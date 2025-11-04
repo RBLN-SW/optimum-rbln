@@ -511,7 +511,6 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
                     f" than the required number of blocks ({num_full_blocks})."
                     "This can cause a failure during model compilation."
                 )
-
         logger.info(f"[KVCache] Compiling with num_blocks: {rbln_config.kvcache_num_blocks}")
 
         return rbln_config
