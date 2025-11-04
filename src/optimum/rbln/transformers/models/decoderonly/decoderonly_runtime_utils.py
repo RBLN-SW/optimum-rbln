@@ -46,6 +46,12 @@ class RBLNPageTableManager:
         """
         If the block is empty (empty_block), allocates a block from the free_block_pool.
         """
+        if batch_idx >= len(self.block_tables) or block_idx >= len(self.block_tables[batch_idx]):
+            raise IndexError(
+                f"Invalid index(batch_idx={batch_idx}, block_idx={block_idx}): \n \
+                               BlockTable Shape(batch_axis, block_axis): {self.block_tables.shape}, BlockSize: {self.rbln_config.kvcache_block_size}"
+            )
+
         if self.block_tables[batch_idx][block_idx] == self.EMPTY_BLOCK:
             if self.free_block_pool:
                 block = self.free_block_pool.popleft()
@@ -96,8 +102,6 @@ class RBLNPageTableManager:
                 s, e = cache_position[0][0].item(), cache_position[0][-1].item()
                 for position in range(s, e + 1, self.rbln_config.kvcache_block_size):
                     block_idx = position // self.rbln_config.kvcache_block_size
-                    if batch_idx >= len(self.block_tables) or block_idx >= len(self.block_tables[batch_idx]):
-                        raise IndexError(f"Invalid index: batch_idx={batch_idx}, block_idx={block_idx}")
                     self.update_block(batch_idx, block_idx)
 
                 return self.replace_empty_block(self.block_tables[batch_idx])
