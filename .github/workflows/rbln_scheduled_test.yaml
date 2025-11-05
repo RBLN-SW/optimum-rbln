@@ -2,12 +2,14 @@ name: Optimum-rbln / Scheduled Test
 
 on:
   schedule:
-    # Run every day at 2am (17:00 UTC, 2:00am KST)
-    - cron: '0 17 * * *'
+    # Run every day at 1 (16:00 UTC, 1:00am KST)
+    - cron: '0 16 * * *'
 
 env:
-  HF_USER_ID: ${{ secrets.HF_USER_ID }}
-  HF_AUTH_TOKEN: ${{ secrets.HF_AUTH_TOKEN }}
+  REBEL_PYPI_ENDPOINT: ${{ vars.REBEL_PYPI_INTERNAL_ENDPOINT }}
+  REBEL_PYPI_USERNAME: ${{ secrets.REBEL_PYPI_USERNAME }}
+  REBEL_PYPI_PASSWORD: ${{ secrets.REBEL_PYPI_PASSWORD }}
+  TOKEN: ${{secrets.RENOVATE_TOKEN}}
 
 jobs:
   check-code-quality:
@@ -18,169 +20,62 @@ jobs:
     with:
       test_all_files: true
 
-  load-version:
+  fetch-version:
     runs-on: rebel-k8s-runner
     outputs:
       compiler_version: ${{ steps.get_version.outputs.compiler_version }}
+      need_pr: ${{ steps.check_pr_needed.outputs.need_pr }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
-      
+
       - name: Get compiler version
         id: get_version
         run: |
-          VERSION=$(grep rebel_compiler_version .github/version.yaml | cut -d ':' -f2 | tr -d ' ')
-          echo "compiler_version=$VERSION" >> $GITHUB_OUTPUT
+          CUR_VERSION=$(grep rebel_compiler_version .github/version.yaml | cut -d ':' -f2 | tr -d ' ')
+          LATEST_VERSION=$(curl -s -u "${{ env.REBEL_PYPI_USERNAME }}:${{ env.REBEL_PYPI_PASSWORD }}" ${{ env.REBEL_PYPI_INTERNAL_ENDPOINT }}/rebel-compiler/json | jq -r '.releases | keys | .[]' | grep prod | tail -n 1)
+          echo "compiler_version=$LATEST_VERSION" >> $GITHUB_OUTPUT
+          echo "cur_version=$CUR_VERSION" >> $GITHUB_OUTPUT
 
-  check-compiler:
-    needs: load-version
-    uses: ./.github/workflows/rbln_check_compiler.yaml
-    with:
-      compiler_version: ${{ needs.load-version.outputs.compiler_version }}
-    secrets: inherit
+      - name: Check if PR needed
+        id: check_pr_needed
+        run: |
+          if [ "${{ steps.get_version.outputs.cur_version }}" == "${{ steps.get_version.outputs.compiler_version }}" ]; then
+            NEED_PR=false
+          else
+            NEED_PR=true
+          fi
+          echo "need_pr=$NEED_PR" >> $GITHUB_OUTPUT
 
-  optimum-rbln-pytest:
-    needs: [load-version, check-compiler]
-    if: ${{ needs.check-compiler.outputs.compiler_version_check == 'true' }}
-    uses: ./.github/workflows/rbln_optimum_pytest.yaml
-    with:
-      ref: main
-      rebel_compiler_version: ${{ needs.check-compiler.outputs.compiler_version }}
-      test_level: "full"
-      enable_hf_hub_tests: true
-      fail_fast: false
-    secrets: inherit
-
-  optimum-rbln-inference-test:
-    needs: check-compiler
-    if: ${{ needs.check-compiler.outputs.compiler_version_check == 'true' }}
-    uses: ./.github/workflows/rbln_optimum_inference_test.yaml
-    with:
-      ref: main
-      rebel_compiler_version: ${{ needs.check-compiler.outputs.compiler_version }}
-    secrets: inherit
-
-  summary_and_report:
-    needs: [load-version, check-compiler, optimum-rbln-pytest]
-    if: always()
+  create-pr:
     runs-on: rebel-k8s-runner
+    needs: fetch-version
+    if: ${{ needs.fetch-version.outputs.need_pr == 'true' }}
     steps:
-      - name: Get failed test details
-        id: get_failed_tests
-        if: needs.optimum-rbln-pytest.result == 'failure'
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: "dev"
+
+      - name: Change version.yaml
         run: |
-          # Get the workflow run jobs
-          JOBS=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
-            "https://api.github.com/repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/jobs")
-          
-          # Extract failed pytest job names step by step for readability
-          FAILED_JOB_NAMES=$(echo "$JOBS" | jq -r '.jobs[] | select(.conclusion == "failure" and (.name | contains("Pytest"))) | .name')
-          # Remove "Pytest (...)" wrapper to get the test name
-          FAILED_TEST_NAMES=$(echo "$FAILED_JOB_NAMES" | sed 's/Pytest (\(.*\))/\1/')
-          # Join names with comma and space
-          FAILED_TESTS=$(echo "$FAILED_TEST_NAMES" | tr '\n' ', ' | sed 's/,$//')
-          
-          if [ -z "$FAILED_TESTS" ]; then
-            echo "failed_tests=Unknown" >> $GITHUB_OUTPUT
-          else
-            echo "failed_tests=$FAILED_TESTS" >> $GITHUB_OUTPUT
-          fi
+          sed -i "s/^rebel_compiler_version:.*/rebel_compiler_version: ${{ needs.fetch-version.outputs.compiler_version }}/" .github/version.yaml
 
-      - name: Determine test results
-        id: test_results
-        run: |
-          # Determine overall status
-          if [ "${{ needs.optimum-rbln-pytest.result }}" == "success" ]; then
-            echo "pytest_status=✅ Success - All tests passed" >> $GITHUB_OUTPUT
-            echo "pytest_emoji=✅" >> $GITHUB_OUTPUT
-          elif [ "${{ needs.optimum-rbln-pytest.result }}" == "failure" ]; then
-            FAILED="${{ steps.get_failed_tests.outputs.failed_tests }}"
-            if [ -n "$FAILED" ] && [ "$FAILED" != "Unknown" ]; then
-              echo "pytest_status=❌ Failed - Tests: \`$FAILED\`" >> $GITHUB_OUTPUT
-            else
-              echo "pytest_status=❌ Failed" >> $GITHUB_OUTPUT
-            fi
-            echo "pytest_emoji=❌" >> $GITHUB_OUTPUT
-          elif [ "${{ needs.optimum-rbln-pytest.result }}" == "skipped" ]; then
-            echo "pytest_status=⏭️ Skipped" >> $GITHUB_OUTPUT
-            echo "pytest_emoji=⏭️" >> $GITHUB_OUTPUT
-          else
-            echo "pytest_status=⚠️ Cancelled" >> $GITHUB_OUTPUT
-            echo "pytest_emoji=⚠️" >> $GITHUB_OUTPUT
-          fi
+      - name: Create PR for updated files
+        id: create-pr-step
+        uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ env.TOKEN }}
+          commit-message: "dependency: Update dependency rebel-compiler to ${{ needs.fetch-version.outputs.compiler_version }}"
+          title: "dependency: Update dependency rebel-compiler to ${{ needs.fetch-version.outputs.compiler_version }}"
+          base: dev
+          team-reviewers: rebellions-sw/sw-generalization, rebel-jongho
 
-          # Determine compiler check status
-          if [ "${{ needs.check-compiler.result }}" == "success" ]; then
-            echo "compiler_status=✅ Available" >> $GITHUB_OUTPUT
-          else
-            echo "compiler_status=❌ Not Available" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Notify Slack
-        if: always()
-        run: |
-          # Determine overall workflow status emoji
-          if [ "${{ needs.optimum-rbln-pytest.result }}" == "success" ]; then
-            title="✅ Optimum-RBLN Scheduled Pytest Results"
-          elif [ "${{ needs.check-compiler.result }}" != "success" ]; then
-            title="⚠️ Optimum-RBLN Scheduled Pytest Results - Compiler Check Failed"
-          else
-            title="❌ Optimum-RBLN Scheduled Pytest Results"
-          fi
-
-          commit="*Commit*\n<https://github.com/rebellions-sw/optimum-rbln/commit/${{github.sha}}|${{github.sha}}>"
-          action_link="*CI Report*\n<https://github.com/rebellions-sw/optimum-rbln/actions/runs/${{ github.run_id }}|View Details>"
-          compiler_version="${{ needs.load-version.outputs.compiler_version }}"
-
-          payload=$(jq -n \
-            --arg channel "${{ secrets.SLACK_CI_REPORTER_CHANNEL }}" \
-            --arg title "$title" \
-            --arg commit "$commit" \
-            --arg action_link "$action_link" \
-            --arg compiler_version "$compiler_version" \
-            --arg compiler_status "${{ steps.test_results.outputs.compiler_status }}" \
-            --arg pytest_status "${{ steps.test_results.outputs.pytest_status }}" \
-            '{
-              channel: $channel,
-              text: "Optimum-RBLN Scheduled Test Results",
-              blocks: [
-                {
-                  type: "header",
-                  text: {
-                    type: "plain_text",
-                    text: $title
-                  }
-                },
-                {
-                  type: "section",
-                  fields: [
-                    { type: "mrkdwn", text: $commit },
-                    { type: "mrkdwn", text: $action_link }
-                  ]
-                },
-                {
-                  type: "section",
-                  fields: [
-                    { type: "mrkdwn", text: "*Compiler Version*" },
-                    { type: "mrkdwn", text: ("`" + $compiler_version + "`") }
-                  ]
-                },
-                { type: "divider" },
-                {
-                  type: "section",
-                  fields: [
-                    { type: "mrkdwn", text: "*Compiler Check*" },
-                    { type: "mrkdwn", text: $compiler_status }
-                  ]
-                },
-                {
-                  type: "section",
-                  fields: [
-                    { type: "mrkdwn", text: "*Pytest Results*" },
-                    { type: "mrkdwn", text: $pytest_status }
-                  ]
-                }
-              ]
-            }'
-          )
-          curl -X POST -H 'Authorization: Bearer ${{ secrets.SLACK_BOT_USER_OAUTH_ACCESS_TOKEN }}' -H 'Content-type: application/json; charset=utf-8' --data "$payload" https://slack.com/api/chat.postMessage
+  rbln-full-test:
+    needs: fetch-version
+    if: ${{ needs.fetch-version.outputs.need_pr == 'false' }}
+    uses: ./.github/workflows/rbln_optimum_full_test.yaml
+    with:
+      rebel_compiler_version: ${{ needs.fetch-version.outputs.compiler_version }}
+      ref: "dev"
+    secrets: inherit

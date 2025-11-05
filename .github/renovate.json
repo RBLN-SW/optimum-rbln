@@ -2,6 +2,9 @@
     "$schema": "https://docs.renovatebot.com/renovate-schema.json",
     "dependencyDashboard": true,
     "prHourlyLimit": 0,
+    "baseBranches": [
+        "dev"
+    ],
     "extends": [
         ":semanticCommitsDisabled"
     ],
@@ -10,7 +13,7 @@
         "rebellions-sw/optimum-rbln"
     ],
     "lockFileMaintenance": {
-        "enabled": true
+        "enabled": false
     },
     "packageRules": [
         {
