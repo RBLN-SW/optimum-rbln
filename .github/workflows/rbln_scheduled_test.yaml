@@ -4,6 +4,7 @@ on:
   schedule:
     # Run every day at 1 (16:00 UTC, 1:00am KST)
     - cron: '0 16 * * *'
+  workflow_dispatch:
 
 env:
   REBEL_PYPI_ENDPOINT: ${{ vars.REBEL_PYPI_INTERNAL_ENDPOINT }}
@@ -33,7 +34,7 @@ jobs:
         id: get_version
         run: |
           CUR_VERSION=$(grep rebel_compiler_version .github/version.yaml | cut -d ':' -f2 | tr -d ' ')
-          LATEST_VERSION=$(curl -s -u "${{ env.REBEL_PYPI_USERNAME }}:${{ env.REBEL_PYPI_PASSWORD }}" ${{ env.REBEL_PYPI_INTERNAL_ENDPOINT }}/rebel-compiler/json | jq -r '.releases | keys | .[]' | grep prod | tail -n 1)
+          LATEST_VERSION=$(curl -s -u "${{ env.REBEL_PYPI_USERNAME }}:${{ env.REBEL_PYPI_PASSWORD }}" ${{ env.REBEL_PYPI_ENDPOINT }}/rebel-compiler/json | jq -r '.releases | keys | .[]' | grep prod | tail -n 1)
           echo "compiler_version=$LATEST_VERSION" >> $GITHUB_OUTPUT
           echo "cur_version=$CUR_VERSION" >> $GITHUB_OUTPUT
 
@@ -69,7 +70,8 @@ jobs:
           commit-message: "dependency: Update dependency rebel-compiler to ${{ needs.fetch-version.outputs.compiler_version }}"
           title: "dependency: Update dependency rebel-compiler to ${{ needs.fetch-version.outputs.compiler_version }}"
           base: dev
-          team-reviewers: rebellions-sw/sw-generalization, rebel-jongho
+          team-reviewers: rebellions-sw/sw-generalization
+          reviewers: rebel-jongho
 
   rbln-full-test:
     needs: fetch-version
