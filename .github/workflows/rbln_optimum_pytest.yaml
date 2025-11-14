@@ -57,7 +57,6 @@ jobs:
 
       - name: Get commit message if not provided
         id: get_commit_message
-        if: ${{ inputs.commit_message == '' }}
         run: |
           COMMIT_MESSAGE=$(git log -1 --pretty=%B)
           echo "message<<EOF" >> $GITHUB_OUTPUT
@@ -128,16 +127,16 @@ jobs:
         run: |
           case "${{ matrix.test_type }}" in
             "config")
-              uv run --no-sync pytest tests/test_config.py -vv --durations 0
+              uv run --no-sync pytest -n 1 tests/test_config.py -vv --durations 0
               ;;
             "transformers")
-              uv run --no-sync pytest tests/test_transformers.py -vv --durations 0
+              uv run --no-sync pytest -n 1 tests/test_transformers.py -vv --durations 0
               ;;
             "diffusers")
-              uv run --no-sync pytest tests/test_diffusers.py -vv --durations 0
+              uv run --no-sync pytest -n 1 tests/test_diffusers.py -vv --durations 0
               ;;
             "llm")
-              uv run --no-sync pytest tests/test_llm.py -vv --durations 0
+              uv run --no-sync pytest -n 1 tests/test_llm.py -vv --durations 0
               ;;
             cli-*)
               # Extract test type from matrix

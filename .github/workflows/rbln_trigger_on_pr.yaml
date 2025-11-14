@@ -25,6 +25,32 @@ jobs:
             echo "No [skip ci] found, continuing with CI"
           fi
 
+  check-pytest-full:
+    runs-on: rebel-k8s-runner
+    outputs:
+      should_full_test: ${{ contains(github.event.pull_request.head.commit.message, '[pytest-full]') }}
+    steps:
+      - name: Check if [pytest-full] is in commit message
+        run: |
+          if ${{ contains(github.event.pull_request.head.commit.message, '[pytest-full]') }}; then
+            echo "Found [pytest-full] in commit message, running full pytest"
+          else
+            echo "No [pytest-full] found, continuing with default pytest"
+          fi
+
+  check-slack-report:
+    runs-on: rebel-k8s-runner
+    outputs:
+      should_slack_report: ${{ contains(github.event.pull_request.head.commit.message, '[slack-report]') }}
+    steps:
+      - name: Check if [slack-report] is in commit message
+        run: |
+          if ${{ contains(github.event.pull_request.head.commit.message, '[slack-report]') }}; then
+            echo "Found [slack-report] in commit message, reporting slack"
+          else
+            echo "No [slack-report] found, continuing without reporting slack"
+          fi
+
   check-code-quality:
     needs: check-skip-ci
     if: ${{ needs.check-skip-ci.outputs.should_skip != 'true' }}
@@ -59,34 +85,6 @@ jobs:
       compiler_version: ${{ needs.load-version.outputs.compiler_version }}
     secrets: inherit
 
-  check-if-dependency-pr:
-    runs-on: rebel-k8s-runner
-    outputs:
-      result: ${{ steps.check_title.outputs.result }}
-    steps:
-      - name: Check out code
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.head.sha }}
-
-      - name: check if pr is dependency check
-        id: check_title
-        run: |
-          PR_TITLE="${{ github.event.pull_request.title }}"
-          LAST_COMMIT_MSG=$(git log -1 --pretty=format:%s)
-          DEP_UPDATE_PATTERN="dependency: Update dependency"
-
-          echo "PR Title: $PR_TITLE"
-          echo "Last Commit: $LAST_COMMIT_MSG"
-
-          if [[ "$PR_TITLE" == *"$DEP_UPDATE_PATTERN"* && "$LAST_COMMIT_MSG" == *"$DEP_UPDATE_PATTERN"* ]]; then
-            echo "result=true" >> $GITHUB_OUTPUT
-          else
-            echo "result=false" >> $GITHUB_OUTPUT
-          fi
-
-          echo $result
-
   check-team-member:
     runs-on: rebel-k8s-runner
     needs: [check-skip-ci, check-code-quality, test-docstrings, check-compiler]
@@ -115,9 +113,9 @@ jobs:
 
   # Default PR test if not Dependency update
   optimum-rbln-pytest:
-    needs: [check-skip-ci, check-code-quality, test-docstrings, check-compiler, check-team-member, check-if-dependency-pr]
+    needs: [check-skip-ci, check-code-quality, test-docstrings, check-compiler, check-team-member, check-pytest-full]
     if: |
-      needs.check-if-dependency-pr.outputs.result == 'false' &&
+      needs.check-pytest-full.outputs.should_full_test != 'true' &&
       needs.check-skip-ci.outputs.should_skip != 'true' &&
       needs.check-team-member.outputs.is_team_member == 'true'
     uses: ./.github/workflows/rbln_optimum_pytest.yaml
@@ -129,13 +127,14 @@ jobs:
 
   # Full Schedule test if Dependency update
   optimum-rbln-dependency-pytest:
-    needs: [check-compiler, check-team-member, check-if-dependency-pr]
+    needs: [check-compiler, check-team-member, check-pytest-full, check-slack-report]
     if: |
-      needs.check-if-dependency-pr.outputs.result == 'true' &&
+      needs.check-pytest-full.outputs.should_full_test == 'true' &&
       needs.check-team-member.outputs.is_team_member == 'true'
     uses: ./.github/workflows/rbln_optimum_full_test.yaml
     with:
       rebel_compiler_version: ${{ needs.check-compiler.outputs.compiler_version }}
       ref: ${{ github.event.pull_request.head.sha }}
+      report_slack: ${{ needs.check-slack-report.outputs.should_slack_report == 'true' }}
     secrets: inherit
  

@@ -11,6 +11,12 @@ on:
             required: true
             type: string
 
+        report_slack:
+            description: "Whether to report slack"
+            required: false
+            type: boolean
+            default: false
+
 env:
   HF_USER_ID: ${{ secrets.HF_USER_ID }}
   HF_AUTH_TOKEN: ${{ secrets.HF_AUTH_TOKEN }}
@@ -59,7 +65,7 @@ jobs:
 
 
   summary_and_report:
-    if: always()
+    if: ${{ always() && inputs.report_slack }}
     needs: [optimum-rbln-pytest, check-compiler, get-hf-package-version]
     runs-on: rebel-k8s-runner
     steps:

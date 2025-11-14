@@ -8,7 +8,7 @@
     "extends": [
         ":semanticCommitsDisabled"
     ],
-    "commitMessagePrefix": "dependency:",
+    "commitMessagePrefix": "[pytest-full] dependency:",
     "repositories": [
         "rebellions-sw/optimum-rbln"
     ],
