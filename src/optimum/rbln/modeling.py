@@ -60,6 +60,9 @@ class RBLNModel(RBLNBaseModel):
 
     @classmethod
     def get_compiled_model(cls, model: "PreTrainedModel", rbln_config: RBLNModelConfig):
+        if rbln_config._allow_no_compile_cfgs:
+            return {}
+
         model = cls._wrap_model_if_needed(model, rbln_config)
         rbln_compile_config = rbln_config.compile_cfgs[0]
         compiled_model = cls.compile(
@@ -69,6 +72,18 @@ class RBLNModel(RBLNBaseModel):
             device=rbln_config.device,
         )
         return compiled_model
+
+    @classmethod
+    def _update_rbln_config(
+        cls,
+        preprocessors: Optional[Any],
+        model: Optional["PreTrainedModel"] = None,
+        model_config: Optional["PretrainedConfig"] = None,
+        rbln_config: Optional[RBLNModelConfig] = None,
+    ) -> RBLNModelConfig:
+        # Default implementation: return config as-is
+        # Subclasses should override to set compile_cfgs if needed
+        return rbln_config
 
     @classmethod
     def _reconstruct_model_if_needed(cls, model: "PreTrainedModel"):
@@ -234,6 +249,9 @@ class RBLNModel(RBLNBaseModel):
         compiled_models: List[rebel.RBLNCompiledModel],
         rbln_config: RBLNModelConfig,
     ) -> List[rebel.Runtime]:
+        if len(rbln_config.compile_cfgs) == 0:
+            return []
+
         if DEFAULT_COMPILED_MODEL_NAME not in rbln_config.device_map:
             cls._raise_missing_compiled_file_error([DEFAULT_COMPILED_MODEL_NAME])
 

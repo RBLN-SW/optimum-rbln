@@ -528,6 +528,7 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
     ]
     submodules: List[str] = []
     subclass_non_save_attributes = []
+    _allow_no_compile_cfgs = False
 
     def initialize_submodule_config(
         self,
@@ -808,7 +809,8 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
             or len(self._compile_cfgs) == 0
             or not all(isinstance(cfg, RBLNCompileConfig) for cfg in self._compile_cfgs)
         ):
-            raise RuntimeError("`compile_cfgs` must be set before freezing.")
+            if not self._allow_no_compile_cfgs:
+                raise RuntimeError("`compile_cfgs` must contain at least one `RBLNCompileConfig` before freezing.")
 
         for submodule_name in self.submodules:
             submodule_config = getattr(self, submodule_name, None)
