@@ -12,59 +12,63 @@ env:
   REBEL_PYPI_PASSWORD: ${{ secrets.REBEL_PYPI_PASSWORD }}
 
 jobs:
-  check-skip-ci:
+  head-commit-message:
     runs-on: rebel-k8s-runner
     outputs:
-      should_skip: ${{ contains(github.event.pull_request.head.commit.message, '[skip ci]') }}
+      message: ${{ steps.get_commit_message.outputs.message }}
     steps:
-      - name: Check if [skip ci] is in commit message
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - name: Get head commit message
+        id: get_commit_message
         run: |
-          if ${{ contains(github.event.pull_request.head.commit.message, '[skip ci]') }}; then
-            echo "Found [skip ci] in commit message, skipping CI"
-          else
-            echo "No [skip ci] found, continuing with CI"
-          fi
+          COMMIT_MESSAGE=$(git log -1 --pretty=%B)
+          echo "message<<EOF" >> $GITHUB_OUTPUT
+          echo "$COMMIT_MESSAGE" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+          echo "COMMIT_MESSAGE=$COMMIT_MESSAGE"
 
   check-pytest-full:
+    needs: head-commit-message
     runs-on: rebel-k8s-runner
     outputs:
-      should_full_test: ${{ contains(github.event.pull_request.head.commit.message, '[pytest-full]') }}
+      should_full_test: ${{ contains(needs.head-commit-message.outputs.message, '[pytest-full]') && 'true' || 'false' }}
     steps:
       - name: Check if [pytest-full] is in commit message
         run: |
-          if ${{ contains(github.event.pull_request.head.commit.message, '[pytest-full]') }}; then
+          if [[ "${{ contains(needs.head-commit-message.outputs.message, '[pytest-full]') }}" == "true" ]]; then
             echo "Found [pytest-full] in commit message, running full pytest"
           else
             echo "No [pytest-full] found, continuing with default pytest"
           fi
 
   check-slack-report:
+    needs: head-commit-message
     runs-on: rebel-k8s-runner
     outputs:
-      should_slack_report: ${{ contains(github.event.pull_request.head.commit.message, '[slack-report]') }}
+      should_slack_report: ${{ contains(needs.head-commit-message.outputs.message, '[slack-report]') && 'true' || 'false' }}
     steps:
       - name: Check if [slack-report] is in commit message
         run: |
-          if ${{ contains(github.event.pull_request.head.commit.message, '[slack-report]') }}; then
+          if [[ "${{ contains(needs.head-commit-message.outputs.message, '[slack-report]') }}" == "true" ]]; then
             echo "Found [slack-report] in commit message, reporting slack"
           else
             echo "No [slack-report] found, continuing without reporting slack"
           fi
 
   check-code-quality:
-    needs: check-skip-ci
-    if: ${{ needs.check-skip-ci.outputs.should_skip != 'true' }}
     uses: ./.github/workflows/check_code_quality.yml
     
   test-docstrings:
-    needs: check-skip-ci
-    if: ${{ needs.check-skip-ci.outputs.should_skip != 'true' }}
     uses: ./.github/workflows/test-docstrings.yml
 
   load-version:
     runs-on: rebel-k8s-runner
-    needs: [check-skip-ci, check-code-quality, test-docstrings]
-    if: ${{ needs.check-skip-ci.outputs.should_skip != 'true' }}
+    needs: [check-code-quality, test-docstrings]
     outputs:
       compiler_version: ${{ steps.get_version.outputs.compiler_version }}
     steps:
@@ -78,8 +82,7 @@ jobs:
           echo "compiler_version=$VERSION" >> $GITHUB_OUTPUT
 
   check-compiler:
-    needs: [check-skip-ci, check-code-quality, test-docstrings, load-version]
-    if: ${{ needs.check-skip-ci.outputs.should_skip != 'true' }}
+    needs: [check-code-quality, test-docstrings, load-version]
     uses: ./.github/workflows/rbln_check_compiler.yaml
     with:
       compiler_version: ${{ needs.load-version.outputs.compiler_version }}
@@ -115,8 +118,7 @@ jobs:
 
   check-team-member:
     runs-on: rebel-k8s-runner
-    needs: [check-skip-ci, check-code-quality, test-docstrings, check-compiler]
-    if: ${{ needs.check-skip-ci.outputs.should_skip != 'true' && needs.check-compiler.outputs.compiler_version_check == 'true' }}
+    needs: [check-code-quality, test-docstrings, check-compiler]
     outputs:
       is_team_member: ${{ steps.check_member.outputs.IS_TEAM_MEMBER }}
     steps:
@@ -141,10 +143,9 @@ jobs:
 
   # Default PR test if not Dependency update
   optimum-rbln-pytest:
-    needs: [check-skip-ci, check-code-quality, test-docstrings, check-compiler, check-team-member, check-pytest-full]
+    needs: [check-code-quality, test-docstrings, check-compiler, check-team-member, check-pytest-full]
     if: |
       needs.check-pytest-full.outputs.should_full_test != 'true' &&
-      needs.check-skip-ci.outputs.should_skip != 'true' &&
       needs.check-team-member.outputs.is_team_member == 'true'
     uses: ./.github/workflows/rbln_optimum_pytest.yaml
     with:
