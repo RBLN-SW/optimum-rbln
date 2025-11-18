@@ -15,6 +15,7 @@
 from typing import Any, Optional
 
 from ....configuration_utils import RBLNModelConfig
+from ....utils.deprecation import deprecate_kwarg
 from ....utils.logging import get_logger
 
 
@@ -24,13 +25,13 @@ logger = get_logger()
 class RBLNModelForSeq2SeqLMConfig(RBLNModelConfig):
     support_paged_attention = None
 
+    @deprecate_kwarg(old_name="pad_token_id", version="0.10.0")
     def __init__(
         self,
         batch_size: Optional[int] = None,
         enc_max_seq_len: Optional[int] = None,
         dec_max_seq_len: Optional[int] = None,
         use_attention_mask: Optional[bool] = None,
-        pad_token_id: Optional[int] = None,
         kvcache_num_blocks: Optional[int] = None,
         kvcache_block_size: Optional[int] = None,
         **kwargs: Any,
@@ -41,7 +42,6 @@ class RBLNModelForSeq2SeqLMConfig(RBLNModelConfig):
             enc_max_seq_len (Optional[int]): Maximum sequence length for the encoder.
             dec_max_seq_len (Optional[int]): Maximum sequence length for the decoder.
             use_attention_mask (Optional[bool]): Whether to use attention masks during inference.
-            pad_token_id (Optional[int]): The ID of the padding token in the vocabulary.
             kvcache_num_blocks (Optional[int]): The total number of blocks to allocate for the
                 PagedAttention KV cache for the SelfAttention. Defaults to batch_size.
             kvcache_block_size (Optional[int]): Sets the size (in number of tokens) of each block
@@ -60,8 +60,6 @@ class RBLNModelForSeq2SeqLMConfig(RBLNModelConfig):
         self.dec_max_seq_len = dec_max_seq_len
 
         self.use_attention_mask = use_attention_mask
-
-        self.pad_token_id = pad_token_id
 
         if self.support_paged_attention:
             self.kvcache_num_blocks = kvcache_num_blocks

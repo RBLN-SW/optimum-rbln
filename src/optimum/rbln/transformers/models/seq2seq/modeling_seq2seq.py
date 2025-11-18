@@ -221,12 +221,6 @@ class RBLNModelForSeq2SeqLM(RBLNModel, GenerationMixin, ABC):
             model_config, "max_position_embeddings", None
         )
 
-        pad_token_id = getattr(model_config, "pad_token_id", None)
-        pad_token_id = pad_token_id or getattr(model_config, "bos_token_id", None)
-        pad_token_id = pad_token_id or getattr(model_config, "eos_token_id", None)
-        pad_token_id = pad_token_id or -1
-        rbln_config.pad_token_id = pad_token_id
-
         if rbln_config.enc_max_seq_len is None:
             enc_max_seq_len = max_position_embeddings
             for tokenizer in preprocessors:
@@ -432,7 +426,7 @@ class RBLNModelForSeq2SeqLM(RBLNModel, GenerationMixin, ABC):
         inputs_tensor = torch.nn.functional.pad(
             inputs_tensor,
             (0, self.rbln_config.enc_max_seq_len - input_len),
-            value=self.rbln_config.pad_token_id,
+            value=self.config.pad_token_id,
         )
         model_kwargs["attention_mask"] = torch.nn.functional.pad(
             model_kwargs["attention_mask"], (0, self.rbln_config.enc_max_seq_len - input_len)

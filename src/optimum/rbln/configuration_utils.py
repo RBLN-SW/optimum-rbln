@@ -24,7 +24,7 @@ import torch
 from packaging.version import Version
 
 from .__version__ import __version__
-from .utils.depreacate_utils import warn_deprecated_npu
+from .utils.deprecation import warn_deprecated_npu
 from .utils.logging import get_logger
 from .utils.runtime_utils import ContextRblnConfig
 

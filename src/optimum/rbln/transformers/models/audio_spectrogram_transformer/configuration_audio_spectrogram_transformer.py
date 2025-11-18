@@ -12,10 +12,36 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from ...configuration_generic import RBLNModelForAudioClassificationConfig
+from typing import Any, Optional
+
+from ....configuration_utils import RBLNModelConfig
+from ....utils.deprecation import deprecate_kwarg
 
 
-class RBLNASTForAudioClassificationConfig(RBLNModelForAudioClassificationConfig):
+class RBLNASTForAudioClassificationConfig(RBLNModelConfig):
     """
     Configuration class for RBLNASTForAudioClassification.
     """
+
+    @deprecate_kwarg(old_name="num_mel_bins", version="0.10.0")
+    def __init__(
+        self,
+        batch_size: Optional[int] = None,
+        max_length: Optional[int] = None,
+        **kwargs: Any,
+    ):
+        """
+        Args:
+            batch_size (Optional[int]): The batch size for inference. Defaults to 1.
+            max_length (Optional[int]): Maximum length of the audio input in time dimension.
+            kwargs: Additional arguments passed to the parent RBLNModelConfig.
+
+        Raises:
+            ValueError: If batch_size is not a positive integer.
+        """
+        super().__init__(**kwargs)
+        self.batch_size = batch_size or 1
+        if not isinstance(self.batch_size, int) or self.batch_size < 0:
+            raise ValueError(f"batch_size must be a positive integer, got {self.batch_size}")
+
+        self.max_length = max_length
