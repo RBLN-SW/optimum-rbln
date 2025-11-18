@@ -123,6 +123,15 @@ class RBLNQuantizationConfig(RBLNSerializableConfigProtocol):
         if self.RBLN_QUANT_BITS_ENV in os.environ:
             os.environ.pop(self.RBLN_QUANT_BITS_ENV)
 
+    @property
+    def nbits_per_param(self) -> int:
+        if self.weights in ["int4", "fp4"]:
+            return 4
+        elif self.weights in ["int8", "fp8"]:
+            return 8
+        else:
+            raise ValueError(f"Invalid weights: {self.weights}")
+
 
 class QuantizedLayerFactory:
     def __init__(self, quantization_config: RBLNQuantizationConfig):

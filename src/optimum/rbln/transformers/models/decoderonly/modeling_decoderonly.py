@@ -466,13 +466,8 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
 
         # Update kvcache_num_blocks based on the attention implementation.
         if rbln_config.attn_impl == "flash_attn":
-            estimated_max_num_blocks = cls.get_maximum_num_blocks(
-                config=model_config,
-                tensor_parallel_size=rbln_config.tensor_parallel_size or 1,
-                kvcache_block_size=rbln_config.kvcache_block_size,
-                nbits_per_param=16 if not rbln_config.quantization else 4,  # TODO(jongho): FIX Ad-hoc
-                n_model_params=sum(p.numel() for p in model.parameters()),
-                num_runtimes=1 if not rbln_config.can_generate else 1 + len(rbln_config.decoder_batch_sizes),
+            estimated_max_num_blocks = cls.get_maximum_num_blocks_by_model(
+                model=model, model_config=model_config, rbln_config=rbln_config
             )
 
             if rbln_config.kvcache_num_blocks is None:

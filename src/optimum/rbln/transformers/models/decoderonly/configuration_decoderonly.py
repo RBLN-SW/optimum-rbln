@@ -281,6 +281,12 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
     def can_generate(self) -> bool:
         return "decode" in self.phases
 
+    @property
+    def nbits_per_param(self) -> int:
+        if self.quantization:
+            return self.quantization.nbits_per_param
+        return 16
+
 
 class RBLNDecoderOnlyModelForCausalLMConfig(RBLNDecoderOnlyModelConfig):
     """

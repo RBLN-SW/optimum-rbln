@@ -20,6 +20,38 @@ import rebel
 import torch
 
 
+def get_available_dram(npu: Optional[str] = None) -> int:
+    """
+    Get the available DRAM size of the specified NPU.
+
+    Args:
+        npu : Optional[str], default=None
+            The NPU to get the available DRAM size.
+            If None, the function will attempt to retrieve through `ensure_valid_npu()`
+
+    Returns:
+        int
+            The available DRAM size in bytes.
+    """
+    if npu is None:
+        if not rebel.npu_is_available(0):
+            raise RuntimeError("No NPU is available to get available DRAM size.")
+
+        npu = rebel.get_npu_name(0)
+
+    if npu.startswith("RBLN-CR"):
+        # TODO(jongho): Assuming 4 chiplets.
+        DRAM_NBYTES = 144 * 2**30
+        SYS_DRAM_NBYTES = 4 * 2**30
+    elif npu.startswith("RBLN-CA"):
+        DRAM_NBYTES = 16 * 2**30
+        SYS_DRAM_NBYTES = 288 * 2**20
+    else:
+        raise ValueError(f"Unknown npu name: {npu}")
+
+    return DRAM_NBYTES - SYS_DRAM_NBYTES
+
+
 def normalize_npu(npu: str) -> str:
     """Normalize the NPU string by removing the form factor."""
     match = re.match(r"(RBLN-CA|RBLN-CR)(\d+)", npu)
