@@ -13,6 +13,11 @@
 # limitations under the License.
 
 
+from typing import Tuple, Union
+
+import torch
+from transformers.modeling_outputs import DepthEstimatorOutput
+
 from ...modeling_generic import RBLNModelForDepthEstimation
 
 
@@ -23,3 +28,15 @@ class RBLNDepthAnythingForDepthEstimation(RBLNModelForDepthEstimation):
     This class provides hardware-accelerated inference for Depth Anything V2
     models on RBLN devices, providing the most capable monocular depth estimation (MDE) model.
     """
+
+    def forward(self, pixel_values: torch.Tensor, **kwargs) -> Union[Tuple, DepthEstimatorOutput]:
+        """
+        Forward pass for the RBLN-optimized DepthAnythingForDepthEstimation model.
+
+        Args:
+            pixel_values (torch.FloatTensor of shape (batch_size, num_channels, height, width)): The tensors corresponding to the input images.
+
+        Returns:
+            The model outputs. If return_dict=False is passed, returns a tuple of tensors. Otherwise, returns a DepthEstimatorOutput object.
+        """
+        return super().forward(pixel_values, **kwargs)

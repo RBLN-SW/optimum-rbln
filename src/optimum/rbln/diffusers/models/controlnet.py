@@ -219,6 +219,21 @@ class RBLNControlNetModel(RBLNModel):
         return_dict: bool = True,
         **kwargs,
     ):
+        """
+        Forward pass for the RBLN-optimized ControlNetModel.
+
+        Args:
+            sample (torch.FloatTensor): The noisy input tensor.
+            timestep (Union[torch.Tensor, float, int]): The number of timesteps to denoise an input.
+            encoder_hidden_states (torch.Tensor): The encoder hidden states.
+            controlnet_cond (torch.FloatTensor): The conditional input tensor of shape `(batch_size, max_seq_len, hidden_size)`.
+            conditioning_scale (torch.Tensor): The scale factor for ControlNet outputs.
+            added_cond_kwargs (Dict[str, torch.Tensor]): Additional conditions for the Stable Diffusion XL UNet.
+            return_dict (bool): Whether or not to return a [`~diffusers.models.controlnets.controlnet.ControlNetOutput`] instead of a plain tuple
+
+        Returns:
+            (Union[`~diffusers.models.controlnets.controlnet.ControlNetOutput`], Tuple)
+        """
         sample_batch_size = sample.size()[0]
         compiled_batch_size = self.compiled_batch_size
         if sample_batch_size != compiled_batch_size and (

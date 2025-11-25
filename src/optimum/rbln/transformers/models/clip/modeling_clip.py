@@ -92,6 +92,9 @@ class RBLNCLIPTextModel(RBLNModel):
         Args:
             input_ids (torch.LongTensor): The input ids to the model.
             return_dict (Optional[bool]): Whether to return a dictionary of outputs.
+
+        Returns:
+            The torch.FloatTensor model outputs.
         """
 
         # To ignore using attention_mask, we override forward method.
@@ -230,6 +233,9 @@ class RBLNCLIPVisionModel(RBLNModel):
             output_attentions (Optional[bool]): Whether to return attentions.
             output_hidden_states (Optional[bool]): Whether to return hidden states.
             interpolate_pos_encoding (bool): Whether to interpolate position encoding.
+
+        Returns:
+            The model outputs. If return_dict=False is passed, returns a tuple of tensors. Otherwise, returns a BaseModelOutputWithPooling object.
         """
 
         if len(kwargs) > 0 and any(value is not None for value in kwargs.values()):

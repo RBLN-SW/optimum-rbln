@@ -602,11 +602,21 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
         input_ids: Optional[torch.LongTensor] = None,
         inputs_embeds: Optional[torch.Tensor] = None,
         attention_mask: Optional[torch.LongTensor] = None,
-        position_embed: Optional[torch.Tensor] = None,
         **kwargs,
-    ) -> Tuple[torch.FloatTensor]:
+    ) -> BaseModelOutputWithPast:
+        """
+        Args:
+            input_ids (torch.LongTensor, optional): The input IDs to the model.
+            inputs_embeds (torch.Tensor, optional): The input embeddings to the model.
+            attention_mask (torch.LongTensor, optional): The attention mask to the model.
+            kwargs (dict[str, Any], optional): Additional keyword arguments.
+
+        Returns:
+            Dataclass containing the last hidden states of the model.
+        """
         inputs = inputs_embeds if inputs_embeds is not None else input_ids
         batch_size = inputs.shape[0]
+        position_embed = kwargs.get("position_embed", None)
 
         if batch_size != self.rbln_config.batch_size:
             raise ValueError(
@@ -629,6 +639,7 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
             all_last_hidden_states.append(last_hidden_states)
 
         last_hidden_states = torch.concat(all_last_hidden_states, dim=0)
+
         return BaseModelOutputWithPast(last_hidden_state=last_hidden_states)
 
 

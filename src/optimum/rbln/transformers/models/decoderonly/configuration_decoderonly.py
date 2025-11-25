@@ -274,7 +274,6 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
 
     @property
     def use_lora(self):
-        """Check if LoRA is enabled for this configuration."""
         return self.lora_config is not None
 
     @property

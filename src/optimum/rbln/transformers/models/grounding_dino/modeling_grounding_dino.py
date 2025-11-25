@@ -13,7 +13,7 @@
 # limitations under the License.
 
 from pathlib import Path
-from typing import TYPE_CHECKING, Dict, List, Optional, Tuple, Union
+from typing import TYPE_CHECKING, List, Optional, Tuple, Union
 
 import torch
 from torch import Tensor, nn
@@ -529,9 +529,26 @@ class RBLNGroundingDinoForObjectDetection(RBLNModel):
         output_attentions: Optional[bool] = None,
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
-        labels: List[Dict[str, Union[torch.LongTensor, torch.FloatTensor]]] = None,
         **kwargs,
     ):
+        """
+        Forward pass for the RBLN-optimized GroundingDinoForObjectDetection model.
+
+        Args:
+            pixel_values (torch.Tensor of shape (batch_size, num_channels, image_size, image_size)) — The tensors corresponding to the input images.
+            input_ids (torch.LongTensor of shape (batch_size, text_sequence_length)) — Indices of input sequence tokens in the vocabulary. Padding will be ignored by default should you provide it.
+            token_type_ids (torch.LongTensor of shape (batch_size, text_sequence_length), optional) — Segment token indices to indicate first and second portions of the inputs.
+            attention_mask (torch.Tensor of shape (batch_size, sequence_length), optional) — Mask to avoid performing attention on padding token indices.
+            pixel_mask (torch.Tensor of shape (batch_size, height, width), optional) — Mask to avoid performing attention on padding pixel values.
+            encoder_outputs - Tuple consists of (last_hidden_state, *optional*: hidden_states, *optional*: attentions) last_hidden_stateof shape(batch_size, sequence_length, hidden_size), optional) is a sequence of hidden-states at the output of the last layer of the encoder.
+            output_attentions - Whether or not to return the attentions tensors of all attention layers.
+            output_hidden_states - Whether or not to return the hidden states of all layers.
+            return_dict — Whether or not to return a ModelOutput instead of a plain tuple.
+
+        Returns:
+            GroundingDinoObjectDetectionOutput or tuple(torch.FloatTensor)
+        """
+
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
 
         # Pad image to rbln_config.image_height and rbln_config.image_width
