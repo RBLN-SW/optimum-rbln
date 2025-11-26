@@ -94,7 +94,7 @@ class RBLNCLIPTextModel(RBLNModel):
             return_dict (Optional[bool]): Whether to return a dictionary of outputs.
 
         Returns:
-            The torch.FloatTensor model outputs.
+            The model outputs. If return_dict=False is passed, returns a tuple of tensors. Otherwise, returns a CLIPTextModelOutput object.
         """
 
         # To ignore using attention_mask, we override forward method.
@@ -312,6 +312,38 @@ class RBLNCLIPVisionModelWithProjection(RBLNCLIPVisionModel):
     This class extends RBLNCLIPVisionModel with a projection layer for
     multimodal embedding alignment tasks.
     """
+
+    def forward(
+        self,
+        pixel_values: torch.FloatTensor,
+        return_dict: bool = True,
+        output_attentions: Optional[bool] = None,
+        output_hidden_states: Optional[bool] = None,
+        interpolate_pos_encoding: bool = False,
+        **kwargs,
+    ) -> Union[Tuple, CLIPVisionModelOutput]:
+        """
+        Forward pass for the RBLN-optimized CLIP vision encoder model with projection.
+
+        Args:
+            pixel_values (torch.Tensor): The pixel values to the model.
+            return_dict (bool): Whether to return a dictionary of outputs.
+            output_attentions (Optional[bool]): Whether to return attentions.
+            output_hidden_states (Optional[bool]): Whether to return hidden states.
+            interpolate_pos_encoding (bool): Whether to interpolate position encoding.
+
+        Returns:
+            The model outputs. If return_dict=False is passed, returns a tuple of tensors. Otherwise, returns a CLIPVisionModelOutput object.
+        """
+
+        return super().forward(
+            pixel_values=pixel_values,
+            return_dict=return_dict,
+            output_attentions=output_attentions,
+            output_hidden_states=output_hidden_states,
+            interpolate_pos_encoding=interpolate_pos_encoding,
+            **kwargs,
+        )
 
     def _prepare_output(self, output, return_dict):
         # Prepare model output based on return_dict flag.
