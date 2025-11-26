@@ -78,11 +78,9 @@ class RBLNResNetForImageClassification(RBLNModelForImageClassification):
         Foward pass for the RBLN-optimized ResNet model for image classification.
 
         Args:
-            pixel_values (torch.FloatTensor of shape (batch_size, channels, height, width)):
-               The tensors corresponding to the input images.
-            output_hidden_states (bool, *optional*, defaults to False):
-               Whether or not to return the hidden states of all layers. See hidden_states under returned tensors
-               for more details.
+            pixel_values (torch.FloatTensor of shape (batch_size, channels, height, width)): The tensors corresponding to the input images.
+            output_hidden_states (bool, *optional*, defaults to False): Whether or not to return the hidden states of all layers.
+                See hidden_states under returned tensors for more details.
             return_dict (bool, *optional*, defaults to True): Whether to return a dictionary of outputs.
 
         Returns:
@@ -98,18 +96,4 @@ class RBLNResNetForImageClassification(RBLNModelForImageClassification):
                 f"Please compile again with the correct argument."
             )
 
-        output = super().forward(pixel_values=pixel_values, return_dict=return_dict, **kwargs)
-
-        if not return_dict:
-            return (output,) if not isinstance(output, (tuple, list)) else output
-        else:
-            logits = output.pop(0) if isinstance(output, (tuple, list)) else output
-
-            if self.rbln_config.output_hidden_states:
-                hidden_states = ()
-                for _ in range(len(output)):
-                    hidden_states += (output.pop(0),)
-            else:
-                hidden_states = None
-
-            return ImageClassifierOutputWithNoAttention(logits=logits, hidden_states=hidden_states)
+        return super().forward(pixel_values=pixel_values, return_dict=return_dict, **kwargs)

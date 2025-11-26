@@ -49,6 +49,8 @@ class RBLNBertModel(RBLNTransformerEncoderForFeatureExtraction):
         self,
         input_ids: Optional[torch.Tensor] = None,
         attention_mask: Optional[torch.Tensor] = None,
+        token_type_ids: Optional[torch.Tensor] = None,
+        position_ids: Optional[torch.Tensor] = None,
         **kwargs,
     ) -> Union[BaseModelOutputWithPoolingAndCrossAttentions, Tuple]:
         """
@@ -57,12 +59,27 @@ class RBLNBertModel(RBLNTransformerEncoderForFeatureExtraction):
         Args:
             input_ids (torch.Tensor of shape (batch_size, sequence_length), optional): Indices of input sequence tokens in the vocabulary.
             attention_mask (torch.Tensor of shape (batch_size, sequence_length), optional): Mask to avoid performing attention on padding token indices.
+            token_type_ids (torch.Tensor of shape (batch_size, sequence_length), optional): Segment token indices to indicate first and second portions of the inputs.
+            position_ids (torch.Tensor of shape (batch_size, sequence_length), optional): Indices of positions of each input sequence tokens in the position embeddings.
 
         Returns:
             The model outputs. If return_dict=False is passed, returns a tuple of tensors. Otherwise, returns a BaseModelOutputWithPoolingAndCrossAttentions object.
         """
 
-        return super().forward(input_ids, attention_mask, **kwargs)
+        input_map = {
+            "input_ids": input_ids,
+            "attention_mask": attention_mask,
+            "token_type_ids": token_type_ids,
+            "position_ids": position_ids,
+        }
+
+        model_input_names = getattr(self.rbln_config, "model_input_names", None)
+        if model_input_names is None:
+            model_input_names = self.rbln_model_input_names
+
+        ordered_inputs = [input_map[name] for name in model_input_names if name in input_map]
+
+        return super().forward(*ordered_inputs, **kwargs)
 
 
 class RBLNBertForMaskedLM(RBLNModelForMaskedLM):

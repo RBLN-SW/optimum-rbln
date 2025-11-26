@@ -41,4 +41,4 @@ class RBLNViTForImageClassification(RBLNModelForImageClassification):
             The model outputs. If return_dict=False is passed, returns a tuple of tensors. Otherwise, returns an ImageClassifierOutput object.
 
         """
-        return ImageClassifierOutput(logits=super().forward(pixel_values, **kwargs))
+        return super().forward(pixel_values, **kwargs)

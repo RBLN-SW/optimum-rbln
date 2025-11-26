@@ -88,4 +88,4 @@ class RBLNASTForAudioClassification(RBLNModel):
             Returns a SequenceClassifierOutput object.
         """
 
-        return SequenceClassifierOutput(logits=super().forward(input_values, **kwargs))
+        return super().forward(input_values, **kwargs)
