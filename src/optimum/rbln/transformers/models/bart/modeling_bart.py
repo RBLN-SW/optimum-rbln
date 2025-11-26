@@ -51,7 +51,7 @@ class RBLNBartModel(RBLNTransformerEncoderForFeatureExtraction):
             attention_mask (torch.Tensor of shape (batch_size, sequence_length), optional): Mask to avoid performing attention on padding token indices.
 
         Returns:
-            The model outputs. If return_dict=False is passed, returns a tuple of tensors. Otherwise, returns a BaseModelOutputWithPoolingAndCrossAttentions object.
+            The model outputs. If return_dict=False is passed, returns a tuple of tensors. Otherwise, returns a Seq2SeqModelOutput object.
         """
 
         return super().forward(input_ids, attention_mask, **kwargs)
