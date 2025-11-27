@@ -38,6 +38,18 @@ jobs:
           CUR_VERSION=$(grep rebel_compiler_version .github/version.yaml | cut -d ':' -f2 | tr -d ' ')
           echo "compiler_version=$CUR_VERSION" >> $GITHUB_OUTPUT
 
+      - name: Add version comment to PR
+        uses: peter-evans/create-or-update-comment@v4
+        if: ${{ steps.create-pr-step.outputs.pull-request-number }}
+        with:
+          token: ${{ env.TOKEN }}
+          repository: ${{ github.repository }}
+          issue-number: ${{ steps.create-pr-step.outputs.pull-request-number }}
+          body: |
+            ### 🔄 rebel-compiler Dependency Update
+            **Updated Version:** `${{ needs.fetch-version.outputs.compiler_version }}`
+            This PR syncs the dependency version with the latest build.
+
   rbln-full-test:
     needs: fetch-version
     uses: ./.github/workflows/rbln_optimum_full_test.yaml
