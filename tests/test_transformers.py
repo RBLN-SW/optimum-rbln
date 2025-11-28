@@ -368,6 +368,22 @@ class TestXLMRobertaModel(BaseTest.TestModel):
     }
 
 
+class TestXLMRobertaModelWithTokenTypeIds(TestXLMRobertaModel):
+    RBLN_CLASS_KWARGS = {
+        "rbln_max_seq_len": 128,
+        "rbln_model_input_names": ["input_ids", "attention_mask", "token_type_ids"],
+    }
+    GENERATION_KWARGS = {
+        "input_ids": torch.randint(low=0, high=50, size=(1, 128), generator=torch.manual_seed(42), dtype=torch.int64),
+        "attention_mask": torch.randint(
+            low=0, high=2, size=(1, 128), generator=torch.manual_seed(42), dtype=torch.int64
+        ),
+        "token_type_ids": torch.randint(
+            low=0, high=2, size=(1, 128), generator=torch.manual_seed(42), dtype=torch.int64
+        ),
+    }
+
+
 class TestCLIPTextModel(BaseTest.TestModel):
     RBLN_AUTO_CLASS = RBLNAutoModelForTextEncoding
     RBLN_CLASS = RBLNCLIPTextModel
