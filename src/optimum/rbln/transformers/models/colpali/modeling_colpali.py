@@ -332,7 +332,7 @@ class RBLNColPaliForRetrieval(RBLNModel):
         ]
         outputs.append(torch.empty(size=language_model_out_size, dtype=torch.float32, device="cpu"))
         if self.rbln_config.output_hidden_states:
-            for i in range(self.config.vlm_config.text_config.num_hidden_layers + 1):
+            for _ in range(self.config.vlm_config.text_config.num_hidden_layers + 1):
                 outputs.append(torch.empty(size=language_model_hidden_states_size, dtype=torch.float32, device="cpu"))
 
         # Embedding_proj_layer is fused on the bottom of the language model.

@@ -340,10 +340,10 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
         rbln_config: RBLNDecoderOnlyModelForCausalLMConfig,
         model_config: PretrainedConfig,
     ):
-        num_attention_heads = getattr(model_config, "n_head", None) or getattr(model_config, "num_attention_heads")
+        num_attention_heads = getattr(model_config, "n_head", None) or model_config.num_attention_heads
         num_key_value_heads = getattr(model_config, "num_key_value_heads", None) or num_attention_heads
-        num_hidden_layers = getattr(model_config, "n_layer", None) or getattr(model_config, "num_hidden_layers")
-        hidden_size = getattr(model_config, "n_embd", None) or getattr(model_config, "hidden_size")
+        num_hidden_layers = getattr(model_config, "n_layer", None) or model_config.num_hidden_layers
+        hidden_size = getattr(model_config, "n_embd", None) or model_config.hidden_size
         head_dim = getattr(model_config, "head_dim", None) or hidden_size // num_attention_heads
         is_prefill = query_length > 1
 

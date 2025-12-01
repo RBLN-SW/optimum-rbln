@@ -111,10 +111,10 @@ class RBLNQwen2_5_VisionTransformerPretrainedModel(RBLNModel):
         model_config: "PretrainedConfig" = None,
         rbln_config: Optional[RBLNQwen2_5_VisionTransformerPretrainedModelConfig] = None,
     ) -> RBLNQwen2_5_VisionTransformerPretrainedModelConfig:
-        window_size = getattr(model_config, "window_size")
-        patch_size = getattr(model_config, "patch_size")
-        hidden_size = getattr(model_config, "hidden_size")
-        num_heads = getattr(model_config, "num_heads")
+        window_size = model_config.window_size
+        patch_size = model_config.patch_size
+        hidden_size = model_config.hidden_size
+        num_heads = model_config.num_heads
         head_dim = hidden_size // num_heads
         window_seq_len = (window_size // patch_size) ** 2
 
@@ -294,10 +294,10 @@ class RBLNQwen2_5_VisionTransformerPretrainedModel(RBLNModel):
             try:
                 ws_index = torch.searchsorted(self.max_seq_lens, window_padded_len).item()
                 max_seq_len = self.max_seq_lens[ws_index]
-            except Exception:
+            except Exception as e:
                 raise ValueError(
                     f"Required seq_len({window_padded_len}) is larger than available max_seq_lens({self.max_seq_lens.tolist()})."
-                )
+                ) from e
 
             # Padding for Window Attention Layers
             hidden_state_padded, cos_padded, sin_padded, window_attn_masks, window_valid_lengths = (

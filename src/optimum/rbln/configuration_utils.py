@@ -117,9 +117,14 @@ class RBLNCompileConfig:
         return self
 
     def get_dummy_inputs(
-        self, fill=0, static_tensors: Dict[str, torch.Tensor] = {}, meta_tensor_names: List[str] = []
+        self,
+        fill=0,
+        static_tensors: Optional[Dict[str, torch.Tensor]] = None,
+        meta_tensor_names: Optional[List[str]] = None,
     ):
         dummy = []
+        static_tensors = static_tensors if static_tensors is not None else {}
+        meta_tensor_names = meta_tensor_names if meta_tensor_names is not None else []
         for name, shape, dtype in self.input_info:
             if name in static_tensors:
                 tensor = static_tensors[name]
@@ -255,7 +260,7 @@ class RBLNAutoConfig:
     def load(
         path: str,
         passed_rbln_config: Optional["RBLNModelConfig"] = None,
-        kwargs: Optional[Dict[str, Any]] = {},
+        kwargs: Optional[Dict[str, Any]] = None,
         return_unused_kwargs: bool = False,
     ) -> Union["RBLNModelConfig", Tuple["RBLNModelConfig", Dict[str, Any]]]:
         """
@@ -269,6 +274,8 @@ class RBLNAutoConfig:
         Returns:
             RBLNModelConfig: The loaded RBLNModelConfig.
         """
+        if kwargs is None:
+            kwargs = {}
         cls, config_file = load_config(path)
 
         rbln_keys = [key for key in kwargs.keys() if key.startswith("rbln_")]
@@ -655,7 +662,7 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
         timeout: Optional[int] = None,
         optimum_rbln_version: Optional[str] = None,
         _torch_dtype: Optional[str] = None,
-        _compile_cfgs: List[RBLNCompileConfig] = [],
+        _compile_cfgs: Optional[List[RBLNCompileConfig]] = None,
         *,
         optimize_host_memory: Optional[bool] = None,
         **kwargs: Any,
@@ -708,7 +715,8 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
         if self.optimum_rbln_version is None:
             self.optimum_rbln_version = __version__
 
-        self._compile_cfgs: List[RBLNCompileConfig] = _compile_cfgs
+        compile_cfgs = _compile_cfgs if _compile_cfgs is not None else []
+        self._compile_cfgs: List[RBLNCompileConfig] = compile_cfgs
 
         if not isinstance(self._compile_cfgs, list):
             raise ValueError("`compile_cfgs` must be a list of `RBLNCompileConfig`.")

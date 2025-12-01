@@ -37,7 +37,9 @@ class SubModulesMixin:
 
     _rbln_submodules: List[Dict[str, Any]] = []
 
-    def __init__(self, *, rbln_submodules: List["RBLNModel"] = [], **kwargs) -> None:
+    def __init__(self, *, rbln_submodules: Optional[List["RBLNModel"]] = None, **kwargs) -> None:
+        if rbln_submodules is None:
+            rbln_submodules = []
         for submodule_meta, submodule in zip(self._rbln_submodules, rbln_submodules):
             setattr(self, submodule_meta["name"], submodule)
 
