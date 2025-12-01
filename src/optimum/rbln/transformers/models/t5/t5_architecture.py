@@ -39,7 +39,7 @@ class T5Wrapper:
 
 class T5EncoderWrapper(Seq2SeqEncoderWrapper):
     def __post_init__(self, model: nn.Module):
-        self.n_layer = getattr(self.config, "num_layers")
+        self.n_layer = self.config.num_layers
         self.cross_k_projects, self.cross_v_projects = self._extract_cross_kv_projects(model.get_decoder().block)
         self.num_heads = self.config.num_heads
         self.d_kv = self.config.d_kv

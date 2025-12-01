@@ -77,7 +77,7 @@ class DecoderOnlyWrapper(nn.Module):
             )
 
         self.model = self.convert_to_rbln_class(model, rbln_config.max_seq_len)
-        self.num_hidden_layers = getattr(self.config, "num_hidden_layers", None) or getattr(self.config, "n_layer")
+        self.num_hidden_layers = getattr(self.config, "num_hidden_layers", None) or self.config.n_layer
         self._phase = "prefill"
 
     def get_rotary_emb(self, max_seq_len):
@@ -616,8 +616,8 @@ class DecoderOnlyAttention(nn.Module):
         self._original_mod = self_attn
         self.rbln_config = rbln_config
         self.layer_idx = self_attn.layer_idx
-        self.num_heads = getattr(self._original_mod, "num_heads", None) or getattr(
-            self._original_mod.config, "num_attention_heads"
+        self.num_heads = (
+            getattr(self._original_mod, "num_heads", None) or self._original_mod.config.num_attention_heads
         )
         self.head_dim = self._original_mod.head_dim
         self._phase = "prefill"

@@ -20,7 +20,7 @@ class Qwen2VisionTransformerWrapper(nn.Module):
 
     def wrap_vision_blocks(self, blocks: torch.nn.ModuleList):
         wrapped_blocks = []
-        for i, block in enumerate(blocks):
+        for _, block in enumerate(blocks):
             wrapped_blocks.append(Qwen2VLVisionBlock(block))
         return nn.ModuleList(wrapped_blocks)
 

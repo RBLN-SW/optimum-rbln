@@ -86,7 +86,7 @@ class RBLNCosmosTextToWorldPipeline(RBLNDiffusionMixin, CosmosTextToWorldPipelin
         *,
         export: bool = False,
         safety_checker: Optional[RBLNCosmosSafetyChecker] = None,
-        rbln_config: Dict[str, Any] = {},
+        rbln_config: Optional[Dict[str, Any]] = None,
         **kwargs: Any,
     ):
         """

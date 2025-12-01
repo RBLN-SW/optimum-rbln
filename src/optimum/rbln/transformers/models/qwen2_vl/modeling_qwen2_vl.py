@@ -112,8 +112,8 @@ class RBLNQwen2VisionTransformerPretrainedModel(RBLNModel):
         model_config: "PretrainedConfig" = None,
         rbln_config: Optional[RBLNQwen2VisionTransformerPretrainedModelConfig] = None,
     ) -> RBLNQwen2VisionTransformerPretrainedModelConfig:
-        hidden_size = getattr(model_config, "embed_dim")
-        num_heads = getattr(model_config, "num_heads")
+        hidden_size = model_config.embed_dim
+        num_heads = model_config.num_heads
         head_dim = hidden_size // num_heads
 
         input_infos = []
@@ -200,10 +200,10 @@ class RBLNQwen2VisionTransformerPretrainedModel(RBLNModel):
             try:
                 cu_index = torch.searchsorted(self.max_seq_lens, cu_seq_len).item()
                 max_seq_len = self.max_seq_lens[cu_index]
-            except Exception:
+            except Exception as e:
                 raise ValueError(
                     f"Required seq_len({cu_seq_len}) is larger than available max_seq_lens({self.max_seq_lens.tolist()})."
-                )
+                ) from e
 
             # Padding for Full Attention Layers
             hidden_state_full_padded, cos_full_padded, sin_full_padded, full_attn_masks = (

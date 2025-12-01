@@ -86,7 +86,7 @@ class RBLNCosmosVideoToWorldPipeline(RBLNDiffusionMixin, CosmosVideoToWorldPipel
         *,
         export: bool = False,
         safety_checker: Optional[RBLNCosmosSafetyChecker] = None,
-        rbln_config: Dict[str, Any] = {},
+        rbln_config: Optional[Dict[str, Any]] = None,
         **kwargs: Any,
     ):
         """
@@ -118,7 +118,6 @@ class RBLNCosmosVideoToWorldPipeline(RBLNDiffusionMixin, CosmosVideoToWorldPipel
                 RBLN compilation process. These may include parameters specific to individual submodules
                 or the particular diffusion pipeline being used.
         """
-
         rbln_config, kwargs = cls.get_rbln_config_class().initialize_from_kwargs(rbln_config, **kwargs)
         if safety_checker is None and export:
             safety_checker = RBLNCosmosSafetyChecker(rbln_config=rbln_config.safety_checker)
