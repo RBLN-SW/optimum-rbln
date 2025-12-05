@@ -24,6 +24,7 @@ class RBLNDecoderOnlyOutput(ModelOutput):
     logits: torch.FloatTensor = None
     generate_idx: torch.Tensor = None
     padded_cache_lengths: int = None
+    hidden_states: Tuple[torch.FloatTensor] = None
 
 
 @dataclass

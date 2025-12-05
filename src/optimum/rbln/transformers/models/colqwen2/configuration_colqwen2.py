@@ -58,7 +58,6 @@ class RBLNColQwen2ForRetrievalConfig(RBLNDecoderOnlyModelConfig):
         visual: Optional[RBLNModelConfig] = None,
         batch_size: Optional[int] = None,
         use_inputs_embeds: bool = True,
-        output_hidden_states: Optional[bool] = False,
         **kwargs,
     ):
         super().__init__(use_inputs_embeds=use_inputs_embeds, **kwargs)
@@ -71,4 +70,3 @@ class RBLNColQwen2ForRetrievalConfig(RBLNDecoderOnlyModelConfig):
             raise ValueError("batch_size is not supported for RBLNColQwen2ForRetrievalConfig")
 
         self.visual = visual
-        self.output_hidden_states = output_hidden_states

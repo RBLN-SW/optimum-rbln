@@ -13,7 +13,7 @@
 # limitations under the License.
 
 from collections import deque
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 import rebel
 import torch
@@ -22,6 +22,10 @@ import torch.nn.functional as F
 from ....utils.runtime_utils import RBLNPytorchRuntime
 from ...modeling_outputs import RBLNDecoderOnlyOutput
 from .configuration_decoderonly import RBLNDecoderOnlyModelForCausalLMConfig
+
+
+if TYPE_CHECKING:
+    from transformers.configuration_utils import PreTrainedConfig
 
 
 class RBLNPageTableManager:
@@ -173,20 +177,21 @@ class RBLNRuntimeModel(RBLNPytorchRuntime):
         dec_attn_mask: torch.Tensor,
         page_table_manager: RBLNPageTableManager,
         rbln_config: RBLNDecoderOnlyModelForCausalLMConfig,
-        out_buffers: Optional[torch.Tensor] = None,
+        config: "PreTrainedConfig" = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(runtime, **kwargs)
         self.phase = phase
         self.batch_size = batch_size
         self.rbln_config = rbln_config
+        self.config = config
 
         # shared resources between prefill and decode phase
         self.dec_attn_mask = dec_attn_mask
         self.page_table_manager = page_table_manager
+        self.out_buffers = None
 
         if self.phase == "prefill":
-            self.out_buffers = out_buffers
             self.causal_mask = 1 - torch.triu(
                 torch.ones(1, 1, self.rbln_config.prefill_chunk_size, self.rbln_config.prefill_chunk_size), diagonal=1
             )
@@ -301,7 +306,7 @@ class RBLNRuntimeModel(RBLNPytorchRuntime):
 
             attention_mask = self.dec_attn_mask
 
-        logits = super().forward(
+        outputs = super().forward(
             inputs,
             cache_position,
             block_tables,
@@ -310,9 +315,13 @@ class RBLNRuntimeModel(RBLNPytorchRuntime):
             attention_mask if self.rbln_config.use_attention_mask else None,
             position_ids if self.rbln_config.use_position_ids else None,
             lora_int_ids if self.rbln_config.use_lora else None,
+            out=self.out_buffers,
         )
 
-        return RBLNDecoderOnlyOutput(logits=logits)
+        if self.rbln_config.output_hidden_states:
+            return RBLNDecoderOnlyOutput(logits=outputs[0], hidden_states=tuple(outputs[1:]))
+        else:
+            return RBLNDecoderOnlyOutput(logits=outputs, hidden_states=None)
 
     def _prepare_prefill_inputs(
         self,
@@ -328,9 +337,22 @@ class RBLNRuntimeModel(RBLNPytorchRuntime):
         # Handle continuous batching in a compiled graph by extracting valid inputs
         # If an attention mask is provided, select only the valid (non-masked) inputs
         if attention_mask is not None:
-            inputs = inputs[:, attention_mask.bool()]
-            position_embed = None if position_embed is None else position_embed[:, :, :, attention_mask.bool(), :]
-            token_type_ids = None if token_type_ids is None else token_type_ids[:, attention_mask.bool()]
+            if attention_mask.dim() != 1:
+                raise ValueError("attention_mask must be a 1D tensor.")
+
+            mask_bool = attention_mask.to(dtype=torch.bool)
+            if (~mask_bool).any():
+                first_one = torch.nonzero(mask_bool, as_tuple=False)
+                if first_one.numel() == 0:
+                    raise ValueError("attention_mask with padding must include at least one real token.")
+
+                first_one_idx = int(first_one[0].item())
+                if not mask_bool[first_one_idx:].all():
+                    raise ValueError("attention_mask must be left padded.")
+
+            inputs = inputs[:, mask_bool]
+            position_embed = None if position_embed is None else position_embed[:, :, :, mask_bool, :]
+            token_type_ids = None if token_type_ids is None else token_type_ids[:, mask_bool]
 
         query_length = inputs.shape[1]
         if query_length > self.rbln_config.max_seq_len:
@@ -381,6 +403,63 @@ class RBLNRuntimeModel(RBLNPytorchRuntime):
             token_type_ids,
         )
 
+    def _prepare_prefill_outputs(
+        self,
+        query_length: int,
+        attention_mask: Optional[torch.Tensor] = None,
+    ):
+        # Prepare out buffers
+        padding_size = (self.rbln_config.prefill_chunk_size - query_length) % self.rbln_config.prefill_chunk_size
+        padded_input_length = query_length + padding_size
+        padded_mask_length = (
+            attention_mask.shape[-1] + padding_size if attention_mask is not None else padded_input_length
+        )
+        out_buffers = [[] for _ in range(padded_input_length // self.rbln_config.prefill_chunk_size)]
+
+        valid_start_index = (
+            int(torch.nonzero(attention_mask, as_tuple=False)[0][0].item()) if attention_mask is not None else 0
+        )
+
+        # Prepare logits buffer
+        logits_size = (
+            1,
+            1 if self.rbln_config.logits_to_keep == 1 else padded_mask_length,
+            self.config.vocab_size if self.rbln_config.can_generate else self.config.hidden_size,
+        )
+        output_logits = torch.full(logits_size, fill_value=1e-10, dtype=self.rbln_config.torch_dtype)
+
+        if self.rbln_config.logits_to_keep == 1:
+            for i in range(padded_input_length // self.rbln_config.prefill_chunk_size):
+                out_buffers[i].append(output_logits)
+        else:
+            for i in range(padded_input_length // self.rbln_config.prefill_chunk_size):
+                s_idx = i * self.rbln_config.prefill_chunk_size + valid_start_index
+                out_buffers[i].append(output_logits[:, s_idx : s_idx + self.rbln_config.prefill_chunk_size])
+
+        # Prepare output hidden states
+        output_hidden_states = None
+        if self.rbln_config.output_hidden_states:
+            hidden_states_size = (
+                1,
+                padded_mask_length,
+                self.config.hidden_size,
+            )
+            output_hidden_states = [
+                torch.full(hidden_states_size, fill_value=1e-10, dtype=self.rbln_config.torch_dtype)
+                for _ in range(self.config.num_hidden_layers + 1)
+            ]
+
+            for i in range(padded_input_length // self.rbln_config.prefill_chunk_size):
+                s_idx = i * self.rbln_config.prefill_chunk_size + valid_start_index
+                out_buffers[i].extend(
+                    [
+                        hidden_states_buffer[:, s_idx : s_idx + self.rbln_config.prefill_chunk_size]
+                        for hidden_states_buffer in output_hidden_states
+                    ]
+                )
+
+        return out_buffers, output_logits, output_hidden_states
+
     def prefill_forward(
         self,
         inputs: torch.Tensor,
@@ -424,6 +503,8 @@ class RBLNRuntimeModel(RBLNPytorchRuntime):
             inputs, cache_position, attention_mask, position_embed, token_type_ids=token_type_ids
         )
 
+        out_buffers, output_logits, output_hidden_states = self._prepare_prefill_outputs(query_length, attention_mask)
+
         # Assumed that prefix caching was performed externally if cache_position doesn't start from 0.
         prefix_cached_len = cache_position[0][0].item()
         if prefix_cached_len > 0:
@@ -435,8 +516,7 @@ class RBLNRuntimeModel(RBLNPytorchRuntime):
                 chunked_attention_mask[:, :, :, :prefix_cached_len] = 1
 
         # Process input in chunks of size `prefill_chunk_size`
-        output_logits = []
-        for step in range(0, query_length, self.rbln_config.prefill_chunk_size):
+        for i, step in enumerate(range(0, query_length, self.rbln_config.prefill_chunk_size)):
             s, e = step, step + self.rbln_config.prefill_chunk_size
             # Extract the current chunk of inputs, cache positions, position ids, and position embeddings
             input_chunk = inputs[:, s:e]
@@ -468,7 +548,7 @@ class RBLNRuntimeModel(RBLNPytorchRuntime):
                 query_position = None
 
             # Forward pass for the current chunk
-            output_logit = super().forward(
+            _ = super().forward(
                 input_chunk,
                 cache_pos_chunk,
                 block_tables,
@@ -478,31 +558,30 @@ class RBLNRuntimeModel(RBLNPytorchRuntime):
                 chunked_attention_mask if self.rbln_config.use_attention_mask else None,
                 position_ids_chunk,
                 lora_int_ids if self.rbln_config.use_lora else None,
-                out=self.out_buffers,
+                out=out_buffers[i],
             )
-            output_logits.append(output_logit)
 
         # Aggregate output_logits
-        output_logits = torch.concat(output_logits, dim=-2)
-        if self.rbln_config.logits_to_keep > 0:
-            output_logits = output_logits[:, -self.rbln_config.logits_to_keep :, :]
+        padding_size = (self.rbln_config.prefill_chunk_size - query_length) % self.rbln_config.prefill_chunk_size
+        if self.rbln_config.logits_to_keep == 1:
+            output_logits = output_logits
+        elif self.rbln_config.logits_to_keep > 1:
+            output_logits = output_logits[:, -padding_size - self.rbln_config.logits_to_keep : -padding_size, :]
         else:
-            output_logits = output_logits[:, :query_length, :]
-            # index copy for masked output_logits
-            if attention_mask is not None:
-                new_output_logits = torch.full(
-                    (1, attention_mask.shape[-1], output_logits.shape[-1]),
-                    fill_value=1e-10,
-                    dtype=output_logits.dtype,
-                )
-                mask_indices = torch.nonzero(attention_mask, as_tuple=True)[0]
-                new_output_logits.index_copy_(dim=-2, index=mask_indices, source=output_logits)
+            output_logits = output_logits[:, :-padding_size, :]
 
-            output_logits = new_output_logits
+        all_hidden_states = None
+        if self.rbln_config.output_hidden_states:
+            all_hidden_states = [
+                output_hidden_state[:, :-padding_size, :] for output_hidden_state in output_hidden_states
+            ]
+            all_hidden_states = tuple(all_hidden_states)
 
         # Update decoder attention mask with processed KV-cache length from prefill phase
         if self.rbln_config.can_generate and not is_external_block_tables and self.rbln_config.use_attention_mask:
             self.dec_attn_mask[batch_idx].fill_(0)
             self.dec_attn_mask[batch_idx, :, :, :query_length] = 1
 
-        return RBLNDecoderOnlyOutput(logits=output_logits, padded_cache_lengths=padded_cache_lengths)
+        return RBLNDecoderOnlyOutput(
+            logits=output_logits, padded_cache_lengths=padded_cache_lengths, hidden_states=all_hidden_states
+        )
