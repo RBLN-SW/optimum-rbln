@@ -106,6 +106,8 @@ class RBLNGemma3RuntimeModel(RBLNRuntimeModel):
         )
 
         step = 0
+        output_logits = []
+        all_hidden_states = [] if self.rbln_config.output_hidden_states else None
         while step < query_length:
             if self.rbln_config.use_image_prefill:
                 # Check if the prefill chunk is an image prefill
@@ -146,7 +148,7 @@ class RBLNGemma3RuntimeModel(RBLNRuntimeModel):
             query_position = torch.tensor(num_processed_tokens - 1, dtype=torch.int16)
 
             if is_image_prefill:
-                logits = self.image_prefill(
+                outputs = self.image_prefill(
                     input_chunk,
                     cache_pos_chunk,
                     block_tables,
@@ -157,7 +159,7 @@ class RBLNGemma3RuntimeModel(RBLNRuntimeModel):
                     lora_int_ids if self.rbln_config.use_lora else None,
                 )
             else:
-                logits = self.prefill(
+                outputs = self.prefill(
                     input_chunk,
                     cache_pos_chunk,
                     block_tables,
@@ -168,14 +170,51 @@ class RBLNGemma3RuntimeModel(RBLNRuntimeModel):
                     lora_int_ids if self.rbln_config.use_lora else None,
                 )
 
+            if self.rbln_config.output_hidden_states:
+                output_logits.append(outputs[0])
+                all_hidden_states.append(tuple(outputs[1:]))
+            else:
+                output_logits.append(outputs)
+
             padded_cache_lengths += current_padded_cache_lengths
             step += num_processed_tokens
+
+        if self.rbln_config.output_hidden_states:
+            num_hidden_layers = len(all_hidden_states[0]) - 1
+            concatenated_hidden_states = ()
+            for l_idx in range(num_hidden_layers + 1):
+                l_hidden_states = torch.cat([hidden_states[l_idx] for hidden_states in all_hidden_states], dim=1)
+                l_hidden_states = l_hidden_states[:, :query_length, :]
+                concatenated_hidden_states += (l_hidden_states,)
+
+            all_hidden_states = concatenated_hidden_states
+
+        # Aggregate output_logits
+        output_logits = torch.concat(output_logits, dim=-2)
+        if self.rbln_config.logits_to_keep > 0:
+            output_logits = output_logits[:, -self.rbln_config.logits_to_keep :, :]
+        else:
+            output_logits = output_logits[:, :query_length, :]
+            # index copy for masked output_logits
+            if attention_mask is not None:
+                new_output_logits = torch.full(
+                    (1, attention_mask.shape[-1], output_logits.shape[-1]),
+                    fill_value=1e-10,
+                    dtype=output_logits.dtype,
+                )
+                mask_indices = torch.nonzero(attention_mask, as_tuple=True)[0]
+                new_output_logits.index_copy_(dim=-2, index=mask_indices, source=output_logits)
+
+            output_logits = new_output_logits
 
         if not is_external_block_tables:
             self.dec_attn_mask[batch_idx : batch_idx + 1] = chunked_attention_mask
 
         return RBLNGemma3ForCausalLMOutput(
-            logits=logits, padded_cache_lengths=padded_cache_lengths, attention_mask=chunked_attention_mask
+            logits=output_logits,
+            padded_cache_lengths=padded_cache_lengths,
+            attention_mask=chunked_attention_mask,
+            hidden_states=all_hidden_states,
         )
 
     def decode_forward(
@@ -240,6 +279,9 @@ class RBLNGemma3RuntimeModel(RBLNRuntimeModel):
         if attention_mask is not None and self.batch_size < attention_mask.shape[0]:
             attention_mask = attention_mask[: self.batch_size]
 
-        logits = self.decode(inputs, cache_position, block_tables, local_block_tables, attention_mask, position_ids)
+        outputs = self.decode(inputs, cache_position, block_tables, local_block_tables, attention_mask, position_ids)
 
-        return RBLNDecoderOnlyOutput(logits=logits)
+        if self.rbln_config.output_hidden_states:
+            return RBLNDecoderOnlyOutput(logits=outputs[0], hidden_states=tuple(outputs[1:]))
+        else:
+            return RBLNDecoderOnlyOutput(logits=outputs, hidden_states=None)
