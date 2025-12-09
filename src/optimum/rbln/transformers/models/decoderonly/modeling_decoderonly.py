@@ -533,8 +533,13 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
         if rbln_config.max_seq_len is None:
             raise ValueError("`max_seq_len` should be specified.")
 
-        if getattr(model_config, "sliding_window", None) is not None and getattr(
-            model_config, "use_sliding_window", True
+        layer_types = getattr(model_config, "layer_types", None)
+        all_full_attention = layer_types is not None and all(t == "full_attention" for t in layer_types)
+
+        if (
+            getattr(model_config, "sliding_window", None) is not None
+            and getattr(model_config, "use_sliding_window", True)
+            and not all_full_attention
         ):
             rbln_config = cls._update_sliding_window_config(model_config, rbln_config)
             if rbln_config.sliding_window is not None:
