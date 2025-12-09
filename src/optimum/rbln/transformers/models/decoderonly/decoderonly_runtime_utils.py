@@ -178,6 +178,7 @@ class RBLNRuntimeModel(RBLNPytorchRuntime):
         page_table_manager: RBLNPageTableManager,
         rbln_config: RBLNDecoderOnlyModelForCausalLMConfig,
         config: "PreTrainedConfig" = None,
+        logits_last_dim: Optional[int] = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(runtime, **kwargs)
@@ -185,6 +186,7 @@ class RBLNRuntimeModel(RBLNPytorchRuntime):
         self.batch_size = batch_size
         self.rbln_config = rbln_config
         self.config = config
+        self.logits_last_dim = logits_last_dim
 
         # shared resources between prefill and decode phase
         self.dec_attn_mask = dec_attn_mask
@@ -363,13 +365,18 @@ class RBLNRuntimeModel(RBLNPytorchRuntime):
 
             mask_bool = attention_mask.to(dtype=torch.bool)
             if (~mask_bool).any():
-                first_one = torch.nonzero(mask_bool, as_tuple=False)
-                if first_one.numel() == 0:
+                indice_one = torch.nonzero(mask_bool, as_tuple=False)
+                if indice_one.numel() == 0:
                     raise ValueError("attention_mask with padding must include at least one real token.")
+                first_one_idx, last_one_idx = int(indice_one[0].item()), int(indice_one[-1].item())
+                if last_one_idx - first_one_idx + 1 != mask_bool.sum():
+                    raise ValueError(
+                        "attention_mask must group all 1s together (e.g. 000111 or 1111000). "
+                        "Zeros between real tokens like 101010 are not supported."
+                    )
 
-                first_one_idx = int(first_one[0].item())
-                if not mask_bool[first_one_idx:].all():
-                    raise ValueError("attention_mask must be left padded.")
+                if self.rbln_config.can_generate and not mask_bool[first_one_idx:].all():
+                    raise ValueError("attention_mask must be left padded for generation.")
 
             inputs = inputs[:, mask_bool]
             position_embed = None if position_embed is None else position_embed[:, :, :, mask_bool, :]
@@ -449,11 +456,16 @@ class RBLNRuntimeModel(RBLNPytorchRuntime):
             int(torch.nonzero(attention_mask, as_tuple=False)[0][0].item()) if attention_mask is not None else 0
         )
 
+        if self.logits_last_dim is None:
+            logits_last_dim = self.config.vocab_size if self.rbln_config.can_generate else self.config.hidden_size
+        else:
+            logits_last_dim = self.logits_last_dim
+
         # Prepare logits buffer
         logits_size = (
             1,
             1 if self.rbln_config.logits_to_keep == 1 else padded_mask_length,
-            self.config.vocab_size if self.rbln_config.can_generate else self.config.hidden_size,
+            logits_last_dim,
         )
         output_logits = torch.full(logits_size, fill_value=1e-10, dtype=self.rbln_config.torch_dtype)
 
