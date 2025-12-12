@@ -92,7 +92,7 @@ class RBLNCompileConfig:
                 and isinstance(item[0], str)  # name
                 and isinstance(item[1], (tuple, list))  # shape
                 and all(isinstance(x, int) for x in item[1])
-                and isinstance(item[2], str)  # dtype
+                and (isinstance(item[2], str) or isinstance(item[2], torch.dtype))  # dtype
                 for item in input_info
             )
 

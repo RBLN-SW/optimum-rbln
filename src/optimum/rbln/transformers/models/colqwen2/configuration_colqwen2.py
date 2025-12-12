@@ -32,14 +32,16 @@ class RBLNColQwen2ForRetrievalConfig(RBLNDecoderOnlyModelConfig):
 
         # Create a configuration object
         config = RBLNColQwen2ForRetrievalConfig(
-            visual={
-                "max_seq_lens": 6400,
-                "device": 0,
-            },
-            max_seq_len=32_768,
-            tensor_parallel_size=4,
-            device=[0, 1, 2, 3],
-            output_hidden_states=False,
+            vlm = {
+                "visual": {
+                    "max_seq_lens": 6400,
+                    "device": 0,
+                },
+                "max_seq_len": 32_768,
+                "tensor_parallel_size": 4,
+                "device": [0, 1, 2, 3],
+                "output_hidden_states": False,
+                }
         )
 
         # Use the configuration with from_pretrained
@@ -51,22 +53,37 @@ class RBLNColQwen2ForRetrievalConfig(RBLNDecoderOnlyModelConfig):
         ```
     """
 
-    submodules = ["visual"]
+    submodules = ["vlm"]
+    _allow_no_compile_cfgs = True
 
     def __init__(
         self,
-        visual: Optional[RBLNModelConfig] = None,
         batch_size: Optional[int] = None,
-        use_inputs_embeds: bool = True,
+        output_hidden_states: Optional[bool] = None,
+        vlm: Optional[RBLNModelConfig] = None,
         **kwargs,
     ):
-        super().__init__(use_inputs_embeds=use_inputs_embeds, **kwargs)
-        if not self.use_inputs_embeds:
-            raise ValueError(
-                "RBLNColQwen2ForRetrievalConfig does not allow `use_inputs_embeds` to be set to False, "
-                "as RBLNColQwen2ForRetrieval accepts only `inputs_embeds` as input."
-            )
-        if batch_size is not None and batch_size != 1:
-            raise ValueError("batch_size is not supported for RBLNColQwen2ForRetrievalConfig")
+        """
+        Args:
+            batch_size (Optional[int]): The batch size for the model.
+            output_hidden_states (Optional[bool]): Whether to output the hidden states of the VLM model.
+            vlm (Optional[RBLNModelConfig]): Configuration for the VLM component.
+            kwargs: Additional arguments passed to the parent RBLNModelConfig.
+        Raises:
+            ValueError: If batch_size is not a positive integer.
+        """
+        super().__init__(**kwargs)
+        self.batch_size = batch_size or 1
+        self.output_hidden_states = output_hidden_states or False
 
-        self.visual = visual
+        if not isinstance(self.batch_size, int) or self.batch_size < 0:
+            raise ValueError(f"batch_size must be a positive integer, got {self.batch_size}")
+
+        self.vlm = self.initialize_submodule_config(
+            submodule_config=vlm,
+            batch_size=batch_size,
+            output_hidden_states=output_hidden_states,
+            force_kwargs=True,
+            logits_to_keep=0,
+            use_inputs_embeds=True,
+        )

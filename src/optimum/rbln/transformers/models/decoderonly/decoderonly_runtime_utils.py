@@ -177,7 +177,7 @@ class RBLNRuntimeModel(RBLNPytorchRuntime):
         dec_attn_mask: torch.Tensor,
         page_table_manager: RBLNPageTableManager,
         rbln_config: RBLNDecoderOnlyModelForCausalLMConfig,
-        config: "PreTrainedConfig" = None,
+        config: Optional["PreTrainedConfig"] = None,
         logits_last_dim: Optional[int] = None,
         **kwargs: Any,
     ) -> None:
