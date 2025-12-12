@@ -21,6 +21,7 @@ from transformers.modeling_outputs import BaseModelOutputWithPooling
 from ....configuration_utils import RBLNCompileConfig
 from ....modeling import RBLNModel
 from ....utils.logging import get_logger
+from ...modeling_outputs import _validate_output_attentions, _validate_output_hidden_states
 from .configuration_siglip import RBLNSiglipVisionModelConfig
 
 
@@ -138,23 +139,8 @@ class RBLNSiglipVisionModel(RBLNModel):
             The model outputs. If return_dict=False is passed, returns a tuple of tensors. Otherwise, returns a BaseModelOutputWithPooling object.
         """
 
-        output_attentions = output_attentions if output_attentions is not None else self.rbln_config.output_attentions
-        output_hidden_states = (
-            output_hidden_states if output_hidden_states is not None else self.rbln_config.output_hidden_states
-        )
-
-        if output_attentions != self.rbln_config.output_attentions:
-            raise ValueError(
-                f"Variable output_attentions {output_attentions} is not equal to rbln_config.output_attentions {self.rbln_config.output_attentions} "
-                f"Please compile again with the correct argument."
-            )
-
-        if output_hidden_states != self.rbln_config.output_hidden_states:
-            raise ValueError(
-                f"Variable output_hidden_states {output_hidden_states} is not equal to rbln_config.output_hidden_states {self.rbln_config.output_hidden_states} "
-                f"Please compile again with the correct argument."
-            )
-
+        output_attentions = _validate_output_attentions(output_attentions, self.rbln_config)
+        output_hidden_states = _validate_output_hidden_states(output_hidden_states, self.rbln_config)
         if interpolate_pos_encoding != self.rbln_config.interpolate_pos_encoding:
             raise ValueError(
                 f"Variable interpolate_pos_encoding {interpolate_pos_encoding} is not equal to rbln_config.interpolate_pos_encoding {self.rbln_config.interpolate_pos_encoding} "

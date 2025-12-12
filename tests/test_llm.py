@@ -612,7 +612,8 @@ class TestQwen2VLForConditionalGeneration(LLMTest.TestLLM):
         text_config = json.loads(config.text_config.to_json_string())
         text_config["num_hidden_layers"] = 1
         text_config["layer_types"] = text_config["layer_types"][:1]
-        vision_config["depth"] = 1  # To make the test faster
+        vision_config["depth"] = 2  # To make the test faster
+        vision_config["fullatt_block_indexes"] = [1]
         kwargs = {"vision_config": vision_config, "text_config": text_config}
         cls.HF_CONFIG_KWARGS.update(kwargs)
         return super().setUpClass()
@@ -657,8 +658,8 @@ class TestQwen2_5_VLForConditionalGeneration(LLMTest.TestLLM):
         text_config = json.loads(config.text_config.to_json_string())
         text_config["num_hidden_layers"] = 1
         text_config["layer_types"] = text_config["layer_types"][:1]
-        vision_config["depth"] = 8
-        vision_config["fullatt_block_indexes"] = [7]
+        vision_config["depth"] = 2
+        vision_config["fullatt_block_indexes"] = [1]
         kwargs = {"vision_config": vision_config, "text_config": text_config}
         cls.HF_CONFIG_KWARGS.update(kwargs)
         return super().setUpClass()

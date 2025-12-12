@@ -32,7 +32,7 @@ from ...modeling_attention_utils import (
     validate_attention_method,
     validate_sliding_window,
 )
-from ...modeling_outputs import RBLNDecoderOnlyOutput
+from ...modeling_outputs import RBLNDecoderOnlyOutput, _validate_output_hidden_states
 from ...utils.rbln_quantization import get_quantized_model
 from .configuration_decoderonly import RBLNDecoderOnlyModelConfig, RBLNDecoderOnlyModelForCausalLMConfig
 from .decoderonly_architecture import DecoderOnlyWrapper
@@ -330,8 +330,8 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
         return model
 
     @classmethod
-    def use_query_position(cls, use_local_attention: bool, is_prefill: bool = True):
-        return use_local_attention
+    def use_query_position(cls, use_local_attention: bool, is_prefill: bool = True, logits_to_keep: int = None):
+        return is_prefill and (use_local_attention or logits_to_keep == 1)
 
     @classmethod
     def get_input_info(
@@ -364,7 +364,7 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
         if rbln_config.use_local_attention:
             input_info.append(("local_block_tables", [1] if is_prefill else [batch_size, 1], "int16"))
 
-        if cls.use_query_position(rbln_config.use_local_attention, is_prefill):
+        if cls.use_query_position(rbln_config.use_local_attention, is_prefill, rbln_config.logits_to_keep):
             input_info.append(("query_position", [], "int16"))
 
         if rbln_config.use_attention_mask:
@@ -643,15 +643,7 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
             raise ValueError(
                 f"Batch size ({batch_size}) must be equal to the batch size of the model ({self.rbln_config.batch_size})."
             )
-
-        output_hidden_states = (
-            output_hidden_states if output_hidden_states is not None else self.rbln_config.output_hidden_states
-        )
-        if output_hidden_states != self.rbln_config.output_hidden_states:
-            raise ValueError(
-                f"Variable output_hidden_states {output_hidden_states} is not equal to rbln_config.output_hidden_states {self.rbln_config.output_hidden_states} "
-                f"Please compile again with the correct argument."
-            )
+        output_hidden_states = _validate_output_hidden_states(output_hidden_states, self.rbln_config)
 
         all_last_hidden_states = []
         all_hidden_states = (
@@ -715,10 +707,6 @@ class RBLNDecoderOnlyModelForCausalLM(RBLNDecoderOnlyModel, RBLNDecoderOnlyGener
     @property
     def logits_last_dim(self):
         return self.config.vocab_size
-
-    @classmethod
-    def use_query_position(cls, use_local_attention: bool, is_prefill: bool = True):
-        return is_prefill
 
     def set_lora_int_ids(self, lora_int_ids: Optional[torch.Tensor]):
         if isinstance(lora_int_ids, int):
@@ -803,14 +791,7 @@ class RBLNDecoderOnlyModelForCausalLM(RBLNDecoderOnlyModel, RBLNDecoderOnlyGener
             )
             padded_cache_lengths = torch.zeros_like(generate_idx)
 
-        output_hidden_states = (
-            output_hidden_states if output_hidden_states is not None else self.rbln_config.output_hidden_states
-        )
-        if output_hidden_states != self.rbln_config.output_hidden_states:
-            raise ValueError(
-                f"Variable output_hidden_states {output_hidden_states} is not equal to rbln_config.output_hidden_states {self.rbln_config.output_hidden_states} "
-                f"Please compile again with the correct argument."
-            )
+        output_hidden_states = _validate_output_hidden_states(output_hidden_states, self.rbln_config)
 
         # Prefill
         if cache_position is None:
