@@ -196,11 +196,11 @@ class BaseTest:
                 saved_path = os.path.join(SAVE_ARTIFACTS_PATH, self.get_rbln_local_dir())
                 shutil.copytree(self.get_rbln_local_dir(), saved_path, dirs_exist_ok=True)
 
-                _ = self.RBLN_CLASS.from_pretrained(
-                    saved_path,
-                    rbln_create_runtimes=False,
-                    **self.HF_CONFIG_KWARGS,
-                )
+                with ContextRblnConfig(create_runtimes=False):
+                    _ = self.RBLN_CLASS.from_pretrained(
+                        saved_path,
+                        **self.HF_CONFIG_KWARGS,
+                    )
 
         def test_model_save_dir(self):
             self.assertTrue(os.path.exists(self.get_rbln_local_dir()), "model_save_dir does not work.")
