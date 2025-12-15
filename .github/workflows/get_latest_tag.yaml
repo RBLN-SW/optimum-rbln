@@ -9,10 +9,22 @@ on:
 
 jobs:
   get-latest-tag:
-    runs-on: ubuntu-latest
+    runs-on: rebel-k8s-runner
     outputs:
       latest_tag: ${{ steps.get_latest.outputs.latest_tag }}
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install packaging library for parsing latest version
+        run: |
+          pip install packaging
+
       - name: Get latest tag
         id: get_latest
         env:
@@ -27,42 +39,19 @@ jobs:
             echo "BC_BASE_PATH directory not found: $BC_BASE_PATH" >&2
             exit 1
           fi
-          latest_tag=$(python3 << 'EOF'
-          import os
-          import pathlib
-          
-          base_path = os.environ.get('BC_BASE_PATH')
-          if not base_path or not os.path.isdir(base_path):
-              raise SystemExit(f'BC_BASE_PATH directory not found: {base_path}')
-          
-          tags = [p.name for p in pathlib.Path(base_path).iterdir() 
-                  if p.is_dir() and not p.name.startswith('.')]
-          
-          if not tags:
-              raise SystemExit('No tag directories found under BC_BASE_PATH')
-          
-          # Convert tag format from v0_9_1 to tuple for version comparison
-          def version_key(tag):
-              # Remove 'v' prefix
-              tag = tag.lstrip('v')
-              # Split by underscore and convert to numbers where possible
-              parts = tag.split('_')
-              key = []
-              for part in parts:
-                  # Try to convert to int, otherwise keep as string
-                  # Handle post releases like "post1"
-                  if part.startswith('post'):
-                      key.append((1, int(part[4:]) if part[4:].isdigit() else part))
-                  elif part.isdigit():
-                      key.append((0, int(part)))
-                  else:
-                      key.append((0, part))
-              return tuple(key)
-          
-          latest = max(tags, key=version_key)
-          print(latest)
-          EOF
+          latest_tag=$(
+            find "$BC_BASE_PATH" -maxdepth 1 -mindepth 1 -type d -not -name '.*' -printf '%f\n' \
+            | sed 's/_/./g' \
+            | python3 .github/scripts/parsing_latest_version.py
           )
+          if [ -z "$latest_tag" ]; then
+            echo "No tag directories found under BC_BASE_PATH" >&2
+            exit 1
+          fi
+
+          if [[ "$latest_tag" != v* ]]; then
+            latest_tag="v$latest_tag"
+          fi
           echo "latest_tag=$latest_tag" >> "$GITHUB_OUTPUT"
-          echo "Latest tag: $latest_tag"
+          echo "latest tag: $latest_tag"
 
