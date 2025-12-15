@@ -29,6 +29,5 @@ def main():
         latest_version = sorted(versions)[-1]
         print(str(latest_version))
 
-
 if __name__ == "__main__":
     main()
