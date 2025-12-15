@@ -516,16 +516,21 @@ class TestTimeSeriesTransformerForPrediction(BaseTest.TestModel):
         REUSE_ARTIFACTS_PATH = os.environ.get("REUSE_ARTIFACTS_PATH", None)
         if REUSE_ARTIFACTS_PATH is not None:
             original_output_distribution = self.model._origin_model.output_distribution
+
             def patched_output_distribution(self, params, loc=None, scale=None, trailing_n=None):
                 params = [p + 1e-6 for p in params]
                 return original_output_distribution(params, loc=loc, scale=scale, trailing_n=trailing_n)
-            self.model._origin_model.output_distribution = patched_output_distribution.__get__(self.model._origin_model)
+
+            self.model._origin_model.output_distribution = patched_output_distribution.__get__(
+                self.model._origin_model
+            )
 
         inputs = self.get_inputs()
         _ = self.model.generate(**inputs)
 
         if REUSE_ARTIFACTS_PATH is not None:
             self.model._origin_model.output_distribution = original_output_distribution
+
 
 class TestBartModel(BaseTest.TestModel):
     RBLN_AUTO_CLASS = RBLNAutoModel
