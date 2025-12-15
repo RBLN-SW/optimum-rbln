@@ -45,13 +45,18 @@ if TYPE_CHECKING:
 class LoopVisionTower(LoopProcessor):
     def __init__(self, vision_tower: "RBLNModel"):
         super().__init__(model=vision_tower.model[0])
+        self._dtype = vision_tower.dtype
+
+    @property
+    def dtype(self):
+        return self._dtype
 
     def _get_batch_size(self, pixel_values, **kwargs):
         return pixel_values.shape[0]
 
     def _prepare_inputs_for_iteration(self, index, common_inputs, pixel_values, **kwargs):
-        pixel_values_item = pixel_values[index : index + 1]
-        out_buffer = [tensor[index : index + 1] for tensor in kwargs["out"]]
+        pixel_values_item = pixel_values[index : index + 1].to(self.dtype)
+        out_buffer = [tensor[index : index + 1].to(self.dtype) for tensor in kwargs["out"]]
         return ([pixel_values_item], {"out": out_buffer})
 
     def _process_outputs(self, outputs: list, **kwargs) -> "BaseModelOutputWithPooling":
@@ -79,8 +84,9 @@ class LoopProjector(LoopProcessor):
         return image_feature.shape[0]
 
     def _prepare_inputs_for_iteration(self, index, common_inputs, image_feature, **kwargs):
-        image_feature_item = image_feature[index : index + 1]
-        out_buffer = [tensor[index : index + 1] for tensor in kwargs["out"]]
+        target_dtype = self.model._input_profile[0].dtype
+        image_feature_item = image_feature[index : index + 1].to(target_dtype)
+        out_buffer = [tensor[index : index + 1].to(target_dtype) for tensor in kwargs["out"]]
         return ([image_feature_item], {"out": out_buffer})
 
     def _process_outputs(self, outputs: list, **kwargs):
@@ -124,6 +130,7 @@ class RBLNLlavaNextForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGeneration
         {"name": "vision_tower"},
         {"name": "language_model"},
     ]
+    _supports_non_fp32 = True
 
     def __getattr__(self, __name: str) -> Any:
         def redirect(func):
@@ -214,7 +221,7 @@ class RBLNLlavaNextForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGeneration
             (
                 "image_features",
                 [rbln_config.vision_tower.batch_size, selected_image_feature_dim, feature_size],
-                "float32",
+                rbln_config._torch_dtype,
             )
         ]
         rbln_compile_config = RBLNCompileConfig(input_info=input_info)
@@ -309,7 +316,7 @@ class RBLNLlavaNextForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGeneration
             (self.config.vision_config.image_size // self.config.vision_config.patch_size) ** 2,
             self.config.text_config.hidden_size,
         ]
-        projector_out_buffer = [torch.empty(size=projector_out_size, dtype=torch.float32, device="cpu")]
+        projector_out_buffer = [torch.empty(size=projector_out_size, dtype=self.dtype, device="cpu")]
 
         if pixel_values.dim() == 5:
             # stacked if input is (batch_size, num_patches, num_channels, height, width)
@@ -467,7 +474,7 @@ class RBLNLlavaNextForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGeneration
                 cache_position = torch.arange(0, generate_idx[b_idx].item(), dtype=torch.int32).unsqueeze(0)
                 output = self.language_model.prefill_decoder(
                     input_ids=inputs[b_idx : b_idx + 1] if inputs_embeds is None else None,
-                    inputs_embeds=inputs[b_idx : b_idx + 1] if inputs_embeds is not None else None,
+                    inputs_embeds=inputs[b_idx : b_idx + 1].to(self.language_model.dtype) if inputs_embeds is not None else None,
                     attention_mask=attention_mask[b_idx] if attention_mask is not None else None,
                     cache_position=cache_position,
                     batch_idx=b_idx,
@@ -480,7 +487,7 @@ class RBLNLlavaNextForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGeneration
         else:
             logits = self.language_model.decoder(
                 input_ids=input_ids,
-                inputs_embeds=inputs_embeds,
+                inputs_embeds=inputs_embeds.to(self.language_model.dtype) if inputs_embeds is not None else None,
                 cache_position=cache_position,
             ).logits
 
