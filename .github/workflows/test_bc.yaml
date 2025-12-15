@@ -5,18 +5,11 @@ on:
     branches:
       - hotfix/bc_ci
 
-jobs:
-  rbln-bc-compile:
-    uses: ./.github/workflows/rbln_bc_compile.yaml
-    with:
-      bc_tag: ${{ github.event.pull_request.head.sha }}
-    secrets: inherit
-  
+jobs:  
   rbln-bc-target-inference:
-    needs: rbln-bc-compile
     uses: ./.github/workflows/rbln_bc_inference.yaml
     with:
-      bc_tag: ${{ github.event.pull_request.head.sha }}
+      bc_tag: "v0.9.4.a4"
       current_ref: ${{ github.event.pull_request.head.sha }}
     secrets: inherit
   
