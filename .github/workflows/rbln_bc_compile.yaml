@@ -17,6 +17,7 @@ on:
 
 jobs:
   get_bc_compile_info:
+    name: BC compile - ${{ github.event.inputs.bc_tag || inputs.bc_tag }}
     runs-on: rebel-k8s-runner
     env:
       BC_BASE_PATH: ${{ vars.BC_BASE_PATH }}
