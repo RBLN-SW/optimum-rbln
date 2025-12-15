@@ -368,6 +368,8 @@ class RBLNQwen2_5_VLModel(RBLNDecoderOnlyModel):
         super().__post_init__(**kwargs)
         self.visual = self.rbln_submodules[0]
         self.rotary_emb = self._rotary_emb_class(self.config)
+        if not self.can_generate():
+            self.block_tables = torch.arange(self.rbln_config.kvcache_num_blocks, dtype=torch.int16)
 
     @property
     def logits_last_dim(self):
@@ -556,6 +558,7 @@ class RBLNQwen2_5_VLModel(RBLNDecoderOnlyModel):
                 cache_position=cache_position,
                 batch_idx=b_idx,
                 position_embed=position_embed[:, b_idx : b_idx + 1],
+                block_tables=self.block_tables,
             )
             logits.append(output.logits)
             if self.rbln_config.output_hidden_states:
