@@ -21,6 +21,7 @@ jobs:
     secrets: inherit
   
   rbln-bc-full-inference:
+    needs: rbln-bc-compile
     uses: ./.github/workflows/rbln_bc_full_inference.yaml
     with:
       current_ref: ${{ github.event.pull_request.head.sha }}
