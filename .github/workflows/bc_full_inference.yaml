@@ -1,4 +1,4 @@
-name: Optimum-rbln / BC full inference
+name: Backward-compatibility / Full inference
 
 on:
   workflow_dispatch:
@@ -59,12 +59,12 @@ jobs:
           echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
           echo "matrix=$matrix"
 
-  rbln-full-inference:
+  bc-full-inference:
     needs: collect-bc-tags
     strategy:
       fail-fast: false
       matrix: ${{ fromJson(needs.collect-bc-tags.outputs.matrix) }}
-    uses: ./.github/workflows/rbln_bc_inference.yaml
+    uses: ./.github/workflows/bc_inference.yaml
     with:
       bc_tag: ${{ matrix.bc_tag }}
       current_ref: ${{ inputs.current_ref }}

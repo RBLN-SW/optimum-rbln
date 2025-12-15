@@ -1,4 +1,4 @@
-name: Optimum-rbln / BC target inference
+name: Backward-compatibility / Target inference
 
 on:
   workflow_dispatch:

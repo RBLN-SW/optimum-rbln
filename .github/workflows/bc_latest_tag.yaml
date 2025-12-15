@@ -1,4 +1,4 @@
-name: Get latest tag
+name: Backward-compatibility / Latest tag
 
 on:
   workflow_call:
