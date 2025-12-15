@@ -46,3 +46,9 @@ jobs:
       ref: "dev"
       report_slack: true
     secrets: inherit
+
+  bc-full-inference:
+    uses: ./.github/workflows/bc_full_inference.yaml
+    with:
+      current_ref: "dev"
+    secrets: inherit

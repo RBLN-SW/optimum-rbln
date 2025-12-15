@@ -1,0 +1,71 @@
+name: Backward-compatibility / Full inference
+
+on:
+  workflow_dispatch:
+    inputs:
+      current_ref:
+        description: "current ref to inference"
+        required: false
+        type: string
+        default: "dev"
+
+  workflow_call:
+    inputs:
+      current_ref:
+        description: "current ref to inference"
+        required: false
+        type: string
+        default: "dev"
+
+jobs:
+  collect-bc-tags:
+    runs-on: rebel-k8s-runner
+    outputs:
+      matrix: ${{ steps.build.outputs.matrix }}
+    steps:
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Build backward-compat tag matrix
+        id: build
+        env:
+          BC_BASE_PATH: ${{ vars.BC_BASE_PATH }}
+        run: |
+          set -eo pipefail
+          if [ -z "$BC_BASE_PATH" ]; then
+            echo "BC_BASE_PATH secret is required" >&2
+            exit 1
+          fi
+          matrix=$(python3 - <<'PY'
+          import json, os, pathlib, sys
+
+          base = os.environ.get('BC_BASE_PATH')
+          if not base or not os.path.isdir(base):
+              sys.exit(f'Base path not found: {base}')
+
+          tags = [
+              p.name.replace('_', '.')
+              for p in sorted(pathlib.Path(base).iterdir())
+              if p.is_dir() and not p.name.startswith('.')
+          ]
+          if not tags:
+              sys.exit('No tag directories found under BC_BASE_PATH')
+
+          print(json.dumps({'bc_tag': tags}))
+          PY
+          )
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+          echo "matrix=$matrix"
+
+  bc-full-inference:
+    needs: collect-bc-tags
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.collect-bc-tags.outputs.matrix) }}
+    uses: ./.github/workflows/bc_inference.yaml
+    with:
+      bc_tag: ${{ matrix.bc_tag }}
+      current_ref: ${{ inputs.current_ref }}
+    secrets: inherit

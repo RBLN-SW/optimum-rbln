@@ -1,0 +1,86 @@
+name: Backward-compatibility / Target inference
+
+on:
+  workflow_dispatch:
+    inputs:
+      bc_tag:
+        description: "target tag to inference"
+        required: true
+        type: string
+      current_ref:
+        description: "current ref to inference"
+        required: true
+        type: string
+
+  workflow_call:
+    inputs:
+      bc_tag:
+        description: "target tag to inference"
+        required: true
+        type: string
+      current_ref:
+        description: "current ref to inference"
+        required: true
+        type: string
+
+jobs:
+  get_bc_inference_info:
+    runs-on: rebel-k8s-runner
+    name: BC inference - ${{ inputs.bc_tag || github.event.inputs.bc_tag }}
+    outputs:
+      reuse_artifacts_path: ${{ steps.get_reuse_artifacts_path.outputs.REUSE_ARTIFACTS_PATH }}
+      rebel_compiler_version: ${{ steps.get_version.outputs.compiler_version }}
+      current_ref: ${{ steps.get_current_ref.outputs.CURRENT_REF }}
+
+    steps:
+      - name: Get target tag
+        id: get_target_tag
+        run: |
+          TARGET_TAG=${{ inputs.bc_tag || github.event.inputs.bc_tag }}
+          echo "TARGET_TAG=$TARGET_TAG" >> $GITHUB_OUTPUT
+          echo "TARGET_TAG=$TARGET_TAG"
+
+      - name: Get current ref
+        id: get_current_ref
+        run: |
+          CURRENT_REF=${{ inputs.current_ref || github.event.inputs.current_ref }}
+          echo "current_ref=$CURRENT_REF" >> $GITHUB_OUTPUT
+          echo "current_ref=$CURRENT_REF"
+
+      - name: encode target tag
+        id: encode_target_tag
+        run: |
+          TARGET_TAG_ENCODED="${{ steps.get_target_tag.outputs.TARGET_TAG }}"
+          TARGET_TAG_ENCODED="${TARGET_TAG_ENCODED//./_}"
+          echo "TARGET_TAG_ENCODED=$TARGET_TAG_ENCODED" >> $GITHUB_OUTPUT
+          echo "ENCODED TARGET TAG: $TARGET_TAG_ENCODED"
+
+      - name: Get reuse artifacts path
+        id: get_reuse_artifacts_path
+        run: |
+          echo "REUSE_ARTIFACTS_PATH=${{vars.BC_BASE_PATH}}/${{steps.encode_target_tag.outputs.TARGET_TAG_ENCODED}}" >> $GITHUB_OUTPUT
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.get_current_ref.outputs.CURRENT_REF }}
+          fetch-depth: 0
+
+      - name: Get rebel-compiler version
+        id: get_version
+        run: |
+          CUR_VERSION=$(grep rebel_compiler_version .github/version.yaml | cut -d ':' -f2 | tr -d ' ')
+          echo "compiler_version=$CUR_VERSION" >> $GITHUB_OUTPUT
+          echo "COMPILER_VERSION=$CUR_VERSION"
+
+  rbln-bc-test:
+    needs: get_bc_inference_info
+    uses: ./.github/workflows/rbln_optimum_pytest.yaml
+    with:
+      ref: ${{ needs.get_bc_inference_info.outputs.current_ref }}
+      reuse_artifacts_path: ${{ needs.get_bc_inference_info.outputs.reuse_artifacts_path }}
+      rebel_compiler_version: ${{ needs.get_bc_inference_info.outputs.rebel_compiler_version }}
+      test_level: "full"
+      enable_hf_hub_tests: false
+      fail_fast: false
+    secrets: inherit
