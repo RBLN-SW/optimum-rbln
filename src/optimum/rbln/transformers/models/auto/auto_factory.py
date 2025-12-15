@@ -150,6 +150,7 @@ class _BaseAutoModelClass:
                 f"from the checkpoint, leading to potential unintended behavior. If this is not intentional, consider calling the "
                 f"`from_pretrained()` method directly from the `RBLN{config.architectures[0]}` class instead.",
                 UserWarning,
+                stacklevel=2,
             )
 
         return model_class

@@ -152,7 +152,9 @@ class RBLNStableDiffusionControlNetImg2ImgPipeline(RBLNDiffusionMixin, StableDif
             for image_ in image:
                 self.check_image(image_, prompt, prompt_embeds)
         else:
-            assert False
+            raise TypeError(
+                "Unsupported controlnet type. Expected `RBLNControlNetModel` or `RBLNMultiControlNetModel`."
+            )
 
         # Check `controlnet_conditioning_scale`
         if (
@@ -178,7 +180,9 @@ class RBLNStableDiffusionControlNetImg2ImgPipeline(RBLNDiffusionMixin, StableDif
                     " the same length as the number of controlnets"
                 )
         else:
-            assert False
+            raise TypeError(
+                "Unsupported controlnet type. Expected `RBLNControlNetModel` or `RBLNMultiControlNetModel`."
+            )
 
         if len(control_guidance_start) != len(control_guidance_end):
             raise ValueError(
@@ -247,7 +251,7 @@ class RBLNStableDiffusionControlNetImg2ImgPipeline(RBLNDiffusionMixin, StableDif
         control_guidance_end: Union[float, List[float]] = 1.0,
         clip_skip: Optional[int] = None,
         callback_on_step_end: Optional[Callable[[int, int, Dict], None]] = None,
-        callback_on_step_end_tensor_inputs: List[str] = ["latents"],
+        callback_on_step_end_tensor_inputs: Optional[List[str]] = None,
         **kwargs,
     ):
         r"""
@@ -384,6 +388,9 @@ class RBLNStableDiffusionControlNetImg2ImgPipeline(RBLNDiffusionMixin, StableDif
             )
 
         # 1. Check inputs. Raise error if not correct
+        if callback_on_step_end_tensor_inputs is None:
+            callback_on_step_end_tensor_inputs = ["latents"]
+
         self.check_inputs(
             prompt,
             control_image,
@@ -490,7 +497,9 @@ class RBLNStableDiffusionControlNetImg2ImgPipeline(RBLNDiffusionMixin, StableDif
 
             control_image = control_images
         else:
-            assert False
+            raise TypeError(
+                "Unsupported controlnet type. Expected `RBLNControlNetModel` or `RBLNMultiControlNetModel`."
+            )
 
         # 5. Prepare timesteps
         self.scheduler.set_timesteps(num_inference_steps, device=device)

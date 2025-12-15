@@ -190,7 +190,9 @@ class RBLNStableDiffusionXLControlNetImg2ImgPipeline(RBLNDiffusionMixin, StableD
             for image_ in image:
                 self.check_image(image_, prompt, prompt_embeds)
         else:
-            assert False
+            raise TypeError(
+                "Unsupported controlnet type. Expected `RBLNControlNetModel` or `RBLNMultiControlNetModel`."
+            )
 
         # Check `controlnet_conditioning_scale`
         if (
@@ -216,7 +218,9 @@ class RBLNStableDiffusionXLControlNetImg2ImgPipeline(RBLNDiffusionMixin, StableD
                     " the same length as the number of controlnets"
                 )
         else:
-            assert False
+            raise TypeError(
+                "Unsupported controlnet type. Expected `RBLNControlNetModel` or `RBLNMultiControlNetModel`."
+            )
 
         if not isinstance(control_guidance_start, (tuple, list)):
             control_guidance_start = [control_guidance_start]
@@ -303,7 +307,7 @@ class RBLNStableDiffusionXLControlNetImg2ImgPipeline(RBLNDiffusionMixin, StableD
         negative_aesthetic_score: float = 2.5,
         clip_skip: Optional[int] = None,
         callback_on_step_end: Optional[Callable[[int, int, Dict], None]] = None,
-        callback_on_step_end_tensor_inputs: List[str] = ["latents"],
+        callback_on_step_end_tensor_inputs: Optional[List[str]] = None,
         **kwargs,
     ):
         r"""
@@ -500,6 +504,9 @@ class RBLNStableDiffusionXLControlNetImg2ImgPipeline(RBLNDiffusionMixin, StableD
             )
 
         # 1. Check inputs. Raise error if not correct
+        if callback_on_step_end_tensor_inputs is None:
+            callback_on_step_end_tensor_inputs = ["latents"]
+
         self.check_inputs(
             prompt,
             prompt_2,
@@ -618,7 +625,9 @@ class RBLNStableDiffusionXLControlNetImg2ImgPipeline(RBLNDiffusionMixin, StableD
             control_image = control_images
             height, width = control_image[0].shape[-2:]
         else:
-            assert False
+            raise TypeError(
+                "Unsupported controlnet type. Expected `RBLNControlNetModel` or `RBLNMultiControlNetModel`."
+            )
 
         # 5. Prepare timesteps
         self.scheduler.set_timesteps(num_inference_steps, device=device)

@@ -37,7 +37,9 @@ class SubModulesMixin:
 
     _rbln_submodules: List[Dict[str, Any]] = []
 
-    def __init__(self, *, rbln_submodules: List["RBLNModel"] = [], **kwargs) -> None:
+    def __init__(self, *, rbln_submodules: Optional[List["RBLNModel"]] = None, **kwargs) -> None:
+        if rbln_submodules is None:
+            rbln_submodules = []
         for submodule_meta, submodule in zip(self._rbln_submodules, rbln_submodules):
             setattr(self, submodule_meta["name"], submodule)
 
@@ -60,11 +62,24 @@ class SubModulesMixin:
         return rbln_config
 
     @classmethod
+    def _update_submodule_rbln_config(
+        cls,
+        submodule_name: str,
+        submodule_cls: Type["RBLNModel"],
+        model: "PreTrainedModel",
+        submodule_config: PretrainedConfig,
+        submodule_rbln_config: RBLNModelConfig,
+        preprocessors: Optional[Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"]],
+    ):
+        return submodule_rbln_config
+
+    @classmethod
     def _export_submodules_from_model(
         cls, model: "PreTrainedModel", model_save_dir: str, rbln_config: RBLNModelConfig, **kwargs
     ) -> List["RBLNModel"]:
         rbln_submodules = []
         submodule_prefix = getattr(cls, "_rbln_submodule_prefix", None)
+        submodule_postfix = getattr(cls, "_rbln_submodule_postfix", None)
         preprocessors = kwargs.pop("preprocessors", [])
 
         for submodule in cls._rbln_submodules:
@@ -72,6 +87,9 @@ class SubModulesMixin:
             if submodule_prefix is not None:
                 torch_submodule: PreTrainedModel = getattr(model, submodule_prefix)
                 torch_submodule = getattr(torch_submodule, submodule_name)
+            elif submodule_postfix is not None:
+                torch_submodule: PreTrainedModel = getattr(model, submodule_name)
+                torch_submodule = getattr(torch_submodule, submodule_postfix)
             else:
                 torch_submodule: PreTrainedModel = getattr(model, submodule_name)
 
@@ -90,6 +108,14 @@ class SubModulesMixin:
                 filtered_kwargs["cls_name"] = submodule_config_cls.__name__
                 submodule_rbln_config = submodule_config_cls(**filtered_kwargs)
 
+            submodule_rbln_config = cls._update_submodule_rbln_config(
+                submodule_name=submodule_name,
+                submodule_cls=submodule_cls,
+                model=model,
+                submodule_config=torch_submodule.config,
+                submodule_rbln_config=submodule_rbln_config,
+                preprocessors=preprocessors,
+            )
             setattr(rbln_config, submodule_name, submodule_rbln_config)
             submodule_rbln_config = submodule_cls._update_submodule_config(model, submodule_rbln_config, preprocessors)
 

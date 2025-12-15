@@ -157,7 +157,8 @@ class BaseTest:
                 if os.path.exists(REUSE_ARTIFACTS_PATH):
                     compiled_model_path = os.path.join(REUSE_ARTIFACTS_PATH, cls.get_rbln_local_dir())
                     if os.path.exists(compiled_model_path):
-                        cls.model = cls.RBLN_CLASS.from_pretrained(compiled_model_path)
+                        with ContextRblnConfig(device=-1):
+                            cls.model = cls.RBLN_CLASS.from_pretrained(compiled_model_path)
                     else:
                         raise unittest.SkipTest(f"Compiled model not found at: {compiled_model_path}.")
 
@@ -221,7 +222,8 @@ class BaseTest:
                     output = self.model(**inputs)[0]
 
             output = self.postprocess(inputs, output)
-            if self.EXPECTED_OUTPUT and self.DEVICE is None:
+            REUSE_ARTIFACTS_PATH = os.environ.get("REUSE_ARTIFACTS_PATH", None)
+            if self.EXPECTED_OUTPUT and self.DEVICE is None and REUSE_ARTIFACTS_PATH is None:
                 from simphile import jaccard_similarity
 
                 if isinstance(self.EXPECTED_OUTPUT, str):

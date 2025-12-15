@@ -210,8 +210,8 @@ class RBLNModelForSeq2SeqLM(RBLNModel, GenerationMixin, ABC):
         if not cls.support_causal_attn:
             rbln_config.use_attention_mask = True
 
-        n_layer = getattr(model_config, "decoder_layers", None) or getattr(model_config, "num_layers")
-        n_head = getattr(model_config, "decoder_attention_heads", None) or getattr(model_config, "num_heads")
+        n_layer = getattr(model_config, "decoder_layers", None) or model_config.num_layers
+        n_head = getattr(model_config, "decoder_attention_heads", None) or model_config.num_heads
         d_kv = (
             model_config.d_kv
             if hasattr(model_config, "d_kv")

@@ -58,6 +58,7 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
         sliding_window_layers: Optional[List[int]] = None,
         phases: Optional[List[PhaseType]] = None,
         logits_to_keep: Optional[int] = None,
+        output_hidden_states: Optional[bool] = None,
         **kwargs,
     ):
         """
@@ -112,6 +113,7 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
                 ["prefill", "decode"] if DecoderOnlyModelForCausalLM is used.
             logits_to_keep (Optional[int]): The number of logits to keep for the decoder.  If set to 0, the decoder will keep all logits.
                 Defaults to 0 if DecoderOnlyModel is used, 1 if DecoderOnlyModelForCausalLM is used.
+            output_hidden_states (Optional[bool]): Whether to output the hidden states of the decoder. Defaults to False.
             kwargs: Additional arguments passed to the parent RBLNModelConfig.
 
         Raises:
@@ -231,6 +233,8 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
         self.logits_to_keep = logits_to_keep or self._default_logits_to_keep
         if self.logits_to_keep is not None and self.logits_to_keep > 1:
             raise NotImplementedError("`logits_to_keep` > 1 is currently not supported for RBLN models.")
+
+        self.output_hidden_states = output_hidden_states or False
 
         self.decoder_batch_sizes = None
         if "decode" in self.phases:
