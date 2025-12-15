@@ -19,7 +19,7 @@ from optimum.rbln import (
     RBLNStableVideoDiffusionPipeline,
 )
 
-from .test_base import BaseHubTest, BaseTest
+from .test_base import BaseHubTest, BaseTest, skip_if_compile_only
 
 
 class TestSDModel(BaseTest.TestModel, BaseHubTest.TestHub):
@@ -264,6 +264,7 @@ class TestKandinskyV22Model(BaseTest.TestModel):
         },
     }
 
+    @skip_if_compile_only
     def test_complicate_config(self):
         rbln_config = {
             "prior_pipe": {

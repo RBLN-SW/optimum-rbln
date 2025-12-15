@@ -114,7 +114,6 @@ class TestResNetModel(BaseTest.TestModel, BaseHubTest.TestHub):
                 rbln_device=[0, 1, 2, 3],
             )
 
-
     @skip_if_compile_only
     @skip_if_inference_only
     def test_failed_to_create_runtime(self):
@@ -246,7 +245,6 @@ class TestWhisperModel(BaseTest.TestModel):
         output = self.model.generate(input_features=input_features, max_new_tokens=10, language=None)[:, :5]
         self.assertTrue(torch.all(output == self.EXPECTED_OUTPUT))
 
-
     @skip_if_compile_only
     def test_long_form_language_auto_detect_generate(self):
         inputs = self.get_inputs()
@@ -268,7 +266,6 @@ class TestWhisperModel(BaseTest.TestModel):
         inputs["attention_mask"] = torch.ones(2, 3002, dtype=torch.int64)
 
         _ = self.model.generate(**inputs, temperature=0.0, return_timestamps=True)
-
 
     @skip_if_compile_only
     def test_pipeline(self):

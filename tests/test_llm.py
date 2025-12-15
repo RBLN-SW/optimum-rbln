@@ -43,7 +43,7 @@ from optimum.rbln import (
     RBLNT5ForConditionalGeneration,
 )
 
-from .test_base import BaseTest, DisallowedTestBase, TestLevel
+from .test_base import BaseTest, DisallowedTestBase, TestLevel, skip_if_compile_only
 
 
 RANDOM_ATTN_MASK = torch.randint(low=0, high=2, size=(1, 512), generator=torch.manual_seed(42), dtype=torch.int64)
@@ -283,6 +283,7 @@ class TestBartModel(LLMTest.TestLLM):
         )
         return generated_text
 
+    @skip_if_compile_only
     def test_automap(self):
         # BartForConditionalGeneration -> RBLNBartForConditionalGeneration compile case
         with self.subTest():
@@ -313,7 +314,11 @@ class TestBartModel(LLMTest.TestLLM):
         # RBLNBartForSeq2SeqLM -> RBLNBartForCausalLM load case
         with self.subTest():
             REUSE_ARTIFACTS_PATH = os.environ.get("REUSE_ARTIFACTS_PATH")
-            model_save_path = os.path.join(REUSE_ARTIFACTS_PATH, self.get_rbln_local_dir()) if REUSE_ARTIFACTS_PATH is not None else self.get_rbln_local_dir()           
+            model_save_path = (
+                os.path.join(REUSE_ARTIFACTS_PATH, self.get_rbln_local_dir())
+                if REUSE_ARTIFACTS_PATH is not None
+                else self.get_rbln_local_dir()
+            )
             with pytest.raises(ValueError):
                 _ = RBLNAutoModelForCausalLM.from_pretrained(
                     model_save_path,
@@ -433,6 +438,7 @@ class TestLlavaNextForConditionalGeneration(LLMTest.TestLLM):
             **self.HF_CONFIG_KWARGS,
         )
 
+    @skip_if_compile_only
     def test_complicate_config(self):
         rbln_config = {
             "vision_tower": {
@@ -680,6 +686,7 @@ class TestLlamaForCausalLM_fp8(LLMTest.TestLLM):
         },
     }
 
+    @skip_if_compile_only
     def test_generate(self):
         # Cannot generate output with fp8 quantization in ATOM™
         pass
