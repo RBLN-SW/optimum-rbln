@@ -54,4 +54,3 @@ jobs:
           fi
           echo "latest_tag=$latest_tag" >> "$GITHUB_OUTPUT"
           echo "latest tag: $latest_tag"
-

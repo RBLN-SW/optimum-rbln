@@ -161,7 +161,7 @@ class BaseTest:
                         with ContextRblnConfig(device=-1):
                             cls.model = cls.RBLN_CLASS.from_pretrained(compiled_model_path)
                 if not hasattr(cls, "model"):
-                    raise unittest.SkipTest(f"Compiled model not found at: {compiled_model_path}.")
+                    raise unittest.SkipTest("Compiled model not found")
 
         @classmethod
         def get_rbln_local_dir(cls):
