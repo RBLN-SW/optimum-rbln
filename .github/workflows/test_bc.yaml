@@ -18,3 +18,15 @@ jobs:
     with:
       current_ref: ${{ github.event.pull_request.head.sha }}
     secrets: inherit
+  
+  latest-bc-tag:
+    uses: ./.github/workflows/get_latest_tag.yaml
+    secrets: inherit
+  
+  print-latest-bc-tag:
+    needs: [latest-bc-tag]
+    runs-on: rebel-k8s-runner
+    steps:
+      - name: Print latest BC tag
+        run: |
+          echo "Latest BC tag: ${{ needs.latest-bc-tag.outputs.latest_tag }}"
