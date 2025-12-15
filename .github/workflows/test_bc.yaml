@@ -13,6 +13,7 @@ jobs:
     secrets: inherit
   
   rbln-bc-target-inference:
+    needs: rbln-bc-compile
     uses: ./.github/workflows/rbln_bc_inference.yaml
     with:
       bc_tag: ${{ github.event.pull_request.head.sha }}
