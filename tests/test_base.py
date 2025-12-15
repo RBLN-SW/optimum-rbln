@@ -49,28 +49,6 @@ def require_hf_token(test_case):
         return test_case
 
 
-def skip_if_inference_only(test_case):
-    """
-    Decorator marking a test that should be excluded if the model is inference only.
-    """
-    REUSE_ARTIFACTS_PATH = os.environ.get("REUSE_ARTIFACTS_PATH", None)
-    if REUSE_ARTIFACTS_PATH is None:
-        return test_case
-    else:
-        return unittest.skip("test is inference only")(test_case)
-
-
-def skip_if_compile_only(test_case):
-    """
-    Decorator marking a test that should be excluded if the model is compile only.
-    """
-    SAVE_ARTIFACTS_PATH = os.environ.get("SAVE_ARTIFACTS_PATH", None)
-    if SAVE_ARTIFACTS_PATH is None:
-        return test_case
-    else:
-        return unittest.skip("test is compile only")(test_case)
-
-
 class BaseHubTest:
     class TestHub(unittest.TestCase):
         @require_hf_token
@@ -223,8 +201,6 @@ class BaseTest:
                     **self.HF_CONFIG_KWARGS,
                 )
 
-        @skip_if_compile_only
-        @skip_if_inference_only
         def test_model_save_dir(self):
             self.assertTrue(os.path.exists(self.get_rbln_local_dir()), "model_save_dir does not work.")
 
@@ -234,7 +210,6 @@ class BaseTest:
         def postprocess(self, inputs, output):
             return output
 
-        @skip_if_compile_only
         def test_generate(self):
             inputs = self.get_inputs()
             if self.is_diffuser():
@@ -285,14 +260,10 @@ class BaseTest:
                         **self.HF_CONFIG_KWARGS,
                     )
 
-        @skip_if_compile_only
-        @skip_if_inference_only
         def test_save_load(self):
             with tempfile.TemporaryDirectory() as tmpdir:
                 self._inner_test_save_load(tmpdir)
 
-        @skip_if_compile_only
-        @skip_if_inference_only
         def test_model_save_dir_load(self):
             rbln_local_dir = self.get_rbln_local_dir()
             with ContextRblnConfig(create_runtimes=False):
@@ -303,7 +274,6 @@ class BaseTest:
                     **self.HF_CONFIG_KWARGS,
                 )
 
-        @skip_if_compile_only
         def test_automap(self):
             if self.RBLN_AUTO_CLASS is None:
                 self.skipTest("Skipping test because RBLN_AUTO_CLASS is None")
@@ -323,7 +293,6 @@ class BaseTest:
                 )
 
         # check if this use a pipeline
-        @skip_if_compile_only
         def test_infer_framework(self):
             class_hierarchy = inspect.getmro(self.model.__class__)
 
@@ -335,7 +304,6 @@ class BaseTest:
 
             assert is_valid_framework, "Model does not inherit from PreTrainedModel."
 
-        @skip_if_compile_only
         def test_get_rbln_config_class(self):
             assert self.RBLN_CLASS.get_rbln_config_class() is not None
             rbln_config_class_name = self.RBLN_CLASS.get_rbln_config_class().__name__
@@ -358,8 +326,6 @@ class DisallowedTestBase:
             if env_coverage.value < cls.TEST_LEVEL.value:
                 raise unittest.SkipTest(f"Skipped test : Test Coverage {env_coverage.name} < {cls.TEST_LEVEL.name}")
 
-        @skip_if_compile_only
-        @skip_if_inference_only
         def test_load(self):
             try:
                 _ = self.RBLN_CLASS.from_pretrained(

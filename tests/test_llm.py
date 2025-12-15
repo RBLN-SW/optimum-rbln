@@ -43,7 +43,7 @@ from optimum.rbln import (
     RBLNT5ForConditionalGeneration,
 )
 
-from .test_base import BaseTest, DisallowedTestBase, TestLevel, skip_if_compile_only
+from .test_base import BaseTest, DisallowedTestBase, TestLevel
 
 
 RANDOM_ATTN_MASK = torch.randint(low=0, high=2, size=(1, 512), generator=torch.manual_seed(42), dtype=torch.int64)
@@ -283,7 +283,6 @@ class TestBartModel(LLMTest.TestLLM):
         )
         return generated_text
 
-    @skip_if_compile_only
     def test_automap(self):
         # BartForConditionalGeneration -> RBLNBartForConditionalGeneration compile case
         with self.subTest():
@@ -438,7 +437,6 @@ class TestLlavaNextForConditionalGeneration(LLMTest.TestLLM):
             **self.HF_CONFIG_KWARGS,
         )
 
-    @skip_if_compile_only
     def test_complicate_config(self):
         rbln_config = {
             "vision_tower": {
@@ -686,7 +684,6 @@ class TestLlamaForCausalLM_fp8(LLMTest.TestLLM):
         },
     }
 
-    @skip_if_compile_only
     def test_generate(self):
         # Cannot generate output with fp8 quantization in ATOM™
         pass
