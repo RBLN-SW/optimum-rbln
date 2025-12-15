@@ -168,11 +168,14 @@ jobs:
         env:
           OPTIMUM_RBLN_TEST_LEVEL: ${{ inputs.test_level }}
         run: |
+          EXTRA_PYTEST_ARGS=""
           if [ "${{ inputs.save_artifacts_path }}" != "" ]; then
             export SAVE_ARTIFACTS_PATH="${{ inputs.save_artifacts_path }}"
+            EXTRA_PYTEST_ARGS="-k test_save_artifacts"
           fi
           if [ "${{ inputs.reuse_artifacts_path }}" != "" ]; then
             export REUSE_ARTIFACTS_PATH="${{ inputs.reuse_artifacts_path }}"
+            EXTRA_PYTEST_ARGS="-k test_generate"
           fi
 
           case "${{ matrix.test_type }}" in
@@ -180,13 +183,13 @@ jobs:
               uv run --no-sync pytest -n 1 tests/test_config.py -vv --durations 0
               ;;
             "transformers")
-              uv run --no-sync pytest -n 1 tests/test_transformers.py -vv --durations 0
+              uv run --no-sync pytest -n 1 tests/test_transformers.py -vv --durations 0 $EXTRA_PYTEST_ARGS
               ;;
             "diffusers")
-              uv run --no-sync pytest -n 1 tests/test_diffusers.py -vv --durations 0
+              uv run --no-sync pytest -n 1 tests/test_diffusers.py -vv --durations 0 $EXTRA_PYTEST_ARGS
               ;;
             "llm")
-              uv run --no-sync pytest -n 1 tests/test_llm.py -vv --durations 0
+              uv run --no-sync pytest -n 1 tests/test_llm.py -vv --durations 0 $EXTRA_PYTEST_ARGS
               ;;
             cli-*)
               # Extract test type from matrix

@@ -48,7 +48,7 @@ from optimum.rbln.transformers.models.auto.modeling_auto import (
 from optimum.rbln.utils.runtime_utils import ContextRblnConfig
 from optimum.rbln.utils.save_utils import maybe_load_preprocessors
 
-from .test_base import BaseHubTest, BaseTest, TestLevel, skip_if_compile_only, skip_if_inference_only
+from .test_base import BaseHubTest, BaseTest, TestLevel
 
 
 RANDOM_INPUT_IDS = torch.randint(low=0, high=50, size=(1, 512), generator=torch.manual_seed(42), dtype=torch.int64)
@@ -79,8 +79,6 @@ class TestResNetModel(BaseTest.TestModel, BaseHubTest.TestHub):
     GENERATION_KWARGS = {"pixel_values": torch.randn(1, 3, 224, 224, generator=torch.manual_seed(42))}
     TEST_LEVEL = TestLevel.ESSENTIAL
 
-    @skip_if_compile_only
-    @skip_if_inference_only
     def test_compile_from_model(self):
         if self.is_diffuser:
             pass  # TODO(diffuser from model)
@@ -102,8 +100,6 @@ class TestResNetModel(BaseTest.TestModel, BaseHubTest.TestHub):
                     preprocessors=preprocessors,  # For image_classification
                 )
 
-    @skip_if_compile_only
-    @skip_if_inference_only
     def _inner_test_save_load(self, tmpdir):
         super()._inner_test_save_load(tmpdir)
 
@@ -114,8 +110,6 @@ class TestResNetModel(BaseTest.TestModel, BaseHubTest.TestHub):
                 rbln_device=[0, 1, 2, 3],
             )
 
-    @skip_if_compile_only
-    @skip_if_inference_only
     def test_failed_to_create_runtime(self):
         with self.assertRaises(ValueError):
             _ = self.RBLN_CLASS.from_pretrained(
@@ -214,7 +208,6 @@ class TestWhisperModel(BaseTest.TestModel):
         "rbln_batch_size": 2,
     }
 
-    @skip_if_compile_only
     def test_generate(self):
         from datasets import load_dataset
         from transformers import AutoProcessor
@@ -245,7 +238,6 @@ class TestWhisperModel(BaseTest.TestModel):
         output = self.model.generate(input_features=input_features, max_new_tokens=10, language=None)[:, :5]
         self.assertTrue(torch.all(output == self.EXPECTED_OUTPUT))
 
-    @skip_if_compile_only
     def test_long_form_language_auto_detect_generate(self):
         inputs = self.get_inputs()
 
@@ -256,7 +248,6 @@ class TestWhisperModel(BaseTest.TestModel):
 
         _ = self.model.generate(**inputs, temperature=0.0, language=None, return_timestamps=True)
 
-    @skip_if_compile_only
     def test_long_form_generate(self):
         inputs = self.get_inputs()
 
@@ -267,7 +258,6 @@ class TestWhisperModel(BaseTest.TestModel):
 
         _ = self.model.generate(**inputs, temperature=0.0, return_timestamps=True)
 
-    @skip_if_compile_only
     def test_pipeline(self):
         import numpy as np
         from transformers import AutoProcessor, pipeline
@@ -323,12 +313,10 @@ class TestWhisperModel_TokenTimestamps(BaseTest.TestModel):
         "rbln_batch_size": 2,
     }
 
-    @skip_if_compile_only
     def test_generate(self):
         inputs = self.get_inputs()
         _ = self.model.generate(**inputs)
 
-    @skip_if_compile_only
     def test_long_form_generate(self):
         inputs = self.get_inputs()
 
@@ -487,7 +475,6 @@ class TestTimeSeriesTransformerForPrediction(BaseTest.TestModel):
     RBLN_CLASS_KWARGS = {"rbln_batch_size": 1, "rbln_num_parallel_samples": 100}
     DEVICE = 0
 
-    @skip_if_compile_only
     def test_generate(self):
         inputs = self.get_inputs()
         _ = self.model.generate(**inputs)
