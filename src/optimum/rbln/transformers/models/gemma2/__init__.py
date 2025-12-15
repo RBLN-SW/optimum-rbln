@@ -12,13 +12,5 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .configuration_qwen2_vl import (
-    RBLNQwen2VisionTransformerPretrainedModelConfig,
-    RBLNQwen2VLForConditionalGenerationConfig,
-    RBLNQwen2VLModelConfig,
-)
-from .modeling_qwen2_vl import (
-    RBLNQwen2VisionTransformerPretrainedModel,
-    RBLNQwen2VLForConditionalGeneration,
-    RBLNQwen2VLModel,
-)
+from .configuration_gemma2 import RBLNGemma2ForCausalLMConfig, RBLNGemma2ModelConfig
+from .modeling_gemma2 import RBLNGemma2ForCausalLM, RBLNGemma2Model

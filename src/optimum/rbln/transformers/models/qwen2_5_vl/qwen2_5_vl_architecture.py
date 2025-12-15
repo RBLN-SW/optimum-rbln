@@ -6,22 +6,29 @@ import torch.nn as nn
 from transformers import PreTrainedModel
 
 from ..decoderonly.decoderonly_architecture import DecoderOnlyWrapper, apply_rotary_pos_emb
+from .configuration_qwen2_5_vl import RBLNQwen2_5_VisionTransformerPretrainedModelConfig
 
 
 class Qwen2_5_VisionTransformerWrapper(nn.Module):
-    def __init__(self, model: torch.nn.Module):
+    def __init__(self, model: torch.nn.Module, rbln_config: RBLNQwen2_5_VisionTransformerPretrainedModelConfig):
         super().__init__()
         self._original_mod = model
         self.fullatt_block_indexes = model.fullatt_block_indexes
         self.merger = model.merger
+        self.rbln_config = rbln_config
         window_seq_len = (model.window_size // model.patch_size) ** 2
-        self.blocks = self.wrap_vision_blocks(model.blocks, window_seq_len)
+        self.blocks = self.wrap_vision_blocks(model.blocks, window_seq_len, rbln_config)
 
-    def wrap_vision_blocks(self, blocks: torch.nn.ModuleList, window_seq_len: int):
+    def wrap_vision_blocks(
+        self,
+        blocks: torch.nn.ModuleList,
+        window_seq_len: int,
+        rbln_config: RBLNQwen2_5_VisionTransformerPretrainedModelConfig,
+    ):
         wrapped_blocks = []
         for i, block in enumerate(blocks):
             is_full_attn = True if i in self.fullatt_block_indexes else False
-            wrapped_blocks.append(Qwen2_5_VLVisionBlock(block, is_full_attn, window_seq_len))
+            wrapped_blocks.append(Qwen2_5_VLVisionBlock(block, is_full_attn, window_seq_len, rbln_config))
         return nn.ModuleList(wrapped_blocks)
 
     def forward(
@@ -32,8 +39,8 @@ class Qwen2_5_VisionTransformerWrapper(nn.Module):
         cos: torch.Tensor,
         sin: torch.Tensor,
     ):
-        full_attn_masks = (1 - full_attn_masks) * torch.finfo(torch.float32).min
-        window_attn_masks = (1 - window_attn_masks) * torch.finfo(torch.float32).min
+        full_attn_masks = (1.0 - full_attn_masks) * torch.finfo(hidden_states.dtype).min
+        window_attn_masks = (1.0 - window_attn_masks) * torch.finfo(hidden_states.dtype).min
 
         for i, block in enumerate(self.blocks):
             attn_masks = full_attn_masks if i in self.fullatt_block_indexes else window_attn_masks
@@ -45,16 +52,23 @@ class Qwen2_5_VisionTransformerWrapper(nn.Module):
 
 
 class Qwen2_5_VLVisionBlock(torch.nn.Module):
-    def __init__(self, model: torch.nn.Module, is_full_attn: bool, window_seq_len: int):
+    def __init__(
+        self,
+        model: torch.nn.Module,
+        is_full_attn: bool,
+        window_seq_len: int,
+        rbln_config: RBLNQwen2_5_VisionTransformerPretrainedModelConfig,
+    ):
         super().__init__()
         self._origin_model = model
+        self.rbln_config = rbln_config
         self.norm1 = model.norm1
         self.norm2 = model.norm2
 
         if is_full_attn:
-            self.attn = Qwen2_5_VLVisionFullAttention(model.attn)
+            self.attn = Qwen2_5_VLVisionFullAttention(model.attn, rbln_config)
         else:
-            self.attn = Qwen2_5_VLVisionWindowAttention(model.attn, window_seq_len)
+            self.attn = Qwen2_5_VLVisionWindowAttention(model.attn, window_seq_len, rbln_config)
         self.mlp = model.mlp
 
     def forward(
@@ -73,13 +87,15 @@ class Qwen2_5_VLVisionBlock(torch.nn.Module):
 
 
 class Qwen2_5_VLVisionFullAttention(nn.Module):
-    def __init__(self, model: nn.Module) -> None:
+    def __init__(self, model: nn.Module, rbln_config: RBLNQwen2_5_VisionTransformerPretrainedModelConfig) -> None:
         super().__init__()
         self._origin_model = model
+        self.rbln_config = rbln_config
         self.num_heads = model.num_heads
         self.head_dim = getattr(model, "head_dim", model.proj.in_features // model.num_heads)
         self.qkv = model.qkv
         self.proj = model.proj
+        self.scale = torch.tensor(1 / math.sqrt(self.head_dim), dtype=rbln_config.torch_dtype)
 
     def forward(
         self,
@@ -96,9 +112,9 @@ class Qwen2_5_VLVisionFullAttention(nn.Module):
         cos, sin = position_embeddings
         q, k = apply_rotary_pos_emb(q, k, cos, sin)
 
-        attn_weights = torch.matmul(q, k.transpose(2, 3)) / math.sqrt(self.head_dim)
+        attn_weights = torch.matmul(q, k.transpose(2, 3)) * self.scale
         attn_weights = attn_weights + attn_masks
-        attn_weights = nn.functional.softmax(attn_weights, dim=-1, dtype=torch.float32)
+        attn_weights = nn.functional.softmax(attn_weights, dim=-1, dtype=hidden_states.dtype)
         attn_output = torch.matmul(attn_weights, v)
         attn_output = attn_output.transpose(1, 2)
         attn_output = attn_output.reshape(1, seq_length, -1)
@@ -108,14 +124,18 @@ class Qwen2_5_VLVisionFullAttention(nn.Module):
 
 
 class Qwen2_5_VLVisionWindowAttention(nn.Module):
-    def __init__(self, model: nn.Module, window_seq_len: int) -> None:
+    def __init__(
+        self, model: nn.Module, window_seq_len: int, rbln_config: RBLNQwen2_5_VisionTransformerPretrainedModelConfig
+    ) -> None:
         super().__init__()
         self._origin_model = model
+        self.rbln_config = rbln_config
         self.num_heads = model.num_heads
         self.head_dim = getattr(model, "head_dim", model.proj.in_features // model.num_heads)
         self.qkv = model.qkv
         self.proj = model.proj
         self.window_seq_len = window_seq_len
+        self.scale = torch.tensor(1 / math.sqrt(self.head_dim), dtype=rbln_config.torch_dtype)
 
     def forward(
         self,
@@ -142,10 +162,10 @@ class Qwen2_5_VLVisionWindowAttention(nn.Module):
         sin = sin.reshape(num_windows, 1, seq_length // num_windows, -1)
         q, k = apply_rotary_pos_emb(q, k, cos, sin)
 
-        attn_weights = torch.matmul(q, k.transpose(2, 3)) / math.sqrt(self.head_dim)
+        attn_weights = torch.matmul(q, k.transpose(2, 3)) * self.scale
 
         attn_weights = attn_weights + attn_masks
-        attn_weights = nn.functional.softmax(attn_weights, dim=-1, dtype=torch.float32)
+        attn_weights = nn.functional.softmax(attn_weights, dim=-1)
         attn_output = torch.matmul(attn_weights, v)
         attn_output = attn_output.transpose(1, 2)
         attn_output = attn_output.reshape(1, seq_length, -1)
@@ -155,6 +175,12 @@ class Qwen2_5_VLVisionWindowAttention(nn.Module):
 
 
 class Qwen2_5_VL_LanguageModelWrapper(DecoderOnlyWrapper):
+    def get_decoder_layers(self, model: PreTrainedModel):
+        return model.model.language_model.layers if hasattr(model, "model") else model.language_model.layers
+
+    def get_model_layer(self, model: PreTrainedModel):
+        return model.model.language_model if hasattr(model, "model") else model.language_model
+
     def prepare_forward_args(self, *args):
         args = list(args)
         input_ids = None if self.rbln_config.use_inputs_embeds else args.pop(0)
@@ -163,10 +189,10 @@ class Qwen2_5_VL_LanguageModelWrapper(DecoderOnlyWrapper):
         global_block_tables = args.pop(0)
         local_block_tables = None
         position_embeds = args.pop(0)
-        query_position = args.pop(0) if self.phase == "prefill" else None
+        query_position = args.pop(0) if self.phase == "prefill" and self.rbln_config.logits_to_keep > 0 else None
         position_ids = None
-        lora_int_id = None
         attention_mask = args.pop(0) if self.rbln_config.use_attention_mask else None
+        lora_int_id = args.pop(0) if self.rbln_config.lora_config else None
         past_key_values = args
 
         if len(past_key_values) != 2 * self.num_hidden_layers:
@@ -197,24 +223,3 @@ class Qwen2_5_VL_LanguageModelWrapper(DecoderOnlyWrapper):
             past_key_values,
             position_embeds,
         )
-
-    def convert_to_rbln_class(self, model: PreTrainedModel, max_seq_len: int):
-        new_layers = []
-
-        for layer_idx, layer in enumerate(model.model.language_model.layers):
-            is_sliding = layer_idx in self.rbln_config.sliding_window_layers
-            new_self_attn = self.get_rbln_attn_class()(
-                self.get_attn_layer(layer), self.rbln_config, is_sliding=is_sliding
-            )
-            new_layer = self.get_rbln_layer_class()(layer, new_self_attn)
-            new_layers.append(new_layer)
-
-        new_model = self.get_rbln_model_class()(
-            model.model.language_model,
-            new_layers,
-            self.rbln_config,
-            use_learned_pos_emb=self.__class__._use_learned_pos_emb,
-        )
-
-        new_model = self.get_rbln_causal_lm_class()(model.model, new_model)
-        return new_model

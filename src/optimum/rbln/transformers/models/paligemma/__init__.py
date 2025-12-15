@@ -12,13 +12,5 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .configuration_qwen2_vl import (
-    RBLNQwen2VisionTransformerPretrainedModelConfig,
-    RBLNQwen2VLForConditionalGenerationConfig,
-    RBLNQwen2VLModelConfig,
-)
-from .modeling_qwen2_vl import (
-    RBLNQwen2VisionTransformerPretrainedModel,
-    RBLNQwen2VLForConditionalGeneration,
-    RBLNQwen2VLModel,
-)
+from .configuration_paligemma import RBLNPaliGemmaForConditionalGenerationConfig, RBLNPaliGemmaModelConfig
+from .modeling_paligemma import RBLNPaliGemmaForConditionalGeneration, RBLNPaliGemmaModel
