@@ -12,23 +12,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import TYPE_CHECKING
-
-from transformers import PretrainedConfig
 
 from ....utils import logging
 from ...models.decoderonly import (
     RBLNDecoderOnlyModel,
     RBLNDecoderOnlyModelForCausalLM,
-    RBLNDecoderOnlyModelForCausalLMConfig,
 )
 from .qwen3_architecture import Qwen3Wrapper
 
 
 logger = logging.get_logger(__name__)
-
-if TYPE_CHECKING:
-    from transformers import PretrainedConfig
 
 
 class RBLNQwen3ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
@@ -83,19 +76,6 @@ class RBLNQwen3ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
     """
 
     _decoder_wrapper_cls = Qwen3Wrapper
-
-    @classmethod
-    def _update_sliding_window_config(
-        cls, model_config: PretrainedConfig, rbln_config: RBLNDecoderOnlyModelForCausalLMConfig
-    ):
-        # https://github.com/huggingface/transformers/issues/35896
-        # There seems to be a bug in transformers(v4.52.4). Therefore, similar to when attn_implementation is eager,
-        # we set all layers to use sliding window in this version. This should be updated once the bug is fixed.
-
-        rbln_config.cache_impl = "sliding_window"
-        rbln_config.sliding_window = model_config.sliding_window
-        rbln_config.sliding_window_layers = list(range(model_config.num_hidden_layers))
-        return rbln_config
 
     def forward(self, *args, **kwargs):
         kwargs["return_dict"] = True

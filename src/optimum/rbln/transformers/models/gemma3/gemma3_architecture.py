@@ -64,6 +64,7 @@ class Gemma3TextModel(DecoderOnlyModel):
         global_block_tables: Optional[torch.Tensor] = None,
         local_block_tables: Optional[torch.Tensor] = None,
         lora_int_id: Optional[torch.Tensor] = None,
+        output_hidden_states: Optional[bool] = None,
     ):
         # retrieve input_ids and inputs_embeds
         if (input_ids is None) ^ (inputs_embeds is not None):
@@ -96,7 +97,10 @@ class Gemma3TextModel(DecoderOnlyModel):
 
         sliding_cache_pos = self.get_local_cache_positions(position_ids, query_position)
 
+        all_hidden_states = () if output_hidden_states else None
         for layer_idx, layer in enumerate(self.layers):
+            if output_hidden_states:
+                all_hidden_states += (hidden_states,)
             is_sliding = True if layer_idx in self.sliding_window_layers else False
             hidden_states = layer(
                 hidden_states=hidden_states,
@@ -110,7 +114,9 @@ class Gemma3TextModel(DecoderOnlyModel):
             )
 
         hidden_states = self.get_last_layernorm()(hidden_states)
-        return hidden_states
+        if output_hidden_states:
+            all_hidden_states += (hidden_states,)
+        return hidden_states, all_hidden_states
 
 
 class Gemma3DecoderLayer(DecoderOnlyLayer):

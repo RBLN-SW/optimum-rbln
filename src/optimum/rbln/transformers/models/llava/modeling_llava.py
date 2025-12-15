@@ -336,7 +336,7 @@ class RBLNLlavaForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMixi
             pooler_out_size = [pixel_values.shape[0], self.config.vision_config.hidden_size]
 
         vision_out_buffer = []
-        for i in range(self.config.vision_config.num_hidden_layers + 2):
+        for _ in range(self.config.vision_config.num_hidden_layers + 2):
             vision_out_buffer.append(torch.empty(size=vision_out_size, dtype=torch.float32, device="cpu"))
         if pooler_out_size is not None:
             vision_out_buffer.insert(1, torch.empty(size=pooler_out_size, dtype=torch.float32, device="cpu"))

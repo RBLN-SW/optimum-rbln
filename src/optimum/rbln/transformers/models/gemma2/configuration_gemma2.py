@@ -12,44 +12,34 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import rebel
-
-from ..decoderonly.configuration_decoderonly import RBLNDecoderOnlyModelForCausalLMConfig
+from ..decoderonly.configuration_decoderonly import RBLNDecoderOnlyModelConfig, RBLNDecoderOnlyModelForCausalLMConfig
 
 
-class RBLNGptOssForCausalLMConfig(RBLNDecoderOnlyModelForCausalLMConfig):
+class RBLNGemma2ForCausalLMConfig(RBLNDecoderOnlyModelForCausalLMConfig):
     """
-    Configuration class for RBLN GPT-OSS models.
-
+    Configuration class for RBLN Gemma2 models.
     This class is an alias of RBLNDecoderOnlyModelForCausalLMConfig.
-
     Example usage:
     ```python
-    from optimum.rbln import RBLNGptOssForCausalLM, RBLNGptOssForCausalLMConfig
-
+    from optimum.rbln import RBLNGemma2ForCausalLM, RBLNGemma2ForCausalLMConfig
     # Create a configuration object
-    config = RBLNGptOssForCausalLMConfig(
+    config = RBLNGemma2ForCausalLMConfig(
         batch_size=1,
+        max_seq_len=8192,
         tensor_parallel_size=4
     )
-
     # Use the configuration with from_pretrained
-    model = RBLNGptOssForCausalLM.from_pretrained(
-        "openai/gpt-oss-20b",
+    model = RBLNGemma2ForCausalLM.from_pretrained(
+        "google/gemma-2-9b",
         export=True,
         rbln_config=config
     )
     ```
     """
 
-    @property
-    def _support_mxfp4(self):
-        import os
 
-        if os.environ.get("MXFP4_MODE") == "1":
-            return True
-        else:
-            return False
-
-        npu = self.npu or rebel.get_npu_name() or ""
-        return True if "RBLN-CR" in npu else False
+class RBLNGemma2ModelConfig(RBLNDecoderOnlyModelConfig):
+    """
+    Configuration class for RBLN Gemma2 models.
+    This class is an alias of RBLNDecoderOnlyModelConfig.
+    """

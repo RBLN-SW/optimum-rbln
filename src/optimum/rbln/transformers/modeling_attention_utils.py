@@ -195,7 +195,7 @@ class RBLNDecoderOnlyFlashAttentionMixin:
     ) -> int:
         tensor_parallel_size = rbln_config.tensor_parallel_size or 1
         vocab_size = model_config.vocab_size
-        hidden_size = getattr(model_config, "n_embd", None) or getattr(model_config, "hidden_size")
+        hidden_size = getattr(model_config, "n_embd", None) or model_config.hidden_size
         lm_head_params = align(vocab_size, 64) * hidden_size
 
         nbytes_per_param = 2  # Assuming lm_head is always not quantized
@@ -214,7 +214,7 @@ class RBLNDecoderOnlyFlashAttentionMixin:
     ) -> int:
         # This is an *APPROXIMATE* calculation based on the number of parameters
         tensor_parallel_size = rbln_config.tensor_parallel_size or 1
-        num_hidden_layers = getattr(model_config, "n_layer", None) or getattr(model_config, "num_hidden_layers")
+        num_hidden_layers = getattr(model_config, "n_layer", None) or model_config.num_hidden_layers
 
         n_model_params = sum(p.numel() for p in model.parameters())
         embed_token_params = sum(p.numel() for p in model.get_input_embeddings().parameters())
@@ -307,9 +307,9 @@ class RBLNDecoderOnlyFlashAttentionMixin:
 
             return dram_per_block
 
-        num_attention_heads = getattr(model_config, "n_head", None) or getattr(model_config, "num_attention_heads")
+        num_attention_heads = getattr(model_config, "n_head", None) or model_config.num_attention_heads
         head_dim = getattr(model_config, "head_dim", None) or model_config.hidden_size // num_attention_heads
-        num_hidden_layers = getattr(model_config, "n_layer", None) or getattr(model_config, "num_hidden_layers")
+        num_hidden_layers = getattr(model_config, "n_layer", None) or model_config.num_hidden_layers
         num_key_value_heads = getattr(model_config, "num_key_value_heads", None) or num_attention_heads
         tensor_parallel_size = rbln_config.tensor_parallel_size or 1
 

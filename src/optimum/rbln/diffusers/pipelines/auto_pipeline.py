@@ -15,7 +15,7 @@
 
 import importlib
 from pathlib import Path
-from typing import Any, Dict, Type, Union
+from typing import Any, Dict, Optional, Type, Union
 
 from diffusers.models.controlnets import ControlNetUnionModel
 from diffusers.pipelines.auto_pipeline import (
@@ -174,7 +174,7 @@ class RBLNAutoPipelineBase:
         model_id: Union[str, Path],
         *,
         export: bool = None,
-        rbln_config: Union[Dict[str, Any], RBLNModelConfig] = {},
+        rbln_config: Optional[Union[Dict[str, Any], RBLNModelConfig]] = None,
         **kwargs: Any,
     ):
         """

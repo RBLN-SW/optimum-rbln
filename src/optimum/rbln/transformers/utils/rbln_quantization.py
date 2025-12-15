@@ -221,12 +221,12 @@ def load_weight_files(
     cache_dir: Optional[str] = None,
     force_download: bool = False,
     local_files_only: bool = False,
-    exception_keywords: List[str] = [],
+    exception_keywords: Optional[List[str]] = None,
 ) -> list[str]:
     """
     Discover and download safetensors files for the given model id.
     """
-
+    exception_keywords = exception_keywords or []
     if os.path.isdir(model_id):
         safetensor_files = glob.glob(f"{model_id}/*.safetensors")
     else:

@@ -304,7 +304,6 @@ class RBLNGroundingDinoForObjectDetection(RBLNModel):
         for feature_map, mask in vision_features:
             # position encoding
             position_embeddings_list.append(self.backbone_position_embedding(feature_map, mask).to(feature_map.dtype))
-        vision_features, position_embeddings_list
 
         # Then, apply 1x1 convolution to reduce the channel dimension to d_model (256 by default)
         feature_maps = []
