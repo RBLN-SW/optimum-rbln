@@ -215,7 +215,7 @@ class RBLNControlNetModel(RBLNModel):
         encoder_hidden_states: torch.Tensor,
         controlnet_cond: torch.FloatTensor,
         conditioning_scale: torch.Tensor = 1.0,
-        added_cond_kwargs: Dict[str, torch.Tensor] = {},
+        added_cond_kwargs: Optional[Dict[str, torch.Tensor]] = None,
         return_dict: bool = True,
         **kwargs,
     ):

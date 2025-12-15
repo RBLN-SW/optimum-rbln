@@ -150,7 +150,7 @@ class _GroundingDinoEncoder(torch.nn.Module):
         all_attn_fused_vision = () if output_attentions else None
         all_attn_enhanced_text = () if output_attentions else None
         all_attn_deformable = () if output_attentions else None
-        for i, encoder_layer in enumerate(self.layers):
+        for _, encoder_layer in enumerate(self.layers):
             if output_hidden_states:
                 encoder_vision_states += (vision_features,)
                 encoder_text_states += (text_features,)

@@ -15,7 +15,6 @@
 import importlib
 import os
 import shutil
-from abc import ABC
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple, Type, Union
@@ -39,7 +38,7 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 
-class PreTrainedModel(ABC):  # noqa: F811
+class PreTrainedModel:  # noqa: F811
     pass
 
 
@@ -63,7 +62,7 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
         model_save_dir: Optional[Union[str, Path, TemporaryDirectory]] = None,
         subfolder: str = "",
         rbln_compiled_models: Optional[rebel.RBLNCompiledModel] = None,
-        rbln_submodules: List["RBLNBaseModel"] = [],
+        rbln_submodules: Optional[List["RBLNBaseModel"]] = None,
         **kwargs,
     ):
         self.model = models
@@ -106,6 +105,8 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
             self.model_save_dir = model_save_dir
         self.subfolder = subfolder
 
+        if rbln_submodules is None:
+            rbln_submodules = []
         self.rbln_submodules = rbln_submodules
         self.__post_init__(**kwargs)
 
@@ -181,7 +182,7 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
         # passed from compile function
         rbln_config: Optional[RBLNModelConfig] = None,
         rbln_compiled_models: Optional[Dict[str, rebel.RBLNCompiledModel]] = None,
-        rbln_submodules: List["RBLNBaseModel"] = [],
+        rbln_submodules: Optional[List["RBLNBaseModel"]] = None,
         **kwargs,
     ) -> "RBLNBaseModel":
         if rbln_compiled_models is None:
@@ -217,8 +218,9 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
                 )
 
             if len(cls._rbln_submodules) > 0:
-                rbln_submodules = cls._load_submodules(model_save_dir=model_id, rbln_config=rbln_config, **kwargs)
-            else:
+                if rbln_submodules is None:
+                    rbln_submodules = cls._load_submodules(model_save_dir=model_id, rbln_config=rbln_config, **kwargs)
+            elif rbln_submodules is None:
                 rbln_submodules = []
 
             rbln_config.freeze()
@@ -279,9 +281,12 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
         config: "PretrainedConfig",
         model_save_dir: Union[Path, str],
         subfolder: Union[Path, str],
-        rbln_submodules: List["RBLNBaseModel"] = [],
+        rbln_submodules: Optional[List["RBLNBaseModel"]] = None,
         **kwargs,
     ):
+        if rbln_submodules is None:
+            rbln_submodules = []
+
         if isinstance(model_save_dir, str):
             model_save_dir = Path(model_save_dir)
 

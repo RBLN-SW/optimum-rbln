@@ -15,7 +15,7 @@
 from typing import Any, Dict, List, Optional, Union
 
 from ....configuration_utils import RBLNModelConfig
-from ..decoderonly.configuration_decoderonly import RBLNDecoderOnlyModelForCausalLMConfig
+from ..decoderonly.configuration_decoderonly import RBLNDecoderOnlyModelConfig, RBLNDecoderOnlyModelForCausalLMConfig
 
 
 class RBLNQwen2VLForConditionalGenerationConfig(RBLNDecoderOnlyModelForCausalLMConfig):
@@ -46,6 +46,16 @@ class RBLNQwen2VLForConditionalGenerationConfig(RBLNDecoderOnlyModelForCausalLMC
                 "as RBLNQwen2VLForConditionalGeneration accepts only `inputs_embeds` as input."
             )
         self.visual = visual
+
+
+class RBLNQwen2VLModelConfig(RBLNDecoderOnlyModelConfig):
+    """
+    Configuration class for RBLNQwen2VLModel.
+    """
+
+    def __init__(self, visual: Optional[RBLNModelConfig] = None, **kwargs: Dict[str, Any]):
+        super().__init__(**kwargs)
+        self.visual = self.initialize_submodule_config(submodule_config=visual)
 
 
 class RBLNQwen2VisionTransformerPretrainedModelConfig(RBLNModelConfig):
