@@ -73,7 +73,7 @@ jobs:
           echo "compiler_version=$CUR_VERSION" >> $GITHUB_OUTPUT
           echo "COMPILER_VERSION=$CUR_VERSION"
 
-  rbln-full-test:
+  rbln-bc-test:
     needs: get_bc_inference_info
     uses: ./.github/workflows/rbln_optimum_pytest.yaml
     with:
