@@ -5,20 +5,7 @@ on:
     branches:
       - hotfix/bc_ci
 
-jobs:  
-  rbln-bc-target-inference:
-    uses: ./.github/workflows/rbln_bc_inference.yaml
-    with:
-      bc_tag: "v0.9.4.a4"
-      current_ref: ${{ github.event.pull_request.head.sha }}
-    secrets: inherit
-  
-  rbln-bc-full-inference:
-    uses: ./.github/workflows/rbln_bc_full_inference.yaml
-    with:
-      current_ref: ${{ github.event.pull_request.head.sha }}
-    secrets: inherit
-  
+jobs:
   latest-bc-tag:
     uses: ./.github/workflows/get_latest_tag.yaml
     secrets: inherit

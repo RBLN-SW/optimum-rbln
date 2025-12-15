@@ -9,7 +9,7 @@ on:
 
 jobs:
   get-latest-tag:
-    runs-on: ubuntu-latest
+    runs-on: rebel-k8s-runner
     outputs:
       latest_tag: ${{ steps.get_latest.outputs.latest_tag }}
     steps:
