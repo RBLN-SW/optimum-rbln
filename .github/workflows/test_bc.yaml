@@ -6,8 +6,8 @@ on:
       - hotfix/bc_ci
 
 jobs:
-  rbln-bc-full-inference:
-    uses: ./.github/workflows/rbln_bc_full_inference.yaml
+  rbln-bc-compile:
+    uses: ./.github/workflows/rbln_bc_compile.yaml
     with:
-      current_ref: ${{ github.event.pull_request.head.sha }}
+      bc_tag: ${{ github.event.pull_request.head.sha }}
     secrets: inherit
