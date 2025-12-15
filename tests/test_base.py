@@ -59,6 +59,7 @@ def skip_if_inference_only(test_case):
     else:
         return unittest.skip("test is inference only")(test_case)
 
+
 def skip_if_compile_only(test_case):
     """
     Decorator marking a test that should be excluded if the model is compile only.
@@ -68,6 +69,7 @@ def skip_if_compile_only(test_case):
         return test_case
     else:
         return unittest.skip("test is compile only")(test_case)
+
 
 class BaseHubTest:
     class TestHub(unittest.TestCase):
@@ -180,7 +182,7 @@ class BaseTest:
                     if os.path.exists(compiled_model_path):
                         cls.model = cls.RBLN_CLASS.from_pretrained(compiled_model_path)
                     else:
-                        raise unittest.SkipTest(f"Compiled model not found at: {compiled_model_path}")
+                        raise unittest.SkipTest(f"Compiled model not found at: {compiled_model_path}.")
 
         @classmethod
         def get_rbln_local_dir(cls):
@@ -202,17 +204,24 @@ class BaseTest:
 
         @classmethod
         def tearDownClass(cls):
-            rbln_local_dir = cls.get_rbln_local_dir()
-            if not os.path.exists(rbln_local_dir):
-                return
+            if os.path.exists(cls.get_rbln_local_dir()):
+                shutil.rmtree(cls.get_rbln_local_dir())
 
+        # BC: Test save_artifacts and copy tree is successful
+        def test_save_artifacts(self):
             SAVE_ARTIFACTS_PATH = os.environ.get("SAVE_ARTIFACTS_PATH", None)
             if SAVE_ARTIFACTS_PATH is None:
-                shutil.rmtree(rbln_local_dir)
+                return
             else:
                 os.makedirs(SAVE_ARTIFACTS_PATH, exist_ok=True)
-                shutil.move(rbln_local_dir, os.path.join(SAVE_ARTIFACTS_PATH, rbln_local_dir))
+                saved_path = os.path.join(SAVE_ARTIFACTS_PATH, self.get_rbln_local_dir())
+                shutil.copytree(self.get_rbln_local_dir(), saved_path, dirs_exist_ok=True)
 
+                _ = self.RBLN_CLASS.from_pretrained(
+                    saved_path,
+                    rbln_create_runtimes=False,
+                    **self.HF_CONFIG_KWARGS,
+                )
 
         @skip_if_compile_only
         @skip_if_inference_only
@@ -224,7 +233,6 @@ class BaseTest:
 
         def postprocess(self, inputs, output):
             return output
-
 
         @skip_if_compile_only
         def test_generate(self):
@@ -315,6 +323,7 @@ class BaseTest:
                 )
 
         # check if this use a pipeline
+        @skip_if_compile_only
         def test_infer_framework(self):
             class_hierarchy = inspect.getmro(self.model.__class__)
 
@@ -326,6 +335,7 @@ class BaseTest:
 
             assert is_valid_framework, "Model does not inherit from PreTrainedModel."
 
+        @skip_if_compile_only
         def test_get_rbln_config_class(self):
             assert self.RBLN_CLASS.get_rbln_config_class() is not None
             rbln_config_class_name = self.RBLN_CLASS.get_rbln_config_class().__name__

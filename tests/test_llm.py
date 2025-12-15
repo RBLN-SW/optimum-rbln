@@ -313,7 +313,11 @@ class TestBartModel(LLMTest.TestLLM):
         # RBLNBartForSeq2SeqLM -> RBLNBartForCausalLM load case
         with self.subTest():
             REUSE_ARTIFACTS_PATH = os.environ.get("REUSE_ARTIFACTS_PATH")
-            model_save_path = os.path.join(REUSE_ARTIFACTS_PATH, self.get_rbln_local_dir()) if REUSE_ARTIFACTS_PATH is not None else self.get_rbln_local_dir()           
+            model_save_path = (
+                os.path.join(REUSE_ARTIFACTS_PATH, self.get_rbln_local_dir())
+                if REUSE_ARTIFACTS_PATH is not None
+                else self.get_rbln_local_dir()
+            )
             with pytest.raises(ValueError):
                 _ = RBLNAutoModelForCausalLM.from_pretrained(
                     model_save_path,
