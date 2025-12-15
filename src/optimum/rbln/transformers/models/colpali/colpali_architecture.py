@@ -156,8 +156,8 @@ class ColPaliAttention(nn.Module):
     def __init__(self, self_attn):
         super().__init__()
         self._original_mod = self_attn
-        self.num_heads = getattr(self._original_mod, "num_heads", None) or getattr(
-            self._original_mod.config, "num_attention_heads"
+        self.num_heads = (
+            getattr(self._original_mod, "num_heads", None) or self._original_mod.config.num_attention_heads
         )
         self.head_dim = self._original_mod.head_dim
         self.scaling = self.head_dim**-0.5

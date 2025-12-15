@@ -15,5 +15,10 @@
 from .configuration_qwen2_vl import (
     RBLNQwen2VisionTransformerPretrainedModelConfig,
     RBLNQwen2VLForConditionalGenerationConfig,
+    RBLNQwen2VLModelConfig,
 )
-from .modeling_qwen2_vl import RBLNQwen2VisionTransformerPretrainedModel, RBLNQwen2VLForConditionalGeneration
+from .modeling_qwen2_vl import (
+    RBLNQwen2VisionTransformerPretrainedModel,
+    RBLNQwen2VLForConditionalGeneration,
+    RBLNQwen2VLModel,
+)

@@ -57,6 +57,9 @@ _import_structure = {
         "RBLNSD3Transformer2DModelConfig",
         "RBLNUNet2DConditionModelConfig",
         "RBLNVQModelConfig",
+        "RBLNUNetSpatioTemporalConditionModelConfig",
+        "RBLNStableVideoDiffusionPipelineConfig",
+        "RBLNAutoencoderKLTemporalDecoderConfig",
     ],
     "pipelines": [
         "RBLNAutoPipelineForImage2Image",
@@ -86,14 +89,17 @@ _import_structure = {
         "RBLNStableDiffusion3Pipeline",
         "RBLNStableDiffusion3Img2ImgPipeline",
         "RBLNStableDiffusion3InpaintPipeline",
+        "RBLNStableVideoDiffusionPipeline",
     ],
     "models": [
         "RBLNAutoencoderKL",
         "RBLNAutoencoderKLCosmos",
         "RBLNUNet2DConditionModel",
+        "RBLNUNetSpatioTemporalConditionModel",
         "RBLNControlNetModel",
         "RBLNCosmosTransformer3DModel",
         "RBLNSD3Transformer2DModel",
+        "RBLNAutoencoderKLTemporalDecoder",
         "RBLNPriorTransformer",
         "RBLNVQModel",
     ],
@@ -106,6 +112,7 @@ if TYPE_CHECKING:
     from .configurations import (
         RBLNAutoencoderKLConfig,
         RBLNAutoencoderKLCosmosConfig,
+        RBLNAutoencoderKLTemporalDecoderConfig,
         RBLNControlNetModelConfig,
         RBLNCosmosTextToWorldPipelineConfig,
         RBLNCosmosTransformer3DModelConfig,
@@ -132,18 +139,22 @@ if TYPE_CHECKING:
         RBLNStableDiffusionXLImg2ImgPipelineConfig,
         RBLNStableDiffusionXLInpaintPipelineConfig,
         RBLNStableDiffusionXLPipelineConfig,
+        RBLNStableVideoDiffusionPipelineConfig,
         RBLNUNet2DConditionModelConfig,
+        RBLNUNetSpatioTemporalConditionModelConfig,
         RBLNVQModelConfig,
     )
     from .modeling_diffusers import RBLNDiffusionMixin
     from .models import (
         RBLNAutoencoderKL,
         RBLNAutoencoderKLCosmos,
+        RBLNAutoencoderKLTemporalDecoder,
         RBLNControlNetModel,
         RBLNCosmosTransformer3DModel,
         RBLNPriorTransformer,
         RBLNSD3Transformer2DModel,
         RBLNUNet2DConditionModel,
+        RBLNUNetSpatioTemporalConditionModel,
         RBLNVQModel,
     )
     from .pipelines import (
@@ -174,6 +185,7 @@ if TYPE_CHECKING:
         RBLNStableDiffusionXLImg2ImgPipeline,
         RBLNStableDiffusionXLInpaintPipeline,
         RBLNStableDiffusionXLPipeline,
+        RBLNStableVideoDiffusionPipeline,
     )
 else:
     import sys

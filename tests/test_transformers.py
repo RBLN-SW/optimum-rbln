@@ -368,6 +368,22 @@ class TestXLMRobertaModel(BaseTest.TestModel):
     }
 
 
+class TestXLMRobertaModelWithTokenTypeIds(TestXLMRobertaModel):
+    RBLN_CLASS_KWARGS = {
+        "rbln_max_seq_len": 128,
+        "rbln_model_input_names": ["input_ids", "attention_mask", "token_type_ids"],
+    }
+    GENERATION_KWARGS = {
+        "input_ids": torch.randint(low=0, high=50, size=(1, 128), generator=torch.manual_seed(42), dtype=torch.int64),
+        "attention_mask": torch.randint(
+            low=0, high=2, size=(1, 128), generator=torch.manual_seed(42), dtype=torch.int64
+        ),
+        "token_type_ids": torch.randint(
+            low=0, high=2, size=(1, 128), generator=torch.manual_seed(42), dtype=torch.int64
+        ),
+    }
+
+
 class TestCLIPTextModel(BaseTest.TestModel):
     RBLN_AUTO_CLASS = RBLNAutoModelForTextEncoding
     RBLN_CLASS = RBLNCLIPTextModel
@@ -386,6 +402,14 @@ class TestColPaliModel(BaseTest.TestModel):
     RBLN_AUTO_CLASS = None
     RBLN_CLASS = RBLNColPaliForRetrieval
     HF_MODEL_ID = "thkim93/colpali-hf-1layer"
+    RBLN_CLASS_KWARGS = {
+        "rbln_config": {
+            "vlm": {
+                "language_model": {"prefill_chunk_size": 8192},
+                "output_hidden_states": True,
+            }
+        }
+    }
     GENERATION_KWARGS = {
         "input_ids": torch.full((1, 1024), fill_value=257152, dtype=torch.int32),
         "attention_mask": torch.ones((1, 1024), dtype=torch.int32),
@@ -399,9 +423,11 @@ class TestColQwen2Model(BaseTest.TestModel):
     HF_MODEL_ID = "vidore/colqwen2-v1.0-hf"
     RBLN_CLASS_KWARGS = {
         "rbln_config": {
-            "visual": {"max_seq_lens": 512},
-            "tensor_parallel_size": 1,
-            "max_seq_len": 32_768,
+            "vlm": {
+                "visual": {"max_seq_lens": 512},
+                "tensor_parallel_size": 1,
+                "max_seq_len": 32_768,
+            }
         }
     }
     HF_CONFIG_KWARGS = {}  # Initialize empty to avoid sharing with other classes
@@ -414,7 +440,8 @@ class TestColQwen2Model(BaseTest.TestModel):
         # Reduce model size for faster testing
         vision_config = json.loads(config.vlm_config.vision_config.to_json_string())
         text_config = json.loads(config.vlm_config.text_config.to_json_string())
-        vision_config["depth"] = 1
+        vision_config["depth"] = 2
+        vision_config["fullatt_block_indexes"] = [1]
         text_config["num_hidden_layers"] = 1
         text_config["layer_types"] = text_config["layer_types"][:1]
 
@@ -434,6 +461,32 @@ class TestColQwen2Model(BaseTest.TestModel):
         ]
         inputs_image = processor(images=images)
         return inputs_image
+
+
+class TestColQwen2Model_BFloat16(TestColQwen2Model):
+    TEST_LEVEL = TestLevel.FULL
+    HF_CONFIG_KWARGS = {
+        "dtype": torch.bfloat16,
+    }
+
+
+class TestColQwen2Model_Auto(TestColQwen2Model):
+    TEST_LEVEL = TestLevel.FULL
+    HF_CONFIG_KWARGS = {
+        "dtype": "auto",
+    }
+
+
+class TestColQwen2Model_Float32(TestColQwen2Model):
+    TEST_LEVEL = TestLevel.FULL
+    HF_CONFIG_KWARGS = {
+        "dtype": torch.float32,
+    }
+
+
+class TestColQwen2_5Model(TestColQwen2Model):
+    TEST_LEVEL = TestLevel.FULL
+    HF_MODEL_ID = "Sahil-Kabir/colqwen2.5-v0.2-hf"
 
 
 class TestWav2VecModel(BaseTest.TestModel):

@@ -88,12 +88,16 @@ _import_structure = {
         "RBLNQwen2_5_VisionTransformerPretrainedModelConfig",
         "RBLNQwen2_5_VLForConditionalGeneration",
         "RBLNQwen2_5_VLForConditionalGenerationConfig",
+        "RBLNQwen2_5_VLModel",
+        "RBLNQwen2_5_VLModelConfig",
     ],
     "qwen2_vl": [
         "RBLNQwen2VisionTransformerPretrainedModel",
         "RBLNQwen2VisionTransformerPretrainedModelConfig",
         "RBLNQwen2VLForConditionalGeneration",
         "RBLNQwen2VLForConditionalGenerationConfig",
+        "RBLNQwen2VLModel",
+        "RBLNQwen2VLModelConfig",
     ],
     "decoderonly": [
         "RBLNDecoderOnlyModelConfig",
@@ -110,6 +114,7 @@ _import_structure = {
     ],
     "exaone": ["RBLNExaoneForCausalLM", "RBLNExaoneForCausalLMConfig"],
     "gemma": ["RBLNGemmaForCausalLM", "RBLNGemmaForCausalLMConfig", "RBLNGemmaModel", "RBLNGemmaModelConfig"],
+    "gemma2": ["RBLNGemma2ForCausalLM", "RBLNGemma2ForCausalLMConfig", "RBLNGemma2Model", "RBLNGemma2ModelConfig"],
     "gemma3": [
         "RBLNGemma3ForCausalLM",
         "RBLNGemma3ForCausalLMConfig",
@@ -132,6 +137,12 @@ _import_structure = {
         "RBLNPegasusModel",
         "RBLNPegasusForConditionalGenerationConfig",
         "RBLNPegasusModelConfig",
+    ],
+    "paligemma": [
+        "RBLNPaliGemmaForConditionalGeneration",
+        "RBLNPaliGemmaForConditionalGenerationConfig",
+        "RBLNPaliGemmaModel",
+        "RBLNPaliGemmaModelConfig",
     ],
     "llava_next": ["RBLNLlavaNextForConditionalGeneration", "RBLNLlavaNextForConditionalGenerationConfig"],
     "midm": ["RBLNMidmLMHeadModel", "RBLNMidmLMHeadModelConfig"],
@@ -257,6 +268,7 @@ if TYPE_CHECKING:
     from .dpt import RBLNDPTForDepthEstimation, RBLNDPTForDepthEstimationConfig
     from .exaone import RBLNExaoneForCausalLM, RBLNExaoneForCausalLMConfig
     from .gemma import RBLNGemmaForCausalLM, RBLNGemmaForCausalLMConfig, RBLNGemmaModel, RBLNGemmaModelConfig
+    from .gemma2 import RBLNGemma2ForCausalLM, RBLNGemma2ForCausalLMConfig, RBLNGemma2Model, RBLNGemma2ModelConfig
     from .gemma3 import (
         RBLNGemma3ForCausalLM,
         RBLNGemma3ForCausalLMConfig,
@@ -285,6 +297,12 @@ if TYPE_CHECKING:
     from .midm import RBLNMidmLMHeadModel, RBLNMidmLMHeadModelConfig
     from .mistral import RBLNMistralForCausalLM, RBLNMistralForCausalLMConfig, RBLNMistralModel, RBLNMistralModelConfig
     from .opt import RBLNOPTForCausalLM, RBLNOPTForCausalLMConfig, RBLNOPTModel, RBLNOPTModelConfig
+    from .paligemma import (
+        RBLNPaliGemmaForConditionalGeneration,
+        RBLNPaliGemmaForConditionalGenerationConfig,
+        RBLNPaliGemmaModel,
+        RBLNPaliGemmaModelConfig,
+    )
     from .pegasus import (
         RBLNPegasusForConditionalGeneration,
         RBLNPegasusForConditionalGenerationConfig,
@@ -299,6 +317,8 @@ if TYPE_CHECKING:
         RBLNQwen2_5_VisionTransformerPretrainedModelConfig,
         RBLNQwen2_5_VLForConditionalGeneration,
         RBLNQwen2_5_VLForConditionalGenerationConfig,
+        RBLNQwen2_5_VLModel,
+        RBLNQwen2_5_VLModelConfig,
     )
     from .qwen2_moe import RBLNQwen2MoeForCausalLM, RBLNQwen2MoeForCausalLMConfig
     from .qwen2_vl import (
@@ -306,6 +326,8 @@ if TYPE_CHECKING:
         RBLNQwen2VisionTransformerPretrainedModelConfig,
         RBLNQwen2VLForConditionalGeneration,
         RBLNQwen2VLForConditionalGenerationConfig,
+        RBLNQwen2VLModel,
+        RBLNQwen2VLModelConfig,
     )
     from .qwen3 import RBLNQwen3ForCausalLM, RBLNQwen3ForCausalLMConfig, RBLNQwen3Model, RBLNQwen3ModelConfig
     from .qwen3_moe import RBLNQwen3MoeForCausalLM, RBLNQwen3MoeForCausalLMConfig

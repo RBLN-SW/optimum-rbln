@@ -44,5 +44,12 @@ class RBLNGptOssForCausalLMConfig(RBLNDecoderOnlyModelForCausalLMConfig):
 
     @property
     def _support_mxfp4(self):
+        import os
+
+        if os.environ.get("MXFP4_MODE") == "1":
+            return True
+        else:
+            return False
+
         npu = self.npu or rebel.get_npu_name() or ""
         return True if "RBLN-CR" in npu else False

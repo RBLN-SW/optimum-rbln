@@ -303,6 +303,21 @@ class RBLNCosmosTransformer3DModel(RBLNModel):
         padding_mask: Optional[torch.Tensor] = None,
         return_dict: bool = True,
     ):
+        """
+        Forward pass for the RBLN-optimized CosmosTransformer3DModel.
+
+        Args:
+            hidden_states (torch.Tensor): The currently predicted image embeddings.
+            timestep (torch.Tensor): Current denoising step.
+            encoder_hidden_states (torch.Tensor): Conditional embeddings (embeddings computed from the input conditions such as prompts) to use.
+            fps: (Optional[int]): Frames per second for the video being generated.
+            condition_mask (Optional[torch.Tensor]): Tensor of condition mask.
+            padding_mask (Optional[torch.Tensor]): Tensor of padding mask.
+            return_dict (bool): Whether or not to return a [`~diffusers.models.modeling_output.Transformer2DModelOutput`] instead of a plain tuple.
+
+        Returns:
+            (Union[`~diffusers.models.modeling_output.Transformer2DModelOutput`, Tuple])
+        """
         (
             hidden_states,
             temb,

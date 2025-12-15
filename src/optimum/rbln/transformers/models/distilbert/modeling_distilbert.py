@@ -12,6 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from typing import Optional, Tuple, Union
+
+import torch
+from transformers.modeling_outputs import QuestionAnsweringModelOutput
+
 from ...modeling_generic import RBLNModelForQuestionAnswering
 
 
@@ -25,3 +30,22 @@ class RBLNDistilBertForQuestionAnswering(RBLNModelForQuestionAnswering):
     """
 
     rbln_model_input_names = ["input_ids", "attention_mask"]
+
+    def forward(
+        self,
+        input_ids: Optional[torch.Tensor] = None,
+        attention_mask: Optional[torch.Tensor] = None,
+        **kwargs,
+    ) -> Union[Tuple, QuestionAnsweringModelOutput]:
+        """
+        Forward pass for the RBLN-optimized DistilBERT model for question answering tasks.
+
+        Args:
+            input_ids (torch.Tensor of shape (batch_size, sequence_length), optional): Indices of input sequence tokens in the vocabulary.
+            attention_mask (torch.Tensor of shape (batch_size, sequence_length), optional): Mask to avoid performing attention on padding token indices.
+
+        Returns:
+            The model outputs. If return_dict=False is passed, returns a tuple of tensors. Otherwise, returns a QuestionAnsweringModelOutput object.
+        """
+
+        return super().forward(input_ids, attention_mask, **kwargs)

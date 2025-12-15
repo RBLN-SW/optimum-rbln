@@ -88,6 +88,34 @@ jobs:
       compiler_version: ${{ needs.load-version.outputs.compiler_version }}
     secrets: inherit
 
+  check-if-dependency-pr:
+    runs-on: rebel-k8s-runner
+    outputs:
+      result: ${{ steps.check_title.outputs.result }}
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: check if pr is dependency check
+        id: check_title
+        run: |
+          PR_TITLE="${{ github.event.pull_request.title }}"
+          LAST_COMMIT_MSG=$(git log -1 --pretty=format:%s)
+          DEP_UPDATE_PATTERN="dependency: Update dependency"
+
+          echo "PR Title: $PR_TITLE"
+          echo "Last Commit: $LAST_COMMIT_MSG"
+
+          if [[ "$PR_TITLE" == *"$DEP_UPDATE_PATTERN"* && "$LAST_COMMIT_MSG" == *"$DEP_UPDATE_PATTERN"* ]]; then
+            echo "result=true" >> $GITHUB_OUTPUT
+          else
+            echo "result=false" >> $GITHUB_OUTPUT
+          fi
+
+          echo $result
+
   check-team-member:
     runs-on: rebel-k8s-runner
     needs: [check-code-quality, test-docstrings, check-compiler]

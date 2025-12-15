@@ -142,7 +142,7 @@ class LoRALinear(nn.Module):
         padded_lora_a = []
         padded_lora_b = []
 
-        for i, (lora_a, lora_b) in enumerate(zip(lora_a_weights, lora_b_weights)):
+        for _, (lora_a, lora_b) in enumerate(zip(lora_a_weights, lora_b_weights)):
             current_rank = lora_a.shape[0]
             if current_rank < max_rank:
                 # Pad with zeros

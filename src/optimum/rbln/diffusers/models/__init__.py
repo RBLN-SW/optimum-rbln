@@ -22,9 +22,11 @@ _import_structure = {
         "RBLNAutoencoderKL",
         "RBLNAutoencoderKLCosmos",
         "RBLNVQModel",
+        "RBLNAutoencoderKLTemporalDecoder",
     ],
     "unets": [
         "RBLNUNet2DConditionModel",
+        "RBLNUNetSpatioTemporalConditionModel",
     ],
     "controlnet": ["RBLNControlNetModel"],
     "transformers": [
@@ -35,10 +37,22 @@ _import_structure = {
 }
 
 if TYPE_CHECKING:
-    from .autoencoders import RBLNAutoencoderKL, RBLNAutoencoderKLCosmos, RBLNVQModel
+    from .autoencoders import (
+        RBLNAutoencoderKL,
+        RBLNAutoencoderKLCosmos,
+        RBLNAutoencoderKLTemporalDecoder,
+        RBLNVQModel,
+    )
     from .controlnet import RBLNControlNetModel
-    from .transformers import RBLNCosmosTransformer3DModel, RBLNPriorTransformer, RBLNSD3Transformer2DModel
-    from .unets import RBLNUNet2DConditionModel
+    from .transformers import (
+        RBLNCosmosTransformer3DModel,
+        RBLNPriorTransformer,
+        RBLNSD3Transformer2DModel,
+    )
+    from .unets import (
+        RBLNUNet2DConditionModel,
+        RBLNUNetSpatioTemporalConditionModel,
+    )
 else:
     import sys
 

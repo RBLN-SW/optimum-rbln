@@ -278,6 +278,19 @@ class RBLNSwinBackbone(RBLNModel):
         output_hidden_states: bool = None,
         **kwargs,
     ) -> Union[Tuple, BackboneOutput]:
+        """
+        Forward pass for the RBLN-optimized Swin backbone model.
+
+        Args:
+            pixel_values (torch.FloatTensor of shape (batch_size, num_channels, image_size, image_size), optional): The tensors corresponding to the input images. Pixel values can be obtained using ViTImageProcessor. See ViTImageProcessor.call() for details (processor_class uses ViTImageProcessor for processing images).
+            return_dict (bool, optional): Whether or not to return a ModelOutput instead of a plain tuple.
+            output_attentions (bool, optional): Whether or not to return the attentions tensors of all attention layers. See attentions under returned tensors for more detail.
+            output_hidden_states (bool, optional): Whether or not to return the hidden states of all layers. See hidden_states under returned tensors for more detail.
+
+        Returns:
+            The model outputs. If return_dict=False is passed, returns a tuple of tensors. Otherwise, returns a BackboneOutput object.
+        """
+
         if len(kwargs) > 0 and any(value is not None for value in kwargs.values()):
             logger.warning(
                 f"Currently, optimum-rbln does not support kwargs {kwargs.keys()} for {self.__class__.__name__}."
@@ -314,19 +327,19 @@ class RBLNSwinBackbone(RBLNModel):
         output = self.model[0](padded_pixel_values)
 
         feature_maps = ()
-        for i in range(len(self.config.out_features)):
+        for _ in range(len(self.config.out_features)):
             feature_maps += (output.pop(0),)
 
         if self.rbln_config.output_hidden_states:
             hidden_states = ()
-            for i in range(len(self.config.stage_names)):
+            for _ in range(len(self.config.stage_names)):
                 hidden_states += (output.pop(0),)
         else:
             hidden_states = None
 
         if self.rbln_config.output_attentions:
             attentions = ()
-            for i in range(len(self.config.depths)):
+            for _ in range(len(self.config.depths)):
                 attentions += (output.pop(0),)
         else:
             attentions = None

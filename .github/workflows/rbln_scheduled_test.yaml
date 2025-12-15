@@ -25,6 +25,7 @@ jobs:
     runs-on: rebel-k8s-runner
     outputs:
       compiler_version: ${{ steps.get_version.outputs.compiler_version }}
+      need_pr: ${{ steps.check_pr_needed.outputs.need_pr }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
