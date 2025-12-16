@@ -804,9 +804,7 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
                 serializable_map[key] = RBLNCompileConfig.normalize_dtype(value)
             else:
                 serializable_map[key] = value
-        import pdb
 
-        pdb.set_trace()
         return serializable_map
 
     def __repr__(self):
