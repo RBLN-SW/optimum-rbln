@@ -166,4 +166,15 @@ jobs:
       ref: ${{ github.event.pull_request.head.sha }}
       report_slack: ${{ needs.check-slack-report.outputs.should_slack_report == 'true' }}
     secrets: inherit
- 
+
+  bc-latest-tag:
+    uses: ./.github/workflows/bc_latest_tag.yaml
+    secrets: inherit
+
+  bc-inference:
+    needs: bc-latest-tag
+    uses: ./.github/workflows/bc_inference.yaml
+    with:
+      bc_tag: ${{ needs.bc-latest-tag.outputs.latest_tag }}
+      current_ref: ${{ github.event.pull_request.head.sha }}
+    secrets: inherit

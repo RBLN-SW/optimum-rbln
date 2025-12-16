@@ -93,6 +93,8 @@ class LLMTest:
             return generated_texts
 
         def _test_output_hidden_states_generation(self):
+            REUSE_ARTIFACTS_PATH = os.environ.get("REUSE_ARTIFACTS_PATH", None)
+
             inputs = self.get_inputs()
             if self.model.can_generate():
                 inputs["max_new_tokens"] = 4
@@ -100,6 +102,8 @@ class LLMTest:
                 inputs["return_dict_in_generate"] = True
                 inputs["output_hidden_states"] = True
                 output = self.model.generate(**inputs)
+                if REUSE_ARTIFACTS_PATH is not None:
+                    return
 
                 # Check hidden states Shape and Type
                 self.assertTrue(len(output.hidden_states) == inputs["max_new_tokens"])
@@ -115,6 +119,8 @@ class LLMTest:
             else:
                 inputs["output_hidden_states"] = True
                 output = self.model.forward(**inputs)
+                if REUSE_ARTIFACTS_PATH is not None:
+                    return
                 # Check hidden states Shape and Type
                 self.assertTrue(len(output.hidden_states) == (self.HF_CONFIG_KWARGS["num_hidden_layers"] + 1))
                 self.assertTrue(isinstance(output.hidden_states, tuple))
