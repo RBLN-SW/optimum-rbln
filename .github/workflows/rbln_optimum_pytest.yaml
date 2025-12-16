@@ -52,7 +52,7 @@ env:
 jobs:
   pytest:
     name: Pytest (${{ matrix.test_type }})
-    runs-on: vm-ci-0
+    runs-on: ${{ inputs.reuse_artifacts_path != '' && 'rebel-k8s-runner' || 'vm-ci-0' }}
     strategy:
       fail-fast: ${{ inputs.fail_fast }}
       matrix: ${{ fromJson(
