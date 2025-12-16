@@ -213,7 +213,7 @@ class RBLNColPaliForRetrieval(RBLNModel):
             input_ids=input_ids,
             attention_mask=attention_mask,
             pixel_values=pixel_values,
-            output_hidden_states=True,
+            output_hidden_states=output_hidden_states,
             return_dict=True,
             **kwargs,
         )
