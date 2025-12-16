@@ -69,7 +69,7 @@ class RBLNGptOssTopKRouter(nn.Module):
 
 
 class RBLNGptOssExperts(nn.Module):
-    def __init__(self, model, k: Optional[int] = None):
+    def __init__(self, model, top_k: Optional[int] = None):
         super().__init__()
         self.intermediate_size = model.intermediate_size
         self.num_experts = model.num_experts
@@ -102,8 +102,7 @@ class RBLNGptOssExperts(nn.Module):
 
         self.alpha = model.alpha  # 1.702
         self.limit = model.limit  # 7.0
-
-        self.k = k
+        self.top_k = top_k
 
     def forward(self, hidden_states: torch.Tensor, router_logits: torch.Tensor) -> torch.Tensor:
         return torch.ops.rbln_custom_ops.custom_moe_glu_mxfp4(
@@ -120,7 +119,7 @@ class RBLNGptOssExperts(nn.Module):
             router_logits,
             torch.tensor(self.alpha, dtype=hidden_states.dtype),
             torch.tensor(self.limit, dtype=hidden_states.dtype),
-            k=self.k,
+            k=self.top_k,
         )
 
 
@@ -129,7 +128,7 @@ class RBLNGptOssMLP(nn.Module):
         super().__init__()
         self._original_mod = model
         self.router = RBLNGptOssTopKRouter(model.router)
-        self.experts = RBLNGptOssExperts(model.experts, k=self.router.top_k)
+        self.experts = RBLNGptOssExperts(model.experts, top_k=model.router.top_k)
 
     def forward(self, hidden_states):
         batch_size, sequence_length, hidden_dim = hidden_states.shape
