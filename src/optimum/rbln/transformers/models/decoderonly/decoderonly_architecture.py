@@ -372,7 +372,7 @@ class DecoderOnlyModel(nn.Module):
         cache_pos_for_partitions = torch.clamp(cs - pidx * partition_len, 0, partition_len)
         return cache_pos_for_partitions
 
-    def get_local_cache_positions(self, position_ids, query_position):
+    def get_swa_custom_op_args(self, position_ids, query_position):
         max_cache_len = self._original_mod.config.sliding_window
         valid_input_len = 1 if query_position is None else query_position + 1
         cache_seq_len = torch.clamp(position_ids.to(torch.int32), max=max_cache_len)[:, :1]  # past seen tokens
@@ -471,7 +471,8 @@ class DecoderOnlyModel(nn.Module):
 
         # Get local cache positions for sliding window layers
         if len(self.sliding_window_layers) > 0:
-            sliding_cache_pos = self.get_local_cache_positions(position_ids, query_position)
+            cache_seq_len, cache_offset, swa_attn_mask = self.get_swa_custom_op_args(position_ids, query_position)
+            sliding_cache_pos = (cache_seq_len, cache_offset)
 
         all_hidden_states = () if output_hidden_states else None
         for layer_idx, layer in enumerate(self.layers):
@@ -479,9 +480,10 @@ class DecoderOnlyModel(nn.Module):
                 all_hidden_states += (hidden_states,)
 
             is_sliding = True if layer_idx in self.sliding_window_layers else False
+            is_sliding_decode = is_sliding and self.phase == "decode"
             hidden_states = layer(
                 hidden_states=hidden_states,
-                attention_mask=attention_mask,
+                attention_mask=swa_attn_mask if is_sliding_decode else attention_mask,
                 seq_positions=sliding_cache_pos if is_sliding else seq_positions,
                 past_key_values=past_key_values,
                 cos=cos,
@@ -1183,9 +1185,8 @@ class SlidingWindowAttentionOp(AttentionOp):
                     op_args["is_bidirectional"] = True
                 else:
                     op_args["is_bidirectional"] = False
-
-        if self.phase == "decode":
-            op_args["attn_mask"] = seq_position[2]
+        elif self.phase == "decode":
+            op_args["attn_mask"] = attn_mask
 
         if s_aux is not None:
             op_args["s_aux"] = s_aux

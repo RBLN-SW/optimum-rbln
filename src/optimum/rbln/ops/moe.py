@@ -51,16 +51,7 @@ def custom_moe_glu(
         Tensor: [batch * seq_len, hidden_size]
     """
 
-    out = torch.zeros_like(hidden_states)
-    expert_cnt = gate_proj_weight.shape[0]
-    for i in range(expert_cnt):
-        gate = torch.nn.functional.linear(hidden_states, gate_proj_weight[i])
-        up = torch.nn.functional.linear(hidden_states, up_proj_weight[i])
-        mul = torch.nn.functional.silu(gate) * up
-        down = torch.nn.functional.linear(mul, down_proj_weight[i])
-        out += down * masked_routing_weight[:, i : i + 1]
-
-    return out
+    return torch.empty_like(hidden_states)
 
 
 @custom_moe_glu.register_fake
@@ -121,7 +112,7 @@ def custom_moe_ff_fake(
 
 @torch.library.custom_op(
     "rbln_custom_ops::custom_moe_glu_mxfp4",
-    mutates_args=(["hidden_states"]),
+    mutates_args=(),
 )
 def custom_moe_glu_mxfp4(
     hidden_states: Tensor,

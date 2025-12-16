@@ -95,16 +95,6 @@ class RBLNGptOssForCausalLM(RBLNDecoderOnlyModelForCausalLM):
 
     _decoder_wrapper_cls = RBLNGptOssWrapper
 
-    @classmethod
-    def get_pytorch_model(
-        cls,
-        *args,
-        rbln_config: Optional[RBLNDecoderOnlyModelConfig] = None,
-        **kwargs,
-    ) -> PreTrainedModel:
-        return cls._get_mxfp4_pytorch_model(*args, rbln_config=rbln_config, **kwargs)
-
-    # FIXME(thkim): workaround patch for dtype
     @staticmethod
     def _get_dtype(dtype: Union[str, torch.dtype] = None, torch_dtype: Union[str, torch.dtype] = None):
         # For BC on torch_dtype argument
@@ -120,7 +110,7 @@ class RBLNGptOssForCausalLM(RBLNDecoderOnlyModelForCausalLM):
         return dtype
 
     @classmethod
-    def _get_mxfp4_pytorch_model(
+    def get_pytorch_model(
         cls,
         model_id: str,
         *args,
