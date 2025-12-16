@@ -1,0 +1,56 @@
+name: Backward-compatibility / Latest tag
+
+on:
+  workflow_call:
+    outputs:
+      latest_tag:
+        description: "The latest tag found in BC_BASE_PATH"
+        value: ${{ jobs.get-latest-tag.outputs.latest_tag }}
+
+jobs:
+  get-latest-tag:
+    runs-on: rebel-k8s-runner
+    outputs:
+      latest_tag: ${{ steps.get_latest.outputs.latest_tag }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install packaging library for parsing latest version
+        run: |
+          pip install packaging
+
+      - name: Get latest tag
+        id: get_latest
+        env:
+          BC_BASE_PATH: ${{ vars.BC_BASE_PATH }}
+        run: |
+          set -eo pipefail
+          if [ -z "$BC_BASE_PATH" ]; then
+            echo "BC_BASE_PATH secret is required" >&2
+            exit 1
+          fi
+          if [ ! -d "$BC_BASE_PATH" ]; then
+            echo "BC_BASE_PATH directory not found: $BC_BASE_PATH" >&2
+            exit 1
+          fi
+          latest_tag=$(
+            find "$BC_BASE_PATH" -maxdepth 1 -mindepth 1 -type d -not -name '.*' -printf '%f\n' \
+            | sed 's/_/./g' \
+            | python3 .github/scripts/parsing_latest_version.py
+          )
+          if [ -z "$latest_tag" ]; then
+            echo "No tag directories found under BC_BASE_PATH" >&2
+            exit 1
+          fi
+
+          if [[ "$latest_tag" != v* ]]; then
+            latest_tag="v$latest_tag"
+          fi
+          echo "latest_tag=$latest_tag" >> "$GITHUB_OUTPUT"
+          echo "latest tag: $latest_tag"
