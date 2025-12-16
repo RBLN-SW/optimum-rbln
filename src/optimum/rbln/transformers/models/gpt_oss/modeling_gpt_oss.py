@@ -96,30 +96,13 @@ class RBLNGptOssForCausalLM(RBLNDecoderOnlyModelForCausalLM):
     _decoder_wrapper_cls = RBLNGptOssWrapper
 
     @classmethod
-    def _update_sliding_window_config(
-        cls, model_config: PretrainedConfig, rbln_config: RBLNDecoderOnlyModelForCausalLMConfig
-    ):
-        rbln_config.cache_impl = "hybrid"
-        rbln_config.sliding_window = model_config.sliding_window
-        sliding_window_layers = []
-        for i in range(model_config.num_hidden_layers):
-            if model_config.layer_types[i] == "sliding_attention":
-                sliding_window_layers.append(i)
-        rbln_config.sliding_window_layers = sliding_window_layers
-
-        return rbln_config
-
-    @classmethod
     def get_pytorch_model(
         cls,
         *args,
         rbln_config: Optional[RBLNDecoderOnlyModelConfig] = None,
         **kwargs,
     ) -> PreTrainedModel:
-        if rbln_config._support_mxfp4:
-            return cls._get_mxfp4_pytorch_model(*args, rbln_config=rbln_config, **kwargs)
-        else:
-            return super().get_pytorch_model(*args, rbln_config=rbln_config, **kwargs)
+        return cls._get_mxfp4_pytorch_model(*args, rbln_config=rbln_config, **kwargs)
 
     # FIXME(thkim): workaround patch for dtype
     @staticmethod
