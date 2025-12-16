@@ -651,7 +651,7 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
         super().__setattr__(key, value)
 
     @deprecate_kwarg(
-        old_name="torch_dtype",
+        old_name="_torch_dtype",
         new_name="dtype",
         version="0.12.0",
         deprecated_type=torch.dtype,
@@ -794,10 +794,19 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
             if isinstance(value, RBLNSerializableConfigProtocol):
                 # Convert nested RBLNModelConfig to its serializable form
                 serializable_map[key] = value._prepare_for_serialization()
+            elif key == "_dtype":
+                serializable_map["dtype"] = (
+                    RBLNCompileConfig.normalize_dtype(value) if isinstance(value, torch.dtype) else value
+                )
             elif key == "_compile_cfgs":
                 serializable_map[key] = [cfg.asdict() for cfg in value]
+            elif isinstance(value, torch.dtype):
+                serializable_map[key] = RBLNCompileConfig.normalize_dtype(value)
             else:
                 serializable_map[key] = value
+        import pdb
+
+        pdb.set_trace()
         return serializable_map
 
     def __repr__(self):
