@@ -406,7 +406,6 @@ class TestColPaliModel(BaseTest.TestModel):
         "rbln_config": {
             "vlm": {
                 "language_model": {"prefill_chunk_size": 8192},
-                "output_hidden_states": True,
             }
         }
     }
