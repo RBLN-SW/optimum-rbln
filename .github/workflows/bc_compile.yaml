@@ -1,0 +1,73 @@
+name: Backward-compatibility / Target compile
+
+on:
+  workflow_dispatch:
+    inputs:
+      bc_tag:
+        description: "target tag to compile"
+        required: true
+        type: string
+
+  workflow_call:
+    inputs:
+      bc_tag:
+        description: "target tag to compile"
+        required: true
+        type: string
+
+jobs:
+  get_bc_compile_info:
+    name: BC compile - ${{ github.event.inputs.bc_tag || inputs.bc_tag }}
+    runs-on: rebel-k8s-runner
+    env:
+      BC_BASE_PATH: ${{ vars.BC_BASE_PATH }}
+    outputs:
+      save_artifacts_path: ${{ steps.get_path.outputs.SAVE_ARTIFACTS_PATH }}
+      rebel_compiler_version: ${{ steps.get_version.outputs.compiler_version }}
+      get_target_tag: ${{ steps.get_target_tag.outputs.TARGET_TAG }}
+
+    steps:
+      - name: Get target tag
+        id: get_target_tag
+        run: |
+          TARGET_TAG=${{ inputs.bc_tag || github.event.inputs.bc_tag }}
+          echo "TARGET_TAG=$TARGET_TAG" >> $GITHUB_OUTPUT
+          echo "TARGET_TAG=$TARGET_TAG"
+
+      - name: encode target tag
+        id: encode_target_tag
+        run: |
+          TARGET_TAG_ENCODED="${{ steps.get_target_tag.outputs.TARGET_TAG }}"
+          TARGET_TAG_ENCODED="${TARGET_TAG_ENCODED//./_}"
+          echo "TARGET_TAG_ENCODED=$TARGET_TAG_ENCODED" >> $GITHUB_OUTPUT
+          echo "ENCODED TARGET TAG: $TARGET_TAG_ENCODED"
+
+      - name: Get save artifacts path
+        id: get_path
+        run: |
+          echo "SAVE_ARTIFACTS_PATH=${BC_BASE_PATH}/${{steps.encode_target_tag.outputs.TARGET_TAG_ENCODED}}" >> $GITHUB_OUTPUT
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.get_target_tag.outputs.TARGET_TAG }}
+          fetch-depth: 0
+
+      - name: Get rebel-compiler version
+        id: get_version
+        run: |
+          CUR_VERSION=$(grep rebel_compiler_version .github/version.yaml | cut -d ':' -f2 | tr -d ' ')
+          echo "compiler_version=$CUR_VERSION" >> $GITHUB_OUTPUT
+          echo "COMPILER_VERSION=$CUR_VERSION"
+
+  rbln-full-test:
+    needs: get_bc_compile_info
+    uses: ./.github/workflows/rbln_optimum_pytest.yaml
+    with:
+      ref: ${{ needs.get_bc_compile_info.outputs.get_target_tag }}
+      save_artifacts_path: ${{ needs.get_bc_compile_info.outputs.save_artifacts_path }}
+      rebel_compiler_version: ${{ needs.get_bc_compile_info.outputs.rebel_compiler_version }}
+      test_level: "full"
+      enable_hf_hub_tests: true
+      fail_fast: false
+    secrets: inherit

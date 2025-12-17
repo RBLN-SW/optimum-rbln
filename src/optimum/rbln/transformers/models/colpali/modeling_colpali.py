@@ -108,17 +108,25 @@ class RBLNColPaliForRetrieval(RBLNModel):
         from optimum.rbln import RBLNColPaliForRetrieval
 
         # Simple usage using rbln_* arguments
-        # `max_seq_lens` is automatically inferred from the model config
         model = RBLNColPaliForRetrieval.from_pretrained(
             "vidore/colpali-v1.3-hf",
             export=True,
-            rbln_max_seq_lens=1152,
+            rbln_config={
+                "vlm": {
+                    "language_model": {
+                        "prefill_chunk_size": 8192, # same as model's max_position_embeddings (max_seq_len)
+                    }
+                }
+            }
         )
 
         # Using a config dictionary
         rbln_config = {
-            "max_seq_lens": 1152,
-            "output_hidden_states": False,
+            "vlm": {
+                "language_model": {
+                    "prefill_chunk_size": 8192, # same as model's max_position_embeddings (max_seq_len)
+                }
+            }
         }
         model = RBLNColPaliForRetrieval.from_pretrained(
             "vidore/colpali-v1.3-hf",
@@ -130,7 +138,9 @@ class RBLNColPaliForRetrieval(RBLNModel):
         from optimum.rbln import RBLNColPaliForRetrievalConfig
 
         config = RBLNColPaliForRetrievalConfig(
-            max_seq_lens=1152,
+            vlm={
+                "language_model": {"prefill_chunk_size": 8192},
+            },
             output_hidden_states=False,
             tensor_parallel_size=4
         )
@@ -187,11 +197,11 @@ class RBLNColPaliForRetrieval(RBLNModel):
         Forward pass for the RBLN-optimized ColPaliForRetrieval model.
 
         Args:
-            input_ids (torch.LongTensor of shape (batch_size, sequence_length)) — Indices of input sequence tokens in the vocabulary.
-            pixel_values (torch.Tensor of shape (batch_size, num_channels, image_size, image_size)) — The tensors corresponding to the input images.
-            attention_mask (torch.Tensor of shape (batch_size, sequence_length)) — Mask to avoid performing attention on padding token indices.
-            output_hidden_states (bool, optional) — Whether or not to return the hidden states of all layers. See hidden_states under returned tensors for more detail.
-            return_dict (bool, optional) — Whether or not to return a ModelOutput instead of a plain tuple.
+            input_ids (torch.LongTensor of shape (batch_size, sequence_length)): Indices of input sequence tokens in the vocabulary.
+            pixel_values (torch.Tensor of shape (batch_size, num_channels, image_size, image_size)): The tensors corresponding to the input images.
+            attention_mask (torch.Tensor of shape (batch_size, sequence_length)): Mask to avoid performing attention on padding token indices.
+            output_hidden_states (bool, optional): Whether or not to return the hidden states of all layers. See hidden_states under returned tensors for more detail.
+            return_dict (bool, optional): Whether or not to return a ModelOutput instead of a plain tuple.
 
         Returns:
             ColPaliForRetrievalOutput or tuple(torch.FloatTensor)
@@ -213,7 +223,7 @@ class RBLNColPaliForRetrieval(RBLNModel):
             input_ids=input_ids,
             attention_mask=attention_mask,
             pixel_values=pixel_values,
-            output_hidden_states=True,
+            output_hidden_states=output_hidden_states,
             return_dict=True,
             **kwargs,
         )

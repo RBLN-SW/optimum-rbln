@@ -32,11 +32,6 @@ class RBLNSwinBackboneConfig(RBLNModelForImageClassificationConfig):
         Raises:
             ValueError: If batch_size is not a positive integer.
         """
-        super().__init__(**kwargs)
-        self.batch_size = batch_size or 1
-        if not isinstance(self.batch_size, int) or self.batch_size < 0:
-            raise ValueError(f"batch_size must be a positive integer, got {self.batch_size}")
-
-        self.image_size = image_size
+        super().__init__(batch_size=batch_size, image_size=image_size, **kwargs)
         self.output_hidden_states = output_hidden_states
         self.output_attentions = output_attentions

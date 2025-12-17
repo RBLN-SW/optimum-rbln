@@ -95,16 +95,18 @@ class Gemma3TextModel(DecoderOnlyModel):
         else:
             seq_positions = cache_position[:, :1]
 
-        sliding_cache_pos = self.get_local_cache_positions(position_ids, query_position)
+        cache_seq_len, cache_offset, swa_attn_mask = self.get_swa_custom_op_args(position_ids, query_position)
+        sliding_cache_pos = (cache_seq_len, cache_offset)
 
         all_hidden_states = () if output_hidden_states else None
         for layer_idx, layer in enumerate(self.layers):
             if output_hidden_states:
                 all_hidden_states += (hidden_states,)
             is_sliding = True if layer_idx in self.sliding_window_layers else False
+            is_sliding_decode = is_sliding and self.phase == "decode"
             hidden_states = layer(
                 hidden_states=hidden_states,
-                attention_mask=attention_mask,
+                attention_mask=swa_attn_mask if is_sliding_decode else attention_mask,
                 seq_positions=sliding_cache_pos if is_sliding else seq_positions,
                 past_key_values=past_key_values,
                 cos=cos_local if is_sliding else cos_global,

@@ -33,7 +33,9 @@ class RBLNColPaliForRetrievalConfig(RBLNModelConfig):
 
         # Create a configuration object
         config = RBLNColPaliForRetrievalConfig(
-            max_seq_lens=1152,
+            vlm={
+                "language_model": {"prefill_chunk_size": 8192},
+            }
             output_hidden_states=False,
             tensor_parallel_size=4
         )

@@ -692,6 +692,7 @@ class RBLNDecoderOnlyModelForCausalLM(RBLNDecoderOnlyModel, RBLNDecoderOnlyGener
     1. Converting pre-trained transformer models to RBLN-optimized format
     2. Handling the compilation process for RBLN devices
     3. Managing inference operations for causal language modeling
+
     This class inherits from RBLNModel and implements specific methods required for
     decoder-only architectures and causal language modeling tasks.
 

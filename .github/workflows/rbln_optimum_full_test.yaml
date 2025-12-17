@@ -17,6 +17,12 @@ on:
             type: boolean
             default: false
 
+        test_bc:
+            description: "Whether to test BC"
+            required: false
+            type: boolean
+            default: false
+
 env:
   HF_USER_ID: ${{ secrets.HF_USER_ID }}
   HF_AUTH_TOKEN: ${{ secrets.HF_AUTH_TOKEN }}
@@ -25,6 +31,13 @@ env:
   REBEL_PYPI_PASSWORD: ${{ secrets.REBEL_PYPI_PASSWORD }}
 
 jobs:
+  bc-full-inference-test:
+    if: ${{ always() && inputs.test_bc }}
+    uses: ./.github/workflows/bc_full_inference.yaml
+    with:
+      current_ref: ${{ inputs.ref }}
+    secrets: inherit
+
   check-compiler:
     uses: ./.github/workflows/rbln_check_compiler.yaml
     with:
@@ -66,7 +79,7 @@ jobs:
 
   summary_and_report:
     if: ${{ always() && inputs.report_slack }}
-    needs: [optimum-rbln-pytest, check-compiler, get-hf-package-version]
+    needs: [optimum-rbln-pytest, check-compiler, get-hf-package-version, bc-full-inference-test]
     runs-on: rebel-k8s-runner
     steps:
 
@@ -120,6 +133,17 @@ jobs:
             echo "compiler_status=❌ Not Available" >> $GITHUB_OUTPUT
             fi
 
+            # Determine BC test status
+            if [ "${{ needs.bc-full-inference-test.result }}" == "skipped" ]; then
+            echo "bc_status=⏭️ Skipped" >> $GITHUB_OUTPUT
+            else
+            if [ "${{ needs.bc-full-inference-test.result }}" == "success" ]; then
+                echo "bc_status=✅ Success - All BC tests passed" >> $GITHUB_OUTPUT
+                else
+                echo "bc_status=❌ Failed" >> $GITHUB_OUTPUT
+                fi
+            fi
+
       - name: Notify Slack
         if: always()
         run: |
@@ -148,6 +172,7 @@ jobs:
             --arg diffusers_version "$diffusers_version" \
             --arg compiler_status "${{ steps.test_results.outputs.compiler_status }}" \
             --arg pytest_status "${{ steps.test_results.outputs.pytest_status }}" \
+            --arg bc_status "${{ steps.test_results.outputs.bc_status }}" \
             '{
                 channel: $channel,
                 text: "Optimum-RBLN Scheduled Test Results",
@@ -200,6 +225,13 @@ jobs:
                     fields: [
                     { type: "mrkdwn", text: "*Pytest Results*" },
                     { type: "mrkdwn", text: $pytest_status }
+                    ]
+                },
+                {
+                    type: "section",
+                    fields: [
+                    { type: "mrkdwn", text: "*BC Test Results*" },
+                    { type: "mrkdwn", text: $bc_status }
                     ]
                 }
                 ]

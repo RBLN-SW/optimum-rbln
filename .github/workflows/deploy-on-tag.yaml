@@ -7,6 +7,27 @@ on:
   workflow_dispatch:
 
 jobs:
+  check-tag:
+    name: Check tag is release
+    runs-on: ubuntu-latest
+    outputs:
+      is_release: ${{ steps.check.outputs.is_release }}
+    steps:
+      - name: Determine if tag is a stable release
+        id: check
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          # Strip leading v if present
+          TAG="${TAG#v}"
+
+          # Accept: X.Y.Z[.more][.postN|postN]. Reject pre/dev/rc.
+          if [[ "$TAG" =~ ^[0-9]+(\.[0-9]+)*(\.post[0-9]+|post[0-9]+)?$ ]]; then
+            echo "is_release=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_release=false" >> "$GITHUB_OUTPUT"
+          fi
+
   deploy-on-tag:
     uses: ./.github/workflows/deploy.yaml
     with:
@@ -32,3 +53,12 @@ jobs:
               }
             })
             console.log(result)
+
+  bc-compile:
+    name: BC compile for release tag
+    needs: check-tag
+    if: needs.check-tag.outputs.is_release == 'true'
+    uses: ./.github/workflows/bc_compile.yaml
+    with:
+      bc_tag: ${{ github.ref_name }}
+    secrets: inherit
