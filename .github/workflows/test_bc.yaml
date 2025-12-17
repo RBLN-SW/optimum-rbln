@@ -1,0 +1,48 @@
+name: Optimum-rbln / BC Test
+
+on:
+  pull_request:
+    branches:
+      - bc/runner
+
+env:
+  REBEL_PYPI_ENDPOINT: ${{ vars.REBEL_PYPI_INTERNAL_ENDPOINT }}
+  REBEL_PYPI_USERNAME: ${{ secrets.REBEL_PYPI_USERNAME }}
+  REBEL_PYPI_PASSWORD: ${{ secrets.REBEL_PYPI_PASSWORD }}
+  TOKEN: ${{secrets.RENOVATE_TOKEN}}
+
+jobs:
+  check-code-quality:
+    uses: ./.github/workflows/check_code_quality.yml
+    
+  test-docstrings:
+    uses: ./.github/workflows/test-docstrings.yml
+    with:
+      test_all_files: true
+
+  fetch-version:
+    runs-on: rebel-k8s-runner
+    outputs:
+      compiler_version: ${{ steps.get_version.outputs.compiler_version }}
+      need_pr: ${{ steps.check_pr_needed.outputs.need_pr }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          ref: "dev"
+
+      - name: Get compiler version
+        id: get_version
+        run: |
+          CUR_VERSION=$(grep rebel_compiler_version .github/version.yaml | cut -d ':' -f2 | tr -d ' ')
+          echo "compiler_version=$CUR_VERSION" >> $GITHUB_OUTPUT
+
+  rbln-full-test:
+    needs: fetch-version
+    uses: ./.github/workflows/rbln_optimum_full_test.yaml
+    with:
+      rebel_compiler_version: ${{ needs.fetch-version.outputs.compiler_version }}
+      ref: "dev"
+      report_slack: true
+      test_bc: true
+    secrets: inherit
