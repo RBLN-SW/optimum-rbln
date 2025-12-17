@@ -524,7 +524,6 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
     non_save_attributes = [
         "_frozen",
         "_runtime_options",
-        "torch_dtype",
         "npu",
         "tensor_parallel_size",
         "create_runtimes",
@@ -795,9 +794,7 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
                 # Convert nested RBLNModelConfig to its serializable form
                 serializable_map[key] = value._prepare_for_serialization()
             elif key == "_dtype":
-                serializable_map["dtype"] = (
-                    RBLNCompileConfig.normalize_dtype(value) if isinstance(value, torch.dtype) else value
-                )
+                serializable_map["dtype"] = value
             elif key == "_compile_cfgs":
                 serializable_map[key] = [cfg.asdict() for cfg in value]
             elif isinstance(value, torch.dtype):
