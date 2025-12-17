@@ -37,9 +37,11 @@ from optimum.rbln import (
     RBLNQwen2_5_VLForConditionalGeneration,
     RBLNQwen2ForCausalLM,
     RBLNQwen2Model,
+    RBLNQwen2MoeForCausalLM,
     RBLNQwen2VLForConditionalGeneration,
     RBLNQwen3ForCausalLM,
     RBLNQwen3Model,
+    RBLNQwen3MoeForCausalLM,
     RBLNT5ForConditionalGeneration,
 )
 
@@ -214,6 +216,20 @@ class TestQwen3Model(LLMTest.TestLLMWithoutLMHead):
     RBLN_CLASS = RBLNQwen3Model
     HF_MODEL_ID = "trl-internal-testing/tiny-Qwen3ForCausalLM"
     HF_CONFIG_KWARGS = {"num_hidden_layers": 1, "layer_types": ["full_attention"], "max_position_embeddings": 1024}
+
+
+class TestQwen2MoeForCausalLM(LLMTest.TestLLM):
+    RBLN_CLASS = RBLNQwen2MoeForCausalLM
+    # HF_MODEL_ID ="peft-internal-testing/tiny-random-qwen-1.5-MoE"
+    HF_MODEL_ID = "Qwen/Qwen1.5-MoE-A2.7B"
+    HF_CONFIG_KWARGS = {"num_hidden_layers": 1, "max_position_embeddings": 1024}
+    TEST_LEVEL = TestLevel.FULL
+
+
+class TestQwen3MoeForCausalLM(LLMTest.TestLLM):
+    RBLN_CLASS = RBLNQwen3MoeForCausalLM
+    HF_MODEL_ID = "katuni4ka/tiny-random-qwen3moe"
+    HF_CONFIG_KWARGS = {"num_hidden_layers": 3, "max_position_embeddings": 4096}
 
 
 class TestQwen3Model_UAM(TestQwen3Model):
