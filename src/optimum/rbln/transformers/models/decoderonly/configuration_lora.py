@@ -46,7 +46,7 @@ class RBLNLoRAAdapterConfig(RBLNSerializableConfigProtocol):
         model = RBLNLlamaForCausalLM.from_pretrained(
             model_id,
             rbln_config=RBLNLlamaForCausalLMConfig(lora_config=lora_config, tensor_parallel_size=tp_size, max_seq_len=8192),
-            torch_dtype="auto",
+            dtype="auto",
         )
 
 
