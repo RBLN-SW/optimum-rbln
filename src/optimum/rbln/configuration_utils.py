@@ -525,6 +525,7 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
         "_frozen",
         "_runtime_options",
         "npu",
+        "dtype",
         "tensor_parallel_size",
         "create_runtimes",
         "device",
@@ -797,8 +798,6 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
                 serializable_map["dtype"] = value
             elif key == "_compile_cfgs":
                 serializable_map[key] = [cfg.asdict() for cfg in value]
-            elif isinstance(value, torch.dtype):
-                serializable_map[key] = RBLNCompileConfig.normalize_dtype(value)
             else:
                 serializable_map[key] = value
 
