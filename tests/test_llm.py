@@ -229,7 +229,6 @@ class TestQwen2MoeForCausalLM(LLMTest.TestLLM):
 class TestQwen3MoeForCausalLM(LLMTest.TestLLM):
     RBLN_CLASS = RBLNQwen3MoeForCausalLM
     HF_MODEL_ID = "katuni4ka/tiny-random-qwen3moe"
-    # HF_CONFIG_KWARGS = {"num_hidden_layers": 3, "max_position_embeddings": 4096, }
 
     @classmethod
     def setUpClass(cls):
