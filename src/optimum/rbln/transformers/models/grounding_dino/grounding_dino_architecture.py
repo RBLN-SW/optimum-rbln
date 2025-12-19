@@ -514,7 +514,7 @@ class _GroundingDinoBiMultiHeadAttention(torch.nn.Module):
             if mask.dim() == 3:
                 mask = mask[..., 0]
             mask = mask[:, None, None, :].repeat(1, self.num_heads, 1, 1).flatten(0, 1)
-            text_attn_weights = text_attn_weights.masked_fill(mask.bool(), torch.finfo(text_attn_weights.dtype).min)
+            text_attn_weights = text_attn_weights + mask * torch.finfo(text_attn_weights.dtype).min
 
         text_attn_weights = text_attn_weights.softmax(dim=-1)
 
