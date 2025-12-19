@@ -325,7 +325,7 @@ class RBLNGemma3ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMix
                         batch_size,
                         inputs_embeds.shape[1],
                         self.config.text_config.hidden_size,
-                        dtype=self.rbln_config.torch_dtype,
+                        dtype=self.rbln_config.dtype,
                     )
                     for _ in range(self.config.text_config.num_hidden_layers + 1)
                 )
