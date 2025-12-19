@@ -126,17 +126,17 @@ class RBLNQwen2VisionTransformerPretrainedModel(RBLNModel):
         input_infos = []
         for max_seq_len in rbln_config.max_seq_lens:
             input_info = [
-                ("hidden_states", [max_seq_len, hidden_size], rbln_config.torch_dtype),
-                ("full_attn_masks", [1, 1, max_seq_len, max_seq_len], rbln_config.torch_dtype),
+                ("hidden_states", [max_seq_len, hidden_size], rbln_config.dtype),
+                ("full_attn_masks", [1, 1, max_seq_len, max_seq_len], rbln_config.dtype),
                 (
                     "cos",
                     [1, 1, max_seq_len, head_dim],
-                    rbln_config.torch_dtype,
+                    rbln_config.dtype,
                 ),
                 (
                     "sin",
                     [1, 1, max_seq_len, head_dim],
-                    rbln_config.torch_dtype,
+                    rbln_config.dtype,
                 ),
             ]
             input_infos.append(input_info)
@@ -184,10 +184,10 @@ class RBLNQwen2VisionTransformerPretrainedModel(RBLNModel):
         # Processes a batch of images (or frames) through the vision transformer.
         # Each image is handled independently for padding and attention mask generation.
 
-        hidden_states = self.patch_embed(hidden_states).to(self.rbln_config.torch_dtype)
+        hidden_states = self.patch_embed(hidden_states).to(self.rbln_config.dtype)
         rotary_pos_emb = self.rot_pos_emb(grid_thw)
         emb = torch.cat((rotary_pos_emb, rotary_pos_emb), dim=-1)
-        position_embeddings = (emb.cos().to(self.rbln_config.torch_dtype), emb.sin().to(self.rbln_config.torch_dtype))
+        position_embeddings = (emb.cos().to(self.rbln_config.dtype), emb.sin().to(self.rbln_config.dtype))
 
         cu_seqlens = torch.repeat_interleave(grid_thw[:, 1] * grid_thw[:, 2], grid_thw[:, 0]).cumsum(
             dim=0,
@@ -295,7 +295,7 @@ class RBLNQwen2VLModel(RBLNDecoderOnlyModel):
             (
                 "position_emb",
                 [2, batch_size, 1, query_length, model_config.hidden_size // model_config.num_attention_heads],
-                rbln_config.torch_dtype,
+                rbln_config.dtype,
             ),
         )
 
@@ -307,12 +307,12 @@ class RBLNQwen2VLModel(RBLNDecoderOnlyModel):
         cos = (
             torch.cat([m[i % 3] for i, m in enumerate(cos.split(mrope_section, dim=-1))], dim=-1)
             .unsqueeze(1)
-            .to(self.rbln_config.torch_dtype)
+            .to(self.rbln_config.dtype)
         )
         sin = (
             torch.cat([m[i % 3] for i, m in enumerate(sin.split(mrope_section, dim=-1))], dim=-1)
             .unsqueeze(1)
-            .to(self.rbln_config.torch_dtype)
+            .to(self.rbln_config.dtype)
         )
         return torch.stack([cos, sin])
 
@@ -326,7 +326,7 @@ class RBLNQwen2VLModel(RBLNDecoderOnlyModel):
         video_grid_thw: torch.LongTensor = None,
     ):
         batch_size = input_ids.shape[0]
-        inputs_embeds = self.embed_tokens(input_ids).to(self.rbln_config.torch_dtype)
+        inputs_embeds = self.embed_tokens(input_ids).to(self.rbln_config.dtype)
 
         if pixel_values is not None:
             image_embeds = self.visual(pixel_values, grid_thw=image_grid_thw)
@@ -361,9 +361,7 @@ class RBLNQwen2VLModel(RBLNDecoderOnlyModel):
         max_inputs_len = input_ids.shape[1]
 
         head_dim = getattr(self.config, "head_dim", None) or self.config.hidden_size // self.config.num_attention_heads
-        all_position_embeds = torch.zeros(
-            2, batch_size, 1, max_inputs_len, head_dim, dtype=self.rbln_config.torch_dtype
-        )
+        all_position_embeds = torch.zeros(2, batch_size, 1, max_inputs_len, head_dim, dtype=self.rbln_config.dtype)
         all_rope_deltas = []
 
         image_token_id = self.config.image_token_id
@@ -428,7 +426,7 @@ class RBLNQwen2VLModel(RBLNDecoderOnlyModel):
                     batch_size,
                     seq_len,
                     self.config.hidden_size,
-                    dtype=self.rbln_config.torch_dtype,
+                    dtype=self.rbln_config.dtype,
                 )
                 for _ in range(self.config.num_hidden_layers + 1)
             )
@@ -575,16 +573,14 @@ class RBLNQwen2VLForConditionalGeneration(RBLNQwen2VLModel, RBLNDecoderOnlyModel
                 f"Cache position size mismatch: got {cache_position.shape[0]}, expected {self.rbln_config.batch_size}."
             )
 
-        inputs_embeds = self.embed_tokens(input_ids).to(self.rbln_config.torch_dtype)
+        inputs_embeds = self.embed_tokens(input_ids).to(self.rbln_config.dtype)
         position_embeds = []
         for b_idx in range(self.rbln_config.batch_size):
             delta = cache_position[b_idx] + self.rope_deltas[b_idx]
             position_ids = torch.arange(1).view(1, -1)
             position_ids = position_ids.add(delta)
             position_ids = position_ids.unsqueeze(0).expand(3, -1, -1)
-            position_embed = self._get_position_embeddings(
-                torch.zeros(1, dtype=self.rbln_config.torch_dtype), position_ids
-            )
+            position_embed = self._get_position_embeddings(torch.zeros(1, dtype=self.rbln_config.dtype), position_ids)
             position_embeds.append(position_embed)
 
         position_embeds = torch.cat(position_embeds, dim=1)
@@ -625,7 +621,7 @@ class RBLNQwen2VLForConditionalGeneration(RBLNQwen2VLModel, RBLNDecoderOnlyModel
                         batch_size,
                         seq_len,
                         self.config.hidden_size,
-                        dtype=self.rbln_config.torch_dtype,
+                        dtype=self.rbln_config.dtype,
                     )
                     for _ in range(self.config.num_hidden_layers + 1)
                 )
