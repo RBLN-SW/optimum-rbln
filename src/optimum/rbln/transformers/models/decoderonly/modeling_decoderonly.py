@@ -350,7 +350,7 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
 
         input_info = []
         if rbln_config.use_inputs_embeds:
-            input_info.append(("inputs_embeds", [batch_size, query_length, hidden_size], rbln_config.torch_dtype))
+            input_info.append(("inputs_embeds", [batch_size, query_length, hidden_size], rbln_config.dtype))
         else:
             input_info.append(("input_ids", [batch_size, query_length], "int64"))
 
@@ -369,10 +369,10 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
 
         if rbln_config.use_attention_mask:
             if rbln_config.use_position_ids:
-                input_info.append(("attention_mask", [batch_size, rbln_config.max_seq_len], rbln_config.torch_dtype))
+                input_info.append(("attention_mask", [batch_size, rbln_config.max_seq_len], rbln_config.dtype))
             else:
                 input_info.append(
-                    ("attention_mask", [batch_size, 1, query_length, rbln_config.max_seq_len], rbln_config.torch_dtype)
+                    ("attention_mask", [batch_size, 1, query_length, rbln_config.max_seq_len], rbln_config.dtype)
                 )
 
         if rbln_config.use_position_ids:
@@ -381,7 +381,7 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
         if rbln_config.use_lora:
             input_info.append(("lora_int_ids", [batch_size], "int32"))
 
-        kvcache_dtype = rbln_config.torch_dtype
+        kvcache_dtype = rbln_config.dtype
         if rbln_config.quantization and rbln_config.quantization.kv_caches == "fp8":
             kvcache_dtype = "float8_e4m3fn"
 
@@ -652,7 +652,7 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
                     self.rbln_config.batch_size,
                     inputs.shape[1],
                     self.config.hidden_size,
-                    dtype=self.rbln_config.torch_dtype,
+                    dtype=self.rbln_config.dtype,
                 )
                 for _ in range(self.config.num_hidden_layers + 1)
             )
@@ -811,7 +811,7 @@ class RBLNDecoderOnlyModelForCausalLM(RBLNDecoderOnlyModel, RBLNDecoderOnlyGener
 
             all_hidden_states = (
                 tuple(
-                    torch.zeros(batch_size, input_len, self.config.hidden_size, dtype=self.rbln_config.torch_dtype)
+                    torch.zeros(batch_size, input_len, self.config.hidden_size, dtype=self.rbln_config.dtype)
                     for _ in range(self.config.num_hidden_layers + 1)
                 )
                 if self.rbln_config.output_hidden_states

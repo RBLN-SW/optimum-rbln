@@ -167,6 +167,15 @@ def test_config_priority(model_id):
 )
 def test_invalid_config_parameters(model_id, invalid_param):
     """Test robust handling of various invalid configuration parameters."""
+    # check invaild params
+    if "rbln_tensor_parallel_size" in invalid_param:
+        if rebel.device_count() <= invalid_param["rbln_tensor_parallel_size"]:
+            pytest.skip("Sufficient devices for invalid tensor_parallel_size check")
+
+    if "rbln_device" in invalid_param:
+        if rebel.device_count() - 1 <= invalid_param["rbln_device"]:
+            pytest.skip("Sufficient devices for invalid rbln_device check")
+
     with pytest.raises((ValueError, TypeError)):
         _ = RBLNResNetForImageClassification.from_pretrained(model_id, **invalid_param)
 
