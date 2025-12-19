@@ -418,7 +418,11 @@ class TestLlavaForConditionalGeneration(LLMTest.TestLLM):
         _ = self.RBLN_CLASS.from_pretrained(
             tmpdir,
             export=False,
-            rbln_config={"language_model": {"create_runtimes": False}},
+            rbln_config={
+                "create_runtimes": False,
+                "vision_tower": {"create_runtimes": False},
+                "language_model": {"create_runtimes": False},
+            },
             **self.HF_CONFIG_KWARGS,
         )
 
