@@ -332,6 +332,8 @@ class RBLNBlip2ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMixi
 
     @classmethod
     def _reconstruct_model_if_needed(cls, model: "PreTrainedModel"):
+        # FIXME when dtype bug(https://github.com/huggingface/transformers/issues/42641#issuecomment-3624387810) 
+        # is fixed, remove this 
         model.vision_model.to(model.config.vision_config.dtype)
         model.language_model.to(model.config.text_config.dtype)
         model.qformer.to(model.config.qformer_config.dtype)
