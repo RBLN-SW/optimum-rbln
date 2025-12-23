@@ -34,6 +34,28 @@ jobs:
       version: ${{ github.ref_name }}
     secrets: inherit
 
+  trigger-vllm-rbln-pkg-update:
+    name: trigger vllm-rbln pkg update PR
+    needs: [deploy-on-tag]
+    runs-on: rebel-k8s-runner
+    steps:
+      - uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.GIT_PAT }}
+          script: |
+            const result = await github.rest.actions.createWorkflowDispatch({
+              owner: 'rebellions-sw',
+              repo: 'vllm-rbln',
+              workflow_id: 'dispatch_pkg_update.yaml',
+              ref: 'dev',
+              inputs: {
+                'python-version': '3.12',
+                'optimum-version': '${{ github.ref_name }}',
+                'force-rebuild': 'false'
+              }
+            })
+            console.log(result)
+
   trigger-vllm-model-compilation:
     name: trigger vllm model compile and generation ci
     needs: [deploy-on-tag]
