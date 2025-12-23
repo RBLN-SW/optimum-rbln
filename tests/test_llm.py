@@ -516,6 +516,23 @@ class TestLlavaNextForConditionalGeneration(LLMTest.TestLLM):
         ):
             _ = self.RBLN_CLASS.from_pretrained(model_id=self.HF_MODEL_ID, **rbln_class_kwargs)
 
+class TestLlavaNextForConditionalGeneration_BFloat16(TestLlavaNextForConditionalGeneration):
+    TEST_LEVEL = TestLevel.FULL
+    HF_CONFIG_KWARGS = {
+        "dtype": torch.bfloat16,
+    }
+
+class TestLlavaNextForConditionalGeneration_Float16(TestLlavaNextForConditionalGeneration):
+    TEST_LEVEL = TestLevel.FULL
+    HF_CONFIG_KWARGS = {
+        "dtype": torch.float16,
+    }
+
+class TestLlavaNextForConditionalGeneration_Auto(TestLlavaNextForConditionalGeneration):
+    TEST_LEVEL = TestLevel.FULL
+    HF_CONFIG_KWARGS = {
+        "dtype": "auto",
+    }
 
 class TestBlip2ForConditionalGeneration(LLMTest.TestLLM):
     RBLN_AUTO_CLASS = RBLNAutoModelForVision2Seq
@@ -561,6 +578,23 @@ class TestBlip2ForConditionalGeneration(LLMTest.TestLLM):
             **self.HF_CONFIG_KWARGS,
         )
 
+class TestBlip2ForConditionalGeneration_BFloat16(TestBlip2ForConditionalGeneration):
+    TEST_LEVEL = TestLevel.FULL
+    HF_CONFIG_KWARGS = {
+        "dtype": torch.bfloat16,
+    }
+
+class TestBlip2ForConditionalGeneration_Float16(TestBlip2ForConditionalGeneration):
+    TEST_LEVEL = TestLevel.FULL
+    HF_CONFIG_KWARGS = {
+        "dtype": torch.float16,
+    }
+    
+class TestBlip2ForConditionalGeneration_Auto(TestBlip2ForConditionalGeneration):
+    TEST_LEVEL = TestLevel.FULL
+    HF_CONFIG_KWARGS = {
+        "dtype": "auto",
+    }
 
 class TestIdefics3ForConditionalGeneration(LLMTest.TestLLM):
     RBLN_AUTO_CLASS = RBLNAutoModelForVision2Seq

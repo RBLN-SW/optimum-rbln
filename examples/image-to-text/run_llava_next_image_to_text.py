@@ -23,6 +23,7 @@ def main(
         model = RBLNLlavaNextForConditionalGeneration.from_pretrained(
             model_id,
             export=True,
+            dtype="auto",
             rbln_config={
                 "language_model": {
                     "tensor_parallel_size": tensor_parallel_size,

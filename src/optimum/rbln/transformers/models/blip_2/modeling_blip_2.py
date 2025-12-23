@@ -331,6 +331,14 @@ class RBLNBlip2ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMixi
         return True
 
     @classmethod
+    def _reconstruct_model_if_needed(cls, model: "PreTrainedModel"):
+        model.vision_model.to(model.config.vision_config.dtype)
+        model.language_model.to(model.config.text_config.dtype)
+        model.qformer.to(model.config.qformer_config.dtype)
+        model.language_projection.to(model.config.dtype)
+        return model
+
+    @classmethod
     def save_torch_artifacts(
         cls,
         model: "Blip2ForConditionalGeneration",

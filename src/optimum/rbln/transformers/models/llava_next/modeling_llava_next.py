@@ -158,6 +158,11 @@ class RBLNLlavaNextForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGeneration
         model.model.language_model = new_language_model
         model.lm_head = None
         del model.lm_head
+
+        # FIXME when dtype bug(https://github.com/huggingface/transformers/issues/42641#issuecomment-3624387810) 
+        # is fixed, remove this 
+        model.model.language_model.to(model.config.text_config.dtype)
+        model.model.vision_tower.to(model.config.vision_config.dtype)
         return model
 
     @classmethod
