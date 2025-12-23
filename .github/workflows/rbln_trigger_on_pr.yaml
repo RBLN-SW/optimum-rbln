@@ -14,9 +14,6 @@ env:
 jobs:
   # Default PR test if not Dependency update
   optimum-rbln-pytest:
-    if: |
-      needs.check-pytest-full.outputs.should_full_test != 'true' &&
-      needs.check-team-member.outputs.is_team_member == 'true'
     uses: ./.github/workflows/rbln_optimum_pytest.yaml
     with:
       ref: ${{ github.event.pull_request.head.sha }}
