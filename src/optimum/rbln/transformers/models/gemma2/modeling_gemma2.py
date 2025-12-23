@@ -28,13 +28,17 @@ class RBLNGemma2ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
     """
     The Gemma2 Model transformer with a language modeling head (linear layer) on top.
     This model inherits from [`RBLNDecoderOnlyModelForCausalLM`]. Check the superclass documentation for the generic methods the library implements for all its models.
+
     A class to convert and run pre-trained transformers based Gemma2ForCausalLM model on RBLN devices.
     It implements the methods to convert a pre-trained transformers Gemma2ForCausalLM model into a RBLN transformer model by:
+
     - transferring the checkpoint weights of the original into an optimized RBLN graph,
     - compiling the resulting graph using the RBLN compiler.
+
     **Configuration:**
     This model uses [`RBLNGemma2ForCausalLMConfig`] for configuration. When calling methods like `from_pretrained` or `from_model`,
     the `rbln_config` parameter should be an instance of [`RBLNGemma2ForCausalLMConfig`] or a dictionary conforming to its structure.
+
     See the [`RBLNGemma2ForCausalLMConfig`] class for all available configuration options.
     Examples:
         ```python
