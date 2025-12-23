@@ -391,16 +391,14 @@ class RBLNRuntimeModel(RBLNPytorchRuntime):
         # Initialize attention mask for chunked processing
         if self.rbln_config.use_attention_mask:
             if self.rbln_config.use_position_ids:
-                chunked_attention_mask = torch.zeros(
-                    1, self.rbln_config.max_seq_len, dtype=self.rbln_config.torch_dtype
-                )
+                chunked_attention_mask = torch.zeros(1, self.rbln_config.max_seq_len, dtype=self.rbln_config.dtype)
             else:
                 chunked_attention_mask = torch.zeros(
                     1,
                     1,
                     self.rbln_config.prefill_chunk_size,
                     self.rbln_config.max_seq_len,
-                    dtype=self.rbln_config.torch_dtype,
+                    dtype=self.rbln_config.dtype,
                 )
         else:
             chunked_attention_mask = None
@@ -467,7 +465,7 @@ class RBLNRuntimeModel(RBLNPytorchRuntime):
             1 if self.rbln_config.logits_to_keep == 1 else padded_mask_length,
             logits_last_dim,
         )
-        output_logits = torch.full(logits_size, fill_value=1e-10, dtype=self.rbln_config.torch_dtype)
+        output_logits = torch.full(logits_size, fill_value=1e-10, dtype=self.rbln_config.dtype)
 
         if self.rbln_config.logits_to_keep == 1:
             for i in range(padded_input_length // self.rbln_config.prefill_chunk_size):
@@ -486,7 +484,7 @@ class RBLNRuntimeModel(RBLNPytorchRuntime):
                 self.config.hidden_size,
             )
             output_hidden_states = [
-                torch.full(hidden_states_size, fill_value=1e-10, dtype=self.rbln_config.torch_dtype)
+                torch.full(hidden_states_size, fill_value=1e-10, dtype=self.rbln_config.dtype)
                 for _ in range(self.config.num_hidden_layers + 1)
             ]
 

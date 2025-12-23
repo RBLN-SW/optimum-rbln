@@ -79,7 +79,7 @@ class VisionAttention(nn.Module):
         self.head_dim = getattr(model, "head_dim", model.proj.in_features // model.num_heads)
         self.qkv = model.qkv
         self.proj = model.proj
-        self.scale = torch.tensor(1 / math.sqrt(self.head_dim), dtype=rbln_config.torch_dtype)
+        self.scale = torch.tensor(1 / math.sqrt(self.head_dim), dtype=rbln_config.dtype)
 
     def forward(
         self,

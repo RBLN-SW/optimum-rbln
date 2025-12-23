@@ -50,11 +50,14 @@ class RBLNGroundingDinoForObjectDetectionConfig(RBLNImageModelConfig):
         Raises:
             ValueError: If batch_size is not a positive integer.
         """
-        super().__init__(**kwargs)
-        self.encoder = encoder
-        self.decoder = decoder
-        self.text_backbone = text_backbone
-        self.backbone = backbone
+
+        super().__init__(batch_size=batch_size, **kwargs)
+        self.encoder = self.initialize_submodule_config(submodule_config=encoder, batch_size=self.batch_size)
+        self.decoder = self.initialize_submodule_config(submodule_config=decoder, batch_size=self.batch_size)
+        self.text_backbone = self.initialize_submodule_config(
+            submodule_config=text_backbone, batch_size=self.batch_size
+        )
+        self.backbone = self.initialize_submodule_config(submodule_config=backbone, batch_size=self.batch_size)
         self.output_attentions = output_attentions if output_attentions is not None else False
         self.output_hidden_states = output_hidden_states if output_hidden_states is not None else False
 

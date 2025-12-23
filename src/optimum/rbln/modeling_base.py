@@ -90,7 +90,7 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
 
         self.device = torch.device("cpu")
         self.training = False
-        self.dtype = rbln_config.torch_dtype
+        self.dtype = rbln_config.dtype
 
         # FIXME :: model_save_dir is not used after initialized. (This can be used when save/load)
         # This attribute is needed to keep one reference on the temporary directory, since garbage collecting it
@@ -451,8 +451,8 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
         model_config: "PretrainedConfig",
         rbln_config: RBLNModelConfig,
     ) -> RBLNModelConfig:
-        rbln_config.torch_dtype = model.dtype
-        if not cls._supports_non_fp32 and rbln_config.torch_dtype != torch.float32:
+        rbln_config.dtype = model.dtype
+        if not cls._supports_non_fp32 and rbln_config.dtype != torch.float32:
             raise NotImplementedError(
                 f"Currently, {cls.__name__} does not support non-fp32 dtype. Please use float32 dtype."
             )
