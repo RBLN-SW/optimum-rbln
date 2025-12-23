@@ -51,7 +51,6 @@ jobs:
               inputs: {
                 'python-version': '3.12',
                 'optimum-version': '${{ github.ref_name }}',
-                'force-rebuild': 'false'
               }
             })
             console.log(result)
