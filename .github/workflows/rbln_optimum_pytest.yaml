@@ -66,7 +66,6 @@ jobs:
               inputs: {
                 'python-version': '3.12',
                 'optimum-version': 'v0.9.4a5',
-                'force-rebuild': 'false'
               }
             })
             console.log(result)
