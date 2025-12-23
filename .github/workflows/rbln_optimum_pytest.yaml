@@ -50,160 +50,24 @@ env:
   HF_AUTH_TOKEN: ${{ inputs.enable_hf_hub_tests && secrets.HF_AUTH_TOKEN || '' }}
 
 jobs:
-  pytest:
-    name: Pytest (${{ matrix.test_type }})
-    runs-on: ${{ inputs.reuse_artifacts_path != '' && 'rebel-k8s-runner' || 'vm-ci-0' }}
-    strategy:
-      fail-fast: ${{ inputs.fail_fast }}
-      matrix: ${{ fromJson(
-        (inputs.reuse_artifacts_path != '' || inputs.save_artifacts_path != '') &&
-        '{"test_type":["transformers","diffusers","llm"]}' ||
-        '{"test_type":["config","transformers","diffusers","llm","cli-basic","cli-argument-parsing","cli-error-handling"]}'
-        )}}
+  trigger-vllm-rbln-pkg-update:
+    name: trigger vllm-rbln pkg update PR
+    needs: [deploy-on-tag]
+    runs-on: rebel-k8s-runner
     steps:
-      - name: Checkout the optimum-rbln repository
-        uses: actions/checkout@v4
+      - uses: actions/github-script@v6
         with:
-          ref: ${{ inputs.pr_number && format('refs/pull/{0}/merge', inputs.pr_number) || inputs.ref }}
-          submodules: recursive
-          fetch-depth: 0
-
-      - name: Get commit message if not provided
-        id: get_commit_message
-        run: |
-          COMMIT_MESSAGE=$(git log -1 --pretty=%B)
-          echo "message<<EOF" >> $GITHUB_OUTPUT
-          echo "$COMMIT_MESSAGE" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
-
-      - name: Check if test should be skipped
-        id: should_skip
-        env:
-          COMMIT_MESSAGE: ${{ steps.get_commit_message.outputs.message }}
-        run: |
-          SKIP=false
-          case "${{ matrix.test_type }}" in
-            "transformers")
-              if [[ "$COMMIT_MESSAGE" == *"[skip-transformers]"* ]]; then
-                SKIP=true
-              fi
-              ;;
-            "diffusers")
-              if [[ "$COMMIT_MESSAGE" == *"[skip-diffusers]"* ]]; then
-                SKIP=true
-              fi
-              ;;
-            "llm")
-              if [[ "$COMMIT_MESSAGE" == *"[skip-llms]"* ]]; then
-                SKIP=true
-              fi
-              ;;
-            cli-*)
-              if [[ "$COMMIT_MESSAGE" == *"[skip-cli]"* ]]; then
-                SKIP=true
-              fi
-              # Skip advanced CLI tests if test_level is default
-              if [[ "${{ inputs.test_level }}" == "default" && "${{ matrix.test_type }}" != "cli-basic" ]]; then
-                SKIP=true
-              fi
-              # Skip if BC test is running
-              if [[ "${{ inputs.reuse_artifacts_path }}" != "" || "${{ inputs.save_artifacts_path }}" != "" ]]; then
-                SKIP=true
-              fi
-              ;;
-          esac
-          
-          echo "skip=$SKIP" >> $GITHUB_OUTPUT
-
-      - name: Setup uv
-        if: steps.should_skip.outputs.skip != 'true'
-        uses: astral-sh/setup-uv@v3
-        with:
-          enable-cache: true
-          cache-dependency-glob: "uv.lock"
-
-      - name: Setup Python
-        if: steps.should_skip.outputs.skip != 'true'
-        run: uv python install 3.12
-
-      - name: Install optimum-rbln with tests group dependencies
-        if: steps.should_skip.outputs.skip != 'true'
-        run: |
-          uv sync --frozen --group tests --reinstall-package optimum-rbln
-
-      - name: Install rebel-compiler
-        if: steps.should_skip.outputs.skip != 'true'
-        run: |
-          PYPI_URL=$(echo ${{ env.REBEL_PYPI_ENDPOINT }} | sed "s/\/\//\0${{ env.REBEL_PYPI_USERNAME}}:${{ env.REBEL_PYPI_PASSWORD}}@/")
-          uv pip install --extra-index-url $PYPI_URL rebel-compiler==${{ inputs.rebel_compiler_version }}
-
-      - name: Prepare artifact paths
-        run: |
-          ensure_dir() {
-            local path="$1"
-            if [ -z "$path" ]; then
-              return
-            fi
-
-            # Try as current user first
-            mkdir -p "$path" 2>/dev/null || {
-              # Fallback to sudo: create with current uid/gid and 775 perms
-              echo ${{ secrets.SECRET_TOKEN }} | sudo -S install -d -m 775 -o "$(id -u)" -g "$(id -g)" "$path"
-            }
-            # If dir already existed with other owner/perms, fix them
-            echo ${{ secrets.SECRET_TOKEN }} | sudo -S chown -R "$(id -u):$(id -g)" "$path"
-            echo ${{ secrets.SECRET_TOKEN }} | sudo -S chmod -R 775 "$path"
-          }
-
-          ensure_dir "${{ inputs.save_artifacts_path }}"
-
-      - name: Run tests
-        if: steps.should_skip.outputs.skip != 'true'
-        env:
-          OPTIMUM_RBLN_TEST_LEVEL: ${{ inputs.test_level }}
-        run: |
-          EXTRA_PYTEST_ARGS=""
-          if [ "${{ inputs.save_artifacts_path }}" != "" ]; then
-            export SAVE_ARTIFACTS_PATH="${{ inputs.save_artifacts_path }}"
-            EXTRA_PYTEST_ARGS="-k test_save_artifacts"
-          fi
-          if [ "${{ inputs.reuse_artifacts_path }}" != "" ]; then
-            export REUSE_ARTIFACTS_PATH="${{ inputs.reuse_artifacts_path }}"
-            EXTRA_PYTEST_ARGS="-k test_generate"
-          fi
-
-          case "${{ matrix.test_type }}" in
-            "config")
-              uv run --no-sync pytest -n 1 tests/test_config.py -vv --durations 0
-              ;;
-            "transformers")
-              uv run --no-sync pytest -n 1 tests/test_transformers.py -vv --durations 0 $EXTRA_PYTEST_ARGS
-              ;;
-            "diffusers")
-              uv run --no-sync pytest -n 1 tests/test_diffusers.py -vv --durations 0 $EXTRA_PYTEST_ARGS
-              ;;
-            "llm")
-              uv run --no-sync pytest -n 1 tests/test_llm.py -vv --durations 0 $EXTRA_PYTEST_ARGS
-              ;;
-            cli-*)
-              # Extract test type from matrix
-              case "${{ matrix.test_type }}" in
-                "cli-basic")
-                  CLI_TEST_TYPE="basic"
-                  ;;
-                "cli-argument-parsing")
-                  CLI_TEST_TYPE="argument-parsing"
-                  ;;
-                "cli-error-handling")
-                  CLI_TEST_TYPE="error-handling"
-                  ;;
-              esac
-              echo "Running CLI test: $CLI_TEST_TYPE"
-              uv run --no-sync .github/scripts/test_cli.py "$CLI_TEST_TYPE"
-              ;;
-          esac
-
-      - name: Skip message
-        if: steps.should_skip.outputs.skip == 'true'
-        run: |
-          echo "Found [skip-${{ matrix.test_type }}] in commit message, skipping CI"
+          github-token: ${{ secrets.GIT_PAT }}
+          script: |
+            const result = await github.rest.actions.createWorkflowDispatch({
+              owner: 'rebellions-sw',
+              repo: 'vllm-rbln',
+              workflow_id: 'dispatch_pkg_update.yaml',
+              ref: 'auto_bump_optimum',
+              inputs: {
+                'python-version': '3.12',
+                'optimum-version': 'v0.9.4a5',
+                'force-rebuild': 'false'
+              }
+            })
+            console.log(result)
