@@ -52,7 +52,6 @@ env:
 jobs:
   trigger-vllm-rbln-pkg-update:
     name: trigger vllm-rbln pkg update PR
-    needs: [deploy-on-tag]
     runs-on: rebel-k8s-runner
     steps:
       - uses: actions/github-script@v6
