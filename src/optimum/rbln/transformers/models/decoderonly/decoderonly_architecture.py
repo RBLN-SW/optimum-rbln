@@ -946,6 +946,10 @@ class AttentionOp(nn.Module):
         if s_aux is not None:
             op_args["s_aux"] = s_aux
 
+        if self.phase == "decode" and batch_size > 1:
+            attn_mask = torch.ones([batch_size, 1, 1, block_size], dtype = torch.float32)
+            op_args['mask'] = attn_mask
+
         attn_op_name = self.get_attn_op_name()
         attn_op = getattr(torch.ops.rbln_custom_ops, attn_op_name, None)
         if attn_op is None:
