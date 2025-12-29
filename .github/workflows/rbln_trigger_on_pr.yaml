@@ -13,7 +13,9 @@ env:
 
 jobs:
   head-commit-message:
-    runs-on: rebel-k8s-runner
+    runs-on: sw-k8s-4c-32gb
+    container:
+      image: ${{ vars.DEV_CONTAINER_IMAGE }}
     outputs:
       message: ${{ steps.get_commit_message.outputs.message }}
     steps:
@@ -34,7 +36,9 @@ jobs:
 
   check-pytest-full:
     needs: head-commit-message
-    runs-on: rebel-k8s-runner
+    runs-on: sw-k8s-4c-32gb
+    container:
+      image: ${{ vars.DEV_CONTAINER_IMAGE }}
     outputs:
       should_full_test: ${{ contains(needs.head-commit-message.outputs.message, '[pytest-full]') && 'true' || 'false' }}
     steps:
@@ -48,7 +52,9 @@ jobs:
 
   check-slack-report:
     needs: head-commit-message
-    runs-on: rebel-k8s-runner
+    runs-on: sw-k8s-4c-32gb
+    container:
+      image: ${{ vars.DEV_CONTAINER_IMAGE }}
     outputs:
       should_slack_report: ${{ contains(needs.head-commit-message.outputs.message, '[slack-report]') && 'true' || 'false' }}
     steps:
@@ -67,7 +73,9 @@ jobs:
     uses: ./.github/workflows/test-docstrings.yml
 
   load-version:
-    runs-on: rebel-k8s-runner
+    runs-on: sw-k8s-4c-32gb
+    container:
+      image: ${{ vars.DEV_CONTAINER_IMAGE }}
     needs: [check-code-quality, test-docstrings]
     outputs:
       compiler_version: ${{ steps.get_version.outputs.compiler_version }}
@@ -89,7 +97,9 @@ jobs:
     secrets: inherit
 
   check-if-dependency-pr:
-    runs-on: rebel-k8s-runner
+    runs-on: sw-k8s-4c-32gb
+    container:
+      image: ${{ vars.DEV_CONTAINER_IMAGE }}
     outputs:
       result: ${{ steps.check_title.outputs.result }}
     steps:
@@ -117,7 +127,9 @@ jobs:
           echo $result
 
   check-team-member:
-    runs-on: rebel-k8s-runner
+    runs-on: sw-k8s-4c-32gb
+    container:
+      image: ${{ vars.DEV_CONTAINER_IMAGE }}
     needs: [check-code-quality, test-docstrings, check-compiler]
     outputs:
       is_team_member: ${{ steps.check_member.outputs.IS_TEAM_MEMBER }}
@@ -155,7 +167,7 @@ jobs:
     secrets: inherit
 
   # Full Schedule test if Dependency update
-  optimum-rbln-dependency-pytest:
+  optimum-rbln-full-pytest:
     needs: [check-compiler, check-team-member, check-pytest-full, check-slack-report]
     if: |
       needs.check-pytest-full.outputs.should_full_test == 'true' &&

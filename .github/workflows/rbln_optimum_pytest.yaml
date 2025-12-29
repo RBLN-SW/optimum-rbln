@@ -52,7 +52,9 @@ env:
 jobs:
   pytest:
     name: Pytest (${{ matrix.test_type }})
-    runs-on: ${{ inputs.reuse_artifacts_path != '' && 'rebel-k8s-runner' || 'vm-ci-0' }}
+    runs-on: ${{ inputs.reuse_artifacts_path != '' && 'sw-k8s-4c-32gb' || 'sw-k8s-ca22-1' }}
+    container:
+      image: ${{ vars.DEV_CONTAINER_IMAGE }}
     strategy:
       fail-fast: ${{ inputs.fail_fast }}
       matrix: ${{ fromJson(
@@ -114,17 +116,6 @@ jobs:
           esac
           
           echo "skip=$SKIP" >> $GITHUB_OUTPUT
-
-      - name: Setup uv
-        if: steps.should_skip.outputs.skip != 'true'
-        uses: astral-sh/setup-uv@v3
-        with:
-          enable-cache: true
-          cache-dependency-glob: "uv.lock"
-
-      - name: Setup Python
-        if: steps.should_skip.outputs.skip != 'true'
-        run: uv python install 3.12
 
       - name: Install optimum-rbln with tests group dependencies
         if: steps.should_skip.outputs.skip != 'true'

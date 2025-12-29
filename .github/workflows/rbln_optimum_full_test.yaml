@@ -55,7 +55,9 @@ jobs:
     secrets: inherit
 
   get-hf-package-version:
-    runs-on: rebel-k8s-runner
+    runs-on: sw-k8s-4c-32gb
+    container:
+      image: ${{ vars.DEV_CONTAINER_IMAGE }}
     outputs:
         transformers_version: ${{ steps.transformers.outputs.version }}
         diffusers_version: ${{ steps.diffusers.outputs.version }}
@@ -80,7 +82,9 @@ jobs:
   summary_and_report:
     if: ${{ always() && inputs.report_slack }}
     needs: [optimum-rbln-pytest, check-compiler, get-hf-package-version, bc-full-inference-test]
-    runs-on: rebel-k8s-runner
+    runs-on: sw-k8s-4c-32gb
+    container:
+      image: ${{ vars.DEV_CONTAINER_IMAGE }}
     steps:
 
       - name: Get failed test details

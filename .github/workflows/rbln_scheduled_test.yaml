@@ -22,7 +22,9 @@ jobs:
       test_all_files: true
 
   fetch-version:
-    runs-on: rebel-k8s-runner
+    runs-on: sw-k8s-4c-32gb
+    container:
+      image: ${{ vars.DEV_CONTAINER_IMAGE }}
     outputs:
       compiler_version: ${{ steps.get_version.outputs.compiler_version }}
       need_pr: ${{ steps.check_pr_needed.outputs.need_pr }}
