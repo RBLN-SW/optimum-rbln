@@ -740,6 +740,8 @@ class TestGemma3ForConditionalGeneration(LLMTest.TestLLM):
         image = Image.open(img_path)
         image = image.convert("RGB")
         inputs = tokenizer(images=[image], text=[self.PROMPT], return_tensors="pt", padding=True)
+        inputs["max_new_tokens"] = 20
+        inputs["do_sample"] = False
         return inputs
 
 
