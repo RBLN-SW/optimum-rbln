@@ -96,6 +96,26 @@ class RBLNMultiControlNetModel(RBLNModel):
         guess_mode: bool = False,
         return_dict: bool = True,
     ):
+        """
+        Forward pass for the RBLN-optimized MultiControlNetModel.
+
+        This method processes multiple ControlNet models in sequence, applying each one to the input sample
+        with its corresponding conditioning image and scale factor. The outputs from all ControlNets are
+        merged by addition to produce the final control signals.
+
+        Args:
+            sample (torch.FloatTensor): The noisy input tensor.
+            timestep (Union[torch.Tensor, float, int]): The number of timesteps to denoise an input.
+            encoder_hidden_states (torch.Tensor): The encoder hidden states from the text encoder.
+            controlnet_cond (List[torch.Tensor]): A list of conditional input tensors, one for each ControlNet model.
+            conditioning_scale (List[float]): A list of scale factors for each ControlNet output. Each scale
+                controls the strength of the corresponding ControlNet's influence on the generation.
+            return_dict (bool): Whether or not to return a dictionary instead of a plain tuple. Currently,
+                this method always returns a tuple regardless of this parameter.
+
+        Returns:
+            (Tuple[List[torch.Tensor], torch.Tensor])
+        """
         for i, (image, scale, controlnet) in enumerate(zip(controlnet_cond, conditioning_scale, self.nets)):
             down_samples, mid_sample = controlnet(
                 sample=sample.contiguous(),

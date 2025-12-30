@@ -136,7 +136,7 @@ class RBLNDiffusionMixin:
         *,
         export: bool = None,
         model_save_dir: Optional[PathLike] = None,
-        rbln_config: Dict[str, Any] = {},
+        rbln_config: Optional[Dict[str, Any]] = None,
         lora_ids: Optional[Union[str, List[str]]] = None,
         lora_weights_names: Optional[Union[str, List[str]]] = None,
         lora_scales: Optional[Union[float, List[float]]] = None,
@@ -244,7 +244,6 @@ class RBLNDiffusionMixin:
             device=rbln_config.device,
             device_map=rbln_config.device_map,
             create_runtimes=rbln_config.create_runtimes,
-            optimize_host_mem=rbln_config.optimize_host_memory,
             activate_profiler=rbln_config.activate_profiler,
             timeout=rbln_config.timeout,
         ):
@@ -412,12 +411,11 @@ class RBLNDiffusionMixin:
             # overwrite to replace incorrect config
             model.save_config(model_save_dir)
 
-        if rbln_config.optimize_host_memory is False:
-            # Keep compiled_model objs to further analysis. -> TODO: remove soon...
-            model.compiled_models = []
-            for name in cls._submodules:
-                submodule = getattr(model, name)
-                model.compiled_models.extend(submodule.compiled_models)
+        # Keep compiled_model objs to further analysis. -> TODO: remove soon...
+        model.compiled_models = []
+        for name in cls._submodules:
+            submodule = getattr(model, name)
+            model.compiled_models.extend(submodule.compiled_models)
 
         return model
 

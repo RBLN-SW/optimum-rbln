@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from typing import Any, List, Optional, Union
+from typing import Any, Optional
 
 from ....configuration_utils import RBLNModelConfig
 from ....utils.logging import get_logger
@@ -28,43 +28,42 @@ class RBLNColPaliForRetrievalConfig(RBLNModelConfig):
     including vision tower settings and multi-sequence length support.
 
     Example usage:
-    ```python
-    from optimum.rbln import RBLNColPaliForRetrieval, RBLNColPaliForRetrievalConfig
+        ```python
+        from optimum.rbln import RBLNColPaliForRetrieval, RBLNColPaliForRetrievalConfig
 
-    # Create a configuration object
-    config = RBLNColPaliForRetrievalConfig(
-        max_seq_lens=1152,
-        output_hidden_states=False,
-        tensor_parallel_size=4
-    )
+        # Create a configuration object
+        config = RBLNColPaliForRetrievalConfig(
+            vlm={
+                "language_model": {"prefill_chunk_size": 8192},
+            }
+            output_hidden_states=False,
+            tensor_parallel_size=4
+        )
 
-    # Use the configuration with from_pretrained
-    model = RBLNColPaliForRetrieval.from_pretrained(
-        "vidore/colpali-v1.3-hf",
-        export=True,
-        rbln_config=config
-    )
-    ```
+        # Use the configuration with from_pretrained
+        model = RBLNColPaliForRetrieval.from_pretrained(
+            "vidore/colpali-v1.3-hf",
+            export=True,
+            rbln_config=config
+        )
+        ```
     """
 
-    submodules = ["vision_tower"]
+    _allow_no_compile_cfgs = True
+    submodules = ["vlm"]
 
     def __init__(
         self,
         batch_size: Optional[int] = None,
-        max_seq_lens: Union[int, List[int]] = None,
+        vlm: Optional[RBLNModelConfig] = None,
         output_hidden_states: Optional[bool] = None,
-        vision_tower: Optional[RBLNModelConfig] = None,
         **kwargs: Any,
     ):
         """
         Args:
             batch_size (Optional[int]): The batch size for the model.
-            vision_tower (Optional[RBLNModelConfig]): Configuration for the vision encoder component.
-            max_seq_lens (Union[int, List[int]]): The maximum sequence lengths for the language model.
-                This can be multiple values, and the model will be compiled for each max_seq_len, allowing selection of the most appropriate max_seq_len at inference time.
-            output_hidden_states (Optional[bool]): Whether to output the hidden states of the language model.
-            vision_tower (Optional[RBLNModelConfig]): Configuration for the vision encoder component.
+            vlm (Optional[RBLNModelConfig]): Configuration for the VLM component.
+            output_hidden_states (Optional[bool]): Whether to output the hidden states of the decoder. Defaults to False.
             kwargs: Additional arguments passed to the parent RBLNModelConfig.
         Raises:
             ValueError: If batch_size is not a positive integer.
@@ -74,11 +73,7 @@ class RBLNColPaliForRetrievalConfig(RBLNModelConfig):
         if not isinstance(self.batch_size, int) or self.batch_size < 0:
             raise ValueError(f"batch_size must be a positive integer, got {self.batch_size}")
 
-        if self.batch_size != 1:
-            logger.warning("Ignore batch_size for ColPali vision tower. It will be set to 1.")
-
-        self.vision_tower = self.initialize_submodule_config(
-            submodule_config=vision_tower, batch_size=1, force_kwargs=True
+        self.output_hidden_states = output_hidden_states or False
+        self.vlm = self.initialize_submodule_config(
+            submodule_config=vlm, batch_size=batch_size, output_hidden_states=output_hidden_states
         )
-        self.max_seq_lens = max_seq_lens
-        self.output_hidden_states = output_hidden_states

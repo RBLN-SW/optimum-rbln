@@ -28,6 +28,7 @@ from ....modeling import RBLNModel
 from ...modeling_outputs import RBLNDecoderOnlyOutput
 from ...utils.rbln_runtime_wrapper import LoopProcessor
 from ..decoderonly.decoderonly_runtime_utils import RBLNPageTableManager
+from ..decoderonly.generation_decoderonly import RBLNDecoderOnlyGenerationMixin
 from ..decoderonly.modeling_decoderonly import (
     RBLNDecoderOnlyModelForCausalLM,
 )
@@ -77,7 +78,7 @@ class LoopProjector(LoopProcessor):
         return output[0]
 
 
-class RBLNGemma3ForConditionalGeneration(RBLNModel):
+class RBLNGemma3ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMixin):
     auto_model_class = AutoModelForImageTextToText
     _rbln_submodules = [
         {"name": "vision_tower"},
@@ -98,9 +99,7 @@ class RBLNGemma3ForConditionalGeneration(RBLNModel):
         return True
 
     @classmethod
-    def get_pytorch_model(cls, *args, **kwargs):
-        model = super().get_pytorch_model(*args, **kwargs)
-
+    def _reconstruct_model_if_needed(cls, model: "PreTrainedModel"):
         with no_init_weights():
             model_cls_name = model.model.language_model.__class__.__name__
             causal_model_cls_name = model_cls_name.replace("TextModel", "ForCausalLM")
@@ -134,7 +133,7 @@ class RBLNGemma3ForConditionalGeneration(RBLNModel):
         return self.language_model.get_input_embeddings()
 
     @classmethod
-    def wrap_model_if_needed(cls, model: "PreTrainedModel", rbln_config: RBLNModelConfig):
+    def _wrap_model_if_needed(cls, model: "PreTrainedModel", rbln_config: RBLNModelConfig):
         return model.multi_modal_projector
 
     @classmethod
@@ -300,28 +299,60 @@ class RBLNGemma3ForConditionalGeneration(RBLNModel):
         generate_idx: Optional[torch.Tensor] = None,
         padded_cache_lengths: Optional[torch.Tensor] = None,
         position_ids: Optional[torch.Tensor] = None,
+        output_hidden_states: Optional[bool] = None,
         **lm_kwargs: Dict[str, Any],
     ) -> Union[Tuple, RBLNDecoderOnlyOutput]:
+        output_hidden_states = (
+            output_hidden_states
+            if output_hidden_states is not None
+            else self.rbln_config.language_model.output_hidden_states
+        )
+        if output_hidden_states != self.rbln_config.language_model.output_hidden_states:
+            raise ValueError(
+                f"Variable output_hidden_states {output_hidden_states} is not equal to rbln_config.language_model.output_hidden_states {self.rbln_config.language_model.output_hidden_states} "
+                f"Please compile again with the correct argument."
+            )
+
         # prefill
         if cache_position is None:
             logits = []
             inputs_embeds = self._preprocess_prefill(input_ids, inputs_embeds, pixel_values)
             batch_size = inputs_embeds.shape[0]
 
+            all_hidden_states = (
+                tuple(
+                    torch.zeros(
+                        batch_size,
+                        inputs_embeds.shape[1],
+                        self.config.text_config.hidden_size,
+                        dtype=self.rbln_config.dtype,
+                    )
+                    for _ in range(self.config.text_config.num_hidden_layers + 1)
+                )
+                if self.rbln_config.language_model.output_hidden_states
+                else None
+            )
+
             for b_idx in range(batch_size):
                 cache_position = torch.arange(0, generate_idx[b_idx].item(), dtype=torch.int32).unsqueeze(0)
                 token_type_id = token_type_ids[b_idx : b_idx + 1, attention_mask[b_idx].bool()]
                 cache_position = self.get_padded_cache_position(cache_position, token_type_id)
 
-                output = self.language_model.prefill_decoder(
+                outputs = self.language_model.prefill_decoder(
                     inputs_embeds=inputs_embeds[b_idx : b_idx + 1],
                     attention_mask=attention_mask[b_idx],
                     cache_position=cache_position,
                     batch_idx=b_idx,
                     token_type_ids=token_type_ids[b_idx : b_idx + 1],  # do not pass token_type_id
                 )
-                padded_cache_lengths[b_idx] += output.padded_cache_lengths
-                logits.append(output.logits)
+                padded_cache_lengths[b_idx] += outputs.padded_cache_lengths
+                logits.append(outputs.logits)
+                if self.rbln_config.language_model.output_hidden_states:
+                    for l_idx in range(self.config.text_config.num_hidden_layers + 1):
+                        mask_indices = torch.nonzero(attention_mask[b_idx], as_tuple=True)[0]
+                        all_hidden_states[l_idx][b_idx].index_copy_(
+                            dim=0, index=mask_indices, source=outputs.hidden_states[l_idx][0]
+                        )
 
             logits = torch.cat(logits, dim=0)
         # decoder
@@ -335,15 +366,20 @@ class RBLNGemma3ForConditionalGeneration(RBLNModel):
                     f"Please run your model with one of these batch sizes or add support for batch size {batch_size}."
                 )
 
-            logits = self.language_model.decoders[batch_size](
+            outputs = self.language_model.decoders[batch_size](
                 input_ids=input_ids,
                 inputs_embeds=inputs_embeds,
                 cache_position=cache_position,
                 position_ids=position_ids if self.rbln_config.language_model.use_position_ids else None,
-            ).logits
+            )
+            logits = outputs.logits
+            all_hidden_states = outputs.hidden_states
 
         return RBLNDecoderOnlyOutput(
-            logits=logits, generate_idx=generate_idx, padded_cache_lengths=padded_cache_lengths
+            logits=logits,
+            generate_idx=generate_idx,
+            padded_cache_lengths=padded_cache_lengths,
+            hidden_states=all_hidden_states,
         )
 
 
@@ -405,26 +441,6 @@ class RBLNGemma3ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
         return embed_tokens
 
     @classmethod
-    def _update_sliding_window_config(cls, model_config: PretrainedConfig, rbln_config: RBLNGemma3ForCausalLMConfig):
-        sliding_window = getattr(model_config, "sliding_window", None)
-        sliding_window_pattern = getattr(model_config, "sliding_window_pattern", None)
-        if sliding_window_pattern is None:
-            if hasattr(model_config, "layer_types"):
-                first_full_attention_index = model_config.layer_types.index("full_attention")
-                sliding_window_pattern = first_full_attention_index + 1
-            else:
-                raise ValueError("Cannot determine sliding_window_pattern from model_config")
-
-        if sliding_window_pattern <= model_config.num_hidden_layers:
-            rbln_config.cache_impl = "hybrid"
-            rbln_config.sliding_window = sliding_window
-            rbln_config.sliding_window_layers = [
-                i for i in range(model_config.num_hidden_layers) if (i + 1) % sliding_window_pattern > 0
-            ]
-
-        return rbln_config
-
-    @classmethod
     def _update_submodule_config(
         cls,
         model: "PreTrainedModel",
@@ -481,7 +497,7 @@ class RBLNGemma3ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
     @classmethod
     @torch.inference_mode()
     def get_compiled_model(cls, model: "PreTrainedModel", rbln_config: RBLNGemma3ForCausalLMConfig):
-        wrapped_model = cls.wrap_model_if_needed(model, rbln_config)
+        wrapped_model = cls._wrap_model_if_needed(model, rbln_config)
 
         rbln_compile_configs = rbln_config.compile_cfgs
         prefill_compile_config = rbln_compile_configs[0]

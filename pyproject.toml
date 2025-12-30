@@ -29,12 +29,12 @@ classifiers = [
 ]
 keywords = ["transformers", "diffusers", "inference", "rbln", "atom", "rebel"]
 dependencies = [
-    "torch==2.7.0",
-    "torchaudio<=2.7.0",
-    "torchvision<=0.22.0",
+    "torch==2.8.0",
+    "torchaudio<=2.8.0",
+    "torchvision<=0.23.0",
     "accelerate>=1.0.1",
-    "transformers==4.53.1",
-    "diffusers==0.35.1",
+    "transformers==4.57.1",
+    "diffusers==0.36.0",
     "packaging>=24.1",
 ]
 
@@ -43,9 +43,13 @@ Homepage = "https://rebellions.ai"
 Documentation = "https://docs.rbln.ai"
 Repository = "https://github.com/rebellions-sw/optimum-rbln"
 
+[project.scripts]
+optimum-rbln-cli = "optimum.rbln.cli:main"
+
 [dependency-groups]
 tests = [
-    "pytest>=8.1.1",
+    "pytest>=8.4.2",
+    "pytest-xdist>=3.8.0",
     "psutil>=5.9.8",
     "parameterized>=0.9.0",
     "GitPython>=3.1.42",
@@ -57,7 +61,7 @@ tests = [
     "soundfile>=0.13.1",
     "librosa>=0.11.0",
     "simphile>=1.0.2",
-    "torchcodec==0.5",
+    "torchcodec==0.7",
 ]
 quality = [
     "ruff>=0.3.3",
@@ -120,7 +124,7 @@ line-length = 119
 [tool.ruff.lint]
 # Never enforce `E501` (line length violations).
 ignore = ["C901", "E501", "E741", "W605"]
-select = ["C", "E", "F", "I", "W"]
+select = ["C", "E", "F", "I", "W", "B"]
 
 [tool.ruff.lint.isort]
 lines-after-imports = 2

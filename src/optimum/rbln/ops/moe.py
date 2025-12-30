@@ -12,34 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Literal, Optional
+from typing import Optional
 
 import torch
 from torch import Tensor
-
-
-ACT_TYPES = Literal[
-    "gelu",
-    "gelu_10",
-    "gelu_fast",
-    "gelu_new",
-    "gelu_python",
-    "gelu_pytorch_tanh",
-    "gelu_accurate",
-    "laplace",
-    "leaky_relu",
-    "linear",
-    "mish",
-    "quick_gelu",
-    "relu",
-    "relu2",
-    "relu6",
-    "sigmoid",
-    "silu",
-    "swish",
-    "tanh",
-    "prelu",
-]
 
 
 @torch.library.custom_op(
@@ -52,9 +28,8 @@ def custom_moe_glu(
     up_proj_weight: Tensor,
     down_proj_weight: Tensor,
     router_logits: Tensor,
-    k : int,
+    topk: int,
     norm_topk_prob: bool = True,
-    # act_fn: str,
     gate_proj_bias: Optional[Tensor] = None,
     up_proj_bias: Optional[Tensor] = None,
     down_proj_bias: Optional[Tensor] = None,
@@ -67,42 +42,18 @@ def custom_moe_glu(
     - gate_proj_weight: [num_experts, hidden_size, intermediate_size]
     - up_proj_weight: [num_experts, hidden_size, intermediate_size]
     - down_proj_weight: [num_experts, intermediate_size, hidden_size]
-
-    - router_logits: [batch * seq_len, num_experts]
-    - k: top k experts to select
+    - router_logits: [batch*seq_len, num_experts]
+    - topk: top k experts to select
     - norm_topk_prob: whether to normalize the top k routing weights with softmax
-
     - gate_proj_bias: [num_experts, intermediate_size]
     - up_proj_bias: [num_experts, intermediate_size]
     - down_proj_bias: [num_experts, hidden_size]
-
 
     Returns:
         Tensor: [batch * seq_len, hidden_size]
     """
 
-    # normalize routing weight
-    if norm_topk_prob:
-        selected_weights, selected_experts = torch.topk(router_logits, k=k, dim=-1)
-        selected_weights = torch.nn.functional.softmax(selected_weights, dim=1, dtype=torch.float)
-    else:
-        routing_weights = torch.nn.functional.softmax(router_logits, dim=1, dtype=torch.float)
-        selected_weights, selected_experts = torch.topk(routing_weights, k=k, dim=-1)
-
-    masked_routing_weights = torch.zeros_like(router_logits, dtype=torch.float32)
-    masked_routing_weights.scatter_(1, selected_experts, selected_weights)
-
-
-    out = torch.zeros_like(hidden_states)
-    expert_cnt = gate_proj_weight.shape[0]
-    for i in range(expert_cnt):
-        gate = torch.nn.functional.linear(hidden_states, gate_proj_weight[i])
-        up = torch.nn.functional.linear(hidden_states, up_proj_weight[i])
-        mul = torch.nn.functional.silu(gate) * up
-        down = torch.nn.functional.linear(mul, down_proj_weight[i])
-        out += down * masked_routing_weights[:, i : i + 1]
-
-    return out
+    return torch.empty_like(hidden_states)
 
 
 @custom_moe_glu.register_fake
@@ -112,9 +63,8 @@ def custom_moe_glu_fake(
     up_proj_weight: Tensor,
     down_proj_weight: Tensor,
     router_logits: Tensor,
-    k : int,
+    topk: int,
     norm_topk_prob: bool = True,
-    # act_fn: str,
     gate_proj_bias: Optional[Tensor] = None,
     up_proj_bias: Optional[Tensor] = None,
     down_proj_bias: Optional[Tensor] = None,
@@ -131,7 +81,6 @@ def custom_moe_ff(
     gate_proj_weight: Tensor,
     down_proj_weight: Tensor,
     masked_routing_weight: Tensor,
-    # act_fn: str,
     gate_proj_bias: Optional[Tensor] = None,
     down_proj_bias: Optional[Tensor] = None,
 ) -> Tensor:
@@ -143,6 +92,8 @@ def custom_moe_ff(
     - gate_proj_weight: [hidden_size, num_experts * intermediate_size]
     - down_proj_weight: [num_experts * intermediate_size, hidden_size]
     - masked_routing_weight: [batch * seq_len, num_experts]
+    - gate_proj_bias: [num_experts * intermediate_size]
+    - down_proj_bias: [hidden_size]
 
     Returns:
         Tensor: [batch * seq_len, hidden_size]
@@ -156,8 +107,74 @@ def custom_moe_ff_fake(
     gate_proj_weight: Tensor,
     down_proj_weight: Tensor,
     masked_routing_weight: Tensor,
-    # act_fn: str,
     gate_proj_bias: Optional[Tensor] = None,
     down_proj_bias: Optional[Tensor] = None,
+) -> Tensor:
+    return torch.empty_like(hidden_states)
+
+
+@torch.library.custom_op(
+    "rbln_custom_ops::custom_moe_glu_mxfp4",
+    mutates_args=(),
+)
+def custom_moe_glu_mxfp4(
+    hidden_states: Tensor,
+    gate_proj_blocks: Tensor,
+    gate_proj_scales: Tensor,
+    gate_proj_bias: Tensor,
+    up_proj_blocks: Tensor,
+    up_proj_scales: Tensor,
+    up_proj_bias: Tensor,
+    down_proj_blocks: Tensor,
+    down_proj_scales: Tensor,
+    down_proj_bias: Tensor,
+    router_logits: Tensor,
+    alpha: Tensor,
+    limit: Tensor,
+    k: int,
+    post_norm: bool = True,
+) -> Tensor:
+    """
+    Customized MoE GLU operation.
+
+    Expected tensor shapes:
+    - hidden_states: [batch*seq_len, hidden_size]
+    - gate_proj_blocks: [num_experts, intermediate_size, hidden_size // 2]
+    - gate_proj_scales: [num_experts, intermediate_size, hidden_size // 32]
+    - gate_proj_bias: [num_experts, intermediate_size]
+    - up_proj_blocks: [num_experts, intermediate_size, hidden_size // 2]
+    - up_proj_scales: [num_experts, intermediate_size, hidden_size // 32]
+    - up_proj_bias: [num_experts, intermediate_size]
+    - down_proj_blocks: [num_experts, hidden_size, intermediate_size // 2]
+    - down_proj_scales: [num_experts, hidden_size, intermediate_size // 32]
+    - masked_routing_weight: [batch * seq_len, num_experts]
+    - expert_select_count: [num_experts]
+    - alpha: []
+    - limit: []
+
+    Returns:
+        Tensor: [batch * seq_len, hidden_size]
+    """
+
+    return torch.empty_like(hidden_states)
+
+
+@custom_moe_glu_mxfp4.register_fake
+def custom_moe_glu_mxfp4_fake(
+    hidden_states: Tensor,
+    gate_proj_blocks: Tensor,
+    gate_proj_scales: Tensor,
+    gate_proj_bias: Tensor,
+    up_proj_blocks: Tensor,
+    up_proj_scales: Tensor,
+    up_proj_bias: Tensor,
+    down_proj_blocks: Tensor,
+    down_proj_scales: Tensor,
+    down_proj_bias: Tensor,
+    router_logits: Tensor,
+    alpha: Tensor,
+    limit: Tensor,
+    k: int,
+    post_norm: bool = True,
 ) -> Tensor:
     return torch.empty_like(hidden_states)

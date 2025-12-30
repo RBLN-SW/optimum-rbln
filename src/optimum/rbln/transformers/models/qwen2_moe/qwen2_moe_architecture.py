@@ -22,7 +22,7 @@ from ..decoderonly.configuration_decoderonly import RBLNLoRAConfig
 from ..decoderonly.decoderonly_architecture import DecoderOnlyAttention, DecoderOnlyLayer, DecoderOnlyWrapper
 
 
-class QWEN2MoeWrapper(DecoderOnlyWrapper):
+class Qwen2MoeWrapper(DecoderOnlyWrapper):
     def get_rbln_layer_class(self):
         return Qwen2MoeLayer
 
@@ -66,12 +66,9 @@ class Qwen2MoeSparseMoeBlock(nn.Module):
         ones = torch.ones_like(selected_experts.view(-1), dtype=torch.int32)
         expert_select_count = torch.scatter_add(zeros, dim=0, index=selected_experts.view(-1), src=ones)
 
-        breakpoint()
-
         return masked_routing_weights, expert_select_count
 
     def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
-        """ """
         batch_size, sequence_length, hidden_dim = hidden_states.shape
         hidden_states = hidden_states.view(-1, hidden_dim)
 
@@ -117,5 +114,4 @@ class Qwen2MoeMLP(nn.Module):
             self.down_proj.weight,
             masked_routing_weights,
             expert_select_count,  # count for each expert
-            # self.act_fn_name,
         )

@@ -59,6 +59,9 @@ _import_structure = {
         "RBLNStableDiffusion3Img2ImgPipeline",
         "RBLNStableDiffusion3InpaintPipeline",
     ],
+    "stable_video_diffusion": [
+        "RBLNStableVideoDiffusionPipeline",
+    ],
 }
 if TYPE_CHECKING:
     from .auto_pipeline import (
@@ -98,6 +101,7 @@ if TYPE_CHECKING:
         RBLNStableDiffusionXLInpaintPipeline,
         RBLNStableDiffusionXLPipeline,
     )
+    from .stable_video_diffusion import RBLNStableVideoDiffusionPipeline
 else:
     import sys
 

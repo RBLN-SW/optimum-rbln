@@ -24,8 +24,8 @@ class PixtralAttention(nn.Module):
     def __init__(self, self_attention):
         super().__init__()
         self.original_model = self_attention
-        self.num_heads = getattr(self.original_model, "num_heads", None) or getattr(
-            self.original_model.config, "num_attention_heads"
+        self.num_heads = (
+            getattr(self.original_model, "num_heads", None) or self.original_model.config.num_attention_heads
         )
         self.head_dim = self.original_model.head_dim
         self.scaling = self.head_dim**-0.5

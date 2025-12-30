@@ -13,6 +13,8 @@
 # limitations under the License.
 
 
+from typing import Optional
+
 import torch
 from torch import Tensor
 
@@ -33,6 +35,7 @@ def paged_sliding_window_attn_prefill(
     block_table: Tensor,
     block_size: int,
     is_bidirectional: bool,
+    s_aux: Optional[Tensor] = None,
 ) -> Tensor:
     """Defines the computation pattern for prefill phase attention with KV cache updates.
 
@@ -53,6 +56,7 @@ def paged_sliding_window_attn_prefill(
     - cache_offset: [] - The valid length in the combined sequence of the KV cache and the current projected key states.
     - scale: [] - Attention scale factor
     - is_bidirectional: [] - Whether the attention is bidirectional
+    - s_aux: [num_attention_heads, sink_len] - auxiliary states for attention
     Returns:
         Tensor: attn_output: [batch=1, n_heads, n_groups, seq_len, head_dim] - Attention output
     """
@@ -72,6 +76,7 @@ def paged_sliding_window_attn_prefill_fake(
     block_table: Tensor,
     block_size: int,
     is_bidirectional: bool,
+    s_aux: Optional[Tensor] = None,
 ) -> Tensor:
     return torch.empty_like(q)
 
@@ -91,6 +96,8 @@ def paged_sliding_window_attn_decode(
     scale: Tensor,
     block_table: Tensor,
     block_size: int,
+    attn_mask: Tensor,
+    s_aux: Optional[Tensor] = None,
 ) -> Tensor:
     return torch.empty_like(q)
 
@@ -107,5 +114,7 @@ def paged_sliding_window_attn_decode_fake(
     scale: Tensor,
     block_table: Tensor,
     block_size: int,
+    attn_mask: Tensor,
+    s_aux: Optional[Tensor] = None,
 ) -> Tensor:
     return torch.empty_like(q)

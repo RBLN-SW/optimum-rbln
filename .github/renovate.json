@@ -2,15 +2,18 @@
     "$schema": "https://docs.renovatebot.com/renovate-schema.json",
     "dependencyDashboard": true,
     "prHourlyLimit": 0,
+    "baseBranches": [
+        "dev"
+    ],
     "extends": [
         ":semanticCommitsDisabled"
     ],
-    "commitMessagePrefix": "dependency:",
+    "commitMessagePrefix": "[pytest-full] dependency:",
     "repositories": [
         "rebellions-sw/optimum-rbln"
     ],
     "lockFileMaintenance": {
-        "enabled": true
+        "enabled": false
     },
     "packageRules": [
         {

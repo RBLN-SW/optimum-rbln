@@ -26,6 +26,7 @@ jobs:
         id: lint_pr_title
         with:
           types: |
+            release
             model
             performance
             refactor

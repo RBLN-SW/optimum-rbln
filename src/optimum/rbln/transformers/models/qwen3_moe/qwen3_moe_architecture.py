@@ -16,13 +16,12 @@ from typing import Optional
 
 import torch
 from torch import nn
-from transformers.activations import ACT2FN
 
 from ..decoderonly.configuration_decoderonly import RBLNLoRAConfig
 from ..decoderonly.decoderonly_architecture import DecoderOnlyAttention, DecoderOnlyLayer, DecoderOnlyWrapper
 
 
-class QWEN3MoeWrapper(DecoderOnlyWrapper):
+class Qwen3MoeWrapper(DecoderOnlyWrapper):
     def get_rbln_layer_class(self):
         return Qwen3MoeLayer
 
@@ -60,12 +59,9 @@ class Qwen3MoeSparseMoeBlock(nn.Module):
         self.top_k = model.top_k
         self.norm_topk_prob = model.norm_topk_prob
         self.gate = model.gate
-        # self.shared_expert = model.shared_expert
-        # self.shared_expert_gate = model.shared_expert_gate
         self.experts = Qwen3MoeMLP(model.experts, self.top_k, self.norm_topk_prob)
 
-    def forward(self, hidden_states: torch.Tensor, ) -> torch.Tensor:
-        """ """
+    def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
         batch_size, sequence_length, hidden_dim = hidden_states.shape
         hidden_states = hidden_states.view(-1, hidden_dim)
 
@@ -80,15 +76,11 @@ class Qwen3MoeSparseMoeBlock(nn.Module):
 class Qwen3MoeMLP(nn.Module):
     def __init__(self, expert_list, top_k, norm_topk_prob):
         super().__init__()
-        self.config = expert_list[0].config
         self.hidden_size = expert_list[0].hidden_size
         self.intermediate_size = expert_list[0].intermediate_size
-        self.act_fn = ACT2FN[self.config.hidden_act]
-        self.act_fn_name = self.config.hidden_act
         self.top_k = top_k
         self.norm_topk_prob = norm_topk_prob
 
-        # RBLN-optimized MLP
         self.num_experts = len(expert_list)
         self.gate_proj = nn.Linear(self.hidden_size, self.num_experts * self.intermediate_size, bias=False)
         self.up_proj = nn.Linear(self.hidden_size, self.num_experts * self.intermediate_size, bias=False)

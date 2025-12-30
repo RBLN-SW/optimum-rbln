@@ -32,7 +32,7 @@ from ...modeling_attention_utils import (
     validate_attention_method,
     validate_sliding_window,
 )
-from ...modeling_outputs import RBLNDecoderOnlyOutput
+from ...modeling_outputs import RBLNDecoderOnlyOutput, _validate_output_hidden_states
 from ...utils.rbln_quantization import get_quantized_model
 from .configuration_decoderonly import RBLNDecoderOnlyModelConfig, RBLNDecoderOnlyModelForCausalLMConfig
 from .decoderonly_architecture import DecoderOnlyWrapper
@@ -88,8 +88,12 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
     def setup_runtime(self):
         # Initialize resources to be used across Runtime instances (prefill and decode phases)
         page_table_manager = RBLNPageTableManager(self.rbln_config)
-        dec_attn_mask = torch.zeros(self.rbln_config.batch_size, 1, 1, self.rbln_config.max_seq_len, dtype=self.dtype)
-        out_buffers = [torch.empty(self.prefill_output_size, dtype=self.dtype)]
+        if self.rbln_config.use_position_ids:
+            dec_attn_mask = torch.zeros(self.rbln_config.batch_size, self.rbln_config.max_seq_len, dtype=self.dtype)
+        else:
+            dec_attn_mask = torch.zeros(
+                self.rbln_config.batch_size, 1, 1, self.rbln_config.max_seq_len, dtype=self.dtype
+            )
 
         common_kwargs = {
             "main_input_name": "inputs_embeds" if self.rbln_config.use_inputs_embeds else "input_ids",
@@ -97,12 +101,13 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
             "dec_attn_mask": dec_attn_mask,
             "page_table_manager": page_table_manager,
             "rbln_config": self.rbln_config,
+            "config": self.config,
         }
         self.prefill_decoder = RBLNRuntimeModel(
             runtime=self.model[0],
             phase="prefill",
             batch_size=self.rbln_config.batch_size,
-            out_buffers=out_buffers,
+            logits_last_dim=self.logits_last_dim,
             **common_kwargs,
         )
         if self.can_generate():
@@ -119,12 +124,8 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
             self.decoder = self.decoders[self.rbln_config.batch_size]
 
     @property
-    def prefill_output_size(self):
-        return (
-            1,
-            self.rbln_config.prefill_chunk_size if self.rbln_config.logits_to_keep == 0 else 1,
-            self.config.hidden_size,
-        )
+    def logits_last_dim(self):
+        return self.config.hidden_size
 
     @classmethod
     def get_quantized_model(
@@ -216,7 +217,7 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
         return self.rbln_config.kvcache_num_blocks
 
     @classmethod
-    def wrap_model_if_needed(cls, model: PreTrainedModel, rbln_config: "RBLNDecoderOnlyModelConfig"):
+    def _wrap_model_if_needed(cls, model: PreTrainedModel, rbln_config: "RBLNDecoderOnlyModelConfig"):
         return cls._decoder_wrapper_cls(model, rbln_config, cls._use_rotary_emb).eval()
 
     @classmethod
@@ -260,17 +261,19 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
 
         # Mark static tensors (self kv states)
         static_tensors = {}
+        idx = 0
         for (name, _, _), tensor in zip(compile_config.input_info, example_inputs):
             if "past_key_values" in name:
                 static_tensors[name] = tensor
-                context.mark_static_address(tensor)
+                context.mark_static_address(tensor, f"kv_cache_{idx}")
+                idx += 1
 
         return context, static_tensors
 
     @classmethod
     @torch.inference_mode()
     def get_compiled_model(cls, model: PreTrainedModel, rbln_config: RBLNDecoderOnlyModelForCausalLMConfig):
-        wrapped_model = cls.wrap_model_if_needed(model, rbln_config)
+        wrapped_model = cls._wrap_model_if_needed(model, rbln_config)
         prefill_compile_config = rbln_config.compile_cfgs[0]
 
         # Here we use meta tensor, for the memory efficiency.
@@ -327,8 +330,8 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
         return model
 
     @classmethod
-    def use_query_position(cls, use_local_attention: bool, is_prefill: bool = True):
-        return use_local_attention
+    def use_query_position(cls, use_local_attention: bool, is_prefill: bool = True, logits_to_keep: int = None):
+        return is_prefill and (use_local_attention or logits_to_keep == 1)
 
     @classmethod
     def get_input_info(
@@ -338,16 +341,16 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
         rbln_config: RBLNDecoderOnlyModelForCausalLMConfig,
         model_config: PretrainedConfig,
     ):
-        num_attention_heads = getattr(model_config, "n_head", None) or getattr(model_config, "num_attention_heads")
+        num_attention_heads = getattr(model_config, "n_head", None) or model_config.num_attention_heads
         num_key_value_heads = getattr(model_config, "num_key_value_heads", None) or num_attention_heads
-        num_hidden_layers = getattr(model_config, "n_layer", None) or getattr(model_config, "num_hidden_layers")
-        hidden_size = getattr(model_config, "n_embd", None) or getattr(model_config, "hidden_size")
+        num_hidden_layers = getattr(model_config, "n_layer", None) or model_config.num_hidden_layers
+        hidden_size = getattr(model_config, "n_embd", None) or model_config.hidden_size
         head_dim = getattr(model_config, "head_dim", None) or hidden_size // num_attention_heads
         is_prefill = query_length > 1
 
         input_info = []
         if rbln_config.use_inputs_embeds:
-            input_info.append(("inputs_embeds", [batch_size, query_length, hidden_size], rbln_config.torch_dtype))
+            input_info.append(("inputs_embeds", [batch_size, query_length, hidden_size], rbln_config.dtype))
         else:
             input_info.append(("input_ids", [batch_size, query_length], "int64"))
 
@@ -361,15 +364,15 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
         if rbln_config.use_local_attention:
             input_info.append(("local_block_tables", [1] if is_prefill else [batch_size, 1], "int16"))
 
-        if cls.use_query_position(rbln_config.use_local_attention, is_prefill):
+        if cls.use_query_position(rbln_config.use_local_attention, is_prefill, rbln_config.logits_to_keep):
             input_info.append(("query_position", [], "int16"))
 
         if rbln_config.use_attention_mask:
             if rbln_config.use_position_ids:
-                input_info.append(("attention_mask", [batch_size, rbln_config.max_seq_len], rbln_config.torch_dtype))
+                input_info.append(("attention_mask", [batch_size, rbln_config.max_seq_len], rbln_config.dtype))
             else:
                 input_info.append(
-                    ("attention_mask", [batch_size, 1, query_length, rbln_config.max_seq_len], rbln_config.torch_dtype)
+                    ("attention_mask", [batch_size, 1, query_length, rbln_config.max_seq_len], rbln_config.dtype)
                 )
 
         if rbln_config.use_position_ids:
@@ -378,7 +381,7 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
         if rbln_config.use_lora:
             input_info.append(("lora_int_ids", [batch_size], "int32"))
 
-        kvcache_dtype = rbln_config.torch_dtype
+        kvcache_dtype = rbln_config.dtype
         if rbln_config.quantization and rbln_config.quantization.kv_caches == "fp8":
             kvcache_dtype = "float8_e4m3fn"
 
@@ -437,10 +440,22 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
         # Returns:
         #     RBLNDecoderOnlyModelConfig: The updated RBLN model configuration.
 
-        raise NotImplementedError(
-            "Subclasses must implement _update_sliding_window_config to configure sliding window attention settings. "
-            "See method docstring for required configuration details."
+        rbln_config.sliding_window = model_config.sliding_window
+        sliding_window_layers = []
+
+        for i in range(model_config.num_hidden_layers):
+            if hasattr(model_config, "layer_types"):
+                if model_config.layer_types[i] == "sliding_attention":
+                    sliding_window_layers.append(i)
+            else:
+                sliding_window_layers.append(i)
+
+        rbln_config.sliding_window_layers = sliding_window_layers
+
+        rbln_config.cache_impl = (
+            "sliding_window" if len(sliding_window_layers) == model_config.num_hidden_layers else "hybrid"
         )
+        return rbln_config
 
     @classmethod
     def _update_attention_config(
@@ -464,13 +479,8 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
 
         # Update kvcache_num_blocks based on the attention implementation.
         if rbln_config.attn_impl == "flash_attn":
-            estimated_max_num_blocks = cls.get_maximum_num_blocks(
-                config=model_config,
-                tensor_parallel_size=rbln_config.tensor_parallel_size or 1,
-                kvcache_block_size=rbln_config.kvcache_block_size,
-                nbits_per_param=16 if not rbln_config.quantization else 4,  # TODO(jongho): FIX Ad-hoc
-                n_model_params=sum(p.numel() for p in model.parameters()),
-                num_runtimes=1 if not rbln_config.can_generate else 1 + len(rbln_config.decoder_batch_sizes),
+            estimated_max_num_blocks = cls.get_maximum_num_blocks_by_model(
+                model=model, model_config=model_config, rbln_config=rbln_config
             )
 
             if rbln_config.kvcache_num_blocks is None:
@@ -509,7 +519,6 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
                     f" than the required number of blocks ({num_full_blocks})."
                     "This can cause a failure during model compilation."
                 )
-
         logger.info(f"[KVCache] Compiling with num_blocks: {rbln_config.kvcache_num_blocks}")
 
         return rbln_config
@@ -529,8 +538,13 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
         if rbln_config.max_seq_len is None:
             raise ValueError("`max_seq_len` should be specified.")
 
-        if getattr(model_config, "sliding_window", None) is not None and getattr(
-            model_config, "use_sliding_window", True
+        layer_types = getattr(model_config, "layer_types", None)
+        all_full_attention = layer_types is not None and all(t == "full_attention" for t in layer_types)
+
+        if (
+            getattr(model_config, "sliding_window", None) is not None
+            and getattr(model_config, "use_sliding_window", True)
+            and not all_full_attention
         ):
             rbln_config = cls._update_sliding_window_config(model_config, rbln_config)
             if rbln_config.sliding_window is not None:
@@ -606,73 +620,94 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
         input_ids: Optional[torch.LongTensor] = None,
         inputs_embeds: Optional[torch.Tensor] = None,
         attention_mask: Optional[torch.LongTensor] = None,
+        position_ids: Optional[torch.Tensor] = None,
         position_embed: Optional[torch.Tensor] = None,
+        output_hidden_states: Optional[bool] = None,
         **kwargs,
-    ) -> Tuple[torch.FloatTensor]:
+    ) -> BaseModelOutputWithPast:
+        """
+        Args:
+            input_ids (torch.LongTensor, optional): The input IDs to the model.
+            inputs_embeds (torch.Tensor, optional): The input embeddings to the model.
+            attention_mask (torch.LongTensor, optional): The attention mask to the model.
+            kwargs (dict[str, Any], optional): Additional keyword arguments.
+
+        Returns:
+            Dataclass containing the last hidden states of the model.
+        """
         inputs = inputs_embeds if inputs_embeds is not None else input_ids
         batch_size = inputs.shape[0]
+        position_embed = kwargs.get("position_embed", None)
 
         if batch_size != self.rbln_config.batch_size:
             raise ValueError(
                 f"Batch size ({batch_size}) must be equal to the batch size of the model ({self.rbln_config.batch_size})."
             )
+        output_hidden_states = _validate_output_hidden_states(output_hidden_states, self.rbln_config)
 
         all_last_hidden_states = []
+        all_hidden_states = (
+            tuple(
+                torch.zeros(
+                    self.rbln_config.batch_size,
+                    inputs.shape[1],
+                    self.config.hidden_size,
+                    dtype=self.rbln_config.dtype,
+                )
+                for _ in range(self.config.num_hidden_layers + 1)
+            )
+            if output_hidden_states
+            else None
+        )
         for b_idx in range(self.rbln_config.batch_size):
             query_length = (
                 attention_mask[b_idx].sum(dim=-1).int().item() if attention_mask is not None else inputs.shape[1]
             )
             cache_position = torch.arange(query_length, dtype=torch.int32).unsqueeze(0)
-            last_hidden_states = self.prefill_decoder(
-                inputs[b_idx : b_idx + 1],
+            outputs = self.prefill_decoder(
+                input_ids=inputs[b_idx : b_idx + 1] if inputs_embeds is None else None,
+                inputs_embeds=inputs[b_idx : b_idx + 1] if inputs_embeds is not None else None,
                 attention_mask=attention_mask[b_idx] if attention_mask is not None else None,
+                position_ids=position_ids[b_idx : b_idx + 1] if position_ids is not None else None,
                 position_embed=position_embed[b_idx : b_idx + 1] if position_embed is not None else None,
                 cache_position=cache_position,
                 batch_idx=b_idx,
-            ).logits
-            all_last_hidden_states.append(last_hidden_states)
+            )
+            all_last_hidden_states.append(outputs.logits)
+            if self.rbln_config.output_hidden_states:
+                for l_idx in range(self.config.num_hidden_layers + 1):
+                    all_hidden_states[l_idx][b_idx].copy_(outputs.hidden_states[l_idx][0])
 
         last_hidden_states = torch.concat(all_last_hidden_states, dim=0)
-        return BaseModelOutputWithPast(last_hidden_state=last_hidden_states)
+        return BaseModelOutputWithPast(last_hidden_state=last_hidden_states, hidden_states=all_hidden_states)
 
 
 class RBLNDecoderOnlyModelForCausalLM(RBLNDecoderOnlyModel, RBLNDecoderOnlyGenerationMixin):
     """
-        A base class for decoder-only transformer models optimized for causal language modeling tasks on RBLN devices.
-        This class serves as the foundation for various decoder-only architectures like GPT, LLaMA, etc.
+    A base class for decoder-only transformer models optimized for causal language modeling tasks on RBLN devices.
+    This class serves as the foundation for various decoder-only architectures like GPT, LLaMA, etc.
 
-        The class provides core functionality for:
+    The class provides core functionality for:
 
-        1. Converting pre-trained transformer models to RBLN-optimized format
-        2. Handling the compilation process for RBLN devices
-        3. Managing inference operations for causal language modeling
-    <<<<<<< HEAD
+    1. Converting pre-trained transformer models to RBLN-optimized format
+    2. Handling the compilation process for RBLN devices
+    3. Managing inference operations for causal language modeling
 
-    =======
-    >>>>>>> origin/main
-        This class inherits from RBLNModel and implements specific methods required for
-        decoder-only architectures and causal language modeling tasks.
+    This class inherits from RBLNModel and implements specific methods required for
+    decoder-only architectures and causal language modeling tasks.
 
-        Note:
-            - This class is designed to be subclassed by specific model implementations
-              (e.g., RBLNLlamaForCausalLM, RBLNGPT2LMHeadModel)
-            - Subclasses should implement model-specific conversion logic.
-            - The class handles RBLN-specific optimizations automatically during compilation
+    Note:
+        - This class is designed to be subclassed by specific model implementations
+          (e.g., RBLNLlamaForCausalLM, RBLNGPT2LMHeadModel)
+        - Subclasses should implement model-specific conversion logic.
+        - The class handles RBLN-specific optimizations automatically during compilation
     """
 
     auto_model_class = AutoModelForCausalLM
 
     @property
-    def prefill_output_size(self):
-        return (
-            1,
-            self.rbln_config.prefill_chunk_size if self.rbln_config.logits_to_keep == 0 else 1,
-            self.config.vocab_size,
-        )
-
-    @classmethod
-    def use_query_position(cls, use_local_attention: bool, is_prefill: bool = True):
-        return is_prefill
+    def logits_last_dim(self):
+        return self.config.vocab_size
 
     def set_lora_int_ids(self, lora_int_ids: Optional[torch.Tensor]):
         if isinstance(lora_int_ids, int):
@@ -733,6 +768,7 @@ class RBLNDecoderOnlyModelForCausalLM(RBLNDecoderOnlyModel, RBLNDecoderOnlyGener
         token_type_ids: Optional[torch.Tensor] = None,
         lora_int_ids: Optional[torch.Tensor] = None,
         return_dict: Optional[torch.Tensor] = None,
+        output_hidden_states: Optional[bool] = None,
         **kwargs,
     ) -> Tuple[torch.FloatTensor]:
         # Forward method for the RBLN-optimized model, designed for integration with the HuggingFace generate API.
@@ -756,24 +792,48 @@ class RBLNDecoderOnlyModelForCausalLM(RBLNDecoderOnlyModel, RBLNDecoderOnlyGener
             )
             padded_cache_lengths = torch.zeros_like(generate_idx)
 
+        output_hidden_states = _validate_output_hidden_states(output_hidden_states, self.rbln_config)
+
         # Prefill
         if cache_position is None:
             logits = []
             inputs = inputs_embeds if inputs_embeds is not None else input_ids
             batch_size = inputs.shape[0]
+            input_len = inputs.shape[1]
+            if batch_size > self.rbln_config.batch_size:
+                raise ValueError(
+                    f"Input's batch({batch_size}) exceeds compiled batch_size({self.rbln_config.batch_size})"
+                )
+            if input_len > self.rbln_config.max_seq_len:
+                raise ValueError(
+                    f"Input's length({input_len}) exceeds compiled max_seq_len({self.rbln_config.max_seq_len})."
+                )
+
+            all_hidden_states = (
+                tuple(
+                    torch.zeros(batch_size, input_len, self.config.hidden_size, dtype=self.rbln_config.dtype)
+                    for _ in range(self.config.num_hidden_layers + 1)
+                )
+                if self.rbln_config.output_hidden_states
+                else None
+            )
             for b_idx in range(batch_size):
                 cache_position = torch.arange(0, generate_idx[b_idx].item(), dtype=torch.int32).unsqueeze(0)
-                output = self.prefill_decoder(
+                outputs = self.prefill_decoder(
                     input_ids=inputs[b_idx : b_idx + 1] if inputs_embeds is None else None,
                     inputs_embeds=inputs[b_idx : b_idx + 1] if inputs_embeds is not None else None,
                     attention_mask=attention_mask[b_idx] if attention_mask is not None else None,
+                    position_ids=position_ids[b_idx : b_idx + 1] if position_ids is not None else None,
                     cache_position=cache_position,
                     batch_idx=b_idx,
                     token_type_ids=token_type_ids[b_idx : b_idx + 1] if token_type_ids is not None else None,
                     lora_int_ids=lora_int_ids[b_idx : b_idx + 1] if lora_int_ids is not None else None,
                 )
-                padded_cache_lengths[b_idx] += output.padded_cache_lengths
-                logits.append(output.logits)
+                padded_cache_lengths[b_idx] += outputs.padded_cache_lengths
+                logits.append(outputs.logits)
+                if self.rbln_config.output_hidden_states:
+                    for l_idx in range(self.config.num_hidden_layers + 1):
+                        all_hidden_states[l_idx][b_idx].copy_(outputs.hidden_states[l_idx][0])
             logits = torch.cat(logits, dim=0)
         # Decoder
         else:
@@ -785,17 +845,31 @@ class RBLNDecoderOnlyModelForCausalLM(RBLNDecoderOnlyModel, RBLNDecoderOnlyGener
                     f"Available batch sizes are: {list(self.decoders.keys())}. "
                     f"Please run your model with one of these batch sizes or add support for batch size {batch_size}."
                 )
-            logits = self.decoders[batch_size](
+            if max(cache_position.reshape(-1)) >= self.rbln_config.max_seq_len:
+                raise ValueError(
+                    f"Cache position exceeds the maximum sequence length.\n"
+                    f"  - Current max cache position: {int(torch.max(cache_position).item())}\n"
+                    f"  - Allowed max_seq_len: {self.rbln_config.max_seq_len}\n"
+                    f"Solution: Reduce the generation length by adjusting `max_new_tokens` "
+                    f"or `max_length` in the generation config."
+                )
+
+            outputs = self.decoders[batch_size](
                 input_ids=input_ids,
                 inputs_embeds=inputs_embeds,
                 cache_position=cache_position,
                 position_ids=position_ids if self.rbln_config.use_position_ids else None,
                 lora_int_ids=lora_int_ids,
-            ).logits
+            )
+            logits = outputs.logits
+            all_hidden_states = outputs.hidden_states
 
         if not return_dict:
-            return logits, generate_idx, padded_cache_lengths
+            return logits, generate_idx, padded_cache_lengths, all_hidden_states
         else:
             return RBLNDecoderOnlyOutput(
-                logits=logits, generate_idx=generate_idx, padded_cache_lengths=padded_cache_lengths
+                logits=logits,
+                generate_idx=generate_idx,
+                padded_cache_lengths=padded_cache_lengths,
+                hidden_states=all_hidden_states,
             )

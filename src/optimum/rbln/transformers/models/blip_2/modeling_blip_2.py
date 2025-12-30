@@ -14,7 +14,7 @@
 
 import inspect
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Any, Callable, List, Optional, Tuple, Union
 
 import torch
 from transformers import (
@@ -31,6 +31,7 @@ from transformers.utils import logging
 from ....configuration_utils import RBLNCompileConfig, RBLNModelConfig
 from ....modeling import RBLNModel
 from ...utils.rbln_runtime_wrapper import LoopProcessor
+from ..decoderonly.generation_decoderonly import RBLNDecoderOnlyGenerationMixin
 
 
 logger = logging.get_logger(__name__)
@@ -70,7 +71,7 @@ class RBLNBlip2VisionModel(RBLNModel):
         return self.embeddings
 
     @classmethod
-    def wrap_model_if_needed(cls, model: torch.nn.Module, rbln_config: RBLNModelConfig) -> torch.nn.Module:
+    def _wrap_model_if_needed(cls, model: torch.nn.Module, rbln_config: RBLNModelConfig) -> torch.nn.Module:
         class Blip2VisionModelWrapper(torch.nn.Module):
             def __init__(self, model: "Blip2VisionModel") -> None:
                 super().__init__()
@@ -110,11 +111,20 @@ class RBLNBlip2VisionModel(RBLNModel):
     def forward(
         self,
         pixel_values: torch.FloatTensor,
-        output_attentions: Optional[bool] = None,
-        output_hidden_states: Optional[bool] = None,
-        return_dict: Optional[bool] = None,
         interpolate_pos_encoding: bool = False,
+        return_dict: Optional[bool] = None,
     ) -> Union[Tuple, BaseModelOutputWithPooling]:
+        """
+        Forward pass for the RBLN-optimized Blip2VisionModel model.
+
+        Args:
+            pixel_values (torch.FloatTensor of shape (batch_size, num_channels, height, width)): The tensors corresponding to the input images.
+            interpolate_pos_encoding (bool, optional): Whether to interpolate the positional encoding of the image embeddings. Defaults to False.
+            return_dict (bool, optional): Whether to return a ModelOutput instead of a plain tuple.
+
+        Returns:
+            BaseModelOutputWithPooling or tuple(torch.FloatTensor): The model outputs. If return_dict=False is passed, returns a tuple of tensors. Otherwise, returns a BaseModelOutputWithPooling object.
+        """
         batch_size = pixel_values.shape[0]
         outputs = []
         for i in range(batch_size):
@@ -150,7 +160,7 @@ class RBLNBlip2QFormerModel(RBLNModel):
         return self.embeddings.word_embeddings
 
     @classmethod
-    def wrap_model_if_needed(cls, model: torch.nn.Module, rbln_config: RBLNModelConfig) -> torch.nn.Module:
+    def _wrap_model_if_needed(cls, model: torch.nn.Module, rbln_config: RBLNModelConfig) -> torch.nn.Module:
         class Blip2QFormerModelWrapper(torch.nn.Module):
             def __init__(self, model: "Blip2QFormerModel"):
                 super().__init__()
@@ -230,17 +240,22 @@ class RBLNBlip2QFormerModel(RBLNModel):
     def forward(
         self,
         query_embeds: torch.FloatTensor,
-        query_length: Optional[int] = None,
-        attention_mask: Optional[torch.FloatTensor] = None,
-        head_mask: Optional[torch.FloatTensor] = None,
         encoder_hidden_states: Optional[torch.FloatTensor] = None,
         encoder_attention_mask: Optional[torch.FloatTensor] = None,
-        past_key_values: Optional[Tuple[Tuple[torch.FloatTensor]]] = None,
-        use_cache: Optional[bool] = None,
-        output_attentions: Optional[bool] = None,
-        output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
     ) -> Union[Tuple[torch.Tensor], BaseModelOutputWithPoolingAndCrossAttentions]:
+        """
+        The forward pass for the RBLN-optimized Blip2QFormerModel model.
+
+        Args:
+            query_embeds (torch.FloatTensor): Hidden states to be used in the attention computation.
+            encoder_hidden_states (torch.FloatTensor, optional): Sequence of hidden-states at the output of the last layer of the encoder. Used in the cross-attention if the model is configured as a decoder.
+            encoder_attention_mask (torch.FloatTensor, optional): Mask to avoid performing attention on the padding token indices of the encoder input. This mask is used in the cross-attention if the model is configured as a decoder.
+            return_dict (bool, optional): Whether to return a ModelOutput instead of a plain tuple.
+
+        Returns:
+            BaseModelOutputWithPoolingAndCrossAttentions or tuple(torch.FloatTensor): The model outputs. If `return_dict=False` is passed, returns a tuple of tensors. Otherwise, returns a `BaseModelOutputWithPoolingAndCrossAttentions` object.
+        """
         batch_size = query_embeds.shape[0]
         outputs = []
         for i in range(batch_size):
@@ -265,7 +280,7 @@ class RBLNBlip2QFormerModel(RBLNModel):
         )
 
 
-class RBLNBlip2ForConditionalGeneration(RBLNModel):
+class RBLNBlip2ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMixin):
     """
     RBLNBlip2ForConditionalGeneration is a multi-modal model that integrates vision and language processing capabilities,
     optimized for RBLN NPUs. It is designed for conditional generation tasks that involve both image and text inputs.
@@ -348,7 +363,7 @@ class RBLNBlip2ForConditionalGeneration(RBLNModel):
         return self.language_model.get_input_embeddings()
 
     @classmethod
-    def wrap_model_if_needed(cls, model, rbln_config):
+    def _wrap_model_if_needed(cls, model, rbln_config):
         return model.language_projection
 
     @classmethod
@@ -433,3 +448,79 @@ class RBLNBlip2ForConditionalGeneration(RBLNModel):
             )
 
         return inputs_embeds
+
+    @torch.no_grad()
+    def generate(
+        self,
+        pixel_values: torch.FloatTensor,
+        input_ids: Optional[torch.LongTensor] = None,
+        attention_mask: Optional[torch.LongTensor] = None,
+        inputs_embeds: Optional[torch.FloatTensor] = None,
+        interpolate_pos_encoding: bool = False,
+        **generate_kwargs,
+    ) -> List[torch.LongTensor]:
+        """
+        The generate function is utilized in its standard form as in the HuggingFace transformers library. User can use this function to generate text from the model.
+        Check the [HuggingFace transformers documentation](https://huggingface.co/docs/transformers/v4.57.1/en/model_doc/blip-2#transformers.Blip2ForConditionalGeneration.generate) for more details.
+
+        Args:
+            pixel_values (torch.FloatTensor): Input images to be processed.
+            input_ids (torch.LongTensor, optional): The sequence used as a prompt for the generation.
+            attention_mask (torch.LongTensor, optional): Mask to avoid performing attention on padding token indices
+            inputs_embeds (torch.FloatTensor, optional): Embedded representation of the inputs. Should be float, not int tokens.
+            interpolate_pos_encoding (bool, optional, defaults to False) — Whether to interpolate the positional encoding of the image embeddings.
+        Returns:
+            A list of strings of length batch_size * num_captions.
+        """
+        batch_size = pixel_values.shape[0]
+        image_embeds = self.vision_model(
+            pixel_values,
+            return_dict=True,
+            interpolate_pos_encoding=interpolate_pos_encoding,
+        ).last_hidden_state
+        image_attention_mask = torch.ones(image_embeds.size()[:-1], dtype=torch.long, device=image_embeds.device)
+
+        query_tokens = self.query_tokens.expand(image_embeds.shape[0], -1, -1)
+        query_outputs = self.qformer(
+            query_embeds=query_tokens,
+            encoder_hidden_states=image_embeds,
+            encoder_attention_mask=image_attention_mask,
+            return_dict=True,
+        )
+        query_output = query_outputs.last_hidden_state
+
+        if query_output.dtype != image_embeds.dtype:
+            query_output = query_output.to(image_embeds.dtype)
+
+        language_model_inputs = self.language_projection(query_output)
+
+        if inputs_embeds is None:
+            if input_ids is None:
+                image_tokens = [self.config.image_token_index] * self.config.num_query_tokens
+                start_tokens = image_tokens + [self.config.text_config.bos_token_id]
+                input_ids = torch.tensor([start_tokens], dtype=torch.long, device=image_embeds.device)
+                input_ids = input_ids.repeat(batch_size, 1)
+            inputs_embeds = self.get_input_embeddings()(input_ids)
+
+        if attention_mask is None:
+            attention_mask = torch.ones_like(input_ids)
+
+        if input_ids is None:
+            special_image_mask = inputs_embeds == self.get_input_embeddings()(
+                torch.tensor(self.config.image_token_id, dtype=torch.long, device=inputs_embeds.device)
+            )
+            special_image_mask = special_image_mask.all(-1)
+        else:
+            special_image_mask = input_ids == self.config.image_token_id
+
+        special_image_mask = special_image_mask.unsqueeze(-1).expand_as(inputs_embeds).to(inputs_embeds.device)
+        language_model_inputs = language_model_inputs.to(inputs_embeds.device, inputs_embeds.dtype)
+        inputs_embeds = inputs_embeds.masked_scatter(special_image_mask, language_model_inputs)
+
+        inputs = {"inputs_embeds": inputs_embeds, "attention_mask": attention_mask}
+        if not self.language_model.config.is_encoder_decoder:
+            inputs["input_ids"] = input_ids
+
+        outputs = self.language_model.generate(**inputs, **generate_kwargs)
+
+        return outputs

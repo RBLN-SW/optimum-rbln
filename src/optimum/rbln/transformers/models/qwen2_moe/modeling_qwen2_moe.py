@@ -12,86 +12,57 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from transformers import PretrainedConfig
-
-from ....utils import logging
-from ...models.decoderonly import RBLNDecoderOnlyModelForCausalLM, RBLNDecoderOnlyModelForCausalLMConfig
-from .qwen2_moe_architecture import QWEN2MoeWrapper
-
-
-logger = logging.get_logger(__name__)
+from ...models.decoderonly import RBLNDecoderOnlyModelForCausalLM
+from .qwen2_moe_architecture import Qwen2MoeWrapper
 
 
 class RBLNQwen2MoeForCausalLM(RBLNDecoderOnlyModelForCausalLM):
     """
-    The Qwen2 Model transformer with a language modeling head (linear layer) on top.
+    The Qwen2MoE is a Mixture-of-Experts (MoE) variant of Qwen2, available as a base model and an aligned chat model.
     This model inherits from [`RBLNDecoderOnlyModelForCausalLM`]. Check the superclass documentation for the generic methods the library implements for all its models.
-
-    A class to convert and run pre-trained transformers based Qwen2ForCausalLM model on RBLN devices.
-    It implements the methods to convert a pre-trained transformers Qwen2ForCausalLM model into a RBLN transformer model by:
+    A class to convert and run pre-trained transformers based Qwen2MoeForCausalLM model on RBLN devices.
+    It implements the methods to convert a pre-trained transformers Qwen2MoeForCausalLM model into a RBLN transformer model by:
     - transferring the checkpoint weights of the original into an optimized RBLN graph,
     - compiling the resulting graph using the RBLN compiler.
-
     **Configuration:**
     This model uses [`RBLNQwen2MoeForCausalLMConfig`] for configuration. When calling methods like `from_pretrained` or `from_model`,
     the `rbln_config` parameter should be an instance of [`RBLNQwen2MoeForCausalLMConfig`] or a dictionary conforming to its structure.
-
     See the [`RBLNQwen2MoeForCausalLMConfig`] class for all available configuration options.
-
     Examples:
         ```python
         from optimum.rbln import RBLNQwen2MoeForCausalLM
-
         # Simple usage using rbln_* arguments
         # `max_seq_len` is automatically inferred from the model config
         model = RBLNQwen2MoeForCausalLM.from_pretrained(
-            "Qwen/Qwen2-7B-Instruct",
+            "Qwen/Qwen1.5-MoE-A2.7B",
             export=True,
             rbln_batch_size=1,
             rbln_tensor_parallel_size=4,
         )
-
-
         # Using a config dictionary
         rbln_config = {
             "batch_size": 1,
-            "max_seq_len": 4096,
+            "max_seq_len": 8192,
             "tensor_parallel_size": 4,
         }
         model = RBLNQwen2MoeForCausalLM.from_pretrained(
-            "Qwen/Qwen2-7B-Instruct",
+            "Qwen/Qwen1.5-MoE-A2.7B",
             export=True,
             rbln_config=rbln_config
         )
-
-
         # Using a RBLNQwen2ForCausalLMConfig instance (recommended for type checking)
         from optimum.rbln import RBLNQwen2MoeForCausalLMConfig
-
         config = RBLNQwen2MoeForCausalLMConfig(
             batch_size=1,
-            max_seq_len=4096,
+            max_seq_len=8192,
             tensor_parallel_size=4
         )
         model = RBLNQwen2MoeForCausalLM.from_pretrained(
-            "Qwen/Qwen2-7B-Instruct",
+            "Qwen/Qwen1.5-MoE-A2.7B",
             export=True,
             rbln_config=config
         )
         ```
     """
 
-    _decoder_wrapper_cls = QWEN2MoeWrapper
-
-    @classmethod
-    def _update_sliding_window_config(
-        cls, model_config: PretrainedConfig, rbln_config: RBLNDecoderOnlyModelForCausalLMConfig
-    ):
-        # https://github.com/huggingface/transformers/issues/35896
-        # There seems to be a bug in transformers(v4.52.4). Therefore, similar to when attn_implementation is eager,
-        # we set all layers to use sliding window in this version. This should be updated once the bug is fixed.
-
-        rbln_config.cache_impl = "sliding_window"
-        rbln_config.sliding_window = model_config.sliding_window
-        rbln_config.sliding_window_layers = list(range(model_config.num_hidden_layers))
-        return rbln_config
+    _decoder_wrapper_cls = Qwen2MoeWrapper

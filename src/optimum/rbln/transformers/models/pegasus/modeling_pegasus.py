@@ -54,7 +54,7 @@ class RBLNPegasusForConditionalGeneration(RBLNModelForSeq2SeqLM):
     support_causal_attn = True
 
     @classmethod
-    def wrap_model_if_needed(self, model: "PreTrainedModel", rbln_config: RBLNPegasusForConditionalGenerationConfig):
+    def _wrap_model_if_needed(self, model: "PreTrainedModel", rbln_config: RBLNPegasusForConditionalGenerationConfig):
         return PegasusWrapper(
             model, enc_max_seq_len=rbln_config.enc_max_seq_len, use_attention_mask=rbln_config.use_attention_mask
         )

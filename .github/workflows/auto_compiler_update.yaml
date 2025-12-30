@@ -1,0 +1,83 @@
+name: Auto Compiler Update
+
+on:
+  schedule:
+    # Run every day at 19:00 UTC (4:00am KST)
+    - cron: '0 19 * * *'
+  workflow_dispatch:
+
+env:
+  REBEL_PYPI_ENDPOINT: ${{ vars.REBEL_PYPI_INTERNAL_ENDPOINT }}
+  REBEL_PYPI_USERNAME: ${{ secrets.REBEL_PYPI_USERNAME }}
+  REBEL_PYPI_PASSWORD: ${{ secrets.REBEL_PYPI_PASSWORD }}
+  TOKEN: ${{secrets.RENOVATE_TOKEN}}
+
+jobs:
+  fetch-version:
+    runs-on: rebel-k8s-runner
+    outputs:
+      compiler_version: ${{ steps.get_version.outputs.compiler_version }}
+      need_pr: ${{ steps.check_pr_needed.outputs.need_pr }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          ref: "dev"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install packaging library for parsing latest version
+        run: |
+          pip install packaging
+
+      - name: Get compiler version
+        id: get_version
+        run: |
+          CUR_VERSION=$(grep rebel_compiler_version .github/version.yaml | cut -d ':' -f2 | tr -d ' ')
+          LATEST_VERSION=$( \
+                            curl -s -u "${{ env.REBEL_PYPI_USERNAME }}:${{ env.REBEL_PYPI_PASSWORD }}" "${{ env.REBEL_PYPI_ENDPOINT }}/rebel-compiler/json" | \
+                            jq -r '.releases | keys | .[]' | \
+                            grep prod | \
+                            grep -v "latestumd" | \
+                            python .github/scripts/parsing_latest_version.py
+                          )
+          echo "compiler_version=$LATEST_VERSION" >> $GITHUB_OUTPUT
+          echo "cur_version=$CUR_VERSION" >> $GITHUB_OUTPUT
+
+      - name: Check if PR needed
+        id: check_pr_needed
+        run: |
+          if [ "${{ steps.get_version.outputs.cur_version }}" == "${{ steps.get_version.outputs.compiler_version }}" ]; then
+            NEED_PR=false
+          else
+            NEED_PR=true
+          fi
+          echo "need_pr=$NEED_PR" >> $GITHUB_OUTPUT
+
+  create-pr:
+    runs-on: rebel-k8s-runner
+    needs: fetch-version
+    if: ${{ needs.fetch-version.outputs.need_pr == 'true' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: "dev"
+
+      - name: Change version.yaml
+        run: |
+          sed -i "s/^rebel_compiler_version:.*/rebel_compiler_version: ${{ needs.fetch-version.outputs.compiler_version }}/" .github/version.yaml
+
+      - name: Create PR for updated files
+        id: create-pr-step
+        uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ env.TOKEN }}
+          commit-message: "[pytest-full] dependency: Update dependency rebel-compiler to ${{ needs.fetch-version.outputs.compiler_version }}"
+          title: "dependency: Update dependency rebel-compiler to ${{ needs.fetch-version.outputs.compiler_version }}"
+          base: dev
+          team-reviewers: rebellions-sw/sw-generalization
+          reviewers: rebel-jongho

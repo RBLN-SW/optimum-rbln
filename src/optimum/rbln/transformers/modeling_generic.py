@@ -23,9 +23,9 @@ different model architectures.
 import inspect
 from typing import TYPE_CHECKING, Optional, Union
 
+from torch import nn
 from transformers import (
     AutoModel,
-    AutoModelForAudioClassification,
     AutoModelForDepthEstimation,
     AutoModelForImageClassification,
     AutoModelForMaskedLM,
@@ -41,7 +41,6 @@ from ..modeling import RBLNModel
 from ..utils.logging import get_logger
 from .configuration_generic import (
     RBLNImageModelConfig,
-    RBLNModelForAudioClassificationConfig,
     RBLNTransformerEncoderConfig,
 )
 
@@ -56,6 +55,28 @@ class RBLNTransformerEncoder(RBLNModel):
     auto_model_class = AutoModel
     rbln_model_input_names = ["input_ids", "attention_mask", "token_type_ids"]
     rbln_dtype = "int64"
+
+    @classmethod
+    def _wrap_model_if_needed(cls, model: "PreTrainedModel", rbln_config: RBLNTransformerEncoderConfig) -> nn.Module:
+        class TransformerEncoderWrapper(nn.Module):
+            # Parameters to disable for RBLN compilation
+            DISABLED_PARAMS = {"return_dict", "use_cache"}
+
+            def __init__(self, model: "PreTrainedModel", rbln_config: RBLNTransformerEncoderConfig):
+                super().__init__()
+                self.model = model
+                self.rbln_config = rbln_config
+                self._forward_signature = inspect.signature(model.forward)
+
+            def forward(self, *args, **kwargs):
+                # Disable parameters that are not compatible with RBLN compilation
+                for param_name in self.DISABLED_PARAMS:
+                    if param_name in self._forward_signature.parameters:
+                        kwargs[param_name] = False
+
+                return self.model(*args, **kwargs)
+
+        return TransformerEncoderWrapper(model, rbln_config).eval()
 
     @classmethod
     def _update_rbln_config(
@@ -208,7 +229,6 @@ class RBLNModelForQuestionAnswering(RBLNTransformerEncoder):
 
     def _prepare_output(self, output, return_dict):
         # Prepare QuestionAnswering specific output format.
-
         start_logits, end_logits = output
 
         if not return_dict:
@@ -245,59 +265,16 @@ class RBLNModelForImageClassification(RBLNImageModel):
 class RBLNModelForDepthEstimation(RBLNImageModel):
     auto_model_class = AutoModelForDepthEstimation
 
-
-class RBLNModelForAudioClassification(RBLNModel):
-    """
-    This is a generic model class that will be instantiated as one of the model classes of the library (with a audio classification head) when created with the from_pretrained() class method
-    This model inherits from [`RBLNModel`]. Check the superclass documentation for the generic methods the library implements for all its models.
-
-    A class to convert and run pre-trained transformers based AudioClassification models on RBLN devices.
-    It implements the methods to convert a pre-trained transformers AudioClassification model into a RBLN transformer model by:
-
-    - transferring the checkpoint weights of the original into an optimized RBLN graph,
-    - compiling the resulting graph using the RBLN compiler.
-
-    Currently, this model class only supports the 'AST' model from the transformers library. Future updates may include support for additional model types.
-    """
-
-    auto_model_class = AutoModelForAudioClassification
-
     @classmethod
-    def _update_rbln_config(
-        cls,
-        preprocessors: "AutoFeatureExtractor" = None,
-        model: Optional["PreTrainedModel"] = None,
-        model_config: "PretrainedConfig" = None,
-        rbln_config: Optional[RBLNModelForAudioClassificationConfig] = None,
-    ) -> RBLNModelForAudioClassificationConfig:
-        if rbln_config.num_mel_bins is None:
-            rbln_config.num_mel_bins = getattr(model_config, "num_mel_bins", None)
-            if rbln_config.num_mel_bins is None:
-                for feature_extractor in preprocessors:
-                    if hasattr(feature_extractor, "num_mel_bins"):
-                        rbln_config.num_mel_bins = feature_extractor.num_mel_bins
-                        break
+    def _wrap_model_if_needed(cls, model: "PreTrainedModel", rbln_config: RBLNImageModelConfig):
+        class ImageModelWrapper(nn.Module):
+            def __init__(self, model: "PreTrainedModel", rbln_config: RBLNImageModelConfig):
+                super().__init__()
+                self.model = model
+                self.rbln_config = rbln_config
 
-        if rbln_config.num_mel_bins is None:
-            raise ValueError("`num_mel_bins` should be specified!")
+            def forward(self, *args, **kwargs):
+                output = self.model(*args, return_dict=True, **kwargs)
+                return output.predicted_depth
 
-        if rbln_config.max_length is None:
-            rbln_config.max_length = getattr(model_config, "max_length", None)
-            for feature_extractor in preprocessors:
-                if hasattr(feature_extractor, "max_length"):
-                    rbln_config.max_length = feature_extractor.max_length
-                    break
-
-        if rbln_config.max_length is None:
-            raise ValueError("`max_length` should be specified!")
-
-        input_info = [
-            (
-                "input_values",
-                [rbln_config.batch_size, rbln_config.max_length, rbln_config.num_mel_bins],
-                "float32",
-            ),
-        ]
-
-        rbln_config.set_compile_cfgs([RBLNCompileConfig(input_info=input_info)])
-        return rbln_config
+        return ImageModelWrapper(model, rbln_config).eval()

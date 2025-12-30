@@ -69,7 +69,7 @@ class RBLNOPTForCausalLM(RBLNDecoderOnlyModelForCausalLM):
         return layer
 
     @classmethod
-    def wrap_model_if_needed(cls, model: PreTrainedModel, rbln_config: RBLNDecoderOnlyModelForCausalLMConfig):
+    def _wrap_model_if_needed(cls, model: PreTrainedModel, rbln_config: RBLNDecoderOnlyModelForCausalLMConfig):
         for i in range(len(model.model.decoder.layers)):
             model.model.decoder.layers[i] = cls.modify_opt_decoder_layer(model.model.decoder.layers[i])
 
@@ -95,7 +95,7 @@ class RBLNOPTModel(RBLNDecoderOnlyModel):
         return layer
 
     @classmethod
-    def wrap_model_if_needed(cls, model: PreTrainedModel, rbln_config: RBLNDecoderOnlyModelForCausalLMConfig):
+    def _wrap_model_if_needed(cls, model: PreTrainedModel, rbln_config: RBLNDecoderOnlyModelForCausalLMConfig):
         for i in range(len(model.decoder.layers)):
             model.decoder.layers[i] = cls.modify_opt_decoder_layer(model.decoder.layers[i])
 

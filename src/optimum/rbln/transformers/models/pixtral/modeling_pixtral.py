@@ -229,7 +229,7 @@ class RBLNPixtralVisionModel(RBLNModel):
         torch.save(save_dict, save_dir_path / subfolder / "torch_artifacts.pth")
 
     @classmethod
-    def wrap_model_if_needed(
+    def _wrap_model_if_needed(
         cls, model: torch.nn.Module, rbln_config: RBLNPixtralVisionModelConfig
     ) -> torch.nn.Module:
         wrapper_cfg = {
@@ -293,6 +293,18 @@ class RBLNPixtralVisionModel(RBLNModel):
         return_dict: bool = True,
         **kwargs,
     ) -> Union[Tuple, BaseModelOutput]:
+        """
+        Forward pass for the RBLN-optimized Pixtral vision model.
+
+        Args:
+            pixel_values (torch.Tensor of shape (batch_size, num_channels, image_size, image_size)) — The tensors corresponding to the input images. Pixel values can be obtained using PixtralImageProcessor. See PixtralImageProcessor.call() for details (PixtralProcessor uses PixtralImageProcessor for processing images).
+            image_sizes (torch.Tensor of shape (batch_size, 2), optional) — The sizes of the images in the batch, being (height, width) for each image.
+            output_hidden_states (bool, optional) — Whether or not to return the hidden states of all layers. See hidden_states under returned tensors for more detail.
+            return_dict (bool, optional) — Whether or not to return a ModelOutput instead of a plain tuple.
+
+        Returns:
+            BaseModelOutput or tuple(torch.FloatTensor)
+        """
         output_hidden_states = (
             output_hidden_states if output_hidden_states is not None else self.rbln_config.output_hidden_states
         )

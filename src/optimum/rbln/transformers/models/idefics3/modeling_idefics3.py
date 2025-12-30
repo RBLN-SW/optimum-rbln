@@ -35,6 +35,7 @@ from ....configuration_utils import RBLNCompileConfig, RBLNModelConfig
 from ....modeling import RBLNModel
 from ....utils.runtime_utils import RBLNPytorchRuntime
 from ...modeling_outputs import RBLNDecoderOnlyOutput
+from ..decoderonly.generation_decoderonly import RBLNDecoderOnlyGenerationMixin
 
 
 if TYPE_CHECKING:
@@ -109,7 +110,7 @@ class RBLNIdefics3VisionTransformer(RBLNModel):
         return self.embeddings
 
     @classmethod
-    def wrap_model_if_needed(cls, model: torch.nn.Module, rbln_config: RBLNModelConfig) -> torch.nn.Module:
+    def _wrap_model_if_needed(cls, model: torch.nn.Module, rbln_config: RBLNModelConfig) -> torch.nn.Module:
         class Idefics3VisionTransformerWrapper(torch.nn.Module):
             def __init__(self, model: "Idefics3VisionTransformer"):
                 super().__init__()
@@ -120,9 +121,6 @@ class RBLNIdefics3VisionTransformer(RBLNModel):
                 encoder_outputs = self.encoder(
                     inputs_embeds=hidden_states,
                     attention_mask=patch_attention_mask,
-                    output_attentions=None,
-                    output_hidden_states=None,
-                    return_dict=False,
                 )
                 last_hidden_state = encoder_outputs[0]
                 last_hidden_state = self.post_layernorm(last_hidden_state)
@@ -185,7 +183,7 @@ class RBLNIdefics3VisionTransformer(RBLNModel):
             return BaseModelOutput(last_hidden_state=last_hidden_state)
 
 
-class RBLNIdefics3ForConditionalGeneration(RBLNModel):
+class RBLNIdefics3ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMixin):
     """
     RBLNIdefics3ForConditionalGeneration is a multi-modal model that integrates vision and language processing capabilities,
     optimized for RBLN NPUs. It is designed for conditional generation tasks that involve both image and text inputs.
@@ -242,9 +240,7 @@ class RBLNIdefics3ForConditionalGeneration(RBLNModel):
         return True
 
     @classmethod
-    def get_pytorch_model(cls, *args, **kwargs):
-        model = super().get_pytorch_model(*args, **kwargs)
-
+    def _reconstruct_model_if_needed(cls, model: "PreTrainedModel"):
         with no_init_weights():
             model_cls_name = model.model.text_model.__class__.__name__
             causal_model_cls_name = model_cls_name.replace("Model", "ForCausalLM")
@@ -273,7 +269,7 @@ class RBLNIdefics3ForConditionalGeneration(RBLNModel):
         return self.text_model.get_input_embeddings()
 
     @classmethod
-    def wrap_model_if_needed(cls, model, rbln_config):
+    def _wrap_model_if_needed(cls, model, rbln_config):
         return model.model.connector
 
     @classmethod

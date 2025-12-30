@@ -20,6 +20,38 @@ import rebel
 import torch
 
 
+def get_available_dram(npu: Optional[str] = None) -> int:
+    """
+    Get the available DRAM size of the specified NPU.
+
+    Args:
+        npu : Optional[str], default=None
+            The NPU to get the available DRAM size.
+            If None, the function will attempt to retrieve through `ensure_valid_npu()`
+
+    Returns:
+        int
+            The available DRAM size in bytes.
+    """
+    if npu is None:
+        if not rebel.npu_is_available(0):
+            raise RuntimeError("No NPU is available to get available DRAM size.")
+
+        npu = rebel.get_npu_name(0)
+
+    if npu.startswith("RBLN-CR"):
+        # TODO(jongho): Assuming 4 chiplets.
+        DRAM_NBYTES = 144 * 2**30
+        SYS_DRAM_NBYTES = 4 * 2**30
+    elif npu.startswith("RBLN-CA"):
+        DRAM_NBYTES = 16 * 2**30
+        SYS_DRAM_NBYTES = 288 * 2**20
+    else:
+        raise ValueError(f"Unknown npu name: {npu}")
+
+    return DRAM_NBYTES - SYS_DRAM_NBYTES
+
+
 def normalize_npu(npu: str) -> str:
     """Normalize the NPU string by removing the form factor."""
     match = re.match(r"(RBLN-CA|RBLN-CR)(\d+)", npu)
@@ -43,12 +75,6 @@ def tp_and_devices_are_ok(
     if tensor_parallel_size is None:
         tensor_parallel_size = 1
 
-    if rebel.device_count() < tensor_parallel_size:
-        return (
-            f"Tensor parallel size {tensor_parallel_size} is greater than "
-            f"the number of available devices {rebel.device_count()}."
-        )
-
     if device is None:
         device = list(range(tensor_parallel_size))
     elif isinstance(device, int):
@@ -70,6 +96,12 @@ def tp_and_devices_are_ok(
             return (
                 f"Device {device_id} is not a valid NPU device. Please check your NPU status with 'rbln-stat' command."
             )
+
+    if rebel.device_count() < tensor_parallel_size:
+        return (
+            f"Tensor parallel size {tensor_parallel_size} is greater than "
+            f"the number of available devices {rebel.device_count()}."
+        )
 
     if npu is not None:
         for device_id in device:
@@ -167,33 +199,44 @@ class ContextRblnConfig:
         device=None,
         device_map=None,
         create_runtimes=None,
-        optimize_host_mem=None,
         activate_profiler=None,
         timeout=None,
     ):
         self.device = device
         self.device_map = device_map
         self.create_runtimes = create_runtimes
-        self.optimize_host_mem = optimize_host_mem
         self.activate_profiler = activate_profiler
         self.timeout = timeout
+        self._previous_context = None
 
     def __enter__(self):
-        self._local.device = self.device
-        self._local.device_map = self.device_map
-        self._local.create_runtimes = self.create_runtimes
-        self._local.optimize_host_memory = self.optimize_host_mem
-        self._local.activate_profiler = self.activate_profiler
-        self._local.timeout = self.timeout
+        self._previous_context = {
+            "device": getattr(self._local, "device", None),
+            "device_map": getattr(self._local, "device_map", None),
+            "create_runtimes": getattr(self._local, "create_runtimes", None),
+            "activate_profiler": getattr(self._local, "activate_profiler", None),
+            "timeout": getattr(self._local, "timeout", None),
+        }
+
+        if self.device is not None:
+            self._local.device = self.device
+        if self.device_map is not None:
+            self._local.device_map = self.device_map
+        if self.create_runtimes is not None:
+            self._local.create_runtimes = self.create_runtimes
+        if self.activate_profiler is not None:
+            self._local.activate_profiler = self.activate_profiler
+        if self.timeout is not None:
+            self._local.timeout = self.timeout
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        self._local.device = None
-        self._local.device_map = None
-        self._local.create_runtimes = None
-        self._local.optimize_host_memory = None
-        self._local.activate_profiler = None
-        self._local.timeout = None
+        if self._previous_context is not None:
+            self._local.device = self._previous_context["device"]
+            self._local.device_map = self._previous_context["device_map"]
+            self._local.create_runtimes = self._previous_context["create_runtimes"]
+            self._local.activate_profiler = self._previous_context["activate_profiler"]
+            self._local.timeout = self._previous_context["timeout"]
 
     @classmethod
     def get_current_context(cls):
@@ -201,7 +244,6 @@ class ContextRblnConfig:
             "device": getattr(cls._local, "device", None),
             "device_map": getattr(cls._local, "device_map", None),
             "create_runtimes": getattr(cls._local, "create_runtimes", None),
-            "optimize_host_memory": getattr(cls._local, "optimize_host_memory", None),
             "activate_profiler": getattr(cls._local, "activate_profiler", None),
             "timeout": getattr(cls._local, "timeout", None),
         }

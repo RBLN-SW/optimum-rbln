@@ -153,7 +153,7 @@ class RBLNTimeSeriesTransformerForPrediction(RBLNModel):
             return redirect(val)
 
     @classmethod
-    def wrap_model_if_needed(
+    def _wrap_model_if_needed(
         self, model: "PreTrainedModel", rbln_config: RBLNTimeSeriesTransformerForPredictionConfig
     ):
         return TimeSeriesTransformersWrapper(model, rbln_config.num_parallel_samples)
@@ -161,7 +161,7 @@ class RBLNTimeSeriesTransformerForPrediction(RBLNModel):
     @classmethod
     @torch.inference_mode()
     def get_compiled_model(cls, model, rbln_config: RBLNTimeSeriesTransformerForPredictionConfig):
-        wrapped_model = cls.wrap_model_if_needed(model, rbln_config)
+        wrapped_model = cls._wrap_model_if_needed(model, rbln_config)
 
         enc_compile_config = rbln_config.compile_cfgs[0]
         dec_compile_config = rbln_config.compile_cfgs[1]
@@ -184,20 +184,21 @@ class RBLNTimeSeriesTransformerForPrediction(RBLNModel):
             if "key_value_states" in name:
                 context.mark_static_address(tensor)
 
-        compiled_decoder = cls.compile(
-            wrapped_model.decoder,
-            dec_compile_config,
-            create_runtimes=rbln_config.create_runtimes,
-            device=rbln_config.device,
-            example_inputs=dec_example_inputs,
-            compile_context=context,
-        )
         compiled_encoder = cls.compile(
             wrapped_model.encoder,
             enc_compile_config,
             create_runtimes=rbln_config.create_runtimes,
             device=rbln_config.device,
             example_inputs=enc_example_inputs,
+            compile_context=context,
+        )
+
+        compiled_decoder = cls.compile(
+            wrapped_model.decoder,
+            dec_compile_config,
+            create_runtimes=rbln_config.create_runtimes,
+            device=rbln_config.device,
+            example_inputs=dec_example_inputs,
             compile_context=context,
         )
 
@@ -353,6 +354,20 @@ class RBLNTimeSeriesTransformerForPrediction(RBLNModel):
         static_real_features: Optional[torch.Tensor] = None,
         **kwargs,
     ) -> SampleTSPredictionOutput:
+        """
+        Generate pass for the RBLN-optimized Time Series Transformer model for time series forecasting.
+
+        Args:
+            past_values (torch.FloatTensor of shape (batch_size, sequence_length) or (batch_size, sequence_length, input_size)): Past values of the time series, that serve as context in order to predict the future.
+            past_time_features (torch.FloatTensor of shape (batch_size, sequence_length, num_features)): Required time features, which the model internally will add to past_values.
+            future_time_features (torch.FloatTensor of shape (batch_size, prediction_length, num_features)): Required time features for the prediction window, which the model internally will add to future_values.
+            past_observed_mask (torch.BoolTensor of shape (batch_size, sequence_length) or (batch_size, sequence_length, input_size), optional): Boolean mask to indicate which past_values were observed and which were missing.
+            static_categorical_features (torch.LongTensor of shape (batch_size, number of static categorical features), optional): Optional static categorical features for which the model will learn an embedding, which it will add to the values of the time series.
+            static_real_features (torch.FloatTensor of shape (batch_size, number of static real features), optional): Optional static real features which the model will add to the values of the time series.
+
+        Returns:
+            The model outputs. If return_dict=False is passed, returns a tuple of tensors. Otherwise, returns a SampleTSPredictionOutput object.
+        """
         self.validate_batch_size(**{k: v for k, v in locals().items() if isinstance(v, torch.Tensor)})
 
         outputs = self.encoder(

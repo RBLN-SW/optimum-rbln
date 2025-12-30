@@ -132,10 +132,27 @@ def _compute_dynamic_ntk_parameters(
     else:
         seq_len = max(seq_len, max_position_embeddings)
 
-    # Compute the inverse frequencies
-    base = base * ((factor * seq_len / max_position_embeddings) - (factor - 1)) ** (dim / (dim - 2))
-    inv_freq = 1.0 / (base ** (torch.arange(0, dim, 2, dtype=torch.int64).to(device=device, dtype=torch.float) / dim))
-    return inv_freq, attention_factor
+    # Process with chunk_size to reduce precesion error
+    chunk_size = 4096
+    chunks = (seq_len + chunk_size - 1) // chunk_size
+
+    inv_freq_list = []
+    for i in range(chunks):
+        start = i * chunk_size
+        end = min((i + 1) * chunk_size, seq_len)
+
+        seq_lens = torch.arange(start, end, dtype=torch.float32).view(-1, 1) + 1.0
+        seq_lens = torch.where(seq_lens > max_position_embeddings, seq_lens, max_position_embeddings)
+
+        # Compute the inverse frequencies for each chunk
+        scaled_base = base * ((factor * seq_lens / max_position_embeddings) - (factor - 1)) ** (dim / (dim - 2))
+        inv_freq = 1.0 / (scaled_base ** (torch.arange(0, dim, 2, dtype=torch.int64).float() / dim))
+
+        inv_freq_list.append(inv_freq)
+
+    final_inv_freq = torch.cat(inv_freq_list, dim=0)
+
+    return final_inv_freq, attention_factor
 
 
 def _compute_yarn_parameters(

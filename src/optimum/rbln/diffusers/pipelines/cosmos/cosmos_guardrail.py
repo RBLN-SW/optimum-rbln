@@ -81,7 +81,7 @@ def is_compiled_dir(dir: str) -> bool:
     if not os.path.exists(dir):
         return False
 
-    for root, dirs, files in os.walk(dir):
+    for _, _, files in os.walk(dir):
         for file in files:
             if file.endswith(".rbln"):
                 return True

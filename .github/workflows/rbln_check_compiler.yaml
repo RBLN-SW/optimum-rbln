@@ -25,7 +25,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.9"
+          python-version: "3.12"
 
       - name: Install rebel-compiler
         id: install_compiler
@@ -62,7 +62,10 @@ jobs:
       - name: Check pyarmor
         id: check_pyarmor
         run: |
-          if pip3 show -f rebel-compiler | grep -Ei 'pytransform|pyarmor_runtime|__pyarmor__|license\.lic'; then
+          PKG_PATH=$(python3 -c "import rebel; print(rebel.__file__)")
+          PKG_DIR=$(dirname "$PKG_PATH")
+
+          if find "$PKG_DIR" -type f | grep -E '__pyarmor__|pytransform|pyarmor_runtime|license\.lic'; then
             echo "PYARMOR_ENC=true" >> $GITHUB_ENV
             echo "pyarmor check pass(✅)!!"
           else

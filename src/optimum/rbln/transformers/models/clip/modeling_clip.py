@@ -54,7 +54,7 @@ class RBLNCLIPTextModel(RBLNModel):
     _tp_support = False
 
     @classmethod
-    def wrap_model_if_needed(cls, model: torch.nn.Module, rbln_config: RBLNCLIPTextModelConfig) -> torch.nn.Module:
+    def _wrap_model_if_needed(cls, model: torch.nn.Module, rbln_config: RBLNCLIPTextModelConfig) -> torch.nn.Module:
         return _TextEncoder(model).eval()
 
     @classmethod
@@ -92,6 +92,9 @@ class RBLNCLIPTextModel(RBLNModel):
         Args:
             input_ids (torch.LongTensor): The input ids to the model.
             return_dict (Optional[bool]): Whether to return a dictionary of outputs.
+
+        Returns:
+            The model outputs. If return_dict=False is passed, returns a tuple of tensors. Otherwise, returns a CLIPTextModelOutput object.
         """
 
         # To ignore using attention_mask, we override forward method.
@@ -157,7 +160,7 @@ class RBLNCLIPVisionModel(RBLNModel):
     _tp_support = False
 
     @classmethod
-    def wrap_model_if_needed(cls, model: torch.nn.Module, rbln_config: RBLNCLIPVisionModelConfig) -> torch.nn.Module:
+    def _wrap_model_if_needed(cls, model: torch.nn.Module, rbln_config: RBLNCLIPVisionModelConfig) -> torch.nn.Module:
         wrapper_cfg = {
             "interpolate_pos_encoding": rbln_config.interpolate_pos_encoding,
             "output_hidden_states": rbln_config.output_hidden_states,
@@ -230,6 +233,9 @@ class RBLNCLIPVisionModel(RBLNModel):
             output_attentions (Optional[bool]): Whether to return attentions.
             output_hidden_states (Optional[bool]): Whether to return hidden states.
             interpolate_pos_encoding (bool): Whether to interpolate position encoding.
+
+        Returns:
+            The model outputs. If return_dict=False is passed, returns a tuple of tensors. Otherwise, returns a BaseModelOutputWithPooling object.
         """
 
         if len(kwargs) > 0 and any(value is not None for value in kwargs.values()):
@@ -306,6 +312,38 @@ class RBLNCLIPVisionModelWithProjection(RBLNCLIPVisionModel):
     This class extends RBLNCLIPVisionModel with a projection layer for
     multimodal embedding alignment tasks.
     """
+
+    def forward(
+        self,
+        pixel_values: torch.FloatTensor,
+        return_dict: bool = True,
+        output_attentions: Optional[bool] = None,
+        output_hidden_states: Optional[bool] = None,
+        interpolate_pos_encoding: bool = False,
+        **kwargs,
+    ) -> Union[Tuple, CLIPVisionModelOutput]:
+        """
+        Forward pass for the RBLN-optimized CLIP vision encoder model with projection.
+
+        Args:
+            pixel_values (torch.Tensor): The pixel values to the model.
+            return_dict (bool): Whether to return a dictionary of outputs.
+            output_attentions (Optional[bool]): Whether to return attentions.
+            output_hidden_states (Optional[bool]): Whether to return hidden states.
+            interpolate_pos_encoding (bool): Whether to interpolate position encoding.
+
+        Returns:
+            The model outputs. If return_dict=False is passed, returns a tuple of tensors. Otherwise, returns a CLIPVisionModelOutput object.
+        """
+
+        return super().forward(
+            pixel_values=pixel_values,
+            return_dict=return_dict,
+            output_attentions=output_attentions,
+            output_hidden_states=output_hidden_states,
+            interpolate_pos_encoding=interpolate_pos_encoding,
+            **kwargs,
+        )
 
     def _prepare_output(self, output, return_dict):
         # Prepare model output based on return_dict flag.

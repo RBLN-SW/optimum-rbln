@@ -1,0 +1,240 @@
+name: Optimum-rbln / Full Test
+on:
+  workflow_call:
+    inputs:
+        rebel_compiler_version:
+            description: "rebel_compiler version to run"
+            required: true
+            type: string
+        ref:
+            description: "ref to checkout"
+            required: true
+            type: string
+
+        report_slack:
+            description: "Whether to report slack"
+            required: false
+            type: boolean
+            default: false
+
+        test_bc:
+            description: "Whether to test BC"
+            required: false
+            type: boolean
+            default: false
+
+env:
+  HF_USER_ID: ${{ secrets.HF_USER_ID }}
+  HF_AUTH_TOKEN: ${{ secrets.HF_AUTH_TOKEN }}
+  REBEL_PYPI_ENDPOINT: ${{ vars.REBEL_PYPI_INTERNAL_ENDPOINT }}
+  REBEL_PYPI_USERNAME: ${{ secrets.REBEL_PYPI_USERNAME }}
+  REBEL_PYPI_PASSWORD: ${{ secrets.REBEL_PYPI_PASSWORD }}
+
+jobs:
+  bc-full-inference-test:
+    if: ${{ always() && inputs.test_bc }}
+    uses: ./.github/workflows/bc_full_inference.yaml
+    with:
+      current_ref: ${{ inputs.ref }}
+    secrets: inherit
+
+  check-compiler:
+    uses: ./.github/workflows/rbln_check_compiler.yaml
+    with:
+        compiler_version: ${{ inputs.rebel_compiler_version }}
+    secrets: inherit
+
+  optimum-rbln-pytest:
+    uses: ./.github/workflows/rbln_optimum_pytest.yaml
+    with:
+        ref: ${{ inputs.ref }}
+        rebel_compiler_version: ${{ inputs.rebel_compiler_version }}
+        test_level: "full"
+        enable_hf_hub_tests: true
+        fail_fast: false
+    secrets: inherit
+
+  get-hf-package-version:
+    runs-on: rebel-k8s-runner
+    outputs:
+        transformers_version: ${{ steps.transformers.outputs.version }}
+        diffusers_version: ${{ steps.diffusers.outputs.version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+            ref: ${{ inputs.ref }}
+      - name: Get Transformers Version
+        id: transformers
+        run: |
+            VERSION=$(grep -m 1 '"transformers==' pyproject.toml | sed -E 's/.*transformers[<>=]{2}([^",]+).*/\1/' || echo "not_found")
+            echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Get Diffusers Version
+        id: diffusers
+        run: |
+            VERSION=$(grep -m 1 '"diffusers==' pyproject.toml | sed -E 's/.*diffusers[<>=]{2}([^",]+).*/\1/' || echo "not_found")
+            echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+
+  summary_and_report:
+    if: ${{ always() && inputs.report_slack }}
+    needs: [optimum-rbln-pytest, check-compiler, get-hf-package-version, bc-full-inference-test]
+    runs-on: rebel-k8s-runner
+    steps:
+
+      - name: Get failed test details
+        id: get_failed_tests
+        if: needs.optimum-rbln-pytest.result == 'failure'
+        run: |
+            # Get the workflow run jobs
+            JOBS=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/jobs")
+            
+            # Extract failed pytest job names step by step for readability
+            FAILED_JOB_NAMES=$(echo "$JOBS" | jq -r '.jobs[] | select(.conclusion == "failure" and (.name | contains("Pytest"))) | .name')
+            # Remove "Pytest (...)" wrapper to get the test name
+            FAILED_TEST_NAMES=$(echo "$FAILED_JOB_NAMES" | sed 's/Pytest (\(.*\))/\1/')
+            # Join names with comma and space
+            FAILED_TESTS=$(echo "$FAILED_TEST_NAMES" | tr '\n' ', ' | sed 's/,$//')
+            
+            if [ -z "$FAILED_TESTS" ]; then
+            echo "failed_tests=Unknown" >> $GITHUB_OUTPUT
+            else
+            echo "failed_tests=$FAILED_TESTS" >> $GITHUB_OUTPUT
+            fi
+      - name: Determine test results
+        id: test_results
+        run: |
+            # Determine overall status
+            if [ "${{ needs.optimum-rbln-pytest.result }}" == "success" ]; then
+            echo "pytest_status=✅ Success - All tests passed" >> $GITHUB_OUTPUT
+            echo "pytest_emoji=✅" >> $GITHUB_OUTPUT
+            elif [ "${{ needs.optimum-rbln-pytest.result }}" == "failure" ]; then
+            FAILED="${{ steps.get_failed_tests.outputs.failed_tests }}"
+            if [ -n "$FAILED" ] && [ "$FAILED" != "Unknown" ]; then
+                echo "pytest_status=❌ Failed - Tests: \`$FAILED\`" >> $GITHUB_OUTPUT
+            else
+                echo "pytest_status=❌ Failed" >> $GITHUB_OUTPUT
+            fi
+            echo "pytest_emoji=❌" >> $GITHUB_OUTPUT
+            elif [ "${{ needs.optimum-rbln-pytest.result }}" == "skipped" ]; then
+            echo "pytest_status=⏭️ Skipped" >> $GITHUB_OUTPUT
+            echo "pytest_emoji=⏭️" >> $GITHUB_OUTPUT
+            else
+            echo "pytest_status=⚠️ Cancelled" >> $GITHUB_OUTPUT
+            echo "pytest_emoji=⚠️" >> $GITHUB_OUTPUT
+            fi
+
+            # Determine compiler check status
+            if [ "${{ needs.check-compiler.result }}" == "success" ]; then
+            echo "compiler_status=✅ Available" >> $GITHUB_OUTPUT
+            else
+            echo "compiler_status=❌ Not Available" >> $GITHUB_OUTPUT
+            fi
+
+            # Determine BC test status
+            if [ "${{ needs.bc-full-inference-test.result }}" == "skipped" ]; then
+            echo "bc_status=⏭️ Skipped" >> $GITHUB_OUTPUT
+            else
+            if [ "${{ needs.bc-full-inference-test.result }}" == "success" ]; then
+                echo "bc_status=✅ Success - All BC tests passed" >> $GITHUB_OUTPUT
+                else
+                echo "bc_status=❌ Failed" >> $GITHUB_OUTPUT
+                fi
+            fi
+
+      - name: Notify Slack
+        if: always()
+        run: |
+            # Determine overall workflow status emoji
+            if [ "${{ needs.optimum-rbln-pytest.result }}" == "success" ]; then
+            title="✅ Optimum-RBLN Scheduled Pytest Results"
+            elif [ "${{ needs.check-compiler.result }}" != "success" ]; then
+            title="⚠️ Optimum-RBLN Scheduled Pytest Results - Compiler Check Failed"
+            else
+            title="❌ Optimum-RBLN Scheduled Pytest Results"
+            fi
+
+            commit="*Commit*\n<https://github.com/rebellions-sw/optimum-rbln/commit/${{github.sha}}|${{github.sha}}>"
+            action_link="*CI Report*\n<https://github.com/rebellions-sw/optimum-rbln/actions/runs/${{ github.run_id }}|View Details>"
+            compiler_version="${{ inputs.rebel_compiler_version }}"
+            transformers_version="${{ needs.get-hf-package-version.outputs.transformers_version }}"
+            diffusers_version="${{ needs.get-hf-package-version.outputs.diffusers_version }}"
+
+            payload=$(jq -n \
+            --arg channel "${{ secrets.SLACK_CI_REPORTER_CHANNEL }}" \
+            --arg title "$title" \
+            --arg commit "$commit" \
+            --arg action_link "$action_link" \
+            --arg compiler_version "$compiler_version" \
+            --arg transformers_version "$transformers_version" \
+            --arg diffusers_version "$diffusers_version" \
+            --arg compiler_status "${{ steps.test_results.outputs.compiler_status }}" \
+            --arg pytest_status "${{ steps.test_results.outputs.pytest_status }}" \
+            --arg bc_status "${{ steps.test_results.outputs.bc_status }}" \
+            '{
+                channel: $channel,
+                text: "Optimum-RBLN Scheduled Test Results",
+                blocks: [
+                {
+                    type: "header",
+                    text: {
+                    type: "plain_text",
+                    text: $title
+                    }
+                },
+                {
+                    type: "section",
+                    fields: [
+                    { type: "mrkdwn", text: $commit },
+                    { type: "mrkdwn", text: $action_link }
+                    ]
+                },
+                {
+                    type: "section",
+                    fields: [
+                    { type: "mrkdwn", text: "*Compiler Version*" },
+                    { type: "mrkdwn", text: ("`" + $compiler_version + "`") }
+                    ]
+                },
+                {
+                    type: "section",
+                    fields: [
+                    { type: "mrkdwn", text: "*Transformers Version*" },
+                    { type: "mrkdwn", text: ("`" + $transformers_version + "`") }
+                    ]
+                },
+                {
+                    type: "section",
+                    fields: [
+                    { type: "mrkdwn", text: "*Diffusers Version*" },
+                    { type: "mrkdwn", text: ("`" + $diffusers_version + "`") }
+                    ]
+                },
+                { type: "divider" },
+                {
+                    type: "section",
+                    fields: [
+                    { type: "mrkdwn", text: "*Compiler Check*" },
+                    { type: "mrkdwn", text: $compiler_status }
+                    ]
+                },
+                {
+                    type: "section",
+                    fields: [
+                    { type: "mrkdwn", text: "*Pytest Results*" },
+                    { type: "mrkdwn", text: $pytest_status }
+                    ]
+                },
+                {
+                    type: "section",
+                    fields: [
+                    { type: "mrkdwn", text: "*BC Test Results*" },
+                    { type: "mrkdwn", text: $bc_status }
+                    ]
+                }
+                ]
+            }'
+            )
+            curl -X POST -H 'Authorization: Bearer ${{ secrets.SLACK_BOT_USER_OAUTH_ACCESS_TOKEN }}' -H 'Content-type: application/json; charset=utf-8' --data "$payload" https://slack.com/api/chat.postMessage

@@ -12,10 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from ...configuration_generic import RBLNModelForMaskedLMConfig
+from typing import Any, Optional
+
+from ....configuration_utils import RBLNModelConfig
 
 
-class RBLNWav2Vec2ForCTCConfig(RBLNModelForMaskedLMConfig):
+class RBLNWav2Vec2ForCTCConfig(RBLNModelConfig):
     """
     Configuration class for RBLNWav2Vec2ForCTC.
 
@@ -23,4 +25,14 @@ class RBLNWav2Vec2ForCTCConfig(RBLNModelForMaskedLMConfig):
     RBLN-optimized Wav2Vec2 models for Connectionist Temporal Classification (CTC) tasks.
     """
 
-    rbln_model_input_names = ["input_values"]
+    def __init__(
+        self,
+        max_seq_len: Optional[int] = None,
+        batch_size: Optional[int] = None,
+        **kwargs: Any,
+    ):
+        super().__init__(**kwargs)
+        self.max_seq_len = max_seq_len
+        self.batch_size = batch_size or 1
+        if not isinstance(self.batch_size, int) or self.batch_size < 0:
+            raise ValueError(f"batch_size must be a positive integer, got {self.batch_size}")
