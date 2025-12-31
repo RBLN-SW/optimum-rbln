@@ -183,10 +183,10 @@ class RBLNGptOssForCausalLM(RBLNDecoderOnlyModelForCausalLM):
     ) -> RBLNDecoderOnlyModelForCausalLMConfig:
         rbln_config = super()._update_rbln_config(preprocessors, model, model_config, rbln_config)
 
-        if rbln_config.use_attention_mask:
-            raise ValueError(
-                "use_attention_mask is not supported for GPT-OSS because custom attention does not support attention sink for masked attention"
-            )
+        # if rbln_config.use_attention_mask:
+        #     raise ValueError(
+        #         "use_attention_mask is not supported for GPT-OSS because custom attention does not support attention sink for masked attention"
+        #     )
 
         return rbln_config
 

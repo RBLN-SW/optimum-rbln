@@ -377,6 +377,19 @@ class DecoderOnlyModel(nn.Module):
         attn_mask = torch.where(attn_mask > 0, 0.0, 1.0)[:, None, None, :]
 
         return cache_seq_len, cache_offset, attn_mask
+    
+    def get_global_cache_positions(self, position_ids, query_position):
+        max_cache_len = self.rbln_config.max_seq_len
+        valid_input_len = 1 if query_position is None else query_position + 1
+        cache_seq_len = torch.clamp(position_ids.to(torch.int32), max=max_cache_len)[:, :1]  # past seen tokens
+        cache_offset = (
+            torch.clamp(position_ids, max=max_cache_len)[:, :1] + valid_input_len
+        )  # cache offset for next steps
+
+        # Causal mask for sliding window attention
+        attn_mask = torch.arange(max_cache_len)[None, :] - cache_seq_len
+        attn_mask = torch.where(attn_mask > 0, 0.0, 1.0)[:, None, None, :]
+        return cache_seq_len, cache_offset, attn_mask
 
     def get_last_layernorm(self) -> nn.LayerNorm:
         return self._original_mod.norm
@@ -463,12 +476,14 @@ class DecoderOnlyModel(nn.Module):
         # Get local cache positions for sliding window layers
         if len(self.sliding_window_layers) > 0:
             sliding_cache_pos = self.get_local_cache_positions(position_ids, query_position)
-
+        generated_attn_mask = self.get_global_cache_positions(position_ids, query_position)
+        batch_size = inputs_embeds.shape[0]
         for layer_idx, layer in enumerate(self.layers):
             is_sliding = True if layer_idx in self.sliding_window_layers else False
+            use_orig_mask = True if is_sliding or self.phase == 'prefill' or batch_size == 1 else False
             hidden_states = layer(
                 hidden_states=hidden_states,
-                attention_mask=attention_mask,
+                attention_mask=attention_mask if use_orig_mask else generated_attn_mask,
                 seq_positions=sliding_cache_pos if is_sliding else seq_positions,
                 past_key_values=past_key_values,
                 cos=cos,
@@ -947,8 +962,17 @@ class AttentionOp(nn.Module):
             op_args["s_aux"] = s_aux
 
         if self.phase == "decode" and batch_size > 1:
-            attn_mask = torch.ones([batch_size, 1, 1, block_size], dtype = torch.float32)
+            # attn_mask = torch.full([batch_size, 1, 1, block_size//64, 1, 64], fill_value=1.0, dtype = torch.float32)
+            # (TODO) temporal solution to make non-constant mask...
+            # attn_mask = block_tables[0,0:1] * 0.0 + 1.0
+            # attn_mask = attn_mask.repeat(batch_size*block_size)
+            # attn_mask = attn_mask.view(batch_size, 1, 1, block_size//64, 1, 64)
+            # op_args['mask'] = attn_mask
+            attn_mask = attn_mask[2]
+            attn_mask = attn_mask.view(batch_size, 1, 1, block_size//64, 1, 64)
             op_args['mask'] = attn_mask
+            # import pdb; pdb.set_trace()
+            # pass
 
         attn_op_name = self.get_attn_op_name()
         attn_op = getattr(torch.ops.rbln_custom_ops, attn_op_name, None)
