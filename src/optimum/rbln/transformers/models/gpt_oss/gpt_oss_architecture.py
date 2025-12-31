@@ -75,52 +75,83 @@ class RBLNGptOssExperts(nn.Module):
         self.num_experts = model.num_experts
         self.hidden_size = model.hidden_size
 
-        self.register_buffer(
-            "gate_proj_blocks",
-            model.gate_up_proj_blocks.data[:, ::2, :, :].reshape(self.num_experts, self.intermediate_size, -1),
-        )
-        self.register_buffer("gate_proj_scales", model.gate_up_proj_scales.data[:, ::2, :])
-        self.register_buffer(
-            "gate_proj_bias",
-            model.gate_up_proj_bias.data[:, ::2].reshape(self.num_experts, self.intermediate_size),
-        )
+        if hasattr(model, "gate_up_proj_blocks"):
+            self._support_mxfp4 = True
+        else:
+            self._support_mxfp4 = False
 
-        self.register_buffer(
-            "up_proj_blocks",
-            model.gate_up_proj_blocks.data[:, 1::2, :, :].reshape(self.num_experts, self.intermediate_size, -1),
-        )
-        self.register_buffer("up_proj_scales", model.gate_up_proj_scales.data[:, 1::2, :])
-        self.register_buffer(
-            "up_proj_bias", model.gate_up_proj_bias.data[:, 1::2].reshape(self.num_experts, self.intermediate_size)
-        )
+        if self._support_mxfp4:
+            self.register_buffer(
+                "gate_proj_blocks",
+                model.gate_up_proj_blocks.data[:, ::2, :, :].reshape(self.num_experts, self.intermediate_size, -1),
+            )
+            self.register_buffer("gate_proj_scales", model.gate_up_proj_scales.data[:, ::2, :])
+            self.register_buffer(
+                "gate_proj_bias",
+                model.gate_up_proj_bias.data[:, ::2].reshape(self.num_experts, self.intermediate_size),
+            )
 
-        self.register_buffer(
-            "down_proj_blocks", model.down_proj_blocks.data.reshape(self.num_experts, self.hidden_size, -1)
-        )
-        self.register_buffer("down_proj_scales", model.down_proj_scales.data)
-        self.register_buffer("down_proj_bias", model.down_proj_bias.data)
+            self.register_buffer(
+                "up_proj_blocks",
+                model.gate_up_proj_blocks.data[:, 1::2, :, :].reshape(self.num_experts, self.intermediate_size, -1),
+            )
+            self.register_buffer("up_proj_scales", model.gate_up_proj_scales.data[:, 1::2, :])
+            self.register_buffer(
+                "up_proj_bias", model.gate_up_proj_bias.data[:, 1::2].reshape(self.num_experts, self.intermediate_size)
+            )
+
+            self.register_buffer(
+                "down_proj_blocks", model.down_proj_blocks.data.reshape(self.num_experts, self.hidden_size, -1)
+            )
+            self.register_buffer("down_proj_scales", model.down_proj_scales.data)
+            self.register_buffer("down_proj_bias", model.down_proj_bias.data)
+        else:
+            self.register_buffer("gate_proj_weight", model.gate_up_proj.data[:, :, ::2].to(torch.float32))
+            self.register_buffer("gate_proj_bias", model.gate_up_proj_bias.data[:, ::2])
+            self.register_buffer("up_proj_weight", model.gate_up_proj.data[:, :, 1::2].to(torch.float32))
+            self.register_buffer("up_proj_bias", model.gate_up_proj_bias.data[:, 1::2])
+            self.register_buffer("down_proj_weight", model.down_proj.data.to(torch.float32))
+            self.register_buffer("down_proj_bias", model.down_proj_bias.data)
 
         self.alpha = model.alpha  # 1.702
         self.limit = model.limit  # 7.0
         self.top_k = top_k
 
     def forward(self, hidden_states: torch.Tensor, router_logits: torch.Tensor) -> torch.Tensor:
-        return torch.ops.rbln_custom_ops.custom_moe_glu_mxfp4(
-            hidden_states,
-            self.gate_proj_blocks,
-            self.gate_proj_scales,
-            self.gate_proj_bias,
-            self.up_proj_blocks,
-            self.up_proj_scales,
-            self.up_proj_bias,
-            self.down_proj_blocks,
-            self.down_proj_scales,
-            self.down_proj_bias,
-            router_logits,
-            torch.tensor(self.alpha, dtype=hidden_states.dtype),
-            torch.tensor(self.limit, dtype=hidden_states.dtype),
-            k=self.top_k,
-        )
+        if self._support_mxfp4:
+            return torch.ops.rbln_custom_ops.custom_moe_glu_mxfp4(
+                hidden_states,
+                self.gate_proj_blocks,
+                self.gate_proj_scales,
+                self.gate_proj_bias,
+                self.up_proj_blocks,
+                self.up_proj_scales,
+                self.up_proj_bias,
+                self.down_proj_blocks,
+                self.down_proj_scales,
+                self.down_proj_bias,
+                router_logits,
+                torch.tensor(self.alpha, dtype=hidden_states.dtype),
+                torch.tensor(self.limit, dtype=hidden_states.dtype),
+                k=self.top_k,
+            )
+        else:
+            return torch.ops.rbln_custom_ops.custom_moe_glu_mxfp4(
+                hidden_states,
+                self.gate_proj_weight,
+                self.gate_proj_bias,
+                self.gate_proj_bias,
+                self.up_proj_weight,
+                self.up_proj_bias,
+                self.up_proj_bias,
+                self.down_proj_weight,
+                self.down_proj_bias,
+                self.down_proj_bias,
+                router_logits,
+                torch.tensor(self.alpha, dtype=hidden_states.dtype),
+                torch.tensor(self.limit, dtype=hidden_states.dtype),
+                k=self.top_k,
+            )
 
 
 class RBLNGptOssMLP(nn.Module):

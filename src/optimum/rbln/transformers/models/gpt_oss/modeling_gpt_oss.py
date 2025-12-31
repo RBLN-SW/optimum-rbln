@@ -120,22 +120,33 @@ class RBLNGptOssForCausalLM(RBLNDecoderOnlyModelForCausalLM):
         config: Optional[PretrainedConfig] = None,
         **kwargs,
     ) -> PreTrainedModel:
-        safetensor_files = load_weight_files(model_id, exception_keywords=["original"])
-        safetensors = [load_file(safetensor_file) for safetensor_file in safetensor_files]
-        state_dict = {}
-        for sd in safetensors[:-1]:
-            state_dict.update(sd)
+        if "RBLN-CR" in rbln_config.npu:
+            safetensor_files = load_weight_files(model_id, exception_keywords=["original"])
+            safetensors = [load_file(safetensor_file) for safetensor_file in safetensor_files]
+            state_dict = {}
+            for sd in safetensors[:-1]:
+                state_dict.update(sd)
 
-        if config is None:
-            config, kwargs = AutoConfig.from_pretrained(model_id, return_unused_kwargs=True)
+            if config is None:
+                config, kwargs = AutoConfig.from_pretrained(model_id, return_unused_kwargs=True)
 
-        dtype = cls._get_dtype(dtype, torch_dtype)
+            dtype = cls._get_dtype(dtype, torch_dtype)
 
-        with no_init_weights():
-            model = AutoModelForCausalLM.from_config(config, dtype=dtype, **kwargs)
+            with no_init_weights():
+                model = AutoModelForCausalLM.from_config(config, dtype=dtype, **kwargs)
 
-        _replace_with_mxfp4_linear(model, config)
-        model.load_state_dict(state_dict, strict=False)
+            _replace_with_mxfp4_linear(model, config)
+            model.load_state_dict(state_dict, strict=False)
+
+        else:
+            model = super().get_pytorch_model(
+                model_id=model_id,
+                rbln_config=rbln_config,
+                config=config,
+                dtype=dtype,
+                torch_dtype=torch_dtype,
+                **kwargs,
+            )
 
         return model
 
