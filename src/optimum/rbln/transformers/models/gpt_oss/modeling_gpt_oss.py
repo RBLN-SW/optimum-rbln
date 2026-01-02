@@ -123,7 +123,7 @@ class RBLNGptOssForCausalLM(RBLNDecoderOnlyModelForCausalLM):
         safetensor_files = load_weight_files(model_id, exception_keywords=["original"])
         safetensors = [load_file(safetensor_file) for safetensor_file in safetensor_files]
         state_dict = {}
-        for sd in safetensors[:-1]:
+        for sd in safetensors:
             state_dict.update(sd)
 
         if config is None:
