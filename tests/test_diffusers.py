@@ -16,6 +16,7 @@ from optimum.rbln import (
     RBLNStableDiffusionPipeline,
     RBLNStableDiffusionXLControlNetPipeline,
     RBLNStableDiffusionXLPipeline,
+    RBLNStableVideoDiffusionPipeline,
 )
 
 from .test_base import BaseHubTest, BaseTest, TestLevel
@@ -317,6 +318,31 @@ class TestKandinskyV22Img2ImgModel(BaseTest.TestModel):
         },
     }
     TEST_LEVEL = TestLevel.DISABLED  # Should be enabled after compiler issue is fixed
+
+
+class TestSVDImg2VidModel(BaseTest.TestModel):
+    RBLN_CLASS = RBLNStableVideoDiffusionPipeline
+    # ref: https://github.com/huggingface/diffusers/blob/b88fef47851059ce32f161d17f00cd16d94af96a/tests/pipelines/stable_video_diffusion/test_stable_video_diffusion.py#L64
+    HF_MODEL_ID = "seinpark/tiny-stable-video-diffusion-img2vid"
+
+    GENERATION_KWARGS = {
+        "num_inference_steps": 2,
+        "generator": torch.manual_seed(42),
+        "image": torch.randn(1, 3, 32, 32, generator=torch.manual_seed(42)).uniform_(0, 1),
+        "num_frames": 2,
+        "decode_chunk_size": 2,
+        "output_type": "pt",
+        "height": 32,
+        "width": 32,
+    }
+    RBLN_CLASS_KWARGS = {
+        "rbln_config": {
+            "width": 32,
+            "height": 32,
+            "num_frames": 2,
+            "decode_chunk_size": 2,
+        },
+    }
 
 
 if __name__ == "__main__":

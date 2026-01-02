@@ -12,5 +12,4 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .unet_2d_condition import RBLNUNet2DConditionModel
-from .unet_spatio_temporal_condition import RBLNUNetSpatioTemporalConditionModel
+from .pipeline_stable_video_diffusion import RBLNStableVideoDiffusionPipeline

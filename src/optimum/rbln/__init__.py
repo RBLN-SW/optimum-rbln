@@ -186,6 +186,8 @@ _import_structure = {
     "diffusers": [
         "RBLNAutoencoderKL",
         "RBLNAutoencoderKLConfig",
+        "RBLNAutoencoderKLTemporalDecoder",
+        "RBLNAutoencoderKLTemporalDecoderConfig",
         "RBLNAutoencoderKLCosmos",
         "RBLNAutoencoderKLWan",
         "RBLNAutoencoderKLCosmosConfig",
@@ -194,6 +196,8 @@ _import_structure = {
         "RBLNAutoPipelineForText2Image",
         "RBLNAutoencoderKLWanConfig",
         "RBLNControlNetModel",
+        "RBLNUNetSpatioTemporalConditionModel",
+        "RBLNStableVideoDiffusionPipeline",
         "RBLNControlNetModelConfig",
         "RBLNCosmosTextToWorldPipeline",
         "RBLNCosmosTextToWorldPipelineConfig",
@@ -256,6 +260,8 @@ _import_structure = {
         "RBLNUNet2DConditionModelConfig",
         "RBLNVQModel",
         "RBLNVQModelConfig",
+        "RBLNUNetSpatioTemporalConditionModelConfig",
+        "RBLNStableVideoDiffusionPipelineConfig",
     ],
 }
 
@@ -266,6 +272,8 @@ if TYPE_CHECKING:
         RBLNAutoencoderKLConfig,
         RBLNAutoencoderKLCosmos,
         RBLNAutoencoderKLCosmosConfig,
+        RBLNAutoencoderKLTemporalDecoder,
+        RBLNAutoencoderKLTemporalDecoderConfig,
         RBLNAutoPipelineForImage2Image,
         RBLNAutoPipelineForInpainting,
         RBLNAutoPipelineForText2Image,
@@ -330,8 +338,12 @@ if TYPE_CHECKING:
         RBLNStableDiffusionXLInpaintPipelineConfig,
         RBLNStableDiffusionXLPipeline,
         RBLNStableDiffusionXLPipelineConfig,
+        RBLNStableVideoDiffusionPipeline,
+        RBLNStableVideoDiffusionPipelineConfig,
         RBLNUNet2DConditionModel,
         RBLNUNet2DConditionModelConfig,
+        RBLNUNetSpatioTemporalConditionModel,
+        RBLNUNetSpatioTemporalConditionModelConfig,
         RBLNVQModel,
         RBLNVQModelConfig,
     )
