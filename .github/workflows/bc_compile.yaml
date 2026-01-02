@@ -18,7 +18,9 @@ on:
 jobs:
   get_bc_compile_info:
     name: BC compile - ${{ github.event.inputs.bc_tag || inputs.bc_tag }}
-    runs-on: rebel-k8s-runner
+    runs-on: sw-k8s-4c-32gb
+    container:
+      image: ${{ vars.DEV_CONTAINER_IMAGE }}
     env:
       BC_BASE_PATH: ${{ vars.BC_BASE_PATH }}
     outputs:

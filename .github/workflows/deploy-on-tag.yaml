@@ -9,7 +9,9 @@ on:
 jobs:
   check-tag:
     name: Check tag is release
-    runs-on: ubuntu-latest
+    runs-on: sw-k8s-4c-32gb
+    container:
+      image: ${{ vars.DEV_CONTAINER_IMAGE }}
     outputs:
       is_release: ${{ steps.check.outputs.is_release }}
     steps:
@@ -37,7 +39,9 @@ jobs:
   trigger-vllm-rbln-pkg-update:
     name: trigger vllm-rbln pkg update PR
     needs: [deploy-on-tag]
-    runs-on: rebel-k8s-runner
+    runs-on: sw-k8s-4c-32gb
+    container:
+      image: ${{ vars.DEV_CONTAINER_IMAGE }}
     steps:
       - uses: actions/github-script@v6
         with:
@@ -58,7 +62,9 @@ jobs:
   trigger-vllm-model-compilation:
     name: trigger vllm model compile and generation ci
     needs: [deploy-on-tag]
-    runs-on: rebel-k8s-runner
+    runs-on: sw-k8s-4c-32gb
+    container:
+      image: ${{ vars.DEV_CONTAINER_IMAGE }}
     steps:
       - uses: actions/github-script@v6
         with:

@@ -13,7 +13,9 @@ env:
 
 jobs:
   head-commit-message:
-    runs-on: rebel-k8s-runner
+    runs-on: sw-k8s-4c-32gb
+    container:
+      image: ${{ vars.DEV_CONTAINER_IMAGE }}
     outputs:
       message: ${{ steps.get_commit_message.outputs.message }}
     steps:
@@ -26,6 +28,7 @@ jobs:
       - name: Get head commit message
         id: get_commit_message
         run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
           COMMIT_MESSAGE=$(git log -1 --pretty=%B)
           echo "message<<EOF" >> $GITHUB_OUTPUT
           echo "$COMMIT_MESSAGE" >> $GITHUB_OUTPUT
@@ -34,7 +37,9 @@ jobs:
 
   check-pytest-full:
     needs: head-commit-message
-    runs-on: rebel-k8s-runner
+    runs-on: sw-k8s-4c-32gb
+    container:
+      image: ${{ vars.DEV_CONTAINER_IMAGE }}
     outputs:
       should_full_test: ${{ contains(needs.head-commit-message.outputs.message, '[pytest-full]') && 'true' || 'false' }}
     steps:
@@ -48,7 +53,9 @@ jobs:
 
   check-slack-report:
     needs: head-commit-message
-    runs-on: rebel-k8s-runner
+    runs-on: sw-k8s-4c-32gb
+    container:
+      image: ${{ vars.DEV_CONTAINER_IMAGE }}
     outputs:
       should_slack_report: ${{ contains(needs.head-commit-message.outputs.message, '[slack-report]') && 'true' || 'false' }}
     steps:
@@ -67,7 +74,9 @@ jobs:
     uses: ./.github/workflows/test-docstrings.yml
 
   load-version:
-    runs-on: rebel-k8s-runner
+    runs-on: sw-k8s-4c-32gb
+    container:
+      image: ${{ vars.DEV_CONTAINER_IMAGE }}
     needs: [check-code-quality, test-docstrings]
     outputs:
       compiler_version: ${{ steps.get_version.outputs.compiler_version }}
@@ -89,7 +98,9 @@ jobs:
     secrets: inherit
 
   check-if-dependency-pr:
-    runs-on: rebel-k8s-runner
+    runs-on: sw-k8s-4c-32gb
+    container:
+      image: ${{ vars.DEV_CONTAINER_IMAGE }}
     outputs:
       result: ${{ steps.check_title.outputs.result }}
     steps:
@@ -101,6 +112,7 @@ jobs:
       - name: check if pr is dependency check
         id: check_title
         run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
           PR_TITLE="${{ github.event.pull_request.title }}"
           LAST_COMMIT_MSG=$(git log -1 --pretty=format:%s)
           DEP_UPDATE_PATTERN="dependency: Update dependency"
@@ -117,7 +129,9 @@ jobs:
           echo $result
 
   check-team-member:
-    runs-on: rebel-k8s-runner
+    runs-on: sw-k8s-4c-32gb
+    container:
+      image: ${{ vars.DEV_CONTAINER_IMAGE }}
     needs: [check-code-quality, test-docstrings, check-compiler]
     outputs:
       is_team_member: ${{ steps.check_member.outputs.IS_TEAM_MEMBER }}
@@ -155,7 +169,7 @@ jobs:
     secrets: inherit
 
   # Full Schedule test if Dependency update
-  optimum-rbln-dependency-pytest:
+  optimum-rbln-full-pytest:
     needs: [check-compiler, check-team-member, check-pytest-full, check-slack-report]
     if: |
       needs.check-pytest-full.outputs.should_full_test == 'true' &&
@@ -164,7 +178,23 @@ jobs:
     with:
       rebel_compiler_version: ${{ needs.check-compiler.outputs.compiler_version }}
       ref: ${{ github.event.pull_request.head.sha }}
-      report_slack: ${{ needs.check-slack-report.outputs.should_slack_report == 'true' }}
+    secrets: inherit
+
+  slack-report:
+    needs: [optimum-rbln-full-pytest, bc-inference, check-compiler, check-slack-report]
+    if: |
+      always() &&
+      needs.check-slack-report.outputs.should_slack_report == 'true'
+    uses: ./.github/workflows/slack_report.yaml
+    with:
+      title_base: "Optimum-RBLN PR Full Test Results"
+      caller_repository: ${{ github.repository }}
+      caller_run_id: ${{ github.run_id }}
+      commit_sha: ${{ github.event.pull_request.head.sha }}
+      compiler_version: ${{ needs.check-compiler.outputs.compiler_version }}
+      transformers_version: ${{ needs.optimum-rbln-full-pytest.outputs.transformers_version }}
+      diffusers_version: ${{ needs.optimum-rbln-full-pytest.outputs.diffusers_version }}
+      bc_result: ${{ needs.bc-inference.result }}
     secrets: inherit
 
   bc-latest-tag:
