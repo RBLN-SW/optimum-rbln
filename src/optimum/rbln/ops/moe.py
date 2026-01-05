@@ -27,8 +27,9 @@ def custom_moe_glu(
     gate_proj_weight: Tensor,
     up_proj_weight: Tensor,
     down_proj_weight: Tensor,
-    masked_routing_weight: Tensor,
-    expert_select_count: Tensor,
+    router_logits: Tensor,
+    topk: int,
+    norm_topk_prob: bool = True,
     gate_proj_bias: Optional[Tensor] = None,
     up_proj_bias: Optional[Tensor] = None,
     down_proj_bias: Optional[Tensor] = None,
@@ -41,8 +42,9 @@ def custom_moe_glu(
     - gate_proj_weight: [num_experts, hidden_size, intermediate_size]
     - up_proj_weight: [num_experts, hidden_size, intermediate_size]
     - down_proj_weight: [num_experts, intermediate_size, hidden_size]
-    - masked_routing_weight: [batch*seq_len, num_experts]
-    - expert_select_count: [num_experts]
+    - router_logits: [batch*seq_len, num_experts]
+    - topk: top k experts to select
+    - norm_topk_prob: whether to normalize the top k routing weights with softmax
     - gate_proj_bias: [num_experts, intermediate_size]
     - up_proj_bias: [num_experts, intermediate_size]
     - down_proj_bias: [num_experts, hidden_size]
@@ -60,8 +62,9 @@ def custom_moe_glu_fake(
     gate_proj_weight: Tensor,
     up_proj_weight: Tensor,
     down_proj_weight: Tensor,
-    masked_routing_weight: Tensor,
-    expert_select_count: Tensor,
+    router_logits: Tensor,
+    topk: int,
+    norm_topk_prob: bool = True,
     gate_proj_bias: Optional[Tensor] = None,
     up_proj_bias: Optional[Tensor] = None,
     down_proj_bias: Optional[Tensor] = None,
