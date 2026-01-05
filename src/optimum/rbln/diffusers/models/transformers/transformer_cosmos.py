@@ -36,7 +36,7 @@ from ...configurations import RBLNCosmosTransformer3DModelConfig
 if TYPE_CHECKING:
     from transformers import AutoFeatureExtractor, AutoProcessor, AutoTokenizer, PretrainedConfig, PreTrainedModel
 
-    from ...modeling_diffusers import RBLNCosmosTransformer3DModelConfig, RBLNDiffusionMixin, RBLNDiffusionMixinConfig
+    from ...modeling_diffusers import RBLNDiffusionMixin, RBLNDiffusionMixinConfig
 
 
 logger = get_logger(__name__)
@@ -70,8 +70,7 @@ class CosmosTransformer3DModelWrapper(torch.nn.Module):
         return_dict: bool = False,
     ):
         image_rotary_emb = [image_rotary_emb_0, image_rotary_emb_1]
-        # TODO: remove num_layers
-        for block in self.model.transformer_blocks[:3]:
+        for block in self.model.transformer_blocks:
             hidden_states = block(
                 hidden_states=hidden_states,
                 encoder_hidden_states=encoder_hidden_states,
@@ -136,10 +135,21 @@ class RBLNCosmosTransformer3DModel(RBLNModel):
         self.patch_embed.load_state_dict(artifacts["patch_embed"])
         self.time_embed = CosmosEmbedding(hidden_size, hidden_size)
         self.time_embed.load_state_dict(artifacts["time_embed"])
+        if artifacts.get("crossattn_proj") is None:
+            self.crossattn_proj = None
+        else:
+            self.crossattn_proj = torch.nn.Sequential(
+                torch.nn.Linear(
+                    self.config.crossattn_proj_in_channels, self.config.encoder_hidden_states_channels, bias=True
+                ),
+                torch.nn.GELU(),
+            )
+            self.crossattn_proj.load_state_dict(artifacts["crossattn_proj"])
 
     def compute_embedding(
         self,
         hidden_states: torch.Tensor,
+        encoder_hidden_states: torch.Tensor,
         timestep: torch.Tensor,
         attention_mask: Optional[torch.Tensor] = None,
         fps: Optional[int] = None,
@@ -192,10 +202,14 @@ class RBLNCosmosTransformer3DModel(RBLNModel):
                 for x in (temb, embedded_timestep)
             )  # [BT, C] -> [B, T, 1, 1, C] -> [B, T, H, W, C] -> [B, THW, C]
         else:
-            assert False
+            raise AssertionError("Unsupported shape of `timestep`")
+
+        if self.config.use_crossattn_projection:
+            encoder_hidden_states = self.crossattn_proj(encoder_hidden_states)
 
         return (
             hidden_states,
+            encoder_hidden_states,
             temb,
             embedded_timestep,
             image_rotary_emb[0],
@@ -227,13 +241,21 @@ class RBLNCosmosTransformer3DModel(RBLNModel):
                 rbln_config.transformer.num_frames = 121
 
         if rbln_config.transformer.height is None:
-            if pipe.transformer.config.extra_pos_embed_type is None and not rbln_config.vae.uses_encoder:
+            if (
+                pipe.transformer.config.extra_pos_embed_type is None
+                and not rbln_config.vae.uses_encoder
+                and not pipe.transformer.config.use_crossattn_projection
+            ):
                 rbln_config.transformer.height = 768
             else:
                 rbln_config.transformer.height = 704
 
         if rbln_config.transformer.width is None:
-            if pipe.transformer.config.extra_pos_embed_type is None and not rbln_config.vae.uses_encoder:
+            if (
+                pipe.transformer.config.extra_pos_embed_type is None
+                and not rbln_config.vae.uses_encoder
+                and not pipe.transformer.config.use_crossattn_projection
+            ):
                 rbln_config.transformer.width = 1360
             else:
                 rbln_config.transformer.width = 1280
@@ -243,8 +265,12 @@ class RBLNCosmosTransformer3DModel(RBLNModel):
         ) // pipe.vae_scale_factor_temporal + 1
         rbln_config.transformer.latent_height = rbln_config.transformer.height // pipe.vae_scale_factor_spatial
         rbln_config.transformer.latent_width = rbln_config.transformer.width // pipe.vae_scale_factor_spatial
-        rbln_config.transformer.max_seq_len = pipe.text_encoder.config.n_positions
-        rbln_config.transformer.embedding_dim = pipe.text_encoder.encoder.embed_tokens.embedding_dim
+        if pipe.transformer.config.use_crossattn_projection:
+            rbln_config.transformer.max_seq_len = rbln_config.text_encoder.get("max_seq_len", 512)
+            rbln_config.transformer.embedding_dim = pipe.transformer.config.encoder_hidden_states_channels
+        else:
+            rbln_config.transformer.max_seq_len = pipe.text_encoder.config.n_positions
+            rbln_config.transformer.embedding_dim = pipe.text_encoder.encoder.embed_tokens.embedding_dim
 
         return rbln_config
 
@@ -262,6 +288,8 @@ class RBLNCosmosTransformer3DModel(RBLNModel):
             save_dict["learnable_pos_embed"] = model.learnable_pos_embed.state_dict()
         save_dict["patch_embed"] = model.patch_embed.state_dict()
         save_dict["time_embed"] = model.time_embed.state_dict()
+        if model.config.use_crossattn_projection:
+            save_dict["crossattn_proj"] = model.crossattn_proj.state_dict()
         torch.save(save_dict, save_dir_path / subfolder / "torch_artifacts.pth")
 
     @classmethod
@@ -380,13 +408,16 @@ class RBLNCosmosTransformer3DModel(RBLNModel):
         """
         (
             hidden_states,
+            encoder_hidden_states,
             temb,
             embedded_timestep,
             image_rotary_emb_0,
             image_rotary_emb_1,
             extra_pos_emb,
             attention_mask,
-        ) = self.compute_embedding(hidden_states, timestep, attention_mask, fps, condition_mask, padding_mask)
+        ) = self.compute_embedding(
+            hidden_states, encoder_hidden_states, timestep, attention_mask, fps, condition_mask, padding_mask
+        )
 
         if self.config.extra_pos_embed_type is None:
             hidden_states = self.model[0].forward(
