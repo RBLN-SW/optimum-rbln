@@ -51,7 +51,7 @@ env:
 
 jobs:
   pytest:
-    name: Pytest (${{ matrix.test_type }}${{ matrix.test_type == 'llm' && format(' {0}/{1}', matrix.group, matrix.splits) || '' }})
+    name: Pytest (${{ matrix.test_type }}${{ matrix.test_type == 'llm' && matrix.group && format(' {0}/{1}', matrix.group, matrix.splits) || '' }})
     runs-on: ${{ (inputs.reuse_artifacts_path != '' && matrix.test_type == 'llm') && 'sw-k8s-4c-128gb' || (inputs.reuse_artifacts_path != '' && 'sw-k8s-4c-32gb' || 'sw-k8s-ca22-1') }}
     container:
       image: ${{ vars.DEV_CONTAINER_IMAGE }}
@@ -59,7 +59,7 @@ jobs:
       fail-fast: ${{ inputs.fail_fast }}
       matrix: ${{ fromJson(
         (inputs.reuse_artifacts_path != '' || inputs.save_artifacts_path != '') &&
-        '{"include":[{"test_type":"transformers"},{"test_type":"diffusers"},{"test_type":"llm","splits":4,"group":1},{"test_type":"llm","splits":4,"group":2},{"test_type":"llm","splits":4,"group":3},{"test_type":"llm","splits":4,"group":4}]}' ||
+        '{"test_type":["transformers","diffusers","llm"]}' ||
         '{"include":[{"test_type":"config"},{"test_type":"transformers"},{"test_type":"diffusers"},{"test_type":"llm","splits":4,"group":1},{"test_type":"llm","splits":4,"group":2},{"test_type":"llm","splits":4,"group":3},{"test_type":"llm","splits":4,"group":4},{"test_type":"cli-basic"},{"test_type":"cli-argument-parsing"},{"test_type":"cli-error-handling"}]}'
         )}}
     steps:
@@ -175,7 +175,13 @@ jobs:
               uv run --no-sync pytest -n 1 tests/test_diffusers.py -vv --durations 0 $EXTRA_PYTEST_ARGS
               ;;
             "llm")
-              uv run --no-sync pytest -n 1 tests/test_llm.py --splits ${{ matrix.splits }} --group ${{ matrix.group }} -vv --durations 0 $EXTRA_PYTEST_ARGS
+              SPLITS="${{ matrix.splits || '' }}"
+              GROUP="${{ matrix.group || '' }}"
+              if [ -n "$SPLITS" ] && [ -n "$GROUP" ]; then
+                uv run --no-sync pytest -n 1 tests/test_llm.py --splits "$SPLITS" --group "$GROUP" -vv --durations 0 $EXTRA_PYTEST_ARGS
+              else
+                uv run --no-sync pytest -n 1 tests/test_llm.py -vv --durations 0 $EXTRA_PYTEST_ARGS
+              fi
               ;;
             cli-*)
               # Extract test type from matrix
