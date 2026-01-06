@@ -121,10 +121,7 @@ class RBLNGptOssForCausalLM(RBLNDecoderOnlyModelForCausalLM):
         **kwargs,
     ) -> PreTrainedModel:
         safetensor_files = load_weight_files(model_id, exception_keywords=["original"])
-        safetensors = [load_file(safetensor_file) for safetensor_file in safetensor_files]
-        state_dict = {}
-        for sd in safetensors[:-1]:
-            state_dict.update(sd)
+        state_dict = {k: v for f in safetensor_files for k, v in load_file(f).items()}
 
         if config is None:
             config, kwargs = AutoConfig.from_pretrained(model_id, return_unused_kwargs=True)

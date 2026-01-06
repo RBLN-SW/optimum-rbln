@@ -9,21 +9,14 @@ on:
 
 jobs:
   get-latest-tag:
-    runs-on: rebel-k8s-runner
+    runs-on: sw-k8s-4c-32gb
+    container:
+      image: ${{ vars.DEV_CONTAINER_IMAGE }}
     outputs:
       latest_tag: ${{ steps.get_latest.outputs.latest_tag }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Install packaging library for parsing latest version
-        run: |
-          pip install packaging
 
       - name: Get latest tag
         id: get_latest

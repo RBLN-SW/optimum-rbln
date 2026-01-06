@@ -51,14 +51,16 @@ env:
 
 jobs:
   pytest:
-    name: Pytest (${{ matrix.test_type }})
-    runs-on: ${{ inputs.reuse_artifacts_path != '' && 'rebel-k8s-runner' || 'vm-ci-0' }}
+    name: Pytest (${{ matrix.test_type }}${{ matrix.test_type == 'llm' && matrix.group && format(' {0}/{1}', matrix.group, matrix.splits) || '' }})
+    runs-on: ${{ (inputs.reuse_artifacts_path != '' && matrix.test_type == 'llm') && 'sw-k8s-4c-128gb' || (inputs.reuse_artifacts_path != '' && 'sw-k8s-4c-32gb' || 'sw-k8s-ca22-1') }}
+    container:
+      image: ${{ vars.DEV_CONTAINER_IMAGE }}
     strategy:
       fail-fast: ${{ inputs.fail_fast }}
       matrix: ${{ fromJson(
         (inputs.reuse_artifacts_path != '' || inputs.save_artifacts_path != '') &&
         '{"test_type":["transformers","diffusers","llm"]}' ||
-        '{"test_type":["config","transformers","diffusers","llm","cli-basic","cli-argument-parsing","cli-error-handling"]}'
+        '{"include":[{"test_type":"config"},{"test_type":"transformers"},{"test_type":"diffusers"},{"test_type":"llm","splits":4,"group":1},{"test_type":"llm","splits":4,"group":2},{"test_type":"llm","splits":4,"group":3},{"test_type":"llm","splits":4,"group":4},{"test_type":"cli-basic"},{"test_type":"cli-argument-parsing"},{"test_type":"cli-error-handling"}]}'
         )}}
     steps:
       - name: Checkout the optimum-rbln repository
@@ -71,6 +73,7 @@ jobs:
       - name: Get commit message if not provided
         id: get_commit_message
         run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
           COMMIT_MESSAGE=$(git log -1 --pretty=%B)
           echo "message<<EOF" >> $GITHUB_OUTPUT
           echo "$COMMIT_MESSAGE" >> $GITHUB_OUTPUT
@@ -114,17 +117,6 @@ jobs:
           esac
           
           echo "skip=$SKIP" >> $GITHUB_OUTPUT
-
-      - name: Setup uv
-        if: steps.should_skip.outputs.skip != 'true'
-        uses: astral-sh/setup-uv@v3
-        with:
-          enable-cache: true
-          cache-dependency-glob: "uv.lock"
-
-      - name: Setup Python
-        if: steps.should_skip.outputs.skip != 'true'
-        run: uv python install 3.12
 
       - name: Install optimum-rbln with tests group dependencies
         if: steps.should_skip.outputs.skip != 'true'
@@ -183,7 +175,13 @@ jobs:
               uv run --no-sync pytest -n 1 tests/test_diffusers.py -vv --durations 0 $EXTRA_PYTEST_ARGS
               ;;
             "llm")
-              uv run --no-sync pytest -n 1 tests/test_llm.py -vv --durations 0 $EXTRA_PYTEST_ARGS
+              SPLITS="${{ matrix.splits || '' }}"
+              GROUP="${{ matrix.group || '' }}"
+              if [ -n "$SPLITS" ] && [ -n "$GROUP" ]; then
+                uv run --no-sync pytest -n 1 tests/test_llm.py --splits "$SPLITS" --group "$GROUP" -vv --durations 0 $EXTRA_PYTEST_ARGS
+              else
+                uv run --no-sync pytest -n 1 tests/test_llm.py -vv --durations 0 $EXTRA_PYTEST_ARGS
+              fi
               ;;
             cli-*)
               # Extract test type from matrix
