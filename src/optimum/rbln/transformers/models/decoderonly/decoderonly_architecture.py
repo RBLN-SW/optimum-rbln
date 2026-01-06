@@ -995,6 +995,7 @@ class AttentionOp(nn.Module):
 
         # (yhboo) temp update for batch decode
         # (TODO) layout transform in compiler
+        # if self.phase == "decode" and batch_size > 1 and s_aux is not None:
         if self.phase == "decode" and batch_size > 1:
             attn_mask = attn_mask[2]
             attn_mask = attn_mask.view(batch_size, 1, 1, block_size//64, 1, 64)
