@@ -136,7 +136,7 @@ class RBLNDiffusionMixin:
         *,
         export: bool = None,
         model_save_dir: Optional[PathLike] = None,
-        rbln_config: Dict[str, Any] = {},
+        rbln_config: Optional[Dict[str, Any]] = None,
         lora_ids: Optional[Union[str, List[str]]] = None,
         lora_weights_names: Optional[Union[str, List[str]]] = None,
         lora_scales: Optional[Union[float, List[float]]] = None,

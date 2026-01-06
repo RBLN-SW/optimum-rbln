@@ -37,9 +37,11 @@ from optimum.rbln import (
     RBLNQwen2_5_VLForConditionalGeneration,
     RBLNQwen2ForCausalLM,
     RBLNQwen2Model,
+    RBLNQwen2MoeForCausalLM,
     RBLNQwen2VLForConditionalGeneration,
     RBLNQwen3ForCausalLM,
     RBLNQwen3Model,
+    RBLNQwen3MoeForCausalLM,
     RBLNT5ForConditionalGeneration,
 )
 
@@ -59,7 +61,7 @@ class LLMTest:
         DEVICE = None  # Use device to run
         PROMPT = "Who are you?"
         IS_MULTIMODAL = False
-        HF_CONFIG_KWARGS_PREPROCESSOR = {}
+        HF_CONFIG_KWARGS_PREPROCESSOR = {"padding_side": "left"}
 
         def get_tokenizer(self):
             PreProcessor = AutoProcessor if self.IS_MULTIMODAL else AutoTokenizer
@@ -92,6 +94,56 @@ class LLMTest:
 
             return generated_texts
 
+        def _test_output_hidden_states_generation(self):
+            REUSE_ARTIFACTS_PATH = os.environ.get("REUSE_ARTIFACTS_PATH", None)
+
+            inputs = self.get_inputs()
+            if self.model.can_generate():
+                inputs["max_new_tokens"] = 4
+                inputs["do_sample"] = False
+                inputs["return_dict_in_generate"] = True
+                inputs["output_hidden_states"] = True
+                output = self.model.generate(**inputs)
+                if REUSE_ARTIFACTS_PATH is not None:
+                    return
+
+                # Check hidden states Shape and Type
+                self.assertTrue(len(output.hidden_states) == inputs["max_new_tokens"])
+                self.assertTrue(isinstance(output.hidden_states, tuple))
+                num_hidden_layers = (
+                    self.HF_CONFIG_KWARGS["num_hidden_layers"]
+                    if "num_hidden_layers" in self.HF_CONFIG_KWARGS
+                    else self.HF_CONFIG_KWARGS["text_config"]["num_hidden_layers"]
+                )
+                self.assertTrue(len(output.hidden_states[0]) == (num_hidden_layers + 1))
+                self.assertTrue(isinstance(output.hidden_states[0], tuple))
+                test_hidden_states = output.hidden_states[0][1]
+            else:
+                inputs["output_hidden_states"] = True
+                output = self.model.forward(**inputs)
+                if REUSE_ARTIFACTS_PATH is not None:
+                    return
+                # Check hidden states Shape and Type
+                self.assertTrue(len(output.hidden_states) == (self.HF_CONFIG_KWARGS["num_hidden_layers"] + 1))
+                self.assertTrue(isinstance(output.hidden_states, tuple))
+                test_hidden_states = output.hidden_states[1]
+
+                # Check last hidden state corresponds to the last hidden state of the prefill stage
+                self.assertTrue(torch.allclose(output.last_hidden_state, output.hidden_states[-1]))
+
+            # Check well-masked hidden states corresponds to attention mask
+            for b_idx, bmask in enumerate(inputs.attention_mask):
+                masked_indices = torch.where(bmask == 0)[0]
+                unmasked_indices = torch.where(bmask == 1)[0]
+                masked = torch.allclose(test_hidden_states[b_idx][masked_indices], torch.zeros([1]))
+                # 1. all masked hidden states are zero
+                self.assertTrue(masked)
+                unmasked_tensor = test_hidden_states[b_idx][unmasked_indices]
+                avg_unmasked_tensor = torch.mean(unmasked_tensor, dim=-1)
+                approx_zero = torch.isclose(avg_unmasked_tensor, torch.zeros([1]), atol=1e-5)
+                # 2. check if unmasked hidden states are not masked
+                self.assertFalse(torch.any(approx_zero).item())
+
     class TestLLMWithoutLMHead(TestLLM):
         RBLN_AUTO_CLASS = RBLNAutoModel
 
@@ -120,6 +172,29 @@ class TestQwen2Model(LLMTest.TestLLMWithoutLMHead):
     HF_CONFIG_KWARGS = {"num_hidden_layers": 1, "layer_types": ["full_attention"], "max_position_embeddings": 1024}
 
 
+class TestQwen2ForCausalLM_OutputHiddenStates(TestQwen2ForCausalLM):
+    PROMPT = ["Who are you?", "What is the capital of France?"]
+    RBLN_CLASS_KWARGS = {"rbln_config": {"output_hidden_states": True, "batch_size": 2}}
+
+    def get_inputs(self):
+        inputs = super().get_inputs()
+        inputs["return_dict_in_generate"] = True
+        inputs["output_hidden_states"] = True
+        inputs["max_new_tokens"] = 4
+        return inputs
+
+    def test_generate(self):
+        self._test_output_hidden_states_generation()
+
+
+class TestQwen2Model_OutputHiddenStates(TestQwen2Model):
+    PROMPT = ["Who are you?", "What is the capital of France?"]
+    RBLN_CLASS_KWARGS = {"rbln_config": {"output_hidden_states": True, "batch_size": 2}}
+
+    def test_generate(self):
+        self._test_output_hidden_states_generation()
+
+
 class TestQwen3ForCausalLM(LLMTest.TestLLM):
     RBLN_CLASS = RBLNQwen3ForCausalLM
     HF_MODEL_ID = "trl-internal-testing/tiny-Qwen3ForCausalLM"
@@ -141,6 +216,28 @@ class TestQwen3Model(LLMTest.TestLLMWithoutLMHead):
     RBLN_CLASS = RBLNQwen3Model
     HF_MODEL_ID = "trl-internal-testing/tiny-Qwen3ForCausalLM"
     HF_CONFIG_KWARGS = {"num_hidden_layers": 1, "layer_types": ["full_attention"], "max_position_embeddings": 1024}
+
+
+class TestQwen2MoeForCausalLM(LLMTest.TestLLM):
+    RBLN_CLASS = RBLNQwen2MoeForCausalLM
+    # HF_MODEL_ID ="peft-internal-testing/tiny-random-qwen-1.5-MoE"
+    HF_MODEL_ID = "Qwen/Qwen1.5-MoE-A2.7B"
+    HF_CONFIG_KWARGS = {"num_hidden_layers": 1, "max_position_embeddings": 1024}
+    TEST_LEVEL = TestLevel.FULL
+
+
+class TestQwen3MoeForCausalLM(LLMTest.TestLLM):
+    RBLN_CLASS = RBLNQwen3MoeForCausalLM
+    HF_MODEL_ID = "katuni4ka/tiny-random-qwen3moe"
+
+    @classmethod
+    def setUpClass(cls):
+        config = AutoConfig.from_pretrained(cls.HF_MODEL_ID)
+        config.num_hidden_layers = 3
+        config.max_position_embeddings = 4096
+        config.hidden_size = 128
+        cls.HF_CONFIG_KWARGS.update({"config": config, "ignore_mismatched_sizes": True})
+        return super().setUpClass()
 
 
 class TestQwen3Model_UAM(TestQwen3Model):
@@ -351,7 +448,11 @@ class TestLlavaForConditionalGeneration(LLMTest.TestLLM):
         _ = self.RBLN_CLASS.from_pretrained(
             tmpdir,
             export=False,
-            rbln_config={"language_model": {"create_runtimes": False}},
+            rbln_config={
+                "create_runtimes": False,
+                "vision_tower": {"create_runtimes": False},
+                "language_model": {"create_runtimes": False},
+            },
             **self.HF_CONFIG_KWARGS,
         )
 
@@ -545,7 +646,8 @@ class TestQwen2VLForConditionalGeneration(LLMTest.TestLLM):
         text_config = json.loads(config.text_config.to_json_string())
         text_config["num_hidden_layers"] = 1
         text_config["layer_types"] = text_config["layer_types"][:1]
-        vision_config["depth"] = 1  # To make the test faster
+        vision_config["depth"] = 2  # To make the test faster
+        vision_config["fullatt_block_indexes"] = [1]
         kwargs = {"vision_config": vision_config, "text_config": text_config}
         cls.HF_CONFIG_KWARGS.update(kwargs)
         return super().setUpClass()
@@ -590,8 +692,8 @@ class TestQwen2_5_VLForConditionalGeneration(LLMTest.TestLLM):
         text_config = json.loads(config.text_config.to_json_string())
         text_config["num_hidden_layers"] = 1
         text_config["layer_types"] = text_config["layer_types"][:1]
-        vision_config["depth"] = 8
-        vision_config["fullatt_block_indexes"] = [7]
+        vision_config["depth"] = 2
+        vision_config["fullatt_block_indexes"] = [1]
         kwargs = {"vision_config": vision_config, "text_config": text_config}
         cls.HF_CONFIG_KWARGS.update(kwargs)
         return super().setUpClass()
@@ -641,6 +743,17 @@ class TestGemma3ForConditionalGeneration(LLMTest.TestLLM):
         inputs["max_new_tokens"] = 20
         inputs["do_sample"] = False
         return inputs
+
+
+class TestGemma3ForConditionalGeneration_OutputHiddenStates(TestGemma3ForConditionalGeneration):
+    RBLN_CLASS_KWARGS = {
+        "rbln_config": {
+            "language_model": {"use_inputs_embeds": True, "kvcache_partition_len": 4096, "output_hidden_states": True}
+        }
+    }
+
+    def test_generate(self):
+        self._test_output_hidden_states_generation()
 
 
 class TestGemma3ForCausalLM(LLMTest.TestLLM):

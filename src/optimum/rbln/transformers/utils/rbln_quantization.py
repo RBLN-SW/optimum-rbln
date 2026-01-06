@@ -232,11 +232,12 @@ def load_weight_files(
     cache_dir: Optional[str] = None,
     force_download: bool = False,
     local_files_only: bool = False,
+    exception_keywords: Optional[List[str]] = None,
 ) -> list[str]:
     """
     Discover and download safetensors files for the given model id.
     """
-
+    exception_keywords = exception_keywords or []
     if os.path.isdir(model_id):
         safetensor_files = glob.glob(f"{model_id}/*.safetensors")
     else:
@@ -248,17 +249,24 @@ def load_weight_files(
 
             for file in repo_files:
                 if file.endswith(".safetensors"):
-                    # Download the safetensors file
-                    downloaded_file = hf_hub_download(
-                        repo_id=model_id,
-                        filename=file,
-                        revision=revision,
-                        token=use_auth_token,
-                        cache_dir=cache_dir,
-                        force_download=force_download,
-                        local_files_only=local_files_only,
-                    )
-                    safetensor_files.append(downloaded_file)
+                    exculde = False
+                    for except_key in exception_keywords:
+                        if except_key in file:
+                            exculde = True
+                            break
+
+                    if not exculde:
+                        # Download the safetensors file
+                        downloaded_file = hf_hub_download(
+                            repo_id=model_id,
+                            filename=file,
+                            revision=revision,
+                            token=use_auth_token,
+                            cache_dir=cache_dir,
+                            force_download=force_download,
+                            local_files_only=local_files_only,
+                        )
+                        safetensor_files.append(downloaded_file)
         except Exception as e:
             logger.error(f"Failed to download safetensors files from Hugging Face Hub: {e}")
             raise e

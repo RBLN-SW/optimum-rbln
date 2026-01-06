@@ -1,5 +1,5 @@
 import os
-from typing import List
+from typing import List, Optional
 
 import cv2
 import fire
@@ -16,10 +16,7 @@ from optimum.rbln import RBLNStableDiffusionControlNetPipeline
 def main(
     diffusion_model_id: str = "runwayml/stable-diffusion-v1-5",
     from_diffusers: bool = False,
-    controlnet_model_id: List[str] = [
-        "lllyasviel/sd-controlnet-openpose",
-        "lllyasviel/sd-controlnet-canny",
-    ],
+    controlnet_model_id: Optional[List[str]] = None,
     prompt: str = "a giant standing in a fantasy landscape, best quality",
     negative_prompt: str = "monochrome, lowres, bad anatomy, worst quality, low quality",
 ):
@@ -46,6 +43,12 @@ def main(
         "https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/diffusers/person.png"
     )
     openpose_image = openpose(openpose_image)
+
+    if controlnet_model_id is None:
+        controlnet_model_id = [
+            "lllyasviel/sd-controlnet-openpose",
+            "lllyasviel/sd-controlnet-canny",
+        ]
 
     controlnets = []
     for cmi in controlnet_model_id:

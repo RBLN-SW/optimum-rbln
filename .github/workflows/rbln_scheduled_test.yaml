@@ -45,4 +45,5 @@ jobs:
       rebel_compiler_version: ${{ needs.fetch-version.outputs.compiler_version }}
       ref: "dev"
       report_slack: true
+      test_bc: true
     secrets: inherit

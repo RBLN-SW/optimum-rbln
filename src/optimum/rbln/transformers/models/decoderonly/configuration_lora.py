@@ -46,7 +46,7 @@ class RBLNLoRAAdapterConfig(RBLNSerializableConfigProtocol):
         model = RBLNLlamaForCausalLM.from_pretrained(
             model_id,
             rbln_config=RBLNLlamaForCausalLMConfig(lora_config=lora_config, tensor_parallel_size=tp_size, max_seq_len=8192),
-            torch_dtype="auto",
+            dtype="auto",
         )
 
 
@@ -183,7 +183,7 @@ class RBLNLoRAAdapterConfig(RBLNSerializableConfigProtocol):
                 f"Failed to download LoRA adapter '{path.as_posix()}' from HuggingFace Hub. "
                 f"Please check if the model ID is correct or provide a valid local path. "
                 f"Error: {e}"
-            )
+            ) from e
 
     def _load_adapter_config(self) -> Dict[str, Any]:
         """

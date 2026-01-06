@@ -24,7 +24,7 @@ import torch
 from packaging.version import Version
 
 from .__version__ import __version__
-from .utils.deprecation import warn_deprecated_npu
+from .utils.deprecation import deprecate_kwarg, warn_deprecated_npu
 from .utils.logging import get_logger
 from .utils.runtime_utils import ContextRblnConfig
 
@@ -92,7 +92,7 @@ class RBLNCompileConfig:
                 and isinstance(item[0], str)  # name
                 and isinstance(item[1], (tuple, list))  # shape
                 and all(isinstance(x, int) for x in item[1])
-                and isinstance(item[2], str)  # dtype
+                and (isinstance(item[2], str) or isinstance(item[2], torch.dtype))  # dtype
                 for item in input_info
             )
 
@@ -117,9 +117,14 @@ class RBLNCompileConfig:
         return self
 
     def get_dummy_inputs(
-        self, fill=0, static_tensors: Dict[str, torch.Tensor] = {}, meta_tensor_names: List[str] = []
+        self,
+        fill=0,
+        static_tensors: Optional[Dict[str, torch.Tensor]] = None,
+        meta_tensor_names: Optional[List[str]] = None,
     ):
         dummy = []
+        static_tensors = static_tensors if static_tensors is not None else {}
+        meta_tensor_names = meta_tensor_names if meta_tensor_names is not None else []
         for name, shape, dtype in self.input_info:
             if name in static_tensors:
                 tensor = static_tensors[name]
@@ -255,7 +260,7 @@ class RBLNAutoConfig:
     def load(
         path: str,
         passed_rbln_config: Optional["RBLNModelConfig"] = None,
-        kwargs: Optional[Dict[str, Any]] = {},
+        kwargs: Optional[Dict[str, Any]] = None,
         return_unused_kwargs: bool = False,
     ) -> Union["RBLNModelConfig", Tuple["RBLNModelConfig", Dict[str, Any]]]:
         """
@@ -269,6 +274,8 @@ class RBLNAutoConfig:
         Returns:
             RBLNModelConfig: The loaded RBLNModelConfig.
         """
+        if kwargs is None:
+            kwargs = {}
         cls, config_file = load_config(path)
 
         rbln_keys = [key for key in kwargs.keys() if key.startswith("rbln_")]
@@ -517,8 +524,8 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
     non_save_attributes = [
         "_frozen",
         "_runtime_options",
-        "torch_dtype",
         "npu",
+        "dtype",
         "tensor_parallel_size",
         "create_runtimes",
         "device",
@@ -643,6 +650,14 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
 
         super().__setattr__(key, value)
 
+    @deprecate_kwarg(
+        old_name="_torch_dtype",
+        new_name="dtype",
+        version="0.12.0",
+        deprecated_type=torch.dtype,
+        value_replacer=RBLNCompileConfig.normalize_dtype,
+        raise_if_greater_or_equal_version=False,
+    )
     def __init__(
         self,
         cls_name: Optional[str] = None,
@@ -654,8 +669,8 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
         tensor_parallel_size: Optional[int] = None,
         timeout: Optional[int] = None,
         optimum_rbln_version: Optional[str] = None,
-        _torch_dtype: Optional[str] = None,
-        _compile_cfgs: List[RBLNCompileConfig] = [],
+        dtype: Optional[Union[str, torch.dtype]] = None,
+        _compile_cfgs: Optional[List[RBLNCompileConfig]] = None,
         *,
         optimize_host_memory: Optional[bool] = None,
         **kwargs: Any,
@@ -673,7 +688,7 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
             tensor_parallel_size (Optional[int]): Size for tensor parallelism to distribute the model across devices.
             timeout (Optional[int]): The timeout for the runtime in seconds. If it isn't provided, it will be set to 60 by default.
             optimum_rbln_version (Optional[str]): The optimum-rbln version used for this configuration.
-            _torch_dtype (Optional[str]): The data type to use for the model.
+            dtype (Optional[Union[str, torch.dtype]]): The data type to use for the model.
             _compile_cfgs (List[RBLNCompileConfig]): List of compilation configurations for the model.
             kwargs: Additional keyword arguments.
 
@@ -703,12 +718,15 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
         self.npu = npu
         self.tensor_parallel_size = tensor_parallel_size
 
-        self._torch_dtype = _torch_dtype or "float32"
+        if dtype is not None and isinstance(dtype, torch.dtype):
+            dtype = RBLNCompileConfig.normalize_dtype(dtype)
+        self._dtype = dtype or "float32"
         self.optimum_rbln_version = optimum_rbln_version
         if self.optimum_rbln_version is None:
             self.optimum_rbln_version = __version__
 
-        self._compile_cfgs: List[RBLNCompileConfig] = _compile_cfgs
+        compile_cfgs = _compile_cfgs if _compile_cfgs is not None else []
+        self._compile_cfgs: List[RBLNCompileConfig] = compile_cfgs
 
         if not isinstance(self._compile_cfgs, list):
             raise ValueError("`compile_cfgs` must be a list of `RBLNCompileConfig`.")
@@ -735,14 +753,24 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
 
     @property
     def torch_dtype(self):
-        return getattr(torch, self._torch_dtype)
+        logger.warning_once("`torch_dtype` is deprecated. Use `dtype` instead.")
+        return self.dtype
 
     @torch_dtype.setter
     def torch_dtype(self, torch_dtype: Union[str, torch.dtype]):
-        if isinstance(torch_dtype, torch.dtype):
-            torch_dtype = RBLNCompileConfig.normalize_dtype(torch_dtype)
+        logger.warning_once("`torch_dtype` is deprecated. Use `dtype` instead.")
+        self.dtype = torch_dtype
 
-        self._torch_dtype = torch_dtype
+    @property
+    def dtype(self):
+        return getattr(torch, self._dtype)
+
+    @dtype.setter
+    def dtype(self, dtype: Union[str, torch.dtype]):
+        if isinstance(dtype, torch.dtype):
+            dtype = RBLNCompileConfig.normalize_dtype(dtype)
+
+        self._dtype = dtype
 
     @property
     def rbln_model_cls_name(self) -> str:
@@ -766,10 +794,13 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
             if isinstance(value, RBLNSerializableConfigProtocol):
                 # Convert nested RBLNModelConfig to its serializable form
                 serializable_map[key] = value._prepare_for_serialization()
+            elif key == "_dtype":
+                serializable_map["dtype"] = value
             elif key == "_compile_cfgs":
                 serializable_map[key] = [cfg.asdict() for cfg in value]
             else:
                 serializable_map[key] = value
+
         return serializable_map
 
     def __repr__(self):

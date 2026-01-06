@@ -116,7 +116,6 @@ class RBLNLlavaForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMixi
     RBLNLlavaForConditionalGeneration is a multi-modal model that combines vision and language processing capabilities,
     optimized for RBLN NPUs. It is designed for conditional generation tasks that involve both image and text inputs.
     This model inherits from [`RBLNModel`]. Check the superclass documentation for the generic methods the library implements for all its models.
-
     Important Note:
         This model includes a Large Language Model (LLM) as a submodule. For optimal performance, it is highly recommended to use
         tensor parallelism for the language model. This can be achieved by using the `rbln_config` parameter in the
@@ -337,7 +336,7 @@ class RBLNLlavaForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMixi
             pooler_out_size = [pixel_values.shape[0], self.config.vision_config.hidden_size]
 
         vision_out_buffer = []
-        for i in range(self.config.vision_config.num_hidden_layers + 2):
+        for _ in range(self.config.vision_config.num_hidden_layers + 2):
             vision_out_buffer.append(torch.empty(size=vision_out_size, dtype=torch.float32, device="cpu"))
         if pooler_out_size is not None:
             vision_out_buffer.insert(1, torch.empty(size=pooler_out_size, dtype=torch.float32, device="cpu"))

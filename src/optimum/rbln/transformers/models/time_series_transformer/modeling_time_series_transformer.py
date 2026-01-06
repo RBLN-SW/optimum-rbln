@@ -184,20 +184,21 @@ class RBLNTimeSeriesTransformerForPrediction(RBLNModel):
             if "key_value_states" in name:
                 context.mark_static_address(tensor)
 
-        compiled_decoder = cls.compile(
-            wrapped_model.decoder,
-            dec_compile_config,
-            create_runtimes=rbln_config.create_runtimes,
-            device=rbln_config.device,
-            example_inputs=dec_example_inputs,
-            compile_context=context,
-        )
         compiled_encoder = cls.compile(
             wrapped_model.encoder,
             enc_compile_config,
             create_runtimes=rbln_config.create_runtimes,
             device=rbln_config.device,
             example_inputs=enc_example_inputs,
+            compile_context=context,
+        )
+
+        compiled_decoder = cls.compile(
+            wrapped_model.decoder,
+            dec_compile_config,
+            create_runtimes=rbln_config.create_runtimes,
+            device=rbln_config.device,
+            example_inputs=dec_example_inputs,
             compile_context=context,
         )
 

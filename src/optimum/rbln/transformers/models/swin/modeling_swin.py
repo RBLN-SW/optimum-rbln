@@ -327,19 +327,19 @@ class RBLNSwinBackbone(RBLNModel):
         output = self.model[0](padded_pixel_values)
 
         feature_maps = ()
-        for i in range(len(self.config.out_features)):
+        for _ in range(len(self.config.out_features)):
             feature_maps += (output.pop(0),)
 
         if self.rbln_config.output_hidden_states:
             hidden_states = ()
-            for i in range(len(self.config.stage_names)):
+            for _ in range(len(self.config.stage_names)):
                 hidden_states += (output.pop(0),)
         else:
             hidden_states = None
 
         if self.rbln_config.output_attentions:
             attentions = ()
-            for i in range(len(self.config.depths)):
+            for _ in range(len(self.config.depths)):
                 attentions += (output.pop(0),)
         else:
             attentions = None

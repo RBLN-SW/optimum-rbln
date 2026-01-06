@@ -13,6 +13,8 @@
 # limitations under the License.
 
 from ....ops import (
+    custom_moe_ff,
+    custom_moe_glu,
     paged_attn_decode,
     paged_attn_prefill,
     paged_causal_attn_decode,

@@ -30,6 +30,16 @@ on:
         required: false
         type: boolean
         default: true
+      save_artifacts_path:
+        description: "Path to save artifacts (default: empty string, which means not to save artifacts)"
+        required: false
+        type: string
+        default: ""
+      reuse_artifacts_path:
+        description: "Path to reuse artifacts (default: empty string, which means not to reuse artifacts)"
+        required: false
+        type: string
+        default: ""
 
 env:
   REBEL_PYPI_ENDPOINT: ${{ vars.REBEL_PYPI_INTERNAL_ENDPOINT }}
@@ -42,11 +52,14 @@ env:
 jobs:
   pytest:
     name: Pytest (${{ matrix.test_type }})
-    runs-on: vm-ci-0
+    runs-on: ${{ inputs.reuse_artifacts_path != '' && 'rebel-k8s-runner' || 'vm-ci-0' }}
     strategy:
       fail-fast: ${{ inputs.fail_fast }}
-      matrix:
-        test_type: [config, transformers, diffusers, llm, cli-basic, cli-argument-parsing, cli-error-handling]
+      matrix: ${{ fromJson(
+        (inputs.reuse_artifacts_path != '' || inputs.save_artifacts_path != '') &&
+        '{"test_type":["transformers","diffusers","llm"]}' ||
+        '{"test_type":["config","transformers","diffusers","llm","cli-basic","cli-argument-parsing","cli-error-handling"]}'
+        )}}
     steps:
       - name: Checkout the optimum-rbln repository
         uses: actions/checkout@v4
@@ -93,6 +106,10 @@ jobs:
               if [[ "${{ inputs.test_level }}" == "default" && "${{ matrix.test_type }}" != "cli-basic" ]]; then
                 SKIP=true
               fi
+              # Skip if BC test is running
+              if [[ "${{ inputs.reuse_artifacts_path }}" != "" || "${{ inputs.save_artifacts_path }}" != "" ]]; then
+                SKIP=true
+              fi
               ;;
           esac
           
@@ -120,23 +137,53 @@ jobs:
           PYPI_URL=$(echo ${{ env.REBEL_PYPI_ENDPOINT }} | sed "s/\/\//\0${{ env.REBEL_PYPI_USERNAME}}:${{ env.REBEL_PYPI_PASSWORD}}@/")
           uv pip install --extra-index-url $PYPI_URL rebel-compiler==${{ inputs.rebel_compiler_version }}
 
+      - name: Prepare artifact paths
+        run: |
+          ensure_dir() {
+            local path="$1"
+            if [ -z "$path" ]; then
+              return
+            fi
+
+            # Try as current user first
+            mkdir -p "$path" 2>/dev/null || {
+              # Fallback to sudo: create with current uid/gid and 775 perms
+              echo ${{ secrets.SECRET_TOKEN }} | sudo -S install -d -m 775 -o "$(id -u)" -g "$(id -g)" "$path"
+            }
+            # If dir already existed with other owner/perms, fix them
+            echo ${{ secrets.SECRET_TOKEN }} | sudo -S chown -R "$(id -u):$(id -g)" "$path"
+            echo ${{ secrets.SECRET_TOKEN }} | sudo -S chmod -R 775 "$path"
+          }
+
+          ensure_dir "${{ inputs.save_artifacts_path }}"
+
       - name: Run tests
         if: steps.should_skip.outputs.skip != 'true'
         env:
           OPTIMUM_RBLN_TEST_LEVEL: ${{ inputs.test_level }}
         run: |
+          EXTRA_PYTEST_ARGS=""
+          if [ "${{ inputs.save_artifacts_path }}" != "" ]; then
+            export SAVE_ARTIFACTS_PATH="${{ inputs.save_artifacts_path }}"
+            EXTRA_PYTEST_ARGS="-k test_save_artifacts"
+          fi
+          if [ "${{ inputs.reuse_artifacts_path }}" != "" ]; then
+            export REUSE_ARTIFACTS_PATH="${{ inputs.reuse_artifacts_path }}"
+            EXTRA_PYTEST_ARGS="-k test_generate"
+          fi
+
           case "${{ matrix.test_type }}" in
             "config")
               uv run --no-sync pytest -n 1 tests/test_config.py -vv --durations 0
               ;;
             "transformers")
-              uv run --no-sync pytest -n 1 tests/test_transformers.py -vv --durations 0
+              uv run --no-sync pytest -n 1 tests/test_transformers.py -vv --durations 0 $EXTRA_PYTEST_ARGS
               ;;
             "diffusers")
-              uv run --no-sync pytest -n 1 tests/test_diffusers.py -vv --durations 0
+              uv run --no-sync pytest -n 1 tests/test_diffusers.py -vv --durations 0 $EXTRA_PYTEST_ARGS
               ;;
             "llm")
-              uv run --no-sync pytest -n 1 tests/test_llm.py -vv --durations 0
+              uv run --no-sync pytest -n 1 tests/test_llm.py -vv --durations 0 $EXTRA_PYTEST_ARGS
               ;;
             cli-*)
               # Extract test type from matrix

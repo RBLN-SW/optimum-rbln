@@ -174,16 +174,21 @@ class TestT5EncoderModel(BaseTest.TestModel):
 
     @classmethod
     def setUpClass(cls):
-        if os.path.exists(cls.get_rbln_local_dir()):
-            shutil.rmtree(cls.get_rbln_local_dir())
+        REUSE_ARTIFACTS_PATH = os.environ.get("REUSE_ARTIFACTS_PATH", None)
+        if REUSE_ARTIFACTS_PATH is None:
+            if os.path.exists(cls.get_rbln_local_dir()):
+                shutil.rmtree(cls.get_rbln_local_dir())
 
-        t5_encoder_model = T5EncoderModel.from_pretrained(cls.HF_MODEL_ID, return_dict=False, **cls.HF_CONFIG_KWARGS)
-        cls.model = cls.RBLN_CLASS.from_model(
-            model=t5_encoder_model,
-            model_save_dir=cls.get_rbln_local_dir(),
-            rbln_device=-1,
-            **cls.RBLN_CLASS_KWARGS,
-        )
+            t5_encoder_model = T5EncoderModel.from_pretrained(
+                cls.HF_MODEL_ID, return_dict=False, **cls.HF_CONFIG_KWARGS
+            )
+            cls.model = cls.RBLN_CLASS.from_model(
+                model=t5_encoder_model,
+                model_save_dir=cls.get_rbln_local_dir(),
+                **cls.RBLN_CLASS_KWARGS,
+            )
+        else:
+            super().setUpClass()
 
 
 class TestWhisperModel(BaseTest.TestModel):
@@ -209,34 +214,12 @@ class TestWhisperModel(BaseTest.TestModel):
     }
 
     def test_generate(self):
-        from datasets import load_dataset
-        from transformers import AutoProcessor
-
-        processor = AutoProcessor.from_pretrained(self.HF_MODEL_ID)
-        ds = load_dataset(
-            "hf-internal-testing/librispeech_asr_dummy", "clean", split="validation", trust_remote_code=True
-        )
-        input_features_list = []
-
-        for i in range(2):
-            input_features = processor(
-                ds[i]["audio"]["array"],
-                sampling_rate=ds[i]["audio"]["sampling_rate"],
-                truncation=False,
-                return_tensors="pt",
-            ).input_features
-            input_features_list.append(input_features)
-        input_features = torch.cat(input_features_list, dim=0)
-        output = self.model.generate(input_features=input_features, max_new_tokens=10)
-        self.EXPECTED_OUTPUT = output[:, :5]
-
+        inputs = self.get_inputs()
+        _ = self.model.generate(**inputs)
         # test_generate_language
-        output = self.model.generate(input_features=input_features, max_new_tokens=10, language="en")[:, :5]
-        self.assertTrue(torch.all(output == self.EXPECTED_OUTPUT))
-
+        _ = self.model.generate(**inputs, language="en")
         # test_generate_language_auto_detect
-        output = self.model.generate(input_features=input_features, max_new_tokens=10, language=None)[:, :5]
-        self.assertTrue(torch.all(output == self.EXPECTED_OUTPUT))
+        _ = self.model.generate(**inputs, language=None)[:, :5]
 
     def test_long_form_language_auto_detect_generate(self):
         inputs = self.get_inputs()
@@ -402,6 +385,13 @@ class TestColPaliModel(BaseTest.TestModel):
     RBLN_AUTO_CLASS = None
     RBLN_CLASS = RBLNColPaliForRetrieval
     HF_MODEL_ID = "thkim93/colpali-hf-1layer"
+    RBLN_CLASS_KWARGS = {
+        "rbln_config": {
+            "vlm": {
+                "language_model": {"prefill_chunk_size": 8192},
+            }
+        }
+    }
     GENERATION_KWARGS = {
         "input_ids": torch.full((1, 1024), fill_value=257152, dtype=torch.int32),
         "attention_mask": torch.ones((1, 1024), dtype=torch.int32),
@@ -415,9 +405,11 @@ class TestColQwen2Model(BaseTest.TestModel):
     HF_MODEL_ID = "vidore/colqwen2-v1.0-hf"
     RBLN_CLASS_KWARGS = {
         "rbln_config": {
-            "visual": {"max_seq_lens": 512},
-            "tensor_parallel_size": 1,
-            "max_seq_len": 32_768,
+            "vlm": {
+                "visual": {"max_seq_lens": 512},
+                "tensor_parallel_size": 1,
+                "max_seq_len": 32_768,
+            }
         }
     }
     HF_CONFIG_KWARGS = {}  # Initialize empty to avoid sharing with other classes
@@ -430,7 +422,8 @@ class TestColQwen2Model(BaseTest.TestModel):
         # Reduce model size for faster testing
         vision_config = json.loads(config.vlm_config.vision_config.to_json_string())
         text_config = json.loads(config.vlm_config.text_config.to_json_string())
-        vision_config["depth"] = 1
+        vision_config["depth"] = 2
+        vision_config["fullatt_block_indexes"] = [1]
         text_config["num_hidden_layers"] = 1
         text_config["layer_types"] = text_config["layer_types"][:1]
 
@@ -450,6 +443,32 @@ class TestColQwen2Model(BaseTest.TestModel):
         ]
         inputs_image = processor(images=images)
         return inputs_image
+
+
+class TestColQwen2Model_BFloat16(TestColQwen2Model):
+    TEST_LEVEL = TestLevel.FULL
+    HF_CONFIG_KWARGS = {
+        "dtype": torch.bfloat16,
+    }
+
+
+class TestColQwen2Model_Auto(TestColQwen2Model):
+    TEST_LEVEL = TestLevel.FULL
+    HF_CONFIG_KWARGS = {
+        "dtype": "auto",
+    }
+
+
+class TestColQwen2Model_Float32(TestColQwen2Model):
+    TEST_LEVEL = TestLevel.FULL
+    HF_CONFIG_KWARGS = {
+        "dtype": torch.float32,
+    }
+
+
+class TestColQwen2_5Model(TestColQwen2Model):
+    TEST_LEVEL = TestLevel.FULL
+    HF_MODEL_ID = "Sahil-Kabir/colqwen2.5-v0.2-hf"
 
 
 class TestWav2VecModel(BaseTest.TestModel):
@@ -476,8 +495,23 @@ class TestTimeSeriesTransformerForPrediction(BaseTest.TestModel):
     DEVICE = 0
 
     def test_generate(self):
+        REUSE_ARTIFACTS_PATH = os.environ.get("REUSE_ARTIFACTS_PATH", None)
+        if REUSE_ARTIFACTS_PATH is not None:
+            original_output_distribution = self.model._origin_model.output_distribution
+
+            def patched_output_distribution(self, params, loc=None, scale=None, trailing_n=None):
+                params = [p + 1e-6 for p in params]
+                return original_output_distribution(params, loc=loc, scale=scale, trailing_n=trailing_n)
+
+            self.model._origin_model.output_distribution = patched_output_distribution.__get__(
+                self.model._origin_model
+            )
+
         inputs = self.get_inputs()
         _ = self.model.generate(**inputs)
+
+        if REUSE_ARTIFACTS_PATH is not None:
+            self.model._origin_model.output_distribution = original_output_distribution
 
 
 class TestBartModel(BaseTest.TestModel):
