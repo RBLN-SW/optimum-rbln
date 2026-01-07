@@ -107,6 +107,10 @@ _import_structure = {
         "RBLNLoRAAdapterConfig",
         "RBLNLoRAConfig",
     ],
+    "mamba2": [
+        "RBLNMamba2ForCausalLM",
+        "RBLNMamba2ForCausalLMConfig",
+    ],
     "depth_anything": ["RBLNDepthAnythingForDepthEstimationConfig", "RBLNDepthAnythingForDepthEstimation"],
     "dpt": [
         "RBLNDPTForDepthEstimation",
