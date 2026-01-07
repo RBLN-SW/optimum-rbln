@@ -168,9 +168,17 @@ Quick start examples
        --model-id runwayml/stable-diffusion-v1-5 \
        --unet.batch_size 2 --vae.batch_size 1
 
+  4) Pass HuggingFace model arguments with --hf-* prefix
+     optimum-rbln-cli --output-dir ./compiled_llama \
+       --model-id meta-llama/Llama-2-7b-chat-hf \
+       --hf-trust-remote-code true --hf-dtype bfloat16 \
+       --batch-size 2 --tensor-parallel-size 4
+
 Notes
   - Any extra --key value pairs not defined above are collected into rbln_config
     and forwarded to from_pretrained(..., rbln_config=...).
+  - Use --hf-* prefix to pass arguments to HuggingFace model loader
+    (e.g., --hf-trust-remote-code, --hf-dtype).
   - Use --list-classes to see available RBLN classes.
   - Use --show-rbln-config to see accepted rbln_config keys for the resolved class
     (via --class or inferred from --model-id).
@@ -604,8 +612,9 @@ def main():
         output_path = Path(args.output_dir)
         output_path.mkdir(parents=True, exist_ok=True)
 
-        # Prepare rbln_config by parsing all unknown arguments
+        # Prepare rbln_config and model_kwargs by parsing all unknown arguments
         rbln_config = {}
+        model_kwargs = {}  # HuggingFace model args
 
         # Parse all unknown arguments
         i = 0
@@ -613,23 +622,42 @@ def main():
             arg = unknown_args[i]
             if arg.startswith("--"):
                 arg_name = arg[2:].replace("-", "_")
+
+                # Check if this is a HuggingFace model argument (--hf-* prefix)
+                # Exclude already-defined Hub access args (hf_token, hf_revision, etc.)
+                is_hf_arg = arg_name.startswith("hf_") and arg_name not in {
+                    "hf_token",
+                    "hf_revision",
+                    "hf_cache_dir",
+                    "hf_force_download",
+                    "hf_local_files_only",
+                }
+                if is_hf_arg:
+                    arg_name = arg_name[3:]  # Remove "hf_" prefix
+
                 if i + 1 < len(unknown_args) and not unknown_args[i + 1].startswith("--"):
                     # Has a value
                     arg_value = unknown_args[i + 1]
                     parsed_value = parse_value(arg_value)
 
-                    # Check if this is a nested config argument (contains dots)
-                    if "." in arg_name:
-                        set_nested_dict(rbln_config, arg_name, parsed_value)
+                    if is_hf_arg:
+                        model_kwargs[arg_name] = parsed_value
                     else:
-                        rbln_config[arg_name] = parsed_value
+                        # Check if this is a nested config argument (contains dots)
+                        if "." in arg_name:
+                            set_nested_dict(rbln_config, arg_name, parsed_value)
+                        else:
+                            rbln_config[arg_name] = parsed_value
                     i += 2
                 else:
                     # Boolean flag
-                    if "." in arg_name:
-                        set_nested_dict(rbln_config, arg_name, True)
+                    if is_hf_arg:
+                        model_kwargs[arg_name] = True
                     else:
-                        rbln_config[arg_name] = True
+                        if "." in arg_name:
+                            set_nested_dict(rbln_config, arg_name, True)
+                        else:
+                            rbln_config[arg_name] = True
                     i += 1
             else:
                 i += 1
@@ -642,10 +670,12 @@ def main():
         print(f"{_label('Class:')} {resolved_class_name}")
         print(f"{_label('Output:')} {output_path.absolute()}")
         print(f"{_label('rbln_config:')} {json.dumps(rbln_config, indent=2, ensure_ascii=False)}")
+        if model_kwargs:
+            print(f"{_label('model_kwargs:')} {json.dumps(model_kwargs, indent=2, ensure_ascii=False)}")
 
         with ContextRblnConfig(create_runtimes=create_runtimes):
             _ = model_class.from_pretrained(
-                args.model_id, export=True, model_save_dir=str(output_path), rbln_config=rbln_config
+                args.model_id, export=True, model_save_dir=str(output_path), rbln_config=rbln_config, **model_kwargs
             )
 
         print(_section("Model compilation completed successfully", ANSI_BRIGHT_GREEN, icon="✅"))
