@@ -300,8 +300,17 @@ class RBLNAutoConfig:
                 import pdb; pdb.set_trace()
 
         if passed_rbln_config is not None:
-            config_file.update(passed_rbln_config._runtime_options)
+            config_file.update(passed_rbln_config._runtime_options) # 여기서 runtime_options은 부모것만 업데이트 함. submodule의 runtime_options은 업데이트 안됨.
             # TODO(jongho): Reject if the passed_rbln_config has different attributes from the config_file
+            for submodule in cls.submodules:
+                if hasattr(passed_rbln_config, submodule):
+                    passed_submodule = getattr(passed_rbln_config, submodule)
+                    if isinstance(passed_submodule, dict):
+                        runtime_opts = {k: v for k, v in passed_submodule.items() if k in RUNTIME_KEYWORDS and v is not None}
+                        if runtime_opts:
+                            config_file[submodule]._runtime_options.update(runtime_opts)
+                    elif isinstance(passed_submodule, RBLNModelConfig):
+                        config_file[submodule]._runtime_options.update(passed_submodule._runtime_options)
 
         config_file.update(rbln_runtime_kwargs)
 
@@ -575,7 +584,8 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
                                 f"but kwargs has {value}. Using kwargs value: {value}"
                             )
                         init_kwargs[key] = value
-
+            
+            # 맨처음 config init 하는 부분이라 class를 모르나? -> cls_name이 없는 한 알수가 없음. -> 무조건 dict로 return 될 수 밖에 없음..
             if "cls_name" in init_kwargs:
                 config_cls = get_rbln_config_class(init_kwargs["cls_name"])
             else:
