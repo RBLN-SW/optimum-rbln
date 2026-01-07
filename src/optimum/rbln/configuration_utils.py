@@ -295,6 +295,9 @@ class RBLNAutoConfig:
             submodule_config = config_file[submodule]
             submodule_config.update(rbln_submodule_kwargs.pop(submodule, {}))
             config_file[submodule] = RBLNAutoConfig.load_from_dict(submodule_config)
+            if submodule == "visual" :
+                print("aaaaaa")
+                import pdb; pdb.set_trace()
 
         if passed_rbln_config is not None:
             config_file.update(passed_rbln_config._runtime_options)

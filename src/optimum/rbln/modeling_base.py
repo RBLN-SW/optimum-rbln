@@ -195,7 +195,7 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
                 subfolder=subfolder,
                 local_files_only=local_files_only,
             )
-
+            if cls.__name__ == 'RBLNQwen2VisionTransformerPretrainedModel': import pdb; pdb.set_trace()
             if isinstance(rbln_config, dict):
                 rbln_config_as_kwargs = {f"rbln_{key}": value for key, value in rbln_config.items()}
                 kwargs.update(rbln_config_as_kwargs)
@@ -209,7 +209,7 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
             rbln_config, kwargs = RBLNAutoConfig.load(
                 model_path_subfolder, passed_rbln_config=rbln_config, kwargs=kwargs, return_unused_kwargs=True
             )
-
+            # if cls.__name__ == 'RBLNQwen2VisionTransformerPretrainedModel': import pdb; pdb.set_trace()
             if rbln_config.rbln_model_cls_name != cls.__name__:
                 raise NameError(
                     f"Cannot load the model. The model was originally compiled using "

@@ -147,7 +147,7 @@ class SubModulesMixin:
 
             json_file_path = Path(model_save_dir) / submodule_name / "config.json"
             config = PretrainedConfig.from_json_file(json_file_path)
-
+            if submodule_cls.__name__ == "RBLNQwen2VisionTransformerPretrainedModel": import pdb; pdb.set_trace()
             rbln_submodule = submodule_cls._from_pretrained(
                 model_id=model_save_dir,
                 config=config,
