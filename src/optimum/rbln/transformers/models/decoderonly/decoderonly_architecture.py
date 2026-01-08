@@ -386,18 +386,46 @@ class DecoderOnlyModel(nn.Module):
 
         return cache_seq_len, cache_offset, attn_mask
 
-    def get_global_cache_positions(self, position_ids, query_position):
+    def get_global_cache_positions(self, position_ids):
+        """
+        covers both flash attention and normal attention
+        return values must be used only for decoding step (query_seq_len=1)
+
+        input args:
+          - position_ids: [B, 1], current seq length  
+          - max_seq_len: int, 
+        
+        retrun: required dynamic information for batched attention
+          - seq_idx   : [B, 2] (block_idx, block_offset)
+          - dyn_batch : [P] (valid batch number of each partition)
+          - attn_mask : [B, None, None, max_seq_len]
+        """
+
+        # generate attn mask with original seq_length
         max_cache_len = self.rbln_config.max_seq_len
-        valid_input_len = 1 if query_position is None else query_position + 1
         cache_seq_len = torch.clamp(position_ids.to(torch.int32), max=max_cache_len)[:, :1]  # past seen tokens
-        cache_offset = (
-                torch.clamp(position_ids, max=max_cache_len)[:, :1] + valid_input_len
-                )  # cache offset for next steps
         
         # Causal mask for sliding window attention
         attn_mask = torch.arange(max_cache_len)[None, :] - cache_seq_len
         attn_mask = torch.where(attn_mask > 0, 0.0, 1.0)[:, None, None, :]
-        return cache_seq_len, cache_offset, attn_mask
+
+        #mapping seq_idx to (block_idx, block_offset)
+        partition_len = self.partition_len if self.attn_impl in ["flash_attn"] else max_cache_len
+        num_partition = max_cache_len // partition_len
+
+        blk_idx = cache_seq_len // partition_len
+        blk_offset = cache_seq_len % partition_len
+        seq_blk_pos = torch.cat([blk_idx, blk_offset], dim=1).to(torch.int32)
+
+        # comp valid batch per partition
+        # use existing operations
+        cs = cache_seq_len[:,0].repeat(num_partition, 1).transpose(0, 1) + 1 #[batch, n_partition)
+        pidx = torch.arange(num_partition)
+        cache_pos_for_partitions = torch.clamp(cs - pidx * partition_len, 0, partition_len)
+        valid_batch_per_partitions = torch.sum(cache_pos_for_partitions, dim=0).to(torch.int16)
+        valid_batch_per_partitions += 256
+
+        return seq_blk_pos, valid_batch_per_partitions, attn_mask
 
     def get_last_layernorm(self) -> nn.LayerNorm:
         return self._original_mod.norm
@@ -489,7 +517,7 @@ class DecoderOnlyModel(nn.Module):
 
         all_hidden_states = () if output_hidden_states else None
 
-        generated_attn_mask = self.get_global_cache_positions(position_ids, query_position)
+        seq_blk_pos, valid_batch, generated_attn_mask = self.get_global_cache_positions(position_ids)
         batch_size = inputs_embeds.shape[0]
 
         for layer_idx, layer in enumerate(self.layers):
@@ -499,12 +527,25 @@ class DecoderOnlyModel(nn.Module):
             is_sliding = True if layer_idx in self.sliding_window_layers else False
             is_sliding_decode = is_sliding and self.phase == "decode"
             is_batch_decode = False if is_sliding or self.phase == 'prefill' or batch_size == 1 else True
+            layer_valid_batch = None
             if is_sliding_decode:
                 attn_mask = swa_attn_mask
+                layer_seq_idx = sliding_cache_pos
+            elif is_sliding:
+                attn_mask = attention_mask
+                layer_seq_idx = sliding_cache_pos
             elif is_batch_decode:
                 attn_mask = generated_attn_mask
+                layer_seq_idx = seq_blk_pos
+                layer_valid_batch = valid_batch
             else:
                 attn_mask = attention_mask
+                layer_seq_idx = seq_positions
+            print(generated_attn_mask.shape)
+            # if attn_mask is not None:
+            #     print(attn_mask.shape)
+            # else:
+            #     print("attn mask is None")
 
             hidden_states = layer(
                 hidden_states=hidden_states,
@@ -515,6 +556,7 @@ class DecoderOnlyModel(nn.Module):
                 sin=sin,
                 block_tables=local_block_tables if is_sliding else global_block_tables,
                 lora_int_id=lora_int_id,
+                valid_batch=layer_valid_batch,
             )
 
         hidden_states = self.get_last_layernorm()(hidden_states)
@@ -615,6 +657,7 @@ class DecoderOnlyLayer(nn.Module):
         sin: Optional[torch.Tensor] = None,
         block_tables: Optional[torch.Tensor] = None,
         lora_int_id: Optional[torch.Tensor] = None,
+        valid_batch: Optional[torch.Tensor] = None,
     ):
         residual = hidden_states
         hidden_states = self.get_pre_attention_layernorm()(hidden_states)
@@ -628,6 +671,7 @@ class DecoderOnlyLayer(nn.Module):
             sin=sin,
             block_tables=block_tables,
             lora_int_id=lora_int_id,
+            valid_batch=valid_batch,
         )
         hidden_states = residual + hidden_states
 
@@ -809,6 +853,7 @@ class DecoderOnlyAttention(nn.Module):
         sin: Optional[torch.Tensor] = None,
         block_tables: Optional[torch.Tensor] = None,
         lora_int_id: Optional[torch.Tensor] = None,
+        valid_batch: Optional[torch.Tensor] = None,
     ):
         batch_size, query_length, _ = hidden_states.size()
 
@@ -845,6 +890,7 @@ class DecoderOnlyAttention(nn.Module):
             k_scale=k_scale,
             v_scale=v_scale,
             s_aux=getattr(self, "sinks", None),
+            valid_batch=valid_batch,
         )
 
         # Check if using LoRALinear (which accepts lora_int_id) or standard linear layers
@@ -918,6 +964,7 @@ class AttentionOp(nn.Module):
         k_scale: Optional[torch.Tensor] = None,
         v_scale: Optional[torch.Tensor] = None,
         s_aux: Optional[torch.Tensor] = None,
+        valid_batch: Optional[torch.Tensor] = None,
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Compute attention with static shapes and explicit cache management.
 
@@ -992,12 +1039,17 @@ class AttentionOp(nn.Module):
 
         if s_aux is not None:
             op_args["s_aux"] = s_aux
+        if valid_batch is not None:
+            op_args["dyn_batch"] = valid_batch
 
         # (yhboo) temp update for batch decode
         # (TODO) layout transform in compiler
         # if self.phase == "decode" and batch_size > 1 and s_aux is not None:
         if self.phase == "decode" and batch_size > 1:
-            attn_mask = attn_mask[2]
+            # print('batch decode mask')
+            # print(attn_mask[2].shape)
+            # import pdb; pdb.set_trace()
+            # attn_mask = attn_mask[2]
             attn_mask = attn_mask.view(batch_size, 1, 1, block_size//64, 1, 64)
             op_args['mask'] = attn_mask
 
@@ -1066,6 +1118,7 @@ class FlashAttentionOp(AttentionOp):
         k_scale=None,
         v_scale=None,
         s_aux=None,
+        valid_batch: Optional[torch.Tensor] = None,
     ):
         # reshape for removing repeat_kv (batch=1 , num_head, 1, q_len=1, head_dim)
         key_state = key_state.unsqueeze(2)
@@ -1121,6 +1174,8 @@ class FlashAttentionOp(AttentionOp):
 
         if s_aux is not None:
             op_args["s_aux"] = s_aux
+        if valid_batch is not None:
+            op_args["dyn_batch"] = valid_batch
 
         attn_op_name = self.get_attn_op_name()
         attn_op = getattr(torch.ops.rbln_custom_ops, attn_op_name, None)
@@ -1175,6 +1230,7 @@ class SlidingWindowAttentionOp(AttentionOp):
         k_scale: Optional[torch.Tensor] = None,
         v_scale: Optional[torch.Tensor] = None,
         s_aux: Optional[torch.Tensor] = None,
+        valid_batch: Optional[torch.Tensor] = None,
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         assert self.quantization is None, "Sliding window attention does not support quantization"
         assert k_scale is None and v_scale is None, "Sliding window attention does not support quantization"
@@ -1223,6 +1279,8 @@ class SlidingWindowAttentionOp(AttentionOp):
 
         if s_aux is not None:
             op_args["s_aux"] = s_aux
+        if valid_batch is not None:
+            op_args["dyn_batch"] = valid_batch
 
         attn_op_name = self.get_attn_op_name()
         attn_op = getattr(torch.ops.rbln_custom_ops, attn_op_name, None)

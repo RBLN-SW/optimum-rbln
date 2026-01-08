@@ -206,6 +206,7 @@ def paged_causal_attn_decode(
     block_size: int,
     mask: Optional[Tensor] = None,
     s_aux: Optional[Tensor] = None,
+    dyn_batch: Optional[Tensor] = None,
 ) -> Tensor:
     """Defines the computation pattern for fused attention with KV cache updates.
 
@@ -230,6 +231,7 @@ def paged_causal_attn_decode(
     - block_size: [] - Number of tokens per block
     - mask: [batch=1, max_seq_len] - attention mask when use position_ids
     - s_aux: [num_attention_heads, sink_len] - auxiliary states for attention
+    - dyn_batch: [1] - valid batch size per block
 
     Returns:
         Tensor: attn_output: [batch=1, n_heads, n_groups, 1, head_dim] - Attention output
@@ -250,6 +252,7 @@ def paged_causal_attn_decode_fake(
     block_size: int,
     mask: Optional[Tensor] = None,
     s_aux: Optional[Tensor] = None,
+    dyn_batch: Optional[Tensor] = None,
 ) -> Tensor:
     return torch.empty_like(q)
 
@@ -271,6 +274,7 @@ def paged_causal_attn_prefill(
     is_bidirectional: bool,
     mask: Optional[Tensor] = None,
     s_aux: Optional[Tensor] = None,
+    dyn_batch: Optional[Tensor] = None,
 ) -> Tensor:
     """Defines the computation pattern for prefill phase attention with KV cache updates.
 
@@ -295,6 +299,7 @@ def paged_causal_attn_prefill(
     - is_bidirectional: [] - Whether the attention is bidirectional at current sequence position
     - mask: [batch=1, max_seq_len] - attention mask when use position_ids
     - s_aux: [num_attention_heads, sink_len] - auxiliary states for attention
+    - dyn_batch: [1] not used (always None)
 
     Returns:
         Tensor: attn_output: [batch=1, n_heads, n_groups, seq_len, head_dim] - Attention output
@@ -316,6 +321,7 @@ def paged_causal_attn_prefill_fake(
     is_bidirectional: bool,
     mask: Optional[Tensor] = None,
     s_aux: Optional[Tensor] = None,
+    dyn_batch: Optional[Tensor] = None,
 ) -> Tensor:
     return torch.empty_like(q)
 
@@ -338,6 +344,7 @@ def paged_causal_attn_decode_kv_fp8(
     v_scale: Tensor,
     mask: Optional[Tensor] = None,
     s_aux: Optional[Tensor] = None,
+    dyn_batch: Optional[Tensor] = None,
 ) -> Tensor:
     return torch.empty_like(q)
 
@@ -357,6 +364,7 @@ def paged_causal_attn_decode_kv_fp8_fake(
     v_scale: Tensor,
     mask: Optional[Tensor] = None,
     s_aux: Optional[Tensor] = None,
+    dyn_batch: Optional[Tensor] = None,
 ) -> Tensor:
     return torch.empty_like(q)
 
@@ -380,6 +388,7 @@ def paged_causal_attn_prefill_kv_fp8(
     v_scale: Tensor,
     mask: Optional[Tensor] = None,
     s_aux: Optional[Tensor] = None,
+    dyn_batch: Optional[Tensor] = None,
 ) -> Tensor:
     return torch.empty_like(q)
 
@@ -400,6 +409,7 @@ def paged_causal_attn_prefill_kv_fp8_fake(
     v_scale: Tensor,
     mask: Optional[Tensor] = None,
     s_aux: Optional[Tensor] = None,
+    dyn_batch: Optional[Tensor] = None,
 ) -> Tensor:
     return torch.empty_like(q)
 
