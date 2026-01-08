@@ -19,6 +19,82 @@ from torch import Tensor
 
 
 @torch.library.custom_op(
+    "rbln_custom_ops::paged_linear_attn_prefill",
+    mutates_args=(["state_cache"]),
+)
+def paged_linear_attn_prefill(
+    q: Tensor,
+    k: Tensor,
+    v: Tensor,
+    g: Tensor,
+    beta: Tensor,
+    state_cache: Tensor,
+    scale: Tensor,
+    block_table: Tensor,
+) -> Tensor:
+    # Real compiled path expects blocked layout:
+    #   q/k/v: [B, H, S, D/64, 64]  -> out: [B, S, H, D/64, 64]
+    #
+    # But during tracing/meta (register_fake) we can temporarily see mixed/unblocked ranks.
+    if q.dim() >= 5 and v.dim() >= 5:
+        return torch.empty((q.shape[0], q.shape[2], q.shape[1], v.shape[3], v.shape[4]))
+    # Fallback: unblocked [B,S,H,Dv]
+    return torch.empty((q.shape[0], q.shape[2], q.shape[1], v.shape[-1]))
+
+
+@paged_linear_attn_prefill.register_fake
+def paged_linear_attn_prefill_fake(
+    q: Tensor,
+    k: Tensor,
+    v: Tensor,
+    g: Tensor,
+    beta: Tensor,
+    state_cache: Tensor,
+    scale: Tensor,
+    block_table: Tensor,
+) -> Tensor:
+    if q.dim() >= 5 and v.dim() >= 5:
+        return torch.empty((q.shape[0], q.shape[2], q.shape[1], v.shape[3], v.shape[4]))
+    return torch.empty((q.shape[0], q.shape[2], q.shape[1], v.shape[-1]))
+
+
+@torch.library.custom_op(
+    "rbln_custom_ops::paged_linear_attn_decode",
+    mutates_args=(["state_cache"]),
+)
+def paged_linear_attn_decode(
+    q: Tensor,
+    k: Tensor,
+    v: Tensor,
+    g: Tensor,
+    beta: Tensor,
+    state_cache: Tensor,
+    scale: Tensor,
+    block_table: Tensor,
+) -> Tensor:
+    # Same convention as prefill.
+    if q.dim() >= 5 and v.dim() >= 5:
+        return torch.empty((q.shape[0], q.shape[2], q.shape[1], v.shape[3], v.shape[4]))
+    return torch.empty((q.shape[0], q.shape[2], q.shape[1], v.shape[-1]))
+
+
+@paged_linear_attn_decode.register_fake
+def paged_linear_attn_decode_fake(
+    q: Tensor,
+    k: Tensor,
+    v: Tensor,
+    g: Tensor,
+    beta: Tensor,
+    state_cache: Tensor,
+    scale: Tensor,
+    block_table: Tensor,
+) -> Tensor:
+    if q.dim() >= 5 and v.dim() >= 5:
+        return torch.empty((q.shape[0], q.shape[2], q.shape[1], v.shape[3], v.shape[4]))
+    return torch.empty((q.shape[0], q.shape[2], q.shape[1], v.shape[-1]))
+
+
+@torch.library.custom_op(
     "rbln_custom_ops::paged_attn_decode",
     mutates_args=(["kcache", "vcache"]),
 )

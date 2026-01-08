@@ -926,11 +926,12 @@ class AttentionOp(nn.Module):
         else:
             batch_size = 1
 
+        q_len = query_state.shape[-2]
         query_state = query_state.view(
             batch_size,
             self.num_key_value_heads,
             self.num_heads // self.num_key_value_heads,
-            -1,  # seq len
+            q_len,
             self.head_dim,
         )
 
@@ -1046,11 +1047,12 @@ class FlashAttentionOp(AttentionOp):
         else:
             batch_size = 1
 
+        q_len = query_state.shape[-2]
         query_state = query_state.view(
             batch_size,
             self.num_key_value_heads,
             self.num_heads // self.num_key_value_heads,
-            -1,  # seq len
+            q_len,
             self.head_dim,
         )
 
@@ -1155,11 +1157,12 @@ class SlidingWindowAttentionOp(AttentionOp):
         else:
             batch_size = 1
 
+        q_len = query_state.shape[-2]
         query_state = query_state.view(
             batch_size,
             self.num_key_value_heads,
             self.num_heads // self.num_key_value_heads,
-            -1,  # seq len
+            q_len,
             self.head_dim,
         )
 
