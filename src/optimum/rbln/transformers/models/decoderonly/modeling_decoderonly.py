@@ -27,14 +27,13 @@ from ....configuration_utils import RBLNCompileConfig
 from ....modeling import RBLNModel
 from ....utils.logging import get_logger
 from ...modeling_attention_utils import (
-    RBLNDecoderOnlyFlashAttentionMixin,
     set_default_values,
     validate_attention_method,
     validate_sliding_window,
 )
 from ...modeling_outputs import RBLNDecoderOnlyOutput, _validate_output_hidden_states
 from ...utils.rbln_quantization import get_quantized_model
-from .configuration_decoderonly import RBLNDecoderOnlyModelConfig, RBLNDecoderOnlyModelForCausalLMConfig
+from .configuration_decoderonly import KVCacheMeta, RBLNDecoderOnlyModelConfig, RBLNDecoderOnlyModelForCausalLMConfig
 from .decoderonly_architecture import DecoderOnlyWrapper
 from .decoderonly_runtime_utils import RBLNPageTableManager, RBLNRuntimeModel
 from .generation_decoderonly import RBLNDecoderOnlyGenerationMixin
@@ -46,7 +45,7 @@ if TYPE_CHECKING:
     from transformers import AutoFeatureExtractor, AutoProcessor, AutoTokenizer
 
 
-class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
+class RBLNDecoderOnlyModel(RBLNModel):
     """
     A base class for decoder-only transformer models outputting raw hidden-states without any specific head on top.
     This class is used for RBLN-optimized models that are not causal language models.
@@ -256,17 +255,24 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
         cls,
         compile_config: RBLNCompileConfig,
         example_inputs: List[torch.Tensor],
+        kvcache_metas: List[KVCacheMeta],
     ):
         context = CompileContext(use_weight_sharing=True)
 
         # Mark static tensors (self kv states)
         static_tensors = {}
-        idx = 0
         for (name, _, _), tensor in zip(compile_config.input_info, example_inputs):
             if "past_key_values" in name:
                 static_tensors[name] = tensor
-                context.mark_static_address(tensor, f"kv_cache_{idx}")
-                idx += 1
+                context.mark_static_address(tensor, name)
+                meta = [m for m in kvcache_metas if m.name == name]
+                if len(meta) == 0:
+                    raise ValueError(
+                        f"KVCacheMeta not found for {name}. This is an internal error. Please report to the developers."
+                    )
+                meta = meta[0]
+                if meta.is_dynamic:
+                    context.mark_dynamic_size_tensor(tensor, meta.name)
 
         return context, static_tensors
 
@@ -279,7 +285,7 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
         # Here we use meta tensor, for the memory efficiency.
         meta_tensor_names = [name for name, _, _ in prefill_compile_config.input_info if "past_key_values" in name]
         prefill_example_inputs = prefill_compile_config.get_dummy_inputs(fill=0, meta_tensor_names=meta_tensor_names)
-        context, static_tensors = cls._get_compile_context(prefill_compile_config, prefill_example_inputs)
+        context, static_tensors = cls._get_compile_context(prefill_compile_config, prefill_example_inputs, rbln_config)
 
         compiled_models = {}
         compiled_models["prefill"] = cls._compile_model(
@@ -306,15 +312,6 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
                     phase="decode",
                 )
                 compiled_models[f"decoder_batch_{batch_size}"] = compiled_decoder
-
-            # check if the memory is enough to have additional blocks
-            required_num_blocks = (rbln_config.max_seq_len // rbln_config.kvcache_block_size) * rbln_config.batch_size
-            if rbln_config.kvcache_num_blocks < required_num_blocks:
-                cls.maybe_suggest_kvcache_num_blocks(
-                    compiled_models=compiled_models,
-                    model_config=model.config,
-                    rbln_config=rbln_config,
-                )
 
         return compiled_models
 
@@ -381,29 +378,31 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
         if rbln_config.use_lora:
             input_info.append(("lora_int_ids", [batch_size], "int32"))
 
-        kvcache_dtype = rbln_config.dtype
-        if rbln_config.quantization and rbln_config.quantization.kv_caches == "fp8":
-            kvcache_dtype = "float8_e4m3fn"
+        if len(rbln_config.kvcache_metas) > 0:
+            # Meta is already set, use it
+            input_info.extend(
+                [
+                    (kvcache_meta.name, kvcache_meta.compile_shape, kvcache_meta.dtype)
+                    for kvcache_meta in rbln_config.kvcache_metas
+                ]
+            )
 
-        global_kvcache_shape = [
-            rbln_config.kvcache_num_blocks,
-            num_key_value_heads,
-            rbln_config.kvcache_block_size,
-            head_dim,
-        ]
-        local_kvcache_shape = [rbln_config.batch_size, num_key_value_heads, rbln_config.sliding_window, head_dim]
-        input_info.extend(
-            [
-                (
-                    f"past_key_values_{i}",
-                    local_kvcache_shape
-                    if rbln_config.sliding_window is not None and ((i // 2) in rbln_config.sliding_window_layers)
-                    else global_kvcache_shape,
-                    kvcache_dtype,
+        else:
+            kvcache_dtype = rbln_config.dtype
+            if rbln_config.quantization and rbln_config.quantization.kv_caches == "fp8":
+                kvcache_dtype = "float8_e4m3fn"
+
+            kvcache_metas = []
+            for i in range(num_hidden_layers * 2):
+                layer_idx = i // 2
+                name = f"past_key_values_{i}"
+                kvcache_meta = KVCacheMeta.make(
+                    name, layer_idx, num_key_value_heads, head_dim, kvcache_dtype, rbln_config
                 )
-                for i in range(num_hidden_layers * 2)
-            ]
-        )
+                kvcache_metas.append(kvcache_meta)
+                input_info.append((name, kvcache_meta.compile_shape, kvcache_meta.dtype))
+
+            rbln_config.kvcache_metas.extend(kvcache_metas)
 
         return input_info
 
@@ -475,51 +474,37 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
             max_seq_len=rbln_config.max_seq_len,
         )
 
-        num_full_blocks = (rbln_config.max_seq_len // rbln_config.kvcache_block_size) * rbln_config.batch_size
-
-        # Update kvcache_num_blocks based on the attention implementation.
+        # Validate kvcache_num_blocks based on the number of full blocks required.
+        # Eager mode restriction:
+        # - num_blocks must be at least equal to the batch size
+        # Flash attention restriction:
+        # -
         if rbln_config.attn_impl == "flash_attn":
-            estimated_max_num_blocks = cls.get_maximum_num_blocks_by_model(
-                model=model, model_config=model_config, rbln_config=rbln_config
-            )
-
-            if rbln_config.kvcache_num_blocks is None:
-                if estimated_max_num_blocks < num_full_blocks:
-                    # lower bound of the number of blocks for flash attention.
-                    min_blocks_for_flash = min(
-                        rbln_config.max_seq_len // rbln_config.kvcache_block_size + 1, num_full_blocks
+            if rbln_config.is_dynamic_num_blocks:
+                pass  # dynamic
+            else:
+                num_minimum_blocks = (rbln_config.max_seq_len // rbln_config.kvcache_block_size) + 1
+                if rbln_config.kvcache_num_blocks > rbln_config.num_full_blocks:
+                    logger.warning(
+                        f"The set `kvcache_num_blocks` ({rbln_config.kvcache_num_blocks}) is greater"
+                        f" than the required number of blocks ({rbln_config.num_full_blocks})."
+                        "This can cause a failure during model compilation."
                     )
-                    if min_blocks_for_flash > estimated_max_num_blocks:
-                        # NOTE: Just try to compile with lower bound of blocks for flash attention.
-                        # Even if it's larger than the estimated maximum number of blocks.
-                        rbln_config.kvcache_num_blocks = min_blocks_for_flash
-                    else:
-                        logger.info(f"[KVCache] Compiling with num_blocks: {rbln_config.kvcache_num_blocks}")
-                        rbln_config.kvcache_num_blocks = estimated_max_num_blocks
-
-                    if rbln_config.kvcache_num_blocks < rbln_config.batch_size:
-                        raise RuntimeError(
-                            f"Batch size ({rbln_config.batch_size}) exceeds num_blocks ({rbln_config.kvcache_num_blocks}). "
-                            "Ensure the number of blocks is at least equal to the batch size."
-                        )
-                else:
-                    rbln_config.kvcache_num_blocks = num_full_blocks
-            elif rbln_config.kvcache_num_blocks > estimated_max_num_blocks:
-                logger.warning(
-                    f"The set `kvcache_num_blocks` ({rbln_config.kvcache_num_blocks}) is greater"
-                    f" than the estimated maximum number of blocks ({estimated_max_num_blocks})."
-                    "This can cause a failure during model compilation."
-                )
+                elif rbln_config.kvcache_num_blocks < num_minimum_blocks:
+                    raise ValueError(
+                        f"The set `kvcache_num_blocks` ({rbln_config.kvcache_num_blocks}) is less"
+                        f" than the minimum number of blocks ({num_minimum_blocks})."
+                    )
         else:
-            if rbln_config.kvcache_num_blocks is None:
-                rbln_config.kvcache_num_blocks = num_full_blocks
-            elif rbln_config.kvcache_num_blocks > num_full_blocks:
+            if rbln_config.is_dynamic_num_blocks:
+                # Eager attention should use fixed number of blocks.
+                rbln_config.kvcache_num_blocks = rbln_config.num_full_blocks
+            elif rbln_config.kvcache_num_blocks > rbln_config.num_full_blocks:
                 logger.warning(
                     f"The set `kvcache_num_blocks` ({rbln_config.kvcache_num_blocks}) is greater"
-                    f" than the required number of blocks ({num_full_blocks})."
+                    f" than the required number of blocks ({rbln_config.num_full_blocks})."
                     "This can cause a failure during model compilation."
                 )
-        logger.info(f"[KVCache] Compiling with num_blocks: {rbln_config.kvcache_num_blocks}")
 
         return rbln_config
 
