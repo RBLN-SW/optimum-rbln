@@ -1,6 +1,7 @@
 import json
 import os
 import shutil
+import tempfile
 import unittest
 
 import torch
@@ -443,6 +444,28 @@ class TestColQwen2Model(BaseTest.TestModel):
         ]
         inputs_image = processor(images=images)
         return inputs_image
+
+    def _inner_test_save_load(self, tmpdir):
+        super()._inner_test_save_load(tmpdir)
+        self._inner_propagate_rbln_config(tmpdir)
+
+    def _inner_propagate_rbln_config(self, tmpdir):
+        with ContextRblnConfig(create_runtimes=False):
+            with self.subTest():
+                # Test load
+                rbln_config = {
+                    "vlm":{
+                        "visual": {"device" : 1},
+                        "device" : 2
+                    }
+                }
+                model = self.RBLN_CLASS.from_pretrained(
+                    tmpdir,
+                    rbln_config=rbln_config,
+                )
+                assert model.rbln_config.vlm.visual.device == 1
+                assert model.rbln_config.vlm.device == 2
+                print("aaaaaaaaaaaaa")
 
 
 class TestColQwen2Model_BFloat16(TestColQwen2Model):
