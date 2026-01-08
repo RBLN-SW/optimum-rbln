@@ -1,6 +1,9 @@
 from typing import Optional, Tuple
 
+import rebel
+
 from ..utils.logging import get_logger
+from ..utils.runtime_utils import get_available_dram
 from .models.decoderonly.configuration_decoderonly import RBLNDecoderOnlyModelForCausalLMConfig
 
 
@@ -105,3 +108,57 @@ def validate_sliding_window(rbln_config: RBLNDecoderOnlyModelForCausalLMConfig):
 
     if rbln_config.cache_impl == "sliding_window" and rbln_config.use_attention_mask:
         raise ValueError("`use_attention_mask` must be set to False when `cache_impl` is set to 'sliding_window'.")
+
+
+class RBLNDecoderOnlyFlashAttentionMixin:
+    @classmethod
+    def estimate_num_kvcache_blocks(
+        cls,
+        compiled_models: dict[str, rebel.RBLNCompiledModel],
+        rbln_config: RBLNDecoderOnlyModelForCausalLMConfig,
+        available_dram: Optional[int] = None,
+    ) -> int:
+        if available_dram is None:
+            available_dram = get_available_dram(rbln_config.npu)
+
+        num_node = rbln_config.tensor_parallel_size or 1
+        alloc_per_node_without_dram = [0] * num_node
+        alloc_per_node_with_dram = [0] * num_node
+
+        for compiled_model in compiled_models.values():
+            for key, alloc_per_node in compiled_model.get_alloc_per_node_by_key().items():
+                if len(alloc_per_node) != num_node:
+                    alloc_per_node += [0] * (num_node - len(alloc_per_node))
+
+                if key == "DramTensor":
+                    alloc_per_node_with_dram = [a + b for a, b in zip(alloc_per_node_with_dram, alloc_per_node)]
+                else:
+                    alloc_per_node_without_dram = [a + b for a, b in zip(alloc_per_node_without_dram, alloc_per_node)]
+
+        multipliers_at_node: list[int] = [
+            (available_dram - without_dramtensor) // dramtensor if dramtensor > 0 else 1.0
+            for without_dramtensor, dramtensor in zip(alloc_per_node_without_dram, alloc_per_node_with_dram)
+        ]
+
+        maximum_blocks = max(min(multipliers_at_node), 1)
+
+        return min(maximum_blocks, rbln_config.num_full_blocks)
+
+    @classmethod
+    def multiply_kv_cache_num_blocks(
+        cls,
+        compiled_models: dict[str, rebel.RBLNCompiledModel],
+        rbln_config: RBLNDecoderOnlyModelForCausalLMConfig,
+        multiplier: int,
+    ):
+        if not hasattr(rebel.RBLNCompiledModel, "exp_multiply_buffer_size"):
+            raise RuntimeError(
+                "The installed version of rebel-compiler does not support automatic kv cache size determination. "
+                "Please upgrade rebel-compiler to a version that supports this feature, "
+                "or explicitly set 'kvcache_num_blocks' in rbln_config to manually specify the cache size."
+            )
+
+        for compiled_model in compiled_models.values():
+            compiled_model.exp_multiply_buffer_size(
+                {kvcache_meta.name: multiplier for kvcache_meta in rbln_config.kvcache_metas}
+            )

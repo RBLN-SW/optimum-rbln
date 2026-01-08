@@ -850,18 +850,12 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
             if not isinstance(submodule_config, RBLNModelConfig):
                 raise ValueError(f"`{submodule_name}` must be an instance of `RBLNModelConfig` before freezing.")
 
-            if not submodule_config.is_frozen():
-                raise ValueError(f"`{submodule_name}` config must be frozen before freezing super config.")
-
         self._frozen = True
 
     def is_frozen(self):
         return self._frozen
 
     def save(self, path: str):
-        if not self._frozen:
-            raise RuntimeError("`RBLNModelConfig` is not frozen. Please call `set_compile_cfgs` first.")
-
         # save as json file without runtime attributes
         path = Path(path)
         if path.is_dir():

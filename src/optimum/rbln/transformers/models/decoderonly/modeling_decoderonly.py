@@ -27,6 +27,7 @@ from ....configuration_utils import RBLNCompileConfig
 from ....modeling import RBLNModel
 from ....utils.logging import get_logger
 from ...modeling_attention_utils import (
+    RBLNDecoderOnlyFlashAttentionMixin,
     set_default_values,
     validate_attention_method,
     validate_sliding_window,
@@ -45,7 +46,7 @@ if TYPE_CHECKING:
     from transformers import AutoFeatureExtractor, AutoProcessor, AutoTokenizer
 
 
-class RBLNDecoderOnlyModel(RBLNModel):
+class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
     """
     A base class for decoder-only transformer models outputting raw hidden-states without any specific head on top.
     This class is used for RBLN-optimized models that are not causal language models.
@@ -229,7 +230,7 @@ class RBLNDecoderOnlyModel(RBLNModel):
         rbln_config: RBLNDecoderOnlyModelForCausalLMConfig,
         quantization=None,
         phase: str = "prefill",
-    ):
+    ) -> rebel.RBLNCompiledModel:
         try:
             wrapped_model.phase = phase
             if quantization:
@@ -251,12 +252,7 @@ class RBLNDecoderOnlyModel(RBLNModel):
                 quantization.maybe_reset_quantization_env()
 
     @classmethod
-    def _get_compile_context(
-        cls,
-        compile_config: RBLNCompileConfig,
-        example_inputs: List[torch.Tensor],
-        kvcache_metas: List[KVCacheMeta],
-    ):
+    def _get_compile_context(cls, compile_config: RBLNCompileConfig, example_inputs: List[torch.Tensor]):
         context = CompileContext(use_weight_sharing=True)
 
         # Mark static tensors (self kv states)
@@ -265,14 +261,6 @@ class RBLNDecoderOnlyModel(RBLNModel):
             if "past_key_values" in name:
                 static_tensors[name] = tensor
                 context.mark_static_address(tensor, name)
-                meta = [m for m in kvcache_metas if m.name == name]
-                if len(meta) == 0:
-                    raise ValueError(
-                        f"KVCacheMeta not found for {name}. This is an internal error. Please report to the developers."
-                    )
-                meta = meta[0]
-                if meta.is_dynamic:
-                    context.mark_dynamic_size_tensor(tensor, meta.name)
 
         return context, static_tensors
 
@@ -285,11 +273,9 @@ class RBLNDecoderOnlyModel(RBLNModel):
         # Here we use meta tensor, for the memory efficiency.
         meta_tensor_names = [name for name, _, _ in prefill_compile_config.input_info if "past_key_values" in name]
         prefill_example_inputs = prefill_compile_config.get_dummy_inputs(fill=0, meta_tensor_names=meta_tensor_names)
-        context, static_tensors = cls._get_compile_context(
-            prefill_compile_config, prefill_example_inputs, rbln_config.kvcache_metas
-        )
+        context, static_tensors = cls._get_compile_context(prefill_compile_config, prefill_example_inputs)
 
-        compiled_models = {}
+        compiled_models: dict[str, rebel.RBLNCompiledModel] = {}
         compiled_models["prefill"] = cls._compile_model(
             wrapped_model,
             prefill_compile_config,
@@ -314,6 +300,14 @@ class RBLNDecoderOnlyModel(RBLNModel):
                     phase="decode",
                 )
                 compiled_models[f"decoder_batch_{batch_size}"] = compiled_decoder
+
+        if rbln_config.is_auto_num_blocks:
+            rbln_config.kvcache_num_blocks = cls.estimate_num_kvcache_blocks(
+                compiled_models=compiled_models, rbln_config=rbln_config
+            )
+            cls.multiply_kv_cache_num_blocks(
+                compiled_models=compiled_models, rbln_config=rbln_config, multiplier=rbln_config.kvcache_num_blocks
+            )
 
         return compiled_models
 
@@ -399,7 +393,12 @@ class RBLNDecoderOnlyModel(RBLNModel):
                 layer_idx = i // 2
                 name = f"past_key_values_{i}"
                 kvcache_meta = KVCacheMeta.make(
-                    name, layer_idx, num_key_value_heads, head_dim, kvcache_dtype, rbln_config
+                    name,
+                    layer_idx,
+                    num_key_value_heads,
+                    head_dim,
+                    RBLNCompileConfig.normalize_dtype(kvcache_dtype),
+                    rbln_config,
                 )
                 kvcache_metas.append(kvcache_meta)
                 input_info.append((name, kvcache_meta.compile_shape, kvcache_meta.dtype))
@@ -482,8 +481,8 @@ class RBLNDecoderOnlyModel(RBLNModel):
         # Flash attention restriction:
         # -
         if rbln_config.attn_impl == "flash_attn":
-            if rbln_config.is_dynamic_num_blocks:
-                pass  # dynamic
+            if rbln_config.is_auto_num_blocks:
+                pass  # automatically determined during compilation
             else:
                 num_minimum_blocks = (rbln_config.max_seq_len // rbln_config.kvcache_block_size) + 1
                 if rbln_config.kvcache_num_blocks > rbln_config.num_full_blocks:
@@ -498,7 +497,7 @@ class RBLNDecoderOnlyModel(RBLNModel):
                         f" than the minimum number of blocks ({num_minimum_blocks})."
                     )
         else:
-            if rbln_config.is_dynamic_num_blocks:
+            if rbln_config.is_auto_num_blocks:
                 # Eager attention should use fixed number of blocks.
                 rbln_config.kvcache_num_blocks = rbln_config.num_full_blocks
             elif rbln_config.kvcache_num_blocks > rbln_config.num_full_blocks:
