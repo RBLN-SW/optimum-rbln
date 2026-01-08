@@ -297,13 +297,17 @@ class RBLNAutoConfig:
             config_file[submodule] = RBLNAutoConfig.load_from_dict(submodule_config)
 
         if passed_rbln_config is not None:
-            config_file.update(passed_rbln_config._runtime_options) # NOTE(seinpark) here, update runtime_options for parent. do not update runtime_options for submodules.
+            config_file.update(
+                passed_rbln_config._runtime_options
+            )  # NOTE(seinpark) here, update runtime_options for parent. do not update runtime_options for submodules.
             # TODO(jongho): Reject if the passed_rbln_config has different attributes from the config_file
             for submodule in cls.submodules:
                 if hasattr(passed_rbln_config, submodule):
                     passed_submodule = getattr(passed_rbln_config, submodule)
                     if isinstance(passed_submodule, dict):
-                        runtime_opts = {k: v for k, v in passed_submodule.items() if k in RUNTIME_KEYWORDS and v is not None}
+                        runtime_opts = {
+                            k: v for k, v in passed_submodule.items() if k in RUNTIME_KEYWORDS and v is not None
+                        }
                         if runtime_opts:
                             config_file[submodule]._runtime_options.update(runtime_opts)
                     elif isinstance(passed_submodule, RBLNModelConfig):
