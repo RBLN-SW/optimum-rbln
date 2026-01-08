@@ -796,6 +796,8 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
                 serializable_map[key] = value._prepare_for_serialization()
             elif key == "_dtype":
                 serializable_map["dtype"] = value
+            elif isinstance(value, list) and all(isinstance(item, RBLNSerializableConfigProtocol) for item in value):
+                serializable_map[key] = [item._prepare_for_serialization() for item in value]
             elif key == "_compile_cfgs":
                 serializable_map[key] = [cfg.asdict() for cfg in value]
             else:

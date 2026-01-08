@@ -285,7 +285,9 @@ class RBLNDecoderOnlyModel(RBLNModel):
         # Here we use meta tensor, for the memory efficiency.
         meta_tensor_names = [name for name, _, _ in prefill_compile_config.input_info if "past_key_values" in name]
         prefill_example_inputs = prefill_compile_config.get_dummy_inputs(fill=0, meta_tensor_names=meta_tensor_names)
-        context, static_tensors = cls._get_compile_context(prefill_compile_config, prefill_example_inputs, rbln_config)
+        context, static_tensors = cls._get_compile_context(
+            prefill_compile_config, prefill_example_inputs, rbln_config.kvcache_metas
+        )
 
         compiled_models = {}
         compiled_models["prefill"] = cls._compile_model(

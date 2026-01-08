@@ -15,7 +15,7 @@
 from dataclasses import asdict, dataclass
 from typing import Any, Dict, List, Literal, Optional, Union, get_args
 
-from ....configuration_utils import RBLNModelConfig, RBLNSerializableConfigProtocol
+from ....configuration_utils import RBLNCompileConfig, RBLNModelConfig, RBLNSerializableConfigProtocol
 from ....utils.logging import get_logger
 from ...utils.rbln_quantization import RBLNQuantizationConfig
 from .configuration_lora import RBLNLoRAConfig
@@ -323,6 +323,9 @@ class KVCacheMeta(RBLNSerializableConfigProtocol):
     layer_type: str
     is_dynamic: bool
     dtype: str
+
+    def __post_init__(self):
+        self.dtype = RBLNCompileConfig.normalize_dtype(self.dtype)
 
     def _prepare_for_serialization(self) -> dict[str, Any]:
         return asdict(self)
