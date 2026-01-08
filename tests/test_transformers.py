@@ -1,7 +1,6 @@
 import json
 import os
 import shutil
-import tempfile
 import unittest
 
 import torch
@@ -399,6 +398,21 @@ class TestColPaliModel(BaseTest.TestModel):
         "pixel_values": torch.randn(1, 3, 448, 448, generator=torch.manual_seed(42)),
     }
 
+    def _inner_test_save_load(self, tmpdir):
+        super()._inner_test_save_load(tmpdir)
+        self._inner_propagate_rbln_config(tmpdir)
+
+    def _inner_propagate_rbln_config(self, tmpdir):
+        with ContextRblnConfig(create_runtimes=False):
+            with self.subTest():
+                rbln_config = {"vlm": {"vision_tower": {"device": 1}, "language_model": {"device": 2}}}
+                model = self.RBLN_CLASS.from_pretrained(
+                    tmpdir,
+                    rbln_config=rbln_config,
+                )
+                assert model.rbln_config.vlm.vision_tower.device == 1
+                assert model.rbln_config.vlm.language_model.device == 2
+
 
 class TestColQwen2Model(BaseTest.TestModel):
     RBLN_AUTO_CLASS = None
@@ -452,20 +466,13 @@ class TestColQwen2Model(BaseTest.TestModel):
     def _inner_propagate_rbln_config(self, tmpdir):
         with ContextRblnConfig(create_runtimes=False):
             with self.subTest():
-                # Test load
-                rbln_config = {
-                    "vlm":{
-                        "visual": {"device" : 1},
-                        "device" : 2
-                    }
-                }
+                rbln_config = {"vlm": {"visual": {"device": 1}, "device": 2}}
                 model = self.RBLN_CLASS.from_pretrained(
                     tmpdir,
                     rbln_config=rbln_config,
                 )
                 assert model.rbln_config.vlm.visual.device == 1
                 assert model.rbln_config.vlm.device == 2
-                print("aaaaaaaaaaaaa")
 
 
 class TestColQwen2Model_BFloat16(TestColQwen2Model):
