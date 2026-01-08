@@ -28,9 +28,9 @@ classifiers = [
 ]
 keywords = ["transformers", "diffusers", "inference", "rbln", "atom", "rebel"]
 dependencies = [
-    "torch==2.9.0",
-    "torchaudio<=2.9.0",
-    "torchvision<=0.24.0",
+    "torch==2.8.0",
+    "torchaudio<=2.8.0",
+    "torchvision<=0.23.0",
     "accelerate>=1.0.1",
     "transformers==4.57.3",
     "diffusers==0.36.0",
