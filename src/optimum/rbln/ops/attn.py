@@ -207,6 +207,7 @@ def paged_causal_attn_decode(
     mask: Optional[Tensor] = None,
     s_aux: Optional[Tensor] = None,
     dyn_batch: Optional[Tensor] = None,
+    seq_idx2: Optional[Tensor] = None,
 ) -> Tensor:
     """Defines the computation pattern for fused attention with KV cache updates.
 
@@ -253,6 +254,7 @@ def paged_causal_attn_decode_fake(
     mask: Optional[Tensor] = None,
     s_aux: Optional[Tensor] = None,
     dyn_batch: Optional[Tensor] = None,
+    seq_idx2: Optional[Tensor] = None,
 ) -> Tensor:
     return torch.empty_like(q)
 
@@ -275,6 +277,7 @@ def paged_causal_attn_prefill(
     mask: Optional[Tensor] = None,
     s_aux: Optional[Tensor] = None,
     dyn_batch: Optional[Tensor] = None,
+    seq_idx2: Optional[Tensor] = None,
 ) -> Tensor:
     """Defines the computation pattern for prefill phase attention with KV cache updates.
 
@@ -322,6 +325,7 @@ def paged_causal_attn_prefill_fake(
     mask: Optional[Tensor] = None,
     s_aux: Optional[Tensor] = None,
     dyn_batch: Optional[Tensor] = None,
+    seq_idx2: Optional[Tensor] = None,
 ) -> Tensor:
     return torch.empty_like(q)
 
@@ -345,6 +349,7 @@ def paged_causal_attn_decode_kv_fp8(
     mask: Optional[Tensor] = None,
     s_aux: Optional[Tensor] = None,
     dyn_batch: Optional[Tensor] = None,
+    seq_idx2: Optional[Tensor] = None,
 ) -> Tensor:
     return torch.empty_like(q)
 
@@ -365,6 +370,7 @@ def paged_causal_attn_decode_kv_fp8_fake(
     mask: Optional[Tensor] = None,
     s_aux: Optional[Tensor] = None,
     dyn_batch: Optional[Tensor] = None,
+    seq_idx2: Optional[Tensor] = None,
 ) -> Tensor:
     return torch.empty_like(q)
 
@@ -389,6 +395,7 @@ def paged_causal_attn_prefill_kv_fp8(
     mask: Optional[Tensor] = None,
     s_aux: Optional[Tensor] = None,
     dyn_batch: Optional[Tensor] = None,
+    seq_idx2: Optional[Tensor] = None,
 ) -> Tensor:
     return torch.empty_like(q)
 
@@ -410,6 +417,7 @@ def paged_causal_attn_prefill_kv_fp8_fake(
     mask: Optional[Tensor] = None,
     s_aux: Optional[Tensor] = None,
     dyn_batch: Optional[Tensor] = None,
+    seq_idx2: Optional[Tensor] = None,
 ) -> Tensor:
     return torch.empty_like(q)
 

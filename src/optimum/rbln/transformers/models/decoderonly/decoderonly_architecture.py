@@ -415,15 +415,15 @@ class DecoderOnlyModel(nn.Module):
 
         blk_idx = cache_seq_len // partition_len
         blk_offset = cache_seq_len % partition_len
-        seq_blk_pos = torch.cat([blk_idx, blk_offset], dim=1).to(torch.int32)
+        # seq_blk_pos = torch.cat([blk_idx, blk_offset], dim=1).to(torch.int32)
+        seq_blk_pos = [blk_idx.to(torch.int16), blk_offset.to(torch.int16)]
 
         # comp valid batch per partition
         # use existing operations
-        cs = cache_seq_len[:,0].repeat(num_partition, 1).transpose(0, 1) + 1 #[batch, n_partition)
+        cs = cache_seq_len[:,0].repeat(num_partition, 1).transpose(0, 1) #[batch, n_partition)
         pidx = torch.arange(num_partition)
         cache_pos_for_partitions = torch.clamp(cs - pidx * partition_len, 0, partition_len)
         valid_batch_per_partitions = torch.sum(cache_pos_for_partitions, dim=0).to(torch.int16)
-        valid_batch_per_partitions += 256
 
         return seq_blk_pos, valid_batch_per_partitions, attn_mask
 
@@ -528,6 +528,7 @@ class DecoderOnlyModel(nn.Module):
             is_sliding_decode = is_sliding and self.phase == "decode"
             is_batch_decode = False if is_sliding or self.phase == 'prefill' or batch_size == 1 else True
             layer_valid_batch = None
+            seq_blk_off = None
             if is_sliding_decode:
                 attn_mask = swa_attn_mask
                 layer_seq_idx = sliding_cache_pos
@@ -536,8 +537,11 @@ class DecoderOnlyModel(nn.Module):
                 layer_seq_idx = sliding_cache_pos
             elif is_batch_decode:
                 attn_mask = generated_attn_mask
-                layer_seq_idx = seq_blk_pos
+                # layer_seq_idx = seq_blk_pos
                 layer_valid_batch = valid_batch
+                ## const buf w/a ##
+                layer_seq_idx = seq_blk_pos[0] # block index
+                seq_blk_off = seq_blk_pos[1] # block offset
             else:
                 attn_mask = attention_mask
                 layer_seq_idx = seq_positions
@@ -550,13 +554,14 @@ class DecoderOnlyModel(nn.Module):
             hidden_states = layer(
                 hidden_states=hidden_states,
                 attention_mask=attn_mask,
-                seq_positions=sliding_cache_pos if is_sliding else seq_positions,
+                seq_positions=layer_seq_idx,
                 past_key_values=past_key_values,
                 cos=cos,
                 sin=sin,
                 block_tables=local_block_tables if is_sliding else global_block_tables,
                 lora_int_id=lora_int_id,
                 valid_batch=layer_valid_batch,
+                seq_blk_off = seq_blk_off,
             )
 
         hidden_states = self.get_last_layernorm()(hidden_states)
@@ -658,6 +663,7 @@ class DecoderOnlyLayer(nn.Module):
         block_tables: Optional[torch.Tensor] = None,
         lora_int_id: Optional[torch.Tensor] = None,
         valid_batch: Optional[torch.Tensor] = None,
+        seq_blk_off: Optional[torch.Tensor] = None,
     ):
         residual = hidden_states
         hidden_states = self.get_pre_attention_layernorm()(hidden_states)
@@ -672,6 +678,7 @@ class DecoderOnlyLayer(nn.Module):
             block_tables=block_tables,
             lora_int_id=lora_int_id,
             valid_batch=valid_batch,
+            seq_blk_off=seq_blk_off,
         )
         hidden_states = residual + hidden_states
 
@@ -854,6 +861,7 @@ class DecoderOnlyAttention(nn.Module):
         block_tables: Optional[torch.Tensor] = None,
         lora_int_id: Optional[torch.Tensor] = None,
         valid_batch: Optional[torch.Tensor] = None,
+        seq_blk_off: Optional[torch.Tensor] = None,
     ):
         batch_size, query_length, _ = hidden_states.size()
 
@@ -891,6 +899,7 @@ class DecoderOnlyAttention(nn.Module):
             v_scale=v_scale,
             s_aux=getattr(self, "sinks", None),
             valid_batch=valid_batch,
+            seq_blk_off=seq_blk_off,
         )
 
         # Check if using LoRALinear (which accepts lora_int_id) or standard linear layers
@@ -965,6 +974,7 @@ class AttentionOp(nn.Module):
         v_scale: Optional[torch.Tensor] = None,
         s_aux: Optional[torch.Tensor] = None,
         valid_batch: Optional[torch.Tensor] = None,
+        seq_blk_off: Optional[torch.Tensor] = None,
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Compute attention with static shapes and explicit cache management.
 
@@ -1041,6 +1051,7 @@ class AttentionOp(nn.Module):
             op_args["s_aux"] = s_aux
         if valid_batch is not None:
             op_args["dyn_batch"] = valid_batch
+            op_args['seq_idx2'] = seq_blk_off
 
         # (yhboo) temp update for batch decode
         # (TODO) layout transform in compiler
@@ -1119,6 +1130,7 @@ class FlashAttentionOp(AttentionOp):
         v_scale=None,
         s_aux=None,
         valid_batch: Optional[torch.Tensor] = None,
+        seq_blk_off: Optional[torch.Tensor] = None,
     ):
         # reshape for removing repeat_kv (batch=1 , num_head, 1, q_len=1, head_dim)
         key_state = key_state.unsqueeze(2)
@@ -1176,6 +1188,7 @@ class FlashAttentionOp(AttentionOp):
             op_args["s_aux"] = s_aux
         if valid_batch is not None:
             op_args["dyn_batch"] = valid_batch
+            op_args["seq_idx2"] = seq_blk_off
 
         attn_op_name = self.get_attn_op_name()
         attn_op = getattr(torch.ops.rbln_custom_ops, attn_op_name, None)
@@ -1231,6 +1244,7 @@ class SlidingWindowAttentionOp(AttentionOp):
         v_scale: Optional[torch.Tensor] = None,
         s_aux: Optional[torch.Tensor] = None,
         valid_batch: Optional[torch.Tensor] = None,
+        seq_blk_off: Optional[torch.Tensor] = None,
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         assert self.quantization is None, "Sliding window attention does not support quantization"
         assert k_scale is None and v_scale is None, "Sliding window attention does not support quantization"
@@ -1281,6 +1295,7 @@ class SlidingWindowAttentionOp(AttentionOp):
             op_args["s_aux"] = s_aux
         if valid_batch is not None:
             op_args["dyn_batch"] = valid_batch
+            op_args["seq_idx2"] = seq_blk_off
 
         attn_op_name = self.get_attn_op_name()
         attn_op = getattr(torch.ops.rbln_custom_ops, attn_op_name, None)
