@@ -295,12 +295,9 @@ class RBLNAutoConfig:
             submodule_config = config_file[submodule]
             submodule_config.update(rbln_submodule_kwargs.pop(submodule, {}))
             config_file[submodule] = RBLNAutoConfig.load_from_dict(submodule_config)
-            if submodule == "visual" :
-                print("aaaaaa")
-                import pdb; pdb.set_trace()
 
         if passed_rbln_config is not None:
-            config_file.update(passed_rbln_config._runtime_options) # 여기서 runtime_options은 부모것만 업데이트 함. submodule의 runtime_options은 업데이트 안됨.
+            config_file.update(passed_rbln_config._runtime_options) # NOTE(seinpark) here, update runtime_options for parent. do not update runtime_options for submodules.
             # TODO(jongho): Reject if the passed_rbln_config has different attributes from the config_file
             for submodule in cls.submodules:
                 if hasattr(passed_rbln_config, submodule):
@@ -584,8 +581,8 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
                                 f"but kwargs has {value}. Using kwargs value: {value}"
                             )
                         init_kwargs[key] = value
-            
-            # 맨처음 config init 하는 부분이라 class를 모르나? -> cls_name이 없는 한 알수가 없음. -> 무조건 dict로 return 될 수 밖에 없음..
+
+            # (seinpark) first config init -> don't know class -> if no cls_name, never know -> it must return dict..
             if "cls_name" in init_kwargs:
                 config_cls = get_rbln_config_class(init_kwargs["cls_name"])
             else:
