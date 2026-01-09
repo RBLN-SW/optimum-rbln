@@ -353,7 +353,11 @@ class KVCacheMeta(RBLNSerializableConfigProtocol):
 
     @property
     def compile_shape(self):
-        return self.shape if not self.is_auto else [1, self.shape[1], self.shape[2], self.shape[3]]
+        return (
+            self.shape
+            if not self.is_auto or self.layer_type == "sliding_attention"
+            else [1, self.shape[1], self.shape[2], self.shape[3]]
+        )
 
     @property
     def num_blocks(self) -> int:
