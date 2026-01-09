@@ -274,6 +274,7 @@ _import_structure = {
         "RBLNVQModelConfig",
         "RBLNUNetSpatioTemporalConditionModelConfig",
         "RBLNStableVideoDiffusionPipelineConfig",
+        "RBLNAutoencoderKLWanConfig",
     ],
 }
 
@@ -352,6 +353,7 @@ if TYPE_CHECKING:
         RBLNUNetSpatioTemporalConditionModelConfig,
         RBLNVQModel,
         RBLNVQModelConfig,
+        RBLNAutoencoderKLWan,
     )
     from .modeling import RBLNBaseModel, RBLNModel
     from .transformers import (

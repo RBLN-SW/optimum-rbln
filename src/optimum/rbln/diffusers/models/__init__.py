@@ -23,6 +23,7 @@ _import_structure = {
         "RBLNAutoencoderKLCosmos",
         "RBLNVQModel",
         "RBLNAutoencoderKLTemporalDecoder",
+        "RBLNAutoencoderKLWan"
     ],
     "unets": [
         "RBLNUNet2DConditionModel",
@@ -42,6 +43,7 @@ if TYPE_CHECKING:
         RBLNAutoencoderKLCosmos,
         RBLNAutoencoderKLTemporalDecoder,
         RBLNVQModel,
+        RBLNAutoencoderKLWan,
     )
     from .controlnet import RBLNControlNetModel
     from .transformers import (
