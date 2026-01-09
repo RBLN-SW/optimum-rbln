@@ -12,25 +12,23 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import TYPE_CHECKING, Any, Dict, List, Union, Tuple
+from typing import TYPE_CHECKING, Any, Dict, List, Union
 
 import rebel
 import torch
-from diffusers.models.autoencoders.autoencoder_kl_wan import AutoencoderKLWan, WanCausalConv3d
-from diffusers.models.autoencoders.vae import DecoderOutput
+from diffusers.models.autoencoders.autoencoder_kl_wan import AutoencoderKLWan
+from diffusers.models.autoencoders.vae import DecoderOutput, DiagonalGaussianDistribution
 from diffusers.models.modeling_outputs import AutoencoderKLOutput
-from torch.nn import functional as F
 from transformers import PretrainedConfig
 
 from ....configuration_utils import RBLNCompileConfig
 from ....modeling import RBLNModel
 from ....utils.logging import get_logger
+from ....utils.runtime_utils import RBLNPytorchRuntime
 from ...configurations import RBLNAutoencoderKLWanConfig
-from .vae import RBLNRuntimeCosmosVAEDecoder, RBLNRuntimeCosmosVAEEncoder, _VAECosmosDecoder, _VAECosmosEncoder
 
 
 if TYPE_CHECKING:
-    import torch
     from transformers import AutoFeatureExtractor, AutoProcessor, AutoTokenizer, PreTrainedModel
 
     from ...modeling_diffusers import RBLNDiffusionMixin, RBLNDiffusionMixinConfig
@@ -38,56 +36,58 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 
-class RBLNWanCausalConv3d(WanCausalConv3d):
-    r"""
-    A custom 3D causal convolution layer with feature caching support.
+class _VAEWanEncoder(torch.nn.Module):
+    """Wrapper module for Wan VAE encoder extraction."""
 
-    This layer extends the standard Conv3D layer by ensuring causality in the time dimension and handling feature
-    caching for efficient inference.
+    def __init__(self, vae: AutoencoderKLWan):
+        super().__init__()
+        self.vae = vae
 
-    Args:
-        in_channels (int): Number of channels in the input image
-        out_channels (int): Number of channels produced by the convolution
-        kernel_size (int or tuple): Size of the convolving kernel
-        stride (int or tuple, optional): Stride of the convolution. Default: 1
-        padding (int or tuple, optional): Zero-padding added to all three sides of the input. Default: 0
-    """
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.vae._encode(x)
 
-    def __init__(
-        self,
-        in_channels: int,
-        out_channels: int,
-        kernel_size: Union[int, Tuple[int, int, int]],
-        stride: Union[int, Tuple[int, int, int]] = 1,
-        padding: Union[int, Tuple[int, int, int]] = 0,
-    ) -> None:
-        super().__init__(
-            in_channels=in_channels,
-            out_channels=out_channels,
-            kernel_size=kernel_size,
-            stride=stride,
-            padding=padding,
-        )
 
-        # super()._init_() : 
-        # self._padding = (self.padding[2], self.padding[2], self.padding[1], self.padding[1], 2 * self.padding[0], 0)
-        # self.padding = (0, 0, 0)
+class _VAEWanDecoder(torch.nn.Module):
+    """Wrapper module for Wan VAE decoder extraction."""
 
-    def forward(self, x, cache_x=None):
-        padding = list(self._padding)
-        if cache_x is not None and self._padding[4] > 0:
-            cache_x = cache_x.to(x.device)
-            x = torch.cat([cache_x, x], dim=2)
-            padding[4] -= cache_x.shape[2]
-        x = F.pad(x, padding)
-        return super().forward(x)
+    def __init__(self, vae: AutoencoderKLWan):
+        super().__init__()
+        self.vae = vae
+
+    def forward(self, z: torch.Tensor) -> torch.Tensor:
+        return self.vae._decode(z, return_dict=False)[0]
+
+
+class RBLNRuntimeWanVAEEncoder(RBLNPytorchRuntime):
+    """Runtime wrapper for Wan VAE encoder inference."""
+
+    def encode(self, x: torch.FloatTensor, **kwargs) -> torch.FloatTensor:
+        if self.use_slicing and x.shape[0] > 1:
+            encoded_slices = [self.forward(x_slice) for x_slice in x.split(1)]
+            h = torch.cat(encoded_slices)
+        else:
+            h = self.forward(x)
+        posterior = DiagonalGaussianDistribution(h)
+        return posterior
+
+
+class RBLNRuntimeWanVAEDecoder(RBLNPytorchRuntime):
+    """Runtime wrapper for Wan VAE decoder inference."""
+
+    def decode(self, z: torch.FloatTensor, **kwargs) -> torch.FloatTensor:
+        if self.use_slicing and z.shape[0] > 1:
+            decoded_slices = [self.forward(z_slice) for z_slice in z.split(1)]
+            decoded = torch.cat(decoded_slices)
+        else:
+            decoded = self.forward(z)
+        return decoded
 
 
 class RBLNAutoencoderKLWan(RBLNModel):
     """
-    RBLN implementation of AutoencoderKLCosmos for diffusion models.
+    RBLN implementation of AutoencoderKLWan for diffusion models.
 
-    This model is used to accelerate AutoencoderKLCosmos models from diffusers library on RBLN NPUs.
+    This model is used to accelerate AutoencoderKLWan models from diffusers library on RBLN NPUs.
     It can be configured to include both encoder and decoder, or just the decoder part for latent-to-video
     conversion.
 
@@ -103,24 +103,24 @@ class RBLNAutoencoderKLWan(RBLNModel):
         super().__post_init__(**kwargs)
 
         if self.rbln_config.uses_encoder:
-            self.encoder = RBLNRuntimeCosmosVAEEncoder(
+            self.encoder = RBLNRuntimeWanVAEEncoder(
                 runtime=self.model[0], main_input_name="x", use_slicing=self.rbln_config.use_slicing
             )
 
-        self.decoder = RBLNRuntimeCosmosVAEDecoder(
+        self.decoder = RBLNRuntimeWanVAEDecoder(
             runtime=self.model[-1], main_input_name="z", use_slicing=self.rbln_config.use_slicing
         )
         self.image_size = self.rbln_config.image_size
 
     @classmethod
     def _wrap_model_if_needed(
-        cls, model: torch.nn.Module, rbln_config: RBLNAutoencoderKLCosmosConfig
+        cls, model: torch.nn.Module, rbln_config: RBLNAutoencoderKLWanConfig
     ) -> torch.nn.Module:
-        decoder_model = _VAECosmosDecoder(model)
+        decoder_model = _VAEWanDecoder(model)
         decoder_model.eval()
 
         if rbln_config.uses_encoder:
-            encoder_model = _VAECosmosEncoder(model)
+            encoder_model = _VAEWanEncoder(model)
             encoder_model.eval()
             return encoder_model, decoder_model
         else:
@@ -128,41 +128,28 @@ class RBLNAutoencoderKLWan(RBLNModel):
 
     @classmethod
     def get_compiled_model(
-        cls, model, rbln_config: RBLNAutoencoderKLCosmosConfig
+        cls, model, rbln_config: RBLNAutoencoderKLWanConfig
     ) -> Dict[str, rebel.RBLNCompiledModel]:
-        def replaced_forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
-            if self.temporal_pad != 0:
-                hidden_states_prev = hidden_states[:, :, :1, ...].repeat(1, 1, self.temporal_pad, 1, 1)
-                hidden_states = torch.cat([hidden_states_prev, hidden_states], dim=2)
-            hidden_states = F.pad(hidden_states, (*self.spatial_pad, 0, 0), mode=self.pad_mode, value=0.0)
-            return super(CosmosCausalConv3d, self).forward(hidden_states)
-
-        try:
-            original_forward = CosmosCausalConv3d.forward
-            CosmosCausalConv3d.forward = replaced_forward
-
-            compiled_models = {}
-            if rbln_config.uses_encoder:
-                encoder_model, decoder_model = cls._wrap_model_if_needed(model, rbln_config)
-                enc_compiled_model = cls.compile(
-                    encoder_model,
-                    rbln_compile_config=rbln_config.compile_cfgs[0],
-                    create_runtimes=rbln_config.create_runtimes,
-                    device=rbln_config.device_map["encoder"],
-                )
-                compiled_models["encoder"] = enc_compiled_model
-            else:
-                decoder_model = cls._wrap_model_if_needed(model, rbln_config)
-            dec_compiled_model = cls.compile(
-                decoder_model,
-                rbln_compile_config=rbln_config.compile_cfgs[-1],
+        compiled_models = {}
+        if rbln_config.uses_encoder:
+            encoder_model, decoder_model = cls._wrap_model_if_needed(model, rbln_config)
+            enc_compiled_model = cls.compile(
+                encoder_model,
+                rbln_compile_config=rbln_config.compile_cfgs[0],
                 create_runtimes=rbln_config.create_runtimes,
-                device=rbln_config.device_map["decoder"],
+                device=rbln_config.device_map["encoder"],
             )
-            compiled_models["decoder"] = dec_compiled_model
+            compiled_models["encoder"] = enc_compiled_model
+        else:
+            decoder_model = cls._wrap_model_if_needed(model, rbln_config)
 
-        finally:
-            CosmosCausalConv3d.forward = original_forward
+        dec_compiled_model = cls.compile(
+            decoder_model,
+            rbln_compile_config=rbln_config.compile_cfgs[-1],
+            create_runtimes=rbln_config.create_runtimes,
+            device=rbln_config.device_map["decoder"],
+        )
+        compiled_models["decoder"] = dec_compiled_model
 
         return compiled_models
 
@@ -170,7 +157,10 @@ class RBLNAutoencoderKLWan(RBLNModel):
     def update_rbln_config_using_pipe(
         cls, pipe: "RBLNDiffusionMixin", rbln_config: "RBLNDiffusionMixinConfig", submodule_name: str
     ) -> "RBLNDiffusionMixinConfig":
-        rbln_config.vae.num_channels_latents = pipe.transformer.config.out_channels
+        # For Cosmos2.5 pipeline, get latent channels from transformer config
+        # transformer.config.in_channels - 1 is the num_channels_latents (minus 1 for condition mask)
+        # rbln_config.vae.num_channels_latents = pipe.transformer.config.in_channels - 1
+        rbln_config.vae.num_channels_latents = 93
         rbln_config.vae.vae_scale_factor_temporal = pipe.vae_scale_factor_temporal
         rbln_config.vae.vae_scale_factor_spatial = pipe.vae_scale_factor_spatial
         return rbln_config
@@ -181,8 +171,8 @@ class RBLNAutoencoderKLWan(RBLNModel):
         preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"],
         model: "PreTrainedModel",
         model_config: "PretrainedConfig",
-        rbln_config: RBLNAutoencoderKLCosmosConfig,
-    ) -> RBLNAutoencoderKLCosmosConfig:
+        rbln_config: RBLNAutoencoderKLWanConfig,
+    ) -> RBLNAutoencoderKLWanConfig:
         batch_size = 1 if rbln_config.use_slicing else rbln_config.batch_size
         compile_cfgs = []
         if rbln_config.uses_encoder:
@@ -227,7 +217,7 @@ class RBLNAutoencoderKLWan(RBLNModel):
     def _create_runtimes(
         cls,
         compiled_models: List[rebel.RBLNCompiledModel],
-        rbln_config: RBLNAutoencoderKLCosmosConfig,
+        rbln_config: RBLNAutoencoderKLWanConfig,
     ) -> List[rebel.Runtime]:
         if len(compiled_models) == 1:
             # decoder
