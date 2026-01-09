@@ -355,35 +355,6 @@ class RBLNDecoderOnlyFlashAttentionMixin:
         return buffer
 
     @classmethod
-    def get_maximum_num_blocks_by_compiled_model(
-        cls,
-        compiled_models: dict[str, rebel.RBLNCompiledModel],
-        model_config: "PretrainedConfig",
-        rbln_config: RBLNDecoderOnlyModelForCausalLMConfig,
-    ) -> int:
-        tensor_parallel_size = rbln_config.tensor_parallel_size or 1
-        available_dram = get_available_dram(rbln_config.npu) * tensor_parallel_size
-
-        alloc_memory_by_key = get_alloc_memory_by_key(compiled_models)
-        alloc_memory_by_key.pop("PortRecur", None)  # Old compiler's kv-cache Key
-        alloc_memory_by_key.pop("DramTensor", None)  # kv-cache
-        used_memory = sum(alloc_memory_by_key.values())
-
-        remaining_dram = available_dram - used_memory
-
-        if remaining_dram <= 0:
-            logger.warning(
-                "Insufficient available DRAM after accounting for kernel memory and buffer. "
-                "Model cannot allocate any KV cache blocks."
-            )
-
-        estimated_num_blocks = cls._estimate_num_blocks(
-            remaining_dram, model_config=model_config, rbln_config=rbln_config
-        )
-
-        return estimated_num_blocks
-
-    @classmethod
     def _estimate_num_blocks(
         cls, available_dram: int, model_config: "PretrainedConfig", rbln_config: RBLNDecoderOnlyModelForCausalLMConfig
     ) -> int:
@@ -464,28 +435,3 @@ class RBLNDecoderOnlyFlashAttentionMixin:
 
         max_n_blocks = available_dram // dram_per_block
         return max_n_blocks
-
-    @classmethod
-    def maybe_suggest_kvcache_num_blocks(
-        cls,
-        compiled_models: dict[str, rebel.RBLNCompiledModel],
-        model_config: "PretrainedConfig",
-        rbln_config: RBLNDecoderOnlyModelForCausalLMConfig,
-    ) -> None:
-        max_num_blocks = cls.get_maximum_num_blocks_by_compiled_model(
-            compiled_models=compiled_models,
-            model_config=model_config,
-            rbln_config=rbln_config,
-        )
-
-        # Since our estimation logic is not always accurate,
-        # users can set `kvcache_num_blocks` to `max_num_blocks`.
-        # If the memory is not enough, the model will fail to compile.
-        if rbln_config.kvcache_num_blocks < max_num_blocks:
-            logger.warning(
-                f"Current `kvcache_num_blocks` setting is {rbln_config.kvcache_num_blocks}. "
-                "Our analysis indicates that additional memory is available for more blocks. "
-                f"Consider increasing `kvcache_num_blocks` to {max_num_blocks} for potentially improved performance. "
-                "Please be advised that our memory estimation algorithm has limitations, "
-                "and increasing this value may not guarantee successful model compilation."
-            )
