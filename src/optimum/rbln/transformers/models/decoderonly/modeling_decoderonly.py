@@ -26,6 +26,7 @@ from transformers.modeling_utils import no_init_weights
 from ....configuration_utils import RBLNCompileConfig
 from ....modeling import RBLNModel
 from ....utils.logging import get_logger
+from ....utils.runtime_utils import is_compiler_supports_buffer_resize
 from ...modeling_attention_utils import (
     RBLNDecoderOnlyFlashAttentionMixin,
     set_default_values,
@@ -302,12 +303,9 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
                 compiled_models[f"decoder_batch_{batch_size}"] = compiled_decoder
 
         if rbln_config.is_auto_num_blocks:
-            rbln_config.kvcache_num_blocks = cls.estimate_num_kvcache_blocks(
-                compiled_models=compiled_models, rbln_config=rbln_config
-            )
-            cls.multiply_kv_cache_num_blocks(
-                compiled_models=compiled_models, rbln_config=rbln_config, multiplier=rbln_config.kvcache_num_blocks
-            )
+            if not is_compiler_supports_buffer_resize():
+                raise RuntimeError("`kvcache_num_blocks` must be set.")
+            cls.set_kvcache_num_blocks_after_compilation(compiled_models, rbln_config)
 
         return compiled_models
 
@@ -479,22 +477,23 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
         # Eager mode restriction:
         # - num_blocks must be at least equal to the batch size
         # Flash attention restriction:
-        # -
+        # - num_blocks must be at least equal to (max_seq_len // kvcache_block_size) + 1
+        # - num_blocks must be no greater than the number of full blocks.
         if rbln_config.attn_impl == "flash_attn":
             if rbln_config.is_auto_num_blocks:
-                pass  # automatically determined during compilation
+                cls.set_kvcache_num_blocks_before_compilation(model, model_config, rbln_config)
+
             else:
-                num_minimum_blocks = (rbln_config.max_seq_len // rbln_config.kvcache_block_size) + 1
                 if rbln_config.kvcache_num_blocks > rbln_config.num_full_blocks:
                     logger.warning(
                         f"The set `kvcache_num_blocks` ({rbln_config.kvcache_num_blocks}) is greater"
                         f" than the required number of blocks ({rbln_config.num_full_blocks})."
                         "This can cause a failure during model compilation."
                     )
-                elif rbln_config.kvcache_num_blocks < num_minimum_blocks:
+                elif rbln_config.kvcache_num_blocks < rbln_config.num_min_blocks:
                     raise ValueError(
                         f"The set `kvcache_num_blocks` ({rbln_config.kvcache_num_blocks}) is less"
-                        f" than the minimum number of blocks ({num_minimum_blocks})."
+                        f" than the minimum number of blocks ({rbln_config.num_min_blocks})."
                     )
         else:
             if rbln_config.is_auto_num_blocks:

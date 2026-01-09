@@ -301,6 +301,12 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
     def num_full_blocks(self) -> int:
         return (self.max_seq_len // self.kvcache_block_size) * self.batch_size
 
+    @property
+    def num_min_blocks(self) -> int:
+        if self.attn_impl == "flash_attn":
+            return (self.max_seq_len // self.kvcache_block_size) + 1
+        return self.batch_size
+
 
 class RBLNDecoderOnlyModelForCausalLMConfig(RBLNDecoderOnlyModelConfig):
     """
