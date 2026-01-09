@@ -306,8 +306,7 @@ class RBLNAutoConfig:
                         runtime_opts = {
                             k: v for k, v in passed_submodule.items() if k in RUNTIME_KEYWORDS and v is not None
                         }
-                        if runtime_opts:
-                            config_file[submodule]._runtime_options.update(runtime_opts)
+                        config_file[submodule]._runtime_options.update(runtime_opts)
                     elif isinstance(passed_submodule, RBLNModelConfig):
                         config_file[submodule]._runtime_options.update(passed_submodule._runtime_options)
 
