@@ -60,6 +60,7 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
         phases: Optional[List[PhaseType]] = None,
         logits_to_keep: Optional[int] = None,
         output_hidden_states: Optional[bool] = None,
+        kvcache_metas: Optional[List["KVCacheMeta"]] = None,
         **kwargs,
     ):
         """
@@ -115,6 +116,7 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
             logits_to_keep (Optional[int]): The number of logits to keep for the decoder.  If set to 0, the decoder will keep all logits.
                 Defaults to 0 if DecoderOnlyModel is used, 1 if DecoderOnlyModelForCausalLM is used.
             output_hidden_states (Optional[bool]): Whether to output the hidden states of the decoder. Defaults to False.
+            kvcache_metas (Optional[List["KVCacheMeta"]]): The metadata for the KV cache tensors. Handled internally if not provided. Defaults to None.
             kwargs: Additional arguments passed to the parent RBLNModelConfig.
 
         Raises:
@@ -257,7 +259,7 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
                 # Larger batch size should be at the beginning of the list.
                 self.decoder_batch_sizes.sort(reverse=True)
 
-        self.kvcache_metas: List[KVCacheMeta] = []
+        self.kvcache_metas: List["KVCacheMeta"] = kvcache_metas or []
 
     @staticmethod
     def validate_phases_type(phases: List[PhaseType]):
