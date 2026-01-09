@@ -6,9 +6,7 @@ on:
 
 jobs:
   renovate:
-    runs-on: sw-k8s-4c-32gb
-    container:
-      image: ${{ vars.DEV_CONTAINER_IMAGE }}
+    runs-on: sw-k8s-general
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
