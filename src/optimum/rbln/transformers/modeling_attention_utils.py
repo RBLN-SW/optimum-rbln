@@ -210,28 +210,93 @@ class RBLNDecoderOnlyFlashAttentionMixin:
         if available_dram is None:
             available_dram = get_available_dram(rbln_config.npu)
 
+        if "prefill" not in rbln_config.phases:
+            logger.warning(
+                "Not estimating number of KV cache blocks since `prefill` phase is not in the `phases` list."
+            )
+            return 1
+
         num_node = rbln_config.tensor_parallel_size or 1
         alloc_per_node_without_dram = [0] * num_node
-        alloc_per_node_with_dram = [0] * num_node
 
         for compiled_model in compiled_models.values():
             for key, alloc_per_node in compiled_model.get_alloc_per_node_by_key().items():
+                if key == "DramTensor":
+                    continue
+
                 if len(alloc_per_node) != num_node:
                     alloc_per_node += [0] * (num_node - len(alloc_per_node))
 
-                if key == "DramTensor":
-                    alloc_per_node_with_dram = [a + b for a, b in zip(alloc_per_node_with_dram, alloc_per_node)]
-                else:
-                    alloc_per_node_without_dram = [a + b for a, b in zip(alloc_per_node_without_dram, alloc_per_node)]
+                alloc_per_node_without_dram = [a + b for a, b in zip(alloc_per_node_without_dram, alloc_per_node)]
 
-        multipliers_at_node: list[int] = [
-            (available_dram - without_dramtensor) // dramtensor if dramtensor > 0 else 1.0
-            for without_dramtensor, dramtensor in zip(alloc_per_node_without_dram, alloc_per_node_with_dram)
+        remaining_dram_at_node: list[int] = [
+            available_dram - without_dramtensor for without_dramtensor in alloc_per_node_without_dram
         ]
 
-        maximum_blocks = max(min(multipliers_at_node), 1)
+        kvcache_tensor_sizes: dict[str, list[int]] = compiled_models["prefill"].exp_get_dram_tensor_sizes()
+        kvcache_meta_can_resize: dict[str, bool] = {
+            kvcache_meta.name: kvcache_meta.can_resize for kvcache_meta in rbln_config.kvcache_metas
+        }
 
-        return min(maximum_blocks, rbln_config.num_full_blocks)
+        def get_updated_kvcache_tensor_sizes(
+            kvcache_tensor_sizes: dict[str, list[int]], multiplier: int
+        ) -> dict[str, list[int]]:
+            # Get the updated KV cache tensor sizes by multiplying the multiplier
+            # with considering attention type (full or sliding), and memory alignment.
+            ret = {}
+            for key, sizes in kvcache_tensor_sizes.items():
+                m = multiplier if kvcache_meta_can_resize[key] else 1
+                ret[key] = [align_2MB(size * m) for size in sizes]
+            return ret
+
+        def check_memory_fits(multiplier: int) -> tuple[bool, list[int]]:
+            # Check if the given multiplier fits in memory
+            # Returns (fits: bool, kvcache_tensor_sizes_at_node: list[int])
+            updated_kvcache_tensor_sizes = get_updated_kvcache_tensor_sizes(kvcache_tensor_sizes, multiplier)
+
+            kvcache_tensor_sizes_at_node: list[int] = [0] * num_node
+            for tensor_sizes in updated_kvcache_tensor_sizes.values():
+                for node_id, size in enumerate(tensor_sizes):
+                    kvcache_tensor_sizes_at_node[node_id] += size
+
+            fits = all(
+                remaining_dram_at_node[node_id] >= kvcache_tensor_sizes_at_node[node_id] for node_id in range(num_node)
+            )
+            return fits, kvcache_tensor_sizes_at_node
+
+        # Fast path: try maximum blocks first (most common case)
+        fits, _ = check_memory_fits(rbln_config.num_full_blocks)
+        if fits:
+            # Best case: maximum blocks fit in memory
+            return rbln_config.num_full_blocks
+
+        # Slow path: binary search for optimal multiplier
+        logger.debug(
+            f"[KVCache] Not enough memory for {rbln_config.num_full_blocks} blocks. "
+            f"Searching for optimal multiplier..."
+        )
+
+        left, right = 1, rbln_config.num_full_blocks - 1
+        multiplier = 1  # Default to minimum if no valid multiplier found
+
+        while left <= right:
+            mid = (left + right) // 2
+            fits, kvcache_tensor_sizes_at_node = check_memory_fits(mid)
+
+            if fits:
+                # Memory is sufficient, try larger multiplier
+                multiplier = mid
+                left = mid + 1
+            else:
+                # Memory is insufficient, try smaller multiplier
+                logger.debug(
+                    f"[KVCache] Not enough memory for {mid} blocks. Remaining DRAM: "
+                    f"{[format_byte_size(remaining_dram) for remaining_dram in remaining_dram_at_node]}, "
+                    f"KV cache tensor sizes: {[format_byte_size(size) for size in kvcache_tensor_sizes_at_node]}"
+                )
+                right = mid - 1
+
+        return multiplier
 
     @classmethod
     def multiply_kv_cache_num_blocks(
@@ -249,7 +314,11 @@ class RBLNDecoderOnlyFlashAttentionMixin:
 
         for compiled_model in compiled_models.values():
             compiled_model.exp_multiply_buffer_size(
-                {kvcache_meta.name: multiplier for kvcache_meta in rbln_config.kvcache_metas}
+                {
+                    kvcache_meta.name: multiplier
+                    for kvcache_meta in rbln_config.kvcache_metas
+                    if kvcache_meta.can_resize
+                }
             )
 
     @classmethod
