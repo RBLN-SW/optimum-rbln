@@ -67,4 +67,6 @@ jobs:
       transformers_version: ${{ needs.rbln-full-test.outputs.transformers_version }}
       diffusers_version: ${{ needs.rbln-full-test.outputs.diffusers_version }}
       bc_result: ${{ needs.bc-full-inference-test.result }}
+      pytest_job_group: "rbln-full-test"
+      bc_pytest_job_group: "bc-full-inference-test"
     secrets: inherit
