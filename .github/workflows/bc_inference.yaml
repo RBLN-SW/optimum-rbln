@@ -25,7 +25,9 @@ on:
 
 jobs:
   get_bc_inference_info:
-    runs-on: rebel-k8s-runner
+    runs-on: sw-k8s-4c-32gb
+    container:
+      image: ${{ vars.DEV_CONTAINER_IMAGE }}
     name: BC inference - ${{ inputs.bc_tag || github.event.inputs.bc_tag }}
     outputs:
       reuse_artifacts_path: ${{ steps.get_reuse_artifacts_path.outputs.REUSE_ARTIFACTS_PATH }}

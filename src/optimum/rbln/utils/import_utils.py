@@ -136,7 +136,22 @@ def is_rbln_available() -> bool:
 
 def check_version_compats() -> None:
     warnings.filterwarnings(action="always", category=ImportWarning, module="optimum.rbln")
-    my_version = importlib.metadata.version("optimum-rbln")
+    try:
+        my_version = importlib.metadata.version("optimum-rbln")
+    except importlib.metadata.PackageNotFoundError:
+        # Common dev case: running from source (e.g. PYTHONPATH=src) without installing the package.
+        # package metadata doesn't exist, so fall back to the in-repo version file.
+        try:
+            from optimum.rbln.__version__ import __version__ as my_version  # type: ignore
+        except Exception:
+            warnings.warn(
+                "Could not determine optimum-rbln version (package metadata missing). "
+                "If you are running from source, consider `pip install -e .` to install metadata.",
+                ImportWarning,
+                stacklevel=2,
+            )
+            return
+
     target_version = list(filter(lambda v: Version(my_version) >= Version(v), RBLN_VERSION_COMPATS.keys()))[0]
     for compat in RBLN_VERSION_COMPATS[target_version]:
         try:

@@ -22,10 +22,11 @@ jobs:
       test_all_files: true
 
   fetch-version:
-    runs-on: rebel-k8s-runner
+    runs-on: sw-k8s-4c-32gb
+    container:
+      image: ${{ vars.DEV_CONTAINER_IMAGE }}
     outputs:
       compiler_version: ${{ steps.get_version.outputs.compiler_version }}
-      need_pr: ${{ steps.check_pr_needed.outputs.need_pr }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
@@ -38,12 +39,32 @@ jobs:
           CUR_VERSION=$(grep rebel_compiler_version .github/version.yaml | cut -d ':' -f2 | tr -d ' ')
           echo "compiler_version=$CUR_VERSION" >> $GITHUB_OUTPUT
 
+  bc-full-inference-test:
+    needs: fetch-version
+    uses: ./.github/workflows/bc_full_inference.yaml
+    with:
+      current_ref: "dev"
+    secrets: inherit
+
   rbln-full-test:
     needs: fetch-version
     uses: ./.github/workflows/rbln_optimum_full_test.yaml
     with:
       rebel_compiler_version: ${{ needs.fetch-version.outputs.compiler_version }}
       ref: "dev"
-      report_slack: true
-      test_bc: true
+    secrets: inherit
+
+  slack-report:
+    needs: [fetch-version, rbln-full-test, bc-full-inference-test]
+    if: ${{ always() }}
+    uses: ./.github/workflows/slack_report.yaml
+    with:
+      title_base: "Optimum-RBLN Scheduled Full Test Results"
+      caller_repository: ${{ github.repository }}
+      caller_run_id: ${{ github.run_id }}
+      commit_sha: ${{ github.sha }}
+      compiler_version: ${{ needs.fetch-version.outputs.compiler_version }}
+      transformers_version: ${{ needs.rbln-full-test.outputs.transformers_version }}
+      diffusers_version: ${{ needs.rbln-full-test.outputs.diffusers_version }}
+      bc_result: ${{ needs.bc-full-inference-test.result }}
     secrets: inherit
