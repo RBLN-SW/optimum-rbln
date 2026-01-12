@@ -288,27 +288,28 @@ class RBLNAutoConfig:
             if key[5:] not in RUNTIME_KEYWORDS and key[5:] not in cls.submodules
         }
 
+        def get_nested_submodules(config_file, submodule):
+            rbln_cls = getattr(importlib.import_module("optimum.rbln"), config_file[submodule].get("cls_name"), None)
+            return rbln_cls.submodules
+
         # Process submodule's rbln_config
         for submodule in cls.submodules:
             if submodule not in config_file:
                 raise ValueError(f"Submodule {submodule} not found in rbln_config.json.")
             submodule_config = config_file[submodule]
+            
+            nested_submodules = get_nested_submodules(config_file, submodule)
+            _rbln_submodule_kwargs = rbln_submodule_kwargs.get(submodule, {})
+            
+            rbln_nested_submodule_kwargs = {"rbln_" + key: _rbln_submodule_kwargs.pop(key) for key in nested_submodules if key in _rbln_submodule_kwargs}
+            kwargs.update(rbln_nested_submodule_kwargs)
+            
             submodule_config.update(rbln_submodule_kwargs.pop(submodule, {}))
             config_file[submodule] = RBLNAutoConfig.load_from_dict(submodule_config)
-
+        
         if passed_rbln_config is not None:
             config_file.update(passed_rbln_config._runtime_options)
             # TODO(jongho): Reject if the passed_rbln_config has different attributes from the config_file
-            for submodule in cls.submodules:
-                if hasattr(passed_rbln_config, submodule):
-                    passed_submodule = getattr(passed_rbln_config, submodule)
-                    if isinstance(passed_submodule, dict):
-                        runtime_opts = {
-                            k: v for k, v in passed_submodule.items() if k in RUNTIME_KEYWORDS and v is not None
-                        }
-                        config_file[submodule]._runtime_options.update(runtime_opts)
-                    elif isinstance(passed_submodule, RBLNModelConfig):
-                        config_file[submodule]._runtime_options.update(passed_submodule._runtime_options)
 
         config_file.update(rbln_runtime_kwargs)
 
