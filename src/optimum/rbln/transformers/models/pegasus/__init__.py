@@ -12,6 +12,5 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from ....ops import paged_attn_decode, paged_causal_attn_decode
 from .configuration_pegasus import RBLNPegasusForConditionalGenerationConfig, RBLNPegasusModelConfig
 from .modeling_pegasus import RBLNPegasusForConditionalGeneration, RBLNPegasusModel
