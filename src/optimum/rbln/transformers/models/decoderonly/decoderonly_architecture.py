@@ -386,7 +386,7 @@ class DecoderOnlyModel(nn.Module):
 
         return cache_seq_len, cache_offset, attn_mask
 
-    def get_global_cache_positions(self, position_ids):
+    def get_global_cache_positions(self, position_ids, block_table):
         """
         covers both flash attention and normal attention
         return values must be used only for decoding step (query_seq_len=1)
@@ -412,8 +412,20 @@ class DecoderOnlyModel(nn.Module):
         #mapping seq_idx to (block_idx, block_offset)
         partition_len = self.partition_len if self.attn_impl in ["flash_attn"] else max_cache_len
         num_partition = max_cache_len // partition_len
+        batch_size = block_table.shape[0]
 
+        block_table = block_table.view(batch_size, num_partition)
         blk_idx = cache_seq_len // partition_len
+        batch_idx = torch.arange(batch_size).to(torch.int32)
+        blk_idx = block_table[batch_idx, blk_idx[:,0]].view(batch_size, 1)
+
+        # valid_block_list = []
+        # for i in range(batch_size):
+        #     valid_block_list.append(block_table[i, blk_idx[i]])
+        # import pdb; pdb.set_trace()
+        # blk_idx = torch.cat(valid_block_list, dim=0).view(batch_size,1)
+        # blk_idx = block_table + torch.zeros([batch_size,1])
+
         blk_offset = cache_seq_len % partition_len
         # seq_blk_pos = torch.cat([blk_idx, blk_offset], dim=1).to(torch.int32)
         seq_blk_pos = [blk_idx.to(torch.int16), blk_offset.to(torch.int16)]
@@ -422,7 +434,7 @@ class DecoderOnlyModel(nn.Module):
         # use existing operations
         cs = cache_seq_len[:,0].repeat(num_partition, 1).transpose(0, 1) #[batch, n_partition)
         pidx = torch.arange(num_partition)
-        cache_pos_for_partitions = torch.clamp(cs - pidx * partition_len, 0, partition_len)
+        cache_pos_for_partitions = torch.clamp(cs - pidx * partition_len, 0, 1)
         valid_batch_per_partitions = torch.sum(cache_pos_for_partitions, dim=0).to(torch.int16)
 
         return seq_blk_pos, valid_batch_per_partitions, attn_mask
@@ -517,7 +529,7 @@ class DecoderOnlyModel(nn.Module):
 
         all_hidden_states = () if output_hidden_states else None
 
-        seq_blk_pos, valid_batch, generated_attn_mask = self.get_global_cache_positions(position_ids)
+        seq_blk_pos, valid_batch, generated_attn_mask = self.get_global_cache_positions(position_ids, global_block_tables)
         batch_size = inputs_embeds.shape[0]
 
         for layer_idx, layer in enumerate(self.layers):
