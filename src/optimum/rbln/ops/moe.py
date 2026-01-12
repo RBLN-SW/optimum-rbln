@@ -29,7 +29,7 @@ def custom_moe_glu(
     down_proj_weight: Tensor,
     router_logits: Tensor,
     topk: int,
-    norm_topk_prob: bool = True,
+    norm_topk_prob: bool,
     gate_proj_bias: Optional[Tensor] = None,
     up_proj_bias: Optional[Tensor] = None,
     down_proj_bias: Optional[Tensor] = None,
@@ -64,7 +64,7 @@ def custom_moe_glu_fake(
     down_proj_weight: Tensor,
     router_logits: Tensor,
     topk: int,
-    norm_topk_prob: bool = True,
+    norm_topk_prob: bool,
     gate_proj_bias: Optional[Tensor] = None,
     up_proj_bias: Optional[Tensor] = None,
     down_proj_bias: Optional[Tensor] = None,
@@ -132,7 +132,7 @@ def custom_moe_glu_mxfp4(
     alpha: Tensor,
     limit: Tensor,
     k: int,
-    post_norm: bool = True,
+    post_norm: bool,
 ) -> Tensor:
     """
     Customized MoE GLU operation.
@@ -175,6 +175,6 @@ def custom_moe_glu_mxfp4_fake(
     alpha: Tensor,
     limit: Tensor,
     k: int,
-    post_norm: bool = True,
+    post_norm: bool,
 ) -> Tensor:
     return torch.empty_like(hidden_states)
