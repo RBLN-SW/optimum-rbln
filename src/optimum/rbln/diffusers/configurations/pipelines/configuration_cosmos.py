@@ -15,7 +15,7 @@
 from typing import Any, Optional
 
 from ....configuration_utils import RBLNModelConfig
-from ....transformers import RBLNT5EncoderModelConfig
+from ....transformers import RBLNQwen2_5_VLForConditionalGenerationConfig, RBLNT5EncoderModelConfig
 from ....utils.logging import get_logger
 from ...pipelines.cosmos.cosmos_guardrail import RBLNCosmosSafetyCheckerConfig
 from ..models import RBLNAutoencoderKLCosmosConfig, RBLNAutoencoderKLWanConfig, RBLNCosmosTransformer3DModelConfig
@@ -249,6 +249,7 @@ class RBLNCosmos2_5_PredictBasePipelineConfig(RBLNModelConfig):
             cls_name="RBLNQwen2_5_VLForConditionalGenerationConfig",
             batch_size=batch_size,
             max_seq_len=max_seq_len,
+            output_hidden_states=True,
         )
         self.transformer = self.initialize_submodule_config(
             transformer,
