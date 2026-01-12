@@ -136,7 +136,7 @@ class RBLNStableDiffusionControlNetPipeline(RBLNDiffusionMixin, StableDiffusionC
             # When `image` is a nested list:
             # (e.g. [[canny_image_1, pose_image_1], [canny_image_2, pose_image_2]])
             elif any(isinstance(i, list) for i in image):
-                transposed_image = [list(t) for t in zip(*image, strict=False)]
+                transposed_image = [list(t) for t in zip(*image)]
                 if len(transposed_image) != len(self.controlnet.nets):
                     raise ValueError(
                         f"For multiple controlnets: if you pass`image` as a list of list, each sublist must have the same length as the number of controlnets, but the sublists in `image` got {len(transposed_image)} images and {len(self.controlnet.nets)} ControlNets."
@@ -203,7 +203,7 @@ class RBLNStableDiffusionControlNetPipeline(RBLNDiffusionMixin, StableDiffusionC
                     f"`control_guidance_start`: {control_guidance_start} has {len(control_guidance_start)} elements but there are {len(self.controlnet.nets)} controlnets available. Make sure to provide {len(self.controlnet.nets)}."
                 )
 
-        for start, end in zip(control_guidance_start, control_guidance_end, strict=False):
+        for start, end in zip(control_guidance_start, control_guidance_end):
             if start >= end:
                 raise ValueError(
                     f"control guidance start: {start} cannot be larger or equal to control guidance end: {end}."
@@ -490,7 +490,7 @@ class RBLNStableDiffusionControlNetPipeline(RBLNDiffusionMixin, StableDiffusionC
             # Nested lists as ControlNet condition
             if isinstance(image[0], list):
                 # Transpose the nested image list
-                image = [list(t) for t in zip(*image, strict=False)]
+                image = [list(t) for t in zip(*image)]
 
             for image_ in image:
                 image_ = self.prepare_image(
@@ -554,7 +554,7 @@ class RBLNStableDiffusionControlNetPipeline(RBLNDiffusionMixin, StableDiffusionC
         for i in range(len(timesteps)):
             keeps = [
                 1.0 - float(i / len(timesteps) < s or (i + 1) / len(timesteps) > e)
-                for s, e in zip(control_guidance_start, control_guidance_end, strict=False)
+                for s, e in zip(control_guidance_start, control_guidance_end)
             ]
             controlnet_keep.append(keeps[0] if isinstance(controlnet, RBLNControlNetModel) else keeps)
 
@@ -584,9 +584,7 @@ class RBLNStableDiffusionControlNetPipeline(RBLNDiffusionMixin, StableDiffusionC
                     controlnet_prompt_embeds = prompt_embeds
 
                 if isinstance(controlnet_keep[i], list):
-                    cond_scale = [
-                        c * s for c, s in zip(controlnet_conditioning_scale, controlnet_keep[i], strict=False)
-                    ]
+                    cond_scale = [c * s for c, s in zip(controlnet_conditioning_scale, controlnet_keep[i])]
                 else:
                     controlnet_cond_scale = controlnet_conditioning_scale
                     if isinstance(controlnet_cond_scale, list):

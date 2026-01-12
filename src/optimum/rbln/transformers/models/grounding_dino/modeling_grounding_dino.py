@@ -336,9 +336,7 @@ class RBLNGroundingDinoForObjectDetection(RBLNModel):
         mask_flatten = []
         lvl_pos_embed_flatten = []
         spatial_shapes_list = []
-        for level, (source, mask, pos_embed) in enumerate(
-            zip(feature_maps, masks, position_embeddings_list, strict=False)
-        ):
+        for level, (source, mask, pos_embed) in enumerate(zip(feature_maps, masks, position_embeddings_list)):
             batch_size, num_channels, height, width = source.shape
             spatial_shape = (height, width)
             spatial_shapes_list.append(spatial_shape)

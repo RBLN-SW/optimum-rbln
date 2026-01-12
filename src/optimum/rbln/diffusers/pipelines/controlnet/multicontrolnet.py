@@ -116,9 +116,7 @@ class RBLNMultiControlNetModel(RBLNModel):
         Returns:
             (Tuple[List[torch.Tensor], torch.Tensor])
         """
-        for i, (image, scale, controlnet) in enumerate(
-            zip(controlnet_cond, conditioning_scale, self.nets, strict=False)
-        ):
+        for i, (image, scale, controlnet) in enumerate(zip(controlnet_cond, conditioning_scale, self.nets)):
             down_samples, mid_sample = controlnet(
                 sample=sample.contiguous(),
                 timestep=timestep.float(),
@@ -134,7 +132,7 @@ class RBLNMultiControlNetModel(RBLNModel):
             else:
                 down_block_res_samples = [
                     samples_prev + samples_curr
-                    for samples_prev, samples_curr in zip(down_block_res_samples, down_samples, strict=False)
+                    for samples_prev, samples_curr in zip(down_block_res_samples, down_samples)
                 ]
                 mid_block_res_sample += mid_sample
 

@@ -233,7 +233,7 @@ class BaseTest:
                         similarity, 0.9, msg=f"self.EXPECTED_OUTPUT: {self.EXPECTED_OUTPUT}, output: {output}"
                     )
                 else:
-                    for o, e_o in zip(output, self.EXPECTED_OUTPUT, strict=False):
+                    for o, e_o in zip(output, self.EXPECTED_OUTPUT):
                         similarity = jaccard_similarity(o, e_o)
                         self.assertGreater(
                             similarity, 0.9, msg=f"self.EXPECTED_OUTPUT: {self.EXPECTED_OUTPUT}, output: {output}"

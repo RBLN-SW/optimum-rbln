@@ -172,7 +172,7 @@ class RBLNTimeSeriesTransformerForPrediction(RBLNModel):
 
         # Mark encoder's static tensors (cross kv states)
         static_tensors = {}
-        for (name, _, _), tensor in zip(enc_compile_config.input_info, enc_example_inputs, strict=False):
+        for (name, _, _), tensor in zip(enc_compile_config.input_info, enc_example_inputs):
             if "key_value_states" in name:
                 static_tensors[name] = tensor
                 context.mark_static_address(tensor)
@@ -180,7 +180,7 @@ class RBLNTimeSeriesTransformerForPrediction(RBLNModel):
         dec_example_inputs = dec_compile_config.get_dummy_inputs(fill=0, static_tensors=static_tensors)
 
         # Mark decoder's static tensors (self kv states)
-        for (name, _, _), tensor in zip(dec_compile_config.input_info, dec_example_inputs, strict=False):
+        for (name, _, _), tensor in zip(dec_compile_config.input_info, dec_example_inputs):
             if "key_value_states" in name:
                 context.mark_static_address(tensor)
 

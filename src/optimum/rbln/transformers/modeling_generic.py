@@ -157,7 +157,7 @@ class RBLNTransformerEncoder(RBLNModel):
             input_info = [
                 (model_input_name, model_input_shape, cls.rbln_dtype)
                 for model_input_name, model_input_shape in zip(
-                    rbln_config.model_input_names, rbln_config.model_input_shapes, strict=False
+                    rbln_config.model_input_names, rbln_config.model_input_shapes
                 )
             ]
 
