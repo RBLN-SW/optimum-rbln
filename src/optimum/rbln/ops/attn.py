@@ -276,8 +276,6 @@ def paged_causal_attn_prefill(
     is_bidirectional: bool,
     mask: Optional[Tensor] = None,
     s_aux: Optional[Tensor] = None,
-    dyn_batch: Optional[Tensor] = None,
-    seq_idx2: Optional[Tensor] = None,
 ) -> Tensor:
     """Defines the computation pattern for prefill phase attention with KV cache updates.
 

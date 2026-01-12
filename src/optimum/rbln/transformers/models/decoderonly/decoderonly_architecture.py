@@ -545,11 +545,6 @@ class DecoderOnlyModel(nn.Module):
             else:
                 attn_mask = attention_mask
                 layer_seq_idx = seq_positions
-            print(generated_attn_mask.shape)
-            # if attn_mask is not None:
-            #     print(attn_mask.shape)
-            # else:
-            #     print("attn mask is None")
 
             hidden_states = layer(
                 hidden_states=hidden_states,
@@ -1186,9 +1181,13 @@ class FlashAttentionOp(AttentionOp):
 
         if s_aux is not None:
             op_args["s_aux"] = s_aux
-        if valid_batch is not None:
+        if self.phase == "decode" and batch_size > 1:
+            # attn_mask = attn_mask[2] # why?
+            attn_mask = attn_mask.view(batch_size, self.rbln_config.max_seq_len)
+            op_args['mask'] = attn_mask
             op_args["dyn_batch"] = valid_batch
             op_args["seq_idx2"] = seq_blk_off
+            assert valid_batch is not None, "valid batch must exist!"
 
         attn_op_name = self.get_attn_op_name()
         attn_op = getattr(torch.ops.rbln_custom_ops, attn_op_name, None)
@@ -1199,7 +1198,6 @@ class FlashAttentionOp(AttentionOp):
         attn_output = attn_output.view(batch_size, self.num_heads, -1, self.head_dim)
         attn_output = attn_output.transpose(1, 2).contiguous()
         attn_output = attn_output.reshape(batch_size, -1, self.num_heads * self.head_dim)
-
         return attn_output
 
 
@@ -1293,9 +1291,8 @@ class SlidingWindowAttentionOp(AttentionOp):
 
         if s_aux is not None:
             op_args["s_aux"] = s_aux
-        if valid_batch is not None:
-            op_args["dyn_batch"] = valid_batch
-            op_args["seq_idx2"] = seq_blk_off
+
+        assert valid_batch is None, "dyn batch is not supported for sliding window attention"
 
         attn_op_name = self.get_attn_op_name()
         attn_op = getattr(torch.ops.rbln_custom_ops, attn_op_name, None)
