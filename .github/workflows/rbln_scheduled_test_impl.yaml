@@ -12,10 +12,13 @@ env:
 jobs:
   check-code-quality:
     uses: ./.github/workflows/check_code_quality.yml
+    with:
+      ref: dev
 
   test-docstrings:
     uses: ./.github/workflows/test-docstrings.yml
     with:
+      ref: dev
       test_all_files: true
 
   fetch-version:

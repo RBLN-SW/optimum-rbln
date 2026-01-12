@@ -3,6 +3,11 @@ name: Test Docstring Parsing
 on:
   workflow_call:
     inputs:
+      ref:
+        description: "Optional git ref to checkout (e.g. dev). Empty means use event default."
+        required: false
+        type: string
+        default: ""
       test_all_files:
         description: "Test all files in src/ instead of just changed files"
         required: false
@@ -16,6 +21,7 @@ jobs:
     steps:
     - uses: actions/checkout@v4
       with:
+        ref: ${{ inputs.ref != '' && inputs.ref || github.ref }}
         fetch-depth: 0  # Get full git history for file diff
     
     - name: Set up Python
