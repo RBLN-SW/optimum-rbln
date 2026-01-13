@@ -685,7 +685,7 @@ class RBLNGroundingDinoEncoder(RBLNModel):
         return model
 
     @classmethod
-    def _update_submodule_config(
+    def _update_submodule_rbln_config_from_model(
         cls,
         model: "PreTrainedModel",
         rbln_config: RBLNModelConfig,
@@ -882,7 +882,7 @@ class RBLNGroundingDinoDecoder(RBLNModel):
         return _GroundingDinoDecoder(model, rbln_config).eval()
 
     @classmethod
-    def _update_submodule_config(
+    def _update_submodule_rbln_config_from_model(
         cls,
         model: "PreTrainedModel",
         rbln_config: RBLNModelConfig,

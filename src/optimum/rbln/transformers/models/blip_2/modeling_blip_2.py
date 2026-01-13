@@ -183,7 +183,7 @@ class RBLNBlip2QFormerModel(RBLNModel):
         return Blip2QFormerModelWrapper(model).eval()
 
     @classmethod
-    def _update_submodule_config(
+    def _update_submodule_rbln_config_from_model(
         cls,
         model: "PreTrainedModel",
         rbln_config: RBLNModelConfig,

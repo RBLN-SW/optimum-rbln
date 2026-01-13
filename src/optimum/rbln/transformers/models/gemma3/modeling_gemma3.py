@@ -441,7 +441,7 @@ class RBLNGemma3ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
         return embed_tokens
 
     @classmethod
-    def _update_submodule_config(
+    def _update_submodule_rbln_config_from_model(
         cls,
         model: "PreTrainedModel",
         rbln_config: RBLNModelConfig,

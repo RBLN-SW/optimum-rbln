@@ -215,7 +215,7 @@ class RBLNSwinBackbone(RBLNModel):
         return _SwinBackbone(model, **wrapper_cfg).eval()
 
     @classmethod
-    def _update_submodule_config(
+    def _update_submodule_rbln_config_from_model(
         cls,
         model: "PreTrainedModel",
         rbln_config: RBLNModelConfig,

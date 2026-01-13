@@ -53,7 +53,7 @@ class SubModulesMixin:
         return get_rbln_config_class(f"RBLN{cls_name}Config")
 
     @classmethod
-    def _update_submodule_config(
+    def _update_submodule_rbln_config_from_model(
         cls,
         model: "PreTrainedModel",
         rbln_config: RBLNModelConfig,
@@ -101,7 +101,7 @@ class SubModulesMixin:
             if isinstance(submodule_rbln_config, dict):
                 filtered_kwargs = rbln_config.filter_parameters(submodule_config_cls, submodule_rbln_config)
                 filtered_kwargs["cls_name"] = submodule_config_cls.__name__
-                submodule_rbln_config = submodule_config_cls(**filtered_kwargs)
+                submodule_rbln_config = submodule_config_cls(**filtered_kwargs) # NOTE(sein) : 여기서 nested는 filtering 안됨 + RBLNConfig class 아님 -> 이게 맞는거일지도?
             elif not isinstance(submodule_rbln_config, submodule_config_cls):
                 config_dict = {k: v for k, v in submodule_rbln_config.__dict__.items() if not k.startswith("_")}
                 filtered_kwargs = rbln_config.filter_parameters(submodule_config_cls, config_dict)
@@ -117,7 +117,7 @@ class SubModulesMixin:
                 preprocessors=preprocessors,
             )
             setattr(rbln_config, submodule_name, submodule_rbln_config)
-            submodule_rbln_config = submodule_cls._update_submodule_config(model, submodule_rbln_config, preprocessors)
+            submodule_rbln_config = submodule_cls._update_submodule_rbln_config_from_model(model, submodule_rbln_config, preprocessors)
 
             rbln_submodule = submodule_cls.from_model(
                 model=torch_submodule,
@@ -133,7 +133,13 @@ class SubModulesMixin:
         return rbln_submodules
 
     @classmethod
-    def _load_submodules_from_compiled_models(cls, model_save_dir: str, rbln_config: RBLNModelConfig, **kwargs):
+    def _load_submodules_from_compiled_models(
+        cls,
+        model_save_dir: str,
+        rbln_config: RBLNModelConfig,
+        rbln_submodule_config: Optional[Dict[str, Any]] = None,
+        **kwargs,
+    ):
         rbln_submodules = []
 
         for submodule in cls._rbln_submodules:
@@ -153,6 +159,7 @@ class SubModulesMixin:
                 config=config,
                 subfolder=submodule_name,
                 rbln_config=submodule_rbln_config,
+                rbln_submodule_config=rbln_submodule_config,
                 **kwargs,
             )
 
@@ -163,16 +170,29 @@ class SubModulesMixin:
         return rbln_submodules
 
     @classmethod
-    def _load_submodules(cls, model_save_dir, rbln_config: RBLNModelConfig, model=None, **kwargs):
+    def _load_submodules(
+        cls,
+        model_save_dir,
+        rbln_config: RBLNModelConfig,
+        model=None,
+        rbln_submodule_config: Optional[Dict[str, Any]] = None,
+        **kwargs,
+    ):
         # Two ways :
         # 1. Compile from pytorch object
         # 2. Load from compiled file
         if model is not None:
             return cls._export_submodules_from_model(
-                model=model, model_save_dir=model_save_dir, rbln_config=rbln_config, **kwargs
+                model=model,
+                model_save_dir=model_save_dir,
+                rbln_config=rbln_config,
+                **kwargs,
             )
 
         else:
             return cls._load_submodules_from_compiled_models(
-                model_save_dir=model_save_dir, rbln_config=rbln_config, **kwargs
+                model_save_dir=model_save_dir,
+                rbln_config=rbln_config,
+                rbln_submodule_config=rbln_submodule_config,
+                **kwargs,
             )
