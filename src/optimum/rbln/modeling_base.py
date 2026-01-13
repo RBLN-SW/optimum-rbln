@@ -182,6 +182,7 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
         # passed from compile function
         rbln_config: Optional[RBLNModelConfig] = None,
         rbln_compiled_models: Optional[Dict[str, rebel.RBLNCompiledModel]] = None,
+        rbln_submodule_config: Optional[Dict[str, Any]] = None,
         rbln_submodules: Optional[List["RBLNBaseModel"]] = None,
         **kwargs,
     ) -> "RBLNBaseModel":
@@ -206,8 +207,12 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
                     f"does not match the expected model class name ({cls.__name__})."
                 )
 
-            rbln_config, kwargs = RBLNAutoConfig.load(
-                model_path_subfolder, passed_rbln_config=rbln_config, kwargs=kwargs, return_unused_kwargs=True
+            rbln_config, rbln_submodule_config, kwargs = RBLNAutoConfig.load(
+                model_path_subfolder,
+                passed_rbln_config=rbln_config,
+                kwargs=kwargs,
+                rbln_submodule_config=rbln_submodule_config,
+                return_unused_kwargs=True,
             )
 
             if rbln_config.rbln_model_cls_name != cls.__name__:
@@ -219,7 +224,12 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
 
             if len(cls._rbln_submodules) > 0:
                 if rbln_submodules is None:
-                    rbln_submodules = cls._load_submodules(model_save_dir=model_id, rbln_config=rbln_config, **kwargs)
+                    rbln_submodules = cls._load_submodules(
+                        model_save_dir=model_id,
+                        rbln_config=rbln_config,
+                        rbln_submodule_config=rbln_submodule_config,
+                        **kwargs,
+                    )
             elif rbln_submodules is None:
                 rbln_submodules = []
 

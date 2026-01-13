@@ -261,6 +261,7 @@ class RBLNAutoConfig:
         path: str,
         passed_rbln_config: Optional["RBLNModelConfig"] = None,
         kwargs: Optional[Dict[str, Any]] = None,
+        rbln_submodule_config: Optional[Dict[str, "RBLNModelConfig"]] = None,
         return_unused_kwargs: bool = False,
     ) -> Union["RBLNModelConfig", Tuple["RBLNModelConfig", Dict[str, Any]]]:
         """
@@ -281,6 +282,8 @@ class RBLNAutoConfig:
         rbln_keys = [key for key in kwargs.keys() if key.startswith("rbln_")]
         rbln_runtime_kwargs = {key[5:]: kwargs.pop(key) for key in rbln_keys if key[5:] in RUNTIME_KEYWORDS}
         rbln_submodule_kwargs = {key[5:]: kwargs.pop(key) for key in rbln_keys if key[5:] in cls.submodules}
+        rbln_submodule_kwargs.update(rbln_submodule_config or {})
+        rbln_nested_submodule_kwargs = {}
 
         rbln_kwargs = {
             key[5:]: kwargs.pop(key)
@@ -297,16 +300,20 @@ class RBLNAutoConfig:
             if submodule not in config_file:
                 raise ValueError(f"Submodule {submodule} not found in rbln_config.json.")
             submodule_config = config_file[submodule]
-            
+
             nested_submodules = get_nested_submodules(config_file, submodule)
             _rbln_submodule_kwargs = rbln_submodule_kwargs.get(submodule, {})
-            
-            rbln_nested_submodule_kwargs = {"rbln_" + key: _rbln_submodule_kwargs.pop(key) for key in nested_submodules if key in _rbln_submodule_kwargs}
-            kwargs.update(rbln_nested_submodule_kwargs)
-            
+
+            # check if submodule has nested submodule kwargs
+            nested_submodule_kwargs = {
+                key: _rbln_submodule_kwargs.pop(key) for key in nested_submodules if key in _rbln_submodule_kwargs
+            }
+            rbln_nested_submodule_kwargs.update(nested_submodule_kwargs)
+
+            # update submodule config only
             submodule_config.update(rbln_submodule_kwargs.pop(submodule, {}))
             config_file[submodule] = RBLNAutoConfig.load_from_dict(submodule_config)
-        
+
         if passed_rbln_config is not None:
             config_file.update(passed_rbln_config._runtime_options)
             # TODO(jongho): Reject if the passed_rbln_config has different attributes from the config_file
@@ -324,7 +331,7 @@ class RBLNAutoConfig:
                     )
 
         if return_unused_kwargs:
-            return cls(**config_file), kwargs
+            return cls(**config_file), rbln_nested_submodule_kwargs, kwargs
         else:
             return cls(**config_file)
 
