@@ -60,10 +60,10 @@ class BartForConditionalGeneration(Seq2SeqForConditionalGeneration):
 class BartDecoder(Seq2SeqDecoder):
     has_pos_emb = True
 
-    def __post_init__(self):
-        self.embed_positions = self._model.embed_positions
-        self.layernorm_embedding = self._model.layernorm_embedding
-        self.embed_scale = getattr(self._model, "embed_scale", None)
+    def __post_init__(self, model: nn.Module):
+        self.embed_positions = model.embed_positions
+        self.layernorm_embedding = model.layernorm_embedding
+        self.embed_scale = getattr(model, "embed_scale", None)
 
     def prepare_attn_mask(self, attention_mask, encoder_attention_mask, **kwargs):
         if attention_mask is not None:
@@ -112,11 +112,11 @@ class BartLayerFF(nn.Module):
 
 
 class BartDecoderLayer(Seq2SeqDecoderLayer):
-    def __post_init__(self):
-        self.self_attn_layer_norm = self._layer.self_attn_layer_norm
-        self.encoder_attn = self._layer.encoder_attn
-        self.encoder_attn_layer_norm = self._layer.encoder_attn_layer_norm
-        self.ff_layer = BartLayerFF(self._layer)
+    def __post_init__(self, decoder_layer: nn.Module):
+        self.self_attn_layer_norm = decoder_layer.self_attn_layer_norm
+        self.encoder_attn = decoder_layer.encoder_attn
+        self.encoder_attn_layer_norm = decoder_layer.encoder_attn_layer_norm
+        self.ff_layer = BartLayerFF(decoder_layer)
 
     def pre_self_attn_layer_norm(self, hidden_states):
         return hidden_states
@@ -132,13 +132,13 @@ class BartDecoderLayer(Seq2SeqDecoderLayer):
 
 
 class BartSelfAttention(Seq2SeqSelfAttention):
-    def __post_init__(self, use_attention_mask: bool = True):
-        self.q_proj = self._attn.q_proj
-        self.k_proj = self._attn.k_proj
-        self.v_proj = self._attn.v_proj
-        self.out_proj = self._attn.out_proj
-        self.num_heads = self._attn.num_heads
-        self.head_dim = self._attn.embed_dim // self._attn.num_heads
+    def __post_init__(self, attn: nn.Module, use_attention_mask: bool = True):
+        self.q_proj = attn.q_proj
+        self.k_proj = attn.k_proj
+        self.v_proj = attn.v_proj
+        self.out_proj = attn.out_proj
+        self.num_heads = attn.num_heads
+        self.head_dim = attn.embed_dim // attn.num_heads
         self.scaling = self.head_dim**-0.5
         if use_attention_mask:
             self.attn_decode = torch.ops.rbln_custom_ops.paged_attn_decode
@@ -153,11 +153,11 @@ class BartSelfAttention(Seq2SeqSelfAttention):
 
 
 class BartCrossAttention(Seq2SeqCrossAttention):
-    def __post_init__(self):
-        self.q_proj = self._attn.q_proj
-        self.k_proj = self._attn.k_proj
-        self.v_proj = self._attn.v_proj
-        self.out_proj = self._attn.out_proj
-        self.num_heads = self._attn.num_heads
-        self.head_dim = self._attn.embed_dim // self._attn.num_heads
-        self.embed_dim = self._attn.embed_dim
+    def __post_init__(self, attn: nn.Module):
+        self.q_proj = attn.q_proj
+        self.k_proj = attn.k_proj
+        self.v_proj = attn.v_proj
+        self.out_proj = attn.out_proj
+        self.num_heads = attn.num_heads
+        self.head_dim = attn.embed_dim // attn.num_heads
+        self.embed_dim = attn.embed_dim

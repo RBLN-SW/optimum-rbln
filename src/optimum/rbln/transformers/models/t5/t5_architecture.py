@@ -111,9 +111,9 @@ class T5ForConditionalGeneration(Seq2SeqForConditionalGeneration):
 class T5Decoder(Seq2SeqDecoder):
     has_pos_emb = False
 
-    def __post_init__(self, dec_max_seq_len: int = None):
-        self.invert_attention_mask = self._model.invert_attention_mask
-        self._dec_position_bias = self.precompute_dec_position_bias(self._model, dec_max_seq_len)
+    def __post_init__(self, model: nn.Module, dec_max_seq_len: int = None):
+        self.invert_attention_mask = model.invert_attention_mask
+        self._dec_position_bias = self.precompute_dec_position_bias(model, dec_max_seq_len)
 
     def precompute_dec_position_bias(self, model, dec_max_length):
         attn_layer = model.block[0].layer[0].SelfAttention
@@ -145,13 +145,12 @@ class T5Decoder(Seq2SeqDecoder):
 class T5Block(Seq2SeqDecoderLayer):
     def __init__(self, decoder_layer, self_attn):
         super().__init__(decoder_layer, self_attn, cross_attn=None)
-        self.__post_init__()
 
-    def __post_init__(self):
-        self.self_attn_layer_norm = self._layer.layer[0].layer_norm
-        self.encoder_attn_layer_norm = self._layer.layer[1].layer_norm
-        self.cross_attn = T5CrossAttention(self._layer.layer[1].EncDecAttention)
-        self.ff_layer = self._layer.layer[2]
+    def __post_init__(self, decoder_layer: nn.Module):
+        self.self_attn_layer_norm = decoder_layer.layer[0].layer_norm
+        self.encoder_attn_layer_norm = decoder_layer.layer[1].layer_norm
+        self.cross_attn = T5CrossAttention(decoder_layer.layer[1].EncDecAttention)
+        self.ff_layer = decoder_layer.layer[2]
 
     def pre_self_attn_layer_norm(self, hidden_states):
         return self.self_attn_layer_norm(hidden_states)
@@ -167,13 +166,13 @@ class T5Block(Seq2SeqDecoderLayer):
 
 
 class T5LayerSelfAttention(Seq2SeqSelfAttention):
-    def __post_init__(self):
-        self.q_proj = self._attn.q
-        self.k_proj = self._attn.k
-        self.v_proj = self._attn.v
-        self.out_proj = self._attn.o
-        self.num_heads = self._attn.n_heads
-        self.head_dim = self._attn.key_value_proj_dim
+    def __post_init__(self, attn: nn.Module):
+        self.q_proj = attn.q
+        self.k_proj = attn.k
+        self.v_proj = attn.v
+        self.out_proj = attn.o
+        self.num_heads = attn.n_heads
+        self.head_dim = attn.key_value_proj_dim
         self.attn_decode = torch.ops.rbln_custom_ops.paged_add_softmax_attn_decode
 
     def projection(self, hidden_states) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
