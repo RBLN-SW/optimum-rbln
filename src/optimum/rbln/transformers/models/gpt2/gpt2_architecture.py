@@ -20,8 +20,6 @@ import torch.nn as nn
 
 from ..decoderonly.decoderonly_architecture import (
     DecoderOnlyAttention,
-    DecoderOnlyLayer,
-    DecoderOnlyModel,
     DecoderOnlyWrapper,
 )
 
@@ -34,12 +32,6 @@ class GPT2Wrapper(DecoderOnlyWrapper):
     def get_rbln_attn_class(self):
         return GPT2Attention
 
-    def get_rbln_layer_class(self):
-        return GPT2Layer
-
-    def get_rbln_model_class(self):
-        return GPT2Model
-
     def get_attn_layer(self, layer: nn.Module):
         return layer.attn
 
@@ -48,21 +40,6 @@ class GPT2Wrapper(DecoderOnlyWrapper):
 
     def get_decoder_layers(self, model: Union["GPT2LMHeadModel", "GPT2Model"]):
         return model.transformer.h if self.is_causal_lm else model.h
-
-
-class GPT2Model(DecoderOnlyModel):
-    def get_last_layernorm(self) -> nn.LayerNorm:
-        return self.norm
-
-    def get_embedding(self) -> nn.Embedding:
-        return self.embed_tokens
-
-    def get_pos_embedding(self) -> nn.Embedding:
-        return self.embed_positions
-
-
-class GPT2Layer(DecoderOnlyLayer):
-    pass
 
 
 class GPT2Attention(DecoderOnlyAttention):
