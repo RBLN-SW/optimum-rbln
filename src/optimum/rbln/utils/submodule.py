@@ -101,9 +101,7 @@ class SubModulesMixin:
             if isinstance(submodule_rbln_config, dict):
                 filtered_kwargs = rbln_config.filter_parameters(submodule_config_cls, submodule_rbln_config)
                 filtered_kwargs["cls_name"] = submodule_config_cls.__name__
-                submodule_rbln_config = submodule_config_cls(
-                    **filtered_kwargs
-                )  # NOTE(sein) : 여기서 nested는 filtering 안됨 + RBLNConfig class 아님 -> 이게 맞는거일지도?
+                submodule_rbln_config = submodule_config_cls(**filtered_kwargs)
             elif not isinstance(submodule_rbln_config, submodule_config_cls):
                 config_dict = {k: v for k, v in submodule_rbln_config.__dict__.items() if not k.startswith("_")}
                 filtered_kwargs = rbln_config.filter_parameters(submodule_config_cls, config_dict)
