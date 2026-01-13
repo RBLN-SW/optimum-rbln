@@ -32,6 +32,19 @@ if TYPE_CHECKING:
 logger = logging.get_logger(__name__)
 
 
+def _set_first_existing_attr(dst: object, dst_attr: str, src: object, *src_attrs: str) -> Optional[str]:
+    """
+    Set dst.<dst_attr> = src.<first existing attr in src_attrs>.
+
+    Returns the matched source attribute name, or None if none exist.
+    """
+    for name in src_attrs:
+        if hasattr(src, name):
+            setattr(dst, dst_attr, getattr(src, name))
+            return name
+    return None
+
+
 class DecoderOnlyWrapper(nn.Module):
     """A wrapper class for decoder-only language models that handles RBLN-specific optimizations and requirements.
 
@@ -336,26 +349,9 @@ class DecoderOnlyModel(nn.Module):
         #
         # Different HF model families use different attribute names; we register what we can
         # and allow subclasses to override getters when needed.
-        if hasattr(model, "embed_tokens"):
-            self.embed_tokens = model.embed_tokens
-        elif hasattr(model, "wte"):
-            self.embed_tokens = model.wte
-
-        if hasattr(model, "embed_positions"):
-            self.embed_positions = model.embed_positions
-        elif hasattr(model, "wpe"):
-            self.embed_positions = model.wpe
-
-        if hasattr(model, "norm"):
-            self.norm = model.norm
-        elif hasattr(model, "final_layer_norm"):
-            self.norm = model.final_layer_norm
-        elif hasattr(model, "final_layernorm"):
-            self.norm = model.final_layernorm
-        elif hasattr(model, "ln_f"):
-            self.norm = model.ln_f
-        elif hasattr(model, "layer_norm"):
-            self.norm = model.layer_norm
+        _set_first_existing_attr(self, "embed_tokens", model, "embed_tokens", "wte")
+        _set_first_existing_attr(self, "embed_positions", model, "embed_positions", "wpe")
+        _set_first_existing_attr(self, "norm", model, "norm", "final_layer_norm", "final_layernorm", "ln_f", "layer_norm")
         self.layers = nn.ModuleList(layers)
         self.rbln_config = rbln_config
         self._phase = "prefill"
@@ -561,22 +557,18 @@ class DecoderOnlyLayer(nn.Module):
         super().__init__()
         # Register commonly-used original submodules directly on this wrapper so their weights
         # are preserved in state_dict even if we don't keep a reference to the whole layer.
-        if hasattr(layer, "input_layernorm"):
-            self.input_layernorm = layer.input_layernorm
-        elif hasattr(layer, "ln_1"):
-            self.input_layernorm = layer.ln_1
-        elif hasattr(layer, "self_attn_layer_norm"):
-            self.input_layernorm = layer.self_attn_layer_norm
-        else:
+        if (
+            _set_first_existing_attr(self, "input_layernorm", layer, "input_layernorm", "ln_1", "self_attn_layer_norm")
+            is None
+        ):
             raise AttributeError(f"Unsupported layer type: cannot find pre-attention layernorm on {type(layer)}")
 
-        if hasattr(layer, "post_attention_layernorm"):
-            self.post_attention_layernorm = layer.post_attention_layernorm
-        elif hasattr(layer, "ln_2"):
-            self.post_attention_layernorm = layer.ln_2
-        elif hasattr(layer, "final_layer_norm"):
-            self.post_attention_layernorm = layer.final_layer_norm
-        else:
+        if (
+            _set_first_existing_attr(
+                self, "post_attention_layernorm", layer, "post_attention_layernorm", "ln_2", "final_layer_norm"
+            )
+            is None
+        ):
             raise AttributeError(f"Unsupported layer type: cannot find post-attention layernorm on {type(layer)}")
 
         if hasattr(layer, "mlp"):
@@ -714,19 +706,9 @@ class DecoderOnlyAttention(nn.Module):
         # Register projection layers if present on the original attention module.
         # Some model families (e.g. GPT-2) don't expose q/k/v projections separately and override
         # projection() in a subclass instead.
-        if hasattr(self_attn, "q_proj"):
-            self.q_proj = self_attn.q_proj
-        if hasattr(self_attn, "k_proj"):
-            self.k_proj = self_attn.k_proj
-        if hasattr(self_attn, "v_proj"):
-            self.v_proj = self_attn.v_proj
-
-        if hasattr(self_attn, "o_proj"):
-            self.o_proj = self_attn.o_proj
-        elif hasattr(self_attn, "out_proj"):
-            self.o_proj = self_attn.out_proj
-        elif hasattr(self_attn, "dense"):
-            self.o_proj = self_attn.dense
+        for name in ("q_proj", "k_proj", "v_proj"):
+            _set_first_existing_attr(self, name, self_attn, name)
+        _set_first_existing_attr(self, "o_proj", self_attn, "o_proj", "out_proj", "dense")
 
         setattr(self, self.get_attention_name(), self.create_attention_op())
         self.__post_init__(self_attn)
