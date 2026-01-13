@@ -11,13 +11,13 @@ from optimum.rbln import (
     RBLNAutoConfig,
     RBLNAutoModel,
     RBLNCompileConfig,
+    RBLNLlavaNextForConditionalGeneration,
+    RBLNMistralForCausalLMConfig,
     RBLNModel,
     RBLNModelConfig,
     RBLNResNetForImageClassification,
     RBLNResNetForImageClassificationConfig,
     RBLNStableDiffusionPipeline,
-    RBLNMistralForCausalLMConfig,
-    RBLNLlavaNextForConditionalGeneration
 )
 
 
@@ -129,12 +129,8 @@ def test_mixed_config_approach_2():
     """Test that using both rbln_config dict and rbln_ prefixed arguments raises ValueError."""
     # Create a base config dict
     config_dict = {
-        "language_model": {
-            "max_seq_len": 32768,
-            "use_inputs_embeds": True,
-            "batch_size": 1
-            },
-        }
+        "language_model": {"max_seq_len": 32768, "use_inputs_embeds": True, "batch_size": 1},
+    }
 
     # Should raise ValueError: cannot use both rbln_config and rbln_ prefixed arguments
     with pytest.raises(ValueError, match="Cannot use both"):
@@ -151,11 +147,7 @@ def test_submodule_config_dict():
     model = RBLNLlavaNextForConditionalGeneration.from_pretrained(
         "trl-internal-testing/tiny-LlavaNextForConditionalGeneration",
         export=True,
-        rbln_language_model={
-            "max_seq_len": 16384,
-            "use_inputs_embeds": True,
-            "batch_size": 2
-            },
+        rbln_language_model={"max_seq_len": 16384, "use_inputs_embeds": True, "batch_size": 2},
     )
     assert model.rbln_config.language_model.max_seq_len == 16384
     assert model.rbln_config.language_model.batch_size == 2
