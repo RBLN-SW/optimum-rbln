@@ -31,29 +31,6 @@ if TYPE_CHECKING:
 
 logger = logging.get_logger(__name__)
 
-
-class _FC1FC2MLP(nn.Module):
-    """Adapter for OPT-style MLP blocks (fc1/fc2)."""
-
-    def __init__(self, layer: nn.Module):
-        super().__init__()
-        self.fc1 = layer.fc1
-        self.fc2 = layer.fc2
-        self.activation_fn = getattr(layer, "activation_fn", None)
-        self.dropout = getattr(layer, "dropout", None)
-
-    def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
-        hidden_states = self.fc1(hidden_states)
-        if self.activation_fn is not None:
-            hidden_states = self.activation_fn(hidden_states)
-        if self.dropout is not None:
-            hidden_states = self.dropout(hidden_states)
-        hidden_states = self.fc2(hidden_states)
-        if self.dropout is not None:
-            hidden_states = self.dropout(hidden_states)
-        return hidden_states
-
-
 class DecoderOnlyWrapper(nn.Module):
     """A wrapper class for decoder-only language models that handles RBLN-specific optimizations and requirements.
 
@@ -603,9 +580,6 @@ class DecoderOnlyLayer(nn.Module):
 
         if hasattr(layer, "mlp"):
             self.mlp = layer.mlp
-        elif hasattr(layer, "fc1") and hasattr(layer, "fc2"):
-            # OPT-style feedforward uses fc1/fc2 + activation_fn (+ dropout)
-            self.mlp = _FC1FC2MLP(layer)
         else:
             raise AttributeError(f"Unsupported layer type: cannot find MLP/feedforward on {type(layer)}")
         self.self_attn = self_attn
