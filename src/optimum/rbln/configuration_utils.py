@@ -370,14 +370,16 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
             rbln_config=config
         )
 
-        # Method 4: Combining a config object with override parameters
-        # (rbln_ prefixed parameters take precedence over rbln_config values)
+        # Note: `rbln_config` and `rbln_` prefixed arguments are mutually exclusive.
+        # Using both simultaneously will raise a ValueError.
+        # Choose one approach:
+        # - Use `rbln_config` (Method 2 or 3) for complex configurations
+        # - Use `rbln_` prefixed arguments (Method 1) for simple cases
         model = RBLNResNetForImageClassification.from_pretrained(
             "model_id",
             export=True,
             rbln_config=config,
-            rbln_image_size=320,  # This overrides the value in config
-            rbln_device=1         # This sets a new value
+            rbln_image_size=320,  # This argument will raise ValueError
         )
         ```
 

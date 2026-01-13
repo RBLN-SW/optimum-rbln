@@ -16,6 +16,8 @@ from optimum.rbln import (
     RBLNResNetForImageClassification,
     RBLNResNetForImageClassificationConfig,
     RBLNStableDiffusionPipeline,
+    RBLNMistralForCausalLMConfig,
+    RBLNLlavaNextForConditionalGeneration
 )
 
 
@@ -121,6 +123,56 @@ def test_mixed_config_approach_1(model_id):
             rbln_config=config_dict,
             rbln_batch_size=2,
         )
+
+
+def test_mixed_config_approach_2():
+    """Test that using both rbln_config dict and rbln_ prefixed arguments raises ValueError."""
+    # Create a base config dict
+    config_dict = {
+        "language_model": {
+            "max_seq_len": 32768,
+            "use_inputs_embeds": True,
+            "batch_size": 1
+            },
+        }
+
+    # Should raise ValueError: cannot use both rbln_config and rbln_ prefixed arguments
+    with pytest.raises(ValueError, match="Cannot use both"):
+        model = RBLNLlavaNextForConditionalGeneration.from_pretrained(
+            "trl-internal-testing/tiny-LlavaNextForConditionalGeneration",
+            export=True,
+            rbln_config=config_dict,
+            rbln_language_model={"batch_size": 2},
+        )
+
+
+def test_submodule_config_dict():
+    """Test loading submodule model with configuration passed as a dictionary."""
+    model = RBLNLlavaNextForConditionalGeneration.from_pretrained(
+        "trl-internal-testing/tiny-LlavaNextForConditionalGeneration",
+        export=True,
+        rbln_language_model={
+            "max_seq_len": 16384,
+            "use_inputs_embeds": True,
+            "batch_size": 2
+            },
+    )
+    assert model.rbln_config.language_model.max_seq_len == 16384
+    assert model.rbln_config.language_model.batch_size == 2
+
+
+def test_submodule_config_object():
+    """Test loading submodule with a pre-configured RBLNMistralForCausalLMConfig object."""
+
+    rbln_config = RBLNMistralForCausalLMConfig(max_seq_len=16384, use_inputs_embeds=True, batch_size=2)
+
+    model = RBLNLlavaNextForConditionalGeneration.from_pretrained(
+        "trl-internal-testing/tiny-LlavaNextForConditionalGeneration",
+        export=True,
+        rbln_language_model=rbln_config,
+    )
+    assert model.rbln_config.language_model.max_seq_len == 16384
+    assert model.rbln_config.language_model.batch_size == 2
 
 
 def test_config_persistence_after_reload(model_id, tmp_path):
