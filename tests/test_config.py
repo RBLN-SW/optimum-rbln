@@ -89,8 +89,8 @@ def test_config_object(model_id):
     # Pre-configured object should be properly applied
 
 
-def test_mixed_config_approach(model_id):
-    """Test loading model with both config object and additional parameters."""
+def test_mixed_config_approach_0(model_id):
+    """Test that using both rbln_config class and rbln_ prefixed arguments raises ValueError."""
     config = RBLNResNetForImageClassificationConfig()
     config.create_runtimes = False
 
@@ -98,16 +98,29 @@ def test_mixed_config_approach(model_id):
     compile_cfg = RBLNCompileConfig(input_info=[("pixel_values", (1, 3, 224, 224), "float32")])
     config.set_compile_cfgs([compile_cfg])
 
-    model = RBLNResNetForImageClassification.from_pretrained(
-        model_id,
-        export=True,
-        rbln_config=config,
-        rbln_image_size=128,  # This should override the config object
-    )
-    assert model is not None
-    assert hasattr(model, "rbln_config")
-    assert model.rbln_config.image_size == 128
-    # Check if override parameters were properly applied
+    # Should raise ValueError: cannot use both rbln_config and rbln_ prefixed arguments
+    with pytest.raises(ValueError, match="Cannot use both"):
+        model = RBLNResNetForImageClassification.from_pretrained(
+            model_id,
+            export=True,
+            rbln_config=config,
+            rbln_image_size=128,
+        )
+
+
+def test_mixed_config_approach_1(model_id):
+    """Test that using both rbln_config dict and rbln_ prefixed arguments raises ValueError."""
+    # Create a base config dict
+    config_dict = {"image_size": 224, "create_runtimes": False}
+
+    # Should raise ValueError: cannot use both rbln_config and rbln_ prefixed arguments
+    with pytest.raises(ValueError, match="Cannot use both"):
+        model = RBLNResNetForImageClassification.from_pretrained(
+            model_id,
+            export=True,
+            rbln_config=config_dict,
+            rbln_batch_size=2,
+        )
 
 
 def test_config_persistence_after_reload(model_id, tmp_path):
@@ -134,24 +147,6 @@ def test_config_persistence_after_reload(model_id, tmp_path):
 
     if os.path.exists(save_dir):
         shutil.rmtree(save_dir)
-
-
-def test_config_priority(model_id):
-    """Test the priority of different configuration mechanisms."""
-    # Create a base config
-    config = RBLNResNetForImageClassificationConfig(image_size=224)
-    config.create_runtimes = False
-
-    # This explicit parameter should override the config object setting
-    model = RBLNResNetForImageClassification.from_pretrained(
-        model_id,
-        export=True,
-        rbln_config=config,
-        rbln_image_size=128,  # Should override config.image_size
-    )
-
-    assert model.rbln_config.image_size == 128, "Explicit parameter should override config object"
-    assert model.rbln_config.create_runtimes is False, "Other config values should be preserved"
 
 
 @pytest.mark.parametrize(

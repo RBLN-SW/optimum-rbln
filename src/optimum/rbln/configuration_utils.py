@@ -909,16 +909,22 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
         kwargs_keys = list(kwargs.keys())
         rbln_kwargs = {key[5:]: kwargs.pop(key) for key in kwargs_keys if key.startswith("rbln_")}
 
+        # Check if both rbln_config and rbln_ prefixed arguments are provided
+        if rbln_config is not None and len(rbln_kwargs) > 0:
+            raise ValueError(
+                f"Cannot use both `rbln_config` and `rbln_` prefixed arguments simultaneously. "
+                f"Found rbln_ prefixed arguments: {list(rbln_kwargs.keys())}. "
+                f"Please specify configuration either via `rbln_config` or `rbln_` prefixed arguments, not both."
+            )
+
         if isinstance(rbln_config, dict):
-            rbln_config.update(rbln_kwargs)
             rbln_config = cls(**rbln_config)
 
         elif rbln_config is None:
             rbln_config = cls(**rbln_kwargs)
 
         elif isinstance(rbln_config, RBLNModelConfig):
-            for key, value in rbln_kwargs.items():
-                setattr(rbln_config, key, value)
+            pass  # Use rbln_config as is
 
         return rbln_config, kwargs
 
