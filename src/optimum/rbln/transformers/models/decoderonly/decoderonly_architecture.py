@@ -31,6 +31,7 @@ if TYPE_CHECKING:
 
 logger = logging.get_logger(__name__)
 
+
 class DecoderOnlyWrapper(nn.Module):
     """A wrapper class for decoder-only language models that handles RBLN-specific optimizations and requirements.
 
