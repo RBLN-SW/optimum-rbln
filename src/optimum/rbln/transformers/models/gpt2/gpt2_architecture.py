@@ -52,28 +52,26 @@ class GPT2Wrapper(DecoderOnlyWrapper):
 
 class GPT2Model(DecoderOnlyModel):
     def get_last_layernorm(self) -> nn.LayerNorm:
-        return self._original_mod.ln_f
+        return self.norm
 
     def get_embedding(self) -> nn.Embedding:
-        return self._original_mod.wte
+        return self.embed_tokens
 
     def get_pos_embedding(self) -> nn.Embedding:
-        return self._original_mod.wpe
+        return self.embed_positions
 
 
 class GPT2Layer(DecoderOnlyLayer):
-    def get_pre_attention_layernorm(self) -> nn.LayerNorm:
-        return self._original_mod.ln_1
-
-    def get_post_attention_layernorm(self) -> nn.LayerNorm:
-        return self._original_mod.ln_2
+    pass
 
 
 class GPT2Attention(DecoderOnlyAttention):
-    def __post_init__(self):
-        self.c_attn = self._original_mod.c_attn
-        self.o_proj = self._original_mod.c_proj
-        self.split_size = self._original_mod.split_size
+    def __post_init__(self, self_attn):
+        self.c_attn = self_attn.c_attn
+        self.o_proj = self_attn.c_proj
+        self.split_size = self_attn.split_size
+        self.scale_attn_weights = getattr(self_attn, "scale_attn_weights", False)
+        self.scale_attn_by_inverse_layer_idx = getattr(self_attn, "scale_attn_by_inverse_layer_idx", False)
 
     def projection(self, hidden_states, lora_int_id) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         if lora_int_id is not None:
@@ -84,10 +82,10 @@ class GPT2Attention(DecoderOnlyAttention):
 
     def get_attn_scale(self):
         scale = 1.0
-        if self._original_mod.scale_attn_weights:
+        if self.scale_attn_weights:
             scale /= math.sqrt(self.head_dim)
 
-        if self._original_mod.scale_attn_by_inverse_layer_idx:
+        if self.scale_attn_by_inverse_layer_idx:
             scale /= 1 + self.layer_idx
 
         return scale

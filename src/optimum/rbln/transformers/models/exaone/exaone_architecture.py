@@ -55,23 +55,15 @@ class ExaoneForCausalLMWrapper(DecoderOnlyWrapper):
 
 class ExaoneModel(DecoderOnlyModel):
     def get_embedding(self) -> nn.Embedding:
-        return self._original_mod.wte
+        return self.embed_tokens
 
     def get_last_layernorm(self) -> nn.LayerNorm:
-        return self._original_mod.ln_f
+        return self.norm
 
 
 class ExaoneLayer(DecoderOnlyLayer):
-    def get_pre_attention_layernorm(self) -> nn.LayerNorm:
-        return self._original_mod.ln_1
-
-    def get_post_attention_layernorm(self) -> nn.LayerNorm:
-        return self._original_mod.ln_2
+    pass
 
 
 class ExaoneAttention(DecoderOnlyAttention):
-    def __post_init__(self):
-        self.q_proj = self._original_mod.q_proj
-        self.k_proj = self._original_mod.k_proj
-        self.v_proj = self._original_mod.v_proj
-        self.o_proj = self._original_mod.out_proj
+    pass

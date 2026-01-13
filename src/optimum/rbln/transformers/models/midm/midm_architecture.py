@@ -71,6 +71,10 @@ class MidmLMHeadModelWrapper(DecoderOnlyWrapper):
 
 
 class MidmModel(DecoderOnlyModel):
+    def __init__(self, model, layers, rbln_config, use_learned_pos_emb=None):
+        super().__init__(model, layers, rbln_config, use_learned_pos_emb=use_learned_pos_emb)
+        self.use_layernorm1p = getattr(model, "use_layernorm1p", False)
+
     def get_layernorm1p(self, module: nn.LayerNorm):
         def layernorm1p(input: torch.Tensor):
             """Applies Layer Normalization with a slight modification on the weights."""
@@ -81,19 +85,22 @@ class MidmModel(DecoderOnlyModel):
         return layernorm1p
 
     def get_last_layernorm(self) -> nn.LayerNorm:
-        if self._original_mod.use_layernorm1p:
-            return self.get_layernorm1p(self._original_mod.ln_f)
-        else:
-            return self._original_mod.ln_f
+        if self.use_layernorm1p:
+            return self.get_layernorm1p(self.norm)
+        return self.norm
 
     def get_embedding(self) -> nn.Embedding:
-        return self._original_mod.wte
+        return self.embed_tokens
 
     def get_pos_embedding(self) -> nn.Embedding:
-        return self._original_mod.wpe
+        return self.embed_positions
 
 
 class MidmLayer(DecoderOnlyLayer):
+    def __init__(self, layer, self_attn: DecoderOnlyAttention, lora_config=None):
+        super().__init__(layer, self_attn, lora_config)
+        self.use_layernorm1p = getattr(layer, "use_layernorm1p", False)
+
     def get_layernorm1p(self, module: nn.LayerNorm):
         def layernorm1p(input: torch.Tensor):
             """Applies Layer Normalization with a slight modification on the weights."""
@@ -104,24 +111,25 @@ class MidmLayer(DecoderOnlyLayer):
         return layernorm1p
 
     def get_pre_attention_layernorm(self) -> nn.LayerNorm:
-        if self._original_mod.use_layernorm1p:
-            return self.get_layernorm1p(self._original_mod.ln_1)
-        else:
-            return self._original_mod.ln_1
+        if self.use_layernorm1p:
+            return self.get_layernorm1p(self.input_layernorm)
+        return self.input_layernorm
 
     def get_post_attention_layernorm(self) -> nn.LayerNorm:
-        if self._original_mod.use_layernorm1p:
-            return self.get_layernorm1p(self._original_mod.ln_2)
-        else:
-            return self._original_mod.ln_2
+        if self.use_layernorm1p:
+            return self.get_layernorm1p(self.post_attention_layernorm)
+        return self.post_attention_layernorm
 
 
 class MidmAttention(DecoderOnlyAttention):
-    def __post_init__(self):
-        self.c_attn = self._original_mod.c_attn
-        self.o_proj = self._original_mod.c_proj
-        self.split_size = self._original_mod.split_size
-        self.num_key_value_heads = self._original_mod.num_heads
+    def __post_init__(self, self_attn):
+        self.c_attn = self_attn.c_attn
+        self.o_proj = self_attn.c_proj
+        self.split_size = self_attn.split_size
+        self.num_key_value_heads = self_attn.num_heads
+        self.scale_attn_weights = getattr(self_attn, "scale_attn_weights", False)
+        self.scale_attn_by_inverse_layer_idx = getattr(self_attn, "scale_attn_by_inverse_layer_idx", False)
+        self.scale_qk_by_inverse_layer_idx = getattr(self_attn, "scale_qk_by_inverse_layer_idx", False)
 
     def projection(self, hidden_states, lora_int_id) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         if lora_int_id is not None:
@@ -132,10 +140,10 @@ class MidmAttention(DecoderOnlyAttention):
 
     def get_attn_scale(self):
         scale = 1.0
-        if self._original_mod.scale_attn_weights:
+        if self.scale_attn_weights:
             scale /= math.sqrt(self.head_dim)
 
-        if self._original_mod.scale_attn_by_inverse_layer_idx and not self._original_mod.scale_qk_by_inverse_layer_idx:
+        if self.scale_attn_by_inverse_layer_idx and not self.scale_qk_by_inverse_layer_idx:
             scale /= 1 + self.layer_idx
 
         return scale

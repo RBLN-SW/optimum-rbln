@@ -122,11 +122,17 @@ class Gemma3TextModel(DecoderOnlyModel):
 
 
 class Gemma3DecoderLayer(DecoderOnlyLayer):
+    def __init__(self, layer, self_attn: DecoderOnlyAttention, lora_config=None):
+        super().__init__(layer, self_attn, lora_config)
+        # Gemma3 has extra FFN layer norms that are not part of the base DecoderOnlyLayer.
+        self.pre_feedforward_layernorm = layer.pre_feedforward_layernorm
+        self.post_feedforward_layernorm = layer.post_feedforward_layernorm
+
     def get_pre_feedforward_layernorm(self) -> Gemma3RMSNorm:
-        return self._original_mod.pre_feedforward_layernorm
+        return self.pre_feedforward_layernorm
 
     def get_post_feedforward_layernorm(self) -> Gemma3RMSNorm:
-        return self._original_mod.post_feedforward_layernorm
+        return self.post_feedforward_layernorm
 
     def forward(
         self,
@@ -166,13 +172,9 @@ class Gemma3DecoderLayer(DecoderOnlyLayer):
 
 
 class Gemma3Attention(DecoderOnlyAttention):
-    def __post_init__(self):
-        self.q_proj = self._original_mod.q_proj
-        self.k_proj = self._original_mod.k_proj
-        self.v_proj = self._original_mod.v_proj
-        self.o_proj = self._original_mod.o_proj
-        self.q_norm = self._original_mod.q_norm
-        self.k_norm = self._original_mod.k_norm
+    def __post_init__(self, self_attn):
+        self.q_norm = self_attn.q_norm
+        self.k_norm = self_attn.k_norm
 
     def get_attn_scale(self):
-        return self._original_mod.config.query_pre_attn_scalar**-0.5
+        return self.config.query_pre_attn_scalar**-0.5

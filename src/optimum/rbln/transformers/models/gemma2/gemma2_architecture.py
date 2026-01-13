@@ -33,11 +33,17 @@ class Gemma2Wrapper(DecoderOnlyWrapper):
 
 
 class Gemma2DecoderLayer(DecoderOnlyLayer):
+    def __init__(self, layer, self_attn: DecoderOnlyAttention, lora_config=None):
+        super().__init__(layer, self_attn, lora_config)
+        # Gemma2 has extra FFN layer norms that are not part of the base DecoderOnlyLayer.
+        self.pre_feedforward_layernorm = layer.pre_feedforward_layernorm
+        self.post_feedforward_layernorm = layer.post_feedforward_layernorm
+
     def get_pre_feedforward_layernorm(self) -> Gemma2RMSNorm:
-        return self._original_mod.pre_feedforward_layernorm
+        return self.pre_feedforward_layernorm
 
     def get_post_feedforward_layernorm(self) -> Gemma2RMSNorm:
-        return self._original_mod.post_feedforward_layernorm
+        return self.post_feedforward_layernorm
 
     def forward(
         self,
@@ -77,17 +83,11 @@ class Gemma2DecoderLayer(DecoderOnlyLayer):
 
 
 class Gemma2Attention(DecoderOnlyAttention):
-    def __post_init__(self):
-        self.q_proj = self._original_mod.q_proj
-        self.k_proj = self._original_mod.k_proj
-        self.v_proj = self._original_mod.v_proj
-        self.o_proj = self._original_mod.o_proj
-
     def get_attn_scale(self):
-        return self._original_mod.config.query_pre_attn_scalar**-0.5
+        return self.config.query_pre_attn_scalar**-0.5
 
 
 class Gemma2Model(DecoderOnlyModel):
     @property
     def hidden_multiplier(self):
-        return self._original_mod.config.hidden_size**0.5
+        return self.config.hidden_size**0.5

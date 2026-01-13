@@ -48,27 +48,19 @@ class OPTWrapper(DecoderOnlyWrapper):
 
 
 class OPTAttention(DecoderOnlyAttention):
-    def __post_init__(self):
-        self.k_proj = self._original_mod.k_proj
-        self.v_proj = self._original_mod.v_proj
-        self.q_proj = self._original_mod.q_proj
-        self.o_proj = self._original_mod.out_proj
+    pass
 
 
 class OPTModel(DecoderOnlyModel):
     def get_embedding(self) -> nn.Embedding:
-        return self._original_mod.embed_tokens
+        return self.embed_tokens
 
     def get_pos_embedding(self):
-        return self._original_mod.embed_positions
+        return self.embed_positions
 
     def get_last_layernorm(self) -> nn.LayerNorm:
-        return self._original_mod.final_layer_norm
+        return self.norm
 
 
 class OPTDecoderLayer(DecoderOnlyLayer):
-    def get_pre_attention_layernorm(self) -> nn.LayerNorm:
-        return self._original_mod.self_attn_layer_norm
-
-    def get_post_attention_layernorm(self) -> nn.LayerNorm:
-        return self._original_mod.final_layer_norm
+    pass

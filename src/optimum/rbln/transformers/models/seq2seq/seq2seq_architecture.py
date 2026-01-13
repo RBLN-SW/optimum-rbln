@@ -269,9 +269,10 @@ class Seq2SeqDecoder(torch.nn.Module):
     def __init__(self, model, layers, **kwargs):
         super().__init__()
         self._original_mod = model
+        self._model = model
         self.layers = nn.ModuleList(layers)
         self.embed_tokens = model.embed_tokens
-        self.final_layer_norm = getattr(model, "final_layer_norm", None)
+        self.final_layer_norm = getattr(model, "final_layer_norm", None) or getattr(model, "layer_norm", None)
         self.__post_init__(**kwargs)
 
     def __post_init__(self, **kwargs):
@@ -345,6 +346,7 @@ class Seq2SeqDecoderLayer(torch.nn.Module):
     def __init__(self, decoder_layer, self_attn, cross_attn):
         super().__init__()
         self._original_mod = decoder_layer
+        self._layer = decoder_layer
         self.self_attn = self_attn
         self.cross_attn = cross_attn
         self.__post_init__()
@@ -424,6 +426,7 @@ class Seq2SeqSelfAttention(nn.Module):
     def __init__(self, attn, **kwargs):
         super().__init__()
         self._original_mod = attn
+        self._attn = attn
         self.__post_init__(**kwargs)
 
     def __post_init__(self, **kwargs):
@@ -496,6 +499,7 @@ class Seq2SeqCrossAttention(nn.Module):
     def __init__(self, attn, **kwargs):
         super().__init__()
         self._original_mod = attn
+        self._attn = attn
         self.__post_init__(**kwargs)
 
     def forward(
