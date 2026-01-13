@@ -66,11 +66,16 @@ class GPT2Layer(DecoderOnlyLayer):
 
 
 class GPT2Attention(DecoderOnlyAttention):
+    # These attributes are accessed during DecoderOnlyAttention.__init__() via get_attn_scale().
+    # Define safe defaults at class level so they exist before __post_init__ runs.
+    scale_attn_weights = True
+    scale_attn_by_inverse_layer_idx = False
+
     def __post_init__(self, self_attn):
         self.c_attn = self_attn.c_attn
         self.o_proj = self_attn.c_proj
         self.split_size = self_attn.split_size
-        self.scale_attn_weights = getattr(self_attn, "scale_attn_weights", False)
+        self.scale_attn_weights = getattr(self_attn, "scale_attn_weights", True)
         self.scale_attn_by_inverse_layer_idx = getattr(self_attn, "scale_attn_by_inverse_layer_idx", False)
 
     def projection(self, hidden_states, lora_int_id) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
