@@ -102,7 +102,7 @@ def test_mixed_config_approach_0(model_id):
 
     # Should raise ValueError: cannot use both rbln_config and rbln_ prefixed arguments
     with pytest.raises(ValueError, match="Cannot use both"):
-        model = RBLNResNetForImageClassification.from_pretrained(
+        model = RBLNResNetForImageClassification.from_pretrained( # noqa: F841
             model_id,
             export=True,
             rbln_config=config,
@@ -117,7 +117,7 @@ def test_mixed_config_approach_1(model_id):
 
     # Should raise ValueError: cannot use both rbln_config and rbln_ prefixed arguments
     with pytest.raises(ValueError, match="Cannot use both"):
-        model = RBLNResNetForImageClassification.from_pretrained(
+        model = RBLNResNetForImageClassification.from_pretrained( # noqa: F841
             model_id,
             export=True,
             rbln_config=config_dict,
@@ -134,7 +134,7 @@ def test_mixed_config_approach_2():
 
     # Should raise ValueError: cannot use both rbln_config and rbln_ prefixed arguments
     with pytest.raises(ValueError, match="Cannot use both"):
-        model = RBLNLlavaNextForConditionalGeneration.from_pretrained(
+        model = RBLNLlavaNextForConditionalGeneration.from_pretrained( # noqa: F841
             "trl-internal-testing/tiny-LlavaNextForConditionalGeneration",
             export=True,
             rbln_config=config_dict,
