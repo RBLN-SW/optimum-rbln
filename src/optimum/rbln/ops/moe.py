@@ -132,7 +132,7 @@ def custom_moe_glu_mxfp4(
     alpha: Tensor,
     limit: Tensor,
     k: int,
-    post_norm: bool = True,
+    post_norm: bool,
 ) -> Tensor:
     """
     Customized MoE GLU operation.
@@ -175,6 +175,6 @@ def custom_moe_glu_mxfp4_fake(
     alpha: Tensor,
     limit: Tensor,
     k: int,
-    post_norm: bool = True,
+    post_norm: bool,
 ) -> Tensor:
     return torch.empty_like(hidden_states)
