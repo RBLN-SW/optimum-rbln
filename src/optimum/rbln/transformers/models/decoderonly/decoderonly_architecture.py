@@ -351,7 +351,9 @@ class DecoderOnlyModel(nn.Module):
         # and allow subclasses to override getters when needed.
         _set_first_existing_attr(self, "embed_tokens", model, "embed_tokens", "wte")
         _set_first_existing_attr(self, "embed_positions", model, "embed_positions", "wpe")
-        _set_first_existing_attr(self, "norm", model, "norm", "final_layer_norm", "final_layernorm", "ln_f", "layer_norm")
+        _set_first_existing_attr(
+            self, "norm", model, "norm", "final_layer_norm", "final_layernorm", "ln_f", "layer_norm"
+        )
         self.layers = nn.ModuleList(layers)
         self.rbln_config = rbln_config
         self._phase = "prefill"
