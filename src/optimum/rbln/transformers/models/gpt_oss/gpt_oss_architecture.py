@@ -120,6 +120,7 @@ class RBLNGptOssExperts(nn.Module):
             torch.tensor(self.alpha, dtype=hidden_states.dtype),
             torch.tensor(self.limit, dtype=hidden_states.dtype),
             k=self.top_k,
+            post_norm=True,
         )
 
 
