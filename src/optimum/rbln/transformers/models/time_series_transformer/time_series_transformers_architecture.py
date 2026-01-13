@@ -66,7 +66,7 @@ class TimeSeriesTransformersEncoderWrapper(torch.nn.Module):
         # 2. pre-compute cross_attention's past_key_value which used in decoder phase.
         cross_kv = []
         batch_size = inputs_embeds.shape[0]
-        for k_proj, v_proj in zip(self.cross_k_projects, self.cross_v_projects):
+        for k_proj, v_proj in zip(self.cross_k_projects, self.cross_v_projects, strict=False):
             past_k = k_proj(last_hidden_states).view(batch_size, -1, self.num_heads, self.d_kv).transpose(1, 2)
             past_v = v_proj(last_hidden_states).view(batch_size, -1, self.num_heads, self.d_kv).transpose(1, 2)
 
@@ -173,7 +173,7 @@ class TimeSeriesTransformersDecoder(nn.Module):
 
         # iterate decoder_layer
         for self_past_key_value, cross_past_key_value, decoder_layer in zip(
-            self_past_key_values, cross_past_key_values, self.layers
+            self_past_key_values, cross_past_key_values, self.layers, strict=False
         ):
             hidden_states = decoder_layer(
                 hidden_states,

@@ -104,7 +104,7 @@ class RBLNDiffusionMixin:
 
                 adapter_names = [f"adapter_{i}" for i in range(len(lora_ids))]
 
-                for lora_id, lora_weight, adapter_name in zip(lora_ids, lora_weights_names, adapter_names):
+                for lora_id, lora_weight, adapter_name in zip(lora_ids, lora_weights_names, adapter_names, strict=False):
                     model.load_lora_weights(lora_id, weight_name=lora_weight, adapter_name=adapter_name)
 
                 if lora_scales:

@@ -510,7 +510,7 @@ class RBLNGemma3ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
 
         # Mark static tensors (self kv states)
         static_tensors = {}
-        for (name, _, _), tensor in zip(prefill_compile_config.input_info, prefill_example_inputs):
+        for (name, _, _), tensor in zip(prefill_compile_config.input_info, prefill_example_inputs, strict=False):
             if "past_key_values" in name:
                 static_tensors[name] = tensor
                 context.mark_static_address(tensor)
@@ -562,7 +562,7 @@ class RBLNGemma3ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
 
         wrapped_model.phase = "decode"
         for batch_size, dec_compile_config in zip(
-            rbln_config.decoder_batch_sizes, rbln_compile_configs[rbln_config.decoder_runtime_idx :]
+            rbln_config.decoder_batch_sizes, rbln_compile_configs[rbln_config.decoder_runtime_idx :], strict=False
         ):
             dec_example_inputs = dec_compile_config.get_dummy_inputs(fill=0, static_tensors=static_tensors)
             compiled_decoder = compile_model(
