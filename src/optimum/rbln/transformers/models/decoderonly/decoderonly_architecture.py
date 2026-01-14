@@ -919,9 +919,9 @@ class DecoderOnlyAttention(nn.Module):
             block_size=self.kvcache_block_size,
             k_scale=k_scale,
             v_scale=v_scale,
-            s_aux=getattr(self, "sinks", None),
             valid_batch=valid_batch,
             seq_blk_off=seq_blk_off,
+            s_aux=getattr(self, "sinks", None),
         )
 
         # Check if using LoRALinear (which accepts lora_int_id) or standard linear layers
@@ -994,9 +994,9 @@ class AttentionOp(nn.Module):
         block_size: int,
         k_scale: Optional[torch.Tensor] = None,
         v_scale: Optional[torch.Tensor] = None,
-        s_aux: Optional[torch.Tensor] = None,
         valid_batch: Optional[torch.Tensor] = None,
         seq_blk_off: Optional[torch.Tensor] = None,
+        s_aux: Optional[torch.Tensor] = None,
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Compute attention with static shapes and explicit cache management.
 
@@ -1013,6 +1013,10 @@ class AttentionOp(nn.Module):
             block_size: Block size for paged attention
             k_scale: Scale applied to key
             v_scale: Scale applied to value
+            valid_batch: [P], valid batch size per partitions
+            seq_blk_off: if not None,
+              - seq_position: [B, 1] - target block index to update cache
+              - seq_blk_off: [B, 1] - block_offset of the target block_index
             s_aux: Auxiliary states for attention sinks
 
         Returns:
@@ -1071,20 +1075,15 @@ class AttentionOp(nn.Module):
 
         if s_aux is not None:
             op_args["s_aux"] = s_aux
-        if valid_batch is not None:
-            op_args["dyn_batch"] = valid_batch
-            op_args['seq_idx2'] = seq_blk_off
-
+        
         # (yhboo) temp update for batch decode
         # (TODO) layout transform in compiler
-        # if self.phase == "decode" and batch_size > 1 and s_aux is not None:
-        if self.phase == "decode" and batch_size > 1:
-            # print('batch decode mask')
-            # print(attn_mask[2].shape)
-            # import pdb; pdb.set_trace()
-            # attn_mask = attn_mask[2]
+        if valid_batch is not None:
             attn_mask = attn_mask.view(batch_size, 1, 1, block_size//64, 1, 64)
+            op_args["dyn_batch"] = valid_batch
+            op_args['seq_idx2'] = seq_blk_off
             op_args['mask'] = attn_mask
+
 
         attn_op_name = self.get_attn_op_name()
         attn_op = getattr(torch.ops.rbln_custom_ops, attn_op_name, None)
@@ -1208,7 +1207,9 @@ class FlashAttentionOp(AttentionOp):
 
         if s_aux is not None:
             op_args["s_aux"] = s_aux
-        if self.phase == "decode" and batch_size > 1:
+        
+        # if self.phase == "decode" and batch_size > 1:
+        if valid_batch is not None:
             # attn_mask = attn_mask[2] # why?
             attn_mask = attn_mask.view(batch_size, self.rbln_config.max_seq_len)
             op_args['mask'] = attn_mask
@@ -1267,12 +1268,13 @@ class SlidingWindowAttentionOp(AttentionOp):
         block_size: int,
         k_scale: Optional[torch.Tensor] = None,
         v_scale: Optional[torch.Tensor] = None,
-        s_aux: Optional[torch.Tensor] = None,
         valid_batch: Optional[torch.Tensor] = None,
         seq_blk_off: Optional[torch.Tensor] = None,
+        s_aux: Optional[torch.Tensor] = None,
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         assert self.quantization is None, "Sliding window attention does not support quantization"
         assert k_scale is None and v_scale is None, "Sliding window attention does not support quantization"
+        assert valid_batch is None and seq_blk_off is None, "Sliding window attention does not support dynamic batch"
 
         # reshape for removing repeat_kv (batch=1 , num_head, 1, q_len=1, head_dim)
         key_state = key_state.unsqueeze(2)
@@ -1318,8 +1320,6 @@ class SlidingWindowAttentionOp(AttentionOp):
 
         if s_aux is not None:
             op_args["s_aux"] = s_aux
-
-        assert valid_batch is None, "dyn batch is not supported for sliding window attention"
 
         attn_op_name = self.get_attn_op_name()
         attn_op = getattr(torch.ops.rbln_custom_ops, attn_op_name, None)
