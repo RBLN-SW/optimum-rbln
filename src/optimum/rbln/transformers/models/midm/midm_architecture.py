@@ -31,8 +31,6 @@ from ..decoderonly.decoderonly_architecture import (
 if TYPE_CHECKING:
     from transformers import PreTrainedModel as MidmLMHeadModel
 
-    from ..decoderonly.configuration_decoderonly import RBLNDecoderOnlyModelConfig
-
 
 def apply_rotary_to_tensor(tensor, cos, sin, rot_dim):
     """Applies rotary position embedding to the specified dimension of the tensor."""
@@ -73,8 +71,10 @@ class MidmLMHeadModelWrapper(DecoderOnlyWrapper):
 
 
 class MidmModel(DecoderOnlyModel):
-    def __init__(self, model, layers, rbln_config, use_learned_pos_emb=None):
-        super().__init__(model, layers, rbln_config, use_learned_pos_emb=use_learned_pos_emb)
+    def __init__(self, model, layers, rbln_config, use_learned_pos_emb=None, use_rotary_emb=True):
+        super().__init__(
+            model, layers, rbln_config, use_learned_pos_emb=use_learned_pos_emb, use_rotary_emb=use_rotary_emb
+        )
         self.use_layernorm1p = getattr(model, "use_layernorm1p", False)
 
     def get_layernorm1p(self, module: nn.LayerNorm):
@@ -124,20 +124,15 @@ class MidmLayer(DecoderOnlyLayer):
 
 
 class MidmAttention(DecoderOnlyAttention):
-    def __init__(
-        self,
-        self_attn,
-        rbln_config: "RBLNDecoderOnlyModelConfig",
-        is_sliding=False,
-    ):
-        super().__init__(self_attn, rbln_config, is_sliding)
+    _Q_PROJ_ATTRS = None
+    _K_PROJ_ATTRS = None
+    _V_PROJ_ATTRS = None
+
+    def __post_init__(self, self_attn):
         self.c_attn = self_attn.c_attn
         self.o_proj = self_attn.c_proj
         self.split_size = self_attn.split_size
         self.num_key_value_heads = self_attn.num_heads
-        self.scale_attn_weights = getattr(self_attn, "scale_attn_weights", True)
-        self.scale_attn_by_inverse_layer_idx = getattr(self_attn, "scale_attn_by_inverse_layer_idx", False)
-        self.scale_qk_by_inverse_layer_idx = getattr(self_attn, "scale_qk_by_inverse_layer_idx", False)
 
     def projection(self, hidden_states, lora_int_id) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         if lora_int_id is not None:
@@ -146,12 +141,12 @@ class MidmAttention(DecoderOnlyAttention):
         query_states, key_states, value_states = self.c_attn(hidden_states).split(self.split_size, dim=2)
         return query_states, key_states, value_states
 
-    def get_attn_scale(self):
+    def get_attn_scale(self, self_attn):
         scale = 1.0
-        if self.scale_attn_weights:
+        if self_attn.scale_attn_weights:
             scale /= math.sqrt(self.head_dim)
 
-        if self.scale_attn_by_inverse_layer_idx and not self.scale_qk_by_inverse_layer_idx:
+        if self_attn.scale_attn_by_inverse_layer_idx:
             scale /= 1 + self.layer_idx
 
         return scale

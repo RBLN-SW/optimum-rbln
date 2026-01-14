@@ -118,6 +118,7 @@ class DecoderOnlyWrapper(nn.Module):
             new_layers,
             self.rbln_config,
             use_learned_pos_emb=self.__class__._use_learned_pos_emb,
+            use_rotary_emb=self.use_rotary_emb,
         )
 
         if self.is_causal_lm:
@@ -334,6 +335,7 @@ class DecoderOnlyModel(nn.Module):
         layers: List["DecoderOnlyLayer"],
         rbln_config: "RBLNDecoderOnlyModelConfig",
         use_learned_pos_emb=None,
+        use_rotary_emb=True,
     ):
         super().__init__()
         self.config = model.config
@@ -342,7 +344,8 @@ class DecoderOnlyModel(nn.Module):
         # Different HF model families use different attribute names; we register what we can
         # and allow subclasses to override getters when needed.
         self.embed_tokens = _get_attr_from_candidates(model, self._EMBEDDING_ATTRS)
-        self.embed_positions = _get_attr_from_candidates(model, self._POSITION_ATTRS)
+        if not use_rotary_emb:
+            self.embed_positions = _get_attr_from_candidates(model, self._POSITION_ATTRS)
         self.norm = _get_attr_from_candidates(model, self._LAYERNORM_ATTRS)
         self.pre_feedforward_layernorm = _get_attr_from_candidates(model, self._PRE_FF_LAYERNORM_ATTRS)
         self.post_feedforward_layernorm = _get_attr_from_candidates(model, self._POST_FF_LAYERNORM_ATTRS)
@@ -649,6 +652,11 @@ class DecoderOnlyAttention(nn.Module):
         is_sliding: Whether this is sliding window attention
     """
 
+    _Q_PROJ_ATTRS = ["q_proj"]
+    _K_PROJ_ATTRS = ["k_proj"]
+    _V_PROJ_ATTRS = ["v_proj"]
+    _O_PROJ_ATTRS = ["o_proj", "out_proj", "dense", "c_proj"]
+
     def __init__(
         self,
         self_attn,
@@ -662,7 +670,7 @@ class DecoderOnlyAttention(nn.Module):
         self.num_heads = getattr(self_attn, "num_heads", None) or self_attn.config.num_attention_heads
         self.head_dim = self_attn.head_dim
         self._phase = "prefill"
-        self.scale = torch.nn.Parameter(torch.tensor(self.get_attn_scale()))
+        self.scale = torch.nn.Parameter(torch.tensor(self.get_attn_scale(self_attn)))
 
         if hasattr(self_attn, "num_key_value_heads"):
             self.num_key_value_heads = self_attn.num_key_value_heads
@@ -676,17 +684,10 @@ class DecoderOnlyAttention(nn.Module):
         self.kvcache_partition_len = getattr(rbln_config, "kvcache_partition_len", None)
         self.kvcache_block_size = rbln_config.sliding_window if is_sliding else rbln_config.kvcache_block_size
         self.lora_config = rbln_config.lora_config
-
-        # Some model families (e.g. GPT-2) override projection() and do not expose q/k/v explicitly.
-        # If we're using the base projection() (or LoRA is enabled), require q/k/v/o at init-time.
-        uses_base_projection = self.__class__.projection is DecoderOnlyAttention.projection
-        require_projections = uses_base_projection or self.lora_config is not None
-
-        if require_projections:
-            self.q_proj = self_attn.q_proj
-            self.k_proj = self_attn.k_proj
-            self.v_proj = self_attn.v_proj
-            self.o_proj = _get_attr_from_candidates(self_attn, ["o_proj", "out_proj", "dense"])
+        self.q_proj = _get_attr_from_candidates(self_attn, self._Q_PROJ_ATTRS)
+        self.k_proj = _get_attr_from_candidates(self_attn, self._K_PROJ_ATTRS)
+        self.v_proj = _get_attr_from_candidates(self_attn, self._V_PROJ_ATTRS)
+        self.o_proj = _get_attr_from_candidates(self_attn, self._O_PROJ_ATTRS)
 
         setattr(self, self.get_attention_name(), self.create_attention_op())
         self.__post_init__(self_attn)
@@ -787,8 +788,8 @@ class DecoderOnlyAttention(nn.Module):
     def apply_rotary_pos_embed(self, query_states, key_states, cos, sin):
         return apply_rotary_pos_emb(query_states, key_states, cos, sin)
 
-    def get_attn_scale(self):
-        return 1 / math.sqrt(self.head_dim)
+    def get_attn_scale(self, self_attn):
+        return 1 / math.sqrt(self_attn.head_dim)
 
     def maybe_get_kvcache_scale(self) -> Tuple[Optional[torch.Tensor], Optional[torch.Tensor]]:
         if hasattr(self, "k_proj") and hasattr(self, "v_proj"):

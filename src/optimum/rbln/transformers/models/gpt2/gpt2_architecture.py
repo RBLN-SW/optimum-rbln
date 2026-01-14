@@ -27,8 +27,6 @@ from ..decoderonly.decoderonly_architecture import (
 if TYPE_CHECKING:
     from transformers import GPT2LMHeadModel, GPT2Model
 
-    from ..decoderonly.configuration_decoderonly import RBLNDecoderOnlyModelConfig
-
 
 class GPT2Wrapper(DecoderOnlyWrapper):
     def get_rbln_attn_class(self):
@@ -45,22 +43,15 @@ class GPT2Wrapper(DecoderOnlyWrapper):
 
 
 class GPT2Attention(DecoderOnlyAttention):
-    # These attributes are accessed during DecoderOnlyAttention.__init__() via get_attn_scale().
-    # Define safe defaults at class level so they exist before __post_init__ runs.
-    def __init__(
-        self,
-        self_attn,
-        rbln_config: "RBLNDecoderOnlyModelConfig",
-        is_sliding=False,
-    ):
-        super().__init__(self_attn, rbln_config, is_sliding)
+    _Q_PROJ_ATTRS = None
+    _K_PROJ_ATTRS = None
+    _V_PROJ_ATTRS = None
+
+    def __post_init__(self, self_attn):
         self.c_attn = self_attn.c_attn
         self.o_proj = self_attn.c_proj
         self.split_size = self_attn.split_size
         self.num_key_value_heads = self_attn.num_heads
-        self.scale_attn_weights = getattr(self_attn, "scale_attn_weights", True)
-        self.scale_attn_by_inverse_layer_idx = getattr(self_attn, "scale_attn_by_inverse_layer_idx", False)
-        self.scale_qk_by_inverse_layer_idx = getattr(self_attn, "scale_qk_by_inverse_layer_idx", False)
 
     def projection(self, hidden_states, lora_int_id) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         if lora_int_id is not None:
@@ -69,12 +60,12 @@ class GPT2Attention(DecoderOnlyAttention):
         query_states, key_states, value_states = self.c_attn(hidden_states).split(self.split_size, dim=2)
         return query_states, key_states, value_states
 
-    def get_attn_scale(self):
+    def get_attn_scale(self, self_attn):
         scale = 1.0
-        if self.scale_attn_weights:
+        if self_attn.scale_attn_weights:
             scale /= math.sqrt(self.head_dim)
 
-        if self.scale_attn_by_inverse_layer_idx:
+        if self_attn.scale_attn_by_inverse_layer_idx:
             scale /= 1 + self.layer_idx
 
         return scale
