@@ -543,6 +543,8 @@ class DecoderOnlyLayer(nn.Module):
 
     _PRE_ATTN_LAYERNORM = ["input_layernorm", "ln_1", "self_attn_layer_norm", "pre_feedforward_layernorm"]
     _POST_ATTN_LAYERNORM = ["post_attention_layernorm", "ln_2", "final_layer_norm", "post_feedforward_layernorm"]
+    _PRE_FF_LAYERNORM_ATTRS = None
+    _POST_FF_LAYERNORM_ATTRS = None
 
     def __init__(self, layer, self_attn: "DecoderOnlyAttention", lora_config: Optional[RBLNLoRAConfig] = None):
         super().__init__()
