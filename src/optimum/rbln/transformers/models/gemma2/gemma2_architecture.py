@@ -73,8 +73,8 @@ class Gemma2DecoderLayer(DecoderOnlyLayer):
 
 
 class Gemma2Attention(DecoderOnlyAttention):
-    def get_attn_scale(self):
-        return self.config.query_pre_attn_scalar**-0.5
+    def get_attn_scale(self, self_attn):
+        return self_attn.config.query_pre_attn_scalar**-0.5
 
 
 class Gemma2Model(DecoderOnlyModel):

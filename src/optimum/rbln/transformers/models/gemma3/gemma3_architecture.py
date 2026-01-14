@@ -166,5 +166,5 @@ class Gemma3Attention(DecoderOnlyAttention):
         self.q_norm = self_attn.q_norm
         self.k_norm = self_attn.k_norm
 
-    def get_attn_scale(self):
-        return self.config.query_pre_attn_scalar**-0.5
+    def get_attn_scale(self, self_attn):
+        return self_attn.config.query_pre_attn_scalar**-0.5
