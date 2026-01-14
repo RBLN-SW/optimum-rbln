@@ -56,13 +56,13 @@ class TestSDModelBatch(BaseTest.TestModel):
     }
     # Fix incorrect tiny-sd-pipe's vae config.json sample_size
     RBLN_CLASS_KWARGS = {
-        "rbln_batch_size": 2,
         "rbln_config": {
             "vae": {
                 "sample_size": (64, 64),
             },
+            "batch_size": 2,
+            "guidance_scale": 0.0,
         },
-        "rbln_guidance_scale": 0.0,
     }
 
 
@@ -106,9 +106,9 @@ class TestSDImg2ImgModel(BaseTest.TestModel):
             "unet": {
                 "batch_size": 2,
             },
+            "img_width": 64,
+            "img_height": 64,
         },
-        "rbln_img_width": 64,
-        "rbln_img_height": 64,
     }
 
 
@@ -123,9 +123,9 @@ class TestSDControlNetModel(BaseTest.TestModel):
         "image": torch.randn(1, 3, 64, 64, generator=torch.manual_seed(42)),
     }
     RBLN_CLASS_KWARGS = {
-        "rbln_img_width": 64,
-        "rbln_img_height": 64,
         "rbln_config": {
+            "img_width": 64,
+            "img_height": 64,
             "controlnet": {
                 "batch_size": 2,
             },
@@ -154,9 +154,9 @@ class TestSDXLControlNetModel(BaseTest.TestModel):
         "controlnet_conditioning_scale": 0.5,
     }
     RBLN_CLASS_KWARGS = {
-        "rbln_img_width": 64,
-        "rbln_img_height": 64,
         "rbln_config": {
+            "img_width": 64,
+            "img_height": 64,
             "unet": {
                 "batch_size": 2,
             },
@@ -225,9 +225,9 @@ class TestSDMultiControlNetModel(BaseTest.TestModel):
         "negative_prompt": "monochrome, lowres, bad anatomy, worst quality, low quality",
     }
     RBLN_CLASS_KWARGS = {
-        "rbln_img_width": 64,
-        "rbln_img_height": 64,
         "rbln_config": {
+            "img_width": 64,
+            "img_height": 64,
             "controlnet": {
                 "batch_size": 2,
             },
@@ -256,9 +256,9 @@ class TestKandinskyV22Model(BaseTest.TestModel):
         "num_inference_steps": 3,
     }
     RBLN_CLASS_KWARGS = {
-        "rbln_img_width": 64,
-        "rbln_img_height": 64,
         "rbln_config": {
+            "img_width": 64,
+            "img_height": 64,
             "prior_pipe": {"prior": {"batch_size": 2}},
             "decoder_pipe": {"unet": {"batch_size": 2}},
         },
@@ -306,9 +306,9 @@ class TestKandinskyV22Img2ImgModel(BaseTest.TestModel):
         "image": image,
     }
     RBLN_CLASS_KWARGS = {
-        "rbln_img_width": 64,
-        "rbln_img_height": 64,
         "rbln_config": {
+            "img_width": 64,
+            "img_height": 64,
             "prior_pipe": {"prior": {"batch_size": 2}},
             "decoder_pipe": {"unet": {"batch_size": 2}},
         },
