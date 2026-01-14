@@ -75,7 +75,7 @@ class DecoderOnlyWrapper(nn.Module):
                 f" or equal to max_seq_len({rbln_config.max_seq_len})!"
             )
 
-        self.model = self.convert_to_rbln_class(model, rbln_config.max_seq_len)
+        self.model = self.convert_to_rbln_class(model, rbln_config.max_seq_len, use_rotary_emb)
         self.num_hidden_layers = getattr(self.config, "num_hidden_layers", None) or self.config.n_layer
         self._phase = "prefill"
 
@@ -103,7 +103,7 @@ class DecoderOnlyWrapper(nn.Module):
     def get_rbln_causal_lm_class(self):
         return DecoderOnlyForCausalLM
 
-    def convert_to_rbln_class(self, model: PreTrainedModel, max_seq_len: int):
+    def convert_to_rbln_class(self, model: PreTrainedModel, max_seq_len: int, use_rotary_emb: bool):
         new_layers = []
         for layer_idx, layer in enumerate(self.get_decoder_layers(model)):
             is_sliding = layer_idx in self.rbln_config.sliding_window_layers
@@ -118,7 +118,7 @@ class DecoderOnlyWrapper(nn.Module):
             new_layers,
             self.rbln_config,
             use_learned_pos_emb=self.__class__._use_learned_pos_emb,
-            use_rotary_emb=self.use_rotary_emb,
+            use_rotary_emb=use_rotary_emb,
         )
 
         if self.is_causal_lm:
@@ -344,7 +344,8 @@ class DecoderOnlyModel(nn.Module):
         # Different HF model families use different attribute names; we register what we can
         # and allow subclasses to override getters when needed.
         self.embed_tokens = _get_attr_from_candidates(model, self._EMBEDDING_ATTRS)
-        if not use_rotary_emb:
+        # hasattr(model, "rotary_emb") is workaround for Qwen2VL
+        if not (use_rotary_emb or hasattr(model, "rotary_emb")):
             self.embed_positions = _get_attr_from_candidates(model, self._POSITION_ATTRS)
         self.norm = _get_attr_from_candidates(model, self._LAYERNORM_ATTRS)
         self.pre_feedforward_layernorm = _get_attr_from_candidates(model, self._PRE_FF_LAYERNORM_ATTRS)
