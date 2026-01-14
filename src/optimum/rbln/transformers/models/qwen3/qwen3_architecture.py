@@ -23,5 +23,9 @@ class Qwen3Wrapper(DecoderOnlyWrapper):
 
 class Qwen3Attention(DecoderOnlyAttention):
     def __post_init__(self, self_attn):
+        self.q_proj = self_attn.q_proj
+        self.k_proj = self_attn.k_proj
+        self.v_proj = self_attn.v_proj
+        self.o_proj = self_attn.o_proj
         self.q_norm = self_attn.q_norm
         self.k_norm = self_attn.k_norm
