@@ -280,15 +280,15 @@ class TestKandinskyV22Model(BaseTest.TestModel):
             },
             "batch_size": 1,
         }
-        rbln_class_kwargs_copy = self.RBLN_CLASS_KWARGS.copy()
-        rbln_class_kwargs_copy["rbln_config"] = rbln_config
-        with self.subTest():
-            _ = self.RBLN_CLASS.from_pretrained(model_id=self.HF_MODEL_ID, **rbln_class_kwargs_copy)
-        with self.subTest():
-            self.assertEqual(_.prior_text_encoder.rbln_config.batch_size, 2)
-            self.assertEqual(_.prior_prior.rbln_config.batch_size, 4)
-            self.assertEqual(_.unet.rbln_config.batch_size, 2)
+        import copy
+        rbln_class_kwargs_copy = copy.deepcopy(self.RBLN_CLASS_KWARGS)
+        rbln_class_kwargs_copy["rbln_config"].update(rbln_config)
+        model = self.RBLN_CLASS.from_pretrained(model_id=self.HF_MODEL_ID, **rbln_class_kwargs_copy)
 
+        with self.subTest():
+            self.assertEqual(model.prior_text_encoder.rbln_config.batch_size, 2)
+            self.assertEqual(model.prior_prior.rbln_config.batch_size, 4)
+            self.assertEqual(model.unet.rbln_config.batch_size, 2)
 
 class TestKandinskyV22Img2ImgModel(BaseTest.TestModel):
     RBLN_AUTO_CLASS = RBLNAutoPipelineForImage2Image
@@ -341,7 +341,7 @@ class TestSVDImg2VidModel(BaseTest.TestModel):
     }
 
     def test_rbln_prefix_config(self):
-        RBLN_CLASS_KWARGS = {
+        rbln_config = {
             "rbln_width": 32,
             "rbln_height": 32,
             "rbln_num_frames": 2,
@@ -349,7 +349,7 @@ class TestSVDImg2VidModel(BaseTest.TestModel):
         }
         model = self.RBLN_CLASS.from_pretrained(
             self.HF_MODEL_ID,
-            **RBLN_CLASS_KWARGS,
+            **rbln_config,
         )
         with self.subTest():
             assert model is not None

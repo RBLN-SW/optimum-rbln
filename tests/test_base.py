@@ -147,11 +147,13 @@ class BaseTest:
                 if os.path.exists(cls.get_rbln_local_dir()):
                     shutil.rmtree(cls.get_rbln_local_dir())
 
-                cls.RBLN_CLASS_KWARGS.setdefault("rbln_config", {}).update({"device": cls.DEVICE})
+                import copy
+                rbln_class_kwargs = copy.deepcopy(cls.RBLN_CLASS_KWARGS)
+                rbln_class_kwargs.setdefault("rbln_config", {}).update({"device": cls.DEVICE})
                 cls.model = cls.RBLN_CLASS.from_pretrained(
                     cls.HF_MODEL_ID,
                     model_save_dir=cls.get_rbln_local_dir(),
-                    **cls.RBLN_CLASS_KWARGS,
+                    **rbln_class_kwargs,
                     **cls.HF_CONFIG_KWARGS,
                 )
             else:
