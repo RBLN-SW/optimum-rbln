@@ -914,9 +914,17 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
         # Check if both rbln_config and rbln_ prefixed arguments are provided
         if rbln_config is not None and len(rbln_kwargs) > 0:
             raise ValueError(
-                f"Cannot use both `rbln_config` and `rbln_` prefixed arguments simultaneously. "
-                f"Found rbln_ prefixed arguments: {list(rbln_kwargs.keys())}. "
-                f"Please specify configuration either via `rbln_config` or `rbln_` prefixed arguments, not both."
+                f"Cannot use both `rbln_config` and `rbln_` prefixed arguments simultaneously.\n"
+                f"Found rbln_ prefixed arguments: {list(rbln_kwargs.keys())}.\n\n"
+                f"Please choose one of the following approaches:\n"
+                f"  1. Using rbln_ prefixed arguments:\n"
+                f"     model = RBLNModel.from_pretrained('model_id', export=True, rbln_batch_size=4)\n\n"
+                f"  2. Using rbln_config dictionary:\n"
+                f"     model = RBLNModel.from_pretrained('model_id', export=True, rbln_config={{'batch_size': 4}})\n\n"
+                f"  3. Using RBLNModelConfig instance:\n"
+                f"     config = RBLNModelConfig(batch_size=4)\n"
+                f"     model = RBLNModel.from_pretrained('model_id', export=True, rbln_config=config)\n\n"
+                f"For more details, refer to the `RBLNModelConfig` class or https://docs.rbln.ai/ docs."
             )
 
         if isinstance(rbln_config, dict):
