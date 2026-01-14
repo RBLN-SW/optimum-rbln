@@ -759,8 +759,6 @@ class DecoderOnlyAttention(nn.Module):
 
         # Initialize LoRA weights if configured, which will replace linear layers
         if self.lora_config:
-            if not all(hasattr(self, n) for n in ["q_proj", "k_proj", "v_proj", "o_proj"]):
-                raise NotImplementedError("LoRA is only supported for attention modules with q/k/v/o projections.")
             self._init_lora_weights()
 
     def projection(
