@@ -17,6 +17,7 @@ from optimum.rbln import (
     RBLNStableDiffusionXLControlNetPipeline,
     RBLNStableDiffusionXLPipeline,
     RBLNStableVideoDiffusionPipeline,
+    RBLNStableVideoDiffusionPipelineConfig,
 )
 
 from .test_base import BaseHubTest, BaseTest
@@ -338,6 +339,37 @@ class TestSVDImg2VidModel(BaseTest.TestModel):
             "decode_chunk_size": 2,
         },
     }
+
+    def test_rbln_prefix_config(self):
+        RBLN_CLASS_KWARGS = {
+            "rbln_width": 32,
+            "rbln_height": 32,
+            "rbln_num_frames": 2,
+            "rbln_decode_chunk_size": 2,
+        }
+
+    def test_rbln_config_object(self):
+        config = RBLNStableVideoDiffusionPipelineConfig(
+            width=32,
+            height=32,
+            num_frames=2,
+            decode_chunk_size=2,
+        )
+        model = self.RBLN_CLASS.from_pretrained(
+            self.HF_MODEL_ID,
+            rbln_config=config,
+        )
+        with self.subTest():
+            assert model is not None
+
+        with self.subTest():
+            # optimum-rbln/src/optimum/rbln/diffusers/models/autoencoders/autoencoder_kl_temporal_decoder.py
+            # chunk_frame() adjusts decode_chunk_size to the closest divisor of num_frames (excluding num_frames itself).
+            # For num_frames=2, divisors are [1], so decode_chunk_size becomes 1.
+            self.assertEqual(model.vae.rbln_config.decode_chunk_size, 1)
+            self.assertEqual(model.vae.rbln_config.sample_size, (32, 32))
+            self.assertEqual(model.unet.rbln_config.num_frames, 2)
+            self.assertEqual(model.unet.rbln_config.sample_size, (16, 16))
 
 
 if __name__ == "__main__":
