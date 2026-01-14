@@ -403,7 +403,8 @@ class DecoderOnlyModel(nn.Module):
 
         # generate attn mask with original seq_length
         max_cache_len = self.rbln_config.max_seq_len
-        cache_seq_len = torch.clamp(position_ids.to(torch.int32), max=max_cache_len)[:, :1]  # past seen tokens
+        # cache_seq_len = torch.clamp(position_ids.to(torch.int32), max=max_cache_len)[:, :1]  # past seen tokens
+        cache_seq_len = position_ids[:, :1].to(torch.int32)  # past seen tokens
         
         # Causal mask for sliding window attention
         attn_mask = torch.arange(max_cache_len)[None, :] - cache_seq_len
@@ -412,12 +413,26 @@ class DecoderOnlyModel(nn.Module):
         #mapping seq_idx to (block_idx, block_offset)
         partition_len = self.partition_len if self.attn_impl in ["flash_attn"] else max_cache_len
         num_partition = max_cache_len // partition_len
-        batch_size = block_table.shape[0]
+        batch_size = position_ids.shape[0]
 
-        block_table = block_table.view(batch_size, num_partition)
-        blk_idx = cache_seq_len // partition_len
-        batch_idx = torch.arange(batch_size).to(torch.int32)
-        blk_idx = block_table[batch_idx, blk_idx[:,0]].view(batch_size, 1)
+        
+        # # impl-1 : use adv index (batch axis unrolled on tvm graph)
+        # blk_idx = cache_seq_len // partition_len
+        # block_table = block_table.view(batch_size, num_partition)
+        # batch_idx = torch.arange(batch_size).to(torch.int32)
+        # blk_idx = block_table[batch_idx, blk_idx[:,0]].view(batch_size, 1)
+
+        # impl-2 : use embedding (which is faster?)
+        blk_idx = cache_seq_len[:,0] // partition_len # [B]
+        block_table_flatten = block_table.view(-1,1) # [B*P, 1] -> n_token=B*P, dim=1
+        batch_offset = torch.arange(batch_size) * num_partition # [0, P, 2P, 3P, .., (B-1)*P]
+        blk_idx = torch.nn.functional.embedding(blk_idx+batch_offset, block_table_flatten)
+
+        # # manual block idx setting
+        # blk_idx = cache_seq_len // partition_len
+        # blk_offset = torch.arange(batch_size).view(-1,1)
+        # blk_idx = blk_idx * 0 + blk_offset*0+ 3
+
 
         # valid_block_list = []
         # for i in range(batch_size):
