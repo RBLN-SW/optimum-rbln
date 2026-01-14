@@ -45,6 +45,10 @@ class PhiWrapper(DecoderOnlyWrapper):
 
 class PhiAttention(DecoderOnlyAttention):
     def __post_init__(self, self_attn):
+        self.q_proj = self_attn.q_proj
+        self.k_proj = self_attn.k_proj
+        self.v_proj = self_attn.v_proj
+        self.o_proj = self_attn.dense
         self.qk_layernorm = self_attn.qk_layernorm
         self.rotary_ndims = self_attn.rotary_ndims
         self.q_layernorm = getattr(self_attn, "q_layernorm", None)
