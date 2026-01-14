@@ -321,7 +321,7 @@ class TestRBLNXLMRobertaForSequenceClassification(BaseTest.TestModel):
 
     # FIXME:: Update to internal once enabled tiny model
     HF_MODEL_ID = "BAAI/bge-reranker-v2-m3"
-    RBLN_CLASS_KWARGS = {"rbln_config": {"rbln_max_seq_len": 128}}
+    RBLN_CLASS_KWARGS = {"rbln_config": {"max_seq_len": 128}}
     GENERATION_KWARGS = {
         "input_ids": torch.randint(low=0, high=50, size=(1, 128), generator=torch.manual_seed(42), dtype=torch.int64),
         "attention_mask": torch.randint(
@@ -341,7 +341,7 @@ class TestXLMRobertaModel(BaseTest.TestModel):
 
     # FIXME:: Update to internal once enabled tiny model
     HF_MODEL_ID = "BAAI/bge-m3"
-    RBLN_CLASS_KWARGS = {"rbln_config": {"rbln_max_seq_len": 128}}
+    RBLN_CLASS_KWARGS = {"rbln_config": {"max_seq_len": 128}}
     GENERATION_KWARGS = {
         "input_ids": torch.randint(low=0, high=50, size=(1, 128), generator=torch.manual_seed(42), dtype=torch.int64),
         "attention_mask": torch.randint(
