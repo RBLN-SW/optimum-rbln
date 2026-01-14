@@ -348,8 +348,6 @@ class DecoderOnlyModel(nn.Module):
         if not (use_rotary_emb or hasattr(model, "rotary_emb")):
             self.embed_positions = _get_attr_from_candidates(model, self._POSITION_ATTRS)
         self.norm = _get_attr_from_candidates(model, self._LAYERNORM_ATTRS)
-        self.pre_feedforward_layernorm = _get_attr_from_candidates(model, self._PRE_FF_LAYERNORM_ATTRS)
-        self.post_feedforward_layernorm = _get_attr_from_candidates(model, self._POST_FF_LAYERNORM_ATTRS)
         self.layers = nn.ModuleList(layers)
         self.rbln_config = rbln_config
         self._phase = "prefill"
@@ -551,6 +549,8 @@ class DecoderOnlyLayer(nn.Module):
 
         self.pre_attention_layernorm = _get_attr_from_candidates(layer, self._PRE_ATTN_LAYERNORM)
         self.post_attention_layernorm = _get_attr_from_candidates(layer, self._POST_ATTN_LAYERNORM)
+        self.pre_feedforward_layernorm = _get_attr_from_candidates(layer, self._PRE_FF_LAYERNORM_ATTRS)
+        self.post_feedforward_layernorm = _get_attr_from_candidates(layer, self._POST_FF_LAYERNORM_ATTRS)
         self.mlp = layer.mlp
         self.self_attn = self_attn
         self._phase = "prefill"
@@ -585,6 +585,12 @@ class DecoderOnlyLayer(nn.Module):
 
     def get_post_attention_layernorm(self) -> nn.LayerNorm:
         return self.post_attention_layernorm
+
+    def get_pre_feedforward_layernorm(self) -> nn.LayerNorm:
+        return self.pre_feedforward_layernorm
+
+    def get_post_feedforward_layernorm(self) -> nn.LayerNorm:
+        return self.post_feedforward_layernorm
 
     def get_mlp(self) -> nn.Module:
         return self.mlp
