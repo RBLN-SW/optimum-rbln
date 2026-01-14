@@ -209,8 +209,11 @@ class TestWhisperModel(BaseTest.TestModel):
         "decoder_layers": 4,
     }
     RBLN_CLASS_KWARGS = {
-        "rbln_token_timestamps": False,
-        "rbln_batch_size": 2,
+        "rbln_config":
+            {
+                "token_timestamps": False,
+                "batch_size": 2,
+             }
     }
 
     def test_generate(self):
@@ -292,8 +295,11 @@ class TestWhisperModel_TokenTimestamps(BaseTest.TestModel):
     }
 
     RBLN_CLASS_KWARGS = {
-        "rbln_token_timestamps": True,
-        "rbln_batch_size": 2,
+        "rbln_config":
+            {
+                "token_timestamps": True,
+                "batch_size": 2,
+            }
     }
 
     def test_generate(self):
@@ -317,7 +323,7 @@ class TestRBLNXLMRobertaForSequenceClassification(BaseTest.TestModel):
 
     # FIXME:: Update to internal once enabled tiny model
     HF_MODEL_ID = "BAAI/bge-reranker-v2-m3"
-    RBLN_CLASS_KWARGS = {"rbln_max_seq_len": 128}
+    RBLN_CLASS_KWARGS = {"rbln_config": {"rbln_max_seq_len": 128}}
     GENERATION_KWARGS = {
         "input_ids": torch.randint(low=0, high=50, size=(1, 128), generator=torch.manual_seed(42), dtype=torch.int64),
         "attention_mask": torch.randint(
@@ -337,7 +343,7 @@ class TestXLMRobertaModel(BaseTest.TestModel):
 
     # FIXME:: Update to internal once enabled tiny model
     HF_MODEL_ID = "BAAI/bge-m3"
-    RBLN_CLASS_KWARGS = {"rbln_max_seq_len": 128}
+    RBLN_CLASS_KWARGS = {"rbln_config": {"rbln_max_seq_len": 128}}
     GENERATION_KWARGS = {
         "input_ids": torch.randint(low=0, high=50, size=(1, 128), generator=torch.manual_seed(42), dtype=torch.int64),
         "attention_mask": torch.randint(
@@ -353,8 +359,10 @@ class TestXLMRobertaModel(BaseTest.TestModel):
 
 class TestXLMRobertaModelWithTokenTypeIds(TestXLMRobertaModel):
     RBLN_CLASS_KWARGS = {
-        "rbln_max_seq_len": 128,
-        "rbln_model_input_names": ["input_ids", "attention_mask", "token_type_ids"],
+        "rbln_config": {
+            "max_seq_len": 128,
+            "model_input_names": ["input_ids", "attention_mask", "token_type_ids"],
+        }
     }
     GENERATION_KWARGS = {
         "input_ids": torch.randint(low=0, high=50, size=(1, 128), generator=torch.manual_seed(42), dtype=torch.int64),
