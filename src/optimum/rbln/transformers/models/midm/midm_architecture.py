@@ -124,10 +124,6 @@ class MidmLayer(DecoderOnlyLayer):
 
 
 class MidmAttention(DecoderOnlyAttention):
-    _Q_PROJ_ATTRS = None
-    _K_PROJ_ATTRS = None
-    _V_PROJ_ATTRS = None
-
     def __post_init__(self, self_attn):
         self.c_attn = self_attn.c_attn
         self.o_proj = self_attn.c_proj

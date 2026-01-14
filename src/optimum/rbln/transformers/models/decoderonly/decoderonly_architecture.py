@@ -655,10 +655,7 @@ class DecoderOnlyAttention(nn.Module):
         is_sliding: Whether this is sliding window attention
     """
 
-    _Q_PROJ_ATTRS = ["q_proj"]
-    _K_PROJ_ATTRS = ["k_proj"]
-    _V_PROJ_ATTRS = ["v_proj"]
-    _O_PROJ_ATTRS = ["o_proj", "out_proj", "dense", "c_proj"]
+    _O_PROJ_ATTRS = ["o_proj", "out_proj", "dense"]
 
     def __init__(
         self,
@@ -687,10 +684,9 @@ class DecoderOnlyAttention(nn.Module):
         self.kvcache_partition_len = getattr(rbln_config, "kvcache_partition_len", None)
         self.kvcache_block_size = rbln_config.sliding_window if is_sliding else rbln_config.kvcache_block_size
         self.lora_config = rbln_config.lora_config
-        self.q_proj = _get_attr_from_candidates(self_attn, self._Q_PROJ_ATTRS)
-        self.k_proj = _get_attr_from_candidates(self_attn, self._K_PROJ_ATTRS)
-        self.v_proj = _get_attr_from_candidates(self_attn, self._V_PROJ_ATTRS)
-        self.o_proj = _get_attr_from_candidates(self_attn, self._O_PROJ_ATTRS)
+
+        if hasattr(self_attn, "sinks"):
+            self.sinks = self_attn.sinks.data[:, None]
 
         setattr(self, self.get_attention_name(), self.create_attention_op())
         self.__post_init__(self_attn)
@@ -756,6 +752,11 @@ class DecoderOnlyAttention(nn.Module):
             raise NotImplementedError(f"Unknown attention implementation: {self.attn_impl}")
 
     def __post_init__(self, self_attn=None):
+        self.q_proj = self_attn.q_proj
+        self.k_proj = self_attn.k_proj
+        self.v_proj = self_attn.v_proj
+        self.o_proj = _get_attr_from_candidates(self_attn, self._O_PROJ_ATTRS)
+
         # Initialize LoRA weights if configured, which will replace linear layers
         if self.lora_config:
             if not all(hasattr(self, n) for n in ["q_proj", "k_proj", "v_proj", "o_proj"]):

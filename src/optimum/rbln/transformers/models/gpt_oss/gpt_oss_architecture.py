@@ -28,18 +28,8 @@ from ..decoderonly.decoderonly_architecture import (
 
 
 class RBLNGptOssWrapper(DecoderOnlyWrapper):
-    def get_rbln_attn_class(self):
-        return RBLNGptOssAttention
-
     def get_rbln_layer_class(self):
         return RBLNGptOssLayer
-
-
-class RBLNGptOssAttention(DecoderOnlyAttention):
-    def __post_init__(self, self_attn):
-        super().__post_init__(self_attn)
-        if hasattr(self_attn, "sinks"):
-            self.sinks = self_attn.sinks.data[:, None]
 
 
 class RBLNGptOssLayer(DecoderOnlyLayer):
