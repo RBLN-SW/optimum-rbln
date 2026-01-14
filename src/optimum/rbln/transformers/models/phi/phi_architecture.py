@@ -30,9 +30,6 @@ if TYPE_CHECKING:
 
 
 class PhiWrapper(DecoderOnlyWrapper):
-    def get_rbln_model_class(self):
-        return PhiModel
-
     def get_rbln_attn_class(self):
         return PhiAttention
 
