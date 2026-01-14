@@ -30,8 +30,13 @@ class Qwen3MoeWrapper(DecoderOnlyWrapper):
 
 
 class Qwen3MoeAttention(DecoderOnlyAttention):
-    _Q_NORM_ATTRS = ["q_norm"]
-    _K_NORM_ATTRS = ["k_norm"]
+    def __post_init__(self, self_attn):
+        self.q_proj = self_attn.q_proj
+        self.k_proj = self_attn.k_proj
+        self.v_proj = self_attn.v_proj
+        self.o_proj = self_attn.o_proj
+        self.q_norm = self_attn.q_norm
+        self.k_norm = self_attn.k_norm
 
 
 class Qwen3MoeLayer(DecoderOnlyLayer):
