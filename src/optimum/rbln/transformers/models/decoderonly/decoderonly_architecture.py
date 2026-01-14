@@ -403,12 +403,6 @@ class DecoderOnlyModel(nn.Module):
     def get_last_layernorm(self) -> nn.LayerNorm:
         return self.norm
 
-    def get_pre_feedforward_layernorm(self) -> nn.LayerNorm:
-        return self.pre_feedforward_layernorm
-
-    def get_post_feedforward_layernorm(self) -> nn.LayerNorm:
-        return self.post_feedforward_layernorm
-
     def get_embedding(self) -> nn.Embedding:
         return self.embed_tokens
 
