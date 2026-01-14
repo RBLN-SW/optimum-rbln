@@ -648,6 +648,7 @@ class DecoderOnlyAttention(nn.Module):
         rbln_config: RBLN model configuration containing attention parameters
         is_sliding: Whether this is sliding window attention
     """
+
     def __init__(
         self,
         self_attn,
