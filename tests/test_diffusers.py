@@ -347,6 +347,12 @@ class TestSVDImg2VidModel(BaseTest.TestModel):
             "rbln_num_frames": 2,
             "rbln_decode_chunk_size": 2,
         }
+        model = self.RBLN_CLASS.from_pretrained(
+            self.HF_MODEL_ID,
+            **RBLN_CLASS_KWARGS,
+        )
+        with self.subTest():
+            assert model is not None
 
     def test_rbln_config_object(self):
         config = RBLNStableVideoDiffusionPipelineConfig(
