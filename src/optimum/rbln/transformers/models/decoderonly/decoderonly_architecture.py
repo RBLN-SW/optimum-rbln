@@ -1077,9 +1077,8 @@ class AttentionOp(nn.Module):
             op_args["s_aux"] = s_aux
         
         # (yhboo) temp update for batch decode
-        # (TODO) layout transform in compiler
         if valid_batch is not None:
-            attn_mask = attn_mask.view(batch_size, 1, 1, block_size//64, 1, 64)
+            attn_mask = attn_mask.view(batch_size, self.rbln_config.max_seq_len)
             op_args["dyn_batch"] = valid_batch
             op_args['seq_idx2'] = seq_blk_off
             op_args['mask'] = attn_mask
