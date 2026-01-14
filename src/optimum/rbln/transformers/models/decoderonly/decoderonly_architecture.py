@@ -1326,14 +1326,18 @@ def apply_rotary_pos_emb_partial(query_states, key_states, cos, sin, ndim) -> Tu
 
 def _get_attr_from_candidates(
     src: object,
-    candidates: List[str],
+    candidates: Optional[List[str]] = None,
 ):
     """
-    Return src.<first existing attr in candidates>, or raise AttributeError if none exist.
+    Get an attribute from a list of candidate names.
+
+    - If `candidates` is None, this attribute is treated as optional and returns None.
+    - Otherwise, returns `getattr(src, name)` for the first `name` in `candidates` that exists on `src`.
+    - Raises AttributeError if `candidates` is provided but none of the names exist on `src`.
     """
     if candidates is None:
         return None
-
     for name in candidates:
         if hasattr(src, name):
             return getattr(src, name)
+    raise AttributeError(f"None of the attributes {candidates} exist in {src}")
