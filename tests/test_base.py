@@ -147,7 +147,7 @@ class BaseTest:
                 if os.path.exists(cls.get_rbln_local_dir()):
                     shutil.rmtree(cls.get_rbln_local_dir())
 
-                cls.RBLN_CLASS_KWARGS.update({"rbln_config": {"device": cls.DEVICE}})
+                cls.RBLN_CLASS_KWARGS.setdefault("rbln_config", {}).update({"device": cls.DEVICE})
                 cls.model = cls.RBLN_CLASS.from_pretrained(
                     cls.HF_MODEL_ID,
                     model_save_dir=cls.get_rbln_local_dir(),
