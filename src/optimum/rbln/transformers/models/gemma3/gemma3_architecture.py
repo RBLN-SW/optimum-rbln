@@ -16,7 +16,6 @@ import copy
 from typing import Optional, Tuple, Union
 
 import torch
-from transformers.models.gemma3.modeling_gemma3 import Gemma3RMSNorm
 
 from ..decoderonly.decoderonly_architecture import (
     DecoderOnlyAttention,
@@ -122,17 +121,8 @@ class Gemma3TextModel(DecoderOnlyModel):
 
 
 class Gemma3DecoderLayer(DecoderOnlyLayer):
-    def __init__(self, layer, self_attn: DecoderOnlyAttention, lora_config=None):
-        super().__init__(layer, self_attn, lora_config)
-        # Gemma3 has extra FFN layer norms that are not part of the base DecoderOnlyLayer.
-        self.pre_feedforward_layernorm = layer.pre_feedforward_layernorm
-        self.post_feedforward_layernorm = layer.post_feedforward_layernorm
-
-    def get_pre_feedforward_layernorm(self) -> Gemma3RMSNorm:
-        return self.pre_feedforward_layernorm
-
-    def get_post_feedforward_layernorm(self) -> Gemma3RMSNorm:
-        return self.post_feedforward_layernorm
+    _PRE_FF_LAYERNORM_ATTRS = ["pre_feedforward_layernorm"]
+    _POST_FF_LAYERNORM_ATTRS = ["post_feedforward_layernorm"]
 
     def forward(
         self,

@@ -15,7 +15,6 @@
 from typing import Optional, Tuple, Union
 
 import torch
-from transformers.models.gemma2.modeling_gemma2 import Gemma2RMSNorm
 
 from ...models.decoderonly.decoderonly_architecture import DecoderOnlyAttention, DecoderOnlyLayer, DecoderOnlyModel
 from ..decoderonly.decoderonly_architecture import DecoderOnlyWrapper
@@ -33,17 +32,8 @@ class Gemma2Wrapper(DecoderOnlyWrapper):
 
 
 class Gemma2DecoderLayer(DecoderOnlyLayer):
-    def __init__(self, layer, self_attn: DecoderOnlyAttention, lora_config=None):
-        super().__init__(layer, self_attn, lora_config)
-        # Gemma2 has extra FFN layer norms that are not part of the base DecoderOnlyLayer.
-        self.pre_feedforward_layernorm = layer.pre_feedforward_layernorm
-        self.post_feedforward_layernorm = layer.post_feedforward_layernorm
-
-    def get_pre_feedforward_layernorm(self) -> Gemma2RMSNorm:
-        return self.pre_feedforward_layernorm
-
-    def get_post_feedforward_layernorm(self) -> Gemma2RMSNorm:
-        return self.post_feedforward_layernorm
+    _PRE_FF_LAYERNORM_ATTRS = ["pre_feedforward_layernorm"]
+    _POST_FF_LAYERNORM_ATTRS = ["post_feedforward_layernorm"]
 
     def forward(
         self,

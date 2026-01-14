@@ -27,6 +27,8 @@ from ..decoderonly.decoderonly_architecture import (
 if TYPE_CHECKING:
     from transformers import GPT2LMHeadModel, GPT2Model
 
+    from ..decoderonly.configuration_decoderonly import RBLNDecoderOnlyModelConfig
+
 
 class GPT2Wrapper(DecoderOnlyWrapper):
     def get_rbln_attn_class(self):
@@ -45,15 +47,20 @@ class GPT2Wrapper(DecoderOnlyWrapper):
 class GPT2Attention(DecoderOnlyAttention):
     # These attributes are accessed during DecoderOnlyAttention.__init__() via get_attn_scale().
     # Define safe defaults at class level so they exist before __post_init__ runs.
-    scale_attn_weights = True
-    scale_attn_by_inverse_layer_idx = False
-
-    def __post_init__(self, self_attn):
+    def __init__(
+        self,
+        self_attn,
+        rbln_config: "RBLNDecoderOnlyModelConfig",
+        is_sliding=False,
+    ):
+        super().__init__(self_attn, rbln_config, is_sliding)
         self.c_attn = self_attn.c_attn
         self.o_proj = self_attn.c_proj
         self.split_size = self_attn.split_size
+        self.num_key_value_heads = self_attn.num_heads
         self.scale_attn_weights = getattr(self_attn, "scale_attn_weights", True)
         self.scale_attn_by_inverse_layer_idx = getattr(self_attn, "scale_attn_by_inverse_layer_idx", False)
+        self.scale_qk_by_inverse_layer_idx = getattr(self_attn, "scale_qk_by_inverse_layer_idx", False)
 
     def projection(self, hidden_states, lora_int_id) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         if lora_int_id is not None:

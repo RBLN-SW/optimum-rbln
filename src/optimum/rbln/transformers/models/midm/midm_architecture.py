@@ -31,6 +31,8 @@ from ..decoderonly.decoderonly_architecture import (
 if TYPE_CHECKING:
     from transformers import PreTrainedModel as MidmLMHeadModel
 
+    from ..decoderonly.configuration_decoderonly import RBLNDecoderOnlyModelConfig
+
 
 def apply_rotary_to_tensor(tensor, cos, sin, rot_dim):
     """Applies rotary position embedding to the specified dimension of the tensor."""
@@ -112,8 +114,8 @@ class MidmLayer(DecoderOnlyLayer):
 
     def get_pre_attention_layernorm(self) -> nn.LayerNorm:
         if self.use_layernorm1p:
-            return self.get_layernorm1p(self.input_layernorm)
-        return self.input_layernorm
+            return self.get_layernorm1p(self.pre_attention_layernorm)
+        return self.pre_attention_layernorm
 
     def get_post_attention_layernorm(self) -> nn.LayerNorm:
         if self.use_layernorm1p:
@@ -122,13 +124,13 @@ class MidmLayer(DecoderOnlyLayer):
 
 
 class MidmAttention(DecoderOnlyAttention):
-    # These attributes are accessed during DecoderOnlyAttention.__init__() via get_attn_scale().
-    # Define safe defaults at class level so they exist before __post_init__ runs.
-    scale_attn_weights = True
-    scale_attn_by_inverse_layer_idx = False
-    scale_qk_by_inverse_layer_idx = False
-
-    def __post_init__(self, self_attn):
+    def __init__(
+        self,
+        self_attn,
+        rbln_config: "RBLNDecoderOnlyModelConfig",
+        is_sliding=False,
+    ):
+        super().__init__(self_attn, rbln_config, is_sliding)
         self.c_attn = self_attn.c_attn
         self.o_proj = self_attn.c_proj
         self.split_size = self_attn.split_size

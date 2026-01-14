@@ -32,19 +32,6 @@ if TYPE_CHECKING:
 logger = logging.get_logger(__name__)
 
 
-def _set_first_existing_attr(dst: object, dst_attr: str, src: object, *src_attrs: str) -> Optional[str]:
-    """
-    Set dst.<dst_attr> = src.<first existing attr in src_attrs>.
-
-    Returns the matched source attribute name, or None if none exist.
-    """
-    for name in src_attrs:
-        if hasattr(src, name):
-            setattr(dst, dst_attr, getattr(src, name))
-            return name
-    return None
-
-
 class DecoderOnlyWrapper(nn.Module):
     """A wrapper class for decoder-only language models that handles RBLN-specific optimizations and requirements.
 
@@ -335,6 +322,12 @@ class DecoderOnlyModel(nn.Module):
         _phase: Current processing phase ("prefill" or "decode")
     """
 
+    _EMBEDDING_ATTRS = ["embed_tokens", "wte"]
+    _POSITION_ATTRS = ["embed_positions", "wpe"]
+    _LAYERNORM_ATTRS = ["norm", "final_layer_norm", "final_layernorm", "ln_f", "layer_norm"]
+    _PRE_FF_LAYERNORM_ATTRS = None
+    _POST_FF_LAYERNORM_ATTRS = None
+
     def __init__(
         self,
         model,
@@ -346,14 +339,13 @@ class DecoderOnlyModel(nn.Module):
         self.config = model.config
         # Keep commonly-used original submodules registered on this wrapper so their weights
         # are preserved in state_dict even if the original model object is not kept.
-        #
         # Different HF model families use different attribute names; we register what we can
         # and allow subclasses to override getters when needed.
-        _set_first_existing_attr(self, "embed_tokens", model, "embed_tokens", "wte")
-        _set_first_existing_attr(self, "embed_positions", model, "embed_positions", "wpe")
-        _set_first_existing_attr(
-            self, "norm", model, "norm", "final_layer_norm", "final_layernorm", "ln_f", "layer_norm"
-        )
+        self.embed_tokens = _get_attr_from_candidates(model, self._EMBEDDING_ATTRS)
+        self.embed_positions = _get_attr_from_candidates(model, self._POSITION_ATTRS)
+        self.norm = _get_attr_from_candidates(model, self._LAYERNORM_ATTRS)
+        self.pre_feedforward_layernorm = _get_attr_from_candidates(model, self._PRE_FF_LAYERNORM_ATTRS)
+        self.post_feedforward_layernorm = _get_attr_from_candidates(model, self._POST_FF_LAYERNORM_ATTRS)
         self.layers = nn.ModuleList(layers)
         self.rbln_config = rbln_config
         self._phase = "prefill"
@@ -407,27 +399,19 @@ class DecoderOnlyModel(nn.Module):
         return cache_seq_len, cache_offset, attn_mask
 
     def get_last_layernorm(self) -> nn.LayerNorm:
-        if not hasattr(self, "norm"):
-            raise NotImplementedError(
-                "The 'get_last_layernorm' method is not implemented for this model family. "
-                "Please override it in a subclass."
-            )
         return self.norm
 
+    def get_pre_feedforward_layernorm(self) -> nn.LayerNorm:
+        return self.pre_feedforward_layernorm
+
+    def get_post_feedforward_layernorm(self) -> nn.LayerNorm:
+        return self.post_feedforward_layernorm
+
     def get_embedding(self) -> nn.Embedding:
-        if not hasattr(self, "embed_tokens"):
-            raise NotImplementedError(
-                "The 'get_embedding' method is not implemented for this model family. "
-                "Please override it in a subclass."
-            )
         return self.embed_tokens
 
     def get_pos_embedding(self) -> nn.Embedding:
-        if hasattr(self, "embed_positions"):
-            return self.embed_positions
-        raise NotImplementedError(
-            "The 'get_pos_embedding' method is not implemented. Please define this method in a subclass."
-        )
+        return self.embed_positions
 
     def forward(
         self,
@@ -555,28 +539,15 @@ class DecoderOnlyLayer(nn.Module):
         phase: Current operation phase ("prefill" or "decode")
     """
 
+    _PRE_ATTN_LAYERNORM = ["input_layernorm", "ln_1", "self_attn_layer_norm", "pre_feedforward_layernorm"]
+    _POST_ATTN_LAYERNORM = ["post_attention_layernorm", "ln_2", "final_layer_norm", "post_feedforward_layernorm"]
+
     def __init__(self, layer, self_attn: "DecoderOnlyAttention", lora_config: Optional[RBLNLoRAConfig] = None):
         super().__init__()
-        # Register commonly-used original submodules directly on this wrapper so their weights
-        # are preserved in state_dict even if we don't keep a reference to the whole layer.
-        if (
-            _set_first_existing_attr(self, "input_layernorm", layer, "input_layernorm", "ln_1", "self_attn_layer_norm")
-            is None
-        ):
-            raise AttributeError(f"Unsupported layer type: cannot find pre-attention layernorm on {type(layer)}")
 
-        if (
-            _set_first_existing_attr(
-                self, "post_attention_layernorm", layer, "post_attention_layernorm", "ln_2", "final_layer_norm"
-            )
-            is None
-        ):
-            raise AttributeError(f"Unsupported layer type: cannot find post-attention layernorm on {type(layer)}")
-
-        if hasattr(layer, "mlp"):
-            self.mlp = layer.mlp
-        else:
-            raise AttributeError(f"Unsupported layer type: cannot find MLP/feedforward on {type(layer)}")
+        self.pre_attention_layernorm = _get_attr_from_candidates(layer, self._PRE_ATTN_LAYERNORM)
+        self.post_attention_layernorm = _get_attr_from_candidates(layer, self._POST_ATTN_LAYERNORM)
+        self.mlp = layer.mlp
         self.self_attn = self_attn
         self._phase = "prefill"
         self.lora_config = lora_config
@@ -606,7 +577,7 @@ class DecoderOnlyLayer(nn.Module):
         self.self_attn.phase = phase
 
     def get_pre_attention_layernorm(self) -> nn.LayerNorm:
-        return self.input_layernorm
+        return self.pre_attention_layernorm
 
     def get_post_attention_layernorm(self) -> nn.LayerNorm:
         return self.post_attention_layernorm
@@ -677,7 +648,6 @@ class DecoderOnlyAttention(nn.Module):
         rbln_config: RBLN model configuration containing attention parameters
         is_sliding: Whether this is sliding window attention
     """
-
     def __init__(
         self,
         self_attn,
@@ -705,12 +675,17 @@ class DecoderOnlyAttention(nn.Module):
         self.kvcache_partition_len = getattr(rbln_config, "kvcache_partition_len", None)
         self.kvcache_block_size = rbln_config.sliding_window if is_sliding else rbln_config.kvcache_block_size
         self.lora_config = rbln_config.lora_config
-        # Register projection layers if present on the original attention module.
-        # Some model families (e.g. GPT-2) don't expose q/k/v projections separately and override
-        # projection() in a subclass instead.
-        for name in ("q_proj", "k_proj", "v_proj"):
-            _set_first_existing_attr(self, name, self_attn, name)
-        _set_first_existing_attr(self, "o_proj", self_attn, "o_proj", "out_proj", "dense")
+
+        # Some model families (e.g. GPT-2) override projection() and do not expose q/k/v explicitly.
+        # If we're using the base projection() (or LoRA is enabled), require q/k/v/o at init-time.
+        uses_base_projection = self.__class__.projection is DecoderOnlyAttention.projection
+        require_projections = uses_base_projection or self.lora_config is not None
+
+        if require_projections:
+            self.q_proj = self_attn.q_proj
+            self.k_proj = self_attn.k_proj
+            self.v_proj = self_attn.v_proj
+            self.o_proj = _get_attr_from_candidates(self_attn, ["o_proj", "out_proj", "dense"])
 
         setattr(self, self.get_attention_name(), self.create_attention_op())
         self.__post_init__(self_attn)
@@ -1346,3 +1321,18 @@ def apply_rotary_pos_emb_partial(query_states, key_states, cos, sin, ndim) -> Tu
     query_states = torch.cat((query_rot, query_pass), dim=-1)
     key_states = torch.cat((key_rot, key_pass), dim=-1)
     return query_states, key_states
+
+
+def _get_attr_from_candidates(
+    src: object,
+    candidates: List[str],
+):
+    """
+    Return src.<first existing attr in candidates>, or raise AttributeError if none exist.
+    """
+    if candidates is None:
+        return None
+
+    for name in candidates:
+        if hasattr(src, name):
+            return getattr(src, name)

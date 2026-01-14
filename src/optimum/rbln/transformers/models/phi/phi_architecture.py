@@ -15,13 +15,11 @@
 from typing import TYPE_CHECKING, Optional, Tuple, Union
 
 import torch
-import torch.nn as nn
 from transformers import PhiForCausalLM
 
 from ..decoderonly.decoderonly_architecture import (
     DecoderOnlyAttention,
     DecoderOnlyLayer,
-    DecoderOnlyModel,
     DecoderOnlyWrapper,
     apply_rotary_pos_emb_partial,
 )
@@ -37,9 +35,6 @@ class PhiWrapper(DecoderOnlyWrapper):
 
     def get_rbln_layer_class(self):
         return PhiLayer
-
-    def get_rbln_model_class(self):
-        return PhiModel
 
     def get_model_layer(self, model: Union["PhiForCausalLM", "PhiModel"]):
         return model.model if self.is_causal_lm else model
@@ -78,27 +73,7 @@ class PhiAttention(DecoderOnlyAttention):
 
 
 class PhiLayer(DecoderOnlyLayer):
-    def __init__(self, layer, self_attn: DecoderOnlyAttention, lora_config=None):
-        # Phi's decoder layer doesn't follow the standard (post-attn LN -> MLP) structure
-        # used by DecoderOnlyLayer, so we register only the parts we need.
-        nn.Module.__init__(self)
-        self.input_layernorm = layer.input_layernorm
-        self.mlp = layer.mlp
-        self.self_attn = self_attn
-        self._phase = "prefill"
-        self.lora_config = lora_config
-
-    @property
-    def phase(self):
-        return self._phase
-
-    @phase.setter
-    def phase(self, phase: str):
-        self._phase = phase
-        self.self_attn.phase = phase
-
-    def get_post_attention_layernorm(self):
-        raise NotImplementedError
+    _POST_ATTN_LAYERNORM = None
 
     def forward(
         self,
@@ -130,8 +105,3 @@ class PhiLayer(DecoderOnlyLayer):
         hidden_states = attn_output + feed_forward_hidden_states + residual
 
         return hidden_states
-
-
-class PhiModel(DecoderOnlyModel):
-    def get_last_layernorm(self):
-        return self.norm
