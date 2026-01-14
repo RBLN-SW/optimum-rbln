@@ -44,15 +44,11 @@ class PhiWrapper(DecoderOnlyWrapper):
 
 
 class PhiAttention(DecoderOnlyAttention):
+    _Q_NORM_ATTRS = ["q_layernorm"]
+    _K_NORM_ATTRS = ["k_layernorm"]
+
     def __post_init__(self, self_attn):
-        self.q_proj = self_attn.q_proj
-        self.k_proj = self_attn.k_proj
-        self.v_proj = self_attn.v_proj
-        self.o_proj = self_attn.dense
-        self.qk_layernorm = self_attn.qk_layernorm
         self.rotary_ndims = self_attn.rotary_ndims
-        self.q_layernorm = getattr(self_attn, "q_layernorm", None)
-        self.k_layernorm = getattr(self_attn, "k_layernorm", None)
 
     def projection(self, hidden_states, lora_int_id) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         if lora_int_id is not None:
@@ -62,9 +58,9 @@ class PhiAttention(DecoderOnlyAttention):
         key_states = self.k_proj(hidden_states)
         value_states = self.v_proj(hidden_states)
 
-        if self.qk_layernorm:
-            query_states = self.q_layernorm(query_states)
-            key_states = self.k_layernorm(key_states)
+        if getattr(self, "q_norm", None) is not None:
+            query_states = self.q_norm(query_states)
+            key_states = self.k_norm(key_states)
 
         return query_states, key_states, value_states
 

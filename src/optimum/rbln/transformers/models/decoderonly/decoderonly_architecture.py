@@ -648,6 +648,14 @@ class DecoderOnlyAttention(nn.Module):
         rbln_config: RBLN model configuration containing attention parameters
         is_sliding: Whether this is sliding window attention
     """
+
+    _Q_NORM_ATTRS = None
+    _K_NORM_ATTRS = None
+    _Q_PROJ_ATTRS = ["q_proj"]
+    _K_PROJ_ATTRS = ["k_proj"]
+    _V_PROJ_ATTRS = ["v_proj"]
+    _O_PROJ_ATTRS = ["o_proj", "out_proj", "dense", "c_proj"]
+
     def __init__(
         self,
         self_attn,
@@ -675,17 +683,12 @@ class DecoderOnlyAttention(nn.Module):
         self.kvcache_partition_len = getattr(rbln_config, "kvcache_partition_len", None)
         self.kvcache_block_size = rbln_config.sliding_window if is_sliding else rbln_config.kvcache_block_size
         self.lora_config = rbln_config.lora_config
-
-        # Some model families (e.g. GPT-2) override projection() and do not expose q/k/v explicitly.
-        # If we're using the base projection() (or LoRA is enabled), require q/k/v/o at init-time.
-        uses_base_projection = self.__class__.projection is DecoderOnlyAttention.projection
-        require_projections = uses_base_projection or self.lora_config is not None
-
-        if require_projections:
-            self.q_proj = self_attn.q_proj
-            self.k_proj = self_attn.k_proj
-            self.v_proj = self_attn.v_proj
-            self.o_proj = _get_attr_from_candidates(self_attn, ["o_proj", "out_proj", "dense"])
+        self.q_proj = _get_attr_from_candidates(self_attn, self._Q_PROJ_ATTRS)
+        self.k_proj = _get_attr_from_candidates(self_attn, self._K_PROJ_ATTRS)
+        self.v_proj = _get_attr_from_candidates(self_attn, self._V_PROJ_ATTRS)
+        self.o_proj = _get_attr_from_candidates(self_attn, self._O_PROJ_ATTRS)
+        self.q_norm = _get_attr_from_candidates(self_attn, self._Q_NORM_ATTRS)
+        self.k_norm = _get_attr_from_candidates(self_attn, self._K_NORM_ATTRS)
 
         setattr(self, self.get_attention_name(), self.create_attention_op())
         self.__post_init__(self_attn)
