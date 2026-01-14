@@ -281,6 +281,7 @@ class TestKandinskyV22Model(BaseTest.TestModel):
             "batch_size": 1,
         }
         import copy
+
         rbln_class_kwargs_copy = copy.deepcopy(self.RBLN_CLASS_KWARGS)
         rbln_class_kwargs_copy["rbln_config"].update(rbln_config)
         model = self.RBLN_CLASS.from_pretrained(model_id=self.HF_MODEL_ID, **rbln_class_kwargs_copy)
@@ -289,6 +290,7 @@ class TestKandinskyV22Model(BaseTest.TestModel):
             self.assertEqual(model.prior_text_encoder.rbln_config.batch_size, 2)
             self.assertEqual(model.prior_prior.rbln_config.batch_size, 4)
             self.assertEqual(model.unet.rbln_config.batch_size, 2)
+
 
 class TestKandinskyV22Img2ImgModel(BaseTest.TestModel):
     RBLN_AUTO_CLASS = RBLNAutoPipelineForImage2Image
