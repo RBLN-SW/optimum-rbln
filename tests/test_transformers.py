@@ -209,11 +209,10 @@ class TestWhisperModel(BaseTest.TestModel):
         "decoder_layers": 4,
     }
     RBLN_CLASS_KWARGS = {
-        "rbln_config":
-            {
-                "token_timestamps": False,
-                "batch_size": 2,
-             }
+        "rbln_config": {
+            "token_timestamps": False,
+            "batch_size": 2,
+        }
     }
 
     def test_generate(self):
@@ -295,11 +294,10 @@ class TestWhisperModel_TokenTimestamps(BaseTest.TestModel):
     }
 
     RBLN_CLASS_KWARGS = {
-        "rbln_config":
-            {
-                "token_timestamps": True,
-                "batch_size": 2,
-            }
+        "rbln_config": {
+            "token_timestamps": True,
+            "batch_size": 2,
+        }
     }
 
     def test_generate(self):
