@@ -354,6 +354,15 @@ class TestSVDImg2VidModel(BaseTest.TestModel):
         with self.subTest():
             assert model is not None
 
+        with self.subTest():
+            # optimum-rbln/src/optimum/rbln/diffusers/models/autoencoders/autoencoder_kl_temporal_decoder.py
+            # chunk_frame() adjusts decode_chunk_size to the closest divisor of num_frames (excluding num_frames itself).
+            # For num_frames=2, divisors are [1], so decode_chunk_size becomes 1.
+            self.assertEqual(model.vae.rbln_config.decode_chunk_size, 1)
+            self.assertEqual(model.vae.rbln_config.sample_size, (32, 32))
+            self.assertEqual(model.unet.rbln_config.num_frames, 2)
+            self.assertEqual(model.unet.rbln_config.sample_size, (16, 16))
+
     def test_rbln_config_object(self):
         config = RBLNStableVideoDiffusionPipelineConfig(
             width=32,
