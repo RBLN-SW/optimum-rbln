@@ -10,7 +10,7 @@
     ],
     "commitMessagePrefix": "[pytest-full] dependency:",
     "repositories": [
-        "rebellions-sw/optimum-rbln"
+        "rbln-sw/optimum-rbln"
     ],
     "lockFileMaintenance": {
         "enabled": false
