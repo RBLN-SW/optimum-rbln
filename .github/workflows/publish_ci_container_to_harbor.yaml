@@ -17,7 +17,7 @@ jobs:
     name: Build & Push
     runs-on: ubuntu-latest-rbln
     env:
-      IMAGE_PATH: rebellions-sw/optimum-rbln
+      IMAGE_PATH: rbln-sw/optimum-rbln
       DOCKERFILE: docker/ci/Dockerfile
       CONTEXT: .
       PLATFORMS: linux/amd64

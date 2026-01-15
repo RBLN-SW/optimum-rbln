@@ -16,7 +16,7 @@ jobs:
       - name: Checkout the repository
         uses: actions/checkout@v4
         with:
-          repository: rebellions-sw/optimum-rbln
+          repository: rbln-sw/optimum-rbln
           fetch-depth: 0
           ref: ${{ inputs.version }}
           token: ${{ secrets.GITHUB_TOKEN }}
