@@ -9,7 +9,7 @@ on:
 
 jobs:
   deploy:
-    runs-on: sw-k8s-4c-32gb
+    runs-on: rbln-sw-k8s-4c-32gb
     container:
       image: ${{ vars.DEV_CONTAINER_IMAGE }}
     steps:

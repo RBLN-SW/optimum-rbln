@@ -13,7 +13,7 @@ env:
 
 jobs:
   head-commit-message:
-    runs-on: sw-k8s-4c-32gb
+    runs-on: rbln-sw-k8s-4c-32gb
     container:
       image: ${{ vars.DEV_CONTAINER_IMAGE }}
     outputs:
@@ -37,7 +37,7 @@ jobs:
 
   check-pytest-full:
     needs: head-commit-message
-    runs-on: sw-k8s-4c-32gb
+    runs-on: rbln-sw-k8s-4c-32gb
     container:
       image: ${{ vars.DEV_CONTAINER_IMAGE }}
     outputs:
@@ -53,7 +53,7 @@ jobs:
 
   check-slack-report:
     needs: head-commit-message
-    runs-on: sw-k8s-4c-32gb
+    runs-on: rbln-sw-k8s-4c-32gb
     container:
       image: ${{ vars.DEV_CONTAINER_IMAGE }}
     outputs:
@@ -74,7 +74,7 @@ jobs:
     uses: ./.github/workflows/test-docstrings.yml
 
   load-version:
-    runs-on: sw-k8s-4c-32gb
+    runs-on: rbln-sw-k8s-4c-32gb
     container:
       image: ${{ vars.DEV_CONTAINER_IMAGE }}
     needs: [check-code-quality, test-docstrings]
@@ -98,7 +98,7 @@ jobs:
     secrets: inherit
 
   check-if-dependency-pr:
-    runs-on: sw-k8s-4c-32gb
+    runs-on: rbln-sw-k8s-4c-32gb
     container:
       image: ${{ vars.DEV_CONTAINER_IMAGE }}
     outputs:
@@ -129,7 +129,7 @@ jobs:
           echo $result
 
   check-team-member:
-    runs-on: sw-k8s-4c-32gb
+    runs-on: rbln-sw-k8s-4c-32gb
     container:
       image: ${{ vars.DEV_CONTAINER_IMAGE }}
     needs: [check-code-quality, test-docstrings, check-compiler]
