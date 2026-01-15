@@ -12,9 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from dataclasses import asdict, dataclass
 from typing import Any, Dict, List, Literal, Optional, Union, get_args
 
-from ....configuration_utils import RBLNModelConfig
+from ....configuration_utils import RBLNModelConfig, RBLNSerializableConfigProtocol
 from ....utils.logging import get_logger
 from ...utils.rbln_quantization import RBLNQuantizationConfig
 from .configuration_lora import RBLNLoRAConfig
@@ -59,6 +60,7 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
         phases: Optional[List[PhaseType]] = None,
         logits_to_keep: Optional[int] = None,
         output_hidden_states: Optional[bool] = None,
+        kvcache_metas: Optional[List["KVCacheMeta"]] = None,
         **kwargs,
     ):
         """
@@ -93,8 +95,8 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
                 processing input sequences. Defaults to 128. Must be a positive integer
                 divisible by 64. Affects prefill performance and memory usage.
             kvcache_num_blocks (Optional[int]): The total number of blocks to allocate for the
-                PagedAttention KV cache. See the "KV Cache Number of Blocks (`kvcache_num_blocks`)"
-                section below for details.
+                PagedAttention KV cache at compile time. Defaults to 0 (automatically determined).
+                See the "KV Cache Number of Blocks (`kvcache_num_blocks`)" section below for details.
             decoder_batch_sizes (Optional[List[int]]): A list of batch sizes for which separate decoder models will be compiled.
                 This allows the model to handle varying batch sizes efficiently during generation. If not specified,
                 defaults to a list containing only the model's main batch size. When specifying multiple batch sizes:
@@ -114,6 +116,7 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
             logits_to_keep (Optional[int]): The number of logits to keep for the decoder.  If set to 0, the decoder will keep all logits.
                 Defaults to 0 if DecoderOnlyModel is used, 1 if DecoderOnlyModelForCausalLM is used.
             output_hidden_states (Optional[bool]): Whether to output the hidden states of the decoder. Defaults to False.
+            kvcache_metas (Optional[List["KVCacheMeta"]]): The metadata for the KV cache tensors. Handled internally if not provided. Defaults to None.
             kwargs: Additional arguments passed to the parent RBLNModelConfig.
 
         Raises:
@@ -152,17 +155,15 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
 
 
         KV Cache Number of Blocks:
-            `kvcache_num_blocks` controls the total number of memory blocks allocated for the PagedAttention KV cache.
-            Each block holds `kvcache_block_size` tokens of Key and Value states.
+            `kvcache_num_blocks` controls the total number of memory blocks allocated for the PagedAttention KV cache
+            at compile time. Each block holds `kvcache_block_size` tokens of Key and Value states.
 
-            - **Automatic Estimation (Default)**: If `kvcache_num_blocks` is `None`, the system estimates
-                the maximum number of blocks that can fit into the available RBLN device memory. This
-                calculation considers the model size (kernel memory), required buffer memory, the number
-                of layers and heads, `kvcache_block_size`, tensor parallelism, and available RBLN NPU DRAM.
-                This aims to maximize cache capacity for potentially better performance with long sequences
-                or larger batches without manual tuning.
-            - **Manual Setting**: You can explicitly set the number of blocks. This provides finer control
-                but requires careful consideration of memory limits. Setting it too high may lead to
+            - **Automatic Determination (Default)**: If `kvcache_num_blocks` is `0` (default), the number of blocks
+                is automatically determined during compilation to fit within the available DRAM on the NPU. This allows
+                the model to utilize the remaining memory after compilation without manual tuning, providing optimal
+                cache capacity for better performance with long sequences or larger batches.
+            - **Manual Setting**: You can explicitly set the number of blocks to a positive integer. This provides
+                finer control but requires careful consideration of memory limits. Setting it too high may lead to
                 compilation errors if it exceeds available memory. The system will issue warnings if your
                 setting exceeds the estimated maximum.
             - **Performance Impact**: A larger number of blocks reduces the likelihood of cache eviction,
@@ -175,7 +176,8 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
                 are violated (e.g., if `kvcache_num_blocks` is less than `batch_size` when using Flash Attention).
 
             The optimal value depends on the specific model, task, hardware, and desired trade-off
-            between performance and memory usage. The automatic estimation provides a robust starting point.
+            between performance and memory usage. Automatic determination (default) provides a robust starting point
+            that adapts to the available DRAM on the NPU at compile time.
         """
 
         super().__init__(**kwargs)
@@ -222,7 +224,7 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
         if self.prefill_chunk_size % 64 != 0 or self.prefill_chunk_size <= 0:
             raise ValueError("`prefill_chunk_size` must be a positive integer divisible by 64.")
 
-        self.kvcache_num_blocks = kvcache_num_blocks
+        self.kvcache_num_blocks = kvcache_num_blocks if kvcache_num_blocks is not None else 0
         self.cache_impl = cache_impl or "static"
         self.sliding_window = sliding_window
         self.sliding_window_layers = sliding_window_layers or []
@@ -257,6 +259,8 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
                 # Larger batch size should be at the beginning of the list.
                 self.decoder_batch_sizes.sort(reverse=True)
 
+        self.kvcache_metas: List["KVCacheMeta"] = kvcache_metas or []
+
     @staticmethod
     def validate_phases_type(phases: List[PhaseType]):
         if not isinstance(phases, list):
@@ -290,6 +294,21 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
             return self.quantization.nbits_per_param
         return 16
 
+    @property
+    def is_auto_num_blocks(self) -> bool:
+        """Returns True if kvcache_num_blocks will be automatically determined during compilation to fit within the available DRAM on the NPU."""
+        return self.kvcache_num_blocks == 0
+
+    @property
+    def num_full_blocks(self) -> int:
+        return (self.max_seq_len // self.kvcache_block_size) * self.batch_size
+
+    @property
+    def num_min_blocks(self) -> int:
+        if self.attn_impl == "flash_attn":
+            return min(self.max_seq_len // self.kvcache_block_size + 1, self.num_full_blocks)
+        return self.batch_size
+
 
 class RBLNDecoderOnlyModelForCausalLMConfig(RBLNDecoderOnlyModelConfig):
     """
@@ -302,3 +321,86 @@ class RBLNDecoderOnlyModelForCausalLMConfig(RBLNDecoderOnlyModelConfig):
 
     _default_phases = ["prefill", "decode"]
     _default_logits_to_keep = 1
+
+
+@dataclass
+class KVCacheMeta(RBLNSerializableConfigProtocol):
+    """
+    KVCacheMeta contains metadata describing the key-value (KV) cache tensor for a specific transformer layer.
+
+    This is used during compilation and runtime on RBLN devices to manage memory and configure the
+    static or dynamic characteristics of the cache implementation for decoder-only models.
+
+    Attributes:
+        name (str): Logical name of the KV cache tensor.
+        layer_index (int): Index of the transformer layer corresponding to this cache.
+        shape (list[int]): The 4D shape of the cache tensor:
+            [num_blocks, num_heads, block_size, head_dim]. The number of blocks may be dynamic or static
+            depending on model configuration.
+        layer_type (str): String describing the attention/cache algorithm (e.g., "full_attention", "sliding_attention").
+        is_auto (bool): Whether the number of blocks is automatically determined during compilation (True) or manually specified (False).
+            In both cases, the KV cache size is fixed at compile time.
+        dtype (str): Data type of the cache buffer ("float16", "float32", etc.).
+    """
+
+    name: str
+    layer_index: int
+    shape: list[int]  # (num_blocks, num_heads, block_size(seq), head_dim)
+    layer_type: str
+    is_auto: bool
+    dtype: str
+
+    def _prepare_for_serialization(self) -> dict[str, Any]:
+        return asdict(self)
+
+    @property
+    def compile_shape(self):
+        return [1, self.shape[1], self.shape[2], self.shape[3]] if self.can_resize else self.shape
+
+    @property
+    def can_resize(self):
+        return self.is_auto and self.layer_type == "full_attention"
+
+    @property
+    def num_blocks(self) -> int:
+        return self.shape[0]
+
+    @property
+    def block_size(self) -> int:
+        return self.shape[2]
+
+    @staticmethod
+    def make(
+        name: str,
+        layer_index: int,
+        num_key_value_heads: int,
+        head_dim: int,
+        dtype: str,
+        rbln_config: RBLNDecoderOnlyModelForCausalLMConfig,
+    ) -> "KVCacheMeta":
+        assert len(rbln_config.compile_cfgs) == 0, "KVCacheMeta cannot be created from rbln_config with compile_cfgs"
+
+        if rbln_config.sliding_window is not None and layer_index in rbln_config.sliding_window_layers:
+            layer_type = "sliding_attention"
+            block_size = rbln_config.sliding_window
+            num_blocks = rbln_config.batch_size
+            is_auto = False
+
+        else:
+            layer_type = "full_attention"
+            block_size = rbln_config.kvcache_block_size
+
+            if rbln_config.is_auto_num_blocks:
+                num_blocks = rbln_config.num_full_blocks
+                is_auto = True
+            else:
+                num_blocks = rbln_config.kvcache_num_blocks
+                is_auto = False
+
+        shape = [num_blocks, num_key_value_heads, block_size, head_dim]
+        if num_blocks <= 0:
+            raise ValueError("`num_blocks` must be greater than 0 when using KV cache.")
+
+        return KVCacheMeta(
+            name=name, layer_index=layer_index, shape=shape, layer_type=layer_type, is_auto=is_auto, dtype=dtype
+        )
