@@ -7,9 +7,6 @@ on:
   workflow_dispatch:
 
 env:
-  REBEL_PYPI_ENDPOINT: ${{ vars.REBEL_PYPI_INTERNAL_ENDPOINT }}
-  REBEL_PYPI_USERNAME: ${{ secrets.REBEL_PYPI_USERNAME }}
-  REBEL_PYPI_PASSWORD: ${{ secrets.REBEL_PYPI_PASSWORD }}
   TOKEN: ${{secrets.RENOVATE_TOKEN}}
 
 jobs:
@@ -22,7 +19,7 @@ jobs:
       test_all_files: true
 
   fetch-version:
-    runs-on: sw-k8s-4c-32gb
+    runs-on: rbln-sw-k8s-4c-32gb
     container:
       image: ${{ vars.DEV_CONTAINER_IMAGE }}
     outputs:
@@ -67,4 +64,6 @@ jobs:
       transformers_version: ${{ needs.rbln-full-test.outputs.transformers_version }}
       diffusers_version: ${{ needs.rbln-full-test.outputs.diffusers_version }}
       bc_result: ${{ needs.bc-full-inference-test.result }}
+      pytest_job_group: "rbln-full-test"
+      bc_pytest_job_group: "bc-full-inference-test"
     secrets: inherit

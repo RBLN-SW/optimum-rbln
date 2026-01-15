@@ -60,10 +60,10 @@ class PegasusForConditionalGeneration(Seq2SeqForConditionalGeneration):
 class PegasusDecoder(Seq2SeqDecoder):
     has_pos_emb = True
 
-    def __post_init__(self):
-        self.embed_positions = self._original_mod.embed_positions
-        self.embed_scale = getattr(self._original_mod, "embed_scale", None)
-        self.final_layer_norm = getattr(self._original_mod, "layer_norm", None)
+    def __post_init__(self, model: nn.Module):
+        self.embed_positions = model.embed_positions
+        self.embed_scale = getattr(model, "embed_scale", None)
+        self.final_layer_norm = getattr(model, "layer_norm", None)
 
     def prepare_attn_mask(self, attention_mask, encoder_attention_mask, **kwargs):
         if attention_mask is not None:
@@ -110,11 +110,11 @@ class PegasusLayerFF(nn.Module):
 
 
 class PegasusDecoderLayer(Seq2SeqDecoderLayer):
-    def __post_init__(self):
-        self.self_attn_layer_norm = self._original_mod.self_attn_layer_norm
-        self.encoder_attn = self._original_mod.encoder_attn
-        self.encoder_attn_layer_norm = self._original_mod.encoder_attn_layer_norm
-        self.ff_layer = PegasusLayerFF(self._original_mod)
+    def __post_init__(self, decoder_layer: nn.Module):
+        self.self_attn_layer_norm = decoder_layer.self_attn_layer_norm
+        self.encoder_attn = decoder_layer.encoder_attn
+        self.encoder_attn_layer_norm = decoder_layer.encoder_attn_layer_norm
+        self.ff_layer = PegasusLayerFF(decoder_layer)
 
     def pre_self_attn_layer_norm(self, hidden_states):
         return self.self_attn_layer_norm(hidden_states)
@@ -130,13 +130,13 @@ class PegasusDecoderLayer(Seq2SeqDecoderLayer):
 
 
 class PegasusSelfAttention(Seq2SeqSelfAttention):
-    def __post_init__(self, use_attention_mask: bool = True):
-        self.q_proj = self._original_mod.q_proj
-        self.k_proj = self._original_mod.k_proj
-        self.v_proj = self._original_mod.v_proj
-        self.out_proj = self._original_mod.out_proj
-        self.num_heads = self._original_mod.num_heads
-        self.head_dim = self._original_mod.embed_dim // self._original_mod.num_heads
+    def __post_init__(self, attn: nn.Module, use_attention_mask: bool = True):
+        self.q_proj = attn.q_proj
+        self.k_proj = attn.k_proj
+        self.v_proj = attn.v_proj
+        self.out_proj = attn.out_proj
+        self.num_heads = attn.num_heads
+        self.head_dim = attn.embed_dim // attn.num_heads
         self.scaling = self.head_dim**-0.5
         if use_attention_mask:
             self.attn_decode = torch.ops.rbln_custom_ops.paged_attn_decode
@@ -151,11 +151,11 @@ class PegasusSelfAttention(Seq2SeqSelfAttention):
 
 
 class PegasusCrossAttention(Seq2SeqCrossAttention):
-    def __post_init__(self):
-        self.q_proj = self._original_mod.q_proj
-        self.k_proj = self._original_mod.k_proj
-        self.v_proj = self._original_mod.v_proj
-        self.out_proj = self._original_mod.out_proj
-        self.num_heads = self._original_mod.num_heads
-        self.head_dim = self._original_mod.embed_dim // self._original_mod.num_heads
-        self.embed_dim = self._original_mod.embed_dim
+    def __post_init__(self, attn: nn.Module):
+        self.q_proj = attn.q_proj
+        self.k_proj = attn.k_proj
+        self.v_proj = attn.v_proj
+        self.out_proj = attn.out_proj
+        self.num_heads = attn.num_heads
+        self.head_dim = attn.embed_dim // attn.num_heads
+        self.embed_dim = attn.embed_dim
