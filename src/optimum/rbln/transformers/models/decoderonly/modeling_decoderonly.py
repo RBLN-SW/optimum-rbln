@@ -481,7 +481,8 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
         # - num_blocks must be no greater than the number of full blocks.
         if rbln_config.attn_impl == "flash_attn":
             if rbln_config.is_auto_num_blocks:
-                cls.set_kvcache_num_blocks_before_compilation(model, model_config, rbln_config)
+                # Do nothing
+                pass
 
             else:
                 if rbln_config.kvcache_num_blocks > rbln_config.num_full_blocks:
