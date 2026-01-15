@@ -15,20 +15,20 @@ Before you ask a question, it is best to search for existing [Issues](/issues) t
 
 If you then still feel the need to ask a question and need clarification, we recommend the following:
 
-- Open an [Issue](https://github.com/rebellions-sw/optimum-rbln/issues/new/choose).
+- Open an [Issue](https://github.com/rbln-sw/optimum-rbln/issues/new/choose).
 - Provide as much context as you can about what you're running into.
 
 We will then take care of the issue as soon as possible.
 
 ## How to create a Pull Request?
-1. Fork the [repository](https://github.com/rebellions-sw/optimum-rbln) by clicking on the 'Fork' button on the repository's page. This creates a copy of the code under your GitHub user account.
+1. Fork the [repository](https://github.com/rbln-sw/optimum-rbln) by clicking on the 'Fork' button on the repository's page. This creates a copy of the code under your GitHub user account.
 
 2. Clone your fork to your local disk, and add the base repository as a remote:
 
 	```bash
 	git clone git@github.com:<your Github handle>/optimum-rbln.git
 	cd optimum-rbln
-	git remote add upstream https://github.com/rebellions-sw/optimum-rbln.git
+	git remote add upstream https://github.com/rbln-sw/optimum-rbln.git
 	```
 
 3. Create a new branch to hold your development changes:

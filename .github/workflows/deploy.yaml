@@ -9,14 +9,14 @@ on:
 
 jobs:
   deploy:
-    runs-on: sw-k8s-4c-32gb
+    runs-on: rbln-sw-k8s-4c-32gb
     container:
       image: ${{ vars.DEV_CONTAINER_IMAGE }}
     steps:
       - name: Checkout the repository
         uses: actions/checkout@v4
         with:
-          repository: rebellions-sw/optimum-rbln
+          repository: rbln-sw/optimum-rbln
           fetch-depth: 0
           ref: ${{ inputs.version }}
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -34,5 +34,5 @@ jobs:
             twine upload \
             --verbose \
             -u __token__ \
-            -p ${{ secrets.PYPI_ORG_PASSWORD }} \
+            -p ${{ secrets.PKG_ORG_GATE }} \
             dist/*
