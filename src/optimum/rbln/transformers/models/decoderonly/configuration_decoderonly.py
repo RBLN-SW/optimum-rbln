@@ -306,7 +306,7 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
     @property
     def num_min_blocks(self) -> int:
         if self.attn_impl == "flash_attn":
-            return (self.max_seq_len // self.kvcache_block_size) + 1
+            return min(self.max_seq_len // self.kvcache_block_size + 1, self.num_full_blocks)
         return self.batch_size
 
 
