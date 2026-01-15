@@ -1,6 +1,6 @@
 import math
-from collections import Counter, defaultdict
-from typing import TYPE_CHECKING, Optional, Tuple
+from collections import defaultdict
+from typing import Optional, Tuple
 
 import rebel
 
@@ -10,10 +10,6 @@ from .models.decoderonly.configuration_decoderonly import RBLNDecoderOnlyModelFo
 
 
 logger = get_logger()
-
-
-if TYPE_CHECKING:
-    from transformers import PretrainedConfig, PreTrainedModel
 
 
 DEFAULT_FLASH_ATTN_PARTITION_LENGTH = 16_384
