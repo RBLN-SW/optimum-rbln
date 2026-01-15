@@ -19,11 +19,8 @@ on:
             value: ${{ jobs.get-hf-package-version.outputs.diffusers_version }}
 
 env:
-  HF_USER_ID: ${{ secrets.HF_USER_ID }}
-  HF_AUTH_TOKEN: ${{ secrets.HF_AUTH_TOKEN }}
-  REBEL_PYPI_ENDPOINT: ${{ vars.REBEL_PYPI_INTERNAL_ENDPOINT }}
-  REBEL_PYPI_USERNAME: ${{ secrets.REBEL_PYPI_USERNAME }}
-  REBEL_PYPI_PASSWORD: ${{ secrets.REBEL_PYPI_PASSWORD }}
+  HF_USER_ID: ${{ secrets.MODEL_HUB_ID }}
+  HF_AUTH_TOKEN: ${{ secrets.MODEL_HUB_ACCESS }}
 
 jobs:
   check-compiler:

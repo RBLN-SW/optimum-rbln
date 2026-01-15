@@ -7,10 +7,7 @@ on:
   workflow_dispatch:
 
 env:
-  REBEL_PYPI_ENDPOINT: ${{ vars.REBEL_PYPI_INTERNAL_ENDPOINT }}
-  REBEL_PYPI_USERNAME: ${{ secrets.REBEL_PYPI_USERNAME }}
-  REBEL_PYPI_PASSWORD: ${{ secrets.REBEL_PYPI_PASSWORD }}
-  TOKEN: ${{secrets.RENOVATE_TOKEN}}
+  TOKEN: ${{ secrets.RENOVATE_TOKEN }}
 
 jobs:
   fetch-version:
@@ -31,7 +28,8 @@ jobs:
         run: |
           CUR_VERSION=$(grep rebel_compiler_version .github/version.yaml | cut -d ':' -f2 | tr -d ' ')
           LATEST_VERSION=$( \
-                            curl -s -u "${{ env.REBEL_PYPI_USERNAME }}:${{ env.REBEL_PYPI_PASSWORD }}" "${{ env.REBEL_PYPI_ENDPOINT }}/rebel-compiler/json" | \
+                            PYPI_BASE_URL=$(echo "${{ secrets.DEV_PKG_URL }}" | sed 's#/simple$##') && \
+                            curl -s "${PYPI_BASE_URL}/rebel-compiler/json" | \
                             jq -r '.releases | keys | .[]' | \
                             grep prod | \
                             grep -v "latestumd" | \
