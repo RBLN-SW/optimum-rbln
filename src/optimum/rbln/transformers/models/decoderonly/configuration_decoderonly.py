@@ -297,8 +297,21 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
         return self.phases.index("image_prefill")
 
     @property
+    def expected_compiled_model_names(self):
+        # ["prefill", "image_prefill", "decoder_batch_1", "decoder_batch_2", ...]
+        if self.can_generate:
+            return self.phases[: self.decoder_runtime_idx] + [
+                f"decoder_batch_{batch_size}" for batch_size in self.decoder_batch_sizes
+            ]
+        else:
+            return self.phases
+
+    @property
     def decoder_runtime_idx(self):
-        return self.phases.index("decode")
+        if self.can_generate:
+            return self.phases.index("decode")
+        else:
+            raise ValueError("`decode` phase is not in the phases.")
 
     @property
     def nbits_per_param(self) -> int:

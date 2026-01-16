@@ -608,9 +608,7 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
         compiled_models: List[rebel.RBLNCompiledModel],
         rbln_config: RBLNDecoderOnlyModelForCausalLMConfig,
     ) -> List[rebel.Runtime]:
-        expected_model_names = rbln_config.phases[: rbln_config.decoder_runtime_idx] + [
-            f"decoder_batch_{batch_size}" for batch_size in rbln_config.decoder_batch_sizes
-        ]  # ["prefill", "image_prefill", "decoder_batch_1", "decoder_batch_2", ...]
+        expected_model_names = rbln_config.expected_compiled_model_names
 
         if any(model_name not in rbln_config.device_map for model_name in expected_model_names):
             cls._raise_missing_compiled_file_error(expected_model_names)
