@@ -7,14 +7,11 @@ on:
   workflow_dispatch:
 
 env:
-  REBEL_PYPI_ENDPOINT: ${{ vars.REBEL_PYPI_INTERNAL_ENDPOINT }}
-  REBEL_PYPI_USERNAME: ${{ secrets.REBEL_PYPI_USERNAME }}
-  REBEL_PYPI_PASSWORD: ${{ secrets.REBEL_PYPI_PASSWORD }}
   TOKEN: ${{secrets.RENOVATE_TOKEN}}
 
 jobs:
   fetch-version:
-    runs-on: sw-k8s-4c-32gb
+    runs-on: rbln-sw-k8s-4c-32gb
     container:
       image: ${{ vars.DEV_CONTAINER_IMAGE }}
     outputs:
@@ -31,7 +28,7 @@ jobs:
         run: |
           CUR_VERSION=$(grep rebel_compiler_version .github/version.yaml | cut -d ':' -f2 | tr -d ' ')
           LATEST_VERSION=$( \
-                            curl -s -u "${{ env.REBEL_PYPI_USERNAME }}:${{ env.REBEL_PYPI_PASSWORD }}" "${{ env.REBEL_PYPI_ENDPOINT }}/rebel-compiler/json" | \
+                            curl -s "${{ secrets.DEV_PKG_URL }}/rebel-compiler/json" | \
                             jq -r '.releases | keys | .[]' | \
                             grep prod | \
                             grep -v "latestumd" | \
@@ -51,7 +48,7 @@ jobs:
           echo "need_pr=$NEED_PR" >> $GITHUB_OUTPUT
 
   create-pr:
-    runs-on: sw-k8s-4c-32gb
+    runs-on: rbln-sw-k8s-4c-32gb
     container:
       image: ${{ vars.DEV_CONTAINER_IMAGE }}
     needs: fetch-version
@@ -74,5 +71,5 @@ jobs:
           commit-message: "[pytest-full] dependency: Update dependency rebel-compiler to ${{ needs.fetch-version.outputs.compiler_version }}"
           title: "dependency: Update dependency rebel-compiler to ${{ needs.fetch-version.outputs.compiler_version }}"
           base: dev
-          team-reviewers: rebellions-sw/sw-generalization
+          team-reviewers: rbln-sw/sw-generalization
           reviewers: rebel-jongho
