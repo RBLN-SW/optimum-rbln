@@ -49,18 +49,11 @@ class RBLNGemma3ForCausalLMConfig(RBLNDecoderOnlyModelForCausalLMConfig):
         use_attention_mask = use_attention_mask or True
         use_position_ids = use_position_ids or True
         prefill_chunk_size = prefill_chunk_size or 256
-        phases = kwargs.pop("phases", None)
-        if phases is None:
-            if image_prefill_chunk_size is not None:
-                phases = ["prefill", "image_prefill", "decode"]
-            else:
-                phases = ["prefill", "decode"]
 
         super().__init__(
             prefill_chunk_size=prefill_chunk_size,
             use_attention_mask=use_attention_mask,
             use_position_ids=use_position_ids,
-            phases=phases,
             **kwargs,
         )
         self.image_prefill_chunk_size = image_prefill_chunk_size

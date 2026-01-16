@@ -450,4 +450,7 @@ class RBLNGemma3ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
                 f"Image prefill chunk size is different from mm_tokens_per_image: {rbln_config.image_prefill_chunk_size} != {model.config.mm_tokens_per_image}"
             )
 
+        if "image_prefill" not in rbln_config.phases:
+            rbln_config.phases = ["prefill", "image_prefill", "decode"]
+
         return rbln_config
