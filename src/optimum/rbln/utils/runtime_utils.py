@@ -20,6 +20,10 @@ import rebel
 import torch
 
 
+def is_compiler_supports_buffer_resize() -> bool:
+    return hasattr(rebel.RBLNCompiledModel, "exp_multiply_buffer_size")
+
+
 def get_available_dram(npu: Optional[str] = None) -> int:
     """
     Get the available DRAM size of the specified NPU.
