@@ -8,7 +8,7 @@
     "extends": [
         ":semanticCommitsDisabled"
     ],
-    "commitMessagePrefix": "[pytest-full] dependency:",
+    "commitMessagePrefix": "[pytest-full] [slack-report] dependency:",
     "repositories": [
         "rbln-sw/optimum-rbln"
     ],

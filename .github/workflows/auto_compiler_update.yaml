@@ -68,7 +68,7 @@ jobs:
         uses: peter-evans/create-pull-request@v7
         with:
           token: ${{ env.TOKEN }}
-          commit-message: "[pytest-full] dependency: Update dependency rebel-compiler to ${{ needs.fetch-version.outputs.compiler_version }}"
+          commit-message: "[pytest-full] [slack-report] dependency: Update dependency rebel-compiler to ${{ needs.fetch-version.outputs.compiler_version }}"
           title: "dependency: Update dependency rebel-compiler to ${{ needs.fetch-version.outputs.compiler_version }}"
           base: dev
           team-reviewers: rbln-sw/sw-generalization

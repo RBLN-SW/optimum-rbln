@@ -154,7 +154,6 @@ class WhisperDecoderWrapper(torch.nn.Module):
 class WhisperDecoder(nn.Module):
     def __init__(self, model, layers, **kwargs):
         super().__init__()
-        self._original_mod = model
         self.layers = nn.ModuleList(layers)
         self.embed_tokens = model.embed_tokens
         self.layer_norm = model.layer_norm
@@ -210,7 +209,6 @@ class WhisperDecoder(nn.Module):
 class WhisperDecoderLayer(nn.Module):
     def __init__(self, decoder_layer, self_attn, cross_attn):
         super().__init__()
-        self._original_mod = decoder_layer
         self.self_attn = self_attn
         self.encoder_attn = cross_attn
         self.self_attn_layer_norm = decoder_layer.self_attn_layer_norm
@@ -263,7 +261,6 @@ class WhisperDecoderLayer(nn.Module):
 class WhisperAttention(nn.Module):
     def __init__(self, attn):
         super().__init__()
-        self._original_mod = attn
         self.q_proj = attn.q_proj
         self.k_proj = attn.k_proj
         self.v_proj = attn.v_proj

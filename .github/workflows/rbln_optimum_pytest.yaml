@@ -57,7 +57,7 @@ jobs:
       matrix: ${{ fromJson(
         (inputs.reuse_artifacts_path != '' || inputs.save_artifacts_path != '') &&
         '{"test_type":["transformers","diffusers","llm"]}' ||
-        '{"test_type":["config","transformers","diffusers","llm","cli-basic","cli-argument-parsing","cli-error-handling"]}'
+        '{"include":[{"test_type":"config"},{"test_type":"transformers"},{"test_type":"diffusers"},{"test_type":"llm","splits":4,"group":1},{"test_type":"llm","splits":4,"group":2},{"test_type":"llm","splits":4,"group":3},{"test_type":"llm","splits":4,"group":4},{"test_type":"cli-basic"},{"test_type":"cli-argument-parsing"},{"test_type":"cli-error-handling"}]}'
         )}}
     steps:
       - name: Checkout the optimum-rbln repository
@@ -171,7 +171,13 @@ jobs:
               uv run --no-sync pytest -n 1 tests/test_diffusers.py -vv --durations 0 $EXTRA_PYTEST_ARGS
               ;;
             "llm")
-              uv run --no-sync pytest -n 1 tests/test_llm.py -vv --durations 0 $EXTRA_PYTEST_ARGS
+              SPLITS="${{ matrix.splits || '' }}"
+              GROUP="${{ matrix.group || '' }}"
+              if [ -n "$SPLITS" ] && [ -n "$GROUP" ]; then
+                uv run --no-sync pytest -n 1 tests/test_llm.py --splits "$SPLITS" --group "$GROUP" -vv --durations 0 $EXTRA_PYTEST_ARGS
+              else
+                uv run --no-sync pytest -n 1 tests/test_llm.py -vv --durations 0 $EXTRA_PYTEST_ARGS
+              fi
               ;;
             cli-*)
               # Extract test type from matrix

@@ -33,7 +33,7 @@ dependencies = [
     "torchaudio<=2.8.0",
     "torchvision<=0.23.0",
     "accelerate>=1.0.1",
-    "transformers==4.57.1",
+    "transformers==4.57.3",
     "diffusers==0.36.0",
     "packaging>=24.1",
 ]
@@ -50,6 +50,7 @@ optimum-rbln-cli = "optimum.rbln.cli:main"
 tests = [
     "pytest>=8.4.2",
     "pytest-xdist>=3.8.0",
+    "pytest-split>=0.9.0",
     "psutil>=5.9.8",
     "parameterized>=0.9.0",
     "GitPython>=3.1.42",

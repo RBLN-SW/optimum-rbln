@@ -75,7 +75,7 @@ class DecoderOnlyWrapper(nn.Module):
                 f" or equal to max_seq_len({rbln_config.max_seq_len})!"
             )
 
-        self.model = self.convert_to_rbln_class(model, rbln_config.max_seq_len)
+        self.model = self.convert_to_rbln_class(model, rbln_config.max_seq_len, use_rotary_emb)
         self.num_hidden_layers = getattr(self.config, "num_hidden_layers", None) or self.config.n_layer
         self._phase = "prefill"
 
@@ -103,7 +103,7 @@ class DecoderOnlyWrapper(nn.Module):
     def get_rbln_causal_lm_class(self):
         return DecoderOnlyForCausalLM
 
-    def convert_to_rbln_class(self, model: PreTrainedModel, max_seq_len: int):
+    def convert_to_rbln_class(self, model: PreTrainedModel, max_seq_len: int, use_rotary_emb: bool):
         new_layers = []
         for layer_idx, layer in enumerate(self.get_decoder_layers(model)):
             is_sliding = layer_idx in self.rbln_config.sliding_window_layers
@@ -118,6 +118,7 @@ class DecoderOnlyWrapper(nn.Module):
             new_layers,
             self.rbln_config,
             use_learned_pos_emb=self.__class__._use_learned_pos_emb,
+            use_rotary_emb=use_rotary_emb,
         )
 
         if self.is_causal_lm:
@@ -243,7 +244,6 @@ class DecoderOnlyForCausalLM(nn.Module):
 
     Attributes:
         config: Configuration from the original causal language model
-        _original_mod: Reference to the original model for components like lm_head
         model: RBLN-optimized decoder model instance
         _phase: Current processing phase ("prefill" or "decode")
     """
@@ -251,10 +251,9 @@ class DecoderOnlyForCausalLM(nn.Module):
     def __init__(self, causal_lm: PreTrainedModel, model: nn.Module):
         super().__init__()
         self.config = causal_lm.config
-        self._original_mod = causal_lm
         self.model = model
         self._phase = "prefill"
-        self.lm_head = self._original_mod.lm_head
+        self.lm_head = causal_lm.lm_head
 
     @property
     def phase(self):
@@ -320,10 +319,15 @@ class DecoderOnlyModel(nn.Module):
         use_learned_pos_emb: Whether to use learned position embeddings (class-specific override)
 
     Attributes:
-        _original_mod: Reference to original Huggingface model
         layers: ModuleList of RBLN-optimized transformer layers
         _phase: Current processing phase ("prefill" or "decode")
     """
+
+    _EMBEDDING_ATTRS = ["embed_tokens", "wte"]
+    _POSITION_ATTRS = ["embed_positions", "wpe"]
+    _LAYERNORM_ATTRS = ["norm", "final_layer_norm", "final_layernorm", "ln_f", "layer_norm"]
+    _PRE_FF_LAYERNORM_ATTRS = None
+    _POST_FF_LAYERNORM_ATTRS = None
 
     def __init__(
         self,
@@ -331,9 +335,19 @@ class DecoderOnlyModel(nn.Module):
         layers: List["DecoderOnlyLayer"],
         rbln_config: "RBLNDecoderOnlyModelConfig",
         use_learned_pos_emb=None,
+        use_rotary_emb=True,
     ):
         super().__init__()
-        self._original_mod = model
+        self.config = model.config
+        # Keep commonly-used original submodules registered on this wrapper so their weights
+        # are preserved in state_dict even if the original model object is not kept.
+        # Different HF model families use different attribute names; we register what we can
+        # and allow subclasses to override getters when needed.
+        self.embed_tokens = _get_attr_from_candidates(model, self._EMBEDDING_ATTRS)
+        # hasattr(model, "rotary_emb") is workaround for Qwen2VL
+        if not (use_rotary_emb or hasattr(model, "rotary_emb")):
+            self.embed_positions = _get_attr_from_candidates(model, self._POSITION_ATTRS)
+        self.norm = _get_attr_from_candidates(model, self._LAYERNORM_ATTRS)
         self.layers = nn.ModuleList(layers)
         self.rbln_config = rbln_config
         self._phase = "prefill"
@@ -373,7 +387,7 @@ class DecoderOnlyModel(nn.Module):
         return cache_pos_for_partitions
 
     def get_swa_custom_op_args(self, position_ids, query_position):
-        max_cache_len = self._original_mod.config.sliding_window
+        max_cache_len = self.config.sliding_window
         valid_input_len = 1 if query_position is None else query_position + 1
         cache_seq_len = torch.clamp(position_ids.to(torch.int32), max=max_cache_len)[:, :1]  # past seen tokens
         cache_offset = (
@@ -455,15 +469,13 @@ class DecoderOnlyModel(nn.Module):
         return seq_blk_pos, valid_batch_per_partitions, attn_mask
 
     def get_last_layernorm(self) -> nn.LayerNorm:
-        return self._original_mod.norm
+        return self.norm
 
     def get_embedding(self) -> nn.Embedding:
-        return self._original_mod.embed_tokens
+        return self.embed_tokens
 
     def get_pos_embedding(self) -> nn.Embedding:
-        raise NotImplementedError(
-            "The 'get_pos_embedding' method is not implemented. Please define this method in a subclass."
-        )
+        return self.embed_positions
 
     def forward(
         self,
@@ -613,14 +625,23 @@ class DecoderOnlyLayer(nn.Module):
         self_attn (DecoderOnlyAttention): Modified attention module optimized for RBLN
 
     Attributes:
-        _original_mod: Reference to original layer for accessing components
         self_attn: Modified attention mechanism mapped to RBLN ops at compile time
         phase: Current operation phase ("prefill" or "decode")
     """
 
+    _PRE_ATTN_LAYERNORM = ["input_layernorm", "ln_1", "self_attn_layer_norm", "pre_feedforward_layernorm"]
+    _POST_ATTN_LAYERNORM = ["post_attention_layernorm", "ln_2", "final_layer_norm", "post_feedforward_layernorm"]
+    _PRE_FF_LAYERNORM_ATTRS = None
+    _POST_FF_LAYERNORM_ATTRS = None
+
     def __init__(self, layer, self_attn: "DecoderOnlyAttention", lora_config: Optional[RBLNLoRAConfig] = None):
         super().__init__()
-        self._original_mod = layer
+
+        self.pre_attention_layernorm = _get_attr_from_candidates(layer, self._PRE_ATTN_LAYERNORM)
+        self.post_attention_layernorm = _get_attr_from_candidates(layer, self._POST_ATTN_LAYERNORM)
+        self.pre_feedforward_layernorm = _get_attr_from_candidates(layer, self._PRE_FF_LAYERNORM_ATTRS)
+        self.post_feedforward_layernorm = _get_attr_from_candidates(layer, self._POST_FF_LAYERNORM_ATTRS)
+        self.mlp = layer.mlp
         self.self_attn = self_attn
         self._phase = "prefill"
         self.lora_config = lora_config
@@ -650,13 +671,19 @@ class DecoderOnlyLayer(nn.Module):
         self.self_attn.phase = phase
 
     def get_pre_attention_layernorm(self) -> nn.LayerNorm:
-        return self._original_mod.input_layernorm
+        return self.pre_attention_layernorm
 
     def get_post_attention_layernorm(self) -> nn.LayerNorm:
-        return self._original_mod.post_attention_layernorm
+        return self.post_attention_layernorm
+
+    def get_pre_feedforward_layernorm(self) -> nn.LayerNorm:
+        return self.pre_feedforward_layernorm
+
+    def get_post_feedforward_layernorm(self) -> nn.LayerNorm:
+        return self.post_feedforward_layernorm
 
     def get_mlp(self) -> nn.Module:
-        return self._original_mod.mlp
+        return self.mlp
 
     def forward_mlp(self, hidden_states: torch.Tensor, lora_int_id: Optional[torch.Tensor] = None) -> torch.Tensor:
         mlp = self.get_mlp()
@@ -726,6 +753,8 @@ class DecoderOnlyAttention(nn.Module):
         is_sliding: Whether this is sliding window attention
     """
 
+    _O_PROJ_ATTRS = ["o_proj", "out_proj", "dense"]
+
     def __init__(
         self,
         self_attn,
@@ -733,20 +762,18 @@ class DecoderOnlyAttention(nn.Module):
         is_sliding=False,
     ):
         super().__init__()
-        self._original_mod = self_attn
+        self.config = getattr(self_attn, "config", None)
         self.rbln_config = rbln_config
         self.layer_idx = self_attn.layer_idx
-        self.num_heads = (
-            getattr(self._original_mod, "num_heads", None) or self._original_mod.config.num_attention_heads
-        )
-        self.head_dim = self._original_mod.head_dim
+        self.num_heads = getattr(self_attn, "num_heads", None) or self_attn.config.num_attention_heads
+        self.head_dim = self_attn.head_dim
         self._phase = "prefill"
-        self.scale = torch.nn.Parameter(torch.tensor(self.get_attn_scale()))
+        self.scale = torch.nn.Parameter(torch.tensor(self.get_attn_scale(self_attn)))
 
-        if hasattr(self._original_mod, "num_key_value_heads"):
-            self.num_key_value_heads = self._original_mod.num_key_value_heads
-        elif hasattr(self._original_mod, "config") and hasattr(self._original_mod.config, "num_key_value_heads"):
-            self.num_key_value_heads = self._original_mod.config.num_key_value_heads
+        if hasattr(self_attn, "num_key_value_heads"):
+            self.num_key_value_heads = self_attn.num_key_value_heads
+        elif hasattr(self_attn, "config") and hasattr(self_attn.config, "num_key_value_heads"):
+            self.num_key_value_heads = self_attn.config.num_key_value_heads
         else:
             self.num_key_value_heads = self.num_heads
 
@@ -756,13 +783,16 @@ class DecoderOnlyAttention(nn.Module):
         self.kvcache_block_size = rbln_config.sliding_window if is_sliding else rbln_config.kvcache_block_size
         self.lora_config = rbln_config.lora_config
 
+        if hasattr(self_attn, "sinks"):
+            self.sinks = self_attn.sinks.data[:, None]
+
         setattr(self, self.get_attention_name(), self.create_attention_op())
-        self.__post_init__()
+        self.__post_init__(self_attn)
 
     def _init_lora_weights(self):
         """Initialize LoRA adapter weights by replacing linear layers with LoRALinear."""
         for proj_name in ["q_proj", "k_proj", "v_proj", "o_proj"]:
-            original_linear = getattr(self._original_mod, proj_name)
+            original_linear = getattr(self, proj_name)
             lora_linear = LoRALinear(
                 original_linear=original_linear,
                 lora_config=self.lora_config,
@@ -819,16 +849,15 @@ class DecoderOnlyAttention(nn.Module):
         else:
             raise NotImplementedError(f"Unknown attention implementation: {self.attn_impl}")
 
-    def __post_init__(self):
+    def __post_init__(self, self_attn=None):
+        self.q_proj = self_attn.q_proj
+        self.k_proj = self_attn.k_proj
+        self.v_proj = self_attn.v_proj
+        self.o_proj = _get_attr_from_candidates(self_attn, self._O_PROJ_ATTRS)
+
         # Initialize LoRA weights if configured, which will replace linear layers
         if self.lora_config:
             self._init_lora_weights()
-        else:
-            # Use original linear layers if no LoRA
-            self.q_proj = self._original_mod.q_proj
-            self.k_proj = self._original_mod.k_proj
-            self.v_proj = self._original_mod.v_proj
-            self.o_proj = self._original_mod.o_proj
 
     def projection(
         self, hidden_states, lora_int_id: Optional[torch.Tensor] = None
@@ -859,8 +888,8 @@ class DecoderOnlyAttention(nn.Module):
     def apply_rotary_pos_embed(self, query_states, key_states, cos, sin):
         return apply_rotary_pos_emb(query_states, key_states, cos, sin)
 
-    def get_attn_scale(self):
-        return 1 / math.sqrt(self.head_dim)
+    def get_attn_scale(self, self_attn):
+        return 1 / math.sqrt(self_attn.head_dim)
 
     def maybe_get_kvcache_scale(self) -> Tuple[Optional[torch.Tensor], Optional[torch.Tensor]]:
         if hasattr(self, "k_proj") and hasattr(self, "v_proj"):
@@ -1425,3 +1454,22 @@ def apply_rotary_pos_emb_partial(query_states, key_states, cos, sin, ndim) -> Tu
     query_states = torch.cat((query_rot, query_pass), dim=-1)
     key_states = torch.cat((key_rot, key_pass), dim=-1)
     return query_states, key_states
+
+
+def _get_attr_from_candidates(
+    src: object,
+    candidates: Optional[List[str]] = None,
+):
+    """
+    Get an attribute from a list of candidate names.
+
+    - If `candidates` is None, this attribute is treated as optional and returns None.
+    - Otherwise, returns `getattr(src, name)` for the first `name` in `candidates` that exists on `src`.
+    - Raises AttributeError if `candidates` is provided but none of the names exist on `src`.
+    """
+    if candidates is None:
+        return None
+    for name in candidates:
+        if hasattr(src, name):
+            return getattr(src, name)
+    raise AttributeError(f"None of the attributes {candidates} exist in {src}")

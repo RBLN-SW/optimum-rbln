@@ -79,6 +79,10 @@ _import_structure = {
         "RBLNColQwen2ForRetrieval",
         "RBLNColQwen2ForRetrievalConfig",
     ],
+    "detr": [
+        "RBLNDetrForObjectDetection",
+        "RBLNDetrForObjectDetectionConfig",
+    ],
     "distilbert": [
         "RBLNDistilBertForQuestionAnswering",
         "RBLNDistilBertForQuestionAnsweringConfig",
@@ -264,6 +268,7 @@ if TYPE_CHECKING:
         RBLNLoRAConfig,
     )
     from .depth_anything import RBLNDepthAnythingForDepthEstimation, RBLNDepthAnythingForDepthEstimationConfig
+    from .detr import RBLNDetrForObjectDetection, RBLNDetrForObjectDetectionConfig
     from .distilbert import RBLNDistilBertForQuestionAnswering, RBLNDistilBertForQuestionAnsweringConfig
     from .dpt import RBLNDPTForDepthEstimation, RBLNDPTForDepthEstimationConfig
     from .exaone import RBLNExaoneForCausalLM, RBLNExaoneForCausalLMConfig
