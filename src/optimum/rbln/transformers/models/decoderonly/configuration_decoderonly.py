@@ -289,6 +289,18 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
         return "decode" in self.phases
 
     @property
+    def use_image_prefill(self):
+        return "image_prefill" in self.phases
+
+    @property
+    def image_prefill_runtime_idx(self):
+        return self.phases.index("image_prefill")
+
+    @property
+    def decoder_runtime_idx(self):
+        return self.phases.index("decode")
+
+    @property
     def nbits_per_param(self) -> int:
         if self.quantization:
             return self.quantization.nbits_per_param

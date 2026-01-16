@@ -104,6 +104,11 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
             "rbln_config": self.rbln_config,
             "config": self.config,
         }
+
+        if self.rbln_config.use_image_prefill:
+            # TODO(sdk-gen): Implement and combine prefill and image prefill into a single runtime.
+            raise NotImplementedError(f"Image prefill at {self.__class__.__name__} is not supported yet.")
+
         self.prefill_decoder = RBLNRuntimeModel(
             runtime=self.model[0],
             phase="prefill",
@@ -287,9 +292,27 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
             phase="prefill",
         )
 
+        if rbln_config.use_image_prefill:
+            image_prefill_compile_config = rbln_config.compile_cfgs[rbln_config.image_prefill_runtime_idx]
+            image_prefill_example_inputs = image_prefill_compile_config.get_dummy_inputs(
+                fill=0, static_tensors=static_tensors
+            )
+            compiled_image_prefill = cls._compile_model(
+                wrapped_model,
+                image_prefill_compile_config,
+                image_prefill_example_inputs,
+                context,
+                rbln_config,
+                rbln_config.quantization,
+                phase="image_prefill",
+            )
+            compiled_models["image_prefill"] = compiled_image_prefill
+
         if rbln_config.can_generate:
             wrapped_model.phase = "decode"
-            for batch_size, dec_compile_config in zip(rbln_config.decoder_batch_sizes, rbln_config.compile_cfgs[1:]):
+            for batch_size, dec_compile_config in zip(
+                rbln_config.decoder_batch_sizes, rbln_config.compile_cfgs[rbln_config.decoder_runtime_idx :]
+            ):
                 dec_example_inputs = dec_compile_config.get_dummy_inputs(fill=0, static_tensors=static_tensors)
                 compiled_decoder = cls._compile_model(
                     wrapped_model,
@@ -548,6 +571,22 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
         prefill_compile_config = RBLNCompileConfig(compiled_model_name="prefill", input_info=prefill_input_info)
         compile_cfgs = [prefill_compile_config]
 
+        if rbln_config.use_image_prefill:
+            if rbln_config.prefill_chunk_size != rbln_config.image_prefill_chunk_size:
+                raise NotImplementedError(
+                    "Not implemented for different prefill chunk sizes between text and image prefill."
+                )
+            image_prefill_input_info = cls.get_input_info(
+                batch_size=1,
+                query_length=rbln_config.image_prefill_chunk_size,
+                rbln_config=rbln_config,
+                model_config=model_config,
+            )
+            image_prefill_compile_config = RBLNCompileConfig(
+                compiled_model_name="image_prefill", input_info=image_prefill_input_info
+            )
+            compile_cfgs.append(image_prefill_compile_config)
+
         if rbln_config.can_generate:
             for batch_size in rbln_config.decoder_batch_sizes:
                 dec_input_info = cls.get_input_info(
@@ -569,36 +608,23 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
         compiled_models: List[rebel.RBLNCompiledModel],
         rbln_config: RBLNDecoderOnlyModelForCausalLMConfig,
     ) -> List[rebel.Runtime]:
-        expected_model_names = ["prefill"]
-        if rbln_config.can_generate:
-            expected_model_names.extend(
-                [f"decoder_batch_{batch_size}" for batch_size in rbln_config.decoder_batch_sizes]
-            )
+        expected_model_names = rbln_config.phases[: rbln_config.decoder_runtime_idx] + [
+            f"decoder_batch_{batch_size}" for batch_size in rbln_config.decoder_batch_sizes
+        ]  # ["prefill", "image_prefill", "decoder_batch_1", "decoder_batch_2", ...]
+
         if any(model_name not in rbln_config.device_map for model_name in expected_model_names):
             cls._raise_missing_compiled_file_error(expected_model_names)
 
         ret_val = [
             rebel.Runtime(
-                compiled_models[0],
+                compiled_models[i],
                 tensor_type="pt",
-                device=rbln_config.device_map["prefill"],
+                device=rbln_config.device_map[model_name],
                 activate_profiler=rbln_config.activate_profiler,
                 timeout=rbln_config.timeout,
             )
+            for i, model_name in enumerate(expected_model_names)
         ]
-        if rbln_config.can_generate:
-            ret_val.extend(
-                [
-                    rebel.Runtime(
-                        compiled_models[i + 1],
-                        tensor_type="pt",
-                        device=rbln_config.device_map[f"decoder_batch_{batch_size}"],
-                        activate_profiler=rbln_config.activate_profiler,
-                        timeout=rbln_config.timeout,
-                    )
-                    for i, batch_size in enumerate(rbln_config.decoder_batch_sizes)
-                ]
-            )
         return ret_val
 
     def forward(

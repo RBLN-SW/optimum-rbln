@@ -49,22 +49,24 @@ class RBLNGemma3ForCausalLMConfig(RBLNDecoderOnlyModelForCausalLMConfig):
         use_attention_mask = use_attention_mask or True
         use_position_ids = use_position_ids or True
         prefill_chunk_size = prefill_chunk_size or 256
+        phases = kwargs.pop("phases", None)
+        if phases is None:
+            if image_prefill_chunk_size is not None:
+                phases = ["prefill", "image_prefill", "decode"]
+            else:
+                phases = ["prefill", "decode"]
 
         super().__init__(
             prefill_chunk_size=prefill_chunk_size,
             use_attention_mask=use_attention_mask,
             use_position_ids=use_position_ids,
+            phases=phases,
             **kwargs,
         )
         self.image_prefill_chunk_size = image_prefill_chunk_size
 
-    @property
-    def use_image_prefill(self):
-        return self.image_prefill_chunk_size is not None
-
-    @property
-    def decoder_runtime_idx(self):
-        return 2 if self.use_image_prefill else 1
+        if not (self.use_attention_mask and self.use_position_ids):
+            raise ValueError("use_attention_mask and use_position_ids must be True for RBLNGemma3ForCausalLM")
 
 
 class RBLNGemma3ForConditionalGenerationConfig(RBLNModelConfig):
