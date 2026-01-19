@@ -13,11 +13,9 @@
 # limitations under the License.
 import importlib
 import inspect
-from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Any, Callable, Dict, Optional, Tuple, Union
 
-import rebel
 import torch
-from rebel.compile_context import CompileContext
 from transformers import AutoModelForImageTextToText, Gemma3ForConditionalGeneration, PretrainedConfig, PreTrainedModel
 from transformers.modeling_outputs import BaseModelOutputWithPooling
 from transformers.modeling_utils import no_init_weights
@@ -29,10 +27,7 @@ from ...modeling_outputs import RBLNDecoderOnlyOutput
 from ...utils.rbln_runtime_wrapper import LoopProcessor
 from ..decoderonly.decoderonly_runtime_utils import RBLNPageTableManager
 from ..decoderonly.generation_decoderonly import RBLNDecoderOnlyGenerationMixin
-from ..decoderonly.modeling_decoderonly import (
-    RBLNDecoderOnlyModelForCausalLM,
-)
-from .configuration_gemma3 import RBLNGemma3ForCausalLMConfig
+from ..decoderonly.modeling_decoderonly import RBLNDecoderOnlyModelForCausalLM
 from .gemma3_architecture import Gemma3ForCausalLMWrapper
 from .gemma3_runtime_utils import RBLNGemma3RuntimeModel
 
@@ -455,174 +450,7 @@ class RBLNGemma3ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
                 f"Image prefill chunk size is different from mm_tokens_per_image: {rbln_config.image_prefill_chunk_size} != {model.config.mm_tokens_per_image}"
             )
 
-        return rbln_config
-
-    @classmethod
-    def _update_rbln_config(
-        cls,
-        preprocessors: Optional[Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"]] = None,
-        model: Optional["PreTrainedModel"] = None,
-        model_config: Optional["PretrainedConfig"] = None,
-        rbln_config: Optional[RBLNGemma3ForCausalLMConfig] = None,
-    ) -> RBLNGemma3ForCausalLMConfig:
-        # Update rbln_config with super class
-        rbln_config = super()._update_rbln_config(preprocessors, model, model_config, rbln_config)
-
-        if not (rbln_config.use_attention_mask and rbln_config.use_position_ids):
-            raise ValueError("use_attention_mask and use_position_ids must be True for RBLNGemma3ForCausalLM")
-
-        if rbln_config.use_image_prefill:
-            if rbln_config.prefill_chunk_size != rbln_config.image_prefill_chunk_size:
-                raise NotImplementedError(
-                    "Not implemented for different prefill chunk sizes between text and image prefill."
-                )
-
-            # Update image prefill compile config
-            img_prefill_input_info = cls.get_input_info(
-                batch_size=1,
-                query_length=rbln_config.image_prefill_chunk_size,
-                rbln_config=rbln_config,
-                model_config=model_config,
-            )
-            image_prefill_compile_config = RBLNCompileConfig(
-                compiled_model_name="image_prefill", input_info=img_prefill_input_info
-            )
-            # Insert image_prefill compile config at index 1
-            compile_cfgs = rbln_config.compile_cfgs
-            compile_cfgs.insert(1, image_prefill_compile_config)
-            rbln_config.set_compile_cfgs(compile_cfgs)
+        if "image_prefill" not in rbln_config.phases:
+            rbln_config.phases = ["prefill", "image_prefill", "decode"]
 
         return rbln_config
-
-    @classmethod
-    @torch.inference_mode()
-    def get_compiled_model(cls, model: "PreTrainedModel", rbln_config: RBLNGemma3ForCausalLMConfig):
-        wrapped_model = cls._wrap_model_if_needed(model, rbln_config)
-
-        rbln_compile_configs = rbln_config.compile_cfgs
-        prefill_compile_config = rbln_compile_configs[0]
-
-        context = CompileContext(use_weight_sharing=True)
-
-        # Here we use meta tensor, for the memory efficiency.
-        meta_tensor_names = [name for name, _, _ in prefill_compile_config.input_info if "past_key_values" in name]
-        prefill_example_inputs = prefill_compile_config.get_dummy_inputs(fill=0, meta_tensor_names=meta_tensor_names)
-
-        # Mark static tensors (self kv states)
-        static_tensors = {}
-        for (name, _, _), tensor in zip(prefill_compile_config.input_info, prefill_example_inputs):
-            if "past_key_values" in name:
-                static_tensors[name] = tensor
-                context.mark_static_address(tensor)
-
-        def compile_model(wrapped_model, compile_config, example_inputs, compile_context, quantization):
-            try:
-                if quantization:
-                    quantization.maybe_set_quantization_env()
-                original_linear = torch.nn.functional.linear
-                torch.nn.functional.linear = torch.ops.rbln_custom_ops.linear
-                compiled_model = cls.compile(
-                    wrapped_model,
-                    compile_config,
-                    create_runtimes=rbln_config.create_runtimes,
-                    device=rbln_config.device,
-                    example_inputs=example_inputs,
-                    compile_context=compile_context,
-                )
-                return compiled_model
-            finally:
-                torch.nn.functional.linear = original_linear
-                if quantization:
-                    quantization.maybe_reset_quantization_env()
-
-        wrapped_model.phase = "prefill"
-        compiled_prefill = compile_model(
-            wrapped_model,
-            prefill_compile_config,
-            prefill_example_inputs,
-            context,
-            rbln_config.quantization,
-        )
-        compiled_models = {"prefill": compiled_prefill}
-
-        if rbln_config.use_image_prefill:
-            image_prefill_compile_config = rbln_compile_configs[1]
-            image_prefill_example_inputs = image_prefill_compile_config.get_dummy_inputs(
-                fill=0, static_tensors=static_tensors
-            )
-            wrapped_model.phase = "image_prefill"
-            compiled_image_prefill = compile_model(
-                wrapped_model,
-                image_prefill_compile_config,
-                image_prefill_example_inputs,
-                context,
-                rbln_config.quantization,
-            )
-            compiled_models["image_prefill"] = compiled_image_prefill
-
-        wrapped_model.phase = "decode"
-        for batch_size, dec_compile_config in zip(
-            rbln_config.decoder_batch_sizes, rbln_compile_configs[rbln_config.decoder_runtime_idx :]
-        ):
-            dec_example_inputs = dec_compile_config.get_dummy_inputs(fill=0, static_tensors=static_tensors)
-            compiled_decoder = compile_model(
-                wrapped_model,
-                dec_compile_config,
-                dec_example_inputs,
-                context,
-                rbln_config.quantization,
-            )
-            compiled_models[f"decoder_batch_{batch_size}"] = compiled_decoder
-
-        return compiled_models
-
-    @classmethod
-    def _create_runtimes(
-        cls,
-        compiled_models: List[rebel.RBLNCompiledModel],
-        rbln_config: RBLNGemma3ForCausalLMConfig,
-    ) -> List[rebel.Runtime]:
-        expected_model_names = [
-            "prefill",
-            *[f"decoder_batch_{batch_size}" for batch_size in rbln_config.decoder_batch_sizes],
-        ]
-        if rbln_config.use_image_prefill:
-            expected_model_names.insert(1, "image_prefill")
-
-        if any(model_name not in rbln_config.device_map for model_name in expected_model_names):
-            cls._raise_missing_compiled_file_error(expected_model_names)
-
-        ret_val = [
-            rebel.Runtime(
-                compiled_models[0],
-                tensor_type="pt",
-                device=rbln_config.device_map["prefill"],
-                activate_profiler=rbln_config.activate_profiler,
-                timeout=rbln_config.timeout,
-            )
-        ]
-        if rbln_config.use_image_prefill:
-            ret_val.append(
-                rebel.Runtime(
-                    compiled_models[1],
-                    tensor_type="pt",
-                    device=rbln_config.device_map["image_prefill"],
-                    activate_profiler=rbln_config.activate_profiler,
-                    timeout=rbln_config.timeout,
-                ),
-            )
-
-        ret_val.extend(
-            [
-                rebel.Runtime(
-                    compiled_models[i + rbln_config.decoder_runtime_idx],
-                    tensor_type="pt",
-                    device=rbln_config.device_map[f"decoder_batch_{batch_size}"],
-                    activate_profiler=rbln_config.activate_profiler,
-                    timeout=rbln_config.timeout,
-                )
-                for i, batch_size in enumerate(rbln_config.decoder_batch_sizes)
-            ]
-        )
-
-        return ret_val
