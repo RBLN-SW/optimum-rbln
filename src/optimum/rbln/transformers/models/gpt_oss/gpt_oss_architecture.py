@@ -28,9 +28,16 @@ from ..decoderonly.decoderonly_architecture import (
 
 
 class RBLNGptOssWrapper(DecoderOnlyWrapper):
+    def get_rbln_attn_class(self):
+        return RBLNGptOssAttention
+    
     def get_rbln_layer_class(self):
         return RBLNGptOssLayer
 
+class RBLNGptOssAttention(DecoderOnlyAttention):
+    def __post_init__(self, self_attn=None):
+        super().__post_init__(self_attn)
+        self.sinks = self_attn.sinks.data[:, None]
 
 class RBLNGptOssLayer(DecoderOnlyLayer):
     def __init__(self, layer, self_attn: DecoderOnlyAttention, lora_config: Optional[RBLNLoRAConfig] = None):
