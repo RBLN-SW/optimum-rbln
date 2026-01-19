@@ -518,6 +518,21 @@ class RBLNRuntimeModel(RBLNPytorchRuntime):
         Instead of processing the entire sequence at once, the input is divided into chunks of size `prefill_chunk_size`,
         and each chunk is processed sequentially. This allows for better memory utilization and compatibility with continuous batching.
         """
+
+        import numpy as np
+        def aligned_tensor(size, dtype=np.float16, alignment=4096):
+            itemsize = np.dtype(dtype).itemsize
+            extra = alignment // itemsize
+
+            buf = np.empty(size + extra, dtype=dtype)
+
+            address = buf.ctypes.data
+            offset = (-address % alignment) // itemsize
+            aligned_buf = buf[offset:offset + size]
+
+            assert aligned_buf.ctypes.data % alignment == 0, "Alignment failed"
+            return torch.from_numpy(aligned_buf).contiguous()
+
         if self.rbln_config.use_lora and lora_int_ids is None:
             if self.lora_int_ids is None:
                 raise ValueError(
@@ -615,6 +630,20 @@ class RBLNRuntimeModel(RBLNPytorchRuntime):
                 lora_int_ids if self.rbln_config.use_lora else None,
                 out=out_buffers[i],
             )
+
+            n_layers = 28
+            import rebel.kv_cache
+            cpu_kv_cache = aligned_tensor(n_layers * 2 * 3 * 8 * 4096 * 128) # max_seq=8192
+            current_block_idx = block_tables[step // self.rbln_config.kvcache_block_size].item()
+            current_block_offset = step % self.rbln_config.kvcache_block_size
+            print(f"current block idx: {current_block_idx}, current block offset: {current_block_offset}")
+
+            rebel.kv_cache.get_kv_cache(self.runtime, cpu_kv_cache, current_block_idx, current_block_offset, size=self.rbln_config.prefill_chunk_size)
+
+            # Update cpu_kv_cache with random values for functionality testing.
+            cpu_kv_cache.copy_(torch.randn(cpu_kv_cache.shape, dtype=cpu_kv_cache.dtype))
+            
+            rebel.kv_cache.set_kv_cache(self.runtime, cpu_kv_cache, current_block_idx, current_block_offset, size=self.rbln_config.prefill_chunk_size)
 
         # Aggregate output_logits
         padding_size = (self.rbln_config.prefill_chunk_size - query_length) % self.rbln_config.prefill_chunk_size
