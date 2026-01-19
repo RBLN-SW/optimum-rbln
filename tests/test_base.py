@@ -105,7 +105,7 @@ class BaseHubTest:
 
         @require_hf_token
         @require_hf_user_id
-        def test_pull_compiled_model_from_hub(self):
+        def test_z_pull_compiled_model_from_hub(self):
             HF_AUTH_TOKEN = os.environ.get("HF_AUTH_TOKEN", None)
             HF_USER_ID = os.environ.get("HF_USER_ID", None)
 
