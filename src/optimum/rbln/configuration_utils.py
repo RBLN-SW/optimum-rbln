@@ -32,6 +32,31 @@ from .utils.runtime_utils import ContextRblnConfig
 logger = get_logger(__name__)
 
 
+def _recursive_update(base_dict: Dict[str, Any], update_dict: Dict[str, Any]) -> None:
+    """
+    Recursively update a dictionary with another dictionary.
+
+    This function performs a deep merge where nested dictionaries are merged
+    recursively, rather than being completely replaced.
+
+    Args:
+        base_dict: The dictionary to update (modified in-place).
+        update_dict: The dictionary containing updates to apply.
+
+    Example:
+        >>> base = {"key": {"a": 1, "b": 2}}
+        >>> update = {"key": {"a": 2}}
+        >>> _recursive_update(base, update)
+        >>> base
+        {"key": {"a": 2, "b": 2}}
+    """
+    for key, value in update_dict.items():
+        if key in base_dict and isinstance(base_dict[key], dict) and isinstance(value, dict):
+            _recursive_update(base_dict[key], value)
+        else:
+            base_dict[key] = value
+
+
 DEFAULT_COMPILED_MODEL_NAME = "compiled_model"
 TypeInputInfo = List[Tuple[str, Tuple[int], str]]
 
@@ -293,12 +318,21 @@ class RBLNAutoConfig:
             if submodule not in config_file:
                 raise ValueError(f"Submodule {submodule} not found in rbln_config.json.")
             submodule_config = config_file[submodule]
-            submodule_config.update(rbln_submodule_kwargs.pop(submodule, {}))
+            update_dict = rbln_submodule_kwargs.pop(submodule, {})
+            if update_dict:
+                _recursive_update(submodule_config, update_dict)
             config_file[submodule] = RBLNAutoConfig.load_from_dict(submodule_config)
 
         if passed_rbln_config is not None:
             config_file.update(passed_rbln_config._runtime_options)
-            # TODO(jongho): Reject if the passed_rbln_config has different attributes from the config_file
+
+            # update submodule runtime
+            for submodule in passed_rbln_config.submodules:
+                if str(config_file[submodule]) != str(getattr(passed_rbln_config, submodule)):
+                    raise ValueError(
+                        f"Passed rbln_config has different attributes for submodule {submodule} than the config_file"
+                    )
+                config_file[submodule] = getattr(passed_rbln_config, submodule)
 
         config_file.update(rbln_runtime_kwargs)
 
