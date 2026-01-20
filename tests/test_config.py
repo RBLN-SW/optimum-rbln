@@ -75,6 +75,40 @@ def test_config_dict(model_id):
     # Config dict should be properly applied
 
 
+def test_config_object_load(model_id, tmp_path):
+    """Test loading rbln_config with various approaches: plain load, rbln_config dict, and rbln_ prefix."""
+    # Create and save a base config
+    base_config = RBLNResNetForImageClassificationConfig(image_size=128)
+    compile_cfg = RBLNCompileConfig(input_info=[("pixel_values", (1, 3, 128, 128), "float32")])
+    base_config.set_compile_cfgs([compile_cfg])
+    base_config.freeze()
+    config_path = tmp_path / "test_config.json"
+    base_config.save(str(config_path))
+
+    # Subtest 1: Plain load
+    loaded_config = RBLNResNetForImageClassificationConfig.load(str(config_path))
+    assert loaded_config.image_size == 128, "Plain load: image_size mismatch"
+
+    # Subtest 2: Load with rbln_config dict
+    loaded_config = RBLNResNetForImageClassificationConfig.load(
+        str(config_path), rbln_config={"create_runtimes": False}
+    )
+    assert loaded_config.create_runtimes is False, "Load with rbln_config: create_runtimes mismatch"
+
+    # Subtest 3: Load with rbln_ prefix
+    loaded_config = RBLNResNetForImageClassificationConfig.load(str(config_path), rbln_create_runtimes=False)
+    assert loaded_config.create_runtimes is False, "Load with rbln_ prefix: create_runtimes mismatch"
+
+    # Subtest 4: Load with rbln_config object
+    with pytest.raises(
+        NotImplementedError, match="Loading from an existing RBLNModelConfig instance is not supported yet."
+    ):
+        loaded_config = RBLNResNetForImageClassificationConfig.load(
+            str(config_path), rbln_config=RBLNResNetForImageClassificationConfig(create_runtimes=False)
+        )
+        assert loaded_config.create_runtimes is False, "Load with rbln_ prefix: create_runtimes mismatch"
+
+
 def test_config_object(model_id):
     """Test loading model with a pre-configured RBLNResNetForImageClassificationConfig object."""
     config = RBLNResNetForImageClassificationConfig()
@@ -92,7 +126,7 @@ def test_config_object(model_id):
 
 
 def test_mixed_config_approach_0(model_id):
-    """Test that using both rbln_config class and rbln_ prefixed arguments raises ValueError."""
+    """Test that using both rbln_config class and rbln_ prefixed arguments."""
     config = RBLNResNetForImageClassificationConfig()
     config.create_runtimes = False
 
@@ -101,13 +135,14 @@ def test_mixed_config_approach_0(model_id):
     config.set_compile_cfgs([compile_cfg])
 
     # Should raise ValueError: cannot use both rbln_config and rbln_ prefixed arguments
-    with pytest.raises(ValueError, match="Cannot use both"):
-        model = RBLNResNetForImageClassification.from_pretrained(  # noqa: F841
-            model_id,
-            export=True,
-            rbln_config=config,
-            rbln_image_size=128,
-        )
+    model = RBLNResNetForImageClassification.from_pretrained(  # noqa: F841
+        model_id,
+        export=True,
+        rbln_config=config,
+        rbln_image_size=128,
+    )
+
+    assert model.rbln_config.image_size == (224, 224)
 
 
 def test_mixed_config_approach_1(model_id):

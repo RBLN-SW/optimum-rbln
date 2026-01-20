@@ -872,7 +872,9 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
             json.dump(serializable_data, jsonf, indent=2)
 
     @classmethod
-    def load(cls, path: str, **kwargs: Any) -> "RBLNModelConfig":
+    def load(
+        cls, path: str, rbln_config: Union[Dict[str, Any], "RBLNModelConfig", None] = None, **kwargs: Any
+    ) -> "RBLNModelConfig":
         """
         Load a RBLNModelConfig from a path.
 
@@ -895,9 +897,18 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
         if cls_reserved != cls:
             logger.warning(f"Expected {cls.__name__}, but got {cls_reserved.__name__}.")
 
-        rbln_keys = [key for key in kwargs.keys() if key.startswith("rbln_")]
-        rbln_kwargs = {key[5:]: kwargs.pop(key) for key in rbln_keys}
-        config_file.update(rbln_kwargs)
+        rbln_config, kwargs = validate_and_convert_rbln_config_dict(rbln_config, **kwargs)
+        if len(kwargs) > 0:
+            raise ValueError(
+                f"Unexpected arguments: {kwargs.keys()}. "
+                "Please use `rbln_config` or `rbln_` prefixed arguments, not both."
+            )
+
+        if isinstance(rbln_config, dict):
+            config_file.update(rbln_config)
+        elif isinstance(rbln_config, cls):
+            raise NotImplementedError("Loading from an existing RBLNModelConfig instance is not supported yet.")
+            # FIXME(seinpark) rbln_config is an instance of RBLNModelConfig
 
         return cls(**config_file)
 
@@ -907,31 +918,12 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
         rbln_config: Optional[Union[Dict[str, Any], "RBLNModelConfig"]] = None,
         **kwargs: Any,
     ) -> Tuple["RBLNModelConfig", Dict[str, Any]]:
-        # Initialize RBLNModelConfig from kwargs.
-        kwargs_keys = list(kwargs.keys())
-        rbln_kwargs = {key[5:]: kwargs.pop(key) for key in kwargs_keys if key.startswith("rbln_")}
+        # Validate and merge rbln_ prefixed kwargs into rbln_config
+        rbln_config, kwargs = validate_and_convert_rbln_config_dict(rbln_config, **kwargs)
 
-        # Check if both rbln_config and rbln_ prefixed arguments are provided
-        if rbln_config is not None and len(rbln_kwargs) > 0:
-            raise ValueError(
-                f"Cannot use both `rbln_config` and `rbln_` prefixed arguments simultaneously.\n"
-                f"Found rbln_ prefixed arguments: {list(rbln_kwargs.keys())}.\n\n"
-                f"Please choose one of the following approaches:\n"
-                f"  1. Using rbln_ prefixed arguments:\n"
-                f"     model = RBLNModel.from_pretrained('model_id', export=True, rbln_batch_size=4)\n\n"
-                f"  2. Using rbln_config dictionary:\n"
-                f"     model = RBLNModel.from_pretrained('model_id', export=True, rbln_config={{'batch_size': 4}})\n\n"
-                f"  3. Using RBLNModelConfig instance:\n"
-                f"     config = RBLNModelConfig(batch_size=4)\n"
-                f"     model = RBLNModel.from_pretrained('model_id', export=True, rbln_config=config)\n\n"
-                f"For more details, refer to the `RBLNModelConfig` class or https://docs.rbln.ai/ docs."
-            )
-
+        # Initialize RBLNModelConfig from rbln_config dict or instance
         if isinstance(rbln_config, dict):
             rbln_config = cls(**rbln_config)
-
-        elif rbln_config is None:
-            rbln_config = cls(**rbln_kwargs)
 
         elif isinstance(rbln_config, RBLNModelConfig):
             pass  # Use rbln_config as is
@@ -1013,3 +1005,32 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
     @timeout.setter
     def timeout(self, timeout: int):
         self._runtime_options["timeout"] = timeout
+
+
+def validate_and_convert_rbln_config_dict(
+    rbln_config: Optional[Union[Dict[str, Any], RBLNModelConfig]] = None, **kwargs
+) -> Tuple[Optional[Union[Dict[str, Any], RBLNModelConfig]], Dict[str, Any]]:
+    # Validate and merge rbln_ prefixed kwargs into rbln_config
+    kwargs_keys = list(kwargs.keys())
+    rbln_kwargs = {key[5:]: kwargs.pop(key) for key in kwargs_keys if key.startswith("rbln_")}
+
+    if rbln_config is not None and len(rbln_kwargs) > 0:
+        raise ValueError(
+            f"Cannot use both `rbln_config` and `rbln_` prefixed arguments simultaneously.\n"
+            f"Found rbln_ prefixed arguments: {list(kwargs.keys())}.\n\n"
+            f"Please choose one of the following approaches:\n"
+            f"  1. Using rbln_ prefixed arguments:\n"
+            f"     model = RBLNModel.from_pretrained('model_id', export=True, rbln_batch_size=4)\n\n"
+            f"  2. Using rbln_config dictionary:\n"
+            f"     model = RBLNModel.from_pretrained('model_id', export=True, rbln_config={{'batch_size': 4}})\n\n"
+            f"  3. Using RBLNModelConfig instance:\n"
+            f"     config = RBLNModelConfig(batch_size=4)\n"
+            f"     model = RBLNModel.from_pretrained('model_id', export=True, rbln_config=config)\n\n"
+            f"For more details, refer to the `RBLNModelConfig` class or https://docs.rbln.ai/ docs."
+        )
+
+    rbln_config = {} if rbln_config is None else rbln_config
+    if isinstance(rbln_config, dict):
+        rbln_config.update(rbln_kwargs)
+
+    return rbln_config, kwargs
