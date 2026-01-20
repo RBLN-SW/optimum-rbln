@@ -192,20 +192,24 @@ class RBLNDecoderOnlyFlashAttentionMixin:
             available_dram - without_dramtensor for without_dramtensor in alloc_per_node_without_dram
         ]
 
-        kvcache_tensor_sizes: dict[str, list[int]] = compiled_models["prefill"].exp_get_dram_tensor_sizes()
+        # kvcache_tensor_sizes[key][node_id][chiplet_id] = alloc_size
+        kvcache_tensor_sizes: dict[str, list[list[int]]] = compiled_models["prefill"].exp_get_dram_tensor_sizes()
         kvcache_meta_can_resize: dict[str, bool] = {
             kvcache_meta.name: kvcache_meta.can_resize for kvcache_meta in rbln_config.kvcache_metas
         }
 
         def get_updated_kvcache_tensor_sizes(
-            kvcache_tensor_sizes: dict[str, list[int]], multiplier: int
-        ) -> dict[str, list[int]]:
+            kvcache_tensor_sizes: dict[str, list[list[int]]], multiplier: int
+        ) -> dict[str, list[list[int]]]:
             # Get the updated KV cache tensor sizes by multiplying the multiplier
             # with considering attention type (full or sliding), and memory alignment.
-            ret = {}
-            for key, sizes in kvcache_tensor_sizes.items():
+            ret: dict[str, list[list[int]]] = {}
+            for key, sizes_at_node in kvcache_tensor_sizes.items():
                 m = multiplier if kvcache_meta_can_resize[key] else 1
-                ret[key] = [align_2MB(size * m) for size in sizes]
+                ret[key] = [
+                    [align_2MB(size_at_chiplet * m) for size_at_chiplet in sizes_at_node_at_chiplet]
+                    for sizes_at_node_at_chiplet in sizes_at_node
+                ]
             return ret
 
         def check_memory_fits(multiplier: int) -> tuple[bool, list[int]]:
@@ -214,9 +218,11 @@ class RBLNDecoderOnlyFlashAttentionMixin:
             updated_kvcache_tensor_sizes = get_updated_kvcache_tensor_sizes(kvcache_tensor_sizes, multiplier)
 
             kvcache_tensor_sizes_at_node: list[int] = [0] * num_node
-            for tensor_sizes in updated_kvcache_tensor_sizes.values():
-                for node_id, size in enumerate(tensor_sizes):
-                    kvcache_tensor_sizes_at_node[node_id] += size
+            for tensor_sizes_at_node in updated_kvcache_tensor_sizes.values():
+                tensor_sizes_at_node: list[list[int]]
+                for node_id, sizes_at_chiplet in enumerate(tensor_sizes_at_node):
+                    sizes_at_chiplet: list[int]
+                    kvcache_tensor_sizes_at_node[node_id] += sum(sizes_at_chiplet)
 
             fits = all(
                 remaining_dram_at_node[node_id] >= kvcache_tensor_sizes_at_node[node_id] for node_id in range(num_node)
