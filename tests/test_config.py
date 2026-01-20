@@ -135,14 +135,13 @@ def test_mixed_config_approach_0(model_id):
     config.set_compile_cfgs([compile_cfg])
 
     # Should raise ValueError: cannot use both rbln_config and rbln_ prefixed arguments
-    model = RBLNResNetForImageClassification.from_pretrained(  # noqa: F841
-        model_id,
-        export=True,
-        rbln_config=config,
-        rbln_image_size=128,
-    )
-
-    assert model.rbln_config.image_size == (224, 224)
+    with pytest.raises(ValueError, match="Cannot use both"):
+        model = RBLNResNetForImageClassification.from_pretrained(  # noqa: F841
+            model_id,
+            export=True,
+            rbln_config=config,
+            rbln_image_size=128,
+        )
 
 
 def test_mixed_config_approach_1(model_id):
