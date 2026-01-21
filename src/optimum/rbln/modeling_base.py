@@ -196,19 +196,17 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
                 local_files_only=local_files_only,
             )
 
-            if isinstance(rbln_config, dict):  # 이 과정이 필요가 있을까?
-                rbln_config_as_kwargs = {f"rbln_{key}": value for key, value in rbln_config.items()}
-                kwargs.update(rbln_config_as_kwargs)
-                rbln_config = None
-            elif isinstance(rbln_config, RBLNModelConfig) and rbln_config.rbln_model_cls_name != cls.__name__:
+            if isinstance(rbln_config, RBLNModelConfig) and rbln_config.rbln_model_cls_name != cls.__name__:
                 raise ValueError(
                     f"Cannot use the passed rbln_config. Its model class name ({rbln_config.rbln_model_cls_name}) "
                     f"does not match the expected model class name ({cls.__name__})."
                 )
 
-            rbln_config, kwargs = RBLNAutoConfig.load(
-                model_path_subfolder, passed_rbln_config=rbln_config, kwargs=kwargs, return_unused_kwargs=True
-            )
+            if not isinstance(rbln_config, RBLNModelConfig):
+                config_cls = cls.get_rbln_config_class()
+                rbln_config, kwargs = config_cls.from_pretrained(
+                    model_path_subfolder, rbln_config=rbln_config, return_unused_kwargs=True, **kwargs
+                )
 
             if rbln_config.rbln_model_cls_name != cls.__name__:
                 raise NameError(

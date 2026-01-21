@@ -36,6 +36,34 @@ DEFAULT_COMPILED_MODEL_NAME = "compiled_model"
 TypeInputInfo = List[Tuple[str, Tuple[int], str]]
 
 
+def nested_update(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Recursively merge override dict into base dict.
+    
+    For nested dicts, values are merged recursively instead of being replaced.
+    For non-dict values, override takes precedence.
+    
+    Args:
+        base: The base dictionary to merge into (modified in-place).
+        override: The dictionary with values to merge.
+    
+    Returns:
+        The merged base dictionary.
+    
+    Example:
+        >>> base = {"a": 1, "nested": {"x": 10, "y": 20}}
+        >>> override = {"b": 2, "nested": {"y": 30, "z": 40}}
+        >>> nested_update(base, override)
+        {"a": 1, "b": 2, "nested": {"x": 10, "y": 30, "z": 40}}
+    """
+    for key, value in override.items():
+        if key in base and isinstance(base[key], dict) and isinstance(value, dict):
+            nested_update(base[key], value)
+        else:
+            base[key] = value
+    return base
+
+
 @runtime_checkable
 class RBLNSerializableConfigProtocol(Protocol):
     def _prepare_for_serialization(self) -> Dict[str, Any]: ...
@@ -899,7 +927,7 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
 
         if cls_reserved != cls:
             logger.warning(f"Expected {cls.__name__}, but got {cls_reserved.__name__}.")
-
+        import pdb; pdb.set_trace()
         rbln_config, kwargs = validate_and_convert_rbln_config_dict(rbln_config, **kwargs)
         if len(kwargs) > 0:
             raise ValueError(
@@ -908,10 +936,10 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
             )
 
         if isinstance(rbln_config, dict):
-            config_file.update(rbln_config)
+            nested_update(config_file, rbln_config)
         elif isinstance(rbln_config, cls):
-            raise NotImplementedError("Loading from an existing RBLNModelConfig instance is not supported yet.")
-            # FIXME(seinpark) rbln_config is an instance of RBLNModelConfig
+            # FIXME(seinpark): is it supported?
+            raise ValueError("Loading from an existing RBLNModelConfig instance is not supported.")
 
         if return_unused_kwargs:
             return cls(**config_file), kwargs
