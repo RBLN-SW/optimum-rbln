@@ -39,17 +39,17 @@ TypeInputInfo = List[Tuple[str, Tuple[int], str]]
 def nested_update(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any]:
     """
     Recursively merge override dict into base dict.
-    
+
     For nested dicts, values are merged recursively instead of being replaced.
     For non-dict values, override takes precedence.
-    
+
     Args:
         base: The base dictionary to merge into (modified in-place).
         override: The dictionary with values to merge.
-    
+
     Returns:
         The merged base dictionary.
-    
+
     Example:
         >>> base = {"a": 1, "nested": {"x": 10, "y": 20}}
         >>> override = {"b": 2, "nested": {"y": 30, "z": 40}}
@@ -306,7 +306,9 @@ class RBLNAutoConfig:
             RBLNModelConfig: The loaded RBLNModelConfig.
         """
         target_cls, _ = load_config(path)
-        return target_cls.from_pretrained(path, rbln_config=rbln_config, return_unused_kwargs=return_unused_kwargs, **kwargs)
+        return target_cls.from_pretrained(
+            path, rbln_config=rbln_config, return_unused_kwargs=return_unused_kwargs, **kwargs
+        )
 
     @classmethod
     @deprecate_method(version="0.12.0", new_method="from_pretrained")
@@ -923,7 +925,9 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
 
         if cls_reserved != cls:
             logger.warning(f"Expected {cls.__name__}, but got {cls_reserved.__name__}.")
-        import pdb; pdb.set_trace()
+        import pdb
+
+        pdb.set_trace()
         rbln_config, kwargs = validate_and_convert_rbln_config_dict(rbln_config, **kwargs)
         if len(kwargs) > 0:
             raise ValueError(
@@ -941,7 +945,7 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
             return cls(**config_file), kwargs
         else:
             return cls(**config_file)
-    
+
     @classmethod
     @deprecate_method(version="0.12.0", new_method="from_pretrained")
     def load(

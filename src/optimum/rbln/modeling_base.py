@@ -24,7 +24,7 @@ import torch
 from transformers import AutoConfig, AutoModel, GenerationConfig, PretrainedConfig
 from transformers.utils.hub import PushToHubMixin
 
-from .configuration_utils import RBLNAutoConfig, RBLNCompileConfig, RBLNModelConfig, get_rbln_config_class
+from .configuration_utils import RBLNCompileConfig, RBLNModelConfig, get_rbln_config_class
 from .utils.hub import pull_compiled_model_from_hub, validate_files
 from .utils.logging import get_logger
 from .utils.runtime_utils import UnavailableRuntime, tp_and_devices_are_ok

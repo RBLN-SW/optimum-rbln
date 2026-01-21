@@ -292,4 +292,3 @@ def deprecate_method(
         return wrapped_func
 
     return wrapper
-
