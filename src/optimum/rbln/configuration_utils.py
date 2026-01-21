@@ -925,9 +925,7 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
 
         if cls_reserved != cls:
             logger.warning(f"Expected {cls.__name__}, but got {cls_reserved.__name__}.")
-        import pdb
 
-        pdb.set_trace()
         rbln_config, kwargs = validate_and_convert_rbln_config_dict(rbln_config, **kwargs)
         if len(kwargs) > 0:
             raise ValueError(
