@@ -5,12 +5,12 @@ import fire
 from PIL import Image
 from transformers import AutoFeatureExtractor
 
-from optimum.rbln import RBLNResNetForImageClassification, RBLNResNetForImageClassificationConfig
+from optimum.rbln import RBLNResNetForImageClassification
 
 
 def main(
     model_id: str = "microsoft/resnet-50",
-    from_transformers: bool = True,
+    from_transformers: bool = False,
     batch_size: int = 1,
 ):
     img_url = "https://rbln-public.s3.ap-northeast-2.amazonaws.com/images/tabby.jpg"
@@ -20,18 +20,12 @@ def main(
             f.write(response.read())
 
     image = Image.open(img_path)
-    rbln_config = RBLNResNetForImageClassificationConfig(batch_size=2, image_size=448)
     if from_transformers:
         model = RBLNResNetForImageClassification.from_pretrained(
             model_id,
             export=True,
             rbln_image_size=224,
             rbln_batch_size=batch_size,
-            # rbln_config={
-            #     "image_size": 448,
-            #     "batch_size": 2,
-            # },
-            rbln_config=rbln_config,
         )
         model.save_pretrained(os.path.basename(model_id))
     else:
