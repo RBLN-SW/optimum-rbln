@@ -24,7 +24,7 @@ import torch
 from packaging.version import Version
 
 from .__version__ import __version__
-from .utils.deprecation import deprecate_kwarg, warn_deprecated_npu
+from .utils.deprecation import deprecate_kwarg, deprecate_method, warn_deprecated_npu
 from .utils.logging import get_logger
 from .utils.runtime_utils import ContextRblnConfig
 
@@ -256,10 +256,11 @@ class RBLNAutoConfig:
 
         CONFIG_MAPPING[config.__name__] = config
 
-    @staticmethod
-    def load(
+    @classmethod
+    def from_pretrained(
+        cls,
         path: str,
-        passed_rbln_config: Optional["RBLNModelConfig"] = None,
+        rbln_config: Optional[Dict[str, Any]] = None,
         return_unused_kwargs: bool = False,
         **kwargs: Optional[Dict[str, Any]],
     ) -> Union["RBLNModelConfig", Tuple["RBLNModelConfig", Dict[str, Any]]]:
@@ -269,71 +270,51 @@ class RBLNAutoConfig:
 
         Args:
             path (str): Path to the RBLNModelConfig.
+            rbln_config (Optional[Dict[str, Any]]): Additional configuration to override.
+            return_unused_kwargs (bool): Whether to return unused kwargs.
             passed_rbln_config (Optional["RBLNModelConfig"]): RBLNModelConfig to pass its runtime options.
 
         Returns:
             RBLNModelConfig: The loaded RBLNModelConfig.
         """
-        if kwargs is None:
-            kwargs = {}
-        cls, config_file = load_config(path)
+        target_cls, _ = load_config(path)
+        return target_cls.from_pretrained(path, rbln_config=rbln_config, return_unused_kwargs=return_unused_kwargs, **kwargs)
 
-        # passed_rbln_config? -> rbln_config가 되는게 맞지않나? + RBLNModelConfig와 API가 다른게 말이 될까?
-        # 그럼 AutoConfig.load에서는 rbln_config dict를 받지 못하나? -> submodule의 device는 어떻게 set 하지?
-        rbln_config, kwargs = validate_and_convert_rbln_config_dict(rbln_config=passed_rbln_config, kwargs=kwargs)
-        import copy
+    @classmethod
+    @deprecate_method(version="0.12.0", new_method="from_pretrained")
+    def load(
+        cls,
+        path: str,
+        rbln_config: Optional[Dict[str, Any]] = None,
+        return_unused_kwargs: bool = False,
+        **kwargs: Optional[Dict[str, Any]],
+    ) -> Union["RBLNModelConfig", Tuple["RBLNModelConfig", Dict[str, Any]]]:
+        """
+        Load RBLNModelConfig from a path.
 
-        _rbln_config = copy.deepcopy(rbln_config)
-        rbln_runtime_kwargs = {key: _rbln_config.pop(key) for key in rbln_config if key in RUNTIME_KEYWORDS}
-        rbln_submodule_kwargs = {key: _rbln_config.pop(key) for key in rbln_config if key in cls.submodules}
+        .. deprecated:: 0.12.0
+            This method is deprecated and will be removed in version 0.12.0.
+            Use :meth:`from_pretrained` instead.
 
-        if len(_rbln_config) > 0:
-            for key, value in _rbln_config.items():
-                if getattr(rbln_config, key) != value:
-                    raise ValueError(
-                        f"Cannot set the following arguments: {list(_rbln_config.keys())} "
-                        f"Since the value is already set to {getattr(rbln_config, key)}"
-                    )
+        Args:
+            path (str): Path to the RBLNModelConfig file or directory.
+            rbln_config (Optional[Dict[str, Any]]): Additional configuration to override.
+            return_unused_kwargs (bool): Whether to return unused kwargs.
+            kwargs: Additional keyword arguments to override configuration values.
 
-        # rbln_keys = [key for key in kwargs.keys() if key.startswith("rbln_")]
-        # rbln_runtime_kwargs = {key[5:]: kwargs.pop(key) for key in rbln_keys if key[5:] in RUNTIME_KEYWORDS}
-        # rbln_submodule_kwargs = {key[5:]: kwargs.pop(key) for key in rbln_keys if key[5:] in cls.submodules}
+        Returns:
+            RBLNModelConfig: The loaded RBLNModelConfig.
 
-        # rbln_kwargs = {
-        #     key[5:]: kwargs.pop(key)
-        #     for key in rbln_keys
-        #     if key[5:] not in RUNTIME_KEYWORDS and key[5:] not in cls.submodules
-        # }
+        Example:
+            ```python
+                # Deprecated usage:
+                config = RBLNAutoConfig.load("/path/to/model")
 
-        # Process submodule's rbln_config
-        for submodule in cls.submodules:
-            if submodule not in config_file:
-                raise ValueError(f"Submodule {submodule} not found in rbln_config.json.")
-            submodule_config = config_file[submodule]
-            print(rbln_submodule_kwargs.get(submodule, f"no submodule config for {submodule}"))
-            submodule_config.update(rbln_submodule_kwargs.pop(submodule, {}))
-            config_file[submodule] = RBLNAutoConfig.load_from_dict(submodule_config)
-
-        if passed_rbln_config is not None:
-            config_file.update(passed_rbln_config._runtime_options)
-            # TODO(jongho): Reject if the passed_rbln_config has different attributes from the config_file
-
-        config_file.update(rbln_runtime_kwargs)
-        import pdb; pdb.set_trace()
-        rbln_config = cls(**config_file)
-
-        # if len(rbln_kwargs) > 0:
-        #     for key, value in rbln_kwargs.items():
-        #         if getattr(rbln_config, key) != value:
-        #             raise ValueError(
-        #                 f"Cannot set the following arguments: {list(rbln_kwargs.keys())} "
-        #                 f"Since the value is already set to {getattr(rbln_config, key)}"
-        #             )
-
-        if return_unused_kwargs:
-            return cls(**config_file), kwargs
-        else:
-            return cls(**config_file)
+                # Recommended usage:
+                config = RBLNAutoConfig.from_pretrained("/path/to/model")
+            ```
+        """
+        return cls.from_pretrained(path, rbln_config=rbln_config, return_unused_kwargs=return_unused_kwargs, **kwargs)
 
 
 class RBLNModelConfig(RBLNSerializableConfigProtocol):
@@ -890,9 +871,13 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
             json.dump(serializable_data, jsonf, indent=2)
 
     @classmethod
-    def load(
-        cls, path: str, rbln_config: Union[Dict[str, Any], "RBLNModelConfig", None] = None, **kwargs: Any
-    ) -> "RBLNModelConfig":
+    def from_pretrained(
+        cls,
+        path: str,
+        rbln_config: Optional[Dict[str, Any]] = None,
+        return_unused_kwargs: bool = False,
+        **kwargs: Optional[Dict[str, Any]],
+    ) -> Union["RBLNModelConfig", Tuple["RBLNModelConfig", Dict[str, Any]]]:
         """
         Load a RBLNModelConfig from a path.
 
@@ -928,7 +913,53 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
             raise NotImplementedError("Loading from an existing RBLNModelConfig instance is not supported yet.")
             # FIXME(seinpark) rbln_config is an instance of RBLNModelConfig
 
-        return cls(**config_file)
+        if return_unused_kwargs:
+            return cls(**config_file), kwargs
+        else:
+            return cls(**config_file)
+    
+    @classmethod
+    @deprecate_method(version="0.12.0", new_method="from_pretrained")
+    def load(
+        cls,
+        path: str,
+        rbln_config: Optional[Dict[str, Any]] = None,
+        return_unused_kwargs: bool = False,
+        **kwargs: Optional[Dict[str, Any]],
+    ) -> Union["RBLNModelConfig", Tuple["RBLNModelConfig", Dict[str, Any]]]:
+        """
+        Load a RBLNModelConfig from a path.
+
+        .. deprecated:: 0.12.0
+            This method is deprecated and will be removed in version 0.12.0.
+            Use :meth:`from_pretrained` instead.
+
+        Args:
+            path (str): Path to the RBLNModelConfig file or directory containing the config file.
+            rbln_config (Optional[Dict[str, Any]]): Additional configuration to override.
+            return_unused_kwargs (bool): Whether to return unused kwargs.
+            kwargs: Additional keyword arguments to override configuration values.
+                    Keys starting with 'rbln_' will have the prefix removed and be used
+                    to update the configuration.
+
+        Returns:
+            RBLNModelConfig: The loaded configuration instance.
+
+        Note:
+            This method loads the configuration from the specified path and applies any
+            provided overrides. If the loaded configuration class doesn't match the expected
+            class, a warning will be logged.
+
+        Example:
+            ```python
+                # Deprecated usage:
+                config = RBLNResNetForImageClassificationConfig.load("/path/to/model")
+
+                # Recommended usage:
+                config = RBLNResNetForImageClassificationConfig.from_pretrained("/path/to/model")
+            ```
+        """
+        return cls.from_pretrained(path, rbln_config=rbln_config, return_unused_kwargs=return_unused_kwargs, **kwargs)
 
     @classmethod
     def initialize_from_kwargs(
