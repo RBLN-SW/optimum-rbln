@@ -205,8 +205,6 @@ def paged_causal_attn_decode(
     block_table: Tensor,
     block_size: int,
     mask: Optional[Tensor] = None,
-    dyn_batch: Optional[Tensor] = None,
-    seq_idx2: Optional[Tensor] = None,
     s_aux: Optional[Tensor] = None,
 ) -> Tensor:
     """Defines the computation pattern for fused attention with KV cache updates.
@@ -226,16 +224,18 @@ def paged_causal_attn_decode(
     - v: [batch=1, n_heads, 1, 1, head_dim] - Value states for current input
     - kcache: [batch_size, n_heads, 1, max_seq_len, head_dim] - Key cache
     - vcache: [batch_size, n_heads, 1, max_seq_len, head_dim] - Value cache
-    - seq: [1, 1] - Starting sequence position
+    - seq: [B, 1] - Starting sequence position (raw cache_position)
     - scale: [] - Attention scale factor
     - block_table: [batch_size, max_seq_len // block_size] - Block indices for KV cache management
     - block_size: [] - Number of tokens per block
-    - mask: [batch=1, max_seq_len] - attention mask when use position_ids
+    - mask: [batch, max_seq_len] - attention mask when use position_ids
     - s_aux: [num_attention_heads, sink_len] - auxiliary states for attention
-    - dyn_batch: [1] - valid batch size per block
+
+    Note: For batch_size > 1, the compiler internally computes batch decode parameters
+    (physical block index, block offset, valid batch per partition) from seq and block_table.
 
     Returns:
-        Tensor: attn_output: [batch=1, n_heads, n_groups, 1, head_dim] - Attention output
+        Tensor: attn_output: [batch, n_heads, n_groups, 1, head_dim] - Attention output
     """
     return torch.empty_like(q)
 
@@ -252,8 +252,6 @@ def paged_causal_attn_decode_fake(
     block_table: Tensor,
     block_size: int,
     mask: Optional[Tensor] = None,
-    dyn_batch: Optional[Tensor] = None,
-    seq_idx2: Optional[Tensor] = None,
     s_aux: Optional[Tensor] = None,
 ) -> Tensor:
     return torch.empty_like(q)
@@ -345,8 +343,6 @@ def paged_causal_attn_decode_kv_fp8(
     k_scale: Tensor,
     v_scale: Tensor,
     mask: Optional[Tensor] = None,
-    dyn_batch: Optional[Tensor] = None,
-    seq_idx2: Optional[Tensor] = None,
     s_aux: Optional[Tensor] = None,
 ) -> Tensor:
     return torch.empty_like(q)
@@ -366,8 +362,6 @@ def paged_causal_attn_decode_kv_fp8_fake(
     k_scale: Tensor,
     v_scale: Tensor,
     mask: Optional[Tensor] = None,
-    dyn_batch: Optional[Tensor] = None,
-    seq_idx2: Optional[Tensor] = None,
     s_aux: Optional[Tensor] = None,
 ) -> Tensor:
     return torch.empty_like(q)
