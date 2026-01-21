@@ -159,6 +159,7 @@ _import_structure = {
     ],
     "phi": ["RBLNPhiForCausalLM", "RBLNPhiForCausalLMConfig", "RBLNPhiModel", "RBLNPhiModelConfig"],
     "qwen2": ["RBLNQwen2ForCausalLM", "RBLNQwen2ForCausalLMConfig", "RBLNQwen2Model", "RBLNQwen2ModelConfig"],
+    "qwen2_5_omni": ["RBLNQwen2_5OmniToken2WavDiTModel", "RBLNQwen2_5OmniToken2WavDiTModelConfig"],
     "qwen2_moe": ["RBLNQwen2MoeForCausalLM", "RBLNQwen2MoeForCausalLMConfig"],
     "qwen3": ["RBLNQwen3ForCausalLM", "RBLNQwen3ForCausalLMConfig", "RBLNQwen3Model", "RBLNQwen3ModelConfig"],
     "qwen3_moe": ["RBLNQwen3MoeForCausalLM", "RBLNQwen3MoeForCausalLMConfig"],
@@ -323,6 +324,7 @@ if TYPE_CHECKING:
     from .phi import RBLNPhiForCausalLM, RBLNPhiForCausalLMConfig, RBLNPhiModel, RBLNPhiModelConfig
     from .pixtral import RBLNPixtralVisionModel, RBLNPixtralVisionModelConfig
     from .qwen2 import RBLNQwen2ForCausalLM, RBLNQwen2ForCausalLMConfig, RBLNQwen2Model, RBLNQwen2ModelConfig
+    from .qwen2_5_omni import RBLNQwen2_5OmniToken2WavDiTModel, RBLNQwen2_5OmniToken2WavDiTModelConfig
     from .qwen2_5_vl import (
         RBLNQwen2_5_VisionTransformerPretrainedModel,
         RBLNQwen2_5_VisionTransformerPretrainedModelConfig,
