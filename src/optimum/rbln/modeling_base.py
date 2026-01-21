@@ -196,7 +196,7 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
                 local_files_only=local_files_only,
             )
 
-            if isinstance(rbln_config, dict):
+            if isinstance(rbln_config, dict):  # 이 과정이 필요가 있을까?
                 rbln_config_as_kwargs = {f"rbln_{key}": value for key, value in rbln_config.items()}
                 kwargs.update(rbln_config_as_kwargs)
                 rbln_config = None

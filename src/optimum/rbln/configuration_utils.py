@@ -260,8 +260,8 @@ class RBLNAutoConfig:
     def load(
         path: str,
         passed_rbln_config: Optional["RBLNModelConfig"] = None,
-        kwargs: Optional[Dict[str, Any]] = None,
         return_unused_kwargs: bool = False,
+        **kwargs: Optional[Dict[str, Any]],
     ) -> Union["RBLNModelConfig", Tuple["RBLNModelConfig", Dict[str, Any]]]:
         """
         Load RBLNModelConfig from a path.
@@ -278,21 +278,39 @@ class RBLNAutoConfig:
             kwargs = {}
         cls, config_file = load_config(path)
 
-        rbln_keys = [key for key in kwargs.keys() if key.startswith("rbln_")]
-        rbln_runtime_kwargs = {key[5:]: kwargs.pop(key) for key in rbln_keys if key[5:] in RUNTIME_KEYWORDS}
-        rbln_submodule_kwargs = {key[5:]: kwargs.pop(key) for key in rbln_keys if key[5:] in cls.submodules}
+        # passed_rbln_config? -> rbln_config가 되는게 맞지않나? + RBLNModelConfig와 API가 다른게 말이 될까?
+        # 그럼 AutoConfig.load에서는 rbln_config dict를 받지 못하나? -> submodule의 device는 어떻게 set 하지?
+        rbln_config, kwargs = validate_and_convert_rbln_config_dict(rbln_config=passed_rbln_config, kwargs=kwargs)
+        import copy
 
-        rbln_kwargs = {
-            key[5:]: kwargs.pop(key)
-            for key in rbln_keys
-            if key[5:] not in RUNTIME_KEYWORDS and key[5:] not in cls.submodules
-        }
+        _rbln_config = copy.deepcopy(rbln_config)
+        rbln_runtime_kwargs = {key: _rbln_config.pop(key) for key in rbln_config if key in RUNTIME_KEYWORDS}
+        rbln_submodule_kwargs = {key: _rbln_config.pop(key) for key in rbln_config if key in cls.submodules}
+
+        if len(_rbln_config) > 0:
+            for key, value in _rbln_config.items():
+                if getattr(rbln_config, key) != value:
+                    raise ValueError(
+                        f"Cannot set the following arguments: {list(_rbln_config.keys())} "
+                        f"Since the value is already set to {getattr(rbln_config, key)}"
+                    )
+
+        # rbln_keys = [key for key in kwargs.keys() if key.startswith("rbln_")]
+        # rbln_runtime_kwargs = {key[5:]: kwargs.pop(key) for key in rbln_keys if key[5:] in RUNTIME_KEYWORDS}
+        # rbln_submodule_kwargs = {key[5:]: kwargs.pop(key) for key in rbln_keys if key[5:] in cls.submodules}
+
+        # rbln_kwargs = {
+        #     key[5:]: kwargs.pop(key)
+        #     for key in rbln_keys
+        #     if key[5:] not in RUNTIME_KEYWORDS and key[5:] not in cls.submodules
+        # }
 
         # Process submodule's rbln_config
         for submodule in cls.submodules:
             if submodule not in config_file:
                 raise ValueError(f"Submodule {submodule} not found in rbln_config.json.")
             submodule_config = config_file[submodule]
+            print(rbln_submodule_kwargs.get(submodule, f"no submodule config for {submodule}"))
             submodule_config.update(rbln_submodule_kwargs.pop(submodule, {}))
             config_file[submodule] = RBLNAutoConfig.load_from_dict(submodule_config)
 
@@ -301,16 +319,16 @@ class RBLNAutoConfig:
             # TODO(jongho): Reject if the passed_rbln_config has different attributes from the config_file
 
         config_file.update(rbln_runtime_kwargs)
-
+        import pdb; pdb.set_trace()
         rbln_config = cls(**config_file)
 
-        if len(rbln_kwargs) > 0:
-            for key, value in rbln_kwargs.items():
-                if getattr(rbln_config, key) != value:
-                    raise ValueError(
-                        f"Cannot set the following arguments: {list(rbln_kwargs.keys())} "
-                        f"Since the value is already set to {getattr(rbln_config, key)}"
-                    )
+        # if len(rbln_kwargs) > 0:
+        #     for key, value in rbln_kwargs.items():
+        #         if getattr(rbln_config, key) != value:
+        #             raise ValueError(
+        #                 f"Cannot set the following arguments: {list(rbln_kwargs.keys())} "
+        #                 f"Since the value is already set to {getattr(rbln_config, key)}"
+        #             )
 
         if return_unused_kwargs:
             return cls(**config_file), kwargs

@@ -12,6 +12,7 @@ from optimum.rbln import (
     RBLNAutoModel,
     RBLNCompileConfig,
     RBLNLlavaNextForConditionalGeneration,
+    RBLNLlavaNextForConditionalGenerationConfig,
     RBLNMistralForCausalLMConfig,
     RBLNModel,
     RBLNModelConfig,
@@ -123,6 +124,20 @@ def test_config_object(model_id):
     assert model is not None
     assert hasattr(model, "rbln_config")
     # Pre-configured object should be properly applied
+
+
+def test_load_submodule_config_object():
+    """Test loading submodule with a pre-compiled config object."""
+
+    rbln_config = RBLNLlavaNextForConditionalGenerationConfig.load("/home/seinpark/optimum-rbln/llava_test_model", rbln_create_runtimes=False)
+
+    # model = RBLNLlavaNextForConditionalGeneration.from_pretrained(
+    #     "trl-internal-testing/tiny-LlavaNextForConditionalGeneration",
+    #     export=True,
+    #     rbln_config=rbln_config,
+    # )
+    assert rbln_config.language_model.rbln_create_runtimes == False
+    assert rbln_config.vision_tower.rbln_create_runtimes == False
 
 
 def test_mixed_config_approach_0(model_id):
