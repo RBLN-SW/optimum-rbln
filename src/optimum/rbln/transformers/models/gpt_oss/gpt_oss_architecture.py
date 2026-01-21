@@ -28,25 +28,8 @@ from ..decoderonly.decoderonly_architecture import (
 
 
 class RBLNGptOssWrapper(DecoderOnlyWrapper):
-    def get_rbln_attn_class(self):
-        return RBLNGptOssAttention
-
     def get_rbln_layer_class(self):
         return RBLNGptOssLayer
-
-
-class RBLNGptOssAttention(DecoderOnlyAttention):
-    def __post_init__(self):
-        # Initialize LoRA weights if configured, which will replace linear layers
-        if self.lora_config:
-            self._init_lora_weights()
-        else:
-            # Use original linear layers if no LoRA
-            self.q_proj = self._original_mod.q_proj
-            self.k_proj = self._original_mod.k_proj
-            self.v_proj = self._original_mod.v_proj
-            self.o_proj = self._original_mod.o_proj
-            self.sinks = self._original_mod.sinks.data[:, None]
 
 
 class RBLNGptOssLayer(DecoderOnlyLayer):
@@ -127,7 +110,6 @@ class RBLNGptOssExperts(nn.Module):
 class RBLNGptOssMLP(nn.Module):
     def __init__(self, model):
         super().__init__()
-        self._original_mod = model
         self.router = RBLNGptOssTopKRouter(model.router)
         self.experts = RBLNGptOssExperts(model.experts, top_k=model.router.top_k)
 

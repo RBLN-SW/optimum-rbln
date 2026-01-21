@@ -221,8 +221,6 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
             elif rbln_submodules is None:
                 rbln_submodules = []
 
-            rbln_config.freeze()
-
             if config is None:
                 if cls.hf_library_name == "transformers":
                     config = AutoConfig.from_pretrained(
@@ -310,6 +308,8 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
                 f"Make sure your NPU is properly installed and operational."
             )
             raise rebel.core.exception.RBLNRuntimeError(error_msg) from e
+
+        rbln_config.freeze()
 
         return cls(
             models,
@@ -457,7 +457,7 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
         rbln_config = cls._update_rbln_config(
             preprocessors=preprocessors, model=model, model_config=model_config, rbln_config=rbln_config
         )
-        rbln_config.freeze()
+
         if rbln_config.rbln_model_cls_name != cls.__name__:
             raise NameError(
                 f"Cannot get the rbln config. {cls.__name__} is not the same as {rbln_config.rbln_model_cls_name}. "

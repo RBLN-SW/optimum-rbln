@@ -18,9 +18,6 @@ import torch.nn as nn
 
 from ....utils import logging
 from ...models.decoderonly.decoderonly_architecture import (
-    DecoderOnlyAttention,
-    DecoderOnlyLayer,
-    DecoderOnlyModel,
     DecoderOnlyWrapper,
 )
 
@@ -42,36 +39,3 @@ class ExaoneForCausalLMWrapper(DecoderOnlyWrapper):
 
     def get_model_layer(self, causal_lm: "ExaoneForCausalLM"):
         return causal_lm.transformer
-
-    def get_rbln_attn_class(self):
-        return ExaoneAttention
-
-    def get_rbln_layer_class(self):
-        return ExaoneLayer
-
-    def get_rbln_model_class(self):
-        return ExaoneModel
-
-
-class ExaoneModel(DecoderOnlyModel):
-    def get_embedding(self) -> nn.Embedding:
-        return self._original_mod.wte
-
-    def get_last_layernorm(self) -> nn.LayerNorm:
-        return self._original_mod.ln_f
-
-
-class ExaoneLayer(DecoderOnlyLayer):
-    def get_pre_attention_layernorm(self) -> nn.LayerNorm:
-        return self._original_mod.ln_1
-
-    def get_post_attention_layernorm(self) -> nn.LayerNorm:
-        return self._original_mod.ln_2
-
-
-class ExaoneAttention(DecoderOnlyAttention):
-    def __post_init__(self):
-        self.q_proj = self._original_mod.q_proj
-        self.k_proj = self._original_mod.k_proj
-        self.v_proj = self._original_mod.v_proj
-        self.o_proj = self._original_mod.out_proj
