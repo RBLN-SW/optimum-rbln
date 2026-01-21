@@ -20,6 +20,7 @@ def main(
             f.write(response.read())
 
     image = Image.open(img_path)
+
     if from_transformers:
         model = RBLNResNetForImageClassification.from_pretrained(
             model_id,
