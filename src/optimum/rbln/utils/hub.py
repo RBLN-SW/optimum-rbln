@@ -63,7 +63,6 @@ def pull_compiled_model_from_hub(
             rbln_config_cache_path = hf_hub_download(
                 repo_id=model_id,
                 filename=config_filename,
-                subfolder=subfolder,
                 token=token,
                 revision=revision,
                 cache_dir=cache_dir,
@@ -79,7 +78,6 @@ def pull_compiled_model_from_hub(
                     hf_hub_download(
                         repo_id=model_id,
                         filename=filename,
-                        subfolder=subfolder,
                         token=token,
                         revision=revision,
                         cache_dir=cache_dir,
@@ -102,7 +100,6 @@ def pull_compiled_model_from_hub(
             rbln_config_cache_path = hf_hub_download(
                 repo_id=model_id,
                 filename=config_filename,
-                subfolder=subfolder,
                 token=token,
                 revision=revision,
                 cache_dir=cache_dir,
@@ -146,7 +143,6 @@ def pull_compiled_model_from_hub(
         rbln_config_cache_path = hf_hub_download(
             repo_id=model_id,
             filename=filename,
-            subfolder=subfolder,
             token=token,
             revision=revision,
             cache_dir=cache_dir,
