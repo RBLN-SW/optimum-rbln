@@ -412,6 +412,7 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
             )
 
         from_pretrained_method = cls._export if export else cls._from_pretrained
+        cls.validate_rbln_config(rbln_config, export)
         return from_pretrained_method(model_id=model_id, **kwargs, rbln_config=rbln_config)
 
     @classmethod
@@ -487,6 +488,23 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
             rbln_config_class_name = cls.__name__ + "Config"
             cls._rbln_config_class = get_rbln_config_class(rbln_config_class_name)
         return cls._rbln_config_class
+
+    @classmethod
+    def validate_rbln_config(cls, rbln_config, export):
+        def nested_validate(config):
+            for submodule_name in config.submodules:
+                submodule_config = getattr(config, submodule_name)
+                if isinstance(submodule_config, RBLNModelConfig):
+                    nested_validate(submodule_config)
+                else:
+                    raise ValueError(
+                        "When loading a compiled model with an `RBLNModelConfig` object, "
+                        "the config must be initialized using `RBLNModelConfig.from_pretrained()`. "
+                        "This ensures that submodule configurations are properly loaded from the saved model."
+                    )
+
+        if isinstance(rbln_config, RBLNModelConfig) and not export:
+            nested_validate(rbln_config)
 
     def can_generate(self):
         return False
