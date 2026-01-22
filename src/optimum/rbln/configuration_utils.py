@@ -300,7 +300,6 @@ class RBLNAutoConfig:
             path (str): Path to the RBLNModelConfig.
             rbln_config (Optional[Dict[str, Any]]): Additional configuration to override.
             return_unused_kwargs (bool): Whether to return unused kwargs.
-            passed_rbln_config (Optional["RBLNModelConfig"]): RBLNModelConfig to pass its runtime options.
 
         Returns:
             RBLNModelConfig: The loaded RBLNModelConfig.
@@ -909,9 +908,11 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
 
         Args:
             path (str): Path to the RBLNModelConfig file or directory containing the config file.
+            rbln_config (Optional[Dict[str, Any]]): Additional configuration to override.
+            return_unused_kwargs (bool): Whether to return unused kwargs.
             kwargs: Additional keyword arguments to override configuration values.
-                      Keys starting with 'rbln_' will have the prefix removed and be used
-                      to update the configuration.
+                    Keys starting with 'rbln_' will have the prefix removed and be used
+                    to update the configuration.
 
         Returns:
             RBLNModelConfig: The loaded configuration instance.
