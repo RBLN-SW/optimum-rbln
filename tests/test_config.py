@@ -100,9 +100,7 @@ def test_config_object_load(model_id, tmp_path):
     assert loaded_config.create_runtimes is False, "Load with rbln_ prefix: create_runtimes mismatch"
 
     # Subtest 4: Load with rbln_config object
-    with pytest.raises(
-        NotImplementedError, match="Loading from an existing RBLNModelConfig instance is not supported yet."
-    ):
+    with pytest.raises(ValueError, match="Loading from an existing RBLNModelConfig instance is not supported"):
         loaded_config = RBLNResNetForImageClassificationConfig.load(
             str(config_path), rbln_config=RBLNResNetForImageClassificationConfig(create_runtimes=False)
         )
