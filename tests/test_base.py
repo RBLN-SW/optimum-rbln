@@ -6,6 +6,7 @@ import tempfile
 import unittest
 from enum import Enum
 from typing import Iterable
+import copy
 
 import transformers
 from diffusers import DiffusionPipeline
@@ -146,8 +147,6 @@ class BaseTest:
             if REUSE_ARTIFACTS_PATH is None:
                 if os.path.exists(cls.get_rbln_local_dir()):
                     shutil.rmtree(cls.get_rbln_local_dir())
-
-                import copy
 
                 rbln_class_kwargs = copy.deepcopy(cls.RBLN_CLASS_KWARGS)
                 rbln_class_kwargs.setdefault("rbln_config", {}).update({"device": cls.DEVICE})
