@@ -24,7 +24,6 @@ from transformers import (
 from transformers.modeling_utils import no_init_weights
 from transformers.models.qwen2_5_omni.modeling_qwen2_5_omni import (
     DiTCodecEmbedding,
-    DiTInputEmbedding,
     DiTTimestepEmbedding,
     Qwen2_5OmniDiTRotaryEmbedding,
     Qwen2_5OmniToken2WavDiTModel,
@@ -75,7 +74,6 @@ class RBLNQwen2_5OmniToken2WavDiTModel(RBLNModel):
                 config.repeats,
             ).eval()
             self.time_embed = DiTTimestepEmbedding(config.hidden_size).eval()
-            self.input_embed = DiTInputEmbedding(config).eval()
             self.rotary_embed = Qwen2_5OmniDiTRotaryEmbedding(config.head_dim).eval()
 
         artifacts = torch.load(
@@ -84,7 +82,6 @@ class RBLNQwen2_5OmniToken2WavDiTModel(RBLNModel):
         )
         self.text_embed.load_state_dict(artifacts["text_embed"])
         self.time_embed.load_state_dict(artifacts["time_embed"])
-        self.input_embed.load_state_dict(artifacts["input_embed"])
         self.rotary_embed.load_state_dict(artifacts["rotary_embed"])
 
     def __getattr__(self, __name: str) -> Any:
@@ -106,10 +103,9 @@ class RBLNQwen2_5OmniToken2WavDiTModel(RBLNModel):
         rbln_config: RBLNQwen2_5OmniToken2WavDiTModelConfig,
     ):
         save_dict = {
-            "text_embed": model.text_embed.state_dict(),
-            "time_embed": model.time_embed.state_dict(),
-            "input_embed": model.input_embed.state_dict(),
-            "rotary_embed": model.rotary_embed.state_dict(),
+            "text_embed": model.text_embed.state_dict(),  # Embedding to host
+            "time_embed": model.time_embed.state_dict(),  # sin/cos with scaling 10000 to host
+            "rotary_embed": model.rotary_embed.state_dict(),  # sin/cos to host
         }
         torch.save(save_dict, save_dir_path / subfolder / "torch_artifacts.pth")
 
@@ -132,6 +128,9 @@ class RBLNQwen2_5OmniToken2WavDiTModel(RBLNModel):
         hidden_size = model_config.hidden_size
         head_dim = model_config.head_dim
         num_attention_heads = model_config.num_attention_heads
+        mel_dim = model_config.mel_dim
+        emb_dim = model_config.emb_dim
+        enc_emb_dim = model_config.enc_emb_dim
         max_seq_len = rbln_config.max_seq_len
 
         if max_seq_len is None:
@@ -140,10 +139,13 @@ class RBLNQwen2_5OmniToken2WavDiTModel(RBLNModel):
             max_seq_len = 1000
             rbln_config.max_seq_len = max_seq_len
 
-        # need to fix?
-        # batch_size=2 for CFG (conditional + unconditional) after input_embed
+        # batch_size=1 for inputs before input_embed (input_embed doubles batch for CFG)
         input_info = [
-            ("hidden_states", [2, max_seq_len, hidden_size], rbln_config.dtype),
+            ("hidden_states", [1, max_seq_len, mel_dim], rbln_config.dtype),
+            ("speaker_embedding", [1, max_seq_len, enc_emb_dim], rbln_config.dtype),
+            ("condition_vector", [1, max_seq_len, mel_dim], rbln_config.dtype),
+            ("text_embedding", [1, max_seq_len, emb_dim], rbln_config.dtype),
+            ("text_embedding_unconditioned", [1, max_seq_len, emb_dim], rbln_config.dtype),
             ("time_embedding", [2, hidden_size], rbln_config.dtype),
             ("cos", [2, max_seq_len, head_dim], rbln_config.dtype),
             ("sin", [2, max_seq_len, head_dim], rbln_config.dtype),
@@ -155,43 +157,75 @@ class RBLNQwen2_5OmniToken2WavDiTModel(RBLNModel):
 
         return rbln_config
 
-    def _create_block_diff(self, hidden_states: torch.Tensor) -> torch.Tensor:
+    def _create_block_diff(self, seq_len: int, batch_size: int = 2) -> torch.Tensor:
         """Creates block difference matrix for attention masking."""
-        batch, seq_len = hidden_states.shape[0], hidden_states.shape[1]
-        block_indices = torch.arange(seq_len, device=hidden_states.device) // self.block_size
+        block_indices = torch.arange(seq_len) // self.block_size
 
         block_i = block_indices.unsqueeze(1)
         block_j = block_indices.unsqueeze(0)
         block_diff = block_j - block_i
 
-        return block_diff.expand(batch, self.num_attention_heads, seq_len, seq_len)
+        return block_diff.expand(batch_size, self.num_attention_heads, seq_len, seq_len)
 
-    def _pad_to_max_seq_len(
+    def _pad_inputs(
         self,
         hidden_states: torch.Tensor,
+        speaker_embedding: torch.Tensor,
+        condition_vector: torch.Tensor,
+        text_embedding: torch.Tensor,
+        text_embedding_unconditioned: torch.Tensor,
         time_embedding: torch.Tensor,
         cos: torch.Tensor,
         sin: torch.Tensor,
         block_diff: torch.Tensor,
     ):
         max_seq_len = self.rbln_config.max_seq_len
-        _, seq_len, _ = hidden_states.shape
+        seq_len = hidden_states.shape[1]
 
         if seq_len == max_seq_len:
-            return hidden_states, time_embedding, cos, sin, block_diff, seq_len
+            return (
+                hidden_states,
+                speaker_embedding,
+                condition_vector,
+                text_embedding,
+                text_embedding_unconditioned,
+                time_embedding,
+                cos,
+                sin,
+                block_diff,
+                seq_len,
+            )
 
-        # Pad hidden_states
         pad_len = max_seq_len - seq_len
-        hidden_states = torch.nn.functional.pad(hidden_states, (0, 0, 0, pad_len), value=0)
 
-        # Pad cos, sin
+        # Pad sequence dimension (dim=1) for batch=1 inputs
+        hidden_states = torch.nn.functional.pad(hidden_states, (0, 0, 0, pad_len), value=0)
+        speaker_embedding = torch.nn.functional.pad(speaker_embedding, (0, 0, 0, pad_len), value=0)
+        condition_vector = torch.nn.functional.pad(condition_vector, (0, 0, 0, pad_len), value=0)
+        text_embedding = torch.nn.functional.pad(text_embedding, (0, 0, 0, pad_len), value=0)
+        text_embedding_unconditioned = torch.nn.functional.pad(
+            text_embedding_unconditioned, (0, 0, 0, pad_len), value=0
+        )
+
+        # Pad sequence dimension for batch=2 inputs (cos, sin)
         cos = torch.nn.functional.pad(cos, (0, 0, 0, pad_len), value=0)
         sin = torch.nn.functional.pad(sin, (0, 0, 0, pad_len), value=0)
 
         # Pad block_diff
         block_diff = torch.nn.functional.pad(block_diff, (0, pad_len, 0, pad_len), value=0)
 
-        return hidden_states, time_embedding, cos, sin, block_diff, seq_len
+        return (
+            hidden_states,
+            speaker_embedding,
+            condition_vector,
+            text_embedding,
+            text_embedding_unconditioned,
+            time_embedding,
+            cos,
+            sin,
+            block_diff,
+            seq_len,
+        )
 
     def forward(
         self,
@@ -205,6 +239,8 @@ class RBLNQwen2_5OmniToken2WavDiTModel(RBLNModel):
         apply_cfg: bool = True,
     ) -> torch.Tensor:
         batch_size = hidden_states.shape[0]
+        seq_len = hidden_states.shape[1]
+
         if time_step.ndim == 0:
             time_step = time_step.repeat(batch_size)
 
@@ -212,29 +248,52 @@ class RBLNQwen2_5OmniToken2WavDiTModel(RBLNModel):
         text_embedding = self.text_embed(quantized_code, drop_code=False if apply_cfg else drop_code)
         text_embedding_unconditioned = self.text_embed(quantized_code, drop_code=True) if apply_cfg else None
 
-        hidden_states = self.input_embed(
-            hidden_states,
-            speaker_embedding,
-            condition_vector,
-            text_embedding,
-            drop_audio_cond=drop_audio_conditioning,
-            code_embed_uncond=text_embedding_unconditioned,
-            apply_cfg=apply_cfg,
-        )
+        if text_embedding_unconditioned is None:
+            text_embedding_unconditioned = torch.zeros_like(text_embedding)
 
         if apply_cfg:
             time_embedding = torch.cat([time_embedding, time_embedding], dim=0)
 
-        cos, sin = self.rotary_embed(hidden_states)
+        # Compute rotary embeddings for doubled batch (after input_embed)
+        # Create a dummy tensor with doubled batch to get correct cos/sin shape
+        dummy_hidden = torch.zeros(
+            2, seq_len, self.hidden_size, dtype=hidden_states.dtype, device=hidden_states.device
+        )
+        cos, sin = self.rotary_embed(dummy_hidden)
 
-        block_diff = self._create_block_diff(hidden_states)
+        # Create block_diff for doubled batch
+        block_diff = self._create_block_diff(seq_len, batch_size=2)
 
-        hidden_states, time_embedding, cos, sin, block_diff, original_seq_len = self._pad_to_max_seq_len(
-            hidden_states, time_embedding, cos, sin, block_diff
+        # Pad all inputs to max_seq_len
+        (
+            hidden_states,
+            speaker_embedding,
+            condition_vector,
+            text_embedding,
+            text_embedding_unconditioned,
+            time_embedding,
+            cos,
+            sin,
+            block_diff,
+            original_seq_len,
+        ) = self._pad_inputs(
+            hidden_states,
+            speaker_embedding,
+            condition_vector,
+            text_embedding,
+            text_embedding_unconditioned,
+            time_embedding,
+            cos,
+            sin,
+            block_diff,
         )
 
         output = self.compiled_model(
             hidden_states,
+            speaker_embedding,
+            condition_vector,
+            text_embedding,
+            text_embedding_unconditioned,
             time_embedding,
             cos,
             sin,
