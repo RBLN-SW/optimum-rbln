@@ -12,7 +12,6 @@ from optimum.rbln import (
     RBLNAutoModel,
     RBLNCompileConfig,
     RBLNLlavaNextForConditionalGeneration,
-    RBLNLlavaNextForConditionalGenerationConfig,
     RBLNMistralForCausalLMConfig,
     RBLNModel,
     RBLNModelConfig,
