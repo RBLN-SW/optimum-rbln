@@ -64,6 +64,4 @@ class RBLNLlavaNextForConditionalGenerationConfig(RBLNModelConfig):
             force_kwargs=True,
         )
 
-        self.language_model = self.initialize_submodule_config(
-            submodule_config=language_model, batch_size=self.batch_size
-        )
+        self.language_model = self.initialize_submodule_config(submodule_config=language_model)
