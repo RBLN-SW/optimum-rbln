@@ -1,3 +1,4 @@
+import copy
 import inspect
 import os
 import random
@@ -6,7 +7,6 @@ import tempfile
 import unittest
 from enum import Enum
 from typing import Iterable
-import copy
 
 import transformers
 from diffusers import DiffusionPipeline
