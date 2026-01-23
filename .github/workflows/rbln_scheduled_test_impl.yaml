@@ -4,21 +4,18 @@ on:
   workflow_call:
 
 env:
-  REBEL_PYPI_ENDPOINT: ${{ vars.REBEL_PYPI_INTERNAL_ENDPOINT }}
-  REBEL_PYPI_USERNAME: ${{ secrets.REBEL_PYPI_USERNAME }}
-  REBEL_PYPI_PASSWORD: ${{ secrets.REBEL_PYPI_PASSWORD }}
   TOKEN: ${{ secrets.RENOVATE_TOKEN }}
 
 jobs:
   check-code-quality:
     uses: ./.github/workflows/check_code_quality.yml
     with:
-      ref: dev
+      ref: "dev"
 
   test-docstrings:
     uses: ./.github/workflows/test-docstrings.yml
     with:
-      ref: dev
+      ref: "dev"
       test_all_files: true
 
   fetch-version:
@@ -70,4 +67,3 @@ jobs:
       pytest_job_group: "rbln-full-test"
       bc_pytest_job_group: "bc-full-inference-test"
     secrets: inherit
-
