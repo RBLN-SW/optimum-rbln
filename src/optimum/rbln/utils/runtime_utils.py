@@ -94,7 +94,7 @@ def tp_and_devices_are_ok(
             return None
         if rebel.get_npu_name(device_id) is None:
             return (
-                f"Device {device_id} is not a valid NPU device. Please check your NPU status with 'rbln-stat' command."
+                f"Device {device_id} is not a valid NPU device. Please check your NPU status with 'rbln-smi' command."
             )
 
     if rebel.device_count() < tensor_parallel_size:
@@ -181,7 +181,7 @@ class UnavailableRuntime:
             "This model was loaded with create_runtimes=False. To use this model for inference:\n"
             "1. Load the model with runtime creation enabled:\n"
             "   model = RBLNModel.from_pretrained(..., rbln_create_runtimes=True)\n"
-            "2. Ensure your NPU hardware is properly configured (check with 'rbln-stat' command)\n"
+            "2. Ensure your NPU hardware is properly configured (check with 'rbln-smi' command)\n"
             "3. If you're on a machine without NPU hardware, you need to transfer the model files\n"
             "   to a compatible system with NPU support."
         )
