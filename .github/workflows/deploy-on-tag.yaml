@@ -48,7 +48,7 @@ jobs:
           github-token: ${{ secrets.GIT_PAT }}
           script: |
             const result = await github.rest.actions.createWorkflowDispatch({
-              owner: 'rebellions-sw',
+              owner: 'rbln-sw',
               repo: 'vllm-rbln',
               workflow_id: 'dispatch_pkg_update.yaml',
               ref: 'dev',

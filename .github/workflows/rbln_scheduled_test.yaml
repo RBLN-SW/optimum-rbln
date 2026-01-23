@@ -8,5 +8,5 @@ on:
 
 jobs:
   dispatch:
-    uses: rebellions-sw/optimum-rbln/.github/workflows/rbln_scheduled_test_impl.yaml@dev
+    uses: rbln-sw/optimum-rbln/.github/workflows/rbln_scheduled_test_impl.yaml@dev
     secrets: inherit

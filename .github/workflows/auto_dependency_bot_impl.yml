@@ -6,6 +6,8 @@ on:
 jobs:
   renovate:
     runs-on: rbln-sw-k8s-general
+    container:
+      image: ${{ vars.DEV_CONTAINER_IMAGE }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
