@@ -992,35 +992,6 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
         """
         return cls.from_pretrained(path, rbln_config=rbln_config, return_unused_kwargs=return_unused_kwargs, **kwargs)
 
-    @classmethod
-    def load(cls, path: str, **kwargs: Any) -> "RBLNModelConfig":
-        """
-        Load a RBLNModelConfig from a path.
-
-        Args:
-            path (str): Path to the RBLNModelConfig file or directory containing the config file.
-            kwargs: Additional keyword arguments to override configuration values.
-                      Keys starting with 'rbln_' will have the prefix removed and be used
-                      to update the configuration.
-
-        Returns:
-            RBLNModelConfig: The loaded configuration instance.
-
-        Note:
-            This method loads the configuration from the specified path and applies any
-            provided overrides. If the loaded configuration class doesn't match the expected
-            class, a warning will be logged.
-        """
-        cls_reserved, config_file = load_config(path)
-
-        if cls_reserved != cls:
-            logger.warning(f"Expected {cls.__name__}, but got {cls_reserved.__name__}.")
-
-        rbln_keys = [key for key in kwargs.keys() if key.startswith("rbln_")]
-        rbln_kwargs = {key[5:]: kwargs.pop(key) for key in rbln_keys}
-        config_file.update(rbln_kwargs)
-
-        return cls(**config_file)
 
     @classmethod
     def initialize_from_kwargs(
