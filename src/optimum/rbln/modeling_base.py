@@ -306,7 +306,7 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
                 f"If you only need to compile the model without loading it to NPU, you can use:\n"
                 f"  from_pretrained(..., rbln_create_runtimes=False) or\n"
                 f"  from_pretrained(..., rbln_config={{..., 'create_runtimes': False}})\n\n"
-                f"To check your NPU status, run the 'rbln-stat' command in your terminal.\n"
+                f"To check your NPU status, run the 'rbln-smi' command in your terminal.\n"
                 f"Make sure your NPU is properly installed and operational."
             )
             raise rebel.core.exception.RBLNRuntimeError(error_msg) from e
