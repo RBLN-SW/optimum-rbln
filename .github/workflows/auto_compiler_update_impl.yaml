@@ -11,7 +11,7 @@ env:
 
 jobs:
   fetch-version:
-    runs-on: sw-k8s-4c-32gb
+    runs-on: rbln-sw-k8s-4c-32gb
     container:
       image: ${{ vars.DEV_CONTAINER_IMAGE }}
     outputs:
@@ -48,7 +48,7 @@ jobs:
           echo "need_pr=$NEED_PR" >> $GITHUB_OUTPUT
 
   create-pr:
-    runs-on: sw-k8s-4c-32gb
+    runs-on: rbln-sw-k8s-4c-32gb
     container:
       image: ${{ vars.DEV_CONTAINER_IMAGE }}
     needs: fetch-version
@@ -71,6 +71,6 @@ jobs:
           commit-message: "[pytest-full] [slack-report] dependency: Update dependency rebel-compiler to ${{ needs.fetch-version.outputs.compiler_version }}"
           title: "dependency: Update dependency rebel-compiler to ${{ needs.fetch-version.outputs.compiler_version }}"
           base: dev
-          team-reviewers: rebellions-sw/sw-generalization
+          team-reviewers: rbln-sw/sw-generalization
           reviewers: rebel-jongho
 

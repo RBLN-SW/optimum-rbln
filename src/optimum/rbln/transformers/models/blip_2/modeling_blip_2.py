@@ -468,7 +468,7 @@ class RBLNBlip2ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMixi
             input_ids (torch.LongTensor, optional): The sequence used as a prompt for the generation.
             attention_mask (torch.LongTensor, optional): Mask to avoid performing attention on padding token indices
             inputs_embeds (torch.FloatTensor, optional): Embedded representation of the inputs. Should be float, not int tokens.
-            interpolate_pos_encoding (bool, optional, defaults to False) — Whether to interpolate the positional encoding of the image embeddings.
+            interpolate_pos_encoding (bool, optional, defaults to False): Whether to interpolate the positional encoding of the image embeddings.
         Returns:
             A list of strings of length batch_size * num_captions.
         """

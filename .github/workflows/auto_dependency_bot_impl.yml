@@ -5,7 +5,7 @@ on:
 
 jobs:
   renovate:
-    runs-on: sw-k8s-general
+    runs-on: rbln-sw-k8s-general
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4

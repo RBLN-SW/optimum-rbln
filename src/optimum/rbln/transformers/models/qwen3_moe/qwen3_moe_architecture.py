@@ -30,22 +30,22 @@ class Qwen3MoeWrapper(DecoderOnlyWrapper):
 
 
 class Qwen3MoeAttention(DecoderOnlyAttention):
-    def __post_init__(self):
-        self.q_proj = self._original_mod.q_proj
-        self.k_proj = self._original_mod.k_proj
-        self.v_proj = self._original_mod.v_proj
-        self.o_proj = self._original_mod.o_proj
-        self.q_norm = self._original_mod.q_norm
-        self.k_norm = self._original_mod.k_norm
+    def __post_init__(self, self_attn):
+        self.q_proj = self_attn.q_proj
+        self.k_proj = self_attn.k_proj
+        self.v_proj = self_attn.v_proj
+        self.o_proj = self_attn.o_proj
+        self.q_norm = self_attn.q_norm
+        self.k_norm = self_attn.k_norm
 
 
 class Qwen3MoeLayer(DecoderOnlyLayer):
     def __init__(self, layer, self_attn: DecoderOnlyAttention, lora_config: Optional[RBLNLoRAConfig] = None):
         super().__init__(layer, self_attn, lora_config)
         self.mlp = (
-            Qwen3MoeSparseMoeBlock(self._original_mod.mlp)
-            if self._original_mod.mlp.__class__.__name__ == "Qwen3MoeSparseMoeBlock"
-            else self._original_mod.mlp
+            Qwen3MoeSparseMoeBlock(layer.mlp)
+            if layer.mlp.__class__.__name__ == "Qwen3MoeSparseMoeBlock"
+            else layer.mlp
         )
 
     def get_mlp(self) -> nn.Module:
@@ -80,7 +80,6 @@ class Qwen3MoeMLP(nn.Module):
         self.intermediate_size = expert_list[0].intermediate_size
         self.top_k = top_k
         self.norm_topk_prob = norm_topk_prob
-
         self.num_experts = len(expert_list)
         self.gate_proj = nn.Linear(self.hidden_size, self.num_experts * self.intermediate_size, bias=False)
         self.up_proj = nn.Linear(self.hidden_size, self.num_experts * self.intermediate_size, bias=False)

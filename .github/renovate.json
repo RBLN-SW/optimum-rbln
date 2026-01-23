@@ -8,9 +8,9 @@
     "extends": [
         ":semanticCommitsDisabled"
     ],
-    "commitMessagePrefix": "[pytest-full] dependency:",
+    "commitMessagePrefix": "[pytest-full] [slack-report] dependency:",
     "repositories": [
-        "rebellions-sw/optimum-rbln"
+        "rbln-sw/optimum-rbln"
     ],
     "lockFileMaintenance": {
         "enabled": false
