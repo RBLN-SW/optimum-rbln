@@ -70,7 +70,7 @@ class RBLNGptOssForCausalLM(RBLNDecoderOnlyModelForCausalLM):
         # Using a config dictionary
         rbln_config = {
             "batch_size": 1,
-            "tensor_parallel_size": 4,
+            "tensor_parallel_size": 8,
             "kvcache_partition_len": 8192,
         }
         model = RBLNGptOssForCausalLM.from_pretrained(
@@ -85,7 +85,7 @@ class RBLNGptOssForCausalLM(RBLNDecoderOnlyModelForCausalLM):
 
         config = RBLNGptOssForCausalLMConfig(
             batch_size=1,
-            tensor_parallel_size=4,
+            tensor_parallel_size=8,
             kvcache_partition_len=8192,
         )
         model = RBLNGptOssForCausalLM.from_pretrained(
