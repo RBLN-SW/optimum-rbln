@@ -11,13 +11,12 @@ from optimum.rbln import (
     RBLNAutoConfig,
     RBLNAutoModel,
     RBLNCompileConfig,
+    RBLNLlavaNextForConditionalGeneration,
+    RBLNMistralForCausalLMConfig,
     RBLNModel,
     RBLNModelConfig,
     RBLNResNetForImageClassification,
     RBLNResNetForImageClassificationConfig,
-    RBLNLlavaNextForConditionalGeneration,
-    RBLNLlavaNextForConditionalGenerationConfig,
-    RBLNMistralForCausalLMConfig,
     RBLNStableDiffusionPipeline,
 )
 
@@ -180,7 +179,6 @@ def test_submodule_config_object():
     )
     assert model.rbln_config.language_model.max_seq_len == 16384
     assert model.rbln_config.language_model.batch_size == 2
-
 
 
 @pytest.mark.parametrize(

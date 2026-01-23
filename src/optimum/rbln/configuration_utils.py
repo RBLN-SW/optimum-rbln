@@ -334,67 +334,6 @@ class RBLNAutoConfig:
         """
         return cls.from_pretrained(path, rbln_config=rbln_config, return_unused_kwargs=return_unused_kwargs, **kwargs)
 
-    # @staticmethod
-    # def load(
-    #     path: str,
-    #     passed_rbln_config: Optional["RBLNModelConfig"] = None,
-    #     kwargs: Optional[Dict[str, Any]] = None,
-    #     return_unused_kwargs: bool = False,
-    # ) -> Union["RBLNModelConfig", Tuple["RBLNModelConfig", Dict[str, Any]]]:
-    #     """
-    #     Load RBLNModelConfig from a path.
-    #     Class name is automatically inferred from the `rbln_config.json` file.
-
-    #     Args:
-    #         path (str): Path to the RBLNModelConfig.
-    #         passed_rbln_config (Optional["RBLNModelConfig"]): RBLNModelConfig to pass its runtime options.
-
-    #     Returns:
-    #         RBLNModelConfig: The loaded RBLNModelConfig.
-    #     """
-    #     if kwargs is None:
-    #         kwargs = {}
-    #     cls, config_file = load_config(path)
-
-    #     rbln_keys = [key for key in kwargs.keys() if key.startswith("rbln_")]
-    #     rbln_runtime_kwargs = {key[5:]: kwargs.pop(key) for key in rbln_keys if key[5:] in RUNTIME_KEYWORDS}
-    #     rbln_submodule_kwargs = {key[5:]: kwargs.pop(key) for key in rbln_keys if key[5:] in cls.submodules}
-
-    #     rbln_kwargs = {
-    #         key[5:]: kwargs.pop(key)
-    #         for key in rbln_keys
-    #         if key[5:] not in RUNTIME_KEYWORDS and key[5:] not in cls.submodules
-    #     }
-
-    #     # Process submodule's rbln_config
-    #     for submodule in cls.submodules:
-    #         if submodule not in config_file:
-    #             raise ValueError(f"Submodule {submodule} not found in rbln_config.json.")
-    #         submodule_config = config_file[submodule]
-    #         submodule_config.update(rbln_submodule_kwargs.pop(submodule, {}))
-    #         config_file[submodule] = RBLNAutoConfig.load_from_dict(submodule_config)
-
-    #     if passed_rbln_config is not None:
-    #         config_file.update(passed_rbln_config._runtime_options)
-    #         # TODO(jongho): Reject if the passed_rbln_config has different attributes from the config_file
-
-    #     config_file.update(rbln_runtime_kwargs)
-
-    #     rbln_config = cls(**config_file)
-
-    #     if len(rbln_kwargs) > 0:
-    #         for key, value in rbln_kwargs.items():
-    #             if getattr(rbln_config, key) != value:
-    #                 raise ValueError(
-    #                     f"Cannot set the following arguments: {list(rbln_kwargs.keys())} "
-    #                     f"Since the value is already set to {getattr(rbln_config, key)}"
-    #                 )
-
-    #     if return_unused_kwargs:
-    #         return cls(**config_file), kwargs
-    #     else:
-    #         return cls(**config_file)
-
 
 class RBLNModelConfig(RBLNSerializableConfigProtocol):
     """Base configuration class for RBLN models that handles compilation settings, runtime options, and submodules.
@@ -990,10 +929,10 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
             if update_dict:
                 nested_update(submodule_config, update_dict)
             config_file[submodule] = RBLNAutoConfig.load_from_dict(submodule_config)
-        
+
         if rbln_config is not None:
             config_file.update(rbln_config._runtime_options)
-            
+
             # update submodule runtime
             for submodule in rbln_config.submodules:
                 if str(config_file[submodule]) != str(getattr(rbln_config, submodule)):

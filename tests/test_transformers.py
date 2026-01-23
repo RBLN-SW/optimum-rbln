@@ -474,6 +474,7 @@ class TestColQwen2Model(BaseTest.TestModel):
                 assert model.rbln_config.vlm.visual.device == 1
                 assert model.rbln_config.vlm.device == 2
 
+
 class TestColQwen2Model_BFloat16(TestColQwen2Model):
     TEST_LEVEL = TestLevel.FULL
     HF_CONFIG_KWARGS = {
