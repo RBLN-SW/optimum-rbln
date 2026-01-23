@@ -47,38 +47,23 @@ class Qwen2_5OmniToken2WavDiTWrapper(nn.Module):
         self.num_attention_heads = model.num_attention_heads
         self.block_size = model.block_size
 
-        self.input_embed = model.input_embed
+        # Transformer blocks only - embeddings are handled on CPU
         self.transformer_blocks = nn.ModuleList(
             [DiTDecoderLayerWrapper(block, rbln_config) for block in model.transformer_blocks]
         )
 
+        # Output layers
         self.norm_out = model.norm_out
         self.proj_out = model.proj_out
 
     def forward(
         self,
         hidden_states: torch.Tensor,
-        speaker_embedding: torch.Tensor,
-        condition_vector: torch.Tensor,
-        text_embedding: torch.Tensor,
-        text_embedding_unconditioned: torch.Tensor,
         time_embedding: torch.Tensor,
         cos: torch.Tensor,
         sin: torch.Tensor,
         block_diff: torch.Tensor,
     ) -> torch.Tensor:
-        # Input embedding with CFG (apply_cfg=True is hardcoded)
-        hidden_states = self.input_embed(
-            hidden_states,
-            speaker_embedding,
-            condition_vector,
-            text_embedding,
-            drop_audio_cond=False,
-            code_embed_uncond=text_embedding_unconditioned,
-            apply_cfg=True,
-        )
-
-        # Transformer blocks
         for transformer_block in self.transformer_blocks:
             hidden_states = transformer_block(
                 hidden_states,
