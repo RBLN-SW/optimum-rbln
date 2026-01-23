@@ -1,0 +1,26 @@
+name: Auto Dependency Bot (impl)
+
+on:
+  workflow_call:
+
+jobs:
+  renovate:
+    runs-on: rbln-sw-k8s-general
+    container:
+      image: ${{ vars.DEV_CONTAINER_IMAGE }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: dev
+
+      - name: Run Renovate
+        uses: renovatebot/github-action@v39.0.2
+        with:
+          configurationFile: .github/renovate.json
+          token: ${{ secrets.RENOVATE_TOKEN }}
+        env:
+          LOG_LEVEL: debug
+          RENOVATE_PLATFORM: github
+          RENOVATE_TOKEN: ${{ secrets.RENOVATE_TOKEN }}
+
