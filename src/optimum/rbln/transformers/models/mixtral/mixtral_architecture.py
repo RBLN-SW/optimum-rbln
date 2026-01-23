@@ -27,9 +27,11 @@ class MixtralWrapper(DecoderOnlyWrapper):
 
 
 class MixtralLayer(DecoderOnlyLayer):
+    _MLP_ATTR = ("block_sparse_moe",)
+
     def __init__(self, layer, self_attn: DecoderOnlyAttention, lora_config: Optional[RBLNLoRAConfig] = None):
         super().__init__(layer, self_attn, lora_config)
-        self.block_sparse_moe = MixtralSparseMoeBlock(self._original_mod.block_sparse_moe)
+        self.block_sparse_moe = MixtralSparseMoeBlock(self.mlp)
 
     def get_mlp(self) -> nn.Module:
         return self.block_sparse_moe
