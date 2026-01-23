@@ -992,7 +992,6 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
         """
         return cls.from_pretrained(path, rbln_config=rbln_config, return_unused_kwargs=return_unused_kwargs, **kwargs)
 
-
     @classmethod
     def initialize_from_kwargs(
         cls: Type["RBLNModelConfig"],
