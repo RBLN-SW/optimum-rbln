@@ -42,7 +42,7 @@ class RBLNMixtralForCausalLM(RBLNDecoderOnlyModelForCausalLM):
         # Using a config dictionary
         rbln_config = {
             "batch_size": 1,
-            "max_seq_len": 262144,
+            "max_seq_len": 32768,
             "tensor_parallel_size": 4,
         }
         model = RBLNMixtralForCausalLM.from_pretrained(
@@ -54,7 +54,7 @@ class RBLNMixtralForCausalLM(RBLNDecoderOnlyModelForCausalLM):
         from optimum.rbln import RBLNMixtralForCausalLMConfig
         config = RBLNMixtralForCausalLMConfig(
             batch_size=1,
-            max_seq_len=262144,
+            max_seq_len=32768,
             tensor_parallel_size=4
         )
         model = RBLNMixtralForCausalLM.from_pretrained(
