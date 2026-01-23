@@ -41,8 +41,8 @@ class RBLNGptOssForCausalLM(RBLNDecoderOnlyModelForCausalLM):
     The GPT-OSS Model transformer with a language modeling head (linear layer) on top.
     This model inherits from [`RBLNDecoderOnlyModelForCausalLM`]. Check the superclass documentation for the generic methods the library implements for all its models.
 
-    A class to convert and run pre-trained transformers based GPT-OSSForCausalLM model on RBLN devices.
-    It implements the methods to convert a pre-trained transformers GPT-OSSForCausalLM model into a RBLN transformer model by:
+    A class to convert and run pre-trained transformers based GptOssForCausalLM model on RBLN devices.
+    It implements the methods to convert a pre-trained transformers GptOssForCausalLM model into a RBLN transformer model by:
     - transferring the checkpoint weights of the original into an optimized RBLN graph,
     - compiling the resulting graph using the RBLN compiler.
 
@@ -62,7 +62,8 @@ class RBLNGptOssForCausalLM(RBLNDecoderOnlyModelForCausalLM):
             "openai/gpt-oss-20b",
             export=True,
             rbln_batch_size=1,
-            rbln_tensor_parallel_size=4,
+            rbln_tensor_parallel_size=8,
+            rbln_kvcache_partition_len=8192,
         )
 
 
@@ -70,11 +71,12 @@ class RBLNGptOssForCausalLM(RBLNDecoderOnlyModelForCausalLM):
         rbln_config = {
             "batch_size": 1,
             "tensor_parallel_size": 4,
+            "kvcache_partition_len": 8192,
         }
         model = RBLNGptOssForCausalLM.from_pretrained(
             "openai/gpt-oss-20b",
             export=True,
-            rbln_config=rbln_config
+            rbln_config=rbln_config,
         )
 
 
@@ -83,12 +85,13 @@ class RBLNGptOssForCausalLM(RBLNDecoderOnlyModelForCausalLM):
 
         config = RBLNGptOssForCausalLMConfig(
             batch_size=1,
-            tensor_parallel_size=4
+            tensor_parallel_size=4,
+            kvcache_partition_len=8192,
         )
         model = RBLNGptOssForCausalLM.from_pretrained(
             "openai/gpt-oss-20b",
             export=True,
-            rbln_config=config
+            rbln_config=config,
         )
         ```
     """
