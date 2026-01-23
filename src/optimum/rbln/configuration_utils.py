@@ -956,7 +956,7 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
             return cls(**config_file)
 
     @classmethod
-    @deprecate_method(version="0.12.0", new_method="from_pretrained")
+    @deprecate_method(version="0.10.0", new_method="from_pretrained")
     def load(
         cls,
         path: str,
