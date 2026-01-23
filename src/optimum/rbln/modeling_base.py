@@ -206,8 +206,9 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
                     f"does not match the expected model class name ({cls.__name__})."
                 )
 
-            rbln_config, kwargs = RBLNAutoConfig.load(
-                model_path_subfolder, passed_rbln_config=rbln_config, kwargs=kwargs, return_unused_kwargs=True
+            config_cls = cls.get_rbln_config_class()
+            rbln_config, kwargs = config_cls.from_pretrained(
+                model_path_subfolder, rbln_config=rbln_config, return_unused_kwargs=True, **kwargs
             )
 
             if rbln_config.rbln_model_cls_name != cls.__name__:

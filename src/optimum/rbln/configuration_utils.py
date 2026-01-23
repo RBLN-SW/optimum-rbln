@@ -971,19 +971,46 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
         if cls_reserved != cls:
             logger.warning(f"Expected {cls.__name__}, but got {cls_reserved.__name__}.")
 
-        rbln_config, kwargs = validate_and_convert_rbln_config_dict(rbln_config, **kwargs)
-        if len(kwargs) > 0:
-            raise ValueError(
-                f"Unexpected arguments: {kwargs.keys()}. "
-                "Please use `rbln_config` or `rbln_` prefixed arguments, not both."
-            )
+        rbln_keys = [key for key in kwargs.keys() if key.startswith("rbln_")]
+        rbln_runtime_kwargs = {key[5:]: kwargs.pop(key) for key in rbln_keys if key[5:] in RUNTIME_KEYWORDS}
+        rbln_submodule_kwargs = {key[5:]: kwargs.pop(key) for key in rbln_keys if key[5:] in cls.submodules}
 
-        if isinstance(rbln_config, dict):
-            nested_update(config_file, rbln_config)
-        elif isinstance(rbln_config, cls):
-            # FIXME(seinpark): is it supported?
-            raise ValueError("Loading from an existing RBLNModelConfig instance is not supported.")
+        rbln_kwargs = {
+            key[5:]: kwargs.pop(key)
+            for key in rbln_keys
+            if key[5:] not in RUNTIME_KEYWORDS and key[5:] not in cls.submodules
+        }
 
+        # Process submodule's rbln_config
+        for submodule in cls.submodules:
+            if submodule not in config_file:
+                raise ValueError(f"Submodule {submodule} not found in rbln_config.json.")
+            submodule_config = config_file[submodule]
+            update_dict = rbln_submodule_kwargs.pop(submodule, {})
+            if update_dict:
+                nested_update(submodule_config, update_dict)
+            config_file[submodule] = RBLNAutoConfig.load_from_dict(submodule_config)
+        
+        if rbln_config is not None:
+            config_file.update(rbln_config._runtime_options)
+            
+            # update submodule runtime
+            for submodule in rbln_config.submodules:
+                if str(config_file[submodule]) != str(getattr(rbln_config, submodule)):
+                    raise ValueError(
+                        f"Passed rbln_config has different attributes for submodule {submodule} than the config_file"
+                    )
+                config_file[submodule] = getattr(rbln_config, submodule)
+
+        config_file.update(rbln_runtime_kwargs)
+        rbln_config = cls(**config_file)
+        if len(rbln_kwargs) > 0:
+            for key, value in rbln_kwargs.items():
+                if getattr(rbln_config, key) != value:
+                    raise ValueError(
+                        f"Cannot set the following arguments: {list(rbln_kwargs.keys())} "
+                        f"Since the value is already set to {getattr(rbln_config, key)}"
+                    )
         if return_unused_kwargs:
             return cls(**config_file), kwargs
         else:
@@ -1156,30 +1183,16 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
         self._runtime_options["timeout"] = timeout
 
 
-def validate_and_convert_rbln_config_dict(
+def convert_rbln_config_dict(
     rbln_config: Optional[Union[Dict[str, Any], RBLNModelConfig]] = None, **kwargs
 ) -> Tuple[Optional[Union[Dict[str, Any], RBLNModelConfig]], Dict[str, Any]]:
     # Validate and merge rbln_ prefixed kwargs into rbln_config
     kwargs_keys = list(kwargs.keys())
     rbln_kwargs = {key[5:]: kwargs.pop(key) for key in kwargs_keys if key.startswith("rbln_")}
 
-    if rbln_config is not None and len(rbln_kwargs) > 0:
-        raise ValueError(
-            f"Cannot use both `rbln_config` and `rbln_` prefixed arguments simultaneously.\n"
-            f"Found rbln_ prefixed arguments: {list(kwargs.keys())}.\n\n"
-            f"Please choose one of the following approaches:\n"
-            f"  1. Using rbln_ prefixed arguments:\n"
-            f"     model = RBLNModel.from_pretrained('model_id', export=True, rbln_batch_size=4)\n\n"
-            f"  2. Using rbln_config dictionary:\n"
-            f"     model = RBLNModel.from_pretrained('model_id', export=True, rbln_config={{'batch_size': 4}})\n\n"
-            f"  3. Using RBLNModelConfig instance:\n"
-            f"     config = RBLNModelConfig(batch_size=4)\n"
-            f"     model = RBLNModel.from_pretrained('model_id', export=True, rbln_config=config)\n\n"
-            f"For more details, refer to the `RBLNModelConfig` class or https://docs.rbln.ai/ docs."
-        )
-
     rbln_config = {} if rbln_config is None else rbln_config
-    if isinstance(rbln_config, dict):
+
+    if isinstance(rbln_config, dict) and len(rbln_kwargs) > 0:
         rbln_config.update(rbln_kwargs)
 
     return rbln_config, kwargs
