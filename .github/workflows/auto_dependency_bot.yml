@@ -10,5 +10,5 @@ on:
 
 jobs:
   dispatch:
-    uses: rbln-sw/optimum-rbln/.github/workflows/auto_dependency_bot_impl.yml@ci/schedule_dispatch
+    uses: rbln-sw/optimum-rbln/.github/workflows/auto_dependency_bot_impl.yml@dev
     secrets: inherit
