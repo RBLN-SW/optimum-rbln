@@ -6,9 +6,11 @@ on:
 jobs:
   renovate:
     runs-on: rbln-sw-k8s-general
-    container:
-      image: ${{ vars.DEV_CONTAINER_IMAGE }}
     steps:
+      - name: Set safe directory
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
