@@ -910,6 +910,11 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
         if cls_reserved != cls:
             logger.warning(f"Expected {cls.__name__}, but got {cls_reserved.__name__}.")
 
+        if isinstance(rbln_config, dict):
+            for key, value in rbln_config.items():
+                if key not in kwargs:
+                    kwargs[f"rbln_{key}"] = value
+
         rbln_keys = [key for key in kwargs.keys() if key.startswith("rbln_")]
         rbln_runtime_kwargs = {key[5:]: kwargs.pop(key) for key in rbln_keys if key[5:] in RUNTIME_KEYWORDS}
         rbln_submodule_kwargs = {key[5:]: kwargs.pop(key) for key in rbln_keys if key[5:] in cls.submodules}

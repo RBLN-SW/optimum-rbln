@@ -170,24 +170,22 @@ def test_load_config_object(model_id, tmp_path):
     loaded_config = RBLNResNetForImageClassificationConfig.load(str(config_path))
     assert loaded_config.image_size == 128, "Plain load: image_size mismatch"
 
-    # # Subtest 2: Load with rbln_config dict # FIXME(seinpark) : this is not working properly
-    # loaded_config = RBLNResNetForImageClassificationConfig.load(
-    #     str(config_path), rbln_config={"create_runtimes": False}
-    # )
-    # assert loaded_config.create_runtimes is False, "Load with rbln_config: create_runtimes mismatch"
+    # Subtest 2: Load with rbln_config dict # FIXME(seinpark) : this is not working properly
+    loaded_config = RBLNResNetForImageClassificationConfig.load(
+        str(config_path), rbln_config={"create_runtimes": False}
+    )
+    assert not loaded_config.create_runtimes, "Load with rbln_config: create_runtimes mismatch"
 
     # Subtest 3: Load with rbln_ prefix
     loaded_config = RBLNResNetForImageClassificationConfig.load(str(config_path), rbln_create_runtimes=False)
-    assert loaded_config.create_runtimes is False, "Load with rbln_ prefix: create_runtimes mismatch"
+    assert not loaded_config.create_runtimes, "Load with rbln_ prefix: create_runtimes mismatch"
 
-    # # Subtest 4: Load with rbln_ prefix # FIXME(seinpark) : this is not working properly
-    # loaded_config = RBLNResNetForImageClassificationConfig.load(
-    #     str(config_path),
-    #     rbln_create_runtimes=False,
-    #     rbln_config={"image_size": 256}
-    # )
-    # assert loaded_config.create_runtimes is False, "Load with rbln_ prefix: create_runtimes mismatch"
-    # assert loaded_config.image_size == 256, "Load with rbln_ prefix: image_size mismatch"
+    # Subtest 4: Load with rbln_ prefix # FIXME(seinpark) : this is not working properly
+    with pytest.raises(ValueError, match="Cannot set the following arguments: ['image_size']*"):
+        loaded_config = RBLNResNetForImageClassificationConfig.load(
+            str(config_path), rbln_create_runtimes=False, rbln_config={"image_size": 256}
+        )
+        assert not loaded_config.create_runtimes, "Load with rbln_ prefix: create_runtimes mismatch"
 
 
 def test_submodule_config_dict():
