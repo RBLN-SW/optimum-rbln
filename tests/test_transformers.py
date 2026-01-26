@@ -472,8 +472,8 @@ class TestColQwen2Model(BaseTest.TestModel):
             )
             assert model.rbln_config.vlm.visual.device == 1
             assert model.rbln_config.vlm.device == 2
-            assert model.rbln_config.create_runtimes == False
-            assert model.rbln_config.vlm.create_runtimes == False
+            assert not model.rbln_config.create_runtimes
+            assert not model.rbln_config.vlm.create_runtimes
 
 
 class TestColQwen2Model_BFloat16(TestColQwen2Model):

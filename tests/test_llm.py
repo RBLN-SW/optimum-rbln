@@ -544,9 +544,9 @@ class TestLlavaNextForConditionalGeneration(LLMTest.TestLLM):
             **self.HF_CONFIG_KWARGS,
         )
         assert model.rbln_config.vision_tower.device == 1
-        assert model.rbln_config.vision_tower.create_runtimes == False
+        assert not model.rbln_config.vision_tower.create_runtimes
         assert model.rbln_config.language_model.device == 2
-        assert model.rbln_config.language_model.create_runtimes == False
+        assert not model.rbln_config.language_model.create_runtimes
 
     def test_complicate_config(self):
         rbln_config = {
