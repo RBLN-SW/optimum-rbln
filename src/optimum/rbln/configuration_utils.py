@@ -925,12 +925,14 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
             if submodule not in config_file:
                 raise ValueError(f"Submodule {submodule} not found in rbln_config.json.")
             submodule_config = config_file[submodule]
+            submodule_config.update(rbln_runtime_kwargs)
+
             update_dict = rbln_submodule_kwargs.pop(submodule, {})
             if update_dict:
                 nested_update(submodule_config, update_dict)
             config_file[submodule] = RBLNAutoConfig.load_from_dict(submodule_config)
 
-        if rbln_config is not None:
+        if isinstance(rbln_config, RBLNModelConfig):
             config_file.update(rbln_config._runtime_options)
 
             # update submodule runtime
@@ -951,9 +953,9 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
                         f"Since the value is already set to {getattr(rbln_config, key)}"
                     )
         if return_unused_kwargs:
-            return cls(**config_file), kwargs
+            return rbln_config, kwargs
         else:
-            return cls(**config_file)
+            return rbln_config
 
     @classmethod
     @deprecate_method(version="0.10.0", new_method="from_pretrained")

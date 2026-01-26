@@ -525,17 +525,28 @@ class TestLlavaNextForConditionalGeneration(LLMTest.TestLLM):
 
     def _inner_test_save_load(self, tmpdir):
         super()._inner_test_save_load(tmpdir)
+        self._inner_test_nested_config(tmpdir)
+
+    def _inner_test_nested_config(self, tmpdir):
         # Test loading from nested config
-        _ = self.RBLN_CLASS.from_pretrained(
+        model = self.RBLN_CLASS.from_pretrained(
             tmpdir,
             export=False,
+            rbln_create_runtimes=False,
             rbln_config={
-                "create_runtimes": False,
-                "vision_tower": {"create_runtimes": False},
-                "language_model": {"create_runtimes": False},
+                "vision_tower": {
+                    "device": 1,
+                },
+                "language_model": {
+                    "device": 2,
+                },
             },
             **self.HF_CONFIG_KWARGS,
         )
+        assert model.rbln_config.vision_tower.device == 1
+        assert model.rbln_config.vision_tower.create_runtimes == False
+        assert model.rbln_config.language_model.device == 2
+        assert model.rbln_config.language_model.create_runtimes == False
 
     def test_complicate_config(self):
         rbln_config = {

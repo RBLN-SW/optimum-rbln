@@ -464,15 +464,16 @@ class TestColQwen2Model(BaseTest.TestModel):
         self._inner_propagate_rbln_config(tmpdir)
 
     def _inner_propagate_rbln_config(self, tmpdir):
-        with ContextRblnConfig(create_runtimes=False):
-            with self.subTest():
-                rbln_config = {"vlm": {"visual": {"device": 1}, "device": 2}}
-                model = self.RBLN_CLASS.from_pretrained(
-                    tmpdir,
-                    rbln_config=rbln_config,
-                )
-                assert model.rbln_config.vlm.visual.device == 1
-                assert model.rbln_config.vlm.device == 2
+        with self.subTest():
+            rbln_config = {"create_runtimes": False, "vlm": {"visual": {"device": 1}, "device": 2}}
+            model = self.RBLN_CLASS.from_pretrained(
+                tmpdir,
+                rbln_config=rbln_config,
+            )
+            assert model.rbln_config.vlm.visual.device == 1
+            assert model.rbln_config.vlm.device == 2
+            assert model.rbln_config.create_runtimes == False
+            assert model.rbln_config.vlm.create_runtimes == False
 
 
 class TestColQwen2Model_BFloat16(TestColQwen2Model):
