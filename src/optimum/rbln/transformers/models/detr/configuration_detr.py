@@ -1,4 +1,4 @@
-# Copyright 2025 Rebellions Inc. All rights reserved.
+# Copyright 2026 Rebellions Inc. All rights reserved.
 
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,11 +12,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from typing import Any, Optional, Tuple, Union
 
-from ...configuration_generic import RBLNModelForImageClassificationConfig
+from ....configuration_utils import RBLNModelConfig
 
 
-class RBLNDetrForObjectDetectionConfig(RBLNModelForImageClassificationConfig):
+# Default DETR image processor config
+DETR_SHORTEST_EDGE = 800
+DETR_LONGEST_EDGE = 1333
+
+
+class RBLNDetrForObjectDetectionConfig(RBLNModelConfig):
     """
     Configuration class for RBLNDetrForObjectDetection.
 
@@ -24,11 +30,18 @@ class RBLNDetrForObjectDetectionConfig(RBLNModelForImageClassificationConfig):
     RBLN-optimized DETR models for object detection tasks.
     """
 
-    def __init__(self, **kwargs):
+    def __init__(
+        self,
+        max_image_size: Optional[Union[int, Tuple[int, int]]] = None,
+        batch_size: Optional[int] = None,
+        **kwargs: Any,
+    ):
         """
         Args:
-            image_size (Optional[Union[int, Tuple[int, int]]]): The size of input images.
-                Can be an integer for square images or a tuple (height, width).
+            max_image_size (Optional[Union[int, Tuple[int, int]]]): The maximum size of input images
+                for compile shape. Can be an integer for square images or a tuple (height, width).
+                If not provided, defaults to (1333, 1333) based on DETR's default longest_edge setting.
+                Images smaller than this will be padded during inference.
             batch_size (Optional[int]): The batch size for inference. Defaults to 1.
             kwargs: Additional arguments passed to the parent RBLNModelConfig.
 
@@ -36,3 +49,29 @@ class RBLNDetrForObjectDetectionConfig(RBLNModelForImageClassificationConfig):
             ValueError: If batch_size is not a positive integer.
         """
         super().__init__(**kwargs)
+        self.max_image_size = max_image_size
+        self.batch_size = batch_size or 1
+        if not isinstance(self.batch_size, int) or self.batch_size < 0:
+            raise ValueError(f"batch_size must be a positive integer, got {self.batch_size}")
+
+    @property
+    def max_image_height(self) -> int:
+        if self.max_image_size is None:
+            return DETR_LONGEST_EDGE
+        if isinstance(self.max_image_size, int):
+            return self.max_image_size
+        elif isinstance(self.max_image_size, (list, tuple)):
+            return self.max_image_size[0]
+        else:
+            return self.max_image_size["height"]
+
+    @property
+    def max_image_width(self) -> int:
+        if self.max_image_size is None:
+            return DETR_LONGEST_EDGE
+        if isinstance(self.max_image_size, int):
+            return self.max_image_size
+        elif isinstance(self.max_image_size, (list, tuple)):
+            return self.max_image_size[1]
+        else:
+            return self.max_image_size["width"]

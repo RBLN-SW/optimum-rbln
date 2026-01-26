@@ -1,4 +1,4 @@
-# Copyright 2025 Rebellions Inc. All rights reserved.
+# Copyright 2026 Rebellions Inc. All rights reserved.
 
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,19 +13,22 @@
 # limitations under the License.
 
 
-from typing import TYPE_CHECKING, Tuple, Union
+from typing import TYPE_CHECKING, Optional, Tuple, Union
 
 import torch
-from transformers.models.detr.modeling_detr import DetrObjectDetectionOutput
+from transformers import AutoModelForObjectDetection
+from transformers.models.detr.modeling_detr import DetrConfig, DetrObjectDetectionOutput
 
-from ...modeling_generic import RBLNModelForImageClassification
+from ....configuration_utils import RBLNCompileConfig
+from ....modeling import RBLNModel
+from .configuration_detr import DETR_LONGEST_EDGE, RBLNDetrForObjectDetectionConfig
 
 
 if TYPE_CHECKING:
-    pass
+    from transformers import AutoFeatureExtractor, AutoProcessor, AutoTokenizer, PreTrainedModel
 
 
-class RBLNDetrForObjectDetection(RBLNModelForImageClassification):
+class RBLNDetrForObjectDetection(RBLNModel):
     """
     RBLN optimized DETR model for object detection tasks.
 
@@ -34,20 +37,88 @@ class RBLNDetrForObjectDetection(RBLNModelForImageClassification):
     designed for object detection tasks.
     """
 
+    auto_model_class = AutoModelForObjectDetection
+
+    @classmethod
+    def _update_rbln_config(
+        cls,
+        preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"],
+        model: Optional["PreTrainedModel"] = None,
+        model_config: "DetrConfig" = None,
+        rbln_config: Optional[RBLNDetrForObjectDetectionConfig] = None,
+    ) -> RBLNDetrForObjectDetectionConfig:
+        # If max_image_size is not provided, use default DETR longest_edge (1333, 1333)
+        if rbln_config.max_image_size is None:
+            rbln_config.max_image_size = (DETR_LONGEST_EDGE, DETR_LONGEST_EDGE)
+
+        max_height = rbln_config.max_image_height
+        max_width = rbln_config.max_image_width
+
+        rbln_compile_config = RBLNCompileConfig(
+            input_info=[
+                (
+                    "pixel_values",
+                    [rbln_config.batch_size, 3, max_height, max_width],
+                    "float32",
+                ),
+                (
+                    "pixel_mask",
+                    [rbln_config.batch_size, max_height, max_width],
+                    "int64",
+                ),
+            ]
+        )
+
+        rbln_config.set_compile_cfgs([rbln_compile_config])
+        return rbln_config
+
     def forward(
-        self, pixel_values: torch.Tensor, return_dict: bool = None, **kwargs
+        self,
+        pixel_values: torch.Tensor,
+        pixel_mask: Optional[torch.Tensor] = None,
+        return_dict: bool = None,
+        **kwargs,
     ) -> Union[Tuple, DetrObjectDetectionOutput]:
         """
-        Foward pass for the RBLN-optimized DETR model for object detection.
+        Forward pass for the RBLN-optimized DETR model for object detection.
 
         Args:
-            pixel_values (torch.FloatTensor of shape (batch_size, channels, height, width)): The tensors corresponding to the input images.
-            return_dict (bool, *optional*, defaults to True): Whether to return a dictionary of outputs.
+            pixel_values (torch.FloatTensor of shape (batch_size, channels, height, width)):
+                The tensors corresponding to the input images. Images will be padded to
+                the compile-time max_image_size if smaller.
+            pixel_mask (torch.LongTensor of shape (batch_size, height, width), optional):
+                Mask from the image processor indicating valid pixels (1) vs padding (0).
+                If not provided, a mask will be generated assuming all input pixels are valid.
+            return_dict (bool, optional, defaults to True):
+                Whether to return a dictionary of outputs.
 
         Returns:
-            The model outputs. If return_dict=False is passed, returns a tuple of tensors. Otherwise, returns a ImageClassifierOutputWithNoAttention object.
+            The model outputs. If return_dict=False is passed, returns a tuple of tensors.
+            Otherwise, returns a DetrObjectDetectionOutput object.
         """
-        output = self.model[0](pixel_values=pixel_values, **kwargs)
+
+        batch_size, _, height, width = pixel_values.shape
+        max_height = self.rbln_config.max_image_height
+        max_width = self.rbln_config.max_image_width
+
+        pad_h = max_height - height
+        pad_w = max_width - width
+
+        if pixel_mask is None:
+            pixel_mask = torch.ones((batch_size, height, width), dtype=torch.int64, device=pixel_values.device)
+
+        pixel_values = torch.nn.functional.pad(pixel_values, (0, pad_w, 0, pad_h), value=0)
+        pixel_mask = torch.nn.functional.pad(pixel_mask, (0, pad_w, 0, pad_h), value=0)
+
+        output = self.model[0](pixel_values=pixel_values, pixel_mask=pixel_mask, **kwargs)
+
+        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+        if not return_dict:
+            return output
+
         return DetrObjectDetectionOutput(
-            logits=output[0], pred_boxes=output[1], last_hidden_state=output[2], encoder_last_hidden_state=output[3]
+            logits=output[0],
+            pred_boxes=output[1],
+            last_hidden_state=output[2],
+            encoder_last_hidden_state=output[3],
         )
