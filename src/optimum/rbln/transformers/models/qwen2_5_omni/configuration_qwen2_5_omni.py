@@ -49,3 +49,36 @@ class RBLNQwen2_5OmniToken2WavDiTModelConfig(RBLNModelConfig):
             raise ValueError(f"'max_seq_len' must be a positive integer, got {max_seq_len}.")
 
         self.max_seq_len = max_seq_len
+
+
+class RBLNQwen2_5OmniToken2WavBigVGANModelConfig(RBLNModelConfig):
+    """
+    Configuration class for RBLNQwen2_5OmniToken2WavBigVGANModel.
+
+    This configuration class stores the configuration parameters specific to
+    RBLN-optimized Qwen2.5-Omni Token2Wav BigVGAN model (vocoder) which converts
+    mel spectrogram to audio waveform.
+    """
+
+    def __init__(
+        self,
+        max_mel_len: Optional[int] = None,
+        **kwargs: Any,
+    ):
+        """
+        Args:
+            max_mel_len (Optional[int]): Maximum mel spectrogram length for the BigVGAN model.
+                This determines the maximum number of mel frames that can be processed.
+                The output waveform length will be `max_mel_len * hop_length` where
+                `hop_length` is typically 256. If not provided, a default value will be used.
+            kwargs: Additional arguments passed to the parent RBLNModelConfig.
+
+        Raises:
+            ValueError: If `max_mel_len` is not a positive integer when provided.
+        """
+        super().__init__(**kwargs)
+
+        if max_mel_len is not None and max_mel_len <= 0:
+            raise ValueError(f"'max_mel_len' must be a positive integer, got {max_mel_len}.")
+
+        self.max_mel_len = max_mel_len

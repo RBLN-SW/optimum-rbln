@@ -13,8 +13,10 @@
 # limitations under the License.
 
 from .configuration_qwen2_5_omni import (
+    RBLNQwen2_5OmniToken2WavBigVGANModelConfig,
     RBLNQwen2_5OmniToken2WavDiTModelConfig,
 )
 from .modeling_qwen2_5_omni import (
+    RBLNQwen2_5OmniToken2WavBigVGANModel,
     RBLNQwen2_5OmniToken2WavDiTModel,
 )

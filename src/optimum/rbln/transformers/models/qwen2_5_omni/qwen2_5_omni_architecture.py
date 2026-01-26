@@ -17,7 +17,10 @@ import math
 import torch
 import torch.nn as nn
 
-from .configuration_qwen2_5_omni import RBLNQwen2_5OmniToken2WavDiTModelConfig
+from .configuration_qwen2_5_omni import (
+    RBLNQwen2_5OmniToken2WavBigVGANModelConfig,
+    RBLNQwen2_5OmniToken2WavDiTModelConfig,
+)
 
 
 def rotate_half_codec(x):
@@ -190,3 +193,38 @@ class DiTAttentionWrapper(nn.Module):
         attn_output = self.to_out[1](attn_output)
 
         return attn_output
+
+
+class Qwen2_5OmniToken2WavBigVGANWrapper(nn.Module):
+    """
+    Wrapper for BigVGAN model that compiles the ups + resblocks loop only.
+    conv_pre, activation_post, conv_post are run on CPU.
+    """
+
+    def __init__(
+        self,
+        model: nn.Module,
+        rbln_config: RBLNQwen2_5OmniToken2WavBigVGANModelConfig,
+    ):
+        super().__init__()
+        self.rbln_config = rbln_config
+        self.num_upsample_layers = model.num_upsample_layers
+        self.num_residual_blocks = model.num_residual_blocks
+
+        self.ups = model.ups
+        self.resblocks = model.resblocks
+
+    def forward(
+        self,
+        hidden_representation: torch.Tensor,
+    ) -> torch.Tensor:
+        for layer_index in range(self.num_upsample_layers):
+            hidden_representation = self.ups[layer_index][0](hidden_representation)
+            residual_output = sum(
+                self.resblocks[layer_index * self.num_residual_blocks + block_index](hidden_representation)
+                for block_index in range(self.num_residual_blocks)
+            )
+            residual_output = residual_output / self.num_residual_blocks
+            hidden_representation = residual_output
+
+        return hidden_representation

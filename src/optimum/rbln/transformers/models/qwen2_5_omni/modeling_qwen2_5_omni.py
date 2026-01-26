@@ -27,14 +27,21 @@ from transformers.models.qwen2_5_omni.modeling_qwen2_5_omni import (
     DiTInputEmbedding,
     DiTTimestepEmbedding,
     Qwen2_5OmniDiTRotaryEmbedding,
+    Qwen2_5OmniToken2WavBigVGANModel,
     Qwen2_5OmniToken2WavDiTModel,
 )
 
 from ....configuration_utils import RBLNCompileConfig
 from ....modeling import RBLNModel
 from ....utils.logging import get_logger
-from .configuration_qwen2_5_omni import RBLNQwen2_5OmniToken2WavDiTModelConfig
-from .qwen2_5_omni_architecture import Qwen2_5OmniToken2WavDiTWrapper
+from .configuration_qwen2_5_omni import (
+    RBLNQwen2_5OmniToken2WavBigVGANModelConfig,
+    RBLNQwen2_5OmniToken2WavDiTModelConfig,
+)
+from .qwen2_5_omni_architecture import (
+    Qwen2_5OmniToken2WavBigVGANWrapper,
+    Qwen2_5OmniToken2WavDiTWrapper,
+)
 
 
 logger = get_logger(__name__)
@@ -311,3 +318,141 @@ class RBLNQwen2_5OmniToken2WavDiTModel(RBLNModel):
         generated_waveform = solution_trajectory[-1]
         generated_mel_spectrogram = generated_waveform.permute(0, 2, 1)
         return generated_mel_spectrogram
+
+
+class RBLNQwen2_5OmniToken2WavBigVGANModel(RBLNModel):
+    """
+    RBLN optimized Qwen2.5-Omni Token2Wav BigVGAN model (vocoder).
+
+    This class provides hardware-accelerated inference for Qwen2.5-Omni Token2Wav BigVGAN model
+    on RBLN devices, which converts mel spectrogram to audio waveform.
+    """
+
+    auto_model_class = None
+    _supports_non_fp32 = True
+
+    def __post_init__(self, **kwargs):
+        self.compiled_model = self.model[0]
+        config = self.config
+
+        self.mel_dim = config.mel_dim
+        self.num_residual_blocks = len(config.resblock_kernel_sizes)
+        self.num_upsample_layers = len(config.upsample_rates)
+
+        artifacts_path = Path(self.model_save_dir) / self.subfolder / "torch_artifacts.pth"
+        if artifacts_path.exists():
+            torch_artifacts = torch.load(artifacts_path, map_location="cpu", weights_only=True)
+
+            from transformers.models.qwen2_5_omni.modeling_qwen2_5_omni import (
+                SnakeBeta,
+                TorchActivation1d,
+            )
+
+            self.conv_pre = torch.nn.Conv1d(config.mel_dim, config.upsample_initial_channel, 7, 1, padding=3)
+            self.conv_pre.load_state_dict(torch_artifacts["conv_pre"])
+            self.conv_pre.eval()
+
+            final_channels = config.upsample_initial_channel // (2**self.num_upsample_layers)
+            self.activation_post = TorchActivation1d(activation=SnakeBeta(final_channels))
+            self.activation_post.load_state_dict(torch_artifacts["activation_post"])
+            self.activation_post.eval()
+
+            self.conv_post = torch.nn.Conv1d(final_channels, 1, 7, 1, padding=3, bias=False)
+            self.conv_post.load_state_dict(torch_artifacts["conv_post"])
+            self.conv_post.eval()
+
+    def __getattr__(self, __name: str) -> Any:
+        def redirect(func):
+            return lambda *pargs, **kwargs: func(self, *pargs, **kwargs)
+
+        val = getattr(Qwen2_5OmniToken2WavBigVGANModel, __name)
+
+        if isinstance(val, Callable) and "self" in set(inspect.signature(val).parameters):
+            return redirect(val)
+        return val
+
+    @classmethod
+    def save_torch_artifacts(
+        cls,
+        model: "PreTrainedModel",
+        save_dir_path: Path,
+        subfolder: str,
+        rbln_config: RBLNQwen2_5OmniToken2WavBigVGANModelConfig,
+    ):
+        torch_artifacts = {}
+
+        torch_artifacts["conv_pre"] = model.conv_pre.state_dict()
+        torch_artifacts["activation_post"] = model.activation_post.state_dict()
+        torch_artifacts["conv_post"] = model.conv_post.state_dict()
+
+        artifacts_path = save_dir_path / subfolder / "torch_artifacts.pth"
+        torch.save(torch_artifacts, artifacts_path)
+
+    @classmethod
+    def _update_rbln_config(
+        cls,
+        preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"],
+        model: Optional["PreTrainedModel"] = None,
+        model_config: "PretrainedConfig" = None,
+        rbln_config: Optional[RBLNQwen2_5OmniToken2WavBigVGANModelConfig] = None,
+    ) -> RBLNQwen2_5OmniToken2WavBigVGANModelConfig:
+        max_mel_len = rbln_config.max_mel_len
+        upsample_initial_channel = model_config.upsample_initial_channel
+
+        if max_mel_len is None:
+            # Default max_mel_len for testing
+            max_mel_len = 1000
+            rbln_config.max_mel_len = max_mel_len
+
+        input_info = [
+            ("hidden_representation", [1, upsample_initial_channel, max_mel_len], rbln_config.dtype),
+        ]
+
+        rbln_compile_config = RBLNCompileConfig(input_info=input_info)
+        rbln_config.set_compile_cfgs([rbln_compile_config])
+
+        return rbln_config
+
+    @classmethod
+    def _wrap_model_if_needed(
+        cls,
+        model: "PreTrainedModel",
+        rbln_config: RBLNQwen2_5OmniToken2WavBigVGANModelConfig,
+    ):
+        return Qwen2_5OmniToken2WavBigVGANWrapper(model, rbln_config)
+
+    def _pad_to_max_mel_len(
+        self,
+        tensor: torch.Tensor,
+    ):
+        max_mel_len = self.rbln_config.max_mel_len
+        _, _, seq_len = tensor.shape
+
+        if seq_len == max_mel_len:
+            return tensor, seq_len
+
+        pad_len = max_mel_len - seq_len
+        tensor = torch.nn.functional.pad(tensor, (0, pad_len), value=0)
+
+        return tensor, seq_len
+
+    def forward(self, mel_spectrogram: torch.Tensor) -> torch.Tensor:
+        original_mel_len = mel_spectrogram.shape[-1]
+        processed_spectrogram = self.process_mel_spectrogram(mel_spectrogram)
+        hidden_representation = self.conv_pre(processed_spectrogram)
+        hidden_representation, _ = self._pad_to_max_mel_len(hidden_representation)
+
+        hidden_representation = self.compiled_model(hidden_representation)
+
+        upsample_rates = self.config.upsample_rates
+        total_upsample = 1
+        for rate in upsample_rates:
+            total_upsample *= rate
+        original_output_len = original_mel_len * total_upsample
+
+        hidden_representation = hidden_representation[..., :original_output_len].cpu()
+        hidden_representation = self.activation_post(hidden_representation)
+        output_waveform = self.conv_post(hidden_representation)
+        output_waveform = torch.clamp(output_waveform, min=-1.0, max=1.0)
+
+        return output_waveform.squeeze().cpu()
