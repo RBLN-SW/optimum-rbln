@@ -21,7 +21,7 @@ from transformers.models.detr.modeling_detr import DetrConfig, DetrObjectDetecti
 
 from ....configuration_utils import RBLNCompileConfig
 from ....modeling import RBLNModel
-from .configuration_detr import DETR_LONGEST_EDGE, RBLNDetrForObjectDetectionConfig
+from .configuration_detr import RBLNDetrForObjectDetectionConfig
 
 
 if TYPE_CHECKING:
@@ -47,10 +47,6 @@ class RBLNDetrForObjectDetection(RBLNModel):
         model_config: "DetrConfig" = None,
         rbln_config: Optional[RBLNDetrForObjectDetectionConfig] = None,
     ) -> RBLNDetrForObjectDetectionConfig:
-        # If max_image_size is not provided, use default DETR longest_edge (1333, 1333)
-        if rbln_config.max_image_size is None:
-            rbln_config.max_image_size = (DETR_LONGEST_EDGE, DETR_LONGEST_EDGE)
-
         max_height = rbln_config.max_image_height
         max_width = rbln_config.max_image_width
 
@@ -83,14 +79,9 @@ class RBLNDetrForObjectDetection(RBLNModel):
         Forward pass for the RBLN-optimized DETR model for object detection.
 
         Args:
-            pixel_values (torch.FloatTensor of shape (batch_size, channels, height, width)):
-                The tensors corresponding to the input images. Images will be padded to
-                the compile-time max_image_size if smaller.
-            pixel_mask (torch.LongTensor of shape (batch_size, height, width), optional):
-                Mask from the image processor indicating valid pixels (1) vs padding (0).
-                If not provided, a mask will be generated assuming all input pixels are valid.
-            return_dict (bool, optional, defaults to True):
-                Whether to return a dictionary of outputs.
+            pixel_values (torch.FloatTensor of shape (batch_size, channels, height, width)): The tensors corresponding to the input images.
+            pixel_mask (torch.LongTensor of shape (batch_size, height, width), optional): Mask from the image processor indicating valid pixels (1) vs padding (0).
+            return_dict (bool, optional, defaults to True): Whether to return a dictionary of outputs.
 
         Returns:
             The model outputs. If return_dict=False is passed, returns a tuple of tensors.
