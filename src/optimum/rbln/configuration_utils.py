@@ -24,7 +24,7 @@ import torch
 from packaging.version import Version
 
 from .__version__ import __version__
-from .utils.deprecation import deprecate_kwarg, warn_deprecated_npu
+from .utils.deprecation import deprecate_kwarg, deprecate_method, warn_deprecated_npu
 from .utils.logging import get_logger
 from .utils.runtime_utils import ContextRblnConfig
 
@@ -34,6 +34,30 @@ logger = get_logger(__name__)
 
 DEFAULT_COMPILED_MODEL_NAME = "compiled_model"
 TypeInputInfo = List[Tuple[str, Tuple[int], str]]
+
+
+def nested_update(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Recursively merge override dict into base dict.
+    For nested dicts, values are merged recursively instead of being replaced.
+    For non-dict values, override takes precedence.
+    Args:
+        base: The base dictionary to merge into (modified in-place).
+        override: The dictionary with values to merge.
+    Returns:
+        The merged base dictionary.
+    Example:
+        >>> base = {"a": 1, "nested": {"x": 10, "y": 20}}
+        >>> override = {"b": 2, "nested": {"y": 30, "z": 40}}
+        >>> nested_update(base, override)
+        {"a": 1, "b": 2, "nested": {"x": 10, "y": 30, "z": 40}}
+    """
+    for key, value in override.items():
+        if key in base and isinstance(base[key], dict) and isinstance(value, dict):
+            nested_update(base[key], value)
+        else:
+            base[key] = value
+    return base
 
 
 @runtime_checkable
@@ -256,66 +280,59 @@ class RBLNAutoConfig:
 
         CONFIG_MAPPING[config.__name__] = config
 
-    @staticmethod
-    def load(
+    @classmethod
+    def from_pretrained(
+        cls,
         path: str,
-        passed_rbln_config: Optional["RBLNModelConfig"] = None,
-        kwargs: Optional[Dict[str, Any]] = None,
+        rbln_config: Optional[Dict[str, Any]] = None,
         return_unused_kwargs: bool = False,
+        **kwargs: Optional[Dict[str, Any]],
     ) -> Union["RBLNModelConfig", Tuple["RBLNModelConfig", Dict[str, Any]]]:
         """
         Load RBLNModelConfig from a path.
         Class name is automatically inferred from the `rbln_config.json` file.
-
         Args:
             path (str): Path to the RBLNModelConfig.
-            passed_rbln_config (Optional["RBLNModelConfig"]): RBLNModelConfig to pass its runtime options.
-
+            rbln_config (Optional[Dict[str, Any]]): Additional configuration to override.
+            return_unused_kwargs (bool): Whether to return unused kwargs.
         Returns:
             RBLNModelConfig: The loaded RBLNModelConfig.
         """
-        if kwargs is None:
-            kwargs = {}
-        cls, config_file = load_config(path)
+        target_cls, _ = load_config(path)
+        return target_cls.from_pretrained(
+            path, rbln_config=rbln_config, return_unused_kwargs=return_unused_kwargs, **kwargs
+        )
 
-        rbln_keys = [key for key in kwargs.keys() if key.startswith("rbln_")]
-        rbln_runtime_kwargs = {key[5:]: kwargs.pop(key) for key in rbln_keys if key[5:] in RUNTIME_KEYWORDS}
-        rbln_submodule_kwargs = {key[5:]: kwargs.pop(key) for key in rbln_keys if key[5:] in cls.submodules}
-
-        rbln_kwargs = {
-            key[5:]: kwargs.pop(key)
-            for key in rbln_keys
-            if key[5:] not in RUNTIME_KEYWORDS and key[5:] not in cls.submodules
-        }
-
-        # Process submodule's rbln_config
-        for submodule in cls.submodules:
-            if submodule not in config_file:
-                raise ValueError(f"Submodule {submodule} not found in rbln_config.json.")
-            submodule_config = config_file[submodule]
-            submodule_config.update(rbln_submodule_kwargs.pop(submodule, {}))
-            config_file[submodule] = RBLNAutoConfig.load_from_dict(submodule_config)
-
-        if passed_rbln_config is not None:
-            config_file.update(passed_rbln_config._runtime_options)
-            # TODO(jongho): Reject if the passed_rbln_config has different attributes from the config_file
-
-        config_file.update(rbln_runtime_kwargs)
-
-        rbln_config = cls(**config_file)
-
-        if len(rbln_kwargs) > 0:
-            for key, value in rbln_kwargs.items():
-                if getattr(rbln_config, key) != value:
-                    raise ValueError(
-                        f"Cannot set the following arguments: {list(rbln_kwargs.keys())} "
-                        f"Since the value is already set to {getattr(rbln_config, key)}"
-                    )
-
-        if return_unused_kwargs:
-            return cls(**config_file), kwargs
-        else:
-            return cls(**config_file)
+    @classmethod
+    @deprecate_method(version="0.12.0", new_method="from_pretrained")
+    def load(
+        cls,
+        path: str,
+        rbln_config: Optional[Dict[str, Any]] = None,
+        return_unused_kwargs: bool = False,
+        **kwargs: Optional[Dict[str, Any]],
+    ) -> Union["RBLNModelConfig", Tuple["RBLNModelConfig", Dict[str, Any]]]:
+        """
+        Load RBLNModelConfig from a path.
+        .. deprecated:: 0.12.0
+            This method is deprecated and will be removed in version 0.12.0.
+            Use :meth:`from_pretrained` instead.
+        Args:
+            path (str): Path to the RBLNModelConfig file or directory.
+            rbln_config (Optional[Dict[str, Any]]): Additional configuration to override.
+            return_unused_kwargs (bool): Whether to return unused kwargs.
+            kwargs: Additional keyword arguments to override configuration values.
+        Returns:
+            RBLNModelConfig: The loaded RBLNModelConfig.
+        Example:
+            ```python
+                # Deprecated usage:
+                config = RBLNAutoConfig.load("/path/to/model")
+                # Recommended usage:
+                config = RBLNAutoConfig.from_pretrained("/path/to/model")
+            ```
+        """
+        return cls.from_pretrained(path, rbln_config=rbln_config, return_unused_kwargs=return_unused_kwargs, **kwargs)
 
 
 class RBLNModelConfig(RBLNSerializableConfigProtocol):
@@ -866,34 +883,114 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
             json.dump(serializable_data, jsonf, indent=2)
 
     @classmethod
-    def load(cls, path: str, **kwargs: Any) -> "RBLNModelConfig":
+    def from_pretrained(
+        cls,
+        path: str,
+        rbln_config: Optional[Dict[str, Any]] = None,
+        return_unused_kwargs: bool = False,
+        **kwargs: Optional[Dict[str, Any]],
+    ) -> Union["RBLNModelConfig", Tuple["RBLNModelConfig", Dict[str, Any]]]:
         """
         Load a RBLNModelConfig from a path.
-
         Args:
             path (str): Path to the RBLNModelConfig file or directory containing the config file.
+            rbln_config (Optional[Dict[str, Any]]): Additional configuration to override.
+            return_unused_kwargs (bool): Whether to return unused kwargs.
             kwargs: Additional keyword arguments to override configuration values.
-                      Keys starting with 'rbln_' will have the prefix removed and be used
-                      to update the configuration.
-
+                    Keys starting with 'rbln_' will have the prefix removed and be used
+                    to update the configuration.
         Returns:
             RBLNModelConfig: The loaded configuration instance.
-
         Note:
             This method loads the configuration from the specified path and applies any
             provided overrides. If the loaded configuration class doesn't match the expected
             class, a warning will be logged.
         """
         cls_reserved, config_file = load_config(path)
-
         if cls_reserved != cls:
             logger.warning(f"Expected {cls.__name__}, but got {cls_reserved.__name__}.")
 
         rbln_keys = [key for key in kwargs.keys() if key.startswith("rbln_")]
-        rbln_kwargs = {key[5:]: kwargs.pop(key) for key in rbln_keys}
-        config_file.update(rbln_kwargs)
+        rbln_runtime_kwargs = {key[5:]: kwargs.pop(key) for key in rbln_keys if key[5:] in RUNTIME_KEYWORDS}
+        rbln_submodule_kwargs = {key[5:]: kwargs.pop(key) for key in rbln_keys if key[5:] in cls.submodules}
 
-        return cls(**config_file)
+        rbln_kwargs = {
+            key[5:]: kwargs.pop(key)
+            for key in rbln_keys
+            if key[5:] not in RUNTIME_KEYWORDS and key[5:] not in cls.submodules
+        }
+
+        # Process submodule's rbln_config
+        for submodule in cls.submodules:
+            if submodule not in config_file:
+                raise ValueError(f"Submodule {submodule} not found in rbln_config.json.")
+            submodule_config = config_file[submodule]
+            update_dict = rbln_submodule_kwargs.pop(submodule, {})
+            if update_dict:
+                nested_update(submodule_config, update_dict)
+            config_file[submodule] = RBLNAutoConfig.load_from_dict(submodule_config)
+
+        if rbln_config is not None:
+            config_file.update(rbln_config._runtime_options)
+
+            # update submodule runtime
+            for submodule in rbln_config.submodules:
+                if str(config_file[submodule]) != str(getattr(rbln_config, submodule)):
+                    raise ValueError(
+                        f"Passed rbln_config has different attributes for submodule {submodule} than the config_file"
+                    )
+                config_file[submodule] = getattr(rbln_config, submodule)
+
+        config_file.update(rbln_runtime_kwargs)
+        rbln_config = cls(**config_file)
+        if len(rbln_kwargs) > 0:
+            for key, value in rbln_kwargs.items():
+                if getattr(rbln_config, key) != value:
+                    raise ValueError(
+                        f"Cannot set the following arguments: {list(rbln_kwargs.keys())} "
+                        f"Since the value is already set to {getattr(rbln_config, key)}"
+                    )
+        if return_unused_kwargs:
+            return cls(**config_file), kwargs
+        else:
+            return cls(**config_file)
+
+    @classmethod
+    @deprecate_method(version="0.10.0", new_method="from_pretrained")
+    def load(
+        cls,
+        path: str,
+        rbln_config: Optional[Dict[str, Any]] = None,
+        return_unused_kwargs: bool = False,
+        **kwargs: Optional[Dict[str, Any]],
+    ) -> Union["RBLNModelConfig", Tuple["RBLNModelConfig", Dict[str, Any]]]:
+        """
+        Load a RBLNModelConfig from a path.
+        .. deprecated:: 0.12.0
+            This method is deprecated and will be removed in version 0.12.0.
+            Use :meth:`from_pretrained` instead.
+        Args:
+            path (str): Path to the RBLNModelConfig file or directory containing the config file.
+            rbln_config (Optional[Dict[str, Any]]): Additional configuration to override.
+            return_unused_kwargs (bool): Whether to return unused kwargs.
+            kwargs: Additional keyword arguments to override configuration values.
+                    Keys starting with 'rbln_' will have the prefix removed and be used
+                    to update the configuration.
+        Returns:
+            RBLNModelConfig: The loaded configuration instance.
+        Note:
+            This method loads the configuration from the specified path and applies any
+            provided overrides. If the loaded configuration class doesn't match the expected
+            class, a warning will be logged.
+        Example:
+            ```python
+                # Deprecated usage:
+                config = RBLNResNetForImageClassificationConfig.load("/path/to/model")
+                # Recommended usage:
+                config = RBLNResNetForImageClassificationConfig.from_pretrained("/path/to/model")
+            ```
+        """
+        return cls.from_pretrained(path, rbln_config=rbln_config, return_unused_kwargs=return_unused_kwargs, **kwargs)
 
     @classmethod
     def initialize_from_kwargs(
@@ -993,3 +1090,18 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
     @timeout.setter
     def timeout(self, timeout: int):
         self._runtime_options["timeout"] = timeout
+
+
+def convert_rbln_config_dict(
+    rbln_config: Optional[Union[Dict[str, Any], RBLNModelConfig]] = None, **kwargs
+) -> Tuple[Optional[Union[Dict[str, Any], RBLNModelConfig]], Dict[str, Any]]:
+    # Validate and merge rbln_ prefixed kwargs into rbln_config
+    kwargs_keys = list(kwargs.keys())
+    rbln_kwargs = {key[5:]: kwargs.pop(key) for key in kwargs_keys if key.startswith("rbln_")}
+
+    rbln_config = {} if rbln_config is None else rbln_config
+
+    if isinstance(rbln_config, dict) and len(rbln_kwargs) > 0:
+        rbln_config.update(rbln_kwargs)
+
+    return rbln_config, kwargs

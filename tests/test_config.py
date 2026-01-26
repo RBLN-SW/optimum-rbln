@@ -11,6 +11,8 @@ from optimum.rbln import (
     RBLNAutoConfig,
     RBLNAutoModel,
     RBLNCompileConfig,
+    RBLNLlavaNextForConditionalGeneration,
+    RBLNMistralForCausalLMConfig,
     RBLNModel,
     RBLNModelConfig,
     RBLNResNetForImageClassification,
@@ -152,6 +154,31 @@ def test_config_priority(model_id):
 
     assert model.rbln_config.image_size == 128, "Explicit parameter should override config object"
     assert model.rbln_config.create_runtimes is False, "Other config values should be preserved"
+
+
+def test_submodule_config_dict():
+    """Test loading submodule model with configuration passed as a dictionary."""
+    model = RBLNLlavaNextForConditionalGeneration.from_pretrained(
+        "trl-internal-testing/tiny-LlavaNextForConditionalGeneration",
+        export=True,
+        rbln_language_model={"max_seq_len": 16384, "use_inputs_embeds": True, "batch_size": 2},
+    )
+    assert model.rbln_config.language_model.max_seq_len == 16384
+    assert model.rbln_config.language_model.batch_size == 2
+
+
+def test_submodule_config_object():
+    """Test loading submodule with a pre-configured RBLNMistralForCausalLMConfig object."""
+
+    rbln_config = RBLNMistralForCausalLMConfig(max_seq_len=16384, use_inputs_embeds=True, batch_size=2)
+
+    model = RBLNLlavaNextForConditionalGeneration.from_pretrained(
+        "trl-internal-testing/tiny-LlavaNextForConditionalGeneration",
+        export=True,
+        rbln_language_model=rbln_config,
+    )
+    assert model.rbln_config.language_model.max_seq_len == 16384
+    assert model.rbln_config.language_model.batch_size == 2
 
 
 @pytest.mark.parametrize(
