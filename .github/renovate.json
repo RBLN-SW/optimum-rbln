@@ -9,6 +9,7 @@
         ":semanticCommitsDisabled"
     ],
     "commitMessagePrefix": "[pytest-full] [slack-report] dependency:",
+    "prTitle": "dependency: {{#if groupName}}{{groupName}}{{else}}{{depName}}{{/if}}{{#if newVersion}} to {{newVersion}}{{/if}}",
     "repositories": [
         "rbln-sw/optimum-rbln"
     ],
