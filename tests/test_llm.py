@@ -29,6 +29,7 @@ from optimum.rbln import (
     RBLNLoRAAdapterConfig,
     RBLNMistralForCausalLM,
     RBLNMistralModel,
+    RBLNMixtralForCausalLM,
     RBLNOPTForCausalLM,
     RBLNOPTModel,
     RBLNPegasusForConditionalGeneration,
@@ -884,6 +885,20 @@ class TestDisallowedLlama_4(DisallowedTestBase.DisallowedTest):
     HF_MODEL_ID = "afmck/testing-llama-tiny"
     HF_CONFIG_KWARGS = {"num_hidden_layers": 1, "max_position_embeddings": 2048}
     RBLN_CLASS_KWARGS = {"rbln_config": {"attn_impl": "flash_attn", "kvcache_partition_len": 1024}}
+
+
+class TestMixtralForCausalLM(LLMTest.TestLLM):
+    RBLN_CLASS = RBLNMixtralForCausalLM
+    HF_MODEL_ID = "vprovorg/tiny-random-Mixtral-8x7B-v0.1"
+
+    @classmethod
+    def setUpClass(cls):
+        config = AutoConfig.from_pretrained(cls.HF_MODEL_ID)
+        config.num_hidden_layers = 3
+        config.max_position_embeddings = 4096
+        config.hidden_size = 128
+        cls.HF_CONFIG_KWARGS.update({"config": config, "ignore_mismatched_sizes": True})
+        return super().setUpClass()
 
 
 if __name__ == "__main__":

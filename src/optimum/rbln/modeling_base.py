@@ -24,7 +24,7 @@ import torch
 from transformers import AutoConfig, AutoModel, GenerationConfig, PretrainedConfig
 from transformers.utils.hub import PushToHubMixin
 
-from .configuration_utils import RBLNAutoConfig, RBLNCompileConfig, RBLNModelConfig, get_rbln_config_class
+from .configuration_utils import RBLNCompileConfig, RBLNModelConfig, get_rbln_config_class
 from .utils.hub import pull_compiled_model_from_hub, validate_files
 from .utils.logging import get_logger
 from .utils.runtime_utils import UnavailableRuntime, tp_and_devices_are_ok
@@ -206,8 +206,9 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
                     f"does not match the expected model class name ({cls.__name__})."
                 )
 
-            rbln_config, kwargs = RBLNAutoConfig.load(
-                model_path_subfolder, passed_rbln_config=rbln_config, kwargs=kwargs, return_unused_kwargs=True
+            config_cls = cls.get_rbln_config_class()
+            rbln_config, kwargs = config_cls.from_pretrained(
+                model_path_subfolder, rbln_config=rbln_config, return_unused_kwargs=True, **kwargs
             )
 
             if rbln_config.rbln_model_cls_name != cls.__name__:
@@ -306,7 +307,7 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
                 f"If you only need to compile the model without loading it to NPU, you can use:\n"
                 f"  from_pretrained(..., rbln_create_runtimes=False) or\n"
                 f"  from_pretrained(..., rbln_config={{..., 'create_runtimes': False}})\n\n"
-                f"To check your NPU status, run the 'rbln-stat' command in your terminal.\n"
+                f"To check your NPU status, run the 'rbln-smi' command in your terminal.\n"
                 f"Make sure your NPU is properly installed and operational."
             )
             raise rebel.core.exception.RBLNRuntimeError(error_msg) from e

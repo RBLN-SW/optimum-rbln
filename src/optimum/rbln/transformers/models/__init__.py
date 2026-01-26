@@ -173,6 +173,10 @@ _import_structure = {
         "RBLNSiglipVisionModel",
         "RBLNSiglipVisionModelConfig",
     ],
+    "mixtral": [
+        "RBLNMixtralForCausalLM",
+        "RBLNMixtralForCausalLMConfig",
+    ],
     "swin": [
         "RBLNSwinBackbone",
         "RBLNSwinBackboneConfig",
@@ -301,6 +305,7 @@ if TYPE_CHECKING:
     from .llava_next import RBLNLlavaNextForConditionalGeneration, RBLNLlavaNextForConditionalGenerationConfig
     from .midm import RBLNMidmLMHeadModel, RBLNMidmLMHeadModelConfig
     from .mistral import RBLNMistralForCausalLM, RBLNMistralForCausalLMConfig, RBLNMistralModel, RBLNMistralModelConfig
+    from .mixtral import RBLNMixtralForCausalLM, RBLNMixtralForCausalLMConfig
     from .opt import RBLNOPTForCausalLM, RBLNOPTForCausalLMConfig, RBLNOPTModel, RBLNOPTModelConfig
     from .paligemma import (
         RBLNPaliGemmaForConditionalGeneration,
