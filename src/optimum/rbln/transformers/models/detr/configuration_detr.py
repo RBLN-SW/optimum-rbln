@@ -60,10 +60,7 @@ class RBLNDetrForObjectDetectionConfig(RBLNModelConfig):
             return DETR_LONGEST_EDGE
         if isinstance(self.max_image_size, int):
             return self.max_image_size
-        elif isinstance(self.max_image_size, (list, tuple)):
-            return self.max_image_size[0]
-        else:
-            return self.max_image_size["height"]
+        return self.max_image_size[0]
 
     @property
     def max_image_width(self) -> int:
@@ -71,7 +68,4 @@ class RBLNDetrForObjectDetectionConfig(RBLNModelConfig):
             return DETR_LONGEST_EDGE
         if isinstance(self.max_image_size, int):
             return self.max_image_size
-        elif isinstance(self.max_image_size, (list, tuple)):
-            return self.max_image_size[1]
-        else:
-            return self.max_image_size["width"]
+        return self.max_image_size[1]
