@@ -15,9 +15,9 @@ permissions:
 jobs:
   build-and-push:
     name: Build & Push
-    runs-on: ubuntu-latest-rbln
+    runs-on: rbln-sw-k8s-general
     env:
-      IMAGE_PATH: rebellions-sw/optimum-rbln
+      IMAGE_PATH: rbln-sw/optimum-rbln
       DOCKERFILE: docker/ci/Dockerfile
       CONTEXT: .
       PLATFORMS: linux/amd64
@@ -36,8 +36,8 @@ jobs:
         uses: docker/login-action@v3
         with:
           registry: ${{ secrets.HARBOR }}
-          username: ${{ secrets.REBEL_PYPI_USERNAME }}
-          password: ${{ secrets.REBEL_PYPI_PASSWORD }}
+          username: ${{ secrets.PKG_GATE0 }}
+          password: ${{ secrets.PKG_GATE1 }}
 
       - name: Build and push (auto on dev lockfile change)
         uses: docker/build-push-action@v6

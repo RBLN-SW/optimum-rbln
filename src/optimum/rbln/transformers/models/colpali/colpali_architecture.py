@@ -77,11 +77,11 @@ class ColPaliModel(nn.Module):
         self, model, layers: List["ColPaliLayer"], output_hidden_states: bool = False, max_seq_len: int = 2048
     ):
         super().__init__()
-        self._original_mod = model
         self.layers = nn.ModuleList(layers)
         self.output_hidden_states = output_hidden_states
-        self.norm = self._original_mod.norm
-        self.hidden_size = self._original_mod.config.hidden_size
+        self.config = model.config
+        self.norm = model.norm
+        self.hidden_size = self.config.hidden_size
         self.max_seq_len = max_seq_len
 
     def forward(
@@ -118,7 +118,6 @@ class ColPaliModel(nn.Module):
 class ColPaliLayer(nn.Module):
     def __init__(self, layer, self_attn: "ColPaliAttention"):
         super().__init__()
-        self._original_mod = layer
         self.self_attn = self_attn
         self.mlp = layer.mlp
         self.input_layernorm = layer.input_layernorm
@@ -155,27 +154,22 @@ class ColPaliLayer(nn.Module):
 class ColPaliAttention(nn.Module):
     def __init__(self, self_attn):
         super().__init__()
-        self._original_mod = self_attn
-        self.num_heads = (
-            getattr(self._original_mod, "num_heads", None) or self._original_mod.config.num_attention_heads
-        )
-        self.head_dim = self._original_mod.head_dim
+        self.config = self_attn.config
+        self.num_heads = getattr(self_attn, "num_heads", None) or self_attn.config.num_attention_heads
+        self.head_dim = self_attn.head_dim
         self.scaling = self.head_dim**-0.5
 
-        if hasattr(self._original_mod, "num_key_value_heads"):
-            self.num_key_value_heads = self._original_mod.num_key_value_heads
-        elif hasattr(self._original_mod, "config") and hasattr(self._original_mod.config, "num_key_value_heads"):
-            self.num_key_value_heads = self._original_mod.config.num_key_value_heads
+        if hasattr(self_attn, "num_key_value_heads"):
+            self.num_key_value_heads = self_attn.num_key_value_heads
+        elif hasattr(self_attn, "config") and hasattr(self_attn.config, "num_key_value_heads"):
+            self.num_key_value_heads = self_attn.config.num_key_value_heads
         else:
             self.num_key_value_heads = self.num_heads
 
-        self.__post_init__()
-
-    def __post_init__(self):
-        self.q_proj = self._original_mod.q_proj
-        self.k_proj = self._original_mod.k_proj
-        self.v_proj = self._original_mod.v_proj
-        self.o_proj = self._original_mod.o_proj
+        self.q_proj = self_attn.q_proj
+        self.k_proj = self_attn.k_proj
+        self.v_proj = self_attn.v_proj
+        self.o_proj = self_attn.o_proj
 
     def projection(self, hidden_states) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         query_states = self.q_proj(hidden_states)

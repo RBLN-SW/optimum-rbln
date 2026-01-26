@@ -17,7 +17,7 @@ on:
 
 jobs:
   check-rebel-compiler-version:
-    runs-on: sw-k8s-4c-32gb
+    runs-on: rbln-sw-k8s-4c-32gb
     container:
       image: ${{ vars.DEV_CONTAINER_IMAGE }}
     outputs:
@@ -26,14 +26,9 @@ jobs:
     steps:
       - name: Install rebel-compiler
         id: install_compiler
-        env:
-          REBEL_PYPI_ENDPOINT: ${{ vars.REBEL_PYPI_INTERNAL_ENDPOINT }}
-          REBEL_PYPI_USERNAME: ${{ secrets.REBEL_PYPI_USERNAME }}
-          REBEL_PYPI_PASSWORD: ${{ secrets.REBEL_PYPI_PASSWORD }}
         run: |
           set -e
-          PYPI_URL=$(echo $REBEL_PYPI_ENDPOINT | sed "s/\/\//\0$REBEL_PYPI_USERNAME:$REBEL_PYPI_PASSWORD@/")
-          uv pip install --extra-index-url $PYPI_URL rebel-compiler==${{ inputs.compiler_version }}
+          uv pip install --extra-index-url ${{ secrets.DEV_PKG_URL }} rebel-compiler==${{ inputs.compiler_version }}
           echo "COMPILER_VERSION=${{ inputs.compiler_version }}" >> $GITHUB_OUTPUT
 
       - name: Run script to check ENV
