@@ -892,6 +892,7 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
     ) -> Union["RBLNModelConfig", Tuple["RBLNModelConfig", Dict[str, Any]]]:
         """
         Load a RBLNModelConfig from a path.
+
         Args:
             path (str): Path to the RBLNModelConfig file or directory containing the config file.
             rbln_config (Optional[Dict[str, Any]]): Additional configuration to override.
@@ -899,8 +900,10 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
             kwargs: Additional keyword arguments to override configuration values.
                     Keys starting with 'rbln_' will have the prefix removed and be used
                     to update the configuration.
+
         Returns:
             RBLNModelConfig: The loaded configuration instance.
+
         Note:
             This method loads the configuration from the specified path and applies any
             provided overrides. If the loaded configuration class doesn't match the expected
@@ -966,9 +969,11 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
     ) -> Union["RBLNModelConfig", Tuple["RBLNModelConfig", Dict[str, Any]]]:
         """
         Load a RBLNModelConfig from a path.
+
         .. deprecated:: 0.12.0
             This method is deprecated and will be removed in version 0.12.0.
             Use :meth:`from_pretrained` instead.
+
         Args:
             path (str): Path to the RBLNModelConfig file or directory containing the config file.
             rbln_config (Optional[Dict[str, Any]]): Additional configuration to override.
@@ -976,12 +981,15 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
             kwargs: Additional keyword arguments to override configuration values.
                     Keys starting with 'rbln_' will have the prefix removed and be used
                     to update the configuration.
+
         Returns:
             RBLNModelConfig: The loaded configuration instance.
+
         Note:
             This method loads the configuration from the specified path and applies any
             provided overrides. If the loaded configuration class doesn't match the expected
             class, a warning will be logged.
+
         Example:
             ```python
                 # Deprecated usage:
