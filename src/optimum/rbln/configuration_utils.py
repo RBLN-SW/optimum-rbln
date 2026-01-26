@@ -240,8 +240,7 @@ class RBLNAutoConfig:
                 For example, the parsed contents of `rbln_config.json`.
 
         Returns:
-            RBLNModelConfig: A configuration instance. The specific subclass is
-            selected by `config_dict["cls_name"]`.
+            RBLNModelConfig: A configuration instance. The specific subclass is selected by `config_dict["cls_name"]`.
 
         Raises:
             ValueError: If `cls_name` is missing.
@@ -291,13 +290,13 @@ class RBLNAutoConfig:
         """
         Load RBLNModelConfig from a path.
         Class name is automatically inferred from the `rbln_config.json` file.
-        
+
         Args:
             path (str): Path to the RBLNModelConfig.
             rbln_config (Optional[Dict[str, Any]]): Additional configuration to override.
             return_unused_kwargs (bool): Whether to return unused kwargs.
             kwargs: Additional keyword arguments to override configuration values.
-        
+
         Returns:
             RBLNModelConfig: The loaded RBLNModelConfig.
 
