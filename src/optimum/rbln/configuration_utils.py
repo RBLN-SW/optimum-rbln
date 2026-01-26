@@ -923,7 +923,7 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
 
         Examples:
             ```python
-                config = RBLNResNetForImageClassificationConfig.from_pretrained("/path/to/model")
+            config = RBLNResNetForImageClassificationConfig.from_pretrained("/path/to/model")
             ```
         """
         cls_reserved, config_file = load_config(path)
