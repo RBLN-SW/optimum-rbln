@@ -296,11 +296,12 @@ class RBLNAutoConfig:
             path (str): Path to the RBLNModelConfig.
             rbln_config (Optional[Dict[str, Any]]): Additional configuration to override.
             return_unused_kwargs (bool): Whether to return unused kwargs.
+            kwargs: Additional keyword arguments to override configuration values.
         
         Returns:
             RBLNModelConfig: The loaded RBLNModelConfig.
 
-        Example:
+        Examples:
             ```python
                 config = RBLNAutoConfig.from_pretrained("/path/to/model")
             ```
@@ -321,6 +322,7 @@ class RBLNAutoConfig:
     ) -> Union["RBLNModelConfig", Tuple["RBLNModelConfig", Dict[str, Any]]]:
         """
         Load RBLNModelConfig from a path.
+        Class name is automatically inferred from the `rbln_config.json` file.
 
         Deprecated:
             This method is deprecated since version 0.12.0 and will be removed.
@@ -335,7 +337,7 @@ class RBLNAutoConfig:
         Returns:
             RBLNModelConfig: The loaded RBLNModelConfig.
 
-        Example:
+        Examples:
             ```python
             # Deprecated usage:
             config = RBLNAutoConfig.load("/path/to/model")
@@ -920,7 +922,7 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
             provided overrides. If the loaded configuration class doesn't match the expected
             class, a warning will be logged.
 
-        Example:
+        Examples:
             ```python
                 config = RBLNResNetForImageClassificationConfig.from_pretrained("/path/to/model")
             ```
@@ -1006,7 +1008,7 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
             provided overrides. If the loaded configuration class doesn't match the expected
             class, a warning will be logged.
 
-        Example:
+        Examples:
             ```python
             # Deprecated usage:
             config = RBLNResNetForImageClassificationConfig.load("/path/to/model")
