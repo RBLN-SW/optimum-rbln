@@ -240,8 +240,7 @@ class RBLNAutoConfig:
                 For example, the parsed contents of `rbln_config.json`.
 
         Returns:
-            RBLNModelConfig: A configuration instance. The specific subclass is
-            selected by `config_dict["cls_name"]`.
+            RBLNModelConfig: A configuration instance. The specific subclass is selected by `config_dict["cls_name"]`.
 
         Raises:
             ValueError: If `cls_name` is missing.
@@ -291,12 +290,20 @@ class RBLNAutoConfig:
         """
         Load RBLNModelConfig from a path.
         Class name is automatically inferred from the `rbln_config.json` file.
+
         Args:
             path (str): Path to the RBLNModelConfig.
             rbln_config (Optional[Dict[str, Any]]): Additional configuration to override.
             return_unused_kwargs (bool): Whether to return unused kwargs.
+            kwargs: Additional keyword arguments to override configuration values.
+
         Returns:
             RBLNModelConfig: The loaded RBLNModelConfig.
+
+        Examples:
+            ```python
+                config = RBLNAutoConfig.from_pretrained("/path/to/model")
+            ```
         """
         target_cls, _ = load_config(path)
         return target_cls.from_pretrained(
@@ -314,22 +321,27 @@ class RBLNAutoConfig:
     ) -> Union["RBLNModelConfig", Tuple["RBLNModelConfig", Dict[str, Any]]]:
         """
         Load RBLNModelConfig from a path.
-        .. deprecated:: 0.12.0
-            This method is deprecated and will be removed in version 0.12.0.
-            Use :meth:`from_pretrained` instead.
+        Class name is automatically inferred from the `rbln_config.json` file.
+
+        Deprecated:
+            This method is deprecated since version 0.12.0 and will be removed.
+            Use `from_pretrained` instead.
+
         Args:
             path (str): Path to the RBLNModelConfig file or directory.
             rbln_config (Optional[Dict[str, Any]]): Additional configuration to override.
             return_unused_kwargs (bool): Whether to return unused kwargs.
             kwargs: Additional keyword arguments to override configuration values.
+
         Returns:
             RBLNModelConfig: The loaded RBLNModelConfig.
-        Example:
+
+        Examples:
             ```python
-                # Deprecated usage:
-                config = RBLNAutoConfig.load("/path/to/model")
-                # Recommended usage:
-                config = RBLNAutoConfig.from_pretrained("/path/to/model")
+            # Deprecated usage:
+            config = RBLNAutoConfig.load("/path/to/model")
+            # Recommended usage:
+            config = RBLNAutoConfig.from_pretrained("/path/to/model")
             ```
         """
         return cls.from_pretrained(path, rbln_config=rbln_config, return_unused_kwargs=return_unused_kwargs, **kwargs)
@@ -892,6 +904,7 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
     ) -> Union["RBLNModelConfig", Tuple["RBLNModelConfig", Dict[str, Any]]]:
         """
         Load a RBLNModelConfig from a path.
+
         Args:
             path (str): Path to the RBLNModelConfig file or directory containing the config file.
             rbln_config (Optional[Dict[str, Any]]): Additional configuration to override.
@@ -899,12 +912,19 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
             kwargs: Additional keyword arguments to override configuration values.
                     Keys starting with 'rbln_' will have the prefix removed and be used
                     to update the configuration.
+
         Returns:
             RBLNModelConfig: The loaded configuration instance.
+
         Note:
             This method loads the configuration from the specified path and applies any
             provided overrides. If the loaded configuration class doesn't match the expected
             class, a warning will be logged.
+
+        Examples:
+            ```python
+            config = RBLNResNetForImageClassificationConfig.from_pretrained("/path/to/model")
+            ```
         """
         cls_reserved, config_file = load_config(path)
         if cls_reserved != cls:
@@ -966,9 +986,11 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
     ) -> Union["RBLNModelConfig", Tuple["RBLNModelConfig", Dict[str, Any]]]:
         """
         Load a RBLNModelConfig from a path.
-        .. deprecated:: 0.12.0
-            This method is deprecated and will be removed in version 0.12.0.
-            Use :meth:`from_pretrained` instead.
+
+        Deprecated:
+            This method is deprecated since version 0.12.0 and will be removed.
+            Use `from_pretrained` instead.
+
         Args:
             path (str): Path to the RBLNModelConfig file or directory containing the config file.
             rbln_config (Optional[Dict[str, Any]]): Additional configuration to override.
@@ -976,18 +998,21 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
             kwargs: Additional keyword arguments to override configuration values.
                     Keys starting with 'rbln_' will have the prefix removed and be used
                     to update the configuration.
+
         Returns:
             RBLNModelConfig: The loaded configuration instance.
+
         Note:
             This method loads the configuration from the specified path and applies any
             provided overrides. If the loaded configuration class doesn't match the expected
             class, a warning will be logged.
-        Example:
+
+        Examples:
             ```python
-                # Deprecated usage:
-                config = RBLNResNetForImageClassificationConfig.load("/path/to/model")
-                # Recommended usage:
-                config = RBLNResNetForImageClassificationConfig.from_pretrained("/path/to/model")
+            # Deprecated usage:
+            config = RBLNResNetForImageClassificationConfig.load("/path/to/model")
+            # Recommended usage:
+            config = RBLNResNetForImageClassificationConfig.from_pretrained("/path/to/model")
             ```
         """
         return cls.from_pretrained(path, rbln_config=rbln_config, return_unused_kwargs=return_unused_kwargs, **kwargs)
