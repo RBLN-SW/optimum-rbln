@@ -2,7 +2,6 @@ import json
 import os
 import unittest
 import warnings
-import copy
 
 import pytest
 import torch
@@ -467,37 +466,42 @@ class TestLlavaForConditionalGeneration(LLMTest.TestLLM):
 
 
 class TestLlavaForConditionalGeneration_Auto(TestLlavaForConditionalGeneration):
-    TEST_LEVEL = TestLevel.FULL
-    
     # override
     @classmethod
     def setUpClass(cls):
-        cls.HF_CONFIG_KWARGS.update({
-            "dtype": "auto",
-        })
+        cls.HF_CONFIG_KWARGS.update(
+            {
+                "dtype": "auto",
+            }
+        )
         return super().setUpClass()
+
 
 class TestLlavaForConditionalGeneration_Bfloat16(TestLlavaForConditionalGeneration):
     TEST_LEVEL = TestLevel.FULL
-    
+
     # override
     @classmethod
     def setUpClass(cls):
-        cls.HF_CONFIG_KWARGS.update({
-            "dtype": "bfloat16",
-        })
+        cls.HF_CONFIG_KWARGS.update(
+            {
+                "dtype": "bfloat16",
+            }
+        )
         return super().setUpClass()
 
 
 class TestLlavaForConditionalGeneration_Float16(TestLlavaForConditionalGeneration):
     TEST_LEVEL = TestLevel.FULL
-    
+
     # override
     @classmethod
     def setUpClass(cls):
-        cls.HF_CONFIG_KWARGS.update({
-            "dtype": "float16",
-        })
+        cls.HF_CONFIG_KWARGS.update(
+            {
+                "dtype": "float16",
+            }
+        )
         return super().setUpClass()
 
 
@@ -600,38 +604,42 @@ class TestLlavaNextForConditionalGeneration(LLMTest.TestLLM):
 
 
 class TestLlavaNextForConditionalGeneration_Auto(TestLlavaNextForConditionalGeneration):
-    TEST_LEVEL = TestLevel.FULL
-    
     # override
     @classmethod
     def setUpClass(cls):
-        cls.HF_CONFIG_KWARGS.update({
-            "dtype": "auto",
-        })
+        cls.HF_CONFIG_KWARGS.update(
+            {
+                "dtype": "auto",
+            }
+        )
         return super().setUpClass()
 
 
 class TestLlavaNextForConditionalGeneration_Bfloat16(TestLlavaNextForConditionalGeneration):
     TEST_LEVEL = TestLevel.FULL
-    
+
     # override
     @classmethod
     def setUpClass(cls):
-        cls.HF_CONFIG_KWARGS.update({
-            "dtype": "bfloat16",
-        })
+        cls.HF_CONFIG_KWARGS.update(
+            {
+                "dtype": "bfloat16",
+            }
+        )
         return super().setUpClass()
 
 
 class TestLlavaNextForConditionalGeneration_Float16(TestLlavaNextForConditionalGeneration):
     TEST_LEVEL = TestLevel.FULL
-    
+
     # override
     @classmethod
     def setUpClass(cls):
-        cls.HF_CONFIG_KWARGS.update({
-            "dtype": "float16",
-        })
+        cls.HF_CONFIG_KWARGS.update(
+            {
+                "dtype": "float16",
+            }
+        )
         return super().setUpClass()
 
 
@@ -686,7 +694,6 @@ class TestBlip2ForConditionalGeneration(LLMTest.TestLLM):
 
 
 class TestBlip2ForConditionalGeneration_Auto(TestBlip2ForConditionalGeneration):
-    TEST_LEVEL = TestLevel.FULL
     HF_CONFIG_KWARGS = {
         "dtype": "auto",
     }
@@ -736,7 +743,6 @@ class TestIdefics3ForConditionalGeneration(LLMTest.TestLLM):
 
 
 class TestIdefics3ForConditionalGeneration_Auto(TestIdefics3ForConditionalGeneration):
-    TEST_LEVEL = TestLevel.FULL
     HF_CONFIG_KWARGS = {
         "dtype": "auto",
     }
@@ -749,11 +755,12 @@ class TestIdefics3ForConditionalGeneration_Bfloat16(TestIdefics3ForConditionalGe
     }
 
 
-class TestIdefics3ForConditionalGeneration_Float16(TestIdefics3ForConditionalGeneration):   
+class TestIdefics3ForConditionalGeneration_Float16(TestIdefics3ForConditionalGeneration):
     TEST_LEVEL = TestLevel.FULL
     HF_CONFIG_KWARGS = {
         "dtype": "float16",
     }
+
 
 class TestQwen2VLForConditionalGeneration(LLMTest.TestLLM):
     RBLN_AUTO_CLASS = RBLNAutoModelForVision2Seq
