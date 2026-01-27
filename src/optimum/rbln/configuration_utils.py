@@ -283,7 +283,7 @@ class RBLNAutoConfig:
     def from_pretrained(
         cls,
         path: str,
-        rbln_config: Optional[Dict[str, Any]] = None,
+        rbln_config: Optional[Union[Dict[str, Any], "RBLNModelConfig"]] = None,
         return_unused_kwargs: bool = False,
         **kwargs: Optional[Dict[str, Any]],
     ) -> Union["RBLNModelConfig", Tuple["RBLNModelConfig", Dict[str, Any]]]:
@@ -315,7 +315,7 @@ class RBLNAutoConfig:
     def load(
         cls,
         path: str,
-        rbln_config: Optional[Dict[str, Any]] = None,
+        rbln_config: Optional[Union[Dict[str, Any], "RBLNModelConfig"]] = None,
         return_unused_kwargs: bool = False,
         **kwargs: Optional[Dict[str, Any]],
     ) -> Union["RBLNModelConfig", Tuple["RBLNModelConfig", Dict[str, Any]]]:
@@ -898,7 +898,7 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
     def from_pretrained(
         cls,
         path: str,
-        rbln_config: Optional[Dict[str, Any]] = None,
+        rbln_config: Optional[Union[Dict[str, Any], "RBLNModelConfig"]] = None,
         return_unused_kwargs: bool = False,
         **kwargs: Optional[Dict[str, Any]],
     ) -> Union["RBLNModelConfig", Tuple["RBLNModelConfig", Dict[str, Any]]]:
@@ -930,6 +930,11 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
         if cls_reserved != cls:
             logger.warning(f"Expected {cls.__name__}, but got {cls_reserved.__name__}.")
 
+        if isinstance(rbln_config, dict):
+            for key, value in rbln_config.items():
+                if key not in kwargs:
+                    kwargs[f"rbln_{key}"] = value
+
         rbln_keys = [key for key in kwargs.keys() if key.startswith("rbln_")]
         rbln_runtime_kwargs = {key[5:]: kwargs.pop(key) for key in rbln_keys if key[5:] in RUNTIME_KEYWORDS}
         rbln_submodule_kwargs = {key[5:]: kwargs.pop(key) for key in rbln_keys if key[5:] in cls.submodules}
@@ -945,12 +950,14 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
             if submodule not in config_file:
                 raise ValueError(f"Submodule {submodule} not found in rbln_config.json.")
             submodule_config = config_file[submodule]
+            submodule_config.update(rbln_runtime_kwargs)
+
             update_dict = rbln_submodule_kwargs.pop(submodule, {})
             if update_dict:
                 nested_update(submodule_config, update_dict)
             config_file[submodule] = RBLNAutoConfig.load_from_dict(submodule_config)
 
-        if rbln_config is not None:
+        if isinstance(rbln_config, RBLNModelConfig):
             config_file.update(rbln_config._runtime_options)
 
             # update submodule runtime
@@ -971,16 +978,16 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
                         f"Since the value is already set to {getattr(rbln_config, key)}"
                     )
         if return_unused_kwargs:
-            return cls(**config_file), kwargs
+            return rbln_config, kwargs
         else:
-            return cls(**config_file)
+            return rbln_config
 
     @classmethod
     @deprecate_method(version="0.10.0", new_method="from_pretrained")
     def load(
         cls,
         path: str,
-        rbln_config: Optional[Dict[str, Any]] = None,
+        rbln_config: Optional[Union[Dict[str, Any], "RBLNModelConfig"]] = None,
         return_unused_kwargs: bool = False,
         **kwargs: Optional[Dict[str, Any]],
     ) -> Union["RBLNModelConfig", Tuple["RBLNModelConfig", Dict[str, Any]]]:

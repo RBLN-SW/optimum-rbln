@@ -156,6 +156,38 @@ def test_config_priority(model_id):
     assert model.rbln_config.create_runtimes is False, "Other config values should be preserved"
 
 
+def test_load_config_object(model_id, tmp_path):
+    """Test loading rbln_config with various approaches: plain load, rbln_config dict, and rbln_ prefix."""
+    # Create and save a base config
+    base_config = RBLNResNetForImageClassificationConfig(image_size=128)
+    compile_cfg = RBLNCompileConfig(input_info=[("pixel_values", (1, 3, 128, 128), "float32")])
+    base_config.set_compile_cfgs([compile_cfg])
+    base_config.freeze()
+    config_path = tmp_path / "test_config.json"
+    base_config.save(str(config_path))
+
+    # Subtest 1: Plain load
+    loaded_config = RBLNResNetForImageClassificationConfig.load(str(config_path))
+    assert loaded_config.image_size == 128, "Plain load: image_size mismatch"
+
+    # Subtest 2: Load with rbln_config dict
+    loaded_config = RBLNResNetForImageClassificationConfig.load(
+        str(config_path), rbln_config={"create_runtimes": False}
+    )
+    assert not loaded_config.create_runtimes, "Load with rbln_config: create_runtimes mismatch"
+
+    # Subtest 3: Load with rbln_ prefix
+    loaded_config = RBLNResNetForImageClassificationConfig.load(str(config_path), rbln_create_runtimes=False)
+    assert not loaded_config.create_runtimes, "Load with rbln_ prefix: create_runtimes mismatch"
+
+    # Subtest 4: Load with rbln_ prefix
+    with pytest.raises(ValueError, match="Cannot set the following arguments: ['image_size']*"):
+        loaded_config = RBLNResNetForImageClassificationConfig.load(
+            str(config_path), rbln_create_runtimes=False, rbln_config={"image_size": 256}
+        )
+        assert not loaded_config.create_runtimes, "Load with rbln_ prefix: create_runtimes mismatch"
+
+
 def test_submodule_config_dict():
     """Test loading submodule model with configuration passed as a dictionary."""
     model = RBLNLlavaNextForConditionalGeneration.from_pretrained(
