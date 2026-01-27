@@ -231,6 +231,7 @@ class RBLNIdefics3ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationM
     auto_model_class = AutoModelForVision2Seq
     _rbln_submodules = [{"name": "vision_model"}, {"name": "text_model"}]
     _rbln_submodule_prefix = "model"
+    _supports_non_fp32 = True
 
     def __getattr__(self, __name: str) -> Any:
         def redirect(func):

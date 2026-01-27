@@ -663,6 +663,26 @@ class TestIdefics3ForConditionalGeneration(LLMTest.TestLLM):
         return inputs
 
 
+class TestIdefics3ForConditionalGeneration_Auto(TestIdefics3ForConditionalGeneration):
+    TEST_LEVEL = TestLevel.FULL
+    HF_CONFIG_KWARGS = {
+        "dtype": "auto",
+    }
+
+
+class TestIdefics3ForConditionalGeneration_Bfloat16(TestIdefics3ForConditionalGeneration):
+    TEST_LEVEL = TestLevel.FULL
+    HF_CONFIG_KWARGS = {
+        "dtype": "bfloat16",
+    }
+
+
+class TestIdefics3ForConditionalGeneration_Float16(TestIdefics3ForConditionalGeneration):   
+    TEST_LEVEL = TestLevel.FULL
+    HF_CONFIG_KWARGS = {
+        "dtype": "float16",
+    }
+
 class TestQwen2VLForConditionalGeneration(LLMTest.TestLLM):
     RBLN_AUTO_CLASS = RBLNAutoModelForVision2Seq
     RBLN_CLASS = RBLNQwen2VLForConditionalGeneration
