@@ -4,9 +4,6 @@ on:
   workflow_call:
 
 env:
-  REBEL_PYPI_ENDPOINT: ${{ vars.REBEL_PYPI_INTERNAL_ENDPOINT }}
-  REBEL_PYPI_USERNAME: ${{ secrets.REBEL_PYPI_USERNAME }}
-  REBEL_PYPI_PASSWORD: ${{ secrets.REBEL_PYPI_PASSWORD }}
   TOKEN: ${{ secrets.RENOVATE_TOKEN }}
 
 jobs:
@@ -28,7 +25,7 @@ jobs:
         run: |
           CUR_VERSION=$(grep rebel_compiler_version .github/version.yaml | cut -d ':' -f2 | tr -d ' ')
           LATEST_VERSION=$( \
-                            curl -s -u "${{ env.REBEL_PYPI_USERNAME }}:${{ env.REBEL_PYPI_PASSWORD }}" "${{ env.REBEL_PYPI_ENDPOINT }}/rebel-compiler/json" | \
+                            curl -s "${{ secrets.DEV_PKG_URL }}/rebel-compiler/json" | \
                             jq -r '.releases | keys | .[]' | \
                             grep prod | \
                             grep -v "latestumd" | \
@@ -73,4 +70,3 @@ jobs:
           base: dev
           team-reviewers: rbln-sw/sw-generalization
           reviewers: rebel-jongho
-
