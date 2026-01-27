@@ -53,6 +53,8 @@ class RBLNQwen2VLModelConfig(RBLNDecoderOnlyModelConfig):
     Configuration class for RBLNQwen2VLModel.
     """
 
+    submodules = ["visual"]
+
     def __init__(self, visual: Optional[RBLNModelConfig] = None, **kwargs: Dict[str, Any]):
         super().__init__(**kwargs)
         self.visual = self.initialize_submodule_config(submodule_config=visual)
