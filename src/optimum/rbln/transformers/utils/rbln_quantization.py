@@ -22,7 +22,8 @@ from safetensors.torch import load_file
 from torch.nn import Linear, Parameter
 from torch.nn import functional as F
 from transformers import AutoConfig
-from transformers.modeling_utils import get_state_dict_dtype, no_init_weights
+from transformers.modeling_utils import get_state_dict_dtype
+from transformers.initialization import no_init_weights
 
 from ...configuration_utils import RBLNSerializableConfigProtocol
 from ...utils.logging import get_logger
@@ -194,7 +195,7 @@ def get_quantized_model(
 
     config = AutoConfig.from_pretrained(
         model_id,
-        use_auth_token=use_auth_token,
+        token=use_auth_token,
         revision=revision,
         cache_dir=cache_dir,
         force_download=force_download,

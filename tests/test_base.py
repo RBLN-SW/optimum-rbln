@@ -8,7 +8,16 @@ from enum import Enum
 from typing import Iterable
 
 import transformers
-from diffusers import DiffusionPipeline
+try:
+    # NOTE: With transformers==5.0.0rc3, some diffusers/peft versions are incompatible
+    # (e.g. peft tries to import `HybridCache` from `transformers`).
+    # Keep this test module importable by treating diffusers as optional at import-time.
+    from diffusers import DiffusionPipeline as DiffusionPipeline
+except Exception:  # pragma: no cover - depends on external packages
+    class DiffusionPipeline:
+        """Sentinel type used when diffusers cannot be imported."""
+
+        pass
 from transformers import AutoConfig, CLIPConfig
 
 from optimum.rbln import __version__

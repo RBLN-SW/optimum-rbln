@@ -18,7 +18,7 @@ from typing import Optional, Tuple, Union
 
 import torch
 from transformers.modeling_outputs import BaseModelOutputWithPooling
-from transformers.modeling_utils import no_init_weights
+from transformers.initialization import no_init_weights
 from transformers.models.colpali.modeling_colpali import ColPaliForRetrieval, ColPaliForRetrievalOutput
 
 from ....configuration_utils import RBLNModelConfig
