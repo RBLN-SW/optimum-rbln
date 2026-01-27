@@ -466,6 +466,41 @@ class TestLlavaForConditionalGeneration(LLMTest.TestLLM):
         )
 
 
+class TestLlavaForConditionalGeneration_Auto(TestLlavaForConditionalGeneration):
+    TEST_LEVEL = TestLevel.FULL
+    
+    # override
+    @classmethod
+    def setUpClass(cls):
+        cls.HF_CONFIG_KWARGS.update({
+            "dtype": "auto",
+        })
+        return super().setUpClass()
+
+class TestLlavaForConditionalGeneration_Bfloat16(TestLlavaForConditionalGeneration):
+    TEST_LEVEL = TestLevel.FULL
+    
+    # override
+    @classmethod
+    def setUpClass(cls):
+        cls.HF_CONFIG_KWARGS.update({
+            "dtype": "bfloat16",
+        })
+        return super().setUpClass()
+
+
+class TestLlavaForConditionalGeneration_Float16(TestLlavaForConditionalGeneration):
+    TEST_LEVEL = TestLevel.FULL
+    
+    # override
+    @classmethod
+    def setUpClass(cls):
+        cls.HF_CONFIG_KWARGS.update({
+            "dtype": "float16",
+        })
+        return super().setUpClass()
+
+
 class TestPegasusModel(LLMTest.TestLLM):
     RBLN_AUTO_CLASS = RBLNAutoModelForSeq2SeqLM
     RBLN_CLASS = RBLNPegasusForConditionalGeneration
