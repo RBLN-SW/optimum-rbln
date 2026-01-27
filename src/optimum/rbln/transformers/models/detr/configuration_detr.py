@@ -17,11 +17,6 @@ from typing import Any, Optional, Tuple, Union
 from ....configuration_utils import RBLNModelConfig
 
 
-# Default DETR image processor config
-DETR_SHORTEST_EDGE = 800
-DETR_LONGEST_EDGE = 1333
-
-
 class RBLNDetrForObjectDetectionConfig(RBLNModelConfig):
     """
     Configuration class for RBLNDetrForObjectDetection.
@@ -32,13 +27,13 @@ class RBLNDetrForObjectDetectionConfig(RBLNModelConfig):
 
     def __init__(
         self,
-        max_image_size: Optional[Union[int, Tuple[int, int]]] = None,
+        image_size: Optional[Union[int, Tuple[int, int]]] = None,
         batch_size: Optional[int] = None,
         **kwargs: Any,
     ):
         """
         Args:
-            max_image_size (Optional[Union[int, Tuple[int, int]]]): The maximum size of input images
+            image_size (Optional[Union[int, Tuple[int, int]]]): The size of input images
                 for compile shape. Can be an integer for square images or a tuple (height, width).
                 If not provided, defaults to (1333, 1333) based on DETR's default longest_edge setting.
                 Images smaller than this will be padded during inference.
@@ -49,23 +44,7 @@ class RBLNDetrForObjectDetectionConfig(RBLNModelConfig):
             ValueError: If batch_size is not a positive integer.
         """
         super().__init__(**kwargs)
-        self.max_image_size = max_image_size
+        self.image_size = image_size
         self.batch_size = batch_size or 1
         if not isinstance(self.batch_size, int) or self.batch_size < 0:
             raise ValueError(f"batch_size must be a positive integer, got {self.batch_size}")
-
-    @property
-    def max_image_height(self) -> int:
-        if self.max_image_size is None:
-            return DETR_LONGEST_EDGE
-        if isinstance(self.max_image_size, int):
-            return self.max_image_size
-        return self.max_image_size[0]
-
-    @property
-    def max_image_width(self) -> int:
-        if self.max_image_size is None:
-            return DETR_LONGEST_EDGE
-        if isinstance(self.max_image_size, int):
-            return self.max_image_size
-        return self.max_image_size[1]

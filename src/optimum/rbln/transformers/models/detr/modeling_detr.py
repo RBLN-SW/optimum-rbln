@@ -47,23 +47,30 @@ class RBLNDetrForObjectDetection(RBLNModel):
         model_config: "DetrConfig" = None,
         rbln_config: Optional[RBLNDetrForObjectDetectionConfig] = None,
     ) -> RBLNDetrForObjectDetectionConfig:
-        max_height = rbln_config.max_image_height
-        max_width = rbln_config.max_image_width
+        if rbln_config.image_size is None:
+            max_image_size = preprocessors[0].size["longest_edge"]
+            height, width = max_image_size, max_image_size
+        else:
+            if isinstance(rbln_config.image_size, int):
+                height, width = rbln_config.image_size, rbln_config.image_size
+            else:
+                height, width = rbln_config.image_size
 
         rbln_compile_config = RBLNCompileConfig(
             input_info=[
                 (
                     "pixel_values",
-                    [rbln_config.batch_size, 3, max_height, max_width],
+                    [rbln_config.batch_size, 3, height, width],
                     "float32",
                 ),
                 (
                     "pixel_mask",
-                    [rbln_config.batch_size, max_height, max_width],
+                    [rbln_config.batch_size, height, width],
                     "int64",
                 ),
             ]
         )
+        rbln_config.image_size = (height, width)
 
         rbln_config.set_compile_cfgs([rbln_compile_config])
         return rbln_config
@@ -89,8 +96,8 @@ class RBLNDetrForObjectDetection(RBLNModel):
         """
 
         batch_size, _, height, width = pixel_values.shape
-        max_height = self.rbln_config.max_image_height
-        max_width = self.rbln_config.max_image_width
+        max_height = self.rbln_config.image_size[0]
+        max_width = self.rbln_config.image_size[1]
 
         pad_h = max_height - height
         pad_w = max_width - width
