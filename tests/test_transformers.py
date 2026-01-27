@@ -508,7 +508,7 @@ class TestColQwen2_5Model(TestColQwen2Model):
     HF_MODEL_ID = "Sahil-Kabir/colqwen2.5-v0.2-hf"
 
 
-class TestColQwen2Model_Auto(TestColQwen2Model):
+class TestColQwen2_5Model_Auto(TestColQwen2Model):
     TEST_LEVEL = TestLevel.FULL
     HF_MODEL_ID = "Sahil-Kabir/colqwen2.5-v0.2-hf"
     HF_CONFIG_KWARGS = {
