@@ -613,6 +613,27 @@ class TestBlip2ForConditionalGeneration(LLMTest.TestLLM):
         )
 
 
+class TestBlip2ForConditionalGeneration_Auto(TestBlip2ForConditionalGeneration):
+    TEST_LEVEL = TestLevel.FULL
+    HF_CONFIG_KWARGS = {
+        "dtype": "auto",
+    }
+
+
+class TestBlip2ForConditionalGeneration_Bfloat16(TestBlip2ForConditionalGeneration):
+    TEST_LEVEL = TestLevel.FULL
+    HF_CONFIG_KWARGS = {
+        "dtype": "bfloat16",
+    }
+
+
+class TestBlip2ForConditionalGeneration_Float16(TestBlip2ForConditionalGeneration):
+    TEST_LEVEL = TestLevel.FULL
+    HF_CONFIG_KWARGS = {
+        "dtype": "float16",
+    }
+
+
 class TestIdefics3ForConditionalGeneration(LLMTest.TestLLM):
     RBLN_AUTO_CLASS = RBLNAutoModelForVision2Seq
     RBLN_CLASS = RBLNIdefics3ForConditionalGeneration
