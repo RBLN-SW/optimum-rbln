@@ -508,6 +508,14 @@ class TestColQwen2_5Model(TestColQwen2Model):
     HF_MODEL_ID = "Sahil-Kabir/colqwen2.5-v0.2-hf"
 
 
+class TestColQwen2_5Model_Auto(TestColQwen2Model):
+    TEST_LEVEL = TestLevel.FULL
+    HF_MODEL_ID = "Sahil-Kabir/colqwen2.5-v0.2-hf"
+    HF_CONFIG_KWARGS = {
+        "dtype": "auto",
+    }
+
+
 class TestWav2VecModel(BaseTest.TestModel):
     RBLN_AUTO_CLASS = RBLNAutoModelForCTC
     RBLN_CLASS = RBLNWav2Vec2ForCTC
