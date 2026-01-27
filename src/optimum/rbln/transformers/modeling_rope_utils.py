@@ -33,6 +33,22 @@ import torch
 from transformers import PretrainedConfig
 
 
+def _get_rope_theta(config: PretrainedConfig) -> float:
+    """
+    Backward/forward compatible access to RoPE base frequency.
+
+    - transformers<=4.x: `config.rope_theta`
+    - transformers>=5.x: `config.rope_parameters["rope_theta"]`
+    """
+    if hasattr(config, "rope_theta"):
+        return config.rope_theta
+    rope_parameters = getattr(config, "rope_parameters", None)
+    if isinstance(rope_parameters, dict) and "rope_theta" in rope_parameters:
+        return rope_parameters["rope_theta"]
+    # Reasonable default used by most RoPE-based LMs (Llama/Gemma/etc.).
+    return 10000.0
+
+
 def _compute_default_rope_parameters(
     config: Optional[PretrainedConfig] = None,
     device: Optional["torch.device"] = None,
@@ -51,7 +67,7 @@ def _compute_default_rope_parameters(
         Tuple of (`torch.Tensor`, `float`), containing the inverse frequencies for the RoPE embeddings and the
         post-processing scaling factor applied to the computed cos/sin (unused in this type of RoPE).
     """
-    base = config.rope_theta
+    base = _get_rope_theta(config)
     partial_rotary_factor = config.partial_rotary_factor if hasattr(config, "partial_rotary_factor") else 1.0
     head_dim = getattr(config, "head_dim", None) or config.hidden_size // config.num_attention_heads
     dim = int(head_dim * partial_rotary_factor)
@@ -112,7 +128,7 @@ def _compute_dynamic_ntk_parameters(
         post-processing scaling factor applied to the computed cos/sin (unused in this type of RoPE).
     """
     # TODO (joao): use the new `original_max_position_embeddings` from rope_scaling
-    base = config.rope_theta
+    base = _get_rope_theta(config)
     partial_rotary_factor = config.partial_rotary_factor if hasattr(config, "partial_rotary_factor") else 1.0
     head_dim = getattr(config, "head_dim", config.hidden_size // config.num_attention_heads)
     dim = int(head_dim * partial_rotary_factor)
@@ -173,7 +189,7 @@ def _compute_yarn_parameters(
         post-processing scaling factor applied to the computed cos/sin.
     """
 
-    base = config.rope_theta
+    base = _get_rope_theta(config)
     partial_rotary_factor = config.partial_rotary_factor if hasattr(config, "partial_rotary_factor") else 1.0
     head_dim = getattr(config, "head_dim", config.hidden_size // config.num_attention_heads)
     dim = int(head_dim * partial_rotary_factor)
@@ -260,7 +276,7 @@ def _compute_longrope_parameters(
         post-processing scaling factor applied to the computed cos/sin.
     """
     # TODO (joao): use the new `original_max_position_embeddings` from rope_scaling
-    base = config.rope_theta
+    base = _get_rope_theta(config)
     partial_rotary_factor = config.partial_rotary_factor if hasattr(config, "partial_rotary_factor") else 1.0
     head_dim = getattr(config, "head_dim", config.hidden_size // config.num_attention_heads)
     dim = int(head_dim * partial_rotary_factor)
