@@ -19,6 +19,8 @@ from typing import TYPE_CHECKING, Any, Callable, Optional, Tuple, Union
 
 import rebel
 import torch
+
+
 try:
     from transformers import AutoModelForVision2Seq  # transformers<=4.x
 except ImportError:  # transformers>=5.x
@@ -31,8 +33,8 @@ from transformers import (
     PretrainedConfig,
     PreTrainedModel,
 )
-from transformers.modeling_outputs import BaseModelOutput
 from transformers.initialization import no_init_weights
+from transformers.modeling_outputs import BaseModelOutput
 from transformers.models.idefics3.modeling_idefics3 import Idefics3CausalLMOutputWithPast, Idefics3VisionEmbeddings
 
 from ....configuration_utils import RBLNCompileConfig, RBLNModelConfig

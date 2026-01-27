@@ -619,7 +619,8 @@ class TestGroundingDinoModel(BaseTest.TestModel):
             "backbone": {"image_size": (1333, 1333)},
             "text_backbone": {
                 "model_input_names": ["input_ids", "attention_mask", "token_type_ids", "position_ids"],
-                "model_input_shapes": [(1, 256), (1, 256, 256), (1, 256), (1, 256)],
+                # transformers>=5 expects a 2D attention mask for BERT-like backbones.
+                "model_input_shapes": [(1, 256), (1, 256), (1, 256), (1, 256)],
             },
         }
     }

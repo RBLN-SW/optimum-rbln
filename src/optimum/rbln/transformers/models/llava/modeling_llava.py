@@ -18,8 +18,8 @@ from typing import TYPE_CHECKING, Any, Callable, List, Optional, Tuple, Union
 
 import torch
 from transformers import AutoModelForImageTextToText, LlavaForConditionalGeneration, PretrainedConfig, PreTrainedModel
-from transformers.modeling_outputs import BaseModelOutputWithPooling
 from transformers.initialization import no_init_weights
+from transformers.modeling_outputs import BaseModelOutputWithPooling
 from transformers.models.llava.modeling_llava import LlavaCausalLMOutputWithPast
 
 from ....configuration_utils import RBLNCompileConfig, RBLNModelConfig
@@ -162,6 +162,8 @@ class RBLNLlavaForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMixi
     """
 
     auto_model_class = AutoModelForImageTextToText
+    # transformers>=5 nests `vision_tower` and `language_model` under `model.*`
+    _rbln_submodule_prefix = "model"
     _rbln_submodules = [
         {"name": "vision_tower"},
         {"name": "language_model"},
@@ -199,7 +201,6 @@ class RBLNLlavaForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMixi
         self.vision_tower = LoopVisionTower(self.rbln_submodules[0])
         self.language_model = self.rbln_submodules[1]
         self.multi_modal_projector = LoopProjector(self.model[0], rbln_config=self.rbln_config)
-        self.pad_token_id = self.config.pad_token_id if self.config.pad_token_id is not None else -1
         return super().__post_init__(**kwargs)
 
     def get_attn_impl(self) -> str:
@@ -213,7 +214,10 @@ class RBLNLlavaForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMixi
 
     @classmethod
     def _wrap_model_if_needed(cls, model: "PreTrainedModel", rbln_config: RBLNModelConfig):
-        return model.multi_modal_projector
+        # transformers>=5 nests modules under `model.*`
+        if hasattr(model, "multi_modal_projector"):
+            return model.multi_modal_projector
+        return model.model.multi_modal_projector
 
     @classmethod
     def _update_rbln_config(

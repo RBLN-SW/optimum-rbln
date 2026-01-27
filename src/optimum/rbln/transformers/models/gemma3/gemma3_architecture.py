@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import copy
 from typing import Optional, Tuple, Union
 
 import torch
@@ -29,12 +28,12 @@ from ..decoderonly.decoderonly_architecture import (
 
 class Gemma3ForCausalLMWrapper(DecoderOnlyWrapper):
     def get_rotary_emb(self, max_seq_len):
-        rotary_emb_global = RotaryEmbedding(config=self.config, max_seq_len_cached=max_seq_len)
-
-        config = copy.deepcopy(self.config)
-        config.rope_theta = config.rope_local_base_freq
-        config.rope_scaling = {"rope_type": "default"}
-        rotary_emb_local = RotaryEmbedding(config=config, max_seq_len_cached=max_seq_len)
+        rotary_emb_global = RotaryEmbedding(
+            config=self.config, max_seq_len_cached=max_seq_len, layer_type="full_attention"
+        )
+        rotary_emb_local = RotaryEmbedding(
+            config=self.config, max_seq_len_cached=max_seq_len, layer_type="sliding_attention"
+        )
 
         return (rotary_emb_global, rotary_emb_local)
 

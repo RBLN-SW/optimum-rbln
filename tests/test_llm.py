@@ -135,12 +135,20 @@ class LLMTest:
             for b_idx, bmask in enumerate(inputs.attention_mask):
                 masked_indices = torch.where(bmask == 0)[0]
                 unmasked_indices = torch.where(bmask == 1)[0]
-                masked = torch.allclose(test_hidden_states[b_idx][masked_indices], torch.zeros([1]))
+                # Match dtype/device for transformers>=5 (bfloat16 hidden states are common).
+                masked = torch.allclose(
+                    test_hidden_states[b_idx][masked_indices],
+                    torch.zeros([1], dtype=test_hidden_states.dtype, device=test_hidden_states.device),
+                )
                 # 1. all masked hidden states are zero
                 self.assertTrue(masked)
                 unmasked_tensor = test_hidden_states[b_idx][unmasked_indices]
                 avg_unmasked_tensor = torch.mean(unmasked_tensor, dim=-1)
-                approx_zero = torch.isclose(avg_unmasked_tensor, torch.zeros([1]), atol=1e-5)
+                approx_zero = torch.isclose(
+                    avg_unmasked_tensor,
+                    torch.zeros([1], dtype=avg_unmasked_tensor.dtype, device=avg_unmasked_tensor.device),
+                    atol=1e-5,
+                )
                 # 2. check if unmasked hidden states are not masked
                 self.assertFalse(torch.any(approx_zero).item())
 
@@ -317,8 +325,7 @@ class TestPhiModel(LLMTest.TestLLMWithoutLMHead):
 
 class TestExaoneForCausalLM(LLMTest.TestLLM):
     RBLN_CLASS = RBLNExaoneForCausalLM
-    # HF_MODEL_ID = "katuni4ka/tiny-random-exaone"
-    HF_MODEL_ID = "LGAI-EXAONE/EXAONE-3.5-2.4B-Instruct"
+    HF_MODEL_ID = "katuni4ka/tiny-random-exaone"
     HF_CONFIG_KWARGS = {"num_hidden_layers": 1, "max_position_embeddings": 1024, "trust_remote_code": True}
 
 
@@ -646,7 +653,7 @@ class TestQwen2VLForConditionalGeneration(LLMTest.TestLLM):
             "max_seq_len": 32_768,
         }
     }
-    HF_CONFIG_KWARGS = {"num_hidden_layers": 1}
+    HF_CONFIG_KWARGS = {}
 
     @classmethod
     def setUpClass(cls):
@@ -690,7 +697,7 @@ class TestQwen2_5_VLForConditionalGeneration(LLMTest.TestLLM):
             "max_seq_len": 32_768,
         }
     }
-    HF_CONFIG_KWARGS = {"num_hidden_layers": 1}
+    HF_CONFIG_KWARGS = {}
     HF_CONFIG_KWARGS_PREPROCESSOR = {"max_pixels": 64 * 14 * 14}
     IS_MULTIMODAL = True
 

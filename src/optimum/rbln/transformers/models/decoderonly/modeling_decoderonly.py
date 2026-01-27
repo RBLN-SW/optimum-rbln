@@ -20,8 +20,8 @@ import rebel
 import torch
 from rebel.compile_context import CompileContext
 from transformers import AutoModel, AutoModelForCausalLM, PretrainedConfig, PreTrainedModel
-from transformers.modeling_outputs import BaseModelOutputWithPast
 from transformers.initialization import no_init_weights
+from transformers.modeling_outputs import BaseModelOutputWithPast
 
 from ....configuration_utils import RBLNCompileConfig
 from ....modeling import RBLNModel
@@ -224,7 +224,12 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
 
     @classmethod
     def _wrap_model_if_needed(cls, model: PreTrainedModel, rbln_config: "RBLNDecoderOnlyModelConfig"):
-        return cls._decoder_wrapper_cls(model, rbln_config, cls._use_rotary_emb).eval()
+        # `get_compiled_model()` runs under `torch.inference_mode()` for performance.
+        # Creating new modules/Parameters inside that context produces "inference tensors"
+        # that don't track version counters, which breaks downstream tooling (e.g. rebel hashing).
+        # Temporarily disable inference_mode while we build wrapper modules.
+        with torch.inference_mode(False):
+            return cls._decoder_wrapper_cls(model, rbln_config, cls._use_rotary_emb).eval()
 
     @classmethod
     def _compile_model(

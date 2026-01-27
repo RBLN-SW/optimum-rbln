@@ -17,6 +17,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Optional, Union
 
 import torch
+
+
 try:
     from transformers import AutoModelForVision2Seq  # transformers<=4.x
 except ImportError:  # transformers>=5.x
@@ -62,6 +64,89 @@ if TYPE_CHECKING:
         AutoTokenizer,
         PretrainedConfig,
     )
+
+
+def _ensure_rope_theta(config: "PretrainedConfig") -> None:
+    """
+    transformers==5.x RoPE config uses `config.rope_parameters["rope_theta"]`.
+
+    Some multi-config models (e.g. Qwen2-VL) may keep `rope_theta` only on `config.text_config.rope_parameters`,
+    while `config.rope_parameters` lacks it (only contains mrope_section, rope_type, ...). This triggers
+    `KeyError: 'rope_theta'` inside HF rotary embedding initialization.
+    """
+    rope_parameters = getattr(config, "rope_parameters", None)
+    if not isinstance(rope_parameters, dict):
+        # If the whole dict is missing (can happen when re-loading from a saved config),
+        # try reconstructing from nested text_config.
+        text_config = getattr(config, "text_config", None)
+        text_rope_parameters = getattr(text_config, "rope_parameters", None)
+        if isinstance(text_rope_parameters, dict):
+            config.rope_parameters = dict(text_rope_parameters)
+        else:
+            config.rope_parameters = {"rope_type": "default", "type": "default", "rope_theta": 10000.0}
+        rope_parameters = config.rope_parameters
+    if "rope_theta" in rope_parameters:
+        return
+
+    # Prefer nested text_config if present.
+    text_config = getattr(config, "text_config", None)
+    text_rope_parameters = getattr(text_config, "rope_parameters", None)
+    if isinstance(text_rope_parameters, dict) and "rope_theta" in text_rope_parameters:
+        config.rope_parameters = {**rope_parameters, "rope_theta": text_rope_parameters["rope_theta"]}
+        return
+
+    # Backward compat / default.
+    if hasattr(config, "rope_theta"):
+        config.rope_parameters = {**rope_parameters, "rope_theta": config.rope_theta}
+    else:
+        config.rope_parameters = {**rope_parameters, "rope_theta": 10000.0}
+
+
+def _ensure_max_position_embeddings(config: "PretrainedConfig") -> None:
+    """
+    transformers==5.x `Qwen2VLRotaryEmbedding` expects `config.max_position_embeddings`.
+
+    When loading from a saved config, this field can be missing even though it exists in
+    upstream configs, so we reconstruct it from nested `text_config` if needed.
+    """
+    if hasattr(config, "max_position_embeddings"):
+        return
+    text_config = getattr(config, "text_config", None)
+    mpe = getattr(text_config, "max_position_embeddings", None)
+    if mpe is None:
+        # Conservative default; real value should come from the original model config.
+        mpe = 32768
+    config.max_position_embeddings = mpe
+
+
+def _ensure_hidden_size(config: "PretrainedConfig") -> None:
+    """
+    transformers Qwen2-VL rotary embedding initialization expects `config.hidden_size` and
+    `config.num_attention_heads` on the top-level Qwen2VLConfig.
+    """
+    if hasattr(config, "hidden_size") and config.hidden_size is not None:
+        return
+    text_config = getattr(config, "text_config", None)
+    hs = getattr(text_config, "hidden_size", None)
+    if hs is not None:
+        config.hidden_size = hs
+        return
+
+    # Fallback: try embedding_dim (some configs use that instead).
+    emb = getattr(config, "embedding_dim", None) or getattr(text_config, "embedding_dim", None)
+    if emb is not None:
+        config.hidden_size = emb
+        return
+
+
+def _ensure_num_attention_heads(config: "PretrainedConfig") -> None:
+    if hasattr(config, "num_attention_heads") and config.num_attention_heads is not None:
+        return
+    text_config = getattr(config, "text_config", None)
+    nah = getattr(text_config, "num_attention_heads", None)
+    if nah is not None:
+        config.num_attention_heads = nah
+        return
 
 
 class RBLNQwen2VisionTransformerPretrainedModel(RBLNModel):
@@ -264,6 +349,12 @@ class RBLNQwen2VLModel(RBLNDecoderOnlyModel):
 
         super().__post_init__(**kwargs)
         self.visual = self.rbln_submodules[0]
+
+        # transformers==5.x expects rope_theta to exist in `self.config.rope_parameters`
+        _ensure_rope_theta(self.config)
+        _ensure_max_position_embeddings(self.config)
+        _ensure_hidden_size(self.config)
+        _ensure_num_attention_heads(self.config)
         self.rotary_emb = self._rotary_emb_class(self.config)
         if not self.can_generate():
             self.block_tables = torch.arange(self.rbln_config.kvcache_num_blocks, dtype=torch.int16)
@@ -292,6 +383,20 @@ class RBLNQwen2VLModel(RBLNDecoderOnlyModel):
         rbln_config: RBLNQwen2VLForConditionalGenerationConfig,
         model_config: PretrainedConfig,
     ):
+        # transformers>=5 can store core text attributes only under `text_config`.
+        # Normalize them here because the decoder-only base expects top-level attrs.
+        if hasattr(model_config, "text_config"):
+            if not hasattr(model_config, "hidden_size") and hasattr(model_config.text_config, "hidden_size"):
+                model_config.hidden_size = model_config.text_config.hidden_size
+            if not hasattr(model_config, "num_attention_heads") and hasattr(
+                model_config.text_config, "num_attention_heads"
+            ):
+                model_config.num_attention_heads = model_config.text_config.num_attention_heads
+            if not hasattr(model_config, "num_hidden_layers") and hasattr(
+                model_config.text_config, "num_hidden_layers"
+            ):
+                model_config.num_hidden_layers = model_config.text_config.num_hidden_layers
+
         input_info = super().get_input_info(batch_size, query_length, rbln_config, model_config)
         pos_idx = 3
         input_info.insert(
@@ -509,6 +614,8 @@ class RBLNQwen2VLForConditionalGeneration(RBLNQwen2VLModel, RBLNDecoderOnlyModel
     _decoder_wrapper_cls = Qwen2VL_LanguageModelWrapper
     _supports_non_fp32 = True
     _use_rotary_emb = False
+    # HF `Qwen2VLForConditionalGeneration` nests the base model under `model.*`
+    _rbln_submodule_prefix = "model"
     _rbln_submodules = [
         {"name": "visual"},
     ]

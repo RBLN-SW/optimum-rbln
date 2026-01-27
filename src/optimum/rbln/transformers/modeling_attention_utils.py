@@ -206,6 +206,12 @@ class RBLNDecoderOnlyFlashAttentionMixin:
             ret: dict[str, list[list[int]]] = {}
             for key, sizes_at_node in kvcache_tensor_sizes.items():
                 m = multiplier if kvcache_meta_can_resize[key] else 1
+                # Some compiler versions return sizes as `list[int]` (node -> size) instead of `list[list[int]]`
+                # (node -> chiplet -> size). Normalize to the latter.
+                if isinstance(sizes_at_node, int):
+                    sizes_at_node = [[sizes_at_node]]
+                elif len(sizes_at_node) > 0 and isinstance(sizes_at_node[0], int):
+                    sizes_at_node = [[size_at_node] for size_at_node in sizes_at_node]  # type: ignore[list-item]
                 ret[key] = [
                     [align_2MB(size_at_chiplet * m) for size_at_chiplet in sizes_at_node_at_chiplet]
                     for sizes_at_node_at_chiplet in sizes_at_node

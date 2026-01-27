@@ -34,6 +34,7 @@ from transformers.pytorch_utils import meshgrid
 
 from ....configuration_utils import RBLNCompileConfig, RBLNModelConfig
 from ....modeling import RBLNModel
+from ....utils.logging import get_logger
 from ....utils.runtime_utils import RBLNPytorchRuntime
 from .configuration_grounding_dino import (
     RBLNGroundingDinoDecoderConfig,
@@ -44,6 +45,9 @@ from .grounding_dino_architecture import (
     _GroundingDinoDecoder,
     _GroundingDinoEncoder,
 )
+
+
+logger = get_logger(__name__)
 
 
 if TYPE_CHECKING:
@@ -81,6 +85,20 @@ class RBLNGroundingDinoForObjectDetection(RBLNModel):
         self.backbone = self.rbln_submodules[1]
         self.encoder = self.rbln_submodules[2]
         self.decoder = self.rbln_submodules[3]
+
+    @classmethod
+    def get_pytorch_model(
+        cls, model_id: str, rbln_config: Optional[RBLNModelConfig] = None, **kwargs
+    ) -> "PreTrainedModel":
+        # transformers>=5 can route BERT masking through SDPA paths that don't accept the 3D attention mask
+        # used by GroundingDino text backbone. Force eager attention for this model only.
+        if "attn_implementation" not in kwargs:
+            logger.warning(
+                "GroundingDino: forcing `attn_implementation='eager'` for transformers>=5 compatibility "
+                "(SDPA mask path can reject 3D attention masks)."
+            )
+        kwargs.setdefault("attn_implementation", "eager")
+        return super().get_pytorch_model(model_id=model_id, rbln_config=rbln_config, **kwargs)
 
     def _setup_cpu_instances(self):
         stacte_dict = torch.load(self.model_save_dir / self.subfolder / "torch_artifacts.pth", weights_only=False)
@@ -278,8 +296,12 @@ class RBLNGroundingDinoForObjectDetection(RBLNModel):
             text_token_mask = text_token_mask[:, :max_text_len]
 
         # Extract text features from text backbone
+        #
+        # transformers==5 uses a unified masking path that assumes `attention_mask` is 2D for BERT-like models.
+        # Passing a 3D self-attention mask here can lead to invalid expanded mask ranks during tracing/compilation.
+        # We keep `text_self_attention_masks` for later fusion layers, but feed the text backbone a 2D token mask.
         text_outputs = self.text_backbone(
-            input_ids, text_self_attention_masks.to(torch.long), token_type_ids, position_ids, return_dict=return_dict
+            input_ids, text_token_mask.to(torch.long), token_type_ids, position_ids, return_dict=return_dict
         )
         text_features = text_outputs.last_hidden_state if return_dict else text_outputs[0]
         text_features = self.text_projection(text_features)
