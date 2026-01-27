@@ -2,6 +2,7 @@ import json
 import os
 import unittest
 import warnings
+import copy
 
 import pytest
 import torch
@@ -561,6 +562,42 @@ class TestLlavaNextForConditionalGeneration(LLMTest.TestLLM):
             ValueError, match="Parameter conflict for 'batch_size': submodule_config has 2, but kwargs has 1"
         ):
             _ = self.RBLN_CLASS.from_pretrained(model_id=self.HF_MODEL_ID, **rbln_class_kwargs)
+
+
+class TestLlavaNextForConditionalGeneration_Auto(TestLlavaNextForConditionalGeneration):
+    TEST_LEVEL = TestLevel.FULL
+    
+    # override
+    @classmethod
+    def setUpClass(cls):
+        cls.HF_CONFIG_KWARGS.update({
+            "dtype": "auto",
+        })
+        return super().setUpClass()
+
+
+class TestLlavaNextForConditionalGeneration_Bfloat16(TestLlavaNextForConditionalGeneration):
+    TEST_LEVEL = TestLevel.FULL
+    
+    # override
+    @classmethod
+    def setUpClass(cls):
+        cls.HF_CONFIG_KWARGS.update({
+            "dtype": "bfloat16",
+        })
+        return super().setUpClass()
+
+
+class TestLlavaNextForConditionalGeneration_Float16(TestLlavaNextForConditionalGeneration):
+    TEST_LEVEL = TestLevel.FULL
+    
+    # override
+    @classmethod
+    def setUpClass(cls):
+        cls.HF_CONFIG_KWARGS.update({
+            "dtype": "float16",
+        })
+        return super().setUpClass()
 
 
 class TestBlip2ForConditionalGeneration(LLMTest.TestLLM):
