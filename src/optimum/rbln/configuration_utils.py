@@ -284,7 +284,7 @@ class RBLNAutoConfig:
     def from_pretrained(
         cls,
         path: str,
-        rbln_config: Optional[Dict[str, Any]] = None,
+        rbln_config: Optional[Union[Dict[str, Any], "RBLNModelConfig"]] = None,
         return_unused_kwargs: bool = False,
         **kwargs: Optional[Dict[str, Any]],
     ) -> Union["RBLNModelConfig", Tuple["RBLNModelConfig", Dict[str, Any]]]:
@@ -308,7 +308,7 @@ class RBLNAutoConfig:
     def load(
         cls,
         path: str,
-        rbln_config: Optional[Dict[str, Any]] = None,
+        rbln_config: Optional[Union[Dict[str, Any], "RBLNModelConfig"]] = None,
         return_unused_kwargs: bool = False,
         **kwargs: Optional[Dict[str, Any]],
     ) -> Union["RBLNModelConfig", Tuple["RBLNModelConfig", Dict[str, Any]]]:
@@ -886,7 +886,7 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
     def from_pretrained(
         cls,
         path: str,
-        rbln_config: Optional[Dict[str, Any]] = None,
+        rbln_config: Optional[Union[Dict[str, Any], "RBLNModelConfig"]] = None,
         return_unused_kwargs: bool = False,
         **kwargs: Optional[Dict[str, Any]],
     ) -> Union["RBLNModelConfig", Tuple["RBLNModelConfig", Dict[str, Any]]]:
@@ -967,7 +967,7 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
     def load(
         cls,
         path: str,
-        rbln_config: Optional[Dict[str, Any]] = None,
+        rbln_config: Optional[Union[Dict[str, Any], "RBLNModelConfig"]] = None,
         return_unused_kwargs: bool = False,
         **kwargs: Optional[Dict[str, Any]],
     ) -> Union["RBLNModelConfig", Tuple["RBLNModelConfig", Dict[str, Any]]]:
