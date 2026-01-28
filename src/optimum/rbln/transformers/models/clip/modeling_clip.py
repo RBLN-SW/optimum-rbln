@@ -158,6 +158,7 @@ class RBLNCLIPVisionModel(RBLNModel):
     """
 
     _tp_support = False
+    _supports_non_fp32 = True
 
     @classmethod
     def _wrap_model_if_needed(cls, model: torch.nn.Module, rbln_config: RBLNCLIPVisionModelConfig) -> torch.nn.Module:
