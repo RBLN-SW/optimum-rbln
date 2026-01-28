@@ -29,10 +29,10 @@ from ..decoderonly.decoderonly_architecture import (
 class Gemma3ForCausalLMWrapper(DecoderOnlyWrapper):
     def get_rotary_emb(self, max_seq_len):
         rotary_emb_global = RotaryEmbedding(
-            config=self.config, max_seq_len_cached=max_seq_len, layer_type="full_attention"
+            config=self.config, max_seq_len_cached=max_seq_len, layer_types="full_attention"
         )
         rotary_emb_local = RotaryEmbedding(
-            config=self.config, max_seq_len_cached=max_seq_len, layer_type="sliding_attention"
+            config=self.config, max_seq_len_cached=max_seq_len, layer_types="sliding_attention"
         )
 
         return (rotary_emb_global, rotary_emb_local)
