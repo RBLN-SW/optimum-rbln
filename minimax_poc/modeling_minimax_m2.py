@@ -27,10 +27,11 @@ from optimum.rbln.transformers.models.decoderonly import (
 
 def _w8a16_block_fp8_matmul(self, input: torch.Tensor) -> torch.Tensor:
     _input_dtype = input.dtype
-    weight_scale = self.weight_scale_inv.repeat_interleave(self.block_size[0], 0).repeat_interleave(
-        self.block_size[1], 1
-    )
-    weight = self.weight.to(_input_dtype) * weight_scale.to(_input_dtype)
+    out_features, in_features = self.weight.shape
+
+    weight_scale = self.weight_scale_inv.repeat_interleave(self.block_size[0], 0).unsqueeze(-1)
+    weight = self.weight.view(out_features, in_features // self.block_size[1], self.block_size[1])
+    weight = (weight.to(_input_dtype) * weight_scale).view(out_features, in_features)
     output = torch.nn.functional.linear(input, weight, self.bias)
 
     return output
@@ -76,5 +77,4 @@ class RBLNMiniMaxM2ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
             kwargs.setdefault("trust_remote_code", True)
 
         model = AutoModelForCausalLM.from_pretrained(model_id, *args, **kwargs)
-
         return model
