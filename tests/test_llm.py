@@ -851,7 +851,7 @@ class TestGemma3ForConditionalGeneration(LLMTest.TestLLM):
     HF_MODEL_ID = "trl-internal-testing/tiny-Gemma3ForConditionalGeneration"
     PROMPT = "<bos><start_of_turn>user\n<start_of_image>Describe the image.<end_of_turn>\n<start_of_turn>model\n'"
     RBLN_CLASS_KWARGS = {"rbln_config": {"language_model": {"use_inputs_embeds": True, "kvcache_partition_len": 4096}}}
-    HF_CONFIG_KWARGS = {"revision": "e1f4b0516ec80f86ed75c8cb1d45ede72526ad24"}
+    HF_CONFIG_KWARGS = {"revision": "e1f4b0516ec80f86ed75c8cb1d45ede72526ad24", "dtype": "float32"}
     HF_CONFIG_KWARGS_PREPROCESSOR = {"revision": "e1f4b0516ec80f86ed75c8cb1d45ede72526ad24"}
     TEST_LEVEL = TestLevel.FULL
     IS_MULTIMODAL = True
@@ -888,6 +888,7 @@ class TestGemma3ForConditionalGeneration_OutputHiddenStates(TestGemma3ForConditi
             "language_model": {"use_inputs_embeds": True, "kvcache_partition_len": 4096, "output_hidden_states": True}
         }
     }
+    HF_CONFIG_KWARGS = {"dtype": "float32"}
 
     def test_generate(self):
         self._test_output_hidden_states_generation()
@@ -898,6 +899,7 @@ class TestGemma3ForCausalLM(LLMTest.TestLLM):
     HF_MODEL_ID = "google/gemma-3-1b-it"
     HF_CONFIG_KWARGS = {
         "trust_remote_code": True,
+        "dtype": "float32",
     }
 
     @classmethod
@@ -915,7 +917,7 @@ class TestGemma3ForCausalLM(LLMTest.TestLLM):
 class TestLlamaForCausalLM_fp8(LLMTest.TestLLM):
     RBLN_CLASS = RBLNLlamaForCausalLM
     HF_MODEL_ID = "RedHatAI/Meta-Llama-3-8B-Instruct-FP8-KV"  # No tiny model yet.
-    HF_CONFIG_KWARGS = {"num_hidden_layers": 1}
+    HF_CONFIG_KWARGS = {"num_hidden_layers": 1, "dtype": "float32"}
     RBLN_CLASS_KWARGS = {
         "rbln_config": {
             "quantization": {"weights": "fp8", "kv_caches": "fp8"},
