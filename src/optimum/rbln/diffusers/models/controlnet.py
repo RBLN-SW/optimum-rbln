@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import TYPE_CHECKING, Dict, Optional, Union
+from typing import TYPE_CHECKING, Dict, Optional, Tuple, Union
 
 import torch
 from diffusers import ControlNetModel
@@ -218,7 +218,7 @@ class RBLNControlNetModel(RBLNModel):
         added_cond_kwargs: Optional[Dict[str, torch.Tensor]] = None,
         return_dict: bool = True,
         **kwargs,
-    ):
+    ) -> Union[ControlNetOutput, Tuple]:
         """
         Forward pass for the RBLN-optimized ControlNetModel.
 
