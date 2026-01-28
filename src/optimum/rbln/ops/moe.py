@@ -178,3 +178,57 @@ def custom_moe_glu_mxfp4_fake(
     post_norm: bool,
 ) -> Tensor:
     return torch.empty_like(hidden_states)
+
+
+@torch.library.custom_op(
+    "rbln_custom_ops::custom_moe_silu_fp8",
+    mutates_args=(),
+)
+def custom_moe_silu_fp8(
+    hidden_states: Tensor,
+    gate_proj_weight: Tensor,
+    up_proj_weight: Tensor,
+    down_proj_weight: Tensor,
+    router_logits: Tensor,
+    topk: int,
+    norm_topk_prob: bool,
+    gate_proj_bias: Optional[Tensor] = None,
+    up_proj_bias: Optional[Tensor] = None,
+    down_proj_bias: Optional[Tensor] = None,
+) -> Tensor:
+    """
+    Customized MoE SILU operation.
+
+    Expected tensor shapes:
+    - hidden_states: [batch*seq_len, hidden_size]
+    - gate_proj_weight: [num_experts, hidden_size, intermediate_size]
+    - up_proj_weight: [num_experts, hidden_size, intermediate_size]
+    - down_proj_weight: [num_experts, intermediate_size, hidden_size]
+    - router_logits: [batch*seq_len, num_experts]
+    - topk: top k experts to select
+    - norm_topk_prob: whether to normalize the top k routing weights with softmax
+    - gate_proj_bias: [num_experts, intermediate_size]
+    - up_proj_bias: [num_experts, intermediate_size]
+    - down_proj_bias: [num_experts, hidden_size]
+
+    Returns:
+        Tensor: [batch * seq_len, hidden_size]
+    """
+
+    return torch.empty_like(hidden_states)
+
+
+@custom_moe_silu_fp8.register_fake
+def custom_moe_silu_fp8_fake(
+    hidden_states: Tensor,
+    gate_proj_weight: Tensor,
+    up_proj_weight: Tensor,
+    down_proj_weight: Tensor,
+    router_logits: Tensor,
+    topk: int,
+    norm_topk_prob: bool,
+    gate_proj_bias: Optional[Tensor] = None,
+    up_proj_bias: Optional[Tensor] = None,
+    down_proj_bias: Optional[Tensor] = None,
+) -> Tensor:
+    return torch.empty_like(hidden_states)
