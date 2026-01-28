@@ -13,7 +13,7 @@
 # limitations under the License.
 
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional, Union
+from typing import TYPE_CHECKING, Optional, Tuple, Union
 
 import torch
 from diffusers.models.transformers.prior_transformer import PriorTransformer, PriorTransformerOutput
@@ -134,7 +134,7 @@ class RBLNPriorTransformer(RBLNModel):
         encoder_hidden_states: Optional[torch.Tensor] = None,
         attention_mask: Optional[torch.Tensor] = None,
         return_dict: bool = True,
-    ):
+    ) -> Union[PriorTransformerOutput, Tuple]:
         """
         Forward pass for the RBLN-optimized PriorTransformer.
 
