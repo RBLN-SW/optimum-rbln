@@ -15,6 +15,9 @@
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Union, get_args, get_origin, get_type_hints
+from functools import cached_property
+from itertools import chain
+import inspect
 
 import rebel
 import torch
@@ -22,7 +25,7 @@ from huggingface_hub.constants import HUGGINGFACE_HUB_CACHE
 from transformers import PretrainedConfig
 from transformers.modeling_outputs import BaseModelOutput
 
-from .configuration_utils import DEFAULT_COMPILED_MODEL_NAME, RBLNModelConfig
+from .configuration_utils import DEFAULT_COMPILED_MODEL_NAME, RBLNModelConfig, RBLNCompileConfig
 from .modeling_base import RBLNBaseModel
 from .utils.logging import get_logger
 
@@ -306,6 +309,7 @@ class RBLNModel(RBLNBaseModel):
             return_dict = True if return_dict is None else return_dict
 
         # Get output from the model
+        self._prepare_input(*args, **kwargs)
         output = self.model[0](*args, **kwargs)
 
         # Format output according to task requirements
@@ -339,6 +343,39 @@ class RBLNModel(RBLNBaseModel):
         cls._output_class = BaseModelOutput
         return BaseModelOutput
 
+    @cached_property
+    def _castable_input_names(self) -> set[str]:
+        target_dtype = RBLNCompileConfig.normalize_dtype(self.dtype)
+        names = set()
+        for cfg in self.rbln_config.compile_cfgs:
+            input_infos = cfg.input_info if not cfg.is_multiple_input_info else chain.from_iterable(cfg.input_info)
+            for tensor_name, _, dtype in input_infos:
+                if dtype == target_dtype:
+                    names.add(tensor_name)
+        return names
+
+    @cached_property
+    def _forward_param_names(self) -> List[str]:
+        sig = inspect.signature(self.forward)
+        return [name for name in sig.parameters.keys() if name != "self"]
+
+    def _prepare_input(self, *args, **kwargs):
+        # Prepare model input before passing to RBLN runtime.
+        # This method can be overridden by subclasses to provide task-specific input handling.
+        args = list(args)
+        for idx, value in enumerate(args):
+            if idx >= len(self._forward_param_names):
+                break
+            name = self._forward_param_names[idx]
+            if name in self._castable_input_names and isinstance(value, torch.Tensor):
+                args[idx] = value.to(dtype=self.dtype)
+
+        for name, value in kwargs.items():
+            if name in self._castable_input_names and isinstance(value, torch.Tensor):
+                kwargs[name] = value.to(dtype=self.dtype)
+        import pdb; pdb.set_trace()
+        return tuple(args), kwargs
+    
     def _prepare_output(self, output, return_dict):
         # Prepare model output based on return_dict flag.
         # This method can be overridden by subclasses to provide task-specific output handling.

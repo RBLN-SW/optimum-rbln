@@ -315,6 +315,7 @@ class RBLNBlip2ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMixi
 
     auto_model_class = AutoModelForVisualQuestionAnswering
     _rbln_submodules = [{"name": "vision_model"}, {"name": "qformer"}, {"name": "language_model"}]
+    _supports_non_fp32 = True
 
     def __getattr__(self, __name: str) -> Any:
         def redirect(func):
@@ -517,6 +518,7 @@ class RBLNBlip2ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMixi
         language_model_inputs = language_model_inputs.to(inputs_embeds.device, inputs_embeds.dtype)
         inputs_embeds = inputs_embeds.masked_scatter(special_image_mask, language_model_inputs)
 
+        inputs_embeds = inputs_embeds.to(self.language_model.dtype)
         inputs = {"inputs_embeds": inputs_embeds, "attention_mask": attention_mask}
         if not self.language_model.config.is_encoder_decoder:
             inputs["input_ids"] = input_ids
