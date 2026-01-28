@@ -54,6 +54,48 @@ if TYPE_CHECKING:
     )
 
 
+class RBLNQwen2_5OmniToken2WavModel(RBLNModel):
+    """
+    RBLN optimized Qwen2.5-Omni Token2Wav model.
+
+    This class provides hardware-accelerated inference for Qwen2.5-Omni Token2Wav model
+    on RBLN devices, which takes speech tokens as input and predicts mel spectrogram.
+    """
+
+    auto_model_class = None
+
+    _rbln_submodules = [
+        {"name": "code2wav_dit_model"},
+        {"name": "code2wav_bigvgan_model"},
+    ]
+
+    def __post_init__(self, **kwargs):
+        self.code2wav_dit_model = self.rbln_submodules[0]
+        self.code2wav_bigvgan_model = self.rbln_submodules[1]
+
+    def forward(
+        self,
+        code,
+        conditioning,
+        reference_mel,
+        num_steps=10,
+        guidance_scale=0.5,
+        sway_coefficient=-1.0,
+    ):
+        mel_spectrogram = self.code2wav_dit_model.sample(
+            conditioning_vector=conditioning,
+            reference_mel_spectrogram=reference_mel,
+            quantized_code=code,
+            num_steps=num_steps,
+            guidance_scale=guidance_scale,
+            sway_coefficient=sway_coefficient,
+        )
+
+        waveform = self.code2wav_bigvgan_model(mel_spectrogram)
+
+        return waveform
+
+
 class RBLNQwen2_5OmniToken2WavDiTModel(RBLNModel):
     """
     RBLN optimized Qwen2.5-Omni Token2Wav DiT model.
@@ -264,6 +306,7 @@ class RBLNQwen2_5OmniToken2WavDiTModel(RBLNModel):
     ) -> torch.Tensor:
         from transformers.models.qwen2_5_omni.modeling_qwen2_5_omni import RungeKutta4ODESolver
 
+        torch.manual_seed(0)
         noise_initialization = torch.randn(
             [1, 30000, self.mel_dim],
             dtype=reference_mel_spectrogram.dtype,

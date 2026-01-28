@@ -164,6 +164,8 @@ _import_structure = {
         "RBLNQwen2_5OmniToken2WavDiTModelConfig",
         "RBLNQwen2_5OmniToken2WavBigVGANModel",
         "RBLNQwen2_5OmniToken2WavBigVGANModelConfig",
+        "RBLNQwen2_5OmniToken2WavModel",
+        "RBLNQwen2_5OmniToken2WavModelConfig",
     ],
     "qwen2_moe": ["RBLNQwen2MoeForCausalLM", "RBLNQwen2MoeForCausalLMConfig"],
     "qwen3": ["RBLNQwen3ForCausalLM", "RBLNQwen3ForCausalLMConfig", "RBLNQwen3Model", "RBLNQwen3ModelConfig"],
@@ -334,6 +336,8 @@ if TYPE_CHECKING:
         RBLNQwen2_5OmniToken2WavBigVGANModelConfig,
         RBLNQwen2_5OmniToken2WavDiTModel,
         RBLNQwen2_5OmniToken2WavDiTModelConfig,
+        RBLNQwen2_5OmniToken2WavModel,
+        RBLNQwen2_5OmniToken2WavModelConfig,
     )
     from .qwen2_5_vl import (
         RBLNQwen2_5_VisionTransformerPretrainedModel,

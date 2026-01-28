@@ -17,6 +17,29 @@ from typing import Any, Optional
 from ....configuration_utils import RBLNModelConfig
 
 
+class RBLNQwen2_5OmniToken2WavModelConfig(RBLNModelConfig):
+    """
+    Configuration class for RBLNQwen2_5OmniToken2WavModel.
+
+    This configuration class stores the configuration parameters specific to
+    RBLN-optimized Qwen2.5-Omni Token2Wav model which takes speech tokens
+    as input and predicts mel spectrogram.
+    """
+
+    _allow_no_compile_cfgs = True
+    submodules = ["code2wav_dit_model", "code2wav_bigvgan_model"]
+
+    def __init__(
+        self,
+        code2wav_dit_model: Optional[RBLNModelConfig] = None,
+        code2wav_bigvgan_model: Optional[RBLNModelConfig] = None,
+        **kwargs: Any,
+    ):
+        super().__init__(**kwargs)
+        self.code2wav_dit_model = self.initialize_submodule_config(submodule_config=code2wav_dit_model)
+        self.code2wav_bigvgan_model = self.initialize_submodule_config(submodule_config=code2wav_bigvgan_model)
+
+
 class RBLNQwen2_5OmniToken2WavDiTModelConfig(RBLNModelConfig):
     """
     Configuration class for RBLNQwen2_5OmniToken2WavDiTModel.

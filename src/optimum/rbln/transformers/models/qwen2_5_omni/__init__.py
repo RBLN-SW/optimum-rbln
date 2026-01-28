@@ -15,8 +15,10 @@
 from .configuration_qwen2_5_omni import (
     RBLNQwen2_5OmniToken2WavBigVGANModelConfig,
     RBLNQwen2_5OmniToken2WavDiTModelConfig,
+    RBLNQwen2_5OmniToken2WavModelConfig,
 )
 from .modeling_qwen2_5_omni import (
     RBLNQwen2_5OmniToken2WavBigVGANModel,
     RBLNQwen2_5OmniToken2WavDiTModel,
+    RBLNQwen2_5OmniToken2WavModel,
 )
