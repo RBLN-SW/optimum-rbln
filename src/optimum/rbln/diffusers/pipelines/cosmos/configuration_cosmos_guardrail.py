@@ -141,7 +141,7 @@ class RBLNCosmosSafetyCheckerV2Config(RBLNModelConfig):
 
         self.qwen3guard = self.initialize_submodule_config(
             qwen3guard,
-            cls_name="RBLNQwenForCausalLMConfig",
+            cls_name="RBLNQwen3ForCausalLMConfig",
             batch_size=batch_size,
             tensor_parallel_size=tensor_parallel_size,
             max_seq_len=max_seq_len,
