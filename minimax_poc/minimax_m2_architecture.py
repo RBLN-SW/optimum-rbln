@@ -155,13 +155,24 @@ class MiniMaxM2SparseMoeBlock(nn.Module):
         w3 = torch.stack([e.w3.weight for e in self.experts], dim=0)
         w2 = torch.stack([e.w2.weight for e in self.experts], dim=0)
 
+        w1_scale = torch.stack(
+            [e.w1.weight_scale_inv.repeat_interleave(e.w1.block_size[0], 0).unsqueeze(-1) for e in self.experts], dim=0
+        )
+        w3_scale = torch.stack(
+            [e.w3.weight_scale_inv.repeat_interleave(e.w3.block_size[0], 0).unsqueeze(-1) for e in self.experts], dim=0
+        )
+        w2_scale = torch.stack(
+            [e.w2.weight_scale_inv.repeat_interleave(e.w2.block_size[0], 0).unsqueeze(-1) for e in self.experts], dim=0
+        )
+
+        self.block_size = self.experts[0].w1.block_size
         # Register as parameters for tracing/compilation.
         self.w1 = nn.Parameter(w1, requires_grad=False)
         self.w3 = nn.Parameter(w3, requires_grad=False)
         self.w2 = nn.Parameter(w2, requires_grad=False)
-
-        # MiniMax has an `e_score_correction_bias` buffer; we ignore it here for now.
-        # It can be incorporated if/when the backend op supports bias-corrected sigmoid routing.
+        self.w1_scale = nn.Parameter(w1_scale, requires_grad=False)
+        self.w3_scale = nn.Parameter(w3_scale, requires_grad=False)
+        self.w2_scale = nn.Parameter(w2_scale, requires_grad=False)
 
     def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
         batch_size, seq_len, hidden_dim = hidden_states.shape
@@ -170,11 +181,14 @@ class MiniMaxM2SparseMoeBlock(nn.Module):
         # router_logits: [B*T, num_experts]
         router_logits = self.gate(x)
 
-        y = torch.ops.rbln_custom_ops.custom_moe_glu(
+        y = torch.ops.rbln_custom_ops.custom_moe_swiglu_fp8(
             x,
             self.w1,
+            self.w1_scale,
             self.w3,
+            self.w3_scale,
             self.w2,
+            self.w2_scale,
             router_logits,
             int(self.top_k),
             False,  # norm_topk_prob: False => non-softmax normalization (matches MiniMax's sum-normalization better)
