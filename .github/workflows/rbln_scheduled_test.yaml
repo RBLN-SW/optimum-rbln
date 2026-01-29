@@ -6,65 +6,7 @@ on:
     - cron: '0 16 * * *'
   workflow_dispatch:
 
-env:
-  REBEL_PYPI_ENDPOINT: ${{ vars.REBEL_PYPI_INTERNAL_ENDPOINT }}
-  REBEL_PYPI_USERNAME: ${{ secrets.REBEL_PYPI_USERNAME }}
-  REBEL_PYPI_PASSWORD: ${{ secrets.REBEL_PYPI_PASSWORD }}
-  TOKEN: ${{secrets.RENOVATE_TOKEN}}
-
 jobs:
-  check-code-quality:
-    uses: ./.github/workflows/check_code_quality.yml
-    
-  test-docstrings:
-    uses: ./.github/workflows/test-docstrings.yml
-    with:
-      test_all_files: true
-
-  fetch-version:
-    runs-on: sw-k8s-4c-32gb
-    container:
-      image: ${{ vars.DEV_CONTAINER_IMAGE }}
-    outputs:
-      compiler_version: ${{ steps.get_version.outputs.compiler_version }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
-        with:
-          ref: "dev"
-
-      - name: Get compiler version
-        id: get_version
-        run: |
-          CUR_VERSION=$(grep rebel_compiler_version .github/version.yaml | cut -d ':' -f2 | tr -d ' ')
-          echo "compiler_version=$CUR_VERSION" >> $GITHUB_OUTPUT
-
-  bc-full-inference-test:
-    needs: fetch-version
-    uses: ./.github/workflows/bc_full_inference.yaml
-    with:
-      current_ref: "dev"
-    secrets: inherit
-
-  rbln-full-test:
-    needs: fetch-version
-    uses: ./.github/workflows/rbln_optimum_full_test.yaml
-    with:
-      rebel_compiler_version: ${{ needs.fetch-version.outputs.compiler_version }}
-      ref: "dev"
-    secrets: inherit
-
-  slack-report:
-    needs: [fetch-version, rbln-full-test, bc-full-inference-test]
-    if: ${{ always() }}
-    uses: ./.github/workflows/slack_report.yaml
-    with:
-      title_base: "Optimum-RBLN Scheduled Full Test Results"
-      caller_repository: ${{ github.repository }}
-      caller_run_id: ${{ github.run_id }}
-      commit_sha: ${{ github.sha }}
-      compiler_version: ${{ needs.fetch-version.outputs.compiler_version }}
-      transformers_version: ${{ needs.rbln-full-test.outputs.transformers_version }}
-      diffusers_version: ${{ needs.rbln-full-test.outputs.diffusers_version }}
-      bc_result: ${{ needs.bc-full-inference-test.result }}
+  dispatch:
+    uses: rbln-sw/optimum-rbln/.github/workflows/rbln_scheduled_test_impl.yaml@dev
     secrets: inherit

@@ -9,7 +9,7 @@ on:
 jobs:
   check-tag:
     name: Check tag is release
-    runs-on: sw-k8s-4c-32gb
+    runs-on: rbln-sw-k8s-4c-32gb
     container:
       image: ${{ vars.DEV_CONTAINER_IMAGE }}
     outputs:
@@ -39,7 +39,7 @@ jobs:
   trigger-vllm-rbln-pkg-update:
     name: trigger vllm-rbln pkg update PR
     needs: [deploy-on-tag]
-    runs-on: sw-k8s-4c-32gb
+    runs-on: rbln-sw-k8s-4c-32gb
     container:
       image: ${{ vars.DEV_CONTAINER_IMAGE }}
     steps:
@@ -48,7 +48,7 @@ jobs:
           github-token: ${{ secrets.GIT_PAT }}
           script: |
             const result = await github.rest.actions.createWorkflowDispatch({
-              owner: 'rebellions-sw',
+              owner: 'rbln-sw',
               repo: 'vllm-rbln',
               workflow_id: 'dispatch_pkg_update.yaml',
               ref: 'dev',
@@ -62,7 +62,7 @@ jobs:
   trigger-vllm-model-compilation:
     name: trigger vllm model compile and generation ci
     needs: [deploy-on-tag]
-    runs-on: sw-k8s-4c-32gb
+    runs-on: rbln-sw-k8s-4c-32gb
     container:
       image: ${{ vars.DEV_CONTAINER_IMAGE }}
     steps:

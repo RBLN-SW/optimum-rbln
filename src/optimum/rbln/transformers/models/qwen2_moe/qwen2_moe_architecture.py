@@ -30,9 +30,9 @@ class Qwen2MoeLayer(DecoderOnlyLayer):
     def __init__(self, layer, self_attn: DecoderOnlyAttention, lora_config: Optional[RBLNLoRAConfig] = None):
         super().__init__(layer, self_attn, lora_config)
         self.mlp = (
-            Qwen2MoeSparseMoeBlock(self._original_mod.mlp)
-            if self._original_mod.mlp.__class__.__name__ == "Qwen2MoeSparseMoeBlock"
-            else self._original_mod.mlp
+            Qwen2MoeSparseMoeBlock(layer.mlp)
+            if layer.mlp.__class__.__name__ == "Qwen2MoeSparseMoeBlock"
+            else layer.mlp
         )
 
     def get_mlp(self) -> nn.Module:

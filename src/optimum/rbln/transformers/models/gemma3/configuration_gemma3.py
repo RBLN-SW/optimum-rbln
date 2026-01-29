@@ -58,13 +58,8 @@ class RBLNGemma3ForCausalLMConfig(RBLNDecoderOnlyModelForCausalLMConfig):
         )
         self.image_prefill_chunk_size = image_prefill_chunk_size
 
-    @property
-    def use_image_prefill(self):
-        return self.image_prefill_chunk_size is not None
-
-    @property
-    def decoder_runtime_idx(self):
-        return 2 if self.use_image_prefill else 1
+        if not (self.use_attention_mask and self.use_position_ids):
+            raise ValueError("use_attention_mask and use_position_ids must be True for RBLNGemma3ForCausalLM")
 
 
 class RBLNGemma3ForConditionalGenerationConfig(RBLNModelConfig):

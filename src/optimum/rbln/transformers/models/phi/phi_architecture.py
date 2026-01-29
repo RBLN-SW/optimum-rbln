@@ -20,7 +20,6 @@ from transformers import PhiForCausalLM
 from ..decoderonly.decoderonly_architecture import (
     DecoderOnlyAttention,
     DecoderOnlyLayer,
-    DecoderOnlyModel,
     DecoderOnlyWrapper,
     apply_rotary_pos_emb_partial,
 )
@@ -37,9 +36,6 @@ class PhiWrapper(DecoderOnlyWrapper):
     def get_rbln_layer_class(self):
         return PhiLayer
 
-    def get_rbln_model_class(self):
-        return PhiModel
-
     def get_model_layer(self, model: Union["PhiForCausalLM", "PhiModel"]):
         return model.model if self.is_causal_lm else model
 
@@ -48,13 +44,15 @@ class PhiWrapper(DecoderOnlyWrapper):
 
 
 class PhiAttention(DecoderOnlyAttention):
-    def __post_init__(self):
-        self.q_proj = self._original_mod.q_proj
-        self.k_proj = self._original_mod.k_proj
-        self.v_proj = self._original_mod.v_proj
-        self.o_proj = self._original_mod.dense
-        self.qk_layernorm = self._original_mod.qk_layernorm
-        self.rotary_ndims = self._original_mod.rotary_ndims
+    def __post_init__(self, self_attn):
+        self.q_proj = self_attn.q_proj
+        self.k_proj = self_attn.k_proj
+        self.v_proj = self_attn.v_proj
+        self.o_proj = self_attn.dense
+        self.qk_layernorm = self_attn.qk_layernorm
+        self.rotary_ndims = self_attn.rotary_ndims
+        self.q_layernorm = getattr(self_attn, "q_layernorm", None)
+        self.k_layernorm = getattr(self_attn, "k_layernorm", None)
 
     def projection(self, hidden_states, lora_int_id) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         if lora_int_id is not None:
@@ -65,8 +63,8 @@ class PhiAttention(DecoderOnlyAttention):
         value_states = self.v_proj(hidden_states)
 
         if self.qk_layernorm:
-            query_states = self._original_mod.q_layernorm(query_states)
-            key_states = self._original_mod.k_layernorm(key_states)
+            query_states = self.q_layernorm(query_states)
+            key_states = self.k_layernorm(key_states)
 
         return query_states, key_states, value_states
 
@@ -75,8 +73,7 @@ class PhiAttention(DecoderOnlyAttention):
 
 
 class PhiLayer(DecoderOnlyLayer):
-    def get_post_attention_layernorm(self):
-        raise NotImplementedError
+    _POST_ATTN_LAYERNORM = None
 
     def forward(
         self,
@@ -103,13 +100,8 @@ class PhiLayer(DecoderOnlyLayer):
             block_tables=block_tables,
         )
 
-        feed_forward_hidden_states = self._original_mod.mlp(hidden_states)
+        feed_forward_hidden_states = self.mlp(hidden_states)
 
         hidden_states = attn_output + feed_forward_hidden_states + residual
 
         return hidden_states
-
-
-class PhiModel(DecoderOnlyModel):
-    def get_last_layernorm(self):
-        return self._original_mod.final_layernorm

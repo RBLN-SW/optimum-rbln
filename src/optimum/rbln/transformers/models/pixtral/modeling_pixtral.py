@@ -297,13 +297,17 @@ class RBLNPixtralVisionModel(RBLNModel):
         Forward pass for the RBLN-optimized Pixtral vision model.
 
         Args:
-            pixel_values (torch.Tensor of shape (batch_size, num_channels, image_size, image_size)) — The tensors corresponding to the input images. Pixel values can be obtained using PixtralImageProcessor. See PixtralImageProcessor.call() for details (PixtralProcessor uses PixtralImageProcessor for processing images).
-            image_sizes (torch.Tensor of shape (batch_size, 2), optional) — The sizes of the images in the batch, being (height, width) for each image.
-            output_hidden_states (bool, optional) — Whether or not to return the hidden states of all layers. See hidden_states under returned tensors for more detail.
-            return_dict (bool, optional) — Whether or not to return a ModelOutput instead of a plain tuple.
+            pixel_values: Input images as a tensor of shape (batch_size, num_channels, image_size, image_size).
+                Pixel values can be obtained using PixtralImageProcessor. See PixtralImageProcessor.__call__()
+                for details (PixtralProcessor uses PixtralImageProcessor for processing images).
+            image_sizes: The sizes of the images in the batch as a tensor of shape (batch_size, 2),
+                being (height, width) for each image. Optional.
+            output_hidden_states: Whether or not to return the hidden states of all layers. Optional.
+                See hidden_states under returned tensors for more detail.
+            return_dict: Whether or not to return a ModelOutput instead of a plain tuple. Optional.
 
         Returns:
-            BaseModelOutput or tuple(torch.FloatTensor)
+            The model outputs. If return_dict=False is passed, returns a tuple of tensors. Otherwise, returns a BaseModelOutput object.
         """
         output_hidden_states = (
             output_hidden_states if output_hidden_states is not None else self.rbln_config.output_hidden_states

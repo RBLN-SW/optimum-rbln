@@ -79,6 +79,10 @@ _import_structure = {
         "RBLNColQwen2ForRetrieval",
         "RBLNColQwen2ForRetrievalConfig",
     ],
+    "detr": [
+        "RBLNDetrForObjectDetection",
+        "RBLNDetrForObjectDetectionConfig",
+    ],
     "distilbert": [
         "RBLNDistilBertForQuestionAnswering",
         "RBLNDistilBertForQuestionAnsweringConfig",
@@ -168,6 +172,10 @@ _import_structure = {
     "siglip": [
         "RBLNSiglipVisionModel",
         "RBLNSiglipVisionModelConfig",
+    ],
+    "mixtral": [
+        "RBLNMixtralForCausalLM",
+        "RBLNMixtralForCausalLMConfig",
     ],
     "swin": [
         "RBLNSwinBackbone",
@@ -264,6 +272,7 @@ if TYPE_CHECKING:
         RBLNLoRAConfig,
     )
     from .depth_anything import RBLNDepthAnythingForDepthEstimation, RBLNDepthAnythingForDepthEstimationConfig
+    from .detr import RBLNDetrForObjectDetection, RBLNDetrForObjectDetectionConfig
     from .distilbert import RBLNDistilBertForQuestionAnswering, RBLNDistilBertForQuestionAnsweringConfig
     from .dpt import RBLNDPTForDepthEstimation, RBLNDPTForDepthEstimationConfig
     from .exaone import RBLNExaoneForCausalLM, RBLNExaoneForCausalLMConfig
@@ -296,6 +305,7 @@ if TYPE_CHECKING:
     from .llava_next import RBLNLlavaNextForConditionalGeneration, RBLNLlavaNextForConditionalGenerationConfig
     from .midm import RBLNMidmLMHeadModel, RBLNMidmLMHeadModelConfig
     from .mistral import RBLNMistralForCausalLM, RBLNMistralForCausalLMConfig, RBLNMistralModel, RBLNMistralModelConfig
+    from .mixtral import RBLNMixtralForCausalLM, RBLNMixtralForCausalLMConfig
     from .opt import RBLNOPTForCausalLM, RBLNOPTForCausalLMConfig, RBLNOPTModel, RBLNOPTModelConfig
     from .paligemma import (
         RBLNPaliGemmaForConditionalGeneration,

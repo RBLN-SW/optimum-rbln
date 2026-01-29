@@ -40,7 +40,7 @@ dependencies = [
 [project.urls]
 Homepage = "https://rebellions.ai"
 Documentation = "https://docs.rbln.ai"
-Repository = "https://github.com/rebellions-sw/optimum-rbln"
+Repository = "https://github.com/rbln-sw/optimum-rbln"
 
 [project.scripts]
 optimum-rbln-cli = "optimum.rbln.cli:main"

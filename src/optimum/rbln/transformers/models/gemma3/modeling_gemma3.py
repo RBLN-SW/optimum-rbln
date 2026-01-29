@@ -13,11 +13,9 @@
 # limitations under the License.
 import importlib
 import inspect
-from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Any, Callable, Dict, Optional, Tuple, Union
 
-import rebel
 import torch
-from rebel.compile_context import CompileContext
 from transformers import AutoModelForImageTextToText, Gemma3ForConditionalGeneration, PretrainedConfig, PreTrainedModel
 from transformers.modeling_outputs import BaseModelOutputWithPooling
 from transformers.modeling_utils import no_init_weights
@@ -29,10 +27,7 @@ from ...modeling_outputs import RBLNDecoderOnlyOutput
 from ...utils.rbln_runtime_wrapper import LoopProcessor
 from ..decoderonly.decoderonly_runtime_utils import RBLNPageTableManager
 from ..decoderonly.generation_decoderonly import RBLNDecoderOnlyGenerationMixin
-from ..decoderonly.modeling_decoderonly import (
-    RBLNDecoderOnlyModelForCausalLM,
-)
-from .configuration_gemma3 import RBLNGemma3ForCausalLMConfig
+from ..decoderonly.modeling_decoderonly import RBLNDecoderOnlyModelForCausalLM
 from .gemma3_architecture import Gemma3ForCausalLMWrapper
 from .gemma3_runtime_utils import RBLNGemma3RuntimeModel
 
@@ -455,42 +450,8 @@ class RBLNGemma3ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
                 f"Image prefill chunk size is different from mm_tokens_per_image: {rbln_config.image_prefill_chunk_size} != {model.config.mm_tokens_per_image}"
             )
 
-        return rbln_config
-
-    @classmethod
-    def _update_rbln_config(
-        cls,
-        preprocessors: Optional[Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"]] = None,
-        model: Optional["PreTrainedModel"] = None,
-        model_config: Optional["PretrainedConfig"] = None,
-        rbln_config: Optional[RBLNGemma3ForCausalLMConfig] = None,
-    ) -> RBLNGemma3ForCausalLMConfig:
-        # Update rbln_config with super class
-        rbln_config = super()._update_rbln_config(preprocessors, model, model_config, rbln_config)
-
-        if not (rbln_config.use_attention_mask and rbln_config.use_position_ids):
-            raise ValueError("use_attention_mask and use_position_ids must be True for RBLNGemma3ForCausalLM")
-
-        if rbln_config.use_image_prefill:
-            if rbln_config.prefill_chunk_size != rbln_config.image_prefill_chunk_size:
-                raise NotImplementedError(
-                    "Not implemented for different prefill chunk sizes between text and image prefill."
-                )
-
-            # Update image prefill compile config
-            img_prefill_input_info = cls.get_input_info(
-                batch_size=1,
-                query_length=rbln_config.image_prefill_chunk_size,
-                rbln_config=rbln_config,
-                model_config=model_config,
-            )
-            image_prefill_compile_config = RBLNCompileConfig(
-                compiled_model_name="image_prefill", input_info=img_prefill_input_info
-            )
-            # Insert image_prefill compile config at index 1
-            compile_cfgs = rbln_config.compile_cfgs
-            compile_cfgs.insert(1, image_prefill_compile_config)
-            rbln_config.set_compile_cfgs(compile_cfgs)
+        if "image_prefill" not in rbln_config.phases:
+            rbln_config.phases = ["prefill", "image_prefill", "decode"]
 
         return rbln_config
 
