@@ -13,7 +13,7 @@
 # limitations under the License.
 
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Union
 
 from diffusers import Cosmos2VideoToWorldPipeline
 from diffusers.schedulers import EDMEulerScheduler
@@ -21,6 +21,7 @@ from transformers import T5TokenizerFast
 
 from ....transformers.models.t5.modeling_t5 import RBLNT5EncoderModel
 from ....utils.logging import get_logger
+from ...configurations.pipelines.configuration_cosmos import RBLNCosmos2VideoToImagePipelineConfig
 from ...modeling_diffusers import RBLNDiffusionMixin
 from ...models.autoencoders.autoencoder_kl_wan import RBLNAutoencoderKLWan
 from ...models.transformers.transformer_cosmos import RBLNCosmosTransformer3DModel
@@ -86,7 +87,7 @@ class RBLNCosmos2VideoToWorldPipeline(RBLNDiffusionMixin, Cosmos2VideoToWorldPip
         *,
         export: bool = False,
         safety_checker: Optional[RBLNCosmosSafetyChecker] = None,
-        rbln_config: Dict[str, Any] = {},
+        rbln_config: Optional[Union[Dict[str, Any], RBLNCosmos2VideoToImagePipelineConfig]] = None,
         **kwargs: Dict[str, Any],
     ):
         rbln_config, kwargs = cls.get_rbln_config_class().initialize_from_kwargs(rbln_config, **kwargs)
