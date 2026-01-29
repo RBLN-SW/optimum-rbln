@@ -66,6 +66,7 @@ class RBLNBlip2VisionModel(RBLNModel):
     """
 
     _tp_support = False
+    _supports_non_fp32 = True
 
     def get_input_embeddings(self):
         return self.embeddings
@@ -100,7 +101,7 @@ class RBLNBlip2VisionModel(RBLNModel):
                     model_config.image_size,
                     model_config.image_size,
                 ],
-                "float32",
+                rbln_config.dtype,
             ),
         ]
 
@@ -213,7 +214,7 @@ class RBLNBlip2QFormerModel(RBLNModel):
                     rbln_config.num_query_tokens,
                     model_config.hidden_size,
                 ],
-                "float32",
+                rbln_config.dtype,
             ),
             (
                 "encoder_hidden_states",
@@ -223,7 +224,7 @@ class RBLNBlip2QFormerModel(RBLNModel):
                     rbln_config.image_text_hidden_size + 1,
                     model_config.encoder_hidden_size,
                 ],
-                "float32",
+                rbln_config.dtype,
             ),
             (
                 "encoder_attention_mask",
@@ -315,6 +316,7 @@ class RBLNBlip2ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMixi
 
     auto_model_class = AutoModelForVisualQuestionAnswering
     _rbln_submodules = [{"name": "vision_model"}, {"name": "qformer"}, {"name": "language_model"}]
+    _supports_non_fp32 = True
 
     def __getattr__(self, __name: str) -> Any:
         def redirect(func):
@@ -374,6 +376,8 @@ class RBLNBlip2ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMixi
         model_config: Optional["PretrainedConfig"] = None,
         rbln_config: Optional[RBLNModelConfig] = None,
     ) -> RBLNModelConfig:
+        # FIXME(seinpark): need to check all dtypes are properly set.
+        rbln_config.dtype = model.language_projection.weight.dtype
         input_info = [
             (
                 "query_output",
@@ -382,7 +386,7 @@ class RBLNBlip2ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMixi
                     model_config.num_query_tokens,
                     model_config.qformer_config.hidden_size,
                 ],
-                "float32",
+                rbln_config.dtype,
             ),
         ]
 
@@ -474,7 +478,7 @@ class RBLNBlip2ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMixi
         """
         batch_size = pixel_values.shape[0]
         image_embeds = self.vision_model(
-            pixel_values,
+            pixel_values.to(self.rbln_config.vision_model.dtype),
             return_dict=True,
             interpolate_pos_encoding=interpolate_pos_encoding,
         ).last_hidden_state
@@ -482,8 +486,8 @@ class RBLNBlip2ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMixi
 
         query_tokens = self.query_tokens.expand(image_embeds.shape[0], -1, -1)
         query_outputs = self.qformer(
-            query_embeds=query_tokens,
-            encoder_hidden_states=image_embeds,
+            query_embeds=query_tokens.to(self.rbln_config.qformer.dtype),
+            encoder_hidden_states=image_embeds.to(self.rbln_config.qformer.dtype),
             encoder_attention_mask=image_attention_mask,
             return_dict=True,
         )
@@ -513,6 +517,7 @@ class RBLNBlip2ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMixi
         else:
             special_image_mask = input_ids == self.config.image_token_id
 
+        inputs_embeds = inputs_embeds.to(self.rbln_config.language_model.dtype)
         special_image_mask = special_image_mask.unsqueeze(-1).expand_as(inputs_embeds).to(inputs_embeds.device)
         language_model_inputs = language_model_inputs.to(inputs_embeds.device, inputs_embeds.dtype)
         inputs_embeds = inputs_embeds.masked_scatter(special_image_mask, language_model_inputs)

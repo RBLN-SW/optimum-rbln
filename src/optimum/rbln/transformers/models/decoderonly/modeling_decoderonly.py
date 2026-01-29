@@ -79,7 +79,7 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
     def __post_init__(self, **kwargs):
         if self.rbln_config.use_inputs_embeds:
             artifacts = torch.load(self.model_save_dir / self.subfolder / "torch_artifacts.pth", weights_only=False)
-            self.embed_tokens = self._create_embedding_layer()
+            self.embed_tokens = self._create_embedding_layer().to(dtype=self.rbln_config.dtype)
             self.embed_tokens.load_state_dict(artifacts["embed_tokens"])
         else:
             self.embed_tokens = None

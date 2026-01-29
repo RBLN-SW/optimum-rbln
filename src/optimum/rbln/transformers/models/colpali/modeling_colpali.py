@@ -157,6 +157,7 @@ class RBLNColPaliForRetrieval(RBLNModel):
     _rbln_submodules = [
         {"name": "vlm"},
     ]
+    _supports_non_fp32 = True
 
     def __post_init__(self, **kwargs):
         self.vlm_model = self.rbln_submodules[0]

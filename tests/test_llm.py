@@ -465,6 +465,46 @@ class TestLlavaForConditionalGeneration(LLMTest.TestLLM):
         )
 
 
+class TestLlavaForConditionalGeneration_Auto(TestLlavaForConditionalGeneration):
+    # override
+    @classmethod
+    def setUpClass(cls):
+        cls.HF_CONFIG_KWARGS.update(
+            {
+                "dtype": "auto",
+            }
+        )
+        return super().setUpClass()
+
+
+class TestLlavaForConditionalGeneration_BFloat16(TestLlavaForConditionalGeneration):
+    TEST_LEVEL = TestLevel.FULL
+
+    # override
+    @classmethod
+    def setUpClass(cls):
+        cls.HF_CONFIG_KWARGS.update(
+            {
+                "dtype": "bfloat16",
+            }
+        )
+        return super().setUpClass()
+
+
+class TestLlavaForConditionalGeneration_Float16(TestLlavaForConditionalGeneration):
+    TEST_LEVEL = TestLevel.FULL
+
+    # override
+    @classmethod
+    def setUpClass(cls):
+        cls.HF_CONFIG_KWARGS.update(
+            {
+                "dtype": "float16",
+            }
+        )
+        return super().setUpClass()
+
+
 class TestPegasusModel(LLMTest.TestLLM):
     RBLN_AUTO_CLASS = RBLNAutoModelForSeq2SeqLM
     RBLN_CLASS = RBLNPegasusForConditionalGeneration
@@ -563,6 +603,46 @@ class TestLlavaNextForConditionalGeneration(LLMTest.TestLLM):
             _ = self.RBLN_CLASS.from_pretrained(model_id=self.HF_MODEL_ID, **rbln_class_kwargs)
 
 
+class TestLlavaNextForConditionalGeneration_Auto(TestLlavaNextForConditionalGeneration):
+    # override
+    @classmethod
+    def setUpClass(cls):
+        cls.HF_CONFIG_KWARGS.update(
+            {
+                "dtype": "auto",
+            }
+        )
+        return super().setUpClass()
+
+
+class TestLlavaNextForConditionalGeneration_BFloat16(TestLlavaNextForConditionalGeneration):
+    TEST_LEVEL = TestLevel.FULL
+
+    # override
+    @classmethod
+    def setUpClass(cls):
+        cls.HF_CONFIG_KWARGS.update(
+            {
+                "dtype": "bfloat16",
+            }
+        )
+        return super().setUpClass()
+
+
+class TestLlavaNextForConditionalGeneration_Float16(TestLlavaNextForConditionalGeneration):
+    TEST_LEVEL = TestLevel.FULL
+
+    # override
+    @classmethod
+    def setUpClass(cls):
+        cls.HF_CONFIG_KWARGS.update(
+            {
+                "dtype": "float16",
+            }
+        )
+        return super().setUpClass()
+
+
 class TestBlip2ForConditionalGeneration(LLMTest.TestLLM):
     RBLN_AUTO_CLASS = RBLNAutoModelForVision2Seq
     RBLN_CLASS = RBLNBlip2ForConditionalGeneration
@@ -613,6 +693,26 @@ class TestBlip2ForConditionalGeneration(LLMTest.TestLLM):
         )
 
 
+class TestBlip2ForConditionalGeneration_Auto(TestBlip2ForConditionalGeneration):
+    HF_CONFIG_KWARGS = {
+        "dtype": "auto",
+    }
+
+
+class TestBlip2ForConditionalGeneration_BFloat16(TestBlip2ForConditionalGeneration):
+    TEST_LEVEL = TestLevel.FULL
+    HF_CONFIG_KWARGS = {
+        "dtype": "bfloat16",
+    }
+
+
+class TestBlip2ForConditionalGeneration_Float16(TestBlip2ForConditionalGeneration):
+    TEST_LEVEL = TestLevel.FULL
+    HF_CONFIG_KWARGS = {
+        "dtype": "float16",
+    }
+
+
 class TestIdefics3ForConditionalGeneration(LLMTest.TestLLM):
     RBLN_AUTO_CLASS = RBLNAutoModelForVision2Seq
     RBLN_CLASS = RBLNIdefics3ForConditionalGeneration
@@ -640,6 +740,26 @@ class TestIdefics3ForConditionalGeneration(LLMTest.TestLLM):
         inputs["max_new_tokens"] = 20
         inputs["do_sample"] = False
         return inputs
+
+
+class TestIdefics3ForConditionalGeneration_Auto(TestIdefics3ForConditionalGeneration):
+    HF_CONFIG_KWARGS = {
+        "dtype": "auto",
+    }
+
+
+class TestIdefics3ForConditionalGeneration_BFloat16(TestIdefics3ForConditionalGeneration):
+    TEST_LEVEL = TestLevel.FULL
+    HF_CONFIG_KWARGS = {
+        "dtype": "bfloat16",
+    }
+
+
+class TestIdefics3ForConditionalGeneration_Float16(TestIdefics3ForConditionalGeneration):
+    TEST_LEVEL = TestLevel.FULL
+    HF_CONFIG_KWARGS = {
+        "dtype": "float16",
+    }
 
 
 class TestQwen2VLForConditionalGeneration(LLMTest.TestLLM):

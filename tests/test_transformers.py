@@ -421,6 +421,26 @@ class TestColPaliModel(BaseTest.TestModel):
                 assert model.rbln_config.vlm.language_model.device == 2
 
 
+class TestColPaliModel_Auto(TestColPaliModel):
+    HF_CONFIG_KWARGS = {
+        "dtype": "auto",
+    }
+
+
+class TestColPaliModel_BFloat16(TestColPaliModel):
+    TEST_LEVEL = TestLevel.FULL
+    HF_CONFIG_KWARGS = {
+        "dtype": "bfloat16",
+    }
+
+
+class TestColPaliModel_Float16(TestColPaliModel):
+    TEST_LEVEL = TestLevel.FULL
+    HF_CONFIG_KWARGS = {
+        "dtype": torch.float16,
+    }
+
+
 class TestColQwen2Model(BaseTest.TestModel):
     RBLN_AUTO_CLASS = None
     RBLN_CLASS = RBLNColQwen2ForRetrieval
@@ -490,22 +510,28 @@ class TestColQwen2Model_BFloat16(TestColQwen2Model):
 
 
 class TestColQwen2Model_Auto(TestColQwen2Model):
-    TEST_LEVEL = TestLevel.FULL
     HF_CONFIG_KWARGS = {
         "dtype": "auto",
     }
 
 
-class TestColQwen2Model_Float32(TestColQwen2Model):
+class TestColQwen2Model_Float16(TestColQwen2Model):
     TEST_LEVEL = TestLevel.FULL
     HF_CONFIG_KWARGS = {
-        "dtype": torch.float32,
+        "dtype": torch.float16,
     }
 
 
 class TestColQwen2_5Model(TestColQwen2Model):
     TEST_LEVEL = TestLevel.FULL
     HF_MODEL_ID = "Sahil-Kabir/colqwen2.5-v0.2-hf"
+
+
+class TestColQwen2_5Model_Auto(TestColQwen2Model):
+    HF_MODEL_ID = "Sahil-Kabir/colqwen2.5-v0.2-hf"
+    HF_CONFIG_KWARGS = {
+        "dtype": "auto",
+    }
 
 
 class TestWav2VecModel(BaseTest.TestModel):
