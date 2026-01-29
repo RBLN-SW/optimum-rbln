@@ -35,7 +35,7 @@ class RBLNAutoencoderKLWanConfig(RBLNModelConfig):
         vae_scale_factor_temporal: Optional[int] = None,
         vae_scale_factor_spatial: Optional[int] = None,
         use_slicing: Optional[bool] = None,
-        **kwargs: Dict[str, Any],
+        **kwargs: Any,
     ):
         """
         Args:

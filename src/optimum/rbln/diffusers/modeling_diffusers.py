@@ -219,7 +219,7 @@ class RBLNDiffusionMixin:
                         raise ValueError(
                             f"Invalid module_name '{module_name}' found in model_index.json for "
                             f"submodule '{submodule_name}'. "
-                            "Expected 'optimum.rbln'. Please check the model_index.json configuration."
+                            "Expected 'optimum.rbln'. Please check the model_index.json configuration. "
                             "If you want to compile, set `export=True`."
                         )
 

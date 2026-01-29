@@ -31,8 +31,11 @@ _import_structure = {
         "RBLNStableDiffusionXLControlNetPipeline",
     ],
     "cosmos": [
+        "RBLNCosmos2_5_PredictBasePipeline",
         "RBLNCosmosTextToWorldPipeline",
         "RBLNCosmosVideoToWorldPipeline",
+        "RBLNCosmos2TextToImagePipeline",
+        "RBLNCosmos2VideoToWorldPipeline",
         "RBLNCosmosSafetyChecker",
     ],
     "kandinsky2_2": [
@@ -76,7 +79,14 @@ if TYPE_CHECKING:
         RBLNStableDiffusionXLControlNetImg2ImgPipeline,
         RBLNStableDiffusionXLControlNetPipeline,
     )
-    from .cosmos import RBLNCosmosSafetyChecker, RBLNCosmosTextToWorldPipeline, RBLNCosmosVideoToWorldPipeline
+    from .cosmos import (
+        RBLNCosmos2_5_PredictBasePipeline,
+        RBLNCosmos2TextToImagePipeline,
+        RBLNCosmos2VideoToWorldPipeline,
+        RBLNCosmosSafetyChecker,
+        RBLNCosmosTextToWorldPipeline,
+        RBLNCosmosVideoToWorldPipeline,
+    )
     from .kandinsky2_2 import (
         RBLNKandinskyV22CombinedPipeline,
         RBLNKandinskyV22Img2ImgCombinedPipeline,

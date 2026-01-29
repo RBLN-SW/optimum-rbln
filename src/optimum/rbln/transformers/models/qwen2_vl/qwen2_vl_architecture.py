@@ -15,7 +15,6 @@ from .configuration_qwen2_vl import RBLNQwen2VisionTransformerPretrainedModelCon
 class Qwen2VisionTransformerWrapper(nn.Module):
     def __init__(self, model: torch.nn.Module, rbln_config: RBLNQwen2VisionTransformerPretrainedModelConfig):
         super().__init__()
-        self._original_mod = model
         self.merger = model.merger
         self.rbln_config = rbln_config
         self.blocks = self.wrap_vision_blocks(model.blocks, rbln_config)

@@ -16,7 +16,6 @@ import copy
 from typing import Optional, Tuple, Union
 
 import torch
-from transformers.models.gemma3.modeling_gemma3 import Gemma3RMSNorm
 
 from ..decoderonly.decoderonly_architecture import (
     DecoderOnlyAttention,
@@ -122,11 +121,8 @@ class Gemma3TextModel(DecoderOnlyModel):
 
 
 class Gemma3DecoderLayer(DecoderOnlyLayer):
-    def get_pre_feedforward_layernorm(self) -> Gemma3RMSNorm:
-        return self._original_mod.pre_feedforward_layernorm
-
-    def get_post_feedforward_layernorm(self) -> Gemma3RMSNorm:
-        return self._original_mod.post_feedforward_layernorm
+    _PRE_FF_LAYERNORM_ATTRS = ["pre_feedforward_layernorm"]
+    _POST_FF_LAYERNORM_ATTRS = ["post_feedforward_layernorm"]
 
     def forward(
         self,
@@ -166,13 +162,13 @@ class Gemma3DecoderLayer(DecoderOnlyLayer):
 
 
 class Gemma3Attention(DecoderOnlyAttention):
-    def __post_init__(self):
-        self.q_proj = self._original_mod.q_proj
-        self.k_proj = self._original_mod.k_proj
-        self.v_proj = self._original_mod.v_proj
-        self.o_proj = self._original_mod.o_proj
-        self.q_norm = self._original_mod.q_norm
-        self.k_norm = self._original_mod.k_norm
+    def __post_init__(self, self_attn):
+        self.q_proj = self_attn.q_proj
+        self.k_proj = self_attn.k_proj
+        self.v_proj = self_attn.v_proj
+        self.o_proj = self_attn.o_proj
+        self.q_norm = self_attn.q_norm
+        self.k_norm = self_attn.k_norm
 
-    def get_attn_scale(self):
-        return self._original_mod.config.query_pre_attn_scalar**-0.5
+    def get_attn_scale(self, self_attn):
+        return self_attn.config.query_pre_attn_scalar**-0.5

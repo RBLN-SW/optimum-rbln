@@ -14,6 +14,7 @@
 
 import os
 import pathlib
+import re
 from functools import partial
 from typing import Any, Dict, Optional, Tuple, Union
 from unittest.mock import patch
@@ -26,7 +27,7 @@ from transformers import AutoTokenizer, SiglipProcessor
 
 from .... import RBLNAutoModelForCausalLM, RBLNSiglipVisionModel
 from ....utils.runtime_utils import RBLNPytorchRuntime, UnavailableRuntime
-from .configuration_cosmos_guardrail import RBLNCosmosSafetyCheckerConfig
+from .configuration_cosmos_guardrail import RBLNCosmosSafetyCheckerConfig, RBLNCosmosSafetyCheckerV2Config
 
 
 if is_cosmos_guardrail_available():
@@ -34,6 +35,7 @@ if is_cosmos_guardrail_available():
     from cosmos_guardrail.cosmos_guardrail import (
         COSMOS_GUARDRAIL_CHECKPOINT,
         Blocklist,
+        ContentSafetyGuardrail,
         GuardrailRunner,
         LlamaGuard3,
         ModelConfig,
@@ -74,6 +76,16 @@ else:
     class VideoSafetyModel(FailToImportCosmosGuardrail): ...
 
     cfg_re50 = None
+
+
+UNSAFE_CATEGORIES = {
+    "S1": "Violent",
+    "S2": "Non-violent Illegal Acts",
+    "S3": "Sexual Content or Sexual Acts",
+    "S4": "Suicide & Self-Harm",
+    "S5": "Unethical Acts",
+    "S6": "Jailbreak",
+}
 
 
 def is_compiled_dir(dir: str) -> bool:
@@ -203,7 +215,7 @@ class RBLNRetinaFaceFilter(RetinaFaceFilter):
                 f"If you only need to compile the model without loading it to NPU, you can use:\n"
                 f"  from_pretrained(..., rbln_create_runtimes=False) or\n"
                 f"  from_pretrained(..., rbln_config={{..., 'create_runtimes': False}})\n\n"
-                f"To check your NPU status, run the 'rbln-stat' command in your terminal.\n"
+                f"To check your NPU status, run the 'rbln-smi' command in your terminal.\n"
                 f"Make sure your NPU is properly installed and operational."
             )
             raise rebel.core.exception.RBLNRuntimeError(error_msg) from e
@@ -278,7 +290,7 @@ class RBLNVideoSafetyModel(VideoSafetyModel):
                 f"If you only need to compile the model without loading it to NPU, you can use:\n"
                 f"  from_pretrained(..., rbln_create_runtimes=False) or\n"
                 f"  from_pretrained(..., rbln_config={{..., 'create_runtimes': False}})\n\n"
-                f"To check your NPU status, run the 'rbln-stat' command in your terminal.\n"
+                f"To check your NPU status, run the 'rbln-smi' command in your terminal.\n"
                 f"Make sure your NPU is properly installed and operational."
             )
             raise rebel.core.exception.RBLNRuntimeError(error_msg) from e
@@ -341,6 +353,63 @@ class RBLNLlamaGuard3(LlamaGuard3):
         self.tokenizer.save_pretrained(cache_dir)
 
 
+# https://github.com/nvidia-cosmos/cosmos-predict2.5/blob/main/cosmos_predict2/_src/imaginaire/auxiliary/guardrail/qwen3guard/qwen3guard.py
+class RBLNQwen3Guard(ContentSafetyGuardrail):
+    def __init__(
+        self,
+        checkpoint_id: str = COSMOS_GUARDRAIL_CHECKPOINT,
+        base_model_id: str = "Qwen/Qwen3Guard-Gen-0.6B",
+        rbln_config: Optional[RBLNCosmosSafetyCheckerConfig] = None,
+    ) -> None:
+        """
+        RBLNQwen 3 model for text filtering safety check.
+        """
+        if is_compiled_dir(checkpoint_id):
+            torch.nn.Module.__init__(self)
+            cache_dir = pathlib.Path(checkpoint_id) / "qwen3guard"
+            self.tokenizer = AutoTokenizer.from_pretrained(cache_dir)
+            self.model = RBLNAutoModelForCausalLM.from_pretrained(cache_dir, rbln_config=rbln_config.qwen3guard)
+
+        else:
+            self.model = RBLNAutoModelForCausalLM.from_pretrained(base_model_id, rbln_config=rbln_config.qwen3guard)
+            self.tokenizer = AutoTokenizer.from_pretrained(base_model_id)
+
+        self.rbln_config = rbln_config
+        self.dtype = torch.bfloat16
+        self.device = torch.device("cpu")
+
+    def save_pretrained(self, checkpoint_id: str):
+        cache_dir = pathlib.Path(checkpoint_id) / "qwen3guard"
+        self.model.save_pretrained(cache_dir)
+        self.tokenizer.save_pretrained(cache_dir)
+
+    def extract_label_and_categories(self, prompt):
+        safe_pattern = r"Safety: (Safe|Unsafe|Controversial)"
+        category_pattern = r"(" + "|".join(UNSAFE_CATEGORIES.values()) + ")"
+        messages = [{"role": "user", "content": prompt}]
+
+        text = self.tokenizer.apply_chat_template(messages, tokenize=False)
+        model_inputs = self.tokenizer([text], return_tensors="pt")
+        generated_ids = self.model.generate(**model_inputs, max_new_tokens=128)
+        output_ids = generated_ids[0][len(model_inputs.input_ids[0]) :].tolist()
+        content = self.tokenizer.decode(output_ids, skip_special_tokens=True)
+
+        safe_label_match = re.search(safe_pattern, content)
+        label = safe_label_match.group(1) if safe_label_match else None
+        categories = re.findall(category_pattern, content)
+        if label.lower() == "unsafe":
+            return False, f"Prompt blocked by Qwen3Guard. Safety: {label}, Categories: {categories}"
+        else:
+            return True, ""
+
+    def is_safe(self, prompt: str) -> tuple[bool, str]:
+        """Check if the input prompt is safe according to the Qwen3Guard model."""
+        try:
+            return self.extract_label_and_categories(prompt)
+        except Exception:
+            return True, "Unexpected error occurred when running Qwen3Guard guardrail."
+
+
 class RBLNCosmosSafetyChecker(CosmosSafetyChecker):
     """
     RBLN-accelerated implementation of Cosmos Safety Checker.
@@ -366,9 +435,8 @@ class RBLNCosmosSafetyChecker(CosmosSafetyChecker):
         self.text_guardrail = GuardrailRunner(
             safety_models=[
                 Blocklist(COSMOS_GUARDRAIL_CHECKPOINT),  # Changed since it cannot be saved
-                RBLNLlamaGuard3(
+                RBLNQwen3Guard(
                     checkpoint_id=checkpoint_id,
-                    base_model_id=llamaguard_model_id,
                     rbln_config=rbln_config,
                 ),
             ]
@@ -422,4 +490,88 @@ class RBLNCosmosSafetyChecker(CosmosSafetyChecker):
     ) -> Tuple[RBLNCosmosSafetyCheckerConfig, Dict[str, Any]]:
         # Extract rbln-config from kwargs and convert it to RBLNCosmosSafetyCheckerConfig.
         rbln_config, kwargs = RBLNCosmosSafetyCheckerConfig.initialize_from_kwargs(rbln_config, **kwargs)
+        return rbln_config, kwargs
+
+
+class RBLNCosmosSafetyCheckerV2(RBLNCosmosSafetyChecker):
+    """
+    RBLN-accelerated implementation of Cosmos Safety Checker.
+    """
+
+    def __init__(
+        self,
+        checkpoint_id: str = COSMOS_GUARDRAIL_CHECKPOINT,
+        qwen3guard_model_id: str = "Qwen/Qwen3Guard-Gen-0.6B",
+        rbln_config: Optional[RBLNCosmosSafetyCheckerV2Config] = None,
+    ) -> None:
+        torch.nn.Module.__init__(self)
+        if not COSMOS_AVAILABLE:
+            raise ImportError(
+                "`cosmos_guardrail` is not installed. Please install it to use the safety checker for Cosmos: `pip install cosmos_guardrail`."
+            )
+
+        if rbln_config is None:
+            rbln_config = RBLNCosmosSafetyCheckerV2Config()
+        elif isinstance(rbln_config, dict):
+            rbln_config = RBLNCosmosSafetyCheckerV2Config(**rbln_config)
+
+        self.text_guardrail = GuardrailRunner(
+            safety_models=[
+                Blocklist(COSMOS_GUARDRAIL_CHECKPOINT),  # Changed since it cannot be saved
+                RBLNQwen3Guard(
+                    checkpoint_id=checkpoint_id,
+                    base_model_id=qwen3guard_model_id,
+                    rbln_config=rbln_config,
+                ),
+            ]
+        )
+
+        self.video_guardrail = GuardrailRunner(
+            safety_models=[RBLNVideoContentSafetyFilter(checkpoint_id=checkpoint_id, rbln_config=rbln_config)],
+            postprocessors=[RBLNRetinaFaceFilter(checkpoint_id=checkpoint_id, rbln_config=rbln_config)],
+        )
+
+        self.rbln_config = rbln_config
+
+    def save_pretrained(self, save_dir: str):
+        for text_safety_models in self.text_guardrail.safety_models:
+            if isinstance(text_safety_models, RBLNQwen3Guard):
+                text_safety_models.save_pretrained(save_dir)
+
+        for video_safety_models in self.video_guardrail.safety_models:
+            if isinstance(video_safety_models, RBLNVideoContentSafetyFilter):
+                video_safety_models.save_pretrained(save_dir)
+
+        for postprocessors in self.video_guardrail.postprocessors:
+            if isinstance(postprocessors, RBLNRetinaFaceFilter):
+                postprocessors.save_pretrained(save_dir)
+
+        self.rbln_config._frozen = True  # Ad-hoc to save config
+        self.rbln_config.save(save_dir)
+
+    @classmethod
+    def from_pretrained(
+        cls,
+        checkpoint_id: str,
+        rbln_config: Optional[RBLNCosmosSafetyCheckerV2Config] = None,
+        subfolder: Optional[str] = None,
+        export: Optional[bool] = True,
+        **kwargs,
+    ):
+        rbln_config, kwargs = cls.prepare_rbln_config(rbln_config=rbln_config, **kwargs)
+
+        if len(kwargs) > 0:
+            raise ValueError(f"Unexpected arguments: {kwargs.keys()}")
+
+        if subfolder is not None:
+            checkpoint_id = os.path.join(checkpoint_id, subfolder)
+
+        return cls(checkpoint_id=checkpoint_id, rbln_config=rbln_config)
+
+    @classmethod
+    def prepare_rbln_config(
+        cls, rbln_config: Optional[Union[Dict[str, Any], RBLNCosmosSafetyCheckerV2Config]] = None, **kwargs
+    ) -> Tuple[RBLNCosmosSafetyCheckerV2Config, Dict[str, Any]]:
+        # Extract rbln-config from kwargs and convert it to RBLNCosmosSafetyCheckerConfig.
+        rbln_config, kwargs = RBLNCosmosSafetyCheckerV2Config.initialize_from_kwargs(rbln_config, **kwargs)
         return rbln_config, kwargs

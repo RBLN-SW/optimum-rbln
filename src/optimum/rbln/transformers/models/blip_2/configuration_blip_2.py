@@ -32,8 +32,13 @@ class RBLNBlip2VisionModelConfig(RBLNModelConfig):
     def __init__(
         self,
         batch_size: Optional[int] = None,
-        **kwargs,
+        **kwargs: Any,
     ):
+        """
+        Args:
+            batch_size (Optional[int]): The batch size for inference. Defaults to 1.
+            kwargs: Additional arguments passed to the parent RBLNModelConfig.
+        """
         super().__init__(**kwargs)
         self.batch_size = batch_size or 1
         if not isinstance(self.batch_size, int) or self.batch_size < 0:
@@ -53,7 +58,7 @@ class RBLNBlip2QFormerModelConfig(RBLNModelConfig):
         batch_size: Optional[int] = None,
         num_query_tokens: Optional[int] = None,
         image_text_hidden_size: Optional[int] = None,
-        **kwargs,
+        **kwargs: Any,
     ):
         """
         Args:

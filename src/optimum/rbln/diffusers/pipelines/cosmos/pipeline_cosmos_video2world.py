@@ -35,7 +35,7 @@ class RBLNCosmosVideoToWorldPipeline(RBLNDiffusionMixin, CosmosVideoToWorldPipel
     RBLN-accelerated implementation of Cosmos Video to World pipeline for video-to-video generation.
 
     This pipeline compiles Cosmos Video to World models to run efficiently on RBLN NPUs, enabling high-performance
-    inference for generating videos with distinctive artistic style and enhanced visual quality.
+    inference for generating videos that follow physical laws with enhanced visual quality.
     """
 
     original_class = CosmosVideoToWorldPipeline

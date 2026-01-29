@@ -2,6 +2,12 @@ name: check_code_quality
 
 on:
   workflow_call:
+    inputs:
+      ref:
+        description: "Optional git ref to checkout (e.g. dev). Empty means use event default."
+        required: false
+        type: string
+        default: ""
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
@@ -9,11 +15,13 @@ concurrency:
 
 jobs:
   build:
-    runs-on: sw-k8s-4c-32gb
+    runs-on: rbln-sw-k8s-4c-32gb
     container:
       image: ${{ vars.DEV_CONTAINER_IMAGE }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref != '' && inputs.ref || github.ref }}
 
       - name: Install dependencies
         run: uv sync --frozen --only-group quality

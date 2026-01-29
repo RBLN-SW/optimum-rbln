@@ -13,5 +13,8 @@
 # limitations under the License.
 
 from .cosmos_guardrail import RBLNCosmosSafetyChecker
+from .pipeline_cosmos2_5_predict import RBLNCosmos2_5_PredictBasePipeline
+from .pipeline_cosmos2_text2image import RBLNCosmos2TextToImagePipeline
+from .pipeline_cosmos2_video2world import RBLNCosmos2VideoToWorldPipeline
 from .pipeline_cosmos_text2world import RBLNCosmosTextToWorldPipeline
 from .pipeline_cosmos_video2world import RBLNCosmosVideoToWorldPipeline

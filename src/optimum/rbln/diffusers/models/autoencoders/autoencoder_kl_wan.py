@@ -26,10 +26,13 @@ from ....modeling import RBLNModel
 from ....utils.logging import get_logger
 from ....utils.runtime_utils import RBLNPytorchRuntime
 from ...configurations import RBLNAutoencoderKLWanConfig
+from .vae import RBLNRuntimeWanVAEDecoder, RBLNRuntimeWanVAEEncoder, _VAEWanDecoder, _VAEWanEncoder
 
 
 if TYPE_CHECKING:
-    from transformers import AutoFeatureExtractor, AutoProcessor, AutoTokenizer, PreTrainedModel
+    import torch
+    from diffusers.models.autoencoders.vae import DiagonalGaussianDistribution
+    from transformers import AutoFeatureExtractor, AutoProcessor, AutoTokenizer, PretrainedConfig, PreTrainedModel
 
     from ...modeling_diffusers import RBLNDiffusionMixin, RBLNDiffusionMixinConfig
 
@@ -101,6 +104,7 @@ class RBLNAutoencoderKLWan(RBLNModel):
 
     def __post_init__(self, **kwargs):
         super().__post_init__(**kwargs)
+        self.temperal_downsample = self.config.temperal_downsample
 
         if self.rbln_config.uses_encoder:
             self.encoder = RBLNRuntimeWanVAEEncoder(
@@ -163,6 +167,17 @@ class RBLNAutoencoderKLWan(RBLNModel):
         rbln_config.vae.num_channels_latents = 93
         rbln_config.vae.vae_scale_factor_temporal = pipe.vae_scale_factor_temporal
         rbln_config.vae.vae_scale_factor_spatial = pipe.vae_scale_factor_spatial
+        
+        # if rbln_config.vae.height is None:
+        #     rbln_config.vae.height = 704 if rbln_config.vae.uses_encoder else 768
+        # if rbln_config.vae.width is None:
+        #     rbln_config.vae.width = 1280 if rbln_config.vae.uses_encoder else 1360
+
+        # rbln_config.vae.num_channels_latents = pipe.transformer.config.in_channels - int(rbln_config.vae.uses_encoder)
+        # rbln_config.vae.vae_scale_factor_temporal = pipe.vae_scale_factor_temporal
+        # rbln_config.vae.vae_scale_factor_spatial = pipe.vae_scale_factor_spatial
+        # if rbln_config.vae.num_frames is None:
+        #     rbln_config.vae.num_frames = 93 if rbln_config.vae.uses_encoder else 1
         return rbln_config
 
     @classmethod
@@ -241,8 +256,8 @@ class RBLNAutoencoderKLWan(RBLNModel):
         ]
 
     def encode(
-        self, x: torch.FloatTensor, return_dict: bool = True, **kwargs: Dict[str, Any]
-    ) -> Union[torch.FloatTensor, AutoencoderKLOutput]:
+        self, x: torch.Tensor, return_dict: bool = True, **kwargs: Dict[str, Any]
+    ) -> Union[torch.Tensor, AutoencoderKLOutput]:
         """
         Encode an input video into a latent representation.
 
@@ -260,7 +275,7 @@ class RBLNAutoencoderKLWan(RBLNModel):
             return (posterior,)
         return AutoencoderKLOutput(latent_dist=posterior)
 
-    def decode(self, z: torch.FloatTensor, return_dict: bool = True) -> Union[torch.FloatTensor, DecoderOutput]:
+    def decode(self, z: torch.Tensor, return_dict: bool = True) -> Union[torch.Tensor, DecoderOutput]:
         """
         Decode a latent representation into a video.
 
