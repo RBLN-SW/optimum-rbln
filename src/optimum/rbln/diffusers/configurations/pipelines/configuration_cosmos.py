@@ -17,7 +17,7 @@ from typing import Any, Optional
 from ....configuration_utils import RBLNModelConfig
 from ....transformers import RBLNQwen2_5_VLForConditionalGenerationConfig, RBLNT5EncoderModelConfig
 from ....utils.logging import get_logger
-from ...pipelines.cosmos.cosmos_guardrail import RBLNCosmosSafetyCheckerConfig
+from ...pipelines.cosmos.cosmos_guardrail import RBLNCosmosSafetyCheckerConfig, RBLNCosmosSafetyCheckerV2Config
 from ..models import RBLNAutoencoderKLCosmosConfig, RBLNAutoencoderKLWanConfig, RBLNCosmosTransformer3DModelConfig
 
 
@@ -216,7 +216,7 @@ class RBLNCosmos2_5_PredictBasePipelineConfig(RBLNModelConfig):
         text_encoder: Optional[RBLNQwen2_5_VLForConditionalGenerationConfig] = None,
         transformer: Optional[RBLNCosmosTransformer3DModelConfig] = None,
         vae: Optional[RBLNAutoencoderKLWanConfig] = None,
-        safety_checker: Optional[RBLNCosmosSafetyCheckerConfig] = None,
+        safety_checker: Optional[RBLNCosmosSafetyCheckerV2Config] = None,
         *,
         batch_size: Optional[int] = None,
         height: Optional[int] = None,
@@ -233,8 +233,8 @@ class RBLNCosmos2_5_PredictBasePipelineConfig(RBLNModelConfig):
                 Initialized as RBLNCosmosTransformer3DModelConfig if not provided.
             vae (Optional[RBLNAutoencoderKLWanConfig]): Configuration for the VAE model component.
                 Initialized as RBLNAutoencoderKLWanConfig if not provided.
-            safety_checker (Optional[RBLNCosmosSafetyCheckerConfig]): Configuration for the safety checker component.
-                Initialized as RBLNCosmosSafetyCheckerConfig if not provided.
+            safety_checker (Optional[RBLNCosmosSafetyCheckerV2Config]): Configuration for the safety checker component.
+                Initialized as RBLNCosmosSafetyCheckerV2Config if not provided.
             batch_size (Optional[int]): Batch size for inference, applied to all submodules.
             height (Optional[int]): Height of the generated videos.
             width (Optional[int]): Width of the generated videos.
@@ -272,7 +272,7 @@ class RBLNCosmos2_5_PredictBasePipelineConfig(RBLNModelConfig):
         )
         self.safety_checker = self.initialize_submodule_config(
             safety_checker,
-            cls_name="RBLNCosmosSafetyCheckerConfig",
+            cls_name="RBLNCosmosSafetyCheckerV2Config",
             batch_size=batch_size,
             height=height,
             width=width,
