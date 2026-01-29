@@ -180,8 +180,6 @@ class MiniMaxM2SparseMoeBlock(nn.Module):
 
         # router_logits: [B*T, num_experts]
         router_logits = self.gate(x)
-        breakpoint()
-
         y = torch.ops.rbln_custom_ops.custom_moe_swiglu_fp8(
             x,
             self.w1,
