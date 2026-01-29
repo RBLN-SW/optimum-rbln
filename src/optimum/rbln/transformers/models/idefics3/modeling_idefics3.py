@@ -19,16 +19,22 @@ from typing import TYPE_CHECKING, Any, Callable, Optional, Tuple, Union
 
 import rebel
 import torch
+
+
+try:
+    from transformers import AutoModelForVision2Seq  # transformers<=4.x
+except ImportError:  # transformers>=5.x
+    from transformers import AutoModelForImageTextToText as AutoModelForVision2Seq
+
 from transformers import (
-    AutoModelForVision2Seq,
     Idefics3ForConditionalGeneration,
     Idefics3VisionConfig,
     Idefics3VisionTransformer,
     PretrainedConfig,
     PreTrainedModel,
 )
+from transformers.initialization import no_init_weights
 from transformers.modeling_outputs import BaseModelOutput
-from transformers.modeling_utils import no_init_weights
 from transformers.models.idefics3.modeling_idefics3 import Idefics3CausalLMOutputWithPast, Idefics3VisionEmbeddings
 
 from ....configuration_utils import RBLNCompileConfig, RBLNModelConfig

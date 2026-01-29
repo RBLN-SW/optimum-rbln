@@ -178,10 +178,6 @@ class RBLNModel(RBLNBaseModel):
             preprocessors=preprocessors, model=model, model_config=config, rbln_config=rbln_config
         )
 
-        # torchscript should be True for jit to work
-        torchscript_backup = config.torchscript
-        config.torchscript = True
-
         compiled_model: Union[rebel.RBLNCompiledModel, Dict[str, rebel.RBLNCompiledModel]] = cls.get_compiled_model(
             model, rbln_config=rbln_config
         )
@@ -196,7 +192,6 @@ class RBLNModel(RBLNBaseModel):
             cm.save(save_dir_path / subfolder / f"{compiled_model_name}.rbln")
         rbln_config.save(save_dir_path / subfolder)
 
-        config.torchscript = torchscript_backup
         config.save_pretrained(save_dir_path / subfolder)
 
         # Save torch artifacts (e.g. embedding matrix if needed.)
@@ -231,17 +226,89 @@ class RBLNModel(RBLNBaseModel):
     ) -> "PreTrainedModel":
         kwargs = cls.update_kwargs(kwargs)
 
-        return cls.get_hf_class().from_pretrained(
-            model_id,
-            subfolder=subfolder,
-            revision=revision,
-            cache_dir=cache_dir,
-            use_auth_token=use_auth_token,
-            local_files_only=local_files_only,
-            force_download=force_download,
-            trust_remote_code=trust_remote_code,
-            **kwargs,
+        hf_cls = cls.get_hf_class()
+
+        orig_tied_weights = (
+            getattr(hf_cls, "_tied_weights_keys", None) if hasattr(hf_cls, "_tied_weights_keys") else None
         )
+
+        def _load() -> "PreTrainedModel":
+            return hf_cls.from_pretrained(
+                model_id,
+                subfolder=subfolder,
+                revision=revision,
+                cache_dir=cache_dir,
+                token=use_auth_token,
+                local_files_only=local_files_only,
+                force_download=force_download,
+                trust_remote_code=trust_remote_code,
+                **kwargs,
+            )
+
+        # 1) First attempt: keep the original behavior.
+        try:
+            return _load()
+        except Exception as e:
+            msg = str(e)
+
+            # Retry trigger A: trust_remote_code models using legacy list-form `_tied_weights_keys`
+            is_tied_weights_list_bc = (
+                trust_remote_code
+                and isinstance(e, AttributeError)
+                and ("_tied_weights_keys" in msg or "all_tied_weights_keys" in msg)
+                and ("has no attribute 'keys'" in msg or "object has no attribute 'keys'" in msg)
+            )
+
+            # Retry trigger B: transformers>=5 strict tied-weights validation fails (often after config surgery)
+            is_tied_weights_validation_error = (
+                isinstance(e, ValueError)
+                and ("tie_weights_keys" in msg or "tied-weights" in msg or "tied weights" in msg)
+                and ("There is an issue with your definition of" in msg or "issue with your definition" in msg)
+            )
+
+            if not (is_tied_weights_list_bc or is_tied_weights_validation_error):
+                raise
+
+            if is_tied_weights_list_bc:
+                logger.warning(
+                    "transformers>=5 tied-weights BC: remote-code model appears to define `_tied_weights_keys` as a list. "
+                    "Retrying `from_pretrained()` with a temporary compatibility patch (list→dict mapping). "
+                    "If this persists, pin the model revision or update the model's remote code."
+                )
+            else:
+                logger.warning(
+                    "transformers>=5 tied-weights validation failed while loading model. "
+                    "Retrying `from_pretrained()` with tied-weights disabled for this load attempt. "
+                    "This can happen when modifying layer counts or when upstream tie patterns don't match the module tree."
+                )
+
+            from transformers.modeling_utils import PreTrainedModel
+
+            orig_get_expanded_tied = PreTrainedModel.get_expanded_tied_weights_keys
+
+            def _patched_get_expanded_tied_weights_keys(self, *pargs, **pkwargs):  # type: ignore[no-redef]
+                if is_tied_weights_list_bc:
+                    tied = getattr(self, "_tied_weights_keys", None)
+                    if isinstance(tied, list):
+                        return {k: k for k in tied}
+                if is_tied_weights_validation_error:
+                    try:
+                        return orig_get_expanded_tied(self, *pargs, **pkwargs)
+                    except ValueError:
+                        # Disable tied weights on retry
+                        return {}
+                return orig_get_expanded_tied(self, *pargs, **pkwargs)
+
+            try:
+                PreTrainedModel.get_expanded_tied_weights_keys = _patched_get_expanded_tied_weights_keys  # type: ignore[assignment]
+                if is_tied_weights_validation_error and hasattr(hf_cls, "_tied_weights_keys"):
+                    # Best-effort: some models store tied mapping on the class. Make it empty for the retry.
+                    hf_cls._tied_weights_keys = {}
+                return _load()
+            finally:
+                PreTrainedModel.get_expanded_tied_weights_keys = orig_get_expanded_tied  # type: ignore[assignment]
+                if hasattr(hf_cls, "_tied_weights_keys"):
+                    hf_cls._tied_weights_keys = orig_tied_weights
 
     @classmethod
     def _create_runtimes(

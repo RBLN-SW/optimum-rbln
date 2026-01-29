@@ -111,9 +111,19 @@ class _SwinEncoder(torch.nn.Module):
         for i, layer_module in enumerate(self.layers):
             layer_head_mask = head_mask[i] if head_mask is not None else None
 
-            layer_outputs = layer_module(
-                hidden_states, input_dimensions, layer_head_mask, output_attentions, always_partition
-            )
+            # transformers 5.x changed SwinStage.forward signature and removed head_mask.
+            # Keep backward compatibility by trying the old call first, then falling back.
+            try:
+                layer_outputs = layer_module(
+                    hidden_states, input_dimensions, layer_head_mask, output_attentions, always_partition
+                )
+            except TypeError:
+                layer_outputs = layer_module(
+                    hidden_states,
+                    input_dimensions,
+                    output_attentions=output_attentions,
+                    always_partition=always_partition,
+                )
 
             hidden_states = layer_outputs[0]
             hidden_states_before_downsampling = layer_outputs[1]

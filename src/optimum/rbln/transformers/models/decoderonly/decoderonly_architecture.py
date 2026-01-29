@@ -1241,15 +1241,12 @@ class RotaryEmbedding(nn.Module):
         self,
         config: PretrainedConfig,
         max_seq_len_cached: int,
+        layer_types: Optional[str] = None,
     ):
         super().__init__()
-
-        if hasattr(config, "rope_scaling") and config.rope_scaling is not None:
-            rope_type = config.rope_scaling.get("rope_type", config.rope_scaling.get("type"))
-        else:
-            rope_type = "default"
-
-        inv_freq, attention_scaling = ROPE_INIT_FUNCTIONS[rope_type](config, "cpu", max_seq_len_cached)
+        rope_params = config.rope_parameters if layer_types is None else config.rope_parameters[layer_types]
+        rope_type = rope_params["rope_type"]
+        inv_freq, attention_scaling = ROPE_INIT_FUNCTIONS[rope_type](config, "cpu", max_seq_len_cached, layer_types)
         cache_position = torch.arange(0, max_seq_len_cached)
         cache_position_expanded = cache_position[:, None]
 

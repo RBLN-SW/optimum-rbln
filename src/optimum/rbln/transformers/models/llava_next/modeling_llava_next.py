@@ -19,9 +19,16 @@ from typing import TYPE_CHECKING, Any, Callable, List, Optional, Tuple, Union
 
 import numpy as np
 import torch
-from transformers import AutoModelForVision2Seq, LlavaNextForConditionalGeneration, PretrainedConfig, PreTrainedModel
+
+
+try:
+    from transformers import AutoModelForVision2Seq  # transformers<=4.x
+except ImportError:  # transformers>=5.x
+    from transformers import AutoModelForImageTextToText as AutoModelForVision2Seq
+
+from transformers import LlavaNextForConditionalGeneration, PretrainedConfig, PreTrainedModel
+from transformers.initialization import no_init_weights
 from transformers.modeling_outputs import BaseModelOutputWithPooling
-from transformers.modeling_utils import no_init_weights
 from transformers.models.llava_next.modeling_llava_next import (
     get_anyres_image_grid_shape,
     image_size_to_num_patches,
@@ -120,6 +127,8 @@ class RBLNLlavaNextForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGeneration
     """
 
     auto_model_class = AutoModelForVision2Seq
+    # transformers>=5 nests `vision_tower`, `language_model`, and `multi_modal_projector` under `model.*`
+    _rbln_submodule_prefix = "model"
     _rbln_submodules = [
         {"name": "vision_tower"},
         {"name": "language_model"},
@@ -174,10 +183,6 @@ class RBLNLlavaNextForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGeneration
 
         artifacts = torch.load(self.model_save_dir / self.subfolder / "torch_artifacts.pth", weights_only=False)
         self.image_newline = artifacts["image_newline"]
-
-        # Copied from the original class
-        self.pad_token_id = self.config.pad_token_id if self.config.pad_token_id is not None else -1
-        self._padding_side = "left"  # set it to left by default, user can use setter to change padding_sides
         return super().__post_init__(**kwargs)
 
     def get_attn_impl(self) -> str:
@@ -191,7 +196,9 @@ class RBLNLlavaNextForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGeneration
 
     @classmethod
     def _wrap_model_if_needed(cls, model: "PreTrainedModel", rbln_config: RBLNModelConfig):
-        return model.multi_modal_projector
+        if hasattr(model, "multi_modal_projector"):
+            return model.multi_modal_projector
+        return model.model.multi_modal_projector
 
     @classmethod
     def _update_rbln_config(

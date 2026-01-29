@@ -17,14 +17,20 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, List, Optional, Tuple, Union
 
 import torch
+
+
+try:
+    from transformers import AutoModelForVision2Seq  # transformers<=4.x
+except ImportError:  # transformers>=5.x
+    from transformers import AutoModelForImageTextToText as AutoModelForVision2Seq
+
 from transformers import (
-    AutoModelForVision2Seq,
     PretrainedConfig,
     PreTrainedModel,
     Qwen2_5_VLConfig,
     Qwen2_5_VLForConditionalGeneration,
 )
-from transformers.modeling_utils import no_init_weights
+from transformers.initialization import no_init_weights
 from transformers.models.qwen2_5_vl.modeling_qwen2_5_vl import (
     Qwen2_5_VisionPatchEmbed,
     Qwen2_5_VisionRotaryEmbedding,
@@ -49,6 +55,65 @@ logger = get_logger(__name__)
 
 if TYPE_CHECKING:
     from transformers import AutoFeatureExtractor, AutoProcessor, AutoTokenizer
+
+
+def _ensure_rope_theta(config: "PretrainedConfig") -> None:
+    """
+    transformers==5.x Qwen2.5-VL RoPE config expects `config.rope_parameters['rope_theta']`,
+    but for ColQwen2.5 the checkpoint stores it under `config.text_config.rope_parameters`.
+    """
+    rope_parameters = getattr(config, "rope_parameters", None)
+    if not isinstance(rope_parameters, dict):
+        rope_parameters = {}
+    # Ensure required keys that HF expects always exist.
+    rope_parameters.setdefault("rope_type", "default")
+    rope_parameters.setdefault("type", rope_parameters["rope_type"])
+    config.rope_parameters = rope_parameters
+    if "rope_theta" in rope_parameters:
+        return
+    text_config = getattr(config, "text_config", None)
+    text_rp = getattr(text_config, "rope_parameters", None)
+    if isinstance(text_rp, dict) and "rope_theta" in text_rp:
+        config.rope_parameters = {**rope_parameters, "rope_theta": text_rp["rope_theta"]}
+        return
+    if hasattr(config, "rope_theta"):
+        config.rope_parameters = {**rope_parameters, "rope_theta": config.rope_theta}
+    else:
+        config.rope_parameters = {**rope_parameters, "rope_theta": 10000.0}
+
+
+def _ensure_max_position_embeddings(config: "PretrainedConfig") -> None:
+    """
+    transformers==5.x `Qwen2_5_VLRotaryEmbedding` expects `config.max_position_embeddings`.
+    When loading from a saved config, this field can be missing; reconstruct from `text_config` if needed.
+    """
+    if hasattr(config, "max_position_embeddings"):
+        return
+    text_config = getattr(config, "text_config", None)
+    mpe = getattr(text_config, "max_position_embeddings", None)
+    if mpe is None:
+        mpe = 32768
+    config.max_position_embeddings = mpe
+
+
+def _ensure_hidden_size(config: "PretrainedConfig") -> None:
+    if hasattr(config, "hidden_size") and config.hidden_size is not None:
+        return
+    text_config = getattr(config, "text_config", None)
+    hs = getattr(text_config, "hidden_size", None)
+    if hs is not None:
+        config.hidden_size = hs
+        return
+
+
+def _ensure_num_attention_heads(config: "PretrainedConfig") -> None:
+    if hasattr(config, "num_attention_heads") and config.num_attention_heads is not None:
+        return
+    text_config = getattr(config, "text_config", None)
+    nah = getattr(text_config, "num_attention_heads", None)
+    if nah is not None:
+        config.num_attention_heads = nah
+        return
 
 
 class RBLNQwen2_5_VisionTransformerPretrainedModel(RBLNModel):
@@ -349,6 +414,8 @@ class RBLNQwen2_5_VLModel(RBLNDecoderOnlyModel):
     auto_model_class = AutoModelForVision2Seq
     _decoder_wrapper_cls = Qwen2_5_VL_LanguageModelWrapper
     _use_rotary_emb = False
+    # transformers>=5 nests `visual` under `model.visual`
+    _rbln_submodule_prefix = "model"
     _rbln_submodules = [
         {"name": "visual"},
     ]
@@ -367,6 +434,10 @@ class RBLNQwen2_5_VLModel(RBLNDecoderOnlyModel):
 
         super().__post_init__(**kwargs)
         self.visual = self.rbln_submodules[0]
+        _ensure_rope_theta(self.config)
+        _ensure_max_position_embeddings(self.config)
+        _ensure_hidden_size(self.config)
+        _ensure_num_attention_heads(self.config)
         self.rotary_emb = self._rotary_emb_class(self.config)
         if not self.can_generate():
             self.block_tables = torch.arange(self.rbln_config.kvcache_num_blocks, dtype=torch.int16)

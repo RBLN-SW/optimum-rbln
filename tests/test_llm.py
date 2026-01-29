@@ -136,12 +136,20 @@ class LLMTest:
             for b_idx, bmask in enumerate(inputs.attention_mask):
                 masked_indices = torch.where(bmask == 0)[0]
                 unmasked_indices = torch.where(bmask == 1)[0]
-                masked = torch.allclose(test_hidden_states[b_idx][masked_indices], torch.zeros([1]))
+                # Match dtype/device for transformers>=5 (bfloat16 hidden states are common).
+                masked = torch.allclose(
+                    test_hidden_states[b_idx][masked_indices],
+                    torch.zeros([1], dtype=test_hidden_states.dtype, device=test_hidden_states.device),
+                )
                 # 1. all masked hidden states are zero
                 self.assertTrue(masked)
                 unmasked_tensor = test_hidden_states[b_idx][unmasked_indices]
                 avg_unmasked_tensor = torch.mean(unmasked_tensor, dim=-1)
-                approx_zero = torch.isclose(avg_unmasked_tensor, torch.zeros([1]), atol=1e-5)
+                approx_zero = torch.isclose(
+                    avg_unmasked_tensor,
+                    torch.zeros([1], dtype=avg_unmasked_tensor.dtype, device=avg_unmasked_tensor.device),
+                    atol=1e-5,
+                )
                 # 2. check if unmasked hidden states are not masked
                 self.assertFalse(torch.any(approx_zero).item())
 
@@ -318,8 +326,7 @@ class TestPhiModel(LLMTest.TestLLMWithoutLMHead):
 
 class TestExaoneForCausalLM(LLMTest.TestLLM):
     RBLN_CLASS = RBLNExaoneForCausalLM
-    # HF_MODEL_ID = "katuni4ka/tiny-random-exaone"
-    HF_MODEL_ID = "LGAI-EXAONE/EXAONE-3.5-2.4B-Instruct"
+    HF_MODEL_ID = "katuni4ka/tiny-random-exaone"
     HF_CONFIG_KWARGS = {"num_hidden_layers": 1, "max_position_embeddings": 1024, "trust_remote_code": True}
 
 
@@ -658,7 +665,7 @@ class TestQwen2VLForConditionalGeneration(LLMTest.TestLLM):
             "max_seq_len": 32_768,
         }
     }
-    HF_CONFIG_KWARGS = {"num_hidden_layers": 1}
+    HF_CONFIG_KWARGS = {}
 
     @classmethod
     def setUpClass(cls):
@@ -702,7 +709,7 @@ class TestQwen2_5_VLForConditionalGeneration(LLMTest.TestLLM):
             "max_seq_len": 32_768,
         }
     }
-    HF_CONFIG_KWARGS = {"num_hidden_layers": 1}
+    HF_CONFIG_KWARGS = {}
     HF_CONFIG_KWARGS_PREPROCESSOR = {"max_pixels": 64 * 14 * 14}
     IS_MULTIMODAL = True
 
@@ -735,7 +742,7 @@ class TestGemma3ForConditionalGeneration(LLMTest.TestLLM):
     HF_MODEL_ID = "trl-internal-testing/tiny-Gemma3ForConditionalGeneration"
     PROMPT = "<bos><start_of_turn>user\n<start_of_image>Describe the image.<end_of_turn>\n<start_of_turn>model\n'"
     RBLN_CLASS_KWARGS = {"rbln_config": {"language_model": {"use_inputs_embeds": True, "kvcache_partition_len": 4096}}}
-    HF_CONFIG_KWARGS = {"revision": "e1f4b0516ec80f86ed75c8cb1d45ede72526ad24"}
+    HF_CONFIG_KWARGS = {"revision": "e1f4b0516ec80f86ed75c8cb1d45ede72526ad24", "dtype": "float32"}
     HF_CONFIG_KWARGS_PREPROCESSOR = {"revision": "e1f4b0516ec80f86ed75c8cb1d45ede72526ad24"}
     TEST_LEVEL = TestLevel.FULL
     IS_MULTIMODAL = True
@@ -772,6 +779,7 @@ class TestGemma3ForConditionalGeneration_OutputHiddenStates(TestGemma3ForConditi
             "language_model": {"use_inputs_embeds": True, "kvcache_partition_len": 4096, "output_hidden_states": True}
         }
     }
+    HF_CONFIG_KWARGS = {"dtype": "float32"}
 
     def test_generate(self):
         self._test_output_hidden_states_generation()
@@ -782,6 +790,7 @@ class TestGemma3ForCausalLM(LLMTest.TestLLM):
     HF_MODEL_ID = "google/gemma-3-1b-it"
     HF_CONFIG_KWARGS = {
         "trust_remote_code": True,
+        "dtype": "float32",
     }
 
     @classmethod
@@ -799,7 +808,7 @@ class TestGemma3ForCausalLM(LLMTest.TestLLM):
 class TestLlamaForCausalLM_fp8(LLMTest.TestLLM):
     RBLN_CLASS = RBLNLlamaForCausalLM
     HF_MODEL_ID = "RedHatAI/Meta-Llama-3-8B-Instruct-FP8-KV"  # No tiny model yet.
-    HF_CONFIG_KWARGS = {"num_hidden_layers": 1}
+    HF_CONFIG_KWARGS = {"num_hidden_layers": 1, "dtype": "float32"}
     RBLN_CLASS_KWARGS = {
         "rbln_config": {
             "quantization": {"weights": "fp8", "kv_caches": "fp8"},
