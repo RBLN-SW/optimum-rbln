@@ -477,7 +477,7 @@ class TestLlavaForConditionalGeneration_Auto(TestLlavaForConditionalGeneration):
         return super().setUpClass()
 
 
-class TestLlavaForConditionalGeneration_Bfloat16(TestLlavaForConditionalGeneration):
+class TestLlavaForConditionalGeneration_BFloat16(TestLlavaForConditionalGeneration):
     TEST_LEVEL = TestLevel.FULL
 
     # override
@@ -615,7 +615,7 @@ class TestLlavaNextForConditionalGeneration_Auto(TestLlavaNextForConditionalGene
         return super().setUpClass()
 
 
-class TestLlavaNextForConditionalGeneration_Bfloat16(TestLlavaNextForConditionalGeneration):
+class TestLlavaNextForConditionalGeneration_BFloat16(TestLlavaNextForConditionalGeneration):
     TEST_LEVEL = TestLevel.FULL
 
     # override
@@ -699,7 +699,7 @@ class TestBlip2ForConditionalGeneration_Auto(TestBlip2ForConditionalGeneration):
     }
 
 
-class TestBlip2ForConditionalGeneration_Bfloat16(TestBlip2ForConditionalGeneration):
+class TestBlip2ForConditionalGeneration_BFloat16(TestBlip2ForConditionalGeneration):
     TEST_LEVEL = TestLevel.FULL
     HF_CONFIG_KWARGS = {
         "dtype": "bfloat16",
@@ -748,7 +748,7 @@ class TestIdefics3ForConditionalGeneration_Auto(TestIdefics3ForConditionalGenera
     }
 
 
-class TestIdefics3ForConditionalGeneration_Bfloat16(TestIdefics3ForConditionalGeneration):
+class TestIdefics3ForConditionalGeneration_BFloat16(TestIdefics3ForConditionalGeneration):
     TEST_LEVEL = TestLevel.FULL
     HF_CONFIG_KWARGS = {
         "dtype": "bfloat16",
