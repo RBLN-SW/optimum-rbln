@@ -3,6 +3,11 @@ name: Test Docstring Parsing
 on:
   workflow_call:
     inputs:
+      ref:
+        description: "Optional git ref to checkout (e.g. dev). Empty means use event default."
+        required: false
+        type: string
+        default: ""
       test_all_files:
         description: "Test all files in src/ instead of just changed files"
         required: false
@@ -11,11 +16,12 @@ on:
 
 jobs:
   test-docstrings:
-    runs-on: ubuntu-latest-rbln
+    runs-on: rbln-sw-k8s-general
     
     steps:
     - uses: actions/checkout@v4
       with:
+        ref: ${{ inputs.ref != '' && inputs.ref || github.ref }}
         fetch-depth: 0  # Get full git history for file diff
     
     - name: Set up Python
@@ -30,6 +36,7 @@ jobs:
     - name: Get Python files to test
       id: changed-files
       run: |
+        git config --global --add safe.directory "$GITHUB_WORKSPACE"
         if [ "${{ inputs.test_all_files }}" = "true" ]; then
           # For scheduled test, get all Python files in src/
           ALL_FILES=$(find src/ -name '*.py' -type f || true)

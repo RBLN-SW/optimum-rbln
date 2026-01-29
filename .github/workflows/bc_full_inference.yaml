@@ -19,15 +19,12 @@ on:
 
 jobs:
   collect-bc-tags:
-    runs-on: rebel-k8s-runner
+    runs-on: rbln-sw-k8s-4c-32gb
+    container:
+      image: ${{ vars.DEV_CONTAINER_IMAGE }}
     outputs:
       matrix: ${{ steps.build.outputs.matrix }}
     steps:
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.10"
-
       - name: Build backward-compat tag matrix
         id: build
         env:

@@ -16,7 +16,8 @@ import json
 from pathlib import Path
 from typing import List, Optional, Union
 
-from huggingface_hub import HfApi, get_token, hf_hub_download
+from huggingface_hub import HfApi, get_token, hf_hub_download, try_to_load_from_cache
+from huggingface_hub.errors import LocalEntryNotFoundError
 
 
 def pull_compiled_model_from_hub(
@@ -29,6 +30,97 @@ def pull_compiled_model_from_hub(
     local_files_only: bool,
 ) -> Path:
     """Pull model files from the HuggingFace Hub."""
+    config_filename = "rbln_config.json" if subfolder == "" else f"{subfolder}/rbln_config.json"
+
+    # Try to find config file in cache first.
+    config_cache_path = try_to_load_from_cache(
+        repo_id=str(model_id),
+        filename=config_filename,
+        revision=revision,
+        cache_dir=cache_dir,
+    )
+
+    # If config is cached and we're not forcing download, try to use cached files
+    if config_cache_path and isinstance(config_cache_path, str) and not force_download:
+        config_path = Path(config_cache_path)
+        if config_path.exists():
+            cache_dir_path = config_path.parent
+
+            # Look for .rbln files in the same directory
+            pattern_rbln = "*.rbln"
+            rbln_files = list(cache_dir_path.glob(pattern_rbln))
+
+            # Validate files found in cache
+            rbln_config_filenames = [config_path] if config_path.exists() else []
+            validate_files(rbln_files, rbln_config_filenames, f"cached repository {model_id}")
+
+            # If local_files_only is True, return cached directory without API call
+            if local_files_only:
+                return cache_dir_path
+
+            # If local_files_only is False, ensure all files are downloaded
+            # Download config file (will use cache if available, download if missing)
+            rbln_config_cache_path = hf_hub_download(
+                repo_id=model_id,
+                filename=config_filename,
+                token=token,
+                revision=revision,
+                cache_dir=cache_dir,
+                force_download=force_download,
+                local_files_only=False,
+            )
+            cache_dir_path = Path(rbln_config_cache_path).parent
+
+            # Download all .rbln files found in cache (hf_hub_download will use cache if available)
+            for rbln_file in rbln_files:
+                filename = rbln_file.name if subfolder == "" else f"{subfolder}/{rbln_file.name}"
+                try:
+                    hf_hub_download(
+                        repo_id=model_id,
+                        filename=filename,
+                        token=token,
+                        revision=revision,
+                        cache_dir=cache_dir,
+                        force_download=force_download,
+                        local_files_only=False,
+                    )
+                except LocalEntryNotFoundError:
+                    # File might not exist in repo, skip it
+                    pass
+
+            # Note: We skip the API call here since we're using cached files
+            # If there are additional files in the repo that aren't cached,
+            # they won't be downloaded.
+            # If the user needs all files, they should use force_download=True
+            return cache_dir_path
+
+    # If local_files_only is True and config not found in cache, try to download with local_files_only
+    if local_files_only:
+        try:
+            rbln_config_cache_path = hf_hub_download(
+                repo_id=model_id,
+                filename=config_filename,
+                token=token,
+                revision=revision,
+                cache_dir=cache_dir,
+                force_download=force_download,
+                local_files_only=True,
+            )
+            cache_dir_path = Path(rbln_config_cache_path).parent
+            rbln_files = list(cache_dir_path.glob("*.rbln"))
+            rbln_config_filenames = [Path(rbln_config_cache_path)] if Path(rbln_config_cache_path).exists() else []
+            validate_files(rbln_files, rbln_config_filenames, f"cached repository {model_id}")
+            return cache_dir_path
+        except LocalEntryNotFoundError as err:
+            raise FileNotFoundError(
+                f"Could not find compiled model files for {model_id} in local cache. "
+                f"Set local_files_only=False to download from HuggingFace Hub."
+            ) from err
+
+    # List files from repository. This only happens when:
+    # 1. Config is not cached, OR
+    # 2. force_download=True, OR
+    # 3. local_files_only=False and we need to discover all files in the repo
     huggingface_token = _get_huggingface_token(token)
     repo_files = list(
         map(
@@ -51,7 +143,6 @@ def pull_compiled_model_from_hub(
         rbln_config_cache_path = hf_hub_download(
             repo_id=model_id,
             filename=filename,
-            subfolder=subfolder,
             token=token,
             revision=revision,
             cache_dir=cache_dir,

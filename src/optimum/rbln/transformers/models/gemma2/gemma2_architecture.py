@@ -15,7 +15,6 @@
 from typing import Optional, Tuple, Union
 
 import torch
-from transformers.models.gemma2.modeling_gemma2 import Gemma2RMSNorm
 
 from ...models.decoderonly.decoderonly_architecture import DecoderOnlyAttention, DecoderOnlyLayer, DecoderOnlyModel
 from ..decoderonly.decoderonly_architecture import DecoderOnlyWrapper
@@ -33,11 +32,8 @@ class Gemma2Wrapper(DecoderOnlyWrapper):
 
 
 class Gemma2DecoderLayer(DecoderOnlyLayer):
-    def get_pre_feedforward_layernorm(self) -> Gemma2RMSNorm:
-        return self._original_mod.pre_feedforward_layernorm
-
-    def get_post_feedforward_layernorm(self) -> Gemma2RMSNorm:
-        return self._original_mod.post_feedforward_layernorm
+    _PRE_FF_LAYERNORM_ATTRS = ["pre_feedforward_layernorm"]
+    _POST_FF_LAYERNORM_ATTRS = ["post_feedforward_layernorm"]
 
     def forward(
         self,
@@ -77,17 +73,11 @@ class Gemma2DecoderLayer(DecoderOnlyLayer):
 
 
 class Gemma2Attention(DecoderOnlyAttention):
-    def __post_init__(self):
-        self.q_proj = self._original_mod.q_proj
-        self.k_proj = self._original_mod.k_proj
-        self.v_proj = self._original_mod.v_proj
-        self.o_proj = self._original_mod.o_proj
-
-    def get_attn_scale(self):
-        return self._original_mod.config.query_pre_attn_scalar**-0.5
+    def get_attn_scale(self, self_attn):
+        return self_attn.config.query_pre_attn_scalar**-0.5
 
 
 class Gemma2Model(DecoderOnlyModel):
     @property
     def hidden_multiplier(self):
-        return self._original_mod.config.hidden_size**0.5
+        return self.config.hidden_size**0.5

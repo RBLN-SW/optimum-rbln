@@ -12,13 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-
 from ..decoderonly.configuration_decoderonly import RBLNDecoderOnlyModelForCausalLMConfig
 
 
 class RBLNGptOssForCausalLMConfig(RBLNDecoderOnlyModelForCausalLMConfig):
     """
-    Configuration class for RBLN GPT-OSS models.
+    Configuration class for RBLN GptOss models.
 
     This class is an alias of RBLNDecoderOnlyModelForCausalLMConfig.
 
@@ -29,14 +28,15 @@ class RBLNGptOssForCausalLMConfig(RBLNDecoderOnlyModelForCausalLMConfig):
     # Create a configuration object
     config = RBLNGptOssForCausalLMConfig(
         batch_size=1,
-        tensor_parallel_size=4
+        tensor_parallel_size=8,
+        kvcache_partition_len=8192,
     )
 
     # Use the configuration with from_pretrained
     model = RBLNGptOssForCausalLM.from_pretrained(
         "openai/gpt-oss-20b",
         export=True,
-        rbln_config=config
+        rbln_config=config,
     )
     ```
     """
