@@ -21,8 +21,7 @@ from ....utils.runtime_utils import RBLNPytorchRuntime
 
 
 if TYPE_CHECKING:
-    from diffusers import AutoencoderKL, AutoencoderKLCosmos, AutoencoderKLWan, AutoencoderKLTemporalDecoder, VQModel
-    from diffusers import AutoencoderKL, AutoencoderKLCosmos, AutoencoderKLTemporalDecoder, VQModel
+    from diffusers import AutoencoderKL, AutoencoderKLCosmos, AutoencoderKLTemporalDecoder, AutoencoderKLWan, VQModel
 
 
 class RBLNRuntimeVAEEncoder(RBLNPytorchRuntime):
