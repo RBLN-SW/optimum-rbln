@@ -165,7 +165,8 @@ class MiniMaxM2SparseMoeBlock(nn.Module):
             [e.w2.weight_scale_inv.repeat_interleave(e.w2.block_size[0], 0) for e in self.experts], dim=0
         )
 
-        self.block_size = self.experts[0].w1.block_size
+        self.group_size = self.experts[0].w1.block_size[1]
+
         # Register as parameters for tracing/compilation.
         self.w1 = nn.Parameter(w1, requires_grad=False)
         self.w3 = nn.Parameter(w3, requires_grad=False)
@@ -189,6 +190,7 @@ class MiniMaxM2SparseMoeBlock(nn.Module):
             self.w2,
             self.w2_scale,
             router_logits,
+            self.group_size,
             int(self.top_k),
             False,  # norm_topk_prob: False => non-softmax normalization (matches MiniMax's sum-normalization better)
         )

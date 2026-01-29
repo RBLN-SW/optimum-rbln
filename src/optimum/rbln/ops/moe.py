@@ -193,6 +193,7 @@ def custom_moe_swiglu_fp8(
     down_proj_weight: Tensor,
     down_proj_scale: Tensor,
     router_logits: Tensor,
+    group_size: int,
     topk: int,
     norm_topk_prob: bool,
     gate_proj_bias: Optional[Tensor] = None,
@@ -211,8 +212,9 @@ def custom_moe_swiglu_fp8(
     - down_proj_weight: [num_experts, intermediate_size, hidden_size]
     - down_proj_scale: [num_experts, hidden_size, intermediate_size // 128]
     - router_logits: [batch*seq_len, num_experts]
+    - group_size: group size for weight scale
     - topk: top k experts to select
-    - norm_topk_prob: whether to normalize the top k routing weights with softmax
+    - norm_topk_prob: whether to normalize the top k routing weights
     - gate_proj_bias: [num_experts, intermediate_size]
     - up_proj_bias: [num_experts, intermediate_size]
     - down_proj_bias: [num_experts, hidden_size]
@@ -234,6 +236,7 @@ def custom_moe_swiglu_fp8_fake(
     down_proj_weight: Tensor,
     down_proj_scale: Tensor,
     router_logits: Tensor,
+    group_size: int,
     topk: int,
     norm_topk_prob: bool,
     gate_proj_bias: Optional[Tensor] = None,
