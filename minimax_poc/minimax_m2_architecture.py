@@ -156,13 +156,13 @@ class MiniMaxM2SparseMoeBlock(nn.Module):
         w2 = torch.stack([e.w2.weight for e in self.experts], dim=0)
 
         w1_scale = torch.stack(
-            [e.w1.weight_scale_inv.repeat_interleave(e.w1.block_size[0], 0).unsqueeze(-1) for e in self.experts], dim=0
+            [e.w1.weight_scale_inv.repeat_interleave(e.w1.block_size[0], 0) for e in self.experts], dim=0
         )
         w3_scale = torch.stack(
-            [e.w3.weight_scale_inv.repeat_interleave(e.w3.block_size[0], 0).unsqueeze(-1) for e in self.experts], dim=0
+            [e.w3.weight_scale_inv.repeat_interleave(e.w3.block_size[0], 0) for e in self.experts], dim=0
         )
         w2_scale = torch.stack(
-            [e.w2.weight_scale_inv.repeat_interleave(e.w2.block_size[0], 0).unsqueeze(-1) for e in self.experts], dim=0
+            [e.w2.weight_scale_inv.repeat_interleave(e.w2.block_size[0], 0) for e in self.experts], dim=0
         )
 
         self.block_size = self.experts[0].w1.block_size
@@ -180,6 +180,7 @@ class MiniMaxM2SparseMoeBlock(nn.Module):
 
         # router_logits: [B*T, num_experts]
         router_logits = self.gate(x)
+        breakpoint()
 
         y = torch.ops.rbln_custom_ops.custom_moe_swiglu_fp8(
             x,
