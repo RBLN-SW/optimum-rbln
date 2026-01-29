@@ -29,6 +29,7 @@ from optimum.rbln import (
     RBLNLoRAAdapterConfig,
     RBLNMistralForCausalLM,
     RBLNMistralModel,
+    RBLNMixtralForCausalLM,
     RBLNOPTForCausalLM,
     RBLNOPTModel,
     RBLNPegasusForConditionalGeneration,
@@ -524,13 +525,28 @@ class TestLlavaNextForConditionalGeneration(LLMTest.TestLLM):
 
     def _inner_test_save_load(self, tmpdir):
         super()._inner_test_save_load(tmpdir)
+        self._inner_test_nested_config(tmpdir)
+
+    def _inner_test_nested_config(self, tmpdir):
         # Test loading from nested config
-        _ = self.RBLN_CLASS.from_pretrained(
+        model = self.RBLN_CLASS.from_pretrained(
             tmpdir,
             export=False,
-            rbln_config={"language_model": {"create_runtimes": False}},
+            rbln_create_runtimes=False,
+            rbln_config={
+                "vision_tower": {
+                    "device": 1,
+                },
+                "language_model": {
+                    "device": 2,
+                },
+            },
             **self.HF_CONFIG_KWARGS,
         )
+        assert model.rbln_config.vision_tower.device == 1
+        assert not model.rbln_config.vision_tower.create_runtimes
+        assert model.rbln_config.language_model.device == 2
+        assert not model.rbln_config.language_model.create_runtimes
 
     def test_complicate_config(self):
         rbln_config = {
@@ -591,7 +607,12 @@ class TestBlip2ForConditionalGeneration(LLMTest.TestLLM):
         _ = self.RBLN_CLASS.from_pretrained(
             tmpdir,
             export=False,
-            rbln_config={"language_model": {"create_runtimes": False}},
+            rbln_config={
+                "create_runtimes": False,
+                "vision_model": {"create_runtimes": False},
+                "qformer": {"create_runtimes": False},
+                "language_model": {"create_runtimes": False},
+            },
             **self.HF_CONFIG_KWARGS,
         )
 
@@ -875,6 +896,20 @@ class TestDisallowedLlama_4(DisallowedTestBase.DisallowedTest):
     HF_MODEL_ID = "afmck/testing-llama-tiny"
     HF_CONFIG_KWARGS = {"num_hidden_layers": 1, "max_position_embeddings": 2048}
     RBLN_CLASS_KWARGS = {"rbln_config": {"attn_impl": "flash_attn", "kvcache_partition_len": 1024}}
+
+
+class TestMixtralForCausalLM(LLMTest.TestLLM):
+    RBLN_CLASS = RBLNMixtralForCausalLM
+    HF_MODEL_ID = "vprovorg/tiny-random-Mixtral-8x7B-v0.1"
+
+    @classmethod
+    def setUpClass(cls):
+        config = AutoConfig.from_pretrained(cls.HF_MODEL_ID)
+        config.num_hidden_layers = 3
+        config.max_position_embeddings = 4096
+        config.hidden_size = 128
+        cls.HF_CONFIG_KWARGS.update({"config": config, "ignore_mismatched_sizes": True})
+        return super().setUpClass()
 
 
 if __name__ == "__main__":

@@ -53,7 +53,7 @@ class _SiglipVisionModel(torch.nn.Module):
             interpolate_pos_encoding=self.interpolate_pos_encoding,
             output_attentions=self.output_attentions,
         )
-        return tuple(x for x in enc_out if x is not None)
+        return enc_out
 
 
 class RBLNSiglipVisionModel(RBLNModel):

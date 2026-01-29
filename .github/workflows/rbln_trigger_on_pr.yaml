@@ -136,7 +136,7 @@ jobs:
         run: |
           response=$(curl -s -H "Authorization: Bearer ${{ secrets.GIT_PAT }}" \
             -H "Content-Type: application/json" \
-            -d '{"query":"query { organization(login: \"rebellions-sw\") { team(slug: \"rebel-sw-team\") { members(first: 100) { nodes { login } } } } }"}' \
+            -d '{"query":"query { organization(login: \"rbln-sw\") { team(slug: \"SW\") { members(first: 100) { nodes { login } } } } }"}' \
             https://api.github.com/graphql)
           echo "$response" | jq -r '.data.organization.team.members.nodes[].login' > team_members.txt
 
@@ -176,7 +176,7 @@ jobs:
     secrets: inherit
 
   slack-report:
-    needs: [optimum-rbln-full-pytest, bc-inference, check-compiler, check-slack-report]
+    needs: [optimum-rbln-full-pytest,optimum-rbln-pytest, bc-inference, check-compiler, check-slack-report]
     if: |
       always() &&
       needs.check-slack-report.outputs.should_slack_report == 'true'
@@ -187,9 +187,12 @@ jobs:
       caller_run_id: ${{ github.run_id }}
       commit_sha: ${{ github.event.pull_request.head.sha }}
       compiler_version: ${{ needs.check-compiler.outputs.compiler_version }}
-      transformers_version: ${{ needs.optimum-rbln-full-pytest.outputs.transformers_version }}
-      diffusers_version: ${{ needs.optimum-rbln-full-pytest.outputs.diffusers_version }}
+      transformers_version: ${{ needs.check-pytest-full.outputs.should_full_test == 'true' && needs.optimum-rbln-full-pytest.outputs.transformers_version || 'default' }}
+      diffusers_version: ${{ needs.check-pytest-full.outputs.should_full_test == 'true' && needs.optimum-rbln-full-pytest.outputs.diffusers_version || 'default' }}
       bc_result: ${{ needs.bc-inference.result }}
+      pytest_job_group: ${{ needs.check-pytest-full.outputs.should_full_test == 'true' && 'optimum-rbln-full-pytest' || 'optimum-rbln-pytest' }}
+      bc_pytest_job_group: "bc-inference"
+      use_playground_channel: true
     secrets: inherit
 
   bc-latest-tag:

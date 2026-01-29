@@ -1,4 +1,4 @@
-# Copyright 2025 Rebellions Inc. All rights reserved.
+# Copyright 2026 Rebellions Inc. All rights reserved.
 
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,28 +15,24 @@
 from ..decoderonly.configuration_decoderonly import RBLNDecoderOnlyModelForCausalLMConfig
 
 
-class RBLNGptOssForCausalLMConfig(RBLNDecoderOnlyModelForCausalLMConfig):
+class RBLNMixtralForCausalLMConfig(RBLNDecoderOnlyModelForCausalLMConfig):
     """
-    Configuration class for RBLN GptOss models.
-
+    Configuration class for RBLN Mixtral models.
     This class is an alias of RBLNDecoderOnlyModelForCausalLMConfig.
-
     Example usage:
     ```python
-    from optimum.rbln import RBLNGptOssForCausalLM, RBLNGptOssForCausalLMConfig
-
+    from optimum.rbln import RBLNMixtralForCausalLM, RBLNMixtralForCausalLMConfig
     # Create a configuration object
-    config = RBLNGptOssForCausalLMConfig(
+    config = RBLNMixtralForCausalLMConfig(
         batch_size=1,
-        tensor_parallel_size=8,
-        kvcache_partition_len=8192,
+        max_seq_len=32768,
+        tensor_parallel_size=4
     )
-
     # Use the configuration with from_pretrained
-    model = RBLNGptOssForCausalLM.from_pretrained(
-        "openai/gpt-oss-20b",
+    model = RBLNMixtralForCausalLM.from_pretrained(
+        "mistralai/Mixtral-8x7B-Instruct-v0.1",
         export=True,
-        rbln_config=config,
+        rbln_config=config
     )
     ```
     """

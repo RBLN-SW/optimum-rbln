@@ -26,6 +26,7 @@ from transformers.modeling_utils import no_init_weights
 from ....configuration_utils import RBLNCompileConfig
 from ....modeling import RBLNModel
 from ....utils.logging import get_logger
+from ....utils.runtime_utils import is_compiler_supports_buffer_resize
 from ...modeling_attention_utils import (
     RBLNDecoderOnlyFlashAttentionMixin,
     set_default_values,
@@ -34,7 +35,7 @@ from ...modeling_attention_utils import (
 )
 from ...modeling_outputs import RBLNDecoderOnlyOutput, _validate_output_hidden_states
 from ...utils.rbln_quantization import get_quantized_model
-from .configuration_decoderonly import RBLNDecoderOnlyModelConfig, RBLNDecoderOnlyModelForCausalLMConfig
+from .configuration_decoderonly import KVCacheMeta, RBLNDecoderOnlyModelConfig, RBLNDecoderOnlyModelForCausalLMConfig
 from .decoderonly_architecture import DecoderOnlyWrapper
 from .decoderonly_runtime_utils import RBLNPageTableManager, RBLNRuntimeModel
 from .generation_decoderonly import RBLNDecoderOnlyGenerationMixin
@@ -103,6 +104,11 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
             "rbln_config": self.rbln_config,
             "config": self.config,
         }
+
+        if self.rbln_config.use_image_prefill:
+            # TODO(sdk-gen): Implement and combine prefill and image prefill into a single runtime.
+            raise NotImplementedError(f"Image prefill at {self.__class__.__name__} is not supported yet.")
+
         self.prefill_decoder = RBLNRuntimeModel(
             runtime=self.model[0],
             phase="prefill",
@@ -230,7 +236,7 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
         rbln_config: RBLNDecoderOnlyModelForCausalLMConfig,
         quantization=None,
         phase: str = "prefill",
-    ):
+    ) -> rebel.RBLNCompiledModel:
         try:
             wrapped_model.phase = phase
             if quantization:
@@ -252,21 +258,15 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
                 quantization.maybe_reset_quantization_env()
 
     @classmethod
-    def _get_compile_context(
-        cls,
-        compile_config: RBLNCompileConfig,
-        example_inputs: List[torch.Tensor],
-    ):
+    def _get_compile_context(cls, compile_config: RBLNCompileConfig, example_inputs: List[torch.Tensor]):
         context = CompileContext(use_weight_sharing=True)
 
         # Mark static tensors (self kv states)
         static_tensors = {}
-        idx = 0
         for (name, _, _), tensor in zip(compile_config.input_info, example_inputs):
             if "past_key_values" in name:
                 static_tensors[name] = tensor
-                context.mark_static_address(tensor, f"kv_cache_{idx}")
-                idx += 1
+                context.mark_static_address(tensor, name)
 
         return context, static_tensors
 
@@ -281,7 +281,7 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
         prefill_example_inputs = prefill_compile_config.get_dummy_inputs(fill=0, meta_tensor_names=meta_tensor_names)
         context, static_tensors = cls._get_compile_context(prefill_compile_config, prefill_example_inputs)
 
-        compiled_models = {}
+        compiled_models: dict[str, rebel.RBLNCompiledModel] = {}
         compiled_models["prefill"] = cls._compile_model(
             wrapped_model,
             prefill_compile_config,
@@ -292,9 +292,27 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
             phase="prefill",
         )
 
+        if rbln_config.use_image_prefill:
+            image_prefill_compile_config = rbln_config.compile_cfgs[rbln_config.image_prefill_runtime_idx]
+            image_prefill_example_inputs = image_prefill_compile_config.get_dummy_inputs(
+                fill=0, static_tensors=static_tensors
+            )
+            compiled_image_prefill = cls._compile_model(
+                wrapped_model,
+                image_prefill_compile_config,
+                image_prefill_example_inputs,
+                context,
+                rbln_config,
+                rbln_config.quantization,
+                phase="image_prefill",
+            )
+            compiled_models["image_prefill"] = compiled_image_prefill
+
         if rbln_config.can_generate:
             wrapped_model.phase = "decode"
-            for batch_size, dec_compile_config in zip(rbln_config.decoder_batch_sizes, rbln_config.compile_cfgs[1:]):
+            for batch_size, dec_compile_config in zip(
+                rbln_config.decoder_batch_sizes, rbln_config.compile_cfgs[rbln_config.decoder_runtime_idx :]
+            ):
                 dec_example_inputs = dec_compile_config.get_dummy_inputs(fill=0, static_tensors=static_tensors)
                 compiled_decoder = cls._compile_model(
                     wrapped_model,
@@ -307,14 +325,10 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
                 )
                 compiled_models[f"decoder_batch_{batch_size}"] = compiled_decoder
 
-            # check if the memory is enough to have additional blocks
-            required_num_blocks = (rbln_config.max_seq_len // rbln_config.kvcache_block_size) * rbln_config.batch_size
-            if rbln_config.kvcache_num_blocks < required_num_blocks:
-                cls.maybe_suggest_kvcache_num_blocks(
-                    compiled_models=compiled_models,
-                    model_config=model.config,
-                    rbln_config=rbln_config,
-                )
+        if rbln_config.is_auto_num_blocks:
+            if not is_compiler_supports_buffer_resize():
+                raise RuntimeError("`kvcache_num_blocks` must be set.")
+            cls.set_kvcache_num_blocks_after_compilation(compiled_models, rbln_config)
 
         return compiled_models
 
@@ -381,29 +395,36 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
         if rbln_config.use_lora:
             input_info.append(("lora_int_ids", [batch_size], "int32"))
 
-        kvcache_dtype = rbln_config.dtype
-        if rbln_config.quantization and rbln_config.quantization.kv_caches == "fp8":
-            kvcache_dtype = "float8_e4m3fn"
+        if len(rbln_config.kvcache_metas) > 0:
+            # Meta is already set, use it
+            input_info.extend(
+                [
+                    (kvcache_meta.name, kvcache_meta.compile_shape, kvcache_meta.dtype)
+                    for kvcache_meta in rbln_config.kvcache_metas
+                ]
+            )
 
-        global_kvcache_shape = [
-            rbln_config.kvcache_num_blocks,
-            num_key_value_heads,
-            rbln_config.kvcache_block_size,
-            head_dim,
-        ]
-        local_kvcache_shape = [rbln_config.batch_size, num_key_value_heads, rbln_config.sliding_window, head_dim]
-        input_info.extend(
-            [
-                (
-                    f"past_key_values_{i}",
-                    local_kvcache_shape
-                    if rbln_config.sliding_window is not None and ((i // 2) in rbln_config.sliding_window_layers)
-                    else global_kvcache_shape,
-                    kvcache_dtype,
+        else:
+            kvcache_dtype = rbln_config.dtype
+            if rbln_config.quantization and rbln_config.quantization.kv_caches == "fp8":
+                kvcache_dtype = "float8_e4m3fn"
+
+            kvcache_metas = []
+            for i in range(num_hidden_layers * 2):
+                layer_idx = i // 2
+                name = f"past_key_values_{i}"
+                kvcache_meta = KVCacheMeta.make(
+                    name,
+                    layer_idx,
+                    num_key_value_heads,
+                    head_dim,
+                    RBLNCompileConfig.normalize_dtype(kvcache_dtype),
+                    rbln_config,
                 )
-                for i in range(num_hidden_layers * 2)
-            ]
-        )
+                kvcache_metas.append(kvcache_meta)
+                input_info.append((name, kvcache_meta.compile_shape, kvcache_meta.dtype))
+
+            rbln_config.kvcache_metas.extend(kvcache_metas)
 
         return input_info
 
@@ -475,51 +496,39 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
             max_seq_len=rbln_config.max_seq_len,
         )
 
-        num_full_blocks = (rbln_config.max_seq_len // rbln_config.kvcache_block_size) * rbln_config.batch_size
-
-        # Update kvcache_num_blocks based on the attention implementation.
+        # Validate kvcache_num_blocks based on the number of full blocks required.
+        # Eager mode restriction:
+        # - num_blocks must be at least equal to the batch size
+        # Flash attention restriction:
+        # - num_blocks must be at least equal to (max_seq_len // kvcache_block_size) + 1
+        # - num_blocks must be no greater than the number of full blocks.
         if rbln_config.attn_impl == "flash_attn":
-            estimated_max_num_blocks = cls.get_maximum_num_blocks_by_model(
-                model=model, model_config=model_config, rbln_config=rbln_config
-            )
+            if rbln_config.is_auto_num_blocks:
+                # Do nothing
+                pass
 
-            if rbln_config.kvcache_num_blocks is None:
-                if estimated_max_num_blocks < num_full_blocks:
-                    # lower bound of the number of blocks for flash attention.
-                    min_blocks_for_flash = min(
-                        rbln_config.max_seq_len // rbln_config.kvcache_block_size + 1, num_full_blocks
+            else:
+                if rbln_config.kvcache_num_blocks > rbln_config.num_full_blocks:
+                    logger.warning(
+                        f"The set `kvcache_num_blocks` ({rbln_config.kvcache_num_blocks}) is greater"
+                        f" than the required number of blocks ({rbln_config.num_full_blocks})."
+                        "This can cause a failure during model compilation."
                     )
-                    if min_blocks_for_flash > estimated_max_num_blocks:
-                        # NOTE: Just try to compile with lower bound of blocks for flash attention.
-                        # Even if it's larger than the estimated maximum number of blocks.
-                        rbln_config.kvcache_num_blocks = min_blocks_for_flash
-                    else:
-                        logger.info(f"[KVCache] Compiling with num_blocks: {rbln_config.kvcache_num_blocks}")
-                        rbln_config.kvcache_num_blocks = estimated_max_num_blocks
-
-                    if rbln_config.kvcache_num_blocks < rbln_config.batch_size:
-                        raise RuntimeError(
-                            f"Batch size ({rbln_config.batch_size}) exceeds num_blocks ({rbln_config.kvcache_num_blocks}). "
-                            "Ensure the number of blocks is at least equal to the batch size."
-                        )
-                else:
-                    rbln_config.kvcache_num_blocks = num_full_blocks
-            elif rbln_config.kvcache_num_blocks > estimated_max_num_blocks:
-                logger.warning(
-                    f"The set `kvcache_num_blocks` ({rbln_config.kvcache_num_blocks}) is greater"
-                    f" than the estimated maximum number of blocks ({estimated_max_num_blocks})."
-                    "This can cause a failure during model compilation."
-                )
+                elif rbln_config.kvcache_num_blocks < rbln_config.num_min_blocks:
+                    raise ValueError(
+                        f"The set `kvcache_num_blocks` ({rbln_config.kvcache_num_blocks}) is less"
+                        f" than the minimum number of blocks ({rbln_config.num_min_blocks})."
+                    )
         else:
-            if rbln_config.kvcache_num_blocks is None:
-                rbln_config.kvcache_num_blocks = num_full_blocks
-            elif rbln_config.kvcache_num_blocks > num_full_blocks:
+            if rbln_config.is_auto_num_blocks:
+                # Eager attention should use fixed number of blocks.
+                rbln_config.kvcache_num_blocks = rbln_config.num_full_blocks
+            elif rbln_config.kvcache_num_blocks > rbln_config.num_full_blocks:
                 logger.warning(
                     f"The set `kvcache_num_blocks` ({rbln_config.kvcache_num_blocks}) is greater"
-                    f" than the required number of blocks ({num_full_blocks})."
+                    f" than the required number of blocks ({rbln_config.num_full_blocks})."
                     "This can cause a failure during model compilation."
                 )
-        logger.info(f"[KVCache] Compiling with num_blocks: {rbln_config.kvcache_num_blocks}")
 
         return rbln_config
 
@@ -562,6 +571,22 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
         prefill_compile_config = RBLNCompileConfig(compiled_model_name="prefill", input_info=prefill_input_info)
         compile_cfgs = [prefill_compile_config]
 
+        if rbln_config.use_image_prefill:
+            if rbln_config.prefill_chunk_size != rbln_config.image_prefill_chunk_size:
+                raise NotImplementedError(
+                    "Not implemented for different prefill chunk sizes between text and image prefill."
+                )
+            image_prefill_input_info = cls.get_input_info(
+                batch_size=1,
+                query_length=rbln_config.image_prefill_chunk_size,
+                rbln_config=rbln_config,
+                model_config=model_config,
+            )
+            image_prefill_compile_config = RBLNCompileConfig(
+                compiled_model_name="image_prefill", input_info=image_prefill_input_info
+            )
+            compile_cfgs.append(image_prefill_compile_config)
+
         if rbln_config.can_generate:
             for batch_size in rbln_config.decoder_batch_sizes:
                 dec_input_info = cls.get_input_info(
@@ -583,36 +608,21 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
         compiled_models: List[rebel.RBLNCompiledModel],
         rbln_config: RBLNDecoderOnlyModelForCausalLMConfig,
     ) -> List[rebel.Runtime]:
-        expected_model_names = ["prefill"]
-        if rbln_config.can_generate:
-            expected_model_names.extend(
-                [f"decoder_batch_{batch_size}" for batch_size in rbln_config.decoder_batch_sizes]
-            )
+        expected_model_names = rbln_config.expected_compiled_model_names
+
         if any(model_name not in rbln_config.device_map for model_name in expected_model_names):
             cls._raise_missing_compiled_file_error(expected_model_names)
 
         ret_val = [
             rebel.Runtime(
-                compiled_models[0],
+                compiled_models[i],
                 tensor_type="pt",
-                device=rbln_config.device_map["prefill"],
+                device=rbln_config.device_map[model_name],
                 activate_profiler=rbln_config.activate_profiler,
                 timeout=rbln_config.timeout,
             )
+            for i, model_name in enumerate(expected_model_names)
         ]
-        if rbln_config.can_generate:
-            ret_val.extend(
-                [
-                    rebel.Runtime(
-                        compiled_models[i + 1],
-                        tensor_type="pt",
-                        device=rbln_config.device_map[f"decoder_batch_{batch_size}"],
-                        activate_profiler=rbln_config.activate_profiler,
-                        timeout=rbln_config.timeout,
-                    )
-                    for i, batch_size in enumerate(rbln_config.decoder_batch_sizes)
-                ]
-            )
         return ret_val
 
     def forward(

@@ -41,8 +41,8 @@ class RBLNGptOssForCausalLM(RBLNDecoderOnlyModelForCausalLM):
     The GPT-OSS Model transformer with a language modeling head (linear layer) on top.
     This model inherits from [`RBLNDecoderOnlyModelForCausalLM`]. Check the superclass documentation for the generic methods the library implements for all its models.
 
-    A class to convert and run pre-trained transformers based GPT-OSSForCausalLM model on RBLN devices.
-    It implements the methods to convert a pre-trained transformers GPT-OSSForCausalLM model into a RBLN transformer model by:
+    A class to convert and run pre-trained transformers based GptOssForCausalLM model on RBLN devices.
+    It implements the methods to convert a pre-trained transformers GptOssForCausalLM model into a RBLN transformer model by:
     - transferring the checkpoint weights of the original into an optimized RBLN graph,
     - compiling the resulting graph using the RBLN compiler.
 
@@ -62,19 +62,21 @@ class RBLNGptOssForCausalLM(RBLNDecoderOnlyModelForCausalLM):
             "openai/gpt-oss-20b",
             export=True,
             rbln_batch_size=1,
-            rbln_tensor_parallel_size=4,
+            rbln_tensor_parallel_size=8,
+            rbln_kvcache_partition_len=8192,
         )
 
 
         # Using a config dictionary
         rbln_config = {
             "batch_size": 1,
-            "tensor_parallel_size": 4,
+            "tensor_parallel_size": 8,
+            "kvcache_partition_len": 8192,
         }
         model = RBLNGptOssForCausalLM.from_pretrained(
             "openai/gpt-oss-20b",
             export=True,
-            rbln_config=rbln_config
+            rbln_config=rbln_config,
         )
 
 
@@ -83,12 +85,13 @@ class RBLNGptOssForCausalLM(RBLNDecoderOnlyModelForCausalLM):
 
         config = RBLNGptOssForCausalLMConfig(
             batch_size=1,
-            tensor_parallel_size=4
+            tensor_parallel_size=8,
+            kvcache_partition_len=8192,
         )
         model = RBLNGptOssForCausalLM.from_pretrained(
             "openai/gpt-oss-20b",
             export=True,
-            rbln_config=config
+            rbln_config=config,
         )
         ```
     """
@@ -121,10 +124,7 @@ class RBLNGptOssForCausalLM(RBLNDecoderOnlyModelForCausalLM):
         **kwargs,
     ) -> PreTrainedModel:
         safetensor_files = load_weight_files(model_id, exception_keywords=["original"])
-        safetensors = [load_file(safetensor_file) for safetensor_file in safetensor_files]
-        state_dict = {}
-        for sd in safetensors[:-1]:
-            state_dict.update(sd)
+        state_dict = {k: v for f in safetensor_files for k, v in load_file(f).items()}
 
         if config is None:
             config, kwargs = AutoConfig.from_pretrained(model_id, return_unused_kwargs=True)
