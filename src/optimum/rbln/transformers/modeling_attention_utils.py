@@ -186,7 +186,7 @@ class RBLNDecoderOnlyFlashAttentionMixin:
                 if len(alloc_per_node) != num_node:
                     alloc_per_node += [0] * (num_node - len(alloc_per_node))
 
-                alloc_per_node_without_dram = [a + b for a, b in zip(alloc_per_node_without_dram, alloc_per_node)]
+                alloc_per_node_without_dram = [a + b for a, b in zip(alloc_per_node_without_dram, alloc_per_node, strict=False)]
 
         remaining_dram_at_node: list[int] = [
             available_dram - without_dramtensor for without_dramtensor in alloc_per_node_without_dram
