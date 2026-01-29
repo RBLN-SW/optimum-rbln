@@ -41,8 +41,8 @@ if TYPE_CHECKING:
     from .autoencoders import (
         RBLNAutoencoderKL,
         RBLNAutoencoderKLCosmos,
-        RBLNAutoencoderKLWan,
         RBLNAutoencoderKLTemporalDecoder,
+        RBLNAutoencoderKLWan,
         RBLNVQModel,
     )
     from .controlnet import RBLNControlNetModel

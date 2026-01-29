@@ -31,6 +31,7 @@ _import_structure = {
         "RBLNStableDiffusionXLControlNetPipeline",
     ],
     "cosmos": [
+        "RBLNCosmos2_5_PredictBasePipeline",
         "RBLNCosmosTextToWorldPipeline",
         "RBLNCosmosVideoToWorldPipeline",
         "RBLNCosmos2TextToImagePipeline",
@@ -79,6 +80,7 @@ if TYPE_CHECKING:
         RBLNStableDiffusionXLControlNetPipeline,
     )
     from .cosmos import (
+        RBLNCosmos2_5_PredictBasePipeline,
         RBLNCosmos2TextToImagePipeline,
         RBLNCosmos2VideoToWorldPipeline,
         RBLNCosmosSafetyChecker,

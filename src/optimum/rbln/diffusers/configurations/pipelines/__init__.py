@@ -5,6 +5,7 @@ from .configuration_controlnet import (
     RBLNStableDiffusionXLControlNetPipelineConfig,
 )
 from .configuration_cosmos import (
+    RBLNCosmos2_5_PredictBasePipelineConfig,
     RBLNCosmos2TextToImagePipelineConfig,
     RBLNCosmos2VideoToWorldPipelineConfig,
     RBLNCosmosTextToWorldPipelineConfig,
