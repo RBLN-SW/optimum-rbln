@@ -410,7 +410,6 @@ class RBLNQwen3Guard(ContentSafetyGuardrail):
             return True, "Unexpected error occurred when running Qwen3Guard guardrail."
 
 
-
 class RBLNCosmosSafetyChecker(CosmosSafetyChecker):
     """
     RBLN-accelerated implementation of Cosmos Safety Checker.

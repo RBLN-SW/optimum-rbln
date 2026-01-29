@@ -131,7 +131,7 @@ class RBLNCosmos2PipelineBaseConfig(RBLNModelConfig):
         width: Optional[int] = None,
         num_frames: Optional[int] = None,
         max_seq_len: Optional[int] = None,
-        **kwargs:  Any,
+        **kwargs: Any,
     ):
         """
         Args:
@@ -208,6 +208,7 @@ class RBLNCosmos2VideoToWorldPipelineConfig(RBLNCosmos2PipelineBaseConfig):
 
 class RBLNCosmos2_5_PredictBasePipelineConfig(RBLNModelConfig):
     """Config for Cosmos-Predict2.5 Pipeline"""
+
     submodules = ["text_encoder", "transformer", "vae", "safety_checker"]
     _vae_uses_encoder = True
 
@@ -223,7 +224,7 @@ class RBLNCosmos2_5_PredictBasePipelineConfig(RBLNModelConfig):
         width: Optional[int] = None,
         num_frames: Optional[int] = None,
         max_seq_len: Optional[int] = None,
-        **kwargs:  Any,
+        **kwargs: Any,
     ):
         """
         Args:

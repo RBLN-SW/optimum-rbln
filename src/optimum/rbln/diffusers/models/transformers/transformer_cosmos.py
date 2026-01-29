@@ -329,9 +329,7 @@ class RBLNCosmosTransformer3DModel(RBLNModel):
             ),
         ]
 
-        if model_config.use_crossattn_projection or (
-            model_config.extra_pos_embed_type is None and rbln_config.is_v2w
-        ):
+        if model_config.use_crossattn_projection or (model_config.extra_pos_embed_type is None and rbln_config.is_v2w):
             input_info.append(
                 ("embedded_timestep", [rbln_config.batch_size, hidden_dim, hidden_size], "float32"),
             )
