@@ -80,7 +80,9 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
 
         # copied from tranformers PreTrainedModel __init__
         if self.can_generate():
-            gen_config_dir = model_save_dir.name if isinstance(model_save_dir, TemporaryDirectory) else model_save_dir
+            gen_config_dir = os.path.join(
+                model_save_dir.name if isinstance(model_save_dir, TemporaryDirectory) else model_save_dir, subfolder
+            )
             self.generation_config = GenerationConfig.from_pretrained(gen_config_dir, trust_remote_code=True)
         else:
             self.generation_config = None
@@ -220,7 +222,9 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
 
             if len(cls._rbln_submodules) > 0:
                 if rbln_submodules is None:
-                    rbln_submodules = cls._load_submodules(model_save_dir=model_id, rbln_config=rbln_config, **kwargs)
+                    rbln_submodules = cls._load_submodules(
+                        model_save_dir=model_id, subfolder=subfolder, rbln_config=rbln_config, **kwargs
+                    )
             elif rbln_submodules is None:
                 rbln_submodules = []
 
