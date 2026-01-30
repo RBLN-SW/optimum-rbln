@@ -37,7 +37,6 @@ if is_cosmos_guardrail_available():
         Blocklist,
         ContentSafetyGuardrail,
         GuardrailRunner,
-        LlamaGuard3,
         ModelConfig,
         RetinaFaceFilter,
         SafetyClassifier,
@@ -324,33 +323,33 @@ class RBLNVideoContentSafetyFilter(VideoContentSafetyFilter):
         self.encoder.save_pretrained(checkpoint_id)
 
 
-class RBLNLlamaGuard3(LlamaGuard3):
-    def __init__(
-        self,
-        checkpoint_id: str = COSMOS_GUARDRAIL_CHECKPOINT,
-        base_model_id: str = "meta-llama/Llama-Guard-3-8B",
-        rbln_config: Optional[RBLNCosmosSafetyCheckerConfig] = None,
-    ) -> None:
-        if is_compiled_dir(checkpoint_id):
-            torch.nn.Module.__init__(self)
-            cache_dir = pathlib.Path(checkpoint_id) / "llamaguard3"
-            self.tokenizer = AutoTokenizer.from_pretrained(cache_dir)
-            self.model = RBLNAutoModelForCausalLM.from_pretrained(cache_dir, rbln_config=rbln_config.llamaguard3)
+# class RBLNLlamaGuard3(LlamaGuard3):
+#     def __init__(
+#         self,
+#         checkpoint_id: str = COSMOS_GUARDRAIL_CHECKPOINT,
+#         base_model_id: str = "meta-llama/Llama-Guard-3-8B",
+#         rbln_config: Optional[RBLNCosmosSafetyCheckerConfig] = None,
+#     ) -> None:
+#         if is_compiled_dir(checkpoint_id):
+#             torch.nn.Module.__init__(self)
+#             cache_dir = pathlib.Path(checkpoint_id) / "llamaguard3"
+#             self.tokenizer = AutoTokenizer.from_pretrained(cache_dir)
+#             self.model = RBLNAutoModelForCausalLM.from_pretrained(cache_dir, rbln_config=rbln_config.llamaguard3)
 
-        else:
-            super().__init__(checkpoint_id, base_model_id)
-            model = self.model
-            del self.model
-            self.model = RBLNAutoModelForCausalLM.from_model(model, rbln_config=rbln_config.llamaguard3)
+#         else:
+#             super().__init__(checkpoint_id, base_model_id)
+#             model = self.model
+#             del self.model
+#             self.model = RBLNAutoModelForCausalLM.from_model(model, rbln_config=rbln_config.llamaguard3)
 
-        self.rbln_config = rbln_config
-        self.dtype = torch.bfloat16
-        self.device = torch.device("cpu")
+#         self.rbln_config = rbln_config
+#         self.dtype = torch.bfloat16
+#         self.device = torch.device("cpu")
 
-    def save_pretrained(self, checkpoint_id: str):
-        cache_dir = pathlib.Path(checkpoint_id) / "llamaguard3"
-        self.model.save_pretrained(cache_dir)
-        self.tokenizer.save_pretrained(cache_dir)
+#     def save_pretrained(self, checkpoint_id: str):
+#         cache_dir = pathlib.Path(checkpoint_id) / "llamaguard3"
+#         self.model.save_pretrained(cache_dir)
+#         self.tokenizer.save_pretrained(cache_dir)
 
 
 # https://github.com/nvidia-cosmos/cosmos-predict2.5/blob/main/cosmos_predict2/_src/imaginaire/auxiliary/guardrail/qwen3guard/qwen3guard.py
@@ -451,7 +450,7 @@ class RBLNCosmosSafetyChecker(CosmosSafetyChecker):
 
     def save_pretrained(self, save_dir: str):
         for text_safety_models in self.text_guardrail.safety_models:
-            if isinstance(text_safety_models, RBLNLlamaGuard3):
+            if isinstance(text_safety_models, RBLNQwen3Guard):
                 text_safety_models.save_pretrained(save_dir)
 
         for video_safety_models in self.video_guardrail.safety_models:

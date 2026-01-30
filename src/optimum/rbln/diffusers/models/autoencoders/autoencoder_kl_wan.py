@@ -164,14 +164,16 @@ class RBLNAutoencoderKLWan(RBLNModel):
         # For Cosmos2.5 pipeline, get latent channels from transformer config
         # transformer.config.in_channels - 1 is the num_channels_latents (minus 1 for condition mask)
         # rbln_config.vae.num_channels_latents = pipe.transformer.config.in_channels - 1
-        rbln_config.vae.num_channels_latents = 93
+        if rbln_config.vae.height is None:
+            rbln_config.vae.height = 704
+        if rbln_config.vae.width is None:
+            rbln_config.vae.width = 1280
+        if rbln_config.vae.num_frames is None:
+            rbln_config.vae.num_frames = 93
+
+        rbln_config.vae.num_channels_latents = 24
         rbln_config.vae.vae_scale_factor_temporal = pipe.vae_scale_factor_temporal
         rbln_config.vae.vae_scale_factor_spatial = pipe.vae_scale_factor_spatial
-        
-        # if rbln_config.vae.height is None:
-        #     rbln_config.vae.height = 704 if rbln_config.vae.uses_encoder else 768
-        # if rbln_config.vae.width is None:
-        #     rbln_config.vae.width = 1280 if rbln_config.vae.uses_encoder else 1360
 
         # rbln_config.vae.num_channels_latents = pipe.transformer.config.in_channels - int(rbln_config.vae.uses_encoder)
         # rbln_config.vae.vae_scale_factor_temporal = pipe.vae_scale_factor_temporal
@@ -191,34 +193,59 @@ class RBLNAutoencoderKLWan(RBLNModel):
         batch_size = 1 if rbln_config.use_slicing else rbln_config.batch_size
         compile_cfgs = []
         if rbln_config.uses_encoder:
+            # vae_enc_input_info = [
+            #     (
+            #         "x",
+            #         [
+            #             batch_size,
+            #             model_config.in_channels,
+            #             rbln_config.num_frames,
+            #             rbln_config.height,
+            #             rbln_config.width,
+            #         ],
+            #         "float32",
+            #     ),
+            # ]
             vae_enc_input_info = [
                 (
                     "x",
                     [
-                        batch_size,
-                        model_config.in_channels,
-                        rbln_config.num_frames,
-                        rbln_config.height,
-                        rbln_config.width,
+                        1,
+                        3,
+                        93,
+                        704,
+                        1280,
                     ],
                     "float32",
                 ),
             ]
             compile_cfgs.append(RBLNCompileConfig(compiled_model_name="encoder", input_info=vae_enc_input_info))
+        # num_latent_frames = (rbln_config.num_frames - 1) // rbln_config.vae_scale_factor_temporal + 1
+        # latent_height = rbln_config.height // rbln_config.vae_scale_factor_spatial
+        # latent_width = rbln_config.width // rbln_config.vae_scale_factor_spatial
 
-        num_latent_frames = (rbln_config.num_frames - 1) // rbln_config.vae_scale_factor_temporal + 1
-        latent_height = rbln_config.height // rbln_config.vae_scale_factor_spatial
-        latent_width = rbln_config.width // rbln_config.vae_scale_factor_spatial
-
+        # vae_dec_input_info = [
+        #     (
+        #         "z",
+        #         [
+        #             batch_size,
+        #             rbln_config.num_channels_latents,
+        #             num_latent_frames,
+        #             latent_height,
+        #             latent_width,
+        #         ],
+        #         "float32",
+        #     ),
+        # ]
         vae_dec_input_info = [
             (
                 "z",
                 [
-                    batch_size,
-                    rbln_config.num_channels_latents,
-                    num_latent_frames,
-                    latent_height,
-                    latent_width,
+                    1,
+                    16,
+                    24,
+                    88,
+                    160,
                 ],
                 "float32",
             ),
