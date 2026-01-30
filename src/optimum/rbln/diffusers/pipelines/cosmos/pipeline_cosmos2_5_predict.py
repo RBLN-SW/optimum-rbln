@@ -13,7 +13,7 @@
 # limitations under the License.
 
 
-from typing import Any, Dict, Optional, Union
+from typing import TYPE_CHECKING, Any, Dict, Optional, Union
 
 from diffusers import Cosmos2_5_PredictBasePipeline
 from diffusers.schedulers import UniPCMultistepScheduler
@@ -21,11 +21,14 @@ from transformers import AutoTokenizer
 
 from ....transformers.models.qwen2_5_vl import RBLNQwen2_5_VLForConditionalGeneration
 from ....utils.logging import get_logger
-from ...configurations.pipelines.configuration_cosmos import RBLNCosmos2_5_PredictBasePipelineConfig
 from ...modeling_diffusers import RBLNDiffusionMixin
 from ...models.autoencoders.autoencoder_kl_wan import RBLNAutoencoderKLWan
 from ...models.transformers.transformer_cosmos import RBLNCosmosTransformer3DModel
 from .cosmos_guardrail import RBLNCosmosSafetyCheckerV2
+
+
+if TYPE_CHECKING:
+    from ...configurations.pipelines.configuration_cosmos import RBLNCosmos2_5_PredictBasePipelineConfig
 
 
 logger = get_logger(__name__)
@@ -82,7 +85,7 @@ class RBLNCosmos2_5_PredictBasePipeline(RBLNDiffusionMixin, Cosmos2_5_PredictBas
         *,
         export: bool = False,
         safety_checker: Optional[RBLNCosmosSafetyCheckerV2] = None,
-        rbln_config: Optional[Union[Dict[str, Any], RBLNCosmos2_5_PredictBasePipelineConfig]] = None,
+        rbln_config: Optional[Union[Dict[str, Any], "RBLNCosmos2_5_PredictBasePipelineConfig"]] = None,
         **kwargs: Dict[str, Any],
     ):
         rbln_config, kwargs = cls.get_rbln_config_class().initialize_from_kwargs(rbln_config, **kwargs)

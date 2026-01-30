@@ -13,7 +13,7 @@
 # limitations under the License.
 
 
-from typing import Any, Dict, Optional, Union
+from typing import TYPE_CHECKING, Any, Dict, Optional, Union
 
 from diffusers import Cosmos2TextToImagePipeline
 from diffusers.schedulers import EDMEulerScheduler
@@ -21,11 +21,14 @@ from transformers import T5TokenizerFast
 
 from ....transformers.models.t5.modeling_t5 import RBLNT5EncoderModel
 from ....utils.logging import get_logger
-from ...configurations.pipelines.configuration_cosmos import RBLNCosmos2TextToImagePipelineConfig
 from ...modeling_diffusers import RBLNDiffusionMixin
 from ...models.autoencoders.autoencoder_kl_wan import RBLNAutoencoderKLWan
 from ...models.transformers.transformer_cosmos import RBLNCosmosTransformer3DModel
 from .cosmos_guardrail import RBLNCosmosSafetyChecker
+
+
+if TYPE_CHECKING:
+    from ...configurations.pipelines.configuration_cosmos import RBLNCosmos2TextToImagePipelineConfig
 
 
 logger = get_logger(__name__)
@@ -82,7 +85,7 @@ class RBLNCosmos2TextToImagePipeline(RBLNDiffusionMixin, Cosmos2TextToImagePipel
         *,
         export: bool = False,
         safety_checker: Optional[RBLNCosmosSafetyChecker] = None,
-        rbln_config: Optional[Union[Dict[str, Any], RBLNCosmos2TextToImagePipelineConfig]] = None,
+        rbln_config: Optional[Union[Dict[str, Any], "RBLNCosmos2TextToImagePipelineConfig"]] = None,
         **kwargs: Dict[str, Any],
     ):
         rbln_config, kwargs = cls.get_rbln_config_class().initialize_from_kwargs(rbln_config, **kwargs)
