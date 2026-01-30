@@ -179,12 +179,11 @@ def custom_moe_glu_mxfp4_fake(
 ) -> Tensor:
     return torch.empty_like(hidden_states)
 
-
 @torch.library.custom_op(
-    "rbln_custom_ops::custom_moe_swiglu_fp8",
+    "rbln_custom_ops::custom_moe_swiglu_group_dequantize",
     mutates_args=(),
 )
-def custom_moe_swiglu_fp8(
+def custom_moe_swiglu_group_dequantize(
     hidden_states: Tensor,
     gate_proj_weight: Tensor,
     gate_proj_scale: Tensor,
@@ -195,7 +194,7 @@ def custom_moe_swiglu_fp8(
     router_logits: Tensor,
     group_size: int,
     topk: int,
-    norm_topk_prob: bool,
+    e_score_correction_bias: Optional[Tensor] = None,
     gate_proj_bias: Optional[Tensor] = None,
     up_proj_bias: Optional[Tensor] = None,
     down_proj_bias: Optional[Tensor] = None,
@@ -214,7 +213,7 @@ def custom_moe_swiglu_fp8(
     - router_logits: [batch*seq_len, num_experts]
     - group_size: group size for weight scale
     - topk: top k experts to select
-    - norm_topk_prob: whether to normalize the top k routing weights
+    - e_score_correction_bias: 
     - gate_proj_bias: [num_experts, intermediate_size]
     - up_proj_bias: [num_experts, intermediate_size]
     - down_proj_bias: [num_experts, hidden_size]
@@ -225,9 +224,8 @@ def custom_moe_swiglu_fp8(
 
     return torch.empty_like(hidden_states)
 
-
-@custom_moe_swiglu_fp8.register_fake
-def custom_moe_swiglu_fp8_fake(
+@custom_moe_swiglu_group_dequantize.register_fake
+def custom_moe_swiglu_group_dequantize_fake(
     hidden_states: Tensor,
     gate_proj_weight: Tensor,
     gate_proj_scale: Tensor,
@@ -238,9 +236,71 @@ def custom_moe_swiglu_fp8_fake(
     router_logits: Tensor,
     group_size: int,
     topk: int,
-    norm_topk_prob: bool,
+    e_score_correction_bias: Optional[Tensor] = None,
     gate_proj_bias: Optional[Tensor] = None,
     up_proj_bias: Optional[Tensor] = None,
     down_proj_bias: Optional[Tensor] = None,
 ) -> Tensor:
     return torch.empty_like(hidden_states)
+
+# @torch.library.custom_op(
+#     "rbln_custom_ops::custom_moe_swiglu_fp8",
+#     mutates_args=(),
+# )
+# def custom_moe_swiglu_fp8(
+#     hidden_states: Tensor,
+#     gate_proj_weight: Tensor,
+#     gate_proj_scale: Tensor,
+#     up_proj_weight: Tensor,
+#     up_proj_scale: Tensor,
+#     down_proj_weight: Tensor,
+#     down_proj_scale: Tensor,
+#     router_logits: Tensor,
+#     topk: int,
+#     norm_topk_prob: bool,
+#     gate_proj_bias: Optional[Tensor] = None,
+#     up_proj_bias: Optional[Tensor] = None,
+#     down_proj_bias: Optional[Tensor] = None,
+# ) -> Tensor:
+#     """
+#     Customized MoE SwiGLU operation.
+
+#     Expected tensor shapes:
+#     - hidden_states: [batch*seq_len, hidden_size]
+#     - gate_proj_weight: [num_experts, hidden_size, intermediate_size]
+#     - gate_proj_scale: [num_experts, intermediate_size, hidden_size // 128]
+#     - up_proj_weight: [num_experts, hidden_size, intermediate_size]
+#     - up_proj_scale: [num_experts, intermediate_size, hidden_size // 128]
+#     - down_proj_weight: [num_experts, intermediate_size, hidden_size]
+#     - down_proj_scale: [num_experts, hidden_size, intermediate_size // 128]
+#     - router_logits: [batch*seq_len, num_experts]
+#     - topk: top k experts to select
+#     - norm_topk_prob: whether to normalize the top k routing weights with softmax
+#     - gate_proj_bias: [num_experts, intermediate_size]
+#     - up_proj_bias: [num_experts, intermediate_size]
+#     - down_proj_bias: [num_experts, hidden_size]
+
+#     Returns:
+#         Tensor: [batch * seq_len, hidden_size]
+#     """
+
+#     return torch.empty_like(hidden_states)
+
+
+# @custom_moe_swiglu_fp8.register_fake
+# def custom_moe_swiglu_fp8_fake(
+#     hidden_states: Tensor,
+#     gate_proj_weight: Tensor,
+#     gate_proj_scale: Tensor,
+#     up_proj_weight: Tensor,
+#     up_proj_scale: Tensor,
+#     down_proj_weight: Tensor,
+#     down_proj_scale: Tensor,
+#     router_logits: Tensor,
+#     topk: int,
+#     norm_topk_prob: bool,
+#     gate_proj_bias: Optional[Tensor] = None,
+#     up_proj_bias: Optional[Tensor] = None,
+#     down_proj_bias: Optional[Tensor] = None,
+# ) -> Tensor:
+#     return torch.empty_like(hidden_states)

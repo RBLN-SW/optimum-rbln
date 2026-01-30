@@ -148,6 +148,7 @@ class MiniMaxM2SparseMoeBlock(nn.Module):
         self.gate = moe_block.gate
         self.experts = moe_block.experts
         self.num_experts = len(self.experts)
+        self.e_score_correction_bias = moe_block.e_score_correction_bias
 
         # Stack expert weights for the fused MoE op.
         # MiniMax expert MLP uses SwiGLU-style: silu(w1(x)) * w3(x) -> w2(...)
@@ -181,7 +182,7 @@ class MiniMaxM2SparseMoeBlock(nn.Module):
 
         # router_logits: [B*T, num_experts]
         router_logits = self.gate(x)
-        y = torch.ops.rbln_custom_ops.custom_moe_swiglu_fp8(
+        y = torch.ops.rbln_custom_ops.custom_moe_swiglu_group_dequantize(
             x,
             self.w1,
             self.w1_scale,
@@ -192,6 +193,6 @@ class MiniMaxM2SparseMoeBlock(nn.Module):
             router_logits,
             self.group_size,
             int(self.top_k),
-            False,  # norm_topk_prob: False => non-softmax normalization (matches MiniMax's sum-normalization better)
+            self.e_score_correction_bias,
         )
         return y.view(batch_size, seq_len, hidden_dim)
