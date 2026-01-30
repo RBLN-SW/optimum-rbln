@@ -9,8 +9,7 @@ jobs:
   bc-compile:
     name: BC compile for release tag
     needs: check-tag
-    if: needs.check-tag.outputs.is_release == 'true'
     uses: ./.github/workflows/bc_compile.yaml
     with:
-      bc_tag: ${{ github.ref_name }}
+      bc_tag: v0.10.0
     secrets: inherit
