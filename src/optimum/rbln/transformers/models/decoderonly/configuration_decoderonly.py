@@ -61,7 +61,7 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
         logits_to_keep: Optional[int] = None,
         output_hidden_states: Optional[bool] = None,
         kvcache_metas: Optional[List["KVCacheMeta"]] = None,
-        **kwargs,
+        **kwargs: Any,
     ):
         """
         Args:
