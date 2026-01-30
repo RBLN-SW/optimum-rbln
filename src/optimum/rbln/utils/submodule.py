@@ -12,7 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Type, Union
 
 from transformers import PretrainedConfig
@@ -75,7 +77,7 @@ class SubModulesMixin:
 
     @classmethod
     def _export_submodules_from_model(
-        cls, model: "PreTrainedModel", model_save_dir: str, rbln_config: RBLNModelConfig, **kwargs
+        cls, model: "PreTrainedModel", model_save_dir: str, subfolder: str, rbln_config: RBLNModelConfig, **kwargs
     ) -> List["RBLNModel"]:
         rbln_submodules = []
         submodule_prefix = getattr(cls, "_rbln_submodule_prefix", None)
@@ -123,7 +125,10 @@ class SubModulesMixin:
                 model=torch_submodule,
                 config=torch_submodule.config,
                 subfolder=submodule_name,
-                model_save_dir=model_save_dir,
+                model_save_dir=os.path.join(
+                    model_save_dir.name if isinstance(model_save_dir, TemporaryDirectory) else model_save_dir,
+                    subfolder,
+                ),
                 rbln_config=submodule_rbln_config,
                 **kwargs,
             )
@@ -133,7 +138,9 @@ class SubModulesMixin:
         return rbln_submodules
 
     @classmethod
-    def _load_submodules_from_compiled_models(cls, model_save_dir: str, rbln_config: RBLNModelConfig, **kwargs):
+    def _load_submodules_from_compiled_models(
+        cls, model_save_dir: str, subfolder: str, rbln_config: RBLNModelConfig, **kwargs
+    ):
         rbln_submodules = []
 
         for submodule in cls._rbln_submodules:
@@ -145,11 +152,11 @@ class SubModulesMixin:
             # RBLNModelConfig -> RBLNModel
             submodule_cls = get_rbln_model_cls(submodule_rbln_config.rbln_model_cls_name)
 
-            json_file_path = Path(model_save_dir) / submodule_name / "config.json"
+            json_file_path = Path(model_save_dir) / subfolder / submodule_name / "config.json"
             config = PretrainedConfig.from_json_file(json_file_path)
 
             rbln_submodule = submodule_cls._from_pretrained(
-                model_id=model_save_dir,
+                model_id=Path(model_save_dir) / subfolder,
                 config=config,
                 subfolder=submodule_name,
                 rbln_config=submodule_rbln_config,
@@ -163,16 +170,16 @@ class SubModulesMixin:
         return rbln_submodules
 
     @classmethod
-    def _load_submodules(cls, model_save_dir, rbln_config: RBLNModelConfig, model=None, **kwargs):
+    def _load_submodules(cls, model_save_dir, subfolder, rbln_config: RBLNModelConfig, model=None, **kwargs):
         # Two ways :
         # 1. Compile from pytorch object
         # 2. Load from compiled file
         if model is not None:
             return cls._export_submodules_from_model(
-                model=model, model_save_dir=model_save_dir, rbln_config=rbln_config, **kwargs
+                model=model, model_save_dir=model_save_dir, subfolder=subfolder, rbln_config=rbln_config, **kwargs
             )
 
         else:
             return cls._load_submodules_from_compiled_models(
-                model_save_dir=model_save_dir, rbln_config=rbln_config, **kwargs
+                model_save_dir=model_save_dir, subfolder=subfolder, rbln_config=rbln_config, **kwargs
             )
