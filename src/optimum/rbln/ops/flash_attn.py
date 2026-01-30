@@ -202,6 +202,9 @@ def paged_flash_causal_attn_decode(
 ) -> Tensor:
     """Defines the computation pattern for fused causal flash attention with KV cache for decoding.
 
+    Note: For batch_size > 1, the compiler internally computes batch decode parameters
+    (physical block index, block offset, valid batch per partition) from seq and block_table.
+
     Returns a tensor with the same shape as q.
     """
     return torch.empty_like(q)
