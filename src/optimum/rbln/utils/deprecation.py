@@ -216,7 +216,7 @@ def deprecate_kwarg(
 def deprecate_method(
     version: str,
     new_method: Optional[str] = None,
-    raise_if_greater_or_equal_version: bool = False,
+    raise_if_greater_or_equal_version: bool = True,
     additional_message: Optional[str] = None,
 ):
     """
