@@ -1,0 +1,16 @@
+name: Deploy package on tag released
+
+on:
+  pull_request:
+    branches:
+      - dev
+
+jobs:
+  bc-compile:
+    name: BC compile for release tag
+    needs: check-tag
+    if: needs.check-tag.outputs.is_release == 'true'
+    uses: ./.github/workflows/bc_compile.yaml
+    with:
+      bc_tag: ${{ github.ref_name }}
+    secrets: inherit
