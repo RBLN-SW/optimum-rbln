@@ -266,7 +266,7 @@ class RBLNCosmosTransformer3DModel(RBLNModel):
         rbln_config.transformer.latent_height = rbln_config.transformer.height // pipe.vae_scale_factor_spatial
         rbln_config.transformer.latent_width = rbln_config.transformer.width // pipe.vae_scale_factor_spatial
         if pipe.transformer.config.use_crossattn_projection:
-            rbln_config.transformer.max_seq_len = rbln_config.text_encoder.get("max_seq_len", 512)
+            rbln_config.transformer.max_seq_len = rbln_config.text_encoder.max_seq_len or 512
             rbln_config.transformer.embedding_dim = pipe.transformer.config.encoder_hidden_states_channels
         else:
             rbln_config.transformer.max_seq_len = pipe.text_encoder.config.n_positions
