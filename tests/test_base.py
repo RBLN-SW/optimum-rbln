@@ -19,6 +19,9 @@ def test_version_is_str():
     assert isinstance(__version__, str)
 
 
+DUMMY_DEVICE_CODE = -1
+
+
 class TestLevel(Enum):
     ESSENTIAL = 1
     DEFAULT = 2
@@ -147,7 +150,7 @@ class BaseTest:
             if REUSE_ARTIFACTS_PATH is None:
                 if os.path.exists(cls.get_rbln_local_dir()):
                     shutil.rmtree(cls.get_rbln_local_dir())
-                with ContextRblnConfig(device=cls.DEVICE):
+                with ContextRblnConfig(device=DUMMY_DEVICE_CODE):
                     cls.model = cls.RBLN_CLASS.from_pretrained(
                         cls.HF_MODEL_ID,
                         model_save_dir=cls.get_rbln_local_dir(),
@@ -158,7 +161,7 @@ class BaseTest:
                 if os.path.exists(REUSE_ARTIFACTS_PATH):
                     compiled_model_path = os.path.join(REUSE_ARTIFACTS_PATH, cls.get_rbln_local_dir())
                     if os.path.exists(compiled_model_path):
-                        with ContextRblnConfig(device=cls.DEVICE):
+                        with ContextRblnConfig(device=DUMMY_DEVICE_CODE):
                             cls.model = cls.RBLN_CLASS.from_pretrained(compiled_model_path)
                 if not hasattr(cls, "model"):
                     raise unittest.SkipTest("Compiled model not found")
