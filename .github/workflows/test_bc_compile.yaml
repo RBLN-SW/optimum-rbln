@@ -8,7 +8,6 @@ on:
 jobs:
   bc-compile:
     name: BC compile for release tag
-    needs: check-tag
     uses: ./.github/workflows/bc_compile.yaml
     with:
       bc_tag: v0.10.0
