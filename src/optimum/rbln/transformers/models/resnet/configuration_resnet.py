@@ -13,7 +13,7 @@
 # limitations under the License.
 
 
-from typing import Optional
+from typing import Any, Optional, Tuple, Union
 
 from ...configuration_generic import RBLNModelForImageClassificationConfig
 
@@ -26,7 +26,13 @@ class RBLNResNetForImageClassificationConfig(RBLNModelForImageClassificationConf
     RBLN-optimized ResNet models for image classification tasks.
     """
 
-    def __init__(self, output_hidden_states: Optional[bool] = None, **kwargs):
+    def __init__(
+        self,
+        image_size: Optional[Union[int, Tuple[int, int]]] = None,
+        batch_size: Optional[int] = None,
+        output_hidden_states: Optional[bool] = None,
+        **kwargs: Any,
+    ):
         """
         Args:
             image_size (Optional[Union[int, Tuple[int, int]]]): The size of input images.
@@ -38,5 +44,5 @@ class RBLNResNetForImageClassificationConfig(RBLNModelForImageClassificationConf
         Raises:
             ValueError: If batch_size is not a positive integer.
         """
-        super().__init__(**kwargs)
+        super().__init__(image_size=image_size, batch_size=batch_size, **kwargs)
         self.output_hidden_states = output_hidden_states

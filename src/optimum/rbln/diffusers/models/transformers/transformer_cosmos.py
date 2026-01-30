@@ -13,7 +13,7 @@
 # limitations under the License.
 
 from pathlib import Path
-from typing import TYPE_CHECKING, List, Optional, Union
+from typing import TYPE_CHECKING, List, Optional, Tuple, Union
 
 import rebel
 import torch
@@ -302,7 +302,7 @@ class RBLNCosmosTransformer3DModel(RBLNModel):
         condition_mask: Optional[torch.Tensor] = None,
         padding_mask: Optional[torch.Tensor] = None,
         return_dict: bool = True,
-    ):
+    ) -> Union[Transformer2DModelOutput, Tuple]:
         """
         Forward pass for the RBLN-optimized CosmosTransformer3DModel.
 
