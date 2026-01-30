@@ -246,9 +246,9 @@ def deprecate_method(
 
     deprecated_version = packaging.version.parse(version)
     current_version = packaging.version.parse(__version__)
-    is_greater_or_equal_version = current_version >= deprecated_version
+    is_greater_version = current_version > deprecated_version
 
-    if is_greater_or_equal_version:
+    if is_greater_version:
         version_message = f"and removed starting from version {version}"
     else:
         version_message = f"and will be removed in version {version}"
@@ -278,7 +278,7 @@ def deprecate_method(
                 message = f"{message} {additional_message}"
 
             # Determine action based on version
-            if is_greater_or_equal_version and raise_if_greater_or_equal_version:
+            if is_greater_version and raise_if_greater_or_equal_version:
                 raise ValueError(message)
             else:
                 logger.warning(message, stacklevel=2)
