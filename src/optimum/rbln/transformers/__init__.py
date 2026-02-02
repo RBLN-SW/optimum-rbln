@@ -195,7 +195,7 @@ _import_structure = {
         "RBLNXLMRobertaModel",
         "RBLNXLMRobertaModelConfig",
     ],
-    "utils": ["RBLNQuantizationConfig"],
+    "utils": ["RBLNQuantizationConfig", "RBLNQuantizer"],
 }
 
 if TYPE_CHECKING:
@@ -374,7 +374,7 @@ if TYPE_CHECKING:
         RBLNXLMRobertaModel,
         RBLNXLMRobertaModelConfig,
     )
-    from .utils import RBLNQuantizationConfig
+    from .utils import RBLNQuantizationConfig, RBLNQuantizer
 else:
     import sys
 

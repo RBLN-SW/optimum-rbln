@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import TYPE_CHECKING, Optional, Union
+from typing import TYPE_CHECKING, Optional, Type, Union
 
 import torch
 from safetensors.torch import load_file
@@ -26,14 +26,73 @@ from ...models.decoderonly import (
     RBLNDecoderOnlyModelForCausalLM,
     RBLNDecoderOnlyModelForCausalLMConfig,
 )
-from ...utils.rbln_quantization import load_weight_files
+from ...utils.rbln_quantization import RBLNQuantizerMixin, load_weight_files
 from .gpt_oss_architecture import RBLNGptOssWrapper
 
 
 if TYPE_CHECKING:
+    from transformers.models.auto.modeling_auto import _BaseAutoModelClass
     from transformers import AutoFeatureExtractor, AutoProcessor, AutoTokenizer, PreTrainedModel
 
 logger = get_logger(__name__)
+
+
+# =============================================================================
+# RBLNMXFP4Quantizer - Mxfp4HfQuantizer + RBLNQuantizerMixin
+# =============================================================================
+
+try:
+    from transformers.quantizers.quantizer_mxfp4 import Mxfp4HfQuantizer
+
+    _MXFP4_QUANTIZER_AVAILABLE = True
+except ImportError:
+    _MXFP4_QUANTIZER_AVAILABLE = False
+    Mxfp4HfQuantizer = object  # Fallback
+
+
+class RBLNMXFP4Quantizer(RBLNQuantizerMixin, Mxfp4HfQuantizer if _MXFP4_QUANTIZER_AVAILABLE else object):
+    """
+    RBLN-compatible MXFP4 Quantizer that inherits from both:
+    - RBLNQuantizerMixin: Common loading logic (get_quantized_model pattern)
+    - Mxfp4HfQuantizer: HuggingFace MXFP4 interface
+
+    Example:
+        model = RBLNMXFP4Quantizer.get_quantized_model(
+            AutoModelForCausalLM,
+            "openai/gpt-oss-20b",
+        )
+    """
+
+    # =========================================================================
+    # RBLNQuantizerMixin override points
+    # =========================================================================
+
+    @classmethod
+    def _get_default_dtype(cls) -> torch.dtype:
+        """MXFP4 uses bfloat16 by default."""
+        return torch.bfloat16
+
+    @classmethod
+    def _get_exception_keywords(cls) -> list:
+        """Exclude 'original' files for MXFP4."""
+        return ["original"]
+
+    @classmethod
+    def _replace_linear_layers_cls(
+        cls,
+        quantizer_cls,
+        model: torch.nn.Module,
+        config: "PretrainedConfig",
+        dtype: torch.dtype,
+        kwargs: dict,
+    ) -> None:
+        """Replace GptOssExperts with Mxfp4GptOssExperts."""
+        if not _MXFP4_QUANTIZER_AVAILABLE:
+            raise ImportError(
+                "Mxfp4HfQuantizer is not available. "
+                "Please upgrade transformers to a version that supports MXFP4 quantization."
+            )
+        _replace_with_mxfp4_linear(model, config)
 
 
 class RBLNGptOssForCausalLM(RBLNDecoderOnlyModelForCausalLM):
@@ -123,21 +182,20 @@ class RBLNGptOssForCausalLM(RBLNDecoderOnlyModelForCausalLM):
         config: Optional[PretrainedConfig] = None,
         **kwargs,
     ) -> PreTrainedModel:
-        safetensor_files = load_weight_files(model_id, exception_keywords=["original"])
-        state_dict = {k: v for f in safetensor_files for k, v in load_file(f).items()}
+        """
+        Load a MXFP4 quantized PyTorch model.
 
-        if config is None:
-            config, kwargs = AutoConfig.from_pretrained(model_id, return_unused_kwargs=True)
-
+        Delegates to RBLNMXFP4Quantizer.get_quantized_model() for the actual implementation.
+        """
         dtype = cls._get_dtype(dtype, torch_dtype)
 
-        with no_init_weights():
-            model = AutoModelForCausalLM.from_config(config, dtype=dtype, **kwargs)
-
-        _replace_with_mxfp4_linear(model, config)
-        model.load_state_dict(state_dict, strict=False)
-
-        return model
+        return RBLNMXFP4Quantizer.get_quantized_model(
+            hf_auto_model_class=AutoModelForCausalLM,
+            model_id=model_id,
+            dtype=dtype,
+            config=config,
+            **kwargs,
+        )
 
     @classmethod
     def _update_rbln_config(
