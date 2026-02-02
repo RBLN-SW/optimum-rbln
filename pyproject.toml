@@ -32,7 +32,7 @@ dependencies = [
     "torchaudio==2.9.0",
     "torchvision==0.24.0+cpu",
     "accelerate>=1.0.1",
-    "transformers==4.57.3",
+    "transformers==4.57.6",
     "diffusers==0.36.0",
     "packaging>=24.1",
 ]
