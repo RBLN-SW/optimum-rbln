@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Optional
+from typing import Any, Optional
 
 from optimum.rbln.configuration_utils import RBLNModelConfig
 
@@ -61,7 +61,7 @@ class RBLNColQwen2ForRetrievalConfig(RBLNDecoderOnlyModelConfig):
         batch_size: Optional[int] = None,
         output_hidden_states: Optional[bool] = None,
         vlm: Optional[RBLNModelConfig] = None,
-        **kwargs,
+        **kwargs: Any,
     ):
         """
         Args:
