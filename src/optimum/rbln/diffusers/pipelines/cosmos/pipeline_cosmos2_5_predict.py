@@ -40,8 +40,10 @@ class RBLNCosmos2_5_PredictBasePipeline(RBLNDiffusionMixin, Cosmos2_5_PredictBas
     """
 
     original_class = Cosmos2_5_PredictBasePipeline
-    _submodules = ["text_encoder", "transformer", "vae"]
-    _optional_submodules = ["safety_checker"]
+    # _submodules = ["text_encoder", "transformer", "vae"]
+    _submodules = ["text_encoder"]
+    # _optional_submodules = ["safety_checker"]
+    _optional_submodules = []
 
     def __init__(
         self,
@@ -53,7 +55,8 @@ class RBLNCosmos2_5_PredictBasePipeline(RBLNDiffusionMixin, Cosmos2_5_PredictBas
         safety_checker: RBLNCosmosSafetyCheckerV2 = None,
     ):
         if safety_checker is None:
-            safety_checker = RBLNCosmosSafetyCheckerV2()
+            # safety_checker = RBLNCosmosSafetyCheckerV2()
+            safety_checker = None
 
         super().__init__(
             text_encoder=text_encoder,

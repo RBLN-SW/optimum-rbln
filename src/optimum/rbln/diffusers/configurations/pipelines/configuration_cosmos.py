@@ -216,7 +216,8 @@ class RBLNCosmos2VideoToWorldPipelineConfig(RBLNCosmos2PipelineBaseConfig):
 class RBLNCosmos2_5_PredictBasePipelineConfig(RBLNModelConfig):
     """Config for Cosmos-Predict2.5 Pipeline"""
 
-    submodules = ["text_encoder", "transformer", "vae", "safety_checker"]
+    # submodules = ["text_encoder", "transformer", "vae", "safety_checker"]
+    submodules = ["text_encoder"]
     _vae_uses_encoder = True
 
     def __init__(

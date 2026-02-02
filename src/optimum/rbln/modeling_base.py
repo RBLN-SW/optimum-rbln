@@ -207,6 +207,7 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
                 )
 
             config_cls = cls.get_rbln_config_class()
+            import pdb; pdb.set_trace()
             rbln_config, kwargs = config_cls.from_pretrained(
                 model_path_subfolder, rbln_config=rbln_config, return_unused_kwargs=True, **kwargs
             )

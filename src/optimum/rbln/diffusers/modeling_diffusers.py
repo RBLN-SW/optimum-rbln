@@ -225,6 +225,7 @@ class RBLNDiffusionMixin:
 
                     submodule_cls = get_rbln_model_cls(class_name)
                     submodule_config = getattr(rbln_config, submodule_name)
+                    import pdb; pdb.set_trace()
                     submodule = submodule_cls.from_pretrained(
                         model_id, export=False, subfolder=submodule_name, rbln_config=submodule_config
                     )
