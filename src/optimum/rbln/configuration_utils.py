@@ -311,7 +311,7 @@ class RBLNAutoConfig:
         )
 
     @classmethod
-    @deprecate_method(version="0.10.0", new_method="from_pretrained")
+    @deprecate_method(version="0.11.0", new_method="from_pretrained")
     def load(
         cls,
         path: str,
@@ -324,7 +324,7 @@ class RBLNAutoConfig:
         Class name is automatically inferred from the `rbln_config.json` file.
 
         Deprecated:
-            This method is deprecated since version 0.10.0 and will be removed.
+            This method is deprecated and will be removed in version 0.11.0.
             Use `from_pretrained` instead.
 
         Args:
@@ -984,7 +984,7 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
             return rbln_config
 
     @classmethod
-    @deprecate_method(version="0.10.0", new_method="from_pretrained")
+    @deprecate_method(version="0.11.0", new_method="from_pretrained")
     def load(
         cls,
         path: str,
@@ -996,7 +996,7 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
         Load a RBLNModelConfig from a path.
 
         Deprecated:
-            This method is deprecated since version 0.10.0 and will be removed.
+            This method is deprecated and will be removed in version 0.11.0.
             Use `from_pretrained` instead.
 
         Args:
