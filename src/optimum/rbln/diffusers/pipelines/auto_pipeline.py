@@ -176,7 +176,7 @@ class RBLNAutoPipelineBase:
         export: bool = None,
         rbln_config: Optional[Union[Dict[str, Any], RBLNModelConfig]] = None,
         **kwargs: Any,
-    ):
+    ) -> RBLNBaseModel:
         """
         Load an RBLN-accelerated Diffusers pipeline from a pretrained checkpoint or a compiled RBLN artifact.
 
@@ -201,8 +201,7 @@ class RBLNAutoPipelineBase:
                 - Remaining arguments are forwarded to the Diffusers loader.
 
         Returns:
-            RBLNBaseModel: An instantiated RBLN model wrapping the Diffusers pipeline, ready for
-            inference on RBLN NPUs.
+            RBLNBaseModel: An instantiated RBLN model wrapping the Diffusers pipeline, ready for inference on RBLN NPUs.
 
         """
         rbln_cls = cls.get_rbln_cls(model_id, export=export, **kwargs)

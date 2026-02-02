@@ -19,6 +19,9 @@ def test_version_is_str():
     assert isinstance(__version__, str)
 
 
+DUMMY_DEVICE_CODE = -1
+
+
 class TestLevel(Enum):
     ESSENTIAL = 1
     DEFAULT = 2
@@ -109,12 +112,13 @@ class BaseHubTest:
             HF_AUTH_TOKEN = os.environ.get("HF_AUTH_TOKEN", None)
             HF_USER_ID = os.environ.get("HF_USER_ID", None)
 
-            _ = self.RBLN_CLASS.from_pretrained(
-                f"{HF_USER_ID}/{self.get_hf_remote_dir()}",
-                **self.HF_CONFIG_KWARGS,
-                rbln_device=self.DEVICE,
-                token=HF_AUTH_TOKEN,
-            )
+            with ContextRblnConfig(create_runtimes=False):
+                _ = self.RBLN_CLASS.from_pretrained(
+                    f"{HF_USER_ID}/{self.get_hf_remote_dir()}",
+                    **self.HF_CONFIG_KWARGS,
+                    rbln_device=self.DEVICE,
+                    token=HF_AUTH_TOKEN,
+                )
 
 
 class BaseTest:
@@ -146,19 +150,18 @@ class BaseTest:
             if REUSE_ARTIFACTS_PATH is None:
                 if os.path.exists(cls.get_rbln_local_dir()):
                     shutil.rmtree(cls.get_rbln_local_dir())
-
-                cls.model = cls.RBLN_CLASS.from_pretrained(
-                    cls.HF_MODEL_ID,
-                    model_save_dir=cls.get_rbln_local_dir(),
-                    rbln_device=cls.DEVICE,
-                    **cls.RBLN_CLASS_KWARGS,
-                    **cls.HF_CONFIG_KWARGS,
-                )
+                with ContextRblnConfig(device=cls.DEVICE):
+                    cls.model = cls.RBLN_CLASS.from_pretrained(
+                        cls.HF_MODEL_ID,
+                        model_save_dir=cls.get_rbln_local_dir(),
+                        **cls.RBLN_CLASS_KWARGS,
+                        **cls.HF_CONFIG_KWARGS,
+                    )
             else:
                 if os.path.exists(REUSE_ARTIFACTS_PATH):
                     compiled_model_path = os.path.join(REUSE_ARTIFACTS_PATH, cls.get_rbln_local_dir())
                     if os.path.exists(compiled_model_path):
-                        with ContextRblnConfig(device=-1):
+                        with ContextRblnConfig(device=DUMMY_DEVICE_CODE):
                             cls.model = cls.RBLN_CLASS.from_pretrained(compiled_model_path)
                 if not hasattr(cls, "model"):
                     raise unittest.SkipTest("Compiled model not found")

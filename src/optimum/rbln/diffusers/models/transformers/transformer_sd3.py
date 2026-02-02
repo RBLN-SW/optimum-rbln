@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Union
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple, Union
 
 import torch
 from diffusers.models.modeling_outputs import Transformer2DModelOutput
@@ -160,7 +160,7 @@ class RBLNSD3Transformer2DModel(RBLNModel):
         joint_attention_kwargs: Optional[Dict[str, Any]] = None,
         return_dict: bool = True,
         **kwargs,
-    ):
+    ) -> Union[Transformer2DModelOutput, Tuple]:
         """
         Forward pass for the RBLN-optimized SD3Transformer2DModel.
 
