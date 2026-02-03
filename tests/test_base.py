@@ -19,6 +19,9 @@ def test_version_is_str():
     assert isinstance(__version__, str)
 
 
+DUMMY_DEVICE_CODE = -1
+
+
 class TestLevel(Enum):
     ESSENTIAL = 1
     DEFAULT = 2
@@ -158,7 +161,7 @@ class BaseTest:
                 if os.path.exists(REUSE_ARTIFACTS_PATH):
                     compiled_model_path = os.path.join(REUSE_ARTIFACTS_PATH, cls.get_rbln_local_dir())
                     if os.path.exists(compiled_model_path):
-                        with ContextRblnConfig(device=cls.DEVICE):
+                        with ContextRblnConfig(device=DUMMY_DEVICE_CODE):
                             cls.model = cls.RBLN_CLASS.from_pretrained(compiled_model_path)
                 if not hasattr(cls, "model"):
                     raise unittest.SkipTest("Compiled model not found")
@@ -233,7 +236,7 @@ class BaseTest:
                         similarity, 0.9, msg=f"self.EXPECTED_OUTPUT: {self.EXPECTED_OUTPUT}, output: {output}"
                     )
                 else:
-                    for o, e_o in zip(output, self.EXPECTED_OUTPUT):
+                    for o, e_o in zip(output, self.EXPECTED_OUTPUT, strict=False):
                         similarity = jaccard_similarity(o, e_o)
                         self.assertGreater(
                             similarity, 0.9, msg=f"self.EXPECTED_OUTPUT: {self.EXPECTED_OUTPUT}, output: {output}"
