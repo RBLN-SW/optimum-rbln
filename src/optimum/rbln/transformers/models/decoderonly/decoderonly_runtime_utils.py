@@ -207,7 +207,7 @@ class RBLNRuntimeModel(RBLNPytorchRuntime):
             raise ValueError("Either `input_ids` or `inputs_embeds` must be provided.")
 
         if self.rbln_config.use_inputs_embeds:
-            return self.embed_tokens(input_ids) if inputs_embeds is None else inputs_embeds
+            return self.embed_tokens(input_ids).to(self.rbln_config.torch_dtype) if inputs_embeds is None else inputs_embeds
         else:
             return input_ids
 
