@@ -12,7 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Optional, Tuple
+from __future__ import annotations
+
+from typing import Any, ClassVar, Optional, Tuple
 
 from ....configuration_utils import RBLNModelConfig
 from ....transformers import RBLNCLIPTextModelWithProjectionConfig, RBLNT5EncoderModelConfig
@@ -20,16 +22,17 @@ from ..models import RBLNAutoencoderKLConfig, RBLNSD3Transformer2DModelConfig
 
 
 class RBLNStableDiffusion3PipelineBaseConfig(RBLNModelConfig):
-    submodules = ["transformer", "text_encoder", "text_encoder_2", "text_encoder_3", "vae"]
-    _vae_uses_encoder = False
+    submodules: ClassVar[list[str]] = ["transformer", "text_encoder", "text_encoder_2", "text_encoder_3", "vae"]
+    _vae_uses_encoder: ClassVar[bool] = False
+
+    transformer: dict[str, Any] | RBLNSD3Transformer2DModelConfig | None = None
+    text_encoder: dict[str, Any] | RBLNCLIPTextModelWithProjectionConfig | None = None
+    text_encoder_2: dict[str, Any] | RBLNCLIPTextModelWithProjectionConfig | None = None
+    text_encoder_3: dict[str, Any] | RBLNT5EncoderModelConfig | None = None
+    vae: dict[str, Any] | RBLNAutoencoderKLConfig | None = None
 
     def __init__(
         self,
-        transformer: Optional[RBLNSD3Transformer2DModelConfig] = None,
-        text_encoder: Optional[RBLNCLIPTextModelWithProjectionConfig] = None,
-        text_encoder_2: Optional[RBLNCLIPTextModelWithProjectionConfig] = None,
-        text_encoder_3: Optional[RBLNT5EncoderModelConfig] = None,
-        vae: Optional[RBLNAutoencoderKLConfig] = None,
         *,
         max_seq_len: Optional[int] = None,
         sample_size: Optional[Tuple[int, int]] = None,
@@ -40,7 +43,7 @@ class RBLNStableDiffusion3PipelineBaseConfig(RBLNModelConfig):
         height: Optional[int] = None,
         width: Optional[int] = None,
         guidance_scale: Optional[float] = None,
-        **kwargs: Any,
+        **data: Any,
     ):
         """
         Args:
@@ -64,7 +67,7 @@ class RBLNStableDiffusion3PipelineBaseConfig(RBLNModelConfig):
             height (Optional[int]): Height of the generated images.
             width (Optional[int]): Width of the generated images.
             guidance_scale (Optional[float]): Scale for classifier-free guidance.
-            kwargs: Additional arguments passed to the parent RBLNModelConfig.
+            **data: Additional arguments passed to the parent RBLNModelConfig.
 
         Raises:
             ValueError: If both image_size and img_height/img_width are provided.
@@ -73,7 +76,7 @@ class RBLNStableDiffusion3PipelineBaseConfig(RBLNModelConfig):
             When guidance_scale > 1.0, the transformer batch size is automatically doubled to
             accommodate classifier-free guidance.
         """
-        super().__init__(**kwargs)
+        super().__init__(**data)
 
         # Initial check for image_size conflict remains as is
         if image_size is not None and (
@@ -101,29 +104,29 @@ class RBLNStableDiffusion3PipelineBaseConfig(RBLNModelConfig):
         max_seq_len = max_seq_len or 256
 
         self.text_encoder = self.initialize_submodule_config(
-            text_encoder,
+            self.text_encoder,
             cls_name="RBLNCLIPTextModelWithProjectionConfig",
             batch_size=batch_size,
         )
         self.text_encoder_2 = self.initialize_submodule_config(
-            text_encoder_2,
+            self.text_encoder_2,
             cls_name="RBLNCLIPTextModelWithProjectionConfig",
             batch_size=batch_size,
         )
         self.text_encoder_3 = self.initialize_submodule_config(
-            text_encoder_3,
+            self.text_encoder_3,
             cls_name="RBLNT5EncoderModelConfig",
             batch_size=batch_size,
             max_seq_len=max_seq_len,
             model_input_names=["input_ids"],
         )
         self.transformer = self.initialize_submodule_config(
-            transformer,
+            self.transformer,
             cls_name="RBLNSD3Transformer2DModelConfig",
             sample_size=sample_size,
         )
         self.vae = self.initialize_submodule_config(
-            vae,
+            self.vae,
             cls_name="RBLNAutoencoderKLConfig",
             batch_size=batch_size,
             uses_encoder=self.__class__._vae_uses_encoder,
@@ -161,16 +164,16 @@ class RBLNStableDiffusion3PipelineBaseConfig(RBLNModelConfig):
 class RBLNStableDiffusion3PipelineConfig(RBLNStableDiffusion3PipelineBaseConfig):
     """Config for SD3 Text2Img Pipeline"""
 
-    _vae_uses_encoder = False
+    _vae_uses_encoder: ClassVar[bool] = False
 
 
 class RBLNStableDiffusion3Img2ImgPipelineConfig(RBLNStableDiffusion3PipelineBaseConfig):
     """Config for SD3 Img2Img Pipeline"""
 
-    _vae_uses_encoder = True
+    _vae_uses_encoder: ClassVar[bool] = True
 
 
 class RBLNStableDiffusion3InpaintPipelineConfig(RBLNStableDiffusion3PipelineBaseConfig):
     """Config for SD3 Inpainting Pipeline"""
 
-    _vae_uses_encoder = True
+    _vae_uses_encoder: ClassVar[bool] = True

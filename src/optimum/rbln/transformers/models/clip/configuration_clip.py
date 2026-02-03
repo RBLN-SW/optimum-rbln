@@ -12,25 +12,26 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Optional
+from __future__ import annotations
+
+from pydantic import field_validator
 
 from ....configuration_utils import RBLNModelConfig
 
 
 class RBLNCLIPTextModelConfig(RBLNModelConfig):
-    def __init__(self, batch_size: Optional[int] = None, **kwargs: Any):
-        """
-        Args:
-            batch_size (Optional[int]): The batch size for text processing. Defaults to 1.
-            kwargs: Additional arguments passed to the parent RBLNModelConfig.
+    """Configuration class for RBLNCLIPTextModel."""
 
-        Raises:
-            ValueError: If `batch_size` is not a positive integer.
-        """
-        super().__init__(**kwargs)
-        self.batch_size = batch_size or 1
-        if not isinstance(self.batch_size, int) or self.batch_size < 0:
-            raise ValueError(f"batch_size must be a positive integer, got {self.batch_size}")
+    batch_size: int = 1
+
+    @field_validator("batch_size", mode="before")
+    @classmethod
+    def validate_batch_size(cls, v: int | None) -> int:
+        if v is None:
+            return 1
+        if not isinstance(v, int) or v < 0:
+            raise ValueError(f"batch_size must be a positive integer, got {v}")
+        return v
 
 
 class RBLNCLIPTextModelWithProjectionConfig(RBLNCLIPTextModelConfig):
@@ -43,40 +44,27 @@ class RBLNCLIPTextModelWithProjectionConfig(RBLNCLIPTextModelConfig):
 
 
 class RBLNCLIPVisionModelConfig(RBLNModelConfig):
-    def __init__(
-        self,
-        batch_size: Optional[int] = None,
-        image_size: Optional[int] = None,
-        interpolate_pos_encoding: Optional[bool] = None,
-        output_hidden_states: Optional[bool] = None,
-        output_attentions: Optional[bool] = None,
-        **kwargs: Any,
-    ):
-        """
-        Args:
-            batch_size (Optional[int]): The batch size for image processing. Defaults to 1.
-            image_size (Optional[int]): The size of input images. Can be an integer for square images,
-                a tuple/list (height, width), or a dictionary with 'height' and 'width' keys.
-            interpolate_pos_encoding (Optional[bool]): Whether or not to interpolate pre-trained position encodings. Defaults to `False`.
-            output_hidden_states (Optional[bool]): Whether or not to return the hidden states of all layers.
-            output_attentions (Optional[bool]): Whether or not to return the attentions tensors of all attention layers
-            kwargs: Additional arguments passed to the parent RBLNModelConfig.
+    """Configuration class for RBLNCLIPVisionModel."""
 
-        Raises:
-            ValueError: If `batch_size` is not a positive integer.
-        """
-        super().__init__(**kwargs)
-        self.batch_size = batch_size or 1
-        if not isinstance(self.batch_size, int) or self.batch_size < 0:
-            raise ValueError(f"batch_size must be a positive integer, got {self.batch_size}")
+    batch_size: int = 1
+    image_size: int | tuple[int, int] | dict[str, int] | None = None
+    interpolate_pos_encoding: bool = False
+    output_hidden_states: bool | None = None
+    output_attentions: bool | None = None
 
-        self.image_size = image_size
-        self.interpolate_pos_encoding = interpolate_pos_encoding or False
-        self.output_hidden_states = output_hidden_states
-        self.output_attentions = output_attentions
+    @field_validator("batch_size", mode="before")
+    @classmethod
+    def validate_batch_size(cls, v: int | None) -> int:
+        if v is None:
+            return 1
+        if not isinstance(v, int) or v < 0:
+            raise ValueError(f"batch_size must be a positive integer, got {v}")
+        return v
 
     @property
-    def image_width(self):
+    def image_width(self) -> int | None:
+        if self.image_size is None:
+            return None
         if isinstance(self.image_size, int):
             return self.image_size
         elif isinstance(self.image_size, (list, tuple)):
@@ -85,7 +73,9 @@ class RBLNCLIPVisionModelConfig(RBLNModelConfig):
             return self.image_size["width"]
 
     @property
-    def image_height(self):
+    def image_height(self) -> int | None:
+        if self.image_size is None:
+            return None
         if isinstance(self.image_size, int):
             return self.image_size
         elif isinstance(self.image_size, (list, tuple)):

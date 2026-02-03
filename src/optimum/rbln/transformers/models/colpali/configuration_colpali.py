@@ -11,7 +11,12 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from typing import Any, Optional
+
+from __future__ import annotations
+
+from typing import Any, ClassVar
+
+from pydantic import field_validator
 
 from ....configuration_utils import RBLNModelConfig
 from ....utils.logging import get_logger
@@ -47,33 +52,39 @@ class RBLNColPaliForRetrievalConfig(RBLNModelConfig):
             rbln_config=config
         )
         ```
+
+    Args:
+        batch_size (int, optional): The batch size for the model. Defaults to 1.
+        vlm (RBLNModelConfig, optional): Configuration for the VLM component.
+        output_hidden_states (bool, optional): Whether to output the hidden states of the decoder. Defaults to False.
     """
 
     _allow_no_compile_cfgs = True
-    submodules = ["vlm"]
+    submodules: ClassVar[list[str]] = ["vlm"]
+    submodule_config_classes: ClassVar[dict[str, str]] = {
+        "vlm": "RBLNPaliGemmaForConditionalGenerationConfig",
+    }
 
-    def __init__(
-        self,
-        batch_size: Optional[int] = None,
-        vlm: Optional[RBLNModelConfig] = None,
-        output_hidden_states: Optional[bool] = None,
-        **kwargs: Any,
-    ):
-        """
-        Args:
-            batch_size (Optional[int]): The batch size for the model.
-            vlm (Optional[RBLNModelConfig]): Configuration for the VLM component.
-            output_hidden_states (Optional[bool]): Whether to output the hidden states of the decoder. Defaults to False.
-            kwargs: Additional arguments passed to the parent RBLNModelConfig.
-        Raises:
-            ValueError: If batch_size is not a positive integer.
-        """
-        super().__init__(**kwargs)
-        self.batch_size = batch_size or 1
-        if not isinstance(self.batch_size, int) or self.batch_size < 0:
-            raise ValueError(f"batch_size must be a positive integer, got {self.batch_size}")
+    batch_size: int = 1
+    vlm: RBLNModelConfig | None = None
+    output_hidden_states: bool = False
 
-        self.output_hidden_states = output_hidden_states or False
-        self.vlm = self.initialize_submodule_config(
-            submodule_config=vlm, batch_size=batch_size, output_hidden_states=output_hidden_states
-        )
+    def __init__(self, **data: Any):
+        super().__init__(**data)
+        # vlm is converted by @model_validator, but we still handle None case
+        if self.vlm is None:
+            self.vlm = self.initialize_submodule_config(
+                submodule_name="vlm",
+                submodule_config=None,
+                batch_size=self.batch_size,
+                output_hidden_states=self.output_hidden_states,
+            )
+
+    @field_validator("batch_size", mode="before")
+    @classmethod
+    def validate_batch_size(cls, v: int | None) -> int:
+        if v is None:
+            return 1
+        if not isinstance(v, int) or v < 0:
+            raise ValueError(f"batch_size must be a positive integer, got {v}")
+        return v

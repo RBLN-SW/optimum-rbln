@@ -12,7 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Optional
+from __future__ import annotations
+
+from typing import Any
+
+from pydantic import field_validator
 
 from ....configuration_utils import RBLNModelConfig
 
@@ -25,21 +29,19 @@ class RBLNCosmosTransformer3DModelConfig(RBLNModelConfig):
     for Transformer models used in diffusion models like Cosmos.
     """
 
-    def __init__(
-        self,
-        batch_size: Optional[int] = None,
-        num_frames: Optional[int] = None,
-        height: Optional[int] = None,
-        width: Optional[int] = None,
-        fps: Optional[int] = None,
-        max_seq_len: Optional[int] = None,
-        embedding_dim: Optional[int] = None,
-        num_channels_latents: Optional[int] = None,
-        num_latent_frames: Optional[int] = None,
-        latent_height: Optional[int] = None,
-        latent_width: Optional[int] = None,
-        **kwargs: Any,
-    ):
+    batch_size: int = 1
+    num_frames: int = 121
+    height: int = 704
+    width: int = 1280
+    fps: int = 30
+    max_seq_len: int | None = None
+    embedding_dim: int | None = None
+    num_channels_latents: int | None = None
+    num_latent_frames: int | None = None
+    latent_height: int | None = None
+    latent_width: int | None = None
+
+    def __init__(self, **data: Any):
         """
         Args:
             batch_size (Optional[int]): The batch size for inference. Defaults to 1.
@@ -52,27 +54,41 @@ class RBLNCosmosTransformer3DModelConfig(RBLNModelConfig):
             num_channels_latents (Optional[int]): The number of channels in latent space.
             latent_height (Optional[int]): The height in pixels in latent space.
             latent_width (Optional[int]): The width in pixels in latent space.
-            kwargs: Additional arguments passed to the parent RBLNModelConfig.
+            **data: Additional arguments passed to the parent RBLNModelConfig.
 
         Raises:
             ValueError: If batch_size is not a positive integer.
         """
-        if kwargs.get("timeout") is None:
-            kwargs["timeout"] = 80
+        if data.get("timeout") is None:
+            data["timeout"] = 80
 
-        super().__init__(**kwargs)
-        self.batch_size = batch_size or 1
-        self.num_frames = num_frames or 121
-        self.height = height or 704
-        self.width = width or 1280
-        self.fps = fps or 30
+        super().__init__(**data)
 
-        self.max_seq_len = max_seq_len
-        self.num_channels_latents = num_channels_latents
-        self.num_latent_frames = num_latent_frames
-        self.latent_height = latent_height
-        self.latent_width = latent_width
-        self.embedding_dim = embedding_dim
+    @field_validator("batch_size", mode="before")
+    @classmethod
+    def validate_batch_size(cls, v: int | None) -> int:
+        if v is None:
+            return 1
+        if not isinstance(v, int) or v < 0:
+            raise ValueError(f"batch_size must be a positive integer, got {v}")
+        return v
 
-        if not isinstance(self.batch_size, int) or self.batch_size < 0:
-            raise ValueError(f"batch_size must be a positive integer, got {self.batch_size}")
+    @field_validator("num_frames", mode="before")
+    @classmethod
+    def validate_num_frames(cls, v: int | None) -> int:
+        return v if v is not None else 121
+
+    @field_validator("height", mode="before")
+    @classmethod
+    def validate_height(cls, v: int | None) -> int:
+        return v if v is not None else 704
+
+    @field_validator("width", mode="before")
+    @classmethod
+    def validate_width(cls, v: int | None) -> int:
+        return v if v is not None else 1280
+
+    @field_validator("fps", mode="before")
+    @classmethod
+    def validate_fps(cls, v: int | None) -> int:
+        return v if v is not None else 30

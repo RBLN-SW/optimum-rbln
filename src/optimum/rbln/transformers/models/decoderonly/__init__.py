@@ -24,6 +24,11 @@ from ....ops import (
     paged_flash_causal_attn_decode,
     paged_flash_causal_attn_prefill,
 )
-from .configuration_decoderonly import RBLNDecoderOnlyModelConfig, RBLNDecoderOnlyModelForCausalLMConfig
+from .configuration_decoderonly import (
+    KVCacheMeta,
+    RBLNDecoderOnlyModelConfig,
+    RBLNDecoderOnlyModelForCausalLMConfig,
+    make_kvcache_meta,
+)
 from .configuration_lora import RBLNLoRAAdapterConfig, RBLNLoRAConfig
 from .modeling_decoderonly import RBLNDecoderOnlyModel, RBLNDecoderOnlyModelForCausalLM

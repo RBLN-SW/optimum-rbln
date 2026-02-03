@@ -155,7 +155,7 @@ class RBLNColQwen2ForRetrieval(RBLNModel):
         if pixel_values is not None and image_grid_thw is not None:
             offsets = image_grid_thw[:, 1] * image_grid_thw[:, 2]  # (batch_size,)
             pixel_values = torch.cat(
-                [pixel_sequence[:offset] for pixel_sequence, offset in zip(pixel_values, offsets)],
+                [pixel_sequence[:offset] for pixel_sequence, offset in zip(pixel_values, offsets, strict=False)],
                 dim=0,
             )
 

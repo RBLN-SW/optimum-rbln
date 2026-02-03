@@ -843,8 +843,12 @@ class TestMultiLora(LLMTest.TestLLM):
             "max_seq_len": 1024,
             "lora_config": {
                 "adapters": [
-                    RBLNLoRAAdapterConfig(1, "nemoguard", "nvidia/llama-3.1-nemoguard-8b-topic-control"),
-                    RBLNLoRAAdapterConfig(2, "abliterated", "reissbaker/llama-3.1-8b-abliterated-lora"),
+                    RBLNLoRAAdapterConfig(
+                        lora_int_id=1, lora_name="nemoguard", lora_path="nvidia/llama-3.1-nemoguard-8b-topic-control"
+                    ),
+                    RBLNLoRAAdapterConfig(
+                        lora_int_id=2, lora_name="abliterated", lora_path="reissbaker/llama-3.1-8b-abliterated-lora"
+                    ),
                 ]
             },
         }
@@ -872,8 +876,12 @@ class TestMultiLora_batch(LLMTest.TestLLM):
             "max_seq_len": 1024,
             "lora_config": {
                 "adapters": [
-                    RBLNLoRAAdapterConfig(1, "nemoguard", "nvidia/llama-3.1-nemoguard-8b-topic-control"),
-                    RBLNLoRAAdapterConfig(2, "abliterated", "reissbaker/llama-3.1-8b-abliterated-lora"),
+                    RBLNLoRAAdapterConfig(
+                        lora_int_id=1, lora_name="nemoguard", lora_path="nvidia/llama-3.1-nemoguard-8b-topic-control"
+                    ),
+                    RBLNLoRAAdapterConfig(
+                        lora_int_id=2, lora_name="abliterated", lora_path="reissbaker/llama-3.1-8b-abliterated-lora"
+                    ),
                 ]
             },
         }

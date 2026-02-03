@@ -12,18 +12,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from __future__ import annotations
+
 import glob
 import os
-from typing import TYPE_CHECKING, Any, Dict, Iterable, List, Optional, Tuple, Type, Union
+from typing import TYPE_CHECKING, Any, ClassVar, Iterable, Literal
 
 import torch
 from huggingface_hub import hf_hub_download, list_repo_files
+from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 from safetensors.torch import load_file
 from torch.nn import Linear, Parameter
 from transformers import AutoConfig
 from transformers.modeling_utils import get_state_dict_dtype, no_init_weights
 
-from ...configuration_utils import RBLNSerializableConfigProtocol
 from ...utils.logging import get_logger
 from .qlinear import QFloatLinear, QIntLinear
 
@@ -46,7 +48,7 @@ QUANTIZED_WEIGHTS = {
 }
 
 # Common alias sets seen in community checkpoints
-VARIANT_ALIASES: Dict[str, List[str]] = {
+VARIANT_ALIASES: dict[str, list[str]] = {
     "weight_scale": ["weight_scale", "scales", "w_scale", "scale"],
     "input_scale": ["input_scale", "act_scale", "activation_scale", "a_scale"],
     "kv_scale": ["kv_scale", "kv_scales"],
@@ -55,74 +57,77 @@ VARIANT_ALIASES: Dict[str, List[str]] = {
 }
 
 
-class RBLNQuantizationConfig(RBLNSerializableConfigProtocol):
-    SUPPORTED_FORMATS = ["rbln"]
-    SUPPORTED_WEIGHTS = ["int4", "int8", "fp8", "fp16"]
-    SUPPORTED_ACTIVATIONS = ["int8", "fp8", "fp16"]
-    SUPPORTED_KVCACHES = ["fp8", "fp16"]
-    RBLN_QUANT_BITS_ENV = "RBLN_QUANT_BITS"
+class RBLNQuantizationConfig(BaseModel):
+    """Configuration class for RBLN quantization settings."""
 
-    def __init__(
-        self,
-        format: Optional[str] = None,
-        weights: Optional[str] = None,
-        activations: Optional[str] = None,
-        kv_caches: Optional[str] = None,
-        dynamic: Optional[bool] = None,
-        *,
-        precision: Optional[str] = None,
-    ):
-        self.format = format or "rbln"
-        if self.format not in self.SUPPORTED_FORMATS:
-            raise ValueError(f"Invalid format: {self.format}, supported formats are: {self.SUPPORTED_FORMATS}")
+    model_config = ConfigDict(frozen=False, extra="forbid", validate_assignment=True)
 
+    SUPPORTED_FORMATS: ClassVar[list[str]] = ["rbln"]
+    SUPPORTED_WEIGHTS: ClassVar[list[str]] = ["int4", "int8", "fp8", "fp16"]
+    SUPPORTED_ACTIVATIONS: ClassVar[list[str]] = ["int8", "fp8", "fp16"]
+    SUPPORTED_KVCACHES: ClassVar[list[str]] = ["fp8", "fp16"]
+    RBLN_QUANT_BITS_ENV: ClassVar[str] = "RBLN_QUANT_BITS"
+
+    format: Literal["rbln"] = "rbln"
+    weights: Literal["int4", "int8", "fp8", "fp16"] = "fp16"
+    activations: Literal["int8", "fp8", "fp16"] = "fp16"
+    kv_caches: Literal["fp8", "fp16"] = "fp16"
+    dynamic: bool = False
+
+    def __init__(self, *, precision: str | None = None, **data: Any):
+        # Handle deprecated precision argument
         if precision is not None:
             logger.warning("The `precision` argument is deprecated. Use `weights` and `activations` instead.")
-            if any(precision_arg is not None for precision_arg in (weights, activations)):
+            if data.get("weights") is not None or data.get("activations") is not None:
                 raise ValueError("`precision` and `weights` or `activations` cannot be set at the same time.")
 
             if precision == "w4a16":
-                weights = "int4"
-                activations = "fp16"
+                data["weights"] = "int4"
+                data["activations"] = "fp16"
             else:
                 raise ValueError(f"Invalid precision: {precision}")
 
-        self.weights = weights or "fp16"
-        self.activations = activations or "fp16"
-        self.kv_caches = kv_caches or "fp16"
-        self.dynamic = dynamic if dynamic is not None else False
+        super().__init__(**data)
 
-        self._validate()
+    @field_validator("format")
+    @classmethod
+    def validate_format(cls, v: str) -> str:
+        if v not in cls.SUPPORTED_FORMATS:
+            raise ValueError(f"Invalid format: {v}, supported formats are: {cls.SUPPORTED_FORMATS}")
+        return v
 
-    def _validate(self):
-        if self.format not in self.SUPPORTED_FORMATS:
-            raise ValueError(f"Invalid format: {self.format}, supported formats are: {self.SUPPORTED_FORMATS}")
-        if self.weights not in self.SUPPORTED_WEIGHTS:
-            raise ValueError(f"Invalid weights: {self.weights}, supported weights are: {self.SUPPORTED_WEIGHTS}")
-        if self.activations not in self.SUPPORTED_ACTIVATIONS:
-            raise ValueError(
-                f"Invalid activations: {self.activations}, supported activations are: {self.SUPPORTED_ACTIVATIONS}"
-            )
-        if self.kv_caches not in self.SUPPORTED_KVCACHES:
-            raise ValueError(
-                f"Invalid kv_caches: {self.kv_caches}, supported kv_caches are: {self.SUPPORTED_KVCACHES}"
-            )
+    @field_validator("weights")
+    @classmethod
+    def validate_weights(cls, v: str) -> str:
+        if v not in cls.SUPPORTED_WEIGHTS:
+            raise ValueError(f"Invalid weights: {v}, supported weights are: {cls.SUPPORTED_WEIGHTS}")
+        return v
+
+    @field_validator("activations")
+    @classmethod
+    def validate_activations(cls, v: str) -> str:
+        if v not in cls.SUPPORTED_ACTIVATIONS:
+            raise ValueError(f"Invalid activations: {v}, supported activations are: {cls.SUPPORTED_ACTIVATIONS}")
+        return v
+
+    @field_validator("kv_caches")
+    @classmethod
+    def validate_kv_caches(cls, v: str) -> str:
+        if v not in cls.SUPPORTED_KVCACHES:
+            raise ValueError(f"Invalid kv_caches: {v}, supported kv_caches are: {cls.SUPPORTED_KVCACHES}")
+        return v
+
+    @model_validator(mode="after")
+    def validate_weights_activations_not_both_fp16(self) -> "RBLNQuantizationConfig":
         if self.weights == "fp16" and self.activations == "fp16":
             raise ValueError("weights and activations of QuantizationConfig cannot be both fp16. It is meaningless.")
+        return self
 
-    def _prepare_for_serialization(self) -> Dict[str, Any]:
-        return {
-            "format": self.format,
-            "weights": self.weights,
-            "activations": self.activations,
-            "kv_caches": self.kv_caches,
-        }
-
-    def maybe_set_quantization_env(self):
+    def maybe_set_quantization_env(self) -> None:
         if self.weights == "int4":
             os.environ[self.RBLN_QUANT_BITS_ENV] = "4"
 
-    def maybe_reset_quantization_env(self):
+    def maybe_reset_quantization_env(self) -> None:
         if self.RBLN_QUANT_BITS_ENV in os.environ:
             os.environ.pop(self.RBLN_QUANT_BITS_ENV)
 
@@ -156,15 +161,15 @@ class QuantizedLayerFactory:
 
 
 def get_quantized_model(
-    hf_auto_model_class: Type["_BaseAutoModelClass"],
+    hf_auto_model_class: type["_BaseAutoModelClass"],
     model_id: str,
-    use_auth_token: Optional[Union[bool, str]] = None,
-    revision: Optional[str] = None,
-    cache_dir: Optional[str] = None,
+    use_auth_token: bool | str | None = None,
+    revision: str | None = None,
+    cache_dir: str | None = None,
     force_download: bool = False,
     local_files_only: bool = False,
-    rbln_quantization: Optional[RBLNQuantizationConfig] = None,
-    **kwargs,
+    rbln_quantization: RBLNQuantizationConfig | None = None,
+    **kwargs: Any,
 ):
     """
     Get a quantized model from a model class and model id.
@@ -227,12 +232,12 @@ def get_quantized_model(
 
 def load_weight_files(
     model_id: str,
-    use_auth_token: Optional[Union[bool, str]] = None,
-    revision: Optional[str] = None,
-    cache_dir: Optional[str] = None,
+    use_auth_token: bool | str | None = None,
+    revision: str | None = None,
+    cache_dir: str | None = None,
     force_download: bool = False,
     local_files_only: bool = False,
-    exception_keywords: Optional[List[str]] = None,
+    exception_keywords: list[str] | None = None,
 ) -> list[str]:
     """
     Discover and download safetensors files for the given model id.
@@ -280,7 +285,7 @@ def load_weight_files(
 def update_layers_to_quantize(
     module: torch.nn.Module,
     scale_dtype: torch.dtype,
-    rbln_quantization: Optional[RBLNQuantizationConfig] = None,
+    rbln_quantization: RBLNQuantizationConfig | None = None,
 ) -> None:
     """
     Updates specified linear layers to quantized (qlinear) layers in the given module.
@@ -359,7 +364,7 @@ def _coerce_per_out_channel_scale(scale: torch.Tensor, out_features: int) -> tor
     return v.reshape(1, 1).expand(out_features, 1).contiguous()
 
 
-def _kv_split_items(base_key: str, tensor: torch.Tensor) -> List[Tuple[str, torch.Tensor]]:
+def _kv_split_items(base_key: str, tensor: torch.Tensor) -> list[tuple[str, torch.Tensor]]:
     # base_key is the original key whose last token was 'kv_scale'
     # We produce keys with 'k_proj.k_scale' and 'v_proj.v_scale'
     if tensor.ndim == 1 and tensor.numel() >= 2:
@@ -375,11 +380,11 @@ def _kv_split_items(base_key: str, tensor: torch.Tensor) -> List[Tuple[str, torc
 
 def canonicalize_checkpoint_items(
     model: torch.nn.Module,
-    items: Iterable[Tuple[str, torch.Tensor]],
-    rbln_quantization: Optional[RBLNQuantizationConfig],
-) -> List[Tuple[str, torch.Tensor]]:
+    items: Iterable[tuple[str, torch.Tensor]],
+    rbln_quantization: RBLNQuantizationConfig | None,
+) -> list[tuple[str, torch.Tensor]]:
     params = dict(model.named_parameters(recurse=True))
-    results: List[Tuple[str, torch.Tensor]] = []
+    results: list[tuple[str, torch.Tensor]] = []
 
     for key, value in items:
         t = value
@@ -431,9 +436,9 @@ def canonicalize_checkpoint_items(
 
 def load_weights_from_files(
     model: torch.nn.Module,
-    safetensors: List[Dict[str, torch.Tensor]],
-    rbln_quantization: Optional[RBLNQuantizationConfig] = None,
-):
+    safetensors: list[dict[str, torch.Tensor]],
+    rbln_quantization: RBLNQuantizationConfig | None = None,
+) -> None:
     """
     Load safetensor file data directly into the model from provided safetensor files.
     """

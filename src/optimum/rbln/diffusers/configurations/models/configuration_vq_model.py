@@ -12,7 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Optional, Tuple
+from __future__ import annotations
+
+from typing import Any
+
+from pydantic import field_validator
 
 from ....configuration_utils import RBLNModelConfig
 
@@ -25,16 +29,14 @@ class RBLNVQModelConfig(RBLNModelConfig):
     for VQModel, which acts similarly to a VAE but uses vector quantization.
     """
 
-    def __init__(
-        self,
-        batch_size: Optional[int] = None,
-        sample_size: Optional[Tuple[int, int]] = None,
-        uses_encoder: Optional[bool] = None,
-        vqmodel_scale_factor: Optional[float] = None,  # TODO: rename to scaling_factor
-        in_channels: Optional[int] = None,
-        latent_channels: Optional[int] = None,
-        **kwargs: Any,
-    ):
+    batch_size: int = 1
+    sample_size: tuple[int, int] | None = None
+    uses_encoder: bool | None = None
+    vqmodel_scale_factor: float | None = None  # TODO: rename to scaling_factor
+    in_channels: int | None = None
+    latent_channels: int | None = None
+
+    def __init__(self, **data: Any):
         """
         Args:
             batch_size (Optional[int]): The batch size for inference. Defaults to 1.
@@ -46,24 +48,26 @@ class RBLNVQModelConfig(RBLNModelConfig):
                 Determines the downsampling ratio between original images and latent representations.
             in_channels (Optional[int]): Number of input channels for the model.
             latent_channels (Optional[int]): Number of channels in the latent space.
-            kwargs: Additional arguments passed to the parent RBLNModelConfig.
+            **data: Additional arguments passed to the parent RBLNModelConfig.
 
         Raises:
             ValueError: If batch_size is not a positive integer.
         """
-        super().__init__(**kwargs)
-        self.batch_size = batch_size or 1
-        if not isinstance(self.batch_size, int) or self.batch_size < 0:
-            raise ValueError(f"batch_size must be a positive integer, got {self.batch_size}")
+        # Normalize sample_size before super().__init__
+        sample_size = data.get("sample_size")
+        if isinstance(sample_size, int):
+            data["sample_size"] = (sample_size, sample_size)
 
-        self.uses_encoder = uses_encoder
-        self.sample_size = sample_size
-        if isinstance(self.sample_size, int):
-            self.sample_size = (self.sample_size, self.sample_size)
+        super().__init__(**data)
 
-        self.vqmodel_scale_factor = vqmodel_scale_factor
-        self.in_channels = in_channels
-        self.latent_channels = latent_channels
+    @field_validator("batch_size", mode="before")
+    @classmethod
+    def validate_batch_size(cls, v: int | None) -> int:
+        if v is None:
+            return 1
+        if not isinstance(v, int) or v < 0:
+            raise ValueError(f"batch_size must be a positive integer, got {v}")
+        return v
 
     @property
     def image_size(self):
@@ -71,4 +75,7 @@ class RBLNVQModelConfig(RBLNModelConfig):
 
     @property
     def latent_sample_size(self):
-        return (self.image_size[0] // self.vqmodel_scale_factor, self.image_size[1] // self.vqmodel_scale_factor)
+        return (
+            int(self.image_size[0] // self.vqmodel_scale_factor),
+            int(self.image_size[1] // self.vqmodel_scale_factor),
+        )

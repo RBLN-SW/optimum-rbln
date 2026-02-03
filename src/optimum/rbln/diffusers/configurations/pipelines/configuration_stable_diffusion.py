@@ -12,7 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Optional, Tuple
+from __future__ import annotations
+
+from typing import Any, ClassVar
 
 from ....configuration_utils import RBLNModelConfig
 from ....transformers import RBLNCLIPTextModelConfig
@@ -20,33 +22,37 @@ from ..models import RBLNAutoencoderKLConfig, RBLNUNet2DConditionModelConfig
 
 
 class RBLNStableDiffusionPipelineBaseConfig(RBLNModelConfig):
-    submodules = ["text_encoder", "unet", "vae"]
-    _vae_uses_encoder = False
+    """Base configuration for Stable Diffusion pipelines."""
+
+    submodules: ClassVar[list[str]] = ["text_encoder", "unet", "vae"]
+    _vae_uses_encoder: ClassVar[bool] = False
+    _allow_no_compile_cfgs: ClassVar[bool] = True
+
+    text_encoder: dict[str, Any] | RBLNModelConfig | None = None
+    unet: dict[str, Any] | RBLNModelConfig | None = None
+    vae: dict[str, Any] | RBLNModelConfig | None = None
 
     def __init__(
         self,
-        text_encoder: Optional[RBLNCLIPTextModelConfig] = None,
-        unet: Optional[RBLNUNet2DConditionModelConfig] = None,
-        vae: Optional[RBLNAutoencoderKLConfig] = None,
+        text_encoder: RBLNCLIPTextModelConfig | dict[str, Any] | None = None,
+        unet: RBLNUNet2DConditionModelConfig | dict[str, Any] | None = None,
+        vae: RBLNAutoencoderKLConfig | dict[str, Any] | None = None,
         *,
-        batch_size: Optional[int] = None,
-        img_height: Optional[int] = None,
-        img_width: Optional[int] = None,
-        height: Optional[int] = None,
-        width: Optional[int] = None,
-        sample_size: Optional[Tuple[int, int]] = None,
-        image_size: Optional[Tuple[int, int]] = None,
-        guidance_scale: Optional[float] = None,
+        batch_size: int | None = None,
+        img_height: int | None = None,
+        img_width: int | None = None,
+        height: int | None = None,
+        width: int | None = None,
+        sample_size: tuple[int, int] | None = None,
+        image_size: tuple[int, int] | None = None,
+        guidance_scale: float | None = None,
         **kwargs: Any,
     ):
         """
         Args:
             text_encoder (Optional[RBLNCLIPTextModelConfig]): Configuration for the text encoder component.
-                Initialized as RBLNCLIPTextModelConfig if not provided.
             unet (Optional[RBLNUNet2DConditionModelConfig]): Configuration for the UNet model component.
-                Initialized as RBLNUNet2DConditionModelConfig if not provided.
             vae (Optional[RBLNAutoencoderKLConfig]): Configuration for the VAE model component.
-                Initialized as RBLNAutoencoderKLConfig if not provided.
             batch_size (Optional[int]): Batch size for inference, applied to all submodules.
             img_height (Optional[int]): Height of the generated images.
             img_width (Optional[int]): Width of the generated images.
@@ -54,19 +60,9 @@ class RBLNStableDiffusionPipelineBaseConfig(RBLNModelConfig):
             width (Optional[int]): Width of the generated images.
             sample_size (Optional[Tuple[int, int]]): Spatial dimensions for the UNet model.
             image_size (Optional[Tuple[int, int]]): Alternative way to specify image dimensions.
-                Cannot be used together with img_height/img_width.
             guidance_scale (Optional[float]): Scale for classifier-free guidance.
             kwargs: Additional arguments passed to the parent RBLNModelConfig.
-
-        Raises:
-            ValueError: If both image_size and img_height/img_width are provided.
-
-        Note:
-            When guidance_scale > 1.0, the UNet batch size is automatically doubled to
-            accommodate classifier-free guidance.
         """
-        super().__init__(**kwargs)
-
         # Initial check for image_size conflict remains as is
         if image_size is not None and (
             img_height is not None or img_width is not None or height is not None or width is not None
@@ -76,7 +72,6 @@ class RBLNStableDiffusionPipelineBaseConfig(RBLNModelConfig):
         # Prioritize height/width (HF-aligned)
         if height is not None and width is not None:
             if img_height is not None or img_width is not None:
-                # Raise error if both sets of arguments are provided
                 raise ValueError(
                     "Cannot provide both 'height'/'width' and 'img_height'/'img_width' simultaneously. "
                     "Please use one set of arguments for image dimensions, preferring 'height'/'width'."
@@ -90,18 +85,26 @@ class RBLNStableDiffusionPipelineBaseConfig(RBLNModelConfig):
         elif (img_height is not None and img_width is None) or (img_height is None and img_width is not None):
             raise ValueError("Both img_height and img_width must be provided together if used")
 
+        # Store submodule configs in kwargs for parent init
+        kwargs["text_encoder"] = text_encoder
+        kwargs["unet"] = unet
+        kwargs["vae"] = vae
+
+        super().__init__(**kwargs)
+
+        # Initialize submodule configs
         self.text_encoder = self.initialize_submodule_config(
-            text_encoder,
+            self.text_encoder,
             cls_name="RBLNCLIPTextModelConfig",
             batch_size=batch_size,
         )
         self.unet = self.initialize_submodule_config(
-            unet,
+            self.unet,
             cls_name="RBLNUNet2DConditionModelConfig",
             sample_size=sample_size,
         )
         self.vae = self.initialize_submodule_config(
-            vae,
+            self.vae,
             cls_name="RBLNAutoencoderKLConfig",
             batch_size=batch_size,
             uses_encoder=self.__class__._vae_uses_encoder,
@@ -112,24 +115,31 @@ class RBLNStableDiffusionPipelineBaseConfig(RBLNModelConfig):
         if guidance_scale is None:
             guidance_scale = self.get_default_values_for_original_cls("__call__", ["guidance_scale"])["guidance_scale"]
 
-        if not self.unet.batch_size_is_specified:
-            do_classifier_free_guidance = guidance_scale > 1.0
-            if do_classifier_free_guidance:
-                self.unet.batch_size = self.text_encoder.batch_size * 2
-            else:
-                self.unet.batch_size = self.text_encoder.batch_size
+        if isinstance(self.unet, RBLNModelConfig) and hasattr(self.unet, "batch_size_is_specified"):
+            if not self.unet.batch_size_is_specified:
+                do_classifier_free_guidance = guidance_scale > 1.0
+                if do_classifier_free_guidance:
+                    self.unet.batch_size = self.text_encoder.batch_size * 2
+                else:
+                    self.unet.batch_size = self.text_encoder.batch_size
 
     @property
-    def batch_size(self):
-        return self.vae.batch_size
+    def batch_size(self) -> int:
+        if isinstance(self.vae, RBLNModelConfig):
+            return self.vae.batch_size
+        return 1
 
     @property
-    def sample_size(self):
-        return self.unet.sample_size
+    def sample_size(self) -> tuple[int, int] | None:
+        if isinstance(self.unet, RBLNModelConfig):
+            return self.unet.sample_size
+        return None
 
     @property
-    def image_size(self):
-        return self.vae.sample_size
+    def image_size(self) -> tuple[int, int] | None:
+        if isinstance(self.vae, RBLNModelConfig):
+            return self.vae.sample_size
+        return None
 
 
 class RBLNStableDiffusionPipelineConfig(RBLNStableDiffusionPipelineBaseConfig):
@@ -137,7 +147,7 @@ class RBLNStableDiffusionPipelineConfig(RBLNStableDiffusionPipelineBaseConfig):
     Configuration for Stable Diffusion pipeline.
     """
 
-    _vae_uses_encoder = False
+    _vae_uses_encoder: ClassVar[bool] = False
 
 
 class RBLNStableDiffusionImg2ImgPipelineConfig(RBLNStableDiffusionPipelineBaseConfig):
@@ -145,7 +155,7 @@ class RBLNStableDiffusionImg2ImgPipelineConfig(RBLNStableDiffusionPipelineBaseCo
     Configuration for Stable Diffusion image-to-image pipeline.
     """
 
-    _vae_uses_encoder = True
+    _vae_uses_encoder: ClassVar[bool] = True
 
 
 class RBLNStableDiffusionInpaintPipelineConfig(RBLNStableDiffusionPipelineBaseConfig):
@@ -153,4 +163,4 @@ class RBLNStableDiffusionInpaintPipelineConfig(RBLNStableDiffusionPipelineBaseCo
     Configuration for Stable Diffusion inpainting pipeline.
     """
 
-    _vae_uses_encoder = True
+    _vae_uses_encoder: ClassVar[bool] = True

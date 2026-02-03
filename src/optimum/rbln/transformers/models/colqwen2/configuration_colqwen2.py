@@ -12,10 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Optional
+from __future__ import annotations
 
-from optimum.rbln.configuration_utils import RBLNModelConfig
+from typing import Any, ClassVar
 
+from ....configuration_utils import RBLNModelConfig
 from ..decoderonly.configuration_decoderonly import RBLNDecoderOnlyModelConfig
 
 
@@ -23,7 +24,7 @@ class RBLNColQwen2ForRetrievalConfig(RBLNDecoderOnlyModelConfig):
     """
     Configuration class for RBLN ColQwen2 models for document retrieval.
 
-    This class extends RBLNModelConfig with specific configurations for ColQwen2 models,
+    This class extends RBLNDecoderOnlyModelConfig with specific configurations for ColQwen2 models,
     including vision tower settings and multi-sequence length support.
 
     Example usage:
@@ -51,39 +52,31 @@ class RBLNColQwen2ForRetrievalConfig(RBLNDecoderOnlyModelConfig):
             rbln_config=config
         )
         ```
+
+    Args:
+        batch_size (int, optional): The batch size for the model. Defaults to 1.
+        output_hidden_states (bool, optional): Whether to output the hidden states of the VLM model. Defaults to False.
+        vlm (RBLNModelConfig, optional): Configuration for the VLM component.
     """
 
-    submodules = ["vlm"]
+    submodules: ClassVar[list[str]] = ["vlm"]
+    submodule_config_classes: ClassVar[dict[str, str]] = {
+        "vlm": "RBLNQwen2VLForConditionalGenerationConfig",
+    }
     _allow_no_compile_cfgs = True
 
-    def __init__(
-        self,
-        batch_size: Optional[int] = None,
-        output_hidden_states: Optional[bool] = None,
-        vlm: Optional[RBLNModelConfig] = None,
-        **kwargs: Any,
-    ):
-        """
-        Args:
-            batch_size (Optional[int]): The batch size for the model.
-            output_hidden_states (Optional[bool]): Whether to output the hidden states of the VLM model.
-            vlm (Optional[RBLNModelConfig]): Configuration for the VLM component.
-            kwargs: Additional arguments passed to the parent RBLNModelConfig.
-        Raises:
-            ValueError: If batch_size is not a positive integer.
-        """
-        super().__init__(**kwargs)
-        self.batch_size = batch_size or 1
-        self.output_hidden_states = output_hidden_states or False
+    vlm: RBLNModelConfig | None = None
 
-        if not isinstance(self.batch_size, int) or self.batch_size < 0:
-            raise ValueError(f"batch_size must be a positive integer, got {self.batch_size}")
-
-        self.vlm = self.initialize_submodule_config(
-            submodule_config=vlm,
-            batch_size=batch_size,
-            output_hidden_states=output_hidden_states,
-            force_kwargs=True,
-            logits_to_keep=0,
-            use_inputs_embeds=True,
-        )
+    def __init__(self, **data: Any):
+        super().__init__(**data)
+        # vlm is converted by @model_validator, but we still handle None case
+        if self.vlm is None:
+            self.vlm = self.initialize_submodule_config(
+                submodule_name="vlm",
+                submodule_config=None,
+                batch_size=self.batch_size,
+                output_hidden_states=self.output_hidden_states,
+                force_kwargs=True,
+                logits_to_keep=0,
+                use_inputs_embeds=True,
+            )

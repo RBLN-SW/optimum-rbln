@@ -12,48 +12,45 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Optional, Tuple
+from __future__ import annotations
+
+from typing import Any
+
+from pydantic import PrivateAttr, field_validator
 
 from ....configuration_utils import RBLNModelConfig
 
 
 class RBLNUNetSpatioTemporalConditionModelConfig(RBLNModelConfig):
-    subclass_non_save_attributes = ["_batch_size_is_specified"]
+    """Configuration for RBLN UNet Spatio-Temporal Condition models."""
 
-    def __init__(
-        self,
-        batch_size: Optional[int] = None,
-        sample_size: Optional[Tuple[int, int]] = None,
-        in_features: Optional[int] = None,
-        num_frames: Optional[int] = None,
-        **kwargs: Any,
-    ):
-        """
-        Args:
-            batch_size (Optional[int]): The batch size for inference. Defaults to 1.
-            sample_size (Optional[Tuple[int, int]]): The spatial dimensions (height, width) of the generated samples.
-                If an integer is provided, it's used for both height and width.
-            in_features (Optional[int]): Number of input features for the model.
-            num_frames (Optional[int]): The number of frames in the generated video.
-            kwargs: Additional arguments passed to the parent RBLNModelConfig.
+    batch_size: int = 1
+    sample_size: tuple[int, int] | None = None
+    in_features: int | None = None
+    num_frames: int | None = None
 
-        Raises:
-            ValueError: If batch_size is not a positive integer.
-        """
-        super().__init__(**kwargs)
-        self._batch_size_is_specified = batch_size is not None
+    _batch_size_is_specified: bool = PrivateAttr(default=False)
 
-        self.batch_size = batch_size or 1
-        if not isinstance(self.batch_size, int) or self.batch_size < 0:
-            raise ValueError(f"batch_size must be a positive integer, got {self.batch_size}")
+    def __init__(self, **data: Any):
+        batch_size_specified = "batch_size" in data and data["batch_size"] is not None
 
-        self.in_features = in_features
-        self.num_frames = num_frames
-
-        self.sample_size = sample_size
+        # Normalize sample_size to tuple
+        sample_size = data.get("sample_size")
         if isinstance(sample_size, int):
-            self.sample_size = (sample_size, sample_size)
+            data["sample_size"] = (sample_size, sample_size)
+
+        super().__init__(**data)
+        self._batch_size_is_specified = batch_size_specified
+
+    @field_validator("batch_size", mode="before")
+    @classmethod
+    def validate_batch_size(cls, v: int | None) -> int:
+        if v is None:
+            return 1
+        if not isinstance(v, int) or v < 0:
+            raise ValueError(f"batch_size must be a positive integer, got {v}")
+        return v
 
     @property
-    def batch_size_is_specified(self):
+    def batch_size_is_specified(self) -> bool:
         return self._batch_size_is_specified

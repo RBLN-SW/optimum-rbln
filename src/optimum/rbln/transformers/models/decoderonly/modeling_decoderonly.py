@@ -23,7 +23,7 @@ from transformers import AutoModel, AutoModelForCausalLM, PretrainedConfig, PreT
 from transformers.modeling_outputs import BaseModelOutputWithPast
 from transformers.modeling_utils import no_init_weights
 
-from ....configuration_utils import RBLNCompileConfig
+from ....configuration_utils import RBLNCompileConfig, normalize_dtype
 from ....modeling import RBLNModel
 from ....utils.logging import get_logger
 from ....utils.runtime_utils import is_compiler_supports_buffer_resize
@@ -35,7 +35,11 @@ from ...modeling_attention_utils import (
 )
 from ...modeling_outputs import RBLNDecoderOnlyOutput, _validate_output_hidden_states
 from ...utils.rbln_quantization import get_quantized_model
-from .configuration_decoderonly import KVCacheMeta, RBLNDecoderOnlyModelConfig, RBLNDecoderOnlyModelForCausalLMConfig
+from .configuration_decoderonly import (
+    RBLNDecoderOnlyModelConfig,
+    RBLNDecoderOnlyModelForCausalLMConfig,
+    make_kvcache_meta,
+)
 from .decoderonly_architecture import DecoderOnlyWrapper
 from .decoderonly_runtime_utils import RBLNPageTableManager, RBLNRuntimeModel
 from .generation_decoderonly import RBLNDecoderOnlyGenerationMixin
@@ -263,7 +267,7 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
 
         # Mark static tensors (self kv states)
         static_tensors = {}
-        for (name, _, _), tensor in zip(compile_config.input_info, example_inputs):
+        for (name, _, _), tensor in zip(compile_config.input_info, example_inputs, strict=False):
             if "past_key_values" in name:
                 static_tensors[name] = tensor
                 context.mark_static_address(tensor, name)
@@ -311,7 +315,7 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
         if rbln_config.can_generate:
             wrapped_model.phase = "decode"
             for batch_size, dec_compile_config in zip(
-                rbln_config.decoder_batch_sizes, rbln_config.compile_cfgs[rbln_config.decoder_runtime_idx :]
+                rbln_config.decoder_batch_sizes, rbln_config.compile_cfgs[rbln_config.decoder_runtime_idx :], strict=False
             ):
                 dec_example_inputs = dec_compile_config.get_dummy_inputs(fill=0, static_tensors=static_tensors)
                 compiled_decoder = cls._compile_model(
@@ -413,12 +417,12 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
             for i in range(num_hidden_layers * 2):
                 layer_idx = i // 2
                 name = f"past_key_values_{i}"
-                kvcache_meta = KVCacheMeta.make(
+                kvcache_meta = make_kvcache_meta(
                     name,
                     layer_idx,
                     num_key_value_heads,
                     head_dim,
-                    RBLNCompileConfig.normalize_dtype(kvcache_dtype),
+                    normalize_dtype(kvcache_dtype),
                     rbln_config,
                 )
                 kvcache_metas.append(kvcache_meta)

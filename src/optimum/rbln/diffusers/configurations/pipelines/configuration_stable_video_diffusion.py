@@ -12,7 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Optional
+from __future__ import annotations
+
+from typing import Any, ClassVar, Optional
 
 from ....configuration_utils import RBLNModelConfig
 from ....transformers import RBLNCLIPVisionModelWithProjectionConfig
@@ -20,14 +22,15 @@ from ..models import RBLNAutoencoderKLTemporalDecoderConfig, RBLNUNetSpatioTempo
 
 
 class RBLNStableVideoDiffusionPipelineConfig(RBLNModelConfig):
-    submodules = ["image_encoder", "unet", "vae"]
-    _vae_uses_encoder = True
+    submodules: ClassVar[list[str]] = ["image_encoder", "unet", "vae"]
+    _vae_uses_encoder: ClassVar[bool] = True
+
+    image_encoder: dict[str, Any] | RBLNCLIPVisionModelWithProjectionConfig | None = None
+    unet: dict[str, Any] | RBLNUNetSpatioTemporalConditionModelConfig | None = None
+    vae: dict[str, Any] | RBLNAutoencoderKLTemporalDecoderConfig | None = None
 
     def __init__(
         self,
-        image_encoder: Optional[RBLNCLIPVisionModelWithProjectionConfig] = None,
-        unet: Optional[RBLNUNetSpatioTemporalConditionModelConfig] = None,
-        vae: Optional[RBLNAutoencoderKLTemporalDecoderConfig] = None,
         *,
         batch_size: Optional[int] = None,
         height: Optional[int] = None,
@@ -35,7 +38,7 @@ class RBLNStableVideoDiffusionPipelineConfig(RBLNModelConfig):
         num_frames: Optional[int] = None,
         decode_chunk_size: Optional[int] = None,
         guidance_scale: Optional[float] = None,
-        **kwargs: Any,
+        **data: Any,
     ):
         """
         Args:
@@ -52,7 +55,7 @@ class RBLNStableVideoDiffusionPipelineConfig(RBLNModelConfig):
             decode_chunk_size (Optional[int]): The number of frames to decode at once during VAE decoding.
                 Useful for managing memory usage during video generation.
             guidance_scale (Optional[float]): Scale for classifier-free guidance.
-            kwargs: Additional arguments passed to the parent RBLNModelConfig.
+            **data: Additional arguments passed to the parent RBLNModelConfig.
 
         Raises:
             ValueError: If both image_size and height/width are provided.
@@ -61,7 +64,7 @@ class RBLNStableVideoDiffusionPipelineConfig(RBLNModelConfig):
             When guidance_scale > 1.0, the UNet batch size is automatically doubled to
             accommodate classifier-free guidance.
         """
-        super().__init__(**kwargs)
+        super().__init__(**data)
         if height is not None and width is not None:
             image_size = (height, width)
         else:
@@ -71,15 +74,15 @@ class RBLNStableVideoDiffusionPipelineConfig(RBLNModelConfig):
             image_size = (height, width)
 
         self.image_encoder = self.initialize_submodule_config(
-            image_encoder, cls_name="RBLNCLIPVisionModelWithProjectionConfig", batch_size=batch_size
+            self.image_encoder, cls_name="RBLNCLIPVisionModelWithProjectionConfig", batch_size=batch_size
         )
         self.unet = self.initialize_submodule_config(
-            unet,
+            self.unet,
             cls_name="RBLNUNetSpatioTemporalConditionModelConfig",
             num_frames=num_frames,
         )
         self.vae = self.initialize_submodule_config(
-            vae,
+            self.vae,
             cls_name="RBLNAutoencoderKLTemporalDecoderConfig",
             batch_size=batch_size,
             num_frames=num_frames,

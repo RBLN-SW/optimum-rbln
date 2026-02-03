@@ -12,7 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Optional
+from __future__ import annotations
+
+from typing import Any, ClassVar, Optional
 
 from ....configuration_utils import RBLNModelConfig
 from ....transformers import RBLNT5EncoderModelConfig
@@ -25,15 +27,16 @@ logger = get_logger(__name__)
 
 
 class RBLNCosmosPipelineBaseConfig(RBLNModelConfig):
-    submodules = ["text_encoder", "transformer", "vae", "safety_checker"]
-    _vae_uses_encoder = False
+    submodules: ClassVar[list[str]] = ["text_encoder", "transformer", "vae", "safety_checker"]
+    _vae_uses_encoder: ClassVar[bool] = False
+
+    text_encoder: dict[str, Any] | RBLNT5EncoderModelConfig | None = None
+    transformer: dict[str, Any] | RBLNCosmosTransformer3DModelConfig | None = None
+    vae: dict[str, Any] | RBLNAutoencoderKLCosmosConfig | None = None
+    safety_checker: dict[str, Any] | RBLNCosmosSafetyCheckerConfig | None = None
 
     def __init__(
         self,
-        text_encoder: Optional[RBLNT5EncoderModelConfig] = None,
-        transformer: Optional[RBLNCosmosTransformer3DModelConfig] = None,
-        vae: Optional[RBLNAutoencoderKLCosmosConfig] = None,
-        safety_checker: Optional[RBLNCosmosSafetyCheckerConfig] = None,
         *,
         batch_size: Optional[int] = None,
         height: Optional[int] = None,
@@ -41,7 +44,7 @@ class RBLNCosmosPipelineBaseConfig(RBLNModelConfig):
         num_frames: Optional[int] = None,
         fps: Optional[int] = None,
         max_seq_len: Optional[int] = None,
-        **kwargs: Any,
+        **data: Any,
     ):
         """
         Args:
@@ -59,18 +62,18 @@ class RBLNCosmosPipelineBaseConfig(RBLNModelConfig):
             num_frames (Optional[int]): The number of frames in the generated video.
             fps (Optional[int]): The frames per second of the generated video.
             max_seq_len (Optional[int]): Maximum sequence length supported by the model.
-            kwargs: Additional arguments passed to the parent RBLNModelConfig.
+            **data: Additional arguments passed to the parent RBLNModelConfig.
         """
-        super().__init__(**kwargs)
+        super().__init__(**data)
 
         self.text_encoder = self.initialize_submodule_config(
-            text_encoder,
+            self.text_encoder,
             cls_name="RBLNT5EncoderModelConfig",
             batch_size=batch_size,
             max_seq_len=max_seq_len,
         )
         self.transformer = self.initialize_submodule_config(
-            transformer,
+            self.transformer,
             cls_name="RBLNCosmosTransformer3DModelConfig",
             batch_size=batch_size,
             max_seq_len=max_seq_len,
@@ -80,7 +83,7 @@ class RBLNCosmosPipelineBaseConfig(RBLNModelConfig):
             fps=fps,
         )
         self.vae = self.initialize_submodule_config(
-            vae,
+            self.vae,
             cls_name="RBLNAutoencoderKLCosmosConfig",
             batch_size=batch_size,
             uses_encoder=self.__class__._vae_uses_encoder,
@@ -89,7 +92,7 @@ class RBLNCosmosPipelineBaseConfig(RBLNModelConfig):
             num_frames=num_frames,
         )
         self.safety_checker = self.initialize_submodule_config(
-            safety_checker,
+            self.safety_checker,
             cls_name="RBLNCosmosSafetyCheckerConfig",
             batch_size=batch_size,
             height=height,
@@ -108,10 +111,10 @@ class RBLNCosmosPipelineBaseConfig(RBLNModelConfig):
 class RBLNCosmosTextToWorldPipelineConfig(RBLNCosmosPipelineBaseConfig):
     """Config for Cosmos Text2World Pipeline"""
 
-    _vae_uses_encoder = False
+    _vae_uses_encoder: ClassVar[bool] = False
 
 
 class RBLNCosmosVideoToWorldPipelineConfig(RBLNCosmosPipelineBaseConfig):
     """Config for Cosmos Video2World Pipeline"""
 
-    _vae_uses_encoder = True
+    _vae_uses_encoder: ClassVar[bool] = True

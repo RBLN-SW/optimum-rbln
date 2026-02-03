@@ -12,26 +12,28 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Dict, List, Optional, Union
+from __future__ import annotations
+
+from typing import Any, ClassVar
+
+from pydantic import model_validator
 
 from ....configuration_utils import RBLNModelConfig
 from ..decoderonly.configuration_decoderonly import RBLNDecoderOnlyModelConfig, RBLNDecoderOnlyModelForCausalLMConfig
 
 
 class RBLNQwen2VLForConditionalGenerationConfig(RBLNDecoderOnlyModelForCausalLMConfig):
-    submodules = ["visual"]
+    submodules: ClassVar[list[str]] = ["visual"]
+    submodule_config_classes: ClassVar[dict[str, str]] = {"visual": "RBLNQwen2VisionTransformerPretrainedModelConfig"}
 
-    def __init__(
-        self,
-        use_inputs_embeds: bool = True,
-        visual: Optional[RBLNModelConfig] = None,
-        **kwargs: Dict[str, Any],
-    ):
+    visual: RBLNModelConfig | None = None
+
+    def __init__(self, **data: Any):
         """
         Args:
             use_inputs_embeds (bool): Whether or not to use `inputs_embeds` as input. Defaults to `True`.
             visual (Optional[RBLNModelConfig]): Configuration for the vision encoder component.
-            kwargs: Additional arguments passed to the parent `RBLNDecoderOnlyModelForCausalLMConfig`.
+            **data: Additional arguments passed to the parent `RBLNDecoderOnlyModelForCausalLMConfig`.
 
         Raises:
             ValueError: If `use_inputs_embeds` is False.
@@ -39,13 +41,21 @@ class RBLNQwen2VLForConditionalGenerationConfig(RBLNDecoderOnlyModelForCausalLMC
             ValueError: If visual is None and no default vision configuration can be inferred for the model architecture.
             ValueError: If any inherited parameters violate constraints defined in the parent class, such as batch_size not being a positive integer, prefill_chunk_size not being divisible by 64, or max_seq_len not meeting requirements for Flash Attention.
         """
-        super().__init__(use_inputs_embeds=use_inputs_embeds, **kwargs)
+        if "use_inputs_embeds" not in data or data["use_inputs_embeds"] is None:
+            data["use_inputs_embeds"] = True
+        super().__init__(**data)
+        # visual is converted by @model_validator for dicts, but we still handle None case
+        if self.visual is None:
+            self.visual = self.initialize_submodule_config(submodule_name="visual", submodule_config=None)
+
+    @model_validator(mode="after")
+    def validate_use_inputs_embeds(self) -> "RBLNQwen2VLForConditionalGenerationConfig":
         if not self.use_inputs_embeds:
             raise ValueError(
                 "RBLNQwen2VLForConditionalGenerationConfig does not allow `use_inputs_embeds` to be set to False, "
                 "as RBLNQwen2VLForConditionalGeneration accepts only `inputs_embeds` as input."
             )
-        self.visual = visual
+        return self
 
 
 class RBLNQwen2VLModelConfig(RBLNDecoderOnlyModelConfig):
@@ -53,15 +63,22 @@ class RBLNQwen2VLModelConfig(RBLNDecoderOnlyModelConfig):
     Configuration class for RBLNQwen2VLModel.
     """
 
-    submodules = ["visual"]
+    submodules: ClassVar[list[str]] = ["visual"]
+    submodule_config_classes: ClassVar[dict[str, str]] = {"visual": "RBLNQwen2VisionTransformerPretrainedModelConfig"}
 
-    def __init__(self, visual: Optional[RBLNModelConfig] = None, **kwargs: Dict[str, Any]):
-        super().__init__(**kwargs)
-        self.visual = self.initialize_submodule_config(submodule_config=visual)
+    visual: RBLNModelConfig | None = None
+
+    def __init__(self, **data: Any):
+        super().__init__(**data)
+        # visual is converted by @model_validator for dicts, but we still handle None case
+        if self.visual is None:
+            self.visual = self.initialize_submodule_config(submodule_name="visual", submodule_config=None)
 
 
 class RBLNQwen2VisionTransformerPretrainedModelConfig(RBLNModelConfig):
-    def __init__(self, max_seq_lens: Union[int, List[int]] = None, **kwargs: Dict[str, Any]):
+    max_seq_lens: list[int] | None = None
+
+    def __init__(self, **data: Any):
         """
         Args:
             max_seq_lens (Optional[Union[int, List[int]]]): Maximum sequence lengths for Vision
@@ -71,7 +88,7 @@ class RBLNQwen2VisionTransformerPretrainedModelConfig(RBLNModelConfig):
                 so `max_seq_lens` must be at least 256. RBLN optimization runs inference per image
                 or video frame, so set `max_seq_lens` to match the maximum expected resolution to
                 optimize computation. If not provided, a `ValueError` is raised.
-            kwargs: Additional arguments passed to the parent RBLNModelConfig.
+            **data: Additional arguments passed to the parent RBLNModelConfig.
 
         Raises:
             ValueError: If batch_size is not a positive integer.
@@ -87,14 +104,14 @@ class RBLNQwen2VisionTransformerPretrainedModelConfig(RBLNModelConfig):
             For example, a 224x224 image with a patch size of 14 results in (224 / 14) * (224 / 14) = 256 patches.
             Therefore, `max_seq_lens` must be at least 256.
         """
-        super().__init__(**kwargs)
-
+        # Handle max_seq_lens normalization before super().__init__
+        max_seq_lens = data.get("max_seq_lens")
         if max_seq_lens is not None:
             if isinstance(max_seq_lens, int):
-                max_seq_lens = [max_seq_lens]
+                data["max_seq_lens"] = [max_seq_lens]
             elif isinstance(max_seq_lens, list):
-                max_seq_lens.sort(reverse=True)
+                data["max_seq_lens"] = sorted(max_seq_lens, reverse=True)
         else:
             raise ValueError("'max_seq_lens' must be specified.")
 
-        self.max_seq_lens = max_seq_lens
+        super().__init__(**data)

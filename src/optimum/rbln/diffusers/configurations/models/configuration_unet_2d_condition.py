@@ -12,7 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Optional, Tuple
+from __future__ import annotations
+
+from typing import Any
+
+from pydantic import PrivateAttr, field_validator
 
 from ....configuration_utils import RBLNModelConfig
 
@@ -25,57 +29,39 @@ class RBLNUNet2DConditionModelConfig(RBLNModelConfig):
     for UNet2DCondition models used in diffusion-based image generation.
     """
 
-    subclass_non_save_attributes = ["_batch_size_is_specified"]
+    batch_size: int = 1
+    sample_size: tuple[int, int] | int | None = None
+    in_channels: int | None = None
+    cross_attention_dim: int | None = None
+    use_additional_residuals: bool | None = None
+    max_seq_len: int | None = None
+    in_features: int | None = None
+    text_model_hidden_size: int | None = None
+    image_model_hidden_size: int | None = None
 
-    def __init__(
-        self,
-        batch_size: Optional[int] = None,
-        sample_size: Optional[Tuple[int, int]] = None,
-        in_channels: Optional[int] = None,
-        cross_attention_dim: Optional[int] = None,
-        use_additional_residuals: Optional[bool] = None,
-        max_seq_len: Optional[int] = None,
-        in_features: Optional[int] = None,
-        text_model_hidden_size: Optional[int] = None,
-        image_model_hidden_size: Optional[int] = None,
-        **kwargs: Any,
-    ):
-        """
-        Args:
-            batch_size (Optional[int]): The batch size for inference. Defaults to 1.
-            sample_size (Optional[Tuple[int, int]]): The spatial dimensions (height, width) of the generated samples.
-                If an integer is provided, it's used for both height and width.
-            in_channels (Optional[int]): Number of input channels for the UNet.
-            cross_attention_dim (Optional[int]): Dimension of the cross-attention features.
-            use_additional_residuals (Optional[bool]): Whether to use additional residual connections in the model.
-            max_seq_len (Optional[int]): Maximum sequence length for text inputs when used with cross-attention.
-            in_features (Optional[int]): Number of input features for the model.
-            text_model_hidden_size (Optional[int]): Hidden size of the text encoder model.
-            image_model_hidden_size (Optional[int]): Hidden size of the image encoder model.
-            kwargs: Additional arguments passed to the parent RBLNModelConfig.
+    _batch_size_is_specified: bool = PrivateAttr(default=False)
 
-        Raises:
-            ValueError: If batch_size is not a positive integer.
-        """
-        super().__init__(**kwargs)
-        self._batch_size_is_specified = batch_size is not None
+    def __init__(self, **data: Any):
+        # Track if batch_size was explicitly specified
+        batch_size_specified = "batch_size" in data and data["batch_size"] is not None
 
-        self.batch_size = batch_size or 1
-        if not isinstance(self.batch_size, int) or self.batch_size < 0:
-            raise ValueError(f"batch_size must be a positive integer, got {self.batch_size}")
-
-        self.in_channels = in_channels
-        self.cross_attention_dim = cross_attention_dim
-        self.use_additional_residuals = use_additional_residuals
-        self.max_seq_len = max_seq_len
-        self.in_features = in_features
-        self.text_model_hidden_size = text_model_hidden_size
-        self.image_model_hidden_size = image_model_hidden_size
-
-        self.sample_size = sample_size
+        # Normalize sample_size to tuple
+        sample_size = data.get("sample_size")
         if isinstance(sample_size, int):
-            self.sample_size = (sample_size, sample_size)
+            data["sample_size"] = (sample_size, sample_size)
+
+        super().__init__(**data)
+        self._batch_size_is_specified = batch_size_specified
+
+    @field_validator("batch_size", mode="before")
+    @classmethod
+    def validate_batch_size(cls, v: int | None) -> int:
+        if v is None:
+            return 1
+        if not isinstance(v, int) or v < 0:
+            raise ValueError(f"batch_size must be a positive integer, got {v}")
+        return v
 
     @property
-    def batch_size_is_specified(self):
+    def batch_size_is_specified(self) -> bool:
         return self._batch_size_is_specified

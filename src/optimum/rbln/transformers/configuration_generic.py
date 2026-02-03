@@ -12,68 +12,60 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, List, Optional, Tuple, Union
+from __future__ import annotations
+
+from typing import Any, ClassVar
+
+from pydantic import field_validator
 
 from ..configuration_utils import RBLNModelConfig
 
 
 class RBLNTransformerEncoderConfig(RBLNModelConfig):
-    rbln_model_input_names: Optional[List[str]] = None
+    """Base configuration for transformer encoder models."""
 
-    def __init__(
-        self,
-        max_seq_len: Optional[int] = None,
-        batch_size: Optional[int] = None,
-        model_input_names: Optional[List[str]] = None,
-        model_input_shapes: Optional[List[Tuple[int, int]]] = None,
-        **kwargs: Any,
-    ):
-        """
-        Args:
-            max_seq_len (Optional[int]): Maximum sequence length supported by the model.
-            batch_size (Optional[int]): The batch size for inference. Defaults to 1.
-            model_input_names (Optional[List[str]]): Names of the input tensors for the model.
-                Defaults to class-specific rbln_model_input_names if not provided.
-            kwargs: Additional arguments passed to the parent RBLNModelConfig.
+    rbln_model_input_names: ClassVar[list[str] | None] = None
 
-        Raises:
-            ValueError: If batch_size is not a positive integer.
-        """
-        super().__init__(**kwargs)
-        self.max_seq_len = max_seq_len
-        self.batch_size = batch_size or 1
-        if not isinstance(self.batch_size, int) or self.batch_size < 0:
-            raise ValueError(f"batch_size must be a positive integer, got {self.batch_size}")
+    max_seq_len: int | None = None
+    batch_size: int = 1
+    model_input_names: list[str] | None = None
+    model_input_shapes: list[tuple[int, int]] | None = None
 
-        self.model_input_names = model_input_names or self.rbln_model_input_names
-        self.model_input_shapes = model_input_shapes
+    def __init__(self, **data: Any):
+        # Set default model_input_names from class variable if not provided
+        if "model_input_names" not in data or data["model_input_names"] is None:
+            data["model_input_names"] = self.__class__.rbln_model_input_names
+        super().__init__(**data)
+
+    @field_validator("batch_size", mode="before")
+    @classmethod
+    def validate_batch_size(cls, v: int | None) -> int:
+        if v is None:
+            return 1
+        if not isinstance(v, int) or v < 0:
+            raise ValueError(f"batch_size must be a positive integer, got {v}")
+        return v
 
 
 class RBLNImageModelConfig(RBLNModelConfig):
-    def __init__(
-        self,
-        image_size: Optional[Union[int, Tuple[int, int]]] = None,
-        batch_size: Optional[int] = None,
-        **kwargs: Any,
-    ):
-        """
-        Args:
-            image_size (Optional[Union[int, Tuple[int, int]]]): The size of input images.
-                Can be an integer for square images or a tuple (height, width).
-            batch_size (Optional[int]): The batch size for inference. Defaults to 1.
-            kwargs: Additional arguments passed to the parent RBLNModelConfig.
+    """Base configuration for image models."""
 
-        Raises:
-            ValueError: If batch_size is not a positive integer.
-        """
-        super().__init__(**kwargs)
-        self.image_size = image_size
-        self.batch_size = batch_size or 1
-        if not isinstance(self.batch_size, int) or self.batch_size < 0:
-            raise ValueError(f"batch_size must be a positive integer, got {self.batch_size}")
+    image_size: int | tuple[int, int] | dict[str, int] | None = None
+    batch_size: int = 1
+
+    @field_validator("batch_size", mode="before")
+    @classmethod
+    def validate_batch_size(cls, v: int | None) -> int:
+        if v is None:
+            return 1
+        if not isinstance(v, int) or v < 0:
+            raise ValueError(f"batch_size must be a positive integer, got {v}")
+        return v
 
     @property
-    def image_width(self):
+    def image_width(self) -> int | None:
+        if self.image_size is None:
+            return None
         if isinstance(self.image_size, int):
             return self.image_size
         elif isinstance(self.image_size, (list, tuple)):
@@ -82,7 +74,9 @@ class RBLNImageModelConfig(RBLNModelConfig):
             return self.image_size["width"]
 
     @property
-    def image_height(self):
+    def image_height(self) -> int | None:
+        if self.image_size is None:
+            return None
         if isinstance(self.image_size, int):
             return self.image_size
         elif isinstance(self.image_size, (list, tuple)):
@@ -92,29 +86,42 @@ class RBLNImageModelConfig(RBLNModelConfig):
 
 
 class RBLNModelForQuestionAnsweringConfig(RBLNTransformerEncoderConfig):
+    """Configuration for question answering models."""
+
     pass
 
 
 class RBLNModelForSequenceClassificationConfig(RBLNTransformerEncoderConfig):
+    """Configuration for sequence classification models."""
+
     pass
 
 
 class RBLNModelForMaskedLMConfig(RBLNTransformerEncoderConfig):
+    """Configuration for masked language modeling."""
+
     pass
 
 
 class RBLNModelForTextEncodingConfig(RBLNTransformerEncoderConfig):
+    """Configuration for text encoding models."""
+
     pass
 
 
-# FIXME : Appropriate name ?
 class RBLNTransformerEncoderForFeatureExtractionConfig(RBLNTransformerEncoderConfig):
+    """Configuration for feature extraction models."""
+
     pass
 
 
 class RBLNModelForImageClassificationConfig(RBLNImageModelConfig):
+    """Configuration for image classification models."""
+
     pass
 
 
 class RBLNModelForDepthEstimationConfig(RBLNImageModelConfig):
+    """Configuration for depth estimation models."""
+
     pass

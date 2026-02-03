@@ -12,7 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Optional, Tuple, Union
+from __future__ import annotations
+
+from typing import Any
+
+from pydantic import PrivateAttr, field_validator
 
 from ....configuration_utils import RBLNModelConfig
 
@@ -25,39 +29,35 @@ class RBLNSD3Transformer2DModelConfig(RBLNModelConfig):
     for Transformer models used in diffusion models like Stable Diffusion 3.
     """
 
-    subclass_non_save_attributes = ["_batch_size_is_specified"]
+    batch_size: int = 1
+    sample_size: tuple[int, int] | None = None
+    prompt_embed_length: int | None = None
 
-    def __init__(
-        self,
-        batch_size: Optional[int] = None,
-        sample_size: Optional[Union[int, Tuple[int, int]]] = None,
-        prompt_embed_length: Optional[int] = None,
-        **kwargs: Any,
-    ):
-        """
-        Args:
-            batch_size (Optional[int]): The batch size for inference. Defaults to 1.
-            sample_size (Optional[Union[int, Tuple[int, int]]]): The spatial dimensions (height, width)
-                of the generated samples. If an integer is provided, it's used for both height and width.
-            prompt_embed_length (Optional[int]): The length of the embedded prompt vectors that
-                will be used to condition the transformer model.
-            kwargs: Additional arguments passed to the parent RBLNModelConfig.
+    _batch_size_is_specified: bool = PrivateAttr(default=False)
 
-        Raises:
-            ValueError: If batch_size is not a positive integer.
-        """
-        super().__init__(**kwargs)
-        self._batch_size_is_specified = batch_size is not None
+    def __init__(self, **data: Any):
+        batch_size_specified = "batch_size" in data and data["batch_size"] is not None
+        super().__init__(**data)
+        self._batch_size_is_specified = batch_size_specified
 
-        self.batch_size = batch_size or 1
-        if not isinstance(self.batch_size, int) or self.batch_size < 0:
-            raise ValueError(f"batch_size must be a positive integer, got {self.batch_size}")
+    @field_validator("batch_size", mode="before")
+    @classmethod
+    def validate_batch_size(cls, v: int | None) -> int:
+        if v is None:
+            return 1
+        if not isinstance(v, int) or v < 0:
+            raise ValueError(f"batch_size must be a positive integer, got {v}")
+        return v
 
-        self.prompt_embed_length = prompt_embed_length
-        self.sample_size = sample_size
-        if isinstance(self.sample_size, int):
-            self.sample_size = (self.sample_size, self.sample_size)
+    @field_validator("sample_size", mode="before")
+    @classmethod
+    def validate_sample_size(cls, v: int | tuple[int, int] | None) -> tuple[int, int] | None:
+        if v is None:
+            return None
+        if isinstance(v, int):
+            return (v, v)
+        return v
 
     @property
-    def batch_size_is_specified(self):
+    def batch_size_is_specified(self) -> bool:
         return self._batch_size_is_specified

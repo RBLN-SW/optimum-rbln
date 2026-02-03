@@ -12,7 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Optional
+from __future__ import annotations
+
+from typing import Any, ClassVar
+
+from pydantic import field_validator
 
 from ....configuration_utils import RBLNModelConfig
 from ....utils.logging import get_logger
@@ -30,43 +34,36 @@ class RBLNLlavaForConditionalGenerationConfig(RBLNModelConfig):
     that combine vision and language processing capabilities.
     """
 
-    submodules = ["vision_tower", "language_model"]
+    submodules: ClassVar[list[str]] = ["vision_tower", "language_model"]
+    # Note: vision_tower and language_model are not mapped because they vary by model
 
-    def __init__(
-        self,
-        batch_size: Optional[int] = None,
-        vision_tower: Optional[RBLNModelConfig] = None,
-        language_model: Optional[RBLNModelConfig] = None,
-        **kwargs: Any,
-    ):
-        """
-        Args:
-            batch_size (Optional[int]): The batch size for inference. Defaults to 1.
-            vision_tower (Optional[RBLNModelConfig]): Configuration for the vision encoder component.
-                This can include settings specific to the vision encoder, such as input resolution or other vision-related parameters.
-                If not provided, default settings will be used.
-            language_model (Optional[RBLNModelConfig]): Configuration for the language model component.
-                This can include settings specific to the language model, such as tensor parallelism or other text-related parameters.
-                If not provided, default settings will be used.
-            kwargs: Additional arguments passed to the parent RBLNModelConfig.
+    batch_size: int = 1
+    vision_tower: dict[str, Any] | RBLNModelConfig | None = None
+    language_model: dict[str, Any] | RBLNModelConfig | None = None
 
-        Raises:
-            ValueError: If `batch_size` is not a positive integer.
-        """
-        super().__init__(**kwargs)
-        self.batch_size = batch_size or 1
-        if not isinstance(self.batch_size, int) or self.batch_size < 0:
-            raise ValueError(f"batch_size must be a positive integer, got {self.batch_size}")
+    def __init__(self, **data: Any):
+        super().__init__(**data)
 
         if self.batch_size != 1:
             logger.warning("Ignore batch_size for Llava vision tower. It will be set to 1.")
 
-        self.vision_tower = self.initialize_submodule_config(
-            submodule_config=vision_tower,
-            batch_size=1,  # vision_tower batch_size is always 1 in Llava
-            force_kwargs=True,
-        )
+        # vision_tower and language_model vary by model, so we use initialize_submodule_config
+        if self.vision_tower is None or isinstance(self.vision_tower, dict):
+            self.vision_tower = self.initialize_submodule_config(
+                submodule_config=self.vision_tower,
+                batch_size=1,  # vision_tower batch_size is always 1 in Llava
+                force_kwargs=True,
+            )
+        if self.language_model is None or isinstance(self.language_model, dict):
+            self.language_model = self.initialize_submodule_config(
+                submodule_config=self.language_model,
+            )
 
-        self.language_model = self.initialize_submodule_config(
-            submodule_config=language_model,
-        )
+    @field_validator("batch_size", mode="before")
+    @classmethod
+    def validate_batch_size(cls, v: int | None) -> int:
+        if v is None:
+            return 1
+        if not isinstance(v, int) or v < 0:
+            raise ValueError(f"batch_size must be a positive integer, got {v}")
+        return v

@@ -12,7 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Optional
+from __future__ import annotations
+
+from typing import Any
+
+from pydantic import PrivateAttr, field_validator
 
 from ....configuration_utils import RBLNModelConfig
 
@@ -25,35 +29,26 @@ class RBLNPriorTransformerConfig(RBLNModelConfig):
     for Transformer models used in diffusion models like Kandinsky V2.2.
     """
 
-    subclass_non_save_attributes = ["_batch_size_is_specified"]
+    batch_size: int = 1
+    embedding_dim: int | None = None
+    num_embeddings: int | None = None
 
-    def __init__(
-        self,
-        batch_size: Optional[int] = None,
-        embedding_dim: Optional[int] = None,
-        num_embeddings: Optional[int] = None,
-        **kwargs: Any,
-    ):
-        """
-        Args:
-            batch_size (Optional[int]): The batch size for inference. Defaults to 1.
-            embedding_dim (Optional[int]): Dimension of the embedding vectors in the model.
-            num_embeddings (Optional[int]): Number of discrete embeddings in the codebook.
-            kwargs: Additional arguments passed to the parent RBLNModelConfig.
+    _batch_size_is_specified: bool = PrivateAttr(default=False)
 
-        Raises:
-            ValueError: If batch_size is not a positive integer.
-        """
-        super().__init__(**kwargs)
-        self._batch_size_is_specified = batch_size is not None
+    def __init__(self, **data: Any):
+        batch_size_specified = "batch_size" in data and data["batch_size"] is not None
+        super().__init__(**data)
+        self._batch_size_is_specified = batch_size_specified
 
-        self.batch_size = batch_size or 1
-        if not isinstance(self.batch_size, int) or self.batch_size < 0:
-            raise ValueError(f"batch_size must be a positive integer, got {self.batch_size}")
-
-        self.embedding_dim = embedding_dim
-        self.num_embeddings = num_embeddings
+    @field_validator("batch_size", mode="before")
+    @classmethod
+    def validate_batch_size(cls, v: int | None) -> int:
+        if v is None:
+            return 1
+        if not isinstance(v, int) or v < 0:
+            raise ValueError(f"batch_size must be a positive integer, got {v}")
+        return v
 
     @property
-    def batch_size_is_specified(self):
+    def batch_size_is_specified(self) -> bool:
         return self._batch_size_is_specified

@@ -12,36 +12,30 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Optional
+from __future__ import annotations
+
+from pydantic import field_validator
 
 from ....configuration_utils import RBLNModelConfig
-from ....utils.deprecation import deprecate_kwarg
 
 
 class RBLNASTForAudioClassificationConfig(RBLNModelConfig):
     """
     Configuration class for RBLNASTForAudioClassification.
+
+    Args:
+        batch_size (int, optional): The batch size for inference. Defaults to 1.
+        max_length (int, optional): Maximum length of the audio input in time dimension.
     """
 
-    @deprecate_kwarg(old_name="num_mel_bins", version="0.10.0")
-    def __init__(
-        self,
-        batch_size: Optional[int] = None,
-        max_length: Optional[int] = None,
-        **kwargs: Any,
-    ):
-        """
-        Args:
-            batch_size (Optional[int]): The batch size for inference. Defaults to 1.
-            max_length (Optional[int]): Maximum length of the audio input in time dimension.
-            kwargs: Additional arguments passed to the parent RBLNModelConfig.
+    batch_size: int = 1
+    max_length: int | None = None
 
-        Raises:
-            ValueError: If batch_size is not a positive integer.
-        """
-        super().__init__(**kwargs)
-        self.batch_size = batch_size or 1
-        if not isinstance(self.batch_size, int) or self.batch_size < 0:
-            raise ValueError(f"batch_size must be a positive integer, got {self.batch_size}")
-
-        self.max_length = max_length
+    @field_validator("batch_size", mode="before")
+    @classmethod
+    def validate_batch_size(cls, v: int | None) -> int:
+        if v is None:
+            return 1
+        if not isinstance(v, int) or v < 0:
+            raise ValueError(f"batch_size must be a positive integer, got {v}")
+        return v
