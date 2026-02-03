@@ -14,10 +14,10 @@
 
 from typing import Any, Optional, Tuple, Union
 
-from ....configuration_utils import RBLNModelConfig
+from ...configuration_generic import RBLNImageModelConfig
 
 
-class RBLNDetrForObjectDetectionConfig(RBLNModelConfig):
+class RBLNDetrForObjectDetectionConfig(RBLNImageModelConfig):
     """
     Configuration class for RBLNDetrForObjectDetection.
 
@@ -35,8 +35,6 @@ class RBLNDetrForObjectDetectionConfig(RBLNModelConfig):
         Args:
             image_size (Optional[Union[int, Tuple[int, int]]]): The size of input images
                 for compile shape. Can be an integer for square images or a tuple (height, width).
-                If not provided, defaults to (1333, 1333) based on DETR's default longest_edge setting.
-                Images smaller than this will be padded during inference.
             batch_size (Optional[int]): The batch size for inference. Defaults to 1.
             kwargs: Additional arguments passed to the parent RBLNModelConfig.
 
