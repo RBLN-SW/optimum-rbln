@@ -17,8 +17,9 @@ from typing import TYPE_CHECKING, Optional, Union
 import torch
 from safetensors.torch import load_file
 from transformers import AutoConfig, AutoModelForCausalLM, PretrainedConfig
+from transformers.initialization import no_init_weights
 from transformers.integrations.mxfp4 import Mxfp4GptOssExperts
-from transformers.modeling_utils import PreTrainedModel, no_init_weights
+from transformers.modeling_utils import PreTrainedModel
 
 from ....utils.logging import get_logger
 from ...models.decoderonly import (

@@ -18,9 +18,16 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Optional, Tuple, Type, Union
 
 import torch
-from transformers import AutoModelForVision2Seq, PaliGemmaForConditionalGeneration, PretrainedConfig, PreTrainedModel
+
+
+try:
+    from transformers import AutoModelForVision2Seq  # transformers<=4.x
+except ImportError:  # transformers>=5.x
+    from transformers import AutoModelForImageTextToText as AutoModelForVision2Seq
+
+from transformers import PaliGemmaForConditionalGeneration, PretrainedConfig, PreTrainedModel
+from transformers.initialization import no_init_weights
 from transformers.modeling_outputs import BaseModelOutputWithPooling
-from transformers.modeling_utils import no_init_weights
 from transformers.models.paligemma.configuration_paligemma import PaliGemmaConfig
 from transformers.models.paligemma.modeling_paligemma import PaligemmaModelOutputWithPast, PaliGemmaMultiModalProjector
 

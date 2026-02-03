@@ -37,8 +37,6 @@ from transformers.models.auto.modeling_auto import (
     MODEL_FOR_SPEECH_SEQ_2_SEQ_MAPPING_NAMES,
     MODEL_FOR_TEXT_ENCODING_MAPPING,
     MODEL_FOR_TEXT_ENCODING_MAPPING_NAMES,
-    MODEL_FOR_VISION_2_SEQ_MAPPING,
-    MODEL_FOR_VISION_2_SEQ_MAPPING_NAMES,
     MODEL_FOR_ZERO_SHOT_OBJECT_DETECTION_MAPPING,
     MODEL_FOR_ZERO_SHOT_OBJECT_DETECTION_MAPPING_NAMES,
     MODEL_MAPPING,
@@ -106,11 +104,9 @@ class RBLNAutoModelForSequenceClassification(_BaseAutoModelClass):
     _model_mapping_names = MODEL_FOR_SEQUENCE_CLASSIFICATION_MAPPING_NAMES
 
 
-class RBLNAutoModelForVision2Seq(_BaseAutoModelClass):
-    """Automatically detect Vision to Sequence Generation Models."""
-
-    _model_mapping = MODEL_FOR_VISION_2_SEQ_MAPPING
-    _model_mapping_names = MODEL_FOR_VISION_2_SEQ_MAPPING_NAMES
+# transformers==5 removed `AutoModelForVision2Seq` in favor of `AutoModelForImageTextToText`.
+# Keep this class name for backward compatibility.
+RBLNAutoModelForVision2Seq = None  # populated below
 
 
 class RBLNAutoModelForImageTextToText(_BaseAutoModelClass):
@@ -118,6 +114,10 @@ class RBLNAutoModelForImageTextToText(_BaseAutoModelClass):
 
     _model_mapping = MODEL_FOR_IMAGE_TEXT_TO_TEXT_MAPPING
     _model_mapping_names = MODEL_FOR_IMAGE_TEXT_TO_TEXT_MAPPING_NAMES
+
+
+# Backward-compat alias (kept as a class, not a function).
+RBLNAutoModelForVision2Seq = RBLNAutoModelForImageTextToText
 
 
 class RBLNAutoModelForMaskedLM(_BaseAutoModelClass):

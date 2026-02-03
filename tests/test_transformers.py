@@ -245,6 +245,13 @@ class TestWhisperModel(BaseTest.TestModel):
         import numpy as np
         from transformers import AutoProcessor, pipeline
 
+        # transformers>=5 pipelines may require torchcodec + system FFmpeg libs at runtime.
+        # In minimal CI/dev environments those shared libs are often missing; skip gracefully.
+        try:
+            import torchcodec  # noqa: F401
+        except Exception as e:
+            self.skipTest(f"torchcodec/ffmpeg not available: {e}")
+
         processor = AutoProcessor.from_pretrained(self.HF_MODEL_ID)
 
         pipe = pipeline(
@@ -643,7 +650,8 @@ class TestGroundingDinoModel(BaseTest.TestModel):
             "backbone": {"image_size": (1333, 1333)},
             "text_backbone": {
                 "model_input_names": ["input_ids", "attention_mask", "token_type_ids", "position_ids"],
-                "model_input_shapes": [(1, 256), (1, 256, 256), (1, 256), (1, 256)],
+                # transformers>=5 expects a 2D attention mask for BERT-like backbones.
+                "model_input_shapes": [(1, 256), (1, 256), (1, 256), (1, 256)],
             },
         }
     }
