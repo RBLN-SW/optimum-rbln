@@ -207,7 +207,6 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
                 )
 
             config_cls = cls.get_rbln_config_class()
-            import pdb; pdb.set_trace()
             rbln_config, kwargs = config_cls.from_pretrained(
                 model_path_subfolder, rbln_config=rbln_config, return_unused_kwargs=True, **kwargs
             )
@@ -221,7 +220,8 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
 
             if len(cls._rbln_submodules) > 0:
                 if rbln_submodules is None:
-                    rbln_submodules = cls._load_submodules(model_save_dir=model_id, rbln_config=rbln_config, **kwargs)
+                    # Use model_path_subfolder instead of model_id to support nested submodules
+                    rbln_submodules = cls._load_submodules(model_save_dir=model_path_subfolder, rbln_config=rbln_config, **kwargs)
             elif rbln_submodules is None:
                 rbln_submodules = []
 
