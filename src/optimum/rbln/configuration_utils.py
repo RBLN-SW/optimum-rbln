@@ -834,6 +834,50 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
 
         return serializable_map
 
+    def to_dict(self, exclude_defaults: bool = True) -> Dict[str, Any]:
+        """
+        Convert config to a dictionary for passing to from_pretrained.
+
+        This method returns runtime options and optionally filters out
+        empty/default values that would conflict with loaded configs.
+        Submodule configs are recursively converted to dictionaries.
+
+        Args:
+            exclude_defaults: If True, exclude None values, empty lists,
+                and other default values that shouldn't override loaded config.
+
+        Returns:
+            Dictionary containing runtime options and non-default config values.
+        """
+        def filter_runtime(cfg):
+            # Recursively extract runtime options from config (RBLNModelConfig or dict)
+            if isinstance(cfg, RBLNModelConfig):
+                return cfg.to_dict(exclude_defaults=exclude_defaults)
+            if not isinstance(cfg, dict):
+                return None
+            result = {}
+            for k, v in cfg.items():
+                if k in RUNTIME_KEYWORDS:
+                    if not exclude_defaults or v is not None:
+                        result[k] = v
+                elif isinstance(v, dict):
+                    nested = filter_runtime(v)
+                    if nested:
+                        result[k] = nested
+            return result or None
+
+        result = {k: v for k, v in self._runtime_options.items() if not exclude_defaults or v is not None}
+        
+        for name in self.submodules:
+            filtered = filter_runtime(getattr(self, name, None))
+            if filtered:
+                result[name] = filtered
+        
+        if not exclude_defaults:
+            result.update(self._prepare_for_serialization())
+
+        return result
+
     def __repr__(self):
         repr_dict = self._prepare_for_serialization()
         return json.dumps(repr_dict, indent=2)
@@ -955,7 +999,7 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
             update_dict = rbln_submodule_kwargs.pop(submodule, {})
             if update_dict:
                 nested_update(submodule_config, update_dict)
-            config_file[submodule] = RBLNAutoConfig.load_from_dict(submodule_config)
+            config_file[submodule] = RBLNAutoConfig.load_from_dict(submodule_config) # 여기서 submodule_config dict / nested submodule_config dict -> 전부 RBLNModelConfig 인스턴스로 변환
 
         if isinstance(rbln_config, RBLNModelConfig):
             config_file.update(rbln_config._runtime_options)
@@ -963,11 +1007,13 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
             # update submodule runtime
             for submodule in rbln_config.submodules:
                 if str(config_file[submodule]) != str(getattr(rbln_config, submodule)):
-                    import pdb; pdb.set_trace()
                     raise ValueError(
                         f"Passed rbln_config has different attributes for submodule {submodule} than the config_file"
                     )
-                config_file[submodule] = getattr(rbln_config, submodule)
+                config_file[submodule] = getattr(rbln_config, submodule) 
+                # rbln_config 의 submodule RBLNModelConfig 인스턴스로 덮어쓰기 -> 이러면 안됨
+                # 그런데, diffusers의 경우 rbln_config.submodule가 껍데기이므로 덮어쓰기가 되어야함. 
+                # 근데 이러면 차라리 입력을 줄 때 dict로 풀어서 주는게 낫지않나? 그럼 모든게 해결되는 것 같은데 -> 현재 이 로직은 대 전제라서 바꿀 순 없음.
 
         config_file.update(rbln_runtime_kwargs)
         rbln_config = cls(**config_file)
