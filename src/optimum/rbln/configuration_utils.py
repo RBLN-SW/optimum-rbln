@@ -999,7 +999,7 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
             update_dict = rbln_submodule_kwargs.pop(submodule, {})
             if update_dict:
                 nested_update(submodule_config, update_dict)
-            config_file[submodule] = RBLNAutoConfig.load_from_dict(submodule_config) # 여기서 submodule_config dict / nested submodule_config dict -> 전부 RBLNModelConfig 인스턴스로 변환
+            config_file[submodule] = RBLNAutoConfig.load_from_dict(submodule_config)
 
         if isinstance(rbln_config, RBLNModelConfig):
             config_file.update(rbln_config._runtime_options)
@@ -1011,9 +1011,6 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
                         f"Passed rbln_config has different attributes for submodule {submodule} than the config_file"
                     )
                 config_file[submodule] = getattr(rbln_config, submodule) 
-                # rbln_config 의 submodule RBLNModelConfig 인스턴스로 덮어쓰기 -> 이러면 안됨
-                # 그런데, diffusers의 경우 rbln_config.submodule가 껍데기이므로 덮어쓰기가 되어야함. 
-                # 근데 이러면 차라리 입력을 줄 때 dict로 풀어서 주는게 낫지않나? 그럼 모든게 해결되는 것 같은데 -> 현재 이 로직은 대 전제라서 바꿀 순 없음.
 
         config_file.update(rbln_runtime_kwargs)
         rbln_config = cls(**config_file)
