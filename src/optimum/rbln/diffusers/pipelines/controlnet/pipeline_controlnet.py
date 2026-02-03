@@ -575,7 +575,9 @@ class RBLNStableDiffusionControlNetPipeline(RBLNDiffusionMixin, StableDiffusionC
                     controlnet_prompt_embeds = prompt_embeds
 
                 if isinstance(controlnet_keep[i], list):
-                    cond_scale = [c * s for c, s in zip(controlnet_conditioning_scale, controlnet_keep[i], strict=False)]
+                    cond_scale = [
+                        c * s for c, s in zip(controlnet_conditioning_scale, controlnet_keep[i], strict=False)
+                    ]
                 else:
                     controlnet_cond_scale = controlnet_conditioning_scale
                     if isinstance(controlnet_cond_scale, list):

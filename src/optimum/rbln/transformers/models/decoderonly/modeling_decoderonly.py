@@ -315,7 +315,9 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
         if rbln_config.can_generate:
             wrapped_model.phase = "decode"
             for batch_size, dec_compile_config in zip(
-                rbln_config.decoder_batch_sizes, rbln_config.compile_cfgs[rbln_config.decoder_runtime_idx :], strict=False
+                rbln_config.decoder_batch_sizes,
+                rbln_config.compile_cfgs[rbln_config.decoder_runtime_idx :],
+                strict=False,
             ):
                 dec_example_inputs = dec_compile_config.get_dummy_inputs(fill=0, static_tensors=static_tensors)
                 compiled_decoder = cls._compile_model(
