@@ -16,9 +16,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import Field, field_validator, model_validator
+from pydantic import Field, model_validator
 
-from ....configuration_utils import RBLNModelConfig
+from ....configuration_utils import IntOrTuple, PositiveIntDefaultOne, RBLNModelConfig
 
 
 class RBLNSD3Transformer2DModelConfig(RBLNModelConfig):
@@ -29,8 +29,8 @@ class RBLNSD3Transformer2DModelConfig(RBLNModelConfig):
     for Transformer models used in diffusion models like Stable Diffusion 3.
     """
 
-    batch_size: int = Field(default=1, description="The batch size for inference.")
-    sample_size: tuple[int, int] | None = Field(
+    batch_size: PositiveIntDefaultOne = Field(default=1, description="The batch size for inference.")
+    sample_size: IntOrTuple = Field(
         default=None,
         description="The spatial dimensions (height, width) of the generated samples. "
         "If an integer is provided, it's used for both height and width.",
@@ -46,21 +46,3 @@ class RBLNSD3Transformer2DModelConfig(RBLNModelConfig):
         if isinstance(data, dict):
             data["batch_size_is_specified"] = "batch_size" in data and data["batch_size"] is not None
         return data
-
-    @field_validator("batch_size", mode="before")
-    @classmethod
-    def validate_batch_size(cls, v: int | None) -> int:
-        if v is None:
-            return 1
-        if not isinstance(v, int) or v < 0:
-            raise ValueError(f"batch_size must be a positive integer, got {v}")
-        return v
-
-    @field_validator("sample_size", mode="before")
-    @classmethod
-    def validate_sample_size(cls, v: int | tuple[int, int] | None) -> tuple[int, int] | None:
-        if v is None:
-            return None
-        if isinstance(v, int):
-            return (v, v)
-        return v

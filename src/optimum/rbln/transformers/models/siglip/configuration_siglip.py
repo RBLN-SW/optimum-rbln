@@ -14,9 +14,9 @@
 
 from __future__ import annotations
 
-from pydantic import Field, field_validator
+from pydantic import Field
 
-from ....configuration_utils import RBLNModelConfig
+from ....configuration_utils import PositiveIntDefaultOne, RBLNModelConfig
 
 
 class RBLNSiglipVisionModelConfig(RBLNModelConfig):
@@ -27,7 +27,7 @@ class RBLNSiglipVisionModelConfig(RBLNModelConfig):
     RBLN-optimized SigLIP vision models for image encoding in multimodal tasks.
     """
 
-    batch_size: int = Field(default=1, description="The batch size for image processing.")
+    batch_size: PositiveIntDefaultOne = Field(default=1, description="The batch size for image processing.")
     image_size: int | tuple[int, int] | dict[str, int] | None = Field(
         default=None,
         description="The size of input images. Can be an integer for square images, "
@@ -36,15 +36,6 @@ class RBLNSiglipVisionModelConfig(RBLNModelConfig):
     interpolate_pos_encoding: bool = Field(default=False, description="Whether to interpolate the position encoding.")
     output_hidden_states: bool | None = Field(default=None, description="Whether to return hidden states.")
     output_attentions: bool | None = Field(default=None, description="Whether to return attentions.")
-
-    @field_validator("batch_size", mode="before")
-    @classmethod
-    def validate_batch_size(cls, v: int | None) -> int:
-        if v is None:
-            return 1
-        if not isinstance(v, int) or v < 0:
-            raise ValueError(f"batch_size must be a positive integer, got {v}")
-        return v
 
     @property
     def image_width(self):

@@ -18,7 +18,7 @@ from typing import Any
 
 from pydantic import Field, field_validator
 
-from ....configuration_utils import RBLNModelConfig
+from ....configuration_utils import PositiveIntDefaultOne, RBLNModelConfig
 
 
 class RBLNCosmosTransformer3DModelConfig(RBLNModelConfig):
@@ -29,7 +29,7 @@ class RBLNCosmosTransformer3DModelConfig(RBLNModelConfig):
     for Transformer models used in diffusion models like Cosmos.
     """
 
-    batch_size: int = Field(default=1, description="The batch size for inference.")
+    batch_size: PositiveIntDefaultOne = Field(default=1, description="The batch size for inference.")
     num_frames: int = Field(default=121, description="The number of frames in the generated video.")
     height: int = Field(default=704, description="The height in pixels of the generated video.")
     width: int = Field(default=1280, description="The width in pixels of the generated video.")
@@ -46,15 +46,6 @@ class RBLNCosmosTransformer3DModelConfig(RBLNModelConfig):
             data["timeout"] = 80
 
         super().__init__(**data)
-
-    @field_validator("batch_size", mode="before")
-    @classmethod
-    def validate_batch_size(cls, v: int | None) -> int:
-        if v is None:
-            return 1
-        if not isinstance(v, int) or v < 0:
-            raise ValueError(f"batch_size must be a positive integer, got {v}")
-        return v
 
     @field_validator("num_frames", mode="before")
     @classmethod

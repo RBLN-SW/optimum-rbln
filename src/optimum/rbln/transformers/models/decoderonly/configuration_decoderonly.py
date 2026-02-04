@@ -19,7 +19,7 @@ from typing import Any, ClassVar, Literal, get_args
 
 from pydantic import Field, field_validator, model_validator
 
-from ....configuration_utils import RBLNModelConfig
+from ....configuration_utils import PositiveIntDefaultOne, RBLNModelConfig
 from ....utils.logging import get_logger
 from ...utils.rbln_quantization import RBLNQuantizationConfig
 from .configuration_lora import RBLNLoRAConfig
@@ -135,7 +135,7 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
     _default_phases: ClassVar[list[str]] = ["prefill"]
     _default_logits_to_keep: ClassVar[int] = 0
 
-    batch_size: int = Field(default=1, description="The batch size for inference.")
+    batch_size: PositiveIntDefaultOne = Field(default=1, description="The batch size for inference.")
     max_seq_len: int | None = Field(
         default=None,
         description="The maximum sequence length supported by the model. "
@@ -271,15 +271,6 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
         # Setup decoder_batch_sizes if decode phase is enabled
         if "decode" in self.phases and self.decoder_batch_sizes is None:
             self.decoder_batch_sizes = [self.batch_size]
-
-    @field_validator("batch_size", mode="before")
-    @classmethod
-    def validate_batch_size(cls, v: int | None) -> int:
-        if v is None:
-            return 1
-        if not isinstance(v, int) or v < 0:
-            raise ValueError(f"batch_size must be a positive integer, got {v}")
-        return v
 
     @field_validator("prefill_chunk_size")
     @classmethod

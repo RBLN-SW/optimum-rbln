@@ -16,9 +16,9 @@ from __future__ import annotations
 
 from typing import Any, ClassVar
 
-from pydantic import Field, field_validator, model_validator
+from pydantic import Field, model_validator
 
-from ....configuration_utils import RBLNModelConfig
+from ....configuration_utils import PositiveIntDefaultOne, RBLNModelConfig
 from ....utils.logging import get_logger
 from ..decoderonly.configuration_decoderonly import RBLNDecoderOnlyModelForCausalLMConfig
 
@@ -62,7 +62,7 @@ class RBLNGemma3ForConditionalGenerationConfig(RBLNModelConfig):
         # vision_tower is not mapped because it varies by model
     }
 
-    batch_size: int = Field(default=1, description="The batch size for inference.")
+    batch_size: PositiveIntDefaultOne = Field(default=1, description="The batch size for inference.")
     vision_tower: dict[str, Any] | RBLNModelConfig | None = Field(
         default=None, description="Configuration for the vision encoder component."
     )
@@ -84,15 +84,6 @@ class RBLNGemma3ForConditionalGenerationConfig(RBLNModelConfig):
             self.language_model = self.initialize_submodule_config(
                 submodule_name="language_model", submodule_config=None
             )
-
-    @field_validator("batch_size", mode="before")
-    @classmethod
-    def validate_batch_size(cls, v: int | None) -> int:
-        if v is None:
-            return 1
-        if not isinstance(v, int) or v < 0:
-            raise ValueError(f"batch_size must be a positive integer, got {v}")
-        return v
 
     @property
     def image_prefill_chunk_size(self):

@@ -16,9 +16,9 @@ from __future__ import annotations
 
 from typing import Any, ClassVar
 
-from pydantic import Field, field_validator
+from pydantic import Field
 
-from ....configuration_utils import RBLNModelConfig
+from ....configuration_utils import PositiveIntDefaultOne, RBLNModelConfig
 from ....utils.logging import get_logger
 
 
@@ -33,16 +33,7 @@ class RBLNBlip2VisionModelConfig(RBLNModelConfig):
     RBLN-optimized BLIP-2 vision encoder models for multimodal tasks.
     """
 
-    batch_size: int = Field(default=1, description="The batch size for inference.")
-
-    @field_validator("batch_size", mode="before")
-    @classmethod
-    def validate_batch_size(cls, v: int | None) -> int:
-        if v is None:
-            return 1
-        if not isinstance(v, int) or v < 0:
-            raise ValueError(f"batch_size must be a positive integer, got {v}")
-        return v
+    batch_size: PositiveIntDefaultOne = Field(default=1, description="The batch size for inference.")
 
 
 class RBLNBlip2QFormerModelConfig(RBLNModelConfig):
@@ -53,22 +44,13 @@ class RBLNBlip2QFormerModelConfig(RBLNModelConfig):
     RBLN-optimized BLIP-2 Q-Former models that bridge vision and language modalities.
     """
 
-    batch_size: int = Field(default=1, description="The batch size for inference.")
+    batch_size: PositiveIntDefaultOne = Field(default=1, description="The batch size for inference.")
     num_query_tokens: int | None = Field(
         default=None, description="The number of query tokens passed through the Transformer."
     )
     image_text_hidden_size: int | None = Field(
         default=None, description="Dimensionality of the hidden state of the image-text fusion layer."
     )
-
-    @field_validator("batch_size", mode="before")
-    @classmethod
-    def validate_batch_size(cls, v: int | None) -> int:
-        if v is None:
-            return 1
-        if not isinstance(v, int) or v < 0:
-            raise ValueError(f"batch_size must be a positive integer, got {v}")
-        return v
 
 
 class RBLNBlip2ForConditionalGenerationConfig(RBLNModelConfig):
@@ -86,7 +68,7 @@ class RBLNBlip2ForConditionalGenerationConfig(RBLNModelConfig):
         # language_model is not mapped because it varies by model (e.g., OPT, T5, etc.)
     }
 
-    batch_size: int = Field(default=1, description="The batch size for inference.")
+    batch_size: PositiveIntDefaultOne = Field(default=1, description="The batch size for inference.")
     vision_model: RBLNModelConfig | None = Field(
         default=None, description="Configuration for the vision encoder component."
     )
@@ -114,12 +96,3 @@ class RBLNBlip2ForConditionalGenerationConfig(RBLNModelConfig):
         )
         if self.language_model is None or isinstance(self.language_model, dict):
             self.language_model = self.initialize_submodule_config(submodule_config=self.language_model)
-
-    @field_validator("batch_size", mode="before")
-    @classmethod
-    def validate_batch_size(cls, v: int | None) -> int:
-        if v is None:
-            return 1
-        if not isinstance(v, int) or v < 0:
-            raise ValueError(f"batch_size must be a positive integer, got {v}")
-        return v

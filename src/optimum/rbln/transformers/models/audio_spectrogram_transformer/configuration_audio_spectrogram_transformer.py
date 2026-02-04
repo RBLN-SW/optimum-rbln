@@ -14,9 +14,9 @@
 
 from __future__ import annotations
 
-from pydantic import Field, field_validator
+from pydantic import Field
 
-from ....configuration_utils import RBLNModelConfig
+from ....configuration_utils import PositiveIntDefaultOne, RBLNModelConfig
 
 
 class RBLNASTForAudioClassificationConfig(RBLNModelConfig):
@@ -27,17 +27,8 @@ class RBLNASTForAudioClassificationConfig(RBLNModelConfig):
     RBLN-optimized Audio Spectrogram Transformer models for audio classification tasks.
     """
 
-    batch_size: int = Field(default=1, description="The batch size for inference.")
+    batch_size: PositiveIntDefaultOne = Field(default=1, description="The batch size for inference.")
     max_length: int | None = Field(
         default=None,
         description="Maximum length of the audio input in time dimension.",
     )
-
-    @field_validator("batch_size", mode="before")
-    @classmethod
-    def validate_batch_size(cls, v: int | None) -> int:
-        if v is None:
-            return 1
-        if not isinstance(v, int) or v < 0:
-            raise ValueError(f"batch_size must be a positive integer, got {v}")
-        return v

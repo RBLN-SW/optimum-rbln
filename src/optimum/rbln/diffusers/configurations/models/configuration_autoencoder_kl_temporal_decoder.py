@@ -14,9 +14,9 @@
 
 from __future__ import annotations
 
-from pydantic import Field, field_validator
+from pydantic import Field
 
-from ....configuration_utils import RBLNModelConfig
+from ....configuration_utils import IntOrTuple, PositiveIntDefaultOne, RBLNModelConfig
 
 
 class RBLNAutoencoderKLTemporalDecoderConfig(RBLNModelConfig):
@@ -24,8 +24,8 @@ class RBLNAutoencoderKLTemporalDecoderConfig(RBLNModelConfig):
     Configuration class for RBLN AutoencoderKL Temporal Decoder models.
     """
 
-    batch_size: int = Field(default=1, description="The batch size for inference.")
-    sample_size: tuple[int, int] | None = Field(
+    batch_size: PositiveIntDefaultOne = Field(default=1, description="The batch size for inference.")
+    sample_size: IntOrTuple = Field(
         default=None,
         description="The spatial dimensions (height, width) of the input/output images. "
         "If an integer is provided, it's used for both height and width.",
@@ -46,24 +46,6 @@ class RBLNAutoencoderKLTemporalDecoderConfig(RBLNModelConfig):
         description="The scaling factor between pixel space and latent space. "
         "Determines how much smaller the latent representations are compared to the original images.",
     )
-
-    @field_validator("batch_size", mode="before")
-    @classmethod
-    def validate_batch_size(cls, v: int | None) -> int:
-        if v is None:
-            return 1
-        if not isinstance(v, int) or v < 0:
-            raise ValueError(f"batch_size must be a positive integer, got {v}")
-        return v
-
-    @field_validator("sample_size", mode="before")
-    @classmethod
-    def validate_sample_size(cls, v: int | tuple[int, int] | None) -> tuple[int, int] | None:
-        if v is None:
-            return None
-        if isinstance(v, int):
-            return (v, v)
-        return v
 
     @property
     def image_size(self):

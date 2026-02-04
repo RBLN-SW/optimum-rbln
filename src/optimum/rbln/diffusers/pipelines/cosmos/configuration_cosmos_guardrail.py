@@ -18,20 +18,15 @@ from typing import Any, ClassVar, Optional, Tuple
 
 from pydantic import Field, field_validator
 
-from ....configuration_utils import RBLNAutoConfig, RBLNModelConfig
+from ....configuration_utils import PositiveIntDefaultOne, RBLNAutoConfig, RBLNModelConfig
 from ....transformers import RBLNSiglipVisionModelConfig
 
 
 class RBLNVideoSafetyModelConfig(RBLNModelConfig):
     """Configuration class for RBLN Video Content Safety Filter."""
 
-    batch_size: int = Field(default=1, description="The batch size for inference.")
+    batch_size: PositiveIntDefaultOne = Field(default=1, description="The batch size for inference.")
     input_size: int = Field(default=1152, description="Input feature size for the safety model.")
-
-    @field_validator("batch_size", mode="before")
-    @classmethod
-    def validate_batch_size(cls, v: int | None) -> int:
-        return v if v is not None else 1
 
     @field_validator("input_size", mode="before")
     @classmethod
@@ -42,15 +37,10 @@ class RBLNVideoSafetyModelConfig(RBLNModelConfig):
 class RBLNRetinaFaceFilterConfig(RBLNModelConfig):
     """Configuration class for RBLN Retina Face Filter."""
 
-    batch_size: int = Field(default=1, description="The batch size for inference.")
+    batch_size: PositiveIntDefaultOne = Field(default=1, description="The batch size for inference.")
     image_size: tuple[int, int] = Field(
         default=(704, 1280), description="The size of input images as (height, width)."
     )
-
-    @field_validator("batch_size", mode="before")
-    @classmethod
-    def validate_batch_size(cls, v: int | None) -> int:
-        return v if v is not None else 1
 
     @field_validator("image_size", mode="before")
     @classmethod

@@ -18,13 +18,14 @@ import importlib
 import inspect
 import json
 from pathlib import Path
-from typing import Any, ClassVar, get_args, get_origin
+from typing import Annotated, Any, ClassVar, get_args, get_origin
 
 import numpy as np
 import torch
 from pydantic import (
     AliasChoices,
     BaseModel,
+    BeforeValidator,
     ConfigDict,
     Field,
     PrivateAttr,
@@ -44,6 +45,29 @@ logger = get_logger(__name__)
 DEFAULT_COMPILED_MODEL_NAME = "compiled_model"
 RUNTIME_KEYWORDS = ["create_runtimes", "device", "device_map", "activate_profiler", "timeout"]
 CONFIG_MAPPING: dict[str, type["RBLNModelConfig"]] = {}
+
+
+def _coerce_positive_int_default_one(v: int | None) -> int:
+    """Convert None to 1 and validate positive integer."""
+    if v is None:
+        return 1
+    if not isinstance(v, int) or v < 0:
+        raise ValueError(f"must be a positive integer, got {v}")
+    return v
+
+
+def _coerce_int_to_tuple(v: int | tuple[int, int] | None) -> tuple[int, int] | None:
+    """Convert int to (int, int) tuple."""
+    if v is None:
+        return None
+    if isinstance(v, int):
+        return (v, v)
+    return v
+
+
+# Reusable custom types
+PositiveIntDefaultOne = Annotated[int, BeforeValidator(_coerce_positive_int_default_one)]
+IntOrTuple = Annotated[tuple[int, int] | None, BeforeValidator(_coerce_int_to_tuple)]
 
 
 def normalize_dtype(dtype: str | torch.dtype | np.dtype) -> str:

@@ -16,9 +16,9 @@ from __future__ import annotations
 
 from typing import Any, ClassVar
 
-from pydantic import Field, field_validator
+from pydantic import Field
 
-from ..configuration_utils import RBLNModelConfig
+from ..configuration_utils import PositiveIntDefaultOne, RBLNModelConfig
 
 
 class RBLNTransformerEncoderConfig(RBLNModelConfig):
@@ -27,7 +27,7 @@ class RBLNTransformerEncoderConfig(RBLNModelConfig):
     rbln_model_input_names: ClassVar[list[str] | None] = None
 
     max_seq_len: int | None = Field(default=None, description="Maximum sequence length for the model.")
-    batch_size: int = Field(default=1, description="The batch size for inference.")
+    batch_size: PositiveIntDefaultOne = Field(default=1, description="The batch size for inference.")
     model_input_names: list[str] | None = Field(default=None, description="Names of the model inputs.")
     model_input_shapes: list[tuple[int, int]] | None = Field(
         default=None, description="Shapes of the model inputs as (batch_size, seq_len)."
@@ -39,15 +39,6 @@ class RBLNTransformerEncoderConfig(RBLNModelConfig):
             data["model_input_names"] = self.__class__.rbln_model_input_names
         super().__init__(**data)
 
-    @field_validator("batch_size", mode="before")
-    @classmethod
-    def validate_batch_size(cls, v: int | None) -> int:
-        if v is None:
-            return 1
-        if not isinstance(v, int) or v < 0:
-            raise ValueError(f"batch_size must be a positive integer, got {v}")
-        return v
-
 
 class RBLNImageModelConfig(RBLNModelConfig):
     """Base configuration for image models."""
@@ -57,16 +48,7 @@ class RBLNImageModelConfig(RBLNModelConfig):
         description="The size of input images. Can be an integer for square images, "
         "a tuple (height, width), or a dict with 'height' and 'width' keys.",
     )
-    batch_size: int = Field(default=1, description="The batch size for inference.")
-
-    @field_validator("batch_size", mode="before")
-    @classmethod
-    def validate_batch_size(cls, v: int | None) -> int:
-        if v is None:
-            return 1
-        if not isinstance(v, int) or v < 0:
-            raise ValueError(f"batch_size must be a positive integer, got {v}")
-        return v
+    batch_size: PositiveIntDefaultOne = Field(default=1, description="The batch size for inference.")
 
     @property
     def image_width(self) -> int | None:

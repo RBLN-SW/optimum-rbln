@@ -16,9 +16,9 @@ from __future__ import annotations
 
 from typing import Any, ClassVar
 
-from pydantic import Field, field_validator
+from pydantic import Field
 
-from ....configuration_utils import RBLNModelConfig
+from ....configuration_utils import PositiveIntDefaultOne, RBLNModelConfig
 from ....utils.deprecation import deprecate_kwarg
 from ....utils.logging import get_logger
 
@@ -31,7 +31,7 @@ class RBLNModelForSeq2SeqLMConfig(RBLNModelConfig):
 
     support_paged_attention: ClassVar[bool | None] = None
 
-    batch_size: int = Field(default=1, description="The batch size for inference.")
+    batch_size: PositiveIntDefaultOne = Field(default=1, description="The batch size for inference.")
     enc_max_seq_len: int | None = Field(default=None, description="Maximum sequence length for the encoder.")
     dec_max_seq_len: int | None = Field(default=None, description="Maximum sequence length for the decoder.")
     use_attention_mask: bool | None = Field(
@@ -64,12 +64,3 @@ class RBLNModelForSeq2SeqLMConfig(RBLNModelConfig):
             data.pop("kvcache_block_size", None)
 
         super().__init__(**data)
-
-    @field_validator("batch_size", mode="before")
-    @classmethod
-    def validate_batch_size(cls, v: int | None) -> int:
-        if v is None:
-            return 1
-        if not isinstance(v, int) or v < 0:
-            raise ValueError(f"batch_size must be a positive integer, got {v}")
-        return v

@@ -16,9 +16,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import Field, field_validator, model_validator
+from pydantic import Field, model_validator
 
-from ....configuration_utils import RBLNModelConfig
+from ....configuration_utils import PositiveIntDefaultOne, RBLNModelConfig
 
 
 class RBLNPriorTransformerConfig(RBLNModelConfig):
@@ -29,7 +29,7 @@ class RBLNPriorTransformerConfig(RBLNModelConfig):
     for Transformer models used in diffusion models like Kandinsky V2.2.
     """
 
-    batch_size: int = Field(default=1, description="The batch size for inference.")
+    batch_size: PositiveIntDefaultOne = Field(default=1, description="The batch size for inference.")
     embedding_dim: int | None = Field(default=None, description="Dimension of the embeddings.")
     num_embeddings: int | None = Field(default=None, description="Number of embeddings.")
     batch_size_is_specified: bool = Field(
@@ -42,12 +42,3 @@ class RBLNPriorTransformerConfig(RBLNModelConfig):
         if isinstance(data, dict):
             data["batch_size_is_specified"] = "batch_size" in data and data["batch_size"] is not None
         return data
-
-    @field_validator("batch_size", mode="before")
-    @classmethod
-    def validate_batch_size(cls, v: int | None) -> int:
-        if v is None:
-            return 1
-        if not isinstance(v, int) or v < 0:
-            raise ValueError(f"batch_size must be a positive integer, got {v}")
-        return v

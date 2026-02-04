@@ -14,24 +14,15 @@
 
 from __future__ import annotations
 
-from pydantic import Field, field_validator
+from pydantic import Field
 
-from ....configuration_utils import RBLNModelConfig
+from ....configuration_utils import PositiveIntDefaultOne, RBLNModelConfig
 
 
 class RBLNCLIPTextModelConfig(RBLNModelConfig):
     """Configuration class for RBLNCLIPTextModel."""
 
-    batch_size: int = Field(default=1, description="The batch size for text processing.")
-
-    @field_validator("batch_size", mode="before")
-    @classmethod
-    def validate_batch_size(cls, v: int | None) -> int:
-        if v is None:
-            return 1
-        if not isinstance(v, int) or v < 0:
-            raise ValueError(f"batch_size must be a positive integer, got {v}")
-        return v
+    batch_size: PositiveIntDefaultOne = Field(default=1, description="The batch size for text processing.")
 
 
 class RBLNCLIPTextModelWithProjectionConfig(RBLNCLIPTextModelConfig):
@@ -46,7 +37,7 @@ class RBLNCLIPTextModelWithProjectionConfig(RBLNCLIPTextModelConfig):
 class RBLNCLIPVisionModelConfig(RBLNModelConfig):
     """Configuration class for RBLNCLIPVisionModel."""
 
-    batch_size: int = Field(default=1, description="The batch size for image processing.")
+    batch_size: PositiveIntDefaultOne = Field(default=1, description="The batch size for image processing.")
     image_size: int | tuple[int, int] | dict[str, int] | None = Field(
         default=None,
         description="The size of input images. Can be an integer for square images, "
@@ -61,15 +52,6 @@ class RBLNCLIPVisionModelConfig(RBLNModelConfig):
     output_attentions: bool | None = Field(
         default=None, description="Whether to return the attention tensors of all attention layers."
     )
-
-    @field_validator("batch_size", mode="before")
-    @classmethod
-    def validate_batch_size(cls, v: int | None) -> int:
-        if v is None:
-            return 1
-        if not isinstance(v, int) or v < 0:
-            raise ValueError(f"batch_size must be a positive integer, got {v}")
-        return v
 
     @property
     def image_width(self) -> int | None:
