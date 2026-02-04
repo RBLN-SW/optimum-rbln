@@ -16,40 +16,37 @@ from __future__ import annotations
 
 from typing import Any, ClassVar
 
+from pydantic import Field
+
 from ....configuration_utils import RBLNModelConfig
 
 
 class RBLNStableDiffusionXLPipelineBaseConfig(RBLNModelConfig):
-    """
-    Base configuration for SDXL pipelines.
-
-    Args:
-        text_encoder: Configuration for the primary text encoder component.
-        text_encoder_2: Configuration for the secondary text encoder component.
-        unet: Configuration for the UNet model component.
-        vae: Configuration for the VAE model component.
-        img_height: Height of the generated images.
-        img_width: Width of the generated images.
-        height: Height of the generated images.
-        width: Width of the generated images.
-        sample_size: Spatial dimensions for the UNet model.
-        _image_size: Internal image size (use height/width instead).
-        guidance_scale: Scale for classifier-free guidance.
-    """
+    """Base configuration for SDXL pipelines."""
 
     submodules: ClassVar[list[str]] = ["text_encoder", "text_encoder_2", "unet", "vae"]
     _vae_uses_encoder: ClassVar[bool] = False
 
-    text_encoder: dict[str, Any] | RBLNModelConfig | None = None
-    text_encoder_2: dict[str, Any] | RBLNModelConfig | None = None
-    unet: dict[str, Any] | RBLNModelConfig | None = None
-    vae: dict[str, Any] | RBLNModelConfig | None = None
-    img_height: int | None = None
-    img_width: int | None = None
-    height: int | None = None
-    width: int | None = None
-    sample_size: tuple[int, int] | None = None
-    guidance_scale: float | None = None
+    text_encoder: dict[str, Any] | RBLNModelConfig | None = Field(
+        default=None, description="Configuration for the primary text encoder component."
+    )
+    text_encoder_2: dict[str, Any] | RBLNModelConfig | None = Field(
+        default=None, description="Configuration for the secondary text encoder component."
+    )
+    unet: dict[str, Any] | RBLNModelConfig | None = Field(
+        default=None, description="Configuration for the UNet model component."
+    )
+    vae: dict[str, Any] | RBLNModelConfig | None = Field(
+        default=None, description="Configuration for the VAE model component."
+    )
+    img_height: int | None = Field(
+        default=None, description="Height of the generated images (deprecated, use height)."
+    )
+    img_width: int | None = Field(default=None, description="Width of the generated images (deprecated, use width).")
+    height: int | None = Field(default=None, description="Height of the generated images.")
+    width: int | None = Field(default=None, description="Width of the generated images.")
+    sample_size: tuple[int, int] | None = Field(default=None, description="Spatial dimensions for the UNet model.")
+    guidance_scale: float | None = Field(default=None, description="Scale for classifier-free guidance.")
 
     def __init__(self, **data: Any):
         # Handle image_size kwarg if provided (before super().__init__)

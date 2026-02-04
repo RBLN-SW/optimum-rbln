@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import field_validator
+from pydantic import Field, field_validator
 
 from ....configuration_utils import RBLNModelConfig
 
@@ -29,36 +29,19 @@ class RBLNCosmosTransformer3DModelConfig(RBLNModelConfig):
     for Transformer models used in diffusion models like Cosmos.
     """
 
-    batch_size: int = 1
-    num_frames: int = 121
-    height: int = 704
-    width: int = 1280
-    fps: int = 30
-    max_seq_len: int | None = None
-    embedding_dim: int | None = None
-    num_channels_latents: int | None = None
-    num_latent_frames: int | None = None
-    latent_height: int | None = None
-    latent_width: int | None = None
+    batch_size: int = Field(default=1, description="The batch size for inference.")
+    num_frames: int = Field(default=121, description="The number of frames in the generated video.")
+    height: int = Field(default=704, description="The height in pixels of the generated video.")
+    width: int = Field(default=1280, description="The width in pixels of the generated video.")
+    fps: int = Field(default=30, description="The frames per second of the generated video.")
+    max_seq_len: int | None = Field(default=None, description="Maximum sequence length of prompt embeds.")
+    embedding_dim: int | None = Field(default=None, description="Embedding vector dimension of prompt embeds.")
+    num_channels_latents: int | None = Field(default=None, description="The number of channels in latent space.")
+    num_latent_frames: int | None = Field(default=None, description="The number of frames in latent space.")
+    latent_height: int | None = Field(default=None, description="The height in pixels in latent space.")
+    latent_width: int | None = Field(default=None, description="The width in pixels in latent space.")
 
     def __init__(self, **data: Any):
-        """
-        Args:
-            batch_size (Optional[int]): The batch size for inference. Defaults to 1.
-            num_frames (Optional[int]): The number of frames in the generated video. Defaults to 121.
-            height (Optional[int]): The height in pixels of the generated video. Defaults to 704.
-            width (Optional[int]): The width in pixels of the generated video. Defaults to 1280.
-            fps (Optional[int]): The frames per second of the generated video.  Defaults to 30.
-            max_seq_len (Optional[int]): Maximum sequence length of prompt embeds.
-            embedding_dim (Optional[int]): Embedding vector dimension of prompt embeds.
-            num_channels_latents (Optional[int]): The number of channels in latent space.
-            latent_height (Optional[int]): The height in pixels in latent space.
-            latent_width (Optional[int]): The width in pixels in latent space.
-            **data: Additional arguments passed to the parent RBLNModelConfig.
-
-        Raises:
-            ValueError: If batch_size is not a positive integer.
-        """
         if data.get("timeout") is None:
             data["timeout"] = 80
 

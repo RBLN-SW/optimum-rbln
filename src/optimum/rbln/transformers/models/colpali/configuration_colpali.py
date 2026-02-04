@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from typing import Any, ClassVar
 
-from pydantic import field_validator
+from pydantic import Field, field_validator
 
 from ....configuration_utils import RBLNModelConfig
 from ....utils.logging import get_logger
@@ -52,11 +52,6 @@ class RBLNColPaliForRetrievalConfig(RBLNModelConfig):
             rbln_config=config
         )
         ```
-
-    Args:
-        batch_size (int, optional): The batch size for the model. Defaults to 1.
-        vlm (RBLNModelConfig, optional): Configuration for the VLM component.
-        output_hidden_states (bool, optional): Whether to output the hidden states of the decoder. Defaults to False.
     """
 
     _allow_no_compile_cfgs = True
@@ -65,9 +60,11 @@ class RBLNColPaliForRetrievalConfig(RBLNModelConfig):
         "vlm": "RBLNPaliGemmaForConditionalGenerationConfig",
     }
 
-    batch_size: int = 1
-    vlm: RBLNModelConfig | None = None
-    output_hidden_states: bool = False
+    batch_size: int = Field(default=1, description="The batch size for the model.")
+    vlm: RBLNModelConfig | None = Field(default=None, description="Configuration for the VLM component.")
+    output_hidden_states: bool = Field(
+        default=False, description="Whether to output the hidden states of the decoder."
+    )
 
     def __init__(self, **data: Any):
         super().__init__(**data)

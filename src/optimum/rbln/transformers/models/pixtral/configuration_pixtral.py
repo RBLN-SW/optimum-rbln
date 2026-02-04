@@ -14,7 +14,7 @@
 
 from __future__ import annotations
 
-from pydantic import field_validator
+from pydantic import Field, field_validator
 
 from ....configuration_utils import RBLNModelConfig
 
@@ -22,9 +22,12 @@ from ....configuration_utils import RBLNModelConfig
 class RBLNPixtralVisionModelConfig(RBLNModelConfig):
     """Configuration for RBLNPixtralVisionModel."""
 
-    batch_size: int = 1
-    max_image_size: tuple[int, int] | None = None
-    output_hidden_states: bool | None = None
+    batch_size: int = Field(default=1, description="The batch size for image processing.")
+    max_image_size: tuple[int, int] | None = Field(
+        default=None,
+        description="The size of max input images as a tuple (max_height, max_width).",
+    )
+    output_hidden_states: bool | None = Field(default=None, description="Whether to return hidden states.")
 
     @field_validator("batch_size", mode="before")
     @classmethod

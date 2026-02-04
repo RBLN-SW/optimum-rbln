@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import field_validator
+from pydantic import Field, field_validator
 
 from ....configuration_utils import RBLNModelConfig
 
@@ -29,30 +29,26 @@ class RBLNVQModelConfig(RBLNModelConfig):
     for VQModel, which acts similarly to a VAE but uses vector quantization.
     """
 
-    batch_size: int = 1
-    sample_size: tuple[int, int] | None = None
-    uses_encoder: bool | None = None
-    vqmodel_scale_factor: float | None = None  # TODO: rename to scaling_factor
-    in_channels: int | None = None
-    latent_channels: int | None = None
+    batch_size: int = Field(default=1, description="The batch size for inference.")
+    sample_size: tuple[int, int] | None = Field(
+        default=None,
+        description="The spatial dimensions (height, width) of the input/output images. "
+        "If an integer is provided, it's used for both height and width.",
+    )
+    uses_encoder: bool | None = Field(
+        default=None,
+        description="Whether to include the encoder part of the VAE in the model. "
+        "When False, only the decoder is used (for latent-to-image conversion).",
+    )
+    vqmodel_scale_factor: float | None = Field(
+        default=None,
+        description="The scaling factor between pixel space and latent space. "
+        "Determines the downsampling ratio between original images and latent representations.",
+    )
+    in_channels: int | None = Field(default=None, description="Number of input channels for the model.")
+    latent_channels: int | None = Field(default=None, description="Number of channels in the latent space.")
 
     def __init__(self, **data: Any):
-        """
-        Args:
-            batch_size (Optional[int]): The batch size for inference. Defaults to 1.
-            sample_size (Optional[Tuple[int, int]]): The spatial dimensions (height, width) of the input/output images.
-                If an integer is provided, it's used for both height and width.
-            uses_encoder (Optional[bool]): Whether to include the encoder part of the VAE in the model.
-                When False, only the decoder is used (for latent-to-image conversion).
-            vqmodel_scale_factor (Optional[float]): The scaling factor between pixel space and latent space.
-                Determines the downsampling ratio between original images and latent representations.
-            in_channels (Optional[int]): Number of input channels for the model.
-            latent_channels (Optional[int]): Number of channels in the latent space.
-            **data: Additional arguments passed to the parent RBLNModelConfig.
-
-        Raises:
-            ValueError: If batch_size is not a positive integer.
-        """
         # Normalize sample_size before super().__init__
         sample_size = data.get("sample_size")
         if isinstance(sample_size, int):

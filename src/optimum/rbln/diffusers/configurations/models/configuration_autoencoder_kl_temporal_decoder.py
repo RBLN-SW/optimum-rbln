@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import field_validator
+from pydantic import Field, field_validator
 
 from ....configuration_utils import RBLNModelConfig
 
@@ -26,31 +26,30 @@ class RBLNAutoencoderKLTemporalDecoderConfig(RBLNModelConfig):
     Configuration class for RBLN AutoencoderKL Temporal Decoder models.
     """
 
-    batch_size: int = 1
-    sample_size: tuple[int, int] | None = None
-    uses_encoder: bool | None = None
-    num_frames: int | None = None
-    decode_chunk_size: int | None = None
-    vae_scale_factor: float | None = None
+    batch_size: int = Field(default=1, description="The batch size for inference.")
+    sample_size: tuple[int, int] | None = Field(
+        default=None,
+        description="The spatial dimensions (height, width) of the input/output images. "
+        "If an integer is provided, it's used for both height and width.",
+    )
+    uses_encoder: bool | None = Field(
+        default=None,
+        description="Whether to include the encoder part of the VAE in the model. "
+        "When False, only the decoder is used (for latent-to-image conversion).",
+    )
+    num_frames: int | None = Field(default=None, description="The number of frames in the generated video.")
+    decode_chunk_size: int | None = Field(
+        default=None,
+        description="The number of frames to decode at once during VAE decoding. "
+        "Useful for managing memory usage during video generation.",
+    )
+    vae_scale_factor: float | None = Field(
+        default=None,
+        description="The scaling factor between pixel space and latent space. "
+        "Determines how much smaller the latent representations are compared to the original images.",
+    )
 
     def __init__(self, **data: Any):
-        """
-        Args:
-            batch_size (Optional[int]): The batch size for inference. Defaults to 1.
-            sample_size (Optional[Tuple[int, int]]): The spatial dimensions (height, width) of the input/output images.
-                If an integer is provided, it's used for both height and width.
-            uses_encoder (Optional[bool]): Whether to include the encoder part of the VAE in the model.
-                When False, only the decoder is used (for latent-to-image conversion).
-            num_frames (Optional[int]): The number of frames in the generated video.
-            decode_chunk_size (Optional[int]): The number of frames to decode at once during VAE decoding.
-                Useful for managing memory usage during video generation.
-            vae_scale_factor (Optional[float]): The scaling factor between pixel space and latent space.
-                Determines how much smaller the latent representations are compared to the original images.
-            **data: Additional arguments passed to the parent RBLNModelConfig.
-
-        Raises:
-            ValueError: If batch_size is not a positive integer.
-        """
         # Normalize sample_size before super().__init__
         sample_size = data.get("sample_size")
         if isinstance(sample_size, int):

@@ -16,20 +16,34 @@ from __future__ import annotations
 
 from typing import Any, ClassVar, Optional, Tuple
 
+from pydantic import Field
+
 from ....configuration_utils import RBLNModelConfig
 from ....transformers import RBLNCLIPTextModelWithProjectionConfig, RBLNT5EncoderModelConfig
 from ..models import RBLNAutoencoderKLConfig, RBLNSD3Transformer2DModelConfig
 
 
 class RBLNStableDiffusion3PipelineBaseConfig(RBLNModelConfig):
+    """Base configuration for Stable Diffusion 3 pipelines."""
+
     submodules: ClassVar[list[str]] = ["transformer", "text_encoder", "text_encoder_2", "text_encoder_3", "vae"]
     _vae_uses_encoder: ClassVar[bool] = False
 
-    transformer: dict[str, Any] | RBLNSD3Transformer2DModelConfig | None = None
-    text_encoder: dict[str, Any] | RBLNCLIPTextModelWithProjectionConfig | None = None
-    text_encoder_2: dict[str, Any] | RBLNCLIPTextModelWithProjectionConfig | None = None
-    text_encoder_3: dict[str, Any] | RBLNT5EncoderModelConfig | None = None
-    vae: dict[str, Any] | RBLNAutoencoderKLConfig | None = None
+    transformer: dict[str, Any] | RBLNSD3Transformer2DModelConfig | None = Field(
+        default=None, description="Configuration for the transformer model component."
+    )
+    text_encoder: dict[str, Any] | RBLNCLIPTextModelWithProjectionConfig | None = Field(
+        default=None, description="Configuration for the primary text encoder."
+    )
+    text_encoder_2: dict[str, Any] | RBLNCLIPTextModelWithProjectionConfig | None = Field(
+        default=None, description="Configuration for the secondary text encoder."
+    )
+    text_encoder_3: dict[str, Any] | RBLNT5EncoderModelConfig | None = Field(
+        default=None, description="Configuration for the tertiary text encoder (T5)."
+    )
+    vae: dict[str, Any] | RBLNAutoencoderKLConfig | None = Field(
+        default=None, description="Configuration for the VAE model component."
+    )
 
     def __init__(
         self,
@@ -45,37 +59,6 @@ class RBLNStableDiffusion3PipelineBaseConfig(RBLNModelConfig):
         guidance_scale: Optional[float] = None,
         **data: Any,
     ):
-        """
-        Args:
-            transformer (Optional[RBLNSD3Transformer2DModelConfig]): Configuration for the transformer model component.
-                Initialized as RBLNSD3Transformer2DModelConfig if not provided.
-            text_encoder (Optional[RBLNCLIPTextModelWithProjectionConfig]): Configuration for the primary text encoder.
-                Initialized as RBLNCLIPTextModelWithProjectionConfig if not provided.
-            text_encoder_2 (Optional[RBLNCLIPTextModelWithProjectionConfig]): Configuration for the secondary text encoder.
-                Initialized as RBLNCLIPTextModelWithProjectionConfig if not provided.
-            text_encoder_3 (Optional[RBLNT5EncoderModelConfig]): Configuration for the tertiary text encoder.
-                Initialized as RBLNT5EncoderModelConfig if not provided.
-            vae (Optional[RBLNAutoencoderKLConfig]): Configuration for the VAE model component.
-                Initialized as RBLNAutoencoderKLConfig if not provided.
-            max_seq_len (Optional[int]): Maximum sequence length for text inputs. Defaults to 256.
-            sample_size (Optional[Tuple[int, int]]): Spatial dimensions for the transformer model.
-            image_size (Optional[Tuple[int, int]]): Dimensions for the generated images.
-                Cannot be used together with img_height/img_width.
-            batch_size (Optional[int]): Batch size for inference, applied to all submodules.
-            img_height (Optional[int]): Height of the generated images.
-            img_width (Optional[int]): Width of the generated images.
-            height (Optional[int]): Height of the generated images.
-            width (Optional[int]): Width of the generated images.
-            guidance_scale (Optional[float]): Scale for classifier-free guidance.
-            **data: Additional arguments passed to the parent RBLNModelConfig.
-
-        Raises:
-            ValueError: If both image_size and img_height/img_width are provided.
-
-        Note:
-            When guidance_scale > 1.0, the transformer batch size is automatically doubled to
-            accommodate classifier-free guidance.
-        """
         super().__init__(**data)
 
         # Initial check for image_size conflict remains as is

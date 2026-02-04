@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import PrivateAttr, field_validator
+from pydantic import Field, PrivateAttr, field_validator
 
 from ....configuration_utils import RBLNModelConfig
 
@@ -24,10 +24,14 @@ from ....configuration_utils import RBLNModelConfig
 class RBLNUNetSpatioTemporalConditionModelConfig(RBLNModelConfig):
     """Configuration for RBLN UNet Spatio-Temporal Condition models."""
 
-    batch_size: int = 1
-    sample_size: tuple[int, int] | None = None
-    in_features: int | None = None
-    num_frames: int | None = None
+    batch_size: int = Field(default=1, description="The batch size for inference.")
+    sample_size: tuple[int, int] | None = Field(
+        default=None,
+        description="The spatial dimensions (height, width) of the generated samples. "
+        "If an integer is provided, it's used for both height and width.",
+    )
+    in_features: int | None = Field(default=None, description="Number of input features for the model.")
+    num_frames: int | None = Field(default=None, description="The number of frames in the generated video.")
 
     _batch_size_is_specified: bool = PrivateAttr(default=False)
 

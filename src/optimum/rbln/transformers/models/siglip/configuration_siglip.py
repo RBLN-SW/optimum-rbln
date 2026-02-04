@@ -14,7 +14,7 @@
 
 from __future__ import annotations
 
-from pydantic import field_validator
+from pydantic import Field, field_validator
 
 from ....configuration_utils import RBLNModelConfig
 
@@ -27,11 +27,15 @@ class RBLNSiglipVisionModelConfig(RBLNModelConfig):
     RBLN-optimized SigLIP vision models for image encoding in multimodal tasks.
     """
 
-    batch_size: int = 1
-    image_size: int | tuple[int, int] | dict[str, int] | None = None
-    interpolate_pos_encoding: bool = False
-    output_hidden_states: bool | None = None
-    output_attentions: bool | None = None
+    batch_size: int = Field(default=1, description="The batch size for image processing.")
+    image_size: int | tuple[int, int] | dict[str, int] | None = Field(
+        default=None,
+        description="The size of input images. Can be an integer for square images, "
+        "a tuple (height, width), or a dict with 'height' and 'width' keys.",
+    )
+    interpolate_pos_encoding: bool = Field(default=False, description="Whether to interpolate the position encoding.")
+    output_hidden_states: bool | None = Field(default=None, description="Whether to return hidden states.")
+    output_attentions: bool | None = Field(default=None, description="Whether to return attentions.")
 
     @field_validator("batch_size", mode="before")
     @classmethod

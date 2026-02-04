@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import PrivateAttr, field_validator
+from pydantic import Field, PrivateAttr, field_validator
 
 from ....configuration_utils import RBLNModelConfig
 
@@ -29,9 +29,9 @@ class RBLNPriorTransformerConfig(RBLNModelConfig):
     for Transformer models used in diffusion models like Kandinsky V2.2.
     """
 
-    batch_size: int = 1
-    embedding_dim: int | None = None
-    num_embeddings: int | None = None
+    batch_size: int = Field(default=1, description="The batch size for inference.")
+    embedding_dim: int | None = Field(default=None, description="Dimension of the embeddings.")
+    num_embeddings: int | None = Field(default=None, description="Number of embeddings.")
 
     _batch_size_is_specified: bool = PrivateAttr(default=False)
 

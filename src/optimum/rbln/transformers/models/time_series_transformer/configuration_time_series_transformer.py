@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pydantic import field_validator
+from pydantic import Field, field_validator
 
 from ....configuration_utils import RBLNModelConfig
 
@@ -11,18 +11,15 @@ class RBLNTimeSeriesTransformerForPredictionConfig(RBLNModelConfig):
 
     This configuration class stores the configuration parameters specific to
     RBLN-optimized Time Series Transformer models for time series forecasting tasks.
-
-    Args:
-        batch_size (int, optional): The batch size for inference. Defaults to 1.
-        enc_max_seq_len (int, optional): Maximum sequence length for the encoder.
-        dec_max_seq_len (int, optional): Maximum sequence length for the decoder.
-        num_parallel_samples (int, optional): Number of samples to generate in parallel during prediction.
     """
 
-    batch_size: int = 1
-    enc_max_seq_len: int | None = None
-    dec_max_seq_len: int | None = None
-    num_parallel_samples: int | None = None
+    batch_size: int = Field(default=1, description="The batch size for inference.")
+    enc_max_seq_len: int | None = Field(default=None, description="Maximum sequence length for the encoder.")
+    dec_max_seq_len: int | None = Field(default=None, description="Maximum sequence length for the decoder.")
+    num_parallel_samples: int | None = Field(
+        default=None,
+        description="Number of samples to generate in parallel during prediction.",
+    )
 
     @field_validator("batch_size", mode="before")
     @classmethod

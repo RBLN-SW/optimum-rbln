@@ -14,6 +14,8 @@
 
 from __future__ import annotations
 
+from pydantic import Field
+
 from ...configuration_generic import RBLNModelForImageClassificationConfig
 
 
@@ -25,4 +27,4 @@ class RBLNResNetForImageClassificationConfig(RBLNModelForImageClassificationConf
     RBLN-optimized ResNet models for image classification tasks.
     """
 
-    output_hidden_states: bool | None = None
+    output_hidden_states: bool | None = Field(default=None, description="Whether to return hidden states.")

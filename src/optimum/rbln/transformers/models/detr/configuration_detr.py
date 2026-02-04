@@ -25,15 +25,4 @@ class RBLNDetrForObjectDetectionConfig(RBLNModelForImageClassificationConfig):
     RBLN-optimized DETR models for object detection tasks.
     """
 
-    def __init__(self, **kwargs):
-        """
-        Args:
-            image_size (Optional[Union[int, Tuple[int, int]]]): The size of input images.
-                Can be an integer for square images or a tuple (height, width).
-            batch_size (Optional[int]): The batch size for inference. Defaults to 1.
-            kwargs: Additional arguments passed to the parent RBLNModelConfig.
-
-        Raises:
-            ValueError: If batch_size is not a positive integer.
-        """
-        super().__init__(**kwargs)
+    pass

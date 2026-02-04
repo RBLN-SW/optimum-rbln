@@ -14,7 +14,7 @@
 
 from __future__ import annotations
 
-from pydantic import field_validator
+from pydantic import Field, field_validator
 
 from ....configuration_utils import RBLNModelConfig
 
@@ -23,13 +23,15 @@ class RBLNASTForAudioClassificationConfig(RBLNModelConfig):
     """
     Configuration class for RBLNASTForAudioClassification.
 
-    Args:
-        batch_size (int, optional): The batch size for inference. Defaults to 1.
-        max_length (int, optional): Maximum length of the audio input in time dimension.
+    This configuration class stores the configuration parameters specific to
+    RBLN-optimized Audio Spectrogram Transformer models for audio classification tasks.
     """
 
-    batch_size: int = 1
-    max_length: int | None = None
+    batch_size: int = Field(default=1, description="The batch size for inference.")
+    max_length: int | None = Field(
+        default=None,
+        description="Maximum length of the audio input in time dimension.",
+    )
 
     @field_validator("batch_size", mode="before")
     @classmethod

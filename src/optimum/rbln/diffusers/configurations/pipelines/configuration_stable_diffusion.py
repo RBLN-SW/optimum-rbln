@@ -16,6 +16,8 @@ from __future__ import annotations
 
 from typing import Any, ClassVar
 
+from pydantic import Field
+
 from ....configuration_utils import RBLNModelConfig
 from ....transformers import RBLNCLIPTextModelConfig
 from ..models import RBLNAutoencoderKLConfig, RBLNUNet2DConditionModelConfig
@@ -28,9 +30,15 @@ class RBLNStableDiffusionPipelineBaseConfig(RBLNModelConfig):
     _vae_uses_encoder: ClassVar[bool] = False
     _allow_no_compile_cfgs: ClassVar[bool] = True
 
-    text_encoder: dict[str, Any] | RBLNModelConfig | None = None
-    unet: dict[str, Any] | RBLNModelConfig | None = None
-    vae: dict[str, Any] | RBLNModelConfig | None = None
+    text_encoder: dict[str, Any] | RBLNModelConfig | None = Field(
+        default=None, description="Configuration for the text encoder component."
+    )
+    unet: dict[str, Any] | RBLNModelConfig | None = Field(
+        default=None, description="Configuration for the UNet model component."
+    )
+    vae: dict[str, Any] | RBLNModelConfig | None = Field(
+        default=None, description="Configuration for the VAE model component."
+    )
 
     def __init__(
         self,
@@ -48,21 +56,6 @@ class RBLNStableDiffusionPipelineBaseConfig(RBLNModelConfig):
         guidance_scale: float | None = None,
         **kwargs: Any,
     ):
-        """
-        Args:
-            text_encoder (Optional[RBLNCLIPTextModelConfig]): Configuration for the text encoder component.
-            unet (Optional[RBLNUNet2DConditionModelConfig]): Configuration for the UNet model component.
-            vae (Optional[RBLNAutoencoderKLConfig]): Configuration for the VAE model component.
-            batch_size (Optional[int]): Batch size for inference, applied to all submodules.
-            img_height (Optional[int]): Height of the generated images.
-            img_width (Optional[int]): Width of the generated images.
-            height (Optional[int]): Height of the generated images.
-            width (Optional[int]): Width of the generated images.
-            sample_size (Optional[Tuple[int, int]]): Spatial dimensions for the UNet model.
-            image_size (Optional[Tuple[int, int]]): Alternative way to specify image dimensions.
-            guidance_scale (Optional[float]): Scale for classifier-free guidance.
-            kwargs: Additional arguments passed to the parent RBLNModelConfig.
-        """
         # Initial check for image_size conflict remains as is
         if image_size is not None and (
             img_height is not None or img_width is not None or height is not None or width is not None

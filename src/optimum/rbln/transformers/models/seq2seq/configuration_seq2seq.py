@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from typing import Any, ClassVar
 
-from pydantic import field_validator
+from pydantic import Field, field_validator
 
 from ....configuration_utils import RBLNModelConfig
 from ....utils.deprecation import deprecate_kwarg
@@ -31,12 +31,22 @@ class RBLNModelForSeq2SeqLMConfig(RBLNModelConfig):
 
     support_paged_attention: ClassVar[bool | None] = None
 
-    batch_size: int = 1
-    enc_max_seq_len: int | None = None
-    dec_max_seq_len: int | None = None
-    use_attention_mask: bool | None = None
-    kvcache_num_blocks: int | None = None
-    kvcache_block_size: int | None = None
+    batch_size: int = Field(default=1, description="The batch size for inference.")
+    enc_max_seq_len: int | None = Field(default=None, description="Maximum sequence length for the encoder.")
+    dec_max_seq_len: int | None = Field(default=None, description="Maximum sequence length for the decoder.")
+    use_attention_mask: bool | None = Field(
+        default=None, description="Whether to use attention masks during inference."
+    )
+    kvcache_num_blocks: int | None = Field(
+        default=None,
+        description="The total number of blocks to allocate for the PagedAttention KV cache "
+        "for the SelfAttention. Defaults to batch_size.",
+    )
+    kvcache_block_size: int | None = Field(
+        default=None,
+        description="The size (in number of tokens) of each block in the PagedAttention KV cache "
+        "for the SelfAttention. Defaults to dec_max_seq_len.",
+    )
 
     @deprecate_kwarg(old_name="pad_token_id", version="0.10.0")
     def __init__(self, **data: Any):

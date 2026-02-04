@@ -619,7 +619,7 @@ class RBLNModelConfig(BaseModel):
         self,
         submodule_config: dict[str, Any] | "RBLNModelConfig" | None = None,
         submodule_name: str | None = None,
-        force_kwargs: bool = False,
+        force_kwargs: bool = False,  # Deprecated: kwargs now always take priority
         **kwargs: Any,
     ) -> "RBLNModelConfig" | dict[str, Any]:
         """Initialize a submodule configuration with inherited runtime options.
@@ -628,41 +628,40 @@ class RBLNModelConfig(BaseModel):
             submodule_config: The submodule configuration dict or RBLNModelConfig instance.
             submodule_name: The name of the submodule. Used to look up the default config class
                 from submodule_config_classes if cls_name is not provided.
-            force_kwargs: Whether to force kwargs values over submodule_config values.
-            **kwargs: Additional keyword arguments to pass to the config.
+            force_kwargs: Deprecated. kwargs now always take priority over submodule_config.
+            **kwargs: Additional keyword arguments to pass to the config. These always take
+                priority over submodule_config values.
 
         Returns:
             The initialized submodule config (RBLNModelConfig instance) or dict if class cannot be determined.
+
+        Priority order (highest to lowest):
+            1. kwargs (always wins)
+            2. submodule_config
+            3. inherited runtime options from parent
         """
         if submodule_config is None:
             submodule_config = {}
 
         if isinstance(submodule_config, RBLNModelConfig):
+            # Apply kwargs to existing config instance
+            for key, value in kwargs.items():
+                if hasattr(submodule_config, key) and getattr(submodule_config, key) != value:
+                    setattr(submodule_config, key, value)
             return submodule_config
 
         if isinstance(submodule_config, dict):
-            from_predecessor = self._get_runtime_options().copy()
-            from_predecessor.update(
+            # Build init_kwargs with priority: runtime_options < submodule_config < kwargs
+            init_kwargs = self._get_runtime_options().copy()
+            init_kwargs.update(
                 {
                     "npu": self.npu,
                     "tensor_parallel_size": self.tensor_parallel_size,
                     "optimum_rbln_version": self.optimum_rbln_version,
                 }
             )
-            from_predecessor.update(kwargs)
-
-            init_kwargs = from_predecessor
             init_kwargs.update(submodule_config)
-
-            if force_kwargs:
-                for key, value in kwargs.items():
-                    if key in init_kwargs:
-                        if init_kwargs[key] != value:
-                            raise ValueError(
-                                f"Parameter conflict for '{key}': submodule_config has {init_kwargs[key]}, "
-                                f"but kwargs has {value}. Using kwargs value: {value}"
-                            )
-                        init_kwargs[key] = value
+            init_kwargs.update(kwargs)  # kwargs always win
 
             if "cls_name" in init_kwargs:
                 config_cls = get_rbln_config_class(init_kwargs["cls_name"])

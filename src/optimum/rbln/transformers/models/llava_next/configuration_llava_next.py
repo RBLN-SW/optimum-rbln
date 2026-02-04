@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from typing import Any, ClassVar
 
-from pydantic import field_validator
+from pydantic import Field, field_validator
 
 from ....configuration_utils import RBLNModelConfig
 from ....utils.logging import get_logger
@@ -37,9 +37,17 @@ class RBLNLlavaNextForConditionalGenerationConfig(RBLNModelConfig):
     submodules: ClassVar[list[str]] = ["vision_tower", "language_model"]
     # Note: vision_tower and language_model are not mapped because they vary by model
 
-    batch_size: int = 1
-    vision_tower: dict[str, Any] | RBLNModelConfig | None = None
-    language_model: dict[str, Any] | RBLNModelConfig | None = None
+    batch_size: int = Field(default=1, description="The batch size for inference.")
+    vision_tower: dict[str, Any] | RBLNModelConfig | None = Field(
+        default=None,
+        description="Configuration for the vision encoder component. "
+        "Includes settings specific to the vision encoder such as input resolution.",
+    )
+    language_model: dict[str, Any] | RBLNModelConfig | None = Field(
+        default=None,
+        description="Configuration for the language model component. "
+        "Includes settings specific to the language model such as tensor parallelism.",
+    )
 
     def __init__(self, **data: Any):
         # Handle batch_size warning and force vision_tower batch_size=1
@@ -50,13 +58,12 @@ class RBLNLlavaNextForConditionalGenerationConfig(RBLNModelConfig):
         super().__init__(**data)
 
         # vision_tower and language_model vary by model, so we use initialize_submodule_config
-        if self.vision_tower is None or isinstance(self.vision_tower, dict):
-            self.vision_tower = self.initialize_submodule_config(
-                submodule_config=self.vision_tower,
-                batch_size=1,  # vision_tower batch_size is always 1 in LlavaNext
-                output_hidden_states=True,  # LlavaNext requires output_hidden_states to be True
-                force_kwargs=True,
-            )
+        # kwargs always take priority
+        self.vision_tower = self.initialize_submodule_config(
+            submodule_config=self.vision_tower,
+            batch_size=1,  # vision_tower batch_size is always 1 in LlavaNext
+            output_hidden_states=True,  # LlavaNext requires output_hidden_states to be True
+        )
 
         if self.language_model is None or isinstance(self.language_model, dict):
             self.language_model = self.initialize_submodule_config(

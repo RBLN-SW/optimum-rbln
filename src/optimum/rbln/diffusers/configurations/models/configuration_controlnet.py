@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import PrivateAttr, field_validator
+from pydantic import Field, PrivateAttr, field_validator
 
 from ....configuration_utils import RBLNModelConfig
 
@@ -24,11 +24,18 @@ from ....configuration_utils import RBLNModelConfig
 class RBLNControlNetModelConfig(RBLNModelConfig):
     """Configuration class for RBLN ControlNet models."""
 
-    batch_size: int = 1
-    max_seq_len: int | None = None
-    unet_sample_size: tuple[int, int] | None = None
-    vae_sample_size: tuple[int, int] | None = None
-    text_model_hidden_size: int | None = None
+    batch_size: int = Field(default=1, description="The batch size for inference.")
+    max_seq_len: int | None = Field(
+        default=None,
+        description="Maximum sequence length for text inputs when used with cross-attention.",
+    )
+    unet_sample_size: tuple[int, int] | None = Field(
+        default=None, description="The spatial dimensions (height, width) of UNet samples."
+    )
+    vae_sample_size: tuple[int, int] | None = Field(
+        default=None, description="The spatial dimensions (height, width) of VAE samples."
+    )
+    text_model_hidden_size: int | None = Field(default=None, description="Hidden size of the text encoder model.")
 
     _batch_size_is_specified: bool = PrivateAttr(default=False)
 

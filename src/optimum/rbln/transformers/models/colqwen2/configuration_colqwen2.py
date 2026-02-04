@@ -16,6 +16,8 @@ from __future__ import annotations
 
 from typing import Any, ClassVar
 
+from pydantic import Field
+
 from ....configuration_utils import RBLNModelConfig
 from ..decoderonly.configuration_decoderonly import RBLNDecoderOnlyModelConfig
 
@@ -65,18 +67,17 @@ class RBLNColQwen2ForRetrievalConfig(RBLNDecoderOnlyModelConfig):
     }
     _allow_no_compile_cfgs = True
 
-    vlm: RBLNModelConfig | None = None
+    vlm: RBLNModelConfig | None = Field(default=None, description="Configuration for the VLM component.")
 
     def __init__(self, **data: Any):
         super().__init__(**data)
-        # vlm is converted by @model_validator, but we still handle None case
-        if self.vlm is None:
-            self.vlm = self.initialize_submodule_config(
-                submodule_name="vlm",
-                submodule_config=None,
-                batch_size=self.batch_size,
-                output_hidden_states=self.output_hidden_states,
-                force_kwargs=True,
-                logits_to_keep=0,
-                use_inputs_embeds=True,
-            )
+        # initialize_submodule_config handles None, dict, and RBLNModelConfig.
+        # kwargs always take priority.
+        self.vlm = self.initialize_submodule_config(
+            submodule_name="vlm",
+            submodule_config=self.vlm,
+            batch_size=self.batch_size,
+            output_hidden_states=self.output_hidden_states,
+            logits_to_keep=0,
+            use_inputs_embeds=True,
+        )

@@ -16,19 +16,17 @@ from __future__ import annotations
 
 from typing import Any, ClassVar, Optional, Tuple
 
-from pydantic import field_validator
+from pydantic import Field, field_validator
 
 from ....configuration_utils import RBLNAutoConfig, RBLNModelConfig
 from ....transformers import RBLNSiglipVisionModelConfig
 
 
 class RBLNVideoSafetyModelConfig(RBLNModelConfig):
-    """
-    Configuration class for RBLN Video Content Safety Filter.
-    """
+    """Configuration class for RBLN Video Content Safety Filter."""
 
-    batch_size: int = 1
-    input_size: int = 1152
+    batch_size: int = Field(default=1, description="The batch size for inference.")
+    input_size: int = Field(default=1152, description="Input feature size for the safety model.")
 
     @field_validator("batch_size", mode="before")
     @classmethod
@@ -42,12 +40,12 @@ class RBLNVideoSafetyModelConfig(RBLNModelConfig):
 
 
 class RBLNRetinaFaceFilterConfig(RBLNModelConfig):
-    """
-    Configuration class for RBLN Retina Face Filter.
-    """
+    """Configuration class for RBLN Retina Face Filter."""
 
-    batch_size: int = 1
-    image_size: tuple[int, int] = (704, 1280)
+    batch_size: int = Field(default=1, description="The batch size for inference.")
+    image_size: tuple[int, int] = Field(
+        default=(704, 1280), description="The size of input images as (height, width)."
+    )
 
     @field_validator("batch_size", mode="before")
     @classmethod
@@ -61,16 +59,22 @@ class RBLNRetinaFaceFilterConfig(RBLNModelConfig):
 
 
 class RBLNCosmosSafetyCheckerConfig(RBLNModelConfig):
-    """
-    Configuration class for RBLN Cosmos Safety Checker.
-    """
+    """Configuration class for RBLN Cosmos Safety Checker."""
 
     submodules: ClassVar[list[str]] = ["llamaguard3", "video_safety_model", "face_blur_filter", "siglip_encoder"]
 
-    llamaguard3: dict[str, Any] | RBLNModelConfig | None = None
-    video_safety_model: dict[str, Any] | RBLNModelConfig | None = None
-    face_blur_filter: dict[str, Any] | RBLNModelConfig | None = None
-    siglip_encoder: dict[str, Any] | RBLNSiglipVisionModelConfig | None = None
+    llamaguard3: dict[str, Any] | RBLNModelConfig | None = Field(
+        default=None, description="Configuration for the LlamaGuard3 safety model."
+    )
+    video_safety_model: dict[str, Any] | RBLNModelConfig | None = Field(
+        default=None, description="Configuration for the video safety model."
+    )
+    face_blur_filter: dict[str, Any] | RBLNModelConfig | None = Field(
+        default=None, description="Configuration for the face blur filter."
+    )
+    siglip_encoder: dict[str, Any] | RBLNSiglipVisionModelConfig | None = Field(
+        default=None, description="Configuration for the SigLIP vision encoder."
+    )
 
     def __init__(
         self,

@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from typing import Any, ClassVar
 
-from pydantic import field_validator
+from pydantic import Field, field_validator
 
 from ..configuration_utils import RBLNModelConfig
 
@@ -26,10 +26,12 @@ class RBLNTransformerEncoderConfig(RBLNModelConfig):
 
     rbln_model_input_names: ClassVar[list[str] | None] = None
 
-    max_seq_len: int | None = None
-    batch_size: int = 1
-    model_input_names: list[str] | None = None
-    model_input_shapes: list[tuple[int, int]] | None = None
+    max_seq_len: int | None = Field(default=None, description="Maximum sequence length for the model.")
+    batch_size: int = Field(default=1, description="The batch size for inference.")
+    model_input_names: list[str] | None = Field(default=None, description="Names of the model inputs.")
+    model_input_shapes: list[tuple[int, int]] | None = Field(
+        default=None, description="Shapes of the model inputs as (batch_size, seq_len)."
+    )
 
     def __init__(self, **data: Any):
         # Set default model_input_names from class variable if not provided
@@ -50,8 +52,12 @@ class RBLNTransformerEncoderConfig(RBLNModelConfig):
 class RBLNImageModelConfig(RBLNModelConfig):
     """Base configuration for image models."""
 
-    image_size: int | tuple[int, int] | dict[str, int] | None = None
-    batch_size: int = 1
+    image_size: int | tuple[int, int] | dict[str, int] | None = Field(
+        default=None,
+        description="The size of input images. Can be an integer for square images, "
+        "a tuple (height, width), or a dict with 'height' and 'width' keys.",
+    )
+    batch_size: int = Field(default=1, description="The batch size for inference.")
 
     @field_validator("batch_size", mode="before")
     @classmethod

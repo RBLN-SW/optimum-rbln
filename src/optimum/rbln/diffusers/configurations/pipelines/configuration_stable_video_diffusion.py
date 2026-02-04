@@ -16,18 +16,28 @@ from __future__ import annotations
 
 from typing import Any, ClassVar, Optional
 
+from pydantic import Field
+
 from ....configuration_utils import RBLNModelConfig
 from ....transformers import RBLNCLIPVisionModelWithProjectionConfig
 from ..models import RBLNAutoencoderKLTemporalDecoderConfig, RBLNUNetSpatioTemporalConditionModelConfig
 
 
 class RBLNStableVideoDiffusionPipelineConfig(RBLNModelConfig):
+    """Configuration for Stable Video Diffusion pipeline."""
+
     submodules: ClassVar[list[str]] = ["image_encoder", "unet", "vae"]
     _vae_uses_encoder: ClassVar[bool] = True
 
-    image_encoder: dict[str, Any] | RBLNCLIPVisionModelWithProjectionConfig | None = None
-    unet: dict[str, Any] | RBLNUNetSpatioTemporalConditionModelConfig | None = None
-    vae: dict[str, Any] | RBLNAutoencoderKLTemporalDecoderConfig | None = None
+    image_encoder: dict[str, Any] | RBLNCLIPVisionModelWithProjectionConfig | None = Field(
+        default=None, description="Configuration for the image encoder component."
+    )
+    unet: dict[str, Any] | RBLNUNetSpatioTemporalConditionModelConfig | None = Field(
+        default=None, description="Configuration for the UNet model component."
+    )
+    vae: dict[str, Any] | RBLNAutoencoderKLTemporalDecoderConfig | None = Field(
+        default=None, description="Configuration for the VAE model component."
+    )
 
     def __init__(
         self,
@@ -40,30 +50,6 @@ class RBLNStableVideoDiffusionPipelineConfig(RBLNModelConfig):
         guidance_scale: Optional[float] = None,
         **data: Any,
     ):
-        """
-        Args:
-            image_encoder (Optional[RBLNCLIPVisionModelWithProjectionConfig]): Configuration for the image encoder component.
-                Initialized as RBLNCLIPVisionModelWithProjectionConfig if not provided.
-            unet (Optional[RBLNUNetSpatioTemporalConditionModelConfig]): Configuration for the UNet model component.
-                Initialized as RBLNUNetSpatioTemporalConditionModelConfig if not provided.
-            vae (Optional[RBLNAutoencoderKLTemporalDecoderConfig]): Configuration for the VAE model component.
-                Initialized as RBLNAutoencoderKLTemporalDecoderConfig if not provided.
-            batch_size (Optional[int]): Batch size for inference, applied to all submodules.
-            height (Optional[int]): Height of the generated images.
-            width (Optional[int]): Width of the generated images.
-            num_frames (Optional[int]): The number of frames in the generated video.
-            decode_chunk_size (Optional[int]): The number of frames to decode at once during VAE decoding.
-                Useful for managing memory usage during video generation.
-            guidance_scale (Optional[float]): Scale for classifier-free guidance.
-            **data: Additional arguments passed to the parent RBLNModelConfig.
-
-        Raises:
-            ValueError: If both image_size and height/width are provided.
-
-        Note:
-            When guidance_scale > 1.0, the UNet batch size is automatically doubled to
-            accommodate classifier-free guidance.
-        """
         super().__init__(**data)
         if height is not None and width is not None:
             image_size = (height, width)

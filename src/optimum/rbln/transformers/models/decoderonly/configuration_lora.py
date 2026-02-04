@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from huggingface_hub import snapshot_download
-from pydantic import BaseModel, ConfigDict, PrivateAttr, field_serializer, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, field_serializer, field_validator, model_validator
 
 from ....utils.logging import get_logger
 
@@ -73,30 +73,21 @@ class RBLNLoRAAdapterConfig(BaseModel):
             generated_text = tokenizer.decode(decoder_outputs[0][input_len:], skip_special_tokens=True)
             print(generated_text + "\\n")
         ```
-
-    Attributes:
-        lora_int_id: Unique identifier for this LoRA adapter (e.g., 0, 1, 2).
-        lora_name: Human-readable name for this adapter (e.g., "math_tuned", "code_tuned").
-        lora_path: Path to the LoRA adapter weights directory or file.
-        r: The rank of the LoRA approximation for this adapter.
-        lora_alpha: The LoRA scaling parameter for this adapter.
-        target_modules: List of module names to apply LoRA to.
-        bias: Bias handling strategy. Options: "none", "all", "lora_only".
-        use_rslora: Whether to use Rank-Stabilized LoRA.
-        scaling_factor: Additional scaling factor for this adapter.
     """
 
     model_config = ConfigDict(frozen=False, extra="forbid", validate_assignment=True, arbitrary_types_allowed=True)
 
-    lora_int_id: int
-    lora_name: str
-    lora_path: Path
-    r: int = 8
-    lora_alpha: float = 8.0
-    target_modules: list[str] | None = None
-    bias: Literal["none", "all", "lora_only"] = "none"
-    use_rslora: bool = False
-    scaling_factor: float = 1.0
+    lora_int_id: int = Field(description="Unique identifier for this LoRA adapter (e.g., 1, 2, 3).")
+    lora_name: str = Field(description='Human-readable name for this adapter (e.g., "math_tuned", "code_tuned").')
+    lora_path: Path = Field(description="Path to the LoRA adapter weights directory or HuggingFace Hub ID.")
+    r: int = Field(default=8, description="The rank of the LoRA approximation for this adapter.")
+    lora_alpha: float = Field(default=8.0, description="The LoRA scaling parameter for this adapter.")
+    target_modules: list[str] | None = Field(default=None, description="List of module names to apply LoRA to.")
+    bias: Literal["none", "all", "lora_only"] = Field(
+        default="none", description="Bias handling strategy. Options: 'none', 'all', 'lora_only'."
+    )
+    use_rslora: bool = Field(default=False, description="Whether to use Rank-Stabilized LoRA.")
+    scaling_factor: float = Field(default=1.0, description="Additional scaling factor for this adapter.")
 
     _local_adapter_path: Path | None = PrivateAttr(default=None)
 
@@ -212,15 +203,15 @@ class RBLNLoRABaseAdapterConfig(BaseModel):
 
     model_config = ConfigDict(frozen=False, extra="forbid", validate_assignment=True, arbitrary_types_allowed=True)
 
-    lora_int_id: Literal[0] = 0
-    lora_name: str = "base"
-    lora_path: Path = Path("__reserved_base__")
-    r: int = 1
-    lora_alpha: float = 1.0
-    target_modules: list[str] = []
-    bias: Literal["none"] = "none"
-    use_rslora: bool = False
-    scaling_factor: float = 1.0
+    lora_int_id: Literal[0] = Field(default=0, description="Reserved ID for base model adapter (always 0).")
+    lora_name: str = Field(default="base", description="Name of the base adapter.")
+    lora_path: Path = Field(default=Path("__reserved_base__"), description="Reserved path for base adapter.")
+    r: int = Field(default=1, description="The rank of the LoRA approximation.")
+    lora_alpha: float = Field(default=1.0, description="The LoRA scaling parameter.")
+    target_modules: list[str] = Field(default_factory=list, description="Empty list for base adapter.")
+    bias: Literal["none"] = Field(default="none", description="Bias handling strategy.")
+    use_rslora: bool = Field(default=False, description="Whether to use Rank-Stabilized LoRA.")
+    scaling_factor: float = Field(default=1.0, description="Scaling factor for this adapter.")
 
     _local_adapter_path: Path | None = PrivateAttr(default=None)
 
@@ -282,8 +273,12 @@ class RBLNLoRAConfig(BaseModel):
 
     model_config = ConfigDict(frozen=False, extra="forbid", validate_assignment=True, arbitrary_types_allowed=True)
 
-    adapters: list[RBLNLoRAAdapterConfig | RBLNLoRABaseAdapterConfig]
-    max_lora_rank: int | None = None
+    adapters: list[RBLNLoRAAdapterConfig | RBLNLoRABaseAdapterConfig] = Field(
+        description="List of LoRA adapters to be compiled into the model."
+    )
+    max_lora_rank: int | None = Field(
+        default=None, description="Maximum rank across all adapters. Auto-calculated if not provided."
+    )
 
     def __init__(self, **data: Any):
         adapters_input = data.get("adapters", [])

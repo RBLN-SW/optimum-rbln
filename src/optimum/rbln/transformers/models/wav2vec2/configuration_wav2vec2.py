@@ -14,7 +14,7 @@
 
 from __future__ import annotations
 
-from pydantic import field_validator
+from pydantic import Field, field_validator
 
 from ....configuration_utils import RBLNModelConfig
 
@@ -25,14 +25,10 @@ class RBLNWav2Vec2ForCTCConfig(RBLNModelConfig):
 
     This configuration class stores the configuration parameters specific to
     RBLN-optimized Wav2Vec2 models for Connectionist Temporal Classification (CTC) tasks.
-
-    Args:
-        batch_size (int, optional): The batch size for inference. Defaults to 1.
-        max_seq_len (int, optional): Maximum sequence length for the audio input.
     """
 
-    batch_size: int = 1
-    max_seq_len: int | None = None
+    batch_size: int = Field(default=1, description="The batch size for inference.")
+    max_seq_len: int | None = Field(default=None, description="Maximum sequence length for the audio input.")
 
     @field_validator("batch_size", mode="before")
     @classmethod

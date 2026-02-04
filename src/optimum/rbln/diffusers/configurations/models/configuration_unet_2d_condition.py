@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import PrivateAttr, field_validator
+from pydantic import Field, PrivateAttr, field_validator
 
 from ....configuration_utils import RBLNModelConfig
 
@@ -29,15 +29,25 @@ class RBLNUNet2DConditionModelConfig(RBLNModelConfig):
     for UNet2DCondition models used in diffusion-based image generation.
     """
 
-    batch_size: int = 1
-    sample_size: tuple[int, int] | int | None = None
-    in_channels: int | None = None
-    cross_attention_dim: int | None = None
-    use_additional_residuals: bool | None = None
-    max_seq_len: int | None = None
-    in_features: int | None = None
-    text_model_hidden_size: int | None = None
-    image_model_hidden_size: int | None = None
+    batch_size: int = Field(default=1, description="The batch size for inference.")
+    sample_size: tuple[int, int] | int | None = Field(
+        default=None,
+        description="The spatial dimensions (height, width) of the generated samples. "
+        "If an integer is provided, it's used for both height and width.",
+    )
+    in_channels: int | None = Field(default=None, description="Number of input channels for the UNet.")
+    cross_attention_dim: int | None = Field(default=None, description="Dimension of the cross-attention features.")
+    use_additional_residuals: bool | None = Field(
+        default=None,
+        description="Whether to use additional residual connections in the model.",
+    )
+    max_seq_len: int | None = Field(
+        default=None,
+        description="Maximum sequence length for text inputs when used with cross-attention.",
+    )
+    in_features: int | None = Field(default=None, description="Number of input features for the model.")
+    text_model_hidden_size: int | None = Field(default=None, description="Hidden size of the text encoder model.")
+    image_model_hidden_size: int | None = Field(default=None, description="Hidden size of the image encoder model.")
 
     _batch_size_is_specified: bool = PrivateAttr(default=False)
 

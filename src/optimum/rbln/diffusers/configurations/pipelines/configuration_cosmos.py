@@ -16,6 +16,8 @@ from __future__ import annotations
 
 from typing import Any, ClassVar, Optional
 
+from pydantic import Field
+
 from ....configuration_utils import RBLNModelConfig
 from ....transformers import RBLNT5EncoderModelConfig
 from ....utils.logging import get_logger
@@ -27,13 +29,23 @@ logger = get_logger(__name__)
 
 
 class RBLNCosmosPipelineBaseConfig(RBLNModelConfig):
+    """Base configuration for Cosmos pipelines."""
+
     submodules: ClassVar[list[str]] = ["text_encoder", "transformer", "vae", "safety_checker"]
     _vae_uses_encoder: ClassVar[bool] = False
 
-    text_encoder: dict[str, Any] | RBLNT5EncoderModelConfig | None = None
-    transformer: dict[str, Any] | RBLNCosmosTransformer3DModelConfig | None = None
-    vae: dict[str, Any] | RBLNAutoencoderKLCosmosConfig | None = None
-    safety_checker: dict[str, Any] | RBLNCosmosSafetyCheckerConfig | None = None
+    text_encoder: dict[str, Any] | RBLNT5EncoderModelConfig | None = Field(
+        default=None, description="Configuration for the text encoder component."
+    )
+    transformer: dict[str, Any] | RBLNCosmosTransformer3DModelConfig | None = Field(
+        default=None, description="Configuration for the Transformer model component."
+    )
+    vae: dict[str, Any] | RBLNAutoencoderKLCosmosConfig | None = Field(
+        default=None, description="Configuration for the VAE model component."
+    )
+    safety_checker: dict[str, Any] | RBLNCosmosSafetyCheckerConfig | None = Field(
+        default=None, description="Configuration for the safety checker component."
+    )
 
     def __init__(
         self,
@@ -46,24 +58,6 @@ class RBLNCosmosPipelineBaseConfig(RBLNModelConfig):
         max_seq_len: Optional[int] = None,
         **data: Any,
     ):
-        """
-        Args:
-            text_encoder (Optional[RBLNT5EncoderModelConfig]): Configuration for the text encoder component.
-                Initialized as RBLNT5EncoderModelConfig if not provided.
-            transformer (Optional[RBLNCosmosTransformer3DModelConfig]): Configuration for the Transformer model component.
-                Initialized as RBLNCosmosTransformer3DModelConfig if not provided.
-            vae (Optional[RBLNAutoencoderKLCosmosConfig]): Configuration for the VAE model component.
-                Initialized as RBLNAutoencoderKLCosmosConfig if not provided.
-            safety_checker (Optional[RBLNCosmosSafetyCheckerConfig]): Configuration for the safety checker component.
-                Initialized as RBLNCosmosSafetyCheckerConfig if not provided.
-            batch_size (Optional[int]): Batch size for inference, applied to all submodules.
-            height (Optional[int]): Height of the generated videos.
-            width (Optional[int]): Width of the generated videos.
-            num_frames (Optional[int]): The number of frames in the generated video.
-            fps (Optional[int]): The frames per second of the generated video.
-            max_seq_len (Optional[int]): Maximum sequence length supported by the model.
-            **data: Additional arguments passed to the parent RBLNModelConfig.
-        """
         super().__init__(**data)
 
         self.text_encoder = self.initialize_submodule_config(

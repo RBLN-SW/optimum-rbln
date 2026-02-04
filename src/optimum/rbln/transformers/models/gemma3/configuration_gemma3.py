@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from typing import Any, ClassVar
 
-from pydantic import field_validator, model_validator
+from pydantic import Field, field_validator, model_validator
 
 from ....configuration_utils import RBLNModelConfig
 from ....utils.logging import get_logger
@@ -29,7 +29,11 @@ logger = get_logger(__name__)
 class RBLNGemma3ForCausalLMConfig(RBLNDecoderOnlyModelForCausalLMConfig):
     """Configuration for RBLNGemma3ForCausalLM."""
 
-    image_prefill_chunk_size: int | None = None
+    image_prefill_chunk_size: int | None = Field(
+        default=None,
+        description="The chunk size used during the prefill phase for processing images. "
+        "Used when use_image_prefill is True.",
+    )
 
     def __init__(self, **data: Any):
         # use_attention_mask and use_position_ids are always True for Gemma3
@@ -58,9 +62,13 @@ class RBLNGemma3ForConditionalGenerationConfig(RBLNModelConfig):
         # vision_tower is not mapped because it varies by model
     }
 
-    batch_size: int = 1
-    vision_tower: dict[str, Any] | RBLNModelConfig | None = None
-    language_model: RBLNModelConfig | None = None
+    batch_size: int = Field(default=1, description="The batch size for inference.")
+    vision_tower: dict[str, Any] | RBLNModelConfig | None = Field(
+        default=None, description="Configuration for the vision encoder component."
+    )
+    language_model: RBLNModelConfig | None = Field(
+        default=None, description="Configuration for the language model component."
+    )
 
     def __init__(self, **data: Any):
         super().__init__(**data)
@@ -68,11 +76,9 @@ class RBLNGemma3ForConditionalGenerationConfig(RBLNModelConfig):
         if self.batch_size != 1:
             logger.warning("Ignore batch_size for Gemma3 vision tower. It will be set to 1.")
 
-        # vision_tower varies by model, so we use initialize_submodule_config for dict conversion
-        if self.vision_tower is None or isinstance(self.vision_tower, dict):
-            self.vision_tower = self.initialize_submodule_config(
-                submodule_config=self.vision_tower, batch_size=1, force_kwargs=True
-            )
+        # vision_tower varies by model, so we use initialize_submodule_config
+        # kwargs (batch_size=1) always take priority
+        self.vision_tower = self.initialize_submodule_config(submodule_config=self.vision_tower, batch_size=1)
         # language_model is converted by @model_validator, but we still handle None case
         if self.language_model is None:
             self.language_model = self.initialize_submodule_config(

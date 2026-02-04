@@ -16,19 +16,31 @@ from __future__ import annotations
 
 from typing import Any, ClassVar, Optional, Tuple
 
+from pydantic import Field
+
 from ....configuration_utils import RBLNModelConfig
 from ....transformers import RBLNCLIPTextModelConfig, RBLNCLIPTextModelWithProjectionConfig
 from ..models import RBLNAutoencoderKLConfig, RBLNControlNetModelConfig, RBLNUNet2DConditionModelConfig
 
 
 class RBLNStableDiffusionControlNetPipelineBaseConfig(RBLNModelConfig):
+    """Base configuration for Stable Diffusion ControlNet pipelines."""
+
     submodules: ClassVar[list[str]] = ["text_encoder", "unet", "vae", "controlnet"]
     _vae_uses_encoder: ClassVar[bool] = False
 
-    text_encoder: dict[str, Any] | RBLNCLIPTextModelConfig | None = None
-    unet: dict[str, Any] | RBLNUNet2DConditionModelConfig | None = None
-    vae: dict[str, Any] | RBLNAutoencoderKLConfig | None = None
-    controlnet: dict[str, Any] | RBLNControlNetModelConfig | None = None
+    text_encoder: dict[str, Any] | RBLNCLIPTextModelConfig | None = Field(
+        default=None, description="Configuration for the text encoder component."
+    )
+    unet: dict[str, Any] | RBLNUNet2DConditionModelConfig | None = Field(
+        default=None, description="Configuration for the UNet model component."
+    )
+    vae: dict[str, Any] | RBLNAutoencoderKLConfig | None = Field(
+        default=None, description="Configuration for the VAE model component."
+    )
+    controlnet: dict[str, Any] | RBLNControlNetModelConfig | None = Field(
+        default=None, description="Configuration for the ControlNet model component."
+    )
 
     def __init__(
         self,
@@ -43,34 +55,6 @@ class RBLNStableDiffusionControlNetPipelineBaseConfig(RBLNModelConfig):
         guidance_scale: Optional[float] = None,
         **data: Any,
     ):
-        """
-        Args:
-            text_encoder (Optional[RBLNCLIPTextModelConfig]): Configuration for the text encoder component.
-                Initialized as RBLNCLIPTextModelConfig if not provided.
-            unet (Optional[RBLNUNet2DConditionModelConfig]): Configuration for the UNet model component.
-                Initialized as RBLNUNet2DConditionModelConfig if not provided.
-            vae (Optional[RBLNAutoencoderKLConfig]): Configuration for the VAE model component.
-                Initialized as RBLNAutoencoderKLConfig if not provided.
-            controlnet (Optional[RBLNControlNetModelConfig]): Configuration for the ControlNet model component.
-                Initialized as RBLNControlNetModelConfig if not provided.
-            batch_size (Optional[int]): Batch size for inference, applied to all submodules.
-            img_height (Optional[int]): Height of the generated images.
-            img_width (Optional[int]): Width of the generated images.
-            height (Optional[int]): Height of the generated images.
-            width (Optional[int]): Width of the generated images.
-            sample_size (Optional[Tuple[int, int]]): Spatial dimensions for the UNet model.
-            image_size (Optional[Tuple[int, int]]): Alternative way to specify image dimensions.
-                Cannot be used together with img_height/img_width.
-            guidance_scale (Optional[float]): Scale for classifier-free guidance.
-            **data: Additional arguments passed to the parent RBLNModelConfig.
-
-        Raises:
-            ValueError: If both image_size and img_height/img_width are provided.
-
-        Note:
-            When guidance_scale > 1.0, the UNet batch size is automatically doubled to
-            accommodate classifier-free guidance.
-        """
         super().__init__(**data)
 
         # Initial check for image_size conflict remains as is
@@ -165,18 +149,26 @@ class RBLNStableDiffusionControlNetImg2ImgPipelineConfig(RBLNStableDiffusionCont
 
 
 class RBLNStableDiffusionXLControlNetPipelineBaseConfig(RBLNModelConfig):
-    """
-    Base configuration for Stable Diffusion XL ControlNet pipelines.
-    """
+    """Base configuration for Stable Diffusion XL ControlNet pipelines."""
 
     submodules: ClassVar[list[str]] = ["text_encoder", "text_encoder_2", "unet", "vae", "controlnet"]
     _vae_uses_encoder: ClassVar[bool] = False
 
-    text_encoder: dict[str, Any] | RBLNCLIPTextModelConfig | None = None
-    text_encoder_2: dict[str, Any] | RBLNCLIPTextModelWithProjectionConfig | None = None
-    unet: dict[str, Any] | RBLNUNet2DConditionModelConfig | None = None
-    vae: dict[str, Any] | RBLNAutoencoderKLConfig | None = None
-    controlnet: dict[str, Any] | RBLNControlNetModelConfig | None = None
+    text_encoder: dict[str, Any] | RBLNCLIPTextModelConfig | None = Field(
+        default=None, description="Configuration for the primary text encoder."
+    )
+    text_encoder_2: dict[str, Any] | RBLNCLIPTextModelWithProjectionConfig | None = Field(
+        default=None, description="Configuration for the secondary text encoder."
+    )
+    unet: dict[str, Any] | RBLNUNet2DConditionModelConfig | None = Field(
+        default=None, description="Configuration for the UNet model component."
+    )
+    vae: dict[str, Any] | RBLNAutoencoderKLConfig | None = Field(
+        default=None, description="Configuration for the VAE model component."
+    )
+    controlnet: dict[str, Any] | RBLNControlNetModelConfig | None = Field(
+        default=None, description="Configuration for the ControlNet model component."
+    )
 
     def __init__(
         self,
@@ -191,36 +183,6 @@ class RBLNStableDiffusionXLControlNetPipelineBaseConfig(RBLNModelConfig):
         guidance_scale: Optional[float] = None,
         **data: Any,
     ):
-        """
-        Args:
-            text_encoder (Optional[RBLNCLIPTextModelConfig]): Configuration for the primary text encoder.
-                Initialized as RBLNCLIPTextModelConfig if not provided.
-            text_encoder_2 (Optional[RBLNCLIPTextModelWithProjectionConfig]): Configuration for the secondary text encoder.
-                Initialized as RBLNCLIPTextModelWithProjectionConfig if not provided.
-            unet (Optional[RBLNUNet2DConditionModelConfig]): Configuration for the UNet model component.
-                Initialized as RBLNUNet2DConditionModelConfig if not provided.
-            vae (Optional[RBLNAutoencoderKLConfig]): Configuration for the VAE model component.
-                Initialized as RBLNAutoencoderKLConfig if not provided.
-            controlnet (Optional[RBLNControlNetModelConfig]): Configuration for the ControlNet model component.
-                Initialized as RBLNControlNetModelConfig if not provided.
-            batch_size (Optional[int]): Batch size for inference, applied to all submodules.
-            img_height (Optional[int]): Height of the generated images.
-            img_width (Optional[int]): Width of the generated images.
-            height (Optional[int]): Height of the generated images.
-            width (Optional[int]): Width of the generated images.
-            sample_size (Optional[Tuple[int, int]]): Spatial dimensions for the UNet model.
-            image_size (Optional[Tuple[int, int]]): Alternative way to specify image dimensions.
-                Cannot be used together with img_height/img_width.
-            guidance_scale (Optional[float]): Scale for classifier-free guidance.
-            **data: Additional arguments passed to the parent RBLNModelConfig.
-
-        Raises:
-            ValueError: If both image_size and img_height/img_width are provided.
-
-        Note:
-            When guidance_scale > 1.0, the UNet batch size is automatically doubled to
-            accommodate classifier-free guidance.
-        """
         super().__init__(**data)
 
         # Initial check for image_size conflict remains as is

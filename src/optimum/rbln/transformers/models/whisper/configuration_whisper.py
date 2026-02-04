@@ -14,7 +14,7 @@
 
 from __future__ import annotations
 
-from pydantic import field_validator
+from pydantic import Field, field_validator
 
 from ....configuration_utils import RBLNModelConfig
 from ....utils.logging import get_logger
@@ -29,26 +29,23 @@ class RBLNWhisperForConditionalGenerationConfig(RBLNModelConfig):
 
     This configuration class stores the configuration parameters specific to
     RBLN-optimized Whisper models for speech recognition and transcription tasks.
-
-    Args:
-        batch_size (int, optional): The batch size for inference. Defaults to 1.
-        token_timestamps (bool, optional): Whether to output token timestamps during generation. Defaults to False.
-        use_attention_mask (bool, optional): Whether to use attention masks during inference.
-        enc_max_seq_len (int, optional): Maximum sequence length for the encoder.
-        dec_max_seq_len (int, optional): Maximum sequence length for the decoder.
-        kvcache_num_blocks (int, optional): The total number of blocks to allocate for the
-            PagedAttention KV cache for the SelfAttention. Defaults to batch_size.
-        kvcache_block_size (int, optional): Sets the size (in number of tokens) of each block
-            in the PagedAttention KV cache for the SelfAttention. Defaults to dec_max_seq_len.
     """
 
-    batch_size: int = 1
-    token_timestamps: bool = False
-    use_attention_mask: bool = False
-    enc_max_seq_len: int | None = None
-    dec_max_seq_len: int | None = None
-    kvcache_num_blocks: int | None = None
-    kvcache_block_size: int | None = None
+    batch_size: int = Field(default=1, description="The batch size for inference.")
+    token_timestamps: bool = Field(default=False, description="Whether to output token timestamps during generation.")
+    use_attention_mask: bool = Field(default=False, description="Whether to use attention masks during inference.")
+    enc_max_seq_len: int | None = Field(default=None, description="Maximum sequence length for the encoder.")
+    dec_max_seq_len: int | None = Field(default=None, description="Maximum sequence length for the decoder.")
+    kvcache_num_blocks: int | None = Field(
+        default=None,
+        description="The total number of blocks to allocate for the PagedAttention KV cache "
+        "for the SelfAttention. Defaults to batch_size.",
+    )
+    kvcache_block_size: int | None = Field(
+        default=None,
+        description="The size (in number of tokens) of each block in the PagedAttention KV cache "
+        "for the SelfAttention. Defaults to dec_max_seq_len.",
+    )
 
     @field_validator("batch_size", mode="before")
     @classmethod

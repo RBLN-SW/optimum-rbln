@@ -14,7 +14,7 @@
 
 from __future__ import annotations
 
-from pydantic import field_validator
+from pydantic import Field, field_validator
 
 from ....configuration_utils import RBLNModelConfig
 
@@ -22,7 +22,7 @@ from ....configuration_utils import RBLNModelConfig
 class RBLNCLIPTextModelConfig(RBLNModelConfig):
     """Configuration class for RBLNCLIPTextModel."""
 
-    batch_size: int = 1
+    batch_size: int = Field(default=1, description="The batch size for text processing.")
 
     @field_validator("batch_size", mode="before")
     @classmethod
@@ -46,11 +46,21 @@ class RBLNCLIPTextModelWithProjectionConfig(RBLNCLIPTextModelConfig):
 class RBLNCLIPVisionModelConfig(RBLNModelConfig):
     """Configuration class for RBLNCLIPVisionModel."""
 
-    batch_size: int = 1
-    image_size: int | tuple[int, int] | dict[str, int] | None = None
-    interpolate_pos_encoding: bool = False
-    output_hidden_states: bool | None = None
-    output_attentions: bool | None = None
+    batch_size: int = Field(default=1, description="The batch size for image processing.")
+    image_size: int | tuple[int, int] | dict[str, int] | None = Field(
+        default=None,
+        description="The size of input images. Can be an integer for square images, "
+        "a tuple (height, width), or a dict with 'height' and 'width' keys.",
+    )
+    interpolate_pos_encoding: bool = Field(
+        default=False, description="Whether to interpolate pre-trained position encodings."
+    )
+    output_hidden_states: bool | None = Field(
+        default=None, description="Whether to return the hidden states of all layers."
+    )
+    output_attentions: bool | None = Field(
+        default=None, description="Whether to return the attention tensors of all attention layers."
+    )
 
     @field_validator("batch_size", mode="before")
     @classmethod

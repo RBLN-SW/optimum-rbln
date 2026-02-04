@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from typing import Any, ClassVar
 
-from pydantic import field_validator
+from pydantic import Field, field_validator
 
 from ....configuration_utils import RBLNModelConfig
 from ....utils.logging import get_logger
@@ -33,7 +33,7 @@ class RBLNIdefics3VisionTransformerConfig(RBLNModelConfig):
     RBLN-optimized Idefics3 vision transformer.
     """
 
-    batch_size: int = 1
+    batch_size: int = Field(default=1, description="The batch size for inference.")
 
     @field_validator("batch_size", mode="before")
     @classmethod
@@ -59,9 +59,15 @@ class RBLNIdefics3ForConditionalGenerationConfig(RBLNModelConfig):
         # text_model is not mapped because it varies by model
     }
 
-    batch_size: int = 1
-    vision_model: RBLNModelConfig | None = None
-    text_model: dict[str, Any] | RBLNModelConfig | None = None
+    batch_size: int = Field(default=1, description="The batch size for inference.")
+    vision_model: RBLNModelConfig | None = Field(
+        default=None,
+        description="Configuration for the vision transformer component. Includes settings specific to the vision encoder.",
+    )
+    text_model: dict[str, Any] | RBLNModelConfig | None = Field(
+        default=None,
+        description="Configuration for the text model component. Includes settings specific to the language model.",
+    )
 
     def __init__(self, **data: Any):
         super().__init__(**data)
@@ -69,11 +75,11 @@ class RBLNIdefics3ForConditionalGenerationConfig(RBLNModelConfig):
         if self.batch_size != 1:
             logger.warning("Ignore batch_size for Idefics3 vision transformer. It will be set to 1.")
 
-        # vision_model is converted by @model_validator, but we still handle None case
-        if self.vision_model is None:
-            self.vision_model = self.initialize_submodule_config(
-                submodule_name="vision_model", submodule_config=None, batch_size=1, force_kwargs=True
-            )
+        # initialize_submodule_config handles None, dict, and RBLNModelConfig.
+        # kwargs (batch_size=1) always take priority.
+        self.vision_model = self.initialize_submodule_config(
+            submodule_name="vision_model", submodule_config=self.vision_model, batch_size=1
+        )
         # text_model varies by model, so we use initialize_submodule_config for dict conversion
         if self.text_model is None or isinstance(self.text_model, dict):
             self.text_model = self.initialize_submodule_config(submodule_config=self.text_model)

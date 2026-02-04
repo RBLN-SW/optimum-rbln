@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from typing import Any, ClassVar
 
-from pydantic import model_validator
+from pydantic import Field, model_validator
 
 from ....configuration_utils import RBLNModelConfig
 from ..decoderonly.configuration_decoderonly import RBLNDecoderOnlyModelConfig, RBLNDecoderOnlyModelForCausalLMConfig
@@ -36,21 +36,9 @@ class RBLNQwen2_5_VLForConditionalGenerationConfig(RBLNDecoderOnlyModelForCausal
         "visual": "RBLNQwen2_5_VisionTransformerPretrainedModelConfig"
     }
 
-    visual: RBLNModelConfig | None = None
+    visual: RBLNModelConfig | None = Field(default=None, description="Configuration for the vision encoder component.")
 
     def __init__(self, **data: Any):
-        """
-        Args:
-            use_inputs_embeds (bool): Whether or not to use `inputs_embeds` as input. Defaults to `True`.
-            visual (Optional[RBLNModelConfig]): Configuration for the vision encoder component.
-            **data: Additional arguments passed to the parent `RBLNDecoderOnlyModelForCausalLMConfig`.
-
-        Raises:
-            ValueError: If `use_inputs_embeds` is False.
-            ValueError: If the visual configuration is provided but contains invalid settings, such as an invalid max_seq_lens (e.g., not a positive integer, not a multiple of the window-based attention unit, or insufficient for the expected resolution).
-            ValueError: If visual is None and no default vision configuration can be inferred for the model architecture.
-            ValueError: If any inherited parameters violate constraints defined in the parent class, such as batch_size not being a positive integer, prefill_chunk_size not being divisible by 64, or max_seq_len not meeting requirements for Flash Attention.
-        """
         if "use_inputs_embeds" not in data or data["use_inputs_embeds"] is None:
             data["use_inputs_embeds"] = True
         super().__init__(**data)
@@ -78,7 +66,7 @@ class RBLNQwen2_5_VLModelConfig(RBLNDecoderOnlyModelConfig):
         "visual": "RBLNQwen2_5_VisionTransformerPretrainedModelConfig"
     }
 
-    visual: RBLNModelConfig | None = None
+    visual: RBLNModelConfig | None = Field(default=None, description="Configuration for the vision encoder component.")
 
     def __init__(self, **data: Any):
         super().__init__(**data)
@@ -94,43 +82,28 @@ class RBLNQwen2_5_VisionTransformerPretrainedModelConfig(RBLNModelConfig):
     This configuration class stores the configuration parameters specific to
     RBLN-optimized Qwen2.5-VL vision transformer models with window-based attention
     mechanisms for processing images and videos.
+
+    Max Seq Lens:
+        Since Qwen2_5_VLForConditionalGeneration performs inference on a per-image or per-frame basis,
+        `max_seq_lens` should be set based on the maximum expected resolution of the input images
+        or video frames, according to the following guidelines:
+
+        1. **Minimum Value**: `max_seq_lens` must be greater than or equal to the number of patches
+           generated from the input image. For example, a 224x224 image with a patch size of 14
+           results in (224 / 14) * (224 / 14) = 256 patches.
+        2. **Alignment Requirement**: `max_seq_lens` must be a multiple of `(window_size / patch_size)^2`
+           due to the window-based attention mechanism. For instance, if window_size is 112 and
+           patch_size is 14, then (112 / 14)^2 = 64, making valid values 64, 128, 192, 256, etc.
     """
 
-    max_seq_lens: list[int] | None = None
+    max_seq_lens: list[int] | None = Field(
+        default=None,
+        description="Maximum sequence lengths for Vision Transformer attention. Can be an integer "
+        "or list of integers, each indicating the number of patches in a sequence for an image or video. "
+        "Must be a multiple of (window_size / patch_size)^2 for window-based attention.",
+    )
 
     def __init__(self, **data: Any):
-        """
-        Args:
-            max_seq_lens (Optional[Union[int, List[int]]]): Maximum sequence lengths for Vision
-                Transformer attention. Can be an integer or list of integers, each indicating
-                the number of patches in a sequence for an image or video. For example, an image
-                of 224x196 pixels with patch size 14 and window size 112 has its width padded to
-                224, forming a 224x224 image. This yields 256 patches [(224/14) * (224/14)], so
-                `max_seq_len` must be at least 256. For window-based attention, `max_seq_len`
-                must be a multiple of `(window_size / patch_size)^2`, e.g., (112/14)^2 = 64,
-                making 256 (64 * 4) valid. RBLN optimization runs inference per image or video
-                frame, so set `max_seq_len` to match the maximum expected resolution to reduce
-                computation. If not provided, a `ValueError` is raised.
-            **data: Additional arguments passed to the parent RBLNModelConfig.
-
-        Raises:
-            ValueError: If `max_seq_lens` is None or not provided.
-            ValueError: If `max_seq_lens` (or any value in the list) is not a positive integer.
-            ValueError: If `max_seq_lens` is not a multiple of (window_size / patch_size)^2 for window-based attention, or is insufficient for the expected image/video resolution.
-            ValueError: If `batch_size` (inherited from RBLNModelConfig) is not a positive integer.
-
-        Max Seq Lens:
-            Since `Qwen2_5_VLForConditionalGeneration` performs inference on a per-image or per-frame basis,
-            `max_seq_lens` should be set based on the maximum expected resolution of the input images or video frames,
-            according to the following guidelines:
-
-            1. **Minimum Value**: `max_seq_lens` must be greater than or equal to the number of patches generated from the input image.
-                For example, a 224x224 image with a patch size of 14 results in (224 / 14) * (224 / 14) = 256 patches.
-                Therefore, `max_seq_lens` must be at least 256.
-            2. **Alignment Requirement**: `max_seq_lens` must be a multiple of `(window_size / patch_size)^2` due to the requirements
-                of the window-based attention mechanism. For instance, if `window_size` is 112 and `patch_size` is 14, then
-                `(112 / 14)^2 = 64`, meaning valid values for `max_seq_lens` include 64, 128, 192, 256, etc.
-        """
         # Handle max_seq_lens normalization before super().__init__
         max_seq_lens = data.get("max_seq_lens")
         if max_seq_lens is not None:
