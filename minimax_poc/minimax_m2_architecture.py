@@ -182,6 +182,7 @@ class MiniMaxM2SparseMoeBlock(nn.Module):
 
         # router_logits: [B*T, num_experts]
         router_logits = self.gate(x)
+        routing_weights = torch.nn.functional.sigmoid(router_logits.float())
         y = torch.ops.rbln_custom_ops.custom_moe_swiglu_group_dequantize(
             x,
             self.w1,
@@ -190,7 +191,7 @@ class MiniMaxM2SparseMoeBlock(nn.Module):
             self.w3_scale,
             self.w2,
             self.w2_scale,
-            router_logits,
+            routing_weights,
             self.group_size,
             int(self.top_k),
             self.e_score_correction_bias,
