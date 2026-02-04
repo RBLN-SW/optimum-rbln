@@ -73,8 +73,12 @@ class RBLNGroundingDinoComponentConfig(RBLNImageModelConfig):
 
 
 class RBLNGroundingDinoEncoderConfig(RBLNGroundingDinoComponentConfig):
+    """Configuration for RBLN Grounding DINO encoder."""
+
     pass
 
 
 class RBLNGroundingDinoDecoderConfig(RBLNGroundingDinoComponentConfig):
+    """Configuration for RBLN Grounding DINO decoder."""
+
     pass

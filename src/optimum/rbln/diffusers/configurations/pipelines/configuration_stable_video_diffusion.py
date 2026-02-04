@@ -14,9 +14,9 @@
 
 from __future__ import annotations
 
-from typing import Any, ClassVar, Optional
+from typing import Any, ClassVar
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from ....configuration_utils import RBLNModelConfig
 from ....transformers import RBLNCLIPVisionModelWithProjectionConfig
@@ -39,18 +39,55 @@ class RBLNStableVideoDiffusionPipelineConfig(RBLNModelConfig):
         default=None, description="Configuration for the VAE model component."
     )
 
-    def __init__(
-        self,
-        *,
-        batch_size: Optional[int] = None,
-        height: Optional[int] = None,
-        width: Optional[int] = None,
-        num_frames: Optional[int] = None,
-        decode_chunk_size: Optional[int] = None,
-        guidance_scale: Optional[float] = None,
-        **data: Any,
-    ):
-        super().__init__(**data)
+    # Pass-through parameters (excluded from serialization.)
+    effective_batch_size: int | None = Field(
+        default=None,
+        alias="batch_size",
+        exclude=True,
+        description="Batch size for inference. Forwarded to image_encoder and vae.",
+    )
+    effective_height: int | None = Field(
+        default=None,
+        alias="height",
+        exclude=True,
+        description="Height of the generated video frames.",
+    )
+    effective_width: int | None = Field(
+        default=None,
+        alias="width",
+        exclude=True,
+        description="Width of the generated video frames.",
+    )
+    effective_num_frames: int | None = Field(
+        default=None,
+        alias="num_frames",
+        exclude=True,
+        description="Number of video frames to generate. Forwarded to unet and vae.",
+    )
+    effective_decode_chunk_size: int | None = Field(
+        default=None,
+        alias="decode_chunk_size",
+        exclude=True,
+        description="Number of frames to decode at a time in VAE. Forwarded to vae.",
+    )
+    effective_guidance_scale: float | None = Field(
+        default=None,
+        alias="guidance_scale",
+        exclude=True,
+        description="Scale for classifier-free guidance. Used to determine UNet batch size.",
+    )
+
+    @model_validator(mode="after")
+    def initialize_submodules(self) -> "RBLNStableVideoDiffusionPipelineConfig":
+        """Initialize submodule configs with pass-through parameters."""
+        # Guard against re-entry during submodule initialization
+        if getattr(self, "_submodules_initialized", False):
+            return self
+        object.__setattr__(self, "_submodules_initialized", True)
+
+        height = self.effective_height
+        width = self.effective_width
+
         if height is not None and width is not None:
             image_size = (height, width)
         else:
@@ -60,24 +97,27 @@ class RBLNStableVideoDiffusionPipelineConfig(RBLNModelConfig):
             image_size = (height, width)
 
         self.image_encoder = self.initialize_submodule_config(
-            self.image_encoder, cls_name="RBLNCLIPVisionModelWithProjectionConfig", batch_size=batch_size
+            self.image_encoder,
+            cls_name="RBLNCLIPVisionModelWithProjectionConfig",
+            batch_size=self.effective_batch_size,
         )
         self.unet = self.initialize_submodule_config(
             self.unet,
             cls_name="RBLNUNetSpatioTemporalConditionModelConfig",
-            num_frames=num_frames,
+            num_frames=self.effective_num_frames,
         )
         self.vae = self.initialize_submodule_config(
             self.vae,
             cls_name="RBLNAutoencoderKLTemporalDecoderConfig",
-            batch_size=batch_size,
-            num_frames=num_frames,
-            decode_chunk_size=decode_chunk_size,
+            batch_size=self.effective_batch_size,
+            num_frames=self.effective_num_frames,
+            decode_chunk_size=self.effective_decode_chunk_size,
             uses_encoder=self.__class__._vae_uses_encoder,
             sample_size=image_size,  # image size is equal to sample size in vae
         )
 
         # Get default guidance scale from original class to set UNet batch size
+        guidance_scale = self.effective_guidance_scale
         if guidance_scale is None:
             guidance_scale = self.get_default_values_for_original_cls("__call__", ["max_guidance_scale"])[
                 "max_guidance_scale"
@@ -89,6 +129,8 @@ class RBLNStableVideoDiffusionPipelineConfig(RBLNModelConfig):
                 self.unet.batch_size = self.image_encoder.batch_size * 2
             else:
                 self.unet.batch_size = self.image_encoder.batch_size
+
+        return self
 
     @property
     def batch_size(self):

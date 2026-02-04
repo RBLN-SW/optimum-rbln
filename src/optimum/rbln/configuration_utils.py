@@ -388,7 +388,7 @@ class RBLNModelConfig(BaseModel):
 
         This validator handles the conversion of submodule configuration dictionaries
         to their corresponding RBLNModelConfig instances. It determines the config class
-        either from the dict's cls_name or from the submodule_config_classes mapping.
+        from cls_name or submodule_config_classes mapping.
 
         Runtime options (npu, tensor_parallel_size, optimum_rbln_version) are inherited
         from the parent config to the submodule config.
@@ -410,12 +410,11 @@ class RBLNModelConfig(BaseModel):
             if not isinstance(submodule_data, dict):
                 continue
 
-            # Determine config class name
+            # Determine config class name with priority: cls_name > submodule_config_classes
             if "cls_name" in submodule_data:
                 cls_name = submodule_data["cls_name"]
             elif submodule_name in cls.submodule_config_classes:
                 cls_name = cls.submodule_config_classes[submodule_name]
-                submodule_data["cls_name"] = cls_name
             else:
                 # Cannot determine class, leave as dict for initialize_submodule_config to handle
                 continue

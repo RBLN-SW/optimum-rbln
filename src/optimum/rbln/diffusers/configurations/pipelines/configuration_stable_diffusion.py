@@ -16,11 +16,9 @@ from __future__ import annotations
 
 from typing import Any, ClassVar
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from ....configuration_utils import RBLNModelConfig
-from ....transformers import RBLNCLIPTextModelConfig
-from ..models import RBLNAutoencoderKLConfig, RBLNUNet2DConditionModelConfig
 
 
 class RBLNStableDiffusionPipelineBaseConfig(RBLNModelConfig):
@@ -40,23 +38,71 @@ class RBLNStableDiffusionPipelineBaseConfig(RBLNModelConfig):
         default=None, description="Configuration for the VAE model component."
     )
 
-    def __init__(
-        self,
-        text_encoder: RBLNCLIPTextModelConfig | dict[str, Any] | None = None,
-        unet: RBLNUNet2DConditionModelConfig | dict[str, Any] | None = None,
-        vae: RBLNAutoencoderKLConfig | dict[str, Any] | None = None,
-        *,
-        batch_size: int | None = None,
-        img_height: int | None = None,
-        img_width: int | None = None,
-        height: int | None = None,
-        width: int | None = None,
-        sample_size: tuple[int, int] | None = None,
-        image_size: tuple[int, int] | None = None,
-        guidance_scale: float | None = None,
-        **kwargs: Any,
-    ):
-        # Initial check for image_size conflict remains as is
+    # Pass-through parameters (excluded from serialization.)
+    effective_batch_size: int | None = Field(
+        default=None,
+        alias="batch_size",
+        exclude=True,
+        description="Batch size for inference. Forwarded to text_encoder and vae.",
+    )
+    effective_img_height: int | None = Field(
+        default=None,
+        alias="img_height",
+        exclude=True,
+        description="(Deprecated) Image height. Use height instead.",
+    )
+    effective_img_width: int | None = Field(
+        default=None,
+        alias="img_width",
+        exclude=True,
+        description="(Deprecated) Image width. Use width instead.",
+    )
+    effective_height: int | None = Field(
+        default=None,
+        alias="height",
+        exclude=True,
+        description="Height of the generated images.",
+    )
+    effective_width: int | None = Field(
+        default=None,
+        alias="width",
+        exclude=True,
+        description="Width of the generated images.",
+    )
+    effective_sample_size: tuple[int, int] | None = Field(
+        default=None,
+        alias="sample_size",
+        exclude=True,
+        description="Spatial dimensions for the UNet model (height, width).",
+    )
+    effective_image_size: tuple[int, int] | None = Field(
+        default=None,
+        alias="image_size",
+        exclude=True,
+        description="Image dimensions (height, width). Forwarded to vae as sample_size.",
+    )
+    effective_guidance_scale: float | None = Field(
+        default=None,
+        alias="guidance_scale",
+        exclude=True,
+        description="Scale for classifier-free guidance. Used to determine UNet batch size.",
+    )
+
+    @model_validator(mode="before")
+    @classmethod
+    def resolve_image_dimensions(cls, data: dict[str, Any]) -> dict[str, Any]:
+        """Resolve image_size from height/width aliases."""
+        if not isinstance(data, dict):
+            return data
+
+        # Check only user-facing keys (aliases), not internal effective_* keys
+        image_size = data.get("image_size")
+        img_height = data.get("img_height")
+        img_width = data.get("img_width")
+        height = data.get("height")
+        width = data.get("width")
+
+        # Initial check for image_size conflict
         if image_size is not None and (
             img_height is not None or img_width is not None or height is not None or width is not None
         ):
@@ -69,42 +115,46 @@ class RBLNStableDiffusionPipelineBaseConfig(RBLNModelConfig):
                     "Cannot provide both 'height'/'width' and 'img_height'/'img_width' simultaneously. "
                     "Please use one set of arguments for image dimensions, preferring 'height'/'width'."
                 )
-            image_size = (height, width)
+            data["image_size"] = (height, width)
         elif (height is not None and width is None) or (height is None and width is not None):
             raise ValueError("Both height and width must be provided together if used")
         # Fallback to img_height/img_width for backward compatibility
         elif img_height is not None and img_width is not None:
-            image_size = (img_height, img_width)
+            data["image_size"] = (img_height, img_width)
         elif (img_height is not None and img_width is None) or (img_height is None and img_width is not None):
             raise ValueError("Both img_height and img_width must be provided together if used")
 
-        # Store submodule configs in kwargs for parent init
-        kwargs["text_encoder"] = text_encoder
-        kwargs["unet"] = unet
-        kwargs["vae"] = vae
+        return data
 
-        super().__init__(**kwargs)
+    @model_validator(mode="after")
+    def initialize_submodules(self) -> "RBLNStableDiffusionPipelineBaseConfig":
+        """Initialize submodule configs with pass-through parameters."""
+        # Guard against re-entry during submodule initialization
+        if getattr(self, "_submodules_initialized", False):
+            return self
+        object.__setattr__(self, "_submodules_initialized", True)
 
         # Initialize submodule configs
         self.text_encoder = self.initialize_submodule_config(
             self.text_encoder,
             cls_name="RBLNCLIPTextModelConfig",
-            batch_size=batch_size,
+            batch_size=self.effective_batch_size,
         )
         self.unet = self.initialize_submodule_config(
             self.unet,
             cls_name="RBLNUNet2DConditionModelConfig",
-            sample_size=sample_size,
+            sample_size=self.effective_sample_size,
         )
         self.vae = self.initialize_submodule_config(
             self.vae,
             cls_name="RBLNAutoencoderKLConfig",
-            batch_size=batch_size,
+            batch_size=self.effective_batch_size,
             uses_encoder=self.__class__._vae_uses_encoder,
-            sample_size=image_size,
+            sample_size=self.effective_image_size,
         )
 
         # Get default guidance scale from original class to set UNet batch size
+        guidance_scale = self.effective_guidance_scale
         if guidance_scale is None:
             guidance_scale = self.get_default_values_for_original_cls("__call__", ["guidance_scale"])["guidance_scale"]
 
@@ -115,6 +165,8 @@ class RBLNStableDiffusionPipelineBaseConfig(RBLNModelConfig):
                     self.unet.batch_size = self.text_encoder.batch_size * 2
                 else:
                     self.unet.batch_size = self.text_encoder.batch_size
+
+        return self
 
     @property
     def batch_size(self) -> int:
