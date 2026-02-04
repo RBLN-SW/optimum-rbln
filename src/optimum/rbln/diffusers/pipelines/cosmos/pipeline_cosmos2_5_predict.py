@@ -41,7 +41,7 @@ class RBLNCosmos2_5_PredictBasePipeline(RBLNDiffusionMixin, Cosmos2_5_PredictBas
 
     original_class = Cosmos2_5_PredictBasePipeline
     # _submodules = ["text_encoder", "transformer", "vae"]
-    _submodules = ["text_encoder"]
+    _submodules = ["vae"]
     # _optional_submodules = ["safety_checker"]
     _optional_submodules = []
 
