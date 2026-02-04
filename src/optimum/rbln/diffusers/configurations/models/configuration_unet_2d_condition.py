@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import Field, PrivateAttr, field_validator
+from pydantic import Field, field_validator, model_validator
 
 from ....configuration_utils import RBLNModelConfig
 
@@ -48,20 +48,16 @@ class RBLNUNet2DConditionModelConfig(RBLNModelConfig):
     in_features: int | None = Field(default=None, description="Number of input features for the model.")
     text_model_hidden_size: int | None = Field(default=None, description="Hidden size of the text encoder model.")
     image_model_hidden_size: int | None = Field(default=None, description="Hidden size of the image encoder model.")
+    batch_size_is_specified: bool = Field(
+        default=False, exclude=True, description="Whether the batch size was explicitly specified by the user."
+    )
 
-    _batch_size_is_specified: bool = PrivateAttr(default=False)
-
-    def __init__(self, **data: Any):
-        # Track if batch_size was explicitly specified
-        batch_size_specified = "batch_size" in data and data["batch_size"] is not None
-
-        # Normalize sample_size to tuple
-        sample_size = data.get("sample_size")
-        if isinstance(sample_size, int):
-            data["sample_size"] = (sample_size, sample_size)
-
-        super().__init__(**data)
-        self._batch_size_is_specified = batch_size_specified
+    @model_validator(mode="before")
+    @classmethod
+    def track_batch_size_specified(cls, data: dict[str, Any]) -> dict[str, Any]:
+        if isinstance(data, dict):
+            data["batch_size_is_specified"] = "batch_size" in data and data["batch_size"] is not None
+        return data
 
     @field_validator("batch_size", mode="before")
     @classmethod
@@ -72,6 +68,11 @@ class RBLNUNet2DConditionModelConfig(RBLNModelConfig):
             raise ValueError(f"batch_size must be a positive integer, got {v}")
         return v
 
-    @property
-    def batch_size_is_specified(self) -> bool:
-        return self._batch_size_is_specified
+    @field_validator("sample_size", mode="before")
+    @classmethod
+    def validate_sample_size(cls, v: int | tuple[int, int] | None) -> tuple[int, int] | None:
+        if v is None:
+            return None
+        if isinstance(v, int):
+            return (v, v)
+        return v

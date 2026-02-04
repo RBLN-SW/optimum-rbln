@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import Field, PrivateAttr, field_validator
+from pydantic import Field, field_validator, model_validator
 
 from ....configuration_utils import RBLNModelConfig
 
@@ -36,13 +36,16 @@ class RBLNControlNetModelConfig(RBLNModelConfig):
         default=None, description="The spatial dimensions (height, width) of VAE samples."
     )
     text_model_hidden_size: int | None = Field(default=None, description="Hidden size of the text encoder model.")
+    batch_size_is_specified: bool = Field(
+        default=False, exclude=True, description="Whether the batch size was explicitly specified by the user."
+    )
 
-    _batch_size_is_specified: bool = PrivateAttr(default=False)
-
-    def __init__(self, **data: Any):
-        batch_size_specified = "batch_size" in data and data["batch_size"] is not None
-        super().__init__(**data)
-        self._batch_size_is_specified = batch_size_specified
+    @model_validator(mode="before")
+    @classmethod
+    def track_batch_size_specified(cls, data: dict[str, Any]) -> dict[str, Any]:
+        if isinstance(data, dict):
+            data["batch_size_is_specified"] = "batch_size" in data and data["batch_size"] is not None
+        return data
 
     @field_validator("batch_size", mode="before")
     @classmethod
@@ -52,7 +55,3 @@ class RBLNControlNetModelConfig(RBLNModelConfig):
         if not isinstance(v, int) or v < 0:
             raise ValueError(f"batch_size must be a positive integer, got {v}")
         return v
-
-    @property
-    def batch_size_is_specified(self) -> bool:
-        return self._batch_size_is_specified
