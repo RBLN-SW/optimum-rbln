@@ -14,8 +14,6 @@
 
 from __future__ import annotations
 
-from typing import Any
-
 from pydantic import Field, field_validator
 
 from ....configuration_utils import RBLNModelConfig
@@ -48,13 +46,6 @@ class RBLNAutoencoderKLConfig(RBLNModelConfig):
     in_channels: int | None = Field(default=None, description="Number of input channels for the model.")
     latent_channels: int | None = Field(default=None, description="Number of channels in the latent space.")
 
-    def __init__(self, **data: Any):
-        # Normalize sample_size to tuple
-        sample_size = data.get("sample_size")
-        if isinstance(sample_size, int):
-            data["sample_size"] = (sample_size, sample_size)
-        super().__init__(**data)
-
     @field_validator("batch_size", mode="before")
     @classmethod
     def validate_batch_size(cls, v: int | None) -> int:
@@ -62,6 +53,15 @@ class RBLNAutoencoderKLConfig(RBLNModelConfig):
             return 1
         if not isinstance(v, int) or v < 0:
             raise ValueError(f"batch_size must be a positive integer, got {v}")
+        return v
+
+    @field_validator("sample_size", mode="before")
+    @classmethod
+    def validate_sample_size(cls, v: int | tuple[int, int] | None) -> tuple[int, int] | None:
+        if v is None:
+            return None
+        if isinstance(v, int):
+            return (v, v)
         return v
 
     @property
