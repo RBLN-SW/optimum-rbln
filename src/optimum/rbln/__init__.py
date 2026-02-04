@@ -373,7 +373,6 @@ if TYPE_CHECKING:
         RBLNUNetSpatioTemporalConditionModelConfig,
         RBLNVQModel,
         RBLNVQModelConfig,
-        RBLNAutoencoderKLWan,
     )
     from .modeling import RBLNBaseModel, RBLNModel
     from .transformers import (

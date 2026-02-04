@@ -19,6 +19,8 @@ import torch
 from diffusers.models.autoencoders.autoencoder_kl_wan import AutoencoderKLWan
 from diffusers.models.autoencoders.vae import DecoderOutput, DiagonalGaussianDistribution
 from diffusers.models.modeling_outputs import AutoencoderKLOutput
+
+# from .vae import RBLNRuntimeWanVAEDecoder, RBLNRuntimeWanVAEEncoder, _VAEWanDecoder, _VAEWanEncoder
 from transformers import PretrainedConfig
 
 from ....configuration_utils import RBLNCompileConfig
@@ -26,7 +28,6 @@ from ....modeling import RBLNModel
 from ....utils.logging import get_logger
 from ....utils.runtime_utils import RBLNPytorchRuntime
 from ...configurations import RBLNAutoencoderKLWanConfig
-from .vae import RBLNRuntimeWanVAEDecoder, RBLNRuntimeWanVAEEncoder, _VAEWanDecoder, _VAEWanEncoder
 
 
 if TYPE_CHECKING:
@@ -38,16 +39,133 @@ if TYPE_CHECKING:
 
 logger = get_logger(__name__)
 
+height = 704
+width = 1280
+PADDED_FRAME_OF_FIRST = 2
+CACHE_SIZE_0 = [
+    # [1, 3, 1, height, width], # first cache
+    [1, 3, PADDED_FRAME_OF_FIRST, height, width],  # padded first cache
+    [1, 96, 2, height, width],
+    [1, 96, 2, height, width],
+    [1, 96, 2, height, width],
+    [1, 96, 2, height, width],
+    [1, 96, 2, height // 2, width // 2],
+    [1, 192, 2, height // 2, width // 2],
+    [1, 192, 2, height // 2, width // 2],
+    [1, 192, 2, height // 2, width // 2],
+    [1, 192, 1, height // 4, width // 4],
+    [1, 192, 2, height // 4, width // 4],
+    [1, 384, 2, height // 4, width // 4],
+    [1, 384, 2, height // 4, width // 4],
+    [1, 384, 2, height // 4, width // 4],
+    [1, 384, 1, height // 8, width // 8],
+    [1, 384, 2, height // 8, width // 8],
+    [1, 384, 2, height // 8, width // 8],
+    [1, 384, 2, height // 8, width // 8],
+    [1, 384, 2, height // 8, width // 8],
+    [1, 384, 2, height // 8, width // 8],
+    [1, 384, 2, height // 8, width // 8],
+    [1, 384, 2, height // 8, width // 8],
+    [1, 384, 2, height // 8, width // 8],
+    [1, 384, 2, height // 8, width // 8],
+]
+
+CACHE_SIZE_N = [
+    [1, 3, 2, height, width],  # first cache
+    [1, 96, 2, height, width],
+    [1, 96, 2, height, width],
+    [1, 96, 2, height, width],
+    [1, 96, 2, height, width],
+    [1, 96, 2, height // 2, width // 2],
+    [1, 192, 2, height // 2, width // 2],
+    [1, 192, 2, height // 2, width // 2],
+    [1, 192, 2, height // 2, width // 2],
+    [1, 192, 1, height // 4, width // 4],
+    [1, 192, 2, height // 4, width // 4],
+    [1, 384, 2, height // 4, width // 4],
+    [1, 384, 2, height // 4, width // 4],
+    [1, 384, 2, height // 4, width // 4],
+    [1, 384, 1, height // 8, width // 8],
+    [1, 384, 2, height // 8, width // 8],
+    [1, 384, 2, height // 8, width // 8],
+    [1, 384, 2, height // 8, width // 8],
+    [1, 384, 2, height // 8, width // 8],
+    [1, 384, 2, height // 8, width // 8],
+    [1, 384, 2, height // 8, width // 8],
+    [1, 384, 2, height // 8, width // 8],
+    [1, 384, 2, height // 8, width // 8],
+    [1, 384, 2, height // 8, width // 8],
+]
+""" AutoencoderKLWan encode logic 참고용
+def clear_cache(self):
+    # Use cached conv counts for decoder and encoder to avoid re-iterating modules each call
+    self._conv_num = self._cached_conv_counts["decoder"]
+    self._conv_idx = [0]
+    self._feat_map = [None] * self._conv_num
+    # cache encode
+    self._enc_conv_num = self._cached_conv_counts["encoder"]
+    self._enc_conv_idx = [0]
+    self._enc_feat_map = [None] * self._enc_conv_num
+
+def _encode(self, x: torch.Tensor):
+    _, _, num_frame, height, width = x.shape
+
+    self.clear_cache()
+    if self.config.patch_size is not None:
+        x = patchify(x, patch_size=self.config.patch_size)
+
+    if self.use_tiling and (width > self.tile_sample_min_width or height > self.tile_sample_min_height):
+        return self.tiled_encode(x)
+
+    iter_ = 1 + (num_frame - 1) // 4
+    for i in range(iter_):
+        self._enc_conv_idx = [0]
+        if i == 0:
+            out = self.encoder(x[:, :, :1, :, :], feat_cache=self._enc_feat_map, feat_idx=self._enc_conv_idx)
+        else:
+            out_ = self.encoder(
+                x[:, :, 1 + 4 * (i - 1) : 1 + 4 * i, :, :],
+                feat_cache=self._enc_feat_map,
+                feat_idx=self._enc_conv_idx,
+            )
+            out = torch.cat([out, out_], 2)
+
+    enc = self.quant_conv(out)
+    self.clear_cache()
+    return enc
+"""
+
 
 class _VAEWanEncoder(torch.nn.Module):
     """Wrapper module for Wan VAE encoder extraction."""
 
     def __init__(self, vae: AutoencoderKLWan):
         super().__init__()
-        self.vae = vae
+        self.encoder = vae.encoder
+        self.cache_dims = CACHE_SIZE_0
+        self.encoder.clear_cache()
+        self._enc_feat_map = self.encoder._enc_feat_map
+        self._enc_conv_idx = self.encoder._enc_conv_idx
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.vae._encode(x)
+    def forward(self, x, *args) -> torch.Tensor:
+        out, feat_cache = self.encoder(x, feat_cache=self._enc_feat_map, feat_idx=self._enc_conv_idx)
+
+        # post-process: update rbln cache tensors
+        dummy_outs = []
+        position = torch.tensor(
+            0, dtype=torch.int16
+        )  # 0 is dummy value -> first output of next chunk have to slice out this frame
+        axis = torch.tensor(2, dtype=torch.int16)
+        for cache, feat_cache_item, cache_dim in zip(list(args), feat_cache, self.cache_dims):
+            n, c, d, h, w = feat_cache_item.shape
+            feat_cache_item = feat_cache_item.reshape(n, c, d, -1)
+            if cache_dim[2] == 2:
+                feat_cache_item = torch.nn.functional.pad(feat_cache_item, (0, 0, 1, 0))  # pad one frame earlier
+
+            dummy_out = torch.ops.rbln_custom_ops.rbln_cache_update(cache, feat_cache_item, position, axis)
+            dummy_outs.append(dummy_out)
+            print(cache.shape, feat_cache_item.shape)
+        return out, dummy_outs
 
 
 class _VAEWanDecoder(torch.nn.Module):
@@ -117,9 +235,7 @@ class RBLNAutoencoderKLWan(RBLNModel):
         self.image_size = self.rbln_config.image_size
 
     @classmethod
-    def _wrap_model_if_needed(
-        cls, model: torch.nn.Module, rbln_config: RBLNAutoencoderKLWanConfig
-    ) -> torch.nn.Module:
+    def _wrap_model_if_needed(cls, model: torch.nn.Module, rbln_config: RBLNAutoencoderKLWanConfig) -> torch.nn.Module:
         decoder_model = _VAEWanDecoder(model)
         decoder_model.eval()
 
@@ -131,9 +247,10 @@ class RBLNAutoencoderKLWan(RBLNModel):
             return decoder_model
 
     @classmethod
-    def get_compiled_model(
-        cls, model, rbln_config: RBLNAutoencoderKLWanConfig
-    ) -> Dict[str, rebel.RBLNCompiledModel]:
+    def get_compiled_model(cls, model, rbln_config: RBLNAutoencoderKLWanConfig) -> Dict[str, rebel.RBLNCompiledModel]:
+        import pdb
+
+        pdb.set_trace()
         compiled_models = {}
         if rbln_config.uses_encoder:
             encoder_model, decoder_model = cls._wrap_model_if_needed(model, rbln_config)
@@ -163,7 +280,7 @@ class RBLNAutoencoderKLWan(RBLNModel):
     ) -> "RBLNDiffusionMixinConfig":
         # For Cosmos2.5 pipeline, get latent channels from transformer config
         # transformer.config.in_channels - 1 is the num_channels_latents (minus 1 for condition mask)
-        # rbln_config.vae.num_channels_latents = pipe.transformer.config.in_channels - 1
+
         if rbln_config.vae.height is None:
             rbln_config.vae.height = 704
         if rbln_config.vae.width is None:
@@ -171,16 +288,33 @@ class RBLNAutoencoderKLWan(RBLNModel):
         if rbln_config.vae.num_frames is None:
             rbln_config.vae.num_frames = 93
 
-        rbln_config.vae.num_channels_latents = 24
+        rbln_config.vae.num_channels_latents = pipe.transformer.config.in_channels - 1
         rbln_config.vae.vae_scale_factor_temporal = pipe.vae_scale_factor_temporal
         rbln_config.vae.vae_scale_factor_spatial = pipe.vae_scale_factor_spatial
 
-        # rbln_config.vae.num_channels_latents = pipe.transformer.config.in_channels - int(rbln_config.vae.uses_encoder)
-        # rbln_config.vae.vae_scale_factor_temporal = pipe.vae_scale_factor_temporal
-        # rbln_config.vae.vae_scale_factor_spatial = pipe.vae_scale_factor_spatial
-        # if rbln_config.vae.num_frames is None:
-        #     rbln_config.vae.num_frames = 93 if rbln_config.vae.uses_encoder else 1
         return rbln_config
+
+    def get_enc_compile_cfg(self, context, rbln_config):
+        # context = CompileContext(use_weight_sharing=False)
+        encoder_0_compile_config = rbln_config.compile_cfgs[0]
+        encoder_1_compile_config = rbln_config.compile_cfgs[1]
+
+        enc0_example_inputs = encoder_0_compile_config.get_dummy_inputs(encoder_0_compile_config.input_info, fill=0)
+
+        # Mark encoder_0's static tensors (cache)
+        static_tensors = {}
+        for (name, _, _), tensor in zip(encoder_0_compile_config.input_info, enc0_example_inputs):
+            if "feat_cache" in name:
+                static_tensors[name] = tensor
+                context.mark_static_address(tensor)
+
+        enc1_example_inputs = encoder_1_compile_config.get_dummy_inputs(
+            encoder_1_compile_config.input_info, fill=0, static_tensors=static_tensors
+        )
+        # Mark encoder_1's static tensors (cache)
+        for (name, _, _), tensor in zip(encoder_1_compile_config.input_info, enc1_example_inputs):
+            if "feat_cache" in name:
+                context.mark_static_address(tensor)
 
     @classmethod
     def _update_rbln_config(
@@ -193,59 +327,56 @@ class RBLNAutoencoderKLWan(RBLNModel):
         batch_size = 1 if rbln_config.use_slicing else rbln_config.batch_size
         compile_cfgs = []
         if rbln_config.uses_encoder:
-            # vae_enc_input_info = [
-            #     (
-            #         "x",
-            #         [
-            #             batch_size,
-            #             model_config.in_channels,
-            #             rbln_config.num_frames,
-            #             rbln_config.height,
-            #             rbln_config.width,
-            #         ],
-            #         "float32",
-            #     ),
-            # ]
-            vae_enc_input_info = [
+            vae_enc_0_input_info = [
                 (
                     "x",
                     [
-                        1,
-                        3,
-                        93,
-                        704,
-                        1280,
+                        batch_size,
+                        model_config.in_channels,
+                        1,  # encode one slice at a time
+                        rbln_config.height,
+                        rbln_config.width,
                     ],
                     "float32",
                 ),
             ]
-            compile_cfgs.append(RBLNCompileConfig(compiled_model_name="encoder", input_info=vae_enc_input_info))
-        # num_latent_frames = (rbln_config.num_frames - 1) // rbln_config.vae_scale_factor_temporal + 1
-        # latent_height = rbln_config.height // rbln_config.vae_scale_factor_spatial
-        # latent_width = rbln_config.width // rbln_config.vae_scale_factor_spatial
+            CHUNK_SIZE = 4
+            vae_enc_1_input_info = [
+                (
+                    "x",
+                    [
+                        batch_size,
+                        model_config.in_channels,
+                        CHUNK_SIZE,  # encode one slice at a time
+                        rbln_config.height,
+                        rbln_config.width,
+                    ],
+                    "float32",
+                ),
+            ]
+            cache_0, cache_1 = cls.get_cache_size(rbln_config.height, rbln_config.width)
+            for i, (shape_0, shape_1) in enumerate(zip(cache_0, cache_1)):
+                shape_0 = [*shape_0[:3], shape_0[-2] * shape_0[-1]]  # N C D HW # FIXME H,W 도 support 가능?
+                shape_1 = [*shape_1[:3], shape_1[-2] * shape_1[-1]]  # N C D HW # FIXME H,W 도 support 가능?
+                vae_enc_0_input_info.append((f"feat_cache_{i}", shape_0, "float32"))
+                vae_enc_1_input_info.append((f"feat_cache_{i}", shape_1, "float32"))
 
-        # vae_dec_input_info = [
-        #     (
-        #         "z",
-        #         [
-        #             batch_size,
-        #             rbln_config.num_channels_latents,
-        #             num_latent_frames,
-        #             latent_height,
-        #             latent_width,
-        #         ],
-        #         "float32",
-        #     ),
-        # ]
+            compile_cfgs.append(RBLNCompileConfig(compiled_model_name="encoder_0", input_info=vae_enc_0_input_info))
+            compile_cfgs.append(RBLNCompileConfig(compiled_model_name="encoder_1", input_info=vae_enc_1_input_info))
+
+        num_latent_frames = (rbln_config.num_frames - 1) // rbln_config.vae_scale_factor_temporal + 1
+        latent_height = rbln_config.height // rbln_config.vae_scale_factor_spatial
+        latent_width = rbln_config.width // rbln_config.vae_scale_factor_spatial
+
         vae_dec_input_info = [
             (
                 "z",
                 [
-                    1,
-                    16,
-                    24,
-                    88,
-                    160,
+                    batch_size,
+                    rbln_config.num_channels_latents,
+                    num_latent_frames,
+                    latent_height,
+                    latent_width,
                 ],
                 "float32",
             ),
@@ -320,3 +451,62 @@ class RBLNAutoencoderKLWan(RBLNModel):
             return (decoded,)
 
         return DecoderOutput(sample=decoded)
+
+    @classmethod
+    def get_cache_size(cls, height, width):
+        PADDED_FRAME_OF_FIRST = 2
+        CACHE_SIZE_0 = [
+            # [1, 3, 1, height, width], # first cache
+            [1, 3, PADDED_FRAME_OF_FIRST, height, width],  # padded first cache
+            [1, 96, 2, height, width],
+            [1, 96, 2, height, width],
+            [1, 96, 2, height, width],
+            [1, 96, 2, height, width],
+            [1, 96, 2, height // 2, width // 2],
+            [1, 192, 2, height // 2, width // 2],
+            [1, 192, 2, height // 2, width // 2],
+            [1, 192, 2, height // 2, width // 2],
+            [1, 192, 1, height // 4, width // 4],
+            [1, 192, 2, height // 4, width // 4],
+            [1, 384, 2, height // 4, width // 4],
+            [1, 384, 2, height // 4, width // 4],
+            [1, 384, 2, height // 4, width // 4],
+            [1, 384, 1, height // 8, width // 8],
+            [1, 384, 2, height // 8, width // 8],
+            [1, 384, 2, height // 8, width // 8],
+            [1, 384, 2, height // 8, width // 8],
+            [1, 384, 2, height // 8, width // 8],
+            [1, 384, 2, height // 8, width // 8],
+            [1, 384, 2, height // 8, width // 8],
+            [1, 384, 2, height // 8, width // 8],
+            [1, 384, 2, height // 8, width // 8],
+            [1, 384, 2, height // 8, width // 8],
+        ]
+
+        CACHE_SIZE_N = [
+            [1, 3, 2, height, width],  # first cache
+            [1, 96, 2, height, width],
+            [1, 96, 2, height, width],
+            [1, 96, 2, height, width],
+            [1, 96, 2, height, width],
+            [1, 96, 2, height // 2, width // 2],
+            [1, 192, 2, height // 2, width // 2],
+            [1, 192, 2, height // 2, width // 2],
+            [1, 192, 2, height // 2, width // 2],
+            [1, 192, 1, height // 4, width // 4],
+            [1, 192, 2, height // 4, width // 4],
+            [1, 384, 2, height // 4, width // 4],
+            [1, 384, 2, height // 4, width // 4],
+            [1, 384, 2, height // 4, width // 4],
+            [1, 384, 1, height // 8, width // 8],
+            [1, 384, 2, height // 8, width // 8],
+            [1, 384, 2, height // 8, width // 8],
+            [1, 384, 2, height // 8, width // 8],
+            [1, 384, 2, height // 8, width // 8],
+            [1, 384, 2, height // 8, width // 8],
+            [1, 384, 2, height // 8, width // 8],
+            [1, 384, 2, height // 8, width // 8],
+            [1, 384, 2, height // 8, width // 8],
+            [1, 384, 2, height // 8, width // 8],
+        ]
+        return CACHE_SIZE_0, CACHE_SIZE_N

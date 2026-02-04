@@ -157,7 +157,6 @@ if TYPE_CHECKING:
         RBLNUNet2DConditionModelConfig,
         RBLNUNetSpatioTemporalConditionModelConfig,
         RBLNVQModelConfig,
-        RBLNAutoencoderKLWanConfig,
     )
     from .modeling_diffusers import RBLNDiffusionMixin
     from .models import (

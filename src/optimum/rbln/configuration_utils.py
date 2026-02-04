@@ -849,6 +849,7 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
         Returns:
             Dictionary containing runtime options and non-default config values.
         """
+
         def filter_runtime(cfg):
             # Recursively extract runtime options from config (RBLNModelConfig or dict)
             if isinstance(cfg, RBLNModelConfig):
@@ -867,12 +868,12 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
             return result or None
 
         result = {k: v for k, v in self._runtime_options.items() if not exclude_defaults or v is not None}
-        
+
         for name in self.submodules:
             filtered = filter_runtime(getattr(self, name, None))
             if filtered:
                 result[name] = filtered
-        
+
         if not exclude_defaults:
             result.update(self._prepare_for_serialization())
 
@@ -1010,7 +1011,7 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
                     raise ValueError(
                         f"Passed rbln_config has different attributes for submodule {submodule} than the config_file"
                     )
-                config_file[submodule] = getattr(rbln_config, submodule) 
+                config_file[submodule] = getattr(rbln_config, submodule)
 
         config_file.update(rbln_runtime_kwargs)
         rbln_config = cls(**config_file)

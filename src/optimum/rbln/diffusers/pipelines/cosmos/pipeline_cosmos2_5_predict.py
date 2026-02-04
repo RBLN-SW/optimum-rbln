@@ -90,7 +90,8 @@ class RBLNCosmos2_5_PredictBasePipeline(RBLNDiffusionMixin, Cosmos2_5_PredictBas
     ):
         rbln_config, kwargs = cls.get_rbln_config_class().initialize_from_kwargs(rbln_config, **kwargs)
         if safety_checker is None and export:
-            safety_checker = RBLNCosmosSafetyCheckerV2(rbln_config=rbln_config.safety_checker)
+            # safety_checker = RBLNCosmosSafetyCheckerV2(rbln_config=rbln_config.safety_checker)
+            safety_checker = None
 
         return super().from_pretrained(
             model_id, export=export, safety_checker=safety_checker, rbln_config=rbln_config, **kwargs

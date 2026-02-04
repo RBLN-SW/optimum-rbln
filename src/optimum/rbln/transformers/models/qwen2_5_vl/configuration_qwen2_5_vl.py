@@ -56,7 +56,7 @@ class RBLNQwen2_5_VLForConditionalGenerationConfig(RBLNDecoderOnlyModelForCausal
         self.visual = self.initialize_submodule_config(
             submodule_config=visual,
             # cls_name="RBLNQwen2_5_VisionTransformerPretrainedModelConfig",
-            )
+        )
         # import pdb; pdb.set_trace()
 
 
@@ -71,7 +71,8 @@ class RBLNQwen2_5_VLModelConfig(RBLNDecoderOnlyModelConfig):
         super().__init__(**kwargs)
         self.visual = self.initialize_submodule_config(
             submodule_config=visual,
-            cls_name="RBLNQwen2_5_VisionTransformerPretrainedModelConfig",)
+            cls_name="RBLNQwen2_5_VisionTransformerPretrainedModelConfig",
+        )
 
 
 class RBLNQwen2_5_VisionTransformerPretrainedModelConfig(RBLNModelConfig):
