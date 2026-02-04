@@ -3,6 +3,11 @@ name: Slack report
 on:
   workflow_call:
     inputs:
+      use_playground_channel:
+        description: "If true, post to secrets.SLACK_CI_PLAYGROUND_CHANNEL; otherwise post to secrets.SLACK_CI_REPORTER_CHANNEL."
+        required: false
+        type: boolean
+        default: false
       title_base:
         description: "Base title (without emoji prefix)."
         required: true
@@ -36,6 +41,16 @@ on:
         required: false
         type: string
         default: ""
+      pytest_job_group:
+        description: "Optional substring to identify *main* pytest jobs in the caller run (e.g. 'rbln-full-test'). Empty means match all 'Pytest ('."
+        required: false
+        type: string
+        default: ""
+      bc_pytest_job_group:
+        description: "Optional substring to identify BC pytest jobs in the caller run (e.g. 'bc-full-inference-test'). Empty disables BC pytest parsing."
+        required: false
+        type: string
+        default: ""
 
 permissions:
   actions: read
@@ -43,7 +58,7 @@ permissions:
 
 jobs:
   slack-report:
-    runs-on: sw-k8s-4c-32gb
+    runs-on: rbln-sw-k8s-4c-32gb
     container:
       image: ${{ vars.DEV_CONTAINER_IMAGE }}
     steps:
@@ -59,9 +74,21 @@ jobs:
           JOBS=$(curl -s -H "Authorization: Bearer ${{ github.token }}" \
             "https://api.github.com/repos/$REPO/actions/runs/$RUN_ID/jobs?per_page=100")
 
-          # Pytest jobs (non-BC) are named like "Pytest (xxx)" in this repo.
-          FAILED_JOB_NAMES=$(echo "$JOBS" | jq -r '.jobs[] | select(.conclusion == "failure" and (.name | startswith("Pytest ("))) | .name')
-          FAILED_TEST_NAMES=$(echo "$FAILED_JOB_NAMES" | sed 's/Pytest (\(.*\))/\1/' || true)
+          # Pytest jobs can appear with prefixes when triggered via reusable workflows
+          # (e.g. "rbln-full-test / optimum-rbln-pytest / Pytest (xxx)"), so don't rely on startswith().
+          PYTEST_NAME_SUBSTR='Pytest ('
+          PYTEST_JOB_GROUP="${{ inputs.pytest_job_group }}"
+          BC_PYTEST_JOB_GROUP="${{ inputs.bc_pytest_job_group }}"
+
+          # Reuse a single jq selector for "pytest jobs" to avoid duplication.
+          PYTEST_JQ_SELECTOR='.jobs[] | select(.name | contains($s)) | select(($g == "") or (.name | contains($g)))'
+          BC_PYTEST_JQ_SELECTOR='.jobs[] | select(.name | contains($s)) | select(.name | contains($g))'
+
+          FAILED_JOB_NAMES=$(echo "$JOBS" | jq -r \
+            --arg s "$PYTEST_NAME_SUBSTR" \
+            --arg g "$PYTEST_JOB_GROUP" \
+            "$PYTEST_JQ_SELECTOR | select(.conclusion == \"failure\") | .name")
+          FAILED_TEST_NAMES=$(echo "$FAILED_JOB_NAMES" | sed -E 's/.*Pytest \((.*)\).*/\1/' || true)
           FAILED_TESTS=$(echo "$FAILED_TEST_NAMES" | tr '\n' ', ' | sed 's/,$//' || true)
 
           if [ -z "${FAILED_TESTS:-}" ]; then
@@ -69,8 +96,28 @@ jobs:
           fi
 
           # Determine overall pytest status from jobs in this run.
-          PYTEST_FAIL_COUNT=$(echo "$JOBS" | jq -r '[.jobs[] | select(.name | startswith("Pytest (")) | select(.conclusion == "failure")] | length')
-          PYTEST_TOTAL_COUNT=$(echo "$JOBS" | jq -r '[.jobs[] | select(.name | startswith("Pytest ("))] | length')
+          PYTEST_FAIL_COUNT=$(echo "$JOBS" | jq -r \
+            --arg s "$PYTEST_NAME_SUBSTR" \
+            --arg g "$PYTEST_JOB_GROUP" \
+            "[ $PYTEST_JQ_SELECTOR | select(.conclusion == \"failure\") ] | length")
+          PYTEST_TOTAL_COUNT=$(echo "$JOBS" | jq -r \
+            --arg s "$PYTEST_NAME_SUBSTR" \
+            --arg g "$PYTEST_JOB_GROUP" \
+            "[ $PYTEST_JQ_SELECTOR ] | length")
+
+          # Optional: BC pytest status (separate from bc_result)
+          BC_PYTEST_FAIL_COUNT=0
+          BC_PYTEST_TOTAL_COUNT=0
+          if [ -n "${BC_PYTEST_JOB_GROUP:-}" ]; then
+            BC_PYTEST_FAIL_COUNT=$(echo "$JOBS" | jq -r \
+              --arg s "$PYTEST_NAME_SUBSTR" \
+              --arg g "$BC_PYTEST_JOB_GROUP" \
+              "[ $BC_PYTEST_JQ_SELECTOR | select(.conclusion == \"failure\") ] | length")
+            BC_PYTEST_TOTAL_COUNT=$(echo "$JOBS" | jq -r \
+              --arg s "$PYTEST_NAME_SUBSTR" \
+              --arg g "$BC_PYTEST_JOB_GROUP" \
+              "[ $BC_PYTEST_JQ_SELECTOR ] | length")
+          fi
 
           if [ "$PYTEST_TOTAL_COUNT" -eq 0 ]; then
             PYTEST_STATUS="⚠️ Unknown"
@@ -101,8 +148,12 @@ jobs:
           fi
 
           TITLE_BASE="${{ inputs.title_base }}"
-          if [ "$PYTEST_FAIL_COUNT" -gt 0 ]; then
+          if [ "$PYTEST_TOTAL_COUNT" -eq 0 ]; then
+            TITLE="⚠️ $TITLE_BASE - No Pytest Jobs Found"
+          elif [ "$PYTEST_FAIL_COUNT" -gt 0 ]; then
             TITLE="❌ $TITLE_BASE"
+          elif [ "$INCLUDE_BC" = "true" ] && [ "$BC_RESULT" != "success" ] && [ "$BC_RESULT" != "skipped" ] && [ -n "$BC_RESULT" ]; then
+            TITLE="❌ $TITLE_BASE - BC Failed"
           elif [ "$COMPILER_CONCLUSION" != "success" ] && [ -n "$COMPILER_CONCLUSION" ] && [ "$COMPILER_CONCLUSION" != "null" ]; then
             TITLE="⚠️ $TITLE_BASE - Compiler Check Failed"
           else
@@ -121,6 +172,14 @@ jobs:
             else
               bc_status="❌ Failed"
             fi
+
+            if [ -n "${BC_PYTEST_JOB_GROUP:-}" ] && [ "$BC_PYTEST_TOTAL_COUNT" -gt 0 ]; then
+              if [ "$BC_PYTEST_FAIL_COUNT" -gt 0 ]; then
+                bc_status="$bc_status (Pytest: ❌ $BC_PYTEST_FAIL_COUNT/$BC_PYTEST_TOTAL_COUNT failed)"
+              else
+                bc_status="$bc_status (Pytest: ✅ $BC_PYTEST_TOTAL_COUNT/$BC_PYTEST_TOTAL_COUNT passed)"
+              fi
+            fi
             bc_blocks=$(jq -n --arg bc_status "$bc_status" '[
               {
                 type: "section",
@@ -133,7 +192,7 @@ jobs:
           fi
 
           payload=$(jq -n \
-            --arg channel "${{ secrets.SLACK_CI_REPORTER_CHANNEL }}" \
+            --arg channel "${{ inputs.use_playground_channel && secrets.SLACK_CI_PLAYGROUND_CHANNEL || secrets.SLACK_CI_REPORTER_CHANNEL }}" \
             --arg title "$TITLE" \
             --arg commit "$commit" \
             --arg action_link "$action_link" \

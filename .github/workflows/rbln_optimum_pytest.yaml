@@ -42,17 +42,14 @@ on:
         default: ""
 
 env:
-  REBEL_PYPI_ENDPOINT: ${{ vars.REBEL_PYPI_INTERNAL_ENDPOINT }}
-  REBEL_PYPI_USERNAME: ${{ secrets.REBEL_PYPI_USERNAME }}
-  REBEL_PYPI_PASSWORD: ${{ secrets.REBEL_PYPI_PASSWORD }}
   HF_HOME: ${{ secrets.HF_HOME }}
-  HF_USER_ID: ${{ inputs.enable_hf_hub_tests && secrets.HF_USER_ID || '' }}
-  HF_AUTH_TOKEN: ${{ inputs.enable_hf_hub_tests && secrets.HF_AUTH_TOKEN || '' }}
+  HF_USER_ID: ${{ inputs.enable_hf_hub_tests && secrets.MODEL_HUB_ID || '' }}
+  HF_AUTH_TOKEN: ${{ inputs.enable_hf_hub_tests && secrets.MODEL_HUB_ACCESS || '' }}
 
 jobs:
   pytest:
-    name: Pytest (${{ matrix.test_type }}${{ matrix.test_type == 'llm' && matrix.group && format(' {0}/{1}', matrix.group, matrix.splits) || '' }})
-    runs-on: ${{ (inputs.reuse_artifacts_path != '' && matrix.test_type == 'llm') && 'sw-k8s-4c-128gb' || (inputs.reuse_artifacts_path != '' && 'sw-k8s-4c-32gb' || 'sw-k8s-ca22-1') }}
+    name: Pytest (${{ matrix.test_type }})
+    runs-on: ${{ (inputs.reuse_artifacts_path != '' && matrix.test_type == 'llm') && 'rbln-sw-k8s-4c-128gb' || (inputs.reuse_artifacts_path != '' && 'rbln-sw-k8s-4c-32gb' || 'rbln-sw-k8s-ca22-1') }}
     container:
       image: ${{ vars.DEV_CONTAINER_IMAGE }}
     strategy:
@@ -126,8 +123,7 @@ jobs:
       - name: Install rebel-compiler
         if: steps.should_skip.outputs.skip != 'true'
         run: |
-          PYPI_URL=$(echo ${{ env.REBEL_PYPI_ENDPOINT }} | sed "s/\/\//\0${{ env.REBEL_PYPI_USERNAME}}:${{ env.REBEL_PYPI_PASSWORD}}@/")
-          uv pip install --extra-index-url $PYPI_URL rebel-compiler==${{ inputs.rebel_compiler_version }}
+          uv pip install --extra-index-url ${{ secrets.DEV_PKG_URL }} rebel-compiler==${{ inputs.rebel_compiler_version }}
 
       - name: Prepare artifact paths
         run: |
@@ -136,15 +132,7 @@ jobs:
             if [ -z "$path" ]; then
               return
             fi
-
-            # Try as current user first
-            mkdir -p "$path" 2>/dev/null || {
-              # Fallback to sudo: create with current uid/gid and 775 perms
-              echo ${{ secrets.SECRET_TOKEN }} | sudo -S install -d -m 775 -o "$(id -u)" -g "$(id -g)" "$path"
-            }
-            # If dir already existed with other owner/perms, fix them
-            echo ${{ secrets.SECRET_TOKEN }} | sudo -S chown -R "$(id -u):$(id -g)" "$path"
-            echo ${{ secrets.SECRET_TOKEN }} | sudo -S chmod -R 775 "$path"
+            mkdir -p "$path"
           }
 
           ensure_dir "${{ inputs.save_artifacts_path }}"

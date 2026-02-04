@@ -59,7 +59,7 @@ class WhisperEncoderWrapper(torch.nn.Module):
         # 2. pre-compute cross_attention's past_key_value which used in decoder phase.
         cross_kv = []
         batch_size = input_features.shape[0]
-        for k_proj, v_proj in zip(self.cross_k_projects, self.cross_v_projects):
+        for k_proj, v_proj in zip(self.cross_k_projects, self.cross_v_projects, strict=False):
             past_k = k_proj(last_hidden_states).view(batch_size, -1, self.num_heads, self.d_kv).transpose(1, 2)
             past_v = v_proj(last_hidden_states).view(batch_size, -1, self.num_heads, self.d_kv).transpose(1, 2)
 
@@ -154,7 +154,6 @@ class WhisperDecoderWrapper(torch.nn.Module):
 class WhisperDecoder(nn.Module):
     def __init__(self, model, layers, **kwargs):
         super().__init__()
-        self._original_mod = model
         self.layers = nn.ModuleList(layers)
         self.embed_tokens = model.embed_tokens
         self.layer_norm = model.layer_norm
@@ -190,7 +189,7 @@ class WhisperDecoder(nn.Module):
         cross_attentions = ()
         # iterate decoder_layer
         for self_past_key_value, cross_past_key_value, decoder_layer in zip(
-            self_past_key_values, cross_past_key_values, self.layers
+            self_past_key_values, cross_past_key_values, self.layers, strict=False
         ):
             hidden_states, cross_attn_weights = decoder_layer(
                 hidden_states,
@@ -210,7 +209,6 @@ class WhisperDecoder(nn.Module):
 class WhisperDecoderLayer(nn.Module):
     def __init__(self, decoder_layer, self_attn, cross_attn):
         super().__init__()
-        self._original_mod = decoder_layer
         self.self_attn = self_attn
         self.encoder_attn = cross_attn
         self.self_attn_layer_norm = decoder_layer.self_attn_layer_norm
@@ -263,7 +261,6 @@ class WhisperDecoderLayer(nn.Module):
 class WhisperAttention(nn.Module):
     def __init__(self, attn):
         super().__init__()
-        self._original_mod = attn
         self.q_proj = attn.q_proj
         self.k_proj = attn.k_proj
         self.v_proj = attn.v_proj

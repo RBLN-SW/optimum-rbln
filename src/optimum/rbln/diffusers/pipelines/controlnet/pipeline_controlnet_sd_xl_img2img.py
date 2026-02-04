@@ -239,7 +239,7 @@ class RBLNStableDiffusionXLControlNetImg2ImgPipeline(RBLNDiffusionMixin, StableD
                     f"`control_guidance_start`: {control_guidance_start} has {len(control_guidance_start)} elements but there are {len(self.controlnet.nets)} controlnets available. Make sure to provide {len(self.controlnet.nets)}."
                 )
 
-        for start, end in zip(control_guidance_start, control_guidance_end):
+        for start, end in zip(control_guidance_start, control_guidance_end, strict=False):
             if start >= end:
                 raise ValueError(
                     f"control guidance start: {start} cannot be larger or equal to control guidance end: {end}."
@@ -309,7 +309,7 @@ class RBLNStableDiffusionXLControlNetImg2ImgPipeline(RBLNDiffusionMixin, StableD
         callback_on_step_end: Optional[Callable[[int, int, Dict], None]] = None,
         callback_on_step_end_tensor_inputs: Optional[List[str]] = None,
         **kwargs,
-    ):
+    ) -> Union[StableDiffusionXLPipelineOutput, Tuple]:
         r"""
         Function invoked when calling the pipeline for generation.
 
@@ -464,8 +464,6 @@ class RBLNStableDiffusionXLControlNetImg2ImgPipeline(RBLNDiffusionMixin, StableD
                 The list of tensor inputs for the `callback_on_step_end` function. The tensors specified in the list
                 will be passed as `callback_kwargs` argument. You will only be able to include variables listed in the
                 `._callback_tensor_inputs` attribute of your pipeine class.
-
-        Examples:
 
         Returns:
             [`~pipelines.stable_diffusion.StableDiffusionPipelineOutput`] or `tuple`:
@@ -655,7 +653,7 @@ class RBLNStableDiffusionXLControlNetImg2ImgPipeline(RBLNDiffusionMixin, StableD
         for i in range(len(timesteps)):
             keeps = [
                 1.0 - float(i / len(timesteps) < s or (i + 1) / len(timesteps) > e)
-                for s, e in zip(control_guidance_start, control_guidance_end)
+                for s, e in zip(control_guidance_start, control_guidance_end, strict=False)
             ]
             controlnet_keep.append(keeps[0] if isinstance(controlnet, RBLNControlNetModel) else keeps)
 
@@ -727,7 +725,9 @@ class RBLNStableDiffusionXLControlNetImg2ImgPipeline(RBLNDiffusionMixin, StableD
                     controlnet_added_cond_kwargs = added_cond_kwargs
 
                 if isinstance(controlnet_keep[i], list):
-                    cond_scale = [c * s for c, s in zip(controlnet_conditioning_scale, controlnet_keep[i])]
+                    cond_scale = [
+                        c * s for c, s in zip(controlnet_conditioning_scale, controlnet_keep[i], strict=False)
+                    ]
                 else:
                     controlnet_cond_scale = controlnet_conditioning_scale
                     if isinstance(controlnet_cond_scale, list):

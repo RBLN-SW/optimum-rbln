@@ -92,7 +92,7 @@ class Seq2SeqEncoderWrapper(nn.Module):
 
         # 2. pre-compute cross_attention's past_key_value which used in decoder phase.
         cross_kv = []
-        for k_proj, v_proj in zip(self.cross_k_projects, self.cross_v_projects):
+        for k_proj, v_proj in zip(self.cross_k_projects, self.cross_v_projects, strict=False):
             past_k = (
                 k_proj(last_hidden_states).view(1, self.encoder_max_length, self.num_heads, self.d_kv).transpose(1, 2)
             )
@@ -268,13 +268,12 @@ class Seq2SeqDecoder(torch.nn.Module):
 
     def __init__(self, model, layers, **kwargs):
         super().__init__()
-        self._original_mod = model
         self.layers = nn.ModuleList(layers)
         self.embed_tokens = model.embed_tokens
-        self.final_layer_norm = getattr(model, "final_layer_norm", None)
-        self.__post_init__(**kwargs)
+        self.final_layer_norm = getattr(model, "final_layer_norm", None) or getattr(model, "layer_norm", None)
+        self.__post_init__(model, **kwargs)
 
-    def __post_init__(self, **kwargs):
+    def __post_init__(self, model: nn.Module, **kwargs):
         """
         Abstract method intended to be overridden by subclasses to modify or override
         the attributes of the original model after initialization.
@@ -315,7 +314,7 @@ class Seq2SeqDecoder(torch.nn.Module):
 
         # iterate decoder_layer
         for decoder_layer, self_past_key_value, cross_past_key_value in zip(
-            self.layers, self_past_key_values, cross_past_key_values
+            self.layers, self_past_key_values, cross_past_key_values, strict=False
         ):
             hidden_states = decoder_layer(
                 hidden_states,
@@ -344,12 +343,11 @@ class Seq2SeqDecoderLayer(torch.nn.Module):
 
     def __init__(self, decoder_layer, self_attn, cross_attn):
         super().__init__()
-        self._original_mod = decoder_layer
         self.self_attn = self_attn
         self.cross_attn = cross_attn
-        self.__post_init__()
+        self.__post_init__(decoder_layer)
 
-    def __post_init__(self, **kwargs):
+    def __post_init__(self, decoder_layer: nn.Module, **kwargs):
         """
         Abstract method intended to be overridden by subclasses to modify or override
         the attributes of the original model after initialization.
@@ -423,10 +421,9 @@ class Seq2SeqDecoderLayer(torch.nn.Module):
 class Seq2SeqSelfAttention(nn.Module):
     def __init__(self, attn, **kwargs):
         super().__init__()
-        self._original_mod = attn
-        self.__post_init__(**kwargs)
+        self.__post_init__(attn, **kwargs)
 
-    def __post_init__(self, **kwargs):
+    def __post_init__(self, attn: nn.Module, **kwargs):
         """
         Abstract method intended to be overridden by subclasses to modify or override
         the attributes of the original model after initialization.
@@ -495,8 +492,13 @@ class Seq2SeqSelfAttention(nn.Module):
 class Seq2SeqCrossAttention(nn.Module):
     def __init__(self, attn, **kwargs):
         super().__init__()
-        self._original_mod = attn
-        self.__post_init__(**kwargs)
+        self.__post_init__(attn, **kwargs)
+
+    def __post_init__(self, attn: nn.Module, **kwargs):
+        """
+        Optional post-init hook for subclasses (e.g., to register q/k/v/out projections).
+        """
+        pass
 
     def forward(
         self,
