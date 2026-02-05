@@ -57,7 +57,9 @@ COPY pyproject.toml uv.lock /workspace/
 RUN --mount=type=cache,target=/root/.cache/uv \
     UV_CACHE_DIR=/root/.cache/uv uv sync --frozen --group tests --group quality --no-install-project && \
     # Build backends for installing local checkout without network (PEP 517/660).
-    UV_CACHE_DIR=/root/.cache/uv uv pip install hatchling hatch-vcs && \
+    # - hatchling/hatch-vcs: project build backend (version from VCS)
+    # - editables: required by hatchling for editable installs (PEP 660)
+    UV_CACHE_DIR=/root/.cache/uv uv pip install --python /opt/venv/bin/python packaging hatchling hatch-vcs editables && \
     # Persist the populated uv cache into the image (runtime uses /opt/uv-cache).
     mkdir -p /opt/uv-cache && cp -a /root/.cache/uv/. /opt/uv-cache/ && \
     # Record the lockfile hash baked into this image (used by workflows to skip re-sync).

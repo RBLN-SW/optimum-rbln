@@ -128,7 +128,7 @@ jobs:
           # the local project into the existing environment.
           if [ -f /opt/uv.lock.sha256 ] && sha256sum --check --status /opt/uv.lock.sha256; then
             echo "uv.lock matches CI image; installing local checkout without syncing deps."
-            uv pip install --no-deps --no-build-isolation -e .
+            uv pip install --python /opt/venv/bin/python --no-deps --no-build-isolation -e .
           else
             echo "uv.lock differs from CI image; syncing deps from lock."
             uv sync --frozen --group tests
