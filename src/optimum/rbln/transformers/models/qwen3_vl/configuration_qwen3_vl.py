@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, List, Optional, Union
+from typing import Any, List, Union
 
 from ....configuration_utils import RBLNModelConfig
 from ..decoderonly.configuration_decoderonly import RBLNDecoderOnlyModelConfig, RBLNDecoderOnlyModelForCausalLMConfig
@@ -27,12 +27,12 @@ class RBLNQwen3VLForConditionalGenerationConfig(RBLNDecoderOnlyModelForCausalLMC
     that combine vision and language processing capabilities.
     """
 
-    submodules = ["visual"]
+    # submodules = ["visual"]
 
     def __init__(
         self,
         use_inputs_embeds: bool = True,
-        visual: Optional[RBLNModelConfig] = None,
+        # visual: Optional[RBLNModelConfig] = None,
         **kwargs: Any,
     ):
         """
@@ -50,15 +50,15 @@ class RBLNQwen3VLForConditionalGenerationConfig(RBLNDecoderOnlyModelForCausalLMC
                 "RBLNQwen3VLForConditionalGenerationConfig does not allow `use_inputs_embeds` to be set to False, "
                 "as RBLNQwen3VLForConditionalGeneration accepts only `inputs_embeds` as input."
             )
-        self.visual = visual
+        # self.visual = visual
 
 
 class RBLNQwen3VLModelConfig(RBLNDecoderOnlyModelConfig):
-    submodules = ["visual"]
+    # submodules = ["visual"]
 
-    def __init__(self, visual: Optional[RBLNModelConfig] = None, **kwargs: Any):
+    def __init__(self, **kwargs: Any):
         super().__init__(**kwargs)
-        self.visual = self.initialize_submodule_config(submodule_config=visual)
+        # self.visual = self.initialize_submodule_config(submodule_config=visual)
 
 
 class RBLNQwen3VLVisionModelConfig(RBLNModelConfig):
