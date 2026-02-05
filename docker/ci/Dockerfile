@@ -43,10 +43,6 @@ COPY --from=uv /uv /bin/uv
 ENV UV_PROJECT_ENVIRONMENT=/opt/venv
 ENV PATH="/opt/venv/bin:${PATH}"
 
-# Bake uv download cache into the image so CI jobs can reuse it without
-# relying on GitHub Actions cache between jobs/runs.
-ENV UV_CACHE_DIR=/opt/uv-cache
-
 WORKDIR /workspace
 
 # Copy only lockfiles first for better layer caching.
@@ -55,14 +51,8 @@ COPY pyproject.toml uv.lock /workspace/
 # Install dependencies (default + tests + quality) according to uv.lock.
 # We intentionally do NOT install the project itself, so the container can test arbitrary checkouts.
 RUN --mount=type=cache,target=/root/.cache/uv \
-    UV_CACHE_DIR=/root/.cache/uv uv sync --frozen --group tests --group quality --no-install-project && \
-    # Build backends for installing local checkout without network (PEP 517/660).
-    # - hatchling/hatch-vcs: project build backend (version from VCS)
-    # - editables: required by hatchling for editable installs (PEP 660)
-    UV_CACHE_DIR=/root/.cache/uv uv pip install --python /opt/venv/bin/python packaging hatchling hatch-vcs editables && \
-    # Persist the populated uv cache into the image (runtime uses /opt/uv-cache).
-    mkdir -p /opt/uv-cache && cp -a /root/.cache/uv/. /opt/uv-cache/ && \
-    # Record the lockfile hash baked into this image (used by workflows to skip re-sync).
+    uv sync --frozen --group tests --group quality --no-install-project && \
+    uv pip install --python /opt/venv/bin/python packaging hatchling hatch-vcs editables && \
     sha256sum uv.lock > /opt/uv.lock.sha256
 
 
