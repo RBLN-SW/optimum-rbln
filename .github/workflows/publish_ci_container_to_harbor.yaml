@@ -26,7 +26,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          ref: "dev"
+          ref: "opt/pytest_package"
           fetch-depth: 0
 
       - name: Set up Docker Buildx
