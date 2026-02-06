@@ -52,6 +52,9 @@ jobs:
     runs-on: ${{ (inputs.reuse_artifacts_path != '' && matrix.test_type == 'llm') && 'rbln-sw-k8s-4c-128gb' || (inputs.reuse_artifacts_path != '' && 'rbln-sw-k8s-4c-32gb' || 'rbln-sw-k8s-ca22-1') }}
     container:
       image: ${{ vars.DEV_CONTAINER_IMAGE }}
+    env:
+      # Use the uv cache baked into the CI image.
+      UV_CACHE_DIR: /opt/uv-cache
     strategy:
       fail-fast: ${{ inputs.fail_fast }}
       matrix: ${{ fromJson(
@@ -115,10 +118,21 @@ jobs:
           
           echo "skip=$SKIP" >> $GITHUB_OUTPUT
 
-      - name: Install optimum-rbln with tests group dependencies
+      - name: Install optimum-rbln (skip sync when possible)
         if: steps.should_skip.outputs.skip != 'true'
         run: |
-          uv sync --frozen --group tests --reinstall-package optimum-rbln
+          set -euo pipefail
+
+          # If the checked-out uv.lock matches what's already baked into the CI image,
+          # avoid `uv sync` (which can trigger index/network activity) and only install
+          # the local project into the existing environment.
+          if [ -f /opt/uv.lock.sha256 ] && sha256sum --check --status /opt/uv.lock.sha256; then
+            echo "uv.lock matches CI image; installing local checkout without syncing deps."
+            uv pip install --python /opt/venv/bin/python --no-deps --no-build-isolation -e .
+          else
+            echo "uv.lock differs from CI image; syncing deps from lock."
+            uv sync --frozen --group tests
+          fi
 
       - name: Install rebel-compiler
         if: steps.should_skip.outputs.skip != 'true'
