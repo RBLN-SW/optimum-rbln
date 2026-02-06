@@ -26,12 +26,15 @@ from optimum.rbln.transformers.models.decoderonly import (
 
 
 def _w8a16_block_fp8_matmul(self, input: torch.Tensor) -> torch.Tensor:
-    _input_dtype = input.dtype
+    bs0, bs1 = self.block_size
     out_features, in_features = self.weight.shape
+    out_blocks = out_features // bs0
+    in_blocks = in_features // bs1
 
-    weight_scale = self.weight_scale_inv.repeat_interleave(self.block_size[0], 0).unsqueeze(-1)
-    weight = self.weight.view(out_features, in_features // self.block_size[1], self.block_size[1])
-    weight = (weight.to(_input_dtype) * weight_scale).view(out_features, in_features)
+    w = self.weight.view(out_blocks, bs0, in_blocks, bs1).to(input.dtype)          # (OB, bs0, IB, bs1)
+    s = self.weight_scale_inv.view(out_blocks, 1, in_blocks, 1).to(input.dtype)    # (OB, 1,  IB, 1)
+
+    weight = (w * s).view(out_features, in_features)
     output = torch.nn.functional.linear(input, weight, self.bias)
 
     return output
