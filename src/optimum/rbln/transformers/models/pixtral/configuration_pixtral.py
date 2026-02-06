@@ -12,32 +12,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Optional, Tuple
+from __future__ import annotations
 
-from ....configuration_utils import RBLNModelConfig
+from pydantic import Field
+
+from ....configuration_utils import PositiveIntDefaultOne, RBLNModelConfig
 
 
 class RBLNPixtralVisionModelConfig(RBLNModelConfig):
-    def __init__(
-        self,
-        max_image_size: Tuple = None,
-        batch_size: Optional[int] = None,
-        output_hidden_states: Optional[bool] = None,
-        **kwargs: Any,
-    ):
-        """
-        Args:
-            max_image_size (Tuple): The size of max input images. A tuple (max_height, max_width)
-            batch_size (Optional[int]): The batch size for image processing. Defaults to 1.
-            kwargs: Additional arguments passed to the parent RBLNModelConfig.
+    """Configuration for RBLNPixtralVisionModel."""
 
-        Raises:
-            ValueError: If batch_size is not a positive integer.
-        """
-        super().__init__(**kwargs)
-        self.batch_size = batch_size or 1
-        if not isinstance(self.batch_size, int) or self.batch_size < 0:
-            raise ValueError(f"batch_size must be a positive integer, got {self.batch_size}")
-
-        self.max_image_size = max_image_size
-        self.output_hidden_states = output_hidden_states
+    batch_size: PositiveIntDefaultOne = Field(default=1, description="The batch size for image processing.")
+    max_image_size: tuple[int, int] | None = Field(
+        default=None,
+        description="The size of max input images as a tuple (max_height, max_width).",
+    )
+    output_hidden_states: bool | None = Field(default=None, description="Whether to return hidden states.")

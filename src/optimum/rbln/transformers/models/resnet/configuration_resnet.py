@@ -12,8 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from __future__ import annotations
 
-from typing import Any, Optional, Tuple, Union
+from pydantic import Field
 
 from ...configuration_generic import RBLNModelForImageClassificationConfig
 
@@ -26,23 +27,4 @@ class RBLNResNetForImageClassificationConfig(RBLNModelForImageClassificationConf
     RBLN-optimized ResNet models for image classification tasks.
     """
 
-    def __init__(
-        self,
-        image_size: Optional[Union[int, Tuple[int, int]]] = None,
-        batch_size: Optional[int] = None,
-        output_hidden_states: Optional[bool] = None,
-        **kwargs: Any,
-    ):
-        """
-        Args:
-            image_size (Optional[Union[int, Tuple[int, int]]]): The size of input images.
-                Can be an integer for square images or a tuple (height, width).
-            batch_size (Optional[int]): The batch size for inference. Defaults to 1.
-            output_hidden_states (bool, optional): Whether or not to return the hidden states of all layers.
-            kwargs: Additional arguments passed to the parent RBLNModelConfig.
-
-        Raises:
-            ValueError: If batch_size is not a positive integer.
-        """
-        super().__init__(image_size=image_size, batch_size=batch_size, **kwargs)
-        self.output_hidden_states = output_hidden_states
+    output_hidden_states: bool | None = Field(default=None, description="Whether to return hidden states.")

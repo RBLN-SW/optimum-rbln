@@ -12,7 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Optional, Tuple
+from __future__ import annotations
+
+from typing import Any, ClassVar
+
+from pydantic import Field, model_validator
 
 from ....configuration_utils import RBLNModelConfig
 from ....transformers import RBLNCLIPTextModelWithProjectionConfig, RBLNCLIPVisionModelWithProjectionConfig
@@ -21,51 +25,83 @@ from ..models.configuration_prior_transformer import RBLNPriorTransformerConfig
 
 
 class RBLNKandinskyV22PipelineBaseConfig(RBLNModelConfig):
-    submodules = ["unet", "movq"]
-    _movq_uses_encoder = False
+    """Base configuration for Kandinsky V2.2 pipelines."""
 
-    def __init__(
-        self,
-        unet: Optional[RBLNUNet2DConditionModelConfig] = None,
-        movq: Optional[RBLNVQModelConfig] = None,
-        *,
-        sample_size: Optional[Tuple[int, int]] = None,
-        batch_size: Optional[int] = None,
-        guidance_scale: Optional[float] = None,
-        image_size: Optional[Tuple[int, int]] = None,
-        img_height: Optional[int] = None,
-        img_width: Optional[int] = None,
-        height: Optional[int] = None,
-        width: Optional[int] = None,
-        **kwargs: Any,
-    ):
-        """
-        Args:
-            unet (Optional[RBLNUNet2DConditionModelConfig]): Configuration for the UNet model component.
-                Initialized as RBLNUNet2DConditionModelConfig if not provided.
-            movq (Optional[RBLNVQModelConfig]): Configuration for the MoVQ (VQ-GAN) model component.
-                Initialized as RBLNVQModelConfig if not provided.
-            sample_size (Optional[Tuple[int, int]]): Spatial dimensions for the UNet model.
-            batch_size (Optional[int]): Batch size for inference, applied to all submodules.
-            guidance_scale (Optional[float]): Scale for classifier-free guidance.
-            image_size (Optional[Tuple[int, int]]): Dimensions for the generated images.
-                Cannot be used together with img_height/img_width.
-            img_height (Optional[int]): Height of the generated images.
-            img_width (Optional[int]): Width of the generated images.
-            height (Optional[int]): Height of the generated images.
-            width (Optional[int]): Width of the generated images.
-            kwargs: Additional arguments passed to the parent RBLNModelConfig.
+    submodules: ClassVar[list[str]] = ["unet", "movq"]
+    _movq_uses_encoder: ClassVar[bool] = False
 
-        Raises:
-            ValueError: If both image_size and img_height/img_width are provided.
+    unet: dict[str, Any] | RBLNUNet2DConditionModelConfig | None = Field(
+        default=None, description="Configuration for the UNet model component."
+    )
+    movq: dict[str, Any] | RBLNVQModelConfig | None = Field(
+        default=None, description="Configuration for the MoVQ (VQ-GAN) model component."
+    )
 
-        Note:
-            When guidance_scale > 1.0, the UNet batch size is automatically doubled to
-            accommodate classifier-free guidance.
-        """
-        super().__init__(**kwargs)
+    # Pass-through parameters (excluded from serialization.)
+    effective_batch_size: int | None = Field(
+        default=None,
+        alias="batch_size",
+        exclude=True,
+        description="Batch size for inference. Forwarded to movq.",
+    )
+    effective_img_height: int | None = Field(
+        default=None,
+        alias="img_height",
+        exclude=True,
+        description="(Deprecated) Image height. Use height instead.",
+    )
+    effective_img_width: int | None = Field(
+        default=None,
+        alias="img_width",
+        exclude=True,
+        description="(Deprecated) Image width. Use width instead.",
+    )
+    effective_height: int | None = Field(
+        default=None,
+        alias="height",
+        exclude=True,
+        description="Height of the generated images.",
+    )
+    effective_width: int | None = Field(
+        default=None,
+        alias="width",
+        exclude=True,
+        description="Width of the generated images.",
+    )
+    effective_sample_size: tuple[int, int] | None = Field(
+        default=None,
+        alias="sample_size",
+        exclude=True,
+        description="Spatial dimensions for the UNet model (height, width).",
+    )
+    effective_image_size: tuple[int, int] | None = Field(
+        default=None,
+        alias="image_size",
+        exclude=True,
+        description="Image dimensions (height, width). Forwarded to movq as sample_size.",
+    )
+    effective_guidance_scale: float | None = Field(
+        default=None,
+        alias="guidance_scale",
+        exclude=True,
+        description="Scale for classifier-free guidance. Used to determine UNet batch size.",
+    )
 
-        # Initial check for image_size conflict remains as is
+    @model_validator(mode="before")
+    @classmethod
+    def resolve_image_dimensions(cls, data: dict[str, Any]) -> dict[str, Any]:
+        """Resolve image_size from height/width aliases."""
+        if not isinstance(data, dict):
+            return data
+
+        # Check only user-facing keys (aliases), not internal effective_* keys
+        image_size = data.get("image_size")
+        img_height = data.get("img_height")
+        img_width = data.get("img_width")
+        height = data.get("height")
+        width = data.get("width")
+
+        # Initial check for image_size conflict
         if image_size is not None and (
             img_height is not None or img_width is not None or height is not None or width is not None
         ):
@@ -74,34 +110,44 @@ class RBLNKandinskyV22PipelineBaseConfig(RBLNModelConfig):
         # Prioritize height/width (HF-aligned)
         if height is not None and width is not None:
             if img_height is not None or img_width is not None:
-                # Raise error if both sets of arguments are provided
                 raise ValueError(
                     "Cannot provide both 'height'/'width' and 'img_height'/'img_width' simultaneously. "
                     "Please use one set of arguments for image dimensions, preferring 'height'/'width'."
                 )
-            image_size = (height, width)
+            data["image_size"] = (height, width)
         elif (height is not None and width is None) or (height is None and width is not None):
             raise ValueError("Both height and width must be provided together if used")
         # Fallback to img_height/img_width for backward compatibility
         elif img_height is not None and img_width is not None:
-            image_size = (img_height, img_width)
+            data["image_size"] = (img_height, img_width)
         elif (img_height is not None and img_width is None) or (img_height is None and img_width is not None):
             raise ValueError("Both img_height and img_width must be provided together if used")
 
+        return data
+
+    @model_validator(mode="after")
+    def initialize_submodules(self) -> "RBLNKandinskyV22PipelineBaseConfig":
+        """Initialize submodule configs with pass-through parameters."""
+        # Guard against re-entry during submodule initialization
+        if getattr(self, "_submodules_initialized", False):
+            return self
+        object.__setattr__(self, "_submodules_initialized", True)
+
         self.unet = self.initialize_submodule_config(
-            unet,
+            self.unet,
             cls_name="RBLNUNet2DConditionModelConfig",
-            sample_size=sample_size,
+            sample_size=self.effective_sample_size,
         )
         self.movq = self.initialize_submodule_config(
-            movq,
+            self.movq,
             cls_name="RBLNVQModelConfig",
-            batch_size=batch_size,
-            sample_size=image_size,  # image size is equal to sample size in vae
+            batch_size=self.effective_batch_size,
+            sample_size=self.effective_image_size,  # image size is equal to sample size in vae
             uses_encoder=self._movq_uses_encoder,
         )
 
         # Get default guidance scale from original class to set UNet batch size
+        guidance_scale = self.effective_guidance_scale
         if guidance_scale is None:
             guidance_scale = self.get_default_values_for_original_cls("__call__", ["guidance_scale"])["guidance_scale"]
 
@@ -111,6 +157,8 @@ class RBLNKandinskyV22PipelineBaseConfig(RBLNModelConfig):
                 self.unet.batch_size = self.movq.batch_size * 2
             else:
                 self.unet.batch_size = self.movq.batch_size
+
+        return self
 
     @property
     def batch_size(self):
@@ -124,75 +172,75 @@ class RBLNKandinskyV22PipelineBaseConfig(RBLNModelConfig):
 class RBLNKandinskyV22PipelineConfig(RBLNKandinskyV22PipelineBaseConfig):
     """Configuration class for the Kandinsky V2.2 text-to-image decoder pipeline."""
 
-    _movq_uses_encoder = False
+    _movq_uses_encoder: ClassVar[bool] = False
 
 
 class RBLNKandinskyV22Img2ImgPipelineConfig(RBLNKandinskyV22PipelineBaseConfig):
     """Configuration class for the Kandinsky V2.2 image-to-image decoder pipeline."""
 
-    _movq_uses_encoder = True
+    _movq_uses_encoder: ClassVar[bool] = True
 
 
 class RBLNKandinskyV22InpaintPipelineConfig(RBLNKandinskyV22PipelineBaseConfig):
     """Configuration class for the Kandinsky V2.2 inpainting decoder pipeline."""
 
-    _movq_uses_encoder = True
+    _movq_uses_encoder: ClassVar[bool] = True
 
 
 class RBLNKandinskyV22PriorPipelineConfig(RBLNModelConfig):
     """Configuration class for the Kandinsky V2.2 Prior pipeline."""
 
-    submodules = ["text_encoder", "image_encoder", "prior"]
+    submodules: ClassVar[list[str]] = ["text_encoder", "image_encoder", "prior"]
 
-    def __init__(
-        self,
-        text_encoder: Optional[RBLNCLIPTextModelWithProjectionConfig] = None,
-        image_encoder: Optional[RBLNCLIPVisionModelWithProjectionConfig] = None,
-        prior: Optional[RBLNPriorTransformerConfig] = None,
-        *,
-        batch_size: Optional[int] = None,
-        guidance_scale: Optional[float] = None,
-        **kwargs: Any,
-    ):
-        """
-        Initialize a configuration for Kandinsky 2.2 prior pipeline optimized for RBLN NPU.
+    text_encoder: dict[str, Any] | RBLNCLIPTextModelWithProjectionConfig | None = Field(
+        default=None, description="Configuration for the text encoder component."
+    )
+    image_encoder: dict[str, Any] | RBLNCLIPVisionModelWithProjectionConfig | None = Field(
+        default=None, description="Configuration for the image encoder component."
+    )
+    prior: dict[str, Any] | RBLNPriorTransformerConfig | None = Field(
+        default=None, description="Configuration for the prior transformer component."
+    )
 
-        This configuration sets up the prior components of the Kandinsky 2.2 architecture, which includes
-        text and image encoders along with a prior transformer that maps text/image embeddings to
-        latent representations used to condition the diffusion process.
+    # Pass-through parameters (excluded from serialization.)
+    effective_batch_size: int | None = Field(
+        default=None,
+        alias="batch_size",
+        exclude=True,
+        description="Batch size for inference. Forwarded to text_encoder and image_encoder.",
+    )
+    effective_guidance_scale: float | None = Field(
+        default=None,
+        alias="guidance_scale",
+        exclude=True,
+        description="Scale for classifier-free guidance. Used to determine prior batch size.",
+    )
 
-        Args:
-            text_encoder (Optional[RBLNCLIPTextModelWithProjectionConfig]): Configuration for the text encoder component.
-                Initialized as RBLNCLIPTextModelWithProjectionConfig if not provided.
-            image_encoder (Optional[RBLNCLIPVisionModelWithProjectionConfig]): Configuration for the image encoder component.
-                Initialized as RBLNCLIPVisionModelWithProjectionConfig if not provided.
-            prior (Optional[RBLNPriorTransformerConfig]): Configuration for the prior transformer component.
-                Initialized as RBLNPriorTransformerConfig if not provided.
-            batch_size (Optional[int]): Batch size for inference, applied to all submodules.
-            guidance_scale (Optional[float]): Scale for classifier-free guidance.
-            kwargs: Additional arguments passed to the parent RBLNModelConfig.
+    @model_validator(mode="after")
+    def initialize_submodules(self) -> "RBLNKandinskyV22PriorPipelineConfig":
+        """Initialize submodule configs with pass-through parameters."""
+        # Guard against re-entry during submodule initialization
+        if getattr(self, "_submodules_initialized", False):
+            return self
+        object.__setattr__(self, "_submodules_initialized", True)
 
-        Note:
-            When guidance_scale > 1.0, the prior batch size is automatically doubled to
-            accommodate classifier-free guidance.
-        """
-        super().__init__(**kwargs)
         self.text_encoder = self.initialize_submodule_config(
-            text_encoder,
+            self.text_encoder,
             cls_name="RBLNCLIPTextModelWithProjectionConfig",
-            batch_size=batch_size,
+            batch_size=self.effective_batch_size,
         )
         self.image_encoder = self.initialize_submodule_config(
-            image_encoder,
+            self.image_encoder,
             cls_name="RBLNCLIPVisionModelWithProjectionConfig",
-            batch_size=batch_size,
+            batch_size=self.effective_batch_size,
         )
         self.prior = self.initialize_submodule_config(
-            prior,
+            self.prior,
             cls_name="RBLNPriorTransformerConfig",
         )
 
-        # Get default guidance scale from original class to set UNet batch size
+        # Get default guidance scale from original class to set prior batch size
+        guidance_scale = self.effective_guidance_scale
         if guidance_scale is None:
             guidance_scale = self.get_default_values_for_original_cls("__call__", ["guidance_scale"])["guidance_scale"]
 
@@ -202,6 +250,8 @@ class RBLNKandinskyV22PriorPipelineConfig(RBLNModelConfig):
                 self.prior.batch_size = self.text_encoder.batch_size * 2
             else:
                 self.prior.batch_size = self.text_encoder.batch_size
+
+        return self
 
     @property
     def batch_size(self):
@@ -215,65 +265,111 @@ class RBLNKandinskyV22PriorPipelineConfig(RBLNModelConfig):
 class RBLNKandinskyV22CombinedPipelineBaseConfig(RBLNModelConfig):
     """Base configuration class for Kandinsky V2.2 combined pipelines."""
 
-    submodules = ["prior_pipe", "decoder_pipe"]
-    _decoder_pipe_cls = RBLNKandinskyV22PipelineConfig
+    submodules: ClassVar[list[str]] = ["prior_pipe", "decoder_pipe"]
+    _decoder_pipe_cls: ClassVar[type] = RBLNKandinskyV22PipelineConfig
 
-    def __init__(
-        self,
-        prior_pipe: Optional[RBLNKandinskyV22PriorPipelineConfig] = None,
-        decoder_pipe: Optional[RBLNKandinskyV22PipelineConfig] = None,
-        *,
-        sample_size: Optional[Tuple[int, int]] = None,
-        image_size: Optional[Tuple[int, int]] = None,
-        batch_size: Optional[int] = None,
-        img_height: Optional[int] = None,
-        img_width: Optional[int] = None,
-        height: Optional[int] = None,
-        width: Optional[int] = None,
-        guidance_scale: Optional[float] = None,
-        prior_prior: Optional[RBLNPriorTransformerConfig] = None,
-        prior_image_encoder: Optional[RBLNCLIPVisionModelWithProjectionConfig] = None,
-        prior_text_encoder: Optional[RBLNCLIPTextModelWithProjectionConfig] = None,
-        unet: Optional[RBLNUNet2DConditionModelConfig] = None,
-        movq: Optional[RBLNVQModelConfig] = None,
-        **kwargs: Any,
-    ):
-        """
-        Initialize a configuration for combined Kandinsky 2.2 pipelines optimized for RBLN NPU.
+    prior_pipe: dict[str, Any] | RBLNKandinskyV22PriorPipelineConfig | None = Field(
+        default=None, description="Configuration for the prior pipeline."
+    )
+    decoder_pipe: dict[str, Any] | RBLNModelConfig | None = Field(
+        default=None, description="Configuration for the decoder pipeline."
+    )
 
-        This configuration integrates both the prior and decoder components of Kandinsky 2.2 into
-        a unified pipeline, allowing for end-to-end text-to-image generation in a single model.
-        It combines the text/image encoding, prior mapping, and diffusion steps together.
+    # Pass-through parameters (excluded from serialization.)
+    effective_batch_size: int | None = Field(
+        default=None,
+        alias="batch_size",
+        exclude=True,
+        description="Batch size for inference. Forwarded to prior_pipe and decoder_pipe.",
+    )
+    effective_img_height: int | None = Field(
+        default=None,
+        alias="img_height",
+        exclude=True,
+        description="(Deprecated) Image height. Use height instead.",
+    )
+    effective_img_width: int | None = Field(
+        default=None,
+        alias="img_width",
+        exclude=True,
+        description="(Deprecated) Image width. Use width instead.",
+    )
+    effective_height: int | None = Field(
+        default=None,
+        alias="height",
+        exclude=True,
+        description="Height of the generated images.",
+    )
+    effective_width: int | None = Field(
+        default=None,
+        alias="width",
+        exclude=True,
+        description="Width of the generated images.",
+    )
+    effective_sample_size: tuple[int, int] | None = Field(
+        default=None,
+        alias="sample_size",
+        exclude=True,
+        description="Spatial dimensions for the UNet model (height, width).",
+    )
+    effective_image_size: tuple[int, int] | None = Field(
+        default=None,
+        alias="image_size",
+        exclude=True,
+        description="Image dimensions (height, width). Forwarded to decoder_pipe.",
+    )
+    effective_guidance_scale: float | None = Field(
+        default=None,
+        alias="guidance_scale",
+        exclude=True,
+        description="Scale for classifier-free guidance.",
+    )
+    effective_prior_prior: RBLNPriorTransformerConfig | None = Field(
+        default=None,
+        alias="prior_prior",
+        exclude=True,
+        description="Configuration for the prior transformer in the prior pipeline.",
+    )
+    effective_prior_image_encoder: RBLNCLIPVisionModelWithProjectionConfig | None = Field(
+        default=None,
+        alias="prior_image_encoder",
+        exclude=True,
+        description="Configuration for the image encoder in the prior pipeline.",
+    )
+    effective_prior_text_encoder: RBLNCLIPTextModelWithProjectionConfig | None = Field(
+        default=None,
+        alias="prior_text_encoder",
+        exclude=True,
+        description="Configuration for the text encoder in the prior pipeline.",
+    )
+    effective_unet: RBLNUNet2DConditionModelConfig | None = Field(
+        default=None,
+        alias="unet",
+        exclude=True,
+        description="Configuration for the UNet in the decoder pipeline.",
+    )
+    effective_movq: RBLNVQModelConfig | None = Field(
+        default=None,
+        alias="movq",
+        exclude=True,
+        description="Configuration for the MoVQ in the decoder pipeline.",
+    )
 
-        Args:
-            prior_pipe (Optional[RBLNKandinskyV22PriorPipelineConfig]): Configuration for the prior pipeline.
-                Initialized as RBLNKandinskyV22PriorPipelineConfig if not provided.
-            decoder_pipe (Optional[RBLNKandinskyV22PipelineConfig]): Configuration for the decoder pipeline.
-                Initialized as RBLNKandinskyV22PipelineConfig if not provided.
-            sample_size (Optional[Tuple[int, int]]): Spatial dimensions for the UNet model.
-            image_size (Optional[Tuple[int, int]]): Dimensions for the generated images.
-                Cannot be used together with img_height/img_width.
-            batch_size (Optional[int]): Batch size for inference, applied to all submodules.
-            img_height (Optional[int]): Height of the generated images.
-            img_width (Optional[int]): Width of the generated images.
-            height (Optional[int]): Height of the generated images.
-            width (Optional[int]): Width of the generated images.
-            guidance_scale (Optional[float]): Scale for classifier-free guidance.
-            prior_prior (Optional[RBLNPriorTransformerConfig]): Direct configuration for the prior transformer.
-                Used if prior_pipe is not provided.
-            prior_image_encoder (Optional[RBLNCLIPVisionModelWithProjectionConfig]): Direct configuration for the image encoder.
-                Used if prior_pipe is not provided.
-            prior_text_encoder (Optional[RBLNCLIPTextModelWithProjectionConfig]): Direct configuration for the text encoder.
-                Used if prior_pipe is not provided.
-            unet (Optional[RBLNUNet2DConditionModelConfig]): Direct configuration for the UNet.
-                Used if decoder_pipe is not provided.
-            movq (Optional[RBLNVQModelConfig]): Direct configuration for the MoVQ (VQ-GAN) model.
-                Used if decoder_pipe is not provided.
-            kwargs: Additional arguments passed to the parent RBLNModelConfig.
-        """
-        super().__init__(**kwargs)
+    @model_validator(mode="before")
+    @classmethod
+    def resolve_image_dimensions(cls, data: dict[str, Any]) -> dict[str, Any]:
+        """Resolve image_size from height/width aliases."""
+        if not isinstance(data, dict):
+            return data
 
-        # Initial check for image_size conflict remains as is
+        # Check only user-facing keys (aliases), not internal effective_* keys
+        image_size = data.get("image_size")
+        img_height = data.get("img_height")
+        img_width = data.get("img_width")
+        height = data.get("height")
+        width = data.get("width")
+
+        # Initial check for image_size conflict
         if image_size is not None and (
             img_height is not None or img_width is not None or height is not None or width is not None
         ):
@@ -282,39 +378,50 @@ class RBLNKandinskyV22CombinedPipelineBaseConfig(RBLNModelConfig):
         # Prioritize height/width (HF-aligned)
         if height is not None and width is not None:
             if img_height is not None or img_width is not None:
-                # Raise error if both sets of arguments are provided
                 raise ValueError(
                     "Cannot provide both 'height'/'width' and 'img_height'/'img_width' simultaneously. "
                     "Please use one set of arguments for image dimensions, preferring 'height'/'width'."
                 )
-            image_size = (height, width)
+            data["image_size"] = (height, width)
         elif (height is not None and width is None) or (height is None and width is not None):
             raise ValueError("Both height and width must be provided together if used")
         # Fallback to img_height/img_width for backward compatibility
         elif img_height is not None and img_width is not None:
-            image_size = (img_height, img_width)
+            data["image_size"] = (img_height, img_width)
         elif (img_height is not None and img_width is None) or (img_height is None and img_width is not None):
             raise ValueError("Both img_height and img_width must be provided together if used")
 
+        return data
+
+    @model_validator(mode="after")
+    def initialize_submodules(self) -> "RBLNKandinskyV22CombinedPipelineBaseConfig":
+        """Initialize submodule configs with pass-through parameters."""
+        # Guard against re-entry during submodule initialization
+        if getattr(self, "_submodules_initialized", False):
+            return self
+        object.__setattr__(self, "_submodules_initialized", True)
+
         self.prior_pipe = self.initialize_submodule_config(
-            prior_pipe,
+            self.prior_pipe,
             cls_name="RBLNKandinskyV22PriorPipelineConfig",
-            prior=prior_prior,
-            image_encoder=prior_image_encoder,
-            text_encoder=prior_text_encoder,
-            batch_size=batch_size,
-            guidance_scale=guidance_scale,
+            prior=self.effective_prior_prior,
+            image_encoder=self.effective_prior_image_encoder,
+            text_encoder=self.effective_prior_text_encoder,
+            batch_size=self.effective_batch_size,
+            guidance_scale=self.effective_guidance_scale,
         )
         self.decoder_pipe = self.initialize_submodule_config(
-            decoder_pipe,
+            self.decoder_pipe,
             cls_name=self._decoder_pipe_cls.__name__,
-            unet=unet,
-            movq=movq,
-            batch_size=batch_size,
-            sample_size=sample_size,
-            image_size=image_size,
-            guidance_scale=guidance_scale,
+            unet=self.effective_unet,
+            movq=self.effective_movq,
+            batch_size=self.effective_batch_size,
+            sample_size=self.effective_sample_size,
+            image_size=self.effective_image_size,
+            guidance_scale=self.effective_guidance_scale,
         )
+
+        return self
 
     @property
     def batch_size(self):
@@ -348,16 +455,16 @@ class RBLNKandinskyV22CombinedPipelineBaseConfig(RBLNModelConfig):
 class RBLNKandinskyV22CombinedPipelineConfig(RBLNKandinskyV22CombinedPipelineBaseConfig):
     """Configuration class for the Kandinsky V2.2 combined text-to-image pipeline."""
 
-    _decoder_pipe_cls = RBLNKandinskyV22PipelineConfig
+    _decoder_pipe_cls: ClassVar[type] = RBLNKandinskyV22PipelineConfig
 
 
 class RBLNKandinskyV22InpaintCombinedPipelineConfig(RBLNKandinskyV22CombinedPipelineBaseConfig):
     """Configuration class for the Kandinsky V2.2 combined inpainting pipeline."""
 
-    _decoder_pipe_cls = RBLNKandinskyV22InpaintPipelineConfig
+    _decoder_pipe_cls: ClassVar[type] = RBLNKandinskyV22InpaintPipelineConfig
 
 
 class RBLNKandinskyV22Img2ImgCombinedPipelineConfig(RBLNKandinskyV22CombinedPipelineBaseConfig):
     """Configuration class for the Kandinsky V2.2 combined image-to-image pipeline."""
 
-    _decoder_pipe_cls = RBLNKandinskyV22Img2ImgPipelineConfig
+    _decoder_pipe_cls: ClassVar[type] = RBLNKandinskyV22Img2ImgPipelineConfig

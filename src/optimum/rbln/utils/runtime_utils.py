@@ -12,9 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from __future__ import annotations
+
+import contextvars
 import re
-import threading
-from typing import Any, List, Optional, Union
+from dataclasses import dataclass
+from typing import Any
 
 import rebel
 import torch
@@ -24,7 +27,7 @@ def is_compiler_supports_buffer_resize() -> bool:
     return hasattr(rebel.RBLNCompiledModel, "exp_multiply_buffer_size")
 
 
-def get_available_dram(npu: Optional[str] = None) -> int:
+def get_available_dram(npu: str | None = None) -> int:
     """
     Get the available DRAM size of the specified NPU.
 
@@ -72,10 +75,10 @@ def normalize_npu(npu: str) -> str:
 
 
 def tp_and_devices_are_ok(
-    tensor_parallel_size: Optional[int] = None,
-    device: Optional[Union[int, List[int]]] = None,
-    npu: Optional[str] = None,
-) -> Optional[str]:
+    tensor_parallel_size: int | None = None,
+    device: int | list[int] | None = None,
+    npu: str | None = None,
+) -> str | None:
     if tensor_parallel_size is None:
         tensor_parallel_size = 1
 
@@ -117,9 +120,9 @@ def tp_and_devices_are_ok(
 
 
 class RBLNPytorchRuntime:
-    mandatory_members = []
+    mandatory_members: list[str] = []
 
-    def __init__(self, runtime: rebel.Runtime, **kwargs) -> None:
+    def __init__(self, runtime: rebel.Runtime, **kwargs: Any) -> None:
         self.runtime = runtime
         for key, value in kwargs.items():
             setattr(self, key, value)
@@ -130,7 +133,7 @@ class RBLNPytorchRuntime:
     def __call__(self, *args: Any, **kwds: Any) -> Any:
         return self.forward(*args, **kwds)
 
-    def forward(self, *args: List["torch.Tensor"], **kwargs: "torch.Tensor"):
+    def forward(self, *args: list[torch.Tensor], **kwargs: torch.Tensor) -> Any:
         # filtering useless args or kwarg such as None.
         args = list(filter(lambda arg: isinstance(arg, torch.Tensor), args))
         kwargs = dict(filter(lambda kwarg: isinstance(kwarg[1], torch.Tensor) or kwarg[0] == "out", kwargs.items()))
@@ -178,7 +181,7 @@ class UnavailableRuntime:
         """Returns an iterator with self as the only item."""
         return iter([self])
 
-    def forward(self, *args: List["torch.Tensor"], **kwargs: "torch.Tensor"):
+    def forward(self, *args: list[torch.Tensor], **kwargs: torch.Tensor) -> Any:
         """Raises a detailed RuntimeError explaining why inference cannot be performed."""
         raise RuntimeError(
             "Cannot perform inference: RBLN runtime is not available.\n\n"
@@ -195,59 +198,113 @@ class UnavailableRuntime:
         return "<UnavailableRuntime: Model loaded without runtime creation (create_runtimes=False)>"
 
 
+@dataclass(frozen=True)
+class RuntimeOverrides:
+    """Immutable container for runtime override values."""
+
+    device: int | list[int] | None = None
+    device_map: dict[str, int | list[int]] | None = None
+    create_runtimes: bool | None = None
+    activate_profiler: bool | None = None
+    timeout: int | None = None
+
+
+# Context variable - works with asyncio and threads
+_runtime_context: contextvars.ContextVar[RuntimeOverrides | None] = contextvars.ContextVar(
+    "rbln_runtime_context", default=None
+)
+
+
 class ContextRblnConfig:
-    _local = threading.local()
+    """
+    Context manager for temporarily overriding runtime options.
+
+    Uses `contextvars` for proper asyncio and thread support.
+
+    Example:
+        config = RBLNLlamaForCausalLMConfig(device=0)
+
+        with ContextRblnConfig(device=1):
+            # All configs in this scope return device=1
+            print(config.get_effective_device())  # 1
+            model.generate(...)  # Uses device 1
+
+        print(config.get_effective_device())  # 0 (back to config value)
+
+    asyncio Example:
+        async def process():
+            with ContextRblnConfig(device=0):
+                await model.generate_async(...)  # Properly inherits context
+
+    Note:
+        - Context overrides take precedence over config values
+        - Use `config.get_effective_*()` methods to query resolved values
+        - Context is properly propagated to asyncio tasks and copied contexts
+    """
 
     def __init__(
         self,
-        device=None,
-        device_map=None,
-        create_runtimes=None,
-        activate_profiler=None,
-        timeout=None,
+        device: int | list[int] | None = None,
+        device_map: dict[str, int | list[int]] | None = None,
+        create_runtimes: bool | None = None,
+        activate_profiler: bool | None = None,
+        timeout: int | None = None,
     ):
-        self.device = device
-        self.device_map = device_map
-        self.create_runtimes = create_runtimes
-        self.activate_profiler = activate_profiler
-        self.timeout = timeout
-        self._previous_context = None
+        self._overrides = RuntimeOverrides(
+            device=device,
+            device_map=device_map,
+            create_runtimes=create_runtimes,
+            activate_profiler=activate_profiler,
+            timeout=timeout,
+        )
+        self._token: contextvars.Token | None = None
 
-    def __enter__(self):
-        self._previous_context = {
-            "device": getattr(self._local, "device", None),
-            "device_map": getattr(self._local, "device_map", None),
-            "create_runtimes": getattr(self._local, "create_runtimes", None),
-            "activate_profiler": getattr(self._local, "activate_profiler", None),
-            "timeout": getattr(self._local, "timeout", None),
-        }
+    def __enter__(self) -> "ContextRblnConfig":
+        # Stack current overrides with parent context
+        parent = _runtime_context.get()
+        if parent is not None:
+            # Merge: child overrides take precedence over parent
+            merged = RuntimeOverrides(
+                device=self._overrides.device if self._overrides.device is not None else parent.device,
+                device_map=self._overrides.device_map if self._overrides.device_map is not None else parent.device_map,
+                create_runtimes=(
+                    self._overrides.create_runtimes
+                    if self._overrides.create_runtimes is not None
+                    else parent.create_runtimes
+                ),
+                activate_profiler=(
+                    self._overrides.activate_profiler
+                    if self._overrides.activate_profiler is not None
+                    else parent.activate_profiler
+                ),
+                timeout=self._overrides.timeout if self._overrides.timeout is not None else parent.timeout,
+            )
+        else:
+            merged = self._overrides
 
-        if self.device is not None:
-            self._local.device = self.device
-        if self.device_map is not None:
-            self._local.device_map = self.device_map
-        if self.create_runtimes is not None:
-            self._local.create_runtimes = self.create_runtimes
-        if self.activate_profiler is not None:
-            self._local.activate_profiler = self.activate_profiler
-        if self.timeout is not None:
-            self._local.timeout = self.timeout
+        self._token = _runtime_context.set(merged)
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        if self._previous_context is not None:
-            self._local.device = self._previous_context["device"]
-            self._local.device_map = self._previous_context["device_map"]
-            self._local.create_runtimes = self._previous_context["create_runtimes"]
-            self._local.activate_profiler = self._previous_context["activate_profiler"]
-            self._local.timeout = self._previous_context["timeout"]
+    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
+        if self._token is not None:
+            _runtime_context.reset(self._token)
 
-    @classmethod
-    def get_current_context(cls):
+    @staticmethod
+    def get_current_context() -> dict[str, Any]:
+        """Get current context overrides as dict (for backward compat)."""
+        overrides = _runtime_context.get()
+        if overrides is None:
+            return {
+                "device": None,
+                "device_map": None,
+                "create_runtimes": None,
+                "activate_profiler": None,
+                "timeout": None,
+            }
         return {
-            "device": getattr(cls._local, "device", None),
-            "device_map": getattr(cls._local, "device_map", None),
-            "create_runtimes": getattr(cls._local, "create_runtimes", None),
-            "activate_profiler": getattr(cls._local, "activate_profiler", None),
-            "timeout": getattr(cls._local, "timeout", None),
+            "device": overrides.device,
+            "device_map": overrides.device_map,
+            "create_runtimes": overrides.create_runtimes,
+            "activate_profiler": overrides.activate_profiler,
+            "timeout": overrides.timeout,
         }

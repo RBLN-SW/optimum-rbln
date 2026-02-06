@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from __future__ import annotations
+
 from ...configuration_generic import RBLNModelForImageClassificationConfig
 
 
@@ -22,3 +24,5 @@ class RBLNViTForImageClassificationConfig(RBLNModelForImageClassificationConfig)
     This configuration class stores the configuration parameters specific to
     RBLN-optimized Vision Transformer (ViT) models for image classification tasks.
     """
+
+    pass
