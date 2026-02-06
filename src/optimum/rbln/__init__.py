@@ -30,6 +30,10 @@ _import_structure = {
         "RBLNCompileConfig",
         "RBLNModelConfig",
     ],
+    "minimax_poc": [
+        "RBLNMiniMaxM2ForCausalLM",
+        "RBLNMiniMaxM2ForCausalLMConfig",
+    ],
     "transformers": [
         "RBLNASTForAudioClassification",
         "RBLNASTForAudioClassificationConfig",
@@ -283,6 +287,7 @@ _import_structure = {
 
 if TYPE_CHECKING:
     from .configuration_utils import RBLNAutoConfig, RBLNCompileConfig, RBLNModelConfig
+    from .minimax_poc import RBLNMiniMaxM2ForCausalLM, RBLNMiniMaxM2ForCausalLMConfig
     from .diffusers import (
         RBLNAutoencoderKL,
         RBLNAutoencoderKLConfig,

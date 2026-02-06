@@ -17,12 +17,11 @@ from __future__ import annotations
 from typing import Optional
 
 import torch
-from minimax_m2_architecture import MiniMaxM2Wrapper
 from transformers import AutoModelForCausalLM, PreTrainedModel
 
-from optimum.rbln.transformers.models.decoderonly import (
-    RBLNDecoderOnlyModelForCausalLM,
-)
+from optimum.rbln.transformers.models.decoderonly import RBLNDecoderOnlyModelForCausalLM
+
+from .minimax_m2_architecture import MiniMaxM2Wrapper
 
 
 def _w8a16_block_fp8_matmul(self, input: torch.Tensor) -> torch.Tensor:
@@ -31,8 +30,8 @@ def _w8a16_block_fp8_matmul(self, input: torch.Tensor) -> torch.Tensor:
     out_blocks = out_features // bs0
     in_blocks = in_features // bs1
 
-    w = self.weight.view(out_blocks, bs0, in_blocks, bs1).to(input.dtype)          # (OB, bs0, IB, bs1)
-    s = self.weight_scale_inv.view(out_blocks, 1, in_blocks, 1).to(input.dtype)    # (OB, 1,  IB, 1)
+    w = self.weight.view(out_blocks, bs0, in_blocks, bs1).to(input.dtype)  # (OB, bs0, IB, bs1)
+    s = self.weight_scale_inv.view(out_blocks, 1, in_blocks, 1).to(input.dtype)  # (OB, 1,  IB, 1)
 
     weight = (w * s).view(out_features, in_features)
     output = torch.nn.functional.linear(input, weight, self.bias)
@@ -67,9 +66,7 @@ class RBLNMiniMaxM2ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
         #
         # The user intentionally monkeypatches the FP8 quantizer env-check (CPU-only environments).
         from transformers.integrations.finegrained_fp8 import FP8Linear
-        from transformers.quantizers.quantizer_finegrained_fp8 import (
-            FineGrainedFP8HfQuantizer,
-        )
+        from transformers.quantizers.quantizer_finegrained_fp8 import FineGrainedFP8HfQuantizer
 
         FineGrainedFP8HfQuantizer.validate_environment = lambda self, *a, **k: None
         FP8Linear.forward = _w8a16_block_fp8_matmul
@@ -81,3 +78,4 @@ class RBLNMiniMaxM2ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
 
         model = AutoModelForCausalLM.from_pretrained(model_id, *args, **kwargs)
         return model
+

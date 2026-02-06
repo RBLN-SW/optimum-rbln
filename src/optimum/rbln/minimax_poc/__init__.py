@@ -1,4 +1,4 @@
-# Copyright 2026 Rebellions Inc. All rights reserved.
+# Copyright 2025 Rebellions Inc. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,15 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from optimum.rbln import RBLNDecoderOnlyModelForCausalLMConfig
+from .configuration_minimax_m2 import RBLNMiniMaxM2ForCausalLMConfig
+from .modeling_minimax_m2 import RBLNMiniMaxM2ForCausalLM
 
 
-class RBLNMiniMaxM2ForCausalLMConfig(RBLNDecoderOnlyModelForCausalLMConfig):
-    """
-    RBLN config for MiniMax-M2.* style decoder-only MoE models.
+__all__ = [
+    "RBLNMiniMaxM2ForCausalLM",
+    "RBLNMiniMaxM2ForCausalLMConfig",
+]
 
-    This is a thin subclass of `RBLNDecoderOnlyModelForCausalLMConfig` used for
-    clearer typing / model registration.
-    """
-
-    pass

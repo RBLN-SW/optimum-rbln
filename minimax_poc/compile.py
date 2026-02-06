@@ -1,17 +1,6 @@
 import os
 
-from configuration_minimax_m2 import RBLNMiniMaxM2ForCausalLMConfig
-
-# Support both:
-# - `python -m minimax.compile` (package execution; relative imports work)
-# - `python minimax/compile.py`  (script execution; relative imports fail)
-from modeling_minimax_m2 import RBLNMiniMaxM2ForCausalLM
-
-from optimum.rbln import RBLNAutoConfig, RBLNAutoModel
-
-
-RBLNAutoModel.register(RBLNMiniMaxM2ForCausalLM, exist_ok=True)
-RBLNAutoConfig.register(RBLNMiniMaxM2ForCausalLMConfig, exist_ok=True)
+from optimum.rbln import RBLNMiniMaxM2ForCausalLM
 
 
 model_id = "MiniMaxAI/MiniMax-M2.1"

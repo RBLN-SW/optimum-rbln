@@ -19,9 +19,7 @@ from typing import Optional, Tuple
 import torch
 import torch.nn as nn
 
-from optimum.rbln.transformers.models.decoderonly.configuration_lora import (
-    RBLNLoRAConfig,
-)
+from optimum.rbln.transformers.models.decoderonly.configuration_lora import RBLNLoRAConfig
 from optimum.rbln.transformers.models.decoderonly.decoderonly_architecture import (
     DecoderOnlyAttention,
     DecoderOnlyLayer,
@@ -156,15 +154,9 @@ class MiniMaxM2SparseMoeBlock(nn.Module):
         w3 = torch.stack([e.w3.weight for e in self.experts], dim=0)
         w2 = torch.stack([e.w2.weight for e in self.experts], dim=0)
 
-        w1_scale = torch.stack(
-            [e.w1.weight_scale_inv for e in self.experts], dim=0
-        )
-        w3_scale = torch.stack(
-            [e.w3.weight_scale_inv for e in self.experts], dim=0
-        )
-        w2_scale = torch.stack(
-            [e.w2.weight_scale_inv for e in self.experts], dim=0
-        )
+        w1_scale = torch.stack([e.w1.weight_scale_inv for e in self.experts], dim=0)
+        w3_scale = torch.stack([e.w3.weight_scale_inv for e in self.experts], dim=0)
+        w2_scale = torch.stack([e.w2.weight_scale_inv for e in self.experts], dim=0)
 
         self.group_size = self.experts[0].w1.block_size[1]
 
@@ -197,3 +189,4 @@ class MiniMaxM2SparseMoeBlock(nn.Module):
             self.e_score_correction_bias,
         )
         return y.view(batch_size, seq_len, hidden_dim)
+
