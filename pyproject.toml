@@ -30,7 +30,7 @@ keywords = ["transformers", "diffusers", "inference", "rbln", "atom", "rebel"]
 dependencies = [
     "torch==2.9.0",
     "torchaudio==2.9.0",
-    "torchvision==0.24.0+cpu",
+    "torchvision==0.24.0",
     "accelerate>=1.0.1",
     "transformers==4.57.6",
     "diffusers==0.36.0",
@@ -93,16 +93,6 @@ environments = [
     "sys_platform == 'linux'"
 ]
 cache-keys = [{ git = { commit = true } }]
-
-[tool.uv.sources]
-torch = { index = "pytorch-cpu", marker = "platform_system != 'Darwin'" }
-torchaudio = { index = "pytorch-cpu", marker = "platform_system != 'Darwin'" }
-torchvision = { index = "pytorch-cpu", marker = "platform_system != 'Darwin'" }
-
-[[tool.uv.index]]
-name = "pytorch-cpu"
-url = "https://download.pytorch.org/whl/cpu"
-explicit = true
 
 [tool.isort]
 default_section = "FIRSTPARTY"
