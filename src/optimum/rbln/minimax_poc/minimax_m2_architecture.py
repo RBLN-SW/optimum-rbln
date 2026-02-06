@@ -184,7 +184,7 @@ class MiniMaxM2SparseMoeBlock(nn.Module):
             self.w2,
             self.w2_scale,
             routing_weights,
-            self.group_size,
+            torch.tensor(self.group_size, dtype=torch.int32),
             int(self.top_k),
             self.e_score_correction_bias,
         )

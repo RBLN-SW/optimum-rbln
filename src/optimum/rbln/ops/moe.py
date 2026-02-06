@@ -192,7 +192,7 @@ def custom_moe_swiglu_group_dequantize(
     down_proj_weight: Tensor,
     down_proj_scale: Tensor,
     router_logits: Tensor,
-    group_size: int,
+    group_size: Tensor,
     topk: int,
     e_score_correction_bias: Optional[Tensor] = None,
     gate_proj_bias: Optional[Tensor] = None,
