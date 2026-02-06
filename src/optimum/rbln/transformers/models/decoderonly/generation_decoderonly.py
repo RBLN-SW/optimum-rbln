@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, Any, Dict, Optional, Union
 
 import torch
 from transformers import GenerationConfig
-from transformers.generation.utils import GenerationMixin
+from transformers.generation.utils import GenerateDecoderOnlyOutput, GenerationMixin
 from transformers.modeling_outputs import ModelOutput
 
 
@@ -27,9 +27,35 @@ if TYPE_CHECKING:
 class RBLNDecoderOnlyGenerationMixin(GenerationMixin):
     _supports_cache_class = False  # Needed for GenerationMixin
     _is_stateful = False  # Needed for GenerationMixin
+    _REORDER_FIELDS = ("sequences", "scores", "logits", "attentions", "hidden_states")
 
     def _reorder_cache(self, past_key_values, beam_idx):
         raise NotImplementedError
+
+    def _reorder_generation_outputs(self, outputs):
+        if getattr(self, "_rbln_unsort_idx", None) is None:
+            return outputs
+
+        def _reorder(value):
+            if value is None:
+                return None
+            if isinstance(value, (tuple, list)):
+                reordered = [_reorder(item) for item in value]
+                return tuple(reordered) if isinstance(value, tuple) else reordered
+            return value.index_select(0, self._rbln_unsort_idx)
+
+        for field_name in self._REORDER_FIELDS:
+            setattr(outputs, field_name, _reorder(getattr(outputs, field_name, None)))
+
+        return outputs
+
+    def _sample(self, *args, **kwargs):
+        outputs = super()._sample(*args, **kwargs)
+        if isinstance(outputs, GenerateDecoderOnlyOutput):
+            return self._reorder_generation_outputs(outputs)
+        if getattr(self, "_rbln_unsort_idx", None) is None:
+            return outputs
+        return outputs.index_select(0, self._rbln_unsort_idx)
 
     def prepare_inputs_for_generation(
         self,
@@ -44,7 +70,24 @@ class RBLNDecoderOnlyGenerationMixin(GenerationMixin):
         is_prefill_phase = generate_idx is None
 
         if is_prefill_phase:
-            generate_idx = attention_mask.sum(dim=-1, keepdim=True).int()
+            if attention_mask is not None:
+                seq_lengths = attention_mask.sum(dim=-1, keepdim=True).int()
+            else:
+                base = input_ids if input_ids is not None else inputs_embeds
+                seq_lengths = torch.full(
+                    (base.shape[0], 1), base.shape[1], dtype=torch.int32, device=base.device
+                )
+
+            self._rbln_sorting_idx = torch.argsort(seq_lengths.squeeze(-1), descending=True)
+            self._rbln_unsort_idx = torch.argsort(self._rbln_sorting_idx)
+
+            def _maybe_sort(tensor):
+                return tensor.index_select(0, self._rbln_sorting_idx) if tensor is not None else None
+
+            input_ids = _maybe_sort(input_ids)
+            attention_mask = _maybe_sort(attention_mask)
+            inputs_embeds = _maybe_sort(inputs_embeds)
+            generate_idx = _maybe_sort(seq_lengths)
             padded_cache_lengths = torch.zeros_like(generate_idx)
             cache_position = None
             position_ids = None

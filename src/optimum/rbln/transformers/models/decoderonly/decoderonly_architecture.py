@@ -473,7 +473,12 @@ class DecoderOnlyModel(nn.Module):
             cos, sin = None, None
 
         # Get sequence positions for flash attention
-        if self.attn_impl == "flash_attn":
+        batch_size = inputs_embeds.shape[0]
+        is_batch_decode = self.phase == "decode" and batch_size > 1
+
+        if self.attn_impl == "flash_attn" and not is_batch_decode:
+            # Only convert for flash attention in single-batch or prefill mode
+            # For batch decode, pass raw cache_position and let the compiler handle partition logic
             seq_positions = cache_position[:, 0]
             seq_positions = self.convert_sequence_positions_for_flash_attn(
                 seq_positions=seq_positions, max_seq_len=self.max_seq_len
@@ -487,16 +492,30 @@ class DecoderOnlyModel(nn.Module):
             sliding_cache_pos = (cache_seq_len, cache_offset)
 
         all_hidden_states = () if output_hidden_states else None
+
         for layer_idx, layer in enumerate(self.layers):
             if output_hidden_states:
                 all_hidden_states += (hidden_states,)
 
             is_sliding = True if layer_idx in self.sliding_window_layers else False
             is_sliding_decode = is_sliding and self.phase == "decode"
+
+            if is_sliding_decode:
+                attn_mask = swa_attn_mask
+                layer_seq_idx = sliding_cache_pos
+            elif is_sliding:
+                attn_mask = attention_mask
+                layer_seq_idx = sliding_cache_pos
+            else:
+                # For both single-batch and multi-batch decode, pass raw seq_positions
+                # The compiler will compute batch decode params internally for batch_size > 1
+                attn_mask = attention_mask
+                layer_seq_idx = seq_positions
+
             hidden_states = layer(
                 hidden_states=hidden_states,
-                attention_mask=swa_attn_mask if is_sliding_decode else attention_mask,
-                seq_positions=sliding_cache_pos if is_sliding else seq_positions,
+                attention_mask=attn_mask,
+                seq_positions=layer_seq_idx,
                 past_key_values=past_key_values,
                 cos=cos,
                 sin=sin,
@@ -1128,7 +1147,6 @@ class FlashAttentionOp(AttentionOp):
         attn_output = attn_output.view(batch_size, self.num_heads, -1, self.head_dim)
         attn_output = attn_output.transpose(1, 2).contiguous()
         attn_output = attn_output.reshape(batch_size, -1, self.num_heads * self.head_dim)
-
         return attn_output
 
 
