@@ -146,7 +146,7 @@ class MiniMaxM2SparseMoeBlock(nn.Module):
         self.gate = moe_block.gate
         self.experts = moe_block.experts
         self.num_experts = len(self.experts)
-        self.e_score_correction_bias = moe_block.e_score_correction_bias
+        self.register_buffer("e_score_correction_bias", moe_block.e_score_correction_bias)
 
         # Stack expert weights for the fused MoE op.
         # MiniMax expert MLP uses SwiGLU-style: silu(w1(x)) * w3(x) -> w2(...)
