@@ -31,7 +31,7 @@ from .configuration_qwen3_vl import RBLNQwen3VLVisionModelConfig
 
 
 if TYPE_CHECKING:
-    pass
+    from .configuration_qwen3_vl import RBLNQwen3VLForConditionalGenerationConfig
 
 
 class Qwen3VLVisionModelWrapper(nn.Module):
@@ -288,14 +288,25 @@ class Qwen3VLDecoderOnlyModel(DecoderOnlyModel):
 
 
 class Qwen3VL_LanguageModelWrapper(DecoderOnlyWrapper):
-    def __init__(self, model: PreTrainedModel, rbln_config, use_rotary_emb: bool):
+    """
+    Wrapper for Qwen3VL language model that adapts it for RBLN compilation.
+
+    This wrapper handles the special configuration structure of Qwen3VL where
+    `model.config` is `Qwen3VLConfig` (containing both vision and text configs),
+    but the parent `DecoderOnlyWrapper` expects a text-only config with attributes
+    like `num_hidden_layers`. The config swap during `__init__` ensures compatibility.
+    """
+
+    def __init__(
+        self, model: PreTrainedModel, rbln_config: "RBLNQwen3VLForConditionalGenerationConfig", use_rotary_emb: bool
+    ):
         vision_config = model.config.vision_config if hasattr(model.config, "vision_config") else None
         if vision_config is not None:
             self.num_deepstack_layers = len(vision_config.deepstack_visual_indexes)
         else:
             self.num_deepstack_layers = 3
 
-        # FIXME: temporal patch
+        # FIXME: change configuration to text_config for parent class initialization.
         original_config = model.config
         model.config = model.config.text_config
         super().__init__(model, rbln_config, use_rotary_emb)

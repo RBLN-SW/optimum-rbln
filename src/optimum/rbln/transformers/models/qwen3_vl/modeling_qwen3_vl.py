@@ -659,7 +659,7 @@ class RBLNQwen3VLModel(RBLNDecoderOnlyModel):
                 position_embed=position_embed[:, b_idx : b_idx + 1],
                 block_tables=self.block_tables,
                 visual_pos_mask=visual_pos_mask[b_idx : b_idx + 1] if visual_pos_mask is not None else None,
-                deepstack_visual_embeds=deepstack_visual_embeds,
+                deepstack_embeds=deepstack_visual_embeds,
             )
             logits.append(output.logits)
             if self.rbln_config.output_hidden_states:
