@@ -13,7 +13,7 @@
 # limitations under the License.
 
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional, Union
+from typing import TYPE_CHECKING, Optional, Tuple, Union
 
 import torch
 from diffusers.models.transformers.prior_transformer import PriorTransformer, PriorTransformerOutput
@@ -77,7 +77,7 @@ class RBLNPriorTransformer(RBLNModel):
         self.clip_std = artifacts["clip_std"]
 
     @classmethod
-    def wrap_model_if_needed(cls, model: torch.nn.Module, rbln_config: RBLNModelConfig) -> torch.nn.Module:
+    def _wrap_model_if_needed(cls, model: torch.nn.Module, rbln_config: RBLNModelConfig) -> torch.nn.Module:
         return _PriorTransformer(model).eval()
 
     @classmethod
@@ -128,13 +128,27 @@ class RBLNPriorTransformer(RBLNModel):
 
     def forward(
         self,
-        hidden_states,
+        hidden_states: torch.Tensor,
         timestep: Union[torch.Tensor, float, int],
         proj_embedding: torch.Tensor,
         encoder_hidden_states: Optional[torch.Tensor] = None,
         attention_mask: Optional[torch.Tensor] = None,
         return_dict: bool = True,
-    ):
+    ) -> Union[PriorTransformerOutput, Tuple]:
+        """
+        Forward pass for the RBLN-optimized PriorTransformer.
+
+        Args:
+            hidden_states (torch.Tensor): The currently predicted image embeddings.
+            timestep (Union[torch.Tensor, float, int]): Current denoising step.
+            proj_embedding (torch.Tensor): Projected embedding vector the denoising process is conditioned on.
+            encoder_hidden_states (Optional[torch.Tensor]): Hidden states of the text embeddings the denoising process is conditioned on.
+            attention_mask (Optional[torch.Tensor]): Text mask for the text embeddings.
+            return_dict (bool): Whether or not to return a [`~diffusers.models.transformers.prior_transformer.PriorTransformerOutput`] instead of a plain tuple.
+
+        Returns:
+            (Union[`~diffusers.models.transformers.prior_transformer.PriorTransformerOutput`, Tuple])
+        """
         # Convert timestep(long) and attention_mask(bool) to float
         return super().forward(
             hidden_states,

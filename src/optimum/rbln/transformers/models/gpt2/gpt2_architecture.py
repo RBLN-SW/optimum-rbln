@@ -20,8 +20,6 @@ import torch.nn as nn
 
 from ..decoderonly.decoderonly_architecture import (
     DecoderOnlyAttention,
-    DecoderOnlyLayer,
-    DecoderOnlyModel,
     DecoderOnlyWrapper,
 )
 
@@ -34,12 +32,6 @@ class GPT2Wrapper(DecoderOnlyWrapper):
     def get_rbln_attn_class(self):
         return GPT2Attention
 
-    def get_rbln_layer_class(self):
-        return GPT2Layer
-
-    def get_rbln_model_class(self):
-        return GPT2Model
-
     def get_attn_layer(self, layer: nn.Module):
         return layer.attn
 
@@ -50,30 +42,12 @@ class GPT2Wrapper(DecoderOnlyWrapper):
         return model.transformer.h if self.is_causal_lm else model.h
 
 
-class GPT2Model(DecoderOnlyModel):
-    def get_last_layernorm(self) -> nn.LayerNorm:
-        return self._original_mod.ln_f
-
-    def get_embedding(self) -> nn.Embedding:
-        return self._original_mod.wte
-
-    def get_pos_embedding(self) -> nn.Embedding:
-        return self._original_mod.wpe
-
-
-class GPT2Layer(DecoderOnlyLayer):
-    def get_pre_attention_layernorm(self) -> nn.LayerNorm:
-        return self._original_mod.ln_1
-
-    def get_post_attention_layernorm(self) -> nn.LayerNorm:
-        return self._original_mod.ln_2
-
-
 class GPT2Attention(DecoderOnlyAttention):
-    def __post_init__(self):
-        self.c_attn = self._original_mod.c_attn
-        self.o_proj = self._original_mod.c_proj
-        self.split_size = self._original_mod.split_size
+    def __post_init__(self, self_attn):
+        self.c_attn = self_attn.c_attn
+        self.o_proj = self_attn.c_proj
+        self.split_size = self_attn.split_size
+        self.num_key_value_heads = self_attn.num_heads
 
     def projection(self, hidden_states, lora_int_id) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         if lora_int_id is not None:
@@ -82,12 +56,12 @@ class GPT2Attention(DecoderOnlyAttention):
         query_states, key_states, value_states = self.c_attn(hidden_states).split(self.split_size, dim=2)
         return query_states, key_states, value_states
 
-    def get_attn_scale(self):
+    def get_attn_scale(self, self_attn):
         scale = 1.0
-        if self._original_mod.scale_attn_weights:
+        if self_attn.scale_attn_weights:
             scale /= math.sqrt(self.head_dim)
 
-        if self._original_mod.scale_attn_by_inverse_layer_idx:
+        if self_attn.scale_attn_by_inverse_layer_idx:
             scale /= 1 + self.layer_idx
 
         return scale

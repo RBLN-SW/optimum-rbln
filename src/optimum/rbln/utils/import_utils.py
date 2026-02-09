@@ -136,13 +136,32 @@ def is_rbln_available() -> bool:
 
 def check_version_compats() -> None:
     warnings.filterwarnings(action="always", category=ImportWarning, module="optimum.rbln")
-    my_version = importlib.metadata.version("optimum-rbln")
+    try:
+        my_version = importlib.metadata.version("optimum-rbln")
+    except importlib.metadata.PackageNotFoundError:
+        # Common dev case: running from source (e.g. PYTHONPATH=src) without installing the package.
+        # package metadata doesn't exist, so fall back to the in-repo version file.
+        try:
+            from optimum.rbln.__version__ import __version__ as my_version  # type: ignore
+        except Exception:
+            warnings.warn(
+                "Could not determine optimum-rbln version (package metadata missing). "
+                "If you are running from source, consider `pip install -e .` to install metadata.",
+                ImportWarning,
+                stacklevel=2,
+            )
+            return
+
     target_version = list(filter(lambda v: Version(my_version) >= Version(v), RBLN_VERSION_COMPATS.keys()))[0]
     for compat in RBLN_VERSION_COMPATS[target_version]:
         try:
             dep_version = importlib.metadata.version(compat.package_name)
         except importlib.metadata.PackageNotFoundError:
-            warnings.warn(f"optimum-rbln requires {compat.package_name} to be installed.", ImportWarning)
+            warnings.warn(
+                f"optimum-rbln requires {compat.package_name} to be installed.",
+                ImportWarning,
+                stacklevel=2,
+            )
             continue
         # For versions 0.7.2 and above, don't show warning for rebel-compiler if base versions match
 
@@ -160,6 +179,7 @@ def check_version_compats() -> None:
                     f"For optimal performance and compatibility, please ensure both packages share the same major and minor version numbers. "
                     "Please refer to our SDK release notes at https://docs.rbln.ai/about_atom/release_note.html",
                     ImportWarning,
+                    stacklevel=2,
                 )
         else:
             if not Version(compat.min_version) <= Version(dep_version) < Version(compat.max_version):
@@ -167,4 +187,5 @@ def check_version_compats() -> None:
                     f"optimum-rbln v{my_version} is compatible to {compat.package_name} v{compat.min_version} to v{compat.max_version}. (you are currently using v{dep_version})\n"
                     "Please refer to our SDK release notes at https://docs.rbln.ai/about_atom/release_note.html",
                     ImportWarning,
+                    stacklevel=2,
                 )

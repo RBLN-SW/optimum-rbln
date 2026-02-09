@@ -14,7 +14,7 @@
 
 import inspect
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Any, Callable, List, Optional, Tuple, Union
 
 import torch
 from transformers import (
@@ -71,7 +71,7 @@ class RBLNBlip2VisionModel(RBLNModel):
         return self.embeddings
 
     @classmethod
-    def wrap_model_if_needed(cls, model: torch.nn.Module, rbln_config: RBLNModelConfig) -> torch.nn.Module:
+    def _wrap_model_if_needed(cls, model: torch.nn.Module, rbln_config: RBLNModelConfig) -> torch.nn.Module:
         class Blip2VisionModelWrapper(torch.nn.Module):
             def __init__(self, model: "Blip2VisionModel") -> None:
                 super().__init__()
@@ -111,11 +111,20 @@ class RBLNBlip2VisionModel(RBLNModel):
     def forward(
         self,
         pixel_values: torch.FloatTensor,
-        output_attentions: Optional[bool] = None,
-        output_hidden_states: Optional[bool] = None,
-        return_dict: Optional[bool] = None,
         interpolate_pos_encoding: bool = False,
+        return_dict: Optional[bool] = None,
     ) -> Union[Tuple, BaseModelOutputWithPooling]:
+        """
+        Forward pass for the RBLN-optimized Blip2VisionModel model.
+
+        Args:
+            pixel_values (torch.FloatTensor of shape (batch_size, num_channels, height, width)): The tensors corresponding to the input images.
+            interpolate_pos_encoding (bool, optional): Whether to interpolate the positional encoding of the image embeddings. Defaults to False.
+            return_dict (bool, optional): Whether to return a ModelOutput instead of a plain tuple.
+
+        Returns:
+            BaseModelOutputWithPooling or tuple(torch.FloatTensor): The model outputs. If return_dict=False is passed, returns a tuple of tensors. Otherwise, returns a BaseModelOutputWithPooling object.
+        """
         batch_size = pixel_values.shape[0]
         outputs = []
         for i in range(batch_size):
@@ -151,7 +160,7 @@ class RBLNBlip2QFormerModel(RBLNModel):
         return self.embeddings.word_embeddings
 
     @classmethod
-    def wrap_model_if_needed(cls, model: torch.nn.Module, rbln_config: RBLNModelConfig) -> torch.nn.Module:
+    def _wrap_model_if_needed(cls, model: torch.nn.Module, rbln_config: RBLNModelConfig) -> torch.nn.Module:
         class Blip2QFormerModelWrapper(torch.nn.Module):
             def __init__(self, model: "Blip2QFormerModel"):
                 super().__init__()
@@ -231,17 +240,22 @@ class RBLNBlip2QFormerModel(RBLNModel):
     def forward(
         self,
         query_embeds: torch.FloatTensor,
-        query_length: Optional[int] = None,
-        attention_mask: Optional[torch.FloatTensor] = None,
-        head_mask: Optional[torch.FloatTensor] = None,
         encoder_hidden_states: Optional[torch.FloatTensor] = None,
         encoder_attention_mask: Optional[torch.FloatTensor] = None,
-        past_key_values: Optional[Tuple[Tuple[torch.FloatTensor]]] = None,
-        use_cache: Optional[bool] = None,
-        output_attentions: Optional[bool] = None,
-        output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
     ) -> Union[Tuple[torch.Tensor], BaseModelOutputWithPoolingAndCrossAttentions]:
+        """
+        The forward pass for the RBLN-optimized Blip2QFormerModel model.
+
+        Args:
+            query_embeds (torch.FloatTensor): Hidden states to be used in the attention computation.
+            encoder_hidden_states (torch.FloatTensor, optional): Sequence of hidden-states at the output of the last layer of the encoder. Used in the cross-attention if the model is configured as a decoder.
+            encoder_attention_mask (torch.FloatTensor, optional): Mask to avoid performing attention on the padding token indices of the encoder input. This mask is used in the cross-attention if the model is configured as a decoder.
+            return_dict (bool, optional): Whether to return a ModelOutput instead of a plain tuple.
+
+        Returns:
+            BaseModelOutputWithPoolingAndCrossAttentions or tuple(torch.FloatTensor): The model outputs. If `return_dict=False` is passed, returns a tuple of tensors. Otherwise, returns a `BaseModelOutputWithPoolingAndCrossAttentions` object.
+        """
         batch_size = query_embeds.shape[0]
         outputs = []
         for i in range(batch_size):
@@ -349,7 +363,7 @@ class RBLNBlip2ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMixi
         return self.language_model.get_input_embeddings()
 
     @classmethod
-    def wrap_model_if_needed(cls, model, rbln_config):
+    def _wrap_model_if_needed(cls, model, rbln_config):
         return model.language_projection
 
     @classmethod
@@ -444,7 +458,20 @@ class RBLNBlip2ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMixi
         inputs_embeds: Optional[torch.FloatTensor] = None,
         interpolate_pos_encoding: bool = False,
         **generate_kwargs,
-    ) -> torch.LongTensor:
+    ) -> List[torch.LongTensor]:
+        """
+        The generate function is utilized in its standard form as in the HuggingFace transformers library. User can use this function to generate text from the model.
+        Check the [HuggingFace transformers documentation](https://huggingface.co/docs/transformers/v4.57.1/en/model_doc/blip-2#transformers.Blip2ForConditionalGeneration.generate) for more details.
+
+        Args:
+            pixel_values (torch.FloatTensor): Input images to be processed.
+            input_ids (torch.LongTensor, optional): The sequence used as a prompt for the generation.
+            attention_mask (torch.LongTensor, optional): Mask to avoid performing attention on padding token indices
+            inputs_embeds (torch.FloatTensor, optional): Embedded representation of the inputs. Should be float, not int tokens.
+            interpolate_pos_encoding (bool, optional, defaults to False): Whether to interpolate the positional encoding of the image embeddings.
+        Returns:
+            A list of strings of length batch_size * num_captions.
+        """
         batch_size = pixel_values.shape[0]
         image_embeds = self.vision_model(
             pixel_values,

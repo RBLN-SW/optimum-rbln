@@ -81,7 +81,7 @@ def is_compiled_dir(dir: str) -> bool:
     if not os.path.exists(dir):
         return False
 
-    for root, dirs, files in os.walk(dir):
+    for _, _, files in os.walk(dir):
         for file in files:
             if file.endswith(".rbln"):
                 return True
@@ -203,7 +203,7 @@ class RBLNRetinaFaceFilter(RetinaFaceFilter):
                 f"If you only need to compile the model without loading it to NPU, you can use:\n"
                 f"  from_pretrained(..., rbln_create_runtimes=False) or\n"
                 f"  from_pretrained(..., rbln_config={{..., 'create_runtimes': False}})\n\n"
-                f"To check your NPU status, run the 'rbln-stat' command in your terminal.\n"
+                f"To check your NPU status, run the 'rbln-smi' command in your terminal.\n"
                 f"Make sure your NPU is properly installed and operational."
             )
             raise rebel.core.exception.RBLNRuntimeError(error_msg) from e
@@ -278,7 +278,7 @@ class RBLNVideoSafetyModel(VideoSafetyModel):
                 f"If you only need to compile the model without loading it to NPU, you can use:\n"
                 f"  from_pretrained(..., rbln_create_runtimes=False) or\n"
                 f"  from_pretrained(..., rbln_config={{..., 'create_runtimes': False}})\n\n"
-                f"To check your NPU status, run the 'rbln-stat' command in your terminal.\n"
+                f"To check your NPU status, run the 'rbln-smi' command in your terminal.\n"
                 f"Make sure your NPU is properly installed and operational."
             )
             raise rebel.core.exception.RBLNRuntimeError(error_msg) from e

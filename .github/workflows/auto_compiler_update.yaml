@@ -1,0 +1,12 @@
+name: Auto Compiler Update
+
+on:
+  schedule:
+    # Run every day at 19:00 UTC (4:00am KST)
+    - cron: '0 19 * * *'
+  workflow_dispatch:
+
+jobs:
+  dispatch:
+    uses: rbln-sw/optimum-rbln/.github/workflows/auto_compiler_update_impl.yaml@dev
+    secrets: inherit

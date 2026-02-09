@@ -20,6 +20,42 @@ import rebel
 import torch
 
 
+def is_compiler_supports_buffer_resize() -> bool:
+    return hasattr(rebel.RBLNCompiledModel, "exp_multiply_buffer_size")
+
+
+def get_available_dram(npu: Optional[str] = None) -> int:
+    """
+    Get the available DRAM size of the specified NPU.
+
+    Args:
+        npu : Optional[str], default=None
+            The NPU to get the available DRAM size.
+            If None, the function will attempt to retrieve through `ensure_valid_npu()`
+
+    Returns:
+        int
+            The available DRAM size in bytes.
+    """
+    if npu is None:
+        if not rebel.npu_is_available(0):
+            raise RuntimeError("No NPU is available to get available DRAM size.")
+
+        npu = rebel.get_npu_name(0)
+
+    if npu.startswith("RBLN-CR"):
+        # TODO(jongho): Assuming 4 chiplets.
+        DRAM_NBYTES = 144 * 2**30
+        SYS_DRAM_NBYTES = 4 * 2**30
+    elif npu.startswith("RBLN-CA"):
+        DRAM_NBYTES = 16 * 2**30
+        SYS_DRAM_NBYTES = 288 * 2**20
+    else:
+        raise ValueError(f"Unknown npu name: {npu}")
+
+    return DRAM_NBYTES - SYS_DRAM_NBYTES
+
+
 def normalize_npu(npu: str) -> str:
     """Normalize the NPU string by removing the form factor."""
     match = re.match(r"(RBLN-CA|RBLN-CR)(\d+)", npu)
@@ -43,12 +79,6 @@ def tp_and_devices_are_ok(
     if tensor_parallel_size is None:
         tensor_parallel_size = 1
 
-    if rebel.device_count() < tensor_parallel_size:
-        return (
-            f"Tensor parallel size {tensor_parallel_size} is greater than "
-            f"the number of available devices {rebel.device_count()}."
-        )
-
     if device is None:
         device = list(range(tensor_parallel_size))
     elif isinstance(device, int):
@@ -68,8 +98,14 @@ def tp_and_devices_are_ok(
             return None
         if rebel.get_npu_name(device_id) is None:
             return (
-                f"Device {device_id} is not a valid NPU device. Please check your NPU status with 'rbln-stat' command."
+                f"Device {device_id} is not a valid NPU device. Please check your NPU status with 'rbln-smi' command."
             )
+
+    if rebel.device_count() < tensor_parallel_size:
+        return (
+            f"Tensor parallel size {tensor_parallel_size} is greater than "
+            f"the number of available devices {rebel.device_count()}."
+        )
 
     if npu is not None:
         for device_id in device:
@@ -149,7 +185,7 @@ class UnavailableRuntime:
             "This model was loaded with create_runtimes=False. To use this model for inference:\n"
             "1. Load the model with runtime creation enabled:\n"
             "   model = RBLNModel.from_pretrained(..., rbln_create_runtimes=True)\n"
-            "2. Ensure your NPU hardware is properly configured (check with 'rbln-stat' command)\n"
+            "2. Ensure your NPU hardware is properly configured (check with 'rbln-smi' command)\n"
             "3. If you're on a machine without NPU hardware, you need to transfer the model files\n"
             "   to a compatible system with NPU support."
         )

@@ -7,29 +7,19 @@ on:
         required: true
         type: string
 
-env:
-  PYTHON_VERSION: "3.10"
-
 jobs:
   deploy:
-    runs-on: rebel-k8s-runner
+    runs-on: rbln-sw-k8s-4c-32gb
+    container:
+      image: ${{ vars.DEV_CONTAINER_IMAGE }}
     steps:
       - name: Checkout the repository
         uses: actions/checkout@v4
         with:
-          repository: rebellions-sw/optimum-rbln
+          repository: rbln-sw/optimum-rbln
           fetch-depth: 0
           ref: ${{ inputs.version }}
           token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Setup uv
-        uses: astral-sh/setup-uv@v3
-        with:
-          enable-cache: true
-          cache-dependency-glob: "uv.lock"
-
-      - name: Setup Python${{ env.PYTHON_VERSION }}
-        run: uv python install ${{ env.PYTHON_VERSION }}
 
       - name: Install dependencies
         run: uv sync --frozen --only-group deploy
@@ -44,5 +34,5 @@ jobs:
             twine upload \
             --verbose \
             -u __token__ \
-            -p ${{ secrets.PYPI_ORG_PASSWORD }} \
+            -p ${{ secrets.PKG_ORG_GATE }} \
             dist/*

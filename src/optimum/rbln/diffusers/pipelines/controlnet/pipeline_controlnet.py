@@ -26,7 +26,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Callable, Dict, List, Optional, Union
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import torch
 import torch.nn.functional as F
@@ -151,7 +151,9 @@ class RBLNStableDiffusionControlNetPipeline(RBLNDiffusionMixin, StableDiffusionC
             for image_ in image:
                 self.check_image(image_, prompt, prompt_embeds)
         else:
-            assert False
+            raise TypeError(
+                "Unsupported controlnet type. Expected `RBLNControlNetModel` or `RBLNMultiControlNetModel`."
+            )
 
         # Check `controlnet_conditioning_scale`
         if (
@@ -180,7 +182,9 @@ class RBLNStableDiffusionControlNetPipeline(RBLNDiffusionMixin, StableDiffusionC
                     " the same length as the number of controlnets"
                 )
         else:
-            assert False
+            raise TypeError(
+                "Unsupported controlnet type. Expected `RBLNControlNetModel` or `RBLNMultiControlNetModel`."
+            )
 
         if not isinstance(control_guidance_start, (tuple, list)):
             control_guidance_start = [control_guidance_start]
@@ -254,9 +258,9 @@ class RBLNStableDiffusionControlNetPipeline(RBLNDiffusionMixin, StableDiffusionC
         control_guidance_end: Union[float, List[float]] = 1.0,
         clip_skip: Optional[int] = None,
         callback_on_step_end: Optional[Callable[[int, int, Dict], None]] = None,
-        callback_on_step_end_tensor_inputs: List[str] = ["latents"],
+        callback_on_step_end_tensor_inputs: Optional[List[str]] = None,
         **kwargs,
-    ):
+    ) -> Union[StableDiffusionPipelineOutput, Tuple]:
         r"""
         The call function to the pipeline for generation.
 
@@ -317,14 +321,7 @@ class RBLNStableDiffusionControlNetPipeline(RBLNDiffusionMixin, StableDiffusionC
             output_type (`str`, *optional*, defaults to `"pil"`):
                 The output format of the generated image. Choose between `PIL.Image` or `np.array`.
             return_dict (`bool`, *optional*, defaults to `True`):
-                Whether or not to return a [`~pipelines.stable_diffusion.StableDiffusionPipelineOutput`] instead of a
-                plain tuple.
-            callback (`Callable`, *optional*):
-                A function that calls every `callback_steps` steps during inference. The function is called with the
-                following arguments: `callback(step: int, timestep: int, latents: torch.FloatTensor)`.
-            callback_steps (`int`, *optional*, defaults to 1):
-                The frequency at which the `callback` function is called. If not specified, the callback is called at
-                every step.
+                Whether or not to return a [`~pipelines.stable_diffusion.StableDiffusionPipelineOutput`] instead of a plain tuple.
             cross_attention_kwargs (`dict`, *optional*):
                 A kwargs dictionary that if specified is passed along to the [`AttentionProcessor`] as defined in
                 [`self.processor`](https://github.com/huggingface/diffusers/blob/main/src/diffusers/models/attention_processor.py).
@@ -351,8 +348,6 @@ class RBLNStableDiffusionControlNetPipeline(RBLNDiffusionMixin, StableDiffusionC
                 The list of tensor inputs for the `callback_on_step_end` function. The tensors specified in the list
                 will be passed as `callback_kwargs` argument. You will only be able to include variables listed in the
                 `._callback_tensor_inputs` attribute of your pipeine class.
-
-        Examples:
 
         Returns:
             [`~pipelines.stable_diffusion.StableDiffusionPipelineOutput`] or `tuple`:
@@ -393,6 +388,9 @@ class RBLNStableDiffusionControlNetPipeline(RBLNDiffusionMixin, StableDiffusionC
             )
 
         # 1. Check inputs. Raise error if not correct
+        if callback_on_step_end_tensor_inputs is None:
+            callback_on_step_end_tensor_inputs = ["latents"]
+
         self.check_inputs(
             prompt,
             image,
@@ -503,7 +501,9 @@ class RBLNStableDiffusionControlNetPipeline(RBLNDiffusionMixin, StableDiffusionC
             image = images
             height, width = image[0].shape[-2:]
         else:
-            assert False
+            raise TypeError(
+                "Unsupported controlnet type. Expected `RBLNControlNetModel` or `RBLNMultiControlNetModel`."
+            )
 
         # 5. Prepare timesteps
         timesteps, num_inference_steps = retrieve_timesteps(self.scheduler, num_inference_steps, device, timesteps)

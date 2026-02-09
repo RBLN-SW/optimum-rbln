@@ -203,7 +203,7 @@ class RBLNWhisperForConditionalGeneration(RBLNModel, RBLNWhisperGenerationMixin)
         raise NotImplementedError
 
     @classmethod
-    def wrap_model_if_needed(self, model: "PreTrainedModel", rbln_config: RBLNWhisperForConditionalGenerationConfig):
+    def _wrap_model_if_needed(self, model: "PreTrainedModel", rbln_config: RBLNWhisperForConditionalGenerationConfig):
         return WhisperWrapper(
             model,
             use_attention_mask=rbln_config.use_attention_mask,
@@ -213,7 +213,7 @@ class RBLNWhisperForConditionalGeneration(RBLNModel, RBLNWhisperGenerationMixin)
     @classmethod
     @torch.inference_mode()
     def get_compiled_model(cls, model, rbln_config: RBLNWhisperForConditionalGenerationConfig):
-        wrapped_model = cls.wrap_model_if_needed(model, rbln_config)
+        wrapped_model = cls._wrap_model_if_needed(model, rbln_config)
 
         enc_compile_config = rbln_config.compile_cfgs[0]
         dec_compile_config = rbln_config.compile_cfgs[1]

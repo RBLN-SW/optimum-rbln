@@ -13,6 +13,8 @@
 # limitations under the License.
 
 
+from typing import Any, Optional, Tuple, Union
+
 from ...configuration_generic import RBLNModelForImageClassificationConfig
 
 
@@ -23,3 +25,24 @@ class RBLNResNetForImageClassificationConfig(RBLNModelForImageClassificationConf
     This configuration class stores the configuration parameters specific to
     RBLN-optimized ResNet models for image classification tasks.
     """
+
+    def __init__(
+        self,
+        image_size: Optional[Union[int, Tuple[int, int]]] = None,
+        batch_size: Optional[int] = None,
+        output_hidden_states: Optional[bool] = None,
+        **kwargs: Any,
+    ):
+        """
+        Args:
+            image_size (Optional[Union[int, Tuple[int, int]]]): The size of input images.
+                Can be an integer for square images or a tuple (height, width).
+            batch_size (Optional[int]): The batch size for inference. Defaults to 1.
+            output_hidden_states (bool, optional): Whether or not to return the hidden states of all layers.
+            kwargs: Additional arguments passed to the parent RBLNModelConfig.
+
+        Raises:
+            ValueError: If batch_size is not a positive integer.
+        """
+        super().__init__(image_size=image_size, batch_size=batch_size, **kwargs)
+        self.output_hidden_states = output_hidden_states

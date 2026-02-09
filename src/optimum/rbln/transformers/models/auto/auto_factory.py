@@ -150,6 +150,7 @@ class _BaseAutoModelClass:
                 f"from the checkpoint, leading to potential unintended behavior. If this is not intentional, consider calling the "
                 f"`from_pretrained()` method directly from the `RBLN{config.architectures[0]}` class instead.",
                 UserWarning,
+                stacklevel=2,
             )
 
         return model_class
@@ -183,8 +184,8 @@ class _BaseAutoModelClass:
         model_id: Union[str, Path],
         export: bool = None,
         rbln_config: Optional[Union[Dict, RBLNModelConfig]] = None,
-        **kwargs,
-    ):
+        **kwargs: Optional[Dict[str, Any]],
+    ) -> RBLNBaseModel:
         """
         Load an RBLN-accelerated model from a pretrained checkpoint or a compiled RBLN artifact.
 
@@ -212,7 +213,7 @@ class _BaseAutoModelClass:
                   `token`, `trust_remote_code`, `cache_dir`, `subfolder`, `local_files_only`).
 
         Returns:
-            An instantiated RBLN model ready for inference on RBLN NPUs.
+            RBLNBaseModel: An instantiated RBLN model ready for inference on RBLN NPUs.
         """
         rbln_cls = cls.get_rbln_cls(model_id, export=export, **kwargs)
         return rbln_cls.from_pretrained(model_id, export=export, rbln_config=rbln_config, **kwargs)

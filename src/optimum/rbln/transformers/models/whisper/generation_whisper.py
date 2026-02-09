@@ -31,29 +31,63 @@ Generation utilities for Whisper.
 Modified from `transformers.models.whisper.generation_whisper.py`
 """
 
+from typing import Any, Dict, Optional, Union
+
 import torch
 import transformers
 from packaging import version
 from transformers import GenerationMixin
+from transformers.generation.configuration_utils import GenerationConfig
+from transformers.modeling_outputs import ModelOutput
 from transformers.models.whisper.generation_whisper import WhisperGenerationMixin
 
 
 class RBLNWhisperGenerationMixin(WhisperGenerationMixin, GenerationMixin):
-    def generate(self, *args, generation_config=None, **kwargs):
-        num_beams = kwargs.get(
-            "num_beams",
-            generation_config.num_beams
-            if hasattr(generation_config, "num_beams") and generation_config.num_beams is not None
-            else 1,
-        )
-        if num_beams > 1:
-            raise ValueError(
-                f"Beam search is not supported in RBLNWhisperGenerationMixin. "
-                f"Received num_beams={num_beams}, but only num_beams=1 is allowed. "
-                f"Please set num_beams=1 for greedy search or adjust your configuration."
-            )
+    def generate(
+        self,
+        input_features: Optional[torch.Tensor] = None,
+        attention_mask: Optional[torch.Tensor] = None,
+        generation_config: Optional[GenerationConfig] = None,
+        return_segments: Optional[bool] = None,
+        return_timestamps: Optional[bool] = None,
+        return_token_timestamps: Optional[bool] = None,
+        **kwargs: Optional[Dict[str, Any]],
+    ) -> Union[ModelOutput, Dict[str, Any], torch.LongTensor]:
+        """
+        The generate function is utilized in its standard form as in the HuggingFace transformers library. User can use this function to generate text from the model.
+        Check the [HuggingFace transformers documentation](https://huggingface.co/docs/transformers/v4.57.1/en/model_doc/whisper#transformers.WhisperForConditionalGeneration.generate) for more details.
 
-        return super().generate(*args, **kwargs)
+        Args:
+            input_features (torch.Tensor, optional): The input features to the model.
+            attention_mask (torch.Tensor, optional): Attention mask needs to be passed when doing long-form transcription using a batch size > 1.
+            generation_config (GenerationConfig, optional): The generation configuration to be used as base parametrization for the generation call. **kwargs passed to generate matching the attributes of generation_config will override them.
+                If generation_config is not provided, the default will be used, which had the following loading priority: 1) from the generation_config.json model file, if it exists; 2) from the model configuration.
+                Please note that unspecified parameters will inherit [GenerationConfig](https://huggingface.co/docs/transformers/v4.57.1/en/main_classes/text_generation#transformers.GenerationConfig)’s default values.
+            return_segments (bool, optional): Whether to return segments.
+            return_timestamps (bool, optional): Whether to return the timestamps with the text. For audios longer than 30 seconds, it is necessary to set return_timestamps=True.
+            return_token_timestamps (bool, optional): Whether to return token timestamps.
+            kwargs (dict[str, Any], optional): Additional arguments passed to the generate function.
+
+        Returns:
+            Transcribes or translates log-mel input features to a sequence of auto-regressively generated token ids.
+        """
+        if kwargs.get("num_beams", None) is not None:
+            if kwargs.get("num_beams") != 1:
+                raise ValueError(
+                    "Beam search is not supported in RBLNWhisperGenerationMixin. "
+                    "Received num_beams={num_beams}, but only num_beams=1 is allowed. "
+                    "Please set num_beams=1 for greedy search or adjust your configuration."
+                )
+
+        return super().generate(
+            input_features,
+            attention_mask=attention_mask,
+            generation_config=generation_config,
+            return_segments=return_segments,
+            return_timestamps=return_timestamps,
+            return_token_timestamps=return_token_timestamps,
+            **kwargs,
+        )
 
     def _postprocess_outputs(
         self,

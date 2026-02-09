@@ -13,11 +13,9 @@
 # limitations under the License.
 import importlib
 import inspect
-from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Any, Callable, Dict, Optional, Tuple, Union
 
-import rebel
 import torch
-from rebel.compile_context import CompileContext
 from transformers import AutoModelForImageTextToText, Gemma3ForConditionalGeneration, PretrainedConfig, PreTrainedModel
 from transformers.modeling_outputs import BaseModelOutputWithPooling
 from transformers.modeling_utils import no_init_weights
@@ -29,10 +27,7 @@ from ...modeling_outputs import RBLNDecoderOnlyOutput
 from ...utils.rbln_runtime_wrapper import LoopProcessor
 from ..decoderonly.decoderonly_runtime_utils import RBLNPageTableManager
 from ..decoderonly.generation_decoderonly import RBLNDecoderOnlyGenerationMixin
-from ..decoderonly.modeling_decoderonly import (
-    RBLNDecoderOnlyModelForCausalLM,
-)
-from .configuration_gemma3 import RBLNGemma3ForCausalLMConfig
+from ..decoderonly.modeling_decoderonly import RBLNDecoderOnlyModelForCausalLM
 from .gemma3_architecture import Gemma3ForCausalLMWrapper
 from .gemma3_runtime_utils import RBLNGemma3RuntimeModel
 
@@ -99,9 +94,7 @@ class RBLNGemma3ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMix
         return True
 
     @classmethod
-    def get_pytorch_model(cls, *args, **kwargs):
-        model = super().get_pytorch_model(*args, **kwargs)
-
+    def _reconstruct_model_if_needed(cls, model: "PreTrainedModel"):
         with no_init_weights():
             model_cls_name = model.model.language_model.__class__.__name__
             causal_model_cls_name = model_cls_name.replace("TextModel", "ForCausalLM")
@@ -135,7 +128,7 @@ class RBLNGemma3ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMix
         return self.language_model.get_input_embeddings()
 
     @classmethod
-    def wrap_model_if_needed(cls, model: "PreTrainedModel", rbln_config: RBLNModelConfig):
+    def _wrap_model_if_needed(cls, model: "PreTrainedModel", rbln_config: RBLNModelConfig):
         return model.multi_modal_projector
 
     @classmethod
@@ -301,28 +294,60 @@ class RBLNGemma3ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMix
         generate_idx: Optional[torch.Tensor] = None,
         padded_cache_lengths: Optional[torch.Tensor] = None,
         position_ids: Optional[torch.Tensor] = None,
+        output_hidden_states: Optional[bool] = None,
         **lm_kwargs: Dict[str, Any],
     ) -> Union[Tuple, RBLNDecoderOnlyOutput]:
+        output_hidden_states = (
+            output_hidden_states
+            if output_hidden_states is not None
+            else self.rbln_config.language_model.output_hidden_states
+        )
+        if output_hidden_states != self.rbln_config.language_model.output_hidden_states:
+            raise ValueError(
+                f"Variable output_hidden_states {output_hidden_states} is not equal to rbln_config.language_model.output_hidden_states {self.rbln_config.language_model.output_hidden_states} "
+                f"Please compile again with the correct argument."
+            )
+
         # prefill
         if cache_position is None:
             logits = []
             inputs_embeds = self._preprocess_prefill(input_ids, inputs_embeds, pixel_values)
             batch_size = inputs_embeds.shape[0]
 
+            all_hidden_states = (
+                tuple(
+                    torch.zeros(
+                        batch_size,
+                        inputs_embeds.shape[1],
+                        self.config.text_config.hidden_size,
+                        dtype=self.rbln_config.dtype,
+                    )
+                    for _ in range(self.config.text_config.num_hidden_layers + 1)
+                )
+                if self.rbln_config.language_model.output_hidden_states
+                else None
+            )
+
             for b_idx in range(batch_size):
                 cache_position = torch.arange(0, generate_idx[b_idx].item(), dtype=torch.int32).unsqueeze(0)
                 token_type_id = token_type_ids[b_idx : b_idx + 1, attention_mask[b_idx].bool()]
                 cache_position = self.get_padded_cache_position(cache_position, token_type_id)
 
-                output = self.language_model.prefill_decoder(
+                outputs = self.language_model.prefill_decoder(
                     inputs_embeds=inputs_embeds[b_idx : b_idx + 1],
                     attention_mask=attention_mask[b_idx],
                     cache_position=cache_position,
                     batch_idx=b_idx,
                     token_type_ids=token_type_ids[b_idx : b_idx + 1],  # do not pass token_type_id
                 )
-                padded_cache_lengths[b_idx] += output.padded_cache_lengths
-                logits.append(output.logits)
+                padded_cache_lengths[b_idx] += outputs.padded_cache_lengths
+                logits.append(outputs.logits)
+                if self.rbln_config.language_model.output_hidden_states:
+                    for l_idx in range(self.config.text_config.num_hidden_layers + 1):
+                        mask_indices = torch.nonzero(attention_mask[b_idx], as_tuple=True)[0]
+                        all_hidden_states[l_idx][b_idx].index_copy_(
+                            dim=0, index=mask_indices, source=outputs.hidden_states[l_idx][0]
+                        )
 
             logits = torch.cat(logits, dim=0)
         # decoder
@@ -336,15 +361,20 @@ class RBLNGemma3ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMix
                     f"Please run your model with one of these batch sizes or add support for batch size {batch_size}."
                 )
 
-            logits = self.language_model.decoders[batch_size](
+            outputs = self.language_model.decoders[batch_size](
                 input_ids=input_ids,
                 inputs_embeds=inputs_embeds,
                 cache_position=cache_position,
                 position_ids=position_ids if self.rbln_config.language_model.use_position_ids else None,
-            ).logits
+            )
+            logits = outputs.logits
+            all_hidden_states = outputs.hidden_states
 
         return RBLNDecoderOnlyOutput(
-            logits=logits, generate_idx=generate_idx, padded_cache_lengths=padded_cache_lengths
+            logits=logits,
+            generate_idx=generate_idx,
+            padded_cache_lengths=padded_cache_lengths,
+            hidden_states=all_hidden_states,
         )
 
 
@@ -406,26 +436,6 @@ class RBLNGemma3ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
         return embed_tokens
 
     @classmethod
-    def _update_sliding_window_config(cls, model_config: PretrainedConfig, rbln_config: RBLNGemma3ForCausalLMConfig):
-        sliding_window = getattr(model_config, "sliding_window", None)
-        sliding_window_pattern = getattr(model_config, "sliding_window_pattern", None)
-        if sliding_window_pattern is None:
-            if hasattr(model_config, "layer_types"):
-                first_full_attention_index = model_config.layer_types.index("full_attention")
-                sliding_window_pattern = first_full_attention_index + 1
-            else:
-                raise ValueError("Cannot determine sliding_window_pattern from model_config")
-
-        if sliding_window_pattern <= model_config.num_hidden_layers:
-            rbln_config.cache_impl = "hybrid"
-            rbln_config.sliding_window = sliding_window
-            rbln_config.sliding_window_layers = [
-                i for i in range(model_config.num_hidden_layers) if (i + 1) % sliding_window_pattern > 0
-            ]
-
-        return rbln_config
-
-    @classmethod
     def _update_submodule_config(
         cls,
         model: "PreTrainedModel",
@@ -440,171 +450,7 @@ class RBLNGemma3ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
                 f"Image prefill chunk size is different from mm_tokens_per_image: {rbln_config.image_prefill_chunk_size} != {model.config.mm_tokens_per_image}"
             )
 
-        return rbln_config
-
-    @classmethod
-    def _update_rbln_config(
-        cls,
-        preprocessors: Optional[Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"]] = None,
-        model: Optional["PreTrainedModel"] = None,
-        model_config: Optional["PretrainedConfig"] = None,
-        rbln_config: Optional[RBLNGemma3ForCausalLMConfig] = None,
-    ) -> RBLNGemma3ForCausalLMConfig:
-        # Update rbln_config with super class
-        rbln_config = super()._update_rbln_config(preprocessors, model, model_config, rbln_config)
-
-        if not (rbln_config.use_attention_mask and rbln_config.use_position_ids):
-            raise ValueError("use_attention_mask and use_position_ids must be True for RBLNGemma3ForCausalLM")
-
-        if rbln_config.use_image_prefill:
-            if rbln_config.prefill_chunk_size != rbln_config.image_prefill_chunk_size:
-                raise NotImplementedError(
-                    "Not implemented for different prefill chunk sizes between text and image prefill."
-                )
-
-            # Update image prefill compile config
-            img_prefill_input_info = cls.get_input_info(
-                batch_size=1,
-                query_length=rbln_config.image_prefill_chunk_size,
-                rbln_config=rbln_config,
-                model_config=model_config,
-            )
-            image_prefill_compile_config = RBLNCompileConfig(
-                compiled_model_name="image_prefill", input_info=img_prefill_input_info
-            )
-            # Insert image_prefill compile config at index 1
-            compile_cfgs = rbln_config.compile_cfgs
-            compile_cfgs.insert(1, image_prefill_compile_config)
-            rbln_config.set_compile_cfgs(compile_cfgs)
+        if "image_prefill" not in rbln_config.phases:
+            rbln_config.phases = ["prefill", "image_prefill", "decode"]
 
         return rbln_config
-
-    @classmethod
-    @torch.inference_mode()
-    def get_compiled_model(cls, model: "PreTrainedModel", rbln_config: RBLNGemma3ForCausalLMConfig):
-        wrapped_model = cls.wrap_model_if_needed(model, rbln_config)
-
-        rbln_compile_configs = rbln_config.compile_cfgs
-        prefill_compile_config = rbln_compile_configs[0]
-
-        context = CompileContext(use_weight_sharing=True)
-
-        # Here we use meta tensor, for the memory efficiency.
-        meta_tensor_names = [name for name, _, _ in prefill_compile_config.input_info if "past_key_values" in name]
-        prefill_example_inputs = prefill_compile_config.get_dummy_inputs(fill=0, meta_tensor_names=meta_tensor_names)
-
-        # Mark static tensors (self kv states)
-        static_tensors = {}
-        for (name, _, _), tensor in zip(prefill_compile_config.input_info, prefill_example_inputs):
-            if "past_key_values" in name:
-                static_tensors[name] = tensor
-                context.mark_static_address(tensor)
-
-        def compile_model(wrapped_model, compile_config, example_inputs, compile_context, quantization):
-            try:
-                if quantization:
-                    quantization.maybe_set_quantization_env()
-                compiled_model = cls.compile(
-                    wrapped_model,
-                    compile_config,
-                    create_runtimes=rbln_config.create_runtimes,
-                    device=rbln_config.device,
-                    example_inputs=example_inputs,
-                    compile_context=compile_context,
-                )
-                return compiled_model
-            finally:
-                if quantization:
-                    quantization.maybe_reset_quantization_env()
-
-        wrapped_model.phase = "prefill"
-        compiled_prefill = compile_model(
-            wrapped_model,
-            prefill_compile_config,
-            prefill_example_inputs,
-            context,
-            rbln_config.quantization,
-        )
-        compiled_models = {"prefill": compiled_prefill}
-
-        if rbln_config.use_image_prefill:
-            image_prefill_compile_config = rbln_compile_configs[1]
-            image_prefill_example_inputs = image_prefill_compile_config.get_dummy_inputs(
-                fill=0, static_tensors=static_tensors
-            )
-            wrapped_model.phase = "image_prefill"
-            compiled_image_prefill = compile_model(
-                wrapped_model,
-                image_prefill_compile_config,
-                image_prefill_example_inputs,
-                context,
-                rbln_config.quantization,
-            )
-            compiled_models["image_prefill"] = compiled_image_prefill
-
-        wrapped_model.phase = "decode"
-        for batch_size, dec_compile_config in zip(
-            rbln_config.decoder_batch_sizes, rbln_compile_configs[rbln_config.decoder_runtime_idx :]
-        ):
-            dec_example_inputs = dec_compile_config.get_dummy_inputs(fill=0, static_tensors=static_tensors)
-            compiled_decoder = compile_model(
-                wrapped_model,
-                dec_compile_config,
-                dec_example_inputs,
-                context,
-                rbln_config.quantization,
-            )
-            compiled_models[f"decoder_batch_{batch_size}"] = compiled_decoder
-
-        return compiled_models
-
-    @classmethod
-    def _create_runtimes(
-        cls,
-        compiled_models: List[rebel.RBLNCompiledModel],
-        rbln_config: RBLNGemma3ForCausalLMConfig,
-    ) -> List[rebel.Runtime]:
-        expected_model_names = [
-            "prefill",
-            *[f"decoder_batch_{batch_size}" for batch_size in rbln_config.decoder_batch_sizes],
-        ]
-        if rbln_config.use_image_prefill:
-            expected_model_names.insert(1, "image_prefill")
-
-        if any(model_name not in rbln_config.device_map for model_name in expected_model_names):
-            cls._raise_missing_compiled_file_error(expected_model_names)
-
-        ret_val = [
-            rebel.Runtime(
-                compiled_models[0],
-                tensor_type="pt",
-                device=rbln_config.device_map["prefill"],
-                activate_profiler=rbln_config.activate_profiler,
-                timeout=rbln_config.timeout,
-            )
-        ]
-        if rbln_config.use_image_prefill:
-            ret_val.append(
-                rebel.Runtime(
-                    compiled_models[1],
-                    tensor_type="pt",
-                    device=rbln_config.device_map["image_prefill"],
-                    activate_profiler=rbln_config.activate_profiler,
-                    timeout=rbln_config.timeout,
-                ),
-            )
-
-        ret_val.extend(
-            [
-                rebel.Runtime(
-                    compiled_models[i + rbln_config.decoder_runtime_idx],
-                    tensor_type="pt",
-                    device=rbln_config.device_map[f"decoder_batch_{batch_size}"],
-                    activate_profiler=rbln_config.activate_profiler,
-                    timeout=rbln_config.timeout,
-                )
-                for i, batch_size in enumerate(rbln_config.decoder_batch_sizes)
-            ]
-        )
-
-        return ret_val

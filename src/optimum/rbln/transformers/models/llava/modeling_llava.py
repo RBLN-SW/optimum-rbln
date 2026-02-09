@@ -88,15 +88,22 @@ class LoopVisionTower(LoopProcessor):
 
 
 class LoopProjector(LoopProcessor):
-    def __init__(self, multi_modal_projector: "RBLNModel"):
+    def __init__(self, multi_modal_projector: "RBLNModel", rbln_config=None):
         super().__init__(model=multi_modal_projector)
+        self.rbln_config = rbln_config
 
     def _get_batch_size(self, image_feature, **kwargs):
         return image_feature.shape[0]
 
     def _prepare_inputs_for_iteration(self, index, common_inputs, image_feature, **kwargs):
         image_feature_item = image_feature[index : index + 1]
-        out_buffer = [tensor[index : index + 1] for tensor in kwargs["out"]]
+        if hasattr(self.rbln_config.vision_tower, "max_image_size"):
+            out_buffer = [
+                tensor[:, index * image_feature.shape[1] : (index + 1) * image_feature.shape[1], :]
+                for tensor in kwargs["out"]
+            ]
+        else:
+            out_buffer = [tensor[index : index + 1] for tensor in kwargs["out"]]
         return ([image_feature_item], {"out": out_buffer})
 
     def _process_outputs(self, outputs: list, **kwargs):
@@ -109,7 +116,6 @@ class RBLNLlavaForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMixi
     RBLNLlavaForConditionalGeneration is a multi-modal model that combines vision and language processing capabilities,
     optimized for RBLN NPUs. It is designed for conditional generation tasks that involve both image and text inputs.
     This model inherits from [`RBLNModel`]. Check the superclass documentation for the generic methods the library implements for all its models.
-
     Important Note:
         This model includes a Large Language Model (LLM) as a submodule. For optimal performance, it is highly recommended to use
         tensor parallelism for the language model. This can be achieved by using the `rbln_config` parameter in the
@@ -175,9 +181,7 @@ class RBLNLlavaForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMixi
         return True
 
     @classmethod
-    def get_pytorch_model(cls, *args, **kwargs):
-        model = super().get_pytorch_model(*args, **kwargs)
-
+    def _reconstruct_model_if_needed(cls, model: "PreTrainedModel"):
         with no_init_weights():
             model_cls_name = model.model.language_model.__class__.__name__
             causal_model_cls_name = model_cls_name.replace("Model", "ForCausalLM")
@@ -194,7 +198,7 @@ class RBLNLlavaForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMixi
     def __post_init__(self, **kwargs):
         self.vision_tower = LoopVisionTower(self.rbln_submodules[0])
         self.language_model = self.rbln_submodules[1]
-        self.multi_modal_projector = LoopProjector(self.model[0])
+        self.multi_modal_projector = LoopProjector(self.model[0], rbln_config=self.rbln_config)
         self.pad_token_id = self.config.pad_token_id if self.config.pad_token_id is not None else -1
         return super().__post_init__(**kwargs)
 
@@ -208,7 +212,7 @@ class RBLNLlavaForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMixi
         return self.language_model.get_input_embeddings()
 
     @classmethod
-    def wrap_model_if_needed(cls, model: "PreTrainedModel", rbln_config: RBLNModelConfig):
+    def _wrap_model_if_needed(cls, model: "PreTrainedModel", rbln_config: RBLNModelConfig):
         return model.multi_modal_projector
 
     @classmethod
@@ -221,10 +225,8 @@ class RBLNLlavaForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMixi
     ) -> RBLNModelConfig:
         # support for pixtral that needs padding
         if hasattr(rbln_config.vision_tower, "max_image_size"):
-            num_positions = (
-                rbln_config.batch_size
-                * (rbln_config.vision_tower.max_image_size[0] // model_config.vision_config.patch_size)
-                * (rbln_config.vision_tower.max_image_size[1] // model_config.vision_config.patch_size)
+            num_positions = (rbln_config.vision_tower.max_image_size[0] // model_config.vision_config.patch_size) * (
+                rbln_config.vision_tower.max_image_size[1] // model_config.vision_config.patch_size
             )
             selected_image_feature_dim = num_positions
 
@@ -334,7 +336,7 @@ class RBLNLlavaForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMixi
             pooler_out_size = [pixel_values.shape[0], self.config.vision_config.hidden_size]
 
         vision_out_buffer = []
-        for i in range(self.config.vision_config.num_hidden_layers + 2):
+        for _ in range(self.config.vision_config.num_hidden_layers + 2):
             vision_out_buffer.append(torch.empty(size=vision_out_size, dtype=torch.float32, device="cpu"))
         if pooler_out_size is not None:
             vision_out_buffer.insert(1, torch.empty(size=pooler_out_size, dtype=torch.float32, device="cpu"))
@@ -353,23 +355,32 @@ class RBLNLlavaForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMixi
 
         if hasattr(self.rbln_config.vision_tower, "max_image_size"):
             num_real_patches = selected_image_feature.shape[1]
-            max_patches = (
-                (self.rbln_config.vision_tower.max_image_size[0] // self.config.vision_config.patch_size)
-                * (self.rbln_config.vision_tower.max_image_size[1] // self.config.vision_config.patch_size)
-                * pixel_values.shape[0]
+            max_patches = (self.rbln_config.vision_tower.max_image_size[0] // self.config.vision_config.patch_size) * (
+                self.rbln_config.vision_tower.max_image_size[1] // self.config.vision_config.patch_size
             )
-            num_padding_patches = max_patches - num_real_patches
 
-            projector_out_size = [1, max_patches, self.config.text_config.hidden_size]
+            chunks = []
+            for i in range(0, num_real_patches, max_patches):
+                chunk = selected_image_feature[:, i : i + max_patches, :]
+                chunk_size = chunk.shape[1]
+
+                if chunk_size < max_patches:
+                    padding_tensor = torch.zeros(
+                        (selected_image_feature.shape[0], max_patches - chunk_size, selected_image_feature.shape[2]),
+                        dtype=selected_image_feature.dtype,
+                    )
+                    chunk = torch.cat([chunk, padding_tensor], dim=1)
+                chunks.append(chunk)
+
+            split_features = torch.cat(chunks, dim=0)
+            num_chunks = len(chunks)
+            projector_out_size = [1, max_patches * num_chunks, self.config.text_config.hidden_size]
             projector_out_buffer = [torch.empty(size=projector_out_size, dtype=torch.float32, device="cpu")]
-
-            padding_tensor = torch.zeros(
-                (selected_image_feature.shape[0], num_padding_patches, selected_image_feature.shape[2]),
-                dtype=selected_image_feature.dtype,
+            projected_features = self.multi_modal_projector(split_features, out=projector_out_buffer)
+            projected_features = projected_features.view(
+                selected_image_feature.shape[0], num_chunks * max_patches, self.config.text_config.hidden_size
             )
-            padded_feature = torch.cat([selected_image_feature, padding_tensor], dim=1)
-            padded_projected_feature = self.multi_modal_projector(padded_feature, out=projector_out_buffer)
-            image_features = padded_projected_feature[:, :num_real_patches, :]
+            image_features = projected_features[:, :num_real_patches, :]
         else:
             projector_out_size = [
                 pixel_values.shape[0] * pixel_values.shape[1],

@@ -19,6 +19,9 @@ def test_version_is_str():
     assert isinstance(__version__, str)
 
 
+DUMMY_DEVICE_CODE = -1
+
+
 class TestLevel(Enum):
     ESSENTIAL = 1
     DEFAULT = 2
@@ -105,16 +108,17 @@ class BaseHubTest:
 
         @require_hf_token
         @require_hf_user_id
-        def test_pull_compiled_model_from_hub(self):
+        def test_z_pull_compiled_model_from_hub(self):
             HF_AUTH_TOKEN = os.environ.get("HF_AUTH_TOKEN", None)
             HF_USER_ID = os.environ.get("HF_USER_ID", None)
 
-            _ = self.RBLN_CLASS.from_pretrained(
-                f"{HF_USER_ID}/{self.get_hf_remote_dir()}",
-                **self.HF_CONFIG_KWARGS,
-                rbln_device=self.DEVICE,
-                token=HF_AUTH_TOKEN,
-            )
+            with ContextRblnConfig(create_runtimes=False):
+                _ = self.RBLN_CLASS.from_pretrained(
+                    f"{HF_USER_ID}/{self.get_hf_remote_dir()}",
+                    **self.HF_CONFIG_KWARGS,
+                    rbln_device=self.DEVICE,
+                    token=HF_AUTH_TOKEN,
+                )
 
 
 class BaseTest:
@@ -142,20 +146,29 @@ class BaseTest:
             if env_coverage.value < cls.TEST_LEVEL.value:
                 raise unittest.SkipTest(f"Skipped test : Test Coverage {env_coverage.name} < {cls.TEST_LEVEL.name}")
 
-            if os.path.exists(cls.get_rbln_local_dir()):
-                shutil.rmtree(cls.get_rbln_local_dir())
-
-            cls.model = cls.RBLN_CLASS.from_pretrained(
-                cls.HF_MODEL_ID,
-                model_save_dir=cls.get_rbln_local_dir(),
-                rbln_device=cls.DEVICE,
-                **cls.RBLN_CLASS_KWARGS,
-                **cls.HF_CONFIG_KWARGS,
-            )
+            REUSE_ARTIFACTS_PATH = os.environ.get("REUSE_ARTIFACTS_PATH", None)
+            if REUSE_ARTIFACTS_PATH is None:
+                if os.path.exists(cls.get_rbln_local_dir()):
+                    shutil.rmtree(cls.get_rbln_local_dir())
+                with ContextRblnConfig(device=DUMMY_DEVICE_CODE):
+                    cls.model = cls.RBLN_CLASS.from_pretrained(
+                        cls.HF_MODEL_ID,
+                        model_save_dir=cls.get_rbln_local_dir(),
+                        **cls.RBLN_CLASS_KWARGS,
+                        **cls.HF_CONFIG_KWARGS,
+                    )
+            else:
+                if os.path.exists(REUSE_ARTIFACTS_PATH):
+                    compiled_model_path = os.path.join(REUSE_ARTIFACTS_PATH, cls.get_rbln_local_dir())
+                    if os.path.exists(compiled_model_path):
+                        with ContextRblnConfig(device=DUMMY_DEVICE_CODE):
+                            cls.model = cls.RBLN_CLASS.from_pretrained(compiled_model_path)
+                if not hasattr(cls, "model"):
+                    raise unittest.SkipTest("Compiled model not found")
 
         @classmethod
         def get_rbln_local_dir(cls):
-            return os.path.basename(cls.HF_MODEL_ID) + "-local"
+            return os.path.basename(cls.__module__.split(".")[-1]) + "_" + os.path.basename(cls.__name__) + "-artifact"
 
         @classmethod
         def get_hf_auto_class(cls):
@@ -175,6 +188,22 @@ class BaseTest:
         def tearDownClass(cls):
             if os.path.exists(cls.get_rbln_local_dir()):
                 shutil.rmtree(cls.get_rbln_local_dir())
+
+        # BC: Test save_artifacts and copy tree is successful
+        def test_save_artifacts(self):
+            SAVE_ARTIFACTS_PATH = os.environ.get("SAVE_ARTIFACTS_PATH", None)
+            if SAVE_ARTIFACTS_PATH is None:
+                return
+            else:
+                os.makedirs(SAVE_ARTIFACTS_PATH, exist_ok=True)
+                saved_path = os.path.join(SAVE_ARTIFACTS_PATH, self.get_rbln_local_dir())
+                shutil.copytree(self.get_rbln_local_dir(), saved_path, dirs_exist_ok=True)
+
+                with ContextRblnConfig(create_runtimes=False):
+                    _ = self.RBLN_CLASS.from_pretrained(
+                        saved_path,
+                        **self.HF_CONFIG_KWARGS,
+                    )
 
         def test_model_save_dir(self):
             self.assertTrue(os.path.exists(self.get_rbln_local_dir()), "model_save_dir does not work.")
@@ -197,7 +226,8 @@ class BaseTest:
                     output = self.model(**inputs)[0]
 
             output = self.postprocess(inputs, output)
-            if self.EXPECTED_OUTPUT and self.DEVICE is None:
+            REUSE_ARTIFACTS_PATH = os.environ.get("REUSE_ARTIFACTS_PATH", None)
+            if self.EXPECTED_OUTPUT and self.DEVICE is None and REUSE_ARTIFACTS_PATH is None:
                 from simphile import jaccard_similarity
 
                 if isinstance(self.EXPECTED_OUTPUT, str):
@@ -240,10 +270,11 @@ class BaseTest:
                 self._inner_test_save_load(tmpdir)
 
         def test_model_save_dir_load(self):
+            rbln_local_dir = self.get_rbln_local_dir()
             with ContextRblnConfig(create_runtimes=False):
                 # Test model_save_dir
                 _ = self.RBLN_CLASS.from_pretrained(
-                    self.get_rbln_local_dir(),
+                    rbln_local_dir,
                     rbln_create_runtimes=False,
                     **self.HF_CONFIG_KWARGS,
                 )

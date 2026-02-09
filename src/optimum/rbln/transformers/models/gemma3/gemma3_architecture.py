@@ -16,7 +16,6 @@ import copy
 from typing import Optional, Tuple, Union
 
 import torch
-from transformers.models.gemma3.modeling_gemma3 import Gemma3RMSNorm
 
 from ..decoderonly.decoderonly_architecture import (
     DecoderOnlyAttention,
@@ -64,6 +63,7 @@ class Gemma3TextModel(DecoderOnlyModel):
         global_block_tables: Optional[torch.Tensor] = None,
         local_block_tables: Optional[torch.Tensor] = None,
         lora_int_id: Optional[torch.Tensor] = None,
+        output_hidden_states: Optional[bool] = None,
     ):
         # retrieve input_ids and inputs_embeds
         if (input_ids is None) ^ (inputs_embeds is not None):
@@ -94,13 +94,18 @@ class Gemma3TextModel(DecoderOnlyModel):
         else:
             seq_positions = cache_position[:, :1]
 
-        sliding_cache_pos = self.get_local_cache_positions(position_ids, query_position)
+        cache_seq_len, cache_offset, swa_attn_mask = self.get_swa_custom_op_args(position_ids, query_position)
+        sliding_cache_pos = (cache_seq_len, cache_offset)
 
+        all_hidden_states = () if output_hidden_states else None
         for layer_idx, layer in enumerate(self.layers):
+            if output_hidden_states:
+                all_hidden_states += (hidden_states,)
             is_sliding = True if layer_idx in self.sliding_window_layers else False
+            is_sliding_decode = is_sliding and self.phase == "decode"
             hidden_states = layer(
                 hidden_states=hidden_states,
-                attention_mask=attention_mask,
+                attention_mask=swa_attn_mask if is_sliding_decode else attention_mask,
                 seq_positions=sliding_cache_pos if is_sliding else seq_positions,
                 past_key_values=past_key_values,
                 cos=cos_local if is_sliding else cos_global,
@@ -110,15 +115,14 @@ class Gemma3TextModel(DecoderOnlyModel):
             )
 
         hidden_states = self.get_last_layernorm()(hidden_states)
-        return hidden_states
+        if output_hidden_states:
+            all_hidden_states += (hidden_states,)
+        return hidden_states, all_hidden_states
 
 
 class Gemma3DecoderLayer(DecoderOnlyLayer):
-    def get_pre_feedforward_layernorm(self) -> Gemma3RMSNorm:
-        return self._original_mod.pre_feedforward_layernorm
-
-    def get_post_feedforward_layernorm(self) -> Gemma3RMSNorm:
-        return self._original_mod.post_feedforward_layernorm
+    _PRE_FF_LAYERNORM_ATTRS = ["pre_feedforward_layernorm"]
+    _POST_FF_LAYERNORM_ATTRS = ["post_feedforward_layernorm"]
 
     def forward(
         self,
@@ -158,13 +162,13 @@ class Gemma3DecoderLayer(DecoderOnlyLayer):
 
 
 class Gemma3Attention(DecoderOnlyAttention):
-    def __post_init__(self):
-        self.q_proj = self._original_mod.q_proj
-        self.k_proj = self._original_mod.k_proj
-        self.v_proj = self._original_mod.v_proj
-        self.o_proj = self._original_mod.o_proj
-        self.q_norm = self._original_mod.q_norm
-        self.k_norm = self._original_mod.k_norm
+    def __post_init__(self, self_attn):
+        self.q_proj = self_attn.q_proj
+        self.k_proj = self_attn.k_proj
+        self.v_proj = self_attn.v_proj
+        self.o_proj = self_attn.o_proj
+        self.q_norm = self_attn.q_norm
+        self.k_norm = self_attn.k_norm
 
-    def get_attn_scale(self):
-        return self._original_mod.config.query_pre_attn_scalar**-0.5
+    def get_attn_scale(self, self_attn):
+        return self_attn.config.query_pre_attn_scalar**-0.5

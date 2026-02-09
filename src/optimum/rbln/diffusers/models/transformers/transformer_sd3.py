@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Union
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple, Union
 
 import torch
 from diffusers.models.modeling_outputs import Transformer2DModelOutput
@@ -77,7 +77,7 @@ class RBLNSD3Transformer2DModel(RBLNModel):
         super().__post_init__(**kwargs)
 
     @classmethod
-    def wrap_model_if_needed(cls, model: torch.nn.Module, rbln_config: RBLNModelConfig) -> torch.nn.Module:
+    def _wrap_model_if_needed(cls, model: torch.nn.Module, rbln_config: RBLNModelConfig) -> torch.nn.Module:
         return SD3Transformer2DModelWrapper(model).eval()
 
     @classmethod
@@ -160,7 +160,20 @@ class RBLNSD3Transformer2DModel(RBLNModel):
         joint_attention_kwargs: Optional[Dict[str, Any]] = None,
         return_dict: bool = True,
         **kwargs,
-    ):
+    ) -> Union[Transformer2DModelOutput, Tuple]:
+        """
+        Forward pass for the RBLN-optimized SD3Transformer2DModel.
+
+        Args:
+            hidden_states (torch.FloatTensor): The currently predicted image embeddings.
+            encoder_hidden_states (torch.FloatTensor): Conditional embeddings (embeddings computed from the input conditions such as prompts) to use.
+            pooled_projections (torch.FloatTensor): Embeddings projected from the embeddings of input conditions.
+            timestep (torch.LongTensor): Current denoising step.
+            return_dict (bool): Whether or not to return a [`~diffusers.models.modeling_output.Transformer2DModelOutput`] instead of a plain tuple.
+
+        Returns:
+            (Union[`~diffusers.models.modeling_output.Transformer2DModelOutput`, Tuple])
+        """
         sample_batch_size = hidden_states.size()[0]
         compiled_batch_size = self.compiled_batch_size
         if sample_batch_size != compiled_batch_size and (

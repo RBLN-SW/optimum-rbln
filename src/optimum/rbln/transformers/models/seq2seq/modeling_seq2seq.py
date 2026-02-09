@@ -20,8 +20,9 @@ import rebel
 import torch
 from rebel.compile_context import CompileContext
 from transformers import AutoModelForSeq2SeqLM, PretrainedConfig, PreTrainedModel
+from transformers.generation.configuration_utils import GenerationConfig
 from transformers.generation.utils import GenerationMixin
-from transformers.modeling_outputs import BaseModelOutput, Seq2SeqLMOutput
+from transformers.modeling_outputs import BaseModelOutput, ModelOutput, Seq2SeqLMOutput
 
 from ....configuration_utils import RBLNCompileConfig
 from ....modeling import RBLNModel
@@ -33,7 +34,7 @@ from .configuration_seq2seq import RBLNModelForSeq2SeqLMConfig
 logger = get_logger(__name__)
 
 if TYPE_CHECKING:
-    from transformers import AutoFeatureExtractor, AutoProcessor, AutoTokenizer, GenerationConfig, PretrainedConfig
+    from transformers import AutoFeatureExtractor, AutoProcessor, AutoTokenizer, PretrainedConfig
 
 
 class RBLNRuntimeEncoder(RBLNPytorchRuntime):
@@ -140,7 +141,7 @@ class RBLNModelForSeq2SeqLM(RBLNModel, GenerationMixin, ABC):
     @classmethod
     @torch.inference_mode()
     def get_compiled_model(cls, model: PreTrainedModel, rbln_config: RBLNModelForSeq2SeqLMConfig):
-        wrapped_model = cls.wrap_model_if_needed(model, rbln_config)
+        wrapped_model = cls._wrap_model_if_needed(model, rbln_config)
 
         enc_compile_config = rbln_config.compile_cfgs[0]
         dec_compile_config = rbln_config.compile_cfgs[1]
@@ -209,8 +210,8 @@ class RBLNModelForSeq2SeqLM(RBLNModel, GenerationMixin, ABC):
         if not cls.support_causal_attn:
             rbln_config.use_attention_mask = True
 
-        n_layer = getattr(model_config, "decoder_layers", None) or getattr(model_config, "num_layers")
-        n_head = getattr(model_config, "decoder_attention_heads", None) or getattr(model_config, "num_heads")
+        n_layer = getattr(model_config, "decoder_layers", None) or model_config.num_layers
+        n_head = getattr(model_config, "decoder_attention_heads", None) or model_config.num_heads
         d_kv = (
             model_config.d_kv
             if hasattr(model_config, "d_kv")
@@ -220,12 +221,6 @@ class RBLNModelForSeq2SeqLM(RBLNModel, GenerationMixin, ABC):
         max_position_embeddings = getattr(model_config, "n_positions", None) or getattr(
             model_config, "max_position_embeddings", None
         )
-
-        pad_token_id = getattr(model_config, "pad_token_id", None)
-        pad_token_id = pad_token_id or getattr(model_config, "bos_token_id", None)
-        pad_token_id = pad_token_id or getattr(model_config, "eos_token_id", None)
-        pad_token_id = pad_token_id or -1
-        rbln_config.pad_token_id = pad_token_id
 
         if rbln_config.enc_max_seq_len is None:
             enc_max_seq_len = max_position_embeddings
@@ -432,7 +427,7 @@ class RBLNModelForSeq2SeqLM(RBLNModel, GenerationMixin, ABC):
         inputs_tensor = torch.nn.functional.pad(
             inputs_tensor,
             (0, self.rbln_config.enc_max_seq_len - input_len),
-            value=self.rbln_config.pad_token_id,
+            value=self.config.pad_token_id,
         )
         model_kwargs["attention_mask"] = torch.nn.functional.pad(
             model_kwargs["attention_mask"], (0, self.rbln_config.enc_max_seq_len - input_len)
@@ -451,3 +446,32 @@ class RBLNModelForSeq2SeqLM(RBLNModel, GenerationMixin, ABC):
             model_kwargs["encoder_outputs"] = encoder(**encoder_kwargs, block_tables=block_tables)
 
         return model_kwargs
+
+    def generate(
+        self,
+        input_ids: torch.LongTensor,
+        attention_mask: Optional[torch.LongTensor] = None,
+        generation_config: Optional[GenerationConfig] = None,
+        **kwargs,
+    ) -> Union[ModelOutput, torch.LongTensor]:
+        """
+        The generate function is utilized in its standard form as in the HuggingFace transformers library. User can use this function to generate text from the model.
+        Check the [HuggingFace transformers documentation](https://huggingface.co/docs/transformers/v4.57.1/en/main_classes/text_generation#transformers.GenerationMixin.generate) for more details.
+
+        Args:
+            input_ids (torch.LongTensor): The input ids to the model.
+            attention_mask (torch.LongTensor, optional): The attention mask to the model.
+            generation_config (GenerationConfig, optional): The generation configuration to be used as base parametrization for the generation call. **kwargs passed to generate matching the attributes of generation_config will override them.
+                If generation_config is not provided, the default will be used, which had the following loading priority: 1) from the generation_config.json model file, if it exists; 2) from the model configuration.
+                Please note that unspecified parameters will inherit [GenerationConfig](https://huggingface.co/docs/transformers/v4.57.1/en/main_classes/text_generation#transformers.GenerationConfig)’s default values.
+            kwargs (dict[str, Any], optional): Additional arguments passed to the generate function. See the HuggingFace transformers documentation for more details.
+
+        Returns:
+            Generates sequences of token ids for models with a language modeling head.
+        """
+        if generation_config is not None:
+            kwargs["generation_config"] = generation_config
+        if attention_mask is not None:
+            kwargs["attention_mask"] = attention_mask
+
+        return super().generate(input_ids, **kwargs)

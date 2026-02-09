@@ -15,7 +15,6 @@
 import importlib
 import os
 import shutil
-from abc import ABC
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple, Type, Union
@@ -25,7 +24,7 @@ import torch
 from transformers import AutoConfig, AutoModel, GenerationConfig, PretrainedConfig
 from transformers.utils.hub import PushToHubMixin
 
-from .configuration_utils import RBLNAutoConfig, RBLNCompileConfig, RBLNModelConfig, get_rbln_config_class
+from .configuration_utils import RBLNCompileConfig, RBLNModelConfig, get_rbln_config_class
 from .utils.hub import pull_compiled_model_from_hub, validate_files
 from .utils.logging import get_logger
 from .utils.runtime_utils import UnavailableRuntime, tp_and_devices_are_ok
@@ -39,7 +38,7 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 
-class PreTrainedModel(ABC):  # noqa: F811
+class PreTrainedModel:  # noqa: F811
     pass
 
 
@@ -63,7 +62,7 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
         model_save_dir: Optional[Union[str, Path, TemporaryDirectory]] = None,
         subfolder: str = "",
         rbln_compiled_models: Optional[rebel.RBLNCompiledModel] = None,
-        rbln_submodules: List["RBLNBaseModel"] = [],
+        rbln_submodules: Optional[List["RBLNBaseModel"]] = None,
         **kwargs,
     ):
         self.model = models
@@ -71,7 +70,6 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
         self.rbln_config = rbln_config
         if not rbln_config.is_frozen():
             raise RuntimeError("`rbln_config` must be frozen. Please call `rbln_config.freeze()` first.")
-
         self.compiled_models = rbln_compiled_models
 
         # Registers the RBLN classes into the transformers AutoModel classes to avoid warnings when creating
@@ -92,7 +90,7 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
 
         self.device = torch.device("cpu")
         self.training = False
-        self.dtype = rbln_config.torch_dtype
+        self.dtype = rbln_config.dtype
 
         # FIXME :: model_save_dir is not used after initialized. (This can be used when save/load)
         # This attribute is needed to keep one reference on the temporary directory, since garbage collecting it
@@ -107,6 +105,8 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
             self.model_save_dir = model_save_dir
         self.subfolder = subfolder
 
+        if rbln_submodules is None:
+            rbln_submodules = []
         self.rbln_submodules = rbln_submodules
         self.__post_init__(**kwargs)
 
@@ -182,7 +182,7 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
         # passed from compile function
         rbln_config: Optional[RBLNModelConfig] = None,
         rbln_compiled_models: Optional[Dict[str, rebel.RBLNCompiledModel]] = None,
-        rbln_submodules: List["RBLNBaseModel"] = [],
+        rbln_submodules: Optional[List["RBLNBaseModel"]] = None,
         **kwargs,
     ) -> "RBLNBaseModel":
         if rbln_compiled_models is None:
@@ -206,8 +206,9 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
                     f"does not match the expected model class name ({cls.__name__})."
                 )
 
-            rbln_config, kwargs = RBLNAutoConfig.load(
-                model_path_subfolder, passed_rbln_config=rbln_config, kwargs=kwargs, return_unused_kwargs=True
+            config_cls = cls.get_rbln_config_class()
+            rbln_config, kwargs = config_cls.from_pretrained(
+                model_path_subfolder, rbln_config=rbln_config, return_unused_kwargs=True, **kwargs
             )
 
             if rbln_config.rbln_model_cls_name != cls.__name__:
@@ -218,11 +219,10 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
                 )
 
             if len(cls._rbln_submodules) > 0:
-                rbln_submodules = cls._load_submodules(model_save_dir=model_id, rbln_config=rbln_config, **kwargs)
-            else:
+                if rbln_submodules is None:
+                    rbln_submodules = cls._load_submodules(model_save_dir=model_id, rbln_config=rbln_config, **kwargs)
+            elif rbln_submodules is None:
                 rbln_submodules = []
-
-            rbln_config.freeze()
 
             if config is None:
                 if cls.hf_library_name == "transformers":
@@ -280,9 +280,12 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
         config: "PretrainedConfig",
         model_save_dir: Union[Path, str],
         subfolder: Union[Path, str],
-        rbln_submodules: List["RBLNBaseModel"] = [],
+        rbln_submodules: Optional[List["RBLNBaseModel"]] = None,
         **kwargs,
     ):
+        if rbln_submodules is None:
+            rbln_submodules = []
+
         if isinstance(model_save_dir, str):
             model_save_dir = Path(model_save_dir)
 
@@ -304,10 +307,12 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
                 f"If you only need to compile the model without loading it to NPU, you can use:\n"
                 f"  from_pretrained(..., rbln_create_runtimes=False) or\n"
                 f"  from_pretrained(..., rbln_config={{..., 'create_runtimes': False}})\n\n"
-                f"To check your NPU status, run the 'rbln-stat' command in your terminal.\n"
+                f"To check your NPU status, run the 'rbln-smi' command in your terminal.\n"
                 f"Make sure your NPU is properly installed and operational."
             )
             raise rebel.core.exception.RBLNRuntimeError(error_msg) from e
+
+        rbln_config.freeze()
 
         return cls(
             models,
@@ -447,15 +452,15 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
         model_config: "PretrainedConfig",
         rbln_config: RBLNModelConfig,
     ) -> RBLNModelConfig:
-        rbln_config.torch_dtype = model.dtype
-        if not cls._supports_non_fp32 and rbln_config.torch_dtype != torch.float32:
+        rbln_config.dtype = model.dtype
+        if not cls._supports_non_fp32 and rbln_config.dtype != torch.float32:
             raise NotImplementedError(
                 f"Currently, {cls.__name__} does not support non-fp32 dtype. Please use float32 dtype."
             )
         rbln_config = cls._update_rbln_config(
             preprocessors=preprocessors, model=model, model_config=model_config, rbln_config=rbln_config
         )
-        rbln_config.freeze()
+
         if rbln_config.rbln_model_cls_name != cls.__name__:
             raise NameError(
                 f"Cannot get the rbln config. {cls.__name__} is not the same as {rbln_config.rbln_model_cls_name}. "

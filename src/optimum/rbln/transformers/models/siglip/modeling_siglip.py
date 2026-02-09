@@ -21,6 +21,7 @@ from transformers.modeling_outputs import BaseModelOutputWithPooling
 from ....configuration_utils import RBLNCompileConfig
 from ....modeling import RBLNModel
 from ....utils.logging import get_logger
+from ...modeling_outputs import _validate_output_attentions, _validate_output_hidden_states
 from .configuration_siglip import RBLNSiglipVisionModelConfig
 
 
@@ -52,7 +53,7 @@ class _SiglipVisionModel(torch.nn.Module):
             interpolate_pos_encoding=self.interpolate_pos_encoding,
             output_attentions=self.output_attentions,
         )
-        return tuple(x for x in enc_out if x is not None)
+        return enc_out
 
 
 class RBLNSiglipVisionModel(RBLNModel):
@@ -66,7 +67,9 @@ class RBLNSiglipVisionModel(RBLNModel):
     _tp_support = False
 
     @classmethod
-    def wrap_model_if_needed(cls, model: torch.nn.Module, rbln_config: RBLNSiglipVisionModelConfig) -> torch.nn.Module:
+    def _wrap_model_if_needed(
+        cls, model: torch.nn.Module, rbln_config: RBLNSiglipVisionModelConfig
+    ) -> torch.nn.Module:
         wrapper_cfg = {
             "interpolate_pos_encoding": rbln_config.interpolate_pos_encoding,
             "output_hidden_states": rbln_config.output_hidden_states,
@@ -122,23 +125,22 @@ class RBLNSiglipVisionModel(RBLNModel):
         interpolate_pos_encoding: bool = False,
         **kwargs: Any,
     ) -> Union[Tuple, BaseModelOutputWithPooling]:
-        output_attentions = output_attentions if output_attentions is not None else self.rbln_config.output_attentions
-        output_hidden_states = (
-            output_hidden_states if output_hidden_states is not None else self.rbln_config.output_hidden_states
-        )
+        """
+        Forward pass for the RBLN-optimized SigLIP vision model.
 
-        if output_attentions != self.rbln_config.output_attentions:
-            raise ValueError(
-                f"Variable output_attentions {output_attentions} is not equal to rbln_config.output_attentions {self.rbln_config.output_attentions} "
-                f"Please compile again with the correct argument."
-            )
+        Args:
+            pixel_values (torch.FloatTensor of shape (batch_size, num_channels, image_size, image_size), optional): The tensors corresponding to the input images. Pixel values can be obtained using ViTImageProcessor. See ViTImageProcessor.call() for details (processor_class uses ViTImageProcessor for processing images).
+            return_dict (bool, optional): Whether or not to return a ModelOutput instead of a plain tuple.
+            output_attentions (bool, optional): Whether or not to return the attentions tensors of all attention layers. See attentions under returned tensors for more detail.
+            output_hidden_states (bool, optional): Whether or not to return the hidden states of all layers. See hidden_states under returned tensors for more detail.
+            interpolate_pos_encoding (bool, defaults to False): Whether to interpolate the pre-trained position encodings.
 
-        if output_hidden_states != self.rbln_config.output_hidden_states:
-            raise ValueError(
-                f"Variable output_hidden_states {output_hidden_states} is not equal to rbln_config.output_hidden_states {self.rbln_config.output_hidden_states} "
-                f"Please compile again with the correct argument."
-            )
+        Returns:
+            The model outputs. If return_dict=False is passed, returns a tuple of tensors. Otherwise, returns a BaseModelOutputWithPooling object.
+        """
 
+        output_attentions = _validate_output_attentions(output_attentions, self.rbln_config)
+        output_hidden_states = _validate_output_hidden_states(output_hidden_states, self.rbln_config)
         if interpolate_pos_encoding != self.rbln_config.interpolate_pos_encoding:
             raise ValueError(
                 f"Variable interpolate_pos_encoding {interpolate_pos_encoding} is not equal to rbln_config.interpolate_pos_encoding {self.rbln_config.interpolate_pos_encoding} "

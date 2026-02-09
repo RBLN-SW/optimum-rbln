@@ -7,16 +7,64 @@ on:
   workflow_dispatch:
 
 jobs:
+  check-tag:
+    name: Check tag is release
+    runs-on: rbln-sw-k8s-4c-32gb
+    container:
+      image: ${{ vars.DEV_CONTAINER_IMAGE }}
+    outputs:
+      is_release: ${{ steps.check.outputs.is_release }}
+    steps:
+      - name: Determine if tag is a stable release
+        id: check
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          # Strip leading v if present
+          TAG="${TAG#v}"
+
+          # Accept: X.Y.Z[.more][.postN|postN]. Reject pre/dev/rc.
+          if [[ "$TAG" =~ ^[0-9]+(\.[0-9]+)*(\.post[0-9]+|post[0-9]+)?$ ]]; then
+            echo "is_release=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_release=false" >> "$GITHUB_OUTPUT"
+          fi
+
   deploy-on-tag:
     uses: ./.github/workflows/deploy.yaml
     with:
       version: ${{ github.ref_name }}
     secrets: inherit
 
+  trigger-vllm-rbln-pkg-update:
+    name: trigger vllm-rbln pkg update PR
+    needs: [deploy-on-tag]
+    runs-on: rbln-sw-k8s-4c-32gb
+    container:
+      image: ${{ vars.DEV_CONTAINER_IMAGE }}
+    steps:
+      - uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.GIT_PAT }}
+          script: |
+            const result = await github.rest.actions.createWorkflowDispatch({
+              owner: 'rbln-sw',
+              repo: 'vllm-rbln',
+              workflow_id: 'dispatch_pkg_update.yaml',
+              ref: 'dev',
+              inputs: {
+                'python-version': '3.12',
+                'optimum-version': '${{ github.ref_name }}',
+              }
+            })
+            console.log(result)
+
   trigger-vllm-model-compilation:
     name: trigger vllm model compile and generation ci
     needs: [deploy-on-tag]
-    runs-on: rebel-k8s-runner
+    runs-on: rbln-sw-k8s-4c-32gb
+    container:
+      image: ${{ vars.DEV_CONTAINER_IMAGE }}
     steps:
       - uses: actions/github-script@v6
         with:
@@ -32,3 +80,12 @@ jobs:
               }
             })
             console.log(result)
+
+  bc-compile:
+    name: BC compile for release tag
+    needs: check-tag
+    if: needs.check-tag.outputs.is_release == 'true'
+    uses: ./.github/workflows/bc_compile.yaml
+    with:
+      bc_tag: ${{ github.ref_name }}
+    secrets: inherit

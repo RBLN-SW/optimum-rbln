@@ -34,49 +34,6 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 
-def _get_dtype(
-    cls,
-    dtype: Optional[Union[str, torch.dtype, dict]],
-    config: PretrainedConfig,
-) -> tuple[PretrainedConfig, Optional[torch.dtype], Optional[torch.dtype]]:
-    dtype_orig = None
-
-    if dtype is not None:
-        if isinstance(dtype, str):
-            if dtype == "auto":
-                if hasattr(config, "dtype") and config.dtype is not None:
-                    dtype = config.dtype
-                else:
-                    dtype = torch.get_default_dtype()
-            elif hasattr(torch, dtype):
-                dtype = getattr(torch, dtype)
-                config.dtype = dtype
-        elif isinstance(dtype, torch.dtype):
-            config.dtype = dtype
-        elif isinstance(dtype, dict):
-            for key, curr_dtype in dtype.items():
-                if hasattr(config, key):
-                    value = getattr(config, key)
-                    curr_dtype = curr_dtype if not isinstance(curr_dtype, str) else getattr(torch, curr_dtype)
-                    value.dtype = curr_dtype
-            # main torch dtype for modules that aren't part of any sub-config
-            dtype = dtype.get("")
-            dtype = dtype if not isinstance(dtype, str) else getattr(torch, dtype)
-            config.dtype = dtype
-            if dtype is None:
-                dtype = torch.float32
-        else:
-            raise ValueError(f"Invalid dtype: {dtype}")
-
-        dtype_orig = cls._set_default_dtype(dtype)
-    else:
-        # Use default dtype
-        default_dtype = torch.get_default_dtype()
-        config.dtype = default_dtype
-
-    return config, dtype, dtype_orig
-
-
 class RBLNModel(RBLNBaseModel):
     @classmethod
     def update_kwargs(cls, kwargs):
@@ -97,13 +54,16 @@ class RBLNModel(RBLNBaseModel):
         pass
 
     @classmethod
-    def wrap_model_if_needed(cls, model: torch.nn.Module, rbln_config: RBLNModelConfig) -> torch.nn.Module:
+    def _wrap_model_if_needed(cls, model: torch.nn.Module, rbln_config: RBLNModelConfig) -> torch.nn.Module:
         # Wrap the model if needed.
         return model
 
     @classmethod
     def get_compiled_model(cls, model: "PreTrainedModel", rbln_config: RBLNModelConfig):
-        model = cls.wrap_model_if_needed(model, rbln_config)
+        if rbln_config._allow_no_compile_cfgs:
+            return {}
+
+        model = cls._wrap_model_if_needed(model, rbln_config)
         rbln_compile_config = rbln_config.compile_cfgs[0]
         compiled_model = cls.compile(
             model,
@@ -112,6 +72,18 @@ class RBLNModel(RBLNBaseModel):
             device=rbln_config.device,
         )
         return compiled_model
+
+    @classmethod
+    def _update_rbln_config(
+        cls,
+        preprocessors: Optional[Any],
+        model: Optional["PreTrainedModel"] = None,
+        model_config: Optional["PretrainedConfig"] = None,
+        rbln_config: Optional[RBLNModelConfig] = None,
+    ) -> RBLNModelConfig:
+        # Default implementation: return config as-is
+        # Subclasses should override to set compile_cfgs if needed
+        return rbln_config
 
     @classmethod
     def _reconstruct_model_if_needed(cls, model: "PreTrainedModel"):
@@ -277,6 +249,9 @@ class RBLNModel(RBLNBaseModel):
         compiled_models: List[rebel.RBLNCompiledModel],
         rbln_config: RBLNModelConfig,
     ) -> List[rebel.Runtime]:
+        if len(rbln_config.compile_cfgs) == 0:
+            return []
+
         if DEFAULT_COMPILED_MODEL_NAME not in rbln_config.device_map:
             cls._raise_missing_compiled_file_error([DEFAULT_COMPILED_MODEL_NAME])
 

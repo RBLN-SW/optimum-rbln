@@ -140,7 +140,6 @@ class TimeSeriesTransformersDecoderWrapper(torch.nn.Module):
 class TimeSeriesTransformersDecoder(nn.Module):
     def __init__(self, model, layers, **kwargs):
         super().__init__()
-        self._original_mod = model
         self.config = model.config
         self.layers = nn.ModuleList(layers)
         self.value_embedding = model.value_embedding
@@ -190,7 +189,6 @@ class TimeSeriesTransformersDecoder(nn.Module):
 class TimeSeriesTransformersDecoderLayer(nn.Module):
     def __init__(self, decoder_layer, self_attn, cross_attn):
         super().__init__()
-        self._original_mod = decoder_layer
         self.self_attn = self_attn
         self.encoder_attn = cross_attn
         self.embed_dim = decoder_layer.embed_dim
@@ -245,7 +243,6 @@ class TimeSeriesTransformersDecoderLayer(nn.Module):
 class TimeSeriesTransformersAttention(nn.Module):
     def __init__(self, attn, num_parallel_samples):
         super().__init__()
-        self._original_mod = attn
         self.q_proj = attn.q_proj
         self.k_proj = attn.k_proj
         self.v_proj = attn.v_proj

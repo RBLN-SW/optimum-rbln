@@ -26,7 +26,6 @@ from typing import TYPE_CHECKING, Optional, Union
 from torch import nn
 from transformers import (
     AutoModel,
-    AutoModelForAudioClassification,
     AutoModelForDepthEstimation,
     AutoModelForImageClassification,
     AutoModelForMaskedLM,
@@ -42,7 +41,6 @@ from ..modeling import RBLNModel
 from ..utils.logging import get_logger
 from .configuration_generic import (
     RBLNImageModelConfig,
-    RBLNModelForAudioClassificationConfig,
     RBLNTransformerEncoderConfig,
 )
 
@@ -59,7 +57,7 @@ class RBLNTransformerEncoder(RBLNModel):
     rbln_dtype = "int64"
 
     @classmethod
-    def wrap_model_if_needed(cls, model: "PreTrainedModel", rbln_config: RBLNTransformerEncoderConfig) -> nn.Module:
+    def _wrap_model_if_needed(cls, model: "PreTrainedModel", rbln_config: RBLNTransformerEncoderConfig) -> nn.Module:
         class TransformerEncoderWrapper(nn.Module):
             # Parameters to disable for RBLN compilation
             DISABLED_PARAMS = {"return_dict", "use_cache"}
@@ -268,7 +266,7 @@ class RBLNModelForDepthEstimation(RBLNImageModel):
     auto_model_class = AutoModelForDepthEstimation
 
     @classmethod
-    def wrap_model_if_needed(cls, model: "PreTrainedModel", rbln_config: RBLNImageModelConfig):
+    def _wrap_model_if_needed(cls, model: "PreTrainedModel", rbln_config: RBLNImageModelConfig):
         class ImageModelWrapper(nn.Module):
             def __init__(self, model: "PreTrainedModel", rbln_config: RBLNImageModelConfig):
                 super().__init__()
@@ -280,60 +278,3 @@ class RBLNModelForDepthEstimation(RBLNImageModel):
                 return output.predicted_depth
 
         return ImageModelWrapper(model, rbln_config).eval()
-
-
-class RBLNModelForAudioClassification(RBLNModel):
-    """
-    This is a generic model class that will be instantiated as one of the model classes of the library (with a audio classification head) when created with the from_pretrained() class method
-    This model inherits from [`RBLNModel`]. Check the superclass documentation for the generic methods the library implements for all its models.
-
-    A class to convert and run pre-trained transformers based AudioClassification models on RBLN devices.
-    It implements the methods to convert a pre-trained transformers AudioClassification model into a RBLN transformer model by:
-
-    - transferring the checkpoint weights of the original into an optimized RBLN graph,
-    - compiling the resulting graph using the RBLN compiler.
-
-    Currently, this model class only supports the 'AST' model from the transformers library. Future updates may include support for additional model types.
-    """
-
-    auto_model_class = AutoModelForAudioClassification
-
-    @classmethod
-    def _update_rbln_config(
-        cls,
-        preprocessors: "AutoFeatureExtractor" = None,
-        model: Optional["PreTrainedModel"] = None,
-        model_config: "PretrainedConfig" = None,
-        rbln_config: Optional[RBLNModelForAudioClassificationConfig] = None,
-    ) -> RBLNModelForAudioClassificationConfig:
-        if rbln_config.num_mel_bins is None:
-            rbln_config.num_mel_bins = getattr(model_config, "num_mel_bins", None)
-            if rbln_config.num_mel_bins is None:
-                for feature_extractor in preprocessors:
-                    if hasattr(feature_extractor, "num_mel_bins"):
-                        rbln_config.num_mel_bins = feature_extractor.num_mel_bins
-                        break
-
-        if rbln_config.num_mel_bins is None:
-            raise ValueError("`num_mel_bins` should be specified!")
-
-        if rbln_config.max_length is None:
-            rbln_config.max_length = getattr(model_config, "max_length", None)
-            for feature_extractor in preprocessors:
-                if hasattr(feature_extractor, "max_length"):
-                    rbln_config.max_length = feature_extractor.max_length
-                    break
-
-        if rbln_config.max_length is None:
-            raise ValueError("`max_length` should be specified!")
-
-        input_info = [
-            (
-                "input_values",
-                [rbln_config.batch_size, rbln_config.max_length, rbln_config.num_mel_bins],
-                "float32",
-            ),
-        ]
-
-        rbln_config.set_compile_cfgs([RBLNCompileConfig(input_info=input_info)])
-        return rbln_config

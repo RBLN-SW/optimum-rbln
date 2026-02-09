@@ -1,18 +1,15 @@
 import math
-from typing import TYPE_CHECKING, Dict, List, Optional, Tuple
+from collections import defaultdict
+from typing import Optional, Tuple
 
-from optimum.rbln.transformers.models.decoderonly.configuration_decoderonly import (
-    RBLNDecoderOnlyModelForCausalLMConfig,
-)
+import rebel
 
 from ..utils.logging import get_logger
+from ..utils.runtime_utils import get_available_dram, is_compiler_supports_buffer_resize
+from .models.decoderonly.configuration_decoderonly import RBLNDecoderOnlyModelForCausalLMConfig
 
 
 logger = get_logger()
-
-if TYPE_CHECKING:
-    from rebel import RBLNCompiledModel
-    from transformers import PretrainedConfig
 
 
 DEFAULT_FLASH_ATTN_PARTITION_LENGTH = 16_384
@@ -115,138 +112,176 @@ def validate_sliding_window(rbln_config: RBLNDecoderOnlyModelForCausalLMConfig):
         raise ValueError("`use_attention_mask` must be set to False when `cache_impl` is set to 'sliding_window'.")
 
 
+def align(x: int, nbytes: int) -> int:
+    return int(math.ceil(x / nbytes) * nbytes)
+
+
+def align_2MB(x: int) -> int:
+    return align(x, 2**21)
+
+
+def get_alloc_memory_by_key(compiled_models: dict[str, rebel.RBLNCompiledModel]) -> dict[str, int]:
+    alloc_memory_by_key = defaultdict(int)
+    # Get the actual memory allocation of each node by key
+    for compiled_model in compiled_models.values():
+        alloc_per_node_by_key = compiled_model.get_alloc_per_node_by_key()
+        for key, memory_per_node in alloc_per_node_by_key.items():
+            alloc_memory_by_key[key] += sum(memory_per_node)
+
+    return alloc_memory_by_key
+
+
+def format_byte_size(nbytes: int) -> str:
+    if nbytes < 1024:
+        return f"{nbytes} B"
+    elif nbytes < 1024**2:
+        return f"{nbytes / 1024:.2f} KB"
+    elif nbytes < 1024**3:
+        return f"{nbytes / 1024**2:.2f} MB"
+    else:
+        return f"{nbytes / 1024**3:.2f} GB"
+
+
 class RBLNDecoderOnlyFlashAttentionMixin:
     @classmethod
-    def get_maximum_num_blocks(
-        cls,
-        config: "PretrainedConfig",
-        tensor_parallel_size: int,
-        kvcache_block_size: int,
-        nbits_per_param: Optional[int] = None,
-        n_model_params: Optional[int] = None,
-        kernel_size: Optional[int] = None,
-        buffer: Optional[int] = None,
-        num_runtimes: int = 2,
-    ) -> int:
-        # We are finding max_n_blocks(x) that satisfies the following equation:
-
-        # available_dram - kernel_size - buffer
-        #     - num_layers * 2 * tensor_parallel_size
-        #     * align_2MB(
-        #         x
-        #         * block_size
-        #         * align_64(head_dim)
-        #         * math.ceil(num_key_value_heads / tensor_parallel_size)
-        #         * 2
-        #     ) > 0
-
-        # This inequality can be rewritten as follows:
-
-        # a - c * align_2MB(b * x) > 0
-        # where
-        #    a = available_dram - kernel_size - buffer
-        #    b = block_size * align_64(head_dim) * math.ceil(num_key_value_heads / tensor_parallel_size) * 2
-        #    c = num_layers * 2 * tensor_parallel_size
-
-        # We can rewrite the inequality as follows:
-        # k > align_2MB(b*x)
-        # where
-        #    k = a / c
-
-        # After that, we can derive the following equation:
-        # x = floor(2**21 / b * floor((k - 1) / 2**21))
-
-        def align(x: int, nbytes: int) -> int:
-            return int(math.ceil(x / nbytes) * nbytes)
-
-        def align_2MB(x: int) -> int:
-            return align(x, 2**21)
-
-        num_attention_heads = getattr(config, "n_head", None) or getattr(config, "num_attention_heads")
-        num_layers = getattr(config, "n_layer", None) or getattr(config, "num_hidden_layers")
-        head_dim = getattr(config, "head_dim", None) or config.hidden_size // num_attention_heads
-        vocab_size = config.vocab_size
-        hidden_size = getattr(config, "n_embd", None) or getattr(config, "hidden_size")
-        num_key_value_heads = getattr(config, "num_key_value_heads", None) or num_attention_heads
-
-        # TODO(jongho): Update if target npu is REBEL.
-        ATOM_DRAM_NBYTES = 16 * 2**30
-        ATOM_SYS_DRAM_NBYTES = 288 * 2**20
-        available_dram = tensor_parallel_size * (ATOM_DRAM_NBYTES - ATOM_SYS_DRAM_NBYTES)
-
-        if kernel_size is None:
-            if n_model_params is None:
-                raise ValueError("`n_model_params` should be specified to estimate the kernel memory.")
-            # Get estimated kernel size (approximated)
-            lm_heads_params = align(vocab_size, 64) * hidden_size
-            lm_heads_nbytes = (
-                align_2MB(lm_heads_params * nbits_per_param // 8 / tensor_parallel_size) * tensor_parallel_size
+    def set_kvcache_num_blocks_after_compilation(
+        cls, compiled_models: dict[str, rebel.RBLNCompiledModel], rbln_config: RBLNDecoderOnlyModelForCausalLMConfig
+    ):
+        rbln_config.kvcache_num_blocks = cls.estimate_num_kvcache_blocks(
+            compiled_models=compiled_models, rbln_config=rbln_config
+        )
+        if rbln_config.kvcache_num_blocks < rbln_config.num_min_blocks:
+            raise ValueError(
+                "Memory is not enought for full sequence length. "
+                "Please consider decreasing `max_seq_len` to reduce the number of blocks."
             )
-            params = n_model_params - lm_heads_params
-            layer_nbytes = (
-                align_2MB(params * nbits_per_param // 8 / num_layers / tensor_parallel_size)
-                * num_layers
-                * tensor_parallel_size
-            )
-            kernel_size = layer_nbytes + lm_heads_nbytes
-        elif n_model_params is not None:
-            raise ValueError("Both `n_model_params` and `kernel_size` cannot be specified.")
-
-        available_dram -= kernel_size
-
-        if buffer is None:
-            # TODO: Accurate buffer estimation
-            buffer_per_runtime_per_core = 2**28  # 256MB per runtime
-            buffer_per_core = buffer_per_runtime_per_core * num_runtimes  # 1 for prefill, 1 for decoder
-            buffer = buffer_per_core * tensor_parallel_size
-        available_dram -= buffer
-
-        b = kvcache_block_size * align(head_dim, 64) * math.ceil(num_key_value_heads / tensor_parallel_size) * 2
-        c = num_layers * 2 * tensor_parallel_size
-        k = available_dram / c
-        max_n_blocks = math.floor(2**21 / b * math.floor((k - 1) / 2**21))
-
-        return max_n_blocks
-
-    @classmethod
-    def maybe_suggest_kvcache_num_blocks(
-        cls,
-        compiled_models: Dict[str, "RBLNCompiledModel"],
-        model_config: "PretrainedConfig",
-        rbln_config: RBLNDecoderOnlyModelForCausalLMConfig,
-    ) -> None:
-        # Get the actual memory allocation of each node by key
-        alloc_memory_per_node_by_key: Dict[str, List[int]] = compiled_models["prefill"].get_alloc_per_node_by_key()
-        alloc_memory_by_key: Dict[str, int] = {
-            key: sum(memory_per_node) for key, memory_per_node in alloc_memory_per_node_by_key.items()
-        }
-        for batch_size in rbln_config.decoder_batch_sizes:
-            for key, memory_per_node in (
-                compiled_models[f"decoder_batch_{batch_size}"].get_alloc_per_node_by_key().items()
-            ):
-                alloc_memory_by_key[key] += sum(memory_per_node)
-        alloc_memory_by_key.pop("PortRecur", None)  # Old compiler's kv-cache Key
-        alloc_memory_by_key.pop("DramTensor", None)  # kv-cache
-        kernel_size = alloc_memory_by_key.pop("Kernel")  # model weight
-
-        # Get the maximum number of blocks that can be allocated
-        buffer = sum(alloc_memory_by_key.values())
-        max_num_blocks = cls.get_maximum_num_blocks(
-            config=model_config,
-            tensor_parallel_size=rbln_config.tensor_parallel_size,
-            kvcache_block_size=rbln_config.kvcache_block_size,
-            kernel_size=kernel_size,
-            buffer=buffer,
+        cls.multiply_kv_cache_num_blocks(
+            compiled_models=compiled_models, rbln_config=rbln_config, multiplier=rbln_config.kvcache_num_blocks
         )
 
-        # Since our estimation logic is not always accurate,
-        # users can set `kvcache_num_blocks` to `max_num_blocks`.
-        # If the memory is not enough, the model will fail to compile.
-        if rbln_config.kvcache_num_blocks < max_num_blocks:
+    @classmethod
+    def estimate_num_kvcache_blocks(
+        cls,
+        compiled_models: dict[str, rebel.RBLNCompiledModel],
+        rbln_config: RBLNDecoderOnlyModelForCausalLMConfig,
+        available_dram: Optional[int] = None,
+    ) -> int:
+        if available_dram is None:
+            available_dram = get_available_dram(rbln_config.npu)
+
+        if "prefill" not in rbln_config.phases:
             logger.warning(
-                f"Current `kvcache_num_blocks` setting is {rbln_config.kvcache_num_blocks}. "
-                "Our analysis indicates that additional memory is available for more blocks. "
-                f"Consider increasing `kvcache_num_blocks` to {max_num_blocks} for potentially improved performance. "
-                "Please be advised that our memory estimation algorithm has limitations, "
-                "and increasing this value may not guarantee successful model compilation."
+                "Not estimating number of KV cache blocks since `prefill` phase is not in the `phases` list."
+            )
+            return 1
+
+        num_node = rbln_config.tensor_parallel_size or 1
+        alloc_per_node_without_dram = [0] * num_node
+
+        for compiled_model in compiled_models.values():
+            for key, alloc_per_node in compiled_model.get_alloc_per_node_by_key().items():
+                if key == "DramTensor":
+                    continue
+
+                if len(alloc_per_node) != num_node:
+                    alloc_per_node += [0] * (num_node - len(alloc_per_node))
+
+                alloc_per_node_without_dram = [a + b for a, b in zip(alloc_per_node_without_dram, alloc_per_node)]
+
+        remaining_dram_at_node: list[int] = [
+            available_dram - without_dramtensor for without_dramtensor in alloc_per_node_without_dram
+        ]
+
+        # kvcache_tensor_sizes[key][node_id][chiplet_id] = alloc_size
+        kvcache_tensor_sizes: dict[str, list[list[int]]] = compiled_models["prefill"].exp_get_dram_tensor_sizes()
+        kvcache_meta_can_resize: dict[str, bool] = {
+            kvcache_meta.name: kvcache_meta.can_resize for kvcache_meta in rbln_config.kvcache_metas
+        }
+
+        def get_updated_kvcache_tensor_sizes(
+            kvcache_tensor_sizes: dict[str, list[list[int]]], multiplier: int
+        ) -> dict[str, list[list[int]]]:
+            # Get the updated KV cache tensor sizes by multiplying the multiplier
+            # with considering attention type (full or sliding), and memory alignment.
+            ret: dict[str, list[list[int]]] = {}
+            for key, sizes_at_node in kvcache_tensor_sizes.items():
+                m = multiplier if kvcache_meta_can_resize[key] else 1
+                ret[key] = [
+                    [align_2MB(size_at_chiplet * m) for size_at_chiplet in sizes_at_node_at_chiplet]
+                    for sizes_at_node_at_chiplet in sizes_at_node
+                ]
+            return ret
+
+        def check_memory_fits(multiplier: int) -> tuple[bool, list[int]]:
+            # Check if the given multiplier fits in memory
+            # Returns (fits: bool, kvcache_tensor_sizes_at_node: list[int])
+            updated_kvcache_tensor_sizes = get_updated_kvcache_tensor_sizes(kvcache_tensor_sizes, multiplier)
+
+            kvcache_tensor_sizes_at_node: list[int] = [0] * num_node
+            for tensor_sizes_at_node in updated_kvcache_tensor_sizes.values():
+                tensor_sizes_at_node: list[list[int]]
+                for node_id, sizes_at_chiplet in enumerate(tensor_sizes_at_node):
+                    sizes_at_chiplet: list[int]
+                    kvcache_tensor_sizes_at_node[node_id] += sum(sizes_at_chiplet)
+
+            fits = all(
+                remaining_dram_at_node[node_id] >= kvcache_tensor_sizes_at_node[node_id] for node_id in range(num_node)
+            )
+            return fits, kvcache_tensor_sizes_at_node
+
+        # Fast path: try maximum blocks first (most common case)
+        fits, _ = check_memory_fits(rbln_config.num_full_blocks)
+        if fits:
+            # Best case: maximum blocks fit in memory
+            return rbln_config.num_full_blocks
+
+        # Slow path: binary search for optimal multiplier
+        logger.debug(
+            f"[KVCache] Not enough memory for {rbln_config.num_full_blocks} blocks. "
+            f"Searching for optimal multiplier..."
+        )
+
+        left, right = 1, rbln_config.num_full_blocks - 1
+        multiplier = 1  # Default to minimum if no valid multiplier found
+
+        while left <= right:
+            mid = (left + right) // 2
+            fits, kvcache_tensor_sizes_at_node = check_memory_fits(mid)
+
+            if fits:
+                # Memory is sufficient, try larger multiplier
+                multiplier = mid
+                left = mid + 1
+            else:
+                # Memory is insufficient, try smaller multiplier
+                logger.debug(
+                    f"[KVCache] Not enough memory for {mid} blocks. Remaining DRAM: "
+                    f"{[format_byte_size(remaining_dram) for remaining_dram in remaining_dram_at_node]}, "
+                    f"KV cache tensor sizes: {[format_byte_size(size) for size in kvcache_tensor_sizes_at_node]}"
+                )
+                right = mid - 1
+
+        return multiplier
+
+    @classmethod
+    def multiply_kv_cache_num_blocks(
+        cls,
+        compiled_models: dict[str, rebel.RBLNCompiledModel],
+        rbln_config: RBLNDecoderOnlyModelForCausalLMConfig,
+        multiplier: int,
+    ):
+        if not is_compiler_supports_buffer_resize():
+            raise RuntimeError(
+                "The installed version of rebel-compiler does not support automatic kv cache size determination. "
+                "Please upgrade rebel-compiler to a version that supports this feature, "
+                "or explicitly set 'kvcache_num_blocks' in rbln_config to manually specify the cache size."
+            )
+
+        for compiled_model in compiled_models.values():
+            compiled_model.exp_multiply_buffer_size(
+                {
+                    kvcache_meta.name: multiplier
+                    for kvcache_meta in rbln_config.kvcache_metas
+                    if kvcache_meta.can_resize
+                }
             )

@@ -17,33 +17,25 @@ on:
 
 jobs:
   check-rebel-compiler-version:
-    runs-on: rebel-k8s-runner
+    runs-on: rbln-sw-k8s-4c-32gb
+    container:
+      image: ${{ vars.DEV_CONTAINER_IMAGE }}
     outputs:
       compiler_version_check: ${{ steps.final_check.outputs.COMPILER_VERSION_CHECK }}
       compiler_version: ${{ steps.install_compiler.outputs.COMPILER_VERSION }}
     steps:
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
       - name: Install rebel-compiler
         id: install_compiler
-        env:
-          REBEL_PYPI_ENDPOINT: ${{ vars.REBEL_PYPI_INTERNAL_ENDPOINT }}
-          REBEL_PYPI_USERNAME: ${{ secrets.REBEL_PYPI_USERNAME }}
-          REBEL_PYPI_PASSWORD: ${{ secrets.REBEL_PYPI_PASSWORD }}
         run: |
           set -e
-          PYPI_URL=$(echo $REBEL_PYPI_ENDPOINT | sed "s/\/\//\0$REBEL_PYPI_USERNAME:$REBEL_PYPI_PASSWORD@/")
-          pip3 install --extra-index-url $PYPI_URL rebel-compiler==${{ inputs.compiler_version }}
+          uv pip install --extra-index-url ${{ secrets.DEV_PKG_URL }} rebel-compiler==${{ inputs.compiler_version }}
           echo "COMPILER_VERSION=${{ inputs.compiler_version }}" >> $GITHUB_OUTPUT
 
       - name: Run script to check ENV
         id: check_env
         run: |
           echo "Running check for rebel-compiler version"
-          ENV_VALUE=$(python3 -c '${{ secrets.CHECK_DEPLOY }}')
+          ENV_VALUE=$(python -c '${{ secrets.CHECK_DEPLOY }}')
           echo $ENV_VALUE
           echo "ENV_VALUE=$ENV_VALUE" >> $GITHUB_ENV
 

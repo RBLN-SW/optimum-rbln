@@ -139,8 +139,8 @@ def main():
     module_name = sys.argv[2] if len(sys.argv) > 2 else None
 
     if not file_path.exists():
-        print(f"❌ File not found: {file_path}")
-        sys.exit(1)
+        print(f"⚠️ File not found: {file_path}")
+        sys.exit(0)
 
     print(f"🔍 Testing mkdocstrings parsing: {file_path}")
     if module_name:

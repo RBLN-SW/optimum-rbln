@@ -1,0 +1,272 @@
+name: Slack report
+
+on:
+  workflow_call:
+    inputs:
+      use_playground_channel:
+        description: "If true, post to secrets.SLACK_CI_PLAYGROUND_CHANNEL; otherwise post to secrets.SLACK_CI_REPORTER_CHANNEL."
+        required: false
+        type: boolean
+        default: false
+      title_base:
+        description: "Base title (without emoji prefix)."
+        required: true
+        type: string
+      caller_repository:
+        description: "Repository in OWNER/REPO form for querying the caller run jobs."
+        required: true
+        type: string
+      caller_run_id:
+        description: "GitHub Actions run_id to query jobs from (caller workflow run)."
+        required: true
+        type: string
+      commit_sha:
+        description: "Commit SHA to link in Slack."
+        required: true
+        type: string
+      compiler_version:
+        description: "Rebel compiler version string."
+        required: true
+        type: string
+      transformers_version:
+        description: "Transformers version string."
+        required: true
+        type: string
+      diffusers_version:
+        description: "Diffusers version string."
+        required: true
+        type: string
+      bc_result:
+        description: "BC result string (success/failure/skipped). Empty means do not include BC."
+        required: false
+        type: string
+        default: ""
+      pytest_job_group:
+        description: "Optional substring to identify *main* pytest jobs in the caller run (e.g. 'rbln-full-test'). Empty means match all 'Pytest ('."
+        required: false
+        type: string
+        default: ""
+      bc_pytest_job_group:
+        description: "Optional substring to identify BC pytest jobs in the caller run (e.g. 'bc-full-inference-test'). Empty disables BC pytest parsing."
+        required: false
+        type: string
+        default: ""
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  slack-report:
+    runs-on: rbln-sw-k8s-4c-32gb
+    container:
+      image: ${{ vars.DEV_CONTAINER_IMAGE }}
+    steps:
+      - name: Build Slack payload
+        id: build
+        run: |
+          set -euo pipefail
+
+          REPO="${{ inputs.caller_repository }}"
+          RUN_ID="${{ inputs.caller_run_id }}"
+          SHA="${{ inputs.commit_sha }}"
+
+          JOBS=$(curl -s -H "Authorization: Bearer ${{ github.token }}" \
+            "https://api.github.com/repos/$REPO/actions/runs/$RUN_ID/jobs?per_page=100")
+
+          # Pytest jobs can appear with prefixes when triggered via reusable workflows
+          # (e.g. "rbln-full-test / optimum-rbln-pytest / Pytest (xxx)"), so don't rely on startswith().
+          PYTEST_NAME_SUBSTR='Pytest ('
+          PYTEST_JOB_GROUP="${{ inputs.pytest_job_group }}"
+          BC_PYTEST_JOB_GROUP="${{ inputs.bc_pytest_job_group }}"
+
+          # Reuse a single jq selector for "pytest jobs" to avoid duplication.
+          PYTEST_JQ_SELECTOR='.jobs[] | select(.name | contains($s)) | select(($g == "") or (.name | contains($g)))'
+          BC_PYTEST_JQ_SELECTOR='.jobs[] | select(.name | contains($s)) | select(.name | contains($g))'
+
+          FAILED_JOB_NAMES=$(echo "$JOBS" | jq -r \
+            --arg s "$PYTEST_NAME_SUBSTR" \
+            --arg g "$PYTEST_JOB_GROUP" \
+            "$PYTEST_JQ_SELECTOR | select(.conclusion == \"failure\") | .name")
+          FAILED_TEST_NAMES=$(echo "$FAILED_JOB_NAMES" | sed -E 's/.*Pytest \((.*)\).*/\1/' || true)
+          FAILED_TESTS=$(echo "$FAILED_TEST_NAMES" | tr '\n' ', ' | sed 's/,$//' || true)
+
+          if [ -z "${FAILED_TESTS:-}" ]; then
+            FAILED_TESTS="Unknown"
+          fi
+
+          # Determine overall pytest status from jobs in this run.
+          PYTEST_FAIL_COUNT=$(echo "$JOBS" | jq -r \
+            --arg s "$PYTEST_NAME_SUBSTR" \
+            --arg g "$PYTEST_JOB_GROUP" \
+            "[ $PYTEST_JQ_SELECTOR | select(.conclusion == \"failure\") ] | length")
+          PYTEST_TOTAL_COUNT=$(echo "$JOBS" | jq -r \
+            --arg s "$PYTEST_NAME_SUBSTR" \
+            --arg g "$PYTEST_JOB_GROUP" \
+            "[ $PYTEST_JQ_SELECTOR ] | length")
+
+          # Optional: BC pytest status (separate from bc_result)
+          BC_PYTEST_FAIL_COUNT=0
+          BC_PYTEST_TOTAL_COUNT=0
+          if [ -n "${BC_PYTEST_JOB_GROUP:-}" ]; then
+            BC_PYTEST_FAIL_COUNT=$(echo "$JOBS" | jq -r \
+              --arg s "$PYTEST_NAME_SUBSTR" \
+              --arg g "$BC_PYTEST_JOB_GROUP" \
+              "[ $BC_PYTEST_JQ_SELECTOR | select(.conclusion == \"failure\") ] | length")
+            BC_PYTEST_TOTAL_COUNT=$(echo "$JOBS" | jq -r \
+              --arg s "$PYTEST_NAME_SUBSTR" \
+              --arg g "$BC_PYTEST_JOB_GROUP" \
+              "[ $BC_PYTEST_JQ_SELECTOR ] | length")
+          fi
+
+          if [ "$PYTEST_TOTAL_COUNT" -eq 0 ]; then
+            PYTEST_STATUS="⚠️ Unknown"
+          elif [ "$PYTEST_FAIL_COUNT" -gt 0 ]; then
+            if [ -n "$FAILED_TESTS" ] && [ "$FAILED_TESTS" != "Unknown" ]; then
+              PYTEST_STATUS="❌ Failed - Tests: \`$FAILED_TESTS\`"
+            else
+              PYTEST_STATUS="❌ Failed"
+            fi
+          else
+            PYTEST_STATUS="✅ Success - All tests passed"
+          fi
+
+          # Compiler job is named "check-rebel-compiler-version" (reusable workflow job).
+          COMPILER_CONCLUSION=$(echo "$JOBS" | jq -r '.jobs[] | select(.name | contains("check-rebel-compiler-version") or contains("check-compiler")) | .conclusion' | head -n 1)
+          if [ "$COMPILER_CONCLUSION" = "success" ]; then
+            COMPILER_STATUS="✅ Available"
+          elif [ -z "$COMPILER_CONCLUSION" ] || [ "$COMPILER_CONCLUSION" = "null" ]; then
+            COMPILER_STATUS="⚠️ Unknown"
+          else
+            COMPILER_STATUS="❌ Not Available"
+          fi
+
+          BC_RESULT="${{ inputs.bc_result }}"
+          INCLUDE_BC=false
+          if [ -n "$BC_RESULT" ]; then
+            INCLUDE_BC=true
+          fi
+
+          TITLE_BASE="${{ inputs.title_base }}"
+          if [ "$PYTEST_TOTAL_COUNT" -eq 0 ]; then
+            TITLE="⚠️ $TITLE_BASE - No Pytest Jobs Found"
+          elif [ "$PYTEST_FAIL_COUNT" -gt 0 ]; then
+            TITLE="❌ $TITLE_BASE"
+          elif [ "$INCLUDE_BC" = "true" ] && [ "$BC_RESULT" != "success" ] && [ "$BC_RESULT" != "skipped" ] && [ -n "$BC_RESULT" ]; then
+            TITLE="❌ $TITLE_BASE - BC Failed"
+          elif [ "$COMPILER_CONCLUSION" != "success" ] && [ -n "$COMPILER_CONCLUSION" ] && [ "$COMPILER_CONCLUSION" != "null" ]; then
+            TITLE="⚠️ $TITLE_BASE - Compiler Check Failed"
+          else
+            TITLE="✅ $TITLE_BASE"
+          fi
+
+          commit="*Commit*\n<https://github.com/$REPO/commit/$SHA|$SHA>"
+          action_link="*CI Report*\n<https://github.com/$REPO/actions/runs/$RUN_ID|View Details>"
+
+          bc_blocks='[]'
+          if [ "$INCLUDE_BC" = "true" ]; then
+            if [ "$BC_RESULT" = "skipped" ]; then
+              bc_status="⏭️ Skipped"
+            elif [ "$BC_RESULT" = "success" ]; then
+              bc_status="✅ Success - All BC tests passed"
+            else
+              bc_status="❌ Failed"
+            fi
+
+            if [ -n "${BC_PYTEST_JOB_GROUP:-}" ] && [ "$BC_PYTEST_TOTAL_COUNT" -gt 0 ]; then
+              if [ "$BC_PYTEST_FAIL_COUNT" -gt 0 ]; then
+                bc_status="$bc_status (Pytest: ❌ $BC_PYTEST_FAIL_COUNT/$BC_PYTEST_TOTAL_COUNT failed)"
+              else
+                bc_status="$bc_status (Pytest: ✅ $BC_PYTEST_TOTAL_COUNT/$BC_PYTEST_TOTAL_COUNT passed)"
+              fi
+            fi
+            bc_blocks=$(jq -n --arg bc_status "$bc_status" '[
+              {
+                type: "section",
+                fields: [
+                  { type: "mrkdwn", text: "*BC Test Results*" },
+                  { type: "mrkdwn", text: $bc_status }
+                ]
+              }
+            ]')
+          fi
+
+          payload=$(jq -n \
+            --arg channel "${{ inputs.use_playground_channel && secrets.SLACK_CI_PLAYGROUND_CHANNEL || secrets.SLACK_CI_REPORTER_CHANNEL }}" \
+            --arg title "$TITLE" \
+            --arg commit "$commit" \
+            --arg action_link "$action_link" \
+            --arg compiler_version "${{ inputs.compiler_version }}" \
+            --arg transformers_version "${{ inputs.transformers_version }}" \
+            --arg diffusers_version "${{ inputs.diffusers_version }}" \
+            --arg compiler_status "$COMPILER_STATUS" \
+            --arg pytest_status "$PYTEST_STATUS" \
+            --argjson bc_blocks "$bc_blocks" \
+            '{
+              channel: $channel,
+              text: "Optimum-RBLN CI Results",
+              blocks: ([
+                {
+                  type: "header",
+                  text: { type: "plain_text", text: $title }
+                },
+                {
+                  type: "section",
+                  fields: [
+                    { type: "mrkdwn", text: $commit },
+                    { type: "mrkdwn", text: $action_link }
+                  ]
+                },
+                {
+                  type: "section",
+                  fields: [
+                    { type: "mrkdwn", text: "*Compiler Version*" },
+                    { type: "mrkdwn", text: ("`" + $compiler_version + "`") }
+                  ]
+                },
+                {
+                  type: "section",
+                  fields: [
+                    { type: "mrkdwn", text: "*Transformers Version*" },
+                    { type: "mrkdwn", text: ("`" + $transformers_version + "`") }
+                  ]
+                },
+                {
+                  type: "section",
+                  fields: [
+                    { type: "mrkdwn", text: "*Diffusers Version*" },
+                    { type: "mrkdwn", text: ("`" + $diffusers_version + "`") }
+                  ]
+                },
+                { type: "divider" },
+                {
+                  type: "section",
+                  fields: [
+                    { type: "mrkdwn", text: "*Compiler Check*" },
+                    { type: "mrkdwn", text: $compiler_status }
+                  ]
+                },
+                {
+                  type: "section",
+                  fields: [
+                    { type: "mrkdwn", text: "*Pytest Results*" },
+                    { type: "mrkdwn", text: $pytest_status }
+                  ]
+                }
+              ] + $bc_blocks)
+            }')
+
+          # $GITHUB_OUTPUT doesn't accept raw multi-line values. Write JSON to a file and pass the path.
+          payload_file="${RUNNER_TEMP:-/tmp}/slack_payload.json"
+          printf '%s' "$payload" > "$payload_file"
+          echo "payload_file=$payload_file" >> "$GITHUB_OUTPUT"
+
+      - name: Notify Slack
+        if: always()
+        run: |
+          curl -X POST \
+            -H 'Authorization: Bearer ${{ secrets.SLACK_BOT_USER_OAUTH_ACCESS_TOKEN }}' \
+            -H 'Content-type: application/json; charset=utf-8' \
+            --data-binary @"${{ steps.build.outputs.payload_file }}" \
+            https://slack.com/api/chat.postMessage
+

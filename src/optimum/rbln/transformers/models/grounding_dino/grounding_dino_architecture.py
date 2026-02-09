@@ -150,7 +150,7 @@ class _GroundingDinoEncoder(torch.nn.Module):
         all_attn_fused_vision = () if output_attentions else None
         all_attn_enhanced_text = () if output_attentions else None
         all_attn_deformable = () if output_attentions else None
-        for i, encoder_layer in enumerate(self.layers):
+        for _, encoder_layer in enumerate(self.layers):
             if output_hidden_states:
                 encoder_vision_states += (vision_features,)
                 encoder_text_states += (text_features,)
@@ -509,10 +509,12 @@ class _GroundingDinoBiMultiHeadAttention(torch.nn.Module):
 
         # mask vision for language
         if vision_attention_mask is not None:
-            # RBLN FIX: bool tensor to float tensor
-            mask = vision_attention_mask * torch.finfo(torch.float16).min
-            text_attn_weights = text_attn_weights.transpose(1, 2) + mask
-            text_attn_weights = text_attn_weights.transpose(1, 2)
+            # RBLN FIX: bool tensor to float tensor, broadcast across heads and src_len
+            mask = vision_attention_mask
+            if mask.dim() == 3:
+                mask = mask[..., 0]
+            mask = mask[:, None, None, :].repeat(1, self.num_heads, 1, 1).flatten(0, 1)
+            text_attn_weights = text_attn_weights + mask * torch.finfo(text_attn_weights.dtype).min
 
         text_attn_weights = text_attn_weights.softmax(dim=-1)
 
