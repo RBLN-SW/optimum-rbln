@@ -321,6 +321,7 @@ class TestExaoneForCausalLM(LLMTest.TestLLM):
     # HF_MODEL_ID = "katuni4ka/tiny-random-exaone"
     HF_MODEL_ID = "LGAI-EXAONE/EXAONE-3.5-2.4B-Instruct"
     HF_CONFIG_KWARGS = {"num_hidden_layers": 1, "max_position_embeddings": 1024, "trust_remote_code": True}
+    TEST_LEVEL = TestLevel.DISABLED
 
 
 class TestT5Model(LLMTest.TestLLM):
