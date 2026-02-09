@@ -74,21 +74,14 @@ class DecoderOnlyWrapper(nn.Module):
         else:
             self.rotary_emb = None
 
-        if (
-            rbln_config.kvcache_partition_len
-            and rbln_config.kvcache_partition_len > rbln_config.max_seq_len
-        ):
+        if rbln_config.kvcache_partition_len and rbln_config.kvcache_partition_len > rbln_config.max_seq_len:
             raise ValueError(
                 f"kvcache_partition_len({rbln_config.kvcache_partition_len}) should be lower"
                 f" or equal to max_seq_len({rbln_config.max_seq_len})!"
             )
 
-        self.model = self.convert_to_rbln_class(
-            model, rbln_config.max_seq_len, use_rotary_emb
-        )
-        self.num_hidden_layers = (
-            getattr(self.config, "num_hidden_layers", None) or self.config.n_layer
-        )
+        self.model = self.convert_to_rbln_class(model, rbln_config.max_seq_len, use_rotary_emb)
+        self.num_hidden_layers = getattr(self.config, "num_hidden_layers", None) or self.config.n_layer
         self._phase = "prefill"
 
     def get_rotary_emb(self, max_seq_len):
@@ -115,18 +108,14 @@ class DecoderOnlyWrapper(nn.Module):
     def get_rbln_causal_lm_class(self):
         return DecoderOnlyForCausalLM
 
-    def convert_to_rbln_class(
-        self, model: PreTrainedModel, max_seq_len: int, use_rotary_emb: bool
-    ):
+    def convert_to_rbln_class(self, model: PreTrainedModel, max_seq_len: int, use_rotary_emb: bool):
         new_layers = []
         for layer_idx, layer in enumerate(self.get_decoder_layers(model)):
             is_sliding = layer_idx in self.rbln_config.sliding_window_layers
             new_self_attn = self.get_rbln_attn_class()(
                 self.get_attn_layer(layer), self.rbln_config, is_sliding=is_sliding
             )
-            new_layer = self.get_rbln_layer_class()(
-                layer, new_self_attn, lora_config=self.rbln_config.lora_config
-            )
+            new_layer = self.get_rbln_layer_class()(layer, new_self_attn, lora_config=self.rbln_config.lora_config)
             new_layers.append(new_layer)
 
         new_model = self.get_rbln_model_class()(
@@ -157,21 +146,14 @@ class DecoderOnlyWrapper(nn.Module):
         input_ids = None if self.rbln_config.use_inputs_embeds else args.pop(0)
         inputs_embeds = args.pop(0) if self.rbln_config.use_inputs_embeds else None
         cache_position = args.pop(0)
-        global_block_tables = (
-            args.pop(0) if self.rbln_config.use_global_attention else None
-        )
-        local_block_tables = (
-            args.pop(0) if self.rbln_config.use_local_attention else None
-        )
+        global_block_tables = args.pop(0) if self.rbln_config.use_global_attention else None
+        local_block_tables = args.pop(0) if self.rbln_config.use_local_attention else None
         query_position = (
             args.pop(0)
             # query_position usage: prefill & (logits_to_keep == 1 or use_local_attention)
             if (
                 "prefill" in self.phase
-                and (
-                    self.rbln_config.logits_to_keep == 1
-                    or self.rbln_config.use_local_attention
-                )
+                and (self.rbln_config.logits_to_keep == 1 or self.rbln_config.use_local_attention)
             )
             else None
         )
@@ -375,9 +357,7 @@ class DecoderOnlyModel(nn.Module):
         self.embed_tokens = _get_attr_from_candidates(model, self._EMBEDDING_ATTRS)
         # hasattr(model, "rotary_emb") is workaround for Qwen2VL
         if not (use_rotary_emb or hasattr(model, "rotary_emb")):
-            self.embed_positions = _get_attr_from_candidates(
-                model, self._POSITION_ATTRS
-            )
+            self.embed_positions = _get_attr_from_candidates(model, self._POSITION_ATTRS)
         self.norm = _get_attr_from_candidates(model, self._LAYERNORM_ATTRS)
         self.layers = nn.ModuleList(layers)
         self.rbln_config = rbln_config
@@ -414,17 +394,13 @@ class DecoderOnlyModel(nn.Module):
 
         cs = seq_positions.repeat(num_partition, 1).transpose(0, 1)
         pidx = torch.arange(num_partition)
-        cache_pos_for_partitions = torch.clamp(
-            cs - pidx * partition_len, 0, partition_len
-        )
+        cache_pos_for_partitions = torch.clamp(cs - pidx * partition_len, 0, partition_len)
         return cache_pos_for_partitions
 
     def get_swa_custom_op_args(self, position_ids, query_position):
         max_cache_len = self.config.sliding_window
         valid_input_len = 1 if query_position is None else query_position + 1
-        cache_seq_len = torch.clamp(position_ids.to(torch.int32), max=max_cache_len)[
-            :, :1
-        ]  # past seen tokens
+        cache_seq_len = torch.clamp(position_ids.to(torch.int32), max=max_cache_len)[:, :1]  # past seen tokens
         cache_offset = (
             torch.clamp(position_ids, max=max_cache_len)[:, :1] + valid_input_len
         )  # cache offset for next steps
@@ -478,9 +454,7 @@ class DecoderOnlyModel(nn.Module):
                 cos = rotary_emb[0]
                 sin = rotary_emb[1]
             else:
-                cos, sin = rotary_emb(
-                    hidden_states, self.max_seq_len
-                )  # dtype carrier, max_seq_len
+                cos, sin = rotary_emb(hidden_states, self.max_seq_len)  # dtype carrier, max_seq_len
                 cos, sin = slice_and_unsqueeze_cos_sin(cos, sin, position_ids)
 
         elif self.use_learned_pos_emb:
@@ -520,9 +494,7 @@ class DecoderOnlyModel(nn.Module):
 
         # Get local cache positions for sliding window layers
         if len(self.sliding_window_layers) > 0:
-            cache_seq_len, cache_offset, swa_attn_mask = self.get_swa_custom_op_args(
-                position_ids, query_position
-            )
+            cache_seq_len, cache_offset, swa_attn_mask = self.get_swa_custom_op_args(position_ids, query_position)
             sliding_cache_pos = (cache_seq_len, cache_offset)
 
         all_hidden_states = () if output_hidden_states else None
@@ -598,18 +570,10 @@ class DecoderOnlyLayer(nn.Module):
     ):
         super().__init__()
 
-        self.pre_attention_layernorm = _get_attr_from_candidates(
-            layer, self._PRE_ATTN_LAYERNORM
-        )
-        self.post_attention_layernorm = _get_attr_from_candidates(
-            layer, self._POST_ATTN_LAYERNORM
-        )
-        self.pre_feedforward_layernorm = _get_attr_from_candidates(
-            layer, self._PRE_FF_LAYERNORM_ATTRS
-        )
-        self.post_feedforward_layernorm = _get_attr_from_candidates(
-            layer, self._POST_FF_LAYERNORM_ATTRS
-        )
+        self.pre_attention_layernorm = _get_attr_from_candidates(layer, self._PRE_ATTN_LAYERNORM)
+        self.post_attention_layernorm = _get_attr_from_candidates(layer, self._POST_ATTN_LAYERNORM)
+        self.pre_feedforward_layernorm = _get_attr_from_candidates(layer, self._PRE_FF_LAYERNORM_ATTRS)
+        self.post_feedforward_layernorm = _get_attr_from_candidates(layer, self._POST_FF_LAYERNORM_ATTRS)
         self.mlp = _get_attr_from_candidates(layer, self._MLP_ATTR)
         self.self_attn = self_attn
         self._phase = "prefill"
@@ -654,9 +618,7 @@ class DecoderOnlyLayer(nn.Module):
     def get_mlp(self) -> nn.Module:
         return self.mlp
 
-    def forward_mlp(
-        self, hidden_states: torch.Tensor, lora_int_id: Optional[torch.Tensor] = None
-    ) -> torch.Tensor:
+    def forward_mlp(self, hidden_states: torch.Tensor, lora_int_id: Optional[torch.Tensor] = None) -> torch.Tensor:
         mlp = self.get_mlp()
         if self.lora_config and lora_int_id is not None:
             gate = mlp.gate_proj(hidden_states, lora_int_id)
@@ -732,19 +694,14 @@ class DecoderOnlyAttention(nn.Module):
         self.config = getattr(self_attn, "config", None)
         self.rbln_config = rbln_config
         self.layer_idx = self_attn.layer_idx
-        self.num_heads = (
-            getattr(self_attn, "num_heads", None)
-            or self_attn.config.num_attention_heads
-        )
+        self.num_heads = getattr(self_attn, "num_heads", None) or self_attn.config.num_attention_heads
         self.head_dim = self_attn.head_dim
         self._phase = "prefill"
         self.scale = torch.nn.Parameter(torch.tensor(self.get_attn_scale(self_attn)))
 
         if hasattr(self_attn, "num_key_value_heads"):
             self.num_key_value_heads = self_attn.num_key_value_heads
-        elif hasattr(self_attn, "config") and hasattr(
-            self_attn.config, "num_key_value_heads"
-        ):
+        elif hasattr(self_attn, "config") and hasattr(self_attn.config, "num_key_value_heads"):
             self.num_key_value_heads = self_attn.config.num_key_value_heads
         else:
             self.num_key_value_heads = self.num_heads
@@ -752,9 +709,7 @@ class DecoderOnlyAttention(nn.Module):
         self.is_sliding = is_sliding
         self.attn_impl = rbln_config.attn_impl if not is_sliding else "eager"
         self.kvcache_partition_len = getattr(rbln_config, "kvcache_partition_len", None)
-        self.kvcache_block_size = (
-            rbln_config.sliding_window if is_sliding else rbln_config.kvcache_block_size
-        )
+        self.kvcache_block_size = rbln_config.sliding_window if is_sliding else rbln_config.kvcache_block_size
         self.lora_config = rbln_config.lora_config
 
         if hasattr(self_attn, "sinks"):
@@ -827,9 +782,7 @@ class DecoderOnlyAttention(nn.Module):
                 is_sliding=False,
             )
         else:
-            raise NotImplementedError(
-                f"Unknown attention implementation: {self.attn_impl}"
-            )
+            raise NotImplementedError(f"Unknown attention implementation: {self.attn_impl}")
 
     def __post_init__(self, self_attn=None):
         self.q_proj = self_attn.q_proj
@@ -893,32 +846,22 @@ class DecoderOnlyAttention(nn.Module):
     ):
         batch_size, query_length, _ = hidden_states.size()
 
-        query_states, key_states, value_states = self.projection(
-            hidden_states=hidden_states, lora_int_id=lora_int_id
-        )
+        query_states, key_states, value_states = self.projection(hidden_states=hidden_states, lora_int_id=lora_int_id)
 
-        query_states = query_states.view(
-            batch_size, query_length, self.num_heads, self.head_dim
-        ).transpose(1, 2)
-        key_states = key_states.view(
-            batch_size, query_length, self.num_key_value_heads, self.head_dim
-        ).transpose(1, 2)
-        value_states = value_states.view(
-            batch_size, query_length, self.num_key_value_heads, self.head_dim
-        ).transpose(1, 2)
+        query_states = query_states.view(batch_size, query_length, self.num_heads, self.head_dim).transpose(1, 2)
+        key_states = key_states.view(batch_size, query_length, self.num_key_value_heads, self.head_dim).transpose(1, 2)
+        value_states = value_states.view(batch_size, query_length, self.num_key_value_heads, self.head_dim).transpose(
+            1, 2
+        )
         if hasattr(self, "q_norm") and hasattr(self, "k_norm"):
             query_states = self.q_norm(query_states)
             key_states = self.k_norm(key_states)
 
         if cos is not None and sin is not None:
-            query_states, key_states = self.apply_rotary_pos_embed(
-                query_states, key_states, cos, sin
-            )
+            query_states, key_states = self.apply_rotary_pos_embed(query_states, key_states, cos, sin)
 
         if batch_size > 1 and "prefill" in self.phase:
-            raise NotImplementedError(
-                f"batch size should be 1 if prefill phase, but got {batch_size}."
-            )
+            raise NotImplementedError(f"batch size should be 1 if prefill phase, but got {batch_size}.")
 
         k_scale, v_scale = self.maybe_get_kvcache_scale()
 
@@ -1092,9 +1035,7 @@ class AttentionOp(nn.Module):
         attn_output = attn_op(**op_args)
         attn_output = attn_output.view(batch_size, self.num_heads, -1, self.head_dim)
         attn_output = attn_output.transpose(1, 2).contiguous()
-        attn_output = attn_output.reshape(
-            batch_size, -1, self.num_heads * self.head_dim
-        )
+        attn_output = attn_output.reshape(batch_size, -1, self.num_heads * self.head_dim)
 
         return attn_output
 
@@ -1215,9 +1156,7 @@ class FlashAttentionOp(AttentionOp):
         attn_output = attn_op(**op_args)
         attn_output = attn_output.view(batch_size, self.num_heads, -1, self.head_dim)
         attn_output = attn_output.transpose(1, 2).contiguous()
-        attn_output = attn_output.reshape(
-            batch_size, -1, self.num_heads * self.head_dim
-        )
+        attn_output = attn_output.reshape(batch_size, -1, self.num_heads * self.head_dim)
 
         return attn_output
 
@@ -1237,16 +1176,12 @@ class SlidingWindowAttentionOp(AttentionOp):
             rbln_config=rbln_config,
             is_sliding=True,
         )
-        self.quantization = (
-            None  # Sliding window attention does not support quantization
-        )
+        self.quantization = None  # Sliding window attention does not support quantization
 
     def get_attn_op_name(self):
         phase = "decode" if self.phase == "decode" else "prefill"
         if not self.use_attention_mask:
-            raise NotImplementedError(
-                "Attention mask is needed for sliding window attention."
-            )
+            raise NotImplementedError("Attention mask is needed for sliding window attention.")
 
         attn_op_name = "paged_sliding_window_attn_" + phase
         return attn_op_name
@@ -1267,12 +1202,8 @@ class SlidingWindowAttentionOp(AttentionOp):
         v_scale: Optional[torch.Tensor] = None,
         s_aux: Optional[torch.Tensor] = None,
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        assert self.quantization is None, (
-            "Sliding window attention does not support quantization"
-        )
-        assert k_scale is None and v_scale is None, (
-            "Sliding window attention does not support quantization"
-        )
+        assert self.quantization is None, "Sliding window attention does not support quantization"
+        assert k_scale is None and v_scale is None, "Sliding window attention does not support quantization"
 
         # reshape for removing repeat_kv (batch=1 , num_head, 1, q_len=1, head_dim)
         key_state = key_state.unsqueeze(2)
@@ -1327,9 +1258,7 @@ class SlidingWindowAttentionOp(AttentionOp):
         attn_output = attn_op(**op_args)
         attn_output = attn_output.view(batch_size, self.num_heads, -1, self.head_dim)
         attn_output = attn_output.transpose(1, 2).contiguous()
-        attn_output = attn_output.reshape(
-            batch_size, -1, self.num_heads * self.head_dim
-        )
+        attn_output = attn_output.reshape(batch_size, -1, self.num_heads * self.head_dim)
 
         return attn_output
 
@@ -1345,15 +1274,11 @@ class RotaryEmbedding(nn.Module):
         super().__init__()
 
         if hasattr(config, "rope_scaling") and config.rope_scaling is not None:
-            rope_type = config.rope_scaling.get(
-                "rope_type", config.rope_scaling.get("type")
-            )
+            rope_type = config.rope_scaling.get("rope_type", config.rope_scaling.get("type"))
         else:
             rope_type = "default"
 
-        inv_freq, attention_scaling = ROPE_INIT_FUNCTIONS[rope_type](
-            config, "cpu", max_seq_len_cached
-        )
+        inv_freq, attention_scaling = ROPE_INIT_FUNCTIONS[rope_type](config, "cpu", max_seq_len_cached)
         cache_position = torch.arange(0, max_seq_len_cached)
         cache_position_expanded = cache_position[:, None]
 
@@ -1412,9 +1337,7 @@ def apply_rotary_pos_emb(q, k, cos, sin):
     return q_embed, k_embed
 
 
-def apply_rotary_pos_emb_partial(
-    query_states, key_states, cos, sin, ndim
-) -> Tuple[torch.Tensor, torch.Tensor]:
+def apply_rotary_pos_emb_partial(query_states, key_states, cos, sin, ndim) -> Tuple[torch.Tensor, torch.Tensor]:
     # Partial rotary embedding
     query_rot, query_pass = (
         query_states[..., :ndim],

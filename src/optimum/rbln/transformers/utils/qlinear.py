@@ -38,9 +38,7 @@ class QIntLinear(QLinear):
         finfo = torch.finfo(x.dtype)
         if self.dynamic:
             if self.input_scale is not None:
-                raise NotImplementedError(
-                    "Dynamic quantization with input_scale is not supported."
-                )
+                raise NotImplementedError("Dynamic quantization with input_scale is not supported.")
             x_max = x.abs().max(dim=-1, keepdim=True).values
             x_scale = x_max / iinfo.max
             x_scale = torch.clamp(x_scale, min=finfo.eps)
