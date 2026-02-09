@@ -9,6 +9,7 @@ from optimum.rbln.minimax_poc.minimax_m2_architecture import MiniMaxM2SparseMoeB
 
 DATA_BASE_PATH = "/mnt/shared_data/groups/sw_dev/thkim/minimax/"
 
+
 def _w8a16_block_fp8_matmul(self, input: torch.Tensor) -> torch.Tensor:
     bs0, bs1 = self.block_size
     out_features, in_features = self.weight.shape
@@ -56,6 +57,10 @@ def main(batch_size: int = 1, prefill_chunk_size: int = 128, compile: bool = Fal
     rbln_output = rbln_model.run(inputs)
     golden_output, _ = model(inputs)
 
+    print("rbln_output")
+    print(rbln_output)
+    print("golden_output")
+    print(golden_output)
     print("Max l1 difference:", torch.max(torch.abs(rbln_output.reshape(-1) - golden_output.reshape(-1))))
     print(
         "Pearson correlation coefficient:",
