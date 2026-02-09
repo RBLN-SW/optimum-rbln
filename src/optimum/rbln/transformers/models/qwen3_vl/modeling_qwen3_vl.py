@@ -123,7 +123,6 @@ class RBLNQwen3VLVisionModel(RBLNModel):
         hidden_size = model_config.hidden_size
         num_heads = model_config.num_heads
         head_dim = hidden_size // num_heads
-        # num_deepstack = len(model_config.deepstack_visual_indexes)
 
         input_infos = []
         for max_seq_len in rbln_config.max_seq_lens:
@@ -184,7 +183,7 @@ class RBLNQwen3VLVisionModel(RBLNModel):
         idx_list = [[] for _ in range(4)]
         weight_list = [[] for _ in range(4)]
 
-        for t, h, w in zip(grid_ts, grid_hs, grid_ws):  # noqa: B007
+        for t, h, w in zip(grid_ts, grid_hs, grid_ws, strict=False):  # noqa: B007
             h_idxs = torch.linspace(0, self.num_grid_per_side - 1, h)
             w_idxs = torch.linspace(0, self.num_grid_per_side - 1, w)
 
@@ -224,11 +223,11 @@ class RBLNQwen3VLVisionModel(RBLNModel):
         pos_embeds = self.pos_embed(idx_tensor) * weight_tensor[:, :, None]
         patch_pos_embeds = pos_embeds[0] + pos_embeds[1] + pos_embeds[2] + pos_embeds[3]
 
-        patch_pos_embeds = patch_pos_embeds.split([h * w for h, w in zip(grid_hs, grid_ws)])
+        patch_pos_embeds = patch_pos_embeds.split([h * w for h, w in zip(grid_hs, grid_ws, strict=False)])
 
         patch_pos_embeds_permute = []
         merge_size = self.spatial_merge_size
-        for pos_embed, t, h, w in zip(patch_pos_embeds, grid_ts, grid_hs, grid_ws):
+        for pos_embed, t, h, w in zip(patch_pos_embeds, grid_ts, grid_hs, grid_ws, strict=False):
             pos_embed = pos_embed.repeat(t, 1)
             pos_embed = (
                 pos_embed.view(t, h // merge_size, merge_size, w // merge_size, merge_size, -1)
@@ -259,7 +258,6 @@ class RBLNQwen3VLVisionModel(RBLNModel):
             sin = torch.cat([sin, pos_padding], dim=0)
             position_embeddings = (cos, sin)
 
-        # Create attention mask (1 for valid, 0 for padding)
         attn_mask = torch.ones(1, 1, max_seq_len, max_seq_len, dtype=hidden_states.dtype)
         if valid_len < max_seq_len:
             attn_mask[:, :, valid_len:, :] = 0
@@ -333,9 +331,9 @@ class RBLNQwen3VLModel(RBLNDecoderOnlyModel):
     auto_model_class = AutoModelForVision2Seq
     _decoder_wrapper_cls = Qwen3VL_LanguageModelWrapper
     _use_rotary_emb = False
-    # _rbln_submodules = [
-    #     {"name": "visual"},
-    # ]
+    _rbln_submodules = [
+        {"name": "visual"},
+    ]
     _config_class = Qwen3VLConfig
     _rotary_emb_class = Qwen3VLTextRotaryEmbedding
     _get_rope_index_func = Qwen3VLModel.get_rope_index
@@ -349,16 +347,15 @@ class RBLNQwen3VLModel(RBLNDecoderOnlyModel):
                 text_config=self.config.text_config, vision_config=self.config.vision_config
             )
 
+        self.num_deepstack_layers = len(self.config.vision_config.deepstack_visual_indexes)
+
         super().__post_init__(**kwargs)
-        # self.visual = self.rbln_submodules[0]
+        self.visual = self.rbln_submodules[0]
         self.rotary_emb = self._rotary_emb_class(self.config.text_config)
         if not self.can_generate():
             self.block_tables = torch.arange(self.rbln_config.kvcache_num_blocks, dtype=torch.int16)
 
-        self.num_deepstack_layers = len(self.config.vision_config.deepstack_visual_indexes)
-
     def setup_runtime(self):
-        """Setup runtime with DeepStack support for Qwen3VL."""
         page_table_manager = RBLNPageTableManager(self.rbln_config)
         if self.rbln_config.use_position_ids:
             dec_attn_mask = torch.zeros(self.rbln_config.batch_size, self.rbln_config.max_seq_len, dtype=self.dtype)
@@ -423,8 +420,6 @@ class RBLNQwen3VLModel(RBLNDecoderOnlyModel):
     ):
         input_info = super().get_input_info(batch_size, query_length, rbln_config, model_config.text_config)
 
-        # Insert position_emb at fixed position (after block_tables, index 3)
-        # This matches Qwen2VL behavior
         pos_idx = 3
         head_dim = getattr(model_config.text_config, "head_dim", None) or (
             model_config.text_config.hidden_size // model_config.text_config.num_attention_heads
@@ -475,9 +470,9 @@ class RBLNQwen3VLModel(RBLNDecoderOnlyModel):
 
     def _get_position_embeddings(self, hidden_states, position_ids):
         cos, sin = self.rotary_emb(hidden_states, position_ids)
-        cos = cos.unsqueeze(1).to(self.rbln_config.dtype)  # [batch, 1, seq, head_dim]
-        sin = sin.unsqueeze(1).to(self.rbln_config.dtype)  # [batch, 1, seq, head_dim]
-        return torch.stack([cos, sin])  # [2, batch, 1, seq, head_dim]
+        cos = cos.unsqueeze(1).to(self.rbln_config.dtype)
+        sin = sin.unsqueeze(1).to(self.rbln_config.dtype)
+        return torch.stack([cos, sin])
 
     def _preprocess_prefill(
         self,
@@ -550,7 +545,6 @@ class RBLNQwen3VLModel(RBLNDecoderOnlyModel):
             image_nums = (vision_tokens == image_token_id).sum()
             video_nums = (vision_tokens == video_token_id).sum()
             position_ids, rope_deltas = self._get_rope_index_func(
-                self,
                 input_id,
                 image_grid_thw[image_idx : image_idx + image_nums] if image_grid_thw is not None else None,
                 video_grid_thw[video_idx : video_idx + video_nums] if video_grid_thw is not None else None,
@@ -565,7 +559,6 @@ class RBLNQwen3VLModel(RBLNDecoderOnlyModel):
 
         rope_deltas = torch.stack(all_rope_deltas)
 
-        # Convert deepstack_visual_embeds list to padded tensor [num_layers, batch, seq_len, hidden_size]
         if deepstack_visual_embeds is not None:
             hidden_size = self.config.text_config.hidden_size
             num_layers = len(deepstack_visual_embeds)
@@ -587,7 +580,6 @@ class RBLNQwen3VLModel(RBLNDecoderOnlyModel):
         deepstack_image_embeds: Optional[List[torch.Tensor]],
         deepstack_video_embeds: Optional[List[torch.Tensor]],
     ):
-        """Prepare visual_pos_mask and deepstack_visual_embeds for DeepStack processing."""
         visual_pos_mask = None
         deepstack_visual_embeds = None
 
@@ -596,7 +588,7 @@ class RBLNQwen3VLModel(RBLNDecoderOnlyModel):
             deepstack_visual_embeds = []
             image_mask_joint = image_mask[visual_pos_mask]
             video_mask_joint = video_mask[visual_pos_mask]
-            for img_embed, vid_embed in zip(deepstack_image_embeds, deepstack_video_embeds):
+            for img_embed, vid_embed in zip(deepstack_image_embeds, deepstack_video_embeds, strict=False):
                 embed_joint = img_embed.new_zeros(visual_pos_mask.sum(), img_embed.shape[-1])
                 embed_joint[image_mask_joint] = img_embed
                 embed_joint[video_mask_joint] = vid_embed
@@ -712,7 +704,7 @@ class RBLNQwen3VLForConditionalGeneration(RBLNQwen3VLModel, RBLNDecoderOnlyModel
                 },
                 "tensor_parallel_size": 8,
                 "kvcache_partition_len": 16_384,
-                "max_seq_len": 114_688,
+                "max_seq_len": 262_144,
                 "device": [0, 1, 2, 3, 4, 5, 6, 7],
             },
         )
@@ -725,9 +717,9 @@ class RBLNQwen3VLForConditionalGeneration(RBLNQwen3VLModel, RBLNDecoderOnlyModel
     _decoder_wrapper_cls = Qwen3VL_LanguageModelWrapper
     _supports_non_fp32 = True
     _use_rotary_emb = False
-    # _rbln_submodules = [
-    #     {"name": "visual"},
-    # ]
+    _rbln_submodules = [
+        {"name": "visual"},
+    ]
 
     def __post_init__(self, **kwargs):
         super().__post_init__(**kwargs)
@@ -863,7 +855,7 @@ class RBLNQwen3VLForConditionalGeneration(RBLNQwen3VLModel, RBLNDecoderOnlyModel
                     batch_idx=b_idx,
                     position_embed=position_embed[:, b_idx : b_idx + 1],
                     visual_pos_mask=visual_pos_mask[b_idx : b_idx + 1] if visual_pos_mask is not None else None,
-                    deepstack_visual_embeds=deepstack_visual_embeds,
+                    deepstack_embeds=deepstack_visual_embeds,
                 )
                 logits.append(output.logits)
                 if self.rbln_config.output_hidden_states:

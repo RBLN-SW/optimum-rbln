@@ -1,4 +1,4 @@
-# Copyright 2025 Rebellions Inc. All rights reserved.
+# Copyright 2026 Rebellions Inc. All rights reserved.
 
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -22,13 +22,6 @@ from ..decoderonly.decoderonly_runtime_utils import RBLNRuntimeModel
 
 
 class RBLNQwen3VLRuntimeModel(RBLNRuntimeModel):
-    """
-    Runtime model for Qwen3VL that supports DeepStack visual feature injection.
-
-    DeepStack is a technique that injects visual features into the hidden states
-    at the first N layers of the language model during prefill phase.
-    """
-
     def __init__(self, *args, num_deepstack_layers: int = 3, **kwargs):
         super().__init__(*args, **kwargs)
         self.num_deepstack_layers = num_deepstack_layers
@@ -57,11 +50,16 @@ class RBLNQwen3VLRuntimeModel(RBLNRuntimeModel):
             inputs, cache_position, attention_mask, position_ids, position_embed, token_type_ids
         )
 
-        # Pad visual_pos_mask and deepstack_embeds to match the padded input length
+        padded_input_len = inputs.shape[1]
         if visual_pos_mask is not None:
-            padding_size = inputs.shape[1] - visual_pos_mask.shape[1]
+            padding_size = padded_input_len - visual_pos_mask.shape[1]
             if padding_size > 0:
                 visual_pos_mask = F.pad(visual_pos_mask, (0, padding_size), value=False)
+
+        if deepstack_embeds is not None:
+            padding_size = padded_input_len - deepstack_embeds.shape[1]
+            if padding_size > 0:
+                deepstack_embeds = F.pad(deepstack_embeds, (0, 0, 0, padding_size), value=0)
 
         return (
             inputs,
@@ -183,11 +181,10 @@ class RBLNQwen3VLRuntimeModel(RBLNRuntimeModel):
         )
 
         out_buffers, output_logits, output_hidden_states = self._prepare_prefill_outputs(query_length, attention_mask)
-
-        # Assumed that prefix caching was performed externally if cache_position doesn't start from 0.
         prefix_cached_len = cache_position[0][0].item()
 
-        for step in range(0, inputs.shape[1], self.rbln_config.prefill_chunk_size):
+        padded_input_length = inputs.shape[1]
+        for i, step in enumerate(range(0, padded_input_length, self.rbln_config.prefill_chunk_size)):
             chunk_size = self.rbln_config.prefill_chunk_size
             input_chunk = inputs[:, step : step + chunk_size]
             cache_pos_chunk = cache_position[:, step : step + chunk_size] + padded_cache_lengths
@@ -196,18 +193,13 @@ class RBLNQwen3VLRuntimeModel(RBLNRuntimeModel):
             )
             position_ids_chunk = position_ids[:, step : step + chunk_size] if position_ids is not None else None
 
-            # Prepare deepstack inputs for this chunk
-            # deepstack_visual_embeds: [num_layers, seq_len, hidden_size] -> slice to chunk
             chunk_visual_pos_mask = None
             chunk_deepstack_visual_embeds = None
             if visual_pos_mask is not None and deepstack_embeds is not None:
                 chunk_visual_pos_mask = visual_pos_mask[:, step : step + chunk_size]
-                # Slice deepstack embeds for this chunk: [num_layers, chunk_size, hidden_size]
                 chunk_deepstack_visual_embeds = deepstack_embeds[:, step : step + chunk_size, :]
 
-            # Update attention mask for this chunk
             if chunked_attention_mask is not None:
-                chunk_idx = step // self.rbln_config.prefill_chunk_size
                 if self.rbln_config.use_position_ids:
                     valid_len = min(chunk_size, query_length - step)
                     for i in range(valid_len):
@@ -220,14 +212,12 @@ class RBLNQwen3VLRuntimeModel(RBLNRuntimeModel):
                         :, :, :, prefix_cached_len + step : prefix_cached_len + step + valid_len
                     ] = 1
 
-            # Determine query position for logits extraction
             if step + chunk_size >= query_length:
                 # Last chunk
                 query_position = torch.tensor(query_length - step - 1, dtype=torch.int16)
             else:
                 query_position = torch.tensor(chunk_size - 1, dtype=torch.int16)
 
-            # Build forward arguments - must match input_info order exactly
             forward_args = [
                 input_chunk,
                 cache_pos_chunk,
@@ -236,7 +226,6 @@ class RBLNQwen3VLRuntimeModel(RBLNRuntimeModel):
             if self.rbln_config.use_global_attention:
                 forward_args.append(block_tables)
 
-            # position_emb is inserted after block_tables
             forward_args.append(position_embed_chunk)
 
             if self.rbln_config.use_local_attention:
@@ -248,7 +237,6 @@ class RBLNQwen3VLRuntimeModel(RBLNRuntimeModel):
             if self.rbln_config.use_attention_mask:
                 forward_args.append(chunked_attention_mask)
 
-            # DeepStack inputs (prefill only)
             if chunk_visual_pos_mask is not None:
                 forward_args.append(chunk_visual_pos_mask.to(torch.bool))
             else:
@@ -268,13 +256,11 @@ class RBLNQwen3VLRuntimeModel(RBLNRuntimeModel):
             if self.rbln_config.use_lora:
                 forward_args.append(lora_int_ids)
 
-            chunk_idx = step // self.rbln_config.prefill_chunk_size
             super(RBLNRuntimeModel, self).forward(
                 *forward_args,
-                out=out_buffers[chunk_idx] if chunk_idx < len(out_buffers) else None,
+                out=out_buffers[i],
             )
 
-        # Process final outputs
         if self.rbln_config.logits_to_keep > 0:
             output_logits = output_logits[:, :query_length, :]
         else:
@@ -289,11 +275,14 @@ class RBLNQwen3VLRuntimeModel(RBLNRuntimeModel):
                 new_output_logits.index_copy_(dim=-2, index=mask_indices, source=output_logits)
                 output_logits = new_output_logits
 
-        if not is_external_block_tables:
-            self.dec_attn_mask[batch_idx : batch_idx + 1] = chunked_attention_mask
+        if self.rbln_config.can_generate and not is_external_block_tables and self.rbln_config.use_attention_mask:
+            if self.rbln_config.use_position_ids:
+                self.dec_attn_mask[batch_idx : batch_idx + 1] = chunked_attention_mask
+            else:
+                self.dec_attn_mask[batch_idx].fill_(0)
+                self.dec_attn_mask[batch_idx, :, :, :query_length] = 1
 
         if self.rbln_config.output_hidden_states:
-            # Trim hidden states to query_length
             output_hidden_states = tuple(hs[:, :query_length, :] for hs in output_hidden_states)
             return RBLNDecoderOnlyOutput(logits=output_logits, hidden_states=output_hidden_states)
         else:

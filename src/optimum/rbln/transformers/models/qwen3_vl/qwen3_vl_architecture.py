@@ -1,4 +1,4 @@
-# Copyright 2025 Rebellions Inc. All rights reserved.
+# Copyright 2026 Rebellions Inc. All rights reserved.
 
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -60,7 +60,6 @@ class Qwen3VLVisionModelWrapper(nn.Module):
         cos: torch.Tensor,
         sin: torch.Tensor,
     ):
-        # Convert attention mask: 1 -> 0, 0 -> -inf
         attn_mask = (1.0 - attn_mask) * torch.finfo(hidden_states.dtype).min
 
         deepstack_features = []
@@ -142,8 +141,6 @@ class Qwen3VLVisionAttention(nn.Module):
 
 
 class Qwen3VLDecoderOnlyForCausalLM(DecoderOnlyForCausalLM):
-    """DecoderOnlyForCausalLM with DeepStack support for Qwen3VL."""
-
     def forward(
         self,
         input_ids: torch.Tensor = None,
@@ -192,8 +189,6 @@ class Qwen3VLDecoderOnlyForCausalLM(DecoderOnlyForCausalLM):
 
 
 class Qwen3VLDecoderOnlyModel(DecoderOnlyModel):
-    """DecoderOnlyModel with DeepStack support for Qwen3VL."""
-
     def __init__(self, model, layers, rbln_config, num_deepstack_layers: int = 3, **kwargs):
         super().__init__(model, layers, rbln_config, **kwargs)
         self.num_deepstack_layers = num_deepstack_layers
@@ -300,7 +295,11 @@ class Qwen3VL_LanguageModelWrapper(DecoderOnlyWrapper):
         else:
             self.num_deepstack_layers = 3
 
-        super().__init__(model.language_model, rbln_config, use_rotary_emb)
+        # FIXME: temporal patch
+        original_config = model.config
+        model.config = model.config.text_config
+        super().__init__(model, rbln_config, use_rotary_emb)
+        model.config = original_config
 
     def get_decoder_layers(self, model: PreTrainedModel):
         if hasattr(model, "language_model"):
@@ -359,7 +358,9 @@ class Qwen3VL_LanguageModelWrapper(DecoderOnlyWrapper):
         local_block_tables = None
         position_embeds = args.pop(0)
         query_position = args.pop(0) if self.phase == "prefill" and self.rbln_config.logits_to_keep > 0 else None
+        position_ids = None
         attention_mask = args.pop(0) if self.rbln_config.use_attention_mask else None
+        lora_int_id = args.pop(0) if self.rbln_config.lora_config else None
 
         if "prefill" in self.phase:
             visual_pos_mask = args.pop(0)
@@ -368,8 +369,6 @@ class Qwen3VL_LanguageModelWrapper(DecoderOnlyWrapper):
             visual_pos_mask = None
             deepstack_visual_embeds = None
 
-        position_ids = None  # Qwen3VL uses position_embeds instead
-        lora_int_id = args.pop(0) if self.rbln_config.lora_config else None
         past_key_values = args
 
         if len(past_key_values) != 2 * self.num_hidden_layers:
@@ -451,7 +450,6 @@ class Qwen3VLAttention(DecoderOnlyAttention):
         self.k_norm = self_attn.k_norm
 
     def get_attn_scale(self, self_attn):
-        # Use config.head_dim for scale calculation to be consistent
         if hasattr(self_attn, "config") and hasattr(self_attn.config, "head_dim"):
             return self_attn.config.head_dim**-0.5
         return self_attn.head_dim**-0.5
