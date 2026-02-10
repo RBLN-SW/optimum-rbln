@@ -63,7 +63,7 @@ class RBLNColQwen2ForRetrievalConfig(RBLNDecoderOnlyModelConfig):
 
     submodules: ClassVar[list[str]] = ["vlm"]
     submodule_config_classes: ClassVar[dict[str, str]] = {
-        "vlm": "RBLNQwen2VLForConditionalGenerationConfig",
+        "vlm": "RBLNQwen2VLModelConfig",
     }
     _allow_no_compile_cfgs = True
 

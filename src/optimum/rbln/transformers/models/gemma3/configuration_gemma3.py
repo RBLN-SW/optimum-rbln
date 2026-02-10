@@ -61,6 +61,9 @@ class RBLNGemma3ForConditionalGenerationConfig(RBLNModelConfig):
         "language_model": "RBLNGemma3ForCausalLMConfig",
         # vision_tower is not mapped because it varies by model
     }
+    _submodule_hf_resolution: ClassVar[dict[str, tuple[str, str]]] = {
+        "vision_tower": ("vision_config", "vision"),
+    }
 
     batch_size: PositiveIntDefaultOne = Field(default=1, description="The batch size for inference.")
     vision_tower: dict[str, Any] | RBLNModelConfig | None = Field(

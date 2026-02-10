@@ -49,6 +49,9 @@ class RBLNIdefics3ForConditionalGenerationConfig(RBLNModelConfig):
         "vision_model": "RBLNIdefics3VisionTransformerConfig",
         # text_model is not mapped because it varies by model
     }
+    _submodule_hf_resolution: ClassVar[dict[str, tuple[str, str]]] = {
+        "text_model": ("text_config", "language_model"),
+    }
 
     batch_size: PositiveIntDefaultOne = Field(default=1, description="The batch size for inference.")
     vision_model: RBLNModelConfig | None = Field(

@@ -167,6 +167,22 @@ def load_config(path: str) -> tuple[type["RBLNModelConfig"], dict[str, Any]]:
     return cls, config_file
 
 
+def _resolve_from_hf_config(cls: type["RBLNModelConfig"], hf_config: Any, submodule_name: str) -> str | None:
+    """Try to resolve RBLN config class name from HF config for a submodule."""
+    if hf_config is None:
+        return None
+    if submodule_name not in cls._submodule_hf_resolution:
+        return None
+    hf_config_attr, role = cls._submodule_hf_resolution[submodule_name]
+    sub_hf_config = getattr(hf_config, hf_config_attr, None)
+    if sub_hf_config is None or not hasattr(sub_hf_config, "model_type"):
+        return None
+
+    from .utils.model_utils import resolve_rbln_config_cls_name
+
+    return resolve_rbln_config_cls_name(sub_hf_config.model_type, role)
+
+
 class RBLNCompileConfig(BaseModel):
     """
     Configuration for RBLN compilation.
@@ -330,6 +346,7 @@ class RBLNModelConfig(BaseModel):
     supports_quantization: ClassVar[bool] = False
     submodules: ClassVar[list[str]] = []
     submodule_config_classes: ClassVar[dict[str, str]] = {}
+    _submodule_hf_resolution: ClassVar[dict[str, tuple[str, str]]] = {}
     _allow_no_compile_cfgs: ClassVar[bool] = False
 
     # Serialized fields
@@ -412,7 +429,7 @@ class RBLNModelConfig(BaseModel):
 
         This validator handles the conversion of submodule configuration dictionaries
         to their corresponding RBLNModelConfig instances. It determines the config class
-        from cls_name or submodule_config_classes mapping.
+        from cls_name, submodule_config_classes mapping, or hf_config-based resolution.
 
         Runtime options (npu, tensor_parallel_size, optimum_rbln_version) are inherited
         from the parent config to the submodule config.
@@ -420,27 +437,37 @@ class RBLNModelConfig(BaseModel):
         if not isinstance(data, dict):
             return data
 
+        # Pop hf_config before field validation (extra="forbid" would reject it)
+        hf_config = data.pop("hf_config", None)
+
         for submodule_name in cls.submodules:
-            if submodule_name not in data:
+            submodule_data = data.get(submodule_name)
+
+            # For None submodules: if hf_config can resolve the class,
+            # create a dict with cls_name so __init__ can instantiate it with model-specific kwargs
+            if submodule_data is None:
+                resolved = _resolve_from_hf_config(cls, hf_config, submodule_name)
+                if resolved:
+                    data[submodule_name] = {"cls_name": resolved}
                 continue
 
-            submodule_data = data[submodule_name]
-
-            # Skip if already a config instance
             if isinstance(submodule_data, RBLNModelConfig):
                 continue
 
-            # Skip if not a dict
             if not isinstance(submodule_data, dict):
                 continue
 
-            # Determine config class name with priority: cls_name > submodule_config_classes
+            # Priority: 1) cls_name  2) submodule_config_classes  3) hf_config
             if "cls_name" in submodule_data:
                 cls_name = submodule_data["cls_name"]
             elif submodule_name in cls.submodule_config_classes:
                 cls_name = cls.submodule_config_classes[submodule_name]
             else:
-                # Cannot determine class, leave as dict for initialize_submodule_config to handle
+                # Try hf_config: inject cls_name but don't instantiate
+                # (model __init__ applies mandatory kwargs via initialize_submodule_config)
+                resolved = _resolve_from_hf_config(cls, hf_config, submodule_name)
+                if resolved:
+                    submodule_data["cls_name"] = resolved
                 continue
 
             # Inherit runtime options from parent

@@ -67,6 +67,9 @@ class RBLNBlip2ForConditionalGenerationConfig(RBLNModelConfig):
         "qformer": "RBLNBlip2QFormerModelConfig",
         # language_model is not mapped because it varies by model (e.g., OPT, T5, etc.)
     }
+    _submodule_hf_resolution: ClassVar[dict[str, tuple[str, str]]] = {
+        "language_model": ("text_config", "language_model"),
+    }
 
     batch_size: PositiveIntDefaultOne = Field(default=1, description="The batch size for inference.")
     vision_model: RBLNModelConfig | None = Field(

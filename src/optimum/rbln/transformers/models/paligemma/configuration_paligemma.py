@@ -35,6 +35,10 @@ class RBLNPaliGemmaForConditionalGenerationConfig(RBLNModelConfig):
 
     submodules: ClassVar[list[str]] = ["vision_tower", "language_model"]
     # Note: vision_tower and language_model are not mapped because they vary by model
+    _submodule_hf_resolution: ClassVar[dict[str, tuple[str, str]]] = {
+        "vision_tower": ("vision_config", "vision"),
+        "language_model": ("text_config", "language_model"),
+    }
     _allow_no_compile_cfgs = True
 
     batch_size: PositiveIntDefaultOne = Field(default=1, description="The batch size for inference.")
@@ -77,6 +81,10 @@ class RBLNPaliGemmaModelConfig(RBLNModelConfig):
 
     submodules: ClassVar[list[str]] = ["vision_tower", "language_model"]
     # Note: vision_tower and language_model are not mapped because they vary by model
+    _submodule_hf_resolution: ClassVar[dict[str, tuple[str, str]]] = {
+        "vision_tower": ("vision_config", "vision"),
+        "language_model": ("text_config", "language_model"),
+    }
     _allow_no_compile_cfgs = True
 
     batch_size: PositiveIntDefaultOne = Field(default=1, description="The batch size for inference.")
