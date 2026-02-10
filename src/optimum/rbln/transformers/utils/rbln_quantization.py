@@ -322,8 +322,8 @@ def update_layers_to_quantize(
     if rbln_quantization.kv_caches == "fp8":
         for name, layer in module.named_modules():
             if is_target_for_adding_kv_scales(name):
-                layer.k_scale = Parameter(torch.tensor([1], dtype=scale_dtype), requires_grad=False)
-                layer.v_scale = Parameter(torch.tensor([1], dtype=scale_dtype), requires_grad=False)
+                layer.k_scale = Parameter(torch.tensor(1, dtype=scale_dtype), requires_grad=False)
+                layer.v_scale = Parameter(torch.tensor(1, dtype=scale_dtype), requires_grad=False)
 
     if processed_layers:
         logger.debug(f"Updated the following linear layers to quantized layers:\n {{{', '.join(processed_layers)}}}")
