@@ -52,6 +52,7 @@ MODEL_FOR_CAUSAL_LM_MAPPING_NAMES.update(
     {
         "midm": "MidmLMHeadModel",
         "exaone": "ExaoneForCausalLM",
+        "MiniMaxM2": "MiniMaxM2ForCausalLM",
     }
 )
 
