@@ -1,4 +1,4 @@
-# Copyright 2025 Rebellions Inc. All rights reserved.
+# Copyright 2026 Rebellions Inc. All rights reserved.
 
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,10 +14,10 @@
 
 from __future__ import annotations
 
-from ...configuration_generic import RBLNModelForImageClassificationConfig
+from ...configuration_generic import RBLNImageModelConfig
 
 
-class RBLNDetrForObjectDetectionConfig(RBLNModelForImageClassificationConfig):
+class RBLNDetrForObjectDetectionConfig(RBLNImageModelConfig):
     """
     Configuration class for RBLNDetrForObjectDetection.
 

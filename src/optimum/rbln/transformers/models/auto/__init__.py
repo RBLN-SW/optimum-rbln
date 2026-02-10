@@ -21,6 +21,7 @@ from .modeling_auto import (
     RBLNAutoModelForImageClassification,
     RBLNAutoModelForImageTextToText,
     RBLNAutoModelForMaskedLM,
+    RBLNAutoModelForObjectDetection,
     RBLNAutoModelForQuestionAnswering,
     RBLNAutoModelForSeq2SeqLM,
     RBLNAutoModelForSequenceClassification,
