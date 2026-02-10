@@ -53,12 +53,7 @@ class DecoderOnlyWrapper(nn.Module):
 
     _use_learned_pos_emb = False
 
-    def __init__(
-        self,
-        model: PreTrainedModel,
-        rbln_config: "RBLNDecoderOnlyModelConfig",
-        use_rotary_emb: bool,
-    ):
+    def __init__(self, model: PreTrainedModel, rbln_config: "RBLNDecoderOnlyModelConfig", use_rotary_emb: bool):
         super().__init__()
         self.quantization = rbln_config.quantization
         self.config = model.config
@@ -330,13 +325,7 @@ class DecoderOnlyModel(nn.Module):
 
     _EMBEDDING_ATTRS = ["embed_tokens", "wte"]
     _POSITION_ATTRS = ["embed_positions", "wpe"]
-    _LAYERNORM_ATTRS = [
-        "norm",
-        "final_layer_norm",
-        "final_layernorm",
-        "ln_f",
-        "layer_norm",
-    ]
+    _LAYERNORM_ATTRS = ["norm", "final_layer_norm", "final_layernorm", "ln_f", "layer_norm"]
     _PRE_FF_LAYERNORM_ATTRS = None
     _POST_FF_LAYERNORM_ATTRS = None
 
@@ -546,28 +535,13 @@ class DecoderOnlyLayer(nn.Module):
         phase: Current operation phase ("prefill" or "decode")
     """
 
-    _PRE_ATTN_LAYERNORM = [
-        "input_layernorm",
-        "ln_1",
-        "self_attn_layer_norm",
-        "pre_feedforward_layernorm",
-    ]
-    _POST_ATTN_LAYERNORM = [
-        "post_attention_layernorm",
-        "ln_2",
-        "final_layer_norm",
-        "post_feedforward_layernorm",
-    ]
+    _PRE_ATTN_LAYERNORM = ["input_layernorm", "ln_1", "self_attn_layer_norm", "pre_feedforward_layernorm"]
+    _POST_ATTN_LAYERNORM = ["post_attention_layernorm", "ln_2", "final_layer_norm", "post_feedforward_layernorm"]
     _PRE_FF_LAYERNORM_ATTRS = None
     _POST_FF_LAYERNORM_ATTRS = None
     _MLP_ATTR = ("mlp",)
 
-    def __init__(
-        self,
-        layer,
-        self_attn: "DecoderOnlyAttention",
-        lora_config: Optional[RBLNLoRAConfig] = None,
-    ):
+    def __init__(self, layer, self_attn: "DecoderOnlyAttention", lora_config: Optional[RBLNLoRAConfig] = None):
         super().__init__()
 
         self.pre_attention_layernorm = _get_attr_from_candidates(layer, self._PRE_ATTN_LAYERNORM)
@@ -826,9 +800,7 @@ class DecoderOnlyAttention(nn.Module):
     def get_attn_scale(self, self_attn):
         return 1 / math.sqrt(self_attn.head_dim)
 
-    def maybe_get_kvcache_scale(
-        self,
-    ) -> Tuple[Optional[torch.Tensor], Optional[torch.Tensor]]:
+    def maybe_get_kvcache_scale(self) -> Tuple[Optional[torch.Tensor], Optional[torch.Tensor]]:
         k_scale = getattr(self, "k_scale", None)
         v_scale = getattr(self, "v_scale", None)
         return k_scale, v_scale
