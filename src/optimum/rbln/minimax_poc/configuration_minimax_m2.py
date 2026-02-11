@@ -24,4 +24,3 @@ class RBLNMiniMaxM2ForCausalLMConfig(RBLNDecoderOnlyModelForCausalLMConfig):
     """
 
     pass
-

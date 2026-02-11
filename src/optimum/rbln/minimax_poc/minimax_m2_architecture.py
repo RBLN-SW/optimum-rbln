@@ -144,21 +144,20 @@ class MiniMaxM2SparseMoeBlock(nn.Module):
         super().__init__()
         self.top_k = moe_block.top_k
         self.gate = moe_block.gate
-        self.experts = moe_block.experts
-        self.num_experts = len(self.experts)
+        self.num_experts = len(moe_block.experts)
         self.register_buffer("e_score_correction_bias", moe_block.e_score_correction_bias)
 
         # Stack expert weights for the fused MoE op.
         # MiniMax expert MLP uses SwiGLU-style: silu(w1(x)) * w3(x) -> w2(...)
-        w1 = torch.stack([e.w1.weight for e in self.experts], dim=0)
-        w3 = torch.stack([e.w3.weight for e in self.experts], dim=0)
-        w2 = torch.stack([e.w2.weight for e in self.experts], dim=0)
+        w1 = torch.stack([e.w1.weight for e in moe_block.experts], dim=0)
+        w3 = torch.stack([e.w3.weight for e in moe_block.experts], dim=0)
+        w2 = torch.stack([e.w2.weight for e in moe_block.experts], dim=0)
 
-        w1_scale = torch.stack([e.w1.weight_scale_inv for e in self.experts], dim=0)
-        w3_scale = torch.stack([e.w3.weight_scale_inv for e in self.experts], dim=0)
-        w2_scale = torch.stack([e.w2.weight_scale_inv for e in self.experts], dim=0)
+        w1_scale = torch.stack([e.w1.weight_scale_inv for e in moe_block.experts], dim=0)
+        w3_scale = torch.stack([e.w3.weight_scale_inv for e in moe_block.experts], dim=0)
+        w2_scale = torch.stack([e.w2.weight_scale_inv for e in moe_block.experts], dim=0)
 
-        self.group_size = self.experts[0].w1.block_size[1]
+        self.group_size = moe_block.experts[0].w1.block_size[1]
 
         # Register as parameters for tracing/compilation.
         self.w1 = nn.Parameter(w1, requires_grad=False)
@@ -189,4 +188,3 @@ class MiniMaxM2SparseMoeBlock(nn.Module):
             self.e_score_correction_bias,
         )
         return y.view(batch_size, seq_len, hidden_dim)
-

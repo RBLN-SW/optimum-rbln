@@ -287,7 +287,6 @@ _import_structure = {
 
 if TYPE_CHECKING:
     from .configuration_utils import RBLNAutoConfig, RBLNCompileConfig, RBLNModelConfig
-    from .minimax_poc import RBLNMiniMaxM2ForCausalLM, RBLNMiniMaxM2ForCausalLMConfig
     from .diffusers import (
         RBLNAutoencoderKL,
         RBLNAutoencoderKLConfig,
@@ -362,6 +361,7 @@ if TYPE_CHECKING:
         RBLNVQModel,
         RBLNVQModelConfig,
     )
+    from .minimax_poc import RBLNMiniMaxM2ForCausalLM, RBLNMiniMaxM2ForCausalLMConfig
     from .modeling import RBLNBaseModel, RBLNModel
     from .transformers import (
         RBLNASTForAudioClassification,

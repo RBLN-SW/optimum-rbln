@@ -78,4 +78,3 @@ class RBLNMiniMaxM2ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
 
         model = AutoModelForCausalLM.from_pretrained(model_id, *args, **kwargs)
         return model
-

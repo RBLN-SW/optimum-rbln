@@ -20,4 +20,3 @@ __all__ = [
     "RBLNMiniMaxM2ForCausalLM",
     "RBLNMiniMaxM2ForCausalLMConfig",
 ]
-
