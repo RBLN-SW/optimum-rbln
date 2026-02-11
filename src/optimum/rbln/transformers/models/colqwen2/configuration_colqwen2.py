@@ -54,17 +54,10 @@ class RBLNColQwen2ForRetrievalConfig(RBLNDecoderOnlyModelConfig):
             rbln_config=config
         )
         ```
-
-    Args:
-        batch_size (int, optional): The batch size for the model. Defaults to 1.
-        output_hidden_states (bool, optional): Whether to output the hidden states of the VLM model. Defaults to False.
-        vlm (RBLNModelConfig, optional): Configuration for the VLM component.
     """
 
     submodules: ClassVar[list[str]] = ["vlm"]
-    submodule_config_classes: ClassVar[dict[str, str]] = {
-        "vlm": "RBLNQwen2VLModelConfig",
-    }
+    submodule_config_classes: ClassVar[dict[str, str]] = {"vlm": "RBLNQwen2VLModelConfig"}
     _allow_no_compile_cfgs = True
 
     vlm: RBLNModelConfig | None = Field(default=None, description="Configuration for the VLM component.")
