@@ -66,7 +66,8 @@ class QFloatLinear(QLinear):
         weight = self.weight.to(self.weight_scale.dtype) * self.weight_scale
 
         qact = F.linear(x, weight, self.bias)
-        # if self.input_scale is not None:
-        #     qact = qact * self.input_scale
+
+        if self.input_scale is not None:
+            qact = qact * self.input_scale
 
         return qact

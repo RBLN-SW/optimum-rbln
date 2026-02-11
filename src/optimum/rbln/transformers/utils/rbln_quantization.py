@@ -350,6 +350,13 @@ def _reduce_to_scalar(t: torch.Tensor) -> torch.Tensor:
     return t.reshape(-1).amax()
 
 
+def _1d_value_as_scalar(value: torch.Tensor) -> torch.Tensor:
+    if value.ndim == 1:
+        return value.reshape(-1).amax()
+    else:
+        raise ValueError(f"Expected 1D tensor, got {value.ndim}D tensor")
+
+
 def _scalar_value_as_1d(scale: torch.Tensor) -> torch.Tensor:
     v = _reduce_to_scalar(scale)
     return v.reshape(1).contiguous()
@@ -446,6 +453,7 @@ def canonicalize_checkpoint_items(
             # For quark-like formats, expand to k/v
             kv_items = _kv_split_items(key, t)
             for k2, v2 in kv_items:
+                v2 = _1d_value_as_scalar(v2)
                 results.append((k2, v2))
             continue
 
@@ -457,6 +465,7 @@ def canonicalize_checkpoint_items(
                 target_key = ".".join(parts[:-2] + [canonical_name])
             else:
                 target_key = _replace_last_with(key, canonical_name)
+            t = _1d_value_as_scalar(t)
             results.append((target_key, t))
             continue
 
