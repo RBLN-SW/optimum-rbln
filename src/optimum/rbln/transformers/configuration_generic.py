@@ -29,7 +29,7 @@ class RBLNTransformerEncoderConfig(RBLNModelConfig):
     max_seq_len: int | None = Field(default=None, description="Maximum sequence length for the model.")
     batch_size: PositiveIntDefaultOne = Field(default=1, description="The batch size for inference.")
     model_input_names: list[str] | None = Field(default=None, description="Names of the model inputs.")
-    model_input_shapes: list[tuple[int, int]] | None = Field(
+    model_input_shapes: list[tuple[int, int] | tuple[int, int, int]] | None = Field(
         default=None, description="Shapes of the model inputs as (batch_size, seq_len)."
     )
 

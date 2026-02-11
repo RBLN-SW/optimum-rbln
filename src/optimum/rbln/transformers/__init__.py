@@ -18,6 +18,9 @@ from transformers.utils import _LazyModule
 
 
 _import_structure = {
+    "configuration_generic": [
+        "RBLNTransformerEncoderConfig",
+    ],
     "models": [
         "RBLNASTForAudioClassification",
         "RBLNASTForAudioClassificationConfig",
@@ -97,6 +100,7 @@ _import_structure = {
         "RBLNGPT2ModelConfig",
         "RBLNGptOssForCausalLM",
         "RBLNGptOssForCausalLMConfig",
+        "RBLNGroundingDinoComponentConfig",
         "RBLNGroundingDinoDecoder",
         "RBLNGroundingDinoDecoderConfig",
         "RBLNGroundingDinoForObjectDetection",
@@ -200,6 +204,7 @@ _import_structure = {
 }
 
 if TYPE_CHECKING:
+    from .configuration_generic import RBLNTransformerEncoderConfig
     from .models import (
         RBLNASTForAudioClassification,
         RBLNASTForAudioClassificationConfig,
@@ -279,6 +284,7 @@ if TYPE_CHECKING:
         RBLNGPT2ModelConfig,
         RBLNGptOssForCausalLM,
         RBLNGptOssForCausalLMConfig,
+        RBLNGroundingDinoComponentConfig,
         RBLNGroundingDinoDecoder,
         RBLNGroundingDinoDecoderConfig,
         RBLNGroundingDinoEncoder,

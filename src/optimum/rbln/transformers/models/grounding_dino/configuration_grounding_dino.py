@@ -23,19 +23,20 @@ from ...configuration_generic import RBLNImageModelConfig, RBLNModelConfig
 class RBLNGroundingDinoForObjectDetectionConfig(RBLNImageModelConfig):
     """Configuration for RBLN Grounding DINO for object detection."""
 
-    submodules: ClassVar[list[str]] = [
-        "text_backbone",
-        "backbone",
-        "encoder",
-        "decoder",
-    ]
+    submodules: ClassVar[list[str]] = ["text_backbone", "backbone", "encoder", "decoder"]
+    submodule_config_classes: ClassVar[dict[str, str]] = {
+        "encoder": "RBLNGroundingDinoEncoderConfig",
+        "decoder": "RBLNGroundingDinoDecoderConfig",
+    }
 
     encoder: RBLNModelConfig | None = Field(default=None, description="Configuration for the encoder component.")
     decoder: RBLNModelConfig | None = Field(default=None, description="Configuration for the decoder component.")
-    text_backbone: RBLNModelConfig | None = Field(
+    text_backbone: dict[str, Any] | RBLNModelConfig | None = Field(
         default=None, description="Configuration for the text backbone component."
     )
-    backbone: RBLNModelConfig | None = Field(default=None, description="Configuration for the backbone component.")
+    backbone: dict[str, Any] | RBLNModelConfig | None = Field(
+        default=None, description="Configuration for the backbone component."
+    )
     output_attentions: bool = Field(default=False, description="Whether to output attentions.")
     output_hidden_states: bool = Field(default=False, description="Whether to output hidden states.")
 
