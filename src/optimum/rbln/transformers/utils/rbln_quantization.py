@@ -453,7 +453,10 @@ def canonicalize_checkpoint_items(
             # For quark-like formats, expand to k/v
             kv_items = _kv_split_items(key, t)
             for k2, v2 in kv_items:
-                v2 = _1d_value_as_scalar(v2)
+                if v2.ndim == 0:
+                    pass
+                else:
+                    v2 = _1d_value_as_scalar(v2)
                 results.append((k2, v2))
             continue
 
@@ -465,7 +468,11 @@ def canonicalize_checkpoint_items(
                 target_key = ".".join(parts[:-2] + [canonical_name])
             else:
                 target_key = _replace_last_with(key, canonical_name)
-            t = _1d_value_as_scalar(t)
+
+            if t.ndim == 0:
+                pass
+            else:
+                t = _1d_value_as_scalar(t)
             results.append((target_key, t))
             continue
 
