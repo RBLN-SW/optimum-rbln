@@ -144,13 +144,13 @@ class RBLNAutoencoderKLCosmos(RBLNModel):
             vae_enc_input_info = [
                 (
                     "x",
-                    [
+                    (
                         batch_size,
                         model_config.in_channels,
                         rbln_config.num_frames,
                         rbln_config.height,
                         rbln_config.width,
-                    ],
+                    ),
                     "float32",
                 ),
             ]
@@ -163,13 +163,13 @@ class RBLNAutoencoderKLCosmos(RBLNModel):
         vae_dec_input_info = [
             (
                 "z",
-                [
+                (
                     batch_size,
                     rbln_config.num_channels_latents,
                     num_latent_frames,
                     latent_height,
                     latent_width,
-                ],
+                ),
                 "float32",
             ),
         ]

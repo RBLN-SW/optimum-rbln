@@ -239,7 +239,7 @@ class RBLNTimeSeriesTransformerForPrediction(RBLNModel):
         enc_input_info = [
             (
                 "inputs_embeds",
-                [rbln_config.batch_size, model_config.context_length, model_config.feature_size],
+                (rbln_config.batch_size, model_config.context_length, model_config.feature_size),
                 "float32",
             ),
         ]
@@ -247,13 +247,13 @@ class RBLNTimeSeriesTransformerForPrediction(RBLNModel):
             [
                 (
                     "cross_key_value_states",
-                    [
+                    (
                         model_config.decoder_layers * 2,
                         rbln_config.batch_size,
                         model_config.decoder_attention_heads,
                         model_config.context_length,
                         model_config.d_model // model_config.decoder_attention_heads,
-                    ],
+                    ),
                     "float32",
                 )
             ]
@@ -262,24 +262,24 @@ class RBLNTimeSeriesTransformerForPrediction(RBLNModel):
         dec_input_info = [
             (
                 "inputs_embeds",
-                [rbln_config.batch_size * rbln_config.num_parallel_samples, 1, model_config.feature_size],
+                (rbln_config.batch_size * rbln_config.num_parallel_samples, 1, model_config.feature_size),
                 "float32",
             ),
-            ("attention_mask", [1, rbln_config.dec_max_seq_len], "float32"),
-            ("cache_position", [], "int32"),
-            ("block_tables", [1, 1], "int16"),
+            ("attention_mask", (1, rbln_config.dec_max_seq_len), "float32"),
+            ("cache_position", (), "int32"),
+            ("block_tables", (1, 1), "int16"),
         ]
         dec_input_info.extend(
             [
                 (
                     "cross_key_value_states",
-                    [
+                    (
                         model_config.decoder_layers * 2,  # 4
                         rbln_config.batch_size,  # 64
                         model_config.decoder_attention_heads,  # 2
                         model_config.context_length,  # 24
                         model_config.d_model // model_config.decoder_attention_heads,  # 13
-                    ],
+                    ),
                     "float32",
                 )
             ]
@@ -288,14 +288,14 @@ class RBLNTimeSeriesTransformerForPrediction(RBLNModel):
             [
                 (
                     f"self_key_value_states_{i}",
-                    [
+                    (
                         1,
                         model_config.decoder_attention_heads
                         * rbln_config.num_parallel_samples
                         * rbln_config.batch_size,
                         rbln_config.dec_max_seq_len,
                         model_config.d_model // model_config.encoder_attention_heads,
-                    ],
+                    ),
                     "float32",
                 )
                 for i in range(model_config.decoder_layers * 2)

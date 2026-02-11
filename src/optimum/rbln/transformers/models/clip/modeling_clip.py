@@ -74,10 +74,10 @@ class RBLNCLIPTextModel(RBLNModel):
         input_info = [
             (
                 "input_ids",
-                [
+                (
                     rbln_config.batch_size,
                     model_config.max_position_embeddings,
-                ],
+                ),
                 "int64",
             ),
         ]
@@ -201,12 +201,12 @@ class RBLNCLIPVisionModel(RBLNModel):
             input_info=[
                 (
                     "pixel_values",
-                    [
+                    (
                         rbln_config.batch_size,
                         3,
                         rbln_config.image_height,
                         rbln_config.image_width,
-                    ],
+                    ),
                     "float32",
                 )
             ]

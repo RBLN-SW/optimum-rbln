@@ -114,32 +114,32 @@ class RBLNSD3Transformer2DModel(RBLNModel):
         input_info = [
             (
                 "hidden_states",
-                [
+                (
                     rbln_config.batch_size,
                     model_config.in_channels,
                     rbln_config.sample_size[0],
                     rbln_config.sample_size[1],
-                ],
+                ),
                 "float32",
             ),
             (
                 "encoder_hidden_states",
-                [
+                (
                     rbln_config.batch_size,
                     rbln_config.prompt_embed_length,
                     model_config.joint_attention_dim,
-                ],
+                ),
                 "float32",
             ),
             (
                 "pooled_projections",
-                [
+                (
                     rbln_config.batch_size,
                     model_config.pooled_projection_dim,
-                ],
+                ),
                 "float32",
             ),
-            ("timestep", [rbln_config.batch_size], "float32"),
+            ("timestep", (rbln_config.batch_size,), "float32"),
         ]
 
         compile_config = RBLNCompileConfig(input_info=input_info)

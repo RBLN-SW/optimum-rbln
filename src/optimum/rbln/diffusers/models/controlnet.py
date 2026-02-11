@@ -166,15 +166,15 @@ class RBLNControlNetModel(RBLNModel):
         input_info = [
             (
                 "sample",
-                [
+                (
                     rbln_config.batch_size,
                     model_config.in_channels,
                     rbln_config.unet_sample_size[0],
                     rbln_config.unet_sample_size[1],
-                ],
+                ),
                 "float32",
             ),
-            ("timestep", [], "float32"),
+            ("timestep", (), "float32"),
         ]
 
         use_encoder_hidden_states = any(element != "DownBlock2D" for element in model_config.down_block_types)
@@ -182,7 +182,7 @@ class RBLNControlNetModel(RBLNModel):
             input_info.append(
                 (
                     "encoder_hidden_states",
-                    [rbln_config.batch_size, rbln_config.max_seq_len, model_config.cross_attention_dim],
+                    (rbln_config.batch_size, rbln_config.max_seq_len, model_config.cross_attention_dim),
                     "float32",
                 )
             )
@@ -190,15 +190,15 @@ class RBLNControlNetModel(RBLNModel):
         input_info.append(
             (
                 "controlnet_cond",
-                [rbln_config.batch_size, 3, rbln_config.vae_sample_size[0], rbln_config.vae_sample_size[1]],
+                (rbln_config.batch_size, 3, rbln_config.vae_sample_size[0], rbln_config.vae_sample_size[1]),
                 "float32",
             )
         )
-        input_info.append(("conditioning_scale", [], "float32"))
+        input_info.append(("conditioning_scale", (), "float32"))
 
         if hasattr(model_config, "addition_embed_type") and model_config.addition_embed_type == "text_time":
-            input_info.append(("text_embeds", [rbln_config.batch_size, rbln_config.text_model_hidden_size], "float32"))
-            input_info.append(("time_ids", [rbln_config.batch_size, 6], "float32"))
+            input_info.append(("text_embeds", (rbln_config.batch_size, rbln_config.text_model_hidden_size), "float32"))
+            input_info.append(("time_ids", (rbln_config.batch_size, 6), "float32"))
 
         rbln_compile_config = RBLNCompileConfig(input_info=input_info)
         rbln_config.set_compile_cfgs([rbln_compile_config])

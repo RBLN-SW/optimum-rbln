@@ -133,21 +133,21 @@ class RBLNQwen2_5_VisionTransformerPretrainedModel(RBLNModel):
                 )
 
             input_info = [
-                ("hidden_states", [max_seq_len, hidden_size], rbln_config.dtype),
-                ("full_attn_masks", [1, 1, max_seq_len, max_seq_len], rbln_config.dtype),
+                ("hidden_states", (max_seq_len, hidden_size), rbln_config.dtype),
+                ("full_attn_masks", (1, 1, max_seq_len, max_seq_len), rbln_config.dtype),
                 (
                     "window_attn_masks",
-                    [max_seq_len // window_seq_len, 1, window_seq_len, window_seq_len],
+                    (max_seq_len // window_seq_len, 1, window_seq_len, window_seq_len),
                     rbln_config.dtype,
                 ),
                 (
                     "cos",
-                    [1, 1, max_seq_len, head_dim],
+                    (1, 1, max_seq_len, head_dim),
                     rbln_config.dtype,
                 ),
                 (
                     "sin",
-                    [1, 1, max_seq_len, head_dim],
+                    (1, 1, max_seq_len, head_dim),
                     rbln_config.dtype,
                 ),
             ]
@@ -401,7 +401,7 @@ class RBLNQwen2_5_VLModel(RBLNDecoderOnlyModel):
             pos_idx,
             (
                 "position_emb",
-                [2, batch_size, 1, query_length, model_config.hidden_size // model_config.num_attention_heads],
+                (2, batch_size, 1, query_length, model_config.hidden_size // model_config.num_attention_heads),
                 rbln_config.dtype,
             ),
         )
