@@ -107,15 +107,15 @@ class RBLNPriorTransformer(RBLNModel):
         rbln_config.num_embeddings = rbln_config.num_embeddings or model_config.num_embeddings
 
         input_info = [
-            ("hidden_states", [rbln_config.batch_size, rbln_config.embedding_dim], "float32"),
-            ("timestep", [], "float32"),
-            ("proj_embedding", [rbln_config.batch_size, rbln_config.embedding_dim], "float32"),
+            ("hidden_states", (rbln_config.batch_size, rbln_config.embedding_dim), "float32"),
+            ("timestep", (), "float32"),
+            ("proj_embedding", (rbln_config.batch_size, rbln_config.embedding_dim), "float32"),
             (
                 "encoder_hidden_states",
-                [rbln_config.batch_size, rbln_config.num_embeddings, rbln_config.embedding_dim],
+                (rbln_config.batch_size, rbln_config.num_embeddings, rbln_config.embedding_dim),
                 "float32",
             ),
-            ("attention_mask", [rbln_config.batch_size, rbln_config.num_embeddings], "float32"),
+            ("attention_mask", (rbln_config.batch_size, rbln_config.num_embeddings), "float32"),
         ]
 
         rbln_compile_config = RBLNCompileConfig(input_info=input_info)

@@ -208,6 +208,7 @@ _import_structure = {
         "RBLNGroundingDinoEncoderConfig",
         "RBLNGroundingDinoDecoder",
         "RBLNGroundingDinoDecoderConfig",
+        "RBLNGroundingDinoComponentConfig",
     ],
 }
 
@@ -289,6 +290,7 @@ if TYPE_CHECKING:
     from .gpt2 import RBLNGPT2LMHeadModel, RBLNGPT2LMHeadModelConfig, RBLNGPT2Model, RBLNGPT2ModelConfig
     from .gpt_oss import RBLNGptOssForCausalLM, RBLNGptOssForCausalLMConfig
     from .grounding_dino import (
+        RBLNGroundingDinoComponentConfig,
         RBLNGroundingDinoDecoder,
         RBLNGroundingDinoDecoderConfig,
         RBLNGroundingDinoEncoder,

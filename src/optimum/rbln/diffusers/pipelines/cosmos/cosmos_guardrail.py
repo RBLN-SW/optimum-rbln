@@ -172,12 +172,12 @@ class RBLNRetinaFaceFilter(RetinaFaceFilter):
                 input_info=[
                     (
                         "frames",
-                        [
+                        (
                             self.batch_size,
                             3,
                             rbln_config.face_blur_filter.image_size[0],
                             rbln_config.face_blur_filter.image_size[1],
-                        ],
+                        ),
                         "float32",
                     )
                 ],
@@ -251,10 +251,10 @@ class RBLNVideoSafetyModel(VideoSafetyModel):
                 input_info=[
                     (
                         "data",
-                        [
+                        (
                             self.rbln_config.video_safety_model.batch_size,
                             self.rbln_config.video_safety_model.input_size,
-                        ],
+                        ),
                         "float32",
                     )
                 ],

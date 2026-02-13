@@ -635,7 +635,6 @@ class TestGroundingDinoModel(BaseTest.TestModel):
         "pixel_values": torch.randn(1, 3, 1333, 1333, generator=torch.manual_seed(42)),
         "input_ids": torch.randint(low=0, high=50, size=(1, 256), generator=torch.manual_seed(42), dtype=torch.int64),
     }
-    TEST_LEVEL = TestLevel.FULL
     RBLN_CLASS_KWARGS = {
         "rbln_config": {
             "encoder": {"image_size": (1333, 1333)},

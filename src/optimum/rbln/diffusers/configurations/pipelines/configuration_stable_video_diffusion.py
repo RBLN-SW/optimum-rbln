@@ -12,7 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Optional
+from __future__ import annotations
+
+from typing import Any, ClassVar
+
+from pydantic import Field, model_validator
 
 from ....configuration_utils import RBLNModelConfig
 from ....transformers import RBLNCLIPVisionModelWithProjectionConfig
@@ -20,48 +24,70 @@ from ..models import RBLNAutoencoderKLTemporalDecoderConfig, RBLNUNetSpatioTempo
 
 
 class RBLNStableVideoDiffusionPipelineConfig(RBLNModelConfig):
-    submodules = ["image_encoder", "unet", "vae"]
-    _vae_uses_encoder = True
+    """Configuration for Stable Video Diffusion pipeline."""
 
-    def __init__(
-        self,
-        image_encoder: Optional[RBLNCLIPVisionModelWithProjectionConfig] = None,
-        unet: Optional[RBLNUNetSpatioTemporalConditionModelConfig] = None,
-        vae: Optional[RBLNAutoencoderKLTemporalDecoderConfig] = None,
-        *,
-        batch_size: Optional[int] = None,
-        height: Optional[int] = None,
-        width: Optional[int] = None,
-        num_frames: Optional[int] = None,
-        decode_chunk_size: Optional[int] = None,
-        guidance_scale: Optional[float] = None,
-        **kwargs: Any,
-    ):
-        """
-        Args:
-            image_encoder (Optional[RBLNCLIPVisionModelWithProjectionConfig]): Configuration for the image encoder component.
-                Initialized as RBLNCLIPVisionModelWithProjectionConfig if not provided.
-            unet (Optional[RBLNUNetSpatioTemporalConditionModelConfig]): Configuration for the UNet model component.
-                Initialized as RBLNUNetSpatioTemporalConditionModelConfig if not provided.
-            vae (Optional[RBLNAutoencoderKLTemporalDecoderConfig]): Configuration for the VAE model component.
-                Initialized as RBLNAutoencoderKLTemporalDecoderConfig if not provided.
-            batch_size (Optional[int]): Batch size for inference, applied to all submodules.
-            height (Optional[int]): Height of the generated images.
-            width (Optional[int]): Width of the generated images.
-            num_frames (Optional[int]): The number of frames in the generated video.
-            decode_chunk_size (Optional[int]): The number of frames to decode at once during VAE decoding.
-                Useful for managing memory usage during video generation.
-            guidance_scale (Optional[float]): Scale for classifier-free guidance.
-            kwargs: Additional arguments passed to the parent RBLNModelConfig.
+    submodules: ClassVar[list[str]] = ["image_encoder", "unet", "vae"]
+    _vae_uses_encoder: ClassVar[bool] = True
 
-        Raises:
-            ValueError: If both image_size and height/width are provided.
+    image_encoder: dict[str, Any] | RBLNCLIPVisionModelWithProjectionConfig | None = Field(
+        default=None, description="Configuration for the image encoder component."
+    )
+    unet: dict[str, Any] | RBLNUNetSpatioTemporalConditionModelConfig | None = Field(
+        default=None, description="Configuration for the UNet model component."
+    )
+    vae: dict[str, Any] | RBLNAutoencoderKLTemporalDecoderConfig | None = Field(
+        default=None, description="Configuration for the VAE model component."
+    )
 
-        Note:
-            When guidance_scale > 1.0, the UNet batch size is automatically doubled to
-            accommodate classifier-free guidance.
-        """
-        super().__init__(**kwargs)
+    # Pass-through parameters (excluded from serialization.)
+    effective_batch_size: int | None = Field(
+        default=None,
+        alias="batch_size",
+        exclude=True,
+        description="Batch size for inference. Forwarded to image_encoder and vae.",
+    )
+    effective_height: int | None = Field(
+        default=None,
+        alias="height",
+        exclude=True,
+        description="Height of the generated video frames.",
+    )
+    effective_width: int | None = Field(
+        default=None,
+        alias="width",
+        exclude=True,
+        description="Width of the generated video frames.",
+    )
+    effective_num_frames: int | None = Field(
+        default=None,
+        alias="num_frames",
+        exclude=True,
+        description="Number of video frames to generate. Forwarded to unet and vae.",
+    )
+    effective_decode_chunk_size: int | None = Field(
+        default=None,
+        alias="decode_chunk_size",
+        exclude=True,
+        description="Number of frames to decode at a time in VAE. Forwarded to vae.",
+    )
+    effective_guidance_scale: float | None = Field(
+        default=None,
+        alias="guidance_scale",
+        exclude=True,
+        description="Scale for classifier-free guidance. Used to determine UNet batch size.",
+    )
+
+    @model_validator(mode="after")
+    def initialize_submodules(self) -> "RBLNStableVideoDiffusionPipelineConfig":
+        """Initialize submodule configs with pass-through parameters."""
+        # Guard against re-entry during submodule initialization
+        if getattr(self, "_submodules_initialized", False):
+            return self
+        object.__setattr__(self, "_submodules_initialized", True)
+
+        height = self.effective_height
+        width = self.effective_width
+
         if height is not None and width is not None:
             image_size = (height, width)
         else:
@@ -71,24 +97,27 @@ class RBLNStableVideoDiffusionPipelineConfig(RBLNModelConfig):
             image_size = (height, width)
 
         self.image_encoder = self.initialize_submodule_config(
-            image_encoder, cls_name="RBLNCLIPVisionModelWithProjectionConfig", batch_size=batch_size
+            self.image_encoder,
+            cls_name="RBLNCLIPVisionModelWithProjectionConfig",
+            batch_size=self.effective_batch_size,
         )
         self.unet = self.initialize_submodule_config(
-            unet,
+            self.unet,
             cls_name="RBLNUNetSpatioTemporalConditionModelConfig",
-            num_frames=num_frames,
+            num_frames=self.effective_num_frames,
         )
         self.vae = self.initialize_submodule_config(
-            vae,
+            self.vae,
             cls_name="RBLNAutoencoderKLTemporalDecoderConfig",
-            batch_size=batch_size,
-            num_frames=num_frames,
-            decode_chunk_size=decode_chunk_size,
+            batch_size=self.effective_batch_size,
+            num_frames=self.effective_num_frames,
+            decode_chunk_size=self.effective_decode_chunk_size,
             uses_encoder=self.__class__._vae_uses_encoder,
             sample_size=image_size,  # image size is equal to sample size in vae
         )
 
         # Get default guidance scale from original class to set UNet batch size
+        guidance_scale = self.effective_guidance_scale
         if guidance_scale is None:
             guidance_scale = self.get_default_values_for_original_cls("__call__", ["max_guidance_scale"])[
                 "max_guidance_scale"
@@ -100,6 +129,8 @@ class RBLNStableVideoDiffusionPipelineConfig(RBLNModelConfig):
                 self.unet.batch_size = self.image_encoder.batch_size * 2
             else:
                 self.unet.batch_size = self.image_encoder.batch_size
+
+        return self
 
     @property
     def batch_size(self):

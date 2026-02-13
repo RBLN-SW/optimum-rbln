@@ -213,7 +213,7 @@ class RBLNLlavaNextForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGeneration
         input_info = [
             (
                 "image_features",
-                [rbln_config.vision_tower.batch_size, selected_image_feature_dim, feature_size],
+                (rbln_config.vision_tower.batch_size, selected_image_feature_dim, feature_size),
                 "float32",
             )
         ]

@@ -259,24 +259,24 @@ class RBLNPixtralVisionModel(RBLNModel):
             input_info=[
                 (
                     "patch_embeds",
-                    [1, num_total_patches, model_config.hidden_size],
+                    (1, num_total_patches, model_config.hidden_size),
                     "float32",
                 ),
-                ("attention_mask", [1, num_total_patches], "float32"),
+                ("attention_mask", (1, num_total_patches), "float32"),
                 (
                     "position_embeddings_1",
-                    [
+                    (
                         num_total_patches,
                         model_config.head_dim,
-                    ],
+                    ),
                     "float32",
                 ),
                 (
                     "position_embeddings_2",
-                    [
+                    (
                         num_total_patches,
                         model_config.head_dim,
-                    ],
+                    ),
                     "float32",
                 ),
             ]

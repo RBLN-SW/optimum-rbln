@@ -1,17 +1,19 @@
+from __future__ import annotations
+
 import json
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Literal
 
 from huggingface_hub import snapshot_download
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, field_serializer, field_validator, model_validator
 
-from ....configuration_utils import RBLNSerializableConfigProtocol
 from ....utils.logging import get_logger
 
 
 logger = get_logger(__name__)
 
 
-class RBLNLoRAAdapterConfig(RBLNSerializableConfigProtocol):
+class RBLNLoRAAdapterConfig(BaseModel):
     """
     Configuration class for individual LoRA adapter settings.
 
@@ -38,8 +40,8 @@ class RBLNLoRAAdapterConfig(RBLNSerializableConfigProtocol):
         # 0 is reserved for base model
         lora_config = RBLNLoRAConfig(
             adapters=[
-                RBLNLoRAAdapterConfig(1, "nemoguard", lora_ids[0]),
-                RBLNLoRAAdapterConfig(2, "abliterated", lora_ids[1]),
+                RBLNLoRAAdapterConfig(lora_int_id=1, lora_name="nemoguard", lora_path=lora_ids[0]),
+                RBLNLoRAAdapterConfig(lora_int_id=2, lora_name="abliterated", lora_path=lora_ids[1]),
             ],
         )
 
@@ -69,112 +71,69 @@ class RBLNLoRAAdapterConfig(RBLNSerializableConfigProtocol):
             model.set_adapter(adapter_name)
             decoder_outputs = model.generate(**inputs, max_new_tokens=64, do_sample=False)
             generated_text = tokenizer.decode(decoder_outputs[0][input_len:], skip_special_tokens=True)
-            print(generated_text + "\n")
+            print(generated_text + "\\n")
         ```
-
     """
 
-    def __init__(
-        self,
-        lora_int_id: int,
-        lora_name: str,
-        lora_path: Union[str, Path],
-        r: Optional[int] = None,
-        lora_alpha: Optional[float] = None,
-        target_modules: Optional[List[str]] = None,
-        bias: Optional[str] = None,
-        use_rslora: Optional[bool] = None,
-        scaling_factor: Optional[float] = None,
-    ):
-        """
-        Args:
-            lora_int_id (int): Unique identifier for this LoRA adapter (e.g., 0, 1, 2).
-                This ID will be used during runtime to select which adapter to use.
-            lora_name (str): Human-readable name for this adapter (e.g., "math_tuned", "code_tuned").
-            lora_path (Union[str, Path]): Path to the LoRA adapter weights directory or file.
-                Must be accessible at compile time to load the weights.
-            r (Optional[int]): The rank of the LoRA approximation for this adapter. If None,
-                will be loaded from adapter config file.
-            lora_alpha (Optional[float]): The LoRA scaling parameter for this adapter. If None,
-                will be loaded from adapter config file.
-            target_modules (Optional[List[str]]): List of module names to apply LoRA to.
-                If None, will be loaded from adapter config file or inherit from parent RBLNLoRAConfig.
-            bias (Optional[str]): Bias handling strategy. Options: "none", "all", "lora_only".
-                If None, will be loaded from adapter config file.
-            use_rslora (Optional[bool]): Whether to use Rank-Stabilized LoRA. If None,
-                will be loaded from adapter config file.
-            scaling_factor (Optional[float]): Additional scaling factor for this adapter. Defaults to 1.0.
-            **kwargs: Additional adapter-specific arguments.
+    model_config = ConfigDict(frozen=False, extra="forbid", validate_assignment=True, arbitrary_types_allowed=True)
 
-        Raises:
-            ValueError: If lora_int_id is None.
-            ValueError: If lora_path doesn't exist.
-            ValueError: If r is not a positive integer.
-            ValueError: If lora_alpha is not positive.
-        """
-        if lora_int_id is None:
-            raise ValueError("lora_int_id cannot be None")
+    lora_int_id: int = Field(description="Unique identifier for this LoRA adapter (e.g., 1, 2, 3).")
+    lora_name: str = Field(description='Human-readable name for this adapter (e.g., "math_tuned", "code_tuned").')
+    lora_path: Path = Field(description="Path to the LoRA adapter weights directory or HuggingFace Hub ID.")
+    r: int = Field(default=8, description="The rank of the LoRA approximation for this adapter.")
+    lora_alpha: float = Field(default=8.0, description="The LoRA scaling parameter for this adapter.")
+    target_modules: list[str] | None = Field(default=None, description="List of module names to apply LoRA to.")
+    bias: Literal["none", "all", "lora_only"] = Field(
+        default="none", description="Bias handling strategy. Options: 'none', 'all', 'lora_only'."
+    )
+    use_rslora: bool = Field(default=False, description="Whether to use Rank-Stabilized LoRA.")
+    scaling_factor: float = Field(default=1.0, description="Additional scaling factor for this adapter.")
 
-        if not isinstance(lora_int_id, int):
-            raise ValueError(f"lora_int_id must be an integer, got {type(lora_int_id)}")
+    _local_adapter_path: Path | None = PrivateAttr(default=None)
 
-        self.lora_int_id = lora_int_id
-        self.lora_name = lora_name
+    def __init__(self, **data: Any):
+        # Convert string path to Path
+        if "lora_path" in data and isinstance(data["lora_path"], str):
+            data["lora_path"] = Path(data["lora_path"])
 
-        # Keep original lora_path as provided by user (for serialization)
-        self.lora_path = Path(lora_path)
+        # Resolve local adapter path before validation
+        lora_path = data.get("lora_path")
+        if lora_path is not None:
+            local_adapter_path = self._resolve_adapter_path_static(Path(lora_path))
+            # Load adapter config and merge defaults
+            adapter_config = self._load_adapter_config_static(local_adapter_path)
 
-        # Resolve to local directory path (for actual weight loading)
-        self.local_adapter_path = self._resolve_adapter_path(self.lora_path)
+            # Set defaults from adapter config if not provided
+            if "r" not in data or data["r"] is None:
+                data["r"] = adapter_config.get("r", 8)
+            if "lora_alpha" not in data or data["lora_alpha"] is None:
+                data["lora_alpha"] = adapter_config.get("lora_alpha", 8.0)
+            if "target_modules" not in data or data["target_modules"] is None:
+                data["target_modules"] = adapter_config.get("target_modules", None)
+            if "bias" not in data or data["bias"] is None:
+                data["bias"] = adapter_config.get("bias", "none")
+            if "use_rslora" not in data or data["use_rslora"] is None:
+                data["use_rslora"] = adapter_config.get("use_rslora", False)
 
-        # Load adapter config and use as defaults
-        adapter_config = self._load_adapter_config()
+        super().__init__(**data)
 
-        # Set values from adapter config if not explicitly provided
-        self.r = r if r is not None else adapter_config.get("r", 8)
-        self.lora_alpha = lora_alpha if lora_alpha is not None else adapter_config.get("lora_alpha", 8.0)
-        self.target_modules = (
-            target_modules if target_modules is not None else adapter_config.get("target_modules", None)
-        )
-        self.bias = bias if bias is not None else adapter_config.get("bias", "none")
-        if self.bias not in ["none"]:
-            raise NotImplementedError("bias != 'none' is not supported yet")
+        # Store resolved local adapter path
+        if lora_path is not None:
+            self._local_adapter_path = local_adapter_path
 
-        self.use_rslora = use_rslora if use_rslora is not None else adapter_config.get("use_rslora", False)
-        self.scaling_factor = scaling_factor if scaling_factor is not None else 1.0
+    @property
+    def local_adapter_path(self) -> Path | None:
+        return self._local_adapter_path
 
-        # Validate the final values
-        if not isinstance(self.r, int) or self.r <= 0:
-            raise ValueError(f"r must be a positive integer, got {self.r}")
-
-        if self.lora_alpha <= 0:
-            raise ValueError(f"lora_alpha must be positive, got {self.lora_alpha}")
-
-        if self.bias not in ["none", "all", "lora_only"]:
-            raise ValueError(f"bias must be one of ['none', 'all', 'lora_only'], got {self.bias}")
-
-    def _resolve_adapter_path(self, path: Path) -> Path:
-        """
-        Resolve the adapter path, downloading from HuggingFace Hub if necessary.
-
-        Args:
-            path: Local path or HuggingFace Hub model ID
-
-        Returns:
-            Path object pointing to local adapter directory
-
-        Raises:
-            ValueError: If the adapter cannot be found locally or downloaded
-        """
-        # If it's a local path and exists, return it
+    @staticmethod
+    def _resolve_adapter_path_static(path: Path) -> Path:
+        """Resolve the adapter path, downloading from HuggingFace Hub if necessary."""
         if path.exists():
             return path
 
-        # If it's an absolute path that doesn't exist, raise error
         if path.is_absolute():
             raise ValueError(f"LoRA adapter path does not exist: {path.as_posix()}")
 
-        # Try to interpret as HuggingFace Hub model ID and download
         try:
             local_dir = snapshot_download(str(path), allow_patterns=["*.safetensors", "*.bin", "*.json"])
             return Path(local_dir)
@@ -185,17 +144,10 @@ class RBLNLoRAAdapterConfig(RBLNSerializableConfigProtocol):
                 f"Error: {e}"
             ) from e
 
-    def _load_adapter_config(self) -> Dict[str, Any]:
-        """
-        Load adapter configuration from adapter_config.json file.
-
-        Returns:
-            Dictionary containing adapter configuration
-
-        Raises:
-            ValueError: If adapter_config.json is not found or cannot be parsed
-        """
-        config_path = self.local_adapter_path / "adapter_config.json"
+    @staticmethod
+    def _load_adapter_config_static(local_adapter_path: Path) -> dict[str, Any]:
+        """Load adapter configuration from adapter_config.json file."""
+        config_path = local_adapter_path / "adapter_config.json"
 
         if not config_path.exists():
             logger.warning(f"No adapter_config.json found at {config_path}, using default values")
@@ -210,65 +162,97 @@ class RBLNLoRAAdapterConfig(RBLNSerializableConfigProtocol):
             logger.warning(f"Failed to load adapter config from {config_path}: {e}, using default values")
             return {}
 
-    def _prepare_for_serialization(self) -> Dict[str, Any]:
-        config_dict = {
-            "lora_int_id": self.lora_int_id,
-            "lora_name": self.lora_name,
-            "lora_path": str(self.lora_path),
-            "r": self.r,
-            "lora_alpha": self.lora_alpha,
-            "target_modules": self.target_modules,
-            "bias": self.bias,
-            "use_rslora": self.use_rslora,
-            "scaling_factor": self.scaling_factor,
-        }
-        return config_dict
+    @field_validator("lora_int_id")
+    @classmethod
+    def validate_lora_int_id(cls, v: int) -> int:
+        if not isinstance(v, int):
+            raise ValueError(f"lora_int_id must be an integer, got {type(v)}")
+        return v
+
+    @field_validator("r")
+    @classmethod
+    def validate_r(cls, v: int) -> int:
+        if not isinstance(v, int) or v <= 0:
+            raise ValueError(f"r must be a positive integer, got {v}")
+        return v
+
+    @field_validator("lora_alpha")
+    @classmethod
+    def validate_lora_alpha(cls, v: float) -> float:
+        if v <= 0:
+            raise ValueError(f"lora_alpha must be positive, got {v}")
+        return v
+
+    @model_validator(mode="after")
+    def validate_bias_support(self) -> "RBLNLoRAAdapterConfig":
+        if self.bias not in ["none"]:
+            raise NotImplementedError("bias != 'none' is not supported yet")
+        return self
+
+    @field_serializer("lora_path")
+    def serialize_lora_path(self, value: Path) -> str:
+        return str(value)
 
 
-class RBLNLoRABaseAdapterConfig(RBLNLoRAAdapterConfig):
+class RBLNLoRABaseAdapterConfig(BaseModel):
     """
     Special adapter config for the reserved base model adapter (lora_int_id = 0).
     This adapter carries zero-effective LoRA weights by targeting no modules,
     thereby producing no LoRA delta and yielding pure base-model behavior.
     """
 
-    def __init__(
-        self,
-        lora_int_id: int = 0,
-        lora_name: str = "base",
-        lora_path: Union[str, Path] = "__reserved_base__",
-        r: Optional[int] = 1,
-        lora_alpha: Optional[float] = 1.0,
-        target_modules: Optional[List[str]] = None,
-        bias: Optional[str] = "none",
-        use_rslora: Optional[bool] = False,
-        scaling_factor: Optional[float] = 1.0,
-    ):
-        if lora_int_id != 0:
+    model_config = ConfigDict(frozen=False, extra="forbid", validate_assignment=True, arbitrary_types_allowed=True)
+
+    lora_int_id: Literal[0] = Field(default=0, description="Reserved ID for base model adapter (always 0).")
+    lora_name: str = Field(default="base", description="Name of the base adapter.")
+    lora_path: Path = Field(default=Path("__reserved_base__"), description="Reserved path for base adapter.")
+    r: int = Field(default=1, description="The rank of the LoRA approximation.")
+    lora_alpha: float = Field(default=1.0, description="The LoRA scaling parameter.")
+    target_modules: list[str] = Field(default_factory=list, description="Empty list for base adapter.")
+    bias: Literal["none"] = Field(default="none", description="Bias handling strategy.")
+    use_rslora: bool = Field(default=False, description="Whether to use Rank-Stabilized LoRA.")
+    scaling_factor: float = Field(default=1.0, description="Scaling factor for this adapter.")
+
+    _local_adapter_path: Path | None = PrivateAttr(default=None)
+
+    def __init__(self, **data: Any):
+        # Convert string path to Path
+        if "lora_path" in data and isinstance(data["lora_path"], str):
+            data["lora_path"] = Path(data["lora_path"])
+
+        # Validate lora_int_id
+        if data.get("lora_int_id", 0) != 0:
             raise ValueError("RBLNLoRABaseAdapterConfig must have lora_int_id=0")
 
-        self.lora_int_id = 0
-        self.lora_name = lora_name
-        # Keep original lora_path for serialization purposes but do not resolve it.
-        self.lora_path = Path(str(lora_path))
-        self.local_adapter_path = None
+        # Force target_modules to empty list
+        data["target_modules"] = []
 
-        # Set minimal defaults; target_modules empty disables LoRA on all projections
-        self.r = 1 if r is None else r
-        self.lora_alpha = 1.0 if lora_alpha is None else lora_alpha
-        self.target_modules = []
-        self.bias = "none"
-        self.use_rslora = False
-        self.scaling_factor = 1.0
+        super().__init__(**data)
 
-        # Validate minimal settings
-        if not isinstance(self.r, int) or self.r <= 0:
-            raise ValueError(f"r must be a positive integer, got {self.r}")
-        if self.lora_alpha <= 0:
-            raise ValueError(f"lora_alpha must be positive, got {self.lora_alpha}")
+    @property
+    def local_adapter_path(self) -> Path | None:
+        return self._local_adapter_path
+
+    @field_validator("r")
+    @classmethod
+    def validate_r(cls, v: int) -> int:
+        if not isinstance(v, int) or v <= 0:
+            raise ValueError(f"r must be a positive integer, got {v}")
+        return v
+
+    @field_validator("lora_alpha")
+    @classmethod
+    def validate_lora_alpha(cls, v: float) -> float:
+        if v <= 0:
+            raise ValueError(f"lora_alpha must be positive, got {v}")
+        return v
+
+    @field_serializer("lora_path")
+    def serialize_lora_path(self, value: Path) -> str:
+        return str(value)
 
 
-class RBLNLoRAConfig(RBLNSerializableConfigProtocol):
+class RBLNLoRAConfig(BaseModel):
     """
     Configuration class for multi-LoRA support in RBLN decoder-only models.
 
@@ -281,98 +265,109 @@ class RBLNLoRAConfig(RBLNSerializableConfigProtocol):
     2. Adapter weights must be available during compilation
     3. The number of adapters is fixed after compilation
     4. Runtime can only switch between pre-compiled adapters
+
+    Attributes:
+        adapters: List of LoRA adapters to be compiled into the model.
+        max_lora_rank: Maximum rank across all adapters.
     """
 
-    def __init__(
-        self, adapters: List[Union[Dict[str, Any], RBLNLoRAAdapterConfig]], max_lora_rank: Optional[int] = None
-    ):
-        """
-        Args:
-            adapters (List[Union[Dict[str, Any], RBLNLoRAAdapterConfig]]): List of LoRA adapters
-                to be compiled into the model. Each adapter must be fully specified with weights
-                accessible at compile time.
-            max_lora_rank (Optional[int]): Maximum rank across all adapters. If None, automatically
-                determined from the provided adapters. Used for memory allocation optimization.
+    model_config = ConfigDict(frozen=False, extra="forbid", validate_assignment=True, arbitrary_types_allowed=True)
 
-        Raises:
-            ValueError: If adapters list is empty.
-            ValueError: If adapter IDs are not unique.
-            ValueError: If any adapter path doesn't exist.
-        """
-        if not adapters:
+    adapters: list[RBLNLoRAAdapterConfig | RBLNLoRABaseAdapterConfig] = Field(
+        description="List of LoRA adapters to be compiled into the model."
+    )
+    max_lora_rank: int | None = Field(
+        default=None, description="Maximum rank across all adapters. Auto-calculated if not provided."
+    )
+
+    def __init__(self, **data: Any):
+        adapters_input = data.get("adapters", [])
+
+        if not adapters_input:
             raise ValueError("adapters list cannot be empty")
 
         # Convert dict adapters to RBLNLoRAAdapterConfig objects
-        self.adapters: List[RBLNLoRAAdapterConfig] = []
-        for adapter in adapters:
+        converted_adapters: list[RBLNLoRAAdapterConfig | RBLNLoRABaseAdapterConfig] = []
+        for adapter in adapters_input:
             if isinstance(adapter, dict):
-                self.adapters.append(RBLNLoRAAdapterConfig(**adapter))
-            elif isinstance(adapter, RBLNLoRAAdapterConfig):
-                self.adapters.append(adapter)
+                converted_adapters.append(RBLNLoRAAdapterConfig(**adapter))
+            elif isinstance(adapter, (RBLNLoRAAdapterConfig, RBLNLoRABaseAdapterConfig)):
+                converted_adapters.append(adapter)
             else:
                 raise ValueError(f"Invalid adapter type: {type(adapter)}")
 
         # Disallow user-provided adapter with id 0: it's reserved for base model
-        if any(ad.lora_int_id == 0 for ad in self.adapters):
+        if any(ad.lora_int_id == 0 for ad in converted_adapters):
             raise ValueError(
-                "lora_int_id=0 is reserved for base model and cannot be provided. Please renumber your adapters to start from 1."
+                "lora_int_id=0 is reserved for base model and cannot be provided. "
+                "Please renumber your adapters to start from 1."
             )
 
         # Inject a reserved zero-weight adapter for base model at id=0
         base_adapter = RBLNLoRABaseAdapterConfig()
-        self.adapters.insert(0, base_adapter)
+        converted_adapters.insert(0, base_adapter)
 
         # Sort adapters by ID to make IDs align with indices
-        self.adapters.sort(key=lambda a: a.lora_int_id)
+        converted_adapters.sort(key=lambda a: a.lora_int_id)
 
-        # Validate unique and contiguous adapter IDs starting from 0
+        data["adapters"] = converted_adapters
+
+        # Calculate max_lora_rank if not provided
+        max_lora_rank = data.get("max_lora_rank")
+        if max_lora_rank is None:
+            data["max_lora_rank"] = max(adapter.r for adapter in converted_adapters)
+
+        super().__init__(**data)
+
+    @model_validator(mode="after")
+    def validate_adapters(self) -> "RBLNLoRAConfig":
+        """Validate adapter IDs are unique and contiguous."""
         adapter_ids = [adapter.lora_int_id for adapter in self.adapters]
         if len(adapter_ids) != len(set(adapter_ids)):
             raise ValueError("All adapter IDs must be unique")
+
         expected_ids = list(range(len(self.adapters)))
         if adapter_ids != expected_ids:
             raise ValueError(
                 f"Adapter IDs must be contiguous and start from 0. Found {adapter_ids}, expected {expected_ids}."
             )
 
-        # Calculate max_lora_rank if not provided
-        if max_lora_rank is None:
-            self.max_lora_rank = max(adapter.r for adapter in self.adapters)
-        else:
-            self.max_lora_rank = max_lora_rank
-            # Validate that max_lora_rank is sufficient
+        # Validate that max_lora_rank is sufficient
+        if self.max_lora_rank is not None:
             actual_max_rank = max(adapter.r for adapter in self.adapters)
             if self.max_lora_rank < actual_max_rank:
                 raise ValueError(
                     f"max_lora_rank ({self.max_lora_rank}) must be >= actual max rank ({actual_max_rank})"
                 )
 
+        return self
+
     @property
     def num_adapters(self) -> int:
         return len(self.adapters)
 
     @property
-    def adapter_ids(self) -> List[int]:
+    def adapter_ids(self) -> list[int]:
         return [adapter.lora_int_id for adapter in self.adapters]
 
     @property
-    def adapter_names(self) -> List[str]:
+    def adapter_names(self) -> list[str]:
         return [adapter.lora_name for adapter in self.adapters]
 
-    def get_adapter_by_id(self, lora_int_id: int) -> Optional[RBLNLoRAAdapterConfig]:
+    def get_adapter_by_id(self, lora_int_id: int) -> RBLNLoRAAdapterConfig | RBLNLoRABaseAdapterConfig | None:
         for adapter in self.adapters:
             if adapter.lora_int_id == lora_int_id:
                 return adapter
         return None
 
-    def get_adapter_by_name(self, lora_name: str) -> Optional[RBLNLoRAAdapterConfig]:
+    def get_adapter_by_name(self, lora_name: str) -> RBLNLoRAAdapterConfig | RBLNLoRABaseAdapterConfig | None:
         for adapter in self.adapters:
             if adapter.lora_name == lora_name:
                 return adapter
         return None
 
-    def validate_adapter_weights(self) -> Dict[int, bool]:
-        validation_results = {}
+    def validate_adapter_weights(self) -> dict[int, bool]:
+        validation_results: dict[int, bool] = {}
         for adapter in self.adapters:
             try:
                 # The reserved base adapter (id=0) always validates to True
@@ -401,11 +396,9 @@ class RBLNLoRAConfig(RBLNSerializableConfigProtocol):
 
         return validation_results
 
-    def _prepare_for_serialization(self) -> Dict[str, Any]:
+    @field_serializer("adapters")
+    def serialize_adapters(
+        self, adapters: list[RBLNLoRAAdapterConfig | RBLNLoRABaseAdapterConfig]
+    ) -> list[dict[str, Any]]:
         # Do not serialize the reserved base adapter (id=0)
-        serializable_adapters = [adapter for adapter in self.adapters if adapter.lora_int_id != 0]
-        serializable_map = {
-            "adapters": [adapter._prepare_for_serialization() for adapter in serializable_adapters],
-            "max_lora_rank": self.max_lora_rank,
-        }
-        return serializable_map
+        return [adapter.model_dump() for adapter in adapters if adapter.lora_int_id != 0]

@@ -23,7 +23,7 @@ from transformers import AutoModel, AutoModelForCausalLM, PretrainedConfig, PreT
 from transformers.modeling_outputs import BaseModelOutputWithPast
 from transformers.modeling_utils import no_init_weights
 
-from ....configuration_utils import RBLNCompileConfig
+from ....configuration_utils import RBLNCompileConfig, normalize_dtype
 from ....modeling import RBLNModel
 from ....utils.logging import get_logger
 from ....utils.runtime_utils import is_compiler_supports_buffer_resize
@@ -35,7 +35,11 @@ from ...modeling_attention_utils import (
 )
 from ...modeling_outputs import RBLNDecoderOnlyOutput, _validate_output_hidden_states
 from ...utils.rbln_quantization import get_quantized_model
-from .configuration_decoderonly import KVCacheMeta, RBLNDecoderOnlyModelConfig, RBLNDecoderOnlyModelForCausalLMConfig
+from .configuration_decoderonly import (
+    RBLNDecoderOnlyModelConfig,
+    RBLNDecoderOnlyModelForCausalLMConfig,
+    make_kvcache_meta,
+)
 from .decoderonly_architecture import DecoderOnlyWrapper
 from .decoderonly_runtime_utils import RBLNPageTableManager, RBLNRuntimeModel
 from .generation_decoderonly import RBLNDecoderOnlyGenerationMixin
@@ -366,36 +370,36 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
 
         input_info = []
         if rbln_config.use_inputs_embeds:
-            input_info.append(("inputs_embeds", [batch_size, query_length, hidden_size], rbln_config.dtype))
+            input_info.append(("inputs_embeds", (batch_size, query_length, hidden_size), rbln_config.dtype))
         else:
-            input_info.append(("input_ids", [batch_size, query_length], "int64"))
+            input_info.append(("input_ids", (batch_size, query_length), "int64"))
 
-        input_info.append(("cache_position", [batch_size, query_length], "int32"))
+        input_info.append(("cache_position", (batch_size, query_length), "int32"))
 
         if rbln_config.use_global_attention:
             max_block_cnt = rbln_config.max_seq_len // rbln_config.kvcache_block_size
             input_info.append(
-                ("block_tables", [max_block_cnt] if is_prefill else [batch_size, max_block_cnt], "int16")
+                ("block_tables", (max_block_cnt,) if is_prefill else (batch_size, max_block_cnt), "int16")
             )
         if rbln_config.use_local_attention:
-            input_info.append(("local_block_tables", [1] if is_prefill else [batch_size, 1], "int16"))
+            input_info.append(("local_block_tables", (1,) if is_prefill else (batch_size, 1), "int16"))
 
         if cls.use_query_position(rbln_config.use_local_attention, is_prefill, rbln_config.logits_to_keep):
-            input_info.append(("query_position", [], "int16"))
+            input_info.append(("query_position", (), "int16"))
 
         if rbln_config.use_attention_mask:
             if rbln_config.use_position_ids:
-                input_info.append(("attention_mask", [batch_size, rbln_config.max_seq_len], rbln_config.dtype))
+                input_info.append(("attention_mask", (batch_size, rbln_config.max_seq_len), rbln_config.dtype))
             else:
                 input_info.append(
-                    ("attention_mask", [batch_size, 1, query_length, rbln_config.max_seq_len], rbln_config.dtype)
+                    ("attention_mask", (batch_size, 1, query_length, rbln_config.max_seq_len), rbln_config.dtype)
                 )
 
         if rbln_config.use_position_ids:
-            input_info.append(("position_ids", [batch_size, query_length], "int32"))
+            input_info.append(("position_ids", (batch_size, query_length), "int32"))
 
         if rbln_config.use_lora:
-            input_info.append(("lora_int_ids", [batch_size], "int32"))
+            input_info.append(("lora_int_ids", (batch_size,), "int32"))
 
         if len(rbln_config.kvcache_metas) > 0:
             # Meta is already set, use it
@@ -415,12 +419,12 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
             for i in range(num_hidden_layers * 2):
                 layer_idx = i // 2
                 name = f"past_key_values_{i}"
-                kvcache_meta = KVCacheMeta.make(
+                kvcache_meta = make_kvcache_meta(
                     name,
                     layer_idx,
                     num_key_value_heads,
                     head_dim,
-                    RBLNCompileConfig.normalize_dtype(kvcache_dtype),
+                    normalize_dtype(kvcache_dtype),
                     rbln_config,
                 )
                 kvcache_metas.append(kvcache_meta)

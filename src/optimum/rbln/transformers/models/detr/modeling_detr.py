@@ -68,12 +68,12 @@ class RBLNDetrForObjectDetection(RBLNModel):
             input_info=[
                 (
                     "pixel_values",
-                    [rbln_config.batch_size, 3, height, width],
+                    (rbln_config.batch_size, 3, height, width),
                     "float32",
                 ),
                 (
                     "pixel_mask",
-                    [rbln_config.batch_size, height, width],
+                    (rbln_config.batch_size, height, width),
                     "int64",
                 ),
             ]

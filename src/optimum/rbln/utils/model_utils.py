@@ -61,3 +61,46 @@ def get_rbln_model_cls(cls_name: str) -> Type["RBLNModel"]:
         else:
             raise AttributeError(f"RBLNModel for {cls_name} not found.")
     return cls
+
+
+def resolve_rbln_config_cls_name(model_type: str, role: str) -> str | None:
+    """Resolve RBLN config class name from HF model_type and submodule role.
+
+    Uses HF's auto-mapping registries to find the HF class name, then checks
+    if the corresponding RBLN config class exists.
+
+    Args:
+        model_type: HF config's model_type (e.g., "llama", "clip_vision_model").
+        role: Submodule role - "language_model" or "vision".
+
+    Returns:
+        RBLN config class name (e.g., "RBLNLlamaForCausalLMConfig") or None if
+        no matching RBLN config class is registered.
+    """
+    from transformers.models.auto.modeling_auto import (
+        MODEL_FOR_CAUSAL_LM_MAPPING_NAMES,
+        MODEL_FOR_SEQ_TO_SEQ_CAUSAL_LM_MAPPING_NAMES,
+        MODEL_MAPPING_NAMES,
+    )
+
+    from ..configuration_utils import get_rbln_config_class
+
+    hf_cls_name = None
+    if role == "language_model":
+        hf_cls_name = MODEL_FOR_CAUSAL_LM_MAPPING_NAMES.get(model_type)
+        if hf_cls_name is None:
+            hf_cls_name = MODEL_FOR_SEQ_TO_SEQ_CAUSAL_LM_MAPPING_NAMES.get(model_type)
+    elif role == "vision":
+        hf_cls_name = MODEL_MAPPING_NAMES.get(model_type)
+
+    if hf_cls_name is None:
+        return None
+
+    rbln_config_cls_name = f"RBLN{hf_cls_name}Config"
+
+    try:
+        get_rbln_config_class(rbln_config_cls_name)
+    except ValueError:
+        return None
+
+    return rbln_config_cls_name

@@ -12,7 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Optional
+from __future__ import annotations
+
+from typing import Any, ClassVar
+
+from pydantic import Field, model_validator
 
 from ....configuration_utils import RBLNModelConfig
 from ....transformers import RBLNT5EncoderModelConfig
@@ -25,76 +29,104 @@ logger = get_logger(__name__)
 
 
 class RBLNCosmosPipelineBaseConfig(RBLNModelConfig):
-    submodules = ["text_encoder", "transformer", "vae", "safety_checker"]
-    _vae_uses_encoder = False
+    """Base configuration for Cosmos pipelines."""
 
-    def __init__(
-        self,
-        text_encoder: Optional[RBLNT5EncoderModelConfig] = None,
-        transformer: Optional[RBLNCosmosTransformer3DModelConfig] = None,
-        vae: Optional[RBLNAutoencoderKLCosmosConfig] = None,
-        safety_checker: Optional[RBLNCosmosSafetyCheckerConfig] = None,
-        *,
-        batch_size: Optional[int] = None,
-        height: Optional[int] = None,
-        width: Optional[int] = None,
-        num_frames: Optional[int] = None,
-        fps: Optional[int] = None,
-        max_seq_len: Optional[int] = None,
-        **kwargs: Any,
-    ):
-        """
-        Args:
-            text_encoder (Optional[RBLNT5EncoderModelConfig]): Configuration for the text encoder component.
-                Initialized as RBLNT5EncoderModelConfig if not provided.
-            transformer (Optional[RBLNCosmosTransformer3DModelConfig]): Configuration for the Transformer model component.
-                Initialized as RBLNCosmosTransformer3DModelConfig if not provided.
-            vae (Optional[RBLNAutoencoderKLCosmosConfig]): Configuration for the VAE model component.
-                Initialized as RBLNAutoencoderKLCosmosConfig if not provided.
-            safety_checker (Optional[RBLNCosmosSafetyCheckerConfig]): Configuration for the safety checker component.
-                Initialized as RBLNCosmosSafetyCheckerConfig if not provided.
-            batch_size (Optional[int]): Batch size for inference, applied to all submodules.
-            height (Optional[int]): Height of the generated videos.
-            width (Optional[int]): Width of the generated videos.
-            num_frames (Optional[int]): The number of frames in the generated video.
-            fps (Optional[int]): The frames per second of the generated video.
-            max_seq_len (Optional[int]): Maximum sequence length supported by the model.
-            kwargs: Additional arguments passed to the parent RBLNModelConfig.
-        """
-        super().__init__(**kwargs)
+    submodules: ClassVar[list[str]] = ["text_encoder", "transformer", "vae", "safety_checker"]
+    _vae_uses_encoder: ClassVar[bool] = False
+
+    text_encoder: dict[str, Any] | RBLNT5EncoderModelConfig | None = Field(
+        default=None, description="Configuration for the text encoder component."
+    )
+    transformer: dict[str, Any] | RBLNCosmosTransformer3DModelConfig | None = Field(
+        default=None, description="Configuration for the Transformer model component."
+    )
+    vae: dict[str, Any] | RBLNAutoencoderKLCosmosConfig | None = Field(
+        default=None, description="Configuration for the VAE model component."
+    )
+    safety_checker: dict[str, Any] | RBLNCosmosSafetyCheckerConfig | None = Field(
+        default=None, description="Configuration for the safety checker component."
+    )
+
+    # Pass-through parameters (excluded from serialization.)
+    effective_batch_size: int | None = Field(
+        default=None,
+        alias="batch_size",
+        exclude=True,
+        description="Batch size for inference. Forwarded to all submodules.",
+    )
+    effective_height: int | None = Field(
+        default=None,
+        alias="height",
+        exclude=True,
+        description="Height of the generated video frames. Forwarded to transformer, vae, and safety_checker.",
+    )
+    effective_width: int | None = Field(
+        default=None,
+        alias="width",
+        exclude=True,
+        description="Width of the generated video frames. Forwarded to transformer, vae, and safety_checker.",
+    )
+    effective_num_frames: int | None = Field(
+        default=None,
+        alias="num_frames",
+        exclude=True,
+        description="Number of video frames to generate. Forwarded to transformer and vae.",
+    )
+    effective_fps: int | None = Field(
+        default=None,
+        alias="fps",
+        exclude=True,
+        description="Frames per second for the generated video. Forwarded to transformer.",
+    )
+    effective_max_seq_len: int | None = Field(
+        default=None,
+        alias="max_seq_len",
+        exclude=True,
+        description="Maximum sequence length for the text encoder. Forwarded to text_encoder and transformer.",
+    )
+
+    @model_validator(mode="after")
+    def initialize_submodules(self) -> "RBLNCosmosPipelineBaseConfig":
+        """Initialize submodule configs with pass-through parameters."""
+        # Guard against re-entry during submodule initialization
+        if getattr(self, "_submodules_initialized", False):
+            return self
+        object.__setattr__(self, "_submodules_initialized", True)
 
         self.text_encoder = self.initialize_submodule_config(
-            text_encoder,
+            self.text_encoder,
             cls_name="RBLNT5EncoderModelConfig",
-            batch_size=batch_size,
-            max_seq_len=max_seq_len,
+            batch_size=self.effective_batch_size,
+            max_seq_len=self.effective_max_seq_len,
         )
         self.transformer = self.initialize_submodule_config(
-            transformer,
+            self.transformer,
             cls_name="RBLNCosmosTransformer3DModelConfig",
-            batch_size=batch_size,
-            max_seq_len=max_seq_len,
-            height=height,
-            width=width,
-            num_frames=num_frames,
-            fps=fps,
+            batch_size=self.effective_batch_size,
+            max_seq_len=self.effective_max_seq_len,
+            height=self.effective_height,
+            width=self.effective_width,
+            num_frames=self.effective_num_frames,
+            fps=self.effective_fps,
         )
         self.vae = self.initialize_submodule_config(
-            vae,
+            self.vae,
             cls_name="RBLNAutoencoderKLCosmosConfig",
-            batch_size=batch_size,
+            batch_size=self.effective_batch_size,
             uses_encoder=self.__class__._vae_uses_encoder,
-            height=height,
-            width=width,
-            num_frames=num_frames,
+            height=self.effective_height,
+            width=self.effective_width,
+            num_frames=self.effective_num_frames,
         )
         self.safety_checker = self.initialize_submodule_config(
-            safety_checker,
+            self.safety_checker,
             cls_name="RBLNCosmosSafetyCheckerConfig",
-            batch_size=batch_size,
-            height=height,
-            width=width,
+            batch_size=self.effective_batch_size,
+            height=self.effective_height,
+            width=self.effective_width,
         )
+
+        return self
 
     @property
     def batch_size(self):
@@ -108,10 +140,10 @@ class RBLNCosmosPipelineBaseConfig(RBLNModelConfig):
 class RBLNCosmosTextToWorldPipelineConfig(RBLNCosmosPipelineBaseConfig):
     """Config for Cosmos Text2World Pipeline"""
 
-    _vae_uses_encoder = False
+    _vae_uses_encoder: ClassVar[bool] = False
 
 
 class RBLNCosmosVideoToWorldPipelineConfig(RBLNCosmosPipelineBaseConfig):
     """Config for Cosmos Video2World Pipeline"""
 
-    _vae_uses_encoder = True
+    _vae_uses_encoder: ClassVar[bool] = True

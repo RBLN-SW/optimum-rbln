@@ -133,18 +133,18 @@ class RBLNUNetSpatioTemporalConditionModel(RBLNModel):
         input_info = [
             (
                 "sample",
-                [
+                (
                     rbln_config.batch_size,
                     rbln_config.num_frames,
                     model_config.in_channels,
                     rbln_config.sample_size[0],
                     rbln_config.sample_size[1],
-                ],
+                ),
                 "float32",
             ),
-            ("timestep", [], "float32"),
-            ("encoder_hidden_states", [rbln_config.batch_size, 1, model_config.cross_attention_dim], "float32"),
-            ("added_time_ids", [rbln_config.batch_size, 3], "float32"),
+            ("timestep", (), "float32"),
+            ("encoder_hidden_states", (rbln_config.batch_size, 1, model_config.cross_attention_dim), "float32"),
+            ("added_time_ids", (rbln_config.batch_size, 3), "float32"),
         ]
 
         if hasattr(model_config, "addition_time_embed_dim"):

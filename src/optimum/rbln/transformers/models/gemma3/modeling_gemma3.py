@@ -142,7 +142,7 @@ class RBLNGemma3ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMix
         image_feature_dim = (model_config.vision_config.image_size // model_config.vision_config.patch_size) ** 2
         feature_size = model_config.vision_config.hidden_size
 
-        input_info = [("image_features", [rbln_config.batch_size, image_feature_dim, feature_size], "float32")]
+        input_info = [("image_features", (rbln_config.batch_size, image_feature_dim, feature_size), "float32")]
         rbln_compile_config = RBLNCompileConfig(input_info=input_info)
         rbln_config.set_compile_cfgs([rbln_compile_config])
         return rbln_config

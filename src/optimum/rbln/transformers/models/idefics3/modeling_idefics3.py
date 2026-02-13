@@ -139,11 +139,11 @@ class RBLNIdefics3VisionTransformer(RBLNModel):
         input_info = [
             (
                 "hidden_states",
-                [
+                (
                     rbln_config.batch_size,
                     (model_config.image_size // model_config.patch_size) ** 2,
                     model_config.hidden_size,
-                ],
+                ),
                 "float32",
             ),
         ]
@@ -283,11 +283,11 @@ class RBLNIdefics3ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationM
         input_info = [
             (
                 "image_hidden_states",
-                [
+                (
                     rbln_config.vision_model.batch_size,
                     (model_config.vision_config.image_size // model_config.vision_config.patch_size) ** 2,
                     model_config.vision_config.hidden_size,
-                ],
+                ),
                 "float32",
             ),
         ]

@@ -158,12 +158,12 @@ class RBLNAutoencoderKL(RBLNModel):
             vae_enc_input_info = [
                 (
                     "x",
-                    [
+                    (
                         rbln_config.batch_size,
                         rbln_config.in_channels,
                         rbln_config.sample_size[0],
                         rbln_config.sample_size[1],
-                    ],
+                    ),
                     "float32",
                 )
             ]
@@ -172,12 +172,12 @@ class RBLNAutoencoderKL(RBLNModel):
         vae_dec_input_info = [
             (
                 "z",
-                [
+                (
                     rbln_config.batch_size,
                     rbln_config.latent_channels,
                     rbln_config.latent_sample_size[0],
                     rbln_config.latent_sample_size[1],
-                ],
+                ),
                 "float32",
             )
         ]
