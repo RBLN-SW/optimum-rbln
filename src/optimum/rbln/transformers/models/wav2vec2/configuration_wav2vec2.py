@@ -12,9 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Optional
+from __future__ import annotations
 
-from ....configuration_utils import RBLNModelConfig
+from pydantic import Field
+
+from ....configuration_utils import PositiveIntDefaultOne, RBLNModelConfig
 
 
 class RBLNWav2Vec2ForCTCConfig(RBLNModelConfig):
@@ -25,14 +27,5 @@ class RBLNWav2Vec2ForCTCConfig(RBLNModelConfig):
     RBLN-optimized Wav2Vec2 models for Connectionist Temporal Classification (CTC) tasks.
     """
 
-    def __init__(
-        self,
-        max_seq_len: Optional[int] = None,
-        batch_size: Optional[int] = None,
-        **kwargs: Any,
-    ):
-        super().__init__(**kwargs)
-        self.max_seq_len = max_seq_len
-        self.batch_size = batch_size or 1
-        if not isinstance(self.batch_size, int) or self.batch_size < 0:
-            raise ValueError(f"batch_size must be a positive integer, got {self.batch_size}")
+    batch_size: PositiveIntDefaultOne = Field(default=1, description="The batch size for inference.")
+    max_seq_len: int | None = Field(default=None, description="Maximum sequence length for the audio input.")

@@ -12,96 +12,100 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Optional, Tuple
+from __future__ import annotations
 
-from ....configuration_utils import RBLNAutoConfig, RBLNModelConfig
+from typing import Any, ClassVar, Optional, Tuple
+
+from pydantic import Field, field_validator
+
+from ....configuration_utils import PositiveIntDefaultOne, RBLNAutoConfig, RBLNModelConfig
 from ....transformers import RBLNSiglipVisionModelConfig
 
 
 class RBLNVideoSafetyModelConfig(RBLNModelConfig):
-    """
-    Configuration class for RBLN Video Content Safety Filter.
-    """
+    """Configuration class for RBLN Video Content Safety Filter."""
 
-    def __init__(
-        self,
-        batch_size: Optional[int] = None,
-        input_size: Optional[int] = None,
-        image_size: Optional[Tuple[int, int]] = None,
-        **kwargs,
-    ):
-        super().__init__(**kwargs)
-        self.batch_size = batch_size or 1
-        self.input_size = input_size or 1152
+    batch_size: PositiveIntDefaultOne = Field(default=1, description="The batch size for inference.")
+    input_size: int = Field(default=1152, description="Input feature size for the safety model.")
+
+    @field_validator("input_size", mode="before")
+    @classmethod
+    def validate_input_size(cls, v: int | None) -> int:
+        return v if v is not None else 1152
 
 
 class RBLNRetinaFaceFilterConfig(RBLNModelConfig):
-    """
-    Configuration class for RBLN Retina Face Filter.
-    """
+    """Configuration class for RBLN Retina Face Filter."""
 
-    def __init__(
-        self,
-        batch_size: Optional[int] = None,
-        image_size: Optional[Tuple[int, int]] = None,
-        **kwargs,
-    ):
-        super().__init__(**kwargs)
-        self.batch_size = batch_size or 1
-        self.image_size = image_size or (704, 1280)
+    batch_size: PositiveIntDefaultOne = Field(default=1, description="The batch size for inference.")
+    image_size: tuple[int, int] = Field(
+        default=(704, 1280), description="The size of input images as (height, width)."
+    )
+
+    @field_validator("image_size", mode="before")
+    @classmethod
+    def validate_image_size(cls, v: tuple[int, int] | None) -> tuple[int, int]:
+        return v if v is not None else (704, 1280)
 
 
 class RBLNCosmosSafetyCheckerConfig(RBLNModelConfig):
-    """
-    Configuration class for RBLN Cosmos Safety Checker.
-    """
+    """Configuration class for RBLN Cosmos Safety Checker."""
 
-    submodules = ["llamaguard3", "video_safety_model", "face_blur_filter", "siglip_encoder"]
+    submodules: ClassVar[list[str]] = ["llamaguard3", "video_safety_model", "face_blur_filter", "siglip_encoder"]
+
+    llamaguard3: dict[str, Any] | RBLNModelConfig | None = Field(
+        default=None, description="Configuration for the LlamaGuard3 safety model."
+    )
+    video_safety_model: dict[str, Any] | RBLNModelConfig | None = Field(
+        default=None, description="Configuration for the video safety model."
+    )
+    face_blur_filter: dict[str, Any] | RBLNModelConfig | None = Field(
+        default=None, description="Configuration for the face blur filter."
+    )
+    siglip_encoder: dict[str, Any] | RBLNSiglipVisionModelConfig | None = Field(
+        default=None, description="Configuration for the SigLIP vision encoder."
+    )
 
     def __init__(
         self,
-        llamaguard3: Optional[RBLNModelConfig] = None,
-        video_safety_model: Optional[RBLNModelConfig] = None,
-        face_blur_filter: Optional[RBLNModelConfig] = None,
-        siglip_encoder: Optional[RBLNSiglipVisionModelConfig] = None,
         *,
         batch_size: Optional[int] = None,
         image_size: Optional[Tuple[int, int]] = None,
         height: Optional[int] = None,
         width: Optional[int] = None,
         max_seq_len: Optional[int] = None,
-        **kwargs: Any,
+        **data: Any,
     ):
-        super().__init__(**kwargs)
+        super().__init__(**data)
         if height is not None and width is not None:
             image_size = (height, width)
 
         if max_seq_len is None:
             max_seq_len = 512
 
-        tensor_parallel_size = kwargs.get("tensor_parallel_size")
+        tensor_parallel_size = data.get("tensor_parallel_size")
 
         self.llamaguard3 = self.initialize_submodule_config(
-            llamaguard3,
+            self.llamaguard3,
             cls_name="RBLNLlamaForCausalLMConfig",
             batch_size=batch_size,
             tensor_parallel_size=tensor_parallel_size,
             max_seq_len=max_seq_len,
         )
         self.siglip_encoder = self.initialize_submodule_config(
-            siglip_encoder,
+            self.siglip_encoder,
             cls_name="RBLNSiglipVisionModelConfig",
             batch_size=batch_size,
             image_size=(384, 384),
         )
         self.video_safety_model = self.initialize_submodule_config(
-            video_safety_model,
+            self.video_safety_model,
             cls_name="RBLNVideoSafetyModelConfig",
             batch_size=batch_size,
             input_size=1152,
         )
         self.face_blur_filter = self.initialize_submodule_config(
-            face_blur_filter,
+            self.face_blur_filter,
             cls_name="RBLNRetinaFaceFilterConfig",
             batch_size=batch_size,
             image_size=image_size,

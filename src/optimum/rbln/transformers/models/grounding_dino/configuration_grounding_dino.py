@@ -10,75 +10,61 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, List, Optional, Tuple, Union
+from __future__ import annotations
+
+from typing import Any, ClassVar
 
 import torch
+from pydantic import Field
 
 from ...configuration_generic import RBLNImageModelConfig, RBLNModelConfig
 
 
 class RBLNGroundingDinoForObjectDetectionConfig(RBLNImageModelConfig):
-    submodules = [
-        "text_backbone",
-        "backbone",
-        "encoder",
-        "decoder",
-    ]
+    """Configuration for RBLN Grounding DINO for object detection."""
 
-    def __init__(
-        self,
-        batch_size: Optional[int] = None,
-        encoder: Optional["RBLNGroundingDinoEncoderConfig"] = None,
-        decoder: Optional["RBLNGroundingDinoDecoderConfig"] = None,
-        text_backbone: Optional["RBLNModelConfig"] = None,
-        backbone: Optional["RBLNModelConfig"] = None,
-        output_attentions: Optional[bool] = None,
-        output_hidden_states: Optional[bool] = None,
-        **kwargs: Any,
-    ):
-        """
-        Args:
-            batch_size (Optional[int]): The batch size for image and text processing. Defaults to 1.
-            encoder (Optional["RBLNModelConfig"]): The encoder configuration. Defaults to None.
-            decoder (Optional["RBLNModelConfig"]): The decoder configuration. Defaults to None.
-            text_backbone (Optional["RBLNModelConfig"]): The text backbone configuration. Defaults to None.
-            backbone (Optional["RBLNModelConfig"]): The backbone configuration. Defaults to None.
-            output_attentions (Optional[bool]): Whether to output attentions. Defaults to None.
-            output_hidden_states (Optional[bool]): Whether to output hidden states. Defaults to None.
-            kwargs: Additional arguments passed to the parent RBLNModelConfig.
+    submodules: ClassVar[list[str]] = ["text_backbone", "backbone", "encoder", "decoder"]
+    submodule_config_classes: ClassVar[dict[str, str]] = {
+        "encoder": "RBLNGroundingDinoEncoderConfig",
+        "decoder": "RBLNGroundingDinoDecoderConfig",
+    }
 
-        Raises:
-            ValueError: If batch_size is not a positive integer.
-        """
+    encoder: RBLNModelConfig | None = Field(default=None, description="Configuration for the encoder component.")
+    decoder: RBLNModelConfig | None = Field(default=None, description="Configuration for the decoder component.")
+    text_backbone: dict[str, Any] | RBLNModelConfig | None = Field(
+        default=None, description="Configuration for the text backbone component."
+    )
+    backbone: dict[str, Any] | RBLNModelConfig | None = Field(
+        default=None, description="Configuration for the backbone component."
+    )
+    output_attentions: bool = Field(default=False, description="Whether to output attentions.")
+    output_hidden_states: bool = Field(default=False, description="Whether to output hidden states.")
 
-        super().__init__(batch_size=batch_size, **kwargs)
-        self.encoder = self.initialize_submodule_config(submodule_config=encoder, batch_size=self.batch_size)
-        self.decoder = self.initialize_submodule_config(submodule_config=decoder, batch_size=self.batch_size)
-        self.text_backbone = self.initialize_submodule_config(
-            submodule_config=text_backbone, batch_size=self.batch_size
-        )
-        self.backbone = self.initialize_submodule_config(submodule_config=backbone, batch_size=self.batch_size)
-        self.output_attentions = output_attentions if output_attentions is not None else False
-        self.output_hidden_states = output_hidden_states if output_hidden_states is not None else False
-
-        if not isinstance(self.batch_size, int) or self.batch_size < 0:
-            raise ValueError(f"batch_size must be a positive integer, got {self.batch_size}")
+    def __init__(self, **data: Any):
+        super().__init__(**data)
+        # Initialize submodules if not already converted by model_validator
+        if self.encoder is None or isinstance(self.encoder, dict):
+            self.encoder = self.initialize_submodule_config(submodule_config=self.encoder, batch_size=self.batch_size)
+        if self.decoder is None or isinstance(self.decoder, dict):
+            self.decoder = self.initialize_submodule_config(submodule_config=self.decoder, batch_size=self.batch_size)
+        if self.text_backbone is None or isinstance(self.text_backbone, dict):
+            self.text_backbone = self.initialize_submodule_config(
+                submodule_config=self.text_backbone, batch_size=self.batch_size
+            )
+        if self.backbone is None or isinstance(self.backbone, dict):
+            self.backbone = self.initialize_submodule_config(
+                submodule_config=self.backbone, batch_size=self.batch_size
+            )
 
 
 class RBLNGroundingDinoComponentConfig(RBLNImageModelConfig):
-    def __init__(
-        self,
-        image_size: Optional[Union[int, Tuple[int, int]]] = None,
-        batch_size: Optional[int] = None,
-        spatial_shapes_list: Optional[List[Tuple[int, int]]] = None,
-        output_attentions: Optional[bool] = False,
-        output_hidden_states: Optional[bool] = False,
-        **kwargs: Any,
-    ):
-        super().__init__(image_size=image_size, batch_size=batch_size, **kwargs)
-        self.spatial_shapes_list = spatial_shapes_list
-        self.output_attentions = output_attentions
-        self.output_hidden_states = output_hidden_states
+    """Configuration for RBLN Grounding DINO component."""
+
+    spatial_shapes_list: list[tuple[int, int]] | None = Field(
+        default=None, description="List of spatial shapes for the component."
+    )
+    output_attentions: bool = Field(default=False, description="Whether to output attentions.")
+    output_hidden_states: bool = Field(default=False, description="Whether to output hidden states.")
 
     @property
     def spatial_shapes(self):
@@ -88,8 +74,12 @@ class RBLNGroundingDinoComponentConfig(RBLNImageModelConfig):
 
 
 class RBLNGroundingDinoEncoderConfig(RBLNGroundingDinoComponentConfig):
+    """Configuration for RBLN Grounding DINO encoder."""
+
     pass
 
 
 class RBLNGroundingDinoDecoderConfig(RBLNGroundingDinoComponentConfig):
+    """Configuration for RBLN Grounding DINO decoder."""
+
     pass

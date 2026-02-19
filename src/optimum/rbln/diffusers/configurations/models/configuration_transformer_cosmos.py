@@ -12,9 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Optional
+from __future__ import annotations
 
-from ....configuration_utils import RBLNModelConfig
+from typing import Any
+
+from pydantic import Field, field_validator
+
+from ....configuration_utils import PositiveIntDefaultOne, RBLNModelConfig
 
 
 class RBLNCosmosTransformer3DModelConfig(RBLNModelConfig):
@@ -25,54 +29,40 @@ class RBLNCosmosTransformer3DModelConfig(RBLNModelConfig):
     for Transformer models used in diffusion models like Cosmos.
     """
 
-    def __init__(
-        self,
-        batch_size: Optional[int] = None,
-        num_frames: Optional[int] = None,
-        height: Optional[int] = None,
-        width: Optional[int] = None,
-        fps: Optional[int] = None,
-        max_seq_len: Optional[int] = None,
-        embedding_dim: Optional[int] = None,
-        num_channels_latents: Optional[int] = None,
-        num_latent_frames: Optional[int] = None,
-        latent_height: Optional[int] = None,
-        latent_width: Optional[int] = None,
-        **kwargs: Any,
-    ):
-        """
-        Args:
-            batch_size (Optional[int]): The batch size for inference. Defaults to 1.
-            num_frames (Optional[int]): The number of frames in the generated video. Defaults to 121.
-            height (Optional[int]): The height in pixels of the generated video. Defaults to 704.
-            width (Optional[int]): The width in pixels of the generated video. Defaults to 1280.
-            fps (Optional[int]): The frames per second of the generated video.  Defaults to 30.
-            max_seq_len (Optional[int]): Maximum sequence length of prompt embeds.
-            embedding_dim (Optional[int]): Embedding vector dimension of prompt embeds.
-            num_channels_latents (Optional[int]): The number of channels in latent space.
-            latent_height (Optional[int]): The height in pixels in latent space.
-            latent_width (Optional[int]): The width in pixels in latent space.
-            kwargs: Additional arguments passed to the parent RBLNModelConfig.
+    batch_size: PositiveIntDefaultOne = Field(default=1, description="The batch size for inference.")
+    num_frames: int = Field(default=121, description="The number of frames in the generated video.")
+    height: int = Field(default=704, description="The height in pixels of the generated video.")
+    width: int = Field(default=1280, description="The width in pixels of the generated video.")
+    fps: int = Field(default=30, description="The frames per second of the generated video.")
+    max_seq_len: int | None = Field(default=None, description="Maximum sequence length of prompt embeds.")
+    embedding_dim: int | None = Field(default=None, description="Embedding vector dimension of prompt embeds.")
+    num_channels_latents: int | None = Field(default=None, description="The number of channels in latent space.")
+    num_latent_frames: int | None = Field(default=None, description="The number of frames in latent space.")
+    latent_height: int | None = Field(default=None, description="The height in pixels in latent space.")
+    latent_width: int | None = Field(default=None, description="The width in pixels in latent space.")
 
-        Raises:
-            ValueError: If batch_size is not a positive integer.
-        """
-        if kwargs.get("timeout") is None:
-            kwargs["timeout"] = 80
+    def __init__(self, **data: Any):
+        if data.get("timeout") is None:
+            data["timeout"] = 80
 
-        super().__init__(**kwargs)
-        self.batch_size = batch_size or 1
-        self.num_frames = num_frames or 121
-        self.height = height or 704
-        self.width = width or 1280
-        self.fps = fps or 30
+        super().__init__(**data)
 
-        self.max_seq_len = max_seq_len
-        self.num_channels_latents = num_channels_latents
-        self.num_latent_frames = num_latent_frames
-        self.latent_height = latent_height
-        self.latent_width = latent_width
-        self.embedding_dim = embedding_dim
+    @field_validator("num_frames", mode="before")
+    @classmethod
+    def validate_num_frames(cls, v: int | None) -> int:
+        return v if v is not None else 121
 
-        if not isinstance(self.batch_size, int) or self.batch_size < 0:
-            raise ValueError(f"batch_size must be a positive integer, got {self.batch_size}")
+    @field_validator("height", mode="before")
+    @classmethod
+    def validate_height(cls, v: int | None) -> int:
+        return v if v is not None else 704
+
+    @field_validator("width", mode="before")
+    @classmethod
+    def validate_width(cls, v: int | None) -> int:
+        return v if v is not None else 1280
+
+    @field_validator("fps", mode="before")
+    @classmethod
+    def validate_fps(cls, v: int | None) -> int:
+        return v if v is not None else 30

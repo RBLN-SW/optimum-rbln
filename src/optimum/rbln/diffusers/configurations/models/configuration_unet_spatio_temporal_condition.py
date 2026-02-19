@@ -12,48 +12,33 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Optional, Tuple
+from __future__ import annotations
 
-from ....configuration_utils import RBLNModelConfig
+from typing import Any
+
+from pydantic import Field, model_validator
+
+from ....configuration_utils import IntOrTuple, PositiveIntDefaultOne, RBLNModelConfig
 
 
 class RBLNUNetSpatioTemporalConditionModelConfig(RBLNModelConfig):
-    subclass_non_save_attributes = ["_batch_size_is_specified"]
+    """Configuration for RBLN UNet Spatio-Temporal Condition models."""
 
-    def __init__(
-        self,
-        batch_size: Optional[int] = None,
-        sample_size: Optional[Tuple[int, int]] = None,
-        in_features: Optional[int] = None,
-        num_frames: Optional[int] = None,
-        **kwargs: Any,
-    ):
-        """
-        Args:
-            batch_size (Optional[int]): The batch size for inference. Defaults to 1.
-            sample_size (Optional[Tuple[int, int]]): The spatial dimensions (height, width) of the generated samples.
-                If an integer is provided, it's used for both height and width.
-            in_features (Optional[int]): Number of input features for the model.
-            num_frames (Optional[int]): The number of frames in the generated video.
-            kwargs: Additional arguments passed to the parent RBLNModelConfig.
+    batch_size: PositiveIntDefaultOne = Field(default=1, description="The batch size for inference.")
+    sample_size: IntOrTuple = Field(
+        default=None,
+        description="The spatial dimensions (height, width) of the generated samples. "
+        "If an integer is provided, it's used for both height and width.",
+    )
+    in_features: int | None = Field(default=None, description="Number of input features for the model.")
+    num_frames: int | None = Field(default=None, description="The number of frames in the generated video.")
+    batch_size_is_specified: bool = Field(
+        default=False, exclude=True, description="Whether the batch size was explicitly specified by the user."
+    )
 
-        Raises:
-            ValueError: If batch_size is not a positive integer.
-        """
-        super().__init__(**kwargs)
-        self._batch_size_is_specified = batch_size is not None
-
-        self.batch_size = batch_size or 1
-        if not isinstance(self.batch_size, int) or self.batch_size < 0:
-            raise ValueError(f"batch_size must be a positive integer, got {self.batch_size}")
-
-        self.in_features = in_features
-        self.num_frames = num_frames
-
-        self.sample_size = sample_size
-        if isinstance(sample_size, int):
-            self.sample_size = (sample_size, sample_size)
-
-    @property
-    def batch_size_is_specified(self):
-        return self._batch_size_is_specified
+    @model_validator(mode="before")
+    @classmethod
+    def track_batch_size_specified(cls, data: dict[str, Any]) -> dict[str, Any]:
+        if isinstance(data, dict):
+            data["batch_size_is_specified"] = "batch_size" in data and data["batch_size"] is not None
+        return data

@@ -12,9 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Optional
+from __future__ import annotations
 
-from ....configuration_utils import RBLNModelConfig
+from typing import Any, ClassVar
+
+from pydantic import Field
+
+from ....configuration_utils import PositiveIntDefaultOne, RBLNModelConfig
 from ....utils.logging import get_logger
 
 
@@ -29,15 +33,7 @@ class RBLNIdefics3VisionTransformerConfig(RBLNModelConfig):
     RBLN-optimized Idefics3 vision transformer.
     """
 
-    def __init__(
-        self,
-        batch_size: Optional[int] = None,
-        **kwargs: Any,
-    ):
-        super().__init__(**kwargs)
-        self.batch_size = batch_size or 1
-        if not isinstance(self.batch_size, int) or self.batch_size < 0:
-            raise ValueError(f"batch_size must be a positive integer, got {self.batch_size}")
+    batch_size: PositiveIntDefaultOne = Field(default=1, description="The batch size for inference.")
 
 
 class RBLNIdefics3ForConditionalGenerationConfig(RBLNModelConfig):
@@ -46,44 +42,38 @@ class RBLNIdefics3ForConditionalGenerationConfig(RBLNModelConfig):
 
     This class extends `RBLNModelConfig` to include settings specific to the Idefics3 vision-language model optimized for RBLN devices.
     It allows configuration of the batch size and separate configurations for the vision and text submodules.
-
-    Attributes:
-        submodules (List[str]): List of submodules included in the model. Defaults to `["vision_model", "text_model"]`.
     """
 
-    submodules = ["vision_model", "text_model"]
+    submodules: ClassVar[list[str]] = ["vision_model", "text_model"]
+    submodule_config_classes: ClassVar[dict[str, str]] = {
+        "vision_model": "RBLNIdefics3VisionTransformerConfig",
+        # text_model is not mapped because it varies by model
+    }
+    _submodule_hf_resolution: ClassVar[dict[str, tuple[str, str]]] = {
+        "text_model": ("text_config", "language_model"),
+    }
 
-    def __init__(
-        self,
-        batch_size: Optional[int] = None,
-        vision_model: Optional[RBLNModelConfig] = None,
-        text_model: Optional[RBLNModelConfig] = None,
-        **kwargs: Any,
-    ):
-        """
-        Args:
-            batch_size (Optional[int]): The batch size for inference. Defaults to 1.
-            vision_model (Optional[RBLNModelConfig]): Configuration for the vision transformer component.
-                This can include settings specific to the vision encoder, such as input resolution or other vision-related parameters.
-                If not provided, default settings will be used.
-            text_model (Optional[RBLNModelConfig]): Configuration for the text model component.
-                This can include settings specific to the language model, such as tensor parallelism or other text-related parameters.
-                If not provided, default settings will be used.
-            kwargs: Additional arguments passed to the parent `RBLNModelConfig`.
+    batch_size: PositiveIntDefaultOne = Field(default=1, description="The batch size for inference.")
+    vision_model: RBLNModelConfig | None = Field(
+        default=None,
+        description="Configuration for the vision transformer component. Includes settings specific to the vision encoder.",
+    )
+    text_model: dict[str, Any] | RBLNModelConfig | None = Field(
+        default=None,
+        description="Configuration for the text model component. Includes settings specific to the language model.",
+    )
 
-        Raises:
-            ValueError: If `batch_size` is not a positive integer.
-        """
-
-        super().__init__(**kwargs)
-        self.batch_size = batch_size or 1
-        if not isinstance(self.batch_size, int) or self.batch_size < 0:
-            raise ValueError(f"batch_size must be a positive integer, got {self.batch_size}")
+    def __init__(self, **data: Any):
+        super().__init__(**data)
 
         if self.batch_size != 1:
             logger.warning("Ignore batch_size for Idefics3 vision transformer. It will be set to 1.")
 
+        # initialize_submodule_config handles None, dict, and RBLNModelConfig.
+        # kwargs (batch_size=1) always take priority.
         self.vision_model = self.initialize_submodule_config(
-            submodule_config=vision_model, batch_size=1, force_kwargs=True
+            submodule_name="vision_model", submodule_config=self.vision_model, batch_size=1
         )
-        self.text_model = self.initialize_submodule_config(submodule_config=text_model)
+        # text_model varies by model, so we use initialize_submodule_config for dict conversion
+        if self.text_model is None or isinstance(self.text_model, dict):
+            self.text_model = self.initialize_submodule_config(submodule_config=self.text_model)

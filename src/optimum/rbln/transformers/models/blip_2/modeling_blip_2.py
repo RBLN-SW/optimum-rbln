@@ -94,12 +94,12 @@ class RBLNBlip2VisionModel(RBLNModel):
         input_info = [
             (
                 "pixel_values",
-                [
+                (
                     rbln_config.batch_size,
                     model_config.num_channels,
                     model_config.image_size,
                     model_config.image_size,
-                ],
+                ),
                 "float32",
             ),
         ]
@@ -208,27 +208,27 @@ class RBLNBlip2QFormerModel(RBLNModel):
         input_info = [
             (
                 "query_embeds",
-                [
+                (
                     rbln_config.batch_size,
                     rbln_config.num_query_tokens,
                     model_config.hidden_size,
-                ],
+                ),
                 "float32",
             ),
             (
                 "encoder_hidden_states",
-                [
+                (
                     rbln_config.batch_size,
                     # image_text_hidden_size + cls token
                     rbln_config.image_text_hidden_size + 1,
                     model_config.encoder_hidden_size,
-                ],
+                ),
                 "float32",
             ),
             (
                 "encoder_attention_mask",
                 # image_text_hidden_size + cls token
-                [rbln_config.batch_size, rbln_config.image_text_hidden_size + 1],
+                (rbln_config.batch_size, rbln_config.image_text_hidden_size + 1),
                 "int64",
             ),
         ]
@@ -377,11 +377,11 @@ class RBLNBlip2ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMixi
         input_info = [
             (
                 "query_output",
-                [
+                (
                     1,
                     model_config.num_query_tokens,
                     model_config.qformer_config.hidden_size,
-                ],
+                ),
                 "float32",
             ),
         ]

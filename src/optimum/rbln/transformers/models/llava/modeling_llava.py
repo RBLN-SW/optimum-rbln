@@ -240,11 +240,11 @@ class RBLNLlavaForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMixi
         input_info = [
             (
                 "image_features",
-                [
+                (
                     1,
                     selected_image_feature_dim,
                     model_config.vision_config.hidden_size,
-                ],
+                ),
                 "float32",
             )
         ]

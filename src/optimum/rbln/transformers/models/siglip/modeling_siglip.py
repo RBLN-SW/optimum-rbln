@@ -102,12 +102,12 @@ class RBLNSiglipVisionModel(RBLNModel):
             input_info=[
                 (
                     "pixel_values",
-                    [
+                    (
                         rbln_config.batch_size,
                         3,
                         rbln_config.image_height,
                         rbln_config.image_width,
-                    ],
+                    ),
                     "float32",
                 )
             ]

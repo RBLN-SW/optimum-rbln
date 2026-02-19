@@ -232,7 +232,7 @@ class RBLNGroundingDinoForObjectDetection(RBLNModel):
         input_info = [
             (
                 "test_features",
-                [rbln_config.batch_size, model_config.max_text_len, model_config.text_config.hidden_size],
+                (rbln_config.batch_size, model_config.max_text_len, model_config.text_config.hidden_size),
                 "float32",
             ),
         ]
@@ -727,48 +727,48 @@ class RBLNGroundingDinoEncoder(RBLNModel):
         input_info = [
             (
                 "vision_features",
-                [rbln_config.batch_size, vision_seq_len, model_config.d_model],
+                (rbln_config.batch_size, vision_seq_len, model_config.d_model),
                 "float32",
             ),
             (
                 "vision_attention_mask",
-                [
+                (
                     rbln_config.batch_size,
                     vision_seq_len,
                     model_config.d_model,
-                ],
+                ),
                 "float32",
             ),
             (
                 "vision_position_embedding",
-                [rbln_config.batch_size, vision_seq_len, model_config.d_model],
+                (rbln_config.batch_size, vision_seq_len, model_config.d_model),
                 "float32",
             ),
             (
                 "text_features",
-                [rbln_config.batch_size, model_config.max_text_len, model_config.d_model],
+                (rbln_config.batch_size, model_config.max_text_len, model_config.d_model),
                 "float32",
             ),
             (
                 "text_attention_mask",
-                [
+                (
                     rbln_config.batch_size,
                     model_config.max_text_len,
-                ],
+                ),
                 "float32",
             ),
             (
                 "text_self_attention_masks",
-                [
+                (
                     rbln_config.batch_size,
                     model_config.max_text_len,
                     model_config.max_text_len,
-                ],
+                ),
                 "float32",
             ),
             (
                 "reference_points",
-                [rbln_config.batch_size, vision_seq_len, 4, 2],
+                (rbln_config.batch_size, vision_seq_len, 4, 2),
                 "float32",
             ),
         ]
@@ -925,52 +925,52 @@ class RBLNGroundingDinoDecoder(RBLNModel):
         input_info = [
             (
                 "inputs_embeds",
-                [rbln_config.batch_size, model_config.num_queries, model_config.d_model],
+                (rbln_config.batch_size, model_config.num_queries, model_config.d_model),
                 "float32",
             ),
             (
                 "vision_encoder_hidden_states",
-                [
+                (
                     rbln_config.batch_size,
                     vision_seq_len,
                     model_config.d_model,
-                ],
+                ),
                 "float32",
             ),
             (
                 "vision_encoder_attention_mask",
-                [rbln_config.batch_size, vision_seq_len, model_config.d_model],
+                (rbln_config.batch_size, vision_seq_len, model_config.d_model),
                 "float32",
             ),
             (
                 "text_encoder_hidden_states",
-                [rbln_config.batch_size, model_config.max_text_len, model_config.d_model],
+                (rbln_config.batch_size, model_config.max_text_len, model_config.d_model),
                 "float32",
             ),
             (
                 "text_encoder_attention_mask",
-                [
+                (
                     rbln_config.batch_size,
                     model_config.max_text_len,
-                ],
+                ),
                 "float32",
             ),
             (
                 "reference_points",
-                [
+                (
                     rbln_config.batch_size,
                     model_config.num_queries,
                     4,
-                ],
+                ),
                 "float32",
             ),
             (
                 "valid_ratios",
-                [
+                (
                     rbln_config.batch_size,
                     4,
                     2,
-                ],
+                ),
                 "float32",
             ),
         ]

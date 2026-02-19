@@ -255,20 +255,20 @@ class RBLNModelForSeq2SeqLM(RBLNModel, GenerationMixin, ABC):
 
         # model input info
         enc_input_info = [
-            ("input_ids", [1, rbln_config.enc_max_seq_len], "int64"),
-            ("attention_mask", [1, rbln_config.enc_max_seq_len], "float32"),
-            ("block_tables", [1], "int16"),
+            ("input_ids", (1, rbln_config.enc_max_seq_len), "int64"),
+            ("attention_mask", (1, rbln_config.enc_max_seq_len), "float32"),
+            ("block_tables", (1,), "int16"),
         ]
         enc_input_info.extend(
             [
                 (
                     f"cross_key_value_states_{i}",
-                    [
+                    (
                         rbln_config.batch_size,
                         n_head,
                         rbln_config.enc_max_seq_len,
                         d_kv,
-                    ],
+                    ),
                     "float32",
                 )
                 for i in range(n_layer * 2)
@@ -276,25 +276,25 @@ class RBLNModelForSeq2SeqLM(RBLNModel, GenerationMixin, ABC):
         )
 
         dec_input_info = [
-            ("input_ids", [rbln_config.batch_size, 1], "int64"),
-            ("encoder_attention_mask", [rbln_config.batch_size, rbln_config.enc_max_seq_len], "float32"),
+            ("input_ids", (rbln_config.batch_size, 1), "int64"),
+            ("encoder_attention_mask", (rbln_config.batch_size, rbln_config.enc_max_seq_len), "float32"),
             (
                 "cache_position",
-                [rbln_config.batch_size, 1],
+                (rbln_config.batch_size, 1),
                 "int32",
             ),
-            ("block_tables", [rbln_config.batch_size, 1], "int16"),
+            ("block_tables", (rbln_config.batch_size, 1), "int16"),
         ]
         dec_input_info.extend(
             [
                 (
                     f"cross_key_value_states_{i}",
-                    [
+                    (
                         rbln_config.batch_size,
                         n_head,
                         rbln_config.enc_max_seq_len,
                         d_kv,
-                    ],
+                    ),
                     "float32",
                 )
                 for i in range(n_layer * 2)
@@ -304,12 +304,12 @@ class RBLNModelForSeq2SeqLM(RBLNModel, GenerationMixin, ABC):
             [
                 (
                     f"self_key_value_states_{i}",
-                    [
+                    (
                         rbln_config.batch_size,
                         n_head,
                         rbln_config.dec_max_seq_len,
                         d_kv,
-                    ],
+                    ),
                     "float32",
                 )
                 for i in range(n_layer * 2)
@@ -318,7 +318,7 @@ class RBLNModelForSeq2SeqLM(RBLNModel, GenerationMixin, ABC):
 
         if rbln_config.use_attention_mask:
             dec_input_info.insert(
-                1, ("attention_mask", [rbln_config.batch_size, rbln_config.dec_max_seq_len], "float32")
+                1, ("attention_mask", (rbln_config.batch_size, rbln_config.dec_max_seq_len), "float32")
             )
 
         enc_compile_config = RBLNCompileConfig(compiled_model_name="encoder", input_info=enc_input_info)

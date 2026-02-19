@@ -12,9 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Optional
+from __future__ import annotations
 
-from ....configuration_utils import RBLNModelConfig
+from typing import Any, ClassVar
+
+from pydantic import Field
+
+from ....configuration_utils import PositiveIntDefaultOne, RBLNModelConfig
 from ....utils.deprecation import deprecate_kwarg
 from ....utils.logging import get_logger
 
@@ -23,49 +27,40 @@ logger = get_logger()
 
 
 class RBLNModelForSeq2SeqLMConfig(RBLNModelConfig):
-    support_paged_attention = None
+    """Configuration for RBLN Sequence-to-Sequence LM models."""
+
+    support_paged_attention: ClassVar[bool | None] = None
+
+    batch_size: PositiveIntDefaultOne = Field(default=1, description="The batch size for inference.")
+    enc_max_seq_len: int | None = Field(default=None, description="Maximum sequence length for the encoder.")
+    dec_max_seq_len: int | None = Field(default=None, description="Maximum sequence length for the decoder.")
+    use_attention_mask: bool | None = Field(
+        default=None, description="Whether to use attention masks during inference."
+    )
+    kvcache_num_blocks: int | None = Field(
+        default=None,
+        description="The total number of blocks to allocate for the PagedAttention KV cache "
+        "for the SelfAttention. Defaults to batch_size.",
+    )
+    kvcache_block_size: int | None = Field(
+        default=None,
+        description="The size (in number of tokens) of each block in the PagedAttention KV cache "
+        "for the SelfAttention. Defaults to dec_max_seq_len.",
+    )
 
     @deprecate_kwarg(old_name="pad_token_id", version="0.10.0")
-    def __init__(
-        self,
-        batch_size: Optional[int] = None,
-        enc_max_seq_len: Optional[int] = None,
-        dec_max_seq_len: Optional[int] = None,
-        use_attention_mask: Optional[bool] = None,
-        kvcache_num_blocks: Optional[int] = None,
-        kvcache_block_size: Optional[int] = None,
-        **kwargs: Any,
-    ):
-        """
-        Args:
-            batch_size (Optional[int]): The batch size for inference. Defaults to 1.
-            enc_max_seq_len (Optional[int]): Maximum sequence length for the encoder.
-            dec_max_seq_len (Optional[int]): Maximum sequence length for the decoder.
-            use_attention_mask (Optional[bool]): Whether to use attention masks during inference.
-            kvcache_num_blocks (Optional[int]): The total number of blocks to allocate for the
-                PagedAttention KV cache for the SelfAttention. Defaults to batch_size.
-            kvcache_block_size (Optional[int]): Sets the size (in number of tokens) of each block
-                in the PagedAttention KV cache for the SelfAttention. Defaults to dec_max_seq_len.
-            kwargs: Additional arguments passed to the parent RBLNModelConfig.
+    def __init__(self, **data: Any):
+        # Validate paged attention support
+        kvcache_num_blocks = data.get("kvcache_num_blocks")
+        kvcache_block_size = data.get("kvcache_block_size")
 
-        Raises:
-            ValueError: If batch_size is not a positive integer.
-        """
-        super().__init__(**kwargs)
-        self.batch_size = batch_size or 1
-        if not isinstance(self.batch_size, int) or self.batch_size < 0:
-            raise ValueError(f"batch_size must be a positive integer, got {self.batch_size}")
-
-        self.enc_max_seq_len = enc_max_seq_len
-        self.dec_max_seq_len = dec_max_seq_len
-
-        self.use_attention_mask = use_attention_mask
-
-        if self.support_paged_attention:
-            self.kvcache_num_blocks = kvcache_num_blocks
-            self.kvcache_block_size = kvcache_block_size
-        else:
+        if not self.support_paged_attention:
             if kvcache_num_blocks is not None or kvcache_block_size is not None:
                 raise ValueError(
                     "You cannot set kvcache_num_blocks or kvcache_block_size as paged attention is not supported for the model."
                 )
+            # Remove these keys so they don't fail validation
+            data.pop("kvcache_num_blocks", None)
+            data.pop("kvcache_block_size", None)
+
+        super().__init__(**data)

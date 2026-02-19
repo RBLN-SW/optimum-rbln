@@ -12,9 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Optional
+from __future__ import annotations
 
-from ....configuration_utils import RBLNModelConfig
+from typing import Any
+
+from pydantic import Field, model_validator
+
+from ....configuration_utils import PositiveIntDefaultOne, RBLNModelConfig
 
 
 class RBLNPriorTransformerConfig(RBLNModelConfig):
@@ -25,35 +29,16 @@ class RBLNPriorTransformerConfig(RBLNModelConfig):
     for Transformer models used in diffusion models like Kandinsky V2.2.
     """
 
-    subclass_non_save_attributes = ["_batch_size_is_specified"]
+    batch_size: PositiveIntDefaultOne = Field(default=1, description="The batch size for inference.")
+    embedding_dim: int | None = Field(default=None, description="Dimension of the embeddings.")
+    num_embeddings: int | None = Field(default=None, description="Number of embeddings.")
+    batch_size_is_specified: bool = Field(
+        default=False, exclude=True, description="Whether the batch size was explicitly specified by the user."
+    )
 
-    def __init__(
-        self,
-        batch_size: Optional[int] = None,
-        embedding_dim: Optional[int] = None,
-        num_embeddings: Optional[int] = None,
-        **kwargs: Any,
-    ):
-        """
-        Args:
-            batch_size (Optional[int]): The batch size for inference. Defaults to 1.
-            embedding_dim (Optional[int]): Dimension of the embedding vectors in the model.
-            num_embeddings (Optional[int]): Number of discrete embeddings in the codebook.
-            kwargs: Additional arguments passed to the parent RBLNModelConfig.
-
-        Raises:
-            ValueError: If batch_size is not a positive integer.
-        """
-        super().__init__(**kwargs)
-        self._batch_size_is_specified = batch_size is not None
-
-        self.batch_size = batch_size or 1
-        if not isinstance(self.batch_size, int) or self.batch_size < 0:
-            raise ValueError(f"batch_size must be a positive integer, got {self.batch_size}")
-
-        self.embedding_dim = embedding_dim
-        self.num_embeddings = num_embeddings
-
-    @property
-    def batch_size_is_specified(self):
-        return self._batch_size_is_specified
+    @model_validator(mode="before")
+    @classmethod
+    def track_batch_size_specified(cls, data: dict[str, Any]) -> dict[str, Any]:
+        if isinstance(data, dict):
+            data["batch_size_is_specified"] = "batch_size" in data and data["batch_size"] is not None
+        return data

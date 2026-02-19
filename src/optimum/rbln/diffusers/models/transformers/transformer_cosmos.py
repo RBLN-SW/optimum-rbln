@@ -245,27 +245,27 @@ class RBLNCosmosTransformer3DModel(RBLNModel):
         input_info = [
             (
                 "hidden_states",
-                [
+                (
                     rbln_config.batch_size,
                     hidden_dim,
                     hidden_size,
-                ],
+                ),
                 "float32",
             ),
             (
                 "encoder_hidden_states",
-                [
+                (
                     rbln_config.batch_size,
                     rbln_config.max_seq_len,
                     rbln_config.embedding_dim,
-                ],
+                ),
                 "float32",
             ),
-            ("embedded_timestep", [rbln_config.batch_size, hidden_size], "float32"),
-            ("temb", [1, hidden_size * 3], "float32"),
-            ("image_rotary_emb_0", [hidden_dim, attention_head_dim], "float32"),
-            ("image_rotary_emb_1", [hidden_dim, attention_head_dim], "float32"),
-            ("extra_pos_emb", [rbln_config.batch_size, hidden_dim, hidden_size], "float32"),
+            ("embedded_timestep", (rbln_config.batch_size, hidden_size), "float32"),
+            ("temb", (1, hidden_size * 3), "float32"),
+            ("image_rotary_emb_0", (hidden_dim, attention_head_dim), "float32"),
+            ("image_rotary_emb_1", (hidden_dim, attention_head_dim), "float32"),
+            ("extra_pos_emb", (rbln_config.batch_size, hidden_dim, hidden_size), "float32"),
         ]
 
         compile_config = RBLNCompileConfig(input_info=input_info)

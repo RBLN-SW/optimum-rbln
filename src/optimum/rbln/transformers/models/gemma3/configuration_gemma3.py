@@ -11,9 +11,14 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from typing import Any, Optional
 
-from ....configuration_utils import RBLNModelConfig
+from __future__ import annotations
+
+from typing import Any, ClassVar
+
+from pydantic import Field, model_validator
+
+from ....configuration_utils import PositiveIntDefaultOne, RBLNModelConfig
 from ....utils.logging import get_logger
 from ..decoderonly.configuration_decoderonly import RBLNDecoderOnlyModelForCausalLMConfig
 
@@ -22,78 +27,66 @@ logger = get_logger(__name__)
 
 
 class RBLNGemma3ForCausalLMConfig(RBLNDecoderOnlyModelForCausalLMConfig):
-    def __init__(
-        self,
-        use_position_ids: Optional[bool] = None,
-        use_attention_mask: Optional[bool] = None,
-        prefill_chunk_size: Optional[int] = None,
-        image_prefill_chunk_size: Optional[int] = None,
-        **kwargs: Any,
-    ):
-        """
-        Args:
-            use_position_ids (Optional[bool]): Whether or not to use `position_ids`, which is indices of positions of each input sequence tokens in the position embeddings.
-            use_attention_mask (Optional[bool]): Whether or not to use `attention_mask` to to avoid performing attention on padding token indices.
-            prefill_chunk_size (Optional[int]): The chunk size used during the prefill phase for
-                processing input sequences. Defaults to 256. Must be a positive integer
-                divisible by 64. Affects prefill performance and memory usage.
-            image_prefill_chunk_size (Optional[int]): The chunk size used during the prefill phase for
-                processing images. This config is used when `use_image_prefill` is True.
-                Currently, the `prefill_chunk_size` and `image_prefill_chunk_size` should be the same value.
-            kwargs: Additional arguments passed to the parent `RBLNDecoderOnlyModelForCausalLMConfig`.
+    """Configuration for RBLNGemma3ForCausalLM."""
 
-        Raises:
-            ValueError: If `use_attention_mask` or `use_position_ids` are False.
-        """
+    image_prefill_chunk_size: int | None = Field(
+        default=None,
+        description="The chunk size used during the prefill phase for processing images. "
+        "Used when use_image_prefill is True.",
+    )
+
+    def __init__(self, **data: Any):
         # use_attention_mask and use_position_ids are always True for Gemma3
-        use_attention_mask = use_attention_mask or True
-        use_position_ids = use_position_ids or True
-        prefill_chunk_size = prefill_chunk_size or 256
+        if "use_attention_mask" not in data or data["use_attention_mask"] is None:
+            data["use_attention_mask"] = True
+        if "use_position_ids" not in data or data["use_position_ids"] is None:
+            data["use_position_ids"] = True
+        if "prefill_chunk_size" not in data or data["prefill_chunk_size"] is None:
+            data["prefill_chunk_size"] = 256
 
-        super().__init__(
-            prefill_chunk_size=prefill_chunk_size,
-            use_attention_mask=use_attention_mask,
-            use_position_ids=use_position_ids,
-            **kwargs,
-        )
-        self.image_prefill_chunk_size = image_prefill_chunk_size
+        super().__init__(**data)
 
+    @model_validator(mode="after")
+    def validate_attention_position_ids(self) -> "RBLNGemma3ForCausalLMConfig":
         if not (self.use_attention_mask and self.use_position_ids):
             raise ValueError("use_attention_mask and use_position_ids must be True for RBLNGemma3ForCausalLM")
+        return self
 
 
 class RBLNGemma3ForConditionalGenerationConfig(RBLNModelConfig):
-    submodules = ["vision_tower", "language_model"]
+    """Configuration for RBLNGemma3ForConditionalGeneration."""
 
-    def __init__(
-        self,
-        batch_size: Optional[int] = None,
-        vision_tower: Optional[RBLNModelConfig] = None,
-        language_model: Optional[RBLNModelConfig] = None,
-        **kwargs: Any,
-    ):
-        """
-        Args:
-            batch_size (Optional[int]): The batch size for inference. Defaults to 1.
-            vision_tower (Optional[RBLNModelConfig]): Configuration for the vision encoder component.
-            language_model (Optional[RBLNModelConfig]): Configuration for the language model component.
-            kwargs: Additional arguments passed to the parent RBLNModelConfig.
+    submodules: ClassVar[list[str]] = ["vision_tower", "language_model"]
+    submodule_config_classes: ClassVar[dict[str, str]] = {
+        "language_model": "RBLNGemma3ForCausalLMConfig",
+        # vision_tower is not mapped because it varies by model
+    }
+    _submodule_hf_resolution: ClassVar[dict[str, tuple[str, str]]] = {
+        "vision_tower": ("vision_config", "vision"),
+    }
 
-        Raises:
-            ValueError: If `batch_size` is not a positive integer.
-        """
-        super().__init__(**kwargs)
-        self.batch_size = batch_size or 1
-        if not isinstance(self.batch_size, int) or self.batch_size < 0:
-            raise ValueError(f"batch_size must be a positive integer, got {self.batch_size}")
+    batch_size: PositiveIntDefaultOne = Field(default=1, description="The batch size for inference.")
+    vision_tower: dict[str, Any] | RBLNModelConfig | None = Field(
+        default=None, description="Configuration for the vision encoder component."
+    )
+    language_model: RBLNModelConfig | None = Field(
+        default=None, description="Configuration for the language model component."
+    )
+
+    def __init__(self, **data: Any):
+        super().__init__(**data)
 
         if self.batch_size != 1:
             logger.warning("Ignore batch_size for Gemma3 vision tower. It will be set to 1.")
 
-        self.vision_tower = self.initialize_submodule_config(
-            submodule_config=vision_tower, batch_size=1, force_kwargs=True
-        )
-        self.language_model = self.initialize_submodule_config(submodule_config=language_model)
+        # vision_tower varies by model, so we use initialize_submodule_config
+        # kwargs (batch_size=1) always take priority
+        self.vision_tower = self.initialize_submodule_config(submodule_config=self.vision_tower, batch_size=1)
+        # language_model is converted by @model_validator, but we still handle None case
+        if self.language_model is None:
+            self.language_model = self.initialize_submodule_config(
+                submodule_name="language_model", submodule_config=None
+            )
 
     @property
     def image_prefill_chunk_size(self):

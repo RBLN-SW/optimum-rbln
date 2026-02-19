@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from __future__ import annotations
+
 from ..decoderonly.configuration_decoderonly import RBLNDecoderOnlyModelConfig, RBLNDecoderOnlyModelForCausalLMConfig
 
 
@@ -41,6 +43,8 @@ class RBLNLlamaForCausalLMConfig(RBLNDecoderOnlyModelForCausalLMConfig):
     ```
     """
 
+    pass
+
 
 class RBLNLlamaModelConfig(RBLNDecoderOnlyModelConfig):
     """
@@ -48,3 +52,5 @@ class RBLNLlamaModelConfig(RBLNDecoderOnlyModelConfig):
 
     This class is an alias of RBLNDecoderOnlyModelConfig.
     """
+
+    pass

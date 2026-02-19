@@ -12,9 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Optional
+from __future__ import annotations
 
-from ....configuration_utils import RBLNModelConfig
+from typing import Any, ClassVar
+
+from pydantic import Field
+
+from ....configuration_utils import PositiveIntDefaultOne, RBLNModelConfig
 from ....utils.logging import get_logger
 
 
@@ -30,40 +34,42 @@ class RBLNLlavaNextForConditionalGenerationConfig(RBLNModelConfig):
     that combine vision and language processing capabilities.
     """
 
-    submodules = ["vision_tower", "language_model"]
+    submodules: ClassVar[list[str]] = ["vision_tower", "language_model"]
+    # Note: vision_tower and language_model are not mapped because they vary by model
+    _submodule_hf_resolution: ClassVar[dict[str, tuple[str, str]]] = {
+        "vision_tower": ("vision_config", "vision"),
+        "language_model": ("text_config", "language_model"),
+    }
 
-    def __init__(
-        self,
-        batch_size: Optional[int] = None,
-        vision_tower: Optional[RBLNModelConfig] = None,
-        language_model: Optional[RBLNModelConfig] = None,
-        **kwargs: Any,
-    ):
-        """
-        Args:
-            batch_size (Optional[int]): The batch size for inference. Defaults to 1.
-            vision_tower (Optional[RBLNModelConfig]): Configuration for the vision encoder component.
-            language_model (Optional[RBLNModelConfig]): Configuration for the language model component.
-            kwargs: Additional arguments passed to the parent RBLNModelConfig.
+    batch_size: PositiveIntDefaultOne = Field(default=1, description="The batch size for inference.")
+    vision_tower: dict[str, Any] | RBLNModelConfig | None = Field(
+        default=None,
+        description="Configuration for the vision encoder component. "
+        "Includes settings specific to the vision encoder such as input resolution.",
+    )
+    language_model: dict[str, Any] | RBLNModelConfig | None = Field(
+        default=None,
+        description="Configuration for the language model component. "
+        "Includes settings specific to the language model such as tensor parallelism.",
+    )
 
-        Raises:
-            ValueError: If `batch_size` is not a positive integer.
-        """
-        super().__init__(**kwargs)
-        self.batch_size = batch_size or 1
-        if not isinstance(self.batch_size, int) or self.batch_size < 0:
-            raise ValueError(f"batch_size must be a positive integer, got {self.batch_size}")
-
-        if self.batch_size != 1:
+    def __init__(self, **data: Any):
+        # Handle batch_size warning and force vision_tower batch_size=1
+        batch_size = data.get("batch_size", 1)
+        if batch_size != 1:
             logger.warning("Ignore batch_size for LlavaNext vision tower. It will be set to 1.")
 
+        super().__init__(**data)
+
+        # vision_tower and language_model vary by model, so we use initialize_submodule_config
+        # kwargs always take priority
         self.vision_tower = self.initialize_submodule_config(
-            submodule_config=vision_tower,
+            submodule_config=self.vision_tower,
             batch_size=1,  # vision_tower batch_size is always 1 in LlavaNext
             output_hidden_states=True,  # LlavaNext requires output_hidden_states to be True
-            force_kwargs=True,
         )
 
-        self.language_model = self.initialize_submodule_config(
-            submodule_config=language_model,
-        )
+        if self.language_model is None or isinstance(self.language_model, dict):
+            self.language_model = self.initialize_submodule_config(
+                submodule_config=self.language_model,
+            )

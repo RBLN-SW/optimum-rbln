@@ -827,6 +827,23 @@ class TestLlamaForCausalLM_fp8(LLMTest.TestLLM):
         pass
 
 
+class TestQLlamaForCausalLM(LLMTest.TestLLM):
+    RBLN_CLASS = RBLNLlamaForCausalLM
+    HF_MODEL_ID = "RedHatAI/Meta-Llama-3.1-8B-Instruct-quantized.w8a8"  # No tiny model yet.
+    HF_CONFIG_KWARGS = {"num_hidden_layers": 1}
+    RBLN_CLASS_KWARGS = {
+        "rbln_config": {
+            "quantization": {
+                "format": "rbln",
+                "weights": "int8",
+                "activations": "int8",
+                "dynamic": True,
+            },
+            "max_seq_len": 4096,
+        }
+    }
+
+
 class TestMultiLora(LLMTest.TestLLM):
     HF_MODEL_ID = "meta-llama/Llama-3.1-8B-Instruct"
     HF_CONFIG_KWARGS = {"num_hidden_layers": 1, "max_position_embeddings": 1024}
@@ -836,8 +853,12 @@ class TestMultiLora(LLMTest.TestLLM):
             "max_seq_len": 1024,
             "lora_config": {
                 "adapters": [
-                    RBLNLoRAAdapterConfig(1, "nemoguard", "nvidia/llama-3.1-nemoguard-8b-topic-control"),
-                    RBLNLoRAAdapterConfig(2, "abliterated", "reissbaker/llama-3.1-8b-abliterated-lora"),
+                    RBLNLoRAAdapterConfig(
+                        lora_int_id=1, lora_name="nemoguard", lora_path="nvidia/llama-3.1-nemoguard-8b-topic-control"
+                    ),
+                    RBLNLoRAAdapterConfig(
+                        lora_int_id=2, lora_name="abliterated", lora_path="reissbaker/llama-3.1-8b-abliterated-lora"
+                    ),
                 ]
             },
         }
@@ -865,8 +886,12 @@ class TestMultiLora_batch(LLMTest.TestLLM):
             "max_seq_len": 1024,
             "lora_config": {
                 "adapters": [
-                    RBLNLoRAAdapterConfig(1, "nemoguard", "nvidia/llama-3.1-nemoguard-8b-topic-control"),
-                    RBLNLoRAAdapterConfig(2, "abliterated", "reissbaker/llama-3.1-8b-abliterated-lora"),
+                    RBLNLoRAAdapterConfig(
+                        lora_int_id=1, lora_name="nemoguard", lora_path="nvidia/llama-3.1-nemoguard-8b-topic-control"
+                    ),
+                    RBLNLoRAAdapterConfig(
+                        lora_int_id=2, lora_name="abliterated", lora_path="reissbaker/llama-3.1-8b-abliterated-lora"
+                    ),
                 ]
             },
         }

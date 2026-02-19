@@ -12,9 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Optional
+from __future__ import annotations
 
-from ....configuration_utils import RBLNModelConfig
+from typing import Any, ClassVar
+
+from pydantic import Field
+
+from ....configuration_utils import PositiveIntDefaultOne, RBLNModelConfig
 from ....utils.logging import get_logger
 
 
@@ -29,20 +33,7 @@ class RBLNBlip2VisionModelConfig(RBLNModelConfig):
     RBLN-optimized BLIP-2 vision encoder models for multimodal tasks.
     """
 
-    def __init__(
-        self,
-        batch_size: Optional[int] = None,
-        **kwargs: Any,
-    ):
-        """
-        Args:
-            batch_size (Optional[int]): The batch size for inference. Defaults to 1.
-            kwargs: Additional arguments passed to the parent RBLNModelConfig.
-        """
-        super().__init__(**kwargs)
-        self.batch_size = batch_size or 1
-        if not isinstance(self.batch_size, int) or self.batch_size < 0:
-            raise ValueError(f"batch_size must be a positive integer, got {self.batch_size}")
+    batch_size: PositiveIntDefaultOne = Field(default=1, description="The batch size for inference.")
 
 
 class RBLNBlip2QFormerModelConfig(RBLNModelConfig):
@@ -53,26 +44,13 @@ class RBLNBlip2QFormerModelConfig(RBLNModelConfig):
     RBLN-optimized BLIP-2 Q-Former models that bridge vision and language modalities.
     """
 
-    def __init__(
-        self,
-        batch_size: Optional[int] = None,
-        num_query_tokens: Optional[int] = None,
-        image_text_hidden_size: Optional[int] = None,
-        **kwargs: Any,
-    ):
-        """
-        Args:
-            num_query_tokens (Optional[int]): The number of query tokens passed through the Transformer.
-            image_text_hidden_size (Optional[int]): Dimensionality of the hidden state of the image-text fusion layer.
-            kwargs: Additional arguments passed to the parent RBLNModelConfig.
-        """
-        super().__init__(**kwargs)
-        self.batch_size = batch_size or 1
-        if not isinstance(self.batch_size, int) or self.batch_size < 0:
-            raise ValueError(f"batch_size must be a positive integer, got {self.batch_size}")
-
-        self.num_query_tokens = num_query_tokens
-        self.image_text_hidden_size = image_text_hidden_size
+    batch_size: PositiveIntDefaultOne = Field(default=1, description="The batch size for inference.")
+    num_query_tokens: int | None = Field(
+        default=None, description="The number of query tokens passed through the Transformer."
+    )
+    image_text_hidden_size: int | None = Field(
+        default=None, description="Dimensionality of the hidden state of the image-text fusion layer."
+    )
 
 
 class RBLNBlip2ForConditionalGenerationConfig(RBLNModelConfig):
@@ -83,38 +61,41 @@ class RBLNBlip2ForConditionalGenerationConfig(RBLNModelConfig):
     RBLN-optimized BLIP-2 models for conditional generation tasks that involve both image and text inputs.
     """
 
-    submodules = ["vision_model", "qformer", "language_model"]
+    submodules: ClassVar[list[str]] = ["vision_model", "qformer", "language_model"]
+    submodule_config_classes: ClassVar[dict[str, str]] = {
+        "vision_model": "RBLNBlip2VisionModelConfig",
+        "qformer": "RBLNBlip2QFormerModelConfig",
+        # language_model is not mapped because it varies by model (e.g., OPT, T5, etc.)
+    }
+    _submodule_hf_resolution: ClassVar[dict[str, tuple[str, str]]] = {
+        "language_model": ("text_config", "language_model"),
+    }
 
-    def __init__(
-        self,
-        batch_size: Optional[int] = None,
-        vision_model: Optional[RBLNModelConfig] = None,
-        qformer: Optional[RBLNModelConfig] = None,
-        language_model: Optional[RBLNModelConfig] = None,
-        **kwargs: Any,
-    ):
-        """
-        Args:
-            batch_size (Optional[int]): The batch size for inference. Defaults to 1.
-            vision_model (Optional[RBLNModelConfig]): Configuration for the vision encoder component.
-            qformer (Optional[RBLNModelConfig]): Configuration for the RBLN-optimized BLIP-2 Q-Former model.
-            language_model (Optional[RBLNModelConfig]): Configuration for the language model component.
-            kwargs: Additional arguments passed to the parent RBLNModelConfig.
+    batch_size: PositiveIntDefaultOne = Field(default=1, description="The batch size for inference.")
+    vision_model: RBLNModelConfig | None = Field(
+        default=None, description="Configuration for the vision encoder component."
+    )
+    qformer: RBLNModelConfig | None = Field(
+        default=None, description="Configuration for the RBLN-optimized BLIP-2 Q-Former model."
+    )
+    language_model: dict[str, Any] | RBLNModelConfig | None = Field(
+        default=None, description="Configuration for the language model component."
+    )
 
-        Raises:
-            ValueError: If batch_size is not a positive integer.
-        """
-        super().__init__(**kwargs)
-        self.batch_size = batch_size or 1
-        if not isinstance(self.batch_size, int) or self.batch_size < 0:
-            raise ValueError(f"batch_size must be a positive integer, got {self.batch_size}")
+    def __init__(self, **data: Any):
+        super().__init__(**data)
 
         if self.batch_size != 1:
             logger.warning("Ignore batch_size for Blip2 vision model. It will be set to 1.")
             logger.warning("Ignore batch_size for Blip2 qformer. It will be set to 1.")
 
+        # initialize_submodule_config handles None, dict, and RBLNModelConfig.
+        # kwargs (batch_size=1) always take priority.
         self.vision_model = self.initialize_submodule_config(
-            submodule_config=vision_model, batch_size=1, force_kwargs=True
+            submodule_name="vision_model", submodule_config=self.vision_model, batch_size=1
         )
-        self.qformer = self.initialize_submodule_config(submodule_config=qformer, batch_size=1, force_kwargs=True)
-        self.language_model = self.initialize_submodule_config(submodule_config=language_model)
+        self.qformer = self.initialize_submodule_config(
+            submodule_name="qformer", submodule_config=self.qformer, batch_size=1
+        )
+        if self.language_model is None or isinstance(self.language_model, dict):
+            self.language_model = self.initialize_submodule_config(submodule_config=self.language_model)

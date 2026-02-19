@@ -12,53 +12,37 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Optional, Tuple
+from __future__ import annotations
 
-from ....configuration_utils import RBLNModelConfig
+from typing import Any
+
+from pydantic import Field, model_validator
+
+from ....configuration_utils import PositiveIntDefaultOne, RBLNModelConfig
 
 
 class RBLNControlNetModelConfig(RBLNModelConfig):
     """Configuration class for RBLN ControlNet models."""
 
-    subclass_non_save_attributes = ["_batch_size_is_specified"]
+    batch_size: PositiveIntDefaultOne = Field(default=1, description="The batch size for inference.")
+    max_seq_len: int | None = Field(
+        default=None,
+        description="Maximum sequence length for text inputs when used with cross-attention.",
+    )
+    unet_sample_size: tuple[int, int] | None = Field(
+        default=None, description="The spatial dimensions (height, width) of UNet samples."
+    )
+    vae_sample_size: tuple[int, int] | None = Field(
+        default=None, description="The spatial dimensions (height, width) of VAE samples."
+    )
+    text_model_hidden_size: int | None = Field(default=None, description="Hidden size of the text encoder model.")
+    batch_size_is_specified: bool = Field(
+        default=False, exclude=True, description="Whether the batch size was explicitly specified by the user."
+    )
 
-    def __init__(
-        self,
-        batch_size: Optional[int] = None,
-        max_seq_len: Optional[int] = None,
-        unet_sample_size: Optional[Tuple[int, int]] = None,
-        vae_sample_size: Optional[Tuple[int, int]] = None,
-        text_model_hidden_size: Optional[int] = None,
-        **kwargs: Any,
-    ):
-        """
-        Args:
-            batch_size (Optional[int]): The batch size for inference. Defaults to 1.
-            max_seq_len (Optional[int]): Maximum sequence length for text inputs when used
-                with cross-attention.
-            unet_sample_size (Optional[Tuple[int, int]]): The spatial dimensions (height, width)
-                of the UNet output samples.
-            vae_sample_size (Optional[Tuple[int, int]]): The spatial dimensions (height, width)
-                of the VAE input/output images.
-            text_model_hidden_size (Optional[int]): Hidden size of the text encoder model used
-                for conditioning.
-            kwargs: Additional arguments passed to the parent RBLNModelConfig.
-
-        Raises:
-            ValueError: If batch_size is not a positive integer.
-        """
-        super().__init__(**kwargs)
-        self._batch_size_is_specified = batch_size is not None
-
-        self.batch_size = batch_size or 1
-        if not isinstance(self.batch_size, int) or self.batch_size < 0:
-            raise ValueError(f"batch_size must be a positive integer, got {self.batch_size}")
-
-        self.max_seq_len = max_seq_len
-        self.unet_sample_size = unet_sample_size
-        self.vae_sample_size = vae_sample_size
-        self.text_model_hidden_size = text_model_hidden_size
-
-    @property
-    def batch_size_is_specified(self):
-        return self._batch_size_is_specified
+    @model_validator(mode="before")
+    @classmethod
+    def track_batch_size_specified(cls, data: dict[str, Any]) -> dict[str, Any]:
+        if isinstance(data, dict):
+            data["batch_size_is_specified"] = "batch_size" in data and data["batch_size"] is not None
+        return data
