@@ -178,8 +178,8 @@ class RBLNModel(RBLNBaseModel):
             preprocessors=preprocessors, model=model, model_config=config, rbln_config=rbln_config
         )
 
-        # torchscript should be True for jit to work
-        torchscript_backup = config.torchscript
+        # torchscript should be True for jit to work (not all configs have this attr, e.g. Sam3Config)
+        torchscript_backup = getattr(config, "torchscript", None)
         config.torchscript = True
 
         compiled_model: Union[rebel.RBLNCompiledModel, Dict[str, rebel.RBLNCompiledModel]] = cls.get_compiled_model(
@@ -196,7 +196,7 @@ class RBLNModel(RBLNBaseModel):
             cm.save(save_dir_path / subfolder / f"{compiled_model_name}.rbln")
         rbln_config.save(save_dir_path / subfolder)
 
-        config.torchscript = torchscript_backup
+        config.torchscript = torchscript_backup if torchscript_backup is not None else False
         config.save_pretrained(save_dir_path / subfolder)
 
         # Save torch artifacts (e.g. embedding matrix if needed.)
@@ -230,13 +230,16 @@ class RBLNModel(RBLNBaseModel):
         **kwargs,
     ) -> "PreTrainedModel":
         kwargs = cls.update_kwargs(kwargs)
+        # transformers 5.0+ uses `token` instead of deprecated `use_auth_token`
+        token = kwargs.pop("token", None) or use_auth_token
+        kwargs.pop("use_auth_token", None)  # avoid passing to model __init__
 
         return cls.get_hf_class().from_pretrained(
             model_id,
             subfolder=subfolder,
             revision=revision,
             cache_dir=cache_dir,
-            use_auth_token=use_auth_token,
+            token=token,
             local_files_only=local_files_only,
             force_download=force_download,
             trust_remote_code=trust_remote_code,

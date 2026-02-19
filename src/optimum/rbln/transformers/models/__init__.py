@@ -162,6 +162,10 @@ _import_structure = {
     "qwen2_moe": ["RBLNQwen2MoeForCausalLM", "RBLNQwen2MoeForCausalLMConfig"],
     "qwen3": ["RBLNQwen3ForCausalLM", "RBLNQwen3ForCausalLMConfig", "RBLNQwen3Model", "RBLNQwen3ModelConfig"],
     "qwen3_moe": ["RBLNQwen3MoeForCausalLM", "RBLNQwen3MoeForCausalLMConfig"],
+    "sam3": [
+        "RBLNSam3Model",
+        "RBLNSam3ModelConfig",
+    ],
     "resnet": ["RBLNResNetForImageClassification", "RBLNResNetForImageClassificationConfig"],
     "roberta": [
         "RBLNRobertaForMaskedLM",
@@ -342,6 +346,7 @@ if TYPE_CHECKING:
     from .qwen3 import RBLNQwen3ForCausalLM, RBLNQwen3ForCausalLMConfig, RBLNQwen3Model, RBLNQwen3ModelConfig
     from .qwen3_moe import RBLNQwen3MoeForCausalLM, RBLNQwen3MoeForCausalLMConfig
     from .resnet import RBLNResNetForImageClassification, RBLNResNetForImageClassificationConfig
+    from .sam3 import RBLNSam3Model, RBLNSam3ModelConfig
     from .roberta import (
         RBLNRobertaForMaskedLM,
         RBLNRobertaForMaskedLMConfig,

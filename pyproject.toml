@@ -7,7 +7,7 @@ It provides a set of tools enabling easy model loading and inference on single a
 authors = [
     {name = "Rebellions Inc.", email = "support@rebellions.ai"},
 ]
-requires-python = ">=3.9,<3.14"
+requires-python = ">=3.10,<3.14"
 readme = "README.md"
 license = "Apache-2.0"
 license-files = ["LICENSE"]
@@ -33,7 +33,7 @@ dependencies = [
     "torchaudio<=2.8.0",
     "torchvision<=0.23.0",
     "accelerate>=1.0.1",
-    "transformers==4.57.3",
+    "transformers==5.0.0",
     "diffusers==0.36.0",
     "packaging>=24.1",
 ]

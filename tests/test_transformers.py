@@ -11,6 +11,7 @@ from transformers import AutoConfig, T5EncoderModel
 from optimum.rbln import (
     RBLNASTForAudioClassification,
     RBLNBartModel,
+    RBLNSam3Model,
     RBLNBertForMaskedLM,
     RBLNBertForQuestionAnswering,
     RBLNBertModel,
@@ -625,6 +626,27 @@ class TestViTForImageClassification(BaseTest.TestModel):
     GENERATION_KWARGS = {
         "pixel_values": torch.randn(1, 3, 224, 224, generator=torch.manual_seed(42)),
     }
+
+
+def _sam3_available():
+    try:
+        from transformers.models.auto.configuration_auto import CONFIG_MAPPING_NAMES
+        return "sam3" in CONFIG_MAPPING_NAMES
+    except Exception:
+        return False
+
+
+@unittest.skipIf(not _sam3_available(), "Sam3 requires transformers>=5.0.0")
+class TestSam3Model(BaseTest.TestModel):
+    RBLN_AUTO_CLASS = RBLNAutoModel
+    RBLN_CLASS = RBLNSam3Model
+    HF_MODEL_ID = "facebook/sam3"
+    GENERATION_KWARGS = {
+        "pixel_values": torch.randn(1, 3, 1008, 1008, generator=torch.manual_seed(42)),
+        "input_ids": torch.randint(low=0, high=49408, size=(1, 77), generator=torch.manual_seed(42), dtype=torch.int64),
+        "attention_mask": torch.ones(1, 77, dtype=torch.int64),
+    }
+    TEST_LEVEL = TestLevel.FULL
 
 
 class TestGroundingDinoModel(BaseTest.TestModel):
