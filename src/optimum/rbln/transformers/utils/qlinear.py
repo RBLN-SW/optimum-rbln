@@ -12,9 +12,6 @@ class QLinear(nn.Module):
         bias: Optional[torch.Tensor] = None,
         weight_scale: Optional[torch.Tensor] = None,
         input_scale: Optional[torch.Tensor] = None,
-        # FIXME(jongho): Make it only holds k_scale or v_scale
-        k_scale: Optional[torch.Tensor] = None,
-        v_scale: Optional[torch.Tensor] = None,
         dynamic: bool = False,
     ):
         super().__init__()
@@ -23,8 +20,6 @@ class QLinear(nn.Module):
         self.bias = bias
         self.weight_scale = weight_scale
         self.input_scale = input_scale
-        self.k_scale = k_scale
-        self.v_scale = v_scale
         self.dynamic = dynamic
 
         if weight_scale is None:
@@ -42,7 +37,7 @@ class QIntLinear(QLinear):
         iinfo = torch.iinfo(self.dtype())
         finfo = torch.finfo(x.dtype)
         if self.dynamic:
-            if self.input_scale:
+            if self.input_scale is not None:
                 raise NotImplementedError("Dynamic quantization with input_scale is not supported.")
             x_max = x.abs().max(dim=-1, keepdim=True).values
             x_scale = x_max / iinfo.max
@@ -50,7 +45,7 @@ class QIntLinear(QLinear):
 
             x = (x / x_scale).clamp(min=iinfo.min, max=iinfo.max)
         else:
-            if self.input_scale:
+            if self.input_scale is not None:
                 x = (x / self.input_scale).clamp(min=iinfo.min, max=iinfo.max)
 
         weight = self.weight * self.weight_scale
@@ -64,10 +59,15 @@ class QIntLinear(QLinear):
 
 class QFloatLinear(QLinear):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        if self.input_scale:
+        if self.input_scale is not None:
             finfo = torch.finfo(self.dtype())
             x = (x / self.input_scale).clamp(min=finfo.min, max=finfo.max)
 
         weight = self.weight.to(self.weight_scale.dtype) * self.weight_scale
 
-        return F.linear(x, weight, self.bias)
+        qact = F.linear(x, weight, self.bias)
+
+        if self.input_scale is not None:
+            qact = qact * self.input_scale
+
+        return qact

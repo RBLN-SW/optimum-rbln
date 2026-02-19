@@ -176,13 +176,19 @@ def get_quantized_model(
     """
     # torch_dtype should not be passed to AutoConfig.from_pretrained
     # since it doesn't support 'auto'
-    torch_dtype = kwargs.pop("torch_dtype", None)
-    if torch_dtype is not None:
-        logger.warning(
-            "torch_dtype is not supported for quantized models. "
+    if "torch_dtype" in kwargs:
+        if "dtype" in kwargs:
+            raise ValueError("torch_dtype and dtype cannot be set at the same time.")
+        logger.warning_once("torch_dtype is deprecated. Use dtype instead.")
+        dtype = kwargs.pop("torch_dtype")
+    else:
+        dtype = kwargs.pop("torch_dtype", None)
+    if dtype is not None:
+        logger.warning_once(
+            "dtype is not supported for quantized models. "
             "It will be ignored and the dtype of the model will be determined by the weights."
         )
-        torch_dtype = None
+        dtype = None
 
     # get paths of safetensors files in the model repo
     safetensor_files = load_weight_files(
@@ -198,7 +204,11 @@ def get_quantized_model(
     safetensors = [load_file(safetensor_file) for safetensor_file in safetensor_files]
 
     # get the dtype of the model from the first safetensor file
-    torch_dtype = get_state_dict_dtype(safetensors[0])
+    dtype = get_state_dict_dtype(safetensors[0])
+
+    # FIXME :: Currently rebel compiler does not support bfloat16 for quantized models.
+    # So we use float32 instead.
+    dtype = torch.float32
 
     # remove n_layer_keys from kwargs if they are None.
     # otherwise AutoConfig.from_pretrained will raise an error.
@@ -219,7 +229,7 @@ def get_quantized_model(
     )
 
     with no_init_weights():
-        model = hf_auto_model_class.from_config(config, torch_dtype=torch_dtype)
+        model = hf_auto_model_class.from_config(config, dtype=dtype)
 
     # Quantize the model
     update_layers_to_quantize(model, model.dtype, rbln_quantization)
@@ -293,12 +303,22 @@ def update_layers_to_quantize(
 
     processed_layers = []
     quantized_layer_factory = QuantizedLayerFactory(rbln_quantization)
-
     for name, layer in module.named_modules():
         if is_target_for_qlinear_replacement(name, layer):
             parent_module, layer_name = get_parent_and_child(module, name)
-            setattr(parent_module, layer_name, quantized_layer_factory.create_linear(layer, scale_dtype))
+            setattr(
+                parent_module,
+                layer_name,
+                quantized_layer_factory.create_linear(layer, scale_dtype),
+            )
             processed_layers.append(name)
+
+    # Register k_scale/v_scale on self_attn modules for fp8 kv caches
+    if rbln_quantization.kv_caches == "fp8":
+        for name, layer in module.named_modules():
+            if is_target_for_adding_kv_scales(name):
+                layer.k_scale = Parameter(torch.tensor(1, dtype=scale_dtype), requires_grad=False)
+                layer.v_scale = Parameter(torch.tensor(1, dtype=scale_dtype), requires_grad=False)
 
     if processed_layers:
         logger.debug(f"Updated the following linear layers to quantized layers:\n {{{', '.join(processed_layers)}}}")
@@ -323,6 +343,13 @@ def _reduce_to_scalar(t: torch.Tensor) -> torch.Tensor:
     if t.ndim == 0:
         return t
     return t.reshape(-1).amax()
+
+
+def _1d_value_as_scalar(value: torch.Tensor) -> torch.Tensor:
+    if value.ndim == 1:
+        return value.reshape(-1).amax()
+    else:
+        raise ValueError(f"Expected 1D tensor, got {value.ndim}D tensor")
 
 
 def _scalar_value_as_1d(scale: torch.Tensor) -> torch.Tensor:
@@ -366,15 +393,15 @@ def _coerce_per_out_channel_scale(scale: torch.Tensor, out_features: int) -> tor
 
 def _kv_split_items(base_key: str, tensor: torch.Tensor) -> list[tuple[str, torch.Tensor]]:
     # base_key is the original key whose last token was 'kv_scale'
-    # We produce keys with 'k_proj.k_scale' and 'v_proj.v_scale'
+    # We produce keys with 'k_scale' and 'v_scale' at the self_attn level
     if tensor.ndim == 1 and tensor.numel() >= 2:
         tk, tv = tensor[0], tensor[1]
     elif tensor.ndim == 2 and tensor.shape[0] >= 2 and tensor.shape[1] == 1:
         tk, tv = tensor[0, 0], tensor[1, 0]
     else:
         tk = tv = tensor
-    k_key = _replace_last_with(base_key, "k_proj.k_scale")
-    v_key = _replace_last_with(base_key, "v_proj.v_scale")
+    k_key = _replace_last_with(base_key, "k_scale")
+    v_key = _replace_last_with(base_key, "v_scale")
     return [(k_key, tk), (v_key, tv)]
 
 
@@ -421,11 +448,27 @@ def canonicalize_checkpoint_items(
             # For quark-like formats, expand to k/v
             kv_items = _kv_split_items(key, t)
             for k2, v2 in kv_items:
+                if v2.ndim == 0:
+                    pass
+                else:
+                    v2 = _1d_value_as_scalar(v2)
                 results.append((k2, v2))
             continue
 
         if _matches_any_alias(key, "k_scale") or _matches_any_alias(key, "v_scale"):
-            results.append((key, t))
+            canonical_name = "k_scale" if _matches_any_alias(key, "k_scale") else "v_scale"
+            parts = key.split(".")
+            # If parent is a projection layer (e.g., k_proj, v_proj), move scale up to self_attn level
+            if len(parts) >= 2 and parts[-2] in ("k_proj", "v_proj"):
+                target_key = ".".join(parts[:-2] + [canonical_name])
+            else:
+                target_key = _replace_last_with(key, canonical_name)
+
+            if t.ndim == 0:
+                pass
+            else:
+                t = _1d_value_as_scalar(t)
+            results.append((target_key, t))
             continue
 
         # Default: passthrough
@@ -572,16 +615,9 @@ def convert_to_qfloat_linear(
         # Keep a non-scalar shape for input scale as well ([1]) for consistency
         input_scale = Parameter(torch.ones(1, dtype=scale_dtype), requires_grad=False)
 
-    k_scale, v_scale = None, None
-    if rbln_quantization.kv_caches == "fp8":
-        k_scale = Parameter(torch.tensor(1, dtype=scale_dtype), requires_grad=False)
-        v_scale = Parameter(torch.tensor(1, dtype=scale_dtype), requires_grad=False)
-
     return QFloatLinear(
         weight=layer.weight,
         bias=layer.bias,
         weight_scale=weight_scale,
         input_scale=input_scale,
-        k_scale=k_scale,
-        v_scale=v_scale,
     )
