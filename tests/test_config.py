@@ -193,10 +193,13 @@ def test_submodule_config_dict():
     model = RBLNLlavaNextForConditionalGeneration.from_pretrained(
         "trl-internal-testing/tiny-LlavaNextForConditionalGeneration",
         export=True,
-        rbln_language_model={"max_seq_len": 16384, "use_inputs_embeds": True, "batch_size": 2},
+        rbln_device=0,
+        rbln_language_model={"max_seq_len": 16384, "use_inputs_embeds": True, "batch_size": 2, "device": 1},
     )
     assert model.rbln_config.language_model.max_seq_len == 16384
     assert model.rbln_config.language_model.batch_size == 2
+    assert model.rbln_config.device == 0
+    assert model.rbln_config.language_model.device == 1
 
 
 def test_submodule_config_object():
