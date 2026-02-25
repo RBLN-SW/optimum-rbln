@@ -88,7 +88,7 @@ plugins:
             show_source: false
             filters: ["!^_"]
             extensions:
-              - griffe_pydantic:
+              - {Path(__file__).parent / "griffe_pydantic_safe.py"}:
                   schema: false
 """
 
