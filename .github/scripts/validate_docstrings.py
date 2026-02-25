@@ -87,6 +87,9 @@ plugins:
           options:
             show_source: false
             filters: ["!^_"]
+            extensions:
+              - griffe_pydantic:
+                  schema: false
 """
 
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -97,7 +100,7 @@ plugins:
             (docs_dir / "index.md").write_text(test_content)
 
             result = subprocess.run(
-                ["mkdocs", "build", "--strict"], cwd=tmp_path, capture_output=True, text=True, timeout=10
+                ["mkdocs", "build", "--strict"], cwd=tmp_path, capture_output=True, text=True, timeout=30
             )
 
             if result.returncode != 0:

@@ -31,7 +31,7 @@ jobs:
     
     - name: Install dependencies
       run: |
-        pip install mkdocs mkdocs-material mkdocstrings mkdocstrings-python
+        pip install mkdocs mkdocs-material mkdocstrings mkdocstrings-python griffe-pydantic
     
     - name: Get Python files to test
       id: changed-files
