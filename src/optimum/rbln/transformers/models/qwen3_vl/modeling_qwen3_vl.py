@@ -559,18 +559,6 @@ class RBLNQwen3VLModel(RBLNDecoderOnlyModel):
 
         rope_deltas = torch.stack(all_rope_deltas)
 
-        if deepstack_visual_embeds is not None:
-            hidden_size = self.config.text_config.hidden_size
-            num_layers = len(deepstack_visual_embeds)
-            padded_deepstack = torch.zeros(
-                num_layers, max_inputs_len, hidden_size, dtype=self.rbln_config.dtype, device=inputs_embeds.device
-            )
-            if visual_pos_mask is not None:
-                visual_indices = torch.nonzero(visual_pos_mask[0], as_tuple=True)[0]
-                for layer_idx, layer_embed in enumerate(deepstack_visual_embeds):
-                    padded_deepstack[layer_idx, visual_indices] = layer_embed.to(padded_deepstack.dtype)
-            deepstack_visual_embeds = padded_deepstack
-
         return inputs_embeds, all_position_embeds, rope_deltas, visual_pos_mask, deepstack_visual_embeds
 
     def _prepare_deepstack(
@@ -580,25 +568,70 @@ class RBLNQwen3VLModel(RBLNDecoderOnlyModel):
         deepstack_image_embeds: Optional[List[torch.Tensor]],
         deepstack_video_embeds: Optional[List[torch.Tensor]],
     ):
-        visual_pos_mask = None
-        deepstack_visual_embeds = None
+        if image_mask is None and video_mask is None:
+            return None, None
 
-        if image_mask is not None and video_mask is not None:
-            visual_pos_mask = image_mask | video_mask
-            deepstack_visual_embeds = []
-            image_mask_joint = image_mask[visual_pos_mask]
-            video_mask_joint = video_mask[visual_pos_mask]
-            for img_embed, vid_embed in zip(deepstack_image_embeds, deepstack_video_embeds, strict=False):
-                embed_joint = img_embed.new_zeros(visual_pos_mask.sum(), img_embed.shape[-1])
-                embed_joint[image_mask_joint] = img_embed
-                embed_joint[video_mask_joint] = vid_embed
-                deepstack_visual_embeds.append(embed_joint)
-        elif image_mask is not None:
-            visual_pos_mask = image_mask
-            deepstack_visual_embeds = deepstack_image_embeds
-        elif video_mask is not None:
-            visual_pos_mask = video_mask
-            deepstack_visual_embeds = deepstack_video_embeds
+        visual_pos_mask = (
+            image_mask if video_mask is None else (video_mask if image_mask is None else (image_mask | video_mask))
+        )
+
+        if deepstack_image_embeds is None and deepstack_video_embeds is None:
+            return visual_pos_mask, None
+
+        batch_size, seq_len = visual_pos_mask.shape
+        device = visual_pos_mask.device
+        dtype = self.rbln_config.dtype
+
+        num_layers = max(
+            len(deepstack_image_embeds) if deepstack_image_embeds is not None else 0,
+            len(deepstack_video_embeds) if deepstack_video_embeds is not None else 0,
+        )
+        if num_layers == 0:
+            return visual_pos_mask, None
+
+        example_layer = None
+        if deepstack_image_embeds is not None and len(deepstack_image_embeds) > 0:
+            example_layer = deepstack_image_embeds[0]
+        elif deepstack_video_embeds is not None and len(deepstack_video_embeds) > 0:
+            example_layer = deepstack_video_embeds[0]
+        hidden_size = int(example_layer.shape[-1])
+
+        img_counts = image_mask.sum(dim=1, dtype=torch.int64).tolist() if image_mask is not None else [0] * batch_size
+        vid_counts = video_mask.sum(dim=1, dtype=torch.int64).tolist() if video_mask is not None else [0] * batch_size
+
+        img_offsets = [0]
+        for c in img_counts[:-1]:
+            img_offsets.append(img_offsets[-1] + int(c))
+        vid_offsets = [0]
+        for c in vid_counts[:-1]:
+            vid_offsets.append(vid_offsets[-1] + int(c))
+
+        deepstack_visual_embeds = torch.zeros(batch_size, num_layers, seq_len, hidden_size, device=device, dtype=dtype)
+
+        for layer_idx in range(num_layers):
+            layer_img = (
+                deepstack_image_embeds[layer_idx]
+                if deepstack_image_embeds is not None and layer_idx < len(deepstack_image_embeds)
+                else None
+            )
+            layer_vid = (
+                deepstack_video_embeds[layer_idx]
+                if deepstack_video_embeds is not None and layer_idx < len(deepstack_video_embeds)
+                else None
+            )
+
+            for b_idx in range(batch_size):
+                if image_mask is not None and layer_img is not None and img_counts[b_idx] > 0:
+                    pos = torch.nonzero(image_mask[b_idx], as_tuple=True)[0]
+                    s = img_offsets[b_idx]
+                    e = s + int(img_counts[b_idx])
+                    deepstack_visual_embeds[b_idx, layer_idx, pos] = layer_img[s:e].to(dtype=dtype, device=device)
+
+                if video_mask is not None and layer_vid is not None and vid_counts[b_idx] > 0:
+                    pos = torch.nonzero(video_mask[b_idx], as_tuple=True)[0]
+                    s = vid_offsets[b_idx]
+                    e = s + int(vid_counts[b_idx])
+                    deepstack_visual_embeds[b_idx, layer_idx, pos] = layer_vid[s:e].to(dtype=dtype, device=device)
 
         return visual_pos_mask, deepstack_visual_embeds
 
@@ -659,7 +692,7 @@ class RBLNQwen3VLModel(RBLNDecoderOnlyModel):
                 position_embed=position_embed[:, b_idx : b_idx + 1],
                 block_tables=self.block_tables,
                 visual_pos_mask=visual_pos_mask[b_idx : b_idx + 1] if visual_pos_mask is not None else None,
-                deepstack_embeds=deepstack_visual_embeds,
+                deepstack_embeds=(deepstack_visual_embeds[b_idx] if deepstack_visual_embeds is not None else None),
             )
             logits.append(output.logits)
             if self.rbln_config.output_hidden_states:
@@ -855,7 +888,7 @@ class RBLNQwen3VLForConditionalGeneration(RBLNQwen3VLModel, RBLNDecoderOnlyModel
                     batch_idx=b_idx,
                     position_embed=position_embed[:, b_idx : b_idx + 1],
                     visual_pos_mask=visual_pos_mask[b_idx : b_idx + 1] if visual_pos_mask is not None else None,
-                    deepstack_embeds=deepstack_visual_embeds,
+                    deepstack_embeds=(deepstack_visual_embeds[b_idx] if deepstack_visual_embeds is not None else None),
                 )
                 logits.append(output.logits)
                 if self.rbln_config.output_hidden_states:
