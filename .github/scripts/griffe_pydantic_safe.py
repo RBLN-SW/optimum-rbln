@@ -13,6 +13,7 @@ Fix: Patch static._process_attribute to skip unannotated attributes, and patch
 
 from griffe_pydantic._internal import common, static
 
+
 # --- Fix Bug 1: Skip unannotated attributes in static analysis ---
 _orig_process_attribute = static._process_attribute
 
@@ -56,4 +57,4 @@ def _safe_model_validators(cls):
 common._model_validators = _safe_model_validators
 
 # Re-export the (now-safe) PydanticExtension
-from griffe_pydantic import PydanticExtension  # noqa: E402
+from griffe_pydantic import PydanticExtension  # noqa: E402, F401
