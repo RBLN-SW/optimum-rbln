@@ -123,6 +123,9 @@ class RBLNGptOssForCausalLM(RBLNDecoderOnlyModelForCausalLM):
         config: Optional[PretrainedConfig] = None,
         **kwargs,
     ) -> PreTrainedModel:
+        # gpt-oss do not support bfloat16, so we force to float32
+        dtype = torch.float32
+
         safetensor_files = load_weight_files(model_id, exception_keywords=["original"])
         state_dict = {k: v for f in safetensor_files for k, v in load_file(f).items()}
 
