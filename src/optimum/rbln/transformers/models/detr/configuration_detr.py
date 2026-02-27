@@ -1,4 +1,4 @@
-# Copyright 2025 Rebellions Inc. All rights reserved.
+# Copyright 2026 Rebellions Inc. All rights reserved.
 
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,11 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from typing import Any, Optional, Tuple, Union
 
-from ...configuration_generic import RBLNModelForImageClassificationConfig
+from ...configuration_generic import RBLNImageModelConfig
 
 
-class RBLNDetrForObjectDetectionConfig(RBLNModelForImageClassificationConfig):
+class RBLNDetrForObjectDetectionConfig(RBLNImageModelConfig):
     """
     Configuration class for RBLNDetrForObjectDetection.
 
@@ -24,11 +25,16 @@ class RBLNDetrForObjectDetectionConfig(RBLNModelForImageClassificationConfig):
     RBLN-optimized DETR models for object detection tasks.
     """
 
-    def __init__(self, **kwargs):
+    def __init__(
+        self,
+        image_size: Optional[Union[int, Tuple[int, int]]] = None,
+        batch_size: Optional[int] = None,
+        **kwargs: Any,
+    ):
         """
         Args:
-            image_size (Optional[Union[int, Tuple[int, int]]]): The size of input images.
-                Can be an integer for square images or a tuple (height, width).
+            image_size (Optional[Union[int, Tuple[int, int]]]): The size of input images
+                for compile shape. Can be an integer for square images or a tuple (height, width).
             batch_size (Optional[int]): The batch size for inference. Defaults to 1.
             kwargs: Additional arguments passed to the parent RBLNModelConfig.
 
@@ -36,3 +42,7 @@ class RBLNDetrForObjectDetectionConfig(RBLNModelForImageClassificationConfig):
             ValueError: If batch_size is not a positive integer.
         """
         super().__init__(**kwargs)
+        self.image_size = image_size
+        self.batch_size = batch_size or 1
+        if not isinstance(self.batch_size, int) or self.batch_size < 0:
+            raise ValueError(f"batch_size must be a positive integer, got {self.batch_size}")
