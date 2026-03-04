@@ -108,8 +108,8 @@ def validate_sliding_window(rbln_config: RBLNDecoderOnlyModelForCausalLMConfig):
             f"Sliding window size ({rbln_config.sliding_window}) must be less than 32768 - prefill_chunk_size ({32768 - rbln_config.prefill_chunk_size})"
         )
 
-    if rbln_config.cache_impl == "sliding_window" and rbln_config.use_attention_mask:
-        raise ValueError("`use_attention_mask` must be set to False when `cache_impl` is set to 'sliding_window'.")
+    # if rbln_config.cache_impl == "sliding_window" and rbln_config.use_attention_mask:
+    #     raise ValueError("`use_attention_mask` must be set to False when `cache_impl` is set to 'sliding_window'.")
 
 
 def align(x: int, nbytes: int) -> int:
