@@ -183,6 +183,84 @@ def test_argument_parsing():
     return True
 
 
+def test_hf_kwargs():
+    """Test HuggingFace model kwargs via --hf-* prefix."""
+    print("\n🔍 Testing HuggingFace model kwargs (--hf-* prefix)...")
+
+    test_output_dir = "/tmp/test_cli_hf_kwargs"
+
+    # Clean up if exists
+    if Path(test_output_dir).exists():
+        shutil.rmtree(test_output_dir)
+
+    # Run CLI compilation with --hf-* arguments
+    cmd = [
+        "uv",
+        "run",
+        "python",
+        "-m",
+        "optimum.rbln.cli",
+        "--output-dir",
+        test_output_dir,
+        "--model-id",
+        "hf-internal-testing/tiny-random-ResNetForImageClassification",
+        "--hf-trust-remote-code",
+        "true",
+        "--hf-dtype",
+        "float32",
+    ]
+
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        print(f"❌ Command failed with exit code {result.returncode}")
+        print(f"STDOUT: {result.stdout}")
+        print(f"STDERR: {result.stderr}")
+        if Path(test_output_dir).exists():
+            shutil.rmtree(test_output_dir)
+        return False
+
+    # Check if model_kwargs appears in output
+    if "model_kwargs" not in result.stdout:
+        print("❌ 'model_kwargs' not found in output")
+        print(f"STDOUT: {result.stdout}")
+        if Path(test_output_dir).exists():
+            shutil.rmtree(test_output_dir)
+        return False
+    print("✅ Found 'model_kwargs' in output")
+
+    # Check if specific kwargs are present
+    if "trust_remote_code" not in result.stdout:
+        print("❌ 'trust_remote_code' not found in model_kwargs output")
+        if Path(test_output_dir).exists():
+            shutil.rmtree(test_output_dir)
+        return False
+    print("✅ Found 'trust_remote_code' in model_kwargs")
+
+    if "dtype" not in result.stdout:
+        print("❌ 'dtype' not found in model_kwargs output")
+        if Path(test_output_dir).exists():
+            shutil.rmtree(test_output_dir)
+        return False
+    print("✅ Found 'dtype' in model_kwargs")
+
+    # Check if required files are generated (compilation succeeded)
+    output_path = Path(test_output_dir)
+    required_files = ["rbln_config.json", "compiled_model.rbln"]
+    for file_name in required_files:
+        file_path = output_path / file_name
+        if not file_path.exists():
+            print(f"❌ Required file not found: {file_path}")
+            if Path(test_output_dir).exists():
+                shutil.rmtree(test_output_dir)
+            return False
+        print(f"✅ Found required file: {file_path}")
+
+    # Clean up
+    shutil.rmtree(test_output_dir)
+    print("✅ HuggingFace kwargs test passed")
+    return True
+
+
 def test_error_handling():
     """Test CLI error handling."""
     print("\n🔍 Testing CLI error handling...")
@@ -228,6 +306,7 @@ def main():
         success &= test_cli_help()
         success &= test_resnet_compilation()
         success &= test_stable_diffusion_compilation()
+        success &= test_hf_kwargs()
     elif args.test_type == "argument-parsing":
         success &= test_argument_parsing()
     elif args.test_type == "error-handling":
