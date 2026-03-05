@@ -23,7 +23,7 @@ from transformers import (
     PreTrainedModel,
     Qwen2VLForConditionalGeneration,
 )
-from transformers.modeling_utils import no_init_weights
+from transformers.initialization import no_init_weights
 from transformers.models.qwen2_vl.modeling_qwen2_vl import (
     PatchEmbed,
     Qwen2VisionTransformerPretrainedModel,

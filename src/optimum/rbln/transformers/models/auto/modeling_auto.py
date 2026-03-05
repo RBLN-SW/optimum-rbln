@@ -57,6 +57,12 @@ MODEL_FOR_CAUSAL_LM_MAPPING_NAMES.update(
     }
 )
 
+MODEL_FOR_IMAGE_TEXT_TO_TEXT_MAPPING_NAMES.update(
+    {
+        "exaone4_5": "Exaone4_5_ForConditionalGeneration",
+    }
+)
+
 
 class RBLNAutoModel(_BaseAutoModelClass):
     """Automatically detect all supported transformers models."""

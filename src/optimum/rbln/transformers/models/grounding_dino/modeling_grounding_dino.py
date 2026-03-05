@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING, List, Optional, Tuple, Union
 
 import torch
 from torch import Tensor, nn
-from transformers.modeling_utils import no_init_weights
+from transformers.initialization import no_init_weights
 from transformers.models.grounding_dino.modeling_grounding_dino import (
     GroundingDinoContrastiveEmbedding,
     GroundingDinoConvEncoder,
