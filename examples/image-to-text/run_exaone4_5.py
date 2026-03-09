@@ -10,7 +10,7 @@ from optimum.rbln import RBLNExaone4_5_ForConditionalGeneration
 
 
 def main(
-    model_id: str = "/mnt/shared_data/.cache/pretrained_models/LGAI-EXAONE/exaone-4.5/model_32B-dummy_128k_2026-02-26",
+    model_id: str = "/mnt/shared_data/groups/sw_dev/.cache/pretrained_models/LGAI-EXAONE/exaone-4.5/model_32B-dummy_128k_2026-02-26",
     batch_size: int = 1,
     from_transformers: bool = False,
     max_seq_len: typing.Optional[int] = 128000,
@@ -24,7 +24,8 @@ def main(
             export=True,
             rbln_config={
                 "visual": {
-                    "max_seq_lens": 6912,
+                    "max_seq_lens": 16384, # exaone longest_edge set 28 * 28 * 4096 in preprocessor_config.json
+                    "tensor_parallel_size": 4,
                 },
                 "kvcache_partition_len": 5120,
                 "max_seq_len": max_seq_len,

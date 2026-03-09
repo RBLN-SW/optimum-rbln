@@ -58,6 +58,7 @@ def _disable_mtp(model_config):
 
 class RBLNExaone4_5_VisionPreTrainedModel(RBLNModel):
     _supports_non_fp32 = True
+    _tp_support = True
 
     def __post_init__(self, **kwargs):
         self.transformer = self.model[0]
