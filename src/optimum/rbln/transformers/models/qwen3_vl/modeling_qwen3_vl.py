@@ -1,4 +1,4 @@
-# Copyright 2025 Rebellions Inc. All rights reserved.
+# Copyright 2026 Rebellions Inc. All rights reserved.
 
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -519,6 +519,8 @@ class RBLNQwen3VLModel(RBLNDecoderOnlyModel):
             video_mask = input_ids == self.config.video_token_id
             mask_unsqueezed = video_mask.unsqueeze(-1)
             mask_expanded = mask_unsqueezed.expand_as(inputs_embeds)
+
+            video_embeds = video_embeds.to(inputs_embeds.device, inputs_embeds.dtype)
             inputs_embeds = inputs_embeds.masked_scatter(mask_expanded, video_embeds)
 
         visual_pos_mask, deepstack_visual_embeds = self._prepare_deepstack(
@@ -579,7 +581,6 @@ class RBLNQwen3VLModel(RBLNDecoderOnlyModel):
             return visual_pos_mask, None
 
         batch_size, seq_len = visual_pos_mask.shape
-        device = visual_pos_mask.device
         dtype = self.rbln_config.dtype
 
         num_layers = max(
@@ -606,7 +607,7 @@ class RBLNQwen3VLModel(RBLNDecoderOnlyModel):
         for c in vid_counts[:-1]:
             vid_offsets.append(vid_offsets[-1] + int(c))
 
-        deepstack_visual_embeds = torch.zeros(batch_size, num_layers, seq_len, hidden_size, device=device, dtype=dtype)
+        deepstack_visual_embeds = torch.zeros(batch_size, num_layers, seq_len, hidden_size, dtype=dtype)
 
         for layer_idx in range(num_layers):
             layer_img = (
@@ -625,13 +626,13 @@ class RBLNQwen3VLModel(RBLNDecoderOnlyModel):
                     pos = torch.nonzero(image_mask[b_idx], as_tuple=True)[0]
                     s = img_offsets[b_idx]
                     e = s + int(img_counts[b_idx])
-                    deepstack_visual_embeds[b_idx, layer_idx, pos] = layer_img[s:e].to(dtype=dtype, device=device)
+                    deepstack_visual_embeds[b_idx, layer_idx, pos] = layer_img[s:e].to(dtype=dtype)
 
                 if video_mask is not None and layer_vid is not None and vid_counts[b_idx] > 0:
                     pos = torch.nonzero(video_mask[b_idx], as_tuple=True)[0]
                     s = vid_offsets[b_idx]
                     e = s + int(vid_counts[b_idx])
-                    deepstack_visual_embeds[b_idx, layer_idx, pos] = layer_vid[s:e].to(dtype=dtype, device=device)
+                    deepstack_visual_embeds[b_idx, layer_idx, pos] = layer_vid[s:e].to(dtype=dtype)
 
         return visual_pos_mask, deepstack_visual_embeds
 
