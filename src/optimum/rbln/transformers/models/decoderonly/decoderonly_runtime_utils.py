@@ -116,17 +116,17 @@ class RBLNPageTableManager:
                     block_idx = position // self.rbln_config.kvcache_block_size
                     self.update_block(b_idx, block_idx)
 
-                return self.replace_empty_block(self.block_tables)
+                return self.replace_empty_block(self.block_tables[:batch_size])
 
         def get_local_block_tables():
             if not self.rbln_config.use_local_attention:
                 return None
             else:
-                return (
-                    torch.tensor([batch_idx], dtype=torch.int16)
-                    if phase == "prefill"
-                    else torch.arange(batch_size, dtype=torch.int16).view(batch_size, -1)
-                )
+                if phase == "prefill":
+                    return torch.tensor([[batch_idx, batch_idx]], dtype=torch.int16)
+
+                local_ids = torch.arange(batch_size, dtype=torch.int16).view(batch_size, -1)
+                return local_ids.repeat(1, 2)
 
         return get_global_block_tables(), get_local_block_tables()
 
@@ -210,6 +210,23 @@ class RBLNRuntimeModel(RBLNPytorchRuntime):
             return self.embed_tokens(input_ids) if inputs_embeds is None else inputs_embeds
         else:
             return input_ids
+
+    def _get_sliding_window_mask_range(self, current_end: int):
+        window_size = self.rbln_config.sliding_window
+        if window_size is None:
+            raise ValueError("sliding_window cache_impl requires rbln_config.sliding_window.")
+
+        mask_len = self.rbln_config.max_seq_len
+        # For [curr, curr] layout (prev block absent), place valid region on the right-side current window.
+        right_window_start = min(window_size, max(0, mask_len - window_size))
+        if current_end <= window_size:
+            start = right_window_start
+            end = min(right_window_start + current_end, mask_len)
+        else:
+            start = max(0, current_end - window_size)
+            end = min(current_end, mask_len)
+
+        return start, end
 
     def forward(
         self,
@@ -300,7 +317,7 @@ class RBLNRuntimeModel(RBLNPytorchRuntime):
             local_block_tables = (
                 local_block_tables
                 if local_block_tables is not None
-                else torch.arange(0, batch_size, dtype=torch.int16).view(batch_size, -1)
+                else torch.arange(0, batch_size, dtype=torch.int16).view(batch_size, -1).repeat(1, 2)
             )
 
         if self.rbln_config.use_attention_mask and attention_mask is None:
@@ -312,7 +329,13 @@ class RBLNRuntimeModel(RBLNPytorchRuntime):
                     )
 
                 if self.rbln_config.use_position_ids:
-                    self.dec_attn_mask[b_idx, decoding_step] = 1
+                    if self.rbln_config.cache_impl == "sliding_window":
+                        start, end = self._get_sliding_window_mask_range(decoding_step + 1)
+                        self.dec_attn_mask[b_idx].fill_(0)
+                        if end > start:
+                            self.dec_attn_mask[b_idx, start:end] = 1
+                    else:
+                        self.dec_attn_mask[b_idx, decoding_step] = 1
 
                     if self.batch_size < block_tables.shape[0]:
                         block_tables = block_tables[: self.batch_size]
@@ -320,11 +343,21 @@ class RBLNRuntimeModel(RBLNPytorchRuntime):
                     if self.dec_attn_mask is not None and self.batch_size < self.dec_attn_mask.shape[0]:
                         self.dec_attn_mask = self.dec_attn_mask[: self.batch_size]
                 else:
-                    if is_external_block_tables:
+                    if self.rbln_config.cache_impl == "sliding_window":
+                        start, end = self._get_sliding_window_mask_range(decoding_step + 1)
                         self.dec_attn_mask[b_idx].fill_(0)
-                        self.dec_attn_mask[b_idx, :, :, : decoding_step + 1] = 1
+                        if is_external_block_tables:
+                            if end > start:
+                                self.dec_attn_mask[b_idx, :, :, start:end] = 1
+                        else:
+                            if end > start:
+                                self.dec_attn_mask[b_idx, :, :, end - 1] = 1
                     else:
-                        self.dec_attn_mask[b_idx, :, :, decoding_step] = 1
+                        if is_external_block_tables:
+                            self.dec_attn_mask[b_idx].fill_(0)
+                            self.dec_attn_mask[b_idx, :, :, : decoding_step + 1] = 1
+                        else:
+                            self.dec_attn_mask[b_idx, :, :, decoding_step] = 1
 
             attention_mask = self.dec_attn_mask
 

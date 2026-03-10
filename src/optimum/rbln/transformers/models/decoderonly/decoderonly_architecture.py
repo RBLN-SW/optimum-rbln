@@ -386,7 +386,7 @@ class DecoderOnlyModel(nn.Module):
         cache_pos_for_partitions = torch.clamp(cs - pidx * partition_len, 0, partition_len)
         return cache_pos_for_partitions
 
-    def get_swa_custom_op_args(self, position_ids, query_position):
+    def get_swa_custom_op_args(self, position_ids, query_position, mask_blocks: int = 1):
         max_cache_len = self.config.sliding_window
         valid_input_len = 1 if query_position is None else query_position + 1
         cache_seq_len = torch.clamp(position_ids.to(torch.int32), max=max_cache_len)[:, :1]  # past seen tokens
@@ -395,8 +395,33 @@ class DecoderOnlyModel(nn.Module):
         )  # cache offset for next steps
 
         # Causal mask for sliding window attention
-        attn_mask = torch.arange(max_cache_len)[None, :] - cache_seq_len
-        attn_mask = torch.where(attn_mask > 0, 0.0, 1.0)[:, None, None, :]
+        attn_mask_len = max_cache_len * max(mask_blocks, 1)
+        attn_mask_len_t = torch.full_like(cache_offset, attn_mask_len)
+        zero_t = torch.zeros_like(cache_offset)
+        cache_update_end = torch.minimum(torch.maximum(cache_offset, zero_t), attn_mask_len_t)
+
+        if mask_blocks > 1:
+            # In 2-block layout [prev, curr], warm-up steps should be written to the right-side current block.
+            right_window_start = min(max_cache_len, max(0, attn_mask_len - max_cache_len))
+            right_window_start_t = torch.full_like(cache_update_end, right_window_start)
+            shifted_start = torch.maximum(cache_update_end - max_cache_len, zero_t)
+            cache_update_start = torch.where(
+                cache_update_end <= max_cache_len,
+                right_window_start_t,
+                shifted_start,
+            )
+        else:
+            cache_update_start = torch.maximum(cache_update_end - max_cache_len, zero_t)
+
+        positions = torch.arange(attn_mask_len, device=position_ids.device, dtype=torch.int64)[None, :]
+        attn_mask = torch.where(
+            (positions >= cache_update_start) & (positions < cache_update_end),
+            1.0,
+            0.0,
+        )[:, None, None, :]
+
+        cache_seq_len = cache_seq_len.to(torch.int32)
+        cache_offset = cache_offset.to(torch.int32)
 
         return cache_seq_len, cache_offset, attn_mask
 
@@ -473,7 +498,12 @@ class DecoderOnlyModel(nn.Module):
             cos, sin = None, None
 
         # Get sequence positions for flash attention
-        if self.attn_impl == "flash_attn":
+        batch_size = inputs_embeds.shape[0]
+        is_batch_decode = self.phase == "decode" and batch_size > 1
+
+        if self.attn_impl == "flash_attn" and not is_batch_decode:
+            # Only convert for flash attention in single-batch or prefill mode
+            # For batch decode, pass raw cache_position and let the compiler handle partition logic
             seq_positions = cache_position[:, 0]
             seq_positions = self.convert_sequence_positions_for_flash_attn(
                 seq_positions=seq_positions, max_seq_len=self.max_seq_len
@@ -483,7 +513,9 @@ class DecoderOnlyModel(nn.Module):
 
         # Get local cache positions for sliding window layers
         if len(self.sliding_window_layers) > 0:
-            cache_seq_len, cache_offset, swa_attn_mask = self.get_swa_custom_op_args(position_ids, query_position)
+            cache_seq_len, cache_offset, swa_attn_mask = self.get_swa_custom_op_args(
+                position_ids, query_position, mask_blocks=1
+            )
             sliding_cache_pos = (cache_seq_len, cache_offset)
 
         all_hidden_states = () if output_hidden_states else None
@@ -493,10 +525,30 @@ class DecoderOnlyModel(nn.Module):
 
             is_sliding = True if layer_idx in self.sliding_window_layers else False
             is_sliding_decode = is_sliding and self.phase == "decode"
+            
+            if is_sliding_decode:
+                if attention_mask is None and hasattr(layer.self_attn, "sinks"):
+                    _, _, swa_sink_attn_mask = self.get_swa_custom_op_args(
+                        position_ids, query_position, mask_blocks=2
+                    )
+                    attn_mask = swa_sink_attn_mask
+                else:
+                    attn_mask = attention_mask if attention_mask is not None else swa_attn_mask
+                layer_seq_idx = sliding_cache_pos
+            elif is_sliding:
+                # Use provided mask for sliding-window prefill when available.
+                attn_mask = attention_mask if attention_mask is not None else swa_attn_mask
+                layer_seq_idx = sliding_cache_pos
+            else:
+                # For both single-batch and multi-batch decode, pass raw seq_positions
+                # The compiler will compute batch decode params internally for batch_size > 1
+                attn_mask = attention_mask
+                layer_seq_idx = seq_positions
+
             hidden_states = layer(
                 hidden_states=hidden_states,
-                attention_mask=swa_attn_mask if is_sliding_decode else attention_mask,
-                seq_positions=sliding_cache_pos if is_sliding else seq_positions,
+                attention_mask=attn_mask,
+                seq_positions=layer_seq_idx,
                 past_key_values=past_key_values,
                 cos=cos,
                 sin=sin,

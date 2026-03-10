@@ -378,7 +378,7 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
                 ("block_tables", [max_block_cnt] if is_prefill else [batch_size, max_block_cnt], "int16")
             )
         if rbln_config.use_local_attention:
-            input_info.append(("local_block_tables", [1] if is_prefill else [batch_size, 1], "int16"))
+            input_info.append(("local_block_tables", [1, 2] if is_prefill else [batch_size, 2], "int16"))
 
         if cls.use_query_position(rbln_config.use_local_attention, is_prefill, rbln_config.logits_to_keep):
             input_info.append(("query_position", [], "int16"))
