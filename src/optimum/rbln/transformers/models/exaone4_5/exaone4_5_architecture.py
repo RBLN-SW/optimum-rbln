@@ -134,13 +134,11 @@ class Exaone4_5VisionFullAttention(nn.Module):
             )
         else:
             qkv = self.qkv(hidden_states)
-            q, kv = torch.split(qkv, [self.q_dim, 2 * self.kv_dim], dim=-1)
+            q, k, v = torch.split(qkv, [self.q_dim, self.kv_dim, self.kv_dim], dim=-1)
 
             q = q.view(seq_length, self.num_heads, self.head_dim).permute(1, 0, 2).unsqueeze(0)
-            kv = kv.view(seq_length, 2, self.num_key_value_heads, self.head_dim)
-
-            k = kv[:, 0]
-            v = kv[:, 1]
+            k = k.view(seq_length, self.num_key_value_heads, self.head_dim)
+            v = v.view(seq_length, self.num_key_value_heads, self.head_dim)
             repeat_factor = self.num_heads // self.num_key_value_heads
             k = k.repeat_interleave(repeat_factor, dim=1).permute(1, 0, 2).unsqueeze(0)
             v = v.repeat_interleave(repeat_factor, dim=1).permute(1, 0, 2).unsqueeze(0)
@@ -181,13 +179,10 @@ class Exaone4_5VisionWindowAttention(nn.Module):
         attn_masks: torch.Tensor,
         position_embeddings: Tuple[torch.Tensor, torch.Tensor],
     ) -> torch.Tensor:
-        seq_length = hidden_states.shape[0]
+        seq_length, hidden_dim = hidden_states.shape
+        assert seq_length % self.window_seq_len == 0
         num_windows = seq_length // self.window_seq_len
-
-        window_hidden_states = []
-        for i in range(0, seq_length, self.window_seq_len):
-            window_hidden_states.append(hidden_states[i : i + self.window_seq_len])
-        hidden_states = torch.stack(window_hidden_states)
+        hidden_states = hidden_states.reshape(num_windows, self.window_seq_len, hidden_dim)
 
         if self.num_key_value_heads == 1:
             q, k, v = (
@@ -198,12 +193,10 @@ class Exaone4_5VisionWindowAttention(nn.Module):
             )
         else:
             qkv = self.qkv(hidden_states)
-            q, kv = torch.split(qkv, [self.q_dim, 2 * self.kv_dim], dim=-1)
+            q, k, v = torch.split(qkv, [self.q_dim, self.kv_dim, self.kv_dim], dim=-1)
             q = q.view(num_windows, self.window_seq_len, self.num_heads, self.head_dim).permute(0, 2, 1, 3)
-
-            kv = kv.view(num_windows, self.window_seq_len, 2, self.num_key_value_heads, self.head_dim)
-            k = kv[:, :, 0]
-            v = kv[:, :, 1]
+            k = k.view(num_windows, self.window_seq_len, self.num_key_value_heads, self.head_dim)
+            v = v.view(num_windows, self.window_seq_len, self.num_key_value_heads, self.head_dim)
             repeat_factor = self.num_heads // self.num_key_value_heads
             k = k.repeat_interleave(repeat_factor, dim=2).permute(0, 2, 1, 3)
             v = v.repeat_interleave(repeat_factor, dim=2).permute(0, 2, 1, 3)
