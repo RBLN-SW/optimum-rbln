@@ -320,7 +320,17 @@ class TestExaoneForCausalLM(LLMTest.TestLLM):
     RBLN_CLASS = RBLNExaoneForCausalLM
     # HF_MODEL_ID = "katuni4ka/tiny-random-exaone"
     HF_MODEL_ID = "LGAI-EXAONE/EXAONE-3.5-2.4B-Instruct"
-    HF_CONFIG_KWARGS = {"num_hidden_layers": 1, "max_position_embeddings": 1024, "trust_remote_code": True}
+    HF_CONFIG_KWARGS = {
+        "num_hidden_layers": 1,
+        "max_position_embeddings": 1024,
+        "trust_remote_code": True,
+        "revision": "e949c91dec92095908d34e6b560af77dd0c993f8",
+    }
+    HF_CONFIG_KWARGS_PREPROCESSOR = {"revision": "e949c91dec92095908d34e6b560af77dd0c993f8"}
+
+    def test_automap(self):
+        # TODO: Test resume in transformers v5.0.0
+        pass
 
 
 class TestT5Model(LLMTest.TestLLM):
@@ -815,6 +825,23 @@ class TestLlamaForCausalLM_fp8(LLMTest.TestLLM):
     def test_generate(self):
         # Cannot generate output with fp8 quantization in ATOM™
         pass
+
+
+class TestQLlamaForCausalLM(LLMTest.TestLLM):
+    RBLN_CLASS = RBLNLlamaForCausalLM
+    HF_MODEL_ID = "RedHatAI/Meta-Llama-3.1-8B-Instruct-quantized.w8a8"  # No tiny model yet.
+    HF_CONFIG_KWARGS = {"num_hidden_layers": 1}
+    RBLN_CLASS_KWARGS = {
+        "rbln_config": {
+            "quantization": {
+                "format": "rbln",
+                "weights": "int8",
+                "activations": "int8",
+                "dynamic": True,
+            },
+            "max_seq_len": 4096,
+        }
+    }
 
 
 class TestMultiLora(LLMTest.TestLLM):

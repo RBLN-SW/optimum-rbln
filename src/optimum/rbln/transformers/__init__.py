@@ -31,6 +31,7 @@ _import_structure = {
         "RBLNAutoModelForMaskedLM",
         "RBLNAutoModelForQuestionAnswering",
         "RBLNAutoModelForSeq2SeqLM",
+        "RBLNAutoModelForObjectDetection",
         "RBLNAutoModelForSequenceClassification",
         "RBLNAutoModelForSpeechSeq2Seq",
         "RBLNAutoModelForVision2Seq",
@@ -201,6 +202,7 @@ _import_structure = {
         "RBLNXLMRobertaModel",
         "RBLNXLMRobertaModelConfig",
     ],
+    "utils": ["RBLNQuantizationConfig"],
 }
 
 if TYPE_CHECKING:
@@ -215,6 +217,7 @@ if TYPE_CHECKING:
         RBLNAutoModelForImageClassification,
         RBLNAutoModelForImageTextToText,
         RBLNAutoModelForMaskedLM,
+        RBLNAutoModelForObjectDetection,
         RBLNAutoModelForQuestionAnswering,
         RBLNAutoModelForSeq2SeqLM,
         RBLNAutoModelForSequenceClassification,
@@ -385,6 +388,7 @@ if TYPE_CHECKING:
         RBLNXLMRobertaModel,
         RBLNXLMRobertaModelConfig,
     )
+    from .utils import RBLNQuantizationConfig
 else:
     import sys
 

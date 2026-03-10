@@ -23,9 +23,6 @@ jobs:
         with:
           ref: ${{ inputs.ref != '' && inputs.ref || github.ref }}
 
-      - name: Install dependencies
-        run: uv sync --frozen --only-group quality
-
       - name: Check style with ruff
         run: |
           uv run --no-sync ruff format --check .
