@@ -54,6 +54,7 @@ MODEL_FOR_CAUSAL_LM_MAPPING_NAMES.update(
     {
         "midm": "MidmLMHeadModel",
         "exaone": "ExaoneForCausalLM",
+        "AXK1": "AXK1ForCausalLM",
     }
 )
 

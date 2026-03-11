@@ -33,6 +33,8 @@ _import_structure = {
     "transformers": [
         "RBLNASTForAudioClassification",
         "RBLNASTForAudioClassificationConfig",
+        "RBLNAXK1ForCausalLM",
+        "RBLNAXK1ForCausalLMConfig",
         "RBLNAutoModel",
         "RBLNAutoModelForAudioClassification",
         "RBLNAutoModelForCausalLM",
@@ -379,6 +381,8 @@ if TYPE_CHECKING:
         RBLNAutoModelForTextEncoding,
         RBLNAutoModelForVision2Seq,
         RBLNAutoModelForZeroShotObjectDetection,
+        RBLNAXK1ForCausalLM,
+        RBLNAXK1ForCausalLMConfig,
         RBLNBartForConditionalGeneration,
         RBLNBartForConditionalGenerationConfig,
         RBLNBartModel,

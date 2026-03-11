@@ -22,6 +22,10 @@ _import_structure = {
         "RBLNASTForAudioClassification",
         "RBLNASTForAudioClassificationConfig",
     ],
+    "ax_k1": [
+        "RBLNAXK1ForCausalLM",
+        "RBLNAXK1ForCausalLMConfig",
+    ],
     "auto": [
         "RBLNAutoModel",
         "RBLNAutoModelForAudioClassification",
@@ -231,6 +235,7 @@ if TYPE_CHECKING:
         RBLNAutoModelForVision2Seq,
         RBLNAutoModelForZeroShotObjectDetection,
     )
+    from .ax_k1 import RBLNAXK1ForCausalLM, RBLNAXK1ForCausalLMConfig
     from .bart import (
         RBLNBartForConditionalGeneration,
         RBLNBartForConditionalGenerationConfig,
