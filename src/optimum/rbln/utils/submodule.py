@@ -40,7 +40,7 @@ class SubModulesMixin:
     def __init__(self, *, rbln_submodules: Optional[List["RBLNModel"]] = None, **kwargs) -> None:
         if rbln_submodules is None:
             rbln_submodules = []
-        for submodule_meta, submodule in zip(self._rbln_submodules, rbln_submodules):
+        for submodule_meta, submodule in zip(self._rbln_submodules, rbln_submodules, strict=False):
             setattr(self, submodule_meta["name"], submodule)
 
     @classmethod

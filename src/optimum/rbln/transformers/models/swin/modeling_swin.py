@@ -180,7 +180,7 @@ class _SwinBackbone(torch.nn.Module):
         hidden_states = outputs[-1]
 
         feature_maps = ()
-        for stage, hidden_state in zip(self.stage_names, hidden_states):
+        for stage, hidden_state in zip(self.stage_names, hidden_states, strict=False):
             if stage in self.out_features:
                 batch_size, num_channels, height, width = hidden_state.shape
                 hidden_state = hidden_state.permute(0, 2, 3, 1).contiguous()
