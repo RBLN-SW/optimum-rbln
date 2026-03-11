@@ -60,8 +60,8 @@ class Exaone4_5VisionTransformerWrapper(nn.Module):
         cos: torch.Tensor,
         sin: torch.Tensor,
     ):
-        full_attn_masks = (1.0 - full_attn_masks) * torch.finfo(hidden_states.dtype).min
-        window_attn_masks = (1.0 - window_attn_masks) * torch.finfo(hidden_states.dtype).min
+        full_attn_masks = full_attn_masks > 0
+        window_attn_masks = window_attn_masks > 0
 
         for i, block in enumerate(self.blocks):
             attn_masks = full_attn_masks if i in self.fullatt_block_indexes else window_attn_masks
@@ -146,10 +146,15 @@ class Exaone4_5VisionFullAttention(nn.Module):
         cos, sin = position_embeddings
         q, k = apply_rotary_pos_emb(q, k, cos, sin)
 
-        attn_weights = torch.matmul(q, k.transpose(2, 3)) * self.scale
-        attn_weights = attn_weights + attn_masks
-        attn_weights = nn.functional.softmax(attn_weights, dim=-1, dtype=hidden_states.dtype)
-        attn_output = torch.matmul(attn_weights, v)
+        attn_output = nn.functional.scaled_dot_product_attention(
+            q,
+            k,
+            v,
+            attn_mask=attn_masks,
+            dropout_p=0.0,
+            is_causal=False,
+            scale=self.scale.item(),
+        )
         attn_output = attn_output.transpose(1, 2)
         attn_output = attn_output.reshape(1, seq_length, -1)
         attn_output = self.proj(attn_output).squeeze(0)
@@ -206,10 +211,15 @@ class Exaone4_5VisionWindowAttention(nn.Module):
         sin = sin.reshape(num_windows, 1, seq_length // num_windows, -1)
         q, k = apply_rotary_pos_emb(q, k, cos, sin)
 
-        attn_weights = torch.matmul(q, k.transpose(2, 3)) * self.scale
-        attn_weights = attn_weights + attn_masks
-        attn_weights = nn.functional.softmax(attn_weights, dim=-1)
-        attn_output = torch.matmul(attn_weights, v)
+        attn_output = nn.functional.scaled_dot_product_attention(
+            q,
+            k,
+            v,
+            attn_mask=attn_masks,
+            dropout_p=0.0,
+            is_causal=False,
+            scale=self.scale.item(),
+        )
         attn_output = attn_output.transpose(1, 2)
         attn_output = attn_output.reshape(1, seq_length, -1)
         attn_output = self.proj(attn_output).squeeze(0)
