@@ -12,11 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import TYPE_CHECKING, Any, Dict, List, Union
+from typing import TYPE_CHECKING, Any, Dict, List, Union, Tuple, Union
 
 import rebel
 import torch
-from diffusers.models.autoencoders.autoencoder_kl_wan import AutoencoderKLWan
+from diffusers.models.autoencoders.autoencoder_kl_wan import AutoencoderKLWan, patchify, unpatchify
 from diffusers.models.autoencoders.vae import DecoderOutput, DiagonalGaussianDistribution
 from diffusers.models.modeling_outputs import AutoencoderKLOutput
 
@@ -39,63 +39,64 @@ if TYPE_CHECKING:
 
 logger = get_logger(__name__)
 
-height = 704
-width = 1280
-PADDED_FRAME_OF_FIRST = 2
-CACHE_SIZE_0 = [
-    # [1, 3, 1, height, width], # first cache
-    [1, 3, PADDED_FRAME_OF_FIRST, height, width],  # padded first cache
-    [1, 96, 2, height, width],
-    [1, 96, 2, height, width],
-    [1, 96, 2, height, width],
-    [1, 96, 2, height, width],
-    [1, 96, 2, height // 2, width // 2],
-    [1, 192, 2, height // 2, width // 2],
-    [1, 192, 2, height // 2, width // 2],
-    [1, 192, 2, height // 2, width // 2],
-    [1, 192, 1, height // 4, width // 4],
-    [1, 192, 2, height // 4, width // 4],
-    [1, 384, 2, height // 4, width // 4],
-    [1, 384, 2, height // 4, width // 4],
-    [1, 384, 2, height // 4, width // 4],
-    [1, 384, 1, height // 8, width // 8],
-    [1, 384, 2, height // 8, width // 8],
-    [1, 384, 2, height // 8, width // 8],
-    [1, 384, 2, height // 8, width // 8],
-    [1, 384, 2, height // 8, width // 8],
-    [1, 384, 2, height // 8, width // 8],
-    [1, 384, 2, height // 8, width // 8],
-    [1, 384, 2, height // 8, width // 8],
-    [1, 384, 2, height // 8, width // 8],
-    [1, 384, 2, height // 8, width // 8],
-]
+def get_cache_size(height, width):
+    PADDED_FRAME_OF_FIRST = 2
+    CACHE_SIZE_0 = [
+        # [1, 3, 1, height, width], # first cache
+        [1, 3, PADDED_FRAME_OF_FIRST, height, width],  # padded first cache
+        [1, 96, 2, height, width],
+        [1, 96, 2, height, width],
+        [1, 96, 2, height, width],
+        [1, 96, 2, height, width],
+        [1, 96, 2, height // 2, width // 2],
+        [1, 192, 2, height // 2, width // 2],
+        [1, 192, 2, height // 2, width // 2],
+        [1, 192, 2, height // 2, width // 2],
+        [1, 192, 1, height // 4, width // 4],
+        [1, 192, 2, height // 4, width // 4],
+        [1, 384, 2, height // 4, width // 4],
+        [1, 384, 2, height // 4, width // 4],
+        [1, 384, 2, height // 4, width // 4],
+        [1, 384, 1, height // 8, width // 8],
+        [1, 384, 2, height // 8, width // 8],
+        [1, 384, 2, height // 8, width // 8],
+        [1, 384, 2, height // 8, width // 8],
+        [1, 384, 2, height // 8, width // 8],
+        [1, 384, 2, height // 8, width // 8],
+        [1, 384, 2, height // 8, width // 8],
+        [1, 384, 2, height // 8, width // 8],
+        [1, 384, 2, height // 8, width // 8],
+        [1, 384, 2, height // 8, width // 8],
+    ]
 
-CACHE_SIZE_N = [
-    [1, 3, 2, height, width],  # first cache
-    [1, 96, 2, height, width],
-    [1, 96, 2, height, width],
-    [1, 96, 2, height, width],
-    [1, 96, 2, height, width],
-    [1, 96, 2, height // 2, width // 2],
-    [1, 192, 2, height // 2, width // 2],
-    [1, 192, 2, height // 2, width // 2],
-    [1, 192, 2, height // 2, width // 2],
-    [1, 192, 1, height // 4, width // 4],
-    [1, 192, 2, height // 4, width // 4],
-    [1, 384, 2, height // 4, width // 4],
-    [1, 384, 2, height // 4, width // 4],
-    [1, 384, 2, height // 4, width // 4],
-    [1, 384, 1, height // 8, width // 8],
-    [1, 384, 2, height // 8, width // 8],
-    [1, 384, 2, height // 8, width // 8],
-    [1, 384, 2, height // 8, width // 8],
-    [1, 384, 2, height // 8, width // 8],
-    [1, 384, 2, height // 8, width // 8],
-    [1, 384, 2, height // 8, width // 8],
-    [1, 384, 2, height // 8, width // 8],
-    [1, 384, 2, height // 8, width // 8],
-    [1, 384, 2, height // 8, width // 8],
-]
+    CACHE_SIZE_N = [
+        [1, 3, 2, height, width],  # first cache
+        [1, 96, 2, height, width],
+        [1, 96, 2, height, width],
+        [1, 96, 2, height, width],
+        [1, 96, 2, height, width],
+        [1, 96, 2, height // 2, width // 2],
+        [1, 192, 2, height // 2, width // 2],
+        [1, 192, 2, height // 2, width // 2],
+        [1, 192, 2, height // 2, width // 2],
+        [1, 192, 1, height // 4, width // 4],
+        [1, 192, 2, height // 4, width // 4],
+        [1, 384, 2, height // 4, width // 4],
+        [1, 384, 2, height // 4, width // 4],
+        [1, 384, 2, height // 4, width // 4],
+        [1, 384, 1, height // 8, width // 8],
+        [1, 384, 2, height // 8, width // 8],
+        [1, 384, 2, height // 8, width // 8],
+        [1, 384, 2, height // 8, width // 8],
+        [1, 384, 2, height // 8, width // 8],
+        [1, 384, 2, height // 8, width // 8],
+        [1, 384, 2, height // 8, width // 8],
+        [1, 384, 2, height // 8, width // 8],
+        [1, 384, 2, height // 8, width // 8],
+        [1, 384, 2, height // 8, width // 8],
+    ]
+    return CACHE_SIZE_0, CACHE_SIZE_N
+
 """ AutoencoderKLWan encode logic 참고용
 def clear_cache(self):
     # Use cached conv counts for decoder and encoder to avoid re-iterating modules each call
@@ -136,13 +137,13 @@ def _encode(self, x: torch.Tensor):
 """
 
 
-class _VAEWanEncoder(torch.nn.Module):
+class _VAEWanEncoder0(torch.nn.Module):
     """Wrapper module for Wan VAE encoder extraction."""
 
-    def __init__(self, vae: AutoencoderKLWan):
+    def __init__(self, vae: AutoencoderKLWan, height=704, width=1280):
         super().__init__()
         self.encoder = vae.encoder
-        self.cache_dims = CACHE_SIZE_0
+        self.cache_dims = get_cache_size(height, width)[0]
         self.encoder.clear_cache()
         self._enc_feat_map = self.encoder._enc_feat_map
         self._enc_conv_idx = self.encoder._enc_conv_idx
@@ -164,7 +165,41 @@ class _VAEWanEncoder(torch.nn.Module):
 
             dummy_out = torch.ops.rbln_custom_ops.rbln_cache_update(cache, feat_cache_item, position, axis)
             dummy_outs.append(dummy_out)
-            print(cache.shape, feat_cache_item.shape)
+            # print(cache.shape, feat_cache_item.shape)
+        return out, dummy_outs
+
+class _VAEWanEncoderN(torch.nn.Module):
+    """Wrapper module for Wan VAE encoder extraction."""
+
+    def __init__(self, vae: AutoencoderKLWan, height=704, width=1280):
+        super().__init__()
+        self.encoder = vae.encoder
+        self.cache_dims = get_cache_size(height, width)[1]
+        # self.encoder.clear_cache()
+        self._enc_feat_map = self.encoder._enc_feat_map
+        self._enc_conv_idx = self.encoder._enc_conv_idx
+
+    def forward(self, x, *args) -> torch.Tensor:
+        feat_cache_reshaped = []
+        
+        # pre-process: reshape rbln cache tensors to torch layout
+        for cache, cache_dim in zip(list(args), self.cache_dims):
+            reshaped_cache = cache.reshape(*cache_dim)  # n c d (hw) -> n c d h w
+            feat_cache_reshaped.append(reshaped_cache)
+        
+        feat_idx = torch.zeros(1, dtype=torch.int32)
+        out, feat_cache_e1 = self.encoder(x, feat_cache=feat_cache_reshaped, feat_idx=feat_idx)
+
+        # post-process: update rbln cache tensors
+        dummy_outs = []
+        position = torch.tensor(0, dtype=torch.int16)
+        axis = torch.tensor(2, dtype=torch.int16)
+        for cache, feat_cache_e1_item in zip(list(args), feat_cache_e1):
+            n, c, d, h, w = feat_cache_e1_item.shape
+            feat_cache_e1_item = feat_cache_e1_item.reshape(n, c, d, -1)
+            dummy_out = torch.ops.rbln_custom_ops.rbln_cache_update(cache, feat_cache_e1_item, position, axis)
+            dummy_outs.append(dummy_out)
+            # print(cache.shape, feat_cache_e1_item.shape)
         return out, dummy_outs
 
 
@@ -225,52 +260,78 @@ class RBLNAutoencoderKLWan(RBLNModel):
         self.temperal_downsample = self.config.temperal_downsample
 
         if self.rbln_config.uses_encoder:
-            self.encoder = RBLNRuntimeWanVAEEncoder(
+            self.encoder_0 = RBLNRuntimeWanVAEEncoder(
                 runtime=self.model[0], main_input_name="x", use_slicing=self.rbln_config.use_slicing
             )
-
-        self.decoder = RBLNRuntimeWanVAEDecoder(
+            self.encoder_n = RBLNRuntimeWanVAEEncoder(
+                runtime=self.model[1], main_input_name="x", use_slicing=self.rbln_config.use_slicing
+            )
+        self.decoder_0 = RBLNRuntimeWanVAEDecoder(
+            runtime=self.model[-2], main_input_name="z", use_slicing=self.rbln_config.use_slicing
+        )
+        self.decoder_n = RBLNRuntimeWanVAEDecoder(
             runtime=self.model[-1], main_input_name="z", use_slicing=self.rbln_config.use_slicing
         )
         self.image_size = self.rbln_config.image_size
+        self.use_slicing = False
+        self.use_tiling = False
 
     @classmethod
     def _wrap_model_if_needed(cls, model: torch.nn.Module, rbln_config: RBLNAutoencoderKLWanConfig) -> torch.nn.Module:
-        decoder_model = _VAEWanDecoder(model)
-        decoder_model.eval()
+        decoder_model_0 = _VAEWanDecoder(model)
+        decoder_model_0.eval()
+        
+        decoder_model_n = _VAEWanDecoder(model)
+        decoder_model_n.eval()
 
         if rbln_config.uses_encoder:
-            encoder_model = _VAEWanEncoder(model)
-            encoder_model.eval()
-            return encoder_model, decoder_model
+            encoder_model_0 = _VAEWanEncoder0(model)
+            encoder_model_0.eval()
+            
+            encoder_model_n = _VAEWanEncoderN(model)
+            encoder_model_n.eval()
+
+            return (encoder_model_0, encoder_model_n), (decoder_model_0, decoder_model_n)
         else:
-            return decoder_model
+            return (decoder_model_0, decoder_model_n)
 
     @classmethod
     def get_compiled_model(cls, model, rbln_config: RBLNAutoencoderKLWanConfig) -> Dict[str, rebel.RBLNCompiledModel]:
-        import pdb
-
-        pdb.set_trace()
         compiled_models = {}
         if rbln_config.uses_encoder:
-            encoder_model, decoder_model = cls._wrap_model_if_needed(model, rbln_config)
-            enc_compiled_model = cls.compile(
-                encoder_model,
+            encoder_models, decoder_models = cls._wrap_model_if_needed(model, rbln_config)
+            enc_compiled_model_0 = cls.compile(
+                encoder_models[0],
                 rbln_compile_config=rbln_config.compile_cfgs[0],
                 create_runtimes=rbln_config.create_runtimes,
-                device=rbln_config.device_map["encoder"],
+                device=rbln_config.device_map["encoder_0"],
             )
-            compiled_models["encoder"] = enc_compiled_model
-        else:
-            decoder_model = cls._wrap_model_if_needed(model, rbln_config)
+            compiled_models["encoder_0"] = enc_compiled_model_0
+            enc_compiled_model_n = cls.compile(
+                encoder_models[1],
+                rbln_compile_config=rbln_config.compile_cfgs[1],
+                create_runtimes=rbln_config.create_runtimes,
+                device=rbln_config.device_map["encoder_n"],
+            )
+            compiled_models["encoder_n"] = enc_compiled_model_n
 
-        dec_compiled_model = cls.compile(
-            decoder_model,
+        decoder_models = cls._wrap_model_if_needed(model, rbln_config)
+
+        dec_compiled_model_0 = cls.compile(
+            decoder_models[0],
             rbln_compile_config=rbln_config.compile_cfgs[-1],
             create_runtimes=rbln_config.create_runtimes,
             device=rbln_config.device_map["decoder"],
         )
-        compiled_models["decoder"] = dec_compiled_model
+        compiled_models["decoder_0"] = dec_compiled_model_0
+
+        dec_compiled_model_n = cls.compile(
+            decoder_models[1],
+            rbln_compile_config=rbln_config.compile_cfgs[-1],
+            create_runtimes=rbln_config.create_runtimes,
+            device=rbln_config.device_map["decoder"],
+        )
+        compiled_models["decoder_n"] = dec_compiled_model_n
 
         return compiled_models
 
@@ -297,7 +358,7 @@ class RBLNAutoencoderKLWan(RBLNModel):
     def get_enc_compile_cfg(self, context, rbln_config):
         # context = CompileContext(use_weight_sharing=False)
         encoder_0_compile_config = rbln_config.compile_cfgs[0]
-        encoder_1_compile_config = rbln_config.compile_cfgs[1]
+        encoder_n_compile_config = rbln_config.compile_cfgs[1]
 
         enc0_example_inputs = encoder_0_compile_config.get_dummy_inputs(encoder_0_compile_config.input_info, fill=0)
 
@@ -308,11 +369,11 @@ class RBLNAutoencoderKLWan(RBLNModel):
                 static_tensors[name] = tensor
                 context.mark_static_address(tensor)
 
-        enc1_example_inputs = encoder_1_compile_config.get_dummy_inputs(
-            encoder_1_compile_config.input_info, fill=0, static_tensors=static_tensors
+        encn_example_inputs = encoder_n_compile_config.get_dummy_inputs(
+            encoder_n_compile_config.input_info, fill=0, static_tensors=static_tensors
         )
-        # Mark encoder_1's static tensors (cache)
-        for (name, _, _), tensor in zip(encoder_1_compile_config.input_info, enc1_example_inputs):
+        # Mark encoder_n's static tensors (cache)
+        for (name, _, _), tensor in zip(encoder_n_compile_config.input_info, encn_example_inputs):
             if "feat_cache" in name:
                 context.mark_static_address(tensor)
 
@@ -354,7 +415,7 @@ class RBLNAutoencoderKLWan(RBLNModel):
                     "float32",
                 ),
             ]
-            cache_0, cache_1 = cls.get_cache_size(rbln_config.height, rbln_config.width)
+            cache_0, cache_1 = get_cache_size(rbln_config.height, rbln_config.width)
             for i, (shape_0, shape_1) in enumerate(zip(cache_0, cache_1)):
                 shape_0 = [*shape_0[:3], shape_0[-2] * shape_0[-1]]  # N C D HW # FIXME H,W 도 support 가능?
                 shape_1 = [*shape_1[:3], shape_1[-2] * shape_1[-1]]  # N C D HW # FIXME H,W 도 support 가능?
@@ -362,7 +423,7 @@ class RBLNAutoencoderKLWan(RBLNModel):
                 vae_enc_1_input_info.append((f"feat_cache_{i}", shape_1, "float32"))
 
             compile_cfgs.append(RBLNCompileConfig(compiled_model_name="encoder_0", input_info=vae_enc_0_input_info))
-            compile_cfgs.append(RBLNCompileConfig(compiled_model_name="encoder_1", input_info=vae_enc_1_input_info))
+            compile_cfgs.append(RBLNCompileConfig(compiled_model_name="encoder_n", input_info=vae_enc_1_input_info))
 
         num_latent_frames = (rbln_config.num_frames - 1) // rbln_config.vae_scale_factor_temporal + 1
         latent_height = rbln_config.height // rbln_config.vae_scale_factor_spatial
@@ -414,8 +475,8 @@ class RBLNAutoencoderKLWan(RBLNModel):
         ]
 
     def encode(
-        self, x: torch.Tensor, return_dict: bool = True, **kwargs: Dict[str, Any]
-    ) -> Union[torch.Tensor, AutoencoderKLOutput]:
+        self, x: torch.Tensor, return_dict: bool = True
+    ) -> Union[AutoencoderKLOutput, Tuple[DiagonalGaussianDistribution]]:
         """
         Encode an input video into a latent representation.
 
@@ -428,10 +489,17 @@ class RBLNAutoencoderKLWan(RBLNModel):
         Returns:
             The latent representation or AutoencoderKLOutput if return_dict=True
         """
-        posterior = self.encoder.encode(x)
+        if self.use_slicing and x.shape[0] > 1:
+            encoded_slices = [self._encode(x_slice) for x_slice in x.split(1)]
+            h = torch.cat(encoded_slices)
+        else:
+            h = self._encode(x)
+        posterior = DiagonalGaussianDistribution(h)
+
         if not return_dict:
             return (posterior,)
         return AutoencoderKLOutput(latent_dist=posterior)
+
 
     def decode(self, z: torch.Tensor, return_dict: bool = True) -> Union[torch.Tensor, DecoderOutput]:
         """
@@ -452,61 +520,40 @@ class RBLNAutoencoderKLWan(RBLNModel):
 
         return DecoderOutput(sample=decoded)
 
-    @classmethod
-    def get_cache_size(cls, height, width):
-        PADDED_FRAME_OF_FIRST = 2
-        CACHE_SIZE_0 = [
-            # [1, 3, 1, height, width], # first cache
-            [1, 3, PADDED_FRAME_OF_FIRST, height, width],  # padded first cache
-            [1, 96, 2, height, width],
-            [1, 96, 2, height, width],
-            [1, 96, 2, height, width],
-            [1, 96, 2, height, width],
-            [1, 96, 2, height // 2, width // 2],
-            [1, 192, 2, height // 2, width // 2],
-            [1, 192, 2, height // 2, width // 2],
-            [1, 192, 2, height // 2, width // 2],
-            [1, 192, 1, height // 4, width // 4],
-            [1, 192, 2, height // 4, width // 4],
-            [1, 384, 2, height // 4, width // 4],
-            [1, 384, 2, height // 4, width // 4],
-            [1, 384, 2, height // 4, width // 4],
-            [1, 384, 1, height // 8, width // 8],
-            [1, 384, 2, height // 8, width // 8],
-            [1, 384, 2, height // 8, width // 8],
-            [1, 384, 2, height // 8, width // 8],
-            [1, 384, 2, height // 8, width // 8],
-            [1, 384, 2, height // 8, width // 8],
-            [1, 384, 2, height // 8, width // 8],
-            [1, 384, 2, height // 8, width // 8],
-            [1, 384, 2, height // 8, width // 8],
-            [1, 384, 2, height // 8, width // 8],
-        ]
+    def clear_cache(self):
+        # Use cached conv counts for decoder and encoder to avoid re-iterating modules each call
+        self._conv_num = self._cached_conv_counts["decoder"]
+        self._conv_idx = [0]
+        self._feat_map = [None] * self._conv_num
+        # cache encode
+        self._enc_conv_num = self._cached_conv_counts["encoder"]
+        self._enc_conv_idx = [0]
+        self._enc_feat_map = [None] * self._enc_conv_num
 
-        CACHE_SIZE_N = [
-            [1, 3, 2, height, width],  # first cache
-            [1, 96, 2, height, width],
-            [1, 96, 2, height, width],
-            [1, 96, 2, height, width],
-            [1, 96, 2, height, width],
-            [1, 96, 2, height // 2, width // 2],
-            [1, 192, 2, height // 2, width // 2],
-            [1, 192, 2, height // 2, width // 2],
-            [1, 192, 2, height // 2, width // 2],
-            [1, 192, 1, height // 4, width // 4],
-            [1, 192, 2, height // 4, width // 4],
-            [1, 384, 2, height // 4, width // 4],
-            [1, 384, 2, height // 4, width // 4],
-            [1, 384, 2, height // 4, width // 4],
-            [1, 384, 1, height // 8, width // 8],
-            [1, 384, 2, height // 8, width // 8],
-            [1, 384, 2, height // 8, width // 8],
-            [1, 384, 2, height // 8, width // 8],
-            [1, 384, 2, height // 8, width // 8],
-            [1, 384, 2, height // 8, width // 8],
-            [1, 384, 2, height // 8, width // 8],
-            [1, 384, 2, height // 8, width // 8],
-            [1, 384, 2, height // 8, width // 8],
-            [1, 384, 2, height // 8, width // 8],
-        ]
-        return CACHE_SIZE_0, CACHE_SIZE_N
+    def _encode(self, x: torch.Tensor):
+        # FIXME(seinpark) super()._encode(x)?
+        _, _, num_frame, height, width = x.shape
+
+        self.clear_cache()
+        if self.config.patch_size is not None:
+            x = patchify(x, patch_size=self.config.patch_size)
+
+        # if self.use_tiling and (width > self.tile_sample_min_width or height > self.tile_sample_min_height):
+        #     return self.tiled_encode(x)
+
+        iter_ = 1 + (num_frame - 1) // 4
+        for i in range(iter_):
+            self._enc_conv_idx = [0]
+            if i == 0:
+                out = self.encoder(x[:, :, :1, :, :], feat_cache=self._enc_feat_map, feat_idx=self._enc_conv_idx)
+            else:
+                out_ = self.encoder(
+                    x[:, :, 1 + 4 * (i - 1) : 1 + 4 * i, :, :],
+                    feat_cache=self._enc_feat_map,
+                    feat_idx=self._enc_conv_idx,
+                )
+                out = torch.cat([out, out_], 2)
+
+        enc = self.quant_conv(out)
+        self.clear_cache()
+        return enc
