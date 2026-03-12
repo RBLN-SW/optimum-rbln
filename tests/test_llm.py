@@ -43,6 +43,7 @@ from optimum.rbln import (
     RBLNQwen3ForCausalLM,
     RBLNQwen3Model,
     RBLNQwen3MoeForCausalLM,
+    RBLNQwen3VLForConditionalGeneration,
     RBLNT5ForConditionalGeneration,
 )
 
@@ -66,7 +67,6 @@ class LLMTest:
 
         def get_tokenizer(self):
             PreProcessor = AutoProcessor if self.IS_MULTIMODAL else AutoTokenizer
-
             if getattr(self, "_tokenizer", None) is None:
                 self._tokenizer = PreProcessor.from_pretrained(self.HF_MODEL_ID, **self.HF_CONFIG_KWARGS_PREPROCESSOR)
             return self._tokenizer
@@ -726,6 +726,41 @@ class TestQwen2_5_VLForConditionalGeneration(LLMTest.TestLLM):
         vision_config["depth"] = 2
         vision_config["fullatt_block_indexes"] = [1]
         kwargs = {"vision_config": vision_config, "text_config": text_config}
+        cls.HF_CONFIG_KWARGS.update(kwargs)
+        return super().setUpClass()
+
+    def get_inputs(self):
+        tokenizer = self.get_tokenizer()
+        img_path = f"{os.path.dirname(__file__)}/../assets/rbln_logo.png"
+        image = Image.open(img_path)
+        inputs = tokenizer(images=[image], text=[self.PROMPT], return_tensors="pt", padding=True)
+        inputs["max_new_tokens"] = 20
+        inputs["do_sample"] = False
+        return inputs
+
+
+class TestQwen3VLForConditionalGeneration(LLMTest.TestLLM):
+    RBLN_AUTO_CLASS = RBLNAutoModelForVision2Seq
+    RBLN_CLASS = RBLNQwen3VLForConditionalGeneration
+    HF_MODEL_ID = "Qwen/Qwen3-VL-2B-Instruct"
+    PROMPT = "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\n<|vision_start|><|image_pad|><|vision_end|>Describe this image.<|im_end|>\n<|im_start|>assistant\n"
+    RBLN_CLASS_KWARGS = {
+        "rbln_config": {
+            "visual": {"max_seq_lens": 512},
+            "tensor_parallel_size": 1,
+            "kvcache_partition_len": 8192,
+            "max_seq_len": 16_384,
+        }
+    }
+    IS_MULTIMODAL = True
+    HF_CONFIG_KWARGS_PREPROCESSOR = {"min_pixels": 64 * 16 * 16, "max_pixels": 64 * 16 * 16}
+
+    @classmethod
+    def setUpClass(cls):
+        config = AutoConfig.from_pretrained(cls.HF_MODEL_ID)
+        text_config = json.loads(config.text_config.to_json_string())
+        text_config["num_hidden_layers"] = 1
+        kwargs = {"text_config": text_config}
         cls.HF_CONFIG_KWARGS.update(kwargs)
         return super().setUpClass()
 
