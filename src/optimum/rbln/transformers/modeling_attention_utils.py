@@ -152,7 +152,7 @@ class RBLNDecoderOnlyFlashAttentionMixin:
         )
         if rbln_config.kvcache_num_blocks < rbln_config.num_min_blocks:
             raise ValueError(
-                "Memory is not enought for full sequence length. "
+                "Memory is not enough for full sequence length. "
                 "Please consider decreasing `max_seq_len` to reduce the number of blocks."
             )
         cls.multiply_kv_cache_num_blocks(
