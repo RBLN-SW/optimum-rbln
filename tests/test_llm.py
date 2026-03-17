@@ -44,6 +44,7 @@ from optimum.rbln import (
     RBLNQwen3Model,
     RBLNQwen3MoeForCausalLM,
     RBLNQwen3VLForConditionalGeneration,
+    RBLNQwen3VLMoeForConditionalGeneration,
     RBLNT5ForConditionalGeneration,
 )
 
@@ -761,6 +762,44 @@ class TestQwen3VLForConditionalGeneration(LLMTest.TestLLM):
         text_config = json.loads(config.text_config.to_json_string())
         text_config["num_hidden_layers"] = 1
         kwargs = {"text_config": text_config}
+        cls.HF_CONFIG_KWARGS.update(kwargs)
+        return super().setUpClass()
+
+    def get_inputs(self):
+        tokenizer = self.get_tokenizer()
+        img_path = f"{os.path.dirname(__file__)}/../assets/rbln_logo.png"
+        image = Image.open(img_path)
+        inputs = tokenizer(images=[image], text=[self.PROMPT], return_tensors="pt", padding=True)
+        inputs["max_new_tokens"] = 20
+        inputs["do_sample"] = False
+        return inputs
+
+
+class TestQwen3VLMoeForConditionalGeneration(LLMTest.TestLLM):
+    RBLN_AUTO_CLASS = RBLNAutoModelForVision2Seq
+    RBLN_CLASS = RBLNQwen3VLMoeForConditionalGeneration
+    HF_MODEL_ID = "Qwen/Qwen3-VL-30B-A3B-Instruct"
+    PROMPT = "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\n<|vision_start|><|image_pad|><|vision_end|>Describe this image.<|im_end|>\n<|im_start|>assistant\n"
+    RBLN_CLASS_KWARGS = {
+        "rbln_config": {
+            "visual": {"max_seq_lens": 512},
+            "tensor_parallel_size": 1,
+            "kvcache_partition_len": 8192,
+            "max_seq_len": 16_384,
+        }
+    }
+    IS_MULTIMODAL = True
+    HF_CONFIG_KWARGS_PREPROCESSOR = {"min_pixels": 64 * 16 * 16, "max_pixels": 64 * 16 * 16}
+
+    @classmethod
+    def setUpClass(cls):
+        config = AutoConfig.from_pretrained(cls.HF_MODEL_ID)
+        text_config = json.loads(config.text_config.to_json_string())
+        vision_config = json.loads(config.vision_config.to_json_string())
+        vision_config["depth"] = 1
+        vision_config["deepstack_visual_indexes"] = [0]
+        text_config["num_hidden_layers"] = 1
+        kwargs = {"text_config": text_config, "vision_config": vision_config}
         cls.HF_CONFIG_KWARGS.update(kwargs)
         return super().setUpClass()
 
