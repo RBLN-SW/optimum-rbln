@@ -171,6 +171,14 @@ _import_structure = {
         "RBLNQwen3VLModel",
         "RBLNQwen3VLModelConfig",
     ],
+    "qwen3_vl_moe": [
+        "RBLNQwen3VLMoeVisionModel",
+        "RBLNQwen3VLMoeVisionModelConfig",
+        "RBLNQwen3VLMoeForConditionalGeneration",
+        "RBLNQwen3VLMoeForConditionalGenerationConfig",
+        "RBLNQwen3VLMoeModel",
+        "RBLNQwen3VLMoeModelConfig",
+    ],
     "resnet": ["RBLNResNetForImageClassification", "RBLNResNetForImageClassificationConfig"],
     "roberta": [
         "RBLNRobertaForMaskedLM",
@@ -358,6 +366,14 @@ if TYPE_CHECKING:
         RBLNQwen3VLModelConfig,
         RBLNQwen3VLVisionModel,
         RBLNQwen3VLVisionModelConfig,
+    )
+    from .qwen3_vl_moe import (
+        RBLNQwen3VLMoeForConditionalGeneration,
+        RBLNQwen3VLMoeForConditionalGenerationConfig,
+        RBLNQwen3VLMoeModel,
+        RBLNQwen3VLMoeModelConfig,
+        RBLNQwen3VLMoeVisionModel,
+        RBLNQwen3VLMoeVisionModelConfig,
     )
     from .resnet import RBLNResNetForImageClassification, RBLNResNetForImageClassificationConfig
     from .roberta import (
