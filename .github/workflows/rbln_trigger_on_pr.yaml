@@ -85,13 +85,6 @@ jobs:
           VERSION=$(grep rebel_compiler_version .github/version.yaml | cut -d ':' -f2 | tr -d ' ')
           echo "compiler_version=$VERSION" >> $GITHUB_OUTPUT
 
-  check-compiler:
-    needs: [check-code-quality, test-docstrings, load-version]
-    uses: ./.github/workflows/rbln_check_compiler.yaml
-    with:
-      compiler_version: ${{ needs.load-version.outputs.compiler_version }}
-    secrets: inherit
-
   check-if-dependency-pr:
     runs-on: rbln-sw-k8s-4c-32gb
     container:
@@ -127,7 +120,7 @@ jobs:
     runs-on: rbln-sw-k8s-4c-32gb
     container:
       image: ${{ vars.DEV_CONTAINER_IMAGE }}
-    needs: [check-code-quality, test-docstrings, check-compiler]
+    needs: [check-code-quality, test-docstrings]
     outputs:
       is_team_member: ${{ steps.check_member.outputs.IS_TEAM_MEMBER }}
     steps:
@@ -152,31 +145,31 @@ jobs:
 
   # Default PR test if not Dependency update
   optimum-rbln-pytest:
-    needs: [check-code-quality, test-docstrings, check-compiler, check-team-member, check-pytest-full]
+    needs: [check-code-quality, test-docstrings, load-version, check-team-member, check-pytest-full]
     if: |
       needs.check-pytest-full.outputs.should_full_test != 'true' &&
       needs.check-team-member.outputs.is_team_member == 'true'
     uses: ./.github/workflows/rbln_optimum_pytest.yaml
     with:
       ref: ${{ github.event.pull_request.head.sha }}
-      rebel_compiler_version: ${{ needs.check-compiler.outputs.compiler_version }}
+      rebel_compiler_version: ${{ needs.load-version.outputs.compiler_version }}
       test_level: "default"
     secrets: inherit
 
   # Full Schedule test if Dependency update
   optimum-rbln-full-pytest:
-    needs: [check-compiler, check-team-member, check-pytest-full, check-slack-report]
+    needs: [load-version, check-team-member, check-pytest-full, check-slack-report]
     if: |
       needs.check-pytest-full.outputs.should_full_test == 'true' &&
       needs.check-team-member.outputs.is_team_member == 'true'
     uses: ./.github/workflows/rbln_optimum_full_test.yaml
     with:
-      rebel_compiler_version: ${{ needs.check-compiler.outputs.compiler_version }}
+      rebel_compiler_version: ${{ needs.load-version.outputs.compiler_version }}
       ref: ${{ github.event.pull_request.head.sha }}
     secrets: inherit
 
   slack-report:
-    needs: [optimum-rbln-full-pytest,optimum-rbln-pytest, bc-inference, check-compiler, check-slack-report]
+    needs: [optimum-rbln-full-pytest,optimum-rbln-pytest, bc-inference, load-version, check-slack-report]
     if: |
       always() &&
       needs.check-slack-report.outputs.should_slack_report == 'true'
@@ -186,7 +179,7 @@ jobs:
       caller_repository: ${{ github.repository }}
       caller_run_id: ${{ github.run_id }}
       commit_sha: ${{ github.event.pull_request.head.sha }}
-      compiler_version: ${{ needs.check-compiler.outputs.compiler_version }}
+      compiler_version: ${{ needs.load-version.outputs.compiler_version }}
       transformers_version: ${{ needs.check-pytest-full.outputs.should_full_test == 'true' && needs.optimum-rbln-full-pytest.outputs.transformers_version || 'default' }}
       diffusers_version: ${{ needs.check-pytest-full.outputs.should_full_test == 'true' && needs.optimum-rbln-full-pytest.outputs.diffusers_version || 'default' }}
       bc_result: ${{ needs.bc-inference.result }}
