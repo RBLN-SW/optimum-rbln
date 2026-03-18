@@ -754,6 +754,7 @@ class TestQwen3VLForConditionalGeneration(LLMTest.TestLLM):
         }
     }
     IS_MULTIMODAL = True
+    HF_CONFIG_KWARGS = {}  # Initialize empty to avoid sharing with other classes
     HF_CONFIG_KWARGS_PREPROCESSOR = {"min_pixels": 64 * 16 * 16, "max_pixels": 64 * 16 * 16}
 
     @classmethod
@@ -789,6 +790,7 @@ class TestQwen3VLMoeForConditionalGeneration(LLMTest.TestLLM):
         }
     }
     IS_MULTIMODAL = True
+    HF_CONFIG_KWARGS = {}  # Initialize empty to avoid sharing with other classes
     HF_CONFIG_KWARGS_PREPROCESSOR = {"min_pixels": 64 * 16 * 16, "max_pixels": 64 * 16 * 16}
 
     @classmethod
@@ -1002,6 +1004,7 @@ class TestDisallowedLlama_4(DisallowedTestBase.DisallowedTest):
 class TestMixtralForCausalLM(LLMTest.TestLLM):
     RBLN_CLASS = RBLNMixtralForCausalLM
     HF_MODEL_ID = "vprovorg/tiny-random-Mixtral-8x7B-v0.1"
+    HF_CONFIG_KWARGS = {}  # Initialize empty to avoid sharing with other classes
 
     @classmethod
     def setUpClass(cls):
