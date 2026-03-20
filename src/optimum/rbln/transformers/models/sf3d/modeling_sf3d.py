@@ -15,7 +15,7 @@
 import json
 import struct
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any, List, Optional, Tuple, Union
 
 import numpy as np
 import PIL.Image
@@ -38,6 +38,9 @@ logger = get_logger(__name__)
 
 if TYPE_CHECKING:
     from transformers import PretrainedConfig, PreTrainedModel
+
+# Accepted inputs for preprocess / generate_scene_codes / image_to_3d (paths, arrays, PIL).
+SF3DImageInput = Union[str, Path, np.ndarray, torch.Tensor, PIL.Image.Image]
 
 
 class _SF3DImageTokenizerWrapper(nn.Module):
@@ -155,10 +158,8 @@ def _smooth_vertex_colors(
     lam: float = 0.3,
 ) -> np.ndarray:
     """Laplacian smoothing of per-vertex colors (numpy only, no scipy)."""
-    edges_i = np.concatenate([faces[:, 0], faces[:, 0], faces[:, 1],
-                              faces[:, 1], faces[:, 2], faces[:, 2]])
-    edges_j = np.concatenate([faces[:, 1], faces[:, 2], faces[:, 0],
-                              faces[:, 2], faces[:, 0], faces[:, 1]])
+    edges_i = np.concatenate([faces[:, 0], faces[:, 0], faces[:, 1], faces[:, 1], faces[:, 2], faces[:, 2]])
+    edges_j = np.concatenate([faces[:, 1], faces[:, 2], faces[:, 0], faces[:, 2], faces[:, 0], faces[:, 1]])
 
     result = colors.astype(np.float32).copy()
     for _ in range(iterations):
@@ -229,7 +230,7 @@ def _query_triplane_cpu(positions, triplanes, radius=1.0):
 
 
 def preprocess_sf3d_image(
-    image,
+    image: SF3DImageInput,
     size: int = 512,
     background_color: Tuple[float, float, float] = (0.5, 0.5, 0.5),
     foreground_ratio: float = 0.85,
@@ -459,9 +460,7 @@ class RBLNSF3DForImageTo3D(RBLNModel):
         if cls._TRIPLANE_DECODER_NAME in cfg_map:
             head_order = [h.name for h in model.decoder.cfg.heads]
             radius = model.cfg.radius
-            decoder_module = nn.ModuleDict(
-                {name: model.decoder.heads[name] for name in head_order}
-            )
+            decoder_module = nn.ModuleDict({name: model.decoder.heads[name] for name in head_order})
             wrapper = _SF3DTriplaneDecoderWrapper(decoder_module, head_order, radius)
             wrapper.eval()
             compiled[cls._TRIPLANE_DECODER_NAME] = cls.compile(
@@ -491,13 +490,15 @@ class RBLNSF3DForImageTo3D(RBLNModel):
 
         decoder_head_specs = []
         for h in model.decoder.cfg.heads:
-            decoder_head_specs.append({
-                "name": h.name,
-                "out_channels": h.out_channels,
-                "n_hidden_layers": h.n_hidden_layers,
-                "output_activation": h.output_activation,
-                "out_bias": h.out_bias,
-            })
+            decoder_head_specs.append(
+                {
+                    "name": h.name,
+                    "out_channels": h.out_channels,
+                    "n_hidden_layers": h.n_hidden_layers,
+                    "output_activation": h.output_activation,
+                    "out_bias": h.out_bias,
+                }
+            )
 
         iso_helper = model.isosurface_helper
         iso_data = {
@@ -599,9 +600,7 @@ class RBLNSF3DForImageTo3D(RBLNModel):
         self.decoder_head_names = [h["name"] for h in self.cpu_decoder["head_specs"]]
 
         self._npu_head_order = self.decoder_head_names
-        self._npu_head_out_channels = [
-            h["out_channels"] for h in self.cpu_decoder["head_specs"]
-        ]
+        self._npu_head_out_channels = [h["out_channels"] for h in self.cpu_decoder["head_specs"]]
         self._npu_query_chunk_size = getattr(self.rbln_config, "query_chunk_size", None)
 
         return super().__post_init__(**kwargs)
@@ -613,8 +612,7 @@ class RBLNSF3DForImageTo3D(RBLNModel):
         state_dict = artifacts.get("decoder_state_dict")
         if state_dict is None:
             raise RuntimeError(
-                "decoder_state_dict not found in torch_artifacts. "
-                "Please recompile the model with the latest version."
+                "decoder_state_dict not found in torch_artifacts. Please recompile the model with the latest version."
             )
 
         head_specs = dcfg["head_specs"]
@@ -686,7 +684,7 @@ class RBLNSF3DForImageTo3D(RBLNModel):
             scene_codes = torch.tensor(scene_codes)
         return scene_codes.float()
 
-    def generate_scene_codes(self, image) -> torch.Tensor:
+    def generate_scene_codes(self, image: SF3DImageInput) -> torch.Tensor:
         bg_color = tuple(self.model_config.get("background_color", [0.5, 0.5, 0.5]))
         return self.forward(
             preprocess_sf3d_image(
@@ -792,12 +790,12 @@ class RBLNSF3DForImageTo3D(RBLNModel):
     @torch.no_grad()
     def extract_mesh(
         self,
-        scene_codes,
-        threshold=None,
+        scene_codes: torch.Tensor,
+        threshold: Optional[float] = None,
         bake_resolution: int = 1024,
         remesh: str = "none",
         vertex_count: int = -1,
-    ):
+    ) -> List[trimesh.Trimesh]:
         """Extract mesh from triplane scene codes using marching cubes.
 
         Args:
@@ -824,7 +822,9 @@ class RBLNSF3DForImageTo3D(RBLNModel):
             sc = scene_codes[b : b + 1]
 
             decoded = self._decode_triplane_at_positions(
-                grid_pos, sc, head_names=["density"],
+                grid_pos,
+                sc,
+                head_names=["density"],
             )
             density = decoded["density"].squeeze(-1)
             level = -(density - threshold)
@@ -880,12 +880,12 @@ class RBLNSF3DForImageTo3D(RBLNModel):
 
     def image_to_3d(
         self,
-        image,
-        threshold=None,
+        image: SF3DImageInput,
+        threshold: Optional[float] = None,
         bake_resolution: int = 1024,
         remesh: str = "none",
         vertex_count: int = -1,
-    ):
+    ) -> trimesh.Trimesh:
         """Full pipeline: image -> scene codes -> mesh with vertex colors.
 
         Args:

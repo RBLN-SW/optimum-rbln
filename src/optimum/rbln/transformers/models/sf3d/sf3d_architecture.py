@@ -138,8 +138,7 @@ class Dinov2Encoder(_Dinov2Encoder):
         super().__init__(config)
         self.layer = nn.ModuleList([Dinov2Layer(config) for _ in range(config.num_hidden_layers)])
 
-    def forward(self, hidden_states, modulation_cond=None,
-                output_hidden_states=False, return_dict=True):
+    def forward(self, hidden_states, modulation_cond=None, output_hidden_states=False, return_dict=True):
         all_hidden_states = () if output_hidden_states else None
         for i, layer_module in enumerate(self.layer):
             if output_hidden_states:
@@ -160,20 +159,22 @@ class Dinov2Model(_Dinov2Model):
         super().__init__(config)
         self.encoder = Dinov2Encoder(config)
 
-    def forward(self, pixel_values=None, modulation_cond=None,
-                output_hidden_states=None, return_dict=None):
+    def forward(self, pixel_values=None, modulation_cond=None, output_hidden_states=None, return_dict=None):
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
         embedding_output = self.embeddings(pixel_values)
         encoder_outputs = self.encoder(
-            embedding_output, modulation_cond=modulation_cond,
-            output_hidden_states=output_hidden_states, return_dict=return_dict,
+            embedding_output,
+            modulation_cond=modulation_cond,
+            output_hidden_states=output_hidden_states,
+            return_dict=return_dict,
         )
         sequence_output = self.layernorm(encoder_outputs[0])
         pooled_output = sequence_output[:, 0, :]
         if not return_dict:
             return (sequence_output, pooled_output) + encoder_outputs[1:]
-        return BaseModelOutputWithPooling(last_hidden_state=sequence_output, pooler_output=pooled_output,
-                                          hidden_states=encoder_outputs.hidden_states)
+        return BaseModelOutputWithPooling(
+            last_hidden_state=sequence_output, pooler_output=pooled_output, hidden_states=encoder_outputs.hidden_states
+        )
 
     def set_gradient_checkpointing(self, value=False):
         self.encoder.gradient_checkpointing = value
@@ -228,13 +229,21 @@ class DINOV2SingleImageTokenizer(BaseModule):
         self.model.set_gradient_checkpointing(False)
         modulations = []
         for layer in self.model.encoder.layer:
-            n1 = Modulation(self.model.config.hidden_size, self.cfg.modulation_cond_dim, zero_init=True, single_layer=True)
-            n2 = Modulation(self.model.config.hidden_size, self.cfg.modulation_cond_dim, zero_init=True, single_layer=True)
+            n1 = Modulation(
+                self.model.config.hidden_size, self.cfg.modulation_cond_dim, zero_init=True, single_layer=True
+            )
+            n2 = Modulation(
+                self.model.config.hidden_size, self.cfg.modulation_cond_dim, zero_init=True, single_layer=True
+            )
             layer.register_ada_norm_modulation(n1, n2)
             modulations += [n1, n2]
         self.modulations = nn.ModuleList(modulations)
-        self.register_buffer("image_mean", torch.as_tensor([0.485, 0.456, 0.406]).reshape(1, 1, 3, 1, 1), persistent=False)
-        self.register_buffer("image_std", torch.as_tensor([0.229, 0.224, 0.225]).reshape(1, 1, 3, 1, 1), persistent=False)
+        self.register_buffer(
+            "image_mean", torch.as_tensor([0.485, 0.456, 0.406]).reshape(1, 1, 3, 1, 1), persistent=False
+        )
+        self.register_buffer(
+            "image_std", torch.as_tensor([0.229, 0.224, 0.225]).reshape(1, 1, 3, 1, 1), persistent=False
+        )
 
     def forward(self, images, modulation_cond=None, **kwargs):
         packed = images.ndim == 4
@@ -268,15 +277,20 @@ class TriplaneLearnablePositionalEmbedding(BaseModule):
 
     def configure(self):
         self.embeddings = nn.Parameter(
-            torch.randn(3, self.cfg.num_channels, self.cfg.plane_size, self.cfg.plane_size) / math.sqrt(self.cfg.num_channels)
+            torch.randn(3, self.cfg.num_channels, self.cfg.plane_size, self.cfg.plane_size)
+            / math.sqrt(self.cfg.num_channels)
         )
 
     def forward(self, batch_size: int):
-        return rearrange(repeat(self.embeddings, "Np Ct Hp Wp -> B Np Ct Hp Wp", B=batch_size), "B Np Ct Hp Wp -> B Ct (Np Hp Wp)")
+        return rearrange(
+            repeat(self.embeddings, "Np Ct Hp Wp -> B Np Ct Hp Wp", B=batch_size), "B Np Ct Hp Wp -> B Ct (Np Hp Wp)"
+        )
 
     def detokenize(self, tokens):
         B, Ct, Nt = tokens.shape
-        return rearrange(tokens, "B Ct (Np Hp Wp) -> B Np Ct Hp Wp", Np=3, Hp=self.cfg.plane_size, Wp=self.cfg.plane_size)
+        return rearrange(
+            tokens, "B Ct (Np Hp Wp) -> B Np Ct Hp Wp", Np=3, Hp=self.cfg.plane_size, Wp=self.cfg.plane_size
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -334,9 +348,13 @@ class BasicBlock(nn.Module):
     def __init__(self, dim, kv_dim=None, num_heads=16, qkv_bias=False, attn_drop=0.0, proj_drop=0.0, ff_drop=0.0):
         super().__init__()
         self.norm1 = nn.LayerNorm(dim)
-        self.attn1 = CrossAttention(dim, kv_dim=dim, num_heads=num_heads, qkv_bias=qkv_bias, attn_drop=attn_drop, proj_drop=proj_drop)
+        self.attn1 = CrossAttention(
+            dim, kv_dim=dim, num_heads=num_heads, qkv_bias=qkv_bias, attn_drop=attn_drop, proj_drop=proj_drop
+        )
         self.norm2 = nn.LayerNorm(dim)
-        self.attn2 = CrossAttention(dim, kv_dim=kv_dim, num_heads=num_heads, qkv_bias=qkv_bias, attn_drop=attn_drop, proj_drop=proj_drop)
+        self.attn2 = CrossAttention(
+            dim, kv_dim=kv_dim, num_heads=num_heads, qkv_bias=qkv_bias, attn_drop=attn_drop, proj_drop=proj_drop
+        )
         self.norm3 = nn.LayerNorm(dim)
         self.ff = _FeedForward(dim, dropout=ff_drop)
 
@@ -350,12 +368,16 @@ class BasicBlock(nn.Module):
 
 
 class FuseBlock(nn.Module):
-    def __init__(self, dim_z, dim_x, num_heads=16, qkv_bias=False, attn_drop=0.0, proj_drop=0.0, ff_drop=0.0, norm_x_input=True):
+    def __init__(
+        self, dim_z, dim_x, num_heads=16, qkv_bias=False, attn_drop=0.0, proj_drop=0.0, ff_drop=0.0, norm_x_input=True
+    ):
         super().__init__()
         self.norm_x_input = norm_x_input
         if norm_x_input:
             self.norm_x = nn.LayerNorm(dim_x)
-        self.attn = CrossAttention(dim_z, kv_dim=dim_x, num_heads=num_heads, qkv_bias=qkv_bias, attn_drop=attn_drop, proj_drop=proj_drop)
+        self.attn = CrossAttention(
+            dim_z, kv_dim=dim_x, num_heads=num_heads, qkv_bias=qkv_bias, attn_drop=attn_drop, proj_drop=proj_drop
+        )
         self.norm_z1 = nn.LayerNorm(dim_z)
         self.norm_z2 = nn.LayerNorm(dim_z)
         self.ff = _FeedForward(dim_z, dropout=ff_drop)
@@ -367,17 +389,53 @@ class FuseBlock(nn.Module):
 
 
 class TwoStreamBlock(nn.Module):
-    def __init__(self, dim_latent, dim_input, num_basic_blocks=4, num_heads=16, qkv_bias=False,
-                 attn_drop=0.0, proj_drop=0.0, ff_drop=0.0, norm_x_input=True, dim_cross=None):
+    def __init__(
+        self,
+        dim_latent,
+        dim_input,
+        num_basic_blocks=4,
+        num_heads=16,
+        qkv_bias=False,
+        attn_drop=0.0,
+        proj_drop=0.0,
+        ff_drop=0.0,
+        norm_x_input=True,
+        dim_cross=None,
+    ):
         super().__init__()
-        self.fuse_block_in = FuseBlock(dim_latent, dim_input, num_heads=num_heads, qkv_bias=qkv_bias,
-                                        attn_drop=attn_drop, proj_drop=proj_drop, ff_drop=ff_drop, norm_x_input=norm_x_input)
-        self.transformer_block = nn.ModuleList([
-            BasicBlock(dim_latent, kv_dim=dim_cross, num_heads=num_heads, qkv_bias=qkv_bias, proj_drop=proj_drop, ff_drop=ff_drop)
-            for _ in range(num_basic_blocks)
-        ])
-        self.fuse_block_out = FuseBlock(dim_input, dim_latent, num_heads=num_heads, qkv_bias=qkv_bias,
-                                         attn_drop=attn_drop, proj_drop=proj_drop, ff_drop=ff_drop, norm_x_input=norm_x_input)
+        self.fuse_block_in = FuseBlock(
+            dim_latent,
+            dim_input,
+            num_heads=num_heads,
+            qkv_bias=qkv_bias,
+            attn_drop=attn_drop,
+            proj_drop=proj_drop,
+            ff_drop=ff_drop,
+            norm_x_input=norm_x_input,
+        )
+        self.transformer_block = nn.ModuleList(
+            [
+                BasicBlock(
+                    dim_latent,
+                    kv_dim=dim_cross,
+                    num_heads=num_heads,
+                    qkv_bias=qkv_bias,
+                    proj_drop=proj_drop,
+                    ff_drop=ff_drop,
+                )
+                for _ in range(num_basic_blocks)
+            ]
+        )
+        self.fuse_block_out = FuseBlock(
+            dim_input,
+            dim_latent,
+            num_heads=num_heads,
+            qkv_bias=qkv_bias,
+            attn_drop=attn_drop,
+            proj_drop=proj_drop,
+            ff_drop=ff_drop,
+            norm_x_input=norm_x_input,
+        )
 
     def forward(self, latent, inp, cross_input):
         latent = self.fuse_block_in(latent, inp)
@@ -413,7 +471,9 @@ class TwoStreamInterleaveTransformer(BaseModule):
         self.num_attention_heads = self.cfg.num_attention_heads
         self.latent_dim = self.cfg.num_attention_heads * self.cfg.attention_head_dim
         if self.cfg.norm_num_groups > 0:
-            self.norm_triplane = nn.GroupNorm(self.cfg.norm_num_groups, self.cfg.raw_triplane_channels, eps=1e-6, affine=True)
+            self.norm_triplane = nn.GroupNorm(
+                self.cfg.norm_num_groups, self.cfg.raw_triplane_channels, eps=1e-6, affine=True
+            )
         else:
             self.norm_triplane = nn.LayerNorm(self.cfg.raw_triplane_channels)
         self.proj_triplane = nn.Linear(self.cfg.raw_triplane_channels, self.cfg.triplane_channels)
@@ -424,14 +484,22 @@ class TwoStreamInterleaveTransformer(BaseModule):
         self.proj_latent = nn.Linear(self.latent_dim, self.latent_dim)
         self.latent_init = nn.Parameter(torch.zeros(1, self.cfg.num_latents, self.latent_dim))
         nn.init.normal_(self.latent_init, std=self.cfg.latent_init_std)
-        self.main_blocks = nn.ModuleList([
-            TwoStreamBlock(
-                self.latent_dim, self.cfg.triplane_channels,
-                num_basic_blocks=self.cfg.num_basic_blocks, num_heads=self.cfg.num_attention_heads,
-                qkv_bias=self.cfg.attention_bias, proj_drop=self.cfg.dropout, ff_drop=self.cfg.dropout,
-                norm_x_input=self.cfg.norm_x_input, dim_cross=self.cfg.cross_attention_dim,
-            ) for _ in range(self.cfg.num_blocks)
-        ])
+        self.main_blocks = nn.ModuleList(
+            [
+                TwoStreamBlock(
+                    self.latent_dim,
+                    self.cfg.triplane_channels,
+                    num_basic_blocks=self.cfg.num_basic_blocks,
+                    num_heads=self.cfg.num_attention_heads,
+                    qkv_bias=self.cfg.attention_bias,
+                    proj_drop=self.cfg.dropout,
+                    ff_drop=self.cfg.dropout,
+                    norm_x_input=self.cfg.norm_x_input,
+                    dim_cross=self.cfg.cross_attention_dim,
+                )
+                for _ in range(self.cfg.num_blocks)
+            ]
+        )
         self.proj_out = nn.Linear(self.cfg.triplane_channels, self.cfg.raw_triplane_channels)
 
     def forward(self, hidden_states, encoder_hidden_states, **kwargs):
@@ -467,18 +535,24 @@ class PixelShuffleUpsampleNetwork(BaseModule):
 
     def configure(self):
         layers: list = []
-        out_ch = self.cfg.out_channels * self.cfg.scale_factor ** 2
+        out_ch = self.cfg.out_channels * self.cfg.scale_factor**2
         in_ch = self.cfg.in_channels
         for i in range(self.cfg.conv_layers):
             cur_out = in_ch if i != self.cfg.conv_layers - 1 else out_ch
-            layers.append(nn.Conv2d(in_ch, cur_out, self.cfg.conv_kernel_size, padding=(self.cfg.conv_kernel_size - 1) // 2))
+            layers.append(
+                nn.Conv2d(in_ch, cur_out, self.cfg.conv_kernel_size, padding=(self.cfg.conv_kernel_size - 1) // 2)
+            )
             if i != self.cfg.conv_layers - 1:
                 layers.append(nn.ReLU(inplace=True))
         layers.append(nn.PixelShuffle(self.cfg.scale_factor))
         self.upsample = nn.Sequential(*layers)
 
     def forward(self, triplanes):
-        return rearrange(self.upsample(rearrange(triplanes, "B Np Ci Hp Wp -> (B Np) Ci Hp Wp", Np=3)), "(B Np) Co Hp Wp -> B Np Co Hp Wp", Np=3)
+        return rearrange(
+            self.upsample(rearrange(triplanes, "B Np Ci Hp Wp -> (B Np) Ci Hp Wp", Np=3)),
+            "(B Np) Co Hp Wp -> B Np Co Hp Wp",
+            Np=3,
+        )
 
 
 def _get_activation(name):
@@ -523,8 +597,10 @@ class MaterialMLP(BaseModule):
                 head = HeadSpec(**head)
             layers: list = []
             for i in range(head.n_hidden_layers):
-                layers += [nn.Linear(self.cfg.in_channels if i == 0 else self.cfg.n_neurons, self.cfg.n_neurons),
-                           nn.SiLU(inplace=True) if self.cfg.activation == "silu" else nn.ReLU(inplace=True)]
+                layers += [
+                    nn.Linear(self.cfg.in_channels if i == 0 else self.cfg.n_neurons, self.cfg.n_neurons),
+                    nn.SiLU(inplace=True) if self.cfg.activation == "silu" else nn.ReLU(inplace=True),
+                ]
             layers.append(nn.Linear(self.cfg.n_neurons, head.out_channels))
             heads[head.name] = nn.Sequential(*layers)
         self.heads = nn.ModuleDict(heads)
@@ -603,16 +679,39 @@ class MarchingTetrahedraHelper(IsosurfaceHelper):
         super().__init__()
         self.resolution = resolution
 
-        self.register_buffer("triangle_table", torch.as_tensor([
-            [-1,-1,-1,-1,-1,-1],[1,0,2,-1,-1,-1],[4,0,3,-1,-1,-1],[1,4,2,1,3,4],
-            [3,1,5,-1,-1,-1],[2,3,0,2,5,3],[1,4,0,1,5,4],[4,2,5,-1,-1,-1],
-            [4,5,2,-1,-1,-1],[4,1,0,4,5,1],[3,2,0,3,5,2],[1,3,5,-1,-1,-1],
-            [4,1,2,4,3,1],[3,0,4,-1,-1,-1],[2,0,1,-1,-1,-1],[-1,-1,-1,-1,-1,-1],
-        ], dtype=torch.long), persistent=False)
-        self.register_buffer("num_triangles_table", torch.as_tensor(
-            [0,1,1,2,1,2,2,1,1,2,2,1,2,1,1,0], dtype=torch.long), persistent=False)
-        self.register_buffer("base_tet_edges", torch.as_tensor(
-            [0,1,0,2,0,3,1,2,1,3,2,3], dtype=torch.long), persistent=False)
+        self.register_buffer(
+            "triangle_table",
+            torch.as_tensor(
+                [
+                    [-1, -1, -1, -1, -1, -1],
+                    [1, 0, 2, -1, -1, -1],
+                    [4, 0, 3, -1, -1, -1],
+                    [1, 4, 2, 1, 3, 4],
+                    [3, 1, 5, -1, -1, -1],
+                    [2, 3, 0, 2, 5, 3],
+                    [1, 4, 0, 1, 5, 4],
+                    [4, 2, 5, -1, -1, -1],
+                    [4, 5, 2, -1, -1, -1],
+                    [4, 1, 0, 4, 5, 1],
+                    [3, 2, 0, 3, 5, 2],
+                    [1, 3, 5, -1, -1, -1],
+                    [4, 1, 2, 4, 3, 1],
+                    [3, 0, 4, -1, -1, -1],
+                    [2, 0, 1, -1, -1, -1],
+                    [-1, -1, -1, -1, -1, -1],
+                ],
+                dtype=torch.long,
+            ),
+            persistent=False,
+        )
+        self.register_buffer(
+            "num_triangles_table",
+            torch.as_tensor([0, 1, 1, 2, 1, 2, 2, 1, 1, 2, 2, 1, 2, 1, 1, 0], dtype=torch.long),
+            persistent=False,
+        )
+        self.register_buffer(
+            "base_tet_edges", torch.as_tensor([0, 1, 0, 2, 0, 3, 1, 2, 1, 3, 2, 3], dtype=torch.long), persistent=False
+        )
 
         tet_verts, tet_indices = _generate_tetrahedral_grid(resolution)
         self.register_buffer("_grid_vertices", torch.from_numpy(tet_verts).float(), persistent=False)
@@ -625,7 +724,7 @@ class MarchingTetrahedraHelper(IsosurfaceHelper):
 
     @staticmethod
     def _get_center_boundary(verts):
-        magn = torch.sum(verts ** 2, dim=-1)
+        magn = torch.sum(verts**2, dim=-1)
         center_idx = torch.argmin(magn)
         boundary = (verts == verts.max()) | (verts == verts.min())
         boundary_idx = torch.nonzero(boundary.float().sum(-1)).squeeze(-1)
@@ -673,14 +772,25 @@ class MarchingTetrahedraHelper(IsosurfaceHelper):
         v_id = torch.pow(2, torch.arange(4, dtype=torch.long, device=pos.device))
         tetindex = (occ_fx4[valid] * v_id.unsqueeze(0)).sum(-1)
         num_triangles = self.num_triangles_table[tetindex]
-        faces = torch.cat((
-            torch.gather(idx_map[num_triangles == 1], 1, self.triangle_table[tetindex[num_triangles == 1]][:, :3]).reshape(-1, 3),
-            torch.gather(idx_map[num_triangles == 2], 1, self.triangle_table[tetindex[num_triangles == 2]][:, :6]).reshape(-1, 3),
-        ), dim=0)
+        faces = torch.cat(
+            (
+                torch.gather(
+                    idx_map[num_triangles == 1], 1, self.triangle_table[tetindex[num_triangles == 1]][:, :3]
+                ).reshape(-1, 3),
+                torch.gather(
+                    idx_map[num_triangles == 2], 1, self.triangle_table[tetindex[num_triangles == 2]][:, :6]
+                ).reshape(-1, 3),
+            ),
+            dim=0,
+        )
         return verts, faces
 
     def forward(self, level, deformation=None):
-        grid_verts = self.grid_vertices + self.normalize_grid_deformation(deformation) if deformation is not None else self.grid_vertices
+        grid_verts = (
+            self.grid_vertices + self.normalize_grid_deformation(deformation)
+            if deformation is not None
+            else self.grid_vertices
+        )
         v_pos, t_pos_idx = self._forward(grid_verts, level, self.indices)
         return v_pos, t_pos_idx
 
@@ -706,6 +816,7 @@ class ClipBasedHeadEstimator(BaseModule):
     def configure(self):
         try:
             import open_clip
+
             self.model, _, self.preprocess = open_clip.create_model_and_transforms(
                 self.cfg.model, pretrained=self.cfg.pretrain
             )
@@ -728,11 +839,13 @@ class ClipBasedHeadEstimator(BaseModule):
                 hidden_layers += [nn.Linear(self.cfg.hidden_features, self.cfg.hidden_features), act_fn(inplace=True)]
             head_items = [nn.Sequential(*hidden_layers)]
             for _ in range(2):
-                head_items.append(nn.Sequential(
-                    nn.Linear(self.cfg.hidden_features, self.cfg.hidden_features),
-                    act_fn(inplace=True),
-                    nn.Linear(self.cfg.hidden_features, 1),
-                ))
+                head_items.append(
+                    nn.Sequential(
+                        nn.Linear(self.cfg.hidden_features, self.cfg.hidden_features),
+                        act_fn(inplace=True),
+                        nn.Linear(self.cfg.hidden_features, 1),
+                    )
+                )
             heads[name] = nn.ModuleList(head_items)
         self.heads = nn.ModuleDict(heads)
 

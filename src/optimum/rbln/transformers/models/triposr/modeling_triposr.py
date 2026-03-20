@@ -217,7 +217,14 @@ def _extract_mesh(
     has_vertex_color: bool = True,
 ):
     """CPU fallback: extract mesh using CPU decoder."""
-    _TRIPLANE_KEYS = {"radius", "feature_reduction", "density_activation", "density_bias", "color_activation", "chunk_size"}
+    _TRIPLANE_KEYS = {
+        "radius",
+        "feature_reduction",
+        "density_activation",
+        "density_bias",
+        "color_activation",
+        "chunk_size",
+    }
     triplane_kwargs = {k: v for k, v in renderer_cfg.items() if k in _TRIPLANE_KEYS}
 
     radius = renderer_cfg["radius"]
@@ -512,9 +519,7 @@ class RBLNTripoSRForImageTo3D(RBLNModel):
             "density_bias": model.renderer.cfg.density_bias,
             "color_activation": model.renderer.cfg.color_activation,
         }
-        query_wrapper = _TriplaneQueryWrapper(
-            model.decoder, renderer_cfg, chunk_size=rbln_config.query_chunk_size
-        )
+        query_wrapper = _TriplaneQueryWrapper(model.decoder, renderer_cfg, chunk_size=rbln_config.query_chunk_size)
         query_wrapper.eval()
         compiled[cls._TRIPLANE_QUERY_NAME] = cls.compile(
             query_wrapper,

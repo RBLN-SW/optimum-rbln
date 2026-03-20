@@ -157,7 +157,9 @@ class ImagePreprocessor:
         batched = image.ndim == 4
         if not batched:
             image = image[None, ...]
-        image = F.interpolate(image.permute(0, 3, 1, 2), (size, size), mode="bilinear", align_corners=False, antialias=True).permute(0, 2, 3, 1)
+        image = F.interpolate(
+            image.permute(0, 3, 1, 2), (size, size), mode="bilinear", align_corners=False, antialias=True
+        ).permute(0, 2, 3, 1)
         if not batched:
             image = image[0]
         return image
@@ -235,7 +237,9 @@ class Attention(nn.Module):
             self.norm_cross = nn.LayerNorm(self.cross_attention_dim)
         elif cross_attention_norm == "group_norm":
             norm_cross_ch = added_kv_proj_dim if self.added_kv_proj_dim is not None else self.cross_attention_dim
-            self.norm_cross = nn.GroupNorm(num_channels=norm_cross_ch, num_groups=cross_attention_norm_num_groups, eps=1e-5, affine=True)
+            self.norm_cross = nn.GroupNorm(
+                num_channels=norm_cross_ch, num_groups=cross_attention_norm_num_groups, eps=1e-5, affine=True
+            )
         else:
             raise ValueError(f"unknown cross_attention_norm: {cross_attention_norm}")
 
@@ -262,7 +266,13 @@ class Attention(nn.Module):
         self.processor = processor
 
     def forward(self, hidden_states, encoder_hidden_states=None, attention_mask=None, **cross_attention_kwargs):
-        return self.processor(self, hidden_states, encoder_hidden_states=encoder_hidden_states, attention_mask=attention_mask, **cross_attention_kwargs)
+        return self.processor(
+            self,
+            hidden_states,
+            encoder_hidden_states=encoder_hidden_states,
+            attention_mask=attention_mask,
+            **cross_attention_kwargs,
+        )
 
     def batch_to_head_dim(self, tensor):
         head_size = self.heads
@@ -307,7 +317,9 @@ class AttnProcessor2_0:
         if input_ndim == 4:
             batch_size, channel, height, width = hidden_states.shape
             hidden_states = hidden_states.view(batch_size, channel, height * width).transpose(1, 2)
-        batch_size, sequence_length, _ = hidden_states.shape if encoder_hidden_states is None else encoder_hidden_states.shape
+        batch_size, sequence_length, _ = (
+            hidden_states.shape if encoder_hidden_states is None else encoder_hidden_states.shape
+        )
         if attention_mask is not None:
             attention_mask = attn.prepare_attention_mask(attention_mask, sequence_length, batch_size)
             attention_mask = attention_mask.view(batch_size, attn.heads, -1, attention_mask.shape[-1])
@@ -325,7 +337,9 @@ class AttnProcessor2_0:
         query = query.view(batch_size, -1, attn.heads, head_dim).transpose(1, 2)
         key = key.view(batch_size, -1, attn.heads, head_dim).transpose(1, 2)
         value = value.view(batch_size, -1, attn.heads, head_dim).transpose(1, 2)
-        hidden_states = F.scaled_dot_product_attention(query, key, value, attn_mask=attention_mask, dropout_p=0.0, is_causal=False)
+        hidden_states = F.scaled_dot_product_attention(
+            query, key, value, attn_mask=attention_mask, dropout_p=0.0, is_causal=False
+        )
         hidden_states = hidden_states.transpose(1, 2).reshape(batch_size, -1, attn.heads * head_dim).to(query.dtype)
         hidden_states = attn.to_out[0](hidden_states)
         hidden_states = attn.to_out[1](hidden_states)
@@ -372,8 +386,15 @@ class ApproximateGELU(nn.Module):
 
 
 class FeedForward(nn.Module):
-    def __init__(self, dim: int, dim_out: Optional[int] = None, mult: int = 4,
-                 dropout: float = 0.0, activation_fn: str = "geglu", final_dropout: bool = False):
+    def __init__(
+        self,
+        dim: int,
+        dim_out: Optional[int] = None,
+        mult: int = 4,
+        dropout: float = 0.0,
+        activation_fn: str = "geglu",
+        final_dropout: bool = False,
+    ):
         super().__init__()
         inner_dim = int(dim * mult)
         dim_out = dim_out if dim_out is not None else dim
@@ -403,25 +424,44 @@ class FeedForward(nn.Module):
 
 
 class BasicTransformerBlock(nn.Module):
-    def __init__(self, dim: int, num_attention_heads: int, attention_head_dim: int,
-                 dropout=0.0, cross_attention_dim: Optional[int] = None, activation_fn: str = "geglu",
-                 attention_bias: bool = False, only_cross_attention: bool = False,
-                 double_self_attention: bool = False, upcast_attention: bool = False,
-                 norm_elementwise_affine: bool = True, norm_type: str = "layer_norm", final_dropout: bool = False):
+    def __init__(
+        self,
+        dim: int,
+        num_attention_heads: int,
+        attention_head_dim: int,
+        dropout=0.0,
+        cross_attention_dim: Optional[int] = None,
+        activation_fn: str = "geglu",
+        attention_bias: bool = False,
+        only_cross_attention: bool = False,
+        double_self_attention: bool = False,
+        upcast_attention: bool = False,
+        norm_elementwise_affine: bool = True,
+        norm_type: str = "layer_norm",
+        final_dropout: bool = False,
+    ):
         super().__init__()
         self.only_cross_attention = only_cross_attention
         self.norm1 = nn.LayerNorm(dim, elementwise_affine=norm_elementwise_affine)
         self.attn1 = Attention(
-            query_dim=dim, heads=num_attention_heads, dim_head=attention_head_dim, dropout=dropout,
-            bias=attention_bias, cross_attention_dim=cross_attention_dim if only_cross_attention else None,
+            query_dim=dim,
+            heads=num_attention_heads,
+            dim_head=attention_head_dim,
+            dropout=dropout,
+            bias=attention_bias,
+            cross_attention_dim=cross_attention_dim if only_cross_attention else None,
             upcast_attention=upcast_attention,
         )
         if cross_attention_dim is not None or double_self_attention:
             self.norm2 = nn.LayerNorm(dim, elementwise_affine=norm_elementwise_affine)
             self.attn2 = Attention(
-                query_dim=dim, cross_attention_dim=cross_attention_dim if not double_self_attention else None,
-                heads=num_attention_heads, dim_head=attention_head_dim, dropout=dropout,
-                bias=attention_bias, upcast_attention=upcast_attention,
+                query_dim=dim,
+                cross_attention_dim=cross_attention_dim if not double_self_attention else None,
+                heads=num_attention_heads,
+                dim_head=attention_head_dim,
+                dropout=dropout,
+                bias=attention_bias,
+                upcast_attention=upcast_attention,
             )
         else:
             self.norm2 = None
@@ -442,13 +482,18 @@ class BasicTransformerBlock(nn.Module):
         if self.attn2 is not None:
             norm_hidden_states = self.norm2(hidden_states)
             attn_output = self.attn2(
-                norm_hidden_states, encoder_hidden_states=encoder_hidden_states, attention_mask=encoder_attention_mask,
+                norm_hidden_states,
+                encoder_hidden_states=encoder_hidden_states,
+                attention_mask=encoder_attention_mask,
             )
             hidden_states = attn_output + hidden_states
         norm_hidden_states = self.norm3(hidden_states)
         if self._chunk_size is not None:
             num_chunks = norm_hidden_states.shape[self._chunk_dim] // self._chunk_size
-            ff_output = torch.cat([self.ff(hid_slice) for hid_slice in norm_hidden_states.chunk(num_chunks, dim=self._chunk_dim)], dim=self._chunk_dim)
+            ff_output = torch.cat(
+                [self.ff(hid_slice) for hid_slice in norm_hidden_states.chunk(num_chunks, dim=self._chunk_dim)],
+                dim=self._chunk_dim,
+            )
         else:
             ff_output = self.ff(norm_hidden_states)
         hidden_states = ff_output + hidden_states
@@ -487,18 +532,29 @@ class Transformer1D(BaseModule):
         self.attention_head_dim = self.cfg.attention_head_dim
         inner_dim = self.num_attention_heads * self.attention_head_dim
         self.in_channels = self.cfg.in_channels
-        self.norm = nn.GroupNorm(num_groups=self.cfg.norm_num_groups, num_channels=self.cfg.in_channels, eps=1e-6, affine=True)
+        self.norm = nn.GroupNorm(
+            num_groups=self.cfg.norm_num_groups, num_channels=self.cfg.in_channels, eps=1e-6, affine=True
+        )
         self.proj_in = nn.Linear(self.cfg.in_channels, inner_dim)
-        self.transformer_blocks = nn.ModuleList([
-            BasicTransformerBlock(
-                inner_dim, self.num_attention_heads, self.attention_head_dim,
-                dropout=self.cfg.dropout, cross_attention_dim=self.cfg.cross_attention_dim,
-                activation_fn=self.cfg.activation_fn, attention_bias=self.cfg.attention_bias,
-                only_cross_attention=self.cfg.only_cross_attention, double_self_attention=self.cfg.double_self_attention,
-                upcast_attention=self.cfg.upcast_attention, norm_type=self.cfg.norm_type,
-                norm_elementwise_affine=self.cfg.norm_elementwise_affine,
-            ) for _ in range(self.cfg.num_layers)
-        ])
+        self.transformer_blocks = nn.ModuleList(
+            [
+                BasicTransformerBlock(
+                    inner_dim,
+                    self.num_attention_heads,
+                    self.attention_head_dim,
+                    dropout=self.cfg.dropout,
+                    cross_attention_dim=self.cfg.cross_attention_dim,
+                    activation_fn=self.cfg.activation_fn,
+                    attention_bias=self.cfg.attention_bias,
+                    only_cross_attention=self.cfg.only_cross_attention,
+                    double_self_attention=self.cfg.double_self_attention,
+                    upcast_attention=self.cfg.upcast_attention,
+                    norm_type=self.cfg.norm_type,
+                    norm_elementwise_affine=self.cfg.norm_elementwise_affine,
+                )
+                for _ in range(self.cfg.num_layers)
+            ]
+        )
         self.out_channels = self.cfg.in_channels if self.cfg.out_channels is None else self.cfg.out_channels
         self.proj_out = nn.Linear(inner_dim, self.cfg.in_channels)
         self.gradient_checkpointing = self.cfg.gradient_checkpointing
@@ -517,8 +573,12 @@ class Transformer1D(BaseModule):
         hidden_states = hidden_states.permute(0, 2, 1).reshape(batch, seq_len, inner_dim)
         hidden_states = self.proj_in(hidden_states)
         for block in self.transformer_blocks:
-            hidden_states = block(hidden_states, attention_mask=attention_mask,
-                                  encoder_hidden_states=encoder_hidden_states, encoder_attention_mask=encoder_attention_mask)
+            hidden_states = block(
+                hidden_states,
+                attention_mask=attention_mask,
+                encoder_hidden_states=encoder_hidden_states,
+                encoder_attention_mask=encoder_attention_mask,
+            )
         hidden_states = self.proj_out(hidden_states)
         hidden_states = hidden_states.reshape(batch, seq_len, inner_dim).permute(0, 2, 1).contiguous()
         return hidden_states + residual
@@ -545,8 +605,12 @@ class DINOSingleImageTokenizer(BaseModule):
         )
         if self.cfg.enable_gradient_checkpointing:
             self.model.encoder.gradient_checkpointing = True
-        self.register_buffer("image_mean", torch.as_tensor([0.485, 0.456, 0.406]).reshape(1, 1, 3, 1, 1), persistent=False)
-        self.register_buffer("image_std", torch.as_tensor([0.229, 0.224, 0.225]).reshape(1, 1, 3, 1, 1), persistent=False)
+        self.register_buffer(
+            "image_mean", torch.as_tensor([0.485, 0.456, 0.406]).reshape(1, 1, 3, 1, 1), persistent=False
+        )
+        self.register_buffer(
+            "image_std", torch.as_tensor([0.229, 0.224, 0.225]).reshape(1, 1, 3, 1, 1), persistent=False
+        )
 
     def forward(self, images, **kwargs):
         packed = False
@@ -578,15 +642,20 @@ class Triplane1DTokenizer(BaseModule):
 
     def configure(self) -> None:
         self.embeddings = nn.Parameter(
-            torch.randn(3, self.cfg.num_channels, self.cfg.plane_size, self.cfg.plane_size) / math.sqrt(self.cfg.num_channels)
+            torch.randn(3, self.cfg.num_channels, self.cfg.plane_size, self.cfg.plane_size)
+            / math.sqrt(self.cfg.num_channels)
         )
 
     def forward(self, batch_size: int) -> torch.Tensor:
-        return rearrange(repeat(self.embeddings, "Np Ct Hp Wp -> B Np Ct Hp Wp", B=batch_size), "B Np Ct Hp Wp -> B Ct (Np Hp Wp)")
+        return rearrange(
+            repeat(self.embeddings, "Np Ct Hp Wp -> B Np Ct Hp Wp", B=batch_size), "B Np Ct Hp Wp -> B Ct (Np Hp Wp)"
+        )
 
     def detokenize(self, tokens: torch.Tensor) -> torch.Tensor:
         batch_size, Ct, Nt = tokens.shape
-        return rearrange(tokens, "B Ct (Np Hp Wp) -> B Np Ct Hp Wp", Np=3, Hp=self.cfg.plane_size, Wp=self.cfg.plane_size)
+        return rearrange(
+            tokens, "B Ct (Np Hp Wp) -> B Np Ct Hp Wp", Np=3, Hp=self.cfg.plane_size, Wp=self.cfg.plane_size
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -608,7 +677,8 @@ class TriplaneUpsampleNetwork(BaseModule):
     def forward(self, triplanes: torch.Tensor) -> torch.Tensor:
         return rearrange(
             self.upsample(rearrange(triplanes, "B Np Ci Hp Wp -> (B Np) Ci Hp Wp", Np=3)),
-            "(B Np) Co Hp Wp -> B Np Co Hp Wp", Np=3,
+            "(B Np) Co Hp Wp -> B Np Co Hp Wp",
+            Np=3,
         )
 
 
@@ -687,7 +757,8 @@ class TriplaneNeRFRenderer(BaseModule):
             out = F.grid_sample(
                 rearrange(triplane, "Np Cp Hp Wp -> Np Cp Hp Wp", Np=3),
                 rearrange(indices2D, "Np N Nd -> Np () N Nd", Np=3),
-                align_corners=False, mode="bilinear",
+                align_corners=False,
+                mode="bilinear",
             )
             if self.cfg.feature_reduction == "concat":
                 out = rearrange(out, "Np Cp () N -> N (Np Cp)", Np=3)
@@ -699,7 +770,9 @@ class TriplaneNeRFRenderer(BaseModule):
             net_out = chunk_batch(_query_chunk, self.chunk_size, positions)
         else:
             net_out = _query_chunk(positions)
-        net_out["density_act"] = get_activation(self.cfg.density_activation)(net_out["density"] + self.cfg.density_bias)
+        net_out["density_act"] = get_activation(self.cfg.density_activation)(
+            net_out["density"] + self.cfg.density_bias
+        )
         net_out["color"] = get_activation(self.cfg.color_activation)(net_out["features"])
         return {k: v.view(*input_shape, -1) for k, v in net_out.items()}
 
@@ -742,7 +815,9 @@ class MarchingCubeHelper(IsosurfaceHelper):
         if self._grid_vertices is None:
             x, y, z = (torch.linspace(*self.points_range, self.resolution),) * 3
             x, y, z = torch.meshgrid(x, y, z, indexing="ij")
-            self._grid_vertices = torch.cat([x.reshape(-1, 1), y.reshape(-1, 1), z.reshape(-1, 1)], dim=-1).reshape(-1, 3)
+            self._grid_vertices = torch.cat([x.reshape(-1, 1), y.reshape(-1, 1), z.reshape(-1, 1)], dim=-1).reshape(
+                -1, 3
+            )
         return self._grid_vertices
 
     def forward(self, level: torch.FloatTensor) -> Tuple[torch.FloatTensor, torch.LongTensor]:
