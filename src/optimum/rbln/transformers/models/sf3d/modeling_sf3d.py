@@ -419,7 +419,6 @@ class RBLNSF3DForImageTo3D(RBLNModel):
                 pp_out = model.post_processor(dummy_tri)
                 post_proc_out_channels = pp_out.shape[2]
 
-            total_out = sum(h.out_channels for h in model.decoder.cfg.heads)
             compile_cfgs.append(
                 RBLNCompileConfig(
                     compiled_model_name=cls._TRIPLANE_DECODER_NAME,
@@ -733,7 +732,7 @@ class RBLNSF3DForImageTo3D(RBLNModel):
         all_outputs = {h: [] for h in head_names}
         head_offsets = {}
         offset = 0
-        for name, nch in zip(self._npu_head_order, self._npu_head_out_channels):
+        for name, nch in zip(self._npu_head_order, self._npu_head_out_channels, strict=True):
             head_offsets[name] = (offset, offset + nch)
             offset += nch
 

@@ -25,7 +25,7 @@ import math
 import os
 from collections import defaultdict
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+from typing import Any, Callable, Dict, Optional, Tuple, Union
 
 import numpy as np
 import PIL.Image
@@ -119,7 +119,7 @@ def chunk_batch(func: Callable, chunk_size: int, *args, **kwargs) -> Any:
             out_chunk = {0: out_chunk}
         elif isinstance(out_chunk, (tuple, list)):
             chunk_length = len(out_chunk)
-            out_chunk = {i: c for i, c in enumerate(out_chunk)}
+            out_chunk = dict(enumerate(out_chunk))
         elif isinstance(out_chunk, dict):
             pass
         else:

@@ -37,16 +37,20 @@ from einops import rearrange, repeat
 from huggingface_hub import hf_hub_download
 from omegaconf import DictConfig, OmegaConf
 from safetensors.torch import load_model
-
-logger = logging.getLogger(__name__)
-
 from transformers.modeling_outputs import BaseModelOutput, BaseModelOutputWithPooling
 from transformers.models.dinov2.configuration_dinov2 import Dinov2Config
 from transformers.models.dinov2.modeling_dinov2 import (
     Dinov2Encoder as _Dinov2Encoder,
+)
+from transformers.models.dinov2.modeling_dinov2 import (
     Dinov2Layer as _Dinov2Layer,
+)
+from transformers.models.dinov2.modeling_dinov2 import (
     Dinov2Model as _Dinov2Model,
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -140,7 +144,7 @@ class Dinov2Encoder(_Dinov2Encoder):
 
     def forward(self, hidden_states, modulation_cond=None, output_hidden_states=False, return_dict=True):
         all_hidden_states = () if output_hidden_states else None
-        for i, layer_module in enumerate(self.layer):
+        for _i, layer_module in enumerate(self.layer):
             if output_hidden_states:
                 all_hidden_states = all_hidden_states + (hidden_states,)
             layer_outputs = layer_module(hidden_states, modulation_cond=modulation_cond)

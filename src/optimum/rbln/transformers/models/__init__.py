@@ -186,6 +186,7 @@ _import_structure = {
         "RBLNRobertaForSequenceClassification",
         "RBLNRobertaForSequenceClassificationConfig",
     ],
+    "sf3d": ["RBLNSF3DForImageTo3D", "RBLNSF3DForImageTo3DConfig"],
     "siglip": [
         "RBLNSiglipVisionModel",
         "RBLNSiglipVisionModelConfig",
@@ -198,17 +199,16 @@ _import_structure = {
         "RBLNSwinBackbone",
         "RBLNSwinBackboneConfig",
     ],
-    "time_series_transformer": [
-        "RBLNTimeSeriesTransformerForPrediction",
-        "RBLNTimeSeriesTransformerForPredictionConfig",
-    ],
     "t5": [
         "RBLNT5EncoderModel",
         "RBLNT5ForConditionalGeneration",
         "RBLNT5EncoderModelConfig",
         "RBLNT5ForConditionalGenerationConfig",
     ],
-    "sf3d": ["RBLNSF3DForImageTo3D", "RBLNSF3DForImageTo3DConfig"],
+    "time_series_transformer": [
+        "RBLNTimeSeriesTransformerForPrediction",
+        "RBLNTimeSeriesTransformerForPredictionConfig",
+    ],
     "triposr": ["RBLNTripoSRForImageTo3D", "RBLNTripoSRForImageTo3DConfig"],
     "vit": ["RBLNViTForImageClassification", "RBLNViTForImageClassificationConfig"],
     "wav2vec2": ["RBLNWav2Vec2ForCTC", "RBLNWav2Vec2ForCTCConfig"],
@@ -384,6 +384,7 @@ if TYPE_CHECKING:
         RBLNRobertaForSequenceClassification,
         RBLNRobertaForSequenceClassificationConfig,
     )
+    from .sf3d import RBLNSF3DForImageTo3D, RBLNSF3DForImageTo3DConfig
     from .siglip import RBLNSiglipVisionModel, RBLNSiglipVisionModelConfig
     from .swin import RBLNSwinBackbone, RBLNSwinBackboneConfig
     from .t5 import (
@@ -396,7 +397,6 @@ if TYPE_CHECKING:
         RBLNTimeSeriesTransformerForPrediction,
         RBLNTimeSeriesTransformerForPredictionConfig,
     )
-    from .sf3d import RBLNSF3DForImageTo3D, RBLNSF3DForImageTo3DConfig
     from .triposr import RBLNTripoSRForImageTo3D, RBLNTripoSRForImageTo3DConfig
     from .vit import RBLNViTForImageClassification, RBLNViTForImageClassificationConfig
     from .wav2vec2 import RBLNWav2Vec2ForCTC, RBLNWav2Vec2ForCTCConfig
