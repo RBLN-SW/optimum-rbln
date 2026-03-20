@@ -208,6 +208,7 @@ _import_structure = {
         "RBLNT5EncoderModelConfig",
         "RBLNT5ForConditionalGenerationConfig",
     ],
+    "sf3d": ["RBLNSF3DForImageTo3D", "RBLNSF3DForImageTo3DConfig"],
     "triposr": ["RBLNTripoSRForImageTo3D", "RBLNTripoSRForImageTo3DConfig"],
     "vit": ["RBLNViTForImageClassification", "RBLNViTForImageClassificationConfig"],
     "wav2vec2": ["RBLNWav2Vec2ForCTC", "RBLNWav2Vec2ForCTCConfig"],
@@ -395,6 +396,7 @@ if TYPE_CHECKING:
         RBLNTimeSeriesTransformerForPrediction,
         RBLNTimeSeriesTransformerForPredictionConfig,
     )
+    from .sf3d import RBLNSF3DForImageTo3D, RBLNSF3DForImageTo3DConfig
     from .triposr import RBLNTripoSRForImageTo3D, RBLNTripoSRForImageTo3DConfig
     from .vit import RBLNViTForImageClassification, RBLNViTForImageClassificationConfig
     from .wav2vec2 import RBLNWav2Vec2ForCTC, RBLNWav2Vec2ForCTCConfig

@@ -13,18 +13,23 @@
 # limitations under the License.
 
 from pathlib import Path
-from typing import TYPE_CHECKING, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 
 import numpy as np
+import PIL.Image
 import rebel
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import trimesh
+from einops import rearrange, reduce, repeat
+from skimage.measure import marching_cubes
 
 from ....configuration_utils import RBLNCompileConfig
 from ....modeling import RBLNModel
 from ....utils.logging import get_logger
 from .configuration_triposr import RBLNTripoSRForImageTo3DConfig
+
 
 logger = get_logger(__name__)
 
@@ -165,8 +170,6 @@ def _query_triplane(
     color_activation: str,
     chunk_size: int = 65536,
 ) -> Dict[str, torch.Tensor]:
-    from einops import rearrange, reduce
-
     input_shape = positions.shape[:-1]
     positions_flat = positions.view(-1, 3)
     positions_norm = _scale_tensor(positions_flat, (-radius, radius), (-1, 1))
@@ -214,9 +217,6 @@ def _extract_mesh(
     has_vertex_color: bool = True,
 ):
     """CPU fallback: extract mesh using CPU decoder."""
-    import trimesh
-    from skimage.measure import marching_cubes as sk_marching_cubes
-
     _TRIPLANE_KEYS = {"radius", "feature_reduction", "density_activation", "density_bias", "color_activation", "chunk_size"}
     triplane_kwargs = {k: v for k, v in renderer_cfg.items() if k in _TRIPLANE_KEYS}
 
@@ -233,7 +233,7 @@ def _extract_mesh(
     level = -(qr["density_act"].squeeze(-1) - threshold)
     level_3d = level.view(resolution, resolution, resolution).detach().cpu().numpy()
 
-    verts_np, faces_np, _, _ = sk_marching_cubes(level_3d, level=0.0)
+    verts_np, faces_np, _, _ = marching_cubes(level_3d, level=0.0)
 
     v_pos = torch.from_numpy(verts_np.copy()).float()
     t_pos_idx = torch.from_numpy(faces_np.copy()).long()
@@ -297,9 +297,6 @@ def _extract_mesh_npu(
     has_vertex_color: bool = True,
 ):
     """Extract mesh using NPU triplane_query runtime."""
-    import trimesh
-    from skimage.measure import marching_cubes as sk_marching_cubes
-
     radius = renderer_cfg["radius"]
 
     x, y, z = (torch.linspace(0, 1, resolution),) * 3
@@ -313,7 +310,7 @@ def _extract_mesh_npu(
     level = -(density_act.squeeze(-1) - threshold)
     level_3d = level.view(resolution, resolution, resolution).detach().cpu().numpy()
 
-    verts_np, faces_np, _, _ = sk_marching_cubes(level_3d, level=0.0)
+    verts_np, faces_np, _, _ = marching_cubes(level_3d, level=0.0)
 
     v_pos = torch.from_numpy(verts_np.copy()).float()
     t_pos_idx = torch.from_numpy(faces_np.copy()).long()
@@ -335,8 +332,6 @@ def _extract_mesh_npu(
 
 def preprocess_image(image, size: int = 512) -> torch.Tensor:
     """Convert PIL/numpy/tensor image to [1, 3, size, size] float32 in [0, 1]."""
-    import PIL.Image
-
     if isinstance(image, PIL.Image.Image):
         image = torch.from_numpy(np.array(image).astype(np.float32) / 255.0)
     elif isinstance(image, np.ndarray):
@@ -405,10 +400,13 @@ class RBLNTripoSRForImageTo3D(RBLNModel):
     def get_pytorch_model(
         cls,
         model_id: str,
+        use_auth_token: Optional[str] = None,
+        revision: Optional[str] = None,
         force_download: bool = False,
         cache_dir: Optional[str] = None,
         subfolder: str = "",
         local_files_only: bool = False,
+        trust_remote_code: bool = False,
         rbln_config: Optional[RBLNTripoSRForImageTo3DConfig] = None,
         **kwargs,
     ) -> "PreTrainedModel":
@@ -433,7 +431,7 @@ class RBLNTripoSRForImageTo3D(RBLNModel):
     @classmethod
     def _update_rbln_config(
         cls,
-        preprocessors=None,
+        preprocessors: Optional[Any] = None,
         model: Optional["PreTrainedModel"] = None,
         model_config: Optional["PretrainedConfig"] = None,
         rbln_config: Optional[RBLNTripoSRForImageTo3DConfig] = None,
@@ -564,7 +562,11 @@ class RBLNTripoSRForImageTo3D(RBLNModel):
         torch.save(save_dict, save_dir_path / subfolder / "torch_artifacts.pth")
 
     @classmethod
-    def _create_runtimes(cls, compiled_models: List[rebel.RBLNCompiledModel], rbln_config: RBLNTripoSRForImageTo3DConfig):
+    def _create_runtimes(
+        cls,
+        compiled_models: List[rebel.RBLNCompiledModel],
+        rbln_config: RBLNTripoSRForImageTo3DConfig,
+    ) -> List[rebel.Runtime]:
         expected = [c.compiled_model_name for c in rbln_config.compile_cfgs]
         if any(n not in rbln_config.device_map for n in expected):
             cls._raise_missing_compiled_file_error(expected)
@@ -632,7 +634,6 @@ class RBLNTripoSRForImageTo3D(RBLNModel):
 
         return super().__post_init__(**kwargs)
 
-    @torch.no_grad()
     def forward(self, pixel_values: torch.Tensor, **kwargs) -> torch.Tensor:
         """Generate triplane scene codes from input images.
 
@@ -642,8 +643,6 @@ class RBLNTripoSRForImageTo3D(RBLNModel):
         Returns:
             scene_codes: [B, 3, C_out, H_out, W_out] triplane features.
         """
-        from einops import rearrange, repeat
-
         B = pixel_values.shape[0]
         image_tokens = rearrange(self.image_tokenizer_runtime(pixel_values), "B C N -> B N C")
 

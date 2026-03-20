@@ -35,6 +35,7 @@ import torch.nn.functional as F
 from einops import rearrange, reduce, repeat
 from huggingface_hub import hf_hub_download
 from omegaconf import DictConfig, OmegaConf
+from skimage.measure import marching_cubes
 from transformers.models.vit.modeling_vit import ViTModel
 
 
@@ -745,10 +746,8 @@ class MarchingCubeHelper(IsosurfaceHelper):
         return self._grid_vertices
 
     def forward(self, level: torch.FloatTensor) -> Tuple[torch.FloatTensor, torch.LongTensor]:
-        from skimage.measure import marching_cubes as sk_marching_cubes
-
         level_3d = -level.view(self.resolution, self.resolution, self.resolution).detach().cpu().numpy()
-        verts_np, faces_np, _, _ = sk_marching_cubes(level_3d, level=0.0)
+        verts_np, faces_np, _, _ = marching_cubes(level_3d, level=0.0)
         v_pos = torch.from_numpy(verts_np[..., [2, 1, 0]].copy()).float() / (self.resolution - 1.0)
         t_pos_idx = torch.from_numpy(faces_np.copy()).long()
         return v_pos.to(level.device), t_pos_idx.to(level.device)
