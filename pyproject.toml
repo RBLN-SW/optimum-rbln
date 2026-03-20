@@ -53,7 +53,6 @@ optimum-rbln-cli = "optimum.rbln.cli:main"
 
 [dependency-groups]
 tests = [
-    # Mirror [project] deps used by SF3D/TripoSR so `uv sync --group tests` matches pytest needs when lock updates.
     "trimesh>=4.0.0",
     "scikit-image>=0.22.0",
     "einops>=0.7.0",
@@ -111,6 +110,7 @@ constraint-dependencies = [
     "torchaudio==2.9.1+cpu; platform_machine == 'x86_64' and platform_python_implementation == 'CPython' and sys_platform == 'linux'",
     "torchvision==0.24.1; platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux'",
     "torchvision==0.24.1+cpu; platform_machine == 'x86_64' and platform_python_implementation == 'CPython' and sys_platform == 'linux'",
+    "scipy>=1.15.3,<1.17",
 ]
 
 [tool.uv.sources]
