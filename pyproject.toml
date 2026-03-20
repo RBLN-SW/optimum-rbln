@@ -53,6 +53,11 @@ optimum-rbln-cli = "optimum.rbln.cli:main"
 
 [dependency-groups]
 tests = [
+    # Mirror [project] deps used by SF3D/TripoSR so `uv sync --group tests` matches pytest needs when lock updates.
+    "trimesh>=4.0.0",
+    "scikit-image>=0.22.0",
+    "einops>=0.7.0",
+    "omegaconf>=2.3.0",
     "pytest>=8.4.2",
     "pytest-xdist>=3.8.0",
     "pytest-split>=0.9.0",
