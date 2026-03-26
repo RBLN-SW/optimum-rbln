@@ -575,8 +575,8 @@ class TestLlavaNextForConditionalGeneration(LLMTest.TestLLM):
         with pytest.raises(
             ValueError, match="Parameter conflict for 'batch_size': submodule_config has 2, but kwargs has 1"
         ):
-            model = self.RBLN_CLASS.from_pretrained(model_id=self.HF_MODEL_ID, **rbln_class_kwargs)
-            
+            _ = self.RBLN_CLASS.from_pretrained(model_id=self.HF_MODEL_ID, **rbln_class_kwargs)
+
     def test_propagate_config(self):
         rbln_config = {
             "create_runtimes": False,
@@ -718,6 +718,7 @@ class TestQwen2VLForConditionalGeneration(LLMTest.TestLLM):
         assert not model.rbln_config.visual.create_runtimes
         assert not model.rbln_config.create_runtimes
 
+
 class TestQwen2_5_VLForConditionalGeneration(LLMTest.TestLLM):
     RBLN_AUTO_CLASS = RBLNAutoModelForVision2Seq
     RBLN_CLASS = RBLNQwen2_5_VLForConditionalGeneration
@@ -764,6 +765,7 @@ class TestQwen2_5_VLForConditionalGeneration(LLMTest.TestLLM):
 
         assert not model.rbln_config.visual.create_runtimes
         assert not model.rbln_config.create_runtimes
+
 
 class TestQwen3VLForConditionalGeneration(LLMTest.TestLLM):
     RBLN_AUTO_CLASS = RBLNAutoModelForVision2Seq
