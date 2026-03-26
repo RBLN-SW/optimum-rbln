@@ -50,7 +50,7 @@ class RBLNQwen3VLForConditionalGenerationConfig(RBLNDecoderOnlyModelForCausalLMC
                 "RBLNQwen3VLForConditionalGenerationConfig does not allow `use_inputs_embeds` to be set to False, "
                 "as RBLNQwen3VLForConditionalGeneration accepts only `inputs_embeds` as input."
             )
-        self.visual = visual
+        self.visual = self.initialize_submodule_config(submodule_config=visual)
 
 
 class RBLNQwen3VLModelConfig(RBLNDecoderOnlyModelConfig):
