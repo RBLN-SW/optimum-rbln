@@ -134,6 +134,10 @@ jobs:
             uv sync --frozen --group tests
           fi
 
+          # --no-deps omits [project] dependencies; image-to-3D and tests need these for import/collection.
+          uv pip install --python /opt/venv/bin/python \
+            "trimesh>=4.0.0" "scikit-image>=0.22.0" "einops>=0.7.0" "omegaconf>=2.3.0"
+
       - name: Install rebel-compiler
         if: steps.should_skip.outputs.skip != 'true'
         run: |

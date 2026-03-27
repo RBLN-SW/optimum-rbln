@@ -190,7 +190,7 @@ def _list_available_rbln_classes():
     """Return a sorted list of (name, kind) for available RBLN classes; kind in {"Model","Pipeline","Auto"}."""
     try:
         # Import lazily exposed module and enumerate public names
-        import optimum.rbln as rbln  # noqa: WPS433 (third-party import within function)
+        import optimum.rbln as rbln  # noqa: PLC0415 (lazy import to avoid heavy startup)
 
         # Import bases for filtering
         RBLNBaseModel = getattr(rbln, "RBLNBaseModel", None)

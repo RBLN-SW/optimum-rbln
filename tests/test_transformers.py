@@ -24,8 +24,10 @@ from optimum.rbln import (
     RBLNResNetForImageClassification,
     RBLNRobertaForMaskedLM,
     RBLNRobertaForSequenceClassification,
+    RBLNSF3DForImageTo3D,
     RBLNT5EncoderModel,
     RBLNTimeSeriesTransformerForPrediction,
+    RBLNTripoSRForImageTo3D,
     RBLNViTForImageClassification,
     RBLNWav2Vec2ForCTC,
     RBLNWhisperForConditionalGeneration,
@@ -689,6 +691,46 @@ class TestGroundingDinoModel(BaseTest.TestModel):
         cls.HF_CONFIG_KWARGS["config"] = config
         cls.HF_CONFIG_KWARGS["ignore_mismatched_sizes"] = True
         return super().setUpClass()
+
+
+class TestImageTo3DModelClasses(unittest.TestCase):
+    """Registry checks for image-to-3D models (no Hub download, no compile)."""
+
+    def test_triposr_get_rbln_config_class(self):
+        cfg_cls = RBLNTripoSRForImageTo3D.get_rbln_config_class()
+        self.assertIsNotNone(cfg_cls)
+        self.assertEqual(cfg_cls.__name__, "RBLNTripoSRForImageTo3DConfig")
+        self.assertEqual(RBLNTripoSRForImageTo3D.__name__, "RBLNTripoSRForImageTo3D")
+
+    def test_sf3d_get_rbln_config_class(self):
+        cfg_cls = RBLNSF3DForImageTo3D.get_rbln_config_class()
+        self.assertIsNotNone(cfg_cls)
+        self.assertEqual(cfg_cls.__name__, "RBLNSF3DForImageTo3DConfig")
+        self.assertEqual(RBLNSF3DForImageTo3D.__name__, "RBLNSF3DForImageTo3D")
+
+
+class TestTripoSRForImageTo3D(BaseTest.TestModel):
+    """End-to-end tests: Hub weights + compile. Skipped unless OPTIMUM_RBLN_TEST_LEVEL=full."""
+
+    RBLN_AUTO_CLASS = None
+    RBLN_CLASS = RBLNTripoSRForImageTo3D
+    HF_MODEL_ID = "stabilityai/TripoSR"
+    GENERATION_KWARGS = {
+        "pixel_values": torch.randn(1, 3, 512, 512, generator=torch.manual_seed(42), dtype=torch.float32),
+    }
+    TEST_LEVEL = TestLevel.FULL
+
+
+class TestSF3DForImageTo3D(BaseTest.TestModel):
+    """End-to-end tests: Hub weights + compile. Skipped unless OPTIMUM_RBLN_TEST_LEVEL=full."""
+
+    RBLN_AUTO_CLASS = None
+    RBLN_CLASS = RBLNSF3DForImageTo3D
+    HF_MODEL_ID = "stabilityai/stable-fast-3d"
+    GENERATION_KWARGS = {
+        "pixel_values": torch.randn(1, 1, 3, 512, 512, generator=torch.manual_seed(42), dtype=torch.float32),
+    }
+    TEST_LEVEL = TestLevel.FULL
 
 
 if __name__ == "__main__":
