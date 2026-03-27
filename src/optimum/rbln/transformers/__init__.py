@@ -169,6 +169,18 @@ _import_structure = {
         "RBLNQwen3ForCausalLMConfig",
         "RBLNQwen3Model",
         "RBLNQwen3ModelConfig",
+        "RBLNQwen3VLForConditionalGeneration",
+        "RBLNQwen3VLForConditionalGenerationConfig",
+        "RBLNQwen3VLModel",
+        "RBLNQwen3VLModelConfig",
+        "RBLNQwen3VLVisionModel",
+        "RBLNQwen3VLVisionModelConfig",
+        "RBLNQwen3VLMoeForConditionalGeneration",
+        "RBLNQwen3VLMoeForConditionalGenerationConfig",
+        "RBLNQwen3VLMoeModel",
+        "RBLNQwen3VLMoeModelConfig",
+        "RBLNQwen3VLMoeVisionModel",
+        "RBLNQwen3VLMoeVisionModelConfig",
         "RBLNResNetForImageClassification",
         "RBLNResNetForImageClassificationConfig",
         "RBLNRobertaForMaskedLM",
@@ -196,6 +208,7 @@ _import_structure = {
         "RBLNXLMRobertaModel",
         "RBLNXLMRobertaModelConfig",
     ],
+    "utils": ["RBLNQuantizationConfig"],
 }
 
 if TYPE_CHECKING:
@@ -348,6 +361,18 @@ if TYPE_CHECKING:
         RBLNQwen3ModelConfig,
         RBLNQwen3MoeForCausalLM,
         RBLNQwen3MoeForCausalLMConfig,
+        RBLNQwen3VLForConditionalGeneration,
+        RBLNQwen3VLForConditionalGenerationConfig,
+        RBLNQwen3VLModel,
+        RBLNQwen3VLModelConfig,
+        RBLNQwen3VLMoeForConditionalGeneration,
+        RBLNQwen3VLMoeForConditionalGenerationConfig,
+        RBLNQwen3VLMoeModel,
+        RBLNQwen3VLMoeModelConfig,
+        RBLNQwen3VLMoeVisionModel,
+        RBLNQwen3VLMoeVisionModelConfig,
+        RBLNQwen3VLVisionModel,
+        RBLNQwen3VLVisionModelConfig,
         RBLNResNetForImageClassification,
         RBLNResNetForImageClassificationConfig,
         RBLNRobertaForMaskedLM,
@@ -375,6 +400,7 @@ if TYPE_CHECKING:
         RBLNXLMRobertaModel,
         RBLNXLMRobertaModelConfig,
     )
+    from .utils import RBLNQuantizationConfig
 else:
     import sys
 

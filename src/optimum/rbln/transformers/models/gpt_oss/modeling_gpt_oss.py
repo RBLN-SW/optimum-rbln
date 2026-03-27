@@ -123,16 +123,13 @@ class RBLNGptOssForCausalLM(RBLNDecoderOnlyModelForCausalLM):
         config: Optional[PretrainedConfig] = None,
         **kwargs,
     ) -> PreTrainedModel:
-        # FIXME: workaround for functionality
-        dtype = torch.float32
+        dtype = cls._get_dtype(dtype, torch_dtype)
 
         safetensor_files = load_weight_files(model_id, exception_keywords=["original"])
         state_dict = {k: v for f in safetensor_files for k, v in load_file(f).items()}
 
         if config is None:
             config, kwargs = AutoConfig.from_pretrained(model_id, return_unused_kwargs=True)
-
-        dtype = cls._get_dtype(dtype, torch_dtype)
 
         with no_init_weights():
             model = AutoModelForCausalLM.from_config(config, dtype=dtype, **kwargs)

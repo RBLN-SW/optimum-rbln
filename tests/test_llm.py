@@ -43,6 +43,8 @@ from optimum.rbln import (
     RBLNQwen3ForCausalLM,
     RBLNQwen3Model,
     RBLNQwen3MoeForCausalLM,
+    RBLNQwen3VLForConditionalGeneration,
+    RBLNQwen3VLMoeForConditionalGeneration,
     RBLNT5ForConditionalGeneration,
 )
 
@@ -66,7 +68,6 @@ class LLMTest:
 
         def get_tokenizer(self):
             PreProcessor = AutoProcessor if self.IS_MULTIMODAL else AutoTokenizer
-
             if getattr(self, "_tokenizer", None) is None:
                 self._tokenizer = PreProcessor.from_pretrained(self.HF_MODEL_ID, **self.HF_CONFIG_KWARGS_PREPROCESSOR)
             return self._tokenizer
@@ -739,6 +740,81 @@ class TestQwen2_5_VLForConditionalGeneration(LLMTest.TestLLM):
         return inputs
 
 
+class TestQwen3VLForConditionalGeneration(LLMTest.TestLLM):
+    RBLN_AUTO_CLASS = RBLNAutoModelForVision2Seq
+    RBLN_CLASS = RBLNQwen3VLForConditionalGeneration
+    HF_MODEL_ID = "Qwen/Qwen3-VL-2B-Instruct"
+    PROMPT = "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\n<|vision_start|><|image_pad|><|vision_end|>Describe this image.<|im_end|>\n<|im_start|>assistant\n"
+    RBLN_CLASS_KWARGS = {
+        "rbln_config": {
+            "visual": {"max_seq_lens": 512},
+            "tensor_parallel_size": 1,
+            "kvcache_partition_len": 8192,
+            "max_seq_len": 16_384,
+        }
+    }
+    IS_MULTIMODAL = True
+    HF_CONFIG_KWARGS = {}  # Initialize empty to avoid sharing with other classes
+    HF_CONFIG_KWARGS_PREPROCESSOR = {"min_pixels": 64 * 16 * 16, "max_pixels": 64 * 16 * 16}
+
+    @classmethod
+    def setUpClass(cls):
+        config = AutoConfig.from_pretrained(cls.HF_MODEL_ID)
+        text_config = json.loads(config.text_config.to_json_string())
+        text_config["num_hidden_layers"] = 1
+        kwargs = {"text_config": text_config}
+        cls.HF_CONFIG_KWARGS.update(kwargs)
+        return super().setUpClass()
+
+    def get_inputs(self):
+        tokenizer = self.get_tokenizer()
+        img_path = f"{os.path.dirname(__file__)}/../assets/rbln_logo.png"
+        image = Image.open(img_path)
+        inputs = tokenizer(images=[image], text=[self.PROMPT], return_tensors="pt", padding=True)
+        inputs["max_new_tokens"] = 20
+        inputs["do_sample"] = False
+        return inputs
+
+
+class TestQwen3VLMoeForConditionalGeneration(LLMTest.TestLLM):
+    RBLN_AUTO_CLASS = RBLNAutoModelForVision2Seq
+    RBLN_CLASS = RBLNQwen3VLMoeForConditionalGeneration
+    HF_MODEL_ID = "Qwen/Qwen3-VL-30B-A3B-Instruct"
+    PROMPT = "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\n<|vision_start|><|image_pad|><|vision_end|>Describe this image.<|im_end|>\n<|im_start|>assistant\n"
+    RBLN_CLASS_KWARGS = {
+        "rbln_config": {
+            "visual": {"max_seq_lens": 512},
+            "tensor_parallel_size": 1,
+            "kvcache_partition_len": 8192,
+            "max_seq_len": 16_384,
+        }
+    }
+    IS_MULTIMODAL = True
+    HF_CONFIG_KWARGS = {}  # Initialize empty to avoid sharing with other classes
+    HF_CONFIG_KWARGS_PREPROCESSOR = {"min_pixels": 64 * 16 * 16, "max_pixels": 64 * 16 * 16}
+
+    @classmethod
+    def setUpClass(cls):
+        config = AutoConfig.from_pretrained(cls.HF_MODEL_ID)
+        text_config = json.loads(config.text_config.to_json_string())
+        vision_config = json.loads(config.vision_config.to_json_string())
+        vision_config["depth"] = 1
+        vision_config["deepstack_visual_indexes"] = [0]
+        text_config["num_hidden_layers"] = 1
+        kwargs = {"text_config": text_config, "vision_config": vision_config}
+        cls.HF_CONFIG_KWARGS.update(kwargs)
+        return super().setUpClass()
+
+    def get_inputs(self):
+        tokenizer = self.get_tokenizer()
+        img_path = f"{os.path.dirname(__file__)}/../assets/rbln_logo.png"
+        image = Image.open(img_path)
+        inputs = tokenizer(images=[image], text=[self.PROMPT], return_tensors="pt", padding=True)
+        inputs["max_new_tokens"] = 20
+        inputs["do_sample"] = False
+        return inputs
+
+
 class TestGemma3ForConditionalGeneration(LLMTest.TestLLM):
     RBLN_AUTO_CLASS = RBLNAutoModelForImageTextToText
     RBLN_CLASS = RBLNGemma3ForConditionalGeneration
@@ -827,6 +903,23 @@ class TestLlamaForCausalLM_fp8(LLMTest.TestLLM):
         pass
 
 
+class TestQLlamaForCausalLM(LLMTest.TestLLM):
+    RBLN_CLASS = RBLNLlamaForCausalLM
+    HF_MODEL_ID = "RedHatAI/Meta-Llama-3.1-8B-Instruct-quantized.w8a8"  # No tiny model yet.
+    HF_CONFIG_KWARGS = {"num_hidden_layers": 1}
+    RBLN_CLASS_KWARGS = {
+        "rbln_config": {
+            "quantization": {
+                "format": "rbln",
+                "weights": "int8",
+                "activations": "int8",
+                "dynamic": True,
+            },
+            "max_seq_len": 4096,
+        }
+    }
+
+
 class TestMultiLora(LLMTest.TestLLM):
     HF_MODEL_ID = "meta-llama/Llama-3.1-8B-Instruct"
     HF_CONFIG_KWARGS = {"num_hidden_layers": 1, "max_position_embeddings": 1024}
@@ -911,6 +1004,7 @@ class TestDisallowedLlama_4(DisallowedTestBase.DisallowedTest):
 class TestMixtralForCausalLM(LLMTest.TestLLM):
     RBLN_CLASS = RBLNMixtralForCausalLM
     HF_MODEL_ID = "vprovorg/tiny-random-Mixtral-8x7B-v0.1"
+    HF_CONFIG_KWARGS = {}  # Initialize empty to avoid sharing with other classes
 
     @classmethod
     def setUpClass(cls):
