@@ -112,11 +112,6 @@ class Qwen3VLVisionAttention(nn.Module):
         self.head_dim = getattr(model, "head_dim", model.proj.in_features // model.num_heads)
         self.qkv = model.qkv
         self.proj = model.proj
-        self.q_dim = self.num_heads * self.head_dim
-        qkv_out_dim = getattr(self.qkv, "out_features", self.q_dim * 3)
-        kv_total_dim = qkv_out_dim - self.q_dim
-        self.kv_dim = kv_total_dim // 2
-        self.num_key_value_heads = self.kv_dim // self.head_dim
         self.scale = torch.tensor(1 / math.sqrt(self.head_dim), dtype=rbln_config.dtype)
 
     def forward(
@@ -126,16 +121,10 @@ class Qwen3VLVisionAttention(nn.Module):
         position_embeddings: Tuple[torch.Tensor, torch.Tensor],
     ) -> torch.Tensor:
         seq_length = hidden_states.shape[0]
-        qkv = self.qkv(hidden_states)
-        q, k, v = torch.split(qkv, [self.q_dim, self.kv_dim, self.kv_dim], dim=-1)
-
-        q = q.view(seq_length, self.num_heads, self.head_dim).permute(1, 0, 2).unsqueeze(0)
-        k = k.view(seq_length, self.num_key_value_heads, self.head_dim)
-        v = v.view(seq_length, self.num_key_value_heads, self.head_dim)
-        repeat_factor = self.num_heads // self.num_key_value_heads
-        k = k.repeat_interleave(repeat_factor, dim=1).permute(1, 0, 2).unsqueeze(0)
-        v = v.repeat_interleave(repeat_factor, dim=1).permute(1, 0, 2).unsqueeze(0)
-
+        hidden_states = hidden_states.unsqueeze(0)
+        q, k, v = (
+            self.qkv(hidden_states).reshape(1, seq_length, 3, self.num_heads, -1).permute(2, 0, 3, 1, 4).unbind(0)
+        )
         cos, sin = position_embeddings
         q, k = apply_rotary_pos_emb(q, k, cos, sin)
         attn_output = nn.functional.scaled_dot_product_attention(
