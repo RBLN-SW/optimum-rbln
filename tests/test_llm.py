@@ -803,7 +803,7 @@ class TestQwen3VLForConditionalGeneration(LLMTest.TestLLM):
         return inputs
 
     def test_propagate_config(self):
-        self.RBLN_CLASS_KWARGS.update({"create_runtimes": False})
+        self.RBLN_CLASS_KWARGS["rbln_config"].update({"create_runtimes": False})
 
         model = self.RBLN_CLASS.from_pretrained(model_id=self.HF_MODEL_ID, **self.RBLN_CLASS_KWARGS)
 
