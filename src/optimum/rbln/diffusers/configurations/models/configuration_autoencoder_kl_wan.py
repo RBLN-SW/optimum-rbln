@@ -69,7 +69,7 @@ class RBLNAutoencoderKLWanConfig(RBLNModelConfig):
             logger.warning("The batch size of Wan VAE Decoder will be explicitly 1 for memory efficiency.")
             self.batch_size = 1
 
-        self.uses_encoder = uses_encoder
+        self.uses_encoder = uses_encoder or True # FIXME(seinpark): tmp patch
         self.num_frames = num_frames or 93
         self.height = height or 704
         self.width = width or 1280

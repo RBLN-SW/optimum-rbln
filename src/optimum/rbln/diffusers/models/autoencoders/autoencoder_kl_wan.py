@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, Any, Dict, List, Union, Tuple, Union
 
 import rebel
 import torch
+from rebel.compile_context import CompileContext
 from diffusers.models.autoencoders.autoencoder_kl_wan import AutoencoderKLWan, patchify, unpatchify
 from diffusers.models.autoencoders.vae import DecoderOutput, DiagonalGaussianDistribution
 from diffusers.models.modeling_outputs import AutoencoderKLOutput
@@ -144,20 +145,18 @@ class _VAEWanEncoder0(torch.nn.Module):
         super().__init__()
         self.encoder = vae.encoder
         self.cache_dims = get_cache_size(height, width)[0]
-        self.encoder.clear_cache()
-        self._enc_feat_map = self.encoder._enc_feat_map
-        self._enc_conv_idx = self.encoder._enc_conv_idx
+        self.clear_cache(vae)
+
 
     def forward(self, x, *args) -> torch.Tensor:
-        out, feat_cache = self.encoder(x, feat_cache=self._enc_feat_map, feat_idx=self._enc_conv_idx)
-
+        out = self.encoder(x, feat_cache=self._enc_feat_map, feat_idx=self._enc_conv_idx)
         # post-process: update rbln cache tensors
         dummy_outs = []
         position = torch.tensor(
             0, dtype=torch.int16
         )  # 0 is dummy value -> first output of next chunk have to slice out this frame
         axis = torch.tensor(2, dtype=torch.int16)
-        for cache, feat_cache_item, cache_dim in zip(list(args), feat_cache, self.cache_dims):
+        for cache, feat_cache_item, cache_dim in zip(list(args), self._enc_feat_map, self.cache_dims):
             n, c, d, h, w = feat_cache_item.shape
             feat_cache_item = feat_cache_item.reshape(n, c, d, -1)
             if cache_dim[2] == 2:
@@ -165,8 +164,14 @@ class _VAEWanEncoder0(torch.nn.Module):
 
             dummy_out = torch.ops.rbln_custom_ops.rbln_cache_update(cache, feat_cache_item, position, axis)
             dummy_outs.append(dummy_out)
-            # print(cache.shape, feat_cache_item.shape)
+            print(cache.shape, feat_cache_item.shape)
         return out, dummy_outs
+
+    def clear_cache(self, vae):
+        self._enc_conv_num = vae._cached_conv_counts["encoder"]
+        self._enc_conv_idx = [0]
+        self._enc_feat_map = [None] * self._enc_conv_num # None은 trace가 안되지 않나? -> 되네..
+        # self._enc_feat_map = [-1] * self._enc_conv_num
 
 class _VAEWanEncoderN(torch.nn.Module):
     """Wrapper module for Wan VAE encoder extraction."""
@@ -175,9 +180,8 @@ class _VAEWanEncoderN(torch.nn.Module):
         super().__init__()
         self.encoder = vae.encoder
         self.cache_dims = get_cache_size(height, width)[1]
-        # self.encoder.clear_cache()
-        self._enc_feat_map = self.encoder._enc_feat_map
-        self._enc_conv_idx = self.encoder._enc_conv_idx
+        # self._enc_feat_map = vae._enc_feat_map
+        # self._enc_conv_idx = vae._enc_conv_idx
 
     def forward(self, x, *args) -> torch.Tensor:
         feat_cache_reshaped = []
@@ -188,13 +192,13 @@ class _VAEWanEncoderN(torch.nn.Module):
             feat_cache_reshaped.append(reshaped_cache)
         
         feat_idx = torch.zeros(1, dtype=torch.int32)
-        out, feat_cache_e1 = self.encoder(x, feat_cache=feat_cache_reshaped, feat_idx=feat_idx)
+        out = self.encoder(x, feat_cache=feat_cache_reshaped, feat_idx=feat_idx)
 
         # post-process: update rbln cache tensors
         dummy_outs = []
         position = torch.tensor(0, dtype=torch.int16)
         axis = torch.tensor(2, dtype=torch.int16)
-        for cache, feat_cache_e1_item in zip(list(args), feat_cache_e1):
+        for cache, feat_cache_e1_item in zip(list(args), feat_cache_reshaped):
             n, c, d, h, w = feat_cache_e1_item.shape
             feat_cache_e1_item = feat_cache_e1_item.reshape(n, c, d, -1)
             dummy_out = torch.ops.rbln_custom_ops.rbln_cache_update(cache, feat_cache_e1_item, position, axis)
@@ -298,13 +302,17 @@ class RBLNAutoencoderKLWan(RBLNModel):
     @classmethod
     def get_compiled_model(cls, model, rbln_config: RBLNAutoencoderKLWanConfig) -> Dict[str, rebel.RBLNCompiledModel]:
         compiled_models = {}
+        context = CompileContext(use_weight_sharing=False)
         if rbln_config.uses_encoder:
             encoder_models, decoder_models = cls._wrap_model_if_needed(model, rbln_config)
+            context, enc0_example_inputs, encn_example_inputs = cls.get_enc_compile_cfg(context, rbln_config)
             enc_compiled_model_0 = cls.compile(
                 encoder_models[0],
                 rbln_compile_config=rbln_config.compile_cfgs[0],
                 create_runtimes=rbln_config.create_runtimes,
                 device=rbln_config.device_map["encoder_0"],
+                example_inputs=enc0_example_inputs,
+                compile_context=context,
             )
             compiled_models["encoder_0"] = enc_compiled_model_0
             enc_compiled_model_n = cls.compile(
@@ -312,9 +320,12 @@ class RBLNAutoencoderKLWan(RBLNModel):
                 rbln_compile_config=rbln_config.compile_cfgs[1],
                 create_runtimes=rbln_config.create_runtimes,
                 device=rbln_config.device_map["encoder_n"],
+                example_inputs=encn_example_inputs,
+                compile_context=context,
             )
             compiled_models["encoder_n"] = enc_compiled_model_n
 
+        import pdb; pdb.set_trace()
         decoder_models = cls._wrap_model_if_needed(model, rbln_config)
 
         dec_compiled_model_0 = cls.compile(
@@ -355,12 +366,12 @@ class RBLNAutoencoderKLWan(RBLNModel):
 
         return rbln_config
 
-    def get_enc_compile_cfg(self, context, rbln_config):
-        # context = CompileContext(use_weight_sharing=False)
+    @classmethod
+    def get_enc_compile_cfg(cls, context, rbln_config):
         encoder_0_compile_config = rbln_config.compile_cfgs[0]
         encoder_n_compile_config = rbln_config.compile_cfgs[1]
 
-        enc0_example_inputs = encoder_0_compile_config.get_dummy_inputs(encoder_0_compile_config.input_info, fill=0)
+        enc0_example_inputs = encoder_0_compile_config.get_dummy_inputs(fill=0)
 
         # Mark encoder_0's static tensors (cache)
         static_tensors = {}
@@ -369,13 +380,12 @@ class RBLNAutoencoderKLWan(RBLNModel):
                 static_tensors[name] = tensor
                 context.mark_static_address(tensor)
 
-        encn_example_inputs = encoder_n_compile_config.get_dummy_inputs(
-            encoder_n_compile_config.input_info, fill=0, static_tensors=static_tensors
-        )
+        encn_example_inputs = encoder_n_compile_config.get_dummy_inputs(fill=0, static_tensors=static_tensors)
         # Mark encoder_n's static tensors (cache)
         for (name, _, _), tensor in zip(encoder_n_compile_config.input_info, encn_example_inputs):
             if "feat_cache" in name:
                 context.mark_static_address(tensor)
+        return context, enc0_example_inputs, encn_example_inputs
 
     @classmethod
     def _update_rbln_config(
@@ -425,6 +435,9 @@ class RBLNAutoencoderKLWan(RBLNModel):
             compile_cfgs.append(RBLNCompileConfig(compiled_model_name="encoder_0", input_info=vae_enc_0_input_info))
             compile_cfgs.append(RBLNCompileConfig(compiled_model_name="encoder_n", input_info=vae_enc_1_input_info))
 
+        rbln_config.vae_scale_factor_temporal = rbln_config.vae_scale_factor_temporal or 4 # tmp code
+        rbln_config.vae_scale_factor_spatial = rbln_config.vae_scale_factor_spatial or 8 # tmp code
+        
         num_latent_frames = (rbln_config.num_frames - 1) // rbln_config.vae_scale_factor_temporal + 1
         latent_height = rbln_config.height // rbln_config.vae_scale_factor_spatial
         latent_width = rbln_config.width // rbln_config.vae_scale_factor_spatial
