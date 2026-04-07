@@ -40,34 +40,40 @@ if TYPE_CHECKING:
 
 logger = get_logger(__name__)
 
-def get_cache_size(height, width):
-    PADDED_FRAME_OF_FIRST = 2
+def get_cache_size_enc(height=704, width=1280):
+    # 사실상 처음에는 전부 1만 나오는데, 그 다음부터 cache frame이 2개씩 쌓이므로 미리 패딩해서 넣어놓음
     CACHE_SIZE_0 = [
         # [1, 3, 1, height, width], # first cache
-        [1, 3, PADDED_FRAME_OF_FIRST, height, width],  # padded first cache
-        [1, 96, 2, height, width],
-        [1, 96, 2, height, width],
-        [1, 96, 2, height, width],
-        [1, 96, 2, height, width],
-        [1, 96, 2, height // 2, width // 2],
-        [1, 192, 2, height // 2, width // 2],
-        [1, 192, 2, height // 2, width // 2],
-        [1, 192, 2, height // 2, width // 2],
+        [1, 3, 1, height, width],  # padded first cache
+        [1, 96, 1, height, width],
+        [1, 96, 1, height, width],
+        [1, 96, 1, height, width],
+        [1, 96, 1, height, width],
+        [1, 96, 1, height // 2, width // 2],
+        [1, 192, 1, height // 2, width // 2],
+        [1, 192, 1, height // 2, width // 2],
+        [1, 192, 1, height // 2, width // 2],
         [1, 192, 1, height // 4, width // 4],
-        [1, 192, 2, height // 4, width // 4],
-        [1, 384, 2, height // 4, width // 4],
-        [1, 384, 2, height // 4, width // 4],
-        [1, 384, 2, height // 4, width // 4],
+        [1, 192, 1, height // 4, width // 4],
+        [1, 384, 1, height // 4, width // 4],
+        [1, 384, 1, height // 4, width // 4],
+        [1, 384, 1, height // 4, width // 4],
         [1, 384, 1, height // 8, width // 8],
-        [1, 384, 2, height // 8, width // 8],
-        [1, 384, 2, height // 8, width // 8],
-        [1, 384, 2, height // 8, width // 8],
-        [1, 384, 2, height // 8, width // 8],
-        [1, 384, 2, height // 8, width // 8],
-        [1, 384, 2, height // 8, width // 8],
-        [1, 384, 2, height // 8, width // 8],
-        [1, 384, 2, height // 8, width // 8],
-        [1, 384, 2, height // 8, width // 8],
+        [1, 384, 1, height // 8, width // 8],
+        [1, 384, 1, height // 8, width // 8],
+        [1, 384, 1, height // 8, width // 8],
+        [1, 384, 1, height // 8, width // 8],
+        [1, 384, 1, height // 8, width // 8],
+        [1, 384, 1, height // 8, width // 8],
+        [1, 384, 1, height // 8, width // 8],
+        [1, 384, 1, height // 8, width // 8],
+        [1, 384, 1, height // 8, width // 8],
+    ]
+    PADDED_FRAME = 2
+    NO_PAD_INDICES = {9, 14}  # pre-defined indices where frame dim is always 1
+    PADDED_CACHE_SIZE_0 = [
+        [s[0], s[1], s[2] if i in NO_PAD_INDICES else PADDED_FRAME, s[3], s[4]]
+        for i, s in enumerate(CACHE_SIZE_0)
     ]
 
     CACHE_SIZE_N = [
@@ -95,6 +101,78 @@ def get_cache_size(height, width):
         [1, 384, 2, height // 8, width // 8],
         [1, 384, 2, height // 8, width // 8],
         [1, 384, 2, height // 8, width // 8],
+    ]
+    return PADDED_CACHE_SIZE_0, CACHE_SIZE_N
+
+def get_cache_size_dec(height=704, width=1280):
+    CACHE_SIZE_0 = [        
+        [1, 16, 2, height // 8, width // 8],
+        [1, 384, 2, height // 8, width // 8],
+        [1, 384, 2, height // 8, width // 8],
+        [1, 384, 2, height // 8, width // 8],
+        [1, 384, 2, height // 8, width // 8],
+        [1, 384, 2, height // 8, width // 8],
+        [1, 384, 2, height // 8, width // 8],
+        [1, 384, 2, height // 8, width // 8],
+        [1, 384, 2, height // 8, width // 8],
+        [1, 384, 2, height // 8, width // 8],
+        [1, 384, 2, height // 8, width // 8],
+        [1, 384, 2, height // 8, width // 8],
+        [1, 192, 2, height // 4, width // 4],
+        [1, 384, 2, height // 4, width // 4],
+        [1, 384, 2, height // 4, width // 4],
+        [1, 384, 2, height // 4, width // 4],
+        [1, 384, 2, height // 4, width // 4],
+        [1, 384, 2, height // 4, width // 4],
+        [1, 384, 2, height // 4, width // 4],
+        [1, 192, 2, height // 2, width // 2],
+        [1, 192, 2, height // 2, width // 2],
+        [1, 192, 2, height // 2, width // 2],
+        [1, 192, 2, height // 2, width // 2],
+        [1, 192, 2, height // 2, width // 2],
+        [1, 192, 2, height // 2, width // 2],
+        [1, 96, 2, height, width],
+        [1, 96, 2, height, width],
+        [1, 96, 2, height, width],
+        [1, 96, 2, height, width],
+        [1, 96, 2, height, width],
+        [1, 96, 2, height, width],
+        [1, 96, 2, height, width],
+    ]
+
+    CACHE_SIZE_N = [
+        [1, 16, 2, height // 8, width // 8],
+        [1, 384, 2, height // 8, width // 8],
+        [1, 384, 2, height // 8, width // 8],
+        [1, 384, 2, height // 8, width // 8],
+        [1, 384, 2, height // 8, width // 8],
+        [1, 384, 2, height // 8, width // 8],
+        [1, 384, 2, height // 8, width // 8],
+        [1, 384, 2, height // 8, width // 8],
+        [1, 384, 2, height // 8, width // 8],
+        [1, 384, 2, height // 8, width // 8],
+        [1, 384, 2, height // 8, width // 8],
+        [1, 384, 2, height // 8, width // 8],
+        [1, 192, 2, height // 4, width // 4],
+        [1, 384, 2, height // 4, width // 4],
+        [1, 384, 2, height // 4, width // 4],
+        [1, 384, 2, height // 4, width // 4],
+        [1, 384, 2, height // 4, width // 4],
+        [1, 384, 2, height // 4, width // 4],
+        [1, 384, 2, height // 4, width // 4],
+        [1, 192, 2, height // 2, width // 2],
+        [1, 192, 2, height // 2, width // 2],
+        [1, 192, 2, height // 2, width // 2],
+        [1, 192, 2, height // 2, width // 2],
+        [1, 192, 2, height // 2, width // 2],
+        [1, 192, 2, height // 2, width // 2],
+        [1, 96, 2, height, width],
+        [1, 96, 2, height, width],
+        [1, 96, 2, height, width],
+        [1, 96, 2, height, width],
+        [1, 96, 2, height, width],
+        [1, 96, 2, height, width],
+        [1, 96, 2, height, width],
     ]
     return CACHE_SIZE_0, CACHE_SIZE_N
 
@@ -144,9 +222,8 @@ class _VAEWanEncoder0(torch.nn.Module):
     def __init__(self, vae: AutoencoderKLWan, height=704, width=1280):
         super().__init__()
         self.encoder = vae.encoder
-        self.cache_dims = get_cache_size(height, width)[0]
+        self.cache_dims = get_cache_size_enc(height, width)[0]
         self.clear_cache(vae)
-
 
     def forward(self, x, *args) -> torch.Tensor:
         out = self.encoder(x, feat_cache=self._enc_feat_map, feat_idx=self._enc_conv_idx)
@@ -179,7 +256,7 @@ class _VAEWanEncoderN(torch.nn.Module):
     def __init__(self, vae: AutoencoderKLWan, height=704, width=1280):
         super().__init__()
         self.encoder = vae.encoder
-        self.cache_dims = get_cache_size(height, width)[1]
+        self.cache_dims = get_cache_size_enc(height, width)[1]
         # self._enc_feat_map = vae._enc_feat_map
         # self._enc_conv_idx = vae._enc_conv_idx
 
@@ -207,15 +284,78 @@ class _VAEWanEncoderN(torch.nn.Module):
         return out, dummy_outs
 
 
-class _VAEWanDecoder(torch.nn.Module):
+class _VAEWanDecoder0(torch.nn.Module):
     """Wrapper module for Wan VAE decoder extraction."""
 
-    def __init__(self, vae: AutoencoderKLWan):
+    def __init__(self, vae: AutoencoderKLWan, height=704, width=1280):
         super().__init__()
-        self.vae = vae
+        self.decoder = vae.decoder
+        self.cache_dims = get_cache_size_dec(height, width)[0]
+        self.clear_cache(vae)
 
-    def forward(self, z: torch.Tensor) -> torch.Tensor:
-        return self.vae._decode(z, return_dict=False)[0]
+
+    def forward(self, x, *args) -> torch.Tensor:
+        out = self.decoder(x, feat_cache=self._feat_map, feat_idx=self._conv_idx)
+        # post-process: update rbln cache tensors
+        dummy_outs = []
+        position = torch.tensor(
+            0, dtype=torch.int16
+        )  # 0 is dummy value -> first output of next chunk have to slice out this frame
+        axis = torch.tensor(2, dtype=torch.int16)
+        for cache, feat_cache_item in zip(list(args), self._feat_map):
+            n, c, d, h, w = feat_cache_item.shape
+            feat_cache_item = feat_cache_item.reshape(n, c, d, -1)
+            feat_cache_item = torch.nn.functional.pad(feat_cache_item, (0, 0, 1, 0))  # pad one frame earlier
+
+            dummy_out = torch.ops.rbln_custom_ops.rbln_cache_update(cache, feat_cache_item, position, axis)
+            dummy_outs.append(dummy_out)
+            print(cache.shape, feat_cache_item.shape)
+        return out, dummy_outs
+
+    def clear_cache(self, vae):
+        self._conv_num = vae._cached_conv_counts["decoder"]
+        self._conv_idx = [0]
+        self._feat_map = [None] * self._conv_num # None은 trace가 안되지 않나? -> 되네..
+        # self._enc_feat_map = [-1] * self._enc_conv_num
+
+
+class _VAEWanDecoderN(torch.nn.Module):
+    """Wrapper module for Wan VAE encoder extraction."""
+
+    def __init__(self, vae: AutoencoderKLWan, height=704, width=1280):
+        super().__init__()
+        self.decoder = vae.decoder
+        self.cache_dims = get_cache_size_dec(height, width)[0]
+
+    def forward(self, x, *args) -> torch.Tensor:
+        feat_cache_reshaped = []
+        
+        # pre-process: reshape rbln cache tensors to torch layout
+        for cache, cache_dim in zip(list(args), self.cache_dims):
+            reshaped_cache = cache.reshape(*cache_dim)  # n c d (hw) -> n c d h w
+            feat_cache_reshaped.append(reshaped_cache)
+
+        feat_idx = torch.zeros(1, dtype=torch.int32)
+        out = self.decoder(x, feat_cache=feat_cache_reshaped, feat_idx=feat_idx)
+
+        # post-process: update rbln cache tensors
+        dummy_outs = []
+        position = torch.tensor(0, dtype=torch.int16)
+        axis = torch.tensor(2, dtype=torch.int16)
+        for cache, feat_cache_dn_item in zip(list(args), feat_cache_reshaped):
+            n, c, d, h, w = feat_cache_dn_item.shape
+            feat_cache_dn_item = feat_cache_dn_item.reshape(n, c, d, -1)
+            # feat_cache_dn_item = torch.nn.functional.pad(feat_cache_dn_item, (0, 0, 1, 0)) # 이거 안해줘도 되나..? 디코더는..? -> 애초에 cache가 2프레임이니까 패딩 필요 없음
+
+            dummy_out = torch.ops.rbln_custom_ops.rbln_cache_update(cache, feat_cache_dn_item, position, axis)
+            dummy_outs.append(dummy_out)
+            print(cache.shape, feat_cache_dn_item.shape)
+        return out, dummy_outs
+
+    def clear_cache(self, vae):
+        self._conv_num = vae._cached_conv_counts["decoder"]
+        self._conv_idx = [0]
+        self._feat_map = [None] * self._conv_num # None은 trace가 안되지 않나? -> 되네..
 
 
 class RBLNRuntimeWanVAEEncoder(RBLNPytorchRuntime):
@@ -425,7 +565,7 @@ class RBLNAutoencoderKLWan(RBLNModel):
                     "float32",
                 ),
             ]
-            cache_0, cache_1 = get_cache_size(rbln_config.height, rbln_config.width)
+            cache_0, cache_1 = get_cache_size_enc(rbln_config.height, rbln_config.width)
             for i, (shape_0, shape_1) in enumerate(zip(cache_0, cache_1)):
                 shape_0 = [*shape_0[:3], shape_0[-2] * shape_0[-1]]  # N C D HW # FIXME H,W 도 support 가능?
                 shape_1 = [*shape_1[:3], shape_1[-2] * shape_1[-1]]  # N C D HW # FIXME H,W 도 support 가능?
