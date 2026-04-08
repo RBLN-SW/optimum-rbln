@@ -34,7 +34,7 @@ dependencies = [
     "torchvision==0.24.1; platform_machine == 'aarch64' and platform_python_implementation == 'CPython'",
     "torchvision==0.24.1+cpu; platform_machine == 'x86_64' and platform_python_implementation == 'CPython'",
     "accelerate>=1.0.1",
-    "transformers==4.57.6",
+    "transformers==5.0.0",
     "diffusers==0.37.0",
     "packaging>=24.1",
 ]
