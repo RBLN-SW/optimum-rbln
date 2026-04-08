@@ -31,6 +31,9 @@ if TYPE_CHECKING:
 _PACKED_LAST_LAYER_LN_IO_COUNT = 11
 _PACKED_ATTENTION_IO_COUNT = 5
 _PACKED_LAST_LAYER_LN_IO_EXT_COUNT = _PACKED_LAST_LAYER_LN_IO_COUNT + _PACKED_ATTENTION_IO_COUNT
+_PER_LAYER_BASE_COUNT = 9  # pre_in, pre_out, post_in, post_out, gate, act, up, mul, down
+_PER_LAYER_EXT_COUNT = _PER_LAYER_BASE_COUNT + _PACKED_ATTENTION_IO_COUNT  # + q, k, v, attn_op, attn_o_proj
+_FINAL_NORM_COUNT = 2  # final_norm_in, final_norm_out
 
 
 def _rebuild_last_layer_layernorm_io(packed: list[torch.Tensor], num_hidden_layers: int) -> dict[str, Any]:
@@ -96,13 +99,54 @@ def _rebuild_all_layers_layernorm_io(packed: list[torch.Tensor], num_hidden_laye
     return {"per_layer": per_layer, "final_norm": (final_in, final_out)}
 
 
+def _rebuild_all_layers_flat_layernorm_io(
+    packed: list[torch.Tensor], num_hidden_layers: int, per_layer_count: int
+) -> dict[str, Any]:
+    """Rebuild per-layer layernorm_io when the compiler unpacked torch.stack into flat 3D tensors.
+
+    The expected layout is ``per_layer_count`` tensors per layer (in layer order),
+    followed by 2 final-norm tensors (final_norm_in, final_norm_out).
+    """
+    per_layer: list[Optional[dict[str, Any]]] = [None for _ in range(num_hidden_layers)]
+    idx = 0
+    for i in range(num_hidden_layers):
+        pre_in, pre_out = packed[idx], packed[idx + 1]
+        post_in, post_out = packed[idx + 2], packed[idx + 3]
+        gate, act, up, mul, down = packed[idx + 4], packed[idx + 5], packed[idx + 6], packed[idx + 7], packed[idx + 8]
+        item: dict[str, Any] = {
+            "pre_attention": (pre_in, pre_out),
+            "post_attention": (post_in, post_out),
+            "mlp_gate": gate,
+            "mlp_act": act,
+            "mlp_up": up,
+            "mlp_mul": mul,
+            "mlp_down": down,
+        }
+        if per_layer_count >= _PER_LAYER_EXT_COUNT:
+            item["attn_q_proj"] = packed[idx + 9]
+            item["attn_k_proj"] = packed[idx + 10]
+            item["attn_v_proj"] = packed[idx + 11]
+            item["attn_op_out"] = packed[idx + 12]
+            item["attn_o_proj_out"] = packed[idx + 13]
+        per_layer[i] = item
+        idx += per_layer_count
+    final_in = packed[idx]
+    final_out = packed[idx + 1]
+    return {"per_layer": per_layer, "final_norm": (final_in, final_out)}
+
+
 def _rebuild_layernorm_io(packed: list[torch.Tensor], num_hidden_layers: int) -> dict[str, Any]:
-    # Auto-detect packed format:
-    # - last-layer only: packed[0] is [B,S,H]
-    # - all-layers stack: packed[0] is [L,B,S,H]
     t0 = packed[0]
+    # Case 1: 4D stacked tensors (compiler preserved torch.stack)
     if hasattr(t0, "dim") and int(t0.dim()) >= 4 and int(t0.shape[0]) == int(num_hidden_layers):
         return _rebuild_all_layers_layernorm_io(packed, num_hidden_layers)
+    # Case 2: flat 3D tensors — compiler unpacked the stack into individual per-layer outputs
+    n_packed = len(packed)
+    for plc in (_PER_LAYER_EXT_COUNT, _PER_LAYER_BASE_COUNT):
+        expected = plc * num_hidden_layers + _FINAL_NORM_COUNT
+        if n_packed == expected:
+            return _rebuild_all_layers_flat_layernorm_io(packed, num_hidden_layers, per_layer_count=plc)
+    # Fallback: last-layer only
     return _rebuild_last_layer_layernorm_io(packed, num_hidden_layers)
 
 
@@ -808,7 +852,10 @@ class RBLNRuntimeModel(RBLNPytorchRuntime):
             if output_packed_ln_io is None:
                 layernorm_io = {"per_layer": [], "final_norm": None, "runtime_layernorm_io_unavailable": True}
             else:
-                packed = [buf[:, :-padding_size, :] for buf in output_packed_ln_io] if padding_size > 0 else output_packed_ln_io
+                packed = [
+                    (buf[:, :, :-padding_size, :] if buf.dim() >= 4 else buf[:, :-padding_size, :])
+                    for buf in output_packed_ln_io
+                ] if padding_size > 0 else output_packed_ln_io
                 layernorm_io = _rebuild_layernorm_io(packed, int(self.config.num_hidden_layers))
 
         lhs = all_hidden_states[-1] if all_hidden_states else None
