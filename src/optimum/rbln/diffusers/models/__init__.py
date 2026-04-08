@@ -21,6 +21,7 @@ _import_structure = {
     "autoencoders": [
         "RBLNAutoencoderKL",
         "RBLNAutoencoderKLCosmos",
+        "RBLNAutoencoderKLQwenImage",
         "RBLNVQModel",
         "RBLNAutoencoderKLTemporalDecoder",
     ],
@@ -32,6 +33,7 @@ _import_structure = {
     "transformers": [
         "RBLNPriorTransformer",
         "RBLNCosmosTransformer3DModel",
+        "RBLNQwenImageTransformer2DModel",
         "RBLNSD3Transformer2DModel",
     ],
 }
@@ -40,6 +42,7 @@ if TYPE_CHECKING:
     from .autoencoders import (
         RBLNAutoencoderKL,
         RBLNAutoencoderKLCosmos,
+        RBLNAutoencoderKLQwenImage,
         RBLNAutoencoderKLTemporalDecoder,
         RBLNVQModel,
     )
@@ -47,6 +50,7 @@ if TYPE_CHECKING:
     from .transformers import (
         RBLNCosmosTransformer3DModel,
         RBLNPriorTransformer,
+        RBLNQwenImageTransformer2DModel,
         RBLNSD3Transformer2DModel,
     )
     from .unets import (
