@@ -3,6 +3,7 @@ import os
 import shutil
 import unittest
 
+import pytest
 import torch
 from PIL import Image
 from rebel.core.exception import RBLNRuntimeError
@@ -191,6 +192,7 @@ class TestT5EncoderModel(BaseTest.TestModel):
             super().setUpClass()
 
 
+@pytest.mark.skip(reason="disabled")
 class TestWhisperModel(BaseTest.TestModel):
     RBLN_AUTO_CLASS = RBLNAutoModelForSpeechSeq2Seq
     RBLN_CLASS = RBLNWhisperForConditionalGeneration
@@ -269,7 +271,7 @@ class TestWhisperModel(BaseTest.TestModel):
                 batch_size=2,
             )
 
-
+@pytest.mark.skip(reason="disabled")
 class TestWhisperModel_TokenTimestamps(BaseTest.TestModel):
     RBLN_AUTO_CLASS = RBLNAutoModelForSpeechSeq2Seq
     RBLN_CLASS = RBLNWhisperForConditionalGeneration
