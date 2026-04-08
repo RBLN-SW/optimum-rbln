@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import math
-from typing import TYPE_CHECKING, List, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple, Union
 
 import torch
 from torch import nn
@@ -30,6 +30,18 @@ if TYPE_CHECKING:
 
 
 logger = logging.get_logger(__name__)
+
+
+def _unpack_decoder_only_inner_outputs(
+    outputs: Tuple[Any, ...],
+) -> Tuple[Any, Any, Optional[Any]]:
+    """Base :class:`DecoderOnlyModel` returns 3 tensors when ``output_layernorm_io`` is used; custom models (e.g. Gemma3, Qwen3-VL) may return 2."""
+    n = len(outputs)
+    if n == 2:
+        return outputs[0], outputs[1], None
+    if n == 3:
+        return outputs[0], outputs[1], outputs[2]
+    raise ValueError(f"Expected 2 or 3 return values from decoder model forward, got {n}")
 
 
 class DecoderOnlyWrapper(nn.Module):
@@ -206,7 +218,7 @@ class DecoderOnlyWrapper(nn.Module):
             rotary_emb,
         ) = self.prepare_forward_args(*args)
 
-        logits, all_hidden_states = self.model(
+        logits, all_hidden_states, layernorm_io = self.model(
             input_ids=input_ids,
             inputs_embeds=inputs_embeds,
             attention_mask=attention_mask,
@@ -221,10 +233,14 @@ class DecoderOnlyWrapper(nn.Module):
             output_hidden_states=self.rbln_config.output_hidden_states,
         )
 
+        out_ln = bool(getattr(self.rbln_config, "output_layernorm_io", False)) and ("prefill" in self.phase)
+        if self.rbln_config.output_hidden_states and out_ln:
+            return logits, all_hidden_states, layernorm_io
         if self.rbln_config.output_hidden_states:
             return logits, all_hidden_states
-        else:
-            return logits
+        if out_ln:
+            return logits, layernorm_io
+        return logits
 
 
 class DecoderOnlyForCausalLM(nn.Module):
@@ -279,20 +295,22 @@ class DecoderOnlyForCausalLM(nn.Module):
         lora_int_id: Optional[torch.Tensor] = None,
         output_hidden_states: Optional[bool] = None,
     ):
-        # outputs
-        hidden_states, all_hidden_states = self.model(
-            input_ids=input_ids,
-            inputs_embeds=inputs_embeds,
-            attention_mask=attention_mask,
-            cache_position=cache_position,
-            position_ids=position_ids,
-            query_position=query_position,
-            past_key_values=past_key_values,
-            rotary_emb=rotary_emb,
-            global_block_tables=global_block_tables,
-            local_block_tables=local_block_tables,
-            lora_int_id=lora_int_id,
-            output_hidden_states=output_hidden_states,
+        # outputs (inner may return 2-tuple for custom architectures, or 3-tuple with layernorm_io)
+        hidden_states, all_hidden_states, layernorm_io = _unpack_decoder_only_inner_outputs(
+            self.model(
+                input_ids=input_ids,
+                inputs_embeds=inputs_embeds,
+                attention_mask=attention_mask,
+                cache_position=cache_position,
+                position_ids=position_ids,
+                query_position=query_position,
+                past_key_values=past_key_values,
+                rotary_emb=rotary_emb,
+                global_block_tables=global_block_tables,
+                local_block_tables=local_block_tables,
+                lora_int_id=lora_int_id,
+                output_hidden_states=output_hidden_states,
+            )
         )
 
         if "prefill" in self.phase and query_position is not None:
@@ -306,7 +324,7 @@ class DecoderOnlyForCausalLM(nn.Module):
             logits = torch.tanh(logits)
             logits = logits * self.config.final_logit_softcapping
 
-        return logits, all_hidden_states
+        return logits, all_hidden_states, layernorm_io
 
 
 class DecoderOnlyModel(nn.Module):
@@ -423,7 +441,7 @@ class DecoderOnlyModel(nn.Module):
         local_block_tables: Optional[torch.Tensor] = None,
         lora_int_id: Optional[torch.Tensor] = None,
         output_hidden_states: Optional[bool] = None,
-    ):
+    ) -> Tuple[torch.Tensor, Optional[Tuple[torch.Tensor, ...]], Optional[Dict[str, Any]]]:
         # retrieve input_ids and inputs_embeds
         if (input_ids is None) ^ (inputs_embeds is not None):
             raise ValueError(
@@ -486,14 +504,19 @@ class DecoderOnlyModel(nn.Module):
             cache_seq_len, cache_offset, swa_attn_mask = self.get_swa_custom_op_args(position_ids, query_position)
             sliding_cache_pos = (cache_seq_len, cache_offset)
 
+        collect_ln = bool(getattr(self.rbln_config, "output_layernorm_io", False)) and ("prefill" in self.phase)
         all_hidden_states = () if output_hidden_states else None
+        per_layer_ln_io: Optional[List[Optional[Dict[str, Tuple[torch.Tensor, torch.Tensor]]]]] = (
+            [] if collect_ln else None
+        )
+
         for layer_idx, layer in enumerate(self.layers):
             if output_hidden_states:
                 all_hidden_states += (hidden_states,)
 
             is_sliding = True if layer_idx in self.sliding_window_layers else False
             is_sliding_decode = is_sliding and self.phase == "decode"
-            hidden_states = layer(
+            layer_out = layer(
                 hidden_states=hidden_states,
                 attention_mask=swa_attn_mask if is_sliding_decode else attention_mask,
                 seq_positions=sliding_cache_pos if is_sliding else seq_positions,
@@ -503,12 +526,114 @@ class DecoderOnlyModel(nn.Module):
                 block_tables=local_block_tables if is_sliding else global_block_tables,
                 lora_int_id=lora_int_id,
             )
+            if collect_ln:
+                assert per_layer_ln_io is not None
+                if isinstance(layer_out, tuple):
+                    hidden_states, layer_ln_io = layer_out
+                    per_layer_ln_io.append(layer_ln_io)
+                else:
+                    hidden_states = layer_out
+                    per_layer_ln_io.append(None)
+            else:
+                hidden_states = layer_out
 
-        hidden_states = self.get_last_layernorm()(hidden_states)
+        layernorm_io: Optional[Dict[str, Any]] = None
+        if collect_ln:
+            assert per_layer_ln_io is not None
+            x_pre_final = hidden_states
+            hidden_states = self.get_last_layernorm()(hidden_states)
+            layernorm_io = {
+                "per_layer": per_layer_ln_io,
+                "final_norm": (x_pre_final, hidden_states),
+            }
+            # Compiled runtimes flatten nested tuple outputs into a flat tensor list, but do not support dict outputs.
+            # During tracing/compilation, return a fixed, tensor-only representation.
+            if torch.jit.is_tracing():
+                export_all = bool(getattr(self.rbln_config, "output_layernorm_io_all_layers", False))
+                export_attn = bool(getattr(self.rbln_config, "output_attention_io", False))
+                if export_all:
+                    # Export all layers as stacked tensors to keep output count fixed.
+                    # Shapes:
+                    # - pre/post ln in/out: [L, B, S, H]
+                    # - mlp gate/act/up/mul/down: [L, B, S, I]
+                    assert len(per_layer_ln_io) == len(self.layers)
+                    for item in per_layer_ln_io:
+                        assert item is not None
+                    pre_in_s = torch.stack([item["pre_attention"][0] for item in per_layer_ln_io], dim=0)
+                    pre_out_s = torch.stack([item["pre_attention"][1] for item in per_layer_ln_io], dim=0)
+                    post_in_s = torch.stack([item["post_attention"][0] for item in per_layer_ln_io], dim=0)
+                    post_out_s = torch.stack([item["post_attention"][1] for item in per_layer_ln_io], dim=0)
+                    gate_s = torch.stack([item["mlp_gate"] for item in per_layer_ln_io], dim=0)
+                    act_s = torch.stack([item["mlp_act"] for item in per_layer_ln_io], dim=0)
+                    up_s = torch.stack([item["mlp_up"] for item in per_layer_ln_io], dim=0)
+                    mul_s = torch.stack([item["mlp_mul"] for item in per_layer_ln_io], dim=0)
+                    down_s = torch.stack([item["mlp_down"] for item in per_layer_ln_io], dim=0)
+                    packed = (
+                        pre_in_s,
+                        pre_out_s,
+                        post_in_s,
+                        post_out_s,
+                        gate_s,
+                        act_s,
+                        up_s,
+                        mul_s,
+                        down_s,
+                        x_pre_final,
+                        hidden_states,
+                    )
+                    if export_attn:
+                        for item in per_layer_ln_io:
+                            assert "attn_q_proj" in item and "attn_k_proj" in item and "attn_v_proj" in item
+                            assert "attn_op_out" in item and "attn_o_proj_out" in item
+                        q_s = torch.stack([item["attn_q_proj"] for item in per_layer_ln_io], dim=0)
+                        k_s = torch.stack([item["attn_k_proj"] for item in per_layer_ln_io], dim=0)
+                        v_s = torch.stack([item["attn_v_proj"] for item in per_layer_ln_io], dim=0)
+                        attn_op_out_s = torch.stack([item["attn_op_out"] for item in per_layer_ln_io], dim=0)
+                        attn_o_proj_out_s = torch.stack([item["attn_o_proj_out"] for item in per_layer_ln_io], dim=0)
+                        packed = packed + (q_s, k_s, v_s, attn_op_out_s, attn_o_proj_out_s)
+                    layernorm_io = packed
+                else:
+                    # Backward compatible: export last layer only.
+                    last = per_layer_ln_io[-1] if len(per_layer_ln_io) > 0 else None
+                    assert last is not None
+                    pre_in, pre_out = last["pre_attention"]
+                    post_in, post_out = last["post_attention"]
+                    gate = last["mlp_gate"]
+                    act = last["mlp_act"]
+                    up = last["mlp_up"]
+                    mul = last["mlp_mul"]
+                    down = last["mlp_down"]
+                    packed = (
+                        pre_in,
+                        pre_out,
+                        post_in,
+                        post_out,
+                        gate,
+                        act,
+                        up,
+                        mul,
+                        down,
+                        x_pre_final,
+                        hidden_states,
+                    )
+                    if export_attn:
+                        assert "attn_q_proj" in last and "attn_k_proj" in last and "attn_v_proj" in last
+                        assert "attn_op_out" in last and "attn_o_proj_out" in last
+                        packed = packed + (
+                            last["attn_q_proj"],
+                            last["attn_k_proj"],
+                            last["attn_v_proj"],
+                            last["attn_op_out"],
+                            last["attn_o_proj_out"],
+                        )
+                    layernorm_io = packed
+        else:
+            hidden_states = self.get_last_layernorm()(hidden_states)
+
         if output_hidden_states:
             all_hidden_states += (hidden_states,)
 
-        return hidden_states, all_hidden_states
+        return hidden_states, all_hidden_states, layernorm_io
 
 
 class DecoderOnlyLayer(nn.Module):
@@ -592,21 +717,48 @@ class DecoderOnlyLayer(nn.Module):
     def get_mlp(self) -> nn.Module:
         return self.mlp
 
-    def forward_mlp(self, hidden_states: torch.Tensor, lora_int_id: Optional[torch.Tensor] = None) -> torch.Tensor:
+    def forward_mlp(
+        self,
+        hidden_states: torch.Tensor,
+        lora_int_id: Optional[torch.Tensor] = None,
+        ln_io: Optional[Dict[str, Any]] = None,
+    ) -> torch.Tensor:
         mlp = self.get_mlp()
+        record = ln_io is not None
         if self.lora_config and lora_int_id is not None:
             gate = mlp.gate_proj(hidden_states, lora_int_id)
             up = mlp.up_proj(hidden_states, lora_int_id)
             act_fn = getattr(mlp, "act_fn", None) or getattr(mlp, "activation_fn", None)
             if act_fn is None:
-                gate = torch.nn.functional.silu(gate)
+                gate_act = torch.nn.functional.silu(gate)
             else:
-                gate = act_fn(gate)
-            fused = gate * up
-            hidden_states = mlp.down_proj(fused, lora_int_id)
-        else:
-            hidden_states = mlp(hidden_states)
-        return hidden_states
+                gate_act = act_fn(gate)
+            fused = gate_act * up
+            out = mlp.down_proj(fused, lora_int_id)
+            if record:
+                ln_io["mlp_gate"] = gate
+                ln_io["mlp_act"] = gate_act
+                ln_io["mlp_up"] = up
+                ln_io["mlp_mul"] = fused
+                ln_io["mlp_down"] = out
+            return out
+        if record:
+            gate = mlp.gate_proj(hidden_states)
+            up = mlp.up_proj(hidden_states)
+            act_fn = getattr(mlp, "act_fn", None) or getattr(mlp, "activation_fn", None)
+            if act_fn is None:
+                gate_act = torch.nn.functional.silu(gate)
+            else:
+                gate_act = act_fn(gate)
+            fused = gate_act * up
+            out = mlp.down_proj(fused)
+            ln_io["mlp_gate"] = gate
+            ln_io["mlp_act"] = gate_act
+            ln_io["mlp_up"] = up
+            ln_io["mlp_mul"] = fused
+            ln_io["mlp_down"] = out
+            return out
+        return mlp(hidden_states)
 
     def forward(
         self,
@@ -619,8 +771,21 @@ class DecoderOnlyLayer(nn.Module):
         block_tables: Optional[torch.Tensor] = None,
         lora_int_id: Optional[torch.Tensor] = None,
     ):
+        # Only collect layernorm I/O during prefill. Decoder compilation/execution expects
+        # tensor-only hidden_states; returning tuples here breaks downstream norms.
+        collect_ln = bool(getattr(self.self_attn.rbln_config, "output_layernorm_io", False)) and ("prefill" in self.phase)
+        ln_io: Optional[Dict[str, Tuple[torch.Tensor, torch.Tensor]]] = None
+        if collect_ln:
+            ln_io = {}
+
         residual = hidden_states
+        if collect_ln:
+            assert ln_io is not None
+            x_pre = hidden_states
         hidden_states = self.get_pre_attention_layernorm()(hidden_states)
+        if collect_ln:
+            assert ln_io is not None
+            ln_io["pre_attention"] = (x_pre, hidden_states)
 
         hidden_states = self.self_attn(
             hidden_states=hidden_states,
@@ -631,15 +796,23 @@ class DecoderOnlyLayer(nn.Module):
             sin=sin,
             block_tables=block_tables,
             lora_int_id=lora_int_id,
+            ln_io=ln_io if collect_ln else None,
         )
         hidden_states = residual + hidden_states
 
         # Fully Connected
         residual = hidden_states
+        if collect_ln:
+            x_pre = hidden_states
         hidden_states = self.get_post_attention_layernorm()(hidden_states)
-        hidden_states = self.forward_mlp(hidden_states, lora_int_id)
+        if collect_ln:
+            assert ln_io is not None
+            ln_io["post_attention"] = (x_pre, hidden_states)
+        hidden_states = self.forward_mlp(hidden_states, lora_int_id, ln_io if collect_ln else None)
         hidden_states = residual + hidden_states
 
+        if collect_ln:
+            return hidden_states, ln_io
         return hidden_states
 
 
@@ -815,10 +988,21 @@ class DecoderOnlyAttention(nn.Module):
         sin: Optional[torch.Tensor] = None,
         block_tables: Optional[torch.Tensor] = None,
         lora_int_id: Optional[torch.Tensor] = None,
+        ln_io: Optional[Dict[str, Any]] = None,
     ):
         batch_size, query_length, _ = hidden_states.size()
 
         query_states, key_states, value_states = self.projection(hidden_states=hidden_states, lora_int_id=lora_int_id)
+        record_attn = (
+            ln_io is not None
+            and bool(getattr(self.rbln_config, "output_attention_io", False))
+            and ("prefill" in self.phase)
+        )
+        if record_attn:
+            # Note: these are Linear outputs (bias already applied if present).
+            ln_io["attn_q_proj"] = query_states
+            ln_io["attn_k_proj"] = key_states
+            ln_io["attn_v_proj"] = value_states
 
         query_states = query_states.view(batch_size, query_length, self.num_heads, self.head_dim).transpose(1, 2)
         key_states = key_states.view(batch_size, query_length, self.num_key_value_heads, self.head_dim).transpose(1, 2)
@@ -852,6 +1036,8 @@ class DecoderOnlyAttention(nn.Module):
             v_scale=v_scale,
             s_aux=getattr(self, "sinks", None),
         )
+        if record_attn:
+            ln_io["attn_op_out"] = attn_output
 
         # Check if using LoRALinear (which accepts lora_int_id) or standard linear layers
         if self.lora_config:
@@ -860,6 +1046,8 @@ class DecoderOnlyAttention(nn.Module):
         else:
             # Standard linear projection without LoRA
             attn_outputs = self.o_proj(attn_output)
+        if record_attn:
+            ln_io["attn_o_proj_out"] = attn_outputs
 
         return attn_outputs
 

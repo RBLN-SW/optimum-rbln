@@ -13,7 +13,7 @@
 # limitations under the License.
 
 from dataclasses import dataclass
-from typing import Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 import torch
 from transformers.modeling_outputs import ModelOutput
@@ -27,6 +27,10 @@ class RBLNDecoderOnlyOutput(ModelOutput):
     generate_idx: torch.Tensor = None
     padded_cache_lengths: int = None
     hidden_states: Tuple[torch.FloatTensor] = None
+    #: When ``output_layernorm_io=True`` on the eager/decoder path, per-layer norm I/O and MLP intermediates.
+    layernorm_io: Optional[Dict[str, Any]] = None
+    #: Normalized hidden (e.g. after final RMS) when exposed by the runtime; else ``None``.
+    last_hidden_state: Optional[torch.FloatTensor] = None
 
 
 @dataclass

@@ -60,6 +60,9 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
         phases: Optional[List[PhaseType]] = None,
         logits_to_keep: Optional[int] = None,
         output_hidden_states: Optional[bool] = None,
+        output_layernorm_io: Optional[bool] = None,
+        output_layernorm_io_all_layers: Optional[bool] = None,
+        output_attention_io: Optional[bool] = None,
         kvcache_metas: Optional[List["KVCacheMeta"]] = None,
         **kwargs: Any,
     ):
@@ -116,6 +119,14 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
             logits_to_keep (Optional[int]): The number of logits to keep for the decoder.  If set to 0, the decoder will keep all logits.
                 Defaults to 0 if DecoderOnlyModel is used, 1 if DecoderOnlyModelForCausalLM is used.
             output_hidden_states (Optional[bool]): Whether to output the hidden states of the decoder. Defaults to False.
+            output_layernorm_io (Optional[bool]): If True, decoder forwards also return inputs/outputs of each
+                pre-attention LayerNorm, post-attention (pre-FFN) LayerNorm, and the final norm. Defaults to False.
+            output_layernorm_io_all_layers (Optional[bool]): If True, export layernorm_io for all decoder layers
+                as fixed tensor-only outputs during tracing/compilation (prefill only). This significantly increases
+                output tensor sizes and compilation/runtime memory footprint. Defaults to False.
+            output_attention_io (Optional[bool]): If True, also export attention intermediates (q/k/v projections,
+                attention op output, and o_proj output) as part of the packed `layernorm_io` outputs (prefill only).
+                Defaults to the same value as `output_layernorm_io`.
             kvcache_metas (Optional[List["KVCacheMeta"]]): The metadata for the KV cache tensors. Handled internally if not provided. Defaults to None.
             kwargs: Additional arguments passed to the parent RBLNModelConfig.
 
@@ -237,6 +248,10 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
             raise NotImplementedError("`logits_to_keep` > 1 is currently not supported for RBLN models.")
 
         self.output_hidden_states = output_hidden_states or False
+        self.output_layernorm_io = output_layernorm_io or False
+        self.output_layernorm_io_all_layers = output_layernorm_io_all_layers or False
+        # Default: follow output_layernorm_io, unless explicitly overridden.
+        self.output_attention_io = self.output_layernorm_io if output_attention_io is None else bool(output_attention_io)
 
         self.decoder_batch_sizes = None
         if "decode" in self.phases:

@@ -28,6 +28,130 @@ if TYPE_CHECKING:
     from transformers.configuration_utils import PreTrainedConfig
 
 
+_PACKED_LAST_LAYER_LN_IO_COUNT = 11
+_PACKED_ATTENTION_IO_COUNT = 5
+_PACKED_LAST_LAYER_LN_IO_EXT_COUNT = _PACKED_LAST_LAYER_LN_IO_COUNT + _PACKED_ATTENTION_IO_COUNT
+
+
+def _rebuild_last_layer_layernorm_io(packed: list[torch.Tensor], num_hidden_layers: int) -> dict[str, Any]:
+    # packed order must match DecoderOnlyModel.forward (tracing path)
+    pre_in, pre_out = packed[0], packed[1]
+    post_in, post_out = packed[2], packed[3]
+    gate, act, up, mul, down = packed[4], packed[5], packed[6], packed[7], packed[8]
+    final_in, final_out = packed[9], packed[10]
+    per_layer: list[Optional[dict[str, Any]]] = [None for _ in range(num_hidden_layers)]
+    last: dict[str, Any] = {
+        "pre_attention": (pre_in, pre_out),
+        "post_attention": (post_in, post_out),
+        "mlp_gate": gate,
+        "mlp_act": act,
+        "mlp_up": up,
+        "mlp_mul": mul,
+        "mlp_down": down,
+    }
+    if len(packed) >= _PACKED_LAST_LAYER_LN_IO_EXT_COUNT:
+        q, k, v, attn_op_out, attn_o_proj_out = packed[11], packed[12], packed[13], packed[14], packed[15]
+        last["attn_q_proj"] = q
+        last["attn_k_proj"] = k
+        last["attn_v_proj"] = v
+        last["attn_op_out"] = attn_op_out
+        last["attn_o_proj_out"] = attn_o_proj_out
+    per_layer[-1] = last
+    return {"per_layer": per_layer, "final_norm": (final_in, final_out)}
+
+
+def _rebuild_all_layers_layernorm_io(packed: list[torch.Tensor], num_hidden_layers: int) -> dict[str, Any]:
+    # packed order must match DecoderOnlyModel.forward (tracing path, all-layers stack)
+    pre_in_s, pre_out_s = packed[0], packed[1]
+    post_in_s, post_out_s = packed[2], packed[3]
+    gate_s, act_s, up_s, mul_s, down_s = packed[4], packed[5], packed[6], packed[7], packed[8]
+    final_in, final_out = packed[9], packed[10]
+    q_s = k_s = v_s = attn_op_out_s = attn_o_proj_out_s = None
+    if len(packed) >= _PACKED_LAST_LAYER_LN_IO_EXT_COUNT:
+        q_s, k_s, v_s, attn_op_out_s, attn_o_proj_out_s = packed[11], packed[12], packed[13], packed[14], packed[15]
+
+    if pre_in_s.dim() < 1 or int(pre_in_s.shape[0]) != int(num_hidden_layers):
+        raise ValueError(
+            f"Invalid packed all-layer layernorm_io: expected leading dim L={num_hidden_layers}, got {tuple(pre_in_s.shape)}"
+        )
+
+    per_layer: list[Optional[dict[str, Any]]] = [None for _ in range(num_hidden_layers)]
+    for i in range(num_hidden_layers):
+        item: dict[str, Any] = {
+            "pre_attention": (pre_in_s[i], pre_out_s[i]),
+            "post_attention": (post_in_s[i], post_out_s[i]),
+            "mlp_gate": gate_s[i],
+            "mlp_act": act_s[i],
+            "mlp_up": up_s[i],
+            "mlp_mul": mul_s[i],
+            "mlp_down": down_s[i],
+        }
+        if q_s is not None:
+            item["attn_q_proj"] = q_s[i]
+            item["attn_k_proj"] = k_s[i]
+            item["attn_v_proj"] = v_s[i]
+            item["attn_op_out"] = attn_op_out_s[i]
+            item["attn_o_proj_out"] = attn_o_proj_out_s[i]
+        per_layer[i] = item
+    return {"per_layer": per_layer, "final_norm": (final_in, final_out)}
+
+
+def _rebuild_layernorm_io(packed: list[torch.Tensor], num_hidden_layers: int) -> dict[str, Any]:
+    # Auto-detect packed format:
+    # - last-layer only: packed[0] is [B,S,H]
+    # - all-layers stack: packed[0] is [L,B,S,H]
+    t0 = packed[0]
+    if hasattr(t0, "dim") and int(t0.dim()) >= 4 and int(t0.shape[0]) == int(num_hidden_layers):
+        return _rebuild_all_layers_layernorm_io(packed, num_hidden_layers)
+    return _rebuild_last_layer_layernorm_io(packed, num_hidden_layers)
+
+
+def _normalize_prefill_out_buffer(t: torch.Tensor) -> torch.Tensor:
+    """Align preallocated CPU buffers with rebel ``_output_profile`` shapes.
+
+    Some traced paths (e.g. rotary cos/sin ``unsqueeze``, stacked LN I/O) yield
+    ``(1, 1, S, H)`` while the compiled graph expects ``(1, S, H)``. Drop a
+    leading singleton middle dimension only in that case.
+    """
+    if t.dim() == 4 and int(t.shape[0]) == 1 and int(t.shape[1]) == 1:
+        return t.squeeze(1).contiguous()
+    return t
+
+
+def _alloc_backing_for_profile_output(
+    prof_shape: tuple[int, ...],
+    padded_mask_length: int,
+    fill_value: float,
+    dtype: torch.dtype,
+) -> torch.Tensor:
+    """Allocate host storage for one compiled output; sequence dim follows the profile when fixed (e.g. logits ``(1,1,V)``)."""
+    if len(prof_shape) == 3:
+        mid = int(prof_shape[1])
+        seq_len = 1 if mid == 1 else padded_mask_length
+        return torch.full((1, seq_len, int(prof_shape[-1])), fill_value, dtype=dtype)
+    if len(prof_shape) == 4:
+        a, b, _seq, d = (int(prof_shape[i]) for i in range(4))
+        return torch.full((a, b, padded_mask_length, d), fill_value, dtype=dtype)
+    raise ValueError(f"Unsupported prefill output profile rank/shape: {prof_shape}")
+
+
+def _chunk_view_for_profile_output(
+    backing: torch.Tensor,
+    prof_shape: tuple[int, ...],
+    *,
+    s_idx: int,
+    chunk_sz: int,
+) -> torch.Tensor:
+    """Slice ``backing`` so it matches the compiled graph's shape for this chunk."""
+    if len(prof_shape) == 3 and int(prof_shape[1]) == 1:
+        return _normalize_prefill_out_buffer(backing)
+    if len(prof_shape) == 3:
+        return _normalize_prefill_out_buffer(backing[:, s_idx : s_idx + chunk_sz, :])
+    if len(prof_shape) == 4:
+        return _normalize_prefill_out_buffer(backing[:, :, s_idx : s_idx + chunk_sz, :])
+    raise ValueError(f"Unsupported prefill output profile rank/shape: {prof_shape}")
+
+
 class RBLNPageTableManager:
     EMPTY_BLOCK = -1
     NO_BLOCKS_ERROR = (
@@ -340,10 +464,42 @@ class RBLNRuntimeModel(RBLNPytorchRuntime):
             out=self.out_buffers,
         )
 
-        if self.rbln_config.output_hidden_states:
-            return RBLNDecoderOnlyOutput(logits=outputs[0], hidden_states=tuple(outputs[1:]))
+        out_ln = bool(getattr(self.rbln_config, "output_layernorm_io", False))
+        if isinstance(outputs, (tuple, list)):
+            logits = outputs[0]
+            offset = 1
+            hs = None
+            if self.rbln_config.output_hidden_states:
+                hs_count = int(self.config.num_hidden_layers) + 1
+                hs = tuple(outputs[offset : offset + hs_count])
+                offset += hs_count
+            ln_io = None
+            if out_ln and len(outputs) >= offset + _PACKED_LAST_LAYER_LN_IO_COUNT:
+                # Newer compiled variants may append attention intermediates after the base 11 tensors.
+                take = (
+                    _PACKED_LAST_LAYER_LN_IO_EXT_COUNT
+                    if len(outputs) >= offset + _PACKED_LAST_LAYER_LN_IO_EXT_COUNT
+                    else _PACKED_LAST_LAYER_LN_IO_COUNT
+                )
+                packed = list(outputs[offset : offset + take])
+                ln_io = _rebuild_layernorm_io(packed, int(self.config.num_hidden_layers))
         else:
-            return RBLNDecoderOnlyOutput(logits=outputs, hidden_states=None)
+            logits = outputs
+            hs = None
+            ln_io = None
+
+        if out_ln and ln_io is None:
+            # Some compiled runtime variants do not expose layernorm tensors yet.
+            # Keep a non-empty marker instead of hardcoded None.
+            ln_io = {"per_layer": [], "final_norm": None, "runtime_layernorm_io_unavailable": True}
+
+        lhs = hs[-1] if hs else None
+        return RBLNDecoderOnlyOutput(
+            logits=logits,
+            hidden_states=hs,
+            layernorm_io=ln_io,
+            last_hidden_state=lhs,
+        )
 
     def _prepare_prefill_inputs(
         self,
@@ -441,6 +597,7 @@ class RBLNRuntimeModel(RBLNPytorchRuntime):
         self,
         query_length: int,
         attention_mask: Optional[torch.Tensor] = None,
+        out_ln: bool = False,
     ):
         # Prepare out buffers
         padding_size = (self.rbln_config.prefill_chunk_size - query_length) % self.rbln_config.prefill_chunk_size
@@ -454,50 +611,53 @@ class RBLNRuntimeModel(RBLNPytorchRuntime):
             int(torch.nonzero(attention_mask, as_tuple=False)[0][0].item()) if attention_mask is not None else 0
         )
 
-        if self.logits_last_dim is None:
-            logits_last_dim = self.config.vocab_size if self.rbln_config.can_generate else self.config.hidden_size
-        else:
-            logits_last_dim = self.logits_last_dim
+        profile = self.runtime._output_profile
+        fill = 1e-10
+        dtype = self.rbln_config.dtype
 
-        # Prepare logits buffer
-        logits_size = (
-            1,
-            1 if self.rbln_config.logits_to_keep == 1 else padded_mask_length,
-            logits_last_dim,
-        )
-        output_logits = torch.full(logits_size, fill_value=1e-10, dtype=self.rbln_config.dtype)
+        # One backing tensor per compiled output; last dims (e.g. 512 vs intermediate_size) come from the graph.
+        backing: list[torch.Tensor] = [
+            _alloc_backing_for_profile_output(tuple(p.shape), padded_mask_length, fill, dtype) for p in profile
+        ]
 
-        if self.rbln_config.logits_to_keep == 1:
-            for i in range(padded_input_length // self.rbln_config.prefill_chunk_size):
-                out_buffers[i].append(output_logits)
-        else:
-            for i in range(padded_input_length // self.rbln_config.prefill_chunk_size):
-                s_idx = i * self.rbln_config.prefill_chunk_size + valid_start_index
-                out_buffers[i].append(output_logits[:, s_idx : s_idx + self.rbln_config.prefill_chunk_size])
+        output_logits = backing[0]
 
-        # Prepare output hidden states
-        output_hidden_states = None
-        if self.rbln_config.output_hidden_states:
-            hidden_states_size = (
-                1,
-                padded_mask_length,
-                self.config.hidden_size,
-            )
-            output_hidden_states = [
-                torch.full(hidden_states_size, fill_value=1e-10, dtype=self.rbln_config.dtype)
-                for _ in range(self.config.num_hidden_layers + 1)
-            ]
-
-            for i in range(padded_input_length // self.rbln_config.prefill_chunk_size):
-                s_idx = i * self.rbln_config.prefill_chunk_size + valid_start_index
-                out_buffers[i].extend(
-                    [
-                        hidden_states_buffer[:, s_idx : s_idx + self.rbln_config.prefill_chunk_size]
-                        for hidden_states_buffer in output_hidden_states
-                    ]
+        n_hs = (int(self.config.num_hidden_layers) + 1) if self.rbln_config.output_hidden_states else 0
+        output_hidden_states: Optional[list[torch.Tensor]] = None
+        if n_hs > 0:
+            if 1 + n_hs > len(profile):
+                raise RuntimeError(
+                    f"Prefill output profile has only {len(profile)} outputs; "
+                    f"need at least {1 + n_hs} for logits plus {n_hs} hidden state tensors."
                 )
+            output_hidden_states = [backing[1 + j] for j in range(n_hs)]
 
-        return out_buffers, output_logits, output_hidden_states
+        ln_start = 1 + n_hs
+        output_packed_ln_io: Optional[list[torch.Tensor]] = None
+        if out_ln:
+            if ln_start > len(profile):
+                raise RuntimeError("Prefill output profile has no layernorm_io tensors after hidden states.")
+            output_packed_ln_io = [backing[j] for j in range(ln_start, len(profile))]
+
+        num_chunks = padded_input_length // self.rbln_config.prefill_chunk_size
+        chunk_sz = self.rbln_config.prefill_chunk_size
+
+        for i in range(num_chunks):
+            s_idx = i * chunk_sz + valid_start_index
+            chunk_out: list[torch.Tensor] = []
+            for j, prof in enumerate(profile):
+                shp = tuple(prof.shape)
+                chunk_out.append(
+                    _chunk_view_for_profile_output(
+                        backing[j],
+                        shp,
+                        s_idx=s_idx,
+                        chunk_sz=chunk_sz,
+                    )
+                )
+            out_buffers[i] = chunk_out
+
+        return out_buffers, output_logits, output_hidden_states, output_packed_ln_io
 
     def prefill_forward(
         self,
@@ -543,7 +703,10 @@ class RBLNRuntimeModel(RBLNPytorchRuntime):
             inputs, cache_position, attention_mask, position_ids, position_embed, token_type_ids=token_type_ids
         )
 
-        out_buffers, output_logits, output_hidden_states = self._prepare_prefill_outputs(query_length, attention_mask)
+        out_ln = bool(getattr(self.rbln_config, "output_layernorm_io", False))
+        out_buffers, output_logits, output_hidden_states, output_packed_ln_io = self._prepare_prefill_outputs(
+            query_length, attention_mask, out_ln=out_ln
+        )
 
         # Assumed that prefix caching was performed externally if cache_position doesn't start from 0.
         prefix_cached_len = cache_position[0][0].item()
@@ -640,6 +803,19 @@ class RBLNRuntimeModel(RBLNPytorchRuntime):
                 self.dec_attn_mask[batch_idx].fill_(0)
                 self.dec_attn_mask[batch_idx, :, :, :query_length] = 1
 
+        layernorm_io = None
+        if out_ln:
+            if output_packed_ln_io is None:
+                layernorm_io = {"per_layer": [], "final_norm": None, "runtime_layernorm_io_unavailable": True}
+            else:
+                packed = [buf[:, :-padding_size, :] for buf in output_packed_ln_io] if padding_size > 0 else output_packed_ln_io
+                layernorm_io = _rebuild_layernorm_io(packed, int(self.config.num_hidden_layers))
+
+        lhs = all_hidden_states[-1] if all_hidden_states else None
         return RBLNDecoderOnlyOutput(
-            logits=output_logits, padded_cache_lengths=padded_cache_lengths, hidden_states=all_hidden_states
+            logits=output_logits,
+            padded_cache_lengths=padded_cache_lengths,
+            hidden_states=all_hidden_states,
+            layernorm_io=layernorm_io,
+            last_hidden_state=lhs,
         )

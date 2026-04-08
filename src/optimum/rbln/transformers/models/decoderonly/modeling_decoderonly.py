@@ -879,9 +879,13 @@ class RBLNDecoderOnlyModelForCausalLM(RBLNDecoderOnlyModel, RBLNDecoderOnlyGener
         if not return_dict:
             return logits, generate_idx, padded_cache_lengths, all_hidden_states
         else:
+            lhs = all_hidden_states[-1] if all_hidden_states else None
+            layernorm_io = getattr(outputs, "layernorm_io", None) if "outputs" in locals() else None
             return RBLNDecoderOnlyOutput(
                 logits=logits,
                 generate_idx=generate_idx,
                 padded_cache_lengths=padded_cache_lengths,
                 hidden_states=all_hidden_states,
+                layernorm_io=layernorm_io,
+                last_hidden_state=lhs,
             )
