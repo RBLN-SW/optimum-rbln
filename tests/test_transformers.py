@@ -271,6 +271,7 @@ class TestWhisperModel(BaseTest.TestModel):
                 batch_size=2,
             )
 
+
 @pytest.mark.skip(reason="disabled")
 class TestWhisperModel_TokenTimestamps(BaseTest.TestModel):
     RBLN_AUTO_CLASS = RBLNAutoModelForSpeechSeq2Seq
