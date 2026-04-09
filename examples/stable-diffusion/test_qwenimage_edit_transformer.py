@@ -28,7 +28,7 @@ def test_transformer(
     width: int,
     batch: int,
     prompt_embed_length: int,
-    num_layers: int = 1,
+    num_layers: int = 60,
     native: bool = False,
     compile: bool = False,
     threshold: float = PASS_THRESHOLD,
@@ -42,7 +42,7 @@ def test_transformer(
 
     vae_scale_factor = 8
 
-    inputs = torch.load("/tmp/transformer_golden_inputs.pt")
+    inputs = torch.load("/mnt/shared_data/groups/sw_dev/thkim/transformer_golden_inputs.pt")
     dummy_hs = inputs["hidden_states"]
     dummy_enc_raw = inputs["encoder_hidden_states"]
     dummy_t = torch.tensor([1.0] * batch)
