@@ -51,9 +51,7 @@ def test_transformer(
     transformer = QwenImageTransformer2DModel.from_pretrained(
         model_id,
         subfolder="transformer",
-        torch_dtype=torch.float32,
         num_layers=num_layers,
-        zero_cond_t=True,
     )
     transformer.eval()
     lat_h = 2 * (height // (vae_scale_factor * 2))
@@ -111,11 +109,12 @@ def test_transformer(
         timestep=dummy_t,
         return_dict=False,
     )
-    breakpoint()
     if isinstance(rbln_output, tuple):
         rbln_output = rbln_output[0]
     if native:
         r = compute_pearsonr(golden_output.detach(), rbln_output.detach())
+        print(f"Golden output: {golden_output}")
+        print(f"RBLN output: {rbln_output}")  
         report("Transformer", r, threshold)
 
         return r >= threshold
