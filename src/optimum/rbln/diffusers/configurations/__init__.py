@@ -22,7 +22,7 @@ from .pipelines import (
     RBLNKandinskyV22InpaintPipelineConfig,
     RBLNKandinskyV22PipelineConfig,
     RBLNKandinskyV22PriorPipelineConfig,
-    RBLNQwenImageEditPipelineConfig,
+    RBLNQwenImageEditPlusPipelineConfig,
     RBLNStableDiffusion3Img2ImgPipelineConfig,
     RBLNStableDiffusion3InpaintPipelineConfig,
     RBLNStableDiffusion3PipelineConfig,

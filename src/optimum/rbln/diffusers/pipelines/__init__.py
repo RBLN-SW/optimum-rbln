@@ -45,7 +45,7 @@ _import_structure = {
         "RBLNKandinskyV22Pipeline",
     ],
     "qwenimage": [
-        "RBLNQwenImageEditPipeline",
+        "RBLNQwenImageEditPlusPipeline",
     ],
     "stable_diffusion": [
         "RBLNStableDiffusionImg2ImgPipeline",
@@ -89,7 +89,7 @@ if TYPE_CHECKING:
         RBLNKandinskyV22Pipeline,
         RBLNKandinskyV22PriorPipeline,
     )
-    from .qwenimage import RBLNQwenImageEditPipeline
+    from .qwenimage import RBLNQwenImageEditPlusPipeline
     from .stable_diffusion import (
         RBLNStableDiffusionImg2ImgPipeline,
         RBLNStableDiffusionInpaintPipeline,

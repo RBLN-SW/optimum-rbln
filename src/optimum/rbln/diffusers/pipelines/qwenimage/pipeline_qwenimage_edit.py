@@ -13,21 +13,22 @@
 # limitations under the License.
 
 
-from diffusers import QwenImageEditPipeline
+from diffusers import QwenImageEditPlusPipeline
 
-from ...configurations import RBLNQwenImageEditPipelineConfig
+from ...configurations import RBLNQwenImageEditPlusPipelineConfig
 from ...modeling_diffusers import RBLNDiffusionMixin
 
 
-class RBLNQwenImageEditPipeline(RBLNDiffusionMixin, QwenImageEditPipeline):
+class RBLNQwenImageEditPlusPipeline(RBLNDiffusionMixin, QwenImageEditPlusPipeline):
     """
-    RBLN-accelerated implementation of QwenImageEditPipeline for image editing.
+    RBLN-accelerated implementation of QwenImageEditPlusPipeline for image editing.
 
-    This pipeline compiles Qwen-Image-Edit models to run efficiently on RBLN NPUs, enabling
-    high-performance inference for editing images based on text prompts with semantic and
-    appearance editing capabilities.
+    This pipeline compiles Qwen-Image-Edit-Plus models to run efficiently on RBLN NPUs,
+    enabling high-performance inference for editing images based on text prompts with
+    semantic and appearance editing capabilities. Supports multiple input images and
+    guidance-distilled models.
     """
 
-    original_class = QwenImageEditPipeline
-    _rbln_config_class = RBLNQwenImageEditPipelineConfig
+    original_class = QwenImageEditPlusPipeline
+    _rbln_config_class = RBLNQwenImageEditPlusPipelineConfig
     _submodules = ["text_encoder", "transformer", "vae"]

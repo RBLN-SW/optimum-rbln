@@ -307,6 +307,8 @@ class RBLNModel(RBLNBaseModel):
 
         # Get output from the model
         output = self.model[0](*args, **kwargs)
+        
+        breakpoint()
 
         # Format output according to task requirements
         return self._prepare_output(output, return_dict)

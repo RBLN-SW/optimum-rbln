@@ -19,9 +19,9 @@ from ....transformers import RBLNQwen2_5_VLModelConfig
 from ..models import RBLNAutoencoderKLQwenImageConfig, RBLNQwenImageTransformer2DModelConfig
 
 
-class RBLNQwenImageEditPipelineConfig(RBLNModelConfig):
+class RBLNQwenImageEditPlusPipelineConfig(RBLNModelConfig):
     """
-    Configuration for the Qwen-Image-Edit pipeline.
+    Configuration for the QwenImageEditPlus pipeline.
 
     This pipeline uses Qwen2.5-VL as the text+image encoder, QwenImageTransformer2DModel
     as the denoising transformer, and AutoencoderKLQwenImage as the 3D causal VAE.

@@ -12,11 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import types
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple, Union
 
 import torch
 from diffusers.models.modeling_outputs import Transformer2DModelOutput
-from diffusers.models.transformers.transformer_qwenimage import QwenImageTransformer2DModel
+from diffusers.models.transformers.transformer_qwenimage import (
+    QwenImageTransformer2DModel,
+    QwenImageTransformerBlock,
+)
 from transformers import PretrainedConfig
 
 from ....configuration_utils import RBLNCompileConfig, RBLNModelConfig
@@ -33,57 +37,168 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 
-class QwenImageTransformer2DModelWrapper(torch.nn.Module):
-    """Wrapper that simplifies QwenImageTransformer2DModel forward for RBLN compilation."""
+# ═══════════════════════════════════════════════════════════════════════
+# Compile-time patches
+#
+# RBLN compiler does not support several ops used by the upstream
+# QwenImageTransformer2DModel.  The three helpers below are applied
+# inside get_compiled_model (try/finally) so that the compile graph
+# is clean while the original module-level functions are restored
+# immediately afterwards.
+# ═══════════════════════════════════════════════════════════════════════
 
-    def __init__(self, model: "QwenImageTransformer2DModel") -> None:
+
+def _apply_rotary_emb_real(x, freqs_cis, use_real=True, use_real_unbind_dim=-1):
+    """Real-number replacement for ``apply_rotary_emb_qwen``.
+
+    Uses a half-split rotation: ``(x1, x2) = x[:D/2], x[D/2:]`` paired
+    with cat-doubled ``(cos, sin)`` of shape ``[S, D]``.  Numerically
+    very close to the original interleaved complex multiplication on CPU
+    and compiles most accurately on the RBLN backend.
+    """
+    cos, sin = freqs_cis                           # each [S, D]
+    cos = cos[None, :, None, :].to(x.device)       # [1, S, 1, D]
+    sin = sin[None, :, None, :].to(x.device)       # [1, S, 1, D]
+    d = x.shape[-1]
+    x1, x2 = x.split(d // 2, dim=-1)
+    return x * cos + torch.cat([-x2, x1], dim=-1) * sin
+
+
+def _modulate_no_where(self, x, mod_params, index=None):
+    """Arithmetic-lerp replacement for ``QwenImageTransformerBlock._modulate``.
+
+    Replaces ``torch.where(index == 0, a, b)`` with
+    ``a * (1 - idx) + b * idx`` to remove the boolean branch.
+    """
+    shift, scale, gate = mod_params.chunk(3, dim=-1)
+
+    if index is not None:
+        n = shift.size(0) // 2
+        idx = index.unsqueeze(-1).to(x.dtype)
+        inv = 1 - idx
+        shift = shift[:n].unsqueeze(1) * inv + shift[n:].unsqueeze(1) * idx
+        scale = scale[:n].unsqueeze(1) * inv + scale[n:].unsqueeze(1) * idx
+        gate = gate[:n].unsqueeze(1) * inv + gate[n:].unsqueeze(1) * idx
+    else:
+        shift = shift.unsqueeze(1)
+        scale = scale.unsqueeze(1)
+        gate = gate.unsqueeze(1)
+
+    return x * (1 + scale) + shift, gate
+
+
+def _patch_rope_to_real(transformer, img_shapes, txt_seq_lens, dtype):
+    """Pre-compute ``QwenEmbedRope`` complex frequencies as real buffers.
+
+    After this call the ``pos_embed.forward`` of *transformer* returns
+    ``((vid_cos, vid_sin), (txt_cos, txt_sin))`` — pure real tensors —
+    so that no complex numbers enter the compile graph.
+    """
+    embed = transformer.pos_embed
+
+    with torch.no_grad():
+        vid_freqs, txt_freqs = embed(img_shapes, txt_seq_lens=txt_seq_lens)
+
+    def _to_cos_sin(freqs):
+        c, s = freqs.real, freqs.imag   # each [S, D/2]
+        return (
+            torch.cat([c, c], dim=-1).to(dtype).contiguous(),
+            torch.cat([s, s], dim=-1).to(dtype).contiguous(),
+        )
+
+    vid_cos, vid_sin = _to_cos_sin(vid_freqs)
+    txt_cos, txt_sin = _to_cos_sin(txt_freqs)
+
+    embed.register_buffer("_vid_cos", vid_cos)
+    embed.register_buffer("_vid_sin", vid_sin)
+    embed.register_buffer("_txt_cos", txt_cos)
+    embed.register_buffer("_txt_sin", txt_sin)
+    embed.pos_freqs = None
+    embed.neg_freqs = None
+
+    def _forward_real(self, *args, **kwargs):
+        return (self._vid_cos, self._vid_sin), (self._txt_cos, self._txt_sin)
+
+    embed.forward = types.MethodType(_forward_real, embed)
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# Wrapper
+# ═══════════════════════════════════════════════════════════════════════
+
+
+class QwenImageTransformer2DModelWrapper(torch.nn.Module):
+    """Thin wrapper that fixes compile-time constants and maps the
+    four tensor inputs to the upstream ``QwenImageTransformer2DModel``
+    interface.
+
+    ``img_shapes`` / ``txt_seq_lens`` are Python lists stored as
+    attributes (compile-time constants).
+
+    ``encoder_hidden_states_mask`` (float32, 1=valid / 0=pad) is
+    converted to an additive attention bias and injected via
+    ``attention_kwargs`` so that the model's own
+    ``compute_text_seq_len_from_mask`` is bypassed (it relies on
+    bool ops that the RBLN compiler cannot handle).
+    """
+
+    _MASK_NEG_INF: float = -10000.0
+
+    def __init__(
+        self,
+        model: QwenImageTransformer2DModel,
+        img_shapes: list,
+        txt_seq_lens: list,
+    ) -> None:
         super().__init__()
         self.model = model
+        self.img_shapes = img_shapes
+        self.txt_seq_lens = txt_seq_lens
 
     def forward(
         self,
         hidden_states: torch.FloatTensor,
-        encoder_hidden_states: torch.FloatTensor = None,
-        encoder_hidden_states_mask: torch.FloatTensor = None,
-        timestep: torch.FloatTensor = None,
-        guidance: torch.FloatTensor = None,
-        img_shapes_tensor: torch.LongTensor = None,
-    ):
-        # Reconstruct img_shapes from flattened tensor:
-        # img_shapes_tensor has shape [batch_size, num_img_groups, 3]
-        # Convert back to list[list[tuple[int, int, int]]] for the original model
-        batch_size = img_shapes_tensor.shape[0]
-        num_groups = img_shapes_tensor.shape[1]
-        img_shapes = []
-        for b in range(batch_size):
-            shapes = []
-            for g in range(num_groups):
-                t, h, w = img_shapes_tensor[b, g].tolist()
-                if t == 0 and h == 0 and w == 0:
-                    break
-                shapes.append((t, h, w))
-            img_shapes.append(shapes)
+        encoder_hidden_states: torch.FloatTensor,
+        timestep: torch.FloatTensor,
+        encoder_hidden_states_mask: torch.FloatTensor,
+    ) -> torch.Tensor:
+        batch_size = hidden_states.shape[0]
+        image_seq_len = hidden_states.shape[1]
+
+        text_attn_bias = (1.0 - encoder_hidden_states_mask) * self._MASK_NEG_INF
+        image_attn_bias = torch.zeros(
+            batch_size, image_seq_len,
+            device=hidden_states.device, dtype=hidden_states.dtype,
+        )
+        joint_attention_mask = torch.cat([text_attn_bias, image_attn_bias], dim=1)
 
         return self.model(
             hidden_states=hidden_states,
             encoder_hidden_states=encoder_hidden_states,
-            encoder_hidden_states_mask=encoder_hidden_states_mask,
+            encoder_hidden_states_mask=None,
             timestep=timestep,
-            guidance=guidance,
-            img_shapes=img_shapes,
+            img_shapes=self.img_shapes,
+            txt_seq_lens=self.txt_seq_lens,
+            guidance=None,
+            attention_kwargs={"attention_mask": joint_attention_mask},
             return_dict=False,
         )
 
 
+# ═══════════════════════════════════════════════════════════════════════
+# RBLN model
+# ═══════════════════════════════════════════════════════════════════════
+
+
 class RBLNQwenImageTransformer2DModel(RBLNModel):
-    """
-    RBLN implementation of QwenImageTransformer2DModel for the Qwen-Image-Edit pipeline.
+    """RBLN implementation of ``QwenImageTransformer2DModel``.
 
-    This transformer takes text+image embeddings from Qwen2.5-VL and packed image latents,
-    and predicts the noise to be removed during the diffusion denoising process.
+    Three compile-time patches are applied inside ``get_compiled_model``
+    and restored immediately after compilation:
 
-    This class inherits from [`RBLNModel`]. Check the superclass documentation for the generic methods
-    the library implements for all its models.
+    1. **Real RoPE** – replaces ``apply_rotary_emb_qwen`` (complex ops).
+    2. **Arithmetic _modulate** – replaces ``torch.where`` branch.
+    3. **Pre-computed RoPE buffers** – eliminates runtime ``torch.polar``.
     """
 
     hf_library_name = "diffusers"
@@ -92,11 +207,58 @@ class RBLNQwenImageTransformer2DModel(RBLNModel):
 
     def __post_init__(self, **kwargs):
         super().__post_init__(**kwargs)
-        self._img_shapes_tensor = None
+
+    # ── helpers ────────────────────────────────────────────────────────
+
+    @classmethod
+    def _get_compile_time_constants(cls, rbln_config):
+        """Return ``(img_shapes, txt_seq_lens)`` derived from config."""
+        sample_h, sample_w = rbln_config.sample_size
+        patch_size = 2
+        packed_h = sample_h // patch_size
+        packed_w = sample_w // patch_size
+        single = (1, packed_h, packed_w)
+        img_shapes = [[single] * rbln_config.num_img_groups]
+        txt_seq_lens = [rbln_config.prompt_embed_length] * rbln_config.batch_size
+        return img_shapes, txt_seq_lens
+
+    # ── wrap / compile ────────────────────────────────────────────────
 
     @classmethod
     def _wrap_model_if_needed(cls, model: torch.nn.Module, rbln_config: RBLNModelConfig) -> torch.nn.Module:
-        return QwenImageTransformer2DModelWrapper(model).eval()
+        img_shapes, txt_seq_lens = cls._get_compile_time_constants(rbln_config)
+        return QwenImageTransformer2DModelWrapper(model, img_shapes, txt_seq_lens).eval()
+
+    @classmethod
+    def get_compiled_model(cls, model, rbln_config: RBLNQwenImageTransformer2DModelConfig):
+        import diffusers.models.transformers.transformer_qwenimage as _tq
+
+        original_rotary = _tq.apply_rotary_emb_qwen
+        original_modulate = QwenImageTransformerBlock._modulate
+
+        try:
+            # Patch 1 – real-number RoPE
+            _tq.apply_rotary_emb_qwen = _apply_rotary_emb_real
+            # Patch 2 – arithmetic _modulate
+            QwenImageTransformerBlock._modulate = _modulate_no_where
+            # Patch 3 – pre-computed RoPE buffers
+            img_shapes, txt_seq_lens = cls._get_compile_time_constants(rbln_config)
+            _patch_rope_to_real(model, img_shapes, txt_seq_lens, dtype=torch.float32)
+
+            wrapped = cls._wrap_model_if_needed(model, rbln_config)
+            compiled_model = cls.compile(
+                wrapped,
+                rbln_compile_config=rbln_config.compile_cfgs[0],
+                create_runtimes=rbln_config.create_runtimes,
+                device=rbln_config.device,
+            )
+        finally:
+            _tq.apply_rotary_emb_qwen = original_rotary
+            QwenImageTransformerBlock._modulate = original_modulate
+
+        return compiled_model
+
+    # ── config ────────────────────────────────────────────────────────
 
     @classmethod
     def update_rbln_config_using_pipe(
@@ -104,14 +266,13 @@ class RBLNQwenImageTransformer2DModel(RBLNModel):
     ) -> "RBLNDiffusionMixinConfig":
         if rbln_config.transformer.sample_size is None:
             if rbln_config.image_size is not None:
-                vae_scale_factor = pipe.vae_scale_factor
+                vae_sf = pipe.vae_scale_factor
                 rbln_config.transformer.sample_size = (
-                    rbln_config.image_size[0] // vae_scale_factor,
-                    rbln_config.image_size[1] // vae_scale_factor,
+                    rbln_config.image_size[0] // vae_sf,
+                    rbln_config.image_size[1] // vae_sf,
                 )
             else:
                 rbln_config.transformer.sample_size = pipe.default_sample_size
-
         return rbln_config
 
     @classmethod
@@ -124,84 +285,44 @@ class RBLNQwenImageTransformer2DModel(RBLNModel):
     ) -> RBLNQwenImageTransformer2DModelConfig:
         if rbln_config.sample_size is None:
             rbln_config.sample_size = model_config.sample_size
-
         if isinstance(rbln_config.sample_size, int):
             rbln_config.sample_size = (rbln_config.sample_size, rbln_config.sample_size)
 
-        # QwenImage packs latents into 2x2 patches, so sequence length = (H/2) * (W/2)
-        latent_height = rbln_config.sample_size[0]
-        latent_width = rbln_config.sample_size[1]
-        # hidden_states is packed: [batch, (H/2)*(W/2), in_channels * 4]
-        # But for the edit pipeline, image_latents are concatenated:
-        # latent_model_input = torch.cat([latents, image_latents], dim=1)
-        # So the seq_len is doubled
-        image_seq_len = (latent_height // 2) * (latent_width // 2)
-        total_seq_len = image_seq_len * 2  # latents + image_latents concatenated
+        sample_h, sample_w = rbln_config.sample_size
+        packed_h, packed_w = sample_h // 2, sample_w // 2
+        total_seq_len = packed_h * packed_w * rbln_config.num_img_groups
 
         input_info = [
             (
                 "hidden_states",
-                [
-                    rbln_config.batch_size,
-                    total_seq_len,
-                    model_config.in_channels,
-                ],
+                [rbln_config.batch_size, total_seq_len, model_config.in_channels],
                 "float32",
             ),
             (
                 "encoder_hidden_states",
-                [
-                    rbln_config.batch_size,
-                    rbln_config.prompt_embed_length,
-                    model_config.joint_attention_dim,
-                ],
+                [rbln_config.batch_size, rbln_config.prompt_embed_length, model_config.joint_attention_dim],
+                "float32",
+            ),
+            (
+                "timestep",
+                [rbln_config.batch_size],
                 "float32",
             ),
             (
                 "encoder_hidden_states_mask",
-                [
-                    rbln_config.batch_size,
-                    rbln_config.prompt_embed_length,
-                ],
+                [rbln_config.batch_size, rbln_config.prompt_embed_length],
                 "float32",
-            ),
-            ("timestep", [rbln_config.batch_size], "float32"),
-            ("guidance", [rbln_config.batch_size], "float32"),
-            (
-                "img_shapes_tensor",
-                [
-                    rbln_config.batch_size,
-                    rbln_config.num_img_groups,
-                    3,
-                ],
-                "int64",
             ),
         ]
 
-        compile_config = RBLNCompileConfig(input_info=input_info)
-        rbln_config.set_compile_cfgs([compile_config])
+        rbln_config.set_compile_cfgs([RBLNCompileConfig(input_info=input_info)])
         return rbln_config
+
+    # ── runtime ───────────────────────────────────────────────────────
 
     @property
     def compiled_batch_size(self):
         return self.rbln_config.compile_cfgs[0].input_info[0][1][0]
-
-    def _build_img_shapes_tensor(
-        self,
-        img_shapes: list,
-        batch_size: int,
-        device: torch.device,
-    ) -> torch.LongTensor:
-        """Convert img_shapes list to a fixed-size tensor for compiled model input."""
-        num_img_groups = self.rbln_config.num_img_groups
-        tensor = torch.zeros((batch_size, num_img_groups, 3), dtype=torch.long, device=device)
-        for b in range(min(batch_size, len(img_shapes))):
-            for g in range(min(num_img_groups, len(img_shapes[b]))):
-                t, h, w = img_shapes[b][g]
-                tensor[b, g, 0] = t
-                tensor[b, g, 1] = h
-                tensor[b, g, 2] = w
-        return tensor
 
     def forward(
         self,
@@ -215,47 +336,30 @@ class RBLNQwenImageTransformer2DModel(RBLNModel):
         return_dict: bool = True,
         **kwargs,
     ) -> Union[Transformer2DModelOutput, Tuple]:
-        """
-        Forward pass for the RBLN-optimized QwenImageTransformer2DModel.
+        compiled_seq_len = self.rbln_config.prompt_embed_length
+        actual_seq_len = encoder_hidden_states.shape[1]
 
-        Args:
-            hidden_states (torch.FloatTensor): Packed latent image embeddings.
-            encoder_hidden_states (torch.FloatTensor): Conditional embeddings from Qwen2.5-VL.
-            encoder_hidden_states_mask (torch.FloatTensor): Attention mask for encoder hidden states.
-            timestep (torch.LongTensor): Current denoising step.
-            img_shapes (list): Image shapes for RoPE computation.
-            guidance (torch.Tensor): Guidance tensor for guidance-distilled models.
-            return_dict (bool): Whether to return Transformer2DModelOutput or tuple.
+        if encoder_hidden_states_mask is not None:
+            mask = encoder_hidden_states_mask.float()
+            if actual_seq_len < compiled_seq_len:
+                mask = torch.nn.functional.pad(mask, (0, compiled_seq_len - actual_seq_len), value=0.0)
+        else:
+            mask = torch.ones(
+                encoder_hidden_states.shape[0], compiled_seq_len,
+                device=encoder_hidden_states.device, dtype=encoder_hidden_states.dtype,
+            )
+            if actual_seq_len < compiled_seq_len:
+                mask[:, actual_seq_len:] = 0.0
 
-        Returns:
-            Union[Transformer2DModelOutput, Tuple]
-        """
-        batch_size = hidden_states.shape[0]
-
-        # Convert img_shapes to tensor format
-        img_shapes_tensor = self._build_img_shapes_tensor(
-            img_shapes, batch_size, hidden_states.device
-        )
-
-        # Pad encoder_hidden_states_mask if needed
-        if encoder_hidden_states_mask is None:
-            prompt_embed_length = self.rbln_config.prompt_embed_length
-            encoder_hidden_states_mask = torch.ones(
-                (batch_size, prompt_embed_length),
-                dtype=hidden_states.dtype,
-                device=hidden_states.device,
+        if actual_seq_len < compiled_seq_len:
+            encoder_hidden_states = torch.nn.functional.pad(
+                encoder_hidden_states, (0, 0, 0, compiled_seq_len - actual_seq_len), value=0.0,
             )
 
-        # Pad guidance if needed
-        if guidance is None:
-            guidance = torch.zeros(batch_size, dtype=torch.float32, device=hidden_states.device)
-
-        return super().forward(
+        output = super().forward(
             hidden_states,
             encoder_hidden_states,
-            encoder_hidden_states_mask,
             timestep,
-            guidance,
-            img_shapes_tensor,
+            mask,
             return_dict=return_dict,
         )
