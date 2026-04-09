@@ -356,7 +356,7 @@ class RBLNQwenImageTransformer2DModel(RBLNModel):
                 encoder_hidden_states, (0, 0, 0, compiled_seq_len - actual_seq_len), value=0.0,
             )
 
-        output = super().forward(
+        return super().forward(
             hidden_states,
             encoder_hidden_states,
             timestep,
