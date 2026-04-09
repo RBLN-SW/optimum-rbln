@@ -21,7 +21,7 @@ from torch import Tensor
 
 @torch.library.custom_op(
     "rbln_custom_ops::paged_sliding_window_attn_prefill",
-    mutates_args=(),
+    mutates_args=(["kcache", "vcache"]),
 )
 def paged_sliding_window_attn_prefill(
     q: Tensor,
@@ -83,7 +83,7 @@ def paged_sliding_window_attn_prefill_fake(
 
 @torch.library.custom_op(
     "rbln_custom_ops::paged_sliding_window_attn_decode",
-    mutates_args=(),
+    mutates_args=(["kcache", "vcache"]),
 )
 def paged_sliding_window_attn_decode(
     q: Tensor,
