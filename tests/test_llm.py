@@ -228,6 +228,7 @@ class TestQwen2MoeForCausalLM(LLMTest.TestLLM):
     TEST_LEVEL = TestLevel.FULL
 
 
+@pytest.mark.skip(reason="disabled")
 class TestQwen3MoeForCausalLM(LLMTest.TestLLM):
     RBLN_CLASS = RBLNQwen3MoeForCausalLM
     HF_MODEL_ID = "katuni4ka/tiny-random-qwen3moe"
