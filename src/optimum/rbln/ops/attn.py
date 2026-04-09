@@ -20,7 +20,7 @@ from torch import Tensor
 
 @torch.library.custom_op(
     "rbln_custom_ops::paged_attn_decode",
-    mutates_args=(["kcache", "vcache"]),
+    mutates_args=(),
 )
 def paged_attn_decode(
     q: Tensor,
@@ -55,7 +55,7 @@ def paged_attn_decode_fake(
 
 @torch.library.custom_op(
     "rbln_custom_ops::paged_attn_decode_kv_fp8",
-    mutates_args=(["kcache", "vcache"]),
+    mutates_args=(),
 )
 def paged_attn_decode_kv_fp8(
     q: Tensor,
@@ -94,7 +94,7 @@ def paged_attn_decode_kv_fp8_fake(
 
 @torch.library.custom_op(
     "rbln_custom_ops::paged_attn_prefill",
-    mutates_args=(["kcache", "vcache"]),
+    mutates_args=(),
 )
 def paged_attn_prefill(
     q: Tensor,
@@ -153,7 +153,7 @@ def paged_attn_prefill_fake(
 
 @torch.library.custom_op(
     "rbln_custom_ops::paged_attn_prefill_kv_fp8",
-    mutates_args=(["kcache", "vcache"]),
+    mutates_args=(),
 )
 def paged_attn_prefill_kv_fp8(
     q: Tensor,
@@ -192,7 +192,7 @@ def paged_attn_prefill_kv_fp8_fake(
 
 @torch.library.custom_op(
     "rbln_custom_ops::paged_causal_attn_decode",
-    mutates_args=(["kcache", "vcache"]),
+    mutates_args=(),
 )
 def paged_causal_attn_decode(
     q: Tensor,
@@ -256,7 +256,7 @@ def paged_causal_attn_decode_fake(
 
 @torch.library.custom_op(
     "rbln_custom_ops::paged_causal_attn_prefill",
-    mutates_args=(["kcache", "vcache"]),
+    mutates_args=(),
 )
 def paged_causal_attn_prefill(
     q: Tensor,
@@ -322,7 +322,7 @@ def paged_causal_attn_prefill_fake(
 
 @torch.library.custom_op(
     "rbln_custom_ops::paged_causal_attn_decode_kv_fp8",
-    mutates_args=(["kcache", "vcache"]),
+    mutates_args=(),
 )
 def paged_causal_attn_decode_kv_fp8(
     q: Tensor,
@@ -363,7 +363,7 @@ def paged_causal_attn_decode_kv_fp8_fake(
 
 @torch.library.custom_op(
     "rbln_custom_ops::paged_causal_attn_prefill_kv_fp8",
-    mutates_args=(["kcache", "vcache"]),
+    mutates_args=(),
 )
 def paged_causal_attn_prefill_kv_fp8(
     q: Tensor,
@@ -406,7 +406,7 @@ def paged_causal_attn_prefill_kv_fp8_fake(
 
 @torch.library.custom_op(
     "rbln_custom_ops::paged_add_softmax_attn_decode",
-    mutates_args=(["kcache", "vcache"]),
+    mutates_args=(),
 )
 def paged_add_softmax_attn_decode(
     q: Tensor,

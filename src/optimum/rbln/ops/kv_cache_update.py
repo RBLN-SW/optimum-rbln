@@ -16,7 +16,7 @@ import torch
 from torch import Tensor
 
 
-@torch.library.custom_op("rbln_custom_ops::rbln_cache_update", mutates_args=(["cache"]))
+@torch.library.custom_op("rbln_custom_ops::rbln_cache_update", mutates_args=())
 def rbln_cache_update(cache: Tensor, state: Tensor, position: Tensor, axis: Tensor) -> Tensor:
     # Define the RBLN custom operation "rbln_cache_update" which updates a cache tensor with a given state tensor.
     # This operation is designed to perform in-place updates directly on the device without needing to transfer the cache back to the host.
