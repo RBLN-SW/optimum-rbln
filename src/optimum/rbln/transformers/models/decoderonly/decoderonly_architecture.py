@@ -13,14 +13,11 @@
 # limitations under the License.
 
 import math
-import os
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple, Union
 
 import torch
 from torch import nn
 from transformers import PretrainedConfig, PreTrainedModel
-
-_DISABLE_LAYERNORM = os.environ.get("RBLN_EXEC_DISABLE_LAYERNORM", "0").lower() in ("1", "true", "yes")
 
 from ....utils import logging
 from ...modeling_rope_utils import ROPE_INIT_FUNCTIONS
@@ -544,8 +541,7 @@ class DecoderOnlyModel(nn.Module):
         if collect_ln:
             assert per_layer_ln_io is not None
             x_pre_final = hidden_states
-            if not _DISABLE_LAYERNORM:
-                hidden_states = self.get_last_layernorm()(hidden_states)
+            hidden_states = self.get_last_layernorm()(hidden_states)
             layernorm_io = {
                 "per_layer": per_layer_ln_io,
                 "final_norm": (x_pre_final, hidden_states),
@@ -632,8 +628,7 @@ class DecoderOnlyModel(nn.Module):
                         )
                     layernorm_io = packed
         else:
-            if not _DISABLE_LAYERNORM:
-                hidden_states = self.get_last_layernorm()(hidden_states)
+            hidden_states = self.get_last_layernorm()(hidden_states)
 
         if output_hidden_states:
             all_hidden_states += (hidden_states,)
@@ -787,8 +782,7 @@ class DecoderOnlyLayer(nn.Module):
         if collect_ln:
             assert ln_io is not None
             x_pre = hidden_states
-        if not _DISABLE_LAYERNORM:
-            hidden_states = self.get_pre_attention_layernorm()(hidden_states)
+        hidden_states = self.get_pre_attention_layernorm()(hidden_states)
         if collect_ln:
             assert ln_io is not None
             ln_io["pre_attention"] = (x_pre, hidden_states)
@@ -810,8 +804,7 @@ class DecoderOnlyLayer(nn.Module):
         residual = hidden_states
         if collect_ln:
             x_pre = hidden_states
-        if not _DISABLE_LAYERNORM:
-            hidden_states = self.get_post_attention_layernorm()(hidden_states)
+        hidden_states = self.get_post_attention_layernorm()(hidden_states)
         if collect_ln:
             assert ln_io is not None
             ln_io["post_attention"] = (x_pre, hidden_states)
