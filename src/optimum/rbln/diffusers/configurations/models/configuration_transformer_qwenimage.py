@@ -33,6 +33,7 @@ class RBLNQwenImageTransformer2DModelConfig(RBLNModelConfig):
         sample_size: Optional[Union[int, Tuple[int, int]]] = None,
         prompt_embed_length: Optional[int] = None,
         num_img_groups: int = 2,
+        tensor_parallel_size: int = 1,
         **kwargs: Any,
     ):
         """
@@ -59,6 +60,7 @@ class RBLNQwenImageTransformer2DModelConfig(RBLNModelConfig):
             self.sample_size = (self.sample_size, self.sample_size)
 
         self.num_img_groups = num_img_groups
+        self.tensor_parallel_size = tensor_parallel_size
 
     @property
     def batch_size_is_specified(self):

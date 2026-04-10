@@ -32,6 +32,7 @@ def test_transformer(
     native: bool = False,
     compile: bool = False,
     threshold: float = PASS_THRESHOLD,
+    tensor_parallel_size: int = 1,
 ) -> bool:
     print("\n" + "=" * 60)
     print("Transformer (QwenImageTransformer2DModel) — golden comparison")
@@ -95,6 +96,7 @@ def test_transformer(
                 "sample_size": (lat_h, lat_w),
                 "prompt_embed_length": prompt_embed_length,
                 "num_img_groups": 2,
+                "tensor_parallel_size": tensor_parallel_size,
             },
         )
     else:
@@ -133,6 +135,7 @@ def parse_args():
     p.add_argument("--num-layers", type=int, default=60, help="Number of layers to test")
     p.add_argument("--compile", action="store_true", default=False, help="Compile the transformer")
     p.add_argument("--native", action="store_true", default=False, help="Use native transformer")
+    p.add_argument("--tensor-parallel-size","-tp", type=int, default=1, help="Tensor parallel size")
     return p.parse_args()
 
 
@@ -148,6 +151,7 @@ def main():
         native=args.native,
         compile=args.compile,
         threshold=args.threshold,
+        tensor_parallel_size=args.tensor_parallel_size,
     )
     print("\n" + "=" * 60)
     print("SUMMARY")
