@@ -51,17 +51,23 @@ logger = get_logger(__name__)
 def _apply_rotary_emb_real(x, freqs_cis, use_real=True, use_real_unbind_dim=-1):
     """Real-number replacement for ``apply_rotary_emb_qwen``.
 
-    Uses a half-split rotation: ``(x1, x2) = x[:D/2], x[D/2:]`` paired
-    with cat-doubled ``(cos, sin)`` of shape ``[S, D]``.  Numerically
-    very close to the original interleaved complex multiplication on CPU
-    and compiles most accurately on the RBLN backend.
+    Mathematically equivalent to the original complex multiplication::
+
+        (a + jb)(c + jd) = (ac - bd) + j(ad + bc)
+
+    Uses the **interleaved** convention (same as ``use_real_unbind_dim=-1``
+    in diffusers): adjacent elements ``(x[2k], x[2k+1])`` form a pair
+    rotated by frequency ``k``.
+
+    ``freqs_cis`` is a ``(cos, sin)`` tuple with shape ``[S, D]`` where
+    values are repeat-interleaved: ``[c0, c0, c1, c1, …]``.
     """
     cos, sin = freqs_cis                           # each [S, D]
     cos = cos[None, :, None, :].to(x.device)       # [1, S, 1, D]
     sin = sin[None, :, None, :].to(x.device)       # [1, S, 1, D]
-    d = x.shape[-1]
-    x1, x2 = x.split(d // 2, dim=-1)
-    return x * cos + torch.cat([-x2, x1], dim=-1) * sin
+    x_real, x_imag = x.reshape(*x.shape[:-1], -1, 2).unbind(-1)  # each [B, S, H, D/2]
+    x_rotated = torch.stack([-x_imag, x_real], dim=-1).flatten(-2)  # [B, S, H, D]
+    return (x.float() * cos + x_rotated.float() * sin).to(x.dtype)
 
 
 def _modulate_no_where(self, x, mod_params, index=None):
@@ -101,9 +107,12 @@ def _patch_rope_to_real(transformer, img_shapes, txt_seq_lens, dtype):
 
     def _to_cos_sin(freqs):
         c, s = freqs.real, freqs.imag   # each [S, D/2]
+        # repeat-interleave: [c0,c0,c1,c1,...] to match interleaved pairing
+        c = torch.stack([c, c], dim=-1).reshape(c.shape[0], -1)
+        s = torch.stack([s, s], dim=-1).reshape(s.shape[0], -1)
         return (
-            torch.cat([c, c], dim=-1).to(dtype).contiguous(),
-            torch.cat([s, s], dim=-1).to(dtype).contiguous(),
+            c.to(dtype).contiguous(),
+            s.to(dtype).contiguous(),
         )
 
     vid_cos, vid_sin = _to_cos_sin(vid_freqs)
