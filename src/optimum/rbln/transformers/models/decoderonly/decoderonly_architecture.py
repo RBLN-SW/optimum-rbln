@@ -591,7 +591,12 @@ class DecoderOnlyModel(nn.Module):
                         attn_op_out_s = torch.stack([item["attn_op_out"] for item in per_layer_ln_io], dim=0)
                         attn_o_proj_out_s = torch.stack([item["attn_o_proj_out"] for item in per_layer_ln_io], dim=0)
                         packed = packed + (q_s, k_s, v_s, attn_op_out_s, attn_o_proj_out_s)
-                    layernorm_io = packed
+                        # q/k after rotary embedding
+                        if "attn_q_rot" in per_layer_ln_io[0]:
+                            q_rot_s = torch.stack([item["attn_q_rot"] for item in per_layer_ln_io], dim=0)
+                            k_rot_s = torch.stack([item["attn_k_rot"] for item in per_layer_ln_io], dim=0)
+                            packed = packed + (q_rot_s, k_rot_s)
+                    layernorm_io = tuple(t.contiguous() if hasattr(t, 'contiguous') else t for t in packed)
                 else:
                     # Backward compatible: export last layer only.
                     last = per_layer_ln_io[-1] if len(per_layer_ln_io) > 0 else None
@@ -626,7 +631,10 @@ class DecoderOnlyModel(nn.Module):
                             last["attn_op_out"],
                             last["attn_o_proj_out"],
                         )
-                    layernorm_io = packed
+                        # q/k after rotary embedding
+                        if "attn_q_rot" in last:
+                            packed = packed + (last["attn_q_rot"], last["attn_k_rot"])
+                    layernorm_io = tuple(t.contiguous() if hasattr(t, 'contiguous') else t for t in packed)
         else:
             hidden_states = self.get_last_layernorm()(hidden_states)
 
@@ -1000,9 +1008,10 @@ class DecoderOnlyAttention(nn.Module):
         )
         if record_attn:
             # Note: these are Linear outputs (bias already applied if present).
-            ln_io["attn_q_proj"] = query_states
-            ln_io["attn_k_proj"] = key_states
-            ln_io["attn_v_proj"] = value_states
+            # .contiguous() ensures traced outputs satisfy rebel compiler's contiguity requirement.
+            ln_io["attn_q_proj"] = query_states.contiguous()
+            ln_io["attn_k_proj"] = key_states.contiguous()
+            ln_io["attn_v_proj"] = value_states.contiguous()
 
         query_states = query_states.view(batch_size, query_length, self.num_heads, self.head_dim).transpose(1, 2)
         key_states = key_states.view(batch_size, query_length, self.num_key_value_heads, self.head_dim).transpose(1, 2)
@@ -1015,6 +1024,10 @@ class DecoderOnlyAttention(nn.Module):
 
         if cos is not None and sin is not None:
             query_states, key_states = self.apply_rotary_pos_embed(query_states, key_states, cos, sin)
+
+        if record_attn:
+            ln_io["attn_q_rot"] = query_states.contiguous()
+            ln_io["attn_k_rot"] = key_states.contiguous()
 
         if batch_size > 1 and "prefill" in self.phase:
             raise NotImplementedError(f"batch size should be 1 if prefill phase, but got {batch_size}.")
@@ -1037,7 +1050,7 @@ class DecoderOnlyAttention(nn.Module):
             s_aux=getattr(self, "sinks", None),
         )
         if record_attn:
-            ln_io["attn_op_out"] = attn_output
+            ln_io["attn_op_out"] = attn_output.contiguous()
 
         # Check if using LoRALinear (which accepts lora_int_id) or standard linear layers
         if self.lora_config:
@@ -1047,7 +1060,7 @@ class DecoderOnlyAttention(nn.Module):
             # Standard linear projection without LoRA
             attn_outputs = self.o_proj(attn_output)
         if record_attn:
-            ln_io["attn_o_proj_out"] = attn_outputs
+            ln_io["attn_o_proj_out"] = attn_outputs.contiguous()
 
         return attn_outputs
 

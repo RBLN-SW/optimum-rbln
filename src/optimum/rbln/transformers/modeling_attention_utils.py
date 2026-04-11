@@ -26,17 +26,26 @@ def set_default_values(
     kvcache_block_size: Optional[int] = None,
     max_seq_len: Optional[int] = None,
 ) -> Tuple[str, int, int]:
+    _attn_impl_explicitly_set = attn_impl is not None
+
     if attn_impl is None:
         attn_impl = "eager"
 
     if kvcache_partition_len is not None:
-        if attn_impl == "eager":
+        if attn_impl == "eager" and not _attn_impl_explicitly_set:
             attn_impl = "flash_attn"
             logger.warning(
                 "A non-null `kvcache_partition_len` was provided, but `attn_impl` was not explicitly set or "
                 "set to 'eager'. Since KV cache partitioning is only supported with flash attention, "
                 "`attn_impl` has been automatically switched to 'flash_attn'."
             )
+        elif attn_impl == "eager" and _attn_impl_explicitly_set:
+            # User explicitly requested eager attention; ignore kvcache_partition_len.
+            logger.warning(
+                "A non-null `kvcache_partition_len` was provided, but `attn_impl` was explicitly set to 'eager'. "
+                "Ignoring `kvcache_partition_len` and using eager attention."
+            )
+            kvcache_partition_len = None
 
     if kvcache_partition_len is None and attn_impl == "flash_attn":
         kvcache_partition_len = DEFAULT_FLASH_ATTN_PARTITION_LENGTH

@@ -29,10 +29,13 @@ if TYPE_CHECKING:
 
 
 _PACKED_LAST_LAYER_LN_IO_COUNT = 11
-_PACKED_ATTENTION_IO_COUNT = 5
+_PACKED_ATTENTION_IO_COUNT = 5  # q_proj, k_proj, v_proj, attn_op_out, attn_o_proj_out
+_PACKED_ATTENTION_ROT_COUNT = 2  # attn_q_rot, attn_k_rot
 _PACKED_LAST_LAYER_LN_IO_EXT_COUNT = _PACKED_LAST_LAYER_LN_IO_COUNT + _PACKED_ATTENTION_IO_COUNT
+_PACKED_LAST_LAYER_LN_IO_FULL_COUNT = _PACKED_LAST_LAYER_LN_IO_EXT_COUNT + _PACKED_ATTENTION_ROT_COUNT
 _PER_LAYER_BASE_COUNT = 9  # pre_in, pre_out, post_in, post_out, gate, act, up, mul, down
 _PER_LAYER_EXT_COUNT = _PER_LAYER_BASE_COUNT + _PACKED_ATTENTION_IO_COUNT  # + q, k, v, attn_op, attn_o_proj
+_PER_LAYER_FULL_COUNT = _PER_LAYER_EXT_COUNT + _PACKED_ATTENTION_ROT_COUNT  # + q_rot, k_rot
 _FINAL_NORM_COUNT = 2  # final_norm_in, final_norm_out
 
 
@@ -59,6 +62,9 @@ def _rebuild_last_layer_layernorm_io(packed: list[torch.Tensor], num_hidden_laye
         last["attn_v_proj"] = v
         last["attn_op_out"] = attn_op_out
         last["attn_o_proj_out"] = attn_o_proj_out
+    if len(packed) >= _PACKED_LAST_LAYER_LN_IO_FULL_COUNT:
+        last["attn_q_rot"] = packed[16]
+        last["attn_k_rot"] = packed[17]
     per_layer[-1] = last
     return {"per_layer": per_layer, "final_norm": (final_in, final_out)}
 
@@ -70,8 +76,11 @@ def _rebuild_all_layers_layernorm_io(packed: list[torch.Tensor], num_hidden_laye
     gate_s, act_s, up_s, mul_s, down_s = packed[4], packed[5], packed[6], packed[7], packed[8]
     final_in, final_out = packed[9], packed[10]
     q_s = k_s = v_s = attn_op_out_s = attn_o_proj_out_s = None
+    q_rot_s = k_rot_s = None
     if len(packed) >= _PACKED_LAST_LAYER_LN_IO_EXT_COUNT:
         q_s, k_s, v_s, attn_op_out_s, attn_o_proj_out_s = packed[11], packed[12], packed[13], packed[14], packed[15]
+    if len(packed) >= _PACKED_LAST_LAYER_LN_IO_FULL_COUNT:
+        q_rot_s, k_rot_s = packed[16], packed[17]
 
     if pre_in_s.dim() < 1 or int(pre_in_s.shape[0]) != int(num_hidden_layers):
         raise ValueError(
@@ -95,6 +104,9 @@ def _rebuild_all_layers_layernorm_io(packed: list[torch.Tensor], num_hidden_laye
             item["attn_v_proj"] = v_s[i]
             item["attn_op_out"] = attn_op_out_s[i]
             item["attn_o_proj_out"] = attn_o_proj_out_s[i]
+        if q_rot_s is not None:
+            item["attn_q_rot"] = q_rot_s[i]
+            item["attn_k_rot"] = k_rot_s[i]
         per_layer[i] = item
     return {"per_layer": per_layer, "final_norm": (final_in, final_out)}
 
@@ -128,6 +140,9 @@ def _rebuild_all_layers_flat_layernorm_io(
             item["attn_v_proj"] = packed[idx + 11]
             item["attn_op_out"] = packed[idx + 12]
             item["attn_o_proj_out"] = packed[idx + 13]
+        if per_layer_count >= _PER_LAYER_FULL_COUNT:
+            item["attn_q_rot"] = packed[idx + 14]
+            item["attn_k_rot"] = packed[idx + 15]
         per_layer[i] = item
         idx += per_layer_count
     final_in = packed[idx]
@@ -142,7 +157,7 @@ def _rebuild_layernorm_io(packed: list[torch.Tensor], num_hidden_layers: int) ->
         return _rebuild_all_layers_layernorm_io(packed, num_hidden_layers)
     # Case 2: flat 3D tensors — compiler unpacked the stack into individual per-layer outputs
     n_packed = len(packed)
-    for plc in (_PER_LAYER_EXT_COUNT, _PER_LAYER_BASE_COUNT):
+    for plc in (_PER_LAYER_FULL_COUNT, _PER_LAYER_EXT_COUNT, _PER_LAYER_BASE_COUNT):
         expected = plc * num_hidden_layers + _FINAL_NORM_COUNT
         if n_packed == expected:
             return _rebuild_all_layers_flat_layernorm_io(packed, num_hidden_layers, per_layer_count=plc)
@@ -520,11 +535,12 @@ class RBLNRuntimeModel(RBLNPytorchRuntime):
             ln_io = None
             if out_ln and len(outputs) >= offset + _PACKED_LAST_LAYER_LN_IO_COUNT:
                 # Newer compiled variants may append attention intermediates after the base 11 tensors.
-                take = (
-                    _PACKED_LAST_LAYER_LN_IO_EXT_COUNT
-                    if len(outputs) >= offset + _PACKED_LAST_LAYER_LN_IO_EXT_COUNT
-                    else _PACKED_LAST_LAYER_LN_IO_COUNT
-                )
+                if len(outputs) >= offset + _PACKED_LAST_LAYER_LN_IO_FULL_COUNT:
+                    take = _PACKED_LAST_LAYER_LN_IO_FULL_COUNT
+                elif len(outputs) >= offset + _PACKED_LAST_LAYER_LN_IO_EXT_COUNT:
+                    take = _PACKED_LAST_LAYER_LN_IO_EXT_COUNT
+                else:
+                    take = _PACKED_LAST_LAYER_LN_IO_COUNT
                 packed = list(outputs[offset : offset + take])
                 ln_io = _rebuild_layernorm_io(packed, int(self.config.num_hidden_layers))
         else:
