@@ -44,16 +44,16 @@ def test_transformer(
     vae_scale_factor = 8
 
     inputs = torch.load("/mnt/shared_data/groups/sw_dev/thkim/transformer_golden_inputs.pt")
-    dummy_hs = inputs["hidden_states"]#.to(torch.bfloat16)
-    dummy_enc_raw = inputs["encoder_hidden_states"]#.to(torch.bfloat16)
-    dummy_t = inputs["timestep"]#.to(torch.bfloat16)
+    dummy_hs = inputs["hidden_states"].to(torch.bfloat16)
+    dummy_enc_raw = inputs["encoder_hidden_states"].to(torch.bfloat16)
+    dummy_t = inputs["timestep"].to(torch.bfloat16)
 
     print("\n[1/4] Loading PyTorch Transformer...")
     transformer = QwenImageTransformer2DModel.from_pretrained(
         model_id,
         subfolder="transformer",
         num_layers=num_layers,
-        # torch_dtype=torch.bfloat16,
+        torch_dtype=torch.bfloat16,
     )
     transformer.eval()
 
@@ -96,6 +96,7 @@ def test_transformer(
             model_save_dir=model_save_dir,
             rbln_config={
                 "batch_size": batch,
+                # QwenImage diffusers config has no `sample_size`; latent (H, W) must be set for compile.
                 "sample_size": (lat_h, lat_w),
                 "prompt_embed_length": prompt_embed_length,
                 "num_img_groups": 2,

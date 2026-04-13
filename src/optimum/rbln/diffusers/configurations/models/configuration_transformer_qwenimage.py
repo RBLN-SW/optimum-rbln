@@ -25,12 +25,12 @@ class RBLNQwenImageTransformer2DModelConfig(RBLNModelConfig):
     the Qwen-Image-Edit diffusion pipeline.
     """
 
-    subclass_non_save_attributes = ["_batch_size_is_specified"]
+    subclass_non_save_attributes = ["_batch_size_is_specified", "_sample_size"]
+    _sample_size = None
 
     def __init__(
         self,
         batch_size: Optional[int] = None,
-        sample_size: Optional[Union[int, Tuple[int, int]]] = None,
         prompt_embed_length: Optional[int] = None,
         num_img_groups: int = 2,
         tensor_parallel_size: int = 1,
@@ -55,10 +55,6 @@ class RBLNQwenImageTransformer2DModelConfig(RBLNModelConfig):
             raise ValueError(f"batch_size must be a positive integer, got {self.batch_size}")
 
         self.prompt_embed_length = prompt_embed_length
-        self.sample_size = sample_size
-        if isinstance(self.sample_size, int):
-            self.sample_size = (self.sample_size, self.sample_size)
-
         self.num_img_groups = num_img_groups
         self.tensor_parallel_size = tensor_parallel_size
 

@@ -220,7 +220,10 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
 
             if len(cls._rbln_submodules) > 0:
                 if rbln_submodules is None:
-                    rbln_submodules = cls._load_submodules(model_save_dir=model_id, rbln_config=rbln_config, **kwargs)
+                    submodule_load_dir = str(Path(model_id) / subfolder) if subfolder else model_id
+                    rbln_submodules = cls._load_submodules(
+                        model_save_dir=submodule_load_dir, rbln_config=rbln_config, **kwargs
+                    )
             elif rbln_submodules is None:
                 rbln_submodules = []
 

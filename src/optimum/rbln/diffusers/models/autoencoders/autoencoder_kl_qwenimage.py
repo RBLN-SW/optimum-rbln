@@ -102,6 +102,7 @@ class RBLNAutoencoderKLQwenImage(RBLNModel):
 
         self.decoder = RBLNRuntimeQwenImageVAEDecoder(runtime=self.model[-1], main_input_name="z")
         self.image_size = self.rbln_config.image_size
+        self.temperal_downsample = self.config.temperal_downsample
 
     @classmethod
     def get_compiled_model(
@@ -138,7 +139,7 @@ class RBLNAutoencoderKLQwenImage(RBLNModel):
 
         if vae_config.sample_size is None:
             transformer = getattr(pipe, "transformer", None)
-            if transformer is not None and hasattr(transformer.config, "sample_size"):
+            if transformer is not None and hasattr(transformer.config, "sample_size") and transformer.config.sample_size is not None:
                 sample_size = transformer.config.sample_size
                 if isinstance(sample_size, int):
                     sample_size = (sample_size, sample_size)
@@ -148,8 +149,15 @@ class RBLNAutoencoderKLQwenImage(RBLNModel):
                     sample_size[1] * vae_scale_factor,
                 )
 
-        if vae_config.vae_scale_factor is None:
-            vae_config.vae_scale_factor = pipe.vae_scale_factor
+        if vae_config.sample_size is None:
+            raise ValueError(
+                "image_size (or height/width) is required for compiling the QwenImage VAE but was not provided. "
+                "Please specify it in rbln_config, e.g.: "
+                'rbln_config={"height": 1024, "width": 1024, ...}'
+            )
+
+        if vae_config._vae_scale_factor is None:
+            vae_config._vae_scale_factor = pipe.vae_scale_factor
 
         return rbln_config
 
@@ -164,14 +172,14 @@ class RBLNAutoencoderKLQwenImage(RBLNModel):
         if isinstance(rbln_config.sample_size, int):
             rbln_config.sample_size = (rbln_config.sample_size, rbln_config.sample_size)
 
-        if rbln_config.z_dim is None:
-            rbln_config.z_dim = model_config.z_dim
+        if rbln_config._z_dim is None:
+            rbln_config._z_dim = model_config.z_dim
 
-        if rbln_config.input_channels is None:
-            rbln_config.input_channels = model_config.input_channels
+        if rbln_config._input_channels is None:
+            rbln_config._input_channels = model_config.input_channels
 
-        if rbln_config.vae_scale_factor is None:
-            rbln_config.vae_scale_factor = 2 ** len(model_config.temperal_downsample)
+        if rbln_config._vae_scale_factor is None:
+            rbln_config._vae_scale_factor = 2 ** len(model_config.temperal_downsample)
 
         compile_cfgs = []
 
@@ -184,7 +192,7 @@ class RBLNAutoencoderKLQwenImage(RBLNModel):
                     "x",
                     [
                         rbln_config.batch_size,
-                        rbln_config.input_channels,
+                        rbln_config._input_channels,
                         num_frames,
                         rbln_config.sample_size[0],
                         rbln_config.sample_size[1],
@@ -194,15 +202,15 @@ class RBLNAutoencoderKLQwenImage(RBLNModel):
             ]
             compile_cfgs.append(RBLNCompileConfig(compiled_model_name="encoder", input_info=vae_enc_input_info))
 
-        latent_height = rbln_config.sample_size[0] // rbln_config.vae_scale_factor
-        latent_width = rbln_config.sample_size[1] // rbln_config.vae_scale_factor
+        latent_height = rbln_config.sample_size[0] // rbln_config._vae_scale_factor
+        latent_width = rbln_config.sample_size[1] // rbln_config._vae_scale_factor
 
         vae_dec_input_info = [
             (
                 "z",
                 [
                     rbln_config.batch_size,
-                    rbln_config.z_dim,
+                    rbln_config._z_dim,
                     num_frames,
                     latent_height,
                     latent_width,

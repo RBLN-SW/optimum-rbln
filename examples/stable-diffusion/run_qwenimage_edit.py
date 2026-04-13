@@ -10,8 +10,12 @@ Usage:
 
     # Custom image size
     python run_qwenimage_edit.py --from-diffusers --height 1024 --width 1024
+
+    # Quick test with reduced layers (fast compile, garbage output)
+    python run_qwenimage_edit.py --from-diffusers --transformer-num-layers 1 --text-encoder-num-layers 1 --vision-depth 2
 """
 
+import json
 import os
 
 import fire
@@ -56,14 +60,53 @@ The output must look like a real manufactured mechanical component rendered in 3
 """
 
 
+def _load_thin_submodules(model_id, transformer_num_layers, text_encoder_num_layers, vision_depth):
+    """Load submodules with reduced layers for fast compile testing."""
+    submodules = {}
+
+    if transformer_num_layers is not None:
+        from diffusers.models.transformers.transformer_qwenimage import QwenImageTransformer2DModel
+
+        print(f"  Loading transformer with num_layers={transformer_num_layers}")
+        submodules["transformer"] = QwenImageTransformer2DModel.from_pretrained(
+            model_id, subfolder="transformer", num_layers=transformer_num_layers,
+        )
+
+    if text_encoder_num_layers is not None or vision_depth is not None:
+        from transformers import AutoConfig, Qwen2_5_VLForConditionalGeneration
+
+        config = AutoConfig.from_pretrained(model_id, subfolder="text_encoder")
+        if text_encoder_num_layers is not None:
+            text_config = json.loads(config.text_config.to_json_string())
+            text_config["num_hidden_layers"] = text_encoder_num_layers
+            text_config["layer_types"] = text_config.get("layer_types", ["dense"] * 28)[:text_encoder_num_layers]
+            config.text_config = type(config.text_config)(**text_config)
+            config.num_hidden_layers = text_encoder_num_layers
+            print(f"  Loading text_encoder with num_hidden_layers={text_encoder_num_layers}")
+        if vision_depth is not None:
+            vision_config = json.loads(config.vision_config.to_json_string())
+            vision_config["depth"] = vision_depth
+            vision_config["fullatt_block_indexes"] = [i for i in vision_config.get("fullatt_block_indexes", []) if i < vision_depth]
+            if not vision_config["fullatt_block_indexes"]:
+                vision_config["fullatt_block_indexes"] = [vision_depth - 1]
+            config.vision_config = type(config.vision_config)(**vision_config)
+            print(f"  Loading text_encoder.visual with depth={vision_depth}")
+
+        submodules["text_encoder"] = Qwen2_5_VLForConditionalGeneration.from_pretrained(
+            model_id, subfolder="text_encoder", config=config,
+        )
+
+    return submodules
+
+
 def main(
     model_id: str = "/mnt/shared_data/.cache/pretrained_models/NC/VARCO_I2I_inference/models",
     from_diffusers: bool = False,
     image_path: str = "/mnt/shared_data/.cache/pretrained_models/NC/VARCO_I2I_inference/assets/1.png",
     prompt: str = PROMPT,
     negative_prompt: str = " ",
-    height: int = None,
-    width: int = None,
+    height: int = 1024,
+    width: int = 1024,
     num_inference_steps: int = 40,
     true_cfg_scale: float = 4.0,
     guidance_scale: float = 1.0,
@@ -71,10 +114,21 @@ def main(
     max_seq_len: int = 4096,
     prompt_embed_length: int = 512,
     seed: int = 0,
+    transformer_num_layers: int = 1,
+    text_encoder_num_layers: int = 1,
+    vision_depth: int = 6,
 ):
     save_dir = "rbln_" + os.path.basename(model_id)
 
     if from_diffusers:
+        thin = transformer_num_layers is not None or text_encoder_num_layers is not None or vision_depth is not None
+        extra_kwargs = {}
+        if thin:
+            print("\n[Thin mode] Loading submodules with reduced layers...")
+            extra_kwargs = _load_thin_submodules(
+                model_id, transformer_num_layers, text_encoder_num_layers, vision_depth,
+            )
+
         pipe = RBLNQwenImageEditPlusPipeline.from_pretrained(
             model_id=model_id,
             export=True,
@@ -94,6 +148,7 @@ def main(
                 },
                 **({"height": height, "width": width} if height and width else {}),
             },
+            **extra_kwargs,
         )
         pipe.save_pretrained(save_dir)
     else:
@@ -102,7 +157,7 @@ def main(
             export=False,
         )
 
-    image = Image.open(image_path).convert("RGB")
+    image = Image.open(image_path).convert("RGB").resize((height, width))
 
     result = pipe(
         image=[image],

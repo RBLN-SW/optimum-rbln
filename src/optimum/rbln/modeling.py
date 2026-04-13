@@ -161,11 +161,13 @@ class RBLNModel(RBLNBaseModel):
         for preprocessor in preprocessors:
             preprocessor.save_pretrained(save_dir_path / subfolder)
 
-        # Load submodules
+        # Load submodules — save inside the parent model's subfolder so that
+        # save_pretrained (which copies model_save_dir/subfolder) includes them.
         if len(cls._rbln_submodules) > 0:
+            submodule_save_dir = save_dir_path / subfolder if subfolder else save_dir_path
             rbln_submodules = cls._load_submodules(
                 model=model,
-                model_save_dir=save_dir,
+                model_save_dir=submodule_save_dir,
                 rbln_config=rbln_config,
                 preprocessors=preprocessors,
                 **kwargs,

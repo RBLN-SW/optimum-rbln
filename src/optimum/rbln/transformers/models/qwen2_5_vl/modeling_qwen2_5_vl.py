@@ -50,6 +50,8 @@ logger = get_logger(__name__)
 if TYPE_CHECKING:
     from transformers import AutoFeatureExtractor, AutoProcessor, AutoTokenizer
 
+    from ....diffusers.modeling_diffusers import RBLNDiffusionMixin, RBLNDiffusionMixinConfig
+
 
 class RBLNQwen2_5_VisionTransformerPretrainedModel(RBLNModel):
     """
@@ -356,6 +358,18 @@ class RBLNQwen2_5_VLModel(RBLNDecoderOnlyModel):
     _rotary_emb_class = Qwen2_5_VLRotaryEmbedding
     _get_rope_index_func = Qwen2_5_VLModel.get_rope_index
 
+    @classmethod
+    def update_rbln_config_using_pipe(
+        cls, pipe: "RBLNDiffusionMixin", rbln_config: "RBLNDiffusionMixinConfig", submodule_name: str
+    ) -> "RBLNDiffusionMixinConfig":
+        return rbln_config
+
+    @classmethod
+    def _reconstruct_model_if_needed(cls, model: "PreTrainedModel"):
+        if hasattr(model, "lm_head"):
+            model.lm_head = None
+        return model
+
     def __post_init__(self, **kwargs):
         if hasattr(self.config, "embedding_dim"):
             self.embedding_dim = self.config.embedding_dim
@@ -528,6 +542,9 @@ class RBLNQwen2_5_VLModel(RBLNDecoderOnlyModel):
 
         self.rope_deltas = rope_deltas
         batch_size, seq_len = inputs_embeds.shape[:2]
+
+        if return_dict is None:
+            return_dict = True
 
         output_hidden_states = _validate_output_hidden_states(output_hidden_states, self.rbln_config)
 

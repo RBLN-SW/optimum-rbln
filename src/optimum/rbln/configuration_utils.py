@@ -960,13 +960,19 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
         if isinstance(rbln_config, RBLNModelConfig):
             config_file.update(rbln_config._runtime_options)
 
-            # update submodule runtime
+            # update submodule runtime – only override from passed config when
+            # the user explicitly provided an RBLNModelConfig for the submodule.
+            # Default-constructed pipeline configs may contain plain dicts or None
+            # for nested submodules (e.g. visual inside text_encoder); in that case
+            # the saved config from file should be kept as-is.
             for submodule in rbln_config.submodules:
-                if str(config_file[submodule]) != str(getattr(rbln_config, submodule)):
-                    raise ValueError(
-                        f"Passed rbln_config has different attributes for submodule {submodule} than the config_file"
-                    )
-                config_file[submodule] = getattr(rbln_config, submodule)
+                passed_sub = getattr(rbln_config, submodule)
+                if isinstance(passed_sub, RBLNModelConfig):
+                    if str(config_file[submodule]) != str(passed_sub):
+                        raise ValueError(
+                            f"Passed rbln_config has different attributes for submodule {submodule} than the config_file"
+                        )
+                    config_file[submodule] = passed_sub
 
         config_file.update(rbln_runtime_kwargs)
         rbln_config = cls(**config_file)

@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import types
+from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple, Union
 
 import torch
@@ -21,6 +22,10 @@ from diffusers.models.transformers.transformer_qwenimage import (
     QwenImageTransformer2DModel,
     QwenImageTransformerBlock,
 )
+from transformers import PretrainedConfig
+
+from transformers import PretrainedConfig
+
 from transformers import PretrainedConfig
 
 from ....configuration_utils import RBLNCompileConfig, RBLNModelConfig
@@ -223,7 +228,7 @@ class RBLNQwenImageTransformer2DModel(RBLNModel):
     @classmethod
     def _get_compile_time_constants(cls, rbln_config):
         """Return ``(img_shapes, txt_seq_lens)`` derived from config."""
-        sample_h, sample_w = rbln_config.sample_size
+        sample_h, sample_w = rbln_config._sample_size
         patch_size = 2
         packed_h = sample_h // patch_size
         packed_w = sample_w // patch_size
@@ -274,15 +279,15 @@ class RBLNQwenImageTransformer2DModel(RBLNModel):
     def update_rbln_config_using_pipe(
         cls, pipe: "RBLNDiffusionMixin", rbln_config: "RBLNDiffusionMixinConfig", submodule_name: str
     ) -> "RBLNDiffusionMixinConfig":
-        if rbln_config.transformer.sample_size is None:
+        if rbln_config.transformer._sample_size is None:
             if rbln_config.image_size is not None:
                 vae_sf = pipe.vae_scale_factor
-                rbln_config.transformer.sample_size = (
+                rbln_config.transformer._sample_size = (
                     rbln_config.image_size[0] // vae_sf,
                     rbln_config.image_size[1] // vae_sf,
                 )
             else:
-                rbln_config.transformer.sample_size = pipe.default_sample_size
+                rbln_config.transformer._sample_size = pipe.default_sample_size
         return rbln_config
 
     @classmethod
@@ -293,12 +298,17 @@ class RBLNQwenImageTransformer2DModel(RBLNModel):
         model_config: "PretrainedConfig",
         rbln_config: RBLNQwenImageTransformer2DModelConfig,
     ) -> RBLNQwenImageTransformer2DModelConfig:
-        if rbln_config.sample_size is None:
-            rbln_config.sample_size = model_config.sample_size
-        if isinstance(rbln_config.sample_size, int):
-            rbln_config.sample_size = (rbln_config.sample_size, rbln_config.sample_size)
+        def _cfg_get(cfg: Any, key: str, default: Any = None) -> Any:
+            if isinstance(cfg, dict):
+                return cfg.get(key, default)
+            return getattr(cfg, key, default)
 
-        sample_h, sample_w = rbln_config.sample_size
+        if rbln_config._sample_size is None:
+            rbln_config._sample_size = model_config.sample_size
+        if isinstance(rbln_config._sample_size, int):
+            rbln_config._sample_size = (rbln_config._sample_size, rbln_config._sample_size)
+
+        sample_h, sample_w = rbln_config._sample_size
         packed_h, packed_w = sample_h // 2, sample_w // 2
         total_seq_len = packed_h * packed_w * rbln_config.num_img_groups
 
@@ -327,8 +337,6 @@ class RBLNQwenImageTransformer2DModel(RBLNModel):
 
         rbln_config.set_compile_cfgs([RBLNCompileConfig(input_info=input_info)])
         return rbln_config
-
-    # ── runtime ───────────────────────────────────────────────────────
 
     @property
     def compiled_batch_size(self):
