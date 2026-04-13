@@ -1,4 +1,5 @@
 import argparse
+import copy
 import sys
 import tempfile
 import os
@@ -38,23 +39,36 @@ def test_transformer(
     print("Transformer (QwenImageTransformer2DModel) — golden comparison")
     print("=" * 60)
 
-    from diffusers.models.transformers.transformer_qwenimage import QwenImageTransformer2DModel
+    import diffusers.models.transformers.transformer_qwenimage as _tq
+    from diffusers.models.transformers.transformer_qwenimage import (
+        QwenImageTransformer2DModel,
+        QwenImageTransformerBlock,
+    )
     from optimum.rbln import RBLNQwenImageTransformer2DModel
+    from optimum.rbln.diffusers.models.transformers.transformer_qwenimage import (
+        _apply_rotary_emb_real,
+        _modulate_no_where,
+        _patch_rope_to_real,
+    )
 
     vae_scale_factor = 8
 
     inputs = torch.load("/mnt/shared_data/groups/sw_dev/thkim/transformer_golden_inputs.pt")
+    inputs = torch.load("/home/thkim/workspace/optimum-rbln/transformer_golden_inputs_2511.pt")
     dummy_hs = inputs["hidden_states"]
     dummy_enc_raw = inputs["encoder_hidden_states"]
-    dummy_t = torch.tensor([1.0] * batch)
+    dummy_t = inputs["timestep"]
 
     print("\n[1/4] Loading PyTorch Transformer...")
     transformer = QwenImageTransformer2DModel.from_pretrained(
         model_id,
         subfolder="transformer",
         num_layers=num_layers,
+        zero_cond_t=True,
+        # torch_dtype=torch.bfloat16,
     )
     transformer.eval()
+
     lat_h = 2 * (height // (vae_scale_factor * 2))
     lat_w = 2 * (width // (vae_scale_factor * 2))
     packed_h, packed_w = lat_h // 2, lat_w // 2
@@ -82,6 +96,7 @@ def test_transformer(
                 guidance=None,
                 return_dict=False,
             )
+        torch.save(golden_output, "golden_output.pt")
         golden_output = golden_output[0]
 
     print("[3/4] Compiling RBLN Transformer...")

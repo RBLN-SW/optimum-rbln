@@ -29,6 +29,7 @@ def main():
         QwenImageTransformerBlock,
     )
     from optimum.rbln.diffusers.models.transformers.transformer_qwenimage import (
+        QwenImageTransformer2DModelWrapper,
         _apply_rotary_emb_real,
         _modulate_no_where,
         _patch_rope_to_real,
@@ -66,7 +67,8 @@ def main():
     print("[1/3] Loading QwenImageTransformer2DModel (num_layers=1) ...")
     transformer = QwenImageTransformer2DModel.from_pretrained(
         MODEL_DIR, subfolder="transformer", torch_dtype=torch.float32,
-        num_layers=1,# zero_cond_t=False,
+        num_layers=3,
+        zero_cond_t=True,
     )
     transformer.eval()
 
@@ -83,8 +85,8 @@ def main():
             return_dict=False,
         )[0]
 
-    # ── Run B: with all three monkey patches ─────────────────────────
-    print("[3/3] Forward — with monkey patches ...")
+    # ── Run B: with all three monkey patches (direct call) ──────────
+    print("[3/4] Forward — with monkey patches (direct) ...")
 
     original_rotary = _tq.apply_rotary_emb_qwen
     original_modulate = QwenImageTransformerBlock._modulate
@@ -114,34 +116,63 @@ def main():
         transformer.pos_embed.pos_freqs = original_pos_freqs
         transformer.pos_embed.neg_freqs = original_neg_freqs
 
+    # ── Run C: with all three monkey patches + wrapper ────────────
+    print("[4/4] Forward — with monkey patches + wrapper ...")
+
+    enc_mask_float = torch.ones(batch, prompt_embed_length, dtype=torch.float32)
+    if actual_enc_len < prompt_embed_length:
+        enc_mask_float[:, actual_enc_len:] = 0.0
+
+    patched_model = copy.deepcopy(transformer)
+    original_rotary2 = _tq.apply_rotary_emb_qwen
+    original_modulate2 = QwenImageTransformerBlock._modulate
+    try:
+        _tq.apply_rotary_emb_qwen = _apply_rotary_emb_real
+        QwenImageTransformerBlock._modulate = _modulate_no_where
+        _patch_rope_to_real(patched_model, img_shapes, txt_seq_lens, dtype=torch.float32)
+        wrapped = QwenImageTransformer2DModelWrapper(patched_model, img_shapes, txt_seq_lens).eval()
+        with torch.no_grad():
+            out_wrapped = wrapped(
+                hidden_states=dummy_hs,
+                encoder_hidden_states=dummy_enc,
+                timestep=dummy_t,
+                encoder_hidden_states_mask=enc_mask_float,
+            )
+        if isinstance(out_wrapped, tuple):
+            out_wrapped = out_wrapped[0]
+    finally:
+        _tq.apply_rotary_emb_qwen = original_rotary2
+        QwenImageTransformerBlock._modulate = original_modulate2
+
     # ── Compare ──────────────────────────────────────────────────────
-    r = compute_pearsonr(out_original, out_patched)
-    max_diff = (out_original - out_patched).abs().max().item()
-    mean_diff = (out_original - out_patched).abs().mean().item()
-
-    scale_orig = out_original.abs().mean().item()
-    scale_patched = out_patched.abs().mean().item()
+    def report_pair(label, a, b):
+        r = compute_pearsonr(a, b)
+        diff = (a - b).abs()
+        sa = a.abs().mean().item()
+        sb = b.abs().mean().item()
+        print(f"  {label}")
+        print(f"    pearsonr     : {r:.10f}")
+        print(f"    max abs diff : {diff.max().item():.6e}")
+        print(f"    mean abs diff: {diff.mean().item():.6e}")
+        print(f"    scale a/b    : {sa:.6e} / {sb:.6e}  ratio={sb / sa:.6f}")
+        if r > 0.9999:
+            tag = "PASS"
+        elif r > 0.999:
+            tag = "CLOSE"
+        elif r > 0.99:
+            tag = "WARNING"
+        else:
+            tag = "FAIL"
+        print(f"    → {tag}")
+        print()
 
     print()
     print("=" * 60)
-    print("RESULTS: original golden vs monkey-patched golden (CPU only)")
+    print("RESULTS (CPU only, no RBLN)")
     print("=" * 60)
-    print(f"  pearsonr     : {r:.10f}")
-    print(f"  max abs diff : {max_diff:.6e}")
-    print(f"  mean abs diff: {mean_diff:.6e}")
-    print(f"  scale orig   : {scale_orig:.6e}")
-    print(f"  scale patched: {scale_patched:.6e}")
-    print(f"  scale ratio  : {scale_patched / scale_orig:.6f}")
-    print()
-
-    if r > 0.9999:
-        print("  → PASS: patches are numerically equivalent")
-    elif r > 0.999:
-        print("  → CLOSE: minor numerical drift")
-    elif r > 0.99:
-        print("  → WARNING: noticeable difference")
-    else:
-        print("  → FAIL: significant divergence")
+    report_pair("A vs B : original  vs  patched (direct)", out_original, out_patched)
+    report_pair("A vs C : original  vs  patched+wrapper",  out_original, out_wrapped)
+    report_pair("B vs C : patched   vs  patched+wrapper",  out_patched,  out_wrapped)
 
 
 if __name__ == "__main__":
