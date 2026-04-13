@@ -213,6 +213,7 @@ class RBLNQwenImageTransformer2DModel(RBLNModel):
     hf_library_name = "diffusers"
     auto_model_class = QwenImageTransformer2DModel
     _output_class = Transformer2DModelOutput
+    _supports_non_fp32=True
 
     def __post_init__(self, **kwargs):
         super().__post_init__(**kwargs)
@@ -305,22 +306,22 @@ class RBLNQwenImageTransformer2DModel(RBLNModel):
             (
                 "hidden_states",
                 [rbln_config.batch_size, total_seq_len, model_config.in_channels],
-                "float32",
+                rbln_config.dtype,
             ),
             (
                 "encoder_hidden_states",
                 [rbln_config.batch_size, rbln_config.prompt_embed_length, model_config.joint_attention_dim],
-                "float32",
+                rbln_config.dtype,
             ),
             (
                 "timestep",
                 [rbln_config.batch_size],
-                "float32",
+                rbln_config.dtype,
             ),
             (
                 "encoder_hidden_states_mask",
                 [rbln_config.batch_size, rbln_config.prompt_embed_length],
-                "float32",
+                rbln_config.dtype,
             ),
         ]
 
