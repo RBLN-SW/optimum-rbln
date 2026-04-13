@@ -221,12 +221,14 @@ class RBLNDiffusionMixin:
                         raise ValueError(
                             f"Invalid module_name '{module_name}' found in model_index.json for "
                             f"submodule '{submodule_name}'. "
-                            "Expected 'optimum.rbln'. Please check the model_index.json configuration."
+                            "Expected 'optimum.rbln'. Please check the model_index.json configuration. "
                             "If you want to compile, set `export=True`."
                         )
 
                     submodule_cls = get_rbln_model_cls(class_name)
                     submodule_config = getattr(rbln_config, submodule_name)
+                    if isinstance(submodule_config, RBLNModelConfig):
+                        submodule_config = submodule_config.to_dict()
                     submodule = submodule_cls.from_pretrained(
                         model_id, export=False, subfolder=submodule_name, rbln_config=submodule_config
                     )

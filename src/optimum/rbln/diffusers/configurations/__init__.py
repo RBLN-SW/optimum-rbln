@@ -2,6 +2,7 @@ from .models import (
     RBLNAutoencoderKLConfig,
     RBLNAutoencoderKLCosmosConfig,
     RBLNAutoencoderKLTemporalDecoderConfig,
+    RBLNAutoencoderKLWanConfig,
     RBLNControlNetModelConfig,
     RBLNCosmosTransformer3DModelConfig,
     RBLNPriorTransformerConfig,
@@ -11,6 +12,9 @@ from .models import (
     RBLNVQModelConfig,
 )
 from .pipelines import (
+    RBLNCosmos2_5_PredictBasePipelineConfig,
+    RBLNCosmos2TextToImagePipelineConfig,
+    RBLNCosmos2VideoToWorldPipelineConfig,
     RBLNCosmosTextToWorldPipelineConfig,
     RBLNCosmosVideoToWorldPipelineConfig,
     RBLNKandinskyV22CombinedPipelineConfig,

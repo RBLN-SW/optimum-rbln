@@ -834,6 +834,50 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
 
         return serializable_map
 
+    def to_dict(self, exclude_defaults: bool = True) -> Dict[str, Any]:
+        """
+        Convert config to a dictionary for passing to from_pretrained.
+
+        This method returns runtime options and optionally filters out
+        empty/default values that would conflict with loaded configs.
+        Submodule configs are recursively converted to dictionaries.
+
+        Args:
+            exclude_defaults: If True, exclude None values, empty lists,
+                and other default values that shouldn't override loaded config.
+
+        Returns:
+            Dictionary containing runtime options and non-default config values.
+        """
+        def filter_runtime(cfg):
+            # Recursively extract runtime options from config (RBLNModelConfig or dict)
+            if isinstance(cfg, RBLNModelConfig):
+                return cfg.to_dict(exclude_defaults=exclude_defaults)
+            if not isinstance(cfg, dict):
+                return None
+            result = {}
+            for k, v in cfg.items():
+                if k in RUNTIME_KEYWORDS:
+                    if not exclude_defaults or v is not None:
+                        result[k] = v
+                elif isinstance(v, dict):
+                    nested = filter_runtime(v)
+                    if nested:
+                        result[k] = nested
+            return result or None
+
+        result = {k: v for k, v in self._runtime_options.items() if not exclude_defaults or v is not None}
+        
+        for name in self.submodules:
+            filtered = filter_runtime(getattr(self, name, None))
+            if filtered:
+                result[name] = filtered
+        
+        if not exclude_defaults:
+            result.update(self._prepare_for_serialization())
+
+        return result
+
     def __repr__(self):
         repr_dict = self._prepare_for_serialization()
         return json.dumps(repr_dict, indent=2)
@@ -966,7 +1010,7 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
                     raise ValueError(
                         f"Passed rbln_config has different attributes for submodule {submodule} than the config_file"
                     )
-                config_file[submodule] = getattr(rbln_config, submodule)
+                config_file[submodule] = getattr(rbln_config, submodule) 
 
         config_file.update(rbln_runtime_kwargs)
         rbln_config = cls(**config_file)
