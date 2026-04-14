@@ -223,6 +223,11 @@ class RBLNQwenImageTransformer2DModel(RBLNModel):
     def __post_init__(self, **kwargs):
         super().__post_init__(**kwargs)
 
+    @contextmanager
+    def cache_context(self, name: str):
+        """No-op context manager; RBLN compiled models don't use diffusers caching."""
+        yield
+
     # ── helpers ────────────────────────────────────────────────────────
 
     @classmethod

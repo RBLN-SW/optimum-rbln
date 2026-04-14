@@ -60,7 +60,7 @@ def main(
     num_images_per_prompt: int = 1,
     seed: int = 0,
 ):
-    pipe = QwenImageEditPlusPipeline.from_pretrained(model_id, torch_dtype=torch.float32)
+    pipe = QwenImageEditPlusPipeline.from_pretrained(model_id, torch_dtype=torch.bfloat16)
     pipe.set_progress_bar_config(disable=None)
 
     image = Image.open(image_path).convert("RGB").resize((1024, 1024))
@@ -80,7 +80,7 @@ def main(
         ).images[0]
 
     os.makedirs("results", exist_ok=True)
-    output_name = "results/1_output.png"
+    output_name = "results/1_golden_output.png"
     result.save(output_name)
     print(f"Saved: {output_name}  ({result.size[0]}x{result.size[1]})")
 

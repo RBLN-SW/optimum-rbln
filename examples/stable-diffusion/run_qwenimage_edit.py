@@ -114,9 +114,9 @@ def main(
     max_seq_len: int = 4096,
     prompt_embed_length: int = 512,
     seed: int = 0,
-    transformer_num_layers: int = 1,
-    text_encoder_num_layers: int = 1,
-    vision_depth: int = 6,
+    transformer_num_layers: int = None,
+    text_encoder_num_layers: int = None,
+    vision_depth: int = None,
 ):
     save_dir = "rbln_" + os.path.basename(model_id)
 
@@ -137,17 +137,24 @@ def main(
                     "max_seq_len": max_seq_len,
                     "visual": {
                         "max_seq_lens": 6400,
+                        "device": [24]
                     },
+                    "tensor_parallel_size": 4,
+                    "device": [28, 29, 30, 31],
                 },
                 "transformer": {
                     "batch_size": 1,
                     "prompt_embed_length": prompt_embed_length,
+                    "tensor_parallel_size": 8,
+                    "device": [16, 17, 18, 19, 20, 21, 22, 23],
                 },
                 "vae": {
                     "batch_size": 1,
+                    "device": [25],
                 },
                 **({"height": height, "width": width} if height and width else {}),
             },
+            torch_dtype=torch.float32,
             **extra_kwargs,
         )
         pipe.save_pretrained(save_dir)
@@ -155,6 +162,20 @@ def main(
         pipe = RBLNQwenImageEditPlusPipeline.from_pretrained(
             model_id=save_dir,
             export=False,
+            rbln_config={
+                "text_encoder": {
+                    "device": [28, 29, 30, 31],
+                    "visual": {
+                        "device": [24]
+                    },
+                },
+                "transformer": {
+                    "device": [16, 17, 18, 19, 20, 21, 22, 23],
+                },
+                "vae": {
+                    "device": [25],
+                },
+            },
         )
 
     image = Image.open(image_path).convert("RGB").resize((height, width))

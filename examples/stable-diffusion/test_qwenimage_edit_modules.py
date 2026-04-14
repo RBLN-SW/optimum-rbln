@@ -1,39 +1,104 @@
 """
-QwenImageEditPlus — per-module compile & inference golden comparison.
+QwenImageEditPlus — full pipeline submodules, logit-level golden check.
 
-Compiles each submodule (text_encoder, transformer, vae) individually via
-optimum-rbln, runs inference with identical inputs, and compares RBLN output
-against the PyTorch golden output using Pearson correlation.
+Each compiled block (``text_encoder``, ``transformer``, ``vae``) is exercised
+with the same tensors as a PyTorch reference forward; outputs are compared
+with Pearson r (flattened activations), matching the style of
+``test_qwenimage_edit_transformer.py``.
+
+This does **not** run tensor-parallel on the transformer (pass ``--tensor-parallel-size 1``);
+it is meant to validate numerics when TP is unsupported on the compiler.
+
+Thin layers (fast compile), aligned with ``run_qwenimage_edit.py``:
+
+    python test_qwenimage_edit_modules.py --module all \\
+        --transformer-num-layers 3 --text-encoder-num-layers 3 --vision-depth 4
+
+Multimodal text encoder (image + prompt), closer to the real edit path:
+
+    python test_qwenimage_edit_modules.py --module text_encoder \\
+        --image-path /path/to/input.png
 
 Usage:
     python test_qwenimage_edit_modules.py
-    python test_qwenimage_edit_modules.py --module vae
-    python test_qwenimage_edit_modules.py --module transformer --height 128 --width 128
-    python test_qwenimage_edit_modules.py --module text_encoder --max-seq-len 4096
+    python test_qwenimage_edit_modules.py --module vae --height 512 --width 512
+    python test_qwenimage_edit_modules.py --module transformer --golden-inputs ./inputs.pt
 """
 
+from __future__ import annotations
+
 import argparse
-import math
+import json
+import os
 import sys
 import tempfile
-from typing import Tuple
+from typing import Any, Dict, Optional
 
 import torch
 from scipy.stats import pearsonr
 
 # ---------------------------------------------------------------------------
-# Helpers
+# Defaults (override with env / CLI)
 # ---------------------------------------------------------------------------
-
-# NOTE: The RBLN transformer compilation applies three internal patches
-# (real RoPE, arithmetic _modulate, pre-computed RoPE buffers) inside
-# get_compiled_model(). These patches are mathematically equivalent to
-# the original ops, so the unpatched PyTorch golden output should match
-# the RBLN output within pearsonr tolerance.
 
 PASS_THRESHOLD = 0.99
 
 MODEL_DIR = "/mnt/shared_data/.cache/pretrained_models/NC/VARCO_I2I_inference/models"
+
+DEFAULT_TRANSFORMER_GOLDEN = os.environ.get(
+    "QWENIMAGE_TRANSFORMER_GOLDEN",
+    "/mnt/shared_data/groups/sw_dev/thkim/transformer_golden_inputs.pt",
+)
+
+
+def _load_thin_submodules(
+    model_id: str,
+    transformer_num_layers: Optional[int],
+    text_encoder_num_layers: Optional[int],
+    vision_depth: Optional[int],
+) -> Dict[str, Any]:
+    """Load submodules with reduced layers (same logic as ``run_qwenimage_edit.py``)."""
+    submodules: Dict[str, Any] = {}
+
+    if transformer_num_layers is not None:
+        from diffusers.models.transformers.transformer_qwenimage import QwenImageTransformer2DModel
+
+        print(f"  [thin] transformer num_layers={transformer_num_layers}")
+        submodules["transformer"] = QwenImageTransformer2DModel.from_pretrained(
+            model_id,
+            subfolder="transformer",
+            num_layers=transformer_num_layers,
+        )
+
+    if text_encoder_num_layers is not None or vision_depth is not None:
+        from transformers import AutoConfig, Qwen2_5_VLForConditionalGeneration
+
+        config = AutoConfig.from_pretrained(model_id, subfolder="text_encoder")
+        if text_encoder_num_layers is not None:
+            text_config = json.loads(config.text_config.to_json_string())
+            text_config["num_hidden_layers"] = text_encoder_num_layers
+            text_config["layer_types"] = text_config.get("layer_types", ["dense"] * 28)[:text_encoder_num_layers]
+            config.text_config = type(config.text_config)(**text_config)
+            config.num_hidden_layers = text_encoder_num_layers
+            print(f"  [thin] text_encoder num_hidden_layers={text_encoder_num_layers}")
+        if vision_depth is not None:
+            vision_config = json.loads(config.vision_config.to_json_string())
+            vision_config["depth"] = vision_depth
+            vision_config["fullatt_block_indexes"] = [
+                i for i in vision_config.get("fullatt_block_indexes", []) if i < vision_depth
+            ]
+            if not vision_config["fullatt_block_indexes"]:
+                vision_config["fullatt_block_indexes"] = [vision_depth - 1]
+            config.vision_config = type(config.vision_config)(**vision_config)
+            print(f"  [thin] text_encoder vision depth={vision_depth}")
+
+        submodules["text_encoder"] = Qwen2_5_VLForConditionalGeneration.from_pretrained(
+            model_id,
+            subfolder="text_encoder",
+            config=config,
+        )
+
+    return submodules
 
 
 def compute_pearsonr(golden: torch.Tensor, test: torch.Tensor) -> float:
@@ -43,24 +108,59 @@ def compute_pearsonr(golden: torch.Tensor, test: torch.Tensor) -> float:
     return float(r)
 
 
-def report(name: str, r: float) -> None:
-    status = "PASS" if r >= PASS_THRESHOLD else "FAIL"
-    print(f"  [{status}] {name}: pearsonr = {r:.6f}  (threshold = {PASS_THRESHOLD})")
+def report(name: str, r: float, threshold: float) -> None:
+    status = "PASS" if r >= threshold else "FAIL"
+    print(f"  [{status}] {name}: pearsonr = {r:.6f}  (threshold = {threshold})")
 
 
-def calculate_dimensions(target_area: int, ratio: float) -> Tuple[int, int]:
-    w = math.sqrt(target_area * ratio)
-    h = w / ratio
-    w = round(w / 32) * 32
-    h = round(h / 32) * 32
-    return int(w), int(h)
+def _build_text_encoder_inputs(
+    processor: Any,
+    prompt: str,
+    image_path: Optional[str],
+) -> Dict[str, torch.Tensor]:
+    """Match QwenImage-style system + user message; optional real image for VL path."""
+    if image_path:
+        from PIL import Image
+
+        img = Image.open(image_path).convert("RGB")
+        messages = [
+            {"role": "system", "content": "Describe the key features of the input image."},
+            {
+                "role": "user",
+                "content": [
+                    {"type": "image", "image": img},
+                    {"type": "text", "text": prompt},
+                ],
+            },
+        ]
+        text = processor.apply_chat_template(
+            messages,
+            tokenize=False,
+            add_generation_prompt=True,
+        )
+        batch = processor(
+            text=[text],
+            images=[img],
+            padding=True,
+            return_tensors="pt",
+        )
+    else:
+        template = (
+            "<|im_start|>system\nDescribe the key features of the input image.<|im_end|>\n"
+            "<|im_start|>user\n{}<|im_end|>\n<|im_start|>assistant\n"
+        )
+        txt = [template.format(prompt)]
+        batch = processor(text=txt, padding=True, return_tensors="pt")
+
+    return {k: v for k, v in batch.items() if v is not None and isinstance(v, torch.Tensor)}
 
 
 # ---------------------------------------------------------------------------
-# VAE test
+# VAE
 # ---------------------------------------------------------------------------
 
-def test_vae(model_id: str, height: int, width: int, batch: int):
+
+def test_vae(model_id: str, height: int, width: int, batch: int, threshold: float) -> bool:
     print("\n" + "=" * 60)
     print("VAE (AutoencoderKLQwenImage) — golden comparison")
     print("=" * 60)
@@ -105,21 +205,34 @@ def test_vae(model_id: str, height: int, width: int, batch: int):
         rbln_enc_moments = rbln_enc_output.mean
         golden_mean = golden_enc_output[:, :z_dim]
         r_enc = compute_pearsonr(golden_mean, rbln_enc_moments)
-        report("VAE Encoder (mean)", r_enc)
+        report("VAE Encoder (mean)", r_enc, threshold)
 
         rbln_dec_output = rbln_vae.decoder.decode(dummy_dec_input)
         r_dec = compute_pearsonr(golden_dec_output, rbln_dec_output)
-        report("VAE Decoder", r_dec)
+        report("VAE Decoder", r_dec, threshold)
 
     del vae, rbln_vae
-    return r_enc >= PASS_THRESHOLD and r_dec >= PASS_THRESHOLD
+    return r_enc >= threshold and r_dec >= threshold
 
 
 # ---------------------------------------------------------------------------
-# Transformer test
+# Transformer
 # ---------------------------------------------------------------------------
 
-def test_transformer(model_id: str, height: int, width: int, batch: int, prompt_embed_length: int):
+
+def test_transformer(
+    model_id: str,
+    height: int,
+    width: int,
+    batch: int,
+    prompt_embed_length: int,
+    threshold: float,
+    *,
+    transformer_num_layers: Optional[int],
+    golden_inputs_path: Optional[str],
+    use_bf16: bool,
+    tensor_parallel_size: int,
+) -> bool:
     print("\n" + "=" * 60)
     print("Transformer (QwenImageTransformer2DModel) — golden comparison")
     print("=" * 60)
@@ -128,11 +241,23 @@ def test_transformer(model_id: str, height: int, width: int, batch: int, prompt_
     from optimum.rbln import RBLNQwenImageTransformer2DModel
 
     vae_scale_factor = 8
+    dtype = torch.bfloat16 if use_bf16 else torch.float32
+
+    thin = _load_thin_submodules(
+        model_id,
+        transformer_num_layers,
+        text_encoder_num_layers=None,
+        vision_depth=None,
+    )
 
     print("\n[1/4] Loading PyTorch Transformer...")
-    transformer = QwenImageTransformer2DModel.from_pretrained(
-        model_id, subfolder="transformer", num_layers=1,
-    )
+    if "transformer" in thin:
+        transformer = thin["transformer"].to(dtype=dtype)
+    else:
+        kw: Dict[str, Any] = {"torch_dtype": dtype}
+        transformer = QwenImageTransformer2DModel.from_pretrained(
+            model_id, subfolder="transformer", **kw
+        )
     transformer.eval()
 
     lat_h = 2 * (height // (vae_scale_factor * 2))
@@ -140,11 +265,29 @@ def test_transformer(model_id: str, height: int, width: int, batch: int, prompt_
     packed_h, packed_w = lat_h // 2, lat_w // 2
     total_seq_len = packed_h * packed_w * 2
 
+    path = golden_inputs_path or DEFAULT_TRANSFORMER_GOLDEN
+    if path and os.path.isfile(path):
+        print(f"  Using golden inputs: {path}")
+        inputs = torch.load(path, weights_only=False)
+    else:
+        print(
+            f"  [warn] Golden file not found ({path}); using synthetic tensors "
+            f"(shape-only; pearsonr vs random reference will fail unless you disable native compare)."
+        )
+        in_ch = transformer.config.in_channels
+        inputs = {
+            "hidden_states": torch.randn(batch, total_seq_len, in_ch, dtype=dtype),
+            "encoder_hidden_states": torch.randn(batch, min(prompt_embed_length, 128), transformer.config.joint_attention_dim, dtype=dtype),
+            "timestep": torch.ones(batch, dtype=dtype),
+        }
+
+    dummy_hs = inputs["hidden_states"].to(dtype=dtype)
+    dummy_enc_raw = inputs["encoder_hidden_states"].to(dtype=dtype)
+    dummy_t = inputs.get("timestep", torch.ones(batch, dtype=dtype)).to(dtype=dtype)
+    if dummy_t.ndim == 0:
+        dummy_t = dummy_t.expand(batch)
+
     img_shapes = [[(1, packed_h, packed_w), (1, packed_h, packed_w)]] * batch
-    inputs = torch.load("/mnt/shared_data/groups/sw_dev/thkim/transformer_golden_inputs.pt")
-    dummy_hs = inputs["hidden_states"]
-    dummy_enc_raw = inputs["encoder_hidden_states"]
-    dummy_t = torch.tensor([1.0] * batch)
 
     actual_enc_len = dummy_enc_raw.shape[1]
     if actual_enc_len < prompt_embed_length:
@@ -157,7 +300,6 @@ def test_transformer(model_id: str, height: int, width: int, batch: int, prompt_
         enc_mask = None
 
     print("[2/4] Running PyTorch golden forward...")
-
     with torch.no_grad():
         golden_output = transformer(
             hidden_states=dummy_hs,
@@ -180,6 +322,7 @@ def test_transformer(model_id: str, height: int, width: int, batch: int, prompt_
                 "sample_size": (lat_h, lat_w),
                 "prompt_embed_length": prompt_embed_length,
                 "num_img_groups": 2,
+                "tensor_parallel_size": tensor_parallel_size,
             },
         )
 
@@ -194,50 +337,62 @@ def test_transformer(model_id: str, height: int, width: int, batch: int, prompt_
             rbln_output = rbln_output[0]
 
         r = compute_pearsonr(golden_output.detach(), rbln_output.detach())
-        report("Transformer", r)
+        report("Transformer (hidden_states)", r, threshold)
 
-    print(f"Golden output: {golden_output}")
-    print(f"RBLN output: {rbln_output}")  
     del transformer, rbln_transformer
-    return r >= PASS_THRESHOLD
+    return r >= threshold
 
 
 # ---------------------------------------------------------------------------
-# Text encoder test
+# Text encoder
 # ---------------------------------------------------------------------------
 
-def test_text_encoder(model_id: str, max_seq_len: int, batch: int):
+
+def test_text_encoder(
+    model_id: str,
+    max_seq_len: int,
+    batch: int,
+    threshold: float,
+    *,
+    text_encoder_num_layers: Optional[int],
+    vision_depth: Optional[int],
+    image_path: Optional[str],
+    visual_max_seq_lens: int,
+) -> bool:
     print("\n" + "=" * 60)
-    print("Text Encoder (Qwen2_5_VLForConditionalGeneration) — golden comparison")
+    print("Text Encoder (Qwen2_5_VL) — last hidden state golden comparison")
     print("=" * 60)
 
-    from transformers import Qwen2_5_VLForConditionalGeneration, AutoProcessor
+    from transformers import AutoProcessor, Qwen2_5_VLForConditionalGeneration
     from optimum.rbln import RBLNQwen2_5_VLModel
 
-    print("\n[1/4] Loading PyTorch Text Encoder...")
-    text_encoder = Qwen2_5_VLForConditionalGeneration.from_pretrained(
-        model_id, subfolder="text_encoder",
+    thin = _load_thin_submodules(
+        model_id,
+        transformer_num_layers=None,
+        text_encoder_num_layers=text_encoder_num_layers,
+        vision_depth=vision_depth,
     )
+
+    print("\n[1/4] Loading PyTorch Text Encoder...")
+    if "text_encoder" in thin:
+        text_encoder = thin["text_encoder"]
+    else:
+        text_encoder = Qwen2_5_VLForConditionalGeneration.from_pretrained(
+            model_id,
+            subfolder="text_encoder",
+            torch_dtype=torch.float32,
+        )
     text_encoder.eval()
 
     processor = AutoProcessor.from_pretrained(model_id, subfolder="processor")
 
     print("[2/4] Preparing inputs & running PyTorch golden forward...")
     prompt = "Make the cat wear a hat"
-    template = (
-        "<|im_start|>system\nDescribe the key features of the input image.<|im_end|>\n"
-        "<|im_start|>user\n{}<|im_end|>\n<|im_start|>assistant\n"
-    )
-    txt = [template.format(prompt)]
-
-    model_inputs = processor(text=txt, padding=True, return_tensors="pt")
+    model_inputs = _build_text_encoder_inputs(processor, prompt, image_path)
+    fwd_kw = {k: v for k, v in model_inputs.items() if k in ("input_ids", "attention_mask", "pixel_values", "image_grid_thw")}
 
     with torch.no_grad():
-        golden_outputs = text_encoder(
-            input_ids=model_inputs.input_ids,
-            attention_mask=model_inputs.attention_mask,
-            output_hidden_states=True,
-        )
+        golden_outputs = text_encoder(**fwd_kw, output_hidden_states=True)
     golden_hidden = golden_outputs.hidden_states[-1]
 
     print("[3/4] Compiling RBLN Text Encoder (RBLNQwen2_5_VLModel)...")
@@ -251,72 +406,136 @@ def test_text_encoder(model_id: str, max_seq_len: int, batch: int):
                 "use_inputs_embeds": True,
                 "output_hidden_states": True,
                 "visual": {
-                    "max_seq_lens": 6400,
+                    "max_seq_lens": visual_max_seq_lens,
                 },
             },
         )
 
         print("[4/4] Running RBLN inference & comparing...")
-        rbln_outputs = rbln_model(
-            input_ids=model_inputs.input_ids,
-            attention_mask=model_inputs.attention_mask,
-            output_hidden_states=True,
-        )
+        rbln_outputs = rbln_model(**fwd_kw, output_hidden_states=True)
         rbln_hidden = rbln_outputs.hidden_states[-1]
 
-        seq_len = model_inputs.attention_mask.sum().item()
+        seq_len = int(model_inputs["attention_mask"].sum().item())
         golden_valid = golden_hidden[0, :seq_len]
         rbln_valid = rbln_hidden[0, :seq_len]
 
         r = compute_pearsonr(golden_valid, rbln_valid)
-        report("Text Encoder (last hidden state)", r)
+        report("Text Encoder (last hidden state)", r, threshold)
 
     del text_encoder, rbln_model
-    return r >= PASS_THRESHOLD
+    return r >= threshold
 
 
 # ---------------------------------------------------------------------------
-# Main
+# CLI
 # ---------------------------------------------------------------------------
+
 
 def parse_args():
     p = argparse.ArgumentParser(
-        description="QwenImageEditPlus per-module golden comparison (pearsonr)"
+        description="QwenImageEditPlus: per-submodule logit-level golden comparison (Pearson r)."
     )
+    p.add_argument("--model-id", default=MODEL_DIR, help="HF model id or local checkpoint directory")
     p.add_argument(
-        "--model-id", default=MODEL_DIR,
-        help="HuggingFace model ID or local path",
+        "--module",
+        default="all",
+        choices=["all", "vae", "transformer", "text_encoder"],
+        help="Submodule to test",
     )
-    p.add_argument(
-        "--module", default="all", choices=["all", "vae", "transformer", "text_encoder"],
-        help="Which module to test (default: all)",
-    )
-    p.add_argument("--height", type=int, default=1024, help="Image height for VAE/Transformer test")
-    p.add_argument("--width", type=int, default=1024, help="Image width for VAE/Transformer test")
+    p.add_argument("--height", type=int, default=1024, help="Image height for VAE / transformer latent math")
+    p.add_argument("--width", type=int, default=1024, help="Image width for VAE / transformer latent math")
     p.add_argument("--batch", type=int, default=1)
-    p.add_argument("--prompt-embed-length", type=int, default=512, help="Prompt embed length for Transformer")
-    p.add_argument("--max-seq-len", type=int, default=4096, help="Max seq len for text encoder")
+    p.add_argument("--prompt-embed-length", type=int, default=512, help="Compiled prompt length for transformer")
+    p.add_argument("--max-seq-len", type=int, default=4096, help="Text encoder max sequence length")
+    p.add_argument(
+        "--visual-max-seq-lens",
+        type=int,
+        default=6400,
+        help="Vision branch max_seq_lens for RBLN text encoder (match run_qwenimage_edit.py)",
+    )
     p.add_argument("--threshold", type=float, default=0.99, help="Pearson r pass threshold")
+    p.add_argument(
+        "--transformer-num-layers",
+        type=int,
+        default=None,
+        help="If set, load transformer with this many layers (fast compile)",
+    )
+    p.add_argument(
+        "--text-encoder-num-layers",
+        type=int,
+        default=None,
+        help="If set, shrink language backbone to this many layers",
+    )
+    p.add_argument(
+        "--vision-depth",
+        type=int,
+        default=None,
+        help="If set, shrink vision tower depth (with --text-encoder-num-layers or alone)",
+    )
+    p.add_argument(
+        "--golden-inputs",
+        default=None,
+        help=f"transformer_golden_inputs.pt path (default: env QWENIMAGE_TRANSFORMER_GOLDEN or {DEFAULT_TRANSFORMER_GOLDEN})",
+    )
+    p.add_argument(
+        "--image-path",
+        default=None,
+        help="If set, text_encoder test uses image+prompt (multimodal); same as edit pipeline",
+    )
+    p.add_argument(
+        "--tensor-parallel-size",
+        "-tp",
+        type=int,
+        default=1,
+        help="Transformer compile tensor parallel size (use 1 if compiler has no TP support)",
+    )
+    p.add_argument(
+        "--no-bf16-transformer",
+        action="store_true",
+        help="Run transformer in float32 instead of bfloat16",
+    )
     return p.parse_args()
 
 
 def main():
     args = parse_args()
-    global PASS_THRESHOLD
-    PASS_THRESHOLD = args.threshold
+    threshold = args.threshold
 
     results = {}
 
     if args.module in ("all", "vae"):
-        results["vae"] = test_vae(args.model_id, args.height, args.width, args.batch)
+        results["vae"] = test_vae(args.model_id, args.height, args.width, args.batch, threshold)
 
     if args.module in ("all", "transformer"):
         results["transformer"] = test_transformer(
-            args.model_id, args.height, args.width, args.batch, args.prompt_embed_length
+            args.model_id,
+            args.height,
+            args.width,
+            args.batch,
+            args.prompt_embed_length,
+            threshold,
+            transformer_num_layers=args.transformer_num_layers,
+            golden_inputs_path=args.golden_inputs,
+            use_bf16=not args.no_bf16_transformer,
+            tensor_parallel_size=args.tensor_parallel_size,
         )
 
     if args.module in ("all", "text_encoder"):
-        results["text_encoder"] = test_text_encoder(args.model_id, args.max_seq_len, args.batch)
+        if args.text_encoder_num_layers is None and args.vision_depth is None:
+            print(
+                "\n[hint] Full text_encoder compile is heavy; consider "
+                "`--text-encoder-num-layers 2 --vision-depth 4` like run_qwenimage_edit.py thin mode."
+            )
+        results["text_encoder"] = test_text_encoder(
+            args.model_id,
+            args.max_seq_len,
+            args.batch,
+            threshold,
+            text_encoder_num_layers=args.text_encoder_num_layers,
+            vision_depth=args.vision_depth,
+            image_path=args.image_path,
+            visual_max_seq_lens=args.visual_max_seq_lens,
+        )
 
     print("\n" + "=" * 60)
     print("SUMMARY")
@@ -329,9 +548,9 @@ def main():
             all_pass = False
 
     if all_pass:
-        print("\nAll modules passed golden comparison.")
+        print("\nAll selected modules passed golden comparison.")
     else:
-        print("\nSome modules FAILED. Check output above.")
+        print("\nSome modules FAILED. See logs above.")
         sys.exit(1)
 
 
