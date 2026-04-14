@@ -39,17 +39,17 @@ def test_vae(
     z_dim = 16
 
     print("\n[1/4] Loading PyTorch VAE...")
-    vae = AutoencoderKLQwenImage.from_pretrained(model_id, subfolder="vae", torch_dtype=torch.float32)
+    vae = AutoencoderKLQwenImage.from_pretrained(model_id, subfolder="vae", torch_dtype=torch.bfloat16)
     vae.eval()
 
     print("[2/4] Running PyTorch golden forward...")
-    dummy_enc_input = torch.randn(batch, 3, 1, height, width)
+    dummy_enc_input = torch.randn(batch, 3, 1, height, width, dtype=torch.bfloat16)
     with torch.no_grad():
         golden_enc_output = vae._encode(dummy_enc_input)
 
     lat_h = height // vae_scale_factor
     lat_w = width // vae_scale_factor
-    dummy_dec_input = torch.randn(batch, z_dim, 1, lat_h, lat_w)
+    dummy_dec_input = torch.randn(batch, z_dim, 1, lat_h, lat_w, dtype=torch.bfloat16)
     with torch.no_grad():
         golden_dec_output = vae._decode(dummy_dec_input, return_dict=False)
     if isinstance(golden_dec_output, tuple):
