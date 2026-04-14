@@ -91,6 +91,7 @@ class RBLNAutoencoderKLQwenImage(RBLNModel):
     auto_model_class = AutoencoderKLQwenImage
     hf_library_name = "diffusers"
     _rbln_config_class = RBLNAutoencoderKLQwenImageConfig
+    _supports_non_fp32=True
 
     def __post_init__(self, **kwargs):
         super().__post_init__(**kwargs)
@@ -189,7 +190,7 @@ class RBLNAutoencoderKLQwenImage(RBLNModel):
                         rbln_config.sample_size[0],
                         rbln_config.sample_size[1],
                     ],
-                    "float32",
+                    rbln_config.dtype,
                 )
             ]
             compile_cfgs.append(RBLNCompileConfig(compiled_model_name="encoder", input_info=vae_enc_input_info))
@@ -207,7 +208,7 @@ class RBLNAutoencoderKLQwenImage(RBLNModel):
                     latent_height,
                     latent_width,
                 ],
-                "float32",
+                rbln_config.dtype,
             )
         ]
         compile_cfgs.append(RBLNCompileConfig(compiled_model_name="decoder", input_info=vae_dec_input_info))
