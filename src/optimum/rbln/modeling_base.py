@@ -53,6 +53,7 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
     config_name = "config.json"
     hf_library_name = "transformers"
     _supports_non_fp32 = False
+    _comp_dtype=None
 
     def __init__(
         self,
@@ -438,6 +439,7 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
             if runtime_cannot_be_created:
                 raise ValueError(runtime_cannot_be_created)
 
+        kwargs.update({"comp_dtype":cls._comp_dtype})
         compiled_model = rebel.compile_from_torch(
             model,
             input_info=rbln_compile_config.input_info,

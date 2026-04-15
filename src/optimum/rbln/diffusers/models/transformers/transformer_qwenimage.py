@@ -219,6 +219,7 @@ class RBLNQwenImageTransformer2DModel(RBLNModel):
     auto_model_class = QwenImageTransformer2DModel
     _output_class = Transformer2DModelOutput
     _supports_non_fp32=True
+    _comp_dtype="bfloat"
 
     def __post_init__(self, **kwargs):
         super().__post_init__(**kwargs)
