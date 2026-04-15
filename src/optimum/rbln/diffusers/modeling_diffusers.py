@@ -186,6 +186,7 @@ class RBLNDiffusionMixin:
                 The returned object is an instance of the class that called this method, inheriting from RBLNDiffusionMixin.
         """
         rbln_config, kwargs = cls.get_rbln_config_class().initialize_from_kwargs(rbln_config, **kwargs)
+        kwargs.update({"torch_dtype": torch.float32})
 
         if export is None:
             export = any(
