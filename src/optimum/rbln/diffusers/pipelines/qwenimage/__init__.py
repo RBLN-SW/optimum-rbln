@@ -12,4 +12,4 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .pipeline_qwenimage_edit import RBLNQwenImageEditPlusPipeline  # noqa: F401
+from .pipeline_qwenimage_edit_plus import RBLNQwenImageEditPlusPipeline  # noqa: F401
