@@ -58,13 +58,12 @@ class RBLNQwenImageEditPlusPipeline(RBLNDiffusionMixin, QwenImageEditPlusPipelin
             user_w = kwargs.get("width")
             if user_h is not None and user_w is not None:
                 if user_h != compiled_h or user_w != compiled_w:
-                    logger.warning(
+                    raise ValueError(
                         f"Requested output size ({user_h}x{user_w}) differs from compiled "
-                        f"image_size ({compiled_h}x{compiled_w}). Overriding to compiled size."
+                        f"image_size ({compiled_h}x{compiled_w}). "
+                        f"Either omit height/width to use the compiled size, "
+                        f"or recompile the pipeline with the desired dimensions."
                     )
-
-            kwargs["height"] = compiled_h
-            kwargs["width"] = compiled_w
 
         compiled_prompt_len = getattr(self.transformer, "rbln_config", None)
         if compiled_prompt_len is not None:
