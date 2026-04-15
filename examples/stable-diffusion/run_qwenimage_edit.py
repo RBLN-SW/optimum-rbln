@@ -22,6 +22,7 @@ import fire
 import torch
 from PIL import Image
 
+from diffusers import QwenImageEditPlusPipeline
 from optimum.rbln import RBLNQwenImageEditPlusPipeline
 
 
@@ -102,7 +103,7 @@ def _load_thin_submodules(model_id, transformer_num_layers, text_encoder_num_lay
 def main(
     model_id: str = "/mnt/shared_data/.cache/pretrained_models/NC/VARCO_I2I_inference/models",
     from_diffusers: bool = False,
-    image_path: str = "/mnt/shared_data/.cache/pretrained_models/NC/VARCO_I2I_inference/assets/1.png",
+    image_path: str = "/mnt/shared_data/.cache/pretrained_models/NC/VARCO_I2I_inference/assets/4.png",
     prompt: str = PROMPT,
     negative_prompt: str = " ",
     height: int = 1024,
@@ -193,7 +194,7 @@ def main(
     ).images[0]
 
     os.makedirs("results", exist_ok=True)
-    output_name = "results/1_output.png"
+    output_name = "results/4_output.png"
     result.save(output_name)
     print(f"Saved: {output_name}  ({result.size[0]}x{result.size[1]})")
 
