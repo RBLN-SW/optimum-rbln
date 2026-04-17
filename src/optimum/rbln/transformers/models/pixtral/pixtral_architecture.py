@@ -61,12 +61,10 @@ class PixtralAttention(nn.Module):
         sin = sin[None, None, None, :, :]
         query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin)
 
-        attn_weights = torch.matmul(query_states, key_states.transpose(3, 4)) * self.scaling
-        attn_weights = attn_weights + attention_mask
-        attn_weights = nn.functional.softmax(attn_weights, dim=-1, dtype=torch.float32)
-        attn_output = torch.matmul(attn_weights, value_states)
+        attn_output = nn.functional.scaled_dot_product_attention(
+            query_states, key_states, value_states, attn_mask=attention_mask, scale=self.scaling
+        )
         attn_output = attn_output.transpose(1, 3)
-
         attn_output = attn_output.reshape(batch_size, patches, -1)
         attn_output = self.o_proj(attn_output)
 

@@ -111,10 +111,9 @@ class Qwen2_5_VLVisionFullAttention(nn.Module):
         cos, sin = position_embeddings
         q, k = apply_rotary_pos_emb(q, k, cos, sin)
 
-        attn_weights = torch.matmul(q, k.transpose(2, 3)) * self.scale
-        attn_weights = attn_weights + attn_masks
-        attn_weights = nn.functional.softmax(attn_weights, dim=-1, dtype=hidden_states.dtype)
-        attn_output = torch.matmul(attn_weights, v)
+        attn_output = nn.functional.scaled_dot_product_attention(
+            q, k, v, attn_mask=attn_masks, scale=self.scale
+        )
         attn_output = attn_output.transpose(1, 2)
         attn_output = attn_output.reshape(1, seq_length, -1)
         attn_output = self.proj(attn_output).squeeze(0)
@@ -161,11 +160,9 @@ class Qwen2_5_VLVisionWindowAttention(nn.Module):
         sin = sin.reshape(num_windows, 1, seq_length // num_windows, -1)
         q, k = apply_rotary_pos_emb(q, k, cos, sin)
 
-        attn_weights = torch.matmul(q, k.transpose(2, 3)) * self.scale
-
-        attn_weights = attn_weights + attn_masks
-        attn_weights = nn.functional.softmax(attn_weights, dim=-1)
-        attn_output = torch.matmul(attn_weights, v)
+        attn_output = nn.functional.scaled_dot_product_attention(
+            q, k, v, attn_mask=attn_masks, scale=self.scale
+        )
         attn_output = attn_output.transpose(1, 2)
         attn_output = attn_output.reshape(1, seq_length, -1)
         attn_output = self.proj(attn_output).squeeze(0)
