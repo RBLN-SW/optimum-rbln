@@ -57,8 +57,8 @@ class Qwen3VLMoeLayer(DecoderOnlyLayer):
 class Qwen3VLMoeSparseMoeBlock(nn.Module):
     def __init__(self, model: nn.Module):
         super().__init__()
-        self.num_experts = model.num_experts
-        self.top_k = model.top_k
+        self.num_experts = getattr(model, "num_experts", None) or model.gate.num_experts
+        self.top_k = getattr(model, "top_k", None) or model.gate.top_k
         self.gate = model.gate
         self.experts = Qwen3VLMoeMLP(model.experts, self.top_k)
 
@@ -76,27 +76,20 @@ class Qwen3VLMoeSparseMoeBlock(nn.Module):
 class Qwen3VLMoeMLP(nn.Module):
     def __init__(self, experts: nn.Module, top_k: int):
         super().__init__()
-        self.hidden_size = experts.hidden_size
-        self.intermediate_size = experts.intermediate_size
         self.num_experts = experts.num_experts
         self.top_k = top_k
         self.norm_topk_prob = True
 
-        self.gate_proj = nn.Linear(self.hidden_size, self.num_experts * self.intermediate_size, bias=False)
-        self.up_proj = nn.Linear(self.hidden_size, self.num_experts * self.intermediate_size, bias=False)
-        self.down_proj = nn.Linear(self.num_experts * self.intermediate_size, self.hidden_size, bias=False)
+        intermediate_dim = getattr(experts, "intermediate_dim", None) or getattr(experts, "expert_dim", None) or getattr(experts, "intermediate_size", None)
+
+        self.gate_proj = nn.Linear(1, 1, bias=False)
+        self.up_proj = nn.Linear(1, 1, bias=False)
+        self.down_proj = nn.Linear(1, 1, bias=False)
 
         gate_up = experts.gate_up_proj
-        expert_dim = experts.expert_dim
-        self.gate_proj.weight.data = torch.stack(
-            [gate_up[expert_idx, :, :expert_dim].transpose(0, 1) for expert_idx in range(self.num_experts)], dim=0
-        )
-        self.up_proj.weight.data = torch.stack(
-            [gate_up[expert_idx, :, expert_dim:].transpose(0, 1) for expert_idx in range(self.num_experts)], dim=0
-        )
-        self.down_proj.weight.data = torch.stack(
-            [experts.down_proj[expert_idx].transpose(0, 1) for expert_idx in range(self.num_experts)], dim=0
-        )
+        self.gate_proj.weight = nn.Parameter(gate_up[:, :intermediate_dim, :])
+        self.up_proj.weight = nn.Parameter(gate_up[:, intermediate_dim:, :])
+        self.down_proj.weight = nn.Parameter(experts.down_proj.data.clone())
 
     def forward(self, x: torch.Tensor, router_logits: torch.Tensor) -> torch.Tensor:
         return torch.ops.rbln_custom_ops.custom_moe_glu(
