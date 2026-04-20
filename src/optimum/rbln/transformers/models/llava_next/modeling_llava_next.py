@@ -19,9 +19,9 @@ from typing import TYPE_CHECKING, Any, Callable, List, Optional, Tuple, Union
 
 import numpy as np
 import torch
-from transformers import AutoModelForVision2Seq, LlavaNextForConditionalGeneration, PretrainedConfig, PreTrainedModel
+from transformers import AutoModelForImageTextToText, LlavaNextForConditionalGeneration, PretrainedConfig, PreTrainedModel
 from transformers.modeling_outputs import BaseModelOutputWithPooling
-from transformers.modeling_utils import no_init_weights
+from transformers.initialization import no_init_weights
 from transformers.models.llava_next.modeling_llava_next import (
     get_anyres_image_grid_shape,
     image_size_to_num_patches,
@@ -119,7 +119,7 @@ class RBLNLlavaNextForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGeneration
         ```
     """
 
-    auto_model_class = AutoModelForVision2Seq
+    auto_model_class = AutoModelForImageTextToText
     _rbln_submodules = [
         {"name": "vision_tower"},
         {"name": "language_model"},
