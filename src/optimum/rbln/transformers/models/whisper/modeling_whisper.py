@@ -431,6 +431,8 @@ class RBLNWhisperForConditionalGeneration(RBLNModel, RBLNWhisperGenerationMixin)
         # default decoder pass
         if input_features is None and encoder_outputs is None:
             cross_attentions = []
+            if cache_position is None:
+                cache_position = torch.arange(input_ids.shape[-1], dtype=torch.long)
             for step in cache_position:
                 # skip step 0 if language_detection has been processed
                 if step == 0 and self.is_language_detected:

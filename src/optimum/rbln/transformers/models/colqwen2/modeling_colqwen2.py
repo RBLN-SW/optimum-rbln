@@ -85,7 +85,6 @@ class RBLNColQwen2ForRetrieval(RBLNModel):
         ```
     """
 
-    _rbln_submodule_postfix = "model"
     _rbln_submodules = [
         {"name": "vlm"},
     ]

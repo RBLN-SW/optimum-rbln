@@ -57,7 +57,8 @@ class Qwen2MoeSparseMoeBlock(nn.Module):
         hidden_states = hidden_states.view(-1, hidden_dim)
 
         # router_logits: (batch * sequence_length, n_experts)
-        router_logits = self.gate(hidden_states)
+        router_output = self.gate(hidden_states)
+        router_logits = router_output[0] if isinstance(router_output, tuple) else router_output
         final_hidden_states = self.experts(hidden_states, router_logits)
         shared_expert_output = self.shared_expert(hidden_states)
         shared_expert_output = (

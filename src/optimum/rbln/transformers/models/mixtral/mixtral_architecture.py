@@ -47,7 +47,8 @@ class MixtralSparseMoeBlock(nn.Module):
         batch_size, sequence_length, hidden_dim = hidden_states.shape
         hidden_states = hidden_states.view(-1, hidden_dim)
         # router_logits: (batch * sequence_length, n_experts)
-        router_logits = self.gate(hidden_states)
+        router_output = self.gate(hidden_states)
+        router_logits = router_output[0] if isinstance(router_output, tuple) else router_output
         final_hidden_states = self.experts(hidden_states, router_logits)
         final_hidden_states = final_hidden_states.reshape(batch_size, sequence_length, hidden_dim)
         return final_hidden_states

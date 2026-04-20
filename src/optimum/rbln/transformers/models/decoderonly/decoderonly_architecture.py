@@ -1247,6 +1247,8 @@ class RotaryEmbedding(nn.Module):
 
         if hasattr(config, "rope_scaling") and config.rope_scaling is not None:
             rope_type = config.rope_scaling.get("rope_type", config.rope_scaling.get("type"))
+            if rope_type is None:
+                rope_type = "default"
         else:
             rope_type = "default"
 
