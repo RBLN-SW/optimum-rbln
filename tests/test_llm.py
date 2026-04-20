@@ -137,11 +137,12 @@ class LLMTest:
             for b_idx, bmask in enumerate(inputs.attention_mask):
                 masked_indices = torch.where(bmask == 0)[0]
                 unmasked_indices = torch.where(bmask == 1)[0]
-                masked = torch.allclose(test_hidden_states[b_idx][masked_indices], torch.zeros([1]))
+                hs_dtype = test_hidden_states.dtype
+                masked = torch.allclose(test_hidden_states[b_idx][masked_indices], torch.zeros([1], dtype=hs_dtype))
                 # 1. all masked hidden states are zero
                 self.assertTrue(masked)
                 unmasked_tensor = test_hidden_states[b_idx][unmasked_indices]
-                avg_unmasked_tensor = torch.mean(unmasked_tensor, dim=-1)
+                avg_unmasked_tensor = torch.mean(unmasked_tensor.float(), dim=-1)
                 approx_zero = torch.isclose(avg_unmasked_tensor, torch.zeros([1]), atol=1e-5)
                 # 2. check if unmasked hidden states are not masked
                 self.assertFalse(torch.any(approx_zero).item())
