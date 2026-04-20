@@ -31,13 +31,14 @@ class MixtralLayer(DecoderOnlyLayer):
 
     def __init__(self, layer, self_attn: DecoderOnlyAttention, lora_config: Optional[RBLNLoRAConfig] = None):
         super().__init__(layer, self_attn, lora_config)
-        self.mlp = MixtralSparseMoeBlock(layer.block_sparse_moe)
+        moe_block = getattr(layer, "block_sparse_moe", None) or layer.mlp
+        self.mlp = MixtralSparseMoeBlock(moe_block)
 
 
 class MixtralSparseMoeBlock(nn.Module):
     def __init__(self, model: nn.Module):
         super().__init__()
-        self.top_k = model.top_k
+        self.top_k = getattr(model, "top_k", None) or model.gate.top_k
         self.gate = model.gate
         self.experts = MixtralBlockSparseTop2MLP(model.experts, self.top_k)
         model.experts = None
@@ -53,13 +54,20 @@ class MixtralSparseMoeBlock(nn.Module):
 
 
 class MixtralBlockSparseTop2MLP(nn.Module):
-    def __init__(self, expert_list, top_k):
+    def __init__(self, experts, top_k):
         super().__init__()
         self.top_k = top_k
 
-        self.w1_weight = nn.Parameter(torch.stack([expert.w1.weight.data for expert in expert_list], dim=0))
-        self.w2_weight = nn.Parameter(torch.stack([expert.w2.weight.data for expert in expert_list], dim=0))
-        self.w3_weight = nn.Parameter(torch.stack([expert.w3.weight.data for expert in expert_list], dim=0))
+        if hasattr(experts, "gate_up_proj"):
+            intermediate_dim = experts.intermediate_dim
+            gate_up = experts.gate_up_proj.data
+            self.w1_weight = nn.Parameter(gate_up[:, :intermediate_dim, :])
+            self.w3_weight = nn.Parameter(gate_up[:, intermediate_dim:, :])
+            self.w2_weight = nn.Parameter(experts.down_proj.data.clone())
+        else:
+            self.w1_weight = nn.Parameter(torch.stack([expert.w1.weight.data for expert in experts], dim=0))
+            self.w2_weight = nn.Parameter(torch.stack([expert.w2.weight.data for expert in experts], dim=0))
+            self.w3_weight = nn.Parameter(torch.stack([expert.w3.weight.data for expert in experts], dim=0))
 
     def forward(self, x, router_logits):
         return torch.ops.rbln_custom_ops.custom_moe_glu(
