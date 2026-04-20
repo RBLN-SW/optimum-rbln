@@ -31,8 +31,8 @@ from huggingface_hub import hf_hub_download, list_repo_files
 from safetensors.torch import load_file
 from torch.nn import Linear, Parameter
 from transformers import AutoConfig
-from transformers.modeling_utils import get_state_dict_dtype
 from transformers.initialization import no_init_weights
+from transformers.modeling_utils import get_state_dict_dtype
 
 from ...configuration_utils import RBLNSerializableConfigProtocol
 from ...utils.logging import get_logger

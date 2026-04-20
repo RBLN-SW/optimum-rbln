@@ -81,7 +81,11 @@ class Qwen3VLMoeMLP(nn.Module):
         self.top_k = top_k
         self.norm_topk_prob = True
 
-        intermediate_dim = getattr(experts, "intermediate_dim", None) or getattr(experts, "expert_dim", None) or getattr(experts, "intermediate_size", None)
+        intermediate_dim = (
+            getattr(experts, "intermediate_dim", None)
+            or getattr(experts, "expert_dim", None)
+            or getattr(experts, "intermediate_size", None)
+        )
 
         self.gate_proj = nn.Linear(1, 1, bias=False)
         self.up_proj = nn.Linear(1, 1, bias=False)

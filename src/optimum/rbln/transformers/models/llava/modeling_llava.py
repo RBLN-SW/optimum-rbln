@@ -18,8 +18,8 @@ from typing import TYPE_CHECKING, Any, Callable, List, Optional, Tuple, Union
 
 import torch
 from transformers import AutoModelForImageTextToText, LlavaForConditionalGeneration, PretrainedConfig, PreTrainedModel
-from transformers.modeling_outputs import BaseModelOutputWithPooling
 from transformers.initialization import no_init_weights
+from transformers.modeling_outputs import BaseModelOutputWithPooling
 from transformers.models.llava.modeling_llava import LlavaCausalLMOutputWithPast
 
 from ....configuration_utils import RBLNCompileConfig, RBLNModelConfig
