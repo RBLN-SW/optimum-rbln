@@ -234,6 +234,10 @@ class RBLNModel(RBLNBaseModel):
     ) -> "PreTrainedModel":
         kwargs = cls.update_kwargs(kwargs)
 
+        # FIXME(kblee):In transformers v5+, some models default to non-fp32 dtype (e.g. bfloat16).
+        if not cls._supports_non_fp32 and "dtype" not in kwargs and "torch_dtype" not in kwargs:
+            kwargs["torch_dtype"] = torch.float32
+
         return cls.get_hf_class().from_pretrained(
             model_id,
             subfolder=subfolder,
