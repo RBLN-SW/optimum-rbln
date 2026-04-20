@@ -18,12 +18,12 @@ from typing import TYPE_CHECKING, Any, Callable, Optional, Union
 
 import torch
 from transformers import (
-    AutoModelForVision2Seq,
+    AutoModelForImageTextToText,
     PretrainedConfig,
     PreTrainedModel,
     Qwen2VLForConditionalGeneration,
 )
-from transformers.modeling_utils import no_init_weights
+from transformers.initialization import no_init_weights
 from transformers.models.qwen2_vl.modeling_qwen2_vl import (
     PatchEmbed,
     Qwen2VisionTransformerPretrainedModel,
@@ -238,7 +238,7 @@ class RBLNQwen2VisionTransformerPretrainedModel(RBLNModel):
 
 
 class RBLNQwen2VLModel(RBLNDecoderOnlyModel):
-    auto_model_class = AutoModelForVision2Seq
+    auto_model_class = AutoModelForImageTextToText
     _decoder_wrapper_cls = Qwen2VL_LanguageModelWrapper
     _supports_non_fp32 = True
     _use_rotary_emb = False
@@ -501,7 +501,7 @@ class RBLNQwen2VLForConditionalGeneration(RBLNQwen2VLModel, RBLNDecoderOnlyModel
         ```
     """
 
-    auto_model_class = AutoModelForVision2Seq
+    auto_model_class = AutoModelForImageTextToText
     _decoder_wrapper_cls = Qwen2VL_LanguageModelWrapper
     _supports_non_fp32 = True
     _use_rotary_emb = False
