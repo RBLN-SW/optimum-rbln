@@ -179,7 +179,7 @@ class RBLNModel(RBLNBaseModel):
         )
 
         # torchscript should be True for jit to work
-        torchscript_backup = config.torchscript
+        torchscript_backup = getattr(config, "torchscript", None)
         config.torchscript = True
 
         compiled_model: Union[rebel.RBLNCompiledModel, Dict[str, rebel.RBLNCompiledModel]] = cls.get_compiled_model(
@@ -196,7 +196,10 @@ class RBLNModel(RBLNBaseModel):
             cm.save(save_dir_path / subfolder / f"{compiled_model_name}.rbln")
         rbln_config.save(save_dir_path / subfolder)
 
-        config.torchscript = torchscript_backup
+        if torchscript_backup is not None:
+            config.torchscript = torchscript_backup
+        elif hasattr(config, "torchscript"):
+            del config.torchscript
         config.save_pretrained(save_dir_path / subfolder)
 
         # Save torch artifacts (e.g. embedding matrix if needed.)
@@ -218,7 +221,7 @@ class RBLNModel(RBLNBaseModel):
     def get_pytorch_model(
         cls,
         model_id: str,
-        use_auth_token: Optional[Union[bool, str]] = None,
+        token: Optional[Union[bool, str]] = None,
         revision: Optional[str] = None,
         force_download: bool = False,
         cache_dir: Optional[str] = HUGGINGFACE_HUB_CACHE,
@@ -236,7 +239,7 @@ class RBLNModel(RBLNBaseModel):
             subfolder=subfolder,
             revision=revision,
             cache_dir=cache_dir,
-            use_auth_token=use_auth_token,
+            token=token,
             local_files_only=local_files_only,
             force_download=force_download,
             trust_remote_code=trust_remote_code,
