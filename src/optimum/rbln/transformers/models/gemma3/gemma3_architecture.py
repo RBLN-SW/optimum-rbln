@@ -32,7 +32,13 @@ class Gemma3ForCausalLMWrapper(DecoderOnlyWrapper):
         rotary_emb_global = RotaryEmbedding(config=self.config, max_seq_len_cached=max_seq_len)
 
         config = copy.deepcopy(self.config)
-        config.rope_theta = config.rope_local_base_freq
+        # In transformers v5+, rope_local_base_freq is replaced by rope_parameters["sliding_attention"]
+        rope_parameters = getattr(config, "rope_parameters", None)
+        if hasattr(config, "rope_local_base_freq"):
+            config.rope_theta = config.rope_local_base_freq
+        elif rope_parameters and isinstance(rope_parameters, dict) and "sliding_attention" in rope_parameters:
+            local_rope_theta = rope_parameters["sliding_attention"].get("rope_theta", 10000.0)
+            config.rope_parameters = {"rope_type": "default", "rope_theta": local_rope_theta}
         config.rope_scaling = {"rope_type": "default"}
         rotary_emb_local = RotaryEmbedding(config=config, max_seq_len_cached=max_seq_len)
 
