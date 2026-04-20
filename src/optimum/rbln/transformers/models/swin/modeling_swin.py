@@ -35,8 +35,8 @@ if TYPE_CHECKING:
         AutoTokenizer,
         PreTrainedModel,
         SwinBackbone,
-        SwinEncoder,
     )
+    from transformers.models.swin.modeling_swin import SwinEncoder
 
 
 def window_partition(input_feature, window_size):
