@@ -21,7 +21,7 @@ import torch
 from rebel.compile_context import CompileContext
 from transformers import AutoModel, AutoModelForCausalLM, PretrainedConfig, PreTrainedModel
 from transformers.modeling_outputs import BaseModelOutputWithPast
-from transformers.modeling_utils import no_init_weights
+from transformers.initialization import no_init_weights
 
 from ....configuration_utils import RBLNCompileConfig
 from ....modeling import RBLNModel
@@ -138,7 +138,7 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
         cls,
         model_id: str,
         config: Optional[PretrainedConfig] = None,
-        use_auth_token: Optional[Union[bool, str]] = None,
+        token: Optional[Union[bool, str]] = None,
         revision: Optional[str] = None,
         force_download: bool = False,
         cache_dir: Optional[str] = None,
@@ -153,7 +153,7 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
         return get_quantized_model(
             cls.auto_model_class,
             model_id,
-            use_auth_token=use_auth_token,
+            token=token,
             revision=revision,
             cache_dir=cache_dir,
             force_download=force_download,
