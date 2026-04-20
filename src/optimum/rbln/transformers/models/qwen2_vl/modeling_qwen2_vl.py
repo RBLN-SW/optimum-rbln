@@ -242,6 +242,7 @@ class RBLNQwen2VLModel(RBLNDecoderOnlyModel):
     _decoder_wrapper_cls = Qwen2VL_LanguageModelWrapper
     _supports_non_fp32 = True
     _use_rotary_emb = False
+    _rbln_submodule_prefix = "model"
     _rbln_submodules = [
         {"name": "visual"},
     ]
@@ -505,6 +506,7 @@ class RBLNQwen2VLForConditionalGeneration(RBLNQwen2VLModel, RBLNDecoderOnlyModel
     _decoder_wrapper_cls = Qwen2VL_LanguageModelWrapper
     _supports_non_fp32 = True
     _use_rotary_emb = False
+    _rbln_submodule_prefix = "model"
     _rbln_submodules = [
         {"name": "visual"},
     ]

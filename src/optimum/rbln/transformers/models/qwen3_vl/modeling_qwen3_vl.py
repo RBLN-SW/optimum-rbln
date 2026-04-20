@@ -331,6 +331,7 @@ class RBLNQwen3VLModel(RBLNDecoderOnlyModel):
     auto_model_class = AutoModelForImageTextToText
     _decoder_wrapper_cls = Qwen3VL_LanguageModelWrapper
     _use_rotary_emb = False
+    _rbln_submodule_prefix = "model"
     _rbln_submodules = [
         {"name": "visual"},
     ]
@@ -760,6 +761,7 @@ class RBLNQwen3VLForConditionalGeneration(RBLNQwen3VLModel, RBLNDecoderOnlyModel
     _decoder_wrapper_cls = Qwen3VL_LanguageModelWrapper
     _supports_non_fp32 = True
     _use_rotary_emb = False
+    _rbln_submodule_prefix = "model"
     _rbln_submodules = [
         {"name": "visual"},
     ]

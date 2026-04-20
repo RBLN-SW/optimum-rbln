@@ -88,6 +88,7 @@ class RBLNPaliGemmaForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGeneration
     """
 
     auto_model_class = AutoModelForImageTextToText
+    _rbln_submodule_prefix = "model"
     _rbln_submodules = [
         {"name": "vision_tower"},
         {"name": "language_model"},
@@ -372,6 +373,7 @@ class RBLNPaliGemmaModel(RBLNModel):
         ```
     """
 
+    _rbln_submodule_prefix = "model"
     _rbln_submodules = [
         {"name": "vision_tower"},
         {"name": "language_model"},
