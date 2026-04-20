@@ -435,7 +435,7 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
             if runtime_cannot_be_created:
                 raise ValueError(runtime_cannot_be_created)
 
-        compiled_model = rebel.compile_from_torch(
+        compiled_model = cls._compile_with_masking_compat(
             model,
             input_info=rbln_compile_config.input_info,
             npu=rbln_compile_config.npu,
@@ -443,6 +443,34 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
             **kwargs,
         )
         return compiled_model
+
+    @classmethod
+    def _compile_with_masking_compat(cls, model, **kwargs):
+        import transformers.masking_utils as _mu
+
+        _orig_preprocess = getattr(_mu, "_preprocess_mask_arguments", None)
+        if _orig_preprocess is not None:
+            import functools
+
+            @functools.wraps(_orig_preprocess)
+            def _patched_preprocess(*args, **kwargs):
+                result = _orig_preprocess(*args, **kwargs)
+                early_exit, attn_mask, packed_seq, q_length, kv_length, q_offset, kv_offset = result
+                if early_exit:
+                    return result
+                if isinstance(q_length, torch.Tensor):
+                    q_length = int(q_length)
+                if isinstance(kv_length, torch.Tensor):
+                    kv_length = int(kv_length)
+                return early_exit, attn_mask, packed_seq, q_length, kv_length, q_offset, kv_offset
+
+            _mu._preprocess_mask_arguments = _patched_preprocess
+            try:
+                return rebel.compile_from_torch(model, **kwargs)
+            finally:
+                _mu._preprocess_mask_arguments = _orig_preprocess
+        else:
+            return rebel.compile_from_torch(model, **kwargs)
 
     @classmethod
     def update_rbln_config(
