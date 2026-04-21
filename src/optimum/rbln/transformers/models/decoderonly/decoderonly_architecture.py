@@ -56,7 +56,10 @@ class DecoderOnlyWrapper(nn.Module):
     def __init__(self, model: PreTrainedModel, rbln_config: "RBLNDecoderOnlyModelConfig", use_rotary_emb: bool):
         super().__init__()
         self.quantization = rbln_config.quantization
-        self.config = model.config
+        config = model.config
+        if hasattr(config, "text_config") and not hasattr(config, "num_hidden_layers") and not hasattr(config, "n_layer"):
+            config = config.text_config
+        self.config = config
         self.is_causal_lm = getattr(model, "lm_head", None) is not None
         self.rbln_config = rbln_config
 
