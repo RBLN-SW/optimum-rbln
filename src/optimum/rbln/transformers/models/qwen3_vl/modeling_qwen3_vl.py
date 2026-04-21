@@ -338,6 +338,12 @@ class RBLNQwen3VLModel(RBLNDecoderOnlyModel):
     _rotary_emb_class = Qwen3VLTextRotaryEmbedding
     _get_rope_index_func = Qwen3VLModel.get_rope_index
 
+    @classmethod
+    def _load_submodules(cls, model_save_dir, rbln_config, model=None, **kwargs):
+        if model is None and not getattr(rbln_config, "load_visual", True):
+            return []
+        return super()._load_submodules(model_save_dir, rbln_config, model=model, **kwargs)
+
     def __post_init__(self, **kwargs):
         if hasattr(self.config, "embedding_dim"):
             self.embedding_dim = self.config.embedding_dim
@@ -350,7 +356,7 @@ class RBLNQwen3VLModel(RBLNDecoderOnlyModel):
         self.num_deepstack_layers = len(self.config.vision_config.deepstack_visual_indexes)
 
         super().__post_init__(**kwargs)
-        self.visual = self.rbln_submodules[0]
+        self.visual = self.rbln_submodules[0] if self.rbln_submodules else None
         self.rotary_emb = self._rotary_emb_class(self.config.text_config)
         if not self.can_generate():
             self.block_tables = torch.arange(self.rbln_config.kvcache_num_blocks, dtype=torch.int16)
@@ -791,6 +797,10 @@ class RBLNQwen3VLForConditionalGeneration(RBLNQwen3VLModel, RBLNDecoderOnlyModel
     def _reconstruct_model_if_needed(cls, model: "PreTrainedModel"):
         model.model.lm_head = model.lm_head
         return model
+
+    @staticmethod
+    def load_visual_encoder(model_path: str, **kwargs) -> "RBLNQwen3VLVisionModel":
+        return RBLNQwen3VLVisionModel.from_pretrained(model_path, subfolder="visual", **kwargs)
 
     def encode(
         self,

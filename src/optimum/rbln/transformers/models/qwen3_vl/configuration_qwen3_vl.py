@@ -33,12 +33,14 @@ class RBLNQwen3VLForConditionalGenerationConfig(RBLNDecoderOnlyModelForCausalLMC
         self,
         use_inputs_embeds: bool = True,
         visual: Optional[RBLNModelConfig] = None,
+        load_visual: bool = True,
         **kwargs: Any,
     ):
         """
         Args:
             use_inputs_embeds (bool): Whether or not to use `inputs_embeds` as input. Defaults to `True`.
             visual (Optional[RBLNModelConfig]): Configuration for the vision encoder component.
+            load_visual (bool): Whether to load the visual encoder submodule.
             kwargs: Additional arguments passed to the parent `RBLNDecoderOnlyModelForCausalLMConfig`.
 
         Raises:
@@ -51,14 +53,16 @@ class RBLNQwen3VLForConditionalGenerationConfig(RBLNDecoderOnlyModelForCausalLMC
                 "as RBLNQwen3VLForConditionalGeneration accepts only `inputs_embeds` as input."
             )
         self.visual = visual
+        self.load_visual = load_visual
 
 
 class RBLNQwen3VLModelConfig(RBLNDecoderOnlyModelConfig):
     submodules = ["visual"]
 
-    def __init__(self, visual: Optional[RBLNModelConfig] = None, **kwargs: Any):
+    def __init__(self, visual: Optional[RBLNModelConfig] = None, load_visual: bool = True, **kwargs: Any):
         super().__init__(**kwargs)
         self.visual = self.initialize_submodule_config(submodule_config=visual)
+        self.load_visual = load_visual
 
 
 class RBLNQwen3VLVisionModelConfig(RBLNModelConfig):
