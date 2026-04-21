@@ -150,6 +150,8 @@ class RBLNWhisperGenerationMixin(WhisperGenerationMixin, GenerationMixin):
 
         valid_seekoutputs = []
         for k, v in seek_outputs.items():
+            if k == "past_key_values":
+                continue
             if v is not None and len(v) > 0 and v[0] is not None:
                 valid_seekoutputs.append((k, v))
         seek_outputs = [

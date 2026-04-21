@@ -457,7 +457,9 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
                 result = _orig_preprocess(*args, **kwargs)
                 early_exit, attn_mask, packed_seq, q_length, kv_length, q_offset, kv_offset = result
                 if early_exit:
-                    return result
+                    if isinstance(attn_mask, torch.Tensor) and attn_mask.dim() == 5:
+                        attn_mask = attn_mask.squeeze(1)
+                    return early_exit, attn_mask, packed_seq, q_length, kv_length, q_offset, kv_offset
                 if isinstance(q_length, torch.Tensor):
                     q_length = int(q_length)
                 if isinstance(kv_length, torch.Tensor):

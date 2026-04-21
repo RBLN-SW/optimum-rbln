@@ -261,7 +261,8 @@ class RBLNQwen2VLModel(RBLNDecoderOnlyModel):
 
         super().__post_init__(**kwargs)
         self.visual = self.rbln_submodules[0]
-        self.rotary_emb = self._rotary_emb_class(self.config)
+        rotary_config = self.config.text_config if hasattr(self.config, "text_config") else self.config
+        self.rotary_emb = self._rotary_emb_class(rotary_config)
         if not self.can_generate():
             self.block_tables = torch.arange(self.rbln_config.kvcache_num_blocks, dtype=torch.int16)
 
@@ -290,12 +291,13 @@ class RBLNQwen2VLModel(RBLNDecoderOnlyModel):
         model_config: PretrainedConfig,
     ):
         input_info = super().get_input_info(batch_size, query_length, rbln_config, model_config)
+        cfg = model_config.text_config if hasattr(model_config, "text_config") and not hasattr(model_config, "hidden_size") else model_config
         pos_idx = 3
         input_info.insert(
             pos_idx,
             (
                 "position_emb",
-                [2, batch_size, 1, query_length, model_config.hidden_size // model_config.num_attention_heads],
+                [2, batch_size, 1, query_length, cfg.hidden_size // cfg.num_attention_heads],
                 rbln_config.dtype,
             ),
         )
