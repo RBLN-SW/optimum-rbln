@@ -340,7 +340,7 @@ class RBLNQwen3VLModel(RBLNDecoderOnlyModel):
 
     @classmethod
     def _load_submodules(cls, model_save_dir, rbln_config, model=None, **kwargs):
-        if model is None and not getattr(rbln_config, "load_visual", True):
+        if model is None and not getattr(rbln_config, "_load_visual_runtime", True):
             return []
         return super()._load_submodules(model_save_dir, rbln_config, model=model, **kwargs)
 
@@ -501,6 +501,11 @@ class RBLNQwen3VLModel(RBLNDecoderOnlyModel):
 
         # Use pre-computed image_embeds if provided, otherwise run visual encoder
         if image_embeds is None and pixel_values is not None:
+            if self.visual is None:
+                raise RuntimeError(
+                    "Visual encoder runtime is not loaded (_load_visual_runtime=False). "
+                    "Provide pre-computed image_embeds from an encoder node."
+                )
             image_embeds, deepstack_image_embeds = self.visual(pixel_values, grid_thw=image_grid_thw)
 
         if image_embeds is not None:
@@ -520,6 +525,11 @@ class RBLNQwen3VLModel(RBLNDecoderOnlyModel):
 
         # Use pre-computed video_embeds if provided, otherwise run visual encoder
         if video_embeds is None and pixel_values_videos is not None:
+            if self.visual is None:
+                raise RuntimeError(
+                    "Visual encoder runtime is not loaded (_load_visual_runtime=False). "
+                    "Provide pre-computed video_embeds from an encoder node."
+                )
             video_embeds, deepstack_video_embeds = self.visual(pixel_values_videos, grid_thw=video_grid_thw)
 
         if video_embeds is not None:
@@ -809,6 +819,12 @@ class RBLNQwen3VLForConditionalGeneration(RBLNQwen3VLModel, RBLNDecoderOnlyModel
         image_grid_thw: Optional[torch.LongTensor] = None,
         video_grid_thw: Optional[torch.LongTensor] = None,
     ) -> dict:
+        if self.visual is None:
+            raise RuntimeError(
+                "Visual encoder runtime is not loaded (_load_visual_runtime=False). "
+                "Use load_visual_encoder() to load the visual encoder on the encoder node, "
+                "or set _load_visual_runtime=True to load both visual and LLM."
+            )
         result = {}
         if pixel_values is not None:
             image_embeds, deepstack_image_embeds = self.visual(pixel_values, grid_thw=image_grid_thw)
