@@ -326,9 +326,8 @@ class TestExaoneForCausalLM(LLMTest.TestLLM):
         "num_hidden_layers": 1,
         "max_position_embeddings": 1024,
         "trust_remote_code": True,
-        "revision": "e949c91dec92095908d34e6b560af77dd0c993f8",
     }
-    HF_CONFIG_KWARGS_PREPROCESSOR = {"revision": "e949c91dec92095908d34e6b560af77dd0c993f8"}
+    HF_CONFIG_KWARGS_PREPROCESSOR = {}
 
     def test_automap(self):
         # TODO: Test resume in transformers v5.0.0
@@ -670,8 +669,7 @@ class TestQwen2VLForConditionalGeneration(LLMTest.TestLLM):
             "max_seq_len": 32_768,
         }
     }
-    HF_CONFIG_KWARGS = {"num_hidden_layers": 1}
-
+    
     @classmethod
     def setUpClass(cls):
         config = AutoConfig.from_pretrained(cls.HF_MODEL_ID)
@@ -714,7 +712,6 @@ class TestQwen2_5_VLForConditionalGeneration(LLMTest.TestLLM):
             "max_seq_len": 32_768,
         }
     }
-    HF_CONFIG_KWARGS = {"num_hidden_layers": 1}
     HF_CONFIG_KWARGS_PREPROCESSOR = {"max_pixels": 64 * 14 * 14}
     IS_MULTIMODAL = True
 
