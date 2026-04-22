@@ -64,9 +64,6 @@ Check out [the documentation of Optimum RBLN](https://docs.rbln.ai/software/opti
 
 To install the latest release of this package:
 ```bash
-pip install optimum-rbln
-
-# CPU-only installation (recommended if you don't plan to use CUDA-enabled PyTorch)
 pip install optimum-rbln --extra-index-url https://download.pytorch.org/whl/cpu
 ```
 
