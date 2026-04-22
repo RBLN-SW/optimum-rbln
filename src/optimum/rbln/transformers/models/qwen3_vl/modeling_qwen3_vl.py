@@ -62,6 +62,7 @@ class RBLNQwen3VLVisionModel(RBLNModel):
 
     auto_model_class = None
     _supports_non_fp32 = True
+    _tp_support = True
 
     def __post_init__(self, **kwargs):
         self.transformer = self.model[0]
