@@ -1,0 +1,1 @@
+/home/seinpark/rbln_model_zoo/huggingface/third-party-models/text-to-video/cosmos-predict2_5/set_environments.py
