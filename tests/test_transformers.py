@@ -103,7 +103,7 @@ class TestResNetModel(BaseTest.TestModel, BaseHubTest.TestHub):
     def _inner_test_save_load(self, tmpdir):
         super()._inner_test_save_load(tmpdir)
 
-        with self.assertRaises(RBLNRuntimeError):
+        with self.assertRaises(RuntimeError):
             _ = self.RBLN_CLASS.from_pretrained(
                 tmpdir,
                 export=False,
