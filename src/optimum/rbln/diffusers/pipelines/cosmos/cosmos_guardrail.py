@@ -197,7 +197,7 @@ class RBLNRetinaFaceFilter(RetinaFaceFilter):
                 if self.rbln_config.face_blur_filter.create_runtimes
                 else UnavailableRuntime()
             )
-        except rebel.core.exception.RBLNRuntimeError as e:
+        except RuntimeError as e:
             error_msg = (
                 f"\nFailed to create RBLN runtime: {str(e)}\n\n"
                 f"If you only need to compile the model without loading it to NPU, you can use:\n"
@@ -206,7 +206,7 @@ class RBLNRetinaFaceFilter(RetinaFaceFilter):
                 f"To check your NPU status, run the 'rbln-smi' command in your terminal.\n"
                 f"Make sure your NPU is properly installed and operational."
             )
-            raise rebel.core.exception.RBLNRuntimeError(error_msg) from e
+            raise RuntimeError(error_msg) from e
 
         self.net = RBLNPytorchRuntime(runtime)
 
@@ -272,7 +272,7 @@ class RBLNVideoSafetyModel(VideoSafetyModel):
                 if self.rbln_config.video_safety_model.create_runtimes
                 else UnavailableRuntime()
             )
-        except rebel.core.exception.RBLNRuntimeError as e:
+        except RuntimeError as e:
             error_msg = (
                 f"\nFailed to create RBLN runtime: {str(e)}\n\n"
                 f"If you only need to compile the model without loading it to NPU, you can use:\n"
@@ -281,7 +281,7 @@ class RBLNVideoSafetyModel(VideoSafetyModel):
                 f"To check your NPU status, run the 'rbln-smi' command in your terminal.\n"
                 f"Make sure your NPU is properly installed and operational."
             )
-            raise rebel.core.exception.RBLNRuntimeError(error_msg) from e
+            raise RuntimeError(error_msg) from e
 
         self.network = RBLNPytorchRuntime(runtime)
 
