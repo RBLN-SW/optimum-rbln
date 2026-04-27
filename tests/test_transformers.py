@@ -5,7 +5,6 @@ import unittest
 
 import torch
 from PIL import Image
-from rebel.core.exception import RBLNRuntimeError
 from transformers import AutoConfig, T5EncoderModel
 
 from optimum.rbln import (
