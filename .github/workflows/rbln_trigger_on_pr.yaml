@@ -169,7 +169,7 @@ jobs:
     secrets: inherit
 
   slack-report:
-    needs: [optimum-rbln-full-pytest,optimum-rbln-pytest, bc-inference, load-version, check-slack-report]
+    needs: [optimum-rbln-full-pytest,optimum-rbln-pytest, load-version, check-slack-report]
     if: |
       always() &&
       needs.check-slack-report.outputs.should_slack_report == 'true'
@@ -182,20 +182,6 @@ jobs:
       compiler_version: ${{ needs.load-version.outputs.compiler_version }}
       transformers_version: ${{ needs.check-pytest-full.outputs.should_full_test == 'true' && needs.optimum-rbln-full-pytest.outputs.transformers_version || 'default' }}
       diffusers_version: ${{ needs.check-pytest-full.outputs.should_full_test == 'true' && needs.optimum-rbln-full-pytest.outputs.diffusers_version || 'default' }}
-      bc_result: ${{ needs.bc-inference.result }}
       pytest_job_group: ${{ needs.check-pytest-full.outputs.should_full_test == 'true' && 'optimum-rbln-full-pytest' || 'optimum-rbln-pytest' }}
-      bc_pytest_job_group: "bc-inference"
       use_playground_channel: true
-    secrets: inherit
-
-  bc-latest-tag:
-    uses: ./.github/workflows/bc_latest_tag.yaml
-    secrets: inherit
-
-  bc-inference:
-    needs: bc-latest-tag
-    uses: ./.github/workflows/bc_inference.yaml
-    with:
-      bc_tag: ${{ needs.bc-latest-tag.outputs.latest_tag }}
-      current_ref: ${{ github.event.pull_request.head.sha }}
     secrets: inherit
