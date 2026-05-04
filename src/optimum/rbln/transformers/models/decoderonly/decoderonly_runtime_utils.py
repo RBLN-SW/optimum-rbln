@@ -116,7 +116,7 @@ class RBLNPageTableManager:
                     block_idx = position // self.rbln_config.kvcache_block_size
                     self.update_block(b_idx, block_idx)
 
-                return self.replace_empty_block(self.block_tables)
+                return self.replace_empty_block(self.block_tables[:batch_size])
 
         def get_local_block_tables():
             if not self.rbln_config.use_local_attention:
