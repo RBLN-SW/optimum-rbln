@@ -1,12 +1,15 @@
 import math
 from collections import defaultdict
-from typing import Optional, Tuple
+from typing import TYPE_CHECKING, Optional, Tuple
 
 import rebel
 
 from ..utils.logging import get_logger
 from ..utils.runtime_utils import get_available_dram, is_compiler_supports_buffer_resize
-from .models.decoderonly.configuration_decoderonly import RBLNDecoderOnlyModelForCausalLMConfig
+
+
+if TYPE_CHECKING:
+    from .models.decoderonly.configuration_decoderonly import RBLNDecoderOnlyModelForCausalLMConfig
 
 
 logger = get_logger()
@@ -102,7 +105,7 @@ def validate_attention_method(attn_impl: str, kvcache_partition_len: int, kvcach
             )
 
 
-def validate_sliding_window(rbln_config: RBLNDecoderOnlyModelForCausalLMConfig):
+def validate_sliding_window(rbln_config: "RBLNDecoderOnlyModelForCausalLMConfig"):
     if rbln_config.sliding_window > MAX_SLIDING_WINDOW_SIZE - rbln_config.prefill_chunk_size:
         raise ValueError(
             f"Sliding window size ({rbln_config.sliding_window}) must be less than 32768 - prefill_chunk_size ({32768 - rbln_config.prefill_chunk_size})"
@@ -145,7 +148,7 @@ def format_byte_size(nbytes: int) -> str:
 class RBLNDecoderOnlyFlashAttentionMixin:
     @classmethod
     def set_kvcache_num_blocks_after_compilation(
-        cls, compiled_models: dict[str, rebel.RBLNCompiledModel], rbln_config: RBLNDecoderOnlyModelForCausalLMConfig
+        cls, compiled_models: dict[str, rebel.RBLNCompiledModel], rbln_config: "RBLNDecoderOnlyModelForCausalLMConfig"
     ):
         rbln_config.kvcache_num_blocks = cls.estimate_num_kvcache_blocks(
             compiled_models=compiled_models, rbln_config=rbln_config
@@ -163,7 +166,7 @@ class RBLNDecoderOnlyFlashAttentionMixin:
     def estimate_num_kvcache_blocks(
         cls,
         compiled_models: dict[str, rebel.RBLNCompiledModel],
-        rbln_config: RBLNDecoderOnlyModelForCausalLMConfig,
+        rbln_config: "RBLNDecoderOnlyModelForCausalLMConfig",
         available_dram: Optional[int] = None,
     ) -> int:
         if available_dram is None:
@@ -269,7 +272,7 @@ class RBLNDecoderOnlyFlashAttentionMixin:
     def multiply_kv_cache_num_blocks(
         cls,
         compiled_models: dict[str, rebel.RBLNCompiledModel],
-        rbln_config: RBLNDecoderOnlyModelForCausalLMConfig,
+        rbln_config: "RBLNDecoderOnlyModelForCausalLMConfig",
         multiplier: int,
     ):
         if not is_compiler_supports_buffer_resize():
