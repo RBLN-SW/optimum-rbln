@@ -100,6 +100,7 @@ class RBLNGptOssExperts(nn.Module):
             self.down_proj_scales,
             self.down_proj_bias,
             router_logits,
+            "softmax",
             torch.tensor(self.alpha, dtype=hidden_states.dtype),
             torch.tensor(self.limit, dtype=hidden_states.dtype),
             k=self.top_k,

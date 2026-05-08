@@ -105,6 +105,7 @@ class Qwen3VLMoeMLP(nn.Module):
             self.up_proj.weight,
             self.down_proj.weight,
             router_logits,
+            "softmax",
             self.top_k,
             self.norm_topk_prob,
         )
