@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import math
+import os
 from typing import TYPE_CHECKING, List, Optional, Tuple, Union
 
 import torch
@@ -30,6 +31,11 @@ if TYPE_CHECKING:
 
 
 logger = logging.get_logger(__name__)
+
+
+def _is_batch_attn_opt_enabled() -> bool:
+    """Check whether VLLM_RBLN_BATCH_ATTN_OPT env var is set to enable batched dynamic decode."""
+    return os.environ.get("VLLM_RBLN_BATCH_ATTN_OPT", "0") == "1"
 
 
 class DecoderOnlyWrapper(nn.Module):
@@ -400,6 +406,25 @@ class DecoderOnlyModel(nn.Module):
 
         return cache_seq_len, cache_offset, attn_mask
 
+    def get_batch_attn_opt_mask(self, position_ids):
+        """Generate the causal attention mask used by the batched dynamic decode path.
+
+        This is used only when VLLM_RBLN_BATCH_ATTN_OPT=1 and the decode step has batch_size > 1.
+        The custom attention op handles cache block indexing internally; this function only
+        produces the [B, 1, 1, max_seq_len] mask that selects valid past positions per batch.
+
+        Args:
+            position_ids: [B, 1] tensor with current sequence length per batch.
+
+        Returns:
+            attn_mask: [B, 1, 1, max_seq_len]
+        """
+        max_cache_len = self.rbln_config.max_seq_len
+        cache_seq_len = position_ids[:, :1].to(torch.int32)
+        attn_mask = torch.arange(max_cache_len)[None, :] - cache_seq_len
+        attn_mask = torch.where(attn_mask > 0, 0.0, 1.0)[:, None, None, :]
+        return attn_mask
+
     def get_last_layernorm(self) -> nn.LayerNorm:
         return self.norm
 
@@ -472,12 +497,23 @@ class DecoderOnlyModel(nn.Module):
             hidden_states = hidden_states + position_embeds
             cos, sin = None, None
 
+        # Decide whether to take the batched dynamic decode path (VLLM_RBLN_BATCH_ATTN_OPT).
+        # The batched path passes the raw position_ids ([B, 1]) as `seq` and a 2D mask so the
+        # custom op can dispatch per-batch internally; otherwise we keep the partition-unrolled
+        # `seq` shape ([B, P]) used by the standard flash/eager attention path.
+        batch_size = inputs_embeds.shape[0]
+        is_batch_attn_opt_decode = _is_batch_attn_opt_enabled() and self.phase == "decode" and batch_size > 1
+
         # Get sequence positions for flash attention
         if self.attn_impl == "flash_attn":
-            seq_positions = cache_position[:, 0]
-            seq_positions = self.convert_sequence_positions_for_flash_attn(
-                seq_positions=seq_positions, max_seq_len=self.max_seq_len
-            )
+            if is_batch_attn_opt_decode:
+                # Skip partition unrolling — pass raw per-batch position as seq.
+                seq_positions = position_ids[:, :1].to(torch.int32)
+            else:
+                seq_positions = cache_position[:, 0]
+                seq_positions = self.convert_sequence_positions_for_flash_attn(
+                    seq_positions=seq_positions, max_seq_len=self.max_seq_len
+                )
         else:
             seq_positions = cache_position[:, :1]
 
@@ -487,21 +523,41 @@ class DecoderOnlyModel(nn.Module):
             sliding_cache_pos = (cache_seq_len, cache_offset)
 
         all_hidden_states = () if output_hidden_states else None
+
+        # Mask used only by the batched dynamic decode path. Generated once and reused per layer.
+        batch_attn_opt_mask = self.get_batch_attn_opt_mask(position_ids) if is_batch_attn_opt_decode else None
+
         for layer_idx, layer in enumerate(self.layers):
             if output_hidden_states:
                 all_hidden_states += (hidden_states,)
 
             is_sliding = True if layer_idx in self.sliding_window_layers else False
             is_sliding_decode = is_sliding and self.phase == "decode"
+            # Sliding window layers keep their own batching path (per-batch mask already in swa_attn_mask)
+            layer_is_batch_attn_opt = is_batch_attn_opt_decode and not is_sliding
+            if is_sliding_decode:
+                attn_mask = swa_attn_mask
+                layer_seq_idx = sliding_cache_pos
+            elif is_sliding:
+                attn_mask = attention_mask
+                layer_seq_idx = sliding_cache_pos
+            elif layer_is_batch_attn_opt:
+                attn_mask = batch_attn_opt_mask
+                layer_seq_idx = seq_positions
+            else:
+                attn_mask = attention_mask
+                layer_seq_idx = seq_positions
+
             hidden_states = layer(
                 hidden_states=hidden_states,
-                attention_mask=swa_attn_mask if is_sliding_decode else attention_mask,
-                seq_positions=sliding_cache_pos if is_sliding else seq_positions,
+                attention_mask=attn_mask,
+                seq_positions=layer_seq_idx,
                 past_key_values=past_key_values,
                 cos=cos,
                 sin=sin,
                 block_tables=local_block_tables if is_sliding else global_block_tables,
                 lora_int_id=lora_int_id,
+                is_batch_attn_opt_decode=layer_is_batch_attn_opt,
             )
 
         hidden_states = self.get_last_layernorm()(hidden_states)
@@ -618,6 +674,7 @@ class DecoderOnlyLayer(nn.Module):
         sin: Optional[torch.Tensor] = None,
         block_tables: Optional[torch.Tensor] = None,
         lora_int_id: Optional[torch.Tensor] = None,
+        is_batch_attn_opt_decode: bool = False,
     ):
         residual = hidden_states
         hidden_states = self.get_pre_attention_layernorm()(hidden_states)
@@ -631,6 +688,7 @@ class DecoderOnlyLayer(nn.Module):
             sin=sin,
             block_tables=block_tables,
             lora_int_id=lora_int_id,
+            is_batch_attn_opt_decode=is_batch_attn_opt_decode,
         )
         hidden_states = residual + hidden_states
 
@@ -815,6 +873,7 @@ class DecoderOnlyAttention(nn.Module):
         sin: Optional[torch.Tensor] = None,
         block_tables: Optional[torch.Tensor] = None,
         lora_int_id: Optional[torch.Tensor] = None,
+        is_batch_attn_opt_decode: bool = False,
     ):
         batch_size, query_length, _ = hidden_states.size()
 
@@ -850,6 +909,7 @@ class DecoderOnlyAttention(nn.Module):
             block_size=self.kvcache_block_size,
             k_scale=k_scale,
             v_scale=v_scale,
+            is_batch_attn_opt_decode=is_batch_attn_opt_decode,
             s_aux=getattr(self, "sinks", None),
         )
 
@@ -923,6 +983,7 @@ class AttentionOp(nn.Module):
         block_size: int,
         k_scale: Optional[torch.Tensor] = None,
         v_scale: Optional[torch.Tensor] = None,
+        is_batch_attn_opt_decode: bool = False,
         s_aux: Optional[torch.Tensor] = None,
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Compute attention with static shapes and explicit cache management.
@@ -940,6 +1001,10 @@ class AttentionOp(nn.Module):
             block_size: Block size for paged attention
             k_scale: Scale applied to key
             v_scale: Scale applied to value
+            is_batch_attn_opt_decode: If True, dispatch the batched dynamic decode path
+                (VLLM_RBLN_BATCH_ATTN_OPT). `seq_position` is then [B, 1] (raw cache
+                position per batch) and a 2D mask is force-attached so the kernel can
+                handle per-batch attention without graph-level partition unrolling.
             s_aux: Auxiliary states for attention sinks
 
         Returns:
@@ -998,6 +1063,12 @@ class AttentionOp(nn.Module):
 
         if s_aux is not None:
             op_args["s_aux"] = s_aux
+
+        # Batched dynamic decode path: force a 2D [B, max_seq_len] mask onto the existing
+        # `mask` arg of the custom op. The op signature is unchanged; only the shape of
+        # `seq` (here [B, 1]) and `mask` distinguishes this path from the standard one.
+        if is_batch_attn_opt_decode:
+            op_args["mask"] = attn_mask.view(batch_size, self.rbln_config.max_seq_len)
 
         attn_op_name = self.get_attn_op_name()
         attn_op = getattr(torch.ops.rbln_custom_ops, attn_op_name, None)
@@ -1064,6 +1135,7 @@ class FlashAttentionOp(AttentionOp):
         k_scale=None,
         v_scale=None,
         s_aux=None,
+        is_batch_attn_opt_decode: bool = False,
     ):
         # reshape for removing repeat_kv (batch=1 , num_head, 1, q_len=1, head_dim)
         key_state = key_state.unsqueeze(2)
@@ -1120,6 +1192,13 @@ class FlashAttentionOp(AttentionOp):
         if s_aux is not None:
             op_args["s_aux"] = s_aux
 
+        # Batched dynamic decode path: force a 2D [B, max_seq_len] mask onto the existing
+        # `mask` arg. `seq` was already prepared as [B, 1] (raw cache position per batch)
+        # upstream; the custom op recognizes this shape combination and dispatches the
+        # batched kernel internally — no extra args (e.g. dyn_batch/seq_idx2) needed.
+        if is_batch_attn_opt_decode:
+            op_args["mask"] = attn_mask.view(batch_size, self.rbln_config.max_seq_len)
+
         attn_op_name = self.get_attn_op_name()
         attn_op = getattr(torch.ops.rbln_custom_ops, attn_op_name, None)
         if attn_op is None:
@@ -1172,10 +1251,15 @@ class SlidingWindowAttentionOp(AttentionOp):
         block_size: int,
         k_scale: Optional[torch.Tensor] = None,
         v_scale: Optional[torch.Tensor] = None,
+        is_batch_attn_opt_decode: bool = False,
         s_aux: Optional[torch.Tensor] = None,
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         assert self.quantization is None, "Sliding window attention does not support quantization"
         assert k_scale is None and v_scale is None, "Sliding window attention does not support quantization"
+        # SWA already supports batching through its own per-batch attn_mask path; the
+        # batched dynamic decode optimization is not routed here (filtered out in the model
+        # loop), so this should always be False when reaching SWA.
+        assert not is_batch_attn_opt_decode, "Sliding window attention does not support batch_attn_opt path"
 
         # reshape for removing repeat_kv (batch=1 , num_head, 1, q_len=1, head_dim)
         key_state = key_state.unsqueeze(2)
