@@ -479,18 +479,22 @@ class DecoderOnlyModel(nn.Module):
             cos, sin = None, None
 
         # Decide whether to take the batched dynamic decode path (VLLM_RBLN_BATCH_ATTN_OPT).
-        # In this mode we pass the raw position_ids ([B, 1]) as `seq` and DO NOT pass a mask
-        # — the rebel compiler detects the [B, 1] seq shape and computes attn_mask/valid_batch/
-        # blk_offset itself (see rebel_compiler `apply_batch_decode_transform`). Otherwise we
-        # use the partition-unrolled `seq` shape ([B, P]) used by the standard flash path.
+        # When the env var is set, rebel-compiler is also configured (via Config.cpp reading
+        # the same env var) to dispatch `apply_batch_decode_transform` for batch_size > 1
+        # decode ops — that transform asserts `seq` is [B, 1] and generates the attn_mask /
+        # valid_batch / blk_offset internally, so we must pass [B, 1] seq AND no mask here.
+        # Outside this mode we keep the partition-unrolled `seq` shape ([B, P]).
         batch_size = inputs_embeds.shape[0]
         is_batch_attn_opt_decode = _is_batch_attn_opt_enabled() and self.phase == "decode" and batch_size > 1
 
-        # Get sequence positions for flash attention
+        # Get sequence positions for flash attention.
+        # The compiler uses `seq` as the cache position to compute block index and offset
+        # (see rebel_compiler `compute_batch_decode_params`), so we must pass cache_position
+        # — not position_ids, which can diverge from cache_position by padded_cache_lengths
+        # when `use_position_ids=True`.
         if self.attn_impl == "flash_attn":
             if is_batch_attn_opt_decode:
-                # Skip partition unrolling — pass raw per-batch position as seq.
-                seq_positions = position_ids[:, :1].to(torch.int32)
+                seq_positions = cache_position[:, :1].to(torch.int32)
             else:
                 seq_positions = cache_position[:, 0]
                 seq_positions = self.convert_sequence_positions_for_flash_attn(

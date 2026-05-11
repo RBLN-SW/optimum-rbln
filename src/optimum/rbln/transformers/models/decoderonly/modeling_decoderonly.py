@@ -802,6 +802,10 @@ class RBLNDecoderOnlyModelForCausalLM(RBLNDecoderOnlyModel, RBLNDecoderOnlyGener
         if shape_src is None:
             shape_src = model_inputs.get("input_ids")
         if shape_src is None or shape_src.shape[0] <= 1 or not _is_batch_attn_opt_enabled():
+            # Clear any cached permutation from a prior generation so a stale index can't
+            # leak into a subsequent decode call with a different (single-batch / opt-off) shape.
+            self._rbln_sort_idx = None
+            self._rbln_unsort_idx = None
             return None
 
         is_prefill = model_inputs.get("cache_position") is None
@@ -814,6 +818,11 @@ class RBLNDecoderOnlyModelForCausalLM(RBLNDecoderOnlyModel, RBLNDecoderOnlyGener
         else:
             sort_idx = getattr(self, "_rbln_sort_idx", None)
             unsort_idx = getattr(self, "_rbln_unsort_idx", None)
+            # Defensive: if decode batch size diverges from the prefill-time sort, the cached
+            # permutation can't apply. Skip sorting rather than silently corrupting outputs.
+            if sort_idx is not None and sort_idx.shape[0] != shape_src.shape[0]:
+                sort_idx = None
+                unsort_idx = None
 
         if sort_idx is None:
             return None
