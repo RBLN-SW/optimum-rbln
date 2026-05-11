@@ -47,6 +47,7 @@ from .configuration_qwen2_vl import (
     RBLNQwen2VLForConditionalGenerationConfig,
 )
 from .qwen2_vl_architecture import Qwen2VisionTransformerWrapper, Qwen2VL_LanguageModelWrapper
+from . import hybrid_compile as _hybrid_compile
 
 
 logger = get_logger(__name__)
@@ -65,8 +66,18 @@ class RBLNQwen2VisionTransformerPretrainedModel(RBLNModel):
     _supports_non_fp32 = True
 
     def __post_init__(self, **kwargs):
-        self.transformer = self.model[0]
         self.max_seq_lens = torch.tensor(sorted(self.rbln_config.max_seq_lens, reverse=False))
+        # Hybrid mode: self.model is a dict of many runtimes {artifact_name: Runtime}
+        # Standard mode: self.model is a list with one Runtime.
+        self._hybrid = bool(getattr(self.rbln_config, "hybrid_sdpa_dlf", False))
+        if self._hybrid:
+            # self.model is already a dict from _create_runtimes override.
+            self.hybrid_runtimes = self.model
+            self.transformer = None
+        else:
+            self.transformer = self.model[0]
+            self.hybrid_runtimes = None
+
         config = self.config
 
         self.patch_size = config.spatial_patch_size
@@ -100,6 +111,158 @@ class RBLNQwen2VisionTransformerPretrainedModel(RBLNModel):
         cls, model: "PreTrainedModel", rbln_config: RBLNQwen2VisionTransformerPretrainedModelConfig
     ):
         return Qwen2VisionTransformerWrapper(model, rbln_config).eval()
+
+    # ------------------------------------------------------------------
+    # Hybrid bf16/dlfloat compile path.
+    # ------------------------------------------------------------------
+    @classmethod
+    def get_compiled_model(cls, model: "PreTrainedModel", rbln_config):
+        # Hybrid path: compile 32 block_bf + 1 merger in a bfloat subprocess,
+        # and 32 block_dlf in a dlfloat subprocess. Returns a dict of
+        # RBLNCompiledModel so `_export` saves each as a separate .rbln.
+        if getattr(rbln_config, "hybrid_sdpa_dlf", False):
+            import tempfile
+            # `model` here is the native Qwen2VisionTransformerPretrainedModel
+            # (visual tower) that the caller passes to get_compiled_model.
+            # Persist its state_dict and vision config so the subprocesses can
+            # rebuild it without needing any HF auto-class.
+            native_visual = model
+            sd = native_visual.state_dict()
+            vision_config = native_visual.config
+            model_id = (
+                getattr(native_visual, "name_or_path", None)
+                or getattr(vision_config, "_name_or_path", None)
+                or "qwen2vl-visual"
+            )
+            out_dir = Path(tempfile.mkdtemp(prefix="qwen2vl_hybrid_compile_"))
+            compiled = _hybrid_compile.run_hybrid_compile(
+                native_visual_state_dict=sd,
+                native_vision_config=vision_config,
+                model_id=model_id,
+                seq_lens=list(rbln_config.max_seq_lens),
+                out_dir=out_dir,
+            )
+            return compiled
+
+        return super().get_compiled_model(model, rbln_config)
+
+    @classmethod
+    def _create_runtimes(cls, compiled_models, rbln_config):
+        # Hybrid path: build one Runtime per artifact, keyed by stem.
+        # `compiled_models` is the full dict in hybrid mode (see override of
+        # `_from_compiled_models` below).
+        if getattr(rbln_config, "hybrid_sdpa_dlf", False):
+            import os
+            runtimes = {}
+            items = (
+                compiled_models.items()
+                if isinstance(compiled_models, dict)
+                else [(str(i), cm) for i, cm in enumerate(compiled_models)]
+            )
+            # Spread 65 artifacts across the free NPUs. Default pool excludes
+            # NPUs 0-3 on sw-giga-dev2 (typically occupied by other jobs).
+            # Override via env RBLN_VIT_HYBRID_DEVICES="4,5,6,7,8,9,10,11".
+            pool_env = os.environ.get("RBLN_VIT_HYBRID_DEVICES", "4,5,6,7,8,9,10,11")
+            device_pool = [int(x) for x in pool_env.split(",") if x.strip()]
+            if not device_pool:
+                device_pool = [0]
+
+            # Co-locate a block's bf + dlf chunks on the same NPU so the
+            # block-internal (h1, pre_act) handoff avoids cross-NPU transfer.
+            def _block_idx(name: str) -> int:
+                parts = name.split("_")
+                for p in parts:
+                    if p.isdigit():
+                        return int(p)
+                return 0
+
+            for name, cm in items:
+                if name.startswith("merger_"):
+                    device = device_pool[0]
+                else:
+                    device = device_pool[_block_idx(name) % len(device_pool)]
+                device = rbln_config.device_map.get(name, device)
+                runtimes[name] = cm.create_runtime(
+                    device=device,
+                    tensor_type="pt",
+                    activate_profiler=rbln_config.activate_profiler,
+                    timeout=rbln_config.timeout,
+                )
+            return runtimes
+        return super()._create_runtimes(compiled_models, rbln_config)
+
+    @classmethod
+    def _from_compiled_models(
+        cls,
+        rbln_compiled_models,
+        rbln_config,
+        config,
+        model_save_dir,
+        subfolder,
+        rbln_submodules=None,
+        **kwargs,
+    ):
+        # Hybrid path: bypass the standard "filter by compile_cfgs" step and
+        # pass the full dict of compiled artifacts to _create_runtimes.
+        if getattr(rbln_config, "hybrid_sdpa_dlf", False):
+            import rebel
+            from ....modeling_base import UnavailableRuntime
+            from pathlib import Path as _P
+
+            if rbln_submodules is None:
+                rbln_submodules = []
+            if isinstance(model_save_dir, str):
+                model_save_dir = _P(model_save_dir)
+
+            try:
+                models = (
+                    cls._create_runtimes(rbln_compiled_models, rbln_config)
+                    if rbln_config.create_runtimes
+                    else UnavailableRuntime()
+                )
+            except rebel.core.exception.RBLNRuntimeError as e:
+                raise e
+
+            rbln_config.freeze()
+
+            return cls(
+                models,
+                config,
+                rbln_config,
+                model_save_dir=model_save_dir,
+                subfolder=subfolder,
+                rbln_compiled_models=rbln_compiled_models,
+                rbln_submodules=rbln_submodules,
+                **kwargs,
+            )
+
+        return super()._from_compiled_models(
+            rbln_compiled_models=rbln_compiled_models,
+            rbln_config=rbln_config,
+            config=config,
+            model_save_dir=model_save_dir,
+            subfolder=subfolder,
+            rbln_submodules=rbln_submodules,
+            **kwargs,
+        )
+
+    @classmethod
+    def _load_compiled_models(cls, model_path_subfolder, compiled_model_names):
+        # Hybrid path: load all .rbln files from the subfolder regardless of
+        # the compile_cfgs list. Standard path: use base class behaviour.
+        import rebel
+        from pathlib import Path as _P
+
+        sub = _P(model_path_subfolder)
+        all_files = sorted(sub.glob("*.rbln"))
+        # Detect hybrid layout by chunk-name prefix.
+        hybrid_markers = any(
+            p.stem.startswith(("block_bf_", "block_dlf_", "merger_"))
+            for p in all_files
+        )
+        if hybrid_markers:
+            return {p.stem: rebel.RBLNCompiledModel(p) for p in all_files}
+        return super()._load_compiled_models(model_path_subfolder, compiled_model_names)
 
     def __getattr__(self, __name: str) -> Any:
         def redirect(func):
@@ -222,13 +385,23 @@ class RBLNQwen2VisionTransformerPretrainedModel(RBLNModel):
                 )
             )
 
-            # RBLN run with the compiled model
-            output = self.transformer(
-                hidden_state_full_padded,
-                full_attn_masks,
-                cos_full_padded[None, None, :, :],
-                sin_full_padded[None, None, :, :],
-            )
+            # RBLN run — hybrid or single-compile.
+            if self._hybrid:
+                output = _hybrid_compile.hybrid_forward_image(
+                    runtimes=self.hybrid_runtimes,
+                    seq_len=int(max_seq_len),
+                    hidden_state_padded=hidden_state_full_padded,
+                    full_attn_masks=full_attn_masks,
+                    cos=cos_full_padded[None, None, :, :],
+                    sin=sin_full_padded[None, None, :, :],
+                )
+            else:
+                output = self.transformer(
+                    hidden_state_full_padded,
+                    full_attn_masks,
+                    cos_full_padded[None, None, :, :],
+                    sin_full_padded[None, None, :, :],
+                )
             # Depadding
             depadded_output = output[: cu_seq_len // self.spatial_merge_unit]
             output_hidden_states.append(depadded_output)

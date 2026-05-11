@@ -61,7 +61,12 @@ class RBLNQwen2VLModelConfig(RBLNDecoderOnlyModelConfig):
 
 
 class RBLNQwen2VisionTransformerPretrainedModelConfig(RBLNModelConfig):
-    def __init__(self, max_seq_lens: Union[int, List[int]] = None, **kwargs: Dict[str, Any]):
+    def __init__(
+        self,
+        max_seq_lens: Union[int, List[int]] = None,
+        hybrid_sdpa_dlf: bool = False,
+        **kwargs: Dict[str, Any],
+    ):
         """
         Args:
             max_seq_lens (Optional[Union[int, List[int]]]): Maximum sequence lengths for Vision
@@ -98,3 +103,12 @@ class RBLNQwen2VisionTransformerPretrainedModelConfig(RBLNModelConfig):
             raise ValueError("'max_seq_lens' must be specified.")
 
         self.max_seq_lens = max_seq_lens
+
+        # Hybrid-dtype workaround for the visual tower. When True, the vision
+        # transformer is compiled as 65 separate RBLN artifacts — 32 block_bf
+        # (norm1 + attn + residual_1 + norm2 + fc1) + 32 block_dlf (act + fc2
+        # + residual_2) + 1 merger — where only the dlfloat chunks isolate
+        # `block.mlp.fc2` (K=5120). Everything else stays bfloat. Chained at
+        # runtime via fp32 host tensors. See `hybrid_compile.py` and
+        # `_hybrid_compile_worker.py`.
+        self.hybrid_sdpa_dlf = bool(hybrid_sdpa_dlf)
