@@ -59,9 +59,7 @@ class RBLNDecoderOnlyGenerationMixin(GenerationMixin):
                 generate_idx = attention_mask.sum(dim=-1, keepdim=True).int()
             else:
                 base = input_ids if input_ids is not None else inputs_embeds
-                generate_idx = torch.full(
-                    (base.shape[0], 1), base.shape[1], dtype=torch.int32, device=base.device
-                )
+                generate_idx = torch.full((base.shape[0], 1), base.shape[1], dtype=torch.int32, device=base.device)
             padded_cache_lengths = torch.zeros_like(generate_idx)
             cache_position = None
             position_ids = None
