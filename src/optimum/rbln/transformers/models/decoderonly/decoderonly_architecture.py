@@ -406,25 +406,6 @@ class DecoderOnlyModel(nn.Module):
 
         return cache_seq_len, cache_offset, attn_mask
 
-    def get_batch_attn_opt_mask(self, position_ids):
-        """Generate the causal attention mask used by the batched dynamic decode path.
-
-        This is used only when VLLM_RBLN_BATCH_ATTN_OPT=1 and the decode step has batch_size > 1.
-        The custom attention op handles cache block indexing internally; this function only
-        produces the [B, 1, 1, max_seq_len] mask that selects valid past positions per batch.
-
-        Args:
-            position_ids: [B, 1] tensor with current sequence length per batch.
-
-        Returns:
-            attn_mask: [B, 1, 1, max_seq_len]
-        """
-        max_cache_len = self.rbln_config.max_seq_len
-        cache_seq_len = position_ids[:, :1].to(torch.int32)
-        attn_mask = torch.arange(max_cache_len)[None, :] - cache_seq_len
-        attn_mask = torch.where(attn_mask > 0, 0.0, 1.0)[:, None, None, :]
-        return attn_mask
-
     def get_last_layernorm(self) -> nn.LayerNorm:
         return self.norm
 
@@ -498,9 +479,10 @@ class DecoderOnlyModel(nn.Module):
             cos, sin = None, None
 
         # Decide whether to take the batched dynamic decode path (VLLM_RBLN_BATCH_ATTN_OPT).
-        # The batched path passes the raw position_ids ([B, 1]) as `seq` and a 2D mask so the
-        # custom op can dispatch per-batch internally; otherwise we keep the partition-unrolled
-        # `seq` shape ([B, P]) used by the standard flash/eager attention path.
+        # In this mode we pass the raw position_ids ([B, 1]) as `seq` and DO NOT pass a mask
+        # — the rebel compiler detects the [B, 1] seq shape and computes attn_mask/valid_batch/
+        # blk_offset itself (see rebel_compiler `apply_batch_decode_transform`). Otherwise we
+        # use the partition-unrolled `seq` shape ([B, P]) used by the standard flash path.
         batch_size = inputs_embeds.shape[0]
         is_batch_attn_opt_decode = _is_batch_attn_opt_enabled() and self.phase == "decode" and batch_size > 1
 
@@ -524,9 +506,6 @@ class DecoderOnlyModel(nn.Module):
 
         all_hidden_states = () if output_hidden_states else None
 
-        # Mask used only by the batched dynamic decode path. Generated once and reused per layer.
-        batch_attn_opt_mask = self.get_batch_attn_opt_mask(position_ids) if is_batch_attn_opt_decode else None
-
         for layer_idx, layer in enumerate(self.layers):
             if output_hidden_states:
                 all_hidden_states += (hidden_states,)
@@ -541,10 +520,9 @@ class DecoderOnlyModel(nn.Module):
             elif is_sliding:
                 attn_mask = attention_mask
                 layer_seq_idx = sliding_cache_pos
-            elif layer_is_batch_attn_opt:
-                attn_mask = batch_attn_opt_mask
-                layer_seq_idx = seq_positions
             else:
+                # For both standard and batch_attn_opt paths we forward `attention_mask` here;
+                # the AttentionOp will drop it before the custom op call in batch_attn_opt mode.
                 attn_mask = attention_mask
                 layer_seq_idx = seq_positions
 
@@ -1014,7 +992,10 @@ class AttentionOp(nn.Module):
         key_state = key_state.unsqueeze(2)  # 1, 32, 1, 128, 128
         value_state = value_state.unsqueeze(2)
 
-        if self.use_attention_mask and not self.rbln_config.use_position_ids:
+        # In batch_attn_opt decode the rebel compiler computes the mask itself
+        # (see `apply_batch_decode_transform`), so we must NOT forward a mask of our own
+        # — passing one results in the mask being appended twice in the lowered op.
+        if self.use_attention_mask and not self.rbln_config.use_position_ids and not is_batch_attn_opt_decode:
             attn_mask = attn_mask.unsqueeze(2)
 
         if self.phase == "decode":
@@ -1042,7 +1023,7 @@ class AttentionOp(nn.Module):
             "block_size": block_size,
         }
 
-        if self.use_attention_mask:
+        if self.use_attention_mask and not is_batch_attn_opt_decode:
             op_args["mask"] = attn_mask
 
         if self.phase == "prefill" or self.phase == "image_prefill":
@@ -1063,12 +1044,6 @@ class AttentionOp(nn.Module):
 
         if s_aux is not None:
             op_args["s_aux"] = s_aux
-
-        # Batched dynamic decode path: force a 2D [B, max_seq_len] mask onto the existing
-        # `mask` arg of the custom op. The op signature is unchanged; only the shape of
-        # `seq` (here [B, 1]) and `mask` distinguishes this path from the standard one.
-        if is_batch_attn_opt_decode:
-            op_args["mask"] = attn_mask.view(batch_size, self.rbln_config.max_seq_len)
 
         attn_op_name = self.get_attn_op_name()
         attn_op = getattr(torch.ops.rbln_custom_ops, attn_op_name, None)
@@ -1141,7 +1116,10 @@ class FlashAttentionOp(AttentionOp):
         key_state = key_state.unsqueeze(2)
         value_state = value_state.unsqueeze(2)
 
-        if self.use_attention_mask and not self.rbln_config.use_position_ids:
+        # In batch_attn_opt decode the rebel compiler computes the mask itself
+        # (see `apply_batch_decode_transform`), so we must NOT forward a mask of our own
+        # — passing one results in the mask being appended twice in the lowered op.
+        if self.use_attention_mask and not self.rbln_config.use_position_ids and not is_batch_attn_opt_decode:
             attn_mask = attn_mask.unsqueeze(2)
 
         if self.phase == "decode":
@@ -1170,7 +1148,7 @@ class FlashAttentionOp(AttentionOp):
             "partition": self.kvcache_partition_size,
         }
 
-        if self.use_attention_mask:
+        if self.use_attention_mask and not is_batch_attn_opt_decode:
             op_args["mask"] = attn_mask
 
         if self.phase == "prefill" or self.phase == "image_prefill":
@@ -1191,13 +1169,6 @@ class FlashAttentionOp(AttentionOp):
 
         if s_aux is not None:
             op_args["s_aux"] = s_aux
-
-        # Batched dynamic decode path: force a 2D [B, max_seq_len] mask onto the existing
-        # `mask` arg. `seq` was already prepared as [B, 1] (raw cache position per batch)
-        # upstream; the custom op recognizes this shape combination and dispatches the
-        # batched kernel internally — no extra args (e.g. dyn_batch/seq_idx2) needed.
-        if is_batch_attn_opt_decode:
-            op_args["mask"] = attn_mask.view(batch_size, self.rbln_config.max_seq_len)
 
         attn_op_name = self.get_attn_op_name()
         attn_op = getattr(torch.ops.rbln_custom_ops, attn_op_name, None)
