@@ -301,7 +301,7 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
                 else UnavailableRuntime()
             )
 
-        except rebel.core.exception.RBLNRuntimeError as e:
+        except RuntimeError as e:
             error_msg = (
                 f"\nFailed to create RBLN runtime: {str(e)}\n\n"
                 f"If you only need to compile the model without loading it to NPU, you can use:\n"
@@ -310,7 +310,16 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
                 f"To check your NPU status, run the 'rbln-smi' command in your terminal.\n"
                 f"Make sure your NPU is properly installed and operational."
             )
-            raise rebel.core.exception.RBLNRuntimeError(error_msg) from e
+
+            if "Lack of device memory" in str(e):
+                oom_help_msg = "\n\nNot enough NPU memory to load the model. \n\n"
+                oom_help_msg += cls._get_class_specific_oom_help_msg()
+                oom_help_msg += "\n\nFor a detailed guide, "
+                oom_help_msg += "see https://docs.rbln.ai/latest/software/optimum/troubleshoot/index.html.\n"
+
+                error_msg += oom_help_msg
+
+            raise RuntimeError(error_msg) from e
 
         rbln_config.freeze()
 
@@ -671,3 +680,15 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
             "and ensure the compilation completes successfully."
         )
         raise KeyError(message)
+
+    @classmethod
+    def _get_class_specific_oom_help_msg(cls) -> str:
+        help_msg = ""
+        if cls._rbln_submodules and len(cls._rbln_submodules) > 0:
+            help_msg += (
+                "This model has submodules"
+                f" ({', '.join([submodule['name'] for submodule in cls._rbln_submodules])}).\n"
+                "Check whether this model and its submodules are loaded on the same NPU.\n"
+                "If so, try assigning them to different NPU devices."
+            )
+        return help_msg

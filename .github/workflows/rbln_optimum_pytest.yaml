@@ -55,6 +55,8 @@ jobs:
     env:
       # Use the uv cache baked into the CI image.
       UV_CACHE_DIR: /opt/uv-cache
+      UV_HTTP_TIMEOUT: 900
+      UV_CONCURRENT_DOWNLOADS: 4
     strategy:
       fail-fast: ${{ inputs.fail_fast }}
       matrix: ${{ fromJson(
