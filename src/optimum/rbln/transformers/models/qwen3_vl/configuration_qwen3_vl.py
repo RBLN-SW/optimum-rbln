@@ -28,17 +28,24 @@ class RBLNQwen3VLForConditionalGenerationConfig(RBLNDecoderOnlyModelForCausalLMC
     """
 
     submodules = ["visual"]
+    subclass_non_save_attributes = ["_load_visual_runtime"]
 
     def __init__(
         self,
         use_inputs_embeds: bool = True,
         visual: Optional[RBLNModelConfig] = None,
+        _load_visual_runtime: bool = True,
         **kwargs: Any,
     ):
         """
         Args:
             use_inputs_embeds (bool): Whether or not to use `inputs_embeds` as input. Defaults to `True`.
             visual (Optional[RBLNModelConfig]): Configuration for the vision encoder component.
+            _load_visual_runtime (bool): Whether to create runtime for the visual encoder submodule.
+                Set to ``False`` on decoder-only nodes in a disaggregated encoder setup to skip
+                loading the visual encoder's compiled model (.rbln) and torch artifacts entirely.
+                When ``False``, pre-computed ``image_embeds`` / ``video_embeds`` must be provided
+                to forward(). Defaults to ``True``.
             kwargs: Additional arguments passed to the parent `RBLNDecoderOnlyModelForCausalLMConfig`.
 
         Raises:
@@ -47,18 +54,30 @@ class RBLNQwen3VLForConditionalGenerationConfig(RBLNDecoderOnlyModelForCausalLMC
         super().__init__(use_inputs_embeds=use_inputs_embeds, **kwargs)
         if not self.use_inputs_embeds:
             raise ValueError(
-                "RBLNQwen3VLForConditionalGenerationConfig does not allow `use_inputs_embeds` to be set to False, "
-                "as RBLNQwen3VLForConditionalGeneration accepts only `inputs_embeds` as input."
+                "RBLNQwen3VLForConditionalGenerationConfig requires use_inputs_embeds=True. "
+                "The visual encoder output must be injected into inputs_embeds, whether the "
+                "visual encoder runs locally (_load_visual_runtime=True) or embeddings are "
+                "received from an encoder node (_load_visual_runtime=False)."
             )
         self.visual = visual
+        self._load_visual_runtime = _load_visual_runtime
 
 
 class RBLNQwen3VLModelConfig(RBLNDecoderOnlyModelConfig):
     submodules = ["visual"]
+    subclass_non_save_attributes = ["_load_visual_runtime"]
 
-    def __init__(self, visual: Optional[RBLNModelConfig] = None, **kwargs: Any):
+    def __init__(self, visual: Optional[RBLNModelConfig] = None, _load_visual_runtime: bool = True, **kwargs: Any):
         super().__init__(**kwargs)
+        if not getattr(self, "use_inputs_embeds", True):
+            raise ValueError(
+                "RBLNQwen3VLModelConfig requires use_inputs_embeds=True. "
+                "The visual encoder output must be injected into inputs_embeds, whether the "
+                "visual encoder runs locally (_load_visual_runtime=True) or embeddings are "
+                "received from an encoder node (_load_visual_runtime=False)."
+            )
         self.visual = self.initialize_submodule_config(submodule_config=visual)
+        self._load_visual_runtime = _load_visual_runtime
 
 
 class RBLNQwen3VLVisionModelConfig(RBLNModelConfig):

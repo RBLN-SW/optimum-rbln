@@ -627,6 +627,18 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
         ]
         return ret_val
 
+    @classmethod
+    def _get_class_specific_oom_help_msg(cls) -> str:
+        help_msg = super()._get_class_specific_oom_help_msg()
+        help_msg += (
+            "\n\nTo reduce memory usage for a decoder-only model, consider the following:\n"
+            "1. Reduce `max_seq_len`, the context length used during inference.\n"
+            "2. Reduce `kvcache_num_blocks`, the number of blocks allocated for the paged attention KV cache.\n"
+            "3. Increase `tensor_parallel_size` to distribute memory across more NPUs."
+        )
+
+        return help_msg
+
     def forward(
         self,
         input_ids: Optional[torch.LongTensor] = None,
