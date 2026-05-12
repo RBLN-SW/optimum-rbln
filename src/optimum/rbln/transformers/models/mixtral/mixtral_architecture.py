@@ -63,5 +63,12 @@ class MixtralBlockSparseTop2MLP(nn.Module):
 
     def forward(self, x, router_logits):
         return torch.ops.rbln_custom_ops.custom_moe_glu(
-            x, self.w1_weight, self.w3_weight, self.w2_weight, router_logits, self.top_k, True
+            hidden_states=x,
+            gate_proj_weight=self.w1_weight,
+            up_proj_weight=self.w3_weight,
+            down_proj_weight=self.w2_weight,
+            router_logits=router_logits,
+            scoring_func="softmax",
+            topk=self.top_k,
+            norm_topk_prob=True,
         )
