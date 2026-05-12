@@ -318,7 +318,7 @@ class RBLNWhisperForConditionalGeneration(RBLNModel, RBLNWhisperGenerationMixin)
                     "cross_key_value_states",
                     [
                         model_config.decoder_layers * 2,
-                        rbln_config.batch_size,
+                        rbln_config.batch_size + 1,
                         model_config.decoder_attention_heads,
                         rbln_config.enc_max_seq_len,
                         model_config.d_model // model_config.decoder_attention_heads,
@@ -332,7 +332,7 @@ class RBLNWhisperForConditionalGeneration(RBLNModel, RBLNWhisperGenerationMixin)
                 (
                     f"self_key_value_states_{i}",
                     [
-                        rbln_config.batch_size,
+                        rbln_config.batch_size + 1,
                         model_config.decoder_attention_heads,
                         rbln_config.dec_max_seq_len,
                         model_config.d_model // model_config.encoder_attention_heads,
