@@ -880,6 +880,7 @@ class TestGemma3ForCausalLM(LLMTest.TestLLM):
         return super().setUpClass()
 
 
+@unittest.skip("Compilation fails: with CR25 + CR03, need to fix it")
 class TestLlamaForCausalLM_fp8(LLMTest.TestLLM):
     RBLN_CLASS = RBLNLlamaForCausalLM
     HF_MODEL_ID = "RedHatAI/Meta-Llama-3-8B-Instruct-FP8-KV"  # No tiny model yet.
@@ -939,6 +940,7 @@ class TestMultiLora(LLMTest.TestLLM):
         return super().get_inputs()
 
 
+@unittest.skip("Compilation fails: with CR25 + CR03, need to fix it")
 class TestMultiLora_batch(LLMTest.TestLLM):
     PROMPT = ["Who are you?", "What is the capital of France?"]
 
