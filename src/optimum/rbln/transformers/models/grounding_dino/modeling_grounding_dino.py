@@ -278,9 +278,15 @@ class RBLNGroundingDinoForObjectDetection(RBLNModel):
             token_type_ids = token_type_ids[:, :max_text_len]
             text_token_mask = text_token_mask[:, :max_text_len]
 
+        text_attn_bias = torch.where(
+            text_self_attention_masks,
+            torch.zeros((), dtype=torch.float32),
+            torch.full((), torch.finfo(torch.float32).min, dtype=torch.float32),
+        ).unsqueeze(1)
+
         # Extract text features from text backbone
         text_outputs = self.text_backbone(
-            input_ids, text_self_attention_masks.to(torch.long), token_type_ids, position_ids, return_dict=return_dict
+            input_ids, text_attn_bias, token_type_ids, position_ids, return_dict=return_dict
         )
         text_features = text_outputs.last_hidden_state if return_dict else text_outputs[0]
         text_features = self.text_projection(text_features)

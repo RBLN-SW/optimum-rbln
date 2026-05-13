@@ -156,7 +156,14 @@ class RBLNModel(RBLNBaseModel):
             generation_config_path.write_text(json.dumps(local_config, indent=2) + "\n", encoding="utf-8")
 
         if not isinstance(config, PretrainedConfig):  # diffusers config
-            config = PretrainedConfig(**config)
+            config_dict = dict(config)
+            model_type = config_dict.pop("model_type", None)
+            if model_type:
+                from transformers import AutoConfig
+
+                config = AutoConfig.for_model(model_type, **config_dict)
+            else:
+                config = PretrainedConfig(**config_dict)
 
         # Save preprocessor
         for preprocessor in preprocessors:

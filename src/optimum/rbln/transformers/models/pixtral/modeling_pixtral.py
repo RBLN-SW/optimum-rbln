@@ -175,14 +175,18 @@ class _PixtralVisionModel(torch.nn.Module):
         return model.transformer
 
     def forward(self, patch_embeds, attention_mask, position_embeddings_1, position_embeddings_2):
-        output = self.transformer(
-            inputs_embeds=patch_embeds,
-            attention_mask=attention_mask,
-            position_embeddings=(position_embeddings_1, position_embeddings_2),
-            output_hidden_states=self.output_hidden_states,
-            return_dict=False,
-        )
-        return output
+        position_embeddings = (position_embeddings_1, position_embeddings_2)
+        hidden_states = patch_embeds
+        all_hidden_states = [hidden_states] if self.output_hidden_states else []
+        for layer in self.transformer.layers:
+            hidden_states = layer(
+                hidden_states,
+                attention_mask,
+                position_embeddings=position_embeddings,
+            )
+            if self.output_hidden_states:
+                all_hidden_states.append(hidden_states)
+        return tuple([hidden_states] + all_hidden_states)
 
 
 class RBLNPixtralVisionModel(RBLNModel):
