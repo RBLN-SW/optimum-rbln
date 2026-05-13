@@ -319,14 +319,12 @@ class TestPhiModel(LLMTest.TestLLMWithoutLMHead):
 
 class TestExaoneForCausalLM(LLMTest.TestLLM):
     RBLN_CLASS = RBLNExaoneForCausalLM
-    # HF_MODEL_ID = "katuni4ka/tiny-random-exaone"
     HF_MODEL_ID = "LGAI-EXAONE/EXAONE-3.5-2.4B-Instruct"
     HF_CONFIG_KWARGS = {
         "num_hidden_layers": 1,
-        "max_position_embeddings": 1024,
         "trust_remote_code": True,
     }
-    HF_CONFIG_KWARGS_PREPROCESSOR = {}
+    HF_CONFIG_KWARGS_PREPROCESSOR = {"trust_remote_code": True}
 
     def test_automap(self):
         # TODO: Test resume in transformers v5.0.0
