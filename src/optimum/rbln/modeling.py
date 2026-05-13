@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import types
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Union, get_args, get_origin, get_type_hints
@@ -332,7 +333,9 @@ class RBLNModel(RBLNBaseModel):
         ret = hints.get("return")
 
         if ret is not None:
-            candidates = get_args(ret) if get_origin(ret) is Union else (ret,)
+            origin = get_origin(ret)
+            is_union = origin is Union or origin is types.UnionType
+            candidates = get_args(ret) if is_union else (ret,)
 
             for t in candidates:
                 if t is type(None):  # Skip NoneType in Union
