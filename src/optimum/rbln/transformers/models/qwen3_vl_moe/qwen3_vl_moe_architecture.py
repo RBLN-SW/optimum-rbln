@@ -98,13 +98,14 @@ class Qwen3VLMoeMLP(nn.Module):
 
     def forward(self, x: torch.Tensor, router_logits: torch.Tensor) -> torch.Tensor:
         return torch.ops.rbln_custom_ops.custom_moe_glu(
-            x,
-            self.gate_proj.weight,
-            self.up_proj.weight,
-            self.down_proj.weight,
-            router_logits,
-            self.top_k,
-            self.norm_topk_prob,
+            hidden_states=x,
+            gate_proj_weight=self.gate_proj.weight,
+            up_proj_weight=self.up_proj.weight,
+            down_proj_weight=self.down_proj.weight,
+            router_logits=router_logits,
+            scoring_func="softmax",
+            topk=self.top_k,
+            norm_topk_prob=self.norm_topk_prob,
         )
 
 
