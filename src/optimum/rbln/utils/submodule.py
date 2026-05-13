@@ -87,7 +87,9 @@ class SubModulesMixin:
             if submodule_prefix is not None and hasattr(model, submodule_prefix):
                 torch_submodule: PreTrainedModel = getattr(model, submodule_prefix)
                 torch_submodule = getattr(torch_submodule, submodule_name)
-            elif submodule_postfix is not None and hasattr(getattr(model, submodule_name, None) or model, submodule_postfix):
+            elif submodule_postfix is not None and hasattr(
+                getattr(model, submodule_name, None) or model, submodule_postfix
+            ):
                 torch_submodule: PreTrainedModel = getattr(model, submodule_name)
                 torch_submodule = getattr(torch_submodule, submodule_postfix)
             else:

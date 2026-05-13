@@ -669,7 +669,7 @@ class TestQwen2VLForConditionalGeneration(LLMTest.TestLLM):
             "max_seq_len": 32_768,
         }
     }
-    
+
     @classmethod
     def setUpClass(cls):
         config = AutoConfig.from_pretrained(cls.HF_MODEL_ID)

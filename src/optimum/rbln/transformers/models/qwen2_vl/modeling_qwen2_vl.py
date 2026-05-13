@@ -291,7 +291,11 @@ class RBLNQwen2VLModel(RBLNDecoderOnlyModel):
         model_config: PretrainedConfig,
     ):
         input_info = super().get_input_info(batch_size, query_length, rbln_config, model_config)
-        cfg = model_config.text_config if hasattr(model_config, "text_config") and not hasattr(model_config, "hidden_size") else model_config
+        cfg = (
+            model_config.text_config
+            if hasattr(model_config, "text_config") and not hasattr(model_config, "hidden_size")
+            else model_config
+        )
         pos_idx = 3
         input_info.insert(
             pos_idx,
