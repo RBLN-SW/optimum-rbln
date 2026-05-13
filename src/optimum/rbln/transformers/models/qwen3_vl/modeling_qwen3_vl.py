@@ -339,6 +339,7 @@ class RBLNQwen3VLModel(RBLNDecoderOnlyModel):
     _config_class = Qwen3VLConfig
     _rotary_emb_class = Qwen3VLTextRotaryEmbedding
     _get_rope_index_func = Qwen3VLModel.get_rope_index
+    get_vision_position_ids = Qwen3VLModel.get_vision_position_ids
 
     @classmethod
     def _load_submodules(cls, model_save_dir, rbln_config, model=None, **kwargs):
@@ -494,6 +495,7 @@ class RBLNQwen3VLModel(RBLNDecoderOnlyModel):
         video_embeds: Optional[torch.Tensor] = None,
         deepstack_image_embeds: Optional[List[torch.Tensor]] = None,
         deepstack_video_embeds: Optional[List[torch.Tensor]] = None,
+        mm_token_type_ids: Optional[torch.IntTensor] = None,
     ):
         batch_size = input_ids.shape[0]
         inputs_embeds = self.embed_tokens(input_ids).to(self.rbln_config.dtype)
@@ -582,8 +584,17 @@ class RBLNQwen3VLModel(RBLNDecoderOnlyModel):
                     video_row_idx += 1
                 video_grid_slice = video_grid_thw[start_row:video_row_idx]
 
+            # (0=text, 1=image, 2=video). Derive from input_id if not provided by caller.
+            if mm_token_type_ids is not None:
+                batch_mm_token_type_ids = mm_token_type_ids[b_idx : b_idx + 1][:, attention_mask[b_idx].bool()]
+            else:
+                batch_mm_token_type_ids = torch.zeros_like(input_id, dtype=torch.int)
+                batch_mm_token_type_ids[input_id == image_token_id] = 1
+                batch_mm_token_type_ids[input_id == video_token_id] = 2
+
             position_ids, rope_deltas = self._get_rope_index_func(
                 input_id,
+                batch_mm_token_type_ids,
                 image_grid_thw[image_idx : image_idx + image_nums] if image_grid_thw is not None else None,
                 video_grid_slice,
             )
@@ -687,6 +698,7 @@ class RBLNQwen3VLModel(RBLNDecoderOnlyModel):
         cache_position: Optional[torch.LongTensor] = None,
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
+        mm_token_type_ids: Optional[torch.IntTensor] = None,
         **kwargs,
     ) -> RBLNDecoderOnlyOutput:
         inputs_embeds, position_embed, rope_deltas, visual_pos_mask, deepstack_visual_embeds = (
@@ -701,6 +713,7 @@ class RBLNQwen3VLModel(RBLNDecoderOnlyModel):
                 video_embeds=video_embeds,
                 deepstack_image_embeds=deepstack_image_embeds,
                 deepstack_video_embeds=deepstack_video_embeds,
+                mm_token_type_ids=mm_token_type_ids,
             )
         )
 
@@ -853,6 +866,7 @@ class RBLNQwen3VLForConditionalGeneration(RBLNQwen3VLModel, RBLNDecoderOnlyModel
         video_embeds=None,
         deepstack_image_embeds=None,
         deepstack_video_embeds=None,
+        mm_token_type_ids=None,
         **kwargs,
     ):
         model_inputs = {}
@@ -878,6 +892,7 @@ class RBLNQwen3VLForConditionalGeneration(RBLNQwen3VLModel, RBLNDecoderOnlyModel
             video_embeds = None
             deepstack_image_embeds = None
             deepstack_video_embeds = None
+            mm_token_type_ids = None
             model_inputs.update({"input_ids": input_ids})
 
         model_inputs.update(
@@ -893,6 +908,7 @@ class RBLNQwen3VLForConditionalGeneration(RBLNQwen3VLModel, RBLNDecoderOnlyModel
                 "video_embeds": video_embeds,
                 "deepstack_image_embeds": deepstack_image_embeds,
                 "deepstack_video_embeds": deepstack_video_embeds,
+                "mm_token_type_ids": mm_token_type_ids,
             }
         )
 
@@ -939,6 +955,7 @@ class RBLNQwen3VLForConditionalGeneration(RBLNQwen3VLModel, RBLNDecoderOnlyModel
         generate_idx: Optional[torch.Tensor] = None,
         return_dict: Optional[bool] = None,
         output_hidden_states: Optional[bool] = None,
+        mm_token_type_ids: Optional[torch.IntTensor] = None,
         **kwargs,
     ) -> RBLNDecoderOnlyOutput:
         output_hidden_states = _validate_output_hidden_states(output_hidden_states, self.rbln_config)
@@ -956,6 +973,7 @@ class RBLNQwen3VLForConditionalGeneration(RBLNQwen3VLModel, RBLNDecoderOnlyModel
                     video_embeds=video_embeds,
                     deepstack_image_embeds=deepstack_image_embeds,
                     deepstack_video_embeds=deepstack_video_embeds,
+                    mm_token_type_ids=mm_token_type_ids,
                 )
             )
 
