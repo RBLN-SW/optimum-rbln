@@ -200,7 +200,9 @@ class RBLNLlavaForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMixi
         self.vision_tower = LoopVisionTower(self.rbln_submodules[0])
         self.language_model = self.rbln_submodules[1]
         self.multi_modal_projector = LoopProjector(self.model[0], rbln_config=self.rbln_config)
-        self.pad_token_id = getattr(self.config, "pad_token_id", None) or -1
+        self.pad_token_id = (
+            self.config.text_config.pad_token_id if self.config.text_config.pad_token_id is not None else -1
+        )
         return super().__post_init__(**kwargs)
 
     def get_attn_impl(self) -> str:

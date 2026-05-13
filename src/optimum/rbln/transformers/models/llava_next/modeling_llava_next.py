@@ -181,8 +181,8 @@ class RBLNLlavaNextForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGeneration
         artifacts = torch.load(self.model_save_dir / self.subfolder / "torch_artifacts.pth", weights_only=False)
         self.image_newline = artifacts["image_newline"]
 
-        # Copied from the original class
-        self.pad_token_id = self.config.pad_token_id if self.config.pad_token_id is not None else -1
+        text_config = self.config.text_config
+        self.pad_token_id = text_config.pad_token_id if text_config.pad_token_id is not None else -1
         self._padding_side = "left"  # set it to left by default, user can use setter to change padding_sides
         return super().__post_init__(**kwargs)
 
