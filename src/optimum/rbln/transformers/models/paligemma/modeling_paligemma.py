@@ -166,7 +166,7 @@ class RBLNPaliGemmaForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGeneration
     ):
         save_dict = {}
         save_dict["embed_tokens"] = model.get_input_embeddings().state_dict()
-        save_dict["multi_modal_projector"] = model.multi_modal_projector.state_dict()
+        save_dict["multi_modal_projector"] = model.model.multi_modal_projector.state_dict()
         torch.save(save_dict, save_dir_path / subfolder / "torch_artifacts.pth")
 
     def get_attn_impl(self) -> str:
@@ -436,7 +436,7 @@ class RBLNPaliGemmaModel(RBLNModel):
     ):
         save_dict = {}
         save_dict["embed_tokens"] = model.get_input_embeddings().state_dict()
-        save_dict["multi_modal_projector"] = model.multi_modal_projector.state_dict()
+        save_dict["multi_modal_projector"] = model.model.multi_modal_projector.state_dict()
         torch.save(save_dict, save_dir_path / subfolder / "torch_artifacts.pth")
 
     def _create_embedding_layer(self):

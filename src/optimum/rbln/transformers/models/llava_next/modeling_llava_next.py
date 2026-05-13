@@ -197,8 +197,6 @@ class RBLNLlavaNextForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGeneration
 
     @classmethod
     def _wrap_model_if_needed(cls, model: "PreTrainedModel", rbln_config: RBLNModelConfig):
-        if hasattr(model, "multi_modal_projector"):
-            return model.multi_modal_projector
         return model.model.multi_modal_projector
 
     @classmethod
