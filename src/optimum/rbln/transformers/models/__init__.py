@@ -126,6 +126,14 @@ _import_structure = {
         "RBLNGemma3ForConditionalGeneration",
         "RBLNGemma3ForConditionalGenerationConfig",
     ],
+    "gemma4": [
+        "RBLNGemma4ForCausalLM",
+        "RBLNGemma4ForCausalLMConfig",
+        "RBLNGemma4ForConditionalGeneration",
+        "RBLNGemma4ForConditionalGenerationConfig",
+        "RBLNGemma4VisionModel",
+        "RBLNGemma4VisionModelConfig",
+    ],
     "gpt_oss": ["RBLNGptOssForCausalLM", "RBLNGptOssForCausalLMConfig"],
     "gpt2": ["RBLNGPT2LMHeadModel", "RBLNGPT2LMHeadModelConfig", "RBLNGPT2Model", "RBLNGPT2ModelConfig"],
     "idefics3": [
@@ -301,6 +309,14 @@ if TYPE_CHECKING:
         RBLNGemma3ForCausalLMConfig,
         RBLNGemma3ForConditionalGeneration,
         RBLNGemma3ForConditionalGenerationConfig,
+    )
+    from .gemma4 import (
+        RBLNGemma4ForCausalLM,
+        RBLNGemma4ForCausalLMConfig,
+        RBLNGemma4ForConditionalGeneration,
+        RBLNGemma4ForConditionalGenerationConfig,
+        RBLNGemma4VisionModel,
+        RBLNGemma4VisionModelConfig,
     )
     from .gpt2 import RBLNGPT2LMHeadModel, RBLNGPT2LMHeadModelConfig, RBLNGPT2Model, RBLNGPT2ModelConfig
     from .gpt_oss import RBLNGptOssForCausalLM, RBLNGptOssForCausalLMConfig
