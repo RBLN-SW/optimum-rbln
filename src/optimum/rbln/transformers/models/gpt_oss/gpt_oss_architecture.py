@@ -19,6 +19,7 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 
+from ....ops.moe import compute_masked_routing_weight_topk_first
 from ..decoderonly.configuration_decoderonly import RBLNLoRAConfig
 from ..decoderonly.decoderonly_architecture import (
     DecoderOnlyAttention,
@@ -88,6 +89,7 @@ class RBLNGptOssExperts(nn.Module):
         self.top_k = top_k
 
     def forward(self, hidden_states: torch.Tensor, router_logits: torch.Tensor) -> torch.Tensor:
+        masked_routing_weight = compute_masked_routing_weight_topk_first(router_logits, top_k=self.top_k)
         return torch.ops.rbln_custom_ops.custom_moe_glu_mxfp4(
             hidden_states=hidden_states,
             gate_proj_blocks=self.gate_proj_blocks,
@@ -99,12 +101,9 @@ class RBLNGptOssExperts(nn.Module):
             down_proj_blocks=self.down_proj_blocks,
             down_proj_scales=self.down_proj_scales,
             down_proj_bias=self.down_proj_bias,
-            router_logits=router_logits,
-            scoring_func="softmax",
+            masked_routing_weight=masked_routing_weight,
             alpha=torch.tensor(self.alpha, dtype=hidden_states.dtype),
             limit=torch.tensor(self.limit, dtype=hidden_states.dtype),
-            k=self.top_k,
-            post_norm=True,
         )
 
 
