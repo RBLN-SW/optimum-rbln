@@ -290,6 +290,7 @@ class RBLNWhisperForConditionalGeneration(RBLNModel, RBLNWhisperGenerationMixin)
             rbln_config.dec_max_seq_len = model_config.max_length
 
         cls._update_paged_attention_config(model_config, rbln_config)
+        breakpoint()
 
         enc_input_info = [
             ("input_features", [1, num_mel_bins, expected_seq_len], "float32"),
@@ -300,7 +301,7 @@ class RBLNWhisperForConditionalGeneration(RBLNModel, RBLNWhisperGenerationMixin)
                     model_config.decoder_layers * 2,
                     rbln_config.kvcache_num_blocks,
                     model_config.decoder_attention_heads,
-                    rbln_config.kvcache_block_size,
+                    rbln_config.enc_max_seq_len,
                     model_config.d_model // model_config.decoder_attention_heads,
                 ],
                 "float32",
@@ -320,7 +321,7 @@ class RBLNWhisperForConditionalGeneration(RBLNModel, RBLNWhisperGenerationMixin)
                         model_config.decoder_layers * 2,
                         rbln_config.kvcache_num_blocks,
                         model_config.decoder_attention_heads,
-                        rbln_config.kvcache_block_size,
+                        rbln_config.enc_max_seq_len,
                         model_config.d_model // model_config.decoder_attention_heads,
                     ],
                     "float32",
@@ -334,7 +335,7 @@ class RBLNWhisperForConditionalGeneration(RBLNModel, RBLNWhisperGenerationMixin)
                     [
                         rbln_config.kvcache_num_blocks,
                         model_config.decoder_attention_heads,
-                        rbln_config.kvcache_block_size,
+                        rbln_config.dec_max_seq_len,
                         model_config.d_model // model_config.encoder_attention_heads,
                     ],
                     "float32",
