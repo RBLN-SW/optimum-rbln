@@ -259,12 +259,12 @@ class RBLNWhisperForConditionalGeneration(RBLNModel, RBLNWhisperGenerationMixin)
     def _update_paged_attention_config(
         cls, model_config: "PretrainedConfig", rbln_config: RBLNWhisperForConditionalGenerationConfig
     ):
-        rbln_config.kvcache_num_blocks = rbln_config.kvcache_num_blocks or rbln_config.batch_size
+        rbln_config.kvcache_num_blocks = rbln_config.kvcache_num_blocks or rbln_config.batch_size + 1
         rbln_config.kvcache_block_size = rbln_config.kvcache_block_size or rbln_config.dec_max_seq_len
 
-        if rbln_config.kvcache_num_blocks != rbln_config.batch_size:
+        if rbln_config.kvcache_num_blocks < rbln_config.batch_size:
             raise NotImplementedError(
-                f"kvcache_num_blocks ({rbln_config.kvcache_num_blocks}) must be equal to batch_size ({rbln_config.batch_size}) as flash attention is not supported yet."
+                f"kvcache_num_blocks ({rbln_config.kvcache_num_blocks}) must be equal or larger than batch_size ({rbln_config.batch_size})."
             )
 
         if rbln_config.kvcache_block_size != rbln_config.dec_max_seq_len:
@@ -298,9 +298,9 @@ class RBLNWhisperForConditionalGeneration(RBLNModel, RBLNWhisperGenerationMixin)
                 "cross_key_value_states",
                 [
                     model_config.decoder_layers * 2,
-                    rbln_config.batch_size + 1,
+                    rbln_config.kvcache_num_blocks,
                     model_config.decoder_attention_heads,
-                    rbln_config.enc_max_seq_len,
+                    rbln_config.kvcache_block_size,
                     model_config.d_model // model_config.decoder_attention_heads,
                 ],
                 "float32",
@@ -318,9 +318,9 @@ class RBLNWhisperForConditionalGeneration(RBLNModel, RBLNWhisperGenerationMixin)
                     "cross_key_value_states",
                     [
                         model_config.decoder_layers * 2,
-                        rbln_config.batch_size + 1,
+                        rbln_config.kvcache_num_blocks,
                         model_config.decoder_attention_heads,
-                        rbln_config.enc_max_seq_len,
+                        rbln_config.kvcache_block_size,
                         model_config.d_model // model_config.decoder_attention_heads,
                     ],
                     "float32",
@@ -332,9 +332,9 @@ class RBLNWhisperForConditionalGeneration(RBLNModel, RBLNWhisperGenerationMixin)
                 (
                     f"self_key_value_states_{i}",
                     [
-                        rbln_config.batch_size + 1,
+                        rbln_config.kvcache_num_blocks,
                         model_config.decoder_attention_heads,
-                        rbln_config.dec_max_seq_len,
+                        rbln_config.kvcache_block_size,
                         model_config.d_model // model_config.encoder_attention_heads,
                     ],
                     "float32",
