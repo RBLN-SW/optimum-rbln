@@ -430,6 +430,11 @@ class RBLNWhisperForConditionalGeneration(RBLNModel, RBLNWhisperGenerationMixin)
     ) -> Seq2SeqLMOutput:
         # default decoder pass
         if input_features is None and encoder_outputs is None:
+            if cache_position is None:
+                # transformers 5.x's generation path no longer passes
+                # cache_position by default. Reconstruct it from input_ids so
+                # the legacy step-by-step decoder loop below keeps working.
+                cache_position = torch.arange(input_ids.shape[-1], dtype=torch.int32, device=input_ids.device)
             cross_attentions = []
             for step in cache_position:
                 # skip step 0 if language_detection has been processed

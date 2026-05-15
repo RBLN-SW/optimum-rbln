@@ -21,6 +21,7 @@ from transformers.modeling_outputs import CausalLMOutput
 
 from ....configuration_utils import RBLNCompileConfig
 from ....modeling import RBLNModel
+from ....utils.import_utils import is_transformers_version
 from .configuration_wav2vec2 import RBLNWav2Vec2ForCTCConfig
 
 
@@ -34,7 +35,15 @@ class _Wav2Vec2(torch.nn.Module):
         self.model = model
 
     def forward(self, input_values):
-        output = self.model.wav2vec2(input_values=input_values)
+        kwargs = {}
+        if is_transformers_version(">=", "5.0"):
+            # transformers 5.x routes Wav2Vec2 attention through masking_utils
+            # whose BC branch crashes on the 0-dim cache_position fakeTensor
+            # the rebel-compiler trace emits when attention_mask is None.
+            # Passing an all-ones 2D padding mask routes through
+            # `_get_feature_vector_attention_mask`, avoiding the BC branch.
+            kwargs["attention_mask"] = torch.ones(input_values.shape, dtype=torch.long, device=input_values.device)
+        output = self.model.wav2vec2(input_values=input_values, **kwargs)
         return self.model.lm_head(output[0])
 
 
