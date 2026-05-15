@@ -195,6 +195,9 @@ def test_submodule_config_dict():
         "trl-internal-testing/tiny-LlavaNextForConditionalGeneration",
         export=True,
         rbln_language_model={"max_seq_len": 16384, "use_inputs_embeds": True, "batch_size": 2},
+        # transformers 5.x defaults `dtype="auto"`, which loads CLIPVisionModel
+        # weights in a non-fp32 dtype that RBLNCLIPVisionModel does not accept.
+        torch_dtype=torch.float32,
     )
     assert model.rbln_config.language_model.max_seq_len == 16384
     assert model.rbln_config.language_model.batch_size == 2
@@ -209,6 +212,7 @@ def test_submodule_config_object():
         "trl-internal-testing/tiny-LlavaNextForConditionalGeneration",
         export=True,
         rbln_language_model=rbln_config,
+        torch_dtype=torch.float32,
     )
     assert model.rbln_config.language_model.max_seq_len == 16384
     assert model.rbln_config.language_model.batch_size == 2
