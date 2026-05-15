@@ -90,6 +90,9 @@ class RBLNGptOssExperts(nn.Module):
 
     def forward(self, hidden_states: torch.Tensor, router_logits: torch.Tensor) -> torch.Tensor:
         masked_routing_weight = compute_masked_routing_weight_topk_first(router_logits, top_k=self.top_k)
+        token_dim = masked_routing_weight.shape[1]
+        if token_dim <= 8:
+            masked_routing_weight = F.pad(masked_routing_weight, (0, 64 - token_dim), value=0.0)
         return torch.ops.rbln_custom_ops.custom_moe_glu_mxfp4(
             hidden_states=hidden_states,
             gate_proj_blocks=self.gate_proj_blocks,
