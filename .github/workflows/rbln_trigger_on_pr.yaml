@@ -154,7 +154,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        transformers_version_spec: ["", ">=5.0,<6.0"]
+        transformers_version_spec: ["==4.57.6", ">=5.0,<6.0"]
     uses: ./.github/workflows/rbln_optimum_pytest.yaml
     with:
       ref: ${{ github.event.pull_request.head.sha }}
