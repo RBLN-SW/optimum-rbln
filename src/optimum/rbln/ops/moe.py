@@ -32,7 +32,7 @@ def compute_masked_routing_weight_softmax_first(router_logits: Tensor, top_k: in
         device=router_logits.device,
     )
     masked.scatter_(1, topk_ids, topk_weights)
-    return masked.transpose(0, 1).contiguous()
+    return masked
 
 
 def compute_masked_routing_weight_topk_first(router_logits: Tensor, top_k: int) -> Tensor:
@@ -47,7 +47,7 @@ def compute_masked_routing_weight_topk_first(router_logits: Tensor, top_k: int) 
         device=router_logits.device,
     )
     masked.scatter_(1, topk_ids, topk_weights)
-    return masked.transpose(0, 1).contiguous()
+    return masked
 
 
 @torch.library.custom_op(
@@ -75,8 +75,8 @@ def custom_moe_glu(
     - gate_proj_weight: [num_experts, intermediate_size, hidden_size]
     - up_proj_weight: [num_experts, intermediate_size, hidden_size]
     - down_proj_weight: [num_experts, hidden_size, intermediate_size]
-    - masked_routing_weight: [num_experts, batch*seq_len]
-        Dense routing matrix in [E, T] layout. Non-selected (expert, token)
+    - masked_routing_weight: [batch*seq_len, num_experts]
+        Dense routing matrix in [T, E] layout. Non-selected (token, expert)
         positions must be zero.
     - expert_map: [num_experts_global] (vllm-only; pass None outside vllm)
     - gate_proj_bias: [num_experts, intermediate_size]
@@ -180,8 +180,8 @@ def custom_moe_glu_mxfp4(
     - down_proj_blocks: [num_experts, hidden_size, intermediate_size // 2]
     - down_proj_scales: [num_experts, hidden_size, intermediate_size // 32]
     - down_proj_bias: [num_experts, hidden_size]
-    - masked_routing_weight: [num_experts, batch*seq_len]
-        Dense routing matrix in [E, T] layout. Non-selected (expert, token)
+    - masked_routing_weight: [batch*seq_len, num_experts]
+        Dense routing matrix in [T, E] layout. Non-selected (token, expert)
         positions must be zero.
     - alpha: scalar tensor for swigluoai activation
     - limit: scalar tensor for swigluoai activation
