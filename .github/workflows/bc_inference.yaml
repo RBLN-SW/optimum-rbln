@@ -85,4 +85,9 @@ jobs:
       test_level: "full"
       enable_hf_hub_tests: false
       fail_fast: false
+      # Backward-compat tests reuse artifacts compiled under the prior release,
+      # which were produced against transformers 4.x. Pin to 4.x here so the
+      # artifact config schema matches the runtime config schema; the dual
+      # 4.x/5.x matrix lives in rbln_trigger_on_pr.yaml's optimum-rbln-pytest.
+      transformers_version_spec: "==4.57.6"
     secrets: inherit

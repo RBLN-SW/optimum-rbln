@@ -79,6 +79,7 @@ except ImportError:
 # v4.x: rope params are flat attributes on the config (config.rope_theta).
 # v5.x: rope params live inside the dict config.rope_parameters.
 
+
 def get_rope_param(config: Any, name: str, default: Any = None) -> Any:
     """Read a RoPE parameter (e.g. 'rope_theta') across transformers versions."""
     if _IS_TRANSFORMERS_V5:
@@ -104,6 +105,7 @@ def set_rope_param(config: Any, name: str, value: Any) -> None:
 # accepting both for backward compatibility and route everything through
 # this helper.
 
+
 def normalize_token_kwarg(
     use_auth_token: Optional[Any] = None,
     token: Optional[Any] = None,
@@ -118,8 +120,7 @@ def normalize_token_kwarg(
         import warnings
 
         warnings.warn(
-            "`use_auth_token` is deprecated and will be removed in a future release. "
-            "Please use `token` instead.",
+            "`use_auth_token` is deprecated and will be removed in a future release. Please use `token` instead.",
             FutureWarning,
             stacklevel=3,
         )
