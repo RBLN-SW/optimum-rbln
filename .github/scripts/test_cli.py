@@ -36,7 +36,7 @@ def run_command(cmd):
 def test_cli_help():
     """Test CLI help command."""
     print("\n🔍 Testing CLI help command...")
-    return run_command(["uv", "run", "python", "-m", "optimum.rbln.cli", "--help"])
+    return run_command(["uv", "run", "--no-sync", "python", "-m", "optimum.rbln.cli", "--help"])
 
 
 def test_resnet_compilation():
@@ -53,6 +53,7 @@ def test_resnet_compilation():
     cmd = [
         "uv",
         "run",
+        "--no-sync",
         "python",
         "-m",
         "optimum.rbln.cli",
@@ -96,6 +97,7 @@ def test_stable_diffusion_compilation():
     cmd = [
         "uv",
         "run",
+        "--no-sync",
         "python",
         "-m",
         "optimum.rbln.cli",
@@ -149,7 +151,9 @@ def test_argument_parsing():
 
     # Test missing required arguments
     print("Testing missing required arguments...")
-    result = subprocess.run(["uv", "run", "python", "-m", "optimum.rbln.cli"], capture_output=True, text=True)
+    result = subprocess.run(
+        ["uv", "run", "--no-sync", "python", "-m", "optimum.rbln.cli"], capture_output=True, text=True
+    )
     if result.returncode == 0:
         print("❌ Expected non-zero exit for missing arguments")
         return False
@@ -161,6 +165,7 @@ def test_argument_parsing():
         [
             "uv",
             "run",
+            "--no-sync",
             "python",
             "-m",
             "optimum.rbln.cli",
@@ -197,6 +202,7 @@ def test_hf_kwargs():
     cmd = [
         "uv",
         "run",
+        "--no-sync",
         "python",
         "-m",
         "optimum.rbln.cli",
@@ -271,6 +277,7 @@ def test_error_handling():
         [
             "uv",
             "run",
+            "--no-sync",
             "python",
             "-m",
             "optimum.rbln.cli",
