@@ -91,7 +91,18 @@ class SubModulesMixin:
                 torch_submodule: PreTrainedModel = getattr(model, submodule_name)
                 torch_submodule = getattr(torch_submodule, submodule_postfix)
             else:
-                torch_submodule: PreTrainedModel = getattr(model, submodule_name)
+                # transformers 5.x VLMs (PR #42156) nest sub-models (vision_tower,
+                # multi_modal_projector, language_model, ...) under `.model`
+                # rather than exposing them directly on the conditional-generation
+                # head. Fall back to that path so existing wrappers keep working.
+                torch_submodule = getattr(model, submodule_name, None)
+                if torch_submodule is None:
+                    inner = getattr(model, "model", None)
+                    if inner is None:
+                        raise AttributeError(
+                            f"{type(model).__name__} has no submodule {submodule_name!r}"
+                        )
+                    torch_submodule = getattr(inner, submodule_name)
 
             cls_name = torch_submodule.__class__.__name__
             submodule_cls: Type["RBLNModel"] = get_rbln_model_cls(f"RBLN{cls_name}")
