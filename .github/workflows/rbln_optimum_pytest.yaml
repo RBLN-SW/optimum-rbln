@@ -53,7 +53,12 @@ env:
 
 jobs:
   pytest:
-    name: Pytest (${{ matrix.test_type }}${{ inputs.transformers_version_spec != '' && format(' / tx{0}', inputs.transformers_version_spec) || '' }})
+    # The transformers spec is omitted here on purpose: when this workflow is
+    # called from a caller-side matrix (e.g. rbln_trigger_on_pr.yaml), GitHub
+    # already prefixes the job name with the matrix value, e.g.
+    # `optimum-rbln-pytest (==4.57.6) / Pytest (cli-basic)`. Adding the spec
+    # again caused `cli-basic` to truncate out of view in the GitHub UI.
+    name: Pytest (${{ matrix.test_type }})
     runs-on: ${{ (inputs.reuse_artifacts_path != '' && matrix.test_type == 'llm') && 'rbln-sw-k8s-4c-128gb' || (inputs.reuse_artifacts_path != '' && 'rbln-sw-k8s-4c-32gb' || 'rbln-sw-k8s-ca22-1') }}
     container:
       image: ${{ vars.DEV_CONTAINER_IMAGE }}
