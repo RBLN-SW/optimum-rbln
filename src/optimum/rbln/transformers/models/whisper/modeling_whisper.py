@@ -290,7 +290,6 @@ class RBLNWhisperForConditionalGeneration(RBLNModel, RBLNWhisperGenerationMixin)
             rbln_config.dec_max_seq_len = model_config.max_length
 
         cls._update_paged_attention_config(model_config, rbln_config)
-        breakpoint()
 
         enc_input_info = [
             ("input_features", [1, num_mel_bins, expected_seq_len], "float32"),
