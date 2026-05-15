@@ -99,9 +99,7 @@ class SubModulesMixin:
                 if torch_submodule is None:
                     inner = getattr(model, "model", None)
                     if inner is None:
-                        raise AttributeError(
-                            f"{type(model).__name__} has no submodule {submodule_name!r}"
-                        )
+                        raise AttributeError(f"{type(model).__name__} has no submodule {submodule_name!r}")
                     torch_submodule = getattr(inner, submodule_name)
 
             cls_name = torch_submodule.__class__.__name__
