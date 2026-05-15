@@ -99,6 +99,27 @@ def set_rope_param(config: Any, name: str, value: Any) -> None:
         setattr(config, name, value)
 
 
+# --- VLM submodule access --------------------------------------------------
+# transformers PR #42156 moved VLM sub-modules (vision_tower,
+# multi_modal_projector, language_model, ...) off the conditional-generation
+# head and onto the underlying *Model class in v5: e.g.
+#     v4: paligemma_for_cond_gen.multi_modal_projector
+#     v5: paligemma_for_cond_gen.model.multi_modal_projector
+
+
+def get_vlm_submodule(model, name):
+    """Return a VLM sub-module that may live on the head or under `.model`."""
+    sub = getattr(model, name, None)
+    if sub is not None:
+        return sub
+    inner = getattr(model, "model", None)
+    if inner is not None:
+        sub = getattr(inner, name, None)
+        if sub is not None:
+            return sub
+    raise AttributeError(f"{type(model).__name__} has no submodule {name!r}")
+
+
 # --- image processor size --------------------------------------------------
 # v4.x: image processors expose `size` as a plain dict ({"height": ..., "width": ...}).
 # v5.x: `size` is a SizeDict dataclass with attribute access and no `.keys()`.
@@ -173,6 +194,7 @@ __all__ = [
     "MODEL_FOR_VISION_2_SEQ_MAPPING_NAMES",
     "assert_supported_on_current_transformers",
     "get_rope_param",
+    "get_vlm_submodule",
     "no_init_weights",
     "normalize_token_kwarg",
     "processor_size_get",

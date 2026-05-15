@@ -24,7 +24,7 @@ from transformers.models.llava.modeling_llava import LlavaCausalLMOutputWithPast
 from ....configuration_utils import RBLNCompileConfig, RBLNModelConfig
 from ....modeling import RBLNModel
 from ....utils.logging import get_logger
-from ....utils.transformers_compat import no_init_weights
+from ....utils.transformers_compat import get_vlm_submodule, no_init_weights
 from ...modeling_outputs import RBLNDecoderOnlyOutput
 from ...utils.rbln_runtime_wrapper import LoopProcessor
 from ..decoderonly.generation_decoderonly import RBLNDecoderOnlyGenerationMixin
@@ -213,7 +213,7 @@ class RBLNLlavaForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMixi
 
     @classmethod
     def _wrap_model_if_needed(cls, model: "PreTrainedModel", rbln_config: RBLNModelConfig):
-        return model.multi_modal_projector
+        return get_vlm_submodule(model, "multi_modal_projector")
 
     @classmethod
     def _update_rbln_config(

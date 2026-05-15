@@ -26,7 +26,7 @@ from transformers.models.paligemma.modeling_paligemma import PaligemmaModelOutpu
 from ....configuration_utils import RBLNModelConfig
 from ....modeling import RBLNModel
 from ....utils.logging import get_logger
-from ....utils.transformers_compat import AutoModelForVision2Seq, no_init_weights
+from ....utils.transformers_compat import AutoModelForVision2Seq, get_vlm_submodule, no_init_weights
 from ...utils.rbln_runtime_wrapper import LoopProcessor
 from ..decoderonly.generation_decoderonly import RBLNDecoderOnlyGenerationMixin
 from ..decoderonly.modeling_decoderonly import RBLNDecoderOnlyOutput
@@ -160,7 +160,7 @@ class RBLNPaliGemmaForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGeneration
     ):
         save_dict = {}
         save_dict["embed_tokens"] = model.get_input_embeddings().state_dict()
-        save_dict["multi_modal_projector"] = model.multi_modal_projector.state_dict()
+        save_dict["multi_modal_projector"] = get_vlm_submodule(model, "multi_modal_projector").state_dict()
         torch.save(save_dict, save_dir_path / subfolder / "torch_artifacts.pth")
 
     def get_attn_impl(self) -> str:
@@ -429,7 +429,7 @@ class RBLNPaliGemmaModel(RBLNModel):
     ):
         save_dict = {}
         save_dict["embed_tokens"] = model.get_input_embeddings().state_dict()
-        save_dict["multi_modal_projector"] = model.multi_modal_projector.state_dict()
+        save_dict["multi_modal_projector"] = get_vlm_submodule(model, "multi_modal_projector").state_dict()
         torch.save(save_dict, save_dir_path / subfolder / "torch_artifacts.pth")
 
     def _create_embedding_layer(self):
