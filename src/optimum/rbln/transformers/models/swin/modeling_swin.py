@@ -23,6 +23,7 @@ from transformers.models.swin.modeling_swin import BackboneOutput
 from ....configuration_utils import RBLNCompileConfig, RBLNModelConfig
 from ....modeling import RBLNModel
 from ....utils.logging import get_logger
+from ....utils.transformers_compat import processor_size_get, processor_size_keys
 from .configuration_swin import RBLNSwinBackboneConfig
 
 
@@ -250,8 +251,11 @@ class RBLNSwinBackbone(RBLNModel):
         if rbln_config.image_size is None:
             for processor in preprocessors:
                 if hasattr(processor, "size"):
-                    if all(required_key in processor.size.keys() for required_key in ["height", "width"]):
-                        rbln_config.image_size = (processor.size["height"], processor.size["width"])
+                    if {"height", "width"} <= processor_size_keys(processor.size):
+                        rbln_config.image_size = (
+                            processor_size_get(processor.size, "height"),
+                            processor_size_get(processor.size, "width"),
+                        )
                     break
 
         input_info = [

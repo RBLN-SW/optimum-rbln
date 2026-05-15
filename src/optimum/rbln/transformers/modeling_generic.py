@@ -39,6 +39,7 @@ from transformers.modeling_outputs import BaseModelOutput, QuestionAnsweringMode
 from ..configuration_utils import RBLNCompileConfig
 from ..modeling import RBLNModel
 from ..utils.logging import get_logger
+from ..utils.transformers_compat import processor_size_get, processor_size_keys
 from .configuration_generic import (
     RBLNImageModelConfig,
     RBLNTransformerEncoderConfig,
@@ -196,12 +197,18 @@ class RBLNImageModel(RBLNModel):
         if rbln_config.image_size is None:
             for processor in preprocessors:
                 if hasattr(processor, "size"):
-                    if all(required_key in processor.size.keys() for required_key in ["height", "width"]):
-                        rbln_config.image_size = (processor.size["height"], processor.size["width"])
-                    elif "shortest_edge" in processor.size.keys():
-                        rbln_config.image_size = (processor.size["shortest_edge"], processor.size["shortest_edge"])
-                    elif "longest_edge" in processor.size.keys():
-                        rbln_config.image_size = (processor.size["longest_edge"], processor.size["longest_edge"])
+                    keys = processor_size_keys(processor.size)
+                    if {"height", "width"} <= keys:
+                        rbln_config.image_size = (
+                            processor_size_get(processor.size, "height"),
+                            processor_size_get(processor.size, "width"),
+                        )
+                    elif "shortest_edge" in keys:
+                        edge = processor_size_get(processor.size, "shortest_edge")
+                        rbln_config.image_size = (edge, edge)
+                    elif "longest_edge" in keys:
+                        edge = processor_size_get(processor.size, "longest_edge")
+                        rbln_config.image_size = (edge, edge)
                     break
 
             if rbln_config.image_size is None:

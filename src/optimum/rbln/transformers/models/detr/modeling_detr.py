@@ -21,6 +21,7 @@ from transformers.models.detr.modeling_detr import DetrConfig, DetrObjectDetecti
 
 from ....configuration_utils import RBLNCompileConfig
 from ....modeling import RBLNModel
+from ....utils.transformers_compat import processor_size_get, processor_size_keys
 from .configuration_detr import RBLNDetrForObjectDetectionConfig
 
 
@@ -50,10 +51,13 @@ class RBLNDetrForObjectDetection(RBLNModel):
         if rbln_config.image_size is None:
             for processor in preprocessors:
                 if hasattr(processor, "size"):
-                    if all(required_key in processor.size.keys() for required_key in ["height", "width"]):
-                        height, width = processor.size["height"], processor.size["width"]
-                    elif "longest_edge" in processor.size.keys():
-                        height, width = processor.size["longest_edge"], processor.size["longest_edge"]
+                    keys = processor_size_keys(processor.size)
+                    if {"height", "width"} <= keys:
+                        height = processor_size_get(processor.size, "height")
+                        width = processor_size_get(processor.size, "width")
+                    elif "longest_edge" in keys:
+                        edge = processor_size_get(processor.size, "longest_edge")
+                        height, width = edge, edge
                     break
 
             if rbln_config.image_size is None:

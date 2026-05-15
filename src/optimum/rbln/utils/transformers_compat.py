@@ -99,6 +99,27 @@ def set_rope_param(config: Any, name: str, value: Any) -> None:
         setattr(config, name, value)
 
 
+# --- image processor size --------------------------------------------------
+# v4.x: image processors expose `size` as a plain dict ({"height": ..., "width": ...}).
+# v5.x: `size` is a SizeDict dataclass with attribute access and no `.keys()`.
+
+_SIZE_DICT_FIELDS = ("height", "width", "longest_edge", "shortest_edge", "max_height", "max_width")
+
+
+def processor_size_keys(size):
+    """Return the set of populated size keys for either v4 dict or v5 SizeDict."""
+    if hasattr(size, "keys"):
+        return set(size.keys())
+    return {k for k in _SIZE_DICT_FIELDS if getattr(size, k, None) is not None}
+
+
+def processor_size_get(size, key, default=None):
+    """Read a size entry from either v4 dict or v5 SizeDict."""
+    if hasattr(size, "get"):
+        return size.get(key, default)
+    return getattr(size, key, default)
+
+
 # --- token / use_auth_token ------------------------------------------------
 # v5.x dropped use_auth_token from PreTrainedModel.from_pretrained;
 # only `token` is accepted. Public-facing entrypoints in optimum-rbln keep
@@ -154,5 +175,7 @@ __all__ = [
     "get_rope_param",
     "no_init_weights",
     "normalize_token_kwarg",
+    "processor_size_get",
+    "processor_size_keys",
     "set_rope_param",
 ]
