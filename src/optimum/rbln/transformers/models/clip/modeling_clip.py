@@ -21,6 +21,7 @@ from transformers.models.clip.modeling_clip import CLIPTextModelOutput, CLIPVisi
 
 from ....configuration_utils import RBLNCompileConfig
 from ....modeling import RBLNModel
+from ....utils.import_utils import is_transformers_version
 from ....utils.logging import get_logger
 from .configuration_clip import RBLNCLIPTextModelConfig, RBLNCLIPVisionModelConfig
 
@@ -55,6 +56,14 @@ class RBLNCLIPTextModel(RBLNModel):
 
     @classmethod
     def _wrap_model_if_needed(cls, model: torch.nn.Module, rbln_config: RBLNCLIPTextModelConfig) -> torch.nn.Module:
+        # transformers 5.x routes CLIP attention through
+        # `transformers.masking_utils.sdpa_mask`, whose BC branch trips an
+        # IndexError on a 0-dim cache_position that gets emitted during the
+        # rebel-compiler trace. Force eager attention on the reference model so
+        # the trace runs through the legacy mask path; the NPU runs its own
+        # attention kernel either way, so the compiled graph is unaffected.
+        if is_transformers_version(">=", "5.0"):
+            model.set_attn_implementation("eager")
         return _TextEncoder(model).eval()
 
     @classmethod
