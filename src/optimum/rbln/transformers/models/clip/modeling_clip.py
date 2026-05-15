@@ -40,8 +40,24 @@ class _TextEncoder(torch.nn.Module):
         self.enc = enc
 
     def forward(self, inp):
-        enc_out = self.enc(inp, output_hidden_states=True, return_dict=False)
-        return enc_out
+        if is_transformers_version(">=", "5.0"):
+            # On transformers 5.x, CLIPTextModel.forward delegates mask creation
+            # to `transformers.masking_utils.create_causal_mask`, which calls
+            # `sdpa_mask` whose BC branch crashes on the 0-dim cache_position the
+            # rebel-compiler tracer emits. Build the 4D causal mask ourselves and
+            # pass it through; create_causal_mask returns a pre-built 4D mask
+            # as-is, so sdpa_mask is never reached.
+            #
+            # v4 cannot take this path: its `attention_mask` is a 2D padding mask
+            # and a 4D tensor would be misinterpreted by `_prepare_4d_attention_mask`.
+            batch_size, seq_len = inp.shape[0], inp.shape[1]
+            causal_4d = torch.zeros((batch_size, 1, seq_len, seq_len), device=inp.device, dtype=torch.float32)
+            causal_4d = causal_4d.masked_fill(
+                torch.triu(torch.ones(seq_len, seq_len, device=inp.device, dtype=torch.bool), diagonal=1),
+                float("-inf"),
+            )
+            return self.enc(inp, attention_mask=causal_4d, output_hidden_states=True, return_dict=False)
+        return self.enc(inp, output_hidden_states=True, return_dict=False)
 
 
 class RBLNCLIPTextModel(RBLNModel):
@@ -56,14 +72,6 @@ class RBLNCLIPTextModel(RBLNModel):
 
     @classmethod
     def _wrap_model_if_needed(cls, model: torch.nn.Module, rbln_config: RBLNCLIPTextModelConfig) -> torch.nn.Module:
-        # transformers 5.x routes CLIP attention through
-        # `transformers.masking_utils.sdpa_mask`, whose BC branch trips an
-        # IndexError on a 0-dim cache_position that gets emitted during the
-        # rebel-compiler trace. Force eager attention on the reference model so
-        # the trace runs through the legacy mask path; the NPU runs its own
-        # attention kernel either way, so the compiled graph is unaffected.
-        if is_transformers_version(">=", "5.0"):
-            model.set_attn_implementation("eager")
         return _TextEncoder(model).eval()
 
     @classmethod
