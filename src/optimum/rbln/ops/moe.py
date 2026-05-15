@@ -19,13 +19,14 @@ from torch import Tensor
 
 
 def compute_masked_routing_weight_softmax_first(router_logits: Tensor, top_k: int, renormalize: bool) -> Tensor:
-    # softmax → topk → (optional renorm) → scatter.
     num_tokens, num_experts = router_logits.shape
-    routing = torch.softmax(router_logits.to(torch.float32), dim=-1)
-    topk_weights, topk_ids = torch.topk(routing, top_k, dim=-1)
     if renormalize:
-        topk_weights = topk_weights / topk_weights.sum(dim=-1, keepdim=True)
-    topk_weights = topk_weights.to(router_logits.dtype)
+        topk_values, topk_ids = torch.topk(router_logits.to(torch.float32), top_k, dim=-1)
+        topk_weights = torch.softmax(topk_values, dim=-1).to(router_logits.dtype)
+    else:
+        routing = torch.softmax(router_logits.to(torch.float32), dim=-1)
+        topk_weights, topk_ids = torch.topk(routing, top_k, dim=-1)
+        topk_weights = topk_weights.to(router_logits.dtype)
     masked = torch.zeros(
         (num_tokens, num_experts),
         dtype=router_logits.dtype,
