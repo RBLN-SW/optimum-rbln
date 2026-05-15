@@ -2,6 +2,10 @@ name: Optimum-rbln / PR
 
 on:
   pull_request:
+    # Include `ready_for_review` so that switching a draft PR to ready
+    # actually triggers CI; without it, runs queued during the draft
+    # state stay stuck after the PR opens for review.
+    types: [opened, synchronize, reopened, ready_for_review]
     branches:
       - main
       - dev
