@@ -176,7 +176,11 @@ class RBLNLlavaNextForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGeneration
         self.image_newline = artifacts["image_newline"]
 
         # Copied from the original class
-        self.pad_token_id = self.config.pad_token_id if self.config.pad_token_id is not None else -1
+        # transformers 5.x moved pad_token_id off LlavaNextConfig and onto text_config.
+        pad_token_id = getattr(self.config, "pad_token_id", None)
+        if pad_token_id is None and hasattr(self.config, "text_config"):
+            pad_token_id = getattr(self.config.text_config, "pad_token_id", None)
+        self.pad_token_id = pad_token_id if pad_token_id is not None else -1
         self._padding_side = "left"  # set it to left by default, user can use setter to change padding_sides
         return super().__post_init__(**kwargs)
 

@@ -199,7 +199,11 @@ class RBLNLlavaForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMixi
         self.vision_tower = LoopVisionTower(self.rbln_submodules[0])
         self.language_model = self.rbln_submodules[1]
         self.multi_modal_projector = LoopProjector(self.model[0], rbln_config=self.rbln_config)
-        self.pad_token_id = self.config.pad_token_id if self.config.pad_token_id is not None else -1
+        # transformers 5.x moved pad_token_id off LlavaConfig and onto text_config.
+        pad_token_id = getattr(self.config, "pad_token_id", None)
+        if pad_token_id is None and hasattr(self.config, "text_config"):
+            pad_token_id = getattr(self.config.text_config, "pad_token_id", None)
+        self.pad_token_id = pad_token_id if pad_token_id is not None else -1
         return super().__post_init__(**kwargs)
 
     def get_attn_impl(self) -> str:
