@@ -31,11 +31,11 @@ import torch
 from rebel.compile_context import CompileContext
 from transformers import PretrainedConfig, TimeSeriesTransformerForPrediction, TimeSeriesTransformerModel
 from transformers.modeling_outputs import SampleTSPredictionOutput, Seq2SeqTSModelOutput
-from transformers.modeling_utils import no_init_weights
 
 from ....configuration_utils import RBLNCompileConfig
 from ....modeling import RBLNModel
 from ....utils.runtime_utils import RBLNPytorchRuntime
+from ....utils.transformers_compat import no_init_weights
 from ...modeling_outputs import RBLNSeq2SeqTSDecoderOutput
 from .configuration_time_series_transformer import RBLNTimeSeriesTransformerForPredictionConfig
 from .time_series_transformers_architecture import TimeSeriesTransformersWrapper

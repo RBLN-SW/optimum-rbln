@@ -18,11 +18,11 @@ from typing import Optional, Tuple, Union
 
 import torch
 from transformers.modeling_outputs import BaseModelOutputWithPooling
-from transformers.modeling_utils import no_init_weights
 from transformers.models.colpali.modeling_colpali import ColPaliForRetrieval, ColPaliForRetrievalOutput
 
 from ....configuration_utils import RBLNModelConfig
 from ....modeling import RBLNModel
+from ....utils.transformers_compat import no_init_weights
 from ...utils.rbln_runtime_wrapper import LoopProcessor
 
 

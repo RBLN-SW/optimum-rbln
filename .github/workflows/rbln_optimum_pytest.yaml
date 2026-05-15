@@ -40,6 +40,11 @@ on:
         required: false
         type: string
         default: ""
+      transformers_version_spec:
+        description: "Optional transformers spec to override the lockfile, e.g. '==4.57.6' or '>=5.0,<6.0'. Empty means keep the synced version."
+        required: false
+        type: string
+        default: ""
 
 env:
   HF_HOME: ${{ secrets.HF_HOME }}
@@ -48,7 +53,7 @@ env:
 
 jobs:
   pytest:
-    name: Pytest (${{ matrix.test_type }})
+    name: Pytest (${{ matrix.test_type }}${{ inputs.transformers_version_spec != '' && format(' / tx{0}', inputs.transformers_version_spec) || '' }})
     runs-on: ${{ (inputs.reuse_artifacts_path != '' && matrix.test_type == 'llm') && 'rbln-sw-k8s-4c-128gb' || (inputs.reuse_artifacts_path != '' && 'rbln-sw-k8s-4c-32gb' || 'rbln-sw-k8s-ca22-1') }}
     container:
       image: ${{ vars.DEV_CONTAINER_IMAGE }}
@@ -140,6 +145,14 @@ jobs:
         if: steps.should_skip.outputs.skip != 'true'
         run: |
           uv pip install --extra-index-url ${{ secrets.DEV_PKG_URL }} rebel-compiler==${{ inputs.rebel_compiler_version }}
+
+      - name: Override transformers version (if requested)
+        if: steps.should_skip.outputs.skip != 'true' && inputs.transformers_version_spec != ''
+        run: |
+          set -euo pipefail
+          echo "Overriding transformers to spec: ${{ inputs.transformers_version_spec }}"
+          uv pip install --python /opt/venv/bin/python "transformers${{ inputs.transformers_version_spec }}"
+          python -c "import transformers; print('transformers version after override:', transformers.__version__)"
 
       - name: Prepare artifact paths
         run: |

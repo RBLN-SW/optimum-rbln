@@ -21,12 +21,12 @@ import torch
 from rebel.compile_context import CompileContext
 from transformers import AutoModel, AutoModelForCausalLM, PretrainedConfig, PreTrainedModel
 from transformers.modeling_outputs import BaseModelOutputWithPast
-from transformers.modeling_utils import no_init_weights
 
 from ....configuration_utils import RBLNCompileConfig
 from ....modeling import RBLNModel
 from ....utils.logging import get_logger
 from ....utils.runtime_utils import is_compiler_supports_buffer_resize
+from ....utils.transformers_compat import no_init_weights
 from ...modeling_attention_utils import (
     RBLNDecoderOnlyFlashAttentionMixin,
     set_default_values,
@@ -146,6 +146,7 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
         local_files_only: bool = False,
         trust_remote_code: bool = False,
         rbln_config: Optional[RBLNDecoderOnlyModelConfig] = None,
+        token: Optional[Union[bool, str]] = None,
         **kwargs,
     ):
         kwargs = cls.update_kwargs(kwargs)
@@ -154,6 +155,7 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
             cls.auto_model_class,
             model_id,
             use_auth_token=use_auth_token,
+            token=token,
             revision=revision,
             cache_dir=cache_dir,
             force_download=force_download,

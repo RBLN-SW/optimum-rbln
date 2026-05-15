@@ -17,6 +17,7 @@ from typing import Optional, Tuple, Union
 
 import torch
 
+from ....utils.transformers_compat import set_rope_param
 from ..decoderonly.decoderonly_architecture import (
     DecoderOnlyAttention,
     DecoderOnlyLayer,
@@ -32,8 +33,10 @@ class Gemma3ForCausalLMWrapper(DecoderOnlyWrapper):
         rotary_emb_global = RotaryEmbedding(config=self.config, max_seq_len_cached=max_seq_len)
 
         config = copy.deepcopy(self.config)
-        config.rope_theta = config.rope_local_base_freq
+        # Order matters on transformers v5: assigning rope_scaling replaces the
+        # underlying rope_parameters dict, so the rope_theta write must come after.
         config.rope_scaling = {"rope_type": "default"}
+        set_rope_param(config, "rope_theta", config.rope_local_base_freq)
         rotary_emb_local = RotaryEmbedding(config=config, max_seq_len_cached=max_seq_len)
 
         return (rotary_emb_global, rotary_emb_local)

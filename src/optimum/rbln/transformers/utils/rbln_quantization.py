@@ -31,10 +31,11 @@ from huggingface_hub import hf_hub_download, list_repo_files
 from safetensors.torch import load_file
 from torch.nn import Linear, Parameter
 from transformers import AutoConfig
-from transformers.modeling_utils import get_state_dict_dtype, no_init_weights
+from transformers.modeling_utils import get_state_dict_dtype
 
 from ...configuration_utils import RBLNSerializableConfigProtocol
 from ...utils.logging import get_logger
+from ...utils.transformers_compat import no_init_weights, normalize_token_kwarg
 from .qlinear import QFloatLinear, QIntLinear
 
 
@@ -174,11 +175,13 @@ def get_quantized_model(
     force_download: bool = False,
     local_files_only: bool = False,
     rbln_quantization: Optional[RBLNQuantizationConfig] = None,
+    token: Optional[Union[bool, str]] = None,
     **kwargs,
 ):
     """
     Get a quantized model from a model class and model id.
     """
+    token = normalize_token_kwarg(use_auth_token=use_auth_token, token=token)
     # torch_dtype should not be passed to AutoConfig.from_pretrained
     # since it doesn't support 'auto'
     if "torch_dtype" in kwargs:
@@ -198,7 +201,7 @@ def get_quantized_model(
     # get paths of safetensors files in the model repo
     safetensor_files = load_weight_files(
         model_id,
-        use_auth_token=use_auth_token,
+        token=token,
         revision=revision,
         cache_dir=cache_dir,
         force_download=force_download,
@@ -225,7 +228,7 @@ def get_quantized_model(
 
     config = AutoConfig.from_pretrained(
         model_id,
-        use_auth_token=use_auth_token,
+        token=token,
         revision=revision,
         cache_dir=cache_dir,
         force_download=force_download,
@@ -253,17 +256,19 @@ def load_weight_files(
     force_download: bool = False,
     local_files_only: bool = False,
     exception_keywords: Optional[List[str]] = None,
+    token: Optional[Union[bool, str]] = None,
 ) -> list[str]:
     """
     Discover and download safetensors files for the given model id.
     """
+    token = normalize_token_kwarg(use_auth_token=use_auth_token, token=token)
     exception_keywords = exception_keywords or []
     if os.path.isdir(model_id):
         safetensor_files = glob.glob(f"{model_id}/*.safetensors")
     else:
         try:
             # List all files in the repository
-            repo_files = list_repo_files(model_id, revision=revision, token=use_auth_token)
+            repo_files = list_repo_files(model_id, revision=revision, token=token)
             # Filter for safetensors files
             safetensor_files = []
 
@@ -281,7 +286,7 @@ def load_weight_files(
                             repo_id=model_id,
                             filename=file,
                             revision=revision,
-                            token=use_auth_token,
+                            token=token,
                             cache_dir=cache_dir,
                             force_download=force_download,
                             local_files_only=local_files_only,

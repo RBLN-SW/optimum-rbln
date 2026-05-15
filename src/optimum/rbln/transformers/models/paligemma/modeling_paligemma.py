@@ -18,15 +18,15 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Optional, Tuple, Type, Union
 
 import torch
-from transformers import AutoModelForVision2Seq, PaliGemmaForConditionalGeneration, PretrainedConfig, PreTrainedModel
+from transformers import PaliGemmaForConditionalGeneration, PretrainedConfig, PreTrainedModel
 from transformers.modeling_outputs import BaseModelOutputWithPooling
-from transformers.modeling_utils import no_init_weights
 from transformers.models.paligemma.configuration_paligemma import PaliGemmaConfig
 from transformers.models.paligemma.modeling_paligemma import PaligemmaModelOutputWithPast, PaliGemmaMultiModalProjector
 
 from ....configuration_utils import RBLNModelConfig
 from ....modeling import RBLNModel
 from ....utils.logging import get_logger
+from ....utils.transformers_compat import AutoModelForVision2Seq, no_init_weights
 from ...utils.rbln_runtime_wrapper import LoopProcessor
 from ..decoderonly.generation_decoderonly import RBLNDecoderOnlyGenerationMixin
 from ..decoderonly.modeling_decoderonly import RBLNDecoderOnlyOutput

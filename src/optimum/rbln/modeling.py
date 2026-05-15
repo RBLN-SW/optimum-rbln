@@ -25,6 +25,7 @@ from transformers.modeling_outputs import BaseModelOutput
 from .configuration_utils import DEFAULT_COMPILED_MODEL_NAME, RBLNModelConfig
 from .modeling_base import RBLNBaseModel
 from .utils.logging import get_logger
+from .utils.transformers_compat import normalize_token_kwarg
 
 
 if TYPE_CHECKING:
@@ -227,16 +228,18 @@ class RBLNModel(RBLNBaseModel):
         trust_remote_code: bool = False,
         # Some rbln-config should be applied before loading torch module (i.e. quantized llm)
         rbln_config: Optional[RBLNModelConfig] = None,
+        token: Optional[Union[bool, str]] = None,
         **kwargs,
     ) -> "PreTrainedModel":
         kwargs = cls.update_kwargs(kwargs)
+        token = normalize_token_kwarg(use_auth_token=use_auth_token, token=token)
 
         return cls.get_hf_class().from_pretrained(
             model_id,
             subfolder=subfolder,
             revision=revision,
             cache_dir=cache_dir,
-            use_auth_token=use_auth_token,
+            token=token,
             local_files_only=local_files_only,
             force_download=force_download,
             trust_remote_code=trust_remote_code,

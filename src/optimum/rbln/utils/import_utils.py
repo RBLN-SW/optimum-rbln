@@ -14,10 +14,40 @@
 
 import importlib.metadata
 import importlib.util
+import operator
 import warnings
 from dataclasses import dataclass
+from typing import Optional
 
 from packaging.version import Version
+
+
+_STR_OPERATION_TO_FUNC = {
+    ">": operator.gt,
+    ">=": operator.ge,
+    "==": operator.eq,
+    "!=": operator.ne,
+    "<": operator.lt,
+    "<=": operator.le,
+}
+
+
+try:
+    _transformers_version: Optional[str] = importlib.metadata.version("transformers")
+except importlib.metadata.PackageNotFoundError:
+    _transformers_version = None
+
+
+def is_transformers_version(op: str, reference_version: str) -> bool:
+    """Compare the installed transformers version to a reference version.
+
+    Example:
+        if is_transformers_version(">=", "5.0"):
+            ...
+    """
+    if _transformers_version is None:
+        return False
+    return _STR_OPERATION_TO_FUNC[op](Version(_transformers_version), Version(reference_version))
 
 
 @dataclass

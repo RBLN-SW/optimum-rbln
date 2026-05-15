@@ -16,8 +16,7 @@ import inspect
 from typing import TYPE_CHECKING, Any, Callable
 
 import torch
-from transformers import AutoModelForVision2Seq, PreTrainedModel, Qwen3VLMoeConfig
-from transformers.modeling_utils import no_init_weights
+from transformers import PreTrainedModel, Qwen3VLMoeConfig
 from transformers.models.qwen3_vl_moe.modeling_qwen3_vl_moe import (
     Qwen3VLMoeModel,
     Qwen3VLMoeTextRotaryEmbedding,
@@ -26,6 +25,7 @@ from transformers.models.qwen3_vl_moe.modeling_qwen3_vl_moe import (
     Qwen3VLMoeVisionRotaryEmbedding,
 )
 
+from ....utils.transformers_compat import AutoModelForVision2Seq, no_init_weights
 from ..decoderonly.decoderonly_runtime_utils import RBLNPageTableManager, RBLNRuntimeModel
 from ..qwen3_vl.modeling_qwen3_vl import (
     RBLNQwen3VLForConditionalGeneration,

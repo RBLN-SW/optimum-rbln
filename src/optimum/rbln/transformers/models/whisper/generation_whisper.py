@@ -34,12 +34,12 @@ Modified from `transformers.models.whisper.generation_whisper.py`
 from typing import Any, Dict, Optional, Union
 
 import torch
-import transformers
-from packaging import version
 from transformers import GenerationMixin
 from transformers.generation.configuration_utils import GenerationConfig
 from transformers.modeling_outputs import ModelOutput
 from transformers.models.whisper.generation_whisper import WhisperGenerationMixin
+
+from ....utils.import_utils import is_transformers_version
 
 
 class RBLNWhisperGenerationMixin(WhisperGenerationMixin, GenerationMixin):
@@ -120,7 +120,7 @@ class RBLNWhisperGenerationMixin(WhisperGenerationMixin, GenerationMixin):
                 num_frames = num_frames - seek
                 num_frames = num_frames[batch_idx_map]
 
-            if version.parse(transformers.__version__) >= version.parse("4.46.0"):
+            if is_transformers_version(">=", "4.46.0"):
                 seek_outputs["token_timestamps"] = self._extract_token_timestamps(
                     seek_outputs,
                     generation_config.alignment_heads,

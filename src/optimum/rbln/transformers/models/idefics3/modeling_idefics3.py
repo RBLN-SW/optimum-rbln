@@ -20,7 +20,6 @@ from typing import TYPE_CHECKING, Any, Callable, Optional, Tuple, Union
 import rebel
 import torch
 from transformers import (
-    AutoModelForVision2Seq,
     Idefics3ForConditionalGeneration,
     Idefics3VisionConfig,
     Idefics3VisionTransformer,
@@ -28,12 +27,12 @@ from transformers import (
     PreTrainedModel,
 )
 from transformers.modeling_outputs import BaseModelOutput
-from transformers.modeling_utils import no_init_weights
 from transformers.models.idefics3.modeling_idefics3 import Idefics3CausalLMOutputWithPast, Idefics3VisionEmbeddings
 
 from ....configuration_utils import RBLNCompileConfig, RBLNModelConfig
 from ....modeling import RBLNModel
 from ....utils.runtime_utils import RBLNPytorchRuntime
+from ....utils.transformers_compat import AutoModelForVision2Seq, no_init_weights
 from ...modeling_outputs import RBLNDecoderOnlyOutput
 from ..decoderonly.generation_decoderonly import RBLNDecoderOnlyGenerationMixin
 

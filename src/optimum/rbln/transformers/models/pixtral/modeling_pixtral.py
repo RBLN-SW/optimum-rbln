@@ -20,13 +20,13 @@ import torch
 import torch.nn as nn
 from transformers import PixtralVisionConfig, PixtralVisionModel
 from transformers.modeling_outputs import BaseModelOutput
-from transformers.modeling_utils import no_init_weights
 from transformers.models.pixtral.modeling_pixtral import PixtralRMSNorm, PixtralRotaryEmbedding
 
 from ....configuration_utils import RBLNCompileConfig, RBLNModelConfig
 from ....modeling import RBLNModel
 from ....utils.logging import get_logger
 from ....utils.runtime_utils import RBLNPytorchRuntime
+from ....utils.transformers_compat import no_init_weights
 from .configuration_pixtral import RBLNPixtralVisionModelConfig
 from .pixtral_architecture import PixtralAttention
 

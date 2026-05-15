@@ -17,7 +17,6 @@ from typing import TYPE_CHECKING, List, Optional, Tuple, Union
 
 import torch
 from torch import Tensor, nn
-from transformers.modeling_utils import no_init_weights
 from transformers.models.grounding_dino.modeling_grounding_dino import (
     GroundingDinoContrastiveEmbedding,
     GroundingDinoConvEncoder,
@@ -35,6 +34,7 @@ from transformers.pytorch_utils import meshgrid
 from ....configuration_utils import RBLNCompileConfig, RBLNModelConfig
 from ....modeling import RBLNModel
 from ....utils.runtime_utils import RBLNPytorchRuntime
+from ....utils.transformers_compat import no_init_weights
 from .configuration_grounding_dino import (
     RBLNGroundingDinoDecoderConfig,
     RBLNGroundingDinoEncoderConfig,

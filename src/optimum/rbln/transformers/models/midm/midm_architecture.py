@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING, Tuple
 import torch
 import torch.nn as nn
 
+from ....utils.transformers_compat import set_rope_param
 from ..decoderonly.decoderonly_architecture import (
     DecoderOnlyAttention,
     DecoderOnlyLayer,
@@ -49,9 +50,9 @@ def apply_rotary_pos_emb(q, k, cos, sin):
 
 class MidmLMHeadModelWrapper(DecoderOnlyWrapper):
     def get_rotary_emb(self, max_seq_len):
-        self.config.rope_theta = 10000
+        set_rope_param(self.config, "rope_theta", 10000)
         self.config.head_dim = self.config.n_embd // self.config.n_head
-        self.config.partial_rotary_factor = self.config.rotary_percentage
+        set_rope_param(self.config, "partial_rotary_factor", self.config.rotary_percentage)
         return super().get_rotary_emb(max_seq_len=max_seq_len)
 
     def get_rbln_attn_class(self):

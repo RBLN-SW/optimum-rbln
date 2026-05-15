@@ -17,11 +17,11 @@ from typing import TYPE_CHECKING, Optional, Tuple, Union
 
 import torch
 from transformers import ColQwen2Config, ColQwen2ForRetrieval
-from transformers.modeling_utils import no_init_weights
 from transformers.models.colqwen2.modeling_colqwen2 import ColQwen2ForRetrievalOutput
 
 from ....modeling import RBLNModel
 from ....transformers.modeling_outputs import _validate_output_hidden_states
+from ....utils.transformers_compat import no_init_weights
 
 
 if TYPE_CHECKING:
