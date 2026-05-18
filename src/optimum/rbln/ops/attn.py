@@ -33,7 +33,6 @@ def paged_attn_decode(
     scale: Tensor,
     block_table: Tensor,
     block_size: int,
-    sinks: Optional[Tensor] = None,
 ) -> Tensor:
     return torch.empty_like(q)
 
@@ -50,7 +49,6 @@ def paged_attn_decode_fake(
     scale: Tensor,
     block_table: Tensor,
     block_size: int,
-    sinks: Optional[Tensor] = None,
 ) -> Tensor:
     return torch.empty_like(q)
 
@@ -72,7 +70,6 @@ def paged_attn_decode_kv_fp8(
     block_size: int,
     k_scale: Tensor,
     v_scale: Tensor,
-    sinks: Optional[Tensor] = None,
 ) -> Tensor:
     return torch.empty_like(q)
 
@@ -91,7 +88,6 @@ def paged_attn_decode_kv_fp8_fake(
     block_size: int,
     k_scale: Tensor,
     v_scale: Tensor,
-    sinks: Optional[Tensor] = None,
 ) -> Tensor:
     return torch.empty_like(q)
 
@@ -111,7 +107,6 @@ def paged_attn_prefill(
     scale: Tensor,
     block_table: Tensor,
     block_size: int,
-    sinks: Optional[Tensor] = None,
 ) -> Tensor:
     """Defines the computation pattern for prefill phase attention with KV cache updates.
 
@@ -152,7 +147,6 @@ def paged_attn_prefill_fake(
     scale: Tensor,
     block_table: Tensor,
     block_size: int,
-    sinks: Optional[Tensor] = None,
 ) -> Tensor:
     return torch.empty_like(q)
 
@@ -174,7 +168,6 @@ def paged_attn_prefill_kv_fp8(
     block_size: int,
     k_scale: Tensor,
     v_scale: Tensor,
-    sinks: Optional[Tensor] = None,
 ) -> Tensor:
     return torch.empty_like(q)
 
@@ -193,7 +186,6 @@ def paged_attn_prefill_kv_fp8_fake(
     block_size: int,
     k_scale: Tensor,
     v_scale: Tensor,
-    sinks: Optional[Tensor] = None,
 ) -> Tensor:
     return torch.empty_like(q)
 
@@ -427,7 +419,6 @@ def paged_add_softmax_attn_decode(
     scale: Tensor,
     block_table: Tensor,
     block_size: int,
-    sinks: Optional[Tensor] = None,
 ) -> Tensor:
     """Defines the computation pattern for fused attention with KV cache updates.
 
@@ -470,6 +461,5 @@ def paged_add_softmax_attn_decode_fake(
     scale: Tensor,
     block_table: Tensor,
     block_size: int,
-    sinks: Optional[Tensor] = None,
 ) -> Tensor:
     return torch.empty_like(q)

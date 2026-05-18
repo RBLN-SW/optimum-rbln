@@ -477,7 +477,6 @@ class Seq2SeqSelfAttention(nn.Module):
             "block_table": block_tables,
             "block_size": block_size,
             "mask": attention_mask.unsqueeze(2) if attention_mask is not None else None,
-            "sinks": None,
         }
 
         attn_output = self.attn_decode(**op_args)

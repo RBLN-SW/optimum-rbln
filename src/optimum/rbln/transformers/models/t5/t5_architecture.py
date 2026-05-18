@@ -210,7 +210,6 @@ class T5LayerSelfAttention(Seq2SeqSelfAttention):
             scale=torch.tensor(1.0, dtype=torch.float32),
             block_table=block_tables,
             block_size=block_size,
-            sinks=None,
         )
 
         attn_output = attn_output.view(bsz, self.num_heads, -1, self.head_dim).transpose(1, 2)
