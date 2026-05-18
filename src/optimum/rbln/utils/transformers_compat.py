@@ -176,7 +176,12 @@ def normalize_token_kwarg(
 # a free-form key (typically the RBLN class name or model architecture
 # string) that callers pass to `assert_supported_on_current_transformers`.
 
-_UNSUPPORTED_ON_V5: set = set()
+_UNSUPPORTED_ON_V5: set = {
+    # v5 renamed MixtralDecoderLayer.block_sparse_moe; the RBLN wrapper still
+    # reaches for that attribute by name during compile. Pin transformers<5 to
+    # use this model until the wrapper is ported.
+    "RBLNMixtralForCausalLM",
+}
 
 
 def assert_supported_on_current_transformers(model_kind: str) -> None:

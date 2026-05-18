@@ -186,6 +186,9 @@ class TestQwen2Model(LLMTest.TestLLMWithoutLMHead):
 class TestQwen2ForCausalLM_OutputHiddenStates(TestQwen2ForCausalLM):
     PROMPT = ["Who are you?", "What is the capital of France?"]
     RBLN_CLASS_KWARGS = {"rbln_config": {"output_hidden_states": True, "batch_size": 2}}
+    # transformers 5.x defaults `dtype="auto"`, which loads weights in bf16 and
+    # produces a dtype mismatch against the fp32 hidden-state buffers. Force fp32.
+    HF_CONFIG_KWARGS = {**TestQwen2ForCausalLM.HF_CONFIG_KWARGS, "torch_dtype": torch.float32}
 
     def get_inputs(self):
         inputs = super().get_inputs()
@@ -201,6 +204,7 @@ class TestQwen2ForCausalLM_OutputHiddenStates(TestQwen2ForCausalLM):
 class TestQwen2Model_OutputHiddenStates(TestQwen2Model):
     PROMPT = ["Who are you?", "What is the capital of France?"]
     RBLN_CLASS_KWARGS = {"rbln_config": {"output_hidden_states": True, "batch_size": 2}}
+    HF_CONFIG_KWARGS = {**TestQwen2Model.HF_CONFIG_KWARGS, "torch_dtype": torch.float32}
 
     def test_generate(self):
         self._test_output_hidden_states_generation()
@@ -882,6 +886,9 @@ class TestGemma3ForCausalLM(LLMTest.TestLLM):
     HF_MODEL_ID = "google/gemma-3-1b-it"
     HF_CONFIG_KWARGS = {
         "trust_remote_code": True,
+        # transformers 5.x defaults `dtype="auto"`; RBLNGemma3ForCausalLM rejects
+        # non-fp32 weights, so force fp32 explicitly.
+        "torch_dtype": torch.float32,
     }
 
     @classmethod
@@ -1017,6 +1024,7 @@ class TestDisallowedLlama_4(DisallowedTestBase.DisallowedTest):
     RBLN_CLASS_KWARGS = {"rbln_config": {"attn_impl": "flash_attn", "kvcache_partition_len": 1024}}
 
 
+@unittest.skipIf(_SKIP_ON_V5, "MixtralDecoderLayer renamed block_sparse_moe in transformers>=5; wrapper not ported")
 class TestMixtralForCausalLM(LLMTest.TestLLM):
     RBLN_CLASS = RBLNMixtralForCausalLM
     HF_MODEL_ID = "vprovorg/tiny-random-Mixtral-8x7B-v0.1"

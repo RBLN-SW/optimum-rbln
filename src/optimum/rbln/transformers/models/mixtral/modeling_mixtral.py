@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from ....utils.transformers_compat import assert_supported_on_current_transformers
 from ...models.decoderonly import RBLNDecoderOnlyModelForCausalLM
 from .mixtral_architecture import MixtralWrapper
 
@@ -66,3 +67,8 @@ class RBLNMixtralForCausalLM(RBLNDecoderOnlyModelForCausalLM):
     """
 
     _decoder_wrapper_cls = MixtralWrapper
+
+    @classmethod
+    def from_pretrained(cls, *args, **kwargs):
+        assert_supported_on_current_transformers("RBLNMixtralForCausalLM")
+        return super().from_pretrained(*args, **kwargs)
