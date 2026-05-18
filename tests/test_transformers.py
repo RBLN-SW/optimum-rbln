@@ -421,7 +421,7 @@ class TestColQwen2Model(BaseTest.TestModel):
     RBLN_CLASS_KWARGS = {
         "rbln_config": {
             "vlm": {
-                "visual": {"max_seq_lens": 512},
+                "visual": {"max_seq_len": 512},
                 "tensor_parallel_size": 1,
                 "max_seq_len": 32_768,
             }
