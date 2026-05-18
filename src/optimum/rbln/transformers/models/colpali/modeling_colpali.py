@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import bisect
 from pathlib import Path
 from typing import Optional, Tuple, Union
 
@@ -42,48 +41,6 @@ class LoopVisionTower(LoopProcessor):
         return BaseModelOutputWithPooling(
             last_hidden_state=kwargs["out"],
         )
-
-
-class LoopLanguageModel(LoopProcessor):
-    def __init__(self, language_model: RBLNModel, rbln_config: RBLNModelConfig):
-        super().__init__(model=language_model)
-        self.rbln_config = rbln_config
-
-    def _get_batch_size(self, inputs_embeds, **kwargs):
-        return inputs_embeds.shape[0]
-
-    def _prepare_inputs_before_loop(self, *, inputs_embeds: torch.Tensor, attention_mask: torch.Tensor, **kwargs):
-        input_len = inputs_embeds.shape[1]
-        idx = bisect.bisect_left(self.rbln_config.max_seq_lens, input_len)
-        if idx == len(self.rbln_config.max_seq_lens):
-            raise ValueError(
-                f"Required seq_len({input_len}) is larger than available max_seq_lens({self.rbln_config.max_seq_lens})."
-            )
-        max_seq_len = self.rbln_config.max_seq_lens[idx]
-        padded_inputs_embed = torch.nn.functional.pad(inputs_embeds, (0, 0, 0, max_seq_len - input_len))
-        padded_attn_mask = torch.nn.functional.pad(attention_mask, (0, max_seq_len - input_len)).to(torch.float32)
-        padded_position_ids = torch.arange(max_seq_len, dtype=torch.int32).view(1, -1)
-
-        return {
-            "padded_inputs_embed": padded_inputs_embed,
-            "padded_attn_mask": padded_attn_mask,
-            "padded_position_ids": padded_position_ids,
-        }
-
-    def _prepare_inputs_for_iteration(self, index: int, common_inputs, *args, **kwargs):
-        item_kwargs = {
-            "inputs_embeds": common_inputs["padded_inputs_embed"][index : index + 1],
-            "attention_mask": common_inputs["padded_attn_mask"][index : index + 1],
-            "position_ids": common_inputs["padded_position_ids"],
-            "out": [tensor[index : index + 1] for tensor in kwargs["out"]],
-        }
-        return ([], item_kwargs)
-
-    def _process_outputs(self, outputs: list, **kwargs):
-        if self.rbln_config.output_hidden_states:
-            return kwargs["out"][0], tuple(kwargs["out"][1:])
-        else:
-            return kwargs["out"]
 
 
 class RBLNColPaliForRetrieval(RBLNModel):
