@@ -241,6 +241,7 @@ class TestQwen2MoeForCausalLM(LLMTest.TestLLM):
     TEST_LEVEL = TestLevel.FULL
 
 
+@unittest.skipIf(_SKIP_ON_V5, "Qwen3MoeSparseMoeBlock dropped num_experts in transformers>=5; wrapper not ported")
 class TestQwen3MoeForCausalLM(LLMTest.TestLLM):
     RBLN_CLASS = RBLNQwen3MoeForCausalLM
     HF_MODEL_ID = "katuni4ka/tiny-random-qwen3moe"

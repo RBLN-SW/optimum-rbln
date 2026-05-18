@@ -1246,7 +1246,10 @@ class RotaryEmbedding(nn.Module):
         super().__init__()
 
         if hasattr(config, "rope_scaling") and config.rope_scaling is not None:
-            rope_type = config.rope_scaling.get("rope_type", config.rope_scaling.get("type"))
+            # On transformers v5, some configs expose rope_scaling with an
+            # explicit rope_type=None instead of omitting the key; fall back
+            # to "default" so the ROPE_INIT_FUNCTIONS lookup succeeds.
+            rope_type = config.rope_scaling.get("rope_type") or config.rope_scaling.get("type") or "default"
         else:
             rope_type = "default"
 

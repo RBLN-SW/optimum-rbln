@@ -181,6 +181,9 @@ _UNSUPPORTED_ON_V5: set = {
     # reaches for that attribute by name during compile. Pin transformers<5 to
     # use this model until the wrapper is ported.
     "RBLNMixtralForCausalLM",
+    # v5 Qwen3MoeSparseMoeBlock dropped the `num_experts` attribute the RBLN
+    # wrapper depends on. Pin transformers<5 to use this model.
+    "RBLNQwen3MoeForCausalLM",
 }
 
 
