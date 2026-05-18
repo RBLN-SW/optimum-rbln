@@ -971,8 +971,11 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
         config_file.update(rbln_runtime_kwargs)
         rbln_config = cls(**config_file)
         if len(rbln_kwargs) > 0:
+            non_save_attrs = set(getattr(cls, "subclass_non_save_attributes", []))
             for key, value in rbln_kwargs.items():
-                if getattr(rbln_config, key) != value:
+                if key in non_save_attrs:
+                    setattr(rbln_config, key, value)
+                elif getattr(rbln_config, key) != value:
                     raise ValueError(
                         f"Cannot set the following arguments: {list(rbln_kwargs.keys())} "
                         f"Since the value is already set to {getattr(rbln_config, key)}"
