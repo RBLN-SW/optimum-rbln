@@ -231,11 +231,7 @@ class RBLNModel(RBLNBaseModel):
     ) -> "PreTrainedModel":
         kwargs = cls.update_kwargs(kwargs)
 
-        # Default to following the checkpoint's dtype (config.json `torch_dtype`).
-        # Without this, HF `from_pretrained` upcasts all weights to torch.float32
-        # (the global default dtype), which silently inflates trace precision and
-        # can mask precision-sensitive compile decisions downstream.
-        # Users can still override by passing `dtype=...` or `torch_dtype=...`.
+        # Follow the checkpoint's dtype by default; override with `dtype=...`.
         if "dtype" not in kwargs and "torch_dtype" not in kwargs:
             kwargs["dtype"] = "auto"
 
