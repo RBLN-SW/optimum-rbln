@@ -165,6 +165,9 @@ jobs:
       rebel_compiler_version: ${{ needs.load-version.outputs.compiler_version }}
       test_level: "default"
       transformers_version_spec: ${{ matrix.transformers_version_spec }}
+      # Surface every residual v5 failure in one shot instead of having one
+      # test_type fail cancel the rest within the same matrix slot.
+      fail_fast: false
     secrets: inherit
 
   # Full Schedule test if Dependency update
