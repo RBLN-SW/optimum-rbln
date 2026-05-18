@@ -34,6 +34,8 @@ def custom_moe_glu(
     gate_proj_bias: Optional[Tensor] = None,
     up_proj_bias: Optional[Tensor] = None,
     down_proj_bias: Optional[Tensor] = None,
+    expert_map: Optional[Tensor] = None,
+    dp_mask: Optional[Tensor] = None,
 ) -> Tensor:
     """
     Customized MoE GLU operation.
@@ -52,6 +54,8 @@ def custom_moe_glu(
     - gate_proj_bias: [num_experts, intermediate_size]
     - up_proj_bias: [num_experts, intermediate_size]
     - down_proj_bias: [num_experts, hidden_size]
+    - expert_map: [num_experts] global->local expert index mapping (torch.distributed)
+    - dp_mask: data-parallel mask (torch.distributed)
 
     Returns:
         Tensor: [batch * seq_len, hidden_size]
@@ -73,6 +77,8 @@ def custom_moe_glu_fake(
     gate_proj_bias: Optional[Tensor] = None,
     up_proj_bias: Optional[Tensor] = None,
     down_proj_bias: Optional[Tensor] = None,
+    expert_map: Optional[Tensor] = None,
+    dp_mask: Optional[Tensor] = None,
 ) -> Tensor:
     return torch.empty_like(hidden_states)
 
@@ -88,6 +94,8 @@ def custom_moe_ff(
     masked_routing_weight: Tensor,
     gate_proj_bias: Optional[Tensor] = None,
     down_proj_bias: Optional[Tensor] = None,
+    expert_map: Optional[Tensor] = None,
+    dp_mask: Optional[Tensor] = None,
 ) -> Tensor:
     """
     Customized MoE FF operation.
@@ -99,6 +107,8 @@ def custom_moe_ff(
     - masked_routing_weight: [batch * seq_len, num_experts]
     - gate_proj_bias: [num_experts * intermediate_size]
     - down_proj_bias: [hidden_size]
+    - expert_map: [num_experts] global->local expert index mapping (torch.distributed)
+    - dp_mask: data-parallel mask (torch.distributed)
 
     Returns:
         Tensor: [batch * seq_len, hidden_size]
@@ -114,6 +124,8 @@ def custom_moe_ff_fake(
     masked_routing_weight: Tensor,
     gate_proj_bias: Optional[Tensor] = None,
     down_proj_bias: Optional[Tensor] = None,
+    expert_map: Optional[Tensor] = None,
+    dp_mask: Optional[Tensor] = None,
 ) -> Tensor:
     return torch.empty_like(hidden_states)
 
@@ -139,6 +151,8 @@ def custom_moe_glu_mxfp4(
     limit: Tensor,
     k: int,
     post_norm: bool,
+    expert_map: Optional[Tensor] = None,
+    dp_mask: Optional[Tensor] = None,
 ) -> Tensor:
     """
     Customized MoE GLU operation.
@@ -189,5 +203,7 @@ def custom_moe_glu_mxfp4_fake(
     limit: Tensor,
     k: int,
     post_norm: bool,
+    expert_map: Optional[Tensor] = None,
+    dp_mask: Optional[Tensor] = None,
 ) -> Tensor:
     return torch.empty_like(hidden_states)

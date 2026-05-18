@@ -108,7 +108,10 @@ class Seq2SeqEncoderWrapper(nn.Module):
         cross_key_values = list(cross_key_values)
         for i in range(self.n_layer * 2):
             cross_key_values[i] = torch.ops.rbln_custom_ops.rbln_cache_update(
-                cross_key_values[i], cross_kv[i], b_idx[0], batch_axis
+                cache=cross_key_values[i],
+                state=cross_kv[i],
+                position=b_idx[0],
+                axis=batch_axis,
             )
 
         return cross_key_values
@@ -463,23 +466,21 @@ class Seq2SeqSelfAttention(nn.Module):
         value_states = self._shape(value_states, -1, bsz)
 
         block_size = past_key_value[0].shape[-2]
-        args = [
-            query_states,
-            key_states,
-            value_states,
-            past_key_value[0].view(bsz, self.num_heads, 1, -1, self.head_dim),
-            past_key_value[1].view(bsz, self.num_heads, 1, -1, self.head_dim),
-            cache_position,
-            torch.tensor(1.0, dtype=torch.float32),  # scale
-            block_tables,
-            block_size,
-        ]
-        if attention_mask is not None:
-            args.insert(3, attention_mask.unsqueeze(2))
-        else:
-            args.append(None)
+        op_args = {
+            "q": query_states,
+            "k": key_states,
+            "v": value_states,
+            "kcache": past_key_value[0].view(bsz, self.num_heads, 1, -1, self.head_dim),
+            "vcache": past_key_value[1].view(bsz, self.num_heads, 1, -1, self.head_dim),
+            "seq": cache_position,
+            "scale": torch.tensor(1.0, dtype=torch.float32),
+            "block_table": block_tables,
+            "block_size": block_size,
+            "mask": attention_mask.unsqueeze(2) if attention_mask is not None else None,
+            "sinks": None,
+        }
 
-        attn_output = self.attn_decode(*args)
+        attn_output = self.attn_decode(**op_args)
 
         attn_output = attn_output.view(bsz, self.num_heads, -1, self.head_dim).transpose(1, 2)
         attn_output = attn_output.reshape(bsz, -1, self.num_heads * self.head_dim)
