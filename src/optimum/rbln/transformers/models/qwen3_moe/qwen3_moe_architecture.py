@@ -96,15 +96,17 @@ class Qwen3MoeMLP(nn.Module):
 
         if hasattr(experts, "gate_up_proj"):
             # v5: experts is Qwen3MoeExperts with fused parameters
-            # gate_up_proj [E, 2I, H] and down_proj [E, H, I].
+            # gate_up_proj [E, 2I, H] and down_proj [E, H, I]. transformers v5
+            # builds these under torch.inference_mode(); detach+clone gives a
+            # regular leaf tensor that nn.Parameter can wrap safely.
             self.num_experts = experts.num_experts
             self.hidden_size = experts.hidden_dim
             self.intermediate_size = experts.intermediate_dim
-            gate_up = experts.gate_up_proj.data
+            gate_up = experts.gate_up_proj.detach().clone()
             intermediate_size = gate_up.shape[1] // 2
             gate_stack = gate_up[:, :intermediate_size, :].contiguous()
             up_stack = gate_up[:, intermediate_size:, :].contiguous()
-            down_stack = experts.down_proj.data.contiguous()
+            down_stack = experts.down_proj.detach().clone().contiguous()
         else:
             # v4: experts is a ModuleList of MLPs with gate_proj/up_proj/down_proj.
             self.hidden_size = experts[0].hidden_size

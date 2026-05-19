@@ -68,12 +68,15 @@ class MixtralBlockSparseTop2MLP(nn.Module):
         if hasattr(experts, "gate_up_proj"):
             # v5: experts is a single MixtralExperts module with fused tensors
             # gate_up_proj [E, 2I, H] (gate || up along the row axis) and
-            # down_proj [E, H, I].
-            gate_up = experts.gate_up_proj.data
+            # down_proj [E, H, I]. transformers v5 builds these under
+            # torch.inference_mode(), so the tensors are inference tensors;
+            # detach+clone produces a regular leaf tensor that can be wrapped
+            # in nn.Parameter and that tracks its version counter.
+            gate_up = experts.gate_up_proj.detach().clone()
             intermediate_size = gate_up.shape[1] // 2
             self.w1_weight = nn.Parameter(gate_up[:, :intermediate_size, :].contiguous())
             self.w3_weight = nn.Parameter(gate_up[:, intermediate_size:, :].contiguous())
-            self.w2_weight = nn.Parameter(experts.down_proj.data.contiguous())
+            self.w2_weight = nn.Parameter(experts.down_proj.detach().clone())
         else:
             # v4: experts is a ModuleList of MixtralBlockSparseTop2MLP, each
             # with per-expert nn.Linear w1/w2/w3.
