@@ -466,7 +466,7 @@ class RBLNGemma4ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMix
     auto_model_class = AutoModelForImageTextToText
     _rbln_submodule_prefix = "model"
     _rbln_submodules = [
-        # {"name": "vision_tower"},
+        {"name": "vision_tower"},
         {"name": "language_model"},
     ]
     _supports_non_fp32 = True
