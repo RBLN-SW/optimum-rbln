@@ -89,11 +89,16 @@ class RBLNGptOssExperts(nn.Module):
         self.top_k = top_k
 
     def forward(self, hidden_states: torch.Tensor, router_logits: torch.Tensor) -> torch.Tensor:
-        token_dim = router_logits.shape[0]
+        token_dim = hidden_states.shape[0]
+        pad_size = 0
         if token_dim <= 8:
-            router_logits = F.pad(router_logits, (0, 0, 0, 64 - token_dim), value=0.0)
+            pad_size = 64 - token_dim
+            hidden_states = F.pad(hidden_states, (0, 0, 0, pad_size))
+            router_logits = F.pad(router_logits, (0, 0, 0, pad_size), value=0.0)
         masked_routing_weight = compute_masked_routing_weight_topk_first(router_logits, top_k=self.top_k)
-        return torch.ops.rbln_custom_ops.custom_moe_glu_mxfp4(
+        if pad_size > 0:
+            masked_routing_weight = F.pad(masked_routing_weight[:, :token_dim], (0, pad_size), value=0.0)
+        out = torch.ops.rbln_custom_ops.custom_moe_glu_mxfp4(
             hidden_states=hidden_states,
             gate_proj_blocks=self.gate_proj_blocks,
             gate_proj_scales=self.gate_proj_scales,
@@ -108,6 +113,9 @@ class RBLNGptOssExperts(nn.Module):
             alpha=torch.tensor(self.alpha, dtype=hidden_states.dtype),
             limit=torch.tensor(self.limit, dtype=hidden_states.dtype),
         )
+        if pad_size > 0:
+            out = out[:token_dim]
+        return out
 
 
 class RBLNGptOssMLP(nn.Module):
