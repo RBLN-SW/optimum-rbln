@@ -184,6 +184,10 @@ _UNSUPPORTED_ON_V5: set = {
     # v5 Qwen3MoeSparseMoeBlock dropped the `num_experts` attribute the RBLN
     # wrapper depends on. Pin transformers<5 to use this model.
     "RBLNQwen3MoeForCausalLM",
+    # v5 Gemma3TextConfig nests rope_parameters per layer_type
+    # (sliding/full) and dropped rope_theta / rope_local_base_freq flat
+    # attrs. The RBLN wrapper still assumes the v4 layout. Pin transformers<5.
+    "RBLNGemma3ForCausalLM",
 }
 
 

@@ -882,6 +882,9 @@ class TestGemma3ForConditionalGeneration_OutputHiddenStates(TestGemma3ForConditi
         self._test_output_hidden_states_generation()
 
 
+@unittest.skipIf(
+    _SKIP_ON_V5, "Gemma3TextConfig nested rope_parameters per layer_type in transformers>=5; wrapper not ported"
+)
 class TestGemma3ForCausalLM(LLMTest.TestLLM):
     RBLN_CLASS = RBLNGemma3ForCausalLM
     HF_MODEL_ID = "google/gemma-3-1b-it"
