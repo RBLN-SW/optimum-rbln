@@ -247,6 +247,7 @@ class RBLNGemma4ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
         rbln_config: RBLNGemma4ForCausalLMConfig,
         model_config: PretrainedConfig,
     ):
+        cls._pre_populate_kvcache_metas(model_config, rbln_config)
         base_info = super().get_input_info(
             batch_size=batch_size,
             query_length=query_length,
@@ -284,12 +285,6 @@ class RBLNGemma4ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
                 save_dict["embed_tokens_per_layer"] = embed_per_layer.state_dict()
         if save_dict:
             torch.save(save_dict, save_dir_path / subfolder / "torch_artifacts.pth")
-
-    @classmethod
-    def _wrap_model_if_needed(cls, model: torch.nn.Module, rbln_config: RBLNModelConfig) -> torch.nn.Module:
-        model = cls._decoder_wrapper_cls(model, rbln_config, cls._use_rotary_emb).eval()
-        cls._pre_populate_kvcache_metas(model.config, rbln_config)
-        return model
 
     def _create_per_layer_embedding_layer(self):
         from transformers.models.gemma4.modeling_gemma4 import Gemma4TextScaledWordEmbedding
