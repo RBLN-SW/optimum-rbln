@@ -17,7 +17,7 @@ from typing import Optional, Tuple, Union
 
 import torch
 
-from ....utils.transformers_compat import set_rope_param
+from ....utils.import_utils import is_transformers_version
 from ..decoderonly.decoderonly_architecture import (
     DecoderOnlyAttention,
     DecoderOnlyLayer,
@@ -28,17 +28,48 @@ from ..decoderonly.decoderonly_architecture import (
 )
 
 
+def _resolve_gemma3_rope_bases(config) -> Tuple[float, float]:
+    """Return (global_base, local_base) RoPE thetas across transformers versions.
+
+    v4: ``config.rope_theta`` (global) and ``config.rope_local_base_freq`` (local) are flat attrs.
+    v5: bases live under ``config.rope_parameters[<layer_type>]['rope_theta']``,
+    keyed by ``full_attention`` / ``sliding_attention``.
+    """
+    if is_transformers_version(">=", "5.0"):
+        rope_params = config.rope_parameters or {}
+        return (
+            rope_params["full_attention"]["rope_theta"],
+            rope_params["sliding_attention"]["rope_theta"],
+        )
+    return config.rope_theta, config.rope_local_base_freq
+
+
+def _build_rotary_config(base_config, rope_theta: float):
+    """Materialize a config with a single flat rope_theta for RotaryEmbedding.
+
+    Both global and local rotary embeddings reuse the standard "default" RoPE
+    init; only the base frequency differs, so we clone the parent config and
+    overwrite both rope_scaling and rope_parameters (v5) to a flat single-entry
+    layout.
+    """
+    cfg = copy.deepcopy(base_config)
+    cfg.rope_scaling = {"rope_type": "default", "rope_theta": rope_theta}
+    if is_transformers_version(">=", "5.0"):
+        cfg.rope_parameters = {"rope_type": "default", "rope_theta": rope_theta}
+    else:
+        cfg.rope_theta = rope_theta
+    return cfg
+
+
 class Gemma3ForCausalLMWrapper(DecoderOnlyWrapper):
     def get_rotary_emb(self, max_seq_len):
-        rotary_emb_global = RotaryEmbedding(config=self.config, max_seq_len_cached=max_seq_len)
-
-        config = copy.deepcopy(self.config)
-        # Order matters on transformers v5: assigning rope_scaling replaces the
-        # underlying rope_parameters dict, so the rope_theta write must come after.
-        config.rope_scaling = {"rope_type": "default"}
-        set_rope_param(config, "rope_theta", config.rope_local_base_freq)
-        rotary_emb_local = RotaryEmbedding(config=config, max_seq_len_cached=max_seq_len)
-
+        global_base, local_base = _resolve_gemma3_rope_bases(self.config)
+        rotary_emb_global = RotaryEmbedding(
+            config=_build_rotary_config(self.config, global_base), max_seq_len_cached=max_seq_len
+        )
+        rotary_emb_local = RotaryEmbedding(
+            config=_build_rotary_config(self.config, local_base), max_seq_len_cached=max_seq_len
+        )
         return (rotary_emb_global, rotary_emb_local)
 
     def get_rbln_attn_class(self):

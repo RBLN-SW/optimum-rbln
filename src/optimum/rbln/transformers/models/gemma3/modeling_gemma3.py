@@ -22,7 +22,7 @@ from transformers.models.gemma3.modeling_gemma3 import Gemma3TextScaledWordEmbed
 
 from ....configuration_utils import RBLNCompileConfig, RBLNModelConfig
 from ....modeling import RBLNModel
-from ....utils.transformers_compat import assert_supported_on_current_transformers, get_vlm_submodule, no_init_weights
+from ....utils.transformers_compat import get_vlm_submodule, no_init_weights
 from ...modeling_outputs import RBLNDecoderOnlyOutput
 from ...utils.rbln_runtime_wrapper import LoopProcessor
 from ..decoderonly.decoderonly_runtime_utils import RBLNPageTableManager
@@ -391,11 +391,6 @@ class RBLNGemma3ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
 
     _decoder_wrapper_cls = Gemma3ForCausalLMWrapper
     _supports_non_fp32 = False
-
-    @classmethod
-    def from_pretrained(cls, *args, **kwargs):
-        assert_supported_on_current_transformers("RBLNGemma3ForCausalLM")
-        return super().from_pretrained(*args, **kwargs)
 
     def setup_runtime(self):
         # Initialize shared resources to be used across Runtime instances (prefill and decode phases)

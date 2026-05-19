@@ -241,7 +241,6 @@ class TestQwen2MoeForCausalLM(LLMTest.TestLLM):
     TEST_LEVEL = TestLevel.FULL
 
 
-@unittest.skipIf(_SKIP_ON_V5, "Qwen3MoeSparseMoeBlock dropped num_experts in transformers>=5; wrapper not ported")
 class TestQwen3MoeForCausalLM(LLMTest.TestLLM):
     RBLN_CLASS = RBLNQwen3MoeForCausalLM
     HF_MODEL_ID = "katuni4ka/tiny-random-qwen3moe"
@@ -882,9 +881,6 @@ class TestGemma3ForConditionalGeneration_OutputHiddenStates(TestGemma3ForConditi
         self._test_output_hidden_states_generation()
 
 
-@unittest.skipIf(
-    _SKIP_ON_V5, "Gemma3TextConfig nested rope_parameters per layer_type in transformers>=5; wrapper not ported"
-)
 class TestGemma3ForCausalLM(LLMTest.TestLLM):
     RBLN_CLASS = RBLNGemma3ForCausalLM
     HF_MODEL_ID = "google/gemma-3-1b-it"
@@ -1028,7 +1024,6 @@ class TestDisallowedLlama_4(DisallowedTestBase.DisallowedTest):
     RBLN_CLASS_KWARGS = {"rbln_config": {"attn_impl": "flash_attn", "kvcache_partition_len": 1024}}
 
 
-@unittest.skipIf(_SKIP_ON_V5, "MixtralDecoderLayer renamed block_sparse_moe in transformers>=5; wrapper not ported")
 class TestMixtralForCausalLM(LLMTest.TestLLM):
     RBLN_CLASS = RBLNMixtralForCausalLM
     HF_MODEL_ID = "vprovorg/tiny-random-Mixtral-8x7B-v0.1"

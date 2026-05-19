@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from ....utils.transformers_compat import assert_supported_on_current_transformers
 from ...models.decoderonly import RBLNDecoderOnlyModelForCausalLM
 from .qwen3_moe_architecture import Qwen3MoeWrapper
 
@@ -67,8 +66,3 @@ class RBLNQwen3MoeForCausalLM(RBLNDecoderOnlyModelForCausalLM):
     """
 
     _decoder_wrapper_cls = Qwen3MoeWrapper
-
-    @classmethod
-    def from_pretrained(cls, *args, **kwargs):
-        assert_supported_on_current_transformers("RBLNQwen3MoeForCausalLM")
-        return super().from_pretrained(*args, **kwargs)
