@@ -48,7 +48,6 @@ class MixtralSparseMoeBlock(nn.Module):
         gate.weight = nn.Parameter(gate_weight.detach().clone())
         self.gate = gate
         self.experts = MixtralBlockSparseTop2MLP(model.experts, self.top_k)
-        model.experts = None
 
     def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
         batch_size, sequence_length, hidden_dim = hidden_states.shape
