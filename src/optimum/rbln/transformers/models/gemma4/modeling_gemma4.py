@@ -26,13 +26,14 @@ from transformers import (
     PreTrainedModel,
 )
 from transformers.initialization import no_init_weights
-from transformers.modeling_outputs import BaseModelOutputWithPooling
+from transformers.modeling_outputs import BaseModelOutputWithPast, BaseModelOutputWithPooling
 
 from ....configuration_utils import RBLNCompileConfig, RBLNModelConfig
 from ....modeling import RBLNModel
 from ....utils.logging import get_logger
 from ...modeling_outputs import RBLNDecoderOnlyOutput
 from ...utils.rbln_runtime_wrapper import LoopProcessor
+from ..decoderonly.configuration_decoderonly import KVCacheMeta
 from ..decoderonly.decoderonly_runtime_utils import RBLNPageTableManager
 from ..decoderonly.generation_decoderonly import RBLNDecoderOnlyGenerationMixin
 from ..decoderonly.modeling_decoderonly import RBLNDecoderOnlyModelForCausalLM
@@ -58,7 +59,7 @@ class LoopVisionTower(LoopProcessor):
     def __init__(self, vision_tower: "RBLNModel"):
         super().__init__(model=vision_tower)
 
-    def _get_batch_size(self, pixel_values, **kwargs):
+    def _get_batch_size(self, pixel_values, pixel_position_ids, **kwargs):
         return pixel_values.shape[0]
 
     def _prepare_inputs_for_iteration(self, index, common_inputs, pixel_values, pixel_position_ids, **kwargs):
@@ -73,6 +74,8 @@ class LoopVisionTower(LoopProcessor):
 
 
 class LoopProjector(LoopProcessor):
+    """Per-image loop wrapper around the compiled embed_vision (Gemma4MultimodalEmbedder) runtime."""
+
     def __init__(self, multi_modal_projector: "RBLNModel"):
         super().__init__(model=multi_modal_projector)
 
@@ -132,14 +135,12 @@ class RBLNGemma4VisionModel(RBLNModel):
 
         max_patches = rbln_config.max_patches
         hidden_size = model_config.hidden_size
-        head_dim = getattr(model_config, "head_dim", None) or (
-            hidden_size // model_config.num_attention_heads
-        )
+        head_dim = getattr(model_config, "head_dim", None) or (hidden_size // model_config.num_attention_heads)
 
         input_info = [
-            ("inputs_embeds", [rbln_config.batch_size, max_patches, hidden_size], "float32"),
+            ("inputs_embeds", [rbln_config.batch_size, max_patches, hidden_size], rbln_config.dtype),
             ("pixel_position_ids", [rbln_config.batch_size, max_patches, 2], "int64"),
-            ("attn_mask", [rbln_config.batch_size, 1, max_patches, max_patches], "float32"),
+            ("attn_mask", [rbln_config.batch_size, 1, max_patches, max_patches], rbln_config.dtype),
             ("padding_positions", [rbln_config.batch_size, max_patches], "bool"),
             ("cos", [rbln_config.batch_size, max_patches, head_dim], rbln_config.dtype),
             ("sin", [rbln_config.batch_size, max_patches, head_dim], rbln_config.dtype),
@@ -180,12 +181,12 @@ class RBLNGemma4VisionModel(RBLNModel):
         if "patch_embedder" in artifacts:
             self.patch_embedder = self._create_patch_embedder()
             self.patch_embedder.load_state_dict(artifacts["patch_embedder"])
+            self.patch_embedder.to(self.rbln_config.dtype)
             self.patch_embedder.eval()
         else:
             self.patch_embedder = None
-        # rotary_emb has no learnable weights — recreate purely from config.
         self.rotary_emb = self._create_rotary_emb().eval()
-        return super().__post_init__(**kwargs)
+        super().__post_init__(**kwargs)
 
     def forward(
         self,
@@ -198,26 +199,25 @@ class RBLNGemma4VisionModel(RBLNModel):
                 "patch_embedder was not loaded from torch_artifacts.pth. "
                 "Re-export the model so that patch_embedder weights are saved as a host-side artifact."
             )
-        padding_positions = (pixel_position_ids == -1).all(dim=-1)  # (B, max_patches), True=pad
+        padding_positions = (pixel_position_ids == -1).all(dim=-1)
         with torch.no_grad():
             inputs_embeds = self.patch_embedder(pixel_values, pixel_position_ids, padding_positions)
             cos, sin = self.rotary_emb(inputs_embeds, pixel_position_ids)
         cos = cos.to(self.rbln_config.dtype)
         sin = sin.to(self.rbln_config.dtype)
 
-        valid = (~padding_positions)[:, None, :].to(inputs_embeds.dtype)  # (B, 1, S)
-        attn_mask = valid[..., None, :] * valid[..., None]  # (B, 1, S, S)
+        valid = (~padding_positions)[:, None, :].to(inputs_embeds.dtype)
+        attn_mask = valid[..., None, :] * valid[..., None]
         attn_mask = (1.0 - attn_mask) * torch.finfo(inputs_embeds.dtype).min
 
-        return super().forward(
-            inputs_embeds, pixel_position_ids, attn_mask, padding_positions, cos, sin, **kwargs
-        )
+        return super().forward(inputs_embeds, pixel_position_ids, attn_mask, padding_positions, cos, sin, **kwargs)
 
     def _prepare_output(self, output, return_dict):
-        last_hidden_state = output[0] if isinstance(output, (tuple, list)) else output
+        hidden_states, pooler_mask = output
+        hidden_states = hidden_states[pooler_mask]
         if not return_dict:
-            return (last_hidden_state,)
-        return BaseModelOutputWithPooling(last_hidden_state=last_hidden_state)
+            return (hidden_states,)
+        return BaseModelOutputWithPast(last_hidden_state=hidden_states)
 
 
 class RBLNGemma4ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
@@ -237,7 +237,7 @@ class RBLNGemma4ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
     """
 
     _decoder_wrapper_cls = Gemma4ForCausalLMWrapper
-    _supports_non_fp32 = False
+    _supports_non_fp32 = True
 
     @classmethod
     def get_input_info(
@@ -285,6 +285,10 @@ class RBLNGemma4ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
         if save_dict:
             torch.save(save_dict, save_dir_path / subfolder / "torch_artifacts.pth")
 
+    @classmethod
+    def _wrap_model_if_needed(cls, model: torch.nn.Module, rbln_config: RBLNModelConfig) -> torch.nn.Module:
+        cls._pre_populate_kvcache_metas(model.config, rbln_config)
+        return cls._decoder_wrapper_cls(model, rbln_config, cls._use_rotary_emb).eval()
 
     def _create_per_layer_embedding_layer(self):
         from transformers.models.gemma4.modeling_gemma4 import Gemma4TextScaledWordEmbedding
@@ -305,19 +309,21 @@ class RBLNGemma4ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
         if self.rbln_config.use_inputs_embeds and "embed_tokens" in artifacts:
             self.embed_tokens = self._create_embedding_layer()
             self.embed_tokens.load_state_dict(artifacts["embed_tokens"])
+            self.embed_tokens.to(self.rbln_config.dtype)
         else:
             self.embed_tokens = None
 
         if getattr(self.config, "hidden_size_per_layer_input", 0) and "embed_tokens_per_layer" in artifacts:
             self.embed_tokens_per_layer = self._create_per_layer_embedding_layer()
             self.embed_tokens_per_layer.load_state_dict(artifacts["embed_tokens_per_layer"])
+            self.embed_tokens_per_layer.to(self.rbln_config.dtype)
         else:
             self.embed_tokens_per_layer = None
 
         self.setup_runtime()
 
     def setup_runtime(self):
-        dec_attn_mask = torch.zeros(self.rbln_config.batch_size, self.rbln_config.max_seq_len, dtype=torch.float32)
+        dec_attn_mask = torch.zeros(self.rbln_config.batch_size, self.rbln_config.max_seq_len, dtype=self.dtype)
         page_table_manager = RBLNPageTableManager(self.rbln_config)
 
         common_kwargs = {
@@ -334,6 +340,7 @@ class RBLNGemma4ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
 
         self.prefill_decoder = RBLNGemma4RuntimeModel(
             runtime=self.model[0],
+            image_prefill=self.model[1] if self.rbln_config.use_image_prefill else None,
             phase="prefill",
             batch_size=self.rbln_config.batch_size,
             logits_last_dim=self.logits_last_dim,
@@ -363,6 +370,82 @@ class RBLNGemma4ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
             )
         return embed_tokens
 
+    @classmethod
+    def _pre_populate_kvcache_metas(
+        cls,
+        model_config: "PretrainedConfig",
+        rbln_config: RBLNGemma4ForCausalLMConfig,
+    ) -> None:
+        """Pre-populate `rbln_config.kvcache_metas` with per-layer-heterogeneous KV shapes.
+
+        Gemma4 mixes two layer kinds:
+        - `sliding_attention`: `head_dim = config.head_dim`,
+          `num_kv = config.num_key_value_heads`.
+        - `full_attention`: `head_dim = config.global_head_dim`,
+          `num_kv = config.num_global_key_value_heads` (when `attention_k_eq_v=True`)
+          or `config.num_key_value_heads` (otherwise).
+
+        Base `get_input_info` short-circuits on a non-empty `kvcache_metas` list and uses
+        these entries verbatim as compile-time KV cache input shapes. This is the only way
+        to express per-layer heterogeneous KV geometry in the current pipeline.
+        """
+        if len(rbln_config.kvcache_metas) > 0:
+            return  # already populated (e.g. loaded from disk)
+
+        dtype_str = RBLNCompileConfig.normalize_dtype(rbln_config.dtype)
+
+        layer_types = getattr(model_config, "layer_types", None)
+        if layer_types is None:
+            # Homogeneous model — let base populate normally.
+            return
+        if len(layer_types) != model_config.num_hidden_layers:
+            raise ValueError(
+                f"layer_types length ({len(layer_types)}) does not match num_hidden_layers "
+                f"({model_config.num_hidden_layers})."
+            )
+
+        head_dim_sliding = model_config.head_dim
+        num_kv_sliding = model_config.num_key_value_heads
+        head_dim_full = getattr(model_config, "global_head_dim", None) or head_dim_sliding
+        attention_k_eq_v = bool(getattr(model_config, "attention_k_eq_v", False))
+        num_kv_full = (
+            getattr(model_config, "num_global_key_value_heads", None) or num_kv_sliding
+            if attention_k_eq_v
+            else num_kv_sliding
+        )
+
+        for layer_idx in range(model_config.num_hidden_layers):
+            is_sliding = layer_types[layer_idx] == "sliding_attention"
+            num_kv = num_kv_sliding if is_sliding else num_kv_full
+            head_dim = head_dim_sliding if is_sliding else head_dim_full
+
+            for kv_offset, _ in enumerate(("key", "value")):
+                name = f"past_key_values_{layer_idx * 2 + kv_offset}"
+                meta = KVCacheMeta.make(
+                    name=name,
+                    layer_index=layer_idx,
+                    num_key_value_heads=num_kv,
+                    head_dim=head_dim,
+                    dtype=dtype_str,
+                    rbln_config=rbln_config,
+                )
+                rbln_config.kvcache_metas.append(meta)
+
+    @classmethod
+    def _update_submodule_config(
+        cls,
+        model: "PreTrainedModel",
+        rbln_config: RBLNModelConfig,
+        preprocessors: Optional[Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"]],
+    ):
+        if rbln_config.image_prefill_chunk_size is None:
+            rbln_config.image_prefill_chunk_size = rbln_config.prefill_chunk_size
+
+        if "image_prefill" not in rbln_config.phases:
+            rbln_config.phases = ["prefill", "image_prefill", "decode"]
+
+        return rbln_config
+
 
 class RBLNGemma4ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMixin):
     """
@@ -374,18 +457,34 @@ class RBLNGemma4ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMix
     - transferring the checkpoint weights of the original into an optimized RBLN graph,
     - compiling the resulting graph using the RBLN compiler.
 
-    This class compiles the `embed_vision` multimodal projector (vision soft tokens -> language-model
-    embedding space) as its own graph. Vision encoding and language modeling are compiled as
-    submodules: `vision_tower` ([`RBLNGemma4VisionModel`], batch_size=1, looped over images at
-    runtime) and `language_model` ([`RBLNGemma4ForCausalLM`]).
+    This class compiles the `embed_vision` multimodal projector (vision soft tokens ->
+    language-model embedding space) as its own graph. Vision encoding and language modeling
+    are compiled as submodules: `vision_tower` ([`RBLNGemma4VisionModel`], batch_size=1,
+    looped over images at runtime) and `language_model` ([`RBLNGemma4ForCausalLM`]).
     """
 
     auto_model_class = AutoModelForImageTextToText
     _rbln_submodule_prefix = "model"
     _rbln_submodules = [
-        {"name": "vision_tower"},
+        # {"name": "vision_tower"},
         {"name": "language_model"},
     ]
+    _supports_non_fp32 = True
+
+    @staticmethod
+    def _reject_unsupported_modalities(
+        pixel_values_videos=None,
+        input_features=None,
+        input_features_mask=None,
+    ):
+        """Reject video/audio inputs that exist on the HF API but are not wired here."""
+        if pixel_values_videos is not None:
+            raise NotImplementedError("pixel_values_videos is not supported by RBLNGemma4ForConditionalGeneration.")
+        if input_features is not None or input_features_mask is not None:
+            raise NotImplementedError(
+                "Audio inputs (input_features / input_features_mask) are not supported by "
+                "RBLNGemma4ForConditionalGeneration. Apply the gemma4_audio patch to enable."
+            )
 
     def __getattr__(self, __name: str) -> Any:
         def redirect(func):
@@ -420,11 +519,10 @@ class RBLNGemma4ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMix
         self.embed_vision = LoopProjector(self.model[0])
 
         self.vocab_size = self.config.text_config.vocab_size
-
         self.pad_token_id = (
             self.config.text_config.pad_token_id if self.config.text_config.pad_token_id is not None else -1
         )
-        return super().__post_init__(**kwargs)
+        super().__post_init__(**kwargs)
 
     def get_attn_impl(self) -> str:
         return self.rbln_config.language_model.attn_impl
@@ -453,21 +551,15 @@ class RBLNGemma4ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMix
         if isinstance(vt_cfg, dict):
             max_soft_tokens = vt_cfg.get("max_soft_tokens", None)
         max_soft_tokens = max_soft_tokens or 280
-        vision_hidden_size = vision_cfg.hidden_size
+        vision_hidden_size = int(vision_cfg.hidden_size)
 
         compile_cfgs = [
             RBLNCompileConfig(
-                compiled_model_name="embed_vision",
                 input_info=[
-                    (
-                        "image_features",
-                        [1, max_soft_tokens, vision_hidden_size],
-                        "float32",
-                    )
+                    ("image_features", [1, max_soft_tokens, vision_hidden_size], "float32"),
                 ],
             )
         ]
-
         rbln_config.set_compile_cfgs(compile_cfgs)
         return rbln_config
 
@@ -476,14 +568,18 @@ class RBLNGemma4ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMix
         input_ids,
         inputs_embeds=None,
         pixel_values=None,
-        pixel_position_ids=None,
+        image_position_ids=None,
         attention_mask=None,
         generate_idx=None,
         padded_cache_lengths=None,
         token_type_ids=None,
         mm_token_type_ids=None,
+        pixel_values_videos=None,
+        input_features=None,
+        input_features_mask=None,
         **kwargs,
     ):
+        self._reject_unsupported_modalities(pixel_values_videos, input_features, input_features_mask)
         is_prefill_phase = generate_idx is None
         model_inputs = self.language_model.prepare_inputs_for_generation(
             input_ids=input_ids,
@@ -497,7 +593,7 @@ class RBLNGemma4ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMix
             model_inputs.update(
                 {
                     "pixel_values": pixel_values,
-                    "pixel_position_ids": pixel_position_ids,
+                    "image_position_ids": image_position_ids,
                     "token_type_ids": token_type_ids,
                     "mm_token_type_ids": mm_token_type_ids,
                 }
@@ -523,29 +619,36 @@ class RBLNGemma4ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMix
         vision_cfg = self.rbln_config.vision_tower
         text_hidden = self.config.text_config.hidden_size
 
-        vision_out_size = [
+        vision_out_0_size = [
             pixel_values.shape[0],
             vision_cfg.max_soft_tokens,
             self.config.vision_config.hidden_size,
+        ]
+        vision_out_1_size = [
+            pixel_values.shape[0],
+            vision_cfg.max_soft_tokens,
         ]
         projector_out_size = [
             pixel_values.shape[0],
             vision_cfg.max_soft_tokens,
             text_hidden,
         ]
-        vision_out_buffer = [torch.empty(size=vision_out_size, dtype=torch.float32, device="cpu")]
+        vision_out_buffer = [
+            torch.empty(size=vision_out_0_size, dtype=self.rbln_config.vision_tower.dtype, device="cpu"),
+            torch.empty(size=vision_out_1_size, dtype=torch.bool, device="cpu"),
+        ]
         projector_out_buffer = [torch.empty(size=projector_out_size, dtype=torch.float32, device="cpu")]
 
         vision_outputs = self.vision_tower(pixel_values, pixel_position_ids, out=vision_out_buffer).last_hidden_state
-        image_features = self.embed_vision(vision_outputs, out=projector_out_buffer)
-        return image_features
+        pooler_output = self.embed_vision(vision_outputs.float(), out=projector_out_buffer)
+        return pooler_output
 
     def _preprocess_prefill(
         self,
         input_ids: Optional[torch.LongTensor] = None,
         inputs_embeds: Optional[torch.FloatTensor] = None,
         pixel_values: Optional[torch.FloatTensor] = None,
-        pixel_position_ids: Optional[torch.LongTensor] = None,
+        image_position_ids: Optional[torch.LongTensor] = None,
         **kwargs,
     ):
         if (input_ids is None) ^ (inputs_embeds is not None):
@@ -567,14 +670,15 @@ class RBLNGemma4ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMix
 
         if inputs_embeds is None:
             inputs_embeds = self.get_input_embeddings()(llm_input_ids)
+        inputs_embeds = inputs_embeds.to(self.rbln_config.language_model.dtype)
 
-        if pixel_values is not None and pixel_position_ids is not None:
+        if pixel_values is not None and image_position_ids is not None:
             if input_ids is None:
                 raise ValueError(
                     "multimodal prefill requires `input_ids` for image-token mask construction; "
                     "received inputs_embeds-only"
                 )
-            image_features = self.get_image_features(pixel_values, pixel_position_ids)
+            image_features = self.get_image_features(pixel_values, image_position_ids)
             image_features = image_features.to(inputs_embeds.device, inputs_embeds.dtype)
             image_mask = (input_ids == image_token_id).unsqueeze(-1).expand_as(inputs_embeds)
             inputs_embeds = inputs_embeds.masked_scatter(image_mask, image_features)
@@ -587,7 +691,7 @@ class RBLNGemma4ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMix
         attention_mask: torch.Tensor = None,
         token_type_ids: torch.Tensor = None,
         pixel_values: torch.FloatTensor = None,
-        pixel_position_ids: torch.LongTensor = None,
+        image_position_ids: torch.LongTensor = None,
         cache_position: Optional[torch.LongTensor] = None,
         inputs_embeds: Optional[torch.FloatTensor] = None,
         generate_idx: Optional[torch.Tensor] = None,
@@ -595,8 +699,13 @@ class RBLNGemma4ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMix
         position_ids: Optional[torch.Tensor] = None,
         mm_token_type_ids: Optional[torch.Tensor] = None,
         output_hidden_states: Optional[bool] = None,
+        pixel_values_videos: Optional[torch.Tensor] = None,
+        input_features: Optional[torch.Tensor] = None,
+        input_features_mask: Optional[torch.Tensor] = None,
         **lm_kwargs: Dict[str, Any],
     ) -> Union[Tuple, RBLNDecoderOnlyOutput]:
+        self._reject_unsupported_modalities(pixel_values_videos, input_features, input_features_mask)
+
         output_hidden_states = (
             output_hidden_states
             if output_hidden_states is not None
@@ -615,9 +724,27 @@ class RBLNGemma4ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMix
                 input_ids=input_ids,
                 inputs_embeds=inputs_embeds,
                 pixel_values=pixel_values,
-                pixel_position_ids=pixel_position_ids,
+                image_position_ids=image_position_ids,
             )
             batch_size = inputs_embeds.shape[0]
+
+            all_hidden_states = (
+                tuple(
+                    torch.zeros(
+                        batch_size,
+                        inputs_embeds.shape[1],
+                        self.config.text_config.hidden_size,
+                        dtype=self.rbln_config.language_model.dtype,
+                    )
+                    for _ in range(self.config.text_config.num_hidden_layers + 1)
+                )
+                if self.rbln_config.language_model.output_hidden_states
+                else None
+            )
+
+            dispatch_token_type_ids = (
+                mm_token_type_ids if mm_token_type_ids is not None else token_type_ids
+            )
 
             for b_idx in range(batch_size):
                 cache_position_b = torch.arange(0, generate_idx[b_idx].item(), dtype=torch.int32).unsqueeze(0)
@@ -627,10 +754,24 @@ class RBLNGemma4ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMix
                     attention_mask=attention_mask[b_idx] if attention_mask is not None else None,
                     cache_position=cache_position_b,
                     batch_idx=b_idx,
-                    token_type_ids=token_type_ids[b_idx : b_idx + 1] if token_type_ids is not None else None,
+                    token_type_ids=(
+                        dispatch_token_type_ids[b_idx : b_idx + 1]
+                        if dispatch_token_type_ids is not None
+                        else None
+                    ),
                 )
                 padded_cache_lengths[b_idx] += outputs.padded_cache_lengths
                 logits.append(outputs.logits)
+
+                if self.rbln_config.language_model.output_hidden_states and outputs.hidden_states is not None:
+                    if attention_mask is not None:
+                        mask_indices = torch.nonzero(attention_mask[b_idx], as_tuple=True)[0]
+                    else:
+                        mask_indices = torch.arange(outputs.hidden_states[0].shape[1])
+                    for l_idx in range(self.config.text_config.num_hidden_layers + 1):
+                        all_hidden_states[l_idx][b_idx].index_copy_(
+                            dim=0, index=mask_indices, source=outputs.hidden_states[l_idx][0]
+                        )
 
             logits = torch.cat(logits, dim=0)
         else:
@@ -648,9 +789,11 @@ class RBLNGemma4ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMix
                 position_ids=position_ids if self.rbln_config.language_model.use_position_ids else None,
             )
             logits = outputs.logits
+            all_hidden_states = outputs.hidden_states if self.rbln_config.language_model.output_hidden_states else None
 
         return RBLNDecoderOnlyOutput(
             logits=logits,
             generate_idx=generate_idx,
             padded_cache_lengths=padded_cache_lengths,
+            hidden_states=all_hidden_states,
         )

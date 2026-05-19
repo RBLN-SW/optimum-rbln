@@ -76,7 +76,7 @@ class Gemma4ForCausalLMWrapper(DecoderOnlyWrapper):
         return (rotary_emb_global, rotary_emb_local)
 
     def get_rbln_attn_class(self):
-        return Gemma4Attention
+        return Gemma4TextAttention
 
     def get_rbln_layer_class(self):
         return Gemma4DecoderLayer
@@ -243,18 +243,14 @@ class Gemma4TextModel(DecoderOnlyModel):
             inputs_embeds = self.get_embedding()(input_ids)
         hidden_states = inputs_embeds
 
-        # Merge per-layer inputs (host-supplied per-layer residual stream) with the inputs_embeds projection.
         per_layer_inputs_projected = self._project_per_layer_inputs(inputs_embeds, per_layer_inputs)
 
-        # Global Position Embeddings
         cos_global, sin_global = rotary_emb[0](hidden_states, self.max_seq_len)
         cos_global, sin_global = slice_and_unsqueeze_cos_sin(cos_global, sin_global, position_ids)
 
-        # Local Position Embeddings
         cos_local, sin_local = rotary_emb[1](hidden_states, self.max_seq_len)
         cos_local, sin_local = slice_and_unsqueeze_cos_sin(cos_local, sin_local, position_ids)
 
-        # (batch, seq_len) -> (batch,)
         if self.attn_impl == "flash_attn":
             seq_positions = cache_position[:, 0]
             seq_positions = self.convert_sequence_positions_for_flash_attn(
@@ -312,7 +308,6 @@ class Gemma4DecoderLayer(DecoderOnlyLayer):
     def __init__(self, layer, self_attn: DecoderOnlyAttention, lora_config: Optional[RBLNLoRAConfig] = None):
         super().__init__(layer, self_attn, lora_config)
 
-        # MoE branch (optional, when enable_moe_block=True)
         self.enable_moe_block = getattr(layer, "enable_moe_block", False)
         if self.enable_moe_block:
             self.router = Gemma4Router(layer.router)
@@ -321,7 +316,6 @@ class Gemma4DecoderLayer(DecoderOnlyLayer):
             self.post_feedforward_layernorm_1 = layer.post_feedforward_layernorm_1
             self.post_feedforward_layernorm_2 = layer.post_feedforward_layernorm_2
 
-        # Per-layer-input branch (optional, when hidden_size_per_layer_input > 0)
         self.hidden_size_per_layer_input = getattr(layer, "hidden_size_per_layer_input", 0)
         if self.hidden_size_per_layer_input:
             self.per_layer_input_gate = layer.per_layer_input_gate
@@ -358,7 +352,6 @@ class Gemma4DecoderLayer(DecoderOnlyLayer):
         hidden_states = self.get_post_attention_layernorm()(hidden_states)
         hidden_states = residual + hidden_states
 
-        # Feed-forward block (and optional MoE branch in parallel)
         residual = hidden_states
         ff_input = self.get_pre_feedforward_layernorm()(hidden_states)
         mlp_out = self.forward_mlp(ff_input, lora_int_id)
@@ -392,17 +385,23 @@ class Gemma4DecoderLayer(DecoderOnlyLayer):
         return hidden_states
 
 
-class Gemma4Attention(DecoderOnlyAttention):
+class Gemma4TextAttention(DecoderOnlyAttention):
     """A wrapper for the attention component of a Gemma4 model, designed for RBLN optimization.
 
     Extends `DecoderOnlyAttention` with Gemma4-specific behaviors:
 
-    - `q_norm` and `k_norm` are taken from the original module (Gemma4 applies them per-head
-      pre-RoPE, the same way Gemma3 does).
+    - `q_norm`, `k_norm`, and `v_norm` are taken from the original module and applied per-head
+      pre-RoPE / pre-attention. Gemma4 uses `Gemma4RMSNorm(with_scale=False)` for `v_norm`,
+      which the base `DecoderOnlyAttention.forward` does not apply — we override `forward`
+      below to include the `v_norm` step.
     - `head_dim` differs between sliding-attention (`config.head_dim`) and full-attention layers
       (`config.global_head_dim`); the original `self_attn.head_dim` already encodes this.
     - `num_key_value_heads` is recomputed from the projection shape to account for Gemma4-specific
       knobs (`num_global_key_value_heads`, `attention_k_eq_v`) not exposed as attributes.
+    - Attention scaling is hardcoded to `1.0` per HF Gemma4TextAttention (`self.scaling = 1.0`);
+      the q_norm/k_norm RMSNorm provides the magnitude normalization that the traditional
+      `1/sqrt(d_k)` factor would otherwise supply. Applying both would double-normalize the
+      attention scores.
     """
 
     def __init__(self, self_attn, rbln_config, is_sliding=False):
@@ -411,8 +410,15 @@ class Gemma4Attention(DecoderOnlyAttention):
             self_attn.num_key_value_heads = num_kv_heads
         super().__init__(self_attn, rbln_config, is_sliding=is_sliding)
 
+        self.q_norm = getattr(self_attn, "q_norm", None)
+        self.k_norm = getattr(self_attn, "k_norm", None)
+        self.v_norm = getattr(self_attn, "v_norm", None)
+
+        if self.v_proj is None:
+            self.v_proj = copy.deepcopy(self.k_proj)
+
     def get_attn_scale(self, self_attn):
-        return 1.0 / (self_attn.head_dim**0.5)
+        return 1.0
 
     def projection(
         self, hidden_states, lora_int_id: Optional[torch.Tensor] = None
@@ -429,13 +435,72 @@ class Gemma4Attention(DecoderOnlyAttention):
         if self.lora_config:
             query_states = self.q_proj(hidden_states, lora_int_id)
             key_states = self.k_proj(hidden_states, lora_int_id)
-            value_states = self.v_proj(hidden_states, lora_int_id) if self.v_proj is not None else key_states
+            value_states = self.v_proj(hidden_states, lora_int_id)
         else:
             query_states = self.q_proj(hidden_states)
             key_states = self.k_proj(hidden_states)
-            value_states = self.v_proj(hidden_states) if self.v_proj is not None else key_states
+            value_states = self.v_proj(hidden_states)
 
         return query_states, key_states, value_states
+
+    def forward(
+        self,
+        hidden_states: torch.Tensor,
+        attention_mask: torch.Tensor,
+        seq_positions: torch.LongTensor,
+        past_key_values: Tuple[Tuple[torch.Tensor]],
+        cos: Optional[torch.Tensor] = None,
+        sin: Optional[torch.Tensor] = None,
+        block_tables: Optional[torch.Tensor] = None,
+        lora_int_id: Optional[torch.Tensor] = None,
+    ):
+        batch_size, query_length, _ = hidden_states.size()
+
+        query_states, key_states, value_states = self.projection(hidden_states=hidden_states, lora_int_id=lora_int_id)
+
+        query_states = query_states.view(batch_size, query_length, self.num_heads, self.head_dim).transpose(1, 2)
+        key_states = key_states.view(batch_size, query_length, self.num_key_value_heads, self.head_dim).transpose(1, 2)
+        value_states = value_states.view(batch_size, query_length, self.num_key_value_heads, self.head_dim).transpose(
+            1, 2
+        )
+
+        if self.q_norm is not None:
+            query_states = self.q_norm(query_states)
+        if self.k_norm is not None:
+            key_states = self.k_norm(key_states)
+        if self.v_norm is not None:
+            value_states = self.v_norm(value_states)
+
+        if cos is not None and sin is not None:
+            query_states, key_states = self.apply_rotary_pos_embed(query_states, key_states, cos, sin)
+
+        if batch_size > 1 and "prefill" in self.phase:
+            raise NotImplementedError(f"batch size should be 1 if prefill phase, but got {batch_size}.")
+
+        k_scale, v_scale = self.maybe_get_kvcache_scale()
+
+        attn_output = self.get_attention_op()(
+            query_states,
+            key_states,
+            value_states,
+            attention_mask,
+            past_key_state=past_key_values[self.layer_idx][0],
+            past_value_state=past_key_values[self.layer_idx][1],
+            seq_position=seq_positions,
+            scale=self.scale,
+            block_tables=block_tables,
+            block_size=self.kvcache_block_size,
+            k_scale=k_scale,
+            v_scale=v_scale,
+            s_aux=getattr(self, "sinks", None),
+        )
+
+        if self.lora_config:
+            attn_outputs = self.o_proj(attn_output, lora_int_id)
+        else:
+            attn_outputs = self.o_proj(attn_output)
+
+        return attn_outputs
 
 
 class Gemma4ForCausalLM(DecoderOnlyForCausalLM):
@@ -537,9 +602,9 @@ class Gemma4Experts(nn.Module):
         per_expert_scale = router.per_expert_scale.detach()
         down_w = down_w * per_expert_scale[:, None, None]
 
-        gate_w_op = gate_w.transpose(1, 2).contiguous()
-        up_w_op = up_w.transpose(1, 2).contiguous()
-        down_w_op = down_w.transpose(1, 2).contiguous()
+        gate_w_op = gate_w.contiguous()
+        up_w_op = up_w.contiguous()
+        down_w_op = down_w.contiguous()
 
         self.gate_proj = nn.Linear(self.hidden_size, self.num_experts * self.intermediate_size, bias=False)
         self.up_proj = nn.Linear(self.hidden_size, self.num_experts * self.intermediate_size, bias=False)
@@ -559,6 +624,79 @@ class Gemma4Experts(nn.Module):
             topk=self.top_k,
             norm_topk_prob=self.norm_topk_prob,
         )
+
+
+class Gemma4VisionAttention(nn.Module):
+    """RBLN-compatible replacement for HF ``Gemma4VisionAttention``.
+
+    HF's vision attention dispatches through ``ALL_ATTENTION_FUNCTIONS[_attn_implementation]``
+    which defaults to ``F.scaled_dot_product_attention``. rebel-compiler cannot lower SDPA
+    (it surfaces as ``Invalid udma type, loc=...scaled_dot_product_attention``), so this
+    replacement keeps the exact same projection / per-head norm / multidimensional RoPE
+    steps but emits an explicit ``matmul → softmax → matmul`` attention block. All weight
+    references (q/k/v/o_proj and q/k/v_norm) are reused from the original HF instance, so
+    the swap is weight-preserving and numerically equivalent to HF eager attention.
+
+    Mirrors the ``get_rbln_attn_class`` swap pattern used by ``Gemma4ForCausalLMWrapper``
+    for the text decoder; here the swap is applied to each
+    ``Gemma4VisionEncoderLayer.self_attn`` directly inside ``Gemma4VisionModelWrapper``.
+    """
+
+    def __init__(self, self_attn: nn.Module):
+        super().__init__()
+        self.q_proj = self_attn.q_proj
+        self.k_proj = self_attn.k_proj
+        self.v_proj = self_attn.v_proj
+        self.o_proj = self_attn.o_proj
+        self.q_norm = self_attn.q_norm
+        self.k_norm = self_attn.k_norm
+        self.v_norm = self_attn.v_norm
+
+        self.head_dim = int(self_attn.head_dim)
+        self.num_key_value_groups = int(self_attn.num_key_value_groups)
+        self.scaling = float(self_attn.scaling)
+
+    def forward(
+        self,
+        hidden_states: torch.Tensor,
+        position_embeddings: Tuple[torch.Tensor, torch.Tensor] = None,
+        attention_mask: Optional[torch.Tensor] = None,
+        position_ids: Optional[torch.Tensor] = None,
+        **kwargs,
+    ) -> Tuple[torch.Tensor, None]:
+        from transformers.models.gemma4.modeling_gemma4 import apply_multidimensional_rope
+
+        input_shape = hidden_states.shape[:-1]
+        hidden_shape = (*input_shape, -1, self.head_dim)
+        cos, sin = position_embeddings
+
+        query_states = self.q_proj(hidden_states).view(hidden_shape)
+        query_states = self.q_norm(query_states)
+        query_states = apply_multidimensional_rope(query_states, cos, sin, position_ids)
+        query_states = query_states.transpose(1, 2)
+
+        key_states = self.k_proj(hidden_states).view(hidden_shape)
+        key_states = self.k_norm(key_states)
+        key_states = apply_multidimensional_rope(key_states, cos, sin, position_ids)
+        key_states = key_states.transpose(1, 2)
+
+        value_states = self.v_proj(hidden_states).view(hidden_shape)
+        value_states = self.v_norm(value_states)
+        value_states = value_states.transpose(1, 2)
+
+        if self.num_key_value_groups > 1:
+            key_states = key_states.repeat_interleave(self.num_key_value_groups, dim=1)
+            value_states = value_states.repeat_interleave(self.num_key_value_groups, dim=1)
+
+        attn_weights = torch.matmul(query_states, key_states.transpose(-2, -1)) * self.scaling
+        if attention_mask is not None:
+            attn_weights = attn_weights + attention_mask
+        attn_weights = nn.functional.softmax(attn_weights, dim=-1, dtype=torch.float32).to(query_states.dtype)
+        attn_output = torch.matmul(attn_weights, value_states)
+
+        attn_output = attn_output.transpose(1, 2).contiguous().reshape(*input_shape, -1)
+        attn_output = self.o_proj(attn_output)
+        return attn_output, None
 
 
 class Gemma4VisionModelWrapper(nn.Module):
@@ -601,6 +739,9 @@ class Gemma4VisionModelWrapper(nn.Module):
 
     def __init__(self, model: PreTrainedModel, num_soft_tokens: int):
         super().__init__()
+        for layer in model.encoder.layers:
+            layer.self_attn = Gemma4VisionAttention(layer.self_attn)
+
         self.encoder_layers = model.encoder.layers
         self.num_layers = int(model.config.num_hidden_layers)
         self.pooler = model.pooler
@@ -629,7 +770,7 @@ class Gemma4VisionModelWrapper(nn.Module):
                 position_ids=pixel_position_ids,
             )
 
-        hidden_states, _ = self.pooler(
+        hidden_states, pooler_mask = self.pooler(
             hidden_states=hidden_states,
             pixel_position_ids=pixel_position_ids,
             padding_positions=padding_positions,
@@ -639,4 +780,4 @@ class Gemma4VisionModelWrapper(nn.Module):
         if self.standardize:
             hidden_states = (hidden_states - self.std_bias) * self.std_scale
 
-        return hidden_states
+        return hidden_states, pooler_mask

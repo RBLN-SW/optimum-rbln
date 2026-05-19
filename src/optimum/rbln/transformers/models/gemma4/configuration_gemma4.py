@@ -169,10 +169,11 @@ class RBLNGemma4ForConditionalGenerationConfig(RBLNModelConfig):
             logger.warning("Ignore batch_size for Gemma4 vision tower. It will be set to 1.")
 
         self.vision_tower = self.initialize_submodule_config(
-            submodule_config=vision_tower, batch_size=1, force_kwargs=True
+            submodule_config=vision_tower, batch_size=batch_size, force_kwargs=True
         )
         self.language_model = self.initialize_submodule_config(
             submodule_config=language_model,
+            batch_size=batch_size,
             force_kwargs=True,
             use_inputs_embeds=True,
         )
