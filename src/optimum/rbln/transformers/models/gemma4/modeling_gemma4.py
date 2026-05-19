@@ -287,8 +287,9 @@ class RBLNGemma4ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
 
     @classmethod
     def _wrap_model_if_needed(cls, model: torch.nn.Module, rbln_config: RBLNModelConfig) -> torch.nn.Module:
+        model = cls._decoder_wrapper_cls(model, rbln_config, cls._use_rotary_emb).eval()
         cls._pre_populate_kvcache_metas(model.config, rbln_config)
-        return cls._decoder_wrapper_cls(model, rbln_config, cls._use_rotary_emb).eval()
+        return model
 
     def _create_per_layer_embedding_layer(self):
         from transformers.models.gemma4.modeling_gemma4 import Gemma4TextScaledWordEmbedding
