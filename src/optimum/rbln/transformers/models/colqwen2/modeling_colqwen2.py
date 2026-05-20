@@ -21,7 +21,7 @@ from transformers.models.colqwen2.modeling_colqwen2 import ColQwen2ForRetrievalO
 
 from ....modeling import RBLNModel
 from ....transformers.modeling_outputs import _validate_output_hidden_states
-from ....utils.transformers_compat import no_init_weights
+from ....utils.transformers_compat import assert_supported_on_current_transformers, no_init_weights
 
 
 if TYPE_CHECKING:
@@ -90,6 +90,11 @@ class RBLNColQwen2ForRetrieval(RBLNModel):
         {"name": "vlm"},
     ]
     _supports_non_fp32 = True
+
+    @classmethod
+    def from_pretrained(cls, *args, **kwargs):
+        assert_supported_on_current_transformers("RBLNColQwen2ForRetrieval")
+        return super().from_pretrained(*args, **kwargs)
 
     def __post_init__(self, **kwargs):
         self.vlm_model = self.rbln_submodules[0]

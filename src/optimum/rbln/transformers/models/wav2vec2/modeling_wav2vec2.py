@@ -34,7 +34,14 @@ class _Wav2Vec2(torch.nn.Module):
         self.model = model
 
     def forward(self, input_values):
-        output = self.model.wav2vec2(input_values=input_values)
+        # transformers v5 unconditionally dispatches to create_bidirectional_mask
+        # for the wav2vec2 encoder. Without an explicit attention_mask the
+        # backward-compat branch of sdpa_mask tries to index a 0-d q_length
+        # tensor and raises IndexError under torch.export. Passing a trivial
+        # ones mask routes through the regular path.
+        batch_size, seq_len = input_values.shape
+        attention_mask = torch.ones(batch_size, seq_len, dtype=torch.long, device=input_values.device)
+        output = self.model.wav2vec2(input_values=input_values, attention_mask=attention_mask)
         return self.model.lm_head(output[0])
 
 

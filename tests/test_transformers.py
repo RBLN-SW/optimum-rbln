@@ -422,6 +422,11 @@ class TestColPaliModel(BaseTest.TestModel):
                 assert model.rbln_config.vlm.language_model.device == 2
 
 
+@unittest.skipIf(
+    _SKIP_ON_V5,
+    "ColQwen2's vlm dropped its lm_head on v5 (Qwen2VLForConditionalGeneration → "
+    "Qwen2VLModel); the wrapper still hot-patches lm_head with embedding_proj_layer.",
+)
 class TestColQwen2Model(BaseTest.TestModel):
     RBLN_AUTO_CLASS = None
     RBLN_CLASS = RBLNColQwen2ForRetrieval

@@ -183,6 +183,13 @@ _UNSUPPORTED_ON_V5: set = {
     # within EXAONE's own code, so the fix has to land in the upstream
     # EXAONE repo, not here.
     "RBLNExaoneForCausalLM",
+    # transformers PR #42156 changed `ColQwen2ForRetrieval.vlm` from
+    # `Qwen2VLForConditionalGeneration` (with `.model` + `.lm_head`) to
+    # `Qwen2VLModel` (no lm_head). The RBLN wrapper hot-patches lm_head with
+    # `embedding_proj_layer` and relies on it being part of the compiled
+    # graph; porting requires restructuring `forward` to call the projection
+    # outside the compiled vlm. Tracked as follow-up.
+    "RBLNColQwen2ForRetrieval",
 }
 
 
