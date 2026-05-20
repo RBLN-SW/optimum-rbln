@@ -22,6 +22,7 @@ from transformers.generation.utils import GenerationMixin
 
 from ....configuration_utils import RBLNModelConfig
 from ....utils import logging
+from ....utils.transformers_compat import assert_supported_on_current_transformers
 from ..decoderonly import RBLNDecoderOnlyModelForCausalLM
 from .exaone_architecture import ExaoneForCausalLMWrapper
 
@@ -121,6 +122,8 @@ class RBLNExaoneForCausalLM(RBLNDecoderOnlyModelForCausalLM):
         Returns:
             (RBLNModel): A RBLN model instance ready for inference on RBLN NPU devices.
         """
+
+        assert_supported_on_current_transformers("RBLNExaoneForCausalLM")
 
         if trust_remote_code is not None:
             kwargs["trust_remote_code"] = trust_remote_code

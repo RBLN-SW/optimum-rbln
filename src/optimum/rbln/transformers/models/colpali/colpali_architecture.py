@@ -4,6 +4,7 @@ import torch
 from torch import nn
 from transformers import GemmaForCausalLM, GemmaModel
 
+from ....utils.transformers_compat import get_vlm_submodule
 from ..decoderonly.decoderonly_architecture import RotaryEmbedding, apply_rotary_pos_emb
 
 
@@ -28,7 +29,9 @@ class RBLNColPaliForRetrievalWrapper(nn.Module):
         self.rotary_emb = self.get_rotary_emb(max_seq_len=max_seq_len)
 
         self.output_hidden_states = output_hidden_states
-        self.language_model = self.convert_to_rbln_language_model(causal_lm.model.language_model, max_seq_len)
+        # v4: causal_lm.model.language_model; v5: causal_lm.language_model (PR #42156).
+        language_model = get_vlm_submodule(causal_lm, "language_model")
+        self.language_model = self.convert_to_rbln_language_model(language_model, max_seq_len)
 
         self.num_hidden_layers = getattr(self.text_config, "num_hidden_layers", None)
         self.embedding_proj_layer = embedding_proj_layer

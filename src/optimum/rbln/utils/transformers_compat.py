@@ -176,7 +176,14 @@ def normalize_token_kwarg(
 # a free-form key (typically the RBLN class name or model architecture
 # string) that callers pass to `assert_supported_on_current_transformers`.
 
-_UNSUPPORTED_ON_V5: set = set()
+_UNSUPPORTED_ON_V5: set = {
+    # EXAONE's hub-side modeling_exaone.py predates the transformers v5
+    # `PreTrainedModel.post_init` change to `_tied_weights_keys`. Loading the
+    # checkpoint on v5 raises `'list' object has no attribute 'keys'` from
+    # within EXAONE's own code, so the fix has to land in the upstream
+    # EXAONE repo, not here.
+    "RBLNExaoneForCausalLM",
+}
 
 
 def assert_supported_on_current_transformers(model_kind: str) -> None:
