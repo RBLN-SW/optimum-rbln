@@ -758,6 +758,10 @@ class TestQwen2_5_VLForConditionalGeneration(LLMTest.TestLLM):
         return inputs
 
 
+@unittest.skipIf(
+    _SKIP_ON_V5,
+    "Qwen3VL's decoder layers moved two levels deep in transformers>=5; wrapper not ported.",
+)
 class TestQwen3VLForConditionalGeneration(LLMTest.TestLLM):
     RBLN_AUTO_CLASS = RBLNAutoModelForVision2Seq
     RBLN_CLASS = RBLNQwen3VLForConditionalGeneration
@@ -794,6 +798,10 @@ class TestQwen3VLForConditionalGeneration(LLMTest.TestLLM):
         return inputs
 
 
+@unittest.skipIf(
+    _SKIP_ON_V5,
+    "Qwen3VLMoe's decoder layers moved two levels deep in transformers>=5; wrapper not ported.",
+)
 class TestQwen3VLMoeForConditionalGeneration(LLMTest.TestLLM):
     RBLN_AUTO_CLASS = RBLNAutoModelForVision2Seq
     RBLN_CLASS = RBLNQwen3VLMoeForConditionalGeneration

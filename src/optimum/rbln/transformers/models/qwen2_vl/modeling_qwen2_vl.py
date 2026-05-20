@@ -34,7 +34,7 @@ from transformers.models.qwen2_vl.modeling_qwen2_vl import (
 from ....configuration_utils import RBLNCompileConfig
 from ....modeling import RBLNModel
 from ....utils.logging import get_logger
-from ....utils.transformers_compat import AutoModelForVision2Seq, no_init_weights
+from ....utils.transformers_compat import AutoModelForVision2Seq, get_text_config_attr, no_init_weights
 from ...modeling_outputs import _validate_output_hidden_states
 from ..decoderonly.modeling_decoderonly import (
     RBLNDecoderOnlyModel,
@@ -266,9 +266,13 @@ class RBLNQwen2VLModel(RBLNDecoderOnlyModel):
     @property
     def logits_last_dim(self):
         if self.can_generate():
-            return self.config.vocab_size
+            return get_text_config_attr(self.config, "vocab_size")
         else:
-            return self.embedding_dim if hasattr(self, "embedding_dim") else self.config.hidden_size
+            return (
+                self.embedding_dim
+                if hasattr(self, "embedding_dim")
+                else get_text_config_attr(self.config, "hidden_size")
+            )
 
     def _create_embedding_layer(self):
         with no_init_weights():
@@ -293,7 +297,14 @@ class RBLNQwen2VLModel(RBLNDecoderOnlyModel):
             pos_idx,
             (
                 "position_emb",
-                [2, batch_size, 1, query_length, model_config.hidden_size // model_config.num_attention_heads],
+                [
+                    2,
+                    batch_size,
+                    1,
+                    query_length,
+                    get_text_config_attr(model_config, "hidden_size")
+                    // get_text_config_attr(model_config, "num_attention_heads"),
+                ],
                 rbln_config.dtype,
             ),
         )
@@ -302,7 +313,7 @@ class RBLNQwen2VLModel(RBLNDecoderOnlyModel):
 
     def _get_position_embeddings(self, hidden_states, position_ids):
         cos, sin = self.rotary_emb(hidden_states, position_ids)
-        mrope_section = self.config.rope_scaling["mrope_section"] * 2
+        mrope_section = get_text_config_attr(self.config, "rope_scaling")["mrope_section"] * 2
         cos = (
             torch.cat([m[i % 3] for i, m in enumerate(cos.split(mrope_section, dim=-1))], dim=-1)
             .unsqueeze(1)
@@ -359,7 +370,9 @@ class RBLNQwen2VLModel(RBLNDecoderOnlyModel):
 
         max_inputs_len = input_ids.shape[1]
 
-        head_dim = getattr(self.config, "head_dim", None) or self.config.hidden_size // self.config.num_attention_heads
+        head_dim = get_text_config_attr(self.config, "head_dim") or get_text_config_attr(
+            self.config, "hidden_size"
+        ) // get_text_config_attr(self.config, "num_attention_heads")
         all_position_embeds = torch.zeros(2, batch_size, 1, max_inputs_len, head_dim, dtype=self.rbln_config.dtype)
         all_rope_deltas = []
 
@@ -424,10 +437,10 @@ class RBLNQwen2VLModel(RBLNDecoderOnlyModel):
                 torch.zeros(
                     batch_size,
                     seq_len,
-                    self.config.hidden_size,
+                    get_text_config_attr(self.config, "hidden_size"),
                     dtype=self.rbln_config.dtype,
                 )
-                for _ in range(self.config.num_hidden_layers + 1)
+                for _ in range(get_text_config_attr(self.config, "num_hidden_layers") + 1)
             )
             if output_hidden_states
             else None
@@ -449,7 +462,7 @@ class RBLNQwen2VLModel(RBLNDecoderOnlyModel):
 
             logits.append(outputs.logits)
             if self.rbln_config.output_hidden_states:
-                for l_idx in range(self.config.num_hidden_layers + 1):
+                for l_idx in range(get_text_config_attr(self.config, "num_hidden_layers") + 1):
                     all_hidden_states[l_idx][b_idx].copy_(outputs.hidden_states[l_idx][0])
 
         logits = torch.cat(logits, dim=0)
@@ -619,10 +632,10 @@ class RBLNQwen2VLForConditionalGeneration(RBLNQwen2VLModel, RBLNDecoderOnlyModel
                     torch.zeros(
                         batch_size,
                         seq_len,
-                        self.config.hidden_size,
+                        get_text_config_attr(self.config, "hidden_size"),
                         dtype=self.rbln_config.dtype,
                     )
-                    for _ in range(self.config.num_hidden_layers + 1)
+                    for _ in range(get_text_config_attr(self.config, "num_hidden_layers") + 1)
                 )
                 if output_hidden_states
                 else None
@@ -642,7 +655,7 @@ class RBLNQwen2VLForConditionalGeneration(RBLNQwen2VLModel, RBLNDecoderOnlyModel
                 )
                 logits.append(output.logits)
                 if self.rbln_config.output_hidden_states:
-                    for l_idx in range(self.config.num_hidden_layers + 1):
+                    for l_idx in range(get_text_config_attr(self.config, "num_hidden_layers") + 1):
                         all_hidden_states[l_idx][b_idx].copy_(output.hidden_states[l_idx][0])
             logits = torch.cat(logits, dim=0)
         # Decoder

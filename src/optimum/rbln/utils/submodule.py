@@ -89,7 +89,11 @@ class SubModulesMixin:
                 torch_submodule = getattr(torch_submodule, submodule_name)
             elif submodule_postfix is not None:
                 torch_submodule: PreTrainedModel = getattr(model, submodule_name)
-                torch_submodule = getattr(torch_submodule, submodule_postfix)
+                inner = getattr(torch_submodule, submodule_postfix, None)
+                if inner is not None:
+                    torch_submodule = inner
+                # else: transformers v5 (PR #42156) collapses the wrapping head
+                # so the submodule itself is already the Model class we want.
             else:
                 # transformers 5.x VLMs (PR #42156) nest sub-models (vision_tower,
                 # multi_modal_projector, language_model, ...) under `.model`

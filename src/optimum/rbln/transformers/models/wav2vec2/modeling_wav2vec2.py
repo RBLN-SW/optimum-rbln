@@ -21,6 +21,7 @@ from transformers.modeling_outputs import CausalLMOutput
 
 from ....configuration_utils import RBLNCompileConfig
 from ....modeling import RBLNModel
+from ....utils.transformers_compat import assert_supported_on_current_transformers
 from .configuration_wav2vec2 import RBLNWav2Vec2ForCTCConfig
 
 
@@ -34,14 +35,7 @@ class _Wav2Vec2(torch.nn.Module):
         self.model = model
 
     def forward(self, input_values):
-        # transformers v5 unconditionally dispatches to create_bidirectional_mask
-        # for the wav2vec2 encoder. Without an explicit attention_mask the
-        # backward-compat branch of sdpa_mask tries to index a 0-d q_length
-        # tensor and raises IndexError under torch.export. Passing a trivial
-        # ones mask routes through the regular path.
-        batch_size, seq_len = input_values.shape
-        attention_mask = torch.ones(batch_size, seq_len, dtype=torch.long, device=input_values.device)
-        output = self.model.wav2vec2(input_values=input_values, attention_mask=attention_mask)
+        output = self.model.wav2vec2(input_values=input_values)
         return self.model.lm_head(output[0])
 
 
@@ -58,6 +52,11 @@ class RBLNWav2Vec2ForCTC(RBLNModel):
     main_input_name = "input_values"
     auto_model_class = AutoModelForCTC
     rbln_dtype = "float32"
+
+    @classmethod
+    def from_pretrained(cls, *args, **kwargs):
+        assert_supported_on_current_transformers("RBLNWav2Vec2ForCTC")
+        return super().from_pretrained(*args, **kwargs)
 
     @classmethod
     def _wrap_model_if_needed(cls, model: torch.nn.Module, rbln_config: RBLNWav2Vec2ForCTCConfig) -> torch.nn.Module:

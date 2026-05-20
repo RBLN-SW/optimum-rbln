@@ -120,6 +120,22 @@ def get_vlm_submodule(model, name):
     raise AttributeError(f"{type(model).__name__} has no submodule {name!r}")
 
 
+def get_text_config_attr(config, name, default=None):
+    """Read a config attribute that may live on the top-level config (v4 VLM layout)
+    or have moved into `config.text_config` (transformers v5 split layout).
+    Returns `default` if neither has it.
+    """
+    val = getattr(config, name, None)
+    if val is not None:
+        return val
+    text_cfg = getattr(config, "text_config", None)
+    if text_cfg is not None:
+        val = getattr(text_cfg, name, None)
+        if val is not None:
+            return val
+    return default
+
+
 # --- image processor size --------------------------------------------------
 # v4.x: image processors expose `size` as a plain dict ({"height": ..., "width": ...}).
 # v5.x: `size` is a SizeDict dataclass with attribute access and no `.keys()`.
@@ -190,6 +206,18 @@ _UNSUPPORTED_ON_V5: set = {
     # graph; porting requires restructuring `forward` to call the projection
     # outside the compiled vlm. Tracked as follow-up.
     "RBLNColQwen2ForRetrieval",
+    # On v5, rbln-compiler falls back to torch.jit.trace for the wav2vec2
+    # encoder, and v5's `create_bidirectional_mask` -> `sdpa_mask` BC branch
+    # then trips on the 0-d `q_length` tensor it receives. Routing around the
+    # BC branch is non-trivial from the wrapper layer; tracked as follow-up.
+    "RBLNWav2Vec2ForCTC",
+    # On v5, Qwen3VL's wrapping head delegates to `Qwen3VLModel` and the
+    # decoder layers live two levels deeper (`model.language_model.layers`).
+    # Our wrapper still walks the v4 path (`model.layers`) inside the
+    # decoder-only mixin and the language-model architecture; restructuring
+    # the wrapper to handle the v5 hierarchy is out of scope here.
+    "RBLNQwen3VLForConditionalGeneration",
+    "RBLNQwen3VLMoeForConditionalGeneration",
 }
 
 

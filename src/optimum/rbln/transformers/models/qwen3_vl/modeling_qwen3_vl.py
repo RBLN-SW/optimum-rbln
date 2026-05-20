@@ -33,7 +33,11 @@ from transformers.models.qwen3_vl.modeling_qwen3_vl import (
 from ....configuration_utils import RBLNCompileConfig
 from ....modeling import RBLNModel
 from ....utils.logging import get_logger
-from ....utils.transformers_compat import AutoModelForVision2Seq, no_init_weights
+from ....utils.transformers_compat import (
+    AutoModelForVision2Seq,
+    assert_supported_on_current_transformers,
+    no_init_weights,
+)
 from ...modeling_outputs import RBLNDecoderOnlyOutput, _validate_output_hidden_states
 from ..decoderonly.decoderonly_runtime_utils import RBLNPageTableManager, RBLNRuntimeModel
 from ..decoderonly.modeling_decoderonly import RBLNDecoderOnlyModel, RBLNDecoderOnlyModelForCausalLM
@@ -795,6 +799,11 @@ class RBLNQwen3VLForConditionalGeneration(RBLNQwen3VLModel, RBLNDecoderOnlyModel
     _rbln_submodules = [
         {"name": "visual"},
     ]
+
+    @classmethod
+    def from_pretrained(cls, *args, **kwargs):
+        assert_supported_on_current_transformers(cls.__name__)
+        return super().from_pretrained(*args, **kwargs)
 
     def __post_init__(self, **kwargs):
         super().__post_init__(**kwargs)
