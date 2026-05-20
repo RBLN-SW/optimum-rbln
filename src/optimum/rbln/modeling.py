@@ -24,6 +24,7 @@ from transformers.modeling_outputs import BaseModelOutput
 
 from .configuration_utils import DEFAULT_COMPILED_MODEL_NAME, RBLNModelConfig
 from .modeling_base import RBLNBaseModel
+from .utils.import_utils import is_transformers_version
 from .utils.logging import get_logger
 from .utils.transformers_compat import normalize_token_kwarg
 
@@ -238,6 +239,15 @@ class RBLNModel(RBLNBaseModel):
     ) -> "PreTrainedModel":
         kwargs = cls.update_kwargs(kwargs)
         token = normalize_token_kwarg(use_auth_token=use_auth_token, token=token)
+
+        # transformers v5 changed the default dtype to "auto", which loads
+        # checkpoints in their native bf16/fp16. That hands the rbln compile
+        # path a bf16 graph that doesn't match what these wrappers were tuned
+        # for on v4. If the caller didn't pin a dtype, mirror the v4 default
+        # (fp32). Models that genuinely want non-fp32 weights still get them
+        # when the caller passes `torch_dtype=`/`dtype=` explicitly.
+        if is_transformers_version(">=", "5.0") and "torch_dtype" not in kwargs and "dtype" not in kwargs:
+            kwargs["torch_dtype"] = torch.float32
 
         return cls.get_hf_class().from_pretrained(
             model_id,

@@ -36,18 +36,60 @@ class MixtralLayer(DecoderOnlyLayer):
         self.mlp = MixtralSparseMoeBlock(moe)
 
 
+class _MixtralV5ExpertView(nn.Module):
+    """v4-shaped (w1/w2/w3 nn.Linear) view onto a single expert sliced out of v5's
+    fused MixtralExperts (gate_up_proj [E, 2I, H], down_proj [E, H, I])."""
+
+    def __init__(self, w1: torch.Tensor, w2: torch.Tensor, w3: torch.Tensor):
+        super().__init__()
+        out_features, in_features = w1.shape
+        self.w1 = nn.Linear(in_features, out_features, bias=False)
+        self.w1.weight = nn.Parameter(w1)
+        out_features, in_features = w2.shape
+        self.w2 = nn.Linear(in_features, out_features, bias=False)
+        self.w2.weight = nn.Parameter(w2)
+        out_features, in_features = w3.shape
+        self.w3 = nn.Linear(in_features, out_features, bias=False)
+        self.w3.weight = nn.Parameter(w3)
+
+
+def _v5_experts_to_v4_list(experts: nn.Module) -> nn.ModuleList:
+    """Decompose v5's fused MixtralExperts back into a v4-style per-expert ModuleList
+    so the rest of the wrapper can take the same code path on both versions."""
+    gate_up = experts.gate_up_proj.detach().clone()
+    down = experts.down_proj.detach().clone()
+    num_experts = gate_up.shape[0]
+    intermediate_size = gate_up.shape[1] // 2
+    return nn.ModuleList(
+        [
+            _MixtralV5ExpertView(
+                w1=gate_up[i, :intermediate_size, :].contiguous(),
+                w2=down[i, :, :].contiguous(),
+                w3=gate_up[i, intermediate_size:, :].contiguous(),
+            )
+            for i in range(num_experts)
+        ]
+    )
+
+
 class MixtralSparseMoeBlock(nn.Module):
     def __init__(self, model: nn.Module):
         super().__init__()
         self.top_k = model.top_k
-        # v4 gate is nn.Linear (returns logits tensor); v5 gate is
-        # MixtralTopKRouter (returns a tuple) but exposes the same [E, H]
-        # weight. Materialize a plain nn.Linear so downstream stays uniform.
-        gate_weight = model.gate.weight
-        gate = nn.Linear(gate_weight.shape[1], gate_weight.shape[0], bias=False)
-        gate.weight = nn.Parameter(gate_weight.detach().clone())
-        self.gate = gate
-        self.experts = MixtralBlockSparseTop2MLP(model.experts, self.top_k)
+        if hasattr(model.experts, "gate_up_proj"):
+            # v5 gate is MixtralTopKRouter (returns a tuple); rebuild a plain
+            # nn.Linear from its [E, H] weight so the rest of the path stays
+            # uniform with v4. v5 fused experts are similarly decomposed into
+            # the v4-shaped per-expert ModuleList.
+            gate_weight = model.gate.weight
+            gate = nn.Linear(gate_weight.shape[1], gate_weight.shape[0], bias=False)
+            gate.weight = nn.Parameter(gate_weight.detach().clone())
+            self.gate = gate
+            experts = _v5_experts_to_v4_list(model.experts)
+        else:
+            self.gate = model.gate
+            experts = model.experts
+        self.experts = MixtralBlockSparseTop2MLP(experts, self.top_k)
 
     def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
         batch_size, sequence_length, hidden_dim = hidden_states.shape
@@ -60,28 +102,13 @@ class MixtralSparseMoeBlock(nn.Module):
 
 
 class MixtralBlockSparseTop2MLP(nn.Module):
-    def __init__(self, experts, top_k):
+    def __init__(self, expert_list, top_k):
         super().__init__()
         self.top_k = top_k
 
-        if hasattr(experts, "gate_up_proj"):
-            # v5: experts is a single MixtralExperts module with fused tensors
-            # gate_up_proj [E, 2I, H] (gate || up along the row axis) and
-            # down_proj [E, H, I]. transformers v5 builds these under
-            # torch.inference_mode(), so the tensors are inference tensors;
-            # detach+clone produces a regular leaf tensor that can be wrapped
-            # in nn.Parameter and that tracks its version counter.
-            gate_up = experts.gate_up_proj.detach().clone()
-            intermediate_size = gate_up.shape[1] // 2
-            self.w1_weight = nn.Parameter(gate_up[:, :intermediate_size, :].contiguous())
-            self.w3_weight = nn.Parameter(gate_up[:, intermediate_size:, :].contiguous())
-            self.w2_weight = nn.Parameter(experts.down_proj.detach().clone())
-        else:
-            # v4: experts is a ModuleList of MixtralBlockSparseTop2MLP, each
-            # with per-expert nn.Linear w1/w2/w3.
-            self.w1_weight = nn.Parameter(torch.stack([e.w1.weight.data for e in experts], dim=0))
-            self.w2_weight = nn.Parameter(torch.stack([e.w2.weight.data for e in experts], dim=0))
-            self.w3_weight = nn.Parameter(torch.stack([e.w3.weight.data for e in experts], dim=0))
+        self.w1_weight = nn.Parameter(torch.stack([expert.w1.weight.data for expert in expert_list], dim=0))
+        self.w2_weight = nn.Parameter(torch.stack([expert.w2.weight.data for expert in expert_list], dim=0))
+        self.w3_weight = nn.Parameter(torch.stack([expert.w3.weight.data for expert in expert_list], dim=0))
 
     def forward(self, x, router_logits):
         return torch.ops.rbln_custom_ops.custom_moe_glu(
