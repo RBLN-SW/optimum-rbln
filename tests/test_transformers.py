@@ -278,10 +278,6 @@ class TestWhisperModel(BaseTest.TestModel):
             )
 
 
-@unittest.skipIf(
-    _SKIP_ON_V5,
-    "Whisper token-timestamps relies on subscripting the cache; v5's EncoderDecoderCache is not subscriptable. Tracked as follow-up.",
-)
 class TestWhisperModel_TokenTimestamps(BaseTest.TestModel):
     RBLN_AUTO_CLASS = RBLNAutoModelForSpeechSeq2Seq
     RBLN_CLASS = RBLNWhisperForConditionalGeneration
@@ -393,7 +389,6 @@ class TestCLIPTextModel(BaseTest.TestModel):
     TEST_LEVEL = TestLevel.FULL
 
 
-@unittest.skipIf(_SKIP_ON_V5, "ColPali wrapper not yet ported to transformers>=5 PaliGemma layout")
 class TestColPaliModel(BaseTest.TestModel):
     RBLN_AUTO_CLASS = None
     RBLN_CLASS = RBLNColPaliForRetrieval
@@ -427,7 +422,6 @@ class TestColPaliModel(BaseTest.TestModel):
                 assert model.rbln_config.vlm.language_model.device == 2
 
 
-@unittest.skipIf(_SKIP_ON_V5, "ColQwen2 wrapper not yet ported to transformers>=5 Qwen2-VL layout")
 class TestColQwen2Model(BaseTest.TestModel):
     RBLN_AUTO_CLASS = None
     RBLN_CLASS = RBLNColQwen2ForRetrieval
@@ -516,10 +510,6 @@ class TestColQwen2_5Model(TestColQwen2Model):
     HF_MODEL_ID = "Sahil-Kabir/colqwen2.5-v0.2-hf"
 
 
-@unittest.skipIf(
-    _SKIP_ON_V5,
-    "Wav2Vec2 trace still trips the v5 sdpa_mask BC branch; explicit ones-mask doesn't propagate through the FakeTensor path. Tracked as follow-up.",
-)
 class TestWav2VecModel(BaseTest.TestModel):
     RBLN_AUTO_CLASS = RBLNAutoModelForCTC
     RBLN_CLASS = RBLNWav2Vec2ForCTC
