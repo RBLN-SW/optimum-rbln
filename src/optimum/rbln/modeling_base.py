@@ -454,6 +454,31 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
         return compiled_model
 
     @classmethod
+    def _detect_model_dtype(cls, model: "PreTrainedModel") -> torch.dtype:
+        """Detect the dtype of native ops without corrupting them.
+
+        Standard HF ``PreTrainedModel`` exposes ``.dtype`` (the dtype of
+        the first floating-point parameter). Custom modeling — e.g.
+        third-party trees in ``rbln_model_zoo`` that don't subclass
+        ``PreTrainedModel`` — may not expose that attribute. Fall back
+        to inspecting parameters / buffers so the rbln config records
+        the *actual* native ops dtype instead of crashing or silently
+        forcing fp32.
+        """
+        dtype = getattr(model, "dtype", None)
+        if isinstance(dtype, torch.dtype):
+            return dtype
+        if hasattr(model, "parameters"):
+            for p in model.parameters():
+                if p.is_floating_point():
+                    return p.dtype
+        if hasattr(model, "buffers"):
+            for b in model.buffers():
+                if b.is_floating_point():
+                    return b.dtype
+        return torch.float32
+
+    @classmethod
     def update_rbln_config(
         cls,
         preprocessors: Optional[Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"]],
@@ -461,10 +486,13 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
         model_config: "PretrainedConfig",
         rbln_config: RBLNModelConfig,
     ) -> RBLNModelConfig:
-        rbln_config.dtype = model.dtype
+        rbln_config.dtype = cls._detect_model_dtype(model)
         if not cls._supports_non_fp32 and rbln_config.dtype != torch.float32:
             raise NotImplementedError(
-                f"Currently, {cls.__name__} does not support non-fp32 dtype. Please use float32 dtype."
+                f"Currently, {cls.__name__} does not support non-fp32 dtype "
+                f"(detected {rbln_config.dtype}). Set `_supports_non_fp32 = True` "
+                f"on the subclass once its `_update_rbln_config` propagates the "
+                f"dtype to every `input_info` entry."
             )
         rbln_config = cls._update_rbln_config(
             preprocessors=preprocessors, model=model, model_config=model_config, rbln_config=rbln_config
