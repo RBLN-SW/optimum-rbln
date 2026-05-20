@@ -26,7 +26,7 @@ from ....configuration_utils import RBLNCompileConfig
 from ....modeling import RBLNModel
 from ....utils.logging import get_logger
 from ....utils.runtime_utils import is_compiler_supports_buffer_resize
-from ....utils.transformers_compat import no_init_weights
+from ....utils.transformers_compat import get_text_config_attr, no_init_weights
 from ...modeling_attention_utils import (
     RBLNDecoderOnlyFlashAttentionMixin,
     set_default_values,
@@ -359,11 +359,18 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
         rbln_config: RBLNDecoderOnlyModelForCausalLMConfig,
         model_config: PretrainedConfig,
     ):
-        num_attention_heads = getattr(model_config, "n_head", None) or model_config.num_attention_heads
-        num_key_value_heads = getattr(model_config, "num_key_value_heads", None) or num_attention_heads
-        num_hidden_layers = getattr(model_config, "n_layer", None) or model_config.num_hidden_layers
-        hidden_size = getattr(model_config, "n_embd", None) or model_config.hidden_size
-        head_dim = getattr(model_config, "head_dim", None) or hidden_size // num_attention_heads
+        # Some VLM configs (e.g. Qwen2VLConfig on transformers v5) move their
+        # text decoder fields into `text_config`. `get_text_config_attr` looks
+        # through both layouts.
+        num_attention_heads = getattr(model_config, "n_head", None) or get_text_config_attr(
+            model_config, "num_attention_heads"
+        )
+        num_key_value_heads = get_text_config_attr(model_config, "num_key_value_heads") or num_attention_heads
+        num_hidden_layers = getattr(model_config, "n_layer", None) or get_text_config_attr(
+            model_config, "num_hidden_layers"
+        )
+        hidden_size = getattr(model_config, "n_embd", None) or get_text_config_attr(model_config, "hidden_size")
+        head_dim = get_text_config_attr(model_config, "head_dim") or hidden_size // num_attention_heads
         is_prefill = query_length > 1
 
         input_info = []
@@ -465,21 +472,21 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
         # Returns:
         #     RBLNDecoderOnlyModelConfig: The updated RBLN model configuration.
 
-        rbln_config.sliding_window = model_config.sliding_window
+        rbln_config.sliding_window = get_text_config_attr(model_config, "sliding_window")
         sliding_window_layers = []
 
-        for i in range(model_config.num_hidden_layers):
-            if hasattr(model_config, "layer_types"):
-                if model_config.layer_types[i] == "sliding_attention":
+        num_hidden_layers = get_text_config_attr(model_config, "num_hidden_layers")
+        layer_types = get_text_config_attr(model_config, "layer_types")
+        for i in range(num_hidden_layers):
+            if layer_types is not None:
+                if layer_types[i] == "sliding_attention":
                     sliding_window_layers.append(i)
             else:
                 sliding_window_layers.append(i)
 
         rbln_config.sliding_window_layers = sliding_window_layers
 
-        rbln_config.cache_impl = (
-            "sliding_window" if len(sliding_window_layers) == model_config.num_hidden_layers else "hybrid"
-        )
+        rbln_config.cache_impl = "sliding_window" if len(sliding_window_layers) == num_hidden_layers else "hybrid"
         return rbln_config
 
     @classmethod
