@@ -743,7 +743,16 @@ class RBLNGemma4ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMix
             )
 
             for b_idx in range(batch_size):
-                cache_position_b = torch.arange(0, generate_idx[b_idx].item(), dtype=torch.int32).unsqueeze(0)
+                # Mirror RBLNDecoderOnlyModel.forward: use `attention_mask[b_idx].sum()`
+                # so left-padded multi-batch inputs get a `cache_position` whose length
+                # matches the post-strip inputs (parent `_prepare_prefill_inputs` strips
+                # inputs by `attention_mask`).
+                query_length = (
+                    attention_mask[b_idx].sum(dim=-1).int().item()
+                    if attention_mask is not None
+                    else inputs_embeds.shape[1]
+                )
+                cache_position_b = torch.arange(query_length, dtype=torch.int32).unsqueeze(0)
                 outputs = self.language_model.prefill_decoder(
                     input_ids=input_ids[b_idx : b_idx + 1] if input_ids is not None else None,
                     inputs_embeds=inputs_embeds[b_idx : b_idx + 1],
