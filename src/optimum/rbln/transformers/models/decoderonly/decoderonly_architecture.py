@@ -20,6 +20,7 @@ from torch import nn
 from transformers import PretrainedConfig, PreTrainedModel
 
 from ....utils import logging
+from ....utils.transformers_compat import get_text_config_attr
 from ...modeling_rope_utils import ROPE_INIT_FUNCTIONS
 from .configuration_lora import RBLNLoRAConfig
 from .lora_architecture import LoRALinear
@@ -76,7 +77,9 @@ class DecoderOnlyWrapper(nn.Module):
             )
 
         self.model = self.convert_to_rbln_class(model, rbln_config.max_seq_len, use_rotary_emb)
-        self.num_hidden_layers = getattr(self.config, "num_hidden_layers", None) or self.config.n_layer
+        self.num_hidden_layers = get_text_config_attr(self.config, "num_hidden_layers") or getattr(
+            self.config, "n_layer", None
+        )
         self._phase = "prefill"
 
     def get_rotary_emb(self, max_seq_len):
@@ -165,7 +168,7 @@ class DecoderOnlyWrapper(nn.Module):
         # [key, value] * n_layer -> ( (key, value) ) * n_layer
         # cache shape : batch, n_heads, 1, max_seq_len, head_dim
         _past_key_values = []
-        for i in range(self.config.num_hidden_layers):
+        for i in range(self.num_hidden_layers):
             key_states = past_key_values[i * 2]
             value_states = past_key_values[i * 2 + 1]
             past_key_value = [key_states, value_states]

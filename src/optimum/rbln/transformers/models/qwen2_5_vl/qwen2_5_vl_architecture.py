@@ -202,7 +202,7 @@ class Qwen2_5_VL_LanguageModelWrapper(DecoderOnlyWrapper):
         # [key, value] * n_layer -> ( (key, value) ) * n_layer
         # cache shape : batch, n_heads, 1, max_seq_len, head_dim
         _past_key_values = []
-        for i in range(self.config.num_hidden_layers):
+        for i in range(self.num_hidden_layers):
             key_states = past_key_values[i * 2]
             value_states = past_key_values[i * 2 + 1]
             past_key_value = [key_states, value_states]
