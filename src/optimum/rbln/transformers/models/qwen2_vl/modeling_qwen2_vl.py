@@ -249,6 +249,12 @@ class RBLNQwen2VLModel(RBLNDecoderOnlyModel):
     _rotary_emb_class = Qwen2VLRotaryEmbedding
     _get_rope_index_func = Qwen2VLModel.get_rope_index
 
+    # v5's Qwen2VLModel.get_rope_index calls back through `self.get_vision_position_ids`.
+    # Our wrapper's __getattr__ only looks the symbol up on the ForConditionalGeneration
+    # head, so expose the implementation from Qwen2VLModel directly on the class.
+    if is_transformers_version(">=", "5.0"):
+        get_vision_position_ids = Qwen2VLModel.get_vision_position_ids
+
     def __post_init__(self, **kwargs):
         if hasattr(self.config, "embedding_dim"):
             self.embedding_dim = self.config.embedding_dim

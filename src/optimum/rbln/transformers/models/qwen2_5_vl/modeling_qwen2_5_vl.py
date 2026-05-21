@@ -356,6 +356,12 @@ class RBLNQwen2_5_VLModel(RBLNDecoderOnlyModel):
     _rotary_emb_class = Qwen2_5_VLRotaryEmbedding
     _get_rope_index_func = Qwen2_5_VLModel.get_rope_index
 
+    # v5's Qwen2_5_VLModel.get_rope_index calls back through `self.get_vision_position_ids`.
+    # Expose it directly on the wrapper class so __getattr__ doesn't fall through to
+    # PreTrainedModel and raise AttributeError.
+    if is_transformers_version(">=", "5.0"):
+        get_vision_position_ids = Qwen2_5_VLModel.get_vision_position_ids
+
     def __post_init__(self, **kwargs):
         if hasattr(self.config, "embedding_dim"):
             self.embedding_dim = self.config.embedding_dim
