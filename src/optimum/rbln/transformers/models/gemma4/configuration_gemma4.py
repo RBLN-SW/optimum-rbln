@@ -57,7 +57,7 @@ class RBLNGemma4ForCausalLMConfig(RBLNDecoderOnlyModelForCausalLMConfig):
             use_attention_mask = True
         if use_position_ids is None:
             use_position_ids = True
-        prefill_chunk_size = prefill_chunk_size or 256
+        prefill_chunk_size = prefill_chunk_size or 512
 
         super().__init__(
             prefill_chunk_size=prefill_chunk_size,
@@ -65,10 +65,10 @@ class RBLNGemma4ForCausalLMConfig(RBLNDecoderOnlyModelForCausalLMConfig):
             use_position_ids=use_position_ids,
             **kwargs,
         )
-        if image_prefill_chunk_size is None:
-            self.image_prefill_chunk_size = prefill_chunk_size
-        else:
-            self.image_prefill_chunk_size = image_prefill_chunk_size
+        if image_prefill_chunk_size is not None:
+            assert prefill_chunk_size == image_prefill_chunk_size, \
+            "`image_prefill_chunk_size` should be same with `prefill_chunk_size`"
+        self.image_prefill_chunk_size = prefill_chunk_size
 
         if not (self.use_attention_mask and self.use_position_ids):
             raise ValueError("use_attention_mask and use_position_ids must be True for RBLNGemma4ForCausalLM")
