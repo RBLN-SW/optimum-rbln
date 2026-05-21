@@ -656,6 +656,7 @@ class RBLNQwen2_5_VLForConditionalGeneration(RBLNQwen2_5_VLModel, RBLNDecoderOnl
         image_grid_thw=None,
         video_grid_thw=None,
         second_per_grid_ts=None,
+        mm_token_type_ids=None,  # v5 Qwen2_5_VLProcessor emits this; consume so generate doesn't flag it as unused.
         **kwargs,
     ):
         model_inputs = {}
