@@ -31,6 +31,7 @@ from transformers.modeling_outputs import BaseModelOutputWithPast, BaseModelOutp
 from ....configuration_utils import RBLNCompileConfig, RBLNModelConfig
 from ....modeling import RBLNModel
 from ....utils.logging import get_logger
+from ...modeling_attention_utils import validate_sliding_window
 from ...modeling_outputs import RBLNDecoderOnlyOutput
 from ...utils.rbln_runtime_wrapper import LoopProcessor
 from ..decoderonly.configuration_decoderonly import KVCacheMeta
@@ -267,6 +268,71 @@ class RBLNGemma4ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
             )
             return [base_info[0], per_layer_entry, *base_info[1:]]
         return base_info
+
+    @classmethod
+    def _update_rbln_config(
+        cls,
+        preprocessors: Optional[Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"]] = None,
+        model: Optional[PreTrainedModel] = None,
+        model_config: Optional[PretrainedConfig] = None,
+        rbln_config: Optional[RBLNGemma4ForCausalLMConfig] = None,
+    ) -> RBLNGemma4ForCausalLMConfig:
+        if rbln_config.max_seq_len is None:
+            rbln_config.max_seq_len = getattr(model_config, "max_position_embeddings", None) or getattr(
+                model_config, "n_positions", None
+            )
+        if rbln_config.max_seq_len is None:
+            raise ValueError("`max_seq_len` should be specified.")
+
+        layer_types = getattr(model_config, "layer_types", None)
+        all_full_attention = layer_types is not None and all(t == "full_attention" for t in layer_types)
+
+        if (
+            getattr(model_config, "sliding_window", None) is not None
+            and getattr(model_config, "use_sliding_window", True)
+            and not all_full_attention
+        ):
+            rbln_config = cls._update_sliding_window_config(model_config, rbln_config)
+            if rbln_config.sliding_window is not None:
+                validate_sliding_window(rbln_config)
+
+        rbln_config = cls._update_attention_config(model, model_config, rbln_config)
+
+        prefill_input_info = cls.get_input_info(
+            batch_size=1,
+            query_length=rbln_config.prefill_chunk_size,
+            rbln_config=rbln_config,
+            model_config=model_config,
+        )
+        prefill_compile_config = RBLNCompileConfig(compiled_model_name="prefill", input_info=prefill_input_info)
+        compile_cfgs = [prefill_compile_config]
+
+        if rbln_config.use_image_prefill:
+            image_prefill_input_info = cls.get_input_info(
+                batch_size=1,
+                query_length=rbln_config.image_prefill_chunk_size,
+                rbln_config=rbln_config,
+                model_config=model_config,
+            )
+            image_prefill_compile_config = RBLNCompileConfig(
+                compiled_model_name="image_prefill", input_info=image_prefill_input_info
+            )
+            compile_cfgs.append(image_prefill_compile_config)
+
+        if rbln_config.can_generate:
+            for batch_size in rbln_config.decoder_batch_sizes:
+                dec_input_info = cls.get_input_info(
+                    batch_size=batch_size,
+                    query_length=1,
+                    rbln_config=rbln_config,
+                    model_config=model_config,
+                )
+                compile_cfgs.append(
+                    RBLNCompileConfig(compiled_model_name=f"decoder_batch_{batch_size}", input_info=dec_input_info)
+                )
+        rbln_config.set_compile_cfgs(compile_cfgs)
+
+        return rbln_config
 
     @classmethod
     def save_torch_artifacts(
