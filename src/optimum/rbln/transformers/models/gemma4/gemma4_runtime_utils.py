@@ -22,6 +22,13 @@ from ...modeling_outputs import RBLNDecoderOnlyOutput
 from ..decoderonly.decoderonly_runtime_utils import RBLNPytorchRuntime, RBLNRuntimeModel
 
 
+def _run_length_from(tt: torch.Tensor, start: int, value: int, cap: int) -> int:
+    """Length of the run of `value` in `tt[0, start:]`, capped at `cap`."""
+    seg = tt[0, start : start + cap]
+    diff_idx = (seg != value).nonzero(as_tuple=False)
+    return int(diff_idx[0].item()) if diff_idx.numel() > 0 else int(seg.shape[0])
+
+
 class RBLNGemma4RuntimeModel(RBLNRuntimeModel):
     """Runtime wrapper for the Gemma4 text decoder.
 
@@ -94,16 +101,16 @@ class RBLNGemma4RuntimeModel(RBLNRuntimeModel):
             token_type_ids,
         )
 
-    def _partition_alignment_padding(self, abs_cache_pos: int) -> int:
-        """Padding needed so that an upcoming image-prefill chunk does not cross a KV
-        cache partition (flash_attn block) boundary.
+    def _partition_alignment_padding(self, abs_cache_pos: int, chunk_size: int) -> int:
+        """Padding needed so that an upcoming chunk does not cross a KV cache partition
+        (flash_attn block) boundary.
 
         Bidirectional attention is computed within a single chunk. For flash_attn the KV
         cache is paged at `kvcache_block_size == kvcache_partition_len` granularity, and
-        a single image chunk's K/V must stay inside one block so the partition mechanism
-        can read it back consistently. If the image would straddle a boundary, we skip
-        the remaining slots of the current partition (recorded in `padded_cache_lengths`)
-        and start the image at the next partition.
+        a single chunk's K/V must stay inside one block so the partition mechanism can
+        read it back consistently. If the chunk would straddle a boundary, we skip the
+        remaining slots of the current partition (recorded in `padded_cache_lengths`)
+        and start the chunk at the next partition.
 
         Returns the number of dummy slots to insert. Always 0 for eager attention.
         """
@@ -112,12 +119,11 @@ class RBLNGemma4RuntimeModel(RBLNRuntimeModel):
         partition_len = self.rbln_config.kvcache_partition_len
         if partition_len is None:
             return 0
-        image_chunk = self.rbln_config.image_prefill_chunk_size
-        if image_chunk is None or image_chunk <= 0:
+        if chunk_size is None or chunk_size <= 0:
             return 0
         index_in_part = abs_cache_pos % partition_len
         remaining_in_part = partition_len - index_in_part
-        if remaining_in_part < image_chunk:
+        if remaining_in_part < chunk_size:
             return remaining_in_part
         return 0
 
@@ -179,59 +185,50 @@ class RBLNGemma4RuntimeModel(RBLNRuntimeModel):
         all_hidden_states_list = [] if self.rbln_config.output_hidden_states else None
 
         while step < query_length:
-            if self.rbln_config.use_image_prefill and token_type_ids is not None:
-                image_chunk = self.rbln_config.image_prefill_chunk_size
-                is_image_prefill = bool(
-                    torch.all(token_type_ids[:, step : step + image_chunk] == 1)
-                )
-                is_text_prefill_with_image_tokens = (
-                    not is_image_prefill
-                    and bool(
-                        torch.any(
-                            token_type_ids[:, step : step + self.rbln_config.prefill_chunk_size] == 1
-                        )
-                    )
-                )
+            use_tt = self.rbln_config.use_image_prefill and token_type_ids is not None
+            if use_tt:
+                start_type = int(token_type_ids[0, step].item())
+                is_image_prefill = start_type == 1
             else:
-                is_image_prefill, is_text_prefill_with_image_tokens = False, False
+                is_image_prefill = False
 
-            if is_image_prefill:
-                abs_cache_pos = int(cache_position[0, step].item()) + int(padded_cache_lengths)
-                extra_pad = self._partition_alignment_padding(abs_cache_pos)
-                if extra_pad > 0:
-                    padded_cache_lengths += extra_pad
-                    continue
+            chunk_size_used = (
+                self.rbln_config.image_prefill_chunk_size
+                if is_image_prefill
+                else self.rbln_config.prefill_chunk_size
+            )
+            if use_tt:
+                target_value = 1 if is_image_prefill else 0
+                run_len = _run_length_from(token_type_ids, step, value=target_value, cap=chunk_size_used)
+            else:
+                run_len = chunk_size_used
 
-            is_last_chunk = step + self.rbln_config.prefill_chunk_size >= query_length
+            abs_first = int(cache_position[0, step].item()) + int(padded_cache_lengths)
+            extra_pad = self._partition_alignment_padding(abs_first, chunk_size_used)
+            if extra_pad > 0:
+                padded_cache_lengths += extra_pad
+                continue
 
-            input_chunk = inputs[:, step : step + self.rbln_config.prefill_chunk_size]
+            is_last_chunk = step + chunk_size_used >= query_length
+
+            input_chunk = inputs[:, step : step + chunk_size_used]
             per_layer_chunk = (
-                per_layer_inputs[:, step : step + self.rbln_config.prefill_chunk_size]
+                per_layer_inputs[:, step : step + chunk_size_used]
                 if per_layer_inputs is not None
                 else None
             )
-            cache_pos_chunk = (
-                cache_position[:, step : step + self.rbln_config.prefill_chunk_size]
-                + padded_cache_lengths
-            )
+            cache_pos_chunk = cache_position[:, step : step + chunk_size_used] + padded_cache_lengths
             position_ids_chunk = (
-                position_ids[:, step : step + self.rbln_config.prefill_chunk_size]
+                position_ids[:, step : step + chunk_size_used]
                 if self.rbln_config.use_position_ids
                 else None
             )
 
-            num_processed_tokens = self.rbln_config.prefill_chunk_size
-            current_padded_cache_lengths = 0
-            if is_text_prefill_with_image_tokens:
-                first_image_token_idx = torch.where(
-                    token_type_ids[:, step : step + self.rbln_config.prefill_chunk_size] == 1
-                )[1][0]
-                num_processed_tokens = int(first_image_token_idx.item())
-                current_padded_cache_lengths = (
-                    self.rbln_config.prefill_chunk_size - num_processed_tokens
-                )
+            num_processed_tokens = run_len
+            current_padded_cache_lengths = chunk_size_used - run_len
             if is_last_chunk:
-                num_processed_tokens = query_length - step
+                tail = query_length - step
+                num_processed_tokens = min(tail, run_len) if run_len > 0 else tail
                 current_padded_cache_lengths = 0
 
             chunked_attention_mask[
@@ -262,7 +259,6 @@ class RBLNGemma4RuntimeModel(RBLNRuntimeModel):
             padded_cache_lengths += current_padded_cache_lengths
             step += num_processed_tokens
 
-        # Aggregate hidden states (per layer) across chunks if requested.
         if self.rbln_config.output_hidden_states:
             num_hidden_layers = len(all_hidden_states_list[0]) - 1
             concatenated_hidden_states = ()
@@ -318,6 +314,20 @@ class RBLNGemma4RuntimeModel(RBLNRuntimeModel):
 
         if per_layer_inputs is None and input_ids is not None:
             per_layer_inputs = self.compute_per_layer_inputs(input_ids)
+
+        cache_position_for_blocks = cache_position
+        if (
+            self.phase == "prefill"
+            and self.rbln_config.use_image_prefill
+            and cache_position is not None
+            and self.rbln_config.kvcache_partition_len is not None
+        ):
+            last = int(cache_position[0, -1].item())
+            pad = self.rbln_config.image_prefill_chunk_size
+            partition_len = self.rbln_config.kvcache_partition_len
+            if last + 1 + pad > partition_len:
+                tail = torch.arange(last + 1, last + 1 + pad, dtype=cache_position.dtype).unsqueeze(0)
+                cache_position_for_blocks = torch.cat([cache_position, tail], dim=-1)
 
         block_tables, local_block_tables, is_external_block_tables = (
             self.page_table_manager.get_block_tables_if_needed(
