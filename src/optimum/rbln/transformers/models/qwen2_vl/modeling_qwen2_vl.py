@@ -33,6 +33,7 @@ from transformers.models.qwen2_vl.modeling_qwen2_vl import (
 
 from ....configuration_utils import RBLNCompileConfig
 from ....modeling import RBLNModel
+from ....utils.import_utils import is_transformers_version
 from ....utils.logging import get_logger
 from ....utils.transformers_compat import AutoModelForVision2Seq, get_text_config_attr, no_init_weights
 from ...modeling_outputs import _validate_output_hidden_states
@@ -391,11 +392,30 @@ class RBLNQwen2VLModel(RBLNDecoderOnlyModel):
             vision_tokens = input_id[0][vision_start_indices + 1]
             image_nums = (vision_tokens == image_token_id).sum()
             video_nums = (vision_tokens == video_token_id).sum()
-            position_ids, rope_deltas = self._get_rope_index_func(
-                input_id,
-                image_grid_thw[image_idx : image_idx + image_nums] if image_grid_thw is not None else None,
-                video_grid_thw[video_idx : video_idx + video_nums] if video_grid_thw is not None else None,
+            image_grid_thw_slice = (
+                image_grid_thw[image_idx : image_idx + image_nums] if image_grid_thw is not None else None
             )
+            video_grid_thw_slice = (
+                video_grid_thw[video_idx : video_idx + video_nums] if video_grid_thw is not None else None
+            )
+            if is_transformers_version(">=", "5.0"):
+                # v5 added a required `mm_token_type_ids` parameter (text=0,
+                # image=1, video=2). Derive it from input_ids on the fly.
+                mm_token_type_ids = torch.zeros_like(input_id, dtype=torch.int32)
+                mm_token_type_ids[input_id == image_token_id] = 1
+                mm_token_type_ids[input_id == video_token_id] = 2
+                position_ids, rope_deltas = self._get_rope_index_func(
+                    input_id,
+                    mm_token_type_ids,
+                    image_grid_thw_slice,
+                    video_grid_thw_slice,
+                )
+            else:
+                position_ids, rope_deltas = self._get_rope_index_func(
+                    input_id,
+                    image_grid_thw_slice,
+                    video_grid_thw_slice,
+                )
             image_idx += image_nums
             video_idx += video_nums
 
