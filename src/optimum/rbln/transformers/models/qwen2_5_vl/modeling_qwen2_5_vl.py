@@ -366,7 +366,9 @@ class RBLNQwen2_5_VLModel(RBLNDecoderOnlyModel):
 
         super().__post_init__(**kwargs)
         self.visual = self.rbln_submodules[0]
-        self.rotary_emb = self._rotary_emb_class(self.config)
+        # v5 Qwen2_5_VLRotaryEmbedding reads max_position_embeddings /
+        # rope_parameters off the config; on v5 those moved into text_config.
+        self.rotary_emb = self._rotary_emb_class(getattr(self.config, "text_config", self.config))
         if not self.can_generate():
             self.block_tables = torch.arange(self.rbln_config.kvcache_num_blocks, dtype=torch.int16)
 

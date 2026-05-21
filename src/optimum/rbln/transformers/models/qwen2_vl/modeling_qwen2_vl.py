@@ -259,7 +259,11 @@ class RBLNQwen2VLModel(RBLNDecoderOnlyModel):
 
         super().__post_init__(**kwargs)
         self.visual = self.rbln_submodules[0]
-        self.rotary_emb = self._rotary_emb_class(self.config)
+        # v5 Qwen2VLRotaryEmbedding reads max_position_embeddings / rope_parameters
+        # directly off the config. v5's Qwen2VLConfig moved those into
+        # text_config; pass the text-config slice so the hf code still works on
+        # both layouts.
+        self.rotary_emb = self._rotary_emb_class(getattr(self.config, "text_config", self.config))
         if not self.can_generate():
             self.block_tables = torch.arange(self.rbln_config.kvcache_num_blocks, dtype=torch.int16)
 
