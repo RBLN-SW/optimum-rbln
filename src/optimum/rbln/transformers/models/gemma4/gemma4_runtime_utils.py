@@ -101,32 +101,6 @@ class RBLNGemma4RuntimeModel(RBLNRuntimeModel):
             token_type_ids,
         )
 
-    def _partition_alignment_padding(self, abs_cache_pos: int, chunk_size: int) -> int:
-        """Padding needed so that an upcoming chunk does not cross a KV cache partition
-        (flash_attn block) boundary.
-
-        Bidirectional attention is computed within a single chunk. For flash_attn the KV
-        cache is paged at `kvcache_block_size == kvcache_partition_len` granularity, and
-        a single chunk's K/V must stay inside one block so the partition mechanism can
-        read it back consistently. If the chunk would straddle a boundary, we skip the
-        remaining slots of the current partition (recorded in `padded_cache_lengths`)
-        and start the chunk at the next partition.
-
-        Returns the number of dummy slots to insert. Always 0 for eager attention.
-        """
-        if self.rbln_config.attn_impl != "flash_attn":
-            return 0
-        partition_len = self.rbln_config.kvcache_partition_len
-        if partition_len is None:
-            return 0
-        if chunk_size is None or chunk_size <= 0:
-            return 0
-        index_in_part = abs_cache_pos % partition_len
-        remaining_in_part = partition_len - index_in_part
-        if remaining_in_part < chunk_size:
-            return remaining_in_part
-        return 0
-
     def prefill_forward(
         self,
         inputs: torch.Tensor,
@@ -202,12 +176,6 @@ class RBLNGemma4RuntimeModel(RBLNRuntimeModel):
                 run_len = _run_length_from(token_type_ids, step, value=target_value, cap=chunk_size_used)
             else:
                 run_len = chunk_size_used
-
-            abs_first = int(cache_position[0, step].item()) + int(padded_cache_lengths)
-            extra_pad = self._partition_alignment_padding(abs_first, chunk_size_used)
-            if extra_pad > 0:
-                padded_cache_lengths += extra_pad
-                continue
 
             is_last_chunk = step + chunk_size_used >= query_length
 
@@ -314,20 +282,6 @@ class RBLNGemma4RuntimeModel(RBLNRuntimeModel):
 
         if per_layer_inputs is None and input_ids is not None:
             per_layer_inputs = self.compute_per_layer_inputs(input_ids)
-
-        cache_position_for_blocks = cache_position
-        if (
-            self.phase == "prefill"
-            and self.rbln_config.use_image_prefill
-            and cache_position is not None
-            and self.rbln_config.kvcache_partition_len is not None
-        ):
-            last = int(cache_position[0, -1].item())
-            pad = self.rbln_config.image_prefill_chunk_size
-            partition_len = self.rbln_config.kvcache_partition_len
-            if last + 1 + pad > partition_len:
-                tail = torch.arange(last + 1, last + 1 + pad, dtype=cache_position.dtype).unsqueeze(0)
-                cache_position_for_blocks = torch.cat([cache_position, tail], dim=-1)
 
         block_tables, local_block_tables, is_external_block_tables = (
             self.page_table_manager.get_block_tables_if_needed(
