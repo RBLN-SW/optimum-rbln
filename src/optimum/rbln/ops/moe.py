@@ -28,6 +28,7 @@ def custom_moe_glu(
     up_proj_weight: Tensor,
     down_proj_weight: Tensor,
     router_logits: Tensor,
+    scoring_func: str,
     topk: int,
     norm_topk_prob: bool,
     gate_proj_bias: Optional[Tensor] = None,
@@ -43,8 +44,11 @@ def custom_moe_glu(
     - up_proj_weight: [num_experts, hidden_size, intermediate_size]
     - down_proj_weight: [num_experts, intermediate_size, hidden_size]
     - router_logits: [batch*seq_len, num_experts]
+        For sigmoid scoring, callers must pre-apply sigmoid on logits because
+        the compiler routing kernel does not include the sigmoid op.
+    - scoring_func: routing scoring function, "softmax" or "sigmoid"
     - topk: top k experts to select
-    - norm_topk_prob: whether to normalize the top k routing weights with softmax
+    - norm_topk_prob: whether to renormalize the top k routing weights
     - gate_proj_bias: [num_experts, intermediate_size]
     - up_proj_bias: [num_experts, intermediate_size]
     - down_proj_bias: [num_experts, hidden_size]
@@ -63,6 +67,7 @@ def custom_moe_glu_fake(
     up_proj_weight: Tensor,
     down_proj_weight: Tensor,
     router_logits: Tensor,
+    scoring_func: str,
     topk: int,
     norm_topk_prob: bool,
     gate_proj_bias: Optional[Tensor] = None,
@@ -129,6 +134,7 @@ def custom_moe_glu_mxfp4(
     down_proj_scales: Tensor,
     down_proj_bias: Tensor,
     router_logits: Tensor,
+    scoring_func: str,
     alpha: Tensor,
     limit: Tensor,
     k: int,
@@ -149,8 +155,14 @@ def custom_moe_glu_mxfp4(
     - down_proj_scales: [num_experts, hidden_size, intermediate_size // 32]
     - masked_routing_weight: [batch * seq_len, num_experts]
     - expert_select_count: [num_experts]
+    - router_logits: [batch * seq_len, num_experts]
+        For sigmoid scoring, callers must pre-apply sigmoid on logits because
+        the compiler routing kernel does not include the sigmoid op.
+    - scoring_func: routing scoring function, "softmax" or "sigmoid"
     - alpha: []
     - limit: []
+    - k: top k experts to select
+    - post_norm: whether to renormalize the top k routing weights
 
     Returns:
         Tensor: [batch * seq_len, hidden_size]
@@ -172,6 +184,7 @@ def custom_moe_glu_mxfp4_fake(
     down_proj_scales: Tensor,
     down_proj_bias: Tensor,
     router_logits: Tensor,
+    scoring_func: str,
     alpha: Tensor,
     limit: Tensor,
     k: int,

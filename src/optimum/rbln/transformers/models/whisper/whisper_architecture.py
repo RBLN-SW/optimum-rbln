@@ -293,13 +293,13 @@ class WhisperSelfAttention(WhisperAttention):
         key_states = self._shape(self.k_proj(hidden_states), -1, bsz)
         value_states = self._shape(self.v_proj(hidden_states), -1, bsz)
         block_size = past_key_value[0].shape[-2]
-
+        num_blocks = past_key_value[0].shape[0]
         args = {
             "q": query_states,
             "k": key_states,
             "v": value_states,
-            "kcache": past_key_value[0].view(bsz, self.num_heads, 1, -1, self.head_dim),
-            "vcache": past_key_value[1].view(bsz, self.num_heads, 1, -1, self.head_dim),
+            "kcache": past_key_value[0].view(num_blocks, self.num_heads, 1, -1, self.head_dim),
+            "vcache": past_key_value[1].view(num_blocks, self.num_heads, 1, -1, self.head_dim),
             "seq": cache_position.expand(bsz, 1),
             "scale": torch.tensor(1.0, dtype=torch.float32),
             "block_table": block_tables,
@@ -331,8 +331,8 @@ class WhisperCrossAttention(WhisperAttention):
         query_states = self._shape(self.q_proj(hidden_states), query_len, batch_size)
         query_states = query_states * self.scaling
 
-        key_states = past_key_value[0]
-        value_states = past_key_value[1]
+        key_states = past_key_value[0][:batch_size]
+        value_states = past_key_value[1][:batch_size]
 
         attn_weights = torch.matmul(query_states, key_states.transpose(2, 3))
         attn_weights = nn.functional.softmax(attn_weights, dim=-1)
