@@ -423,15 +423,6 @@ class Gemma4TextAttention(DecoderOnlyAttention):
     def projection(
         self, hidden_states, lora_int_id: Optional[torch.Tensor] = None
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        """Projects input hidden states into query, key, and value representations.
-
-        Args:
-            hidden_states: Input tensor of shape [batch_size, seq_len, hidden_dim]
-            lora_int_id: Adapter ID tensor for LoRA selection [batch_size]
-
-        Returns:
-            Tuple of (query_states, key_states, value_states)
-        """
         if self.lora_config:
             query_states = self.q_proj(hidden_states, lora_int_id)
             key_states = self.k_proj(hidden_states, lora_int_id)
@@ -627,19 +618,17 @@ class Gemma4Experts(nn.Module):
 
 
 class Gemma4VisionAttention(nn.Module):
-    """RBLN-compatible replacement for HF ``Gemma4VisionAttention``.
+    """A wrapper for the vision attention component of a Gemma4 model, designed for RBLN optimization.
 
-    HF's vision attention dispatches through ``ALL_ATTENTION_FUNCTIONS[_attn_implementation]``
-    which defaults to ``F.scaled_dot_product_attention``. rebel-compiler cannot lower SDPA
-    (it surfaces as ``Invalid udma type, loc=...scaled_dot_product_attention``), so this
-    replacement keeps the exact same projection / per-head norm / multidimensional RoPE
-    steps but emits an explicit ``matmul → softmax → matmul`` attention block. All weight
-    references (q/k/v/o_proj and q/k/v_norm) are reused from the original HF instance, so
-    the swap is weight-preserving and numerically equivalent to HF eager attention.
+    Replaces HF `Gemma4VisionAttention` with an explicit ``matmul → softmax → matmul`` attention
+    block. HF's vision attention dispatches through ``ALL_ATTENTION_FUNCTIONS[_attn_implementation]``
+    which defaults to ``F.scaled_dot_product_attention``; the explicit form is used here to keep
+    the attention computation tractable for the compiler's static analysis. All weight references
+    (q/k/v/o_proj and q/k/v_norm) are reused from the original HF instance, so the swap is
+    weight-preserving and numerically equivalent to HF eager attention.
 
-    Mirrors the ``get_rbln_attn_class`` swap pattern used by ``Gemma4ForCausalLMWrapper``
-    for the text decoder; here the swap is applied to each
-    ``Gemma4VisionEncoderLayer.self_attn`` directly inside ``Gemma4VisionModelWrapper``.
+    The swap is applied to each ``Gemma4VisionEncoderLayer.self_attn`` directly inside
+    `Gemma4VisionModelWrapper`.
     """
 
     def __init__(self, self_attn: nn.Module):
@@ -685,14 +674,22 @@ class Gemma4VisionAttention(nn.Module):
         value_states = value_states.transpose(1, 2)
 
         if self.num_key_value_groups > 1:
-            key_states = key_states.repeat_interleave(self.num_key_value_groups, dim=1)
-            value_states = value_states.repeat_interleave(self.num_key_value_groups, dim=1)
+            bsz, num_heads, q_len, head_dim = query_states.shape
+            num_kv = num_heads // self.num_key_value_groups
+            query_states = query_states.view(bsz, num_kv, self.num_key_value_groups, q_len, head_dim)
+            key_states = key_states.unsqueeze(2)
+            value_states = value_states.unsqueeze(2)
+            if attention_mask is not None and attention_mask.dim() == 4:
+                attention_mask = attention_mask.unsqueeze(2)
 
         attn_weights = torch.matmul(query_states, key_states.transpose(-2, -1)) * self.scaling
         if attention_mask is not None:
             attn_weights = attn_weights + attention_mask
         attn_weights = nn.functional.softmax(attn_weights, dim=-1, dtype=torch.float32).to(query_states.dtype)
         attn_output = torch.matmul(attn_weights, value_states)
+
+        if self.num_key_value_groups > 1:
+            attn_output = attn_output.reshape(bsz, num_heads, q_len, head_dim)
 
         attn_output = attn_output.transpose(1, 2).contiguous().reshape(*input_shape, -1)
         attn_output = self.o_proj(attn_output)

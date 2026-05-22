@@ -138,10 +138,22 @@ class RBLNGemma4VisionModel(RBLNModel):
         hidden_size = model_config.hidden_size
         head_dim = getattr(model_config, "head_dim", None) or (hidden_size // model_config.num_attention_heads)
 
+        # `attn_mask` is 2D `(max_patches, max_patches)` and relies on PyTorch broadcasting to
+        # cover the batch and head axes of `attn_weights`. This is only valid when every
+        # sample shares the same padding pattern — i.e. batch_size == 1.
+        if rbln_config.batch_size != 1:
+            raise ValueError(
+                "RBLNGemma4VisionModel uses a 2D attn_mask of shape "
+                "(max_patches, max_patches) that broadcasts across the batch axis; this is "
+                f"only valid for batch_size=1, got batch_size={rbln_config.batch_size}. "
+                "If you need batched compile, restore the 4D mask `(B, 1, max_patches, "
+                "max_patches)` and update the host-side mask construction in `forward`."
+            )
+
         input_info = [
             ("inputs_embeds", [rbln_config.batch_size, max_patches, hidden_size], rbln_config.dtype),
             ("pixel_position_ids", [rbln_config.batch_size, max_patches, 2], "int64"),
-            ("attn_mask", [rbln_config.batch_size, 1, max_patches, max_patches], rbln_config.dtype),
+            ("attn_mask", [max_patches, max_patches], rbln_config.dtype),
             ("padding_positions", [rbln_config.batch_size, max_patches], "bool"),
             ("cos", [rbln_config.batch_size, max_patches, head_dim], rbln_config.dtype),
             ("sin", [rbln_config.batch_size, max_patches, head_dim], rbln_config.dtype),
@@ -207,8 +219,11 @@ class RBLNGemma4VisionModel(RBLNModel):
         cos = cos.to(self.rbln_config.dtype)
         sin = sin.to(self.rbln_config.dtype)
 
-        valid = (~padding_positions)[:, None, :].to(inputs_embeds.dtype)
-        attn_mask = valid[..., None, :] * valid[..., None]
+        # 2D attn_mask of shape (max_patches, max_patches); batch and head axes are left
+        # to PyTorch broadcasting at `attn_weights + attn_mask`. batch_size=1 is enforced
+        # in `_update_rbln_config`, so collapsing the batch dim here is safe.
+        valid = (~padding_positions[0]).to(inputs_embeds.dtype)  # (max_patches,)
+        attn_mask = valid[None, :] * valid[:, None]              # (max_patches, max_patches)
         attn_mask = (1.0 - attn_mask) * torch.finfo(inputs_embeds.dtype).min
 
         return super().forward(inputs_embeds, pixel_position_ids, attn_mask, padding_positions, cos, sin, **kwargs)
