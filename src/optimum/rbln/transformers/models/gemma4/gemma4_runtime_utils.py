@@ -283,10 +283,27 @@ class RBLNGemma4RuntimeModel(RBLNRuntimeModel):
         if per_layer_inputs is None and input_ids is not None:
             per_layer_inputs = self.compute_per_layer_inputs(input_ids)
 
+        alloc_cache_position = cache_position
+        if (
+            self.phase != "decode"
+            and cache_position is not None
+            and self.rbln_config.use_image_prefill
+            and token_type_ids is not None
+        ):
+            tt = token_type_ids[0]
+            trans = (tt[1:] != tt[:-1]).nonzero(as_tuple=True)[0] + 1
+            bounds = torch.cat([trans.new_zeros(1), trans, trans.new_tensor([tt.shape[0]])])
+            run_lens = bounds[1:] - bounds[:-1]
+            cs = self.rbln_config.prefill_chunk_size
+            pad_bound = int(((cs - run_lens % cs) % cs).sum().item())
+            if pad_bound > 0:
+                extra = cache_position.new_tensor([[cache_position[0, -1].item() + pad_bound]])
+                alloc_cache_position = torch.cat([cache_position, extra], dim=-1)
+
         block_tables, local_block_tables, is_external_block_tables = (
             self.page_table_manager.get_block_tables_if_needed(
                 self.batch_size,
-                cache_position,
+                alloc_cache_position,
                 batch_idx=batch_idx,
                 phase=self.phase,
                 block_tables=block_tables,
