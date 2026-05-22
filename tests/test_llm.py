@@ -664,7 +664,7 @@ class TestQwen2VLForConditionalGeneration(LLMTest.TestLLM):
     PROMPT = "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\n<|vision_start|><|image_pad|><|vision_end|>Describe this image.<|im_end|>\n<|im_start|>assistant\n"
     RBLN_CLASS_KWARGS = {
         "rbln_config": {
-            "visual": {"max_seq_lens": 512},
+            "visual": {"max_seq_len": 512},
             "tensor_parallel_size": 1,
             "max_seq_len": 32_768,
         }
@@ -707,7 +707,7 @@ class TestQwen2_5_VLForConditionalGeneration(LLMTest.TestLLM):
     PROMPT = "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\n<|vision_start|><|image_pad|><|vision_end|>Describe this image.<|im_end|>\n<|im_start|>assistant\n"
     RBLN_CLASS_KWARGS = {
         "rbln_config": {
-            "visual": {"max_seq_lens": 512},
+            "visual": {"max_seq_len": 512},
             "tensor_parallel_size": 1,
             "kvcache_partition_len": 16_384,
             "max_seq_len": 32_768,
@@ -747,7 +747,7 @@ class TestQwen3VLForConditionalGeneration(LLMTest.TestLLM):
     PROMPT = "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\n<|vision_start|><|image_pad|><|vision_end|>Describe this image.<|im_end|>\n<|im_start|>assistant\n"
     RBLN_CLASS_KWARGS = {
         "rbln_config": {
-            "visual": {"max_seq_lens": 512},
+            "visual": {"max_seq_len": 512},
             "tensor_parallel_size": 1,
             "kvcache_partition_len": 8192,
             "max_seq_len": 16_384,
@@ -783,7 +783,7 @@ class TestQwen3VLMoeForConditionalGeneration(LLMTest.TestLLM):
     PROMPT = "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\n<|vision_start|><|image_pad|><|vision_end|>Describe this image.<|im_end|>\n<|im_start|>assistant\n"
     RBLN_CLASS_KWARGS = {
         "rbln_config": {
-            "visual": {"max_seq_lens": 512},
+            "visual": {"max_seq_len": 512},
             "tensor_parallel_size": 1,
             "kvcache_partition_len": 8192,
             "max_seq_len": 16_384,
