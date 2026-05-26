@@ -71,7 +71,9 @@ class LoopVisionTower(LoopProcessor):
 
     def _process_outputs(self, outputs: list, **kwargs) -> "BaseModelOutputWithPooling":
         output = kwargs["out"]
-        return BaseModelOutputWithPooling(last_hidden_state=output[0])
+        result = BaseModelOutputWithPooling(last_hidden_state=output[0])
+        result.pooler_mask = output[1]
+        return result
 
 
 class LoopProjector(LoopProcessor):
@@ -716,10 +718,9 @@ class RBLNGemma4ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMix
         ]
         projector_out_buffer = [torch.empty(size=projector_out_size, dtype=torch.float32, device="cpu")]
 
-        vision_outputs = self.vision_tower(pixel_values, pixel_position_ids, out=vision_out_buffer).last_hidden_state
-        pooler_output = self.embed_vision(vision_outputs.float(), out=projector_out_buffer)
-        pooler_mask = vision_out_buffer[1]
-        pooler_output = pooler_output[pooler_mask]
+        vision_outputs = self.vision_tower(pixel_values, pixel_position_ids, out=vision_out_buffer)
+        pooler_output = self.embed_vision(vision_outputs.last_hidden_state.float(), out=projector_out_buffer)
+        pooler_output = pooler_output[vision_outputs.pooler_mask]
         return pooler_output
 
     def _preprocess_prefill(
