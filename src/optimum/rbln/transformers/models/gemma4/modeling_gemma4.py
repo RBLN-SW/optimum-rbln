@@ -718,6 +718,8 @@ class RBLNGemma4ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMix
 
         vision_outputs = self.vision_tower(pixel_values, pixel_position_ids, out=vision_out_buffer).last_hidden_state
         pooler_output = self.embed_vision(vision_outputs.float(), out=projector_out_buffer)
+        pooler_mask = vision_out_buffer[1]
+        pooler_output = pooler_output[pooler_mask]
         return pooler_output
 
     def _preprocess_prefill(
