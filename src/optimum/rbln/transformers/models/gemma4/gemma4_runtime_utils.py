@@ -16,10 +16,10 @@ from typing import Any, Optional
 
 import rebel
 import torch
-import torch.nn.functional as F
 
-from ...modeling_outputs import RBLNDecoderOnlyOutput
-from ..decoderonly.decoderonly_runtime_utils import RBLNPytorchRuntime, RBLNRuntimeModel
+from ...modeling_outputs import RBLNDecoderOnlyOutput, RBLNGemma4ForCausalLMOutput
+from ..decoderonly.decoderonly_runtime_utils import RBLNPytorchRuntime
+from ..decoderonly.modeling_decoderonly import RBLNRuntimeModel
 
 
 def _run_length_from(tt: torch.Tensor, start: int, value: int, cap: int) -> int:
@@ -78,17 +78,15 @@ class RBLNGemma4RuntimeModel(RBLNRuntimeModel):
             token_type_ids,
         ) = super()._prepare_prefill_inputs(*args, **kwargs)
 
-        chunked_attention_mask = torch.zeros(
-            1, chunked_attention_mask.shape[-1], dtype=self.rbln_config.dtype
-        )
+        # chunked_attention_mask shape
+        chunked_attention_mask = torch.zeros(1, chunked_attention_mask.shape[-1], dtype=self.rbln_config.dtype)
 
         if self.rbln_config.use_image_prefill:
             padding_size = self.rbln_config.image_prefill_chunk_size
-            inputs = F.pad(inputs, (0, 0, 0, padding_size))
-            cache_position = F.pad(cache_position, (0, padding_size))
-            position_ids = F.pad(position_ids, (0, padding_size))
-            if token_type_ids is not None:
-                token_type_ids = F.pad(token_type_ids, (0, padding_size), value=-1)
+            inputs = torch.nn.functional.pad(inputs, (0, 0, 0, padding_size))
+            cache_position = torch.nn.functional.pad(cache_position, (0, padding_size))
+            position_ids = torch.nn.functional.pad(position_ids, (0, padding_size))
+            token_type_ids = torch.nn.functional.pad(token_type_ids, (0, padding_size), value=-1)
 
         return (
             inputs,
@@ -104,11 +102,11 @@ class RBLNGemma4RuntimeModel(RBLNRuntimeModel):
     def prefill_forward(
         self,
         inputs: torch.Tensor,
-        cache_position: Optional[torch.Tensor] = None,
+        cache_position: torch.Tensor = None,
         attention_mask: Optional[torch.Tensor] = None,
-        batch_idx: Optional[int] = None,
-        block_tables: Optional[torch.Tensor] = None,
-        is_external_block_tables: Optional[bool] = None,
+        batch_idx: int = None,
+        block_tables: torch.Tensor = None,
+        is_external_block_tables: bool = None,
         position_ids: Optional[torch.Tensor] = None,
         position_embed: Optional[torch.Tensor] = None,
         token_type_ids: Optional[torch.Tensor] = None,
@@ -156,8 +154,7 @@ class RBLNGemma4RuntimeModel(RBLNRuntimeModel):
 
         step = 0
         output_logits = []
-        all_hidden_states_list = [] if self.rbln_config.output_hidden_states else None
-
+        all_hidden_states = [] if self.rbln_config.output_hidden_states else None
         while step < query_length:
             use_tt = self.rbln_config.use_image_prefill and token_type_ids is not None
             if use_tt:
@@ -204,23 +201,36 @@ class RBLNGemma4RuntimeModel(RBLNRuntimeModel):
             ] = 1
             query_position = torch.tensor(num_processed_tokens - 1, dtype=torch.int16)
 
-            runtime = self.image_prefill if is_image_prefill else self.prefill
-            outputs = runtime(
-                input_chunk,
-                per_layer_chunk if self.hidden_size_per_layer_input else None,
-                cache_pos_chunk,
-                block_tables,
-                local_block_tables,
-                None,
-                query_position,
-                chunked_attention_mask,
-                position_ids_chunk,
-                lora_int_ids if self.rbln_config.use_lora else None,
-            )
+            if is_image_prefill:
+                outputs = self.image_prefill(
+                    input_chunk,
+                    per_layer_chunk if self.hidden_size_per_layer_input else None,
+                    cache_pos_chunk,
+                    block_tables,
+                    local_block_tables,
+                    None,
+                    query_position,
+                    chunked_attention_mask,
+                    position_ids_chunk,
+                    lora_int_ids if self.rbln_config.use_lora else None,
+                )
+            else:
+                outputs = self.prefill(
+                    input_chunk,
+                    per_layer_chunk if self.hidden_size_per_layer_input else None,
+                    cache_pos_chunk,
+                    block_tables,
+                    local_block_tables,
+                    None,
+                    query_position,
+                    chunked_attention_mask,
+                    position_ids_chunk,
+                    lora_int_ids if self.rbln_config.use_lora else None,
+                )
 
             if self.rbln_config.output_hidden_states:
                 output_logits.append(outputs[0])
-                all_hidden_states_list.append(tuple(outputs[1:]))
+                all_hidden_states.append(tuple(outputs[1:]))
             else:
                 output_logits.append(outputs)
 
@@ -228,22 +238,22 @@ class RBLNGemma4RuntimeModel(RBLNRuntimeModel):
             step += num_processed_tokens
 
         if self.rbln_config.output_hidden_states:
-            num_hidden_layers = len(all_hidden_states_list[0]) - 1
+            num_hidden_layers = len(all_hidden_states[0]) - 1
             concatenated_hidden_states = ()
             for l_idx in range(num_hidden_layers + 1):
-                l_hidden_states = torch.cat(
-                    [hs[l_idx] for hs in all_hidden_states_list], dim=1
-                )[:, :query_length, :]
+                l_hidden_states = torch.cat([hidden_states[l_idx] for hidden_states in all_hidden_states], dim=1)
+                l_hidden_states = l_hidden_states[:, :query_length, :]
                 concatenated_hidden_states += (l_hidden_states,)
-            output_hidden_states = concatenated_hidden_states
-        else:
-            output_hidden_states = None
 
+            all_hidden_states = concatenated_hidden_states
+
+        # Aggregate output_logits
         output_logits = torch.concat(output_logits, dim=-2)
         if self.rbln_config.logits_to_keep > 0:
             output_logits = output_logits[:, -self.rbln_config.logits_to_keep :, :]
         else:
             output_logits = output_logits[:, :query_length, :]
+            # index copy for masked output_logits
             if attention_mask is not None:
                 new_output_logits = torch.full(
                     (1, attention_mask.shape[-1], output_logits.shape[-1]),
@@ -252,15 +262,17 @@ class RBLNGemma4RuntimeModel(RBLNRuntimeModel):
                 )
                 mask_indices = torch.nonzero(attention_mask, as_tuple=True)[0]
                 new_output_logits.index_copy_(dim=-2, index=mask_indices, source=output_logits)
+
                 output_logits = new_output_logits
 
         if not is_external_block_tables:
             self.dec_attn_mask[batch_idx : batch_idx + 1] = chunked_attention_mask
 
-        return RBLNDecoderOnlyOutput(
+        return RBLNGemma4ForCausalLMOutput(
             logits=output_logits,
             padded_cache_lengths=padded_cache_lengths,
-            hidden_states=output_hidden_states,
+            attention_mask=chunked_attention_mask,
+            hidden_states=all_hidden_states,
         )
 
     def forward(
