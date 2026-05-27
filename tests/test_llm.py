@@ -992,14 +992,14 @@ class TestDisallowedLlama_3(DisallowedTestBase.DisallowedTest):
     RBLN_CLASS = RBLNLlamaForCausalLM
     HF_MODEL_ID = "afmck/testing-llama-tiny"
     HF_CONFIG_KWARGS = {"num_hidden_layers": 1, "max_position_embeddings": 8192}
-    RBLN_CLASS_KWARGS = {"rbln_config": {"attn_impl": "flash_attn", "kvcache_partition_len": 1024}}
+    RBLN_CLASS_KWARGS = {"rbln_config": {"attn_impl": "flash_attn", "kvcache_partition_len": 512}}
 
 
 class TestDisallowedLlama_4(DisallowedTestBase.DisallowedTest):
-    # Flash attn : too short max_seq_len
+    # Flash attn : max_seq_len smaller than 2 * kvcache_partition_len (fewer than 2 partitions)
     RBLN_CLASS = RBLNLlamaForCausalLM
     HF_MODEL_ID = "afmck/testing-llama-tiny"
-    HF_CONFIG_KWARGS = {"num_hidden_layers": 1, "max_position_embeddings": 2048}
+    HF_CONFIG_KWARGS = {"num_hidden_layers": 1, "max_position_embeddings": 1024}
     RBLN_CLASS_KWARGS = {"rbln_config": {"attn_impl": "flash_attn", "kvcache_partition_len": 1024}}
 
 
