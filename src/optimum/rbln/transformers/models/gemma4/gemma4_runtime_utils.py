@@ -78,8 +78,12 @@ class RBLNGemma4RuntimeModel(RBLNRuntimeModel):
             token_type_ids,
         ) = super()._prepare_prefill_inputs(*args, **kwargs)
 
-        # chunked_attention_mask shape
         chunked_attention_mask = torch.zeros(1, chunked_attention_mask.shape[-1], dtype=self.rbln_config.dtype)
+
+        if position_ids is not None and position_ids.shape[-1] < cache_position.shape[-1]:
+            position_ids = torch.nn.functional.pad(
+                position_ids, (0, cache_position.shape[-1] - position_ids.shape[-1])
+            )
 
         if self.rbln_config.use_image_prefill:
             padding_size = self.rbln_config.image_prefill_chunk_size
@@ -148,7 +152,7 @@ class RBLNGemma4RuntimeModel(RBLNRuntimeModel):
             target_len = inputs.shape[1]
             pad = target_len - unpadded_len
             if pad > 0:
-                per_layer_inputs = F.pad(per_layer_inputs, (0, 0, 0, 0, 0, pad))
+                per_layer_inputs = torch.nn.functional.pad(per_layer_inputs, (0, 0, 0, 0, 0, pad))
             elif pad < 0:
                 per_layer_inputs = per_layer_inputs[:, :target_len]
 
@@ -344,6 +348,7 @@ class RBLNGemma4RuntimeModel(RBLNRuntimeModel):
                 batch_idx,
                 block_tables,
                 is_external_block_tables=is_external_block_tables,
+                position_ids=position_ids,
                 position_embed=position_embed,
                 token_type_ids=token_type_ids,
                 local_block_tables=local_block_tables,
