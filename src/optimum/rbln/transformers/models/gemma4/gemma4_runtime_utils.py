@@ -207,6 +207,13 @@ class RBLNGemma4RuntimeModel(RBLNRuntimeModel):
             ] = 1
             query_position = torch.tensor(num_processed_tokens - 1, dtype=torch.int16)
 
+            if is_image_prefill and num_processed_tokens < chunk_size_used:
+                input_chunk = input_chunk.clone()
+                input_chunk[:, num_processed_tokens:] = 0
+                if per_layer_chunk is not None:
+                    per_layer_chunk = per_layer_chunk.clone()
+                    per_layer_chunk[:, num_processed_tokens:] = 0
+
             if is_image_prefill:
                 outputs = self.image_prefill(
                     input_chunk,
