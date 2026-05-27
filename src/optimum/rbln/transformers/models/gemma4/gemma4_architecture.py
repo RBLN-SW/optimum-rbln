@@ -712,14 +712,17 @@ class Gemma4VisionModelWrapper(nn.Module):
 
     - `patch_embedder` — produces `inputs_embeds` from `pixel_values`.
     - `Gemma4VisionRotaryEmbedding` — produces `(cos, sin)` from `pixel_position_ids`.
-    - `padding_positions` (`(pixel_position_ids == -1).all(dim=-1)`) and the 4D additive
-      `attn_mask` (`(1 - mask_2d * mask_2d.T) * finfo.min`) — both derived from
-      `pixel_position_ids` on the host. The compiled graph receives them as inputs.
+    - `padding_positions` (`(pixel_position_ids == -1).all(dim=-1)`) and the 1D-per-key
+      additive `attn_mask` (`(1 - valid) * finfo.min`, shape `(batch, max_patches)`) —
+      both derived from `pixel_position_ids` on the host. The compiled graph receives
+      them as inputs; `attn_mask` is broadcast to `(batch, 1, 1, max_patches)` here so it
+      masks only the key axis (valid queries never attend to padded keys; padded-query
+      rows are discarded by the pooler).
 
     Inputs (compiled):
         inputs_embeds: (batch, max_patches, hidden_size)
         pixel_position_ids: (batch, max_patches, 2)
-        attn_mask: (batch, 1, max_patches, max_patches) — additive, finfo.min for masked-out
+        attn_mask: (batch, max_patches) — additive per-key, finfo.min for padded keys
         padding_positions: (batch, max_patches) — bool, True for padded patches
         cos / sin: (batch, max_patches, head_dim) — rotary tables from host
 
@@ -759,6 +762,7 @@ class Gemma4VisionModelWrapper(nn.Module):
     ) -> torch.Tensor:
         hidden_states = inputs_embeds
         position_embeddings = (cos, sin)
+        attn_mask = attn_mask[:, None, None, :]
         for layer in self.encoder_layers[: self.num_layers]:
             hidden_states = layer(
                 hidden_states,
