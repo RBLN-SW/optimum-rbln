@@ -132,6 +132,8 @@ class RBLNGemma4RuntimeModel(RBLNRuntimeModel):
         if per_layer_inputs is not None and attention_mask is not None:
             mask_bool = attention_mask.to(dtype=torch.bool)
             if (~mask_bool).any():
+                if mask_bool.dim() == 2:
+                    mask_bool = mask_bool[0]
                 per_layer_inputs = per_layer_inputs[:, mask_bool]
 
         (
@@ -178,7 +180,7 @@ class RBLNGemma4RuntimeModel(RBLNRuntimeModel):
             else:
                 run_len = chunk_size_used
 
-            is_last_chunk = step + chunk_size_used >= query_length
+            is_last_chunk = step + run_len >= query_length
 
             input_chunk = inputs[:, step : step + chunk_size_used]
             per_layer_chunk = (
@@ -234,7 +236,7 @@ class RBLNGemma4RuntimeModel(RBLNRuntimeModel):
 
             if self.rbln_config.output_hidden_states:
                 output_logits.append(outputs[0])
-                all_hidden_states.append(tuple(outputs[1:]))
+                all_hidden_states.append(tuple(h[:, :num_processed_tokens] for h in outputs[1:]))
             else:
                 output_logits.append(outputs)
 
