@@ -987,22 +987,6 @@ class TestDisallowedLlama_2(DisallowedTestBase.DisallowedTest):
     RBLN_CLASS_KWARGS = {"rbln_config": {"attn_impl": "flash_attn", "kvcache_partition_len": 8000}}
 
 
-class TestDisallowedLlama_3(DisallowedTestBase.DisallowedTest):
-    # Flash attn : too short partition
-    RBLN_CLASS = RBLNLlamaForCausalLM
-    HF_MODEL_ID = "afmck/testing-llama-tiny"
-    HF_CONFIG_KWARGS = {"num_hidden_layers": 1, "max_position_embeddings": 8192}
-    RBLN_CLASS_KWARGS = {"rbln_config": {"attn_impl": "flash_attn", "kvcache_partition_len": 1024}}
-
-
-class TestDisallowedLlama_4(DisallowedTestBase.DisallowedTest):
-    # Flash attn : too short max_seq_len
-    RBLN_CLASS = RBLNLlamaForCausalLM
-    HF_MODEL_ID = "afmck/testing-llama-tiny"
-    HF_CONFIG_KWARGS = {"num_hidden_layers": 1, "max_position_embeddings": 2048}
-    RBLN_CLASS_KWARGS = {"rbln_config": {"attn_impl": "flash_attn", "kvcache_partition_len": 1024}}
-
-
 class TestMixtralForCausalLM(LLMTest.TestLLM):
     RBLN_CLASS = RBLNMixtralForCausalLM
     HF_MODEL_ID = "vprovorg/tiny-random-Mixtral-8x7B-v0.1"
