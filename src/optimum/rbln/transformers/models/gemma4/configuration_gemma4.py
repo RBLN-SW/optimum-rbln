@@ -31,7 +31,13 @@ class RBLNGemma4ForCausalLMConfig(RBLNDecoderOnlyModelForCausalLMConfig):
     Both `use_position_ids` and `use_attention_mask` are forced to `True` for Gemma4.
     The text decoder uses two RoPE flavors (`proportional` for full-attention layers and `default`
     for sliding-attention layers) with potentially different `head_dim` values.
+
+    Gemma4 only supports a prefill / image-prefill chunk size of `SUPPORTED_PREFILL_CHUNK_SIZE`
+    (512); both `prefill_chunk_size` and `image_prefill_chunk_size` default to it and any other
+    explicit value is rejected.
     """
+
+    SUPPORTED_PREFILL_CHUNK_SIZE = 512
 
     def __init__(
         self,
@@ -45,19 +51,35 @@ class RBLNGemma4ForCausalLMConfig(RBLNDecoderOnlyModelForCausalLMConfig):
         Args:
             use_position_ids (Optional[bool]): Whether to use `position_ids`. Forced to `True` for Gemma4.
             use_attention_mask (Optional[bool]): Whether to use `attention_mask`. Forced to `True` for Gemma4.
-            prefill_chunk_size (Optional[int]): Chunk size used during the prefill phase. Defaults to 256.
+            prefill_chunk_size (Optional[int]): Chunk size used during the prefill phase. Only
+                `SUPPORTED_PREFILL_CHUNK_SIZE` (512) is supported. Defaults to 512.
             image_prefill_chunk_size (Optional[int]): Chunk size used for image-prefill (multimodal Gemma4).
-                Currently must equal `prefill_chunk_size`.
+                Only `SUPPORTED_PREFILL_CHUNK_SIZE` (512) is supported. Defaults to 512.
             kwargs: Additional arguments passed to the parent `RBLNDecoderOnlyModelForCausalLMConfig`.
 
         Raises:
-            ValueError: If `use_attention_mask` or `use_position_ids` are False.
+            ValueError: If `use_attention_mask` or `use_position_ids` are False, or if
+                `prefill_chunk_size` / `image_prefill_chunk_size` is not 512.
         """
         if use_attention_mask is None:
             use_attention_mask = True
         if use_position_ids is None:
             use_position_ids = True
-        prefill_chunk_size = prefill_chunk_size or 512
+
+        if prefill_chunk_size is None:
+            prefill_chunk_size = self.SUPPORTED_PREFILL_CHUNK_SIZE
+        if image_prefill_chunk_size is None:
+            image_prefill_chunk_size = self.SUPPORTED_PREFILL_CHUNK_SIZE
+        if prefill_chunk_size != self.SUPPORTED_PREFILL_CHUNK_SIZE:
+            raise ValueError(
+                f"RBLNGemma4ForCausalLM only supports prefill_chunk_size="
+                f"{self.SUPPORTED_PREFILL_CHUNK_SIZE}, but got {prefill_chunk_size}."
+            )
+        if image_prefill_chunk_size != self.SUPPORTED_PREFILL_CHUNK_SIZE:
+            raise ValueError(
+                f"RBLNGemma4ForCausalLM only supports image_prefill_chunk_size="
+                f"{self.SUPPORTED_PREFILL_CHUNK_SIZE}, but got {image_prefill_chunk_size}."
+            )
 
         super().__init__(
             prefill_chunk_size=prefill_chunk_size,
@@ -65,10 +87,7 @@ class RBLNGemma4ForCausalLMConfig(RBLNDecoderOnlyModelForCausalLMConfig):
             use_position_ids=use_position_ids,
             **kwargs,
         )
-        if image_prefill_chunk_size is not None:
-            assert prefill_chunk_size == image_prefill_chunk_size, \
-            "`image_prefill_chunk_size` should be same with `prefill_chunk_size`"
-        self.image_prefill_chunk_size = prefill_chunk_size
+        self.image_prefill_chunk_size = image_prefill_chunk_size
 
         if not (self.use_attention_mask and self.use_position_ids):
             raise ValueError("use_attention_mask and use_position_ids must be True for RBLNGemma4ForCausalLM")
@@ -94,7 +113,6 @@ class RBLNGemma4VisionModelConfig(RBLNModelConfig):
         pooling_kernel_size: Optional[int] = None,
         patch_size: Optional[int] = None,
         output_hidden_states: Optional[bool] = None,
-        output_attentions: Optional[bool] = None,
         **kwargs: Any,
     ):
         """
@@ -107,7 +125,6 @@ class RBLNGemma4VisionModelConfig(RBLNModelConfig):
                 Defaults to `model_config.pooling_kernel_size` (3 by default).
             patch_size (Optional[int]): Patch height/width in pixels. Defaults to `model_config.patch_size`.
             output_hidden_states (Optional[bool]): Whether to return per-layer hidden states.
-            output_attentions (Optional[bool]): Whether to return per-layer attention weights.
             kwargs: Additional arguments passed to the parent `RBLNModelConfig`.
 
         Raises:
@@ -122,7 +139,6 @@ class RBLNGemma4VisionModelConfig(RBLNModelConfig):
         self.pooling_kernel_size = pooling_kernel_size
         self.patch_size = patch_size
         self.output_hidden_states = output_hidden_states or False
-        self.output_attentions = output_attentions or False
 
     @property
     def max_patches(self) -> int:
