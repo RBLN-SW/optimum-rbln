@@ -26,7 +26,7 @@ from transformers import (
     PreTrainedModel,
 )
 from transformers.initialization import no_init_weights
-from transformers.modeling_outputs import BaseModelOutputWithPast, BaseModelOutputWithPooling
+from transformers.modeling_outputs import BaseModelOutputWithPooling
 
 from ....configuration_utils import RBLNCompileConfig, RBLNModelConfig
 from ....modeling import RBLNModel
@@ -235,7 +235,7 @@ class RBLNGemma4VisionModel(RBLNModel):
         hidden_states = hidden_states[pooler_mask]
         if not return_dict:
             return (hidden_states,)
-        return BaseModelOutputWithPast(last_hidden_state=hidden_states)
+        return BaseModelOutputWithPooling(last_hidden_state=hidden_states)
 
 
 class RBLNGemma4ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
