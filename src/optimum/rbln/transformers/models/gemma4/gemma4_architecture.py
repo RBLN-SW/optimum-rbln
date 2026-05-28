@@ -237,20 +237,23 @@ class Gemma4TextModel(DecoderOnlyModel):
             # (1, 1, prefill_chunk_size, sliding_window + prefill_chunk_size)
             batch_size, prefill_chunk_size = position_ids.shape
             max_compute_len = max_cache_len + prefill_chunk_size
-            cache_seq_len_b = cache_seq_len[:, None, None, :] # (1, 1, 1, 1)
-            cache_offset_b = cache_offset[:, None, None, :] # (1, 1, 1, 1)
+            cache_seq_len_b = cache_seq_len[:, None, None, :]  # (1, 1, 1, 1)
+            cache_offset_b = cache_offset[:, None, None, :]  # (1, 1, 1, 1)
 
-            q_idx = torch.arange(prefill_chunk_size).view(1, 1, -1, 1) # (1, 1, prefill_chunk_size, 1)
-            compute_idx = torch.arange(max_compute_len).view(1, 1, 1, -1) # (1, 1, 1, max_compute_len)
-            in_chunk = (compute_idx >= cache_seq_len_b) & (compute_idx < cache_offset_b) # valid idx in 4 dims
-            in_past = compute_idx < cache_seq_len_b # valid idx in 4 dims
+            q_idx = torch.arange(prefill_chunk_size).view(1, 1, -1, 1)  # (1, 1, prefill_chunk_size, 1)
+            compute_idx = torch.arange(max_compute_len).view(1, 1, 1, -1)  # (1, 1, 1, max_compute_len)
+            in_chunk = (compute_idx >= cache_seq_len_b) & (compute_idx < cache_offset_b)  # valid idx in 4 dims
+            in_past = compute_idx < cache_seq_len_b  # valid idx in 4 dims
 
             gap = cache_seq_len_b + q_idx - compute_idx
             swa = (gap >= 0) & (gap < max_cache_len)
 
             valid_q = q_idx < valid_input_len
             valid_kv = in_past | in_chunk
-            attn = valid_q & valid_kv & (swa | (self.phase == "image_prefill" & in_chunk))
+            if self.phase == "image_prefill":
+                attn = valid_q & valid_kv & (swa | in_chunk)
+            else:
+                attn = valid_q & valid_kv & swa
             attn_mask = torch.where(attn, 1.0, 0.0).expand(batch_size, 1, prefill_chunk_size, max_compute_len)
 
         return cache_seq_len, cache_offset, attn_mask
@@ -302,13 +305,13 @@ class Gemma4TextModel(DecoderOnlyModel):
             if output_hidden_states:
                 all_hidden_states += (hidden_states,)
             is_sliding = layer_idx in self.sliding_window_layers
-            is_sliding_decode = is_sliding and self.phase == "decode"
+            use_swa_mask = is_sliding and self.phase in ("decode", "image_prefill")
             per_layer_input_slice = (
                 per_layer_inputs_projected[:, :, layer_idx, :] if per_layer_inputs_projected is not None else None
             )
             hidden_states = layer(
                 hidden_states=hidden_states,
-                attention_mask=swa_attn_mask if is_sliding_decode else attention_mask,
+                attention_mask=swa_attn_mask if use_swa_mask else attention_mask,
                 seq_positions=sliding_cache_pos if is_sliding else seq_positions,
                 past_key_values=past_key_values,
                 cos=cos_local if is_sliding else cos_global,
