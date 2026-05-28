@@ -225,7 +225,7 @@ class Gemma4TextModel(DecoderOnlyModel):
         valid_input_len = 1 if query_position is None else query_position + 1
         cache_seq_len = torch.clamp(position_ids.to(torch.int32), max=max_cache_len)[:, :1]  # past seen tokens
         cache_offset = (
-            torch.clamp(position_ids, max=max_cache_len)[:, :1] + valid_input_len
+            torch.clamp(position_ids.to(torch.int32), max=max_cache_len)[:, :1] + valid_input_len
         )  # cache offset for next steps
 
         if self.phase == "decode":
@@ -234,20 +234,21 @@ class Gemma4TextModel(DecoderOnlyModel):
             attn_mask = torch.where(attn_mask > 0, 0.0, 1.0)[:, None, None, :]
 
         else:
-            # (1, 1, prefill_chunk_size, align64(sliding_window + prefill_chunk_size))
+            # (1, 1, prefill_chunk_size, sliding_window + prefill_chunk_size)
+            # prfill_chunk_size: 512
+            # sliding_window: 1024 
+            # 1536
             _, prefill_chunk_size = position_ids.shape
             max_compute_len = max_cache_len + prefill_chunk_size
+            cache_seq_len_b = cache_seq_len[:, None, None, :]  # (1, 1, 1, 1)
+            cache_offset_b = cache_offset[:, None, None, :]  # (1, 1, 1, 1)
 
-            compute_idx = torch.arange(max_compute_len, dtype=torch.int32, device=position_ids.device)
-            compute_idx = compute_idx.reshape(1, 1, 1, -1).expand(1, 1, prefill_chunk_size, -1)
-            cache_seq_len_b = cache_seq_len.reshape(1, 1, 1, 1).expand_as(compute_idx)
-            cache_offset_b = cache_offset.reshape(1, 1, 1, 1).expand_as(compute_idx)
-            q_idx = torch.arange(prefill_chunk_size, dtype=torch.int32, device=position_ids.device)
-            q_idx = q_idx.reshape(1, 1, -1, 1).expand_as(compute_idx)
+            q_idx = torch.arange(prefill_chunk_size, dtype=torch.int32).reshape(1, 1, -1, 1)  # (1, 1, prefill_chunk_size, 1)
+            compute_idx = torch.arange(max_compute_len, dtype=torch.int32).reshape(1, 1, 1, -1)  # (1, 1, 1, max_compute_len)
+            in_chunk = (compute_idx >= cache_seq_len_b) & (compute_idx < cache_offset_b)  # valid idx in 4 dims
+            in_past = compute_idx < cache_seq_len_b  # valid idx in 4 dims
 
-            in_chunk = (compute_idx >= cache_seq_len_b) & (compute_idx < cache_offset_b)
-            in_past = compute_idx < cache_seq_len_b
-
+            # (1,1,1,1) + (1,1,512,1) - (1,1,1,1536)
             gap = cache_seq_len_b + q_idx - compute_idx
             swa = (gap >= 0) & (gap < max_cache_len)
 
