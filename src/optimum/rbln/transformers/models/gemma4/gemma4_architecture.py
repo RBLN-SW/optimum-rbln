@@ -249,9 +249,9 @@ class Gemma4TextModel(DecoderOnlyModel):
             swa = (gap >= 0) & (gap < max_cache_len)
 
             valid_q = q_idx < valid_input_len
-            valid_kv = in_past | in_chunk
+            valid_kv = torch.logical_or(in_past, in_chunk)
             if self.phase == "image_prefill":
-                attn = valid_q & valid_kv & (swa | in_chunk)
+                attn = valid_q & valid_kv & torch.logical_or(swa, in_chunk)
             else:
                 attn = valid_q & valid_kv & swa
             attn_mask = torch.where(attn, 1.0, 0.0).expand(batch_size, 1, prefill_chunk_size, max_compute_len)
