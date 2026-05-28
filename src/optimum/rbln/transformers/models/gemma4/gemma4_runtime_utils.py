@@ -89,8 +89,10 @@ class RBLNGemma4RuntimeModel(RBLNRuntimeModel):
             padding_size = self.rbln_config.image_prefill_chunk_size
             inputs = torch.nn.functional.pad(inputs, (0, 0, 0, padding_size))
             cache_position = torch.nn.functional.pad(cache_position, (0, padding_size))
-            position_ids = torch.nn.functional.pad(position_ids, (0, padding_size))
-            token_type_ids = torch.nn.functional.pad(token_type_ids, (0, padding_size), value=-1)
+            if position_ids is not None:
+                position_ids = torch.nn.functional.pad(position_ids, (0, padding_size))
+            if token_type_ids is not None:
+                token_type_ids = torch.nn.functional.pad(token_type_ids, (0, padding_size), value=-1)
 
         return (
             inputs,
