@@ -234,18 +234,18 @@ class Gemma4TextModel(DecoderOnlyModel):
             attn_mask = torch.where(attn_mask > 0, 0.0, 1.0)[:, None, None, :]
 
         else:
-            # (batch, 1, prefill_chunk_size, sliding_window + prefill_chunk_size)
+            # (1, 1, prefill_chunk_size, sliding_window + prefill_chunk_size)
             batch_size, prefill_chunk_size = position_ids.shape
             max_compute_len = max_cache_len + prefill_chunk_size
-            cache_seq_len_b = cache_seq_len[:, None, None, :]
-            cache_offset_b = cache_offset[:, None, None, :]
+            cache_seq_len_b = cache_seq_len[:, None, None, :] # (1, 1, 1, 1)
+            cache_offset_b = cache_offset[:, None, None, :] # (1, 1, 1, 1)
 
-            q_idx = torch.arange(prefill_chunk_size).view(1, 1, -1, 1)
-            kv_idx = torch.arange(max_compute_len).view(1, 1, 1, -1)
-            in_chunk = (kv_idx >= cache_seq_len_b) & (kv_idx < cache_offset_b)
-            in_past = kv_idx < cache_seq_len_b
+            q_idx = torch.arange(prefill_chunk_size).view(1, 1, -1, 1) # (1, 1, prefill_chunk_size, 1)
+            compute_idx = torch.arange(max_compute_len).view(1, 1, 1, -1) # (1, 1, 1, max_compute_len)
+            in_chunk = (compute_idx >= cache_seq_len_b) & (compute_idx < cache_offset_b) # valid idx in 4 dims
+            in_past = compute_idx < cache_seq_len_b # valid idx in 4 dims
 
-            gap = cache_seq_len_b + q_idx - kv_idx
+            gap = cache_seq_len_b + q_idx - compute_idx
             swa = (gap >= 0) & (gap < max_cache_len)
 
             valid_q = q_idx < valid_input_len
