@@ -222,7 +222,7 @@ class Gemma4TextModel(DecoderOnlyModel):
 
     def get_swa_custom_op_args(self, position_ids, query_position):
         max_cache_len = self.config.sliding_window
-        valid_input_len = 1 if query_position is None else int(query_position.item()) + 1
+        valid_input_len = 1 if query_position is None else query_position + 1
         cache_seq_len = torch.clamp(position_ids.to(torch.int32), max=max_cache_len)[:, :1]  # past seen tokens
         cache_offset = (
             torch.clamp(position_ids, max=max_cache_len)[:, :1] + valid_input_len
@@ -240,8 +240,8 @@ class Gemma4TextModel(DecoderOnlyModel):
             cache_seq_len_b = cache_seq_len[:, None, None, :]  # (1, 1, 1, 1)
             cache_offset_b = cache_offset[:, None, None, :]  # (1, 1, 1, 1)
 
-            q_idx = torch.arange(prefill_chunk_size).view(1, 1, -1, 1)  # (1, 1, prefill_chunk_size, 1)
-            compute_idx = torch.arange(max_compute_len).view(1, 1, 1, -1)  # (1, 1, 1, max_compute_len)
+            q_idx = torch.arange(prefill_chunk_size).reshape(1, 1, -1, 1)  # (1, 1, prefill_chunk_size, 1)
+            compute_idx = torch.arange(max_compute_len).reshape(1, 1, 1, -1)  # (1, 1, 1, max_compute_len)
             in_chunk = (compute_idx >= cache_seq_len_b) & (compute_idx < cache_offset_b)  # valid idx in 4 dims
             in_past = compute_idx < cache_seq_len_b  # valid idx in 4 dims
 
