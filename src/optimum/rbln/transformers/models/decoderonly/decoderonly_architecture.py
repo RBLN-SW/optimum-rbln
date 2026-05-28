@@ -1226,6 +1226,8 @@ class SlidingWindowAttentionOp(AttentionOp):
 
         if self.phase == "decode" or self.phase == "image_prefill":
             op_args["attn_mask"] = attn_mask
+        else:
+            op_args["attn_mask"] = None
 
         if s_aux is not None:
             op_args["s_aux"] = s_aux
