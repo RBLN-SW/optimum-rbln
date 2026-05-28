@@ -220,6 +220,41 @@ class Gemma4TextModel(DecoderOnlyModel):
             return per_layer_projection
         return (per_layer_projection + per_layer_inputs) * self.per_layer_input_scale
 
+    def get_swa_custom_op_args(self, position_ids, query_position):
+        max_cache_len = self.config.sliding_window
+        valid_input_len = 1 if query_position is None else int(query_position.item()) + 1
+        cache_seq_len = torch.clamp(position_ids.to(torch.int32), max=max_cache_len)[:, :1]  # past seen tokens
+        cache_offset = (
+            torch.clamp(position_ids, max=max_cache_len)[:, :1] + valid_input_len
+        )  # cache offset for next steps
+
+        if self.phase == "decode":
+            # Causal mask for sliding window attention
+            attn_mask = torch.arange(max_cache_len)[None, :] - cache_seq_len
+            attn_mask = torch.where(attn_mask > 0, 0.0, 1.0)[:, None, None, :]
+
+        else:
+            # (batch, 1, prefill_chunk_size, sliding_window + prefill_chunk_size)
+            batch_size, prefill_chunk_size = position_ids.shape
+            max_compute_len = max_cache_len + prefill_chunk_size
+            cache_seq_len_b = cache_seq_len[:, None, None, :]
+            cache_offset_b = cache_offset[:, None, None, :]
+
+            q_idx = torch.arange(prefill_chunk_size).view(1, 1, -1, 1)
+            kv_idx = torch.arange(max_compute_len).view(1, 1, 1, -1)
+            in_chunk = (kv_idx >= cache_seq_len_b) & (kv_idx < cache_offset_b)
+            in_past = kv_idx < cache_seq_len_b
+
+            gap = cache_seq_len_b + q_idx - kv_idx
+            swa = (gap >= 0) & (gap < max_cache_len)
+
+            valid_q = q_idx < valid_input_len
+            valid_kv = in_past | in_chunk
+            attn = valid_q & valid_kv & (swa | (self.phase == "image_prefill" & in_chunk))
+            attn_mask = torch.where(attn, 1.0, 0.0).expand(batch_size, 1, prefill_chunk_size, max_compute_len)
+
+        return cache_seq_len, cache_offset, attn_mask
+
     def forward(
         self,
         input_ids: torch.Tensor = None,

@@ -170,9 +170,7 @@ class RBLNGemma4RuntimeModel(RBLNRuntimeModel):
                 is_image_prefill = False
 
             chunk_size_used = (
-                self.rbln_config.image_prefill_chunk_size
-                if is_image_prefill
-                else self.rbln_config.prefill_chunk_size
+                self.rbln_config.image_prefill_chunk_size if is_image_prefill else self.rbln_config.prefill_chunk_size
             )
             if use_tt:
                 target_value = 1 if is_image_prefill else 0
@@ -184,15 +182,11 @@ class RBLNGemma4RuntimeModel(RBLNRuntimeModel):
 
             input_chunk = inputs[:, step : step + chunk_size_used]
             per_layer_chunk = (
-                per_layer_inputs[:, step : step + chunk_size_used]
-                if per_layer_inputs is not None
-                else None
+                per_layer_inputs[:, step : step + chunk_size_used] if per_layer_inputs is not None else None
             )
             cache_pos_chunk = cache_position[:, step : step + chunk_size_used] + padded_cache_lengths
             position_ids_chunk = (
-                position_ids[:, step : step + chunk_size_used]
-                if self.rbln_config.use_position_ids
-                else None
+                position_ids[:, step : step + chunk_size_used] if self.rbln_config.use_position_ids else None
             )
 
             num_processed_tokens = run_len
