@@ -89,8 +89,10 @@ class RBLNGemma4RuntimeModel(RBLNRuntimeModel):
             padding_size = self.rbln_config.image_prefill_chunk_size
             inputs = torch.nn.functional.pad(inputs, (0, 0, 0, padding_size))
             cache_position = torch.nn.functional.pad(cache_position, (0, padding_size))
-            position_ids = torch.nn.functional.pad(position_ids, (0, padding_size))
-            token_type_ids = torch.nn.functional.pad(token_type_ids, (0, padding_size), value=-1)
+            if position_ids is not None:
+                position_ids = torch.nn.functional.pad(position_ids, (0, padding_size))
+            if token_type_ids is not None:
+                token_type_ids = torch.nn.functional.pad(token_type_ids, (0, padding_size), value=-1)
 
         return (
             inputs,
@@ -159,13 +161,24 @@ class RBLNGemma4RuntimeModel(RBLNRuntimeModel):
                 per_layer_inputs = per_layer_inputs[:, :target_len]
 
         step = 0
+        minus_run_total = 0
         output_logits = []
         all_hidden_states = [] if self.rbln_config.output_hidden_states else None
-        while step < query_length:
-            use_tt = self.rbln_config.use_image_prefill and token_type_ids is not None
+        use_tt = self.rbln_config.use_image_prefill and token_type_ids is not None
+        while step + minus_run_total < query_length:
+            step_padded = step + minus_run_total
+
             if use_tt:
-                start_type = int(token_type_ids[0, step].item())
-                is_image_prefill = start_type == 1
+                tt_at = int(token_type_ids[0, step_padded].item())
+                if tt_at == -1:
+                    rest = token_type_ids[0, step_padded:query_length]
+                    valid_off = (rest != -1).nonzero(as_tuple=True)[0]
+                    run_minus = (
+                        int(valid_off[0].item()) if valid_off.numel() > 0 else int(rest.shape[0])
+                    )
+                    minus_run_total += run_minus
+                    continue
+                is_image_prefill = tt_at == 1
             else:
                 is_image_prefill = False
 
@@ -176,21 +189,23 @@ class RBLNGemma4RuntimeModel(RBLNRuntimeModel):
             )
             if use_tt:
                 target_value = 1 if is_image_prefill else 0
-                run_len = _run_length_from(token_type_ids, step, value=target_value, cap=chunk_size_used)
+                run_len = _run_length_from(
+                    token_type_ids, step_padded, value=target_value, cap=chunk_size_used
+                )
             else:
                 run_len = chunk_size_used
 
-            is_last_chunk = step + run_len >= query_length
+            is_last_chunk = step_padded + run_len >= query_length
 
-            input_chunk = inputs[:, step : step + chunk_size_used]
+            input_chunk = inputs[:, step_padded : step_padded + chunk_size_used]
             per_layer_chunk = (
-                per_layer_inputs[:, step : step + chunk_size_used]
+                per_layer_inputs[:, step_padded : step_padded + chunk_size_used]
                 if per_layer_inputs is not None
                 else None
             )
             cache_pos_chunk = cache_position[:, step : step + chunk_size_used] + padded_cache_lengths
             position_ids_chunk = (
-                position_ids[:, step : step + chunk_size_used]
+                position_ids[:, step_padded : step_padded + chunk_size_used]
                 if self.rbln_config.use_position_ids
                 else None
             )
@@ -198,7 +213,7 @@ class RBLNGemma4RuntimeModel(RBLNRuntimeModel):
             num_processed_tokens = run_len
             current_padded_cache_lengths = chunk_size_used - run_len
             if is_last_chunk:
-                tail = query_length - step
+                tail = query_length - step_padded
                 num_processed_tokens = min(tail, run_len) if run_len > 0 else tail
                 current_padded_cache_lengths = 0
 
@@ -318,9 +333,16 @@ class RBLNGemma4RuntimeModel(RBLNRuntimeModel):
             tt = token_type_ids[0]
             trans = (tt[1:] != tt[:-1]).nonzero(as_tuple=True)[0] + 1
             bounds = torch.cat([trans.new_zeros(1), trans, trans.new_tensor([tt.shape[0]])])
-            run_lens = bounds[1:] - bounds[:-1]
-            cs = self.rbln_config.prefill_chunk_size
-            pad_bound = int(((cs - run_lens % cs) % cs).sum().item())
+
+            starts = bounds[:-1]
+            run_lens = bounds[1:] - starts
+            run_vals = tt[starts]
+            prefill_cs = self.rbln_config.prefill_chunk_size
+            image_cs = self.rbln_config.image_prefill_chunk_size
+            cs_per_run = torch.where(run_vals == 1, image_cs, prefill_cs)
+            valid_mask = (run_vals != -1).to(cs_per_run.dtype)
+            per_run_pad = ((cs_per_run - run_lens % cs_per_run) % cs_per_run) * valid_mask
+            pad_bound = int(per_run_pad.sum().item())
             if pad_bound > 0:
                 extra = cache_position.new_tensor([[cache_position[0, -1].item() + pad_bound]])
                 alloc_cache_position = torch.cat([cache_position, extra], dim=-1)
