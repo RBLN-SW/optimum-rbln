@@ -806,9 +806,7 @@ class RBLNGemma4ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMix
                 else None
             )
 
-            dispatch_token_type_ids = (
-                mm_token_type_ids if mm_token_type_ids is not None else token_type_ids
-            )
+            dispatch_token_type_ids = mm_token_type_ids if mm_token_type_ids is not None else token_type_ids
 
             for b_idx in range(batch_size):
                 # Mirror RBLNDecoderOnlyModel.forward: use `attention_mask[b_idx].sum()`
@@ -828,9 +826,7 @@ class RBLNGemma4ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMix
                     cache_position=cache_position_b,
                     batch_idx=b_idx,
                     token_type_ids=(
-                        dispatch_token_type_ids[b_idx : b_idx + 1]
-                        if dispatch_token_type_ids is not None
-                        else None
+                        dispatch_token_type_ids[b_idx : b_idx + 1] if dispatch_token_type_ids is not None else None
                     ),
                 )
                 padded_cache_lengths[b_idx] += outputs.padded_cache_lengths
