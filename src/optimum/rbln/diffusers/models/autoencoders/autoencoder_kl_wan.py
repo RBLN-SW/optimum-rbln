@@ -422,10 +422,10 @@ class RBLNAutoencoderKLWan(RBLNModel):
 
     @classmethod
     def _wrap_model_if_needed(cls, model: torch.nn.Module, rbln_config: RBLNAutoencoderKLWanConfig) -> torch.nn.Module:
-        decoder_model_0 = _VAEWanDecoder(model)
+        decoder_model_0 = _VAEWanDecoder0(model)
         decoder_model_0.eval()
         
-        decoder_model_n = _VAEWanDecoder(model)
+        decoder_model_n = _VAEWanDecoderN(model)
         decoder_model_n.eval()
 
         if rbln_config.uses_encoder:
