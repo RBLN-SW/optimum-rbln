@@ -35,6 +35,7 @@ def paged_sliding_window_attn_prefill(
     block_table: Tensor,
     block_size: int,
     is_bidirectional: bool,
+    attn_mask: Optional[Tensor] = None,
     s_aux: Optional[Tensor] = None,
 ) -> Tensor:
     """Defines the computation pattern for prefill phase attention with KV cache updates.
@@ -76,6 +77,7 @@ def paged_sliding_window_attn_prefill_fake(
     block_table: Tensor,
     block_size: int,
     is_bidirectional: bool,
+    attn_mask: Optional[Tensor] = None,
     s_aux: Optional[Tensor] = None,
 ) -> Tensor:
     return torch.empty_like(q)

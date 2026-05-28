@@ -183,9 +183,7 @@ class RBLNGemma4RuntimeModel(RBLNRuntimeModel):
                 is_image_prefill = False
 
             chunk_size_used = (
-                self.rbln_config.image_prefill_chunk_size
-                if is_image_prefill
-                else self.rbln_config.prefill_chunk_size
+                self.rbln_config.image_prefill_chunk_size if is_image_prefill else self.rbln_config.prefill_chunk_size
             )
             if use_tt:
                 target_value = 1 if is_image_prefill else 0
@@ -221,13 +219,6 @@ class RBLNGemma4RuntimeModel(RBLNRuntimeModel):
                 :, step + padded_cache_lengths : step + num_processed_tokens + padded_cache_lengths
             ] = 1
             query_position = torch.tensor(num_processed_tokens - 1, dtype=torch.int16)
-
-            if is_image_prefill and num_processed_tokens < chunk_size_used:
-                input_chunk = input_chunk.clone()
-                input_chunk[:, num_processed_tokens:] = 0
-                if per_layer_chunk is not None:
-                    per_layer_chunk = per_layer_chunk.clone()
-                    per_layer_chunk[:, num_processed_tokens:] = 0
 
             if is_image_prefill:
                 outputs = self.image_prefill(
