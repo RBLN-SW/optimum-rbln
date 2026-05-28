@@ -223,9 +223,9 @@ class Gemma4TextModel(DecoderOnlyModel):
     def get_swa_custom_op_args(self, position_ids, query_position):
         max_cache_len = self.config.sliding_window
         valid_input_len = 1 if query_position is None else query_position + 1
-        cache_seq_len = torch.clamp(position_ids.to(torch.int32), max=max_cache_len)[:, :1]  # past seen tokens
+        cache_seq_len = torch.clamp(position_ids.to(torch.int32), max=max_cache_len, dtype=torch.int32)[:, :1]  # past seen tokens
         cache_offset = (
-            torch.clamp(position_ids, max=max_cache_len)[:, :1] + valid_input_len
+            torch.clamp(position_ids, max=max_cache_len, dtype=torch.int32)[:, :1] + valid_input_len
         )  # cache offset for next steps
 
         if self.phase == "decode":
