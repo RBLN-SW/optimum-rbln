@@ -235,16 +235,20 @@ class Gemma4TextModel(DecoderOnlyModel):
 
         else:
             # (1, 1, prefill_chunk_size, sliding_window + prefill_chunk_size)
+            # prfill_chunk_size: 512
+            # sliding_window: 1024 
+            # 1536
             _, prefill_chunk_size = position_ids.shape
             max_compute_len = max_cache_len + prefill_chunk_size
             cache_seq_len_b = cache_seq_len[:, None, None, :]  # (1, 1, 1, 1)
             cache_offset_b = cache_offset[:, None, None, :]  # (1, 1, 1, 1)
 
-            q_idx = torch.arange(prefill_chunk_size).reshape(1, 1, -1, 1)  # (1, 1, prefill_chunk_size, 1)
-            compute_idx = torch.arange(max_compute_len).reshape(1, 1, 1, -1)  # (1, 1, 1, max_compute_len)
+            q_idx = torch.arange(prefill_chunk_size, dtype=torch.int32).reshape(1, 1, -1, 1)  # (1, 1, prefill_chunk_size, 1)
+            compute_idx = torch.arange(max_compute_len, dtype=torch.int32).reshape(1, 1, 1, -1)  # (1, 1, 1, max_compute_len)
             in_chunk = (compute_idx >= cache_seq_len_b) & (compute_idx < cache_offset_b)  # valid idx in 4 dims
             in_past = compute_idx < cache_seq_len_b  # valid idx in 4 dims
 
+            # (1,1,1,1) + (1,1,512,1) - (1,1,1,1536)
             gap = cache_seq_len_b + q_idx - compute_idx
             swa = (gap >= 0) & (gap < max_cache_len)
 
@@ -254,7 +258,7 @@ class Gemma4TextModel(DecoderOnlyModel):
                 attn = valid_q & valid_kv & torch.logical_or(swa, in_chunk)
             else:
                 attn = valid_q & valid_kv & swa
-            attn_mask = torch.where(attn, 1.0, 0.0)
+            attn_mask = torch.where(attn, 1.0, 0.0).to(self.rbln_config.dtype)
 
         return cache_seq_len, cache_offset, attn_mask
 
