@@ -1,5 +1,4 @@
 import math
-import os
 from collections import defaultdict
 from typing import TYPE_CHECKING, Optional, Tuple
 
@@ -18,10 +17,10 @@ logger = get_logger()
 
 DEFAULT_FLASH_ATTN_PARTITION_LENGTH = 16_384
 DEFAULT_MAX_EAGER_ATTN_SEQUENCE_LENGTH = 32_768
-MIN_FLASH_ATTN_MAX_SEQ_LEN = int(os.environ.get("RBLN_MIN_FLASH_ATTN_MAX_SEQ_LEN", 8192))
-MIN_FLASH_ATTN_PARTITION_LENGTH = int(os.environ.get("RBLN_MIN_FLASH_ATTN_PARTITION_LENGTH", 4096))
-MAX_FLASH_ATTN_PARTITION_LENGTH = int(os.environ.get("RBLN_MAX_FLASH_ATTN_PARTITION_LENGTH", 32_768))
-MAX_SLIDING_WINDOW_SIZE = int(os.environ.get("RBLN_MAX_SLIDING_WINDOW_SIZE", 32_768))
+MIN_FLASH_ATTN_MAX_SEQ_LEN = 8192   
+MIN_FLASH_ATTN_PARTITION_LENGTH = 4096
+MAX_FLASH_ATTN_PARTITION_LENGTH = 32_768
+MAX_SLIDING_WINDOW_SIZE = 32_768
 
 
 def set_default_values(
@@ -55,6 +54,12 @@ def set_default_values(
 
 
 def validate_attention_method(attn_impl: str, kvcache_partition_len: int, kvcache_block_size: int, max_seq_len: int):
+    import os
+    SKIP_VALIDATION = os.environ.get("RBLN_SKIP_VALIDATION", "0") == "1"
+    
+    if SKIP_VALIDATION:
+        return
+
     if attn_impl not in ["eager", "flash_attn"]:
         raise ValueError(f"Unknown `attn_impl` : {attn_impl}. (Available : 'eager', 'flash_attn`)")
 
