@@ -992,7 +992,7 @@ class TestDisallowedLlama_3(DisallowedTestBase.DisallowedTest):
     RBLN_CLASS = RBLNLlamaForCausalLM
     HF_MODEL_ID = "afmck/testing-llama-tiny"
     HF_CONFIG_KWARGS = {"num_hidden_layers": 1, "max_position_embeddings": 8192}
-    RBLN_CLASS_KWARGS = {"rbln_config": {"attn_impl": "flash_attn", "kvcache_partition_len": 512}}
+    RBLN_CLASS_KWARGS = {"rbln_config": {"attn_impl": "flash_attn", "kvcache_partition_len": 1024}}
 
 
 class TestDisallowedLlama_4(DisallowedTestBase.DisallowedTest):
@@ -1000,7 +1000,7 @@ class TestDisallowedLlama_4(DisallowedTestBase.DisallowedTest):
     RBLN_CLASS = RBLNLlamaForCausalLM
     HF_MODEL_ID = "afmck/testing-llama-tiny"
     HF_CONFIG_KWARGS = {"num_hidden_layers": 1, "max_position_embeddings": 1024}
-    RBLN_CLASS_KWARGS = {"rbln_config": {"attn_impl": "flash_attn", "kvcache_partition_len": 1024}}
+    RBLN_CLASS_KWARGS = {"rbln_config": {"attn_impl": "flash_attn", "kvcache_partition_len": 2048}}
 
 
 class TestMixtralForCausalLM(LLMTest.TestLLM):
