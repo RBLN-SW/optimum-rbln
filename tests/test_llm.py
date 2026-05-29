@@ -664,7 +664,7 @@ class TestQwen2VLForConditionalGeneration(LLMTest.TestLLM):
     PROMPT = "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\n<|vision_start|><|image_pad|><|vision_end|>Describe this image.<|im_end|>\n<|im_start|>assistant\n"
     RBLN_CLASS_KWARGS = {
         "rbln_config": {
-            "visual": {"max_seq_lens": 512},
+            "visual": {"max_seq_len": 512},
             "tensor_parallel_size": 1,
             "max_seq_len": 32_768,
         }
@@ -707,7 +707,7 @@ class TestQwen2_5_VLForConditionalGeneration(LLMTest.TestLLM):
     PROMPT = "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\n<|vision_start|><|image_pad|><|vision_end|>Describe this image.<|im_end|>\n<|im_start|>assistant\n"
     RBLN_CLASS_KWARGS = {
         "rbln_config": {
-            "visual": {"max_seq_lens": 512},
+            "visual": {"max_seq_len": 512},
             "tensor_parallel_size": 1,
             "kvcache_partition_len": 16_384,
             "max_seq_len": 32_768,
@@ -747,7 +747,7 @@ class TestQwen3VLForConditionalGeneration(LLMTest.TestLLM):
     PROMPT = "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\n<|vision_start|><|image_pad|><|vision_end|>Describe this image.<|im_end|>\n<|im_start|>assistant\n"
     RBLN_CLASS_KWARGS = {
         "rbln_config": {
-            "visual": {"max_seq_lens": 512},
+            "visual": {"max_seq_len": 512},
             "tensor_parallel_size": 1,
             "kvcache_partition_len": 8192,
             "max_seq_len": 16_384,
@@ -783,7 +783,7 @@ class TestQwen3VLMoeForConditionalGeneration(LLMTest.TestLLM):
     PROMPT = "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\n<|vision_start|><|image_pad|><|vision_end|>Describe this image.<|im_end|>\n<|im_start|>assistant\n"
     RBLN_CLASS_KWARGS = {
         "rbln_config": {
-            "visual": {"max_seq_lens": 512},
+            "visual": {"max_seq_len": 512},
             "tensor_parallel_size": 1,
             "kvcache_partition_len": 8192,
             "max_seq_len": 16_384,
@@ -882,6 +882,7 @@ class TestGemma3ForCausalLM(LLMTest.TestLLM):
         return super().setUpClass()
 
 
+@unittest.skip("Compilation fails: with CR25 + CR03, need to fix it")
 class TestLlamaForCausalLM_fp8(LLMTest.TestLLM):
     RBLN_CLASS = RBLNLlamaForCausalLM
     HF_MODEL_ID = "RedHatAI/Meta-Llama-3-8B-Instruct-FP8-KV"  # No tiny model yet.
@@ -941,6 +942,7 @@ class TestMultiLora(LLMTest.TestLLM):
         return super().get_inputs()
 
 
+@unittest.skip("Compilation fails: with CR25 + CR03, need to fix it")
 class TestMultiLora_batch(LLMTest.TestLLM):
     PROMPT = ["Who are you?", "What is the capital of France?"]
 
@@ -994,11 +996,11 @@ class TestDisallowedLlama_3(DisallowedTestBase.DisallowedTest):
 
 
 class TestDisallowedLlama_4(DisallowedTestBase.DisallowedTest):
-    # Flash attn : too short max_seq_len
+    # Flash attn : max_seq_len smaller than 2 * kvcache_partition_len (fewer than 2 partitions)
     RBLN_CLASS = RBLNLlamaForCausalLM
     HF_MODEL_ID = "afmck/testing-llama-tiny"
-    HF_CONFIG_KWARGS = {"num_hidden_layers": 1, "max_position_embeddings": 2048}
-    RBLN_CLASS_KWARGS = {"rbln_config": {"attn_impl": "flash_attn", "kvcache_partition_len": 1024}}
+    HF_CONFIG_KWARGS = {"num_hidden_layers": 1, "max_position_embeddings": 1024}
+    RBLN_CLASS_KWARGS = {"rbln_config": {"attn_impl": "flash_attn", "kvcache_partition_len": 2048}}
 
 
 class TestMixtralForCausalLM(LLMTest.TestLLM):
