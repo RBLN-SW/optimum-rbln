@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import copy
-from typing import Optional, Tuple, Union
+from typing import Optional, Tuple, Union, Any
 
 import torch
 import torch.nn as nn
@@ -355,7 +355,7 @@ class Gemma4DecoderLayer(DecoderOnlyLayer):
         self.enable_moe_block = getattr(layer, "enable_moe_block", False)
         if self.enable_moe_block:
             self.router = Gemma4Router(layer.router)
-            self.experts = Gemma4Experts(layer.experts, layer.router)
+            self.experts = Gemma4Experts(layer.experts, layer.router, self_attn.phase, self_attn.rbln_config)
             self.pre_feedforward_layernorm_2 = layer.pre_feedforward_layernorm_2
             self.post_feedforward_layernorm_1 = layer.post_feedforward_layernorm_1
             self.post_feedforward_layernorm_2 = layer.post_feedforward_layernorm_2
@@ -621,7 +621,7 @@ class Gemma4Experts(nn.Module):
     at construction time because the op does not accept an external per-expert constant.
     """
 
-    def __init__(self, experts: nn.Module, router: nn.Module):
+    def __init__(self, experts: nn.Module, router: nn.Module, phase: str, rbln_config: Any):
         super().__init__()
         self.num_experts = experts.num_experts
         self.hidden_size = experts.hidden_dim
@@ -633,13 +633,12 @@ class Gemma4Experts(nn.Module):
         gate_w = gate_up[:, : self.intermediate_size, :]
         up_w = gate_up[:, self.intermediate_size :, :]
         down_w = experts.down_proj
-
-        per_expert_scale = router.per_expert_scale.detach()
-        down_w = down_w * per_expert_scale[:, None, None]
-
+        
+        self.per_expert_scale = router.per_expert_scale.detach().clone().unsqueeze(1)
+        
         gate_w_op = gate_w.contiguous()
         up_w_op = up_w.contiguous()
-        down_w_op = down_w.contiguous()
+        down_w_op = down_w.contiguous().clone()
 
         self.gate_proj = nn.Linear(self.hidden_size, self.num_experts * self.intermediate_size, bias=False)
         self.up_proj = nn.Linear(self.hidden_size, self.num_experts * self.intermediate_size, bias=False)
@@ -658,6 +657,7 @@ class Gemma4Experts(nn.Module):
             scoring_func="softmax",
             topk=self.top_k,
             norm_topk_prob=self.norm_topk_prob,
+            per_expert_scale=self.per_expert_scale,
         )
 
 
