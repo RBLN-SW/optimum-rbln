@@ -1,4 +1,5 @@
 import math
+import os
 from collections import defaultdict
 from typing import TYPE_CHECKING, Optional, Tuple
 
@@ -17,10 +18,10 @@ logger = get_logger()
 
 DEFAULT_FLASH_ATTN_PARTITION_LENGTH = 16_384
 DEFAULT_MAX_EAGER_ATTN_SEQUENCE_LENGTH = 32_768
-MIN_FLASH_ATTN_MAX_SEQ_LEN = 2048
-MIN_FLASH_ATTN_PARTITION_LENGTH = 1024
-MAX_FLASH_ATTN_PARTITION_LENGTH = 32_768
-MAX_SLIDING_WINDOW_SIZE = 32_768
+MIN_FLASH_ATTN_MAX_SEQ_LEN = int(os.environ.get("RBLN_MIN_FLASH_ATTN_MAX_SEQ_LEN", 8192))
+MIN_FLASH_ATTN_PARTITION_LENGTH = int(os.environ.get("RBLN_MIN_FLASH_ATTN_PARTITION_LENGTH", 4096))
+MAX_FLASH_ATTN_PARTITION_LENGTH = int(os.environ.get("RBLN_MAX_FLASH_ATTN_PARTITION_LENGTH", 32_768))
+MAX_SLIDING_WINDOW_SIZE = int(os.environ.get("RBLN_MAX_SLIDING_WINDOW_SIZE", 32_768))
 
 
 def set_default_values(
@@ -108,7 +109,7 @@ def validate_attention_method(attn_impl: str, kvcache_partition_len: int, kvcach
 def validate_sliding_window(rbln_config: "RBLNDecoderOnlyModelForCausalLMConfig"):
     if rbln_config.sliding_window > MAX_SLIDING_WINDOW_SIZE - rbln_config.prefill_chunk_size:
         raise ValueError(
-            f"Sliding window size ({rbln_config.sliding_window}) must be less than 32768 - prefill_chunk_size ({32768 - rbln_config.prefill_chunk_size})"
+            f"Sliding window size ({rbln_config.sliding_window}) must be less than {MAX_SLIDING_WINDOW_SIZE} - prefill_chunk_size ({MAX_SLIDING_WINDOW_SIZE - rbln_config.prefill_chunk_size})"
         )
 
     if rbln_config.cache_impl == "sliding_window" and rbln_config.use_attention_mask:
