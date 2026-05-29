@@ -1,4 +1,5 @@
 import math
+import os
 from collections import defaultdict
 from typing import TYPE_CHECKING, Optional, Tuple
 
@@ -17,10 +18,17 @@ logger = get_logger()
 
 DEFAULT_FLASH_ATTN_PARTITION_LENGTH = 16_384
 DEFAULT_MAX_EAGER_ATTN_SEQUENCE_LENGTH = 32_768
-MIN_FLASH_ATTN_MAX_SEQ_LEN = 8192   
+MIN_FLASH_ATTN_MAX_SEQ_LEN = 8192
 MIN_FLASH_ATTN_PARTITION_LENGTH = 4096
 MAX_FLASH_ATTN_PARTITION_LENGTH = 32_768
 MAX_SLIDING_WINDOW_SIZE = 32_768
+
+
+def _should_skip_attn_validation() -> bool:
+    # Escape hatch read at call time so it can be toggled per-process (e.g. by external scripts
+    # like rbln-executor or k-perf). When enabled, attention/sliding-window constraints are not
+    # enforced — invalid configurations may still fail at compile or runtime.
+    return os.environ.get("RBLN_SKIP_ATTN_VALIDATION", "0") == "1"
 
 
 def set_default_values(
@@ -54,10 +62,11 @@ def set_default_values(
 
 
 def validate_attention_method(attn_impl: str, kvcache_partition_len: int, kvcache_block_size: int, max_seq_len: int):
-    import os
-    SKIP_VALIDATION = os.environ.get("RBLN_SKIP_VALIDATION", "0") == "1"
-    
-    if SKIP_VALIDATION:
+    if _should_skip_attn_validation():
+        logger.warning(
+            "Skipping `validate_attention_method` because `RBLN_SKIP_ATTN_VALIDATION=1`. "
+            "Invalid configurations may still fail at compile or runtime."
+        )
         return
 
     if attn_impl not in ["eager", "flash_attn"]:
@@ -112,6 +121,13 @@ def validate_attention_method(attn_impl: str, kvcache_partition_len: int, kvcach
 
 
 def validate_sliding_window(rbln_config: "RBLNDecoderOnlyModelForCausalLMConfig"):
+    if _should_skip_attn_validation():
+        logger.warning(
+            "Skipping `validate_sliding_window` because `RBLN_SKIP_ATTN_VALIDATION=1`. "
+            "Invalid configurations may still fail at compile or runtime."
+        )
+        return
+
     if rbln_config.sliding_window > MAX_SLIDING_WINDOW_SIZE - rbln_config.prefill_chunk_size:
         raise ValueError(
             f"Sliding window size ({rbln_config.sliding_window}) must be less than {MAX_SLIDING_WINDOW_SIZE} - prefill_chunk_size ({MAX_SLIDING_WINDOW_SIZE - rbln_config.prefill_chunk_size})"
