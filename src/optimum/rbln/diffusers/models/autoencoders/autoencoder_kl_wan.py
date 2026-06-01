@@ -228,12 +228,14 @@ class _VAEWanEncoder0(torch.nn.Module):
     def forward(self, x, *args) -> torch.Tensor:
         out = self.encoder(x, feat_cache=self._enc_feat_map, feat_idx=self._enc_conv_idx)
         # post-process: update rbln cache tensors
+        feat_cache_0 = self._enc_feat_map[0]
+        feat_cache_0 = torch.nn.functional.pad(feat_cache_0, (0, 0, 0, 0, 1, 0))  # pad one frame earlier
         dummy_outs = []
         position = torch.tensor(
             0, dtype=torch.int16
         )  # 0 is dummy value -> first output of next chunk have to slice out this frame
         axis = torch.tensor(2, dtype=torch.int16)
-        for cache, feat_cache_item, cache_dim in zip(list(args), self._enc_feat_map, self.cache_dims):
+        for cache, feat_cache_item, cache_dim in zip(list(args)[1:], self._enc_feat_map[1:], self.cache_dims[1:]):
             n, c, d, h, w = feat_cache_item.shape
             feat_cache_item = feat_cache_item.reshape(n, c, d, -1)
             if cache_dim[2] == 2:
@@ -242,7 +244,7 @@ class _VAEWanEncoder0(torch.nn.Module):
             dummy_out = torch.ops.rbln_custom_ops.rbln_cache_update(cache, feat_cache_item, position, axis)
             dummy_outs.append(dummy_out)
             print(cache.shape, feat_cache_item.shape)
-        return out, dummy_outs
+        return out, feat_cache_0, dummy_outs
 
     def clear_cache(self, vae):
         self._enc_conv_num = vae._cached_conv_counts["encoder"]
@@ -257,14 +259,14 @@ class _VAEWanEncoderN(torch.nn.Module):
         super().__init__()
         self.encoder = vae.encoder
         self.cache_dims = get_cache_size_enc(height, width)[1]
-        # self._enc_feat_map = vae._enc_feat_map
-        # self._enc_conv_idx = vae._enc_conv_idx
+        # self.clear_cache(vae) # 이게 필요없네... 사실상 _enc_feat_map이 우리 dram과 동일한 역할
 
     def forward(self, x, *args) -> torch.Tensor:
         feat_cache_reshaped = []
         
+        feat_cache_reshaped.append(args[0])
         # pre-process: reshape rbln cache tensors to torch layout
-        for cache, cache_dim in zip(list(args), self.cache_dims):
+        for cache, cache_dim in zip(list(args)[1:], self.cache_dims[1:]):
             reshaped_cache = cache.reshape(*cache_dim)  # n c d (hw) -> n c d h w
             feat_cache_reshaped.append(reshaped_cache)
         
@@ -275,14 +277,13 @@ class _VAEWanEncoderN(torch.nn.Module):
         dummy_outs = []
         position = torch.tensor(0, dtype=torch.int16)
         axis = torch.tensor(2, dtype=torch.int16)
-        for cache, feat_cache_e1_item in zip(list(args), feat_cache_reshaped):
+        for cache, feat_cache_e1_item in zip(list(args)[1:], feat_cache_reshaped[1:]):
             n, c, d, h, w = feat_cache_e1_item.shape
             feat_cache_e1_item = feat_cache_e1_item.reshape(n, c, d, -1)
             dummy_out = torch.ops.rbln_custom_ops.rbln_cache_update(cache, feat_cache_e1_item, position, axis)
             dummy_outs.append(dummy_out)
             # print(cache.shape, feat_cache_e1_item.shape)
-        return out, dummy_outs
-
+        return out, feat_cache_reshaped[0], dummy_outs
 
 class _VAEWanDecoder0(torch.nn.Module):
     """Wrapper module for Wan VAE decoder extraction."""
@@ -465,7 +466,7 @@ class RBLNAutoencoderKLWan(RBLNModel):
             )
             compiled_models["encoder_n"] = enc_compiled_model_n
 
-        import pdb; pdb.set_trace()
+        """
         decoder_models = cls._wrap_model_if_needed(model, rbln_config)
 
         dec_compiled_model_0 = cls.compile(
@@ -483,7 +484,7 @@ class RBLNAutoencoderKLWan(RBLNModel):
             device=rbln_config.device_map["decoder"],
         )
         compiled_models["decoder_n"] = dec_compiled_model_n
-
+        """
         return compiled_models
 
     @classmethod
@@ -516,14 +517,14 @@ class RBLNAutoencoderKLWan(RBLNModel):
         # Mark encoder_0's static tensors (cache)
         static_tensors = {}
         for (name, _, _), tensor in zip(encoder_0_compile_config.input_info, enc0_example_inputs):
-            if "feat_cache" in name:
+            if ("feat_cache" in name) and (not "feat_cache_0" in name):
                 static_tensors[name] = tensor
                 context.mark_static_address(tensor)
 
         encn_example_inputs = encoder_n_compile_config.get_dummy_inputs(fill=0, static_tensors=static_tensors)
         # Mark encoder_n's static tensors (cache)
         for (name, _, _), tensor in zip(encoder_n_compile_config.input_info, encn_example_inputs):
-            if "feat_cache" in name:
+            if ("feat_cache" in name) and (not "feat_cache_0" in name):
                 context.mark_static_address(tensor)
         return context, enc0_example_inputs, encn_example_inputs
 
@@ -567,8 +568,9 @@ class RBLNAutoencoderKLWan(RBLNModel):
             ]
             cache_0, cache_1 = get_cache_size_enc(rbln_config.height, rbln_config.width)
             for i, (shape_0, shape_1) in enumerate(zip(cache_0, cache_1)):
-                shape_0 = [*shape_0[:3], shape_0[-2] * shape_0[-1]]  # N C D HW # FIXME H,W 도 support 가능?
-                shape_1 = [*shape_1[:3], shape_1[-2] * shape_1[-1]]  # N C D HW # FIXME H,W 도 support 가능?
+                if i > 0:
+                    shape_0 = [*shape_0[:3], shape_0[-2] * shape_0[-1]] # N C D HW # FIXME H,W 도 support 가능?
+                    shape_1 = [*shape_1[:3], shape_1[-2] * shape_1[-1]]
                 vae_enc_0_input_info.append((f"feat_cache_{i}", shape_0, "float32"))
                 vae_enc_1_input_info.append((f"feat_cache_{i}", shape_1, "float32"))
 
@@ -610,7 +612,8 @@ class RBLNAutoencoderKLWan(RBLNModel):
             # decoder
             expected_models = ["decoder"]
         else:
-            expected_models = ["encoder", "decoder"]
+            # expected_models = ["encoder_0", "encoder_n", "decoder_0", "decoder_n"]
+            expected_models = ["encoder_0", "encoder_n"] # tmp code
 
         if any(model_name not in rbln_config.device_map for model_name in expected_models):
             cls._raise_missing_compiled_file_error(expected_models)
