@@ -65,7 +65,7 @@ class RBLNQwen2_5_VisionTransformerPretrainedModel(RBLNModel):
 
     def __post_init__(self, **kwargs):
         self.transformer = self.model[0]
-        self.max_seq_lens = torch.tensor(sorted(self.rbln_config.max_seq_lens, reverse=False))
+        self.max_seq_len = torch.tensor(sorted(self.rbln_config.max_seq_len, reverse=False))
         config = self.config
         self.window_size = config.window_size
         self.patch_size = config.spatial_patch_size
@@ -126,7 +126,7 @@ class RBLNQwen2_5_VisionTransformerPretrainedModel(RBLNModel):
         window_seq_len = (window_size // patch_size) ** 2
 
         input_infos = []
-        for max_seq_len in rbln_config.max_seq_lens:
+        for max_seq_len in rbln_config.max_seq_len:
             if max_seq_len % window_seq_len > 0:
                 raise ValueError(
                     f"max_seq_len ({max_seq_len}) must be a multiple of window_seq_len ({window_seq_len})."
@@ -299,11 +299,11 @@ class RBLNQwen2_5_VisionTransformerPretrainedModel(RBLNModel):
             # Select the nearest higher max_seq_len from the available compiled models.
             window_padded_len = len(window_indice) * window_seq_len
             try:
-                ws_index = torch.searchsorted(self.max_seq_lens, window_padded_len).item()
-                max_seq_len = self.max_seq_lens[ws_index]
+                ws_index = torch.searchsorted(self.max_seq_len, window_padded_len).item()
+                max_seq_len = self.max_seq_len[ws_index]
             except Exception as e:
                 raise ValueError(
-                    f"Required seq_len({window_padded_len}) is larger than available max_seq_lens({self.max_seq_lens.tolist()})."
+                    f"Required seq_len({window_padded_len}) is larger than available max_seq_len({self.max_seq_len.tolist()})."
                 ) from e
 
             # Padding for Window Attention Layers
@@ -641,7 +641,7 @@ class RBLNQwen2_5_VLForConditionalGeneration(RBLNQwen2_5_VLModel, RBLNDecoderOnl
             export=True,
             rbln_config={
                 "visual": {
-                    "max_seq_lens": 6400,
+                    "max_seq_len": 6400,
                     "device": 0,
                 },
                 "tensor_parallel_size": 8,

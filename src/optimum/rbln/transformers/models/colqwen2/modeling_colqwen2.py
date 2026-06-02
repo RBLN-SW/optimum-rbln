@@ -50,7 +50,7 @@ class RBLNColQwen2ForRetrieval(RBLNModel):
         rbln_config = {
             "vlm": {
                 "visual": {
-                    "max_seq_lens": 6400,
+                    "max_seq_len": 6400,
                 },
                 "tensor_parallel_size": 4,
                 "kvcache_partition_len": 16384,
