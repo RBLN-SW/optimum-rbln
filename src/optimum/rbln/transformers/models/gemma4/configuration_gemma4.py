@@ -135,18 +135,23 @@ class RBLNGemma4VisionModelConfig(RBLNModelConfig):
         if not isinstance(self.batch_size, int) or self.batch_size <= 0:
             raise ValueError(f"batch_size must be a positive integer, got {self.batch_size}")
 
+        if max_soft_tokens is not None:
+            if isinstance(max_soft_tokens, int):
+                max_soft_tokens = [max_soft_tokens]
+            elif isinstance(max_soft_tokens, list):
+                max_soft_tokens.sort(reverse=True)
+
         self.max_soft_tokens = max_soft_tokens
         self.pooling_kernel_size = pooling_kernel_size
         self.patch_size = patch_size
         self.output_hidden_states = output_hidden_states or False
 
-    @property
-    def max_patches(self) -> int:
+    def get_max_patches(self) -> int:
         if self.max_soft_tokens is None or self.pooling_kernel_size is None:
             raise ValueError(
                 "`max_patches` cannot be computed until both `max_soft_tokens` and `pooling_kernel_size` are set."
             )
-        return self.max_soft_tokens * self.pooling_kernel_size * self.pooling_kernel_size
+        return [max_soft_tokens * self.pooling_kernel_size * self.pooling_kernel_size for max_soft_tokens in self.max_soft_tokens]
 
 
 class RBLNGemma4ForConditionalGenerationConfig(RBLNModelConfig):

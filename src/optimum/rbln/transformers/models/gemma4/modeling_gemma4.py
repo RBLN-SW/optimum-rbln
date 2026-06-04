@@ -134,21 +134,24 @@ class RBLNGemma4VisionModel(RBLNModel):
         if rbln_config.patch_size is None:
             rbln_config.patch_size = model_config.patch_size
         if rbln_config.max_soft_tokens is None:
-            rbln_config.max_soft_tokens = 280
+            rbln_config.max_soft_tokens = [70, 140, 280, 560, 1120]
 
-        max_patches = rbln_config.max_patches
+        max_patches_list = rbln_config.get_max_patches()
         hidden_size = model_config.hidden_size
         head_dim = getattr(model_config, "head_dim", None) or (hidden_size // model_config.num_attention_heads)
 
-        input_info = [
-            ("inputs_embeds", [rbln_config.batch_size, max_patches, hidden_size], rbln_config.dtype),
-            ("pixel_position_ids", [rbln_config.batch_size, max_patches, 2], "int64"),
-            ("attn_mask", [rbln_config.batch_size, max_patches], rbln_config.dtype),
-            ("padding_positions", [rbln_config.batch_size, max_patches], "bool"),
-            ("cos", [rbln_config.batch_size, max_patches, head_dim], rbln_config.dtype),
-            ("sin", [rbln_config.batch_size, max_patches, head_dim], rbln_config.dtype),
-        ]
-        rbln_compile_config = RBLNCompileConfig(input_info=input_info)
+        input_infos = []
+        for max_patches in max_patches_list:
+            input_info = [
+                ("inputs_embeds", [rbln_config.batch_size, max_patches, hidden_size], rbln_config.dtype),
+                ("pixel_position_ids", [rbln_config.batch_size, max_patches, 2], "int64"),
+                ("attn_mask", [rbln_config.batch_size, max_patches], rbln_config.dtype),
+                ("padding_positions", [rbln_config.batch_size, max_patches], "bool"),
+                ("cos", [rbln_config.batch_size, max_patches, head_dim], rbln_config.dtype),
+                ("sin", [rbln_config.batch_size, max_patches, head_dim], rbln_config.dtype),
+            ]
+            input_infos.append(input_info)
+        rbln_compile_config = RBLNCompileConfig(input_info=input_infos)
         rbln_config.set_compile_cfgs([rbln_compile_config])
         return rbln_config
 
@@ -610,20 +613,22 @@ class RBLNGemma4ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMix
     ) -> RBLNModelConfig:
         vision_cfg = model_config.vision_config
         vt_cfg = rbln_config.vision_tower
-        max_soft_tokens = getattr(vt_cfg, "max_soft_tokens", None) if vt_cfg is not None else None
+        max_soft_tokens_list = getattr(vt_cfg, "max_soft_tokens", None) if vt_cfg is not None else None
         if isinstance(vt_cfg, dict):
-            max_soft_tokens = vt_cfg.get("max_soft_tokens", None)
-        max_soft_tokens = max_soft_tokens or 280
+            max_soft_tokens_list = vt_cfg.get("max_soft_tokens", None)
+        max_soft_tokens_list = max_soft_tokens_list or [70, 140, 280, 560, 1120]
+        if isinstance(max_soft_tokens_list, int):
+            max_soft_tokens_list = list(max_soft_tokens_list)
+        elif isinstance(max_soft_tokens_list, list):
+            max_soft_tokens_list.sort(reverse=True)
         vision_hidden_size = int(vision_cfg.hidden_size)
 
-        compile_cfgs = [
-            RBLNCompileConfig(
-                input_info=[
-                    ("image_features", [1, max_soft_tokens, vision_hidden_size], "float32"),
-                ],
-            )
-        ]
-        rbln_config.set_compile_cfgs(compile_cfgs)
+        input_infos = []
+        for max_soft_tokens in max_soft_tokens_list:
+            input_info = [("image_features", [1, max_soft_tokens, vision_hidden_size], "float32"),]
+            input_infos.append(input_info)
+        compile_cfgs = RBLNCompileConfig(input_info=input_infos)
+        rbln_config.set_compile_cfgs([compile_cfgs])
         return rbln_config
 
     def prepare_inputs_for_generation(
