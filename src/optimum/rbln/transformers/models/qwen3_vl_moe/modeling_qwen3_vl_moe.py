@@ -44,7 +44,7 @@ if TYPE_CHECKING:
 class RBLNQwen3VLMoeVisionModel(RBLNQwen3VLVisionModel):
     def __post_init__(self, **kwargs):
         self.transformer = self.model[0]
-        self.max_seq_lens = torch.tensor(sorted(self.rbln_config.max_seq_lens, reverse=False))
+        self.max_seq_len = torch.tensor(sorted(self.rbln_config.max_seq_len, reverse=False))
         config = self.config
         self.patch_size = config.patch_size
         self.spatial_merge_size = config.spatial_merge_size

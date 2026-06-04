@@ -15,6 +15,7 @@
 from typing import Any, List, Optional, Union
 
 from ....configuration_utils import RBLNModelConfig
+from ....utils.deprecation import deprecate_kwarg
 from ..decoderonly.configuration_decoderonly import RBLNDecoderOnlyModelConfig, RBLNDecoderOnlyModelForCausalLMConfig
 
 
@@ -88,10 +89,11 @@ class RBLNQwen3VLVisionModelConfig(RBLNModelConfig):
     RBLN-optimized Qwen3-VL vision transformer models for processing images and videos.
     """
 
-    def __init__(self, max_seq_lens: Union[int, List[int]] = None, **kwargs: Any):
+    @deprecate_kwarg(old_name="max_seq_lens", new_name="max_seq_len", version="0.11.0")
+    def __init__(self, max_seq_len: Union[int, List[int]] = None, **kwargs: Any):
         """
         Args:
-            max_seq_lens (Optional[Union[int, List[int]]]): Maximum sequence lengths for Vision
+            max_seq_len (Optional[Union[int, List[int]]]): Maximum sequence lengths for Vision
                 Transformer attention. Can be an integer or list of integers, each indicating
                 the number of patches in a sequence for an image or video. For example, an image
                 of 224x224 pixels with patch size 16 and spatial_merge_size 2 yields
@@ -101,16 +103,16 @@ class RBLNQwen3VLVisionModelConfig(RBLNModelConfig):
             kwargs: Additional arguments passed to the parent RBLNModelConfig.
 
         Raises:
-            ValueError: If `max_seq_lens` is None or not provided.
+            ValueError: If `max_seq_len` is None or not provided.
         """
         super().__init__(**kwargs)
 
-        if max_seq_lens is not None:
-            if isinstance(max_seq_lens, int):
-                max_seq_lens = [max_seq_lens]
-            elif isinstance(max_seq_lens, list):
-                max_seq_lens.sort(reverse=True)
+        if max_seq_len is not None:
+            if isinstance(max_seq_len, int):
+                max_seq_len = [max_seq_len]
+            elif isinstance(max_seq_len, list):
+                max_seq_len.sort(reverse=True)
         else:
-            raise ValueError("'max_seq_lens' must be specified.")
+            raise ValueError("'max_seq_len' must be specified.")
 
-        self.max_seq_lens = max_seq_lens
+        self.max_seq_len = max_seq_len
