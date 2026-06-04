@@ -793,7 +793,7 @@ class Gemma4VisionModelWrapper(nn.Module):
         if self.standardize:
             self.std_bias = model.std_bias
             self.std_scale = model.std_scale
-        self.num_soft_tokens = int(num_soft_tokens)
+        self.pooling_kernel_size = model.config.pooling_kernel_size
 
     def forward(
         self,
@@ -807,6 +807,7 @@ class Gemma4VisionModelWrapper(nn.Module):
         hidden_states = inputs_embeds
         position_embeddings = (cos, sin)
         attn_mask = attn_mask[:, None, None, :]
+        output_length = inputs_embeds.shape[1] // (self.pooling_kernel_size * self.pooling_kernel_size)
         for layer in self.encoder_layers[: self.num_layers]:
             hidden_states = layer(
                 hidden_states,
@@ -819,7 +820,7 @@ class Gemma4VisionModelWrapper(nn.Module):
             hidden_states=hidden_states,
             pixel_position_ids=pixel_position_ids,
             padding_positions=padding_positions,
-            output_length=self.num_soft_tokens,
+            output_length=output_length,
         )
 
         if self.standardize:
