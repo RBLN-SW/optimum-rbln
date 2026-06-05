@@ -332,7 +332,6 @@ class RBLNQwen3VLModel(RBLNDecoderOnlyModel):
     auto_model_class = AutoModelForImageTextToText
     _decoder_wrapper_cls = Qwen3VL_LanguageModelWrapper
     _use_rotary_emb = False
-    _rbln_submodule_prefix = "model"
     _rbln_submodules = [
         {"name": "visual"},
     ]
@@ -584,7 +583,8 @@ class RBLNQwen3VLModel(RBLNDecoderOnlyModel):
                     video_row_idx += 1
                 video_grid_slice = video_grid_thw[start_row:video_row_idx]
 
-            # (0=text, 1=image, 2=video). Derive from input_id if not provided by caller.
+            # mm_token_type_ids (0=text, 1=image, 2=video). Derive it from
+            # input_id if the caller (e.g. the processor) did not provide it.
             if mm_token_type_ids is not None:
                 batch_mm_token_type_ids = mm_token_type_ids[b_idx : b_idx + 1][:, attention_mask[b_idx].bool()]
             else:
@@ -807,7 +807,6 @@ class RBLNQwen3VLForConditionalGeneration(RBLNQwen3VLModel, RBLNDecoderOnlyModel
     _decoder_wrapper_cls = Qwen3VL_LanguageModelWrapper
     _supports_non_fp32 = True
     _use_rotary_emb = False
-    _rbln_submodule_prefix = "model"
     _rbln_submodules = [
         {"name": "visual"},
     ]

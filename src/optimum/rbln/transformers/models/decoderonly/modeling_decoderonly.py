@@ -357,8 +357,7 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
         rbln_config: RBLNDecoderOnlyModelForCausalLMConfig,
         model_config: PretrainedConfig,
     ):
-        if hasattr(model_config, "text_config") and not hasattr(model_config, "num_attention_heads"):
-            model_config = model_config.text_config
+        model_config = model_config.get_text_config()
         num_attention_heads = getattr(model_config, "n_head", None) or model_config.num_attention_heads
         num_key_value_heads = getattr(model_config, "num_key_value_heads", None) or num_attention_heads
         num_hidden_layers = getattr(model_config, "n_layer", None) or model_config.num_hidden_layers
@@ -465,12 +464,13 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
         # Returns:
         #     RBLNDecoderOnlyModelConfig: The updated RBLN model configuration.
 
-        rbln_config.sliding_window = model_config.sliding_window
+        text_config = model_config.get_text_config()
+        rbln_config.sliding_window = text_config.sliding_window
         sliding_window_layers = []
 
-        for i in range(model_config.num_hidden_layers):
-            if hasattr(model_config, "layer_types"):
-                if model_config.layer_types[i] == "sliding_attention":
+        for i in range(text_config.num_hidden_layers):
+            if hasattr(text_config, "layer_types"):
+                if text_config.layer_types[i] == "sliding_attention":
                     sliding_window_layers.append(i)
             else:
                 sliding_window_layers.append(i)
@@ -478,7 +478,7 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
         rbln_config.sliding_window_layers = sliding_window_layers
 
         rbln_config.cache_impl = (
-            "sliding_window" if len(sliding_window_layers) == model_config.num_hidden_layers else "hybrid"
+            "sliding_window" if len(sliding_window_layers) == text_config.num_hidden_layers else "hybrid"
         )
         return rbln_config
 

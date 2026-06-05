@@ -162,7 +162,6 @@ class RBLNLlavaForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMixi
     """
 
     auto_model_class = AutoModelForImageTextToText
-    _rbln_submodule_prefix = "model"
     _rbln_submodules = [
         {"name": "vision_tower"},
         {"name": "language_model"},

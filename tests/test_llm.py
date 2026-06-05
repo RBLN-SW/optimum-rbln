@@ -666,6 +666,7 @@ class TestQwen2VLForConditionalGeneration(LLMTest.TestLLM):
             "max_seq_len": 32_768,
         }
     }
+    HF_CONFIG_KWARGS = {}
 
     @classmethod
     def setUpClass(cls):
@@ -709,6 +710,7 @@ class TestQwen2_5_VLForConditionalGeneration(LLMTest.TestLLM):
             "max_seq_len": 32_768,
         }
     }
+    HF_CONFIG_KWARGS = {}
     HF_CONFIG_KWARGS_PREPROCESSOR = {"max_pixels": 64 * 14 * 14}
     IS_MULTIMODAL = True
 

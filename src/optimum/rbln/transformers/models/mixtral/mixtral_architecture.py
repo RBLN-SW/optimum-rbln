@@ -31,44 +31,40 @@ class MixtralLayer(DecoderOnlyLayer):
 
     def __init__(self, layer, self_attn: DecoderOnlyAttention, lora_config: Optional[RBLNLoRAConfig] = None):
         super().__init__(layer, self_attn, lora_config)
-        moe_block = getattr(layer, "block_sparse_moe", None) or layer.mlp
-        self.mlp = MixtralSparseMoeBlock(moe_block)
+        self.mlp = MixtralSparseMoeBlock(layer.mlp)
 
 
 class MixtralSparseMoeBlock(nn.Module):
     def __init__(self, model: nn.Module):
         super().__init__()
-        self.top_k = getattr(model, "top_k", None) or model.gate.top_k
-        self.gate = model.gate
+        self.top_k = model.top_k
+        gate_weight = model.gate.weight
+        gate = nn.Linear(gate_weight.shape[1], gate_weight.shape[0], bias=False)
+        gate.weight = nn.Parameter(gate_weight.detach().clone())
+        self.gate = gate
         self.experts = MixtralBlockSparseTop2MLP(model.experts, self.top_k)
-        model.experts = None
 
     def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
         batch_size, sequence_length, hidden_dim = hidden_states.shape
         hidden_states = hidden_states.view(-1, hidden_dim)
         # router_logits: (batch * sequence_length, n_experts)
-        router_output = self.gate(hidden_states)
-        router_logits = router_output[0] if isinstance(router_output, tuple) else router_output
+        router_logits = self.gate(hidden_states)
         final_hidden_states = self.experts(hidden_states, router_logits)
         final_hidden_states = final_hidden_states.reshape(batch_size, sequence_length, hidden_dim)
         return final_hidden_states
 
 
 class MixtralBlockSparseTop2MLP(nn.Module):
-    def __init__(self, experts, top_k):
+    def __init__(self, experts: nn.Module, top_k: int):
         super().__init__()
         self.top_k = top_k
 
-        if hasattr(experts, "gate_up_proj"):
-            intermediate_dim = experts.intermediate_dim
-            gate_up = experts.gate_up_proj.data
-            self.w1_weight = nn.Parameter(gate_up[:, :intermediate_dim, :])
-            self.w3_weight = nn.Parameter(gate_up[:, intermediate_dim:, :])
-            self.w2_weight = nn.Parameter(experts.down_proj.data.clone())
-        else:
-            self.w1_weight = nn.Parameter(torch.stack([expert.w1.weight.data for expert in experts], dim=0))
-            self.w2_weight = nn.Parameter(torch.stack([expert.w2.weight.data for expert in experts], dim=0))
-            self.w3_weight = nn.Parameter(torch.stack([expert.w3.weight.data for expert in experts], dim=0))
+        # Fused MixtralExperts: gate_up_proj [E, 2I, H], down_proj [E, H, I].
+        gate_up = experts.gate_up_proj.detach().clone()
+        intermediate_size = gate_up.shape[1] // 2
+        self.w1_weight = nn.Parameter(gate_up[:, :intermediate_size, :].contiguous())
+        self.w3_weight = nn.Parameter(gate_up[:, intermediate_size:, :].contiguous())
+        self.w2_weight = nn.Parameter(experts.down_proj.detach().clone().contiguous())
 
     def forward(self, x, router_logits):
         return torch.ops.rbln_custom_ops.custom_moe_glu(

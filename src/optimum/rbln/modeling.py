@@ -186,10 +186,6 @@ class RBLNModel(RBLNBaseModel):
             preprocessors=preprocessors, model=model, model_config=config, rbln_config=rbln_config
         )
 
-        # torchscript should be True for jit to work
-        torchscript_backup = getattr(config, "torchscript", None)
-        config.torchscript = True
-
         compiled_model: Union[rebel.RBLNCompiledModel, Dict[str, rebel.RBLNCompiledModel]] = cls.get_compiled_model(
             model, rbln_config=rbln_config
         )
@@ -204,10 +200,6 @@ class RBLNModel(RBLNBaseModel):
             cm.save(save_dir_path / subfolder / f"{compiled_model_name}.rbln")
         rbln_config.save(save_dir_path / subfolder)
 
-        if torchscript_backup is not None:
-            config.torchscript = torchscript_backup
-        elif hasattr(config, "torchscript"):
-            del config.torchscript
         config.save_pretrained(save_dir_path / subfolder)
 
         # Save torch artifacts (e.g. embedding matrix if needed.)
@@ -242,7 +234,9 @@ class RBLNModel(RBLNBaseModel):
     ) -> "PreTrainedModel":
         kwargs = cls.update_kwargs(kwargs)
 
-        # FIXME(kblee):In transformers v5+, some models default to non-fp32 dtype (e.g. bfloat16).
+        # transformers v5 defaults dtype to "auto", which loads checkpoints in
+        # their native bf16/fp16. If the caller didn't pin a dtype, fall back
+        # to fp32 for models whose RBLN wrappers don't support non-fp32 weights.
         if not cls._supports_non_fp32 and "dtype" not in kwargs and "torch_dtype" not in kwargs:
             kwargs["torch_dtype"] = torch.float32
 

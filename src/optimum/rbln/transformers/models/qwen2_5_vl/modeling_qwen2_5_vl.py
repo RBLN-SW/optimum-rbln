@@ -349,7 +349,6 @@ class RBLNQwen2_5_VLModel(RBLNDecoderOnlyModel):
     auto_model_class = AutoModelForImageTextToText
     _decoder_wrapper_cls = Qwen2_5_VL_LanguageModelWrapper
     _use_rotary_emb = False
-    _rbln_submodule_prefix = "model"
     _rbln_submodules = [
         {"name": "visual"},
     ]
@@ -399,17 +398,13 @@ class RBLNQwen2_5_VLModel(RBLNDecoderOnlyModel):
         model_config: PretrainedConfig,
     ):
         input_info = super().get_input_info(batch_size, query_length, rbln_config, model_config)
-        cfg = (
-            model_config.text_config
-            if hasattr(model_config, "text_config") and not hasattr(model_config, "hidden_size")
-            else model_config
-        )
+        text_config = model_config.get_text_config()
         pos_idx = 3
         input_info.insert(
             pos_idx,
             (
                 "position_emb",
-                [2, batch_size, 1, query_length, cfg.hidden_size // cfg.num_attention_heads],
+                [2, batch_size, 1, query_length, text_config.hidden_size // text_config.num_attention_heads],
                 rbln_config.dtype,
             ),
         )
@@ -494,7 +489,8 @@ class RBLNQwen2_5_VLModel(RBLNDecoderOnlyModel):
             image_nums = (vision_tokens == image_token_id).sum()
             video_nums = (vision_tokens == video_token_id).sum()
 
-            # (0=text, 1=image, 2=video). Derive from input_id if not provided by caller.
+            # mm_token_type_ids (0=text, 1=image, 2=video). Derive it from
+            # input_id if the caller (e.g. the processor) did not provide it.
             if mm_token_type_ids is not None:
                 batch_mm_token_type_ids = mm_token_type_ids[b_idx : b_idx + 1][:, attention_mask[b_idx].bool()]
             else:
@@ -639,7 +635,6 @@ class RBLNQwen2_5_VLForConditionalGeneration(RBLNQwen2_5_VLModel, RBLNDecoderOnl
     _decoder_wrapper_cls = Qwen2_5_VL_LanguageModelWrapper
     _supports_non_fp32 = True
     _use_rotary_emb = False
-    _rbln_submodule_prefix = "model"
     _rbln_submodules = [
         {"name": "visual"},
     ]

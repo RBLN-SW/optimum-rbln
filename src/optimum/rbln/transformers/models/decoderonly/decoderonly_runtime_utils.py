@@ -455,12 +455,8 @@ class RBLNRuntimeModel(RBLNPytorchRuntime):
         )
 
         if self.logits_last_dim is None:
-            cfg = (
-                self.config.text_config
-                if hasattr(self.config, "text_config") and not hasattr(self.config, "vocab_size")
-                else self.config
-            )
-            logits_last_dim = cfg.vocab_size if self.rbln_config.can_generate else cfg.hidden_size
+            text_config = self.config.get_text_config()
+            logits_last_dim = text_config.vocab_size if self.rbln_config.can_generate else text_config.hidden_size
         else:
             logits_last_dim = self.logits_last_dim
 

@@ -84,16 +84,16 @@ class SubModulesMixin:
 
         for submodule in cls._rbln_submodules:
             submodule_name = submodule["name"]
-            if submodule_prefix is not None and hasattr(model, submodule_prefix):
+            if submodule_prefix is not None:
                 torch_submodule: PreTrainedModel = getattr(model, submodule_prefix)
                 torch_submodule = getattr(torch_submodule, submodule_name)
-            elif submodule_postfix is not None and hasattr(
-                getattr(model, submodule_name, None) or model, submodule_postfix
-            ):
+            elif submodule_postfix is not None:
                 torch_submodule: PreTrainedModel = getattr(model, submodule_name)
                 torch_submodule = getattr(torch_submodule, submodule_postfix)
             else:
-                torch_submodule: PreTrainedModel = getattr(model, submodule_name)
+                torch_submodule = getattr(model, submodule_name, None)
+                if torch_submodule is None:
+                    torch_submodule = getattr(model.model, submodule_name)
 
             cls_name = torch_submodule.__class__.__name__
             submodule_cls: Type["RBLNModel"] = get_rbln_model_cls(f"RBLN{cls_name}")

@@ -56,7 +56,6 @@ if TYPE_CHECKING:
 
 
 class RBLNGroundingDinoForObjectDetection(RBLNModel):
-    _rbln_submodule_prefix = "model"
     _rbln_submodules = [
         {"name": "text_backbone"},
         {"name": "backbone"},

@@ -57,9 +57,12 @@ class Qwen3VLMoeLayer(DecoderOnlyLayer):
 class Qwen3VLMoeSparseMoeBlock(nn.Module):
     def __init__(self, model: nn.Module):
         super().__init__()
-        self.num_experts = getattr(model, "num_experts", None) or model.gate.num_experts
-        self.top_k = getattr(model, "top_k", None) or model.gate.top_k
-        self.gate = model.gate
+        self.num_experts = model.gate.num_experts
+        self.top_k = model.gate.top_k
+        gate_weight = model.gate.weight
+        gate = nn.Linear(gate_weight.shape[1], gate_weight.shape[0], bias=False)
+        gate.weight = nn.Parameter(gate_weight.detach().clone())
+        self.gate = gate
         self.experts = Qwen3VLMoeMLP(model.experts, self.top_k)
 
     def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
@@ -67,8 +70,7 @@ class Qwen3VLMoeSparseMoeBlock(nn.Module):
         hidden_states = hidden_states.view(-1, hidden_dim)
 
         # router_logits: (batch * sequence_length, n_experts)
-        router_output = self.gate(hidden_states)
-        router_logits = router_output[0] if isinstance(router_output, tuple) else router_output
+        router_logits = self.gate(hidden_states)
         final_hidden_states = self.experts(hidden_states, router_logits)
         final_hidden_states = final_hidden_states.reshape(batch_size, sequence_length, hidden_dim)
         return final_hidden_states
@@ -81,20 +83,16 @@ class Qwen3VLMoeMLP(nn.Module):
         self.top_k = top_k
         self.norm_topk_prob = True
 
-        intermediate_dim = (
-            getattr(experts, "intermediate_dim", None)
-            or getattr(experts, "expert_dim", None)
-            or getattr(experts, "intermediate_size", None)
-        )
-
         self.gate_proj = nn.Linear(1, 1, bias=False)
         self.up_proj = nn.Linear(1, 1, bias=False)
         self.down_proj = nn.Linear(1, 1, bias=False)
 
-        gate_up = experts.gate_up_proj
-        self.gate_proj.weight = nn.Parameter(gate_up[:, :intermediate_dim, :])
-        self.up_proj.weight = nn.Parameter(gate_up[:, intermediate_dim:, :])
-        self.down_proj.weight = nn.Parameter(experts.down_proj.data.clone())
+        # Fused Qwen3VLMoeTextExperts: gate_up_proj [E, 2I, H], down_proj [E, H, I].
+        intermediate_dim = experts.intermediate_dim
+        gate_up = experts.gate_up_proj.detach().clone()
+        self.gate_proj.weight = nn.Parameter(gate_up[:, :intermediate_dim, :].contiguous())
+        self.up_proj.weight = nn.Parameter(gate_up[:, intermediate_dim:, :].contiguous())
+        self.down_proj.weight = nn.Parameter(experts.down_proj.detach().clone().contiguous())
 
     def forward(self, x: torch.Tensor, router_logits: torch.Tensor) -> torch.Tensor:
         return torch.ops.rbln_custom_ops.custom_moe_glu(
