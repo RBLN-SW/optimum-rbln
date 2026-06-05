@@ -96,7 +96,6 @@ class SubModulesMixin:
                     torch_submodule = getattr(model.model, submodule_name)
 
             cls_name = torch_submodule.__class__.__name__
-            submodule_cls: Type["RBLNModel"] = get_rbln_model_cls(f"RBLN{cls_name}")
             submodule_rbln_config = getattr(rbln_config, submodule_name) or {}
             submodule_config_cls = cls._get_submodule_config_class(cls_name, submodule_rbln_config)
 
@@ -109,6 +108,8 @@ class SubModulesMixin:
                 filtered_kwargs = rbln_config.filter_parameters(submodule_config_cls, config_dict)
                 filtered_kwargs["cls_name"] = submodule_config_cls.__name__
                 submodule_rbln_config = submodule_config_cls(**filtered_kwargs)
+
+            submodule_cls: Type["RBLNModel"] = get_rbln_model_cls(submodule_rbln_config.rbln_model_cls_name)
 
             submodule_rbln_config = cls._update_submodule_rbln_config(
                 submodule_name=submodule_name,

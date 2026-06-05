@@ -169,24 +169,10 @@ class Qwen3VL_LanguageModelWrapper(DecoderOnlyWrapper):
         model.config = original_config
 
     def get_decoder_layers(self, model: PreTrainedModel):
-        if hasattr(model, "language_model"):
-            return model.language_model.layers
-        elif hasattr(model, "model"):
-            inner = model.model
-            if hasattr(inner, "language_model"):
-                return inner.language_model.layers
-            return inner.layers
-        return model.layers
+        return model.get_decoder().layers
 
     def get_model_layer(self, model: PreTrainedModel):
-        if hasattr(model, "language_model"):
-            return model.language_model
-        elif hasattr(model, "model"):
-            inner = model.model
-            if hasattr(inner, "language_model"):
-                return inner.language_model
-            return inner
-        return model
+        return model.get_decoder()
 
     def get_rbln_attn_class(self):
         return Qwen3VLAttention

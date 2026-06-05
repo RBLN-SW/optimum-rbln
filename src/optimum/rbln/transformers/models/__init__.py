@@ -222,6 +222,8 @@ _import_structure = {
         "RBLNGroundingDinoForObjectDetectionConfig",
         "RBLNGroundingDinoEncoder",
         "RBLNGroundingDinoEncoderConfig",
+        "RBLNGroundingDinoTextModel",
+        "RBLNGroundingDinoTextModelConfig",
         "RBLNGroundingDinoDecoder",
         "RBLNGroundingDinoDecoderConfig",
     ],
@@ -311,6 +313,8 @@ if TYPE_CHECKING:
         RBLNGroundingDinoEncoderConfig,
         RBLNGroundingDinoForObjectDetection,
         RBLNGroundingDinoForObjectDetectionConfig,
+        RBLNGroundingDinoTextModel,
+        RBLNGroundingDinoTextModelConfig,
     )
     from .idefics3 import (
         RBLNIdefics3ForConditionalGeneration,

@@ -175,10 +175,10 @@ class Qwen2_5_VLVisionWindowAttention(nn.Module):
 
 class Qwen2_5_VL_LanguageModelWrapper(DecoderOnlyWrapper):
     def get_decoder_layers(self, model: PreTrainedModel):
-        return model.model.language_model.layers if hasattr(model, "model") else model.language_model.layers
+        return model.get_decoder().layers
 
     def get_model_layer(self, model: PreTrainedModel):
-        return model.model.language_model if hasattr(model, "model") else model.language_model
+        return model.get_decoder()
 
     def prepare_forward_args(self, *args):
         args = list(args)
