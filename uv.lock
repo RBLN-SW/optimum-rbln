@@ -21,6 +21,8 @@ constraints = [
     { name = "torch", specifier = "==2.11.0+cpu", index = "https://download.pytorch.org/whl/cpu" },
     { name = "torchaudio", marker = "platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux'", specifier = "==2.11.0", index = "https://download.pytorch.org/whl/cpu" },
     { name = "torchaudio", marker = "platform_machine == 'x86_64' and platform_python_implementation == 'CPython' and sys_platform == 'linux'", specifier = "==2.11.0+cpu", index = "https://download.pytorch.org/whl/cpu" },
+    { name = "torchcodec", marker = "platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux'", specifier = "==0.11.0", index = "https://download.pytorch.org/whl/cpu" },
+    { name = "torchcodec", marker = "platform_machine == 'x86_64' and platform_python_implementation == 'CPython' and sys_platform == 'linux'", specifier = "==0.11.0+cpu", index = "https://download.pytorch.org/whl/cpu" },
     { name = "torchvision", marker = "platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux'", specifier = "==0.26.0", index = "https://download.pytorch.org/whl/cpu" },
     { name = "torchvision", marker = "platform_machine == 'x86_64' and platform_python_implementation == 'CPython' and sys_platform == 'linux'", specifier = "==0.26.0+cpu", index = "https://download.pytorch.org/whl/cpu" },
 ]
@@ -1112,6 +1114,7 @@ dependencies = [
     { name = "packaging", marker = "(platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux') or (platform_machine == 'x86_64' and platform_python_implementation == 'CPython' and sys_platform == 'linux')" },
     { name = "torch", marker = "(platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux') or (platform_machine == 'x86_64' and platform_python_implementation == 'CPython' and sys_platform == 'linux')" },
     { name = "torchaudio", marker = "(platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux') or (platform_machine == 'x86_64' and platform_python_implementation == 'CPython' and sys_platform == 'linux')" },
+    { name = "torchcodec", marker = "(platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux') or (platform_machine == 'x86_64' and platform_python_implementation == 'CPython' and sys_platform == 'linux')" },
     { name = "torchvision", marker = "(platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux') or (platform_machine == 'x86_64' and platform_python_implementation == 'CPython' and sys_platform == 'linux')" },
     { name = "transformers", marker = "(platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux') or (platform_machine == 'x86_64' and platform_python_implementation == 'CPython' and sys_platform == 'linux')" },
 ]
@@ -1140,7 +1143,6 @@ tests = [
     { name = "sentencepiece", marker = "(platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux') or (platform_machine == 'x86_64' and platform_python_implementation == 'CPython' and sys_platform == 'linux')" },
     { name = "simphile", marker = "(platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux') or (platform_machine == 'x86_64' and platform_python_implementation == 'CPython' and sys_platform == 'linux')" },
     { name = "soundfile", marker = "(platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux') or (platform_machine == 'x86_64' and platform_python_implementation == 'CPython' and sys_platform == 'linux')" },
-    { name = "torchcodec", marker = "(platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux') or (platform_machine == 'x86_64' and platform_python_implementation == 'CPython' and sys_platform == 'linux')" },
 ]
 
 [package.metadata]
@@ -1151,6 +1153,8 @@ requires-dist = [
     { name = "torch", specifier = "==2.11.0+cpu", index = "https://download.pytorch.org/whl/cpu" },
     { name = "torchaudio", marker = "platform_machine == 'aarch64' and platform_python_implementation == 'CPython'", specifier = "==2.11.0", index = "https://download.pytorch.org/whl/cpu" },
     { name = "torchaudio", marker = "platform_machine == 'x86_64' and platform_python_implementation == 'CPython'", specifier = "==2.11.0+cpu", index = "https://download.pytorch.org/whl/cpu" },
+    { name = "torchcodec", marker = "platform_machine == 'aarch64' and platform_python_implementation == 'CPython'", specifier = "==0.11.0", index = "https://download.pytorch.org/whl/cpu" },
+    { name = "torchcodec", marker = "platform_machine == 'x86_64' and platform_python_implementation == 'CPython'", specifier = "==0.11.0+cpu", index = "https://download.pytorch.org/whl/cpu" },
     { name = "torchvision", marker = "platform_machine == 'aarch64' and platform_python_implementation == 'CPython'", specifier = "==0.26.0", index = "https://download.pytorch.org/whl/cpu" },
     { name = "torchvision", marker = "platform_machine == 'x86_64' and platform_python_implementation == 'CPython'", specifier = "==0.26.0+cpu", index = "https://download.pytorch.org/whl/cpu" },
     { name = "transformers", specifier = "==5.8.1" },
@@ -1178,8 +1182,6 @@ tests = [
     { name = "sentencepiece", specifier = ">=0.2.0" },
     { name = "simphile", specifier = ">=1.0.2" },
     { name = "soundfile", specifier = ">=0.13.1" },
-    { name = "torchcodec", marker = "platform_machine == 'aarch64' and platform_python_implementation == 'CPython'", specifier = "==0.11.0", index = "https://download.pytorch.org/whl/cpu" },
-    { name = "torchcodec", marker = "platform_machine == 'x86_64' and platform_python_implementation == 'CPython'", specifier = "==0.11.0+cpu", index = "https://download.pytorch.org/whl/cpu" },
 ]
 
 [[package]]
