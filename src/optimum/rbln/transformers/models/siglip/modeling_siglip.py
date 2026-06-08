@@ -40,8 +40,6 @@ class _SiglipVisionModel(torch.nn.Module):
         output_attentions: bool,
     ):
         super().__init__()
-        # v4: SiglipVisionModel wraps an inner `.vision_model`. v5 collapsed
-        # that layer so the head class is itself the vision encoder.
         self.vision_model = getattr(model, "vision_model", model)
         self.interpolate_pos_encoding = interpolate_pos_encoding
         self.output_hidden_states = output_hidden_states
