@@ -96,13 +96,11 @@ class RBLNGemma3RuntimeModel(RBLNRuntimeModel):
             cache_position,
             chunked_attention_mask,
             position_ids,
-            position_embed,
+            _,
             padded_cache_lengths,
             query_length,
             token_type_ids,
-        ) = self._prepare_prefill_inputs(
-            inputs, cache_position, attention_mask, position_embed, token_type_ids=token_type_ids
-        )
+        ) = self._prepare_prefill_inputs(inputs, cache_position, attention_mask, token_type_ids=token_type_ids)
 
         step = 0
         output_logits = []
