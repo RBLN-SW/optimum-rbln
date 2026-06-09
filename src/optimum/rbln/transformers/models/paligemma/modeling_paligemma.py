@@ -18,9 +18,14 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Optional, Tuple, Type, Union
 
 import torch
-from transformers import AutoModelForVision2Seq, PaliGemmaForConditionalGeneration, PretrainedConfig, PreTrainedModel
+from transformers import (
+    AutoModelForImageTextToText,
+    PaliGemmaForConditionalGeneration,
+    PretrainedConfig,
+    PreTrainedModel,
+)
+from transformers.initialization import no_init_weights
 from transformers.modeling_outputs import BaseModelOutputWithPooling
-from transformers.modeling_utils import no_init_weights
 from transformers.models.paligemma.configuration_paligemma import PaliGemmaConfig
 from transformers.models.paligemma.modeling_paligemma import PaligemmaModelOutputWithPast, PaliGemmaMultiModalProjector
 
@@ -87,7 +92,7 @@ class RBLNPaliGemmaForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGeneration
         ```
     """
 
-    auto_model_class = AutoModelForVision2Seq
+    auto_model_class = AutoModelForImageTextToText
     _rbln_submodules = [
         {"name": "vision_tower"},
         {"name": "language_model"},
@@ -160,7 +165,7 @@ class RBLNPaliGemmaForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGeneration
     ):
         save_dict = {}
         save_dict["embed_tokens"] = model.get_input_embeddings().state_dict()
-        save_dict["multi_modal_projector"] = model.multi_modal_projector.state_dict()
+        save_dict["multi_modal_projector"] = model.model.multi_modal_projector.state_dict()
         torch.save(save_dict, save_dir_path / subfolder / "torch_artifacts.pth")
 
     def get_attn_impl(self) -> str:

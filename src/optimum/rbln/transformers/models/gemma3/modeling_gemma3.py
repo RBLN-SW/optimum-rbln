@@ -17,8 +17,8 @@ from typing import TYPE_CHECKING, Any, Callable, Dict, Optional, Tuple, Union
 
 import torch
 from transformers import AutoModelForImageTextToText, Gemma3ForConditionalGeneration, PretrainedConfig, PreTrainedModel
+from transformers.initialization import no_init_weights
 from transformers.modeling_outputs import BaseModelOutputWithPooling
-from transformers.modeling_utils import no_init_weights
 from transformers.models.gemma3.modeling_gemma3 import Gemma3TextScaledWordEmbedding
 
 from ....configuration_utils import RBLNCompileConfig, RBLNModelConfig
@@ -112,10 +112,9 @@ class RBLNGemma3ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMix
         self.vision_tower = LoopVisionTower(self.rbln_submodules[0])
         self.language_model = self.rbln_submodules[1]
         self.multi_modal_projector = LoopProjector(self.model[0])
-        self.vocab_size = self.config.text_config.vocab_size
-
-        # Copied from the original class
-        self.pad_token_id = self.config.pad_token_id if self.config.pad_token_id is not None else -1
+        text_config = self.config.text_config
+        self.vocab_size = text_config.vocab_size
+        self.pad_token_id = text_config.pad_token_id if text_config.pad_token_id is not None else -1
         return super().__post_init__(**kwargs)
 
     def get_attn_impl(self) -> str:
@@ -129,7 +128,7 @@ class RBLNGemma3ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMix
 
     @classmethod
     def _wrap_model_if_needed(cls, model: "PreTrainedModel", rbln_config: RBLNModelConfig):
-        return model.multi_modal_projector
+        return model.model.multi_modal_projector
 
     @classmethod
     def _update_rbln_config(
