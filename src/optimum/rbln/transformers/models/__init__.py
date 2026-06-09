@@ -35,7 +35,6 @@ _import_structure = {
         "RBLNAutoModelForObjectDetection",
         "RBLNAutoModelForSequenceClassification",
         "RBLNAutoModelForSpeechSeq2Seq",
-        "RBLNAutoModelForVision2Seq",
         "RBLNAutoModelForImageTextToText",
         "RBLNAutoModelForTextEncoding",
         "RBLNAutoModelForZeroShotObjectDetection",
@@ -246,7 +245,6 @@ if TYPE_CHECKING:
         RBLNAutoModelForSequenceClassification,
         RBLNAutoModelForSpeechSeq2Seq,
         RBLNAutoModelForTextEncoding,
-        RBLNAutoModelForVision2Seq,
         RBLNAutoModelForZeroShotObjectDetection,
     )
     from .bart import (

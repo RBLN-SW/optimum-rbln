@@ -113,10 +113,6 @@ class RBLNAutoModelForImageTextToText(_BaseAutoModelClass):
     _model_mapping_names = MODEL_FOR_IMAGE_TEXT_TO_TEXT_MAPPING_NAMES
 
 
-# Backward compatibility alias (AutoModelForVision2Seq was removed in transformers v5)
-RBLNAutoModelForVision2Seq = RBLNAutoModelForImageTextToText
-
-
 class RBLNAutoModelForMaskedLM(_BaseAutoModelClass):
     """Automatically detect Masked Lanuage Models."""
 
