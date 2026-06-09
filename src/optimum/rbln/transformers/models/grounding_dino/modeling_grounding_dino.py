@@ -94,7 +94,7 @@ class RBLNGroundingDinoTextModel(RBLNBertModel):
 
 class RBLNGroundingDinoForObjectDetection(RBLNModel):
     _rbln_submodules = [
-        {"name": "text_backbone"},
+        {"name": "text_backbone", "config_class": RBLNGroundingDinoTextModelConfig},
         {"name": "backbone"},
         {"name": "encoder"},
         {"name": "decoder"},
@@ -110,12 +110,6 @@ class RBLNGroundingDinoForObjectDetection(RBLNModel):
     - An encoder-decoder transformer for processing visual and textual features
     - Object detection heads for predicting bounding boxes and class labels
     """
-
-    @classmethod
-    def _get_submodule_config_class(cls, cls_name, submodule_rbln_config):
-        if cls_name == "BertModel":
-            return RBLNGroundingDinoTextModelConfig
-        return super()._get_submodule_config_class(cls_name, submodule_rbln_config)
 
     @classmethod
     def _update_submodule_rbln_config(

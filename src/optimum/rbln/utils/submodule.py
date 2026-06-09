@@ -96,7 +96,9 @@ class SubModulesMixin:
 
             cls_name = torch_submodule.__class__.__name__
             submodule_rbln_config = getattr(rbln_config, submodule_name) or {}
-            submodule_config_cls = cls._get_submodule_config_class(cls_name, submodule_rbln_config)
+            submodule_config_cls = submodule.get("config_class") or cls._get_submodule_config_class(
+                cls_name, submodule_rbln_config
+            )
 
             if isinstance(submodule_rbln_config, dict):
                 filtered_kwargs = rbln_config.filter_parameters(submodule_config_cls, submodule_rbln_config)

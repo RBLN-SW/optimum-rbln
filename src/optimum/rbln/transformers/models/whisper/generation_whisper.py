@@ -143,17 +143,10 @@ class RBLNWhisperGenerationMixin(WhisperGenerationMixin, GenerationMixin):
         for k, v in seek_outputs.items():
             if v is None:
                 continue
-            # transformers v5 wraps the kv cache as EncoderDecoderCache, which
-            # has no __getitem__. We don't keep the cache anyway (see
-            # split_by_batch_index above), so skip the probe for those keys.
-            if k == "past_key_values":
+            if not hasattr(v, "__getitem__"):
                 valid_seekoutputs.append((k, v))
                 continue
-            try:
-                first = v[0]
-            except TypeError:
-                continue
-            if len(v) > 0 and first is not None:
+            if len(v) > 0 and v[0] is not None:
                 valid_seekoutputs.append((k, v))
         seek_outputs = [
             {k: split_by_batch_index(v, k, i) for k, v in valid_seekoutputs} for i in range(sequence_tokens.shape[0])
