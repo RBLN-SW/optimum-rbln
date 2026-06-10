@@ -39,6 +39,7 @@ dependencies = [
     "transformers==5.8.1",
     "diffusers==0.37.0",
     "packaging>=24.1",
+    "tokenizers==0.22.1",
 ]
 
 [project.urls]

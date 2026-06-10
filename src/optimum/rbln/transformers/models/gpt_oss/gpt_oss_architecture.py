@@ -63,7 +63,7 @@ class RBLNGptOssExperts(nn.Module):
             gate_up_scales = model.gate_up_proj_scales.data
             down_blocks = model.down_proj_blocks.data
             down_scales = model.down_proj_scales.data
-        else:
+        elif not callable(getattr(model.gate_up_proj, "storage", None)):
             gate_up_blocks = (
                 model.gate_up_proj.storage.layout.unswizzle_data(model.gate_up_proj.storage.data)
                 .transpose(-1, -2)
@@ -80,6 +80,11 @@ class RBLNGptOssExperts(nn.Module):
             down_scales = model.down_proj_precision_config.weight_scale.storage.layout.unswizzle_data(
                 model.down_proj_precision_config.weight_scale.storage.data
             ).transpose(-1, -2)
+        else:
+            gate_up_blocks = model.gate_up_proj.data
+            gate_up_scales = model.gate_up_proj_scales.data
+            down_blocks = model.down_proj.data
+            down_scales = model.down_proj_scales.data
 
         self.register_buffer(
             "gate_proj_blocks",
