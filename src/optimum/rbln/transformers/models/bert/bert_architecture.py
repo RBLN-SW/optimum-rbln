@@ -11,7 +11,11 @@ class BertModelWrapper(torch.nn.Module):
     def forward(self, *args, **kwargs):
         # TODO: make this to use `create_bidirectional_mask` in transformers v5
         args = list(args)
-        input_names = self.rbln_config.model_input_names or ["input_ids", "attention_mask", "token_type_ids"]
+        input_names = getattr(self.rbln_config, "model_input_names", None) or [
+            "input_ids",
+            "attention_mask",
+            "token_type_ids",
+        ]
         if "attention_mask" in input_names:
             idx = input_names.index("attention_mask")
             if idx < len(args) and args[idx] is not None and args[idx].dim() == 2:
