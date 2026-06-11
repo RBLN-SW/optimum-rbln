@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING, Optional, Tuple, Union
 
 import torch
 from transformers import ColQwen2Config, ColQwen2ForRetrieval
-from transformers.modeling_utils import no_init_weights
+from transformers.initialization import no_init_weights
 from transformers.models.colqwen2.modeling_colqwen2 import ColQwen2ForRetrievalOutput
 
 from ....modeling import RBLNModel
@@ -85,7 +85,6 @@ class RBLNColQwen2ForRetrieval(RBLNModel):
         ```
     """
 
-    _rbln_submodule_postfix = "model"
     _rbln_submodules = [
         {"name": "vlm"},
     ]
@@ -105,13 +104,15 @@ class RBLNColQwen2ForRetrieval(RBLNModel):
                 )
                 new_model = ColQwen2ForRetrieval._from_config(model_config)
             new_model.embedding_proj_layer = model.custom_text_proj
-            new_model.vlm.model.visual.load_state_dict(model.visual.state_dict())
-            new_model.vlm.model.language_model.load_state_dict(model.language_model.state_dict())
+            vlm_inner = getattr(new_model.vlm, "model", new_model.vlm)
+            vlm_inner.visual.load_state_dict(model.visual.state_dict())
+            vlm_inner.language_model.load_state_dict(model.language_model.state_dict())
             model = new_model
 
         # replace the lm_head with the custom text projection layer for optimization
-        model.vlm.model.lm_head = model.embedding_proj_layer
-        model.vlm.model.config.embedding_dim = model.config.embedding_dim
+        vlm_inner = getattr(model.vlm, "model", model.vlm)
+        vlm_inner.lm_head = model.embedding_proj_layer
+        vlm_inner.config.embedding_dim = model.config.embedding_dim
 
         # Some of the model weights are different from the model.dtype(vidore/colqwen2-v1.0-hf)
         return model.to(model.dtype)

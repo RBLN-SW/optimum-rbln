@@ -29,14 +29,14 @@ from ..decoderonly.decoderonly_architecture import (
 
 class Gemma3ForCausalLMWrapper(DecoderOnlyWrapper):
     def get_rotary_emb(self, max_seq_len):
-        rotary_emb_global = RotaryEmbedding(config=self.config, max_seq_len_cached=max_seq_len)
-
-        config = copy.deepcopy(self.config)
-        config.rope_theta = config.rope_local_base_freq
-        config.rope_scaling = {"rope_type": "default"}
-        rotary_emb_local = RotaryEmbedding(config=config, max_seq_len_cached=max_seq_len)
-
-        return (rotary_emb_global, rotary_emb_local)
+        rotary_embs = []
+        for layer_type in ("full_attention", "sliding_attention"):
+            rope_theta = self.config.rope_parameters[layer_type]["rope_theta"]
+            config = copy.deepcopy(self.config)
+            config.rope_scaling = {"rope_type": "default", "rope_theta": rope_theta}
+            config.rope_parameters = {"rope_type": "default", "rope_theta": rope_theta}
+            rotary_embs.append(RotaryEmbedding(config=config, max_seq_len_cached=max_seq_len))
+        return tuple(rotary_embs)
 
     def get_rbln_attn_class(self):
         return Gemma3Attention

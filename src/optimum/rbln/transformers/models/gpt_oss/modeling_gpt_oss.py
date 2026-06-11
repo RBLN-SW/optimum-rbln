@@ -17,8 +17,9 @@ from typing import TYPE_CHECKING, Optional, Union
 import torch
 from safetensors.torch import load_file
 from transformers import AutoConfig, AutoModelForCausalLM, PretrainedConfig
+from transformers.initialization import no_init_weights
 from transformers.integrations.mxfp4 import Mxfp4GptOssExperts
-from transformers.modeling_utils import PreTrainedModel, no_init_weights
+from transformers.modeling_utils import PreTrainedModel
 
 from ....utils.logging import get_logger
 from ...models.decoderonly import (
@@ -136,6 +137,17 @@ class RBLNGptOssForCausalLM(RBLNDecoderOnlyModelForCausalLM):
 
         _replace_with_mxfp4_linear(model, config)
         model.load_state_dict(state_dict, strict=False)
+
+        for name, module in model.named_modules():
+            if module.__class__.__name__ != "Mxfp4GptOssExperts":
+                continue
+            for proj in ("gate_up_proj", "down_proj"):
+                blocks = state_dict.get(f"{name}.{proj}_blocks")
+                scales = state_dict.get(f"{name}.{proj}_scales")
+                if blocks is not None:
+                    getattr(module, proj).data = blocks
+                if scales is not None and not hasattr(module, f"{proj}_scales"):
+                    module.register_buffer(f"{proj}_scales", scales, persistent=False)
 
         return model
 
