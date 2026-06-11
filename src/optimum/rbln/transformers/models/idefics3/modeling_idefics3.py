@@ -20,15 +20,15 @@ from typing import TYPE_CHECKING, Any, Callable, Optional, Tuple, Union
 import rebel
 import torch
 from transformers import (
-    AutoModelForVision2Seq,
+    AutoModelForImageTextToText,
     Idefics3ForConditionalGeneration,
     Idefics3VisionConfig,
     Idefics3VisionTransformer,
     PretrainedConfig,
     PreTrainedModel,
 )
+from transformers.initialization import no_init_weights
 from transformers.modeling_outputs import BaseModelOutput
-from transformers.modeling_utils import no_init_weights
 from transformers.models.idefics3.modeling_idefics3 import Idefics3CausalLMOutputWithPast, Idefics3VisionEmbeddings
 
 from ....configuration_utils import RBLNCompileConfig, RBLNModelConfig
@@ -222,7 +222,7 @@ class RBLNIdefics3ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationM
         ```
     """
 
-    auto_model_class = AutoModelForVision2Seq
+    auto_model_class = AutoModelForImageTextToText
     _rbln_submodules = [{"name": "vision_model"}, {"name": "text_model"}]
     _rbln_submodule_prefix = "model"
 

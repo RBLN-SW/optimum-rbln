@@ -35,8 +35,8 @@ if TYPE_CHECKING:
         AutoTokenizer,
         PreTrainedModel,
         SwinBackbone,
-        SwinEncoder,
     )
+    from transformers.models.swin.modeling_swin import SwinEncoder
 
 
 def window_partition(input_feature, window_size):
@@ -108,12 +108,8 @@ class _SwinEncoder(torch.nn.Module):
             all_hidden_states += (hidden_states,)
             all_reshaped_hidden_states += (reshaped_hidden_state,)
 
-        for i, layer_module in enumerate(self.layers):
-            layer_head_mask = head_mask[i] if head_mask is not None else None
-
-            layer_outputs = layer_module(
-                hidden_states, input_dimensions, layer_head_mask, output_attentions, always_partition
-            )
+        for _, layer_module in enumerate(self.layers):
+            layer_outputs = layer_module(hidden_states, input_dimensions, output_attentions, always_partition)
 
             hidden_states = layer_outputs[0]
             hidden_states_before_downsampling = layer_outputs[1]

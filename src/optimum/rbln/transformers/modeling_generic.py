@@ -23,6 +23,7 @@ different model architectures.
 import inspect
 from typing import TYPE_CHECKING, Optional, Union
 
+import torch
 from torch import nn
 from transformers import (
     AutoModel,
@@ -34,6 +35,7 @@ from transformers import (
     AutoModelForTextEncoding,
     PretrainedConfig,
 )
+from transformers.modeling_attn_mask_utils import _prepare_4d_attention_mask
 from transformers.modeling_outputs import BaseModelOutput, QuestionAnsweringModelOutput
 
 from ..configuration_utils import RBLNCompileConfig
@@ -73,6 +75,20 @@ class RBLNTransformerEncoder(RBLNModel):
                 for param_name in self.DISABLED_PARAMS:
                     if param_name in self._forward_signature.parameters:
                         kwargs[param_name] = False
+
+                # TODO: make this to use `create_bidirectional_mask` in transformers v5
+                args = list(args)
+                input_names = self.rbln_config.model_input_names or RBLNTransformerEncoder.rbln_model_input_names
+                if "attention_mask" in input_names:
+                    idx = input_names.index("attention_mask")
+                    if idx < len(args) and args[idx] is not None and args[idx].dim() == 2:
+                        args[idx] = _prepare_4d_attention_mask(args[idx], torch.float32)
+                if (
+                    "attention_mask" in kwargs
+                    and kwargs["attention_mask"] is not None
+                    and kwargs["attention_mask"].dim() == 2
+                ):
+                    kwargs["attention_mask"] = _prepare_4d_attention_mask(kwargs["attention_mask"], torch.float32)
 
                 return self.model(*args, **kwargs)
 
@@ -196,11 +212,11 @@ class RBLNImageModel(RBLNModel):
         if rbln_config.image_size is None:
             for processor in preprocessors:
                 if hasattr(processor, "size"):
-                    if all(required_key in processor.size.keys() for required_key in ["height", "width"]):
+                    if all(required_key in processor.size for required_key in ["height", "width"]):
                         rbln_config.image_size = (processor.size["height"], processor.size["width"])
-                    elif "shortest_edge" in processor.size.keys():
+                    elif "shortest_edge" in processor.size:
                         rbln_config.image_size = (processor.size["shortest_edge"], processor.size["shortest_edge"])
-                    elif "longest_edge" in processor.size.keys():
+                    elif "longest_edge" in processor.size:
                         rbln_config.image_size = (processor.size["longest_edge"], processor.size["longest_edge"])
                     break
 

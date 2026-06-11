@@ -420,7 +420,7 @@ class TestColQwen2Model(BaseTest.TestModel):
     RBLN_CLASS_KWARGS = {
         "rbln_config": {
             "vlm": {
-                "visual": {"max_seq_lens": 512},
+                "visual": {"max_seq_len": 512},
                 "tensor_parallel_size": 1,
                 "max_seq_len": 32_768,
             }
@@ -640,10 +640,6 @@ class TestGroundingDinoModel(BaseTest.TestModel):
             "encoder": {"image_size": (1333, 1333)},
             "decoder": {"image_size": (1333, 1333)},
             "backbone": {"image_size": (1333, 1333)},
-            "text_backbone": {
-                "model_input_names": ["input_ids", "attention_mask", "token_type_ids", "position_ids"],
-                "model_input_shapes": [(1, 256), (1, 256, 256), (1, 256), (1, 256)],
-            },
         }
     }
 
@@ -653,7 +649,10 @@ class TestGroundingDinoModel(BaseTest.TestModel):
 
         config = GroundingDinoConfig.from_pretrained(
             cls.HF_MODEL_ID,
-            decoder_layers=1,
+            # with `decoder_bbox_embed_share=True` v5 ties
+            # `bbox_embed.0` into `bbox_embed.[1+]`, and its tie_weights
+            # validation raises if no tie target exists.
+            decoder_layers=2,
             decoder_attention_heads=2,
             encoder_layers=1,
             encoder_attention_heads=2,

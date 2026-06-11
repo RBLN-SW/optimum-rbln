@@ -31,7 +31,8 @@ from huggingface_hub import hf_hub_download, list_repo_files
 from safetensors.torch import load_file
 from torch.nn import Linear, Parameter
 from transformers import AutoConfig
-from transformers.modeling_utils import get_state_dict_dtype, no_init_weights
+from transformers.initialization import no_init_weights
+from transformers.modeling_utils import get_state_dict_dtype
 
 from ...configuration_utils import RBLNSerializableConfigProtocol
 from ...utils.logging import get_logger
@@ -168,7 +169,7 @@ class QuantizedLayerFactory:
 def get_quantized_model(
     hf_auto_model_class: Type["_BaseAutoModelClass"],
     model_id: str,
-    use_auth_token: Optional[Union[bool, str]] = None,
+    token: Optional[Union[bool, str]] = None,
     revision: Optional[str] = None,
     cache_dir: Optional[str] = None,
     force_download: bool = False,
@@ -198,7 +199,7 @@ def get_quantized_model(
     # get paths of safetensors files in the model repo
     safetensor_files = load_weight_files(
         model_id,
-        use_auth_token=use_auth_token,
+        token=token,
         revision=revision,
         cache_dir=cache_dir,
         force_download=force_download,
@@ -225,7 +226,7 @@ def get_quantized_model(
 
     config = AutoConfig.from_pretrained(
         model_id,
-        use_auth_token=use_auth_token,
+        token=token,
         revision=revision,
         cache_dir=cache_dir,
         force_download=force_download,
@@ -247,7 +248,7 @@ def get_quantized_model(
 
 def load_weight_files(
     model_id: str,
-    use_auth_token: Optional[Union[bool, str]] = None,
+    token: Optional[Union[bool, str]] = None,
     revision: Optional[str] = None,
     cache_dir: Optional[str] = None,
     force_download: bool = False,
@@ -263,7 +264,7 @@ def load_weight_files(
     else:
         try:
             # List all files in the repository
-            repo_files = list_repo_files(model_id, revision=revision, token=use_auth_token)
+            repo_files = list_repo_files(model_id, revision=revision, token=token)
             # Filter for safetensors files
             safetensor_files = []
 
@@ -281,7 +282,7 @@ def load_weight_files(
                             repo_id=model_id,
                             filename=file,
                             revision=revision,
-                            token=use_auth_token,
+                            token=token,
                             cache_dir=cache_dir,
                             force_download=force_download,
                             local_files_only=local_files_only,

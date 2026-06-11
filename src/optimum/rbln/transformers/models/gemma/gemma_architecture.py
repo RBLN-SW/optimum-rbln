@@ -22,6 +22,4 @@ class GemmaWrapper(DecoderOnlyWrapper):
 
 
 class GemmaModel(DecoderOnlyModel):
-    @property
-    def hidden_multiplier(self):
-        return self.config.hidden_size**0.5
+    pass

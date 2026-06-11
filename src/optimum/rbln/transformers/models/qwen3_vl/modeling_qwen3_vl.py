@@ -18,12 +18,12 @@ from typing import TYPE_CHECKING, Any, Callable, List, Optional, Tuple, Union
 
 import torch
 from transformers import (
-    AutoModelForVision2Seq,
+    AutoModelForImageTextToText,
     PretrainedConfig,
     PreTrainedModel,
     Qwen3VLConfig,
 )
-from transformers.modeling_utils import no_init_weights
+from transformers.initialization import no_init_weights
 from transformers.models.qwen3_vl.modeling_qwen3_vl import (
     Qwen3VLModel,
     Qwen3VLTextRotaryEmbedding,
@@ -66,7 +66,7 @@ class RBLNQwen3VLVisionModel(RBLNModel):
 
     def __post_init__(self, **kwargs):
         self.transformer = self.model[0]
-        self.max_seq_lens = torch.tensor(sorted(self.rbln_config.max_seq_lens, reverse=False))
+        self.max_seq_len = torch.tensor(sorted(self.rbln_config.max_seq_len, reverse=False))
         config = self.config
         self.patch_size = config.patch_size
         self.spatial_merge_size = config.spatial_merge_size
@@ -126,7 +126,7 @@ class RBLNQwen3VLVisionModel(RBLNModel):
         head_dim = hidden_size // num_heads
 
         input_infos = []
-        for max_seq_len in rbln_config.max_seq_lens:
+        for max_seq_len in rbln_config.max_seq_len:
             input_info = [
                 ("hidden_states", [max_seq_len, hidden_size], rbln_config.dtype),
                 ("attn_mask", [1, 1, max_seq_len, max_seq_len], rbln_config.dtype),
@@ -295,11 +295,11 @@ class RBLNQwen3VLVisionModel(RBLNModel):
 
             image_seq_len = image_e - image_s
             try:
-                ws_index = torch.searchsorted(self.max_seq_lens, image_seq_len).item()
-                max_seq_len = self.max_seq_lens[ws_index].item()
+                ws_index = torch.searchsorted(self.max_seq_len, image_seq_len).item()
+                max_seq_len = self.max_seq_len[ws_index].item()
             except Exception as e:
                 raise ValueError(
-                    f"Required seq_len({image_seq_len}) is larger than available max_seq_lens({self.max_seq_lens.tolist()})."
+                    f"Required seq_len({image_seq_len}) is larger than available max_seq_len({self.max_seq_len.tolist()})."
                 ) from e
 
             image_hidden, (image_cos, image_sin), attn_mask, valid_len = self._pad_hidden_states(
@@ -329,7 +329,7 @@ class RBLNQwen3VLVisionModel(RBLNModel):
 
 
 class RBLNQwen3VLModel(RBLNDecoderOnlyModel):
-    auto_model_class = AutoModelForVision2Seq
+    auto_model_class = AutoModelForImageTextToText
     _decoder_wrapper_cls = Qwen3VL_LanguageModelWrapper
     _use_rotary_emb = False
     _rbln_submodules = [
@@ -338,6 +338,7 @@ class RBLNQwen3VLModel(RBLNDecoderOnlyModel):
     _config_class = Qwen3VLConfig
     _rotary_emb_class = Qwen3VLTextRotaryEmbedding
     _get_rope_index_func = Qwen3VLModel.get_rope_index
+    get_vision_position_ids = Qwen3VLModel.get_vision_position_ids
 
     @classmethod
     def _load_submodules(cls, model_save_dir, rbln_config, model=None, **kwargs):
@@ -493,6 +494,7 @@ class RBLNQwen3VLModel(RBLNDecoderOnlyModel):
         video_embeds: Optional[torch.Tensor] = None,
         deepstack_image_embeds: Optional[List[torch.Tensor]] = None,
         deepstack_video_embeds: Optional[List[torch.Tensor]] = None,
+        mm_token_type_ids: Optional[torch.IntTensor] = None,
     ):
         batch_size = input_ids.shape[0]
         inputs_embeds = self.embed_tokens(input_ids).to(self.rbln_config.dtype)
@@ -581,8 +583,18 @@ class RBLNQwen3VLModel(RBLNDecoderOnlyModel):
                     video_row_idx += 1
                 video_grid_slice = video_grid_thw[start_row:video_row_idx]
 
+            # mm_token_type_ids (0=text, 1=image, 2=video). Derive it from
+            # input_id if the caller (e.g. the processor) did not provide it.
+            if mm_token_type_ids is not None:
+                batch_mm_token_type_ids = mm_token_type_ids[b_idx : b_idx + 1][:, attention_mask[b_idx].bool()]
+            else:
+                batch_mm_token_type_ids = torch.zeros_like(input_id, dtype=torch.int)
+                batch_mm_token_type_ids[input_id == image_token_id] = 1
+                batch_mm_token_type_ids[input_id == video_token_id] = 2
+
             position_ids, rope_deltas = self._get_rope_index_func(
                 input_id,
+                batch_mm_token_type_ids,
                 image_grid_thw[image_idx : image_idx + image_nums] if image_grid_thw is not None else None,
                 video_grid_slice,
             )
@@ -686,6 +698,7 @@ class RBLNQwen3VLModel(RBLNDecoderOnlyModel):
         cache_position: Optional[torch.LongTensor] = None,
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
+        mm_token_type_ids: Optional[torch.IntTensor] = None,
         **kwargs,
     ) -> RBLNDecoderOnlyOutput:
         inputs_embeds, position_embed, rope_deltas, visual_pos_mask, deepstack_visual_embeds = (
@@ -700,6 +713,7 @@ class RBLNQwen3VLModel(RBLNDecoderOnlyModel):
                 video_embeds=video_embeds,
                 deepstack_image_embeds=deepstack_image_embeds,
                 deepstack_video_embeds=deepstack_video_embeds,
+                mm_token_type_ids=mm_token_type_ids,
             )
         )
 
@@ -775,7 +789,7 @@ class RBLNQwen3VLForConditionalGeneration(RBLNQwen3VLModel, RBLNDecoderOnlyModel
             export=True,
             rbln_config={
                 "visual": {
-                    "max_seq_lens": 6400,
+                    "max_seq_len": 6400,
                     "device": 0,
                 },
                 "tensor_parallel_size": 8,
@@ -789,7 +803,7 @@ class RBLNQwen3VLForConditionalGeneration(RBLNQwen3VLModel, RBLNDecoderOnlyModel
         ```
     """
 
-    auto_model_class = AutoModelForVision2Seq
+    auto_model_class = AutoModelForImageTextToText
     _decoder_wrapper_cls = Qwen3VL_LanguageModelWrapper
     _supports_non_fp32 = True
     _use_rotary_emb = False
@@ -851,6 +865,7 @@ class RBLNQwen3VLForConditionalGeneration(RBLNQwen3VLModel, RBLNDecoderOnlyModel
         video_embeds=None,
         deepstack_image_embeds=None,
         deepstack_video_embeds=None,
+        mm_token_type_ids=None,
         **kwargs,
     ):
         model_inputs = {}
@@ -876,6 +891,7 @@ class RBLNQwen3VLForConditionalGeneration(RBLNQwen3VLModel, RBLNDecoderOnlyModel
             video_embeds = None
             deepstack_image_embeds = None
             deepstack_video_embeds = None
+            mm_token_type_ids = None
             model_inputs.update({"input_ids": input_ids})
 
         model_inputs.update(
@@ -891,6 +907,7 @@ class RBLNQwen3VLForConditionalGeneration(RBLNQwen3VLModel, RBLNDecoderOnlyModel
                 "video_embeds": video_embeds,
                 "deepstack_image_embeds": deepstack_image_embeds,
                 "deepstack_video_embeds": deepstack_video_embeds,
+                "mm_token_type_ids": mm_token_type_ids,
             }
         )
 
@@ -937,6 +954,7 @@ class RBLNQwen3VLForConditionalGeneration(RBLNQwen3VLModel, RBLNDecoderOnlyModel
         generate_idx: Optional[torch.Tensor] = None,
         return_dict: Optional[bool] = None,
         output_hidden_states: Optional[bool] = None,
+        mm_token_type_ids: Optional[torch.IntTensor] = None,
         **kwargs,
     ) -> RBLNDecoderOnlyOutput:
         output_hidden_states = _validate_output_hidden_states(output_hidden_states, self.rbln_config)
@@ -954,6 +972,7 @@ class RBLNQwen3VLForConditionalGeneration(RBLNQwen3VLModel, RBLNDecoderOnlyModel
                     video_embeds=video_embeds,
                     deepstack_image_embeds=deepstack_image_embeds,
                     deepstack_video_embeds=deepstack_video_embeds,
+                    mm_token_type_ids=mm_token_type_ids,
                 )
             )
 
