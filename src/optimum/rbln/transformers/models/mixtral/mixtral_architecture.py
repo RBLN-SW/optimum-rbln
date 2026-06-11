@@ -17,6 +17,7 @@ from typing import Optional
 import torch
 from torch import nn
 
+from ....ops.moe import compute_masked_routing_weight_softmax_first
 from ..decoderonly.configuration_decoderonly import RBLNLoRAConfig
 from ..decoderonly.decoderonly_architecture import DecoderOnlyAttention, DecoderOnlyLayer, DecoderOnlyWrapper
 
@@ -67,13 +68,13 @@ class MixtralBlockSparseTop2MLP(nn.Module):
         self.w2_weight = nn.Parameter(experts.down_proj.detach().clone().contiguous())
 
     def forward(self, x, router_logits):
+        masked_routing_weight = compute_masked_routing_weight_softmax_first(
+            router_logits, top_k=self.top_k, renormalize=True
+        )
         return torch.ops.rbln_custom_ops.custom_moe_glu(
             hidden_states=x,
             gate_proj_weight=self.w1_weight,
             up_proj_weight=self.w3_weight,
             down_proj_weight=self.w2_weight,
-            router_logits=router_logits,
-            scoring_func="softmax",
-            topk=self.top_k,
-            norm_topk_prob=True,
+            masked_routing_weight=masked_routing_weight,
         )
