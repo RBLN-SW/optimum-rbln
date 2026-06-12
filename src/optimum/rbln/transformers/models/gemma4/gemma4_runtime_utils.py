@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Optional
+from typing import Any, Dict, Optional
 
 import rebel
 import torch
@@ -43,7 +43,7 @@ class RBLNGemma4RuntimeModel(RBLNRuntimeModel):
     def __init__(
         self,
         *args: Any,
-        image_prefill: Optional[rebel.Runtime] = None,
+        image_prefills: Optional[Dict[int, rebel.Runtime]] = None,
         embed_tokens_per_layer: Optional[torch.nn.Module] = None,
         num_hidden_layers: Optional[int] = None,
         hidden_size_per_layer_input: Optional[int] = None,
@@ -53,7 +53,10 @@ class RBLNGemma4RuntimeModel(RBLNRuntimeModel):
         self.embed_tokens_per_layer = embed_tokens_per_layer
         self.num_hidden_layers = num_hidden_layers
         self.hidden_size_per_layer_input = hidden_size_per_layer_input
-        self.image_prefill = RBLNPytorchRuntime(image_prefill)
+        # One runtime per image-prefill chunk bucket, keyed by chunk size; selected in `prefill_forward`.
+        self.image_prefills = {
+            chunk_size: RBLNPytorchRuntime(runtime) for chunk_size, runtime in (image_prefills or {}).items()
+        }
         self.prefill = RBLNPytorchRuntime(self.runtime) if self.phase == "prefill" else None
 
     def compute_per_layer_inputs(self, input_ids: torch.Tensor) -> Optional[torch.Tensor]:
@@ -104,6 +107,77 @@ class RBLNGemma4RuntimeModel(RBLNRuntimeModel):
             query_length,
             token_type_ids,
         )
+
+    def _plan_prefill_chunks(self, token_type_ids: Optional[torch.Tensor], query_length: int):
+        """Plan the chunked prefill once so the loop and block allocation stay in sync.
+
+        Walks the input exactly the way ``prefill_forward`` does and records, per chunk, the
+        cache padding that precedes it. Two kinds of KV-cache padding are accounted for:
+
+        * partial-run padding: a run shorter than its chunk still occupies a full chunk.
+        * partition-alignment padding: a chunk writes ``chunk_size`` contiguous cache slots and
+          may not straddle a ``kvcache_partition_len`` boundary, so it is pushed to the next
+          boundary if it would.
+
+        Returns:
+            plan: list of per-chunk dicts (``step``, ``chunk_size``, ``num_processed``,
+                ``is_image``, ``padded_before``).
+            total_padded: final accumulated ``padded_cache_lengths``.
+            alloc_len: highest cache slot (exclusive) touched, used to size block allocation.
+        """
+        partition_len = self.rbln_config.kvcache_partition_len
+        use_tt = self.rbln_config.use_image_prefill and token_type_ids is not None
+        if use_tt:
+            image_buckets = self.rbln_config.image_prefill_chunk_sizes
+            max_image_bucket = max(image_buckets)
+
+        plan = []
+        step = 0
+        padded = 0
+        alloc_len = query_length
+        while step < query_length:
+            is_image = bool(use_tt and int(token_type_ids[0, step].item()) == 1)
+            if is_image:
+                run_len = _run_length_from(token_type_ids, step, value=1, cap=max_image_bucket + 1)
+                if run_len > max_image_bucket:
+                    raise ValueError(
+                        f"Image run starting at position {step} is longer than the largest image-prefill "
+                        f"bucket ({max_image_bucket}); no bucket can hold it. Add a larger value to "
+                        f"`image_prefill_chunk_sizes`."
+                    )
+                chunk_size = min(b for b in image_buckets if b >= run_len)
+            else:
+                chunk_size = self.rbln_config.prefill_chunk_size
+                run_len = _run_length_from(token_type_ids, step, value=0, cap=chunk_size) if use_tt else chunk_size
+
+            if partition_len is not None:
+                offset_in_partition = (step + padded) % partition_len
+                if offset_in_partition + chunk_size > partition_len:
+                    padded += partition_len - offset_in_partition
+
+            is_last_chunk = step + run_len >= query_length
+            if is_last_chunk:
+                tail = query_length - step
+                num_processed = min(tail, run_len) if run_len > 0 else tail
+                current_padded = 0
+            else:
+                num_processed = run_len
+                current_padded = chunk_size - run_len
+
+            plan.append(
+                {
+                    "step": step,
+                    "chunk_size": chunk_size,
+                    "num_processed": num_processed,
+                    "is_image": is_image,
+                    "padded_before": padded,
+                }
+            )
+            alloc_len = max(alloc_len, step + padded + chunk_size)
+            padded += current_padded
+            step += num_processed
+
+        return plan, padded, alloc_len
 
     def prefill_forward(
         self,
@@ -160,55 +234,32 @@ class RBLNGemma4RuntimeModel(RBLNRuntimeModel):
             elif pad < 0:
                 per_layer_inputs = per_layer_inputs[:, :target_len]
 
-        step = 0
+        plan, total_padded, _ = self._plan_prefill_chunks(token_type_ids, query_length)
+
         output_logits = []
         all_hidden_states = [] if self.rbln_config.output_hidden_states else None
-        while step < query_length:
-            use_tt = self.rbln_config.use_image_prefill and token_type_ids is not None
-            if use_tt:
-                start_type = int(token_type_ids[0, step].item())
-                is_image_prefill = start_type == 1
-            else:
-                is_image_prefill = False
-
-            chunk_size_used = (
-                self.rbln_config.image_prefill_chunk_size if is_image_prefill else self.rbln_config.prefill_chunk_size
-            )
-            if use_tt:
-                target_value = 1 if is_image_prefill else 0
-                run_len = _run_length_from(token_type_ids, step, value=target_value, cap=chunk_size_used)
-            else:
-                run_len = chunk_size_used
-
-            is_last_chunk = step + run_len >= query_length
+        for chunk in plan:
+            step = chunk["step"]
+            chunk_size_used = chunk["chunk_size"]
+            is_image_prefill = chunk["is_image"]
+            num_processed_tokens = chunk["num_processed"]
+            chunk_padded_cache_lengths = chunk["padded_before"]
 
             input_chunk = inputs[:, step : step + chunk_size_used]
             per_layer_chunk = (
-                per_layer_inputs[:, step : step + chunk_size_used]
-                if per_layer_inputs is not None
-                else None
+                per_layer_inputs[:, step : step + chunk_size_used] if per_layer_inputs is not None else None
             )
-            cache_pos_chunk = cache_position[:, step : step + chunk_size_used] + padded_cache_lengths
+            cache_pos_chunk = cache_position[:, step : step + chunk_size_used] + chunk_padded_cache_lengths
             position_ids_chunk = (
-                position_ids[:, step : step + chunk_size_used]
-                if self.rbln_config.use_position_ids
-                else None
+                position_ids[:, step : step + chunk_size_used] if self.rbln_config.use_position_ids else None
             )
 
-            num_processed_tokens = run_len
-            current_padded_cache_lengths = chunk_size_used - run_len
-            if is_last_chunk:
-                tail = query_length - step
-                num_processed_tokens = min(tail, run_len) if run_len > 0 else tail
-                current_padded_cache_lengths = 0
-
-            chunked_attention_mask[
-                :, step + padded_cache_lengths : step + num_processed_tokens + padded_cache_lengths
-            ] = 1
+            mask_start = step + chunk_padded_cache_lengths
+            chunked_attention_mask[:, mask_start : mask_start + num_processed_tokens] = 1
             query_position = torch.tensor(num_processed_tokens - 1, dtype=torch.int16)
 
             if is_image_prefill:
-                outputs = self.image_prefill(
+                outputs = self.image_prefills[chunk_size_used](
                     input_chunk,
                     per_layer_chunk if self.hidden_size_per_layer_input else None,
                     cache_pos_chunk,
@@ -240,8 +291,7 @@ class RBLNGemma4RuntimeModel(RBLNRuntimeModel):
             else:
                 output_logits.append(outputs)
 
-            padded_cache_lengths += current_padded_cache_lengths
-            step += num_processed_tokens
+        padded_cache_lengths = total_padded
 
         if self.rbln_config.output_hidden_states:
             num_hidden_layers = len(all_hidden_states[0]) - 1
@@ -308,14 +358,24 @@ class RBLNGemma4RuntimeModel(RBLNRuntimeModel):
             and self.rbln_config.use_image_prefill
             and token_type_ids is not None
         ):
-            tt = token_type_ids[0]
-            trans = (tt[1:] != tt[:-1]).nonzero(as_tuple=True)[0] + 1
-            bounds = torch.cat([trans.new_zeros(1), trans, trans.new_tensor([tt.shape[0]])])
-            run_lens = bounds[1:] - bounds[:-1]
-            cs = self.rbln_config.prefill_chunk_size
-            pad_bound = int(((cs - run_lens % cs) % cs).sum().item())
-            if pad_bound > 0:
-                extra = cache_position.new_tensor([[cache_position[0, -1].item() + pad_bound]])
+            plan_token_type_ids = token_type_ids
+            if attention_mask is not None:
+                mask_bool = attention_mask.to(dtype=torch.bool)
+                if mask_bool.dim() == 2:
+                    mask_bool = mask_bool[0]
+                plan_token_type_ids = token_type_ids[:, mask_bool]
+            query_length = cache_position.shape[-1]
+            _, _, alloc_len = self._plan_prefill_chunks(plan_token_type_ids, query_length)
+            if alloc_len > self.rbln_config.max_seq_len:
+                raise ValueError(
+                    f"Chunked prefill requires {alloc_len} KV-cache slots (input length "
+                    f"{query_length} plus {alloc_len - query_length} slots of partial-run and "
+                    f"partition-alignment padding), which exceeds max_seq_len "
+                    f"({self.rbln_config.max_seq_len}). Increase max_seq_len or reduce the input length."
+                )
+            if alloc_len > query_length:
+                extra_pos = int(cache_position[0, -1].item()) + (alloc_len - query_length)
+                extra = cache_position.new_tensor([[extra_pos]])
                 alloc_cache_position = torch.cat([cache_position, extra], dim=-1)
 
         block_tables, local_block_tables, is_external_block_tables = (

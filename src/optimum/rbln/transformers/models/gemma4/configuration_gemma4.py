@@ -11,7 +11,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from typing import Any, Optional
+
+from typing import Any, List, Optional, Union
 
 from ....configuration_utils import RBLNModelConfig
 from ....utils.logging import get_logger
@@ -19,6 +20,14 @@ from ..decoderonly.configuration_decoderonly import RBLNDecoderOnlyModelForCausa
 
 
 logger = get_logger(__name__)
+
+
+DEFAULT_MAX_SOFT_TOKENS = [70, 140, 280, 560, 1120]
+
+
+def ceil_to_multiple_of_128(value: int) -> int:
+    """Smallest multiple of 128 greater than or equal to `value`."""
+    return ((int(value) + 127) // 128) * 128
 
 
 class RBLNGemma4ForCausalLMConfig(RBLNDecoderOnlyModelForCausalLMConfig):
@@ -31,13 +40,7 @@ class RBLNGemma4ForCausalLMConfig(RBLNDecoderOnlyModelForCausalLMConfig):
     Both `use_position_ids` and `use_attention_mask` are forced to `True` for Gemma4.
     The text decoder uses two RoPE flavors (`proportional` for full-attention layers and `default`
     for sliding-attention layers) with potentially different `head_dim` values.
-
-    Gemma4 only supports a prefill / image-prefill chunk size of `SUPPORTED_PREFILL_CHUNK_SIZE`
-    (512); both `prefill_chunk_size` and `image_prefill_chunk_size` default to it and any other
-    explicit value is rejected.
     """
-
-    SUPPORTED_PREFILL_CHUNK_SIZE = 512
 
     def __init__(
         self,
@@ -45,21 +48,28 @@ class RBLNGemma4ForCausalLMConfig(RBLNDecoderOnlyModelForCausalLMConfig):
         use_attention_mask: Optional[bool] = None,
         prefill_chunk_size: Optional[int] = None,
         image_prefill_chunk_size: Optional[int] = None,
+        image_prefill_chunk_sizes: Optional[Union[int, List[int]]] = None,
         **kwargs: Any,
     ):
         """
         Args:
             use_position_ids (Optional[bool]): Whether to use `position_ids`. Forced to `True` for Gemma4.
             use_attention_mask (Optional[bool]): Whether to use `attention_mask`. Forced to `True` for Gemma4.
-            prefill_chunk_size (Optional[int]): Chunk size used during the prefill phase. Only
-                `SUPPORTED_PREFILL_CHUNK_SIZE` (512) is supported. Defaults to 512.
-            image_prefill_chunk_size (Optional[int]): Chunk size used for image-prefill (multimodal Gemma4).
-                Only `SUPPORTED_PREFILL_CHUNK_SIZE` (512) is supported. Defaults to 512.
+            prefill_chunk_size (Optional[int]): Chunk size used during the prefill phase. Defaults to 512.
+            image_prefill_chunk_size (Optional[int]): Single chunk size used for image-prefill (multimodal
+                Gemma4). Mutually exclusive with `image_prefill_chunk_sizes`. When neither is given, the
+                image-prefill buckets are decided later in `_update_rbln_config`.
+            image_prefill_chunk_sizes (Optional[Union[int, List[int]]]): Desired bucketing shapes for the
+                image-prefill phase. When given, a separate `image_prefill` graph is compiled for every
+                value (sorted in descending order), allowing the runtime to pick the smallest bucket that
+                fits an image run. Mutually exclusive with `image_prefill_chunk_size`; when this is set,
+                `image_prefill_chunk_size` is derived as `max(image_prefill_chunk_sizes)`.
             kwargs: Additional arguments passed to the parent `RBLNDecoderOnlyModelForCausalLMConfig`.
 
         Raises:
-            ValueError: If `use_attention_mask` or `use_position_ids` are False, or if
-                `prefill_chunk_size` / `image_prefill_chunk_size` is not 512.
+            ValueError: If `use_attention_mask` or `use_position_ids` are False, if both
+                `image_prefill_chunk_size` and `image_prefill_chunk_sizes` are specified, or if any
+                image-prefill chunk size is not a positive integer divisible by 128.
         """
         if use_attention_mask is None:
             use_attention_mask = True
@@ -67,19 +77,17 @@ class RBLNGemma4ForCausalLMConfig(RBLNDecoderOnlyModelForCausalLMConfig):
             use_position_ids = True
 
         if prefill_chunk_size is None:
-            prefill_chunk_size = self.SUPPORTED_PREFILL_CHUNK_SIZE
-        if image_prefill_chunk_size is None:
-            image_prefill_chunk_size = self.SUPPORTED_PREFILL_CHUNK_SIZE
-        if prefill_chunk_size != self.SUPPORTED_PREFILL_CHUNK_SIZE:
+            prefill_chunk_size = 512
+
+        if image_prefill_chunk_size is not None and image_prefill_chunk_sizes is not None:
             raise ValueError(
-                f"RBLNGemma4ForCausalLM only supports prefill_chunk_size="
-                f"{self.SUPPORTED_PREFILL_CHUNK_SIZE}, but got {prefill_chunk_size}."
+                "Specify only one of `image_prefill_chunk_size` or `image_prefill_chunk_sizes`, not both."
             )
-        if image_prefill_chunk_size != self.SUPPORTED_PREFILL_CHUNK_SIZE:
-            raise ValueError(
-                f"RBLNGemma4ForCausalLM only supports image_prefill_chunk_size="
-                f"{self.SUPPORTED_PREFILL_CHUNK_SIZE}, but got {image_prefill_chunk_size}."
-            )
+
+        if image_prefill_chunk_sizes is None and image_prefill_chunk_size is not None:
+            image_prefill_chunk_sizes = image_prefill_chunk_size
+        if image_prefill_chunk_sizes is not None:
+            image_prefill_chunk_sizes = self._normalize_image_prefill_chunk_sizes(image_prefill_chunk_sizes)
 
         super().__init__(
             prefill_chunk_size=prefill_chunk_size,
@@ -87,10 +95,63 @@ class RBLNGemma4ForCausalLMConfig(RBLNDecoderOnlyModelForCausalLMConfig):
             use_position_ids=use_position_ids,
             **kwargs,
         )
-        self.image_prefill_chunk_size = image_prefill_chunk_size
+        self.image_prefill_chunk_sizes = image_prefill_chunk_sizes
 
         if not (self.use_attention_mask and self.use_position_ids):
             raise ValueError("use_attention_mask and use_position_ids must be True for RBLNGemma4ForCausalLM")
+
+    @property
+    def image_prefill_chunk_size(self) -> Optional[int]:
+        """Largest image-prefill bucket, derived from `image_prefill_chunk_sizes`.
+
+        Kept as a read-only derived value (not a stored attribute) so it never has to be persisted
+        alongside `image_prefill_chunk_sizes`; otherwise a reloaded config would carry both and trip
+        the "specify only one" guard in `__init__`.
+        """
+        if not self.image_prefill_chunk_sizes:
+            return None
+        return max(self.image_prefill_chunk_sizes)
+
+    @staticmethod
+    def _normalize_image_prefill_chunk_sizes(chunk_sizes: Union[int, List[int]]) -> List[int]:
+        """Normalize and validate image-prefill chunk sizes (the single enforcement point).
+
+        Accepts an int or list, returns a de-duplicated, descending list. Each chunk must be a
+        positive multiple of 128 (the bucket dimension the compiler requires) — stricter than the
+        text `prefill_chunk_size`'s 64-alignment, and independent of it.
+        """
+        if isinstance(chunk_sizes, int):
+            chunk_sizes = [chunk_sizes]
+        chunk_sizes = sorted(set(chunk_sizes), reverse=True)
+        for chunk_size in chunk_sizes:
+            if chunk_size <= 0 or chunk_size % 128 != 0:
+                raise ValueError(
+                    "Every image-prefill chunk size must be a positive integer divisible by 128, "
+                    f"but got image_prefill_chunk_sizes={chunk_sizes}."
+                )
+        return chunk_sizes
+
+    @property
+    def num_image_prefill_buckets(self) -> int:
+        """Number of separate `image_prefill_{chunk}` graphs (0 when image-prefill is disabled)."""
+        if not self.use_image_prefill or not self.image_prefill_chunk_sizes:
+            return 0
+        return len(self.image_prefill_chunk_sizes)
+
+    @property
+    def expected_compiled_model_names(self):
+        names = ["prefill"]
+        if self.use_image_prefill and self.image_prefill_chunk_sizes:
+            names += [f"image_prefill_{chunk_size}" for chunk_size in self.image_prefill_chunk_sizes]
+        if self.can_generate:
+            names += [f"decoder_batch_{batch_size}" for batch_size in self.decoder_batch_sizes]
+        return names
+
+    @property
+    def decoder_runtime_idx(self):
+        if not self.can_generate:
+            raise ValueError("`decode` phase is not in the phases.")
+        return 1 + self.num_image_prefill_buckets
 
 
 class RBLNGemma4VisionModelConfig(RBLNModelConfig):
@@ -151,7 +212,10 @@ class RBLNGemma4VisionModelConfig(RBLNModelConfig):
             raise ValueError(
                 "`max_patches` cannot be computed until both `max_soft_tokens` and `pooling_kernel_size` are set."
             )
-        return [max_soft_tokens * self.pooling_kernel_size * self.pooling_kernel_size for max_soft_tokens in self.max_soft_tokens]
+        return [
+            max_soft_tokens * self.pooling_kernel_size * self.pooling_kernel_size
+            for max_soft_tokens in self.max_soft_tokens
+        ]
 
 
 class RBLNGemma4ForConditionalGenerationConfig(RBLNModelConfig):
@@ -202,9 +266,61 @@ class RBLNGemma4ForConditionalGenerationConfig(RBLNModelConfig):
             use_inputs_embeds=True,
         )
 
+        self._update_image_prefill_chunk_sizes()
+
+    def _get_vision_max_soft_tokens(self) -> List[int]:
+        """Per-image soft-token counts the vision tower emits, sorted in descending order.
+
+        Reads `max_soft_tokens` from the vision sub-config (which may still be a raw dict at this
+        point) and falls back to `DEFAULT_MAX_SOFT_TOKENS` when unset, matching the default the
+        vision tower itself applies in `RBLNGemma4VisionModel._update_rbln_config`.
+        """
+        vt_cfg = self.vision_tower
+        if isinstance(vt_cfg, dict):
+            max_soft_tokens = vt_cfg.get("max_soft_tokens", None)
+        else:
+            max_soft_tokens = getattr(vt_cfg, "max_soft_tokens", None)
+        if max_soft_tokens is None:
+            max_soft_tokens = DEFAULT_MAX_SOFT_TOKENS
+        if isinstance(max_soft_tokens, int):
+            max_soft_tokens = [max_soft_tokens]
+        return sorted(max_soft_tokens, reverse=True)
+
+    def _update_image_prefill_chunk_sizes(self) -> None:
+        """Derive the language model's image-prefill buckets from the vision tower's soft-token counts.
+
+        Each bucket is the smallest multiple of 128 that can hold one image's worth of soft tokens, so
+        an `image_prefill` graph exists per `max_soft_tokens` value. Only applied when the user pinned
+        neither `image_prefill_chunk_size` nor `image_prefill_chunk_sizes` on the language model.
+
+        Note: these buckets are sized solely from the vision soft-token counts and are independent of
+        the language model's text `prefill_chunk_size`; the two chunk sizes are unrelated.
+        """
+        lm_cfg = self.language_model
+
+        if isinstance(lm_cfg, dict):
+            already_pinned = "image_prefill_chunk_size" in lm_cfg or "image_prefill_chunk_sizes" in lm_cfg
+        else:
+            already_pinned = getattr(lm_cfg, "image_prefill_chunk_sizes", None) is not None
+        if already_pinned:
+            return
+
+        buckets = RBLNGemma4ForCausalLMConfig._normalize_image_prefill_chunk_sizes(
+            [ceil_to_multiple_of_128(t) for t in self._get_vision_max_soft_tokens()]
+        )
+
+        if isinstance(lm_cfg, dict):
+            lm_cfg["image_prefill_chunk_sizes"] = buckets
+        else:
+            lm_cfg.image_prefill_chunk_sizes = buckets
+
     @property
     def image_prefill_chunk_size(self):
         return self.language_model.image_prefill_chunk_size
+
+    @property
+    def image_prefill_chunk_sizes(self):
+        return self.language_model.image_prefill_chunk_sizes
 
     @property
     def prefill_chunk_size(self):

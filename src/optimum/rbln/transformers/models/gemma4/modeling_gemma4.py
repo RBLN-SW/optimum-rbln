@@ -31,6 +31,7 @@ from transformers.modeling_outputs import BaseModelOutputWithPooling
 from ....configuration_utils import RBLNCompileConfig, RBLNModelConfig
 from ....modeling import RBLNModel
 from ....utils.logging import get_logger
+from ....utils.runtime_utils import is_compiler_supports_buffer_resize
 from ...modeling_attention_utils import validate_sliding_window
 from ...modeling_outputs import RBLNDecoderOnlyOutput
 from ...utils.rbln_runtime_wrapper import LoopProcessor
@@ -39,6 +40,7 @@ from ..decoderonly.decoderonly_runtime_utils import RBLNPageTableManager
 from ..decoderonly.generation_decoderonly import RBLNDecoderOnlyGenerationMixin
 from ..decoderonly.modeling_decoderonly import RBLNDecoderOnlyModelForCausalLM
 from .configuration_gemma4 import (
+    DEFAULT_MAX_SOFT_TOKENS,
     RBLNGemma4ForCausalLMConfig,
     RBLNGemma4VisionModelConfig,
 )
@@ -134,7 +136,7 @@ class RBLNGemma4VisionModel(RBLNModel):
         if rbln_config.patch_size is None:
             rbln_config.patch_size = model_config.patch_size
         if rbln_config.max_soft_tokens is None:
-            rbln_config.max_soft_tokens = [70, 140, 280, 560, 1120]
+            rbln_config.max_soft_tokens = list(DEFAULT_MAX_SOFT_TOKENS)
 
         max_patches_list = rbln_config.get_max_patches()
         hidden_size = model_config.hidden_size
@@ -253,6 +255,7 @@ class RBLNGemma4ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
         model_config: PretrainedConfig,
     ):
         cls._pre_populate_kvcache_metas(model_config, rbln_config)
+
         base_info = super().get_input_info(
             batch_size=batch_size,
             query_length=query_length,
@@ -312,16 +315,21 @@ class RBLNGemma4ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
         compile_cfgs = [prefill_compile_config]
 
         if rbln_config.use_image_prefill:
-            image_prefill_input_info = cls.get_input_info(
-                batch_size=1,
-                query_length=rbln_config.image_prefill_chunk_size,
-                rbln_config=rbln_config,
-                model_config=model_config,
-            )
-            image_prefill_compile_config = RBLNCompileConfig(
-                compiled_model_name="image_prefill", input_info=image_prefill_input_info
-            )
-            compile_cfgs.append(image_prefill_compile_config)
+            if rbln_config.image_prefill_chunk_sizes is None:
+                rbln_config.image_prefill_chunk_sizes = [rbln_config.prefill_chunk_size]
+
+            for chunk_size in rbln_config.image_prefill_chunk_sizes:
+                image_prefill_input_info = cls.get_input_info(
+                    batch_size=1,
+                    query_length=chunk_size,
+                    rbln_config=rbln_config,
+                    model_config=model_config,
+                )
+                compile_cfgs.append(
+                    RBLNCompileConfig(
+                        compiled_model_name=f"image_prefill_{chunk_size}", input_info=image_prefill_input_info
+                    )
+                )
 
         if rbln_config.can_generate:
             for batch_size in rbln_config.decoder_batch_sizes:
@@ -337,6 +345,70 @@ class RBLNGemma4ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
         rbln_config.set_compile_cfgs(compile_cfgs)
 
         return rbln_config
+
+    @classmethod
+    @torch.inference_mode()
+    def get_compiled_model(cls, model: PreTrainedModel, rbln_config: RBLNGemma4ForCausalLMConfig):
+        wrapped_model = cls._wrap_model_if_needed(model, rbln_config)
+        prefill_compile_config = rbln_config.compile_cfgs[0]
+
+        meta_tensor_names = [name for name, _, _ in prefill_compile_config.input_info if "past_key_values" in name]
+        prefill_example_inputs = prefill_compile_config.get_dummy_inputs(fill=0, meta_tensor_names=meta_tensor_names)
+        context, static_tensors = cls._get_compile_context(prefill_compile_config, prefill_example_inputs)
+
+        compiled_models = {}
+        compiled_models["prefill"] = cls._compile_model(
+            wrapped_model,
+            prefill_compile_config,
+            prefill_example_inputs,
+            context,
+            rbln_config,
+            rbln_config.quantization,
+            phase="prefill",
+        )
+
+        if rbln_config.use_image_prefill:
+            # image_prefill buckets occupy compile_cfgs[1 : 1+N] (right after prefill at index 0).
+            ip_start = rbln_config.image_prefill_runtime_idx
+            ip_compile_configs = rbln_config.compile_cfgs[ip_start : ip_start + rbln_config.num_image_prefill_buckets]
+            for chunk_size, ip_compile_config in zip(
+                rbln_config.image_prefill_chunk_sizes, ip_compile_configs, strict=True
+            ):
+                ip_example_inputs = ip_compile_config.get_dummy_inputs(fill=0, static_tensors=static_tensors)
+                compiled_models[f"image_prefill_{chunk_size}"] = cls._compile_model(
+                    wrapped_model,
+                    ip_compile_config,
+                    ip_example_inputs,
+                    context,
+                    rbln_config,
+                    rbln_config.quantization,
+                    phase="image_prefill",
+                )
+
+        if rbln_config.can_generate:
+            wrapped_model.phase = "decode"
+            for batch_size, dec_compile_config in zip(
+                rbln_config.decoder_batch_sizes,
+                rbln_config.compile_cfgs[rbln_config.decoder_runtime_idx :],
+                strict=False,
+            ):
+                dec_example_inputs = dec_compile_config.get_dummy_inputs(fill=0, static_tensors=static_tensors)
+                compiled_models[f"decoder_batch_{batch_size}"] = cls._compile_model(
+                    wrapped_model,
+                    dec_compile_config,
+                    dec_example_inputs,
+                    context,
+                    rbln_config,
+                    rbln_config.quantization,
+                    phase="decode",
+                )
+
+        if rbln_config.is_auto_num_blocks:
+            if not is_compiler_supports_buffer_resize():
+                raise RuntimeError("`kvcache_num_blocks` must be set.")
+            cls.set_kvcache_num_blocks_after_compilation(compiled_models, rbln_config)
+
+        return compiled_models
 
     @classmethod
     def save_torch_artifacts(
@@ -404,9 +476,15 @@ class RBLNGemma4ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
             "config": self.config,
         }
 
+        image_prefills = {}
+        if self.rbln_config.use_image_prefill:
+            ip_start = self.rbln_config.image_prefill_runtime_idx
+            for i, chunk_size in enumerate(self.rbln_config.image_prefill_chunk_sizes):
+                image_prefills[chunk_size] = self.model[ip_start + i]
+
         self.prefill_decoder = RBLNGemma4RuntimeModel(
             runtime=self.model[0],
-            image_prefill=self.model[1] if self.rbln_config.use_image_prefill else None,
+            image_prefills=image_prefills,
             phase="prefill",
             batch_size=self.rbln_config.batch_size,
             logits_last_dim=self.logits_last_dim,
@@ -504,8 +582,8 @@ class RBLNGemma4ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
         rbln_config: RBLNModelConfig,
         preprocessors: Optional[Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"]],
     ):
-        if rbln_config.image_prefill_chunk_size is None:
-            rbln_config.image_prefill_chunk_size = rbln_config.prefill_chunk_size
+        if rbln_config.image_prefill_chunk_sizes is None:
+            rbln_config.image_prefill_chunk_sizes = [rbln_config.prefill_chunk_size]
 
         if "image_prefill" not in rbln_config.phases:
             rbln_config.phases = ["prefill", "image_prefill", "decode"]
@@ -616,16 +694,18 @@ class RBLNGemma4ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMix
         max_soft_tokens_list = getattr(vt_cfg, "max_soft_tokens", None) if vt_cfg is not None else None
         if isinstance(vt_cfg, dict):
             max_soft_tokens_list = vt_cfg.get("max_soft_tokens", None)
-        max_soft_tokens_list = max_soft_tokens_list or [70, 140, 280, 560, 1120]
+        max_soft_tokens_list = max_soft_tokens_list or list(DEFAULT_MAX_SOFT_TOKENS)
         if isinstance(max_soft_tokens_list, int):
-            max_soft_tokens_list = list(max_soft_tokens_list)
+            max_soft_tokens_list = [max_soft_tokens_list]
         elif isinstance(max_soft_tokens_list, list):
             max_soft_tokens_list.sort(reverse=True)
         vision_hidden_size = int(vision_cfg.hidden_size)
 
         input_infos = []
         for max_soft_tokens in max_soft_tokens_list:
-            input_info = [("image_features", [1, max_soft_tokens, vision_hidden_size], "float32"),]
+            input_info = [
+                ("image_features", [1, max_soft_tokens, vision_hidden_size], "float32"),
+            ]
             input_infos.append(input_info)
         compile_cfgs = RBLNCompileConfig(input_info=input_infos)
         rbln_config.set_compile_cfgs([compile_cfgs])
@@ -686,19 +766,38 @@ class RBLNGemma4ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMix
     ) -> torch.Tensor:
         vision_cfg = self.rbln_config.vision_tower
         text_hidden = self.config.text_config.hidden_size
+        pooling = vision_cfg.pooling_kernel_size
+        num_patches = pixel_values.shape[1]
+        if num_patches % (pooling * pooling) != 0:
+            raise ValueError(
+                f"pixel_values patch count ({num_patches}) is not a multiple of "
+                f"pooling_kernel_size**2 ({pooling * pooling}); cannot derive max_soft_tokens."
+            )
+        max_soft_tokens = num_patches // (pooling * pooling)
+        compiled_buckets = (
+            vision_cfg.max_soft_tokens
+            if isinstance(vision_cfg.max_soft_tokens, list)
+            else [vision_cfg.max_soft_tokens]
+        )
+        if max_soft_tokens not in compiled_buckets:
+            raise ValueError(
+                f"Derived max_soft_tokens ({max_soft_tokens}) from pixel_values with {num_patches} "
+                f"patches is not among the compiled buckets {sorted(compiled_buckets)}. "
+                f"Compile the vision tower with a matching `max_soft_tokens`."
+            )
 
         vision_out_0_size = [
             pixel_values.shape[0],
-            vision_cfg.max_soft_tokens,
+            max_soft_tokens,
             self.config.vision_config.hidden_size,
         ]
         vision_out_1_size = [
             pixel_values.shape[0],
-            vision_cfg.max_soft_tokens,
+            max_soft_tokens,
         ]
         projector_out_size = [
             pixel_values.shape[0],
-            vision_cfg.max_soft_tokens,
+            max_soft_tokens,
             text_hidden,
         ]
         vision_out_buffer = [
@@ -814,10 +913,6 @@ class RBLNGemma4ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMix
             dispatch_token_type_ids = mm_token_type_ids if mm_token_type_ids is not None else token_type_ids
 
             for b_idx in range(batch_size):
-                # Mirror RBLNDecoderOnlyModel.forward: use `attention_mask[b_idx].sum()`
-                # so left-padded multi-batch inputs get a `cache_position` whose length
-                # matches the post-strip inputs (parent `_prepare_prefill_inputs` strips
-                # inputs by `attention_mask`).
                 query_length = (
                     attention_mask[b_idx].sum(dim=-1).int().item()
                     if attention_mask is not None
