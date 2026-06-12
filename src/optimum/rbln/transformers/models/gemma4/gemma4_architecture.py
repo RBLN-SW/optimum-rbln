@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import copy
-from typing import Optional, Tuple, Union, Any
+from typing import Any, Optional, Tuple, Union
 
 import torch
 import torch.nn as nn
@@ -225,7 +225,7 @@ class Gemma4TextModel(DecoderOnlyModel):
         valid_input_len = 1 if query_position is None else query_position + 1
         cache_seq_len = torch.clamp(position_ids.to(torch.int32), max=max_cache_len)[:, :1]  # past seen tokens []
         cache_offset = (
-            torch.clamp(position_ids.to(torch.int32), max=max_cache_len)[:, :1] + valid_input_len # []
+            torch.clamp(position_ids.to(torch.int32), max=max_cache_len)[:, :1] + valid_input_len  # []
         )  # cache offset for next steps
 
         if self.phase == "decode":
@@ -236,17 +236,23 @@ class Gemma4TextModel(DecoderOnlyModel):
         else:
             # (1, 1, prefill_chunk_size, sliding_window + prefill_chunk_size)
             # prfill_chunk_size: 512
-            # sliding_window: 1024 
+            # sliding_window: 1024
             # 1536
             _, prefill_chunk_size = position_ids.shape
             max_compute_len = max_cache_len + prefill_chunk_size
-            cache_seq_len_b = torch.zeros(1,1,1, max_compute_len,dtype=torch.int32) + cache_seq_len
-            cache_offset_b = torch.zeros(1,1,1, max_compute_len,dtype=torch.int32) + cache_offset
+            cache_seq_len_b = torch.zeros(1, 1, 1, max_compute_len, dtype=torch.int32) + cache_seq_len
+            cache_offset_b = torch.zeros(1, 1, 1, max_compute_len, dtype=torch.int32) + cache_offset
 
-            q_idx = torch.zeros(1, 1, prefill_chunk_size, max_compute_len, dtype=torch.int32, device=position_ids.device)
-            q_idx = q_idx + torch.arange(prefill_chunk_size, dtype=torch.int32, device=position_ids.device).reshape(1, 1, -1, 1) # (1, 1, prefill_chunk_size, max_compute_len)
-                        
-            compute_idx = torch.arange(max_compute_len, dtype=torch.int32).reshape(1, 1, 1, -1)  # (1, 1, 1, max_compute_len)
+            q_idx = torch.zeros(
+                1, 1, prefill_chunk_size, max_compute_len, dtype=torch.int32, device=position_ids.device
+            )
+            q_idx = q_idx + torch.arange(prefill_chunk_size, dtype=torch.int32, device=position_ids.device).reshape(
+                1, 1, -1, 1
+            )  # (1, 1, prefill_chunk_size, max_compute_len)
+
+            compute_idx = torch.arange(max_compute_len, dtype=torch.int32).reshape(
+                1, 1, 1, -1
+            )  # (1, 1, 1, max_compute_len)
             in_chunk = (compute_idx >= cache_seq_len_b) & (compute_idx < cache_offset_b)  # valid idx in 4 dims
             in_past = compute_idx < cache_seq_len_b  # valid idx in 4 dims
 
@@ -633,9 +639,9 @@ class Gemma4Experts(nn.Module):
         gate_w = gate_up[:, : self.intermediate_size, :]
         up_w = gate_up[:, self.intermediate_size :, :]
         down_w = experts.down_proj
-        
+
         self.per_expert_scale = router.per_expert_scale.detach().clone().unsqueeze(1)
-        
+
         gate_w_op = gate_w.contiguous()
         up_w_op = up_w.contiguous()
         down_w_op = down_w.contiguous().clone()
