@@ -157,6 +157,9 @@ class RBLNPaliGemmaForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGeneration
         return model
 
     def __post_init__(self, **kwargs):
+        if isinstance(getattr(self.config, "text_config", None), dict):
+            self.config = PaliGemmaConfig.from_dict(self.config.to_dict())
+
         self.vision_tower = LoopVisionTower(self.rbln_submodules[0])
         self.language_model = self.rbln_submodules[1]
 
@@ -327,6 +330,9 @@ class RBLNPaliGemmaForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGeneration
             logits = []
             inputs = inputs_embeds if inputs_embeds is not None else input_ids
             batch_size = inputs.shape[0]
+
+            if generate_idx is None:
+                generate_idx = torch.full((batch_size, 1), inputs.shape[1], dtype=torch.int32)
 
             for b_idx in range(batch_size):
                 cache_position = torch.arange(0, generate_idx[b_idx].item(), dtype=torch.int32).unsqueeze(0)
