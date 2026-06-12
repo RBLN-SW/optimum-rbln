@@ -55,7 +55,7 @@ class RBLNGemma4ForCausalLMConfig(RBLNDecoderOnlyModelForCausalLMConfig):
         Args:
             use_position_ids (Optional[bool]): Whether to use `position_ids`. Forced to `True` for Gemma4.
             use_attention_mask (Optional[bool]): Whether to use `attention_mask`. Forced to `True` for Gemma4.
-            prefill_chunk_size (Optional[int]): Chunk size used during the prefill phase. Defaults to 512.
+            prefill_chunk_size (Optional[int]): Chunk size used during the prefill phase. Defaults to 128.
             image_prefill_chunk_size (Optional[int]): Single chunk size used for image-prefill (multimodal
                 Gemma4). Mutually exclusive with `image_prefill_chunk_sizes`. When neither is given, the
                 image-prefill buckets are decided later in `_update_rbln_config`.
@@ -77,7 +77,7 @@ class RBLNGemma4ForCausalLMConfig(RBLNDecoderOnlyModelForCausalLMConfig):
             use_position_ids = True
 
         if prefill_chunk_size is None:
-            prefill_chunk_size = 512
+            prefill_chunk_size = 128
 
         if image_prefill_chunk_size is not None and image_prefill_chunk_sizes is not None:
             raise ValueError(
