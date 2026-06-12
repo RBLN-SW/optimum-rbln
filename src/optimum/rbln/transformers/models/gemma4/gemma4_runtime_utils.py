@@ -89,7 +89,15 @@ class RBLNGemma4RuntimeModel(RBLNRuntimeModel):
             )
 
         if self.rbln_config.use_image_prefill:
-            padding_size = self.rbln_config.image_prefill_chunk_size
+            # Pad by the LARGEST chunk size any planner-dispatched chunk can use, so the last
+            # chunk's `inputs[step : step + chunk_size_used]` slice always returns
+            # `chunk_size_used` rows. `image_prefill_chunk_size` (= max image bucket) and
+            # `prefill_chunk_size` (text) are independent; using only the former underruns the
+            # tail text chunk when text size exceeds the largest image bucket.
+            padding_size = max(
+                self.rbln_config.image_prefill_chunk_size,
+                self.rbln_config.prefill_chunk_size,
+            )
             inputs = torch.nn.functional.pad(inputs, (0, 0, 0, padding_size))
             cache_position = torch.nn.functional.pad(cache_position, (0, padding_size))
             if position_ids is not None:
