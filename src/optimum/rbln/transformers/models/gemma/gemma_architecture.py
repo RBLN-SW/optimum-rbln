@@ -22,4 +22,8 @@ class GemmaWrapper(DecoderOnlyWrapper):
 
 
 class GemmaModel(DecoderOnlyModel):
-    pass
+    @property
+    def hidden_multiplier(self):
+        if self.rbln_config.use_inputs_embeds:
+            return self.config.hidden_size**0.5
+        return 1
