@@ -77,7 +77,7 @@ class RBLNWhisperGenerationMixin(WhisperGenerationMixin, GenerationMixin):
                     "Please set num_beams=1 for greedy search or adjust your configuration."
                 )
 
-        return super().generate(
+        outputs = super().generate(
             input_features,
             attention_mask=attention_mask,
             generation_config=generation_config,
@@ -86,6 +86,18 @@ class RBLNWhisperGenerationMixin(WhisperGenerationMixin, GenerationMixin):
             return_token_timestamps=return_token_timestamps,
             **kwargs,
         )
+
+        # transformers' WhisperGenerationMixin returns long-form sequences as a
+        # 2D [batch, seq] tensor. RBLN long-form decoding can leave a spurious
+        # singleton segment dim ([batch, 1, seq]); without removing it,
+        # processor.batch_decode(..., decode_with_timestamps=True) iterates one
+        # level too deep and raises
+        # "'>=' not supported between instances of 'list' and 'int'".
+        # Restore the documented [batch, seq] contract (no-op for 2D output).
+        if isinstance(outputs, torch.Tensor) and outputs.dim() == 3 and outputs.shape[1] == 1:
+            outputs = outputs.squeeze(1)
+
+        return outputs
 
     def _postprocess_outputs(
         self,
