@@ -56,11 +56,11 @@ class RBLNCosmosSafetyCheckerConfig(RBLNModelConfig):
     Configuration class for RBLN Cosmos Safety Checker.
     """
 
-    submodules = ["llamaguard3", "video_safety_model", "face_blur_filter", "siglip_encoder"]
+    submodules = ["qwen3guard", "video_safety_model", "face_blur_filter", "siglip_encoder"]
 
     def __init__(
         self,
-        llamaguard3: Optional[RBLNModelConfig] = None,
+        qwen3guard: Optional[RBLNModelConfig] = None,
         video_safety_model: Optional[RBLNModelConfig] = None,
         face_blur_filter: Optional[RBLNModelConfig] = None,
         siglip_encoder: Optional[RBLNSiglipVisionModelConfig] = None,
@@ -81,25 +81,14 @@ class RBLNCosmosSafetyCheckerConfig(RBLNModelConfig):
 
         tensor_parallel_size = kwargs.get("tensor_parallel_size")
 
-        self.llamaguard3 = self.initialize_submodule_config(
-            llamaguard3,
-            cls_name="RBLNLlamaForCausalLMConfig",
+        self.qwen3guard = self.initialize_submodule_config(
+            qwen3guard,
+            cls_name="RBLNQwen3ForCausalLMConfig",
             batch_size=batch_size,
             tensor_parallel_size=tensor_parallel_size,
             max_seq_len=max_seq_len,
         )
-        self.siglip_encoder = self.initialize_submodule_config(
-            siglip_encoder,
-            cls_name="RBLNSiglipVisionModelConfig",
-            batch_size=batch_size,
-            image_size=(384, 384),
-        )
-        self.video_safety_model = self.initialize_submodule_config(
-            video_safety_model,
-            cls_name="RBLNVideoSafetyModelConfig",
-            batch_size=batch_size,
-            input_size=1152,
-        )
+        # VideoContentSafetyFilter is omitted because it is not supported in cosmos-guardrail==0.3.1
         self.face_blur_filter = self.initialize_submodule_config(
             face_blur_filter,
             cls_name="RBLNRetinaFaceFilterConfig",
