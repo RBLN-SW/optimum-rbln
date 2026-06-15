@@ -287,27 +287,48 @@ class RBLNGemma4ForConditionalGenerationConfig(RBLNModelConfig):
         return sorted(max_soft_tokens, reverse=True)
 
     def _update_image_prefill_chunk_sizes(self) -> None:
-        """Derive the language model's image-prefill buckets from the vision tower's soft-token counts.
+        """Derive or validate the language model's image-prefill buckets against the vision tower's soft-token counts.
 
-        Each bucket is the smallest multiple of 128 that can hold one image's worth of soft tokens, so
-        an `image_prefill` graph exists per `max_soft_tokens` value. Only applied when the user pinned
-        neither `image_prefill_chunk_size` nor `image_prefill_chunk_sizes` on the language model.
+        When the user pinned neither `image_prefill_chunk_size` nor `image_prefill_chunk_sizes`, derive the
+        buckets: map each `max_soft_tokens` value to the smallest multiple of 128 that holds it, then keep
+        only the largest `(n + 1) // 2` of them to cap the number of `image_prefill` graphs. Buckets are
+        dropped smallest-first, so the largest soft-token count always keeps its own bucket while smaller
+        images route to the smallest kept bucket `>=` their length at runtime — this minimizes the
+        worst-case prefill padding at the cost of over-padding small images.
+
+        When the user did pin the buckets, keep their values but verify the largest bucket can hold the
+        largest image the vision tower emits; otherwise some image run would have no bucket and the failure
+        would only surface at runtime.
 
         Note: these buckets are sized solely from the vision soft-token counts and are independent of
         the language model's text `prefill_chunk_size`; the two chunk sizes are unrelated.
         """
         lm_cfg = self.language_model
+        soft_tokens = self._get_vision_max_soft_tokens()
+        max_soft_token = max(soft_tokens)
 
         if isinstance(lm_cfg, dict):
-            already_pinned = "image_prefill_chunk_size" in lm_cfg or "image_prefill_chunk_sizes" in lm_cfg
+            pinned = lm_cfg.get("image_prefill_chunk_sizes", lm_cfg.get("image_prefill_chunk_size", None))
         else:
-            already_pinned = getattr(lm_cfg, "image_prefill_chunk_sizes", None) is not None
-        if already_pinned:
+            pinned = getattr(lm_cfg, "image_prefill_chunk_sizes", None)
+
+        if pinned is not None:
+            pinned_buckets = RBLNGemma4ForCausalLMConfig._normalize_image_prefill_chunk_sizes(pinned)
+            if max(pinned_buckets) < max_soft_token:
+                raise ValueError(
+                    f"The largest image-prefill chunk size ({max(pinned_buckets)}) is smaller than the "
+                    f"vision tower's largest max_soft_tokens ({max_soft_token}); some images would have no "
+                    f"bucket able to hold them. Provide an image-prefill chunk size of at least "
+                    f"{ceil_to_multiple_of_128(max_soft_token)}."
+                )
             return
 
         buckets = RBLNGemma4ForCausalLMConfig._normalize_image_prefill_chunk_sizes(
-            [ceil_to_multiple_of_128(t) for t in self._get_vision_max_soft_tokens()]
+            [ceil_to_multiple_of_128(t) for t in soft_tokens]
         )
+        # Keep only the largest `(n + 1) // 2` buckets (descending list -> drop smallest first).
+        num_keep = (len(soft_tokens) + 1) // 2
+        buckets = buckets[:num_keep]
 
         if isinstance(lm_cfg, dict):
             lm_cfg["image_prefill_chunk_sizes"] = buckets
