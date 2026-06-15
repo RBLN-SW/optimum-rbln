@@ -120,9 +120,15 @@ class RBLNGemma4RuntimeModel(RBLNRuntimeModel):
         """Plan the chunked prefill once so the loop and block allocation stay in sync.
 
         Walks the input exactly the way ``prefill_forward`` does and records, per chunk, the
-        cache padding that precedes it. Two kinds of KV-cache padding are accounted for:
+        cache padding that precedes it.
 
-        * partial-run padding: a run shorter than its chunk still occupies a full chunk.
+        Chunks are **tight-packed**: a run shorter than its chunk does NOT occupy a full chunk.
+        The next chunk starts right after the current run's valid tokens and overwrites the
+        masked dead tail the current chunk wrote (text-prefill spillover, or the zeroed
+        image-prefill tail). This keeps KV-cache usage proportional to the real token count,
+        which matters for layouts with many short runs (e.g. video frames interleaved with
+        per-frame timestamp text). Only one kind of padding remains:
+
         * partition-alignment padding: a chunk writes ``chunk_size`` contiguous cache slots and
           may not straddle a ``kvcache_partition_len`` boundary, so it is pushed to the next
           boundary if it would.
@@ -167,10 +173,8 @@ class RBLNGemma4RuntimeModel(RBLNRuntimeModel):
             if is_last_chunk:
                 tail = query_length - step
                 num_processed = min(tail, run_len) if run_len > 0 else tail
-                current_padded = 0
             else:
                 num_processed = run_len
-                current_padded = chunk_size - run_len
 
             plan.append(
                 {
@@ -182,7 +186,6 @@ class RBLNGemma4RuntimeModel(RBLNRuntimeModel):
                 }
             )
             alloc_len = max(alloc_len, step + padded + chunk_size)
-            padded += current_padded
             step += num_processed
 
         return plan, padded, alloc_len
@@ -377,8 +380,8 @@ class RBLNGemma4RuntimeModel(RBLNRuntimeModel):
             if alloc_len > self.rbln_config.max_seq_len:
                 raise ValueError(
                     f"Chunked prefill requires {alloc_len} KV-cache slots (input length "
-                    f"{query_length} plus {alloc_len - query_length} slots of partial-run and "
-                    f"partition-alignment padding), which exceeds max_seq_len "
+                    f"{query_length} plus {alloc_len - query_length} slots of trailing chunk_size "
+                    f"write-extent overhang and partition-alignment padding), which exceeds max_seq_len "
                     f"({self.rbln_config.max_seq_len}). Increase max_seq_len or reduce the input length."
                 )
             if alloc_len > query_length:
