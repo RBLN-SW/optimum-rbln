@@ -102,6 +102,7 @@ def get_cache_size_enc(height=704, width=1280):
         [1, 384, 2, height // 8, width // 8],
         [1, 384, 2, height // 8, width // 8],
     ]
+    # 두개 다 같은 거 아닌가?
     return PADDED_CACHE_SIZE_0, CACHE_SIZE_N
 
 def get_cache_size_dec(height=704, width=1280):
