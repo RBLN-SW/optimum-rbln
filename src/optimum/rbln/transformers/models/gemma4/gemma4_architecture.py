@@ -30,6 +30,7 @@ from ..decoderonly.decoderonly_architecture import (
     RotaryEmbedding,
     slice_and_unsqueeze_cos_sin,
 )
+from ....ops.moe import compute_masked_routing_weight_softmax_first
 
 
 class Gemma4ForCausalLMWrapper(DecoderOnlyWrapper):
@@ -595,11 +596,8 @@ class Gemma4Router(nn.Module):
     """Router for Gemma4 MoE blocks.
 
     Replicates `Gemma4TextRouter`'s logit computation: RMSNorm (no-scale) -> per-token scale -> linear.
-    The downstream `Gemma4Experts` module handles softmax + topk + top_k_norm via the fused
-    `custom_moe_glu` op; this module emits raw logits only.
-
-    Per-expert scale (`per_expert_scale` in HF) is folded into the `down_proj` weights of
-    `Gemma4Experts` at construction time, so it is not applied here.
+    This module emits raw logits only; routing (top-k, renormalize) and `per_expert_scale` are
+    applied in `Gemma4Experts` before dispatch to `custom_moe_glu`.
     """
 
     def __init__(self, router: nn.Module):
@@ -623,8 +621,8 @@ class Gemma4Experts(nn.Module):
     shape contract of `custom_moe_glu`: `gate_proj_weight` (E, H, I), `up_proj_weight` (E, H, I),
     `down_proj_weight` (E, I, H).
 
-    Per-expert routing scale (`per_expert_scale` in HF) is folded into `down_proj` weights
-    at construction time because the op does not accept an external per-expert constant.
+    Routing mirrors HF `Gemma4TextRouter`: top-k on logits, softmax over top-k (renormalize),
+    then multiply the scattered `[E, T]` mask by `per_expert_scale` from the router.
     """
 
     def __init__(self, experts: nn.Module, router: nn.Module, phase: str, rbln_config: Any):
@@ -654,16 +652,18 @@ class Gemma4Experts(nn.Module):
         self.down_proj.weight.data = down_w_op
 
     def forward(self, hidden_states: torch.Tensor, router_logits: torch.Tensor) -> torch.Tensor:
+        masked_routing_weight = compute_masked_routing_weight_softmax_first(
+            router_logits, top_k=self.top_k, renormalize=self.norm_topk_prob
+        )
+        masked_routing_weight = masked_routing_weight * self.per_expert_scale
+        
         return torch.ops.rbln_custom_ops.custom_moe_glu(
-            hidden_states,
+            hidden_states=hidden_states,
             gate_proj_weight=self.gate_proj.weight,
             up_proj_weight=self.up_proj.weight,
             down_proj_weight=self.down_proj.weight,
-            router_logits=router_logits,
-            scoring_func="softmax",
-            topk=self.top_k,
-            norm_topk_prob=self.norm_topk_prob,
-            per_expert_scale=self.per_expert_scale,
+            masked_routing_weight=masked_routing_weight,
+            hidden_act="gelu",
         )
 
 
