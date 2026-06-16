@@ -117,6 +117,14 @@ _import_structure = {
         "RBLNDPTForDepthEstimationConfig",
     ],
     "exaone": ["RBLNExaoneForCausalLM", "RBLNExaoneForCausalLMConfig"],
+    "exaone4_5": [
+        "RBLNExaone4_5_ForConditionalGeneration",
+        "RBLNExaone4_5_ForConditionalGenerationConfig",
+        "RBLNExaone4_5_Model",
+        "RBLNExaone4_5_ModelConfig",
+        "RBLNExaone4_5_VisionModel",
+        "RBLNExaone4_5_VisionModelConfig",
+    ],
     "gemma": ["RBLNGemmaForCausalLM", "RBLNGemmaForCausalLMConfig", "RBLNGemmaModel", "RBLNGemmaModelConfig"],
     "gemma2": ["RBLNGemma2ForCausalLM", "RBLNGemma2ForCausalLMConfig", "RBLNGemma2Model", "RBLNGemma2ModelConfig"],
     "gemma3": [
@@ -294,6 +302,14 @@ if TYPE_CHECKING:
     from .distilbert import RBLNDistilBertForQuestionAnswering, RBLNDistilBertForQuestionAnsweringConfig
     from .dpt import RBLNDPTForDepthEstimation, RBLNDPTForDepthEstimationConfig
     from .exaone import RBLNExaoneForCausalLM, RBLNExaoneForCausalLMConfig
+    from .exaone4_5 import (
+        RBLNExaone4_5_ForConditionalGeneration,
+        RBLNExaone4_5_ForConditionalGenerationConfig,
+        RBLNExaone4_5_Model,
+        RBLNExaone4_5_ModelConfig,
+        RBLNExaone4_5_VisionModel,
+        RBLNExaone4_5_VisionModelConfig,
+    )
     from .gemma import RBLNGemmaForCausalLM, RBLNGemmaForCausalLMConfig, RBLNGemmaModel, RBLNGemmaModelConfig
     from .gemma2 import RBLNGemma2ForCausalLM, RBLNGemma2ForCausalLMConfig, RBLNGemma2Model, RBLNGemma2ModelConfig
     from .gemma3 import (
