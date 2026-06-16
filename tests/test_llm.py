@@ -13,7 +13,6 @@ from optimum.rbln import (
     RBLNAutoModelForCausalLM,
     RBLNAutoModelForImageTextToText,
     RBLNAutoModelForSeq2SeqLM,
-    RBLNAutoModelForVision2Seq,
     RBLNBartForConditionalGeneration,
     RBLNBlip2ForConditionalGeneration,
     RBLNExaoneForCausalLM,
@@ -428,7 +427,7 @@ class TestBartModel(LLMTest.TestLLM):
 
 
 class TestLlavaForConditionalGeneration(LLMTest.TestLLM):
-    RBLN_AUTO_CLASS = RBLNAutoModelForVision2Seq
+    RBLN_AUTO_CLASS = RBLNAutoModelForImageTextToText
     RBLN_CLASS = RBLNLlavaForConditionalGeneration
     HF_MODEL_ID = "trl-internal-testing/tiny-LlavaForConditionalGeneration"
     PROMPT = "[INST] <image>\nWhat’s shown in this image? [/INST]"
@@ -499,7 +498,7 @@ class TestPegasusModel(LLMTest.TestLLM):
 
 
 class TestLlavaNextForConditionalGeneration(LLMTest.TestLLM):
-    RBLN_AUTO_CLASS = RBLNAutoModelForVision2Seq
+    RBLN_AUTO_CLASS = RBLNAutoModelForImageTextToText
     RBLN_CLASS = RBLNLlavaNextForConditionalGeneration
     HF_MODEL_ID = "trl-internal-testing/tiny-LlavaNextForConditionalGeneration"
     PROMPT = "[INST] <image>\nWhat’s shown in this image? [/INST]"
@@ -576,7 +575,7 @@ class TestLlavaNextForConditionalGeneration(LLMTest.TestLLM):
 
 
 class TestBlip2ForConditionalGeneration(LLMTest.TestLLM):
-    RBLN_AUTO_CLASS = RBLNAutoModelForVision2Seq
+    RBLN_AUTO_CLASS = RBLNAutoModelForImageTextToText
     RBLN_CLASS = RBLNBlip2ForConditionalGeneration
     HF_MODEL_ID = "Salesforce/blip2-opt-2.7b"  # No tiny model yet.
     PROMPT = "Question: Describe this image? Answer:"
@@ -626,7 +625,7 @@ class TestBlip2ForConditionalGeneration(LLMTest.TestLLM):
 
 
 class TestIdefics3ForConditionalGeneration(LLMTest.TestLLM):
-    RBLN_AUTO_CLASS = RBLNAutoModelForVision2Seq
+    RBLN_AUTO_CLASS = RBLNAutoModelForImageTextToText
     RBLN_CLASS = RBLNIdefics3ForConditionalGeneration
     HF_MODEL_ID = "hf-internal-testing/tiny-random-Idefics3ForConditionalGeneration"
     PROMPT = [{"role": "user", "content": [{"type": "image"}, {"type": "text", "text": "Describe this image."}]}]
@@ -655,17 +654,18 @@ class TestIdefics3ForConditionalGeneration(LLMTest.TestLLM):
 
 
 class TestQwen2VLForConditionalGeneration(LLMTest.TestLLM):
-    RBLN_AUTO_CLASS = RBLNAutoModelForVision2Seq
+    RBLN_AUTO_CLASS = RBLNAutoModelForImageTextToText
     RBLN_CLASS = RBLNQwen2VLForConditionalGeneration
     HF_MODEL_ID = "hf-internal-testing/tiny-random-Qwen2VLForConditionalGeneration"
     PROMPT = "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\n<|vision_start|><|image_pad|><|vision_end|>Describe this image.<|im_end|>\n<|im_start|>assistant\n"
     RBLN_CLASS_KWARGS = {
         "rbln_config": {
-            "visual": {"max_seq_lens": 512},
+            "visual": {"max_seq_len": 512},
             "tensor_parallel_size": 1,
             "max_seq_len": 32_768,
         }
     }
+    HF_CONFIG_KWARGS = {}
 
     @classmethod
     def setUpClass(cls):
@@ -697,18 +697,19 @@ class TestQwen2VLForConditionalGeneration(LLMTest.TestLLM):
 
 
 class TestQwen2_5_VLForConditionalGeneration(LLMTest.TestLLM):
-    RBLN_AUTO_CLASS = RBLNAutoModelForVision2Seq
+    RBLN_AUTO_CLASS = RBLNAutoModelForImageTextToText
     RBLN_CLASS = RBLNQwen2_5_VLForConditionalGeneration
     HF_MODEL_ID = "Qwen/Qwen2.5-VL-3B-Instruct"  # No tiny model yet.
     PROMPT = "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\n<|vision_start|><|image_pad|><|vision_end|>Describe this image.<|im_end|>\n<|im_start|>assistant\n"
     RBLN_CLASS_KWARGS = {
         "rbln_config": {
-            "visual": {"max_seq_lens": 512},
+            "visual": {"max_seq_len": 512},
             "tensor_parallel_size": 1,
             "kvcache_partition_len": 16_384,
             "max_seq_len": 32_768,
         }
     }
+    HF_CONFIG_KWARGS = {}
     HF_CONFIG_KWARGS_PREPROCESSOR = {"max_pixels": 64 * 14 * 14}
     IS_MULTIMODAL = True
 
@@ -736,13 +737,13 @@ class TestQwen2_5_VLForConditionalGeneration(LLMTest.TestLLM):
 
 
 class TestQwen3VLForConditionalGeneration(LLMTest.TestLLM):
-    RBLN_AUTO_CLASS = RBLNAutoModelForVision2Seq
+    RBLN_AUTO_CLASS = RBLNAutoModelForImageTextToText
     RBLN_CLASS = RBLNQwen3VLForConditionalGeneration
     HF_MODEL_ID = "Qwen/Qwen3-VL-2B-Instruct"
     PROMPT = "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\n<|vision_start|><|image_pad|><|vision_end|>Describe this image.<|im_end|>\n<|im_start|>assistant\n"
     RBLN_CLASS_KWARGS = {
         "rbln_config": {
-            "visual": {"max_seq_lens": 512},
+            "visual": {"max_seq_len": 512},
             "tensor_parallel_size": 1,
             "kvcache_partition_len": 8192,
             "max_seq_len": 16_384,
@@ -772,13 +773,13 @@ class TestQwen3VLForConditionalGeneration(LLMTest.TestLLM):
 
 
 class TestQwen3VLMoeForConditionalGeneration(LLMTest.TestLLM):
-    RBLN_AUTO_CLASS = RBLNAutoModelForVision2Seq
+    RBLN_AUTO_CLASS = RBLNAutoModelForImageTextToText
     RBLN_CLASS = RBLNQwen3VLMoeForConditionalGeneration
     HF_MODEL_ID = "Qwen/Qwen3-VL-30B-A3B-Instruct"
     PROMPT = "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\n<|vision_start|><|image_pad|><|vision_end|>Describe this image.<|im_end|>\n<|im_start|>assistant\n"
     RBLN_CLASS_KWARGS = {
         "rbln_config": {
-            "visual": {"max_seq_lens": 512},
+            "visual": {"max_seq_len": 512},
             "tensor_parallel_size": 1,
             "kvcache_partition_len": 8192,
             "max_seq_len": 16_384,
@@ -991,11 +992,11 @@ class TestDisallowedLlama_3(DisallowedTestBase.DisallowedTest):
 
 
 class TestDisallowedLlama_4(DisallowedTestBase.DisallowedTest):
-    # Flash attn : too short max_seq_len
+    # Flash attn : max_seq_len smaller than 2 * kvcache_partition_len (fewer than 2 partitions)
     RBLN_CLASS = RBLNLlamaForCausalLM
     HF_MODEL_ID = "afmck/testing-llama-tiny"
-    HF_CONFIG_KWARGS = {"num_hidden_layers": 1, "max_position_embeddings": 2048}
-    RBLN_CLASS_KWARGS = {"rbln_config": {"attn_impl": "flash_attn", "kvcache_partition_len": 1024}}
+    HF_CONFIG_KWARGS = {"num_hidden_layers": 1, "max_position_embeddings": 1024}
+    RBLN_CLASS_KWARGS = {"rbln_config": {"attn_impl": "flash_attn", "kvcache_partition_len": 2048}}
 
 
 if __name__ == "__main__":

@@ -34,7 +34,7 @@ class RBLNColQwen2ForRetrievalConfig(RBLNDecoderOnlyModelConfig):
         config = RBLNColQwen2ForRetrievalConfig(
             vlm = {
                 "visual": {
-                    "max_seq_lens": 6400,
+                    "max_seq_len": 6400,
                     "device": 0,
                 },
                 "max_seq_len": 32_768,

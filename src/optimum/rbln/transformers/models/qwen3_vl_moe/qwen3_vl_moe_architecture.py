@@ -17,6 +17,7 @@ from typing import Optional
 import torch
 import torch.nn as nn
 
+from ....ops.moe import compute_masked_routing_weight_softmax_first
 from ..decoderonly.configuration_lora import RBLNLoRAConfig
 from ..decoderonly.decoderonly_architecture import DecoderOnlyAttention, DecoderOnlyLayer
 from ..qwen3_vl.qwen3_vl_architecture import (
@@ -57,9 +58,12 @@ class Qwen3VLMoeLayer(DecoderOnlyLayer):
 class Qwen3VLMoeSparseMoeBlock(nn.Module):
     def __init__(self, model: nn.Module):
         super().__init__()
-        self.num_experts = getattr(model, "num_experts", None) or model.gate.num_experts
-        self.top_k = getattr(model, "top_k", None) or model.gate.top_k
-        self.gate = model.gate
+        self.num_experts = model.gate.num_experts
+        self.top_k = model.gate.top_k
+        gate_weight = model.gate.weight
+        gate = nn.Linear(gate_weight.shape[1], gate_weight.shape[0], bias=False)
+        gate.weight = nn.Parameter(gate_weight.detach().clone())
+        self.gate = gate
         self.experts = Qwen3VLMoeMLP(model.experts, self.top_k)
 
     def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
@@ -81,31 +85,27 @@ class Qwen3VLMoeMLP(nn.Module):
         self.top_k = top_k
         self.norm_topk_prob = True
 
-        intermediate_dim = (
-            getattr(experts, "intermediate_dim", None)
-            or getattr(experts, "expert_dim", None)
-            or getattr(experts, "intermediate_size", None)
-        )
-
         self.gate_proj = nn.Linear(1, 1, bias=False)
         self.up_proj = nn.Linear(1, 1, bias=False)
         self.down_proj = nn.Linear(1, 1, bias=False)
 
-        gate_up = experts.gate_up_proj
-        self.gate_proj.weight = nn.Parameter(gate_up[:, :intermediate_dim, :])
-        self.up_proj.weight = nn.Parameter(gate_up[:, intermediate_dim:, :])
-        self.down_proj.weight = nn.Parameter(experts.down_proj.data.clone())
+        # Fused Qwen3VLMoeTextExperts: gate_up_proj [E, 2I, H], down_proj [E, H, I].
+        intermediate_dim = experts.intermediate_dim
+        gate_up = experts.gate_up_proj.detach().clone()
+        self.gate_proj.weight = nn.Parameter(gate_up[:, :intermediate_dim, :].contiguous())
+        self.up_proj.weight = nn.Parameter(gate_up[:, intermediate_dim:, :].contiguous())
+        self.down_proj.weight = nn.Parameter(experts.down_proj.detach().clone().contiguous())
 
     def forward(self, x: torch.Tensor, router_logits: torch.Tensor) -> torch.Tensor:
+        masked_routing_weight = compute_masked_routing_weight_softmax_first(
+            router_logits, top_k=self.top_k, renormalize=self.norm_topk_prob
+        )
         return torch.ops.rbln_custom_ops.custom_moe_glu(
             hidden_states=x,
             gate_proj_weight=self.gate_proj.weight,
             up_proj_weight=self.up_proj.weight,
             down_proj_weight=self.down_proj.weight,
-            router_logits=router_logits,
-            scoring_func="softmax",
-            topk=self.top_k,
-            norm_topk_prob=self.norm_topk_prob,
+            masked_routing_weight=masked_routing_weight,
         )
 
 

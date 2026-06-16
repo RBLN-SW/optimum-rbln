@@ -56,14 +56,7 @@ class DecoderOnlyWrapper(nn.Module):
     def __init__(self, model: PreTrainedModel, rbln_config: "RBLNDecoderOnlyModelConfig", use_rotary_emb: bool):
         super().__init__()
         self.quantization = rbln_config.quantization
-        config = model.config
-        if (
-            hasattr(config, "text_config")
-            and not hasattr(config, "num_hidden_layers")
-            and not hasattr(config, "n_layer")
-        ):
-            config = config.text_config
-        self.config = config
+        self.config = model.config.get_text_config()
         self.is_causal_lm = getattr(model, "lm_head", None) is not None
         self.rbln_config = rbln_config
 
@@ -172,7 +165,7 @@ class DecoderOnlyWrapper(nn.Module):
         # [key, value] * n_layer -> ( (key, value) ) * n_layer
         # cache shape : batch, n_heads, 1, max_seq_len, head_dim
         _past_key_values = []
-        for i in range(self.config.num_hidden_layers):
+        for i in range(self.num_hidden_layers):
             key_states = past_key_values[i * 2]
             value_states = past_key_values[i * 2 + 1]
             past_key_value = [key_states, value_states]
@@ -1256,9 +1249,7 @@ class RotaryEmbedding(nn.Module):
         super().__init__()
 
         if hasattr(config, "rope_scaling") and config.rope_scaling is not None:
-            rope_type = config.rope_scaling.get("rope_type", config.rope_scaling.get("type"))
-            if rope_type is None:
-                rope_type = "default"
+            rope_type = config.rope_scaling.get("rope_type") or config.rope_scaling.get("type") or "default"
         else:
             rope_type = "default"
 

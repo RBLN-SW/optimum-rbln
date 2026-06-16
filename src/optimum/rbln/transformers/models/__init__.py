@@ -35,7 +35,6 @@ _import_structure = {
         "RBLNAutoModelForObjectDetection",
         "RBLNAutoModelForSequenceClassification",
         "RBLNAutoModelForSpeechSeq2Seq",
-        "RBLNAutoModelForVision2Seq",
         "RBLNAutoModelForImageTextToText",
         "RBLNAutoModelForTextEncoding",
         "RBLNAutoModelForZeroShotObjectDetection",
@@ -230,6 +229,8 @@ _import_structure = {
         "RBLNGroundingDinoForObjectDetectionConfig",
         "RBLNGroundingDinoEncoder",
         "RBLNGroundingDinoEncoderConfig",
+        "RBLNGroundingDinoTextModel",
+        "RBLNGroundingDinoTextModelConfig",
         "RBLNGroundingDinoDecoder",
         "RBLNGroundingDinoDecoderConfig",
     ],
@@ -252,7 +253,6 @@ if TYPE_CHECKING:
         RBLNAutoModelForSequenceClassification,
         RBLNAutoModelForSpeechSeq2Seq,
         RBLNAutoModelForTextEncoding,
-        RBLNAutoModelForVision2Seq,
         RBLNAutoModelForZeroShotObjectDetection,
     )
     from .bart import (
@@ -327,6 +327,8 @@ if TYPE_CHECKING:
         RBLNGroundingDinoEncoderConfig,
         RBLNGroundingDinoForObjectDetection,
         RBLNGroundingDinoForObjectDetectionConfig,
+        RBLNGroundingDinoTextModel,
+        RBLNGroundingDinoTextModelConfig,
     )
     from .idefics3 import (
         RBLNIdefics3ForConditionalGeneration,

@@ -66,7 +66,7 @@ class RBLNQwen3VLVisionModel(RBLNModel):
 
     def __post_init__(self, **kwargs):
         self.transformer = self.model[0]
-        self.max_seq_lens = torch.tensor(sorted(self.rbln_config.max_seq_lens, reverse=False))
+        self.max_seq_len = torch.tensor(sorted(self.rbln_config.max_seq_len, reverse=False))
         config = self.config
         self.patch_size = config.patch_size
         self.spatial_merge_size = config.spatial_merge_size
@@ -126,7 +126,7 @@ class RBLNQwen3VLVisionModel(RBLNModel):
         head_dim = hidden_size // num_heads
 
         input_infos = []
-        for max_seq_len in rbln_config.max_seq_lens:
+        for max_seq_len in rbln_config.max_seq_len:
             input_info = [
                 ("hidden_states", [max_seq_len, hidden_size], rbln_config.dtype),
                 ("attn_mask", [1, 1, max_seq_len, max_seq_len], rbln_config.dtype),
@@ -295,11 +295,11 @@ class RBLNQwen3VLVisionModel(RBLNModel):
 
             image_seq_len = image_e - image_s
             try:
-                ws_index = torch.searchsorted(self.max_seq_lens, image_seq_len).item()
-                max_seq_len = self.max_seq_lens[ws_index].item()
+                ws_index = torch.searchsorted(self.max_seq_len, image_seq_len).item()
+                max_seq_len = self.max_seq_len[ws_index].item()
             except Exception as e:
                 raise ValueError(
-                    f"Required seq_len({image_seq_len}) is larger than available max_seq_lens({self.max_seq_lens.tolist()})."
+                    f"Required seq_len({image_seq_len}) is larger than available max_seq_len({self.max_seq_len.tolist()})."
                 ) from e
 
             image_hidden, (image_cos, image_sin), attn_mask, valid_len = self._pad_hidden_states(
@@ -584,7 +584,8 @@ class RBLNQwen3VLModel(RBLNDecoderOnlyModel):
                     video_row_idx += 1
                 video_grid_slice = video_grid_thw[start_row:video_row_idx]
 
-            # (0=text, 1=image, 2=video). Derive from input_id if not provided by caller.
+            # mm_token_type_ids (0=text, 1=image, 2=video). Derive it from
+            # input_id if the caller (e.g. the processor) did not provide it.
             if mm_token_type_ids is not None:
                 batch_mm_token_type_ids = mm_token_type_ids[b_idx : b_idx + 1][:, attention_mask[b_idx].bool()]
             else:
@@ -789,7 +790,7 @@ class RBLNQwen3VLForConditionalGeneration(RBLNQwen3VLModel, RBLNDecoderOnlyModel
             export=True,
             rbln_config={
                 "visual": {
-                    "max_seq_lens": 6400,
+                    "max_seq_len": 6400,
                     "device": 0,
                 },
                 "tensor_parallel_size": 8,

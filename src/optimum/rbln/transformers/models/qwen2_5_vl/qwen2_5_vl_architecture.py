@@ -175,10 +175,10 @@ class Qwen2_5_VLVisionWindowAttention(nn.Module):
 
 class Qwen2_5_VL_LanguageModelWrapper(DecoderOnlyWrapper):
     def get_decoder_layers(self, model: PreTrainedModel):
-        return model.model.language_model.layers if hasattr(model, "model") else model.language_model.layers
+        return model.get_decoder().layers
 
     def get_model_layer(self, model: PreTrainedModel):
-        return model.model.language_model if hasattr(model, "model") else model.language_model
+        return model.get_decoder()
 
     def prepare_forward_args(self, *args):
         args = list(args)
@@ -202,7 +202,7 @@ class Qwen2_5_VL_LanguageModelWrapper(DecoderOnlyWrapper):
         # [key, value] * n_layer -> ( (key, value) ) * n_layer
         # cache shape : batch, n_heads, 1, max_seq_len, head_dim
         _past_key_values = []
-        for i in range(self.config.num_hidden_layers):
+        for i in range(self.num_hidden_layers):
             key_states = past_key_values[i * 2]
             value_states = past_key_values[i * 2 + 1]
             past_key_value = [key_states, value_states]

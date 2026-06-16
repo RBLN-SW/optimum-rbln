@@ -66,7 +66,7 @@ class RBLNQwen2VisionTransformerPretrainedModel(RBLNModel):
 
     def __post_init__(self, **kwargs):
         self.transformer = self.model[0]
-        self.max_seq_lens = torch.tensor(sorted(self.rbln_config.max_seq_lens, reverse=False))
+        self.max_seq_len = torch.tensor(sorted(self.rbln_config.max_seq_len, reverse=False))
         config = self.config
 
         self.patch_size = config.spatial_patch_size
@@ -124,7 +124,7 @@ class RBLNQwen2VisionTransformerPretrainedModel(RBLNModel):
         head_dim = hidden_size // num_heads
 
         input_infos = []
-        for max_seq_len in rbln_config.max_seq_lens:
+        for max_seq_len in rbln_config.max_seq_len:
             input_info = [
                 ("hidden_states", [max_seq_len, hidden_size], rbln_config.dtype),
                 ("full_attn_masks", [1, 1, max_seq_len, max_seq_len], rbln_config.dtype),
@@ -205,11 +205,11 @@ class RBLNQwen2VisionTransformerPretrainedModel(RBLNModel):
             # Select the nearest higher max_seq_len from the available compiled models.
             cu_seq_len = image_e - image_s
             try:
-                cu_index = torch.searchsorted(self.max_seq_lens, cu_seq_len).item()
-                max_seq_len = self.max_seq_lens[cu_index]
+                cu_index = torch.searchsorted(self.max_seq_len, cu_seq_len).item()
+                max_seq_len = self.max_seq_len[cu_index]
             except Exception as e:
                 raise ValueError(
-                    f"Required seq_len({cu_seq_len}) is larger than available max_seq_lens({self.max_seq_lens.tolist()})."
+                    f"Required seq_len({cu_seq_len}) is larger than available max_seq_len({self.max_seq_len.tolist()})."
                 ) from e
 
             # Padding for Full Attention Layers
@@ -292,17 +292,13 @@ class RBLNQwen2VLModel(RBLNDecoderOnlyModel):
         model_config: PretrainedConfig,
     ):
         input_info = super().get_input_info(batch_size, query_length, rbln_config, model_config)
-        cfg = (
-            model_config.text_config
-            if hasattr(model_config, "text_config") and not hasattr(model_config, "hidden_size")
-            else model_config
-        )
+        text_config = model_config.get_text_config()
         pos_idx = 3
         input_info.insert(
             pos_idx,
             (
                 "position_emb",
-                [2, batch_size, 1, query_length, cfg.hidden_size // cfg.num_attention_heads],
+                [2, batch_size, 1, query_length, text_config.hidden_size // text_config.num_attention_heads],
                 rbln_config.dtype,
             ),
         )
@@ -386,7 +382,8 @@ class RBLNQwen2VLModel(RBLNDecoderOnlyModel):
             image_nums = (vision_tokens == image_token_id).sum()
             video_nums = (vision_tokens == video_token_id).sum()
 
-            # (0=text, 1=image, 2=video). Derive from input_id if not provided by caller.
+            # mm_token_type_ids (0=text, 1=image, 2=video). Derive it from
+            # input_id if the caller (e.g. the processor) did not provide it.
             if mm_token_type_ids is not None:
                 batch_mm_token_type_ids = mm_token_type_ids[b_idx : b_idx + 1][:, attention_mask[b_idx].bool()]
             else:
@@ -510,7 +507,7 @@ class RBLNQwen2VLForConditionalGeneration(RBLNQwen2VLModel, RBLNDecoderOnlyModel
             export=True,
             rbln_config={
                 "visual": {
-                    "max_seq_lens": 6400,
+                    "max_seq_len": 6400,
                     "device": 0,
                 },
                 "tensor_parallel_size": 8,
