@@ -223,7 +223,7 @@ class TestQwen2MoeForCausalLM(LLMTest.TestLLM):
     RBLN_CLASS = RBLNQwen2MoeForCausalLM
     # HF_MODEL_ID ="peft-internal-testing/tiny-random-qwen-1.5-MoE"
     HF_MODEL_ID = "Qwen/Qwen1.5-MoE-A2.7B"
-    HF_CONFIG_KWARGS = {"num_hidden_layers": 1, "max_position_embeddings": 1024}
+    HF_CONFIG_KWARGS = {"num_hidden_layers": 1, "layer_types": ["full_attention"], "max_position_embeddings": 1024}
     TEST_LEVEL = TestLevel.FULL
 
 
