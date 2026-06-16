@@ -24,9 +24,30 @@ def is_compiler_supports_buffer_resize() -> bool:
     return hasattr(rebel.RBLNCompiledModel, "exp_multiply_buffer_size")
 
 
+def is_compiler_supports_chiplet_alloc() -> bool:
+    return hasattr(rebel.RBLNCompiledModel, "get_alloc_per_chiplet_by_key")
+
+
+def _resolve_npu(npu: Optional[str] = None) -> str:
+    if npu is None:
+        if not rebel.npu_is_available(0):
+            raise RuntimeError("No NPU is available to get available DRAM size.")
+        npu = rebel.get_npu_name(0)
+    return npu
+
+
+# Total device DRAM and the system DRAM reserved per chiplet, by NPU family.
+def _dram_spec(npu: str) -> tuple[int, int]:
+    if npu.startswith("RBLN-CR"):
+        return 144 * 2**30, 1 * 2**30
+    elif npu.startswith("RBLN-CA"):
+        return 16 * 2**30, 288 * 2**20
+    raise ValueError(f"Unknown npu name: {npu}")
+
+
 def get_available_dram(npu: Optional[str] = None) -> int:
     """
-    Get the available DRAM size of the specified NPU.
+    Get the available DRAM size of the specified NPU at the node (device) level.
 
     Args:
         npu : Optional[str], default=None
@@ -37,23 +58,33 @@ def get_available_dram(npu: Optional[str] = None) -> int:
         int
             The available DRAM size in bytes.
     """
-    if npu is None:
-        if not rebel.npu_is_available(0):
-            raise RuntimeError("No NPU is available to get available DRAM size.")
-
-        npu = rebel.get_npu_name(0)
-
+    npu = _resolve_npu(npu)
+    dram_nbytes, sys_per_chiplet = _dram_spec(npu)
+    # Node total = full DRAM minus the per-chiplet system reservation on every chiplet.
     if npu.startswith("RBLN-CR"):
-        # TODO(jongho): Assuming 4 chiplets.
-        DRAM_NBYTES = 144 * 2**30
-        SYS_DRAM_NBYTES = 4 * 2**30
-    elif npu.startswith("RBLN-CA"):
-        DRAM_NBYTES = 16 * 2**30
-        SYS_DRAM_NBYTES = 288 * 2**20
-    else:
-        raise ValueError(f"Unknown npu name: {npu}")
+        return dram_nbytes - sys_per_chiplet * 4
+    return dram_nbytes - sys_per_chiplet
 
-    return DRAM_NBYTES - SYS_DRAM_NBYTES
+
+def get_available_dram_per_chiplet(num_chiplets: int, npu: Optional[str] = None) -> int:
+    """
+    Get the available DRAM per chiplet. Device DRAM is physically partitioned across
+    chiplets, so an allocation pinned to a chiplet must fit within this amount, not the
+    node total.
+
+    Args:
+        num_chiplets : int
+            Number of chiplets the device DRAM is split across.
+        npu : Optional[str], default=None
+            The NPU to get the available DRAM size. Resolved from the local device if None.
+
+    Returns:
+        int
+            The available DRAM per chiplet in bytes.
+    """
+    npu = _resolve_npu(npu)
+    dram_nbytes, sys_per_chiplet = _dram_spec(npu)
+    return dram_nbytes // num_chiplets - sys_per_chiplet
 
 
 def normalize_npu(npu: str) -> str:
