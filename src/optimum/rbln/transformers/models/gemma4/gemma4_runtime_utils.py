@@ -135,7 +135,7 @@ class RBLNGemma4RuntimeModel(RBLNRuntimeModel):
 
         Returns:
             plan: list of per-chunk dicts (``step``, ``chunk_size``, ``num_processed``,
-                ``is_image``, ``padded_before``).
+                ``is_image_prefill``, ``padded_before``).
             total_padded: final accumulated ``padded_cache_lengths``.
             alloc_len: highest cache slot (exclusive) touched, used to size block allocation.
         """
@@ -150,13 +150,21 @@ class RBLNGemma4RuntimeModel(RBLNRuntimeModel):
         padded = 0
         alloc_len = query_length
         while step < query_length:
-            is_image = bool(use_tt and int(token_type_ids[0, step].item()) == 1)
-            if is_image:
-                run_len = _run_length_from(token_type_ids, step, value=1, cap=max_image_bucket + 1)
+            # A multimodal run routes to the bidirectional `image_prefill` graph. Gemma4 marks
+            # image soft tokens as token_type 1 and video soft tokens as 2; both vision modalities
+            # use the same soft-token buckets, so any non-zero, non-text type is dispatched to
+            # image_prefill. Text (0) goes to the causal `prefill` graph.
+            start_type = int(token_type_ids[0, step].item()) if use_tt else 0
+            is_image_prefill = use_tt and start_type > 0
+            if is_image_prefill:
+                run_len = _run_length_from(token_type_ids, step, value=start_type, cap=max_image_bucket + 1)
                 if run_len > max_image_bucket:
+                    modality = "video" if start_type == 2 else "image"
                     raise ValueError(
-                        f"Image run starting at position {step} is longer than the largest image-prefill "
-                        f"bucket ({max_image_bucket}); no bucket can hold it. Add a larger value to "
+                        f"{modality.capitalize()} run (token_type={start_type}) starting at position {step} "
+                        f"is longer than the largest image-prefill bucket ({max_image_bucket}); no bucket can "
+                        f"hold it. For video this means consecutive frames are not separated by text (each "
+                        f"frame run must fit one bucket); otherwise add a larger value to "
                         f"`image_prefill_chunk_sizes`."
                     )
                 chunk_size = min(b for b in image_buckets if b >= run_len)
@@ -181,7 +189,7 @@ class RBLNGemma4RuntimeModel(RBLNRuntimeModel):
                     "step": step,
                     "chunk_size": chunk_size,
                     "num_processed": num_processed,
-                    "is_image": is_image,
+                    "is_image_prefill": is_image_prefill,
                     "padded_before": padded,
                 }
             )
@@ -252,7 +260,7 @@ class RBLNGemma4RuntimeModel(RBLNRuntimeModel):
         for chunk in plan:
             step = chunk["step"]
             chunk_size_used = chunk["chunk_size"]
-            is_image_prefill = chunk["is_image"]
+            is_image_prefill = chunk["is_image_prefill"]
             num_processed_tokens = chunk["num_processed"]
             chunk_padded_cache_lengths = chunk["padded_before"]
 

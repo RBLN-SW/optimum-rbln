@@ -604,7 +604,17 @@ class RBLNGemma4ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMix
     This class compiles the `embed_vision` multimodal projector (vision soft tokens ->
     language-model embedding space) as its own graph. Vision encoding and language modeling
     are compiled as submodules: `vision_tower` ([`RBLNGemma4VisionModel`], batch_size=1,
-    looped over images at runtime) and `language_model` ([`RBLNGemma4ForCausalLM`]).
+    looped over images/frames at runtime) and `language_model` ([`RBLNGemma4ForCausalLM`]).
+
+    Both image and video inputs are supported. A video is `(num_videos, num_frames, ...)`;
+    `get_video_features` flattens the leading dims and reuses the per-image vision path, so each
+    frame is encoded independently by the looped batch-1 vision tower. Image (`token_type` 1) and
+    video (`token_type` 2) soft tokens are both dispatched to the bidirectional `image_prefill`
+    graph (one chunk per contiguous same-token_type run), giving per-frame bidirectional
+    attention with cross-frame causal attention. This assumes the HF token layout separates
+    consecutive frames with text (timestamps + BOI/EOI), so each frame is its own run that fits
+    one soft-token bucket; adjacent frames with no separating text would merge into a single
+    over-long run. Audio inputs are not supported.
     """
 
     auto_model_class = AutoModelForImageTextToText
@@ -617,13 +627,14 @@ class RBLNGemma4ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMix
 
     @staticmethod
     def _reject_unsupported_modalities(
-        pixel_values_videos=None,
         input_features=None,
         input_features_mask=None,
     ):
-        """Reject video/audio inputs that exist on the HF API but are not wired here."""
-        if pixel_values_videos is not None:
-            raise NotImplementedError("pixel_values_videos is not supported by RBLNGemma4ForConditionalGeneration.")
+        """Reject audio inputs that exist on the HF API but are not wired here.
+
+        Image and video are both supported: each frame/image is encoded by the looped
+        batch-1 vision tower and dispatched to the bidirectional `image_prefill` graph.
+        """
         if input_features is not None or input_features_mask is not None:
             raise NotImplementedError(
                 "Audio inputs (input_features / input_features_mask) are not supported by "
@@ -723,11 +734,12 @@ class RBLNGemma4ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMix
         token_type_ids=None,
         mm_token_type_ids=None,
         pixel_values_videos=None,
+        video_position_ids=None,
         input_features=None,
         input_features_mask=None,
         **kwargs,
     ):
-        self._reject_unsupported_modalities(pixel_values_videos, input_features, input_features_mask)
+        self._reject_unsupported_modalities(input_features, input_features_mask)
         is_prefill_phase = generate_idx is None
         model_inputs = self.language_model.prepare_inputs_for_generation(
             input_ids=input_ids,
@@ -742,6 +754,8 @@ class RBLNGemma4ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMix
                 {
                     "pixel_values": pixel_values,
                     "image_position_ids": image_position_ids,
+                    "pixel_values_videos": pixel_values_videos,
+                    "video_position_ids": video_position_ids,
                     "token_type_ids": token_type_ids,
                     "mm_token_type_ids": mm_token_type_ids,
                 }
@@ -811,12 +825,36 @@ class RBLNGemma4ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMix
         pooler_output = pooler_output[vision_outputs.pooler_mask]
         return pooler_output
 
+    def get_video_features(
+        self,
+        pixel_values_videos: torch.Tensor,
+        video_position_ids: torch.Tensor,
+    ) -> torch.Tensor:
+        """Encode video frames with the (batch-1, per-frame looped) vision tower.
+
+        Mirrors HF `Gemma4ForConditionalGeneration.get_video_features`: a video is
+        `(num_videos, num_frames, max_patches, ...)`; flattening the leading two dims treats
+        every frame as an independent image, so the same `get_image_features` path (looped
+        vision tower + `embed_vision`) produces `max_soft_tokens` soft tokens per frame. The
+        vision encoder is stateless across frames, so no temporal context is lost here — the
+        language model supplies it via per-frame bidirectional + cross-frame causal attention.
+
+        Assumes every flattened frame yields exactly `max_soft_tokens` valid soft tokens (no
+        frame-level padding), matching the HF video processor and the per-image pooler-mask
+        contract; padded frames, if any, would scatter spurious soft tokens.
+        """
+        pixel_values = pixel_values_videos.flatten(0, 1)
+        pixel_position_ids = video_position_ids.flatten(0, 1)
+        return self.get_image_features(pixel_values, pixel_position_ids)
+
     def _preprocess_prefill(
         self,
         input_ids: Optional[torch.LongTensor] = None,
         inputs_embeds: Optional[torch.FloatTensor] = None,
         pixel_values: Optional[torch.FloatTensor] = None,
         image_position_ids: Optional[torch.LongTensor] = None,
+        pixel_values_videos: Optional[torch.FloatTensor] = None,
+        video_position_ids: Optional[torch.LongTensor] = None,
         **kwargs,
     ):
         if (input_ids is None) ^ (inputs_embeds is not None):
@@ -840,16 +878,26 @@ class RBLNGemma4ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMix
             inputs_embeds = self.get_input_embeddings()(llm_input_ids)
         inputs_embeds = inputs_embeds.to(self.rbln_config.language_model.dtype)
 
-        if pixel_values is not None and image_position_ids is not None:
+        if (pixel_values is not None and image_position_ids is not None) or (
+            pixel_values_videos is not None and video_position_ids is not None
+        ):
             if input_ids is None:
                 raise ValueError(
-                    "multimodal prefill requires `input_ids` for image-token mask construction; "
+                    "multimodal prefill requires `input_ids` for image/video-token mask construction; "
                     "received inputs_embeds-only"
                 )
+
+        if pixel_values is not None and image_position_ids is not None:
             image_features = self.get_image_features(pixel_values, image_position_ids)
             image_features = image_features.to(inputs_embeds.device, inputs_embeds.dtype)
             image_mask = (input_ids == image_token_id).unsqueeze(-1).expand_as(inputs_embeds)
             inputs_embeds = inputs_embeds.masked_scatter(image_mask, image_features)
+
+        if pixel_values_videos is not None and video_position_ids is not None:
+            video_features = self.get_video_features(pixel_values_videos, video_position_ids)
+            video_features = video_features.to(inputs_embeds.device, inputs_embeds.dtype)
+            video_mask = (input_ids == video_token_id).unsqueeze(-1).expand_as(inputs_embeds)
+            inputs_embeds = inputs_embeds.masked_scatter(video_mask, video_features)
 
         return inputs_embeds
 
@@ -868,11 +916,12 @@ class RBLNGemma4ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMix
         mm_token_type_ids: Optional[torch.Tensor] = None,
         output_hidden_states: Optional[bool] = None,
         pixel_values_videos: Optional[torch.Tensor] = None,
+        video_position_ids: Optional[torch.Tensor] = None,
         input_features: Optional[torch.Tensor] = None,
         input_features_mask: Optional[torch.Tensor] = None,
         **lm_kwargs: Dict[str, Any],
     ) -> Union[Tuple, RBLNDecoderOnlyOutput]:
-        self._reject_unsupported_modalities(pixel_values_videos, input_features, input_features_mask)
+        self._reject_unsupported_modalities(input_features, input_features_mask)
 
         output_hidden_states = (
             output_hidden_states
@@ -893,6 +942,8 @@ class RBLNGemma4ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMix
                 inputs_embeds=inputs_embeds,
                 pixel_values=pixel_values,
                 image_position_ids=image_position_ids,
+                pixel_values_videos=pixel_values_videos,
+                video_position_ids=video_position_ids,
             )
             batch_size = inputs_embeds.shape[0]
 
