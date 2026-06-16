@@ -78,4 +78,5 @@ class MixtralBlockSparseTop2MLP(nn.Module):
             up_proj_weight=self.w3_weight,
             down_proj_weight=self.w2_weight,
             masked_routing_weight=masked_routing_weight,
+            hidden_act="silu",
         )
