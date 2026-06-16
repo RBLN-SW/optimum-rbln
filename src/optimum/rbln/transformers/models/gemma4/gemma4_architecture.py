@@ -46,35 +46,20 @@ class Gemma4ForCausalLMWrapper(DecoderOnlyWrapper):
     """
 
     def get_rotary_emb(self, max_seq_len):
-        config = self.config
-        rope_params_full = (
-            config.rope_parameters.get("full_attention", {}) if isinstance(config.rope_parameters, dict) else {}
-        )
-        rope_params_sliding = (
-            config.rope_parameters.get("sliding_attention", {}) if isinstance(config.rope_parameters, dict) else {}
-        )
-
-        config_full = copy.deepcopy(config)
-        config_full.rope_scaling = {
-            "rope_type": rope_params_full.get("rope_type", "default"),
-            "rope_theta": rope_params_full.get("rope_theta", getattr(config, "rope_theta", 10000.0)),
-            "partial_rotary_factor": rope_params_full.get("partial_rotary_factor", 1.0),
-            "factor": rope_params_full.get("factor", 1.0),
+        # full_attention layers use `global_head_dim`, sliding_attention layers use `head_dim`.
+        head_dims = {
+            "full_attention": getattr(self.config, "global_head_dim", None) or self.config.head_dim,
+            "sliding_attention": self.config.head_dim,
         }
-        config_full.rope_theta = rope_params_full.get("rope_theta", getattr(config, "rope_theta", 10000.0))
-        config_full.head_dim = getattr(config, "global_head_dim", None) or config.head_dim
-        rotary_emb_global = RotaryEmbedding(config=config_full, max_seq_len_cached=max_seq_len)
-
-        config_sliding = copy.deepcopy(config)
-        config_sliding.rope_scaling = {
-            "rope_type": rope_params_sliding.get("rope_type", "default"),
-            "rope_theta": rope_params_sliding.get("rope_theta", getattr(config, "rope_theta", 10000.0)),
-        }
-        config_sliding.rope_theta = rope_params_sliding.get("rope_theta", getattr(config, "rope_theta", 10000.0))
-        config_sliding.head_dim = config.head_dim
-        rotary_emb_local = RotaryEmbedding(config=config_sliding, max_seq_len_cached=max_seq_len)
-
-        return (rotary_emb_global, rotary_emb_local)
+        rotary_embs = []
+        for layer_type in ("full_attention", "sliding_attention"):
+            params = dict(self.config.rope_parameters[layer_type])
+            config = copy.deepcopy(self.config)
+            config.rope_scaling = params
+            config.rope_parameters = params
+            config.head_dim = head_dims[layer_type]
+            rotary_embs.append(RotaryEmbedding(config=config, max_seq_len_cached=max_seq_len))
+        return tuple(rotary_embs)
 
     def get_rbln_attn_class(self):
         return Gemma4TextAttention
