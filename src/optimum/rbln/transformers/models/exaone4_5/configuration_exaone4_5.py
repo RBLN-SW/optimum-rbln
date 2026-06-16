@@ -15,7 +15,6 @@
 from typing import Any, List, Optional, Union
 
 from ....configuration_utils import RBLNModelConfig
-from ....utils.deprecation import deprecate_kwarg
 from ..decoderonly.configuration_decoderonly import RBLNDecoderOnlyModelConfig, RBLNDecoderOnlyModelForCausalLMConfig
 
 
@@ -75,7 +74,6 @@ class RBLNExaone4_5_VisionModelConfig(RBLNModelConfig):
     mechanisms for processing images and videos.
     """
 
-    @deprecate_kwarg(old_name="max_seq_lens", new_name="max_seq_len", version="0.11.0")
     def __init__(self, max_seq_len: Union[int, List[int]] = None, **kwargs: Any):
         """
         Args:
