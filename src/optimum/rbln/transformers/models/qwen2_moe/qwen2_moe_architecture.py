@@ -17,6 +17,7 @@ from typing import Optional
 import torch
 from torch import nn
 
+from ....ops.moe import compute_masked_routing_weight_softmax_first
 from ..decoderonly.configuration_decoderonly import RBLNLoRAConfig
 from ..decoderonly.decoderonly_architecture import DecoderOnlyAttention, DecoderOnlyLayer, DecoderOnlyWrapper
 
@@ -87,13 +88,13 @@ class Qwen2MoeMLP(nn.Module):
         self.down_proj.weight = nn.Parameter(experts.down_proj.detach().clone().contiguous())
 
     def forward(self, x, router_logits):
+        masked_routing_weight = compute_masked_routing_weight_softmax_first(
+            router_logits, top_k=self.top_k, renormalize=self.norm_topk_prob
+        )
         return torch.ops.rbln_custom_ops.custom_moe_glu(
             hidden_states=x,
             gate_proj_weight=self.gate_proj.weight,
             up_proj_weight=self.up_proj.weight,
             down_proj_weight=self.down_proj.weight,
-            router_logits=router_logits,
-            scoring_func="softmax",
-            topk=self.top_k,
-            norm_topk_prob=self.norm_topk_prob,
+            masked_routing_weight=masked_routing_weight,
         )

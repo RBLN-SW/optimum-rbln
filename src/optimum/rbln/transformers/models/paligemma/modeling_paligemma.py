@@ -138,12 +138,28 @@ class RBLNPaliGemmaForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGeneration
 
         new_language_model.lm_head = model.lm_head
         new_language_model.model = model.model.language_model
+
+        # TODO: make this to use `lm_head.weight` in transformers v5
+        # Now, skipping `lm_head.weight` is handled by the `is_meta` check, so this is a no-op.
+        if new_language_model.lm_head.weight.is_meta:
+            embed_weight = new_language_model.get_input_embeddings().weight
+            new_language_model.lm_head.weight = torch.nn.Parameter(
+                torch.zeros(
+                    new_language_model.lm_head.weight.shape,
+                    dtype=embed_weight.dtype,
+                    device=embed_weight.device,
+                )
+            )
+
         model.model.language_model = new_language_model
         model.lm_head = None
         del model.lm_head
         return model
 
     def __post_init__(self, **kwargs):
+        if isinstance(getattr(self.config, "text_config", None), dict):
+            self.config = PaliGemmaConfig.from_dict(self.config.to_dict())
+
         self.vision_tower = LoopVisionTower(self.rbln_submodules[0])
         self.language_model = self.rbln_submodules[1]
 
@@ -314,6 +330,9 @@ class RBLNPaliGemmaForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGeneration
             logits = []
             inputs = inputs_embeds if inputs_embeds is not None else input_ids
             batch_size = inputs.shape[0]
+
+            if generate_idx is None:
+                generate_idx = torch.full((batch_size, 1), inputs.shape[1], dtype=torch.int32)
 
             for b_idx in range(batch_size):
                 cache_position = torch.arange(0, generate_idx[b_idx].item(), dtype=torch.int32).unsqueeze(0)

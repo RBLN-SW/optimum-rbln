@@ -31,10 +31,10 @@ class Gemma3ForCausalLMWrapper(DecoderOnlyWrapper):
     def get_rotary_emb(self, max_seq_len):
         rotary_embs = []
         for layer_type in ("full_attention", "sliding_attention"):
-            rope_theta = self.config.rope_parameters[layer_type]["rope_theta"]
+            params = dict(self.config.rope_parameters[layer_type])
             config = copy.deepcopy(self.config)
-            config.rope_scaling = {"rope_type": "default", "rope_theta": rope_theta}
-            config.rope_parameters = {"rope_type": "default", "rope_theta": rope_theta}
+            config.rope_scaling = params
+            config.rope_parameters = params
             rotary_embs.append(RotaryEmbedding(config=config, max_seq_len_cached=max_seq_len))
         return tuple(rotary_embs)
 
