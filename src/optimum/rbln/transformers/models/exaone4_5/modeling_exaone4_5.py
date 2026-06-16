@@ -378,24 +378,12 @@ class RBLNExaone4_5_Model(RBLNDecoderOnlyModel):
 
         if pixel_values is not None:
             image_embeds = self.visual(pixel_values, grid_thw=image_grid_thw)
-            n_image_tokens = (input_ids == self.config.image_token_id).sum().item()
-            n_image_features = image_embeds.shape[0]
-            if n_image_tokens != n_image_features:
-                raise ValueError(
-                    f"Image features and image tokens do not match: tokens: {n_image_tokens}, features {n_image_features}"
-                )
             mask = (input_ids == self.config.image_token_id).unsqueeze(-1).expand_as(inputs_embeds)
             image_embeds = image_embeds.to(inputs_embeds.device, inputs_embeds.dtype)
             inputs_embeds = inputs_embeds.masked_scatter(mask, image_embeds)
 
         if pixel_values_videos is not None:
             video_embeds = self.visual(pixel_values_videos, grid_thw=video_grid_thw)
-            n_video_tokens = (input_ids == self.config.video_token_id).sum().item()
-            n_video_features = video_embeds.shape[0]
-            if n_video_tokens != n_video_features:
-                raise ValueError(
-                    f"Video features and video tokens do not match: tokens: {n_video_tokens}, features {n_video_features}"
-                )
             mask = (input_ids == self.config.video_token_id).unsqueeze(-1).expand_as(inputs_embeds)
             video_embeds = video_embeds.to(inputs_embeds.device, inputs_embeds.dtype)
             inputs_embeds = inputs_embeds.masked_scatter(mask, video_embeds)
