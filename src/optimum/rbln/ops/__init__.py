@@ -12,9 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .attn import *
-from .flash_attn import *
-from .kv_cache_update import *
-from .linear import linear
-from .moe import *
-from .sliding_window_attn import *
+# All ``rbln_custom_ops::`` operators are registered by rebel-compiler as the single
+# source of truth. Importing rebel triggers that registration as an import side effect,
+# so optimum-rbln no longer defines its own duplicate ``torch.library.custom_op``s.
+import rebel  # noqa: F401
+
+from .moe import compute_masked_routing_weight_softmax_first, compute_masked_routing_weight_topk_first
