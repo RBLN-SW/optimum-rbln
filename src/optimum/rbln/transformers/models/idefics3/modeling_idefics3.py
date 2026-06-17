@@ -368,6 +368,49 @@ class RBLNIdefics3ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationM
         new_inputs_embeds[special_image_token_mask] = reshaped_image_hidden_states
         return new_inputs_embeds
 
+    def get_image_features(
+        self,
+        pixel_values: torch.FloatTensor,
+        pixel_attention_mask: Optional[torch.BoolTensor] = None,
+        **kwargs,
+    ) -> torch.Tensor:
+        batch_size, num_images, num_channels, height, width = pixel_values.shape
+        pixel_values = pixel_values.to(dtype=self.dtype)  # fp16 compatibility
+        pixel_values = pixel_values.view(batch_size * num_images, *pixel_values.shape[2:])
+
+        nb_values_per_image = pixel_values.shape[1:].numel()
+        real_images_inds = (pixel_values == 0.0).sum(dim=(-1, -2, -3)) != nb_values_per_image
+        pixel_values = pixel_values[real_images_inds].contiguous()
+
+        if pixel_attention_mask is None:
+            pixel_attention_mask = torch.ones(
+                size=(pixel_values.size(0), pixel_values.size(2), pixel_values.size(3)),
+                dtype=torch.bool,
+            )
+        else:
+            pixel_attention_mask = pixel_attention_mask.view(batch_size * num_images, *pixel_attention_mask.shape[2:])
+            pixel_attention_mask = pixel_attention_mask[real_images_inds].contiguous()
+
+        patch_size = self.config.vision_config.patch_size
+        patches_subgrid = pixel_attention_mask.unfold(dimension=1, size=patch_size, step=patch_size)
+        patches_subgrid = patches_subgrid.unfold(dimension=2, size=patch_size, step=patch_size)
+        patch_attention_mask = (patches_subgrid.sum(dim=(-1, -2)) > 0).bool()
+
+        image_hidden_states = self.vision_model(
+            pixel_values=pixel_values, patch_attention_mask=patch_attention_mask, return_dict=True
+        ).last_hidden_state
+
+        connector_output_size = [
+            image_hidden_states.shape[0],
+            image_hidden_states.shape[1] // self.config.scale_factor**2,
+            self.config.text_config.hidden_size,
+        ]
+        image_features = torch.empty(size=connector_output_size, dtype=torch.float32, device="cpu")
+        for i in range(image_hidden_states.shape[0]):
+            self.connector(image_hidden_states[i : i + 1,], out=image_features[i : i + 1,])
+
+        return image_features
+
     def _preprocess_prefill(
         self,
         input_ids: torch.LongTensor = None,
@@ -394,44 +437,7 @@ class RBLNIdefics3ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationM
             raise ValueError("You cannot specify both pixel_values and image_hidden_states at the same time")
 
         elif pixel_values is not None:
-            batch_size, num_images, num_channels, height, width = pixel_values.shape
-            pixel_values = pixel_values.to(dtype=self.dtype)
-            pixel_values = pixel_values.view(batch_size * num_images, *pixel_values.shape[2:])
-
-            nb_values_per_image = pixel_values.shape[1:].numel()
-            real_images_inds = (pixel_values == 0.0).sum(dim=(-1, -2, -3)) != nb_values_per_image
-            pixel_values = pixel_values[real_images_inds].contiguous()
-
-            if pixel_attention_mask is None:
-                pixel_attention_mask = torch.ones(
-                    size=(pixel_values.size(0), pixel_values.size(2), pixel_values.size(3)),
-                    dtype=torch.bool,
-                    device=pixel_values.device,
-                )
-            else:
-                pixel_attention_mask = pixel_attention_mask.view(
-                    batch_size * num_images, *pixel_attention_mask.shape[2:]
-                )
-                pixel_attention_mask = pixel_attention_mask[real_images_inds].contiguous()
-
-            patch_size = self.config.vision_config.patch_size
-            patches_subgrid = pixel_attention_mask.unfold(dimension=1, size=patch_size, step=patch_size)
-            patches_subgrid = patches_subgrid.unfold(dimension=2, size=patch_size, step=patch_size)
-            patch_attention_mask = (patches_subgrid.sum(dim=(-1, -2)) > 0).bool()
-
-            image_hidden_states = self.vision_model(
-                pixel_values=pixel_values, patch_attention_mask=patch_attention_mask, return_dict=True
-            ).last_hidden_state
-
-            connector_output_size = [
-                image_hidden_states.shape[0],
-                image_hidden_states.shape[1] // self.config.scale_factor**2,
-                self.config.text_config.hidden_size,
-            ]
-            connector_outputs = torch.empty(size=connector_output_size, dtype=torch.float32, device="cpu")
-            for i in range(image_hidden_states.shape[0]):
-                self.connector(image_hidden_states[i : i + 1,], out=connector_outputs[i : i + 1,])
-            image_hidden_states = connector_outputs
+            image_hidden_states = self.get_image_features(pixel_values, pixel_attention_mask)
 
         elif image_hidden_states is not None:
             image_hidden_states = image_hidden_states.to(dtype=self.dtype, device=input_ids.device)
