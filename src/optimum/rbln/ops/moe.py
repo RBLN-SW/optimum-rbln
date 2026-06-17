@@ -54,6 +54,7 @@ def custom_moe_glu(
     up_proj_weight: Tensor,
     down_proj_weight: Tensor,
     masked_routing_weight: Tensor,
+    hidden_act: str,
     expert_map: Optional[Tensor] = None,
     gate_proj_bias: Optional[Tensor] = None,
     up_proj_bias: Optional[Tensor] = None,
@@ -72,6 +73,7 @@ def custom_moe_glu(
     - masked_routing_weight: [num_experts, batch*seq_len]
         Dense routing matrix in [E, T] layout (token dim may be padded to 64-align).
         Non-selected (expert, token) positions must be zero.
+    - hidden_act: gate activation name ("silu"/"swish" or "gelu*")
     - expert_map: [num_experts_global] (vllm-only; pass None outside vllm)
     - gate_proj_bias: [num_experts, intermediate_size]
     - up_proj_bias: [num_experts, intermediate_size]
@@ -91,6 +93,7 @@ def custom_moe_glu_fake(
     up_proj_weight: Tensor,
     down_proj_weight: Tensor,
     masked_routing_weight: Tensor,
+    hidden_act: str,
     expert_map: Optional[Tensor] = None,
     gate_proj_bias: Optional[Tensor] = None,
     up_proj_bias: Optional[Tensor] = None,
