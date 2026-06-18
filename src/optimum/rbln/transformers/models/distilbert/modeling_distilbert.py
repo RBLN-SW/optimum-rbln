@@ -48,7 +48,6 @@ class RBLNDistilBertForQuestionAnswering(RBLNModelForQuestionAnswering):
             The model outputs. If return_dict=False is passed, returns a tuple of tensors. Otherwise, returns a QuestionAnsweringModelOutput object.
         """
 
-        # DistilBERT has no token-type (segment) embeddings; drop token_type_ids if a tokenizer
-        # provides it (AutoTokenizer resolves to BertTokenizer for DistilBERT in transformers v5).
+        # DistilBERT has no token-type embeddings; drop token_type_ids if a tokenizer emits it.
         kwargs.pop("token_type_ids", None)
         return super().forward(input_ids, attention_mask, **kwargs)
