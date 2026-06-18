@@ -20,6 +20,7 @@ import torch.nn as nn
 from transformers import PreTrainedModel
 from transformers.activations import ACT2FN
 
+from ....ops.moe import compute_masked_routing_weight_softmax_first
 from ..decoderonly.configuration_decoderonly import RBLNLoRAConfig
 from ..decoderonly.decoderonly_architecture import (
     DecoderOnlyAttention,
@@ -30,7 +31,6 @@ from ..decoderonly.decoderonly_architecture import (
     RotaryEmbedding,
     slice_and_unsqueeze_cos_sin,
 )
-from ....ops.moe import compute_masked_routing_weight_softmax_first
 
 
 class Gemma4ForCausalLMWrapper(DecoderOnlyWrapper):
@@ -641,7 +641,7 @@ class Gemma4Experts(nn.Module):
             router_logits, top_k=self.top_k, renormalize=self.norm_topk_prob
         )
         masked_routing_weight = masked_routing_weight * self.per_expert_scale
-        
+
         return torch.ops.rbln_custom_ops.custom_moe_glu(
             hidden_states=hidden_states,
             gate_proj_weight=self.gate_proj.weight,
