@@ -30,6 +30,7 @@ from ..decoderonly.decoderonly_architecture import (
     RotaryEmbedding,
     slice_and_unsqueeze_cos_sin,
 )
+from ....ops.moe import compute_masked_routing_weight_softmax_first
 
 
 class Gemma4ForCausalLMWrapper(DecoderOnlyWrapper):
@@ -45,35 +46,20 @@ class Gemma4ForCausalLMWrapper(DecoderOnlyWrapper):
     """
 
     def get_rotary_emb(self, max_seq_len):
-        config = self.config
-        rope_params_full = (
-            config.rope_parameters.get("full_attention", {}) if isinstance(config.rope_parameters, dict) else {}
-        )
-        rope_params_sliding = (
-            config.rope_parameters.get("sliding_attention", {}) if isinstance(config.rope_parameters, dict) else {}
-        )
-
-        config_full = copy.deepcopy(config)
-        config_full.rope_scaling = {
-            "rope_type": rope_params_full.get("rope_type", "default"),
-            "rope_theta": rope_params_full.get("rope_theta", getattr(config, "rope_theta", 10000.0)),
-            "partial_rotary_factor": rope_params_full.get("partial_rotary_factor", 1.0),
-            "factor": rope_params_full.get("factor", 1.0),
+        # full_attention layers use `global_head_dim`, sliding_attention layers use `head_dim`.
+        head_dims = {
+            "full_attention": getattr(self.config, "global_head_dim", None) or self.config.head_dim,
+            "sliding_attention": self.config.head_dim,
         }
-        config_full.rope_theta = rope_params_full.get("rope_theta", getattr(config, "rope_theta", 10000.0))
-        config_full.head_dim = getattr(config, "global_head_dim", None) or config.head_dim
-        rotary_emb_global = RotaryEmbedding(config=config_full, max_seq_len_cached=max_seq_len)
-
-        config_sliding = copy.deepcopy(config)
-        config_sliding.rope_scaling = {
-            "rope_type": rope_params_sliding.get("rope_type", "default"),
-            "rope_theta": rope_params_sliding.get("rope_theta", getattr(config, "rope_theta", 10000.0)),
-        }
-        config_sliding.rope_theta = rope_params_sliding.get("rope_theta", getattr(config, "rope_theta", 10000.0))
-        config_sliding.head_dim = config.head_dim
-        rotary_emb_local = RotaryEmbedding(config=config_sliding, max_seq_len_cached=max_seq_len)
-
-        return (rotary_emb_global, rotary_emb_local)
+        rotary_embs = []
+        for layer_type in ("full_attention", "sliding_attention"):
+            params = dict(self.config.rope_parameters[layer_type])
+            config = copy.deepcopy(self.config)
+            config.rope_scaling = params
+            config.rope_parameters = params
+            config.head_dim = head_dims[layer_type]
+            rotary_embs.append(RotaryEmbedding(config=config, max_seq_len_cached=max_seq_len))
+        return tuple(rotary_embs)
 
     def get_rbln_attn_class(self):
         return Gemma4TextAttention
@@ -595,11 +581,8 @@ class Gemma4Router(nn.Module):
     """Router for Gemma4 MoE blocks.
 
     Replicates `Gemma4TextRouter`'s logit computation: RMSNorm (no-scale) -> per-token scale -> linear.
-    The downstream `Gemma4Experts` module handles softmax + topk + top_k_norm via the fused
-    `custom_moe_glu` op; this module emits raw logits only.
-
-    Per-expert scale (`per_expert_scale` in HF) is folded into the `down_proj` weights of
-    `Gemma4Experts` at construction time, so it is not applied here.
+    This module emits raw logits only; routing (top-k, renormalize) and `per_expert_scale` are
+    applied in `Gemma4Experts` before dispatch to `custom_moe_glu`.
     """
 
     def __init__(self, router: nn.Module):
@@ -623,8 +606,8 @@ class Gemma4Experts(nn.Module):
     shape contract of `custom_moe_glu`: `gate_proj_weight` (E, H, I), `up_proj_weight` (E, H, I),
     `down_proj_weight` (E, I, H).
 
-    Per-expert routing scale (`per_expert_scale` in HF) is folded into `down_proj` weights
-    at construction time because the op does not accept an external per-expert constant.
+    Routing mirrors HF `Gemma4TextRouter`: top-k on logits, softmax over top-k (renormalize),
+    then multiply the scattered `[E, T]` mask by `per_expert_scale` from the router.
     """
 
     def __init__(self, experts: nn.Module, router: nn.Module, phase: str, rbln_config: Any):
@@ -654,16 +637,18 @@ class Gemma4Experts(nn.Module):
         self.down_proj.weight.data = down_w_op
 
     def forward(self, hidden_states: torch.Tensor, router_logits: torch.Tensor) -> torch.Tensor:
+        masked_routing_weight = compute_masked_routing_weight_softmax_first(
+            router_logits, top_k=self.top_k, renormalize=self.norm_topk_prob
+        )
+        masked_routing_weight = masked_routing_weight * self.per_expert_scale
+        
         return torch.ops.rbln_custom_ops.custom_moe_glu(
-            hidden_states,
+            hidden_states=hidden_states,
             gate_proj_weight=self.gate_proj.weight,
             up_proj_weight=self.up_proj.weight,
             down_proj_weight=self.down_proj.weight,
-            router_logits=router_logits,
-            scoring_func="softmax",
-            topk=self.top_k,
-            norm_topk_prob=self.norm_topk_prob,
-            per_expert_scale=self.per_expert_scale,
+            masked_routing_weight=masked_routing_weight,
+            hidden_act="gelu",
         )
 
 
