@@ -44,9 +44,7 @@ class RBLNDistilBertForQuestionAnswering(RBLNModelForQuestionAnswering):
         Args:
             input_ids (torch.Tensor of shape (batch_size, sequence_length), optional): Indices of input sequence tokens in the vocabulary.
             attention_mask (torch.Tensor of shape (batch_size, sequence_length), optional): Mask to avoid performing attention on padding token indices.
-            token_type_ids (torch.Tensor of shape (batch_size, sequence_length), optional): Accepted for tokenizer
-                compatibility and ignored. DistilBERT has no token-type (segment) embeddings, so it is not a compiled
-                input; this mirrors the native model, which also ignores it.
+            token_type_ids (torch.Tensor of shape (batch_size, sequence_length), optional): Ignored; DistilBERT has no token-type embeddings.
 
         Returns:
             The model outputs. If return_dict=False is passed, returns a tuple of tensors. Otherwise, returns a QuestionAnsweringModelOutput object.
