@@ -421,7 +421,7 @@ class TestColQwen2Model(BaseTest.TestModel):
         "rbln_config": {
             "vlm": {
                 "visual": {"max_seq_len": 512},
-                "tensor_parallel_size": 1,
+                "num_devices": 1,
                 "max_seq_len": 32_768,
             }
         }

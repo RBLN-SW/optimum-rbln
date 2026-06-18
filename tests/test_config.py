@@ -214,13 +214,23 @@ def test_submodule_config_object():
     assert model.rbln_config.language_model.batch_size == 2
 
 
+def test_num_devices_deprecated_alias():
+    """`tensor_parallel_size` is the deprecated alias of `num_devices` and must still map through."""
+    cfg = RBLNMistralForCausalLMConfig(num_devices=4)
+    assert cfg.num_devices == 4
+
+    legacy = RBLNMistralForCausalLMConfig(tensor_parallel_size=4)
+    assert legacy.num_devices == 4
+    assert not hasattr(legacy, "tensor_parallel_size")
+
+
 @pytest.mark.parametrize(
     "invalid_param",
     [
         {"rbln_nonexistent_param": "value"},
         {"rbln_image_size": "not_an_integer"},  # Type error
         {"rbln_batch_size": -1},  # Negative value
-        {"rbln_tensor_parallel_size": 32},  # Tensor parallel size is not supported
+        {"rbln_tensor_parallel_size": 32},  # deprecated alias of num_devices; too many devices is unsupported
         {"rbln_npu": "RBLN-Unknown"},  # NPU is not supported
         {"rbln_device": 32},  # Device is not supported
     ],

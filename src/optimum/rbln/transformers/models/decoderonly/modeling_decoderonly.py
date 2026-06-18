@@ -636,7 +636,7 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
             "\n\nTo reduce memory usage for a decoder-only model, consider the following:\n"
             "1. Reduce `max_seq_len`, the context length used during inference.\n"
             "2. Reduce `kvcache_num_blocks`, the number of blocks allocated for the paged attention KV cache.\n"
-            "3. Increase `tensor_parallel_size` to distribute memory across more NPUs."
+            "3. Increase `num_devices` to distribute memory across more NPUs."
         )
 
         return help_msg

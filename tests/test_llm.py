@@ -661,7 +661,7 @@ class TestQwen2VLForConditionalGeneration(LLMTest.TestLLM):
     RBLN_CLASS_KWARGS = {
         "rbln_config": {
             "visual": {"max_seq_len": 512},
-            "tensor_parallel_size": 1,
+            "num_devices": 1,
             "max_seq_len": 32_768,
         }
     }
@@ -704,7 +704,7 @@ class TestQwen2_5_VLForConditionalGeneration(LLMTest.TestLLM):
     RBLN_CLASS_KWARGS = {
         "rbln_config": {
             "visual": {"max_seq_len": 512},
-            "tensor_parallel_size": 1,
+            "num_devices": 1,
             "kvcache_partition_len": 16_384,
             "max_seq_len": 32_768,
         }
@@ -744,7 +744,7 @@ class TestQwen3VLForConditionalGeneration(LLMTest.TestLLM):
     RBLN_CLASS_KWARGS = {
         "rbln_config": {
             "visual": {"max_seq_len": 512},
-            "tensor_parallel_size": 1,
+            "num_devices": 1,
             "kvcache_partition_len": 8192,
             "max_seq_len": 16_384,
         }
@@ -780,7 +780,7 @@ class TestQwen3VLMoeForConditionalGeneration(LLMTest.TestLLM):
     RBLN_CLASS_KWARGS = {
         "rbln_config": {
             "visual": {"max_seq_len": 512},
-            "tensor_parallel_size": 1,
+            "num_devices": 1,
             "kvcache_partition_len": 8192,
             "max_seq_len": 16_384,
         }
@@ -891,7 +891,7 @@ class TestLlamaForCausalLM_fp8(LLMTest.TestLLM):
             "attn_impl": "flash_attn",
             "kvcache_partition_len": 4096,
             "max_seq_len": 8192,
-            "tensor_parallel_size": 1,
+            "num_devices": 1,
         },
     }
 

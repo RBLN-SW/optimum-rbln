@@ -85,7 +85,7 @@ class RBLNPaliGemmaForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGeneration
                     "prefill_chunk_size": 8192,
                 }
             },
-            rbln_tensor_parallel_size=4,
+            rbln_num_devices=4,
         )
 
         model.save_pretrained("compiled-paligemma2-3b-mix-224")
@@ -389,7 +389,7 @@ class RBLNPaliGemmaModel(RBLNModel):
                     "prefill_chunk_size": 8192,
                 }
             },
-            rbln_tensor_parallel_size=4,
+            rbln_num_devices=4,
         )
 
         model.save_pretrained("compiled-paligemma2-3b-mix-224")

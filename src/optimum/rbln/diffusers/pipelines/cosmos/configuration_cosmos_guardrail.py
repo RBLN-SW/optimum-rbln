@@ -79,13 +79,13 @@ class RBLNCosmosSafetyCheckerConfig(RBLNModelConfig):
         if max_seq_len is None:
             max_seq_len = 512
 
-        tensor_parallel_size = kwargs.get("tensor_parallel_size")
+        num_devices = kwargs.get("num_devices", kwargs.get("tensor_parallel_size"))
 
         self.qwen3guard = self.initialize_submodule_config(
             qwen3guard,
             cls_name="RBLNQwen3ForCausalLMConfig",
             batch_size=batch_size,
-            tensor_parallel_size=tensor_parallel_size,
+            num_devices=num_devices,
             max_seq_len=max_seq_len,
         )
         # VideoContentSafetyFilter is omitted because it is not supported in cosmos-guardrail==0.3.1
