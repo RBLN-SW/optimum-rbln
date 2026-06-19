@@ -220,9 +220,8 @@ class RBLNPaliGemmaForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGeneration
         labels=None,
         **kwargs,
     ):
-        # `labels` is a training-only field that PaliGemmaProcessor can include in its output. It has no
-        # role in generation, so accept and drop it. Declaring it here also keeps `generate`'s
-        # `_validate_model_kwargs` from rejecting the processor output (the native model declares `labels`).
+        # Accept and drop `labels`: PaliGemmaProcessor may emit this training-only field. Declaring it
+        # keeps `generate`'s `_validate_model_kwargs` from rejecting the processor output.
         is_prefill_phase = generate_idx is None
 
         model_inputs = self.language_model.prepare_inputs_for_generation(
