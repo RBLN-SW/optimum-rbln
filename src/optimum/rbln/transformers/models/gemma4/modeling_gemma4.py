@@ -79,7 +79,7 @@ class LoopVisionTower(LoopProcessor):
 
 
 class LoopProjector(LoopProcessor):
-    """Per-image loop wrapper around the compiled embed_vision (Gemma4MultimodalEmbedder) runtime."""
+    # Per-image loop wrapper around the compiled embed_vision (Gemma4MultimodalEmbedder) runtime.
 
     def __init__(self, multi_modal_projector: "RBLNModel"):
         super().__init__(model=multi_modal_projector)
@@ -520,19 +520,14 @@ class RBLNGemma4ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
         model_config: "PretrainedConfig",
         rbln_config: RBLNGemma4ForCausalLMConfig,
     ) -> None:
-        """Pre-populate `rbln_config.kvcache_metas` with per-layer-heterogeneous KV shapes.
-
-        Gemma4 mixes two layer kinds:
-        - `sliding_attention`: `head_dim = config.head_dim`,
-          `num_kv = config.num_key_value_heads`.
-        - `full_attention`: `head_dim = config.global_head_dim`,
-          `num_kv = config.num_global_key_value_heads` (when `attention_k_eq_v=True`)
-          or `config.num_key_value_heads` (otherwise).
-
-        Base `get_input_info` short-circuits on a non-empty `kvcache_metas` list and uses
-        these entries verbatim as compile-time KV cache input shapes. This is the only way
-        to express per-layer heterogeneous KV geometry in the current pipeline.
-        """
+        # Pre-populates rbln_config.kvcache_metas with per-layer-heterogeneous KV shapes.
+        # Gemma4 mixes two layer kinds:
+        #   sliding_attention: head_dim=config.head_dim, num_kv=config.num_key_value_heads.
+        #   full_attention: head_dim=config.global_head_dim,
+        #     num_kv=config.num_global_key_value_heads (attention_k_eq_v=True) or num_key_value_heads.
+        # Base get_input_info short-circuits on a non-empty kvcache_metas list and uses these entries
+        # verbatim as compile-time KV cache input shapes — the only way to express per-layer
+        # heterogeneous KV geometry in the current pipeline.
         if len(rbln_config.kvcache_metas) > 0:
             return  # already populated (e.g. loaded from disk)
 
@@ -630,11 +625,9 @@ class RBLNGemma4ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMix
         input_features=None,
         input_features_mask=None,
     ):
-        """Reject audio inputs that exist on the HF API but are not wired here.
-
-        Image and video are both supported: each frame/image is encoded by the looped
-        batch-1 vision tower and dispatched to the bidirectional `image_prefill` graph.
-        """
+        # Rejects audio inputs that exist on the HF API but are not wired here.
+        # Image and video are both supported: each frame/image is encoded by the looped
+        # batch-1 vision tower and dispatched to the bidirectional image_prefill graph.
         if input_features is not None or input_features_mask is not None:
             raise NotImplementedError(
                 "Audio inputs (input_features / input_features_mask) are not supported by "
@@ -830,19 +823,13 @@ class RBLNGemma4ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMix
         pixel_values_videos: torch.Tensor,
         video_position_ids: torch.Tensor,
     ) -> torch.Tensor:
-        """Encode video frames with the (batch-1, per-frame looped) vision tower.
-
-        Mirrors HF `Gemma4ForConditionalGeneration.get_video_features`: a video is
-        `(num_videos, num_frames, max_patches, ...)`; flattening the leading two dims treats
-        every frame as an independent image, so the same `get_image_features` path (looped
-        vision tower + `embed_vision`) produces `max_soft_tokens` soft tokens per frame. The
-        vision encoder is stateless across frames, so no temporal context is lost here — the
-        language model supplies it via per-frame bidirectional + cross-frame causal attention.
-
-        Assumes every flattened frame yields exactly `max_soft_tokens` valid soft tokens (no
-        frame-level padding), matching the HF video processor and the per-image pooler-mask
-        contract; padded frames, if any, would scatter spurious soft tokens.
-        """
+        # Encodes video frames with the (batch-1, per-frame looped) vision tower.
+        # Mirrors HF Gemma4ForConditionalGeneration.get_video_features: video is
+        # (num_videos, num_frames, max_patches, ...); flattening the leading two dims treats
+        # every frame as an independent image reusing the get_image_features path (looped
+        # vision tower + embed_vision). The vision encoder is stateless across frames.
+        # Assumes every flattened frame yields exactly max_soft_tokens valid soft tokens
+        # (no frame-level padding), matching the HF video processor and pooler-mask contract.
         pixel_values = pixel_values_videos.flatten(0, 1)
         pixel_position_ids = video_position_ids.flatten(0, 1)
         return self.get_image_features(pixel_values, pixel_position_ids)

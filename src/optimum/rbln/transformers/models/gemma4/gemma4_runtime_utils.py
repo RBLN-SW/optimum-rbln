@@ -23,22 +23,18 @@ from ..decoderonly.modeling_decoderonly import RBLNRuntimeModel
 
 
 def _run_length_from(tt: torch.Tensor, start: int, value: int, cap: int) -> int:
-    """Length of the run of `value` in `tt[0, start:]`, capped at `cap`."""
+    # Length of the run of `value` in tt[0, start:], capped at cap.
     seg = tt[0, start : start + cap]
     diff_idx = (seg != value).nonzero(as_tuple=False)
     return int(diff_idx[0].item()) if diff_idx.numel() > 0 else int(seg.shape[0])
 
 
 class RBLNGemma4RuntimeModel(RBLNRuntimeModel):
-    """Runtime wrapper for the Gemma4 text decoder.
-
-    Extends `RBLNRuntimeModel` with two Gemma4-specific responsibilities:
-
-    1. Holds host-side references to `embed_tokens_per_layer` so the per-layer residual stream can be
-       computed from raw `input_ids` before the compiled graph is invoked.
-    2. Inserts the precomputed `per_layer_inputs` tensor as the second positional argument in every
-       runtime call, matching the argument order of `Gemma4ForCausalLMWrapper.prepare_forward_args`.
-    """
+    # Extends RBLNRuntimeModel with two Gemma4-specific responsibilities:
+    # 1. Holds host-side references to embed_tokens_per_layer so the per-layer residual stream can
+    #    be computed from raw input_ids before the compiled graph is invoked.
+    # 2. Inserts the precomputed per_layer_inputs tensor as the second positional argument in every
+    #    runtime call, matching the argument order of Gemma4ForCausalLMWrapper.prepare_forward_args.
 
     def __init__(
         self,
@@ -117,28 +113,19 @@ class RBLNGemma4RuntimeModel(RBLNRuntimeModel):
         )
 
     def _plan_prefill_chunks(self, token_type_ids: Optional[torch.Tensor], query_length: int):
-        """Plan the chunked prefill once so the loop and block allocation stay in sync.
-
-        Walks the input exactly the way ``prefill_forward`` does and records, per chunk, the
-        cache padding that precedes it.
-
-        Chunks are **tight-packed**: a run shorter than its chunk does NOT occupy a full chunk.
-        The next chunk starts right after the current run's valid tokens and overwrites the
-        masked dead tail the current chunk wrote (text-prefill spillover, or the zeroed
-        image-prefill tail). This keeps KV-cache usage proportional to the real token count,
-        which matters for layouts with many short runs (e.g. video frames interleaved with
-        per-frame timestamp text). Only one kind of padding remains:
-
-        * partition-alignment padding: a chunk writes ``chunk_size`` contiguous cache slots and
-          may not straddle a ``kvcache_partition_len`` boundary, so it is pushed to the next
-          boundary if it would.
-
-        Returns:
-            plan: list of per-chunk dicts (``step``, ``chunk_size``, ``num_processed``,
-                ``is_image_prefill``, ``padded_before``).
-            total_padded: final accumulated ``padded_cache_lengths``.
-            alloc_len: highest cache slot (exclusive) touched, used to size block allocation.
-        """
+        # Plans the chunked prefill once so the loop and block allocation stay in sync.
+        # Walks the input exactly the way prefill_forward does and records, per chunk, the
+        # cache padding that precedes it.
+        #
+        # Chunks are tight-packed: a run shorter than its chunk does NOT occupy a full chunk.
+        # The next chunk starts right after the current run's valid tokens and overwrites the
+        # masked dead tail the current chunk wrote. Only one kind of padding remains:
+        # partition-alignment padding (a chunk may not straddle a kvcache_partition_len boundary).
+        #
+        # Returns:
+        #   plan: list of per-chunk dicts (step, chunk_size, num_processed, is_image_prefill, padded_before).
+        #   total_padded: final accumulated padded_cache_lengths.
+        #   alloc_len: highest cache slot (exclusive) touched, used to size block allocation.
         partition_len = self.rbln_config.kvcache_partition_len
         use_tt = self.rbln_config.use_image_prefill and token_type_ids is not None
         if use_tt:

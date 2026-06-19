@@ -34,16 +34,11 @@ from ..decoderonly.decoderonly_architecture import (
 
 
 class Gemma4ForCausalLMWrapper(DecoderOnlyWrapper):
-    """A wrapper for the text decoder component of a Gemma4 model, designed for RBLN optimization.
-
-    Extends `DecoderOnlyWrapper` with two Gemma4-specific behaviors:
-
-    1. Two RoPE caches are provided: one for full-attention layers (using `global_head_dim` and
-       `proportional` rope_type) and one for sliding-attention layers (using `head_dim` and
-       `default` rope_type). Mirrors the Gemma3 wrapper.
-    2. A `per_layer_inputs` positional argument is extracted from the wrapper inputs and forwarded
-       to `Gemma4TextModel`.
-    """
+    # Extends DecoderOnlyWrapper with two Gemma4-specific behaviors:
+    # 1. Two RoPE caches: one for full-attention layers (global_head_dim, proportional rope_type)
+    #    and one for sliding-attention layers (head_dim, default rope_type). Mirrors Gemma3 wrapper.
+    # 2. A per_layer_inputs positional argument is extracted from wrapper inputs and forwarded
+    #    to Gemma4TextModel.
 
     def get_rotary_emb(self, max_seq_len):
         # full_attention layers use `global_head_dim`, sliding_attention layers use `head_dim`.
@@ -74,7 +69,7 @@ class Gemma4ForCausalLMWrapper(DecoderOnlyWrapper):
         return Gemma4ForCausalLM
 
     def prepare_forward_args(self, *args):
-        """Override to extract ``per_layer_inputs`` after the leading inputs/cache_position."""
+        # Override to extract per_layer_inputs after the leading inputs/cache_position.
         args = list(args)
         input_ids = None if self.rbln_config.use_inputs_embeds else args.pop(0)
         inputs_embeds = args.pop(0) if self.rbln_config.use_inputs_embeds else None
@@ -163,16 +158,12 @@ class Gemma4ForCausalLMWrapper(DecoderOnlyWrapper):
 
 
 class Gemma4TextModel(DecoderOnlyModel):
-    """A wrapper for the text model component of a Gemma4 model, designed for RBLN optimization.
-
-    Extends `DecoderOnlyModel` with Gemma4-specific behaviors:
-
-    - Two rotary embedding caches (full vs sliding), like Gemma3.
-    - Holds `per_layer_model_projection` and `per_layer_projection_norm` from the original model.
-      The host-side `embed_tokens_per_layer` lookup is done outside the wrapper; the result is passed
-      in as `per_layer_inputs` and the full `project_per_layer_inputs` math runs here on NPU.
-    - Forwards the per-layer slice `per_layer_inputs[:, :, i, :]` to each decoder layer.
-    """
+    # Extends DecoderOnlyModel with Gemma4-specific behaviors:
+    # - Two rotary embedding caches (full vs sliding), like Gemma3.
+    # - Holds per_layer_model_projection and per_layer_projection_norm from the original model.
+    #   The host-side embed_tokens_per_layer lookup is done outside the wrapper; the result is
+    #   passed in as per_layer_inputs and the full project_per_layer_inputs math runs here on NPU.
+    # - Forwards the per-layer slice per_layer_inputs[:, :, i, :] to each decoder layer.
 
     def __init__(self, model, layers, rbln_config, use_learned_pos_emb=None, use_rotary_emb=True):
         super().__init__(model, layers, rbln_config, use_learned_pos_emb, use_rotary_emb)
@@ -326,17 +317,12 @@ class Gemma4TextModel(DecoderOnlyModel):
 
 
 class Gemma4DecoderLayer(DecoderOnlyLayer):
-    """A wrapper for a single transformer block of a Gemma4 model, designed for RBLN optimization.
-
-    Extends the standard pre/post-attn + pre/post-ff layernorm structure with three Gemma4-specific features:
-
-    1. An optional Mixture-of-Experts (MoE) branch run in parallel to the regular MLP. The MoE branch
-       uses pre/post layernorms (`pre_feedforward_layernorm_2` / `post_feedforward_layernorm_2`) and
-       its output is summed with the MLP output before the regular `post_feedforward_layernorm`.
-    2. An optional per-layer-input merge after the FF residual block: a learned gate + projection
-       that receives the layer-specific embedding slice.
-    3. A learned `layer_scalar` multiplier applied to the final output.
-    """
+    # Extends the standard pre/post-attn + pre/post-ff layernorm structure with three Gemma4-specific features:
+    # 1. Optional MoE branch in parallel to the MLP (pre_feedforward_layernorm_2 /
+    #    post_feedforward_layernorm_2); output summed with MLP output before post_feedforward_layernorm.
+    # 2. Optional per-layer-input merge after the FF residual block: learned gate + projection
+    #    receiving the layer-specific embedding slice.
+    # 3. A learned layer_scalar multiplier applied to the final output.
 
     _PRE_FF_LAYERNORM_ATTRS = ["pre_feedforward_layernorm"]
     _POST_FF_LAYERNORM_ATTRS = ["post_feedforward_layernorm"]
@@ -422,23 +408,15 @@ class Gemma4DecoderLayer(DecoderOnlyLayer):
 
 
 class Gemma4TextAttention(DecoderOnlyAttention):
-    """A wrapper for the attention component of a Gemma4 model, designed for RBLN optimization.
-
-    Extends `DecoderOnlyAttention` with Gemma4-specific behaviors:
-
-    - `q_norm`, `k_norm`, and `v_norm` are taken from the original module and applied per-head
-      pre-RoPE / pre-attention. Gemma4 uses `Gemma4RMSNorm(with_scale=False)` for `v_norm`,
-      which the base `DecoderOnlyAttention.forward` does not apply — we override `forward`
-      below to include the `v_norm` step.
-    - `head_dim` differs between sliding-attention (`config.head_dim`) and full-attention layers
-      (`config.global_head_dim`); the original `self_attn.head_dim` already encodes this.
-    - `num_key_value_heads` is recomputed from the projection shape to account for Gemma4-specific
-      knobs (`num_global_key_value_heads`, `attention_k_eq_v`) not exposed as attributes.
-    - Attention scaling is hardcoded to `1.0` per HF Gemma4TextAttention (`self.scaling = 1.0`);
-      the q_norm/k_norm RMSNorm provides the magnitude normalization that the traditional
-      `1/sqrt(d_k)` factor would otherwise supply. Applying both would double-normalize the
-      attention scores.
-    """
+    # Extends DecoderOnlyAttention with Gemma4-specific behaviors:
+    # - q_norm, k_norm, v_norm applied per-head pre-RoPE/pre-attention; v_norm uses
+    #   Gemma4RMSNorm(with_scale=False), which the base forward does not apply — overridden below.
+    # - head_dim differs between sliding (config.head_dim) and full (config.global_head_dim) layers;
+    #   self_attn.head_dim already encodes this.
+    # - num_key_value_heads is recomputed from the projection shape to handle num_global_key_value_heads
+    #   and attention_k_eq_v knobs not exposed as standard attributes.
+    # - Attention scaling is hardcoded to 1.0 (HF Gemma4TextAttention.scaling); q_norm/k_norm RMSNorm
+    #   supplies magnitude normalization in place of the 1/sqrt(d_k) factor.
 
     def __init__(self, self_attn, rbln_config, is_sliding=False):
         if hasattr(self_attn, "k_proj") and self_attn.k_proj is not None:
@@ -578,12 +556,9 @@ class Gemma4ForCausalLM(DecoderOnlyForCausalLM):
 
 
 class Gemma4Router(nn.Module):
-    """Router for Gemma4 MoE blocks.
-
-    Replicates `Gemma4TextRouter`'s logit computation: RMSNorm (no-scale) -> per-token scale -> linear.
-    This module emits raw logits only; routing (top-k, renormalize) and `per_expert_scale` are
-    applied in `Gemma4Experts` before dispatch to `custom_moe_glu`.
-    """
+    # Replicates Gemma4TextRouter's logit computation: RMSNorm (no-scale) -> per-token scale -> linear.
+    # Emits raw logits only; routing (top-k, renormalize) and per_expert_scale are applied in
+    # Gemma4Experts before dispatch to custom_moe_glu.
 
     def __init__(self, router: nn.Module):
         super().__init__()
@@ -599,16 +574,12 @@ class Gemma4Router(nn.Module):
 
 
 class Gemma4Experts(nn.Module):
-    """Fused MoE expert block for Gemma4, dispatching to `rbln_custom_ops.custom_moe_glu`.
-
-    The HF `Gemma4TextExperts` stores packed weight tensors `gate_up_proj` (E, 2*I, H) and
-    `down_proj` (E, H, I). This class splits and transposes them at construction time to match the
-    shape contract of `custom_moe_glu`: `gate_proj_weight` (E, H, I), `up_proj_weight` (E, H, I),
-    `down_proj_weight` (E, I, H).
-
-    Routing mirrors HF `Gemma4TextRouter`: top-k on logits, softmax over top-k (renormalize),
-    then multiply the scattered `[E, T]` mask by `per_expert_scale` from the router.
-    """
+    # Fused MoE expert block dispatching to rbln_custom_ops.custom_moe_glu.
+    # HF Gemma4TextExperts stores packed weight tensors gate_up_proj (E, 2*I, H) and
+    # down_proj (E, H, I). Splits and transposes them at construction to match custom_moe_glu's
+    # shape contract: gate_proj_weight (E, H, I), up_proj_weight (E, H, I), down_proj_weight (E, I, H).
+    # Routing mirrors HF Gemma4TextRouter: top-k on logits, softmax over top-k (renormalize),
+    # then multiply the scattered [E, T] mask by per_expert_scale from the router.
 
     def __init__(self, experts: nn.Module, router: nn.Module, phase: str, rbln_config: Any):
         super().__init__()
@@ -653,18 +624,12 @@ class Gemma4Experts(nn.Module):
 
 
 class Gemma4VisionAttention(nn.Module):
-    """A wrapper for the vision attention component of a Gemma4 model, designed for RBLN optimization.
-
-    Replaces HF `Gemma4VisionAttention` with an explicit ``matmul → softmax → matmul`` attention
-    block. HF's vision attention dispatches through ``ALL_ATTENTION_FUNCTIONS[_attn_implementation]``
-    which defaults to ``F.scaled_dot_product_attention``; the explicit form is used here to keep
-    the attention computation tractable for the compiler's static analysis. All weight references
-    (q/k/v/o_proj and q/k/v_norm) are reused from the original HF instance, so the swap is
-    weight-preserving and numerically equivalent to HF eager attention.
-
-    The swap is applied to each ``Gemma4VisionEncoderLayer.self_attn`` directly inside
-    `Gemma4VisionModelWrapper`.
-    """
+    # Replaces HF Gemma4VisionAttention with an explicit matmul -> softmax -> matmul block.
+    # HF dispatches through ALL_ATTENTION_FUNCTIONS[_attn_implementation] (default: F.scaled_dot_product_attention);
+    # the explicit form keeps the computation tractable for the compiler's static analysis.
+    # All weight references (q/k/v/o_proj and q/k/v_norm) are reused from the original HF instance —
+    # weight-preserving and numerically equivalent to HF eager attention.
+    # Applied to each Gemma4VisionEncoderLayer.self_attn inside Gemma4VisionModelWrapper.
 
     def __init__(self, self_attn: nn.Module):
         super().__init__()
@@ -732,45 +697,30 @@ class Gemma4VisionAttention(nn.Module):
 
 
 class Gemma4VisionModelWrapper(nn.Module):
-    """A wrapper for the vision encoder component of a Gemma4 model, designed for RBLN optimization.
-
-    The compiled graph covers (in order):
-
-    1. The encoder layer chain — `model.encoder.layers` is registered directly so
-       `Gemma4VisionEncoder.forward` is **bypassed**; only `Gemma4VisionEncoderLayer.forward`
-       runs per layer. This intentionally excludes `Gemma4VisionEncoder.forward`'s internal
-       `create_bidirectional_mask` and `rotary_emb` calls from the traced graph.
-    2. `pooler` (spatial 2D average pool by patch positions) producing `num_soft_tokens` outputs.
-    3. Optional `standardize` affine.
-
-    Host-side responsibilities (NOT in the compiled graph):
-
-    - `patch_embedder` — produces `inputs_embeds` from `pixel_values`.
-    - `Gemma4VisionRotaryEmbedding` — produces `(cos, sin)` from `pixel_position_ids`.
-    - `padding_positions` (`(pixel_position_ids == -1).all(dim=-1)`) and the 1D-per-key
-      additive `attn_mask` (`(1 - valid) * finfo.min`, shape `(batch, max_patches)`) —
-      both derived from `pixel_position_ids` on the host. The compiled graph receives
-      them as inputs; `attn_mask` is broadcast to `(batch, 1, 1, max_patches)` here so it
-      masks only the key axis (valid queries never attend to padded keys; padded-query
-      rows are discarded by the pooler).
-
-    Inputs (compiled):
-        inputs_embeds: (batch, max_patches, hidden_size)
-        pixel_position_ids: (batch, max_patches, 2)
-        attn_mask: (batch, max_patches) — additive per-key, finfo.min for padded keys
-        padding_positions: (batch, max_patches) — bool, True for padded patches
-        cos / sin: (batch, max_patches, head_dim) — rotary tables from host
-
-    Output:
-        hidden_states: (batch, num_soft_tokens, hidden_size) — post-pool, post-standardize.
-
-    The dynamic per-image padding strip after pooling is left to the host
-    (`RBLNGemma4ForConditionalGeneration.get_image_features`).
-
-    Args:
-        model (nn.Module): The `Gemma4VisionModel` instance.
-        num_soft_tokens (int): Number of soft tokens per image after pooling (equals `max_soft_tokens`).
-    """
+    # The compiled graph covers (in order):
+    # 1. The encoder layer chain — model.encoder.layers is registered directly so
+    #    Gemma4VisionEncoder.forward is bypassed; only Gemma4VisionEncoderLayer.forward runs per layer.
+    #    This intentionally excludes Gemma4VisionEncoder.forward's internal create_bidirectional_mask
+    #    and rotary_emb calls from the traced graph.
+    # 2. pooler (spatial 2D average pool by patch positions) producing num_soft_tokens outputs.
+    # 3. Optional standardize affine.
+    #
+    # Host-side responsibilities (NOT in the compiled graph):
+    # - patch_embedder: produces inputs_embeds from pixel_values.
+    # - Gemma4VisionRotaryEmbedding: produces (cos, sin) from pixel_position_ids.
+    # - padding_positions ((pixel_position_ids == -1).all(dim=-1)) and 1D-per-key additive attn_mask
+    #   ((1 - valid) * finfo.min, shape (batch, max_patches)) — both derived from pixel_position_ids
+    #   on the host. attn_mask is broadcast to (batch, 1, 1, max_patches) here to mask only the key
+    #   axis (padded-query rows are discarded by the pooler).
+    #
+    # Compiled inputs:
+    #   inputs_embeds: (batch, max_patches, hidden_size)
+    #   pixel_position_ids: (batch, max_patches, 2)
+    #   attn_mask: (batch, max_patches) — additive per-key, finfo.min for padded keys
+    #   padding_positions: (batch, max_patches) — bool, True for padded patches
+    #   cos / sin: (batch, max_patches, head_dim) — rotary tables from host
+    # Output: hidden_states: (batch, num_soft_tokens, hidden_size) — post-pool, post-standardize.
+    # The dynamic per-image padding strip after pooling is left to the host.
 
     def __init__(self, model: PreTrainedModel, num_soft_tokens: int):
         super().__init__()

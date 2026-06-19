@@ -26,21 +26,14 @@ DEFAULT_MAX_SOFT_TOKENS = [70, 140, 280, 560, 1120]
 
 
 def ceil_to_multiple_of_128(value: int) -> int:
-    """Smallest multiple of 128 greater than or equal to `value`."""
+    # Smallest multiple of 128 greater than or equal to value.
     return ((int(value) + 127) // 128) * 128
 
 
 class RBLNGemma4ForCausalLMConfig(RBLNDecoderOnlyModelForCausalLMConfig):
-    """
-    Configuration class for `RBLNGemma4ForCausalLM`.
-
-    This configuration class stores the configuration parameters specific to
-    RBLN-optimized Gemma4 causal language model (text decoder).
-
-    Both `use_position_ids` and `use_attention_mask` are forced to `True` for Gemma4.
-    The text decoder uses two RoPE flavors (`proportional` for full-attention layers and `default`
-    for sliding-attention layers) with potentially different `head_dim` values.
-    """
+    # Both use_position_ids and use_attention_mask are forced to True for Gemma4.
+    # The text decoder uses two RoPE flavors (proportional for full-attention layers and
+    # default for sliding-attention layers) with potentially different head_dim values.
 
     def __init__(
         self,
@@ -102,24 +95,18 @@ class RBLNGemma4ForCausalLMConfig(RBLNDecoderOnlyModelForCausalLMConfig):
 
     @property
     def image_prefill_chunk_size(self) -> Optional[int]:
-        """Largest image-prefill bucket, derived from `image_prefill_chunk_sizes`.
-
-        Kept as a read-only derived value (not a stored attribute) so it never has to be persisted
-        alongside `image_prefill_chunk_sizes`; otherwise a reloaded config would carry both and trip
-        the "specify only one" guard in `__init__`.
-        """
+        # Largest image-prefill bucket, derived from image_prefill_chunk_sizes.
+        # Read-only derived value (not stored) so it is never persisted alongside image_prefill_chunk_sizes;
+        # a reloaded config carrying both would trip the "specify only one" guard in __init__.
         if not self.image_prefill_chunk_sizes:
             return None
         return max(self.image_prefill_chunk_sizes)
 
     @staticmethod
     def _normalize_image_prefill_chunk_sizes(chunk_sizes: Union[int, List[int]]) -> List[int]:
-        """Normalize and validate image-prefill chunk sizes (the single enforcement point).
-
-        Accepts an int or list, returns a de-duplicated, descending list. Each chunk must be a
-        positive multiple of 128 (the bucket dimension the compiler requires) — stricter than the
-        text `prefill_chunk_size`'s 64-alignment, and independent of it.
-        """
+        # Single enforcement point: accepts int or list, returns a de-duplicated descending list.
+        # Each chunk must be a positive multiple of 128 (stricter than text prefill_chunk_size's
+        # 64-alignment, and independent of it).
         if isinstance(chunk_sizes, int):
             chunk_sizes = [chunk_sizes]
         chunk_sizes = sorted(set(chunk_sizes), reverse=True)
@@ -133,7 +120,7 @@ class RBLNGemma4ForCausalLMConfig(RBLNDecoderOnlyModelForCausalLMConfig):
 
     @property
     def num_image_prefill_buckets(self) -> int:
-        """Number of separate `image_prefill_{chunk}` graphs (0 when image-prefill is disabled)."""
+        # Number of separate image_prefill_{chunk} graphs (0 when image-prefill is disabled).
         if not self.use_image_prefill or not self.image_prefill_chunk_sizes:
             return 0
         return len(self.image_prefill_chunk_sizes)
@@ -155,17 +142,10 @@ class RBLNGemma4ForCausalLMConfig(RBLNDecoderOnlyModelForCausalLMConfig):
 
 
 class RBLNGemma4VisionModelConfig(RBLNModelConfig):
-    """
-    Configuration class for `RBLNGemma4VisionModel`.
-
-    This configuration class stores the configuration parameters specific to
-    RBLN-optimized Gemma4 vision encoder models.
-
-    The vision encoder takes pre-patched `pixel_values` of shape
-    `(batch, max_patches, 3 * patch_size**2)` and `pixel_position_ids` of shape
-    `(batch, max_patches, 2)`. `max_patches` is derived from `max_soft_tokens` and
-    `pooling_kernel_size` via `max_patches = max_soft_tokens * pooling_kernel_size**2`.
-    """
+    # The vision encoder takes pre-patched pixel_values of shape (batch, max_patches, 3*patch_size**2)
+    # and pixel_position_ids of shape (batch, max_patches, 2).
+    # max_patches is derived from max_soft_tokens and pooling_kernel_size via
+    # max_patches = max_soft_tokens * pooling_kernel_size**2.
 
     def __init__(
         self,
@@ -219,15 +199,8 @@ class RBLNGemma4VisionModelConfig(RBLNModelConfig):
 
 
 class RBLNGemma4ForConditionalGenerationConfig(RBLNModelConfig):
-    """
-    Configuration class for `RBLNGemma4ForConditionalGeneration`.
-
-    This configuration class stores the configuration parameters specific to
-    RBLN-optimized multimodal Gemma4 (text + vision) models.
-
-    Holds nested configs for the vision encoder and the language model. The vision tower
-    is always compiled with `batch_size=1` and looped over samples at runtime.
-    """
+    # Holds nested configs for the vision encoder and the language model. The vision tower
+    # is always compiled with batch_size=1 and looped over samples at runtime.
 
     submodules = ["vision_tower", "language_model"]
 
@@ -269,12 +242,10 @@ class RBLNGemma4ForConditionalGenerationConfig(RBLNModelConfig):
         self._update_image_prefill_chunk_sizes()
 
     def _get_vision_max_soft_tokens(self) -> List[int]:
-        """Per-image soft-token counts the vision tower emits, sorted in descending order.
-
-        Reads `max_soft_tokens` from the vision sub-config (which may still be a raw dict at this
-        point) and falls back to `DEFAULT_MAX_SOFT_TOKENS` when unset, matching the default the
-        vision tower itself applies in `RBLNGemma4VisionModel._update_rbln_config`.
-        """
+        # Per-image soft-token counts the vision tower emits, sorted in descending order.
+        # Reads max_soft_tokens from the vision sub-config (may still be a raw dict at this point)
+        # and falls back to DEFAULT_MAX_SOFT_TOKENS when unset, matching the default applied in
+        # RBLNGemma4VisionModel._update_rbln_config.
         vt_cfg = self.vision_tower
         if isinstance(vt_cfg, dict):
             max_soft_tokens = vt_cfg.get("max_soft_tokens", None)
@@ -287,22 +258,15 @@ class RBLNGemma4ForConditionalGenerationConfig(RBLNModelConfig):
         return sorted(max_soft_tokens, reverse=True)
 
     def _update_image_prefill_chunk_sizes(self) -> None:
-        """Derive or validate the language model's image-prefill buckets against the vision tower's soft-token counts.
-
-        When the user pinned neither `image_prefill_chunk_size` nor `image_prefill_chunk_sizes`, derive the
-        buckets: map each `max_soft_tokens` value to the smallest multiple of 128 that holds it, then keep
-        only the largest `(n + 1) // 2` of them to cap the number of `image_prefill` graphs. Buckets are
-        dropped smallest-first, so the largest soft-token count always keeps its own bucket while smaller
-        images route to the smallest kept bucket `>=` their length at runtime — this minimizes the
-        worst-case prefill padding at the cost of over-padding small images.
-
-        When the user did pin the buckets, keep their values but verify the largest bucket can hold the
-        largest image the vision tower emits; otherwise some image run would have no bucket and the failure
-        would only surface at runtime.
-
-        Note: these buckets are sized solely from the vision soft-token counts and are independent of
-        the language model's text `prefill_chunk_size`; the two chunk sizes are unrelated.
-        """
+        # Derives or validates the language model's image-prefill buckets against the vision tower's
+        # soft-token counts.
+        # When neither image_prefill_chunk_size nor image_prefill_chunk_sizes is pinned: map each
+        # max_soft_tokens to the smallest multiple of 128 that holds it, then keep only the largest
+        # (n + 1) // 2 buckets — dropped smallest-first so the largest count keeps its own bucket and
+        # smaller images route to the smallest kept bucket >= their length at runtime.
+        # When the user did pin the buckets: verify the largest can hold the vision tower's largest
+        # max_soft_tokens; otherwise some image run would have no bucket (detected here, not at runtime).
+        # Note: these buckets are independent of the language model's text prefill_chunk_size.
         lm_cfg = self.language_model
         soft_tokens = self._get_vision_max_soft_tokens()
         max_soft_token = max(soft_tokens)
