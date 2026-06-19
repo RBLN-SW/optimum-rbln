@@ -211,10 +211,14 @@ class Gemma4TextModel(DecoderOnlyModel):
             attn_mask = torch.where(attn_mask > 0, 0.0, 1.0)[:, None, None, :]
 
         else:
-            # (1, 1, prefill_chunk_size, sliding_window + prefill_chunk_size)
-            # prfill_chunk_size: 512
-            # sliding_window: 1024
-            # 1536
+            # Prefill (and image_prefill) builds a 4D SWA mask of shape
+            #   (1, 1, prefill_chunk_size, max_compute_len)
+            # where max_compute_len = sliding_window + prefill_chunk_size.
+            #   - axis 2 (query):  the current prefill chunk being processed
+            #   - axis 3 (key/value): the sliding-window KV cache (past tokens kept in window)
+            #                         concatenated with the current chunk's keys
+            # Example with prefill_chunk_size=512 and sliding_window=1024:
+            #   max_compute_len = 1024 + 512 = 1536 -> mask shape (1, 1, 512, 1536)
             _, prefill_chunk_size = position_ids.shape
             max_compute_len = max_cache_len + prefill_chunk_size
             cache_seq_len_b = torch.zeros(1, 1, 1, max_compute_len, dtype=torch.int32) + cache_seq_len
