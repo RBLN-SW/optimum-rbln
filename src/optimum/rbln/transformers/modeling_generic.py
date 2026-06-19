@@ -21,7 +21,7 @@ different model architectures.
 """
 
 import inspect
-from typing import TYPE_CHECKING, Optional, Union
+from typing import TYPE_CHECKING, Any, Optional, Union
 
 import torch
 from torch import nn
@@ -131,7 +131,15 @@ class RBLNTransformerEncoder(RBLNModel):
                 if rbln_config.max_seq_len is None:
                     raise ValueError("`max_seq_len` should be specified!")
 
-        if max_position_embeddings is not None and rbln_config.max_seq_len > max_position_embeddings:
+        # `max_seq_len` may be a single value or a list of values (bucketing). Normalize to a
+        # sorted list of unique sequence lengths so that downstream logic is uniform.
+        max_seq_lens = (
+            [rbln_config.max_seq_len]
+            if isinstance(rbln_config.max_seq_len, int)
+            else sorted(set(rbln_config.max_seq_len))
+        )
+
+        if max_position_embeddings is not None and max(max_seq_lens) > max_position_embeddings:
             raise ValueError("`max_seq_len` should be less or equal than max_position_embeddings!")
 
         signature_params = inspect.signature(model.forward).parameters.keys()
@@ -165,10 +173,18 @@ class RBLNTransformerEncoder(RBLNModel):
             )
 
         if rbln_config.model_input_shapes is None:
+            # Build one input_info set per `max_seq_len` bucket. When more than one bucket is
+            # requested, `input_info` becomes a list of input_info sets so the compiled model
+            # exposes one executor per bucket and the runtime dispatches by input shape.
             input_info = [
-                (model_input_name, [rbln_config.batch_size, rbln_config.max_seq_len], cls.rbln_dtype)
-                for model_input_name in rbln_config.model_input_names
+                [
+                    (model_input_name, [rbln_config.batch_size, max_seq_len], cls.rbln_dtype)
+                    for model_input_name in rbln_config.model_input_names
+                ]
+                for max_seq_len in max_seq_lens
             ]
+            if len(input_info) == 1:
+                input_info = input_info[0]
         else:
             input_info = [
                 (model_input_name, model_input_shape, cls.rbln_dtype)
@@ -179,6 +195,39 @@ class RBLNTransformerEncoder(RBLNModel):
 
         rbln_config.set_compile_cfgs([RBLNCompileConfig(input_info=input_info)])
         return rbln_config
+
+    def forward(self, *args: Any, return_dict: Optional[bool] = None, **kwargs: Any) -> Any:
+        compile_cfg = self.rbln_config.compile_cfgs[0]
+        if not compile_cfg.is_multiple_input_info:
+            # No sequence-length bucketing: use the default single-shape path.
+            return super().forward(*args, return_dict=return_dict, **kwargs)
+
+        # Bucketing: pad inputs to the smallest compiled `max_seq_len` that fits (the runtime then
+        # dispatches to the matching executor), and slice the sequence dimension of outputs back.
+        # Multiple input_info sets only ever come from list-valued `max_seq_len` (the config forbids
+        # combining it with `model_input_shapes`), so index [1] is always the sequence dimension.
+        buckets = sorted(info[0][1][1] for info in compile_cfg.input_info)
+        seq_len = next(t.shape[1] for t in (*args, *kwargs.values()) if isinstance(t, torch.Tensor) and t.dim() >= 2)
+        target = next((bucket for bucket in buckets if bucket >= seq_len), None)
+        if target is None:
+            raise ValueError(
+                f"Input sequence length ({seq_len}) exceeds the largest `max_seq_len` bucket ({buckets[-1]})."
+            )
+
+        def pad(t):
+            return torch.nn.functional.pad(t, (0, target - seq_len)) if isinstance(t, torch.Tensor) else t
+
+        def unpad(t):
+            return t[:, :seq_len] if isinstance(t, torch.Tensor) and t.dim() >= 2 and t.shape[1] == target else t
+
+        output = self.model[0](*(pad(a) for a in args), **{k: pad(v) for k, v in kwargs.items()})
+        output = type(output)(map(unpad, output)) if isinstance(output, (tuple, list)) else unpad(output)
+
+        if self.hf_library_name == "transformers":
+            return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+        else:
+            return_dict = True if return_dict is None else return_dict
+        return self._prepare_output(output, return_dict)
 
 
 class RBLNImageModel(RBLNModel):
