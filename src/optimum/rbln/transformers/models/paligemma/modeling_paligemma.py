@@ -217,9 +217,12 @@ class RBLNPaliGemmaForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGeneration
         generate_idx=None,
         position_ids=None,
         token_type_ids=None,
+        labels=None,
         **kwargs,
     ):
-        # Prepare HF generation
+        # `labels` is a training-only field that PaliGemmaProcessor can include in its output. It has no
+        # role in generation, so accept and drop it. Declaring it here also keeps `generate`'s
+        # `_validate_model_kwargs` from rejecting the processor output (the native model declares `labels`).
         is_prefill_phase = generate_idx is None
 
         model_inputs = self.language_model.prepare_inputs_for_generation(
