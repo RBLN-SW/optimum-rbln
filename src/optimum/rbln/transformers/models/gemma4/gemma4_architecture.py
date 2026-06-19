@@ -778,7 +778,6 @@ class Gemma4VisionModelWrapper(nn.Module):
             layer.self_attn = Gemma4VisionAttention(layer.self_attn)
 
         self.encoder_layers = model.encoder.layers
-        self.num_layers = int(model.config.num_hidden_layers)
         self.pooler = model.pooler
         self.standardize = getattr(model.config, "standardize", False)
         if self.standardize:
@@ -799,7 +798,7 @@ class Gemma4VisionModelWrapper(nn.Module):
         position_embeddings = (cos, sin)
         attn_mask = attn_mask[:, None, None, :]
         output_length = inputs_embeds.shape[1] // (self.pooling_kernel_size * self.pooling_kernel_size)
-        for layer in self.encoder_layers[: self.num_layers]:
+        for layer in self.encoder_layers:
             hidden_states = layer(
                 hidden_states,
                 attention_mask=attn_mask,
