@@ -118,6 +118,7 @@ class RBLNGemma4VisionModel(RBLNModel):
 
     auto_model_class = AutoModel
     _supports_non_fp32 = True
+    _tp_support = True
 
     @classmethod
     def _wrap_model_if_needed(cls, model: PreTrainedModel, rbln_config: RBLNGemma4VisionModelConfig):
