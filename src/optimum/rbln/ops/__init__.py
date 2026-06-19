@@ -17,4 +17,3 @@ from .flash_attn import *
 from .kv_cache_update import *
 from .linear import linear
 from .moe import *
-from .sliding_window_attn import *
