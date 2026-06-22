@@ -201,10 +201,11 @@ class RBLNTransformerEncoder(RBLNModel):
             if isinstance(self.rbln_config.max_seq_len, list)
             else [self.rbln_config.max_seq_len]
         )
-        seq_len = (
-            kwargs.get("input_ids")
-            or args[(self.rbln_config.model_input_names or self.rbln_model_input_names).index("input_ids")]
-        ).shape[1]
+        input_ids = kwargs.get("input_ids")
+        if input_ids is None:
+            input_names = self.rbln_config.model_input_names or self.rbln_model_input_names
+            input_ids = args[input_names.index("input_ids")]
+        seq_len = input_ids.shape[1]
         target = next((bucket for bucket in buckets if bucket >= seq_len), None)
         if target is None:
             raise ValueError(
