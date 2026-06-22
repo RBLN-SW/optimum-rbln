@@ -14,23 +14,29 @@
 
 from typing import Any, List, Optional, Tuple, Union
 
+from optimum.rbln.utils.deprecation import deprecate_kwarg
+
 from ..configuration_utils import RBLNModelConfig
 
 
 class RBLNTransformerEncoderConfig(RBLNModelConfig):
     rbln_model_input_names: Optional[List[str]] = None
 
+    @deprecate_kwarg(old_name="model_input_shapes", version="0.12.0")
     def __init__(
         self,
-        max_seq_len: Optional[int] = None,
+        max_seq_len: Optional[Union[int, List[int]]] = None,
         batch_size: Optional[int] = None,
         model_input_names: Optional[List[str]] = None,
-        model_input_shapes: Optional[List[Tuple[int, int]]] = None,
         **kwargs: Any,
     ):
         """
         Args:
-            max_seq_len (Optional[int]): Maximum sequence length supported by the model.
+            max_seq_len (Optional[Union[int, List[int]]]): Maximum sequence length supported by the model.
+                A single integer compiles the model for one sequence length. A list of integers enables
+                sequence-length bucketing: the model is compiled for each length on the default
+                ``[batch_size, max_seq_len]`` input layout and, at inference time, the runtime dispatches
+                to the smallest bucket that fits each input.
             batch_size (Optional[int]): The batch size for inference. Defaults to 1.
             model_input_names (Optional[List[str]]): Names of the input tensors for the model.
                 Defaults to class-specific rbln_model_input_names if not provided.
@@ -46,7 +52,6 @@ class RBLNTransformerEncoderConfig(RBLNModelConfig):
             raise ValueError(f"batch_size must be a positive integer, got {self.batch_size}")
 
         self.model_input_names = model_input_names or self.rbln_model_input_names
-        self.model_input_shapes = model_input_shapes
 
 
 class RBLNImageModelConfig(RBLNModelConfig):
