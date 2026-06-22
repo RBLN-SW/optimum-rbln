@@ -194,11 +194,17 @@ class RBLNTransformerEncoder(RBLNModel):
             # No sequence-length bucketing: use the default single-shape path.
             return super().forward(*args, return_dict=return_dict, **kwargs)
 
-        # Bucketing: pad inputs to the smallest compiled `max_seq_len` that fits (the runtime then
-        # dispatches to the matching executor), and slice the sequence dimension of outputs back.
-        # Index [1] is always the sequence dimension for the default [batch_size, max_seq_len] layout.
-        buckets = sorted(info[0][1][1] for info in compile_cfg.input_info)
-        seq_len = next(t.shape[1] for t in (*args, *kwargs.values()) if isinstance(t, torch.Tensor) and t.dim() >= 2)
+        # Bucketing: pad inputs to the smallest `max_seq_len` bucket that fits, then slice outputs
+        # back to the original sequence length (`input_ids.shape[1]`).
+        buckets = sorted(
+            self.rbln_config.max_seq_len
+            if isinstance(self.rbln_config.max_seq_len, list)
+            else [self.rbln_config.max_seq_len]
+        )
+        seq_len = (
+            kwargs.get("input_ids")
+            or args[(self.rbln_config.model_input_names or self.rbln_model_input_names).index("input_ids")]
+        ).shape[1]
         target = next((bucket for bucket in buckets if bucket >= seq_len), None)
         if target is None:
             raise ValueError(
@@ -214,10 +220,7 @@ class RBLNTransformerEncoder(RBLNModel):
         output = self.model[0](*(pad(a) for a in args), **{k: pad(v) for k, v in kwargs.items()})
         output = type(output)(map(unpad, output)) if isinstance(output, (tuple, list)) else unpad(output)
 
-        if self.hf_library_name == "transformers":
-            return_dict = return_dict if return_dict is not None else self.config.use_return_dict
-        else:
-            return_dict = True if return_dict is None else return_dict
+        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
         return self._prepare_output(output, return_dict)
 
 
