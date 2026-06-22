@@ -18,23 +18,21 @@ import rebel
 import torch
 
 from ...modeling_outputs import RBLNDecoderOnlyOutput, RBLNGemma4ForCausalLMOutput
-from ..decoderonly.decoderonly_runtime_utils import RBLNPytorchRuntime
+from ..decoderonly.decoderonly_runtime_utils import (
+    RBLNDecoderOnlyChunkedMultimodalPrefillMixin,
+    RBLNPytorchRuntime,
+)
 from ..decoderonly.modeling_decoderonly import RBLNRuntimeModel
 
 
-def _run_length_from(tt: torch.Tensor, start: int, value: int, cap: int) -> int:
-    # Length of the run of `value` in tt[0, start:], capped at cap.
-    seg = tt[0, start : start + cap]
-    diff_idx = (seg != value).nonzero(as_tuple=False)
-    return int(diff_idx[0].item()) if diff_idx.numel() > 0 else int(seg.shape[0])
-
-
-class RBLNGemma4RuntimeModel(RBLNRuntimeModel):
-    # Extends RBLNRuntimeModel with two Gemma4-specific responsibilities:
+class RBLNGemma4RuntimeModel(RBLNDecoderOnlyChunkedMultimodalPrefillMixin, RBLNRuntimeModel):
+    # Extends the shared chunked-multimodal prefill mixin with two Gemma4-specific responsibilities:
     # 1. Holds host-side references to embed_tokens_per_layer so the per-layer residual stream can
     #    be computed from raw input_ids before the compiled graph is invoked.
     # 2. Inserts the precomputed per_layer_inputs tensor as the second positional argument in every
     #    runtime call, matching the argument order of Gemma4ForCausalLMWrapper.prepare_forward_args.
+
+    _prefill_output_cls = RBLNGemma4ForCausalLMOutput
 
     def __init__(
         self,
@@ -65,276 +63,32 @@ class RBLNGemma4RuntimeModel(RBLNRuntimeModel):
         )
         return per_layer_inputs
 
-    def _prepare_prefill_inputs(self, *args, **kwargs):
-        (
-            inputs,
-            cache_position,
-            chunked_attention_mask,
-            position_ids,
-            position_embed,
-            padded_cache_lengths,
-            query_length,
-            token_type_ids,
-        ) = super()._prepare_prefill_inputs(*args, **kwargs)
-
-        chunked_attention_mask = torch.zeros(1, chunked_attention_mask.shape[-1], dtype=self.rbln_config.dtype)
-
-        if position_ids is not None and position_ids.shape[-1] < cache_position.shape[-1]:
-            position_ids = torch.nn.functional.pad(
-                position_ids, (0, cache_position.shape[-1] - position_ids.shape[-1])
-            )
-
-        if self.rbln_config.use_image_prefill:
-            # Pad by the LARGEST chunk size any planner-dispatched chunk can use, so the last
-            # chunk's `inputs[step : step + chunk_size_used]` slice always returns
-            # `chunk_size_used` rows. `image_prefill_chunk_size` (= max image bucket) and
-            # `prefill_chunk_size` (text) are independent; using only the former underruns the
-            # tail text chunk when text size exceeds the largest image bucket.
-            padding_size = max(
-                self.rbln_config.image_prefill_chunk_size,
-                self.rbln_config.prefill_chunk_size,
-            )
-            inputs = torch.nn.functional.pad(inputs, (0, 0, 0, padding_size))
-            cache_position = torch.nn.functional.pad(cache_position, (0, padding_size))
-            if position_ids is not None:
-                position_ids = torch.nn.functional.pad(position_ids, (0, padding_size))
-            if token_type_ids is not None:
-                token_type_ids = torch.nn.functional.pad(token_type_ids, (0, padding_size), value=-1)
-
-        return (
-            inputs,
-            cache_position,
-            chunked_attention_mask,
-            position_ids,
-            position_embed,
-            padded_cache_lengths,
-            query_length,
-            token_type_ids,
-        )
-
-    def _plan_prefill_chunks(self, token_type_ids: Optional[torch.Tensor], query_length: int):
-        # Plans the chunked prefill once so the loop and block allocation stay in sync.
-        # Walks the input exactly the way prefill_forward does and records, per chunk, the
-        # cache padding that precedes it.
-        #
-        # Chunks are tight-packed: a run shorter than its chunk does NOT occupy a full chunk.
-        # The next chunk starts right after the current run's valid tokens and overwrites the
-        # masked dead tail the current chunk wrote. Only one kind of padding remains:
-        # partition-alignment padding (a chunk may not straddle a kvcache_partition_len boundary).
-        #
-        # Returns:
-        #   plan: list of per-chunk dicts (step, chunk_size, num_processed, is_image_prefill, padded_before).
-        #   total_padded: final accumulated padded_cache_lengths.
-        #   alloc_len: highest cache slot (exclusive) touched, used to size block allocation.
-        partition_len = self.rbln_config.kvcache_partition_len
-        use_tt = self.rbln_config.use_image_prefill and token_type_ids is not None
-        if use_tt:
-            image_buckets = self.rbln_config.image_prefill_chunk_sizes
-            max_image_bucket = max(image_buckets)
-
-        plan = []
-        step = 0
-        padded = 0
-        alloc_len = query_length
-        while step < query_length:
-            # A multimodal run routes to the bidirectional `image_prefill` graph. Gemma4 marks
-            # image soft tokens as token_type 1 and video soft tokens as 2; both vision modalities
-            # use the same soft-token buckets, so any non-zero, non-text type is dispatched to
-            # image_prefill. Text (0) goes to the causal `prefill` graph.
-            start_type = int(token_type_ids[0, step].item()) if use_tt else 0
-            is_image_prefill = use_tt and start_type > 0
-            if is_image_prefill:
-                run_len = _run_length_from(token_type_ids, step, value=start_type, cap=max_image_bucket + 1)
-                if run_len > max_image_bucket:
-                    modality = "video" if start_type == 2 else "image"
-                    raise ValueError(
-                        f"{modality.capitalize()} run (token_type={start_type}) starting at position {step} "
-                        f"is longer than the largest image-prefill bucket ({max_image_bucket}); no bucket can "
-                        f"hold it. For video this means consecutive frames are not separated by text (each "
-                        f"frame run must fit one bucket); otherwise add a larger value to "
-                        f"`image_prefill_chunk_sizes`."
-                    )
-                chunk_size = min(b for b in image_buckets if b >= run_len)
-            else:
-                chunk_size = self.rbln_config.prefill_chunk_size
-                run_len = _run_length_from(token_type_ids, step, value=0, cap=chunk_size) if use_tt else chunk_size
-
-            if partition_len is not None:
-                offset_in_partition = (step + padded) % partition_len
-                if offset_in_partition + chunk_size > partition_len:
-                    padded += partition_len - offset_in_partition
-
-            is_last_chunk = step + run_len >= query_length
-            if is_last_chunk:
-                tail = query_length - step
-                num_processed = min(tail, run_len) if run_len > 0 else tail
-            else:
-                num_processed = run_len
-
-            plan.append(
-                {
-                    "step": step,
-                    "chunk_size": chunk_size,
-                    "num_processed": num_processed,
-                    "is_image_prefill": is_image_prefill,
-                    "padded_before": padded,
-                }
-            )
-            alloc_len = max(alloc_len, step + padded + chunk_size)
-            step += num_processed
-
-        return plan, padded, alloc_len
-
-    def prefill_forward(
+    def _invoke_prefill_chunk(
         self,
-        inputs: torch.Tensor,
-        cache_position: torch.Tensor = None,
-        attention_mask: Optional[torch.Tensor] = None,
-        batch_idx: int = None,
-        block_tables: torch.Tensor = None,
-        is_external_block_tables: bool = None,
-        position_ids: Optional[torch.Tensor] = None,
-        position_embed: Optional[torch.Tensor] = None,
-        token_type_ids: Optional[torch.Tensor] = None,
-        local_block_tables: Optional[torch.Tensor] = None,
-        lora_int_ids: Optional[torch.Tensor] = None,
-        per_layer_inputs: Optional[torch.Tensor] = None,
-    ) -> torch.FloatTensor:
-        if self.rbln_config.use_lora and lora_int_ids is None:
-            if self.lora_int_ids is None:
-                raise ValueError(
-                    "lora_int_id is required when using LoRA. "
-                    "You should call set_lora_int_ids() before forward() or pass lora_int_id to forward()."
-                )
-            if batch_idx is not None:
-                lora_int_ids = self.lora_int_ids[batch_idx : batch_idx + 1].clone()
-            else:
-                lora_int_ids = self.lora_int_ids.clone()
-
-        if per_layer_inputs is not None and attention_mask is not None:
-            mask_bool = attention_mask.to(dtype=torch.bool)
-            if (~mask_bool).any():
-                if mask_bool.dim() == 2:
-                    mask_bool = mask_bool[0]
-                per_layer_inputs = per_layer_inputs[:, mask_bool]
-
-        (
-            inputs,
-            cache_position,
+        runtime,
+        input_chunk: torch.Tensor,
+        per_layer_chunk: Optional[torch.Tensor],
+        cache_pos_chunk: torch.Tensor,
+        block_tables: torch.Tensor,
+        local_block_tables: Optional[torch.Tensor],
+        query_position: torch.Tensor,
+        chunked_attention_mask: torch.Tensor,
+        position_ids_chunk: Optional[torch.Tensor],
+        lora_int_ids: Optional[torch.Tensor],
+    ):
+        # Mirrors Gemma4ForCausalLMWrapper.prepare_forward_args: per_layer_inputs is the second
+        # positional argument and an explicit None occupies the position_embed slot.
+        return runtime(
+            input_chunk,
+            per_layer_chunk if self.hidden_size_per_layer_input else None,
+            cache_pos_chunk,
+            block_tables,
+            local_block_tables,
+            None,
+            query_position,
             chunked_attention_mask,
-            position_ids,
-            position_embed,
-            padded_cache_lengths,
-            query_length,
-            token_type_ids,
-        ) = self._prepare_prefill_inputs(
-            inputs, cache_position, attention_mask, position_ids, position_embed, token_type_ids=token_type_ids
-        )
-
-        if per_layer_inputs is not None:
-            unpadded_len = per_layer_inputs.shape[1]
-            target_len = inputs.shape[1]
-            pad = target_len - unpadded_len
-            if pad > 0:
-                per_layer_inputs = torch.nn.functional.pad(per_layer_inputs, (0, 0, 0, 0, 0, pad))
-            elif pad < 0:
-                per_layer_inputs = per_layer_inputs[:, :target_len]
-
-        plan, total_padded, _ = self._plan_prefill_chunks(token_type_ids, query_length)
-
-        output_logits = []
-        all_hidden_states = [] if self.rbln_config.output_hidden_states else None
-        for chunk in plan:
-            step = chunk["step"]
-            chunk_size_used = chunk["chunk_size"]
-            is_image_prefill = chunk["is_image_prefill"]
-            num_processed_tokens = chunk["num_processed"]
-            chunk_padded_cache_lengths = chunk["padded_before"]
-
-            input_chunk = inputs[:, step : step + chunk_size_used]
-            per_layer_chunk = (
-                per_layer_inputs[:, step : step + chunk_size_used] if per_layer_inputs is not None else None
-            )
-            cache_pos_chunk = cache_position[:, step : step + chunk_size_used] + chunk_padded_cache_lengths
-            position_ids_chunk = (
-                position_ids[:, step : step + chunk_size_used] if self.rbln_config.use_position_ids else None
-            )
-
-            mask_start = step + chunk_padded_cache_lengths
-            chunked_attention_mask[:, mask_start : mask_start + num_processed_tokens] = 1
-            query_position = torch.tensor(num_processed_tokens - 1, dtype=torch.int16)
-
-            if is_image_prefill:
-                outputs = self.image_prefills[chunk_size_used](
-                    input_chunk,
-                    per_layer_chunk if self.hidden_size_per_layer_input else None,
-                    cache_pos_chunk,
-                    block_tables,
-                    local_block_tables,
-                    None,
-                    query_position,
-                    chunked_attention_mask,
-                    position_ids_chunk,
-                    lora_int_ids if self.rbln_config.use_lora else None,
-                )
-            else:
-                outputs = self.prefill(
-                    input_chunk,
-                    per_layer_chunk if self.hidden_size_per_layer_input else None,
-                    cache_pos_chunk,
-                    block_tables,
-                    local_block_tables,
-                    None,
-                    query_position,
-                    chunked_attention_mask,
-                    position_ids_chunk,
-                    lora_int_ids if self.rbln_config.use_lora else None,
-                )
-
-            if self.rbln_config.output_hidden_states:
-                output_logits.append(outputs[0])
-                all_hidden_states.append(tuple(h[:, :num_processed_tokens] for h in outputs[1:]))
-            else:
-                output_logits.append(outputs)
-
-        padded_cache_lengths = total_padded
-
-        if self.rbln_config.output_hidden_states:
-            num_hidden_layers = len(all_hidden_states[0]) - 1
-            concatenated_hidden_states = ()
-            for l_idx in range(num_hidden_layers + 1):
-                l_hidden_states = torch.cat([hidden_states[l_idx] for hidden_states in all_hidden_states], dim=1)
-                l_hidden_states = l_hidden_states[:, :query_length, :]
-                concatenated_hidden_states += (l_hidden_states,)
-
-            all_hidden_states = concatenated_hidden_states
-
-        # Aggregate output_logits
-        output_logits = torch.concat(output_logits, dim=-2)
-        if self.rbln_config.logits_to_keep > 0:
-            output_logits = output_logits[:, -self.rbln_config.logits_to_keep :, :]
-        else:
-            output_logits = output_logits[:, :query_length, :]
-            # index copy for masked output_logits
-            if attention_mask is not None:
-                new_output_logits = torch.full(
-                    (1, attention_mask.shape[-1], output_logits.shape[-1]),
-                    fill_value=1e-10,
-                    dtype=output_logits.dtype,
-                )
-                mask_indices = torch.nonzero(attention_mask, as_tuple=True)[0]
-                new_output_logits.index_copy_(dim=-2, index=mask_indices, source=output_logits)
-
-                output_logits = new_output_logits
-
-        if not is_external_block_tables:
-            self.dec_attn_mask[batch_idx : batch_idx + 1] = chunked_attention_mask
-
-        return RBLNGemma4ForCausalLMOutput(
-            logits=output_logits,
-            padded_cache_lengths=padded_cache_lengths,
-            attention_mask=chunked_attention_mask,
-            hidden_states=all_hidden_states,
+            position_ids_chunk,
+            lora_int_ids if self.rbln_config.use_lora else None,
         )
 
     def forward(
