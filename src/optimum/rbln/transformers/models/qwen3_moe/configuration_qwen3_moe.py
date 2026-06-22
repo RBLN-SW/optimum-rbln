@@ -26,7 +26,7 @@ class RBLNQwen3MoeForCausalLMConfig(RBLNDecoderOnlyModelForCausalLMConfig):
     config = RBLNQwen3MoeForCausalLMConfig(
         batch_size=1,
         max_seq_len=262144,
-        tensor_parallel_size=4
+        num_devices=4
     )
     # Use the configuration with from_pretrained
     model = RBLNQwen3MoeForCausalLM.from_pretrained(
