@@ -370,17 +370,18 @@ class TestEncoderMaxSeqLenBucketing(unittest.TestCase):
         if env_coverage.value < cls.TEST_LEVEL.value:
             raise unittest.SkipTest(f"Skipped test : Test Coverage {env_coverage.name} < {cls.TEST_LEVEL.name}")
 
-    def test_bucketing_conflicts_with_model_input_shapes(self):
-        # Bucketing (list `max_seq_len`) and `model_input_shapes` are mutually exclusive: the former
-        # compiles several graphs, the latter describes a single one. Combining them must error.
+    def test_model_input_shapes_is_deprecated(self):
         from optimum.rbln.transformers.configuration_generic import RBLNTransformerEncoderConfig
 
-        with self.assertRaises(ValueError):
-            RBLNTransformerEncoderConfig(max_seq_len=[64, 128], model_input_shapes=[[1, 64], [1, 64]])
+        with self.assertLogs("optimum.rbln.utils.deprecation", level="WARNING") as logs:
+            config = RBLNTransformerEncoderConfig(
+                max_seq_len=[64, 128],
+                model_input_shapes=[[1, 64], [1, 64]],
+            )
 
-        # Each alone is fine.
-        RBLNTransformerEncoderConfig(max_seq_len=[64, 128])
-        RBLNTransformerEncoderConfig(max_seq_len=64, model_input_shapes=[[1, 64], [1, 64]])
+        self.assertTrue(any("model_input_shapes" in msg for msg in logs.output))
+        self.assertEqual(config.max_seq_len, [64, 128])
+        self.assertFalse(hasattr(config, "model_input_shapes"))
 
     def _tiny_models(self):
         config_kwargs = {

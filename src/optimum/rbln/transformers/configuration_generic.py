@@ -14,18 +14,20 @@
 
 from typing import Any, List, Optional, Tuple, Union
 
+from optimum.rbln.utils.deprecation import deprecate_kwarg
+
 from ..configuration_utils import RBLNModelConfig
 
 
 class RBLNTransformerEncoderConfig(RBLNModelConfig):
     rbln_model_input_names: Optional[List[str]] = None
 
+    @deprecate_kwarg(old_name="model_input_shapes", version="0.12.0")
     def __init__(
         self,
         max_seq_len: Optional[Union[int, List[int]]] = None,
         batch_size: Optional[int] = None,
         model_input_names: Optional[List[str]] = None,
-        model_input_shapes: Optional[List[Tuple[int, int]]] = None,
         **kwargs: Any,
     ):
         """
@@ -34,35 +36,22 @@ class RBLNTransformerEncoderConfig(RBLNModelConfig):
                 A single integer compiles the model for one sequence length. A list of integers enables
                 sequence-length bucketing: the model is compiled for each length on the default
                 ``[batch_size, max_seq_len]`` input layout and, at inference time, the runtime dispatches
-                to the bucket matching the input shape. Bucketing is mutually exclusive with
-                `model_input_shapes` (which fully specifies a single set of shapes).
+                to the smallest bucket that fits each input.
             batch_size (Optional[int]): The batch size for inference. Defaults to 1.
             model_input_names (Optional[List[str]]): Names of the input tensors for the model.
                 Defaults to class-specific rbln_model_input_names if not provided.
-            model_input_shapes (Optional[List[Tuple[int, int]]]): Explicit shape for each input tensor,
-                fully overriding the default ``[batch_size, max_seq_len]`` derivation. This describes a
-                single compiled graph and therefore does not support sequence-length bucketing; pass a
-                scalar `max_seq_len` (or `None`) when using it.
             kwargs: Additional arguments passed to the parent RBLNModelConfig.
 
         Raises:
-            ValueError: If batch_size is not a positive integer, or if a list-valued `max_seq_len`
-                (bucketing) is combined with `model_input_shapes`.
+            ValueError: If batch_size is not a positive integer.
         """
         super().__init__(**kwargs)
-        if model_input_shapes is not None and isinstance(max_seq_len, (list, tuple)):
-            raise ValueError(
-                "`max_seq_len` bucketing (a list of lengths) cannot be combined with `model_input_shapes`. "
-                "`model_input_shapes` describes a single compiled graph, while bucketing compiles several. "
-                "Provide a single integer `max_seq_len`, or drop `model_input_shapes` to bucket."
-            )
         self.max_seq_len = max_seq_len
         self.batch_size = batch_size or 1
         if not isinstance(self.batch_size, int) or self.batch_size < 0:
             raise ValueError(f"batch_size must be a positive integer, got {self.batch_size}")
 
         self.model_input_names = model_input_names or self.rbln_model_input_names
-        self.model_input_shapes = model_input_shapes
 
 
 class RBLNImageModelConfig(RBLNModelConfig):

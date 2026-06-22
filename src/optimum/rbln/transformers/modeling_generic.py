@@ -172,26 +172,18 @@ class RBLNTransformerEncoder(RBLNModel):
                 "This is an internal error. Please report it to the developers."
             )
 
-        if rbln_config.model_input_shapes is None:
-            # Build one input_info set per `max_seq_len` bucket. When more than one bucket is
-            # requested, `input_info` becomes a list of input_info sets so the compiled model
-            # exposes one executor per bucket and the runtime dispatches by input shape.
-            input_info = [
-                [
-                    (model_input_name, [rbln_config.batch_size, max_seq_len], cls.rbln_dtype)
-                    for model_input_name in rbln_config.model_input_names
-                ]
-                for max_seq_len in max_seq_lens
+        # Build one input_info set per `max_seq_len` bucket. When more than one bucket is
+        # requested, `input_info` becomes a list of input_info sets so the compiled model
+        # exposes one executor per bucket and the runtime dispatches by input shape.
+        input_info = [
+            [
+                (model_input_name, [rbln_config.batch_size, max_seq_len], cls.rbln_dtype)
+                for model_input_name in rbln_config.model_input_names
             ]
-            if len(input_info) == 1:
-                input_info = input_info[0]
-        else:
-            input_info = [
-                (model_input_name, model_input_shape, cls.rbln_dtype)
-                for model_input_name, model_input_shape in zip(
-                    rbln_config.model_input_names, rbln_config.model_input_shapes, strict=False
-                )
-            ]
+            for max_seq_len in max_seq_lens
+        ]
+        if len(input_info) == 1:
+            input_info = input_info[0]
 
         rbln_config.set_compile_cfgs([RBLNCompileConfig(input_info=input_info)])
         return rbln_config
@@ -204,8 +196,7 @@ class RBLNTransformerEncoder(RBLNModel):
 
         # Bucketing: pad inputs to the smallest compiled `max_seq_len` that fits (the runtime then
         # dispatches to the matching executor), and slice the sequence dimension of outputs back.
-        # Multiple input_info sets only ever come from list-valued `max_seq_len` (the config forbids
-        # combining it with `model_input_shapes`), so index [1] is always the sequence dimension.
+        # Index [1] is always the sequence dimension for the default [batch_size, max_seq_len] layout.
         buckets = sorted(info[0][1][1] for info in compile_cfg.input_info)
         seq_len = next(t.shape[1] for t in (*args, *kwargs.values()) if isinstance(t, torch.Tensor) and t.dim() >= 2)
         target = next((bucket for bucket in buckets if bucket >= seq_len), None)
