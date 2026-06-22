@@ -196,10 +196,10 @@ class RBLNTransformerEncoder(RBLNModel):
 
         # Bucketing: pad inputs to the smallest `max_seq_len` bucket that fits, then slice outputs
         # back to the original sequence length (`input_ids.shape[1]`).
-        buckets = sorted(
-            self.rbln_config.max_seq_len
-            if isinstance(self.rbln_config.max_seq_len, list)
-            else [self.rbln_config.max_seq_len]
+        buckets = (
+            [self.rbln_config.max_seq_len]
+            if isinstance(self.rbln_config.max_seq_len, int)
+            else sorted(set(self.rbln_config.max_seq_len))
         )
         input_ids = kwargs.get("input_ids")
         if input_ids is None:
