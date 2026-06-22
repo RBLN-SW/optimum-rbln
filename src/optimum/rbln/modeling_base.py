@@ -38,6 +38,20 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 
+def normalize_contiguous_(model: torch.nn.Module) -> torch.nn.Module:
+    """Materialize all parameters as contiguous tensors, in place.
+
+    The compiler calls ``.contiguous()`` on every weight at ingest while the
+    original is still alive, so a non-contiguous weight (e.g. a transposed view
+    from a checkpoint) is copied and host peak memory doubles over it. Replacing
+    each tensor here frees the original first, capping the transient at one weight.
+    """
+    for param in model.parameters():
+        if not param.is_contiguous():
+            param.data = param.data.contiguous()
+    return model
+
+
 class PreTrainedModel:  # noqa: F811
     pass
 
@@ -447,6 +461,8 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
             )
             if runtime_cannot_be_created:
                 raise ValueError(runtime_cannot_be_created)
+
+        normalize_contiguous_(model)
 
         compiled_model = rebel.compile_from_torch(
             model,
