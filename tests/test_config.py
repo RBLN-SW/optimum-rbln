@@ -243,9 +243,7 @@ def test_submodule_config_dict_deprecated_tensor_parallel_size():
 
     # With nothing specified, the parent's value is still inherited.
     parent_tp = RBLNMistralForCausalLMConfig(num_devices=2)
-    sub_inherit = parent_tp.initialize_submodule_config(
-        submodule_config={"cls_name": "RBLNMistralForCausalLMConfig"}
-    )
+    sub_inherit = parent_tp.initialize_submodule_config(submodule_config={"cls_name": "RBLNMistralForCausalLMConfig"})
     assert sub_inherit.num_devices == 2
 
 
