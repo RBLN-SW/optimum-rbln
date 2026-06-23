@@ -23,6 +23,7 @@ from ..decoderonly.decoderonly_architecture import (
     DecoderOnlyModel,
     DecoderOnlyWrapper,
     RotaryEmbedding,
+    build_image_prefill_swa_custom_op_args,
     slice_and_unsqueeze_cos_sin,
 )
 
@@ -50,6 +51,9 @@ class Gemma3ForCausalLMWrapper(DecoderOnlyWrapper):
 
 class Gemma3TextModel(DecoderOnlyModel):
     # Different from DecoderOnlyModel, this model has global and local rotary embeddings.
+    def get_swa_custom_op_args(self, position_ids, query_position):
+        return build_image_prefill_swa_custom_op_args(self, position_ids, query_position)
+
     def forward(
         self,
         input_ids: torch.Tensor = None,
@@ -102,10 +106,10 @@ class Gemma3TextModel(DecoderOnlyModel):
             if output_hidden_states:
                 all_hidden_states += (hidden_states,)
             is_sliding = True if layer_idx in self.sliding_window_layers else False
-            is_sliding_decode = is_sliding and self.phase == "decode"
+            use_swa_mask = is_sliding and self.phase in ("decode", "image_prefill")
             hidden_states = layer(
                 hidden_states=hidden_states,
-                attention_mask=swa_attn_mask if is_sliding_decode else attention_mask,
+                attention_mask=swa_attn_mask if use_swa_mask else attention_mask,
                 seq_positions=sliding_cache_pos if is_sliding else seq_positions,
                 past_key_values=past_key_values,
                 cos=cos_local if is_sliding else cos_global,

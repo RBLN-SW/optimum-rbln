@@ -21,6 +21,7 @@ from ...modeling_outputs import RBLNDecoderOnlyOutput, RBLNGemma4ForCausalLMOutp
 from ..decoderonly.decoderonly_runtime_utils import (
     RBLNDecoderOnlyChunkedMultimodalPrefillMixin,
     RBLNPytorchRuntime,
+    _run_length_from,
 )
 from ..decoderonly.modeling_decoderonly import RBLNRuntimeModel
 
@@ -62,6 +63,26 @@ class RBLNGemma4RuntimeModel(RBLNDecoderOnlyChunkedMultimodalPrefillMixin, RBLNR
             *clamped_ids.shape, self.num_hidden_layers, self.hidden_size_per_layer_input
         )
         return per_layer_inputs
+
+    def _select_image_prefill_runtime(self, chunk_size_used: int):
+        # Gemma4 keeps one runtime per bucket; pick the one matching the planned chunk size.
+        return self.image_prefills[chunk_size_used]
+
+    def _resolve_image_chunk(self, token_type_ids: torch.Tensor, step: int, start_type: int):
+        # Gemma4 buckets image/video runs: pick the smallest bucket that fits the run.
+        image_buckets = self.rbln_config.image_prefill_chunk_sizes
+        max_image_bucket = max(image_buckets)
+        run_len = _run_length_from(token_type_ids, step, value=start_type, cap=max_image_bucket + 1)
+        if run_len > max_image_bucket:
+            modality = "video" if start_type == 2 else "image"
+            raise ValueError(
+                f"{modality.capitalize()} run (token_type={start_type}) starting at position {step} "
+                f"is longer than the largest image-prefill bucket ({max_image_bucket}); no bucket can "
+                f"hold it. For video this means consecutive frames are not separated by text (each "
+                f"frame run must fit one bucket); otherwise add a larger value to "
+                f"`image_prefill_chunk_sizes`."
+            )
+        return run_len, min(b for b in image_buckets if b >= run_len)
 
     def _invoke_prefill_chunk(
         self,
@@ -111,32 +132,7 @@ class RBLNGemma4RuntimeModel(RBLNDecoderOnlyChunkedMultimodalPrefillMixin, RBLNR
         if per_layer_inputs is None and input_ids is not None:
             per_layer_inputs = self.compute_per_layer_inputs(input_ids)
 
-        alloc_cache_position = cache_position
-        if (
-            self.phase != "decode"
-            and cache_position is not None
-            and self.rbln_config.use_image_prefill
-            and token_type_ids is not None
-        ):
-            plan_token_type_ids = token_type_ids
-            if attention_mask is not None:
-                mask_bool = attention_mask.to(dtype=torch.bool)
-                if mask_bool.dim() == 2:
-                    mask_bool = mask_bool[0]
-                plan_token_type_ids = token_type_ids[:, mask_bool]
-            query_length = cache_position.shape[-1]
-            _, _, alloc_len = self._plan_prefill_chunks(plan_token_type_ids, query_length)
-            if alloc_len > self.rbln_config.max_seq_len:
-                raise ValueError(
-                    f"Chunked prefill requires {alloc_len} KV-cache slots (input length "
-                    f"{query_length} plus {alloc_len - query_length} slots of trailing chunk_size "
-                    f"write-extent overhang and partition-alignment padding), which exceeds max_seq_len "
-                    f"({self.rbln_config.max_seq_len}). Increase max_seq_len or reduce the input length."
-                )
-            if alloc_len > query_length:
-                extra_pos = int(cache_position[0, -1].item()) + (alloc_len - query_length)
-                extra = cache_position.new_tensor([[extra_pos]])
-                alloc_cache_position = torch.cat([cache_position, extra], dim=-1)
+        alloc_cache_position = self._extend_cache_position_for_alloc(cache_position, token_type_ids, attention_mask)
 
         block_tables, local_block_tables, is_external_block_tables = (
             self.page_table_manager.get_block_tables_if_needed(
