@@ -25,6 +25,7 @@ from huggingface_hub import snapshot_download
 from transformers import AutoTokenizer, SiglipProcessor
 
 from .... import RBLNAutoModelForCausalLM, RBLNSiglipVisionModel
+from ....modeling_base import normalize_contiguous_
 from ....utils.runtime_utils import RBLNPytorchRuntime, UnavailableRuntime
 from .configuration_cosmos_guardrail import RBLNCosmosSafetyCheckerConfig
 
@@ -167,6 +168,7 @@ class RBLNRetinaFaceFilter(RetinaFaceFilter):
                 super().__init__(checkpoint_id)
             net = self.net
             del self.net
+            normalize_contiguous_(net)
             self.compiled_model = rebel.compile_from_torch(
                 net,
                 input_info=[
@@ -245,6 +247,7 @@ class RBLNVideoSafetyModel(VideoSafetyModel):
             safety_filter_local_path = os.path.join(checkpoint_dir, "safety_filter.pt")
             checkpoint = torch.load(safety_filter_local_path, weights_only=True)
             network.load_state_dict({k.replace("network.", ""): v for k, v in checkpoint["model"].items()})
+            normalize_contiguous_(network)
 
             self.compiled_model = rebel.compile_from_torch(
                 network,
