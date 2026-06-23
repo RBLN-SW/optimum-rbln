@@ -1217,7 +1217,13 @@ class SlidingWindowAttentionOp(AttentionOp):
                 else:
                     op_args["is_bidirectional"] = False
 
-        if self.phase == "decode" or self.phase == "image_prefill":
+        if self.phase == "decode":
+            op_args["attn_mask"] = attn_mask
+        elif self.phase == "image_prefill" and attn_mask is not None and attn_mask.dim() == 4:
+            # Only a model that supplies a 4D sliding-window mask for image_prefill (e.g. Gemma4)
+            # feeds it to the op. Otherwise (e.g. 2D causal mask) the sliding-window prefill
+            # op computes the causal window internally — passing a 2D mask trips the op's 4D mask
+            # assertion at compile time.
             op_args["attn_mask"] = attn_mask
         else:
             op_args["attn_mask"] = None
