@@ -660,10 +660,11 @@ class RBLNDecoderOnlyChunkedMultimodalPrefillMixin:
     # not waste KV-cache slots (the next chunk / decode overwrites the masked dead tail), and
     # (c) keep each chunk's KV write inside a single `kvcache_partition_len` partition.
     #
-    # Subclasses provide the runtime registry (`self.prefill`, `self.image_prefills`) and implement
-    # `_invoke_prefill_chunk` to map a chunk onto their compiled graph's exact argument order. Models
-    # without per-layer inputs (e.g. text+image only) leave `per_layer_inputs` as None and the
-    # per-layer branches below are skipped.
+    # Subclasses provide the runtime registry (`self.prefill` for text, plus `self.image_prefill` —
+    # a single bidirectional runtime by default; override `_select_image_prefill_runtime` and
+    # `_resolve_image_chunk` for multiple buckets) and implement `_invoke_prefill_chunk` to map a
+    # chunk onto their compiled graph's exact argument order. Models without per-layer inputs
+    # (e.g. text+image only) leave `per_layer_inputs` as None and the per-layer branches are skipped.
     #
     # MRO: mix in BEFORE RBLNRuntimeModel so this `prefill_forward` / `_prepare_prefill_inputs`
     # override the base text-only implementations while `super()` still resolves to RBLNRuntimeModel.
@@ -738,6 +739,29 @@ class RBLNDecoderOnlyChunkedMultimodalPrefillMixin:
             token_type_ids,
         )
 
+    def _select_image_prefill_runtime(self, chunk_size_used: int):
+        # Runtime that serves an image/video chunk. Default: a single bidirectional image-prefill
+        # runtime (`self.image_prefill`). Subclasses with multiple buckets override this to pick the
+        # runtime matching `chunk_size_used`.
+        return self.image_prefill
+
+    def _resolve_image_chunk(self, token_type_ids: torch.Tensor, step: int, start_type: int):
+        # Given an image/video run starting at `step` (token_type `start_type` > 0), return
+        # (run_len, chunk_size). Default: a single image-prefill bucket (`image_prefill_chunk_size`);
+        # the run must fit it. Subclasses with multiple buckets override this to pick the smallest
+        # bucket that fits the run.
+        bucket = self.rbln_config.image_prefill_chunk_size
+        run_len = _run_length_from(token_type_ids, step, value=start_type, cap=bucket + 1)
+        if run_len > bucket:
+            modality = "video" if start_type == 2 else "image"
+            raise ValueError(
+                f"{modality.capitalize()} run (token_type={start_type}) starting at position {step} "
+                f"is longer than the image-prefill bucket ({bucket}); no bucket can hold it. For video "
+                f"this means consecutive frames are not separated by text (each frame run must fit one "
+                f"bucket); otherwise increase `image_prefill_chunk_size`."
+            )
+        return run_len, bucket
+
     def _plan_prefill_chunks(self, token_type_ids: Optional[torch.Tensor], query_length: int):
         # Plans the chunked prefill once so the loop and block allocation stay in sync.
         # Walks the input exactly the way prefill_forward does and records, per chunk, the
@@ -754,9 +778,6 @@ class RBLNDecoderOnlyChunkedMultimodalPrefillMixin:
         #   alloc_len: highest cache slot (exclusive) touched, used to size block allocation.
         partition_len = self.rbln_config.kvcache_partition_len
         use_tt = self.rbln_config.use_image_prefill and token_type_ids is not None
-        if use_tt:
-            image_buckets = self.rbln_config.image_prefill_chunk_sizes
-            max_image_bucket = max(image_buckets)
 
         plan = []
         step = 0
@@ -770,17 +791,9 @@ class RBLNDecoderOnlyChunkedMultimodalPrefillMixin:
             start_type = int(token_type_ids[0, step].item()) if use_tt else 0
             is_image_prefill = use_tt and start_type > 0
             if is_image_prefill:
-                run_len = _run_length_from(token_type_ids, step, value=start_type, cap=max_image_bucket + 1)
-                if run_len > max_image_bucket:
-                    modality = "video" if start_type == 2 else "image"
-                    raise ValueError(
-                        f"{modality.capitalize()} run (token_type={start_type}) starting at position {step} "
-                        f"is longer than the largest image-prefill bucket ({max_image_bucket}); no bucket can "
-                        f"hold it. For video this means consecutive frames are not separated by text (each "
-                        f"frame run must fit one bucket); otherwise add a larger value to "
-                        f"`image_prefill_chunk_sizes`."
-                    )
-                chunk_size = min(b for b in image_buckets if b >= run_len)
+                # `_resolve_image_chunk` owns bucket selection: the mixin default assumes a single
+                # bucket; subclasses with multiple buckets override it.
+                run_len, chunk_size = self._resolve_image_chunk(token_type_ids, step, start_type)
             else:
                 chunk_size = self.rbln_config.prefill_chunk_size
                 run_len = _run_length_from(token_type_ids, step, value=0, cap=chunk_size) if use_tt else chunk_size
@@ -810,6 +823,100 @@ class RBLNDecoderOnlyChunkedMultimodalPrefillMixin:
             step += num_processed
 
         return plan, padded, alloc_len
+
+    def _extend_cache_position_for_alloc(
+        self,
+        cache_position: Optional[torch.Tensor],
+        token_type_ids: Optional[torch.Tensor],
+        attention_mask: Optional[torch.Tensor],
+    ) -> Optional[torch.Tensor]:
+        # During prefill, the tight-pack plan may touch cache slots past `query_length` (trailing
+        # chunk write-extent + partition-alignment padding). Extend cache_position so the page table
+        # reserves those slots. Returns cache_position unchanged for decode or non-multimodal prefill.
+        alloc_cache_position = cache_position
+        if (
+            self.phase != "decode"
+            and cache_position is not None
+            and self.rbln_config.use_image_prefill
+            and token_type_ids is not None
+        ):
+            plan_token_type_ids = token_type_ids
+            if attention_mask is not None:
+                mask_bool = attention_mask.to(dtype=torch.bool)
+                if mask_bool.dim() == 2:
+                    mask_bool = mask_bool[0]
+                plan_token_type_ids = token_type_ids[:, mask_bool]
+            query_length = cache_position.shape[-1]
+            _, _, alloc_len = self._plan_prefill_chunks(plan_token_type_ids, query_length)
+            if alloc_len > self.rbln_config.max_seq_len:
+                raise ValueError(
+                    f"Chunked prefill requires {alloc_len} KV-cache slots (input length "
+                    f"{query_length} plus {alloc_len - query_length} slots of trailing chunk_size "
+                    f"write-extent overhang and partition-alignment padding), which exceeds max_seq_len "
+                    f"({self.rbln_config.max_seq_len}). Increase max_seq_len or reduce the input length."
+                )
+            if alloc_len > query_length:
+                extra_pos = int(cache_position[0, -1].item()) + (alloc_len - query_length)
+                extra = cache_position.new_tensor([[extra_pos]])
+                alloc_cache_position = torch.cat([cache_position, extra], dim=-1)
+        return alloc_cache_position
+
+    def forward(
+        self,
+        input_ids: Optional[torch.LongTensor] = None,
+        inputs_embeds: Optional[torch.Tensor] = None,
+        cache_position: torch.Tensor = None,
+        attention_mask: Optional[torch.Tensor] = None,
+        batch_idx: Optional[int] = None,
+        block_tables: Optional[torch.Tensor] = None,
+        position_embed: Optional[torch.Tensor] = None,
+        position_ids: Optional[torch.Tensor] = None,
+        token_type_ids: Optional[torch.Tensor] = None,
+        local_block_tables: Optional[torch.Tensor] = None,
+        lora_int_ids: Optional[torch.Tensor] = None,
+    ):
+        # Shared dispatch for models without per-layer inputs. Subclasses that carry per-layer
+        # inputs (e.g. Gemma4) override `forward` to thread that extra tensor through, calling
+        # `_extend_cache_position_for_alloc` for the same allocation-sizing behaviour.
+        inputs = self.inputs_embeddings_if_needed(input_ids, inputs_embeds)
+        alloc_cache_position = self._extend_cache_position_for_alloc(cache_position, token_type_ids, attention_mask)
+        block_tables, local_block_tables, is_external_block_tables = (
+            self.page_table_manager.get_block_tables_if_needed(
+                self.batch_size,
+                alloc_cache_position,
+                batch_idx=batch_idx,
+                phase=self.phase,
+                block_tables=block_tables,
+                local_block_tables=local_block_tables,
+            )
+        )
+
+        if self.phase == "decode":
+            return self.decode_forward(
+                inputs,
+                cache_position,
+                block_tables,
+                is_external_block_tables,
+                attention_mask=attention_mask,
+                position_embed=position_embed,
+                position_ids=position_ids,
+                local_block_tables=local_block_tables,
+                lora_int_ids=lora_int_ids,
+            )
+        else:
+            return self.prefill_forward(
+                inputs,
+                cache_position,
+                attention_mask,
+                batch_idx,
+                block_tables,
+                is_external_block_tables=is_external_block_tables,
+                position_ids=position_ids,
+                position_embed=position_embed,
+                token_type_ids=token_type_ids,
+                local_block_tables=local_block_tables,
+                lora_int_ids=lora_int_ids,
+            )
 
     def prefill_forward(
         self,
@@ -896,7 +1003,7 @@ class RBLNDecoderOnlyChunkedMultimodalPrefillMixin:
             chunked_attention_mask[:, mask_start : mask_start + num_processed_tokens] = 1
             query_position = torch.tensor(num_processed_tokens - 1, dtype=torch.int16)
 
-            runtime = self.image_prefills[chunk_size_used] if is_image_prefill else self.prefill
+            runtime = self._select_image_prefill_runtime(chunk_size_used) if is_image_prefill else self.prefill
             outputs = self._invoke_prefill_chunk(
                 runtime,
                 input_chunk,
