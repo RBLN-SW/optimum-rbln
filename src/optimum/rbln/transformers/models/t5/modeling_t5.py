@@ -64,7 +64,7 @@ class RBLNT5EncoderModel(RBLNTransformerEncoderForFeatureExtraction):
         model = RBLNT5EncoderModel.from_pretrained(
             "sentence-transformers/sentence-t5-xxl",
             export=True,
-            rbln_tensor_parallel_size=4,
+            rbln_num_devices=4,
         )
 
         model.save_pretrained("compiled-sentence-t5-xxl")
@@ -110,7 +110,7 @@ class RBLNT5ForConditionalGeneration(RBLNModelForSeq2SeqLM):
         model = RBLNT5ForConditionalGeneration.from_pretrained(
             "google-t5/t5-11b",
             export=True,
-            rbln_tensor_parallel_size=4,
+            rbln_num_devices=4,
         )
 
         model.save_pretrained("compiled-sentence-t5-xxl")

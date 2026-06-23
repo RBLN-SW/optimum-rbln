@@ -12,7 +12,7 @@ def main(
     batch_size: int = 1,
     from_transformers: bool = False,
     max_seq_len: typing.Optional[int] = None,
-    tensor_parallel_size: typing.Optional[int] = 4,
+    num_devices: typing.Optional[int] = 4,
 ):
     # Example input sentences for the model
     sentences = [
@@ -28,7 +28,7 @@ def main(
             # The following arguments are specific to RBLN compilation
             rbln_batch_size=batch_size,
             rbln_max_seq_len=max_seq_len,
-            rbln_tensor_parallel_size=tensor_parallel_size,
+            rbln_num_devices=num_devices,
             torch_dtype="auto",
         )
         model.save_pretrained(os.path.basename(model_id))

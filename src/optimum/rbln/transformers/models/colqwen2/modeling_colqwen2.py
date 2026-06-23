@@ -52,7 +52,7 @@ class RBLNColQwen2ForRetrieval(RBLNModel):
                 "visual": {
                     "max_seq_len": 6400,
                 },
-                "tensor_parallel_size": 4,
+                "num_devices": 4,
                 "kvcache_partition_len": 16384,
                 "max_seq_len": 16384 * 7,
             },

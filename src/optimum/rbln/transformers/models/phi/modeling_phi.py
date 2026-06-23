@@ -47,7 +47,7 @@ class RBLNPhiForCausalLM(RBLNDecoderOnlyModelForCausalLM):
             "microsoft/phi-2",
             export=True,
             rbln_batch_size=1,
-            rbln_tensor_parallel_size=4,
+            rbln_num_devices=4,
         )
 
 
@@ -55,7 +55,7 @@ class RBLNPhiForCausalLM(RBLNDecoderOnlyModelForCausalLM):
         rbln_config = {
             "batch_size": 1,
             "max_seq_len": 4096,
-            "tensor_parallel_size": 4,
+            "num_devices": 4,
         }
         model = RBLNPhiForCausalLM.from_pretrained(
             "microsoft/phi-2",
@@ -70,7 +70,7 @@ class RBLNPhiForCausalLM(RBLNDecoderOnlyModelForCausalLM):
         config = RBLNPhiForCausalLMConfig(
             batch_size=1,
             max_seq_len=4096,
-            tensor_parallel_size=4
+            num_devices=4
         )
         model = RBLNPhiForCausalLM.from_pretrained(
             "microsoft/phi-2",
