@@ -224,6 +224,31 @@ def test_num_devices_deprecated_alias():
     assert not hasattr(legacy, "tensor_parallel_size")
 
 
+def test_submodule_config_dict_deprecated_tensor_parallel_size():
+    """Regression: a nested submodule dict using the deprecated `tensor_parallel_size` alias
+    must still set `num_devices`. The parent's inherited `num_devices` previously shadowed it,
+    so TP sharding was silently dropped (leading to DRAM OOM)."""
+    parent = RBLNMistralForCausalLMConfig()  # num_devices unset -> None
+    sub = parent.initialize_submodule_config(
+        submodule_config={"cls_name": "RBLNMistralForCausalLMConfig", "tensor_parallel_size": 4}
+    )
+    assert sub.num_devices == 4
+    assert not hasattr(sub, "tensor_parallel_size")
+
+    # An explicit `num_devices` in the submodule keeps winning.
+    sub_new = parent.initialize_submodule_config(
+        submodule_config={"cls_name": "RBLNMistralForCausalLMConfig", "num_devices": 8}
+    )
+    assert sub_new.num_devices == 8
+
+    # With nothing specified, the parent's value is still inherited.
+    parent_tp = RBLNMistralForCausalLMConfig(num_devices=2)
+    sub_inherit = parent_tp.initialize_submodule_config(
+        submodule_config={"cls_name": "RBLNMistralForCausalLMConfig"}
+    )
+    assert sub_inherit.num_devices == 2
+
+
 @pytest.mark.parametrize(
     "invalid_param",
     [

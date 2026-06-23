@@ -592,6 +592,12 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
             init_kwargs = from_predecessor
             init_kwargs.update(submodule_config)
 
+            # Drop the inherited `num_devices` so a submodule using the deprecated
+            # `tensor_parallel_size` alias isn't shadowed by it; an explicit submodule
+            # `num_devices` already wins on its own.
+            if "tensor_parallel_size" in submodule_config and "num_devices" not in submodule_config:
+                init_kwargs.pop("num_devices", None)
+
             if force_kwargs:
                 for key, value in kwargs.items():
                     if key in init_kwargs:
