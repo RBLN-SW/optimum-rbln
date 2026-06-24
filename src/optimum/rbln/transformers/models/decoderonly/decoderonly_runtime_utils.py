@@ -841,12 +841,13 @@ class RBLNDecoderOnlyChunkedMultimodalPrefillMixin:
             and token_type_ids is not None
         ):
             plan_token_type_ids = token_type_ids
+            query_length = cache_position.shape[-1]
             if attention_mask is not None:
                 mask_bool = attention_mask.to(dtype=torch.bool)
                 if mask_bool.dim() == 2:
                     mask_bool = mask_bool[0]
                 plan_token_type_ids = token_type_ids[:, mask_bool]
-            query_length = cache_position.shape[-1]
+                query_length = int(mask_bool.sum().item())
             _, _, alloc_len = self._plan_prefill_chunks(plan_token_type_ids, query_length)
             if alloc_len > self.rbln_config.max_seq_len:
                 raise ValueError(
