@@ -68,7 +68,7 @@ class RBLNGemma4ForCausalLMConfig(RBLNDecoderOnlyModelForCausalLMConfig):
             prefill_chunk_size = 128
 
         if image_prefill_chunk_size is not None:
-            image_prefill_chunk_size = self._normalize_image_prefill_chunk_size(image_prefill_chunk_size)
+            image_prefill_chunk_size = self._validate_image_prefill_chunk_size(image_prefill_chunk_size)
 
         super().__init__(
             prefill_chunk_size=prefill_chunk_size,
@@ -84,10 +84,9 @@ class RBLNGemma4ForCausalLMConfig(RBLNDecoderOnlyModelForCausalLMConfig):
             raise ValueError("use_attention_mask and use_position_ids must be True for RBLNGemma4ForCausalLM")
 
     @staticmethod
-    def _normalize_image_prefill_chunk_size(chunk_size: Union[int, List[int]]) -> List[int]:
-        # Single enforcement point: accepts int or list, returns a de-duplicated descending list.
-        # Each chunk must be a positive multiple of 128 (stricter than text prefill_chunk_size's
-        # 64-alignment, and independent of it).
+    def _validate_image_prefill_chunk_size(chunk_size: Union[int, List[int]]) -> List[int]:
+        # Single enforcement point: validates that every image_prefill_chunk_size (int or list) is a
+        # positive multiple of 128 and returns it in canonical form — de-duplicated and sorted descending.
         if isinstance(chunk_size, int):
             chunk_size = [chunk_size]
         chunk_size = sorted(set(chunk_size), reverse=True)
@@ -263,9 +262,9 @@ class RBLNGemma4ForConditionalGenerationConfig(RBLNModelConfig):
             pinned = getattr(lm_cfg, "image_prefill_chunk_size", None)
 
         if pinned is not None:
-            buckets = RBLNGemma4ForCausalLMConfig._normalize_image_prefill_chunk_size(pinned)
+            buckets = RBLNGemma4ForCausalLMConfig._validate_image_prefill_chunk_size(pinned)
         else:
-            buckets = RBLNGemma4ForCausalLMConfig._normalize_image_prefill_chunk_size(
+            buckets = RBLNGemma4ForCausalLMConfig._validate_image_prefill_chunk_size(
                 [ceil_to_multiple_of_128(t) for t in max_soft_tokens]
             )
             # Keep only the largest `(n + 1) // 2` buckets (descending list -> drop smallest first).
