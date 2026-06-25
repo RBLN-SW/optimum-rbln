@@ -136,8 +136,6 @@ class RBLNGemma4VisionModel(RBLNModel):
             rbln_config.pooling_kernel_size = model_config.pooling_kernel_size
         if rbln_config.patch_size is None:
             rbln_config.patch_size = model_config.patch_size
-        if rbln_config.max_soft_tokens is None:
-            rbln_config.max_soft_tokens = list(DEFAULT_MAX_SOFT_TOKENS)
 
         max_patches_list = rbln_config.get_max_patches()
         hidden_size = model_config.hidden_size
@@ -316,10 +314,10 @@ class RBLNGemma4ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
         compile_cfgs = [prefill_compile_config]
 
         if rbln_config.use_image_prefill:
-            if rbln_config.image_prefill_chunk_sizes is None:
-                rbln_config.image_prefill_chunk_sizes = [rbln_config.prefill_chunk_size]
+            if rbln_config.image_prefill_chunk_size is None:
+                rbln_config.image_prefill_chunk_size = [rbln_config.prefill_chunk_size]
 
-            for chunk_size in rbln_config.image_prefill_chunk_sizes:
+            for chunk_size in rbln_config.image_prefill_chunk_size:
                 image_prefill_input_info = cls.get_input_info(
                     batch_size=1,
                     query_length=chunk_size,
@@ -373,7 +371,7 @@ class RBLNGemma4ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
             ip_start = rbln_config.image_prefill_runtime_idx
             ip_compile_configs = rbln_config.compile_cfgs[ip_start : ip_start + rbln_config.num_image_prefill_buckets]
             for chunk_size, ip_compile_config in zip(
-                rbln_config.image_prefill_chunk_sizes, ip_compile_configs, strict=True
+                rbln_config.image_prefill_chunk_size, ip_compile_configs, strict=True
             ):
                 ip_example_inputs = ip_compile_config.get_dummy_inputs(fill=0, static_tensors=static_tensors)
                 compiled_models[f"image_prefill_{chunk_size}"] = cls._compile_model(
@@ -480,7 +478,7 @@ class RBLNGemma4ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
         image_prefills = {}
         if self.rbln_config.use_image_prefill:
             ip_start = self.rbln_config.image_prefill_runtime_idx
-            for i, chunk_size in enumerate(self.rbln_config.image_prefill_chunk_sizes):
+            for i, chunk_size in enumerate(self.rbln_config.image_prefill_chunk_size):
                 image_prefills[chunk_size] = self.model[ip_start + i]
 
         self.prefill_decoder = RBLNGemma4RuntimeModel(
@@ -578,8 +576,8 @@ class RBLNGemma4ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
         rbln_config: RBLNModelConfig,
         preprocessors: Optional[Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"]],
     ):
-        if rbln_config.image_prefill_chunk_sizes is None:
-            rbln_config.image_prefill_chunk_sizes = [rbln_config.prefill_chunk_size]
+        if rbln_config.image_prefill_chunk_size is None:
+            rbln_config.image_prefill_chunk_size = [rbln_config.prefill_chunk_size]
 
         if "image_prefill" not in rbln_config.phases:
             rbln_config.phases = ["prefill", "image_prefill", "decode"]
@@ -699,7 +697,7 @@ class RBLNGemma4ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMix
         max_soft_tokens_list = getattr(vt_cfg, "max_soft_tokens", None) if vt_cfg is not None else None
         if isinstance(vt_cfg, dict):
             max_soft_tokens_list = vt_cfg.get("max_soft_tokens", None)
-        max_soft_tokens_list = max_soft_tokens_list or list(DEFAULT_MAX_SOFT_TOKENS)
+        max_soft_tokens_list = max_soft_tokens_list or [DEFAULT_MAX_SOFT_TOKENS]
         if isinstance(max_soft_tokens_list, int):
             max_soft_tokens_list = [max_soft_tokens_list]
         elif isinstance(max_soft_tokens_list, list):
