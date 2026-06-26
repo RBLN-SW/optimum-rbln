@@ -20,8 +20,8 @@ import rebel
 import torch
 from rebel.compile_context import CompileContext
 from transformers import AutoModel, AutoModelForCausalLM, PretrainedConfig, PreTrainedModel
+from transformers.initialization import no_init_weights
 from transformers.modeling_outputs import BaseModelOutputWithPast
-from transformers.modeling_utils import no_init_weights
 
 from ....configuration_utils import RBLNCompileConfig
 from ....modeling import RBLNModel
@@ -138,7 +138,7 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
         cls,
         model_id: str,
         config: Optional[PretrainedConfig] = None,
-        use_auth_token: Optional[Union[bool, str]] = None,
+        token: Optional[Union[bool, str]] = None,
         revision: Optional[str] = None,
         force_download: bool = False,
         cache_dir: Optional[str] = None,
@@ -153,7 +153,7 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
         return get_quantized_model(
             cls.auto_model_class,
             model_id,
-            use_auth_token=use_auth_token,
+            token=token,
             revision=revision,
             cache_dir=cache_dir,
             force_download=force_download,
@@ -357,6 +357,7 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
         rbln_config: RBLNDecoderOnlyModelForCausalLMConfig,
         model_config: PretrainedConfig,
     ):
+        model_config = model_config.get_text_config()
         num_attention_heads = getattr(model_config, "n_head", None) or model_config.num_attention_heads
         num_key_value_heads = getattr(model_config, "num_key_value_heads", None) or num_attention_heads
         num_hidden_layers = getattr(model_config, "n_layer", None) or model_config.num_hidden_layers
@@ -463,12 +464,13 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
         # Returns:
         #     RBLNDecoderOnlyModelConfig: The updated RBLN model configuration.
 
-        rbln_config.sliding_window = model_config.sliding_window
+        text_config = model_config.get_text_config()
+        rbln_config.sliding_window = text_config.sliding_window
         sliding_window_layers = []
 
-        for i in range(model_config.num_hidden_layers):
-            if hasattr(model_config, "layer_types"):
-                if model_config.layer_types[i] == "sliding_attention":
+        for i in range(text_config.num_hidden_layers):
+            if hasattr(text_config, "layer_types"):
+                if text_config.layer_types[i] == "sliding_attention":
                     sliding_window_layers.append(i)
             else:
                 sliding_window_layers.append(i)
@@ -476,7 +478,7 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
         rbln_config.sliding_window_layers = sliding_window_layers
 
         rbln_config.cache_impl = (
-            "sliding_window" if len(sliding_window_layers) == model_config.num_hidden_layers else "hybrid"
+            "sliding_window" if len(sliding_window_layers) == text_config.num_hidden_layers else "hybrid"
         )
         return rbln_config
 
@@ -634,7 +636,7 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
             "\n\nTo reduce memory usage for a decoder-only model, consider the following:\n"
             "1. Reduce `max_seq_len`, the context length used during inference.\n"
             "2. Reduce `kvcache_num_blocks`, the number of blocks allocated for the paged attention KV cache.\n"
-            "3. Increase `tensor_parallel_size` to distribute memory across more NPUs."
+            "3. Increase `num_devices` to distribute memory across more NPUs."
         )
 
         return help_msg

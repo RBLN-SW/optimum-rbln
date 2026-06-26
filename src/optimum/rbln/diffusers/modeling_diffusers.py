@@ -202,6 +202,12 @@ class RBLNDiffusionMixin:
             )
 
         if export:
+            # transformers v5 defaults dtype to "auto", which loads checkpoints in their
+            # native bf16/fp16. RBLN diffusion submodels only support fp32 weights, so fall
+            # back to fp32
+            if "dtype" not in kwargs and "torch_dtype" not in kwargs:
+                kwargs["torch_dtype"] = torch.float32
+
             # keep submodules if user passed any of them.
             passed_submodules = {
                 name: kwargs.pop(name)

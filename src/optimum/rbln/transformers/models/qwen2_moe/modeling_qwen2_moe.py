@@ -37,13 +37,13 @@ class RBLNQwen2MoeForCausalLM(RBLNDecoderOnlyModelForCausalLM):
             "Qwen/Qwen1.5-MoE-A2.7B",
             export=True,
             rbln_batch_size=1,
-            rbln_tensor_parallel_size=4,
+            rbln_num_devices=4,
         )
         # Using a config dictionary
         rbln_config = {
             "batch_size": 1,
             "max_seq_len": 8192,
-            "tensor_parallel_size": 4,
+            "num_devices": 4,
         }
         model = RBLNQwen2MoeForCausalLM.from_pretrained(
             "Qwen/Qwen1.5-MoE-A2.7B",
@@ -55,7 +55,7 @@ class RBLNQwen2MoeForCausalLM(RBLNDecoderOnlyModelForCausalLM):
         config = RBLNQwen2MoeForCausalLMConfig(
             batch_size=1,
             max_seq_len=8192,
-            tensor_parallel_size=4
+            num_devices=4
         )
         model = RBLNQwen2MoeForCausalLM.from_pretrained(
             "Qwen/Qwen1.5-MoE-A2.7B",

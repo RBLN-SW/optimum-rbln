@@ -33,6 +33,15 @@ import torch
 from transformers import PretrainedConfig
 
 
+def _get_rope_theta(config: PretrainedConfig) -> float:
+    if hasattr(config, "rope_theta"):
+        return config.rope_theta
+    rope_parameters = getattr(config, "rope_parameters", None)
+    if rope_parameters and isinstance(rope_parameters, dict) and "rope_theta" in rope_parameters:
+        return rope_parameters["rope_theta"]
+    return 10000.0
+
+
 def _compute_default_rope_parameters(
     config: Optional[PretrainedConfig] = None,
     device: Optional["torch.device"] = None,
@@ -51,7 +60,7 @@ def _compute_default_rope_parameters(
         Tuple of (`torch.Tensor`, `float`), containing the inverse frequencies for the RoPE embeddings and the
         post-processing scaling factor applied to the computed cos/sin (unused in this type of RoPE).
     """
-    base = config.rope_theta
+    base = _get_rope_theta(config)
     partial_rotary_factor = config.partial_rotary_factor if hasattr(config, "partial_rotary_factor") else 1.0
     head_dim = getattr(config, "head_dim", None) or config.hidden_size // config.num_attention_heads
     dim = int(head_dim * partial_rotary_factor)
@@ -112,7 +121,7 @@ def _compute_dynamic_ntk_parameters(
         post-processing scaling factor applied to the computed cos/sin (unused in this type of RoPE).
     """
     # TODO (joao): use the new `original_max_position_embeddings` from rope_scaling
-    base = config.rope_theta
+    base = _get_rope_theta(config)
     partial_rotary_factor = config.partial_rotary_factor if hasattr(config, "partial_rotary_factor") else 1.0
     head_dim = getattr(config, "head_dim", config.hidden_size // config.num_attention_heads)
     dim = int(head_dim * partial_rotary_factor)
@@ -173,7 +182,7 @@ def _compute_yarn_parameters(
         post-processing scaling factor applied to the computed cos/sin.
     """
 
-    base = config.rope_theta
+    base = _get_rope_theta(config)
     partial_rotary_factor = config.partial_rotary_factor if hasattr(config, "partial_rotary_factor") else 1.0
     head_dim = getattr(config, "head_dim", config.hidden_size // config.num_attention_heads)
     dim = int(head_dim * partial_rotary_factor)
@@ -260,7 +269,7 @@ def _compute_longrope_parameters(
         post-processing scaling factor applied to the computed cos/sin.
     """
     # TODO (joao): use the new `original_max_position_embeddings` from rope_scaling
-    base = config.rope_theta
+    base = _get_rope_theta(config)
     partial_rotary_factor = config.partial_rotary_factor if hasattr(config, "partial_rotary_factor") else 1.0
     head_dim = getattr(config, "head_dim", config.hidden_size // config.num_attention_heads)
     dim = int(head_dim * partial_rotary_factor)
@@ -337,6 +346,62 @@ def _compute_llama3_parameters(
     return inv_freq_llama, attention_factor
 
 
+def _compute_proportional_rope_parameters(
+    config: PretrainedConfig,
+    device: "torch.device",
+    seq_len: Optional[int] = None,
+    layer_type: Optional[str] = None,
+    head_dim_key: str = "head_dim",
+) -> tuple["torch.Tensor", float]:
+    """
+    Computes the inverse frequencies with proportional RoPE.
+
+    Args:
+        config ([`~transformers.PretrainedConfig`]):
+            The model configuration.
+        device (`torch.device`):
+            The device to use for initialization of the inverse frequencies.
+        seq_len (`int`, *optional*):
+            The current sequence length. Unused for this type of RoPE.
+        head_dim_key
+
+    Returns:
+        Tuple of (`torch.Tensor`, `float`), containing the inverse frequencies for the RoPE embeddings and the
+        post-processing scaling factor applied to the computed cos/sin.
+    """
+
+    rope_parameters_dict = config.rope_parameters[layer_type] if layer_type is not None else config.rope_parameters
+
+    head_dim = getattr(config, head_dim_key, None) or config.hidden_size // config.num_attention_heads
+    base = rope_parameters_dict["rope_theta"]
+    factor = rope_parameters_dict.get("factor", 1.0)
+    rope_proportion = rope_parameters_dict.get("partial_rotary_factor", 1.0)
+
+    attention_factor = 1.0  # Unused in this type of RoPE
+
+    rope_angles = int(rope_proportion * head_dim // 2)
+
+    inv_freq_rotated = 1.0 / (
+        base
+        ** (torch.arange(0, 2 * rope_angles, 2, dtype=torch.int64).to(device=device, dtype=torch.float) / head_dim)
+    )
+
+    nope_angles = head_dim // 2 - rope_angles
+    if nope_angles > 0:
+        inv_freq = torch.cat(
+            (
+                inv_freq_rotated,
+                torch.zeros(nope_angles, dtype=torch.float32, device=device),
+            ),
+            dim=0,
+        )
+    else:
+        inv_freq = inv_freq_rotated
+
+    inv_freq /= factor
+    return inv_freq, attention_factor
+
+
 # This maps the "rope_type" string field in rope config to the corresponding function to compute the RoPE parameters
 # from the model config. You can append new {'rope_type': callable} pairs to this dictionary to enable custom RoPE
 # parameterizations, as long as the callable has the same signature.
@@ -347,4 +412,5 @@ ROPE_INIT_FUNCTIONS = {
     "yarn": _compute_yarn_parameters,
     "longrope": _compute_longrope_parameters,
     "llama3": _compute_llama3_parameters,
+    "proportional": _compute_proportional_rope_parameters,
 }

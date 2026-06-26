@@ -214,13 +214,46 @@ def test_submodule_config_object():
     assert model.rbln_config.language_model.batch_size == 2
 
 
+def test_num_devices_deprecated_alias():
+    """`tensor_parallel_size` is the deprecated alias of `num_devices` and must still map through."""
+    cfg = RBLNMistralForCausalLMConfig(num_devices=4)
+    assert cfg.num_devices == 4
+
+    legacy = RBLNMistralForCausalLMConfig(tensor_parallel_size=4)
+    assert legacy.num_devices == 4
+    assert not hasattr(legacy, "tensor_parallel_size")
+
+
+def test_submodule_config_dict_deprecated_tensor_parallel_size():
+    """Regression: a nested submodule dict using the deprecated `tensor_parallel_size` alias
+    must still set `num_devices`. The parent's inherited `num_devices` previously shadowed it,
+    so TP sharding was silently dropped (leading to DRAM OOM)."""
+    parent = RBLNMistralForCausalLMConfig()  # num_devices unset -> None
+    sub = parent.initialize_submodule_config(
+        submodule_config={"cls_name": "RBLNMistralForCausalLMConfig", "tensor_parallel_size": 4}
+    )
+    assert sub.num_devices == 4
+    assert not hasattr(sub, "tensor_parallel_size")
+
+    # An explicit `num_devices` in the submodule keeps winning.
+    sub_new = parent.initialize_submodule_config(
+        submodule_config={"cls_name": "RBLNMistralForCausalLMConfig", "num_devices": 8}
+    )
+    assert sub_new.num_devices == 8
+
+    # With nothing specified, the parent's value is still inherited.
+    parent_tp = RBLNMistralForCausalLMConfig(num_devices=2)
+    sub_inherit = parent_tp.initialize_submodule_config(submodule_config={"cls_name": "RBLNMistralForCausalLMConfig"})
+    assert sub_inherit.num_devices == 2
+
+
 @pytest.mark.parametrize(
     "invalid_param",
     [
         {"rbln_nonexistent_param": "value"},
         {"rbln_image_size": "not_an_integer"},  # Type error
         {"rbln_batch_size": -1},  # Negative value
-        {"rbln_tensor_parallel_size": 32},  # Tensor parallel size is not supported
+        {"rbln_tensor_parallel_size": 32},  # deprecated alias of num_devices; too many devices is unsupported
         {"rbln_npu": "RBLN-Unknown"},  # NPU is not supported
         {"rbln_device": 32},  # Device is not supported
     ],
