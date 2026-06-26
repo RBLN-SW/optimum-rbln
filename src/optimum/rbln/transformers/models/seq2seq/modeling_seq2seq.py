@@ -436,9 +436,7 @@ class RBLNModelForSeq2SeqLM(RBLNModel, GenerationMixin, ABC):
             (0, pad_len),
             value=self.config.pad_token_id,
         )
-        model_kwargs["attention_mask"] = torch.nn.functional.pad(
-            model_kwargs["attention_mask"], (0, pad_len)
-        )
+        model_kwargs["attention_mask"] = torch.nn.functional.pad(model_kwargs["attention_mask"], (0, pad_len))
 
         # 3. make sure that encoder returns `ModelOutput`
         model_input_name = model_input_name if model_input_name is not None else self.main_input_name
