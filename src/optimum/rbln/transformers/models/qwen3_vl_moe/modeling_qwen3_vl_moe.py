@@ -16,8 +16,8 @@ import inspect
 from typing import TYPE_CHECKING, Any, Callable
 
 import torch
-from transformers import AutoModelForImageTextToText, PreTrainedModel, Qwen3VLMoeConfig
-from transformers.initialization import no_init_weights
+from transformers import AutoModelForVision2Seq, PreTrainedModel, Qwen3VLMoeConfig
+from transformers.modeling_utils import no_init_weights
 from transformers.models.qwen3_vl_moe.modeling_qwen3_vl_moe import (
     Qwen3VLMoeModel,
     Qwen3VLMoeTextRotaryEmbedding,
@@ -79,7 +79,7 @@ class RBLNQwen3VLMoeVisionModel(RBLNQwen3VLVisionModel):
 
 
 class RBLNQwen3VLMoeModel(RBLNQwen3VLModel):
-    auto_model_class = AutoModelForImageTextToText
+    auto_model_class = AutoModelForVision2Seq
     _decoder_wrapper_cls = Qwen3VLMoe_LanguageModelWrapper
     _use_rotary_emb = False
     _rbln_submodules = [{"name": "visual"}]
@@ -127,7 +127,7 @@ class RBLNQwen3VLMoeModel(RBLNQwen3VLModel):
 
 
 class RBLNQwen3VLMoeForConditionalGeneration(RBLNQwen3VLForConditionalGeneration):
-    auto_model_class = AutoModelForImageTextToText
+    auto_model_class = AutoModelForVision2Seq
     _decoder_wrapper_cls = Qwen3VLMoe_LanguageModelWrapper
     _supports_non_fp32 = True
     _use_rotary_emb = False

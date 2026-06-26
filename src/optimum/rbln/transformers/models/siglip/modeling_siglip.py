@@ -40,7 +40,7 @@ class _SiglipVisionModel(torch.nn.Module):
         output_attentions: bool,
     ):
         super().__init__()
-        self.vision_model = getattr(model, "vision_model", model)
+        self.vision_model = model.vision_model
         self.interpolate_pos_encoding = interpolate_pos_encoding
         self.output_hidden_states = output_hidden_states
         self.output_attentions = output_attentions

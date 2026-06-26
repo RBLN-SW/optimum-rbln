@@ -49,7 +49,7 @@ def apply_rotary_pos_emb(q, k, cos, sin):
 
 class MidmLMHeadModelWrapper(DecoderOnlyWrapper):
     def get_rotary_emb(self, max_seq_len):
-        self.config.rope_parameters = {"rope_type": "default", "rope_theta": 10000.0}
+        self.config.rope_theta = 10000
         self.config.head_dim = self.config.n_embd // self.config.n_head
         self.config.partial_rotary_factor = self.config.rotary_percentage
         return super().get_rotary_emb(max_seq_len=max_seq_len)

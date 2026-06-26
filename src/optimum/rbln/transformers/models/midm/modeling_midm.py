@@ -55,7 +55,7 @@ class RBLNMidmLMHeadModel(RBLNDecoderOnlyModelForCausalLM):
             "KT-AI/midm-bitext-S-7B-inst-v1",
             export=True,
             rbln_batch_size=1,
-            rbln_num_devices=4,
+            rbln_tensor_parallel_size=4,
         )
 
 
@@ -63,7 +63,7 @@ class RBLNMidmLMHeadModel(RBLNDecoderOnlyModelForCausalLM):
         rbln_config = {
             "batch_size": 1,
             "max_seq_len": 4096,
-            "num_devices": 4,
+            "tensor_parallel_size": 4,
         }
         model = RBLNMidmLMHeadModel.from_pretrained(
             "KT-AI/midm-bitext-S-7B-inst-v1",
@@ -78,7 +78,7 @@ class RBLNMidmLMHeadModel(RBLNDecoderOnlyModelForCausalLM):
         config = RBLNMidmLMHeadModelConfig(
             batch_size=1,
             max_seq_len=4096,
-            num_devices=4
+            tensor_parallel_size=4
         )
         model = RBLNMidmLMHeadModel.from_pretrained(
             "KT-AI/midm-bitext-S-7B-inst-v1",

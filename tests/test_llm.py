@@ -13,6 +13,7 @@ from optimum.rbln import (
     RBLNAutoModelForCausalLM,
     RBLNAutoModelForImageTextToText,
     RBLNAutoModelForSeq2SeqLM,
+    RBLNAutoModelForVision2Seq,
     RBLNBartForConditionalGeneration,
     RBLNBlip2ForConditionalGeneration,
     RBLNExaoneForCausalLM,
@@ -28,6 +29,7 @@ from optimum.rbln import (
     RBLNLoRAAdapterConfig,
     RBLNMistralForCausalLM,
     RBLNMistralModel,
+    RBLNMixtralForCausalLM,
     RBLNOPTForCausalLM,
     RBLNOPTModel,
     RBLNPegasusForConditionalGeneration,
@@ -135,12 +137,11 @@ class LLMTest:
             for b_idx, bmask in enumerate(inputs.attention_mask):
                 masked_indices = torch.where(bmask == 0)[0]
                 unmasked_indices = torch.where(bmask == 1)[0]
-                hs_dtype = test_hidden_states.dtype
-                masked = torch.allclose(test_hidden_states[b_idx][masked_indices], torch.zeros([1], dtype=hs_dtype))
+                masked = torch.allclose(test_hidden_states[b_idx][masked_indices], torch.zeros([1]))
                 # 1. all masked hidden states are zero
                 self.assertTrue(masked)
                 unmasked_tensor = test_hidden_states[b_idx][unmasked_indices]
-                avg_unmasked_tensor = torch.mean(unmasked_tensor.float(), dim=-1)
+                avg_unmasked_tensor = torch.mean(unmasked_tensor, dim=-1)
                 approx_zero = torch.isclose(avg_unmasked_tensor, torch.zeros([1]), atol=1e-5)
                 # 2. check if unmasked hidden states are not masked
                 self.assertFalse(torch.any(approx_zero).item())
@@ -223,7 +224,7 @@ class TestQwen2MoeForCausalLM(LLMTest.TestLLM):
     RBLN_CLASS = RBLNQwen2MoeForCausalLM
     # HF_MODEL_ID ="peft-internal-testing/tiny-random-qwen-1.5-MoE"
     HF_MODEL_ID = "Qwen/Qwen1.5-MoE-A2.7B"
-    HF_CONFIG_KWARGS = {"num_hidden_layers": 1, "layer_types": ["full_attention"], "max_position_embeddings": 1024}
+    HF_CONFIG_KWARGS = {"num_hidden_layers": 1, "max_position_embeddings": 1024}
     TEST_LEVEL = TestLevel.FULL
 
 
@@ -318,12 +319,15 @@ class TestPhiModel(LLMTest.TestLLMWithoutLMHead):
 
 class TestExaoneForCausalLM(LLMTest.TestLLM):
     RBLN_CLASS = RBLNExaoneForCausalLM
+    # HF_MODEL_ID = "katuni4ka/tiny-random-exaone"
     HF_MODEL_ID = "LGAI-EXAONE/EXAONE-3.5-2.4B-Instruct"
     HF_CONFIG_KWARGS = {
         "num_hidden_layers": 1,
+        "max_position_embeddings": 1024,
         "trust_remote_code": True,
+        "revision": "e949c91dec92095908d34e6b560af77dd0c993f8",
     }
-    HF_CONFIG_KWARGS_PREPROCESSOR = {"trust_remote_code": True}
+    HF_CONFIG_KWARGS_PREPROCESSOR = {"revision": "e949c91dec92095908d34e6b560af77dd0c993f8"}
 
     def test_automap(self):
         # TODO: Test resume in transformers v5.0.0
@@ -427,7 +431,7 @@ class TestBartModel(LLMTest.TestLLM):
 
 
 class TestLlavaForConditionalGeneration(LLMTest.TestLLM):
-    RBLN_AUTO_CLASS = RBLNAutoModelForImageTextToText
+    RBLN_AUTO_CLASS = RBLNAutoModelForVision2Seq
     RBLN_CLASS = RBLNLlavaForConditionalGeneration
     HF_MODEL_ID = "trl-internal-testing/tiny-LlavaForConditionalGeneration"
     PROMPT = "[INST] <image>\nWhat’s shown in this image? [/INST]"
@@ -498,7 +502,7 @@ class TestPegasusModel(LLMTest.TestLLM):
 
 
 class TestLlavaNextForConditionalGeneration(LLMTest.TestLLM):
-    RBLN_AUTO_CLASS = RBLNAutoModelForImageTextToText
+    RBLN_AUTO_CLASS = RBLNAutoModelForVision2Seq
     RBLN_CLASS = RBLNLlavaNextForConditionalGeneration
     HF_MODEL_ID = "trl-internal-testing/tiny-LlavaNextForConditionalGeneration"
     PROMPT = "[INST] <image>\nWhat’s shown in this image? [/INST]"
@@ -575,7 +579,7 @@ class TestLlavaNextForConditionalGeneration(LLMTest.TestLLM):
 
 
 class TestBlip2ForConditionalGeneration(LLMTest.TestLLM):
-    RBLN_AUTO_CLASS = RBLNAutoModelForImageTextToText
+    RBLN_AUTO_CLASS = RBLNAutoModelForVision2Seq
     RBLN_CLASS = RBLNBlip2ForConditionalGeneration
     HF_MODEL_ID = "Salesforce/blip2-opt-2.7b"  # No tiny model yet.
     PROMPT = "Question: Describe this image? Answer:"
@@ -625,7 +629,7 @@ class TestBlip2ForConditionalGeneration(LLMTest.TestLLM):
 
 
 class TestIdefics3ForConditionalGeneration(LLMTest.TestLLM):
-    RBLN_AUTO_CLASS = RBLNAutoModelForImageTextToText
+    RBLN_AUTO_CLASS = RBLNAutoModelForVision2Seq
     RBLN_CLASS = RBLNIdefics3ForConditionalGeneration
     HF_MODEL_ID = "hf-internal-testing/tiny-random-Idefics3ForConditionalGeneration"
     PROMPT = [{"role": "user", "content": [{"type": "image"}, {"type": "text", "text": "Describe this image."}]}]
@@ -654,18 +658,18 @@ class TestIdefics3ForConditionalGeneration(LLMTest.TestLLM):
 
 
 class TestQwen2VLForConditionalGeneration(LLMTest.TestLLM):
-    RBLN_AUTO_CLASS = RBLNAutoModelForImageTextToText
+    RBLN_AUTO_CLASS = RBLNAutoModelForVision2Seq
     RBLN_CLASS = RBLNQwen2VLForConditionalGeneration
     HF_MODEL_ID = "hf-internal-testing/tiny-random-Qwen2VLForConditionalGeneration"
     PROMPT = "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\n<|vision_start|><|image_pad|><|vision_end|>Describe this image.<|im_end|>\n<|im_start|>assistant\n"
     RBLN_CLASS_KWARGS = {
         "rbln_config": {
             "visual": {"max_seq_len": 512},
-            "num_devices": 1,
+            "tensor_parallel_size": 1,
             "max_seq_len": 32_768,
         }
     }
-    HF_CONFIG_KWARGS = {}
+    HF_CONFIG_KWARGS = {"num_hidden_layers": 1}
 
     @classmethod
     def setUpClass(cls):
@@ -697,19 +701,19 @@ class TestQwen2VLForConditionalGeneration(LLMTest.TestLLM):
 
 
 class TestQwen2_5_VLForConditionalGeneration(LLMTest.TestLLM):
-    RBLN_AUTO_CLASS = RBLNAutoModelForImageTextToText
+    RBLN_AUTO_CLASS = RBLNAutoModelForVision2Seq
     RBLN_CLASS = RBLNQwen2_5_VLForConditionalGeneration
     HF_MODEL_ID = "Qwen/Qwen2.5-VL-3B-Instruct"  # No tiny model yet.
     PROMPT = "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\n<|vision_start|><|image_pad|><|vision_end|>Describe this image.<|im_end|>\n<|im_start|>assistant\n"
     RBLN_CLASS_KWARGS = {
         "rbln_config": {
             "visual": {"max_seq_len": 512},
-            "num_devices": 1,
+            "tensor_parallel_size": 1,
             "kvcache_partition_len": 16_384,
             "max_seq_len": 32_768,
         }
     }
-    HF_CONFIG_KWARGS = {}
+    HF_CONFIG_KWARGS = {"num_hidden_layers": 1}
     HF_CONFIG_KWARGS_PREPROCESSOR = {"max_pixels": 64 * 14 * 14}
     IS_MULTIMODAL = True
 
@@ -737,14 +741,14 @@ class TestQwen2_5_VLForConditionalGeneration(LLMTest.TestLLM):
 
 
 class TestQwen3VLForConditionalGeneration(LLMTest.TestLLM):
-    RBLN_AUTO_CLASS = RBLNAutoModelForImageTextToText
+    RBLN_AUTO_CLASS = RBLNAutoModelForVision2Seq
     RBLN_CLASS = RBLNQwen3VLForConditionalGeneration
     HF_MODEL_ID = "Qwen/Qwen3-VL-2B-Instruct"
     PROMPT = "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\n<|vision_start|><|image_pad|><|vision_end|>Describe this image.<|im_end|>\n<|im_start|>assistant\n"
     RBLN_CLASS_KWARGS = {
         "rbln_config": {
             "visual": {"max_seq_len": 512},
-            "num_devices": 1,
+            "tensor_parallel_size": 1,
             "kvcache_partition_len": 8192,
             "max_seq_len": 16_384,
         }
@@ -773,14 +777,14 @@ class TestQwen3VLForConditionalGeneration(LLMTest.TestLLM):
 
 
 class TestQwen3VLMoeForConditionalGeneration(LLMTest.TestLLM):
-    RBLN_AUTO_CLASS = RBLNAutoModelForImageTextToText
+    RBLN_AUTO_CLASS = RBLNAutoModelForVision2Seq
     RBLN_CLASS = RBLNQwen3VLMoeForConditionalGeneration
     HF_MODEL_ID = "Qwen/Qwen3-VL-30B-A3B-Instruct"
     PROMPT = "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\n<|vision_start|><|image_pad|><|vision_end|>Describe this image.<|im_end|>\n<|im_start|>assistant\n"
     RBLN_CLASS_KWARGS = {
         "rbln_config": {
             "visual": {"max_seq_len": 512},
-            "num_devices": 1,
+            "tensor_parallel_size": 1,
             "kvcache_partition_len": 8192,
             "max_seq_len": 16_384,
         }
@@ -891,7 +895,7 @@ class TestLlamaForCausalLM_fp8(LLMTest.TestLLM):
             "attn_impl": "flash_attn",
             "kvcache_partition_len": 4096,
             "max_seq_len": 8192,
-            "num_devices": 1,
+            "tensor_parallel_size": 1,
         },
     }
 
@@ -997,6 +1001,21 @@ class TestDisallowedLlama_4(DisallowedTestBase.DisallowedTest):
     HF_MODEL_ID = "afmck/testing-llama-tiny"
     HF_CONFIG_KWARGS = {"num_hidden_layers": 1, "max_position_embeddings": 1024}
     RBLN_CLASS_KWARGS = {"rbln_config": {"attn_impl": "flash_attn", "kvcache_partition_len": 2048}}
+
+
+class TestMixtralForCausalLM(LLMTest.TestLLM):
+    RBLN_CLASS = RBLNMixtralForCausalLM
+    HF_MODEL_ID = "vprovorg/tiny-random-Mixtral-8x7B-v0.1"
+    HF_CONFIG_KWARGS = {}  # Initialize empty to avoid sharing with other classes
+
+    @classmethod
+    def setUpClass(cls):
+        config = AutoConfig.from_pretrained(cls.HF_MODEL_ID)
+        config.num_hidden_layers = 3
+        config.max_position_embeddings = 4096
+        config.hidden_size = 128
+        cls.HF_CONFIG_KWARGS.update({"config": config, "ignore_mismatched_sizes": True})
+        return super().setUpClass()
 
 
 if __name__ == "__main__":

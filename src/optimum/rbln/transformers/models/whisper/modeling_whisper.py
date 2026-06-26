@@ -430,10 +430,6 @@ class RBLNWhisperForConditionalGeneration(RBLNModel, RBLNWhisperGenerationMixin)
     ) -> Seq2SeqLMOutput:
         # default decoder pass
         if input_features is None and encoder_outputs is None:
-            if cache_position is None:
-                num_cached = int(self.decoder_attention_mask[0].sum().item())
-                start = 0 if self.is_language_detected else num_cached
-                cache_position = torch.arange(start, input_ids.shape[-1], dtype=torch.int32)
             cross_attentions = []
             for step in cache_position:
                 # skip step 0 if language_detection has been processed

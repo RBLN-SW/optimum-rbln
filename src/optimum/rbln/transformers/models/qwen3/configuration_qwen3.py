@@ -29,7 +29,7 @@ class RBLNQwen3ForCausalLMConfig(RBLNDecoderOnlyModelForCausalLMConfig):
     config = RBLNQwen3ForCausalLMConfig(
         batch_size=1,
         max_seq_len=40960,
-        num_devices=4,
+        tensor_parallel_size=4,
         kvcache_partition_len=16384
     )
 
@@ -57,7 +57,7 @@ class RBLNQwen3ModelConfig(RBLNDecoderOnlyModelConfig):
     config = RBLNQwen3ModelConfig(
         batch_size=1,
         max_seq_len=40960,
-        num_devices=4,
+        tensor_parallel_size=4,
         kvcache_partition_len=16384
     )
 

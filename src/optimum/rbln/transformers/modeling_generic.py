@@ -21,9 +21,8 @@ different model architectures.
 """
 
 import inspect
-from typing import TYPE_CHECKING, Any, Optional, Union
+from typing import TYPE_CHECKING, Optional, Union
 
-import torch
 from torch import nn
 from transformers import (
     AutoModel,
@@ -35,7 +34,6 @@ from transformers import (
     AutoModelForTextEncoding,
     PretrainedConfig,
 )
-from transformers.modeling_attn_mask_utils import _prepare_4d_attention_mask
 from transformers.modeling_outputs import BaseModelOutput, QuestionAnsweringModelOutput
 
 from ..configuration_utils import RBLNCompileConfig
@@ -75,20 +73,6 @@ class RBLNTransformerEncoder(RBLNModel):
                 for param_name in self.DISABLED_PARAMS:
                     if param_name in self._forward_signature.parameters:
                         kwargs[param_name] = False
-
-                # TODO: make this to use `create_bidirectional_mask` in transformers v5
-                args = list(args)
-                input_names = self.rbln_config.model_input_names or RBLNTransformerEncoder.rbln_model_input_names
-                if "attention_mask" in input_names:
-                    idx = input_names.index("attention_mask")
-                    if idx < len(args) and args[idx] is not None and args[idx].dim() == 2:
-                        args[idx] = _prepare_4d_attention_mask(args[idx], torch.float32)
-                if (
-                    "attention_mask" in kwargs
-                    and kwargs["attention_mask"] is not None
-                    and kwargs["attention_mask"].dim() == 2
-                ):
-                    kwargs["attention_mask"] = _prepare_4d_attention_mask(kwargs["attention_mask"], torch.float32)
 
                 return self.model(*args, **kwargs)
 
@@ -131,15 +115,7 @@ class RBLNTransformerEncoder(RBLNModel):
                 if rbln_config.max_seq_len is None:
                     raise ValueError("`max_seq_len` should be specified!")
 
-        # `max_seq_len` may be a single value or a list of values (bucketing). Normalize to a
-        # sorted list of unique sequence lengths so that downstream logic is uniform.
-        max_seq_lens = (
-            [rbln_config.max_seq_len]
-            if isinstance(rbln_config.max_seq_len, int)
-            else sorted(set(rbln_config.max_seq_len))
-        )
-
-        if max_position_embeddings is not None and max(max_seq_lens) > max_position_embeddings:
+        if max_position_embeddings is not None and rbln_config.max_seq_len > max_position_embeddings:
             raise ValueError("`max_seq_len` should be less or equal than max_position_embeddings!")
 
         signature_params = inspect.signature(model.forward).parameters.keys()
@@ -172,57 +148,21 @@ class RBLNTransformerEncoder(RBLNModel):
                 "This is an internal error. Please report it to the developers."
             )
 
-        # Build one input_info set per `max_seq_len` bucket. When more than one bucket is
-        # requested, `input_info` becomes a list of input_info sets so the compiled model
-        # exposes one executor per bucket and the runtime dispatches by input shape.
-        input_info = [
-            [
-                (model_input_name, [rbln_config.batch_size, max_seq_len], cls.rbln_dtype)
+        if rbln_config.model_input_shapes is None:
+            input_info = [
+                (model_input_name, [rbln_config.batch_size, rbln_config.max_seq_len], cls.rbln_dtype)
                 for model_input_name in rbln_config.model_input_names
             ]
-            for max_seq_len in max_seq_lens
-        ]
-        if len(input_info) == 1:
-            input_info = input_info[0]
+        else:
+            input_info = [
+                (model_input_name, model_input_shape, cls.rbln_dtype)
+                for model_input_name, model_input_shape in zip(
+                    rbln_config.model_input_names, rbln_config.model_input_shapes, strict=False
+                )
+            ]
 
         rbln_config.set_compile_cfgs([RBLNCompileConfig(input_info=input_info)])
         return rbln_config
-
-    def forward(self, *args: Any, return_dict: Optional[bool] = None, **kwargs: Any) -> Any:
-        compile_cfg = self.rbln_config.compile_cfgs[0]
-        if not compile_cfg.is_multiple_input_info:
-            # No sequence-length bucketing: use the default single-shape path.
-            return super().forward(*args, return_dict=return_dict, **kwargs)
-
-        # Bucketing: pad inputs to the smallest `max_seq_len` bucket that fits, then slice outputs
-        # back to the original sequence length (`input_ids.shape[1]`).
-        buckets = (
-            [self.rbln_config.max_seq_len]
-            if isinstance(self.rbln_config.max_seq_len, int)
-            else sorted(set(self.rbln_config.max_seq_len))
-        )
-        input_ids = kwargs.get("input_ids")
-        if input_ids is None:
-            input_names = self.rbln_config.model_input_names or self.rbln_model_input_names
-            input_ids = args[input_names.index("input_ids")]
-        seq_len = input_ids.shape[1]
-        target = next((bucket for bucket in buckets if bucket >= seq_len), None)
-        if target is None:
-            raise ValueError(
-                f"Input sequence length ({seq_len}) exceeds the largest `max_seq_len` bucket ({buckets[-1]})."
-            )
-
-        def pad(t):
-            return torch.nn.functional.pad(t, (0, target - seq_len)) if isinstance(t, torch.Tensor) else t
-
-        def unpad(t):
-            return t[:, :seq_len] if isinstance(t, torch.Tensor) and t.dim() >= 2 and t.shape[1] == target else t
-
-        output = self.model[0](*(pad(a) for a in args), **{k: pad(v) for k, v in kwargs.items()})
-        output = type(output)(map(unpad, output)) if isinstance(output, (tuple, list)) else unpad(output)
-
-        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
-        return self._prepare_output(output, return_dict)
 
 
 class RBLNImageModel(RBLNModel):
@@ -256,11 +196,11 @@ class RBLNImageModel(RBLNModel):
         if rbln_config.image_size is None:
             for processor in preprocessors:
                 if hasattr(processor, "size"):
-                    if all(required_key in processor.size for required_key in ["height", "width"]):
+                    if all(required_key in processor.size.keys() for required_key in ["height", "width"]):
                         rbln_config.image_size = (processor.size["height"], processor.size["width"])
-                    elif "shortest_edge" in processor.size:
+                    elif "shortest_edge" in processor.size.keys():
                         rbln_config.image_size = (processor.size["shortest_edge"], processor.size["shortest_edge"])
-                    elif "longest_edge" in processor.size:
+                    elif "longest_edge" in processor.size.keys():
                         rbln_config.image_size = (processor.size["longest_edge"], processor.size["longest_edge"])
                     break
 

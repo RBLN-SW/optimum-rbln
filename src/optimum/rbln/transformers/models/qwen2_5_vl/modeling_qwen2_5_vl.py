@@ -18,13 +18,13 @@ from typing import TYPE_CHECKING, Any, Callable, List, Optional, Tuple, Union
 
 import torch
 from transformers import (
-    AutoModelForImageTextToText,
+    AutoModelForVision2Seq,
     PretrainedConfig,
     PreTrainedModel,
     Qwen2_5_VLConfig,
     Qwen2_5_VLForConditionalGeneration,
 )
-from transformers.initialization import no_init_weights
+from transformers.modeling_utils import no_init_weights
 from transformers.models.qwen2_5_vl.modeling_qwen2_5_vl import (
     Qwen2_5_VisionPatchEmbed,
     Qwen2_5_VisionRotaryEmbedding,
@@ -346,7 +346,7 @@ class RBLNQwen2_5_VisionTransformerPretrainedModel(RBLNModel):
 
 
 class RBLNQwen2_5_VLModel(RBLNDecoderOnlyModel):
-    auto_model_class = AutoModelForImageTextToText
+    auto_model_class = AutoModelForVision2Seq
     _decoder_wrapper_cls = Qwen2_5_VL_LanguageModelWrapper
     _use_rotary_emb = False
     _rbln_submodules = [
@@ -355,7 +355,6 @@ class RBLNQwen2_5_VLModel(RBLNDecoderOnlyModel):
     _config_class = Qwen2_5_VLConfig
     _rotary_emb_class = Qwen2_5_VLRotaryEmbedding
     _get_rope_index_func = Qwen2_5_VLModel.get_rope_index
-    get_vision_position_ids = Qwen2_5_VLModel.get_vision_position_ids
 
     def __post_init__(self, **kwargs):
         if hasattr(self.config, "embedding_dim"):
@@ -368,17 +367,16 @@ class RBLNQwen2_5_VLModel(RBLNDecoderOnlyModel):
 
         super().__post_init__(**kwargs)
         self.visual = self.rbln_submodules[0]
-        self.rotary_emb = self._rotary_emb_class(self.config.text_config)
+        self.rotary_emb = self._rotary_emb_class(self.config)
         if not self.can_generate():
             self.block_tables = torch.arange(self.rbln_config.kvcache_num_blocks, dtype=torch.int16)
 
     @property
     def logits_last_dim(self):
-        text_config = self.config.text_config
         if self.can_generate():
-            return text_config.vocab_size
+            return self.config.vocab_size
         else:
-            return self.embedding_dim if hasattr(self, "embedding_dim") else text_config.hidden_size
+            return self.embedding_dim if hasattr(self, "embedding_dim") else self.config.hidden_size
 
     def _create_embedding_layer(self):
         with no_init_weights():
@@ -398,13 +396,12 @@ class RBLNQwen2_5_VLModel(RBLNDecoderOnlyModel):
         model_config: PretrainedConfig,
     ):
         input_info = super().get_input_info(batch_size, query_length, rbln_config, model_config)
-        text_config = model_config.get_text_config()
         pos_idx = 3
         input_info.insert(
             pos_idx,
             (
                 "position_emb",
-                [2, batch_size, 1, query_length, text_config.hidden_size // text_config.num_attention_heads],
+                [2, batch_size, 1, query_length, model_config.hidden_size // model_config.num_attention_heads],
                 rbln_config.dtype,
             ),
         )
@@ -413,7 +410,7 @@ class RBLNQwen2_5_VLModel(RBLNDecoderOnlyModel):
 
     def _get_position_embeddings(self, hidden_states, position_ids):
         cos, sin = self.rotary_emb(hidden_states, position_ids)
-        mrope_section = self.config.text_config.rope_scaling["mrope_section"] * 2
+        mrope_section = self.config.rope_scaling["mrope_section"] * 2
         cos = (
             torch.cat([m[i % 3] for i, m in enumerate(cos.split(mrope_section, dim=-1))], dim=-1)
             .unsqueeze(1)
@@ -435,7 +432,6 @@ class RBLNQwen2_5_VLModel(RBLNDecoderOnlyModel):
         image_grid_thw: torch.LongTensor = None,
         video_grid_thw: torch.LongTensor = None,
         second_per_grid_ts: torch.Tensor = None,
-        mm_token_type_ids: Optional[torch.IntTensor] = None,
     ):
         batch_size = input_ids.shape[0]
         inputs_embeds = self.embed_tokens(input_ids).to(self.rbln_config.dtype)
@@ -472,8 +468,7 @@ class RBLNQwen2_5_VLModel(RBLNDecoderOnlyModel):
 
         max_inputs_len = input_ids.shape[1]
 
-        text_config = self.config.text_config
-        head_dim = getattr(text_config, "head_dim", None) or text_config.hidden_size // text_config.num_attention_heads
+        head_dim = getattr(self.config, "head_dim", None) or self.config.hidden_size // self.config.num_attention_heads
         all_position_embeds = torch.zeros(2, batch_size, 1, max_inputs_len, head_dim, dtype=self.rbln_config.dtype)
         all_rope_deltas = []
 
@@ -488,24 +483,11 @@ class RBLNQwen2_5_VLModel(RBLNDecoderOnlyModel):
             vision_tokens = input_id[0][vision_start_indices + 1]
             image_nums = (vision_tokens == image_token_id).sum()
             video_nums = (vision_tokens == video_token_id).sum()
-
-            # mm_token_type_ids (0=text, 1=image, 2=video). Derive it from
-            # input_id if the caller (e.g. the processor) did not provide it.
-            if mm_token_type_ids is not None:
-                batch_mm_token_type_ids = mm_token_type_ids[b_idx : b_idx + 1][:, attention_mask[b_idx].bool()]
-            else:
-                batch_mm_token_type_ids = torch.zeros_like(input_id, dtype=torch.int)
-                batch_mm_token_type_ids[input_id == image_token_id] = 1
-                batch_mm_token_type_ids[input_id == video_token_id] = 2
-
             position_ids, rope_deltas = self._get_rope_index_func(
                 input_id,
-                batch_mm_token_type_ids,
                 image_grid_thw[image_idx : image_idx + image_nums] if image_grid_thw is not None else None,
                 video_grid_thw[video_idx : video_idx + video_nums] if video_grid_thw is not None else None,
-                second_per_grid_ts=second_per_grid_ts[video_idx : video_idx + video_nums]
-                if second_per_grid_ts is not None
-                else None,
+                second_per_grid_ts[video_idx : video_idx + video_nums] if second_per_grid_ts is not None else None,
             )
             image_idx += image_nums
             video_idx += video_nums
@@ -532,7 +514,6 @@ class RBLNQwen2_5_VLModel(RBLNDecoderOnlyModel):
         second_per_grid_ts: Optional[torch.Tensor] = None,
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
-        mm_token_type_ids: Optional[torch.IntTensor] = None,
         **kwargs,
     ) -> RBLNDecoderOnlyOutput:
         inputs_embeds, position_embed, rope_deltas = self._preprocess_prefill(
@@ -543,7 +524,6 @@ class RBLNQwen2_5_VLModel(RBLNDecoderOnlyModel):
             image_grid_thw,
             video_grid_thw,
             second_per_grid_ts,
-            mm_token_type_ids=mm_token_type_ids,
         )
 
         self.rope_deltas = rope_deltas
@@ -556,10 +536,10 @@ class RBLNQwen2_5_VLModel(RBLNDecoderOnlyModel):
                 torch.zeros(
                     batch_size,
                     seq_len,
-                    self.config.text_config.hidden_size,
+                    self.config.hidden_size,
                     dtype=self.rbln_config.dtype,
                 )
-                for _ in range(self.config.text_config.num_hidden_layers + 1)
+                for _ in range(self.config.num_hidden_layers + 1)
             )
             if output_hidden_states
             else None
@@ -620,7 +600,7 @@ class RBLNQwen2_5_VLForConditionalGeneration(RBLNQwen2_5_VLModel, RBLNDecoderOnl
                     "max_seq_len": 6400,
                     "device": 0,
                 },
-                "num_devices": 8,
+                "tensor_parallel_size": 8,
                 "kvcache_partition_len": 16_384,
                 "max_seq_len": 114_688,
                 "device": [0, 1, 2, 3, 4, 5, 6, 7],
@@ -631,7 +611,7 @@ class RBLNQwen2_5_VLForConditionalGeneration(RBLNQwen2_5_VLModel, RBLNDecoderOnl
         ```
     """
 
-    auto_model_class = AutoModelForImageTextToText
+    auto_model_class = AutoModelForVision2Seq
     _decoder_wrapper_cls = Qwen2_5_VL_LanguageModelWrapper
     _supports_non_fp32 = True
     _use_rotary_emb = False
@@ -662,7 +642,6 @@ class RBLNQwen2_5_VLForConditionalGeneration(RBLNQwen2_5_VLModel, RBLNDecoderOnl
         image_grid_thw=None,
         video_grid_thw=None,
         second_per_grid_ts=None,
-        mm_token_type_ids=None,
         **kwargs,
     ):
         model_inputs = {}
@@ -679,7 +658,6 @@ class RBLNQwen2_5_VLForConditionalGeneration(RBLNQwen2_5_VLModel, RBLNDecoderOnl
             input_ids = input_ids[:, -1:]
             cache_position = generate_idx
             generate_idx = generate_idx + 1
-            mm_token_type_ids = None
             model_inputs.update({"input_ids": input_ids})
 
         model_inputs.update(
@@ -692,7 +670,6 @@ class RBLNQwen2_5_VLForConditionalGeneration(RBLNQwen2_5_VLModel, RBLNDecoderOnl
                 "image_grid_thw": image_grid_thw,
                 "video_grid_thw": video_grid_thw,
                 "second_per_grid_ts": second_per_grid_ts,
-                "mm_token_type_ids": mm_token_type_ids,
             }
         )
 
@@ -736,7 +713,6 @@ class RBLNQwen2_5_VLForConditionalGeneration(RBLNQwen2_5_VLModel, RBLNDecoderOnl
         generate_idx: Optional[torch.Tensor] = None,
         return_dict: Optional[bool] = None,
         output_hidden_states: Optional[bool] = None,
-        mm_token_type_ids: Optional[torch.IntTensor] = None,
         **kwargs,
     ) -> RBLNDecoderOnlyOutput:
         output_hidden_states = _validate_output_hidden_states(output_hidden_states, self.rbln_config)
@@ -750,7 +726,6 @@ class RBLNQwen2_5_VLForConditionalGeneration(RBLNQwen2_5_VLModel, RBLNDecoderOnl
                 image_grid_thw,
                 video_grid_thw,
                 second_per_grid_ts,
-                mm_token_type_ids=mm_token_type_ids,
             )
 
             batch_size, seq_len = inputs_embeds.shape[:2]
@@ -759,10 +734,10 @@ class RBLNQwen2_5_VLForConditionalGeneration(RBLNQwen2_5_VLModel, RBLNDecoderOnl
                     torch.zeros(
                         batch_size,
                         seq_len,
-                        self.config.text_config.hidden_size,
+                        self.config.hidden_size,
                         dtype=self.rbln_config.dtype,
                     )
-                    for _ in range(self.config.text_config.num_hidden_layers + 1)
+                    for _ in range(self.config.num_hidden_layers + 1)
                 )
                 if output_hidden_states
                 else None

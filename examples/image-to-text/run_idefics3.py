@@ -14,7 +14,7 @@ def main(
     from_transformers: bool = False,
     prompt: typing.Optional[str] = None,
     max_seq_len: typing.Optional[int] = None,
-    num_devices: typing.Optional[int] = 4,
+    tensor_parallel_size: typing.Optional[int] = 4,
 ):
     processor = AutoProcessor.from_pretrained(model_id)
 
@@ -27,7 +27,7 @@ def main(
                     "attn_impl": "flash_attn",
                     "max_seq_len": max_seq_len,
                     "use_inputs_embeds": True,
-                    "num_devices": num_devices,
+                    "tensor_parallel_size": tensor_parallel_size,
                     "batch_size": batch_size,
                 }
             },

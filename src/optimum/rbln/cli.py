@@ -312,11 +312,11 @@ def _print_rbln_config_options(class_name: str):
     # Curated: common compile-time options that live in RBLNModelConfig (non-runtime)
     print(_underline("\nCommon compile-time options (in rbln_config):"))
     print("  • npu: Target NPU for compilation (e.g., 'RBLN-CA25').")
-    print("  • num_devices: Number of NPUs to shard the model across at compile time.")
+    print("  • tensor_parallel_size: Number of NPUs to shard the model at compile time.")
 
     print(_underline("\nTips:"))
     print("  - Pass config keys as CLI flags, e.g., --batch_size 2 --max_seq_len 4096")
-    print("  - Compile-time examples: --npu RBLN-CA25 --num_devices 4")
+    print("  - Compile-time examples: --npu RBLN-CA25 --tensor_parallel_size 4")
     print("  - Use dot-notation for submodules, e.g., --vision_tower.image_size 336 --language_model.batch_size 1")
     print("  - To see examples: optimum-rbln-cli --examples")
 

@@ -39,7 +39,8 @@ class _TextEncoder(torch.nn.Module):
         self.enc = enc
 
     def forward(self, inp):
-        return self.enc(inp, output_hidden_states=True, return_dict=False)
+        enc_out = self.enc(inp, output_hidden_states=True, return_dict=False)
+        return enc_out
 
 
 class RBLNCLIPTextModel(RBLNModel):

@@ -50,7 +50,7 @@ class RBLNQwen2ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
             "Qwen/Qwen2-7B-Instruct",
             export=True,
             rbln_batch_size=1,
-            rbln_num_devices=4,
+            rbln_tensor_parallel_size=4,
         )
 
 
@@ -58,7 +58,7 @@ class RBLNQwen2ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
         rbln_config = {
             "batch_size": 1,
             "max_seq_len": 4096,
-            "num_devices": 4,
+            "tensor_parallel_size": 4,
         }
         model = RBLNQwen2ForCausalLM.from_pretrained(
             "Qwen/Qwen2-7B-Instruct",
@@ -73,7 +73,7 @@ class RBLNQwen2ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
         config = RBLNQwen2ForCausalLMConfig(
             batch_size=1,
             max_seq_len=4096,
-            num_devices=4
+            tensor_parallel_size=4
         )
         model = RBLNQwen2ForCausalLM.from_pretrained(
             "Qwen/Qwen2-7B-Instruct",

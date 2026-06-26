@@ -26,7 +26,7 @@ class RBLNGemma2ForCausalLMConfig(RBLNDecoderOnlyModelForCausalLMConfig):
     config = RBLNGemma2ForCausalLMConfig(
         batch_size=1,
         max_seq_len=8192,
-        num_devices=4
+        tensor_parallel_size=4
     )
     # Use the configuration with from_pretrained
     model = RBLNGemma2ForCausalLM.from_pretrained(

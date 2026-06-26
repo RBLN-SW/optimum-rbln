@@ -17,27 +17,6 @@ import torch
 from ...configuration_generic import RBLNImageModelConfig, RBLNModelConfig
 
 
-class RBLNGroundingDinoTextModelConfig(RBLNModelConfig):
-    def __init__(
-        self,
-        batch_size: Optional[int] = None,
-        max_text_len: Optional[int] = None,
-        **kwargs: Any,
-    ):
-        """
-        Args:
-            batch_size (Optional[int]): The batch size for text processing. Defaults to 1.
-            max_text_len (Optional[int]): Maximum text sequence length. Defaults to the
-                parent GroundingDino config's `max_text_len`.
-            kwargs: Additional arguments passed to the parent RBLNModelConfig.
-        """
-        super().__init__(**kwargs)
-        self.batch_size = batch_size or 1
-        if not isinstance(self.batch_size, int) or self.batch_size < 0:
-            raise ValueError(f"batch_size must be a positive integer, got {self.batch_size}")
-        self.max_text_len = max_text_len
-
-
 class RBLNGroundingDinoForObjectDetectionConfig(RBLNImageModelConfig):
     submodules = [
         "text_backbone",

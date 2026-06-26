@@ -14,7 +14,7 @@ def main(
     from_transformers: bool = False,
     prompt: typing.Optional[str] = None,
     max_seq_len: typing.Optional[int] = None,
-    num_devices: typing.Optional[int] = 4,
+    tensor_parallel_size: typing.Optional[int] = 4,
     num_text_only: typing.Optional[int] = None,
 ):
     if from_transformers:
@@ -25,7 +25,7 @@ def main(
             export=True,
             rbln_config={
                 "language_model": {
-                    "num_devices": num_devices,
+                    "tensor_parallel_size": tensor_parallel_size,
                     "max_seq_len": max_seq_len,
                     "use_inputs_embeds": True,
                     "batch_size": batch_size,

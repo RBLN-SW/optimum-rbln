@@ -47,7 +47,7 @@ class RBLNLlamaForCausalLM(RBLNDecoderOnlyModelForCausalLM):
             "meta-llama/Llama-2-7b-hf",
             export=True,
             rbln_batch_size=1,
-            rbln_num_devices=4,
+            rbln_tensor_parallel_size=4,
         )
 
 
@@ -55,7 +55,7 @@ class RBLNLlamaForCausalLM(RBLNDecoderOnlyModelForCausalLM):
         rbln_config = {
             "batch_size": 1,
             "max_seq_len": 4096,
-            "num_devices": 4,
+            "tensor_parallel_size": 4,
         }
         model = RBLNLlamaForCausalLM.from_pretrained(
             "meta-llama/Llama-2-7b-hf",
@@ -70,7 +70,7 @@ class RBLNLlamaForCausalLM(RBLNDecoderOnlyModelForCausalLM):
         config = RBLNLlamaForCausalLMConfig(
             batch_size=1,
             max_seq_len=4096,
-            num_devices=4
+            tensor_parallel_size=4
         )
         model = RBLNLlamaForCausalLM.from_pretrained(
             "meta-llama/Llama-2-7b-hf",

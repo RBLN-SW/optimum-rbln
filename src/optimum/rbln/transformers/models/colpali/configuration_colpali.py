@@ -37,7 +37,7 @@ class RBLNColPaliForRetrievalConfig(RBLNModelConfig):
                 "language_model": {"prefill_chunk_size": 8192},
             }
             output_hidden_states=False,
-            num_devices=4
+            tensor_parallel_size=4
         )
 
         # Use the configuration with from_pretrained

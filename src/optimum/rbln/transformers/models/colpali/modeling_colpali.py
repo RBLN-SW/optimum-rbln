@@ -16,8 +16,8 @@ from pathlib import Path
 from typing import Optional, Tuple, Union
 
 import torch
-from transformers.initialization import no_init_weights
 from transformers.modeling_outputs import BaseModelOutputWithPooling
+from transformers.modeling_utils import no_init_weights
 from transformers.models.colpali.modeling_colpali import ColPaliForRetrieval, ColPaliForRetrievalOutput
 
 from ....configuration_utils import RBLNModelConfig
@@ -99,7 +99,7 @@ class RBLNColPaliForRetrieval(RBLNModel):
                 "language_model": {"prefill_chunk_size": 8192},
             },
             output_hidden_states=False,
-            num_devices=4
+            tensor_parallel_size=4
         )
         model = RBLNColPaliForRetrieval.from_pretrained(
             "vidore/colpali-v1.3-hf",
@@ -110,6 +110,7 @@ class RBLNColPaliForRetrieval(RBLNModel):
     """
 
     auto_model_class = None
+    _rbln_submodule_postfix = "model"
     _rbln_submodules = [
         {"name": "vlm"},
     ]
