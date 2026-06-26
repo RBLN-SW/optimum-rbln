@@ -38,7 +38,7 @@ class RBLNColQwen2ForRetrievalConfig(RBLNDecoderOnlyModelConfig):
                     "device": 0,
                 },
                 "max_seq_len": 32_768,
-                "tensor_parallel_size": 4,
+                "num_devices": 4,
                 "device": [0, 1, 2, 3],
                 "output_hidden_states": False,
                 }

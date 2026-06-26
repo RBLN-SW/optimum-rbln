@@ -30,8 +30,8 @@ import rebel
 import torch
 from rebel.compile_context import CompileContext
 from transformers import PretrainedConfig, TimeSeriesTransformerForPrediction, TimeSeriesTransformerModel
+from transformers.initialization import no_init_weights
 from transformers.modeling_outputs import SampleTSPredictionOutput, Seq2SeqTSModelOutput
-from transformers.modeling_utils import no_init_weights
 
 from ....configuration_utils import RBLNCompileConfig
 from ....modeling import RBLNModel
