@@ -50,14 +50,14 @@ class RBLNMistralForCausalLM(RBLNDecoderOnlyModelForCausalLM):
             "mistralai/Mistral-7B-v0.1",
             export=True,
             rbln_batch_size=1,
-            rbln_tensor_parallel_size=4,
+            rbln_num_devices=4,
         )
 
         # Using a config dictionary
         rbln_config = {
             "batch_size": 1,
             "max_seq_len": 4096,
-            "tensor_parallel_size": 4,
+            "num_devices": 4,
         }
         model = RBLNMistralForCausalLM.from_pretrained(
             "mistralai/Mistral-7B-v0.1",
@@ -71,7 +71,7 @@ class RBLNMistralForCausalLM(RBLNDecoderOnlyModelForCausalLM):
         config = RBLNMistralForCausalLMConfig(
             batch_size=1,
             max_seq_len=4096,
-            tensor_parallel_size=4
+            num_devices=4
         )
         model = RBLNMistralForCausalLM.from_pretrained(
             "mistralai/Mistral-7B-v0.1",

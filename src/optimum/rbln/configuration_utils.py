@@ -15,7 +15,7 @@
 import importlib
 import inspect
 import json
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, fields
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Protocol, Tuple, Type, Union, runtime_checkable
 
@@ -77,13 +77,13 @@ class RBLNCompileConfig:
         compiled_model_name (str): Name of the compiled model.
         input_info (Union[List[TypeInputInfo], TypeInputInfo]): Information about input tensors.
         npu (Optional[str]): NPU configuration.
-        tensor_parallel_size (Optional[int]): Size for tensor parallelism.
+        num_devices (Optional[int]): Number of devices to distribute the model across.
     """
 
     compiled_model_name: str = DEFAULT_COMPILED_MODEL_NAME
     input_info: Union[List[TypeInputInfo], TypeInputInfo] = None
     npu: Optional[str] = None
-    tensor_parallel_size: Optional[int] = None
+    num_devices: Optional[int] = None
 
     @staticmethod
     def normalize_dtype(dtype: Union[str, torch.dtype, np.dtype]) -> str:
@@ -137,7 +137,7 @@ class RBLNCompileConfig:
         self.compiled_model_name = kwargs.get("compiled_model_name", self.compiled_model_name)
         self.input_info = kwargs.get("input_info", self.input_info)
         self.npu = kwargs.get("npu", self.npu)
-        self.tensor_parallel_size = kwargs.get("tensor_parallel_size", self.tensor_parallel_size)
+        self.num_devices = kwargs.get("num_devices", self.num_devices)
         return self
 
     def get_dummy_inputs(
@@ -250,7 +250,7 @@ class RBLNAutoConfig:
             >>> data = {
             ...     "cls_name": "RBLNLlamaForCausalLMConfig",
             ...     "create_runtimes": False,
-            ...     "tensor_parallel_size": 4
+            ...     "num_devices": 4
             ... }
             >>> cfg = RBLNAutoConfig.load_from_dict(data)
         """
@@ -440,7 +440,7 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
         config = RBLNLlamaForCausalLMConfig(
             max_seq_len=4096,
             device=[0, 1, 2, 3],
-            tensor_parallel_size=4  # For multi-NPU parallel inference
+            num_devices=4  # For multi-NPU parallel inference
         )
         ```
 
@@ -463,7 +463,7 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
                     "image_size": 336,
                 },
                 "language_model": {
-                    "tensor_parallel_size": 4,  # Distribute across 4 NPUs
+                    "num_devices": 4,  # Distribute across 4 NPUs
                     "max_seq_len": 8192,
                     "use_inputs_embeds": True,
                     "batch_size": 1,
@@ -479,7 +479,7 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
         # Setup a complex multi-device configuration for large language models
         llm_config = RBLNLlamaForCausalLMConfig(
             # Split model across 8 NPUs
-            tensor_parallel_size=8,
+            num_devices=8,
 
             # Runtime options
             device=[8, 9, 10, 11, 12, 13, 14, 15],
@@ -502,7 +502,7 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
             create_runtimes=False,  # Compile only, don't create runtime
             npu="RBLN-CA25",  # Specify target NPU for compilation
             max_seq_len=4096,
-            tensor_parallel_size=4,
+            num_devices=4,
             batch_size=1
         )
 
@@ -555,7 +555,7 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
         "_runtime_options",
         "npu",
         "dtype",
-        "tensor_parallel_size",
+        "num_devices",
         "create_runtimes",
         "device",
         "device_map",
@@ -583,7 +583,7 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
             from_predecessor.update(
                 {
                     "npu": self.npu,
-                    "tensor_parallel_size": self.tensor_parallel_size,
+                    "num_devices": self.num_devices,
                     "optimum_rbln_version": self.optimum_rbln_version,
                 }
             )
@@ -591,6 +591,12 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
 
             init_kwargs = from_predecessor
             init_kwargs.update(submodule_config)
+
+            # Drop the inherited `num_devices` so a submodule using the deprecated
+            # `tensor_parallel_size` alias isn't shadowed by it; an explicit submodule
+            # `num_devices` already wins on its own.
+            if "tensor_parallel_size" in submodule_config and "num_devices" not in submodule_config:
+                init_kwargs.pop("num_devices", None)
 
             if force_kwargs:
                 for key, value in kwargs.items():
@@ -632,7 +638,7 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
 
         if model_cls is not None:
             if not getattr(model_cls, "_tp_support", False):
-                filtered_out_params.add("tensor_parallel_size")
+                filtered_out_params.add("num_devices")
 
         filtered_params = {}
         for key, value in parameters.items():
@@ -680,6 +686,12 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
         super().__setattr__(key, value)
 
     @deprecate_kwarg(
+        old_name="tensor_parallel_size",
+        new_name="num_devices",
+        version="0.12.0",
+        raise_if_greater_or_equal_version=False,
+    )
+    @deprecate_kwarg(
         old_name="_torch_dtype",
         new_name="dtype",
         version="0.12.0",
@@ -695,7 +707,7 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
         device_map: Optional[Dict[str, Union[int, List[int]]]] = None,
         activate_profiler: Optional[bool] = None,
         npu: Optional[str] = None,
-        tensor_parallel_size: Optional[int] = None,
+        num_devices: Optional[int] = None,
         timeout: Optional[int] = None,
         optimum_rbln_version: Optional[str] = None,
         dtype: Optional[Union[str, torch.dtype]] = None,
@@ -714,7 +726,7 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
             device_map (Optional[Dict[str, Union[int, List[int]]]]): Mapping from compiled model names to device IDs.
             activate_profiler (Optional[bool]): Whether to activate the profiler for performance analysis.
             npu (Optional[str]): The NPU device name to use for compilation.
-            tensor_parallel_size (Optional[int]): Size for tensor parallelism to distribute the model across devices.
+            num_devices (Optional[int]): Number of devices to distribute the model across.
             timeout (Optional[int]): The timeout for the runtime in seconds. If it isn't provided, it will be set to 60 by default.
             optimum_rbln_version (Optional[str]): The optimum-rbln version used for this configuration.
             dtype (Optional[Union[str, torch.dtype]]): The data type to use for the model.
@@ -743,9 +755,9 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
         if optimize_host_memory is not None:
             logger.warning("`optimize_host_memory` is deprecated and will be removed in future versions.")
 
-        # Automatically pass npu, tensor_parallel_size to compile_cfgs
+        # Automatically pass npu, num_devices to compile_cfgs
         self.npu = npu
-        self.tensor_parallel_size = tensor_parallel_size
+        self.num_devices = num_devices
 
         if dtype is not None and isinstance(dtype, torch.dtype):
             dtype = RBLNCompileConfig.normalize_dtype(dtype)
@@ -760,7 +772,13 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
         if not isinstance(self._compile_cfgs, list):
             raise ValueError("`compile_cfgs` must be a list of `RBLNCompileConfig`.")
         if len(self._compile_cfgs) > 0 and not isinstance(self._compile_cfgs[0], RBLNCompileConfig):
-            self.set_compile_cfgs([RBLNCompileConfig(**cfg) for cfg in self._compile_cfgs])
+            compile_cfg_fields = {f.name for f in fields(RBLNCompileConfig)}
+            self.set_compile_cfgs(
+                [
+                    RBLNCompileConfig(**{k: v for k, v in cfg.items() if k in compile_cfg_fields})
+                    for cfg in self._compile_cfgs
+                ]
+            )
 
         if len(kwargs) > 0:
             if optimum_rbln_version is not None:  # loaded from file
@@ -857,7 +875,7 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
         self._compile_cfgs = compile_cfgs
         for compile_cfg in self._compile_cfgs:
             compile_cfg.npu = self.npu
-            compile_cfg.tensor_parallel_size = self.tensor_parallel_size
+            compile_cfg.num_devices = self.num_devices
 
         target_npu = self.npu or next((cfg.npu for cfg in self._compile_cfgs if cfg.npu is not None), None)
         warn_deprecated_npu(target_npu)
