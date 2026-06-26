@@ -424,19 +424,14 @@ class RBLNModelForSeq2SeqLM(RBLNModel, GenerationMixin, ABC):
             }
 
         batch_size, input_len = inputs_tensor.shape
-        pad_len = self.rbln_config.enc_max_seq_len - input_len
-        if pad_len < 0:
-            raise ValueError(
-                f"Encoder input length ({input_len}) exceeds the compiled `enc_max_seq_len` "
-                f"({self.rbln_config.enc_max_seq_len}); the input would be silently truncated. "
-                f"Recompile the model with a larger `rbln_enc_max_seq_len`."
-            )
         inputs_tensor = torch.nn.functional.pad(
             inputs_tensor,
-            (0, pad_len),
+            (0, self.rbln_config.enc_max_seq_len - input_len),
             value=self.config.pad_token_id,
         )
-        model_kwargs["attention_mask"] = torch.nn.functional.pad(model_kwargs["attention_mask"], (0, pad_len))
+        model_kwargs["attention_mask"] = torch.nn.functional.pad(
+            model_kwargs["attention_mask"], (0, self.rbln_config.enc_max_seq_len - input_len)
+        )
 
         # 3. make sure that encoder returns `ModelOutput`
         model_input_name = model_input_name if model_input_name is not None else self.main_input_name
