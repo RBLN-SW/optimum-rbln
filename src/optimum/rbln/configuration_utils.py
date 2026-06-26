@@ -417,7 +417,7 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
         config.save("/path/to/model")
 
         # Using AutoConfig
-        loaded_config = RBLNAutoConfig.load("/path/to/model")
+        loaded_config = RBLNAutoConfig.from_pretrained("/path/to/model")
         ```
 
 
