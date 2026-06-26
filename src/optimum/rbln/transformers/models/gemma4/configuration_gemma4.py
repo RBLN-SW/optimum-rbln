@@ -244,10 +244,8 @@ class RBLNGemma4ForConditionalGenerationConfig(RBLNModelConfig):
         # Resolves the language model's image-prefill chunk size(s) against the vision tower's
         # max_soft_tokens.
         # When image_prefill_chunk_size is not pinned: derive it from max_soft_tokens by mapping each
-        # count to the smallest multiple of 128 that holds it, then keeping only the largest
-        # (n + 1) // 2 buckets — dropped smallest-first so the largest count keeps its own bucket and
-        # smaller images route to the smallest kept bucket >= their length at runtime. With the default
-        # single max_soft_tokens (280) this derives a single chunk size of 384.
+        # count to the smallest multiple of 128 that holds it — one bucket per distinct soft-token count.
+        # With the default single max_soft_tokens (280) this derives a single chunk size of 384.
         # When the user did pin it: use it as-is.
         # Either way the resolved buckets are validated against max_soft_tokens below (asserted here, not
         # at runtime); these buckets are independent of the text prefill_chunk_size.
@@ -267,9 +265,6 @@ class RBLNGemma4ForConditionalGenerationConfig(RBLNModelConfig):
             buckets = RBLNGemma4ForCausalLMConfig._validate_image_prefill_chunk_size(
                 [ceil_to_multiple_of_128(t) for t in max_soft_tokens]
             )
-            # Keep only the largest `(n + 1) // 2` buckets (descending list -> drop smallest first).
-            num_keep = (len(max_soft_tokens) + 1) // 2
-            buckets = buckets[:num_keep]
             if isinstance(lm_cfg, dict):
                 lm_cfg["image_prefill_chunk_size"] = buckets
             else:
@@ -285,14 +280,18 @@ class RBLNGemma4ForConditionalGenerationConfig(RBLNModelConfig):
                 f"{ceil_to_multiple_of_128(max(max_soft_tokens))}."
             )
 
-        # (2) Any image-prefill bucket smaller than the smallest max_soft_tokens is never selected at
-        # runtime (every image run is >= min(max_soft_tokens) and the runtime picks the smallest bucket
-        # that fits), so it would be compiled but unused.
-        if min(buckets) < min(max_soft_tokens):
+        # (2) Every compiled bucket must serve at least one max_soft_tokens count. At runtime an image
+        # of t soft tokens is dispatched to the smallest bucket >= t; buckets that no count routes to
+        # (too small to fit any, or shadowed by a smaller bucket that already covers every count) are
+        # compiled but never selected. `max(buckets) >= max(max_soft_tokens)` (checked above) guarantees
+        # every count has at least one fitting bucket here.
+        used_buckets = {min(b for b in buckets if b >= t) for t in max_soft_tokens}
+        unused_buckets = [b for b in buckets if b not in used_buckets]
+        if unused_buckets:
             raise ValueError(
-                f"The smallest image-prefill chunk size ({min(buckets)}) is smaller than the vision "
-                f"tower's smallest max_soft_tokens ({min(max_soft_tokens)}); image-prefill chunk sizes "
-                f"below {min(max_soft_tokens)} are never used at runtime. Remove them."
+                f"Image-prefill chunk sizes {unused_buckets} are never used at runtime: no vision tower "
+                f"max_soft_tokens ({max_soft_tokens}) routes to them (each image is dispatched to the "
+                f"smallest image-prefill chunk size >= its soft-token count). Remove them."
             )
 
     @property
