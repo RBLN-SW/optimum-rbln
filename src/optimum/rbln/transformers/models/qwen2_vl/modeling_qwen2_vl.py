@@ -509,7 +509,7 @@ class RBLNQwen2VLForConditionalGeneration(RBLNQwen2VLModel, RBLNDecoderOnlyModel
                     "max_seq_len": 6400,
                     "device": 0,
                 },
-                "tensor_parallel_size": 8,
+                "num_devices": 8,
                 "max_seq_len": 32_768,
                 "device": [0, 1, 2, 3, 4, 5, 6, 7],
             },

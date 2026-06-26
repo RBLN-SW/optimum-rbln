@@ -12,12 +12,29 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import inspect
 import re
 import threading
+from functools import lru_cache
 from typing import Any, List, Optional, Union
 
 import rebel
 import torch
+
+
+@lru_cache(maxsize=1)
+def compiler_num_devices_kwarg() -> str:
+    """Return the kwarg name the installed rebel-compiler expects for the device count.
+
+    Compilers expose this as `num_devices`, but ones predating that name only accept
+    `tensor_parallel_size`. `compile_from_torch` forwards `**kwargs` to `compile`, so we probe
+    `rebel.compile`'s signature to pick the name the installed compiler accepts.
+    """
+    try:
+        params = inspect.signature(rebel.compile).parameters
+    except (ValueError, TypeError):
+        return "num_devices"
+    return "num_devices" if "num_devices" in params else "tensor_parallel_size"
 
 
 def is_compiler_supports_buffer_resize() -> bool:
@@ -103,24 +120,22 @@ def normalize_npu(npu: str) -> str:
 
 
 def tp_and_devices_are_ok(
-    tensor_parallel_size: Optional[int] = None,
+    num_devices: Optional[int] = None,
     device: Optional[Union[int, List[int]]] = None,
     npu: Optional[str] = None,
 ) -> Optional[str]:
-    if tensor_parallel_size is None:
-        tensor_parallel_size = 1
+    if num_devices is None:
+        num_devices = 1
 
     if device is None:
-        device = list(range(tensor_parallel_size))
+        device = list(range(num_devices))
     elif isinstance(device, int):
         device = [device]
     elif isinstance(device, list):
         if any(not isinstance(d, int) for d in device):
             return "Device must be a(n) (list of) integer(s)."
-        if len(device) != tensor_parallel_size:
-            return (
-                f"The number of devices ({len(device)}) does not match tensor parallel size ({tensor_parallel_size})."
-            )
+        if len(device) != num_devices:
+            return f"The number of devices ({len(device)}) does not match `num_devices` ({num_devices})."
     else:
         return f"Invalid device: {device}"
 
@@ -132,11 +147,8 @@ def tp_and_devices_are_ok(
                 f"Device {device_id} is not a valid NPU device. Please check your NPU status with 'rbln-smi' command."
             )
 
-    if rebel.device_count() < tensor_parallel_size:
-        return (
-            f"Tensor parallel size {tensor_parallel_size} is greater than "
-            f"the number of available devices {rebel.device_count()}."
-        )
+    if rebel.device_count() < num_devices:
+        return f"`num_devices` ({num_devices}) is greater than the number of available devices {rebel.device_count()}."
 
     if npu is not None:
         for device_id in device:
