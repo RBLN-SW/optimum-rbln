@@ -53,9 +53,9 @@ class Action(Enum):
 def _at_or_past_deprecation(current: str, deprecated: str) -> bool:
     """Whether ``current`` belongs to a release line at or past ``deprecated``.
 
-    Compares PEP 440 base versions so pre-, post-, and dev-releases of the
-    same ``X.Y.Z`` line (e.g. ``0.11.0a1``, ``0.11.0rc1``, ``0.11.0.post1``)
-    share the cutoff with the final ``0.11.0`` tag.
+    Compares PEP 440 base versions so pre-release (``aN``, ``bN``, ``rcN``),
+    dev-release (``.devN``), and post-release (``.postN``) suffixes share
+    the cutoff with their final ``X.Y.Z`` tag.
     """
     current_base = packaging.version.Version(packaging.version.Version(current).base_version)
     return current_base >= packaging.version.Version(deprecated)
