@@ -7,6 +7,7 @@ import unittest
 from enum import Enum
 from typing import Iterable
 
+import pytest
 import transformers
 from diffusers import DiffusionPipeline
 from transformers import AutoConfig, CLIPConfig
@@ -19,20 +20,27 @@ def test_version_is_str():
     assert isinstance(__version__, str)
 
 
-def test_at_or_past_deprecation_normalizes_prerelease_to_base_version():
+@pytest.mark.parametrize(
+    "current, expected",
+    [
+        # Same X.Y.Z line — any PEP 440 suffix shares the cutoff.
+        pytest.param("1.0.0.dev0", True, id="dev"),
+        pytest.param("1.0.0a1", True, id="alpha"),
+        pytest.param("1.0.0b2", True, id="beta"),
+        pytest.param("1.0.0rc1", True, id="rc"),
+        pytest.param("1.0.0", True, id="final"),
+        pytest.param("1.0.0.post1", True, id="post"),
+        pytest.param("1.0.1", True, id="patch-above"),
+        # Earlier release lines stay below the cutoff.
+        pytest.param("0.9.5", False, id="minor-below"),
+        pytest.param("0.9.9.post2", False, id="minor-below-post"),
+    ],
+)
+def test_at_or_past_deprecation_normalizes_prerelease_to_base_version(current, expected):
     """Pre-, post-, and dev-releases share the cutoff with the final tag."""
     from optimum.rbln.utils.deprecation import _at_or_past_deprecation
 
-    assert _at_or_past_deprecation("0.11.0a1", "0.11.0")
-    assert _at_or_past_deprecation("0.11.0b2", "0.11.0")
-    assert _at_or_past_deprecation("0.11.0rc1", "0.11.0")
-    assert _at_or_past_deprecation("0.11.0.dev3", "0.11.0")
-    assert _at_or_past_deprecation("0.11.0", "0.11.0")
-    assert _at_or_past_deprecation("0.11.0.post1", "0.11.0")
-    assert _at_or_past_deprecation("0.11.1", "0.11.0")
-
-    assert not _at_or_past_deprecation("0.10.5", "0.11.0")
-    assert not _at_or_past_deprecation("0.10.9.post2", "0.11.0")
+    assert _at_or_past_deprecation(current, "1.0.0") is expected
 
 
 DUMMY_DEVICE_CODE = -1
