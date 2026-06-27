@@ -19,6 +19,24 @@ def test_version_is_str():
     assert isinstance(__version__, str)
 
 
+def test_at_or_past_deprecation_normalizes_prerelease_to_base_version():
+    # Pre-/post-/dev-releases on the same X.Y.Z line should count as
+    # "at the cutoff" so deprecated paths blow up on alphas/RCs that CI
+    # runs, not only on the final tag.
+    from optimum.rbln.utils.deprecation import _at_or_past_deprecation
+
+    assert _at_or_past_deprecation("0.11.0a1", "0.11.0")
+    assert _at_or_past_deprecation("0.11.0b2", "0.11.0")
+    assert _at_or_past_deprecation("0.11.0rc1", "0.11.0")
+    assert _at_or_past_deprecation("0.11.0.dev3", "0.11.0")
+    assert _at_or_past_deprecation("0.11.0", "0.11.0")
+    assert _at_or_past_deprecation("0.11.0.post1", "0.11.0")
+    assert _at_or_past_deprecation("0.11.1", "0.11.0")
+
+    assert not _at_or_past_deprecation("0.10.5", "0.11.0")
+    assert not _at_or_past_deprecation("0.10.9.post2", "0.11.0")
+
+
 DUMMY_DEVICE_CODE = -1
 
 
