@@ -20,9 +20,7 @@ def test_version_is_str():
 
 
 def test_at_or_past_deprecation_normalizes_prerelease_to_base_version():
-    # Pre-/post-/dev-releases on the same X.Y.Z line should count as
-    # "at the cutoff" so deprecated paths blow up on alphas/RCs that CI
-    # runs, not only on the final tag.
+    """Pre-, post-, and dev-releases share the cutoff with the final tag."""
     from optimum.rbln.utils.deprecation import _at_or_past_deprecation
 
     assert _at_or_past_deprecation("0.11.0a1", "0.11.0")

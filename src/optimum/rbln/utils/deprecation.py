@@ -51,14 +51,11 @@ class Action(Enum):
 
 
 def _at_or_past_deprecation(current: str, deprecated: str) -> bool:
-    """Whether the running release line is at or past the deprecation cutoff.
+    """Whether ``current`` belongs to a release line at or past ``deprecated``.
 
-    Compares PEP 440 base versions, so pre-/post-/dev-releases on the
-    same X.Y.Z line — e.g. 0.11.0a1, 0.11.0rc2, 0.11.0.post1, 0.11.0.dev3 —
-    trigger the raise-after-cutoff behavior consistently with the final
-    0.11.0 tag. Without this normalization, packaging.version treats
-    0.11.0a1 < 0.11.0, so deprecated calls only blow up at final-release
-    time rather than on the alpha/RC builds CI actually runs against.
+    Compares PEP 440 base versions so pre-, post-, and dev-releases of the
+    same ``X.Y.Z`` line (e.g. ``0.11.0a1``, ``0.11.0rc1``, ``0.11.0.post1``)
+    share the cutoff with the final ``0.11.0`` tag.
     """
     current_base = packaging.version.Version(packaging.version.Version(current).base_version)
     return current_base >= packaging.version.Version(deprecated)
