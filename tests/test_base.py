@@ -21,9 +21,12 @@ def test_version_is_str():
 
 
 @pytest.mark.parametrize(
-    "current, expected",
+    "current_version, expect_raise",
     [
-        # Same X.Y.Z line — any PEP 440 suffix shares the cutoff.
+        # Earlier release lines stay below the cutoff — warn only.
+        pytest.param("0.9.5", False, id="below"),
+        pytest.param("0.9.9.post2", False, id="below-post"),
+        # Same X.Y.Z line — any PEP 440 suffix shares the cutoff and raises.
         pytest.param("1.0.0.dev0", True, id="dev"),
         pytest.param("1.0.0a1", True, id="alpha"),
         pytest.param("1.0.0b2", True, id="beta"),
@@ -31,16 +34,25 @@ def test_version_is_str():
         pytest.param("1.0.0", True, id="final"),
         pytest.param("1.0.0.post1", True, id="post"),
         pytest.param("1.0.1", True, id="patch-above"),
-        # Earlier release lines stay below the cutoff.
-        pytest.param("0.9.5", False, id="minor-below"),
-        pytest.param("0.9.9.post2", False, id="minor-below-post"),
     ],
 )
-def test_at_or_past_deprecation_normalizes_prerelease_to_base_version(current, expected):
-    """Pre-, post-, and dev-releases share the cutoff with the final tag."""
-    from optimum.rbln.utils.deprecation import _at_or_past_deprecation
+def test_deprecate_method_raises_at_or_past_cutoff(current_version, expect_raise):
+    """@deprecate_method raises starting from the cutoff X.Y.Z line, including any PEP 440 suffix."""
+    from unittest.mock import patch
 
-    assert _at_or_past_deprecation(current, "1.0.0") is expected
+    from optimum.rbln.utils.deprecation import deprecate_method
+
+    with patch("optimum.rbln.utils.deprecation.__version__", current_version):
+
+        @deprecate_method(version="1.0.0", new_method="from_pretrained")
+        def stub():
+            return "ok"
+
+    if expect_raise:
+        with pytest.raises(ValueError, match="deprecated"):
+            stub()
+    else:
+        assert stub() == "ok"
 
 
 DUMMY_DEVICE_CODE = -1
