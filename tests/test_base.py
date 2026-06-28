@@ -23,10 +23,8 @@ def test_version_is_str():
 @pytest.mark.parametrize(
     "current_version, expect_raise",
     [
-        # Earlier release lines stay below the cutoff — warn only.
         pytest.param("0.9.5", False, id="below"),
         pytest.param("0.9.9.post2", False, id="below-post"),
-        # Same X.Y.Z line — any PEP 440 suffix shares the cutoff and raises.
         pytest.param("1.0.0.dev0", True, id="dev"),
         pytest.param("1.0.0a1", True, id="alpha"),
         pytest.param("1.0.0b2", True, id="beta"),
