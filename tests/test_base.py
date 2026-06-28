@@ -4,6 +4,7 @@ import random
 import shutil
 import tempfile
 import unittest
+from contextlib import nullcontext as does_not_raise
 from enum import Enum
 from typing import Iterable
 from unittest.mock import patch
@@ -37,15 +38,14 @@ def test_version_is_str():
     ],
 )
 def test_deprecate_method_raises_at_or_past_cutoff(current_version, expect_raise):
+    expectation = pytest.raises(ValueError, match="deprecated") if expect_raise else does_not_raise()
+
     with patch("optimum.rbln.utils.deprecation.__version__", current_version):
         @deprecate_method(version="1.0.0", new_method="from_pretrained")
         def stub():
             pass
 
-    if expect_raise:
-        with pytest.raises(ValueError, match="deprecated"):
-            stub()
-    else:
+    with expectation:
         stub()
 
 
