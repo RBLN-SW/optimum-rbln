@@ -174,7 +174,7 @@ class _BaseAutoModelClass:
         model_path_subfolder = RBLNBaseModel._load_compiled_model_dir(
             model_id=pretrained_model_name_or_path, **filtered_kwargs
         )
-        rbln_config = RBLNAutoConfig.from_pretrained(model_path_subfolder)
+        rbln_config = RBLNAutoConfig.load(model_path_subfolder)
 
         return rbln_config.rbln_model_cls_name
 
