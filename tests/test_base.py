@@ -6,6 +6,7 @@ import tempfile
 import unittest
 from enum import Enum
 from typing import Iterable
+from unittest.mock import patch
 
 import pytest
 import transformers
@@ -14,6 +15,7 @@ from transformers import AutoConfig, CLIPConfig
 
 from optimum.rbln import __version__
 from optimum.rbln.configuration_utils import ContextRblnConfig
+from optimum.rbln.utils.deprecation import deprecate_method
 
 
 def test_version_is_str():
@@ -35,11 +37,6 @@ def test_version_is_str():
     ],
 )
 def test_deprecate_method_raises_at_or_past_cutoff(current_version, expect_raise):
-    """@deprecate_method raises starting from the cutoff X.Y.Z line, including any PEP 440 suffix."""
-    from unittest.mock import patch
-
-    from optimum.rbln.utils.deprecation import deprecate_method
-
     with patch("optimum.rbln.utils.deprecation.__version__", current_version):
 
         @deprecate_method(version="1.0.0", new_method="from_pretrained")
