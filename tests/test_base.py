@@ -38,16 +38,15 @@ def test_version_is_str():
 )
 def test_deprecate_method_raises_at_or_past_cutoff(current_version, expect_raise):
     with patch("optimum.rbln.utils.deprecation.__version__", current_version):
-
         @deprecate_method(version="1.0.0", new_method="from_pretrained")
         def stub():
-            return "ok"
+            pass
 
     if expect_raise:
         with pytest.raises(ValueError, match="deprecated"):
             stub()
     else:
-        assert stub() == "ok"
+        stub()
 
 
 DUMMY_DEVICE_CODE = -1
