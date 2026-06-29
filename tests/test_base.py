@@ -26,15 +26,15 @@ def test_version_is_str():
 @pytest.mark.parametrize(
     "current_version, expect_raise",
     [
-        pytest.param("0.9.5", False, id="below"),
-        pytest.param("0.9.9.post2", False, id="below-post"),
-        pytest.param("1.0.0.dev0", True, id="dev"),
-        pytest.param("1.0.0a1", True, id="alpha"),
-        pytest.param("1.0.0b2", True, id="beta"),
-        pytest.param("1.0.0rc1", True, id="rc"),
-        pytest.param("1.0.0", True, id="final"),
-        pytest.param("1.0.0.post1", True, id="post"),
-        pytest.param("1.0.1", True, id="patch-above"),
+        pytest.param("1.9.5", False, id="below"),
+        pytest.param("1.9.99.post1", False, id="below-post"),
+        pytest.param("1.10.0.dev0", True, id="dev"),
+        pytest.param("1.10.0a1", True, id="alpha"),
+        pytest.param("1.10.0b2", True, id="beta"),
+        pytest.param("1.10.0rc1", True, id="rc"),
+        pytest.param("1.10.0", True, id="final"),
+        pytest.param("1.10.0.post1", True, id="post"),
+        pytest.param("1.10.1", True, id="patch-above"),
     ],
 )
 def test_deprecate_method_raises_at_or_past_cutoff(current_version, expect_raise):
@@ -42,7 +42,7 @@ def test_deprecate_method_raises_at_or_past_cutoff(current_version, expect_raise
 
     with patch("optimum.rbln.utils.deprecation.__version__", current_version):
 
-        @deprecate_method(version="1.0.0", new_method="from_pretrained")
+        @deprecate_method(version="1.10.0", new_method="from_pretrained")
         def stub():
             pass
 
