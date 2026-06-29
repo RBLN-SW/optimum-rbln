@@ -161,6 +161,14 @@ _import_structure = {
     "qwen2": ["RBLNQwen2ForCausalLM", "RBLNQwen2ForCausalLMConfig", "RBLNQwen2Model", "RBLNQwen2ModelConfig"],
     "qwen2_moe": ["RBLNQwen2MoeForCausalLM", "RBLNQwen2MoeForCausalLMConfig"],
     "qwen3": ["RBLNQwen3ForCausalLM", "RBLNQwen3ForCausalLMConfig", "RBLNQwen3Model", "RBLNQwen3ModelConfig"],
+    "qwen3_5": [
+        "RBLNQwen3_5Model",
+        "RBLNQwen3_5ModelConfig",
+        "RBLNQwen3_5ForConditionalGeneration",
+        "RBLNQwen3_5ForConditionalGenerationConfig",
+        "RBLNQwen3_5VisionModel",
+        "RBLNQwen3_5VisionModelConfig",
+    ],
     "qwen3_moe": ["RBLNQwen3MoeForCausalLM", "RBLNQwen3MoeForCausalLMConfig"],
     "qwen3_vl": [
         "RBLNQwen3VLVisionModel",
@@ -360,6 +368,14 @@ if TYPE_CHECKING:
         RBLNQwen2VLModelConfig,
     )
     from .qwen3 import RBLNQwen3ForCausalLM, RBLNQwen3ForCausalLMConfig, RBLNQwen3Model, RBLNQwen3ModelConfig
+    from .qwen3_5 import (
+        RBLNQwen3_5ForConditionalGeneration,
+        RBLNQwen3_5ForConditionalGenerationConfig,
+        RBLNQwen3_5Model,
+        RBLNQwen3_5ModelConfig,
+        RBLNQwen3_5VisionModel,
+        RBLNQwen3_5VisionModelConfig,
+    )
     from .qwen3_moe import RBLNQwen3MoeForCausalLM, RBLNQwen3MoeForCausalLMConfig
     from .qwen3_vl import (
         RBLNQwen3VLForConditionalGeneration,
