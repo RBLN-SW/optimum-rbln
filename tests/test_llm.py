@@ -573,6 +573,17 @@ class TestLlavaNextForConditionalGeneration(LLMTest.TestLLM):
         ):
             _ = self.RBLN_CLASS.from_pretrained(model_id=self.HF_MODEL_ID, **rbln_class_kwargs)
 
+    def test_propagate_config(self):
+        rbln_config = {
+            "create_runtimes": False,
+        }
+        rbln_class_kwargs = {"rbln_config": rbln_config}
+
+        model = self.RBLN_CLASS.from_pretrained(model_id=self.HF_MODEL_ID, **rbln_class_kwargs)
+
+        assert not model.rbln_config.vision_tower.create_runtimes
+        assert not model.rbln_config.language_model.create_runtimes
+
 
 class TestBlip2ForConditionalGeneration(LLMTest.TestLLM):
     RBLN_AUTO_CLASS = RBLNAutoModelForImageTextToText
@@ -695,6 +706,14 @@ class TestQwen2VLForConditionalGeneration(LLMTest.TestLLM):
         inputs["do_sample"] = False
         return inputs
 
+    def test_propagate_config(self):
+        self.RBLN_CLASS_KWARGS["rbln_config"].update({"create_runtimes": False})
+
+        model = self.RBLN_CLASS.from_pretrained(model_id=self.HF_MODEL_ID, **self.RBLN_CLASS_KWARGS)
+
+        assert not model.rbln_config.visual.create_runtimes
+        assert not model.rbln_config.create_runtimes
+
 
 class TestQwen2_5_VLForConditionalGeneration(LLMTest.TestLLM):
     RBLN_AUTO_CLASS = RBLNAutoModelForImageTextToText
@@ -735,6 +754,14 @@ class TestQwen2_5_VLForConditionalGeneration(LLMTest.TestLLM):
         inputs["do_sample"] = False
         return inputs
 
+    def test_propagate_config(self):
+        self.RBLN_CLASS_KWARGS["rbln_config"].update({"create_runtimes": False})
+
+        model = self.RBLN_CLASS.from_pretrained(model_id=self.HF_MODEL_ID, **self.RBLN_CLASS_KWARGS)
+
+        assert not model.rbln_config.visual.create_runtimes
+        assert not model.rbln_config.create_runtimes
+
 
 class TestQwen3VLForConditionalGeneration(LLMTest.TestLLM):
     RBLN_AUTO_CLASS = RBLNAutoModelForImageTextToText
@@ -770,6 +797,14 @@ class TestQwen3VLForConditionalGeneration(LLMTest.TestLLM):
         inputs["max_new_tokens"] = 20
         inputs["do_sample"] = False
         return inputs
+
+    def test_propagate_config(self):
+        self.RBLN_CLASS_KWARGS["rbln_config"].update({"create_runtimes": False})
+
+        model = self.RBLN_CLASS.from_pretrained(model_id=self.HF_MODEL_ID, **self.RBLN_CLASS_KWARGS)
+
+        assert not model.rbln_config.visual.create_runtimes
+        assert not model.rbln_config.create_runtimes
 
 
 class TestQwen3VLMoeForConditionalGeneration(LLMTest.TestLLM):
