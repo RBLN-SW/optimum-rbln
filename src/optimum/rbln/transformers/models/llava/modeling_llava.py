@@ -129,7 +129,7 @@ class RBLNLlavaForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMixi
             rbln_config={
                 "vision_tower": {"output_hidden_states": True},
                 "language_model": {
-                    "tensor_parallel_size": 4,
+                    "num_devices": 4,
                     "use_inputs_embeds": True,  # In Llava, language model must use inputs_embeds as input.
                 },
             },
@@ -146,7 +146,7 @@ class RBLNLlavaForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMixi
             batch_size=1,
             max_seq_len=4096,
             use_inputs_embeds=True,
-            tensor_parallel_size=4
+            num_devices=4
         )
         llava_config = RBLNLlavaForConditionalGenerationConfig(
             batch_size=1,

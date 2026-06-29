@@ -27,7 +27,7 @@ from transformers.utils.hub import PushToHubMixin
 from .configuration_utils import RBLNCompileConfig, RBLNModelConfig, get_rbln_config_class
 from .utils.hub import pull_compiled_model_from_hub, validate_files
 from .utils.logging import get_logger
-from .utils.runtime_utils import UnavailableRuntime, tp_and_devices_are_ok
+from .utils.runtime_utils import UnavailableRuntime, compiler_num_devices_kwarg, tp_and_devices_are_ok
 from .utils.save_utils import maybe_load_preprocessors
 from .utils.submodule import SubModulesMixin
 
@@ -36,6 +36,20 @@ if TYPE_CHECKING:
     from transformers import AutoFeatureExtractor, AutoProcessor, AutoTokenizer, PreTrainedModel
 
 logger = get_logger(__name__)
+
+
+def normalize_contiguous_(model: torch.nn.Module) -> torch.nn.Module:
+    """Materialize all parameters as contiguous tensors, in place.
+
+    The compiler calls ``.contiguous()`` on every weight at ingest while the
+    original is still alive, so a non-contiguous weight (e.g. a transposed view
+    from a checkpoint) is copied and host peak memory doubles over it. Replacing
+    each tensor here frees the original first, capping the transient at one weight.
+    """
+    for param in model.parameters():
+        if not param.is_contiguous():
+            param.data = param.data.contiguous()
+    return model
 
 
 class PreTrainedModel:  # noqa: F811
@@ -441,18 +455,20 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
     ):
         if create_runtimes:
             runtime_cannot_be_created = tp_and_devices_are_ok(
-                tensor_parallel_size=rbln_compile_config.tensor_parallel_size,
+                num_devices=rbln_compile_config.num_devices,
                 device=device,
                 npu=rbln_compile_config.npu,
             )
             if runtime_cannot_be_created:
                 raise ValueError(runtime_cannot_be_created)
 
+        normalize_contiguous_(model)
+
         compiled_model = rebel.compile_from_torch(
             model,
             input_info=rbln_compile_config.input_info,
             npu=rbln_compile_config.npu,
-            tensor_parallel_size=rbln_compile_config.tensor_parallel_size,
+            **{compiler_num_devices_kwarg(): rbln_compile_config.num_devices},
             **kwargs,
         )
         return compiled_model

@@ -209,7 +209,7 @@ class RBLNIdefics3ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationM
                 "text_model": {
                     "batch_size": 1,
                     "max_seq_len": 131_072,
-                    "tensor_parallel_size": 8,
+                    "num_devices": 8,
                     "use_inputs_embeds": True,
                     "attn_impl": "flash_attn",
                     "kvcache_partition_len": 16_384,

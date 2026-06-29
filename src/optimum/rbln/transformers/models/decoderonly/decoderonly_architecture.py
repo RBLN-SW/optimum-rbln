@@ -309,6 +309,57 @@ class DecoderOnlyForCausalLM(nn.Module):
         return logits, all_hidden_states
 
 
+def build_image_prefill_swa_custom_op_args(model, position_ids, query_position):
+    """Shared sliding-window custom-op args builder for image-prefill-capable models (Gemma3, Gemma4).
+
+    Returns (cache_seq_len, cache_offset, attn_mask) where attn_mask is:
+      - decode: a 4D causal sliding-window mask of shape (1, 1, 1, max_cache_len)
+      - prefill / image_prefill: a 4D mask of shape (1, 1, prefill_chunk_size, max_compute_len)
+        with max_compute_len = sliding_window + prefill_chunk_size. image_prefill additionally
+        allows bidirectional attention within the current chunk.
+    """
+    max_cache_len = model.config.sliding_window
+    valid_input_len = 1 if query_position is None else query_position + 1
+    cache_seq_len = torch.clamp(position_ids.to(torch.int32), max=max_cache_len)[:, :1]  # past seen tokens
+    cache_offset = (
+        torch.clamp(position_ids.to(torch.int32), max=max_cache_len)[:, :1] + valid_input_len
+    )  # cache offset for next steps
+
+    if model.phase == "decode":
+        # Causal mask for sliding window attention
+        attn_mask = torch.arange(max_cache_len)[None, :] - cache_seq_len
+        attn_mask = torch.where(attn_mask > 0, 0.0, 1.0)[:, None, None, :]
+    else:
+        #   - axis 2 (query):  the current prefill chunk being processed
+        #   - axis 3 (key/value): the sliding-window KV cache concatenated with the chunk's keys
+        _, prefill_chunk_size = position_ids.shape
+        max_compute_len = max_cache_len + prefill_chunk_size
+        cache_seq_len_b = torch.zeros(1, 1, 1, max_compute_len, dtype=torch.int32) + cache_seq_len
+        cache_offset_b = torch.zeros(1, 1, 1, max_compute_len, dtype=torch.int32) + cache_offset
+
+        q_idx = torch.zeros(1, 1, prefill_chunk_size, max_compute_len, dtype=torch.int32, device=position_ids.device)
+        q_idx = q_idx + torch.arange(prefill_chunk_size, dtype=torch.int32, device=position_ids.device).reshape(
+            1, 1, -1, 1
+        )
+
+        compute_idx = torch.arange(max_compute_len, dtype=torch.int32).reshape(1, 1, 1, -1)
+        in_chunk = (compute_idx >= cache_seq_len_b) & (compute_idx < cache_offset_b)
+        in_past = compute_idx < cache_seq_len_b
+
+        gap = cache_seq_len_b + q_idx - compute_idx
+        swa = (gap >= 0) & (gap < max_cache_len)
+
+        valid_q = q_idx < valid_input_len
+        valid_kv = torch.logical_or(in_past, in_chunk)
+        if model.phase == "image_prefill":
+            attn = valid_q & valid_kv & torch.logical_or(swa, in_chunk)
+        else:
+            attn = valid_q & valid_kv & swa
+        attn_mask = torch.where(attn, 1.0, 0.0).to(model.rbln_config.dtype)
+
+    return cache_seq_len, cache_offset, attn_mask
+
+
 class DecoderOnlyModel(nn.Module):
     """A modified decoder-only model implementation optimized for RBLN compilation.
 
@@ -1210,8 +1261,17 @@ class SlidingWindowAttentionOp(AttentionOp):
                     op_args["is_bidirectional"] = True
                 else:
                     op_args["is_bidirectional"] = False
-        elif self.phase == "decode":
+
+        if self.phase == "decode":
             op_args["attn_mask"] = attn_mask
+        elif self.phase == "image_prefill" and attn_mask is not None and attn_mask.dim() == 4:
+            # Only a model that supplies a 4D sliding-window mask for image_prefill (e.g. Gemma4)
+            # feeds it to the op. Otherwise (e.g. 2D causal mask) the sliding-window prefill
+            # op computes the causal window internally — passing a 2D mask trips the op's 4D mask
+            # assertion at compile time.
+            op_args["attn_mask"] = attn_mask
+        else:
+            op_args["attn_mask"] = None
 
         if s_aux is not None:
             op_args["s_aux"] = s_aux

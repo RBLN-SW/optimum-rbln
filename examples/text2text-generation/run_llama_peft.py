@@ -13,7 +13,7 @@ def main(
     batch_size: int = 1,
     from_transformers: bool = False,
     max_seq_len: typing.Optional[int] = None,
-    tensor_parallel_size: typing.Optional[int] = 4,
+    num_devices: typing.Optional[int] = 4,
     use_inputs_embeds: bool = None,
 ):
     if from_transformers:
@@ -30,7 +30,7 @@ def main(
             model,
             rbln_batch_size=batch_size,
             rbln_max_seq_len=max_seq_len,
-            rbln_tensor_parallel_size=tensor_parallel_size,
+            rbln_num_devices=num_devices,
             rbln_use_inputs_embeds=use_inputs_embeds,
         )
         model.save_pretrained(os.path.basename(model_id))

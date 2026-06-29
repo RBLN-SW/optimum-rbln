@@ -114,7 +114,7 @@ class RBLNLlavaNextForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGeneration
             export=True,
             rbln_config={
                 "language_model": {
-                    "tensor_parallel_size": 4,
+                    "num_devices": 4,
                     "use_inputs_embeds": True,  # In Llava-Next, language model must use inputs_embeds as input.
                 },
             },

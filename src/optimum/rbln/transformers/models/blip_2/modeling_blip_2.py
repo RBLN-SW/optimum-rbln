@@ -303,7 +303,7 @@ class RBLNBlip2ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMixi
                 "language_model": {
                     "batch_size": 1,
                     "max_seq_len": 2048,
-                    "tensor_parallel_size": 1,
+                    "num_devices": 1,
                     "use_inputs_embeds": True,
                 },
             },

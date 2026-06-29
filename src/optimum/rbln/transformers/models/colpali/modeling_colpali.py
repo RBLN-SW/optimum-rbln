@@ -99,7 +99,7 @@ class RBLNColPaliForRetrieval(RBLNModel):
                 "language_model": {"prefill_chunk_size": 8192},
             },
             output_hidden_states=False,
-            tensor_parallel_size=4
+            num_devices=4
         )
         model = RBLNColPaliForRetrieval.from_pretrained(
             "vidore/colpali-v1.3-hf",
