@@ -714,11 +714,15 @@ class RBLNDecoderOnlyChunkedMultimodalPrefillMixin:
         if self.rbln_config.use_image_prefill:
             # Pad by the LARGEST chunk size any planner-dispatched chunk can use, so the last
             # chunk's `inputs[step : step + chunk_size_used]` slice always returns
-            # `chunk_size_used` rows. `image_prefill_chunk_size` (= max image bucket) and
-            # `prefill_chunk_size` (text) are independent; using only the former underruns the
-            # tail text chunk when text size exceeds the largest image bucket.
+            # `chunk_size_used` rows. `image_prefill_chunk_size` (a scalar bucket, or a list of
+            # buckets whose max is the largest) and `prefill_chunk_size` (text) are independent;
+            # using only the former underruns the tail text chunk when text size exceeds the
+            # largest image bucket.
+            image_prefill_chunk_size = self.rbln_config.image_prefill_chunk_size
+            if isinstance(image_prefill_chunk_size, (list, tuple)):
+                image_prefill_chunk_size = max(image_prefill_chunk_size)
             padding_size = max(
-                self.rbln_config.image_prefill_chunk_size,
+                image_prefill_chunk_size,
                 self.rbln_config.prefill_chunk_size,
             )
             inputs = torch.nn.functional.pad(inputs, (0, 0, 0, padding_size))
