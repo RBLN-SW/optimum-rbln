@@ -168,22 +168,24 @@ def test_load_config_object(model_id, tmp_path):
     base_config.save(str(config_path))
 
     # Subtest 1: Plain load
-    loaded_config = RBLNResNetForImageClassificationConfig.load(str(config_path))
+    loaded_config = RBLNResNetForImageClassificationConfig.from_pretrained(str(config_path))
     assert loaded_config.image_size == 128, "Plain load: image_size mismatch"
 
     # Subtest 2: Load with rbln_config dict
-    loaded_config = RBLNResNetForImageClassificationConfig.load(
+    loaded_config = RBLNResNetForImageClassificationConfig.from_pretrained(
         str(config_path), rbln_config={"create_runtimes": False}
     )
     assert not loaded_config.create_runtimes, "Load with rbln_config: create_runtimes mismatch"
 
     # Subtest 3: Load with rbln_ prefix
-    loaded_config = RBLNResNetForImageClassificationConfig.load(str(config_path), rbln_create_runtimes=False)
+    loaded_config = RBLNResNetForImageClassificationConfig.from_pretrained(
+        str(config_path), rbln_create_runtimes=False
+    )
     assert not loaded_config.create_runtimes, "Load with rbln_ prefix: create_runtimes mismatch"
 
     # Subtest 4: Load with rbln_ prefix
     with pytest.raises(ValueError, match="Cannot set the following arguments: ['image_size']*"):
-        loaded_config = RBLNResNetForImageClassificationConfig.load(
+        loaded_config = RBLNResNetForImageClassificationConfig.from_pretrained(
             str(config_path), rbln_create_runtimes=False, rbln_config={"image_size": 256}
         )
         assert not loaded_config.create_runtimes, "Load with rbln_ prefix: create_runtimes mismatch"

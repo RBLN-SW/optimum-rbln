@@ -50,6 +50,12 @@ class Action(Enum):
     RAISE = "raise"
 
 
+def _at_or_past_deprecation(current: str, deprecated: str) -> bool:
+    """Compare PEP 440 base versions so pre/post/dev-release suffixes share the cutoff."""
+    current_base = packaging.version.Version(packaging.version.Version(current).base_version)
+    return current_base >= packaging.version.Version(deprecated)
+
+
 # Scenario Table for Deprecation Strategy Example
 # Assume that current version is v0.9.6 and the deprecated version is v0.10.0
 # |--------------------|----------------|----------------|---------------------------------------------|--------------------------------------------------------------------------------------|----------------------------------------------------------------------|
@@ -121,9 +127,7 @@ def deprecate_kwarg(
             A wrapped function that handles the deprecated keyword arguments according to the specified parameters.
     """
 
-    deprecated_version = packaging.version.parse(version)
-    current_version = packaging.version.parse(__version__)
-    is_greater_or_equal_version = current_version >= deprecated_version
+    is_greater_or_equal_version = _at_or_past_deprecation(__version__, version)
 
     if is_greater_or_equal_version:
         version_message = f"and removed starting from version {version}"
@@ -244,9 +248,7 @@ def deprecate_method(
         ...         return self.from_pretrained(path)
     """
 
-    deprecated_version = packaging.version.parse(version)
-    current_version = packaging.version.parse(__version__)
-    is_greater_or_equal_version = current_version >= deprecated_version
+    is_greater_or_equal_version = _at_or_past_deprecation(__version__, version)
 
     if is_greater_or_equal_version:
         version_message = f"and removed starting from version {version}"
