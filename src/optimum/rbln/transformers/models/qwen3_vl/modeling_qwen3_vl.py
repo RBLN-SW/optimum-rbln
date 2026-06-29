@@ -18,12 +18,12 @@ from typing import TYPE_CHECKING, Any, Callable, List, Optional, Tuple, Union
 
 import torch
 from transformers import (
-    AutoModelForVision2Seq,
+    AutoModelForImageTextToText,
     PretrainedConfig,
     PreTrainedModel,
     Qwen3VLConfig,
 )
-from transformers.modeling_utils import no_init_weights
+from transformers.initialization import no_init_weights
 from transformers.models.qwen3_vl.modeling_qwen3_vl import (
     Qwen3VLModel,
     Qwen3VLTextRotaryEmbedding,
@@ -62,10 +62,11 @@ class RBLNQwen3VLVisionModel(RBLNModel):
 
     auto_model_class = None
     _supports_non_fp32 = True
+    _tp_support = True
 
     def __post_init__(self, **kwargs):
         self.transformer = self.model[0]
-        self.max_seq_lens = torch.tensor(sorted(self.rbln_config.max_seq_lens, reverse=False))
+        self.max_seq_len = torch.tensor(sorted(self.rbln_config.max_seq_len, reverse=False))
         config = self.config
         self.patch_size = config.patch_size
         self.spatial_merge_size = config.spatial_merge_size
@@ -125,7 +126,7 @@ class RBLNQwen3VLVisionModel(RBLNModel):
         head_dim = hidden_size // num_heads
 
         input_infos = []
-        for max_seq_len in rbln_config.max_seq_lens:
+        for max_seq_len in rbln_config.max_seq_len:
             input_info = [
                 ("hidden_states", [max_seq_len, hidden_size], rbln_config.dtype),
                 ("attn_mask", [1, 1, max_seq_len, max_seq_len], rbln_config.dtype),
@@ -294,11 +295,11 @@ class RBLNQwen3VLVisionModel(RBLNModel):
 
             image_seq_len = image_e - image_s
             try:
-                ws_index = torch.searchsorted(self.max_seq_lens, image_seq_len).item()
-                max_seq_len = self.max_seq_lens[ws_index].item()
+                ws_index = torch.searchsorted(self.max_seq_len, image_seq_len).item()
+                max_seq_len = self.max_seq_len[ws_index].item()
             except Exception as e:
                 raise ValueError(
-                    f"Required seq_len({image_seq_len}) is larger than available max_seq_lens({self.max_seq_lens.tolist()})."
+                    f"Required seq_len({image_seq_len}) is larger than available max_seq_len({self.max_seq_len.tolist()})."
                 ) from e
 
             image_hidden, (image_cos, image_sin), attn_mask, valid_len = self._pad_hidden_states(
@@ -328,7 +329,7 @@ class RBLNQwen3VLVisionModel(RBLNModel):
 
 
 class RBLNQwen3VLModel(RBLNDecoderOnlyModel):
-    auto_model_class = AutoModelForVision2Seq
+    auto_model_class = AutoModelForImageTextToText
     _decoder_wrapper_cls = Qwen3VL_LanguageModelWrapper
     _use_rotary_emb = False
     _rbln_submodules = [
@@ -337,6 +338,13 @@ class RBLNQwen3VLModel(RBLNDecoderOnlyModel):
     _config_class = Qwen3VLConfig
     _rotary_emb_class = Qwen3VLTextRotaryEmbedding
     _get_rope_index_func = Qwen3VLModel.get_rope_index
+    get_vision_position_ids = Qwen3VLModel.get_vision_position_ids
+
+    @classmethod
+    def _load_submodules(cls, model_save_dir, rbln_config, model=None, **kwargs):
+        if model is None and not getattr(rbln_config, "_load_visual_runtime", True):
+            return []
+        return super()._load_submodules(model_save_dir, rbln_config, model=model, **kwargs)
 
     def __post_init__(self, **kwargs):
         if hasattr(self.config, "embedding_dim"):
@@ -350,7 +358,7 @@ class RBLNQwen3VLModel(RBLNDecoderOnlyModel):
         self.num_deepstack_layers = len(self.config.vision_config.deepstack_visual_indexes)
 
         super().__post_init__(**kwargs)
-        self.visual = self.rbln_submodules[0]
+        self.visual = self.rbln_submodules[0] if self.rbln_submodules else None
         self.rotary_emb = self._rotary_emb_class(self.config.text_config)
         if not self.can_generate():
             self.block_tables = torch.arange(self.rbln_config.kvcache_num_blocks, dtype=torch.int16)
@@ -482,17 +490,28 @@ class RBLNQwen3VLModel(RBLNDecoderOnlyModel):
         pixel_values_videos: torch.FloatTensor = None,
         image_grid_thw: torch.LongTensor = None,
         video_grid_thw: torch.LongTensor = None,
+        image_embeds: Optional[torch.Tensor] = None,
+        video_embeds: Optional[torch.Tensor] = None,
+        deepstack_image_embeds: Optional[List[torch.Tensor]] = None,
+        deepstack_video_embeds: Optional[List[torch.Tensor]] = None,
+        mm_token_type_ids: Optional[torch.IntTensor] = None,
     ):
         batch_size = input_ids.shape[0]
         inputs_embeds = self.embed_tokens(input_ids).to(self.rbln_config.dtype)
 
-        deepstack_image_embeds = None
-        deepstack_video_embeds = None
         image_mask = None
         video_mask = None
 
-        if pixel_values is not None:
+        # Use pre-computed image_embeds if provided, otherwise run visual encoder
+        if image_embeds is None and pixel_values is not None:
+            if self.visual is None:
+                raise RuntimeError(
+                    "Visual encoder runtime is not loaded (_load_visual_runtime=False). "
+                    "Provide pre-computed image_embeds from an encoder node."
+                )
             image_embeds, deepstack_image_embeds = self.visual(pixel_values, grid_thw=image_grid_thw)
+
+        if image_embeds is not None:
             n_image_tokens = (input_ids == self.config.image_token_id).sum().item()
             n_image_features = image_embeds.shape[0]
             if n_image_tokens != n_image_features:
@@ -507,8 +526,16 @@ class RBLNQwen3VLModel(RBLNDecoderOnlyModel):
             image_embeds = image_embeds.to(inputs_embeds.device, inputs_embeds.dtype)
             inputs_embeds = inputs_embeds.masked_scatter(mask_expanded, image_embeds)
 
-        if pixel_values_videos is not None:
+        # Use pre-computed video_embeds if provided, otherwise run visual encoder
+        if video_embeds is None and pixel_values_videos is not None:
+            if self.visual is None:
+                raise RuntimeError(
+                    "Visual encoder runtime is not loaded (_load_visual_runtime=False). "
+                    "Provide pre-computed video_embeds from an encoder node."
+                )
             video_embeds, deepstack_video_embeds = self.visual(pixel_values_videos, grid_thw=video_grid_thw)
+
+        if video_embeds is not None:
             n_video_tokens = (input_ids == self.config.video_token_id).sum().item()
             n_video_features = video_embeds.shape[0]
             if n_video_tokens != n_video_features:
@@ -556,8 +583,18 @@ class RBLNQwen3VLModel(RBLNDecoderOnlyModel):
                     video_row_idx += 1
                 video_grid_slice = video_grid_thw[start_row:video_row_idx]
 
+            # mm_token_type_ids (0=text, 1=image, 2=video). Derive it from
+            # input_id if the caller (e.g. the processor) did not provide it.
+            if mm_token_type_ids is not None:
+                batch_mm_token_type_ids = mm_token_type_ids[b_idx : b_idx + 1][:, attention_mask[b_idx].bool()]
+            else:
+                batch_mm_token_type_ids = torch.zeros_like(input_id, dtype=torch.int)
+                batch_mm_token_type_ids[input_id == image_token_id] = 1
+                batch_mm_token_type_ids[input_id == video_token_id] = 2
+
             position_ids, rope_deltas = self._get_rope_index_func(
                 input_id,
+                batch_mm_token_type_ids,
                 image_grid_thw[image_idx : image_idx + image_nums] if image_grid_thw is not None else None,
                 video_grid_slice,
             )
@@ -654,9 +691,14 @@ class RBLNQwen3VLModel(RBLNDecoderOnlyModel):
         pixel_values_videos: Optional[torch.FloatTensor] = None,
         image_grid_thw: Optional[torch.LongTensor] = None,
         video_grid_thw: Optional[torch.LongTensor] = None,
+        image_embeds: Optional[torch.Tensor] = None,
+        video_embeds: Optional[torch.Tensor] = None,
+        deepstack_image_embeds: Optional[List[torch.Tensor]] = None,
+        deepstack_video_embeds: Optional[List[torch.Tensor]] = None,
         cache_position: Optional[torch.LongTensor] = None,
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
+        mm_token_type_ids: Optional[torch.IntTensor] = None,
         **kwargs,
     ) -> RBLNDecoderOnlyOutput:
         inputs_embeds, position_embed, rope_deltas, visual_pos_mask, deepstack_visual_embeds = (
@@ -667,6 +709,11 @@ class RBLNQwen3VLModel(RBLNDecoderOnlyModel):
                 pixel_values_videos,
                 image_grid_thw,
                 video_grid_thw,
+                image_embeds=image_embeds,
+                video_embeds=video_embeds,
+                deepstack_image_embeds=deepstack_image_embeds,
+                deepstack_video_embeds=deepstack_video_embeds,
+                mm_token_type_ids=mm_token_type_ids,
             )
         )
 
@@ -742,10 +789,10 @@ class RBLNQwen3VLForConditionalGeneration(RBLNQwen3VLModel, RBLNDecoderOnlyModel
             export=True,
             rbln_config={
                 "visual": {
-                    "max_seq_lens": 6400,
+                    "max_seq_len": 6400,
                     "device": 0,
                 },
-                "tensor_parallel_size": 8,
+                "num_devices": 8,
                 "kvcache_partition_len": 16_384,
                 "max_seq_len": 262_144,
                 "device": [0, 1, 2, 3, 4, 5, 6, 7],
@@ -756,7 +803,7 @@ class RBLNQwen3VLForConditionalGeneration(RBLNQwen3VLModel, RBLNDecoderOnlyModel
         ```
     """
 
-    auto_model_class = AutoModelForVision2Seq
+    auto_model_class = AutoModelForImageTextToText
     _decoder_wrapper_cls = Qwen3VL_LanguageModelWrapper
     _supports_non_fp32 = True
     _use_rotary_emb = False
@@ -776,6 +823,34 @@ class RBLNQwen3VLForConditionalGeneration(RBLNQwen3VLModel, RBLNDecoderOnlyModel
         model.model.lm_head = model.lm_head
         return model
 
+    @staticmethod
+    def load_visual_encoder(model_path: str, **kwargs) -> "RBLNQwen3VLVisionModel":
+        return RBLNQwen3VLVisionModel.from_pretrained(model_path, subfolder="visual", **kwargs)
+
+    def encode(
+        self,
+        pixel_values: Optional[torch.Tensor] = None,
+        pixel_values_videos: Optional[torch.FloatTensor] = None,
+        image_grid_thw: Optional[torch.LongTensor] = None,
+        video_grid_thw: Optional[torch.LongTensor] = None,
+    ) -> dict:
+        if self.visual is None:
+            raise RuntimeError(
+                "Visual encoder runtime is not loaded (_load_visual_runtime=False). "
+                "Use load_visual_encoder() to load the visual encoder on the encoder node, "
+                "or set _load_visual_runtime=True to load both visual and LLM."
+            )
+        result = {}
+        if pixel_values is not None:
+            image_embeds, deepstack_image_embeds = self.visual(pixel_values, grid_thw=image_grid_thw)
+            result["image_embeds"] = image_embeds
+            result["deepstack_image_embeds"] = deepstack_image_embeds
+        if pixel_values_videos is not None:
+            video_embeds, deepstack_video_embeds = self.visual(pixel_values_videos, grid_thw=video_grid_thw)
+            result["video_embeds"] = video_embeds
+            result["deepstack_video_embeds"] = deepstack_video_embeds
+        return result
+
     def prepare_inputs_for_generation(
         self,
         input_ids: torch.LongTensor,
@@ -786,6 +861,11 @@ class RBLNQwen3VLForConditionalGeneration(RBLNQwen3VLModel, RBLNDecoderOnlyModel
         pixel_values_videos=None,
         image_grid_thw=None,
         video_grid_thw=None,
+        image_embeds=None,
+        video_embeds=None,
+        deepstack_image_embeds=None,
+        deepstack_video_embeds=None,
+        mm_token_type_ids=None,
         **kwargs,
     ):
         model_inputs = {}
@@ -802,6 +882,16 @@ class RBLNQwen3VLForConditionalGeneration(RBLNQwen3VLModel, RBLNDecoderOnlyModel
             input_ids = input_ids[:, -1:]
             cache_position = generate_idx
             generate_idx = generate_idx + 1
+            # No need to pass visual data in decoder phase
+            pixel_values = None
+            pixel_values_videos = None
+            image_grid_thw = None
+            video_grid_thw = None
+            image_embeds = None
+            video_embeds = None
+            deepstack_image_embeds = None
+            deepstack_video_embeds = None
+            mm_token_type_ids = None
             model_inputs.update({"input_ids": input_ids})
 
         model_inputs.update(
@@ -813,6 +903,11 @@ class RBLNQwen3VLForConditionalGeneration(RBLNQwen3VLModel, RBLNDecoderOnlyModel
                 "pixel_values_videos": pixel_values_videos,
                 "image_grid_thw": image_grid_thw,
                 "video_grid_thw": video_grid_thw,
+                "image_embeds": image_embeds,
+                "video_embeds": video_embeds,
+                "deepstack_image_embeds": deepstack_image_embeds,
+                "deepstack_video_embeds": deepstack_video_embeds,
+                "mm_token_type_ids": mm_token_type_ids,
             }
         )
 
@@ -851,10 +946,15 @@ class RBLNQwen3VLForConditionalGeneration(RBLNQwen3VLModel, RBLNDecoderOnlyModel
         pixel_values_videos: Optional[torch.FloatTensor] = None,
         image_grid_thw: Optional[torch.LongTensor] = None,
         video_grid_thw: Optional[torch.LongTensor] = None,
+        image_embeds: Optional[torch.Tensor] = None,
+        video_embeds: Optional[torch.Tensor] = None,
+        deepstack_image_embeds: Optional[List[torch.Tensor]] = None,
+        deepstack_video_embeds: Optional[List[torch.Tensor]] = None,
         cache_position: Optional[torch.LongTensor] = None,
         generate_idx: Optional[torch.Tensor] = None,
         return_dict: Optional[bool] = None,
         output_hidden_states: Optional[bool] = None,
+        mm_token_type_ids: Optional[torch.IntTensor] = None,
         **kwargs,
     ) -> RBLNDecoderOnlyOutput:
         output_hidden_states = _validate_output_hidden_states(output_hidden_states, self.rbln_config)
@@ -868,6 +968,11 @@ class RBLNQwen3VLForConditionalGeneration(RBLNQwen3VLModel, RBLNDecoderOnlyModel
                     pixel_values_videos,
                     image_grid_thw,
                     video_grid_thw,
+                    image_embeds=image_embeds,
+                    video_embeds=video_embeds,
+                    deepstack_image_embeds=deepstack_image_embeds,
+                    deepstack_video_embeds=deepstack_video_embeds,
+                    mm_token_type_ids=mm_token_type_ids,
                 )
             )
 

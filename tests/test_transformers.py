@@ -5,8 +5,7 @@ import unittest
 
 import torch
 from PIL import Image
-from rebel.core.exception import RBLNRuntimeError
-from transformers import AutoConfig, T5EncoderModel
+from transformers import AutoConfig, BertConfig, BertModel, T5EncoderModel, XLMRobertaConfig, XLMRobertaModel
 
 from optimum.rbln import (
     RBLNASTForAudioClassification,
@@ -103,7 +102,7 @@ class TestResNetModel(BaseTest.TestModel, BaseHubTest.TestHub):
     def _inner_test_save_load(self, tmpdir):
         super()._inner_test_save_load(tmpdir)
 
-        with self.assertRaises(RBLNRuntimeError):
+        with self.assertRaises(RuntimeError):
             _ = self.RBLN_CLASS.from_pretrained(
                 tmpdir,
                 export=False,
@@ -351,6 +350,94 @@ class TestXLMRobertaModel(BaseTest.TestModel):
     }
 
 
+class TestEncoderMaxSeqLenBucketing(unittest.TestCase):
+    """Sequence-length bucketing for feature-extraction encoders.
+
+    A single model is compiled for several ``max_seq_len`` values; the resulting buckets live in
+    one compiled model and therefore share a single copy of the encoder weights. At inference the
+    runtime routes each input to the smallest bucket that fits, and the forward pass pads up to that
+    bucket and slices the outputs back. This test checks the routed outputs match the HF reference
+    for the e5 (BERT) and bge-m3 (XLM-RoBERTa) families, using tiny random stand-ins.
+    """
+
+    BUCKETS = [32, 64, 128]
+    TEST_SEQ_LENS = [20, 32, 100, 128]
+    TEST_LEVEL = TestLevel.DEFAULT
+
+    @classmethod
+    def setUpClass(cls):
+        env_coverage = TestLevel[os.environ.get("OPTIMUM_RBLN_TEST_LEVEL", "default").upper()]
+        if env_coverage.value < cls.TEST_LEVEL.value:
+            raise unittest.SkipTest(f"Skipped test : Test Coverage {env_coverage.name} < {cls.TEST_LEVEL.name}")
+
+    def test_model_input_shapes_is_deprecated(self):
+        from optimum.rbln.transformers.configuration_generic import RBLNTransformerEncoderConfig
+
+        with self.assertLogs("optimum.rbln.utils.deprecation", level="WARNING") as logs:
+            config = RBLNTransformerEncoderConfig(
+                max_seq_len=[64, 128],
+                model_input_shapes=[[1, 64], [1, 64]],
+            )
+
+        self.assertTrue(any("model_input_shapes" in msg for msg in logs.output))
+        self.assertEqual(config.max_seq_len, [64, 128])
+        self.assertFalse(hasattr(config, "model_input_shapes"))
+
+    def _tiny_models(self):
+        config_kwargs = {
+            "vocab_size": 1024,
+            "hidden_size": 64,
+            "num_hidden_layers": 2,
+            "num_attention_heads": 2,
+            "intermediate_size": 128,
+            "max_position_embeddings": 256,
+        }
+        return {
+            "e5": (RBLNBertModel, BertModel(BertConfig(**config_kwargs)).eval()),
+            "bge-m3": (RBLNXLMRobertaModel, XLMRobertaModel(XLMRobertaConfig(**config_kwargs)).eval()),
+        }
+
+    def test_bucketing_matches_reference(self):
+        torch.manual_seed(42)
+        for name, (rbln_cls, hf_model) in self._tiny_models().items():
+            with self.subTest(model=name):
+                # Reference outputs from the eager HF model, computed before compilation.
+                inputs = {
+                    seq_len: {
+                        "input_ids": torch.randint(0, 1024, (1, seq_len), dtype=torch.int64),
+                        "attention_mask": torch.ones(1, seq_len, dtype=torch.int64),
+                    }
+                    for seq_len in self.TEST_SEQ_LENS
+                }
+                references = {seq_len: hf_model(**args).last_hidden_state for seq_len, args in inputs.items()}
+
+                save_dir = f"bucketing_{name.replace('-', '_')}-artifact"
+                if os.path.exists(save_dir):
+                    shutil.rmtree(save_dir)
+                rbln_model = rbln_cls.from_model(
+                    hf_model,
+                    rbln_max_seq_len=self.BUCKETS,
+                    rbln_device=0,
+                    model_save_dir=save_dir,
+                )
+                try:
+                    # One executor per bucket, all in a single compiled model (shared weights).
+                    self.assertEqual(rbln_model.model[0].get_executor_count(), len(self.BUCKETS))
+
+                    for seq_len, args in inputs.items():
+                        output = rbln_model(**args, return_dict=False)[0]
+                        reference = references[seq_len]
+                        self.assertEqual(tuple(output.shape), tuple(reference.shape))
+                        max_diff = (output - reference).abs().max().item()
+                        self.assertTrue(
+                            torch.allclose(output, reference, atol=2e-2, rtol=1e-2),
+                            msg=f"{name} seq_len={seq_len}: outputs diverged (max abs diff {max_diff:.4g})",
+                        )
+                finally:
+                    if os.path.exists(save_dir):
+                        shutil.rmtree(save_dir)
+
+
 class TestXLMRobertaModelWithTokenTypeIds(TestXLMRobertaModel):
     RBLN_CLASS_KWARGS = {
         "rbln_max_seq_len": 128,
@@ -421,8 +508,8 @@ class TestColQwen2Model(BaseTest.TestModel):
     RBLN_CLASS_KWARGS = {
         "rbln_config": {
             "vlm": {
-                "visual": {"max_seq_lens": 512},
-                "tensor_parallel_size": 1,
+                "visual": {"max_seq_len": 512},
+                "num_devices": 1,
                 "max_seq_len": 32_768,
             }
         }
@@ -641,10 +728,6 @@ class TestGroundingDinoModel(BaseTest.TestModel):
             "encoder": {"image_size": (1333, 1333)},
             "decoder": {"image_size": (1333, 1333)},
             "backbone": {"image_size": (1333, 1333)},
-            "text_backbone": {
-                "model_input_names": ["input_ids", "attention_mask", "token_type_ids", "position_ids"],
-                "model_input_shapes": [(1, 256), (1, 256, 256), (1, 256), (1, 256)],
-            },
         }
     }
 
@@ -654,7 +737,10 @@ class TestGroundingDinoModel(BaseTest.TestModel):
 
         config = GroundingDinoConfig.from_pretrained(
             cls.HF_MODEL_ID,
-            decoder_layers=1,
+            # with `decoder_bbox_embed_share=True` v5 ties
+            # `bbox_embed.0` into `bbox_embed.[1+]`, and its tie_weights
+            # validation raises if no tie target exists.
+            decoder_layers=2,
             decoder_attention_heads=2,
             encoder_layers=1,
             encoder_attention_heads=2,

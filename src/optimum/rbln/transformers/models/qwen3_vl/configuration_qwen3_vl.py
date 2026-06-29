@@ -15,6 +15,7 @@
 from typing import Any, List, Optional, Union
 
 from ....configuration_utils import RBLNModelConfig
+from ....utils.deprecation import deprecate_kwarg
 from ..decoderonly.configuration_decoderonly import RBLNDecoderOnlyModelConfig, RBLNDecoderOnlyModelForCausalLMConfig
 
 
@@ -28,17 +29,24 @@ class RBLNQwen3VLForConditionalGenerationConfig(RBLNDecoderOnlyModelForCausalLMC
     """
 
     submodules = ["visual"]
+    subclass_non_save_attributes = ["_load_visual_runtime"]
 
     def __init__(
         self,
         use_inputs_embeds: bool = True,
         visual: Optional[RBLNModelConfig] = None,
+        _load_visual_runtime: bool = True,
         **kwargs: Any,
     ):
         """
         Args:
             use_inputs_embeds (bool): Whether or not to use `inputs_embeds` as input. Defaults to `True`.
             visual (Optional[RBLNModelConfig]): Configuration for the vision encoder component.
+            _load_visual_runtime (bool): Whether to create runtime for the visual encoder submodule.
+                Set to ``False`` on decoder-only nodes in a disaggregated encoder setup to skip
+                loading the visual encoder's compiled model (.rbln) and torch artifacts entirely.
+                When ``False``, pre-computed ``image_embeds`` / ``video_embeds`` must be provided
+                to forward(). Defaults to ``True``.
             kwargs: Additional arguments passed to the parent `RBLNDecoderOnlyModelForCausalLMConfig`.
 
         Raises:
@@ -47,18 +55,30 @@ class RBLNQwen3VLForConditionalGenerationConfig(RBLNDecoderOnlyModelForCausalLMC
         super().__init__(use_inputs_embeds=use_inputs_embeds, **kwargs)
         if not self.use_inputs_embeds:
             raise ValueError(
-                "RBLNQwen3VLForConditionalGenerationConfig does not allow `use_inputs_embeds` to be set to False, "
-                "as RBLNQwen3VLForConditionalGeneration accepts only `inputs_embeds` as input."
+                "RBLNQwen3VLForConditionalGenerationConfig requires use_inputs_embeds=True. "
+                "The visual encoder output must be injected into inputs_embeds, whether the "
+                "visual encoder runs locally (_load_visual_runtime=True) or embeddings are "
+                "received from an encoder node (_load_visual_runtime=False)."
             )
         self.visual = self.initialize_submodule_config(submodule_config=visual)
+        self._load_visual_runtime = _load_visual_runtime
 
 
 class RBLNQwen3VLModelConfig(RBLNDecoderOnlyModelConfig):
     submodules = ["visual"]
+    subclass_non_save_attributes = ["_load_visual_runtime"]
 
-    def __init__(self, visual: Optional[RBLNModelConfig] = None, **kwargs: Any):
+    def __init__(self, visual: Optional[RBLNModelConfig] = None, _load_visual_runtime: bool = True, **kwargs: Any):
         super().__init__(**kwargs)
+        if not getattr(self, "use_inputs_embeds", True):
+            raise ValueError(
+                "RBLNQwen3VLModelConfig requires use_inputs_embeds=True. "
+                "The visual encoder output must be injected into inputs_embeds, whether the "
+                "visual encoder runs locally (_load_visual_runtime=True) or embeddings are "
+                "received from an encoder node (_load_visual_runtime=False)."
+            )
         self.visual = self.initialize_submodule_config(submodule_config=visual)
+        self._load_visual_runtime = _load_visual_runtime
 
 
 class RBLNQwen3VLVisionModelConfig(RBLNModelConfig):
@@ -69,10 +89,11 @@ class RBLNQwen3VLVisionModelConfig(RBLNModelConfig):
     RBLN-optimized Qwen3-VL vision transformer models for processing images and videos.
     """
 
-    def __init__(self, max_seq_lens: Union[int, List[int]] = None, **kwargs: Any):
+    @deprecate_kwarg(old_name="max_seq_lens", new_name="max_seq_len", version="0.11.0")
+    def __init__(self, max_seq_len: Union[int, List[int]] = None, **kwargs: Any):
         """
         Args:
-            max_seq_lens (Optional[Union[int, List[int]]]): Maximum sequence lengths for Vision
+            max_seq_len (Optional[Union[int, List[int]]]): Maximum sequence lengths for Vision
                 Transformer attention. Can be an integer or list of integers, each indicating
                 the number of patches in a sequence for an image or video. For example, an image
                 of 224x224 pixels with patch size 16 and spatial_merge_size 2 yields
@@ -82,16 +103,16 @@ class RBLNQwen3VLVisionModelConfig(RBLNModelConfig):
             kwargs: Additional arguments passed to the parent RBLNModelConfig.
 
         Raises:
-            ValueError: If `max_seq_lens` is None or not provided.
+            ValueError: If `max_seq_len` is None or not provided.
         """
         super().__init__(**kwargs)
 
-        if max_seq_lens is not None:
-            if isinstance(max_seq_lens, int):
-                max_seq_lens = [max_seq_lens]
-            elif isinstance(max_seq_lens, list):
-                max_seq_lens.sort(reverse=True)
+        if max_seq_len is not None:
+            if isinstance(max_seq_len, int):
+                max_seq_len = [max_seq_len]
+            elif isinstance(max_seq_len, list):
+                max_seq_len.sort(reverse=True)
         else:
-            raise ValueError("'max_seq_lens' must be specified.")
+            raise ValueError("'max_seq_len' must be specified.")
 
-        self.max_seq_lens = max_seq_lens
+        self.max_seq_len = max_seq_len

@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING, Any, Callable
 
 import torch
 from transformers import AutoModelForTextEncoding, T5EncoderModel, T5ForConditionalGeneration
+from transformers.modeling_attn_mask_utils import _prepare_4d_attention_mask
 from transformers.modeling_outputs import BaseModelOutputWithPastAndCrossAttentions
 
 from ...modeling_generic import RBLNTransformerEncoderForFeatureExtraction
@@ -38,6 +39,12 @@ class T5EncoderWrapper(torch.nn.Module):
 
     def forward(self, *args, **kwargs):
         kwargs.pop("return_dict", None)
+        # TODO: make this to use `create_bidirectional_mask` in transformers v5
+        args = list(args)
+        if len(args) > 1 and torch.is_tensor(args[1]) and args[1].dim() == 2:
+            args[1] = _prepare_4d_attention_mask(args[1], torch.float32)
+        if "attention_mask" in kwargs and kwargs["attention_mask"] is not None and kwargs["attention_mask"].dim() == 2:
+            kwargs["attention_mask"] = _prepare_4d_attention_mask(kwargs["attention_mask"], torch.float32)
         return self.model(*args, **kwargs, return_dict=False)
 
 
@@ -48,7 +55,7 @@ class RBLNT5EncoderModel(RBLNTransformerEncoderForFeatureExtraction):
 
     Important Note:
         This model supports various sizes of the T5EncoderModel. For optimal performance, it is highly recommended to adjust the tensor parallelism setting
-        based on the model size. Please refer to the [Optimum RBLN Overview](../../../optimum_rbln.md) for guidance on choosing the appropriate tensor parallelism size for your model.
+        based on the model size. Please refer to the [Optimum RBLN Overview](../../../index.md) for guidance on choosing the appropriate tensor parallelism size for your model.
 
     Examples:
         ```python
@@ -57,7 +64,7 @@ class RBLNT5EncoderModel(RBLNTransformerEncoderForFeatureExtraction):
         model = RBLNT5EncoderModel.from_pretrained(
             "sentence-transformers/sentence-t5-xxl",
             export=True,
-            rbln_tensor_parallel_size=4,
+            rbln_num_devices=4,
         )
 
         model.save_pretrained("compiled-sentence-t5-xxl")
@@ -93,7 +100,7 @@ class RBLNT5ForConditionalGeneration(RBLNModelForSeq2SeqLM):
 
     Important Note:
         This model supports various sizes of the T5ForConditionalGeneration. For optimal performance, it is highly recommended to adjust the tensor parallelism setting
-        based on the model size. Please refer to the [Optimum RBLN Overview](../../../optimum_rbln.md) for guidance on choosing the appropriate tensor parallelism size for your model.
+        based on the model size. Please refer to the [Optimum RBLN Overview](../../../index.md) for guidance on choosing the appropriate tensor parallelism size for your model.
 
 
     Examples:
@@ -103,7 +110,7 @@ class RBLNT5ForConditionalGeneration(RBLNModelForSeq2SeqLM):
         model = RBLNT5ForConditionalGeneration.from_pretrained(
             "google-t5/t5-11b",
             export=True,
-            rbln_tensor_parallel_size=4,
+            rbln_num_devices=4,
         )
 
         model.save_pretrained("compiled-sentence-t5-xxl")

@@ -18,6 +18,32 @@ import torch
 from torch import Tensor
 
 
+def compute_masked_routing_weight_softmax_first(router_logits: Tensor, top_k: int, renormalize: bool) -> Tensor:
+    #   renormalize=True : topk → softmax-of-topk → scatter  (post_norm)
+    #   renormalize=False: softmax → topk → scatter           (pre_norm)
+    router_logits_t = router_logits.transpose(0, 1)  # [T, E] -> [E, T]
+    if renormalize:
+        topk_values, topk_ids = torch.topk(router_logits_t, top_k, dim=0)
+        topk_weights = torch.softmax(topk_values, dim=0)
+    else:
+        routing = torch.softmax(router_logits_t, dim=0)
+        topk_weights, topk_ids = torch.topk(routing, top_k, dim=0)
+    masked = torch.zeros_like(router_logits_t, dtype=router_logits.dtype)
+    masked.scatter_(0, topk_ids, topk_weights)
+    return masked  # [E, T]
+
+
+def compute_masked_routing_weight_topk_first(router_logits: Tensor, top_k: int) -> Tensor:
+    # topk → softmax on topk values → scatter (GPT-OSS style).
+    # Same [E, T] / dim=0 layout as softmax_first for compiler pattern matching.
+    router_logits_t = router_logits.transpose(0, 1)  # [T, E] -> [E, T]
+    topk_values, topk_ids = torch.topk(router_logits_t, top_k, dim=0)
+    topk_weights = torch.softmax(topk_values, dim=0)
+    masked = torch.zeros_like(router_logits_t, dtype=router_logits.dtype)
+    masked.scatter_(0, topk_ids, topk_weights)
+    return masked  # [E, T]
+
+
 @torch.library.custom_op(
     "rbln_custom_ops::custom_moe_glu",
     mutates_args=(),
@@ -27,9 +53,9 @@ def custom_moe_glu(
     gate_proj_weight: Tensor,
     up_proj_weight: Tensor,
     down_proj_weight: Tensor,
-    router_logits: Tensor,
-    topk: int,
-    norm_topk_prob: bool,
+    masked_routing_weight: Tensor,
+    hidden_act: str,
+    expert_map: Optional[Tensor] = None,
     gate_proj_bias: Optional[Tensor] = None,
     up_proj_bias: Optional[Tensor] = None,
     down_proj_bias: Optional[Tensor] = None,
@@ -37,14 +63,18 @@ def custom_moe_glu(
     """
     Customized MoE GLU operation.
 
+    Routing (softmax/sigmoid + topk + optional renormalize + scatter) .
+
     Expected tensor shapes:
     - hidden_states: [batch*seq_len, hidden_size]
-    - gate_proj_weight: [num_experts, hidden_size, intermediate_size]
-    - up_proj_weight: [num_experts, hidden_size, intermediate_size]
-    - down_proj_weight: [num_experts, intermediate_size, hidden_size]
-    - router_logits: [batch*seq_len, num_experts]
-    - topk: top k experts to select
-    - norm_topk_prob: whether to normalize the top k routing weights with softmax
+    - gate_proj_weight: [num_experts, intermediate_size, hidden_size]
+    - up_proj_weight: [num_experts, intermediate_size, hidden_size]
+    - down_proj_weight: [num_experts, hidden_size, intermediate_size]
+    - masked_routing_weight: [num_experts, batch*seq_len]
+        Dense routing matrix in [E, T] layout (token dim may be padded to 64-align).
+        Non-selected (expert, token) positions must be zero.
+    - hidden_act: gate activation name ("silu"/"swish" or "gelu*")
+    - expert_map: [num_experts_global] (vllm-only; pass None outside vllm)
     - gate_proj_bias: [num_experts, intermediate_size]
     - up_proj_bias: [num_experts, intermediate_size]
     - down_proj_bias: [num_experts, hidden_size]
@@ -62,9 +92,9 @@ def custom_moe_glu_fake(
     gate_proj_weight: Tensor,
     up_proj_weight: Tensor,
     down_proj_weight: Tensor,
-    router_logits: Tensor,
-    topk: int,
-    norm_topk_prob: bool,
+    masked_routing_weight: Tensor,
+    hidden_act: str,
+    expert_map: Optional[Tensor] = None,
     gate_proj_bias: Optional[Tensor] = None,
     up_proj_bias: Optional[Tensor] = None,
     down_proj_bias: Optional[Tensor] = None,
@@ -128,14 +158,13 @@ def custom_moe_glu_mxfp4(
     down_proj_blocks: Tensor,
     down_proj_scales: Tensor,
     down_proj_bias: Tensor,
-    router_logits: Tensor,
+    masked_routing_weight: Tensor,
     alpha: Tensor,
     limit: Tensor,
-    k: int,
-    post_norm: bool,
+    expert_map: Optional[Tensor] = None,
 ) -> Tensor:
     """
-    Customized MoE GLU operation.
+    Customized MoE GLU operation for mxfp4-quantized experts (GPT-OSS style).
 
     Expected tensor shapes:
     - hidden_states: [batch*seq_len, hidden_size]
@@ -147,10 +176,13 @@ def custom_moe_glu_mxfp4(
     - up_proj_bias: [num_experts, intermediate_size]
     - down_proj_blocks: [num_experts, hidden_size, intermediate_size // 2]
     - down_proj_scales: [num_experts, hidden_size, intermediate_size // 32]
-    - masked_routing_weight: [batch * seq_len, num_experts]
-    - expert_select_count: [num_experts]
-    - alpha: []
-    - limit: []
+    - down_proj_bias: [num_experts, hidden_size]
+    - masked_routing_weight: [num_experts, batch*seq_len]
+        Dense routing matrix in [E, T] layout (token dim may be padded to 64-align).
+        Non-selected (expert, token) positions must be zero.
+    - alpha: scalar tensor for swigluoai activation
+    - limit: scalar tensor for swigluoai activation
+    - expert_map: [num_experts_global] (vllm-only; pass None outside vllm)
 
     Returns:
         Tensor: [batch * seq_len, hidden_size]
@@ -171,10 +203,9 @@ def custom_moe_glu_mxfp4_fake(
     down_proj_blocks: Tensor,
     down_proj_scales: Tensor,
     down_proj_bias: Tensor,
-    router_logits: Tensor,
+    masked_routing_weight: Tensor,
     alpha: Tensor,
     limit: Tensor,
-    k: int,
-    post_norm: bool,
+    expert_map: Optional[Tensor] = None,
 ) -> Tensor:
     return torch.empty_like(hidden_states)

@@ -44,6 +44,7 @@ class PixtralAttention(nn.Module):
         attention_mask: Optional[torch.Tensor] = None,
         position_embeddings: Optional[Tuple[torch.Tensor, torch.Tensor]] = None,
         output_attentions: Optional[bool] = False,
+        **kwargs,
     ):
         batch_size, patches, _ = hidden_states.size()
 
