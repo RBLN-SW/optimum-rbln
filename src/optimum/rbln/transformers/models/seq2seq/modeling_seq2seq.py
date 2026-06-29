@@ -128,7 +128,7 @@ class RBLNModelForSeq2SeqLM(RBLNModel, GenerationMixin, ABC):
 
         self.encoder = RBLNRuntimeEncoder(
             runtime=self.model[0],
-            main_input_name="input_ids",
+            main_input_name="inputs_embeds" if self.rbln_config.use_inputs_embeds else "input_ids",
         )
         self.decoder = RBLNRuntimeDecoder(
             runtime=self.model[1],
@@ -254,8 +254,12 @@ class RBLNModelForSeq2SeqLM(RBLNModel, GenerationMixin, ABC):
             cls._update_paged_attention_config(model_config, rbln_config)
 
         # model input info
+        if rbln_config.use_inputs_embeds:
+            enc_main_input = ("inputs_embeds", [1, rbln_config.enc_max_seq_len, model_config.d_model], "float32")
+        else:
+            enc_main_input = ("input_ids", [1, rbln_config.enc_max_seq_len], "int64")
         enc_input_info = [
-            ("input_ids", [1, rbln_config.enc_max_seq_len], "int64"),
+            enc_main_input,
             ("attention_mask", [1, rbln_config.enc_max_seq_len], "float32"),
             ("block_tables", [1], "int16"),
         ]
@@ -423,25 +427,34 @@ class RBLNModelForSeq2SeqLM(RBLNModel, GenerationMixin, ABC):
                 argument: value for argument, value in encoder_kwargs.items() if argument in encoder_signature
             }
 
-        batch_size, input_len = inputs_tensor.shape
-        inputs_tensor = torch.nn.functional.pad(
-            inputs_tensor,
-            (0, self.rbln_config.enc_max_seq_len - input_len),
-            value=self.config.pad_token_id,
-        )
-        model_kwargs["attention_mask"] = torch.nn.functional.pad(
-            model_kwargs["attention_mask"], (0, self.rbln_config.enc_max_seq_len - input_len)
-        )
+        if self.rbln_config.use_inputs_embeds:
+            batch_size, input_len = inputs_tensor.shape[0], inputs_tensor.shape[1]
+        else:
+            batch_size, input_len = inputs_tensor.shape
+        pad_len = self.rbln_config.enc_max_seq_len - input_len
+        if pad_len < 0:
+            raise ValueError(
+                f"Encoder input length ({input_len}) exceeds the compiled `enc_max_seq_len` "
+                f"({self.rbln_config.enc_max_seq_len}); the input would be silently truncated. "
+                f"Recompile the model with a larger `rbln_enc_max_seq_len`."
+            )
+
+        if self.rbln_config.use_inputs_embeds:
+            inputs_tensor = torch.nn.functional.pad(inputs_tensor, (0, 0, 0, pad_len))
+        else:
+            inputs_tensor = torch.nn.functional.pad(inputs_tensor, (0, pad_len), value=self.config.pad_token_id)
+        model_kwargs["attention_mask"] = torch.nn.functional.pad(model_kwargs["attention_mask"], (0, pad_len))
 
         # 3. make sure that encoder returns `ModelOutput`
         model_input_name = model_input_name if model_input_name is not None else self.main_input_name
+        encoder_input_name = "inputs_embeds" if self.rbln_config.use_inputs_embeds else "input_ids"
         encoder_kwargs["return_dict"] = True
         encoder_kwargs["output_hidden_states"] = False
         encoder_kwargs["output_attentions"] = False
 
         for b in range(batch_size):
             block_tables = torch.tensor([b], dtype=torch.int16)
-            encoder_kwargs["input_ids"] = inputs_tensor[b].unsqueeze(0)
+            encoder_kwargs[encoder_input_name] = inputs_tensor[b].unsqueeze(0)
             encoder_kwargs["attention_mask"] = model_kwargs["attention_mask"][b].unsqueeze(0).to(torch.float32)
             model_kwargs["encoder_outputs"] = encoder(**encoder_kwargs, block_tables=block_tables)
 

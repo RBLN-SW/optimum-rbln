@@ -1,0 +1,5 @@
+# Generated at runtime by the demo / CLI
+pop2piano/
+.gradio/
+__pycache__/
+*.log

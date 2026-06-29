@@ -174,6 +174,10 @@ _import_structure = {
         "RBLNMistralModelConfig",
     ],
     "phi": ["RBLNPhiForCausalLM", "RBLNPhiForCausalLMConfig", "RBLNPhiModel", "RBLNPhiModelConfig"],
+    "pop2piano": [
+        "RBLNPop2PianoForConditionalGeneration",
+        "RBLNPop2PianoForConditionalGenerationConfig",
+    ],
     "qwen2": ["RBLNQwen2ForCausalLM", "RBLNQwen2ForCausalLMConfig", "RBLNQwen2Model", "RBLNQwen2ModelConfig"],
     "qwen2_moe": ["RBLNQwen2MoeForCausalLM", "RBLNQwen2MoeForCausalLMConfig"],
     "qwen3": ["RBLNQwen3ForCausalLM", "RBLNQwen3ForCausalLMConfig", "RBLNQwen3Model", "RBLNQwen3ModelConfig"],
@@ -373,6 +377,10 @@ if TYPE_CHECKING:
     )
     from .phi import RBLNPhiForCausalLM, RBLNPhiForCausalLMConfig, RBLNPhiModel, RBLNPhiModelConfig
     from .pixtral import RBLNPixtralVisionModel, RBLNPixtralVisionModelConfig
+    from .pop2piano import (
+        RBLNPop2PianoForConditionalGeneration,
+        RBLNPop2PianoForConditionalGenerationConfig,
+    )
     from .qwen2 import RBLNQwen2ForCausalLM, RBLNQwen2ForCausalLMConfig, RBLNQwen2Model, RBLNQwen2ModelConfig
     from .qwen2_5_vl import (
         RBLNQwen2_5_VisionTransformerPretrainedModel,
