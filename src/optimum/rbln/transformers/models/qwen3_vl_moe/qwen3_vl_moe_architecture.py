@@ -17,7 +17,7 @@ from typing import Optional
 import torch
 import torch.nn as nn
 
-from ....ops.moe import compute_masked_routing_weight_softmax_first
+from ...utils.moe import compute_masked_routing_weight_softmax_first
 from ..decoderonly.configuration_lora import RBLNLoRAConfig
 from ..decoderonly.decoderonly_architecture import DecoderOnlyAttention, DecoderOnlyLayer
 from ..qwen3_vl.qwen3_vl_architecture import (
