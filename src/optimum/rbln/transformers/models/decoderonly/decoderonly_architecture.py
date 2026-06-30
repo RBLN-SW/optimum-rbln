@@ -429,13 +429,7 @@ class DecoderOnlyModel(nn.Module):
     def convert_sequence_positions_for_flash_attn(self, seq_positions, max_seq_len):
         if self.attn_impl not in ["flash_attn"]:
             raise NotImplementedError(f"Unknown attn_impl ({self.attn_impl}).")
-        partition_len = self.partition_len
-        num_partition = max_seq_len // partition_len
-
-        cs = seq_positions.repeat(num_partition, 1).transpose(0, 1)
-        pidx = torch.arange(num_partition)
-        cache_pos_for_partitions = torch.clamp(cs - pidx * partition_len, 0, partition_len)
-        return cache_pos_for_partitions
+        return seq_positions.unsqueeze(-1)
 
     def get_swa_custom_op_args(self, position_ids, query_position):
         max_cache_len = self.config.sliding_window
