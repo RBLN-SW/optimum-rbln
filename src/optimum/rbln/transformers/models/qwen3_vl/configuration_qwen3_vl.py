@@ -60,7 +60,7 @@ class RBLNQwen3VLForConditionalGenerationConfig(RBLNDecoderOnlyModelForCausalLMC
                 "visual encoder runs locally (_load_visual_runtime=True) or embeddings are "
                 "received from an encoder node (_load_visual_runtime=False)."
             )
-        self.visual = visual
+        self.visual = self.initialize_submodule_config(submodule_config=visual)
         self._load_visual_runtime = _load_visual_runtime
 
 

@@ -85,7 +85,7 @@ class RBLNPaliGemmaForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGeneration
                     "prefill_chunk_size": 8192,
                 }
             },
-            rbln_tensor_parallel_size=4,
+            rbln_num_devices=4,
         )
 
         model.save_pretrained("compiled-paligemma2-3b-mix-224")
@@ -217,9 +217,12 @@ class RBLNPaliGemmaForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGeneration
         generate_idx=None,
         position_ids=None,
         token_type_ids=None,
+        labels=None,
         **kwargs,
     ):
-        # Prepare HF generation
+        # `labels` is a training-only field that PaliGemmaProcessor may include in its output; it has no
+        # effect on generation and is ignored here. Declaring it also mirrors the upstream model (whose
+        # forward lists `labels`), so generate's `_validate_model_kwargs` accepts the processor output as-is.
         is_prefill_phase = generate_idx is None
 
         model_inputs = self.language_model.prepare_inputs_for_generation(
@@ -389,7 +392,7 @@ class RBLNPaliGemmaModel(RBLNModel):
                     "prefill_chunk_size": 8192,
                 }
             },
-            rbln_tensor_parallel_size=4,
+            rbln_num_devices=4,
         )
 
         model.save_pretrained("compiled-paligemma2-3b-mix-224")

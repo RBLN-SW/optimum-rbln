@@ -35,6 +35,11 @@ class RBLNGemma3ForCausalLMOutput(RBLNDecoderOnlyOutput):
 
 
 @dataclass
+class RBLNGemma4ForCausalLMOutput(RBLNGemma3ForCausalLMOutput):
+    pass
+
+
+@dataclass
 class RBLNSeq2SeqTSDecoderOutput(ModelOutput):
     last_hidden_states: torch.FloatTensor = None
     params: Tuple[torch.FloatTensor] = None

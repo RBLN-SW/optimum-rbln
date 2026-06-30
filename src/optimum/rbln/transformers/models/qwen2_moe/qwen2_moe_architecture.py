@@ -97,4 +97,5 @@ class Qwen2MoeMLP(nn.Module):
             up_proj_weight=self.up_proj.weight,
             down_proj_weight=self.down_proj.weight,
             masked_routing_weight=masked_routing_weight,
+            hidden_act="silu",
         )
