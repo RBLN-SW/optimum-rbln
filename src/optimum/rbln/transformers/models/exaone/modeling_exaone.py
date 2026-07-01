@@ -56,7 +56,7 @@ class RBLNExaoneForCausalLM(RBLNDecoderOnlyModelForCausalLM):
             "LGAI-EXAONE/EXAONE-3.0-7.8B-Instruct",
             export=True,
             rbln_batch_size=1,
-            rbln_tensor_parallel_size=4,
+            rbln_num_devices=4,
         )
 
 
@@ -64,7 +64,7 @@ class RBLNExaoneForCausalLM(RBLNDecoderOnlyModelForCausalLM):
         rbln_config = {
             "batch_size": 1,
             "max_seq_len": 4096,
-            "tensor_parallel_size": 4,
+            "num_devices": 4,
         }
         model = RBLNExaoneForCausalLM.from_pretrained(
             "LGAI-EXAONE/EXAONE-3.0-7.8B-Instruct",
@@ -79,7 +79,7 @@ class RBLNExaoneForCausalLM(RBLNDecoderOnlyModelForCausalLM):
         config = RBLNExaoneForCausalLMConfig(
             batch_size=1,
             max_seq_len=4096,
-            tensor_parallel_size=4
+            num_devices=4
         )
         model = RBLNExaoneForCausalLM.from_pretrained(
             "LGAI-EXAONE/EXAONE-3.0-7.8B-Instruct",

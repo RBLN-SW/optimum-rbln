@@ -85,7 +85,7 @@ class RBLNPaliGemmaForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGeneration
                     "prefill_chunk_size": 8192,
                 }
             },
-            rbln_tensor_parallel_size=4,
+            rbln_num_devices=4,
         )
 
         model.save_pretrained("compiled-paligemma2-3b-mix-224")
@@ -138,12 +138,28 @@ class RBLNPaliGemmaForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGeneration
 
         new_language_model.lm_head = model.lm_head
         new_language_model.model = model.model.language_model
+
+        # TODO: make this to use `lm_head.weight` in transformers v5
+        # Now, skipping `lm_head.weight` is handled by the `is_meta` check, so this is a no-op.
+        if new_language_model.lm_head.weight.is_meta:
+            embed_weight = new_language_model.get_input_embeddings().weight
+            new_language_model.lm_head.weight = torch.nn.Parameter(
+                torch.zeros(
+                    new_language_model.lm_head.weight.shape,
+                    dtype=embed_weight.dtype,
+                    device=embed_weight.device,
+                )
+            )
+
         model.model.language_model = new_language_model
         model.lm_head = None
         del model.lm_head
         return model
 
     def __post_init__(self, **kwargs):
+        if isinstance(getattr(self.config, "text_config", None), dict):
+            self.config = PaliGemmaConfig.from_dict(self.config.to_dict())
+
         self.vision_tower = LoopVisionTower(self.rbln_submodules[0])
         self.language_model = self.rbln_submodules[1]
 
@@ -201,9 +217,12 @@ class RBLNPaliGemmaForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGeneration
         generate_idx=None,
         position_ids=None,
         token_type_ids=None,
+        labels=None,
         **kwargs,
     ):
-        # Prepare HF generation
+        # `labels` is a training-only field that PaliGemmaProcessor may include in its output; it has no
+        # effect on generation and is ignored here. Declaring it also mirrors the upstream model (whose
+        # forward lists `labels`), so generate's `_validate_model_kwargs` accepts the processor output as-is.
         is_prefill_phase = generate_idx is None
 
         model_inputs = self.language_model.prepare_inputs_for_generation(
@@ -315,6 +334,9 @@ class RBLNPaliGemmaForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGeneration
             inputs = inputs_embeds if inputs_embeds is not None else input_ids
             batch_size = inputs.shape[0]
 
+            if generate_idx is None:
+                generate_idx = torch.full((batch_size, 1), inputs.shape[1], dtype=torch.int32)
+
             for b_idx in range(batch_size):
                 cache_position = torch.arange(0, generate_idx[b_idx].item(), dtype=torch.int32).unsqueeze(0)
                 output = self.language_model.prefill_decoder(
@@ -370,7 +392,7 @@ class RBLNPaliGemmaModel(RBLNModel):
                     "prefill_chunk_size": 8192,
                 }
             },
-            rbln_tensor_parallel_size=4,
+            rbln_num_devices=4,
         )
 
         model.save_pretrained("compiled-paligemma2-3b-mix-224")

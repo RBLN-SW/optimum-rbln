@@ -223,7 +223,7 @@ class TestQwen2MoeForCausalLM(LLMTest.TestLLM):
     RBLN_CLASS = RBLNQwen2MoeForCausalLM
     # HF_MODEL_ID ="peft-internal-testing/tiny-random-qwen-1.5-MoE"
     HF_MODEL_ID = "Qwen/Qwen1.5-MoE-A2.7B"
-    HF_CONFIG_KWARGS = {"num_hidden_layers": 1, "max_position_embeddings": 1024}
+    HF_CONFIG_KWARGS = {"num_hidden_layers": 1, "layer_types": ["full_attention"], "max_position_embeddings": 1024}
     TEST_LEVEL = TestLevel.FULL
 
 
@@ -573,6 +573,17 @@ class TestLlavaNextForConditionalGeneration(LLMTest.TestLLM):
         ):
             _ = self.RBLN_CLASS.from_pretrained(model_id=self.HF_MODEL_ID, **rbln_class_kwargs)
 
+    def test_propagate_config(self):
+        rbln_config = {
+            "create_runtimes": False,
+        }
+        rbln_class_kwargs = {"rbln_config": rbln_config}
+
+        model = self.RBLN_CLASS.from_pretrained(model_id=self.HF_MODEL_ID, **rbln_class_kwargs)
+
+        assert not model.rbln_config.vision_tower.create_runtimes
+        assert not model.rbln_config.language_model.create_runtimes
+
 
 class TestBlip2ForConditionalGeneration(LLMTest.TestLLM):
     RBLN_AUTO_CLASS = RBLNAutoModelForImageTextToText
@@ -661,7 +672,7 @@ class TestQwen2VLForConditionalGeneration(LLMTest.TestLLM):
     RBLN_CLASS_KWARGS = {
         "rbln_config": {
             "visual": {"max_seq_len": 512},
-            "tensor_parallel_size": 1,
+            "num_devices": 1,
             "max_seq_len": 32_768,
         }
     }
@@ -695,6 +706,14 @@ class TestQwen2VLForConditionalGeneration(LLMTest.TestLLM):
         inputs["do_sample"] = False
         return inputs
 
+    def test_propagate_config(self):
+        self.RBLN_CLASS_KWARGS["rbln_config"].update({"create_runtimes": False})
+
+        model = self.RBLN_CLASS.from_pretrained(model_id=self.HF_MODEL_ID, **self.RBLN_CLASS_KWARGS)
+
+        assert not model.rbln_config.visual.create_runtimes
+        assert not model.rbln_config.create_runtimes
+
 
 class TestQwen2_5_VLForConditionalGeneration(LLMTest.TestLLM):
     RBLN_AUTO_CLASS = RBLNAutoModelForImageTextToText
@@ -704,7 +723,7 @@ class TestQwen2_5_VLForConditionalGeneration(LLMTest.TestLLM):
     RBLN_CLASS_KWARGS = {
         "rbln_config": {
             "visual": {"max_seq_len": 512},
-            "tensor_parallel_size": 1,
+            "num_devices": 1,
             "kvcache_partition_len": 16_384,
             "max_seq_len": 32_768,
         }
@@ -735,6 +754,14 @@ class TestQwen2_5_VLForConditionalGeneration(LLMTest.TestLLM):
         inputs["do_sample"] = False
         return inputs
 
+    def test_propagate_config(self):
+        self.RBLN_CLASS_KWARGS["rbln_config"].update({"create_runtimes": False})
+
+        model = self.RBLN_CLASS.from_pretrained(model_id=self.HF_MODEL_ID, **self.RBLN_CLASS_KWARGS)
+
+        assert not model.rbln_config.visual.create_runtimes
+        assert not model.rbln_config.create_runtimes
+
 
 class TestQwen3VLForConditionalGeneration(LLMTest.TestLLM):
     RBLN_AUTO_CLASS = RBLNAutoModelForImageTextToText
@@ -744,7 +771,7 @@ class TestQwen3VLForConditionalGeneration(LLMTest.TestLLM):
     RBLN_CLASS_KWARGS = {
         "rbln_config": {
             "visual": {"max_seq_len": 512},
-            "tensor_parallel_size": 1,
+            "num_devices": 1,
             "kvcache_partition_len": 8192,
             "max_seq_len": 16_384,
         }
@@ -771,6 +798,14 @@ class TestQwen3VLForConditionalGeneration(LLMTest.TestLLM):
         inputs["do_sample"] = False
         return inputs
 
+    def test_propagate_config(self):
+        self.RBLN_CLASS_KWARGS["rbln_config"].update({"create_runtimes": False})
+
+        model = self.RBLN_CLASS.from_pretrained(model_id=self.HF_MODEL_ID, **self.RBLN_CLASS_KWARGS)
+
+        assert not model.rbln_config.visual.create_runtimes
+        assert not model.rbln_config.create_runtimes
+
 
 class TestQwen3VLMoeForConditionalGeneration(LLMTest.TestLLM):
     RBLN_AUTO_CLASS = RBLNAutoModelForImageTextToText
@@ -780,7 +815,7 @@ class TestQwen3VLMoeForConditionalGeneration(LLMTest.TestLLM):
     RBLN_CLASS_KWARGS = {
         "rbln_config": {
             "visual": {"max_seq_len": 512},
-            "tensor_parallel_size": 1,
+            "num_devices": 1,
             "kvcache_partition_len": 8192,
             "max_seq_len": 16_384,
         }
@@ -891,7 +926,7 @@ class TestLlamaForCausalLM_fp8(LLMTest.TestLLM):
             "attn_impl": "flash_attn",
             "kvcache_partition_len": 4096,
             "max_seq_len": 8192,
-            "tensor_parallel_size": 1,
+            "num_devices": 1,
         },
     }
 

@@ -17,7 +17,7 @@ from typing import Optional
 import torch
 from torch import nn
 
-from ....ops.moe import compute_masked_routing_weight_softmax_first
+from ...utils.moe import compute_masked_routing_weight_softmax_first
 from ..decoderonly.configuration_decoderonly import RBLNLoRAConfig
 from ..decoderonly.decoderonly_architecture import DecoderOnlyAttention, DecoderOnlyLayer, DecoderOnlyWrapper
 
@@ -77,4 +77,5 @@ class MixtralBlockSparseTop2MLP(nn.Module):
             up_proj_weight=self.w3_weight,
             down_proj_weight=self.w2_weight,
             masked_routing_weight=masked_routing_weight,
+            hidden_act="silu",
         )

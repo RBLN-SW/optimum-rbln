@@ -17,7 +17,7 @@ from typing import Optional
 import torch
 from torch import nn
 
-from ....ops.moe import compute_masked_routing_weight_softmax_first
+from ...utils.moe import compute_masked_routing_weight_softmax_first
 from ..decoderonly.configuration_decoderonly import RBLNLoRAConfig
 from ..decoderonly.decoderonly_architecture import DecoderOnlyAttention, DecoderOnlyLayer, DecoderOnlyWrapper
 
@@ -110,4 +110,5 @@ class Qwen3MoeMLP(nn.Module):
             up_proj_weight=self.up_proj.weight,
             down_proj_weight=self.down_proj.weight,
             masked_routing_weight=masked_routing_weight,
+            hidden_act="silu",
         )
