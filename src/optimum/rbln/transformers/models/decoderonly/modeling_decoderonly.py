@@ -38,7 +38,7 @@ from ...utils.rbln_quantization import get_quantized_model
 from .configuration_decoderonly import KVCacheMeta, RBLNDecoderOnlyModelConfig, RBLNDecoderOnlyModelForCausalLMConfig
 from .decoderonly_architecture import DecoderOnlyWrapper
 from .decoderonly_runtime_utils import RBLNPageTableManager, RBLNRuntimeModel
-from .generation_decoderonly import RBLNDecoderOnlyGenerationMixin
+from .generation_decoderonly import RBLNDecoderOnlyGenerationMixin, _is_batch_attn_opt_enabled
 
 
 logger = get_logger()
@@ -782,6 +782,84 @@ class RBLNDecoderOnlyModelForCausalLM(RBLNDecoderOnlyModel, RBLNDecoderOnlyGener
         lora_int_ids = [available_adapters[name] for name in adapter_names]
         self.set_lora_int_ids(torch.tensor(lora_int_ids, dtype=torch.int32))
 
+    def _maybe_sort_inputs_for_batch_attn_opt(self, model_inputs: dict) -> Optional[torch.Tensor]:
+        """Sort batch-indexed inputs in-place for the VLLM_RBLN_BATCH_ATTN_OPT path.
+
+        The batched dynamic decode kernel expects per-batch sequences sorted by length
+        (descending) so its per-partition early-exit contract is honored. The KV cache
+        on device is laid out in that sorted order starting from the prefill call
+        (`cache_position is None`) and the same permutation must be reused for every
+        subsequent decode call. The inverse is then applied to the outputs in
+        `_maybe_unsort_outputs_for_batch_attn_opt` so external callers never see
+        the sorted device-side state.
+
+        Args:
+            model_inputs: dict of {name: Tensor or None} batch-indexed inputs. Mutated
+                in place to contain sorted tensors when sorting is applied.
+
+        Returns:
+            unsort_idx, or None when no sorting was applied (single-batch / opt disabled).
+        """
+        shape_src = model_inputs.get("inputs_embeds")
+        if shape_src is None:
+            shape_src = model_inputs.get("input_ids")
+        if shape_src is None or shape_src.shape[0] <= 1 or not _is_batch_attn_opt_enabled():
+            # Clear any cached permutation from a prior generation so a stale index can't
+            # leak into a subsequent decode call with a different (single-batch / opt-off) shape.
+            self._rbln_sort_idx = None
+            self._rbln_unsort_idx = None
+            return None
+
+        is_prefill = model_inputs.get("cache_position") is None
+        if is_prefill:
+            lengths = model_inputs["generate_idx"].squeeze(-1).to(torch.int32)
+            sort_idx = torch.argsort(lengths, descending=True)
+            unsort_idx = torch.argsort(sort_idx)
+            self._rbln_sort_idx = sort_idx
+            self._rbln_unsort_idx = unsort_idx
+        else:
+            sort_idx = getattr(self, "_rbln_sort_idx", None)
+            unsort_idx = getattr(self, "_rbln_unsort_idx", None)
+            # Defensive: if decode batch size diverges from the prefill-time sort, the cached
+            # permutation can't apply. Skip sorting rather than silently corrupting outputs.
+            if sort_idx is not None and sort_idx.shape[0] != shape_src.shape[0]:
+                sort_idx = None
+                unsort_idx = None
+
+        if sort_idx is None:
+            return None
+
+        for k, v in model_inputs.items():
+            if isinstance(v, torch.Tensor) and v.dim() >= 1:
+                model_inputs[k] = v.index_select(0, sort_idx)
+
+        return unsort_idx
+
+    @staticmethod
+    def _maybe_unsort_outputs_for_batch_attn_opt(
+        unsort_idx: Optional[torch.Tensor], outputs: dict
+    ) -> None:
+        """Apply the inverse of the batched-decode sort to outputs, mutating in place.
+
+        Tensors are unsorted on dim 0; tuples (e.g. `hidden_states`) are unsorted
+        element-wise. No-op when `unsort_idx` is None.
+        """
+        if unsort_idx is None:
+            return
+
+        def _unsort(t):
+            if isinstance(t, torch.Tensor) and t.dim() >= 1:
+                return t.index_select(0, unsort_idx)
+            return t
+
+        for k, v in outputs.items():
+            if v is None:
+                continue
+            if isinstance(v, tuple):
+                outputs[k] = tuple(_unsort(t) for t in v)
+            else:
+                outputs[k] = _unsort(v)
+
     def forward(
         self,
         input_ids: Optional[torch.LongTensor] = None,
@@ -819,6 +897,28 @@ class RBLNDecoderOnlyModelForCausalLM(RBLNDecoderOnlyModel, RBLNDecoderOnlyGener
             padded_cache_lengths = torch.zeros_like(generate_idx)
 
         output_hidden_states = _validate_output_hidden_states(output_hidden_states, self.rbln_config)
+
+        batch_inputs = {
+            "input_ids": input_ids,
+            "inputs_embeds": inputs_embeds,
+            "cache_position": cache_position,
+            "attention_mask": attention_mask,
+            "generate_idx": generate_idx,
+            "padded_cache_lengths": padded_cache_lengths,
+            "position_ids": position_ids,
+            "token_type_ids": token_type_ids,
+            "lora_int_ids": lora_int_ids,
+        }
+        unsort_idx = self._maybe_sort_inputs_for_batch_attn_opt(batch_inputs)
+        input_ids = batch_inputs["input_ids"]
+        inputs_embeds = batch_inputs["inputs_embeds"]
+        cache_position = batch_inputs["cache_position"]
+        attention_mask = batch_inputs["attention_mask"]
+        generate_idx = batch_inputs["generate_idx"]
+        padded_cache_lengths = batch_inputs["padded_cache_lengths"]
+        position_ids = batch_inputs["position_ids"]
+        token_type_ids = batch_inputs["token_type_ids"]
+        lora_int_ids = batch_inputs["lora_int_ids"]
 
         # Prefill
         if cache_position is None:
@@ -889,6 +989,18 @@ class RBLNDecoderOnlyModelForCausalLM(RBLNDecoderOnlyModel, RBLNDecoderOnlyGener
             )
             logits = outputs.logits
             all_hidden_states = outputs.hidden_states
+
+        batch_outputs = {
+            "logits": logits,
+            "generate_idx": generate_idx,
+            "padded_cache_lengths": padded_cache_lengths,
+            "hidden_states": all_hidden_states,
+        }
+        self._maybe_unsort_outputs_for_batch_attn_opt(unsort_idx, batch_outputs)
+        logits = batch_outputs["logits"]
+        generate_idx = batch_outputs["generate_idx"]
+        padded_cache_lengths = batch_outputs["padded_cache_lengths"]
+        all_hidden_states = batch_outputs["hidden_states"]
 
         if not return_dict:
             return logits, generate_idx, padded_cache_lengths, all_hidden_states

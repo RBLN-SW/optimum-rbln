@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import math
+import os
 from typing import TYPE_CHECKING, List, Optional, Tuple, Union
 
 import torch
@@ -30,6 +31,11 @@ if TYPE_CHECKING:
 
 
 logger = logging.get_logger(__name__)
+
+
+def _is_batch_attn_opt_enabled() -> bool:
+    """Check whether VLLM_RBLN_BATCH_ATTN_OPT env var is set to enable batched dynamic decode."""
+    return os.environ.get("VLLM_RBLN_BATCH_ATTN_OPT", "0") == "1"
 
 
 class DecoderOnlyWrapper(nn.Module):
@@ -517,12 +523,28 @@ class DecoderOnlyModel(nn.Module):
             hidden_states = hidden_states + position_embeds
             cos, sin = None, None
 
-        # Get sequence positions for flash attention
+        # Decide whether to take the batched dynamic decode path (VLLM_RBLN_BATCH_ATTN_OPT).
+        # When the env var is set, rebel-compiler is also configured (via Config.cpp reading
+        # the same env var) to dispatch `apply_batch_decode_transform` for batch_size > 1
+        # decode ops — that transform asserts `seq` is [B, 1] and generates the attn_mask /
+        # valid_batch / blk_offset internally, so we must pass [B, 1] seq AND no mask here.
+        # Outside this mode we keep the partition-unrolled `seq` shape ([B, P]).
+        batch_size = inputs_embeds.shape[0]
+        is_batch_attn_opt_decode = _is_batch_attn_opt_enabled() and self.phase == "decode" and batch_size > 1
+
+        # Get sequence positions for flash attention.
+        # The compiler uses `seq` as the cache position to compute block index and offset
+        # (see rebel_compiler `compute_batch_decode_params`), so we must pass cache_position
+        # — not position_ids, which can diverge from cache_position by padded_cache_lengths
+        # when `use_position_ids=True`.
         if self.attn_impl == "flash_attn":
-            seq_positions = cache_position[:, 0]
-            seq_positions = self.convert_sequence_positions_for_flash_attn(
-                seq_positions=seq_positions, max_seq_len=self.max_seq_len
-            )
+            if is_batch_attn_opt_decode:
+                seq_positions = cache_position[:, :1].to(torch.int32)
+            else:
+                seq_positions = cache_position[:, 0]
+                seq_positions = self.convert_sequence_positions_for_flash_attn(
+                    seq_positions=seq_positions, max_seq_len=self.max_seq_len
+                )
         else:
             seq_positions = cache_position[:, :1]
 
@@ -532,21 +554,37 @@ class DecoderOnlyModel(nn.Module):
             sliding_cache_pos = (cache_seq_len, cache_offset)
 
         all_hidden_states = () if output_hidden_states else None
+
         for layer_idx, layer in enumerate(self.layers):
             if output_hidden_states:
                 all_hidden_states += (hidden_states,)
 
             is_sliding = True if layer_idx in self.sliding_window_layers else False
             is_sliding_decode = is_sliding and self.phase == "decode"
+            # Sliding window layers keep their own batching path (per-batch mask already in swa_attn_mask)
+            layer_is_batch_attn_opt = is_batch_attn_opt_decode and not is_sliding
+            if is_sliding_decode:
+                attn_mask = swa_attn_mask
+                layer_seq_idx = sliding_cache_pos
+            elif is_sliding:
+                attn_mask = attention_mask
+                layer_seq_idx = sliding_cache_pos
+            else:
+                # For both standard and batch_attn_opt paths we forward `attention_mask` here;
+                # the AttentionOp will drop it before the custom op call in batch_attn_opt mode.
+                attn_mask = attention_mask
+                layer_seq_idx = seq_positions
+
             hidden_states = layer(
                 hidden_states=hidden_states,
-                attention_mask=swa_attn_mask if is_sliding_decode else attention_mask,
-                seq_positions=sliding_cache_pos if is_sliding else seq_positions,
+                attention_mask=attn_mask,
+                seq_positions=layer_seq_idx,
                 past_key_values=past_key_values,
                 cos=cos,
                 sin=sin,
                 block_tables=local_block_tables if is_sliding else global_block_tables,
                 lora_int_id=lora_int_id,
+                is_batch_attn_opt_decode=layer_is_batch_attn_opt,
             )
 
         hidden_states = self.get_last_layernorm()(hidden_states)
@@ -663,6 +701,7 @@ class DecoderOnlyLayer(nn.Module):
         sin: Optional[torch.Tensor] = None,
         block_tables: Optional[torch.Tensor] = None,
         lora_int_id: Optional[torch.Tensor] = None,
+        is_batch_attn_opt_decode: bool = False,
     ):
         residual = hidden_states
         hidden_states = self.get_pre_attention_layernorm()(hidden_states)
@@ -676,6 +715,7 @@ class DecoderOnlyLayer(nn.Module):
             sin=sin,
             block_tables=block_tables,
             lora_int_id=lora_int_id,
+            is_batch_attn_opt_decode=is_batch_attn_opt_decode,
         )
         hidden_states = residual + hidden_states
 
@@ -860,6 +900,7 @@ class DecoderOnlyAttention(nn.Module):
         sin: Optional[torch.Tensor] = None,
         block_tables: Optional[torch.Tensor] = None,
         lora_int_id: Optional[torch.Tensor] = None,
+        is_batch_attn_opt_decode: bool = False,
     ):
         batch_size, query_length, _ = hidden_states.size()
 
@@ -895,6 +936,7 @@ class DecoderOnlyAttention(nn.Module):
             block_size=self.kvcache_block_size,
             k_scale=k_scale,
             v_scale=v_scale,
+            is_batch_attn_opt_decode=is_batch_attn_opt_decode,
             s_aux=getattr(self, "sinks", None),
         )
 
@@ -968,6 +1010,7 @@ class AttentionOp(nn.Module):
         block_size: int,
         k_scale: Optional[torch.Tensor] = None,
         v_scale: Optional[torch.Tensor] = None,
+        is_batch_attn_opt_decode: bool = False,
         s_aux: Optional[torch.Tensor] = None,
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Compute attention with static shapes and explicit cache management.
@@ -985,6 +1028,10 @@ class AttentionOp(nn.Module):
             block_size: Block size for paged attention
             k_scale: Scale applied to key
             v_scale: Scale applied to value
+            is_batch_attn_opt_decode: If True, dispatch the batched dynamic decode path
+                (VLLM_RBLN_BATCH_ATTN_OPT). `seq_position` is then [B, 1] (raw cache
+                position per batch) and a 2D mask is force-attached so the kernel can
+                handle per-batch attention without graph-level partition unrolling.
             s_aux: Auxiliary states for attention sinks
 
         Returns:
@@ -994,7 +1041,10 @@ class AttentionOp(nn.Module):
         key_state = key_state.unsqueeze(2)  # 1, 32, 1, 128, 128
         value_state = value_state.unsqueeze(2)
 
-        if self.use_attention_mask and not self.rbln_config.use_position_ids:
+        # In batch_attn_opt decode the rebel compiler computes the mask itself
+        # (see `apply_batch_decode_transform`), so we must NOT forward a mask of our own
+        # — passing one results in the mask being appended twice in the lowered op.
+        if self.use_attention_mask and not self.rbln_config.use_position_ids and not is_batch_attn_opt_decode:
             attn_mask = attn_mask.unsqueeze(2)
 
         if self.phase == "decode":
@@ -1022,7 +1072,7 @@ class AttentionOp(nn.Module):
             "block_size": block_size,
         }
 
-        if self.use_attention_mask:
+        if self.use_attention_mask and not is_batch_attn_opt_decode:
             op_args["mask"] = attn_mask
 
         if self.phase == "prefill" or self.phase == "image_prefill":
@@ -1109,12 +1159,16 @@ class FlashAttentionOp(AttentionOp):
         k_scale=None,
         v_scale=None,
         s_aux=None,
+        is_batch_attn_opt_decode: bool = False,
     ):
         # reshape for removing repeat_kv (batch=1 , num_head, 1, q_len=1, head_dim)
         key_state = key_state.unsqueeze(2)
         value_state = value_state.unsqueeze(2)
 
-        if self.use_attention_mask and not self.rbln_config.use_position_ids:
+        # In batch_attn_opt decode the rebel compiler computes the mask itself
+        # (see `apply_batch_decode_transform`), so we must NOT forward a mask of our own
+        # — passing one results in the mask being appended twice in the lowered op.
+        if self.use_attention_mask and not self.rbln_config.use_position_ids and not is_batch_attn_opt_decode:
             attn_mask = attn_mask.unsqueeze(2)
 
         if self.phase == "decode":
@@ -1143,7 +1197,7 @@ class FlashAttentionOp(AttentionOp):
             "partition": self.kvcache_partition_size,
         }
 
-        if self.use_attention_mask:
+        if self.use_attention_mask and not is_batch_attn_opt_decode:
             op_args["mask"] = attn_mask
 
         if self.phase == "prefill" or self.phase == "image_prefill":
@@ -1217,10 +1271,15 @@ class SlidingWindowAttentionOp(AttentionOp):
         block_size: int,
         k_scale: Optional[torch.Tensor] = None,
         v_scale: Optional[torch.Tensor] = None,
+        is_batch_attn_opt_decode: bool = False,
         s_aux: Optional[torch.Tensor] = None,
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         assert self.quantization is None, "Sliding window attention does not support quantization"
         assert k_scale is None and v_scale is None, "Sliding window attention does not support quantization"
+        # SWA already supports batching through its own per-batch attn_mask path; the
+        # batched dynamic decode optimization is not routed here (filtered out in the model
+        # loop), so this should always be False when reaching SWA.
+        assert not is_batch_attn_opt_decode, "Sliding window attention does not support batch_attn_opt path"
 
         # reshape for removing repeat_kv (batch=1 , num_head, 1, q_len=1, head_dim)
         key_state = key_state.unsqueeze(2)

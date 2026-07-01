@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
 from typing import TYPE_CHECKING, Any, Dict, Optional, Union
 
 import torch
@@ -22,6 +23,11 @@ from transformers.modeling_outputs import ModelOutput
 
 if TYPE_CHECKING:
     from ...modeling_outputs import RBLNDecoderOnlyOutput
+
+
+def _is_batch_attn_opt_enabled() -> bool:
+    """Check whether VLLM_RBLN_BATCH_ATTN_OPT env var is set to enable batched dynamic decode."""
+    return os.environ.get("VLLM_RBLN_BATCH_ATTN_OPT", "0") == "1"
 
 
 class RBLNDecoderOnlyGenerationMixin(GenerationMixin):
@@ -40,11 +46,22 @@ class RBLNDecoderOnlyGenerationMixin(GenerationMixin):
         padded_cache_lengths: Optional[torch.Tensor] = None,
         **kwargs,
     ):
+        # NOTE: The batched dynamic decode path (VLLM_RBLN_BATCH_ATTN_OPT=1) requires inputs to
+        # be sorted by sequence length on the device side so the kernel's per-partition early-exit
+        # contract is respected. That sort is applied transparently inside `forward()` (and its
+        # inverse is applied to the outputs) so all callers — including HF GenerationMixin and
+        # direct prefill/decode orchestrators — can keep using inputs in their original order.
         model_inputs = {}
         is_prefill_phase = generate_idx is None
 
         if is_prefill_phase:
-            generate_idx = attention_mask.sum(dim=-1, keepdim=True).int()
+            if attention_mask is not None:
+                generate_idx = attention_mask.sum(dim=-1, keepdim=True).int()
+            else:
+                base = input_ids if input_ids is not None else inputs_embeds
+                generate_idx = torch.full(
+                    (base.shape[0], 1), base.shape[1], dtype=torch.int32, device=base.device
+                )
             padded_cache_lengths = torch.zeros_like(generate_idx)
             cache_position = None
             position_ids = None
