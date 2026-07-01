@@ -20,7 +20,7 @@ import torch.nn as nn
 from transformers import PreTrainedModel
 from transformers.activations import ACT2FN
 
-from ....ops.moe import compute_masked_routing_weight_softmax_first
+from ...utils.moe import compute_masked_routing_weight_softmax_first
 from ..decoderonly.configuration_decoderonly import RBLNLoRAConfig
 from ..decoderonly.decoderonly_architecture import (
     DecoderOnlyAttention,
