@@ -375,11 +375,9 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
 
         if rbln_config.use_global_attention:
             max_block_cnt = rbln_config.max_seq_len // rbln_config.kvcache_block_size
-            input_info.append(
-                ("block_tables", [max_block_cnt] if is_prefill else [batch_size, max_block_cnt], "int16")
-            )
+            input_info.append(("block_tables", [batch_size, max_block_cnt], "int16"))
         if rbln_config.use_local_attention:
-            input_info.append(("local_block_tables", [1] if is_prefill else [batch_size, 1], "int16"))
+            input_info.append(("local_block_tables", [batch_size, 1], "int16"))
 
         if cls.use_query_position(rbln_config.use_local_attention, is_prefill, rbln_config.logits_to_keep):
             input_info.append(("query_position", [], "int16"))
