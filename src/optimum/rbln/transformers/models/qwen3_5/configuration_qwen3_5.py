@@ -59,9 +59,9 @@ class RBLNQwen3_5ForCausalLMConfig(RBLNDecoderOnlyModelForCausalLMConfig):
         self.linear_attention_layers = linear_attention_layers or []
 
 
-class RBLNQwen3_5ModelConfig(RBLNDecoderOnlyModelConfig):
+class RBLNQwen3_5TextModelConfig(RBLNDecoderOnlyModelConfig):
     """
-    Configuration class for the bare RBLN Qwen3.5 text model (no LM head).
+    Configuration class for the bare RBLN Qwen3.5 text backbone (no LM head, text-only).
 
     See `RBLNQwen3_5ForCausalLMConfig` for the meaning of `linear_attention_layers`.
     """
@@ -72,14 +72,15 @@ class RBLNQwen3_5ModelConfig(RBLNDecoderOnlyModelConfig):
 
 
 class RBLNQwen3_5VisionModelConfig(RBLNQwen3VLVisionModelConfig):
-    """Vision encoder config for Qwen3.5-VL (same as Qwen3-VL vision: per-image `max_seq_len`)."""
+    """Vision encoder config for Qwen3.5 (same as Qwen3-VL vision: per-image `max_seq_len`)."""
 
 
-class RBLNQwen3_5VLModelConfig(RBLNQwen3VLModelConfig):
+class RBLNQwen3_5ModelConfig(RBLNQwen3VLModelConfig):
     """
-    Configuration for the bare Qwen3.5-VL model (vision encoder + hybrid text, no LM head).
+    Configuration for the bare Qwen3.5 model (vision encoder + hybrid text, no LM head).
 
-    Adds `linear_attention_layers` (the GatedDeltaNet layer indices) on top of the Qwen3-VL
+    Qwen3.5 is natively vision-language, so this is the multimodal model config. Adds
+    `linear_attention_layers` (the GatedDeltaNet layer indices) on top of the Qwen3-VL
     multimodal config; the `visual` sub-config and `use_inputs_embeds=True` behave as in
     `RBLNQwen3VLModelConfig`.
     """
@@ -93,7 +94,7 @@ class RBLNQwen3_5ForConditionalGenerationConfig(RBLNQwen3VLForConditionalGenerat
     """
     Configuration for `RBLNQwen3_5ForConditionalGeneration` (vision-language).
 
-    Qwen3.5-VL pairs a Qwen3-VL-style vision encoder (no deepstack) with the hybrid Qwen3.5
+    Qwen3.5 pairs a Qwen3-VL-style vision encoder (no deepstack) with the hybrid Qwen3.5
     text backbone (`linear_attention` GatedDeltaNet layers + `full_attention` gated layers).
     The vision encoder output is injected into `inputs_embeds` (`use_inputs_embeds=True`,
     enforced by the parent). `linear_attention_layers` is populated automatically from
@@ -104,11 +105,14 @@ class RBLNQwen3_5ForConditionalGenerationConfig(RBLNQwen3VLForConditionalGenerat
     from optimum.rbln import RBLNQwen3_5ForConditionalGeneration
 
     model = RBLNQwen3_5ForConditionalGeneration.from_pretrained(
-        "Qwen/Qwen3.5-VL-...", export=True,
+        "Qwen/Qwen3.5-...", export=True,
         rbln_config={"max_seq_len": 32768, "tensor_parallel_size": 4, "visual": {"max_seq_len": 6400}},
     )
     ```
     """
+    
+    # submodules = ["visual"]
+    submodules = []
 
     def __init__(self, linear_attention_layers: Optional[List[int]] = None, **kwargs: Any):
         super().__init__(**kwargs)

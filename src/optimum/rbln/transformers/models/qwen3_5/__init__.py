@@ -16,13 +16,13 @@ from .configuration_qwen3_5 import (
     RBLNQwen3_5ForCausalLMConfig,
     RBLNQwen3_5ForConditionalGenerationConfig,
     RBLNQwen3_5ModelConfig,
+    RBLNQwen3_5TextModelConfig,
     RBLNQwen3_5VisionModelConfig,
-    RBLNQwen3_5VLModelConfig,
 )
 from .modeling_qwen3_5 import (
     RBLNQwen3_5ForCausalLM,
     RBLNQwen3_5ForConditionalGeneration,
     RBLNQwen3_5Model,
+    RBLNQwen3_5TextModel,
     RBLNQwen3_5VisionModel,
-    RBLNQwen3_5VLModel,
 )

@@ -33,15 +33,20 @@ from ....configuration_utils import RBLNCompileConfig
 from ....utils import logging
 from ...modeling_outputs import RBLNDecoderOnlyOutput, _validate_output_hidden_states
 from ..decoderonly.configuration_decoderonly import KVCacheMeta
+from ..decoderonly.decoderonly_runtime_utils import RBLNPageTableManager
 from ..decoderonly.modeling_decoderonly import RBLNDecoderOnlyModel, RBLNDecoderOnlyModelForCausalLM
 from ..qwen3_vl.modeling_qwen3_vl import RBLNQwen3VLModel, RBLNQwen3VLVisionModel
 from .configuration_qwen3_5 import (
     RBLNQwen3_5ForConditionalGenerationConfig,  # noqa: F401
+    RBLNQwen3_5ModelConfig,  # noqa: F401
     RBLNQwen3_5VisionModelConfig,  # noqa: F401
-    RBLNQwen3_5VLModelConfig,  # noqa: F401
 )
-from .qwen3_5_architecture import Qwen3_5Wrapper
-from .qwen3_5_vl_architecture import Qwen3_5VisionModelWrapper, Qwen3_5VL_LanguageModelWrapper
+from .qwen3_5_architecture import (
+    Qwen3_5_CausalLMWrapper,
+    Qwen3_5_LanguageModelWrapper,
+    Qwen3_5VisionModelWrapper,
+)
+from .qwen3_5_runtime_utils import RBLNQwen3_5RuntimeModel
 
 
 logger = logging.get_logger(__name__)
@@ -58,7 +63,7 @@ class RBLNQwen3_5ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
     to derive `linear_attention_layers` from the HF `layer_types`.
     """
 
-    _decoder_wrapper_cls = Qwen3_5Wrapper
+    _decoder_wrapper_cls = Qwen3_5_CausalLMWrapper
 
     def forward(self, *args, **kwargs):
         kwargs["return_dict"] = True
@@ -173,15 +178,15 @@ class RBLNQwen3_5ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
         return input_info
 
 
-class RBLNQwen3_5Model(RBLNDecoderOnlyModel):
+class RBLNQwen3_5TextModel(RBLNDecoderOnlyModel):
     """The bare Qwen3.5 text model (no LM head)."""
 
-    _decoder_wrapper_cls = Qwen3_5Wrapper
+    _decoder_wrapper_cls = Qwen3_5_CausalLMWrapper
     _use_rotary_emb = True
 
 
 # ---------------------------------------------------------------------------------------------
-# Vision-language (Qwen3.5-VL) -- Qwen3-VL-style vision encoder (NO deepstack) + hybrid text.
+# Vision-language (Qwen3.5) -- Qwen3-VL-style vision encoder (NO deepstack) + hybrid text.
 # Mirrors the Qwen2.5-VL RBLN flow (deepstack-free): the vision encoder's merged embeddings are
 # scattered into `inputs_embeds`, mRoPE `position_emb` is precomputed on the host, and the hybrid
 # Qwen3.5 text backbone runs the GatedDeltaNet linear layers + gated full-attention layers.
@@ -282,13 +287,13 @@ class RBLNQwen3_5VisionModel(RBLNQwen3VLVisionModel):
         return torch.cat(output_hidden_states)
 
 
-class RBLNQwen3_5VLModel(RBLNQwen3VLModel):
-    """Bare Qwen3.5-VL model (vision encoder + hybrid text, no LM head)."""
+class RBLNQwen3_5Model(RBLNQwen3VLModel):
+    """Bare Qwen3.5 model (vision encoder + hybrid text, no LM head)."""
 
     auto_model_class = AutoModelForImageTextToText
-    _decoder_wrapper_cls = Qwen3_5VL_LanguageModelWrapper
+    _decoder_wrapper_cls = Qwen3_5_LanguageModelWrapper
     _use_rotary_emb = False
-    _rbln_submodules = [{"name": "visual"}]
+    # _rbln_submodules = [{"name": "visual"}] # visual is done.
     _config_class = Qwen3_5Config
     _rotary_emb_class = Qwen3_5TextRotaryEmbedding
     _get_rope_index_func = HFQwen3_5Model.get_rope_index
@@ -301,12 +306,85 @@ class RBLNQwen3_5VLModel(RBLNQwen3VLModel):
                 text_config=self.config.text_config, vision_config=self.config.vision_config
             )
         # Qwen3.5 has NO deepstack: skip RBLNQwen3VLModel.__post_init__ (it reads
-        # vision_config.deepstack_visual_indexes) and run the decoder-only setup directly.
+        # vision_config.deepstack_visual_indexes) and run the decoder-only setup directly. The inherited
+        # VL setup_runtime still reads self.num_deepstack_layers, so set it to 0 (no deepstack inputs).
+        self.num_deepstack_layers = 0
         RBLNDecoderOnlyModel.__post_init__(self, **kwargs)
         self.visual = self.rbln_submodules[0] if self.rbln_submodules else None
         self.rotary_emb = self._rotary_emb_class(self.config.text_config)
         if not self.can_generate():
             self.block_tables = torch.arange(self.rbln_config.kvcache_num_blocks, dtype=torch.int16)
+
+    def _linear_state_shapes(self, batch_size: int):
+        """(conv_state, recurrent_state) host-tensor shapes for a linear layer at ``batch_size``.
+
+        Mirrors the graph inputs declared in ``RBLNQwen3_5ForCausalLM.get_input_info``.
+        """
+        tc = self.config.text_config
+        conv_dim = 2 * (tc.linear_num_key_heads * tc.linear_key_head_dim) + (
+            tc.linear_num_value_heads * tc.linear_value_head_dim
+        )
+        conv_state_shape = (batch_size, tc.linear_conv_kernel_dim - 1, conv_dim)
+        recurrent_state_shape = (
+            batch_size,
+            tc.linear_num_value_heads,
+            tc.linear_key_head_dim,
+            tc.linear_value_head_dim,
+        )
+        return conv_state_shape, recurrent_state_shape
+
+    def setup_runtime(self):
+        # Qwen3.5-specific runtime: the linear_attention layers carry (conv_state, recurrent_state) as
+        # host-threaded functional I/O (not on-device static caches), so use RBLNQwen3_5RuntimeModel
+        # instead of the base VL runtime. Full-attention layers keep the on-device paged KV cache.
+        page_table_manager = RBLNPageTableManager(self.rbln_config)
+        if self.rbln_config.use_position_ids:
+            dec_attn_mask = torch.zeros(self.rbln_config.batch_size, self.rbln_config.max_seq_len, dtype=self.dtype)
+        else:
+            dec_attn_mask = torch.zeros(
+                self.rbln_config.batch_size, 1, 1, self.rbln_config.max_seq_len, dtype=self.dtype
+            )
+
+        common_kwargs = {
+            "main_input_name": "inputs_embeds" if self.rbln_config.use_inputs_embeds else "input_ids",
+            "embed_tokens": self.embed_tokens,
+            "dec_attn_mask": dec_attn_mask,
+            "page_table_manager": page_table_manager,
+            "rbln_config": self.rbln_config,
+            "config": self.config.text_config,
+            "linear_attention_layers": self.rbln_config.linear_attention_layers,
+            "state_dtype": self.dtype,
+        }
+
+        conv_shape, recur_shape = self._linear_state_shapes(self.rbln_config.batch_size)
+        self.prefill_decoder = RBLNQwen3_5RuntimeModel(
+            runtime=self.model[0],
+            phase="prefill",
+            batch_size=self.rbln_config.batch_size,
+            logits_last_dim=self.logits_last_dim,
+            conv_state_shape=conv_shape,
+            recurrent_state_shape=recur_shape,
+            **common_kwargs,
+        )
+
+        if self.can_generate():
+            self.decoders = {}
+            for i, batch_size in enumerate(self.rbln_config.decoder_batch_sizes):
+                conv_shape, recur_shape = self._linear_state_shapes(batch_size)
+                self.decoders[batch_size] = RBLNQwen3_5RuntimeModel(
+                    runtime=self.model[i + 1],
+                    phase="decode",
+                    batch_size=batch_size,
+                    conv_state_shape=conv_shape,
+                    recurrent_state_shape=recur_shape,
+                    **common_kwargs,
+                )
+            self.decoder = self.decoders[self.rbln_config.batch_size]
+            # batch_size == 1 milestone: prefill and the batch-1 decoder SHARE one host state store,
+            # so the (conv_state, recurrent_state) the chunk-prefill accumulates is exactly what
+            # recurrent-decode continues from. (Per-request continuous batching -> per-slot stores; TODO.)
+            self.decoder._conv_states = self.prefill_decoder._conv_states
+            self.decoder._recurrent_states = self.prefill_decoder._recurrent_states
 
     @classmethod
     def _update_rbln_config(cls, preprocessors=None, model=None, model_config=None, rbln_config=None):
@@ -329,7 +407,12 @@ class RBLNQwen3_5VLModel(RBLNQwen3VLModel):
         head_dim = getattr(text_config, "head_dim", None) or (
             text_config.hidden_size // text_config.num_attention_heads
         )
-        input_info.insert(3, ("position_emb", [2, batch_size, 1, query_length, head_dim], rbln_config.dtype))
+        # Qwen3.5 uses PARTIAL RoPE (partial_rotary_factor, default 0.25), so the precomputed mRoPE
+        # cos/sin span only `rotary_ndims = head_dim * partial_rotary_factor` (matching
+        # `Qwen3_5TextRotaryEmbedding`, which builds inv_freq over that width, and
+        # `apply_rotary_pos_emb_partial(ndim=rotary_ndims)`), NOT the full head_dim.
+        rotary_ndims = int(head_dim * getattr(text_config, "partial_rotary_factor", 1.0))
+        input_info.insert(3, ("position_emb", [2, batch_size, 1, query_length, rotary_ndims], rbln_config.dtype))
         return input_info
 
     def _preprocess_prefill(
@@ -365,7 +448,10 @@ class RBLNQwen3_5VLModel(RBLNQwen3VLModel):
         head_dim = getattr(text_config, "head_dim", None) or (
             text_config.hidden_size // text_config.num_attention_heads
         )
-        all_position_embeds = torch.zeros(2, batch_size, 1, max_inputs_len, head_dim, dtype=self.rbln_config.dtype)
+        # Qwen3.5 uses PARTIAL RoPE: cos/sin (and the compiled position_emb graph input) span
+        # rotary_ndims = head_dim * partial_rotary_factor, NOT the full head_dim.
+        rotary_ndims = int(head_dim * getattr(text_config, "partial_rotary_factor", 1.0))
+        all_position_embeds = torch.zeros(2, batch_size, 1, max_inputs_len, rotary_ndims, dtype=self.rbln_config.dtype)
         all_rope_deltas = []
 
         image_token_id = self.config.image_token_id
@@ -406,23 +492,24 @@ class RBLNQwen3_5VLModel(RBLNQwen3VLModel):
         return inputs_embeds, all_position_embeds, rope_deltas
 
 
-# MRO: RBLNQwen3_5ForConditionalGeneration -> RBLNQwen3_5VLModel -> RBLNQwen3VLModel
+# MRO: RBLNQwen3_5ForConditionalGeneration -> RBLNQwen3_5Model -> RBLNQwen3VLModel
 #      -> RBLNDecoderOnlyModelForCausalLM -> RBLNDecoderOnlyModel -> RBLNModel
-class RBLNQwen3_5ForConditionalGeneration(RBLNQwen3_5VLModel, RBLNDecoderOnlyModelForCausalLM):
+class RBLNQwen3_5ForConditionalGeneration(RBLNQwen3_5Model, RBLNDecoderOnlyModelForCausalLM):
     """
     Vision-language Qwen3.5: a Qwen3-VL-style vision encoder (no deepstack) feeding the hybrid
     Qwen3.5 text backbone (GatedDeltaNet `linear_attention` layers + gated `full_attention`).
 
     Note: the hybrid text backbone currently requires a fused GatedDeltaNet device op to compile
     end-to-end (the recurrent decompose does not compose with device full-attention in one graph;
-    see the project memo). This class wires the full VL structure so it works once that op lands.
+    see the project memo). This class wires the full vision-language structure so it works once that op lands.
     """
 
     auto_model_class = AutoModelForImageTextToText
-    _decoder_wrapper_cls = Qwen3_5VL_LanguageModelWrapper
+    _decoder_wrapper_cls = Qwen3_5_LanguageModelWrapper
     _supports_non_fp32 = True
     _use_rotary_emb = False
-    _rbln_submodules = [{"name": "visual"}]
+    # _rbln_submodules = [{"name": "visual"}] # visual is done.
+    _rbln_submodules = []
 
     def __post_init__(self, **kwargs):
         super().__post_init__(**kwargs)
@@ -542,6 +629,7 @@ class RBLNQwen3_5ForConditionalGeneration(RBLNQwen3_5VLModel, RBLNDecoderOnlyMod
                     batch_idx=b_idx,
                     position_embed=position_embed[:, b_idx : b_idx + 1],
                 )
+                # import pdb; pdb.set_trace()
                 logits.append(output.logits)
             logits = torch.cat(logits, dim=0)
         else:  # decode
