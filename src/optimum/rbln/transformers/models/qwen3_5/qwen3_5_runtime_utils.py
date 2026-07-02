@@ -172,6 +172,12 @@ class RBLNQwen3_5RuntimeModel(RBLNRuntimeModel):
             if self.rbln_config.use_lora:
                 named["lora_int_ids"] = lora_int_ids
 
+            # State masks: ZERO the carried state on the FIRST prefill window (fresh sequence -> no prior
+            # context) and pass it through (ones) on later windows. Same shape as one layer's states.
+            fill = torch.zeros if step == 0 else torch.ones
+            named["conv_state_mask"] = fill(self.conv_state_shape, dtype=self.state_dtype)
+            named["recurrent_state_mask"] = fill(self.recurrent_state_shape, dtype=self.state_dtype)
+
             # For logits_to_keep == 1 every window overwrites the single logits row, so the final value
             # is the last window's (the next-token logits). Intermediate windows only advance the states.
             logits = self._run(named)
@@ -215,6 +221,12 @@ class RBLNQwen3_5RuntimeModel(RBLNRuntimeModel):
             named["attention_mask"] = attention_mask
         if self.rbln_config.use_lora:
             named["lora_int_ids"] = lora_int_ids
+
+        # Decode always continues from the real carried state -> ones (no-op). The masks are gated on the
+        # prefill phase in the GatedDeltaNet, so they are pruned from the decode graph and these entries
+        # are simply ignored by the name-based input mapping; passed for safety if they survive.
+        named["conv_state_mask"] = torch.ones(self.conv_state_shape, dtype=self.state_dtype)
+        named["recurrent_state_mask"] = torch.ones(self.recurrent_state_shape, dtype=self.state_dtype)
 
         logits = self._run(named)
         return RBLNDecoderOnlyOutput(logits=logits, hidden_states=None)
