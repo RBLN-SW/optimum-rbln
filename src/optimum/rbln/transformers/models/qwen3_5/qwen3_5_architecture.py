@@ -133,7 +133,7 @@ def rbln_chunk_gated_delta_rule(query, key, value, g, beta, eye, tril_incl, tril
 
     w = attn @ v_beta
     k_cumdecay = attn @ (k_beta * g.exp().unsqueeze(-1))
-    last_state = initial_state.to(w)  # (B, Hv, Dk, Dv) carried recurrent_state
+    last_state = initial_state.to(w)  # (B, Hv, Dk, Dv) carried recurrent_state (already masked at the GDN entry)
 
     attn_intra = (query @ key.transpose(-1, -2)) * decay_mask
     v_new = w - k_cumdecay @ last_state
@@ -253,10 +253,13 @@ class Qwen3_5GatedDeltaNet(nn.Module):
         self.register_buffer(
             "_prefill_chunk_tril_strict", torch.tril(_ones, diagonal=-1).reshape(_shape), persistent=False
         )
-        # Separate (S, S) upper-triangular-inclusive constant for the conv_state reverse-cumsum
-        # (rev = triu @ valid_mask). A distinct buffer, NOT a reshaped view of tril_incl, because the
-        # compiler's weight-reusability check rejects the same constant used in two op contexts.
-        self.register_buffer("_prefill_conv_triu", torch.triu(_ones), persistent=False)
+        # Upper-triangular-inclusive constant for the conv_state reverse-cumsum (rev = triu @ valid_mask).
+        # Size is (K-1)+S, NOT S: the new conv_state is the last K-1 VALID rows of the FULL conv input
+        # [conv_state | mixed_qkv], so a window with < K-1 valid tokens must reach back into the prepended
+        # conv_state. A distinct buffer (not a view of tril_incl) — the compiler's weight-reusability
+        # check rejects the same constant used in two op contexts.
+        _conv_total = self.prefill_chunk_size + self.conv_kernel_size - 1
+        self.register_buffer("_prefill_conv_triu", torch.triu(torch.ones(_conv_total, _conv_total)), persistent=False)
         # log-depth (I - A)^{-1} needs ceil(log2(S)) squarings, where S = the intra-window matrix
         # size = prefill_chunk_size (A is S×S strictly-lower, so A^S = 0). NOT num_v_heads.
         self.num_iter = max(1, (self.prefill_chunk_size - 1).bit_length())  # ceil(log2(prefill_chunk_size))
@@ -275,10 +278,22 @@ class Qwen3_5GatedDeltaNet(nn.Module):
         conv_state: torch.Tensor,
         recurrent_state: torch.Tensor,
         valid_mask: Optional[torch.Tensor] = None,
+        conv_state_mask: Optional[torch.Tensor] = None,
+        recurrent_state_mask: Optional[torch.Tensor] = None,
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         batch_size, seq_len, _ = hidden_states.shape
         k_1 = self.conv_kernel_size - 1
         prefill = "prefill" in self._phase and valid_mask is not None
+
+        # Force the PREFILL FIRST CHUNK to start from zero carried state: the runtime feeds a zeros mask
+        # for prefill window 0 and a ones mask for every later window (masks have the same shape as the
+        # states, so this is a plain elementwise multiply; mask==1 is exact -> later chunks unchanged).
+        # Only in prefill — decode always continues from the real carried state.
+        if prefill:
+            if conv_state_mask is not None:
+                conv_state = conv_state * conv_state_mask
+            if recurrent_state_mask is not None:
+                recurrent_state = recurrent_state * recurrent_state_mask
 
         mixed_qkv = self.in_proj_qkv(hidden_states)  # (B, S, conv_dim)
         z = self.in_proj_z(hidden_states).reshape(batch_size, seq_len, -1, self.head_v_dim)
@@ -295,19 +310,25 @@ class Qwen3_5GatedDeltaNet(nn.Module):
         # valid_mask -> one-hot -> matmul (compile-safe: arithmetic + matmul, no dynamic StridedSlice).
         # Decode (no padding) uses the plain last-K-1 tail (HF-style innermost slice on the time axis).
         if prefill:
-            # rev[t] = # valid tokens from t to the window end (0 for padding), via an UPPER-triangular
-            # matmul instead of cumsum/flip (those trip OpTiling / partition dominance). The last K-1
-            # valid tokens then have rev in {K-1, ..., 1}; a clamp one-hot selects them and a matmul
-            # gathers the corresponding raw mixed_qkv rows. Keep S as the INNERMOST axis through the
-            # abs/clamp: elementwise ops on an innermost dim of 1 ((B, S, 1)) return garbage on device.
-            rev = torch.matmul(self._prefill_conv_triu, valid_mask).reshape(batch_size, 1, seq_len)  # (B, 1, S)
+            # new conv_state = the last K-1 VALID rows of the FULL conv input [conv_state | mixed_qkv].
+            # The prepended conv_state (first K-1 cols of x_cf) is ALWAYS valid left-context, so extend
+            # valid_mask with K-1 leading ones. rev[t] = # valid from t to end (via triu matmul, avoiding
+            # cumsum/flip); the last K-1 valid have rev in {K-1,..,1}; a clamp one-hot selects them and a
+            # matmul gathers those rows. Gathering from the FULL x (not just mixed_qkv) is what lets a
+            # window with < K-1 valid tokens still pull the tail of the previous window's conv_state
+            # (e.g. multi-window prefill whose last window has 1-2 valid tokens). Keep the time axis
+            # INNERMOST through abs/clamp (a (B, T, 1) innermost-1 tensor returns garbage on device).
+            total = k_1 + seq_len
+            vm_ext = torch.cat([valid_mask.new_ones(batch_size, k_1, 1), valid_mask], dim=1)  # (B, (K-1)+S, 1)
+            rev = torch.matmul(self._prefill_conv_triu, vm_ext).reshape(batch_size, 1, total)  # (B, 1, (K-1)+S)
             jv = (k_1 - torch.arange(k_1, device=hidden_states.device)).view(1, k_1, 1)  # (1, K-1, 1): [K-1,...,1]
-            sel = (1.0 - (rev - jv).abs().to(mixed_qkv.dtype)).clamp(0.0, 1.0)  # (B, K-1, S), S innermost
-            new_conv_state = torch.matmul(sel, mixed_qkv).contiguous()  # (B,K-1,S) @ (B,S,conv_dim) = (B,K-1,conv_dim)
+            sel = (1.0 - (rev - jv).abs().to(mixed_qkv.dtype)).clamp(0.0, 1.0)  # (B, K-1, (K-1)+S)
+            new_conv_state = torch.matmul(sel, x_cf.transpose(1, 2)).contiguous()  # @ (B,(K-1)+S,conv_dim)=(B,K-1,conv_dim)
         else:
             new_conv_state = x_cf[:, :, -k_1:].transpose(1, 2).contiguous()  # (B, K-1, conv_dim), HF-style
         conv_out = F.conv1d(x_cf, self.conv1d.weight, self.conv1d.bias, padding=0, groups=self.conv_dim)
         mixed_qkv = F.silu(conv_out.transpose(1, 2))  # (B, S, conv_dim)
+
         query, key, value = torch.split(mixed_qkv, [self.key_dim, self.key_dim, self.value_dim], dim=-1)
         query = query.reshape(batch_size, seq_len, -1, self.head_k_dim)
         key = key.reshape(batch_size, seq_len, -1, self.head_k_dim)
@@ -380,11 +401,18 @@ class Qwen3_5LinearDecoderLayer(nn.Module):
         conv_state: torch.Tensor,
         recurrent_state: torch.Tensor,
         valid_mask: Optional[torch.Tensor] = None,
+        conv_state_mask: Optional[torch.Tensor] = None,
+        recurrent_state_mask: Optional[torch.Tensor] = None,
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         residual = hidden_states
         hidden_states = self.input_layernorm(hidden_states)
         hidden_states, new_conv_state, new_recurrent_state = self.linear_attn(
-            hidden_states, conv_state, recurrent_state, valid_mask=valid_mask
+            hidden_states,
+            conv_state,
+            recurrent_state,
+            valid_mask=valid_mask,
+            conv_state_mask=conv_state_mask,
+            recurrent_state_mask=recurrent_state_mask,
         )
         hidden_states = residual + hidden_states
 
@@ -520,6 +548,8 @@ class Qwen3_5Model(DecoderOnlyModel):
         global_block_tables: Optional[torch.Tensor] = None,
         local_block_tables: Optional[torch.Tensor] = None,
         lora_int_id: Optional[torch.Tensor] = None,
+        conv_state_mask: Optional[torch.Tensor] = None,
+        recurrent_state_mask: Optional[torch.Tensor] = None,
         output_hidden_states: Optional[bool] = None,
     ):
         if (input_ids is None) ^ (inputs_embeds is not None):
@@ -561,7 +591,12 @@ class Qwen3_5Model(DecoderOnlyModel):
             if layer_idx in self.linear_attention_layers:
                 conv_state, recurrent_state = past_key_values[layer_idx]
                 hidden_states, new_conv_state, new_recurrent_state = layer(
-                    hidden_states, conv_state, recurrent_state, valid_mask=valid_mask
+                    hidden_states,
+                    conv_state,
+                    recurrent_state,
+                    valid_mask=valid_mask,
+                    conv_state_mask=conv_state_mask,
+                    recurrent_state_mask=recurrent_state_mask,
                 )
                 new_states.append(new_conv_state)
                 new_states.append(new_recurrent_state)
@@ -597,6 +632,8 @@ class Qwen3_5ForCausalLM(DecoderOnlyForCausalLM):
         global_block_tables: Optional[torch.Tensor] = None,
         local_block_tables: Optional[torch.Tensor] = None,
         lora_int_id: Optional[torch.Tensor] = None,
+        conv_state_mask: Optional[torch.Tensor] = None,
+        recurrent_state_mask: Optional[torch.Tensor] = None,
         output_hidden_states: Optional[bool] = None,
     ):
         hidden_states, all_hidden_states, new_states = self.model(
@@ -611,6 +648,8 @@ class Qwen3_5ForCausalLM(DecoderOnlyForCausalLM):
             global_block_tables=global_block_tables,
             local_block_tables=local_block_tables,
             lora_int_id=lora_int_id,
+            conv_state_mask=conv_state_mask,
+            recurrent_state_mask=recurrent_state_mask,
             output_hidden_states=output_hidden_states,
         )
 
@@ -670,6 +709,17 @@ class Qwen3_5_CausalLMWrapper(DecoderOnlyWrapper):
             return self.get_rbln_causal_lm_class()(model, new_model)
         return new_model
 
+    def prepare_forward_args(self, *args):
+        # conv_state_mask / recurrent_state_mask are the LAST two graph inputs (see get_input_info) —
+        # pop them off the end, let the base handle the standard prefix + per-layer state block, then
+        # tack the masks back on. Only present when the model has linear_attention layers.
+        args = list(args)
+        has_linear = bool(getattr(self.rbln_config, "linear_attention_layers", None))
+        recurrent_state_mask = args.pop() if has_linear else None
+        conv_state_mask = args.pop() if has_linear else None
+        base = super().prepare_forward_args(*args)
+        return (*base, conv_state_mask, recurrent_state_mask)
+
     def forward(self, *args):
         (
             input_ids,
@@ -683,6 +733,8 @@ class Qwen3_5_CausalLMWrapper(DecoderOnlyWrapper):
             lora_int_id,
             past_key_values,
             rotary_emb,
+            conv_state_mask,
+            recurrent_state_mask,
         ) = self.prepare_forward_args(*args)
 
         logits, all_hidden_states, new_states = self.model(
@@ -697,6 +749,8 @@ class Qwen3_5_CausalLMWrapper(DecoderOnlyWrapper):
             global_block_tables=global_block_tables,
             local_block_tables=local_block_tables,
             lora_int_id=lora_int_id,
+            conv_state_mask=conv_state_mask,
+            recurrent_state_mask=recurrent_state_mask,
             output_hidden_states=self.rbln_config.output_hidden_states,
         )
 
@@ -737,6 +791,12 @@ class Qwen3_5_LanguageModelWrapper(Qwen3_5_CausalLMWrapper):
 
     def prepare_forward_args(self, *args):
         args = list(args)
+        # conv_state_mask / recurrent_state_mask are the LAST two graph inputs (see get_input_info):
+        # pop them off the end first, so the standard front-popping + `past_key_values = args` below is
+        # unchanged. Present only when the model has linear_attention layers.
+        has_linear = bool(getattr(self.rbln_config, "linear_attention_layers", None))
+        recurrent_state_mask = args.pop() if has_linear else None
+        conv_state_mask = args.pop() if has_linear else None
         input_ids = None if self.rbln_config.use_inputs_embeds else args.pop(0)
         inputs_embeds = args.pop(0) if self.rbln_config.use_inputs_embeds else None
         cache_position = args.pop(0)
@@ -772,6 +832,8 @@ class Qwen3_5_LanguageModelWrapper(Qwen3_5_CausalLMWrapper):
             lora_int_id,
             past_key_values,
             position_embeds,
+            conv_state_mask,
+            recurrent_state_mask,
         )
 
     def forward(self, *args):
@@ -787,6 +849,8 @@ class Qwen3_5_LanguageModelWrapper(Qwen3_5_CausalLMWrapper):
             lora_int_id,
             past_key_values,
             position_embeds,
+            conv_state_mask,
+            recurrent_state_mask,
         ) = self.prepare_forward_args(*args)
 
         logits, all_hidden_states, new_states = self.model(
@@ -801,6 +865,8 @@ class Qwen3_5_LanguageModelWrapper(Qwen3_5_CausalLMWrapper):
             global_block_tables=global_block_tables,
             local_block_tables=local_block_tables,
             lora_int_id=lora_int_id,
+            conv_state_mask=conv_state_mask,
+            recurrent_state_mask=recurrent_state_mask,
             output_hidden_states=self.rbln_config.output_hidden_states,
         )
 

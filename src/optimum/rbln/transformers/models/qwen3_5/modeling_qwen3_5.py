@@ -172,6 +172,26 @@ class RBLNQwen3_5ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
                     kvcache_metas.append(meta)
                     input_info.append((name, meta.compile_shape, meta.dtype))
 
+        # Shared 0/1 state masks (same shape as ONE linear layer's states) that force the PREFILL FIRST
+        # CHUNK to start from zero state in-graph: the runtime feeds a zeros mask for prefill window 0 and
+        # a ones mask otherwise. Full-shape tensors (never scalars) so nothing is constant-folded, and
+        # mask==1 is an exact multiply so later chunks / decode are unchanged. Appended LAST so both the
+        # text and VL wrappers can pop them off the end before the per-layer state block.
+        if linear_layers:
+            input_info.append(("conv_state_mask", [batch_size, conv_state_len, conv_dim], rbln_config.dtype))
+            input_info.append(
+                (
+                    "recurrent_state_mask",
+                    [
+                        batch_size,
+                        text_config.linear_num_value_heads,
+                        text_config.linear_key_head_dim,
+                        text_config.linear_value_head_dim,
+                    ],
+                    rbln_config.dtype,
+                )
+            )
+
         if len(rbln_config.kvcache_metas) == 0:
             rbln_config.kvcache_metas.extend(kvcache_metas)
 
