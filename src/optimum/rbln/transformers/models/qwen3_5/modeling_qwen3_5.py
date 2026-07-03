@@ -16,6 +16,7 @@ import inspect
 from typing import Any, Callable, Optional
 
 import torch
+from rebel.compile_context import CompileContext
 from transformers import AutoModelForImageTextToText, PretrainedConfig, PreTrainedModel
 from transformers.initialization import no_init_weights
 from transformers.models.qwen3_5.configuration_qwen3_5 import Qwen3_5Config
@@ -52,6 +53,55 @@ from .qwen3_5_runtime_utils import RBLNQwen3_5RuntimeModel
 logger = logging.get_logger(__name__)
 
 
+def _qwen3_5_is_static_state_name(name: str) -> bool:
+    """Per-layer state inputs that live in device DRAM (meta placeholder + static address): the
+    full-attention paged KV (``past_key_values_*``) AND the linear-attention states
+    (``conv_state_*`` / ``recurrent_state_*``). The per-call ``*_mask`` control inputs are NOT states
+    (functional 0/1) so they are excluded via the ``_mask`` suffix."""
+    if "past_key_values" in name:
+        return True
+    return ("conv_state" in name or "recurrent_state" in name) and not name.endswith("_mask")
+
+
+def _qwen3_5_build_compile_context(compile_config, example_inputs):
+    """Mark the hybrid per-layer state caches static, ENTIRELY in the subclass (base is untouched).
+
+    Overrides the base ``_get_compile_context`` for Qwen3.5. The base marks only ``past_key_values_*``
+    static; here we ALSO mark the linear-attention ``conv_state_*``/``recurrent_state_*`` inputs static
+    (via ``_qwen3_5_is_static_state_name``) so they become on-device DRAM caches read+written in-graph
+    (``rbln_cache_update``) instead of host-threaded functional I/O. This is the scaffolding for the
+    static linear-state cache; it does NOT yet compile end-to-end — see below.
+
+    STATE OF PLAY (both paths need a rebel/compiler-side change; neither is fixable in Python):
+
+      * real + static (THIS code): conv/recurrent dummies arrive REAL (base excludes them from
+        ``meta_tensor_names``) and we mark them static as-is. The GRAPH COMPILES FINE — all gated-delta
+        math (conv, chunk, recurrent) runs on real tensors — but ``PyRblnModelBuilder.add_module``
+        (called with ``remove_placeholders=True``) throws ``IndexError: map::at``: its placeholder map
+        only holds meta placeholders (like the KV cache), so a real static tensor used as BOTH graph
+        input and aliased output isn't found. Ask: let add_module handle a real static in+out tensor.
+
+      * meta + static: to instead make conv/recurrent meta placeholders (like KV) we'd have to change
+        ``meta_tensor_names`` — computed inline in the base ``get_compiled_model`` with no hook — which
+        under the "don't touch base" rule means copying that whole method. AND it still won't compile:
+        a meta state then feeds PLAIN math (``conv_state * mask``, ``cat([conv_state, mixed_qkv])``, the
+        recurrent matmuls) which cannot consume a meta tensor (``... not on the expected device meta!``).
+        Ask: a fused gated-delta device op that absorbs the meta state (like attention absorbs meta KV).
+
+    The real+static path (this code) is the leaner scaffolding and its graph already compiles, so the
+    add_module fix is the smaller compiler ask. ``example_inputs`` here is a TUPLE (immutable), which is
+    why the meta path can't be done in this hook by swapping placeholders in-place.
+    """
+    context = CompileContext(use_weight_sharing=True)
+    static_tensors = {}
+    for (name, _, _), tensor in zip(compile_config.input_info, example_inputs, strict=False):
+        if not _qwen3_5_is_static_state_name(name):
+            continue
+        static_tensors[name] = tensor
+        context.mark_static_address(tensor, name)
+    return context, static_tensors
+
+
 class RBLNQwen3_5ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
     """
     RBLN wrapper for the Qwen3.5 text backbone (`Qwen3_5ForCausalLM`).
@@ -68,6 +118,13 @@ class RBLNQwen3_5ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
     def forward(self, *args, **kwargs):
         kwargs["return_dict"] = True
         return super().forward(*args, **kwargs)
+
+    @classmethod
+    def _get_compile_context(cls, compile_config, example_inputs):
+        # Mark the hybrid per-layer state caches (KV + linear-attn conv/recurrent) static in the SUBCLASS
+        # only — base untouched. conv/recurrent arrive REAL (base makes only past_key_values meta), so
+        # this is real+static — see _qwen3_5_build_compile_context (graph compiles; add_module map::at).
+        return _qwen3_5_build_compile_context(compile_config, example_inputs)
 
     @classmethod
     def _update_rbln_config(
@@ -400,11 +457,8 @@ class RBLNQwen3_5Model(RBLNQwen3VLModel):
                     **common_kwargs,
                 )
             self.decoder = self.decoders[self.rbln_config.batch_size]
-            # batch_size == 1 milestone: prefill and the batch-1 decoder SHARE one host state store,
-            # so the (conv_state, recurrent_state) the chunk-prefill accumulates is exactly what
-            # recurrent-decode continues from. (Per-request continuous batching -> per-slot stores; TODO.)
-            self.decoder._conv_states = self.prefill_decoder._conv_states
-            self.decoder._recurrent_states = self.prefill_decoder._recurrent_states
+            # conv_state/recurrent_state are STATIC on-device caches shared by prefill and decode via the
+            # shared static addresses baked at compile (see _get_compile_context) — no host store to wire.
 
     @classmethod
     def _update_rbln_config(cls, preprocessors=None, model=None, model_config=None, rbln_config=None):
@@ -537,6 +591,13 @@ class RBLNQwen3_5ForConditionalGeneration(RBLNQwen3_5Model, RBLNDecoderOnlyModel
 
     def can_generate(self):
         return True
+
+    @classmethod
+    def _get_compile_context(cls, compile_config, example_inputs):
+        # Mark the hybrid per-layer state caches (KV + linear-attn conv/recurrent) static in the SUBCLASS
+        # only — base untouched. conv/recurrent arrive REAL (base makes only past_key_values meta), so
+        # this is real+static — see _qwen3_5_build_compile_context (graph compiles; add_module map::at).
+        return _qwen3_5_build_compile_context(compile_config, example_inputs)
 
     @classmethod
     def _reconstruct_model_if_needed(cls, model: "PreTrainedModel"):

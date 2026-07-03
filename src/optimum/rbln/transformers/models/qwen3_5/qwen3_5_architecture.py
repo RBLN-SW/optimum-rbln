@@ -25,7 +25,7 @@ paged KV cache, like Qwen3 + an output gate + partial RoPE) interleaved with
   hands its ``recurrent_state`` straight to recurrent-decode.
 - Its two states (``conv_state`` and ``recurrent_state``) are carried as ordinary graph
   inputs/outputs (functional), and a Qwen3.5-specific runtime keeps them on the host between
-  prefill chunks / decode steps. Each linear layer reuses its two ``past_key_values`` slots to
+  prefill chunks / decode steps. Each linear layer reuses its two ``past_states`` slots to
   carry ``(conv_state, recurrent_state)`` instead of ``(key, value)``.
 """
 
@@ -543,7 +543,8 @@ class Qwen3_5Model(DecoderOnlyModel):
         cache_position: torch.Tensor = None,
         position_ids: torch.Tensor = None,
         query_position: torch.Tensor = None,
-        past_key_values: Tuple[Tuple[torch.Tensor]] = None,
+        past_key_values: Tuple[Tuple[torch.Tensor]] = None,  # full-attention layers' KV (None at linear idx)
+        past_states: Tuple[Tuple[torch.Tensor]] = None,  # linear-attention layers' (conv, recurrent) (None at full idx)
         rotary_emb: Optional[nn.Module] = None,
         global_block_tables: Optional[torch.Tensor] = None,
         local_block_tables: Optional[torch.Tensor] = None,
@@ -598,7 +599,7 @@ class Qwen3_5Model(DecoderOnlyModel):
             if output_hidden_states:
                 all_hidden_states += (hidden_states,)
             if layer_idx in self.linear_attention_layers:
-                conv_state, recurrent_state = past_key_values[layer_idx]
+                conv_state, recurrent_state = past_states[layer_idx]  # static DRAM cache slots
                 hidden_states, new_conv_state, new_recurrent_state = layer(
                     hidden_states,
                     conv_state,
@@ -607,13 +608,24 @@ class Qwen3_5Model(DecoderOnlyModel):
                     conv_state_mask=conv_state_mask,
                     recurrent_state_mask=recurrent_state_mask,
                 )
-                new_states.append(new_conv_state)
-                new_states.append(new_recurrent_state)
+                # Persist the new states to the static DRAM cache in-place (aliased write). batch=1:
+                # overwrite the whole cache at position 0 along the batch axis. The op's result aliases
+                # the static input address, so returning it wires the write; the runtime does NOT re-feed
+                # these (they live on device). (batch>1 will pass position=batch_idx for prefill.)
+                _axis0 = torch.tensor(0, dtype=torch.int16)
+                _pos = torch.tensor(0, dtype=torch.int16)
+                new_states.append(torch.ops.rbln_custom_ops.rbln_cache_update(conv_state, new_conv_state, _pos, _axis0))
+                new_states.append(
+                    torch.ops.rbln_custom_ops.rbln_cache_update(recurrent_state, new_recurrent_state, _pos, _axis0)
+                )
             else:
                 hidden_states = layer(
                     hidden_states=hidden_states,
                     attention_mask=attention_mask,
                     seq_positions=seq_positions,
+                    # full-attention layers are the BASE DecoderOnlyLayer (not overridden); it indexes
+                    # past_key_values[self.layer_idx]. past_key_values holds KV only (None at linear idx);
+                    # linear layers read conv/recurrent from the separate past_states container above.
                     past_key_values=past_key_values,
                     cos=cos,
                     sin=sin,
@@ -636,7 +648,8 @@ class Qwen3_5ForCausalLM(DecoderOnlyForCausalLM):
         cache_position: torch.Tensor = None,
         position_ids: torch.Tensor = None,
         query_position: torch.Tensor = None,
-        past_key_values: Tuple[Tuple[torch.Tensor]] = None,
+        past_key_values: Tuple[Tuple[torch.Tensor]] = None,  # full-attention layers' KV (None at linear idx)
+        past_states: Tuple[Tuple[torch.Tensor]] = None,  # linear-attention layers' (conv, recurrent) (None at full idx)
         rotary_emb: nn.Module = None,
         global_block_tables: Optional[torch.Tensor] = None,
         local_block_tables: Optional[torch.Tensor] = None,
@@ -653,6 +666,7 @@ class Qwen3_5ForCausalLM(DecoderOnlyForCausalLM):
             position_ids=position_ids,
             query_position=query_position,
             past_key_values=past_key_values,
+            past_states=past_states,
             rotary_emb=rotary_emb,
             global_block_tables=global_block_tables,
             local_block_tables=local_block_tables,
@@ -721,12 +735,23 @@ class Qwen3_5_CausalLMWrapper(DecoderOnlyWrapper):
     def prepare_forward_args(self, *args):
         # conv_state_mask / recurrent_state_mask are the LAST two graph inputs (see get_input_info) —
         # pop them off the end, let the base handle the standard prefix + per-layer state block, then
-        # tack the masks back on. Only present when the model has linear_attention layers.
+        # SPLIT that combined state list into two containers and tack the masks back on. Only present
+        # when the model has linear_attention layers.
         args = list(args)
         has_linear = bool(getattr(self.rbln_config, "linear_attention_layers", None))
         recurrent_state_mask = args.pop() if has_linear else None
         conv_state_mask = args.pop() if has_linear else None
-        base = super().prepare_forward_args(*args)
+        base = list(super().prepare_forward_args(*args))
+        # The base returns (..., past_key_values, rotary_emb): the combined per-layer state list is the
+        # second-to-last element (base[-2]), grouped 2-per-layer and indexed by layer_idx. Split it by
+        # layer type into two SEPARATE containers: past_key_values = KV (full-attention layers),
+        # past_states = (conv, recurrent) (linear-attention layers). Both stay full-length with None at the
+        # other type's indices so [layer_idx] indexing still works (base DecoderOnlyLayer uses it for KV).
+        linear = set(getattr(self.rbln_config, "linear_attention_layers", None) or [])
+        combined = base[-2]
+        base[-2] = [pair if i not in linear else None for i, pair in enumerate(combined)]  # past_key_values
+        past_states = [pair if i in linear else None for i, pair in enumerate(combined)]
+        base.insert(-1, past_states)  # insert past_states just before rotary_emb (the last element)
         return (*base, conv_state_mask, recurrent_state_mask)
 
     def forward(self, *args):
@@ -741,6 +766,7 @@ class Qwen3_5_CausalLMWrapper(DecoderOnlyWrapper):
             position_ids,
             lora_int_id,
             past_key_values,
+            past_states,
             rotary_emb,
             conv_state_mask,
             recurrent_state_mask,
@@ -754,6 +780,7 @@ class Qwen3_5_CausalLMWrapper(DecoderOnlyWrapper):
             position_ids=position_ids,
             query_position=query_position,
             past_key_values=past_key_values,
+            past_states=past_states,
             rotary_emb=rotary_emb,
             global_block_tables=global_block_tables,
             local_block_tables=local_block_tables,
@@ -801,7 +828,7 @@ class Qwen3_5_LanguageModelWrapper(Qwen3_5_CausalLMWrapper):
     def prepare_forward_args(self, *args):
         args = list(args)
         # conv_state_mask / recurrent_state_mask are the LAST two graph inputs (see get_input_info):
-        # pop them off the end first, so the standard front-popping + `past_key_values = args` below is
+        # pop them off the end first, so the standard front-popping + `past_states = args` below is
         # unchanged. Present only when the model has linear_attention layers.
         has_linear = bool(getattr(self.rbln_config, "linear_attention_layers", None))
         recurrent_state_mask = args.pop() if has_linear else None
@@ -817,17 +844,24 @@ class Qwen3_5_LanguageModelWrapper(Qwen3_5_CausalLMWrapper):
         attention_mask = args.pop(0) if self.rbln_config.use_attention_mask else None
         lora_int_id = args.pop(0) if self.rbln_config.lora_config else None
 
-        # 2 state slots per layer: (conv_state, recurrent_state) for linear_attention layers,
-        # (key, value) for full_attention layers. The model dispatches per layer_idx.
-        past_key_values = args
-        if len(past_key_values) != 2 * self.num_hidden_layers:
+        # 2 state slots per layer. Split into two SEPARATE containers by layer type: past_key_values =
+        # (key, value) for full_attention layers, past_states = (conv_state, recurrent_state) for
+        # linear_attention layers. Both stay full-length (None at the other type's indices) so per-layer
+        # [layer_idx] indexing works (base DecoderOnlyLayer uses past_key_values[layer_idx]).
+        state_args = args
+        if len(state_args) != 2 * self.num_hidden_layers:
             raise ValueError(
-                f"Different past_key_values to model's config. {len(past_key_values)} != {2 * self.num_hidden_layers}"
+                f"Different states to model's config. {len(state_args)} != {2 * self.num_hidden_layers}"
             )
-        _past_key_values = []
+        linear = set(getattr(self.rbln_config, "linear_attention_layers", None) or [])
+        past_key_values = [None] * self.num_hidden_layers
+        past_states = [None] * self.num_hidden_layers
         for i in range(self.num_hidden_layers):
-            _past_key_values.append([past_key_values[i * 2], past_key_values[i * 2 + 1]])
-        past_key_values = _past_key_values
+            pair = [state_args[i * 2], state_args[i * 2 + 1]]
+            if i in linear:
+                past_states[i] = pair
+            else:
+                past_key_values[i] = pair
 
         return (
             input_ids,
@@ -840,6 +874,7 @@ class Qwen3_5_LanguageModelWrapper(Qwen3_5_CausalLMWrapper):
             position_ids,
             lora_int_id,
             past_key_values,
+            past_states,
             position_embeds,
             conv_state_mask,
             recurrent_state_mask,
@@ -857,6 +892,7 @@ class Qwen3_5_LanguageModelWrapper(Qwen3_5_CausalLMWrapper):
             position_ids,
             lora_int_id,
             past_key_values,
+            past_states,
             position_embeds,
             conv_state_mask,
             recurrent_state_mask,
@@ -870,6 +906,7 @@ class Qwen3_5_LanguageModelWrapper(Qwen3_5_CausalLMWrapper):
             position_ids=position_ids,
             query_position=query_position,
             past_key_values=past_key_values,
+            past_states=past_states,
             rotary_emb=position_embeds,  # precomputed mRoPE (cos, sin); see Qwen3_5Model.forward
             global_block_tables=global_block_tables,
             local_block_tables=local_block_tables,

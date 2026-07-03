@@ -53,47 +53,21 @@ class RBLNQwen3_5RuntimeModel(RBLNRuntimeModel):
         self.conv_state_shape = tuple(conv_state_shape)
         self.recurrent_state_shape = tuple(recurrent_state_shape)
         self.state_dtype = state_dtype
-        self._conv_states = {}
-        self._recurrent_states = {}
-        self.reset_linear_states()
-
-    # ------------------------------------------------------------------ state store (host)
-    def reset_linear_states(self):
-        """Zero both states for every linear layer — called at the start of each sequence (prefill).
-
-        Reassign per key (keep the dict OBJECT) so a store shared with the decode runtime — set up in
-        RBLNQwen3_5Model.setup_runtime for prefill->decode carry — is not detached by the reset.
-        """
-        for i in self.linear_attention_layers:
-            self._conv_states[i] = torch.zeros(self.conv_state_shape, dtype=self.state_dtype)
-            self._recurrent_states[i] = torch.zeros(self.recurrent_state_shape, dtype=self.state_dtype)
-
-    def _store_linear_states(self, outputs) -> torch.Tensor:
-        """outputs == (logits, new_conv_i, new_recur_i, ...); persist the new states, return logits."""
-        outputs = list(outputs) if isinstance(outputs, (list, tuple)) else [outputs]
-        idx = 1
-        for i in self.linear_attention_layers:
-            self._conv_states[i] = outputs[idx]
-            self._recurrent_states[i] = outputs[idx + 1]
-            idx += 2
-        return outputs[0]
 
     def _run(self, named_inputs: dict) -> torch.Tensor:
-        """Add the linear states, order inputs by the runtime's OWN signature, invoke (no ``out=``),
-        capture the new states.
+        """Order inputs by the runtime's OWN (pruned) signature and invoke; return logits.
 
-        rebel prunes dead graph inputs, so the runtime's live inputs are a subset of the compiled
-        input_info (e.g. an all-linear model uses no ``block_tables`` / ``cache_position`` /
-        ``position_emb`` — those belong to full-attention layers — so they are dropped). Mapping by
-        NAME via ``_index_to_input_name`` passes exactly what the runtime kept, in its index order,
-        and works unchanged for the hybrid model (where nothing is pruned).
+        conv_state/recurrent_state are STATIC on-device caches (mark_static_address in the compile
+        context) — read AND written in-graph via rbln_cache_update, so they are NOT passed at call
+        time and are absent from ``_index_to_input_name``. Only the standard inputs + the 0/1 state
+        masks flow through ``named_inputs``; rebel prunes dead inputs, so mapping by NAME passes exactly
+        what the runtime kept, in its index order. The graph's state-cache-update outputs alias the
+        static addresses (in-place device writes), so we keep only ``logits``.
         """
-        for i in self.linear_attention_layers:
-            named_inputs[f"conv_state_{i}"] = self._conv_states[i]
-            named_inputs[f"recurrent_state_{i}"] = self._recurrent_states[i]
         order = self.runtime._index_to_input_name
         args = [named_inputs[order[k]] for k in range(len(order))]
-        return self._store_linear_states(super(RBLNRuntimeModel, self).forward(*args))
+        out = super(RBLNRuntimeModel, self).forward(*args)
+        return out[0] if isinstance(out, (list, tuple)) else out
 
     # ------------------------------------------------------------------ prefill
     def prefill_forward(
@@ -110,9 +84,8 @@ class RBLNQwen3_5RuntimeModel(RBLNRuntimeModel):
         local_block_tables: Optional[torch.Tensor] = None,
         lora_int_ids: Optional[torch.Tensor] = None,
     ) -> RBLNDecoderOnlyOutput:
-        # Fresh sequence -> zero both states (window 0 reads zeros; the runtime carries thereafter).
-        self.reset_linear_states()
-
+        # Fresh sequence: no host reset needed — the static cache may hold stale DRAM, but the first
+        # prefill window's conv/recurrent mask (0) zeros the read, so it starts fresh regardless.
         (
             inputs,
             cache_position,

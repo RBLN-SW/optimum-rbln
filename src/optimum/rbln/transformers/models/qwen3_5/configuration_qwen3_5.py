@@ -110,7 +110,7 @@ class RBLNQwen3_5ForConditionalGenerationConfig(RBLNQwen3VLForConditionalGenerat
     )
     ```
     """
-    
+
     # submodules = ["visual"]
     submodules = []
 
