@@ -581,7 +581,16 @@ class Qwen3_5Model(DecoderOnlyModel):
                 seq_positions=cache_position[:, 0], max_seq_len=self.max_seq_len
             )
         else:
-            seq_positions = cache_position[:, :1]
+            # seq_positions = cache_position[:, :1]
+            # == cache_position[:, :1] (the chunk-start position, since cache_position is a monotonic
+            # arange), but computed as a REDUCTION instead of a strided_slice. In the hybrid LLLF graph
+            # the strided_slice on the cache_position graph input crosses the linear layers' partition
+            # boundary and lowers to a SubviewOp whose ScatterInfo size != shape size (compiler abort
+            # "ScatterInfo size mismatch --> slice_1"); a reduction is not a subview so it sidesteps it.
+
+            seq_positions = cache_position.amin(dim=1, keepdim=True) # same to seq_positions = cache_position[:, :1]
+            # 이건 그냥 현재 업데이트해야하는 position이라서 torch.arange에서 최소값을 가져오는거랑 똑같음
+            # 근데 Linear attention 이랑 합쳐졌다고 해서 이게 에러가 나는게 좀 이상한거같긴함
 
         all_hidden_states = () if output_hidden_states else None
         new_states: List[torch.Tensor] = []
