@@ -13,7 +13,7 @@
 # limitations under the License.
 
 from dataclasses import asdict, dataclass
-from typing import Any, Dict, List, Literal, Optional, Union, get_args
+from typing import Any, Callable, Dict, List, Literal, Optional, Union, get_args
 
 from ....configuration_utils import RBLNModelConfig, RBLNSerializableConfigProtocol
 from ....utils.logging import get_logger
@@ -38,6 +38,7 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
 
     _default_phases = ["prefill"]
     _default_logits_to_keep = 0
+    subclass_non_save_attributes = ["kvcache_num_blocks_adjuster"]
 
     def __init__(
         self,
@@ -53,6 +54,7 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
         lora_config: Optional[Union[Dict[str, Any], RBLNLoRAConfig]] = None,
         prefill_chunk_size: Optional[int] = None,
         kvcache_num_blocks: Optional[int] = None,
+        kvcache_num_blocks_adjuster: Optional[Callable[[int, "RBLNModelConfig"], int]] = None,
         decoder_batch_sizes: Optional[List[int]] = None,
         cache_impl: Optional[CacheImplType] = None,
         sliding_window: Optional[int] = None,
@@ -97,6 +99,14 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
             kvcache_num_blocks (Optional[int]): The total number of blocks to allocate for the
                 PagedAttention KV cache at compile time. Defaults to 0 (automatically determined).
                 See the "KV Cache Number of Blocks (`kvcache_num_blocks`)" section below for details.
+            kvcache_num_blocks_adjuster (Optional[Callable[[int, RBLNModelConfig], int]]): A callable
+                invoked at compile time with the auto-estimated number of blocks and the
+                `RBLNModelConfig` instance, returning the number of blocks to actually allocate.
+                Only used when `kvcache_num_blocks` is `0` (auto). The default estimator assumes
+                the model owns all available DRAM, so pass an adjuster when some memory must be
+                reserved for other uses. The returned value must be a positive int; values below
+                `num_min_blocks` raise an error, and values above the estimate emit a warning.
+                Not serialized into `rbln_config.json` and ignored when loading a precompiled artifact.
             decoder_batch_sizes (Optional[List[int]]): A list of batch sizes for which separate decoder models will be compiled.
                 This allows the model to handle varying batch sizes efficiently during generation. If not specified,
                 defaults to a list containing only the model's main batch size. When specifying multiple batch sizes:
@@ -225,6 +235,7 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
             raise ValueError("`prefill_chunk_size` must be a positive integer divisible by 64.")
 
         self.kvcache_num_blocks = kvcache_num_blocks if kvcache_num_blocks is not None else 0
+        self.kvcache_num_blocks_adjuster = kvcache_num_blocks_adjuster
         self.cache_impl = cache_impl or "static"
         self.sliding_window = sliding_window
         self.sliding_window_layers = sliding_window_layers or []

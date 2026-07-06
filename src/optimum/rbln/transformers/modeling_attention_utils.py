@@ -1,7 +1,7 @@
 import math
 import os
 from collections import defaultdict
-from typing import TYPE_CHECKING, Optional, Tuple
+from typing import TYPE_CHECKING, Callable, Optional, Tuple
 
 import rebel
 
@@ -175,18 +175,28 @@ def format_byte_size(nbytes: int) -> str:
 class RBLNDecoderOnlyFlashAttentionMixin:
     @classmethod
     def set_kvcache_num_blocks_after_compilation(
-        cls, compiled_models: dict[str, rebel.RBLNCompiledModel], rbln_config: "RBLNDecoderOnlyModelForCausalLMConfig"
+        cls,
+        compiled_models: dict[str, rebel.RBLNCompiledModel],
+        rbln_config: "RBLNDecoderOnlyModelForCausalLMConfig",
+        adjuster: "Optional[Callable[[int, 'RBLNDecoderOnlyModelForCausalLMConfig'], int]]" = None,
     ):
-        rbln_config.kvcache_num_blocks = cls.estimate_num_kvcache_blocks(
-            compiled_models=compiled_models, rbln_config=rbln_config
-        )
-        if rbln_config.kvcache_num_blocks < rbln_config.num_min_blocks:
+        estimated = cls.estimate_num_kvcache_blocks(compiled_models=compiled_models, rbln_config=rbln_config)
+        num_blocks = adjuster(estimated, rbln_config) if adjuster is not None else estimated
+        if not isinstance(num_blocks, int) or isinstance(num_blocks, bool) or num_blocks <= 0:
+            raise ValueError(f"`kvcache_num_blocks_adjuster` must return a positive int, got {num_blocks!r}.")
+        if num_blocks > estimated:
+            logger.warning(
+                f"`kvcache_num_blocks_adjuster` returned {num_blocks}, which exceeds the "
+                f"estimated maximum {estimated}. This may cause OOM at compile or runtime."
+            )
+        if num_blocks < rbln_config.num_min_blocks:
             raise ValueError(
                 "Memory is not enough for full sequence length. "
                 "Please consider decreasing `max_seq_len` to reduce the number of blocks."
             )
+        rbln_config.kvcache_num_blocks = num_blocks
         cls.multiply_kv_cache_num_blocks(
-            compiled_models=compiled_models, rbln_config=rbln_config, multiplier=rbln_config.kvcache_num_blocks
+            compiled_models=compiled_models, rbln_config=rbln_config, multiplier=num_blocks
         )
 
     @classmethod

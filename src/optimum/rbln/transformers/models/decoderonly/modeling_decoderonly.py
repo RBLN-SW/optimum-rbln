@@ -330,7 +330,9 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
         if rbln_config.is_auto_num_blocks:
             if not is_compiler_supports_buffer_resize():
                 raise RuntimeError("`kvcache_num_blocks` must be set.")
-            cls.set_kvcache_num_blocks_after_compilation(compiled_models, rbln_config)
+            cls.set_kvcache_num_blocks_after_compilation(
+                compiled_models, rbln_config, adjuster=rbln_config.kvcache_num_blocks_adjuster
+            )
 
         return compiled_models
 
