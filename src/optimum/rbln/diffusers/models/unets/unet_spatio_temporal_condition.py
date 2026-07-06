@@ -173,13 +173,13 @@ class RBLNUNetSpatioTemporalConditionModel(RBLNModel):
 
         Args:
             sample (torch.Tensor): The noisy input tensor with the following shape `(batch, channel, height, width)`.
-            timestep (Union[torch.Tensor, float, int]): The number of timesteps to denoise an input.
+            timestep (torch.Tensor | float | int): The number of timesteps to denoise an input.
             encoder_hidden_states (torch.Tensor): The encoder hidden states.
             added_time_ids (torch.Tensor): A tensor containing additional sinusoidal embeddings and added to the time embeddings.
             return_dict (bool): Whether or not to return a [`~diffusers.models.unets.unet_spatio_temporal_condition.UNetSpatioTemporalConditionOutput`] instead of a plain tuple.
 
         Returns:
-            (Union[`~diffusers.models.unets.unet_spatio_temporal_condition.UNetSpatioTemporalConditionOutput`], Tuple)
+            (`~diffusers.models.unets.unet_spatio_temporal_condition.UNetSpatioTemporalConditionOutput`, Tuple)
         """
         sample_batch_size = sample.size()[0]
         compiled_batch_size = self.compiled_batch_size

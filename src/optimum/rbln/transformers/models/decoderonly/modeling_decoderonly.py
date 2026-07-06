@@ -754,7 +754,7 @@ class RBLNDecoderOnlyModelForCausalLM(RBLNDecoderOnlyModel, RBLNDecoderOnlyGener
         Sets the active adapter(s) for the model using adapter name(s).
 
         Args:
-            adapter_name (Union[str, List[str]]): The name(s) of the adapter(s) to be activated.
+            adapter_name (str | list[str]): The name(s) of the adapter(s) to be activated.
                 Can be a single adapter name or a list of adapter names.
 
         Raises:

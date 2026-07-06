@@ -67,7 +67,7 @@ def get_available_dram(npu: str | None = None) -> int:
     Get the available DRAM size of the specified NPU at the node (device) level.
 
     Args:
-        npu : Optional[str], default=None
+        npu : str | None, default=None
             The NPU to get the available DRAM size.
             If None, the function will attempt to retrieve through `ensure_valid_npu()`
 
@@ -92,7 +92,7 @@ def get_available_dram_per_chiplet(num_chiplets: int, npu: str | None = None) ->
     Args:
         num_chiplets : int
             Number of chiplets the device DRAM is split across.
-        npu : Optional[str], default=None
+        npu : str | None, default=None
             The NPU to get the available DRAM size. Resolved from the local device if None.
 
     Returns:

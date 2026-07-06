@@ -21,7 +21,7 @@ class RBLNCLIPTextModelConfig(RBLNModelConfig):
     def __init__(self, batch_size: int | None = None, **kwargs: Any):
         """
         Args:
-            batch_size (Optional[int]): The batch size for text processing. Defaults to 1.
+            batch_size (int | None): The batch size for text processing. Defaults to 1.
             kwargs: Additional arguments passed to the parent RBLNModelConfig.
 
         Raises:
@@ -54,12 +54,12 @@ class RBLNCLIPVisionModelConfig(RBLNModelConfig):
     ):
         """
         Args:
-            batch_size (Optional[int]): The batch size for image processing. Defaults to 1.
-            image_size (Optional[int]): The size of input images. Can be an integer for square images,
+            batch_size (int | None): The batch size for image processing. Defaults to 1.
+            image_size (int | None): The size of input images. Can be an integer for square images,
                 a tuple/list (height, width), or a dictionary with 'height' and 'width' keys.
-            interpolate_pos_encoding (Optional[bool]): Whether or not to interpolate pre-trained position encodings. Defaults to `False`.
-            output_hidden_states (Optional[bool]): Whether or not to return the hidden states of all layers.
-            output_attentions (Optional[bool]): Whether or not to return the attentions tensors of all attention layers
+            interpolate_pos_encoding (bool | None): Whether or not to interpolate pre-trained position encodings. Defaults to `False`.
+            output_hidden_states (bool | None): Whether or not to return the hidden states of all layers.
+            output_attentions (bool | None): Whether or not to return the attentions tensors of all attention layers
             kwargs: Additional arguments passed to the parent RBLNModelConfig.
 
         Raises:

@@ -32,13 +32,13 @@ class RBLNTransformerEncoderConfig(RBLNModelConfig):
     ):
         """
         Args:
-            max_seq_len (Optional[Union[int, List[int]]]): Maximum sequence length supported by the model.
+            max_seq_len (int | list[int] | None): Maximum sequence length supported by the model.
                 A single integer compiles the model for one sequence length. A list of integers enables
                 sequence-length bucketing: the model is compiled for each length on the default
                 ``[batch_size, max_seq_len]`` input layout and, at inference time, the runtime dispatches
                 to the smallest bucket that fits each input.
-            batch_size (Optional[int]): The batch size for inference. Defaults to 1.
-            model_input_names (Optional[List[str]]): Names of the input tensors for the model.
+            batch_size (int | None): The batch size for inference. Defaults to 1.
+            model_input_names (list[str] | None): Names of the input tensors for the model.
                 Defaults to class-specific rbln_model_input_names if not provided.
             kwargs: Additional arguments passed to the parent RBLNModelConfig.
 
@@ -63,9 +63,9 @@ class RBLNImageModelConfig(RBLNModelConfig):
     ):
         """
         Args:
-            image_size (Optional[Union[int, Tuple[int, int]]]): The size of input images.
+            image_size (int | tuple[int, int] | None): The size of input images.
                 Can be an integer for square images or a tuple (height, width).
-            batch_size (Optional[int]): The batch size for inference. Defaults to 1.
+            batch_size (int | None): The batch size for inference. Defaults to 1.
             kwargs: Additional arguments passed to the parent RBLNModelConfig.
 
         Raises:

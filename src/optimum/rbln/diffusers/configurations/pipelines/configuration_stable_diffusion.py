@@ -41,21 +41,21 @@ class RBLNStableDiffusionPipelineBaseConfig(RBLNModelConfig):
     ):
         """
         Args:
-            text_encoder (Optional[RBLNCLIPTextModelConfig]): Configuration for the text encoder component.
+            text_encoder (RBLNCLIPTextModelConfig | None): Configuration for the text encoder component.
                 Initialized as RBLNCLIPTextModelConfig if not provided.
-            unet (Optional[RBLNUNet2DConditionModelConfig]): Configuration for the UNet model component.
+            unet (RBLNUNet2DConditionModelConfig | None): Configuration for the UNet model component.
                 Initialized as RBLNUNet2DConditionModelConfig if not provided.
-            vae (Optional[RBLNAutoencoderKLConfig]): Configuration for the VAE model component.
+            vae (RBLNAutoencoderKLConfig | None): Configuration for the VAE model component.
                 Initialized as RBLNAutoencoderKLConfig if not provided.
-            batch_size (Optional[int]): Batch size for inference, applied to all submodules.
-            img_height (Optional[int]): Height of the generated images.
-            img_width (Optional[int]): Width of the generated images.
-            height (Optional[int]): Height of the generated images.
-            width (Optional[int]): Width of the generated images.
-            sample_size (Optional[Tuple[int, int]]): Spatial dimensions for the UNet model.
-            image_size (Optional[Tuple[int, int]]): Alternative way to specify image dimensions.
+            batch_size (int | None): Batch size for inference, applied to all submodules.
+            img_height (int | None): Height of the generated images.
+            img_width (int | None): Width of the generated images.
+            height (int | None): Height of the generated images.
+            width (int | None): Width of the generated images.
+            sample_size (tuple[int, int] | None): Spatial dimensions for the UNet model.
+            image_size (tuple[int, int] | None): Alternative way to specify image dimensions.
                 Cannot be used together with img_height/img_width.
-            guidance_scale (Optional[float]): Scale for classifier-free guidance.
+            guidance_scale (float | None): Scale for classifier-free guidance.
             kwargs: Additional arguments passed to the parent RBLNModelConfig.
 
         Raises:

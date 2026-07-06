@@ -61,9 +61,9 @@ class RBLNColPaliForRetrievalConfig(RBLNModelConfig):
     ):
         """
         Args:
-            batch_size (Optional[int]): The batch size for the model.
-            vlm (Optional[RBLNModelConfig]): Configuration for the VLM component.
-            output_hidden_states (Optional[bool]): Whether to output the hidden states of the decoder. Defaults to False.
+            batch_size (int | None): The batch size for the model.
+            vlm (RBLNModelConfig | None): Configuration for the VLM component.
+            output_hidden_states (bool | None): Whether to output the hidden states of the decoder. Defaults to False.
             kwargs: Additional arguments passed to the parent RBLNModelConfig.
         Raises:
             ValueError: If batch_size is not a positive integer.

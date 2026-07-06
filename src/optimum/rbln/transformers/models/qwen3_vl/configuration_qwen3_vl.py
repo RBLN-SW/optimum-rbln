@@ -41,7 +41,7 @@ class RBLNQwen3VLForConditionalGenerationConfig(RBLNDecoderOnlyModelForCausalLMC
         """
         Args:
             use_inputs_embeds (bool): Whether or not to use `inputs_embeds` as input. Defaults to `True`.
-            visual (Optional[RBLNModelConfig]): Configuration for the vision encoder component.
+            visual (RBLNModelConfig | None): Configuration for the vision encoder component.
             _load_visual_runtime (bool): Whether to create runtime for the visual encoder submodule.
                 Set to ``False`` on decoder-only nodes in a disaggregated encoder setup to skip
                 loading the visual encoder's compiled model (.rbln) and torch artifacts entirely.
@@ -93,7 +93,7 @@ class RBLNQwen3VLVisionModelConfig(RBLNModelConfig):
     def __init__(self, max_seq_len: int | list[int] = None, **kwargs: Any):
         """
         Args:
-            max_seq_len (Optional[Union[int, List[int]]]): Maximum sequence lengths for Vision
+            max_seq_len (int | list[int] | None): Maximum sequence lengths for Vision
                 Transformer attention. Can be an integer or list of integers, each indicating
                 the number of patches in a sequence for an image or video. For example, an image
                 of 224x224 pixels with patch size 16 and spatial_merge_size 2 yields

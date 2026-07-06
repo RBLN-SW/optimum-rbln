@@ -38,13 +38,13 @@ class RBLNModelForSeq2SeqLMConfig(RBLNModelConfig):
     ):
         """
         Args:
-            batch_size (Optional[int]): The batch size for inference. Defaults to 1.
-            enc_max_seq_len (Optional[int]): Maximum sequence length for the encoder.
-            dec_max_seq_len (Optional[int]): Maximum sequence length for the decoder.
-            use_attention_mask (Optional[bool]): Whether to use attention masks during inference.
-            kvcache_num_blocks (Optional[int]): The total number of blocks to allocate for the
+            batch_size (int | None): The batch size for inference. Defaults to 1.
+            enc_max_seq_len (int | None): Maximum sequence length for the encoder.
+            dec_max_seq_len (int | None): Maximum sequence length for the decoder.
+            use_attention_mask (bool | None): Whether to use attention masks during inference.
+            kvcache_num_blocks (int | None): The total number of blocks to allocate for the
                 PagedAttention KV cache for the SelfAttention. Defaults to batch_size.
-            kvcache_block_size (Optional[int]): Sets the size (in number of tokens) of each block
+            kvcache_block_size (int | None): Sets the size (in number of tokens) of each block
                 in the PagedAttention KV cache for the SelfAttention. Defaults to dec_max_seq_len.
             kwargs: Additional arguments passed to the parent RBLNModelConfig.
 

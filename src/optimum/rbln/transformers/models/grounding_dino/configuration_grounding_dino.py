@@ -26,8 +26,8 @@ class RBLNGroundingDinoTextModelConfig(RBLNModelConfig):
     ):
         """
         Args:
-            batch_size (Optional[int]): The batch size for text processing. Defaults to 1.
-            max_text_len (Optional[int]): Maximum text sequence length. Defaults to the
+            batch_size (int | None): The batch size for text processing. Defaults to 1.
+            max_text_len (int | None): Maximum text sequence length. Defaults to the
                 parent GroundingDino config's `max_text_len`.
             kwargs: Additional arguments passed to the parent RBLNModelConfig.
         """
@@ -59,13 +59,13 @@ class RBLNGroundingDinoForObjectDetectionConfig(RBLNImageModelConfig):
     ):
         """
         Args:
-            batch_size (Optional[int]): The batch size for image and text processing. Defaults to 1.
-            encoder (Optional["RBLNModelConfig"]): The encoder configuration. Defaults to None.
-            decoder (Optional["RBLNModelConfig"]): The decoder configuration. Defaults to None.
-            text_backbone (Optional["RBLNModelConfig"]): The text backbone configuration. Defaults to None.
-            backbone (Optional["RBLNModelConfig"]): The backbone configuration. Defaults to None.
-            output_attentions (Optional[bool]): Whether to output attentions. Defaults to None.
-            output_hidden_states (Optional[bool]): Whether to output hidden states. Defaults to None.
+            batch_size (int | None): The batch size for image and text processing. Defaults to 1.
+            encoder ("RBLNModelConfig" | None): The encoder configuration. Defaults to None.
+            decoder ("RBLNModelConfig" | None): The decoder configuration. Defaults to None.
+            text_backbone ("RBLNModelConfig" | None): The text backbone configuration. Defaults to None.
+            backbone ("RBLNModelConfig" | None): The backbone configuration. Defaults to None.
+            output_attentions (bool | None): Whether to output attentions. Defaults to None.
+            output_hidden_states (bool | None): Whether to output hidden states. Defaults to None.
             kwargs: Additional arguments passed to the parent RBLNModelConfig.
 
         Raises:

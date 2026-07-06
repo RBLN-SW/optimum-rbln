@@ -32,12 +32,12 @@ class RBLNGemma3ForCausalLMConfig(RBLNDecoderOnlyModelForCausalLMConfig):
     ):
         """
         Args:
-            use_position_ids (Optional[bool]): Whether or not to use `position_ids`, which is indices of positions of each input sequence tokens in the position embeddings.
-            use_attention_mask (Optional[bool]): Whether or not to use `attention_mask` to to avoid performing attention on padding token indices.
-            prefill_chunk_size (Optional[int]): The chunk size used during the prefill phase for
+            use_position_ids (bool | None): Whether or not to use `position_ids`, which is indices of positions of each input sequence tokens in the position embeddings.
+            use_attention_mask (bool | None): Whether or not to use `attention_mask` to to avoid performing attention on padding token indices.
+            prefill_chunk_size (int | None): The chunk size used during the prefill phase for
                 processing input sequences. Defaults to 256. Must be a positive integer
                 divisible by 64. Affects prefill performance and memory usage.
-            image_prefill_chunk_size (Optional[int]): The chunk size used during the prefill phase for
+            image_prefill_chunk_size (int | None): The chunk size used during the prefill phase for
                 processing images. This config is used when `use_image_prefill` is True.
                 Currently, the `prefill_chunk_size` and `image_prefill_chunk_size` should be the same value.
             kwargs: Additional arguments passed to the parent `RBLNDecoderOnlyModelForCausalLMConfig`.
@@ -74,9 +74,9 @@ class RBLNGemma3ForConditionalGenerationConfig(RBLNModelConfig):
     ):
         """
         Args:
-            batch_size (Optional[int]): The batch size for inference. Defaults to 1.
-            vision_tower (Optional[RBLNModelConfig]): Configuration for the vision encoder component.
-            language_model (Optional[RBLNModelConfig]): Configuration for the language model component.
+            batch_size (int | None): The batch size for inference. Defaults to 1.
+            vision_tower (RBLNModelConfig | None): Configuration for the vision encoder component.
+            language_model (RBLNModelConfig | None): Configuration for the language model component.
             kwargs: Additional arguments passed to the parent RBLNModelConfig.
 
         Raises:

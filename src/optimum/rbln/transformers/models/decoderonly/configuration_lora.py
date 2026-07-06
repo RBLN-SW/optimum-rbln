@@ -91,19 +91,19 @@ class RBLNLoRAAdapterConfig(RBLNSerializableConfigProtocol):
             lora_int_id (int): Unique identifier for this LoRA adapter (e.g., 0, 1, 2).
                 This ID will be used during runtime to select which adapter to use.
             lora_name (str): Human-readable name for this adapter (e.g., "math_tuned", "code_tuned").
-            lora_path (Union[str, Path]): Path to the LoRA adapter weights directory or file.
+            lora_path (str | Path): Path to the LoRA adapter weights directory or file.
                 Must be accessible at compile time to load the weights.
-            r (Optional[int]): The rank of the LoRA approximation for this adapter. If None,
+            r (int | None): The rank of the LoRA approximation for this adapter. If None,
                 will be loaded from adapter config file.
-            lora_alpha (Optional[float]): The LoRA scaling parameter for this adapter. If None,
+            lora_alpha (float | None): The LoRA scaling parameter for this adapter. If None,
                 will be loaded from adapter config file.
-            target_modules (Optional[List[str]]): List of module names to apply LoRA to.
+            target_modules (list[str] | None): List of module names to apply LoRA to.
                 If None, will be loaded from adapter config file or inherit from parent RBLNLoRAConfig.
-            bias (Optional[str]): Bias handling strategy. Options: "none", "all", "lora_only".
+            bias (str | None): Bias handling strategy. Options: "none", "all", "lora_only".
                 If None, will be loaded from adapter config file.
-            use_rslora (Optional[bool]): Whether to use Rank-Stabilized LoRA. If None,
+            use_rslora (bool | None): Whether to use Rank-Stabilized LoRA. If None,
                 will be loaded from adapter config file.
-            scaling_factor (Optional[float]): Additional scaling factor for this adapter. Defaults to 1.0.
+            scaling_factor (float | None): Additional scaling factor for this adapter. Defaults to 1.0.
             **kwargs: Additional adapter-specific arguments.
 
         Raises:
@@ -286,10 +286,10 @@ class RBLNLoRAConfig(RBLNSerializableConfigProtocol):
     def __init__(self, adapters: list[dict[str, Any] | RBLNLoRAAdapterConfig], max_lora_rank: int | None = None):
         """
         Args:
-            adapters (List[Union[Dict[str, Any], RBLNLoRAAdapterConfig]]): List of LoRA adapters
+            adapters (list[dict[str, Any] | RBLNLoRAAdapterConfig]): List of LoRA adapters
                 to be compiled into the model. Each adapter must be fully specified with weights
                 accessible at compile time.
-            max_lora_rank (Optional[int]): Maximum rank across all adapters. If None, automatically
+            max_lora_rank (int | None): Maximum rank across all adapters. If None, automatically
                 determined from the provided adapters. Used for memory allocation optimization.
 
         Raises:

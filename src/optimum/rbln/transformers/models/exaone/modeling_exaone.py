@@ -109,11 +109,11 @@ class RBLNExaoneForCausalLM(RBLNDecoderOnlyModelForCausalLM):
         User can use this function to load a pre-trained model from the HuggingFace library and convert it to a RBLN model to be run on RBLN NPUs.
 
         Args:
-            model_id (Union[str, Path]): The model id of the pre-trained model to be loaded.
+            model_id (str | Path): The model id of the pre-trained model to be loaded.
                 It can be downloaded from the HuggingFace model hub or a local path, or a model id of a compiled model using the RBLN Compiler.
-            export (Optional[bool]): A boolean flag to indicate whether the model should be compiled.
+            export (bool | None): A boolean flag to indicate whether the model should be compiled.
                 If None, it will be determined based on the existence of the compiled model files in the model_id.
-            rbln_config (Optional[Union[Dict, RBLNModelConfig]]): Configuration for RBLN model compilation and runtime.
+            rbln_config (dict | RBLNModelConfig | None): Configuration for RBLN model compilation and runtime.
                 This can be provided as a dictionary or an instance of the model's configuration class (e.g., `RBLNExaoneForCausalLMConfig` for EXAONE models).
                 For detailed configuration options, see the specific model's configuration class documentation.
             trust_remote_code (bool): Whether or not to trust the remote code when loading a model from the Hub.

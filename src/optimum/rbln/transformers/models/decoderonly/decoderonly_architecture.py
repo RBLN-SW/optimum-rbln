@@ -365,7 +365,7 @@ class DecoderOnlyModel(nn.Module):
 
     Args:
         model: Original Huggingface model to adapt
-        layers (List[DecoderOnlyLayer]): Modified transformer layers optimized for RBLN
+        layers (list[DecoderOnlyLayer]): Modified transformer layers optimized for RBLN
         rbln_config: RBLN model configuration
         use_learned_pos_emb: Whether to use learned position embeddings (class-specific override)
 

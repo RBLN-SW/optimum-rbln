@@ -354,16 +354,16 @@ class RBLNUNet2DConditionModel(RBLNModel):
 
         Args:
             sample (torch.Tensor): The noisy input tensor with the following shape `(batch, channel, height, width)`.
-            timestep (Union[torch.Tensor, float, int]): The number of timesteps to denoise an input.
+            timestep (torch.Tensor | float | int): The number of timesteps to denoise an input.
             encoder_hidden_states (torch.Tensor): The encoder hidden states.
-            added_cond_kwargs (Dict[str, torch.Tensor]): A kwargs dictionary containing additional embeddings that
+            added_cond_kwargs (dict[str, torch.Tensor]): A kwargs dictionary containing additional embeddings that
                 if specified are added to the embeddings that are passed along to the UNet blocks.
-            down_block_additional_residuals (Optional[Tuple[torch.Tensor]]): A tuple of tensors that if specified are added to the residuals of down unet blocks.
-            mid_block_additional_residual (Optional[torch.Tensor]): A tensor that if specified is added to the residual of the middle unet block.
+            down_block_additional_residuals (tuple[torch.Tensor] | None): A tuple of tensors that if specified are added to the residuals of down unet blocks.
+            mid_block_additional_residual (torch.Tensor | None): A tensor that if specified is added to the residual of the middle unet block.
             return_dict (bool): Whether or not to return a [`~diffusers.models.unets.unet_2d_condition.UNet2DConditionOutput`] instead of a plain tuple.
 
         Returns:
-            (Union[`~diffusers.models.unets.unet_2d_condition.UNet2DConditionOutput`], Tuple)
+            (`~diffusers.models.unets.unet_2d_condition.UNet2DConditionOutput`, Tuple)
         """
         sample_batch_size = sample.size()[0]
         compiled_batch_size = self.compiled_batch_size

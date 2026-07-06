@@ -36,7 +36,7 @@ class RBLNBlip2VisionModelConfig(RBLNModelConfig):
     ):
         """
         Args:
-            batch_size (Optional[int]): The batch size for inference. Defaults to 1.
+            batch_size (int | None): The batch size for inference. Defaults to 1.
             kwargs: Additional arguments passed to the parent RBLNModelConfig.
         """
         super().__init__(**kwargs)
@@ -62,8 +62,8 @@ class RBLNBlip2QFormerModelConfig(RBLNModelConfig):
     ):
         """
         Args:
-            num_query_tokens (Optional[int]): The number of query tokens passed through the Transformer.
-            image_text_hidden_size (Optional[int]): Dimensionality of the hidden state of the image-text fusion layer.
+            num_query_tokens (int | None): The number of query tokens passed through the Transformer.
+            image_text_hidden_size (int | None): Dimensionality of the hidden state of the image-text fusion layer.
             kwargs: Additional arguments passed to the parent RBLNModelConfig.
         """
         super().__init__(**kwargs)
@@ -95,10 +95,10 @@ class RBLNBlip2ForConditionalGenerationConfig(RBLNModelConfig):
     ):
         """
         Args:
-            batch_size (Optional[int]): The batch size for inference. Defaults to 1.
-            vision_model (Optional[RBLNModelConfig]): Configuration for the vision encoder component.
-            qformer (Optional[RBLNModelConfig]): Configuration for the RBLN-optimized BLIP-2 Q-Former model.
-            language_model (Optional[RBLNModelConfig]): Configuration for the language model component.
+            batch_size (int | None): The batch size for inference. Defaults to 1.
+            vision_model (RBLNModelConfig | None): Configuration for the vision encoder component.
+            qformer (RBLNModelConfig | None): Configuration for the RBLN-optimized BLIP-2 Q-Former model.
+            language_model (RBLNModelConfig | None): Configuration for the language model component.
             kwargs: Additional arguments passed to the parent RBLNModelConfig.
 
         Raises:

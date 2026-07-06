@@ -42,16 +42,16 @@ class RBLNUNet2DConditionModelConfig(RBLNModelConfig):
     ):
         """
         Args:
-            batch_size (Optional[int]): The batch size for inference. Defaults to 1.
-            sample_size (Optional[Tuple[int, int]]): The spatial dimensions (height, width) of the generated samples.
+            batch_size (int | None): The batch size for inference. Defaults to 1.
+            sample_size (tuple[int, int] | None): The spatial dimensions (height, width) of the generated samples.
                 If an integer is provided, it's used for both height and width.
-            in_channels (Optional[int]): Number of input channels for the UNet.
-            cross_attention_dim (Optional[int]): Dimension of the cross-attention features.
-            use_additional_residuals (Optional[bool]): Whether to use additional residual connections in the model.
-            max_seq_len (Optional[int]): Maximum sequence length for text inputs when used with cross-attention.
-            in_features (Optional[int]): Number of input features for the model.
-            text_model_hidden_size (Optional[int]): Hidden size of the text encoder model.
-            image_model_hidden_size (Optional[int]): Hidden size of the image encoder model.
+            in_channels (int | None): Number of input channels for the UNet.
+            cross_attention_dim (int | None): Dimension of the cross-attention features.
+            use_additional_residuals (bool | None): Whether to use additional residual connections in the model.
+            max_seq_len (int | None): Maximum sequence length for text inputs when used with cross-attention.
+            in_features (int | None): Number of input features for the model.
+            text_model_hidden_size (int | None): Hidden size of the text encoder model.
+            image_model_hidden_size (int | None): Hidden size of the image encoder model.
             kwargs: Additional arguments passed to the parent RBLNModelConfig.
 
         Raises:

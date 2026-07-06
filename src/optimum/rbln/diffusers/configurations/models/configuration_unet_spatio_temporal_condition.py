@@ -30,11 +30,11 @@ class RBLNUNetSpatioTemporalConditionModelConfig(RBLNModelConfig):
     ):
         """
         Args:
-            batch_size (Optional[int]): The batch size for inference. Defaults to 1.
-            sample_size (Optional[Tuple[int, int]]): The spatial dimensions (height, width) of the generated samples.
+            batch_size (int | None): The batch size for inference. Defaults to 1.
+            sample_size (tuple[int, int] | None): The spatial dimensions (height, width) of the generated samples.
                 If an integer is provided, it's used for both height and width.
-            in_features (Optional[int]): Number of input features for the model.
-            num_frames (Optional[int]): The number of frames in the generated video.
+            in_features (int | None): Number of input features for the model.
+            num_frames (int | None): The number of frames in the generated video.
             kwargs: Additional arguments passed to the parent RBLNModelConfig.
 
         Raises:

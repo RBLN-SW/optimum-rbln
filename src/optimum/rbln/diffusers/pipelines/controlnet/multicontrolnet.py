@@ -105,16 +105,16 @@ class RBLNMultiControlNetModel(RBLNModel):
 
         Args:
             sample (torch.FloatTensor): The noisy input tensor.
-            timestep (Union[torch.Tensor, float, int]): The number of timesteps to denoise an input.
+            timestep (torch.Tensor | float | int): The number of timesteps to denoise an input.
             encoder_hidden_states (torch.Tensor): The encoder hidden states from the text encoder.
-            controlnet_cond (List[torch.Tensor]): A list of conditional input tensors, one for each ControlNet model.
-            conditioning_scale (List[float]): A list of scale factors for each ControlNet output. Each scale
+            controlnet_cond (list[torch.Tensor]): A list of conditional input tensors, one for each ControlNet model.
+            conditioning_scale (list[float]): A list of scale factors for each ControlNet output. Each scale
                 controls the strength of the corresponding ControlNet's influence on the generation.
             return_dict (bool): Whether or not to return a dictionary instead of a plain tuple. Currently,
                 this method always returns a tuple regardless of this parameter.
 
         Returns:
-            (Tuple[List[torch.Tensor], torch.Tensor])
+            (tuple[list[torch.Tensor], torch.Tensor])
         """
         for i, (image, scale, controlnet) in enumerate(
             zip(controlnet_cond, conditioning_scale, self.nets, strict=False)

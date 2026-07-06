@@ -45,20 +45,20 @@ class RBLNCosmosPipelineBaseConfig(RBLNModelConfig):
     ):
         """
         Args:
-            text_encoder (Optional[RBLNT5EncoderModelConfig]): Configuration for the text encoder component.
+            text_encoder (RBLNT5EncoderModelConfig | None): Configuration for the text encoder component.
                 Initialized as RBLNT5EncoderModelConfig if not provided.
-            transformer (Optional[RBLNCosmosTransformer3DModelConfig]): Configuration for the Transformer model component.
+            transformer (RBLNCosmosTransformer3DModelConfig | None): Configuration for the Transformer model component.
                 Initialized as RBLNCosmosTransformer3DModelConfig if not provided.
-            vae (Optional[RBLNAutoencoderKLCosmosConfig]): Configuration for the VAE model component.
+            vae (RBLNAutoencoderKLCosmosConfig | None): Configuration for the VAE model component.
                 Initialized as RBLNAutoencoderKLCosmosConfig if not provided.
-            safety_checker (Optional[RBLNCosmosSafetyCheckerConfig]): Configuration for the safety checker component.
+            safety_checker (RBLNCosmosSafetyCheckerConfig | None): Configuration for the safety checker component.
                 Initialized as RBLNCosmosSafetyCheckerConfig if not provided.
-            batch_size (Optional[int]): Batch size for inference, applied to all submodules.
-            height (Optional[int]): Height of the generated videos.
-            width (Optional[int]): Width of the generated videos.
-            num_frames (Optional[int]): The number of frames in the generated video.
-            fps (Optional[int]): The frames per second of the generated video.
-            max_seq_len (Optional[int]): Maximum sequence length supported by the model.
+            batch_size (int | None): Batch size for inference, applied to all submodules.
+            height (int | None): Height of the generated videos.
+            width (int | None): Width of the generated videos.
+            num_frames (int | None): The number of frames in the generated video.
+            fps (int | None): The frames per second of the generated video.
+            max_seq_len (int | None): Maximum sequence length supported by the model.
             kwargs: Additional arguments passed to the parent RBLNModelConfig.
         """
         super().__init__(**kwargs)

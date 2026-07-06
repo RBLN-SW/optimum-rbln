@@ -35,12 +35,12 @@ class RBLNSiglipVisionModelConfig(RBLNModelConfig):
     ):
         """
         Args:
-            batch_size (Optional[int]): The batch size for image processing. Defaults to 1.
-            image_size (Optional[int]): The size of input images. Can be an integer for square images,
+            batch_size (int | None): The batch size for image processing. Defaults to 1.
+            image_size (int | None): The size of input images. Can be an integer for square images,
                 a tuple/list (height, width), or a dictionary with 'height' and 'width' keys.
-            interpolate_pos_encoding (Optional[bool]): Whether to interpolate the position encoding.
-            output_hidden_states: (Optional[bool]): Whether to return hidden states.
-            output_attentions: (Optional[bool]): Whether to return attentions.
+            interpolate_pos_encoding (bool | None): Whether to interpolate the position encoding.
+            output_hidden_states: (bool | None): Whether to return hidden states.
+            output_attentions: (bool | None): Whether to return attentions.
             kwargs: Additional arguments passed to the parent RBLNModelConfig.
 
         Raises:

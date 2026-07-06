@@ -39,7 +39,7 @@ class RBLNQwen2_5_VLForConditionalGenerationConfig(RBLNDecoderOnlyModelForCausal
         """
         Args:
             use_inputs_embeds (bool): Whether or not to use `inputs_embeds` as input. Defaults to `True`.
-            visual (Optional[RBLNModelConfig]): Configuration for the vision encoder component.
+            visual (RBLNModelConfig | None): Configuration for the vision encoder component.
             kwargs: Additional arguments passed to the parent `RBLNDecoderOnlyModelForCausalLMConfig`.
 
         Raises:
@@ -82,7 +82,7 @@ class RBLNQwen2_5_VisionTransformerPretrainedModelConfig(RBLNModelConfig):
     def __init__(self, max_seq_len: int | list[int] = None, **kwargs: Any):
         """
         Args:
-            max_seq_len (Optional[Union[int, List[int]]]): Maximum sequence lengths for Vision
+            max_seq_len (int | list[int] | None): Maximum sequence lengths for Vision
                 Transformer attention. Can be an integer or list of integers, each indicating
                 the number of patches in a sequence for an image or video. For example, an image
                 of 224x196 pixels with patch size 14 and window size 112 has its width padded to

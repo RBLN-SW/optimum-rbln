@@ -37,15 +37,15 @@ class RBLNVQModelConfig(RBLNModelConfig):
     ):
         """
         Args:
-            batch_size (Optional[int]): The batch size for inference. Defaults to 1.
-            sample_size (Optional[Tuple[int, int]]): The spatial dimensions (height, width) of the input/output images.
+            batch_size (int | None): The batch size for inference. Defaults to 1.
+            sample_size (tuple[int, int] | None): The spatial dimensions (height, width) of the input/output images.
                 If an integer is provided, it's used for both height and width.
-            uses_encoder (Optional[bool]): Whether to include the encoder part of the VAE in the model.
+            uses_encoder (bool | None): Whether to include the encoder part of the VAE in the model.
                 When False, only the decoder is used (for latent-to-image conversion).
-            vqmodel_scale_factor (Optional[float]): The scaling factor between pixel space and latent space.
+            vqmodel_scale_factor (float | None): The scaling factor between pixel space and latent space.
                 Determines the downsampling ratio between original images and latent representations.
-            in_channels (Optional[int]): Number of input channels for the model.
-            latent_channels (Optional[int]): Number of channels in the latent space.
+            in_channels (int | None): Number of input channels for the model.
+            latent_channels (int | None): Number of channels in the latent space.
             kwargs: Additional arguments passed to the parent RBLNModelConfig.
 
         Raises:

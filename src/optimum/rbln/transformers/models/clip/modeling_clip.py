@@ -90,7 +90,7 @@ class RBLNCLIPTextModel(RBLNModel):
 
         Args:
             input_ids (torch.LongTensor): The input ids to the model.
-            return_dict (Optional[bool]): Whether to return a dictionary of outputs.
+            return_dict (bool | None): Whether to return a dictionary of outputs.
 
         Returns:
             The model outputs. If return_dict=False is passed, returns a tuple of tensors. Otherwise, returns a CLIPTextModelOutput object.
@@ -229,8 +229,8 @@ class RBLNCLIPVisionModel(RBLNModel):
         Args:
             pixel_values (torch.Tensor): The pixel values to the model.
             return_dict (bool): Whether to return a dictionary of outputs.
-            output_attentions (Optional[bool]): Whether to return attentions.
-            output_hidden_states (Optional[bool]): Whether to return hidden states.
+            output_attentions (bool | None): Whether to return attentions.
+            output_hidden_states (bool | None): Whether to return hidden states.
             interpolate_pos_encoding (bool): Whether to interpolate position encoding.
 
         Returns:
@@ -327,8 +327,8 @@ class RBLNCLIPVisionModelWithProjection(RBLNCLIPVisionModel):
         Args:
             pixel_values (torch.Tensor): The pixel values to the model.
             return_dict (bool): Whether to return a dictionary of outputs.
-            output_attentions (Optional[bool]): Whether to return attentions.
-            output_hidden_states (Optional[bool]): Whether to return hidden states.
+            output_attentions (bool | None): Whether to return attentions.
+            output_hidden_states (bool | None): Whether to return hidden states.
             interpolate_pos_encoding (bool): Whether to interpolate position encoding.
 
         Returns:

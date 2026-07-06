@@ -254,7 +254,7 @@ class _BaseAutoModelClass:
         Register a new RBLN model class.
 
         Args:
-            rbln_cls (Type[RBLNBaseModel]): The RBLN model class to register.
+            rbln_cls (type[RBLNBaseModel]): The RBLN model class to register.
             exist_ok (bool): Whether to allow registering an already registered model.
         """
         if not issubclass(rbln_cls, RBLNBaseModel):

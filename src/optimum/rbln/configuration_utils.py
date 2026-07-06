@@ -75,9 +75,9 @@ class RBLNCompileConfig:
 
     Attributes:
         compiled_model_name (str): Name of the compiled model.
-        input_info (Union[List[TypeInputInfo], TypeInputInfo]): Information about input tensors.
-        npu (Optional[str]): NPU configuration.
-        num_devices (Optional[int]): Number of devices to distribute the model across.
+        input_info (list[TypeInputInfo] | TypeInputInfo): Information about input tensors.
+        npu (str | None): NPU configuration.
+        num_devices (int | None): Number of devices to distribute the model across.
     """
 
     compiled_model_name: str = DEFAULT_COMPILED_MODEL_NAME
@@ -293,7 +293,7 @@ class RBLNAutoConfig:
 
         Args:
             path (str): Path to the RBLNModelConfig.
-            rbln_config (Optional[Dict[str, Any]]): Additional configuration to override.
+            rbln_config (dict[str, Any] | None): Additional configuration to override.
             return_unused_kwargs (bool): Whether to return unused kwargs.
             kwargs: Additional keyword arguments to override configuration values.
 
@@ -329,7 +329,7 @@ class RBLNAutoConfig:
 
         Args:
             path (str): Path to the RBLNModelConfig file or directory.
-            rbln_config (Optional[Dict[str, Any]]): Additional configuration to override.
+            rbln_config (dict[str, Any] | None): Additional configuration to override.
             return_unused_kwargs (bool): Whether to return unused kwargs.
             kwargs: Additional keyword arguments to override configuration values.
 
@@ -720,17 +720,17 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
         Initialize a RBLN model configuration with runtime options and compile configurations.
 
         Args:
-            cls_name (Optional[str]): The class name of the configuration. Defaults to the current class name.
-            create_runtimes (Optional[bool]): Whether to create RBLN runtimes. Defaults to True.
-            device (Optional[Union[int, List[int]]]): The device(s) to load the model onto. Can be a single device ID or a list.
-            device_map (Optional[Dict[str, Union[int, List[int]]]]): Mapping from compiled model names to device IDs.
-            activate_profiler (Optional[bool]): Whether to activate the profiler for performance analysis.
-            npu (Optional[str]): The NPU device name to use for compilation.
-            num_devices (Optional[int]): Number of devices to distribute the model across.
-            timeout (Optional[int]): The timeout for the runtime in seconds. If it isn't provided, it will be set to 60 by default.
-            optimum_rbln_version (Optional[str]): The optimum-rbln version used for this configuration.
-            dtype (Optional[Union[str, torch.dtype]]): The data type to use for the model.
-            _compile_cfgs (List[RBLNCompileConfig]): List of compilation configurations for the model.
+            cls_name (str | None): The class name of the configuration. Defaults to the current class name.
+            create_runtimes (bool | None): Whether to create RBLN runtimes. Defaults to True.
+            device (int | list[int] | None): The device(s) to load the model onto. Can be a single device ID or a list.
+            device_map (dict[str, int | list[int]] | None): Mapping from compiled model names to device IDs.
+            activate_profiler (bool | None): Whether to activate the profiler for performance analysis.
+            npu (str | None): The NPU device name to use for compilation.
+            num_devices (int | None): Number of devices to distribute the model across.
+            timeout (int | None): The timeout for the runtime in seconds. If it isn't provided, it will be set to 60 by default.
+            optimum_rbln_version (str | None): The optimum-rbln version used for this configuration.
+            dtype (str | torch.dtype | None): The data type to use for the model.
+            _compile_cfgs (list[RBLNCompileConfig]): List of compilation configurations for the model.
             kwargs: Additional keyword arguments.
 
         Raises:
@@ -925,7 +925,7 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
 
         Args:
             path (str): Path to the RBLNModelConfig file or directory containing the config file.
-            rbln_config (Optional[Dict[str, Any]]): Additional configuration to override.
+            rbln_config (dict[str, Any] | None): Additional configuration to override.
             return_unused_kwargs (bool): Whether to return unused kwargs.
             kwargs: Additional keyword arguments to override configuration values.
                     Keys starting with 'rbln_' will have the prefix removed and be used
@@ -1021,7 +1021,7 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
 
         Args:
             path (str): Path to the RBLNModelConfig file or directory containing the config file.
-            rbln_config (Optional[Dict[str, Any]]): Additional configuration to override.
+            rbln_config (dict[str, Any] | None): Additional configuration to override.
             return_unused_kwargs (bool): Whether to return unused kwargs.
             kwargs: Additional keyword arguments to override configuration values.
                     Keys starting with 'rbln_' will have the prefix removed and be used

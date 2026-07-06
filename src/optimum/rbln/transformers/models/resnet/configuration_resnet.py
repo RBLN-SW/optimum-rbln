@@ -35,9 +35,9 @@ class RBLNResNetForImageClassificationConfig(RBLNModelForImageClassificationConf
     ):
         """
         Args:
-            image_size (Optional[Union[int, Tuple[int, int]]]): The size of input images.
+            image_size (int | tuple[int, int] | None): The size of input images.
                 Can be an integer for square images or a tuple (height, width).
-            batch_size (Optional[int]): The batch size for inference. Defaults to 1.
+            batch_size (int | None): The batch size for inference. Defaults to 1.
             output_hidden_states (bool, optional): Whether or not to return the hidden states of all layers.
             kwargs: Additional arguments passed to the parent RBLNModelConfig.
 

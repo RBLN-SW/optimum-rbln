@@ -41,19 +41,19 @@ class RBLNKandinskyV22PipelineBaseConfig(RBLNModelConfig):
     ):
         """
         Args:
-            unet (Optional[RBLNUNet2DConditionModelConfig]): Configuration for the UNet model component.
+            unet (RBLNUNet2DConditionModelConfig | None): Configuration for the UNet model component.
                 Initialized as RBLNUNet2DConditionModelConfig if not provided.
-            movq (Optional[RBLNVQModelConfig]): Configuration for the MoVQ (VQ-GAN) model component.
+            movq (RBLNVQModelConfig | None): Configuration for the MoVQ (VQ-GAN) model component.
                 Initialized as RBLNVQModelConfig if not provided.
-            sample_size (Optional[Tuple[int, int]]): Spatial dimensions for the UNet model.
-            batch_size (Optional[int]): Batch size for inference, applied to all submodules.
-            guidance_scale (Optional[float]): Scale for classifier-free guidance.
-            image_size (Optional[Tuple[int, int]]): Dimensions for the generated images.
+            sample_size (tuple[int, int] | None): Spatial dimensions for the UNet model.
+            batch_size (int | None): Batch size for inference, applied to all submodules.
+            guidance_scale (float | None): Scale for classifier-free guidance.
+            image_size (tuple[int, int] | None): Dimensions for the generated images.
                 Cannot be used together with img_height/img_width.
-            img_height (Optional[int]): Height of the generated images.
-            img_width (Optional[int]): Width of the generated images.
-            height (Optional[int]): Height of the generated images.
-            width (Optional[int]): Width of the generated images.
+            img_height (int | None): Height of the generated images.
+            img_width (int | None): Width of the generated images.
+            height (int | None): Height of the generated images.
+            width (int | None): Width of the generated images.
             kwargs: Additional arguments passed to the parent RBLNModelConfig.
 
         Raises:
@@ -162,14 +162,14 @@ class RBLNKandinskyV22PriorPipelineConfig(RBLNModelConfig):
         latent representations used to condition the diffusion process.
 
         Args:
-            text_encoder (Optional[RBLNCLIPTextModelWithProjectionConfig]): Configuration for the text encoder component.
+            text_encoder (RBLNCLIPTextModelWithProjectionConfig | None): Configuration for the text encoder component.
                 Initialized as RBLNCLIPTextModelWithProjectionConfig if not provided.
-            image_encoder (Optional[RBLNCLIPVisionModelWithProjectionConfig]): Configuration for the image encoder component.
+            image_encoder (RBLNCLIPVisionModelWithProjectionConfig | None): Configuration for the image encoder component.
                 Initialized as RBLNCLIPVisionModelWithProjectionConfig if not provided.
-            prior (Optional[RBLNPriorTransformerConfig]): Configuration for the prior transformer component.
+            prior (RBLNPriorTransformerConfig | None): Configuration for the prior transformer component.
                 Initialized as RBLNPriorTransformerConfig if not provided.
-            batch_size (Optional[int]): Batch size for inference, applied to all submodules.
-            guidance_scale (Optional[float]): Scale for classifier-free guidance.
+            batch_size (int | None): Batch size for inference, applied to all submodules.
+            guidance_scale (float | None): Scale for classifier-free guidance.
             kwargs: Additional arguments passed to the parent RBLNModelConfig.
 
         Note:
@@ -246,28 +246,28 @@ class RBLNKandinskyV22CombinedPipelineBaseConfig(RBLNModelConfig):
         It combines the text/image encoding, prior mapping, and diffusion steps together.
 
         Args:
-            prior_pipe (Optional[RBLNKandinskyV22PriorPipelineConfig]): Configuration for the prior pipeline.
+            prior_pipe (RBLNKandinskyV22PriorPipelineConfig | None): Configuration for the prior pipeline.
                 Initialized as RBLNKandinskyV22PriorPipelineConfig if not provided.
-            decoder_pipe (Optional[RBLNKandinskyV22PipelineConfig]): Configuration for the decoder pipeline.
+            decoder_pipe (RBLNKandinskyV22PipelineConfig | None): Configuration for the decoder pipeline.
                 Initialized as RBLNKandinskyV22PipelineConfig if not provided.
-            sample_size (Optional[Tuple[int, int]]): Spatial dimensions for the UNet model.
-            image_size (Optional[Tuple[int, int]]): Dimensions for the generated images.
+            sample_size (tuple[int, int] | None): Spatial dimensions for the UNet model.
+            image_size (tuple[int, int] | None): Dimensions for the generated images.
                 Cannot be used together with img_height/img_width.
-            batch_size (Optional[int]): Batch size for inference, applied to all submodules.
-            img_height (Optional[int]): Height of the generated images.
-            img_width (Optional[int]): Width of the generated images.
-            height (Optional[int]): Height of the generated images.
-            width (Optional[int]): Width of the generated images.
-            guidance_scale (Optional[float]): Scale for classifier-free guidance.
-            prior_prior (Optional[RBLNPriorTransformerConfig]): Direct configuration for the prior transformer.
+            batch_size (int | None): Batch size for inference, applied to all submodules.
+            img_height (int | None): Height of the generated images.
+            img_width (int | None): Width of the generated images.
+            height (int | None): Height of the generated images.
+            width (int | None): Width of the generated images.
+            guidance_scale (float | None): Scale for classifier-free guidance.
+            prior_prior (RBLNPriorTransformerConfig | None): Direct configuration for the prior transformer.
                 Used if prior_pipe is not provided.
-            prior_image_encoder (Optional[RBLNCLIPVisionModelWithProjectionConfig]): Direct configuration for the image encoder.
+            prior_image_encoder (RBLNCLIPVisionModelWithProjectionConfig | None): Direct configuration for the image encoder.
                 Used if prior_pipe is not provided.
-            prior_text_encoder (Optional[RBLNCLIPTextModelWithProjectionConfig]): Direct configuration for the text encoder.
+            prior_text_encoder (RBLNCLIPTextModelWithProjectionConfig | None): Direct configuration for the text encoder.
                 Used if prior_pipe is not provided.
-            unet (Optional[RBLNUNet2DConditionModelConfig]): Direct configuration for the UNet.
+            unet (RBLNUNet2DConditionModelConfig | None): Direct configuration for the UNet.
                 Used if decoder_pipe is not provided.
-            movq (Optional[RBLNVQModelConfig]): Direct configuration for the MoVQ (VQ-GAN) model.
+            movq (RBLNVQModelConfig | None): Direct configuration for the MoVQ (VQ-GAN) model.
                 Used if decoder_pipe is not provided.
             kwargs: Additional arguments passed to the parent RBLNModelConfig.
         """

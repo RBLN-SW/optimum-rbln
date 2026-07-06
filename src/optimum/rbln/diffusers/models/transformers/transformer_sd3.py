@@ -172,7 +172,7 @@ class RBLNSD3Transformer2DModel(RBLNModel):
             return_dict (bool): Whether or not to return a [`~diffusers.models.modeling_output.Transformer2DModelOutput`] instead of a plain tuple.
 
         Returns:
-            (Union[`~diffusers.models.modeling_output.Transformer2DModelOutput`, Tuple])
+            (`~diffusers.models.modeling_output.Transformer2DModelOutput` | tuple)
         """
         sample_batch_size = hidden_states.size()[0]
         compiled_batch_size = self.compiled_batch_size

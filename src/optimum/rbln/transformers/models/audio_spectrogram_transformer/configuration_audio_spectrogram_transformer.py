@@ -32,8 +32,8 @@ class RBLNASTForAudioClassificationConfig(RBLNModelConfig):
     ):
         """
         Args:
-            batch_size (Optional[int]): The batch size for inference. Defaults to 1.
-            max_length (Optional[int]): Maximum length of the audio input in time dimension.
+            batch_size (int | None): The batch size for inference. Defaults to 1.
+            max_length (int | None): Maximum length of the audio input in time dimension.
             kwargs: Additional arguments passed to the parent RBLNModelConfig.
 
         Raises:

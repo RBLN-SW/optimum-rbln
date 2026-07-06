@@ -42,16 +42,16 @@ class RBLNCosmosTransformer3DModelConfig(RBLNModelConfig):
     ):
         """
         Args:
-            batch_size (Optional[int]): The batch size for inference. Defaults to 1.
-            num_frames (Optional[int]): The number of frames in the generated video. Defaults to 121.
-            height (Optional[int]): The height in pixels of the generated video. Defaults to 704.
-            width (Optional[int]): The width in pixels of the generated video. Defaults to 1280.
-            fps (Optional[int]): The frames per second of the generated video.  Defaults to 30.
-            max_seq_len (Optional[int]): Maximum sequence length of prompt embeds.
-            embedding_dim (Optional[int]): Embedding vector dimension of prompt embeds.
-            num_channels_latents (Optional[int]): The number of channels in latent space.
-            latent_height (Optional[int]): The height in pixels in latent space.
-            latent_width (Optional[int]): The width in pixels in latent space.
+            batch_size (int | None): The batch size for inference. Defaults to 1.
+            num_frames (int | None): The number of frames in the generated video. Defaults to 121.
+            height (int | None): The height in pixels of the generated video. Defaults to 704.
+            width (int | None): The width in pixels of the generated video. Defaults to 1280.
+            fps (int | None): The frames per second of the generated video.  Defaults to 30.
+            max_seq_len (int | None): Maximum sequence length of prompt embeds.
+            embedding_dim (int | None): Embedding vector dimension of prompt embeds.
+            num_channels_latents (int | None): The number of channels in latent space.
+            latent_height (int | None): The height in pixels in latent space.
+            latent_width (int | None): The width in pixels in latent space.
             kwargs: Additional arguments passed to the parent RBLNModelConfig.
 
         Raises:

@@ -45,10 +45,10 @@ class RBLNGemma4ForCausalLMConfig(RBLNDecoderOnlyModelForCausalLMConfig):
     ):
         """
         Args:
-            use_position_ids (Optional[bool]): Whether to use `position_ids`. Forced to `True` for Gemma4.
-            use_attention_mask (Optional[bool]): Whether to use `attention_mask`. Forced to `True` for Gemma4.
-            prefill_chunk_size (Optional[int]): Chunk size used during the prefill phase. Defaults to 128.
-            image_prefill_chunk_size (Optional[Union[int, List[int]]]): Chunk size(s) used for image-prefill
+            use_position_ids (bool | None): Whether to use `position_ids`. Forced to `True` for Gemma4.
+            use_attention_mask (bool | None): Whether to use `attention_mask`. Forced to `True` for Gemma4.
+            prefill_chunk_size (int | None): Chunk size used during the prefill phase. Defaults to 128.
+            image_prefill_chunk_size (int | list[int] | None): Chunk size(s) used for image-prefill
                 (multimodal Gemma4). A single int compiles one `image_prefill` graph; a list compiles one
                 graph per value (sorted in descending order) and the runtime picks the smallest bucket that
                 fits an image run. When not given, it is derived from the vision tower's `max_soft_tokens`
@@ -138,16 +138,16 @@ class RBLNGemma4VisionModelConfig(RBLNModelConfig):
     ):
         """
         Args:
-            batch_size (Optional[int]): The batch size of images (number of images, not patches). Defaults to 1.
-            max_soft_tokens (Optional[Union[int, List[int]]]): The number of soft tokens emitted per image
+            batch_size (int | None): The batch size of images (number of images, not patches). Defaults to 1.
+            max_soft_tokens (int | list[int] | None): The number of soft tokens emitted per image
                 after pooling. Defaults to 280 (the upstream default in `Gemma4ImageProcessor`). A single int
                 compiles one vision graph; a list compiles one graph per value (sorted descending) so the
                 runtime can serve images at multiple soft-token counts. Must be a value supported by the image
                 processor (e.g. 70/140/280/560/1120).
-            pooling_kernel_size (Optional[int]): Spatial pooling kernel size applied after patchification.
+            pooling_kernel_size (int | None): Spatial pooling kernel size applied after patchification.
                 Defaults to `model_config.pooling_kernel_size` (3 by default).
-            patch_size (Optional[int]): Patch height/width in pixels. Defaults to `model_config.patch_size`.
-            output_hidden_states (Optional[bool]): Whether to return per-layer hidden states.
+            patch_size (int | None): Patch height/width in pixels. Defaults to `model_config.patch_size`.
+            output_hidden_states (bool | None): Whether to return per-layer hidden states.
             kwargs: Additional arguments passed to the parent `RBLNModelConfig`.
 
         Raises:
@@ -196,9 +196,9 @@ class RBLNGemma4ForConditionalGenerationConfig(RBLNModelConfig):
     ):
         """
         Args:
-            batch_size (Optional[int]): The batch size for inference. Defaults to 1.
-            vision_tower (Optional[RBLNModelConfig]): Configuration for the vision encoder component.
-            language_model (Optional[RBLNModelConfig]): Configuration for the language model component.
+            batch_size (int | None): The batch size for inference. Defaults to 1.
+            vision_tower (RBLNModelConfig | None): Configuration for the vision encoder component.
+            language_model (RBLNModelConfig | None): Configuration for the language model component.
             kwargs: Additional arguments passed to the parent `RBLNModelConfig`.
 
         Raises:

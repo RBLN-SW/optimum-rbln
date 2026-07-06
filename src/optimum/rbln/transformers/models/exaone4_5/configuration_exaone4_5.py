@@ -38,7 +38,7 @@ class RBLNExaone4_5_ForConditionalGenerationConfig(RBLNDecoderOnlyModelForCausal
         """
         Args:
             use_inputs_embeds (bool): Whether or not to use `inputs_embeds` as input. Defaults to `True`.
-            visual (Optional[RBLNModelConfig]): Configuration for the vision encoder component.
+            visual (RBLNModelConfig | None): Configuration for the vision encoder component.
             kwargs: Additional arguments passed to the parent `RBLNDecoderOnlyModelForCausalLMConfig`.
 
         Raises:
@@ -77,7 +77,7 @@ class RBLNExaone4_5_VisionModelConfig(RBLNModelConfig):
     def __init__(self, max_seq_len: int | list[int] = None, **kwargs: Any):
         """
         Args:
-            max_seq_len (Optional[Union[int, List[int]]]): Maximum sequence lengths for Vision
+            max_seq_len (int | list[int] | None): Maximum sequence lengths for Vision
                 Transformer attention. Can be an integer or list of integers, each indicating
                 the number of patches in a sequence for an image or video. For window-based
                 attention, `max_seq_len` must be a multiple of `(window_size / patch_size)^2`.

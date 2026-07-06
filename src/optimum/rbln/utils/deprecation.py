@@ -103,7 +103,7 @@ def deprecate_kwarg(
             Name of the deprecated keyword argument, or the argument with a deprecated value type.
         version (`str`):
             The version in which the keyword argument or value type was (or will be) deprecated.
-        new_name (`Optional[str]`, *optional*):
+        new_name (`str | None`, *optional*):
             The new name for the deprecated keyword argument. If specified, the deprecated keyword argument will be replaced with this new name (Scenario 'a').
         deprecated_type (`type`, *optional*):
             The deprecated type for the keyword argument specified by `old_name` (Scenario 'b').
@@ -115,7 +115,7 @@ def deprecate_kwarg(
             Whether to raise `ValueError` if current `optimum.rbln.` version is greater or equal to the deprecated version.
         raise_if_both_names (`bool`, *optional*, defaults to `False`):
             Whether to raise `ValueError` if both deprecated and new keyword arguments are set (only for Scenario 'a').
-        additional_message (`Optional[str]`, *optional*):
+        additional_message (`str | None`, *optional*):
             An additional message to append to the default deprecation message.
 
     Raises:
@@ -232,11 +232,11 @@ def deprecate_method(
     Parameters:
         version (`str`):
             The version in which the method was (or will be) deprecated.
-        new_method (`Optional[str]`, *optional*):
+        new_method (`str | None`, *optional*):
             The name of the new method to use instead. If specified, users will be directed to use this method.
         raise_if_greater_or_equal_version (`bool`, *optional*, defaults to `True`):
             Whether to raise `ValueError` if current `optimum.rbln` version is greater than or equal to the deprecated version.
-        additional_message (`Optional[str]`, *optional*):
+        additional_message (`str | None`, *optional*):
             An additional message to append to the default deprecation message.
     Returns:
         Callable:

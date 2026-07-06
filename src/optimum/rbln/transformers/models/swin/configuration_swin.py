@@ -26,7 +26,7 @@ class RBLNSwinBackboneConfig(RBLNModelForImageClassificationConfig):
     ):
         """
         Args:
-            batch_size (Optional[int]): The batch size for text processing. Defaults to 1.
+            batch_size (int | None): The batch size for text processing. Defaults to 1.
             kwargs: Additional arguments passed to the parent RBLNModelConfig.
 
         Raises:

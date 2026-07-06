@@ -264,7 +264,7 @@ class Seq2SeqDecoder(torch.nn.Module):
 
     Args:
         model: Original Huggingface model to adapt
-        layers (List[Seq2SeqDecoderLayer]): Modified transformer layers optimized for RBLN
+        layers (list[Seq2SeqDecoderLayer]): Modified transformer layers optimized for RBLN
     """
 
     has_pos_emb = True
@@ -340,7 +340,7 @@ class Seq2SeqDecoderLayer(torch.nn.Module):
 
     Args:
         model: Original Huggingface model to adapt
-        layers (List[DecoderOnlyLayer]): Modified transformer layers optimized for RBLN
+        layers (list[DecoderOnlyLayer]): Modified transformer layers optimized for RBLN
         self_attn (Seq2SeqSelfAttention): Modified self-attention layer optimized for RBLN
     """
 
