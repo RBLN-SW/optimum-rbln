@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Optional
+from typing import Any
 
 from ....configuration_utils import RBLNModelConfig
 from ....utils.deprecation import deprecate_kwarg
@@ -28,12 +28,12 @@ class RBLNModelForSeq2SeqLMConfig(RBLNModelConfig):
     @deprecate_kwarg(old_name="pad_token_id", version="0.10.0")
     def __init__(
         self,
-        batch_size: Optional[int] = None,
-        enc_max_seq_len: Optional[int] = None,
-        dec_max_seq_len: Optional[int] = None,
-        use_attention_mask: Optional[bool] = None,
-        kvcache_num_blocks: Optional[int] = None,
-        kvcache_block_size: Optional[int] = None,
+        batch_size: int | None = None,
+        enc_max_seq_len: int | None = None,
+        dec_max_seq_len: int | None = None,
+        use_attention_mask: bool | None = None,
+        kvcache_num_blocks: int | None = None,
+        kvcache_block_size: int | None = None,
         **kwargs: Any,
     ):
         """

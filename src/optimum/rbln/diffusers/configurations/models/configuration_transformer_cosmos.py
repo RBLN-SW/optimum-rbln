@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Optional
+from typing import Any
 
 from ....configuration_utils import RBLNModelConfig
 
@@ -27,17 +27,17 @@ class RBLNCosmosTransformer3DModelConfig(RBLNModelConfig):
 
     def __init__(
         self,
-        batch_size: Optional[int] = None,
-        num_frames: Optional[int] = None,
-        height: Optional[int] = None,
-        width: Optional[int] = None,
-        fps: Optional[int] = None,
-        max_seq_len: Optional[int] = None,
-        embedding_dim: Optional[int] = None,
-        num_channels_latents: Optional[int] = None,
-        num_latent_frames: Optional[int] = None,
-        latent_height: Optional[int] = None,
-        latent_width: Optional[int] = None,
+        batch_size: int | None = None,
+        num_frames: int | None = None,
+        height: int | None = None,
+        width: int | None = None,
+        fps: int | None = None,
+        max_seq_len: int | None = None,
+        embedding_dim: int | None = None,
+        num_channels_latents: int | None = None,
+        num_latent_frames: int | None = None,
+        latent_height: int | None = None,
+        latent_width: int | None = None,
         **kwargs: Any,
     ):
         """

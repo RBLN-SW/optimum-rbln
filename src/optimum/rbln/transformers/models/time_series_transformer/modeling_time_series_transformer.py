@@ -23,8 +23,9 @@
 
 import inspect
 import logging
+from collections.abc import Callable
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, List, Optional, Union
+from typing import TYPE_CHECKING, Any, Optional, Union
 
 import rebel
 import torch
@@ -63,11 +64,11 @@ class RBLNRuntimeEncoder(RBLNPytorchRuntime):
         self,
         past_values: torch.Tensor,
         past_time_features: torch.Tensor,
-        static_categorical_features: Optional[torch.Tensor] = None,
-        static_real_features: Optional[torch.Tensor] = None,
-        past_observed_mask: Optional[torch.Tensor] = None,
-        future_values: Optional[torch.Tensor] = None,
-        future_time_features: Optional[torch.Tensor] = None,
+        static_categorical_features: torch.Tensor | None = None,
+        static_real_features: torch.Tensor | None = None,
+        past_observed_mask: torch.Tensor | None = None,
+        future_values: torch.Tensor | None = None,
+        future_time_features: torch.Tensor | None = None,
     ):
         # preprocess
         transformer_inputs, loc, scale, static_feat = self._origin_model.create_network_inputs(
@@ -222,10 +223,10 @@ class RBLNTimeSeriesTransformerForPrediction(RBLNModel):
     @classmethod
     def _update_rbln_config(
         cls,
-        preprocessors: Optional[Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"]] = None,
+        preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"] | None = None,
         model: Optional["PreTrainedModel"] = None,
         model_config: Optional["PretrainedConfig"] = None,
-        rbln_config: Optional[RBLNTimeSeriesTransformerForPredictionConfig] = None,
+        rbln_config: RBLNTimeSeriesTransformerForPredictionConfig | None = None,
     ) -> RBLNTimeSeriesTransformerForPredictionConfig:
         rbln_config.num_parallel_samples = rbln_config.num_parallel_samples or model_config.num_parallel_samples
 
@@ -310,9 +311,9 @@ class RBLNTimeSeriesTransformerForPrediction(RBLNModel):
     @classmethod
     def _create_runtimes(
         cls,
-        compiled_models: List[rebel.RBLNCompiledModel],
+        compiled_models: list[rebel.RBLNCompiledModel],
         rbln_config: RBLNTimeSeriesTransformerForPredictionConfig,
-    ) -> List[rebel.Runtime]:
+    ) -> list[rebel.Runtime]:
         if any(model_name not in rbln_config.device_map for model_name in ["encoder", "decoder"]):
             cls._raise_missing_compiled_file_error(["encoder", "decoder"])
 
@@ -349,9 +350,9 @@ class RBLNTimeSeriesTransformerForPrediction(RBLNModel):
         past_values: torch.Tensor,
         past_time_features: torch.Tensor,
         future_time_features: torch.Tensor,
-        past_observed_mask: Optional[torch.Tensor] = None,
-        static_categorical_features: Optional[torch.Tensor] = None,
-        static_real_features: Optional[torch.Tensor] = None,
+        past_observed_mask: torch.Tensor | None = None,
+        static_categorical_features: torch.Tensor | None = None,
+        static_real_features: torch.Tensor | None = None,
         **kwargs,
     ) -> SampleTSPredictionOutput:
         """

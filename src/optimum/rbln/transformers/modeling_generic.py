@@ -97,10 +97,10 @@ class RBLNTransformerEncoder(RBLNModel):
     @classmethod
     def _update_rbln_config(
         cls,
-        preprocessors: Optional[Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"]] = None,
+        preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"] | None = None,
         model: Optional["PreTrainedModel"] = None,
         model_config: Optional["PretrainedConfig"] = None,
-        rbln_config: Optional[RBLNTransformerEncoderConfig] = None,
+        rbln_config: RBLNTransformerEncoderConfig | None = None,
     ) -> RBLNTransformerEncoderConfig:
         return cls.update_rbln_config_for_transformers_encoder(
             preprocessors=preprocessors,
@@ -112,10 +112,10 @@ class RBLNTransformerEncoder(RBLNModel):
     @classmethod
     def update_rbln_config_for_transformers_encoder(
         cls,
-        preprocessors: Optional[Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"]] = None,
+        preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"] | None = None,
         model: Optional["PreTrainedModel"] = None,
         model_config: Optional["PretrainedConfig"] = None,
-        rbln_config: Optional[RBLNTransformerEncoderConfig] = None,
+        rbln_config: RBLNTransformerEncoderConfig | None = None,
     ) -> RBLNTransformerEncoderConfig:
         max_position_embeddings = getattr(model_config, "n_positions", None) or getattr(
             model_config, "max_position_embeddings", None
@@ -188,7 +188,7 @@ class RBLNTransformerEncoder(RBLNModel):
         rbln_config.set_compile_cfgs([RBLNCompileConfig(input_info=input_info)])
         return rbln_config
 
-    def forward(self, *args: Any, return_dict: Optional[bool] = None, **kwargs: Any) -> Any:
+    def forward(self, *args: Any, return_dict: bool | None = None, **kwargs: Any) -> Any:
         compile_cfg = self.rbln_config.compile_cfgs[0]
         if not compile_cfg.is_multiple_input_info:
             # No sequence-length bucketing: use the default single-shape path.
@@ -233,10 +233,10 @@ class RBLNImageModel(RBLNModel):
     @classmethod
     def _update_rbln_config(
         cls,
-        preprocessors: Optional[Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"]] = None,
+        preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"] | None = None,
         model: Optional["PreTrainedModel"] = None,
         model_config: Optional["PretrainedConfig"] = None,
-        rbln_config: Optional[RBLNImageModelConfig] = None,
+        rbln_config: RBLNImageModelConfig | None = None,
     ) -> RBLNImageModelConfig:
         return cls.update_rbln_config_for_image_model(
             preprocessors=preprocessors,
@@ -248,10 +248,10 @@ class RBLNImageModel(RBLNModel):
     @classmethod
     def update_rbln_config_for_image_model(
         cls,
-        preprocessors: Optional[Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"]] = None,
+        preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"] | None = None,
         model: Optional["PreTrainedModel"] = None,
         model_config: Optional["PretrainedConfig"] = None,
-        rbln_config: Optional[RBLNImageModelConfig] = None,
+        rbln_config: RBLNImageModelConfig | None = None,
     ) -> RBLNImageModelConfig:
         if rbln_config.image_size is None:
             for processor in preprocessors:

@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Optional
+from typing import Any
 
 from ....configuration_utils import RBLNModelConfig
 from ....transformers import RBLNCLIPVisionModelWithProjectionConfig
@@ -25,16 +25,16 @@ class RBLNStableVideoDiffusionPipelineConfig(RBLNModelConfig):
 
     def __init__(
         self,
-        image_encoder: Optional[RBLNCLIPVisionModelWithProjectionConfig] = None,
-        unet: Optional[RBLNUNetSpatioTemporalConditionModelConfig] = None,
-        vae: Optional[RBLNAutoencoderKLTemporalDecoderConfig] = None,
+        image_encoder: RBLNCLIPVisionModelWithProjectionConfig | None = None,
+        unet: RBLNUNetSpatioTemporalConditionModelConfig | None = None,
+        vae: RBLNAutoencoderKLTemporalDecoderConfig | None = None,
         *,
-        batch_size: Optional[int] = None,
-        height: Optional[int] = None,
-        width: Optional[int] = None,
-        num_frames: Optional[int] = None,
-        decode_chunk_size: Optional[int] = None,
-        guidance_scale: Optional[float] = None,
+        batch_size: int | None = None,
+        height: int | None = None,
+        width: int | None = None,
+        num_frames: int | None = None,
+        decode_chunk_size: int | None = None,
+        guidance_scale: float | None = None,
         **kwargs: Any,
     ):
         """

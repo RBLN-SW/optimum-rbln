@@ -13,7 +13,8 @@
 # limitations under the License.
 
 import inspect
-from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Union
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any, Optional, Union
 
 import rebel
 import torch
@@ -46,7 +47,7 @@ if TYPE_CHECKING:
 class RBLNRuntimeEncoder(RBLNPytorchRuntime):
     mandatory_members = ["main_input_name"]
 
-    def forward(self, *args: List[torch.Tensor], **kwargs: torch.Tensor):
+    def forward(self, *args: list[torch.Tensor], **kwargs: torch.Tensor):
         output = super().forward(*args, **kwargs)
         return BaseModelOutput(last_hidden_state=output)
 
@@ -59,7 +60,7 @@ class RBLNRuntimeDecoder(RBLNPytorchRuntime):
         runtime: rebel.Runtime,
         batch_size: int,
         dec_max_seq_len: int,
-        use_attention_mask: Optional[bool] = None,
+        use_attention_mask: bool | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(runtime, **kwargs)
@@ -275,10 +276,10 @@ class RBLNWhisperForConditionalGeneration(RBLNModel, RBLNWhisperGenerationMixin)
     @classmethod
     def _update_rbln_config(
         cls,
-        preprocessors: Optional[Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"]] = None,
+        preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"] | None = None,
         model: Optional["PreTrainedModel"] = None,
         model_config: Optional["PretrainedConfig"] = None,
-        rbln_config: Optional[RBLNWhisperForConditionalGenerationConfig] = None,
+        rbln_config: RBLNWhisperForConditionalGenerationConfig | None = None,
     ) -> RBLNWhisperForConditionalGenerationConfig:
         expected_seq_len = model_config.max_source_positions * 2
         num_mel_bins = model_config.num_mel_bins
@@ -358,9 +359,9 @@ class RBLNWhisperForConditionalGeneration(RBLNModel, RBLNWhisperGenerationMixin)
     @classmethod
     def _create_runtimes(
         cls,
-        compiled_models: List[rebel.RBLNCompiledModel],
+        compiled_models: list[rebel.RBLNCompiledModel],
         rbln_config: RBLNWhisperForConditionalGenerationConfig,
-    ) -> List[rebel.Runtime]:
+    ) -> list[rebel.Runtime]:
         if any(model_name not in rbln_config.device_map for model_name in ["encoder", "decoder"]):
             cls._raise_missing_compiled_file_error(["encoder", "decoder"])
 
@@ -384,8 +385,8 @@ class RBLNWhisperForConditionalGeneration(RBLNModel, RBLNWhisperGenerationMixin)
     def prepare_inputs_for_generation(
         self,
         input_ids,
-        cache_position: Optional[torch.Tensor] = None,
-        attention_mask: Optional[torch.Tensor] = None,  # need for support transformers>=4.45.0
+        cache_position: torch.Tensor | None = None,
+        attention_mask: torch.Tensor | None = None,  # need for support transformers>=4.45.0
         **kwargs,
     ):
         return {
@@ -398,10 +399,10 @@ class RBLNWhisperForConditionalGeneration(RBLNModel, RBLNWhisperGenerationMixin)
         self,
         inputs_tensor: torch.Tensor,
         model_kwargs,
-        model_input_name: Optional[str] = None,
+        model_input_name: str | None = None,
         generation_config: Optional["GenerationConfig"] = None,
         **kwargs,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         batch_size = inputs_tensor.shape[0]
         n_pad_to_batch = self.batch_size - batch_size
         if n_pad_to_batch > 0:
@@ -421,11 +422,11 @@ class RBLNWhisperForConditionalGeneration(RBLNModel, RBLNWhisperGenerationMixin)
 
     def forward(
         self,
-        input_ids: Optional[torch.LongTensor] = None,
-        cache_position: Optional[torch.Tensor] = None,
-        input_features: Optional[torch.Tensor] = None,
-        decoder_input_ids: Optional[torch.Tensor] = None,
-        encoder_outputs: Optional[Seq2SeqLMOutput] = None,
+        input_ids: torch.LongTensor | None = None,
+        cache_position: torch.Tensor | None = None,
+        input_features: torch.Tensor | None = None,
+        decoder_input_ids: torch.Tensor | None = None,
+        encoder_outputs: Seq2SeqLMOutput | None = None,
         **kwargs,
     ) -> Seq2SeqLMOutput:
         # default decoder pass

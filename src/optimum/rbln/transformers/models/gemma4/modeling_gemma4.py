@@ -14,8 +14,9 @@
 
 import importlib
 import inspect
+from collections.abc import Callable
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, Dict, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Any, Optional, Union
 
 import torch
 from transformers import (
@@ -127,10 +128,10 @@ class RBLNGemma4VisionModel(RBLNModel):
     @classmethod
     def _update_rbln_config(
         cls,
-        preprocessors: Optional[Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"]],
-        model: Optional[PreTrainedModel] = None,
-        model_config: Optional[PretrainedConfig] = None,
-        rbln_config: Optional[RBLNGemma4VisionModelConfig] = None,
+        preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"] | None,
+        model: PreTrainedModel | None = None,
+        model_config: PretrainedConfig | None = None,
+        rbln_config: RBLNGemma4VisionModelConfig | None = None,
     ) -> RBLNGemma4VisionModelConfig:
         if rbln_config.pooling_kernel_size is None:
             rbln_config.pooling_kernel_size = model_config.pooling_kernel_size
@@ -278,10 +279,10 @@ class RBLNGemma4ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
     @classmethod
     def _update_rbln_config(
         cls,
-        preprocessors: Optional[Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"]] = None,
-        model: Optional[PreTrainedModel] = None,
-        model_config: Optional[PretrainedConfig] = None,
-        rbln_config: Optional[RBLNGemma4ForCausalLMConfig] = None,
+        preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"] | None = None,
+        model: PreTrainedModel | None = None,
+        model_config: PretrainedConfig | None = None,
+        rbln_config: RBLNGemma4ForCausalLMConfig | None = None,
     ) -> RBLNGemma4ForCausalLMConfig:
         if rbln_config.max_seq_len is None:
             rbln_config.max_seq_len = getattr(model_config, "max_position_embeddings", None) or getattr(
@@ -490,7 +491,7 @@ class RBLNGemma4ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
             **common_kwargs,
         )
 
-        self.decoders: Dict[int, RBLNGemma4RuntimeModel] = {}
+        self.decoders: dict[int, RBLNGemma4RuntimeModel] = {}
         if self.can_generate():
             for i, batch_size in enumerate(self.rbln_config.decoder_batch_sizes):
                 self.decoders[batch_size] = RBLNGemma4RuntimeModel(
@@ -574,7 +575,7 @@ class RBLNGemma4ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
         cls,
         model: "PreTrainedModel",
         rbln_config: RBLNModelConfig,
-        preprocessors: Optional[Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"]],
+        preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"] | None,
     ):
         if rbln_config.image_prefill_chunk_size is None:
             rbln_config.image_prefill_chunk_size = [rbln_config.prefill_chunk_size]
@@ -687,10 +688,10 @@ class RBLNGemma4ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMix
     @classmethod
     def _update_rbln_config(
         cls,
-        preprocessors: Optional[Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"]],
+        preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"] | None,
         model: Optional["PreTrainedModel"] = None,
         model_config: Optional["PretrainedConfig"] = None,
-        rbln_config: Optional[RBLNModelConfig] = None,
+        rbln_config: RBLNModelConfig | None = None,
     ) -> RBLNModelConfig:
         vision_cfg = model_config.vision_config
         vt_cfg = rbln_config.vision_tower
@@ -758,9 +759,9 @@ class RBLNGemma4ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMix
     def _update_model_kwargs_for_generation(
         self,
         outputs: RBLNDecoderOnlyOutput,
-        model_kwargs: Dict[str, Any],
+        model_kwargs: dict[str, Any],
         **kwargs,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         model_kwargs["generate_idx"] = outputs.generate_idx
         model_kwargs["padded_cache_lengths"] = outputs.padded_cache_lengths
         return model_kwargs
@@ -835,12 +836,12 @@ class RBLNGemma4ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMix
 
     def _preprocess_prefill(
         self,
-        input_ids: Optional[torch.LongTensor] = None,
-        inputs_embeds: Optional[torch.FloatTensor] = None,
-        pixel_values: Optional[torch.FloatTensor] = None,
-        image_position_ids: Optional[torch.LongTensor] = None,
-        pixel_values_videos: Optional[torch.FloatTensor] = None,
-        video_position_ids: Optional[torch.LongTensor] = None,
+        input_ids: torch.LongTensor | None = None,
+        inputs_embeds: torch.FloatTensor | None = None,
+        pixel_values: torch.FloatTensor | None = None,
+        image_position_ids: torch.LongTensor | None = None,
+        pixel_values_videos: torch.FloatTensor | None = None,
+        video_position_ids: torch.LongTensor | None = None,
         **kwargs,
     ):
         if (input_ids is None) ^ (inputs_embeds is not None):
@@ -894,19 +895,19 @@ class RBLNGemma4ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMix
         token_type_ids: torch.Tensor = None,
         pixel_values: torch.FloatTensor = None,
         image_position_ids: torch.LongTensor = None,
-        cache_position: Optional[torch.LongTensor] = None,
-        inputs_embeds: Optional[torch.FloatTensor] = None,
-        generate_idx: Optional[torch.Tensor] = None,
-        padded_cache_lengths: Optional[torch.Tensor] = None,
-        position_ids: Optional[torch.Tensor] = None,
-        mm_token_type_ids: Optional[torch.Tensor] = None,
-        output_hidden_states: Optional[bool] = None,
-        pixel_values_videos: Optional[torch.Tensor] = None,
-        video_position_ids: Optional[torch.Tensor] = None,
-        input_features: Optional[torch.Tensor] = None,
-        input_features_mask: Optional[torch.Tensor] = None,
-        **lm_kwargs: Dict[str, Any],
-    ) -> Union[Tuple, RBLNDecoderOnlyOutput]:
+        cache_position: torch.LongTensor | None = None,
+        inputs_embeds: torch.FloatTensor | None = None,
+        generate_idx: torch.Tensor | None = None,
+        padded_cache_lengths: torch.Tensor | None = None,
+        position_ids: torch.Tensor | None = None,
+        mm_token_type_ids: torch.Tensor | None = None,
+        output_hidden_states: bool | None = None,
+        pixel_values_videos: torch.Tensor | None = None,
+        video_position_ids: torch.Tensor | None = None,
+        input_features: torch.Tensor | None = None,
+        input_features_mask: torch.Tensor | None = None,
+        **lm_kwargs: dict[str, Any],
+    ) -> tuple | RBLNDecoderOnlyOutput:
         self._reject_unsupported_modalities(input_features, input_features_mask)
 
         output_hidden_states = (

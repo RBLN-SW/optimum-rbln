@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Optional, Tuple, Union
+from typing import Any
 
 from ....configuration_utils import RBLNModelConfig
 
@@ -29,9 +29,9 @@ class RBLNSD3Transformer2DModelConfig(RBLNModelConfig):
 
     def __init__(
         self,
-        batch_size: Optional[int] = None,
-        sample_size: Optional[Union[int, Tuple[int, int]]] = None,
-        prompt_embed_length: Optional[int] = None,
+        batch_size: int | None = None,
+        sample_size: int | tuple[int, int] | None = None,
+        prompt_embed_length: int | None = None,
         **kwargs: Any,
     ):
         """

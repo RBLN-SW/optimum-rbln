@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from typing import Any, Optional
+from typing import Any
 
 from ....configuration_utils import RBLNModelConfig
 from ....utils.logging import get_logger
@@ -54,9 +54,9 @@ class RBLNColPaliForRetrievalConfig(RBLNModelConfig):
 
     def __init__(
         self,
-        batch_size: Optional[int] = None,
-        vlm: Optional[RBLNModelConfig] = None,
-        output_hidden_states: Optional[bool] = None,
+        batch_size: int | None = None,
+        vlm: RBLNModelConfig | None = None,
+        output_hidden_states: bool | None = None,
         **kwargs: Any,
     ):
         """

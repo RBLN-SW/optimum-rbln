@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, List, Optional, Tuple, Union
+from typing import Any, Optional
 
 import torch
 
@@ -20,8 +20,8 @@ from ...configuration_generic import RBLNImageModelConfig, RBLNModelConfig
 class RBLNGroundingDinoTextModelConfig(RBLNModelConfig):
     def __init__(
         self,
-        batch_size: Optional[int] = None,
-        max_text_len: Optional[int] = None,
+        batch_size: int | None = None,
+        max_text_len: int | None = None,
         **kwargs: Any,
     ):
         """
@@ -48,13 +48,13 @@ class RBLNGroundingDinoForObjectDetectionConfig(RBLNImageModelConfig):
 
     def __init__(
         self,
-        batch_size: Optional[int] = None,
+        batch_size: int | None = None,
         encoder: Optional["RBLNGroundingDinoEncoderConfig"] = None,
         decoder: Optional["RBLNGroundingDinoDecoderConfig"] = None,
         text_backbone: Optional["RBLNModelConfig"] = None,
         backbone: Optional["RBLNModelConfig"] = None,
-        output_attentions: Optional[bool] = None,
-        output_hidden_states: Optional[bool] = None,
+        output_attentions: bool | None = None,
+        output_hidden_states: bool | None = None,
         **kwargs: Any,
     ):
         """
@@ -89,11 +89,11 @@ class RBLNGroundingDinoForObjectDetectionConfig(RBLNImageModelConfig):
 class RBLNGroundingDinoComponentConfig(RBLNImageModelConfig):
     def __init__(
         self,
-        image_size: Optional[Union[int, Tuple[int, int]]] = None,
-        batch_size: Optional[int] = None,
-        spatial_shapes_list: Optional[List[Tuple[int, int]]] = None,
-        output_attentions: Optional[bool] = False,
-        output_hidden_states: Optional[bool] = False,
+        image_size: int | tuple[int, int] | None = None,
+        batch_size: int | None = None,
+        spatial_shapes_list: list[tuple[int, int]] | None = None,
+        output_attentions: bool | None = False,
+        output_hidden_states: bool | None = False,
         **kwargs: Any,
     ):
         super().__init__(image_size=image_size, batch_size=batch_size, **kwargs)

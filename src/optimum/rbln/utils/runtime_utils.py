@@ -16,7 +16,7 @@ import inspect
 import re
 import threading
 from functools import lru_cache
-from typing import Any, List, Optional, Union
+from typing import Any
 
 import rebel
 import torch
@@ -45,7 +45,7 @@ def is_compiler_supports_chiplet_alloc() -> bool:
     return hasattr(rebel.RBLNCompiledModel, "get_alloc_per_chiplet_by_key")
 
 
-def _resolve_npu(npu: Optional[str] = None) -> str:
+def _resolve_npu(npu: str | None = None) -> str:
     if npu is None:
         if not rebel.npu_is_available(0):
             raise RuntimeError("No NPU is available to get available DRAM size.")
@@ -62,7 +62,7 @@ def _dram_spec(npu: str) -> tuple[int, int]:
     raise ValueError(f"Unknown npu name: {npu}")
 
 
-def get_available_dram(npu: Optional[str] = None) -> int:
+def get_available_dram(npu: str | None = None) -> int:
     """
     Get the available DRAM size of the specified NPU at the node (device) level.
 
@@ -83,7 +83,7 @@ def get_available_dram(npu: Optional[str] = None) -> int:
     return dram_nbytes - sys_per_chiplet
 
 
-def get_available_dram_per_chiplet(num_chiplets: int, npu: Optional[str] = None) -> int:
+def get_available_dram_per_chiplet(num_chiplets: int, npu: str | None = None) -> int:
     """
     Get the available DRAM per chiplet. Device DRAM is physically partitioned across
     chiplets, so an allocation pinned to a chiplet must fit within this amount, not the
@@ -120,10 +120,10 @@ def normalize_npu(npu: str) -> str:
 
 
 def tp_and_devices_are_ok(
-    num_devices: Optional[int] = None,
-    device: Optional[Union[int, List[int]]] = None,
-    npu: Optional[str] = None,
-) -> Optional[str]:
+    num_devices: int | None = None,
+    device: int | list[int] | None = None,
+    npu: str | None = None,
+) -> str | None:
     if num_devices is None:
         num_devices = 1
 
@@ -173,7 +173,7 @@ class RBLNPytorchRuntime:
     def __call__(self, *args: Any, **kwds: Any) -> Any:
         return self.forward(*args, **kwds)
 
-    def forward(self, *args: List["torch.Tensor"], **kwargs: "torch.Tensor"):
+    def forward(self, *args: list["torch.Tensor"], **kwargs: "torch.Tensor"):
         # filtering useless args or kwarg such as None.
         args = list(filter(lambda arg: isinstance(arg, torch.Tensor), args))
         kwargs = dict(filter(lambda kwarg: isinstance(kwarg[1], torch.Tensor) or kwarg[0] == "out", kwargs.items()))
@@ -221,7 +221,7 @@ class UnavailableRuntime:
         """Returns an iterator with self as the only item."""
         return iter([self])
 
-    def forward(self, *args: List["torch.Tensor"], **kwargs: "torch.Tensor"):
+    def forward(self, *args: list["torch.Tensor"], **kwargs: "torch.Tensor"):
         """Raises a detailed RuntimeError explaining why inference cannot be performed."""
         raise RuntimeError(
             "Cannot perform inference: RBLN runtime is not available.\n\n"

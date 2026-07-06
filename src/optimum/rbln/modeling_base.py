@@ -17,7 +17,7 @@ import os
 import shutil
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple, Type, Union
+from typing import TYPE_CHECKING, Any, Optional, Union
 
 import rebel
 import torch
@@ -70,13 +70,13 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
 
     def __init__(
         self,
-        models: List[rebel.Runtime],
+        models: list[rebel.Runtime],
         config: "PretrainedConfig",
         rbln_config: RBLNModelConfig,
-        model_save_dir: Optional[Union[str, Path, TemporaryDirectory]] = None,
+        model_save_dir: str | Path | TemporaryDirectory | None = None,
         subfolder: str = "",
-        rbln_compiled_models: Optional[rebel.RBLNCompiledModel] = None,
-        rbln_submodules: Optional[List["RBLNBaseModel"]] = None,
+        rbln_compiled_models: rebel.RBLNCompiledModel | None = None,
+        rbln_submodules: list["RBLNBaseModel"] | None = None,
         **kwargs,
     ):
         self.model = models
@@ -131,11 +131,11 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
     @classmethod
     def _load_compiled_model_dir(
         cls,
-        model_id: Union[str, Path],
-        token: Optional[Union[bool, str]] = None,
-        revision: Optional[str] = None,
+        model_id: str | Path,
+        token: bool | str | None = None,
+        revision: str | None = None,
         force_download: bool = False,
-        cache_dir: Optional[str] = None,
+        cache_dir: str | None = None,
         subfolder: str = "",
         local_files_only: bool = False,
     ) -> str:
@@ -161,7 +161,7 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
         return str(model_path)
 
     @classmethod
-    def _load_compiled_models(cls, model_path: str, expected_compiled_model_names: List[str]):
+    def _load_compiled_models(cls, model_path: str, expected_compiled_model_names: list[str]):
         compiled_models = Path(model_path).glob("*.rbln")
         expected_compiled_models = [
             Path(model_path) / f"{compiled_model_name}.rbln" for compiled_model_name in expected_compiled_model_names
@@ -187,20 +187,20 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
     @classmethod
     def _from_pretrained(
         cls,
-        model_id: Union[str, Path],
+        model_id: str | Path,
         config: Optional["PretrainedConfig"] = None,
-        token: Optional[Union[bool, str]] = None,
-        revision: Optional[str] = None,
+        token: bool | str | None = None,
+        revision: str | None = None,
         force_download: bool = False,
-        cache_dir: Optional[str] = None,
+        cache_dir: str | None = None,
         subfolder: str = "",
         local_files_only: bool = False,
         trust_remote_code: bool = False,
-        model_save_dir: Optional[Union[str, Path, TemporaryDirectory]] = None,
+        model_save_dir: str | Path | TemporaryDirectory | None = None,
         # passed from compile function
-        rbln_config: Optional[RBLNModelConfig] = None,
-        rbln_compiled_models: Optional[Dict[str, rebel.RBLNCompiledModel]] = None,
-        rbln_submodules: Optional[List["RBLNBaseModel"]] = None,
+        rbln_config: RBLNModelConfig | None = None,
+        rbln_compiled_models: dict[str, rebel.RBLNCompiledModel] | None = None,
+        rbln_submodules: list["RBLNBaseModel"] | None = None,
         **kwargs,
     ) -> "RBLNBaseModel":
         if rbln_compiled_models is None:
@@ -293,12 +293,12 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
     @classmethod
     def _from_compiled_models(
         cls,
-        rbln_compiled_models: Dict[str, rebel.RBLNCompiledModel],
+        rbln_compiled_models: dict[str, rebel.RBLNCompiledModel],
         rbln_config: RBLNModelConfig,
         config: "PretrainedConfig",
-        model_save_dir: Union[Path, str],
-        subfolder: Union[Path, str],
-        rbln_submodules: Optional[List["RBLNBaseModel"]] = None,
+        model_save_dir: Path | str,
+        subfolder: Path | str,
+        rbln_submodules: list["RBLNBaseModel"] | None = None,
         **kwargs,
     ):
         if rbln_submodules is None:
@@ -353,13 +353,13 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
         )
 
     @classmethod
-    def _export(cls, model_id: Union[str, Path], **kwargs) -> "RBLNBaseModel":
+    def _export(cls, model_id: str | Path, **kwargs) -> "RBLNBaseModel":
         subfolder = kwargs.get("subfolder", "")
         model_save_dir = kwargs.pop("model_save_dir", None)
 
         rbln_config, kwargs = cls.prepare_rbln_config(**kwargs)
 
-        model: "PreTrainedModel" = cls.get_pytorch_model(model_id=model_id, rbln_config=rbln_config, **kwargs)
+        model: PreTrainedModel = cls.get_pytorch_model(model_id=model_id, rbln_config=rbln_config, **kwargs)
         preprocessors = maybe_load_preprocessors(model_id, subfolder=subfolder)
         return cls.from_model(
             model, preprocessors=preprocessors, model_save_dir=model_save_dir, rbln_config=rbln_config, **kwargs
@@ -367,8 +367,8 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
 
     @classmethod
     def prepare_rbln_config(
-        cls, rbln_config: Optional[Union[Dict[str, Any], RBLNModelConfig]] = None, **kwargs
-    ) -> Tuple[RBLNModelConfig, Dict[str, Any]]:
+        cls, rbln_config: dict[str, Any] | RBLNModelConfig | None = None, **kwargs
+    ) -> tuple[RBLNModelConfig, dict[str, Any]]:
         # Extract rbln-config from kwargs and convert it to RBLNModelConfig.
 
         config_cls = cls.get_rbln_config_class()
@@ -378,11 +378,11 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
     @classmethod
     def _is_compiled(
         cls,
-        model_id: Union[str, Path],
-        token: Optional[Union[bool, str]] = None,
-        revision: Optional[str] = None,
+        model_id: str | Path,
+        token: bool | str | None = None,
+        revision: str | None = None,
         force_download: bool = False,
-        cache_dir: Optional[str] = None,
+        cache_dir: str | None = None,
         subfolder: str = "",
         local_files_only: bool = False,
     ) -> bool:
@@ -403,10 +403,10 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
 
     @classmethod
     def from_pretrained(
-        cls: Type["RBLNBaseModel"],
-        model_id: Union[str, Path],
-        export: Optional[bool] = None,
-        rbln_config: Optional[Union[Dict, RBLNModelConfig]] = None,
+        cls: type["RBLNBaseModel"],
+        model_id: str | Path,
+        export: bool | None = None,
+        rbln_config: dict | RBLNModelConfig | None = None,
         **kwargs: Any,
     ) -> "RBLNBaseModel":
         """
@@ -450,7 +450,7 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
         model,
         rbln_compile_config: RBLNCompileConfig,
         create_runtimes: bool,
-        device: Union[int, List[int]],
+        device: int | list[int],
         **kwargs,
     ):
         if create_runtimes:
@@ -476,7 +476,7 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
     @classmethod
     def update_rbln_config(
         cls,
-        preprocessors: Optional[Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"]],
+        preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"] | None,
         model: "PreTrainedModel",
         model_config: "PretrainedConfig",
         rbln_config: RBLNModelConfig,
@@ -513,7 +513,7 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
         return cls._hf_class
 
     @classmethod
-    def get_rbln_config_class(cls) -> Type[RBLNModelConfig]:
+    def get_rbln_config_class(cls) -> type[RBLNModelConfig]:
         # Lazily loads and caches the corresponding RBLN model config class.
         if "_rbln_config_class" not in cls.__dict__ or cls._rbln_config_class is None:
             rbln_config_class_name = cls.__name__ + "Config"
@@ -562,7 +562,7 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
 
     def save_pretrained(
         self,
-        save_directory: Union[str, Path],
+        save_directory: str | Path,
         push_to_hub: bool = False,
         **kwargs,
     ):
@@ -653,7 +653,7 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
             return super().push_to_hub(repo_id=repo_id, **kwargs)
 
     @staticmethod
-    def _raise_missing_compiled_file_error(missing_files: List[str]):
+    def _raise_missing_compiled_file_error(missing_files: list[str]):
         # Raises a KeyError with a message indicating missing compiled model files.
 
         if len(missing_files) == 1:

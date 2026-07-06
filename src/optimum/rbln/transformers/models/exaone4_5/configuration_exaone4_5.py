@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, List, Optional, Union
+from typing import Any
 
 from ....configuration_utils import RBLNModelConfig
 from ..decoderonly.configuration_decoderonly import RBLNDecoderOnlyModelConfig, RBLNDecoderOnlyModelForCausalLMConfig
@@ -32,7 +32,7 @@ class RBLNExaone4_5_ForConditionalGenerationConfig(RBLNDecoderOnlyModelForCausal
     def __init__(
         self,
         use_inputs_embeds: bool = True,
-        visual: Optional[RBLNModelConfig] = None,
+        visual: RBLNModelConfig | None = None,
         **kwargs: Any,
     ):
         """
@@ -60,7 +60,7 @@ class RBLNExaone4_5_ModelConfig(RBLNDecoderOnlyModelConfig):
 
     submodules = ["visual"]
 
-    def __init__(self, visual: Optional[RBLNModelConfig] = None, **kwargs: Any):
+    def __init__(self, visual: RBLNModelConfig | None = None, **kwargs: Any):
         super().__init__(**kwargs)
         self.visual = self.initialize_submodule_config(submodule_config=visual)
 
@@ -74,7 +74,7 @@ class RBLNExaone4_5_VisionModelConfig(RBLNModelConfig):
     mechanisms for processing images and videos.
     """
 
-    def __init__(self, max_seq_len: Union[int, List[int]] = None, **kwargs: Any):
+    def __init__(self, max_seq_len: int | list[int] = None, **kwargs: Any):
         """
         Args:
             max_seq_len (Optional[Union[int, List[int]]]): Maximum sequence lengths for Vision

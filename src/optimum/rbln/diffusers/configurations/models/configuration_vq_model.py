@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Optional, Tuple
+from typing import Any
 
 from ....configuration_utils import RBLNModelConfig
 
@@ -27,12 +27,12 @@ class RBLNVQModelConfig(RBLNModelConfig):
 
     def __init__(
         self,
-        batch_size: Optional[int] = None,
-        sample_size: Optional[Tuple[int, int]] = None,
-        uses_encoder: Optional[bool] = None,
-        vqmodel_scale_factor: Optional[float] = None,  # TODO: rename to scaling_factor
-        in_channels: Optional[int] = None,
-        latent_channels: Optional[int] = None,
+        batch_size: int | None = None,
+        sample_size: tuple[int, int] | None = None,
+        uses_encoder: bool | None = None,
+        vqmodel_scale_factor: float | None = None,  # TODO: rename to scaling_factor
+        in_channels: int | None = None,
+        latent_channels: int | None = None,
         **kwargs: Any,
     ):
         """

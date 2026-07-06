@@ -13,7 +13,7 @@
 # limitations under the License.
 
 from dataclasses import asdict, dataclass
-from typing import Any, Dict, List, Literal, Optional, Union, get_args
+from typing import Any, Literal, get_args
 
 from ....configuration_utils import RBLNModelConfig, RBLNSerializableConfigProtocol
 from ....utils.logging import get_logger
@@ -41,26 +41,26 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
 
     def __init__(
         self,
-        batch_size: Optional[int] = None,
-        max_seq_len: Optional[int] = None,
-        use_inputs_embeds: Optional[bool] = None,
-        use_attention_mask: Optional[bool] = None,
-        use_position_ids: Optional[bool] = None,
-        attn_impl: Optional[str] = None,
-        kvcache_partition_len: Optional[int] = None,
-        kvcache_block_size: Optional[int] = None,
-        quantization: Optional[Union[Dict[str, Any], RBLNQuantizationConfig]] = None,
-        lora_config: Optional[Union[Dict[str, Any], RBLNLoRAConfig]] = None,
-        prefill_chunk_size: Optional[int] = None,
-        kvcache_num_blocks: Optional[int] = None,
-        decoder_batch_sizes: Optional[List[int]] = None,
-        cache_impl: Optional[CacheImplType] = None,
-        sliding_window: Optional[int] = None,
-        sliding_window_layers: Optional[List[int]] = None,
-        phases: Optional[List[PhaseType]] = None,
-        logits_to_keep: Optional[int] = None,
-        output_hidden_states: Optional[bool] = None,
-        kvcache_metas: Optional[List["KVCacheMeta"]] = None,
+        batch_size: int | None = None,
+        max_seq_len: int | None = None,
+        use_inputs_embeds: bool | None = None,
+        use_attention_mask: bool | None = None,
+        use_position_ids: bool | None = None,
+        attn_impl: str | None = None,
+        kvcache_partition_len: int | None = None,
+        kvcache_block_size: int | None = None,
+        quantization: dict[str, Any] | RBLNQuantizationConfig | None = None,
+        lora_config: dict[str, Any] | RBLNLoRAConfig | None = None,
+        prefill_chunk_size: int | None = None,
+        kvcache_num_blocks: int | None = None,
+        decoder_batch_sizes: list[int] | None = None,
+        cache_impl: CacheImplType | None = None,
+        sliding_window: int | None = None,
+        sliding_window_layers: list[int] | None = None,
+        phases: list[PhaseType] | None = None,
+        logits_to_keep: int | None = None,
+        output_hidden_states: bool | None = None,
+        kvcache_metas: list["KVCacheMeta"] | None = None,
         **kwargs: Any,
     ):
         """
@@ -259,10 +259,10 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
                 # Larger batch size should be at the beginning of the list.
                 self.decoder_batch_sizes.sort(reverse=True)
 
-        self.kvcache_metas: List["KVCacheMeta"] = kvcache_metas or []
+        self.kvcache_metas: list[KVCacheMeta] = kvcache_metas or []
 
     @staticmethod
-    def validate_phases_type(phases: List[PhaseType]):
+    def validate_phases_type(phases: list[PhaseType]):
         if not isinstance(phases, list):
             raise ValueError("`phases` must be a list.")
         if not all(phase in get_args(PhaseType) for phase in phases):

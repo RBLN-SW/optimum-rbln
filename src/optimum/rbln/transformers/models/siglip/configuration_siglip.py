@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Optional
 
 from ....configuration_utils import RBLNModelConfig
 
@@ -27,11 +26,11 @@ class RBLNSiglipVisionModelConfig(RBLNModelConfig):
 
     def __init__(
         self,
-        batch_size: Optional[int] = None,
-        image_size: Optional[int] = None,
-        interpolate_pos_encoding: Optional[bool] = None,
-        output_hidden_states: Optional[bool] = None,
-        output_attentions: Optional[bool] = None,
+        batch_size: int | None = None,
+        image_size: int | None = None,
+        interpolate_pos_encoding: bool | None = None,
+        output_hidden_states: bool | None = None,
+        output_attentions: bool | None = None,
         **kwargs,
     ):
         """

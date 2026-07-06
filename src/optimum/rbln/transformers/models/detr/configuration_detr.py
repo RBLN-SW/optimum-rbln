@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Optional, Tuple, Union
+from typing import Any
 
 from ...configuration_generic import RBLNImageModelConfig
 
@@ -27,8 +27,8 @@ class RBLNDetrForObjectDetectionConfig(RBLNImageModelConfig):
 
     def __init__(
         self,
-        image_size: Optional[Union[int, Tuple[int, int]]] = None,
-        batch_size: Optional[int] = None,
+        image_size: int | tuple[int, int] | None = None,
+        batch_size: int | None = None,
         **kwargs: Any,
     ):
         """

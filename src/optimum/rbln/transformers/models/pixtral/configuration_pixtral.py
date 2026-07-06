@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Optional, Tuple
+from typing import Any
 
 from ....configuration_utils import RBLNModelConfig
 
@@ -20,9 +20,9 @@ from ....configuration_utils import RBLNModelConfig
 class RBLNPixtralVisionModelConfig(RBLNModelConfig):
     def __init__(
         self,
-        max_image_size: Tuple = None,
-        batch_size: Optional[int] = None,
-        output_hidden_states: Optional[bool] = None,
+        max_image_size: tuple = None,
+        batch_size: int | None = None,
+        output_hidden_states: bool | None = None,
         **kwargs: Any,
     ):
         """

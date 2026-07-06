@@ -13,7 +13,7 @@
 # limitations under the License.
 
 
-from typing import Any, Optional, Tuple, Union
+from typing import Any
 
 from ...configuration_generic import RBLNModelForImageClassificationConfig
 
@@ -28,9 +28,9 @@ class RBLNResNetForImageClassificationConfig(RBLNModelForImageClassificationConf
 
     def __init__(
         self,
-        image_size: Optional[Union[int, Tuple[int, int]]] = None,
-        batch_size: Optional[int] = None,
-        output_hidden_states: Optional[bool] = None,
+        image_size: int | tuple[int, int] | None = None,
+        batch_size: int | None = None,
+        output_hidden_states: bool | None = None,
         **kwargs: Any,
     ):
         """

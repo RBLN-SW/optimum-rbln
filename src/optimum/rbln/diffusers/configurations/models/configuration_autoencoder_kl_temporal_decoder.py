@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Optional, Tuple
+from typing import Any
 
 from ....configuration_utils import RBLNModelConfig
 
@@ -20,12 +20,12 @@ from ....configuration_utils import RBLNModelConfig
 class RBLNAutoencoderKLTemporalDecoderConfig(RBLNModelConfig):
     def __init__(
         self,
-        batch_size: Optional[int] = None,
-        sample_size: Optional[Tuple[int, int]] = None,
-        uses_encoder: Optional[bool] = None,
-        num_frames: Optional[int] = None,
-        decode_chunk_size: Optional[int] = None,
-        vae_scale_factor: Optional[float] = None,
+        batch_size: int | None = None,
+        sample_size: tuple[int, int] | None = None,
+        uses_encoder: bool | None = None,
+        num_frames: int | None = None,
+        decode_chunk_size: int | None = None,
+        vae_scale_factor: float | None = None,
         **kwargs: Any,
     ):
         """

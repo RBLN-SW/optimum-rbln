@@ -1,7 +1,7 @@
 import math
 import os
 from collections import defaultdict
-from typing import TYPE_CHECKING, Optional, Tuple
+from typing import TYPE_CHECKING
 
 import rebel
 
@@ -37,11 +37,11 @@ def _should_skip_attn_validation() -> bool:
 
 
 def set_default_values(
-    attn_impl: Optional[str] = None,
-    kvcache_partition_len: Optional[int] = None,
-    kvcache_block_size: Optional[int] = None,
-    max_seq_len: Optional[int] = None,
-) -> Tuple[str, int, int]:
+    attn_impl: str | None = None,
+    kvcache_partition_len: int | None = None,
+    kvcache_block_size: int | None = None,
+    max_seq_len: int | None = None,
+) -> tuple[str, int, int]:
     if attn_impl is None:
         attn_impl = "eager"
 
@@ -194,7 +194,7 @@ class RBLNDecoderOnlyFlashAttentionMixin:
         cls,
         compiled_models: dict[str, rebel.RBLNCompiledModel],
         rbln_config: "RBLNDecoderOnlyModelForCausalLMConfig",
-        available_dram: Optional[int] = None,
+        available_dram: int | None = None,
     ) -> int:
         if "prefill" not in rbln_config.phases:
             logger.warning(
@@ -217,12 +217,12 @@ class RBLNDecoderOnlyFlashAttentionMixin:
         cls,
         compiled_models: dict[str, rebel.RBLNCompiledModel],
         rbln_config: "RBLNDecoderOnlyModelForCausalLMConfig",
-        available_dram: Optional[int] = None,
-    ) -> Tuple[dict[Tuple[int, int], int], dict[str, list[list[int]]], int, set[Tuple[int, int]]]:
+        available_dram: int | None = None,
+    ) -> tuple[dict[tuple[int, int], int], dict[str, list[list[int]]], int, set[tuple[int, int]]]:
         # Returns non-KV alloc, KV sizes, per-bucket DRAM budget, and the (node, chiplet)
         # buckets to check. ATOM reports one chiplet, so it shares the per-chiplet path.
-        alloc_without_dram: dict[Tuple[int, int], int] = defaultdict(int)
-        chiplets: set[Tuple[int, int]] = set()
+        alloc_without_dram: dict[tuple[int, int], int] = defaultdict(int)
+        chiplets: set[tuple[int, int]] = set()
 
         if is_compiler_supports_chiplet_alloc():
             for compiled_model in compiled_models.values():
@@ -270,21 +270,21 @@ class RBLNDecoderOnlyFlashAttentionMixin:
     def _search_num_kvcache_blocks(
         cls,
         rbln_config: "RBLNDecoderOnlyModelForCausalLMConfig",
-        alloc_without_dram: dict[Tuple[int, int], int],
+        alloc_without_dram: dict[tuple[int, int], int],
         kvcache_tensor_sizes: dict[str, list[list[int]]],
         available_per_chiplet: int,
-        chiplets: set[Tuple[int, int]],
+        chiplets: set[tuple[int, int]],
     ) -> int:
-        remaining_dram_at_chiplet: dict[Tuple[int, int], int] = {
+        remaining_dram_at_chiplet: dict[tuple[int, int], int] = {
             key: available_per_chiplet - alloc_without_dram.get(key, 0) for key in chiplets
         }
         kvcache_meta_can_resize: dict[str, bool] = {
             kvcache_meta.name: kvcache_meta.can_resize for kvcache_meta in rbln_config.kvcache_metas
         }
 
-        def kvcache_sizes_at_chiplet(multiplier: int) -> dict[Tuple[int, int], int]:
+        def kvcache_sizes_at_chiplet(multiplier: int) -> dict[tuple[int, int], int]:
             # Resize multiplier applies only to resizable tensors; 2MB-aligned.
-            sizes: dict[Tuple[int, int], int] = defaultdict(int)
+            sizes: dict[tuple[int, int], int] = defaultdict(int)
             for key, sizes_at_node in kvcache_tensor_sizes.items():
                 m = multiplier if kvcache_meta_can_resize[key] else 1
                 for node_id, sizes_at_chiplet in enumerate(sizes_at_node):
@@ -292,7 +292,7 @@ class RBLNDecoderOnlyFlashAttentionMixin:
                         sizes[(node_id, chiplet_id)] += align_2MB(size * m)
             return sizes
 
-        def check_memory_fits(multiplier: int) -> Tuple[bool, dict[Tuple[int, int], int]]:
+        def check_memory_fits(multiplier: int) -> tuple[bool, dict[tuple[int, int], int]]:
             # Fits only if every chiplet bucket has room.
             kvcache_sizes = kvcache_sizes_at_chiplet(multiplier)
             fits = all(remaining_dram_at_chiplet[key] >= kvcache_sizes.get(key, 0) for key in chiplets)

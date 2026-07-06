@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Optional, Tuple
+from typing import Any
 
 from ....configuration_utils import RBLNModelConfig
 from ....transformers import RBLNCLIPTextModelWithProjectionConfig, RBLNCLIPVisionModelWithProjectionConfig
@@ -26,17 +26,17 @@ class RBLNKandinskyV22PipelineBaseConfig(RBLNModelConfig):
 
     def __init__(
         self,
-        unet: Optional[RBLNUNet2DConditionModelConfig] = None,
-        movq: Optional[RBLNVQModelConfig] = None,
+        unet: RBLNUNet2DConditionModelConfig | None = None,
+        movq: RBLNVQModelConfig | None = None,
         *,
-        sample_size: Optional[Tuple[int, int]] = None,
-        batch_size: Optional[int] = None,
-        guidance_scale: Optional[float] = None,
-        image_size: Optional[Tuple[int, int]] = None,
-        img_height: Optional[int] = None,
-        img_width: Optional[int] = None,
-        height: Optional[int] = None,
-        width: Optional[int] = None,
+        sample_size: tuple[int, int] | None = None,
+        batch_size: int | None = None,
+        guidance_scale: float | None = None,
+        image_size: tuple[int, int] | None = None,
+        img_height: int | None = None,
+        img_width: int | None = None,
+        height: int | None = None,
+        width: int | None = None,
         **kwargs: Any,
     ):
         """
@@ -146,12 +146,12 @@ class RBLNKandinskyV22PriorPipelineConfig(RBLNModelConfig):
 
     def __init__(
         self,
-        text_encoder: Optional[RBLNCLIPTextModelWithProjectionConfig] = None,
-        image_encoder: Optional[RBLNCLIPVisionModelWithProjectionConfig] = None,
-        prior: Optional[RBLNPriorTransformerConfig] = None,
+        text_encoder: RBLNCLIPTextModelWithProjectionConfig | None = None,
+        image_encoder: RBLNCLIPVisionModelWithProjectionConfig | None = None,
+        prior: RBLNPriorTransformerConfig | None = None,
         *,
-        batch_size: Optional[int] = None,
-        guidance_scale: Optional[float] = None,
+        batch_size: int | None = None,
+        guidance_scale: float | None = None,
         **kwargs: Any,
     ):
         """
@@ -220,22 +220,22 @@ class RBLNKandinskyV22CombinedPipelineBaseConfig(RBLNModelConfig):
 
     def __init__(
         self,
-        prior_pipe: Optional[RBLNKandinskyV22PriorPipelineConfig] = None,
-        decoder_pipe: Optional[RBLNKandinskyV22PipelineConfig] = None,
+        prior_pipe: RBLNKandinskyV22PriorPipelineConfig | None = None,
+        decoder_pipe: RBLNKandinskyV22PipelineConfig | None = None,
         *,
-        sample_size: Optional[Tuple[int, int]] = None,
-        image_size: Optional[Tuple[int, int]] = None,
-        batch_size: Optional[int] = None,
-        img_height: Optional[int] = None,
-        img_width: Optional[int] = None,
-        height: Optional[int] = None,
-        width: Optional[int] = None,
-        guidance_scale: Optional[float] = None,
-        prior_prior: Optional[RBLNPriorTransformerConfig] = None,
-        prior_image_encoder: Optional[RBLNCLIPVisionModelWithProjectionConfig] = None,
-        prior_text_encoder: Optional[RBLNCLIPTextModelWithProjectionConfig] = None,
-        unet: Optional[RBLNUNet2DConditionModelConfig] = None,
-        movq: Optional[RBLNVQModelConfig] = None,
+        sample_size: tuple[int, int] | None = None,
+        image_size: tuple[int, int] | None = None,
+        batch_size: int | None = None,
+        img_height: int | None = None,
+        img_width: int | None = None,
+        height: int | None = None,
+        width: int | None = None,
+        guidance_scale: float | None = None,
+        prior_prior: RBLNPriorTransformerConfig | None = None,
+        prior_image_encoder: RBLNCLIPVisionModelWithProjectionConfig | None = None,
+        prior_text_encoder: RBLNCLIPTextModelWithProjectionConfig | None = None,
+        unet: RBLNUNet2DConditionModelConfig | None = None,
+        movq: RBLNVQModelConfig | None = None,
         **kwargs: Any,
     ):
         """

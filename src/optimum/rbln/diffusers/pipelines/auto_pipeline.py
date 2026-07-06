@@ -15,7 +15,7 @@
 
 import importlib
 from pathlib import Path
-from typing import Any, Dict, Optional, Type, Union
+from typing import Any
 
 from diffusers.models.controlnets import ControlNetUnionModel
 from diffusers.pipelines.auto_pipeline import (
@@ -44,7 +44,7 @@ class RBLNAutoPipelineBase:
     _model_mapping_names = None
 
     @classmethod
-    def get_rbln_cls(cls, pretrained_model_name_or_path: Union[str, Path], export: bool = None, **kwargs):
+    def get_rbln_cls(cls, pretrained_model_name_or_path: str | Path, export: bool = None, **kwargs):
         if isinstance(pretrained_model_name_or_path, Path):
             pretrained_model_name_or_path = pretrained_model_name_or_path.as_posix()
 
@@ -74,7 +74,7 @@ class RBLNAutoPipelineBase:
         return rbln_cls
 
     @classmethod
-    def get_rbln_model_cls_name(cls, pretrained_model_name_or_path: Union[str, Path], **kwargs):
+    def get_rbln_model_cls_name(cls, pretrained_model_name_or_path: str | Path, **kwargs):
         """
         Retrieve the path to the compiled model directory for a given RBLN model.
 
@@ -97,7 +97,7 @@ class RBLNAutoPipelineBase:
     @classmethod
     def _is_compiled_pipeline(
         cls,
-        pretrained_model_name_or_path: Union[str, Path],
+        pretrained_model_name_or_path: str | Path,
         cache_dir=None,
         force_download=False,
         proxies=None,
@@ -123,7 +123,7 @@ class RBLNAutoPipelineBase:
     @classmethod
     def infer_hf_model_class(
         cls,
-        pretrained_model_or_path: Union[str, Path],
+        pretrained_model_or_path: str | Path,
         cache_dir=None,
         force_download=False,
         proxies=None,
@@ -171,10 +171,10 @@ class RBLNAutoPipelineBase:
     @validate_hf_hub_args
     def from_pretrained(
         cls,
-        model_id: Union[str, Path],
+        model_id: str | Path,
         *,
         export: bool = None,
-        rbln_config: Optional[Union[Dict[str, Any], RBLNModelConfig]] = None,
+        rbln_config: dict[str, Any] | RBLNModelConfig | None = None,
         **kwargs: Any,
     ) -> RBLNBaseModel:
         """
@@ -208,7 +208,7 @@ class RBLNAutoPipelineBase:
         return rbln_cls.from_pretrained(model_id, export=export, rbln_config=rbln_config, **kwargs)
 
     @staticmethod
-    def register(rbln_cls: Type[RBLNBaseModel], exist_ok=False):
+    def register(rbln_cls: type[RBLNBaseModel], exist_ok=False):
         """
         Register a new RBLN model class.
 

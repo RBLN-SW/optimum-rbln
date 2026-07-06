@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Optional, Tuple
+from typing import Any
 
 from ....configuration_utils import RBLNModelConfig
 
@@ -22,10 +22,10 @@ class RBLNUNetSpatioTemporalConditionModelConfig(RBLNModelConfig):
 
     def __init__(
         self,
-        batch_size: Optional[int] = None,
-        sample_size: Optional[Tuple[int, int]] = None,
-        in_features: Optional[int] = None,
-        num_frames: Optional[int] = None,
+        batch_size: int | None = None,
+        sample_size: tuple[int, int] | None = None,
+        in_features: int | None = None,
+        num_frames: int | None = None,
         **kwargs: Any,
     ):
         """

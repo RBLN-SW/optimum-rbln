@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Optional
+from typing import Any
 
 from ....configuration_utils import RBLNModelConfig
 from ....utils.logging import get_logger
@@ -31,7 +31,7 @@ class RBLNIdefics3VisionTransformerConfig(RBLNModelConfig):
 
     def __init__(
         self,
-        batch_size: Optional[int] = None,
+        batch_size: int | None = None,
         **kwargs: Any,
     ):
         super().__init__(**kwargs)
@@ -55,9 +55,9 @@ class RBLNIdefics3ForConditionalGenerationConfig(RBLNModelConfig):
 
     def __init__(
         self,
-        batch_size: Optional[int] = None,
-        vision_model: Optional[RBLNModelConfig] = None,
-        text_model: Optional[RBLNModelConfig] = None,
+        batch_size: int | None = None,
+        vision_model: RBLNModelConfig | None = None,
+        text_model: RBLNModelConfig | None = None,
         **kwargs: Any,
     ):
         """

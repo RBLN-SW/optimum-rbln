@@ -13,8 +13,9 @@
 # limitations under the License.
 
 import inspect
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable, Dict, Optional, Union
+from typing import Any
 
 from transformers import AutoModelForCausalLM
 from transformers.generation.utils import GenerationMixin
@@ -95,11 +96,11 @@ class RBLNMidmLMHeadModel(RBLNDecoderOnlyModelForCausalLM):
     @classmethod
     def from_pretrained(
         cls,
-        model_id: Union[str, Path],
+        model_id: str | Path,
         *,
-        export: Optional[bool] = None,
-        rbln_config: Optional[Union[Dict, RBLNModelConfig]] = None,
-        trust_remote_code: Optional[bool] = None,
+        export: bool | None = None,
+        rbln_config: dict | RBLNModelConfig | None = None,
+        trust_remote_code: bool | None = None,
         **kwargs: Any,
     ):
         """

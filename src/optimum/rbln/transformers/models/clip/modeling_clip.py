@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import TYPE_CHECKING, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Optional, Union
 
 import torch
 from transformers import CLIPTextConfig, CLIPTextModel, CLIPVisionConfig, CLIPVisionModel
@@ -68,7 +68,7 @@ class RBLNCLIPTextModel(RBLNModel):
         preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"],
         model: Optional["PreTrainedModel"] = None,
         model_config: "CLIPTextConfig" = None,
-        rbln_config: Optional[RBLNCLIPTextModelConfig] = None,
+        rbln_config: RBLNCLIPTextModelConfig | None = None,
     ) -> RBLNCLIPTextModelConfig:
         input_info = [
             (
@@ -84,7 +84,7 @@ class RBLNCLIPTextModel(RBLNModel):
         rbln_config.set_compile_cfgs([RBLNCompileConfig(input_info=input_info)])
         return rbln_config
 
-    def forward(self, input_ids: torch.LongTensor, return_dict: Optional[bool] = None, **kwargs) -> torch.FloatTensor:
+    def forward(self, input_ids: torch.LongTensor, return_dict: bool | None = None, **kwargs) -> torch.FloatTensor:
         """
         Forward pass for the RBLN-optimized CLIP text encoder model.
 
@@ -179,7 +179,7 @@ class RBLNCLIPVisionModel(RBLNModel):
         preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"],
         model: Optional["PreTrainedModel"] = None,
         model_config: "CLIPVisionConfig" = None,
-        rbln_config: Optional[RBLNCLIPVisionModelConfig] = None,
+        rbln_config: RBLNCLIPVisionModelConfig | None = None,
     ) -> RBLNCLIPVisionModelConfig:
         if rbln_config.image_size is None:
             rbln_config.image_size = getattr(model_config, "image_size", None)
@@ -218,11 +218,11 @@ class RBLNCLIPVisionModel(RBLNModel):
         self,
         pixel_values: torch.FloatTensor,
         return_dict: bool = True,
-        output_attentions: Optional[bool] = None,
-        output_hidden_states: Optional[bool] = None,
+        output_attentions: bool | None = None,
+        output_hidden_states: bool | None = None,
         interpolate_pos_encoding: bool = False,
         **kwargs,
-    ) -> Union[Tuple, BaseModelOutputWithPooling]:
+    ) -> tuple | BaseModelOutputWithPooling:
         """
         Forward pass for the RBLN-optimized CLIP vision encoder model.
 
@@ -316,11 +316,11 @@ class RBLNCLIPVisionModelWithProjection(RBLNCLIPVisionModel):
         self,
         pixel_values: torch.FloatTensor,
         return_dict: bool = True,
-        output_attentions: Optional[bool] = None,
-        output_hidden_states: Optional[bool] = None,
+        output_attentions: bool | None = None,
+        output_hidden_states: bool | None = None,
         interpolate_pos_encoding: bool = False,
         **kwargs,
-    ) -> Union[Tuple, CLIPVisionModelOutput]:
+    ) -> tuple | CLIPVisionModelOutput:
         """
         Forward pass for the RBLN-optimized CLIP vision encoder model with projection.
 

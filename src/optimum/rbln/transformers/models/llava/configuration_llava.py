@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Optional
+from typing import Any
 
 from ....configuration_utils import RBLNModelConfig
 from ....utils.logging import get_logger
@@ -34,9 +34,9 @@ class RBLNLlavaForConditionalGenerationConfig(RBLNModelConfig):
 
     def __init__(
         self,
-        batch_size: Optional[int] = None,
-        vision_tower: Optional[RBLNModelConfig] = None,
-        language_model: Optional[RBLNModelConfig] = None,
+        batch_size: int | None = None,
+        vision_tower: RBLNModelConfig | None = None,
+        language_model: RBLNModelConfig | None = None,
         **kwargs: Any,
     ):
         """

@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, List, Optional, Union
+from typing import Any
 
 from ....configuration_utils import RBLNModelConfig
 from ....utils.logging import get_logger
@@ -37,10 +37,10 @@ class RBLNGemma4ForCausalLMConfig(RBLNDecoderOnlyModelForCausalLMConfig):
 
     def __init__(
         self,
-        use_position_ids: Optional[bool] = None,
-        use_attention_mask: Optional[bool] = None,
-        prefill_chunk_size: Optional[int] = None,
-        image_prefill_chunk_size: Optional[Union[int, List[int]]] = None,
+        use_position_ids: bool | None = None,
+        use_attention_mask: bool | None = None,
+        prefill_chunk_size: int | None = None,
+        image_prefill_chunk_size: int | list[int] | None = None,
         **kwargs: Any,
     ):
         """
@@ -84,7 +84,7 @@ class RBLNGemma4ForCausalLMConfig(RBLNDecoderOnlyModelForCausalLMConfig):
             raise ValueError("use_attention_mask and use_position_ids must be True for RBLNGemma4ForCausalLM")
 
     @staticmethod
-    def _validate_image_prefill_chunk_size(chunk_size: Union[int, List[int]]) -> List[int]:
+    def _validate_image_prefill_chunk_size(chunk_size: int | list[int]) -> list[int]:
         # Single enforcement point: validates that every image_prefill_chunk_size (int or list) is a
         # positive multiple of 128 and returns it in canonical form — de-duplicated and sorted descending.
         if isinstance(chunk_size, int):
@@ -129,11 +129,11 @@ class RBLNGemma4VisionModelConfig(RBLNModelConfig):
 
     def __init__(
         self,
-        batch_size: Optional[int] = None,
-        max_soft_tokens: Optional[Union[int, List[int]]] = None,
-        pooling_kernel_size: Optional[int] = None,
-        patch_size: Optional[int] = None,
-        output_hidden_states: Optional[bool] = None,
+        batch_size: int | None = None,
+        max_soft_tokens: int | list[int] | None = None,
+        pooling_kernel_size: int | None = None,
+        patch_size: int | None = None,
+        output_hidden_states: bool | None = None,
         **kwargs: Any,
     ):
         """
@@ -189,9 +189,9 @@ class RBLNGemma4ForConditionalGenerationConfig(RBLNModelConfig):
 
     def __init__(
         self,
-        batch_size: Optional[int] = None,
-        vision_tower: Optional[RBLNModelConfig] = None,
-        language_model: Optional[RBLNModelConfig] = None,
+        batch_size: int | None = None,
+        vision_tower: RBLNModelConfig | None = None,
+        language_model: RBLNModelConfig | None = None,
         **kwargs: Any,
     ):
         """
@@ -224,7 +224,7 @@ class RBLNGemma4ForConditionalGenerationConfig(RBLNModelConfig):
 
         self._update_image_prefill_chunk_size()
 
-    def _get_vision_max_soft_tokens(self) -> List[int]:
+    def _get_vision_max_soft_tokens(self) -> list[int]:
         # Per-image soft-token counts the vision tower emits, sorted in descending order.
         # Reads max_soft_tokens from the vision sub-config (may still be a raw dict at this point)
         # and falls back to DEFAULT_MAX_SOFT_TOKENS when unset, matching the default applied in

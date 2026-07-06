@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Optional
+from typing import Any
 
 from ....configuration_utils import RBLNModelConfig
 
@@ -29,9 +29,9 @@ class RBLNPriorTransformerConfig(RBLNModelConfig):
 
     def __init__(
         self,
-        batch_size: Optional[int] = None,
-        embedding_dim: Optional[int] = None,
-        num_embeddings: Optional[int] = None,
+        batch_size: int | None = None,
+        embedding_dim: int | None = None,
+        num_embeddings: int | None = None,
         **kwargs: Any,
     ):
         """

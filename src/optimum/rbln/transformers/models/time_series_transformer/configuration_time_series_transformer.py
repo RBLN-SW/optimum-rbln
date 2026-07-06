@@ -1,4 +1,4 @@
-from typing import Any, Optional
+from typing import Any
 
 from ....configuration_utils import RBLNModelConfig
 
@@ -13,10 +13,10 @@ class RBLNTimeSeriesTransformerForPredictionConfig(RBLNModelConfig):
 
     def __init__(
         self,
-        batch_size: Optional[int] = None,
-        enc_max_seq_len: Optional[int] = None,
-        dec_max_seq_len: Optional[int] = None,
-        num_parallel_samples: Optional[int] = None,
+        batch_size: int | None = None,
+        enc_max_seq_len: int | None = None,
+        dec_max_seq_len: int | None = None,
+        num_parallel_samples: int | None = None,
         **kwargs: Any,
     ):
         """

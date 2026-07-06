@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Optional
+from typing import Any
 
 from ....configuration_utils import RBLNModelConfig
 from ....utils.deprecation import deprecate_kwarg
@@ -26,8 +26,8 @@ class RBLNASTForAudioClassificationConfig(RBLNModelConfig):
     @deprecate_kwarg(old_name="num_mel_bins", version="0.10.0")
     def __init__(
         self,
-        batch_size: Optional[int] = None,
-        max_length: Optional[int] = None,
+        batch_size: int | None = None,
+        max_length: int | None = None,
         **kwargs: Any,
     ):
         """

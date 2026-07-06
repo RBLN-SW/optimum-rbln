@@ -14,18 +14,17 @@
 
 import json
 from pathlib import Path
-from typing import List, Optional, Union
 
 from huggingface_hub import HfApi, get_token, hf_hub_download, try_to_load_from_cache
 from huggingface_hub.errors import LocalEntryNotFoundError
 
 
 def pull_compiled_model_from_hub(
-    model_id: Union[str, Path],
+    model_id: str | Path,
     subfolder: str,
-    token: Union[bool, str],
-    revision: Optional[str],
-    cache_dir: Optional[str],
+    token: bool | str,
+    revision: str | None,
+    cache_dir: str | None,
     force_download: bool,
     local_files_only: bool,
 ) -> Path:
@@ -154,8 +153,8 @@ def pull_compiled_model_from_hub(
 
 
 def validate_files(
-    files: List[Path],
-    config_files: List[Path],
+    files: list[Path],
+    config_files: list[Path],
     location: str,
 ):
     """Validate the presence and count of required files."""
@@ -166,7 +165,7 @@ def validate_files(
         raise FileExistsError(f"Multiple rbln_config.json files found in {location}. This is not expected.")
 
     try:
-        with open(config_files[0], "r") as f:
+        with open(config_files[0]) as f:
             config_data = json.load(f)
         compile_cfgs = config_data.get("_compile_cfgs", [])
         if len(compile_cfgs) == 0:
@@ -179,7 +178,7 @@ def validate_files(
         raise FileNotFoundError(f"Could not find any rbln model file in {location}")
 
 
-def _get_huggingface_token(token: Union[bool, str]) -> str:
+def _get_huggingface_token(token: bool | str) -> str:
     if isinstance(token, str):
         return token
     return get_token()

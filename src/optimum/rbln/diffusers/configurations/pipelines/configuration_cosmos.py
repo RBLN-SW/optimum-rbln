@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Optional
+from typing import Any
 
 from ....configuration_utils import RBLNModelConfig
 from ....transformers import RBLNT5EncoderModelConfig
@@ -30,17 +30,17 @@ class RBLNCosmosPipelineBaseConfig(RBLNModelConfig):
 
     def __init__(
         self,
-        text_encoder: Optional[RBLNT5EncoderModelConfig] = None,
-        transformer: Optional[RBLNCosmosTransformer3DModelConfig] = None,
-        vae: Optional[RBLNAutoencoderKLCosmosConfig] = None,
-        safety_checker: Optional[RBLNCosmosSafetyCheckerConfig] = None,
+        text_encoder: RBLNT5EncoderModelConfig | None = None,
+        transformer: RBLNCosmosTransformer3DModelConfig | None = None,
+        vae: RBLNAutoencoderKLCosmosConfig | None = None,
+        safety_checker: RBLNCosmosSafetyCheckerConfig | None = None,
         *,
-        batch_size: Optional[int] = None,
-        height: Optional[int] = None,
-        width: Optional[int] = None,
-        num_frames: Optional[int] = None,
-        fps: Optional[int] = None,
-        max_seq_len: Optional[int] = None,
+        batch_size: int | None = None,
+        height: int | None = None,
+        width: int | None = None,
+        num_frames: int | None = None,
+        fps: int | None = None,
+        max_seq_len: int | None = None,
         **kwargs: Any,
     ):
         """

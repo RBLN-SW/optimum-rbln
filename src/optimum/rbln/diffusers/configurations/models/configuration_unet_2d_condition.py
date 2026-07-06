@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Optional, Tuple
+from typing import Any
 
 from ....configuration_utils import RBLNModelConfig
 
@@ -29,15 +29,15 @@ class RBLNUNet2DConditionModelConfig(RBLNModelConfig):
 
     def __init__(
         self,
-        batch_size: Optional[int] = None,
-        sample_size: Optional[Tuple[int, int]] = None,
-        in_channels: Optional[int] = None,
-        cross_attention_dim: Optional[int] = None,
-        use_additional_residuals: Optional[bool] = None,
-        max_seq_len: Optional[int] = None,
-        in_features: Optional[int] = None,
-        text_model_hidden_size: Optional[int] = None,
-        image_model_hidden_size: Optional[int] = None,
+        batch_size: int | None = None,
+        sample_size: tuple[int, int] | None = None,
+        in_channels: int | None = None,
+        cross_attention_dim: int | None = None,
+        use_additional_residuals: bool | None = None,
+        max_seq_len: int | None = None,
+        in_features: int | None = None,
+        text_model_hidden_size: int | None = None,
+        image_model_hidden_size: int | None = None,
         **kwargs: Any,
     ):
         """

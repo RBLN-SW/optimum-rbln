@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, List, Optional, Tuple, Union
+from typing import Any
 
 from optimum.rbln.utils.deprecation import deprecate_kwarg
 
@@ -20,14 +20,14 @@ from ..configuration_utils import RBLNModelConfig
 
 
 class RBLNTransformerEncoderConfig(RBLNModelConfig):
-    rbln_model_input_names: Optional[List[str]] = None
+    rbln_model_input_names: list[str] | None = None
 
     @deprecate_kwarg(old_name="model_input_shapes", version="0.12.0")
     def __init__(
         self,
-        max_seq_len: Optional[Union[int, List[int]]] = None,
-        batch_size: Optional[int] = None,
-        model_input_names: Optional[List[str]] = None,
+        max_seq_len: int | list[int] | None = None,
+        batch_size: int | None = None,
+        model_input_names: list[str] | None = None,
         **kwargs: Any,
     ):
         """
@@ -57,8 +57,8 @@ class RBLNTransformerEncoderConfig(RBLNModelConfig):
 class RBLNImageModelConfig(RBLNModelConfig):
     def __init__(
         self,
-        image_size: Optional[Union[int, Tuple[int, int]]] = None,
-        batch_size: Optional[int] = None,
+        image_size: int | tuple[int, int] | None = None,
+        batch_size: int | None = None,
         **kwargs: Any,
     ):
         """

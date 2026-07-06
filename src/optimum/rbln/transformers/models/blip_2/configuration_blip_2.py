@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Optional
+from typing import Any
 
 from ....configuration_utils import RBLNModelConfig
 from ....utils.logging import get_logger
@@ -31,7 +31,7 @@ class RBLNBlip2VisionModelConfig(RBLNModelConfig):
 
     def __init__(
         self,
-        batch_size: Optional[int] = None,
+        batch_size: int | None = None,
         **kwargs: Any,
     ):
         """
@@ -55,9 +55,9 @@ class RBLNBlip2QFormerModelConfig(RBLNModelConfig):
 
     def __init__(
         self,
-        batch_size: Optional[int] = None,
-        num_query_tokens: Optional[int] = None,
-        image_text_hidden_size: Optional[int] = None,
+        batch_size: int | None = None,
+        num_query_tokens: int | None = None,
+        image_text_hidden_size: int | None = None,
         **kwargs: Any,
     ):
         """
@@ -87,10 +87,10 @@ class RBLNBlip2ForConditionalGenerationConfig(RBLNModelConfig):
 
     def __init__(
         self,
-        batch_size: Optional[int] = None,
-        vision_model: Optional[RBLNModelConfig] = None,
-        qformer: Optional[RBLNModelConfig] = None,
-        language_model: Optional[RBLNModelConfig] = None,
+        batch_size: int | None = None,
+        vision_model: RBLNModelConfig | None = None,
+        qformer: RBLNModelConfig | None = None,
+        language_model: RBLNModelConfig | None = None,
         **kwargs: Any,
     ):
         """

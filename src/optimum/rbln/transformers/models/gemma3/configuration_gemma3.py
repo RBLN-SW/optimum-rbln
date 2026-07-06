@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from typing import Any, Optional
+from typing import Any
 
 from ....configuration_utils import RBLNModelConfig
 from ....utils.logging import get_logger
@@ -24,10 +24,10 @@ logger = get_logger(__name__)
 class RBLNGemma3ForCausalLMConfig(RBLNDecoderOnlyModelForCausalLMConfig):
     def __init__(
         self,
-        use_position_ids: Optional[bool] = None,
-        use_attention_mask: Optional[bool] = None,
-        prefill_chunk_size: Optional[int] = None,
-        image_prefill_chunk_size: Optional[int] = None,
+        use_position_ids: bool | None = None,
+        use_attention_mask: bool | None = None,
+        prefill_chunk_size: int | None = None,
+        image_prefill_chunk_size: int | None = None,
         **kwargs: Any,
     ):
         """
@@ -67,9 +67,9 @@ class RBLNGemma3ForConditionalGenerationConfig(RBLNModelConfig):
 
     def __init__(
         self,
-        batch_size: Optional[int] = None,
-        vision_tower: Optional[RBLNModelConfig] = None,
-        language_model: Optional[RBLNModelConfig] = None,
+        batch_size: int | None = None,
+        vision_tower: RBLNModelConfig | None = None,
+        language_model: RBLNModelConfig | None = None,
         **kwargs: Any,
     ):
         """

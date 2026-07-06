@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Dict, Optional
+from typing import Any
 
 from ....configuration_utils import RBLNModelConfig
 from ....utils.logging import get_logger
@@ -26,16 +26,16 @@ class RBLNAutoencoderKLCosmosConfig(RBLNModelConfig):
 
     def __init__(
         self,
-        batch_size: Optional[int] = None,
-        uses_encoder: Optional[bool] = None,
-        num_frames: Optional[int] = None,
-        height: Optional[int] = None,
-        width: Optional[int] = None,
-        num_channels_latents: Optional[int] = None,
-        vae_scale_factor_temporal: Optional[int] = None,
-        vae_scale_factor_spatial: Optional[int] = None,
-        use_slicing: Optional[bool] = None,
-        **kwargs: Dict[str, Any],
+        batch_size: int | None = None,
+        uses_encoder: bool | None = None,
+        num_frames: int | None = None,
+        height: int | None = None,
+        width: int | None = None,
+        num_channels_latents: int | None = None,
+        vae_scale_factor_temporal: int | None = None,
+        vae_scale_factor_spatial: int | None = None,
+        use_slicing: bool | None = None,
+        **kwargs: dict[str, Any],
     ):
         """
         Args:

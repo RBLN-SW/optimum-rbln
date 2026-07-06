@@ -21,9 +21,9 @@
 # **********************************************************************************
 
 import inspect
+from collections.abc import Callable
 from enum import Enum
 from functools import wraps
-from typing import Callable, Optional
 
 import packaging.version
 
@@ -34,7 +34,7 @@ from .logging import get_logger
 logger = get_logger(__name__)
 
 
-def warn_deprecated_npu(npu: Optional[str] = None):
+def warn_deprecated_npu(npu: str | None = None):
     import rebel
 
     npu = npu or rebel.get_npu_name()
@@ -77,12 +77,12 @@ def _at_or_past_deprecation(current: str, deprecated: str) -> bool:
 def deprecate_kwarg(
     old_name: str,
     version: str,
-    new_name: Optional[str] = None,
-    deprecated_type: Optional[type] = None,
-    value_replacer: Optional[Callable] = None,
+    new_name: str | None = None,
+    deprecated_type: type | None = None,
+    value_replacer: Callable | None = None,
     raise_if_greater_or_equal_version: bool = True,
     raise_if_both_names: bool = False,
-    additional_message: Optional[str] = None,
+    additional_message: str | None = None,
 ):
     """
     Function or method decorator to notify users about deprecated keyword arguments, replacing them with a new name if specified,
@@ -219,9 +219,9 @@ def deprecate_kwarg(
 
 def deprecate_method(
     version: str,
-    new_method: Optional[str] = None,
+    new_method: str | None = None,
     raise_if_greater_or_equal_version: bool = True,
-    additional_message: Optional[str] = None,
+    additional_message: str | None = None,
 ):
     """
     Decorator to mark a method as deprecated, optionally pointing to a replacement method.

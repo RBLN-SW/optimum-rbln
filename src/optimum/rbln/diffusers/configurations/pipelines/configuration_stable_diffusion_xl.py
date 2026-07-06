@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Optional, Tuple
+from typing import Any
 
 from ....configuration_utils import RBLNModelConfig
 from ....transformers import RBLNCLIPTextModelConfig, RBLNCLIPTextModelWithProjectionConfig
@@ -25,19 +25,19 @@ class RBLNStableDiffusionXLPipelineBaseConfig(RBLNModelConfig):
 
     def __init__(
         self,
-        text_encoder: Optional[RBLNCLIPTextModelConfig] = None,
-        text_encoder_2: Optional[RBLNCLIPTextModelWithProjectionConfig] = None,
-        unet: Optional[RBLNUNet2DConditionModelConfig] = None,
-        vae: Optional[RBLNAutoencoderKLConfig] = None,
+        text_encoder: RBLNCLIPTextModelConfig | None = None,
+        text_encoder_2: RBLNCLIPTextModelWithProjectionConfig | None = None,
+        unet: RBLNUNet2DConditionModelConfig | None = None,
+        vae: RBLNAutoencoderKLConfig | None = None,
         *,
-        batch_size: Optional[int] = None,
-        img_height: Optional[int] = None,
-        img_width: Optional[int] = None,
-        height: Optional[int] = None,
-        width: Optional[int] = None,
-        sample_size: Optional[Tuple[int, int]] = None,
-        image_size: Optional[Tuple[int, int]] = None,
-        guidance_scale: Optional[float] = None,
+        batch_size: int | None = None,
+        img_height: int | None = None,
+        img_width: int | None = None,
+        height: int | None = None,
+        width: int | None = None,
+        sample_size: tuple[int, int] | None = None,
+        image_size: tuple[int, int] | None = None,
+        guidance_scale: float | None = None,
         **kwargs: Any,
     ):
         """
