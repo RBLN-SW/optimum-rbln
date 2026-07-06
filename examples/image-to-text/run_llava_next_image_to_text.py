@@ -1,5 +1,4 @@
 import os
-import typing
 
 import fire
 from datasets import load_dataset
@@ -12,10 +11,10 @@ def main(
     model_id: str = "llava-hf/llava-v1.6-mistral-7b-hf",
     batch_size: int = 1,
     from_transformers: bool = False,
-    prompt: typing.Optional[str] = None,
-    max_seq_len: typing.Optional[int] = None,
-    num_devices: typing.Optional[int] = 4,
-    num_text_only: typing.Optional[int] = None,
+    prompt: str | None = None,
+    max_seq_len: int | None = None,
+    num_devices: int | None = 4,
+    num_text_only: int | None = None,
 ):
     if from_transformers:
         processor = LlavaNextProcessor.from_pretrained(model_id)

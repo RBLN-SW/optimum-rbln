@@ -1,5 +1,4 @@
 import os
-from typing import List, Optional
 
 import cv2
 import fire
@@ -16,7 +15,7 @@ from optimum.rbln import RBLNStableDiffusionControlNetPipeline
 def main(
     diffusion_model_id: str = "runwayml/stable-diffusion-v1-5",
     from_diffusers: bool = False,
-    controlnet_model_id: Optional[List[str]] = None,
+    controlnet_model_id: list[str] | None = None,
     prompt: str = "a giant standing in a fantasy landscape, best quality",
     negative_prompt: str = "monochrome, lowres, bad anatomy, worst quality, low quality",
 ):
