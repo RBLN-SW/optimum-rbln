@@ -194,6 +194,10 @@ _import_structure = {
         "RBLNQwen3VLMoeModel",
         "RBLNQwen3VLMoeModelConfig",
     ],
+    "modernbert": [
+        "RBLNModernBertForMaskedLM",
+        "RBLNModernBertForMaskedLMConfig",
+    ],
     "resnet": ["RBLNResNetForImageClassification", "RBLNResNetForImageClassificationConfig"],
     "roberta": [
         "RBLNRobertaForMaskedLM",
@@ -358,6 +362,7 @@ if TYPE_CHECKING:
     from .midm import RBLNMidmLMHeadModel, RBLNMidmLMHeadModelConfig
     from .mistral import RBLNMistralForCausalLM, RBLNMistralForCausalLMConfig, RBLNMistralModel, RBLNMistralModelConfig
     from .mixtral import RBLNMixtralForCausalLM, RBLNMixtralForCausalLMConfig
+    from .modernbert import RBLNModernBertForMaskedLM, RBLNModernBertForMaskedLMConfig
     from .opt import RBLNOPTForCausalLM, RBLNOPTForCausalLMConfig, RBLNOPTModel, RBLNOPTModelConfig
     from .paligemma import (
         RBLNPaliGemmaForConditionalGeneration,

@@ -19,6 +19,7 @@ from optimum.rbln import (
     RBLNDistilBertForQuestionAnswering,
     RBLNDPTForDepthEstimation,
     RBLNGroundingDinoForObjectDetection,
+    RBLNModernBertForMaskedLM,
     RBLNPegasusModel,
     RBLNResNetForImageClassification,
     RBLNRobertaForMaskedLM,
@@ -148,6 +149,17 @@ class TestBertForMaskedLM(BaseTest.TestModel):
         "input_ids": RANDOM_INPUT_IDS,
         "attention_mask": RANDOM_ATTN_MASK,
         "token_type_ids": RANDOM_TOKEN_TYPE_IDS,
+    }
+
+
+class TestModernBertForMaskedLM(BaseTest.TestModel):
+    RBLN_AUTO_CLASS = RBLNAutoModelForMaskedLM
+    RBLN_CLASS = RBLNModernBertForMaskedLM
+    HF_MODEL_ID = "hf-internal-testing/tiny-random-ModernBertForMaskedLM"
+    # ModernBERT has no token_type_ids and forces the SDPA attention backend.
+    GENERATION_KWARGS = {
+        "input_ids": RANDOM_INPUT_IDS,
+        "attention_mask": RANDOM_ATTN_MASK,
     }
 
 
