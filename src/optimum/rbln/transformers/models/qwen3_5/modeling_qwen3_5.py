@@ -200,19 +200,41 @@ class RBLNQwen3_5ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
         for layer_idx in range(num_hidden_layers):
             if layer_idx in linear_layers:
                 # conv_state innermost dim = conv_dim (a multiple of 64, an RBLN alignment requirement)
-                input_info.append(
-                    (f"conv_state_{layer_idx}", [batch_size, conv_state_len, conv_dim], rbln_config.dtype)
+                conv_shape = [batch_size, conv_state_len, conv_dim]
+                recurrent_shape = [
+                    batch_size,
+                    text_config.linear_num_value_heads,
+                    text_config.linear_key_head_dim,
+                    text_config.linear_value_head_dim,
+                ]
+                input_info.append((f"conv_state_{layer_idx}", conv_shape, rbln_config.dtype))
+                input_info.append((f"recurrent_state_{layer_idx}", recurrent_shape, rbln_config.dtype))
+                # Register FIXED-SIZE (non-resizable) cache metas for the linear-attention states. They are
+                # static DRAM tensors, so they show up in the compiled model's exp_get_dram_tensor_sizes();
+                # without a meta, the auto_num_blocks estimator (set_kvcache_num_blocks_after_compilation ->
+                # kvcache_meta_can_resize[name]) raises KeyError: 'conv_state_0'. layer_type "linear_attention"
+                # (!= "full_attention") => KVCacheMeta.can_resize is False => the estimator counts them once
+                # (m=1), never scaled by the paged-KV block multiplier. (KVCacheMeta.make builds a paged-KV
+                # shape, so we construct these directly with the actual state shapes.)
+                _state_dtype = RBLNCompileConfig.normalize_dtype(rbln_config.dtype)
+                kvcache_metas.append(
+                    KVCacheMeta(
+                        name=f"conv_state_{layer_idx}",
+                        layer_index=layer_idx,
+                        shape=conv_shape,
+                        layer_type="linear_attention",
+                        is_auto=False,
+                        dtype=_state_dtype,
+                    )
                 )
-                input_info.append(
-                    (
-                        f"recurrent_state_{layer_idx}",
-                        [
-                            batch_size,
-                            text_config.linear_num_value_heads,
-                            text_config.linear_key_head_dim,
-                            text_config.linear_value_head_dim,
-                        ],
-                        rbln_config.dtype,
+                kvcache_metas.append(
+                    KVCacheMeta(
+                        name=f"recurrent_state_{layer_idx}",
+                        layer_index=layer_idx,
+                        shape=recurrent_shape,
+                        layer_type="linear_attention",
+                        is_auto=False,
+                        dtype=_state_dtype,
                     )
                 )
             else:

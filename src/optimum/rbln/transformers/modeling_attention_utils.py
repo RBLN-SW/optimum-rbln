@@ -286,6 +286,8 @@ class RBLNDecoderOnlyFlashAttentionMixin:
             # Resize multiplier applies only to resizable tensors; 2MB-aligned.
             sizes: dict[Tuple[int, int], int] = defaultdict(int)
             for key, sizes_at_node in kvcache_tensor_sizes.items():
+                # 여기서 kvcache_tensor_sizes 에는 state_cache가 있지만, kvcache_meta_can_resize는 오로지 kvcache_metas를 생성한 경우에만 참조
+                # 그래서 버그가 일어남 -> 1) state_cache 도 kvcache_metas 를 생성하거나 2) kvcache_metas가 없는 state_cache 는 무시하거나 둘중 하나.
                 m = multiplier if kvcache_meta_can_resize[key] else 1
                 for node_id, sizes_at_chiplet in enumerate(sizes_at_node):
                     for chiplet_id, size in enumerate(sizes_at_chiplet):
@@ -299,6 +301,9 @@ class RBLNDecoderOnlyFlashAttentionMixin:
             return fits, kvcache_sizes
 
         # Fast path: try maximum blocks first (most common case)
+        # import pdb; pdb.set_trace()
+        # 여기서 meta 로 안잡혀서 문제네...
+        # 근데 크기가 별로 안큰데 꼭 잡아야하나? 아니다 잡는게 통일성이 있긴한데... 한번 잡아보자
         fits, _ = check_memory_fits(rbln_config.num_full_blocks)
         if fits:
             return rbln_config.num_full_blocks

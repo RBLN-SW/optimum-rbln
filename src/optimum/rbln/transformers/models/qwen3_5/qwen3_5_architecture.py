@@ -242,24 +242,15 @@ class Qwen3_5GatedDeltaNet(nn.Module):
         # into prefill_chunk_size windows and carries recurrent_state across them). The window math
         # needs fixed S×S constants — float lower-triangular masks + identity at the tensor rank
         # (1, 1, S, S), S = prefill_chunk_size — so the rewrite lowers on RBLN (see
-        # rbln_chunk_gated_delta_rule). register_buffer(persistent=False): graph constants, not weights.
+        # rbln_chunk_gated_delta_rule). The fixed S×S helper matrices (identity + lower-triangular masks) and
+        # the conv reverse-cumsum upper-triangular matrix are built INLINE in forward (local vars, NOT self.*
+        # buffers/attributes). As NAMED module constants the new compiler's weight-sharing pass tries to share
+        # them across the prefill/decode graphs and fails in gen mode: they are prefill-only, so absent from
+        # the decode graph (RTOSAWeightReusabilityCheck -> "OpInvalidWeightSharingError ... _prefill_chunk_eye
+        # not found in map during gen mode"). Forward-local constants fold into the prefill graph anonymously,
+        # outside weight sharing. (A registered buffer AND a plain self.* attribute both keep the `linear_attn.
+        # _prefill_chunk_eye` name and still fail — the name follows the attribute path, so it must be a local.)
         self.prefill_chunk_size = getattr(rbln_config, "prefill_chunk_size", 128)
-        _ones = torch.ones(self.prefill_chunk_size, self.prefill_chunk_size)
-        _shape = (1, 1, self.prefill_chunk_size, self.prefill_chunk_size)
-        self.register_buffer(
-            "_prefill_chunk_eye", torch.eye(self.prefill_chunk_size).reshape(_shape), persistent=False
-        )
-        self.register_buffer("_prefill_chunk_tril_incl", torch.tril(_ones).reshape(_shape), persistent=False)
-        self.register_buffer(
-            "_prefill_chunk_tril_strict", torch.tril(_ones, diagonal=-1).reshape(_shape), persistent=False
-        )
-        # Upper-triangular-inclusive constant for the conv_state reverse-cumsum (rev = triu @ valid_mask).
-        # Size is (K-1)+S, NOT S: the new conv_state is the last K-1 VALID rows of the FULL conv input
-        # [conv_state | mixed_qkv], so a window with < K-1 valid tokens must reach back into the prepended
-        # conv_state. A distinct buffer (not a view of tril_incl) — the compiler's weight-reusability
-        # check rejects the same constant used in two op contexts.
-        _conv_total = self.prefill_chunk_size + self.conv_kernel_size - 1
-        self.register_buffer("_prefill_conv_triu", torch.triu(torch.ones(_conv_total, _conv_total)), persistent=False)
         # log-depth (I - A)^{-1} needs ceil(log2(S)) squarings, where S = the intra-window matrix
         # size = prefill_chunk_size (A is S×S strictly-lower, so A^S = 0). NOT num_v_heads.
         self.num_iter = max(1, (self.prefill_chunk_size - 1).bit_length())  # ceil(log2(prefill_chunk_size))
@@ -320,7 +311,9 @@ class Qwen3_5GatedDeltaNet(nn.Module):
             # INNERMOST through abs/clamp (a (B, T, 1) innermost-1 tensor returns garbage on device).
             total = k_1 + seq_len
             vm_ext = torch.cat([valid_mask.new_ones(batch_size, k_1, 1), valid_mask], dim=1)  # (B, (K-1)+S, 1)
-            rev = torch.matmul(self._prefill_conv_triu, vm_ext).reshape(batch_size, 1, total)  # (B, 1, (K-1)+S)
+            _rc = torch.arange(total, device=vm_ext.device)
+            conv_triu = (_rc.unsqueeze(1) <= _rc.unsqueeze(0)).to(vm_ext.dtype)  # inline upper-tri (see chunk masks)
+            rev = torch.matmul(conv_triu, vm_ext).reshape(batch_size, 1, total)  # (B, 1, (K-1)+S)
             jv = (k_1 - torch.arange(k_1, device=hidden_states.device)).view(1, k_1, 1)  # (1, K-1, 1): [K-1,...,1]
             sel = (1.0 - (rev - jv).abs().to(mixed_qkv.dtype)).clamp(0.0, 1.0)  # (B, K-1, (K-1)+S)
             new_conv_state = torch.matmul(sel, x_cf.transpose(1, 2)).contiguous()  # @ (B,(K-1)+S,conv_dim)=(B,K-1,conv_dim)
@@ -348,15 +341,26 @@ class Qwen3_5GatedDeltaNet(nn.Module):
         if "prefill" in self._phase:
             # One prefill window == one delta chunk (compiles on RBLN); the runtime carries
             # recurrent_state across windows and hands the final state to recurrent-decode.
+            # Build the fixed S×S helper matrices INLINE (forward-local -> not weight-shared; see __init__).
+            # Use arange+compare, NOT torch.eye/tril (aten::eye is not implemented for RBLN tracing, and a
+            # named self.* buffer/attr re-triggers the weight-sharing gen-mode failure). These fold to
+            # anonymous prefill-graph constants.
+            _S = self.prefill_chunk_size
+            _cshape = (1, 1, _S, _S)
+            _ii = torch.arange(_S, device=query.device).unsqueeze(1)  # (S, 1)
+            _jj = torch.arange(_S, device=query.device).unsqueeze(0)  # (1, S)
+            chunk_eye = (_ii == _jj).to(query.dtype).reshape(_cshape)
+            chunk_tril_incl = (_ii >= _jj).to(query.dtype).reshape(_cshape)
+            chunk_tril_strict = (_ii > _jj).to(query.dtype).reshape(_cshape)
             core_attn_out, new_recurrent_state = rbln_chunk_gated_delta_rule(
                 query,
                 key,
                 value,
                 g,
                 beta,
-                self._prefill_chunk_eye,
-                self._prefill_chunk_tril_incl,
-                self._prefill_chunk_tril_strict,
+                chunk_eye,
+                chunk_tril_incl,
+                chunk_tril_strict,
                 recurrent_state,
                 num_iter=self.num_iter,
             )
