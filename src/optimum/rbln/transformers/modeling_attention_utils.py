@@ -380,6 +380,12 @@ class RBLNDecoderOnlyFlashAttentionMixin:
                 f"time to fit device DRAM ({current}); the model may fail to allocate at runtime. "
                 "Proceeding without a device-fit check."
             )
+        if target > rbln_config.num_full_blocks:
+            logger.warning(
+                f"Requested kvcache_num_blocks={target} exceeds num_full_blocks "
+                f"({rbln_config.num_full_blocks}), the blocks needed to cover the full batch at "
+                "max_seq_len; the excess blocks are never used."
+            )
         for compiled_model in compiled_models.values():
             compiled_model.exp_rescale_buffer_size(
                 {
