@@ -37,14 +37,6 @@ def compiler_num_devices_kwarg() -> str:
     return "num_devices" if "num_devices" in params else "tensor_parallel_size"
 
 
-def is_compiler_supports_buffer_resize() -> bool:
-    return hasattr(rebel.RBLNCompiledModel, "exp_multiply_buffer_size")
-
-
-def is_compiler_supports_chiplet_alloc() -> bool:
-    return hasattr(rebel.RBLNCompiledModel, "get_alloc_per_chiplet_by_key")
-
-
 def _resolve_npu(npu: str | None = None) -> str:
     if npu is None:
         if not rebel.npu_is_available(0):
@@ -60,27 +52,6 @@ def _dram_spec(npu: str) -> tuple[int, int]:
     elif npu.startswith("RBLN-CA"):
         return 16 * 2**30, 288 * 2**20
     raise ValueError(f"Unknown npu name: {npu}")
-
-
-def get_available_dram(npu: str | None = None) -> int:
-    """
-    Get the available DRAM size of the specified NPU at the node (device) level.
-
-    Args:
-        npu : str | None, default=None
-            The NPU to get the available DRAM size.
-            If None, the function will attempt to retrieve through `ensure_valid_npu()`
-
-    Returns:
-        int
-            The available DRAM size in bytes.
-    """
-    npu = _resolve_npu(npu)
-    dram_nbytes, sys_per_chiplet = _dram_spec(npu)
-    # Node total = full DRAM minus the per-chiplet system reservation on every chiplet.
-    if npu.startswith("RBLN-CR"):
-        return dram_nbytes - sys_per_chiplet * 4
-    return dram_nbytes - sys_per_chiplet
 
 
 def get_available_dram_per_chiplet(num_chiplets: int, npu: str | None = None) -> int:

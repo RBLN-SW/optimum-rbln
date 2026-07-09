@@ -27,7 +27,6 @@ from transformers.modeling_outputs import BaseModelOutputWithPast
 from ....configuration_utils import RBLNCompileConfig
 from ....modeling import RBLNModel
 from ....utils.logging import get_logger
-from ....utils.runtime_utils import is_compiler_supports_buffer_resize
 from ...modeling_attention_utils import (
     RBLNDecoderOnlyFlashAttentionMixin,
     set_default_values,
@@ -329,8 +328,6 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
                 compiled_models[f"decoder_batch_{batch_size}"] = compiled_decoder
 
         if rbln_config.is_auto_num_blocks:
-            if not is_compiler_supports_buffer_resize():
-                raise RuntimeError("`kvcache_num_blocks` must be set.")
             cls.set_kvcache_num_blocks_after_compilation(compiled_models, rbln_config)
 
         return compiled_models

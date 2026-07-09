@@ -32,7 +32,6 @@ from transformers.modeling_outputs import BaseModelOutputWithPooling
 from ....configuration_utils import RBLNCompileConfig, RBLNModelConfig
 from ....modeling import RBLNModel
 from ....utils.logging import get_logger
-from ....utils.runtime_utils import is_compiler_supports_buffer_resize
 from ...modeling_attention_utils import validate_sliding_window
 from ...modeling_outputs import RBLNDecoderOnlyOutput
 from ...utils.rbln_runtime_wrapper import LoopProcessor
@@ -404,8 +403,6 @@ class RBLNGemma4ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
                 )
 
         if rbln_config.is_auto_num_blocks:
-            if not is_compiler_supports_buffer_resize():
-                raise RuntimeError("`kvcache_num_blocks` must be set.")
             cls.set_kvcache_num_blocks_after_compilation(compiled_models, rbln_config)
 
         return compiled_models
