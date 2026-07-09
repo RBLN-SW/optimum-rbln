@@ -434,8 +434,9 @@ class RBLNQwen3_5Model(RBLNQwen3VLModel):
 
     def setup_runtime(self):
         # Qwen3.5-specific runtime: the linear_attention layers carry (conv_state, recurrent_state) as
-        # host-threaded functional I/O (not on-device static caches), so use RBLNQwen3_5RuntimeModel
-        # instead of the base VL runtime. Full-attention layers keep the on-device paged KV cache.
+        # on-device static caches (shared across prefill/decode via addresses baked at compile — see
+        # _get_compile_context), so use RBLNQwen3_5RuntimeModel instead of the base VL runtime. The
+        # runtime only injects the 0/1 state masks; full-attention layers keep the on-device paged KV cache.
         page_table_manager = RBLNPageTableManager(self.rbln_config)
         if self.rbln_config.use_position_ids:
             dec_attn_mask = torch.zeros(self.rbln_config.batch_size, self.rbln_config.max_seq_len, dtype=self.dtype)

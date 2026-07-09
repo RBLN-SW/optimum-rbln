@@ -25,18 +25,21 @@ class RBLNQwen3_5RuntimeModel(RBLNRuntimeModel):
 
     ``full_attention`` layers use the on-device paged KV cache (handled by the base runtime, whose
     buffers are static and never passed at call time). The ``linear_attention`` (GatedDeltaNet) layers
-    instead carry two FUNCTIONAL states per layer — ``conv_state`` and ``recurrent_state`` — which are
-    ordinary graph inputs/outputs, not on-device static caches. This runtime holds them on the host and
-    threads them across prefill windows and decode steps:
+    carry two extra states per layer — ``conv_state`` and ``recurrent_state`` — which are ALSO on-device
+    STATIC caches: they are marked static (``mark_static_address``) in the Qwen3.5 compile context
+    (``_qwen3_5_build_compile_context``) and read + written entirely in-graph via ``rbln_cache_update``.
+    So, like the KV cache, they live in device DRAM and are NEVER passed at call time — this runtime does
+    NOT hold state values on the host:
 
-        zero-init -> prefill window 0 -> ... -> prefill window N -> decode step 0 -> decode step 1 -> ...
+        prefill window 0 -> ... -> prefill window N -> decode step 0 -> decode step 1 -> ...
 
-    Each compiled graph call takes the current states (appended after the standard inputs, in linear-
-    layer order) and returns the updated states (right after ``logits`` in the output tuple); we read
-    them back into the host store for the next call. ``RBLNPytorchRuntime.forward`` drops ``None`` args,
-    so the standard-arg order collapses to exactly the order the Qwen3.5 wrapper's ``prepare_forward_args``
-    expects (``inputs, cache_position, block_tables, position_embed, [query_position], [attention_mask],
-    [lora]``), after which the linear states follow.
+    The runtime's only linear-state job is to inject two 0/1 control masks per call — ``conv_state_mask``
+    and ``recurrent_state_mask`` — which the GatedDeltaNet multiplies into the state it reads: ZEROS on
+    prefill window 0 (fresh sequence, so the stale static cache is discarded) and ONES afterwards (carry
+    whatever the previous window/step wrote). ``_run`` maps the named inputs onto the runtime's own
+    (rebel-pruned) input order via ``_index_to_input_name``; the static caches are absent from that order,
+    and the graph's cache-update outputs alias the static addresses (in-place device writes), so only
+    ``logits`` is kept.
     """
 
     def __init__(

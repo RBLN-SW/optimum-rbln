@@ -23,10 +23,12 @@ paged KV cache, like Qwen3 + an output gate + partial RoPE) interleaved with
   delta rule for decode (seq=1). The HF chunked kernel does not lower as-is, so it is rewritten
   (``rbln_chunk_gated_delta_rule``) to compile on RBLN; both forms share a state layout, so prefill
   hands its ``recurrent_state`` straight to recurrent-decode.
-- Its two states (``conv_state`` and ``recurrent_state``) are carried as ordinary graph
-  inputs/outputs (functional), and a Qwen3.5-specific runtime keeps them on the host between
-  prefill chunks / decode steps. Each linear layer reuses its two ``past_states`` slots to
-  carry ``(conv_state, recurrent_state)`` instead of ``(key, value)``.
+- Its two states (``conv_state`` and ``recurrent_state``) live in on-device STATIC DRAM caches
+  (``mark_static_address`` in the Qwen3.5 compile context), read and written in-graph via
+  ``rbln_cache_update`` — like the paged KV cache, not host-threaded. Each linear layer uses its two
+  ``past_states`` slots to carry ``(conv_state, recurrent_state)`` instead of ``(key, value)``; a
+  Qwen3.5-specific runtime injects 0/1 masks that zero the stale cache on prefill window 0 and carry
+  it afterwards.
 """
 
 import copy
@@ -77,31 +79,29 @@ class Qwen3_5VisionModelWrapper(nn.Module):
         return self.merger(hidden_states)
 
 
-def rbln_chunk_gated_delta_rule(query, key, value, g, beta, eye, tril_incl, tril_strict, initial_state, num_iter=1):
-    """Single-window (parallel) gated delta rule for RBLN PREFILL. Numerically identical to HF
-    ``torch_chunk_gated_delta_rule`` (cos=1.0), with four lowering fixes (see project memo
-    ``rbln-qwen35-deltanet-compile``):
+def rbln_chunk_gated_delta_rule(query, key, value, g, beta, eye, tril_incl, tril_strict, initial_state):
+    """Single-window (parallel) gated delta rule for RBLN PREFILL. Mirrors HF
+    ``torch_chunk_gated_delta_rule`` expression-for-expression (numerically identical, cos=1.0); every
+    difference below is ONLY what HF's exact ops need to LOWER on RBLN (see memo
+    ``rbln-qwen35-deltanet-compile``). Read side-by-side with HF; the ``# HF:`` comments map each line.
 
-    - intra-window triangular inverse via the fixed-shape log-depth identity
-      ``(I - A)^{-1} = (I + A)(I + A^2)(I + A^4)...`` instead of the variable-slice forward-substitution
-      loop (the ScatterInfo blocker, also an unroll);
-    - mask / identity constants kept at the tensors' rank ``(1, 1, S, S)`` (else PadChannels emits a
-      wrong-rank pad);
-    - float lower-triangular masks instead of bool ``masked_fill`` / ``.tril()`` (``rtosa.where``
-      rejects i1);
-    - matmuls kept to 2 batch dims ``(B, Hv)`` — the standard multi-head layout (the 3-batch-dim form
-      trips OpTiling: "memory size mismatch (3 vs 4)").
+    - ``(I - A)^{-1}`` via HF's forward-substitution loop, NOT the log-depth squaring ``(I+A)(I+A^2)...``:
+      the squaring is numerically unstable at trained scale (intermediate powers blow up) -> wrong inverse.
+    - float lower-triangular masks (``tril_incl``/``tril_strict``) + a passed identity (``eye``) in place of
+      HF's bool ``.tril()`` / ``.masked_fill()`` / ``torch.eye`` (``rtosa.where`` rejects i1; ``aten::eye``
+      unimplemented). Built inline by the caller at rank ``(1, 1, S, S)`` (else PadChannels wrong-rank pad).
+    - the end-of-window decay (HF ``g[..., -1] - g[..., :]`` and ``g[..., -1]``) as a MATMUL reverse-cumsum
+      ``incr @ tril_strict`` + ``incr.sum`` — HF's innermost ``g[..., -1]`` slice and ``torch.flip`` mis-lower.
+    - matmuls kept to 2 batch dims ``(B, Hv)`` — the 3-batch-dim form trips OpTiling ("memory size
+      mismatch (3 vs 4)"), so there is NO internal sub-chunking (HF's ``chunk_size`` reshape).
 
-    NO internal sub-chunking: the optimum-rbln prefill runtime already splits the prompt into fixed
-    ``prefill_chunk_size`` windows and carries ``recurrent_state`` across them, so ONE call == ONE
-    delta-rule chunk. ``query_length == prefill_chunk_size == S == the mask size``; the runtime pads
-    the final window, so there is no padding here. The intra-window term is the causal attention over
-    the window; the inter term is the interaction with the incoming ``initial_state`` (carried state).
+    NO internal sub-chunking: the optimum-rbln prefill runtime splits the prompt into fixed
+    ``prefill_chunk_size`` windows and carries ``recurrent_state`` across them, so ONE call == ONE HF chunk
+    (``S == prefill_chunk_size == the mask size``; the runtime pads the final window, so no padding here).
 
     Inputs follow the recurrent rule's call site: query/key ``(B, S, Hv, Dk)``, value ``(B, S, Hv, Dv)``,
-    g/beta ``(B, S, Hv)``, initial_state ``(B, Hv, Dk, Dv)``. Returns core ``(B, S, Hv, Dv)`` and the
-    final state ``(B, Hv, Dk, Dv)`` — the same layout the recurrent rule returns. Used for PREFILL;
-    decode (seq=1) stays on the recurrent rule.
+    g/beta ``(B, S, Hv)``, initial_state ``(B, Hv, Dk, Dv)``. Returns core ``(B, S, Hv, Dv)`` and the final
+    state ``(B, Hv, Dk, Dv)``. Decode (seq=1) stays on the recurrent rule.
     """
     initial_dtype = query.dtype
     query = l2norm(query, dim=-1, eps=1e-6)
@@ -110,42 +110,39 @@ def rbln_chunk_gated_delta_rule(query, key, value, g, beta, eye, tril_incl, tril
     query, key, value, beta, g = [
         x.transpose(1, 2).contiguous().to(torch.float32) for x in (query, key, value, beta, g)
     ]
-    Dk = key.shape[-1]
-
-    query = query * (Dk**-0.5)
+    scale = 1 / (query.shape[-1] ** 0.5)  # match HF torch_chunk_gated_delta_rule (query.shape[-1] == head_k_dim)
+    query = query * scale
     v_beta = value * beta.unsqueeze(-1)
     k_beta = key * beta.unsqueeze(-1)
+
+    # chunk decay
     incr = g  # (B, Hv, S) per-token log-decay increments (pre-cumsum)
     g = incr.cumsum(dim=-1)  # (B, Hv, S) cumulative log-decay across the window
+    decay_mask = ((g.unsqueeze(-1) - g.unsqueeze(-2)) * tril_incl).exp() * tril_incl  # (B, Hv, S, S)
+    attn = -((k_beta @ key.transpose(-1, -2)) * decay_mask) * tril_strict
+    # (I - A)^{-1} via forward substitution (IDENTICAL to HF's loop; squaring is numerically unstable at
+    # scale). HF appends `torch.eye`; here `eye` is the passed inline identity.
+    chunk_size = attn.shape[-1]
+    
+    # 우리는 모든 chunk에 대해서 한번에 수행하지 못함 -> 한번에 한 청크만 수행이 가능함.
+    for i in range(1, chunk_size):
+        row = attn[..., i, :i].clone()
+        sub = attn[..., :i, :i].clone()
+        attn[..., i, :i] = row + (row.unsqueeze(-1) * sub).sum(-2)
+    attn = attn + eye
 
-    diff = g.unsqueeze(-1) - g.unsqueeze(-2)  # (B, Hv, S, S)
-    decay_mask = (diff * tril_incl).exp() * tril_incl
-    A = -((k_beta @ key.transpose(-1, -2)) * decay_mask) * tril_strict
-
-    # (I - A)^{-1} = (I+A)(I+A^2)(I+A^4)...; ceil(log2(S)) squarings suffice since A^S = 0 (nilpotent).
-    # S is the static prefill window size, so this trip count is a Python constant -> unrolls cleanly.
-    M = eye + A
-    P = A
-    for _ in range(num_iter):  # (I - A)^{-1} via log-depth squaring
-        P = P @ P
-        M = M @ (eye + P)
-    attn = M
-
-    w = attn @ v_beta
+    value = attn @ v_beta
     k_cumdecay = attn @ (k_beta * g.exp().unsqueeze(-1))
-    last_state = initial_state.to(w)  # (B, Hv, Dk, Dv) carried recurrent_state (already masked at the GDN entry)
+    last_state = initial_state.to(value)  # (B, Hv, Dk, Dv) carried recurrent_state (already masked at the GDN entry)
 
-    attn_intra = (query @ key.transpose(-1, -2)) * decay_mask
-    v_new = w - k_cumdecay @ last_state
-    attn_inter = (query * g.exp().unsqueeze(-1)) @ last_state
+    # for current chunk
+    attn_intra = (query @ key.transpose(-1, -2)) * decay_mask  # HF (per-chunk loop) reuses the name `attn`
+    v_new = value - k_cumdecay @ last_state  # HF: v_new = v_i - (k_cumdecay[i] @ last_state)
+    attn_inter = (query * g.exp().unsqueeze(-1)) @ last_state  # HF: (q_i * g[..., None].exp()) @ last_state
     core = attn_inter + attn_intra @ v_new  # (B, Hv, S, Dv)
 
-    # decay from each position to the window end = g_total - g, as an exclusive REVERSE cumsum of the
-    # increments. Avoids g[..., -1] (an innermost width-1 StridedSlice the ViewOpSplit pass rejects) and
-    # the (…, 1)-vs-(…, S) broadcast subtract (which trips PadLastDim). All terms stay (B, Hv, S).
-    _ax = incr.dim() - 1  # positive axis: RBLN's reverse op requires a non-negative axis (flip(-1) fails)
-    rev_incl = incr.flip(_ax).cumsum(dim=-1).flip(_ax)  # Σ_{i>=t} incr[i]
-    decay_to_end = rev_incl - incr  # Σ_{i>t} incr[i]  == g_total - g  (<= 0, numerically stable)
+    # reverse-cumsum Σ_{s>t} incr[s] (== HF `g[..., -1] - g`) as a matmul
+    decay_to_end = incr @ tril_strict[0, 0]  # (B, Hv, S)  Σ_{i>t} incr[i]
     g_total = incr.sum(dim=-1, keepdim=True)  # (B, Hv, 1) total log-decay (a reduction, not a slice)
     new_state = (
         last_state * g_total.unsqueeze(-1).exp() + (key * decay_to_end.exp().unsqueeze(-1)).transpose(-1, -2) @ v_new
@@ -203,7 +200,7 @@ def rbln_recurrent_gated_delta_rule_step(query, key, value, g, beta, initial_sta
 
 
 class Qwen3_5GatedDeltaNet(nn.Module):
-    """GatedDeltaNet token mixer for RBLN (functional: states in -> states out).
+    """GatedDeltaNet token mixer for RBLN (conv_state + recurrent_state are on-device static caches).
 
     PREFILL uses the parallel chunked delta rule (``rbln_chunk_gated_delta_rule``, which lowers on RBLN);
     DECODE (seq=1) uses the recurrent delta rule. Both consume/return the same state layout so a
@@ -251,9 +248,6 @@ class Qwen3_5GatedDeltaNet(nn.Module):
         # outside weight sharing. (A registered buffer AND a plain self.* attribute both keep the `linear_attn.
         # _prefill_chunk_eye` name and still fail — the name follows the attribute path, so it must be a local.)
         self.prefill_chunk_size = getattr(rbln_config, "prefill_chunk_size", 128)
-        # log-depth (I - A)^{-1} needs ceil(log2(S)) squarings, where S = the intra-window matrix
-        # size = prefill_chunk_size (A is S×S strictly-lower, so A^S = 0). NOT num_v_heads.
-        self.num_iter = max(1, (self.prefill_chunk_size - 1).bit_length())  # ceil(log2(prefill_chunk_size))
 
     @property
     def phase(self):
@@ -301,22 +295,18 @@ class Qwen3_5GatedDeltaNet(nn.Module):
         # valid_mask -> one-hot -> matmul (compile-safe: arithmetic + matmul, no dynamic StridedSlice).
         # Decode (no padding) uses the plain last-K-1 tail (HF-style innermost slice on the time axis).
         if prefill:
-            # new conv_state = the last K-1 VALID rows of the FULL conv input [conv_state | mixed_qkv].
-            # The prepended conv_state (first K-1 cols of x_cf) is ALWAYS valid left-context, so extend
-            # valid_mask with K-1 leading ones. rev[t] = # valid from t to end (via triu matmul, avoiding
-            # cumsum/flip); the last K-1 valid have rev in {K-1,..,1}; a clamp one-hot selects them and a
-            # matmul gathers those rows. Gathering from the FULL x (not just mixed_qkv) is what lets a
-            # window with < K-1 valid tokens still pull the tail of the previous window's conv_state
-            # (e.g. multi-window prefill whose last window has 1-2 valid tokens). Keep the time axis
-            # INNERMOST through abs/clamp (a (B, T, 1) innermost-1 tensor returns garbage on device).
-            total = k_1 + seq_len
-            vm_ext = torch.cat([valid_mask.new_ones(batch_size, k_1, 1), valid_mask], dim=1)  # (B, (K-1)+S, 1)
-            _rc = torch.arange(total, device=vm_ext.device)
-            conv_triu = (_rc.unsqueeze(1) <= _rc.unsqueeze(0)).to(vm_ext.dtype)  # inline upper-tri (see chunk masks)
-            rev = torch.matmul(conv_triu, vm_ext).reshape(batch_size, 1, total)  # (B, 1, (K-1)+S)
-            jv = (k_1 - torch.arange(k_1, device=hidden_states.device)).view(1, k_1, 1)  # (1, K-1, 1): [K-1,...,1]
-            sel = (1.0 - (rev - jv).abs().to(mixed_qkv.dtype)).clamp(0.0, 1.0)  # (B, K-1, (K-1)+S)
-            new_conv_state = torch.matmul(sel, x_cf.transpose(1, 2)).contiguous()  # @ (B,(K-1)+S,conv_dim)=(B,K-1,conv_dim)
+            # new conv_state = the last K-1 VALID cols of the FULL conv input x_cf = [conv_state | mixed_qkv].
+            # x_cf cols 0..K-2 = the prepended conv_state (ALWAYS valid left-context); cols K-1.. = mixed_qkv
+            # (the first `valid_count` are real tokens, the rest are right-padding). So the last K-1 valid
+            # cols are exactly [valid_count .. valid_count+K-2] (chronological). When valid_count < K-1 this
+            # index range reaches back into the prepended conv_state (e.g. a multi-window prefill whose last
+            # window has 1-2 valid tokens still pulls the tail of the previous window's conv_state).
+            # A single DYNAMIC index_select (a point-gather) lowers on RBLN — unlike a dynamic strided-slice
+            # (SubviewOp/ScatterInfo blocker). PREFILL is batch=1, so `valid_count` is a scalar and the same
+            # columns apply to the whole batch. Numerically identical to the old one-hot-matmul gather.
+            valid_count = valid_mask.sum().to(torch.int64)  # scalar (batch=1): # valid tokens in this window
+            idx = valid_count + torch.arange(k_1, device=x_cf.device, dtype=torch.int64)  # (K-1,) last valid cols
+            new_conv_state = torch.index_select(x_cf, 2, idx).transpose(1, 2).contiguous()  # (B, K-1, conv_dim)
         else:
             new_conv_state = x_cf[:, :, -k_1:].transpose(1, 2).contiguous()  # (B, K-1, conv_dim), HF-style
         conv_out = F.conv1d(x_cf, self.conv1d.weight, self.conv1d.bias, padding=0, groups=self.conv_dim)
@@ -362,7 +352,6 @@ class Qwen3_5GatedDeltaNet(nn.Module):
                 chunk_tril_incl,
                 chunk_tril_strict,
                 recurrent_state,
-                num_iter=self.num_iter,
             )
         else:
             # Decode (seq=1): the single-step recurrent rule, rewritten for RBLN (HF's version lowers to
@@ -380,7 +369,7 @@ class Qwen3_5GatedDeltaNet(nn.Module):
 
 
 class Qwen3_5LinearDecoderLayer(nn.Module):
-    """A ``linear_attention`` decoder layer: GatedDeltaNet token mixer + MLP (functional state)."""
+    """A ``linear_attention`` decoder layer: GatedDeltaNet token mixer + MLP (on-device static states)."""
 
     def __init__(self, layer: nn.Module, linear_attn: Qwen3_5GatedDeltaNet):
         super().__init__()
