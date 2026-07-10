@@ -340,8 +340,11 @@ class Qwen3_5GatedDeltaNet(nn.Module):
             _ii = torch.arange(_S, device=query.device).unsqueeze(1)  # (S, 1)
             _jj = torch.arange(_S, device=query.device).unsqueeze(0)  # (1, S)
             chunk_eye = (_ii == _jj).to(query.dtype).reshape(_cshape) # torch.eye
-            chunk_tril_incl = (_ii >= _jj).to(query.dtype).reshape(_cshape) # torch.tril(diagonal=0)
-            chunk_tril_strict = (_ii > _jj).to(query.dtype).reshape(_cshape) # torch.triu(diagonal=0)의 역 == torch.tril(diagonal=-1)
+            # chunk_eye = torch.eye(_S, device=query.device, dtype=query.dtype).reshape(_cshape) # when does it support?
+            # chunk_tril_incl = (_ii >= _jj).to(query.dtype).reshape(_cshape) # torch.tril(diagonal=0)
+            # chunk_tril_strict = (_ii > _jj).to(query.dtype).reshape(_cshape) # torch.tril(diagonal=-1)
+            chunk_tril_incl = torch.tril(torch.ones(_cshape, device=query.device, dtype=query.dtype), diagonal=0)
+            chunk_tril_strict = torch.tril(torch.ones(_cshape, device=query.device, dtype=query.dtype), diagonal=-1)
             core_attn_out, new_recurrent_state = rbln_chunk_gated_delta_rule(
                 query,
                 key,
