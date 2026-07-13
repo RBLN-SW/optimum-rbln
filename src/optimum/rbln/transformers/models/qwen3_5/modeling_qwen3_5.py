@@ -398,7 +398,7 @@ class RBLNQwen3_5Model(RBLNQwen3VLModel):
     auto_model_class = AutoModelForImageTextToText
     _decoder_wrapper_cls = Qwen3_5_LanguageModelWrapper
     _use_rotary_emb = False
-    # _rbln_submodules = [{"name": "visual"}] # visual is done.
+    _rbln_submodules = [{"name": "visual"}] # visual is done.
     _config_class = Qwen3_5Config
     _rotary_emb_class = Qwen3_5TextRotaryEmbedding
     _get_rope_index_func = HFQwen3_5Model.get_rope_index
