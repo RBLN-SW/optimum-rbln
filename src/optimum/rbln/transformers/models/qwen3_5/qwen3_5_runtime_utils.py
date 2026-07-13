@@ -160,6 +160,16 @@ class RBLNQwen3_5RuntimeModel(RBLNRuntimeModel):
             named["conv_state_mask"] = fill(self.conv_state_shape, dtype=self.state_dtype)
             named["recurrent_state_mask"] = fill(self.recurrent_state_shape, dtype=self.state_dtype)
 
+            # Per-token validity of THIS chunk: 1 for the real tokens, 0 for the right-padding. Built from
+            # query_length (the SAME source as query_position above), NOT from the embeddings. The
+            # GatedDeltaNet multiplies it into g/beta to drop padding from the recurrent-state sum / decay
+            # and the conv_state extraction. Full windows -> all ones; the last (partial) window -> ones
+            # for the first (query_length - step) columns, then zeros.
+            valid_count = max(0, min(chunk, query_length - step))
+            valid_mask = torch.zeros(input_chunk.shape[0], chunk, 1, dtype=self.state_dtype)
+            valid_mask[:, :valid_count] = 1.0
+            named["valid_mask"] = valid_mask
+
             # For logits_to_keep == 1 every window overwrites the single logits row, so the final value
             # is the last window's (the next-token logits). Intermediate windows only advance the states.
             logits = self._run(named)
@@ -209,6 +219,9 @@ class RBLNQwen3_5RuntimeModel(RBLNRuntimeModel):
         # are simply ignored by the name-based input mapping; passed for safety if they survive.
         named["conv_state_mask"] = torch.ones(self.conv_state_shape, dtype=self.state_dtype)
         named["recurrent_state_mask"] = torch.ones(self.recurrent_state_shape, dtype=self.state_dtype)
+        # Decode is seq=1 (always valid) and uses the recurrent rule, which ignores valid_mask -> pruned from
+        # the decode graph; passed (all ones) only for safety if it survives, mirroring the state masks.
+        named["valid_mask"] = torch.ones(inputs.shape[0], 1, 1, dtype=self.state_dtype)
 
         logits = self._run(named)
         return RBLNDecoderOnlyOutput(logits=logits, hidden_states=None)

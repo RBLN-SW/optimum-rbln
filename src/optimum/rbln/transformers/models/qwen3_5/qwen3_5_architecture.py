@@ -556,6 +556,7 @@ class Qwen3_5Model(DecoderOnlyModel):
         lora_int_id: Optional[torch.Tensor] = None,
         conv_state_mask: Optional[torch.Tensor] = None,
         recurrent_state_mask: Optional[torch.Tensor] = None,
+        valid_mask: Optional[torch.Tensor] = None,
         output_hidden_states: Optional[bool] = None,
     ):
         if (input_ids is None) ^ (inputs_embeds is not None):
@@ -564,12 +565,12 @@ class Qwen3_5Model(DecoderOnlyModel):
             inputs_embeds = self.get_embedding()(input_ids)
         hidden_states = inputs_embeds * self.hidden_multiplier
 
-        # Per-token validity for the linear layers: PREFILL right-pads the window to prefill_chunk_size
-        # with ZERO embeddings (F.pad in the runtime), so a valid token has nonzero inputs_embeds and a
-        # padding token is exactly zero. Derive a (B, S, 1) 0/1 mask from that (a dynamic tensor -> not
-        # constant-folded, unlike a scalar query_position). The linear layers use it to drop padding from
-        # the recurrent-state sum/decay and the conv_state extraction; full windows -> all ones (no-op).
-        valid_mask = (inputs_embeds.abs().sum(dim=-1, keepdim=True) * 1e9).clamp(0.0, 1.0)
+        # Per-token validity for the linear layers (valid_mask: (B, S, 1), 1 = real token, 0 = right-padding)
+        # is passed IN from the runtime, built host-side from query_length — the SAME source query_position
+        # uses. (Previously derived in-graph as `(inputs_embeds.abs().sum(-1) != 0)`, which implicitly assumed
+        # padding embeddings are exactly zero.) The linear layers use it to drop padding from the
+        # recurrent-state sum/decay and the conv_state extraction; full windows -> all ones (no-op); decode
+        # (seq=1) -> ignored by the recurrent path. See RBLNQwen3_5RuntimeModel.prefill_forward.
 
         position_ids = position_ids if position_ids is not None else cache_position
         cos = sin = None
@@ -661,6 +662,7 @@ class Qwen3_5ForCausalLM(DecoderOnlyForCausalLM):
         lora_int_id: Optional[torch.Tensor] = None,
         conv_state_mask: Optional[torch.Tensor] = None,
         recurrent_state_mask: Optional[torch.Tensor] = None,
+        valid_mask: Optional[torch.Tensor] = None,
         output_hidden_states: Optional[bool] = None,
     ):
         hidden_states, all_hidden_states, new_states = self.model(
@@ -678,6 +680,7 @@ class Qwen3_5ForCausalLM(DecoderOnlyForCausalLM):
             lora_int_id=lora_int_id,
             conv_state_mask=conv_state_mask,
             recurrent_state_mask=recurrent_state_mask,
+            valid_mask=valid_mask,
             output_hidden_states=output_hidden_states,
         )
 
@@ -738,12 +741,13 @@ class Qwen3_5_CausalLMWrapper(DecoderOnlyWrapper):
         return new_model
 
     def prepare_forward_args(self, *args):
-        # conv_state_mask / recurrent_state_mask are the LAST two graph inputs (see get_input_info) —
-        # pop them off the end, let the base handle the standard prefix + per-layer state block, then
-        # SPLIT that combined state list into two containers and tack the masks back on. Only present
-        # when the model has linear_attention layers.
+        # valid_mask / conv_state_mask / recurrent_state_mask are the LAST graph inputs (see get_input_info,
+        # in that order) — pop them off the end (LIFO -> valid_mask, then recurrent, then conv), let the base
+        # handle the standard prefix + per-layer state block, then SPLIT that combined state list into two
+        # containers and tack the masks back on. Only present when the model has linear_attention layers.
         args = list(args)
         has_linear = bool(getattr(self.rbln_config, "linear_attention_layers", None))
+        valid_mask = args.pop() if has_linear else None
         recurrent_state_mask = args.pop() if has_linear else None
         conv_state_mask = args.pop() if has_linear else None
         base = list(super().prepare_forward_args(*args))
@@ -757,7 +761,7 @@ class Qwen3_5_CausalLMWrapper(DecoderOnlyWrapper):
         base[-2] = [pair if i not in linear else None for i, pair in enumerate(combined)]  # past_key_values
         past_states = [pair if i in linear else None for i, pair in enumerate(combined)]
         base.insert(-1, past_states)  # insert past_states just before rotary_emb (the last element)
-        return (*base, conv_state_mask, recurrent_state_mask)
+        return (*base, conv_state_mask, recurrent_state_mask, valid_mask)
 
     def forward(self, *args):
         (
@@ -775,6 +779,7 @@ class Qwen3_5_CausalLMWrapper(DecoderOnlyWrapper):
             rotary_emb,
             conv_state_mask,
             recurrent_state_mask,
+            valid_mask,
         ) = self.prepare_forward_args(*args)
 
         logits, all_hidden_states, new_states = self.model(
@@ -792,6 +797,7 @@ class Qwen3_5_CausalLMWrapper(DecoderOnlyWrapper):
             lora_int_id=lora_int_id,
             conv_state_mask=conv_state_mask,
             recurrent_state_mask=recurrent_state_mask,
+            valid_mask=valid_mask,
             output_hidden_states=self.rbln_config.output_hidden_states,
         )
 
@@ -832,10 +838,12 @@ class Qwen3_5_LanguageModelWrapper(Qwen3_5_CausalLMWrapper):
 
     def prepare_forward_args(self, *args):
         args = list(args)
-        # conv_state_mask / recurrent_state_mask are the LAST two graph inputs (see get_input_info):
-        # pop them off the end first, so the standard front-popping + `past_states = args` below is
-        # unchanged. Present only when the model has linear_attention layers.
+        # valid_mask / conv_state_mask / recurrent_state_mask are the LAST graph inputs (see get_input_info,
+        # appended in that order): pop them off the end first (so LIFO -> valid_mask, then recurrent, then
+        # conv), so the standard front-popping + `past_states = args` below is unchanged. Present only when
+        # the model has linear_attention layers.
         has_linear = bool(getattr(self.rbln_config, "linear_attention_layers", None))
+        valid_mask = args.pop() if has_linear else None
         recurrent_state_mask = args.pop() if has_linear else None
         conv_state_mask = args.pop() if has_linear else None
         input_ids = None if self.rbln_config.use_inputs_embeds else args.pop(0)
@@ -883,6 +891,7 @@ class Qwen3_5_LanguageModelWrapper(Qwen3_5_CausalLMWrapper):
             position_embeds,
             conv_state_mask,
             recurrent_state_mask,
+            valid_mask,
         )
 
     def forward(self, *args):
@@ -901,6 +910,7 @@ class Qwen3_5_LanguageModelWrapper(Qwen3_5_CausalLMWrapper):
             position_embeds,
             conv_state_mask,
             recurrent_state_mask,
+            valid_mask,
         ) = self.prepare_forward_args(*args)
 
         logits, all_hidden_states, new_states = self.model(
@@ -918,6 +928,7 @@ class Qwen3_5_LanguageModelWrapper(Qwen3_5_CausalLMWrapper):
             lora_int_id=lora_int_id,
             conv_state_mask=conv_state_mask,
             recurrent_state_mask=recurrent_state_mask,
+            valid_mask=valid_mask,
             output_hidden_states=self.rbln_config.output_hidden_states,
         )
 

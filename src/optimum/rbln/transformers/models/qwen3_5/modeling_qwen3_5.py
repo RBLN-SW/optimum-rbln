@@ -270,6 +270,12 @@ class RBLNQwen3_5ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
                     rbln_config.dtype,
                 )
             )
+            # Per-token validity of the current chunk (1 = real token, 0 = right-padding). Built HOST-SIDE by
+            # the runtime from query_length (the same source as query_position), NOT derived in-graph from the
+            # embeddings. The GatedDeltaNet uses it to drop padding from the recurrent-state sum / conv
+            # extraction. Prefill: (B, prefill_chunk_size, 1) with the last window partially 1; decode: dead
+            # (seq=1, recurrent path ignores it) -> pruned. Appended LAST (popped first in the wrappers).
+            input_info.append(("valid_mask", [batch_size, query_length, 1], rbln_config.dtype))
 
         if len(rbln_config.kvcache_metas) == 0:
             rbln_config.kvcache_metas.extend(kvcache_metas)
