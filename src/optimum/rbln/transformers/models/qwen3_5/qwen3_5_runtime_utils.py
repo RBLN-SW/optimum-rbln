@@ -40,6 +40,12 @@ class RBLNQwen3_5RuntimeModel(RBLNRuntimeModel):
     (rebel-pruned) input order via ``_index_to_input_name``; the static caches are absent from that order,
     and the graph's cache-update outputs alias the static addresses (in-place device writes), so only
     ``logits`` is kept.
+
+    NOTE — multi-window prefill needs FLASH attention. A partial last prefill window
+    (``seq_len % prefill_chunk_size != 0``) attending across PRIOR KV blocks (i.e. the 2nd or later chunk)
+    is mis-lowered by the EAGER attention op (prefill logit pearson ~0.99 vs HF eager; the argmax can flip).
+    FLASH attention (``max_seq_len >= 4096``, ``kvcache_partition_len >= 4096``) computes it correctly
+    (~0.9999). The GatedDeltaNet / linear-state path is accurate under both. Prefer flash for Qwen3.5 hybrid.
     """
 
     def __init__(
