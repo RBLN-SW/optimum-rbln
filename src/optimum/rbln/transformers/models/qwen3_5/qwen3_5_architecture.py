@@ -103,6 +103,27 @@ def rbln_chunk_gated_delta_rule(query, key, value, g, beta, eye, tril_incl, tril
     g/beta ``(B, S, Hv)``, initial_state ``(B, Hv, Dk, Dv)``. Returns core ``(B, S, Hv, Dv)`` and the final
     state ``(B, Hv, Dk, Dv)``. Decode (seq=1) stays on the recurrent rule.
     """
+    # ┌─────────────────────────────────────────────────────────────┐
+    # │ 첫 번째 for문 (청크 "안"의 병렬화 준비)                            │
+    # │                                                             │
+    # │   A (하삼각, 토큰끼리 간섭)  ──전방대입──►  T = (I−A)⁻¹            │
+    # │   (B,H,N,C,C)                              (B,H,N,C,C)      │
+    # │                                                             │
+    # │   T로 밸류/키 보정  →  U(=value), k_cumdecay                   │
+    # │   "청크 안의 순차적 델타 보정을 행렬곱 한 방으로"                     │
+    # └─────────────────────────────────────────────────────────────┘
+    #                           │
+    #                           ▼
+    # ┌─────────────────────────────────────────────────────────────┐
+    # │ 두 번째 for문 (청크 "사이"의 순차 처리)                            │
+    # │                                                             │
+    # │   S₀=0 ─청크0─► S₁ ─청크1─► S₂ ─ ... ─► S_N                   │
+    # │         (각 단계: 감쇠 + 새 정보 기록,  S는 d_k×d_v)              │
+    # │                                                             │
+    # │   각 청크 출력 = q·S(이전상태)  +  청크안 어텐션·v_new              │
+    # │                 └ inter-chunk ┘    └── intra-chunk ──┘      │
+    # └─────────────────────────────────────────────────────────────┘
+    
     initial_dtype = query.dtype
     query = l2norm(query, dim=-1, eps=1e-6)
     key = l2norm(key, dim=-1, eps=1e-6)
@@ -112,14 +133,32 @@ def rbln_chunk_gated_delta_rule(query, key, value, g, beta, eye, tril_incl, tril
     ]
     scale = 1 / (query.shape[-1] ** 0.5)  # match HF torch_chunk_gated_delta_rule (query.shape[-1] == head_k_dim)
     query = query * scale
-    v_beta = value * beta.unsqueeze(-1)
-    k_beta = key * beta.unsqueeze(-1)
+    v_beta = value * beta.unsqueeze(-1) # (B,H,S,d)
+    k_beta = key * beta.unsqueeze(-1) # (B,H,S,d)
 
     # chunk decay
     incr = g  # (B, Hv, S) per-token log-decay increments (pre-cumsum)
-    g = incr.cumsum(dim=-1)  # (B, Hv, S) cumulative log-decay across the window
+    g = incr.cumsum(dim=-1)  # (B, Hv, S) cumulative log-decay across the chunk window
     decay_mask = ((g.unsqueeze(-1) - g.unsqueeze(-2)) * tril_incl).exp() * tril_incl  # (B, Hv, S, S)
-    attn = -((k_beta @ key.transpose(-1, -2)) * decay_mask) * tril_strict
+    #     j=0      j=1      j=2      j=3
+    # i=0 [ e^0       0        0        0    ]
+    # i=1 [ e^{g1-g0} e^0      0        0    ]
+    # i=2 [ e^{g2-g0} e^{g2-g1} e^0     0    ]
+    # i=3 [ e^{g3-g0} e^{g3-g1} e^{g3-g2} e^0]
+    #         ↑ 하삼각(과거만) + 대각선은 e^0=1
+
+    attn = -((k_beta @ key.transpose(-1, -2)) * decay_mask) * tril_strict # k_beta @ keyᵀ : (B,H,S,d_k) @ (B,H,S,d_k) = (B,H,S,S) 
+                                                                          # [i,j] = β_i (k_i · k_j)  → 청크 안 키들끼리의 유사도(× β)
+                                                                          # * decay_mask : 여기에 감쇠 곱 → β_i (k_i·k_j) exp(g_i−g_j)
+                                                                          # * tril_strict : 하삼각 마스크 → 과거만 유지
+    # attn(S=4 예시) :
+    #       j=0    j=1    j=2    j=3
+    # i=0 [  0      0      0      0  ]
+    # i=1 [ a₁₀     0      0      0  ]      a_ij = -β_i (k_i·k_j) e^{g_i-g_j}
+    # i=2 [ a₂₀    a₂₁     0      0  ]      (i > j 인 곳만 값이 있음)
+    # i=3 [ a₃₀    a₃₁    a₃₂     0  ]
+    # 이 attn 행렬은 "청크 안에서 토큰 i가 자기보다 앞선 토큰 j에게 받는 (음의) 간섭"을 담고 있음
+    
     # (I - A)^{-1} via forward substitution (IDENTICAL to HF's loop; squaring is numerically unstable at
     # scale). HF appends `torch.eye`; here `eye` is the passed inline identity.
     #
@@ -135,27 +174,65 @@ def rbln_chunk_gated_delta_rule(query, key, value, g, beta, eye, tril_incl, tril
 
     # 우리는 모든 chunk에 대해서 한번에 수행하지 못함 -> 한번에 한 청크만 수행이 가능함.
     for i in range(1, chunk_size):
-        row = attn[..., i, :i].clone()
-        sub = attn[..., :i, :i].clone()
+        row = attn[..., i, :i].clone()  # (B,H,i)   : i행의 [0..i-1] 열
+        sub = attn[..., :i, :i].clone() # (B,H,i,i)    : 왼쪽 위 i×i 블록
         attn[..., i, :i] = row + (row.unsqueeze(-1) * sub).sum(-2)
-    attn = attn + eye
+    # row  = [a₃₀  a₃₁  a₃₂]          ← 3행 (아직 raw 값)
+    # sub  = 이미 완성된 위쪽 블록
+    #        [ 0                ]  (0행)
+    #        [ t₁₀   0          ]  (1행)
+    #        [ t₂₀   t₂₁   0    ]  (2행)
 
-    value = attn @ v_beta
-    k_cumdecay = attn @ (k_beta * g.exp().unsqueeze(-1))
-    last_state = initial_state.to(value)  # (B, Hv, Dk, Dv) carried recurrent_state (already masked at the GDN entry)
+    # 새 attn[3,m] = a₃ₘ + Σ_k a₃ₖ · sub[k,m] = "3에서 m으로 가는 직접 경로 + 중간 토큰 k를 거치는 모든 경로"
+    attn = attn + eye
+    # attn = T = (I - A)^{-1}
+    # T (C=4): (B,H,S,S) -> "청크 안의 모든 델타 보정을 한 번에 적용하는 변환 행렬"
+    # [ 1                    ]
+    # [ t₁₀  1               ]
+    # [ t₂₀  t₂₁  1          ]
+    # [ t₃₀  t₃₁  t₃₂  1     ]
+
+    value = attn @ v_beta # (B,H,S,d_v) -> 청크 안 델타 보정이 반영된 "새로운 밸류"
+    k_cumdecay = attn @ (k_beta * g.exp().unsqueeze(-1)) # (B,H,S,S) @ (B,H,S,d_k) = (B,H,S,d_k) -> 감쇠가 적용된 키(k_beta)를 T로 변환한 것.
+                                                         # 이건 "이전 청크에서 넘어온 상태 S가 현재 청크에 미치는 영향을 빼내기(제거)" 위해 쓰임
+    last_recurrent_state = initial_state.to(value)  # (B, Hv, Dk, Dv) carried recurrent_state (already masked at the GDN entry)
 
     # for current chunk
-    attn_intra = (query @ key.transpose(-1, -2)) * decay_mask  # HF (per-chunk loop) reuses the name `attn`
-    v_new = value - k_cumdecay @ last_state  # HF: v_new = v_i - (k_cumdecay[i] @ last_state)
-    attn_inter = (query * g.exp().unsqueeze(-1)) @ last_state  # HF: (q_i * g[..., None].exp()) @ last_state
+    # S_t = α_t S_{t-1} + k_t u_tᵀ
+    # o_t = q_tᵀ S_t
+    attn_intra = (query @ key.transpose(-1, -2)) * decay_mask  # 청크 안 어텐션 (intra-chunk) -> query × keyᵀ × decay_mask
+    v_prime = k_cumdecay @ last_recurrent_state # 현재 청크의 키들이 이전 상태 S로부터 이미 예측 가능한 밸류 
+    v_new = value - v_prime  # 이전 상태의 기여분 제거 (intra 보정) 
+    attn_inter = (query * g.exp().unsqueeze(-1)) @ last_recurrent_state  # 이전 상태로부터의 출력 (inter-chunk)
+                                                                         # q_i가 이전 청크들의 누적 메모리 S 에서 뽑아낸 출력.
     core = attn_inter + attn_intra @ v_new  # (B, Hv, S, Dv)
+    #     └이전청크 기여 ┘  └ 현재청크 안 기여 ┘
 
     # reverse-cumsum Σ_{s>t} incr[s] (== HF `g[..., -1] - g`) as a matmul
-    decay_to_end = incr @ tril_strict[0, 0]  # (B, Hv, S)  Σ_{i>t} incr[i]
     g_total = incr.sum(dim=-1, keepdim=True)  # (B, Hv, 1) total log-decay (a reduction, not a slice)
+    decay_to_end = incr @ tril_strict[0, 0]  # (B, Hv, S)  Σ_{i>t} incr[i] # 현재 청크의 (오차) 정보를 메모리에 새로 기록
+    # 원하는 것: decay_to_end[t] = Σ_{s>t} incr[s]
+    # t=0 →  a₁+a₂+a₃      (0번보다 뒤: 1,2,3)
+    # t=1 →  a₂+a₃         (1번보다 뒤: 2,3)
+    # t=2 →  a₃            (2번보다 뒤: 3)
+    # t=3 →  0             (3번보다 뒤: 없음)
+    # tril_strict (4×4),  [s, t] = 1  iff  s > t
+    #               t=0 열   t=1 열   t=2 열   t=3 열
+    #   s=0 [ a₀ ]   0        0        0        0
+    #   s=1 [ a₁ ]   1        0        0        0
+    #   s=2 [ a₂ ]   1        1        0        0
+    #   s=3 [ a₃ ]   1        1        1        0
+    #    ↑incr        │        │        │        │
+    #                 ▼        ▼        ▼        ▼
+    #    decay_to_end[t] = Σ_s incr[s]·(그 열)
+
+    # t=0열: a₀·0 + a₁·1 + a₂·1 + a₃·1 = a₁+a₂+a₃
+    # t=1열: a₀·0 + a₁·0 + a₂·1 + a₃·1 = a₂+a₃
+    # t=2열: a₀·0 + a₁·0 + a₂·0 + a₃·1 = a₃
+    # t=3열: a₀·0 + a₁·0 + a₂·0 + a₃·0 = 0
     new_state = (
-        last_state * g_total.unsqueeze(-1).exp() + (key * decay_to_end.exp().unsqueeze(-1)).transpose(-1, -2) @ v_new
-    )
+        last_recurrent_state * g_total.unsqueeze(-1).exp() + (key * decay_to_end.exp().unsqueeze(-1)).transpose(-1, -2) @ v_new
+    ) # 기존 메모리 감쇠 + 현재 청크 기여
 
     core = core.transpose(1, 2).contiguous().to(initial_dtype)  # (B, S, Hv, Dv)
     return core, new_state
@@ -201,6 +278,10 @@ def rbln_recurrent_gated_delta_rule_step(query, key, value, g, beta, initial_sta
 
     state = initial_state.float() * g_t  # decay the carried state
     kv_mem = torch.matmul(k_row, state)  # (B, Hv, 1, Dk) @ (B, Hv, Dk, Dv) = (B, Hv, 1, Dv)
+    #           S_decayed (3×2)
+    # k(1×3)    ┌ s00  s01 ┐
+    # [k0 k1 k2]│ s10  s11 │ = [ k0s00+k1s10+k2s20 ,  k0s01+k1s11+k2s21 ]  (1×2)
+    #           └ s20  s21 ┘        = kv_mem
     delta = (v_row - kv_mem) * beta_t  # (B, Hv, 1, Dv)
     new_state = state + torch.matmul(k_row.transpose(-1, -2), delta)  # + (B,Hv,Dk,1)@(B,Hv,1,Dv)
     core = torch.matmul(q_row, new_state)  # (B, Hv, 1, Dk) @ (B, Hv, Dk, Dv) = (B, Hv, 1, Dv)
