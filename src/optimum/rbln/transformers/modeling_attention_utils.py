@@ -341,16 +341,20 @@ class RBLNDecoderOnlyFlashAttentionMixin:
         kvcache_tensor_sizes: dict[str, list[list[int]]],
         rbln_config: "RBLNDecoderOnlyModelForCausalLMConfig",
         num_blocks: int,
+        current_blocks: int = 1,
     ) -> dict[Tuple[int, int], int]:
-        # Per-(node, chiplet) kv-cache bytes: resizable tensors scale with num_blocks, others stay
-        # at 1, each 2MB-aligned. Alignment is applied after scaling, so bytes grow non-linearly.
+        # Per-(node, chiplet) kv-cache bytes at `num_blocks`. `kvcache_tensor_sizes` reflects the
+        # buffers' current block count (`current_blocks`), so a resizable tensor's per-block bytes
+        # are size // current_blocks, rescaled to num_blocks; others are fixed. Each 2MB-aligned
+        # after scaling, so bytes grow non-linearly.
         can_resize = {meta.name: meta.can_resize for meta in rbln_config.kvcache_metas}
         sizes: dict[Tuple[int, int], int] = defaultdict(int)
         for key, sizes_at_node in kvcache_tensor_sizes.items():
-            m = num_blocks if can_resize[key] else 1
+            resizable = can_resize[key]
             for node_id, sizes_at_chiplet in enumerate(sizes_at_node):
                 for chiplet_id, size in enumerate(sizes_at_chiplet):
-                    sizes[(node_id, chiplet_id)] += align_2MB(size * m)
+                    scaled = size // current_blocks * num_blocks if resizable else size
+                    sizes[(node_id, chiplet_id)] += align_2MB(scaled)
         return sizes
 
     @classmethod
@@ -362,11 +366,15 @@ class RBLNDecoderOnlyFlashAttentionMixin:
     ) -> int:
         """Total device-wide kv-cache DRAM (bytes) at `num_blocks`, with 2MB alignment applied.
 
-        Assumes the block-size-1 compile baseline (as during estimation); the returned bytes are
-        not linear in `num_blocks` because alignment is applied after scaling.
+        Works for any current block size: the buffers' block count is `rbln_config.kvcache_num_blocks`
+        (0 for the unresized compile baseline is treated as 1). Bytes are not linear in `num_blocks`
+        because alignment is applied after scaling.
         """
         kvcache_tensor_sizes = compiled_models["prefill"].exp_get_dram_tensor_sizes()
-        return sum(cls._kvcache_bytes_per_chiplet(kvcache_tensor_sizes, rbln_config, num_blocks).values())
+        current_blocks = rbln_config.kvcache_num_blocks or 1
+        return sum(
+            cls._kvcache_bytes_per_chiplet(kvcache_tensor_sizes, rbln_config, num_blocks, current_blocks).values()
+        )
 
     @classmethod
     def multiply_kv_cache_num_blocks(
