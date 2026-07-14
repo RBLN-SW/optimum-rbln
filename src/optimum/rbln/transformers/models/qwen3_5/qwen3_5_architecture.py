@@ -162,14 +162,14 @@ def rbln_chunk_gated_delta_rule(query, key, value, g, beta, eye, tril_incl, tril
     # (I - A)^{-1} via forward substitution (IDENTICAL to HF's loop; squaring is numerically unstable at
     # scale). HF appends `torch.eye`; here `eye` is the passed inline identity.
     #
-    # KNOWN DEVICE LIMITATION (see memo `rbln-qwen35-deltanet-compile`): the in-place dynamic-WIDTH sub-tile
-    # store `attn[..., i, :i] = ...` mis-lowers on RBLN (partial-tile masked store loses precision, drifts
-    # md~0.25 over the 127-step chain). It corrupts the carried recurrent_state, so PARTIAL last prefill
-    # windows (seq % prefill_chunk_size != 0) degrade to pearsonR ~0.99 vs HF (full windows stay ~0.9999).
-    # Every algebraically-identical fix that avoids the sub-tile store either fails to compile (full-`attn`
-    # reads -> RblnTensorPartition "cat operand does not dominate", V3/V6) or is optimized back to the same
-    # sub-tile store (full-row store V7/V8). A real fix needs a compiler change (fused triangular-solve /
-    # gated-delta op, or the SSA/partition bug). Left as-is (compiles; correct for full windows).
+    # NOTE — root cause CORRECTED (see memo `rbln-qwen35-deltanet-compile`): this in-place forward-sub
+    # `attn[..., i, :i] = ...` has a small device-vs-CPU drift on RBLN (dynamic-width sub-tile store,
+    # max_abs ~0.25) but it is a RED HERRING — its pearsonR is 0.9994 (above the 0.99 bar) and it washes
+    # out in the downstream matmuls, so it causes NO real degradation. The partial-window prefill
+    # degradation (seq % prefill_chunk_size != 0 -> ~0.99) once blamed here is actually the EAGER attention
+    # op mishandling a partial query window attending across PRIOR KV blocks, and is FULLY fixed by FLASH
+    # attention (max_seq_len >= 4096, kvcache_partition_len >= 4096 -> all ~0.9999), the recommended
+    # config. So this V0 loop is left as-is (compiles; drift immaterial); no forward-sub rewrite needed.
     chunk_size = attn.shape[-1]
 
     # 우리는 모든 chunk에 대해서 한번에 수행하지 못함 -> 한번에 한 청크만 수행이 가능함.
