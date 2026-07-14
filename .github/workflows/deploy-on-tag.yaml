@@ -66,20 +66,25 @@ jobs:
     container:
       image: ${{ vars.DEV_CONTAINER_IMAGE }}
     steps:
-      - uses: actions/github-script@v6
-        with:
-          github-token: ${{ secrets.GIT_PAT }}
-          script: |
-            const result = await github.rest.actions.createWorkflowDispatch({
-              owner: 'rebellions-sw',
-              repo: 'rebel_compiler',
-              workflow_id: 'rebel_dispatch_model_generation_for_vllm.yaml',
-              ref: 'dev',
-              inputs: {
-                optimum_rbln_version: "${{ github.ref_name }}",
-              }
-            })
-            console.log(result)
+      # rebel_compiler's model-generation CI was migrated from GitHub Actions to
+      # Buildkite/Obedients, so trigger the Obedients pipeline directly (create a
+      # build via the BK-compatible REST API) instead of a workflow_dispatch.
+      # The pipeline reads OPTIMUM_RBLN_VERSION to pin the just-released tag.
+      - name: Trigger Obedients model-generation pipeline
+        env:
+          OBEDIENTS_API_TOKEN: ${{ secrets.OBEDIENTS_API_TOKEN }}
+          OPTIMUM_RBLN_VERSION: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          command -v jq >/dev/null 2>&1 || (apt-get update && apt-get install -y jq curl)
+          curl -fsS --retry 5 --retry-max-time 120 -X POST \
+            "https://obedients-api.k8s.rebellions.in/v2/organizations/main/pipelines/standalone-rebel-compiler-model-generation-vllm-rbln-pr-ci/builds" \
+            -H "Authorization: Bearer ${OBEDIENTS_API_TOKEN}" \
+            -H "Content-Type: application/json" \
+            -d "$(jq -n --arg ver "$OPTIMUM_RBLN_VERSION" \
+              '{commit: "HEAD", branch: "dev",
+                message: ("optimum-rbln " + $ver + " → model generation for vllm-rbln CI"),
+                env: {OPTIMUM_RBLN_VERSION: $ver, VLLM_RBLN_REF: "dev"}}')"
 
   bc-compile:
     name: BC compile for release tag
