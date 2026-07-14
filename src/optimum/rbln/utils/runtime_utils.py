@@ -54,7 +54,16 @@ def _dram_spec(npu: str) -> tuple[int, int]:
     raise ValueError(f"Unknown npu name: {npu}")
 
 
-def get_available_dram_per_chiplet(num_chiplets: int, npu: Optional[str] = None) -> int:
+def get_total_dram(npu: Optional[str] = None) -> int:
+    """Total device DRAM in bytes for the target NPU (resolved from the local device if None)."""
+    npu = _resolve_npu(npu)
+    dram_nbytes, _ = _dram_spec(npu)
+    return dram_nbytes
+
+
+def get_available_dram_per_chiplet(
+    num_chiplets: int, npu: Optional[str] = None, total_memory: Optional[int] = None
+) -> int:
     """
     Get the available DRAM per chiplet. Device DRAM is physically partitioned across
     chiplets, so an allocation pinned to a chiplet must fit within this amount, not the
@@ -65,6 +74,8 @@ def get_available_dram_per_chiplet(num_chiplets: int, npu: Optional[str] = None)
             Number of chiplets the device DRAM is split across.
         npu : Optional[str], default=None
             The NPU to get the available DRAM size. Resolved from the local device if None.
+        total_memory : Optional[int], default=None
+            Override for the device total DRAM in bytes. Defaults to the NPU's total DRAM.
 
     Returns:
         int
@@ -72,7 +83,37 @@ def get_available_dram_per_chiplet(num_chiplets: int, npu: Optional[str] = None)
     """
     npu = _resolve_npu(npu)
     dram_nbytes, sys_per_chiplet = _dram_spec(npu)
+    if total_memory is not None:
+        dram_nbytes = total_memory
     return dram_nbytes // num_chiplets - sys_per_chiplet
+
+
+_BYTE_UNITS = {"B": 1, "KB": 2**10, "MB": 2**20, "GB": 2**30, "TB": 2**40}
+
+
+def parse_byte_size(value: Union[int, str]) -> int:
+    """Parse a byte size given as an int (bytes) or a string like "10GB" / "512MB".
+
+    Units are case-insensitive and binary (KB=2**10 ... TB=2**40). Returns a positive int of bytes.
+    """
+    if isinstance(value, bool):
+        raise ValueError(f"Invalid byte size: {value!r}")
+    if isinstance(value, int):
+        nbytes = value
+    elif isinstance(value, str):
+        match = re.fullmatch(r"\s*(\d+)\s*([KMGT]?B)?\s*", value, re.IGNORECASE)
+        if not match:
+            raise ValueError(
+                f"Invalid byte size {value!r}. Expected an integer optionally suffixed with "
+                "B, KB, MB, GB, or TB (e.g. '10GB')."
+            )
+        unit = match.group(2)
+        nbytes = int(match.group(1)) * (_BYTE_UNITS[unit.upper()] if unit else 1)
+    else:
+        raise ValueError(f"Invalid byte size type: {type(value).__name__}")
+    if nbytes <= 0:
+        raise ValueError(f"Byte size must be positive, got {nbytes}.")
+    return nbytes
 
 
 def normalize_npu(npu: str) -> str:
