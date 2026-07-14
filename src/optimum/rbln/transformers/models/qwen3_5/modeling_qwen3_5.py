@@ -611,8 +611,7 @@ class RBLNQwen3_5ForConditionalGeneration(RBLNQwen3_5Model, RBLNDecoderOnlyModel
     _decoder_wrapper_cls = Qwen3_5_LanguageModelWrapper
     _supports_non_fp32 = True
     _use_rotary_emb = False
-    # _rbln_submodules = [{"name": "visual"}] # visual is done.
-    _rbln_submodules = []
+    _rbln_submodules = [{"name": "visual"}]  # visual is done.
 
     def __post_init__(self, **kwargs):
         super().__post_init__(**kwargs)
