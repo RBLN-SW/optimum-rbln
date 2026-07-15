@@ -356,6 +356,114 @@ blocker다. decode 경로는 패딩이 없으므로 HF처럼 그냥 꼬리 `x_cf
 
 ---
 
+## 7. Runtime 오케스트레이션 — 전체 generate() 흐름
+
+섹션 2~4가 GDN 커널 "한 번의 호출" 내부라면, 여기서는 이 호출들이 vision 인코딩부터 prefill 윈도우들,
+decode 스텝들까지 어떻게 엮여 `generate()`를 이루는지 정리한다.
+구현: `qwen3_5_runtime_utils.py`(`RBLNQwen3_5RuntimeModel`), `modeling_qwen3_5.py`(`forward` / `_preprocess_prefill`).
+
+### 7.0 두 개의 컴파일 단위
+
+| 단위 | 아티팩트 | 언제 실행 | 상태 캐시 |
+|---|---|---|---|
+| **visual** (vision 인코더) | 별도 `.rbln` 서브모듈 | prefill 때 **딱 1회** (Python eager 호출) | 없음 (stateless) |
+| **language model** | prefill/decode `.rbln` | prefill(청크 루프) + decode(스텝 루프) | full-attn paged KV + linear conv/recurrent 정적 캐시 |
+
+런타임(`RBLNQwen3_5RuntimeModel`)이 GDN을 위해 하는 일은 딱 **3가지 입력 주입**뿐이다. 상태 자체(conv/recurrent/KV)는
+KV처럼 device DRAM 정적 캐시에 있고 호출 시 오가지 않는다.
+
+| 주입 입력 | shape (0.8B) | 역할 |
+|---|---|---|
+| `conv_state_mask` | (1, 3, 6144) | 읽은 conv_state에 곱함 — **0=fresh(폐기), 1=carry** |
+| `recurrent_state_mask` | (1, 16, 128, 128) | 읽은 recurrent_state에 곱함 — 0=fresh, 1=carry |
+| `valid_mask` | (1, chunk, 1) | 청크 내 토큰별 유효(1)/패딩(0) — chunk-parallel prefill에서 패딩 제외 |
+
+### 7.1 Visual submodule — 입력 처리와 병합
+
+**프로세서**(HF `AutoProcessor.apply_chat_template`)가 이미지를 패치로 잘라 `input_ids`를 만든다:
+
+```
+smart_resize:  factor = patch_size · spatial_merge = 16 · 2 = 32
+   원본 H×W → h_bar×w_bar (32의 배수, h_bar·w_bar ≤ max_pixels, 종횡비 유지)
+grid_thw = (grid_t, grid_h, grid_w) = (1, h_bar/16, w_bar/16)
+patch 개수 P      = grid_t·grid_h·grid_w                  # pixel_values = [P, 3·2·16·16 = 1536]
+image placeholder = P / spatial_merge² = P / 4            # <image> 토큰(id 248056) 개수
+```
+
+`input_ids` = `… <vision_start> <image>×(P/4) <vision_end> "질문" …` 형태.
+(예: max_pixels 262144 → P=936, placeholder≈234 · max_pixels 1M → P=3888, placeholder=972.)
+
+**vision forward**(`RBLNQwen3_5VisionModel.forward`): patch_embed → 위치임베딩 → transformer 블록 →
+**2×2 patch merger** → `image_embeds [P/4, H_lm]`. 패치수를 `visual.max_seq_len` 버킷으로 pad→실행→valid만 trim
+(따라서 `visual: {max_seq_len: N}`은 P 이상이어야 한다 — 작으면 vision forward에서 IndexError).
+
+**병합**(`_preprocess_prefill`):
+```python
+inputs_embeds = embed_tokens(input_ids)                        # 텍스트 임베딩 (placeholder 포함)
+image_embeds  = self.visual(pixel_values, grid_thw)            # [P/4, H_lm]
+mask = (input_ids == config.image_token_id)                    # placeholder 위치
+inputs_embeds = inputs_embeds.masked_scatter(mask, image_embeds)   # 그 자리 → vision 임베딩 (순서대로 1:1)
+```
+placeholder 개수 == `image_embeds` 행수(P/4)라 1:1로 맞아떨어진다.
+
+### 7.2 mRoPE 위치 임베딩
+
+같은 `_preprocess_prefill`에서 `_get_rope_index_func(input_ids, mm_token_type_ids, image_grid_thw)`가 3D mRoPE
+좌표를 만든다 — 텍스트 토큰은 순차, **이미지 토큰은 grid 기반 2D(height/width)** 좌표. → `position_embed`(부분 RoPE
+cos/sin)로 `prefill_decoder`에 전달. decode는 `cache_position + rope_deltas`로 이어간다. (position_ids는 프로세서가
+아니라 모델이 생성한다.)
+
+### 7.3 PREFILL 런타임 — `prefill_forward`
+
+프롬프트를 `prefill_chunk_size`(=128) 윈도우로 나눠 넣고 GDN 상태를 윈도우 사이로 넘긴다. `prompt=255` 예시
+(→ 256으로 pad, 2 윈도우):
+
+```
+                conv/recurrent state_mask   valid_mask (1,128,1)
+window0 step=0     ZEROS (fresh 시작)         [1]×128            ← stale DRAM 폐기, 새 상태 write
+window1 step=128   ONES  (carry)              [1]×127 + [0]×1    ← window0 상태 이어받음, 우측 패딩 1개 제외
+                                              (valid = min(128, 255−128) = 127)
+```
+
+- **`conv/recurrent_state_mask`** — window0에서만 0. 런타임이 device DRAM을 직접 못 지우므로 GDN이 읽은 상태에
+  ×0을 곱해 "논리적 리셋"을 한다(§0). 이후 윈도우는 ×1로 이전 윈도우가 쓴 상태를 그대로 이어받는다.
+- **`valid_mask`** — GDN이 `g`/`beta`에 곱해, 마지막 부분 윈도우의 우측 패딩을 recurrent-state 합·decay·conv_state
+  추출에서 제외한다(§2.5). full 윈도우는 전부 1.
+- **`query_position`** — 이 윈도우에서 logits를 남길 행(마지막 유효 토큰). `logits_to_keep=1`이라 매 윈도우가 단일
+  logits 행을 덮어써, 최종값 = **마지막 윈도우의 next-token logits**.
+
+### 7.4 DECODE 런타임 — `decode_forward`
+
+토큰 1개(seq=1), `cache_position` 한 칸씩 전진, 순차 델타 규칙(§3). `state_mask`=ones(carry), `valid_mask`=ones —
+셋 다 decode 그래프에선 prefill-phase 게이팅으로 pruned되어 실질 무시된다(안전용으로만 전달).
+
+### 7.5 `_run` — pruned 입력 이름 매핑
+
+```python
+order = self.runtime._index_to_input_name         # rebel이 dead input 제거 후 남긴 입력 순서
+args  = [named_inputs[order[k]] for k in range(len(order))]
+out   = super().forward(*args); return out[0]      # 정적 캐시는 order에 없음(in-graph); logits만 keep
+```
+이름 기반 매핑이라 런타임이 실제로 keep한 입력만 정확한 순서로 전달된다 — decode에서 pruned된 mask를 넘겨도 무시된다.
+
+### 7.6 전체 타임라인
+
+```
+이미지 ─[processor]→ pixel_values, grid_thw ─→ self.visual (별도 .rbln) ─→ image_embeds [P/4, H]
+텍스트+<image> input_ids ─[embed_tokens]→ inputs_embeds ──masked_scatter(input_ids==image_token_id)──┘
+                                                    │  + mRoPE position_embed
+                                                    ▼
+                              prefill_decoder (LM prefill)
+                                window0(mask=0, fresh) → window1(mask=1, carry) → …   (conv/recurrent 캐리)
+                                                    ▼  마지막 윈도우의 next-token logits
+                              decode step0 → step1 → …   (seq=1, 이미지 없음, 순차 규칙)
+```
+
+full-attn paged-KV와 linear conv/recurrent 정적 캐시가 prefill 윈도우들 → decode 스텝들에 걸쳐 device에서 연속으로
+이어지고, 런타임은 그 사이 (1) 3개 마스크 주입, (2) 청크 윈도잉, (3) 이름 기반 입력 매핑만 담당한다.
+
+---
+
 ### 참고
 
 - 자세한 배경은 프로젝트 메모 `rbln-qwen35-deltanet-compile` 참고.
