@@ -37,7 +37,7 @@ jobs:
           BUILD_NUMBER=$( \
             curl -fsS --retry 5 --retry-max-time 120 -H "$AUTH" \
               "${API}/builds?branch=dev&state=passed&per_page=30" \
-            | jq -r 'first((.items // .)[] | select(.message=="nightly-build") | .number) // empty' \
+            | jq -r 'first((if type=="array" then . else .items end)[] | select(.message=="nightly-build") | .number) // empty' \
           )
           if [ -z "$BUILD_NUMBER" ]; then
             echo "No passed 'nightly-build' found on dev" >&2
@@ -48,7 +48,7 @@ jobs:
           DL_URL=$( \
             curl -fsS --retry 5 --retry-max-time 120 -H "$AUTH" \
               "${API}/builds/${BUILD_NUMBER}/artifacts" \
-            | jq -r 'first((.items // .)[] | select(.filename=="compiler-nightly-version") | .download_url) // empty' \
+            | jq -r 'first((if type=="array" then . else .items end)[] | select(.filename=="compiler-nightly-version") | .download_url) // empty' \
           )
           if [ -z "$DL_URL" ]; then
             echo "compiler-nightly-version artifact missing on build #${BUILD_NUMBER}" >&2
