@@ -22,15 +22,36 @@ jobs:
 
       - name: Get compiler version
         id: get_version
+        env:
+          OBEDIENTS_API_TOKEN: ${{ secrets.OBEDIENTS_API_TOKEN }}
+          OBEDIENTS_API_URL: ${{ secrets.OBEDIENTS_API_URL }}
         run: |
+          set -euo pipefail
+          API="${OBEDIENTS_API_URL}/v2/organizations/main/pipelines/nightly"
+          AUTH="Authorization: Bearer ${OBEDIENTS_API_TOKEN}"
+
+          # 1. Latest passed nightly build on dev (list is newest-first).
+          BUILD_NUMBER=$( \
+            curl -fsS --retry 5 --retry-max-time 120 -H "$AUTH" \
+              "${API}/builds?branch=dev&state=passed&per_page=1" \
+            | jq -r '(.items // .)[0].number' \
+          )
+
+          # 2. Locate the version manifest artifact produced by that build.
+          DL_URL=$( \
+            curl -fsS --retry 5 --retry-max-time 120 -H "$AUTH" \
+              "${API}/builds/${BUILD_NUMBER}/artifacts" \
+            | jq -r '(.items // .)[] | select(.filename=="compiler-nightly-version") | .download_url' \
+          )
+
+          # 3. Read VERSION_PROD (download_url is pre-signed, no auth header needed).
+          LATEST_VERSION=$(curl -fsSL --retry 5 "$DL_URL" | grep '^VERSION_PROD=' | cut -d '=' -f2-)
+
           CUR_VERSION=$(grep rebel_compiler_version .github/version.yaml | cut -d ':' -f2 | tr -d ' ')
-          LATEST_VERSION=$( \
-                            curl -s "${{ secrets.DEV_PKG_URL }}/rebel-compiler/json" | \
-                            jq -r '.releases | keys | .[]' | \
-                            grep prod | \
-                            grep -v "latestumd" | \
-                            python .github/scripts/parsing_latest_version.py
-                          )
+
+          echo "Latest (nightly build #${BUILD_NUMBER}): $LATEST_VERSION"
+          echo "Current (.github/version.yaml): $CUR_VERSION"
+
           echo "compiler_version=$LATEST_VERSION" >> $GITHUB_OUTPUT
           echo "cur_version=$CUR_VERSION" >> $GITHUB_OUTPUT
 
