@@ -66,10 +66,6 @@ jobs:
     container:
       image: ${{ vars.DEV_CONTAINER_IMAGE }}
     steps:
-      # rebel_compiler's model-generation CI was migrated from GitHub Actions to
-      # Buildkite/Obedients, so trigger the Obedients pipeline directly (create a
-      # build via the BK-compatible REST API) instead of a workflow_dispatch.
-      # The pipeline reads OPTIMUM_RBLN_VERSION to pin the just-released tag.
       - name: Trigger Obedients model-generation pipeline
         env:
           OBEDIENTS_API_TOKEN: ${{ secrets.OBEDIENTS_API_TOKEN }}
