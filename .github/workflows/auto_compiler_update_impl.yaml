@@ -30,22 +30,37 @@ jobs:
           API="${OBEDIENTS_API_URL}/v2/organizations/main/pipelines/nightly"
           AUTH="Authorization: Bearer ${OBEDIENTS_API_TOKEN}"
 
-          # 1. Latest passed nightly build on dev (list is newest-first).
+          # 1. Latest passed *amd64* nightly build on dev. The list also
+          #    contains "nightly-build-AArch64" (ARM) and nixl-triggered
+          #    builds; only the canonical "nightly-build" carries the amd64
+          #    prod package + version manifest, so filter by message.
           BUILD_NUMBER=$( \
             curl -fsS --retry 5 --retry-max-time 120 -H "$AUTH" \
-              "${API}/builds?branch=dev&state=passed&per_page=1" \
-            | jq -r '(.items // .)[0].number' \
+              "${API}/builds?branch=dev&state=passed&per_page=30" \
+            | jq -r 'first((.items // .)[] | select(.message=="nightly-build") | .number) // empty' \
           )
+          if [ -z "$BUILD_NUMBER" ]; then
+            echo "No passed 'nightly-build' found on dev" >&2
+            exit 1
+          fi
 
           # 2. Locate the version manifest artifact produced by that build.
           DL_URL=$( \
             curl -fsS --retry 5 --retry-max-time 120 -H "$AUTH" \
               "${API}/builds/${BUILD_NUMBER}/artifacts" \
-            | jq -r '(.items // .)[] | select(.filename=="compiler-nightly-version") | .download_url' \
+            | jq -r 'first((.items // .)[] | select(.filename=="compiler-nightly-version") | .download_url) // empty' \
           )
+          if [ -z "$DL_URL" ]; then
+            echo "compiler-nightly-version artifact missing on build #${BUILD_NUMBER}" >&2
+            exit 1
+          fi
 
           # 3. Read VERSION_PROD (download_url is pre-signed, no auth header needed).
           LATEST_VERSION=$(curl -fsSL --retry 5 "$DL_URL" | grep '^VERSION_PROD=' | cut -d '=' -f2-)
+          if [ -z "$LATEST_VERSION" ]; then
+            echo "VERSION_PROD not found in manifest of build #${BUILD_NUMBER}" >&2
+            exit 1
+          fi
 
           CUR_VERSION=$(grep rebel_compiler_version .github/version.yaml | cut -d ':' -f2 | tr -d ' ')
 
