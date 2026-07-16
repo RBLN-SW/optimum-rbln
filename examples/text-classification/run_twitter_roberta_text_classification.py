@@ -1,16 +1,23 @@
+import argparse
 import csv
 import os
 import urllib.request
 
-import fire
 import numpy as np
 import torch
-from transformers import RobertaTokenizerFast
+from transformers import AutoTokenizer
 
 from optimum.rbln import RBLNRobertaForSequenceClassification
 
 
 NUM_CLASS = 4
+
+
+# You can compile the model ahead of time with the CLI and then load the
+# artifacts here by passing the output directory as --model-id:
+#
+#   optimum-rbln-cli --model-id cardiffnlp/twitter-roberta-base-emotion -o twitter-roberta-base-emotion \
+#       --max_seq_len 512 --batch_size 1
 
 
 # Preprocess text
@@ -34,12 +41,12 @@ def download_label_mapping(task):
 def predict(text, tokenizer, model, max_seq_len, labels):
     # Encode the text
     text[0] = preprocess(text[0])
-    inputs = tokenizer.batch_encode_plus(
+    inputs = tokenizer(
         text, max_length=max_seq_len, truncation=True, padding="max_length", return_tensors="pt"
     )
 
     # Run the model
-    output = model(inputs.input_ids, inputs.attention_mask)
+    output = model(inputs.input_ids, inputs.attention_mask).logits
 
     for batch_itr in range(output.shape[0]):
         # Apply softmax to get probabilities
@@ -56,37 +63,36 @@ def predict(text, tokenizer, model, max_seq_len, labels):
             print(f"{batch_itr}) {l} {np.round(float(s), NUM_CLASS)}")
 
 
-def main(
-    model_id: str = None,
-    from_transformers: bool = True,
-    max_seq_len: int = 512,
-    batch_size: int = 1,
-):
-    task = "emotion"
-    model_id = f"cardiffnlp/twitter-roberta-base-{task}"
+def parse_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--model-id", default="cardiffnlp/twitter-roberta-base-emotion")
+    parser.add_argument("--max-seq-len", type=int, default=512)
+    parser.add_argument("--batch-size", type=int, default=1)
+    return parser.parse_args()
 
-    if from_transformers:
-        model = RBLNRobertaForSequenceClassification.from_pretrained(
-            model_id=model_id,
-            export=True,
-            rbln_max_seq_len=max_seq_len,
-            rbln_batch_size=batch_size,
-        )
-        model.save_pretrained(os.path.basename(model_id))
+
+def main():
+    args = parse_args()
+
+    task = "emotion"
+
+    if os.path.isdir(args.model_id):
+        model = RBLNRobertaForSequenceClassification.from_pretrained(args.model_id)
     else:
         model = RBLNRobertaForSequenceClassification.from_pretrained(
-            model_id=os.path.basename(model_id),
-            export=False,
+            args.model_id,
+            rbln_max_seq_len=args.max_seq_len,
+            rbln_batch_size=args.batch_size,
         )
 
     prompt = ["Celebrating my promotion 😎"]
 
     target_sentences = prompt
 
-    tokenizer = RobertaTokenizerFast.from_pretrained(model_id)
+    tokenizer = AutoTokenizer.from_pretrained(args.model_id)
     labels = download_label_mapping(task)
-    predict(target_sentences, tokenizer, model, max_seq_len, labels)
+    predict(target_sentences, tokenizer, model, args.max_seq_len, labels)
 
 
 if __name__ == "__main__":
-    fire.Fire(main)
+    main()

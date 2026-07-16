@@ -1,38 +1,42 @@
+import argparse
 import os
 
-import fire
 from transformers import BartTokenizer
 
 from optimum.rbln import RBLNBartForConditionalGeneration
 
 
+# You can compile the model ahead of time with the CLI and then load the
+# artifacts here by passing the output directory as --model-id:
+#
+#   optimum-rbln-cli --model-id lucadiliello/bart-small -o bart-small \
+#       --batch_size 1
+
+
 sentences = ["UN Chief Says There Is No <mask> in Syria"]
 
 
-def main(
-    model_id: str = "lucadiliello/bart-small",
-    batch_size: int = 1,
-    from_transformers: bool = False,
-):
-    if from_transformers:
-        # Compile the RBLN-optimized Bart model (if export=True)
-        model = RBLNBartForConditionalGeneration.from_pretrained(
-            model_id=model_id,
-            export=True,
-            # The following arguments are specific to RBLN compilation
-            rbln_batch_size=batch_size,
-        )
-        model.save_pretrained(os.path.basename(model_id))
+def parse_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--model-id", default="lucadiliello/bart-small")
+    parser.add_argument("--batch-size", type=int, default=1)
+    return parser.parse_args()
+
+
+def main():
+    args = parse_args()
+
+    if os.path.isdir(args.model_id):
+        model = RBLNBartForConditionalGeneration.from_pretrained(args.model_id)
     else:
-        # Load compiled model
         model = RBLNBartForConditionalGeneration.from_pretrained(
-            model_id=os.path.basename(model_id),
-            export=False,
+            args.model_id,
+            rbln_batch_size=args.batch_size,
         )
 
     # Prepare inputs
-    target_sentences = sentences * batch_size
-    tokenizer = BartTokenizer.from_pretrained(model_id)
+    target_sentences = sentences * args.batch_size
+    tokenizer = BartTokenizer.from_pretrained(args.model_id)
     inputs = tokenizer(target_sentences, return_tensors="pt", padding=True)
 
     # Generate
@@ -49,4 +53,4 @@ def main(
 
 
 if __name__ == "__main__":
-    fire.Fire(main)
+    main()

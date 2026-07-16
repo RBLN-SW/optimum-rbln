@@ -152,16 +152,16 @@ def _label(text: str) -> str:
 
 EXAMPLES_TEXT = r"""
 Quick start examples
-  1) Compile a Llama chat model for causal LM
-     optimum-rbln-cli --output-dir ./compiled_llama \
-       --model-id meta-llama/Llama-2-7b-chat-hf \
-       --batch-size 2 --tensor-parallel-size 4
+  1) Compile a Qwen3 chat model for causal LM
+     optimum-rbln-cli --output-dir ./compiled_qwen3 \
+       --model-id Qwen/Qwen3-4B \
+       --batch_size 1 --max_seq_len 8192 --num_devices 4
 
   2) Compile with explicit class (Auto sequence classification)
      optimum-rbln-cli --output-dir ./compiled_bert \
        --class RBLNAutoModelForSequenceClassification \
        --model-id bert-base-uncased \
-       --batch-size 8 --max-seq-len 512
+       --batch_size 8 --max_seq_len 512
 
   3) Pass nested rbln_config with dot-notation (e.g., for diffusion)
      optimum-rbln-cli --output-dir ./compiled_sd \
@@ -169,10 +169,10 @@ Quick start examples
        --unet.batch_size 2 --vae.batch_size 1
 
   4) Pass HuggingFace model arguments with --hf-* prefix
-     optimum-rbln-cli --output-dir ./compiled_llama \
-       --model-id meta-llama/Llama-2-7b-chat-hf \
+     optimum-rbln-cli --output-dir ./compiled_qwen3 \
+       --model-id Qwen/Qwen3-4B \
        --hf-trust-remote-code true --hf-dtype bfloat16 \
-       --batch-size 2 --tensor-parallel-size 4
+       --batch_size 1 --num_devices 4
 
 Notes
   - Any extra --key value pairs not defined above are collected into rbln_config

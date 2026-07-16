@@ -130,10 +130,10 @@ RBLNAutoConfig.register(RBLNResNetModelConfig)
 # STEP 4: Usage Example - Creating and using the custom RBLN model
 # ----------------------------------------------------------------
 # Initialize the model from a pretrained HuggingFace model
-# The 'export=True' parameter triggers the model compilation process
-# rbln_image_size and rbln_batch_size are passed to the custom configuration
+# Passing a HuggingFace model id compiles the model; rbln_image_size and
+# rbln_batch_size are passed to the custom configuration
 my_model = RBLNResNetModel.from_pretrained(
-    "microsoft/resnet-50", export=True, rbln_image_size=(224, 224), rbln_batch_size=1
+    "microsoft/resnet-50", rbln_image_size=(224, 224), rbln_batch_size=1
 )
 
 # Save the compiled model for later use
