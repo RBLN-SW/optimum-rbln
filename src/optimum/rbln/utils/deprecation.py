@@ -29,15 +29,15 @@ import packaging.version
 
 from ..__version__ import __version__
 from .logging import get_logger
+from .runtime_utils import _get_npu_name
 
 
 logger = get_logger(__name__)
 
 
 def warn_deprecated_npu(npu: Optional[str] = None):
-    import rebel
 
-    npu = npu or rebel.get_npu_name()
+    npu = npu or _get_npu_name()
     if npu == "RBLN-CA02":
         logger.warning_once(
             "Support for the RBLN-CA02 device is provided only up to optimum-rbln v0.8.0 and has reached end of life.",

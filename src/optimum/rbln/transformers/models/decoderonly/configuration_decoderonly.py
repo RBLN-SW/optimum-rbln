@@ -220,10 +220,7 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
         self.attn_impl = attn_impl
         self.kvcache_partition_len = kvcache_partition_len
         self.kvcache_block_size = kvcache_block_size
-        self.prefill_chunk_size = prefill_chunk_size or 128
-        if self.prefill_chunk_size % 64 != 0 or self.prefill_chunk_size <= 0:
-            raise ValueError("`prefill_chunk_size` must be a positive integer divisible by 64.")
-
+        self.prefill_chunk_size = prefill_chunk_size
         self.kvcache_num_blocks = kvcache_num_blocks if kvcache_num_blocks is not None else 0
         self.cache_impl = cache_impl or "static"
         self.sliding_window = sliding_window

@@ -26,7 +26,7 @@ from transformers.modeling_outputs import BaseModelOutputWithPast
 from ....configuration_utils import RBLNCompileConfig
 from ....modeling import RBLNModel
 from ....utils.logging import get_logger
-from ....utils.runtime_utils import is_compiler_supports_buffer_resize
+from ....utils.runtime_utils import _get_npu_name, is_compiler_supports_buffer_resize
 from ...modeling_attention_utils import (
     RBLNDecoderOnlyFlashAttentionMixin,
     set_default_values,
@@ -550,6 +550,12 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
             )
         if rbln_config.max_seq_len is None:
             raise ValueError("`max_seq_len` should be specified.")
+
+        if rbln_config.prefill_chunk_size is None:
+            rbln_config.prefill_chunk_size = 512 if "RBLN-CR" in _get_npu_name() else 128
+
+        if rbln_config.prefill_chunk_size % 64 != 0 or rbln_config.prefill_chunk_size <= 0:
+            raise ValueError("`prefill_chunk_size` must be a positive integer divisible by 64.")
 
         layer_types = getattr(model_config, "layer_types", None)
         all_full_attention = layer_types is not None and all(t == "full_attention" for t in layer_types)
