@@ -552,7 +552,7 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
             raise ValueError("`max_seq_len` should be specified.")
 
         if rbln_config.prefill_chunk_size is None:
-            rbln_config.prefill_chunk_size = 512 if "RBLN-CR" in _get_npu_name() else 128
+            rbln_config.prefill_chunk_size = 512 if "RBLN-CR" in (_get_npu_name() or "") else 128
 
         if rbln_config.prefill_chunk_size % 64 != 0 or rbln_config.prefill_chunk_size <= 0:
             raise ValueError("`prefill_chunk_size` must be a positive integer divisible by 64.")
