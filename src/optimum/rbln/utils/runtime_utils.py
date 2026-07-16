@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import inspect
-import os
 import re
 import threading
 from functools import lru_cache
@@ -46,18 +45,11 @@ def is_compiler_supports_chiplet_alloc() -> bool:
     return hasattr(rebel.RBLNCompiledModel, "get_alloc_per_chiplet_by_key")
 
 
-def _get_npu_name() -> str:
-    device_name = (
-        rebel.get_npu_name(0) or os.environ.get("RBLN_FORCE_NPU_NAME") or os.environ.get("RBLN_TARGET_SOC") or None
-    )
-    return device_name
-
-
 def _resolve_npu(npu: Optional[str] = None) -> str:
     if npu is None:
-        npu = _get_npu_name()
-        if not npu:
+        if not rebel.npu_is_available(0):
             raise RuntimeError("No NPU is available to get available DRAM size.")
+        npu = rebel.get_npu_name(0)
     return npu
 
 
