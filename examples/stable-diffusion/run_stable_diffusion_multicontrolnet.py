@@ -24,9 +24,7 @@ def parse_args():
     parser.add_argument("--diffusion-model-id", default="runwayml/stable-diffusion-v1-5")
     parser.add_argument("--controlnet-model-id", nargs="+", default=None)
     parser.add_argument("--prompt", default="a giant standing in a fantasy landscape, best quality")
-    parser.add_argument(
-        "--negative-prompt", default="monochrome, lowres, bad anatomy, worst quality, low quality"
-    )
+    parser.add_argument("--negative-prompt", default="monochrome, lowres, bad anatomy, worst quality, low quality")
     return parser.parse_args()
 
 

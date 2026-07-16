@@ -132,9 +132,7 @@ RBLNAutoConfig.register(RBLNResNetModelConfig)
 # Initialize the model from a pretrained HuggingFace model
 # Passing a HuggingFace model id compiles the model; rbln_image_size and
 # rbln_batch_size are passed to the custom configuration
-my_model = RBLNResNetModel.from_pretrained(
-    "microsoft/resnet-50", rbln_image_size=(224, 224), rbln_batch_size=1
-)
+my_model = RBLNResNetModel.from_pretrained("microsoft/resnet-50", rbln_image_size=(224, 224), rbln_batch_size=1)
 
 # Save the compiled model for later use
 my_model.save_pretrained("my_resnet_model_saved")

@@ -41,9 +41,7 @@ def download_label_mapping(task):
 def predict(text, tokenizer, model, max_seq_len, labels):
     # Encode the text
     text[0] = preprocess(text[0])
-    inputs = tokenizer(
-        text, max_length=max_seq_len, truncation=True, padding="max_length", return_tensors="pt"
-    )
+    inputs = tokenizer(text, max_length=max_seq_len, truncation=True, padding="max_length", return_tensors="pt")
 
     # Run the model
     output = model(inputs.input_ids, inputs.attention_mask).logits
