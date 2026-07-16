@@ -111,8 +111,8 @@ class RBLNQwen3_5ForConditionalGenerationConfig(RBLNQwen3VLForConditionalGenerat
     ```
     """
 
-    submodules = ["visual"]
-    # submodules = []
+    # submodules = ["visual"]
+    submodules = []
 
     def __init__(self, linear_attention_layers: Optional[List[int]] = None, **kwargs: Any):
         super().__init__(**kwargs)
