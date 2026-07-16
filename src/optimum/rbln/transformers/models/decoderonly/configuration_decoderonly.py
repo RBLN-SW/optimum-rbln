@@ -98,10 +98,10 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
             kvcache_num_blocks (Optional[int]): The total number of blocks to allocate for the
                 PagedAttention KV cache at compile time. Defaults to 0 (automatically determined).
                 See the "KV Cache Number of Blocks (`kvcache_num_blocks`)" section below for details.
-            memory_budget (Optional[Union[int, str]]): Device DRAM budget used when auto-estimating
-                `kvcache_num_blocks`. Accepts bytes as an int or string ("10GB", "512MB"), or a
-                percentage ("80%") of the NPU total DRAM. Defaults to None (the NPU total DRAM).
-                Must not exceed the target NPU's total DRAM.
+            memory_budget (Optional[Union[int, str]]): Usable DRAM budget (system reserve excluded)
+                used when auto-estimating `kvcache_num_blocks`. Accepts bytes as an int or string
+                ("10GB", "512MB"), or a percentage ("80%") of the NPU available DRAM. Defaults to
+                None (the full NPU available DRAM). Must not exceed the target NPU's available DRAM.
             decoder_batch_sizes (Optional[List[int]]): A list of batch sizes for which separate decoder models will be compiled.
                 This allows the model to handle varying batch sizes efficiently during generation. If not specified,
                 defaults to a list containing only the model's main batch size. When specifying multiple batch sizes:

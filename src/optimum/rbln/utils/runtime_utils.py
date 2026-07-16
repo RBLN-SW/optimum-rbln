@@ -54,16 +54,7 @@ def _dram_spec(npu: str) -> tuple[int, int]:
     raise ValueError(f"Unknown npu name: {npu}")
 
 
-def get_total_dram(npu: Optional[str] = None) -> int:
-    """Total device DRAM in bytes for the target NPU (resolved from the local device if None)."""
-    npu = _resolve_npu(npu)
-    dram_nbytes, _ = _dram_spec(npu)
-    return dram_nbytes
-
-
-def get_available_dram_per_chiplet(
-    num_chiplets: int, npu: Optional[str] = None, total_memory: Optional[int] = None
-) -> int:
+def get_available_dram_per_chiplet(num_chiplets: int, npu: Optional[str] = None) -> int:
     """
     Get the available DRAM per chiplet. Device DRAM is physically partitioned across
     chiplets, so an allocation pinned to a chiplet must fit within this amount, not the
@@ -74,8 +65,6 @@ def get_available_dram_per_chiplet(
             Number of chiplets the device DRAM is split across.
         npu : Optional[str], default=None
             The NPU to get the available DRAM size. Resolved from the local device if None.
-        total_memory : Optional[int], default=None
-            Override for the device total DRAM in bytes. Defaults to the NPU's total DRAM.
 
     Returns:
         int
@@ -83,8 +72,6 @@ def get_available_dram_per_chiplet(
     """
     npu = _resolve_npu(npu)
     dram_nbytes, sys_per_chiplet = _dram_spec(npu)
-    if total_memory is not None:
-        dram_nbytes = total_memory
     return dram_nbytes // num_chiplets - sys_per_chiplet
 
 

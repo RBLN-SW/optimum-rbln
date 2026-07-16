@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Optional, Tuple
 import rebel
 
 from ..utils.logging import get_logger
-from ..utils.runtime_utils import get_available_dram_per_chiplet, get_total_dram, parse_byte_size
+from ..utils.runtime_utils import get_available_dram_per_chiplet, parse_byte_size
 
 
 if TYPE_CHECKING:
@@ -168,23 +168,25 @@ def format_byte_size(nbytes: int) -> str:
         return f"{nbytes / 1024**3:.2f} GB"
 
 
-def _resolve_memory_budget(memory_budget: Optional[object], npu: Optional[str]) -> int:
-    """Resolve `memory_budget` to a device total-DRAM budget in bytes, capped at the NPU total.
+def _resolve_memory_budget(memory_budget: Optional[object], available_total: int) -> int:
+    """Resolve `memory_budget` to usable DRAM bytes (system reserve excluded), capped at available_total.
 
-    None -> NPU total DRAM; "80%" -> that fraction of it; int/"10GB"/"512MB" -> parsed bytes.
+    None -> available_total; "80%" -> that fraction of it; int/"10GB"/"512MB" -> parsed bytes.
+    `available_total` is the device-wide available DRAM after the per-chiplet system reserve.
     """
-    total = get_total_dram(npu)
     if memory_budget is None:
-        return total
+        return available_total
     if isinstance(memory_budget, str) and memory_budget.strip().endswith("%"):
         pct = float(memory_budget.strip()[:-1])
         if pct <= 0:
             raise ValueError(f"memory_budget percentage must be positive, got {memory_budget!r}.")
-        budget = int(total * pct / 100)
+        budget = int(available_total * pct / 100)
     else:
         budget = parse_byte_size(memory_budget)
-    if budget > total:
-        raise ValueError(f"memory_budget ({budget} bytes) exceeds the target NPU's total DRAM ({total} bytes).")
+    if budget > available_total:
+        raise ValueError(
+            f"memory_budget ({budget} bytes) exceeds the target NPU's available DRAM ({available_total} bytes)."
+        )
     return budget
 
 
@@ -276,10 +278,9 @@ class RBLNDecoderOnlyFlashAttentionMixin:
                     chiplets.add((node_id, chiplet_id))
 
         num_chiplets = max((chiplet_id for _, chiplet_id in chiplets), default=0) + 1
-        total_budget = _resolve_memory_budget(rbln_config.memory_budget, rbln_config.npu)
-        available_per_chiplet = get_available_dram_per_chiplet(
-            num_chiplets, rbln_config.npu, total_memory=total_budget
-        )
+        available_total = get_available_dram_per_chiplet(num_chiplets, rbln_config.npu) * num_chiplets
+        budget = _resolve_memory_budget(rbln_config.memory_budget, available_total)
+        available_per_chiplet = budget // num_chiplets
         return alloc_without_dram, kvcache_tensor_sizes, available_per_chiplet, chiplets
 
     @classmethod
