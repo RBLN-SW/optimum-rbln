@@ -42,13 +42,16 @@ def set_default_values(
     kvcache_block_size: Optional[int] = None,
     max_seq_len: Optional[int] = None,
     prefill_chunk_size: Optional[int] = None,
+    npu: Optional[str] = None,
 ) -> Tuple[str, int, int, int]:
     if attn_impl is None:
         attn_impl = "eager"
 
     if prefill_chunk_size is None:
         # RBLN-CR NPUs use a larger prefill chunk for better prefill performance.
-        prefill_chunk_size = 512 if "RBLN-CR" in (rebel.get_npu_name(0) or "") else 128
+        # Prefer the target NPU pinned on the config; fall back to the locally attached device.
+        npu = npu or rebel.get_npu_name(0)
+        prefill_chunk_size = 512 if "RBLN-CR" in (npu or "") else 128
     if prefill_chunk_size % 64 != 0 or prefill_chunk_size <= 0:
         raise ValueError("`prefill_chunk_size` must be a positive integer divisible by 64.")
 
