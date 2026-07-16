@@ -133,11 +133,11 @@ def rbln_chunk_gated_delta_rule(query, key, value, g, beta, eye, tril_incl, tril
     # gated-delta op, or the SSA/partition bug). Left as-is (compiles; correct for full windows).
     chunk_size = attn.shape[-1]
 
-    # 우리는 모든 chunk에 대해서 한번에 수행하지 못함 -> 한번에 한 청크만 수행이 가능함.
-    for i in range(1, chunk_size):
-        row = attn[..., i, :i].clone()
-        sub = attn[..., :i, :i].clone()
-        attn[..., i, :i] = row + (row.unsqueeze(-1) * sub).sum(-2)
+    # # 우리는 모든 chunk에 대해서 한번에 수행하지 못함 -> 한번에 한 청크만 수행이 가능함.
+    # for i in range(1, chunk_size):
+    #     row = attn[..., i, :i].clone()
+    #     sub = attn[..., :i, :i].clone()
+    #     attn[..., i, :i] = row + (row.unsqueeze(-1) * sub).sum(-2)
     attn = attn + eye
 
     value = attn @ v_beta
