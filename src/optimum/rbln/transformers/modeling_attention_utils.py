@@ -1,3 +1,4 @@
+import logging
 import math
 import os
 from collections import defaultdict
@@ -6,12 +7,7 @@ from typing import TYPE_CHECKING, Optional, Tuple
 import rebel
 
 from ..utils.logging import get_logger
-from ..utils.runtime_utils import (
-    get_available_dram,
-    get_available_dram_per_chiplet,
-    is_compiler_supports_buffer_resize,
-    is_compiler_supports_chiplet_alloc,
-)
+from ..utils.runtime_utils import get_available_dram_per_chiplet
 
 
 if TYPE_CHECKING:
@@ -187,6 +183,25 @@ class RBLNDecoderOnlyFlashAttentionMixin:
     def set_kvcache_num_blocks_after_compilation(
         cls, compiled_models: dict[str, rebel.RBLNCompiledModel], rbln_config: "RBLNDecoderOnlyModelForCausalLMConfig"
     ):
+        def _log_memory_usage(compiled_models: dict[str, rebel.RBLNCompiledModel], prefix: str):
+            if not logger.isEnabledFor(logging.DEBUG):
+                return
+            for phase, compiled_model in compiled_models.items():
+                logger.debug(f"{prefix} Memory usage of compiled_model[{phase}]:")
+                for key, alloc_per_chiplet in compiled_model.get_alloc_per_chiplet_by_key().items():
+                    logger.debug(
+                        f"  {key}: {[[format_byte_size(size) for size in sizes_at_chiplet] for sizes_at_chiplet in alloc_per_chiplet]}"
+                    )
+
+                logger.debug(f"{prefix} DramTensor sizes in compiled_model[{phase}]:")
+                logger.debug("Please note that the sizes are not aligned. (alignment is not considered)")
+                for key, sizes_at_node in compiled_model.exp_get_dram_tensor_sizes().items():
+                    logger.debug(f"  {key}:")
+                    for node_id, sizes_at_chiplet in enumerate(sizes_at_node):
+                        logger.debug(f"    - node {node_id}: {[format_byte_size(size) for size in sizes_at_chiplet]}")
+
+        _log_memory_usage(compiled_models, "Before adjusting kvcache_num_blocks:")
+
         rbln_config.kvcache_num_blocks = cls.estimate_num_kvcache_blocks(
             compiled_models=compiled_models, rbln_config=rbln_config
         )
@@ -199,12 +214,13 @@ class RBLNDecoderOnlyFlashAttentionMixin:
             compiled_models=compiled_models, rbln_config=rbln_config, multiplier=rbln_config.kvcache_num_blocks
         )
 
+        _log_memory_usage(compiled_models, "After adjusting kvcache_num_blocks:")
+
     @classmethod
     def estimate_num_kvcache_blocks(
         cls,
         compiled_models: dict[str, rebel.RBLNCompiledModel],
         rbln_config: "RBLNDecoderOnlyModelForCausalLMConfig",
-        available_dram: Optional[int] = None,
     ) -> int:
         if "prefill" not in rbln_config.phases:
             logger.warning(
@@ -216,7 +232,7 @@ class RBLNDecoderOnlyFlashAttentionMixin:
         # total can still OOM a single chiplet; the search below bounds blocks by the
         # tightest chiplet.
         alloc_without_dram, kvcache_tensor_sizes, available_per_chiplet, chiplets = (
-            cls._collect_chiplet_kvcache_inputs(compiled_models, rbln_config, available_dram)
+            cls._collect_chiplet_kvcache_inputs(compiled_models, rbln_config)
         )
         return cls._search_num_kvcache_blocks(
             rbln_config, alloc_without_dram, kvcache_tensor_sizes, available_per_chiplet, chiplets
@@ -227,53 +243,30 @@ class RBLNDecoderOnlyFlashAttentionMixin:
         cls,
         compiled_models: dict[str, rebel.RBLNCompiledModel],
         rbln_config: "RBLNDecoderOnlyModelForCausalLMConfig",
-        available_dram: Optional[int] = None,
     ) -> Tuple[dict[Tuple[int, int], int], dict[str, list[list[int]]], int, set[Tuple[int, int]]]:
-        # Returns non-KV alloc, KV sizes, per-bucket DRAM budget, and the (node, chiplet)
+        # Returns non-KV alloc, KV sizes, per-chiplet DRAM budget, and the (node, chiplet)
         # buckets to check. ATOM reports one chiplet, so it shares the per-chiplet path.
         alloc_without_dram: dict[Tuple[int, int], int] = defaultdict(int)
         chiplets: set[Tuple[int, int]] = set()
 
-        if is_compiler_supports_chiplet_alloc():
-            for compiled_model in compiled_models.values():
-                for key, alloc_per_chiplet in compiled_model.get_alloc_per_chiplet_by_key().items():
-                    if key == "DramTensor":
-                        continue
-                    for node_id, sizes_at_chiplet in enumerate(alloc_per_chiplet):
-                        for chiplet_id, size in enumerate(sizes_at_chiplet):
-                            alloc_without_dram[(node_id, chiplet_id)] += size
-                            chiplets.add((node_id, chiplet_id))
-
-            # kvcache_tensor_sizes[key][node_id][chiplet_id] = alloc_size
-            kvcache_tensor_sizes: dict[str, list[list[int]]] = compiled_models["prefill"].exp_get_dram_tensor_sizes()
-            for sizes_at_node in kvcache_tensor_sizes.values():
-                for node_id, sizes_at_chiplet in enumerate(sizes_at_node):
-                    for chiplet_id in range(len(sizes_at_chiplet)):
-                        chiplets.add((node_id, chiplet_id))
-
-            num_chiplets = max((chiplet_id for _, chiplet_id in chiplets), default=0) + 1
-            available_per_chiplet = get_available_dram_per_chiplet(num_chiplets, rbln_config.npu)
-            return alloc_without_dram, kvcache_tensor_sizes, available_per_chiplet, chiplets
-
-        # Legacy compiler exposes only node totals, so collapse each node into one bucket
-        # with the whole-node budget; the search then reduces to the node-level check.
         for compiled_model in compiled_models.values():
-            for key, alloc_per_node in compiled_model.get_alloc_per_node_by_key().items():
+            for key, alloc_per_chiplet in compiled_model.get_alloc_per_chiplet_by_key().items():
                 if key == "DramTensor":
                     continue
-                for node_id, size in enumerate(alloc_per_node):
-                    alloc_without_dram[(node_id, 0)] += size
-                    chiplets.add((node_id, 0))
+                for node_id, sizes_at_chiplet in enumerate(alloc_per_chiplet):
+                    for chiplet_id, size in enumerate(sizes_at_chiplet):
+                        alloc_without_dram[(node_id, chiplet_id)] += size
+                        chiplets.add((node_id, chiplet_id))
 
-        # Sum the per-chiplet KV sizes into the single bucket to match alloc's shape.
-        raw_kvcache: dict[str, list[list[int]]] = compiled_models["prefill"].exp_get_dram_tensor_sizes()
-        kvcache_tensor_sizes = {}
-        for key, sizes_at_node in raw_kvcache.items():
-            kvcache_tensor_sizes[key] = [[sum(sizes_at_chiplet)] for sizes_at_chiplet in sizes_at_node]
-            for node_id in range(len(sizes_at_node)):
-                chiplets.add((node_id, 0))
+        # kvcache_tensor_sizes[key][node_id][chiplet_id] = alloc_size
+        kvcache_tensor_sizes: dict[str, list[list[int]]] = compiled_models["prefill"].exp_get_dram_tensor_sizes()
+        for sizes_at_node in kvcache_tensor_sizes.values():
+            for node_id, sizes_at_chiplet in enumerate(sizes_at_node):
+                for chiplet_id in range(len(sizes_at_chiplet)):
+                    chiplets.add((node_id, chiplet_id))
 
-        available_per_chiplet = available_dram if available_dram is not None else get_available_dram(rbln_config.npu)
+        num_chiplets = max((chiplet_id for _, chiplet_id in chiplets), default=0) + 1
+        available_per_chiplet = get_available_dram_per_chiplet(num_chiplets, rbln_config.npu)
         return alloc_without_dram, kvcache_tensor_sizes, available_per_chiplet, chiplets
 
     @classmethod
@@ -349,13 +342,6 @@ class RBLNDecoderOnlyFlashAttentionMixin:
         rbln_config: "RBLNDecoderOnlyModelForCausalLMConfig",
         multiplier: int,
     ):
-        if not is_compiler_supports_buffer_resize():
-            raise RuntimeError(
-                "The installed version of rebel-compiler does not support automatic kv cache size determination. "
-                "Please upgrade rebel-compiler to a version that supports this feature, "
-                "or explicitly set 'kvcache_num_blocks' in rbln_config to manually specify the cache size."
-            )
-
         for compiled_model in compiled_models.values():
             compiled_model.exp_multiply_buffer_size(
                 {

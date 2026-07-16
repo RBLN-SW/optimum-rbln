@@ -70,7 +70,7 @@ class RBLNGemma4RuntimeModel(RBLNDecoderOnlyChunkedMultimodalPrefillMixin, RBLNR
 
     def _resolve_image_chunk(self, token_type_ids: torch.Tensor, step: int, start_type: int):
         # Gemma4 buckets image/video runs: pick the smallest bucket that fits the run.
-        image_buckets = self.rbln_config.image_prefill_chunk_sizes
+        image_buckets = self.rbln_config.image_prefill_chunk_size
         max_image_bucket = max(image_buckets)
         run_len = _run_length_from(token_type_ids, step, value=start_type, cap=max_image_bucket + 1)
         if run_len > max_image_bucket:
@@ -80,7 +80,7 @@ class RBLNGemma4RuntimeModel(RBLNDecoderOnlyChunkedMultimodalPrefillMixin, RBLNR
                 f"is longer than the largest image-prefill bucket ({max_image_bucket}); no bucket can "
                 f"hold it. For video this means consecutive frames are not separated by text (each "
                 f"frame run must fit one bucket); otherwise add a larger value to "
-                f"`image_prefill_chunk_sizes`."
+                f"`image_prefill_chunk_size`."
             )
         return run_len, min(b for b in image_buckets if b >= run_len)
 
