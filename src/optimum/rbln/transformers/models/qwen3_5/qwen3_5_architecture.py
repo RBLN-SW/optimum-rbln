@@ -79,7 +79,7 @@ class Qwen3_5VisionModelWrapper(nn.Module):
         return self.merger(hidden_states)
 
 
-def rbln_chunk_gated_delta_rule(query, key, value, g, beta, eye, tril_incl, tril_strict, initial_state):
+def rbln_chunk_gated_delta_rule(query, key, value, g, beta, tril_incl, tril_strict, initial_state):
     """Single-window (parallel) gated delta rule for RBLN PREFILL. Mirrors HF
     ``torch_chunk_gated_delta_rule`` expression-for-expression (numerically identical, cos=1.0); every
     difference below is ONLY what HF's exact ops need to LOWER on RBLN (see memo
@@ -171,7 +171,7 @@ def rbln_chunk_gated_delta_rule(query, key, value, g, beta, eye, tril_incl, tril
     # attention (max_seq_len >= 4096, kvcache_partition_len >= 4096 -> all ~0.9999), the recommended
     # config. So this V0 loop is left as-is (compiles; drift immaterial); no forward-sub rewrite needed.
     chunk_size = attn.shape[-1]
-    '''
+    '''    
     # 우리는 모든 chunk에 대해서 한번에 수행하지 못함 -> 한번에 한 청크만 수행이 가능함.
     for i in range(1, chunk_size):
         row = attn[..., i, :i].clone()  # (B,H,i)   : i행의 [0..i-1] 열
@@ -182,8 +182,9 @@ def rbln_chunk_gated_delta_rule(query, key, value, g, beta, eye, tril_incl, tril
     #        [ 0                ]  (0행)
     #        [ t₁₀   0          ]  (1행)
     #        [ t₂₀   t₂₁   0    ]  (2행)
-
+    '''
     # 새 attn[3,m] = a₃ₘ + Σ_k a₃ₖ · sub[k,m] = "3에서 m으로 가는 직접 경로 + 중간 토큰 k를 거치는 모든 경로"
+    eye = tril_incl - tril_strict  # == torch.eye ((i>=j) − (i>j) = 대각선), 넘겨받은 두 마스크에서 파생
     attn = attn + eye
     # attn = T = (I - A)^{-1}
     # T (C=4): (B,H,S,S) -> "청크 안의 모든 델타 보정을 한 번에 적용하는 변환 행렬"
@@ -191,7 +192,7 @@ def rbln_chunk_gated_delta_rule(query, key, value, g, beta, eye, tril_incl, tril
     # [ t₁₀  1               ]
     # [ t₂₀  t₂₁  1          ]
     # [ t₃₀  t₃₁  t₃₂  1     ]
-    '''
+
     value = attn @ v_beta # (B,H,S,d_v) -> 청크 안 델타 보정이 반영된 "새로운 밸류"
     k_cumdecay = attn @ (k_beta * g.exp().unsqueeze(-1)) # (B,H,S,S) @ (B,H,S,d_k) = (B,H,S,d_k) -> 감쇠가 적용된 키(k_beta)를 T로 변환한 것.
                                                          # 이건 "이전 청크에서 넘어온 상태 S가 현재 청크에 미치는 영향을 빼내기(제거)" 위해 쓰임
@@ -425,23 +426,16 @@ class Qwen3_5GatedDeltaNet(nn.Module):
             # Use arange+compare, NOT torch.eye/tril (aten::eye is not implemented for RBLN tracing, and a
             # named self.* buffer/attr re-triggers the weight-sharing gen-mode failure). These fold to
             # anonymous prefill-graph constants.
-            _S = self.prefill_chunk_size
-            _cshape = (1, 1, _S, _S)
-            _ii = torch.arange(_S, device=query.device).unsqueeze(1)  # (S, 1)
-            _jj = torch.arange(_S, device=query.device).unsqueeze(0)  # (1, S)
-            chunk_eye = (_ii == _jj).to(query.dtype).reshape(_cshape) # torch.eye
-            # chunk_eye = torch.eye(_S, device=query.device, dtype=query.dtype).reshape(_cshape) # when does it support?
-            # chunk_tril_incl = (_ii >= _jj).to(query.dtype).reshape(_cshape) # torch.tril(diagonal=0)
-            # chunk_tril_strict = (_ii > _jj).to(query.dtype).reshape(_cshape) # torch.tril(diagonal=-1)
+            _cshape = (1, 1, self.prefill_chunk_size, self.prefill_chunk_size)
             chunk_tril_incl = torch.tril(torch.ones(_cshape, device=query.device, dtype=query.dtype), diagonal=0)
             chunk_tril_strict = torch.tril(torch.ones(_cshape, device=query.device, dtype=query.dtype), diagonal=-1)
+            # eye is derived inside rbln_chunk_gated_delta_rule as (tril_incl - tril_strict) — no separate arg.
             core_attn_out, new_recurrent_state = rbln_chunk_gated_delta_rule(
                 query,
                 key,
                 value,
                 g,
                 beta,
-                chunk_eye,
                 chunk_tril_incl,
                 chunk_tril_strict,
                 recurrent_state,
