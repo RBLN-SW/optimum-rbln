@@ -299,6 +299,7 @@ class Qwen3_5GatedDeltaNet(nn.Module):
         hidden_states: torch.Tensor,
         conv_state: torch.Tensor,
         recurrent_state: torch.Tensor,
+        query_position: Optional[torch.Tensor] = None,
         valid_mask: Optional[torch.Tensor] = None,
         conv_state_mask: Optional[torch.Tensor] = None,
         recurrent_state_mask: Optional[torch.Tensor] = None,
@@ -338,12 +339,11 @@ class Qwen3_5GatedDeltaNet(nn.Module):
             # cols are exactly [valid_count .. valid_count+K-2] (chronological). When valid_count < K-1 this
             # index range reaches back into the prepended conv_state (e.g. a multi-window prefill whose last
             # window has 1-2 valid tokens still pulls the tail of the previous window's conv_state).
-            # A single DYNAMIC index_select (a point-gather) lowers on RBLN — unlike a dynamic strided-slice
-            # (SubviewOp/ScatterInfo blocker). PREFILL is batch=1, so `valid_count` is a scalar and the same
-            # columns apply to the whole batch. Numerically identical to the old one-hot-matmul gather.
-            valid_count = valid_mask.sum().to(torch.int64)  # scalar (batch=1): # valid tokens in this window
-            idx = valid_count + torch.arange(k_1, device=x_cf.device, dtype=torch.int64)  # (K-1,) last valid cols
-            new_conv_state = torch.index_select(x_cf, 2, idx).transpose(1, 2).contiguous()  # (B, K-1, conv_dim)
+            
+            # k_1 times dynamic take
+            states = [x_cf[:, :, query_position.to(torch.int).unsqueeze(0) + i] for i in range(1, k_1 + 1)]
+            new_conv_state = torch.cat(states, dim=2).transpose(1, 2).contiguous()  # (B, K-1, conv_dim)
+            
         else:
             new_conv_state = x_cf[:, :, -k_1:].transpose(1, 2).contiguous()  # (B, K-1, conv_dim), HF-style
         conv_out = F.conv1d(x_cf, self.conv1d.weight, self.conv1d.bias, padding=0, groups=self.conv_dim)
@@ -435,6 +435,7 @@ class Qwen3_5LinearDecoderLayer(nn.Module):
         hidden_states: torch.Tensor,
         conv_state: torch.Tensor,
         recurrent_state: torch.Tensor,
+        query_position: Optional[torch.Tensor] = None,
         valid_mask: Optional[torch.Tensor] = None,
         conv_state_mask: Optional[torch.Tensor] = None,
         recurrent_state_mask: Optional[torch.Tensor] = None,
@@ -445,6 +446,7 @@ class Qwen3_5LinearDecoderLayer(nn.Module):
             hidden_states,
             conv_state,
             recurrent_state,
+            query_position=query_position,
             valid_mask=valid_mask,
             conv_state_mask=conv_state_mask,
             recurrent_state_mask=recurrent_state_mask,
@@ -640,6 +642,7 @@ class Qwen3_5Model(DecoderOnlyModel):
                     hidden_states,
                     conv_state,
                     recurrent_state,
+                    query_position=query_position,
                     valid_mask=valid_mask,
                     conv_state_mask=conv_state_mask,
                     recurrent_state_mask=recurrent_state_mask,
