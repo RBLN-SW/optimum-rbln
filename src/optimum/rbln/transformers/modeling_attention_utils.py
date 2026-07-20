@@ -171,15 +171,21 @@ def format_byte_size(nbytes: int) -> str:
 def _resolve_memory_budget(memory_budget: Optional[object], available_total: int) -> int:
     """Resolve `memory_budget` to usable DRAM bytes (system reserve excluded), capped at available_total.
 
-    None -> available_total; a float in (0, 1] -> that fraction of it; int/"10GB"/"512MB" -> parsed bytes.
-    `available_total` is the device-wide available DRAM after the per-chiplet system reserve.
+    None -> available_total; a float in (0, 1] (or a "80%" string) -> that fraction of it;
+    int/"10GB"/"512MB" -> parsed bytes. `available_total` is the device-wide available DRAM after
+    the per-chiplet system reserve.
     """
     if memory_budget is None:
         return available_total
+    fraction = None
     if isinstance(memory_budget, float):
-        if not 0.0 < memory_budget <= 1.0:
-            raise ValueError(f"memory_budget as a fraction must be in (0, 1], got {memory_budget}.")
-        budget = int(available_total * memory_budget)
+        fraction = memory_budget
+    elif isinstance(memory_budget, str) and memory_budget.strip().endswith("%"):
+        fraction = float(memory_budget.strip()[:-1]) / 100
+    if fraction is not None:
+        if not 0.0 < fraction <= 1.0:
+            raise ValueError(f"memory_budget fraction must be in (0, 1] (or (0%, 100%]), got {memory_budget!r}.")
+        budget = int(available_total * fraction)
     else:
         budget = parse_byte_size(memory_budget)
     if budget > available_total:
