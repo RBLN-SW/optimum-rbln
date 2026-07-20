@@ -171,7 +171,7 @@ def rbln_chunk_gated_delta_rule(query, key, value, g, beta, eye, tril_incl, tril
     # attention (max_seq_len >= 4096, kvcache_partition_len >= 4096 -> all ~0.9999), the recommended
     # config. So this V0 loop is left as-is (compiles; drift immaterial); no forward-sub rewrite needed.
     chunk_size = attn.shape[-1]
-
+    '''
     # 우리는 모든 chunk에 대해서 한번에 수행하지 못함 -> 한번에 한 청크만 수행이 가능함.
     for i in range(1, chunk_size):
         row = attn[..., i, :i].clone()  # (B,H,i)   : i행의 [0..i-1] 열
@@ -191,7 +191,7 @@ def rbln_chunk_gated_delta_rule(query, key, value, g, beta, eye, tril_incl, tril
     # [ t₁₀  1               ]
     # [ t₂₀  t₂₁  1          ]
     # [ t₃₀  t₃₁  t₃₂  1     ]
-
+    '''
     value = attn @ v_beta # (B,H,S,d_v) -> 청크 안 델타 보정이 반영된 "새로운 밸류"
     k_cumdecay = attn @ (k_beta * g.exp().unsqueeze(-1)) # (B,H,S,S) @ (B,H,S,d_k) = (B,H,S,d_k) -> 감쇠가 적용된 키(k_beta)를 T로 변환한 것.
                                                          # 이건 "이전 청크에서 넘어온 상태 S가 현재 청크에 미치는 영향을 빼내기(제거)" 위해 쓰임
@@ -352,6 +352,7 @@ class Qwen3_5GatedDeltaNet(nn.Module):
         hidden_states: torch.Tensor,
         conv_state: torch.Tensor,
         recurrent_state: torch.Tensor,
+        query_position: Optional[torch.Tensor] = None,
         valid_mask: Optional[torch.Tensor] = None,
         conv_state_mask: Optional[torch.Tensor] = None,
         recurrent_state_mask: Optional[torch.Tensor] = None,
@@ -394,9 +395,36 @@ class Qwen3_5GatedDeltaNet(nn.Module):
             # A single DYNAMIC index_select (a point-gather) lowers on RBLN — unlike a dynamic strided-slice
             # (SubviewOp/ScatterInfo blocker). PREFILL is batch=1, so `valid_count` is a scalar and the same
             # columns apply to the whole batch. Numerically identical to the old one-hot-matmul gather.
-            valid_count = valid_mask.sum().to(torch.int64)  # scalar (batch=1): # valid tokens in this window
-            idx = valid_count + torch.arange(k_1, device=x_cf.device, dtype=torch.int64)  # (K-1,) last valid cols
-            new_conv_state = torch.index_select(x_cf, 2, idx).transpose(1, 2).contiguous()  # (B, K-1, conv_dim)
+            # valid_count = valid_mask.sum().to(torch.int64)  # scalar (batch=1): # valid tokens in this window
+            # import pdb; pdb.set_trace()
+            # idx = query_position + torch.arange(k_1, dtype=torch.int64)
+            # new_conv_state = torch.index_select(x_cf, 2, idx).transpose(1, 2).contiguous()  # (B, K-1, conv_dim)
+
+            # k_1 times dynamic take
+            states = [x_cf[:, :, query_position.to(torch.int).unsqueeze(0) + i] for i in range(1, k_1 + 1)]
+            new_conv_state = torch.cat(states, dim=2).transpose(1, 2).contiguous()  # (B, K-1, conv_dim)
+            
+            # # Compile-safe gather of cols [qp+1, qp+2, qp+3] (the last K-1 VALID conv inputs; qp=query_position
+            # # =valid_count-1). one-hot(positions) @ x_cf = pure arithmetic + matmul -> lowers on RBLN as ONE
+            # # # graph: NO dynamic StridedSlice (list-comp x_cf[:,:,i]) and NO index_select (which splits the graph).
+            # positions = query_position + torch.arange(1, k_1 + 1, device=x_cf.device, dtype=torch.int64)  # (K-1,)
+            # col_ids = torch.arange(x_cf.shape[-1], device=x_cf.device, dtype=torch.int64)
+            # onehot = (col_ids.unsqueeze(0) == positions.unsqueeze(1)).to(x_cf.dtype)  # (K-1, S+K-1)
+            # new_conv_state = torch.matmul(x_cf, onehot.transpose(0, 1)).transpose(1, 2).contiguous()  # (B, K-1, conv_dim)
+            
+            # positions = valid_count + torch.arange(k_1, dtype=torch.int64)
+            # col_ids = torch.arange(x_cf.shape[-1], dtype=torch.int64)
+            # onehot = (col_ids.unsqueeze(0) == positions.unsqueeze(1)).to(x_cf.dtype)
+            # new_conv_state = torch.matmul(x_cf, onehot.transpose(0, 1)).transpose(1, 2).contiguous()  # (B, K-1, conv_dim)
+            
+            
+            # one-hot matmul selects cols [valid_count .. valid_count+K-2] of x_cf without a dynamic gather
+            valid_count = valid_mask.sum().to(torch.int64)
+            positions = valid_count + torch.arange(k_1, device=x_cf.device, dtype=torch.int64)
+            col_ids = torch.arange(x_cf.shape[-1], device=x_cf.device, dtype=torch.int64)
+            onehot = (col_ids.unsqueeze(0) == positions.unsqueeze(1)).to(x_cf.dtype)
+            new_conv_state = torch.matmul(x_cf, onehot.transpose(0, 1)).transpose(1, 2).contiguous()  # (B, K-1, conv_dim)
+            
         else:
             new_conv_state = x_cf[:, :, -k_1:].transpose(1, 2).contiguous()  # (B, K-1, conv_dim), HF-style
         conv_out = F.conv1d(x_cf, self.conv1d.weight, self.conv1d.bias, padding=0, groups=self.conv_dim)
@@ -486,6 +514,7 @@ class Qwen3_5LinearDecoderLayer(nn.Module):
         hidden_states: torch.Tensor,
         conv_state: torch.Tensor,
         recurrent_state: torch.Tensor,
+        query_position: Optional[torch.Tensor] = None,
         valid_mask: Optional[torch.Tensor] = None,
         conv_state_mask: Optional[torch.Tensor] = None,
         recurrent_state_mask: Optional[torch.Tensor] = None,
@@ -496,6 +525,7 @@ class Qwen3_5LinearDecoderLayer(nn.Module):
             hidden_states,
             conv_state,
             recurrent_state,
+            query_position=query_position,
             valid_mask=valid_mask,
             conv_state_mask=conv_state_mask,
             recurrent_state_mask=recurrent_state_mask,
@@ -691,6 +721,7 @@ class Qwen3_5Model(DecoderOnlyModel):
                     hidden_states,
                     conv_state,
                     recurrent_state,
+                    query_position=query_position,
                     valid_mask=valid_mask,
                     conv_state_mask=conv_state_mask,
                     recurrent_state_mask=recurrent_state_mask,
