@@ -392,38 +392,10 @@ class Qwen3_5GatedDeltaNet(nn.Module):
             # cols are exactly [valid_count .. valid_count+K-2] (chronological). When valid_count < K-1 this
             # index range reaches back into the prepended conv_state (e.g. a multi-window prefill whose last
             # window has 1-2 valid tokens still pulls the tail of the previous window's conv_state).
-            # A single DYNAMIC index_select (a point-gather) lowers on RBLN — unlike a dynamic strided-slice
-            # (SubviewOp/ScatterInfo blocker). PREFILL is batch=1, so `valid_count` is a scalar and the same
-            # columns apply to the whole batch. Numerically identical to the old one-hot-matmul gather.
-            # valid_count = valid_mask.sum().to(torch.int64)  # scalar (batch=1): # valid tokens in this window
-            # import pdb; pdb.set_trace()
-            # idx = query_position + torch.arange(k_1, dtype=torch.int64)
-            # new_conv_state = torch.index_select(x_cf, 2, idx).transpose(1, 2).contiguous()  # (B, K-1, conv_dim)
-
+            
             # k_1 times dynamic take
             states = [x_cf[:, :, query_position.to(torch.int).unsqueeze(0) + i] for i in range(1, k_1 + 1)]
             new_conv_state = torch.cat(states, dim=2).transpose(1, 2).contiguous()  # (B, K-1, conv_dim)
-            
-            # # Compile-safe gather of cols [qp+1, qp+2, qp+3] (the last K-1 VALID conv inputs; qp=query_position
-            # # =valid_count-1). one-hot(positions) @ x_cf = pure arithmetic + matmul -> lowers on RBLN as ONE
-            # # # graph: NO dynamic StridedSlice (list-comp x_cf[:,:,i]) and NO index_select (which splits the graph).
-            # positions = query_position + torch.arange(1, k_1 + 1, device=x_cf.device, dtype=torch.int64)  # (K-1,)
-            # col_ids = torch.arange(x_cf.shape[-1], device=x_cf.device, dtype=torch.int64)
-            # onehot = (col_ids.unsqueeze(0) == positions.unsqueeze(1)).to(x_cf.dtype)  # (K-1, S+K-1)
-            # new_conv_state = torch.matmul(x_cf, onehot.transpose(0, 1)).transpose(1, 2).contiguous()  # (B, K-1, conv_dim)
-            
-            # positions = valid_count + torch.arange(k_1, dtype=torch.int64)
-            # col_ids = torch.arange(x_cf.shape[-1], dtype=torch.int64)
-            # onehot = (col_ids.unsqueeze(0) == positions.unsqueeze(1)).to(x_cf.dtype)
-            # new_conv_state = torch.matmul(x_cf, onehot.transpose(0, 1)).transpose(1, 2).contiguous()  # (B, K-1, conv_dim)
-            
-            
-            # one-hot matmul selects cols [valid_count .. valid_count+K-2] of x_cf without a dynamic gather
-            valid_count = valid_mask.sum().to(torch.int64)
-            positions = valid_count + torch.arange(k_1, device=x_cf.device, dtype=torch.int64)
-            col_ids = torch.arange(x_cf.shape[-1], device=x_cf.device, dtype=torch.int64)
-            onehot = (col_ids.unsqueeze(0) == positions.unsqueeze(1)).to(x_cf.dtype)
-            new_conv_state = torch.matmul(x_cf, onehot.transpose(0, 1)).transpose(1, 2).contiguous()  # (B, K-1, conv_dim)
             
         else:
             new_conv_state = x_cf[:, :, -k_1:].transpose(1, 2).contiguous()  # (B, K-1, conv_dim), HF-style
