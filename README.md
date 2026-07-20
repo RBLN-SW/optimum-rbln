@@ -3,7 +3,10 @@
 
 <div align="center">
 
-<img src="assets/rbln_logo.png" width="60%"/>
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/rbln_logo_dark.png">
+  <img src="assets/rbln_logo_light.png" width="60%" alt="Optimum RBLN"/>
+</picture>
 
 [![PyPI version](https://badge.fury.io/py/optimum-rbln.svg)](https://badge.fury.io/py/optimum-rbln)
 [![License](https://img.shields.io/github/license/rbln-sw/optimum-rbln)](https://github.com/rbln-sw/optimum-rbln/blob/main/LICENSE)
