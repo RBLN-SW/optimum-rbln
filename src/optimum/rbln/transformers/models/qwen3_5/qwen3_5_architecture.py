@@ -79,35 +79,38 @@ class Qwen3_5VisionModelWrapper(nn.Module):
         return self.merger(hidden_states)
 
 
-def rbln_chunk_gated_delta_rule(query, key, value, g, beta, tril_incl, tril_strict, initial_state):
-    """Single-window (parallel) gated delta rule for RBLN PREFILL. Mirrors HF
-    ``torch_chunk_gated_delta_rule`` expression-for-expression (numerically identical, cos=1.0); every
-    difference below is ONLY what HF's exact ops need to LOWER on RBLN (see memo
-    ``rbln-qwen35-deltanet-compile``). Read side-by-side with HF; the ``# HF:`` comments map each line.
+def rbln_chunk_gated_delta_rule(
+    query, key, value, g, beta, tril_incl, tril_strict, initial_state, prefill_chunk_size, chunk_size
+):
+    """Gated delta rule for RBLN PREFILL — HF ``torch_chunk_gated_delta_rule`` 구조(청크 병렬).
+    prefill 윈도우를 ``n_chunks = prefill_chunk_size // chunk_size`` 개의 ``chunk_size`` 서브청크로 나눠,
+    intra-chunk 양(``decay_mask`` / ``T=(I-A)^-1`` / ``value`` / ``k_cumdecay``)을 chunk 축으로 BATCHED 로
+    계산하고, ``for i in range(n_chunks)`` 루프로 ``recurrent_state`` 를 서브청크 사이로 넘긴다(inter-chunk).
+    ``chunk_size == prefill_chunk_size`` (n_chunks == 1) 이면 옛 단일-윈도우 경로와 동일.
 
-    - ``(I - A)^{-1}`` via HF's forward-substitution loop, NOT the log-depth squaring ``(I+A)(I+A^2)...``:
-      the squaring is numerically unstable at trained scale (intermediate powers blow up) -> wrong inverse.
-    - float lower-triangular masks (``tril_incl``/``tril_strict``) + a passed identity (``eye``) in place of
-      HF's bool ``.tril()`` / ``.masked_fill()`` / ``torch.eye`` (``rtosa.where`` rejects i1; ``aten::eye``
-      unimplemented). Built inline by the caller at rank ``(1, 1, S, S)`` (else PadChannels wrong-rank pad).
-    - the end-of-window decay (HF ``g[..., -1] - g[..., :]`` and ``g[..., -1]``) as a MATMUL reverse-cumsum
-      ``incr @ tril_strict`` + ``incr.sum`` — HF's innermost ``g[..., -1]`` slice and ``torch.flip`` mis-lower.
-    - matmuls kept to 2 batch dims ``(B, Hv)`` — the 3-batch-dim form trips OpTiling ("memory size
-      mismatch (3 vs 4)"), so there is NO internal sub-chunking (HF's ``chunk_size`` reshape).
+    RBLN lowering 우회 (HF 대비; 메모 ``rbln-qwen35-deltanet-compile`` / docs/qwen_3.5_optimization.md §1~§2):
+    - ``(I - A)^-1`` 는 HF 의 forward-substitution 루프 (log-depth 제곱은 학습 스케일에서 발산 → 오답).
+    - float 마스크 ``tril_incl``/``tril_strict`` + 내부 파생 ``eye = tril_incl - tril_strict`` (bool ``.tril()``/
+      ``torch.eye`` 미지원 우회). 호출부가 ``(1, 1, 1, chunk_size, chunk_size)`` rank 로 만들어, 5D
+      ``decay_mask``/``attn`` (B, Hv, n_chunks 로 broadcast)와 rank 를 맞춘다(PadChannels wrong-rank 회피).
+    - 청크말 감쇠(HF ``g[-1] - g``, ``g[-1]``)를 matmul reverse-cumsum ``incr @ tril_strict`` + ``incr.sum`` 로.
 
-    NO internal sub-chunking: the optimum-rbln prefill runtime splits the prompt into fixed
-    ``prefill_chunk_size`` windows and carries ``recurrent_state`` across them, so ONE call == ONE HF chunk
-    (``S == prefill_chunk_size == the mask size``; the runtime pads the final window, so no padding here).
+    Shape-inference / OpTiling (하드-원 교훈):
+    - chunk 축은 reshape/unflatten 이 아니라 **torch.stack(슬라이스)** 로 만든다. 4D→5D reshape 는 RBLN 컴파일러가
+      입력 rank 를 오추론(input 을 ``(1,Hv,Hv,gcs,Dk)`` 로 보고 "shape not compatible")한다. stack 은 slice+concat
+      으로 내려가 그 버그를 피한다.
+    - batched intra matmul 은 3 batch-dim ``(B, Hv, n_chunks)`` 라, 현재 컴파일러 OpTiling 이 matmul+multiply
+      (matmul_mul_add; ``getGemmlikeEltwiseInput`` 에 matmul 분기 없음)에서 "memory size mismatch (3 vs 4)"로 죽는다.
+      n_chunks == 1(3번째 축 size-1)도 동일. → 컴파일러팀의 5D matmul(_mul_add) 지원 대기 중(그때 이 형태 그대로 사용).
 
-    Inputs follow the recurrent rule's call site: query/key ``(B, S, Hv, Dk)``, value ``(B, S, Hv, Dv)``,
-    g/beta ``(B, S, Hv)``, initial_state ``(B, Hv, Dk, Dv)``. Returns core ``(B, S, Hv, Dv)`` and the final
-    state ``(B, Hv, Dk, Dv)``. Decode (seq=1) stays on the recurrent rule.
+    Inputs: query/key ``(B, S, Hv, Dk)``, value ``(B, S, Hv, Dv)``, g/beta ``(B, S, Hv)``, initial_state
+    ``(B, Hv, Dk, Dv)`` (S == prefill_chunk_size). Returns core ``(B, S, Hv, Dv)`` 와 final state ``(B, Hv, Dk, Dv)``.
     """
     # ┌─────────────────────────────────────────────────────────────┐
     # │ 첫 번째 for문 (청크 "안"의 병렬화 준비)                            │
     # │                                                             │
     # │   A (하삼각, 토큰끼리 간섭)  ──전방대입──►  T = (I−A)⁻¹            │
-    # │   (B,H,N,C,C)                              (B,H,N,C,C)      │
+    # │   (B,Hv,n_chunks,C,C)                      (B,Hv,n_chunks,C,C)│
     # │                                                             │
     # │   T로 밸류/키 보정  →  U(=value), k_cumdecay                   │
     # │   "청크 안의 순차적 델타 보정을 행렬곱 한 방으로"                     │
@@ -117,126 +120,98 @@ def rbln_chunk_gated_delta_rule(query, key, value, g, beta, tril_incl, tril_stri
     # ┌─────────────────────────────────────────────────────────────┐
     # │ 두 번째 for문 (청크 "사이"의 순차 처리)                            │
     # │                                                             │
-    # │   S₀=0 ─청크0─► S₁ ─청크1─► S₂ ─ ... ─► S_N                   │
-    # │         (각 단계: 감쇠 + 새 정보 기록,  S는 d_k×d_v)              │
-    # │                                                             │
-    # │   각 청크 출력 = q·S(이전상태)  +  청크안 어텐션·v_new              │
-    # │                 └ inter-chunk ┘    └── intra-chunk ──┘      │
+    # │   S₀ ─청크0─► S₁ ─청크1─► S₂ ─ ... ─► S_N  (S는 d_k×d_v)       │
+    # │   각 청크 출력 = q·S(이전상태)  +  청크안 어텐션·v_new             │
+    # │                 └ inter-chunk ┘    └── intra-chunk ──┘       │
     # └─────────────────────────────────────────────────────────────┘
-    
+
     initial_dtype = query.dtype
     query = l2norm(query, dim=-1, eps=1e-6)
     key = l2norm(key, dim=-1, eps=1e-6)
-    # (B, S, Hv, *) -> (B, Hv, S, *); one prefill window == one delta chunk (no internal split)
+    # (B, S, Hv, *) -> (B, Hv, S, *)
     query, key, value, beta, g = [
         x.transpose(1, 2).contiguous().to(torch.float32) for x in (query, key, value, beta, g)
     ]
     scale = 1 / (query.shape[-1] ** 0.5)  # match HF torch_chunk_gated_delta_rule (query.shape[-1] == head_k_dim)
     query = query * scale
-    v_beta = value * beta.unsqueeze(-1) # (B,H,S,d)
-    k_beta = key * beta.unsqueeze(-1) # (B,H,S,d)
+    v_beta = value * beta.unsqueeze(-1)  # (B,Hv,S,Dv)
+    k_beta = key * beta.unsqueeze(-1)  # (B,Hv,S,Dk)
 
-    # chunk decay
-    incr = g  # (B, Hv, S) per-token log-decay increments (pre-cumsum)
-    g = incr.cumsum(dim=-1)  # (B, Hv, S) cumulative log-decay across the chunk window
-    decay_mask = ((g.unsqueeze(-1) - g.unsqueeze(-2)) * tril_incl).exp() * tril_incl  # (B, Hv, S, S)
+    # chunk 축 만들기 — reshape/unflatten 이 아니라 torch.stack(슬라이스) (docstring 참고: reshape rank 오추론 회피).
+    # (B,Hv,S,*) -> n_chunks 개 (B,Hv,gcs,*) -> stack dim=2 -> (B,Hv,n_chunks,gcs,*)
+    gcs = chunk_size
+    n_chunks = prefill_chunk_size // chunk_size
+    query, key, value, v_beta, k_beta = [
+        torch.stack([x[:, :, c * gcs : (c + 1) * gcs] for c in range(n_chunks)], dim=2)
+        for x in (query, key, value, v_beta, k_beta)
+    ]
+    incr = torch.stack([g[:, :, c * gcs : (c + 1) * gcs] for c in range(n_chunks)], dim=2)  # (B,Hv,n_chunks,gcs)
+    g = incr.cumsum(dim=-1)  # (B,Hv,n_chunks,gcs) 서브청크 안 누적 log-decay (매 서브청크 새로 시작)
+
+    # ---- intra-chunk, chunk 축으로 BATCHED (3 batch dims (B, Hv, n_chunks)) ----
+    # decay_mask[...,i,j] = exp(g_i − g_j) (i≥j) else 0.  마스크 (1,1,1,gcs,gcs) 가 chunk 축까지 broadcast.
+    decay_mask = ((g.unsqueeze(-1) - g.unsqueeze(-2)) * tril_incl).exp() * tril_incl  # (B,Hv,n_chunks,gcs,gcs)
     #     j=0      j=1      j=2      j=3
     # i=0 [ e^0       0        0        0    ]
     # i=1 [ e^{g1-g0} e^0      0        0    ]
     # i=2 [ e^{g2-g0} e^{g2-g1} e^0     0    ]
     # i=3 [ e^{g3-g0} e^{g3-g1} e^{g3-g2} e^0]
-    #         ↑ 하삼각(과거만) + 대각선은 e^0=1
+    #         ↑ 하삼각(과거만) + 대각선 e^0=1
 
-    attn = -((k_beta @ key.transpose(-1, -2)) * decay_mask) * tril_strict # k_beta @ keyᵀ : (B,H,S,d_k) @ (B,H,S,d_k) = (B,H,S,S) 
-                                                                          # [i,j] = β_i (k_i · k_j)  → 청크 안 키들끼리의 유사도(× β)
-                                                                          # * decay_mask : 여기에 감쇠 곱 → β_i (k_i·k_j) exp(g_i−g_j)
-                                                                          # * tril_strict : 하삼각 마스크 → 과거만 유지
-    # attn(S=4 예시) :
+    # A[...,i,j] = −β_i (k_i·k_j) exp(g_i−g_j) (i>j) else 0.
+    attn = -((k_beta @ key.transpose(-1, -2)) * decay_mask) * tril_strict  # (B,Hv,n_chunks,gcs,gcs)
+    # attn(gcs=4 예시), a_ij = −β_i (k_i·k_j) e^{g_i-g_j} (i>j 만) :
     #       j=0    j=1    j=2    j=3
     # i=0 [  0      0      0      0  ]
-    # i=1 [ a₁₀     0      0      0  ]      a_ij = -β_i (k_i·k_j) e^{g_i-g_j}
-    # i=2 [ a₂₀    a₂₁     0      0  ]      (i > j 인 곳만 값이 있음)
+    # i=1 [ a₁₀     0      0      0  ]
+    # i=2 [ a₂₀    a₂₁     0      0  ]      "청크 안에서 토큰 i가 앞선 j에게 받는 (음의) 간섭"
     # i=3 [ a₃₀    a₃₁    a₃₂     0  ]
-    # 이 attn 행렬은 "청크 안에서 토큰 i가 자기보다 앞선 토큰 j에게 받는 (음의) 간섭"을 담고 있음
-    
-    # (I - A)^{-1} via forward substitution (IDENTICAL to HF's loop; squaring is numerically unstable at
-    # scale). HF appends `torch.eye`; here `eye` is the passed inline identity.
-    #
-    # NOTE — root cause CORRECTED (see memo `rbln-qwen35-deltanet-compile`): this in-place forward-sub
-    # `attn[..., i, :i] = ...` has a small device-vs-CPU drift on RBLN (dynamic-width sub-tile store,
-    # max_abs ~0.25) but it is a RED HERRING — its pearsonR is 0.9994 (above the 0.99 bar) and it washes
-    # out in the downstream matmuls, so it causes NO real degradation. The partial-window prefill
-    # degradation (seq % prefill_chunk_size != 0 -> ~0.99) once blamed here is actually the EAGER attention
-    # op mishandling a partial query window attending across PRIOR KV blocks, and is FULLY fixed by FLASH
-    # attention (max_seq_len >= 4096, kvcache_partition_len >= 4096 -> all ~0.9999), the recommended
-    # config. So this V0 loop is left as-is (compiles; drift immaterial); no forward-sub rewrite needed.
-    chunk_size = attn.shape[-1]
-    '''    
-    # 우리는 모든 chunk에 대해서 한번에 수행하지 못함 -> 한번에 한 청크만 수행이 가능함.
-    for i in range(1, chunk_size):
-        row = attn[..., i, :i].clone()  # (B,H,i)   : i행의 [0..i-1] 열
-        sub = attn[..., :i, :i].clone() # (B,H,i,i)    : 왼쪽 위 i×i 블록
+
+    # T = (I − A)^{-1} via forward substitution. 대각선은 아래 `+ eye` 전까지 0 (그래야 직접경로가 중복 안 됨).
+    for i in range(1, gcs):
+        row = attn[..., i, :i].clone()   # (B,Hv,n_chunks,i)      : i행의 [0..i-1] 열 (raw A)
+        sub = attn[..., :i, :i].clone()  # (B,Hv,n_chunks,i,i)    : 이미 완성된 왼쪽 위 i×i 블록 (대각선 0)
         attn[..., i, :i] = row + (row.unsqueeze(-1) * sub).sum(-2)
-    # row  = [a₃₀  a₃₁  a₃₂]          ← 3행 (아직 raw 값)
-    # sub  = 이미 완성된 위쪽 블록
-    #        [ 0                ]  (0행)
-    #        [ t₁₀   0          ]  (1행)
-    #        [ t₂₀   t₂₁   0    ]  (2행)
-    '''
-    # 새 attn[3,m] = a₃ₘ + Σ_k a₃ₖ · sub[k,m] = "3에서 m으로 가는 직접 경로 + 중간 토큰 k를 거치는 모든 경로"
+    # 새 attn[i,m] = a_im + Σ_{m<k<i} a_ik · sub[k,m]  = "i→m 직접경로 + 중간토큰 k 경유 모든경로"
+    #   row = [a₃₀ a₃₁ a₃₂] ,  sub = [[0],[t₁₀ 0],[t₂₀ t₂₁ 0]] (완성된 위쪽블록)
     eye = tril_incl - tril_strict  # == torch.eye ((i>=j) − (i>j) = 대각선), 넘겨받은 두 마스크에서 파생
-    attn = attn + eye
-    # attn = T = (I - A)^{-1}
-    # T (C=4): (B,H,S,S) -> "청크 안의 모든 델타 보정을 한 번에 적용하는 변환 행렬"
-    # [ 1                    ]
-    # [ t₁₀  1               ]
-    # [ t₂₀  t₂₁  1          ]
-    # [ t₃₀  t₃₁  t₃₂  1     ]
+    attn = attn + eye  # T
+    # T (gcs=4): 대각선 1, 하삼각 → "청크 안 모든 델타 보정을 한 번에 적용하는 변환 행렬"
+    # [ 1                 ]
+    # [ t₁₀  1            ]
+    # [ t₂₀  t₂₁  1       ]
+    # [ t₃₀  t₃₁  t₃₂  1  ]
 
-    value = attn @ v_beta # (B,H,S,d_v) -> 청크 안 델타 보정이 반영된 "새로운 밸류"
-    k_cumdecay = attn @ (k_beta * g.exp().unsqueeze(-1)) # (B,H,S,S) @ (B,H,S,d_k) = (B,H,S,d_k) -> 감쇠가 적용된 키(k_beta)를 T로 변환한 것.
-                                                         # 이건 "이전 청크에서 넘어온 상태 S가 현재 청크에 미치는 영향을 빼내기(제거)" 위해 쓰임
-    last_recurrent_state = initial_state.to(value)  # (B, Hv, Dk, Dv) carried recurrent_state (already masked at the GDN entry)
+    value = attn @ v_beta  # (B,Hv,n_chunks,gcs,Dv)  청크 안 델타 보정된 "새 밸류" U
+    k_cumdecay = attn @ (k_beta * g.exp().unsqueeze(-1))  # (B,Hv,n_chunks,gcs,Dk)  이전 상태 S의 예측 제거용
+    last_recurrent_state = initial_state.to(value)  # (B, Hv, Dk, Dv) carried (GDN 진입 시 이미 mask 적용됨)
 
-    # for current chunk
-    # S_t = α_t S_{t-1} + k_t u_tᵀ
-    # o_t = q_tᵀ S_t
-    attn_intra = (query @ key.transpose(-1, -2)) * decay_mask  # 청크 안 어텐션 (intra-chunk) -> query × keyᵀ × decay_mask
-    v_prime = k_cumdecay @ last_recurrent_state # 현재 청크의 키들이 이전 상태 S로부터 이미 예측 가능한 밸류 
-    v_new = value - v_prime  # 이전 상태의 기여분 제거 (intra 보정) 
-    attn_inter = (query * g.exp().unsqueeze(-1)) @ last_recurrent_state  # 이전 상태로부터의 출력 (inter-chunk)
-                                                                         # q_i가 이전 청크들의 누적 메모리 S 에서 뽑아낸 출력.
-    core = attn_inter + attn_intra @ v_new  # (B, Hv, S, Dv)
-    #     └이전청크 기여 ┘  └ 현재청크 안 기여 ┘
+    # ---- inter-chunk: 서브청크 사이 순차 carry (2 batch dims, [:, :, i] 인덱싱) ----
+    # S_t = α_t S_{t-1} + k_t u_tᵀ ,  o_t = q_tᵀ S_t
+    core_chunks = []  # 청크별 (B,Hv,gcs,Dv) 모아서 마지막에 cat (index-assign scatter 회피)
+    for i in range(0, n_chunks):
+        q_i, k_i, v_i = query[:, :, i], key[:, :, i], value[:, :, i]  # (B,Hv,gcs,·)
+        attn_intra = (q_i @ k_i.transpose(-1, -2)) * decay_mask[:, :, i]  # 청크 안 어텐션 (intra-chunk)
+        v_prime = k_cumdecay[:, :, i] @ last_recurrent_state  # 이전 상태 S가 이미 예측 가능한 밸류
+        v_new = v_i - v_prime  # 이전 상태 기여 제거 → 델타 u
+        attn_inter = (q_i * g[:, :, i].exp().unsqueeze(-1)) @ last_recurrent_state  # 이전 상태로부터의 출력
+        core_chunks.append(attn_inter + attn_intra @ v_new)  # (B,Hv,gcs,Dv) = 이전청크 기여 + 현재청크 안 기여
 
-    # reverse-cumsum Σ_{s>t} incr[s] (== HF `g[..., -1] - g`) as a matmul
-    g_total = incr.sum(dim=-1, keepdim=True)  # (B, Hv, 1) total log-decay (a reduction, not a slice)
-    decay_to_end = incr @ tril_strict[0, 0]  # (B, Hv, S)  Σ_{i>t} incr[i] # 현재 청크의 (오차) 정보를 메모리에 새로 기록
-    # 원하는 것: decay_to_end[t] = Σ_{s>t} incr[s]
-    # t=0 →  a₁+a₂+a₃      (0번보다 뒤: 1,2,3)
-    # t=1 →  a₂+a₃         (1번보다 뒤: 2,3)
-    # t=2 →  a₃            (2번보다 뒤: 3)
-    # t=3 →  0             (3번보다 뒤: 없음)
-    # tril_strict (4×4),  [s, t] = 1  iff  s > t
-    #               t=0 열   t=1 열   t=2 열   t=3 열
-    #   s=0 [ a₀ ]   0        0        0        0
-    #   s=1 [ a₁ ]   1        0        0        0
-    #   s=2 [ a₂ ]   1        1        0        0
-    #   s=3 [ a₃ ]   1        1        1        0
-    #    ↑incr        │        │        │        │
-    #                 ▼        ▼        ▼        ▼
-    #    decay_to_end[t] = Σ_s incr[s]·(그 열)
+        # 상태 갱신: reverse-cumsum Σ_{s>t} incr[s] (== HF `g[-1]−g`) 를 matmul 로. (slice/flip mis-lower 회피)
+        incr_i = incr[:, :, i]  # (B,Hv,gcs)
+        g_total = incr_i.sum(dim=-1, keepdim=True)  # (B,Hv,1)  == g[...,i,-1] (슬라이스 대신 reduction)
+        decay_to_end = incr_i @ tril_strict[0, 0, 0]  # (B,Hv,gcs)  masks 5D (1,1,1,gcs,gcs) → [0,0,0]=(gcs,gcs)
+        # tril_strict[s,t]=1 iff s>t → (incr @ tril_strict)[t] = Σ_{s>t} incr[s]:
+        #   t=0 → a₁+a₂+a₃ ,  t=1 → a₂+a₃ ,  t=2 → a₃ ,  t=3 → 0
+        last_recurrent_state = (
+            last_recurrent_state * g_total.unsqueeze(-1).exp()
+            + (k_i * decay_to_end.exp().unsqueeze(-1)).transpose(-1, -2) @ v_new
+        )  # 기존 메모리 감쇠 + 현재 서브청크 기여
 
-    # t=0열: a₀·0 + a₁·1 + a₂·1 + a₃·1 = a₁+a₂+a₃
-    # t=1열: a₀·0 + a₁·0 + a₂·1 + a₃·1 = a₂+a₃
-    # t=2열: a₀·0 + a₁·0 + a₂·0 + a₃·1 = a₃
-    # t=3열: a₀·0 + a₁·0 + a₂·0 + a₃·0 = 0
-    new_state = (
-        last_recurrent_state * g_total.unsqueeze(-1).exp() + (key * decay_to_end.exp().unsqueeze(-1)).transpose(-1, -2) @ v_new
-    ) # 기존 메모리 감쇠 + 현재 청크 기여
-
+    # 서브청크 출력을 seq 축으로 이어붙임: n_chunks x (B,Hv,gcs,Dv) -> (B,Hv,S,Dv)
+    core = torch.cat(core_chunks, dim=2)
     core = core.transpose(1, 2).contiguous().to(initial_dtype)  # (B, S, Hv, Dv)
-    return core, new_state
+    return core, last_recurrent_state
 
 
 def rbln_recurrent_gated_delta_rule_step(query, key, value, g, beta, initial_state):
@@ -339,6 +314,10 @@ class Qwen3_5GatedDeltaNet(nn.Module):
         # outside weight sharing. (A registered buffer AND a plain self.* attribute both keep the `linear_attn.
         # _prefill_chunk_eye` name and still fail — the name follows the attribute path, so it must be a local.)
         self.prefill_chunk_size = getattr(rbln_config, "prefill_chunk_size", 128)
+        # Internal GDN sub-chunk: each prefill window is split into `chunk_size` sub-chunks (must divide
+        # prefill_chunk_size). Default = prefill_chunk_size -> n_chunks == 1 (no split). See
+        # rbln_chunk_gated_delta_rule; batched form awaits compiler 5D matmul support for n_chunks > 1.
+        self.chunk_size = getattr(rbln_config, "gdn_chunk_size", None) or self.prefill_chunk_size
 
     @property
     def phase(self):
@@ -422,14 +401,13 @@ class Qwen3_5GatedDeltaNet(nn.Module):
         if "prefill" in self._phase:
             # One prefill window == one delta chunk (compiles on RBLN); the runtime carries
             # recurrent_state across windows and hands the final state to recurrent-decode.
-            # Build the fixed S×S helper matrices INLINE (forward-local -> not weight-shared; see __init__).
-            # Use arange+compare, NOT torch.eye/tril (aten::eye is not implemented for RBLN tracing, and a
-            # named self.* buffer/attr re-triggers the weight-sharing gen-mode failure). These fold to
-            # anonymous prefill-graph constants.
-            _cshape = (1, 1, self.prefill_chunk_size, self.prefill_chunk_size)
+            # Triangular helper masks, built INLINE (forward-local -> not weight-shared; a named self.* buffer
+            # re-triggers the weight-sharing gen-mode failure; see __init__). Sized to the SUB-CHUNK and at
+            # rank (1, 1, 1, chunk_size, chunk_size) to rank-match the 5D decay_mask/attn (broadcast over
+            # B, Hv, n_chunks). `eye` is derived inside rbln_chunk_gated_delta_rule as (tril_incl - tril_strict).
+            _cshape = (1, 1, 1, self.chunk_size, self.chunk_size)
             chunk_tril_incl = torch.tril(torch.ones(_cshape, device=query.device, dtype=query.dtype), diagonal=0)
             chunk_tril_strict = torch.tril(torch.ones(_cshape, device=query.device, dtype=query.dtype), diagonal=-1)
-            # eye is derived inside rbln_chunk_gated_delta_rule as (tril_incl - tril_strict) — no separate arg.
             core_attn_out, new_recurrent_state = rbln_chunk_gated_delta_rule(
                 query,
                 key,
@@ -439,6 +417,8 @@ class Qwen3_5GatedDeltaNet(nn.Module):
                 chunk_tril_incl,
                 chunk_tril_strict,
                 recurrent_state,
+                self.prefill_chunk_size,
+                self.chunk_size,
             )
         else:
             # Decode (seq=1): the single-step recurrent rule, rewritten for RBLN (HF's version lowers to

@@ -46,17 +46,26 @@ class RBLNQwen3_5ForCausalLMConfig(RBLNDecoderOnlyModelForCausalLMConfig):
     ```
     """
 
-    def __init__(self, linear_attention_layers: Optional[List[int]] = None, **kwargs: Any):
+    def __init__(
+        self,
+        linear_attention_layers: Optional[List[int]] = None,
+        gdn_chunk_size: Optional[int] = None,
+        **kwargs: Any,
+    ):
         """
         Args:
             linear_attention_layers (Optional[List[int]]): Indices of layers that use the
                 GatedDeltaNet linear-attention token mixer (the remaining layers use full
                 attention). Populated automatically from the HF `config.layer_types` during
                 `_update_rbln_config`; rarely set by hand.
+            gdn_chunk_size (Optional[int]): GatedDeltaNet prefill sub-chunk size. Each prefill window
+                is split into `prefill_chunk_size // gdn_chunk_size` sub-chunks processed by the chunked
+                delta rule. Must divide `prefill_chunk_size`. `None` -> `prefill_chunk_size` (no split).
             kwargs: Additional arguments passed to `RBLNDecoderOnlyModelForCausalLMConfig`.
         """
         super().__init__(**kwargs)
         self.linear_attention_layers = linear_attention_layers or []
+        self.gdn_chunk_size = gdn_chunk_size
 
 
 class RBLNQwen3_5TextModelConfig(RBLNDecoderOnlyModelConfig):
@@ -66,9 +75,17 @@ class RBLNQwen3_5TextModelConfig(RBLNDecoderOnlyModelConfig):
     See `RBLNQwen3_5ForCausalLMConfig` for the meaning of `linear_attention_layers`.
     """
 
-    def __init__(self, linear_attention_layers: Optional[List[int]] = None, **kwargs: Any):
+    def __init__(
+        self,
+        linear_attention_layers: Optional[List[int]] = None,
+        gdn_chunk_size: Optional[int] = None,
+        **kwargs: Any,
+    ):
         super().__init__(**kwargs)
         self.linear_attention_layers = linear_attention_layers or []
+        # GDN prefill sub-chunk size (must divide prefill_chunk_size). None -> = prefill_chunk_size
+        # (n_chunks == 1, no sub-chunking). See rbln_chunk_gated_delta_rule.
+        self.gdn_chunk_size = gdn_chunk_size
 
 
 class RBLNQwen3_5VisionModelConfig(RBLNQwen3VLVisionModelConfig):
@@ -85,9 +102,17 @@ class RBLNQwen3_5ModelConfig(RBLNQwen3VLModelConfig):
     `RBLNQwen3VLModelConfig`.
     """
 
-    def __init__(self, linear_attention_layers: Optional[List[int]] = None, **kwargs: Any):
+    def __init__(
+        self,
+        linear_attention_layers: Optional[List[int]] = None,
+        gdn_chunk_size: Optional[int] = None,
+        **kwargs: Any,
+    ):
         super().__init__(**kwargs)
         self.linear_attention_layers = linear_attention_layers or []
+        # GDN prefill sub-chunk size (must divide prefill_chunk_size). None -> = prefill_chunk_size
+        # (n_chunks == 1, no sub-chunking). See rbln_chunk_gated_delta_rule.
+        self.gdn_chunk_size = gdn_chunk_size
 
 
 class RBLNQwen3_5ForConditionalGenerationConfig(RBLNQwen3VLForConditionalGenerationConfig):
@@ -114,6 +139,14 @@ class RBLNQwen3_5ForConditionalGenerationConfig(RBLNQwen3VLForConditionalGenerat
     submodules = ["visual"]
     # submodules = []
 
-    def __init__(self, linear_attention_layers: Optional[List[int]] = None, **kwargs: Any):
+    def __init__(
+        self,
+        linear_attention_layers: Optional[List[int]] = None,
+        gdn_chunk_size: Optional[int] = None,
+        **kwargs: Any,
+    ):
         super().__init__(**kwargs)
         self.linear_attention_layers = linear_attention_layers or []
+        # GDN prefill sub-chunk size (must divide prefill_chunk_size). None -> = prefill_chunk_size
+        # (n_chunks == 1, no sub-chunking). See rbln_chunk_gated_delta_rule.
+        self.gdn_chunk_size = gdn_chunk_size
