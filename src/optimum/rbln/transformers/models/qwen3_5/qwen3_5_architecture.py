@@ -572,15 +572,7 @@ class Qwen3_5Attention(DecoderOnlyAttention):
             v_scale=v_scale,
             s_aux=getattr(self, "sinks", None),
         )
-
-        # Apply the output gate in the per-head 4D space (B, S, num_heads, head_dim) with concrete
-        # dims; multiplying the custom-op output by the gate in flat 2048-d space makes RTOSA shape
-        # inference fail ("inferred shape must be > 0").
         attn_output = attn_output.reshape(batch_size, query_length, self.num_heads * self.head_dim)
-        # WORKAROUND ATTEMPT: route attn_output through a numerically-identity elementwise op
-        # (2x - x == x) to give it a "standard op" output provenance before the gate multiply.
-        # The direct `custom_op_output * gate` fails RTOSA shape inference.
-        attn_output = 2.0 * attn_output - attn_output
         attn_output = attn_output * torch.sigmoid(gate)
         attn_output = self.o_proj(attn_output)
         return attn_output
