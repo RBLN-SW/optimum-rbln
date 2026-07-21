@@ -95,13 +95,10 @@ def rbln_chunk_gated_delta_rule(
       ``decay_mask``/``attn`` (B, Hv, n_chunks 로 broadcast)와 rank 를 맞춘다(PadChannels wrong-rank 회피).
     - 청크말 감쇠(HF ``g[-1] - g``, ``g[-1]``)를 matmul reverse-cumsum ``incr @ tril_strict`` + ``incr.sum`` 로.
 
-    Shape-inference / OpTiling (하드-원 교훈):
+    Shape-inference:
     - chunk 축은 reshape/unflatten 이 아니라 **torch.stack(슬라이스)** 로 만든다. 4D→5D reshape 는 RBLN 컴파일러가
       입력 rank 를 오추론(input 을 ``(1,Hv,Hv,gcs,Dk)`` 로 보고 "shape not compatible")한다. stack 은 slice+concat
       으로 내려가 그 버그를 피한다.
-    - batched intra matmul 은 3 batch-dim ``(B, Hv, n_chunks)`` 라, 현재 컴파일러 OpTiling 이 matmul+multiply
-      (matmul_mul_add; ``getGemmlikeEltwiseInput`` 에 matmul 분기 없음)에서 "memory size mismatch (3 vs 4)"로 죽는다.
-      n_chunks == 1(3번째 축 size-1)도 동일. → 컴파일러팀의 5D matmul(_mul_add) 지원 대기 중(그때 이 형태 그대로 사용).
 
     Inputs: query/key ``(B, S, Hv, Dk)``, value ``(B, S, Hv, Dv)``, g/beta ``(B, S, Hv)``, initial_state
     ``(B, Hv, Dk, Dv)`` (S == prefill_chunk_size). Returns core ``(B, S, Hv, Dv)`` 와 final state ``(B, Hv, Dk, Dv)``.
@@ -595,7 +592,8 @@ class Qwen3_5Model(DecoderOnlyModel):
 
     def __init__(self, model, layers, rbln_config, use_learned_pos_emb=None, use_rotary_emb=True):
         super().__init__(model, layers, rbln_config, use_learned_pos_emb, use_rotary_emb)
-        self.linear_attention_layers = set(rbln_config.linear_attention_layers)
+        # linear-attention layer indices, derived from the built layers (no rbln_config field needed).
+        self.linear_attention_layers = {i for i, l in enumerate(layers) if isinstance(l, Qwen3_5LinearDecoderLayer)}
 
     def forward(
         self,
@@ -804,7 +802,7 @@ class Qwen3_5_CausalLMWrapper(DecoderOnlyWrapper):
         # handle the standard prefix + per-layer state block, then SPLIT that combined state list into two
         # containers and tack the masks back on. Only present when the model has linear_attention layers.
         args = list(args)
-        has_linear = bool(getattr(self.rbln_config, "linear_attention_layers", None))
+        has_linear = any(t == "linear_attention" for t in self.config.layer_types)
         valid_mask = args.pop() if has_linear else None
         recurrent_state_mask = args.pop() if has_linear else None
         conv_state_mask = args.pop() if has_linear else None
@@ -814,7 +812,7 @@ class Qwen3_5_CausalLMWrapper(DecoderOnlyWrapper):
         # layer type into two SEPARATE containers: past_key_values = KV (full-attention layers),
         # past_states = (conv, recurrent) (linear-attention layers). Both stay full-length with None at the
         # other type's indices so [layer_idx] indexing still works (base DecoderOnlyLayer uses it for KV).
-        linear = set(getattr(self.rbln_config, "linear_attention_layers", None) or [])
+        linear = {i for i, t in enumerate(self.config.layer_types) if t == "linear_attention"}
         combined = base[-2]
         base[-2] = [pair if i not in linear else None for i, pair in enumerate(combined)]  # past_key_values
         past_states = [pair if i in linear else None for i, pair in enumerate(combined)]
@@ -900,7 +898,7 @@ class Qwen3_5_LanguageModelWrapper(Qwen3_5_CausalLMWrapper):
         # appended in that order): pop them off the end first (so LIFO -> valid_mask, then recurrent, then
         # conv), so the standard front-popping + `past_states = args` below is unchanged. Present only when
         # the model has linear_attention layers.
-        has_linear = bool(getattr(self.rbln_config, "linear_attention_layers", None))
+        has_linear = any(t == "linear_attention" for t in self.config.layer_types)
         valid_mask = args.pop() if has_linear else None
         recurrent_state_mask = args.pop() if has_linear else None
         conv_state_mask = args.pop() if has_linear else None
@@ -924,7 +922,7 @@ class Qwen3_5_LanguageModelWrapper(Qwen3_5_CausalLMWrapper):
             raise ValueError(
                 f"Different states to model's config. {len(state_args)} != {2 * self.num_hidden_layers}"
             )
-        linear = set(getattr(self.rbln_config, "linear_attention_layers", None) or [])
+        linear = {i for i, t in enumerate(self.config.layer_types) if t == "linear_attention"}
         past_key_values = [None] * self.num_hidden_layers
         past_states = [None] * self.num_hidden_layers
         for i in range(self.num_hidden_layers):

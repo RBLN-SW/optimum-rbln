@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import List, Optional
+from typing import Optional
 
 import torch
 
@@ -51,14 +51,12 @@ class RBLNQwen3_5RuntimeModel(RBLNRuntimeModel):
     def __init__(
         self,
         *args,
-        linear_attention_layers: Optional[List[int]] = None,
         conv_state_shape=None,
         recurrent_state_shape=None,
         state_dtype: torch.dtype = torch.float32,
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
-        self.linear_attention_layers = list(linear_attention_layers or [])
         self.conv_state_shape = tuple(conv_state_shape)
         self.recurrent_state_shape = tuple(recurrent_state_shape)
         self.state_dtype = state_dtype

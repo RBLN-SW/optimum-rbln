@@ -138,7 +138,6 @@ class RBLNQwen3_5ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
         layer_types = getattr(text_config, "layer_types", None)
         if layer_types is None:
             raise ValueError("Qwen3.5 requires `layer_types` in the model config.")
-        rbln_config.linear_attention_layers = [i for i, t in enumerate(layer_types) if t == "linear_attention"]
         return super()._update_rbln_config(
             preprocessors=preprocessors, model=model, model_config=model_config, rbln_config=rbln_config
         )
@@ -186,7 +185,7 @@ class RBLNQwen3_5ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
             input_info.append(("lora_int_ids", [batch_size], "int32"))
 
         # ----- per-layer state: full -> (key, value) paged KV;  linear -> (conv_state, recurrent_state) -----
-        linear_layers = set(rbln_config.linear_attention_layers)
+        linear_layers = {i for i, t in enumerate(text_config.layer_types) if t == "linear_attention"}
         conv_dim = 2 * (text_config.linear_num_key_heads * text_config.linear_key_head_dim) + (
             text_config.linear_num_value_heads * text_config.linear_value_head_dim
         )
@@ -458,7 +457,6 @@ class RBLNQwen3_5Model(RBLNQwen3VLModel):
             "page_table_manager": page_table_manager,
             "rbln_config": self.rbln_config,
             "config": self.config.text_config,
-            "linear_attention_layers": self.rbln_config.linear_attention_layers,
             "state_dtype": self.dtype,
         }
 
@@ -495,7 +493,6 @@ class RBLNQwen3_5Model(RBLNQwen3VLModel):
         layer_types = getattr(text_config, "layer_types", None)
         if layer_types is None:
             raise ValueError("Qwen3.5 requires `layer_types` in the model config.")
-        rbln_config.linear_attention_layers = [i for i, t in enumerate(layer_types) if t == "linear_attention"]
         return super()._update_rbln_config(
             preprocessors=preprocessors, model=model, model_config=model_config, rbln_config=rbln_config
         )
