@@ -40,6 +40,14 @@ GDN은 두 가지 경로로 동작한다.
 cache처럼 그래프 안에서 `rbln_cache_update`로 읽고 쓴다. 런타임이 0/1 마스크를 주입해 **prefill 윈도우 0에서는
 이전 상태를 0으로** 지우고, 이후 윈도우부터는 상태를 이어간다.
 
+> **설계 메모 — 왜 real+static 인가** (`modeling_qwen3_5.py`의 `_qwen3_5_build_compile_context`). 두 상태를
+> KV처럼 meta placeholder로 두지 않고 **REAL 텐서로 둔 채 static 주소만 마킹**한다(real+static). meta로 두면
+> GatedDeltaNet의 평범한 텐서 연산(`conv_state × mask`, `cat([conv_state, mixed_qkv])`, recurrent matmul)이 meta
+> 텐서를 소비하지 못해 컴파일이 실패한다(`... not on the expected device meta!`). real+static 경로는 초기엔 rebel
+> `add_module`(`remove_placeholders=True`)의 placeholder 맵이 meta만 담아 real static in+out 텐서를 못 찾는
+> `IndexError: map::at`가 났으나, **컴파일러가 real static in+out 텐서를 처리하도록 지원하면서 해소**되어 지금은
+> end-to-end 컴파일된다.
+
 또한 optimum-rbln의 prefill 런타임은 프롬프트를 고정 크기 `prefill_chunk_size` 윈도우로 나눠 넣고
 윈도우 사이로 `recurrent_state`를 넘긴다. 한 윈도우 **안**은 다시 `gdn_chunk_size`(config, 기본값 =
 `prefill_chunk_size`) 크기의 서브청크로 나눠 청크 병렬 규칙을 적용하고 서브청크 사이로도 state를 넘긴다

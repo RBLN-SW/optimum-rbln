@@ -127,9 +127,9 @@ class RBLNQwen3_5RuntimeModel(RBLNRuntimeModel):
                 else:
                     if step > 0:
                         chunked_attention_mask[:, :, :, prefix_cached_len : prefix_cached_len + step] = 1
-                    chunked_attention_mask[
-                        :, :, :, step + prefix_cached_len : step + prefix_cached_len + chunk
-                    ] = self.causal_mask
+                    chunked_attention_mask[:, :, :, step + prefix_cached_len : step + prefix_cached_len + chunk] = (
+                        self.causal_mask
+                    )
 
             query_position = (
                 torch.tensor(
@@ -172,7 +172,9 @@ class RBLNQwen3_5RuntimeModel(RBLNRuntimeModel):
             # is the last window's (the next-token logits). Intermediate windows only advance the states.
             logits = self._run(named)
 
-        return RBLNDecoderOnlyOutput(logits=logits, hidden_states=None)
+        # padded_cache_lengths (from _prepare_prefill_inputs) is threaded back so the base
+        # RBLNDecoderOnlyModelForCausalLM.forward can accumulate it per batch (the VL forward ignores it).
+        return RBLNDecoderOnlyOutput(logits=logits, padded_cache_lengths=padded_cache_lengths, hidden_states=None)
 
     # ------------------------------------------------------------------ decode (seq == 1)
     def decode_forward(
