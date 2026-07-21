@@ -13,7 +13,8 @@
 # limitations under the License.
 
 import inspect
-from typing import Any, Callable, Optional
+from pathlib import Path
+from typing import Any, Callable, Optional, Tuple
 
 import torch
 from rebel.compile_context import CompileContext
@@ -31,12 +32,12 @@ from transformers.models.qwen3_5.modeling_qwen3_5 import (
 )
 
 from ....configuration_utils import RBLNCompileConfig
+from ....modeling import RBLNModel
 from ....utils import logging
 from ...modeling_outputs import RBLNDecoderOnlyOutput, _validate_output_hidden_states
 from ..decoderonly.configuration_decoderonly import KVCacheMeta
 from ..decoderonly.decoderonly_runtime_utils import RBLNPageTableManager
 from ..decoderonly.modeling_decoderonly import RBLNDecoderOnlyModel, RBLNDecoderOnlyModelForCausalLM
-from ..qwen3_vl.modeling_qwen3_vl import RBLNQwen3VLVisionModel
 from .configuration_qwen3_5 import (
     RBLNQwen3_5ForConditionalGenerationConfig,  # noqa: F401
     RBLNQwen3_5ModelConfig,  # noqa: F401
@@ -165,24 +166,10 @@ class RBLNQwen3_5TextModel(RBLNDecoderOnlyModel):
         return _qwen3_5_build_compile_context(compile_config, example_inputs)
 
     @classmethod
-    def _update_rbln_config(
-        cls,
-        preprocessors=None,
-        model=None,
-        model_config: Optional[PretrainedConfig] = None,
-        rbln_config=None,
-    ):
-        text_config = model_config.get_text_config()
-        layer_types = getattr(text_config, "layer_types", None)
-        if layer_types is None:
-            raise ValueError("Qwen3.5 requires `layer_types` in the model config.")
-        return super()._update_rbln_config(
-            preprocessors=preprocessors, model=model, model_config=model_config, rbln_config=rbln_config
-        )
-
-    @classmethod
     def get_input_info(cls, batch_size, query_length, rbln_config, model_config: PretrainedConfig):
         text_config = model_config.get_text_config()
+        if getattr(text_config, "layer_types", None) is None:
+            raise ValueError("Qwen3.5 requires `layer_types` in the model config.")
         num_attention_heads = getattr(text_config, "n_head", None) or text_config.num_attention_heads
         num_key_value_heads = getattr(text_config, "num_key_value_heads", None) or num_attention_heads
         num_hidden_layers = getattr(text_config, "n_layer", None) or text_config.num_hidden_layers
@@ -345,12 +332,18 @@ class RBLNQwen3_5ForCausalLM(RBLNQwen3_5TextModel, RBLNDecoderOnlyModelForCausal
 # ---------------------------------------------------------------------------------------------
 
 
-class RBLNQwen3_5VisionModel(RBLNQwen3VLVisionModel):
-    """Qwen3.5 vision encoder for RBLN — the Qwen3-VL vision tower WITHOUT deepstack.
+class RBLNQwen3_5VisionModel(RBLNModel):
+    """Qwen3.5 vision encoder for RBLN — a Qwen3-VL-style vision tower WITHOUT deepstack.
 
-    Qwen3.5 deletes deepstack from the Qwen3-VL vision model, so the wrapper returns only the
-    merged image embeddings and `forward` does not collect per-layer deepstack features.
+    Independent of the Qwen3-VL RBLN vision model (inherits ``RBLNModel`` directly). Qwen3.5 deletes
+    deepstack from the Qwen3-VL vision model, so the wrapper returns only the merged image embeddings and
+    ``forward`` does not collect per-layer deepstack features. The per-image window padding / rotary /
+    pos-embed-interpolate helpers (which no longer arrive via inheritance) are defined here.
     """
+
+    auto_model_class = None
+    _supports_non_fp32 = True
+    _tp_support = True
 
     def __post_init__(self, **kwargs):
         self.transformer = self.model[0]
@@ -374,6 +367,19 @@ class RBLNQwen3_5VisionModel(RBLNQwen3VLVisionModel):
         self.pos_embed.load_state_dict(artifacts["pos_embed"])
 
     @classmethod
+    def save_torch_artifacts(
+        cls,
+        model: "Qwen3_5VisionModel",
+        save_dir_path: Path,
+        subfolder: str,
+        rbln_config: RBLNQwen3_5VisionModelConfig,
+    ):
+        save_dict = {}
+        save_dict["patch_embed"] = model.patch_embed.state_dict()
+        save_dict["pos_embed"] = model.pos_embed.state_dict()
+        torch.save(save_dict, save_dir_path / subfolder / "torch_artifacts.pth")
+
+    @classmethod
     def _wrap_model_if_needed(cls, model: "PreTrainedModel", rbln_config: RBLNQwen3_5VisionModelConfig):
         return Qwen3_5VisionModelWrapper(model, rbln_config).eval()
 
@@ -385,6 +391,159 @@ class RBLNQwen3_5VisionModel(RBLNQwen3VLVisionModel):
         if isinstance(val, Callable) and "self" in set(inspect.signature(val).parameters):
             return redirect(val)
         return val
+
+    @classmethod
+    def _update_rbln_config(
+        cls,
+        preprocessors=None,
+        model: Optional["PreTrainedModel"] = None,
+        model_config: "PretrainedConfig" = None,
+        rbln_config: Optional[RBLNQwen3_5VisionModelConfig] = None,
+    ) -> RBLNQwen3_5VisionModelConfig:
+        hidden_size = model_config.hidden_size
+        num_heads = model_config.num_heads
+        head_dim = hidden_size // num_heads
+
+        input_infos = []
+        for max_seq_len in rbln_config.max_seq_len:
+            input_info = [
+                ("hidden_states", [max_seq_len, hidden_size], rbln_config.dtype),
+                ("attn_mask", [1, 1, max_seq_len, max_seq_len], rbln_config.dtype),
+                ("cos", [1, 1, max_seq_len, head_dim], rbln_config.dtype),
+                ("sin", [1, 1, max_seq_len, head_dim], rbln_config.dtype),
+            ]
+            input_infos.append(input_info)
+
+        rbln_compile_config = RBLNCompileConfig(input_info=input_infos)
+        rbln_config.set_compile_cfgs([rbln_compile_config])
+
+        return rbln_config
+
+    def rot_pos_emb(self, grid_thw: torch.Tensor) -> torch.Tensor:
+        merge_size = self.spatial_merge_size
+
+        max_hw = int(grid_thw[:, 1:].max().item())
+        freq_table = self.rotary_pos_emb(max_hw)
+        device = freq_table.device
+
+        total_tokens = int(torch.prod(grid_thw, dim=1).sum().item())
+        pos_ids = torch.empty((total_tokens, 2), dtype=torch.long, device=device)
+
+        offset = 0
+        for num_frames, height, width in grid_thw:
+            merged_h, merged_w = height // merge_size, width // merge_size
+
+            block_rows = torch.arange(merged_h, device=device)
+            block_cols = torch.arange(merged_w, device=device)
+            intra_row = torch.arange(merge_size, device=device)
+            intra_col = torch.arange(merge_size, device=device)
+
+            row_idx = block_rows[:, None, None, None] * merge_size + intra_row[None, None, :, None]
+            col_idx = block_cols[None, :, None, None] * merge_size + intra_col[None, None, None, :]
+
+            row_idx = row_idx.expand(merged_h, merged_w, merge_size, merge_size).reshape(-1)
+            col_idx = col_idx.expand(merged_h, merged_w, merge_size, merge_size).reshape(-1)
+
+            coords = torch.stack((row_idx, col_idx), dim=-1)
+
+            if num_frames > 1:
+                coords = coords.repeat(num_frames, 1)
+
+            num_tokens = coords.shape[0]
+            pos_ids[offset : offset + num_tokens] = coords
+            offset += num_tokens
+
+        embeddings = freq_table[pos_ids]
+        embeddings = embeddings.flatten(1)
+        return embeddings
+
+    def fast_pos_embed_interpolate(self, grid_thw: torch.Tensor) -> torch.Tensor:
+        grid_ts, grid_hs, grid_ws = grid_thw[:, 0], grid_thw[:, 1], grid_thw[:, 2]
+
+        idx_list = [[] for _ in range(4)]
+        weight_list = [[] for _ in range(4)]
+
+        for t, h, w in zip(grid_ts, grid_hs, grid_ws, strict=False):  # noqa: B007
+            h_idxs = torch.linspace(0, self.num_grid_per_side - 1, h)
+            w_idxs = torch.linspace(0, self.num_grid_per_side - 1, w)
+
+            h_idxs_floor = h_idxs.int()
+            w_idxs_floor = w_idxs.int()
+            h_idxs_ceil = (h_idxs.int() + 1).clip(max=self.num_grid_per_side - 1)
+            w_idxs_ceil = (w_idxs.int() + 1).clip(max=self.num_grid_per_side - 1)
+
+            dh = h_idxs - h_idxs_floor
+            dw = w_idxs - w_idxs_floor
+
+            base_h = h_idxs_floor * self.num_grid_per_side
+            base_h_ceil = h_idxs_ceil * self.num_grid_per_side
+
+            indices = [
+                (base_h[None].T + w_idxs_floor[None]).flatten(),
+                (base_h[None].T + w_idxs_ceil[None]).flatten(),
+                (base_h_ceil[None].T + w_idxs_floor[None]).flatten(),
+                (base_h_ceil[None].T + w_idxs_ceil[None]).flatten(),
+            ]
+
+            weights = [
+                ((1 - dh)[None].T * (1 - dw)[None]).flatten(),
+                ((1 - dh)[None].T * dw[None]).flatten(),
+                (dh[None].T * (1 - dw)[None]).flatten(),
+                (dh[None].T * dw[None]).flatten(),
+            ]
+
+            for i in range(4):
+                idx_list[i].extend(indices[i].tolist())
+                weight_list[i].extend(weights[i].tolist())
+
+        idx_tensor = torch.tensor(idx_list, dtype=torch.long, device=self.pos_embed.weight.device)
+        weight_tensor = torch.tensor(
+            weight_list, dtype=self.pos_embed.weight.dtype, device=self.pos_embed.weight.device
+        )
+        pos_embeds = self.pos_embed(idx_tensor) * weight_tensor[:, :, None]
+        patch_pos_embeds = pos_embeds[0] + pos_embeds[1] + pos_embeds[2] + pos_embeds[3]
+
+        patch_pos_embeds = patch_pos_embeds.split([h * w for h, w in zip(grid_hs, grid_ws, strict=False)])
+
+        patch_pos_embeds_permute = []
+        merge_size = self.spatial_merge_size
+        for pos_embed, t, h, w in zip(patch_pos_embeds, grid_ts, grid_hs, grid_ws, strict=False):
+            pos_embed = pos_embed.repeat(t, 1)
+            pos_embed = (
+                pos_embed.view(t, h // merge_size, merge_size, w // merge_size, merge_size, -1)
+                .permute(0, 1, 3, 2, 4, 5)
+                .flatten(0, 4)
+            )
+            patch_pos_embeds_permute.append(pos_embed)
+        patch_pos_embeds = torch.cat(patch_pos_embeds_permute)
+        return patch_pos_embeds
+
+    @staticmethod
+    def _pad_hidden_states(
+        hidden_states: torch.Tensor,
+        position_embeddings: Tuple[torch.Tensor, torch.Tensor],
+        max_seq_len: int,
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, int]:
+        seq_len = hidden_states.shape[0]
+        valid_len = seq_len
+
+        if seq_len < max_seq_len:
+            padding_size = max_seq_len - seq_len
+            hidden_padding = torch.zeros(padding_size, hidden_states.shape[-1], dtype=hidden_states.dtype)
+            hidden_states = torch.cat([hidden_states, hidden_padding], dim=0)
+
+            cos, sin = position_embeddings
+            pos_padding = torch.zeros(padding_size, cos.shape[-1], dtype=cos.dtype)
+            cos = torch.cat([cos, pos_padding], dim=0)
+            sin = torch.cat([sin, pos_padding], dim=0)
+            position_embeddings = (cos, sin)
+
+        attn_mask = torch.ones(1, 1, max_seq_len, max_seq_len, dtype=hidden_states.dtype)
+        if valid_len < max_seq_len:
+            attn_mask[:, :, valid_len:, :] = 0
+            attn_mask[:, :, :, valid_len:] = 0
+
+        return hidden_states, position_embeddings, attn_mask, valid_len
 
     def forward(self, hidden_states: torch.Tensor, grid_thw: torch.Tensor) -> torch.Tensor:
         hidden_states = self.patch_embed(hidden_states).to(self.rbln_config.dtype)
@@ -509,20 +668,7 @@ class RBLNQwen3_5Model(RBLNDecoderOnlyModel):
         _qwen3_5_setup_hybrid_runtime(self)
 
     @classmethod
-    def _update_rbln_config(cls, preprocessors=None, model=None, model_config=None, rbln_config=None):
-        text_config = model_config.get_text_config()
-        layer_types = getattr(text_config, "layer_types", None)
-        if layer_types is None:
-            raise ValueError("Qwen3.5 requires `layer_types` in the model config.")
-        return super()._update_rbln_config(
-            preprocessors=preprocessors, model=model, model_config=model_config, rbln_config=rbln_config
-        )
-
-    @classmethod
     def get_input_info(cls, batch_size, query_length, rbln_config, model_config: PretrainedConfig):
-        # Hybrid per-layer state specs (conv_state/recurrent_state for linear layers, paged KV for
-        # full layers) are identical to the text backbone; reuse that builder, then insert the
-        # precomputed mRoPE position embedding at index 3 (after block_tables). No deepstack inputs.
         input_info = RBLNQwen3_5TextModel.get_input_info(batch_size, query_length, rbln_config, model_config)
         text_config = model_config.get_text_config()
         head_dim = getattr(text_config, "head_dim", None) or (
