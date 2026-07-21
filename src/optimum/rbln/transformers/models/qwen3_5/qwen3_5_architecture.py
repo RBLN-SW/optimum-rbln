@@ -166,7 +166,7 @@ def rbln_chunk_gated_delta_rule(
 
     # T = (I − A)^{-1} via forward substitution. 대각선은 아래 `+ eye` 전까지 0 (그래야 직접경로가 중복 안 됨).
     for i in range(1, gcs):
-        row = attn[..., i, :i].clone()   # (B,Hv,n_chunks,i)      : i행의 [0..i-1] 열 (raw A)
+        row = attn[..., i, :i].clone()  # (B,Hv,n_chunks,i)      : i행의 [0..i-1] 열 (raw A)
         sub = attn[..., :i, :i].clone()  # (B,Hv,n_chunks,i,i)    : 이미 완성된 왼쪽 위 i×i 블록 (대각선 0)
         attn[..., i, :i] = row + (row.unsqueeze(-1) * sub).sum(-2)
     # 새 attn[i,m] = a_im + Σ_{m<k<i} a_ik · sub[k,m]  = "i→m 직접경로 + 중간토큰 k 경유 모든경로"
@@ -369,11 +369,11 @@ class Qwen3_5GatedDeltaNet(nn.Module):
             # cols are exactly [valid_count .. valid_count+K-2] (chronological). When valid_count < K-1 this
             # index range reaches back into the prepended conv_state (e.g. a multi-window prefill whose last
             # window has 1-2 valid tokens still pulls the tail of the previous window's conv_state).
-            
+
             # k_1 times dynamic take
             states = [x_cf[:, :, query_position.to(torch.int).unsqueeze(0) + i] for i in range(1, k_1 + 1)]
             new_conv_state = torch.cat(states, dim=2).transpose(1, 2).contiguous()  # (B, K-1, conv_dim)
-            
+
         else:
             new_conv_state = x_cf[:, :, -k_1:].transpose(1, 2).contiguous()  # (B, K-1, conv_dim), HF-style
         conv_out = F.conv1d(x_cf, self.conv1d.weight, self.conv1d.bias, padding=0, groups=self.conv_dim)
@@ -596,7 +596,9 @@ class Qwen3_5Model(DecoderOnlyModel):
         position_ids: torch.Tensor = None,
         query_position: torch.Tensor = None,
         past_key_values: Tuple[Tuple[torch.Tensor]] = None,  # full-attention layers' KV (None at linear idx)
-        past_states: Tuple[Tuple[torch.Tensor]] = None,  # linear-attention layers' (conv, recurrent) (None at full idx)
+        past_states: Tuple[
+            Tuple[torch.Tensor]
+        ] = None,  # linear-attention layers' (conv, recurrent) (None at full idx)
         rotary_emb: Optional[nn.Module] = None,
         global_block_tables: Optional[torch.Tensor] = None,
         local_block_tables: Optional[torch.Tensor] = None,
@@ -642,7 +644,7 @@ class Qwen3_5Model(DecoderOnlyModel):
             # boundary and lowers to a SubviewOp whose ScatterInfo size != shape size (compiler abort
             # "ScatterInfo size mismatch --> slice_1"); a reduction is not a subview so it sidesteps it.
 
-            seq_positions = cache_position.amin(dim=1, keepdim=True) # same to seq_positions = cache_position[:, :1]
+            seq_positions = cache_position.amin(dim=1, keepdim=True)  # same to seq_positions = cache_position[:, :1]
             # 이건 그냥 현재 업데이트해야하는 position이라서 torch.arange에서 최소값을 가져오는거랑 똑같음
             # 근데 Linear attention 이랑 합쳐졌다고 해서 이게 에러가 나는게 좀 이상한거같긴함
 
@@ -668,7 +670,9 @@ class Qwen3_5Model(DecoderOnlyModel):
                 # these (they live on device). (batch>1 will pass position=batch_idx for prefill.)
                 _axis0 = torch.tensor(0, dtype=torch.int16)
                 _pos = torch.tensor(0, dtype=torch.int16)
-                new_states.append(torch.ops.rbln_custom_ops.rbln_cache_update(conv_state, new_conv_state, _pos, _axis0))
+                new_states.append(
+                    torch.ops.rbln_custom_ops.rbln_cache_update(conv_state, new_conv_state, _pos, _axis0)
+                )
                 new_states.append(
                     torch.ops.rbln_custom_ops.rbln_cache_update(recurrent_state, new_recurrent_state, _pos, _axis0)
                 )
@@ -703,7 +707,9 @@ class Qwen3_5ForCausalLM(DecoderOnlyForCausalLM):
         position_ids: torch.Tensor = None,
         query_position: torch.Tensor = None,
         past_key_values: Tuple[Tuple[torch.Tensor]] = None,  # full-attention layers' KV (None at linear idx)
-        past_states: Tuple[Tuple[torch.Tensor]] = None,  # linear-attention layers' (conv, recurrent) (None at full idx)
+        past_states: Tuple[
+            Tuple[torch.Tensor]
+        ] = None,  # linear-attention layers' (conv, recurrent) (None at full idx)
         rotary_emb: nn.Module = None,
         global_block_tables: Optional[torch.Tensor] = None,
         local_block_tables: Optional[torch.Tensor] = None,
@@ -911,9 +917,7 @@ class Qwen3_5_LanguageModelWrapper(Qwen3_5_CausalLMWrapper):
         # [layer_idx] indexing works (base DecoderOnlyLayer uses past_key_values[layer_idx]).
         state_args = args
         if len(state_args) != 2 * self.num_hidden_layers:
-            raise ValueError(
-                f"Different states to model's config. {len(state_args)} != {2 * self.num_hidden_layers}"
-            )
+            raise ValueError(f"Different states to model's config. {len(state_args)} != {2 * self.num_hidden_layers}")
         linear = {i for i, t in enumerate(self.config.layer_types) if t == "linear_attention"}
         past_key_values = [None] * self.num_hidden_layers
         past_states = [None] * self.num_hidden_layers
