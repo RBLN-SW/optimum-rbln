@@ -41,8 +41,11 @@ cache처럼 그래프 안에서 `rbln_cache_update`로 읽고 쓴다. 런타임�
 이전 상태를 0으로** 지우고, 이후 윈도우부터는 상태를 이어간다.
 
 또한 optimum-rbln의 prefill 런타임은 프롬프트를 고정 크기 `prefill_chunk_size` 윈도우로 나눠 넣고
-윈도우 사이로 `recurrent_state`를 넘긴다. 따라서 **한 번의 호출 == 하나의 델타 청크**이며,
-HF `torch_chunk_gated_delta_rule` 내부의 `chunk_size` 재분할(reshape)은 존재하지 않는다.
+윈도우 사이로 `recurrent_state`를 넘긴다. 한 윈도우 **안**은 다시 `gdn_chunk_size`(config, 기본값 =
+`prefill_chunk_size`) 크기의 서브청크로 나눠 청크 병렬 규칙을 적용하고 서브청크 사이로도 state를 넘긴다
+(`n_chunks = prefill_chunk_size // gdn_chunk_size`; 기본값이면 n_chunks=1 → 한 윈도우 = 한 청크).
+이 서브청크 병렬화는 chunk 축을 batch로 두는 3 batch-dim `(B, Hv, n_chunks)` matmul이라 예전 컴파일러에선
+OpTiling에 막혔으나(§6 참고), 컴파일러의 5D matmul 지원 이후 컴파일된다.
 
 ---
 
@@ -282,7 +285,8 @@ k_cumdecay = T @ (k_beta * exp(g))         # 이전 상태 S가 현재 청크에
 
 ### 2.3 두 번째 for문 대응부 — intra/inter 출력과 상태 갱신
 
-RBLN은 "한 호출 = 한 청크"라 실제 for문은 없고, 한 청크에 대한 다음 계산만 수행한다.
+한 윈도우가 `n_chunks`개 서브청크로 나뉘므로, `for c in range(n_chunks)` 루프로 서브청크마다 아래를 계산하고
+`recurrent_state`를 서브청크 사이로 넘긴다 (HF의 inter-chunk 루프와 동일; n_chunks=1이면 1회). 서브청크당:
 
 ```
 attn_intra = (q @ kᵀ) * decay_mask         # 청크 안 causal 어텐션
@@ -349,10 +353,10 @@ beta = beta * valid_mask
 
 | 항목 | HF | RBLN | 이유 |
 |------|----|----|------|
-| 삼각/단위 행렬 | bool `.tril()` / `masked_fill` / `torch.eye` | float 마스크(`tril_incl`/`tril_strict`) + 전달된 `eye` | `rtosa.where`가 i1 거부, `aten::eye` 미구현 |
-| 마스크/단위 행렬 생성 | 모듈 상수 | `forward` 지역 변수(arange 비교)로 inline | named 상수는 weight-sharing 패스가 prefill/decode 간 공유 시도 → gen mode 실패 |
+| 삼각/단위 행렬 | bool `.tril()` / `masked_fill` / `torch.eye` | float 마스크(`tril_incl`/`tril_strict`), `eye = tril_incl − tril_strict` 로 파생 | `rtosa.where`가 i1 거부, `aten::eye` 미구현 |
+| 마스크 생성 | 모듈 상수 | 호출부 `forward` 지역 변수로 inline (rank `(1,1,1,gcs,gcs)`) | named 상수는 weight-sharing 패스가 prefill/decode 간 공유 시도 → gen mode 실패 |
 | 상태 갱신 감쇠 | `g[-1]`, `g[-1] − g` (슬라이스/뺄셈) | `incr.sum`, `incr @ tril_strict` (matmul reverse-cumsum) | innermost 슬라이스/`flip` mis-lower |
-| 청크 분할 | 내부 `chunk_size` reshape (3 batch dim) | 없음. 한 호출 = 한 청크 (2 batch dim `(B,Hv)`) | 3 batch-dim matmul이 OpTiling "memory size mismatch (3 vs 4)" 유발 |
+| 청크 분할 | 내부 `chunk_size` reshape (3 batch dim) | `gdn_chunk_size`로 서브청크 분할 (chunk 축을 `torch.stack`으로, reshape는 rank 오추론) → 3 batch-dim `(B,Hv,n_chunks)` | 예전엔 OpTiling "3 vs 4"로 막혔으나 컴파일러 5D matmul 지원으로 해소 |
 
 ---
 
@@ -422,7 +426,7 @@ conv_out = F.conv1d(x_cf, weight, bias, padding=0, groups=conv_dim)  # 길이 �
 | 첫 윈도우 좌문맥=0 | `nn.Conv1d`의 내장 `padding=K-1`(zero) | `conv_state × mask`로 0 | ✅ |
 | 저장하는 이전 문맥 | 최근 **K개** 입력 | 최근 **K-1개** 유효 입력 | ⚠️ 표현 차이 (최근 K-1개는 동일) |
 | 다음 스텝 적용 | prepend/roll 후 conv | prepend 후 conv | ✅ |
-| 우측 패딩 처리 | 없음(정확 길이 처리) | `valid_count` 기반 `index_select` | RBLN 고정 윈도우 전용 |
+| 우측 패딩 처리 | 없음(정확 길이 처리) | `query_position` 기반 동적 take(point-gather) K-1개 + `cat` | RBLN 고정 윈도우 전용 |
 
 ### 4.3 왜 HF는 K개, RBLN은 K-1개인가
 
@@ -451,29 +455,35 @@ HF의 참조 구현 `torch_causal_conv1d_update`도 RBLN처럼 `cat + padding=0 
 
 ### 4.4 우측 패딩에서 "마지막 K-1개 유효" 고르기
 
-prefill 윈도우는 우측 패딩되므로, 원시 `mixed_qkv`의 꼬리 `K-1`개는 패딩(쓰레기값)일 수 있다. 그래서 유효 토큰
-개수 `valid_count`를 이용해 **마지막 K-1개 유효 입력**을 고른다.
+prefill 윈도우는 우측 패딩되므로, 원시 `mixed_qkv`의 꼬리 `K-1`개는 패딩(쓰레기값)일 수 있다. 그래서 런타임이 주는
+`query_position`(= 마지막 유효 토큰의 0-based 인덱스 = `valid_count − 1`)으로 **마지막 K-1개 유효 입력**을 고른다.
+`query_position + i` (i = 1..K-1) 열을 각각 **동적 take(point-gather)** 로 뽑아 `cat`한다.
 
 ```python
-valid_count    = valid_mask.sum()                       # 이 윈도우의 유효 토큰 수 (batch=1이라 스칼라)
-idx            = valid_count + arange(K-1)               # x_cf에서 마지막 K-1 유효 열
-new_conv_state = index_select(x_cf, dim=time, idx)       # (B, K-1, conv_dim)
+# query_position 을 (1,) 텐서로 만들어 인덱싱 -> 각 열은 point-gather(take) 로 lower
+states         = [x_cf[:, :, query_position.unsqueeze(0) + i] for i in range(1, K)]  # 각 (B, conv_dim, 1)
+new_conv_state = torch.cat(states, dim=2).transpose(1, 2)                            # (B, K-1, conv_dim)
 ```
 
 - `x_cf = [conv_state(0..K-2) | mixed_qkv(K-1..)]`. 유효 토큰은 `mixed_qkv`의 앞 `valid_count`개.
-- 마지막 K-1개 유효 열 = `x_cf` 인덱스 `[valid_count .. valid_count+K-2]`.
+- 뽑는 열 = `[qp+1 .. qp+K-1]` = `[valid_count .. valid_count+K-2]` = 마지막 K-1개 유효 입력.
 - `valid_count < K-1`이면 인덱스가 prepend된 `conv_state` 영역까지 파고들어 **이전 윈도우 문맥의 꼬리**를
   자동으로 끌어온다.
 
 ```
-예) K=4, 윈도우 6, 유효 4개(t0..t3), 패딩 2개(p):
+예) K=4, 윈도우 6, 유효 4개(t0..t3), 패딩 2개(p), query_position=3:
 x_cf = [ c0 c1 c2 | t0 t1 t2 t3 p p ]   (index 0..8)
 naïve 꼬리 [-3:] = [t3, p, p]           ← ❌ 패딩 섞임
-idx = 4 + [0,1,2] = [4,5,6] → [t1,t2,t3] ← ✅ 마지막 3개 유효
+뽑는 열 = 3 + [1,2,3] = [4,5,6] → [t1,t2,t3] ← ✅ 마지막 3개 유효
 ```
 
-동적 `index_select`(point-gather)는 RBLN에서 lowering 되지만, 동적 strided-slice는 SubviewOp/ScatterInfo
-blocker다. decode 경로는 패딩이 없으므로 HF처럼 그냥 꼬리 `x_cf[..., -k_1:]`을 쓴다.
+**왜 take K-1개 + cat인가** (다른 방식은 컴파일 실패):
+- `index_select`(동적 인덱스 텐서 gather) → RBLN에서 **그래프가 둘로 쪼개짐**.
+- `x_cf[:, :, i]`(동적 **스칼라** 인덱스) → 동적 **StridedSlice(SubviewOp) blocker**.
+- `query_position`을 `(1,)` 텐서로 만들어 `x_cf[:, :, qp+i]`로 뽑으면 **point-gather(take)** 로 lower되고,
+  K-1개를 `cat`하면 단일 그래프로 컴파일된다.
+
+decode 경로는 패딩이 없으므로 HF처럼 그냥 꼬리 `x_cf[..., -(K-1):]`을 쓴다.
 
 ---
 
@@ -487,20 +497,24 @@ blocker다. decode 경로는 패딩이 없으므로 HF처럼 그냥 꼬리 `x_cf
 부동소수점 재배열(합산 순서: cumsum ↔ sum/matmul, broadcast-sum ↔ matmul)로 인한 비트 단위 차이는 존재할 수
 있으나, 위 상관계수 수준에서 무시 가능하다.
 
+검증 범위 (teacher-forced, HF vs 컴파일된 RBLN): text 8·16 레이어, 서브청크 `n_chunks` 1·2, 이미지+텍스트
+(vision 인코더 포함, 다중 윈도우 prefill) — 전부 per-step 로짓 pearson ~0.9999. GatedDeltaNet 단독은 CPU eager로도
+HF와 cos ≈ 1.0 (단일/다중 윈도우).
+
 ---
 
 ## 6. RBLN lowering 제약 → 우회 총정리
 
 | 원인이 된 HF 연산 | RBLN 우회 | 발생 위치 |
 |---|---|---|
-| bool `.tril()` / `masked_fill` / `torch.eye` | float 마스크 + inline arange 비교 | prefill 마스크 |
+| bool `.tril()` / `masked_fill` / `torch.eye` | float `tril_incl`/`tril_strict`, `eye = tril_incl − tril_strict` | prefill 마스크 |
 | 모듈 상수(named) 공유 | `forward` 지역 상수 | weight-sharing gen mode |
 | `g[-1]` 슬라이스, `g[-1]−g`, `flip` | `incr.sum`, `incr @ tril_strict` | 상태 갱신 감쇠 |
-| 3 batch-dim matmul (내부 청크 분할) | 2 batch-dim, 한 호출 = 한 청크 | OpTiling |
+| 내부 `chunk_size` reshape (3 batch-dim) | `gdn_chunk_size` 서브청크 + `torch.stack` 축 생성; 컴파일러 5D matmul 지원으로 3-batch-dim 통과 | OpTiling (구 "3 vs 4") |
 | 비-최내축 `.sum(dim=-2)` | matmul | decode predict/update/output |
 | 최내축 `(x*x).sum(-1)` l2norm (작은 텐서 ≈0) | dot-product matmul | decode l2norm |
 | `query[:,:,i]` / `out[:,:,i]=` (StridedSlice/Scatter) | S=1 `reshape` | decode seq축 |
-| 동적 strided-slice로 conv 꼬리 추출 | 동적 `index_select`(point-gather) | conv_state 갱신 |
+| 동적 strided-slice / index_select 로 conv 꼬리 추출 | `query_position`을 `(1,)` 텐서로 만들어 `x_cf[:, :, qp+i]` 동적 take K-1개 + `cat` (index_select는 그래프 분할, 동적 스칼라 subview는 blocker) | conv_state 갱신 |
 
 ---
 
@@ -577,8 +591,9 @@ window1 step=128   ONES  (carry)              [1]×127 + [0]×1    ← window0 �
   ×0을 곱해 "논리적 리셋"을 한다(§0). 이후 윈도우는 ×1로 이전 윈도우가 쓴 상태를 그대로 이어받는다.
 - **`valid_mask`** — GDN이 `g`/`beta`에 곱해, 마지막 부분 윈도우의 우측 패딩을 recurrent-state 합·decay·conv_state
   추출에서 제외한다(§2.5). full 윈도우는 전부 1.
-- **`query_position`** — 이 윈도우에서 logits를 남길 행(마지막 유효 토큰). `logits_to_keep=1`이라 매 윈도우가 단일
-  logits 행을 덮어써, 최종값 = **마지막 윈도우의 next-token logits**.
+- **`query_position`** — 이 윈도우의 마지막 유효 토큰 인덱스(= `valid_count − 1`). ① `logits_to_keep=1`이라 매 윈도우가
+  단일 logits 행을 덮어써 최종값 = **마지막 윈도우의 next-token logits**, ② GDN conv 꼬리 추출(§4.4)이 이 값으로
+  마지막 K-1 유효 토큰을 고른다.
 
 ### 7.4 DECODE 런타임 — `decode_forward`
 
