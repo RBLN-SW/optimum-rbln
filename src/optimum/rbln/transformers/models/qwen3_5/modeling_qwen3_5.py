@@ -72,6 +72,26 @@ def _qwen3_5_build_compile_context(compile_config, example_inputs):
     return context, static_tensors
 
 
+def _qwen3_5_linear_state_shapes(text_config, batch_size: int):
+    """(conv_state, recurrent_state) host-tensor shapes for one GatedDeltaNet layer at ``batch_size``.
+
+    Mirrors the per-layer state specs declared in ``RBLNQwen3_5TextModel.get_input_info``. Shared by the
+    text backbone and the VL model runtimes; ``text_config`` is the HF text config (``config.text_config``
+    for the VL model, or the flat config itself for the text-only backbone).
+    """
+    conv_dim = 2 * (text_config.linear_num_key_heads * text_config.linear_key_head_dim) + (
+        text_config.linear_num_value_heads * text_config.linear_value_head_dim
+    )
+    conv_state_shape = (batch_size, text_config.linear_conv_kernel_dim - 1, conv_dim)
+    recurrent_state_shape = (
+        batch_size,
+        text_config.linear_num_value_heads,
+        text_config.linear_key_head_dim,
+        text_config.linear_value_head_dim,
+    )
+    return conv_state_shape, recurrent_state_shape
+
+
 class RBLNQwen3_5TextModel(RBLNDecoderOnlyModel):
     """The bare Qwen3.5 text backbone (no LM head).
 
@@ -86,26 +106,6 @@ class RBLNQwen3_5TextModel(RBLNDecoderOnlyModel):
 
     _decoder_wrapper_cls = Qwen3_5_CausalLMWrapper
     _use_rotary_emb = True
-
-    def _linear_state_shapes(self, batch_size: int):
-        """(conv_state, recurrent_state) host-tensor shapes for a linear layer at ``batch_size``.
-
-        Same specs as ``RBLNQwen3_5Model._linear_state_shapes`` / ``get_input_info``, but reads the
-        text config directly (for the text-only backbone, ``self.config`` IS the text config, so
-        ``get_text_config()`` returns it).
-        """
-        tc = self.config.get_text_config()
-        conv_dim = 2 * (tc.linear_num_key_heads * tc.linear_key_head_dim) + (
-            tc.linear_num_value_heads * tc.linear_value_head_dim
-        )
-        conv_state_shape = (batch_size, tc.linear_conv_kernel_dim - 1, conv_dim)
-        recurrent_state_shape = (
-            batch_size,
-            tc.linear_num_value_heads,
-            tc.linear_key_head_dim,
-            tc.linear_value_head_dim,
-        )
-        return conv_state_shape, recurrent_state_shape
 
     def setup_runtime(self):
         # Mirror the base RBLNDecoderOnlyModelForCausalLM.setup_runtime, but use RBLNQwen3_5RuntimeModel:
@@ -132,7 +132,9 @@ class RBLNQwen3_5TextModel(RBLNDecoderOnlyModel):
             "state_dtype": self.dtype,
         }
 
-        conv_shape, recur_shape = self._linear_state_shapes(self.rbln_config.batch_size)
+        conv_shape, recur_shape = _qwen3_5_linear_state_shapes(
+            self.config.get_text_config(), self.rbln_config.batch_size
+        )
         self.prefill_decoder = RBLNQwen3_5RuntimeModel(
             runtime=self.model[0],
             phase="prefill",
@@ -146,7 +148,7 @@ class RBLNQwen3_5TextModel(RBLNDecoderOnlyModel):
         if self.can_generate():
             self.decoders = {}
             for i, batch_size in enumerate(self.rbln_config.decoder_batch_sizes):
-                conv_shape, recur_shape = self._linear_state_shapes(batch_size)
+                conv_shape, recur_shape = _qwen3_5_linear_state_shapes(self.config.get_text_config(), batch_size)
                 self.decoders[batch_size] = RBLNQwen3_5RuntimeModel(
                     runtime=self.model[i + 1],
                     phase="decode",
@@ -504,24 +506,6 @@ class RBLNQwen3_5Model(RBLNDecoderOnlyModel):
         sin = sin.unsqueeze(1).to(self.rbln_config.dtype)
         return torch.stack([cos, sin])
 
-    def _linear_state_shapes(self, batch_size: int):
-        """(conv_state, recurrent_state) host-tensor shapes for a linear layer at ``batch_size``.
-
-        Mirrors the graph inputs declared in ``RBLNQwen3_5TextModel.get_input_info``.
-        """
-        tc = self.config.text_config
-        conv_dim = 2 * (tc.linear_num_key_heads * tc.linear_key_head_dim) + (
-            tc.linear_num_value_heads * tc.linear_value_head_dim
-        )
-        conv_state_shape = (batch_size, tc.linear_conv_kernel_dim - 1, conv_dim)
-        recurrent_state_shape = (
-            batch_size,
-            tc.linear_num_value_heads,
-            tc.linear_key_head_dim,
-            tc.linear_value_head_dim,
-        )
-        return conv_state_shape, recurrent_state_shape
-
     def setup_runtime(self):
         # Qwen3.5-specific runtime: the linear_attention layers carry (conv_state, recurrent_state) as
         # on-device static caches (shared across prefill/decode via addresses baked at compile — see
@@ -545,7 +529,9 @@ class RBLNQwen3_5Model(RBLNDecoderOnlyModel):
             "state_dtype": self.dtype,
         }
 
-        conv_shape, recur_shape = self._linear_state_shapes(self.rbln_config.batch_size)
+        conv_shape, recur_shape = _qwen3_5_linear_state_shapes(
+            self.config.get_text_config(), self.rbln_config.batch_size
+        )
         self.prefill_decoder = RBLNQwen3_5RuntimeModel(
             runtime=self.model[0],
             phase="prefill",
@@ -559,7 +545,7 @@ class RBLNQwen3_5Model(RBLNDecoderOnlyModel):
         if self.can_generate():
             self.decoders = {}
             for i, batch_size in enumerate(self.rbln_config.decoder_batch_sizes):
-                conv_shape, recur_shape = self._linear_state_shapes(batch_size)
+                conv_shape, recur_shape = _qwen3_5_linear_state_shapes(self.config.get_text_config(), batch_size)
                 self.decoders[batch_size] = RBLNQwen3_5RuntimeModel(
                     runtime=self.model[i + 1],
                     phase="decode",
@@ -755,9 +741,6 @@ class RBLNQwen3_5ForConditionalGeneration(RBLNQwen3_5Model, RBLNDecoderOnlyModel
     see the project memo). This class wires the full vision-language structure so it works once that op lands.
     """
 
-    # auto_model_class / _decoder_wrapper_cls / _use_rotary_emb / _rbln_submodules are inherited from
-    # RBLNQwen3_5Model (which precedes RBLNDecoderOnlyModelForCausalLM in the MRO); only the generation-
-    # specific bits are set here.
     _supports_non_fp32 = True
 
     def __post_init__(self, **kwargs):
