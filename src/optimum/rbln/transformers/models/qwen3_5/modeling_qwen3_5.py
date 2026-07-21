@@ -55,8 +55,7 @@ logger = logging.get_logger(__name__)
 
 def _qwen3_5_build_compile_context(compile_config, example_inputs):
     # Mark the hybrid per-layer state caches static (base marks only past_key_values_*): the full-attention
-    # paged KV AND the linear-attention conv_state_*/recurrent_state_* (the per-call *_mask control inputs
-    # are functional 0/1, not states).
+    # paged KV AND the linear-attention conv_state_*/recurrent_state_*
     def is_static_state(name: str) -> bool:
         if "past_key_values" in name:
             return True
@@ -73,12 +72,7 @@ def _qwen3_5_build_compile_context(compile_config, example_inputs):
 
 
 def _qwen3_5_linear_state_shapes(text_config, batch_size: int):
-    """(conv_state, recurrent_state) host-tensor shapes for one GatedDeltaNet layer at ``batch_size``.
-
-    Mirrors the per-layer state specs declared in ``RBLNQwen3_5TextModel.get_input_info``. Shared by the
-    text backbone and the VL model runtimes; ``text_config`` is the HF text config (``config.text_config``
-    for the VL model, or the flat config itself for the text-only backbone).
-    """
+    """(conv_state, recurrent_state) host-tensor shapes for one GatedDeltaNet layer at ``batch_size``."""
     conv_dim = 2 * (text_config.linear_num_key_heads * text_config.linear_key_head_dim) + (
         text_config.linear_num_value_heads * text_config.linear_value_head_dim
     )
@@ -90,6 +84,60 @@ def _qwen3_5_linear_state_shapes(text_config, batch_size: int):
         text_config.linear_value_head_dim,
     )
     return conv_state_shape, recurrent_state_shape
+
+
+def _qwen3_5_setup_hybrid_runtime(model):
+    """Build the prefill/decode ``RBLNQwen3_5RuntimeModel`` runtimes and attach them to ``model``.
+
+    Shared by the text backbone (``RBLNQwen3_5TextModel``) and the VL model (``RBLNQwen3_5Model``): the
+    ``linear_attention`` layers carry (conv_state, recurrent_state) as on-device STATIC caches (addresses
+    baked at compile — see ``_get_compile_context``), so both use ``RBLNQwen3_5RuntimeModel`` instead of the
+    base runtime; its only linear-state job is to inject the 0/1 conv/recurrent masks (+ query_position /
+    valid_mask). full_attention layers keep the on-device paged KV cache. The text path has no precomputed
+    mRoPE ``position_emb`` (rotary is computed in-graph) — the runtime simply omits it.
+    """
+    rbln_config = model.rbln_config
+    text_config = model.config.get_text_config()
+    page_table_manager = RBLNPageTableManager(rbln_config)
+    if rbln_config.use_position_ids:
+        dec_attn_mask = torch.zeros(rbln_config.batch_size, rbln_config.max_seq_len, dtype=model.dtype)
+    else:
+        dec_attn_mask = torch.zeros(rbln_config.batch_size, 1, 1, rbln_config.max_seq_len, dtype=model.dtype)
+
+    common_kwargs = {
+        "main_input_name": "inputs_embeds" if rbln_config.use_inputs_embeds else "input_ids",
+        "embed_tokens": model.embed_tokens,
+        "dec_attn_mask": dec_attn_mask,
+        "page_table_manager": page_table_manager,
+        "rbln_config": rbln_config,
+        "config": text_config,
+        "state_dtype": model.dtype,
+    }
+
+    conv_shape, recur_shape = _qwen3_5_linear_state_shapes(text_config, rbln_config.batch_size)
+    model.prefill_decoder = RBLNQwen3_5RuntimeModel(
+        runtime=model.model[0],
+        phase="prefill",
+        batch_size=rbln_config.batch_size,
+        logits_last_dim=model.logits_last_dim,
+        conv_state_shape=conv_shape,
+        recurrent_state_shape=recur_shape,
+        **common_kwargs,
+    )
+
+    if model.can_generate():
+        model.decoders = {}
+        for i, batch_size in enumerate(rbln_config.decoder_batch_sizes):
+            conv_shape, recur_shape = _qwen3_5_linear_state_shapes(text_config, batch_size)
+            model.decoders[batch_size] = RBLNQwen3_5RuntimeModel(
+                runtime=model.model[i + 1],
+                phase="decode",
+                batch_size=batch_size,
+                conv_state_shape=conv_shape,
+                recurrent_state_shape=recur_shape,
+                **common_kwargs,
+            )
+        model.decoder = model.decoders[rbln_config.batch_size]
 
 
 class RBLNQwen3_5TextModel(RBLNDecoderOnlyModel):
@@ -108,56 +156,7 @@ class RBLNQwen3_5TextModel(RBLNDecoderOnlyModel):
     _use_rotary_emb = True
 
     def setup_runtime(self):
-        # Mirror the base RBLNDecoderOnlyModelForCausalLM.setup_runtime, but use RBLNQwen3_5RuntimeModel:
-        # the linear_attention layers carry (conv_state, recurrent_state) as on-device STATIC caches
-        # (addresses baked at compile — see _get_compile_context), and the runtime's only linear-state job
-        # is to inject the 0/1 conv_state_mask / recurrent_state_mask (+ query_position / valid_mask) per
-        # call. Text-only path: no precomputed mRoPE position_emb (rotary is computed in-graph), so the
-        # runtime simply omits it.
-        page_table_manager = RBLNPageTableManager(self.rbln_config)
-        if self.rbln_config.use_position_ids:
-            dec_attn_mask = torch.zeros(self.rbln_config.batch_size, self.rbln_config.max_seq_len, dtype=self.dtype)
-        else:
-            dec_attn_mask = torch.zeros(
-                self.rbln_config.batch_size, 1, 1, self.rbln_config.max_seq_len, dtype=self.dtype
-            )
-
-        common_kwargs = {
-            "main_input_name": "inputs_embeds" if self.rbln_config.use_inputs_embeds else "input_ids",
-            "embed_tokens": self.embed_tokens,
-            "dec_attn_mask": dec_attn_mask,
-            "page_table_manager": page_table_manager,
-            "rbln_config": self.rbln_config,
-            "config": self.config.get_text_config(),
-            "state_dtype": self.dtype,
-        }
-
-        conv_shape, recur_shape = _qwen3_5_linear_state_shapes(
-            self.config.get_text_config(), self.rbln_config.batch_size
-        )
-        self.prefill_decoder = RBLNQwen3_5RuntimeModel(
-            runtime=self.model[0],
-            phase="prefill",
-            batch_size=self.rbln_config.batch_size,
-            logits_last_dim=self.logits_last_dim,
-            conv_state_shape=conv_shape,
-            recurrent_state_shape=recur_shape,
-            **common_kwargs,
-        )
-
-        if self.can_generate():
-            self.decoders = {}
-            for i, batch_size in enumerate(self.rbln_config.decoder_batch_sizes):
-                conv_shape, recur_shape = _qwen3_5_linear_state_shapes(self.config.get_text_config(), batch_size)
-                self.decoders[batch_size] = RBLNQwen3_5RuntimeModel(
-                    runtime=self.model[i + 1],
-                    phase="decode",
-                    batch_size=batch_size,
-                    conv_state_shape=conv_shape,
-                    recurrent_state_shape=recur_shape,
-                    **common_kwargs,
-                )
-            self.decoder = self.decoders[self.rbln_config.batch_size]
+        _qwen3_5_setup_hybrid_runtime(self)
 
     @classmethod
     def _get_compile_context(cls, compile_config, example_inputs):
@@ -507,56 +506,7 @@ class RBLNQwen3_5Model(RBLNDecoderOnlyModel):
         return torch.stack([cos, sin])
 
     def setup_runtime(self):
-        # Qwen3.5-specific runtime: the linear_attention layers carry (conv_state, recurrent_state) as
-        # on-device static caches (shared across prefill/decode via addresses baked at compile — see
-        # _get_compile_context), so use RBLNQwen3_5RuntimeModel instead of the base VL runtime. The
-        # runtime only injects the 0/1 state masks; full-attention layers keep the on-device paged KV cache.
-        page_table_manager = RBLNPageTableManager(self.rbln_config)
-        if self.rbln_config.use_position_ids:
-            dec_attn_mask = torch.zeros(self.rbln_config.batch_size, self.rbln_config.max_seq_len, dtype=self.dtype)
-        else:
-            dec_attn_mask = torch.zeros(
-                self.rbln_config.batch_size, 1, 1, self.rbln_config.max_seq_len, dtype=self.dtype
-            )
-
-        common_kwargs = {
-            "main_input_name": "inputs_embeds" if self.rbln_config.use_inputs_embeds else "input_ids",
-            "embed_tokens": self.embed_tokens,
-            "dec_attn_mask": dec_attn_mask,
-            "page_table_manager": page_table_manager,
-            "rbln_config": self.rbln_config,
-            "config": self.config.text_config,
-            "state_dtype": self.dtype,
-        }
-
-        conv_shape, recur_shape = _qwen3_5_linear_state_shapes(
-            self.config.get_text_config(), self.rbln_config.batch_size
-        )
-        self.prefill_decoder = RBLNQwen3_5RuntimeModel(
-            runtime=self.model[0],
-            phase="prefill",
-            batch_size=self.rbln_config.batch_size,
-            logits_last_dim=self.logits_last_dim,
-            conv_state_shape=conv_shape,
-            recurrent_state_shape=recur_shape,
-            **common_kwargs,
-        )
-
-        if self.can_generate():
-            self.decoders = {}
-            for i, batch_size in enumerate(self.rbln_config.decoder_batch_sizes):
-                conv_shape, recur_shape = _qwen3_5_linear_state_shapes(self.config.get_text_config(), batch_size)
-                self.decoders[batch_size] = RBLNQwen3_5RuntimeModel(
-                    runtime=self.model[i + 1],
-                    phase="decode",
-                    batch_size=batch_size,
-                    conv_state_shape=conv_shape,
-                    recurrent_state_shape=recur_shape,
-                    **common_kwargs,
-                )
-            self.decoder = self.decoders[self.rbln_config.batch_size]
-            # conv_state/recurrent_state are STATIC on-device caches shared by prefill and decode via the
-            # shared static addresses baked at compile (see _get_compile_context) — no host store to wire.
+        _qwen3_5_setup_hybrid_runtime(self)
 
     @classmethod
     def _update_rbln_config(cls, preprocessors=None, model=None, model_config=None, rbln_config=None):
