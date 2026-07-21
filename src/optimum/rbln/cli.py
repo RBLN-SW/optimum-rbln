@@ -16,14 +16,16 @@
 import argparse
 import inspect
 import json
+import shutil
 import sys
 from pathlib import Path
 from typing import Optional
 
+import rebel
 from huggingface_hub import hf_hub_download
 
 from .__version__ import __version__
-from .configuration_utils import RBLNModelConfig
+from .configuration_utils import RBLNModelConfig, load_config
 from .utils.model_utils import get_rbln_model_cls
 from .utils.runtime_utils import ContextRblnConfig
 
@@ -422,6 +424,66 @@ def _infer_rbln_class_from_model_id(
     return None
 
 
+def _handle_kvcache_num_blocks(
+    model_id: str, get: bool, set_value: Optional[int], output_dir: Optional[str] = None
+) -> None:
+    """Read or set kvcache_num_blocks on an already-compiled local artifact directory.
+
+    `get` prints the current block count from rbln_config.json. `set` rescales the
+    kv-cache buffers in every `*.rbln` to `set_value` blocks and writes both the
+    `.rbln` files and rbln_config.json. With `output_dir` the source artifact is left
+    untouched and a full resized copy is written there; otherwise the edit is in place.
+    Stateless: rbln_config.json is the source of truth for the current block count.
+    """
+    from .transformers.modeling_attention_utils import RBLNDecoderOnlyFlashAttentionMixin
+    from .transformers.models.decoderonly.configuration_decoderonly import KVCacheMeta
+
+    src_dir = Path(model_id)
+    if not (src_dir.exists() and src_dir.is_dir()):
+        raise ValueError(
+            f"--model-id must be a local compiled-artifact directory for this operation, got '{model_id}'."
+        )
+
+    config_cls, _ = load_config(model_id)
+    rbln_config = config_cls.from_pretrained(model_id)
+    if not (hasattr(rbln_config, "kvcache_num_blocks") and hasattr(rbln_config, "kvcache_metas")):
+        raise ValueError(
+            f"The model at '{model_id}' ({config_cls.__name__}) does not expose a top-level "
+            "resizable kv-cache. Only decoder-only causal LM artifacts are supported."
+        )
+
+    if get:
+        print(rbln_config.kvcache_num_blocks)
+        return
+
+    compiled_models = {p.stem: rebel.RBLNCompiledModel(p) for p in sorted(src_dir.glob("*.rbln"))}
+    if not compiled_models:
+        raise FileNotFoundError(f"No .rbln compiled models found in '{model_id}'.")
+
+    dst_dir = src_dir if output_dir is None else Path(output_dir)
+    if dst_dir.resolve() != src_dir.resolve():
+        dst_dir.mkdir(parents=True, exist_ok=True)
+        for item in src_dir.iterdir():
+            if item.suffix == ".rbln" or item.name == "rbln_config.json":
+                continue
+            if item.is_dir():
+                shutil.copytree(item, dst_dir / item.name, dirs_exist_ok=True)
+            else:
+                shutil.copy2(item, dst_dir / item.name)
+
+    rbln_config.kvcache_metas = [
+        m if isinstance(m, KVCacheMeta) else KVCacheMeta(**m) for m in rbln_config.kvcache_metas
+    ]
+    RBLNDecoderOnlyFlashAttentionMixin.rescale_kvcache_num_blocks(
+        compiled_models=compiled_models, rbln_config=rbln_config, target=set_value
+    )
+    for name, compiled_model in compiled_models.items():
+        compiled_model.save(dst_dir / f"{name}.rbln")
+    rbln_config.kvcache_num_blocks = set_value
+    rbln_config.save(str(dst_dir))
+    print(f"Set kvcache_num_blocks to {set_value} for artifact at {dst_dir.absolute()}")
+
+
 def main():
     """
     Main CLI function for optimum-rbln model compilation.
@@ -521,6 +583,23 @@ def main():
         help="Show rbln_config keys for the resolved RBLN class (via --class or inferred from --model-id) and exit",
     )
 
+    # Post-compilation kv-cache block-count operations on an existing --model-id directory
+    parser.add_argument(
+        "--get-kvcache-num-blocks",
+        dest="get_kvcache_num_blocks",
+        action="store_true",
+        help="Print kvcache_num_blocks of the compiled artifact at --model-id and exit (no compilation)",
+    )
+    parser.add_argument(
+        "--set-kvcache-num-blocks",
+        dest="set_kvcache_num_blocks",
+        type=int,
+        default=None,
+        metavar="N",
+        help="Resize the kv-cache of the compiled artifact at --model-id to N blocks and exit (no compilation). "
+        "Edits in place unless --output-dir is given, in which case a resized copy is written there.",
+    )
+
     # Standard --version that integrates with argparse (works after full parse)
     parser.add_argument(
         "--version",
@@ -573,6 +652,20 @@ def main():
 
     # Parse known args to allow for additional rbln_* arguments
     args, unknown_args = parser.parse_known_args()
+
+    # Post-compilation kv-cache block-count operations short-circuit the compile flow.
+    if args.get_kvcache_num_blocks or args.set_kvcache_num_blocks is not None:
+        # --output-dir has a compile default; only honor it here when explicitly passed.
+        explicit_output = "--output-dir" in sys.argv or "-o" in sys.argv
+        output_dir = args.output_dir if explicit_output else None
+        try:
+            _handle_kvcache_num_blocks(
+                args.model_id, args.get_kvcache_num_blocks, args.set_kvcache_num_blocks, output_dir
+            )
+        except Exception as e:
+            print(f"❌ Error: {e}", file=sys.stderr)
+            sys.exit(1)
+        return
 
     try:
         # Resolve or infer model class for compilation
