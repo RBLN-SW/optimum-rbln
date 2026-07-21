@@ -35,6 +35,7 @@ import copy
 from typing import List, Optional, Tuple
 
 import torch
+from torch import Tensor
 import torch.nn.functional as F
 from torch import nn
 from transformers import PreTrainedModel
@@ -50,6 +51,21 @@ from ..decoderonly.decoderonly_architecture import (
     slice_and_unsqueeze_cos_sin,
 )
 from ..qwen3_vl.qwen3_vl_architecture import Qwen3VLVisionBlock
+
+@torch.library.custom_op("rbln::tri_recur_update", mutates_args=())
+def tri_recur_update(attn: Tensor) -> Tensor:
+    attn = attn.clone()
+    c = attn.shape[-1]
+    for i in range(1, c):
+        row = attn[..., i, :i].clone()   # (..., i)      : row i, cols [0..i-1]
+        sub = attn[..., :i, :i].clone()  # (..., i, i)   : top-left i x i block
+        attn[..., i, :i] = row + (row.unsqueeze(-1) * sub).sum(-2)
+    return attn
+
+
+@torch.library.register_fake("rbln::tri_recur_update")
+def tri_recur_update_fake(attn: Tensor) -> Tensor:
+    return torch.empty_like(attn)
 
 
 class Qwen3_5VisionModelWrapper(nn.Module):
@@ -163,12 +179,14 @@ def rbln_chunk_gated_delta_rule(
     # i=1 [ a₁₀     0      0      0  ]
     # i=2 [ a₂₀    a₂₁     0      0  ]      "청크 안에서 토큰 i가 앞선 j에게 받는 (음의) 간섭"
     # i=3 [ a₃₀    a₃₁    a₃₂     0  ]
-
+    '''
     # T = (I − A)^{-1} via forward substitution. 대각선은 아래 `+ eye` 전까지 0 (그래야 직접경로가 중복 안 됨).
     for i in range(1, gcs):
         row = attn[..., i, :i].clone()  # (B,Hv,n_chunks,i)      : i행의 [0..i-1] 열 (raw A)
         sub = attn[..., :i, :i].clone()  # (B,Hv,n_chunks,i,i)    : 이미 완성된 왼쪽 위 i×i 블록 (대각선 0)
         attn[..., i, :i] = row + (row.unsqueeze(-1) * sub).sum(-2)
+    '''
+    attn = torch.ops.rbln.tri_recur_update(attn)
     # 새 attn[i,m] = a_im + Σ_{m<k<i} a_ik · sub[k,m]  = "i→m 직접경로 + 중간토큰 k 경유 모든경로"
     #   row = [a₃₀ a₃₁ a₃₂] ,  sub = [[0],[t₁₀ 0],[t₂₀ t₂₁ 0]] (완성된 위쪽블록)
     eye = tril_incl - tril_strict  # == torch.eye ((i>=j) − (i>j) = 대각선), 넘겨받은 두 마스크에서 파생
