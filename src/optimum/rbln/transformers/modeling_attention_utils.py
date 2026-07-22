@@ -238,7 +238,10 @@ class RBLNDecoderOnlyFlashAttentionMixin:
         cls,
         compiled_models: dict[str, rebel.RBLNCompiledModel],
         rbln_config: "RBLNDecoderOnlyModelForCausalLMConfig",
+        current_blocks: int = 1,
     ) -> int:
+        # `current_blocks` is the block count the loaded buffers already hold: 1 at compile time,
+        # or `rbln_config.kvcache_num_blocks` when re-estimating for an already-resized artifact.
         if "prefill" not in rbln_config.phases:
             logger.warning(
                 "Not estimating number of KV cache blocks since `prefill` phase is not in the `phases` list."
@@ -252,7 +255,7 @@ class RBLNDecoderOnlyFlashAttentionMixin:
             cls._collect_chiplet_kvcache_inputs(compiled_models, rbln_config)
         )
         return cls._search_num_kvcache_blocks(
-            rbln_config, alloc_without_dram, kvcache_tensor_sizes, available_per_chiplet, chiplets
+            rbln_config, alloc_without_dram, kvcache_tensor_sizes, available_per_chiplet, chiplets, current_blocks
         )
 
     @classmethod
@@ -296,6 +299,7 @@ class RBLNDecoderOnlyFlashAttentionMixin:
         kvcache_tensor_sizes: dict[str, list[list[int]]],
         available_per_chiplet: int,
         chiplets: set[Tuple[int, int]],
+        current_blocks: int = 1,
     ) -> int:
         remaining_dram_at_chiplet: dict[Tuple[int, int], int] = {
             key: available_per_chiplet - alloc_without_dram.get(key, 0) for key in chiplets
@@ -303,7 +307,9 @@ class RBLNDecoderOnlyFlashAttentionMixin:
 
         def check_memory_fits(multiplier: int) -> Tuple[bool, dict[Tuple[int, int], int]]:
             # Fits only if every chiplet bucket has room.
-            kvcache_sizes = cls._kvcache_bytes_per_chiplet(kvcache_tensor_sizes, rbln_config, multiplier)
+            kvcache_sizes = cls._kvcache_bytes_per_chiplet(
+                kvcache_tensor_sizes, rbln_config, multiplier, current_blocks
+            )
             fits = all(remaining_dram_at_chiplet[key] >= kvcache_sizes.get(key, 0) for key in chiplets)
             return fits, kvcache_sizes
 
@@ -393,6 +399,60 @@ class RBLNDecoderOnlyFlashAttentionMixin:
             compiled_model.exp_multiply_buffer_size(
                 {
                     kvcache_meta.name: multiplier
+                    for kvcache_meta in rbln_config.kvcache_metas
+                    if kvcache_meta.can_resize
+                }
+            )
+
+    @classmethod
+    def rescale_kvcache_num_blocks(
+        cls,
+        compiled_models: dict[str, rebel.RBLNCompiledModel],
+        rbln_config: "RBLNDecoderOnlyModelForCausalLMConfig",
+        target: int,
+    ):
+        """Resize an already-compiled artifact's kv-cache to `target` blocks.
+
+        The saved buffers hold `per_block * current` bytes, where `current` is the
+        block count resolved at compile time (`rbln_config.kvcache_num_blocks`).
+        Scaling by the rational ratio `target / current` yields `per_block * target`
+        exactly, so `exp_rescale_buffer_size` never rejects the ratio for a
+        block-size-1 baseline.
+        """
+        current = rbln_config.kvcache_num_blocks
+        if current <= 0:
+            raise ValueError(
+                f"Cannot rescale kv-cache: the artifact's current kvcache_num_blocks ({current}) "
+                "is not a resolved positive block count."
+            )
+        if target < rbln_config.num_min_blocks:
+            raise ValueError(
+                f"kvcache_num_blocks={target} is below the minimum required for the full sequence "
+                f"length (num_min_blocks={rbln_config.num_min_blocks})."
+            )
+        for compiled_model in compiled_models.values():
+            if not hasattr(compiled_model, "exp_rescale_buffer_size"):
+                raise RuntimeError(
+                    "The installed rebel-compiler does not support post-compilation kv-cache "
+                    "resizing (`exp_rescale_buffer_size`). Please upgrade rebel-compiler. "
+                    "See https://docs.rbln.ai/about_atom/release_note.html"
+                )
+        if target > current:
+            logger.warning(
+                f"Requested kvcache_num_blocks={target} exceeds the block count chosen at compile "
+                f"time to fit device DRAM ({current}); the model may fail to allocate at runtime. "
+                "Proceeding without a device-fit check."
+            )
+        if target > rbln_config.num_full_blocks:
+            logger.warning(
+                f"Requested kvcache_num_blocks={target} exceeds num_full_blocks "
+                f"({rbln_config.num_full_blocks}), the blocks needed to cover the full batch at "
+                "max_seq_len; the excess blocks are never used."
+            )
+        for compiled_model in compiled_models.values():
+            compiled_model.exp_rescale_buffer_size(
+                {
+                    kvcache_meta.name: (target, current)
                     for kvcache_meta in rbln_config.kvcache_metas
                     if kvcache_meta.can_resize
                 }
