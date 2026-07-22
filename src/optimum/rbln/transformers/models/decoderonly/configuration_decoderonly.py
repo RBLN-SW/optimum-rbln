@@ -38,6 +38,7 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
 
     _default_phases = ["prefill"]
     _default_logits_to_keep = 0
+    subclass_non_save_attributes = ["memory_budget"]
 
     def __init__(
         self,
