@@ -75,6 +75,34 @@ def get_available_dram_per_chiplet(num_chiplets: int, npu: str | None = None) ->
     return dram_nbytes // num_chiplets - sys_per_chiplet
 
 
+_BYTE_UNITS = {"B": 1, "KB": 2**10, "MB": 2**20, "GB": 2**30, "TB": 2**40}
+
+
+def parse_byte_size(value: int | str) -> int:
+    """Parse a byte size given as an int (bytes) or a string like "10GB" / "512MB".
+
+    Units are case-insensitive and binary (KB=2**10 ... TB=2**40). Returns a positive int of bytes.
+    """
+    if isinstance(value, bool):
+        raise ValueError(f"Invalid byte size: {value!r}")
+    if isinstance(value, int):
+        nbytes = value
+    elif isinstance(value, str):
+        match = re.fullmatch(r"\s*(\d+)\s*([KMGT]?B)?\s*", value, re.IGNORECASE)
+        if not match:
+            raise ValueError(
+                f"Invalid byte size {value!r}. Expected an integer optionally suffixed with "
+                "B, KB, MB, GB, or TB (e.g. '10GB')."
+            )
+        unit = match.group(2)
+        nbytes = int(match.group(1)) * (_BYTE_UNITS[unit.upper()] if unit else 1)
+    else:
+        raise ValueError(f"Invalid byte size type: {type(value).__name__}")
+    if nbytes <= 0:
+        raise ValueError(f"Byte size must be positive, got {nbytes}.")
+    return nbytes
+
+
 def normalize_npu(npu: str) -> str:
     """Normalize the NPU string by removing the form factor."""
     match = re.match(r"(RBLN-CA|RBLN-CR)(\d+)", npu)
