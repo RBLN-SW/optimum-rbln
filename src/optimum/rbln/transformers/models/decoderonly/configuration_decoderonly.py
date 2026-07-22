@@ -234,6 +234,12 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
 
         self.kvcache_num_blocks = kvcache_num_blocks if kvcache_num_blocks is not None else 0
         self.memory_budget = memory_budget
+        if self.memory_budget is not None and self.kvcache_num_blocks > 0:
+            raise ValueError(
+                "`memory_budget` and an explicit `kvcache_num_blocks` are mutually exclusive. "
+                "`memory_budget` only guides automatic block estimation, which runs when "
+                "`kvcache_num_blocks` is unset."
+            )
         self.cache_impl = cache_impl or "static"
         self.sliding_window = sliding_window
         self.sliding_window_layers = sliding_window_layers or []
