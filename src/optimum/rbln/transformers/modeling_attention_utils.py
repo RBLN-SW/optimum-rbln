@@ -238,7 +238,10 @@ class RBLNDecoderOnlyFlashAttentionMixin:
         cls,
         compiled_models: dict[str, rebel.RBLNCompiledModel],
         rbln_config: "RBLNDecoderOnlyModelForCausalLMConfig",
+        current_blocks: int = 1,
     ) -> int:
+        # `current_blocks` is the block count the loaded buffers already hold: 1 at compile time,
+        # or `rbln_config.kvcache_num_blocks` when re-estimating for an already-resized artifact.
         if "prefill" not in rbln_config.phases:
             logger.warning(
                 "Not estimating number of KV cache blocks since `prefill` phase is not in the `phases` list."
@@ -252,7 +255,7 @@ class RBLNDecoderOnlyFlashAttentionMixin:
             cls._collect_chiplet_kvcache_inputs(compiled_models, rbln_config)
         )
         return cls._search_num_kvcache_blocks(
-            rbln_config, alloc_without_dram, kvcache_tensor_sizes, available_per_chiplet, chiplets
+            rbln_config, alloc_without_dram, kvcache_tensor_sizes, available_per_chiplet, chiplets, current_blocks
         )
 
     @classmethod
@@ -296,6 +299,7 @@ class RBLNDecoderOnlyFlashAttentionMixin:
         kvcache_tensor_sizes: dict[str, list[list[int]]],
         available_per_chiplet: int,
         chiplets: set[Tuple[int, int]],
+        current_blocks: int = 1,
     ) -> int:
         remaining_dram_at_chiplet: dict[Tuple[int, int], int] = {
             key: available_per_chiplet - alloc_without_dram.get(key, 0) for key in chiplets
@@ -303,7 +307,9 @@ class RBLNDecoderOnlyFlashAttentionMixin:
 
         def check_memory_fits(multiplier: int) -> Tuple[bool, dict[Tuple[int, int], int]]:
             # Fits only if every chiplet bucket has room.
-            kvcache_sizes = cls._kvcache_bytes_per_chiplet(kvcache_tensor_sizes, rbln_config, multiplier)
+            kvcache_sizes = cls._kvcache_bytes_per_chiplet(
+                kvcache_tensor_sizes, rbln_config, multiplier, current_blocks
+            )
             fits = all(remaining_dram_at_chiplet[key] >= kvcache_sizes.get(key, 0) for key in chiplets)
             return fits, kvcache_sizes
 

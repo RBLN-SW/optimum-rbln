@@ -425,15 +425,21 @@ def _infer_rbln_class_from_model_id(
 
 
 def _handle_kvcache_num_blocks(
-    model_id: str, get: bool, set_value: Optional[int], output_dir: Optional[str] = None
+    model_id: str,
+    get: bool,
+    set_value: Optional[int],
+    output_dir: Optional[str] = None,
+    set_memory_budget: Optional[str] = None,
 ) -> None:
     """Read or set kvcache_num_blocks on an already-compiled local artifact directory.
 
-    `get` prints the current block count from rbln_config.json. `set` rescales the
-    kv-cache buffers in every `*.rbln` to `set_value` blocks and writes both the
-    `.rbln` files and rbln_config.json. With `output_dir` the source artifact is left
-    untouched and a full resized copy is written there; otherwise the edit is in place.
-    Stateless: rbln_config.json is the source of truth for the current block count.
+    `get` prints the current block count from rbln_config.json. To set, give either
+    `set_value` (an absolute block count) or `set_memory_budget` (a float/`"80%"`/bytes
+    budget, from which the largest fitting block count is computed). The kv-cache buffers
+    in every `*.rbln` are rescaled to the target and both the `.rbln` files and
+    rbln_config.json are written. With `output_dir` the source artifact is left untouched
+    and a full resized copy is written there; otherwise the edit is in place. Stateless:
+    rbln_config.json is the source of truth for the current block count.
     """
     from .transformers.modeling_attention_utils import RBLNDecoderOnlyFlashAttentionMixin
     from .transformers.models.decoderonly.configuration_decoderonly import KVCacheMeta
@@ -460,6 +466,20 @@ def _handle_kvcache_num_blocks(
     if not compiled_models:
         raise FileNotFoundError(f"No .rbln compiled models found in '{model_id}'.")
 
+    rbln_config.kvcache_metas = [
+        m if isinstance(m, KVCacheMeta) else KVCacheMeta(**m) for m in rbln_config.kvcache_metas
+    ]
+
+    if set_value is not None:
+        target = set_value
+    else:
+        current = rbln_config.kvcache_num_blocks or 1
+        rbln_config.memory_budget = parse_value(set_memory_budget)
+        target = RBLNDecoderOnlyFlashAttentionMixin.estimate_num_kvcache_blocks(
+            compiled_models=compiled_models, rbln_config=rbln_config, current_blocks=current
+        )
+        print(f"memory_budget {set_memory_budget} fits kvcache_num_blocks={target}")
+
     dst_dir = src_dir if output_dir is None else Path(output_dir)
     if dst_dir.resolve() != src_dir.resolve():
         dst_dir.mkdir(parents=True, exist_ok=True)
@@ -471,17 +491,14 @@ def _handle_kvcache_num_blocks(
             else:
                 shutil.copy2(item, dst_dir / item.name)
 
-    rbln_config.kvcache_metas = [
-        m if isinstance(m, KVCacheMeta) else KVCacheMeta(**m) for m in rbln_config.kvcache_metas
-    ]
     RBLNDecoderOnlyFlashAttentionMixin.rescale_kvcache_num_blocks(
-        compiled_models=compiled_models, rbln_config=rbln_config, target=set_value
+        compiled_models=compiled_models, rbln_config=rbln_config, target=target
     )
     for name, compiled_model in compiled_models.items():
         compiled_model.save(dst_dir / f"{name}.rbln")
-    rbln_config.kvcache_num_blocks = set_value
+    rbln_config.kvcache_num_blocks = target
     rbln_config.save(str(dst_dir))
-    print(f"Set kvcache_num_blocks to {set_value} for artifact at {dst_dir.absolute()}")
+    print(f"Set kvcache_num_blocks to {target} for artifact at {dst_dir.absolute()}")
 
 
 def main():
@@ -599,6 +616,16 @@ def main():
         help="Resize the kv-cache of the compiled artifact at --model-id to N blocks and exit (no compilation). "
         "Edits in place unless --output-dir is given, in which case a resized copy is written there.",
     )
+    parser.add_argument(
+        "--set-memory-budget",
+        dest="set_memory_budget",
+        type=str,
+        default=None,
+        metavar="BUDGET",
+        help="Resize the kv-cache of the compiled artifact at --model-id to the largest block count that fits "
+        "BUDGET, then exit (no compilation). BUDGET is a float fraction of the NPU available DRAM (e.g. 0.8), a "
+        "'80%%' string, or bytes ('10GB'). Mutually exclusive with --set-kvcache-num-blocks.",
+    )
 
     # Standard --version that integrates with argparse (works after full parse)
     parser.add_argument(
@@ -654,13 +681,20 @@ def main():
     args, unknown_args = parser.parse_known_args()
 
     # Post-compilation kv-cache block-count operations short-circuit the compile flow.
-    if args.get_kvcache_num_blocks or args.set_kvcache_num_blocks is not None:
+    if args.get_kvcache_num_blocks or args.set_kvcache_num_blocks is not None or args.set_memory_budget is not None:
+        if args.set_kvcache_num_blocks is not None and args.set_memory_budget is not None:
+            print("--set-kvcache-num-blocks and --set-memory-budget are mutually exclusive.", file=sys.stderr)
+            sys.exit(2)
         # --output-dir has a compile default; only honor it here when explicitly passed.
         explicit_output = "--output-dir" in sys.argv or "-o" in sys.argv
         output_dir = args.output_dir if explicit_output else None
         try:
             _handle_kvcache_num_blocks(
-                args.model_id, args.get_kvcache_num_blocks, args.set_kvcache_num_blocks, output_dir
+                args.model_id,
+                args.get_kvcache_num_blocks,
+                args.set_kvcache_num_blocks,
+                output_dir,
+                args.set_memory_budget,
             )
         except Exception as e:
             print(f"❌ Error: {e}", file=sys.stderr)
