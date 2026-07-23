@@ -13,7 +13,7 @@
 # limitations under the License.
 
 from pathlib import Path
-from typing import TYPE_CHECKING, List, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Union
 
 import rebel
 import torch
@@ -65,8 +65,8 @@ class CosmosTransformer3DModelWrapper(torch.nn.Module):
         temb: torch.Tensor,
         image_rotary_emb_0: torch.Tensor,
         image_rotary_emb_1: torch.Tensor,
-        extra_pos_emb: Optional[torch.Tensor] = None,
-        attention_mask: Optional[torch.Tensor] = None,
+        extra_pos_emb: torch.Tensor | None = None,
+        attention_mask: torch.Tensor | None = None,
         return_dict: bool = False,
     ):
         image_rotary_emb = [image_rotary_emb_0, image_rotary_emb_1]
@@ -140,10 +140,10 @@ class RBLNCosmosTransformer3DModel(RBLNModel):
         self,
         hidden_states: torch.Tensor,
         timestep: torch.Tensor,
-        attention_mask: Optional[torch.Tensor] = None,
-        fps: Optional[int] = None,
-        condition_mask: Optional[torch.Tensor] = None,
-        padding_mask: Optional[torch.Tensor] = None,
+        attention_mask: torch.Tensor | None = None,
+        fps: int | None = None,
+        condition_mask: torch.Tensor | None = None,
+        padding_mask: torch.Tensor | None = None,
     ):
         batch_size, num_channels, num_frames, height, width = hidden_states.shape
 
@@ -275,9 +275,9 @@ class RBLNCosmosTransformer3DModel(RBLNModel):
     @classmethod
     def _create_runtimes(
         cls,
-        compiled_models: List[rebel.RBLNCompiledModel],
+        compiled_models: list[rebel.RBLNCompiledModel],
         rbln_config: RBLNModelConfig,
-    ) -> List[rebel.Runtime]:
+    ) -> list[rebel.Runtime]:
         if DEFAULT_COMPILED_MODEL_NAME not in rbln_config.device_map:
             cls._raise_missing_compiled_file_error([DEFAULT_COMPILED_MODEL_NAME])
 
@@ -297,12 +297,12 @@ class RBLNCosmosTransformer3DModel(RBLNModel):
         hidden_states: torch.Tensor,
         timestep: torch.Tensor,
         encoder_hidden_states: torch.Tensor,
-        attention_mask: Optional[torch.Tensor] = None,
-        fps: Optional[int] = None,
-        condition_mask: Optional[torch.Tensor] = None,
-        padding_mask: Optional[torch.Tensor] = None,
+        attention_mask: torch.Tensor | None = None,
+        fps: int | None = None,
+        condition_mask: torch.Tensor | None = None,
+        padding_mask: torch.Tensor | None = None,
         return_dict: bool = True,
-    ) -> Union[Transformer2DModelOutput, Tuple]:
+    ) -> Transformer2DModelOutput | tuple:
         """
         Forward pass for the RBLN-optimized CosmosTransformer3DModel.
 
@@ -310,13 +310,13 @@ class RBLNCosmosTransformer3DModel(RBLNModel):
             hidden_states (torch.Tensor): The currently predicted image embeddings.
             timestep (torch.Tensor): Current denoising step.
             encoder_hidden_states (torch.Tensor): Conditional embeddings (embeddings computed from the input conditions such as prompts) to use.
-            fps: (Optional[int]): Frames per second for the video being generated.
-            condition_mask (Optional[torch.Tensor]): Tensor of condition mask.
-            padding_mask (Optional[torch.Tensor]): Tensor of padding mask.
+            fps: (int | None): Frames per second for the video being generated.
+            condition_mask (torch.Tensor | None): Tensor of condition mask.
+            padding_mask (torch.Tensor | None): Tensor of padding mask.
             return_dict (bool): Whether or not to return a [`~diffusers.models.modeling_output.Transformer2DModelOutput`] instead of a plain tuple.
 
         Returns:
-            (Union[`~diffusers.models.modeling_output.Transformer2DModelOutput`, Tuple])
+            (`~diffusers.models.modeling_output.Transformer2DModelOutput` | tuple)
         """
         (
             hidden_states,

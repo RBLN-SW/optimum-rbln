@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Optional, Tuple
+from typing import Any
 
 from ....configuration_utils import RBLNModelConfig
 
@@ -20,15 +20,15 @@ from ....configuration_utils import RBLNModelConfig
 class RBLNPixtralVisionModelConfig(RBLNModelConfig):
     def __init__(
         self,
-        max_image_size: Tuple = None,
-        batch_size: Optional[int] = None,
-        output_hidden_states: Optional[bool] = None,
+        max_image_size: tuple = None,
+        batch_size: int | None = None,
+        output_hidden_states: bool | None = None,
         **kwargs: Any,
     ):
         """
         Args:
             max_image_size (Tuple): The size of max input images. A tuple (max_height, max_width)
-            batch_size (Optional[int]): The batch size for image processing. Defaults to 1.
+            batch_size (int | None): The batch size for image processing. Defaults to 1.
             kwargs: Additional arguments passed to the parent RBLNModelConfig.
 
         Raises:

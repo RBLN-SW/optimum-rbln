@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import TYPE_CHECKING, Any, Dict, Optional, Union
+from typing import TYPE_CHECKING, Any
 
 import torch
 from transformers import GenerationConfig
@@ -34,10 +34,10 @@ class RBLNDecoderOnlyGenerationMixin(GenerationMixin):
     def prepare_inputs_for_generation(
         self,
         input_ids: torch.LongTensor,
-        generate_idx: Optional[torch.Tensor] = None,
-        attention_mask: Optional[torch.LongTensor] = None,
-        inputs_embeds: Optional[torch.Tensor] = None,
-        padded_cache_lengths: Optional[torch.Tensor] = None,
+        generate_idx: torch.Tensor | None = None,
+        attention_mask: torch.LongTensor | None = None,
+        inputs_embeds: torch.Tensor | None = None,
+        padded_cache_lengths: torch.Tensor | None = None,
         **kwargs,
     ):
         model_inputs = {}
@@ -82,8 +82,8 @@ class RBLNDecoderOnlyGenerationMixin(GenerationMixin):
         return model_inputs
 
     def _update_model_kwargs_for_generation(
-        self, outputs: "RBLNDecoderOnlyOutput", model_kwargs: Dict[str, Any], **kwargs
-    ) -> Dict[str, Any]:
+        self, outputs: "RBLNDecoderOnlyOutput", model_kwargs: dict[str, Any], **kwargs
+    ) -> dict[str, Any]:
         # update generate_idx
         model_kwargs["generate_idx"] = outputs.generate_idx
         model_kwargs["padded_cache_lengths"] = outputs.padded_cache_lengths
@@ -92,10 +92,10 @@ class RBLNDecoderOnlyGenerationMixin(GenerationMixin):
     def generate(
         self,
         input_ids: torch.LongTensor,
-        attention_mask: Optional[torch.LongTensor] = None,
-        generation_config: Optional[GenerationConfig] = None,
+        attention_mask: torch.LongTensor | None = None,
+        generation_config: GenerationConfig | None = None,
         **kwargs,
-    ) -> Union[ModelOutput, torch.LongTensor]:
+    ) -> ModelOutput | torch.LongTensor:
         """
         The generate function is utilized in its standard form as in the HuggingFace transformers library. User can use this function to generate text from the model.
         Check the [HuggingFace transformers documentation](https://huggingface.co/docs/transformers/v4.57.1/en/main_classes/text_generation#transformers.GenerationMixin.generate) for more details.

@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import List, Optional
 
 import torch
 import torch.nn.functional as F
@@ -29,13 +28,13 @@ class RBLNQwen3VLRuntimeModel(RBLNRuntimeModel):
     def _prepare_prefill_inputs(
         self,
         inputs: torch.Tensor,
-        cache_position: Optional[torch.Tensor] = None,
-        attention_mask: Optional[torch.Tensor] = None,
-        position_ids: Optional[torch.Tensor] = None,
-        position_embed: Optional[torch.Tensor] = None,
-        token_type_ids: Optional[torch.Tensor] = None,
-        visual_pos_mask: Optional[torch.Tensor] = None,
-        deepstack_embeds: Optional[List[torch.Tensor]] = None,
+        cache_position: torch.Tensor | None = None,
+        attention_mask: torch.Tensor | None = None,
+        position_ids: torch.Tensor | None = None,
+        position_embed: torch.Tensor | None = None,
+        token_type_ids: torch.Tensor | None = None,
+        visual_pos_mask: torch.Tensor | None = None,
+        deepstack_embeds: list[torch.Tensor] | None = None,
     ):
         (
             inputs,
@@ -76,19 +75,19 @@ class RBLNQwen3VLRuntimeModel(RBLNRuntimeModel):
 
     def forward(
         self,
-        input_ids: Optional[torch.LongTensor] = None,
-        inputs_embeds: Optional[torch.Tensor] = None,
+        input_ids: torch.LongTensor | None = None,
+        inputs_embeds: torch.Tensor | None = None,
         cache_position: torch.Tensor = None,
-        attention_mask: Optional[torch.Tensor] = None,
-        batch_idx: Optional[int] = None,
-        block_tables: Optional[torch.Tensor] = None,
-        position_embed: Optional[torch.Tensor] = None,
-        position_ids: Optional[torch.Tensor] = None,
-        token_type_ids: Optional[torch.Tensor] = None,
-        local_block_tables: Optional[torch.Tensor] = None,
-        lora_int_ids: Optional[torch.Tensor] = None,
-        visual_pos_mask: Optional[torch.Tensor] = None,
-        deepstack_embeds: Optional[List[torch.Tensor]] = None,
+        attention_mask: torch.Tensor | None = None,
+        batch_idx: int | None = None,
+        block_tables: torch.Tensor | None = None,
+        position_embed: torch.Tensor | None = None,
+        position_ids: torch.Tensor | None = None,
+        token_type_ids: torch.Tensor | None = None,
+        local_block_tables: torch.Tensor | None = None,
+        lora_int_ids: torch.Tensor | None = None,
+        visual_pos_mask: torch.Tensor | None = None,
+        deepstack_embeds: list[torch.Tensor] | None = None,
     ):
         inputs = self.inputs_embeddings_if_needed(input_ids, inputs_embeds)
         block_tables, local_block_tables, is_external_block_tables = (
@@ -133,18 +132,18 @@ class RBLNQwen3VLRuntimeModel(RBLNRuntimeModel):
     def prefill_forward(
         self,
         inputs: torch.Tensor,
-        cache_position: Optional[torch.Tensor] = None,
-        attention_mask: Optional[torch.Tensor] = None,
-        batch_idx: Optional[int] = None,
-        block_tables: Optional[torch.Tensor] = None,
-        is_external_block_tables: Optional[bool] = None,
-        position_ids: Optional[torch.Tensor] = None,
-        position_embed: Optional[torch.Tensor] = None,
-        token_type_ids: Optional[torch.Tensor] = None,
-        local_block_tables: Optional[torch.Tensor] = None,
-        lora_int_ids: Optional[torch.Tensor] = None,
-        visual_pos_mask: Optional[torch.Tensor] = None,
-        deepstack_embeds: Optional[List[torch.Tensor]] = None,
+        cache_position: torch.Tensor | None = None,
+        attention_mask: torch.Tensor | None = None,
+        batch_idx: int | None = None,
+        block_tables: torch.Tensor | None = None,
+        is_external_block_tables: bool | None = None,
+        position_ids: torch.Tensor | None = None,
+        position_embed: torch.Tensor | None = None,
+        token_type_ids: torch.Tensor | None = None,
+        local_block_tables: torch.Tensor | None = None,
+        lora_int_ids: torch.Tensor | None = None,
+        visual_pos_mask: torch.Tensor | None = None,
+        deepstack_embeds: list[torch.Tensor] | None = None,
     ) -> torch.FloatTensor:
         if self.rbln_config.use_lora and lora_int_ids is None:
             if self.lora_int_ids is None:

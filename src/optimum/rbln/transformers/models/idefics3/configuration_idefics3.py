@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Optional
+from typing import Any
 
 from ....configuration_utils import RBLNModelConfig
 from ....utils.logging import get_logger
@@ -31,7 +31,7 @@ class RBLNIdefics3VisionTransformerConfig(RBLNModelConfig):
 
     def __init__(
         self,
-        batch_size: Optional[int] = None,
+        batch_size: int | None = None,
         **kwargs: Any,
     ):
         super().__init__(**kwargs)
@@ -48,25 +48,25 @@ class RBLNIdefics3ForConditionalGenerationConfig(RBLNModelConfig):
     It allows configuration of the batch size and separate configurations for the vision and text submodules.
 
     Attributes:
-        submodules (List[str]): List of submodules included in the model. Defaults to `["vision_model", "text_model"]`.
+        submodules (list[str]): List of submodules included in the model. Defaults to `["vision_model", "text_model"]`.
     """
 
     submodules = ["vision_model", "text_model"]
 
     def __init__(
         self,
-        batch_size: Optional[int] = None,
-        vision_model: Optional[RBLNModelConfig] = None,
-        text_model: Optional[RBLNModelConfig] = None,
+        batch_size: int | None = None,
+        vision_model: RBLNModelConfig | None = None,
+        text_model: RBLNModelConfig | None = None,
         **kwargs: Any,
     ):
         """
         Args:
-            batch_size (Optional[int]): The batch size for inference. Defaults to 1.
-            vision_model (Optional[RBLNModelConfig]): Configuration for the vision transformer component.
+            batch_size (int | None): The batch size for inference. Defaults to 1.
+            vision_model (RBLNModelConfig | None): Configuration for the vision transformer component.
                 This can include settings specific to the vision encoder, such as input resolution or other vision-related parameters.
                 If not provided, default settings will be used.
-            text_model (Optional[RBLNModelConfig]): Configuration for the text model component.
+            text_model (RBLNModelConfig | None): Configuration for the text model component.
                 This can include settings specific to the language model, such as tensor parallelism or other text-related parameters.
                 If not provided, default settings will be used.
             kwargs: Additional arguments passed to the parent `RBLNModelConfig`.

@@ -18,7 +18,6 @@ import inspect
 import json
 import sys
 from pathlib import Path
-from typing import Optional
 
 from huggingface_hub import hf_hub_download
 
@@ -325,12 +324,12 @@ def _read_json_from_model_id(
     model_id: str,
     filename: str,
     *,
-    hf_token: Optional[str] = None,
-    hf_revision: Optional[str] = None,
-    hf_cache_dir: Optional[str] = None,
+    hf_token: str | None = None,
+    hf_revision: str | None = None,
+    hf_cache_dir: str | None = None,
     hf_force_download: bool = False,
     hf_local_files_only: bool = False,
-) -> Optional[dict]:
+) -> dict | None:
     """Read a JSON file (e.g., config.json or model_index.json) from a local path or the HuggingFace Hub.
 
     Args:
@@ -375,12 +374,12 @@ def _read_json_from_model_id(
 def _infer_rbln_class_from_model_id(
     model_id: str,
     *,
-    hf_token: Optional[str] = None,
-    hf_revision: Optional[str] = None,
-    hf_cache_dir: Optional[str] = None,
+    hf_token: str | None = None,
+    hf_revision: str | None = None,
+    hf_cache_dir: str | None = None,
     hf_force_download: bool = False,
     hf_local_files_only: bool = False,
-) -> Optional[str]:
+) -> str | None:
     """Infer RBLN class name from model files by prefixing discovered class with 'RBLN'.
 
     Order of precedence:
@@ -576,7 +575,7 @@ def main():
 
     try:
         # Resolve or infer model class for compilation
-        resolved_class_name: Optional[str] = args.model_class
+        resolved_class_name: str | None = args.model_class
         if not resolved_class_name:
             resolved_class_name = _infer_rbln_class_from_model_id(
                 args.model_id,

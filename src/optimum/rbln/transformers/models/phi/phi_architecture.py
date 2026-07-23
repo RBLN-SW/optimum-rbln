@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import TYPE_CHECKING, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Union
 
 import torch
 from transformers import PhiForCausalLM
@@ -54,7 +54,7 @@ class PhiAttention(DecoderOnlyAttention):
         self.q_layernorm = getattr(self_attn, "q_layernorm", None)
         self.k_layernorm = getattr(self_attn, "k_layernorm", None)
 
-    def projection(self, hidden_states, lora_int_id) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    def projection(self, hidden_states, lora_int_id) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         if lora_int_id is not None:
             raise NotImplementedError("LoRA is not supported for PhiAttention")
 
@@ -80,11 +80,11 @@ class PhiLayer(DecoderOnlyLayer):
         hidden_states: torch.Tensor,
         attention_mask: torch.Tensor,
         seq_positions: torch.LongTensor,
-        past_key_values: Tuple[Tuple[torch.Tensor]],
-        cos: Optional[torch.Tensor] = None,
-        sin: Optional[torch.Tensor] = None,
-        block_tables: Optional[torch.Tensor] = None,
-        lora_int_id: Optional[torch.Tensor] = None,
+        past_key_values: tuple[tuple[torch.Tensor]],
+        cos: torch.Tensor | None = None,
+        sin: torch.Tensor | None = None,
+        block_tables: torch.Tensor | None = None,
+        lora_int_id: torch.Tensor | None = None,
     ):
         residual = hidden_states
 
