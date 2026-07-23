@@ -1,7 +1,6 @@
 import os
 import shutil
 import tempfile
-from typing import Optional, Tuple
 
 import pytest
 import rebel
@@ -295,7 +294,7 @@ def test_custom_class(model_id):
         return self.model[0](pixel_values)
 
     class RBLNResNetModelConfig(RBLNModelConfig):
-        def __init__(self, batch_size: int = None, image_size: Optional[Tuple[int, int]] = None, **kwargs):
+        def __init__(self, batch_size: int = None, image_size: tuple[int, int] | None = None, **kwargs):
             super().__init__(**kwargs)
             self.batch_size = batch_size or 1
             self.image_size = image_size or (64, 64)

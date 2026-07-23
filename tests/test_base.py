@@ -4,9 +4,9 @@ import random
 import shutil
 import tempfile
 import unittest
+from collections.abc import Iterable
 from contextlib import nullcontext as does_not_raise
 from enum import Enum
-from typing import Iterable
 from unittest.mock import patch
 
 import pytest

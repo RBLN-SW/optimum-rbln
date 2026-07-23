@@ -13,7 +13,7 @@
 # limitations under the License.
 
 
-from typing import Any, Dict, Optional
+from typing import Any
 
 from diffusers import CosmosTextToWorldPipeline
 from diffusers.schedulers import EDMEulerScheduler
@@ -85,8 +85,8 @@ class RBLNCosmosTextToWorldPipeline(RBLNDiffusionMixin, CosmosTextToWorldPipelin
         model_id: str,
         *,
         export: bool = False,
-        safety_checker: Optional[RBLNCosmosSafetyChecker] = None,
-        rbln_config: Optional[Dict[str, Any]] = None,
+        safety_checker: RBLNCosmosSafetyChecker | None = None,
+        rbln_config: dict[str, Any] | None = None,
         **kwargs: Any,
     ):
         """

@@ -13,7 +13,7 @@
 # limitations under the License.
 
 
-from typing import TYPE_CHECKING, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Optional, Union
 
 import torch
 from transformers import AutoModelForObjectDetection
@@ -45,7 +45,7 @@ class RBLNDetrForObjectDetection(RBLNModel):
         preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"],
         model: Optional["PreTrainedModel"] = None,
         model_config: "DetrConfig" = None,
-        rbln_config: Optional[RBLNDetrForObjectDetectionConfig] = None,
+        rbln_config: RBLNDetrForObjectDetectionConfig | None = None,
     ) -> RBLNDetrForObjectDetectionConfig:
         if rbln_config.image_size is None:
             for processor in preprocessors:
@@ -86,10 +86,10 @@ class RBLNDetrForObjectDetection(RBLNModel):
     def forward(
         self,
         pixel_values: torch.Tensor,
-        pixel_mask: Optional[torch.Tensor] = None,
+        pixel_mask: torch.Tensor | None = None,
         return_dict: bool = None,
         **kwargs,
-    ) -> Union[Tuple, DetrObjectDetectionOutput]:
+    ) -> tuple | DetrObjectDetectionOutput:
         """
         Forward pass for the RBLN-optimized DETR model for object detection.
 

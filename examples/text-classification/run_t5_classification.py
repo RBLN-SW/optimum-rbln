@@ -1,5 +1,4 @@
 import os
-import typing
 
 import fire
 from transformers import AutoTokenizer, T5EncoderModel
@@ -11,7 +10,7 @@ def main(
     model_id: str = "google-t5/t5-small",
     batch_size: int = 1,
     from_transformers: bool = False,
-    prompt: typing.Optional[str] = "Studies have been shown that owning a dog is good for you",
+    prompt: str | None = "Studies have been shown that owning a dog is good for you",
 ):
     tokenizer = AutoTokenizer.from_pretrained(model_id)
 

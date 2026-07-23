@@ -1,5 +1,3 @@
-from typing import List, Optional, Tuple, Union
-
 import torch
 from torch import nn
 from transformers import GemmaForCausalLM, GemmaModel
@@ -74,7 +72,7 @@ class RBLNColPaliForRetrievalWrapper(nn.Module):
 
 class ColPaliModel(nn.Module):
     def __init__(
-        self, model, layers: List["ColPaliLayer"], output_hidden_states: bool = False, max_seq_len: int = 2048
+        self, model, layers: list["ColPaliLayer"], output_hidden_states: bool = False, max_seq_len: int = 2048
     ):
         super().__init__()
         self.layers = nn.ModuleList(layers)
@@ -86,10 +84,10 @@ class ColPaliModel(nn.Module):
 
     def forward(
         self,
-        inputs_embeds: Optional[torch.Tensor] = None,
+        inputs_embeds: torch.Tensor | None = None,
         attention_mask: torch.Tensor = None,
-        rotary_emb: Optional[Union[nn.Module, torch.Tensor]] = None,
-        position_ids: Optional[torch.Tensor] = None,
+        rotary_emb: nn.Module | torch.Tensor | None = None,
+        position_ids: torch.Tensor | None = None,
     ):
         hidden_states = inputs_embeds * self.hidden_size**0.5
 
@@ -126,10 +124,10 @@ class ColPaliLayer(nn.Module):
     def forward(
         self,
         hidden_states: torch.Tensor,
-        attention_mask: Optional[torch.Tensor] = None,
-        cos: Optional[torch.Tensor] = None,
-        sin: Optional[torch.Tensor] = None,
-    ) -> Tuple[torch.FloatTensor]:
+        attention_mask: torch.Tensor | None = None,
+        cos: torch.Tensor | None = None,
+        sin: torch.Tensor | None = None,
+    ) -> tuple[torch.FloatTensor]:
         residual = hidden_states
         hidden_states = self.input_layernorm(hidden_states)
 
@@ -171,7 +169,7 @@ class ColPaliAttention(nn.Module):
         self.v_proj = self_attn.v_proj
         self.o_proj = self_attn.o_proj
 
-    def projection(self, hidden_states) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    def projection(self, hidden_states) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         query_states = self.q_proj(hidden_states)
         key_states = self.k_proj(hidden_states)
         value_states = self.v_proj(hidden_states)
@@ -182,8 +180,8 @@ class ColPaliAttention(nn.Module):
         self,
         hidden_states: torch.Tensor,
         attention_mask: torch.Tensor,
-        cos: Optional[torch.Tensor] = None,
-        sin: Optional[torch.Tensor] = None,
+        cos: torch.Tensor | None = None,
+        sin: torch.Tensor | None = None,
     ):
         batch_size, query_length, _ = hidden_states.size()
 

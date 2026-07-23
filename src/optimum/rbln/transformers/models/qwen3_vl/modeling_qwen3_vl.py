@@ -13,8 +13,9 @@
 # limitations under the License.
 
 import inspect
+from collections.abc import Callable
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, List, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Any, Optional, Union
 
 import torch
 from transformers import (
@@ -119,7 +120,7 @@ class RBLNQwen3VLVisionModel(RBLNModel):
         preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"],
         model: Optional["PreTrainedModel"] = None,
         model_config: "PretrainedConfig" = None,
-        rbln_config: Optional[RBLNQwen3VLVisionModelConfig] = None,
+        rbln_config: RBLNQwen3VLVisionModelConfig | None = None,
     ) -> RBLNQwen3VLVisionModelConfig:
         hidden_size = model_config.hidden_size
         num_heads = model_config.num_heads
@@ -242,9 +243,9 @@ class RBLNQwen3VLVisionModel(RBLNModel):
     @staticmethod
     def _pad_hidden_states(
         hidden_states: torch.Tensor,
-        position_embeddings: Tuple[torch.Tensor, torch.Tensor],
+        position_embeddings: tuple[torch.Tensor, torch.Tensor],
         max_seq_len: int,
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, int]:
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, int]:
         seq_len = hidden_states.shape[0]
         valid_len = seq_len
 
@@ -266,7 +267,7 @@ class RBLNQwen3VLVisionModel(RBLNModel):
 
         return hidden_states, position_embeddings, attn_mask, valid_len
 
-    def forward(self, hidden_states: torch.Tensor, grid_thw: torch.Tensor) -> Tuple[torch.Tensor, List[torch.Tensor]]:
+    def forward(self, hidden_states: torch.Tensor, grid_thw: torch.Tensor) -> tuple[torch.Tensor, list[torch.Tensor]]:
         hidden_states = self.patch_embed(hidden_states).to(self.rbln_config.dtype)
         pos_embeds = self.fast_pos_embed_interpolate(grid_thw)
         hidden_states = hidden_states + pos_embeds.to(hidden_states.dtype)
@@ -490,11 +491,11 @@ class RBLNQwen3VLModel(RBLNDecoderOnlyModel):
         pixel_values_videos: torch.FloatTensor = None,
         image_grid_thw: torch.LongTensor = None,
         video_grid_thw: torch.LongTensor = None,
-        image_embeds: Optional[torch.Tensor] = None,
-        video_embeds: Optional[torch.Tensor] = None,
-        deepstack_image_embeds: Optional[List[torch.Tensor]] = None,
-        deepstack_video_embeds: Optional[List[torch.Tensor]] = None,
-        mm_token_type_ids: Optional[torch.IntTensor] = None,
+        image_embeds: torch.Tensor | None = None,
+        video_embeds: torch.Tensor | None = None,
+        deepstack_image_embeds: list[torch.Tensor] | None = None,
+        deepstack_video_embeds: list[torch.Tensor] | None = None,
+        mm_token_type_ids: torch.IntTensor | None = None,
     ):
         batch_size = input_ids.shape[0]
         inputs_embeds = self.embed_tokens(input_ids).to(self.rbln_config.dtype)
@@ -611,10 +612,10 @@ class RBLNQwen3VLModel(RBLNDecoderOnlyModel):
 
     def _prepare_deepstack(
         self,
-        image_mask: Optional[torch.Tensor],
-        video_mask: Optional[torch.Tensor],
-        deepstack_image_embeds: Optional[List[torch.Tensor]],
-        deepstack_video_embeds: Optional[List[torch.Tensor]],
+        image_mask: torch.Tensor | None,
+        video_mask: torch.Tensor | None,
+        deepstack_image_embeds: list[torch.Tensor] | None,
+        deepstack_video_embeds: list[torch.Tensor] | None,
     ):
         if image_mask is None and video_mask is None:
             return None, None
@@ -684,21 +685,21 @@ class RBLNQwen3VLModel(RBLNDecoderOnlyModel):
 
     def forward(
         self,
-        input_ids: Optional[torch.LongTensor] = None,
-        inputs_embeds: Optional[torch.FloatTensor] = None,
-        attention_mask: Optional[torch.Tensor] = None,
-        pixel_values: Optional[torch.Tensor] = None,
-        pixel_values_videos: Optional[torch.FloatTensor] = None,
-        image_grid_thw: Optional[torch.LongTensor] = None,
-        video_grid_thw: Optional[torch.LongTensor] = None,
-        image_embeds: Optional[torch.Tensor] = None,
-        video_embeds: Optional[torch.Tensor] = None,
-        deepstack_image_embeds: Optional[List[torch.Tensor]] = None,
-        deepstack_video_embeds: Optional[List[torch.Tensor]] = None,
-        cache_position: Optional[torch.LongTensor] = None,
-        output_hidden_states: Optional[bool] = None,
-        return_dict: Optional[bool] = None,
-        mm_token_type_ids: Optional[torch.IntTensor] = None,
+        input_ids: torch.LongTensor | None = None,
+        inputs_embeds: torch.FloatTensor | None = None,
+        attention_mask: torch.Tensor | None = None,
+        pixel_values: torch.Tensor | None = None,
+        pixel_values_videos: torch.FloatTensor | None = None,
+        image_grid_thw: torch.LongTensor | None = None,
+        video_grid_thw: torch.LongTensor | None = None,
+        image_embeds: torch.Tensor | None = None,
+        video_embeds: torch.Tensor | None = None,
+        deepstack_image_embeds: list[torch.Tensor] | None = None,
+        deepstack_video_embeds: list[torch.Tensor] | None = None,
+        cache_position: torch.LongTensor | None = None,
+        output_hidden_states: bool | None = None,
+        return_dict: bool | None = None,
+        mm_token_type_ids: torch.IntTensor | None = None,
         **kwargs,
     ) -> RBLNDecoderOnlyOutput:
         inputs_embeds, position_embed, rope_deltas, visual_pos_mask, deepstack_visual_embeds = (
@@ -829,10 +830,10 @@ class RBLNQwen3VLForConditionalGeneration(RBLNQwen3VLModel, RBLNDecoderOnlyModel
 
     def encode(
         self,
-        pixel_values: Optional[torch.Tensor] = None,
-        pixel_values_videos: Optional[torch.FloatTensor] = None,
-        image_grid_thw: Optional[torch.LongTensor] = None,
-        video_grid_thw: Optional[torch.LongTensor] = None,
+        pixel_values: torch.Tensor | None = None,
+        pixel_values_videos: torch.FloatTensor | None = None,
+        image_grid_thw: torch.LongTensor | None = None,
+        video_grid_thw: torch.LongTensor | None = None,
     ) -> dict:
         if self.visual is None:
             raise RuntimeError(
@@ -854,9 +855,9 @@ class RBLNQwen3VLForConditionalGeneration(RBLNQwen3VLModel, RBLNDecoderOnlyModel
     def prepare_inputs_for_generation(
         self,
         input_ids: torch.LongTensor,
-        generate_idx: Optional[torch.Tensor] = None,
-        attention_mask: Optional[torch.LongTensor] = None,
-        inputs_embeds: Optional[torch.Tensor] = None,
+        generate_idx: torch.Tensor | None = None,
+        attention_mask: torch.LongTensor | None = None,
+        inputs_embeds: torch.Tensor | None = None,
         pixel_values=None,
         pixel_values_videos=None,
         image_grid_thw=None,
@@ -939,22 +940,22 @@ class RBLNQwen3VLForConditionalGeneration(RBLNQwen3VLModel, RBLNDecoderOnlyModel
 
     def forward(
         self,
-        input_ids: Optional[torch.LongTensor] = None,
-        inputs_embeds: Optional[torch.FloatTensor] = None,
-        attention_mask: Optional[torch.Tensor] = None,
-        pixel_values: Optional[torch.Tensor] = None,
-        pixel_values_videos: Optional[torch.FloatTensor] = None,
-        image_grid_thw: Optional[torch.LongTensor] = None,
-        video_grid_thw: Optional[torch.LongTensor] = None,
-        image_embeds: Optional[torch.Tensor] = None,
-        video_embeds: Optional[torch.Tensor] = None,
-        deepstack_image_embeds: Optional[List[torch.Tensor]] = None,
-        deepstack_video_embeds: Optional[List[torch.Tensor]] = None,
-        cache_position: Optional[torch.LongTensor] = None,
-        generate_idx: Optional[torch.Tensor] = None,
-        return_dict: Optional[bool] = None,
-        output_hidden_states: Optional[bool] = None,
-        mm_token_type_ids: Optional[torch.IntTensor] = None,
+        input_ids: torch.LongTensor | None = None,
+        inputs_embeds: torch.FloatTensor | None = None,
+        attention_mask: torch.Tensor | None = None,
+        pixel_values: torch.Tensor | None = None,
+        pixel_values_videos: torch.FloatTensor | None = None,
+        image_grid_thw: torch.LongTensor | None = None,
+        video_grid_thw: torch.LongTensor | None = None,
+        image_embeds: torch.Tensor | None = None,
+        video_embeds: torch.Tensor | None = None,
+        deepstack_image_embeds: list[torch.Tensor] | None = None,
+        deepstack_video_embeds: list[torch.Tensor] | None = None,
+        cache_position: torch.LongTensor | None = None,
+        generate_idx: torch.Tensor | None = None,
+        return_dict: bool | None = None,
+        output_hidden_states: bool | None = None,
+        mm_token_type_ids: torch.IntTensor | None = None,
         **kwargs,
     ) -> RBLNDecoderOnlyOutput:
         output_hidden_states = _validate_output_hidden_states(output_hidden_states, self.rbln_config)

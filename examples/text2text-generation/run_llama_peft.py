@@ -1,5 +1,4 @@
 import os
-import typing
 
 import fire
 from peft import PeftModel
@@ -12,8 +11,8 @@ def main(
     model_id: str = "meta-llama/Meta-Llama-3-8B",
     batch_size: int = 1,
     from_transformers: bool = False,
-    max_seq_len: typing.Optional[int] = None,
-    num_devices: typing.Optional[int] = 4,
+    max_seq_len: int | None = None,
+    num_devices: int | None = 4,
     use_inputs_embeds: bool = None,
 ):
     if from_transformers:

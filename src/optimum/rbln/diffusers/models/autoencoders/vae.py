@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import TYPE_CHECKING, List, Union
+from typing import TYPE_CHECKING, Union
 
 import torch
 from diffusers.models.autoencoders.vae import DiagonalGaussianDistribution, IdentityDistribution
@@ -136,12 +136,12 @@ class RBLNRuntimeVQEncoder(RBLNPytorchRuntime):
 
 
 class RBLNRuntimeVQDecoder(RBLNPytorchRuntime):
-    def decode(self, h: torch.Tensor, force_not_quantize: bool = False, shape=None, **kwargs) -> List[torch.Tensor]:
+    def decode(self, h: torch.Tensor, force_not_quantize: bool = False, shape=None, **kwargs) -> list[torch.Tensor]:
         if not (force_not_quantize and not self.lookup_from_codebook):
             raise ValueError(
                 "Currently, the `decode` method of the class `RBLNVQModel` is executed successfully only if `force_not_quantize` is True and `config.lookup_from_codebook` is False"
             )
-        commit_loss = torch.zeros((h.shape[0])).to(h.device, dtype=h.dtype)
+        commit_loss = torch.zeros(h.shape[0]).to(h.device, dtype=h.dtype)
         dec = self.forward(h.contiguous())
         return dec, commit_loss
 

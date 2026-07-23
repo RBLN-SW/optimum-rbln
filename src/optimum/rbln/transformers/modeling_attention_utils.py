@@ -2,7 +2,7 @@ import logging
 import math
 import os
 from collections import defaultdict
-from typing import TYPE_CHECKING, Optional, Tuple
+from typing import TYPE_CHECKING
 
 import rebel
 
@@ -33,11 +33,11 @@ def _should_skip_attn_validation() -> bool:
 
 
 def set_default_values(
-    attn_impl: Optional[str] = None,
-    kvcache_partition_len: Optional[int] = None,
-    kvcache_block_size: Optional[int] = None,
-    max_seq_len: Optional[int] = None,
-) -> Tuple[str, int, int]:
+    attn_impl: str | None = None,
+    kvcache_partition_len: int | None = None,
+    kvcache_block_size: int | None = None,
+    max_seq_len: int | None = None,
+) -> tuple[str, int, int]:
     if attn_impl is None:
         attn_impl = "eager"
 
@@ -168,7 +168,7 @@ def format_byte_size(nbytes: int) -> str:
         return f"{nbytes / 1024**3:.2f} GB"
 
 
-def _resolve_memory_budget(memory_budget: Optional[object], available_total: int) -> int:
+def _resolve_memory_budget(memory_budget: object | None, available_total: int) -> int:
     """Resolve `memory_budget` to usable DRAM bytes (system reserve excluded), capped at available_total.
 
     None -> available_total; a float in (0, 1] (or a "80%" string) -> that fraction of it;
@@ -260,11 +260,11 @@ class RBLNDecoderOnlyFlashAttentionMixin:
         cls,
         compiled_models: dict[str, rebel.RBLNCompiledModel],
         rbln_config: "RBLNDecoderOnlyModelForCausalLMConfig",
-    ) -> Tuple[dict[Tuple[int, int], int], dict[str, list[list[int]]], int, set[Tuple[int, int]]]:
+    ) -> tuple[dict[tuple[int, int], int], dict[str, list[list[int]]], int, set[tuple[int, int]]]:
         # Returns non-KV alloc, KV sizes, per-chiplet DRAM budget, and the (node, chiplet)
         # buckets to check. ATOM reports one chiplet, so it shares the per-chiplet path.
-        alloc_without_dram: dict[Tuple[int, int], int] = defaultdict(int)
-        chiplets: set[Tuple[int, int]] = set()
+        alloc_without_dram: dict[tuple[int, int], int] = defaultdict(int)
+        chiplets: set[tuple[int, int]] = set()
 
         for compiled_model in compiled_models.values():
             for key, alloc_per_chiplet in compiled_model.get_alloc_per_chiplet_by_key().items():
@@ -292,16 +292,16 @@ class RBLNDecoderOnlyFlashAttentionMixin:
     def _search_num_kvcache_blocks(
         cls,
         rbln_config: "RBLNDecoderOnlyModelForCausalLMConfig",
-        alloc_without_dram: dict[Tuple[int, int], int],
+        alloc_without_dram: dict[tuple[int, int], int],
         kvcache_tensor_sizes: dict[str, list[list[int]]],
         available_per_chiplet: int,
-        chiplets: set[Tuple[int, int]],
+        chiplets: set[tuple[int, int]],
     ) -> int:
-        remaining_dram_at_chiplet: dict[Tuple[int, int], int] = {
+        remaining_dram_at_chiplet: dict[tuple[int, int], int] = {
             key: available_per_chiplet - alloc_without_dram.get(key, 0) for key in chiplets
         }
 
-        def check_memory_fits(multiplier: int) -> Tuple[bool, dict[Tuple[int, int], int]]:
+        def check_memory_fits(multiplier: int) -> tuple[bool, dict[tuple[int, int], int]]:
             # Fits only if every chiplet bucket has room.
             kvcache_sizes = cls._kvcache_bytes_per_chiplet(kvcache_tensor_sizes, rbln_config, multiplier)
             fits = all(remaining_dram_at_chiplet[key] >= kvcache_sizes.get(key, 0) for key in chiplets)
@@ -348,13 +348,13 @@ class RBLNDecoderOnlyFlashAttentionMixin:
         rbln_config: "RBLNDecoderOnlyModelForCausalLMConfig",
         num_blocks: int,
         current_blocks: int = 1,
-    ) -> dict[Tuple[int, int], int]:
+    ) -> dict[tuple[int, int], int]:
         # Per-(node, chiplet) kv-cache bytes at `num_blocks`. `kvcache_tensor_sizes` reflects the
         # buffers' current block count (`current_blocks`), so a resizable tensor's per-block bytes
         # are size // current_blocks, rescaled to num_blocks; others are fixed. Each 2MB-aligned
         # after scaling, so bytes grow non-linearly.
         can_resize = {meta.name: meta.can_resize for meta in rbln_config.kvcache_metas}
-        sizes: dict[Tuple[int, int], int] = defaultdict(int)
+        sizes: dict[tuple[int, int], int] = defaultdict(int)
         for key, sizes_at_node in kvcache_tensor_sizes.items():
             resizable = can_resize[key]
             for node_id, sizes_at_chiplet in enumerate(sizes_at_node):
