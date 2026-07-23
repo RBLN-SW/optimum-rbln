@@ -277,7 +277,7 @@ def rbln_recurrent_gated_delta_rule_step(query, key, value, g, beta, initial_sta
     new_state = state + torch.matmul(k_row.transpose(-1, -2), delta)  # + (B,Hv,Dk,1)@(B,Hv,1,Dv)
     core = torch.matmul(q_row, new_state)  # (B, Hv, 1, Dk) @ (B, Hv, Dk, Dv) = (B, Hv, 1, Dv)
     core = core.reshape(batch_size, 1, num_v_heads, v_head_dim).to(initial_dtype)  # (B, 1, Hv, Dv)
-    new_state = new_state.to(initial_dtype)
+    new_state = new_state.to(initial_dtype) # FIXME(seinpark) is it need?
     return core, new_state
 
 
@@ -375,7 +375,7 @@ class Qwen3_5GatedDeltaNet(nn.Module):
         # HF-style channel-first depthwise conv: transpose to (B, conv_dim, S) and prepend the cached
         # left-context on the TIME axis (dim=-1), exactly like HF's `hidden_states_new`. Then F.conv1d
         # with padding=0 (context already prepended) -> output is exactly S long, no trailing slice.
-        x_cf = torch.cat([conv_state.transpose(1, 2), mixed_qkv.transpose(1, 2)], dim=-1).to(self.conv1d.weight.dtype)
+        x_cf = torch.cat([conv_state.transpose(1, 2), mixed_qkv.transpose(1, 2)], dim=-1)
         # new conv_state = the last K-1 conv INPUTS. In PREFILL the window is right-padded to
         # prefill_chunk_size, so the last K-1 columns are padding (NONZERO via projection biases, hence
         # still wrong); select the last K-1 VALID rows of the (raw) mixed_qkv via a reverse-cumsum of
