@@ -298,7 +298,6 @@ class Qwen3_5GatedDeltaNet(nn.Module):
         self._phase = "prefill"
 
         # Reuse the original (trained) submodules / parameters.
-        self.in_proj_qkv = linear_attn.in_proj_qkv
         self.in_proj_z = linear_attn.in_proj_z
         self.in_proj_b = linear_attn.in_proj_b
         self.in_proj_a = linear_attn.in_proj_a
@@ -316,6 +315,25 @@ class Qwen3_5GatedDeltaNet(nn.Module):
         self.num_v_heads = linear_attn.num_v_heads
         self.conv_dim = linear_attn.conv_dim
         self.conv_kernel_size = linear_attn.conv_kernel_size
+
+        # Pre-split the fused in_proj_qkv into separate Q/K/V projections (pure weight partition,
+        # numerically identical). Q/K/V then run as separate dense + depthwise-conv chains (see forward):
+        # a depthwise conv is per-channel, so a channel-axis split commutes with it, making the per-branch
+        # chains bit-exact with the fused `in_proj_qkv -> single conv -> split`. Removes the fused output
+        # split and lets the compiler shard each projection on its own head axis under multi-node RSD.
+        _qkv = linear_attn.in_proj_qkv
+        _hidden = _qkv.weight.shape[1]
+        _has_bias = _qkv.bias is not None
+        _splits = [self.key_dim, self.key_dim, self.value_dim]
+        _w = _qkv.weight.data.split(_splits, dim=0)
+        _b = _qkv.bias.data.split(_splits, dim=0) if _has_bias else (None, None, None)
+        self.in_proj_q = nn.Linear(_hidden, self.key_dim, bias=_has_bias)
+        self.in_proj_k = nn.Linear(_hidden, self.key_dim, bias=_has_bias)
+        self.in_proj_v = nn.Linear(_hidden, self.value_dim, bias=_has_bias)
+        for _lin, _wi, _bi in zip((self.in_proj_q, self.in_proj_k, self.in_proj_v), _w, _b, strict=True):
+            _lin.weight = nn.Parameter(_wi.contiguous())
+            if _has_bias:
+                _lin.bias = nn.Parameter(_bi.contiguous())
 
         # PREFILL path: one prefill window == one delta-rule chunk (the runtime splits the prompt
         # into prefill_chunk_size windows and carries recurrent_state across them). The window math
@@ -367,38 +385,55 @@ class Qwen3_5GatedDeltaNet(nn.Module):
             if recurrent_state_mask is not None:
                 recurrent_state = recurrent_state * recurrent_state_mask
 
-        mixed_qkv = self.in_proj_qkv(hidden_states)  # (B, S, conv_dim)
         z = self.in_proj_z(hidden_states).reshape(batch_size, seq_len, -1, self.head_v_dim)
         b = self.in_proj_b(hidden_states)
         a = self.in_proj_a(hidden_states)
 
-        # HF-style channel-first depthwise conv: transpose to (B, conv_dim, S) and prepend the cached
-        # left-context on the TIME axis (dim=-1), exactly like HF's `hidden_states_new`. Then F.conv1d
-        # with padding=0 (context already prepended) -> output is exactly S long, no trailing slice.
-        x_cf = torch.cat([conv_state.transpose(1, 2), mixed_qkv.transpose(1, 2)], dim=-1)
+        # Per-branch Q/K/V dense (pre-split weights, see __init__), then per-branch depthwise conv —
+        # numerically identical to the fused `in_proj_qkv -> single depthwise conv -> split` (a depthwise
+        # conv is per-channel, so the channel-axis [Q|K|V] split commutes with it), but as separate chains.
+        kd, vd = self.key_dim, self.value_dim
+        q_in = self.in_proj_q(hidden_states)  # (B, S, key_dim)
+        k_in = self.in_proj_k(hidden_states)  # (B, S, key_dim)
+        v_in = self.in_proj_v(hidden_states)  # (B, S, value_dim)
+
+        # HF-style channel-first depthwise conv: transpose to (B, ch, S) and prepend the cached left-context
+        # on the TIME axis (dim=-1) per branch; the single flat conv_state cache is sliced by channel group
+        # [Q | K | V]. F.conv1d padding=0 (context prepended) -> output exactly S long.
+        q_cf = torch.cat([conv_state[:, :, :kd].transpose(1, 2), q_in.transpose(1, 2)], dim=-1)
+        k_cf = torch.cat([conv_state[:, :, kd : 2 * kd].transpose(1, 2), k_in.transpose(1, 2)], dim=-1)
+        v_cf = torch.cat([conv_state[:, :, 2 * kd :].transpose(1, 2), v_in.transpose(1, 2)], dim=-1)
+        # Reassemble the flat conv input (== old x_cf = [conv_state | mixed_qkv], channels [Q|K|V]) ONLY for
+        # the small new-conv_state cache write below; the heavy dense/conv compute stays decomposed per branch.
+        x_cf = torch.cat([q_cf, k_cf, v_cf], dim=1)  # (B, conv_dim, (K-1)+S)
         # new conv_state = the last K-1 conv INPUTS. In PREFILL the window is right-padded to
         # prefill_chunk_size, so the last K-1 columns are padding (NONZERO via projection biases, hence
-        # still wrong); select the last K-1 VALID rows of the (raw) mixed_qkv via a reverse-cumsum of
-        # valid_mask -> one-hot -> matmul (compile-safe: arithmetic + matmul, no dynamic StridedSlice).
+        # still wrong); select the last K-1 VALID cols via query_position (compile-safe dynamic take).
         # Decode (no padding) uses the plain last-K-1 tail (HF-style innermost slice on the time axis).
         if prefill:
-            # new conv_state = the last K-1 VALID cols of the FULL conv input x_cf = [conv_state | mixed_qkv].
-            # x_cf cols 0..K-2 = the prepended conv_state (ALWAYS valid left-context); cols K-1.. = mixed_qkv
-            # (the first `valid_count` are real tokens, the rest are right-padding). So the last K-1 valid
-            # cols are exactly [valid_count .. valid_count+K-2] (chronological). When valid_count < K-1 this
-            # index range reaches back into the prepended conv_state (e.g. a multi-window prefill whose last
-            # window has 1-2 valid tokens still pulls the tail of the previous window's conv_state).
-
-            # k_1 times dynamic take
+            # last K-1 VALID cols of x_cf = [conv_state(0..K-2, always valid) | mixed_qkv]. When valid_count
+            # < K-1 the index reaches back into the prepended conv_state (prev window's tail).
             states = [x_cf[:, :, query_position.to(torch.int).unsqueeze(0) + i] for i in range(1, k_1 + 1)]
             new_conv_state = torch.cat(states, dim=2).transpose(1, 2).contiguous()  # (B, K-1, conv_dim)
-
         else:
             new_conv_state = x_cf[:, :, -k_1:].transpose(1, 2).contiguous()  # (B, K-1, conv_dim), HF-style
-        conv_out = F.conv1d(x_cf, self.conv1d.weight, self.conv1d.bias, padding=0, groups=self.conv_dim)
-        mixed_qkv = F.silu(conv_out.transpose(1, 2))  # (B, S, conv_dim)
 
-        query, key, value = torch.split(mixed_qkv, [self.key_dim, self.key_dim, self.value_dim], dim=-1)
+        # Per-branch depthwise conv, conv1d weight/bias sliced by channel group [Q | K | V] (constant slices;
+        # fold at compile). silu each -> query/key/value directly (no fused split).
+        _cw, _cb = self.conv1d.weight, self.conv1d.bias
+        query = F.silu(
+            F.conv1d(q_cf, _cw[:kd], _cb[:kd] if _cb is not None else None, padding=0, groups=kd).transpose(1, 2)
+        )
+        key = F.silu(
+            F.conv1d(
+                k_cf, _cw[kd : 2 * kd], _cb[kd : 2 * kd] if _cb is not None else None, padding=0, groups=kd
+            ).transpose(1, 2)
+        )
+        value = F.silu(
+            F.conv1d(
+                v_cf, _cw[2 * kd :], _cb[2 * kd :] if _cb is not None else None, padding=0, groups=vd
+            ).transpose(1, 2)
+        )
         query = query.reshape(batch_size, seq_len, -1, self.head_k_dim)
         key = key.reshape(batch_size, seq_len, -1, self.head_k_dim)
         value = value.reshape(batch_size, seq_len, -1, self.head_v_dim)
