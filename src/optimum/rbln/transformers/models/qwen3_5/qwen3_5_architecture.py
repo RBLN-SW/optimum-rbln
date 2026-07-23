@@ -143,7 +143,7 @@ def rbln_chunk_gated_delta_rule(
     key = l2norm(key, dim=-1, eps=1e-6)
     # (B, S, Hv, *) -> (B, Hv, S, *)
     query, key, value, beta, g = [
-        x.transpose(1, 2).contiguous().to(torch.float32) for x in (query, key, value, beta, g)
+        x.transpose(1, 2).contiguous().to(initial_dtype) for x in (query, key, value, beta, g)
     ]
     scale = 1 / (query.shape[-1] ** 0.5)  # match HF torch_chunk_gated_delta_rule (query.shape[-1] == head_k_dim)
     query = query * scale
@@ -199,7 +199,7 @@ def rbln_chunk_gated_delta_rule(
 
     value = attn @ v_beta  # (B,Hv,n_chunks,gcs,Dv)  청크 안 델타 보정된 "새 밸류" U
     k_cumdecay = attn @ (k_beta * g.exp().unsqueeze(-1))  # (B,Hv,n_chunks,gcs,Dk)  이전 상태 S의 예측 제거용
-    last_recurrent_state = initial_state.to(value)  # (B, Hv, Dk, Dv) carried (GDN 진입 시 이미 mask 적용됨)
+    last_recurrent_state = initial_state  # (B, Hv, Dk, Dv) carried (GDN 진입 시 이미 mask 적용됨)
 
     # ---- inter-chunk: 서브청크 사이 순차 carry (2 batch dims, [:, :, i] 인덱싱) ----
     # S_t = α_t S_{t-1} + k_t u_tᵀ ,  o_t = q_tᵀ S_t
@@ -225,7 +225,7 @@ def rbln_chunk_gated_delta_rule(
 
     # 서브청크 출력을 seq 축으로 이어붙임: n_chunks x (B,Hv,gcs,Dv) -> (B,Hv,S,Dv)
     core = torch.cat(core_chunks, dim=2)
-    core = core.transpose(1, 2).contiguous().to(initial_dtype)  # (B, S, Hv, Dv)
+    core = core.transpose(1, 2).contiguous()  # (B, S, Hv, Dv)
     return core, last_recurrent_state
 
 
@@ -253,9 +253,9 @@ def rbln_recurrent_gated_delta_rule_step(query, key, value, g, beta, initial_sta
     # axis returns ~0 when the second-to-last dim is small (the S=1 decode tensors, e.g. (1,1,2,64)) ->
     # rsqrt(eps)≈1000 -> the norm (and everything downstream) blows up. So compute ||x||² as a matmul
     # dot-product (a contraction, which DOES lower correctly at these sizes).
-    q = query.reshape(batch_size, num_v_heads, k_head_dim).float()
-    k = key.reshape(batch_size, num_v_heads, k_head_dim).float()
-    v = value.reshape(batch_size, num_v_heads, v_head_dim).float()
+    q = query.reshape(batch_size, num_v_heads, k_head_dim)
+    k = key.reshape(batch_size, num_v_heads, k_head_dim)
+    v = value.reshape(batch_size, num_v_heads, v_head_dim)
 
     def _l2norm_dot(x):  # x: (B, Hv, D) -> unit-normalized over D, via matmul sum-of-squares
         ss = torch.matmul(x.unsqueeze(-2), x.unsqueeze(-1)).squeeze(-1)  # (B,Hv,1,D)@(B,Hv,D,1)->(B,Hv,1)
@@ -264,10 +264,10 @@ def rbln_recurrent_gated_delta_rule_step(query, key, value, g, beta, initial_sta
     q_row = (_l2norm_dot(q) * (k_head_dim**-0.5)).unsqueeze(-2)  # (B, Hv, 1, Dk)
     k_row = _l2norm_dot(k).unsqueeze(-2)  # (B, Hv, 1, Dk)
     v_row = v.unsqueeze(-2)  # (B, Hv, 1, Dv)
-    g_t = g.reshape(batch_size, num_v_heads, 1, 1).float().exp()  # (B, Hv, 1, 1)
-    beta_t = beta.reshape(batch_size, num_v_heads, 1, 1).float()  # (B, Hv, 1, 1)
+    g_t = g.reshape(batch_size, num_v_heads, 1, 1).exp()  # (B, Hv, 1, 1)
+    beta_t = beta.reshape(batch_size, num_v_heads, 1, 1)  # (B, Hv, 1, 1)
 
-    state = initial_state.float() * g_t  # decay the carried state
+    state = initial_state * g_t  # decay the carried state
     kv_mem = torch.matmul(k_row, state)  # (B, Hv, 1, Dk) @ (B, Hv, Dk, Dv) = (B, Hv, 1, Dv)
     #           S_decayed (3×2)
     # k(1×3)    ┌ s00  s01 ┐
@@ -277,6 +277,7 @@ def rbln_recurrent_gated_delta_rule_step(query, key, value, g, beta, initial_sta
     new_state = state + torch.matmul(k_row.transpose(-1, -2), delta)  # + (B,Hv,Dk,1)@(B,Hv,1,Dv)
     core = torch.matmul(q_row, new_state)  # (B, Hv, 1, Dk) @ (B, Hv, Dk, Dv) = (B, Hv, 1, Dv)
     core = core.reshape(batch_size, 1, num_v_heads, v_head_dim).to(initial_dtype)  # (B, 1, Hv, Dv)
+    new_state = new_state.to(initial_dtype)
     return core, new_state
 
 
@@ -374,7 +375,7 @@ class Qwen3_5GatedDeltaNet(nn.Module):
         # HF-style channel-first depthwise conv: transpose to (B, conv_dim, S) and prepend the cached
         # left-context on the TIME axis (dim=-1), exactly like HF's `hidden_states_new`. Then F.conv1d
         # with padding=0 (context already prepended) -> output is exactly S long, no trailing slice.
-        x_cf = torch.cat([conv_state.transpose(1, 2), mixed_qkv.transpose(1, 2)], dim=-1)  # (B, conv_dim, (K-1)+S)
+        x_cf = torch.cat([conv_state.transpose(1, 2), mixed_qkv.transpose(1, 2)], dim=-1).to(self.conv1d.weight.dtype)
         # new conv_state = the last K-1 conv INPUTS. In PREFILL the window is right-padded to
         # prefill_chunk_size, so the last K-1 columns are padding (NONZERO via projection biases, hence
         # still wrong); select the last K-1 VALID rows of the (raw) mixed_qkv via a reverse-cumsum of
@@ -403,12 +404,12 @@ class Qwen3_5GatedDeltaNet(nn.Module):
         value = value.reshape(batch_size, seq_len, -1, self.head_v_dim)
 
         beta = b.sigmoid()
-        g = -self.A_log.float().exp() * F.softplus(a.float() + self.dt_bias)
+        g = -self.A_log.exp() * F.softplus(a + self.dt_bias)
         if prefill:
             # PREFILL right-padding: padding tokens have nonzero q/k/v/g via the projection biases, which
             # would pollute the recurrent state (a sum over the window) and its decay. Zero them out.
-            g = g * valid_mask.to(g.dtype)
-            beta = beta * valid_mask.to(beta.dtype)
+            g = g * valid_mask
+            beta = beta * valid_mask
         if self.num_v_heads // self.num_k_heads > 1:
             query = query.repeat_interleave(self.num_v_heads // self.num_k_heads, dim=2)
             key = key.repeat_interleave(self.num_v_heads // self.num_k_heads, dim=2)
