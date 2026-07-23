@@ -308,9 +308,6 @@ class RBLNDecoderOnlyFlashAttentionMixin:
             return fits, kvcache_sizes
 
         # Fast path: try maximum blocks first (most common case)
-        # import pdb; pdb.set_trace()
-        # 여기서 meta 로 안잡혀서 문제네...
-        # 근데 크기가 별로 안큰데 꼭 잡아야하나? 아니다 잡는게 통일성이 있긴한데... 한번 잡아보자
         fits, _ = check_memory_fits(rbln_config.num_full_blocks)
         if fits:
             return rbln_config.num_full_blocks
