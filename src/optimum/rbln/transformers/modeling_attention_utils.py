@@ -2,12 +2,12 @@ import logging
 import math
 import os
 from collections import defaultdict
-from typing import TYPE_CHECKING, Optional, Tuple
+from typing import TYPE_CHECKING
 
 import rebel
 
 from ..utils.logging import get_logger
-from ..utils.runtime_utils import get_available_dram_per_chiplet
+from ..utils.runtime_utils import get_available_dram_per_chiplet, parse_byte_size
 
 
 if TYPE_CHECKING:
@@ -33,11 +33,11 @@ def _should_skip_attn_validation() -> bool:
 
 
 def set_default_values(
-    attn_impl: Optional[str] = None,
-    kvcache_partition_len: Optional[int] = None,
-    kvcache_block_size: Optional[int] = None,
-    max_seq_len: Optional[int] = None,
-) -> Tuple[str, int, int]:
+    attn_impl: str | None = None,
+    kvcache_partition_len: int | None = None,
+    kvcache_block_size: int | None = None,
+    max_seq_len: int | None = None,
+) -> tuple[str, int, int]:
     if attn_impl is None:
         attn_impl = "eager"
 
@@ -168,6 +168,33 @@ def format_byte_size(nbytes: int) -> str:
         return f"{nbytes / 1024**3:.2f} GB"
 
 
+def _resolve_memory_budget(memory_budget: object | None, available_total: int) -> int:
+    """Resolve `memory_budget` to usable DRAM bytes (system reserve excluded), capped at available_total.
+
+    None -> available_total; a float in (0, 1] (or a "80%" string) -> that fraction of it;
+    int/"10GB"/"512MB" -> parsed bytes. `available_total` is the device-wide available DRAM after
+    the per-chiplet system reserve.
+    """
+    if memory_budget is None:
+        return available_total
+    fraction = None
+    if isinstance(memory_budget, float):
+        fraction = memory_budget
+    elif isinstance(memory_budget, str) and memory_budget.strip().endswith("%"):
+        fraction = float(memory_budget.strip()[:-1]) / 100
+    if fraction is not None:
+        if not 0.0 < fraction <= 1.0:
+            raise ValueError(f"memory_budget fraction must be in (0, 1] (or (0%, 100%]), got {memory_budget!r}.")
+        budget = int(available_total * fraction)
+    else:
+        budget = parse_byte_size(memory_budget)
+    if budget > available_total:
+        raise ValueError(
+            f"memory_budget ({budget} bytes) exceeds the target NPU's available DRAM ({available_total} bytes)."
+        )
+    return budget
+
+
 class RBLNDecoderOnlyFlashAttentionMixin:
     @classmethod
     def set_kvcache_num_blocks_after_compilation(
@@ -233,11 +260,11 @@ class RBLNDecoderOnlyFlashAttentionMixin:
         cls,
         compiled_models: dict[str, rebel.RBLNCompiledModel],
         rbln_config: "RBLNDecoderOnlyModelForCausalLMConfig",
-    ) -> Tuple[dict[Tuple[int, int], int], dict[str, list[list[int]]], int, set[Tuple[int, int]]]:
+    ) -> tuple[dict[tuple[int, int], int], dict[str, list[list[int]]], int, set[tuple[int, int]]]:
         # Returns non-KV alloc, KV sizes, per-chiplet DRAM budget, and the (node, chiplet)
         # buckets to check. ATOM reports one chiplet, so it shares the per-chiplet path.
-        alloc_without_dram: dict[Tuple[int, int], int] = defaultdict(int)
-        chiplets: set[Tuple[int, int]] = set()
+        alloc_without_dram: dict[tuple[int, int], int] = defaultdict(int)
+        chiplets: set[tuple[int, int]] = set()
 
         for compiled_model in compiled_models.values():
             for key, alloc_per_chiplet in compiled_model.get_alloc_per_chiplet_by_key().items():
@@ -256,40 +283,27 @@ class RBLNDecoderOnlyFlashAttentionMixin:
                     chiplets.add((node_id, chiplet_id))
 
         num_chiplets = max((chiplet_id for _, chiplet_id in chiplets), default=0) + 1
-        available_per_chiplet = get_available_dram_per_chiplet(num_chiplets, rbln_config.npu)
+        available_total = get_available_dram_per_chiplet(num_chiplets, rbln_config.npu) * num_chiplets
+        budget = _resolve_memory_budget(rbln_config.memory_budget, available_total)
+        available_per_chiplet = budget // num_chiplets
         return alloc_without_dram, kvcache_tensor_sizes, available_per_chiplet, chiplets
 
     @classmethod
     def _search_num_kvcache_blocks(
         cls,
         rbln_config: "RBLNDecoderOnlyModelForCausalLMConfig",
-        alloc_without_dram: dict[Tuple[int, int], int],
+        alloc_without_dram: dict[tuple[int, int], int],
         kvcache_tensor_sizes: dict[str, list[list[int]]],
         available_per_chiplet: int,
-        chiplets: set[Tuple[int, int]],
+        chiplets: set[tuple[int, int]],
     ) -> int:
-        remaining_dram_at_chiplet: dict[Tuple[int, int], int] = {
+        remaining_dram_at_chiplet: dict[tuple[int, int], int] = {
             key: available_per_chiplet - alloc_without_dram.get(key, 0) for key in chiplets
         }
-        kvcache_meta_can_resize: dict[str, bool] = {
-            kvcache_meta.name: kvcache_meta.can_resize for kvcache_meta in rbln_config.kvcache_metas
-        }
 
-        def kvcache_sizes_at_chiplet(multiplier: int) -> dict[Tuple[int, int], int]:
-            # Resize multiplier applies only to resizable tensors; 2MB-aligned.
-            sizes: dict[Tuple[int, int], int] = defaultdict(int)
-            for key, sizes_at_node in kvcache_tensor_sizes.items():
-                # 여기서 kvcache_tensor_sizes 에는 state_cache가 있지만, kvcache_meta_can_resize는 오로지 kvcache_metas를 생성한 경우에만 참조
-                # 그래서 버그가 일어남 -> 1) state_cache 도 kvcache_metas 를 생성하거나 2) kvcache_metas가 없는 state_cache 는 무시하거나 둘중 하나.
-                m = multiplier if kvcache_meta_can_resize[key] else 1
-                for node_id, sizes_at_chiplet in enumerate(sizes_at_node):
-                    for chiplet_id, size in enumerate(sizes_at_chiplet):
-                        sizes[(node_id, chiplet_id)] += align_2MB(size * m)
-            return sizes
-
-        def check_memory_fits(multiplier: int) -> Tuple[bool, dict[Tuple[int, int], int]]:
+        def check_memory_fits(multiplier: int) -> tuple[bool, dict[tuple[int, int], int]]:
             # Fits only if every chiplet bucket has room.
-            kvcache_sizes = kvcache_sizes_at_chiplet(multiplier)
+            kvcache_sizes = cls._kvcache_bytes_per_chiplet(kvcache_tensor_sizes, rbln_config, multiplier)
             fits = all(remaining_dram_at_chiplet[key] >= kvcache_sizes.get(key, 0) for key in chiplets)
             return fits, kvcache_sizes
 
@@ -329,6 +343,47 @@ class RBLNDecoderOnlyFlashAttentionMixin:
                 right = mid - 1
 
         return multiplier
+
+    @classmethod
+    def _kvcache_bytes_per_chiplet(
+        cls,
+        kvcache_tensor_sizes: dict[str, list[list[int]]],
+        rbln_config: "RBLNDecoderOnlyModelForCausalLMConfig",
+        num_blocks: int,
+        current_blocks: int = 1,
+    ) -> dict[tuple[int, int], int]:
+        # Per-(node, chiplet) kv-cache bytes at `num_blocks`. `kvcache_tensor_sizes` reflects the
+        # buffers' current block count (`current_blocks`), so a resizable tensor's per-block bytes
+        # are size // current_blocks, rescaled to num_blocks; others are fixed. Each 2MB-aligned
+        # after scaling, so bytes grow non-linearly.
+        can_resize = {meta.name: meta.can_resize for meta in rbln_config.kvcache_metas}
+        sizes: dict[tuple[int, int], int] = defaultdict(int)
+        for key, sizes_at_node in kvcache_tensor_sizes.items():
+            resizable = can_resize[key]
+            for node_id, sizes_at_chiplet in enumerate(sizes_at_node):
+                for chiplet_id, size in enumerate(sizes_at_chiplet):
+                    scaled = size // current_blocks * num_blocks if resizable else size
+                    sizes[(node_id, chiplet_id)] += align_2MB(scaled)
+        return sizes
+
+    @classmethod
+    def _required_memory_at(
+        cls,
+        compiled_models: dict[str, rebel.RBLNCompiledModel],
+        rbln_config: "RBLNDecoderOnlyModelForCausalLMConfig",
+        num_blocks: int,
+    ) -> int:
+        """Total device-wide kv-cache DRAM (bytes) at `num_blocks`, with 2MB alignment applied.
+
+        Works for any current block size: the buffers' block count is `rbln_config.kvcache_num_blocks`
+        (0 for the unresized compile baseline is treated as 1). Bytes are not linear in `num_blocks`
+        because alignment is applied after scaling.
+        """
+        kvcache_tensor_sizes = compiled_models["prefill"].exp_get_dram_tensor_sizes()
+        current_blocks = rbln_config.kvcache_num_blocks or 1
+        return sum(
+            cls._kvcache_bytes_per_chiplet(kvcache_tensor_sizes, rbln_config, num_blocks, current_blocks).values()
+        )
 
     @classmethod
     def multiply_kv_cache_num_blocks(

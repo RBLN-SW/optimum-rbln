@@ -15,7 +15,7 @@ import importlib
 import inspect
 import warnings
 from pathlib import Path
-from typing import Any, Dict, Optional, Type, Union
+from typing import Any
 
 from transformers import AutoConfig, PretrainedConfig, PreTrainedModel
 from transformers.dynamic_module_utils import get_class_from_dynamic_module
@@ -36,7 +36,7 @@ class _BaseAutoModelClass:
     _model_mapping = None
 
     def __init__(self, *args, **kwargs):
-        raise EnvironmentError(
+        raise OSError(
             f"{self.__class__.__name__} is designed to be instantiated "
             f"using the `{self.__class__.__name__}.from_pretrained(pretrained_model_name_or_path)`"
         )
@@ -44,7 +44,7 @@ class _BaseAutoModelClass:
     @classmethod
     def get_rbln_cls(
         cls,
-        pretrained_model_name_or_path: Union[str, Path],
+        pretrained_model_name_or_path: str | Path,
         *args: Any,
         export: bool = None,
         **kwargs: Any,
@@ -100,7 +100,7 @@ class _BaseAutoModelClass:
     @classmethod
     def infer_hf_model_class(
         cls,
-        pretrained_model_name_or_path: Union[str, Path],
+        pretrained_model_name_or_path: str | Path,
         *args: Any,
         **kwargs: Any,
     ):
@@ -156,7 +156,7 @@ class _BaseAutoModelClass:
         return model_class
 
     @classmethod
-    def get_rbln_model_cls_name(cls, pretrained_model_name_or_path: Union[str, Path], **kwargs):
+    def get_rbln_model_cls_name(cls, pretrained_model_name_or_path: str | Path, **kwargs):
         """
         Retrieve the path to the compiled model directory for a given RBLN model.
 
@@ -181,10 +181,10 @@ class _BaseAutoModelClass:
     @classmethod
     def from_pretrained(
         cls,
-        model_id: Union[str, Path],
+        model_id: str | Path,
         export: bool = None,
-        rbln_config: Optional[Union[Dict, RBLNModelConfig]] = None,
-        **kwargs: Optional[Dict[str, Any]],
+        rbln_config: dict | RBLNModelConfig | None = None,
+        **kwargs: dict[str, Any] | None,
     ) -> RBLNBaseModel:
         """
         Load an RBLN-accelerated model from a pretrained checkpoint or a compiled RBLN artifact.
@@ -222,8 +222,8 @@ class _BaseAutoModelClass:
     def from_model(
         cls,
         model: PreTrainedModel,
-        config: Optional[PretrainedConfig] = None,
-        rbln_config: Optional[Union[RBLNModelConfig, Dict]] = None,
+        config: PretrainedConfig | None = None,
+        rbln_config: RBLNModelConfig | dict | None = None,
         **kwargs: Any,
     ) -> RBLNBaseModel:
         """
@@ -249,12 +249,12 @@ class _BaseAutoModelClass:
         return rbln_cls.from_model(model, config=config, rbln_config=rbln_config, **kwargs)
 
     @staticmethod
-    def register(rbln_cls: Type[RBLNBaseModel], exist_ok: bool = False):
+    def register(rbln_cls: type[RBLNBaseModel], exist_ok: bool = False):
         """
         Register a new RBLN model class.
 
         Args:
-            rbln_cls (Type[RBLNBaseModel]): The RBLN model class to register.
+            rbln_cls (type[RBLNBaseModel]): The RBLN model class to register.
             exist_ok (bool): Whether to allow registering an already registered model.
         """
         if not issubclass(rbln_cls, RBLNBaseModel):

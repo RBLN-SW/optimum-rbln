@@ -21,7 +21,6 @@
 # copied, modified, or distributed without prior written permission
 # from Rebellions Inc.
 
-from typing import Optional, Tuple, Union
 
 import torch
 from torch import nn
@@ -58,7 +57,7 @@ class TimeSeriesTransformersEncoderWrapper(torch.nn.Module):
         self,
         inputs_embeds: torch.Tensor,
         cross_key_values: torch.Tensor,  # n_layers, batch_size, num_heads, context_length, d_kv
-    ) -> Union[Tuple[torch.FloatTensor], BaseModelOutput]:
+    ) -> tuple[torch.FloatTensor] | BaseModelOutput:
         # 1. get encoder last_hidden_states
         encoder_outputs = self.encoder(inputs_embeds=inputs_embeds, attention_mask=None, return_dict=False)
         last_hidden_states = encoder_outputs[0]
@@ -110,7 +109,7 @@ class TimeSeriesTransformersDecoderWrapper(torch.nn.Module):
         block_tables: torch.Tensor,
         cross_kv_cache: torch.Tensor,  # batch_size, num_heads, context_length, d_kv
         *self_kv_cache: torch.Tensor,  # batch_size * num_parallel_samples, num_heads, prediction_length, d_kv
-    ) -> Union[Tuple[torch.FloatTensor], Seq2SeqLMOutput]:
+    ) -> tuple[torch.FloatTensor] | Seq2SeqLMOutput:
         # prepare past_key_values
         self_past_key_values = ()
         cross_past_key_values = ()
@@ -149,10 +148,10 @@ class TimeSeriesTransformersDecoder(nn.Module):
     def forward(
         self,
         inputs_embeds: torch.Tensor = None,
-        attention_mask: Optional[torch.Tensor] = None,
-        self_past_key_values: Optional[torch.Tensor] = None,
-        cross_past_key_values: Optional[torch.Tensor] = None,
-        cache_position: Optional[torch.Tensor] = None,
+        attention_mask: torch.Tensor | None = None,
+        self_past_key_values: torch.Tensor | None = None,
+        cross_past_key_values: torch.Tensor | None = None,
+        cache_position: torch.Tensor | None = None,
         block_tables: torch.Tensor = None,
     ):
         input_shape = inputs_embeds.size()[:-1]
@@ -202,10 +201,10 @@ class TimeSeriesTransformersDecoderLayer(nn.Module):
     def forward(
         self,
         hidden_states: torch.Tensor,
-        attention_mask: Optional[torch.Tensor] = None,
-        self_past_key_value: Optional[Tuple[torch.Tensor]] = None,
-        cross_past_key_value: Optional[Tuple[torch.Tensor]] = None,
-        cache_position: Optional[torch.Tensor] = None,
+        attention_mask: torch.Tensor | None = None,
+        self_past_key_value: tuple[torch.Tensor] | None = None,
+        cross_past_key_value: tuple[torch.Tensor] | None = None,
+        cache_position: torch.Tensor | None = None,
         block_tables: torch.Tensor = None,
     ) -> torch.Tensor:
         # Self Attention Block
@@ -264,11 +263,11 @@ class TimeSeriesTransformersSelfAttention(TimeSeriesTransformersAttention):
     def forward(
         self,
         hidden_states: torch.Tensor,
-        past_key_value: Optional[Tuple[torch.Tensor]] = None,
-        attention_mask: Optional[torch.Tensor] = None,
-        cache_position: Optional[torch.Tensor] = None,
-        block_tables: Optional[torch.Tensor] = None,
-    ) -> Tuple[torch.Tensor, Optional[torch.Tensor], Optional[Tuple[torch.Tensor]]]:
+        past_key_value: tuple[torch.Tensor] | None = None,
+        attention_mask: torch.Tensor | None = None,
+        cache_position: torch.Tensor | None = None,
+        block_tables: torch.Tensor | None = None,
+    ) -> tuple[torch.Tensor, torch.Tensor | None, tuple[torch.Tensor] | None]:
         bsz, tgt_len, _ = hidden_states.size()
         query_states = self._shape(self.q_proj(hidden_states), tgt_len, bsz)
         query_states = query_states * self.scaling
@@ -302,8 +301,8 @@ class TimeSeriesTransformersCrossAttention(TimeSeriesTransformersSelfAttention):
     def forward(
         self,
         hidden_states: torch.Tensor,
-        past_key_value: Optional[Tuple[torch.Tensor]] = None,
-    ) -> Tuple[torch.Tensor, Optional[torch.Tensor], Optional[Tuple[torch.Tensor]]]:
+        past_key_value: tuple[torch.Tensor] | None = None,
+    ) -> tuple[torch.Tensor, torch.Tensor | None, tuple[torch.Tensor] | None]:
         batch_size, query_len, _ = hidden_states.size()
         query_states = (
             self.q_proj(hidden_states)

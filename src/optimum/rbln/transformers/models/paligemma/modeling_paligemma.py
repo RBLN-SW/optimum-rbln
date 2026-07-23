@@ -14,8 +14,9 @@
 
 import importlib
 import inspect
+from collections.abc import Callable
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, Optional, Tuple, Type, Union
+from typing import TYPE_CHECKING, Any, Union
 
 import torch
 from transformers import (
@@ -115,11 +116,11 @@ class RBLNPaliGemmaForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGeneration
     def _update_submodule_rbln_config(
         cls,
         submodule_name: str,
-        submodule_cls: Type["RBLNModel"],
+        submodule_cls: type["RBLNModel"],
         model: "PreTrainedModel",
         submodule_config: PretrainedConfig,
         submodule_rbln_config: RBLNModelConfig,
-        preprocessors: Optional[Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"]],
+        preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"] | None,
     ):
         if submodule_name == "language_model":
             submodule_config.use_sliding_window = False
@@ -284,9 +285,9 @@ class RBLNPaliGemmaForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGeneration
 
     def _preprocess_prefill(
         self,
-        input_ids: Optional[torch.LongTensor] = None,
-        inputs_embeds: Optional[torch.FloatTensor] = None,
-        pixel_values: Optional[torch.FloatTensor] = None,
+        input_ids: torch.LongTensor | None = None,
+        inputs_embeds: torch.FloatTensor | None = None,
+        pixel_values: torch.FloatTensor | None = None,
         **kwargs,
     ):
         if (input_ids is None) ^ (inputs_embeds is not None):
@@ -319,12 +320,12 @@ class RBLNPaliGemmaForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGeneration
         attention_mask: torch.LongTensor = None,
         position_ids: torch.LongTensor = None,
         token_type_ids: torch.LongTensor = None,
-        inputs_embeds: Optional[torch.FloatTensor] = None,
+        inputs_embeds: torch.FloatTensor | None = None,
         cache_position: torch.Tensor = None,
-        generate_idx: Optional[torch.Tensor] = None,
-        return_dict: Optional[bool] = None,
+        generate_idx: torch.Tensor | None = None,
+        return_dict: bool | None = None,
         **kwargs,
-    ) -> Union[Tuple, RBLNDecoderOnlyOutput]:
+    ) -> tuple | RBLNDecoderOnlyOutput:
         # Prefill
         if cache_position is None:
             inputs_embeds = self._preprocess_prefill(
@@ -433,11 +434,11 @@ class RBLNPaliGemmaModel(RBLNModel):
     def _update_submodule_rbln_config(
         cls,
         submodule_name: str,
-        submodule_cls: Type["RBLNModel"],
+        submodule_cls: type["RBLNModel"],
         model: "PreTrainedModel",
         submodule_config: PretrainedConfig,
         submodule_rbln_config: RBLNModelConfig,
-        preprocessors: Optional[Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"]],
+        preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"] | None,
     ):
         if submodule_name == "language_model":
             submodule_config.use_sliding_window = False
@@ -507,9 +508,9 @@ class RBLNPaliGemmaModel(RBLNModel):
 
     def _preprocess_prefill(
         self,
-        input_ids: Optional[torch.LongTensor] = None,
-        inputs_embeds: Optional[torch.FloatTensor] = None,
-        pixel_values: Optional[torch.FloatTensor] = None,
+        input_ids: torch.LongTensor | None = None,
+        inputs_embeds: torch.FloatTensor | None = None,
+        pixel_values: torch.FloatTensor | None = None,
         **kwargs,
     ):
         if (input_ids is None) ^ (inputs_embeds is not None):
@@ -538,16 +539,16 @@ class RBLNPaliGemmaModel(RBLNModel):
 
     def forward(
         self,
-        input_ids: Optional[torch.LongTensor] = None,
-        pixel_values: Optional[torch.FloatTensor] = None,
-        attention_mask: Optional[torch.Tensor] = None,
-        position_ids: Optional[torch.LongTensor] = None,
-        token_type_ids: Optional[torch.LongTensor] = None,
-        inputs_embeds: Optional[torch.FloatTensor] = None,
-        output_hidden_states: Optional[bool] = None,
-        return_dict: Optional[bool] = None,
+        input_ids: torch.LongTensor | None = None,
+        pixel_values: torch.FloatTensor | None = None,
+        attention_mask: torch.Tensor | None = None,
+        position_ids: torch.LongTensor | None = None,
+        token_type_ids: torch.LongTensor | None = None,
+        inputs_embeds: torch.FloatTensor | None = None,
+        output_hidden_states: bool | None = None,
+        return_dict: bool | None = None,
         **kwargs,
-    ) -> Union[Tuple, PaligemmaModelOutputWithPast]:
+    ) -> tuple | PaligemmaModelOutputWithPast:
         """
         Forward pass for the RBLN-optimized PaliGemmaModel model.
 

@@ -14,16 +14,10 @@
 
 import glob
 import os
+from collections.abc import Iterable
 from typing import (
     TYPE_CHECKING,
     Any,
-    Dict,
-    Iterable,
-    List,
-    Optional,
-    Tuple,
-    Type,
-    Union,
 )
 
 import torch
@@ -57,7 +51,7 @@ QUANTIZED_WEIGHTS = {
 }
 
 # Common alias sets seen in community checkpoints
-VARIANT_ALIASES: Dict[str, List[str]] = {
+VARIANT_ALIASES: dict[str, list[str]] = {
     "weight_scale": ["weight_scale", "scales", "w_scale", "scale"],
     "input_scale": ["input_scale", "act_scale", "activation_scale", "a_scale"],
     "kv_scale": ["kv_scale", "kv_scales"],
@@ -75,13 +69,13 @@ class RBLNQuantizationConfig(RBLNSerializableConfigProtocol):
 
     def __init__(
         self,
-        format: Optional[str] = None,
-        weights: Optional[str] = None,
-        activations: Optional[str] = None,
-        kv_caches: Optional[str] = None,
-        dynamic: Optional[bool] = None,
+        format: str | None = None,
+        weights: str | None = None,
+        activations: str | None = None,
+        kv_caches: str | None = None,
+        dynamic: bool | None = None,
         *,
-        precision: Optional[str] = None,
+        precision: str | None = None,
     ):
         self.format = format or "rbln"
         if self.format not in self.SUPPORTED_FORMATS:
@@ -121,7 +115,7 @@ class RBLNQuantizationConfig(RBLNSerializableConfigProtocol):
         if self.weights == "fp16" and self.activations == "fp16":
             raise ValueError("weights and activations of QuantizationConfig cannot be both fp16. It is meaningless.")
 
-    def _prepare_for_serialization(self) -> Dict[str, Any]:
+    def _prepare_for_serialization(self) -> dict[str, Any]:
         return {
             "format": self.format,
             "weights": self.weights,
@@ -167,14 +161,14 @@ class QuantizedLayerFactory:
 
 
 def get_quantized_model(
-    hf_auto_model_class: Type["_BaseAutoModelClass"],
+    hf_auto_model_class: type["_BaseAutoModelClass"],
     model_id: str,
-    token: Optional[Union[bool, str]] = None,
-    revision: Optional[str] = None,
-    cache_dir: Optional[str] = None,
+    token: bool | str | None = None,
+    revision: str | None = None,
+    cache_dir: str | None = None,
     force_download: bool = False,
     local_files_only: bool = False,
-    rbln_quantization: Optional[RBLNQuantizationConfig] = None,
+    rbln_quantization: RBLNQuantizationConfig | None = None,
     **kwargs,
 ):
     """
@@ -248,12 +242,12 @@ def get_quantized_model(
 
 def load_weight_files(
     model_id: str,
-    token: Optional[Union[bool, str]] = None,
-    revision: Optional[str] = None,
-    cache_dir: Optional[str] = None,
+    token: bool | str | None = None,
+    revision: str | None = None,
+    cache_dir: str | None = None,
     force_download: bool = False,
     local_files_only: bool = False,
-    exception_keywords: Optional[List[str]] = None,
+    exception_keywords: list[str] | None = None,
 ) -> list[str]:
     """
     Discover and download safetensors files for the given model id.
@@ -301,7 +295,7 @@ def load_weight_files(
 def update_layers_to_quantize(
     module: torch.nn.Module,
     scale_dtype: torch.dtype,
-    rbln_quantization: Optional[RBLNQuantizationConfig] = None,
+    rbln_quantization: RBLNQuantizationConfig | None = None,
 ) -> None:
     """
     Updates specified linear layers to quantized (qlinear) layers in the given module.
@@ -397,7 +391,7 @@ def _coerce_per_out_channel_scale(scale: torch.Tensor, out_features: int) -> tor
     return v.reshape(1, 1).expand(out_features, 1).contiguous()
 
 
-def _kv_split_items(base_key: str, tensor: torch.Tensor) -> List[Tuple[str, torch.Tensor]]:
+def _kv_split_items(base_key: str, tensor: torch.Tensor) -> list[tuple[str, torch.Tensor]]:
     # base_key is the original key whose last token was 'kv_scale'
     # We produce keys with 'k_scale' and 'v_scale' at the self_attn level
     if tensor.ndim == 1 and tensor.numel() >= 2:
@@ -413,11 +407,11 @@ def _kv_split_items(base_key: str, tensor: torch.Tensor) -> List[Tuple[str, torc
 
 def canonicalize_checkpoint_items(
     model: torch.nn.Module,
-    items: Iterable[Tuple[str, torch.Tensor]],
-    rbln_quantization: Optional[RBLNQuantizationConfig],
-) -> List[Tuple[str, torch.Tensor]]:
+    items: Iterable[tuple[str, torch.Tensor]],
+    rbln_quantization: RBLNQuantizationConfig | None,
+) -> list[tuple[str, torch.Tensor]]:
     params = dict(model.named_parameters(recurse=True))
-    results: List[Tuple[str, torch.Tensor]] = []
+    results: list[tuple[str, torch.Tensor]] = []
 
     for key, value in items:
         t = value
@@ -485,8 +479,8 @@ def canonicalize_checkpoint_items(
 
 def load_weights_from_files(
     model: torch.nn.Module,
-    safetensors: List[Dict[str, torch.Tensor]],
-    rbln_quantization: Optional[RBLNQuantizationConfig] = None,
+    safetensors: list[dict[str, torch.Tensor]],
+    rbln_quantization: RBLNQuantizationConfig | None = None,
 ):
     """
     Load safetensor file data directly into the model from provided safetensor files.

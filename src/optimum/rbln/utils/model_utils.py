@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import importlib
-from typing import TYPE_CHECKING, Type
+from typing import TYPE_CHECKING
 
 
 if TYPE_CHECKING:
@@ -53,7 +53,7 @@ def convert_rbln_to_hf_model_name(rbln_model_name: str):
     return rbln_model_name.removeprefix(RBLN_PREFIX)
 
 
-def get_rbln_model_cls(cls_name: str) -> Type["RBLNModel"]:
+def get_rbln_model_cls(cls_name: str) -> type["RBLNModel"]:
     cls = getattr(importlib.import_module("optimum.rbln"), cls_name, None)
     if cls is None:
         if cls_name in MODEL_MAPPING:

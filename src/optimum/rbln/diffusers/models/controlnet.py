@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import TYPE_CHECKING, Dict, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Union
 
 import torch
 from diffusers import ControlNetModel
@@ -45,8 +45,8 @@ class _ControlNetModel(torch.nn.Module):
         timestep: torch.Tensor,
         controlnet_cond: torch.Tensor,
         conditioning_scale,
-        text_embeds: Optional[torch.Tensor] = None,
-        time_ids: Optional[torch.Tensor] = None,
+        text_embeds: torch.Tensor | None = None,
+        time_ids: torch.Tensor | None = None,
     ):
         if text_embeds is not None and time_ids is not None:
             added_cond_kwargs = {"text_embeds": text_embeds, "time_ids": time_ids}
@@ -77,8 +77,8 @@ class _ControlNetModel_Cross_Attention(torch.nn.Module):
         encoder_hidden_states: torch.Tensor,
         controlnet_cond: torch.Tensor,
         conditioning_scale,
-        text_embeds: Optional[torch.Tensor] = None,
-        time_ids: Optional[torch.Tensor] = None,
+        text_embeds: torch.Tensor | None = None,
+        time_ids: torch.Tensor | None = None,
     ):
         if text_embeds is not None and time_ids is not None:
             added_cond_kwargs = {"text_embeds": text_embeds, "time_ids": time_ids}
@@ -211,28 +211,28 @@ class RBLNControlNetModel(RBLNModel):
     def forward(
         self,
         sample: torch.FloatTensor,
-        timestep: Union[torch.Tensor, float, int],
+        timestep: torch.Tensor | float | int,
         encoder_hidden_states: torch.Tensor,
         controlnet_cond: torch.FloatTensor,
         conditioning_scale: torch.Tensor = 1.0,
-        added_cond_kwargs: Optional[Dict[str, torch.Tensor]] = None,
+        added_cond_kwargs: dict[str, torch.Tensor] | None = None,
         return_dict: bool = True,
         **kwargs,
-    ) -> Union[ControlNetOutput, Tuple]:
+    ) -> ControlNetOutput | tuple:
         """
         Forward pass for the RBLN-optimized ControlNetModel.
 
         Args:
             sample (torch.FloatTensor): The noisy input tensor.
-            timestep (Union[torch.Tensor, float, int]): The number of timesteps to denoise an input.
+            timestep (torch.Tensor | float | int): The number of timesteps to denoise an input.
             encoder_hidden_states (torch.Tensor): The encoder hidden states.
             controlnet_cond (torch.FloatTensor): The conditional input tensor of shape `(batch_size, max_seq_len, hidden_size)`.
             conditioning_scale (torch.Tensor): The scale factor for ControlNet outputs.
-            added_cond_kwargs (Dict[str, torch.Tensor]): Additional conditions for the Stable Diffusion XL UNet.
+            added_cond_kwargs (dict[str, torch.Tensor]): Additional conditions for the Stable Diffusion XL UNet.
             return_dict (bool): Whether or not to return a [`~diffusers.models.controlnets.controlnet.ControlNetOutput`] instead of a plain tuple
 
         Returns:
-            (Union[`~diffusers.models.controlnets.controlnet.ControlNetOutput`], Tuple)
+            (`~diffusers.models.controlnets.controlnet.ControlNetOutput`, Tuple)
         """
         sample_batch_size = sample.size()[0]
         compiled_batch_size = self.compiled_batch_size

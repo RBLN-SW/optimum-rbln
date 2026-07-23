@@ -1,5 +1,4 @@
 import os
-import typing
 
 import fire
 from transformers import AutoTokenizer
@@ -11,8 +10,8 @@ def main(
     model_id: str = "meta-llama/Llama-2-7b-chat-hf",
     batch_size: int = 1,
     from_transformers: bool = False,
-    max_seq_len: typing.Optional[int] = None,
-    num_devices: typing.Optional[int] = 4,
+    max_seq_len: int | None = None,
+    num_devices: int | None = 4,
 ):
     # Example input sentences for the model
     sentences = [

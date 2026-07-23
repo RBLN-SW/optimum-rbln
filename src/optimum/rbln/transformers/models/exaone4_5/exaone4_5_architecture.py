@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import math
-from typing import TYPE_CHECKING, Optional, Tuple
+from typing import TYPE_CHECKING
 
 import torch
 import torch.nn as nn
@@ -95,7 +95,7 @@ class Exaone4_5VisionBlock(torch.nn.Module):
         self,
         hidden_states: torch.Tensor,
         attn_masks: torch.Tensor,
-        position_embeddings: Tuple[torch.Tensor, torch.Tensor],
+        position_embeddings: tuple[torch.Tensor, torch.Tensor],
     ) -> torch.Tensor:
         hidden_states = hidden_states + self.attn(
             self.norm1(hidden_states),
@@ -124,7 +124,7 @@ class Exaone4_5VisionFullAttention(nn.Module):
         self,
         hidden_states: torch.Tensor,
         attn_masks: torch.Tensor,
-        position_embeddings: Tuple[torch.Tensor, torch.Tensor],
+        position_embeddings: tuple[torch.Tensor, torch.Tensor],
     ) -> torch.Tensor:
         seq_length = hidden_states.shape[0]
         if self.num_key_value_heads == self.num_heads:
@@ -180,7 +180,7 @@ class Exaone4_5VisionWindowAttention(nn.Module):
         self,
         hidden_states: torch.Tensor,
         attn_masks: torch.Tensor,
-        position_embeddings: Tuple[torch.Tensor, torch.Tensor],
+        position_embeddings: tuple[torch.Tensor, torch.Tensor],
     ) -> torch.Tensor:
         seq_length, hidden_dim = hidden_states.shape
         assert seq_length % self.window_seq_len == 0
@@ -267,11 +267,11 @@ class Exaone4_5DecoderLayer(DecoderOnlyLayer):
         hidden_states: torch.Tensor,
         attention_mask: torch.Tensor,
         seq_positions: torch.LongTensor,
-        past_key_values: Tuple[Tuple[torch.Tensor]],
-        cos: Optional[torch.Tensor] = None,
-        sin: Optional[torch.Tensor] = None,
-        block_tables: Optional[torch.Tensor] = None,
-        lora_int_id: Optional[torch.Tensor] = None,
+        past_key_values: tuple[tuple[torch.Tensor]],
+        cos: torch.Tensor | None = None,
+        sin: torch.Tensor | None = None,
+        block_tables: torch.Tensor | None = None,
+        lora_int_id: torch.Tensor | None = None,
     ):
         residual = hidden_states
 

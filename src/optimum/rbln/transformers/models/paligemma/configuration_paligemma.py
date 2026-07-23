@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Optional
+from typing import Any
 
 from ....configuration_utils import RBLNModelConfig
 from ....utils.logging import get_logger
@@ -34,22 +34,22 @@ class RBLNPaliGemmaForConditionalGenerationConfig(RBLNModelConfig):
 
     def __init__(
         self,
-        batch_size: Optional[int] = None,
-        vision_tower: Optional[RBLNModelConfig] = None,
-        language_model: Optional[RBLNModelConfig] = None,
-        output_hidden_states: Optional[bool] = None,
+        batch_size: int | None = None,
+        vision_tower: RBLNModelConfig | None = None,
+        language_model: RBLNModelConfig | None = None,
+        output_hidden_states: bool | None = None,
         **kwargs: Any,
     ):
         """
         Args:
-            batch_size (Optional[int]): The batch size for inference. Defaults to 1.
-            vision_tower (Optional[RBLNModelConfig]): Configuration for the vision encoder component.
+            batch_size (int | None): The batch size for inference. Defaults to 1.
+            vision_tower (RBLNModelConfig | None): Configuration for the vision encoder component.
                 This can include settings specific to the vision encoder, such as input resolution or other vision-related parameters.
                 If not provided, default settings will be used.
-            language_model (Optional[RBLNModelConfig]): Configuration for the language model component.
+            language_model (RBLNModelConfig | None): Configuration for the language model component.
                 This can include settings specific to the language model, such as tensor parallelism or other text-related parameters.
                 If not provided, default settings will be used.
-            output_hidden_states (Optional[bool]): Whether to output the hidden states of the decoder. Defaults to False.
+            output_hidden_states (bool | None): Whether to output the hidden states of the decoder. Defaults to False.
             kwargs: Additional arguments passed to the parent RBLNModelConfig.
         Raises:
             ValueError: If `batch_size` is not a positive integer.
@@ -84,22 +84,22 @@ class RBLNPaliGemmaModelConfig(RBLNModelConfig):
 
     def __init__(
         self,
-        batch_size: Optional[int] = None,
-        vision_tower: Optional[RBLNModelConfig] = None,
-        language_model: Optional[RBLNModelConfig] = None,
-        output_hidden_states: Optional[bool] = None,
+        batch_size: int | None = None,
+        vision_tower: RBLNModelConfig | None = None,
+        language_model: RBLNModelConfig | None = None,
+        output_hidden_states: bool | None = None,
         **kwargs: Any,
     ):
         """
         Args:
-            batch_size (Optional[int]): The batch size for inference. Defaults to 1.
-            vision_tower (Optional[RBLNModelConfig]): Configuration for the vision encoder component.
+            batch_size (int | None): The batch size for inference. Defaults to 1.
+            vision_tower (RBLNModelConfig | None): Configuration for the vision encoder component.
                 This can include settings specific to the vision encoder, such as input resolution or other vision-related parameters.
                 If not provided, default settings will be used.
-            language_model (Optional[RBLNModelConfig]): Configuration for the language model component.
+            language_model (RBLNModelConfig | None): Configuration for the language model component.
                 This can include settings specific to the language model, such as tensor parallelism or other text-related parameters.
                 If not provided, default settings will be used.
-            output_hidden_states (Optional[bool]): Whether to output the hidden states of the decoder. Defaults to False.
+            output_hidden_states (bool | None): Whether to output the hidden states of the decoder. Defaults to False.
             kwargs: Additional arguments passed to the parent RBLNModelConfig.
         Raises:
             ValueError: If `batch_size` is not a positive integer.
