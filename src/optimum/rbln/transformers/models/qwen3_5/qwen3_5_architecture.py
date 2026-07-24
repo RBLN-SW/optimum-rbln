@@ -14,12 +14,10 @@
 
 import copy
 import math
-from typing import List, Optional, Tuple
 
 import torch
-from torch import Tensor
 import torch.nn.functional as F
-from torch import nn
+from torch import Tensor, nn
 from transformers import PreTrainedModel
 from transformers.models.qwen3_5.modeling_qwen3_5 import l2norm
 
@@ -33,6 +31,7 @@ from ..decoderonly.decoderonly_architecture import (
     apply_rotary_pos_emb_partial,
     slice_and_unsqueeze_cos_sin,
 )
+
 
 @torch.library.custom_op("rbln::tri_recur_update", mutates_args=())
 def tri_recur_update(attn: Tensor) -> Tensor:
@@ -70,7 +69,7 @@ class Qwen3_5VisionAttention(nn.Module):
         self,
         hidden_states: torch.Tensor,
         attn_mask: torch.Tensor,
-        position_embeddings: Tuple[torch.Tensor, torch.Tensor],
+        position_embeddings: tuple[torch.Tensor, torch.Tensor],
     ) -> torch.Tensor:
         seq_length = hidden_states.shape[0]
         hidden_states = hidden_states.unsqueeze(0)
@@ -110,7 +109,7 @@ class Qwen3_5VisionBlock(nn.Module):
         self,
         hidden_states: torch.Tensor,
         attn_mask: torch.Tensor,
-        position_embeddings: Tuple[torch.Tensor, torch.Tensor],
+        position_embeddings: tuple[torch.Tensor, torch.Tensor],
     ) -> torch.Tensor:
         hidden_states = hidden_states + self.attn(self.norm1(hidden_states), attn_mask, position_embeddings)
         hidden_states = hidden_states + self.mlp(self.norm2(hidden_states))
@@ -146,7 +145,17 @@ class Qwen3_5VisionModelWrapper(nn.Module):
 
 
 def rbln_chunk_gated_delta_rule(
-    query, key, value, g, beta, tril_incl, tril_strict, initial_state, prefill_chunk_size, chunk_size, use_qk_l2norm_in_kernel=False
+    query,
+    key,
+    value,
+    g,
+    beta,
+    tril_incl,
+    tril_strict,
+    initial_state,
+    prefill_chunk_size,
+    chunk_size,
+    use_qk_l2norm_in_kernel=False,
 ):
     """Gated delta rule for RBLN PREFILL (chunk-parallel; HF ``torch_chunk_gated_delta_rule`` rewritten to
     lower on RBLN). A prefill window is split into ``n_chunks = prefill_chunk_size // chunk_size`` sub-chunks:
@@ -243,6 +252,7 @@ def rbln_recurrent_gated_delta_rule_step(query, key, value, g, beta, initial_sta
         # decode tensors RBLN lowers the innermost-axis sum to ~0 -> rsqrt(eps) blows up; matmul lowers correctly.
         ss = torch.matmul(x.unsqueeze(-2), x.unsqueeze(-1)).squeeze(-1)
         return x * torch.rsqrt(ss + 1e-6)
+
     if use_qk_l2norm_in_kernel:
         q = _l2norm_dot(q)
         k = _l2norm_dot(k)
@@ -337,11 +347,11 @@ class Qwen3_5GatedDeltaNet(nn.Module):
         hidden_states: torch.Tensor,
         conv_state: torch.Tensor,
         recurrent_state: torch.Tensor,
-        query_position: Optional[torch.Tensor] = None,
-        valid_mask: Optional[torch.Tensor] = None,
-        conv_state_mask: Optional[torch.Tensor] = None,
-        recurrent_state_mask: Optional[torch.Tensor] = None,
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        query_position: torch.Tensor | None = None,
+        valid_mask: torch.Tensor | None = None,
+        conv_state_mask: torch.Tensor | None = None,
+        recurrent_state_mask: torch.Tensor | None = None,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         batch_size, seq_len, _ = hidden_states.shape
         k_1 = self.conv_kernel_size - 1
         prefill = "prefill" in self._phase and valid_mask is not None
@@ -386,9 +396,9 @@ class Qwen3_5GatedDeltaNet(nn.Module):
             ).transpose(1, 2)
         )
         value = F.silu(
-            F.conv1d(
-                v_cf, _cw[2 * kd :], _cb[2 * kd :] if _cb is not None else None, padding=0, groups=vd
-            ).transpose(1, 2)
+            F.conv1d(v_cf, _cw[2 * kd :], _cb[2 * kd :] if _cb is not None else None, padding=0, groups=vd).transpose(
+                1, 2
+            )
         )
         query = query.reshape(batch_size, seq_len, -1, self.head_k_dim)
         key = key.reshape(batch_size, seq_len, -1, self.head_k_dim)
@@ -405,7 +415,7 @@ class Qwen3_5GatedDeltaNet(nn.Module):
             key = key.repeat_interleave(self.num_v_heads // self.num_k_heads, dim=2)
 
         if "prefill" in self._phase:
-            # Triangular masks built 
+            # Triangular masks built
             _cshape = (1, 1, 1, self.chunk_size, self.chunk_size)
             chunk_tril_incl = torch.tril(torch.ones(_cshape, device=query.device, dtype=query.dtype), diagonal=0)
             chunk_tril_strict = torch.tril(torch.ones(_cshape, device=query.device, dtype=query.dtype), diagonal=-1)
@@ -460,11 +470,11 @@ class Qwen3_5LinearDecoderLayer(nn.Module):
         hidden_states: torch.Tensor,
         conv_state: torch.Tensor,
         recurrent_state: torch.Tensor,
-        query_position: Optional[torch.Tensor] = None,
-        valid_mask: Optional[torch.Tensor] = None,
-        conv_state_mask: Optional[torch.Tensor] = None,
-        recurrent_state_mask: Optional[torch.Tensor] = None,
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        query_position: torch.Tensor | None = None,
+        valid_mask: torch.Tensor | None = None,
+        conv_state_mask: torch.Tensor | None = None,
+        recurrent_state_mask: torch.Tensor | None = None,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         residual = hidden_states
         hidden_states = self.input_layernorm(hidden_states)
         hidden_states, new_conv_state, new_recurrent_state = self.linear_attn(
@@ -522,11 +532,11 @@ class Qwen3_5Attention(DecoderOnlyAttention):
         hidden_states: torch.Tensor,
         attention_mask: torch.Tensor,
         seq_positions: torch.LongTensor,
-        past_key_values: Tuple[Tuple[torch.Tensor]],
-        cos: Optional[torch.Tensor] = None,
-        sin: Optional[torch.Tensor] = None,
-        block_tables: Optional[torch.Tensor] = None,
-        lora_int_id: Optional[torch.Tensor] = None,
+        past_key_values: tuple[tuple[torch.Tensor]],
+        cos: torch.Tensor | None = None,
+        sin: torch.Tensor | None = None,
+        block_tables: torch.Tensor | None = None,
+        lora_int_id: torch.Tensor | None = None,
     ):
         batch_size, query_length, _ = hidden_states.size()
 
@@ -587,24 +597,22 @@ class Qwen3_5Model(DecoderOnlyModel):
     def forward(
         self,
         input_ids: torch.Tensor = None,
-        inputs_embeds: Optional[torch.Tensor] = None,
+        inputs_embeds: torch.Tensor | None = None,
         attention_mask: torch.Tensor = None,
         cache_position: torch.Tensor = None,
         position_ids: torch.Tensor = None,
         query_position: torch.Tensor = None,
-        past_key_values: Tuple[Tuple[torch.Tensor]] = None,
-        past_states: Tuple[
-            Tuple[torch.Tensor]
-        ] = None,
-        rotary_emb: Optional[nn.Module] = None,
-        global_block_tables: Optional[torch.Tensor] = None,
-        local_block_tables: Optional[torch.Tensor] = None,
-        lora_int_id: Optional[torch.Tensor] = None,
-        conv_state_mask: Optional[torch.Tensor] = None,
-        recurrent_state_mask: Optional[torch.Tensor] = None,
-        valid_mask: Optional[torch.Tensor] = None,
-        batch_idx: Optional[torch.Tensor] = None,  # prefill only: which max-batch cache slot this item uses
-        output_hidden_states: Optional[bool] = None,
+        past_key_values: tuple[tuple[torch.Tensor]] = None,
+        past_states: tuple[tuple[torch.Tensor]] = None,
+        rotary_emb: nn.Module | None = None,
+        global_block_tables: torch.Tensor | None = None,
+        local_block_tables: torch.Tensor | None = None,
+        lora_int_id: torch.Tensor | None = None,
+        conv_state_mask: torch.Tensor | None = None,
+        recurrent_state_mask: torch.Tensor | None = None,
+        valid_mask: torch.Tensor | None = None,
+        batch_idx: torch.Tensor | None = None,  # prefill only: which max-batch cache slot this item uses
+        output_hidden_states: bool | None = None,
     ):
         if (input_ids is None) ^ (inputs_embeds is not None):
             raise ValueError("You must specify exactly one of input_ids or inputs_embeds.")
@@ -629,7 +637,7 @@ class Qwen3_5Model(DecoderOnlyModel):
             seq_positions = cache_position.amin(dim=1, keepdim=True)
 
         all_hidden_states = () if output_hidden_states else None
-        new_states: List[torch.Tensor] = []
+        new_states: list[torch.Tensor] = []
         for layer_idx, layer in enumerate(self.layers):
             if output_hidden_states:
                 all_hidden_states += (hidden_states,)
@@ -687,19 +695,17 @@ class Qwen3_5ForCausalLM(DecoderOnlyForCausalLM):
         cache_position: torch.Tensor = None,
         position_ids: torch.Tensor = None,
         query_position: torch.Tensor = None,
-        past_key_values: Tuple[Tuple[torch.Tensor]] = None,
-        past_states: Tuple[
-            Tuple[torch.Tensor]
-        ] = None,
+        past_key_values: tuple[tuple[torch.Tensor]] = None,
+        past_states: tuple[tuple[torch.Tensor]] = None,
         rotary_emb: nn.Module = None,
-        global_block_tables: Optional[torch.Tensor] = None,
-        local_block_tables: Optional[torch.Tensor] = None,
-        lora_int_id: Optional[torch.Tensor] = None,
-        conv_state_mask: Optional[torch.Tensor] = None,
-        recurrent_state_mask: Optional[torch.Tensor] = None,
-        valid_mask: Optional[torch.Tensor] = None,
-        batch_idx: Optional[torch.Tensor] = None,
-        output_hidden_states: Optional[bool] = None,
+        global_block_tables: torch.Tensor | None = None,
+        local_block_tables: torch.Tensor | None = None,
+        lora_int_id: torch.Tensor | None = None,
+        conv_state_mask: torch.Tensor | None = None,
+        recurrent_state_mask: torch.Tensor | None = None,
+        valid_mask: torch.Tensor | None = None,
+        batch_idx: torch.Tensor | None = None,
+        output_hidden_states: bool | None = None,
     ):
         hidden_states, all_hidden_states, new_states = self.model(
             input_ids=input_ids,

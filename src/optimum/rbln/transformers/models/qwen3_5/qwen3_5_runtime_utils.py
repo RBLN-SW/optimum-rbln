@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Optional
 
 import torch
 
@@ -80,16 +79,16 @@ class RBLNQwen3_5RuntimeModel(RBLNRuntimeModel):
     def prefill_forward(
         self,
         inputs: torch.Tensor,
-        cache_position: Optional[torch.Tensor] = None,
-        attention_mask: Optional[torch.Tensor] = None,
-        batch_idx: Optional[int] = None,
-        block_tables: Optional[torch.Tensor] = None,
-        is_external_block_tables: Optional[bool] = None,
-        position_ids: Optional[torch.Tensor] = None,
-        position_embed: Optional[torch.Tensor] = None,
-        token_type_ids: Optional[torch.Tensor] = None,
-        local_block_tables: Optional[torch.Tensor] = None,
-        lora_int_ids: Optional[torch.Tensor] = None,
+        cache_position: torch.Tensor | None = None,
+        attention_mask: torch.Tensor | None = None,
+        batch_idx: int | None = None,
+        block_tables: torch.Tensor | None = None,
+        is_external_block_tables: bool | None = None,
+        position_ids: torch.Tensor | None = None,
+        position_embed: torch.Tensor | None = None,
+        token_type_ids: torch.Tensor | None = None,
+        local_block_tables: torch.Tensor | None = None,
+        lora_int_ids: torch.Tensor | None = None,
     ) -> RBLNDecoderOnlyOutput:
         # Fresh sequence: no host reset needed — the static cache may hold stale DRAM, but the first
         # prefill window's conv/recurrent mask (0) zeros the read, so it starts fresh regardless.
@@ -187,11 +186,11 @@ class RBLNQwen3_5RuntimeModel(RBLNRuntimeModel):
         cache_position: torch.Tensor = None,
         block_tables: torch.Tensor = None,
         is_external_block_tables: bool = None,
-        attention_mask: Optional[torch.Tensor] = None,
-        position_embed: Optional[torch.Tensor] = None,
-        position_ids: Optional[torch.Tensor] = None,
-        local_block_tables: Optional[torch.Tensor] = None,
-        lora_int_ids: Optional[torch.Tensor] = None,
+        attention_mask: torch.Tensor | None = None,
+        position_embed: torch.Tensor | None = None,
+        position_ids: torch.Tensor | None = None,
+        local_block_tables: torch.Tensor | None = None,
+        lora_int_ids: torch.Tensor | None = None,
     ) -> RBLNDecoderOnlyOutput:
         if self.rbln_config.use_attention_mask and attention_mask is None:
             for b_idx in range(self.batch_size):

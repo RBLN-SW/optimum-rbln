@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, List, Optional, Union
+from typing import Any
 
 from ....configuration_utils import RBLNModelConfig
 from ....utils.deprecation import deprecate_kwarg
@@ -45,7 +45,7 @@ class RBLNQwen3_5ForCausalLMConfig(RBLNDecoderOnlyModelForCausalLMConfig):
 
     def __init__(
         self,
-        gdn_chunk_size: Optional[int] = None,
+        gdn_chunk_size: int | None = None,
         **kwargs: Any,
     ):
         """
@@ -69,7 +69,7 @@ class RBLNQwen3_5TextModelConfig(RBLNDecoderOnlyModelConfig):
 
     def __init__(
         self,
-        gdn_chunk_size: Optional[int] = None,
+        gdn_chunk_size: int | None = None,
         **kwargs: Any,
     ):
         super().__init__(**kwargs)
@@ -85,7 +85,7 @@ class RBLNQwen3_5VisionModelConfig(RBLNModelConfig):
     """
 
     @deprecate_kwarg(old_name="max_seq_lens", new_name="max_seq_len", version="0.11.0")
-    def __init__(self, max_seq_len: Union[int, List[int]] = None, **kwargs: Any):
+    def __init__(self, max_seq_len: int | list[int] = None, **kwargs: Any):
         """
         Args:
             max_seq_len (Optional[Union[int, List[int]]]): Vision Transformer attention max sequence
@@ -125,8 +125,8 @@ class RBLNQwen3_5ModelConfig(RBLNDecoderOnlyModelConfig):
 
     def __init__(
         self,
-        gdn_chunk_size: Optional[int] = None,
-        visual: Optional[RBLNModelConfig] = None,
+        gdn_chunk_size: int | None = None,
+        visual: RBLNModelConfig | None = None,
         _load_visual_runtime: bool = True,
         **kwargs: Any,
     ):
@@ -182,9 +182,9 @@ class RBLNQwen3_5ForConditionalGenerationConfig(RBLNDecoderOnlyModelForCausalLMC
 
     def __init__(
         self,
-        gdn_chunk_size: Optional[int] = None,
+        gdn_chunk_size: int | None = None,
         use_inputs_embeds: bool = True,
-        visual: Optional[RBLNModelConfig] = None,
+        visual: RBLNModelConfig | None = None,
         _load_visual_runtime: bool = True,
         **kwargs: Any,
     ):
