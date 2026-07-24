@@ -12,25 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""RBLN graph rewrite for Qwen3.5 (text backbone).
-
-Qwen3.5 is a hybrid decoder: ``full_attention`` layers (gated softmax attention with a
-paged KV cache, like Qwen3 + an output gate + partial RoPE) interleaved with
-``linear_attention`` layers (GatedDeltaNet). Path A bring-up choices (see the project memo
-`rbln-qwen35-deltanet-compile`):
-
-- The GatedDeltaNet uses the *chunked* (parallel) delta rule for prefill and the *recurrent*
-  delta rule for decode (seq=1). The HF chunked kernel does not lower as-is, so it is rewritten
-  (``rbln_chunk_gated_delta_rule``) to compile on RBLN; both forms share a state layout, so prefill
-  hands its ``recurrent_state`` straight to recurrent-decode.
-- Its two states (``conv_state`` and ``recurrent_state``) live in on-device STATIC DRAM caches
-  (``mark_static_address`` in the Qwen3.5 compile context), read and written in-graph via
-  ``rbln_cache_update`` — like the paged KV cache, not host-threaded. Each linear layer uses its two
-  ``past_states`` slots to carry ``(conv_state, recurrent_state)`` instead of ``(key, value)``; a
-  Qwen3.5-specific runtime injects 0/1 masks that zero the stale cache on prefill window 0 and carry
-  it afterwards.
-"""
-
 import copy
 import math
 from typing import List, Optional, Tuple
@@ -58,8 +39,8 @@ def tri_recur_update(attn: Tensor) -> Tensor:
     attn = attn.clone()
     c = attn.shape[-1]
     for i in range(1, c):
-        row = attn[..., i, :i].clone()   # (..., i)      : row i, cols [0..i-1]
-        sub = attn[..., :i, :i].clone()  # (..., i, i)   : top-left i x i block
+        row = attn[..., i, :i].clone()
+        sub = attn[..., :i, :i].clone()
         attn[..., i, :i] = row + (row.unsqueeze(-1) * sub).sum(-2)
     return attn
 
@@ -165,188 +146,107 @@ class Qwen3_5VisionModelWrapper(nn.Module):
 
 
 def rbln_chunk_gated_delta_rule(
-    query, key, value, g, beta, tril_incl, tril_strict, initial_state, prefill_chunk_size, chunk_size
+    query, key, value, g, beta, tril_incl, tril_strict, initial_state, prefill_chunk_size, chunk_size, use_qk_l2norm_in_kernel=False
 ):
-    """Gated delta rule for RBLN PREFILL — HF ``torch_chunk_gated_delta_rule`` 구조(청크 병렬).
-    prefill 윈도우를 ``n_chunks = prefill_chunk_size // chunk_size`` 개의 ``chunk_size`` 서브청크로 나눠,
-    intra-chunk 양(``decay_mask`` / ``T=(I-A)^-1`` / ``value`` / ``k_cumdecay``)을 chunk 축으로 BATCHED 로
-    계산하고, ``for i in range(n_chunks)`` 루프로 ``recurrent_state`` 를 서브청크 사이로 넘긴다(inter-chunk).
-    ``chunk_size == prefill_chunk_size`` (n_chunks == 1) 이면 옛 단일-윈도우 경로와 동일.
-
-    RBLN lowering 우회 (HF 대비; 메모 ``rbln-qwen35-deltanet-compile`` / docs/qwen_3.5_optimization.md §1~§2):
-    - ``(I - A)^-1`` 는 HF 의 forward-substitution 루프 (log-depth 제곱은 학습 스케일에서 발산 → 오답).
-    - float 마스크 ``tril_incl``/``tril_strict`` + 내부 파생 ``eye = tril_incl - tril_strict`` (bool ``.tril()``/
-      ``torch.eye`` 미지원 우회). 호출부가 ``(1, 1, 1, chunk_size, chunk_size)`` rank 로 만들어, 5D
-      ``decay_mask``/``attn`` (B, Hv, n_chunks 로 broadcast)와 rank 를 맞춘다(PadChannels wrong-rank 회피).
-    - 청크말 감쇠(HF ``g[-1] - g``, ``g[-1]``)를 matmul reverse-cumsum ``incr @ tril_strict`` + ``incr.sum`` 로.
-
-    Shape-inference:
-    - chunk 축은 reshape/unflatten 이 아니라 **torch.stack(슬라이스)** 로 만든다. 4D→5D reshape 는 RBLN 컴파일러가
-      입력 rank 를 오추론(input 을 ``(1,Hv,Hv,gcs,Dk)`` 로 보고 "shape not compatible")한다. stack 은 slice+concat
-      으로 내려가 그 버그를 피한다.
-
-    Inputs: query/key ``(B, S, Hv, Dk)``, value ``(B, S, Hv, Dv)``, g/beta ``(B, S, Hv)``, initial_state
-    ``(B, Hv, Dk, Dv)`` (S == prefill_chunk_size). Returns core ``(B, S, Hv, Dv)`` 와 final state ``(B, Hv, Dk, Dv)``.
+    """Gated delta rule for RBLN PREFILL (chunk-parallel; HF ``torch_chunk_gated_delta_rule`` rewritten to
+    lower on RBLN). A prefill window is split into ``n_chunks = prefill_chunk_size // chunk_size`` sub-chunks:
+    intra-chunk terms (``decay_mask`` / ``T = (I-A)^-1`` / ``value`` / ``k_cumdecay``) are batched over the
+    chunk axis, and the ``for`` loop carries ``recurrent_state`` between sub-chunks (inter-chunk). Inputs
+    query/key ``(B,S,Hv,Dk)``, value ``(B,S,Hv,Dv)``, g/beta ``(B,S,Hv)``, initial_state ``(B,Hv,Dk,Dv)``;
+    returns core ``(B,S,Hv,Dv)`` and final state ``(B,Hv,Dk,Dv)``. Full derivation: docs §1–§2.
     """
-    # ┌─────────────────────────────────────────────────────────────┐
-    # │ 첫 번째 for문 (청크 "안"의 병렬화 준비)                            │
-    # │                                                             │
-    # │   A (하삼각, 토큰끼리 간섭)  ──전방대입──►  T = (I−A)⁻¹            │
-    # │   (B,Hv,n_chunks,C,C)                      (B,Hv,n_chunks,C,C)│
-    # │                                                             │
-    # │   T로 밸류/키 보정  →  U(=value), k_cumdecay                   │
-    # │   "청크 안의 순차적 델타 보정을 행렬곱 한 방으로"                     │
-    # └─────────────────────────────────────────────────────────────┘
-    #                           │
-    #                           ▼
-    # ┌─────────────────────────────────────────────────────────────┐
-    # │ 두 번째 for문 (청크 "사이"의 순차 처리)                            │
-    # │                                                             │
-    # │   S₀ ─청크0─► S₁ ─청크1─► S₂ ─ ... ─► S_N  (S는 d_k×d_v)       │
-    # │   각 청크 출력 = q·S(이전상태)  +  청크안 어텐션·v_new             │
-    # │                 └ inter-chunk ┘    └── intra-chunk ──┘       │
-    # └─────────────────────────────────────────────────────────────┘
-
     initial_dtype = query.dtype
-    query = l2norm(query, dim=-1, eps=1e-6)
-    key = l2norm(key, dim=-1, eps=1e-6)
-    # (B, S, Hv, *) -> (B, Hv, S, *)
+    if use_qk_l2norm_in_kernel:
+        query = l2norm(query, dim=-1, eps=1e-6)
+        key = l2norm(key, dim=-1, eps=1e-6)
     query, key, value, beta, g = [
         x.transpose(1, 2).contiguous().to(initial_dtype) for x in (query, key, value, beta, g)
     ]
-    scale = 1 / (query.shape[-1] ** 0.5)  # match HF torch_chunk_gated_delta_rule (query.shape[-1] == head_k_dim)
+    scale = 1 / (query.shape[-1] ** 0.5)
     query = query * scale
-    v_beta = value * beta.unsqueeze(-1)  # (B,Hv,S,Dv)
-    k_beta = key * beta.unsqueeze(-1)  # (B,Hv,S,Dk)
+    v_beta = value * beta.unsqueeze(-1)
+    k_beta = key * beta.unsqueeze(-1)
 
-    # chunk 축 만들기 — reshape/unflatten 이 아니라 torch.stack(슬라이스) (docstring 참고: reshape rank 오추론 회피).
-    # (B,Hv,S,*) -> n_chunks 개 (B,Hv,gcs,*) -> stack dim=2 -> (B,Hv,n_chunks,gcs,*)
     gcs = chunk_size
     n_chunks = prefill_chunk_size // chunk_size
     query, key, value, v_beta, k_beta = [
         torch.stack([x[:, :, c * gcs : (c + 1) * gcs] for c in range(n_chunks)], dim=2)
         for x in (query, key, value, v_beta, k_beta)
     ]
-    incr = torch.stack([g[:, :, c * gcs : (c + 1) * gcs] for c in range(n_chunks)], dim=2)  # (B,Hv,n_chunks,gcs)
-    g = incr.cumsum(dim=-1)  # (B,Hv,n_chunks,gcs) 서브청크 안 누적 log-decay (매 서브청크 새로 시작)
+    incr = torch.stack([g[:, :, c * gcs : (c + 1) * gcs] for c in range(n_chunks)], dim=2)
+    g = incr.cumsum(dim=-1)
 
-    # ---- intra-chunk, chunk 축으로 BATCHED (3 batch dims (B, Hv, n_chunks)) ----
-    # decay_mask[...,i,j] = exp(g_i − g_j) (i≥j) else 0.  마스크 (1,1,1,gcs,gcs) 가 chunk 축까지 broadcast.
-    decay_mask = ((g.unsqueeze(-1) - g.unsqueeze(-2)) * tril_incl).exp() * tril_incl  # (B,Hv,n_chunks,gcs,gcs)
-    #     j=0      j=1      j=2      j=3
-    # i=0 [ e^0       0        0        0    ]
-    # i=1 [ e^{g1-g0} e^0      0        0    ]
-    # i=2 [ e^{g2-g0} e^{g2-g1} e^0     0    ]
-    # i=3 [ e^{g3-g0} e^{g3-g1} e^{g3-g2} e^0]
-    #         ↑ 하삼각(과거만) + 대각선 e^0=1
-
-    # A[...,i,j] = −β_i (k_i·k_j) exp(g_i−g_j) (i>j) else 0.
-    attn = -((k_beta @ key.transpose(-1, -2)) * decay_mask) * tril_strict  # (B,Hv,n_chunks,gcs,gcs)
-    # attn(gcs=4 예시), a_ij = −β_i (k_i·k_j) e^{g_i-g_j} (i>j 만) :
-    #       j=0    j=1    j=2    j=3
-    # i=0 [  0      0      0      0  ]
-    # i=1 [ a₁₀     0      0      0  ]
-    # i=2 [ a₂₀    a₂₁     0      0  ]      "청크 안에서 토큰 i가 앞선 j에게 받는 (음의) 간섭"
-    # i=3 [ a₃₀    a₃₁    a₃₂     0  ]
-    '''
-    # T = (I − A)^{-1} via forward substitution. 대각선은 아래 `+ eye` 전까지 0 (그래야 직접경로가 중복 안 됨).
-    for i in range(1, gcs):
-        row = attn[..., i, :i].clone()  # (B,Hv,n_chunks,i)      : i행의 [0..i-1] 열 (raw A)
-        sub = attn[..., :i, :i].clone()  # (B,Hv,n_chunks,i,i)    : 이미 완성된 왼쪽 위 i×i 블록 (대각선 0)
-        attn[..., i, :i] = row + (row.unsqueeze(-1) * sub).sum(-2)
-    '''
+    # intra-chunk, batched over the chunk axis
+    decay_mask = ((g.unsqueeze(-1) - g.unsqueeze(-2)) * tril_incl).exp() * tril_incl
+    attn = -((k_beta @ key.transpose(-1, -2)) * decay_mask) * tril_strict
     attn = torch.ops.rbln.tri_recur_update(attn)
-    # 새 attn[i,m] = a_im + Σ_{m<k<i} a_ik · sub[k,m]  = "i→m 직접경로 + 중간토큰 k 경유 모든경로"
-    #   row = [a₃₀ a₃₁ a₃₂] ,  sub = [[0],[t₁₀ 0],[t₂₀ t₂₁ 0]] (완성된 위쪽블록)
-    eye = tril_incl - tril_strict  # == torch.eye ((i>=j) − (i>j) = 대각선), 넘겨받은 두 마스크에서 파생
-    attn = attn + eye  # T
-    # T (gcs=4): 대각선 1, 하삼각 → "청크 안 모든 델타 보정을 한 번에 적용하는 변환 행렬"
-    # [ 1                 ]
-    # [ t₁₀  1            ]
-    # [ t₂₀  t₂₁  1       ]
-    # [ t₃₀  t₃₁  t₃₂  1  ]
+    eye = tril_incl - tril_strict
+    attn = attn + eye
 
-    value = attn @ v_beta  # (B,Hv,n_chunks,gcs,Dv)  청크 안 델타 보정된 "새 밸류" U
-    k_cumdecay = attn @ (k_beta * g.exp().unsqueeze(-1))  # (B,Hv,n_chunks,gcs,Dk)  이전 상태 S의 예측 제거용
-    last_recurrent_state = initial_state  # (B, Hv, Dk, Dv) carried (GDN 진입 시 이미 mask 적용됨)
+    value = attn @ v_beta
+    k_cumdecay = attn @ (k_beta * g.exp().unsqueeze(-1))
+    last_recurrent_state = initial_state
 
-    # ---- inter-chunk: 서브청크 사이 순차 carry (2 batch dims, [:, :, i] 인덱싱) ----
-    # S_t = α_t S_{t-1} + k_t u_tᵀ ,  o_t = q_tᵀ S_t
-    core_chunks = []  # 청크별 (B,Hv,gcs,Dv) 모아서 마지막에 cat (index-assign scatter 회피)
+    # inter-chunk: sequential carry across sub-chunks.
+    core_chunks = []
     for i in range(0, n_chunks):
-        q_i, k_i, v_i = query[:, :, i], key[:, :, i], value[:, :, i]  # (B,Hv,gcs,·)
-        attn_intra = (q_i @ k_i.transpose(-1, -2)) * decay_mask[:, :, i]  # 청크 안 어텐션 (intra-chunk)
-        v_prime = k_cumdecay[:, :, i] @ last_recurrent_state  # 이전 상태 S가 이미 예측 가능한 밸류
-        v_new = v_i - v_prime  # 이전 상태 기여 제거 → 델타 u
-        attn_inter = (q_i * g[:, :, i].exp().unsqueeze(-1)) @ last_recurrent_state  # 이전 상태로부터의 출력
-        core_chunks.append(attn_inter + attn_intra @ v_new)  # (B,Hv,gcs,Dv) = 이전청크 기여 + 현재청크 안 기여
+        q_i, k_i, v_i = query[:, :, i], key[:, :, i], value[:, :, i]
+        attn_intra = (q_i @ k_i.transpose(-1, -2)) * decay_mask[:, :, i]
+        v_prime = k_cumdecay[:, :, i] @ last_recurrent_state
+        v_new = v_i - v_prime
+        attn_inter = (q_i * g[:, :, i].exp().unsqueeze(-1)) @ last_recurrent_state
+        core_chunks.append(attn_inter + attn_intra @ v_new)
 
-        # 상태 갱신: reverse-cumsum Σ_{s>t} incr[s] (== HF `g[-1]−g`) 를 matmul 로. (slice/flip mis-lower 회피)
-        incr_i = incr[:, :, i]  # (B,Hv,gcs)
-        g_total = incr_i.sum(dim=-1, keepdim=True)  # (B,Hv,1)  == g[...,i,-1] (슬라이스 대신 reduction)
-        decay_to_end = incr_i @ tril_strict[0, 0, 0]  # (B,Hv,gcs)  masks 5D (1,1,1,gcs,gcs) → [0,0,0]=(gcs,gcs)
-        # tril_strict[s,t]=1 iff s>t → (incr @ tril_strict)[t] = Σ_{s>t} incr[s]:
-        #   t=0 → a₁+a₂+a₃ ,  t=1 → a₂+a₃ ,  t=2 → a₃ ,  t=3 → 0
+        incr_i = incr[:, :, i]
+        g_total = incr_i.sum(dim=-1, keepdim=True)
+        decay_to_end = incr_i @ tril_strict[0, 0, 0]
         last_recurrent_state = (
             last_recurrent_state * g_total.unsqueeze(-1).exp()
             + (k_i * decay_to_end.exp().unsqueeze(-1)).transpose(-1, -2) @ v_new
-        )  # 기존 메모리 감쇠 + 현재 서브청크 기여
+        )
 
-    # 서브청크 출력을 seq 축으로 이어붙임: n_chunks x (B,Hv,gcs,Dv) -> (B,Hv,S,Dv)
+    # concat sub-chunk outputs along seq
     core = torch.cat(core_chunks, dim=2)
-    core = core.transpose(1, 2).contiguous()  # (B, S, Hv, Dv)
+    core = core.transpose(1, 2).contiguous()
     return core, last_recurrent_state
 
 
-def rbln_recurrent_gated_delta_rule_step(query, key, value, g, beta, initial_state):
+def rbln_recurrent_gated_delta_rule_step(query, key, value, g, beta, initial_state, use_qk_l2norm_in_kernel=False):
     """Single-step (decode, seq=1) gated delta rule for RBLN. Numerically identical to HF
-    ``torch_recurrent_gated_delta_rule`` at S=1 (cos=1.0), but written without the ops that do NOT
-    lower on RBLN and silently corrupt the result on device (measured cos≈0.2):
-
-    - the per-position ``core_attn_out[:, :, i] = ...`` index-assign (a ScatterInfo — the SAME blocker
-      the prefill chunk was written to avoid);
-    - the ``query[:, :, i]`` position indexing (a dynamic StridedSlice);
-    - the two ``.sum(dim=-2)`` reductions over the NON-innermost ``Dk`` axis — rewritten as matmuls
-      (which lower cleanly), matching the chunk's "2 batch dims (B, Hv) + matmul" style.
-
-    Since S=1 the recurrence is a single step with no loop and no output scatter. The seq dim is
-    dropped with a data-preserving ``reshape`` (not an index). Inputs/outputs match the chunk and the
-    HF rule: query/key ``(B, 1, Hv, Dk)``, value ``(B, 1, Hv, Dv)``, g/beta ``(B, 1, Hv)``,
-    initial_state ``(B, Hv, Dk, Dv)`` -> core ``(B, 1, Hv, Dv)``, new_state ``(B, Hv, Dk, Dv)``.
+    ``torch_recurrent_gated_delta_rule`` at S=1, but rewritten to avoid ops that lower to garbage on device
+    (cos≈0.2): the per-position output index-assign (ScatterInfo), the ``query[:, :, i]`` dynamic StridedSlice,
+    and the non-innermost ``.sum(dim=-2)`` reductions (rewritten as matmuls). The S=1 axis is dropped with a
+    reshape. Inputs query/key ``(B,1,Hv,Dk)``, value ``(B,1,Hv,Dv)``, g/beta ``(B,1,Hv)``, initial_state
+    ``(B,Hv,Dk,Dv)`` -> core ``(B,1,Hv,Dv)``, new_state ``(B,Hv,Dk,Dv)``. See docs §3.
     """
     initial_dtype = query.dtype
     batch_size, _, num_v_heads, k_head_dim = query.shape
     v_head_dim = value.shape[-1]
-    # drop the S=1 axis via reshape (no position indexing) to a (B, Hv, D) 2-batch-dim layout, THEN
-    # normalize. NB: HF's l2norm does `(x*x).sum(dim=-1)`, but on RBLN a reduction over the innermost
-    # axis returns ~0 when the second-to-last dim is small (the S=1 decode tensors, e.g. (1,1,2,64)) ->
-    # rsqrt(eps)≈1000 -> the norm (and everything downstream) blows up. So compute ||x||² as a matmul
-    # dot-product (a contraction, which DOES lower correctly at these sizes).
     q = query.reshape(batch_size, num_v_heads, k_head_dim)
     k = key.reshape(batch_size, num_v_heads, k_head_dim)
     v = value.reshape(batch_size, num_v_heads, v_head_dim)
 
-    def _l2norm_dot(x):  # x: (B, Hv, D) -> unit-normalized over D, via matmul sum-of-squares
-        ss = torch.matmul(x.unsqueeze(-2), x.unsqueeze(-1)).squeeze(-1)  # (B,Hv,1,D)@(B,Hv,D,1)->(B,Hv,1)
+    def _l2norm_dot(x):
+        # same as HF l2norm, but ||x||² via matmul dot-product instead of `(x*x).sum(-1)`: on the tiny seq=1
+        # decode tensors RBLN lowers the innermost-axis sum to ~0 -> rsqrt(eps) blows up; matmul lowers correctly.
+        ss = torch.matmul(x.unsqueeze(-2), x.unsqueeze(-1)).squeeze(-1)
         return x * torch.rsqrt(ss + 1e-6)
+    if use_qk_l2norm_in_kernel:
+        q = _l2norm_dot(q)
+        k = _l2norm_dot(k)
+    q_row = (q * (k_head_dim**-0.5)).unsqueeze(-2)
+    k_row = k.unsqueeze(-2)
+    v_row = v.unsqueeze(-2)
+    g_t = g.reshape(batch_size, num_v_heads, 1, 1).exp()
+    beta_t = beta.reshape(batch_size, num_v_heads, 1, 1)
 
-    q_row = (_l2norm_dot(q) * (k_head_dim**-0.5)).unsqueeze(-2)  # (B, Hv, 1, Dk)
-    k_row = _l2norm_dot(k).unsqueeze(-2)  # (B, Hv, 1, Dk)
-    v_row = v.unsqueeze(-2)  # (B, Hv, 1, Dv)
-    g_t = g.reshape(batch_size, num_v_heads, 1, 1).exp()  # (B, Hv, 1, 1)
-    beta_t = beta.reshape(batch_size, num_v_heads, 1, 1)  # (B, Hv, 1, 1)
-
-    state = initial_state * g_t  # decay the carried state
-    kv_mem = torch.matmul(k_row, state)  # (B, Hv, 1, Dk) @ (B, Hv, Dk, Dv) = (B, Hv, 1, Dv)
-    #           S_decayed (3×2)
-    # k(1×3)    ┌ s00  s01 ┐
-    # [k0 k1 k2]│ s10  s11 │ = [ k0s00+k1s10+k2s20 ,  k0s01+k1s11+k2s21 ]  (1×2)
-    #           └ s20  s21 ┘        = kv_mem
-    delta = (v_row - kv_mem) * beta_t  # (B, Hv, 1, Dv)
-    new_state = state + torch.matmul(k_row.transpose(-1, -2), delta)  # + (B,Hv,Dk,1)@(B,Hv,1,Dv)
-    core = torch.matmul(q_row, new_state)  # (B, Hv, 1, Dk) @ (B, Hv, Dk, Dv) = (B, Hv, 1, Dv)
-    core = core.reshape(batch_size, 1, num_v_heads, v_head_dim).to(initial_dtype)  # (B, 1, Hv, Dv)
-    new_state = new_state.to(initial_dtype) # FIXME(seinpark) is it need?
+    state = initial_state * g_t
+    kv_mem = torch.matmul(k_row, state)
+    delta = (v_row - kv_mem) * beta_t
+    new_state = state + torch.matmul(k_row.transpose(-1, -2), delta)
+    core = torch.matmul(q_row, new_state)
+    core = core.reshape(batch_size, 1, num_v_heads, v_head_dim).to(initial_dtype)
+    new_state = new_state.to(initial_dtype)
     return core, new_state
 
 
@@ -366,12 +266,11 @@ class Qwen3_5GatedDeltaNet(nn.Module):
         self.layer_idx = layer_idx
         self._phase = "prefill"
 
-        # Reuse the original (trained) submodules / parameters.
         self.in_proj_z = linear_attn.in_proj_z
         self.in_proj_b = linear_attn.in_proj_b
         self.in_proj_a = linear_attn.in_proj_a
         self.conv1d = linear_attn.conv1d
-        self.norm = linear_attn.norm  # gated RMSNorm: norm(x) * silu(gate)
+        self.norm = linear_attn.norm
         self.out_proj = linear_attn.out_proj
         self.A_log = linear_attn.A_log
         self.dt_bias = linear_attn.dt_bias
@@ -385,11 +284,8 @@ class Qwen3_5GatedDeltaNet(nn.Module):
         self.conv_dim = linear_attn.conv_dim
         self.conv_kernel_size = linear_attn.conv_kernel_size
 
-        # Pre-split the fused in_proj_qkv into separate Q/K/V projections (pure weight partition,
-        # numerically identical). Q/K/V then run as separate dense + depthwise-conv chains (see forward):
-        # a depthwise conv is per-channel, so a channel-axis split commutes with it, making the per-branch
-        # chains bit-exact with the fused `in_proj_qkv -> single conv -> split`. Removes the fused output
-        # split and lets the compiler shard each projection on its own head axis under multi-node RSD.
+        # Pre-split the fused in_proj_qkv into separate Q/K/V projections (weight partition, numerically
+        # identical): a depthwise conv is per-channel, so the channel-axis split commutes with it.
         _qkv = linear_attn.in_proj_qkv
         _hidden = _qkv.weight.shape[1]
         _has_bias = _qkv.bias is not None
@@ -404,22 +300,8 @@ class Qwen3_5GatedDeltaNet(nn.Module):
             if _has_bias:
                 _lin.bias = nn.Parameter(_bi.contiguous())
 
-        # PREFILL path: one prefill window == one delta-rule chunk (the runtime splits the prompt
-        # into prefill_chunk_size windows and carries recurrent_state across them). The window math
-        # needs fixed S×S constants — float lower-triangular masks + identity at the tensor rank
-        # (1, 1, S, S), S = prefill_chunk_size — so the rewrite lowers on RBLN (see
-        # rbln_chunk_gated_delta_rule). The fixed S×S helper matrices (identity + lower-triangular masks) and
-        # the conv reverse-cumsum upper-triangular matrix are built INLINE in forward (local vars, NOT self.*
-        # buffers/attributes). As NAMED module constants the new compiler's weight-sharing pass tries to share
-        # them across the prefill/decode graphs and fails in gen mode: they are prefill-only, so absent from
-        # the decode graph (RTOSAWeightReusabilityCheck -> "OpInvalidWeightSharingError ... _prefill_chunk_eye
-        # not found in map during gen mode"). Forward-local constants fold into the prefill graph anonymously,
-        # outside weight sharing. (A registered buffer AND a plain self.* attribute both keep the `linear_attn.
-        # _prefill_chunk_eye` name and still fail — the name follows the attribute path, so it must be a local.)
         self.prefill_chunk_size = getattr(rbln_config, "prefill_chunk_size", 128)
-        # Internal GDN sub-chunk: each prefill window is split into `chunk_size` sub-chunks (must divide
-        # prefill_chunk_size). Default = prefill_chunk_size -> n_chunks == 1 (no split). See
-        # rbln_chunk_gated_delta_rule; batched form awaits compiler 5D matmul support for n_chunks > 1.
+        # GDN sub-chunk: each window splits into `chunk_size` sub-chunks (must divide prefill_chunk_size);
         self.chunk_size = getattr(rbln_config, "gdn_chunk_size", None) or self.prefill_chunk_size
 
     @property
@@ -444,10 +326,8 @@ class Qwen3_5GatedDeltaNet(nn.Module):
         k_1 = self.conv_kernel_size - 1
         prefill = "prefill" in self._phase and valid_mask is not None
 
-        # Force the PREFILL FIRST CHUNK to start from zero carried state: the runtime feeds a zeros mask
-        # for prefill window 0 and a ones mask for every later window (masks have the same shape as the
-        # states, so this is a plain elementwise multiply; mask==1 is exact -> later chunks unchanged).
-        # Only in prefill — decode always continues from the real carried state.
+        # PREFILL window 0 starts from zero carried state: the runtime feeds a zeros mask for window 0 and a
+        # ones mask afterward (same shape as the states -> plain elementwise multiply). Decode always carries.
         if prefill:
             if conv_state_mask is not None:
                 conv_state = conv_state * conv_state_mask
@@ -458,37 +338,24 @@ class Qwen3_5GatedDeltaNet(nn.Module):
         b = self.in_proj_b(hidden_states)
         a = self.in_proj_a(hidden_states)
 
-        # Per-branch Q/K/V dense (pre-split weights, see __init__), then per-branch depthwise conv —
-        # numerically identical to the fused `in_proj_qkv -> single depthwise conv -> split` (a depthwise
-        # conv is per-channel, so the channel-axis [Q|K|V] split commutes with it), but as separate chains.
         kd, vd = self.key_dim, self.value_dim
-        q_in = self.in_proj_q(hidden_states)  # (B, S, key_dim)
-        k_in = self.in_proj_k(hidden_states)  # (B, S, key_dim)
-        v_in = self.in_proj_v(hidden_states)  # (B, S, value_dim)
+        q_in = self.in_proj_q(hidden_states)
+        k_in = self.in_proj_k(hidden_states)
+        v_in = self.in_proj_v(hidden_states)
 
-        # HF-style channel-first depthwise conv: transpose to (B, ch, S) and prepend the cached left-context
-        # on the TIME axis (dim=-1) per branch; the single flat conv_state cache is sliced by channel group
-        # [Q | K | V]. F.conv1d padding=0 (context prepended) -> output exactly S long.
         q_cf = torch.cat([conv_state[:, :, :kd].transpose(1, 2), q_in.transpose(1, 2)], dim=-1)
         k_cf = torch.cat([conv_state[:, :, kd : 2 * kd].transpose(1, 2), k_in.transpose(1, 2)], dim=-1)
         v_cf = torch.cat([conv_state[:, :, 2 * kd :].transpose(1, 2), v_in.transpose(1, 2)], dim=-1)
-        # Reassemble the flat conv input (== old x_cf = [conv_state | mixed_qkv], channels [Q|K|V]) ONLY for
-        # the small new-conv_state cache write below; the heavy dense/conv compute stays decomposed per branch.
-        x_cf = torch.cat([q_cf, k_cf, v_cf], dim=1)  # (B, conv_dim, (K-1)+S)
-        # new conv_state = the last K-1 conv INPUTS. In PREFILL the window is right-padded to
-        # prefill_chunk_size, so the last K-1 columns are padding (NONZERO via projection biases, hence
-        # still wrong); select the last K-1 VALID cols via query_position (compile-safe dynamic take).
-        # Decode (no padding) uses the plain last-K-1 tail (HF-style innermost slice on the time axis).
-        if prefill:
-            # last K-1 VALID cols of x_cf = [conv_state(0..K-2, always valid) | mixed_qkv]. When valid_count
-            # < K-1 the index reaches back into the prepended conv_state (prev window's tail).
-            states = [x_cf[:, :, query_position.to(torch.int).unsqueeze(0) + i] for i in range(1, k_1 + 1)]
-            new_conv_state = torch.cat(states, dim=2).transpose(1, 2).contiguous()  # (B, K-1, conv_dim)
-        else:
-            new_conv_state = x_cf[:, :, -k_1:].transpose(1, 2).contiguous()  # (B, K-1, conv_dim), HF-style
+        x_cf = torch.cat([q_cf, k_cf, v_cf], dim=1)
 
-        # Per-branch depthwise conv, conv1d weight/bias sliced by channel group [Q | K | V] (constant slices;
-        # fold at compile). silu each -> query/key/value directly (no fused split).
+        if prefill:
+            # new conv_state = the last K-1 conv INPUTS. In PREFILL the window is right-padded, so the last K-1 cols
+            # are nonzero padding (via projection biases); select the last K-1 VALID cols via query_position.
+            states = [x_cf[:, :, query_position.to(torch.int).unsqueeze(0) + i] for i in range(1, k_1 + 1)]
+            new_conv_state = torch.cat(states, dim=2).transpose(1, 2).contiguous()
+        else:
+            new_conv_state = x_cf[:, :, -k_1:].transpose(1, 2).contiguous()
+
         _cw, _cb = self.conv1d.weight, self.conv1d.bias
         query = F.silu(
             F.conv1d(q_cf, _cw[:kd], _cb[:kd] if _cb is not None else None, padding=0, groups=kd).transpose(1, 2)
@@ -510,8 +377,7 @@ class Qwen3_5GatedDeltaNet(nn.Module):
         beta = b.sigmoid()
         g = -self.A_log.exp() * F.softplus(a + self.dt_bias)
         if prefill:
-            # PREFILL right-padding: padding tokens have nonzero q/k/v/g via the projection biases, which
-            # would pollute the recurrent state (a sum over the window) and its decay. Zero them out.
+            # padding tokens have nonzero q/k/v/g via biases; zero g/beta so they don't pollute the recurrent-state sum and its decay.
             g = g * valid_mask
             beta = beta * valid_mask
         if self.num_v_heads // self.num_k_heads > 1:
@@ -519,12 +385,7 @@ class Qwen3_5GatedDeltaNet(nn.Module):
             key = key.repeat_interleave(self.num_v_heads // self.num_k_heads, dim=2)
 
         if "prefill" in self._phase:
-            # One prefill window == one delta chunk (compiles on RBLN); the runtime carries
-            # recurrent_state across windows and hands the final state to recurrent-decode.
-            # Triangular helper masks, built INLINE (forward-local -> not weight-shared; a named self.* buffer
-            # re-triggers the weight-sharing gen-mode failure; see __init__). Sized to the SUB-CHUNK and at
-            # rank (1, 1, 1, chunk_size, chunk_size) to rank-match the 5D decay_mask/attn (broadcast over
-            # B, Hv, n_chunks). `eye` is derived inside rbln_chunk_gated_delta_rule as (tril_incl - tril_strict).
+            # Triangular masks built 
             _cshape = (1, 1, 1, self.chunk_size, self.chunk_size)
             chunk_tril_incl = torch.tril(torch.ones(_cshape, device=query.device, dtype=query.dtype), diagonal=0)
             chunk_tril_strict = torch.tril(torch.ones(_cshape, device=query.device, dtype=query.dtype), diagonal=-1)
@@ -539,12 +400,11 @@ class Qwen3_5GatedDeltaNet(nn.Module):
                 recurrent_state,
                 self.prefill_chunk_size,
                 self.chunk_size,
+                use_qk_l2norm_in_kernel=True,
             )
         else:
-            # Decode (seq=1): the single-step recurrent rule, rewritten for RBLN (HF's version lowers to
-            # garbage on device — cos≈0.2 — via its output scatter and small-tensor l2norm reduction).
             core_attn_out, new_recurrent_state = rbln_recurrent_gated_delta_rule_step(
-                query, key, value, g, beta, recurrent_state
+                query, key, value, g, beta, recurrent_state, use_qk_l2norm_in_kernel=True
             )
 
         core_attn_out = core_attn_out.reshape(-1, self.head_v_dim)
@@ -619,10 +479,6 @@ class Qwen3_5Attention(DecoderOnlyAttention):
         self.q_norm = self_attn.q_norm
         self.k_norm = self_attn.k_norm
 
-        # qwen3.5 fuses (query, output-gate) into q_proj -> num_heads*head_dim*2, recovered by
-        # `q_proj(h).view(.., num_heads, 2*head_dim).chunk(2, -1)`. We pre-split the weight into two
-        # separate Linears so the traced graph has NO chunk/split op: a split whose BOTH halves are
-        # consumed fails to lower on RBLN ("view op split fail"). Two matmuls lower cleanly.
         hidden = self_attn.q_proj.weight.shape[1]
         has_bias = self_attn.q_proj.bias is not None
         w = self_attn.q_proj.weight.data.view(self.num_heads, 2, self.head_dim, hidden)
@@ -635,7 +491,6 @@ class Qwen3_5Attention(DecoderOnlyAttention):
             self.q_proj.bias = nn.Parameter(bsplit[:, 0].reshape(-1).contiguous())
             self.gate_proj.bias = nn.Parameter(bsplit[:, 1].reshape(-1).contiguous())
 
-        # Concrete Python int (NOT cos.shape[-1], which traces dynamically and breaks rotary lowering).
         partial_rotary_factor = getattr(self.config, "partial_rotary_factor", 1.0)
         self.rotary_ndims = int(self.head_dim * partial_rotary_factor)
 
@@ -655,7 +510,7 @@ class Qwen3_5Attention(DecoderOnlyAttention):
     ):
         batch_size, query_length, _ = hidden_states.size()
 
-        gate = self.gate_proj(hidden_states)  # (B, S, num_heads * head_dim)
+        gate = self.gate_proj(hidden_states)
         query_states = (
             self.q_proj(hidden_states).view(batch_size, query_length, self.num_heads, self.head_dim).transpose(1, 2)
         )
@@ -707,7 +562,6 @@ class Qwen3_5Model(DecoderOnlyModel):
 
     def __init__(self, model, layers, rbln_config, use_learned_pos_emb=None, use_rotary_emb=True):
         super().__init__(model, layers, rbln_config, use_learned_pos_emb, use_rotary_emb)
-        # linear-attention layer indices, derived from the built layers (no rbln_config field needed).
         self.linear_attention_layers = {i for i, l in enumerate(layers) if isinstance(l, Qwen3_5LinearDecoderLayer)}
 
     def forward(
@@ -718,10 +572,10 @@ class Qwen3_5Model(DecoderOnlyModel):
         cache_position: torch.Tensor = None,
         position_ids: torch.Tensor = None,
         query_position: torch.Tensor = None,
-        past_key_values: Tuple[Tuple[torch.Tensor]] = None,  # full-attention layers' KV (None at linear idx)
+        past_key_values: Tuple[Tuple[torch.Tensor]] = None,
         past_states: Tuple[
             Tuple[torch.Tensor]
-        ] = None,  # linear-attention layers' (conv, recurrent) (None at full idx)
+        ] = None,
         rotary_emb: Optional[nn.Module] = None,
         global_block_tables: Optional[torch.Tensor] = None,
         local_block_tables: Optional[torch.Tensor] = None,
@@ -737,19 +591,10 @@ class Qwen3_5Model(DecoderOnlyModel):
             inputs_embeds = self.get_embedding()(input_ids)
         hidden_states = inputs_embeds * self.hidden_multiplier
 
-        # Per-token validity for the linear layers (valid_mask: (B, S, 1), 1 = real token, 0 = right-padding)
-        # is passed IN from the runtime, built host-side from query_length — the SAME source query_position
-        # uses. (Previously derived in-graph as `(inputs_embeds.abs().sum(-1) != 0)`, which implicitly assumed
-        # padding embeddings are exactly zero.) The linear layers use it to drop padding from the
-        # recurrent-state sum/decay and the conv_state extraction; full windows -> all ones (no-op); decode
-        # (seq=1) -> ignored by the recurrent path. See RBLNQwen3_5RuntimeModel.prefill_forward.
-
         position_ids = position_ids if position_ids is not None else cache_position
         cos = sin = None
         if rotary_emb is not None:
             if isinstance(rotary_emb, torch.Tensor):
-                # multimodal path: mRoPE cos/sin are precomputed on the host and passed in as a
-                # stacked tensor (rotary_emb[0]=cos, rotary_emb[1]=sin); no inline rotary.
                 cos, sin = rotary_emb[0], rotary_emb[1]
             else:
                 cos, sin = rotary_emb(hidden_states, self.max_seq_len)
@@ -760,16 +605,7 @@ class Qwen3_5Model(DecoderOnlyModel):
                 seq_positions=cache_position[:, 0], max_seq_len=self.max_seq_len
             )
         else:
-            # seq_positions = cache_position[:, :1]
-            # == cache_position[:, :1] (the chunk-start position, since cache_position is a monotonic
-            # arange), but computed as a REDUCTION instead of a strided_slice. In the hybrid LLLF graph
-            # the strided_slice on the cache_position graph input crosses the linear layers' partition
-            # boundary and lowers to a SubviewOp whose ScatterInfo size != shape size (compiler abort
-            # "ScatterInfo size mismatch --> slice_1"); a reduction is not a subview so it sidesteps it.
-
-            seq_positions = cache_position.amin(dim=1, keepdim=True)  # same to seq_positions = cache_position[:, :1]
-            # 이건 그냥 현재 업데이트해야하는 position이라서 torch.arange에서 최소값을 가져오는거랑 똑같음
-            # 근데 Linear attention 이랑 합쳐졌다고 해서 이게 에러가 나는게 좀 이상한거같긴함
+            seq_positions = cache_position.amin(dim=1, keepdim=True)
 
         all_hidden_states = () if output_hidden_states else None
         new_states: List[torch.Tensor] = []
@@ -787,10 +623,8 @@ class Qwen3_5Model(DecoderOnlyModel):
                     conv_state_mask=conv_state_mask,
                     recurrent_state_mask=recurrent_state_mask,
                 )
-                # Persist the new states to the static DRAM cache in-place (aliased write). batch=1:
-                # overwrite the whole cache at position 0 along the batch axis. The op's result aliases
-                # the static input address, so returning it wires the write; the runtime does NOT re-feed
-                # these (they live on device). (batch>1 will pass position=batch_idx for prefill.)
+                # persist new states to the static DRAM cache in-place (aliased write): the op result aliases
+                # the static input address, so returning it wires the write (runtime does not re-feed these).
                 _axis0 = torch.tensor(0, dtype=torch.int16)
                 _pos = torch.tensor(0, dtype=torch.int16)
                 new_states.append(
@@ -804,9 +638,6 @@ class Qwen3_5Model(DecoderOnlyModel):
                     hidden_states=hidden_states,
                     attention_mask=attention_mask,
                     seq_positions=seq_positions,
-                    # full-attention layers are the BASE DecoderOnlyLayer (not overridden); it indexes
-                    # past_key_values[self.layer_idx]. past_key_values holds KV only (None at linear idx);
-                    # linear layers read conv/recurrent from the separate past_states container above.
                     past_key_values=past_key_values,
                     cos=cos,
                     sin=sin,
@@ -829,10 +660,10 @@ class Qwen3_5ForCausalLM(DecoderOnlyForCausalLM):
         cache_position: torch.Tensor = None,
         position_ids: torch.Tensor = None,
         query_position: torch.Tensor = None,
-        past_key_values: Tuple[Tuple[torch.Tensor]] = None,  # full-attention layers' KV (None at linear idx)
+        past_key_values: Tuple[Tuple[torch.Tensor]] = None,
         past_states: Tuple[
             Tuple[torch.Tensor]
-        ] = None,  # linear-attention layers' (conv, recurrent) (None at full idx)
+        ] = None,
         rotary_emb: nn.Module = None,
         global_block_tables: Optional[torch.Tensor] = None,
         local_block_tables: Optional[torch.Tensor] = None,
@@ -869,12 +700,9 @@ class Qwen3_5ForCausalLM(DecoderOnlyForCausalLM):
 
 
 class Qwen3_5_CausalLMWrapper(DecoderOnlyWrapper):
-    # for Causal LM
     _use_rotary_emb = True
 
     def get_rotary_emb(self, max_seq_len):
-        # Text-only path: Qwen3.5's mRoPE reduces to standard partial RoPE (rotary dim =
-        # head_dim * partial_rotary_factor). Normalize the rope attrs the base RotaryEmbedding reads.
         config = copy.deepcopy(self.config)
         rope_params = dict(getattr(config, "rope_parameters", None) or {})
         if getattr(config, "rope_theta", None) is None:
@@ -918,21 +746,18 @@ class Qwen3_5_CausalLMWrapper(DecoderOnlyWrapper):
         return new_model
 
     def prepare_forward_args(self, *args):
-        # valid_mask / conv_state_mask / recurrent_state_mask are the LAST graph inputs (see get_input_info,
-        # in that order) — pop them off the end (LIFO -> valid_mask, then recurrent, then conv), let the base
-        # handle the standard prefix + per-layer state block, then SPLIT that combined state list into two
-        # containers and tack the masks back on. Only present when the model has linear_attention layers.
+        # valid/conv/recurrent state masks are the LAST graph inputs (get_input_info order): pop them off the
+        # end (LIFO -> valid, recurrent, conv), let the base build the standard prefix + per-layer state block,
+        # then split that state list into two containers and reattach the masks. Only when linear layers exist.
         args = list(args)
         has_linear = any(t == "linear_attention" for t in self.config.layer_types)
         valid_mask = args.pop() if has_linear else None
         recurrent_state_mask = args.pop() if has_linear else None
         conv_state_mask = args.pop() if has_linear else None
         base = list(super().prepare_forward_args(*args))
-        # The base returns (..., past_key_values, rotary_emb): the combined per-layer state list is the
-        # second-to-last element (base[-2]), grouped 2-per-layer and indexed by layer_idx. Split it by
-        # layer type into two SEPARATE containers: past_key_values = KV (full-attention layers),
-        # past_states = (conv, recurrent) (linear-attention layers). Both stay full-length with None at the
-        # other type's indices so [layer_idx] indexing still works (base DecoderOnlyLayer uses it for KV).
+        # base[-2] is the combined per-layer state list (2/layer, indexed by layer_idx): split by layer type
+        # into past_key_values (full-attn KV) and past_states (linear conv/recurrent), both full-length with
+        # None at the other type's indices so [layer_idx] indexing still works.
         linear = {i for i, t in enumerate(self.config.layer_types) if t == "linear_attention"}
         combined = base[-2]
         base[-2] = [pair if i not in linear else None for i, pair in enumerate(combined)]  # past_key_values
@@ -987,16 +812,15 @@ class Qwen3_5_CausalLMWrapper(DecoderOnlyWrapper):
 class Qwen3_5_LanguageModelWrapper(Qwen3_5_CausalLMWrapper):
     """The hybrid Qwen3.5 text backbone wired for the vision-language runtime.
 
-    Reuses ``Qwen3_5Wrapper``'s hybrid graph rewrite (``convert_to_rbln_class``, the
-    ``get_rbln_*`` factories that emit GatedDeltaNet linear layers + gated full-attention
-    layers, and the linear-state threading in ``Qwen3_5Model``). The only changes vs the
-    text-only wrapper:
+    Reuses ``Qwen3_5_CausalLMWrapper``'s hybrid graph rewrite (``convert_to_rbln_class``, the
+    ``get_rbln_*`` factories that emit GatedDeltaNet linear layers + gated full-attention layers, and the
+    linear-state threading in ``Qwen3_5Model``). The only changes vs the text-only wrapper:
 
-    - ``model.config`` is a ``Qwen3_5Config`` (vision + text); swap it to ``text_config`` for
-      the parent ``DecoderOnlyWrapper`` initialization (which expects text attributes).
-    - the language model is reached via ``model.get_decoder()`` (it is nested under the multimodal model).
-    - ``position_embeds`` (precomputed mRoPE cos/sin) is an explicit graph input, passed to the
-      model as the ``rotary_emb`` tensor; there is no inline ``RotaryEmbedding`` and no deepstack.
+    - ``model.config`` is a ``Qwen3_5Config`` (vision + text); swap it to ``text_config`` for the parent
+      ``DecoderOnlyWrapper`` initialization (which expects text attributes).
+    - the language model is reached via ``model.get_decoder()`` (nested under the multimodal model).
+    - ``position_embeds`` (precomputed mRoPE cos/sin) is an explicit graph input, passed to the model as the
+      ``rotary_emb`` tensor; there is no inline ``RotaryEmbedding`` and no deepstack.
     """
 
     _use_rotary_emb = False
@@ -1015,10 +839,8 @@ class Qwen3_5_LanguageModelWrapper(Qwen3_5_CausalLMWrapper):
 
     def prepare_forward_args(self, *args):
         args = list(args)
-        # valid_mask / conv_state_mask / recurrent_state_mask are the LAST graph inputs (see get_input_info,
-        # appended in that order): pop them off the end first (so LIFO -> valid_mask, then recurrent, then
-        # conv), so the standard front-popping + `past_states = args` below is unchanged. Present only when
-        # the model has linear_attention layers.
+        # valid/conv/recurrent state masks are the LAST graph inputs (get_input_info order): pop them off the
+        # end first so the standard front-popping + `past_states = args` below is unchanged. Linear layers only.
         has_linear = any(t == "linear_attention" for t in self.config.layer_types)
         valid_mask = args.pop() if has_linear else None
         recurrent_state_mask = args.pop() if has_linear else None
@@ -1034,10 +856,9 @@ class Qwen3_5_LanguageModelWrapper(Qwen3_5_CausalLMWrapper):
         attention_mask = args.pop(0) if self.rbln_config.use_attention_mask else None
         lora_int_id = args.pop(0) if self.rbln_config.lora_config else None
 
-        # 2 state slots per layer. Split into two SEPARATE containers by layer type: past_key_values =
-        # (key, value) for full_attention layers, past_states = (conv_state, recurrent_state) for
-        # linear_attention layers. Both stay full-length (None at the other type's indices) so per-layer
-        # [layer_idx] indexing works (base DecoderOnlyLayer uses past_key_values[layer_idx]).
+        # 2 state slots per layer -> split by layer type: past_key_values = (key, value) for full_attention,
+        # past_states = (conv_state, recurrent_state) for linear_attention. Both full-length (None at the other
+        # type's indices) so per-layer [layer_idx] indexing works.
         state_args = args
         if len(state_args) != 2 * self.num_hidden_layers:
             raise ValueError(f"Different states to model's config. {len(state_args)} != {2 * self.num_hidden_layers}")
@@ -1097,7 +918,7 @@ class Qwen3_5_LanguageModelWrapper(Qwen3_5_CausalLMWrapper):
             query_position=query_position,
             past_key_values=past_key_values,
             past_states=past_states,
-            rotary_emb=position_embeds,  # precomputed mRoPE (cos, sin); see Qwen3_5Model.forward
+            rotary_emb=position_embeds,
             global_block_tables=global_block_tables,
             local_block_tables=local_block_tables,
             lora_int_id=lora_int_id,
@@ -1107,7 +928,6 @@ class Qwen3_5_LanguageModelWrapper(Qwen3_5_CausalLMWrapper):
             output_hidden_states=self.rbln_config.output_hidden_states,
         )
 
-        # Linear-attention state updates are returned so the runtime can persist them.
         if self.rbln_config.output_hidden_states:
             return (logits, *new_states, *all_hidden_states)
         return (logits, *new_states)

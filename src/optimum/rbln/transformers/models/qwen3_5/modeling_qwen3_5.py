@@ -194,7 +194,7 @@ class RBLNQwen3_5TextModel(RBLNDecoderOnlyModel):
         if rbln_config.use_lora:
             input_info.append(("lora_int_ids", [batch_size], "int32"))
 
-        # ----- per-layer state: full -> (key, value) paged KV;  linear -> (conv_state, recurrent_state) -----
+        # per-layer state: full_attention -> paged KV (key, value); linear_attention -> (conv_state, recurrent_state)
         linear_layers = {i for i, t in enumerate(text_config.layer_types) if t == "linear_attention"}
         conv_dim = 2 * (text_config.linear_num_key_heads * text_config.linear_key_head_dim) + (
             text_config.linear_num_value_heads * text_config.linear_value_head_dim
@@ -252,9 +252,7 @@ class RBLNQwen3_5TextModel(RBLNDecoderOnlyModel):
                     kvcache_metas.append(meta)
                     input_info.append((name, meta.compile_shape, meta.dtype))
 
-        # Shared 0/1 state masks (same shape as ONE linear layer's states) that force the PREFILL FIRST
-        # CHUNK to start from zero state in-graph: the runtime feeds a zeros mask for prefill window 0 and
-        # a ones mask otherwise.
+        # shared 0/1 masks: runtime feeds zeros on prefill window 0 (reset linear state), ones after (carry). See docs.
         if linear_layers:
             input_info.append(("conv_state_mask", [batch_size, conv_state_len, conv_dim], rbln_config.dtype))
             input_info.append(
@@ -269,10 +267,7 @@ class RBLNQwen3_5TextModel(RBLNDecoderOnlyModel):
                     rbln_config.dtype,
                 )
             )
-            # Per-token validity of the current chunk (1 = real token, 0 = right-padding). Built HOST-SIDE by
-            # the runtime from query_length (the same source as query_position), NOT derived in-graph from the
-            # embeddings. The GatedDeltaNet uses it to drop padding from the recurrent-state sum / conv
-            # extraction.
+            # per-token validity (1=real, 0=right-padding); host-built, GatedDeltaNet uses it to drop padding.
             input_info.append(("valid_mask", [batch_size, query_length, 1], rbln_config.dtype))
 
         if len(rbln_config.kvcache_metas) == 0:
@@ -282,19 +277,42 @@ class RBLNQwen3_5TextModel(RBLNDecoderOnlyModel):
 
 
 class RBLNQwen3_5ForCausalLM(RBLNQwen3_5TextModel, RBLNDecoderOnlyModelForCausalLM):
+    """
+    RBLNQwen3_5ForCausalLM is the text-only (causal language modeling) variant of Qwen3.5, optimized for RBLN NPUs.
+    It runs the hybrid Qwen3.5 decoder — GatedDeltaNet `linear_attention` layers interleaved with gated
+    `full_attention` layers — without the vision encoder.
+
+    This model inherits from [`RBLNDecoderOnlyModelForCausalLM`]. Check the superclass documentation for the generic methods the library implements for all its models.
+
+    Important Note:
+        This model includes a Large Language Model (LLM). For optimal performance, it is highly recommended to use
+        tensor parallelism for the language model. This can be achieved by using the `rbln_config` parameter in the
+        `from_pretrained` method. Refer to the `from_pretrained` documentation and the RBLNQwen3_5ForCausalLMConfig class for details.
+
+    Examples:
+        ```python
+        from optimum.rbln.transformers.models.qwen3_5 import RBLNQwen3_5ForCausalLM
+
+        model = RBLNQwen3_5ForCausalLM.from_pretrained(
+            "Qwen/Qwen3.5-0.8B",
+            export=True,
+            rbln_config={
+                "num_devices": 1,
+                "kvcache_partition_len": 4096,
+                "max_seq_len": 8192,
+                "device": 0,
+            },
+        )
+
+        model.save_pretrained("compiled-qwen3.5-0.8b")
+        ```
+    """
+
     auto_model_class = AutoModelForCausalLM
 
     def forward(self, *args, **kwargs):
         kwargs["return_dict"] = True
         return super().forward(*args, **kwargs)
-
-
-# ---------------------------------------------------------------------------------------------
-# Vision-language (Qwen3.5) -- Qwen3-VL-style vision encoder (NO deepstack) + hybrid text.
-# Mirrors the Qwen2.5-VL RBLN flow (deepstack-free): the vision encoder's merged embeddings are
-# scattered into `inputs_embeds`, mRoPE `position_emb` is precomputed on the host, and the hybrid
-# Qwen3.5 text backbone runs the GatedDeltaNet linear layers + gated full-attention layers.
-# ---------------------------------------------------------------------------------------------
 
 
 class RBLNQwen3_5VisionModel(RBLNModel):
@@ -521,8 +539,7 @@ class RBLNQwen3_5VisionModel(RBLNModel):
         hidden_states = hidden_states.reshape(seq_len, -1)
         rotary_pos_emb = rotary_pos_emb.reshape(seq_len, -1)
         emb = torch.cat((rotary_pos_emb, rotary_pos_emb), dim=-1)
-        # cos/sin stay fp32 and enter the device as fp32; the fp32->low precision cast
-        # happens on-device in Qwen3_5VisionModelWrapper.forward
+        # cos/sin stay fp32 into the device; the fp32->device-dtype cast happens on-device in the vision wrapper
         position_embeddings = (emb.cos(), emb.sin())
 
         cu_seqlens = torch.repeat_interleave(grid_thw[:, 1] * grid_thw[:, 2], grid_thw[:, 0]).cumsum(
@@ -567,16 +584,6 @@ class RBLNQwen3_5VisionModel(RBLNModel):
 
 
 class RBLNQwen3_5Model(RBLNDecoderOnlyModel):
-    """Bare Qwen3.5 model (vision encoder + hybrid text, no LM head).
-
-    Independent of the Qwen3-VL RBLN model — inherits ``RBLNDecoderOnlyModel`` directly. Qwen3.5 has NO
-    deepstack and its ``linear_attention`` layers carry GatedDeltaNet conv/recurrent state caches, so it
-    overrides the runtime (``setup_runtime``), input specs (``get_input_info``) and prefill preprocessing
-    (``_preprocess_prefill``). The small vision-injection helpers (``_load_submodules`` /
-    ``_get_position_embeddings`` / ``_create_embedding_layer`` / ``logits_last_dim``) that no longer arrive
-    via inheritance are duplicated here from the VL model.
-    """
-
     auto_model_class = AutoModelForImageTextToText
     _decoder_wrapper_cls = Qwen3_5_LanguageModelWrapper
     _use_rotary_emb = False
@@ -584,13 +591,10 @@ class RBLNQwen3_5Model(RBLNDecoderOnlyModel):
     _config_class = Qwen3_5Config
     _rotary_emb_class = Qwen3_5TextRotaryEmbedding
     _get_rope_index_func = HFQwen3_5Model.get_rope_index
-    # HFQwen3_5Model.get_rope_index (bound via _get_rope_index_func) calls self.get_vision_position_ids;
-    # provide it here since it no longer comes from the VL model.
     get_vision_position_ids = HFQwen3_5Model.get_vision_position_ids
 
     @classmethod
     def _load_submodules(cls, model_save_dir, rbln_config, model=None, **kwargs):
-        # On a decoder-only node (_load_visual_runtime=False) skip loading the vision encoder submodule.
         if model is None and not getattr(rbln_config, "_load_visual_runtime", True):
             return []
         return super()._load_submodules(model_save_dir, rbln_config, model=model, **kwargs)
@@ -783,12 +787,43 @@ class RBLNQwen3_5Model(RBLNDecoderOnlyModel):
 
 class RBLNQwen3_5ForConditionalGeneration(RBLNQwen3_5Model, RBLNDecoderOnlyModelForCausalLM):
     """
-    Vision-language Qwen3.5: a Qwen3-VL-style vision encoder (no deepstack) feeding the hybrid
-    Qwen3.5 text backbone (GatedDeltaNet `linear_attention` layers + gated `full_attention`).
+    RBLNQwen3_5ForConditionalGeneration is a multi-modal model that integrates vision and language processing capabilities,
+    optimized for RBLN NPUs. It is designed for conditional generation tasks that involve both image and text inputs.
+    It pairs a Qwen3-VL-style vision encoder (no deepstack) with the hybrid Qwen3.5 text backbone — GatedDeltaNet
+    `linear_attention` layers interleaved with gated `full_attention` layers.
 
-    Note: the hybrid text backbone currently requires a fused GatedDeltaNet device op to compile
-    end-to-end (the recurrent decompose does not compose with device full-attention in one graph;
-    see the project memo). This class wires the full vision-language structure so it works once that op lands.
+    This model inherits from [`RBLNDecoderOnlyModelForCausalLM`]. Check the superclass documentation for the generic methods the library implements for all its models.
+
+    Important Note:
+        This model includes a Large Language Model (LLM). For optimal performance, it is highly recommended to use
+        tensor parallelism for the language model. This can be achieved by using the `rbln_config` parameter in the
+        `from_pretrained` method. Refer to the `from_pretrained` documentation and the RBLNQwen3_5ForConditionalGenerationConfig class for details.
+
+        The hybrid text backbone currently requires a fused GatedDeltaNet device op to compile end-to-end (the
+        recurrent decompose does not compose with device full-attention in one graph; see the project memo). This
+        class wires the full vision-language structure so it works once that op lands.
+
+    Examples:
+        ```python
+        from optimum.rbln import RBLNQwen3_5ForConditionalGeneration
+
+        model = RBLNQwen3_5ForConditionalGeneration.from_pretrained(
+            "Qwen/Qwen3.5-0.8B",
+            export=True,
+            rbln_config={
+                "visual": {
+                    "max_seq_len": 2048,
+                    "device": 0,
+                },
+                "num_devices": 1,
+                "kvcache_partition_len": 4096,
+                "max_seq_len": 8192,
+                "device": 0,
+            },
+        )
+
+        model.save_pretrained("compiled-qwen3.5-0.8b")
+        ```
     """
 
     _supports_non_fp32 = True
