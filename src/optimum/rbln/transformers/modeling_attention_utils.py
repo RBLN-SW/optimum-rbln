@@ -1,5 +1,4 @@
 import math
-import os
 from collections import defaultdict
 from typing import TYPE_CHECKING, Optional, Tuple
 
@@ -70,7 +69,7 @@ def validate_attention_method(attn_impl: str, kvcache_partition_len: int, kvcach
     # Constraints of flash attention:
     # 1. `max_seq_len` should be multiple of `partition_len`.
     # 2. 1k <= `partition_len` <= 32k.
-    # 3. `max_seq_len` should be larger then 2048.
+    # 3. `max_seq_len` should be at least 2048 (2 * minimum partition length).
     if attn_impl == "eager" and max_seq_len > DEFAULT_MAX_EAGER_ATTN_SEQUENCE_LENGTH:
         raise ValueError(
             f"`max_seq_len` is set to {max_seq_len}, "
