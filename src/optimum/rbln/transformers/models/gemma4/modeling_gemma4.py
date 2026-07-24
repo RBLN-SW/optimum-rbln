@@ -290,6 +290,10 @@ class RBLNGemma4ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
         if rbln_config.max_seq_len is None:
             raise ValueError("`max_seq_len` should be specified.")
 
+        # Resolve attention defaults first — this also fills in `prefill_chunk_size`, which
+        # `validate_sliding_window` below depends on.
+        rbln_config = cls._update_attention_config(model, model_config, rbln_config)
+
         layer_types = getattr(model_config, "layer_types", None)
         all_full_attention = layer_types is not None and all(t == "full_attention" for t in layer_types)
 
@@ -301,8 +305,6 @@ class RBLNGemma4ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
             rbln_config = cls._update_sliding_window_config(model_config, rbln_config)
             if rbln_config.sliding_window is not None:
                 validate_sliding_window(rbln_config)
-
-        rbln_config = cls._update_attention_config(model, model_config, rbln_config)
 
         prefill_input_info = cls.get_input_info(
             batch_size=1,

@@ -94,8 +94,9 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
                 a dictionary or an RBLNLoRAConfig instance. When provided, enables LoRA functionality
                 for the model compilation. Defaults to None (no LoRA).
             prefill_chunk_size (int | None): The chunk size used during the prefill phase for
-                processing input sequences. Defaults to 128. Must be a positive integer
-                divisible by 64. Affects prefill performance and memory usage.
+                processing input sequences. When unset, it is resolved at compile time to 512 on
+                RBLN-CR NPUs and 128 otherwise. Must be a positive integer divisible by 64.
+                Affects prefill performance and memory usage.
             kvcache_num_blocks (int | None): The total number of blocks to allocate for the
                 PagedAttention KV cache at compile time. Defaults to 0 (automatically determined).
                 See the "KV Cache Number of Blocks (`kvcache_num_blocks`)" section below for details.
@@ -228,10 +229,7 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
         self.attn_impl = attn_impl
         self.kvcache_partition_len = kvcache_partition_len
         self.kvcache_block_size = kvcache_block_size
-        self.prefill_chunk_size = prefill_chunk_size or 128
-        if self.prefill_chunk_size % 64 != 0 or self.prefill_chunk_size <= 0:
-            raise ValueError("`prefill_chunk_size` must be a positive integer divisible by 64.")
-
+        self.prefill_chunk_size = prefill_chunk_size
         self.kvcache_num_blocks = kvcache_num_blocks if kvcache_num_blocks is not None else 0
         self.memory_budget = memory_budget
         if self.memory_budget is not None and self.kvcache_num_blocks > 0:

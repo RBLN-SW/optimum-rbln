@@ -29,9 +29,19 @@ def set_default_values(
     kvcache_partition_len: int | None = None,
     kvcache_block_size: int | None = None,
     max_seq_len: int | None = None,
-) -> tuple[str, int, int]:
+    prefill_chunk_size: int | None = None,
+    npu: str | None = None,
+) -> tuple[str, int, int, int]:
     if attn_impl is None:
         attn_impl = "eager"
+
+    if prefill_chunk_size is None:
+        # RBLN-CR NPUs use a larger prefill chunk for better prefill performance.
+        # Prefer the target NPU pinned on the config; fall back to the locally attached device.
+        npu = npu or rebel.get_npu_name(0)
+        prefill_chunk_size = 512 if "RBLN-CR" in (npu or "") else 128
+    if prefill_chunk_size % 64 != 0 or prefill_chunk_size <= 0:
+        raise ValueError("`prefill_chunk_size` must be a positive integer divisible by 64.")
 
     if kvcache_partition_len is not None:
         if attn_impl == "eager":
@@ -51,7 +61,7 @@ def set_default_values(
         else:
             kvcache_block_size = kvcache_partition_len
 
-    return attn_impl, kvcache_partition_len, kvcache_block_size
+    return attn_impl, kvcache_partition_len, kvcache_block_size, prefill_chunk_size
 
 
 def validate_attention_method(attn_impl: str, kvcache_partition_len: int, kvcache_block_size: int, max_seq_len: int):
