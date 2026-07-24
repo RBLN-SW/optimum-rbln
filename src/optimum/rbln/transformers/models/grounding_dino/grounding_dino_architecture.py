@@ -13,7 +13,7 @@
 # limitations under the License.
 import math
 from functools import wraps
-from typing import TYPE_CHECKING, List, Optional, Tuple
+from typing import TYPE_CHECKING
 
 import torch
 import torch.nn.functional as F
@@ -135,10 +135,10 @@ class _GroundingDinoEncoder(torch.nn.Module):
         vision_features: torch.Tensor,
         vision_attention_mask: torch.Tensor,
         vision_position_embedding: torch.Tensor,
-        text_features: Optional[torch.Tensor] = None,
-        text_attention_mask: Optional[torch.Tensor] = None,
-        text_self_attention_masks: Optional[torch.Tensor] = None,
-        reference_points: Optional[torch.Tensor] = None,
+        text_features: torch.Tensor | None = None,
+        text_attention_mask: torch.Tensor | None = None,
+        text_self_attention_masks: torch.Tensor | None = None,
+        reference_points: torch.Tensor | None = None,
     ):
         output_attentions = self.rbln_config.output_attentions
         output_hidden_states = self.rbln_config.output_hidden_states
@@ -328,15 +328,15 @@ class _GroundingDinoEncoderLayer(torch.nn.Module):
         vision_features: Tensor,
         vision_position_embedding: Tensor,
         spatial_shapes: Tensor,
-        spatial_shapes_list: List[Tuple[int, int]],
+        spatial_shapes_list: list[tuple[int, int]],
         level_start_index: Tensor,
         key_padding_mask: Tensor,
         reference_points: Tensor,
-        text_features: Optional[Tensor] = None,
-        text_attention_mask: Optional[Tensor] = None,
-        text_position_embedding: Optional[Tensor] = None,
-        text_self_attention_masks: Optional[Tensor] = None,
-        text_position_ids: Optional[Tensor] = None,
+        text_features: Tensor | None = None,
+        text_attention_mask: Tensor | None = None,
+        text_position_embedding: Tensor | None = None,
+        text_self_attention_masks: Tensor | None = None,
+        text_position_ids: Tensor | None = None,
     ):
         text_position_embedding = self.get_text_position_embeddings(
             text_features, text_position_embedding, text_position_ids
@@ -379,10 +379,10 @@ class _GroundingDinoMultiscaleDeformableAttention(torch.nn.Module):
     def forward(
         self,
         hidden_states: torch.Tensor,
-        attention_mask: Optional[torch.Tensor] = None,
+        attention_mask: torch.Tensor | None = None,
         encoder_hidden_states=None,
         encoder_attention_mask=None,
-        position_embeddings: Optional[torch.Tensor] = None,
+        position_embeddings: torch.Tensor | None = None,
         reference_points=None,
         spatial_shapes=None,
         spatial_shapes_list=None,
@@ -462,9 +462,9 @@ class _GroundingDinoBiMultiHeadAttention(torch.nn.Module):
         self,
         vision_features: torch.FloatTensor,
         text_features: torch.FloatTensor,
-        vision_attention_mask: Optional[torch.BoolTensor] = None,
-        text_attention_mask: Optional[torch.BoolTensor] = None,
-    ) -> Tuple[Tuple[torch.FloatTensor, torch.FloatTensor], Tuple[torch.FloatTensor, torch.FloatTensor]]:
+        vision_attention_mask: torch.BoolTensor | None = None,
+        text_attention_mask: torch.BoolTensor | None = None,
+    ) -> tuple[tuple[torch.FloatTensor, torch.FloatTensor], tuple[torch.FloatTensor, torch.FloatTensor]]:
         batch_size, tgt_len, _ = vision_features.size()
 
         vision_query_states = self.vision_proj(vision_features) * self.scale
@@ -562,7 +562,7 @@ class _MultiScaleDeformableAttention(torch.nn.Module):
         self,
         value: Tensor,
         value_spatial_shapes: Tensor,
-        value_spatial_shapes_list: List[Tuple],
+        value_spatial_shapes_list: list[tuple],
         level_start_index: Tensor,
         sampling_grids: Tensor,
         attention_weights: Tensor,

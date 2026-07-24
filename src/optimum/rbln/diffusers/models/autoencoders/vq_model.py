@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import TYPE_CHECKING, Any, List, Union
+from typing import TYPE_CHECKING, Any, Union
 
 import rebel
 import torch
@@ -145,9 +145,9 @@ class RBLNVQModel(RBLNModel):
     @classmethod
     def _create_runtimes(
         cls,
-        compiled_models: List[rebel.RBLNCompiledModel],
+        compiled_models: list[rebel.RBLNCompiledModel],
         rbln_config: RBLNVQModelConfig,
-    ) -> List[rebel.Runtime]:
+    ) -> list[rebel.Runtime]:
         if len(compiled_models) == 1:
             # decoder
             expected_models = ["decoder"]
@@ -172,7 +172,7 @@ class RBLNVQModel(RBLNModel):
 
     def encode(
         self, x: torch.FloatTensor, return_dict: bool = True, **kwargs: Any
-    ) -> Union[torch.FloatTensor, VQEncoderOutput]:
+    ) -> torch.FloatTensor | VQEncoderOutput:
         """
         Encode an input image into a quantized latent representation.
 
@@ -192,7 +192,7 @@ class RBLNVQModel(RBLNModel):
 
     def decode(
         self, h: torch.FloatTensor, return_dict: bool = True, **kwargs: Any
-    ) -> Union[torch.FloatTensor, DecoderOutput]:
+    ) -> torch.FloatTensor | DecoderOutput:
         """
         Decode a quantized latent representation back into an image.
 

@@ -14,7 +14,7 @@
 
 
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, Any, Dict, List, Tuple, Union
+from typing import TYPE_CHECKING, Any, Union
 
 from torch.nn import Module
 
@@ -67,13 +67,13 @@ class LoopProcessor(Module, ABC):
 
     @abstractmethod
     def _prepare_inputs_for_iteration(
-        self, index: int, common_inputs: Dict[str, Any], *args, **kwargs
-    ) -> Tuple[List[Any], Dict[str, Any]]:
+        self, index: int, common_inputs: dict[str, Any], *args, **kwargs
+    ) -> tuple[list[Any], dict[str, Any]]:
         pass
 
-    def _prepare_inputs_before_loop(self, *args, **kwargs) -> Dict[str, Any]:
+    def _prepare_inputs_before_loop(self, *args, **kwargs) -> dict[str, Any]:
         pass
 
     @abstractmethod
-    def _process_outputs(self, outputs: List[Any], **kwargs) -> Any:
+    def _process_outputs(self, outputs: list[Any], **kwargs) -> Any:
         pass

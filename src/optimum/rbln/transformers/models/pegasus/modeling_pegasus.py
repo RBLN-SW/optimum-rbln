@@ -13,7 +13,8 @@
 # limitations under the License.
 
 import inspect
-from typing import TYPE_CHECKING, Any, Callable
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any
 
 from transformers import PegasusForConditionalGeneration, PreTrainedModel
 

@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Optional
+from typing import Any
 
 from ....configuration_utils import RBLNModelConfig
 from ....transformers import RBLNCLIPVisionModelWithProjectionConfig
@@ -25,33 +25,33 @@ class RBLNStableVideoDiffusionPipelineConfig(RBLNModelConfig):
 
     def __init__(
         self,
-        image_encoder: Optional[RBLNCLIPVisionModelWithProjectionConfig] = None,
-        unet: Optional[RBLNUNetSpatioTemporalConditionModelConfig] = None,
-        vae: Optional[RBLNAutoencoderKLTemporalDecoderConfig] = None,
+        image_encoder: RBLNCLIPVisionModelWithProjectionConfig | None = None,
+        unet: RBLNUNetSpatioTemporalConditionModelConfig | None = None,
+        vae: RBLNAutoencoderKLTemporalDecoderConfig | None = None,
         *,
-        batch_size: Optional[int] = None,
-        height: Optional[int] = None,
-        width: Optional[int] = None,
-        num_frames: Optional[int] = None,
-        decode_chunk_size: Optional[int] = None,
-        guidance_scale: Optional[float] = None,
+        batch_size: int | None = None,
+        height: int | None = None,
+        width: int | None = None,
+        num_frames: int | None = None,
+        decode_chunk_size: int | None = None,
+        guidance_scale: float | None = None,
         **kwargs: Any,
     ):
         """
         Args:
-            image_encoder (Optional[RBLNCLIPVisionModelWithProjectionConfig]): Configuration for the image encoder component.
+            image_encoder (RBLNCLIPVisionModelWithProjectionConfig | None): Configuration for the image encoder component.
                 Initialized as RBLNCLIPVisionModelWithProjectionConfig if not provided.
-            unet (Optional[RBLNUNetSpatioTemporalConditionModelConfig]): Configuration for the UNet model component.
+            unet (RBLNUNetSpatioTemporalConditionModelConfig | None): Configuration for the UNet model component.
                 Initialized as RBLNUNetSpatioTemporalConditionModelConfig if not provided.
-            vae (Optional[RBLNAutoencoderKLTemporalDecoderConfig]): Configuration for the VAE model component.
+            vae (RBLNAutoencoderKLTemporalDecoderConfig | None): Configuration for the VAE model component.
                 Initialized as RBLNAutoencoderKLTemporalDecoderConfig if not provided.
-            batch_size (Optional[int]): Batch size for inference, applied to all submodules.
-            height (Optional[int]): Height of the generated images.
-            width (Optional[int]): Width of the generated images.
-            num_frames (Optional[int]): The number of frames in the generated video.
-            decode_chunk_size (Optional[int]): The number of frames to decode at once during VAE decoding.
+            batch_size (int | None): Batch size for inference, applied to all submodules.
+            height (int | None): Height of the generated images.
+            width (int | None): Width of the generated images.
+            num_frames (int | None): The number of frames in the generated video.
+            decode_chunk_size (int | None): The number of frames to decode at once during VAE decoding.
                 Useful for managing memory usage during video generation.
-            guidance_scale (Optional[float]): Scale for classifier-free guidance.
+            guidance_scale (float | None): Scale for classifier-free guidance.
             kwargs: Additional arguments passed to the parent RBLNModelConfig.
 
         Raises:

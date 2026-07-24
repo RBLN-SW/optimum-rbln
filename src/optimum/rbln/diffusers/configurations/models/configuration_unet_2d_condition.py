@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Optional, Tuple
+from typing import Any
 
 from ....configuration_utils import RBLNModelConfig
 
@@ -29,29 +29,29 @@ class RBLNUNet2DConditionModelConfig(RBLNModelConfig):
 
     def __init__(
         self,
-        batch_size: Optional[int] = None,
-        sample_size: Optional[Tuple[int, int]] = None,
-        in_channels: Optional[int] = None,
-        cross_attention_dim: Optional[int] = None,
-        use_additional_residuals: Optional[bool] = None,
-        max_seq_len: Optional[int] = None,
-        in_features: Optional[int] = None,
-        text_model_hidden_size: Optional[int] = None,
-        image_model_hidden_size: Optional[int] = None,
+        batch_size: int | None = None,
+        sample_size: tuple[int, int] | None = None,
+        in_channels: int | None = None,
+        cross_attention_dim: int | None = None,
+        use_additional_residuals: bool | None = None,
+        max_seq_len: int | None = None,
+        in_features: int | None = None,
+        text_model_hidden_size: int | None = None,
+        image_model_hidden_size: int | None = None,
         **kwargs: Any,
     ):
         """
         Args:
-            batch_size (Optional[int]): The batch size for inference. Defaults to 1.
-            sample_size (Optional[Tuple[int, int]]): The spatial dimensions (height, width) of the generated samples.
+            batch_size (int | None): The batch size for inference. Defaults to 1.
+            sample_size (tuple[int, int] | None): The spatial dimensions (height, width) of the generated samples.
                 If an integer is provided, it's used for both height and width.
-            in_channels (Optional[int]): Number of input channels for the UNet.
-            cross_attention_dim (Optional[int]): Dimension of the cross-attention features.
-            use_additional_residuals (Optional[bool]): Whether to use additional residual connections in the model.
-            max_seq_len (Optional[int]): Maximum sequence length for text inputs when used with cross-attention.
-            in_features (Optional[int]): Number of input features for the model.
-            text_model_hidden_size (Optional[int]): Hidden size of the text encoder model.
-            image_model_hidden_size (Optional[int]): Hidden size of the image encoder model.
+            in_channels (int | None): Number of input channels for the UNet.
+            cross_attention_dim (int | None): Dimension of the cross-attention features.
+            use_additional_residuals (bool | None): Whether to use additional residual connections in the model.
+            max_seq_len (int | None): Maximum sequence length for text inputs when used with cross-attention.
+            in_features (int | None): Number of input features for the model.
+            text_model_hidden_size (int | None): Hidden size of the text encoder model.
+            image_model_hidden_size (int | None): Hidden size of the image encoder model.
             kwargs: Additional arguments passed to the parent RBLNModelConfig.
 
         Raises:
