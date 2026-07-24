@@ -26,7 +26,14 @@ from transformers.modeling_outputs import BaseModelOutputWithPast
 
 from ....configuration_utils import RBLNCompileConfig
 from ....modeling import RBLNModel
+from ....modeling_base import normalize_contiguous_
 from ....utils.logging import get_logger
+from ....utils.weight_source import (
+    GENERATED_WEIGHT_FILENAME,
+    build_decoder_weight_map,
+    iter_decoder_weight_windows,
+    save_generated_weight_state,
+)
 from ...modeling_attention_utils import (
     RBLNDecoderOnlyFlashAttentionMixin,
     set_default_values,
@@ -75,6 +82,7 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
     _decoder_wrapper_cls = DecoderOnlyWrapper
     _use_rotary_emb = True
     _supports_non_fp32 = True
+    _supports_weight_free = True
 
     def __post_init__(self, **kwargs):
         if self.rbln_config.use_inputs_embeds:
@@ -182,6 +190,76 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
         return val
 
     @classmethod
+    def _update_weight_source_for_export(
+        cls,
+        rbln_config: RBLNDecoderOnlyModelForCausalLMConfig,
+        model_id: str | Path,
+        model: PreTrainedModel,
+        subfolder: str,
+        revision: str | None,
+        variant: str | None,
+        dtype_override: Any,
+    ) -> None:
+        if not rbln_config.weight_free:
+            return
+        if dtype_override not in (None, "auto"):
+            raise ValueError(
+                "Weight-free checkpoint linking does not support dtype conversion; "
+                "load the Hugging Face checkpoint with dtype='auto'."
+            )
+        source_path = Path(model_id)
+        source_id = str(source_path.resolve()) if source_path.exists() else str(model_id)
+        rbln_config.weight_source = {
+            "model_id": source_id,
+            "subfolder": subfolder,
+            "revision": model.config._commit_hash or revision,
+            "variant": variant,
+        }
+
+    @classmethod
+    def _load_runtime_weights(
+        cls,
+        models: list[rebel.Runtime],
+        rbln_config: RBLNDecoderOnlyModelForCausalLMConfig,
+        artifact_dir: Path | None,
+        token: bool | str | None,
+        cache_dir: str | None,
+        local_files_only: bool,
+    ) -> None:
+        if not rbln_config.create_runtimes or not rbln_config.weight_free:
+            return
+        if not rbln_config.weight_source:
+            raise ValueError("Weight-free artifact has no Hugging Face weight source metadata.")
+        if artifact_dir is None:
+            raise ValueError("Weight-free runtime creation requires an artifact directory.")
+
+        plans = [runtime.weight_load_plan() for runtime in models]
+        reference_plan = plans[0]
+        reference_layout = [
+            {key: value for key, value in window.items() if key != "graph_ids"} for window in reference_plan
+        ]
+        for plan in plans[1:]:
+            layout = [{key: value for key, value in window.items() if key != "graph_ids"} for window in plan]
+            if layout != reference_layout:
+                raise RuntimeError("Weight-free sibling runtimes have incompatible weight-pool plans.")
+
+        windows = iter_decoder_weight_windows(
+            weight_source=rbln_config.weight_source,
+            name_map=rbln_config.weight_name_map,
+            generated_weight_map=rbln_config.generated_weight_map,
+            generated_weight_file=(
+                artifact_dir / GENERATED_WEIGHT_FILENAME if rbln_config.generated_weight_map else None
+            ),
+            windows=reference_plan,
+            token=token,
+            cache_dir=cache_dir,
+            local_files_only=local_files_only,
+        )
+        for window_index, (_window, weight_chunk) in enumerate(windows):
+            for runtime_index, runtime in enumerate(models):
+                runtime.load_weight_window(weight_chunk, plans[runtime_index][window_index]["graph_ids"])
+
+    @classmethod
     def save_torch_artifacts(
         cls,
         model: PreTrainedModel,
@@ -191,6 +269,13 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
     ):
         # If you are unavoidably running on a CPU rather than an RBLN device,
         # store the torch tensor, weight, etc. in this function.
+        if rbln_config.weight_free:
+            wrapped_model = cls._wrap_model_if_needed(model, rbln_config)
+            name_map, generated_name_map, generated_state = build_decoder_weight_map(model, wrapped_model)
+            rbln_config.weight_name_map = name_map
+            rbln_config.generated_weight_map = generated_name_map
+            save_generated_weight_state(generated_state, save_dir_path / subfolder)
+
         if rbln_config.use_inputs_embeds:
             save_dict = {}
             save_dict["embed_tokens"] = model.get_input_embeddings().state_dict()
@@ -250,6 +335,7 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
                 device=rbln_config.device,
                 example_inputs=example_inputs,
                 compile_context=compile_context,
+                weight_free=rbln_config.weight_free,
             )
             return compiled_model
         finally:
@@ -273,6 +359,16 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
     @classmethod
     @torch.inference_mode()
     def get_compiled_model(cls, model: PreTrainedModel, rbln_config: RBLNDecoderOnlyModelForCausalLMConfig):
+        if rbln_config.weight_free:
+            if rbln_config.use_image_prefill:
+                raise ValueError("Weight-free checkpoint linking does not support image prefill yet.")
+            if not rbln_config.weight_source:
+                raise ValueError(
+                    "Weight-free checkpoint linking requires from_pretrained(..., export=True) "
+                    "with a Hugging Face model id or local checkpoint path."
+                )
+            normalize_contiguous_(model)
+
         wrapped_model = cls._wrap_model_if_needed(model, rbln_config)
         prefill_compile_config = rbln_config.compile_cfgs[0]
 

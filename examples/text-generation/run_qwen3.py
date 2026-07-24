@@ -11,6 +11,11 @@ from optimum.rbln import RBLNQwen3ForCausalLM
 #
 #   optimum-rbln-cli --model-id Qwen/Qwen3-4B -o Qwen3-4B \
 #       --max_seq_len 8192 --batch_size 1 --num_devices 4
+#
+# To compile an artifact without embedded weights and stream the original
+# Hugging Face safetensors checkpoint at load time:
+#
+#   python run_qwen3.py --weight-free --output-dir Qwen3-4B-weight-free
 
 
 def parse_args():
@@ -18,7 +23,14 @@ def parse_args():
     parser.add_argument("--model-id", default="Qwen/Qwen3-4B")
     parser.add_argument("--batch-size", type=int, default=1)
     parser.add_argument("--max-seq-len", type=int, default=8192)
+    parser.add_argument("--max-new-tokens", type=int, default=128)
     parser.add_argument("--num-devices", type=int, default=4)
+    parser.add_argument(
+        "--weight-free",
+        action="store_true",
+        help="Exclude weights from .rbln files and stream the Hugging Face checkpoint.",
+    )
+    parser.add_argument("--output-dir", help="Directory in which to save compiled artifacts.")
     return parser.parse_args()
 
 
@@ -32,9 +44,11 @@ def main():
         # A HuggingFace model id is compiled on the first run; no separate compilation step is needed.
         model = RBLNQwen3ForCausalLM.from_pretrained(
             args.model_id,
+            model_save_dir=args.output_dir,
             rbln_batch_size=args.batch_size,
             rbln_max_seq_len=args.max_seq_len,
             rbln_num_devices=args.num_devices,
+            rbln_weight_free=args.weight_free,
         )
 
     tokenizer = AutoTokenizer.from_pretrained(args.model_id, padding_side="left")
@@ -50,7 +64,7 @@ def main():
     ]
     inputs = tokenizer(texts, return_tensors="pt", padding=True)
 
-    output_sequences = model.generate(**inputs, do_sample=False, max_new_tokens=128)
+    output_sequences = model.generate(**inputs, do_sample=False, max_new_tokens=args.max_new_tokens)
 
     for i, output in enumerate(output_sequences):
         generated = tokenizer.decode(output, skip_special_tokens=True)

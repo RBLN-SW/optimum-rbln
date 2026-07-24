@@ -198,12 +198,15 @@ class RBLNModel(RBLNBaseModel):
             compiled_models = compiled_model
         for compiled_model_name, cm in compiled_models.items():
             cm.save(save_dir_path / subfolder / f"{compiled_model_name}.rbln")
+
+        # Some model families derive small named tensors while wrapping. Save
+        # those artifacts before serializing rbln_config because this hook also
+        # records their stable name mapping in the config.
+        cls.save_torch_artifacts(model, save_dir_path=save_dir_path, subfolder=subfolder, rbln_config=rbln_config)
+
         rbln_config.save(save_dir_path / subfolder)
 
         config.save_pretrained(save_dir_path / subfolder)
-
-        # Save torch artifacts (e.g. embedding matrix if needed.)
-        cls.save_torch_artifacts(model, save_dir_path=save_dir_path, subfolder=subfolder, rbln_config=rbln_config)
 
         # Instantiate
         return cls._from_pretrained(

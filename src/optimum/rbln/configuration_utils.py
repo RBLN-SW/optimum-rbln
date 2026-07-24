@@ -712,6 +712,10 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
         optimum_rbln_version: str | None = None,
         dtype: str | torch.dtype | None = None,
         _compile_cfgs: list[RBLNCompileConfig] | None = None,
+        weight_free: bool | None = None,
+        weight_source: dict[str, Any] | None = None,
+        weight_name_map: dict[str, str] | None = None,
+        generated_weight_map: dict[str, str] | None = None,
         *,
         optimize_host_memory: bool | None = None,
         **kwargs: Any,
@@ -731,6 +735,10 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
             optimum_rbln_version (str | None): The optimum-rbln version used for this configuration.
             dtype (str | torch.dtype | None): The data type to use for the model.
             _compile_cfgs (list[RBLNCompileConfig]): List of compilation configurations for the model.
+            weight_free (bool | None): Whether compiled artifacts omit deferred weights.
+            weight_source (dict[str, Any] | None): External Hugging Face checkpoint metadata.
+            weight_name_map (dict[str, str] | None): Compiled-to-checkpoint weight name mapping.
+            generated_weight_map (dict[str, str] | None): Compiled-to-generated tensor key mapping.
             kwargs: Additional keyword arguments.
 
         Raises:
@@ -765,6 +773,11 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
         self.optimum_rbln_version = optimum_rbln_version
         if self.optimum_rbln_version is None:
             self.optimum_rbln_version = __version__
+
+        self.weight_free = weight_free or False
+        self.weight_source = weight_source
+        self.weight_name_map = weight_name_map or {}
+        self.generated_weight_map = generated_weight_map or {}
 
         compile_cfgs = _compile_cfgs if _compile_cfgs is not None else []
         self._compile_cfgs: list[RBLNCompileConfig] = compile_cfgs

@@ -67,6 +67,7 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
     config_name = "config.json"
     hf_library_name = "transformers"
     _supports_non_fp32 = False
+    _supports_weight_free = False
 
     def __init__(
         self,
@@ -185,6 +186,31 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
         return rbln_compiled_models
 
     @classmethod
+    def _update_weight_source_for_export(
+        cls,
+        rbln_config: RBLNModelConfig,
+        model_id: str | Path,
+        model: "PreTrainedModel",
+        subfolder: str,
+        revision: str | None,
+        variant: str | None,
+        dtype_override: Any,
+    ) -> None:
+        pass
+
+    @classmethod
+    def _load_runtime_weights(
+        cls,
+        models: list[rebel.Runtime],
+        rbln_config: RBLNModelConfig,
+        artifact_dir: Path | None,
+        token: bool | str | None,
+        cache_dir: str | None,
+        local_files_only: bool,
+    ) -> None:
+        pass
+
+    @classmethod
     def _from_pretrained(
         cls,
         model_id: str | Path,
@@ -287,6 +313,9 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
             model_save_dir=model_save_dir,
             subfolder=subfolder,
             rbln_submodules=rbln_submodules,
+            token=token,
+            cache_dir=cache_dir,
+            local_files_only=local_files_only,
             **kwargs,
         )
 
@@ -299,6 +328,9 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
         model_save_dir: Path | str,
         subfolder: Path | str,
         rbln_submodules: list["RBLNBaseModel"] | None = None,
+        token: bool | str | None = None,
+        cache_dir: str | None = None,
+        local_files_only: bool = False,
         **kwargs,
     ):
         if rbln_submodules is None:
@@ -317,6 +349,16 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
                 cls._create_runtimes(rbln_compiled_models, rbln_config)
                 if rbln_config.create_runtimes
                 else UnavailableRuntime()
+            )
+            artifact_root = model_save_dir.name if isinstance(model_save_dir, TemporaryDirectory) else model_save_dir
+            artifact_dir = Path(artifact_root) / subfolder if artifact_root is not None else None
+            cls._load_runtime_weights(
+                models=models,
+                rbln_config=rbln_config,
+                artifact_dir=artifact_dir,
+                token=token,
+                cache_dir=cache_dir,
+                local_files_only=local_files_only,
             )
 
         except RuntimeError as e:
@@ -360,6 +402,15 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
         rbln_config, kwargs = cls.prepare_rbln_config(**kwargs)
 
         model: PreTrainedModel = cls.get_pytorch_model(model_id=model_id, rbln_config=rbln_config, **kwargs)
+        cls._update_weight_source_for_export(
+            rbln_config=rbln_config,
+            model_id=model_id,
+            model=model,
+            subfolder=subfolder,
+            revision=kwargs.get("revision"),
+            variant=kwargs.get("variant"),
+            dtype_override=kwargs.get("dtype", kwargs.get("torch_dtype")),
+        )
         preprocessors = maybe_load_preprocessors(model_id, subfolder=subfolder)
         return cls.from_model(
             model, preprocessors=preprocessors, model_save_dir=model_save_dir, rbln_config=rbln_config, **kwargs
@@ -464,10 +515,12 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
 
         normalize_contiguous_(model)
 
+        weight_free = kwargs.pop("weight_free", False)
         compiled_model = rebel.compile_from_torch(
             model,
             input_info=rbln_compile_config.input_info,
             npu=rbln_compile_config.npu,
+            weight_free=weight_free,
             **{compiler_num_devices_kwarg(): rbln_compile_config.num_devices},
             **kwargs,
         )
@@ -489,6 +542,8 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
         rbln_config = cls._update_rbln_config(
             preprocessors=preprocessors, model=model, model_config=model_config, rbln_config=rbln_config
         )
+        if rbln_config.weight_free and not cls._supports_weight_free:
+            raise ValueError(f"{cls.__name__} does not support weight-free compilation.")
 
         if rbln_config.rbln_model_cls_name != cls.__name__:
             raise NameError(
