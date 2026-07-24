@@ -12,9 +12,6 @@ from optimum.rbln import RBLNQwen3ForCausalLM
 #   optimum-rbln-cli --model-id Qwen/Qwen3-4B -o Qwen3-4B \
 #       --max_seq_len 8192 --batch_size 1 --num_devices 4
 #
-# To compile an artifact without embedded weights and stream the original
-# Hugging Face safetensors checkpoint at load time:
-#
 #   python run_qwen3.py --weight-free --output-dir Qwen3-4B-weight-free
 
 

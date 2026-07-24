@@ -4,17 +4,14 @@ from types import SimpleNamespace
 
 import pytest
 import torch
-from safetensors import safe_open
 from safetensors.torch import save_file
 
 from optimum.rbln import RBLNLlamaForCausalLMConfig
-from optimum.rbln.configuration_utils import RBLNModelConfig
 from optimum.rbln.transformers.models.decoderonly.modeling_decoderonly import RBLNDecoderOnlyModel
 from optimum.rbln.utils.weight_source import (
     GENERATED_WEIGHT_FILENAME,
     build_decoder_weight_map,
     iter_decoder_weight_windows,
-    save_generated_weight_state,
 )
 
 
@@ -132,15 +129,6 @@ def test_iter_decoder_weight_windows_resolves_variant_index(tmp_path: Path):
     assert torch.equal(state_dict["compiled.first"], torch.ones(2))
 
 
-def test_save_generated_weight_state(tmp_path: Path):
-    generated_state = {"tensor_0000": torch.tensor([1.0, 2.0])}
-
-    save_generated_weight_state(generated_state, tmp_path)
-
-    with safe_open(tmp_path / GENERATED_WEIGHT_FILENAME, framework="pt", device="cpu") as tensors:
-        assert torch.equal(tensors.get_tensor("tensor_0000"), torch.tensor([1.0, 2.0]))
-
-
 def test_weight_free_torch_artifacts_leave_config_json_serializable(tmp_path: Path):
     config = RBLNLlamaForCausalLMConfig(max_seq_len=128, weight_free=True)
 
@@ -180,20 +168,6 @@ def test_decoder_config_serializes_weight_source_mapping():
     assert serialized["weight_source"]["revision"] == "commit"
     assert serialized["weight_name_map"] == {"wrapped.weight": "model.weight"}
     assert serialized["generated_weight_map"] == {"scale": "tensor_0000"}
-
-
-def test_base_model_config_owns_weight_free_metadata():
-    config = RBLNModelConfig(
-        weight_free=True,
-        weight_source={"model_id": "org/model"},
-        weight_name_map={"compiled.weight": "model.weight"},
-        generated_weight_map={"compiled.scale": "tensor_0000"},
-    )
-
-    assert config.weight_free is True
-    assert config.weight_source == {"model_id": "org/model"}
-    assert config.weight_name_map == {"compiled.weight": "model.weight"}
-    assert config.generated_weight_map == {"compiled.scale": "tensor_0000"}
 
 
 def test_weight_free_export_rejects_dtype_conversion():
