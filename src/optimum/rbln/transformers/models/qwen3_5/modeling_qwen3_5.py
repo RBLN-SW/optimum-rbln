@@ -521,9 +521,8 @@ class RBLNQwen3_5VisionModel(RBLNModel):
         hidden_states = hidden_states.reshape(seq_len, -1)
         rotary_pos_emb = rotary_pos_emb.reshape(seq_len, -1)
         emb = torch.cat((rotary_pos_emb, rotary_pos_emb), dim=-1)
-        # cos/sin stay fp32 (emb is already fp32) and enter the device as fp32; the fp32->dlfloat16 cast
-        # happens on-device in Qwen3_5VisionModelWrapper.forward, which retains more mantissa than a
-        # host-side bf16 cast. NOTE: keep fp32 here to match the fp32 cos/sin declared in the vision input_info.
+        # cos/sin stay fp32 and enter the device as fp32; the fp32->low precision cast
+        # happens on-device in Qwen3_5VisionModelWrapper.forward
         position_embeddings = (emb.cos(), emb.sin())
 
         cu_seqlens = torch.repeat_interleave(grid_thw[:, 1] * grid_thw[:, 2], grid_thw[:, 0]).cumsum(
