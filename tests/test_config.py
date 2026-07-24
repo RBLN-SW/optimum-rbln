@@ -10,6 +10,8 @@ from optimum.rbln import (
     RBLNAutoConfig,
     RBLNAutoModel,
     RBLNCompileConfig,
+    RBLNLlamaForCausalLM,
+    RBLNLlamaForCausalLMConfig,
     RBLNLlavaNextForConditionalGeneration,
     RBLNMistralForCausalLMConfig,
     RBLNModel,
@@ -344,6 +346,23 @@ class TestPrefillChunkSizeDefault:
     def test_invalid_value_raises(self, invalid_chunk_size):
         with pytest.raises(ValueError, match="divisible by 64"):
             self._resolve(prefill_chunk_size=invalid_chunk_size, npu="RBLN-CA22")
+
+
+def test_prefill_chunk_size_npu_wiring_e2e(tmp_path):
+    """Compile-time wiring: `rbln_config.npu` flows through `_update_attention_config` into the
+    NPU-aware `prefill_chunk_size` default (512 on RBLN-CR) and survives save/reload.
+    Pinning `npu` compiles for RBLN-CR03 without a CR device attached."""
+    model = RBLNLlamaForCausalLM.from_pretrained(
+        "afmck/testing-llama-tiny",
+        export=True,
+        num_hidden_layers=1,
+        rbln_config={"npu": "RBLN-CR03", "create_runtimes": False, "max_seq_len": 1024},
+    )
+    assert model.rbln_config.prefill_chunk_size == 512
+
+    model.save_pretrained(str(tmp_path))
+    reloaded_config = RBLNLlamaForCausalLMConfig.from_pretrained(str(tmp_path))
+    assert reloaded_config.prefill_chunk_size == 512
 
 
 if __name__ == "__main__":
