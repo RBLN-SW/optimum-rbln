@@ -75,10 +75,11 @@ def _qwen3_5_linear_state_shapes(text_config, batch_size: int):
         text_config.linear_num_value_heads * text_config.linear_value_head_dim
     )
     conv_state_shape = (batch_size, text_config.linear_conv_kernel_dim - 1, conv_dim)
+    # recurrent state/mask are 3D (B, Hv*Dk, Dv) — see the get_input_info comment: merging Hv into dim1 keeps
+    # the shared static cache laid out identically in the prefill/decode graphs (no channel-pad mismatch).
     recurrent_state_shape = (
         batch_size,
-        text_config.linear_num_value_heads,
-        text_config.linear_key_head_dim,
+        text_config.linear_num_value_heads * text_config.linear_key_head_dim,
         text_config.linear_value_head_dim,
     )
     return conv_state_shape, recurrent_state_shape
@@ -216,10 +217,17 @@ class RBLNQwen3_5TextModel(RBLNDecoderOnlyModel):
         for layer_idx in range(num_hidden_layers):
             if layer_idx in linear_layers:
                 conv_shape = [state_batch, conv_state_len, conv_dim]
+                # recurrent cache is stored 3D as (B, Hv*Dk, Dv): the GatedDeltaNet reshapes it to the 4D math
+                # form (B, Hv, Dk, Dv) internally. Storing Hv MERGED into dim1 (Hv*Dk) rather than 4D or
+                # (B, Hv, Dk*Dv) is deliberate: the 4D/`(B,Hv,Dk*Dv)` layouts keep Hv (=16, not a multiple of
+                # 64) in the channel slot, which the compiler pads to 64 in the decode graph but not prefill ->
+                # the SHARED static cache then has a different per-row (batch) stride in each graph -> batch>1
+                # reads garbage for row>0. Merging into Hv*Dk (a multiple of 64) makes the reshape SPLIT dim1
+                # (so the 4D channel padding can't propagate back onto the 3D cache) and keeps the cache layout
+                # identical across prefill/decode. (See qwen3_5_architecture GatedDeltaNet reshapes.)
                 recurrent_shape = [
                     state_batch,
-                    text_config.linear_num_value_heads,
-                    text_config.linear_key_head_dim,
+                    text_config.linear_num_value_heads * text_config.linear_key_head_dim,
                     text_config.linear_value_head_dim,
                 ]
                 input_info.append((f"conv_state_{layer_idx}", conv_shape, rbln_config.dtype))
@@ -267,8 +275,7 @@ class RBLNQwen3_5TextModel(RBLNDecoderOnlyModel):
                     "recurrent_state_mask",
                     [
                         batch_size,
-                        text_config.linear_num_value_heads,
-                        text_config.linear_key_head_dim,
+                        text_config.linear_num_value_heads * text_config.linear_key_head_dim,
                         text_config.linear_value_head_dim,
                     ],
                     rbln_config.dtype,

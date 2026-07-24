@@ -152,8 +152,9 @@ def rbln_chunk_gated_delta_rule(
     lower on RBLN). A prefill window is split into ``n_chunks = prefill_chunk_size // chunk_size`` sub-chunks:
     intra-chunk terms (``decay_mask`` / ``T = (I-A)^-1`` / ``value`` / ``k_cumdecay``) are batched over the
     chunk axis, and the ``for`` loop carries ``recurrent_state`` between sub-chunks (inter-chunk). Inputs
-    query/key ``(B,S,Hv,Dk)``, value ``(B,S,Hv,Dv)``, g/beta ``(B,S,Hv)``, initial_state ``(B,Hv,Dk,Dv)``;
-    returns core ``(B,S,Hv,Dv)`` and final state ``(B,Hv,Dk,Dv)``. Full derivation: docs §1–§2.
+    query/key ``(B,S,Hv,Dk)``, value ``(B,S,Hv,Dv)``, g/beta ``(B,S,Hv)``, initial_state the 3D cache layout
+    ``(B,Hv,Dk*Dv)`` (reshaped to 4D internally after the mask de-statics it); returns core ``(B,S,Hv,Dv)`` and
+    final state ``(B,Hv,Dk*Dv)``.
     """
     initial_dtype = query.dtype
     if use_qk_l2norm_in_kernel:
@@ -185,7 +186,11 @@ def rbln_chunk_gated_delta_rule(
 
     value = attn @ v_beta
     k_cumdecay = attn @ (k_beta * g.exp().unsqueeze(-1))
-    last_recurrent_state = initial_state
+    # initial_state arrives in the 3D cache layout (B, Hv*Dk, Dv); it was masked on GatedDeltaNet
+    # entry, so reshaping it to 4D (B, Hv, Dk, Dv) here is safe.
+    last_recurrent_state = initial_state.reshape(
+        initial_state.shape[0], query.shape[1], query.shape[-1], value.shape[-1]
+    )
 
     # inter-chunk: sequential carry across sub-chunks.
     core_chunks = []
@@ -208,6 +213,12 @@ def rbln_chunk_gated_delta_rule(
     # concat sub-chunk outputs along seq
     core = torch.cat(core_chunks, dim=2)
     core = core.transpose(1, 2).contiguous()
+    # return the final state in the 3D cache layout (B, Hv*Dk, Dv) to match the static cache.
+    last_recurrent_state = last_recurrent_state.reshape(
+        last_recurrent_state.shape[0],
+        last_recurrent_state.shape[1] * last_recurrent_state.shape[2],
+        last_recurrent_state.shape[3],
+    )
     return core, last_recurrent_state
 
 
@@ -216,8 +227,9 @@ def rbln_recurrent_gated_delta_rule_step(query, key, value, g, beta, initial_sta
     ``torch_recurrent_gated_delta_rule`` at S=1, but rewritten to avoid ops that lower to garbage on device
     (cos≈0.2): the per-position output index-assign (ScatterInfo), the ``query[:, :, i]`` dynamic StridedSlice,
     and the non-innermost ``.sum(dim=-2)`` reductions (rewritten as matmuls). The S=1 axis is dropped with a
-    reshape. Inputs query/key ``(B,1,Hv,Dk)``, value ``(B,1,Hv,Dv)``, g/beta ``(B,1,Hv)``, initial_state
-    ``(B,Hv,Dk,Dv)`` -> core ``(B,1,Hv,Dv)``, new_state ``(B,Hv,Dk,Dv)``. See docs §3.
+    reshape. Inputs query/key ``(B,1,Hv,Dk)``, value ``(B,1,Hv,Dv)``, g/beta ``(B,1,Hv)``, initial_state the
+    3D cache layout ``(B,Hv,Dk*Dv)`` -> core ``(B,1,Hv,Dv)``, new_state ``(B,Hv,Dk*Dv)``. The state is kept 3D
+    in the cache and reshaped to 4D here only after a compute (``* g_t``).
     """
     initial_dtype = query.dtype
     batch_size, _, num_v_heads, k_head_dim = query.shape
@@ -237,16 +249,24 @@ def rbln_recurrent_gated_delta_rule_step(query, key, value, g, beta, initial_sta
     q_row = (q * (k_head_dim**-0.5)).unsqueeze(-2)
     k_row = k.unsqueeze(-2)
     v_row = v.unsqueeze(-2)
-    g_t = g.reshape(batch_size, num_v_heads, 1, 1).exp()
     beta_t = beta.reshape(batch_size, num_v_heads, 1, 1)
 
-    state = initial_state * g_t
+    # initial_state is the 3D cache (B, Hv*Dk, Dv). Fold the g decay into a per-(Hv*Dk) column vector and
+    # multiply (this de-statics the read) THEN reshape to 4D (B, Hv, Dk, Dv)
+    decay = (
+        g.reshape(batch_size, num_v_heads, 1)
+        .exp()
+        .repeat(1, 1, k_head_dim)
+        .reshape(batch_size, num_v_heads * k_head_dim, 1)
+    )
+    state = (initial_state * decay).reshape(batch_size, num_v_heads, k_head_dim, v_head_dim)
     kv_mem = torch.matmul(k_row, state)
     delta = (v_row - kv_mem) * beta_t
     new_state = state + torch.matmul(k_row.transpose(-1, -2), delta)
     core = torch.matmul(q_row, new_state)
     core = core.reshape(batch_size, 1, num_v_heads, v_head_dim).to(initial_dtype)
-    new_state = new_state.to(initial_dtype)
+    # back to the 3D cache layout (B, Hv*Dk, Dv)
+    new_state = new_state.reshape(batch_size, num_v_heads * k_head_dim, v_head_dim).to(initial_dtype)
     return core, new_state
 
 
@@ -633,9 +653,6 @@ class Qwen3_5Model(DecoderOnlyModel):
                     conv_state_mask=conv_state_mask,
                     recurrent_state_mask=recurrent_state_mask,
                 )
-                # persist new states to the static DRAM cache in-place (aliased write): the op result aliases
-                # the static input address, so returning it wires the write (runtime does not re-feed these).
-                # slotted -> write the (1, ...) new slot at pos=batch_idx; else the full batch at pos 0.
                 _axis0 = torch.tensor(0, dtype=torch.int16)
                 new_states.append(
                     torch.ops.rbln_custom_ops.rbln_cache_update(conv_state, new_conv_state, _pos, _axis0)

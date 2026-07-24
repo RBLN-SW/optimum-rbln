@@ -638,4 +638,5 @@ full-attn paged-KV와 linear conv/recurrent 정적 캐시가 prefill 윈도우�
 ### 참고
 
 - 자세한 배경은 프로젝트 메모 `rbln-qwen35-deltanet-compile` 참고.
-- 코드 주석은 `qwen3_5_architecture.py`에 HF와 라인 단위로 대응(`# HF:`)되어 있으므로 side-by-side로 읽으면 좋다.
+- `qwen3_5_architecture.py`의 코드 주석은 간결하게 유지하고, 수식 유도·행렬 그림·RBLN lowering 우회의 상세는 이
+  문서(§1~§7)로 옮겨 두었다. 코드와 이 문서를 side-by-side로 읽으면 좋다.
