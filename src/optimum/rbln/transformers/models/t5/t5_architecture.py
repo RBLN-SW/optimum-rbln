@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Tuple
 
 import torch
 from torch import nn
@@ -77,7 +76,7 @@ class T5DecoderWrapper(Seq2SeqDecoderWrapper):
         cache_position,
         block_tables,
         *kv_cache,
-    ) -> Tuple[torch.FloatTensor, Tuple[torch.FloatTensor]]:
+    ) -> tuple[torch.FloatTensor, tuple[torch.FloatTensor]]:
         self_past_key_values = ()
         cross_past_key_values = ()
         self_kv_cache = kv_cache[self.num_layers * 2 :]
@@ -175,7 +174,7 @@ class T5LayerSelfAttention(Seq2SeqSelfAttention):
         self.head_dim = attn.key_value_proj_dim
         self.attn_decode = torch.ops.rbln_custom_ops.paged_add_softmax_attn_decode
 
-    def projection(self, hidden_states) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    def projection(self, hidden_states) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         query_states = self.q_proj(hidden_states)
         key_states = self.k_proj(hidden_states)
         value_states = self.v_proj(hidden_states)
@@ -184,12 +183,12 @@ class T5LayerSelfAttention(Seq2SeqSelfAttention):
     def forward(
         self,
         hidden_states: torch.Tensor,
-        past_key_value: Tuple[torch.Tensor],
+        past_key_value: tuple[torch.Tensor],
         attention_mask: torch.Tensor,
         cache_position: torch.Tensor,
         block_tables: torch.Tensor,
         **kwargs,
-    ) -> Tuple[torch.Tensor, Tuple[torch.Tensor]]:
+    ) -> tuple[torch.Tensor, tuple[torch.Tensor]]:
         bsz, tgt_len, _ = hidden_states.size()
 
         query_states, key_states, value_states = self.projection(hidden_states=hidden_states)

@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import types
-from typing import TYPE_CHECKING, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Optional, Union
 
 import torch
 import torch.nn.functional as F
@@ -74,7 +74,7 @@ def get_attn_mask(self, height, width, dtype, device):
         mask_windows = window_partition(img_mask, self.window_size)
         mask_windows = mask_windows.view(-1, self.window_size * self.window_size)
         attn_mask = mask_windows.unsqueeze(1) - mask_windows.unsqueeze(2)
-        attn_mask = attn_mask.masked_fill(attn_mask != 0, float(-100.0)).masked_fill(attn_mask == 0, float(0.0))
+        attn_mask = attn_mask.masked_fill(attn_mask != 0, (-100.0)).masked_fill(attn_mask == 0, 0.0)
     else:
         attn_mask = None
     return attn_mask
@@ -88,13 +88,13 @@ class _SwinEncoder(torch.nn.Module):
     def forward(
         self,
         hidden_states: torch.Tensor,
-        input_dimensions: Tuple[int, int],
-        head_mask: Optional[torch.FloatTensor] = None,
-        output_attentions: Optional[bool] = False,
-        output_hidden_states: Optional[bool] = False,
-        output_hidden_states_before_downsampling: Optional[bool] = False,
-        always_partition: Optional[bool] = False,
-        return_dict: Optional[bool] = True,
+        input_dimensions: tuple[int, int],
+        head_mask: torch.FloatTensor | None = None,
+        output_attentions: bool | None = False,
+        output_hidden_states: bool | None = False,
+        output_hidden_states_before_downsampling: bool | None = False,
+        always_partition: bool | None = False,
+        return_dict: bool | None = True,
     ):
         all_hidden_states = () if output_hidden_states else None
         all_reshaped_hidden_states = () if output_hidden_states else None
@@ -215,7 +215,7 @@ class RBLNSwinBackbone(RBLNModel):
         cls,
         model: "PreTrainedModel",
         rbln_config: RBLNModelConfig,
-        preprocessors: Optional[Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"]],
+        preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"] | None,
     ):
         for processor in preprocessors:
             if rbln_config.image_size is None and hasattr(processor, "image_processor"):
@@ -241,7 +241,7 @@ class RBLNSwinBackbone(RBLNModel):
         preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"],
         model: Optional["PreTrainedModel"] = None,
         model_config: "SwinConfig" = None,
-        rbln_config: Optional[RBLNSwinBackboneConfig] = None,
+        rbln_config: RBLNSwinBackboneConfig | None = None,
     ) -> RBLNSwinBackboneConfig:
         if rbln_config.image_size is None:
             for processor in preprocessors:
@@ -268,12 +268,12 @@ class RBLNSwinBackbone(RBLNModel):
 
     def forward(
         self,
-        pixel_values: Optional[torch.FloatTensor] = None,
+        pixel_values: torch.FloatTensor | None = None,
         return_dict: bool = True,
         output_attentions: bool = None,
         output_hidden_states: bool = None,
         **kwargs,
-    ) -> Union[Tuple, BackboneOutput]:
+    ) -> tuple | BackboneOutput:
         """
         Forward pass for the RBLN-optimized Swin backbone model.
 

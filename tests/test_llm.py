@@ -443,7 +443,7 @@ class TestLlavaForConditionalGeneration(LLMTest.TestLLM):
 
     def get_inputs(self):
         tokenizer = self.get_tokenizer()
-        img_path = f"{os.path.dirname(__file__)}/../assets/rbln_logo.png"
+        img_path = f"{os.path.dirname(__file__)}/../assets/rbln_logo_light.png"
         image = Image.open(img_path)
         inputs = tokenizer(images=[image], text=[self.PROMPT], return_tensors="pt", padding=True)
         inputs["max_new_tokens"] = 20
@@ -523,7 +523,7 @@ class TestLlavaNextForConditionalGeneration(LLMTest.TestLLM):
 
     def get_inputs(self):
         tokenizer = self.get_tokenizer()
-        img_path = f"{os.path.dirname(__file__)}/../assets/rbln_logo.png"
+        img_path = f"{os.path.dirname(__file__)}/../assets/rbln_logo_light.png"
         image = Image.open(img_path)
         inputs = tokenizer(images=[image], text=[self.PROMPT], return_tensors="pt", padding=True)
         inputs["max_new_tokens"] = 20
@@ -573,6 +573,17 @@ class TestLlavaNextForConditionalGeneration(LLMTest.TestLLM):
         ):
             _ = self.RBLN_CLASS.from_pretrained(model_id=self.HF_MODEL_ID, **rbln_class_kwargs)
 
+    def test_propagate_config(self):
+        rbln_config = {
+            "create_runtimes": False,
+        }
+        rbln_class_kwargs = {"rbln_config": rbln_config}
+
+        model = self.RBLN_CLASS.from_pretrained(model_id=self.HF_MODEL_ID, **rbln_class_kwargs)
+
+        assert not model.rbln_config.vision_tower.create_runtimes
+        assert not model.rbln_config.language_model.create_runtimes
+
 
 class TestBlip2ForConditionalGeneration(LLMTest.TestLLM):
     RBLN_AUTO_CLASS = RBLNAutoModelForImageTextToText
@@ -601,7 +612,7 @@ class TestBlip2ForConditionalGeneration(LLMTest.TestLLM):
 
     def get_inputs(self):
         tokenizer = self.get_tokenizer()
-        img_path = f"{os.path.dirname(__file__)}/../assets/rbln_logo.png"
+        img_path = f"{os.path.dirname(__file__)}/../assets/rbln_logo_light.png"
         image = Image.open(img_path)
         inputs = tokenizer(images=image, text=self.PROMPT, return_tensors="pt", padding=True)
         inputs["max_new_tokens"] = 20
@@ -644,7 +655,7 @@ class TestIdefics3ForConditionalGeneration(LLMTest.TestLLM):
 
     def get_inputs(self):
         tokenizer = self.get_tokenizer()
-        img_path = f"{os.path.dirname(__file__)}/../assets/rbln_logo.png"
+        img_path = f"{os.path.dirname(__file__)}/../assets/rbln_logo_light.png"
         image = Image.open(img_path)
         text = tokenizer.apply_chat_template(self.PROMPT, add_generation_prompt=True)
         inputs = tokenizer(images=[image], text=[text], return_tensors="pt", padding=True)
@@ -688,12 +699,20 @@ class TestQwen2VLForConditionalGeneration(LLMTest.TestLLM):
 
     def get_inputs(self):
         tokenizer = self.get_tokenizer()
-        img_path = f"{os.path.dirname(__file__)}/../assets/rbln_logo.png"
+        img_path = f"{os.path.dirname(__file__)}/../assets/rbln_logo_light.png"
         image = Image.open(img_path)
         inputs = tokenizer(images=[image], text=[self.PROMPT], return_tensors="pt", padding=True)
         inputs["max_new_tokens"] = 20
         inputs["do_sample"] = False
         return inputs
+
+    def test_propagate_config(self):
+        self.RBLN_CLASS_KWARGS["rbln_config"].update({"create_runtimes": False})
+
+        model = self.RBLN_CLASS.from_pretrained(model_id=self.HF_MODEL_ID, **self.RBLN_CLASS_KWARGS)
+
+        assert not model.rbln_config.visual.create_runtimes
+        assert not model.rbln_config.create_runtimes
 
 
 class TestQwen2_5_VLForConditionalGeneration(LLMTest.TestLLM):
@@ -728,12 +747,20 @@ class TestQwen2_5_VLForConditionalGeneration(LLMTest.TestLLM):
 
     def get_inputs(self):
         tokenizer = self.get_tokenizer()
-        img_path = f"{os.path.dirname(__file__)}/../assets/rbln_logo.png"
+        img_path = f"{os.path.dirname(__file__)}/../assets/rbln_logo_light.png"
         image = Image.open(img_path)
         inputs = tokenizer(images=[image], text=[self.PROMPT], return_tensors="pt", padding=True)
         inputs["max_new_tokens"] = 20
         inputs["do_sample"] = False
         return inputs
+
+    def test_propagate_config(self):
+        self.RBLN_CLASS_KWARGS["rbln_config"].update({"create_runtimes": False})
+
+        model = self.RBLN_CLASS.from_pretrained(model_id=self.HF_MODEL_ID, **self.RBLN_CLASS_KWARGS)
+
+        assert not model.rbln_config.visual.create_runtimes
+        assert not model.rbln_config.create_runtimes
 
 
 class TestQwen3VLForConditionalGeneration(LLMTest.TestLLM):
@@ -764,12 +791,20 @@ class TestQwen3VLForConditionalGeneration(LLMTest.TestLLM):
 
     def get_inputs(self):
         tokenizer = self.get_tokenizer()
-        img_path = f"{os.path.dirname(__file__)}/../assets/rbln_logo.png"
+        img_path = f"{os.path.dirname(__file__)}/../assets/rbln_logo_light.png"
         image = Image.open(img_path)
         inputs = tokenizer(images=[image], text=[self.PROMPT], return_tensors="pt", padding=True)
         inputs["max_new_tokens"] = 20
         inputs["do_sample"] = False
         return inputs
+
+    def test_propagate_config(self):
+        self.RBLN_CLASS_KWARGS["rbln_config"].update({"create_runtimes": False})
+
+        model = self.RBLN_CLASS.from_pretrained(model_id=self.HF_MODEL_ID, **self.RBLN_CLASS_KWARGS)
+
+        assert not model.rbln_config.visual.create_runtimes
+        assert not model.rbln_config.create_runtimes
 
 
 class TestQwen3VLMoeForConditionalGeneration(LLMTest.TestLLM):
@@ -803,7 +838,7 @@ class TestQwen3VLMoeForConditionalGeneration(LLMTest.TestLLM):
 
     def get_inputs(self):
         tokenizer = self.get_tokenizer()
-        img_path = f"{os.path.dirname(__file__)}/../assets/rbln_logo.png"
+        img_path = f"{os.path.dirname(__file__)}/../assets/rbln_logo_light.png"
         image = Image.open(img_path)
         inputs = tokenizer(images=[image], text=[self.PROMPT], return_tensors="pt", padding=True)
         inputs["max_new_tokens"] = 20
@@ -839,7 +874,7 @@ class TestGemma3ForConditionalGeneration(LLMTest.TestLLM):
 
     def get_inputs(self):
         tokenizer = self.get_tokenizer()
-        img_path = f"{os.path.dirname(__file__)}/../assets/rbln_logo.png"
+        img_path = f"{os.path.dirname(__file__)}/../assets/rbln_logo_light.png"
         image = Image.open(img_path)
         image = image.convert("RGB")
         inputs = tokenizer(images=[image], text=[self.PROMPT], return_tensors="pt", padding=True)

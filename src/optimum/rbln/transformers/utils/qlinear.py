@@ -1,5 +1,3 @@
-from typing import Optional
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -8,10 +6,10 @@ import torch.nn.functional as F
 class QLinear(nn.Module):
     def __init__(
         self,
-        weight: Optional[torch.Tensor] = None,
-        bias: Optional[torch.Tensor] = None,
-        weight_scale: Optional[torch.Tensor] = None,
-        input_scale: Optional[torch.Tensor] = None,
+        weight: torch.Tensor | None = None,
+        bias: torch.Tensor | None = None,
+        weight_scale: torch.Tensor | None = None,
+        input_scale: torch.Tensor | None = None,
         dynamic: bool = False,
     ):
         super().__init__()

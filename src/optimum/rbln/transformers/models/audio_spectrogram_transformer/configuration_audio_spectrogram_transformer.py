@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Optional
+from typing import Any
 
 from ....configuration_utils import RBLNModelConfig
 from ....utils.deprecation import deprecate_kwarg
@@ -26,14 +26,14 @@ class RBLNASTForAudioClassificationConfig(RBLNModelConfig):
     @deprecate_kwarg(old_name="num_mel_bins", version="0.10.0")
     def __init__(
         self,
-        batch_size: Optional[int] = None,
-        max_length: Optional[int] = None,
+        batch_size: int | None = None,
+        max_length: int | None = None,
         **kwargs: Any,
     ):
         """
         Args:
-            batch_size (Optional[int]): The batch size for inference. Defaults to 1.
-            max_length (Optional[int]): Maximum length of the audio input in time dimension.
+            batch_size (int | None): The batch size for inference. Defaults to 1.
+            max_length (int | None): Maximum length of the audio input in time dimension.
             kwargs: Additional arguments passed to the parent RBLNModelConfig.
 
         Raises:

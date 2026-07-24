@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Optional
+from typing import Any
 
 from ....configuration_utils import RBLNModelConfig
 
@@ -27,31 +27,31 @@ class RBLNCosmosTransformer3DModelConfig(RBLNModelConfig):
 
     def __init__(
         self,
-        batch_size: Optional[int] = None,
-        num_frames: Optional[int] = None,
-        height: Optional[int] = None,
-        width: Optional[int] = None,
-        fps: Optional[int] = None,
-        max_seq_len: Optional[int] = None,
-        embedding_dim: Optional[int] = None,
-        num_channels_latents: Optional[int] = None,
-        num_latent_frames: Optional[int] = None,
-        latent_height: Optional[int] = None,
-        latent_width: Optional[int] = None,
+        batch_size: int | None = None,
+        num_frames: int | None = None,
+        height: int | None = None,
+        width: int | None = None,
+        fps: int | None = None,
+        max_seq_len: int | None = None,
+        embedding_dim: int | None = None,
+        num_channels_latents: int | None = None,
+        num_latent_frames: int | None = None,
+        latent_height: int | None = None,
+        latent_width: int | None = None,
         **kwargs: Any,
     ):
         """
         Args:
-            batch_size (Optional[int]): The batch size for inference. Defaults to 1.
-            num_frames (Optional[int]): The number of frames in the generated video. Defaults to 121.
-            height (Optional[int]): The height in pixels of the generated video. Defaults to 704.
-            width (Optional[int]): The width in pixels of the generated video. Defaults to 1280.
-            fps (Optional[int]): The frames per second of the generated video.  Defaults to 30.
-            max_seq_len (Optional[int]): Maximum sequence length of prompt embeds.
-            embedding_dim (Optional[int]): Embedding vector dimension of prompt embeds.
-            num_channels_latents (Optional[int]): The number of channels in latent space.
-            latent_height (Optional[int]): The height in pixels in latent space.
-            latent_width (Optional[int]): The width in pixels in latent space.
+            batch_size (int | None): The batch size for inference. Defaults to 1.
+            num_frames (int | None): The number of frames in the generated video. Defaults to 121.
+            height (int | None): The height in pixels of the generated video. Defaults to 704.
+            width (int | None): The width in pixels of the generated video. Defaults to 1280.
+            fps (int | None): The frames per second of the generated video.  Defaults to 30.
+            max_seq_len (int | None): Maximum sequence length of prompt embeds.
+            embedding_dim (int | None): Embedding vector dimension of prompt embeds.
+            num_channels_latents (int | None): The number of channels in latent space.
+            latent_height (int | None): The height in pixels in latent space.
+            latent_width (int | None): The width in pixels in latent space.
             kwargs: Additional arguments passed to the parent RBLNModelConfig.
 
         Raises:

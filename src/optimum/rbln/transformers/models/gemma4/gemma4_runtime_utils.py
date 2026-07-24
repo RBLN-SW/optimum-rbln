@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Dict, Optional
+from typing import Any
 
 import rebel
 import torch
@@ -38,10 +38,10 @@ class RBLNGemma4RuntimeModel(RBLNDecoderOnlyChunkedMultimodalPrefillMixin, RBLNR
     def __init__(
         self,
         *args: Any,
-        image_prefills: Optional[Dict[int, rebel.Runtime]] = None,
-        embed_tokens_per_layer: Optional[torch.nn.Module] = None,
-        num_hidden_layers: Optional[int] = None,
-        hidden_size_per_layer_input: Optional[int] = None,
+        image_prefills: dict[int, rebel.Runtime] | None = None,
+        embed_tokens_per_layer: torch.nn.Module | None = None,
+        num_hidden_layers: int | None = None,
+        hidden_size_per_layer_input: int | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(*args, **kwargs)
@@ -54,7 +54,7 @@ class RBLNGemma4RuntimeModel(RBLNDecoderOnlyChunkedMultimodalPrefillMixin, RBLNR
         }
         self.prefill = RBLNPytorchRuntime(self.runtime) if self.phase == "prefill" else None
 
-    def compute_per_layer_inputs(self, input_ids: torch.Tensor) -> Optional[torch.Tensor]:
+    def compute_per_layer_inputs(self, input_ids: torch.Tensor) -> torch.Tensor | None:
         if not self.hidden_size_per_layer_input or self.embed_tokens_per_layer is None:
             return None
         clamped_ids = input_ids.clamp(min=0, max=self.embed_tokens_per_layer.num_embeddings - 1)
@@ -70,7 +70,7 @@ class RBLNGemma4RuntimeModel(RBLNDecoderOnlyChunkedMultimodalPrefillMixin, RBLNR
 
     def _resolve_image_chunk(self, token_type_ids: torch.Tensor, step: int, start_type: int):
         # Gemma4 buckets image/video runs: pick the smallest bucket that fits the run.
-        image_buckets = self.rbln_config.image_prefill_chunk_sizes
+        image_buckets = self.rbln_config.image_prefill_chunk_size
         max_image_bucket = max(image_buckets)
         run_len = _run_length_from(token_type_ids, step, value=start_type, cap=max_image_bucket + 1)
         if run_len > max_image_bucket:
@@ -80,7 +80,7 @@ class RBLNGemma4RuntimeModel(RBLNDecoderOnlyChunkedMultimodalPrefillMixin, RBLNR
                 f"is longer than the largest image-prefill bucket ({max_image_bucket}); no bucket can "
                 f"hold it. For video this means consecutive frames are not separated by text (each "
                 f"frame run must fit one bucket); otherwise add a larger value to "
-                f"`image_prefill_chunk_sizes`."
+                f"`image_prefill_chunk_size`."
             )
         return run_len, min(b for b in image_buckets if b >= run_len)
 
@@ -88,14 +88,14 @@ class RBLNGemma4RuntimeModel(RBLNDecoderOnlyChunkedMultimodalPrefillMixin, RBLNR
         self,
         runtime,
         input_chunk: torch.Tensor,
-        per_layer_chunk: Optional[torch.Tensor],
+        per_layer_chunk: torch.Tensor | None,
         cache_pos_chunk: torch.Tensor,
         block_tables: torch.Tensor,
-        local_block_tables: Optional[torch.Tensor],
+        local_block_tables: torch.Tensor | None,
         query_position: torch.Tensor,
         chunked_attention_mask: torch.Tensor,
-        position_ids_chunk: Optional[torch.Tensor],
-        lora_int_ids: Optional[torch.Tensor],
+        position_ids_chunk: torch.Tensor | None,
+        lora_int_ids: torch.Tensor | None,
     ):
         # Mirrors Gemma4ForCausalLMWrapper.prepare_forward_args: per_layer_inputs is the second
         # positional argument and an explicit None occupies the position_embed slot.
@@ -114,18 +114,18 @@ class RBLNGemma4RuntimeModel(RBLNDecoderOnlyChunkedMultimodalPrefillMixin, RBLNR
 
     def forward(
         self,
-        input_ids: Optional[torch.LongTensor] = None,
-        inputs_embeds: Optional[torch.Tensor] = None,
-        per_layer_inputs: Optional[torch.Tensor] = None,
+        input_ids: torch.LongTensor | None = None,
+        inputs_embeds: torch.Tensor | None = None,
+        per_layer_inputs: torch.Tensor | None = None,
         cache_position: torch.Tensor = None,
-        attention_mask: Optional[torch.Tensor] = None,
-        batch_idx: Optional[int] = None,
-        block_tables: Optional[torch.Tensor] = None,
-        position_embed: Optional[torch.Tensor] = None,
-        position_ids: Optional[torch.Tensor] = None,
-        token_type_ids: Optional[torch.Tensor] = None,
-        local_block_tables: Optional[torch.Tensor] = None,
-        lora_int_ids: Optional[torch.Tensor] = None,
+        attention_mask: torch.Tensor | None = None,
+        batch_idx: int | None = None,
+        block_tables: torch.Tensor | None = None,
+        position_embed: torch.Tensor | None = None,
+        position_ids: torch.Tensor | None = None,
+        token_type_ids: torch.Tensor | None = None,
+        local_block_tables: torch.Tensor | None = None,
+        lora_int_ids: torch.Tensor | None = None,
     ):
         inputs = self.inputs_embeddings_if_needed(input_ids, inputs_embeds)
 
@@ -180,12 +180,12 @@ class RBLNGemma4RuntimeModel(RBLNDecoderOnlyChunkedMultimodalPrefillMixin, RBLNR
         cache_position: torch.Tensor = None,
         block_tables: torch.Tensor = None,
         is_external_block_tables: bool = None,
-        attention_mask: Optional[torch.Tensor] = None,
-        position_embed: Optional[torch.Tensor] = None,
-        position_ids: Optional[torch.Tensor] = None,
-        local_block_tables: Optional[torch.Tensor] = None,
-        lora_int_ids: Optional[torch.Tensor] = None,
-        per_layer_inputs: Optional[torch.Tensor] = None,
+        attention_mask: torch.Tensor | None = None,
+        position_embed: torch.Tensor | None = None,
+        position_ids: torch.Tensor | None = None,
+        local_block_tables: torch.Tensor | None = None,
+        lora_int_ids: torch.Tensor | None = None,
+        per_layer_inputs: torch.Tensor | None = None,
     ) -> torch.FloatTensor:
         if self.rbln_config.use_lora and lora_int_ids is None:
             if self.lora_int_ids is None:
