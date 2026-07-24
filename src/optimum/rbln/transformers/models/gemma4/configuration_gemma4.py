@@ -47,8 +47,10 @@ class RBLNGemma4ForCausalLMConfig(RBLNDecoderOnlyModelForCausalLMConfig):
         Args:
             use_position_ids (bool | None): Whether to use `position_ids`. Forced to `True` for Gemma4.
             use_attention_mask (bool | None): Whether to use `attention_mask`. Forced to `True` for Gemma4.
-            prefill_chunk_size (int | None): Chunk size used during the prefill phase. Defaults to 128.
+            prefill_chunk_size (int | None): Chunk size used during the prefill phase. When unset, it is
+                resolved at compile time to 512 on RBLN-CR NPUs and 128 otherwise.
             image_prefill_chunk_size (int | list[int] | None): Chunk size(s) used for image-prefill
+
                 (multimodal Gemma4). A single int compiles one `image_prefill` graph; a list compiles one
                 graph per value (sorted in descending order) and the runtime picks the smallest bucket that
                 fits an image run. When not given, it is derived from the vision tower's `max_soft_tokens`
@@ -63,9 +65,6 @@ class RBLNGemma4ForCausalLMConfig(RBLNDecoderOnlyModelForCausalLMConfig):
             use_attention_mask = True
         if use_position_ids is None:
             use_position_ids = True
-
-        if prefill_chunk_size is None:
-            prefill_chunk_size = 128
 
         if image_prefill_chunk_size is not None:
             image_prefill_chunk_size = self._validate_image_prefill_chunk_size(image_prefill_chunk_size)

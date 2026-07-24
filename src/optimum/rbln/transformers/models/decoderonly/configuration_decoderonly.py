@@ -94,8 +94,9 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
                 a dictionary or an RBLNLoRAConfig instance. When provided, enables LoRA functionality
                 for the model compilation. Defaults to None (no LoRA).
             prefill_chunk_size (int | None): The chunk size used during the prefill phase for
-                processing input sequences. Defaults to 128. Must be a positive integer
-                divisible by 64. Affects prefill performance and memory usage.
+                processing input sequences. When unset, it is resolved at compile time to 512 on
+                RBLN-CR NPUs and 128 otherwise. Must be a positive integer divisible by 64.
+                Affects prefill performance and memory usage.
             kvcache_num_blocks (int | None): The total number of blocks to allocate for the
                 PagedAttention KV cache at compile time. Defaults to 0 (automatically determined).
                 See the "KV Cache Number of Blocks (`kvcache_num_blocks`)" section below for details.
@@ -142,7 +143,7 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
                 attention implementation. Suitable for sequences up to a certain limit (e.g., 32,768 tokens).
             - **`"flash_attn"`**: Utilizes an optimized Flash Attention implementation, beneficial for
                 longer sequences and potentially faster execution. Requires `max_seq_len` to be at least
-                8,192. If `kvcache_partition_len` is specified, `attn_impl` automatically defaults
+                2,048. If `kvcache_partition_len` is specified, `attn_impl` automatically defaults
                 to `"flash_attn"`. When using `"flash_attn"`, `kvcache_block_size` must equal
                 `kvcache_partition_len`.
 
@@ -155,7 +156,7 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
             `kvcache_partition_len` is relevant **only** when `attn_impl` is `"flash_attn"`.
 
             - It defines the length (number of tokens) of each partition within the Key-Value (KV) cache.
-            - Must be between 4,096 and 32,768 (inclusive).
+            - Must be between 1,024 and 32,768 (inclusive).
             - When using `"flash_attn"`, `max_seq_len` must be a multiple of `kvcache_partition_len`
                 and at least twice its value (`max_seq_len >= 2 * kvcache_partition_len`).
             - If `attn_impl` is `"flash_attn"` and `kvcache_partition_len` is `None`, it defaults to
@@ -228,10 +229,7 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
         self.attn_impl = attn_impl
         self.kvcache_partition_len = kvcache_partition_len
         self.kvcache_block_size = kvcache_block_size
-        self.prefill_chunk_size = prefill_chunk_size or 128
-        if self.prefill_chunk_size % 64 != 0 or self.prefill_chunk_size <= 0:
-            raise ValueError("`prefill_chunk_size` must be a positive integer divisible by 64.")
-
+        self.prefill_chunk_size = prefill_chunk_size
         self.kvcache_num_blocks = kvcache_num_blocks if kvcache_num_blocks is not None else 0
         self.memory_budget = memory_budget
         if self.memory_budget is not None and self.kvcache_num_blocks > 0:

@@ -443,7 +443,7 @@ class TestLlavaForConditionalGeneration(LLMTest.TestLLM):
 
     def get_inputs(self):
         tokenizer = self.get_tokenizer()
-        img_path = f"{os.path.dirname(__file__)}/../assets/rbln_logo.png"
+        img_path = f"{os.path.dirname(__file__)}/../assets/rbln_logo_light.png"
         image = Image.open(img_path)
         inputs = tokenizer(images=[image], text=[self.PROMPT], return_tensors="pt", padding=True)
         inputs["max_new_tokens"] = 20
@@ -523,7 +523,7 @@ class TestLlavaNextForConditionalGeneration(LLMTest.TestLLM):
 
     def get_inputs(self):
         tokenizer = self.get_tokenizer()
-        img_path = f"{os.path.dirname(__file__)}/../assets/rbln_logo.png"
+        img_path = f"{os.path.dirname(__file__)}/../assets/rbln_logo_light.png"
         image = Image.open(img_path)
         inputs = tokenizer(images=[image], text=[self.PROMPT], return_tensors="pt", padding=True)
         inputs["max_new_tokens"] = 20
@@ -612,7 +612,7 @@ class TestBlip2ForConditionalGeneration(LLMTest.TestLLM):
 
     def get_inputs(self):
         tokenizer = self.get_tokenizer()
-        img_path = f"{os.path.dirname(__file__)}/../assets/rbln_logo.png"
+        img_path = f"{os.path.dirname(__file__)}/../assets/rbln_logo_light.png"
         image = Image.open(img_path)
         inputs = tokenizer(images=image, text=self.PROMPT, return_tensors="pt", padding=True)
         inputs["max_new_tokens"] = 20
@@ -655,7 +655,7 @@ class TestIdefics3ForConditionalGeneration(LLMTest.TestLLM):
 
     def get_inputs(self):
         tokenizer = self.get_tokenizer()
-        img_path = f"{os.path.dirname(__file__)}/../assets/rbln_logo.png"
+        img_path = f"{os.path.dirname(__file__)}/../assets/rbln_logo_light.png"
         image = Image.open(img_path)
         text = tokenizer.apply_chat_template(self.PROMPT, add_generation_prompt=True)
         inputs = tokenizer(images=[image], text=[text], return_tensors="pt", padding=True)
@@ -699,7 +699,7 @@ class TestQwen2VLForConditionalGeneration(LLMTest.TestLLM):
 
     def get_inputs(self):
         tokenizer = self.get_tokenizer()
-        img_path = f"{os.path.dirname(__file__)}/../assets/rbln_logo.png"
+        img_path = f"{os.path.dirname(__file__)}/../assets/rbln_logo_light.png"
         image = Image.open(img_path)
         inputs = tokenizer(images=[image], text=[self.PROMPT], return_tensors="pt", padding=True)
         inputs["max_new_tokens"] = 20
@@ -747,7 +747,7 @@ class TestQwen2_5_VLForConditionalGeneration(LLMTest.TestLLM):
 
     def get_inputs(self):
         tokenizer = self.get_tokenizer()
-        img_path = f"{os.path.dirname(__file__)}/../assets/rbln_logo.png"
+        img_path = f"{os.path.dirname(__file__)}/../assets/rbln_logo_light.png"
         image = Image.open(img_path)
         inputs = tokenizer(images=[image], text=[self.PROMPT], return_tensors="pt", padding=True)
         inputs["max_new_tokens"] = 20
@@ -791,7 +791,7 @@ class TestQwen3VLForConditionalGeneration(LLMTest.TestLLM):
 
     def get_inputs(self):
         tokenizer = self.get_tokenizer()
-        img_path = f"{os.path.dirname(__file__)}/../assets/rbln_logo.png"
+        img_path = f"{os.path.dirname(__file__)}/../assets/rbln_logo_light.png"
         image = Image.open(img_path)
         inputs = tokenizer(images=[image], text=[self.PROMPT], return_tensors="pt", padding=True)
         inputs["max_new_tokens"] = 20
@@ -838,7 +838,7 @@ class TestQwen3VLMoeForConditionalGeneration(LLMTest.TestLLM):
 
     def get_inputs(self):
         tokenizer = self.get_tokenizer()
-        img_path = f"{os.path.dirname(__file__)}/../assets/rbln_logo.png"
+        img_path = f"{os.path.dirname(__file__)}/../assets/rbln_logo_light.png"
         image = Image.open(img_path)
         inputs = tokenizer(images=[image], text=[self.PROMPT], return_tensors="pt", padding=True)
         inputs["max_new_tokens"] = 20
@@ -874,7 +874,7 @@ class TestGemma3ForConditionalGeneration(LLMTest.TestLLM):
 
     def get_inputs(self):
         tokenizer = self.get_tokenizer()
-        img_path = f"{os.path.dirname(__file__)}/../assets/rbln_logo.png"
+        img_path = f"{os.path.dirname(__file__)}/../assets/rbln_logo_light.png"
         image = Image.open(img_path)
         image = image.convert("RGB")
         inputs = tokenizer(images=[image], text=[self.PROMPT], return_tensors="pt", padding=True)
@@ -1023,7 +1023,7 @@ class TestDisallowedLlama_3(DisallowedTestBase.DisallowedTest):
     RBLN_CLASS = RBLNLlamaForCausalLM
     HF_MODEL_ID = "afmck/testing-llama-tiny"
     HF_CONFIG_KWARGS = {"num_hidden_layers": 1, "max_position_embeddings": 8192}
-    RBLN_CLASS_KWARGS = {"rbln_config": {"attn_impl": "flash_attn", "kvcache_partition_len": 1024}}
+    RBLN_CLASS_KWARGS = {"rbln_config": {"attn_impl": "flash_attn", "kvcache_partition_len": 512}}
 
 
 class TestDisallowedLlama_4(DisallowedTestBase.DisallowedTest):

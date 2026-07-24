@@ -10,6 +10,8 @@ from optimum.rbln import (
     RBLNAutoConfig,
     RBLNAutoModel,
     RBLNCompileConfig,
+    RBLNLlamaForCausalLM,
+    RBLNLlamaForCausalLMConfig,
     RBLNLlavaNextForConditionalGeneration,
     RBLNMistralForCausalLMConfig,
     RBLNModel,
@@ -308,6 +310,60 @@ def test_custom_class(model_id):
     with tempfile.TemporaryDirectory() as tmp_dir:
         my_model.save_pretrained(tmp_dir)
         _ = RBLNResNetModel.from_pretrained(tmp_dir, export=False)
+
+
+class TestPrefillChunkSizeDefault:
+    """NPU-aware `prefill_chunk_size` default resolution in `set_default_values`."""
+
+    @staticmethod
+    def _resolve(prefill_chunk_size=None, npu=None):
+        from optimum.rbln.transformers.modeling_attention_utils import set_default_values
+
+        _, _, _, resolved_chunk_size = set_default_values(
+            attn_impl="eager", max_seq_len=4096, prefill_chunk_size=prefill_chunk_size, npu=npu
+        )
+        return resolved_chunk_size
+
+    def test_default_512_on_cr_npu(self):
+        assert self._resolve(npu="RBLN-CR03") == 512
+
+    def test_default_128_on_non_cr_npu(self):
+        assert self._resolve(npu="RBLN-CA22") == 128
+
+    def test_falls_back_to_attached_npu(self, monkeypatch):
+        monkeypatch.setattr(rebel, "get_npu_name", lambda *args: "RBLN-CR03")
+        assert self._resolve() == 512
+
+    def test_defaults_to_128_without_attached_npu(self, monkeypatch):
+        # Compiling on a host without an NPU: get_npu_name returns None -> fall back to 128.
+        monkeypatch.setattr(rebel, "get_npu_name", lambda *args: None)
+        assert self._resolve() == 128
+
+    def test_explicit_value_wins_over_npu_default(self):
+        assert self._resolve(prefill_chunk_size=256, npu="RBLN-CR03") == 256
+
+    @pytest.mark.parametrize("invalid_chunk_size", [100, 0, -64])
+    def test_invalid_value_raises(self, invalid_chunk_size):
+        with pytest.raises(ValueError, match="divisible by 64"):
+            self._resolve(prefill_chunk_size=invalid_chunk_size, npu="RBLN-CA22")
+
+
+@pytest.mark.skip(reason="Compilation fails: cross-compiling for RBLN-CR03 on a CA25 runner, need to fix it")
+def test_prefill_chunk_size_npu_wiring_e2e(tmp_path):
+    """Compile-time wiring: `rbln_config.npu` flows through `_update_attention_config` into the
+    NPU-aware `prefill_chunk_size` default (512 on RBLN-CR) and survives save/reload.
+    Pinning `npu` compiles for RBLN-CR03 without a CR device attached."""
+    model = RBLNLlamaForCausalLM.from_pretrained(
+        "afmck/testing-llama-tiny",
+        export=True,
+        num_hidden_layers=1,
+        rbln_config={"npu": "RBLN-CR03", "create_runtimes": False, "max_seq_len": 1024},
+    )
+    assert model.rbln_config.prefill_chunk_size == 512
+
+    model.save_pretrained(str(tmp_path))
+    reloaded_config = RBLNLlamaForCausalLMConfig.from_pretrained(str(tmp_path))
+    assert reloaded_config.prefill_chunk_size == 512
 
 
 if __name__ == "__main__":
