@@ -158,6 +158,10 @@ class RBLNQwen3_5RuntimeModel(RBLNRuntimeModel):
             named["conv_state_mask"] = fill(self.conv_state_shape, dtype=self.state_dtype)
             named["recurrent_state_mask"] = fill(self.recurrent_state_shape, dtype=self.state_dtype)
 
+            # which max-batch slot of the linear state caches this per-item (batch=1) prefill reads/writes.
+            if batch_idx is not None:
+                named["batch_idx"] = torch.tensor(batch_idx, dtype=torch.int16)
+
             # Per-token validity of THIS chunk: 1 for the real tokens, 0 for the right-padding. Built from
             # query_length (the SAME source as query_position above), NOT from the embeddings. The
             # GatedDeltaNet multiplies it into g/beta to drop padding from the recurrent-state sum / decay

@@ -583,6 +583,7 @@ class Qwen3_5Model(DecoderOnlyModel):
         conv_state_mask: Optional[torch.Tensor] = None,
         recurrent_state_mask: Optional[torch.Tensor] = None,
         valid_mask: Optional[torch.Tensor] = None,
+        batch_idx: Optional[torch.Tensor] = None,  # prefill only: which max-batch cache slot this item uses
         output_hidden_states: Optional[bool] = None,
     ):
         if (input_ids is None) ^ (inputs_embeds is not None):
@@ -613,11 +614,20 @@ class Qwen3_5Model(DecoderOnlyModel):
             if output_hidden_states:
                 all_hidden_states += (hidden_states,)
             if layer_idx in self.linear_attention_layers:
-                conv_state, recurrent_state = past_states[layer_idx]  # static DRAM cache slots
+                conv_state, recurrent_state = past_states[layer_idx]
+                slotted = batch_idx is not None
+                if slotted:
+                    # PREFILL processes ONE item -> take its slot [batch_idx] from the max-batch cache -> (1, ...).
+                    conv_in = conv_state[batch_idx.to(torch.int).unsqueeze(0)]
+                    recurrent_in = recurrent_state[batch_idx.to(torch.int).unsqueeze(0)]
+                    _pos = batch_idx.to(torch.int16)
+                else:
+                    conv_in, recurrent_in = conv_state, recurrent_state
+                    _pos = torch.tensor(0, dtype=torch.int16)
                 hidden_states, new_conv_state, new_recurrent_state = layer(
                     hidden_states,
-                    conv_state,
-                    recurrent_state,
+                    conv_in,
+                    recurrent_in,
                     query_position=query_position,
                     valid_mask=valid_mask,
                     conv_state_mask=conv_state_mask,
@@ -625,8 +635,8 @@ class Qwen3_5Model(DecoderOnlyModel):
                 )
                 # persist new states to the static DRAM cache in-place (aliased write): the op result aliases
                 # the static input address, so returning it wires the write (runtime does not re-feed these).
+                # slotted -> write the (1, ...) new slot at pos=batch_idx; else the full batch at pos 0.
                 _axis0 = torch.tensor(0, dtype=torch.int16)
-                _pos = torch.tensor(0, dtype=torch.int16)
                 new_states.append(
                     torch.ops.rbln_custom_ops.rbln_cache_update(conv_state, new_conv_state, _pos, _axis0)
                 )
@@ -671,6 +681,7 @@ class Qwen3_5ForCausalLM(DecoderOnlyForCausalLM):
         conv_state_mask: Optional[torch.Tensor] = None,
         recurrent_state_mask: Optional[torch.Tensor] = None,
         valid_mask: Optional[torch.Tensor] = None,
+        batch_idx: Optional[torch.Tensor] = None,
         output_hidden_states: Optional[bool] = None,
     ):
         hidden_states, all_hidden_states, new_states = self.model(
@@ -689,6 +700,7 @@ class Qwen3_5ForCausalLM(DecoderOnlyForCausalLM):
             conv_state_mask=conv_state_mask,
             recurrent_state_mask=recurrent_state_mask,
             valid_mask=valid_mask,
+            batch_idx=batch_idx,
             output_hidden_states=output_hidden_states,
         )
 
@@ -751,6 +763,8 @@ class Qwen3_5_CausalLMWrapper(DecoderOnlyWrapper):
         # then split that state list into two containers and reattach the masks. Only when linear layers exist.
         args = list(args)
         has_linear = any(t == "linear_attention" for t in self.config.layer_types)
+        # batch_idx is appended LAST for prefill only (get_input_info); pop it first.
+        batch_idx = args.pop() if (has_linear and "prefill" in self.phase) else None
         valid_mask = args.pop() if has_linear else None
         recurrent_state_mask = args.pop() if has_linear else None
         conv_state_mask = args.pop() if has_linear else None
@@ -763,7 +777,7 @@ class Qwen3_5_CausalLMWrapper(DecoderOnlyWrapper):
         base[-2] = [pair if i not in linear else None for i, pair in enumerate(combined)]  # past_key_values
         past_states = [pair if i in linear else None for i, pair in enumerate(combined)]
         base.insert(-1, past_states)  # insert past_states just before rotary_emb (the last element)
-        return (*base, conv_state_mask, recurrent_state_mask, valid_mask)
+        return (*base, conv_state_mask, recurrent_state_mask, valid_mask, batch_idx)
 
     def forward(self, *args):
         (
@@ -782,6 +796,7 @@ class Qwen3_5_CausalLMWrapper(DecoderOnlyWrapper):
             conv_state_mask,
             recurrent_state_mask,
             valid_mask,
+            batch_idx,
         ) = self.prepare_forward_args(*args)
 
         logits, all_hidden_states, new_states = self.model(
@@ -800,6 +815,7 @@ class Qwen3_5_CausalLMWrapper(DecoderOnlyWrapper):
             conv_state_mask=conv_state_mask,
             recurrent_state_mask=recurrent_state_mask,
             valid_mask=valid_mask,
+            batch_idx=batch_idx,
             output_hidden_states=self.rbln_config.output_hidden_states,
         )
 
@@ -842,6 +858,8 @@ class Qwen3_5_LanguageModelWrapper(Qwen3_5_CausalLMWrapper):
         # valid/conv/recurrent state masks are the LAST graph inputs (get_input_info order): pop them off the
         # end first so the standard front-popping + `past_states = args` below is unchanged. Linear layers only.
         has_linear = any(t == "linear_attention" for t in self.config.layer_types)
+        # batch_idx is appended LAST for prefill only (get_input_info); pop it first.
+        batch_idx = args.pop() if (has_linear and "prefill" in self.phase) else None
         valid_mask = args.pop() if has_linear else None
         recurrent_state_mask = args.pop() if has_linear else None
         conv_state_mask = args.pop() if has_linear else None
@@ -888,6 +906,7 @@ class Qwen3_5_LanguageModelWrapper(Qwen3_5_CausalLMWrapper):
             conv_state_mask,
             recurrent_state_mask,
             valid_mask,
+            batch_idx,
         )
 
     def forward(self, *args):
@@ -907,6 +926,7 @@ class Qwen3_5_LanguageModelWrapper(Qwen3_5_CausalLMWrapper):
             conv_state_mask,
             recurrent_state_mask,
             valid_mask,
+            batch_idx,
         ) = self.prepare_forward_args(*args)
 
         logits, all_hidden_states, new_states = self.model(
@@ -925,6 +945,7 @@ class Qwen3_5_LanguageModelWrapper(Qwen3_5_CausalLMWrapper):
             conv_state_mask=conv_state_mask,
             recurrent_state_mask=recurrent_state_mask,
             valid_mask=valid_mask,
+            batch_idx=batch_idx,
             output_hidden_states=self.rbln_config.output_hidden_states,
         )
 

@@ -103,7 +103,9 @@ def _qwen3_5_setup_hybrid_runtime(model):
         "state_dtype": model.dtype,
     }
 
-    conv_shape, recur_shape = _qwen3_5_linear_state_shapes(text_config, rbln_config.batch_size)
+    # Prefill runs one item at a time (batch=1) and writes its `batch_position` slot, so its state MASKS are
+    # batch=1 sized (they gate the single slot the graph reads); the underlying cache is max-batch (get_input_info).
+    conv_shape, recur_shape = _qwen3_5_linear_state_shapes(text_config, 1)
     model.prefill_decoder = RBLNQwen3_5RuntimeModel(
         runtime=model.model[0],
         phase="prefill",
@@ -205,12 +207,17 @@ class RBLNQwen3_5TextModel(RBLNDecoderOnlyModel):
         if rbln_config.quantization and rbln_config.quantization.kv_caches == "fp8":
             kvcache_dtype = "float8_e4m3fn"
 
+        # The linear conv/recurrent caches are ONE shared static tensor across prefill and every decode
+        # bucket, so they are sized to the max (decode) batch — NOT the per-config `batch_size` (=1 for
+        # prefill). Prefill processes one item and read/writes its `batch_position` slot; decode runs the
+        # full batch. (Like the paged KV cache, which is block-indexed and likewise batch-config-agnostic.)
+        state_batch = rbln_config.batch_size
         kvcache_metas = []
         for layer_idx in range(num_hidden_layers):
             if layer_idx in linear_layers:
-                conv_shape = [batch_size, conv_state_len, conv_dim]
+                conv_shape = [state_batch, conv_state_len, conv_dim]
                 recurrent_shape = [
-                    batch_size,
+                    state_batch,
                     text_config.linear_num_value_heads,
                     text_config.linear_key_head_dim,
                     text_config.linear_value_head_dim,
@@ -269,6 +276,9 @@ class RBLNQwen3_5TextModel(RBLNDecoderOnlyModel):
             )
             # per-token validity (1=real, 0=right-padding); host-built, GatedDeltaNet uses it to drop padding.
             input_info.append(("valid_mask", [batch_size, query_length, 1], rbln_config.dtype))
+            # prefill only: which max-batch slot this per-item (batch=1) call reads/writes in the linear caches.
+            if is_prefill:
+                input_info.append(("batch_idx", [], "int16"))
 
         if len(rbln_config.kvcache_metas) == 0:
             rbln_config.kvcache_metas.extend(kvcache_metas)
