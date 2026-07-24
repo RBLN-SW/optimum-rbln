@@ -1,34 +1,41 @@
+import argparse
 import os
 
-import fire
 from transformers import AutoTokenizer, T5EncoderModel
 
 from optimum.rbln import RBLNT5EncoderModel
 
 
-def main(
-    model_id: str = "google-t5/t5-small",
-    batch_size: int = 1,
-    from_transformers: bool = False,
-    prompt: str | None = "Studies have been shown that owning a dog is good for you",
-):
-    tokenizer = AutoTokenizer.from_pretrained(model_id)
+# You can compile the model ahead of time with the CLI and then load the
+# artifacts here by passing the output directory as --model-id:
+#
+#   optimum-rbln-cli --model-id google-t5/t5-small -o t5-small \
+#       --batch_size 1
 
-    t5_encoder_model = T5EncoderModel.from_pretrained(model_id)
 
-    if from_transformers:
+def parse_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--model-id", default="google-t5/t5-small")
+    parser.add_argument("--batch-size", type=int, default=1)
+    parser.add_argument("--prompt", default="Studies have been shown that owning a dog is good for you")
+    return parser.parse_args()
+
+
+def main():
+    args = parse_args()
+
+    tokenizer = AutoTokenizer.from_pretrained(args.model_id)
+
+    if os.path.isdir(args.model_id):
+        model = RBLNT5EncoderModel.from_pretrained(args.model_id)
+    else:
+        t5_encoder_model = T5EncoderModel.from_pretrained(args.model_id)
         model = RBLNT5EncoderModel.from_model(
             model=t5_encoder_model,
-            rbln_batch_size=batch_size,
-        )
-        model.save_pretrained(os.path.basename(model_id))
-    else:
-        model = RBLNT5EncoderModel.from_pretrained(
-            model_id=os.path.basename(model_id),
-            export=False,
+            rbln_batch_size=args.batch_size,
         )
 
-    target_sentences = [prompt] * batch_size
+    target_sentences = [args.prompt] * args.batch_size
     inputs = tokenizer(target_sentences, return_tensors="pt", padding="max_length", max_length=512)
 
     outputs = model(**inputs)
@@ -36,4 +43,4 @@ def main(
 
 
 if __name__ == "__main__":
-    fire.Fire(main)
+    main()
