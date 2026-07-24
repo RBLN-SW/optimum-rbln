@@ -32,6 +32,7 @@ paged KV cache, like Qwen3 + an output gate + partial RoPE) interleaved with
 """
 
 import copy
+import math
 from typing import List, Optional, Tuple
 
 import torch
@@ -47,10 +48,10 @@ from ..decoderonly.decoderonly_architecture import (
     DecoderOnlyModel,
     DecoderOnlyWrapper,
     RotaryEmbedding,
+    apply_rotary_pos_emb,
     apply_rotary_pos_emb_partial,
     slice_and_unsqueeze_cos_sin,
 )
-from ..qwen3_vl.qwen3_vl_architecture import Qwen3VLVisionBlock
 
 @torch.library.custom_op("rbln::tri_recur_update", mutates_args=())
 def tri_recur_update(attn: Tensor) -> Tensor:
@@ -68,6 +69,73 @@ def tri_recur_update_fake(attn: Tensor) -> Tensor:
     return torch.empty_like(attn)
 
 
+class Qwen3_5VisionAttention(nn.Module):
+    """Qwen3.5 vision attention.
+
+    Full (non-windowed) SDPA over the padded patch window; rotary applied on the precomputed host cos/sin.
+    """
+
+    def __init__(self, model: nn.Module, rbln_config) -> None:
+        super().__init__()
+        self._origin_model = model
+        self.rbln_config = rbln_config
+        self.num_heads = model.num_heads
+        self.head_dim = getattr(model, "head_dim", model.proj.in_features // model.num_heads)
+        self.qkv = model.qkv
+        self.proj = model.proj
+        self.scale = torch.tensor(1 / math.sqrt(self.head_dim), dtype=rbln_config.dtype)
+
+    def forward(
+        self,
+        hidden_states: torch.Tensor,
+        attn_mask: torch.Tensor,
+        position_embeddings: Tuple[torch.Tensor, torch.Tensor],
+    ) -> torch.Tensor:
+        seq_length = hidden_states.shape[0]
+        hidden_states = hidden_states.unsqueeze(0)
+        q, k, v = (
+            self.qkv(hidden_states).reshape(1, seq_length, 3, self.num_heads, -1).permute(2, 0, 3, 1, 4).unbind(0)
+        )
+        cos, sin = position_embeddings
+        q, k = apply_rotary_pos_emb(q, k, cos, sin)
+        attn_output = nn.functional.scaled_dot_product_attention(
+            q,
+            k,
+            v,
+            attn_mask=attn_mask,
+            dropout_p=0.0,
+            is_causal=False,
+            scale=self.scale.item(),
+        )
+        attn_output = attn_output.transpose(1, 2)
+        attn_output = attn_output.reshape(1, seq_length, -1)
+        attn_output = self.proj(attn_output).squeeze(0)
+        return attn_output
+
+
+class Qwen3_5VisionBlock(nn.Module):
+    """Qwen3.5 vision transformer block: (norm1 -> attn) + (norm2 -> mlp) residuals."""
+
+    def __init__(self, model: nn.Module, rbln_config) -> None:
+        super().__init__()
+        self._origin_model = model
+        self.rbln_config = rbln_config
+        self.norm1 = model.norm1
+        self.norm2 = model.norm2
+        self.attn = Qwen3_5VisionAttention(model.attn, rbln_config)
+        self.mlp = model.mlp
+
+    def forward(
+        self,
+        hidden_states: torch.Tensor,
+        attn_mask: torch.Tensor,
+        position_embeddings: Tuple[torch.Tensor, torch.Tensor],
+    ) -> torch.Tensor:
+        hidden_states = hidden_states + self.attn(self.norm1(hidden_states), attn_mask, position_embeddings)
+        hidden_states = hidden_states + self.mlp(self.norm2(hidden_states))
+        return hidden_states
+
+
 class Qwen3_5VisionModelWrapper(nn.Module):
     """Qwen3.5 vision encoder for RBLN: transformer blocks + merger, NO deepstack.
 
@@ -80,7 +148,7 @@ class Qwen3_5VisionModelWrapper(nn.Module):
         super().__init__()
         self.merger = model.merger
         self.rbln_config = rbln_config
-        self.blocks = nn.ModuleList([Qwen3VLVisionBlock(block, rbln_config) for block in model.blocks])
+        self.blocks = nn.ModuleList([Qwen3_5VisionBlock(block, rbln_config) for block in model.blocks])
 
     def forward(
         self,
@@ -90,8 +158,9 @@ class Qwen3_5VisionModelWrapper(nn.Module):
         sin: torch.Tensor,
     ) -> torch.Tensor:
         attn_mask = (1.0 - attn_mask) * torch.finfo(hidden_states.dtype).min
+        cos, sin = cos.to(hidden_states.dtype), sin.to(hidden_states.dtype)
         for block in self.blocks:
-            hidden_states = block(hidden_states, attn_mask, [cos, sin])
+            hidden_states = block(hidden_states, attn_mask, (cos, sin))
         return self.merger(hidden_states)
 
 
