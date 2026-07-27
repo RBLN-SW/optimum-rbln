@@ -90,6 +90,19 @@ class RBLNQwen3_5RuntimeModel(RBLNRuntimeModel):
         local_block_tables: torch.Tensor | None = None,
         lora_int_ids: torch.Tensor | None = None,
     ) -> RBLNDecoderOnlyOutput:
+        # Resolve LoRA ids from set_lora_int_ids() when the caller didn't pass them (mirrors the base
+        # prefill_forward): prefill runs one item, so take that batch slot.
+        if self.rbln_config.use_lora and lora_int_ids is None:
+            if self.lora_int_ids is None:
+                raise ValueError(
+                    "lora_int_id is required when using LoRA. "
+                    "You should call set_lora_int_ids() before forward() or pass lora_int_id to forward()."
+                )
+            if batch_idx is not None:
+                lora_int_ids = self.lora_int_ids[batch_idx : batch_idx + 1].clone()
+            else:
+                lora_int_ids = self.lora_int_ids.clone()
+
         # Fresh sequence: no host reset needed — the static cache may hold stale DRAM, but the first
         # prefill window's conv/recurrent mask (0) zeros the read, so it starts fresh regardless.
         (
@@ -192,6 +205,18 @@ class RBLNQwen3_5RuntimeModel(RBLNRuntimeModel):
         local_block_tables: torch.Tensor | None = None,
         lora_int_ids: torch.Tensor | None = None,
     ) -> RBLNDecoderOnlyOutput:
+        # Resolve LoRA ids from set_lora_int_ids() when the caller didn't pass them (mirrors the base
+        # decode_forward): decode runs the full batch, so use the whole tensor.
+        if self.rbln_config.use_lora and lora_int_ids is None:
+            if self.lora_int_ids is None:
+                raise ValueError(
+                    "lora_int_id is required when using LoRA. "
+                    "You should call set_lora_int_ids() before forward() or pass lora_int_id to forward()."
+                )
+            lora_int_ids = self.lora_int_ids
+        if lora_int_ids is not None and lora_int_ids.shape[0] != self.batch_size:
+            raise ValueError(f"lora_int_ids size mismatch: got {lora_int_ids.shape[0]}, expected {self.batch_size}.")
+
         if self.rbln_config.use_attention_mask and attention_mask is None:
             for b_idx in range(self.batch_size):
                 decoding_step = cache_position[b_idx].item()
