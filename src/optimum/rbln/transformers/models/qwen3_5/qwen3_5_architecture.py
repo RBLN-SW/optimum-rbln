@@ -17,7 +17,7 @@ import math
 
 import torch
 import torch.nn.functional as F
-from torch import Tensor, nn
+from torch import nn
 from transformers import PreTrainedModel
 from transformers.models.qwen3_5.modeling_qwen3_5 import l2norm
 
@@ -31,22 +31,6 @@ from ..decoderonly.decoderonly_architecture import (
     apply_rotary_pos_emb_partial,
     slice_and_unsqueeze_cos_sin,
 )
-
-
-@torch.library.custom_op("rbln::tri_recur_update", mutates_args=())
-def tri_recur_update(attn: Tensor) -> Tensor:
-    attn = attn.clone()
-    c = attn.shape[-1]
-    for i in range(1, c):
-        row = attn[..., i, :i].clone()
-        sub = attn[..., :i, :i].clone()
-        attn[..., i, :i] = row + (row.unsqueeze(-1) * sub).sum(-2)
-    return attn
-
-
-@torch.library.register_fake("rbln::tri_recur_update")
-def tri_recur_update_fake(attn: Tensor) -> Tensor:
-    return torch.empty_like(attn)
 
 
 class Qwen3_5VisionAttention(nn.Module):
