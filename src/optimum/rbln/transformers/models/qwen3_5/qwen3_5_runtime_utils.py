@@ -119,7 +119,11 @@ class RBLNQwen3_5RuntimeModel(RBLNRuntimeModel):
         )
 
         chunk = self.rbln_config.prefill_chunk_size
+        # Prefix caching is not supported yet: carrying the linear (GatedDeltaNet) conv/recurrent state
+        # across a cached prefix isn't implemented, so reject it instead of computing against empty state.
         prefix_cached_len = cache_position[0][0].item()
+        if prefix_cached_len > 0:
+            raise NotImplementedError("Prefix caching is not supported for the Qwen3.5 hybrid model.")
         logits = None
 
         for step in range(0, inputs.shape[1], chunk):
