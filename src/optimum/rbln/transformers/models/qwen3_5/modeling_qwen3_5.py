@@ -160,6 +160,10 @@ class RBLNQwen3_5TextModel(RBLNDecoderOnlyModel):
         text_config = model_config.get_text_config()
         if getattr(text_config, "layer_types", None) is None:
             raise ValueError("Qwen3.5 requires `layer_types` in the model config.")
+        # Qwen3.5 feeds rotary via the precomputed `position_emb` (cos/sin), so in-graph position_ids are not
+        # part of its design and the runtime never passes them. Reject use_position_ids until it's supported.
+        if rbln_config.use_position_ids:
+            raise NotImplementedError("use_position_ids is not supported for the Qwen3.5 hybrid model.")
         num_attention_heads = getattr(text_config, "n_head", None) or text_config.num_attention_heads
         num_key_value_heads = getattr(text_config, "num_key_value_heads", None) or num_attention_heads
         num_hidden_layers = getattr(text_config, "n_layer", None) or text_config.num_hidden_layers
@@ -216,7 +220,7 @@ class RBLNQwen3_5TextModel(RBLNDecoderOnlyModel):
         for layer_idx in range(num_hidden_layers):
             if layer_idx in linear_layers:
                 conv_shape = [state_batch, conv_state_len, conv_dim]
-                # FIXME(seinpark) : recurrent cache stored 3D as (B, Hv*Dk, Dv); GatedDeltaNet reshapes to 
+                # FIXME(seinpark) : recurrent cache stored 3D as (B, Hv*Dk, Dv); GatedDeltaNet reshapes to
                 # 4D (B, Hv, Dk, Dv) internally.
                 recurrent_shape = [
                     state_batch,
