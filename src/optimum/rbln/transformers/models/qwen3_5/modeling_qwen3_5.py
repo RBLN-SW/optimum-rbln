@@ -328,10 +328,6 @@ class RBLNQwen3_5ForCausalLM(RBLNQwen3_5TextModel, RBLNDecoderOnlyModelForCausal
 
     auto_model_class = AutoModelForCausalLM
 
-    def forward(self, *args, **kwargs):
-        kwargs["return_dict"] = True
-        return super().forward(*args, **kwargs)
-
 
 class RBLNQwen3_5VisionModel(RBLNModel):
     """Qwen3.5 vision encoder for RBLN — a Qwen3-VL-style vision tower WITHOUT deepstack.
