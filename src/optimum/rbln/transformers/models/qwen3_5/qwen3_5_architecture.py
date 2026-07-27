@@ -764,10 +764,18 @@ class Qwen3_5_CausalLMWrapper(DecoderOnlyWrapper):
             return self.get_rbln_causal_lm_class()(model, new_model)
         return new_model
 
+    def _split_layer_states(self, pairs):
+        # Split a per-layer list of pairs by layer type: full_attention -> past_key_values (key, value), 
+        # linear_attention -> past_states (conv_state, recurrent_state).
+        linear = {i for i, t in enumerate(self.config.layer_types) if t == "linear_attention"}
+        past_key_values = [pair if i not in linear else None for i, pair in enumerate(pairs)]
+        past_states = [pair if i in linear else None for i, pair in enumerate(pairs)]
+        return past_key_values, past_states
+
     def prepare_forward_args(self, *args):
         # valid/conv/recurrent state masks are the LAST graph inputs (get_input_info order): pop them off the
         # end (LIFO -> valid, recurrent, conv), let the base build the standard prefix + per-layer state block,
-        # then split that state list into two containers and reattach the masks. Only when linear layers exist.
+        # then split that state list into two containers and reattach the masks.
         args = list(args)
         has_linear = any(t == "linear_attention" for t in self.config.layer_types)
         # batch_idx is appended LAST for prefill only (get_input_info); pop it first.
@@ -776,13 +784,7 @@ class Qwen3_5_CausalLMWrapper(DecoderOnlyWrapper):
         recurrent_state_mask = args.pop() if has_linear else None
         conv_state_mask = args.pop() if has_linear else None
         base = list(super().prepare_forward_args(*args))
-        # base[-2] is the combined per-layer state list (2/layer, indexed by layer_idx): split by layer type
-        # into past_key_values (full-attn KV) and past_states (linear conv/recurrent), both full-length with
-        # None at the other type's indices so [layer_idx] indexing still works.
-        linear = {i for i, t in enumerate(self.config.layer_types) if t == "linear_attention"}
-        combined = base[-2]
-        base[-2] = [pair if i not in linear else None for i, pair in enumerate(combined)]  # past_key_values
-        past_states = [pair if i in linear else None for i, pair in enumerate(combined)]
+        base[-2], past_states = self._split_layer_states(base[-2])
         base.insert(-1, past_states)  # insert past_states just before rotary_emb (the last element)
         return (*base, conv_state_mask, recurrent_state_mask, valid_mask, batch_idx)
 
@@ -881,21 +883,14 @@ class Qwen3_5_LanguageModelWrapper(Qwen3_5_CausalLMWrapper):
         attention_mask = args.pop(0) if self.rbln_config.use_attention_mask else None
         lora_int_id = args.pop(0) if self.rbln_config.lora_config else None
 
-        # 2 state slots per layer -> split by layer type: past_key_values = (key, value) for full_attention,
-        # past_states = (conv_state, recurrent_state) for linear_attention. Both full-length (None at the other
-        # type's indices) so per-layer [layer_idx] indexing works.
+        # The remaining args are 2 state slots per layer (flat); pair them up, then split by layer type via the
+        # shared helper: past_key_values = (key, value) for full_attention, past_states = (conv_state,
+        # recurrent_state) for linear_attention (both full-length with None at the other type's indices).
         state_args = args
         if len(state_args) != 2 * self.num_hidden_layers:
             raise ValueError(f"Different states to model's config. {len(state_args)} != {2 * self.num_hidden_layers}")
-        linear = {i for i, t in enumerate(self.config.layer_types) if t == "linear_attention"}
-        past_key_values = [None] * self.num_hidden_layers
-        past_states = [None] * self.num_hidden_layers
-        for i in range(self.num_hidden_layers):
-            pair = [state_args[i * 2], state_args[i * 2 + 1]]
-            if i in linear:
-                past_states[i] = pair
-            else:
-                past_key_values[i] = pair
+        pairs = [[state_args[i * 2], state_args[i * 2 + 1]] for i in range(self.num_hidden_layers)]
+        past_key_values, past_states = self._split_layer_states(pairs)
 
         return (
             input_ids,
