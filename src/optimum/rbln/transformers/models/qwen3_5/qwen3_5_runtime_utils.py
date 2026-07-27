@@ -60,6 +60,14 @@ class RBLNQwen3_5RuntimeModel(RBLNRuntimeModel):
         self.recurrent_state_shape = tuple(recurrent_state_shape)
         self.state_dtype = state_dtype
 
+        # conv/recurrent masks: zeros on prefill window 0 (fresh sequence), ones afterwards / in decode (carry).
+        self._conv_mask_zeros = torch.zeros(self.conv_state_shape, dtype=state_dtype)
+        self._conv_mask_ones = torch.ones(self.conv_state_shape, dtype=state_dtype)
+        self._recurrent_mask_zeros = torch.zeros(self.recurrent_state_shape, dtype=state_dtype)
+        self._recurrent_mask_ones = torch.ones(self.recurrent_state_shape, dtype=state_dtype)
+        self._valid_mask_decode = torch.ones(self.batch_size, 1, 1, dtype=state_dtype)
+        self._valid_mask_prefill_full = torch.ones(1, self.rbln_config.prefill_chunk_size, 1, dtype=state_dtype)
+
     def _run(self, named_inputs: dict) -> torch.Tensor:
         """Order inputs by the runtime's OWN (pruned) signature and invoke; return logits.
 
@@ -169,10 +177,9 @@ class RBLNQwen3_5RuntimeModel(RBLNRuntimeModel):
                 named["lora_int_ids"] = lora_int_ids
 
             # State masks: ZERO the carried state on the FIRST prefill window (fresh sequence -> no prior
-            # context) and pass it through (ones) on later windows. Same shape as one layer's states.
-            fill = torch.zeros if step == 0 else torch.ones
-            named["conv_state_mask"] = fill(self.conv_state_shape, dtype=self.state_dtype)
-            named["recurrent_state_mask"] = fill(self.recurrent_state_shape, dtype=self.state_dtype)
+            # context) and pass it through (ones) on later windows. Reuse the precomputed constants.
+            named["conv_state_mask"] = self._conv_mask_zeros if step == 0 else self._conv_mask_ones
+            named["recurrent_state_mask"] = self._recurrent_mask_zeros if step == 0 else self._recurrent_mask_ones
 
             # which max-batch slot of the linear state caches this per-item (batch=1) prefill reads/writes.
             if batch_idx is not None:
@@ -181,11 +188,14 @@ class RBLNQwen3_5RuntimeModel(RBLNRuntimeModel):
             # Per-token validity of THIS chunk: 1 for the real tokens, 0 for the right-padding. Built from
             # query_length (the SAME source as query_position above), NOT from the embeddings. The
             # GatedDeltaNet multiplies it into g/beta to drop padding from the recurrent-state sum / decay
-            # and the conv_state extraction. Full windows -> all ones; the last (partial) window -> ones
-            # for the first (query_length - step) columns, then zeros.
+            # and the conv_state extraction. Full windows -> the precomputed all-ones; the last (partial)
+            # window -> ones for the first (query_length - step) columns, then zeros (built on demand).
             valid_count = max(0, min(chunk, query_length - step))
-            valid_mask = torch.zeros(input_chunk.shape[0], chunk, 1, dtype=self.state_dtype)
-            valid_mask[:, :valid_count] = 1.0
+            if valid_count >= chunk:
+                valid_mask = self._valid_mask_prefill_full
+            else:
+                valid_mask = torch.zeros(input_chunk.shape[0], chunk, 1, dtype=self.state_dtype)
+                valid_mask[:, :valid_count] = 1.0
             named["valid_mask"] = valid_mask
 
             # For logits_to_keep == 1 every window overwrites the single logits row, so the final value
@@ -248,12 +258,11 @@ class RBLNQwen3_5RuntimeModel(RBLNRuntimeModel):
 
         # Decode always continues from the real carried state -> ones (no-op). The masks are gated on the
         # prefill phase in the GatedDeltaNet, so they are pruned from the decode graph and these entries
-        # are simply ignored by the name-based input mapping; passed for safety if they survive.
-        named["conv_state_mask"] = torch.ones(self.conv_state_shape, dtype=self.state_dtype)
-        named["recurrent_state_mask"] = torch.ones(self.recurrent_state_shape, dtype=self.state_dtype)
-        # Decode is seq=1 (always valid) and uses the recurrent rule, which ignores valid_mask -> pruned from
-        # the decode graph; passed (all ones) only for safety if it survives, mirroring the state masks.
-        named["valid_mask"] = torch.ones(inputs.shape[0], 1, 1, dtype=self.state_dtype)
+        # are simply ignored by the name-based input mapping; passed (precomputed constants) for safety if
+        # they survive. Reused, not reallocated — decode runs once per token.
+        named["conv_state_mask"] = self._conv_mask_ones
+        named["recurrent_state_mask"] = self._recurrent_mask_ones
+        named["valid_mask"] = self._valid_mask_decode
 
         logits = self._run(named)
         return RBLNDecoderOnlyOutput(logits=logits, hidden_states=None)
