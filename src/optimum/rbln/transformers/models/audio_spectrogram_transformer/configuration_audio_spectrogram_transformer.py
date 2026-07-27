@@ -15,7 +15,6 @@
 from typing import Any
 
 from ....configuration_utils import RBLNModelConfig
-from ....utils.deprecation import deprecate_kwarg
 
 
 class RBLNASTForAudioClassificationConfig(RBLNModelConfig):
@@ -23,7 +22,6 @@ class RBLNASTForAudioClassificationConfig(RBLNModelConfig):
     Configuration class for RBLNASTForAudioClassification.
     """
 
-    @deprecate_kwarg(old_name="num_mel_bins", version="0.10.0")
     def __init__(
         self,
         batch_size: int | None = None,
