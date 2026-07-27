@@ -83,18 +83,24 @@ class RBLNQwen3_5VisionModelConfig(RBLNModelConfig):
     Independent of the Qwen3-VL config (inherits `RBLNModelConfig` directly).
     """
 
-    def __init__(self, max_seq_len: int | list[int] = None, **kwargs: Any):
+    def __init__(self, max_seq_len: int | list[int] = None, batch_size: int = 1, **kwargs: Any):
         """
         Args:
             max_seq_len (Optional[Union[int, List[int]]]): Vision Transformer attention max sequence
                 length(s) = number of (merged) patches per image/video. RBLN runs inference per image, so
                 set this to the max expected resolution to bound compute. Required.
+            batch_size (int): the vision encoder runs one image at a time (the parent config forces this
+                by default).
             kwargs: Additional arguments passed to the parent RBLNModelConfig.
 
         Raises:
-            ValueError: If `max_seq_len` is None or not provided.
+            ValueError: If `max_seq_len` is None or not provided, or if `batch_size` is not 1.
         """
         super().__init__(**kwargs)
+
+        if batch_size != 1:
+            raise ValueError(f"The Qwen3.5 vision encoder only supports batch_size=1, got {batch_size}.")
+        self.batch_size = batch_size
 
         if max_seq_len is not None:
             if isinstance(max_seq_len, int):
@@ -146,7 +152,8 @@ class RBLNQwen3_5ModelConfig(RBLNDecoderOnlyModelConfig):
                 "RBLNQwen3_5ModelConfig requires use_inputs_embeds=True. "
                 "The visual encoder output must be injected into inputs_embeds."
             )
-        self.visual = self.initialize_submodule_config(submodule_config=visual)
+        # The vision encoder runs one image at a time, so force batch_size=1 on the submodule.
+        self.visual = self.initialize_submodule_config(submodule_config=visual, force_kwargs=True, batch_size=1)
         self._load_visual_runtime = _load_visual_runtime
         self.gdn_chunk_size = gdn_chunk_size
 
@@ -207,6 +214,9 @@ class RBLNQwen3_5ForConditionalGenerationConfig(RBLNDecoderOnlyModelForCausalLMC
                 "RBLNQwen3_5ForConditionalGenerationConfig requires use_inputs_embeds=True. "
                 "The visual encoder output must be injected into inputs_embeds."
             )
-        self.visual = self.initialize_submodule_config(submodule_config=visual)
+        # The vision encoder runs one image at a time, so force batch_size=1 on the submodule.
+        self.visual = self.initialize_submodule_config(submodule_config=visual, force_kwargs=True, batch_size=1)
         self._load_visual_runtime = _load_visual_runtime
+        # GDN prefill sub-chunk size (must divide prefill_chunk_size). None -> = prefill_chunk_size
+        # (n_chunks == 1, no sub-chunking). See rbln_chunk_gated_delta_rule.
         self.gdn_chunk_size = gdn_chunk_size
