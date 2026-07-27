@@ -133,19 +133,14 @@ class RBLNQwen3_5RuntimeModel(RBLNRuntimeModel):
                 position_embed[:, :, :, step : step + chunk, :] if position_embed is not None else None
             )
 
-            # Reveal the current chunk (and previously seen tokens) in the causal attention mask.
+            # Reveal the current chunk (and previously seen tokens) in the causal attention mask. use_position_ids
+            # is rejected for Qwen3.5, so the mask is always 4D.
             if self.rbln_config.use_attention_mask:
-                if self.rbln_config.use_position_ids:
-                    if step > 0:
-                        chunked_attention_mask[:, prefix_cached_len : prefix_cached_len + step] = 1
-                    cur_end = min(step + chunk, query_length) + prefix_cached_len
-                    chunked_attention_mask[:, step + prefix_cached_len : cur_end] = 1
-                else:
-                    if step > 0:
-                        chunked_attention_mask[:, :, :, prefix_cached_len : prefix_cached_len + step] = 1
-                    chunked_attention_mask[:, :, :, step + prefix_cached_len : step + prefix_cached_len + chunk] = (
-                        self.causal_mask
-                    )
+                if step > 0:
+                    chunked_attention_mask[:, :, :, prefix_cached_len : prefix_cached_len + step] = 1
+                chunked_attention_mask[:, :, :, step + prefix_cached_len : step + prefix_cached_len + chunk] = (
+                    self.causal_mask
+                )
 
             query_position = (
                 torch.tensor(
@@ -231,10 +226,7 @@ class RBLNQwen3_5RuntimeModel(RBLNRuntimeModel):
                         f"Decoding step {decoding_step} out of bounds for attention mask "
                         f"with shape {self.dec_attn_mask.shape}."
                     )
-                if self.rbln_config.use_position_ids:
-                    self.dec_attn_mask[b_idx, decoding_step] = 1
-                else:
-                    self.dec_attn_mask[b_idx, :, :, decoding_step] = 1
+                self.dec_attn_mask[b_idx, :, :, decoding_step] = 1
             attention_mask = self.dec_attn_mask
 
         named = {"inputs_embeds" if self.rbln_config.use_inputs_embeds else "input_ids": inputs}

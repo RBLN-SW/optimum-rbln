@@ -90,10 +90,8 @@ def _qwen3_5_setup_hybrid_runtime(model):
     rbln_config = model.rbln_config
     text_config = model.config.get_text_config()
     page_table_manager = RBLNPageTableManager(rbln_config)
-    if rbln_config.use_position_ids:
-        dec_attn_mask = torch.zeros(rbln_config.batch_size, rbln_config.max_seq_len, dtype=model.dtype)
-    else:
-        dec_attn_mask = torch.zeros(rbln_config.batch_size, 1, 1, rbln_config.max_seq_len, dtype=model.dtype)
+    # Qwen3.5 rejects use_position_ids, so the decode attention mask is always 4D.
+    dec_attn_mask = torch.zeros(rbln_config.batch_size, 1, 1, rbln_config.max_seq_len, dtype=model.dtype)
 
     common_kwargs = {
         "main_input_name": "inputs_embeds" if rbln_config.use_inputs_embeds else "input_ids",
@@ -160,9 +158,10 @@ class RBLNQwen3_5TextModel(RBLNDecoderOnlyModel):
         text_config = model_config.get_text_config()
         if getattr(text_config, "layer_types", None) is None:
             raise ValueError("Qwen3.5 requires `layer_types` in the model config.")
-        # Qwen3.5 feeds rotary via the precomputed `position_emb` (cos/sin), so in-graph position_ids are not
-        # part of its design and the runtime never passes them. Reject use_position_ids until it's supported.
         if rbln_config.use_position_ids:
+            # Qwen3.5 needs no explicit position_ids: the VL path precomputes the mRoPE cos/sin on the
+            # host and feeds them as position_emb, and the Text Model path derives contiguous positions from
+            # cache_position (mRoPE degenerates to standard RoPE for text-only).
             raise NotImplementedError("use_position_ids is not supported for the Qwen3.5 model.")
         # TODO(seinpark) : output_hidden_states isn't wired yet; planned as a follow-up.
         if rbln_config.output_hidden_states:
@@ -194,14 +193,9 @@ class RBLNQwen3_5TextModel(RBLNDecoderOnlyModel):
             input_info.append(("query_position", [], "int16"))
 
         if rbln_config.use_attention_mask:
-            if rbln_config.use_position_ids:
-                input_info.append(("attention_mask", [batch_size, rbln_config.max_seq_len], rbln_config.dtype))
-            else:
-                input_info.append(
-                    ("attention_mask", [batch_size, 1, query_length, rbln_config.max_seq_len], rbln_config.dtype)
-                )
-        if rbln_config.use_position_ids:
-            input_info.append(("position_ids", [batch_size, query_length], "int32"))
+            input_info.append(
+                ("attention_mask", [batch_size, 1, query_length, rbln_config.max_seq_len], rbln_config.dtype)
+            )
         if rbln_config.use_lora:
             input_info.append(("lora_int_ids", [batch_size], "int32"))
 
