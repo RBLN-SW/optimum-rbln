@@ -40,7 +40,7 @@ def _tensor_identity(tensor: torch.Tensor) -> tuple:
     )
 
 
-def build_decoder_weight_map(
+def build_weight_map(
     source_model: torch.nn.Module,
     wrapped_model: torch.nn.Module,
 ) -> tuple[dict[str, str], dict[str, str], dict[str, torch.Tensor]]:
@@ -90,18 +90,14 @@ def save_generated_weight_state(
     save_file(generated_state, artifact_dir / GENERATED_WEIGHT_FILENAME)
 
 
-def iter_decoder_weight_windows(
+def resolve_weight_index(
     weight_source: dict[str, Any],
-    name_map: dict[str, str],
-    generated_weight_map: dict[str, str],
-    generated_weight_file: str | Path | None,
-    windows: list[dict[str, Any]],
     *,
     token: bool | str | None = None,
     cache_dir: str | None = None,
     local_files_only: bool = False,
-) -> Iterator[tuple[dict[str, Any], dict[str, torch.Tensor]]]:
-    """Materialize only tensors needed by each weight-pool window."""
+) -> dict[str, Path]:
+    """Map every checkpoint key to the safetensors shard that holds it."""
     files = _resolve_safetensors_files(
         weight_source,
         token=token,
@@ -115,7 +111,17 @@ def iter_decoder_weight_windows(
                 if key in key_to_file:
                     raise ValueError(f"Duplicate checkpoint key across safetensors shards: {key}")
                 key_to_file[key] = path
+    return key_to_file
 
+
+def iter_weight_windows(
+    key_to_file: dict[str, Path],
+    name_map: dict[str, str],
+    generated_weight_map: dict[str, str],
+    generated_weight_file: str | Path | None,
+    windows: list[dict[str, Any]],
+) -> Iterator[tuple[dict[str, Any], dict[str, torch.Tensor]]]:
+    """Materialize only tensors needed by each weight-pool window."""
     for window in windows:
         requested_names = set(window["names"])
         hf_to_compiled: dict[str, list[str]] = {}

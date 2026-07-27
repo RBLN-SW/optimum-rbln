@@ -82,6 +82,7 @@ class RBLNVQModel(RBLNModel):
                 wrapped_model,
                 rbln_compile_config=rbln_config.compile_cfgs[i],
                 create_runtimes=rbln_config.create_runtimes,
+                weight_free=rbln_config.weight_free,
                 device=rbln_config.device_map[model_name],
             )
 
