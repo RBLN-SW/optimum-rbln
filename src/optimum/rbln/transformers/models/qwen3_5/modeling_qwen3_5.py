@@ -209,23 +209,15 @@ class RBLNQwen3_5TextModel(RBLNDecoderOnlyModel):
         if rbln_config.quantization and rbln_config.quantization.kv_caches == "fp8":
             kvcache_dtype = "float8_e4m3fn"
 
-        # The linear conv/recurrent caches are ONE shared static tensor across prefill and every decode
-        # bucket, so they are sized to the max (decode) batch — NOT the per-config `batch_size` (=1 for
-        # prefill). Prefill processes one item and read/writes its `batch_position` slot; decode runs the
-        # full batch. (Like the paged KV cache, which is block-indexed and likewise batch-config-agnostic.)
+        # conv/recurrent caches are one shared static tensor, so sized to the max batch (not batch_size=1 for
+        # prefill). Prefill writes its own slot (batch_idx); decode runs the full batch.
         state_batch = rbln_config.batch_size
         kvcache_metas = []
         for layer_idx in range(num_hidden_layers):
             if layer_idx in linear_layers:
                 conv_shape = [state_batch, conv_state_len, conv_dim]
-                # recurrent cache is stored 3D as (B, Hv*Dk, Dv): the GatedDeltaNet reshapes it to the 4D math
-                # form (B, Hv, Dk, Dv) internally. Storing Hv MERGED into dim1 (Hv*Dk) rather than 4D or
-                # (B, Hv, Dk*Dv) is deliberate: the 4D/`(B,Hv,Dk*Dv)` layouts keep Hv (=16, not a multiple of
-                # 64) in the channel slot, which the compiler pads to 64 in the decode graph but not prefill ->
-                # the SHARED static cache then has a different per-row (batch) stride in each graph -> batch>1
-                # reads garbage for row>0. Merging into Hv*Dk (a multiple of 64) makes the reshape SPLIT dim1
-                # (so the 4D channel padding can't propagate back onto the 3D cache) and keeps the cache layout
-                # identical across prefill/decode. (See qwen3_5_architecture GatedDeltaNet reshapes.)
+                # FIXME(seinpark) : recurrent cache stored 3D as (B, Hv*Dk, Dv); GatedDeltaNet reshapes to 
+                # 4D (B, Hv, Dk, Dv) internally.
                 recurrent_shape = [
                     state_batch,
                     text_config.linear_num_value_heads * text_config.linear_key_head_dim,
