@@ -52,12 +52,12 @@ class RBLNQwen3_5RuntimeModel(RBLNRuntimeModel):
         self.recurrent_state_shape = tuple(recurrent_state_shape)
         self.state_dtype = state_dtype
 
-        # conv/recurrent masks: zeros on prefill window 0 (fresh sequence), ones afterwards / in decode (carry).
+        # Prefill state masks: zeros on window 0 (fresh sequence), ones afterwards (carry). Decode prunes
+        # these, so only the prefill variants are precomputed. valid_mask full windows are all-ones.
         self._conv_mask_zeros = torch.zeros(self.conv_state_shape, dtype=state_dtype)
         self._conv_mask_ones = torch.ones(self.conv_state_shape, dtype=state_dtype)
         self._recurrent_mask_zeros = torch.zeros(self.recurrent_state_shape, dtype=state_dtype)
         self._recurrent_mask_ones = torch.ones(self.recurrent_state_shape, dtype=state_dtype)
-        self._valid_mask_decode = torch.ones(self.batch_size, 1, 1, dtype=state_dtype)
         self._valid_mask_prefill_full = torch.ones(1, self.rbln_config.prefill_chunk_size, 1, dtype=state_dtype)
 
     def _run(self, named_inputs: dict) -> torch.Tensor:
@@ -90,8 +90,6 @@ class RBLNQwen3_5RuntimeModel(RBLNRuntimeModel):
         local_block_tables: torch.Tensor | None = None,
         lora_int_ids: torch.Tensor | None = None,
     ) -> RBLNDecoderOnlyOutput:
-        # Resolve LoRA ids from set_lora_int_ids() when the caller didn't pass them (mirrors the base
-        # prefill_forward): prefill runs one item, so take that batch slot.
         if self.rbln_config.use_lora and lora_int_ids is None:
             if self.lora_int_ids is None:
                 raise ValueError(
@@ -103,8 +101,6 @@ class RBLNQwen3_5RuntimeModel(RBLNRuntimeModel):
             else:
                 lora_int_ids = self.lora_int_ids.clone()
 
-        # Fresh sequence: no host reset needed — the static cache may hold stale DRAM, but the first
-        # prefill window's conv/recurrent mask (0) zeros the read, so it starts fresh regardless.
         (
             inputs,
             cache_position,
@@ -119,8 +115,8 @@ class RBLNQwen3_5RuntimeModel(RBLNRuntimeModel):
         )
 
         chunk = self.rbln_config.prefill_chunk_size
-        # Prefix caching is not supported yet: carrying the linear (GatedDeltaNet) conv/recurrent state
-        # across a cached prefix isn't implemented, so reject it instead of computing against empty state.
+        # NOTE: Prefix caching is not supported yet: carrying the linear (GatedDeltaNet) conv/recurrent state
+        # across a cached prefix isn't implemented.
         prefix_cached_len = cache_position[0][0].item()
         if prefix_cached_len > 0:
             raise NotImplementedError("Prefix caching is not supported for the Qwen3.5 hybrid model.")
@@ -163,8 +159,7 @@ class RBLNQwen3_5RuntimeModel(RBLNRuntimeModel):
             if self.rbln_config.use_lora:
                 named["lora_int_ids"] = lora_int_ids
 
-            # State masks: ZERO the carried state on the FIRST prefill window (fresh sequence -> no prior
-            # context) and pass it through (ones) on later windows. Reuse the precomputed constants.
+            # State masks: ZERO the carried state on the FIRST prefill window (fresh sequence -> no prior context)
             named["conv_state_mask"] = self._conv_mask_zeros if step == 0 else self._conv_mask_ones
             named["recurrent_state_mask"] = self._recurrent_mask_zeros if step == 0 else self._recurrent_mask_ones
 
@@ -172,11 +167,8 @@ class RBLNQwen3_5RuntimeModel(RBLNRuntimeModel):
             if batch_idx is not None:
                 named["batch_idx"] = torch.tensor(batch_idx, dtype=torch.int16)
 
-            # Per-token validity of THIS chunk: 1 for the real tokens, 0 for the right-padding. Built from
-            # query_length (the SAME source as query_position above), NOT from the embeddings. The
-            # GatedDeltaNet multiplies it into g/beta to drop padding from the recurrent-state sum / decay
-            # and the conv_state extraction. Full windows -> the precomputed all-ones; the last (partial)
-            # window -> ones for the first (query_length - step) columns, then zeros (built on demand).
+            # Per-token validity (1=real, 0=right-padding); the GatedDeltaNet multiplies it into g/beta to drop
+            # padding. Full windows reuse the precomputed all-ones; the partial last window is built on demand.
             valid_count = max(0, min(chunk, query_length - step))
             if valid_count >= chunk:
                 valid_mask = self._valid_mask_prefill_full
@@ -193,7 +185,6 @@ class RBLNQwen3_5RuntimeModel(RBLNRuntimeModel):
         # RBLNDecoderOnlyModelForCausalLM.forward can accumulate it per batch (the VL forward ignores it).
         return RBLNDecoderOnlyOutput(logits=logits, padded_cache_lengths=padded_cache_lengths, hidden_states=None)
 
-    # ------------------------------------------------------------------ decode (seq == 1)
     def decode_forward(
         self,
         inputs: torch.Tensor,
@@ -239,14 +230,6 @@ class RBLNQwen3_5RuntimeModel(RBLNRuntimeModel):
             named["attention_mask"] = attention_mask
         if self.rbln_config.use_lora:
             named["lora_int_ids"] = lora_int_ids
-
-        # Decode always continues from the real carried state -> ones (no-op). The masks are gated on the
-        # prefill phase in the GatedDeltaNet, so they are pruned from the decode graph and these entries
-        # are simply ignored by the name-based input mapping; passed (precomputed constants) for safety if
-        # they survive. Reused, not reallocated — decode runs once per token.
-        named["conv_state_mask"] = self._conv_mask_ones
-        named["recurrent_state_mask"] = self._recurrent_mask_ones
-        named["valid_mask"] = self._valid_mask_decode
 
         logits = self._run(named)
         return RBLNDecoderOnlyOutput(logits=logits, hidden_states=None)
