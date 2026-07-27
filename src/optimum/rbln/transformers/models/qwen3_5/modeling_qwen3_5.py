@@ -212,60 +212,63 @@ class RBLNQwen3_5TextModel(RBLNDecoderOnlyModel):
         )
         conv_state_len = text_config.linear_conv_kernel_dim - 1
 
-        kvcache_dtype = rbln_config.dtype
-        if rbln_config.quantization and rbln_config.quantization.kv_caches == "fp8":
-            kvcache_dtype = "float8_e4m3fn"
+        if len(rbln_config.kvcache_metas) > 0:
+            input_info.extend([(meta.name, meta.compile_shape, meta.dtype) for meta in rbln_config.kvcache_metas])
+        else:
+            kvcache_dtype = rbln_config.dtype
+            if rbln_config.quantization and rbln_config.quantization.kv_caches == "fp8":
+                kvcache_dtype = "float8_e4m3fn"
 
-        # conv/recurrent caches are one shared static tensor, so sized to the max batch (not batch_size=1 for
-        # prefill). Prefill writes its own slot (batch_idx); decode runs the full batch.
-        state_batch = rbln_config.batch_size
-        kvcache_metas = []
-        for layer_idx in range(num_hidden_layers):
-            if layer_idx in linear_layers:
-                conv_shape = [state_batch, conv_state_len, conv_dim]
-                # FIXME(seinpark) : recurrent cache stored 3D as (B, Hv*Dk, Dv); GatedDeltaNet reshapes to
-                # 4D (B, Hv, Dk, Dv) internally.
-                recurrent_shape = [
-                    state_batch,
-                    text_config.linear_num_value_heads * text_config.linear_key_head_dim,
-                    text_config.linear_value_head_dim,
-                ]
-                input_info.append((f"conv_state_{layer_idx}", conv_shape, rbln_config.dtype))
-                input_info.append((f"recurrent_state_{layer_idx}", recurrent_shape, rbln_config.dtype))
-                _state_dtype = RBLNCompileConfig.normalize_dtype(rbln_config.dtype)
-                kvcache_metas.append(
-                    KVCacheMeta(
-                        name=f"conv_state_{layer_idx}",
-                        layer_index=layer_idx,
-                        shape=conv_shape,
-                        layer_type="linear_attention",
-                        is_auto=False,
-                        dtype=_state_dtype,
+            # conv/recurrent caches are one shared static tensor, so sized to the max batch (not batch_size=1 for
+            # prefill). Prefill writes its own slot (batch_idx); decode runs the full batch.
+            state_batch = rbln_config.batch_size
+            _state_dtype = RBLNCompileConfig.normalize_dtype(rbln_config.dtype)
+            kvcache_metas = []
+            for layer_idx in range(num_hidden_layers):
+                if layer_idx in linear_layers:
+                    conv_shape = [state_batch, conv_state_len, conv_dim]
+                    # FIXME(seinpark) : recurrent cache stored 3D as (B, Hv*Dk, Dv); GatedDeltaNet reshapes to
+                    # 4D (B, Hv, Dk, Dv) internally.
+                    recurrent_shape = [
+                        state_batch,
+                        text_config.linear_num_value_heads * text_config.linear_key_head_dim,
+                        text_config.linear_value_head_dim,
+                    ]
+                    kvcache_metas.append(
+                        KVCacheMeta(
+                            name=f"conv_state_{layer_idx}",
+                            layer_index=layer_idx,
+                            shape=conv_shape,
+                            layer_type="linear_attention",
+                            is_auto=False,
+                            dtype=_state_dtype,
+                        )
                     )
-                )
-                kvcache_metas.append(
-                    KVCacheMeta(
-                        name=f"recurrent_state_{layer_idx}",
-                        layer_index=layer_idx,
-                        shape=recurrent_shape,
-                        layer_type="linear_attention",
-                        is_auto=False,
-                        dtype=_state_dtype,
+                    kvcache_metas.append(
+                        KVCacheMeta(
+                            name=f"recurrent_state_{layer_idx}",
+                            layer_index=layer_idx,
+                            shape=recurrent_shape,
+                            layer_type="linear_attention",
+                            is_auto=False,
+                            dtype=_state_dtype,
+                        )
                     )
-                )
-            else:
-                for slot in range(2):
-                    name = f"past_key_values_{layer_idx * 2 + slot}"
-                    meta = KVCacheMeta.make(
-                        name,
-                        layer_idx,
-                        num_key_value_heads,
-                        head_dim,
-                        RBLNCompileConfig.normalize_dtype(kvcache_dtype),
-                        rbln_config,
-                    )
-                    kvcache_metas.append(meta)
-                    input_info.append((name, meta.compile_shape, meta.dtype))
+                else:
+                    for slot in range(2):
+                        name = f"past_key_values_{layer_idx * 2 + slot}"
+                        kvcache_metas.append(
+                            KVCacheMeta.make(
+                                name,
+                                layer_idx,
+                                num_key_value_heads,
+                                head_dim,
+                                RBLNCompileConfig.normalize_dtype(kvcache_dtype),
+                                rbln_config,
+                            )
+                        )
+            input_info.extend([(meta.name, meta.compile_shape, meta.dtype) for meta in kvcache_metas])
+            rbln_config.kvcache_metas.extend(kvcache_metas)
 
         # shared 0/1 masks: runtime feeds zeros on prefill window 0 (reset linear state), ones after (carry). See docs.
         if linear_layers:
@@ -286,9 +289,6 @@ class RBLNQwen3_5TextModel(RBLNDecoderOnlyModel):
             # prefill only: which max-batch slot this per-item (batch=1) call reads/writes in the linear caches.
             if is_prefill:
                 input_info.append(("batch_idx", [], "int16"))
-
-        if len(rbln_config.kvcache_metas) == 0:
-            rbln_config.kvcache_metas.extend(kvcache_metas)
 
         return input_info
 
