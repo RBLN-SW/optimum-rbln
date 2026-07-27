@@ -765,7 +765,7 @@ class Qwen3_5_CausalLMWrapper(DecoderOnlyWrapper):
         return new_model
 
     def _split_layer_states(self, pairs):
-        # Split a per-layer list of pairs by layer type: full_attention -> past_key_values (key, value), 
+        # Split a per-layer list of pairs by layer type: full_attention -> past_key_values (key, value),
         # linear_attention -> past_states (conv_state, recurrent_state).
         linear = {i for i, t in enumerate(self.config.layer_types) if t == "linear_attention"}
         past_key_values = [pair if i not in linear else None for i, pair in enumerate(pairs)]
@@ -904,53 +904,9 @@ class Qwen3_5_LanguageModelWrapper(Qwen3_5_CausalLMWrapper):
             lora_int_id,
             past_key_values,
             past_states,
-            position_embeds,
+            position_embeds, # cos/sin
             conv_state_mask,
             recurrent_state_mask,
             valid_mask,
             batch_idx,
         )
-
-    def forward(self, *args):
-        (
-            input_ids,
-            inputs_embeds,
-            cache_position,
-            global_block_tables,
-            local_block_tables,
-            query_position,
-            attention_mask,
-            position_ids,
-            lora_int_id,
-            past_key_values,
-            past_states,
-            position_embeds,
-            conv_state_mask,
-            recurrent_state_mask,
-            valid_mask,
-            batch_idx,
-        ) = self.prepare_forward_args(*args)
-
-        logits, all_hidden_states, new_states = self.model(
-            input_ids=input_ids,
-            inputs_embeds=inputs_embeds,
-            attention_mask=attention_mask,
-            cache_position=cache_position,
-            position_ids=position_ids,
-            query_position=query_position,
-            past_key_values=past_key_values,
-            past_states=past_states,
-            rotary_emb=position_embeds,
-            global_block_tables=global_block_tables,
-            local_block_tables=local_block_tables,
-            lora_int_id=lora_int_id,
-            conv_state_mask=conv_state_mask,
-            recurrent_state_mask=recurrent_state_mask,
-            valid_mask=valid_mask,
-            batch_idx=batch_idx,
-            output_hidden_states=self.rbln_config.output_hidden_states,
-        )
-
-        if self.rbln_config.output_hidden_states:
-            return (logits, *new_states, *all_hidden_states)
-        return (logits, *new_states)
