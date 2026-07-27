@@ -542,6 +542,14 @@ class RBLNRuntimeModel(RBLNPytorchRuntime):
             inputs, cache_position, attention_mask, position_ids, position_embed, token_type_ids=token_type_ids
         )
 
+        if query_length > self.rbln_config.prefill_chunk_size and self.rbln_config.use_bidirectional_prefill:
+            raise ValueError(
+                f"Input length ({query_length}) exceeds `prefill_chunk_size` "
+                f"({self.rbln_config.prefill_chunk_size}). This model prefills with bidirectional "
+                "attention over the whole input, which therefore must fit in a single prefill chunk. "
+                "Compile the model with `prefill_chunk_size` >= the maximum input length."
+            )
+
         out_buffers, output_logits, output_hidden_states = self._prepare_prefill_outputs(query_length, attention_mask)
 
         # Assumed that prefix caching was performed externally if cache_position doesn't start from 0.

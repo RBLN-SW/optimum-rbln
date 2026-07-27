@@ -81,11 +81,6 @@ class RBLNPaliGemmaForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGeneration
         model = RBLNPaliGemmaForConditionalGeneration.from_pretrained(
             "google/paligemma2-3b-mix-224",
             export=True,
-            rbln_config={
-                "language_model": {
-                    "prefill_chunk_size": 8192,
-                }
-            },
             rbln_num_devices=4,
         )
 
@@ -388,11 +383,6 @@ class RBLNPaliGemmaModel(RBLNModel):
         model = RBLNPaliGemmaModel.from_pretrained(
             "google/paligemma2-3b-mix-224",
             export=True,
-            rbln_config={
-                "language_model": {
-                    "prefill_chunk_size": 8192,
-                }
-            },
             rbln_num_devices=4,
         )
 

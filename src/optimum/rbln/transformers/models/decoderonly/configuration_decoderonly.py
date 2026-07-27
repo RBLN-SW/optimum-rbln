@@ -306,6 +306,13 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
         return "image_prefill" in self.phases
 
     @property
+    def use_bidirectional_prefill(self):
+        # Prefix-LM style prefill (e.g. PaliGemma's language model): with attention mask and
+        # position ids but no separate image_prefill phase, the compiled prefill attends
+        # bidirectionally within a chunk, so the whole prompt must fit in a single chunk.
+        return self.use_attention_mask and self.use_position_ids and not self.use_image_prefill
+
+    @property
     def image_prefill_runtime_idx(self):
         return self.phases.index("image_prefill")
 
