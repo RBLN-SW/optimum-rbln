@@ -163,7 +163,10 @@ class RBLNQwen3_5TextModel(RBLNDecoderOnlyModel):
         # Qwen3.5 feeds rotary via the precomputed `position_emb` (cos/sin), so in-graph position_ids are not
         # part of its design and the runtime never passes them. Reject use_position_ids until it's supported.
         if rbln_config.use_position_ids:
-            raise NotImplementedError("use_position_ids is not supported for the Qwen3.5 hybrid model.")
+            raise NotImplementedError("use_position_ids is not supported for the Qwen3.5 model.")
+        # TODO(seinpark) : output_hidden_states isn't wired yet; planned as a follow-up.
+        if rbln_config.output_hidden_states:
+            raise NotImplementedError("output_hidden_states is not yet supported for the Qwen3.5 model.")
         num_attention_heads = getattr(text_config, "n_head", None) or text_config.num_attention_heads
         num_key_value_heads = getattr(text_config, "num_key_value_heads", None) or num_attention_heads
         num_hidden_layers = getattr(text_config, "n_layer", None) or text_config.num_hidden_layers
