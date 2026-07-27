@@ -784,8 +784,9 @@ class Qwen3_5_CausalLMWrapper(DecoderOnlyWrapper):
         recurrent_state_mask = args.pop() if has_linear else None
         conv_state_mask = args.pop() if has_linear else None
         base = list(super().prepare_forward_args(*args))
-        base[-2], past_states = self._split_layer_states(base[-2])
-        base.insert(-1, past_states)  # insert past_states just before rotary_emb (the last element)
+        past_key_values, past_states = self._split_layer_states(base[-2])  # split by layer type
+        base[-2] = past_key_values
+        base.insert(-1, past_states)  # keep past_states next to past_key_values, just before rotary_emb (last).
         return (*base, conv_state_mask, recurrent_state_mask, valid_mask, batch_idx)
 
     def forward(self, *args):
@@ -904,7 +905,7 @@ class Qwen3_5_LanguageModelWrapper(Qwen3_5_CausalLMWrapper):
             lora_int_id,
             past_key_values,
             past_states,
-            position_embeds, # cos/sin
+            position_embeds,  # cos/sin
             conv_state_mask,
             recurrent_state_mask,
             valid_mask,
