@@ -23,9 +23,7 @@ from transformers import AutoModelForCausalLM, AutoModelForImageTextToText, Pret
 from transformers.initialization import no_init_weights
 from transformers.models.qwen3_5.configuration_qwen3_5 import Qwen3_5Config
 from transformers.models.qwen3_5.modeling_qwen3_5 import (
-    Qwen3_5Model as HFQwen3_5Model,
-)
-from transformers.models.qwen3_5.modeling_qwen3_5 import (
+    Qwen3_5Model,
     Qwen3_5TextRotaryEmbedding,
     Qwen3_5VisionModel,
     Qwen3_5VisionPatchEmbed,
@@ -393,15 +391,19 @@ class RBLNQwen3_5VisionModel(RBLNModel):
         hidden_size = model_config.hidden_size
         num_heads = model_config.num_heads
         head_dim = hidden_size // num_heads
+        # Always 1 (enforced by RBLNQwen3_5VisionModelConfig), but thread the config value through the
+        # batch dims rather than hardcoding it. hidden_states stays 2D [seq, hidden]: it is per-image and
+        # the wrapper adds the batch axis with unsqueeze(0), so it has no batch dim to carry here.
+        batch_size = rbln_config.batch_size
 
         input_infos = []
         for max_seq_len in rbln_config.max_seq_len:
             input_info = [
                 ("hidden_states", [max_seq_len, hidden_size], rbln_config.dtype),
-                ("attn_mask", [1, 1, max_seq_len, max_seq_len], rbln_config.dtype),
+                ("attn_mask", [batch_size, 1, max_seq_len, max_seq_len], rbln_config.dtype),
                 # cos/sin enter the device at fp32 and are cast to the device dtype inside the vision model
-                ("cos", [1, 1, max_seq_len, head_dim], torch.float32),
-                ("sin", [1, 1, max_seq_len, head_dim], torch.float32),
+                ("cos", [batch_size, 1, max_seq_len, head_dim], torch.float32),
+                ("sin", [batch_size, 1, max_seq_len, head_dim], torch.float32),
             ]
             input_infos.append(input_info)
 
@@ -597,8 +599,8 @@ class RBLNQwen3_5Model(RBLNDecoderOnlyModel):
     _rbln_submodules = [{"name": "visual"}]
     _config_class = Qwen3_5Config
     _rotary_emb_class = Qwen3_5TextRotaryEmbedding
-    _get_rope_index_func = HFQwen3_5Model.get_rope_index
-    get_vision_position_ids = HFQwen3_5Model.get_vision_position_ids
+    _get_rope_index_func = Qwen3_5Model.get_rope_index
+    get_vision_position_ids = Qwen3_5Model.get_vision_position_ids
 
     @classmethod
     def _load_submodules(cls, model_save_dir, rbln_config, model=None, **kwargs):
