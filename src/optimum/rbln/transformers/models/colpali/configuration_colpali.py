@@ -33,11 +33,8 @@ class RBLNColPaliForRetrievalConfig(RBLNModelConfig):
 
         # Create a configuration object
         config = RBLNColPaliForRetrievalConfig(
-            vlm={
-                "language_model": {"prefill_chunk_size": 8192},
-            }
             output_hidden_states=False,
-            num_devices=4
+            num_devices=4,
         )
 
         # Use the configuration with from_pretrained
