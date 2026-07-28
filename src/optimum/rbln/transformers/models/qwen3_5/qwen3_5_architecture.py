@@ -217,12 +217,10 @@ def rbln_chunk_gated_delta_rule(
 
 def rbln_recurrent_gated_delta_rule_step(query, key, value, g, beta, initial_state, use_qk_l2norm_in_kernel=False):
     """Single-step (decode, seq=1) gated delta rule for RBLN. Numerically identical to HF
-    ``torch_recurrent_gated_delta_rule`` at S=1, but rewritten to avoid ops that lower to garbage on device
-    (cos≈0.2): the per-position output index-assign (ScatterInfo), the ``query[:, :, i]`` dynamic StridedSlice,
-    and the non-innermost ``.sum(dim=-2)`` reductions (rewritten as matmuls). The S=1 axis is dropped with a
-    reshape. Inputs query/key ``(B,1,Hv,Dk)``, value ``(B,1,Hv,Dv)``, g/beta ``(B,1,Hv)``, initial_state the
-    3D cache layout ``(B,Hv,Dk*Dv)`` -> core ``(B,1,Hv,Dv)``, new_state ``(B,Hv,Dk*Dv)``. The state is kept 3D
-    in the cache and reshaped to 4D here only after a compute (``* g_t``).
+    ``torch_recurrent_gated_delta_rule`` at S=1 (reimplemented to work around RBLN lowering; see inline notes).
+    Inputs query/key ``(B,1,Hv,Dk)``, value ``(B,1,Hv,Dv)``, g/beta ``(B,1,Hv)``, initial_state the 3D cache
+    layout ``(B,Hv,Dk*Dv)`` -> core ``(B,1,Hv,Dv)``, new_state ``(B,Hv,Dk*Dv)``. The state is kept 3D in the
+    cache and reshaped to 4D here only after a compute (``* g_t``).
     """
     initial_dtype = query.dtype
     batch_size, _, num_v_heads, k_head_dim = query.shape
