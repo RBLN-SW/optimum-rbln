@@ -775,7 +775,7 @@ class Qwen3_5_CausalLMWrapper(DecoderOnlyWrapper):
     def prepare_forward_args(self, *args):
         # valid/conv/recurrent state masks are the LAST graph inputs (get_input_info order): pop them off the
         # end (LIFO -> valid, recurrent, conv), let the base build the standard prefix + per-layer state block,
-        # then split that state list into two containers and reattach the masks.
+        # then split that state list into two containers and rebuild the tuple explicitly.
         args = list(args)
         has_linear = any(t == "linear_attention" for t in self.config.layer_types)
         # batch_idx is appended LAST for prefill only (get_input_info); pop it first.
@@ -783,11 +783,43 @@ class Qwen3_5_CausalLMWrapper(DecoderOnlyWrapper):
         valid_mask = args.pop() if has_linear else None
         recurrent_state_mask = args.pop() if has_linear else None
         conv_state_mask = args.pop() if has_linear else None
-        base = list(super().prepare_forward_args(*args))
-        past_key_values, past_states = self._split_layer_states(base[-2])  # split by layer type
-        base[-2] = past_key_values
-        base.insert(-1, past_states)  # keep past_states next to past_key_values, just before rotary_emb (last).
-        return (*base, conv_state_mask, recurrent_state_mask, valid_mask, batch_idx)
+
+        # Delegate the (evolving) front-arg parsing to the base; unpack its return by name rather than by
+        # position so a base signature change fails loudly on the unpack instead of silently mis-indexing.
+        (
+            input_ids,
+            inputs_embeds,
+            cache_position,
+            global_block_tables,
+            local_block_tables,
+            query_position,
+            attention_mask,
+            position_ids,
+            lora_int_id,
+            pairs,  # base groups the trailing flat per-layer states into (a, b) pairs
+            rotary_emb,
+        ) = super().prepare_forward_args(*args)
+
+        # full_attention -> past_key_values (key, value); linear_attention -> past_states (conv, recurrent).
+        past_key_values, past_states = self._split_layer_states(pairs)
+        return (
+            input_ids,
+            inputs_embeds,
+            cache_position,
+            global_block_tables,
+            local_block_tables,
+            query_position,
+            attention_mask,
+            position_ids,
+            lora_int_id,
+            past_key_values,
+            past_states,
+            rotary_emb,
+            conv_state_mask,
+            recurrent_state_mask,
+            valid_mask,
+            batch_idx,
+        )
 
     def forward(self, *args):
         (
