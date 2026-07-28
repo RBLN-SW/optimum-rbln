@@ -199,10 +199,8 @@ class RBLNQwen3_5TextModel(RBLNDecoderOnlyModel):
 
         # per-layer state: full_attention -> paged KV (key, value); linear_attention -> (conv_state, recurrent_state)
         linear_layers = {i for i, t in enumerate(text_config.layer_types) if t == "linear_attention"}
-        conv_dim = 2 * (text_config.linear_num_key_heads * text_config.linear_key_head_dim) + (
-            text_config.linear_num_value_heads * text_config.linear_value_head_dim
-        )
-        conv_state_len = text_config.linear_conv_kernel_dim - 1
+        # expose the linear layer indices on rbln_config so KVCacheMeta.make can branch on them (like sliding_window_layers)
+        rbln_config.linear_attention_layers = sorted(linear_layers)
 
         if len(rbln_config.kvcache_metas) > 0:
             input_info.extend([(meta.name, meta.compile_shape, meta.dtype) for meta in rbln_config.kvcache_metas])
@@ -218,32 +216,25 @@ class RBLNQwen3_5TextModel(RBLNDecoderOnlyModel):
             kvcache_metas = []
             for layer_idx in range(num_hidden_layers):
                 if layer_idx in linear_layers:
-                    conv_shape = [state_batch, conv_state_len, conv_dim]
-                    # FIXME(seinpark) : recurrent cache stored 3D as (B, Hv*Dk, Dv); GatedDeltaNet reshapes to
-                    # 4D (B, Hv, Dk, Dv) internally.
-                    recurrent_shape = [
-                        state_batch,
-                        text_config.linear_num_value_heads * text_config.linear_key_head_dim,
-                        text_config.linear_value_head_dim,
-                    ]
+                    # conv/recurrent cache shapes from the shared helper (single source, also used by the runtime
+                    # setup). recurrent cache is stored 3D (B, Hv*Dk, Dv); GatedDeltaNet reshapes to 4D internally.
+                    conv_shape, recurrent_shape = _qwen3_5_linear_state_shapes(text_config, state_batch)
                     kvcache_metas.append(
-                        KVCacheMeta(
-                            name=f"conv_state_{layer_idx}",
-                            layer_index=layer_idx,
-                            shape=conv_shape,
-                            layer_type="linear_attention",
-                            is_auto=False,
+                        KVCacheMeta.make(
+                            f"conv_state_{layer_idx}",
+                            layer_idx,
                             dtype=_state_dtype,
+                            rbln_config=rbln_config,
+                            shape=list(conv_shape),
                         )
                     )
                     kvcache_metas.append(
-                        KVCacheMeta(
-                            name=f"recurrent_state_{layer_idx}",
-                            layer_index=layer_idx,
-                            shape=recurrent_shape,
-                            layer_type="linear_attention",
-                            is_auto=False,
+                        KVCacheMeta.make(
+                            f"recurrent_state_{layer_idx}",
+                            layer_idx,
                             dtype=_state_dtype,
+                            rbln_config=rbln_config,
+                            shape=list(recurrent_shape),
                         )
                     )
                 else:
@@ -264,18 +255,10 @@ class RBLNQwen3_5TextModel(RBLNDecoderOnlyModel):
 
         # shared 0/1 masks: runtime feeds zeros on prefill window 0 (reset linear state), ones after (carry). See docs.
         if linear_layers:
-            input_info.append(("conv_state_mask", [batch_size, conv_state_len, conv_dim], rbln_config.dtype))
-            input_info.append(
-                (
-                    "recurrent_state_mask",
-                    [
-                        batch_size,
-                        text_config.linear_num_value_heads * text_config.linear_key_head_dim,
-                        text_config.linear_value_head_dim,
-                    ],
-                    rbln_config.dtype,
-                )
-            )
+            # masks match the per-call graph batch (batch_size), so reuse the helper with the same shapes.
+            conv_mask_shape, recurrent_mask_shape = _qwen3_5_linear_state_shapes(text_config, batch_size)
+            input_info.append(("conv_state_mask", list(conv_mask_shape), rbln_config.dtype))
+            input_info.append(("recurrent_state_mask", list(recurrent_mask_shape), rbln_config.dtype))
             # per-token validity (1=real, 0=right-padding); host-built, GatedDeltaNet uses it to drop padding.
             input_info.append(("valid_mask", [batch_size, query_length, 1], rbln_config.dtype))
             # prefill only: which max-batch slot this per-item (batch=1) call reads/writes in the linear caches.
