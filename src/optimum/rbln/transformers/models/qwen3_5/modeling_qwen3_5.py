@@ -84,6 +84,13 @@ def _qwen3_5_linear_state_shapes(text_config, batch_size: int):
     return conv_state_shape, recurrent_state_shape
 
 
+def _qwen3_5_linear_layer_indices(model_config) -> list[int]:
+    text_config = model_config.get_text_config()
+    if getattr(text_config, "layer_types", None) is None:
+        raise ValueError("Qwen3.5 requires `layer_types` in the model config.")
+    return [i for i, t in enumerate(text_config.layer_types) if t == "linear_attention"]
+
+
 def _qwen3_5_setup_hybrid_runtime(model):
     rbln_config = model.rbln_config
     text_config = model.config.get_text_config()
@@ -152,10 +159,15 @@ class RBLNQwen3_5TextModel(RBLNDecoderOnlyModel):
         return _qwen3_5_build_compile_context(compile_config, example_inputs)
 
     @classmethod
+    def _update_rbln_config(cls, preprocessors=None, model=None, model_config=None, rbln_config=None):
+        rbln_config.linear_attention_layers = _qwen3_5_linear_layer_indices(model_config)
+        return super()._update_rbln_config(
+            preprocessors=preprocessors, model=model, model_config=model_config, rbln_config=rbln_config
+        )
+
+    @classmethod
     def get_input_info(cls, batch_size, query_length, rbln_config, model_config: PretrainedConfig):
         text_config = model_config.get_text_config()
-        if getattr(text_config, "layer_types", None) is None:
-            raise ValueError("Qwen3.5 requires `layer_types` in the model config.")
         if rbln_config.use_position_ids:
             # Qwen3.5 needs no explicit position_ids: the VL path precomputes the mRoPE cos/sin on the
             # host and feeds them as position_emb, and the Text Model path derives contiguous positions from
@@ -197,10 +209,8 @@ class RBLNQwen3_5TextModel(RBLNDecoderOnlyModel):
         if rbln_config.use_lora:
             input_info.append(("lora_int_ids", [batch_size], "int32"))
 
-        # per-layer state: full_attention -> paged KV (key, value); linear_attention -> (conv_state, recurrent_state)
-        linear_layers = {i for i, t in enumerate(text_config.layer_types) if t == "linear_attention"}
-        # expose the linear layer indices on rbln_config so KVCacheMeta.make can branch on them (like sliding_window_layers)
-        rbln_config.linear_attention_layers = sorted(linear_layers)
+        # per-layer state: full_attention -> paged KV (key, value); linear_attention -> (conv_state, recurrent_state).
+        linear_layers = rbln_config.linear_attention_layers
 
         if len(rbln_config.kvcache_metas) > 0:
             input_info.extend([(meta.name, meta.compile_shape, meta.dtype) for meta in rbln_config.kvcache_metas])
@@ -628,6 +638,13 @@ class RBLNQwen3_5Model(RBLNDecoderOnlyModel):
 
     def setup_runtime(self):
         _qwen3_5_setup_hybrid_runtime(self)
+
+    @classmethod
+    def _update_rbln_config(cls, preprocessors=None, model=None, model_config=None, rbln_config=None):
+        rbln_config.linear_attention_layers = _qwen3_5_linear_layer_indices(model_config)
+        return super()._update_rbln_config(
+            preprocessors=preprocessors, model=model, model_config=model_config, rbln_config=rbln_config
+        )
 
     @classmethod
     def get_input_info(cls, batch_size, query_length, rbln_config, model_config: PretrainedConfig):

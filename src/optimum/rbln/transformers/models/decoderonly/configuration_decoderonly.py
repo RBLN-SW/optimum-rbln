@@ -242,8 +242,6 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
         self.cache_impl = cache_impl or "static"
         self.sliding_window = sliding_window
         self.sliding_window_layers = sliding_window_layers or []
-        # Indices of linear_attention (GatedDeltaNet) layers; model-derived (populated in get_input_info),
-        # empty for standard attention models. KVCacheMeta.make branches on it to build the linear state cache.
         self.linear_attention_layers = linear_attention_layers or []
 
         if phases is not None:
@@ -432,9 +430,6 @@ class KVCacheMeta(RBLNSerializableConfigProtocol):
         assert len(rbln_config.compile_cfgs) == 0, "KVCacheMeta cannot be created from rbln_config with compile_cfgs"
 
         if layer_index in rbln_config.linear_attention_layers:
-            # linear_attention (GatedDeltaNet) state — e.g. Qwen3.5 conv_state / recurrent_state. Its shape is
-            # model-specific (supplied by the caller) and the cache is fixed-size: not the paged, optionally
-            # auto-resized KV layout that the head/block config produces below.
             if shape is None:
                 raise ValueError("`shape` is required to build a linear_attention layer's KVCacheMeta.")
             return KVCacheMeta(

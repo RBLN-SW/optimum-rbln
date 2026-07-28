@@ -556,7 +556,7 @@ class Qwen3_5Model(DecoderOnlyModel):
 
     def __init__(self, model, layers, rbln_config, use_learned_pos_emb=None, use_rotary_emb=True):
         super().__init__(model, layers, rbln_config, use_learned_pos_emb, use_rotary_emb)
-        self.linear_attention_layers = {i for i, l in enumerate(layers) if isinstance(l, Qwen3_5LinearDecoderLayer)}
+        self.linear_attention_layers = rbln_config.linear_attention_layers
 
     def forward(
         self,
