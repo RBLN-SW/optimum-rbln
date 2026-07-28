@@ -576,7 +576,6 @@ class Qwen3_5Model(DecoderOnlyModel):
         recurrent_state_mask: torch.Tensor | None = None,
         valid_mask: torch.Tensor | None = None,
         batch_idx: torch.Tensor | None = None,  # prefill only: which max-batch cache slot this item uses
-        output_hidden_states: bool | None = None,
     ):
         if (input_ids is None) ^ (inputs_embeds is not None):
             raise ValueError("You must specify exactly one of input_ids or inputs_embeds.")
@@ -600,11 +599,8 @@ class Qwen3_5Model(DecoderOnlyModel):
         else:
             seq_positions = cache_position.amin(dim=1, keepdim=True)
 
-        all_hidden_states = () if output_hidden_states else None
         new_states: list[torch.Tensor] = []
         for layer_idx, layer in enumerate(self.layers):
-            if output_hidden_states:
-                all_hidden_states += (hidden_states,)
             if layer_idx in self.linear_attention_layers:
                 conv_state, recurrent_state = past_states[layer_idx]
                 slotted = batch_idx is not None
@@ -645,9 +641,7 @@ class Qwen3_5Model(DecoderOnlyModel):
                 )
 
         hidden_states = self.get_last_layernorm()(hidden_states)
-        if output_hidden_states:
-            all_hidden_states += (hidden_states,)
-        return hidden_states, all_hidden_states, new_states
+        return hidden_states, new_states
 
 
 class Qwen3_5ForCausalLM(DecoderOnlyForCausalLM):
@@ -669,9 +663,8 @@ class Qwen3_5ForCausalLM(DecoderOnlyForCausalLM):
         recurrent_state_mask: torch.Tensor | None = None,
         valid_mask: torch.Tensor | None = None,
         batch_idx: torch.Tensor | None = None,
-        output_hidden_states: bool | None = None,
     ):
-        hidden_states, all_hidden_states, new_states = self.model(
+        hidden_states, new_states = self.model(
             input_ids=input_ids,
             inputs_embeds=inputs_embeds,
             attention_mask=attention_mask,
@@ -688,14 +681,13 @@ class Qwen3_5ForCausalLM(DecoderOnlyForCausalLM):
             recurrent_state_mask=recurrent_state_mask,
             valid_mask=valid_mask,
             batch_idx=batch_idx,
-            output_hidden_states=output_hidden_states,
         )
 
         if "prefill" in self.phase and query_position is not None:
             hidden_states = hidden_states[:, query_position.to(torch.int).unsqueeze(0)]
 
         logits = self.lm_head(hidden_states)
-        return logits, all_hidden_states, new_states
+        return logits, new_states
 
 
 class Qwen3_5_CausalLMWrapper(DecoderOnlyWrapper):
@@ -815,7 +807,7 @@ class Qwen3_5_CausalLMWrapper(DecoderOnlyWrapper):
             batch_idx,
         ) = self.prepare_forward_args(*args)
 
-        logits, all_hidden_states, new_states = self.model(
+        logits, new_states = self.model(
             input_ids=input_ids,
             inputs_embeds=inputs_embeds,
             attention_mask=attention_mask,
@@ -832,12 +824,9 @@ class Qwen3_5_CausalLMWrapper(DecoderOnlyWrapper):
             recurrent_state_mask=recurrent_state_mask,
             valid_mask=valid_mask,
             batch_idx=batch_idx,
-            output_hidden_states=self.rbln_config.output_hidden_states,
         )
 
         # Linear-attention state updates are returned so the runtime can persist them on the host.
-        if self.rbln_config.output_hidden_states:
-            return (logits, *new_states, *all_hidden_states)
         return (logits, *new_states)
 
 

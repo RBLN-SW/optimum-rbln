@@ -35,7 +35,7 @@ from transformers.models.qwen3_5.modeling_qwen3_5 import (
 from ....configuration_utils import RBLNCompileConfig
 from ....modeling import RBLNModel
 from ....utils import logging
-from ...modeling_outputs import RBLNDecoderOnlyOutput, _validate_output_hidden_states
+from ...modeling_outputs import RBLNDecoderOnlyOutput
 from ..decoderonly.configuration_decoderonly import KVCacheMeta
 from ..decoderonly.decoderonly_runtime_utils import RBLNPageTableManager
 from ..decoderonly.modeling_decoderonly import RBLNDecoderOnlyModel, RBLNDecoderOnlyModelForCausalLM
@@ -738,7 +738,6 @@ class RBLNQwen3_5Model(RBLNDecoderOnlyModel):
         image_grid_thw: torch.LongTensor | None = None,
         video_grid_thw: torch.LongTensor | None = None,
         cache_position: torch.LongTensor | None = None,
-        output_hidden_states: bool | None = None,
         return_dict: bool | None = None,
         mm_token_type_ids: torch.IntTensor | None = None,
         **kwargs,
@@ -755,16 +754,6 @@ class RBLNQwen3_5Model(RBLNDecoderOnlyModel):
         self.rope_deltas = rope_deltas
         batch_size, seq_len = inputs_embeds.shape[:2]
 
-        output_hidden_states = _validate_output_hidden_states(output_hidden_states, self.rbln_config)
-        all_hidden_states = (
-            tuple(
-                torch.zeros(batch_size, seq_len, self.config.text_config.hidden_size, dtype=self.rbln_config.dtype)
-                for _ in range(self.config.text_config.num_hidden_layers + 1)
-            )
-            if output_hidden_states
-            else None
-        )
-
         logits = []
         for b_idx in range(batch_size):
             query_length = attention_mask[b_idx].sum(dim=-1).int().item()
@@ -778,18 +767,11 @@ class RBLNQwen3_5Model(RBLNDecoderOnlyModel):
                 block_tables=self.block_tables,
             )
             logits.append(output.logits)
-            if self.rbln_config.output_hidden_states:
-                for l_idx in range(self.config.text_config.num_hidden_layers + 1):
-                    all_hidden_states[l_idx][b_idx].copy_(output.hidden_states[l_idx][0])
         logits = torch.cat(logits, dim=0)
 
         if not return_dict:
-            return logits if not output_hidden_states else (logits, all_hidden_states)
-        return (
-            RBLNDecoderOnlyOutput(logits=logits, hidden_states=all_hidden_states)
-            if output_hidden_states
-            else RBLNDecoderOnlyOutput(logits=logits)
-        )
+            return logits
+        return RBLNDecoderOnlyOutput(logits=logits)
 
 
 class RBLNQwen3_5ForConditionalGeneration(RBLNQwen3_5Model, RBLNDecoderOnlyModelForCausalLM):
@@ -928,12 +910,9 @@ class RBLNQwen3_5ForConditionalGeneration(RBLNQwen3_5Model, RBLNDecoderOnlyModel
         cache_position: torch.LongTensor | None = None,
         generate_idx: torch.Tensor | None = None,
         return_dict: bool | None = None,
-        output_hidden_states: bool | None = None,
         mm_token_type_ids: torch.IntTensor | None = None,
         **kwargs,
     ) -> RBLNDecoderOnlyOutput:
-        output_hidden_states = _validate_output_hidden_states(output_hidden_states, self.rbln_config)
-
         if cache_position is None:  # prefill
             inputs_embeds, position_embed, rope_deltas = self._preprocess_prefill(
                 input_ids,
