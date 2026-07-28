@@ -78,7 +78,7 @@ class RBLNQwen3_5TextModelConfig(RBLNDecoderOnlyModelConfig):
 
 
 class RBLNQwen3_5VisionModelConfig(RBLNModelConfig):
-    """Vision encoder config for Qwen3.5 (Qwen3-VL-style vision, no deepstack): per-image `max_seq_len`.
+    """Vision encoder config for Qwen3.5: per-image `max_seq_len`.
 
     Independent of the Qwen3-VL config (inherits `RBLNModelConfig` directly).
     """
