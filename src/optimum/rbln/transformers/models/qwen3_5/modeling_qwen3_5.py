@@ -221,14 +221,12 @@ class RBLNQwen3_5TextModel(RBLNDecoderOnlyModel):
 
             # conv/recurrent caches are one shared static tensor, so sized to the max batch (not batch_size=1 for
             # prefill). Prefill writes its own slot (batch_idx); decode runs the full batch.
-            state_batch = rbln_config.batch_size
             _state_dtype = RBLNCompileConfig.normalize_dtype(rbln_config.dtype)
             kvcache_metas = []
             for layer_idx in range(num_hidden_layers):
                 if layer_idx in linear_layers:
-                    # conv/recurrent cache shapes from the shared helper (single source, also used by the runtime
-                    # setup). recurrent cache is stored 3D (B, Hv*Dk, Dv); GatedDeltaNet reshapes to 4D internally.
-                    conv_shape, recurrent_shape = _qwen3_5_linear_state_shapes(text_config, state_batch)
+                    # recurrent cache is stored 3D (B, Hv*Dk, Dv); GatedDeltaNet reshapes to 4D internally.
+                    conv_shape, recurrent_shape = _qwen3_5_linear_state_shapes(text_config, rbln_config.batch_size)
                     kvcache_metas.append(
                         KVCacheMeta.make(
                             f"conv_state_{layer_idx}",
