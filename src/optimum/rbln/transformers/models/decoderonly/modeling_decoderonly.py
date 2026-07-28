@@ -498,12 +498,7 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
             max_seq_len=rbln_config.max_seq_len,
         )
 
-        # Validate kvcache_num_blocks based on the number of full blocks required.
-        # Eager mode restriction:
-        # - num_blocks must be at least equal to the batch size
-        # Flash attention restriction:
-        # - num_blocks must be at least equal to (max_seq_len // kvcache_block_size) + 1
-        # - num_blocks must be no greater than the number of full blocks.
+        # Validate kvcache_num_blocks against `num_min_blocks` / `num_full_blocks`.
         if rbln_config.attn_impl == "flash_attn":
             if rbln_config.is_auto_num_blocks:
                 # Do nothing
