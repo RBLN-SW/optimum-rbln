@@ -78,10 +78,7 @@ class RBLNQwen3_5TextModelConfig(RBLNDecoderOnlyModelConfig):
 
 
 class RBLNQwen3_5VisionModelConfig(RBLNModelConfig):
-    """Vision encoder config for Qwen3.5: per-image `max_seq_len`.
-
-    Independent of the Qwen3-VL config (inherits `RBLNModelConfig` directly).
-    """
+    """Vision encoder config for Qwen3.5: per-image `max_seq_len`."""
 
     def __init__(self, max_seq_len: int | list[int] = None, batch_size: int = 1, **kwargs: Any):
         """
