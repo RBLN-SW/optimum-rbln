@@ -34,11 +34,6 @@ from ..decoderonly.decoderonly_architecture import (
 
 
 class Qwen3_5VisionAttention(nn.Module):
-    """Qwen3.5 vision attention.
-
-    Full (non-windowed) SDPA over the padded patch window; rotary applied on the precomputed host cos/sin.
-    """
-
     def __init__(self, model: nn.Module, rbln_config) -> None:
         super().__init__()
         self._origin_model = model
@@ -78,8 +73,6 @@ class Qwen3_5VisionAttention(nn.Module):
 
 
 class Qwen3_5VisionBlock(nn.Module):
-    """Qwen3.5 vision transformer block: (norm1 -> attn) + (norm2 -> mlp) residuals."""
-
     def __init__(self, model: nn.Module, rbln_config) -> None:
         super().__init__()
         self._origin_model = model
@@ -101,12 +94,7 @@ class Qwen3_5VisionBlock(nn.Module):
 
 
 class Qwen3_5VisionModelWrapper(nn.Module):
-    """Qwen3.5 vision encoder for RBLN: transformer blocks + merger, NO deepstack.
-
-    Patch embedding, position-embed interpolation and rotary computation run on the host; the
-    compiled graph takes the patch ``hidden_states`` plus the precomputed attention mask and
-    rotary ``cos``/``sin``, and returns the merged image embeddings.
-    """
+    """Qwen3.5 vision encoder for RBLN: transformer blocks + merger."""
 
     def __init__(self, model: nn.Module, rbln_config):
         super().__init__()
@@ -478,12 +466,6 @@ class Qwen3_5LinearDecoderLayer(nn.Module):
 
 
 class Qwen3_5Attention(DecoderOnlyAttention):
-    """Full-attention layer: Qwen3-style q/k-norm + an output gate + partial RoPE.
-
-    ``q_proj`` emits ``num_heads * head_dim * 2`` and is split into (query, gate); the attention
-    output is multiplied by ``sigmoid(gate)`` before ``o_proj``.
-    """
-
     def __post_init__(self, self_attn):
         self.k_proj = self_attn.k_proj
         self.v_proj = self_attn.v_proj
@@ -771,19 +753,13 @@ class Qwen3_5_CausalLMWrapper(DecoderOnlyWrapper):
         return past_key_values, past_states
 
     def prepare_forward_args(self, *args):
-        # valid/conv/recurrent state masks are the LAST graph inputs (get_input_info order): pop them off the
-        # end (LIFO -> valid, recurrent, conv), let the base build the standard prefix + per-layer state block,
-        # then split that state list into two containers and rebuild the tuple explicitly.
         args = list(args)
         has_linear = any(t == "linear_attention" for t in self.config.layer_types)
-        # batch_idx is appended LAST for prefill only (get_input_info); pop it first.
         batch_idx = args.pop() if (has_linear and "prefill" in self.phase) else None
         valid_mask = args.pop() if has_linear else None
         recurrent_state_mask = args.pop() if has_linear else None
         conv_state_mask = args.pop() if has_linear else None
 
-        # Delegate the (evolving) front-arg parsing to the base; unpack its return by name rather than by
-        # position so a base signature change fails loudly on the unpack instead of silently mis-indexing.
         (
             input_ids,
             inputs_embeds,
@@ -866,18 +842,7 @@ class Qwen3_5_CausalLMWrapper(DecoderOnlyWrapper):
 
 
 class Qwen3_5_LanguageModelWrapper(Qwen3_5_CausalLMWrapper):
-    """The hybrid Qwen3.5 text backbone wired for the vision-language runtime.
-
-    Reuses ``Qwen3_5_CausalLMWrapper``'s hybrid graph rewrite (``convert_to_rbln_class``, the
-    ``get_rbln_*`` factories that emit GatedDeltaNet linear layers + gated full-attention layers, and the
-    linear-state threading in ``Qwen3_5Model``). The only changes vs the text-only wrapper:
-
-    - ``model.config`` is a ``Qwen3_5Config`` (vision + text); swap it to ``text_config`` for the parent
-      ``DecoderOnlyWrapper`` initialization (which expects text attributes).
-    - the language model is reached via ``model.get_decoder()`` (nested under the multimodal model).
-    - ``position_embeds`` (precomputed mRoPE cos/sin) is an explicit graph input, passed to the model as the
-      ``rotary_emb`` tensor; there is no inline ``RotaryEmbedding`` and no deepstack.
-    """
+    """The hybrid Qwen3.5 text backbone wired for the vision-language runtime."""
 
     _use_rotary_emb = False
 
@@ -895,10 +860,7 @@ class Qwen3_5_LanguageModelWrapper(Qwen3_5_CausalLMWrapper):
 
     def prepare_forward_args(self, *args):
         args = list(args)
-        # valid/conv/recurrent state masks are the LAST graph inputs (get_input_info order): pop them off the
-        # end first so the standard front-popping + `past_states = args` below is unchanged. Linear layers only.
         has_linear = any(t == "linear_attention" for t in self.config.layer_types)
-        # batch_idx is appended LAST for prefill only (get_input_info); pop it first.
         batch_idx = args.pop() if (has_linear and "prefill" in self.phase) else None
         valid_mask = args.pop() if has_linear else None
         recurrent_state_mask = args.pop() if has_linear else None
@@ -914,9 +876,7 @@ class Qwen3_5_LanguageModelWrapper(Qwen3_5_CausalLMWrapper):
         attention_mask = args.pop(0) if self.rbln_config.use_attention_mask else None
         lora_int_id = args.pop(0) if self.rbln_config.lora_config else None
 
-        # The remaining args are 2 state slots per layer (flat); pair them up, then split by layer type via the
-        # shared helper: past_key_values = (key, value) for full_attention, past_states = (conv_state,
-        # recurrent_state) for linear_attention (both full-length with None at the other type's indices).
+        # full_attention -> past_key_values (key, value); linear_attention -> past_states (conv, recurrent).
         state_args = args
         if len(state_args) != 2 * self.num_hidden_layers:
             raise ValueError(f"Different states to model's config. {len(state_args)} != {2 * self.num_hidden_layers}")
