@@ -72,8 +72,6 @@ class RBLNQwen3_5TextModelConfig(RBLNDecoderOnlyModelConfig):
         **kwargs: Any,
     ):
         super().__init__(**kwargs)
-        # GDN prefill sub-chunk size (must divide prefill_chunk_size). None -> = prefill_chunk_size
-        # (n_chunks == 1, no sub-chunking). See rbln_chunk_gated_delta_rule.
         self.gdn_chunk_size = gdn_chunk_size
 
 
@@ -133,8 +131,9 @@ class RBLNQwen3_5ModelConfig(RBLNDecoderOnlyModelConfig):
     ):
         """
         Args:
-            gdn_chunk_size (Optional[int]): GatedDeltaNet prefill sub-chunk size (must divide
-                `prefill_chunk_size`). `None` -> `prefill_chunk_size` (no split). See rbln_chunk_gated_delta_rule.
+            gdn_chunk_size (Optional[int]): GatedDeltaNet prefill sub-chunk size. Each prefill window is
+                split into `prefill_chunk_size // gdn_chunk_size` sub-chunks processed by the chunked
+                delta rule. Must divide `prefill_chunk_size`. `None` -> `prefill_chunk_size` (no split).
             visual (Optional[RBLNModelConfig]): Configuration for the vision encoder submodule.
             _load_visual_runtime (bool): Whether to create the visual encoder runtime (False on
                 decoder-only nodes in a disaggregated setup). Defaults to True.
@@ -214,6 +213,4 @@ class RBLNQwen3_5ForConditionalGenerationConfig(RBLNDecoderOnlyModelForCausalLMC
         # The vision encoder runs one image at a time, so force batch_size=1 on the submodule.
         self.visual = self.initialize_submodule_config(submodule_config=visual, force_kwargs=True, batch_size=1)
         self._load_visual_runtime = _load_visual_runtime
-        # GDN prefill sub-chunk size (must divide prefill_chunk_size). None -> = prefill_chunk_size
-        # (n_chunks == 1, no sub-chunking). See rbln_chunk_gated_delta_rule.
         self.gdn_chunk_size = gdn_chunk_size
