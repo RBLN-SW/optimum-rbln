@@ -218,7 +218,7 @@ def rbln_recurrent_gated_delta_rule_step(query, key, value, g, beta, initial_sta
     v = value.reshape(batch_size, num_v_heads, v_head_dim)
 
     def _l2norm_dot(x):
-        # same as HF l2norm, but ||x||² via matmul dot-product instead of `(x*x).sum(-1)`: on the tiny seq=1
+        # Same as HF l2norm, but ||x||² via matmul dot-product instead of `(x*x).sum(-1)`: on the tiny seq=1
         # decode tensors RBLN lowers the innermost-axis sum to ~0 -> rsqrt(eps) blows up; matmul lowers correctly.
         ss = torch.matmul(x.unsqueeze(-2), x.unsqueeze(-1)).squeeze(-1)
         return x * torch.rsqrt(ss + 1e-6)
@@ -284,8 +284,8 @@ class Qwen3_5GatedDeltaNet(nn.Module):
         self.conv_dim = linear_attn.conv_dim
         self.conv_kernel_size = linear_attn.conv_kernel_size
 
-        # Pre-split the fused in_proj_qkv into separate Q/K/V projections (weight partition, numerically
-        # identical): a depthwise conv is per-channel, so the channel-axis split commutes with it.
+        # Pre-split the fused in_proj_qkv into separate Q/K/V projections: a depthwise conv is per-channel,
+        # so the channel-axis split commutes with it.
         _qkv = linear_attn.in_proj_qkv
         _hidden = _qkv.weight.shape[1]
         _has_bias = _qkv.bias is not None
@@ -301,7 +301,7 @@ class Qwen3_5GatedDeltaNet(nn.Module):
                 _lin.bias = nn.Parameter(_bi.contiguous())
 
         self.prefill_chunk_size = getattr(rbln_config, "prefill_chunk_size", 128)
-        # GDN sub-chunk: each window splits into `chunk_size` sub-chunks (must divide prefill_chunk_size);
+        # GDN sub-chunk: each window splits into `chunk_size` sub-chunks (must divide prefill_chunk_size).
         self.chunk_size = getattr(rbln_config, "gdn_chunk_size", None) or self.prefill_chunk_size
 
     @property

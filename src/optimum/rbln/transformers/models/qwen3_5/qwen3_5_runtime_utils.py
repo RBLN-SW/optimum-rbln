@@ -52,8 +52,7 @@ class RBLNQwen3_5RuntimeModel(RBLNRuntimeModel):
         self.recurrent_state_shape = tuple(recurrent_state_shape)
         self.state_dtype = state_dtype
 
-        # Prefill state masks: zeros on window 0 (fresh sequence), ones afterwards (carry). Decode prunes
-        # these, so only the prefill variants are precomputed. valid_mask full windows are all-ones.
+        # Prefill state masks: zeros on window 0 (fresh sequence), ones afterwards (carry over).
         self._conv_mask_zeros = torch.zeros(self.conv_state_shape, dtype=state_dtype)
         self._conv_mask_ones = torch.ones(self.conv_state_shape, dtype=state_dtype)
         self._recurrent_mask_zeros = torch.zeros(self.recurrent_state_shape, dtype=state_dtype)
@@ -61,21 +60,12 @@ class RBLNQwen3_5RuntimeModel(RBLNRuntimeModel):
         self._valid_mask_prefill_full = torch.ones(1, self.rbln_config.prefill_chunk_size, 1, dtype=state_dtype)
 
     def _run(self, named_inputs: dict) -> torch.Tensor:
-        """Order inputs by the runtime's OWN (pruned) signature and invoke; return logits.
-
-        conv_state/recurrent_state are STATIC on-device caches (mark_static_address in the compile
-        context) — read AND written in-graph via rbln_cache_update, so they are NOT passed at call
-        time and are absent from ``_index_to_input_name``. Only the standard inputs + the 0/1 state
-        masks flow through ``named_inputs``; rebel prunes dead inputs, so mapping by NAME passes exactly
-        what the runtime kept, in its index order. The graph's state-cache-update outputs alias the
-        static addresses (in-place device writes), so we keep only ``logits``.
-        """
+        """Order inputs by the runtime's own signature and invoke; return logits."""
         order = self.runtime._index_to_input_name
         args = [named_inputs[order[k]] for k in range(len(order))]
         out = super(RBLNRuntimeModel, self).forward(*args)
         return out[0] if isinstance(out, (list, tuple)) else out
 
-    # ------------------------------------------------------------------ prefill
     def prefill_forward(
         self,
         inputs: torch.Tensor,
@@ -129,8 +119,7 @@ class RBLNQwen3_5RuntimeModel(RBLNRuntimeModel):
                 position_embed[:, :, :, step : step + chunk, :] if position_embed is not None else None
             )
 
-            # Reveal the current chunk (and previously seen tokens) in the causal attention mask. use_position_ids
-            # is rejected for Qwen3.5, so the mask is always 4D.
+            # Reveal the current chunk (and previously seen tokens) in the causal attention mask.
             if self.rbln_config.use_attention_mask:
                 if step > 0:
                     chunked_attention_mask[:, :, :, prefix_cached_len : prefix_cached_len + step] = 1
@@ -163,7 +152,7 @@ class RBLNQwen3_5RuntimeModel(RBLNRuntimeModel):
             named["conv_state_mask"] = self._conv_mask_zeros if step == 0 else self._conv_mask_ones
             named["recurrent_state_mask"] = self._recurrent_mask_zeros if step == 0 else self._recurrent_mask_ones
 
-            # which max-batch slot of the linear state caches this per-item (batch=1) prefill reads/writes.
+            # Which max-batch slot of the linear state caches this per-item (batch=1) prefill reads/writes.
             if batch_idx is not None:
                 named["batch_idx"] = torch.tensor(batch_idx, dtype=torch.int16)
 
@@ -197,8 +186,6 @@ class RBLNQwen3_5RuntimeModel(RBLNRuntimeModel):
         local_block_tables: torch.Tensor | None = None,
         lora_int_ids: torch.Tensor | None = None,
     ) -> RBLNDecoderOnlyOutput:
-        # Resolve LoRA ids from set_lora_int_ids() when the caller didn't pass them (mirrors the base
-        # decode_forward): decode runs the full batch, so use the whole tensor.
         if self.rbln_config.use_lora and lora_int_ids is None:
             if self.lora_int_ids is None:
                 raise ValueError(
