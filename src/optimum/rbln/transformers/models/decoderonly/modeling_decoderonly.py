@@ -484,6 +484,12 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
     def _update_attention_config(
         cls, model: PreTrainedModel, model_config: PretrainedConfig, rbln_config: RBLNDecoderOnlyModelForCausalLMConfig
     ):
+        # Bidirectional prefill attends across the whole prompt, so the prompt must fit in a
+        # single prefill chunk — default the chunk size to max_seq_len instead of the generic
+        # NPU default, which would silently truncate the bidirectional context.
+        if rbln_config.prefill_chunk_size is None and rbln_config.use_bidirectional_prefill:
+            rbln_config.prefill_chunk_size = rbln_config.max_seq_len
+
         (
             rbln_config.attn_impl,
             rbln_config.kvcache_partition_len,
