@@ -13,8 +13,6 @@
 # limitations under the License.
 
 
-from typing import Optional
-
 import torch
 import torch.nn.functional as F
 from torch import nn
@@ -34,7 +32,7 @@ class RBLNGptOssWrapper(DecoderOnlyWrapper):
 
 
 class RBLNGptOssLayer(DecoderOnlyLayer):
-    def __init__(self, layer, self_attn: DecoderOnlyAttention, lora_config: Optional[RBLNLoRAConfig] = None):
+    def __init__(self, layer, self_attn: DecoderOnlyAttention, lora_config: RBLNLoRAConfig | None = None):
         super().__init__(layer, self_attn, lora_config)
         self.mlp = RBLNGptOssMLP(layer.mlp)
 
@@ -53,7 +51,7 @@ class RBLNGptOssTopKRouter(nn.Module):
 
 
 class RBLNGptOssExperts(nn.Module):
-    def __init__(self, model, top_k: Optional[int] = None):
+    def __init__(self, model, top_k: int | None = None):
         super().__init__()
         self.intermediate_size = model.intermediate_size
         self.num_experts = model.num_experts

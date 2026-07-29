@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, List, Optional, Union
+from typing import Any
 
 from ....configuration_utils import RBLNModelConfig
 from ....utils.logging import get_logger
@@ -37,18 +37,20 @@ class RBLNGemma4ForCausalLMConfig(RBLNDecoderOnlyModelForCausalLMConfig):
 
     def __init__(
         self,
-        use_position_ids: Optional[bool] = None,
-        use_attention_mask: Optional[bool] = None,
-        prefill_chunk_size: Optional[int] = None,
-        image_prefill_chunk_size: Optional[Union[int, List[int]]] = None,
+        use_position_ids: bool | None = None,
+        use_attention_mask: bool | None = None,
+        prefill_chunk_size: int | None = None,
+        image_prefill_chunk_size: int | list[int] | None = None,
         **kwargs: Any,
     ):
         """
         Args:
-            use_position_ids (Optional[bool]): Whether to use `position_ids`. Forced to `True` for Gemma4.
-            use_attention_mask (Optional[bool]): Whether to use `attention_mask`. Forced to `True` for Gemma4.
-            prefill_chunk_size (Optional[int]): Chunk size used during the prefill phase. Defaults to 128.
-            image_prefill_chunk_size (Optional[Union[int, List[int]]]): Chunk size(s) used for image-prefill
+            use_position_ids (bool | None): Whether to use `position_ids`. Forced to `True` for Gemma4.
+            use_attention_mask (bool | None): Whether to use `attention_mask`. Forced to `True` for Gemma4.
+            prefill_chunk_size (int | None): Chunk size used during the prefill phase. When unset, it is
+                resolved at compile time to 512 on RBLN-CR NPUs and 128 otherwise.
+            image_prefill_chunk_size (int | list[int] | None): Chunk size(s) used for image-prefill
+
                 (multimodal Gemma4). A single int compiles one `image_prefill` graph; a list compiles one
                 graph per value (sorted in descending order) and the runtime picks the smallest bucket that
                 fits an image run. When not given, it is derived from the vision tower's `max_soft_tokens`
@@ -63,9 +65,6 @@ class RBLNGemma4ForCausalLMConfig(RBLNDecoderOnlyModelForCausalLMConfig):
             use_attention_mask = True
         if use_position_ids is None:
             use_position_ids = True
-
-        if prefill_chunk_size is None:
-            prefill_chunk_size = 128
 
         if image_prefill_chunk_size is not None:
             image_prefill_chunk_size = self._validate_image_prefill_chunk_size(image_prefill_chunk_size)
@@ -84,7 +83,7 @@ class RBLNGemma4ForCausalLMConfig(RBLNDecoderOnlyModelForCausalLMConfig):
             raise ValueError("use_attention_mask and use_position_ids must be True for RBLNGemma4ForCausalLM")
 
     @staticmethod
-    def _validate_image_prefill_chunk_size(chunk_size: Union[int, List[int]]) -> List[int]:
+    def _validate_image_prefill_chunk_size(chunk_size: int | list[int]) -> list[int]:
         # Single enforcement point: validates that every image_prefill_chunk_size (int or list) is a
         # positive multiple of 128 and returns it in canonical form — de-duplicated and sorted descending.
         if isinstance(chunk_size, int):
@@ -129,25 +128,25 @@ class RBLNGemma4VisionModelConfig(RBLNModelConfig):
 
     def __init__(
         self,
-        batch_size: Optional[int] = None,
-        max_soft_tokens: Optional[Union[int, List[int]]] = None,
-        pooling_kernel_size: Optional[int] = None,
-        patch_size: Optional[int] = None,
-        output_hidden_states: Optional[bool] = None,
+        batch_size: int | None = None,
+        max_soft_tokens: int | list[int] | None = None,
+        pooling_kernel_size: int | None = None,
+        patch_size: int | None = None,
+        output_hidden_states: bool | None = None,
         **kwargs: Any,
     ):
         """
         Args:
-            batch_size (Optional[int]): The batch size of images (number of images, not patches). Defaults to 1.
-            max_soft_tokens (Optional[Union[int, List[int]]]): The number of soft tokens emitted per image
+            batch_size (int | None): The batch size of images (number of images, not patches). Defaults to 1.
+            max_soft_tokens (int | list[int] | None): The number of soft tokens emitted per image
                 after pooling. Defaults to 280 (the upstream default in `Gemma4ImageProcessor`). A single int
                 compiles one vision graph; a list compiles one graph per value (sorted descending) so the
                 runtime can serve images at multiple soft-token counts. Must be a value supported by the image
                 processor (e.g. 70/140/280/560/1120).
-            pooling_kernel_size (Optional[int]): Spatial pooling kernel size applied after patchification.
+            pooling_kernel_size (int | None): Spatial pooling kernel size applied after patchification.
                 Defaults to `model_config.pooling_kernel_size` (3 by default).
-            patch_size (Optional[int]): Patch height/width in pixels. Defaults to `model_config.patch_size`.
-            output_hidden_states (Optional[bool]): Whether to return per-layer hidden states.
+            patch_size (int | None): Patch height/width in pixels. Defaults to `model_config.patch_size`.
+            output_hidden_states (bool | None): Whether to return per-layer hidden states.
             kwargs: Additional arguments passed to the parent `RBLNModelConfig`.
 
         Raises:
@@ -189,16 +188,16 @@ class RBLNGemma4ForConditionalGenerationConfig(RBLNModelConfig):
 
     def __init__(
         self,
-        batch_size: Optional[int] = None,
-        vision_tower: Optional[RBLNModelConfig] = None,
-        language_model: Optional[RBLNModelConfig] = None,
+        batch_size: int | None = None,
+        vision_tower: RBLNModelConfig | None = None,
+        language_model: RBLNModelConfig | None = None,
         **kwargs: Any,
     ):
         """
         Args:
-            batch_size (Optional[int]): The batch size for inference. Defaults to 1.
-            vision_tower (Optional[RBLNModelConfig]): Configuration for the vision encoder component.
-            language_model (Optional[RBLNModelConfig]): Configuration for the language model component.
+            batch_size (int | None): The batch size for inference. Defaults to 1.
+            vision_tower (RBLNModelConfig | None): Configuration for the vision encoder component.
+            language_model (RBLNModelConfig | None): Configuration for the language model component.
             kwargs: Additional arguments passed to the parent `RBLNModelConfig`.
 
         Raises:
@@ -224,7 +223,7 @@ class RBLNGemma4ForConditionalGenerationConfig(RBLNModelConfig):
 
         self._update_image_prefill_chunk_size()
 
-    def _get_vision_max_soft_tokens(self) -> List[int]:
+    def _get_vision_max_soft_tokens(self) -> list[int]:
         # Per-image soft-token counts the vision tower emits, sorted in descending order.
         # Reads max_soft_tokens from the vision sub-config (may still be a raw dict at this point)
         # and falls back to DEFAULT_MAX_SOFT_TOKENS when unset, matching the default applied in

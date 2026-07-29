@@ -138,8 +138,8 @@ line-length = 119
 
 [tool.ruff.lint]
 # Never enforce `E501` (line length violations).
-ignore = ["C901", "E501", "E741", "W605"]
-select = ["C", "E", "F", "I", "W", "B"]
+ignore = ["C901", "E501", "E741", "W605", "UP037"]
+select = ["C", "E", "F", "I", "W", "B", "UP"]
 
 [tool.ruff.lint.isort]
 lines-after-imports = 2

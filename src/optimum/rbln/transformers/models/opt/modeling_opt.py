@@ -26,7 +26,7 @@ logger = logging.get_logger(__name__)
 
 class MLP(nn.Module):
     def __init__(self, fc1, fc2, activation_fn):
-        super(MLP, self).__init__()
+        super().__init__()
         self.fc1 = fc1
         self.fc2 = fc2
         self.activation_fn = activation_fn

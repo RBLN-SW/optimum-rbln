@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import TYPE_CHECKING, Any, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Any, Optional, Union
 
 import torch
 from transformers import SiglipVisionConfig, SiglipVisionModel
@@ -83,7 +83,7 @@ class RBLNSiglipVisionModel(RBLNModel):
         preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"],
         model: Optional["PreTrainedModel"] = None,
         model_config: "SiglipVisionConfig" = None,
-        rbln_config: Optional[RBLNSiglipVisionModelConfig] = None,
+        rbln_config: RBLNSiglipVisionModelConfig | None = None,
     ) -> RBLNSiglipVisionModelConfig:
         if rbln_config.image_size is None:
             rbln_config.image_size = getattr(model_config, "image_size", None)
@@ -124,7 +124,7 @@ class RBLNSiglipVisionModel(RBLNModel):
         output_hidden_states: bool = None,
         interpolate_pos_encoding: bool = False,
         **kwargs: Any,
-    ) -> Union[Tuple, BaseModelOutputWithPooling]:
+    ) -> tuple | BaseModelOutputWithPooling:
         """
         Forward pass for the RBLN-optimized SigLIP vision model.
 

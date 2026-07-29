@@ -13,7 +13,7 @@
 # limitations under the License.
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Dict, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Any, Union
 
 import torch
 from diffusers.models.unets.unet_spatio_temporal_condition import (
@@ -43,7 +43,7 @@ class _UNet_STCM(torch.nn.Module):
     def forward(
         self,
         sample: torch.Tensor,
-        timestep: Union[torch.Tensor, float, int],
+        timestep: torch.Tensor | float | int,
         encoder_hidden_states: torch.Tensor,
         added_time_ids: torch.Tensor,
     ) -> torch.Tensor:
@@ -90,8 +90,8 @@ class RBLNUNetSpatioTemporalConditionModel(RBLNModel):
         cls,
         pipe: RBLNDiffusionMixin,
         rbln_config: RBLNUNetSpatioTemporalConditionModelConfig,
-        image_size: Optional[Tuple[int, int]] = None,
-    ) -> Union[int, Tuple[int, int]]:
+        image_size: tuple[int, int] | None = None,
+    ) -> int | tuple[int, int]:
         scale_factor = pipe.vae_scale_factor
 
         if image_size is None:
@@ -110,7 +110,7 @@ class RBLNUNetSpatioTemporalConditionModel(RBLNModel):
     @classmethod
     def update_rbln_config_using_pipe(
         cls, pipe: RBLNDiffusionMixin, rbln_config: "RBLNDiffusionMixinConfig", submodule_name: str
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         rbln_config.unet.sample_size = cls.get_unet_sample_size(
             pipe, rbln_config.unet, image_size=rbln_config.image_size
         )
@@ -162,24 +162,24 @@ class RBLNUNetSpatioTemporalConditionModel(RBLNModel):
     def forward(
         self,
         sample: torch.Tensor,
-        timestep: Union[torch.Tensor, float, int],
+        timestep: torch.Tensor | float | int,
         encoder_hidden_states: torch.Tensor,
         added_time_ids: torch.Tensor,
         return_dict: bool = True,
         **kwargs,
-    ) -> Union[UNetSpatioTemporalConditionOutput, Tuple]:
+    ) -> UNetSpatioTemporalConditionOutput | tuple:
         """
         Forward pass for the RBLN-optimized UNetSpatioTemporalConditionModel.
 
         Args:
             sample (torch.Tensor): The noisy input tensor with the following shape `(batch, channel, height, width)`.
-            timestep (Union[torch.Tensor, float, int]): The number of timesteps to denoise an input.
+            timestep (torch.Tensor | float | int): The number of timesteps to denoise an input.
             encoder_hidden_states (torch.Tensor): The encoder hidden states.
             added_time_ids (torch.Tensor): A tensor containing additional sinusoidal embeddings and added to the time embeddings.
             return_dict (bool): Whether or not to return a [`~diffusers.models.unets.unet_spatio_temporal_condition.UNetSpatioTemporalConditionOutput`] instead of a plain tuple.
 
         Returns:
-            (Union[`~diffusers.models.unets.unet_spatio_temporal_condition.UNetSpatioTemporalConditionOutput`], Tuple)
+            (`~diffusers.models.unets.unet_spatio_temporal_condition.UNetSpatioTemporalConditionOutput`, Tuple)
         """
         sample_batch_size = sample.size()[0]
         compiled_batch_size = self.compiled_batch_size

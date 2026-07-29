@@ -43,9 +43,9 @@ def _get_rope_theta(config: PretrainedConfig) -> float:
 
 
 def _compute_default_rope_parameters(
-    config: Optional[PretrainedConfig] = None,
+    config: PretrainedConfig | None = None,
     device: Optional["torch.device"] = None,
-    seq_len: Optional[int] = None,
+    seq_len: int | None = None,
 ) -> tuple["torch.Tensor", float]:
     """
     Computes the inverse frequencies according to the original RoPE implementation
@@ -73,9 +73,9 @@ def _compute_default_rope_parameters(
 
 
 def _compute_linear_scaling_rope_parameters(
-    config: Optional[PretrainedConfig] = None,
+    config: PretrainedConfig | None = None,
     device: Optional["torch.device"] = None,
-    seq_len: Optional[int] = None,
+    seq_len: int | None = None,
 ) -> tuple["torch.Tensor", float]:
     """
     Computes the inverse frequencies with linear scaling. Credits to the Reddit user /u/kaiokendev
@@ -103,9 +103,9 @@ def _compute_linear_scaling_rope_parameters(
 
 
 def _compute_dynamic_ntk_parameters(
-    config: Optional[PretrainedConfig] = None,
+    config: PretrainedConfig | None = None,
     device: Optional["torch.device"] = None,
-    seq_len: Optional[int] = None,
+    seq_len: int | None = None,
 ) -> tuple["torch.Tensor", float]:
     """
     Computes the inverse frequencies with NTK scaling. Credits to the Reddit users /u/bloc97 and /u/emozilla
@@ -165,7 +165,7 @@ def _compute_dynamic_ntk_parameters(
 
 
 def _compute_yarn_parameters(
-    config: PretrainedConfig, device: "torch.device", seq_len: Optional[int] = None
+    config: PretrainedConfig, device: "torch.device", seq_len: int | None = None
 ) -> tuple["torch.Tensor", float]:
     """
     Computes the inverse frequencies with NTK scaling. Please refer to the
@@ -252,7 +252,7 @@ def _compute_yarn_parameters(
 
 
 def _compute_longrope_parameters(
-    config: PretrainedConfig, device: "torch.device", seq_len: Optional[int] = None
+    config: PretrainedConfig, device: "torch.device", seq_len: int | None = None
 ) -> tuple["torch.Tensor", float]:
     """
     Computes the inverse frequencies with LongRoPE scaling. Please refer to the
@@ -306,7 +306,7 @@ def _compute_longrope_parameters(
 
 
 def _compute_llama3_parameters(
-    config: PretrainedConfig, device: "torch.device", seq_len: Optional[int] = None
+    config: PretrainedConfig, device: "torch.device", seq_len: int | None = None
 ) -> tuple["torch.Tensor", float]:
     """
     Computes the inverse frequencies for llama 3.1.
@@ -349,8 +349,8 @@ def _compute_llama3_parameters(
 def _compute_proportional_rope_parameters(
     config: PretrainedConfig,
     device: "torch.device",
-    seq_len: Optional[int] = None,
-    layer_type: Optional[str] = None,
+    seq_len: int | None = None,
+    layer_type: str | None = None,
     head_dim_key: str = "head_dim",
 ) -> tuple["torch.Tensor", float]:
     """
