@@ -38,6 +38,8 @@ from optimum.rbln import (
     RBLNQwen2Model,
     RBLNQwen2MoeForCausalLM,
     RBLNQwen2VLForConditionalGeneration,
+    RBLNQwen3_5ForCausalLM,
+    RBLNQwen3_5ForConditionalGeneration,
     RBLNQwen3ForCausalLM,
     RBLNQwen3Model,
     RBLNQwen3MoeForCausalLM,
@@ -243,6 +245,22 @@ class TestQwen3MoeForCausalLM(LLMTest.TestLLM):
 
 class TestQwen3Model_UAM(TestQwen3Model):
     RBLN_CLASS_KWARGS = {"rbln_config": {"use_attention_mask": True}}
+
+
+class TestQwen3_5ForCausalLM(LLMTest.TestLLM):
+    RBLN_CLASS = RBLNQwen3_5ForCausalLM
+    HF_MODEL_ID = "Qwen/Qwen3.5-0.8B"
+    RBLN_AUTO_CLASS = None
+    RBLN_CLASS_KWARGS = {"rbln_config": {"num_devices": 1, "max_seq_len": 8192, "kvcache_partition_len": 4096}}
+    HF_CONFIG_KWARGS = {}
+
+    @classmethod
+    def setUpClass(cls):
+        config = AutoConfig.from_pretrained(cls.HF_MODEL_ID).get_text_config()
+        config.num_hidden_layers = 4
+        config.layer_types = ["linear_attention", "linear_attention", "linear_attention", "full_attention"]
+        cls.HF_CONFIG_KWARGS.update({"config": config, "ignore_mismatched_sizes": True})
+        return super().setUpClass()
 
 
 class TestOPTForCausalLM(LLMTest.TestLLM):
@@ -834,6 +852,44 @@ class TestQwen3VLMoeForConditionalGeneration(LLMTest.TestLLM):
         text_config["num_hidden_layers"] = 1
         kwargs = {"text_config": text_config, "vision_config": vision_config}
         cls.HF_CONFIG_KWARGS.update(kwargs)
+        return super().setUpClass()
+
+    def get_inputs(self):
+        tokenizer = self.get_tokenizer()
+        img_path = f"{os.path.dirname(__file__)}/../assets/rbln_logo_light.png"
+        image = Image.open(img_path)
+        inputs = tokenizer(images=[image], text=[self.PROMPT], return_tensors="pt", padding=True)
+        inputs["max_new_tokens"] = 20
+        inputs["do_sample"] = False
+        return inputs
+
+
+class TestQwen3_5ForConditionalGeneration(LLMTest.TestLLM):
+    RBLN_AUTO_CLASS = RBLNAutoModelForImageTextToText
+    RBLN_CLASS = RBLNQwen3_5ForConditionalGeneration
+    HF_MODEL_ID = "Qwen/Qwen3.5-0.8B"
+    PROMPT = "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\n<|vision_start|><|image_pad|><|vision_end|>Describe this image.<|im_end|>\n<|im_start|>assistant\n"
+    RBLN_CLASS_KWARGS = {
+        "rbln_config": {
+            "visual": {"max_seq_len": 512},
+            "num_devices": 1,
+            "kvcache_partition_len": 4096,
+            "max_seq_len": 8192,
+        }
+    }
+    IS_MULTIMODAL = True
+    HF_CONFIG_KWARGS = {}
+    HF_CONFIG_KWARGS_PREPROCESSOR = {"min_pixels": 64 * 16 * 16, "max_pixels": 64 * 16 * 16}
+
+    @classmethod
+    def setUpClass(cls):
+        config = AutoConfig.from_pretrained(cls.HF_MODEL_ID)
+        text_config = json.loads(config.text_config.to_json_string())
+        text_config["num_hidden_layers"] = 4
+        text_config["layer_types"] = ["linear_attention", "linear_attention", "linear_attention", "full_attention"]
+        vision_config = json.loads(config.vision_config.to_json_string())
+        vision_config["depth"] = 4
+        cls.HF_CONFIG_KWARGS.update({"text_config": text_config, "vision_config": vision_config})
         return super().setUpClass()
 
     def get_inputs(self):
