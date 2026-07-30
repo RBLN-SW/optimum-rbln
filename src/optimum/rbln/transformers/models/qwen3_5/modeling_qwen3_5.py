@@ -160,9 +160,18 @@ class RBLNQwen3_5TextModel(RBLNDecoderOnlyModel):
     @classmethod
     def _update_rbln_config(cls, preprocessors=None, model=None, model_config=None, rbln_config=None):
         rbln_config.linear_attention_layers = _qwen3_5_linear_layer_indices(model_config)
-        return super()._update_rbln_config(
+        rbln_config = super()._update_rbln_config(
             preprocessors=preprocessors, model=model, model_config=model_config, rbln_config=rbln_config
         )
+        if rbln_config.gdn_chunk_size is None:
+            rbln_config.gdn_chunk_size = rbln_config.prefill_chunk_size
+        if rbln_config.gdn_chunk_size > 128:
+            raise ValueError(
+                f"gdn_chunk_size must be <= 128, got {rbln_config.gdn_chunk_size}. "
+                "Larger GatedDeltaNet sub-chunk sizes are not supported yet — "
+                "set gdn_chunk_size to a value <= 128 that divides prefill_chunk_size."
+            )
+        return rbln_config
 
     @classmethod
     def get_input_info(cls, batch_size, query_length, rbln_config, model_config: PretrainedConfig):
@@ -631,9 +640,18 @@ class RBLNQwen3_5Model(RBLNDecoderOnlyModel):
     @classmethod
     def _update_rbln_config(cls, preprocessors=None, model=None, model_config=None, rbln_config=None):
         rbln_config.linear_attention_layers = _qwen3_5_linear_layer_indices(model_config)
-        return super()._update_rbln_config(
+        rbln_config = super()._update_rbln_config(
             preprocessors=preprocessors, model=model, model_config=model_config, rbln_config=rbln_config
         )
+        if rbln_config.gdn_chunk_size is None:
+            rbln_config.gdn_chunk_size = rbln_config.prefill_chunk_size
+        if rbln_config.gdn_chunk_size > 128:
+            raise ValueError(
+                f"gdn_chunk_size must be <= 128, got {rbln_config.gdn_chunk_size}. "
+                "Larger GatedDeltaNet sub-chunk sizes are not supported yet — "
+                "set gdn_chunk_size to a value <= 128 that divides prefill_chunk_size."
+            )
+        return rbln_config
 
     @classmethod
     def get_input_info(cls, batch_size, query_length, rbln_config, model_config: PretrainedConfig):
