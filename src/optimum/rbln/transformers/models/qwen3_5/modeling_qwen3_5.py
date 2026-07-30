@@ -330,6 +330,10 @@ class RBLNQwen3_5VisionModel(RBLNModel):
 
         head_dim = config.hidden_size // config.num_heads
         self.rotary_pos_emb = Qwen3_5VisionRotaryEmbedding(head_dim // 2)
+        # Precompute the rotary cos/sin tables up to the largest ViT bucket
+        _freq_table = self.rotary_pos_emb(int(self.max_seq_len.max().item()))
+        self.rotary_cos_table = _freq_table.cos()
+        self.rotary_sin_table = _freq_table.sin()
 
         with no_init_weights():
             self.patch_embed = Qwen3_5VisionPatchEmbed(config=config)
@@ -396,12 +400,9 @@ class RBLNQwen3_5VisionModel(RBLNModel):
 
         return rbln_config
 
-    def rot_pos_emb(self, grid_thw: torch.Tensor) -> torch.Tensor:
+    def rot_pos_emb(self, grid_thw: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         merge_size = self.spatial_merge_size
-
-        max_hw = int(grid_thw[:, 1:].max().item())
-        freq_table = self.rotary_pos_emb(max_hw)
-        device = freq_table.device
+        device = self.rotary_cos_table.device
 
         total_tokens = int(torch.prod(grid_thw, dim=1).sum().item())
         pos_ids = torch.empty((total_tokens, 2), dtype=torch.long, device=device)
@@ -430,9 +431,10 @@ class RBLNQwen3_5VisionModel(RBLNModel):
             pos_ids[offset : offset + num_tokens] = coords
             offset += num_tokens
 
-        embeddings = freq_table[pos_ids]
-        embeddings = embeddings.flatten(1)
-        return embeddings
+        # Gather cos/sin from the tables precomputed at object creation (fixed size -> deterministic).
+        cos = self.rotary_cos_table[pos_ids].flatten(1)
+        sin = self.rotary_sin_table[pos_ids].flatten(1)
+        return cos, sin
 
     def fast_pos_embed_interpolate(self, grid_thw: torch.Tensor) -> torch.Tensor:
         grid_ts, grid_hs, grid_ws = grid_thw[:, 0], grid_thw[:, 1], grid_thw[:, 2]
@@ -527,12 +529,12 @@ class RBLNQwen3_5VisionModel(RBLNModel):
         pos_embeds = self.fast_pos_embed_interpolate(grid_thw)
         hidden_states = hidden_states + pos_embeds.to(hidden_states.dtype)
 
-        rotary_pos_emb = self.rot_pos_emb(grid_thw)
+        cos, sin = self.rot_pos_emb(grid_thw)
         seq_len = hidden_states.shape[0]
         hidden_states = hidden_states.reshape(seq_len, -1)
-        rotary_pos_emb = rotary_pos_emb.reshape(seq_len, -1)
-        emb = torch.cat((rotary_pos_emb, rotary_pos_emb), dim=-1)
-        position_embeddings = (emb.cos(), emb.sin())  # fp32->device-dtype cast happens on-device in the vision wrapper
+        cos = torch.cat((cos, cos), dim=-1)
+        sin = torch.cat((sin, sin), dim=-1)
+        position_embeddings = (cos, sin)
 
         cu_seqlens = torch.repeat_interleave(grid_thw[:, 1] * grid_thw[:, 2], grid_thw[:, 0]).cumsum(
             dim=0, dtype=torch.int32
