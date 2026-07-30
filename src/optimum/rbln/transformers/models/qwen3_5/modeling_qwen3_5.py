@@ -431,7 +431,7 @@ class RBLNQwen3_5VisionModel(RBLNModel):
             pos_ids[offset : offset + num_tokens] = coords
             offset += num_tokens
 
-        # Gather cos/sin from the tables precomputed at object creation (fixed size -> deterministic).
+        # Gather cos/sin from the tables precomputed at object creation
         cos = self.rotary_cos_table[pos_ids].flatten(1)
         sin = self.rotary_sin_table[pos_ids].flatten(1)
         return cos, sin
@@ -534,6 +534,7 @@ class RBLNQwen3_5VisionModel(RBLNModel):
         hidden_states = hidden_states.reshape(seq_len, -1)
         cos = torch.cat((cos, cos), dim=-1)
         sin = torch.cat((sin, sin), dim=-1)
+        # fp32->device-dtype cast happens on-device in the vision wrapper
         position_embeddings = (cos, sin)
 
         cu_seqlens = torch.repeat_interleave(grid_thw[:, 1] * grid_thw[:, 2], grid_thw[:, 0]).cumsum(
