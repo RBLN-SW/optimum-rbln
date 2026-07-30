@@ -17,7 +17,7 @@ from typing import Any
 
 import torch
 import torch.nn as nn
-from transformers import PreTrainedModel
+from transformers import PretrainedConfig, PreTrainedModel
 from transformers.activations import ACT2FN
 
 from ...utils.moe import compute_masked_routing_weight_softmax_first
@@ -575,6 +575,38 @@ class Gemma4Experts(nn.Module):
             masked_routing_weight=masked_routing_weight,
             hidden_act="gelu",
         )
+
+
+class Gemma4VisionRotaryEmbedding(nn.Module):
+    # Host-side replacement for HF Gemma4VisionRotaryEmbedding, which recomputes
+    # `inv_freq @ position_ids` -> cos/sin on every forward. Vision positions are integer patch
+    # coordinates bounded by `position_embedding_size` (the same bound the patch embedder's one-hot
+    # position lookup uses), so the whole table is built once here and each forward is a gather —
+    # like RotaryEmbedding does for the text decoder.
+    #
+    # The table covers positions [0, ..., position_embedding_size - 1, -1]; the trailing row makes
+    # negative indexing reproduce HF's values for padded patches (pixel_position_ids == -1).
+
+    def __init__(self, config: PretrainedConfig):
+        super().__init__()
+        from transformers.models.gemma4.modeling_gemma4 import Gemma4VisionRotaryEmbedding as HFRotaryEmbedding
+
+        # Derive inv_freq through HF so rope_parameters handling stays in sync with upstream.
+        hf_rotary_emb = HFRotaryEmbedding(config)
+        positions = torch.cat([torch.arange(config.position_embedding_size), torch.tensor([-1])])
+        freqs = positions[:, None].float() @ hf_rotary_emb.inv_freq[None, :].float()
+        emb = torch.cat((freqs, freqs), dim=-1)
+
+        self.register_buffer("_cos_cached", emb.cos() * hf_rotary_emb.attention_scaling, persistent=False)
+        self.register_buffer("_sin_cached", emb.sin() * hf_rotary_emb.attention_scaling, persistent=False)
+
+    def forward(self, x: torch.Tensor, position_ids: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        # position_ids (batch, num_patches, ndim) gathers to (batch, num_patches, ndim, emb_dim);
+        # flattening the last two axes matches HF's per-spatial-dim loop plus cat(..., dim=-1).
+        batch_size, num_patches, _ = position_ids.shape
+        cos = self._cos_cached[position_ids].reshape(batch_size, num_patches, -1)
+        sin = self._sin_cached[position_ids].reshape(batch_size, num_patches, -1)
+        return cos.to(dtype=x.dtype), sin.to(dtype=x.dtype)
 
 
 class Gemma4VisionAttention(nn.Module):
