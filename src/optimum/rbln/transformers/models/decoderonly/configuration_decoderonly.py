@@ -59,7 +59,6 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
         cache_impl: CacheImplType | None = None,
         sliding_window: int | None = None,
         sliding_window_layers: list[int] | None = None,
-        linear_attention_layers: list[int] | None = None,
         phases: list[PhaseType] | None = None,
         logits_to_keep: int | None = None,
         output_hidden_states: bool | None = None,
@@ -242,7 +241,6 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
         self.cache_impl = cache_impl or "static"
         self.sliding_window = sliding_window
         self.sliding_window_layers = sliding_window_layers or []
-        self.linear_attention_layers = linear_attention_layers or []
 
         if phases is not None:
             self.validate_phases_type(phases)
@@ -430,7 +428,7 @@ class KVCacheMeta(RBLNSerializableConfigProtocol):
     ) -> "KVCacheMeta":
         assert len(rbln_config.compile_cfgs) == 0, "KVCacheMeta cannot be created from rbln_config with compile_cfgs"
 
-        if layer_index in rbln_config.linear_attention_layers:
+        if layer_index in getattr(rbln_config, "linear_attention_layers", []):
             if shape is None:
                 raise ValueError("`shape` is required to build a linear_attention layer's KVCacheMeta.")
             return KVCacheMeta(
