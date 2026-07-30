@@ -33,7 +33,7 @@ class RBLNGemma3RuntimeModel(RBLNDecoderOnlyChunkedMultimodalPrefillMixin, RBLNR
 
     _prefill_output_cls = RBLNGemma3ForCausalLMOutput
 
-    def __init__(self, *args: Any, image_prefill: rebel.Runtime | None = None, **kwargs: Any) -> None:
+    def __init__(self, *args: Any, image_prefill: "rebel.Runtime | None" = None, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         self.image_prefill = RBLNPytorchRuntime(image_prefill)
         self.prefill = RBLNPytorchRuntime(self.runtime) if self.phase == "prefill" else None

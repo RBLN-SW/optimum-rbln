@@ -75,7 +75,7 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
         rbln_config: RBLNModelConfig,
         model_save_dir: str | Path | TemporaryDirectory | None = None,
         subfolder: str = "",
-        rbln_compiled_models: rebel.RBLNCompiledModel | None = None,
+        rbln_compiled_models: "rebel.RBLNCompiledModel | None" = None,
         rbln_submodules: list["RBLNBaseModel"] | None = None,
         **kwargs,
     ):
