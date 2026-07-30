@@ -625,18 +625,18 @@ class RBLNRuntimeModel(RBLNPytorchRuntime):
 
         # Aggregate output_logits
         padding_size = (self.rbln_config.prefill_chunk_size - query_length) % self.rbln_config.prefill_chunk_size
+        # `-padding_size` as a slice end drops the whole sequence when padding_size == 0 ([:, :-0] == [:, :0])
+        trim_end = -padding_size if padding_size > 0 else None
         if self.rbln_config.logits_to_keep == 1:
             output_logits = output_logits
         elif self.rbln_config.logits_to_keep > 1:
-            output_logits = output_logits[:, -padding_size - self.rbln_config.logits_to_keep : -padding_size, :]
+            output_logits = output_logits[:, -padding_size - self.rbln_config.logits_to_keep : trim_end, :]
         else:
-            output_logits = output_logits[:, :-padding_size, :]
+            output_logits = output_logits[:, :trim_end, :]
 
         all_hidden_states = None
         if self.rbln_config.output_hidden_states:
-            all_hidden_states = [
-                output_hidden_state[:, :-padding_size, :] for output_hidden_state in output_hidden_states
-            ]
+            all_hidden_states = [output_hidden_state[:, :trim_end, :] for output_hidden_state in output_hidden_states]
             all_hidden_states = tuple(all_hidden_states)
 
         # Update decoder attention mask with processed KV-cache length from prefill phase
