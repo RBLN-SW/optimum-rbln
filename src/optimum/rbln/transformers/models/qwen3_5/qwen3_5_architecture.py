@@ -300,9 +300,8 @@ class Qwen3_5GatedDeltaNet(nn.Module):
             if _has_bias:
                 _lin.bias = nn.Parameter(_bi.contiguous())
 
-        self.prefill_chunk_size = getattr(rbln_config, "prefill_chunk_size", 128)
-        # GDN sub-chunk: each window splits into `chunk_size` sub-chunks (must divide prefill_chunk_size).
-        self.chunk_size = getattr(rbln_config, "gdn_chunk_size", None) or self.prefill_chunk_size
+        self.prefill_chunk_size = rbln_config.prefill_chunk_size
+        self.chunk_size = rbln_config.gdn_chunk_size
 
     @property
     def phase(self):
