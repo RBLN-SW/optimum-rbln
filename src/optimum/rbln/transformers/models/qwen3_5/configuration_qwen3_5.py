@@ -25,9 +25,9 @@ class RBLNQwen3_5ForCausalLMConfig(RBLNDecoderOnlyModelForCausalLMConfig):
     Qwen3.5 is a hybrid decoder: most layers are `linear_attention` (GatedDeltaNet) and a
     minority are `full_attention` (gated softmax attention). Full-attention layers use the
     standard paged KV cache; linear-attention layers instead carry a `conv_state` and a
-    `recurrent_state`. Which layers are linear is read directly from the HF `config.layer_types`
-    (no RBLN-config field); this config extends `RBLNDecoderOnlyModelForCausalLMConfig` only with
-    `gdn_chunk_size`.
+    `recurrent_state`. Which layers are linear is read from the HF `config.layer_types` into the internal
+    `linear_attention_layers` field; this config extends `RBLNDecoderOnlyModelForCausalLMConfig` with
+    `gdn_chunk_size` and `linear_attention_layers`.
 
     Example usage:
     ```python
@@ -45,6 +45,7 @@ class RBLNQwen3_5ForCausalLMConfig(RBLNDecoderOnlyModelForCausalLMConfig):
     def __init__(
         self,
         gdn_chunk_size: int | None = None,
+        linear_attention_layers: list[int] | None = None,
         **kwargs: Any,
     ):
         """
@@ -52,10 +53,13 @@ class RBLNQwen3_5ForCausalLMConfig(RBLNDecoderOnlyModelForCausalLMConfig):
             gdn_chunk_size (Optional[int]): GatedDeltaNet prefill sub-chunk size. Each prefill window
                 is split into `prefill_chunk_size // gdn_chunk_size` sub-chunks processed by the chunked
                 delta rule. Must divide `prefill_chunk_size`. `None` -> `prefill_chunk_size` (no split).
+            linear_attention_layers (list[int] | None): The linear_attention (GatedDeltaNet)
+                layer indices, populated automatically from `layer_types` at compile time (not user-set).
             kwargs: Additional arguments passed to `RBLNDecoderOnlyModelForCausalLMConfig`.
         """
         super().__init__(**kwargs)
         self.gdn_chunk_size = gdn_chunk_size
+        self.linear_attention_layers = linear_attention_layers or []
 
 
 class RBLNQwen3_5TextModelConfig(RBLNDecoderOnlyModelConfig):
@@ -69,10 +73,21 @@ class RBLNQwen3_5TextModelConfig(RBLNDecoderOnlyModelConfig):
     def __init__(
         self,
         gdn_chunk_size: int | None = None,
+        linear_attention_layers: list[int] | None = None,
         **kwargs: Any,
     ):
+        """
+        Args:
+            gdn_chunk_size (Optional[int]): GatedDeltaNet prefill sub-chunk size. Each prefill window
+                is split into `prefill_chunk_size // gdn_chunk_size` sub-chunks processed by the chunked
+                delta rule. Must divide `prefill_chunk_size`. `None` -> `prefill_chunk_size` (no split).
+            linear_attention_layers (list[int] | None): The linear_attention (GatedDeltaNet)
+                layer indices, populated automatically from `layer_types` at compile time (not user-set).
+            kwargs: Additional arguments passed to `RBLNDecoderOnlyModelConfig`.
+        """
         super().__init__(**kwargs)
         self.gdn_chunk_size = gdn_chunk_size
+        self.linear_attention_layers = linear_attention_layers or []
 
 
 class RBLNQwen3_5VisionModelConfig(RBLNModelConfig):
@@ -125,6 +140,7 @@ class RBLNQwen3_5ModelConfig(RBLNDecoderOnlyModelConfig):
     def __init__(
         self,
         gdn_chunk_size: int | None = None,
+        linear_attention_layers: list[int] | None = None,
         visual: RBLNModelConfig | None = None,
         _load_visual_runtime: bool = True,
         **kwargs: Any,
@@ -134,6 +150,8 @@ class RBLNQwen3_5ModelConfig(RBLNDecoderOnlyModelConfig):
             gdn_chunk_size (Optional[int]): GatedDeltaNet prefill sub-chunk size. Each prefill window is
                 split into `prefill_chunk_size // gdn_chunk_size` sub-chunks processed by the chunked
                 delta rule. Must divide `prefill_chunk_size`. `None` -> `prefill_chunk_size` (no split).
+            linear_attention_layers (list[int] | None): The linear_attention (GatedDeltaNet)
+                layer indices, populated automatically from `layer_types` at compile time (not user-set).
             visual (Optional[RBLNModelConfig]): Configuration for the vision encoder submodule.
             _load_visual_runtime (bool): Whether to create the visual encoder runtime (False on
                 decoder-only nodes in a disaggregated setup). Defaults to True.
@@ -152,6 +170,7 @@ class RBLNQwen3_5ModelConfig(RBLNDecoderOnlyModelConfig):
         self.visual = self.initialize_submodule_config(submodule_config=visual, force_kwargs=True, batch_size=1)
         self._load_visual_runtime = _load_visual_runtime
         self.gdn_chunk_size = gdn_chunk_size
+        self.linear_attention_layers = linear_attention_layers or []
 
 
 class RBLNQwen3_5ForConditionalGenerationConfig(RBLNDecoderOnlyModelForCausalLMConfig):
@@ -161,7 +180,6 @@ class RBLNQwen3_5ForConditionalGenerationConfig(RBLNDecoderOnlyModelForCausalLMC
     Qwen3.5 pairs a Qwen3-VL-style vision encoder (no deepstack) with the hybrid Qwen3.5
     text backbone (`linear_attention` GatedDeltaNet layers + `full_attention` gated layers).
     The vision encoder output is injected into `inputs_embeds` (`use_inputs_embeds=True`).
-    Which layers are linear is read from the HF `config.text_config.layer_types` (no RBLN-config field).
 
     Independent of the Qwen3-VL config: inherits `RBLNDecoderOnlyModelForCausalLMConfig` directly
     (like the Qwen3-VL config does), carrying its own `visual` submodule handling plus the
@@ -184,6 +202,7 @@ class RBLNQwen3_5ForConditionalGenerationConfig(RBLNDecoderOnlyModelForCausalLMC
     def __init__(
         self,
         gdn_chunk_size: int | None = None,
+        linear_attention_layers: list[int] | None = None,
         use_inputs_embeds: bool = True,
         visual: RBLNModelConfig | None = None,
         _load_visual_runtime: bool = True,
@@ -194,6 +213,8 @@ class RBLNQwen3_5ForConditionalGenerationConfig(RBLNDecoderOnlyModelForCausalLMC
             gdn_chunk_size (Optional[int]): GatedDeltaNet prefill sub-chunk size. Each prefill window is
                 split into `prefill_chunk_size // gdn_chunk_size` sub-chunks. Must divide
                 `prefill_chunk_size`. `None` -> `prefill_chunk_size` (no split). See rbln_chunk_gated_delta_rule.
+            linear_attention_layers (list[int] | None): The linear_attention (GatedDeltaNet)
+                layer indices, populated automatically from `layer_types` at compile time (not user-set).
             use_inputs_embeds (bool): Must be True — the vision encoder output is injected into inputs_embeds.
             visual (Optional[RBLNModelConfig]): Configuration for the vision encoder submodule.
             _load_visual_runtime (bool): Whether to create the visual encoder runtime. Set False on
@@ -214,3 +235,4 @@ class RBLNQwen3_5ForConditionalGenerationConfig(RBLNDecoderOnlyModelForCausalLMC
         self.visual = self.initialize_submodule_config(submodule_config=visual, force_kwargs=True, batch_size=1)
         self._load_visual_runtime = _load_visual_runtime
         self.gdn_chunk_size = gdn_chunk_size
+        self.linear_attention_layers = linear_attention_layers or []
