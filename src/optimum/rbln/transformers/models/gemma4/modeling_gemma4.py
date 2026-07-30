@@ -706,7 +706,7 @@ class RBLNGemma4ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMix
         input_infos = []
         for max_soft_tokens in max_soft_tokens_list:
             input_info = [
-                ("image_features", [1, max_soft_tokens, vision_hidden_size], "float32"),
+                ("image_features", [1, max_soft_tokens, vision_hidden_size], rbln_config.dtype),
             ]
             input_infos.append(input_info)
         compile_cfgs = RBLNCompileConfig(input_info=input_infos)
@@ -809,10 +809,13 @@ class RBLNGemma4ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMix
             torch.empty(size=vision_out_0_size, dtype=self.rbln_config.vision_tower.dtype, device="cpu"),
             torch.empty(size=vision_out_1_size, dtype=torch.bool, device="cpu"),
         ]
-        projector_out_buffer = [torch.empty(size=projector_out_size, dtype=torch.float32, device="cpu")]
+        projector_dtype = self.rbln_config.dtype
+        projector_out_buffer = [torch.empty(size=projector_out_size, dtype=projector_dtype, device="cpu")]
 
         vision_outputs = self.vision_tower(pixel_values, pixel_position_ids, out=vision_out_buffer)
-        pooler_output = self.embed_vision(vision_outputs.last_hidden_state.float(), out=projector_out_buffer)
+        pooler_output = self.embed_vision(
+            vision_outputs.last_hidden_state.to(projector_dtype), out=projector_out_buffer
+        )
         pooler_output = pooler_output[vision_outputs.pooler_mask]
         return pooler_output
 
