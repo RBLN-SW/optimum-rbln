@@ -581,18 +581,21 @@ class Gemma4Experts(nn.Module):
 class Gemma4VisionRotaryEmbedding(nn.Module):
     # Host-side replacement for HF Gemma4VisionRotaryEmbedding, which recomputes
     # `inv_freq @ position_ids` -> cos/sin on every forward. Vision positions are integer patch
-    # coordinates bounded by `position_embedding_size` (the same bound the patch embedder's one-hot
-    # position lookup uses), so the whole table is built once here and each forward is a gather —
-    # like RotaryEmbedding does for the text decoder.
+    # coordinates on the resized patch grid, so the whole table is built once here and each forward
+    # is a gather — like RotaryEmbedding does for the text decoder.
     #
-    # The table covers positions [0, ..., position_embedding_size - 1, -1]; the trailing row makes
-    # negative indexing reproduce HF's values for padded patches (pixel_position_ids == -1).
+    # `max_patches` (the largest compiled bucket) bounds the table: the image processor resizes each
+    # image so that patch_height * patch_width <= max_patches, so neither axis coordinate can reach
+    # it. Smaller buckets index the same table, so one table serves them all.
+    #
+    # The table covers positions [0, ..., max_patches - 1, -1]; the trailing row makes negative
+    # indexing reproduce HF's values for padded patches (pixel_position_ids == -1).
 
-    def __init__(self, config: PretrainedConfig):
+    def __init__(self, config: PretrainedConfig, max_patches: int):
         super().__init__()
         # Derive inv_freq through HF so rope_parameters handling stays in sync with upstream.
         hf_rotary_emb = HFRotaryEmbedding(config)
-        positions = torch.cat([torch.arange(config.position_embedding_size), torch.tensor([-1])])
+        positions = torch.cat([torch.arange(max_patches), torch.tensor([-1])])
         freqs = positions[:, None].float() @ hf_rotary_emb.inv_freq[None, :].float()
         emb = torch.cat((freqs, freqs), dim=-1)
 

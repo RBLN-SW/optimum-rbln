@@ -179,7 +179,7 @@ class RBLNGemma4VisionModel(RBLNModel):
         return patch_embedder
 
     def _create_rotary_emb(self) -> torch.nn.Module:
-        return Gemma4VisionRotaryEmbedding(self.config)
+        return Gemma4VisionRotaryEmbedding(self.config, max(self.rbln_config.get_max_patches()))
 
     def __post_init__(self, **kwargs):
         artifacts_path = self.model_save_dir / self.subfolder / "torch_artifacts.pth"
