@@ -19,6 +19,7 @@ import torch
 import torch.nn as nn
 from transformers import PretrainedConfig, PreTrainedModel
 from transformers.activations import ACT2FN
+from transformers.models.gemma4.modeling_gemma4 import Gemma4VisionRotaryEmbedding as HFRotaryEmbedding
 
 from ...utils.moe import compute_masked_routing_weight_softmax_first
 from ..decoderonly.configuration_decoderonly import RBLNLoRAConfig
@@ -589,8 +590,6 @@ class Gemma4VisionRotaryEmbedding(nn.Module):
 
     def __init__(self, config: PretrainedConfig):
         super().__init__()
-        from transformers.models.gemma4.modeling_gemma4 import Gemma4VisionRotaryEmbedding as HFRotaryEmbedding
-
         # Derive inv_freq through HF so rope_parameters handling stays in sync with upstream.
         hf_rotary_emb = HFRotaryEmbedding(config)
         positions = torch.cat([torch.arange(config.position_embedding_size), torch.tensor([-1])])
