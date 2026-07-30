@@ -201,8 +201,9 @@ class RBLNQwen3VLRuntimeModel(RBLNRuntimeModel):
             if chunked_attention_mask is not None:
                 if self.rbln_config.use_position_ids:
                     valid_len = min(chunk_size, query_length - step)
-                    for i in range(valid_len):
-                        cache_idx = cache_pos_chunk[0, i].item()
+                    # do not reuse `i` here: it is the chunk index selecting `out_buffers[i]` below
+                    for pos in range(valid_len):
+                        cache_idx = cache_pos_chunk[0, pos].item()
                         if cache_idx < chunked_attention_mask.shape[-1]:
                             chunked_attention_mask[0, cache_idx] = 1
                 else:
@@ -260,19 +261,33 @@ class RBLNQwen3VLRuntimeModel(RBLNRuntimeModel):
                 out=out_buffers[i],
             )
 
-        if self.rbln_config.logits_to_keep > 0:
-            output_logits = output_logits[:, :query_length, :]
+        # Aggregate outputs. Valid rows live at [valid_start_index, valid_start_index + query_length)
+        # of the out buffers (`_prepare_prefill_outputs` offsets the chunk views by the first
+        # non-masked position), so extract that window and re-scatter it to the attention-mask
+        # positions with masked rows filled with 1e-10. A `[:, :query_length]` head-trim would read
+        # the pad region of left-padded masks, and hidden states must come back at full mask width
+        # because the model-level aggregation copies them into mask-width buffers.
+        if attention_mask is not None:
+            valid_start_index = int(torch.nonzero(attention_mask, as_tuple=False)[0][0].item())
+            mask_indices = torch.nonzero(attention_mask, as_tuple=True)[0]
         else:
-            output_logits = output_logits[:, :query_length, :]
-            if attention_mask is not None:
-                new_output_logits = torch.full(
-                    (1, attention_mask.shape[-1], output_logits.shape[-1]),
-                    fill_value=1e-10,
-                    dtype=output_logits.dtype,
-                )
-                mask_indices = torch.nonzero(attention_mask, as_tuple=True)[0]
-                new_output_logits.index_copy_(dim=-2, index=mask_indices, source=output_logits)
-                output_logits = new_output_logits
+            valid_start_index = 0
+            mask_indices = None
+
+        def scatter_to_mask_width(padded_output: torch.Tensor) -> torch.Tensor:
+            valid_output = padded_output[:, valid_start_index : valid_start_index + query_length, :]
+            if mask_indices is None:
+                return valid_output
+            full_output = torch.full(
+                (1, attention_mask.shape[-1], padded_output.shape[-1]),
+                fill_value=1e-10,
+                dtype=padded_output.dtype,
+            )
+            full_output.index_copy_(dim=-2, index=mask_indices, source=valid_output)
+            return full_output
+
+        if self.rbln_config.logits_to_keep == 0:
+            output_logits = scatter_to_mask_width(output_logits)
 
         if self.rbln_config.can_generate and not is_external_block_tables and self.rbln_config.use_attention_mask:
             if self.rbln_config.use_position_ids:
@@ -282,7 +297,7 @@ class RBLNQwen3VLRuntimeModel(RBLNRuntimeModel):
                 self.dec_attn_mask[batch_idx, :, :, :query_length] = 1
 
         if self.rbln_config.output_hidden_states:
-            output_hidden_states = tuple(hs[:, :query_length, :] for hs in output_hidden_states)
+            output_hidden_states = tuple(scatter_to_mask_width(hs) for hs in output_hidden_states)
             return RBLNDecoderOnlyOutput(logits=output_logits, hidden_states=output_hidden_states)
         else:
             return RBLNDecoderOnlyOutput(logits=output_logits, hidden_states=None)
