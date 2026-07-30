@@ -17,9 +17,8 @@ from typing import Any
 
 import torch
 import torch.nn as nn
-from transformers import PretrainedConfig, PreTrainedModel
+from transformers import PreTrainedModel
 from transformers.activations import ACT2FN
-from transformers.models.gemma4.modeling_gemma4 import Gemma4VisionRotaryEmbedding as HFRotaryEmbedding
 
 from ...utils.moe import compute_masked_routing_weight_softmax_first
 from ..decoderonly.configuration_decoderonly import RBLNLoRAConfig
@@ -578,39 +577,6 @@ class Gemma4Experts(nn.Module):
         )
 
 
-class Gemma4VisionRotaryEmbedding(nn.Module):
-    # Host-side replacement for HF Gemma4VisionRotaryEmbedding, which recomputes
-    # `inv_freq @ position_ids` -> cos/sin on every forward. Vision positions are integer patch
-    # coordinates on the resized patch grid, so the whole table is built once here and each forward
-    # is a gather — like RotaryEmbedding does for the text decoder.
-    #
-    # `max_patches` (the largest compiled bucket) bounds the table: the image processor resizes each
-    # image so that patch_height * patch_width <= max_patches, so neither axis coordinate can reach
-    # it. Smaller buckets index the same table, so one table serves them all.
-    #
-    # The table covers positions [0, ..., max_patches - 1, -1]; the trailing row makes negative
-    # indexing reproduce HF's values for padded patches (pixel_position_ids == -1).
-
-    def __init__(self, config: PretrainedConfig, max_patches: int):
-        super().__init__()
-        # Derive inv_freq through HF so rope_parameters handling stays in sync with upstream.
-        hf_rotary_emb = HFRotaryEmbedding(config)
-        positions = torch.cat([torch.arange(max_patches), torch.tensor([-1])])
-        freqs = positions[:, None].float() @ hf_rotary_emb.inv_freq[None, :].float()
-        emb = torch.cat((freqs, freqs), dim=-1)
-
-        self.register_buffer("_cos_cached", emb.cos() * hf_rotary_emb.attention_scaling, persistent=False)
-        self.register_buffer("_sin_cached", emb.sin() * hf_rotary_emb.attention_scaling, persistent=False)
-
-    def forward(self, x: torch.Tensor, position_ids: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-        # position_ids (batch, num_patches, ndim) gathers to (batch, num_patches, ndim, emb_dim);
-        # flattening the last two axes matches HF's per-spatial-dim loop plus cat(..., dim=-1).
-        batch_size, num_patches, _ = position_ids.shape
-        cos = self._cos_cached[position_ids].reshape(batch_size, num_patches, -1)
-        sin = self._sin_cached[position_ids].reshape(batch_size, num_patches, -1)
-        return cos.to(dtype=x.dtype), sin.to(dtype=x.dtype)
-
-
 class Gemma4VisionAttention(nn.Module):
     # Replaces HF Gemma4VisionAttention with an explicit matmul -> softmax -> matmul block.
     # HF dispatches through ALL_ATTENTION_FUNCTIONS[_attn_implementation] (default: F.scaled_dot_product_attention);
@@ -695,7 +661,7 @@ class Gemma4VisionModelWrapper(nn.Module):
     #
     # Host-side responsibilities (NOT in the compiled graph):
     # - patch_embedder: produces inputs_embeds from pixel_values.
-    # - Gemma4VisionRotaryEmbedding: produces (cos, sin) from pixel_position_ids.
+    # - rotary (cos, sin): gathered from tables RBLNGemma4VisionModel precomputes at load time.
     # - padding_positions ((pixel_position_ids == -1).all(dim=-1)) and 1D-per-key additive attn_mask
     #   ((1 - valid) * finfo.min, shape (batch, max_patches)) — both derived from pixel_position_ids
     #   on the host. attn_mask is broadcast to (batch, 1, 1, max_patches) here to mask only the key
