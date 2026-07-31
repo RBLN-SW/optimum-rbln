@@ -38,6 +38,8 @@ from optimum.rbln import (
     RBLNQwen2Model,
     RBLNQwen2MoeForCausalLM,
     RBLNQwen2VLForConditionalGeneration,
+    RBLNQwen3_5ForCausalLM,
+    RBLNQwen3_5ForConditionalGeneration,
     RBLNQwen3ForCausalLM,
     RBLNQwen3Model,
     RBLNQwen3MoeForCausalLM,
@@ -148,6 +150,26 @@ class LLMTest:
     class TestLLMWithoutLMHead(TestLLM):
         RBLN_AUTO_CLASS = RBLNAutoModel
 
+        def test_forward_prompt_length_multiple_of_prefill_chunk_size(self):
+            # Regression test for #649: when the prompt length was an exact multiple of
+            # `prefill_chunk_size`, prefill trimmed the whole sequence ([:, :-0, :]) and
+            # returned an empty last_hidden_state.
+            chunk_size = self.model.rbln_config.prefill_chunk_size
+            batch_size = self.model.rbln_config.batch_size
+            max_seq_len = self.model.rbln_config.max_seq_len
+            hidden_size = self.model.config.hidden_size
+
+            for length in (chunk_size, chunk_size * 2):
+                if length > max_seq_len:
+                    continue
+                with self.subTest(length=length):
+                    input_ids = torch.ones((batch_size, length), dtype=torch.int64)
+                    output = self.model(input_ids=input_ids, attention_mask=torch.ones_like(input_ids))
+                    self.assertEqual(output.last_hidden_state.shape, (batch_size, length, hidden_size))
+                    if self.model.rbln_config.output_hidden_states:
+                        for hidden_state in output.hidden_states:
+                            self.assertEqual(hidden_state.shape, (batch_size, length, hidden_size))
+
 
 class TestMistralForCausalLM(LLMTest.TestLLM):
     RBLN_CLASS = RBLNMistralForCausalLM
@@ -243,6 +265,22 @@ class TestQwen3MoeForCausalLM(LLMTest.TestLLM):
 
 class TestQwen3Model_UAM(TestQwen3Model):
     RBLN_CLASS_KWARGS = {"rbln_config": {"use_attention_mask": True}}
+
+
+class TestQwen3_5ForCausalLM(LLMTest.TestLLM):
+    RBLN_CLASS = RBLNQwen3_5ForCausalLM
+    HF_MODEL_ID = "Qwen/Qwen3.5-0.8B"
+    RBLN_AUTO_CLASS = None
+    RBLN_CLASS_KWARGS = {"rbln_config": {"num_devices": 1, "max_seq_len": 8192, "kvcache_partition_len": 4096}}
+    HF_CONFIG_KWARGS = {}
+
+    @classmethod
+    def setUpClass(cls):
+        config = AutoConfig.from_pretrained(cls.HF_MODEL_ID).get_text_config()
+        config.num_hidden_layers = 4
+        config.layer_types = ["linear_attention", "linear_attention", "linear_attention", "full_attention"]
+        cls.HF_CONFIG_KWARGS.update({"config": config, "ignore_mismatched_sizes": True})
+        return super().setUpClass()
 
 
 class TestOPTForCausalLM(LLMTest.TestLLM):
@@ -443,7 +481,7 @@ class TestLlavaForConditionalGeneration(LLMTest.TestLLM):
 
     def get_inputs(self):
         tokenizer = self.get_tokenizer()
-        img_path = f"{os.path.dirname(__file__)}/../assets/rbln_logo.png"
+        img_path = f"{os.path.dirname(__file__)}/../assets/rbln_logo_light.png"
         image = Image.open(img_path)
         inputs = tokenizer(images=[image], text=[self.PROMPT], return_tensors="pt", padding=True)
         inputs["max_new_tokens"] = 20
@@ -523,7 +561,7 @@ class TestLlavaNextForConditionalGeneration(LLMTest.TestLLM):
 
     def get_inputs(self):
         tokenizer = self.get_tokenizer()
-        img_path = f"{os.path.dirname(__file__)}/../assets/rbln_logo.png"
+        img_path = f"{os.path.dirname(__file__)}/../assets/rbln_logo_light.png"
         image = Image.open(img_path)
         inputs = tokenizer(images=[image], text=[self.PROMPT], return_tensors="pt", padding=True)
         inputs["max_new_tokens"] = 20
@@ -573,6 +611,17 @@ class TestLlavaNextForConditionalGeneration(LLMTest.TestLLM):
         ):
             _ = self.RBLN_CLASS.from_pretrained(model_id=self.HF_MODEL_ID, **rbln_class_kwargs)
 
+    def test_propagate_config(self):
+        rbln_config = {
+            "create_runtimes": False,
+        }
+        rbln_class_kwargs = {"rbln_config": rbln_config}
+
+        model = self.RBLN_CLASS.from_pretrained(model_id=self.HF_MODEL_ID, **rbln_class_kwargs)
+
+        assert not model.rbln_config.vision_tower.create_runtimes
+        assert not model.rbln_config.language_model.create_runtimes
+
 
 class TestBlip2ForConditionalGeneration(LLMTest.TestLLM):
     RBLN_AUTO_CLASS = RBLNAutoModelForImageTextToText
@@ -601,7 +650,7 @@ class TestBlip2ForConditionalGeneration(LLMTest.TestLLM):
 
     def get_inputs(self):
         tokenizer = self.get_tokenizer()
-        img_path = f"{os.path.dirname(__file__)}/../assets/rbln_logo.png"
+        img_path = f"{os.path.dirname(__file__)}/../assets/rbln_logo_light.png"
         image = Image.open(img_path)
         inputs = tokenizer(images=image, text=self.PROMPT, return_tensors="pt", padding=True)
         inputs["max_new_tokens"] = 20
@@ -644,7 +693,7 @@ class TestIdefics3ForConditionalGeneration(LLMTest.TestLLM):
 
     def get_inputs(self):
         tokenizer = self.get_tokenizer()
-        img_path = f"{os.path.dirname(__file__)}/../assets/rbln_logo.png"
+        img_path = f"{os.path.dirname(__file__)}/../assets/rbln_logo_light.png"
         image = Image.open(img_path)
         text = tokenizer.apply_chat_template(self.PROMPT, add_generation_prompt=True)
         inputs = tokenizer(images=[image], text=[text], return_tensors="pt", padding=True)
@@ -688,12 +737,20 @@ class TestQwen2VLForConditionalGeneration(LLMTest.TestLLM):
 
     def get_inputs(self):
         tokenizer = self.get_tokenizer()
-        img_path = f"{os.path.dirname(__file__)}/../assets/rbln_logo.png"
+        img_path = f"{os.path.dirname(__file__)}/../assets/rbln_logo_light.png"
         image = Image.open(img_path)
         inputs = tokenizer(images=[image], text=[self.PROMPT], return_tensors="pt", padding=True)
         inputs["max_new_tokens"] = 20
         inputs["do_sample"] = False
         return inputs
+
+    def test_propagate_config(self):
+        self.RBLN_CLASS_KWARGS["rbln_config"].update({"create_runtimes": False})
+
+        model = self.RBLN_CLASS.from_pretrained(model_id=self.HF_MODEL_ID, **self.RBLN_CLASS_KWARGS)
+
+        assert not model.rbln_config.visual.create_runtimes
+        assert not model.rbln_config.create_runtimes
 
 
 class TestQwen2_5_VLForConditionalGeneration(LLMTest.TestLLM):
@@ -728,12 +785,20 @@ class TestQwen2_5_VLForConditionalGeneration(LLMTest.TestLLM):
 
     def get_inputs(self):
         tokenizer = self.get_tokenizer()
-        img_path = f"{os.path.dirname(__file__)}/../assets/rbln_logo.png"
+        img_path = f"{os.path.dirname(__file__)}/../assets/rbln_logo_light.png"
         image = Image.open(img_path)
         inputs = tokenizer(images=[image], text=[self.PROMPT], return_tensors="pt", padding=True)
         inputs["max_new_tokens"] = 20
         inputs["do_sample"] = False
         return inputs
+
+    def test_propagate_config(self):
+        self.RBLN_CLASS_KWARGS["rbln_config"].update({"create_runtimes": False})
+
+        model = self.RBLN_CLASS.from_pretrained(model_id=self.HF_MODEL_ID, **self.RBLN_CLASS_KWARGS)
+
+        assert not model.rbln_config.visual.create_runtimes
+        assert not model.rbln_config.create_runtimes
 
 
 class TestQwen3VLForConditionalGeneration(LLMTest.TestLLM):
@@ -764,12 +829,20 @@ class TestQwen3VLForConditionalGeneration(LLMTest.TestLLM):
 
     def get_inputs(self):
         tokenizer = self.get_tokenizer()
-        img_path = f"{os.path.dirname(__file__)}/../assets/rbln_logo.png"
+        img_path = f"{os.path.dirname(__file__)}/../assets/rbln_logo_light.png"
         image = Image.open(img_path)
         inputs = tokenizer(images=[image], text=[self.PROMPT], return_tensors="pt", padding=True)
         inputs["max_new_tokens"] = 20
         inputs["do_sample"] = False
         return inputs
+
+    def test_propagate_config(self):
+        self.RBLN_CLASS_KWARGS["rbln_config"].update({"create_runtimes": False})
+
+        model = self.RBLN_CLASS.from_pretrained(model_id=self.HF_MODEL_ID, **self.RBLN_CLASS_KWARGS)
+
+        assert not model.rbln_config.visual.create_runtimes
+        assert not model.rbln_config.create_runtimes
 
 
 class TestQwen3VLMoeForConditionalGeneration(LLMTest.TestLLM):
@@ -803,7 +876,45 @@ class TestQwen3VLMoeForConditionalGeneration(LLMTest.TestLLM):
 
     def get_inputs(self):
         tokenizer = self.get_tokenizer()
-        img_path = f"{os.path.dirname(__file__)}/../assets/rbln_logo.png"
+        img_path = f"{os.path.dirname(__file__)}/../assets/rbln_logo_light.png"
+        image = Image.open(img_path)
+        inputs = tokenizer(images=[image], text=[self.PROMPT], return_tensors="pt", padding=True)
+        inputs["max_new_tokens"] = 20
+        inputs["do_sample"] = False
+        return inputs
+
+
+class TestQwen3_5ForConditionalGeneration(LLMTest.TestLLM):
+    RBLN_AUTO_CLASS = RBLNAutoModelForImageTextToText
+    RBLN_CLASS = RBLNQwen3_5ForConditionalGeneration
+    HF_MODEL_ID = "Qwen/Qwen3.5-0.8B"
+    PROMPT = "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\n<|vision_start|><|image_pad|><|vision_end|>Describe this image.<|im_end|>\n<|im_start|>assistant\n"
+    RBLN_CLASS_KWARGS = {
+        "rbln_config": {
+            "visual": {"max_seq_len": 512},
+            "num_devices": 1,
+            "kvcache_partition_len": 4096,
+            "max_seq_len": 8192,
+        }
+    }
+    IS_MULTIMODAL = True
+    HF_CONFIG_KWARGS = {}
+    HF_CONFIG_KWARGS_PREPROCESSOR = {"min_pixels": 64 * 16 * 16, "max_pixels": 64 * 16 * 16}
+
+    @classmethod
+    def setUpClass(cls):
+        config = AutoConfig.from_pretrained(cls.HF_MODEL_ID)
+        text_config = json.loads(config.text_config.to_json_string())
+        text_config["num_hidden_layers"] = 4
+        text_config["layer_types"] = ["linear_attention", "linear_attention", "linear_attention", "full_attention"]
+        vision_config = json.loads(config.vision_config.to_json_string())
+        vision_config["depth"] = 4
+        cls.HF_CONFIG_KWARGS.update({"text_config": text_config, "vision_config": vision_config})
+        return super().setUpClass()
+
+    def get_inputs(self):
+        tokenizer = self.get_tokenizer()
+        img_path = f"{os.path.dirname(__file__)}/../assets/rbln_logo_light.png"
         image = Image.open(img_path)
         inputs = tokenizer(images=[image], text=[self.PROMPT], return_tensors="pt", padding=True)
         inputs["max_new_tokens"] = 20
@@ -839,7 +950,7 @@ class TestGemma3ForConditionalGeneration(LLMTest.TestLLM):
 
     def get_inputs(self):
         tokenizer = self.get_tokenizer()
-        img_path = f"{os.path.dirname(__file__)}/../assets/rbln_logo.png"
+        img_path = f"{os.path.dirname(__file__)}/../assets/rbln_logo_light.png"
         image = Image.open(img_path)
         image = image.convert("RGB")
         inputs = tokenizer(images=[image], text=[self.PROMPT], return_tensors="pt", padding=True)
@@ -988,7 +1099,7 @@ class TestDisallowedLlama_3(DisallowedTestBase.DisallowedTest):
     RBLN_CLASS = RBLNLlamaForCausalLM
     HF_MODEL_ID = "afmck/testing-llama-tiny"
     HF_CONFIG_KWARGS = {"num_hidden_layers": 1, "max_position_embeddings": 8192}
-    RBLN_CLASS_KWARGS = {"rbln_config": {"attn_impl": "flash_attn", "kvcache_partition_len": 1024}}
+    RBLN_CLASS_KWARGS = {"rbln_config": {"attn_impl": "flash_attn", "kvcache_partition_len": 512}}
 
 
 class TestDisallowedLlama_4(DisallowedTestBase.DisallowedTest):

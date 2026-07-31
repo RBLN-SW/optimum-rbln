@@ -13,14 +13,14 @@
 # limitations under the License.
 
 import copy
-from typing import Any, Optional, Tuple, Union
+from typing import Any
 
 import torch
 import torch.nn as nn
 from transformers import PreTrainedModel
 from transformers.activations import ACT2FN
 
-from ....ops.moe import compute_masked_routing_weight_softmax_first
+from ...utils.moe import compute_masked_routing_weight_softmax_first
 from ..decoderonly.configuration_decoderonly import RBLNLoRAConfig
 from ..decoderonly.decoderonly_architecture import (
     DecoderOnlyAttention,
@@ -181,8 +181,8 @@ class Gemma4TextModel(DecoderOnlyModel):
     def _project_per_layer_inputs(
         self,
         inputs_embeds: torch.Tensor,
-        per_layer_inputs: Optional[torch.Tensor],
-    ) -> Optional[torch.Tensor]:
+        per_layer_inputs: torch.Tensor | None,
+    ) -> torch.Tensor | None:
         if not self.hidden_size_per_layer_input:
             return None
 
@@ -205,17 +205,17 @@ class Gemma4TextModel(DecoderOnlyModel):
         self,
         input_ids: torch.Tensor = None,
         inputs_embeds: torch.Tensor = None,
-        per_layer_inputs: Optional[torch.Tensor] = None,
+        per_layer_inputs: torch.Tensor | None = None,
         attention_mask: torch.Tensor = None,
         cache_position: torch.Tensor = None,
         position_ids: torch.Tensor = None,
         query_position: torch.Tensor = None,
-        past_key_values: Tuple[Tuple[torch.Tensor]] = None,
+        past_key_values: tuple[tuple[torch.Tensor]] = None,
         rotary_emb: torch.nn.Module = None,
-        global_block_tables: Optional[torch.Tensor] = None,
-        local_block_tables: Optional[torch.Tensor] = None,
-        lora_int_id: Optional[torch.Tensor] = None,
-        output_hidden_states: Optional[bool] = None,
+        global_block_tables: torch.Tensor | None = None,
+        local_block_tables: torch.Tensor | None = None,
+        lora_int_id: torch.Tensor | None = None,
+        output_hidden_states: bool | None = None,
     ):
         if (input_ids is None) ^ (inputs_embeds is not None):
             raise ValueError("You must specify exactly one of input_ids or inputs_embeds")
@@ -281,7 +281,7 @@ class Gemma4DecoderLayer(DecoderOnlyLayer):
     _PRE_FF_LAYERNORM_ATTRS = ["pre_feedforward_layernorm"]
     _POST_FF_LAYERNORM_ATTRS = ["post_feedforward_layernorm"]
 
-    def __init__(self, layer, self_attn: DecoderOnlyAttention, lora_config: Optional[RBLNLoRAConfig] = None):
+    def __init__(self, layer, self_attn: DecoderOnlyAttention, lora_config: RBLNLoRAConfig | None = None):
         super().__init__(layer, self_attn, lora_config)
 
         self.enable_moe_block = getattr(layer, "enable_moe_block", False)
@@ -305,13 +305,13 @@ class Gemma4DecoderLayer(DecoderOnlyLayer):
         self,
         hidden_states: torch.Tensor,
         attention_mask: torch.Tensor,
-        seq_positions: Union[torch.LongTensor, Tuple[torch.LongTensor]],
-        past_key_values: Tuple[Tuple[torch.Tensor]],
-        cos: Optional[torch.Tensor] = None,
-        sin: Optional[torch.Tensor] = None,
-        block_tables: Optional[torch.Tensor] = None,
-        lora_int_id: Optional[torch.Tensor] = None,
-        per_layer_input: Optional[torch.Tensor] = None,
+        seq_positions: torch.LongTensor | tuple[torch.LongTensor],
+        past_key_values: tuple[tuple[torch.Tensor]],
+        cos: torch.Tensor | None = None,
+        sin: torch.Tensor | None = None,
+        block_tables: torch.Tensor | None = None,
+        lora_int_id: torch.Tensor | None = None,
+        per_layer_input: torch.Tensor | None = None,
     ):
         residual = hidden_states
         hidden_states = self.get_pre_attention_layernorm()(hidden_states)
@@ -389,8 +389,8 @@ class Gemma4TextAttention(DecoderOnlyAttention):
         return 1.0
 
     def projection(
-        self, hidden_states, lora_int_id: Optional[torch.Tensor] = None
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        self, hidden_states, lora_int_id: torch.Tensor | None = None
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         if self.lora_config:
             query_states = self.q_proj(hidden_states, lora_int_id)
             key_states = self.k_proj(hidden_states, lora_int_id)
@@ -407,11 +407,11 @@ class Gemma4TextAttention(DecoderOnlyAttention):
         hidden_states: torch.Tensor,
         attention_mask: torch.Tensor,
         seq_positions: torch.LongTensor,
-        past_key_values: Tuple[Tuple[torch.Tensor]],
-        cos: Optional[torch.Tensor] = None,
-        sin: Optional[torch.Tensor] = None,
-        block_tables: Optional[torch.Tensor] = None,
-        lora_int_id: Optional[torch.Tensor] = None,
+        past_key_values: tuple[tuple[torch.Tensor]],
+        cos: torch.Tensor | None = None,
+        sin: torch.Tensor | None = None,
+        block_tables: torch.Tensor | None = None,
+        lora_int_id: torch.Tensor | None = None,
     ):
         batch_size, query_length, _ = hidden_states.size()
 
@@ -472,12 +472,12 @@ class Gemma4ForCausalLM(DecoderOnlyForCausalLM):
         cache_position: torch.Tensor = None,
         position_ids: torch.Tensor = None,
         query_position: torch.Tensor = None,
-        past_key_values: Tuple[Tuple[torch.Tensor]] = None,
+        past_key_values: tuple[tuple[torch.Tensor]] = None,
         rotary_emb: nn.Module = None,
-        global_block_tables: Optional[torch.Tensor] = None,
-        local_block_tables: Optional[torch.Tensor] = None,
-        lora_int_id: Optional[torch.Tensor] = None,
-        output_hidden_states: Optional[bool] = None,
+        global_block_tables: torch.Tensor | None = None,
+        local_block_tables: torch.Tensor | None = None,
+        lora_int_id: torch.Tensor | None = None,
+        output_hidden_states: bool | None = None,
     ):
         # outputs
         hidden_states, all_hidden_states = self.model(
@@ -602,11 +602,11 @@ class Gemma4VisionAttention(nn.Module):
     def forward(
         self,
         hidden_states: torch.Tensor,
-        position_embeddings: Tuple[torch.Tensor, torch.Tensor] = None,
-        attention_mask: Optional[torch.Tensor] = None,
-        position_ids: Optional[torch.Tensor] = None,
+        position_embeddings: tuple[torch.Tensor, torch.Tensor] = None,
+        attention_mask: torch.Tensor | None = None,
+        position_ids: torch.Tensor | None = None,
         **kwargs,
-    ) -> Tuple[torch.Tensor, None]:
+    ) -> tuple[torch.Tensor, None]:
         from transformers.models.gemma4.modeling_gemma4 import apply_multidimensional_rope
 
         input_shape = hidden_states.shape[:-1]
@@ -661,7 +661,7 @@ class Gemma4VisionModelWrapper(nn.Module):
     #
     # Host-side responsibilities (NOT in the compiled graph):
     # - patch_embedder: produces inputs_embeds from pixel_values.
-    # - Gemma4VisionRotaryEmbedding: produces (cos, sin) from pixel_position_ids.
+    # - rotary (cos, sin): gathered from tables RBLNGemma4VisionModel precomputes at load time.
     # - padding_positions ((pixel_position_ids == -1).all(dim=-1)) and 1D-per-key additive attn_mask
     #   ((1 - valid) * finfo.min, shape (batch, max_patches)) — both derived from pixel_position_ids
     #   on the host. attn_mask is broadcast to (batch, 1, 1, max_patches) here to mask only the key

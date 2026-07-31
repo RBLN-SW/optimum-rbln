@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import TYPE_CHECKING, Any, Dict, List, Tuple, Union
+from typing import TYPE_CHECKING, Any, Union
 
 import rebel
 import torch
@@ -65,7 +65,7 @@ class RBLNAutoencoderKL(RBLNModel):
         self.image_size = self.rbln_config.image_size
 
     @classmethod
-    def get_compiled_model(cls, model, rbln_config: RBLNAutoencoderKLConfig) -> Dict[str, rebel.RBLNCompiledModel]:
+    def get_compiled_model(cls, model, rbln_config: RBLNAutoencoderKLConfig) -> dict[str, rebel.RBLNCompiledModel]:
         if rbln_config.uses_encoder:
             expected_models = ["encoder", "decoder"]
         else:
@@ -92,7 +92,7 @@ class RBLNAutoencoderKL(RBLNModel):
     @classmethod
     def get_vae_sample_size(
         cls, pipe: "RBLNDiffusionMixin", rbln_config: RBLNAutoencoderKLConfig, return_vae_scale_factor: bool = False
-    ) -> Tuple[int, int]:
+    ) -> tuple[int, int]:
         sample_size = rbln_config.sample_size
         noise_module = getattr(pipe, "unet", None) or getattr(pipe, "transformer", None)
         vae_scale_factor = (
@@ -189,9 +189,9 @@ class RBLNAutoencoderKL(RBLNModel):
     @classmethod
     def _create_runtimes(
         cls,
-        compiled_models: List[rebel.RBLNCompiledModel],
+        compiled_models: list[rebel.RBLNCompiledModel],
         rbln_config: RBLNAutoencoderKLConfig,
-    ) -> List[rebel.Runtime]:
+    ) -> list[rebel.Runtime]:
         if len(compiled_models) == 1:
             # decoder
             expected_models = ["decoder"]
@@ -215,8 +215,8 @@ class RBLNAutoencoderKL(RBLNModel):
         ]
 
     def encode(
-        self, x: torch.FloatTensor, return_dict: bool = True, **kwargs: Dict[str, Any]
-    ) -> Union[torch.FloatTensor, AutoencoderKLOutput]:
+        self, x: torch.FloatTensor, return_dict: bool = True, **kwargs: dict[str, Any]
+    ) -> torch.FloatTensor | AutoencoderKLOutput:
         """
         Encode an input image into a latent representation.
 
@@ -235,8 +235,8 @@ class RBLNAutoencoderKL(RBLNModel):
         return AutoencoderKLOutput(latent_dist=posterior)
 
     def decode(
-        self, z: torch.FloatTensor, return_dict: bool = True, **kwargs: Dict[str, Any]
-    ) -> Union[torch.FloatTensor, DecoderOutput]:
+        self, z: torch.FloatTensor, return_dict: bool = True, **kwargs: dict[str, Any]
+    ) -> torch.FloatTensor | DecoderOutput:
         """
         Decode a latent representation into an image.
 

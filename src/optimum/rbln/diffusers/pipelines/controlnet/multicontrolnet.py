@@ -14,7 +14,7 @@
 
 import os
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any
 
 import torch
 from diffusers.pipelines.controlnet.multicontrolnet import MultiControlNetModel
@@ -33,7 +33,7 @@ class RBLNMultiControlNetModel(RBLNModel):
 
     def __init__(
         self,
-        models: List[RBLNControlNetModel],
+        models: list[RBLNControlNetModel],
     ):
         self.nets = models
         self.dtype = torch.float32
@@ -48,7 +48,7 @@ class RBLNMultiControlNetModel(RBLNModel):
     @classmethod
     def _from_pretrained(
         cls,
-        model_id: Union[str, Path],
+        model_id: str | Path,
         **kwargs,
     ) -> RBLNModel:
         idx = 0
@@ -71,7 +71,7 @@ class RBLNMultiControlNetModel(RBLNModel):
             controlnets,
         )
 
-    def save_pretrained(self, save_directory: Union[str, Path], **kwargs):
+    def save_pretrained(self, save_directory: str | Path, **kwargs):
         for idx, model in enumerate(self.nets):
             suffix = "" if idx == 0 else f"_{idx}"
             real_save_path = save_directory + suffix
@@ -84,15 +84,15 @@ class RBLNMultiControlNetModel(RBLNModel):
     def forward(
         self,
         sample: torch.FloatTensor,
-        timestep: Union[torch.Tensor, float, int],
+        timestep: torch.Tensor | float | int,
         encoder_hidden_states: torch.Tensor,
-        controlnet_cond: List[torch.Tensor],
-        conditioning_scale: List[float],
-        class_labels: Optional[torch.Tensor] = None,
-        timestep_cond: Optional[torch.Tensor] = None,
-        attention_mask: Optional[torch.Tensor] = None,
-        added_cond_kwargs: Optional[Dict[str, torch.Tensor]] = None,
-        cross_attention_kwargs: Optional[Dict[str, Any]] = None,
+        controlnet_cond: list[torch.Tensor],
+        conditioning_scale: list[float],
+        class_labels: torch.Tensor | None = None,
+        timestep_cond: torch.Tensor | None = None,
+        attention_mask: torch.Tensor | None = None,
+        added_cond_kwargs: dict[str, torch.Tensor] | None = None,
+        cross_attention_kwargs: dict[str, Any] | None = None,
         guess_mode: bool = False,
         return_dict: bool = True,
     ):
@@ -105,16 +105,16 @@ class RBLNMultiControlNetModel(RBLNModel):
 
         Args:
             sample (torch.FloatTensor): The noisy input tensor.
-            timestep (Union[torch.Tensor, float, int]): The number of timesteps to denoise an input.
+            timestep (torch.Tensor | float | int): The number of timesteps to denoise an input.
             encoder_hidden_states (torch.Tensor): The encoder hidden states from the text encoder.
-            controlnet_cond (List[torch.Tensor]): A list of conditional input tensors, one for each ControlNet model.
-            conditioning_scale (List[float]): A list of scale factors for each ControlNet output. Each scale
+            controlnet_cond (list[torch.Tensor]): A list of conditional input tensors, one for each ControlNet model.
+            conditioning_scale (list[float]): A list of scale factors for each ControlNet output. Each scale
                 controls the strength of the corresponding ControlNet's influence on the generation.
             return_dict (bool): Whether or not to return a dictionary instead of a plain tuple. Currently,
                 this method always returns a tuple regardless of this parameter.
 
         Returns:
-            (Tuple[List[torch.Tensor], torch.Tensor])
+            (tuple[list[torch.Tensor], torch.Tensor])
         """
         for i, (image, scale, controlnet) in enumerate(
             zip(controlnet_cond, conditioning_scale, self.nets, strict=False)

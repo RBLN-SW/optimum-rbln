@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Tuple
 
 import torch
 from torch import nn
@@ -145,7 +144,7 @@ class BartSelfAttention(Seq2SeqSelfAttention):
         else:
             self.attn_decode = torch.ops.rbln_custom_ops.paged_causal_attn_decode
 
-    def projection(self, hidden_states) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    def projection(self, hidden_states) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         query_states = self.q_proj(hidden_states) * self.scaling
         key_states = self.k_proj(hidden_states)
         value_states = self.v_proj(hidden_states)

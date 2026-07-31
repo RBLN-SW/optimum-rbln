@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import TYPE_CHECKING, Any, Dict, List, Union
+from typing import TYPE_CHECKING, Any, Union
 
 import rebel
 import torch
@@ -84,7 +84,7 @@ class RBLNAutoencoderKLCosmos(RBLNModel):
     @classmethod
     def get_compiled_model(
         cls, model, rbln_config: RBLNAutoencoderKLCosmosConfig
-    ) -> Dict[str, rebel.RBLNCompiledModel]:
+    ) -> dict[str, rebel.RBLNCompiledModel]:
         def replaced_forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
             if self.temporal_pad != 0:
                 hidden_states_prev = hidden_states[:, :, :1, ...].repeat(1, 1, self.temporal_pad, 1, 1)
@@ -181,9 +181,9 @@ class RBLNAutoencoderKLCosmos(RBLNModel):
     @classmethod
     def _create_runtimes(
         cls,
-        compiled_models: List[rebel.RBLNCompiledModel],
+        compiled_models: list[rebel.RBLNCompiledModel],
         rbln_config: RBLNAutoencoderKLCosmosConfig,
-    ) -> List[rebel.Runtime]:
+    ) -> list[rebel.Runtime]:
         if len(compiled_models) == 1:
             # decoder
             expected_models = ["decoder"]
@@ -206,8 +206,8 @@ class RBLNAutoencoderKLCosmos(RBLNModel):
         ]
 
     def encode(
-        self, x: torch.FloatTensor, return_dict: bool = True, **kwargs: Dict[str, Any]
-    ) -> Union[torch.FloatTensor, AutoencoderKLOutput]:
+        self, x: torch.FloatTensor, return_dict: bool = True, **kwargs: dict[str, Any]
+    ) -> torch.FloatTensor | AutoencoderKLOutput:
         """
         Encode an input video into a latent representation.
 
@@ -225,7 +225,7 @@ class RBLNAutoencoderKLCosmos(RBLNModel):
             return (posterior,)
         return AutoencoderKLOutput(latent_dist=posterior)
 
-    def decode(self, z: torch.FloatTensor, return_dict: bool = True) -> Union[torch.FloatTensor, DecoderOutput]:
+    def decode(self, z: torch.FloatTensor, return_dict: bool = True) -> torch.FloatTensor | DecoderOutput:
         """
         Decode a latent representation into a video.
 

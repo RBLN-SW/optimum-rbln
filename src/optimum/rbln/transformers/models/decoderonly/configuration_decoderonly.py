@@ -13,7 +13,7 @@
 # limitations under the License.
 
 from dataclasses import asdict, dataclass
-from typing import Any, Dict, List, Literal, Optional, Union, get_args
+from typing import Any, Literal, get_args
 
 from ....configuration_utils import RBLNModelConfig, RBLNSerializableConfigProtocol
 from ....utils.logging import get_logger
@@ -38,85 +38,94 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
 
     _default_phases = ["prefill"]
     _default_logits_to_keep = 0
+    subclass_non_save_attributes = ["memory_budget"]
 
     def __init__(
         self,
-        batch_size: Optional[int] = None,
-        max_seq_len: Optional[int] = None,
-        use_inputs_embeds: Optional[bool] = None,
-        use_attention_mask: Optional[bool] = None,
-        use_position_ids: Optional[bool] = None,
-        attn_impl: Optional[str] = None,
-        kvcache_partition_len: Optional[int] = None,
-        kvcache_block_size: Optional[int] = None,
-        quantization: Optional[Union[Dict[str, Any], RBLNQuantizationConfig]] = None,
-        lora_config: Optional[Union[Dict[str, Any], RBLNLoRAConfig]] = None,
-        prefill_chunk_size: Optional[int] = None,
-        kvcache_num_blocks: Optional[int] = None,
-        decoder_batch_sizes: Optional[List[int]] = None,
-        cache_impl: Optional[CacheImplType] = None,
-        sliding_window: Optional[int] = None,
-        sliding_window_layers: Optional[List[int]] = None,
-        phases: Optional[List[PhaseType]] = None,
-        logits_to_keep: Optional[int] = None,
-        output_hidden_states: Optional[bool] = None,
-        kvcache_metas: Optional[List["KVCacheMeta"]] = None,
+        batch_size: int | None = None,
+        max_seq_len: int | None = None,
+        use_inputs_embeds: bool | None = None,
+        use_attention_mask: bool | None = None,
+        use_position_ids: bool | None = None,
+        attn_impl: str | None = None,
+        kvcache_partition_len: int | None = None,
+        kvcache_block_size: int | None = None,
+        quantization: dict[str, Any] | RBLNQuantizationConfig | None = None,
+        lora_config: dict[str, Any] | RBLNLoRAConfig | None = None,
+        prefill_chunk_size: int | None = None,
+        kvcache_num_blocks: int | None = None,
+        memory_budget: int | float | str | None = None,
+        decoder_batch_sizes: list[int] | None = None,
+        cache_impl: CacheImplType | None = None,
+        sliding_window: int | None = None,
+        sliding_window_layers: list[int] | None = None,
+        phases: list[PhaseType] | None = None,
+        logits_to_keep: int | None = None,
+        output_hidden_states: bool | None = None,
+        kvcache_metas: list["KVCacheMeta"] | None = None,
         **kwargs: Any,
     ):
         """
         Args:
-            batch_size (Optional[int]): The batch size for inference. Defaults to 1.
-            max_seq_len (Optional[int]): The maximum sequence length supported by the model.
+            batch_size (int | None): The batch size for inference. Defaults to 1.
+            max_seq_len (int | None): The maximum sequence length supported by the model.
                 If not provided, it attempts to infer from the model's configuration
                 (`max_position_embeddings` or `n_positions`). Must be specified if not available
                 in the model config.
-            use_inputs_embeds (Optional[bool]): Whether to use input embeddings (`inputs_embeds`)
+            use_inputs_embeds (bool | None): Whether to use input embeddings (`inputs_embeds`)
                 directly instead of `input_ids`. Defaults to False. Requires the model to be
                 compiled with this option enabled.
-            use_attention_mask (Optional[bool]): Whether the model requires attention masks during
+            use_attention_mask (bool | None): Whether the model requires attention masks during
                 inference. This is typically determined based on the target device and model
                 architecture. Defaults are often set automatically based on the model and RBLN NPU.
-            use_position_ids (Optional[bool]): Whether to use position IDs. Defaults to False.
-            attn_impl (Optional[str]): Specifies the attention implementation to use.
+            use_position_ids (bool | None): Whether to use position IDs. Defaults to False.
+            attn_impl (str | None): Specifies the attention implementation to use.
                 See the "Attention Implementation (`attn_impl`)" section below for details.
-            kvcache_partition_len (Optional[int]): Defines the partition length for the KV cache
+            kvcache_partition_len (int | None): Defines the partition length for the KV cache
                 when using "flash_attn". See the "KV Cache Partition Length (`kvcache_partition_len`)"
                 section below for details.
-            kvcache_block_size (Optional[int]): Sets the size (in number of tokens) of each block
+            kvcache_block_size (int | None): Sets the size (in number of tokens) of each block
                 in the PagedAttention KV cache. See the "KV Cache Block Size (`kvcache_block_size`)"
                 section below for details.
-            quantization (Optional[Dict[str, Any]]): Configuration dictionary for applying model
+            quantization (dict[str, Any] | None): Configuration dictionary for applying model
                 quantization. Specifies format, etc.
-            lora_config (Optional[Union[Dict[str, Any], RBLNLoRAConfig]]): Configuration for LoRA
+            lora_config (dict[str, Any] | RBLNLoRAConfig | None): Configuration for LoRA
                 (Low-Rank Adaptation) settings when using (multi-)LoRA support. Can be provided as
                 a dictionary or an RBLNLoRAConfig instance. When provided, enables LoRA functionality
                 for the model compilation. Defaults to None (no LoRA).
-            prefill_chunk_size (Optional[int]): The chunk size used during the prefill phase for
-                processing input sequences. Defaults to 128. Must be a positive integer
-                divisible by 64. Affects prefill performance and memory usage.
-            kvcache_num_blocks (Optional[int]): The total number of blocks to allocate for the
+            prefill_chunk_size (int | None): The chunk size used during the prefill phase for
+                processing input sequences. When unset, it is resolved at compile time to 512 on
+                RBLN-CR NPUs and 128 otherwise. Must be a positive integer divisible by 64.
+                Affects prefill performance and memory usage.
+            kvcache_num_blocks (int | None): The total number of blocks to allocate for the
                 PagedAttention KV cache at compile time. Defaults to 0 (automatically determined).
                 See the "KV Cache Number of Blocks (`kvcache_num_blocks`)" section below for details.
-            decoder_batch_sizes (Optional[List[int]]): A list of batch sizes for which separate decoder models will be compiled.
+            memory_budget (int | float | str | None): Usable DRAM budget (system reserve
+                excluded) used when auto-estimating `kvcache_num_blocks`. Prefer a float in (0, 1]
+                as a fraction of the NPU available DRAM (e.g. 0.8 for 80%). A "80%" string is also
+                accepted (convenient for passing through the compile CLI), as are bytes given as an
+                int or string ("10GB", "512MB"). Defaults to None (the full NPU available DRAM).
+                Must not exceed the target NPU's available DRAM.
+            decoder_batch_sizes (list[int] | None): A list of batch sizes for which separate decoder models will be compiled.
                 This allows the model to handle varying batch sizes efficiently during generation. If not specified,
                 defaults to a list containing only the model's main batch size. When specifying multiple batch sizes:
                 1) All values must be less than or equal to the main batch size.
                 2) The list will be sorted in descending order (larger batch sizes first).
                 3) If using multiple decoders, at least one batch size should match the main batch size.
-            cache_impl (Optional[CacheImplType]): Specifies the KV cache implementation strategy. Defaults to "static".
+            cache_impl (CacheImplType | None): Specifies the KV cache implementation strategy. Defaults to "static".
                 - "static": Uses a fixed-size global KV cache for all layers, suitable for standard attention patterns.
                 - "sliding_window": Implements a sliding window KV cache, where each layer maintains a local cache of recent tokens.
                 - "hybrid": Combines both static and sliding window approaches, allowing different layers to use different cache strategies.
                 The choice affects memory usage and attention patterns. When using "sliding_window" or "hybrid",
                 you must specify the `sliding_window` size and optionally `sliding_window_layers` for hybrid mode.
-            sliding_window (Optional[int]): The size of the sliding window. Defaults to None.
-            sliding_window_layers (Optional[List[int]]): The layers to use for the sliding window used in the hybrid model. Defaults to None.
-            phases (Optional[List[PhaseType]]): The phases to compile the model for. Defaults to ["prefill"] if DecoderOnlyModel is used,
+            sliding_window (int | None): The size of the sliding window. Defaults to None.
+            sliding_window_layers (list[int] | None): The layers to use for the sliding window used in the hybrid model. Defaults to None.
+            phases (list[PhaseType] | None): The phases to compile the model for. Defaults to ["prefill"] if DecoderOnlyModel is used,
                 ["prefill", "decode"] if DecoderOnlyModelForCausalLM is used.
-            logits_to_keep (Optional[int]): The number of logits to keep for the decoder.  If set to 0, the decoder will keep all logits.
+            logits_to_keep (int | None): The number of logits to keep for the decoder.  If set to 0, the decoder will keep all logits.
                 Defaults to 0 if DecoderOnlyModel is used, 1 if DecoderOnlyModelForCausalLM is used.
-            output_hidden_states (Optional[bool]): Whether to output the hidden states of the decoder. Defaults to False.
-            kvcache_metas (Optional[List["KVCacheMeta"]]): The metadata for the KV cache tensors. Handled internally if not provided. Defaults to None.
+            output_hidden_states (bool | None): Whether to output the hidden states of the decoder. Defaults to False.
+            kvcache_metas (list["KVCacheMeta"] | None): The metadata for the KV cache tensors. Handled internally if not provided. Defaults to None.
             kwargs: Additional arguments passed to the parent RBLNModelConfig.
 
         Raises:
@@ -134,7 +143,7 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
                 attention implementation. Suitable for sequences up to a certain limit (e.g., 32,768 tokens).
             - **`"flash_attn"`**: Utilizes an optimized Flash Attention implementation, beneficial for
                 longer sequences and potentially faster execution. Requires `max_seq_len` to be at least
-                8,192. If `kvcache_partition_len` is specified, `attn_impl` automatically defaults
+                2,048. If `kvcache_partition_len` is specified, `attn_impl` automatically defaults
                 to `"flash_attn"`. When using `"flash_attn"`, `kvcache_block_size` must equal
                 `kvcache_partition_len`.
 
@@ -147,7 +156,7 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
             `kvcache_partition_len` is relevant **only** when `attn_impl` is `"flash_attn"`.
 
             - It defines the length (number of tokens) of each partition within the Key-Value (KV) cache.
-            - Must be between 4,096 and 32,768 (inclusive).
+            - Must be between 1,024 and 32,768 (inclusive).
             - When using `"flash_attn"`, `max_seq_len` must be a multiple of `kvcache_partition_len`
                 and at least twice its value (`max_seq_len >= 2 * kvcache_partition_len`).
             - If `attn_impl` is `"flash_attn"` and `kvcache_partition_len` is `None`, it defaults to
@@ -170,10 +179,10 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
                 which is beneficial for tasks involving many long sequences or large batch sizes, enabling
                 higher throughput. However, allocating more blocks consumes more memory.
             - **Minimum Requirement**: The system requires a minimum number of blocks to function,
-                calculated based on `max_seq_len`, `kvcache_block_size`, and `batch_size`. The number of
-                allocated blocks must be sufficient to hold at least one full sequence length per item
-                in the batch concurrently. The system will log warnings or raise errors if constraints
-                are violated (e.g., if `kvcache_num_blocks` is less than `batch_size` when using Flash Attention).
+                calculated based on `max_seq_len`, `kvcache_block_size`, and `batch_size`. The allocated
+                blocks must be enough to hold one full sequence length, and at least one block must be
+                available for every item in the batch. The system will log warnings or raise errors if
+                these constraints are violated (e.g., if `kvcache_num_blocks` is less than `batch_size`).
 
             The optimal value depends on the specific model, task, hardware, and desired trade-off
             between performance and memory usage. Automatic determination (default) provides a robust starting point
@@ -220,11 +229,15 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
         self.attn_impl = attn_impl
         self.kvcache_partition_len = kvcache_partition_len
         self.kvcache_block_size = kvcache_block_size
-        self.prefill_chunk_size = prefill_chunk_size or 128
-        if self.prefill_chunk_size % 64 != 0 or self.prefill_chunk_size <= 0:
-            raise ValueError("`prefill_chunk_size` must be a positive integer divisible by 64.")
-
+        self.prefill_chunk_size = prefill_chunk_size
         self.kvcache_num_blocks = kvcache_num_blocks if kvcache_num_blocks is not None else 0
+        self.memory_budget = memory_budget
+        if self.memory_budget is not None and self.kvcache_num_blocks > 0:
+            raise ValueError(
+                "`memory_budget` and an explicit `kvcache_num_blocks` are mutually exclusive. "
+                "`memory_budget` only guides automatic block estimation, which runs when "
+                "`kvcache_num_blocks` is unset."
+            )
         self.cache_impl = cache_impl or "static"
         self.sliding_window = sliding_window
         self.sliding_window_layers = sliding_window_layers or []
@@ -259,10 +272,10 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
                 # Larger batch size should be at the beginning of the list.
                 self.decoder_batch_sizes.sort(reverse=True)
 
-        self.kvcache_metas: List["KVCacheMeta"] = kvcache_metas or []
+        self.kvcache_metas: list[KVCacheMeta] = kvcache_metas or []
 
     @staticmethod
-    def validate_phases_type(phases: List[PhaseType]):
+    def validate_phases_type(phases: list[PhaseType]):
         if not isinstance(phases, list):
             raise ValueError("`phases` must be a list.")
         if not all(phase in get_args(PhaseType) for phase in phases):
@@ -291,6 +304,13 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
     @property
     def use_image_prefill(self):
         return "image_prefill" in self.phases
+
+    @property
+    def use_bidirectional_prefill(self):
+        # Prefix-LM style prefill (e.g. PaliGemma's language model): with attention mask and
+        # position ids but no separate image_prefill phase, the compiled prefill attends
+        # bidirectionally within a chunk, so the whole prompt must fit in a single chunk.
+        return self.use_attention_mask and self.use_position_ids and not self.use_image_prefill
 
     @property
     def image_prefill_runtime_idx(self):
@@ -331,7 +351,8 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
     @property
     def num_min_blocks(self) -> int:
         if self.attn_impl == "flash_attn":
-            return min(self.max_seq_len // self.kvcache_block_size + 1, self.num_full_blocks)
+            blocks_in_use = max(self.max_seq_len // self.kvcache_block_size, self.batch_size)
+            return min(blocks_in_use + 1, self.num_full_blocks)
         return self.batch_size
 
 
@@ -398,14 +419,28 @@ class KVCacheMeta(RBLNSerializableConfigProtocol):
     def make(
         name: str,
         layer_index: int,
-        num_key_value_heads: int,
-        head_dim: int,
-        dtype: str,
-        rbln_config: RBLNDecoderOnlyModelForCausalLMConfig,
+        num_key_value_heads: int | None = None,
+        head_dim: int | None = None,
+        dtype: str | None = None,
+        rbln_config: RBLNDecoderOnlyModelForCausalLMConfig | None = None,
+        *,
+        shape: list[int] | None = None,
     ) -> "KVCacheMeta":
         assert len(rbln_config.compile_cfgs) == 0, "KVCacheMeta cannot be created from rbln_config with compile_cfgs"
 
-        if rbln_config.sliding_window is not None and layer_index in rbln_config.sliding_window_layers:
+        if layer_index in getattr(rbln_config, "linear_attention_layers", []):
+            if shape is None:
+                raise ValueError("`shape` is required to build a linear_attention layer's KVCacheMeta.")
+            return KVCacheMeta(
+                name=name,
+                layer_index=layer_index,
+                shape=shape,
+                layer_type="linear_attention",
+                is_auto=False,
+                dtype=dtype,
+            )
+
+        elif rbln_config.sliding_window is not None and layer_index in rbln_config.sliding_window_layers:
             layer_type = "sliding_attention"
             block_size = rbln_config.sliding_window
             num_blocks = rbln_config.batch_size

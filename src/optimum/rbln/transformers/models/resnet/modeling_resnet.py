@@ -13,7 +13,7 @@
 # limitations under the License.
 
 
-from typing import TYPE_CHECKING, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Optional, Union
 
 import torch
 from transformers.modeling_outputs import ImageClassifierOutputWithNoAttention
@@ -38,7 +38,7 @@ class RBLNResNetForImageClassification(RBLNModelForImageClassification):
     @classmethod
     def _update_rbln_config(
         cls,
-        preprocessors: Optional[Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"]] = None,
+        preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"] | None = None,
         model: Optional["PreTrainedModel"] = None,
         model_config: Optional["PretrainedConfig"] = None,
         rbln_config: Optional["RBLNResNetForImageClassificationConfig"] = None,
@@ -73,7 +73,7 @@ class RBLNResNetForImageClassification(RBLNModelForImageClassification):
 
     def forward(
         self, pixel_values: torch.Tensor, output_hidden_states: bool = None, return_dict: bool = None, **kwargs
-    ) -> Union[Tuple, ImageClassifierOutputWithNoAttention]:
+    ) -> tuple | ImageClassifierOutputWithNoAttention:
         """
         Foward pass for the RBLN-optimized ResNet model for image classification.
 

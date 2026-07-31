@@ -13,7 +13,7 @@
 # limitations under the License.
 
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Any, Optional, Union
 
 import rebel
 import torch
@@ -58,8 +58,8 @@ class RBLNRuntimePixtralVisionModel(RBLNPytorchRuntime):
         self,
         pixel_values: torch.Tensor,
         image_sizes: torch.Tensor,
-        output_hidden_states: Optional[bool] = None,
-        return_dict: Optional[bool] = None,
+        output_hidden_states: bool | None = None,
+        return_dict: bool | None = None,
         **kwargs,
     ):
         if pixel_values.shape[2] > self.max_image_size[0] or pixel_values.shape[3] > self.max_image_size[1]:
@@ -247,7 +247,7 @@ class RBLNPixtralVisionModel(RBLNModel):
         preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"],
         model: Optional["PreTrainedModel"] = None,
         model_config: "PixtralVisionConfig" = None,
-        rbln_config: Optional[RBLNPixtralVisionModelConfig] = None,
+        rbln_config: RBLNPixtralVisionModelConfig | None = None,
     ) -> RBLNPixtralVisionModelConfig:
         if rbln_config.max_image_size is None:
             rbln_config.max_image_size = (model_config.image_size, model_config.image_size)
@@ -291,12 +291,12 @@ class RBLNPixtralVisionModel(RBLNModel):
 
     def forward(
         self,
-        pixel_values: Optional[torch.FloatTensor] = None,
-        image_sizes: Optional[torch.FloatTensor] = None,
-        output_hidden_states: Optional[bool] = None,
+        pixel_values: torch.FloatTensor | None = None,
+        image_sizes: torch.FloatTensor | None = None,
+        output_hidden_states: bool | None = None,
         return_dict: bool = True,
         **kwargs,
-    ) -> Union[Tuple, BaseModelOutput]:
+    ) -> tuple | BaseModelOutput:
         """
         Forward pass for the RBLN-optimized Pixtral vision model.
 

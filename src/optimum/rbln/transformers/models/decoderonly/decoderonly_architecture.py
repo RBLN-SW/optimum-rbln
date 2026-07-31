@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import math
-from typing import TYPE_CHECKING, List, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Optional
 
 import torch
 from torch import nn
@@ -272,12 +272,12 @@ class DecoderOnlyForCausalLM(nn.Module):
         cache_position: torch.Tensor = None,
         position_ids: torch.Tensor = None,
         query_position: torch.Tensor = None,
-        past_key_values: Tuple[Tuple[torch.Tensor]] = None,
+        past_key_values: tuple[tuple[torch.Tensor]] = None,
         rotary_emb: nn.Module = None,
-        global_block_tables: Optional[torch.Tensor] = None,
-        local_block_tables: Optional[torch.Tensor] = None,
-        lora_int_id: Optional[torch.Tensor] = None,
-        output_hidden_states: Optional[bool] = None,
+        global_block_tables: torch.Tensor | None = None,
+        local_block_tables: torch.Tensor | None = None,
+        lora_int_id: torch.Tensor | None = None,
+        output_hidden_states: bool | None = None,
     ):
         # outputs
         hidden_states, all_hidden_states = self.model(
@@ -365,7 +365,7 @@ class DecoderOnlyModel(nn.Module):
 
     Args:
         model: Original Huggingface model to adapt
-        layers (List[DecoderOnlyLayer]): Modified transformer layers optimized for RBLN
+        layers (list[DecoderOnlyLayer]): Modified transformer layers optimized for RBLN
         rbln_config: RBLN model configuration
         use_learned_pos_emb: Whether to use learned position embeddings (class-specific override)
 
@@ -383,7 +383,7 @@ class DecoderOnlyModel(nn.Module):
     def __init__(
         self,
         model,
-        layers: List["DecoderOnlyLayer"],
+        layers: list["DecoderOnlyLayer"],
         rbln_config: "RBLNDecoderOnlyModelConfig",
         use_learned_pos_emb=None,
         use_rotary_emb=True,
@@ -429,13 +429,7 @@ class DecoderOnlyModel(nn.Module):
     def convert_sequence_positions_for_flash_attn(self, seq_positions, max_seq_len):
         if self.attn_impl not in ["flash_attn"]:
             raise NotImplementedError(f"Unknown attn_impl ({self.attn_impl}).")
-        partition_len = self.partition_len
-        num_partition = max_seq_len // partition_len
-
-        cs = seq_positions.repeat(num_partition, 1).transpose(0, 1)
-        pidx = torch.arange(num_partition)
-        cache_pos_for_partitions = torch.clamp(cs - pidx * partition_len, 0, partition_len)
-        return cache_pos_for_partitions
+        return seq_positions.unsqueeze(-1)
 
     def get_swa_custom_op_args(self, position_ids, query_position):
         max_cache_len = self.config.sliding_window
@@ -463,17 +457,17 @@ class DecoderOnlyModel(nn.Module):
     def forward(
         self,
         input_ids: torch.Tensor = None,
-        inputs_embeds: Optional[torch.Tensor] = None,
+        inputs_embeds: torch.Tensor | None = None,
         attention_mask: torch.Tensor = None,
         cache_position: torch.Tensor = None,
         position_ids: torch.Tensor = None,
         query_position: torch.Tensor = None,
-        past_key_values: Tuple[Tuple[torch.Tensor]] = None,
-        rotary_emb: Optional[Union[nn.Module, torch.Tensor]] = None,
-        global_block_tables: Optional[torch.Tensor] = None,
-        local_block_tables: Optional[torch.Tensor] = None,
-        lora_int_id: Optional[torch.Tensor] = None,
-        output_hidden_states: Optional[bool] = None,
+        past_key_values: tuple[tuple[torch.Tensor]] = None,
+        rotary_emb: nn.Module | torch.Tensor | None = None,
+        global_block_tables: torch.Tensor | None = None,
+        local_block_tables: torch.Tensor | None = None,
+        lora_int_id: torch.Tensor | None = None,
+        output_hidden_states: bool | None = None,
     ):
         # retrieve input_ids and inputs_embeds
         if (input_ids is None) ^ (inputs_embeds is not None):
@@ -592,7 +586,7 @@ class DecoderOnlyLayer(nn.Module):
     _POST_FF_LAYERNORM_ATTRS = None
     _MLP_ATTR = ("mlp",)
 
-    def __init__(self, layer, self_attn: "DecoderOnlyAttention", lora_config: Optional[RBLNLoRAConfig] = None):
+    def __init__(self, layer, self_attn: "DecoderOnlyAttention", lora_config: RBLNLoRAConfig | None = None):
         super().__init__()
 
         self.pre_attention_layernorm = _get_attr_from_candidates(layer, self._PRE_ATTN_LAYERNORM)
@@ -643,7 +637,7 @@ class DecoderOnlyLayer(nn.Module):
     def get_mlp(self) -> nn.Module:
         return self.mlp
 
-    def forward_mlp(self, hidden_states: torch.Tensor, lora_int_id: Optional[torch.Tensor] = None) -> torch.Tensor:
+    def forward_mlp(self, hidden_states: torch.Tensor, lora_int_id: torch.Tensor | None = None) -> torch.Tensor:
         mlp = self.get_mlp()
         if self.lora_config and lora_int_id is not None:
             gate = mlp.gate_proj(hidden_states, lora_int_id)
@@ -664,11 +658,11 @@ class DecoderOnlyLayer(nn.Module):
         hidden_states: torch.Tensor,
         attention_mask: torch.Tensor,
         seq_positions: torch.LongTensor,
-        past_key_values: Tuple[Tuple[torch.Tensor]],
-        cos: Optional[torch.Tensor] = None,
-        sin: Optional[torch.Tensor] = None,
-        block_tables: Optional[torch.Tensor] = None,
-        lora_int_id: Optional[torch.Tensor] = None,
+        past_key_values: tuple[tuple[torch.Tensor]],
+        cos: torch.Tensor | None = None,
+        sin: torch.Tensor | None = None,
+        block_tables: torch.Tensor | None = None,
+        lora_int_id: torch.Tensor | None = None,
     ):
         residual = hidden_states
         hidden_states = self.get_pre_attention_layernorm()(hidden_states)
@@ -820,8 +814,8 @@ class DecoderOnlyAttention(nn.Module):
             self._init_lora_weights()
 
     def projection(
-        self, hidden_states, lora_int_id: Optional[torch.Tensor] = None
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        self, hidden_states, lora_int_id: torch.Tensor | None = None
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Projects input hidden states into query, key, and value representations.
 
         Args:
@@ -851,7 +845,7 @@ class DecoderOnlyAttention(nn.Module):
     def get_attn_scale(self, self_attn):
         return 1 / math.sqrt(self_attn.head_dim)
 
-    def maybe_get_kvcache_scale(self) -> Tuple[Optional[torch.Tensor], Optional[torch.Tensor]]:
+    def maybe_get_kvcache_scale(self) -> tuple[torch.Tensor | None, torch.Tensor | None]:
         k_scale = getattr(self, "k_scale", None)
         v_scale = getattr(self, "v_scale", None)
         return k_scale, v_scale
@@ -861,11 +855,11 @@ class DecoderOnlyAttention(nn.Module):
         hidden_states: torch.Tensor,
         attention_mask: torch.Tensor,
         seq_positions: torch.LongTensor,
-        past_key_values: Tuple[Tuple[torch.Tensor]],
-        cos: Optional[torch.Tensor] = None,
-        sin: Optional[torch.Tensor] = None,
-        block_tables: Optional[torch.Tensor] = None,
-        lora_int_id: Optional[torch.Tensor] = None,
+        past_key_values: tuple[tuple[torch.Tensor]],
+        cos: torch.Tensor | None = None,
+        sin: torch.Tensor | None = None,
+        block_tables: torch.Tensor | None = None,
+        lora_int_id: torch.Tensor | None = None,
     ):
         batch_size, query_length, _ = hidden_states.size()
 
@@ -972,10 +966,10 @@ class AttentionOp(nn.Module):
         scale: torch.Tensor,
         block_tables: torch.Tensor,
         block_size: int,
-        k_scale: Optional[torch.Tensor] = None,
-        v_scale: Optional[torch.Tensor] = None,
-        s_aux: Optional[torch.Tensor] = None,
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        k_scale: torch.Tensor | None = None,
+        v_scale: torch.Tensor | None = None,
+        s_aux: torch.Tensor | None = None,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Compute attention with static shapes and explicit cache management.
 
         Args:
@@ -1214,17 +1208,17 @@ class SlidingWindowAttentionOp(AttentionOp):
         query_state: torch.Tensor,
         key_state: torch.Tensor,
         value_state: torch.Tensor,
-        attn_mask: Optional[torch.Tensor],
+        attn_mask: torch.Tensor | None,
         past_key_state: torch.Tensor,
         past_value_state: torch.Tensor,
-        seq_position: Tuple[torch.Tensor],
+        seq_position: tuple[torch.Tensor],
         scale: torch.Tensor,
         block_tables: torch.Tensor,
         block_size: int,
-        k_scale: Optional[torch.Tensor] = None,
-        v_scale: Optional[torch.Tensor] = None,
-        s_aux: Optional[torch.Tensor] = None,
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        k_scale: torch.Tensor | None = None,
+        v_scale: torch.Tensor | None = None,
+        s_aux: torch.Tensor | None = None,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         assert self.quantization is None, "Sliding window attention does not support quantization"
         assert k_scale is None and v_scale is None, "Sliding window attention does not support quantization"
 
@@ -1369,7 +1363,7 @@ def apply_rotary_pos_emb(q, k, cos, sin):
     return q_embed, k_embed
 
 
-def apply_rotary_pos_emb_partial(query_states, key_states, cos, sin, ndim) -> Tuple[torch.Tensor, torch.Tensor]:
+def apply_rotary_pos_emb_partial(query_states, key_states, cos, sin, ndim) -> tuple[torch.Tensor, torch.Tensor]:
     # Partial rotary embedding
     query_rot, query_pass = (
         query_states[..., :ndim],
@@ -1391,7 +1385,7 @@ def apply_rotary_pos_emb_partial(query_states, key_states, cos, sin, ndim) -> Tu
 
 def _get_attr_from_candidates(
     src: object,
-    candidates: Optional[List[str]] = None,
+    candidates: list[str] | None = None,
 ):
     """
     Get an attribute from a list of candidate names.

@@ -131,9 +131,7 @@ class RBLNPageTableManager:
         return get_global_block_tables(), get_local_block_tables()
 
     # Whether block_tables and local_block_tables are provided by the user
-    def is_external_block_tables(
-        self, block_tables: Optional[torch.Tensor], local_block_tables: Optional[torch.Tensor]
-    ):
+    def is_external_block_tables(self, block_tables: torch.Tensor | None, local_block_tables: torch.Tensor | None):
         if self.rbln_config.cache_impl == "static" and block_tables is None:
             return False
         elif self.rbln_config.cache_impl == "sliding_window" and local_block_tables is None:
@@ -154,8 +152,8 @@ class RBLNPageTableManager:
         cache_position: torch.Tensor,
         batch_idx: int = None,
         phase: str = "prefill",
-        block_tables: Optional[torch.Tensor] = None,
-        local_block_tables: Optional[torch.Tensor] = None,
+        block_tables: torch.Tensor | None = None,
+        local_block_tables: torch.Tensor | None = None,
     ):
         is_external_block_tables = self.is_external_block_tables(block_tables, local_block_tables)
         if not is_external_block_tables:
@@ -178,7 +176,7 @@ class RBLNRuntimeModel(RBLNPytorchRuntime):
         page_table_manager: RBLNPageTableManager,
         rbln_config: RBLNDecoderOnlyModelForCausalLMConfig,
         config: Optional["PreTrainedConfig"] = None,
-        logits_last_dim: Optional[int] = None,
+        logits_last_dim: int | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(runtime, **kwargs)
@@ -201,7 +199,7 @@ class RBLNRuntimeModel(RBLNPytorchRuntime):
         self.lora_int_ids = None
 
     def inputs_embeddings_if_needed(
-        self, input_ids: Optional[torch.Tensor] = None, inputs_embeds: Optional[torch.Tensor] = None
+        self, input_ids: torch.Tensor | None = None, inputs_embeds: torch.Tensor | None = None
     ):
         if input_ids is None and inputs_embeds is None:
             raise ValueError("Either `input_ids` or `inputs_embeds` must be provided.")
@@ -213,17 +211,17 @@ class RBLNRuntimeModel(RBLNPytorchRuntime):
 
     def forward(
         self,
-        input_ids: Optional[torch.LongTensor] = None,
-        inputs_embeds: Optional[torch.Tensor] = None,
+        input_ids: torch.LongTensor | None = None,
+        inputs_embeds: torch.Tensor | None = None,
         cache_position: torch.Tensor = None,
-        attention_mask: Optional[torch.Tensor] = None,
-        batch_idx: Optional[int] = None,
-        block_tables: Optional[torch.Tensor] = None,
-        position_embed: Optional[torch.Tensor] = None,
-        position_ids: Optional[torch.Tensor] = None,
-        token_type_ids: Optional[torch.Tensor] = None,
-        local_block_tables: Optional[torch.Tensor] = None,
-        lora_int_ids: Optional[torch.Tensor] = None,
+        attention_mask: torch.Tensor | None = None,
+        batch_idx: int | None = None,
+        block_tables: torch.Tensor | None = None,
+        position_embed: torch.Tensor | None = None,
+        position_ids: torch.Tensor | None = None,
+        token_type_ids: torch.Tensor | None = None,
+        local_block_tables: torch.Tensor | None = None,
+        lora_int_ids: torch.Tensor | None = None,
     ):
         inputs = self.inputs_embeddings_if_needed(input_ids, inputs_embeds)
         block_tables, local_block_tables, is_external_block_tables = (
@@ -269,11 +267,11 @@ class RBLNRuntimeModel(RBLNPytorchRuntime):
         cache_position: torch.Tensor = None,
         block_tables: torch.Tensor = None,
         is_external_block_tables: bool = None,
-        attention_mask: Optional[torch.Tensor] = None,
-        position_embed: Optional[torch.Tensor] = None,
-        position_ids: Optional[torch.Tensor] = None,
-        local_block_tables: Optional[torch.Tensor] = None,
-        lora_int_ids: Optional[torch.Tensor] = None,
+        attention_mask: torch.Tensor | None = None,
+        position_embed: torch.Tensor | None = None,
+        position_ids: torch.Tensor | None = None,
+        local_block_tables: torch.Tensor | None = None,
+        lora_int_ids: torch.Tensor | None = None,
     ) -> torch.FloatTensor:
         if self.rbln_config.use_lora and lora_int_ids is None:
             if self.lora_int_ids is None:
@@ -348,11 +346,11 @@ class RBLNRuntimeModel(RBLNPytorchRuntime):
     def _prepare_prefill_inputs(
         self,
         inputs: torch.Tensor,
-        cache_position: Optional[torch.Tensor] = None,
-        attention_mask: Optional[torch.Tensor] = None,
-        position_ids: Optional[torch.Tensor] = None,
-        position_embed: Optional[torch.Tensor] = None,
-        token_type_ids: Optional[torch.Tensor] = None,
+        cache_position: torch.Tensor | None = None,
+        attention_mask: torch.Tensor | None = None,
+        position_ids: torch.Tensor | None = None,
+        position_embed: torch.Tensor | None = None,
+        token_type_ids: torch.Tensor | None = None,
     ):
         """
         Prepare inputs for prefill phase.
@@ -440,7 +438,7 @@ class RBLNRuntimeModel(RBLNPytorchRuntime):
     def _prepare_prefill_outputs(
         self,
         query_length: int,
-        attention_mask: Optional[torch.Tensor] = None,
+        attention_mask: torch.Tensor | None = None,
     ):
         # Prepare out buffers
         padding_size = (self.rbln_config.prefill_chunk_size - query_length) % self.rbln_config.prefill_chunk_size
@@ -503,16 +501,16 @@ class RBLNRuntimeModel(RBLNPytorchRuntime):
     def prefill_forward(
         self,
         inputs: torch.Tensor,
-        cache_position: Optional[torch.Tensor] = None,
-        attention_mask: Optional[torch.Tensor] = None,
-        batch_idx: Optional[int] = None,
-        block_tables: Optional[torch.Tensor] = None,
-        is_external_block_tables: Optional[bool] = None,
-        position_ids: Optional[torch.Tensor] = None,
-        position_embed: Optional[torch.Tensor] = None,
-        token_type_ids: Optional[torch.Tensor] = None,
-        local_block_tables: Optional[torch.Tensor] = None,
-        lora_int_ids: Optional[torch.Tensor] = None,
+        cache_position: torch.Tensor | None = None,
+        attention_mask: torch.Tensor | None = None,
+        batch_idx: int | None = None,
+        block_tables: torch.Tensor | None = None,
+        is_external_block_tables: bool | None = None,
+        position_ids: torch.Tensor | None = None,
+        position_embed: torch.Tensor | None = None,
+        token_type_ids: torch.Tensor | None = None,
+        local_block_tables: torch.Tensor | None = None,
+        lora_int_ids: torch.Tensor | None = None,
     ) -> torch.FloatTensor:
         """
         Performs chunked prefill for efficient KV-cache updates and memory optimization.
@@ -543,6 +541,14 @@ class RBLNRuntimeModel(RBLNPytorchRuntime):
         ) = self._prepare_prefill_inputs(
             inputs, cache_position, attention_mask, position_ids, position_embed, token_type_ids=token_type_ids
         )
+
+        if query_length > self.rbln_config.prefill_chunk_size and self.rbln_config.use_bidirectional_prefill:
+            raise ValueError(
+                f"Input length ({query_length}) exceeds `prefill_chunk_size` "
+                f"({self.rbln_config.prefill_chunk_size}). This model prefills with bidirectional "
+                "attention over the whole input, which therefore must fit in a single prefill chunk. "
+                "Compile the model with `prefill_chunk_size` >= the maximum input length."
+            )
 
         out_buffers, output_logits, output_hidden_states = self._prepare_prefill_outputs(query_length, attention_mask)
 
@@ -619,18 +625,18 @@ class RBLNRuntimeModel(RBLNPytorchRuntime):
 
         # Aggregate output_logits
         padding_size = (self.rbln_config.prefill_chunk_size - query_length) % self.rbln_config.prefill_chunk_size
+        # `-padding_size` as a slice end drops the whole sequence when padding_size == 0 ([:, :-0] == [:, :0])
+        trim_end = -padding_size if padding_size > 0 else None
         if self.rbln_config.logits_to_keep == 1:
             output_logits = output_logits
         elif self.rbln_config.logits_to_keep > 1:
-            output_logits = output_logits[:, -padding_size - self.rbln_config.logits_to_keep : -padding_size, :]
+            output_logits = output_logits[:, -padding_size - self.rbln_config.logits_to_keep : trim_end, :]
         else:
-            output_logits = output_logits[:, :-padding_size, :]
+            output_logits = output_logits[:, :trim_end, :]
 
         all_hidden_states = None
         if self.rbln_config.output_hidden_states:
-            all_hidden_states = [
-                output_hidden_state[:, :-padding_size, :] for output_hidden_state in output_hidden_states
-            ]
+            all_hidden_states = [output_hidden_state[:, :trim_end, :] for output_hidden_state in output_hidden_states]
             all_hidden_states = tuple(all_hidden_states)
 
         # Update decoder attention mask with processed KV-cache length from prefill phase
@@ -677,14 +683,14 @@ class RBLNDecoderOnlyChunkedMultimodalPrefillMixin:
         self,
         runtime,
         input_chunk: torch.Tensor,
-        per_layer_chunk: Optional[torch.Tensor],
+        per_layer_chunk: torch.Tensor | None,
         cache_pos_chunk: torch.Tensor,
         block_tables: torch.Tensor,
-        local_block_tables: Optional[torch.Tensor],
+        local_block_tables: torch.Tensor | None,
         query_position: torch.Tensor,
         chunked_attention_mask: torch.Tensor,
-        position_ids_chunk: Optional[torch.Tensor],
-        lora_int_ids: Optional[torch.Tensor],
+        position_ids_chunk: torch.Tensor | None,
+        lora_int_ids: torch.Tensor | None,
     ):
         # Map a single chunk onto the compiled graph's positional argument order. Subclasses MUST
         # match their wrapper's `prepare_forward_args` exactly (including any per-layer / position
@@ -766,7 +772,7 @@ class RBLNDecoderOnlyChunkedMultimodalPrefillMixin:
             )
         return run_len, bucket
 
-    def _plan_prefill_chunks(self, token_type_ids: Optional[torch.Tensor], query_length: int):
+    def _plan_prefill_chunks(self, token_type_ids: torch.Tensor | None, query_length: int):
         # Plans the chunked prefill once so the loop and block allocation stay in sync.
         # Walks the input exactly the way prefill_forward does and records, per chunk, the
         # cache padding that precedes it.
@@ -830,10 +836,10 @@ class RBLNDecoderOnlyChunkedMultimodalPrefillMixin:
 
     def _extend_cache_position_for_alloc(
         self,
-        cache_position: Optional[torch.Tensor],
-        token_type_ids: Optional[torch.Tensor],
-        attention_mask: Optional[torch.Tensor],
-    ) -> Optional[torch.Tensor]:
+        cache_position: torch.Tensor | None,
+        token_type_ids: torch.Tensor | None,
+        attention_mask: torch.Tensor | None,
+    ) -> torch.Tensor | None:
         # During prefill, the tight-pack plan may touch cache slots past `query_length` (trailing
         # chunk write-extent + partition-alignment padding). Extend cache_position so the page table
         # reserves those slots. Returns cache_position unchanged for decode or non-multimodal prefill.
@@ -867,17 +873,17 @@ class RBLNDecoderOnlyChunkedMultimodalPrefillMixin:
 
     def forward(
         self,
-        input_ids: Optional[torch.LongTensor] = None,
-        inputs_embeds: Optional[torch.Tensor] = None,
+        input_ids: torch.LongTensor | None = None,
+        inputs_embeds: torch.Tensor | None = None,
         cache_position: torch.Tensor = None,
-        attention_mask: Optional[torch.Tensor] = None,
-        batch_idx: Optional[int] = None,
-        block_tables: Optional[torch.Tensor] = None,
-        position_embed: Optional[torch.Tensor] = None,
-        position_ids: Optional[torch.Tensor] = None,
-        token_type_ids: Optional[torch.Tensor] = None,
-        local_block_tables: Optional[torch.Tensor] = None,
-        lora_int_ids: Optional[torch.Tensor] = None,
+        attention_mask: torch.Tensor | None = None,
+        batch_idx: int | None = None,
+        block_tables: torch.Tensor | None = None,
+        position_embed: torch.Tensor | None = None,
+        position_ids: torch.Tensor | None = None,
+        token_type_ids: torch.Tensor | None = None,
+        local_block_tables: torch.Tensor | None = None,
+        lora_int_ids: torch.Tensor | None = None,
     ):
         # Shared dispatch for models without per-layer inputs. Subclasses that carry per-layer
         # inputs (e.g. Gemma4) override `forward` to thread that extra tensor through, calling
@@ -926,16 +932,16 @@ class RBLNDecoderOnlyChunkedMultimodalPrefillMixin:
         self,
         inputs: torch.Tensor,
         cache_position: torch.Tensor = None,
-        attention_mask: Optional[torch.Tensor] = None,
+        attention_mask: torch.Tensor | None = None,
         batch_idx: int = None,
         block_tables: torch.Tensor = None,
         is_external_block_tables: bool = None,
-        position_ids: Optional[torch.Tensor] = None,
-        position_embed: Optional[torch.Tensor] = None,
-        token_type_ids: Optional[torch.Tensor] = None,
-        local_block_tables: Optional[torch.Tensor] = None,
-        lora_int_ids: Optional[torch.Tensor] = None,
-        per_layer_inputs: Optional[torch.Tensor] = None,
+        position_ids: torch.Tensor | None = None,
+        position_embed: torch.Tensor | None = None,
+        token_type_ids: torch.Tensor | None = None,
+        local_block_tables: torch.Tensor | None = None,
+        lora_int_ids: torch.Tensor | None = None,
+        per_layer_inputs: torch.Tensor | None = None,
     ) -> torch.FloatTensor:
         if self._prefill_output_cls is None:
             raise NotImplementedError(

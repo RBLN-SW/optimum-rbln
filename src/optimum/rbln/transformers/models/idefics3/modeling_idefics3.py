@@ -14,8 +14,9 @@
 
 import importlib
 import inspect
+from collections.abc import Callable
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Any, Optional, Union
 
 import rebel
 import torch
@@ -58,8 +59,8 @@ class RBLNRuntimeVisionModel(RBLNPytorchRuntime):
     def forward(
         self,
         pixel_values,
-        patch_attention_mask: Optional[torch.BoolTensor] = None,
-        return_dict: Optional[bool] = None,
+        patch_attention_mask: torch.BoolTensor | None = None,
+        return_dict: bool | None = None,
         **kwargs,
     ):
         batch_size = pixel_values.size(0)
@@ -117,7 +118,7 @@ class RBLNIdefics3VisionTransformer(RBLNModel):
                 self.encoder = model.encoder
                 self.post_layernorm = model.post_layernorm
 
-            def forward(self, hidden_states, patch_attention_mask: Optional[torch.BoolTensor] = None):
+            def forward(self, hidden_states, patch_attention_mask: torch.BoolTensor | None = None):
                 encoder_outputs = self.encoder(
                     inputs_embeds=hidden_states,
                     attention_mask=patch_attention_mask,
@@ -131,10 +132,10 @@ class RBLNIdefics3VisionTransformer(RBLNModel):
     @classmethod
     def _update_rbln_config(
         cls,
-        preprocessors: Optional[Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"]],
+        preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"] | None,
         model: Optional["PreTrainedModel"] = None,
         model_config: Optional["PretrainedConfig"] = None,
-        rbln_config: Optional[RBLNModelConfig] = None,
+        rbln_config: RBLNModelConfig | None = None,
     ) -> RBLNModelConfig:
         input_info = [
             (
@@ -155,10 +156,10 @@ class RBLNIdefics3VisionTransformer(RBLNModel):
     def forward(
         self,
         pixel_values,
-        patch_attention_mask: Optional[torch.BoolTensor] = None,
-        return_dict: Optional[bool] = None,
+        patch_attention_mask: torch.BoolTensor | None = None,
+        return_dict: bool | None = None,
         **kwargs,
-    ) -> Union[Tuple, BaseModelOutput]:
+    ) -> tuple | BaseModelOutput:
         last_hidden_state_size = [
             pixel_values.shape[0],
             (self.config.image_size // self.config.patch_size) ** 2,
@@ -275,10 +276,10 @@ class RBLNIdefics3ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationM
     @classmethod
     def _update_rbln_config(
         cls,
-        preprocessors: Optional[Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"]],
+        preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"] | None,
         model: Optional["PreTrainedModel"] = None,
         model_config: Optional["PretrainedConfig"] = None,
-        rbln_config: Optional[RBLNModelConfig] = None,
+        rbln_config: RBLNModelConfig | None = None,
     ) -> RBLNModelConfig:
         input_info = [
             (
@@ -357,8 +358,8 @@ class RBLNIdefics3ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationM
     def inputs_merger(
         self,
         input_ids: torch.LongTensor,
-        inputs_embeds: Optional[torch.Tensor],
-        image_hidden_states: Optional[torch.Tensor],
+        inputs_embeds: torch.Tensor | None,
+        image_hidden_states: torch.Tensor | None,
     ):
         num_images, _, vision_hidden_size = image_hidden_states.shape
         special_image_token_mask = input_ids == self.config.image_token_id
@@ -371,7 +372,7 @@ class RBLNIdefics3ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationM
     def get_image_features(
         self,
         pixel_values: torch.FloatTensor,
-        pixel_attention_mask: Optional[torch.BoolTensor] = None,
+        pixel_attention_mask: torch.BoolTensor | None = None,
         **kwargs,
     ) -> torch.Tensor:
         batch_size, num_images, num_channels, height, width = pixel_values.shape
@@ -414,10 +415,10 @@ class RBLNIdefics3ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationM
     def _preprocess_prefill(
         self,
         input_ids: torch.LongTensor = None,
-        inputs_embeds: Optional[torch.FloatTensor] = None,
-        pixel_values: Optional[torch.FloatTensor] = None,
-        pixel_attention_mask: Optional[torch.BoolTensor] = None,
-        image_hidden_states: Optional[torch.FloatTensor] = None,
+        inputs_embeds: torch.FloatTensor | None = None,
+        pixel_values: torch.FloatTensor | None = None,
+        pixel_attention_mask: torch.BoolTensor | None = None,
+        image_hidden_states: torch.FloatTensor | None = None,
         **kwargs,
     ):
         if input_ids is not None:
@@ -454,16 +455,16 @@ class RBLNIdefics3ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationM
     def forward(
         self,
         input_ids: torch.LongTensor = None,
-        attention_mask: Optional[torch.Tensor] = None,
-        inputs_embeds: Optional[torch.FloatTensor] = None,
-        pixel_values: Optional[torch.FloatTensor] = None,
-        pixel_attention_mask: Optional[torch.BoolTensor] = None,
-        image_hidden_states: Optional[torch.FloatTensor] = None,
+        attention_mask: torch.Tensor | None = None,
+        inputs_embeds: torch.FloatTensor | None = None,
+        pixel_values: torch.FloatTensor | None = None,
+        pixel_attention_mask: torch.BoolTensor | None = None,
+        image_hidden_states: torch.FloatTensor | None = None,
         cache_position: torch.Tensor = None,
-        generate_idx: Optional[torch.Tensor] = None,
-        return_dict: Optional[bool] = None,
+        generate_idx: torch.Tensor | None = None,
+        return_dict: bool | None = None,
         **kwargs,
-    ) -> Union[Tuple, Idefics3CausalLMOutputWithPast]:
+    ) -> tuple | Idefics3CausalLMOutputWithPast:
         # Prefill
         if cache_position is None:
             inputs_embeds = self._preprocess_prefill(

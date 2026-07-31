@@ -13,7 +13,7 @@
 # limitations under the License.
 
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Union
 
 import torch
 from diffusers.models.transformers.prior_transformer import PriorTransformer, PriorTransformerOutput
@@ -129,25 +129,25 @@ class RBLNPriorTransformer(RBLNModel):
     def forward(
         self,
         hidden_states: torch.Tensor,
-        timestep: Union[torch.Tensor, float, int],
+        timestep: torch.Tensor | float | int,
         proj_embedding: torch.Tensor,
-        encoder_hidden_states: Optional[torch.Tensor] = None,
-        attention_mask: Optional[torch.Tensor] = None,
+        encoder_hidden_states: torch.Tensor | None = None,
+        attention_mask: torch.Tensor | None = None,
         return_dict: bool = True,
-    ) -> Union[PriorTransformerOutput, Tuple]:
+    ) -> PriorTransformerOutput | tuple:
         """
         Forward pass for the RBLN-optimized PriorTransformer.
 
         Args:
             hidden_states (torch.Tensor): The currently predicted image embeddings.
-            timestep (Union[torch.Tensor, float, int]): Current denoising step.
+            timestep (torch.Tensor | float | int): Current denoising step.
             proj_embedding (torch.Tensor): Projected embedding vector the denoising process is conditioned on.
-            encoder_hidden_states (Optional[torch.Tensor]): Hidden states of the text embeddings the denoising process is conditioned on.
-            attention_mask (Optional[torch.Tensor]): Text mask for the text embeddings.
+            encoder_hidden_states (torch.Tensor | None): Hidden states of the text embeddings the denoising process is conditioned on.
+            attention_mask (torch.Tensor | None): Text mask for the text embeddings.
             return_dict (bool): Whether or not to return a [`~diffusers.models.transformers.prior_transformer.PriorTransformerOutput`] instead of a plain tuple.
 
         Returns:
-            (Union[`~diffusers.models.transformers.prior_transformer.PriorTransformerOutput`, Tuple])
+            (`~diffusers.models.transformers.prior_transformer.PriorTransformerOutput` | tuple)
         """
         # Convert timestep(long) and attention_mask(bool) to float
         return super().forward(

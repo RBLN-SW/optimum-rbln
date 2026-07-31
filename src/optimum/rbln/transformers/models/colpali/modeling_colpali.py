@@ -13,7 +13,6 @@
 # limitations under the License.
 
 from pathlib import Path
-from typing import Optional, Tuple, Union
 
 import torch
 from transformers.initialization import no_init_weights
@@ -142,13 +141,13 @@ class RBLNColPaliForRetrieval(RBLNModel):
 
     def forward(
         self,
-        input_ids: Optional[torch.LongTensor] = None,
-        pixel_values: Optional[torch.FloatTensor] = None,
-        attention_mask: Optional[torch.Tensor] = None,
-        output_hidden_states: Optional[bool] = None,
-        return_dict: Optional[bool] = None,
+        input_ids: torch.LongTensor | None = None,
+        pixel_values: torch.FloatTensor | None = None,
+        attention_mask: torch.Tensor | None = None,
+        output_hidden_states: bool | None = None,
+        return_dict: bool | None = None,
         **kwargs,
-    ) -> Union[Tuple, ColPaliForRetrievalOutput]:
+    ) -> tuple | ColPaliForRetrievalOutput:
         """
         Forward pass for the RBLN-optimized ColPaliForRetrieval model.
 

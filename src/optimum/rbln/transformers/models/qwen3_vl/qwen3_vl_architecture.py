@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import math
-from typing import TYPE_CHECKING, Optional, Tuple, Union
+from typing import TYPE_CHECKING
 
 import torch
 import torch.nn as nn
@@ -92,7 +92,7 @@ class Qwen3VLVisionBlock(torch.nn.Module):
         self,
         hidden_states: torch.Tensor,
         attn_mask: torch.Tensor,
-        position_embeddings: Tuple[torch.Tensor, torch.Tensor],
+        position_embeddings: tuple[torch.Tensor, torch.Tensor],
     ) -> torch.Tensor:
         hidden_states = hidden_states + self.attn(
             self.norm1(hidden_states),
@@ -118,7 +118,7 @@ class Qwen3VLVisionAttention(nn.Module):
         self,
         hidden_states: torch.Tensor,
         attn_mask: torch.Tensor,
-        position_embeddings: Tuple[torch.Tensor, torch.Tensor],
+        position_embeddings: tuple[torch.Tensor, torch.Tensor],
     ) -> torch.Tensor:
         seq_length = hidden_states.shape[0]
         hidden_states = hidden_states.unsqueeze(0)
@@ -308,14 +308,14 @@ class Qwen3VLDecoderOnlyForCausalLM(DecoderOnlyForCausalLM):
         cache_position: torch.Tensor = None,
         position_ids: torch.Tensor = None,
         query_position: torch.Tensor = None,
-        past_key_values: Tuple[Tuple[torch.Tensor]] = None,
+        past_key_values: tuple[tuple[torch.Tensor]] = None,
         rotary_emb: nn.Module = None,
-        global_block_tables: Optional[torch.Tensor] = None,
-        local_block_tables: Optional[torch.Tensor] = None,
-        lora_int_id: Optional[torch.Tensor] = None,
-        output_hidden_states: Optional[bool] = None,
-        visual_pos_mask: Optional[torch.Tensor] = None,
-        deepstack_visual_embeds: Optional[torch.Tensor] = None,
+        global_block_tables: torch.Tensor | None = None,
+        local_block_tables: torch.Tensor | None = None,
+        lora_int_id: torch.Tensor | None = None,
+        output_hidden_states: bool | None = None,
+        visual_pos_mask: torch.Tensor | None = None,
+        deepstack_visual_embeds: torch.Tensor | None = None,
     ):
         hidden_states, all_hidden_states = self.model(
             input_ids=input_ids,
@@ -365,19 +365,19 @@ class Qwen3VLDecoderOnlyModel(DecoderOnlyModel):
     def forward(
         self,
         input_ids: torch.Tensor = None,
-        inputs_embeds: Optional[torch.Tensor] = None,
+        inputs_embeds: torch.Tensor | None = None,
         attention_mask: torch.Tensor = None,
         cache_position: torch.Tensor = None,
         position_ids: torch.Tensor = None,
         query_position: torch.Tensor = None,
-        past_key_values: Tuple[Tuple[torch.Tensor]] = None,
-        rotary_emb: Optional[Union[nn.Module, torch.Tensor]] = None,
-        global_block_tables: Optional[torch.Tensor] = None,
-        local_block_tables: Optional[torch.Tensor] = None,
-        lora_int_id: Optional[torch.Tensor] = None,
-        output_hidden_states: Optional[bool] = None,
-        visual_pos_mask: Optional[torch.Tensor] = None,
-        deepstack_visual_embeds: Optional[torch.Tensor] = None,
+        past_key_values: tuple[tuple[torch.Tensor]] = None,
+        rotary_emb: nn.Module | torch.Tensor | None = None,
+        global_block_tables: torch.Tensor | None = None,
+        local_block_tables: torch.Tensor | None = None,
+        lora_int_id: torch.Tensor | None = None,
+        output_hidden_states: bool | None = None,
+        visual_pos_mask: torch.Tensor | None = None,
+        deepstack_visual_embeds: torch.Tensor | None = None,
     ):
         if (input_ids is None) ^ (inputs_embeds is not None):
             raise ValueError(
