@@ -261,12 +261,6 @@ class RBLNQwen3VLRuntimeModel(RBLNRuntimeModel):
                 out=out_buffers[i],
             )
 
-        # Aggregate outputs. Valid rows live at [valid_start_index, valid_start_index + query_length)
-        # of the out buffers (`_prepare_prefill_outputs` offsets the chunk views by the first
-        # non-masked position), so extract that window and re-scatter it to the attention-mask
-        # positions with masked rows filled with 1e-10. A `[:, :query_length]` head-trim would read
-        # the pad region of left-padded masks, and hidden states must come back at full mask width
-        # because the model-level aggregation copies them into mask-width buffers.
         if attention_mask is not None:
             valid_start_index = int(torch.nonzero(attention_mask, as_tuple=False)[0][0].item())
             mask_indices = torch.nonzero(attention_mask, as_tuple=True)[0]
