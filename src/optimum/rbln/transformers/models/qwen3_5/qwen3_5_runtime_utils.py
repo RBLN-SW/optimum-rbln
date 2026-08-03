@@ -59,12 +59,24 @@ class RBLNQwen3_5RuntimeModel(RBLNRuntimeModel):
         self._recurrent_mask_ones = torch.ones(self.recurrent_state_shape, dtype=state_dtype)
         self._valid_mask_prefill_full = torch.ones(1, self.rbln_config.prefill_chunk_size, 1, dtype=state_dtype)
 
-    def _run(self, named_inputs: dict) -> torch.Tensor:
-        """Order inputs by the runtime's own signature and invoke; return logits."""
+    def _run(self, named_inputs: dict):
+        """Order inputs by the runtime's own signature and invoke; return (logits, hidden_states).
+
+        The graph returns (logits, *new_states, *hidden_states): the middle new_states are the linear
+        (conv/recurrent) cache-update outputs that alias the on-device static caches, so they are dropped.
+        When output_hidden_states is set, the trailing `num_hidden_layers + 1` outputs are the per-layer
+        hidden states — taking the LAST n_hidden avoids having to count the new_states.
+        """
         order = self.runtime._index_to_input_name
         args = [named_inputs[order[k]] for k in range(len(order))]
         out = super(RBLNRuntimeModel, self).forward(*args)
-        return out[0] if isinstance(out, (list, tuple)) else out
+        if not isinstance(out, (list, tuple)):
+            return out, None
+        hidden_states = None
+        if self.rbln_config.output_hidden_states:
+            n_hidden = self.config.num_hidden_layers + 1
+            hidden_states = tuple(out[-n_hidden:])
+        return out[0], hidden_states
 
     def prefill_forward(
         self,
@@ -111,6 +123,7 @@ class RBLNQwen3_5RuntimeModel(RBLNRuntimeModel):
         if prefix_cached_len > 0:
             raise NotImplementedError("Prefix caching is not supported for the Qwen3.5 hybrid model.")
         logits = None
+        all_hidden_states = [] if self.rbln_config.output_hidden_states else None
 
         for step in range(0, inputs.shape[1], chunk):
             input_chunk = inputs[:, step : step + chunk]
@@ -168,11 +181,40 @@ class RBLNQwen3_5RuntimeModel(RBLNRuntimeModel):
 
             # For logits_to_keep == 1 every window overwrites the single logits row, so the final value
             # is the last window's (the next-token logits). Intermediate windows only advance the states.
-            logits = self._run(named)
+            logits, hidden = self._run(named)
+            if self.rbln_config.output_hidden_states:
+                # keep only this window's valid (non-right-padding) tokens
+                all_hidden_states.append(tuple(h[:, :valid_count, :] for h in hidden))
+
+        final_hidden_states = None
+        if self.rbln_config.output_hidden_states:
+            # Concat each layer's per-window valid tokens along seq -> [1, query_length, hidden].
+            n_hidden = len(all_hidden_states[0])
+            valid_hidden = [
+                torch.cat([window[layer] for window in all_hidden_states], dim=1)[:, :query_length, :]
+                for layer in range(n_hidden)
+            ]
+            if attention_mask is not None:
+                # `_prepare_prefill_inputs` strips padding (inputs[:, mask_bool]) before the graph, so the
+                # graph only produced `query_length` valid tokens. Scatter them back to their mask slots
+                # (padding stays zero) so hidden states line up with the attention mask — mirroring the base
+                # runtime's valid_start_index placement. Padding is contiguous, so a single slice suffices.
+                full_len = attention_mask.shape[-1]
+                start = int(torch.nonzero(attention_mask.reshape(-1), as_tuple=False)[0].item())
+                placed = []
+                for vh in valid_hidden:
+                    buf = torch.zeros(1, full_len, vh.shape[-1], dtype=vh.dtype)
+                    buf[:, start : start + query_length, :] = vh
+                    placed.append(buf)
+                final_hidden_states = tuple(placed)
+            else:
+                final_hidden_states = tuple(valid_hidden)
 
         # padded_cache_lengths (from _prepare_prefill_inputs) is threaded back so the base
         # RBLNDecoderOnlyModelForCausalLM.forward can accumulate it per batch (the VL forward ignores it).
-        return RBLNDecoderOnlyOutput(logits=logits, padded_cache_lengths=padded_cache_lengths, hidden_states=None)
+        return RBLNDecoderOnlyOutput(
+            logits=logits, padded_cache_lengths=padded_cache_lengths, hidden_states=final_hidden_states
+        )
 
     def decode_forward(
         self,
@@ -218,5 +260,5 @@ class RBLNQwen3_5RuntimeModel(RBLNRuntimeModel):
         if self.rbln_config.use_lora:
             named["lora_int_ids"] = lora_int_ids
 
-        logits = self._run(named)
-        return RBLNDecoderOnlyOutput(logits=logits, hidden_states=None)
+        logits, hidden_states = self._run(named)
+        return RBLNDecoderOnlyOutput(logits=logits, hidden_states=hidden_states)

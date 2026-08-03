@@ -922,6 +922,21 @@ class TestQwen3_5ForConditionalGeneration(LLMTest.TestLLM):
         return inputs
 
 
+class TestQwen3_5ForConditionalGeneration_OutputHiddenStates(TestQwen3_5ForConditionalGeneration):
+    RBLN_CLASS_KWARGS = {
+        "rbln_config": {
+            "visual": {"max_seq_len": 512},
+            "num_devices": 1,
+            "kvcache_partition_len": 4096,
+            "max_seq_len": 8192,
+            "output_hidden_states": True,
+        }
+    }
+
+    def test_generate(self):
+        self._test_output_hidden_states_generation()
+
+
 class TestGemma3ForConditionalGeneration(LLMTest.TestLLM):
     RBLN_AUTO_CLASS = RBLNAutoModelForImageTextToText
     RBLN_CLASS = RBLNGemma3ForConditionalGeneration
