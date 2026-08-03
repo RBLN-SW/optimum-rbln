@@ -187,8 +187,7 @@ class RBLNQwen3_5RuntimeModel(RBLNRuntimeModel):
             # Concat each layer's per-window valid tokens along seq -> [1, query_length, hidden].
             n_hidden = len(all_hidden_states[0])
             valid_hidden = [
-                torch.cat([window[layer] for window in all_hidden_states], dim=1)
-                for layer in range(n_hidden)
+                torch.cat([window[layer] for window in all_hidden_states], dim=1) for layer in range(n_hidden)
             ]
             if attention_mask is not None:
                 # `_prepare_prefill_inputs` strips padding (inputs[:, mask_bool]) before the graph, so the
