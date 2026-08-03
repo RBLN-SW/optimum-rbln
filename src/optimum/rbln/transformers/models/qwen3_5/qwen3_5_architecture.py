@@ -646,7 +646,9 @@ class Qwen3_5Model(DecoderOnlyModel):
         hidden_states = self.get_last_layernorm()(hidden_states)
         if output_hidden_states:
             all_hidden_states += (hidden_states,)
-        return hidden_states, all_hidden_states, new_states
+        # new_states (linear-state cache updates) before the optional all_hidden_states, matching the
+        # graph output order (logits, *new_states, *all_hidden_states) the wrapper emits.
+        return hidden_states, new_states, all_hidden_states
 
 
 class Qwen3_5ForCausalLM(DecoderOnlyForCausalLM):
@@ -670,7 +672,7 @@ class Qwen3_5ForCausalLM(DecoderOnlyForCausalLM):
         batch_idx: torch.Tensor | None = None,
         output_hidden_states: bool | None = None,
     ):
-        hidden_states, all_hidden_states, new_states = self.model(
+        hidden_states, new_states, all_hidden_states = self.model(
             input_ids=input_ids,
             inputs_embeds=inputs_embeds,
             attention_mask=attention_mask,
@@ -694,7 +696,7 @@ class Qwen3_5ForCausalLM(DecoderOnlyForCausalLM):
             hidden_states = hidden_states[:, query_position.to(torch.int).unsqueeze(0)]
 
         logits = self.lm_head(hidden_states)
-        return logits, all_hidden_states, new_states
+        return logits, new_states, all_hidden_states
 
 
 class Qwen3_5_CausalLMWrapper(DecoderOnlyWrapper):
@@ -814,7 +816,7 @@ class Qwen3_5_CausalLMWrapper(DecoderOnlyWrapper):
             batch_idx,
         ) = self.prepare_forward_args(*args)
 
-        logits, all_hidden_states, new_states = self.model(
+        logits, new_states, all_hidden_states = self.model(
             input_ids=input_ids,
             inputs_embeds=inputs_embeds,
             attention_mask=attention_mask,
