@@ -646,8 +646,6 @@ class Qwen3_5Model(DecoderOnlyModel):
         hidden_states = self.get_last_layernorm()(hidden_states)
         if output_hidden_states:
             all_hidden_states += (hidden_states,)
-        # new_states (linear-state cache updates) before the optional all_hidden_states, matching the
-        # graph output order (logits, *new_states, *all_hidden_states) the wrapper emits.
         return hidden_states, new_states, all_hidden_states
 
 
