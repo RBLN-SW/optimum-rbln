@@ -33,9 +33,9 @@ from transformers.models.qwen3_5.modeling_qwen3_5 import (
 from ....configuration_utils import RBLNCompileConfig
 from ....modeling import RBLNModel
 from ....utils import logging
-from ....utils.deterministic_ops import deterministic_cos, deterministic_sin
 from ...cache_utils import FullAttentionKVCacheMeta, LinearAttentionCacheMeta
 from ...modeling_outputs import RBLNDecoderOnlyOutput, _validate_output_hidden_states
+from ...modeling_rope_utils import np_cos, np_sin
 from ..decoderonly.decoderonly_runtime_utils import RBLNPageTableManager
 from ..decoderonly.modeling_decoderonly import RBLNDecoderOnlyModel, RBLNDecoderOnlyModelForCausalLM
 from .configuration_qwen3_5 import (
@@ -331,8 +331,8 @@ class RBLNQwen3_5VisionModel(RBLNModel):
         self.rotary_pos_emb = Qwen3_5VisionRotaryEmbedding(head_dim // 2)
         # Precompute the rotary cos/sin tables up to the largest ViT bucket
         _freq_table = self.rotary_pos_emb(int(self.max_seq_len.max().item()))
-        self.rotary_cos_table = deterministic_cos(_freq_table)
-        self.rotary_sin_table = deterministic_sin(_freq_table)
+        self.rotary_cos_table = np_cos(_freq_table)
+        self.rotary_sin_table = np_sin(_freq_table)
 
         with no_init_weights():
             self.patch_embed = Qwen3_5VisionPatchEmbed(config=config)

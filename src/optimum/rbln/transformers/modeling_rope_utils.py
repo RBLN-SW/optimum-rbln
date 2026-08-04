@@ -29,8 +29,25 @@
 import math
 from typing import Optional
 
+import numpy as np
 import torch
 from transformers import PretrainedConfig
+
+
+def np_cos(x: torch.Tensor) -> torch.Tensor:
+    """cos(x) computed on the host via numpy.
+
+    torch's CPU cos/sin kernels are not bit-reproducible: the result can differ in the
+    last bits depending on the OMP/MKL thread configuration and the tensor size, while
+    numpy's are reproducible across thread counts. Any cos/sin computed on the host
+    (e.g. rotary tables fed to a compiled graph as inputs) must use these helpers.
+    """
+    return torch.from_numpy(np.cos(x.detach().cpu().numpy()))
+
+
+def np_sin(x: torch.Tensor) -> torch.Tensor:
+    """sin(x) computed on the host via numpy. See `np_cos` for why."""
+    return torch.from_numpy(np.sin(x.detach().cpu().numpy()))
 
 
 def _get_rope_theta(config: PretrainedConfig) -> float:

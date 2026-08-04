@@ -32,11 +32,11 @@ from transformers.models.gemma4.modeling_gemma4 import Gemma4VisionRotaryEmbeddi
 
 from ....configuration_utils import RBLNCompileConfig, RBLNModelConfig
 from ....modeling import RBLNModel
-from ....utils.deterministic_ops import deterministic_cos, deterministic_sin
 from ....utils.logging import get_logger
 from ...cache_utils import FullAttentionKVCacheMeta, SlidingWindowAttentionKVCacheMeta
 from ...modeling_attention_utils import validate_sliding_window
 from ...modeling_outputs import RBLNDecoderOnlyOutput
+from ...modeling_rope_utils import np_cos, np_sin
 from ...utils.rbln_runtime_wrapper import LoopProcessor
 from ..decoderonly.decoderonly_runtime_utils import RBLNPageTableManager
 from ..decoderonly.generation_decoderonly import RBLNDecoderOnlyGenerationMixin
@@ -196,8 +196,8 @@ class RBLNGemma4VisionModel(RBLNModel):
         rotary_emb = Gemma4VisionRotaryEmbedding(self.config)
         freqs = table_positions[:, None].float() * rotary_emb.inv_freq[None, :].float()
         emb = torch.cat((freqs, freqs), dim=-1)
-        self.rotary_cos_table = deterministic_cos(emb) * rotary_emb.attention_scaling
-        self.rotary_sin_table = deterministic_sin(emb) * rotary_emb.attention_scaling
+        self.rotary_cos_table = np_cos(emb) * rotary_emb.attention_scaling
+        self.rotary_sin_table = np_sin(emb) * rotary_emb.attention_scaling
 
         super().__post_init__(**kwargs)
 
