@@ -20,6 +20,7 @@ from torch import nn
 from transformers import PretrainedConfig, PreTrainedModel
 
 from ....utils import logging
+from ....utils.deterministic_ops import deterministic_cos, deterministic_sin
 from ...modeling_rope_utils import ROPE_INIT_FUNCTIONS
 from .configuration_lora import RBLNLoRAConfig
 from .lora_architecture import LoRALinear
@@ -1316,8 +1317,8 @@ class RotaryEmbedding(nn.Module):
 
         emb = torch.cat((freqs, freqs), dim=-1)
 
-        cos = emb.cos() * attention_scaling
-        sin = emb.sin() * attention_scaling
+        cos = deterministic_cos(emb) * attention_scaling
+        sin = deterministic_sin(emb) * attention_scaling
 
         self.register_buffer("_cos_cached", cos, persistent=False)
         self.register_buffer("_sin_cached", sin, persistent=False)

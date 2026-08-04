@@ -36,6 +36,7 @@ from transformers.models.qwen2_5_vl.modeling_qwen2_5_vl import (
 
 from ....configuration_utils import RBLNCompileConfig
 from ....modeling import RBLNModel
+from ....utils.deterministic_ops import deterministic_cos, deterministic_sin
 from ....utils.logging import get_logger
 from ...modeling_outputs import RBLNDecoderOnlyOutput, _validate_output_hidden_states
 from ..decoderonly.modeling_decoderonly import RBLNDecoderOnlyModel, RBLNDecoderOnlyModelForCausalLM
@@ -278,7 +279,10 @@ class RBLNQwen2_5_VisionTransformerPretrainedModel(RBLNModel):
         rotary_pos_emb = rotary_pos_emb[window_index, :, :]
         rotary_pos_emb = rotary_pos_emb.reshape(seq_len, -1)
         emb = torch.cat((rotary_pos_emb, rotary_pos_emb), dim=-1)
-        position_embeddings = (emb.cos().to(self.rbln_config.dtype), emb.sin().to(self.rbln_config.dtype))
+        position_embeddings = (
+            deterministic_cos(emb).to(self.rbln_config.dtype),
+            deterministic_sin(emb).to(self.rbln_config.dtype),
+        )
 
         cu_seqlens = torch.repeat_interleave(grid_thw[:, 1] * grid_thw[:, 2], grid_thw[:, 0]).cumsum(
             dim=0,

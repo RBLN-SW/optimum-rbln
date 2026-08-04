@@ -32,6 +32,7 @@ from transformers.models.gemma4.modeling_gemma4 import Gemma4VisionRotaryEmbeddi
 
 from ....configuration_utils import RBLNCompileConfig, RBLNModelConfig
 from ....modeling import RBLNModel
+from ....utils.deterministic_ops import deterministic_cos, deterministic_sin
 from ....utils.logging import get_logger
 from ...cache_utils import FullAttentionKVCacheMeta, SlidingWindowAttentionKVCacheMeta
 from ...modeling_attention_utils import validate_sliding_window
@@ -190,12 +191,13 @@ class RBLNGemma4VisionModel(RBLNModel):
 
         max_patches = max(self.rbln_config.get_max_patches())
         table_positions = torch.cat([torch.arange(max_patches), torch.tensor([-1])])
-        cos_table, sin_table = Gemma4VisionRotaryEmbedding(self.config).eval()(
-            torch.empty(1), table_positions[None, :, None].expand(1, -1, 2)
-        )
-        per_axis_dim = cos_table.shape[-1] // 2
-        self.rotary_cos_table = cos_table[0, :, :per_axis_dim]
-        self.rotary_sin_table = sin_table[0, :, :per_axis_dim]
+        # Replicates Gemma4VisionRotaryEmbedding.forward for a single spatial axis
+        # (both axes share the same inv_freq); cos/sin go through the deterministic helpers.
+        rotary_emb = Gemma4VisionRotaryEmbedding(self.config)
+        freqs = table_positions[:, None].float() * rotary_emb.inv_freq[None, :].float()
+        emb = torch.cat((freqs, freqs), dim=-1)
+        self.rotary_cos_table = deterministic_cos(emb) * rotary_emb.attention_scaling
+        self.rotary_sin_table = deterministic_sin(emb) * rotary_emb.attention_scaling
 
         super().__post_init__(**kwargs)
 
