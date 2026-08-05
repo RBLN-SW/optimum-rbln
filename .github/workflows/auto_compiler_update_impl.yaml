@@ -44,14 +44,26 @@ jobs:
             exit 1
           fi
 
-          # 2. Locate the version manifest artifact produced by that build.
-          DL_URL=$( \
+          # 2. Locate the version manifest artifact. The list response has no
+          #    download_url; only the per-artifact GET returns it.
+          ART_RESP=$( \
             curl -fsS --retry 5 --retry-max-time 120 -H "$AUTH" \
               "${API}/builds/${BUILD_NUMBER}/artifacts" \
-            | jq -r 'first((if type=="array" then . else .items end)[] | select(.filename=="compiler-nightly-version") | .download_url) // empty' \
           )
+          ART_URL=$( \
+            printf '%s' "$ART_RESP" \
+            | jq -r 'first((if type=="array" then . else .items end)[] | select(.path=="compiler-nightly-version") | .url) // empty' \
+          )
+          if [ -z "$ART_URL" ]; then
+            echo "compiler-nightly-version artifact missing on build #${BUILD_NUMBER}; artifact list response was:" >&2
+            printf '%s\n' "$ART_RESP" >&2
+            exit 1
+          fi
+          ART_META=$(curl -fsS --retry 5 --retry-max-time 120 -H "$AUTH" "$ART_URL")
+          DL_URL=$(printf '%s' "$ART_META" | jq -r '.download_url // empty')
           if [ -z "$DL_URL" ]; then
-            echo "compiler-nightly-version artifact missing on build #${BUILD_NUMBER}" >&2
+            echo "no download_url for compiler-nightly-version artifact on build #${BUILD_NUMBER}; artifact response was:" >&2
+            printf '%s\n' "$ART_META" >&2
             exit 1
           fi
 
