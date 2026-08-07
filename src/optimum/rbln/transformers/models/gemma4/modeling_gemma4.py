@@ -449,15 +449,13 @@ class RBLNGemma4ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
 
         if self.rbln_config.use_inputs_embeds and "embed_tokens" in artifacts:
             self.embed_tokens = self._create_embedding_layer()
-            self.embed_tokens.load_state_dict(artifacts["embed_tokens"])
-            self.embed_tokens.to(self.rbln_config.dtype)
+            self.embed_tokens.load_state_dict(artifacts["embed_tokens"], assign=True)
         else:
             self.embed_tokens = None
 
         if getattr(self.config, "hidden_size_per_layer_input", 0) and "embed_tokens_per_layer" in artifacts:
             self.embed_tokens_per_layer = self._create_per_layer_embedding_layer()
-            self.embed_tokens_per_layer.load_state_dict(artifacts["embed_tokens_per_layer"])
-            self.embed_tokens_per_layer.to(self.rbln_config.dtype)
+            self.embed_tokens_per_layer.load_state_dict(artifacts["embed_tokens_per_layer"], assign=True)
         else:
             self.embed_tokens_per_layer = None
 
