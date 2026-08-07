@@ -402,7 +402,7 @@ class RBLNBlip2ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMixi
         **kwargs,
     ) -> torch.Tensor:
         vision_outputs = self.vision_model(
-            pixel_values=pixel_values,
+            pixel_values=pixel_values.to(self.rbln_config.vision_model.dtype),
             return_dict=True,
             interpolate_pos_encoding=interpolate_pos_encoding,
         )

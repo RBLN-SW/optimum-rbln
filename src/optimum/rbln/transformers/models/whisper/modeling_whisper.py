@@ -413,9 +413,11 @@ class RBLNWhisperForConditionalGeneration(RBLNModel, RBLNWhisperGenerationMixin)
             for b in range(inputs_tensor.shape[0]):
                 block_tables = torch.tensor([b], dtype=torch.int16)
                 model_kwargs["encoder_outputs"] = self.encoder(
-                    input_features=inputs_tensor[b].unsqueeze(0), block_tables=block_tables
+                    input_features=inputs_tensor[b].unsqueeze(0).to(self.rbln_config.dtype), block_tables=block_tables
                 )
-            self.decoder_attention_mask = torch.zeros(self.batch_size, self.dec_max_seq_len, dtype=self.rbln_config.dtype)
+            self.decoder_attention_mask = torch.zeros(
+                self.batch_size, self.dec_max_seq_len, dtype=self.rbln_config.dtype
+            )
         else:
             model_kwargs["encoder_outputs"] = BaseModelOutput(last_hidden_state=torch.tensor([[-1.0]]))
 
@@ -466,9 +468,14 @@ class RBLNWhisperForConditionalGeneration(RBLNModel, RBLNWhisperGenerationMixin)
             if encoder_outputs is None:
                 for b in range(input_features.shape[0]):
                     block_tables = torch.tensor([b], dtype=torch.int16)
-                    self.encoder(input_features=input_features[b].unsqueeze(0), block_tables=block_tables)
+                    self.encoder(
+                        input_features=input_features[b].unsqueeze(0).to(self.rbln_config.dtype),
+                        block_tables=block_tables,
+                    )
 
-            self.decoder_attention_mask = torch.zeros(self.batch_size, self.dec_max_seq_len, dtype=self.rbln_config.dtype)
+            self.decoder_attention_mask = torch.zeros(
+                self.batch_size, self.dec_max_seq_len, dtype=self.rbln_config.dtype
+            )
             self.is_language_detected = True
             self.decoder_attention_mask[:, 0] = 1
             decoder_output = self.decoder(

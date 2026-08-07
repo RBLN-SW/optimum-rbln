@@ -254,7 +254,7 @@ class RBLNPaliGemmaForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGeneration
             self.config.vision_config.hidden_size,
         ]
         vision_output = torch.empty(size=vision_output_size, dtype=self.rbln_config.vision_tower.dtype, device="cpu")
-        self.vision_tower(pixel_values, out=vision_output)
+        self.vision_tower(pixel_values.to(self.rbln_config.vision_tower.dtype), out=vision_output)
         image_features = self.multi_modal_projector(vision_output.to(self.rbln_config.dtype))
         image_features = image_features / (self.config.text_config.hidden_size**0.5)
         return image_features
@@ -473,7 +473,7 @@ class RBLNPaliGemmaModel(RBLNModel):
             self.config.vision_config.hidden_size,
         ]
         vision_output = torch.empty(size=vision_output_size, dtype=self.rbln_config.vision_tower.dtype, device="cpu")
-        self.vision_tower(pixel_values, out=vision_output)
+        self.vision_tower(pixel_values.to(self.rbln_config.vision_tower.dtype), out=vision_output)
         image_features = self.multi_modal_projector(vision_output.to(self.rbln_config.dtype))
         image_features = image_features / (self.config.text_config.hidden_size**0.5)
         return image_features

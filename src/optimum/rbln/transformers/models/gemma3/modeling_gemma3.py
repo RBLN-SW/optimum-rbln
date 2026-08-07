@@ -218,9 +218,13 @@ class RBLNGemma3ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMix
             self.config.mm_tokens_per_image,
             self.config.text_config.hidden_size,
         ]
-        vision_out_buffer.append(torch.empty(size=vision_out_size, dtype=self.rbln_config.vision_tower.dtype, device="cpu"))
+        vision_out_buffer.append(
+            torch.empty(size=vision_out_size, dtype=self.rbln_config.vision_tower.dtype, device="cpu")
+        )
         projector_out_buffer = [torch.empty(size=projector_out_size, dtype=self.rbln_config.dtype, device="cpu")]
-        vision_outputs = self.vision_tower(pixel_values, out=vision_out_buffer).last_hidden_state
+        vision_outputs = self.vision_tower(
+            pixel_values.to(self.rbln_config.vision_tower.dtype), out=vision_out_buffer
+        ).last_hidden_state
         image_features = self.multi_modal_projector(
             vision_outputs.to(self.rbln_config.dtype), out=projector_out_buffer
         )

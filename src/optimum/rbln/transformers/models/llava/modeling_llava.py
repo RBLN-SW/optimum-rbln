@@ -349,7 +349,12 @@ class RBLNLlavaForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMixi
                 1, torch.empty(size=pooler_out_size, dtype=self.rbln_config.vision_tower.dtype, device="cpu")
             )
 
-        image_outputs = self.vision_tower(pixel_values, output_hidden_states=True, out=vision_out_buffer, **kwargs)
+        image_outputs = self.vision_tower(
+            pixel_values.to(self.rbln_config.vision_tower.dtype),
+            output_hidden_states=True,
+            out=vision_out_buffer,
+            **kwargs,
+        )
 
         if isinstance(vision_feature_layer, int):
             selected_image_feature = image_outputs.hidden_states[vision_feature_layer]
