@@ -124,6 +124,7 @@ class RBLNTimeSeriesTransformerForPrediction(RBLNModel):
 
     auto_model_class = None
     main_input_name = "inputs_embeds"
+    _supports_non_fp32 = True
 
     def __post_init__(self, **kwargs):
         super().__post_init__(**kwargs)
@@ -241,7 +242,7 @@ class RBLNTimeSeriesTransformerForPrediction(RBLNModel):
             (
                 "inputs_embeds",
                 [rbln_config.batch_size, model_config.context_length, model_config.feature_size],
-                "float32",
+                rbln_config.dtype,
             ),
         ]
         enc_input_info.extend(
@@ -255,7 +256,7 @@ class RBLNTimeSeriesTransformerForPrediction(RBLNModel):
                         model_config.context_length,
                         model_config.d_model // model_config.decoder_attention_heads,
                     ],
-                    "float32",
+                    rbln_config.dtype,
                 )
             ]
         )
@@ -264,9 +265,9 @@ class RBLNTimeSeriesTransformerForPrediction(RBLNModel):
             (
                 "inputs_embeds",
                 [rbln_config.batch_size * rbln_config.num_parallel_samples, 1, model_config.feature_size],
-                "float32",
+                rbln_config.dtype,
             ),
-            ("attention_mask", [1, rbln_config.dec_max_seq_len], "float32"),
+            ("attention_mask", [1, rbln_config.dec_max_seq_len], rbln_config.dtype),
             ("cache_position", [], "int32"),
             ("block_tables", [1, 1], "int16"),
         ]
@@ -281,7 +282,7 @@ class RBLNTimeSeriesTransformerForPrediction(RBLNModel):
                         model_config.context_length,  # 24
                         model_config.d_model // model_config.decoder_attention_heads,  # 13
                     ],
-                    "float32",
+                    rbln_config.dtype,
                 )
             ]
         )
@@ -297,7 +298,7 @@ class RBLNTimeSeriesTransformerForPrediction(RBLNModel):
                         rbln_config.dec_max_seq_len,
                         model_config.d_model // model_config.encoder_attention_heads,
                     ],
-                    "float32",
+                    rbln_config.dtype,
                 )
                 for i in range(model_config.decoder_layers * 2)
             ]

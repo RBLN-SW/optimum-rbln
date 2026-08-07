@@ -163,6 +163,7 @@ class RBLNLlavaForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMixi
     """
 
     auto_model_class = AutoModelForImageTextToText
+    _supports_non_fp32 = True
     _rbln_submodules = [
         {"name": "vision_tower"},
         {"name": "language_model"},
@@ -248,7 +249,7 @@ class RBLNLlavaForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMixi
                     selected_image_feature_dim,
                     model_config.vision_config.hidden_size,
                 ],
-                "float32",
+                rbln_config.dtype,
             )
         ]
 
@@ -340,9 +341,13 @@ class RBLNLlavaForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMixi
 
         vision_out_buffer = []
         for _ in range(self.config.vision_config.num_hidden_layers + 2):
-            vision_out_buffer.append(torch.empty(size=vision_out_size, dtype=torch.float32, device="cpu"))
+            vision_out_buffer.append(
+                torch.empty(size=vision_out_size, dtype=self.rbln_config.vision_tower.dtype, device="cpu")
+            )
         if pooler_out_size is not None:
-            vision_out_buffer.insert(1, torch.empty(size=pooler_out_size, dtype=torch.float32, device="cpu"))
+            vision_out_buffer.insert(
+                1, torch.empty(size=pooler_out_size, dtype=self.rbln_config.vision_tower.dtype, device="cpu")
+            )
 
         image_outputs = self.vision_tower(pixel_values, output_hidden_states=True, out=vision_out_buffer, **kwargs)
 
@@ -378,8 +383,10 @@ class RBLNLlavaForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMixi
             split_features = torch.cat(chunks, dim=0)
             num_chunks = len(chunks)
             projector_out_size = [1, max_patches * num_chunks, self.config.text_config.hidden_size]
-            projector_out_buffer = [torch.empty(size=projector_out_size, dtype=torch.float32, device="cpu")]
-            projected_features = self.multi_modal_projector(split_features, out=projector_out_buffer)
+            projector_out_buffer = [torch.empty(size=projector_out_size, dtype=self.rbln_config.dtype, device="cpu")]
+            projected_features = self.multi_modal_projector(
+                split_features.to(self.rbln_config.dtype), out=projector_out_buffer
+            )
             projected_features = projected_features.view(
                 selected_image_feature.shape[0], num_chunks * max_patches, self.config.text_config.hidden_size
             )
@@ -390,8 +397,10 @@ class RBLNLlavaForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMixi
                 (self.config.vision_config.image_size // self.config.vision_config.patch_size) ** 2,
                 self.config.text_config.hidden_size,
             ]
-            projector_out_buffer = [torch.empty(size=projector_out_size, dtype=torch.float32, device="cpu")]
-            image_features = self.multi_modal_projector(selected_image_feature, out=projector_out_buffer)
+            projector_out_buffer = [torch.empty(size=projector_out_size, dtype=self.rbln_config.dtype, device="cpu")]
+            image_features = self.multi_modal_projector(
+                selected_image_feature.to(self.rbln_config.dtype), out=projector_out_buffer
+            )
 
         return image_features
 

@@ -67,7 +67,9 @@ class PegasusDecoder(Seq2SeqDecoder):
     def prepare_attn_mask(self, attention_mask, encoder_attention_mask, **kwargs):
         if attention_mask is not None:
             attention_mask = attention_mask[:, None, None, :]
-        encoder_attention_mask = _prepare_4d_attention_mask(encoder_attention_mask, torch.float32, tgt_len=1)
+        encoder_attention_mask = _prepare_4d_attention_mask(
+            encoder_attention_mask, encoder_attention_mask.dtype, tgt_len=1
+        )
 
         return attention_mask, encoder_attention_mask
 

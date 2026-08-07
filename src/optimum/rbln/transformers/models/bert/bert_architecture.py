@@ -19,9 +19,9 @@ class BertModelWrapper(torch.nn.Module):
         if "attention_mask" in input_names:
             idx = input_names.index("attention_mask")
             if idx < len(args) and args[idx] is not None and args[idx].dim() == 2:
-                args[idx] = _prepare_4d_attention_mask(args[idx], torch.float32)
+                args[idx] = _prepare_4d_attention_mask(args[idx], self.rbln_config.dtype)
         if "attention_mask" in kwargs and kwargs["attention_mask"] is not None and kwargs["attention_mask"].dim() == 2:
-            kwargs["attention_mask"] = _prepare_4d_attention_mask(kwargs["attention_mask"], torch.float32)
+            kwargs["attention_mask"] = _prepare_4d_attention_mask(kwargs["attention_mask"], self.rbln_config.dtype)
 
         output = self.model(*args, **kwargs)
         if isinstance(output, torch.Tensor):

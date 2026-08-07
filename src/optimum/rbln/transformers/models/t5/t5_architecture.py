@@ -207,7 +207,7 @@ class T5LayerSelfAttention(Seq2SeqSelfAttention):
             past_key_value[0].view(bsz, self.num_heads, 1, -1, self.head_dim),
             past_key_value[1].view(bsz, self.num_heads, 1, -1, self.head_dim),
             cache_position,
-            torch.tensor(1.0, dtype=torch.float32),  # scale
+            torch.tensor(1.0, dtype=query_states.dtype),  # scale
             block_tables,
             block_size,
         )

@@ -284,7 +284,7 @@ class TimeSeriesTransformersSelfAttention(TimeSeriesTransformersAttention):
             kcache=past_key_value[0].view(1, bsz * self.num_heads, 1, -1, self.head_dim),
             vcache=past_key_value[1].view(1, bsz * self.num_heads, 1, -1, self.head_dim),
             seq=cache_position.expand(bsz, 1),
-            scale=torch.tensor(1.0, dtype=torch.float32),  # scale
+            scale=torch.tensor(1.0, dtype=query_states.dtype),  # scale
             block_table=block_tables,
             block_size=block_size,
         )

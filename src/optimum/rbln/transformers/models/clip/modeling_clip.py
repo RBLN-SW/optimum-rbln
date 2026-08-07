@@ -51,6 +51,7 @@ class RBLNCLIPTextModel(RBLNModel):
     """
 
     _tp_support = False
+    _supports_non_fp32 = True
 
     @classmethod
     def _wrap_model_if_needed(cls, model: torch.nn.Module, rbln_config: RBLNCLIPTextModelConfig) -> torch.nn.Module:
@@ -157,6 +158,7 @@ class RBLNCLIPVisionModel(RBLNModel):
     """
 
     _tp_support = False
+    _supports_non_fp32 = True
 
     @classmethod
     def _wrap_model_if_needed(cls, model: torch.nn.Module, rbln_config: RBLNCLIPVisionModelConfig) -> torch.nn.Module:
@@ -206,7 +208,7 @@ class RBLNCLIPVisionModel(RBLNModel):
                         rbln_config.image_height,
                         rbln_config.image_width,
                     ],
-                    "float32",
+                    rbln_config.dtype,
                 )
             ]
         )

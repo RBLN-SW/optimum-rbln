@@ -120,6 +120,7 @@ class RBLNModelForSeq2SeqLM(RBLNModel, GenerationMixin, ABC):
     auto_model_class = AutoModelForSeq2SeqLM
     support_causal_attn = None
     _is_stateful = False
+    _supports_non_fp32 = True
 
     def __post_init__(self, **kwargs):
         batch_size = self.rbln_config.batch_size
@@ -256,7 +257,7 @@ class RBLNModelForSeq2SeqLM(RBLNModel, GenerationMixin, ABC):
         # model input info
         enc_input_info = [
             ("input_ids", [1, rbln_config.enc_max_seq_len], "int64"),
-            ("attention_mask", [1, rbln_config.enc_max_seq_len], "float32"),
+            ("attention_mask", [1, rbln_config.enc_max_seq_len], rbln_config.dtype),
             ("block_tables", [1], "int16"),
         ]
         enc_input_info.extend(
@@ -269,7 +270,7 @@ class RBLNModelForSeq2SeqLM(RBLNModel, GenerationMixin, ABC):
                         rbln_config.enc_max_seq_len,
                         d_kv,
                     ],
-                    "float32",
+                    rbln_config.dtype,
                 )
                 for i in range(n_layer * 2)
             ]
@@ -277,7 +278,7 @@ class RBLNModelForSeq2SeqLM(RBLNModel, GenerationMixin, ABC):
 
         dec_input_info = [
             ("input_ids", [rbln_config.batch_size, 1], "int64"),
-            ("encoder_attention_mask", [rbln_config.batch_size, rbln_config.enc_max_seq_len], "float32"),
+            ("encoder_attention_mask", [rbln_config.batch_size, rbln_config.enc_max_seq_len], rbln_config.dtype),
             (
                 "cache_position",
                 [rbln_config.batch_size, 1],
@@ -295,7 +296,7 @@ class RBLNModelForSeq2SeqLM(RBLNModel, GenerationMixin, ABC):
                         rbln_config.enc_max_seq_len,
                         d_kv,
                     ],
-                    "float32",
+                    rbln_config.dtype,
                 )
                 for i in range(n_layer * 2)
             ]
@@ -310,7 +311,7 @@ class RBLNModelForSeq2SeqLM(RBLNModel, GenerationMixin, ABC):
                         rbln_config.dec_max_seq_len,
                         d_kv,
                     ],
-                    "float32",
+                    rbln_config.dtype,
                 )
                 for i in range(n_layer * 2)
             ]
@@ -318,7 +319,7 @@ class RBLNModelForSeq2SeqLM(RBLNModel, GenerationMixin, ABC):
 
         if rbln_config.use_attention_mask:
             dec_input_info.insert(
-                1, ("attention_mask", [rbln_config.batch_size, rbln_config.dec_max_seq_len], "float32")
+                1, ("attention_mask", [rbln_config.batch_size, rbln_config.dec_max_seq_len], rbln_config.dtype)
             )
 
         enc_compile_config = RBLNCompileConfig(compiled_model_name="encoder", input_info=enc_input_info)
@@ -375,12 +376,12 @@ class RBLNModelForSeq2SeqLM(RBLNModel, GenerationMixin, ABC):
         max_seq_len = self.rbln_config.dec_max_seq_len
         decoder_batch_size = input_ids.shape[0]
         input_ids = input_ids[:, cur_seq_len - 1 : cur_seq_len].contiguous()
-        decoder_attention_mask = torch.zeros(decoder_batch_size, max_seq_len, dtype=torch.float32)
+        decoder_attention_mask = torch.zeros(decoder_batch_size, max_seq_len, dtype=self.rbln_config.dtype)
         decoder_attention_mask[:, :cur_seq_len] = 1
 
         return {
             "decoder_input_ids": input_ids,
-            "attention_mask": attention_mask.to(torch.float32),
+            "attention_mask": attention_mask.to(self.rbln_config.dtype),
             "decoder_attention_mask": decoder_attention_mask,
             "cache_position": cache_position,
         }
@@ -447,7 +448,9 @@ class RBLNModelForSeq2SeqLM(RBLNModel, GenerationMixin, ABC):
         for b in range(batch_size):
             block_tables = torch.tensor([b], dtype=torch.int16)
             encoder_kwargs["input_ids"] = inputs_tensor[b].unsqueeze(0)
-            encoder_kwargs["attention_mask"] = model_kwargs["attention_mask"][b].unsqueeze(0).to(torch.float32)
+            encoder_kwargs["attention_mask"] = (
+                model_kwargs["attention_mask"][b].unsqueeze(0).to(self.rbln_config.dtype)
+            )
             model_kwargs["encoder_outputs"] = encoder(**encoder_kwargs, block_tables=block_tables)
 
         return model_kwargs

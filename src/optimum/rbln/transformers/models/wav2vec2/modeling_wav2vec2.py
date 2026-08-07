@@ -50,8 +50,8 @@ class RBLNWav2Vec2ForCTC(RBLNModel):
 
     main_input_name = "input_values"
     auto_model_class = AutoModelForCTC
-    rbln_dtype = "float32"
     _output_class = CausalLMOutput
+    _supports_non_fp32 = True
 
     @classmethod
     def _wrap_model_if_needed(cls, model: torch.nn.Module, rbln_config: RBLNWav2Vec2ForCTCConfig) -> torch.nn.Module:
@@ -81,7 +81,7 @@ class RBLNWav2Vec2ForCTC(RBLNModel):
                         rbln_config.batch_size,
                         rbln_config.max_seq_len,
                     ],
-                    "float32",
+                    rbln_config.dtype,
                 )
             ]
         )

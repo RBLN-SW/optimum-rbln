@@ -76,6 +76,7 @@ class LoopProjector(LoopProcessor):
 
 class RBLNGemma3ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMixin):
     auto_model_class = AutoModelForImageTextToText
+    _supports_non_fp32 = True
     _rbln_submodules = [
         {"name": "vision_tower"},
         {"name": "language_model"},
@@ -142,7 +143,7 @@ class RBLNGemma3ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMix
         image_feature_dim = (model_config.vision_config.image_size // model_config.vision_config.patch_size) ** 2
         feature_size = model_config.vision_config.hidden_size
 
-        input_info = [("image_features", [rbln_config.batch_size, image_feature_dim, feature_size], "float32")]
+        input_info = [("image_features", [rbln_config.batch_size, image_feature_dim, feature_size], rbln_config.dtype)]
         rbln_compile_config = RBLNCompileConfig(input_info=input_info)
         rbln_config.set_compile_cfgs([rbln_compile_config])
         return rbln_config
@@ -217,10 +218,12 @@ class RBLNGemma3ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMix
             self.config.mm_tokens_per_image,
             self.config.text_config.hidden_size,
         ]
-        vision_out_buffer.append(torch.empty(size=vision_out_size, dtype=torch.float32, device="cpu"))
-        projector_out_buffer = [torch.empty(size=projector_out_size, dtype=torch.float32, device="cpu")]
+        vision_out_buffer.append(torch.empty(size=vision_out_size, dtype=self.rbln_config.vision_tower.dtype, device="cpu"))
+        projector_out_buffer = [torch.empty(size=projector_out_size, dtype=self.rbln_config.dtype, device="cpu")]
         vision_outputs = self.vision_tower(pixel_values, out=vision_out_buffer).last_hidden_state
-        image_features = self.multi_modal_projector(vision_outputs, out=projector_out_buffer)
+        image_features = self.multi_modal_projector(
+            vision_outputs.to(self.rbln_config.dtype), out=projector_out_buffer
+        )
         return image_features
 
     def _preprocess_prefill(
@@ -362,11 +365,13 @@ class RBLNGemma3ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
     """
 
     _decoder_wrapper_cls = Gemma3ForCausalLMWrapper
-    _supports_non_fp32 = False
+    _supports_non_fp32 = True
 
     def setup_runtime(self):
         # Initialize shared resources to be used across Runtime instances (prefill and decode phases)
-        dec_attn_mask = torch.zeros(self.rbln_config.batch_size, self.rbln_config.max_seq_len, dtype=torch.float32)
+        dec_attn_mask = torch.zeros(
+            self.rbln_config.batch_size, self.rbln_config.max_seq_len, dtype=self.rbln_config.dtype
+        )
         page_table_manager = RBLNPageTableManager(self.rbln_config)
 
         common_kwargs = {

@@ -40,6 +40,7 @@ class RBLNASTForAudioClassification(RBLNModel):
     """
 
     auto_model_class = AutoModelForAudioClassification
+    _supports_non_fp32 = True
 
     @classmethod
     def _update_rbln_config(
@@ -65,7 +66,7 @@ class RBLNASTForAudioClassification(RBLNModel):
             (
                 "input_values",
                 [rbln_config.batch_size, rbln_config.max_length, num_mel_bins],
-                "float32",
+                rbln_config.dtype,
             ),
         ]
 

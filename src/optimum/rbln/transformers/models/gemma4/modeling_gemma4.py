@@ -676,6 +676,35 @@ class RBLNGemma4ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMix
         )
         super().__post_init__(**kwargs)
 
+    @property
+    def compiled_image_features_dtype(self) -> torch.dtype:
+        # `embed_vision`'s `image_features` input follows `rbln_config.dtype`; that is the basis going
+        # forward. An artifact compiled before that was true has a different `image_features` dtype baked
+        # into its graph, so read the dtype back from the saved compile config and feed the graph what it
+        # was actually compiled with. That keeps such artifacts loading and running instead of failing on
+        # a buffer/graph dtype mismatch, so it only ever warns -- raising would break the case it exists
+        # to support.
+        #
+        # Once optimum-rbln reaches 0.12.0 this is deleted outright:
+        #   1. Delete this property.
+        #   2. In `get_image_features`, replace both uses of `self.compiled_image_features_dtype`
+        #      with `self.rbln_config.dtype`.
+        compile_cfg = self.rbln_config.compile_cfgs[0]
+        input_info = compile_cfg.input_info[0] if compile_cfg.is_multiple_input_info else compile_cfg.input_info
+        compiled_dtype = getattr(torch, next(item[2] for item in input_info if item[0] == "image_features"))
+
+        if compiled_dtype != self.rbln_config.dtype:
+            logger.warning_once(
+                f"This artifact's `embed_vision` was compiled with `image_features` dtype "
+                f"`{compiled_dtype}`, which differs from the current `rbln_config.dtype` "
+                f"(`{self.rbln_config.dtype}`). `image_features` is being fed at the compiled dtype so "
+                "this artifact keeps working; recompile it so `embed_vision` picks up the current "
+                "`rbln_config.dtype`. Support for artifacts whose `embed_vision` compiled "
+                "`image_features` dtype differs from `rbln_config.dtype` is deprecated and will be "
+                "removed in version 0.12.0."
+            )
+        return compiled_dtype
+
     def get_attn_impl(self) -> str:
         return self.rbln_config.language_model.attn_impl
 
@@ -712,7 +741,7 @@ class RBLNGemma4ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMix
         input_infos = []
         for max_soft_tokens in max_soft_tokens_list:
             input_info = [
-                ("image_features", [1, max_soft_tokens, vision_hidden_size], "float32"),
+                ("image_features", [1, max_soft_tokens, vision_hidden_size], rbln_config.dtype),
             ]
             input_infos.append(input_info)
         compile_cfgs = RBLNCompileConfig(input_info=input_infos)
@@ -815,10 +844,14 @@ class RBLNGemma4ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMix
             torch.empty(size=vision_out_0_size, dtype=self.rbln_config.vision_tower.dtype, device="cpu"),
             torch.empty(size=vision_out_1_size, dtype=torch.bool, device="cpu"),
         ]
-        projector_out_buffer = [torch.empty(size=projector_out_size, dtype=torch.float32, device="cpu")]
+        projector_out_buffer = [
+            torch.empty(size=projector_out_size, dtype=self.compiled_image_features_dtype, device="cpu")
+        ]
 
         vision_outputs = self.vision_tower(pixel_values, pixel_position_ids, out=vision_out_buffer)
-        pooler_output = self.embed_vision(vision_outputs.last_hidden_state.float(), out=projector_out_buffer)
+        pooler_output = self.embed_vision(
+            vision_outputs.last_hidden_state.to(self.compiled_image_features_dtype), out=projector_out_buffer
+        )
         pooler_output = pooler_output[vision_outputs.pooler_mask]
         return pooler_output
 

@@ -352,7 +352,10 @@ class _GroundingDinoEncoderLayer(torch.nn.Module):
         (text_features, text_enhanced_attn) = self.text_enhancer_layer(
             hidden_states=text_features,
             attention_masks=(1.0 - text_self_attention_masks),  # RBLN FIX, change from ~ to 1.0 -
-            position_embeddings=(text_position_embedding if text_position_embedding is not None else None),
+            # RBLN FIX: `get_sine_pos_embed` fixes `dim_t` at fp32, so this table is fp32 whatever went in.
+            position_embeddings=(
+                text_position_embedding.to(text_features.dtype) if text_position_embedding is not None else None
+            ),
         )
 
         (vision_features, vision_deformable_attn) = self.deformable_layer(

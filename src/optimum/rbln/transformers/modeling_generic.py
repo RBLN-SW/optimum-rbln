@@ -57,6 +57,7 @@ class RBLNTransformerEncoder(RBLNModel):
     auto_model_class = AutoModel
     rbln_model_input_names = ["input_ids", "attention_mask", "token_type_ids"]
     rbln_dtype = "int64"
+    _supports_non_fp32 = True
 
     @classmethod
     def _wrap_model_if_needed(cls, model: "PreTrainedModel", rbln_config: RBLNTransformerEncoderConfig) -> nn.Module:
@@ -82,13 +83,15 @@ class RBLNTransformerEncoder(RBLNModel):
                 if "attention_mask" in input_names:
                     idx = input_names.index("attention_mask")
                     if idx < len(args) and args[idx] is not None and args[idx].dim() == 2:
-                        args[idx] = _prepare_4d_attention_mask(args[idx], torch.float32)
+                        args[idx] = _prepare_4d_attention_mask(args[idx], self.rbln_config.dtype)
                 if (
                     "attention_mask" in kwargs
                     and kwargs["attention_mask"] is not None
                     and kwargs["attention_mask"].dim() == 2
                 ):
-                    kwargs["attention_mask"] = _prepare_4d_attention_mask(kwargs["attention_mask"], torch.float32)
+                    kwargs["attention_mask"] = _prepare_4d_attention_mask(
+                        kwargs["attention_mask"], self.rbln_config.dtype
+                    )
 
                 return self.model(*args, **kwargs)
 
@@ -229,6 +232,7 @@ class RBLNImageModel(RBLNModel):
     auto_model_class = AutoModel
     main_input_name = "pixel_values"
     output_class = BaseModelOutput
+    _supports_non_fp32 = True
 
     @classmethod
     def _update_rbln_config(
@@ -274,7 +278,7 @@ class RBLNImageModel(RBLNModel):
             (
                 cls.main_input_name,
                 [rbln_config.batch_size, 3, rbln_config.image_height, rbln_config.image_width],
-                "float32",
+                rbln_config.dtype,
             )
         ]
 

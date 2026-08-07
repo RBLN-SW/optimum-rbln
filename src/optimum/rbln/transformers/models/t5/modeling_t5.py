@@ -34,18 +34,20 @@ if TYPE_CHECKING:
 
 
 class T5EncoderWrapper(torch.nn.Module):
-    def __init__(self, model: "T5EncoderModel") -> None:
+    def __init__(self, model: "T5EncoderModel", rbln_config: "RBLNT5EncoderModelConfig") -> None:
         super().__init__()
         self.model = model
+        self.rbln_config = rbln_config
 
     def forward(self, *args, **kwargs):
         kwargs.pop("return_dict", None)
         # TODO: make this to use `create_bidirectional_mask` in transformers v5
         args = list(args)
+        mask_dtype = self.rbln_config.dtype
         if len(args) > 1 and torch.is_tensor(args[1]) and args[1].dim() == 2:
-            args[1] = _prepare_4d_attention_mask(args[1], torch.float32)
+            args[1] = _prepare_4d_attention_mask(args[1], mask_dtype)
         if "attention_mask" in kwargs and kwargs["attention_mask"] is not None and kwargs["attention_mask"].dim() == 2:
-            kwargs["attention_mask"] = _prepare_4d_attention_mask(kwargs["attention_mask"], torch.float32)
+            kwargs["attention_mask"] = _prepare_4d_attention_mask(kwargs["attention_mask"], mask_dtype)
         return self.model(*args, **kwargs, return_dict=False)
 
 
@@ -77,7 +79,7 @@ class RBLNT5EncoderModel(RBLNTransformerEncoderForFeatureExtraction):
 
     @classmethod
     def _wrap_model_if_needed(self, model: "PreTrainedModel", rbln_config: RBLNT5EncoderModelConfig):
-        return T5EncoderWrapper(model)
+        return T5EncoderWrapper(model, rbln_config)
 
     @classmethod
     def update_rbln_config_using_pipe(

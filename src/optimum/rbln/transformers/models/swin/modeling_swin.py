@@ -198,6 +198,8 @@ class _SwinBackbone(torch.nn.Module):
 
 
 class RBLNSwinBackbone(RBLNModel):
+    _supports_non_fp32 = True
+
     @classmethod
     def _wrap_model_if_needed(cls, model: torch.nn.Module, rbln_config: RBLNSwinBackboneConfig) -> torch.nn.Module:
         for layer in model.encoder.layers:
@@ -259,7 +261,7 @@ class RBLNSwinBackbone(RBLNModel):
                     rbln_config.image_height,
                     rbln_config.image_width,
                 ],
-                "float32",
+                rbln_config.dtype,
             ),
         ]
 
