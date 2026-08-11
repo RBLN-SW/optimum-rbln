@@ -142,8 +142,12 @@ class RBLNUNetSpatioTemporalConditionModel(RBLNModel):
                 ],
                 rbln_config.dtype,
             ),
-            ("timestep", [], rbln_config.dtype),
-            ("encoder_hidden_states", [rbln_config.batch_size, 1, model_config.cross_attention_dim], rbln_config.dtype),
+            ("timestep", [], "float32"),
+            (
+                "encoder_hidden_states",
+                [rbln_config.batch_size, 1, model_config.cross_attention_dim],
+                rbln_config.dtype,
+            ),
             ("added_time_ids", [rbln_config.batch_size, 3], rbln_config.dtype),
         ]
 
@@ -192,10 +196,11 @@ class RBLNUNetSpatioTemporalConditionModel(RBLNModel):
                 "Adjust the batch size during compilation or modify the 'guidance scale' to match the compiled batch size.\n\n"
                 "For details, see: https://docs.rbln.ai/software/optimum/model_api.html#stable-diffusion"
             )
+        dtype = self.rbln_config.dtype
         return super().forward(
-            sample.contiguous(),
+            sample.contiguous().to(dtype),
             timestep.float(),
-            encoder_hidden_states,
-            added_time_ids,
+            encoder_hidden_states.to(dtype),
+            added_time_ids.to(dtype),
             return_dict=return_dict,
         )

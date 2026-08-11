@@ -101,6 +101,16 @@ class RBLNVQModel(RBLNModel):
         model_config: "PretrainedConfig",
         rbln_config: RBLNVQModelConfig,
     ) -> RBLNVQModelConfig:
+        if getattr(model_config, "force_upcast", False) and rbln_config.dtype != torch.float32:
+            logger.warning(
+                f"This VQModel's checkpoint is {rbln_config.dtype}, but its config sets `force_upcast=True`, so the "
+                "graph is compiled at float32 -- such a checkpoint is upcast around encode/decode for numerical "
+                f"stability, and a compiled graph cannot be moved afterwards. The rest of the pipeline still runs at "
+                f"{rbln_config.dtype}. Set `force_upcast=False` on the config to compile it at the checkpoint dtype "
+                "instead."
+            )
+            rbln_config.dtype = torch.float32
+
         if hasattr(model_config, "block_out_channels"):
             rbln_config.vqmodel_scale_factor = 2 ** (len(model_config.block_out_channels) - 1)
         else:
@@ -185,7 +195,7 @@ class RBLNVQModel(RBLNModel):
         Returns:
             The quantized latent representation or a specific output object.
         """
-        posterior = self.encoder.encode(x)
+        posterior = self.encoder.encode(x.to(self.rbln_config.dtype))
         if not return_dict:
             return (posterior,)
         return VQEncoderOutput(latents=posterior)
@@ -205,7 +215,7 @@ class RBLNVQModel(RBLNModel):
         Returns:
             The decoded image or a DecoderOutput object.
         """
-        dec, commit_loss = self.decoder.decode(h, **kwargs)
+        dec, commit_loss = self.decoder.decode(h.to(self.rbln_config.dtype), **kwargs)
         if not return_dict:
             return (dec, commit_loss)
         return DecoderOutput(sample=dec, commit_loss=commit_loss)

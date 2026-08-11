@@ -263,8 +263,8 @@ class RBLNCosmosTransformer3DModel(RBLNModel):
             ),
             ("embedded_timestep", [rbln_config.batch_size, hidden_size], rbln_config.dtype),
             ("temb", [1, hidden_size * 3], rbln_config.dtype),
-            ("image_rotary_emb_0", [hidden_dim, attention_head_dim], rbln_config.dtype),
-            ("image_rotary_emb_1", [hidden_dim, attention_head_dim], rbln_config.dtype),
+            ("image_rotary_emb_0", [hidden_dim, attention_head_dim], "float32"),
+            ("image_rotary_emb_1", [hidden_dim, attention_head_dim], "float32"),
             ("extra_pos_emb", [rbln_config.batch_size, hidden_dim, hidden_size], rbln_config.dtype),
         ]
 
@@ -328,14 +328,15 @@ class RBLNCosmosTransformer3DModel(RBLNModel):
             attention_mask,
         ) = self.compute_embedding(hidden_states, timestep, attention_mask, fps, condition_mask, padding_mask)
 
+        dtype = self.rbln_config.dtype
         hidden_states = self.model[0].forward(
-            hidden_states,
-            encoder_hidden_states,
-            embedded_timestep,
-            temb,
-            image_rotary_emb_0,
-            image_rotary_emb_1,
-            extra_pos_emb,
+            hidden_states.to(dtype),
+            encoder_hidden_states.to(dtype),
+            embedded_timestep.to(dtype),
+            temb.to(dtype),
+            image_rotary_emb_0.float(),
+            image_rotary_emb_1.float(),
+            extra_pos_emb.to(dtype) if extra_pos_emb is not None else None,
         )
 
         if not return_dict:

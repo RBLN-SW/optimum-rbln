@@ -163,6 +163,16 @@ class RBLNAutoencoderKLTemporalDecoder(RBLNModel):
         model_config: "PretrainedConfig",
         rbln_config: RBLNAutoencoderKLTemporalDecoderConfig,
     ) -> RBLNAutoencoderKLTemporalDecoderConfig:
+        if getattr(model_config, "force_upcast", False) and rbln_config.dtype != torch.float32:
+            logger.warning(
+                f"This VAE's checkpoint is {rbln_config.dtype}, but its config sets `force_upcast=True`, so the "
+                "graph is compiled at float32 -- upstream pipelines upcast such a VAE around encode/decode for "
+                "numerical stability, and a compiled graph cannot be moved afterwards. The rest of the pipeline "
+                f"still runs at {rbln_config.dtype}. Set `force_upcast=False` on the VAE config to compile it at "
+                "the checkpoint dtype instead."
+            )
+            rbln_config.dtype = torch.float32
+
         if rbln_config.sample_size is None:
             rbln_config.sample_size = model_config.sample_size
 
@@ -248,7 +258,7 @@ class RBLNAutoencoderKLTemporalDecoder(RBLNModel):
         Returns:
             The latent representation or AutoencoderKLOutput if return_dict=True
         """
-        posterior = self.encoder.encode(x)
+        posterior = self.encoder.encode(x.to(self.rbln_config.dtype))
 
         if not return_dict:
             return (posterior,)
@@ -267,7 +277,7 @@ class RBLNAutoencoderKLTemporalDecoder(RBLNModel):
         Returns:
             The decoded video or DecoderOutput if return_dict=True
         """
-        decoded = self.decoder.decode(z)
+        decoded = self.decoder.decode(z.to(self.rbln_config.dtype))
 
         if not return_dict:
             return (decoded,)

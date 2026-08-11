@@ -265,7 +265,7 @@ class RBLNUNet2DConditionModel(RBLNModel):
                 ],
                 rbln_config.dtype,
             ),
-            ("timestep", [], rbln_config.dtype),
+            ("timestep", [], "float32"),
         ]
 
         if rbln_config.max_seq_len is not None:
@@ -377,32 +377,35 @@ class RBLNUNet2DConditionModel(RBLNModel):
                 "For details, see: https://docs.rbln.ai/software/optimum/model_api/diffusers/pipelines/stable_diffusion.html#important-batch-size-configuration-for-guidance-scale"
             )
 
-        added_cond_kwargs = {} if added_cond_kwargs is None else added_cond_kwargs
+        dtype = self.rbln_config.dtype
+        added_cond_kwargs = (
+            {} if added_cond_kwargs is None else {name: tensor.to(dtype) for name, tensor in added_cond_kwargs.items()}
+        )
 
         if down_block_additional_residuals is not None:
-            down_block_additional_residuals = [t.contiguous() for t in down_block_additional_residuals]
+            down_block_additional_residuals = [t.contiguous().to(dtype) for t in down_block_additional_residuals]
             return super().forward(
-                sample.contiguous(),
+                sample.contiguous().to(dtype),
                 timestep.float(),
-                encoder_hidden_states,
+                encoder_hidden_states.to(dtype),
                 *down_block_additional_residuals,
-                mid_block_additional_residual,
+                mid_block_additional_residual.to(dtype) if mid_block_additional_residual is not None else None,
                 **added_cond_kwargs,
                 return_dict=return_dict,
             )
 
         if "image_embeds" in added_cond_kwargs:
             return super().forward(
-                sample.contiguous(),
+                sample.contiguous().to(dtype),
                 timestep.float(),
                 **added_cond_kwargs,
                 return_dict=return_dict,
             )
 
         return super().forward(
-            sample.contiguous(),
+            sample.contiguous().to(dtype),
             timestep.float(),
-            encoder_hidden_states,
+            encoder_hidden_states.to(dtype),
             **added_cond_kwargs,
             return_dict=return_dict,
         )

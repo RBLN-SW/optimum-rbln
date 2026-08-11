@@ -220,7 +220,7 @@ class RBLNAutoencoderKLCosmos(RBLNModel):
         Returns:
             The latent representation or AutoencoderKLOutput if return_dict=True
         """
-        posterior = self.encoder.encode(x)
+        posterior = self.encoder.encode(x.to(self.rbln_config.dtype))
         if not return_dict:
             return (posterior,)
         return AutoencoderKLOutput(latent_dist=posterior)
@@ -237,7 +237,7 @@ class RBLNAutoencoderKLCosmos(RBLNModel):
         Returns:
             The decoded video or DecoderOutput if return_dict=True
         """
-        decoded = self.decoder.decode(z)
+        decoded = self.decoder.decode(z.to(self.rbln_config.dtype))
 
         if not return_dict:
             return (decoded,)

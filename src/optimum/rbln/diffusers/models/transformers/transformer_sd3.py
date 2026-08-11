@@ -139,7 +139,7 @@ class RBLNSD3Transformer2DModel(RBLNModel):
                 ],
                 rbln_config.dtype,
             ),
-            ("timestep", [rbln_config.batch_size], rbln_config.dtype),
+            ("timestep", [rbln_config.batch_size], "float32"),
         ]
 
         compile_config = RBLNCompileConfig(input_info=input_info)
@@ -186,6 +186,11 @@ class RBLNSD3Transformer2DModel(RBLNModel):
                 "For details, see: https://docs.rbln.ai/software/optimum/model_api/diffusers/pipelines/stable_diffusion_3.html#important-batch-size-configuration-for-guidance-scale"
             )
 
+        dtype = self.rbln_config.dtype
         return super().forward(
-            hidden_states, encoder_hidden_states, pooled_projections, timestep, return_dict=return_dict
+            hidden_states.to(dtype),
+            encoder_hidden_states.to(dtype),
+            pooled_projections.to(dtype),
+            timestep.float(),
+            return_dict=return_dict,
         )

@@ -265,7 +265,7 @@ class RBLNCLIPVisionModel(RBLNModel):
                 f"Please compile again with the correct argument."
             )
 
-        output = super().forward(pixel_values, return_dict=return_dict)
+        output = super().forward(pixel_values.to(self.rbln_config.dtype), return_dict=return_dict)
         return output
 
     def _prepare_output(self, output, return_dict):
