@@ -118,7 +118,7 @@ class RBLNVQModel(RBLNModel):
                         rbln_config.sample_size[0],
                         rbln_config.sample_size[1],
                     ],
-                    "float32",
+                    rbln_config.dtype,
                 )
             ]
             enc_rbln_compile_config = RBLNCompileConfig(compiled_model_name="encoder", input_info=enc_input_info)
@@ -133,7 +133,7 @@ class RBLNVQModel(RBLNModel):
                     rbln_config.latent_sample_size[0],
                     rbln_config.latent_sample_size[1],
                 ],
-                "float32",
+                rbln_config.dtype,
             )
         ]
         dec_rbln_compile_config = RBLNCompileConfig(compiled_model_name="decoder", input_info=dec_input_info)

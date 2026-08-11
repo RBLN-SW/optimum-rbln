@@ -263,9 +263,9 @@ class RBLNUNet2DConditionModel(RBLNModel):
                     rbln_config.sample_size[0],
                     rbln_config.sample_size[1],
                 ],
-                "float32",
+                rbln_config.dtype,
             ),
-            ("timestep", [], "float32"),
+            ("timestep", [], rbln_config.dtype),
         ]
 
         if rbln_config.max_seq_len is not None:
@@ -273,7 +273,7 @@ class RBLNUNet2DConditionModel(RBLNModel):
                 (
                     "encoder_hidden_states",
                     [rbln_config.batch_size, rbln_config.max_seq_len, model_config.cross_attention_dim],
-                    "float32",
+                    rbln_config.dtype,
                 ),
             )
 
@@ -286,18 +286,18 @@ class RBLNUNet2DConditionModel(RBLNModel):
                 rbln_config.sample_size[1],
             ]
             height, width = rbln_config.sample_size[0], rbln_config.sample_size[1]
-            input_info.append(("down_block_additional_residuals_0", first_shape, "float32"))
+            input_info.append(("down_block_additional_residuals_0", first_shape, rbln_config.dtype))
             name_idx = 1
             for idx, _ in enumerate(model_config.down_block_types):
                 shape = [rbln_config.batch_size, model_config.block_out_channels[idx], height, width]
                 for _ in range(model_config.layers_per_block):
-                    input_info.append((f"down_block_additional_residuals_{name_idx}", shape, "float32"))
+                    input_info.append((f"down_block_additional_residuals_{name_idx}", shape, rbln_config.dtype))
                     name_idx += 1
                 if idx != len(model_config.down_block_types) - 1:
                     height = height // 2
                     width = width // 2
                     shape = [rbln_config.batch_size, model_config.block_out_channels[idx], height, width]
-                    input_info.append((f"down_block_additional_residuals_{name_idx}", shape, "float32"))
+                    input_info.append((f"down_block_additional_residuals_{name_idx}", shape, rbln_config.dtype))
                     name_idx += 1
 
             # mid block addtional residual
@@ -309,18 +309,18 @@ class RBLNUNet2DConditionModel(RBLNModel):
                 rbln_config.sample_size[0] // 2**num_cross_attn_blocks,
                 rbln_config.sample_size[1] // 2**num_cross_attn_blocks,
             ]
-            input_info.append(("mid_block_additional_residual", shape, "float32"))
+            input_info.append(("mid_block_additional_residual", shape, rbln_config.dtype))
 
         if hasattr(model_config, "addition_embed_type"):
             if model_config.addition_embed_type == "text_time":
                 rbln_config.in_features = model_config.projection_class_embeddings_input_dim
                 input_info.append(
-                    ("text_embeds", [rbln_config.batch_size, rbln_config.text_model_hidden_size], "float32")
+                    ("text_embeds", [rbln_config.batch_size, rbln_config.text_model_hidden_size], rbln_config.dtype)
                 )
-                input_info.append(("time_ids", [rbln_config.batch_size, 6], "float32"))
+                input_info.append(("time_ids", [rbln_config.batch_size, 6], rbln_config.dtype))
             elif model_config.addition_embed_type == "image":
                 input_info.append(
-                    ("image_embeds", [rbln_config.batch_size, rbln_config.image_model_hidden_size], "float32")
+                    ("image_embeds", [rbln_config.batch_size, rbln_config.image_model_hidden_size], rbln_config.dtype)
                 )
 
         rbln_compile_config = RBLNCompileConfig(input_info=input_info)

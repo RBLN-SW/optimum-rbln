@@ -151,7 +151,7 @@ class RBLNAutoencoderKLCosmos(RBLNModel):
                         rbln_config.height,
                         rbln_config.width,
                     ],
-                    "float32",
+                    rbln_config.dtype,
                 ),
             ]
             compile_cfgs.append(RBLNCompileConfig(compiled_model_name="encoder", input_info=vae_enc_input_info))
@@ -170,7 +170,7 @@ class RBLNAutoencoderKLCosmos(RBLNModel):
                     latent_height,
                     latent_width,
                 ],
-                "float32",
+                rbln_config.dtype,
             ),
         ]
         compile_cfgs.append(RBLNCompileConfig(compiled_model_name="decoder", input_info=vae_dec_input_info))
