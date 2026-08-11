@@ -15,6 +15,7 @@
 from typing import Any, Literal, get_args
 
 from ....configuration_utils import RBLNModelConfig
+from ....utils.deprecation import deprecate_kwarg
 from ....utils.logging import get_logger
 from ...cache_utils import CacheMeta
 from ...utils.rbln_quantization import RBLNQuantizationConfig
@@ -40,6 +41,7 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
     _default_logits_to_keep = 0
     subclass_non_save_attributes = ["memory_budget"]
 
+    @deprecate_kwarg(old_name="kvcache_metas", new_name="cache_metas", version="0.12.0")
     def __init__(
         self,
         batch_size: int | None = None,
@@ -62,7 +64,7 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
         phases: list[PhaseType] | None = None,
         logits_to_keep: int | None = None,
         output_hidden_states: bool | None = None,
-        kvcache_metas: list["CacheMeta"] | None = None,
+        cache_metas: list["CacheMeta"] | None = None,
         **kwargs: Any,
     ):
         """
@@ -125,7 +127,7 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
             logits_to_keep (int | None): The number of logits to keep for the decoder.  If set to 0, the decoder will keep all logits.
                 Defaults to 0 if DecoderOnlyModel is used, 1 if DecoderOnlyModelForCausalLM is used.
             output_hidden_states (bool | None): Whether to output the hidden states of the decoder. Defaults to False.
-            kvcache_metas (list["CacheMeta"] | None): The metadata for the cache tensors. Handled internally if not provided. Defaults to None.
+            cache_metas (list["CacheMeta"] | None): The metadata for the cache tensors. Handled internally if not provided. Defaults to None.
             kwargs: Additional arguments passed to the parent RBLNModelConfig.
 
         Raises:
@@ -272,7 +274,7 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
                 # Larger batch size should be at the beginning of the list.
                 self.decoder_batch_sizes.sort(reverse=True)
 
-        self.kvcache_metas: list[CacheMeta] = kvcache_metas or []
+        self.cache_metas: list[CacheMeta] = cache_metas or []
 
     @staticmethod
     def validate_phases_type(phases: list[PhaseType]):

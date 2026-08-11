@@ -397,12 +397,12 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
         if rbln_config.use_lora:
             input_info.append(("lora_int_ids", [batch_size], "int32"))
 
-        if len(rbln_config.kvcache_metas) > 0:
+        if len(rbln_config.cache_metas) > 0:
             # Meta is already set, use it
             input_info.extend(
                 [
-                    (kvcache_meta.name, kvcache_meta.compile_shape, kvcache_meta.dtype)
-                    for kvcache_meta in rbln_config.kvcache_metas
+                    (cache_meta.name, cache_meta.compile_shape, cache_meta.dtype)
+                    for cache_meta in rbln_config.cache_metas
                 ]
             )
 
@@ -412,24 +412,24 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
                 kvcache_dtype = "float8_e4m3fn"
 
             kvcache_dtype = RBLNCompileConfig.normalize_dtype(kvcache_dtype)
-            kvcache_metas = []
+            cache_metas = []
             for i in range(num_hidden_layers * 2):
                 layer_idx = i // 2
                 name = f"past_key_values_{i}"
                 # Pick the concrete meta by the layer's cache kind (linear layers are handled by model
-                # subclasses that pre-populate kvcache_metas, so here it's sliding-window vs full).
+                # subclasses that pre-populate cache_metas, so here it's sliding-window vs full).
                 if rbln_config.sliding_window is not None and layer_idx in rbln_config.sliding_window_layers:
-                    kvcache_meta = SlidingWindowKVCacheMeta.from_config(
+                    cache_meta = SlidingWindowKVCacheMeta.from_config(
                         name, layer_idx, num_key_value_heads, head_dim, kvcache_dtype, rbln_config
                     )
                 else:
-                    kvcache_meta = FullAttentionKVCacheMeta.from_config(
+                    cache_meta = FullAttentionKVCacheMeta.from_config(
                         name, layer_idx, num_key_value_heads, head_dim, kvcache_dtype, rbln_config
                     )
-                kvcache_metas.append(kvcache_meta)
-                input_info.append((name, kvcache_meta.compile_shape, kvcache_meta.dtype))
+                cache_metas.append(cache_meta)
+                input_info.append((name, cache_meta.compile_shape, cache_meta.dtype))
 
-            rbln_config.kvcache_metas.extend(kvcache_metas)
+            rbln_config.cache_metas.extend(cache_metas)
 
         return input_info
 
