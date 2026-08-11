@@ -55,8 +55,6 @@ class CacheMeta(RBLNSerializableConfigProtocol):
     layer_type: ClassVar[str] = "cache"
 
     def _prepare_for_serialization(self) -> dict[str, Any]:
-        # Emit the historical schema so serialized rbln_config.json stays consistent across cache types
-        # and with older artifacts. ``is_auto`` only exists on the full-attention subclass.
         return {
             "name": self.name,
             "layer_index": self.layer_index,

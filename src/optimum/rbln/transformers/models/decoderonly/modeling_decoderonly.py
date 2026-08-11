@@ -416,8 +416,6 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
             for i in range(num_hidden_layers * 2):
                 layer_idx = i // 2
                 name = f"past_key_values_{i}"
-                # Pick the concrete meta by the layer's cache kind (linear layers are handled by model
-                # subclasses that pre-populate cache_metas, so here it's sliding-window vs full).
                 if rbln_config.sliding_window is not None and layer_idx in rbln_config.sliding_window_layers:
                     cache_meta = SlidingWindowKVCacheMeta.from_config(
                         name, layer_idx, num_key_value_heads, head_dim, kvcache_dtype, rbln_config
