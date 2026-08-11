@@ -1,4 +1,4 @@
-# Copyright 2025 Rebellions Inc. All rights reserved.
+# Copyright 2026 Rebellions Inc. All rights reserved.
 
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,23 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Metadata classes describing the on-device caches of a decoder-only model.
-
-Analogous to Transformers' ``cache_utils`` (which keeps ``DynamicCache`` / sliding-window /
-linear-attention layers as distinct types), this module holds a small polymorphic hierarchy:
-
-    CacheMeta                     # base: name, layer_index, shape, dtype; serialization
-    ├─ KVCacheMeta                # paged KV: [num_blocks, num_heads, block_size, head_dim]
-    │   ├─ FullAttentionKVCacheMeta      # resizable when is_auto (grown after compile)
-    │   └─ SlidingWindowKVCacheMeta      # fixed-size window
-    └─ LinearAttentionCacheMeta   # conv/recurrent state; raw model-computed shape, never resized
-
-Each subclass owns its ``can_resize`` / ``compile_shape`` and a class-level ``layer_type`` tag, so
-the previous single-dataclass-with-a-``layer_type``-string design (and its magic-string ``can_resize``)
-is gone. Instances are built through the ``make()`` dispatcher / the subclass ``from_config()``
-factories, which compute the derived ``shape`` and construct the meta.
-"""
-
+from abc import abstractmethod
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, ClassVar
 
@@ -42,21 +26,23 @@ if TYPE_CHECKING:
 @dataclass
 class CacheMeta(RBLNSerializableConfigProtocol):
     """
-    Base metadata describing a decoder cache tensor for one transformer layer.
+    Base metadata describing a decoder cache tensor for one transformer layer, and the root of a small
+    polymorphic hierarchy. Concrete subclasses distinguish the cache algorithm:
 
-    Concrete subclasses distinguish the cache algorithm (full/sliding-window paged KV, linear
-    attention state). Each subclass owns its ``can_resize`` / ``compile_shape`` semantics and a
-    class-level ``layer_type`` tag; that avoids the previous single-dataclass-with-a-``layer_type``
-    -string design.
+        CacheMeta
+        ├─ KVCacheMeta                # paged KV: [num_blocks, num_heads, block_size, head_dim]
+        │   ├─ FullAttentionKVCacheMeta      # resizable when is_auto (grown after compile)
+        │   └─ SlidingWindowKVCacheMeta      # fixed-size window
+        └─ LinearAttentionCacheMeta   # conv/recurrent state; raw model-computed shape, never resized
 
-    Instances are created through the ``make()`` dispatcher / the subclass ``from_config()`` factories,
-    which compute the derived ``shape`` and construct the meta; the dataclass constructor is just the
-    low-level mechanism those factories call.
+    Each subclass owns its ``can_resize`` / ``compile_shape`` and a class-level ``layer_type`` tag. 
+    ``CacheMeta`` / ``KVCacheMeta`` are abstract; instances are built through the
+    subclass ``from_config()`` factories, which compute the derived ``shape`` and construct the meta.
 
     Attributes:
         name (str): Logical name of the cache tensor.
         layer_index (int): Index of the transformer layer this cache belongs to.
-        shape (list[int]): Final tensor shape stored by the factory.
+        shape (list[int]): Derived tensor shape computed by the factory.
         dtype (str): Data type of the cache buffer ("float16", "float32", ...).
     """
 
@@ -87,6 +73,14 @@ class CacheMeta(RBLNSerializableConfigProtocol):
     @property
     def compile_shape(self) -> list[int]:
         return self.shape
+
+    @classmethod
+    @abstractmethod
+    def from_config(cls, *args, **kwargs) -> "CacheMeta":
+        # Construction entry point. Concrete subclasses define the real signature (paged KV takes
+        # num_key_value_heads/head_dim/rbln_config; linear takes a raw shape) and compute the derived
+        # shape.
+        ...
 
 
 @dataclass
@@ -183,5 +177,5 @@ class LinearAttentionCacheMeta(CacheMeta):
     layer_type: ClassVar[str] = "linear_attention"
 
     @classmethod
-    def from_config(cls, name: str, layer_index: int, *, shape: list[int], dtype: str) -> "LinearAttentionCacheMeta":
+    def from_config(cls, name: str, layer_index: int, shape: list[int], dtype: str) -> "LinearAttentionCacheMeta":
         return cls(name=name, layer_index=layer_index, shape=shape, dtype=dtype)
