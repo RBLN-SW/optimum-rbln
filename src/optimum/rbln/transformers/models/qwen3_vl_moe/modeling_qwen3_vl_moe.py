@@ -130,6 +130,5 @@ class RBLNQwen3VLMoeModel(RBLNQwen3VLModel):
 class RBLNQwen3VLMoeForConditionalGeneration(RBLNQwen3VLForConditionalGeneration):
     auto_model_class = AutoModelForImageTextToText
     _decoder_wrapper_cls = Qwen3VLMoe_LanguageModelWrapper
-    _supports_non_fp32 = True
     _use_rotary_emb = False
     _rbln_submodules = [{"name": "visual"}]

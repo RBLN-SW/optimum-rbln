@@ -83,7 +83,6 @@ class RBLNRuntimeVisionModel(RBLNPytorchRuntime):
 
 class RBLNIdefics3VisionTransformer(RBLNModel):
     _tp_support = False
-    _supports_non_fp32 = True
 
     def __post_init__(self, **kwargs):
         artifacts = torch.load(self.model_save_dir / self.subfolder / "torch_artifacts.pth", weights_only=False)
@@ -226,7 +225,6 @@ class RBLNIdefics3ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationM
     """
 
     auto_model_class = AutoModelForImageTextToText
-    _supports_non_fp32 = True
     _rbln_submodules = [{"name": "vision_model"}, {"name": "text_model"}]
     _rbln_submodule_prefix = "model"
 

@@ -120,7 +120,6 @@ class RBLNModelForSeq2SeqLM(RBLNModel, GenerationMixin, ABC):
     auto_model_class = AutoModelForSeq2SeqLM
     support_causal_attn = None
     _is_stateful = False
-    _supports_non_fp32 = True
 
     def __post_init__(self, **kwargs):
         batch_size = self.rbln_config.batch_size

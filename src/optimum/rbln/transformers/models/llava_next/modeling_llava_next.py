@@ -126,7 +126,6 @@ class RBLNLlavaNextForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGeneration
     """
 
     auto_model_class = AutoModelForImageTextToText
-    _supports_non_fp32 = True
     _rbln_submodules = [
         {"name": "vision_tower"},
         {"name": "language_model"},

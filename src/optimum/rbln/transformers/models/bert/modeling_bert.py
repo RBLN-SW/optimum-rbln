@@ -39,6 +39,7 @@ class RBLNBertModel(RBLNTransformerEncoderForFeatureExtraction):
     """
 
     rbln_model_input_names = ["input_ids", "attention_mask"]
+    _supports_non_fp32 = False
 
     @classmethod
     def _wrap_model_if_needed(cls, model: torch.nn.Module, rbln_config: RBLNBertModelConfig) -> torch.nn.Module:

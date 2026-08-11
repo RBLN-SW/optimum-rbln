@@ -67,7 +67,6 @@ class RBLNBlip2VisionModel(RBLNModel):
     """
 
     _tp_support = False
-    _supports_non_fp32 = True
 
     def get_input_embeddings(self):
         return self.embeddings
@@ -157,7 +156,6 @@ class RBLNBlip2QFormerModel(RBLNModel):
     """
 
     _tp_support = False
-    _supports_non_fp32 = True
 
     def get_input_embeddings(self):
         return self.embeddings.word_embeddings
@@ -318,7 +316,6 @@ class RBLNBlip2ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMixi
 
     auto_model_class = AutoModelForVisualQuestionAnswering
     _rbln_submodules = [{"name": "vision_model"}, {"name": "qformer"}, {"name": "language_model"}]
-    _supports_non_fp32 = True
 
     def __getattr__(self, __name: str) -> Any:
         def redirect(func):

@@ -124,7 +124,6 @@ class RBLNTimeSeriesTransformerForPrediction(RBLNModel):
 
     auto_model_class = None
     main_input_name = "inputs_embeds"
-    _supports_non_fp32 = True
 
     def __post_init__(self, **kwargs):
         super().__post_init__(**kwargs)

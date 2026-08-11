@@ -65,7 +65,6 @@ class RBLNSiglipVisionModel(RBLNModel):
     """
 
     _tp_support = False
-    _supports_non_fp32 = True
 
     @classmethod
     def _wrap_model_if_needed(

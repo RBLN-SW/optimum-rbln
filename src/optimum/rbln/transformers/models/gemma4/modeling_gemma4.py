@@ -118,7 +118,6 @@ class RBLNGemma4VisionModel(RBLNModel):
     """
 
     auto_model_class = AutoModel
-    _supports_non_fp32 = True
     _tp_support = True
 
     @classmethod
@@ -247,7 +246,6 @@ class RBLNGemma4ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
     """
 
     _decoder_wrapper_cls = Gemma4ForCausalLMWrapper
-    _supports_non_fp32 = True
 
     @classmethod
     def get_input_info(
@@ -620,7 +618,6 @@ class RBLNGemma4ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMix
         {"name": "vision_tower"},
         {"name": "language_model"},
     ]
-    _supports_non_fp32 = True
 
     @staticmethod
     def _reject_unsupported_modalities(

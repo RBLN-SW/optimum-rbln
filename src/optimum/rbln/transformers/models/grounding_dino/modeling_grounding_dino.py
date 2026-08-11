@@ -68,6 +68,9 @@ class RBLNGroundingDinoTextModel(RBLNBertModel):
 
     rbln_model_input_names = ["input_ids", "attention_mask", "token_type_ids", "position_ids"]
     _hf_class = BertModel
+    # Opts back in, overriding `RBLNBertModel`'s fp32 pin: without this the text backbone would be the
+    # only submodule forced to fp32 while backbone/encoder/decoder follow the checkpoint dtype.
+    _supports_non_fp32 = True
 
     @classmethod
     def _update_rbln_config(
@@ -93,7 +96,6 @@ class RBLNGroundingDinoTextModel(RBLNBertModel):
 
 
 class RBLNGroundingDinoForObjectDetection(RBLNModel):
-    _supports_non_fp32 = True
     _rbln_submodules = [
         {"name": "text_backbone", "config_class": RBLNGroundingDinoTextModelConfig},
         {"name": "backbone"},
@@ -733,7 +735,6 @@ def _update_spatial_shapes(model_config, rbln_config):
 
 
 class RBLNGroundingDinoEncoder(RBLNModel):
-    _supports_non_fp32 = True
 
     def __post_init__(self, **kwargs):
         self.encoder_runtime = RBLNPytorchRuntime(self.model[0])
@@ -937,7 +938,6 @@ class RBLNGroundingDinoEncoder(RBLNModel):
 
 
 class RBLNGroundingDinoDecoder(RBLNModel):
-    _supports_non_fp32 = True
 
     def __post_init__(self, **kwargs):
         self.decoder_runtime = RBLNPytorchRuntime(self.model[0])

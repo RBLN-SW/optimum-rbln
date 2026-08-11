@@ -75,7 +75,6 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
     auto_model_class = AutoModel
     _decoder_wrapper_cls = DecoderOnlyWrapper
     _use_rotary_emb = True
-    _supports_non_fp32 = True
 
     def __post_init__(self, **kwargs):
         if self.rbln_config.use_inputs_embeds:

@@ -66,7 +66,7 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
     config_class = AutoConfig
     config_name = "config.json"
     hf_library_name = "transformers"
-    _supports_non_fp32 = False
+    _supports_non_fp32 = True
 
     def __init__(
         self,

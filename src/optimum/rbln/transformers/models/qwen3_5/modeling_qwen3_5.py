@@ -315,7 +315,6 @@ class RBLNQwen3_5VisionModel(RBLNModel):
     """
 
     auto_model_class = None
-    _supports_non_fp32 = True
     _tp_support = True
 
     def __post_init__(self, **kwargs):
@@ -835,7 +834,6 @@ class RBLNQwen3_5ForConditionalGeneration(RBLNQwen3_5Model, RBLNDecoderOnlyModel
         ```
     """
 
-    _supports_non_fp32 = True
 
     def __post_init__(self, **kwargs):
         super().__post_init__(**kwargs)

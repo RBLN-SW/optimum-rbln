@@ -63,7 +63,6 @@ if TYPE_CHECKING:
 
 class RBLNQwen2VisionTransformerPretrainedModel(RBLNModel):
     auto_model_class = None
-    _supports_non_fp32 = True
 
     def __post_init__(self, **kwargs):
         self.transformer = self.model[0]
@@ -241,7 +240,6 @@ class RBLNQwen2VisionTransformerPretrainedModel(RBLNModel):
 class RBLNQwen2VLModel(RBLNDecoderOnlyModel):
     auto_model_class = AutoModelForImageTextToText
     _decoder_wrapper_cls = Qwen2VL_LanguageModelWrapper
-    _supports_non_fp32 = True
     _use_rotary_emb = False
     _rbln_submodules = [
         {"name": "visual"},
@@ -522,7 +520,6 @@ class RBLNQwen2VLForConditionalGeneration(RBLNQwen2VLModel, RBLNDecoderOnlyModel
 
     auto_model_class = AutoModelForImageTextToText
     _decoder_wrapper_cls = Qwen2VL_LanguageModelWrapper
-    _supports_non_fp32 = True
     _use_rotary_emb = False
     _rbln_submodules = [
         {"name": "visual"},

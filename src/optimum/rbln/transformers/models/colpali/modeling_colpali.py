@@ -109,7 +109,6 @@ class RBLNColPaliForRetrieval(RBLNModel):
     """
 
     auto_model_class = None
-    _supports_non_fp32 = True
     _rbln_submodules = [
         {"name": "vlm"},
     ]

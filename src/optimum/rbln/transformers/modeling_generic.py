@@ -57,7 +57,6 @@ class RBLNTransformerEncoder(RBLNModel):
     auto_model_class = AutoModel
     rbln_model_input_names = ["input_ids", "attention_mask", "token_type_ids"]
     rbln_dtype = "int64"
-    _supports_non_fp32 = True
 
     @classmethod
     def _wrap_model_if_needed(cls, model: "PreTrainedModel", rbln_config: RBLNTransformerEncoderConfig) -> nn.Module:
@@ -232,7 +231,6 @@ class RBLNImageModel(RBLNModel):
     auto_model_class = AutoModel
     main_input_name = "pixel_values"
     output_class = BaseModelOutput
-    _supports_non_fp32 = True
 
     @classmethod
     def _update_rbln_config(

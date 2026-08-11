@@ -199,7 +199,6 @@ class RBLNPixtralVisionModel(RBLNModel):
     on RBLN devices, supporting image encoding for multimodal tasks.
     """
 
-    _supports_non_fp32 = True
 
     def __post_init__(self, **kwargs):
         artifacts = torch.load(self.model_save_dir / self.subfolder / "torch_artifacts.pth", weights_only=False)
