@@ -35,7 +35,7 @@ class CacheMeta(RBLNSerializableConfigProtocol):
         │   └─ SlidingWindowKVCacheMeta      # fixed-size window
         └─ LinearAttentionCacheMeta   # conv/recurrent state; raw model-computed shape, never resized
 
-    Each subclass owns its ``can_resize`` / ``compile_shape`` and a class-level ``layer_type`` tag. 
+    Each subclass owns its ``can_resize`` / ``compile_shape`` and a class-level ``layer_type`` tag.
     ``CacheMeta`` / ``KVCacheMeta`` are abstract; instances are built through the
     subclass ``from_config()`` factories, which compute the derived ``shape`` and construct the meta.
 
