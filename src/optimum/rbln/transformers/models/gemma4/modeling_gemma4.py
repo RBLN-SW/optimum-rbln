@@ -33,10 +33,10 @@ from transformers.models.gemma4.modeling_gemma4 import Gemma4VisionRotaryEmbeddi
 from ....configuration_utils import RBLNCompileConfig, RBLNModelConfig
 from ....modeling import RBLNModel
 from ....utils.logging import get_logger
+from ...cache_utils import FullAttentionKVCacheMeta, SlidingWindowKVCacheMeta
 from ...modeling_attention_utils import validate_sliding_window
 from ...modeling_outputs import RBLNDecoderOnlyOutput
 from ...utils.rbln_runtime_wrapper import LoopProcessor
-from ..decoderonly.configuration_decoderonly import KVCacheMeta
 from ..decoderonly.decoderonly_runtime_utils import RBLNPageTableManager
 from ..decoderonly.generation_decoderonly import RBLNDecoderOnlyGenerationMixin
 from ..decoderonly.modeling_decoderonly import RBLNDecoderOnlyModelForCausalLM
@@ -561,9 +561,10 @@ class RBLNGemma4ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
             num_kv = num_kv_sliding if is_sliding else num_kv_full
             head_dim = head_dim_sliding if is_sliding else head_dim_full
 
+            meta_cls = SlidingWindowKVCacheMeta if is_sliding else FullAttentionKVCacheMeta
             for kv_offset, _ in enumerate(("key", "value")):
                 name = f"past_key_values_{layer_idx * 2 + kv_offset}"
-                meta = KVCacheMeta.make(
+                meta = meta_cls.from_config(
                     name=name,
                     layer_index=layer_idx,
                     num_key_value_heads=num_kv,

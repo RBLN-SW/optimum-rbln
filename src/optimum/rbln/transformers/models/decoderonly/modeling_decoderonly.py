@@ -27,6 +27,7 @@ from transformers.modeling_outputs import BaseModelOutputWithPast
 from ....configuration_utils import RBLNCompileConfig
 from ....modeling import RBLNModel
 from ....utils.logging import get_logger
+from ...cache_utils import FullAttentionKVCacheMeta, SlidingWindowKVCacheMeta
 from ...modeling_attention_utils import (
     RBLNDecoderOnlyFlashAttentionMixin,
     set_default_values,
@@ -35,7 +36,7 @@ from ...modeling_attention_utils import (
 )
 from ...modeling_outputs import RBLNDecoderOnlyOutput, _validate_output_hidden_states
 from ...utils.rbln_quantization import get_quantized_model
-from .configuration_decoderonly import KVCacheMeta, RBLNDecoderOnlyModelConfig, RBLNDecoderOnlyModelForCausalLMConfig
+from .configuration_decoderonly import RBLNDecoderOnlyModelConfig, RBLNDecoderOnlyModelForCausalLMConfig
 from .decoderonly_architecture import DecoderOnlyWrapper
 from .decoderonly_runtime_utils import RBLNPageTableManager, RBLNRuntimeModel
 from .generation_decoderonly import RBLNDecoderOnlyGenerationMixin
@@ -410,18 +411,21 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
             if rbln_config.quantization and rbln_config.quantization.kv_caches == "fp8":
                 kvcache_dtype = "float8_e4m3fn"
 
+            kvcache_dtype = RBLNCompileConfig.normalize_dtype(kvcache_dtype)
             kvcache_metas = []
             for i in range(num_hidden_layers * 2):
                 layer_idx = i // 2
                 name = f"past_key_values_{i}"
-                kvcache_meta = KVCacheMeta.make(
-                    name,
-                    layer_idx,
-                    num_key_value_heads,
-                    head_dim,
-                    RBLNCompileConfig.normalize_dtype(kvcache_dtype),
-                    rbln_config,
-                )
+                # Pick the concrete meta by the layer's cache kind (linear layers are handled by model
+                # subclasses that pre-populate kvcache_metas, so here it's sliding-window vs full).
+                if rbln_config.sliding_window is not None and layer_idx in rbln_config.sliding_window_layers:
+                    kvcache_meta = SlidingWindowKVCacheMeta.from_config(
+                        name, layer_idx, num_key_value_heads, head_dim, kvcache_dtype, rbln_config
+                    )
+                else:
+                    kvcache_meta = FullAttentionKVCacheMeta.from_config(
+                        name, layer_idx, num_key_value_heads, head_dim, kvcache_dtype, rbln_config
+                    )
                 kvcache_metas.append(kvcache_meta)
                 input_info.append((name, kvcache_meta.compile_shape, kvcache_meta.dtype))
 

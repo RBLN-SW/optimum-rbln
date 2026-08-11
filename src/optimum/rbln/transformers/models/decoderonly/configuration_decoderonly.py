@@ -12,11 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from dataclasses import asdict, dataclass
 from typing import Any, Literal, get_args
 
-from ....configuration_utils import RBLNModelConfig, RBLNSerializableConfigProtocol
+from ....configuration_utils import RBLNModelConfig
 from ....utils.logging import get_logger
+from ...cache_utils import CacheMeta
 from ...utils.rbln_quantization import RBLNQuantizationConfig
 from .configuration_lora import RBLNLoRAConfig
 
@@ -62,7 +62,7 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
         phases: list[PhaseType] | None = None,
         logits_to_keep: int | None = None,
         output_hidden_states: bool | None = None,
-        kvcache_metas: list["KVCacheMeta"] | None = None,
+        kvcache_metas: list["CacheMeta"] | None = None,
         **kwargs: Any,
     ):
         """
@@ -125,7 +125,7 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
             logits_to_keep (int | None): The number of logits to keep for the decoder.  If set to 0, the decoder will keep all logits.
                 Defaults to 0 if DecoderOnlyModel is used, 1 if DecoderOnlyModelForCausalLM is used.
             output_hidden_states (bool | None): Whether to output the hidden states of the decoder. Defaults to False.
-            kvcache_metas (list["KVCacheMeta"] | None): The metadata for the KV cache tensors. Handled internally if not provided. Defaults to None.
+            kvcache_metas (list["CacheMeta"] | None): The metadata for the cache tensors. Handled internally if not provided. Defaults to None.
             kwargs: Additional arguments passed to the parent RBLNModelConfig.
 
         Raises:
@@ -272,7 +272,7 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
                 # Larger batch size should be at the beginning of the list.
                 self.decoder_batch_sizes.sort(reverse=True)
 
-        self.kvcache_metas: list[KVCacheMeta] = kvcache_metas or []
+        self.kvcache_metas: list[CacheMeta] = kvcache_metas or []
 
     @staticmethod
     def validate_phases_type(phases: list[PhaseType]):
@@ -367,100 +367,3 @@ class RBLNDecoderOnlyModelForCausalLMConfig(RBLNDecoderOnlyModelConfig):
 
     _default_phases = ["prefill", "decode"]
     _default_logits_to_keep = 1
-
-
-@dataclass
-class KVCacheMeta(RBLNSerializableConfigProtocol):
-    """
-    KVCacheMeta contains metadata describing the key-value (KV) cache tensor for a specific transformer layer.
-
-    This is used during compilation and runtime on RBLN devices to manage memory and configure the
-    static or dynamic characteristics of the cache implementation for decoder-only models.
-
-    Attributes:
-        name (str): Logical name of the KV cache tensor.
-        layer_index (int): Index of the transformer layer corresponding to this cache.
-        shape (list[int]): The 4D shape of the cache tensor:
-            [num_blocks, num_heads, block_size, head_dim]. The number of blocks may be dynamic or static
-            depending on model configuration.
-        layer_type (str): String describing the attention/cache algorithm (e.g., "full_attention", "sliding_attention").
-        is_auto (bool): Whether the number of blocks is automatically determined during compilation (True) or manually specified (False).
-            In both cases, the KV cache size is fixed at compile time.
-        dtype (str): Data type of the cache buffer ("float16", "float32", etc.).
-    """
-
-    name: str
-    layer_index: int
-    shape: list[int]  # (num_blocks, num_heads, block_size(seq), head_dim)
-    layer_type: str
-    is_auto: bool
-    dtype: str
-
-    def _prepare_for_serialization(self) -> dict[str, Any]:
-        return asdict(self)
-
-    @property
-    def compile_shape(self):
-        return [1, self.shape[1], self.shape[2], self.shape[3]] if self.can_resize else self.shape
-
-    @property
-    def can_resize(self):
-        return self.is_auto and self.layer_type == "full_attention"
-
-    @property
-    def num_blocks(self) -> int:
-        return self.shape[0]
-
-    @property
-    def block_size(self) -> int:
-        return self.shape[2]
-
-    @staticmethod
-    def make(
-        name: str,
-        layer_index: int,
-        num_key_value_heads: int | None = None,
-        head_dim: int | None = None,
-        dtype: str | None = None,
-        rbln_config: RBLNDecoderOnlyModelForCausalLMConfig | None = None,
-        *,
-        shape: list[int] | None = None,
-    ) -> "KVCacheMeta":
-        assert len(rbln_config.compile_cfgs) == 0, "KVCacheMeta cannot be created from rbln_config with compile_cfgs"
-
-        if layer_index in getattr(rbln_config, "linear_attention_layers", []):
-            if shape is None:
-                raise ValueError("`shape` is required to build a linear_attention layer's KVCacheMeta.")
-            return KVCacheMeta(
-                name=name,
-                layer_index=layer_index,
-                shape=shape,
-                layer_type="linear_attention",
-                is_auto=False,
-                dtype=dtype,
-            )
-
-        elif rbln_config.sliding_window is not None and layer_index in rbln_config.sliding_window_layers:
-            layer_type = "sliding_attention"
-            block_size = rbln_config.sliding_window
-            num_blocks = rbln_config.batch_size
-            is_auto = False
-
-        else:
-            layer_type = "full_attention"
-            block_size = rbln_config.kvcache_block_size
-
-            if rbln_config.is_auto_num_blocks:
-                num_blocks = rbln_config.num_full_blocks
-                is_auto = True
-            else:
-                num_blocks = rbln_config.kvcache_num_blocks
-                is_auto = False
-
-        shape = [num_blocks, num_key_value_heads, block_size, head_dim]
-        if num_blocks <= 0:
-            raise ValueError("`num_blocks` must be greater than 0 when using KV cache.")
-
-        return KVCacheMeta(
-            name=name, layer_index=layer_index, shape=shape, layer_type=layer_type, is_auto=is_auto, dtype=dtype
-        )

@@ -33,8 +33,8 @@ from transformers.models.qwen3_5.modeling_qwen3_5 import (
 from ....configuration_utils import RBLNCompileConfig
 from ....modeling import RBLNModel
 from ....utils import logging
+from ...cache_utils import FullAttentionKVCacheMeta, LinearAttentionCacheMeta
 from ...modeling_outputs import RBLNDecoderOnlyOutput
-from ..decoderonly.configuration_decoderonly import KVCacheMeta
 from ..decoderonly.decoderonly_runtime_utils import RBLNPageTableManager
 from ..decoderonly.modeling_decoderonly import RBLNDecoderOnlyModel, RBLNDecoderOnlyModelForCausalLM
 from .configuration_qwen3_5 import (
@@ -236,28 +236,20 @@ class RBLNQwen3_5TextModel(RBLNDecoderOnlyModel):
                     # recurrent cache is stored 3D (B, Hv*Dk, Dv); GatedDeltaNet reshapes to 4D internally.
                     conv_shape, recurrent_shape = _qwen3_5_linear_state_shapes(text_config, rbln_config.batch_size)
                     kvcache_metas.append(
-                        KVCacheMeta.make(
-                            f"conv_state_{layer_idx}",
-                            layer_idx,
-                            dtype=_state_dtype,
-                            rbln_config=rbln_config,
-                            shape=list(conv_shape),
+                        LinearAttentionCacheMeta.from_config(
+                            f"conv_state_{layer_idx}", layer_idx, shape=list(conv_shape), dtype=_state_dtype
                         )
                     )
                     kvcache_metas.append(
-                        KVCacheMeta.make(
-                            f"recurrent_state_{layer_idx}",
-                            layer_idx,
-                            dtype=_state_dtype,
-                            rbln_config=rbln_config,
-                            shape=list(recurrent_shape),
+                        LinearAttentionCacheMeta.from_config(
+                            f"recurrent_state_{layer_idx}", layer_idx, shape=list(recurrent_shape), dtype=_state_dtype
                         )
                     )
                 else:
                     for slot in range(2):
                         name = f"past_key_values_{layer_idx * 2 + slot}"
                         kvcache_metas.append(
-                            KVCacheMeta.make(
+                            FullAttentionKVCacheMeta.from_config(
                                 name,
                                 layer_idx,
                                 num_key_value_heads,
