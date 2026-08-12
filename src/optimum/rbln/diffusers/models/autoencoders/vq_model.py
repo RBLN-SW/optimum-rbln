@@ -64,6 +64,8 @@ class RBLNVQModel(RBLNModel):
 
     @classmethod
     def get_compiled_model(cls, model, rbln_config: RBLNModelConfig):
+        model = model.to(rbln_config.dtype)
+
         if rbln_config.uses_encoder:
             expected_models = ["encoder", "decoder"]
         else:

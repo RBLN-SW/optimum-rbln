@@ -75,6 +75,8 @@ class RBLNAutoencoderKLTemporalDecoder(RBLNModel):
     def get_compiled_model(
         cls, model, rbln_config: RBLNAutoencoderKLTemporalDecoderConfig
     ) -> dict[str, rebel.RBLNCompiledModel]:
+        model = model.to(rbln_config.dtype)
+
         compiled_models = {}
         if rbln_config.uses_encoder:
             encoder_model, decoder_model = cls._wrap_model_if_needed(model, rbln_config)
