@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import TYPE_CHECKING, Optional, Tuple, Union
+from typing import TYPE_CHECKING
 
 import torch
 from transformers.modeling_outputs import MaskedLMOutput
@@ -65,10 +65,10 @@ class RBLNModernBertForMaskedLM(RBLNModelForMaskedLM):
 
     def forward(
         self,
-        input_ids: Optional[torch.Tensor] = None,
-        attention_mask: Optional[torch.Tensor] = None,
+        input_ids: torch.Tensor | None = None,
+        attention_mask: torch.Tensor | None = None,
         **kwargs,
-    ) -> Union[Tuple, MaskedLMOutput]:
+    ) -> tuple | MaskedLMOutput:
         """
         Forward pass for the RBLN-optimized ModernBERT model for masked language modeling tasks.
 
