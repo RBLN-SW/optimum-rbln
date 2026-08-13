@@ -15,7 +15,6 @@
 from typing import Any
 
 from ....configuration_utils import RBLNModelConfig
-from ....utils.deprecation import deprecate_kwarg
 from ....utils.logging import get_logger
 
 
@@ -25,7 +24,6 @@ logger = get_logger()
 class RBLNModelForSeq2SeqLMConfig(RBLNModelConfig):
     support_paged_attention = None
 
-    @deprecate_kwarg(old_name="pad_token_id", version="0.10.0")
     def __init__(
         self,
         batch_size: int | None = None,

@@ -542,6 +542,14 @@ class RBLNRuntimeModel(RBLNPytorchRuntime):
             inputs, cache_position, attention_mask, position_ids, position_embed, token_type_ids=token_type_ids
         )
 
+        if query_length > self.rbln_config.prefill_chunk_size and self.rbln_config.use_bidirectional_prefill:
+            raise ValueError(
+                f"Input length ({query_length}) exceeds `prefill_chunk_size` "
+                f"({self.rbln_config.prefill_chunk_size}). This model prefills with bidirectional "
+                "attention over the whole input, which therefore must fit in a single prefill chunk. "
+                "Compile the model with `prefill_chunk_size` >= the maximum input length."
+            )
+
         out_buffers, output_logits, output_hidden_states = self._prepare_prefill_outputs(query_length, attention_mask)
 
         # Assumed that prefix caching was performed externally if cache_position doesn't start from 0.
@@ -617,18 +625,18 @@ class RBLNRuntimeModel(RBLNPytorchRuntime):
 
         # Aggregate output_logits
         padding_size = (self.rbln_config.prefill_chunk_size - query_length) % self.rbln_config.prefill_chunk_size
+        # `-padding_size` as a slice end drops the whole sequence when padding_size == 0 ([:, :-0] == [:, :0])
+        trim_end = -padding_size if padding_size > 0 else None
         if self.rbln_config.logits_to_keep == 1:
             output_logits = output_logits
         elif self.rbln_config.logits_to_keep > 1:
-            output_logits = output_logits[:, -padding_size - self.rbln_config.logits_to_keep : -padding_size, :]
+            output_logits = output_logits[:, -padding_size - self.rbln_config.logits_to_keep : trim_end, :]
         else:
-            output_logits = output_logits[:, :-padding_size, :]
+            output_logits = output_logits[:, :trim_end, :]
 
         all_hidden_states = None
         if self.rbln_config.output_hidden_states:
-            all_hidden_states = [
-                output_hidden_state[:, :-padding_size, :] for output_hidden_state in output_hidden_states
-            ]
+            all_hidden_states = [output_hidden_state[:, :trim_end, :] for output_hidden_state in output_hidden_states]
             all_hidden_states = tuple(all_hidden_states)
 
         # Update decoder attention mask with processed KV-cache length from prefill phase

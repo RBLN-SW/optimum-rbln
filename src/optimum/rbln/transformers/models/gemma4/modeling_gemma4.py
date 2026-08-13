@@ -28,6 +28,7 @@ from transformers import (
 )
 from transformers.initialization import no_init_weights
 from transformers.modeling_outputs import BaseModelOutputWithPooling
+from transformers.models.gemma4.modeling_gemma4 import Gemma4VisionRotaryEmbedding
 
 from ....configuration_utils import RBLNCompileConfig, RBLNModelConfig
 from ....modeling import RBLNModel
@@ -107,10 +108,10 @@ class RBLNGemma4VisionModel(RBLNModel):
     - transferring the checkpoint weights of the original into an optimized RBLN graph,
     - compiling the resulting graph using the RBLN compiler.
 
-    `patch_embedder` (per-patch linear projection + 2D position embedding lookup) and
-    `rotary_emb` (multidimensional cos/sin tables) both run on the host (CPU). `patch_embedder`
-    weights are persisted as a saved torch artifact; `rotary_emb` is recreated from config since
-    its `inv_freq` buffer is non-persistent. The compiled `Gemma4VisionModelWrapper`
+    `patch_embedder` (per-patch linear projection + 2D position embedding lookup) and the
+    multidimensional rotary cos/sin tables both run on the host (CPU). `patch_embedder` weights are
+    persisted as a saved torch artifact; the rotary tables are precomputed from config at load time
+    so each forward only gathers rows from them. The compiled `Gemma4VisionModelWrapper`
     (encoder-layers -> pooler) takes the host-computed `inputs_embeds`, `pixel_position_ids`,
     and `(cos, sin)` rotary tables as inputs. Padding within `max_patches` is handled by the
     encoder via `pixel_position_ids == -1` markers.
@@ -176,12 +177,6 @@ class RBLNGemma4VisionModel(RBLNModel):
             patch_embedder = Gemma4VisionPatchEmbedder(self.config)
         return patch_embedder
 
-    def _create_rotary_emb(self) -> torch.nn.Module:
-        from transformers.models.gemma4.modeling_gemma4 import Gemma4VisionRotaryEmbedding
-
-        rotary_emb = Gemma4VisionRotaryEmbedding(self.config)
-        return rotary_emb
-
     def __post_init__(self, **kwargs):
         artifacts_path = self.model_save_dir / self.subfolder / "torch_artifacts.pth"
         artifacts = torch.load(artifacts_path, weights_only=False) if artifacts_path.exists() else {}
@@ -192,7 +187,16 @@ class RBLNGemma4VisionModel(RBLNModel):
             self.patch_embedder.eval()
         else:
             self.patch_embedder = None
-        self.rotary_emb = self._create_rotary_emb().eval()
+
+        max_patches = max(self.rbln_config.get_max_patches())
+        table_positions = torch.cat([torch.arange(max_patches), torch.tensor([-1])])
+        cos_table, sin_table = Gemma4VisionRotaryEmbedding(self.config).eval()(
+            torch.empty(1), table_positions[None, :, None].expand(1, -1, 2)
+        )
+        per_axis_dim = cos_table.shape[-1] // 2
+        self.rotary_cos_table = cos_table[0, :, :per_axis_dim]
+        self.rotary_sin_table = sin_table[0, :, :per_axis_dim]
+
         super().__post_init__(**kwargs)
 
     def forward(
@@ -209,9 +213,9 @@ class RBLNGemma4VisionModel(RBLNModel):
         padding_positions = (pixel_position_ids == -1).all(dim=-1)
         with torch.no_grad():
             inputs_embeds = self.patch_embedder(pixel_values, pixel_position_ids, padding_positions)
-            cos, sin = self.rotary_emb(inputs_embeds, pixel_position_ids)
-        cos = cos.to(self.rbln_config.dtype)
-        sin = sin.to(self.rbln_config.dtype)
+
+        cos = self.rotary_cos_table[pixel_position_ids].flatten(2).to(self.rbln_config.dtype)
+        sin = self.rotary_sin_table[pixel_position_ids].flatten(2).to(self.rbln_config.dtype)
 
         valid = (~padding_positions).to(inputs_embeds.dtype)
         attn_mask = (1.0 - valid) * torch.finfo(inputs_embeds.dtype).min

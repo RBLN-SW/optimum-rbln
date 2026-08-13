@@ -179,10 +179,10 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
                 which is beneficial for tasks involving many long sequences or large batch sizes, enabling
                 higher throughput. However, allocating more blocks consumes more memory.
             - **Minimum Requirement**: The system requires a minimum number of blocks to function,
-                calculated based on `max_seq_len`, `kvcache_block_size`, and `batch_size`. The number of
-                allocated blocks must be sufficient to hold at least one full sequence length per item
-                in the batch concurrently. The system will log warnings or raise errors if constraints
-                are violated (e.g., if `kvcache_num_blocks` is less than `batch_size` when using Flash Attention).
+                calculated based on `max_seq_len`, `kvcache_block_size`, and `batch_size`. The allocated
+                blocks must be enough to hold one full sequence length, and at least one block must be
+                available for every item in the batch. The system will log warnings or raise errors if
+                these constraints are violated (e.g., if `kvcache_num_blocks` is less than `batch_size`).
 
             The optimal value depends on the specific model, task, hardware, and desired trade-off
             between performance and memory usage. Automatic determination (default) provides a robust starting point
@@ -306,6 +306,13 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
         return "image_prefill" in self.phases
 
     @property
+    def use_bidirectional_prefill(self):
+        # Prefix-LM style prefill (e.g. PaliGemma's language model): with attention mask and
+        # position ids but no separate image_prefill phase, the compiled prefill attends
+        # bidirectionally within a chunk, so the whole prompt must fit in a single chunk.
+        return self.use_attention_mask and self.use_position_ids and not self.use_image_prefill
+
+    @property
     def image_prefill_runtime_idx(self):
         return self.phases.index("image_prefill")
 
@@ -344,7 +351,8 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
     @property
     def num_min_blocks(self) -> int:
         if self.attn_impl == "flash_attn":
-            return min(self.max_seq_len // self.kvcache_block_size + 1, self.num_full_blocks)
+            blocks_in_use = max(self.max_seq_len // self.kvcache_block_size, self.batch_size)
+            return min(blocks_in_use + 1, self.num_full_blocks)
         return self.batch_size
 
 
@@ -411,14 +419,28 @@ class KVCacheMeta(RBLNSerializableConfigProtocol):
     def make(
         name: str,
         layer_index: int,
-        num_key_value_heads: int,
-        head_dim: int,
-        dtype: str,
-        rbln_config: RBLNDecoderOnlyModelForCausalLMConfig,
+        num_key_value_heads: int | None = None,
+        head_dim: int | None = None,
+        dtype: str | None = None,
+        rbln_config: RBLNDecoderOnlyModelForCausalLMConfig | None = None,
+        *,
+        shape: list[int] | None = None,
     ) -> "KVCacheMeta":
         assert len(rbln_config.compile_cfgs) == 0, "KVCacheMeta cannot be created from rbln_config with compile_cfgs"
 
-        if rbln_config.sliding_window is not None and layer_index in rbln_config.sliding_window_layers:
+        if layer_index in getattr(rbln_config, "linear_attention_layers", []):
+            if shape is None:
+                raise ValueError("`shape` is required to build a linear_attention layer's KVCacheMeta.")
+            return KVCacheMeta(
+                name=name,
+                layer_index=layer_index,
+                shape=shape,
+                layer_type="linear_attention",
+                is_auto=False,
+                dtype=dtype,
+            )
+
+        elif rbln_config.sliding_window is not None and layer_index in rbln_config.sliding_window_layers:
             layer_type = "sliding_attention"
             block_size = rbln_config.sliding_window
             num_blocks = rbln_config.batch_size

@@ -177,6 +177,16 @@ _import_structure = {
     "qwen2": ["RBLNQwen2ForCausalLM", "RBLNQwen2ForCausalLMConfig", "RBLNQwen2Model", "RBLNQwen2ModelConfig"],
     "qwen2_moe": ["RBLNQwen2MoeForCausalLM", "RBLNQwen2MoeForCausalLMConfig"],
     "qwen3": ["RBLNQwen3ForCausalLM", "RBLNQwen3ForCausalLMConfig", "RBLNQwen3Model", "RBLNQwen3ModelConfig"],
+    "qwen3_5": [
+        "RBLNQwen3_5ForCausalLM",
+        "RBLNQwen3_5ForCausalLMConfig",
+        "RBLNQwen3_5ForConditionalGeneration",
+        "RBLNQwen3_5ForConditionalGenerationConfig",
+        "RBLNQwen3_5Model",
+        "RBLNQwen3_5ModelConfig",
+        "RBLNQwen3_5VisionModel",
+        "RBLNQwen3_5VisionModelConfig",
+    ],
     "qwen3_moe": ["RBLNQwen3MoeForCausalLM", "RBLNQwen3MoeForCausalLMConfig"],
     "qwen3_vl": [
         "RBLNQwen3VLVisionModel",
@@ -193,6 +203,10 @@ _import_structure = {
         "RBLNQwen3VLMoeForConditionalGenerationConfig",
         "RBLNQwen3VLMoeModel",
         "RBLNQwen3VLMoeModelConfig",
+    ],
+    "modernbert": [
+        "RBLNModernBertForMaskedLM",
+        "RBLNModernBertForMaskedLMConfig",
     ],
     "resnet": ["RBLNResNetForImageClassification", "RBLNResNetForImageClassificationConfig"],
     "roberta": [
@@ -358,6 +372,7 @@ if TYPE_CHECKING:
     from .midm import RBLNMidmLMHeadModel, RBLNMidmLMHeadModelConfig
     from .mistral import RBLNMistralForCausalLM, RBLNMistralForCausalLMConfig, RBLNMistralModel, RBLNMistralModelConfig
     from .mixtral import RBLNMixtralForCausalLM, RBLNMixtralForCausalLMConfig
+    from .modernbert import RBLNModernBertForMaskedLM, RBLNModernBertForMaskedLMConfig
     from .opt import RBLNOPTForCausalLM, RBLNOPTForCausalLMConfig, RBLNOPTModel, RBLNOPTModelConfig
     from .paligemma import (
         RBLNPaliGemmaForConditionalGeneration,
@@ -392,6 +407,16 @@ if TYPE_CHECKING:
         RBLNQwen2VLModelConfig,
     )
     from .qwen3 import RBLNQwen3ForCausalLM, RBLNQwen3ForCausalLMConfig, RBLNQwen3Model, RBLNQwen3ModelConfig
+    from .qwen3_5 import (
+        RBLNQwen3_5ForCausalLM,
+        RBLNQwen3_5ForCausalLMConfig,
+        RBLNQwen3_5ForConditionalGeneration,
+        RBLNQwen3_5ForConditionalGenerationConfig,
+        RBLNQwen3_5Model,
+        RBLNQwen3_5ModelConfig,
+        RBLNQwen3_5VisionModel,
+        RBLNQwen3_5VisionModelConfig,
+    )
     from .qwen3_moe import RBLNQwen3MoeForCausalLM, RBLNQwen3MoeForCausalLMConfig
     from .qwen3_vl import (
         RBLNQwen3VLForConditionalGeneration,
