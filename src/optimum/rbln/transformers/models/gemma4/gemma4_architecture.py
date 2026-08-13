@@ -661,7 +661,7 @@ class Gemma4VisionModelWrapper(nn.Module):
     #
     # Host-side responsibilities (NOT in the compiled graph):
     # - patch_embedder: produces inputs_embeds from pixel_values.
-    # - Gemma4VisionRotaryEmbedding: produces (cos, sin) from pixel_position_ids.
+    # - rotary (cos, sin): gathered from tables RBLNGemma4VisionModel precomputes at load time.
     # - padding_positions ((pixel_position_ids == -1).all(dim=-1)) and 1D-per-key additive attn_mask
     #   ((1 - valid) * finfo.min, shape (batch, max_patches)) — both derived from pixel_position_ids
     #   on the host. attn_mask is broadcast to (batch, 1, 1, max_patches) here to mask only the key

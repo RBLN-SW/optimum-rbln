@@ -150,6 +150,26 @@ class LLMTest:
     class TestLLMWithoutLMHead(TestLLM):
         RBLN_AUTO_CLASS = RBLNAutoModel
 
+        def test_forward_prompt_length_multiple_of_prefill_chunk_size(self):
+            # Regression test for #649: when the prompt length was an exact multiple of
+            # `prefill_chunk_size`, prefill trimmed the whole sequence ([:, :-0, :]) and
+            # returned an empty last_hidden_state.
+            chunk_size = self.model.rbln_config.prefill_chunk_size
+            batch_size = self.model.rbln_config.batch_size
+            max_seq_len = self.model.rbln_config.max_seq_len
+            hidden_size = self.model.config.hidden_size
+
+            for length in (chunk_size, chunk_size * 2):
+                if length > max_seq_len:
+                    continue
+                with self.subTest(length=length):
+                    input_ids = torch.ones((batch_size, length), dtype=torch.int64)
+                    output = self.model(input_ids=input_ids, attention_mask=torch.ones_like(input_ids))
+                    self.assertEqual(output.last_hidden_state.shape, (batch_size, length, hidden_size))
+                    if self.model.rbln_config.output_hidden_states:
+                        for hidden_state in output.hidden_states:
+                            self.assertEqual(hidden_state.shape, (batch_size, length, hidden_size))
+
 
 class TestMistralForCausalLM(LLMTest.TestLLM):
     RBLN_CLASS = RBLNMistralForCausalLM
