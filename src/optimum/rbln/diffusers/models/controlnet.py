@@ -49,7 +49,9 @@ class _ControlNetModel(torch.nn.Module):
         time_ids: torch.Tensor | None = None,
     ):
         if text_embeds is not None and time_ids is not None:
-            added_cond_kwargs = {"text_embeds": text_embeds, "time_ids": time_ids}
+            # `time_ids`' sinusoidal embedding is always float32, and the concat below rejects mixed dtypes
+            # under export.
+            added_cond_kwargs = {"text_embeds": text_embeds.float(), "time_ids": time_ids}
         else:
             added_cond_kwargs = {}
 
@@ -81,7 +83,9 @@ class _ControlNetModel_Cross_Attention(torch.nn.Module):
         time_ids: torch.Tensor | None = None,
     ):
         if text_embeds is not None and time_ids is not None:
-            added_cond_kwargs = {"text_embeds": text_embeds, "time_ids": time_ids}
+            # `time_ids`' sinusoidal embedding is always float32, and the concat below rejects mixed dtypes
+            # under export.
+            added_cond_kwargs = {"text_embeds": text_embeds.float(), "time_ids": time_ids}
         else:
             added_cond_kwargs = {}
 
@@ -197,6 +201,7 @@ class RBLNControlNetModel(RBLNModel):
         input_info.append(("conditioning_scale", [], rbln_config.dtype))
 
         if hasattr(model_config, "addition_embed_type") and model_config.addition_embed_type == "text_time":
+            # Kept at the checkpoint dtype; the wrappers promote it for the concat inside the graph.
             input_info.append(
                 ("text_embeds", [rbln_config.batch_size, rbln_config.text_model_hidden_size], rbln_config.dtype)
             )

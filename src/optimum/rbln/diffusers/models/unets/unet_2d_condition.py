@@ -104,6 +104,11 @@ class _UNet_SDXL(torch.nn.Module):
             down_block_additional_residuals = None
             mid_block_additional_residual = None
 
+        if "text_embeds" in added_cond_kwargs:
+            # `time_ids`' sinusoidal embedding is always float32 (`Timesteps` has no parameters to cast), and
+            # the concat below rejects mixed dtypes under export.
+            added_cond_kwargs["text_embeds"] = added_cond_kwargs["text_embeds"].float()
+
         unet_out = self.unet(
             sample=sample,
             timestep=timestep,
@@ -314,6 +319,7 @@ class RBLNUNet2DConditionModel(RBLNModel):
         if hasattr(model_config, "addition_embed_type"):
             if model_config.addition_embed_type == "text_time":
                 rbln_config.in_features = model_config.projection_class_embeddings_input_dim
+                # Kept at the checkpoint dtype; `_UNet_SDXL.forward` promotes it for the concat inside the graph.
                 input_info.append(
                     ("text_embeds", [rbln_config.batch_size, rbln_config.text_model_hidden_size], rbln_config.dtype)
                 )
