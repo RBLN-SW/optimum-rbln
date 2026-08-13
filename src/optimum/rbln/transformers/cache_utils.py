@@ -32,7 +32,7 @@ class CacheMeta(RBLNSerializableConfigProtocol):
         CacheMeta
         ├─ KVCacheMeta                # paged KV: [num_blocks, num_heads, block_size, head_dim]
         │   ├─ FullAttentionKVCacheMeta      # resizable when is_auto (grown after compile)
-        │   └─ SlidingWindowKVCacheMeta      # fixed-size window
+        │   └─ SlidingWindowAttentionKVCacheMeta      # fixed-size window
         └─ LinearAttentionCacheMeta   # conv/recurrent state; raw model-computed shape, never resized
 
     Each subclass owns its ``can_resize`` / ``compile_shape`` and a class-level ``layer_type`` tag.
@@ -141,7 +141,7 @@ class FullAttentionKVCacheMeta(KVCacheMeta):
 
 
 @dataclass
-class SlidingWindowKVCacheMeta(KVCacheMeta):
+class SlidingWindowAttentionKVCacheMeta(KVCacheMeta):
     """Sliding-window paged KV cache. Fixed size (one block per batch item), never resized."""
 
     layer_type: ClassVar[str] = "sliding_attention"
@@ -155,7 +155,7 @@ class SlidingWindowKVCacheMeta(KVCacheMeta):
         head_dim: int,
         dtype: str,
         rbln_config: "RBLNDecoderOnlyModelForCausalLMConfig",
-    ) -> "SlidingWindowKVCacheMeta":
+    ) -> "SlidingWindowAttentionKVCacheMeta":
         block_size = rbln_config.sliding_window
         num_blocks = rbln_config.batch_size
         cls._validate_num_blocks(num_blocks)

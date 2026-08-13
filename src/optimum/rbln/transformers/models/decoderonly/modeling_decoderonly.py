@@ -27,7 +27,7 @@ from transformers.modeling_outputs import BaseModelOutputWithPast
 from ....configuration_utils import RBLNCompileConfig
 from ....modeling import RBLNModel
 from ....utils.logging import get_logger
-from ...cache_utils import FullAttentionKVCacheMeta, SlidingWindowKVCacheMeta
+from ...cache_utils import FullAttentionKVCacheMeta, SlidingWindowAttentionKVCacheMeta
 from ...modeling_attention_utils import (
     RBLNDecoderOnlyFlashAttentionMixin,
     set_default_values,
@@ -417,7 +417,7 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
                 layer_idx = i // 2
                 name = f"past_key_values_{i}"
                 if rbln_config.sliding_window is not None and layer_idx in rbln_config.sliding_window_layers:
-                    cache_meta = SlidingWindowKVCacheMeta.from_config(
+                    cache_meta = SlidingWindowAttentionKVCacheMeta.from_config(
                         name, layer_idx, num_key_value_heads, head_dim, kvcache_dtype, rbln_config
                     )
                 else:
