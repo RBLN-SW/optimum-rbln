@@ -33,8 +33,8 @@ from transformers.models.qwen3_5.modeling_qwen3_5 import (
 from ....configuration_utils import RBLNCompileConfig
 from ....modeling import RBLNModel
 from ....utils import logging
+from ...cache_utils import FullAttentionKVCacheMeta, LinearAttentionCacheMeta
 from ...modeling_outputs import RBLNDecoderOnlyOutput
-from ..decoderonly.configuration_decoderonly import KVCacheMeta
 from ..decoderonly.decoderonly_runtime_utils import RBLNPageTableManager
 from ..decoderonly.modeling_decoderonly import RBLNDecoderOnlyModel, RBLNDecoderOnlyModelForCausalLM
 from .configuration_qwen3_5 import (
@@ -220,8 +220,8 @@ class RBLNQwen3_5TextModel(RBLNDecoderOnlyModel):
         # per-layer state: full_attention -> paged KV (key, value); linear_attention -> (conv_state, recurrent_state).
         linear_layers = rbln_config.linear_attention_layers
 
-        if len(rbln_config.kvcache_metas) > 0:
-            input_info.extend([(meta.name, meta.compile_shape, meta.dtype) for meta in rbln_config.kvcache_metas])
+        if len(rbln_config.cache_metas) > 0:
+            input_info.extend([(meta.name, meta.compile_shape, meta.dtype) for meta in rbln_config.cache_metas])
         else:
             kvcache_dtype = rbln_config.dtype
             if rbln_config.quantization and rbln_config.quantization.kv_caches == "fp8":
@@ -230,34 +230,26 @@ class RBLNQwen3_5TextModel(RBLNDecoderOnlyModel):
             # conv/recurrent caches are one shared static tensor, so sized to the max batch (not batch_size=1 for
             # prefill). Prefill writes its own slot (batch_idx); decode runs the full batch.
             _state_dtype = RBLNCompileConfig.normalize_dtype(rbln_config.dtype)
-            kvcache_metas = []
+            cache_metas = []
             for layer_idx in range(num_hidden_layers):
                 if layer_idx in linear_layers:
                     # recurrent cache is stored 3D (B, Hv*Dk, Dv); GatedDeltaNet reshapes to 4D internally.
                     conv_shape, recurrent_shape = _qwen3_5_linear_state_shapes(text_config, rbln_config.batch_size)
-                    kvcache_metas.append(
-                        KVCacheMeta.make(
-                            f"conv_state_{layer_idx}",
-                            layer_idx,
-                            dtype=_state_dtype,
-                            rbln_config=rbln_config,
-                            shape=list(conv_shape),
+                    cache_metas.append(
+                        LinearAttentionCacheMeta.from_config(
+                            f"conv_state_{layer_idx}", layer_idx, shape=list(conv_shape), dtype=_state_dtype
                         )
                     )
-                    kvcache_metas.append(
-                        KVCacheMeta.make(
-                            f"recurrent_state_{layer_idx}",
-                            layer_idx,
-                            dtype=_state_dtype,
-                            rbln_config=rbln_config,
-                            shape=list(recurrent_shape),
+                    cache_metas.append(
+                        LinearAttentionCacheMeta.from_config(
+                            f"recurrent_state_{layer_idx}", layer_idx, shape=list(recurrent_shape), dtype=_state_dtype
                         )
                     )
                 else:
                     for slot in range(2):
                         name = f"past_key_values_{layer_idx * 2 + slot}"
-                        kvcache_metas.append(
-                            KVCacheMeta.make(
+                        cache_metas.append(
+                            FullAttentionKVCacheMeta.from_config(
                                 name,
                                 layer_idx,
                                 num_key_value_heads,
@@ -266,8 +258,8 @@ class RBLNQwen3_5TextModel(RBLNDecoderOnlyModel):
                                 rbln_config,
                             )
                         )
-            input_info.extend([(meta.name, meta.compile_shape, meta.dtype) for meta in kvcache_metas])
-            rbln_config.kvcache_metas.extend(kvcache_metas)
+            input_info.extend([(meta.name, meta.compile_shape, meta.dtype) for meta in cache_metas])
+            rbln_config.cache_metas.extend(cache_metas)
 
         # shared 0/1 masks: runtime feeds zeros on prefill window 0 (reset linear state), ones after (carry). See docs.
         if linear_layers:
