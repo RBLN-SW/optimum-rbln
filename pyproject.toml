@@ -77,7 +77,10 @@ deploy = [
 ]
 
 [build-system]
-requires = ["hatchling", "hatch-vcs"]
+# hatchling 1.32 bumped the emitted Metadata-Version to 2.5, which the twine 6.x
+# pinned in the deploy job rejects ("'2.5' is not a valid metadata version").
+# Cap at <1.32 so `uv build` emits 2.4 until the deploy stack (twine) moves up.
+requires = ["hatchling<1.32", "hatch-vcs"]
 build-backend = "hatchling.build"
 
 [tool.hatch.version]
