@@ -34,7 +34,7 @@ from ....configuration_utils import RBLNCompileConfig
 from ....modeling import RBLNModel
 from ....utils import logging
 from ...cache_utils import FullAttentionKVCacheMeta, LinearAttentionCacheMeta
-from ...modeling_outputs import RBLNDecoderOnlyOutput
+from ...modeling_outputs import RBLNDecoderOnlyOutput, _validate_output_hidden_states
 from ..decoderonly.decoderonly_runtime_utils import RBLNPageTableManager
 from ..decoderonly.modeling_decoderonly import RBLNDecoderOnlyModel, RBLNDecoderOnlyModelForCausalLM
 from .configuration_qwen3_5 import (
@@ -181,9 +181,6 @@ class RBLNQwen3_5TextModel(RBLNDecoderOnlyModel):
             # host and feeds them as position_emb, and the Text Model path derives contiguous positions from
             # cache_position (mRoPE degenerates to standard RoPE for text-only).
             raise NotImplementedError("use_position_ids is not supported for the Qwen3.5 model.")
-        # TODO(seinpark) : output_hidden_states isn't wired yet; planned as a follow-up.
-        if rbln_config.output_hidden_states:
-            raise NotImplementedError("output_hidden_states is not yet supported for the Qwen3.5 model.")
         num_attention_heads = getattr(text_config, "n_head", None) or text_config.num_attention_heads
         num_key_value_heads = getattr(text_config, "num_key_value_heads", None) or num_attention_heads
         num_hidden_layers = getattr(text_config, "n_layer", None) or text_config.num_hidden_layers
@@ -752,8 +749,10 @@ class RBLNQwen3_5Model(RBLNDecoderOnlyModel):
         cache_position: torch.LongTensor | None = None,
         return_dict: bool | None = None,
         mm_token_type_ids: torch.IntTensor | None = None,
+        output_hidden_states: bool | None = None,
         **kwargs,
     ) -> RBLNDecoderOnlyOutput:
+        output_hidden_states = _validate_output_hidden_states(output_hidden_states, self.rbln_config)
         inputs_embeds, position_embed, rope_deltas = self._preprocess_prefill(
             input_ids,
             attention_mask,
@@ -766,9 +765,18 @@ class RBLNQwen3_5Model(RBLNDecoderOnlyModel):
         self.rope_deltas = rope_deltas
         batch_size, seq_len = inputs_embeds.shape[:2]
 
+        text_config = self.config.get_text_config()
+        all_hidden_states = (
+            tuple(
+                torch.zeros(batch_size, seq_len, text_config.hidden_size, dtype=self.rbln_config.dtype)
+                for _ in range(text_config.num_hidden_layers + 1)
+            )
+            if output_hidden_states
+            else None
+        )
         logits = []
         for b_idx in range(batch_size):
-            query_length = attention_mask[b_idx].sum(dim=-1).int().item()
+            query_length = attention_mask[b_idx].sum(dim=-1).int().item() if attention_mask is not None else seq_len
             cache_position = torch.arange(query_length, dtype=torch.int32).unsqueeze(0)
             output = self.prefill_decoder(
                 inputs_embeds=inputs_embeds[b_idx : b_idx + 1],
@@ -779,11 +787,14 @@ class RBLNQwen3_5Model(RBLNDecoderOnlyModel):
                 block_tables=self.block_tables,
             )
             logits.append(output.logits)
+            if output_hidden_states:
+                for l_idx in range(text_config.num_hidden_layers + 1):
+                    all_hidden_states[l_idx][b_idx].copy_(output.hidden_states[l_idx][0])
         logits = torch.cat(logits, dim=0)
 
         if not return_dict:
             return logits
-        return RBLNDecoderOnlyOutput(logits=logits)
+        return RBLNDecoderOnlyOutput(logits=logits, hidden_states=all_hidden_states)
 
 
 class RBLNQwen3_5ForConditionalGeneration(RBLNQwen3_5Model, RBLNDecoderOnlyModelForCausalLM):
@@ -920,8 +931,11 @@ class RBLNQwen3_5ForConditionalGeneration(RBLNQwen3_5Model, RBLNDecoderOnlyModel
         generate_idx: torch.Tensor | None = None,
         return_dict: bool | None = None,
         mm_token_type_ids: torch.IntTensor | None = None,
+        output_hidden_states: bool | None = None,
         **kwargs,
     ) -> RBLNDecoderOnlyOutput:
+        output_hidden_states = _validate_output_hidden_states(output_hidden_states, self.rbln_config)
+        text_config = self.config.get_text_config()
         if cache_position is None:  # prefill
             inputs_embeds, position_embed, rope_deltas = self._preprocess_prefill(
                 input_ids,
@@ -933,8 +947,16 @@ class RBLNQwen3_5ForConditionalGeneration(RBLNQwen3_5Model, RBLNDecoderOnlyModel
                 mm_token_type_ids=mm_token_type_ids,
             )
             self.rope_deltas = rope_deltas
-            batch_size = inputs_embeds.shape[0]
+            batch_size, seq_len = inputs_embeds.shape[:2]
 
+            all_hidden_states = (
+                tuple(
+                    torch.zeros(batch_size, seq_len, text_config.hidden_size, dtype=self.rbln_config.dtype)
+                    for _ in range(text_config.num_hidden_layers + 1)
+                )
+                if output_hidden_states
+                else None
+            )
             logits = []
             for b_idx in range(batch_size):
                 cache_pos = torch.arange(0, generate_idx[b_idx].item(), dtype=torch.int32).unsqueeze(0)
@@ -946,6 +968,9 @@ class RBLNQwen3_5ForConditionalGeneration(RBLNQwen3_5Model, RBLNDecoderOnlyModel
                     position_embed=position_embed[:, b_idx : b_idx + 1],
                 )
                 logits.append(output.logits)
+                if output_hidden_states:
+                    for l_idx in range(text_config.num_hidden_layers + 1):
+                        all_hidden_states[l_idx][b_idx].copy_(output.hidden_states[l_idx][0])
             logits = torch.cat(logits, dim=0)
         else:  # decode
             inputs_embeds, position_embed = self._preprocess_decoder(input_ids, cache_position)
@@ -955,7 +980,8 @@ class RBLNQwen3_5ForConditionalGeneration(RBLNQwen3_5Model, RBLNDecoderOnlyModel
                 position_embed=position_embed,
             )
             logits = output.logits
+            all_hidden_states = output.hidden_states
 
         if not return_dict:
             return logits, generate_idx
-        return RBLNDecoderOnlyOutput(logits=logits, generate_idx=generate_idx)
+        return RBLNDecoderOnlyOutput(logits=logits, generate_idx=generate_idx, hidden_states=all_hidden_states)

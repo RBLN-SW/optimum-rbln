@@ -922,6 +922,46 @@ class TestQwen3_5ForConditionalGeneration(LLMTest.TestLLM):
         return inputs
 
 
+class TestQwen3_5ForConditionalGeneration_OutputHiddenStates(TestQwen3_5ForConditionalGeneration):
+    # Left-padded input (padding_side="left", padding="max_length") so the output_hidden_states
+    # aggregation runs with a non-zero start (start > 0). This exercises the scatter-back offset and
+    # the full-width copy_ from the #658 bug family, which a non-padded prompt (start == 0) never hits.
+    # Kept at batch 1 so the BC-inference job can reuse its saved artifact (a batch-size change would
+    # not match the reused artifact).
+    RBLN_CLASS_KWARGS = {
+        "rbln_config": {
+            "visual": {"max_seq_len": 512},
+            "num_devices": 1,
+            "kvcache_partition_len": 4096,
+            "max_seq_len": 8192,
+            "output_hidden_states": True,
+        }
+    }
+    HF_CONFIG_KWARGS_PREPROCESSOR = {
+        "min_pixels": 64 * 16 * 16,
+        "max_pixels": 64 * 16 * 16,
+        "padding_side": "left",
+    }
+
+    def get_inputs(self):
+        tokenizer = self.get_tokenizer()
+        img_path = f"{os.path.dirname(__file__)}/../assets/rbln_logo_light.png"
+        image = Image.open(img_path)
+        inputs = tokenizer(
+            images=[image],
+            text=[self.PROMPT],
+            return_tensors="pt",
+            padding="max_length",
+            max_length=64,
+        )
+        inputs["max_new_tokens"] = 20
+        inputs["do_sample"] = False
+        return inputs
+
+    def test_generate(self):
+        self._test_output_hidden_states_generation()
+
+
 class TestGemma3ForConditionalGeneration(LLMTest.TestLLM):
     RBLN_AUTO_CLASS = RBLNAutoModelForImageTextToText
     RBLN_CLASS = RBLNGemma3ForConditionalGeneration
