@@ -33,6 +33,11 @@ import numpy as np
 import torch
 from transformers import PretrainedConfig
 
+from ..utils.logging import get_logger
+
+
+logger = get_logger(__name__)
+
 
 def np_cos(x: torch.Tensor) -> torch.Tensor:
     """cos(x) computed on the host via numpy.
@@ -98,6 +103,10 @@ class RotaryLookupTable:
 def build_rotary_lookup(rotary_emb: torch.nn.Module, max_seq_len: int):
     if getattr(rotary_emb, "rope_type", "default") == "default":
         return RotaryLookupTable(rotary_emb, max_seq_len)
+    logger.warning(
+        f"rope_type={rotary_emb.rope_type!r} cannot use the deterministic rotary lookup table; "
+        "host cos/sin stays on the torch path and may vary with the thread configuration."
+    )
     return rotary_emb
 
 
