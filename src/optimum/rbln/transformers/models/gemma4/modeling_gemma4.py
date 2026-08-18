@@ -33,10 +33,10 @@ from transformers.models.gemma4.modeling_gemma4 import Gemma4VisionRotaryEmbeddi
 from ....configuration_utils import RBLNCompileConfig, RBLNModelConfig
 from ....modeling import RBLNModel
 from ....utils.logging import get_logger
+from ...cache_utils import FullAttentionKVCacheMeta, SlidingWindowAttentionKVCacheMeta
 from ...modeling_attention_utils import validate_sliding_window
 from ...modeling_outputs import RBLNDecoderOnlyOutput
 from ...utils.rbln_runtime_wrapper import LoopProcessor
-from ..decoderonly.configuration_decoderonly import KVCacheMeta
 from ..decoderonly.decoderonly_runtime_utils import RBLNPageTableManager
 from ..decoderonly.generation_decoderonly import RBLNDecoderOnlyGenerationMixin
 from ..decoderonly.modeling_decoderonly import RBLNDecoderOnlyModelForCausalLM
@@ -257,7 +257,7 @@ class RBLNGemma4ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
         rbln_config: RBLNGemma4ForCausalLMConfig,
         model_config: PretrainedConfig,
     ):
-        cls._pre_populate_kvcache_metas(model_config, rbln_config)
+        cls._pre_populate_cache_metas(model_config, rbln_config)
 
         base_info = super().get_input_info(
             batch_size=batch_size,
@@ -518,20 +518,20 @@ class RBLNGemma4ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
         return embed_tokens
 
     @classmethod
-    def _pre_populate_kvcache_metas(
+    def _pre_populate_cache_metas(
         cls,
         model_config: "PretrainedConfig",
         rbln_config: RBLNGemma4ForCausalLMConfig,
     ) -> None:
-        # Pre-populates rbln_config.kvcache_metas with per-layer-heterogeneous KV shapes.
+        # Pre-populates rbln_config.cache_metas with per-layer-heterogeneous KV shapes.
         # Gemma4 mixes two layer kinds:
         #   sliding_attention: head_dim=config.head_dim, num_kv=config.num_key_value_heads.
         #   full_attention: head_dim=config.global_head_dim,
         #     num_kv=config.num_global_key_value_heads (attention_k_eq_v=True) or num_key_value_heads.
-        # Base get_input_info short-circuits on a non-empty kvcache_metas list and uses these entries
+        # Base get_input_info short-circuits on a non-empty cache_metas list and uses these entries
         # verbatim as compile-time KV cache input shapes — the only way to express per-layer
         # heterogeneous KV geometry in the current pipeline.
-        if len(rbln_config.kvcache_metas) > 0:
+        if len(rbln_config.cache_metas) > 0:
             return  # already populated (e.g. loaded from disk)
 
         dtype_str = RBLNCompileConfig.normalize_dtype(rbln_config.dtype)
@@ -561,9 +561,10 @@ class RBLNGemma4ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
             num_kv = num_kv_sliding if is_sliding else num_kv_full
             head_dim = head_dim_sliding if is_sliding else head_dim_full
 
+            meta_cls = SlidingWindowAttentionKVCacheMeta if is_sliding else FullAttentionKVCacheMeta
             for kv_offset, _ in enumerate(("key", "value")):
                 name = f"past_key_values_{layer_idx * 2 + kv_offset}"
-                meta = KVCacheMeta.make(
+                meta = meta_cls.from_config(
                     name=name,
                     layer_index=layer_idx,
                     num_key_value_heads=num_kv,
@@ -571,7 +572,7 @@ class RBLNGemma4ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
                     dtype=dtype_str,
                     rbln_config=rbln_config,
                 )
-                rbln_config.kvcache_metas.append(meta)
+                rbln_config.cache_metas.append(meta)
 
     @classmethod
     def _update_submodule_config(
