@@ -38,7 +38,7 @@ from ....configuration_utils import RBLNCompileConfig
 from ....modeling import RBLNModel
 from ....utils.logging import get_logger
 from ...modeling_outputs import _validate_output_hidden_states
-from ...modeling_rope_utils import build_rotary_lookup, np_cos, np_sin
+from ...modeling_rope_utils import build_rotary_lookup, np_cos, np_sin, vision_rot_pos_ids
 from ..decoderonly.modeling_decoderonly import (
     RBLNDecoderOnlyModel,
     RBLNDecoderOnlyModelForCausalLM,
@@ -75,6 +75,9 @@ class RBLNQwen2VisionTransformerPretrainedModel(RBLNModel):
         self.spatial_merge_size = config.spatial_merge_size
         self.spatial_merge_unit = config.spatial_merge_size * config.spatial_merge_size
         self.rotary_pos_emb = VisionRotaryEmbedding((config.embed_dim // config.num_heads) // 2)
+        freq_table = self.rotary_pos_emb(int(self.max_seq_len.max()))
+        self.rotary_cos_table = np_cos(freq_table)
+        self.rotary_sin_table = np_sin(freq_table)
         with no_init_weights():
             self.patch_embed = PatchEmbed(
                 patch_size=config.patch_size,
@@ -187,11 +190,12 @@ class RBLNQwen2VisionTransformerPretrainedModel(RBLNModel):
         # Each image is handled independently for padding and attention mask generation.
 
         hidden_states = self.patch_embed(hidden_states).to(self.rbln_config.dtype)
-        rotary_pos_emb = self.rot_pos_emb(grid_thw)
-        emb = torch.cat((rotary_pos_emb, rotary_pos_emb), dim=-1)
+        pos_ids = vision_rot_pos_ids(grid_thw, self.spatial_merge_size)
+        cos = self.rotary_cos_table[pos_ids].flatten(1)
+        sin = self.rotary_sin_table[pos_ids].flatten(1)
         position_embeddings = (
-            np_cos(emb).to(self.rbln_config.dtype),
-            np_sin(emb).to(self.rbln_config.dtype),
+            torch.cat((cos, cos), dim=-1).to(self.rbln_config.dtype),
+            torch.cat((sin, sin), dim=-1).to(self.rbln_config.dtype),
         )
 
         cu_seqlens = torch.repeat_interleave(grid_thw[:, 1] * grid_thw[:, 2], grid_thw[:, 0]).cumsum(

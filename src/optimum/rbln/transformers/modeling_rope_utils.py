@@ -101,6 +101,20 @@ def build_rotary_lookup(rotary_emb: torch.nn.Module, max_seq_len: int):
     return rotary_emb
 
 
+def vision_rot_pos_ids(grid_thw: torch.Tensor, spatial_merge_size: int) -> torch.Tensor:
+    """(h, w) rotary position ids per patch, merge-block ordered (mirrors HF ViT rot_pos_emb)."""
+    pos_ids = []
+    for t, h, w in grid_thw.tolist():
+        hpos = torch.arange(h).unsqueeze(1).expand(-1, w)
+        hpos = hpos.reshape(h // spatial_merge_size, spatial_merge_size, w // spatial_merge_size, spatial_merge_size)
+        hpos = hpos.permute(0, 2, 1, 3).flatten()
+        wpos = torch.arange(w).unsqueeze(0).expand(h, -1)
+        wpos = wpos.reshape(h // spatial_merge_size, spatial_merge_size, w // spatial_merge_size, spatial_merge_size)
+        wpos = wpos.permute(0, 2, 1, 3).flatten()
+        pos_ids.append(torch.stack([hpos, wpos], dim=-1).repeat(t, 1))
+    return torch.cat(pos_ids, dim=0)
+
+
 def _get_rope_theta(config: PretrainedConfig) -> float:
     if hasattr(config, "rope_theta"):
         return config.rope_theta

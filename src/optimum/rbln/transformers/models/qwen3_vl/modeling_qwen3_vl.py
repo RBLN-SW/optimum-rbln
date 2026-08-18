@@ -76,6 +76,9 @@ class RBLNQwen3VLVisionModel(RBLNModel):
 
         head_dim = config.hidden_size // config.num_heads
         self.rotary_pos_emb = Qwen3VLVisionRotaryEmbedding(head_dim // 2)
+        freq_table = self.rotary_pos_emb(int(self.max_seq_len.max()))
+        self.rotary_cos_table = np_cos(freq_table)
+        self.rotary_sin_table = np_sin(freq_table)
         self.deepstack_visual_indexes = config.deepstack_visual_indexes
 
         with no_init_weights():
@@ -142,13 +145,9 @@ class RBLNQwen3VLVisionModel(RBLNModel):
 
         return rbln_config
 
-    def rot_pos_emb(self, grid_thw: torch.Tensor) -> torch.Tensor:
+    def rot_pos_ids(self, grid_thw: torch.Tensor) -> torch.Tensor:
         merge_size = self.spatial_merge_size
-
-        max_hw = int(grid_thw[:, 1:].max().item())
-        freq_table = self.rotary_pos_emb(max_hw)
-        device = freq_table.device
-
+        device = grid_thw.device
         total_tokens = int(torch.prod(grid_thw, dim=1).sum().item())
         pos_ids = torch.empty((total_tokens, 2), dtype=torch.long, device=device)
 
@@ -176,9 +175,7 @@ class RBLNQwen3VLVisionModel(RBLNModel):
             pos_ids[offset : offset + num_tokens] = coords
             offset += num_tokens
 
-        embeddings = freq_table[pos_ids]
-        embeddings = embeddings.flatten(1)
-        return embeddings
+        return pos_ids
 
     def fast_pos_embed_interpolate(self, grid_thw: torch.Tensor) -> torch.Tensor:
         grid_ts, grid_hs, grid_ws = grid_thw[:, 0], grid_thw[:, 1], grid_thw[:, 2]
@@ -273,14 +270,14 @@ class RBLNQwen3VLVisionModel(RBLNModel):
         pos_embeds = self.fast_pos_embed_interpolate(grid_thw)
         hidden_states = hidden_states + pos_embeds.to(hidden_states.dtype)
 
-        rotary_pos_emb = self.rot_pos_emb(grid_thw)
+        pos_ids = self.rot_pos_ids(grid_thw)
         seq_len = hidden_states.shape[0]
         hidden_states = hidden_states.reshape(seq_len, -1)
-        rotary_pos_emb = rotary_pos_emb.reshape(seq_len, -1)
-        emb = torch.cat((rotary_pos_emb, rotary_pos_emb), dim=-1)
+        cos = self.rotary_cos_table[pos_ids].flatten(1)
+        sin = self.rotary_sin_table[pos_ids].flatten(1)
         position_embeddings = (
-            np_cos(emb).to(self.rbln_config.dtype),
-            np_sin(emb).to(self.rbln_config.dtype),
+            torch.cat((cos, cos), dim=-1).to(self.rbln_config.dtype),
+            torch.cat((sin, sin), dim=-1).to(self.rbln_config.dtype),
         )
 
         cu_seqlens = torch.repeat_interleave(grid_thw[:, 1] * grid_thw[:, 2], grid_thw[:, 0]).cumsum(
