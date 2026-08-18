@@ -23,7 +23,7 @@ from transformers.modeling_outputs import BaseModelOutputWithPastAndCrossAttenti
 from ...modeling_generic import RBLNTransformerEncoderForFeatureExtraction
 from ...models.seq2seq import RBLNModelForSeq2SeqLM
 from .configuration_t5 import RBLNT5EncoderModelConfig, RBLNT5ForConditionalGenerationConfig
-from .t5_architecture import T5Wrapper
+from .t5_architecture import T5Wrapper, patch_encoder_blocks
 
 
 if TYPE_CHECKING:
@@ -35,6 +35,7 @@ if TYPE_CHECKING:
 class T5EncoderWrapper(torch.nn.Module):
     def __init__(self, model: "T5EncoderModel", rbln_config: "RBLNT5EncoderModelConfig") -> None:
         super().__init__()
+        patch_encoder_blocks(model.get_encoder())
         self.model = model
         self.rbln_config = rbln_config
 

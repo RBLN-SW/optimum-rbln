@@ -35,8 +35,30 @@ from ..seq2seq.seq2seq_architecture import (
 logger = logging.get_logger(__name__)
 
 
+def _encoder_layer_forward(self, hidden_states, attention_mask, **kwargs):
+    # Mirrors `BartEncoderLayer.forward` minus the dropouts, which are inert at eval, and with the
+    # trailing clamp unguarded: upstream guards it with `not torch.isfinite(...).all()`, a
+    # data-dependent branch that `torch.export` cannot resolve.
+    residual = hidden_states
+    hidden_states, _ = self.self_attn(hidden_states, attention_mask=attention_mask, **kwargs)
+    hidden_states = self.self_attn_layer_norm(residual + hidden_states)
+
+    residual = hidden_states
+    hidden_states = self.fc2(self.activation_fn(self.fc1(hidden_states)))
+    hidden_states = self.final_layer_norm(residual + hidden_states)
+
+    # Bound at the dtype's max, not `max - 1000`: upstream only clamps when a non-finite value is
+    # already present, so the tighter bound would truncate finite activations it leaves alone. At `max`
+    # this is an identity on finite inputs and only folds inf down.
+    bound = torch.finfo(hidden_states.dtype).max
+    return torch.clamp(hidden_states, min=-bound, max=bound)
+
+
 class BartWrapper:
     def __init__(self, model: nn.Module, enc_max_seq_len: int, use_attention_mask: bool):
+        for layer in model.get_encoder().layers:
+            layer.forward = MethodType(_encoder_layer_forward, layer)
+
         self.encoder = Seq2SeqEncoderWrapper(model, enc_max_seq_len)
         self.decoder = BartDecoderWrapper(model, use_attention_mask=use_attention_mask)
 
