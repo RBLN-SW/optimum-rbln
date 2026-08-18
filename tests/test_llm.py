@@ -923,15 +923,40 @@ class TestQwen3_5ForConditionalGeneration(LLMTest.TestLLM):
 
 
 class TestQwen3_5ForConditionalGeneration_OutputHiddenStates(TestQwen3_5ForConditionalGeneration):
+    # Batch 2 with two prompts of different lengths and left padding. This makes the
+    # output_hidden_states aggregation run the two paths that a batch-1 test does not:
+    #   1. scatter-back with a non-zero start (the shorter, left-padded row), and
+    #   2. the per-row copy_ into the (batch, seq_len, H) buffer.
+    PROMPT2 = "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\n<|vision_start|><|image_pad|><|vision_end|>What colors and shapes appear in this logo, and describe the overall style in detail.<|im_end|>\n<|im_start|>assistant\n"
     RBLN_CLASS_KWARGS = {
         "rbln_config": {
             "visual": {"max_seq_len": 512},
             "num_devices": 1,
             "kvcache_partition_len": 4096,
             "max_seq_len": 8192,
+            "batch_size": 2,
             "output_hidden_states": True,
         }
     }
+    HF_CONFIG_KWARGS_PREPROCESSOR = {
+        "min_pixels": 64 * 16 * 16,
+        "max_pixels": 64 * 16 * 16,
+        "padding_side": "left",
+    }
+
+    def get_inputs(self):
+        tokenizer = self.get_tokenizer()
+        img_path = f"{os.path.dirname(__file__)}/../assets/rbln_logo_light.png"
+        image = Image.open(img_path)
+        inputs = tokenizer(
+            images=[image, image],
+            text=[self.PROMPT, self.PROMPT2],
+            return_tensors="pt",
+            padding=True,
+        )
+        inputs["max_new_tokens"] = 20
+        inputs["do_sample"] = False
+        return inputs
 
     def test_generate(self):
         self._test_output_hidden_states_generation()
