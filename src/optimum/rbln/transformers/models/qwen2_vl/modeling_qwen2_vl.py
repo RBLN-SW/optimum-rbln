@@ -38,7 +38,7 @@ from ....configuration_utils import RBLNCompileConfig
 from ....modeling import RBLNModel
 from ....utils.logging import get_logger
 from ...modeling_outputs import _validate_output_hidden_states
-from ...modeling_rope_utils import np_cos, np_sin
+from ...modeling_rope_utils import build_rotary_lookup, np_cos, np_sin
 from ..decoderonly.modeling_decoderonly import (
     RBLNDecoderOnlyModel,
     RBLNDecoderOnlyModelForCausalLM,
@@ -266,7 +266,9 @@ class RBLNQwen2VLModel(RBLNDecoderOnlyModel):
 
         super().__post_init__(**kwargs)
         self.visual = self.rbln_submodules[0]
-        self.rotary_emb = self._rotary_emb_class(self.config.text_config)
+        self.rotary_emb = build_rotary_lookup(
+            self._rotary_emb_class(self.config.text_config), self.rbln_config.max_seq_len
+        )
         if not self.can_generate():
             self.block_tables = torch.arange(self.rbln_config.kvcache_num_blocks, dtype=torch.int16)
 
