@@ -39,7 +39,12 @@ class _TextEncoder(torch.nn.Module):
         self.enc = enc
 
     def forward(self, inp):
-        return self.enc(inp, output_hidden_states=True, return_dict=False)
+        seq_len = inp.shape[-1]
+        min_value = torch.finfo(self.enc.dtype).min
+        causal_mask = torch.full((seq_len, seq_len), min_value, dtype=self.enc.dtype, device=inp.device)
+        causal_mask = torch.triu(causal_mask, diagonal=1)  # 0 on/below the diagonal, min above
+        causal_mask = causal_mask[None, None, :, :]  # (1, 1, seq_len, seq_len)
+        return self.enc(inp, attention_mask=causal_mask, output_hidden_states=True, return_dict=False)
 
 
 class RBLNCLIPTextModel(RBLNModel):

@@ -18,7 +18,6 @@ from typing import TYPE_CHECKING, Any
 
 import torch
 from transformers import AutoModelForTextEncoding, T5EncoderModel, T5ForConditionalGeneration
-from transformers.modeling_attn_mask_utils import _prepare_4d_attention_mask
 from transformers.modeling_outputs import BaseModelOutputWithPastAndCrossAttentions
 
 from ...modeling_generic import RBLNTransformerEncoderForFeatureExtraction
@@ -41,13 +40,6 @@ class T5EncoderWrapper(torch.nn.Module):
 
     def forward(self, *args, **kwargs):
         kwargs.pop("return_dict", None)
-        # TODO: make this to use `create_bidirectional_mask` in transformers v5
-        args = list(args)
-        mask_dtype = self.rbln_config.dtype
-        if len(args) > 1 and torch.is_tensor(args[1]) and args[1].dim() == 2:
-            args[1] = _prepare_4d_attention_mask(args[1], mask_dtype)
-        if "attention_mask" in kwargs and kwargs["attention_mask"] is not None and kwargs["attention_mask"].dim() == 2:
-            kwargs["attention_mask"] = _prepare_4d_attention_mask(kwargs["attention_mask"], mask_dtype)
         return self.model(*args, **kwargs, return_dict=False)
 
 

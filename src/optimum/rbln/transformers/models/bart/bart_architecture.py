@@ -13,9 +13,12 @@
 # limitations under the License.
 
 
+import copy
+from types import MethodType
+
 import torch
 from torch import nn
-from transformers.modeling_attn_mask_utils import _prepare_4d_attention_mask
+from transformers.masking_utils import create_bidirectional_mask
 from transformers.utils import logging
 
 from ..seq2seq.seq2seq_architecture import (
@@ -63,12 +66,23 @@ class BartDecoder(Seq2SeqDecoder):
         self.embed_positions = model.embed_positions
         self.layernorm_embedding = model.layernorm_embedding
         self.embed_scale = getattr(model, "embed_scale", None)
+        self._mask_config = copy.copy(model.config)
+        self._mask_config._attn_implementation = "eager"
 
     def prepare_attn_mask(self, attention_mask, encoder_attention_mask, **kwargs):
         if attention_mask is not None:
             attention_mask = attention_mask[:, None, None, :]
-        encoder_attention_mask = _prepare_4d_attention_mask(
-            encoder_attention_mask, encoder_attention_mask.dtype, tgt_len=1
+        dummy_embeds = torch.empty(
+            encoder_attention_mask.shape[0],
+            1,
+            1,
+            dtype=encoder_attention_mask.dtype,
+            device=encoder_attention_mask.device,
+        )
+        encoder_attention_mask = create_bidirectional_mask(
+            config=self._mask_config,
+            inputs_embeds=dummy_embeds,
+            attention_mask=encoder_attention_mask,
         )
 
         return attention_mask, encoder_attention_mask
