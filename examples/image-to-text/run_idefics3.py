@@ -1,46 +1,54 @@
+import argparse
 import os
-import typing
 
-import fire
 from datasets import load_dataset
 from transformers import AutoProcessor
 
 from optimum.rbln import RBLNIdefics3ForConditionalGeneration
 
 
-def main(
-    model_id: str = "HuggingFaceM4/Idefics3-8B-Llama3",
-    batch_size: int = 1,
-    from_transformers: bool = False,
-    prompt: typing.Optional[str] = None,
-    max_seq_len: typing.Optional[int] = None,
-    tensor_parallel_size: typing.Optional[int] = 4,
-):
-    processor = AutoProcessor.from_pretrained(model_id)
+# You can compile the model ahead of time with the CLI and then load the
+# artifacts here by passing the output directory as --model-id:
+#
+#   optimum-rbln-cli --model-id HuggingFaceM4/Idefics3-8B-Llama3 -o Idefics3-8B-Llama3 \
+#       --text_model.attn_impl flash_attn --text_model.max_seq_len 8192 \
+#       --text_model.use_inputs_embeds True --text_model.num_devices 4 \
+#       --text_model.batch_size 1
 
-    if from_transformers:
+
+def parse_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--model-id", default="HuggingFaceM4/Idefics3-8B-Llama3")
+    parser.add_argument("--batch-size", type=int, default=1)
+    parser.add_argument("--prompt", type=str, default="Describe this image.")
+    parser.add_argument("--max-seq-len", type=int, default=None)
+    parser.add_argument("--num-devices", type=int, default=4)
+    return parser.parse_args()
+
+
+def main():
+    args = parse_args()
+
+    processor = AutoProcessor.from_pretrained(args.model_id)
+
+    if os.path.isdir(args.model_id):
+        model = RBLNIdefics3ForConditionalGeneration.from_pretrained(args.model_id)
+    else:
         model = RBLNIdefics3ForConditionalGeneration.from_pretrained(
-            model_id,
-            export=True,
+            args.model_id,
             rbln_config={
                 "text_model": {
                     "attn_impl": "flash_attn",
-                    "max_seq_len": max_seq_len,
+                    "max_seq_len": args.max_seq_len,
                     "use_inputs_embeds": True,
-                    "tensor_parallel_size": tensor_parallel_size,
-                    "batch_size": batch_size,
+                    "num_devices": args.num_devices,
+                    "batch_size": args.batch_size,
                 }
             },
         )
-        model.save_pretrained(os.path.basename(model_id))
-    else:
-        model = RBLNIdefics3ForConditionalGeneration.from_pretrained(
-            os.path.basename(model_id),
-            export=False,
-        )
 
     ds = load_dataset("HuggingFaceM4/the_cauldron", "ai2d", split="train")
-    samples = ds.select(range(batch_size))
+    samples = ds.select(range(args.batch_size))
     images = []
     prompts = []
 
@@ -48,7 +56,7 @@ def main(
         img = sample["images"]
         images.append(img)
 
-        message = [{"role": "user", "content": [{"type": "image"}, {"type": "text", "text": "Describe this image."}]}]
+        message = [{"role": "user", "content": [{"type": "image"}, {"type": "text", "text": args.prompt}]}]
         prompt = processor.apply_chat_template(message, add_generation_prompt=True)
         prompts.append(prompt)
 
@@ -64,4 +72,4 @@ def main(
 
 
 if __name__ == "__main__":
-    fire.Fire(main)
+    main()

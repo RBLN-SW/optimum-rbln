@@ -13,11 +13,12 @@
 # limitations under the License.
 
 from pathlib import Path
-from typing import TYPE_CHECKING, List, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Optional, Union
 
 import torch
 from torch import Tensor, nn
-from transformers.modeling_utils import no_init_weights
+from transformers import BertModel
+from transformers.initialization import no_init_weights
 from transformers.models.grounding_dino.modeling_grounding_dino import (
     GroundingDinoContrastiveEmbedding,
     GroundingDinoConvEncoder,
@@ -35,10 +36,12 @@ from transformers.pytorch_utils import meshgrid
 from ....configuration_utils import RBLNCompileConfig, RBLNModelConfig
 from ....modeling import RBLNModel
 from ....utils.runtime_utils import RBLNPytorchRuntime
+from ..bert.modeling_bert import RBLNBertModel
 from .configuration_grounding_dino import (
     RBLNGroundingDinoDecoderConfig,
     RBLNGroundingDinoEncoderConfig,
     RBLNGroundingDinoForObjectDetectionConfig,
+    RBLNGroundingDinoTextModelConfig,
 )
 from .grounding_dino_architecture import (
     _GroundingDinoDecoder,
@@ -51,13 +54,47 @@ if TYPE_CHECKING:
         AutoFeatureExtractor,
         AutoProcessor,
         AutoTokenizer,
+        PretrainedConfig,
         PreTrainedModel,
     )
 
 
+class RBLNGroundingDinoTextModel(RBLNBertModel):
+    """RBLN optimized text backbone (BERT) of Grounding DINO.
+
+    the text self-attention mask is a prepared 4D additive float bias (upstream GroundingDinoModel applies a
+    "3D -> 4D correction (add head dim)" before the text backbone).
+    """
+
+    rbln_model_input_names = ["input_ids", "attention_mask", "token_type_ids", "position_ids"]
+    _hf_class = BertModel
+
+    @classmethod
+    def _update_rbln_config(
+        cls,
+        preprocessors=None,
+        model: Optional["PreTrainedModel"] = None,
+        model_config: Optional["PretrainedConfig"] = None,
+        rbln_config: RBLNGroundingDinoTextModelConfig | None = None,
+    ) -> RBLNGroundingDinoTextModelConfig:
+        if rbln_config.max_text_len is None:
+            raise ValueError("`max_text_len` should be specified for the GroundingDino text backbone!")
+
+        batch_size = rbln_config.batch_size
+        max_text_len = rbln_config.max_text_len
+        input_info = [
+            ("input_ids", [batch_size, max_text_len], "int64"),
+            ("attention_mask", [batch_size, 1, max_text_len, max_text_len], "float32"),
+            ("token_type_ids", [batch_size, max_text_len], "int64"),
+            ("position_ids", [batch_size, max_text_len], "int64"),
+        ]
+        rbln_config.set_compile_cfgs([RBLNCompileConfig(input_info=input_info)])
+        return rbln_config
+
+
 class RBLNGroundingDinoForObjectDetection(RBLNModel):
     _rbln_submodules = [
-        {"name": "text_backbone"},
+        {"name": "text_backbone", "config_class": RBLNGroundingDinoTextModelConfig},
         {"name": "backbone"},
         {"name": "encoder"},
         {"name": "decoder"},
@@ -73,6 +110,14 @@ class RBLNGroundingDinoForObjectDetection(RBLNModel):
     - An encoder-decoder transformer for processing visual and textual features
     - Object detection heads for predicting bounding boxes and class labels
     """
+
+    @classmethod
+    def _update_submodule_rbln_config(
+        cls, submodule_name, submodule_cls, model, submodule_config, submodule_rbln_config, preprocessors
+    ):
+        if submodule_name == "text_backbone" and getattr(submodule_rbln_config, "max_text_len", None) is None:
+            submodule_rbln_config.max_text_len = model.config.max_text_len
+        return submodule_rbln_config
 
     def __post_init__(self, **kwargs):
         self._setup_cpu_instances()
@@ -227,7 +272,7 @@ class RBLNGroundingDinoForObjectDetection(RBLNModel):
         preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"],
         model: Optional["PreTrainedModel"] = None,
         model_config: RBLNGroundingDinoForObjectDetectionConfig = None,
-        rbln_config: Optional[RBLNGroundingDinoForObjectDetectionConfig] = None,
+        rbln_config: RBLNGroundingDinoForObjectDetectionConfig | None = None,
     ) -> RBLNGroundingDinoForObjectDetectionConfig:
         input_info = [
             (
@@ -250,9 +295,9 @@ class RBLNGroundingDinoForObjectDetection(RBLNModel):
         self,
         pixel_values: Tensor,
         input_ids: Tensor,
-        token_type_ids: Optional[Tensor] = None,
-        attention_mask: Optional[Tensor] = None,
-        pixel_mask: Optional[Tensor] = None,
+        token_type_ids: Tensor | None = None,
+        attention_mask: Tensor | None = None,
+        pixel_mask: Tensor | None = None,
         encoder_outputs=None,
         output_attentions=None,
         output_hidden_states=None,
@@ -277,9 +322,20 @@ class RBLNGroundingDinoForObjectDetection(RBLNModel):
             token_type_ids = token_type_ids[:, :max_text_len]
             text_token_mask = text_token_mask[:, :max_text_len]
 
+        # 3D -> 4D correction (add head dim) for the text backbone only, mirroring upstream
+        # GroundingDinoModel.forward (which squeezes it back afterwards, as the rest of the
+        # model has custom 3D logic). Upstream passes the 4D bool mask straight to sdpa;
+        # we pass the equivalent additive float bias so create_bidirectional_mask early-exits
+        # the same way regardless of the compiled attention implementation.
+        text_backbone_attention_mask = torch.where(
+            text_self_attention_masks[:, None, :, :],
+            torch.zeros((), dtype=torch.float32),
+            torch.full((), torch.finfo(torch.float32).min, dtype=torch.float32),
+        )
+
         # Extract text features from text backbone
         text_outputs = self.text_backbone(
-            input_ids, text_self_attention_masks.to(torch.long), token_type_ids, position_ids, return_dict=return_dict
+            input_ids, text_backbone_attention_mask, token_type_ids, position_ids, return_dict=return_dict
         )
         text_features = text_outputs.last_hidden_state if return_dict else text_outputs[0]
         text_features = self.text_projection(text_features)
@@ -505,8 +561,8 @@ class RBLNGroundingDinoForObjectDetection(RBLNModel):
     def pad_text_to_rbln_config(
         self,
         input_ids: torch.LongTensor,
-        token_type_ids: Optional[torch.LongTensor] = None,
-        attention_mask: Optional[torch.LongTensor] = None,
+        token_type_ids: torch.LongTensor | None = None,
+        attention_mask: torch.LongTensor | None = None,
     ):
         batch_size, seq_len = input_ids.shape
         max_text_len = self.config.max_text_len
@@ -523,15 +579,15 @@ class RBLNGroundingDinoForObjectDetection(RBLNModel):
         self,
         pixel_values: torch.FloatTensor,
         input_ids: torch.LongTensor,
-        token_type_ids: Optional[torch.LongTensor] = None,
-        attention_mask: Optional[torch.LongTensor] = None,
-        pixel_mask: Optional[torch.BoolTensor] = None,
-        encoder_outputs: Optional[Union[GroundingDinoEncoderOutput, Tuple]] = None,
-        output_attentions: Optional[bool] = None,
-        output_hidden_states: Optional[bool] = None,
-        return_dict: Optional[bool] = None,
+        token_type_ids: torch.LongTensor | None = None,
+        attention_mask: torch.LongTensor | None = None,
+        pixel_mask: torch.BoolTensor | None = None,
+        encoder_outputs: GroundingDinoEncoderOutput | tuple | None = None,
+        output_attentions: bool | None = None,
+        output_hidden_states: bool | None = None,
+        return_dict: bool | None = None,
         **kwargs,
-    ) -> Union[GroundingDinoObjectDetectionOutput, Tuple]:
+    ) -> GroundingDinoObjectDetectionOutput | tuple:
         """
         Forward pass for the RBLN-optimized GroundingDinoForObjectDetection model.
 
@@ -691,7 +747,7 @@ class RBLNGroundingDinoEncoder(RBLNModel):
         cls,
         model: "PreTrainedModel",
         rbln_config: RBLNModelConfig,
-        preprocessors: Optional[Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"]],
+        preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"] | None,
     ):
         for processor in preprocessors:
             if rbln_config.image_size is None and hasattr(processor, "image_processor"):
@@ -717,7 +773,7 @@ class RBLNGroundingDinoEncoder(RBLNModel):
         preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"],
         model: Optional["PreTrainedModel"] = None,
         model_config: RBLNGroundingDinoEncoderConfig = None,
-        rbln_config: Optional[RBLNGroundingDinoEncoderConfig] = None,
+        rbln_config: RBLNGroundingDinoEncoderConfig | None = None,
     ) -> RBLNGroundingDinoEncoderConfig:
         if rbln_config.image_size is None:
             raise ValueError("RBLN config must have image_size set for RBLN optimized GroundingDinoDecoder.")
@@ -814,17 +870,17 @@ class RBLNGroundingDinoEncoder(RBLNModel):
         vision_attention_mask: Tensor,
         vision_position_embedding: Tensor,
         spatial_shapes: Tensor,
-        spatial_shapes_list: List[Tuple[int, int]],
+        spatial_shapes_list: list[tuple[int, int]],
         level_start_index: Tensor,
-        valid_ratios: Optional[Tensor] = None,
-        text_features: Optional[Tensor] = None,
-        text_attention_mask: Optional[Tensor] = None,
-        text_position_embedding: Optional[Tensor] = None,
-        text_self_attention_masks: Optional[Tensor] = None,
-        text_position_ids: Optional[Tensor] = None,
-        output_attentions: Optional[bool] = None,
-        output_hidden_states: Optional[bool] = None,
-        return_dict: Optional[bool] = None,
+        valid_ratios: Tensor | None = None,
+        text_features: Tensor | None = None,
+        text_attention_mask: Tensor | None = None,
+        text_position_embedding: Tensor | None = None,
+        text_self_attention_masks: Tensor | None = None,
+        text_position_ids: Tensor | None = None,
+        output_attentions: bool | None = None,
+        output_hidden_states: bool | None = None,
+        return_dict: bool | None = None,
     ):
         output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
         output_hidden_states = (
@@ -888,7 +944,7 @@ class RBLNGroundingDinoDecoder(RBLNModel):
         cls,
         model: "PreTrainedModel",
         rbln_config: RBLNModelConfig,
-        preprocessors: Optional[Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"]],
+        preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"] | None,
     ):
         for processor in preprocessors:
             if rbln_config.image_size is None and hasattr(processor, "image_processor"):
@@ -915,7 +971,7 @@ class RBLNGroundingDinoDecoder(RBLNModel):
         preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"],
         model: Optional["PreTrainedModel"] = None,
         model_config: RBLNGroundingDinoDecoderConfig = None,
-        rbln_config: Optional[RBLNGroundingDinoEncoderConfig] = None,
+        rbln_config: RBLNGroundingDinoEncoderConfig | None = None,
     ) -> RBLNGroundingDinoEncoderConfig:
         if rbln_config.image_size is None:
             raise ValueError("RBLN config must have image_size set for RBLN optimized GroundingDinoDecoder.")

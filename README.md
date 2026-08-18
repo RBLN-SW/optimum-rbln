@@ -3,7 +3,10 @@
 
 <div align="center">
 
-<img src="assets/rbln_logo.png" width="60%"/>
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/rbln_logo_dark.png">
+  <img src="assets/rbln_logo_light.png" width="60%" alt="Optimum RBLN"/>
+</picture>
 
 [![PyPI version](https://badge.fury.io/py/optimum-rbln.svg)](https://badge.fury.io/py/optimum-rbln)
 [![License](https://img.shields.io/github/license/rbln-sw/optimum-rbln)](https://github.com/rbln-sw/optimum-rbln/blob/main/LICENSE)
@@ -32,6 +35,10 @@ This library enables seamless integration between the HuggingFace ecosystem and 
 
 ## Seamless Replacement for Existing HuggingFace Code
 
+Swap the HuggingFace class for its `RBLN` counterpart. Passing a HuggingFace model id compiles the
+model for the NPU on the first run; passing a directory of previously compiled artifacts loads them
+directly, so compilation is skipped.
+
 ```diff
 - from diffusers import StableDiffusionXLPipeline
 + from optimum.rbln import RBLNStableDiffusionXLPipeline
@@ -40,7 +47,7 @@ This library enables seamless integration between the HuggingFace ecosystem and 
 model_id = "stabilityai/stable-diffusion-xl-base-1.0"
 prompt = "Astronaut in a jungle, cold color palette, muted colors, detailed, 8k"
 - pipe = StableDiffusionXLPipeline.from_pretrained(model_id)
-+ pipe = RBLNStableDiffusionXLPipeline.from_pretrained(model_id, export=True)
++ pipe = RBLNStableDiffusionXLPipeline.from_pretrained(model_id)
 
 # Generate image
 image = pipe(prompt).images[0]
@@ -50,6 +57,32 @@ image.save("image.png")
 
 + # (Optional) Save compiled artifacts to skip the compilation step in future runs
 + pipe.save_pretrained("compiled_sdxl")
+```
+
+## Compile Ahead of Time with the CLI
+
+Instead of compiling inside your script, you can compile a model up front with the `optimum-rbln-cli`
+command and load the resulting artifacts later:
+
+```bash
+# Compile and save the artifacts to ./compiled_qwen3
+optimum-rbln-cli --model-id Qwen/Qwen3-4B -o ./compiled_qwen3 \
+    --max_seq_len 8192 --batch_size 1 --num_devices 4
+```
+
+```python
+from optimum.rbln import RBLNQwen3ForCausalLM
+
+# Load the compiled artifacts (no recompilation)
+model = RBLNQwen3ForCausalLM.from_pretrained("./compiled_qwen3")
+```
+
+Useful CLI helpers:
+
+```bash
+optimum-rbln-cli --list-classes                     # list available RBLN classes
+optimum-rbln-cli --class RBLNQwen3ForCausalLM --show-rbln-config  # show accepted rbln_config keys
+optimum-rbln-cli --examples                          # show more usage examples
 ```
 
 ## Documentation
@@ -64,9 +97,6 @@ Check out [the documentation of Optimum RBLN](https://docs.rbln.ai/software/opti
 
 To install the latest release of this package:
 ```bash
-pip install optimum-rbln
-
-# CPU-only installation (recommended if you don't plan to use CUDA-enabled PyTorch)
 pip install optimum-rbln --extra-index-url https://download.pytorch.org/whl/cpu
 ```
 

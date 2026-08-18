@@ -13,11 +13,11 @@
 # limitations under the License.
 
 
-from typing import TYPE_CHECKING, Optional, Tuple, Union
+from typing import TYPE_CHECKING
 
 import torch
 from transformers import ColQwen2Config, ColQwen2ForRetrieval
-from transformers.modeling_utils import no_init_weights
+from transformers.initialization import no_init_weights
 from transformers.models.colqwen2.modeling_colqwen2 import ColQwen2ForRetrievalOutput
 
 from ....modeling import RBLNModel
@@ -50,9 +50,9 @@ class RBLNColQwen2ForRetrieval(RBLNModel):
         rbln_config = {
             "vlm": {
                 "visual": {
-                    "max_seq_lens": 6400,
+                    "max_seq_len": 6400,
                 },
-                "tensor_parallel_size": 4,
+                "num_devices": 4,
                 "kvcache_partition_len": 16384,
                 "max_seq_len": 16384 * 7,
             },
@@ -85,7 +85,6 @@ class RBLNColQwen2ForRetrieval(RBLNModel):
         ```
     """
 
-    _rbln_submodule_postfix = "model"
     _rbln_submodules = [
         {"name": "vlm"},
     ]
@@ -105,28 +104,30 @@ class RBLNColQwen2ForRetrieval(RBLNModel):
                 )
                 new_model = ColQwen2ForRetrieval._from_config(model_config)
             new_model.embedding_proj_layer = model.custom_text_proj
-            new_model.vlm.model.visual.load_state_dict(model.visual.state_dict())
-            new_model.vlm.model.language_model.load_state_dict(model.language_model.state_dict())
+            vlm_inner = getattr(new_model.vlm, "model", new_model.vlm)
+            vlm_inner.visual.load_state_dict(model.visual.state_dict())
+            vlm_inner.language_model.load_state_dict(model.language_model.state_dict())
             model = new_model
 
         # replace the lm_head with the custom text projection layer for optimization
-        model.vlm.model.lm_head = model.embedding_proj_layer
-        model.vlm.model.config.embedding_dim = model.config.embedding_dim
+        vlm_inner = getattr(model.vlm, "model", model.vlm)
+        vlm_inner.lm_head = model.embedding_proj_layer
+        vlm_inner.config.embedding_dim = model.config.embedding_dim
 
         # Some of the model weights are different from the model.dtype(vidore/colqwen2-v1.0-hf)
         return model.to(model.dtype)
 
     def forward(
         self,
-        input_ids: Optional[torch.LongTensor] = None,
-        inputs_embeds: Optional[torch.FloatTensor] = None,
-        attention_mask: Optional[torch.Tensor] = None,
-        pixel_values: Optional[torch.Tensor] = None,
-        image_grid_thw: Optional[torch.LongTensor] = None,
-        output_hidden_states: Optional[bool] = None,
-        return_dict: Optional[bool] = None,
+        input_ids: torch.LongTensor | None = None,
+        inputs_embeds: torch.FloatTensor | None = None,
+        attention_mask: torch.Tensor | None = None,
+        pixel_values: torch.Tensor | None = None,
+        image_grid_thw: torch.LongTensor | None = None,
+        output_hidden_states: bool | None = None,
+        return_dict: bool | None = None,
         **kwargs,
-    ) -> Union[Tuple, ColQwen2ForRetrievalOutput]:
+    ) -> tuple | ColQwen2ForRetrievalOutput:
         """
         Runs a ColQwen2 retrieval forward pass on text tokens and optional visual inputs.
 

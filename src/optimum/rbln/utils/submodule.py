@@ -13,8 +13,9 @@
 # limitations under the License.
 
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Type, Union
+from typing import TYPE_CHECKING, Any, Union
 
+import torch
 from transformers import PretrainedConfig
 
 from ..configuration_utils import RBLNModelConfig, get_rbln_config_class
@@ -35,9 +36,9 @@ class SubModulesMixin:
     ]
     """
 
-    _rbln_submodules: List[Dict[str, Any]] = []
+    _rbln_submodules: list[dict[str, Any]] = []
 
-    def __init__(self, *, rbln_submodules: Optional[List["RBLNModel"]] = None, **kwargs) -> None:
+    def __init__(self, *, rbln_submodules: list["RBLNModel"] | None = None, **kwargs) -> None:
         if rbln_submodules is None:
             rbln_submodules = []
         for submodule_meta, submodule in zip(self._rbln_submodules, rbln_submodules, strict=False):
@@ -45,8 +46,8 @@ class SubModulesMixin:
 
     @classmethod
     def _get_submodule_config_class(
-        cls, cls_name: str, submodule_rbln_config: Dict[str, Any]
-    ) -> Type[RBLNModelConfig]:
+        cls, cls_name: str, submodule_rbln_config: dict[str, Any]
+    ) -> type[RBLNModelConfig]:
         if isinstance(submodule_rbln_config, dict) and "cls_name" in submodule_rbln_config:
             config_cls_name = submodule_rbln_config["cls_name"]
             return get_rbln_config_class(config_cls_name)
@@ -57,7 +58,7 @@ class SubModulesMixin:
         cls,
         model: "PreTrainedModel",
         rbln_config: RBLNModelConfig,
-        preprocessors: Optional[Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"]],
+        preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"] | None,
     ):
         return rbln_config
 
@@ -65,18 +66,18 @@ class SubModulesMixin:
     def _update_submodule_rbln_config(
         cls,
         submodule_name: str,
-        submodule_cls: Type["RBLNModel"],
+        submodule_cls: type["RBLNModel"],
         model: "PreTrainedModel",
         submodule_config: PretrainedConfig,
         submodule_rbln_config: RBLNModelConfig,
-        preprocessors: Optional[Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"]],
+        preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"] | None,
     ):
         return submodule_rbln_config
 
     @classmethod
     def _export_submodules_from_model(
         cls, model: "PreTrainedModel", model_save_dir: str, rbln_config: RBLNModelConfig, **kwargs
-    ) -> List["RBLNModel"]:
+    ) -> list["RBLNModel"]:
         rbln_submodules = []
         submodule_prefix = getattr(cls, "_rbln_submodule_prefix", None)
         submodule_postfix = getattr(cls, "_rbln_submodule_postfix", None)
@@ -91,12 +92,14 @@ class SubModulesMixin:
                 torch_submodule: PreTrainedModel = getattr(model, submodule_name)
                 torch_submodule = getattr(torch_submodule, submodule_postfix)
             else:
-                torch_submodule: PreTrainedModel = getattr(model, submodule_name)
+                if (torch_submodule := getattr(model, submodule_name, None)) is None:
+                    torch_submodule = getattr(model.model, submodule_name)
 
             cls_name = torch_submodule.__class__.__name__
-            submodule_cls: Type["RBLNModel"] = get_rbln_model_cls(f"RBLN{cls_name}")
             submodule_rbln_config = getattr(rbln_config, submodule_name) or {}
-            submodule_config_cls = cls._get_submodule_config_class(cls_name, submodule_rbln_config)
+            submodule_config_cls = submodule.get("config_class") or cls._get_submodule_config_class(
+                cls_name, submodule_rbln_config
+            )
 
             if isinstance(submodule_rbln_config, dict):
                 filtered_kwargs = rbln_config.filter_parameters(submodule_config_cls, submodule_rbln_config)
@@ -108,6 +111,8 @@ class SubModulesMixin:
                 filtered_kwargs["cls_name"] = submodule_config_cls.__name__
                 submodule_rbln_config = submodule_config_cls(**filtered_kwargs)
 
+            submodule_cls: type[RBLNModel] = get_rbln_model_cls(submodule_rbln_config.rbln_model_cls_name)
+
             submodule_rbln_config = cls._update_submodule_rbln_config(
                 submodule_name=submodule_name,
                 submodule_cls=submodule_cls,
@@ -118,6 +123,12 @@ class SubModulesMixin:
             )
             setattr(rbln_config, submodule_name, submodule_rbln_config)
             submodule_rbln_config = submodule_cls._update_submodule_config(model, submodule_rbln_config, preprocessors)
+
+            if not submodule_cls._supports_non_fp32 and getattr(torch_submodule, "dtype", None) not in (
+                None,
+                torch.float32,
+            ):
+                torch_submodule = torch_submodule.to(torch.float32)
 
             rbln_submodule = submodule_cls.from_model(
                 model=torch_submodule,

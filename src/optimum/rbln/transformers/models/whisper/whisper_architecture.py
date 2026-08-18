@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Optional, Tuple, Union
 
 import torch
 from torch import nn
@@ -48,10 +47,10 @@ class WhisperEncoderWrapper(torch.nn.Module):
 
     def forward(
         self,
-        input_features: Optional[torch.LongTensor],
+        input_features: torch.LongTensor | None,
         b_idx: torch.Tensor,
         cross_key_values: torch.Tensor,
-    ) -> Union[Tuple[torch.FloatTensor], BaseModelOutput]:
+    ) -> tuple[torch.FloatTensor] | BaseModelOutput:
         # 1. get encoder last_hidden_states
         encoder_outputs = self.encoder(input_features=input_features)
         last_hidden_states = encoder_outputs[0]
@@ -109,7 +108,7 @@ class WhisperDecoderWrapper(torch.nn.Module):
     def forward(
         self,
         *args,
-    ) -> Union[Tuple[torch.FloatTensor], Seq2SeqLMOutput]:
+    ) -> tuple[torch.FloatTensor] | Seq2SeqLMOutput:
         if self.use_attention_mask:
             (
                 decoder_input_ids,
@@ -161,12 +160,12 @@ class WhisperDecoder(nn.Module):
 
     def forward(
         self,
-        input_ids: Optional[torch.Tensor] = None,
-        attention_mask: Optional[torch.Tensor] = None,
-        self_past_key_values: Optional[torch.Tensor] = None,
-        cross_past_key_values: Optional[torch.Tensor] = None,
-        cache_position: Optional[torch.Tensor] = None,
-        block_tables: Optional[torch.Tensor] = None,
+        input_ids: torch.Tensor | None = None,
+        attention_mask: torch.Tensor | None = None,
+        self_past_key_values: torch.Tensor | None = None,
+        cross_past_key_values: torch.Tensor | None = None,
+        cache_position: torch.Tensor | None = None,
+        block_tables: torch.Tensor | None = None,
     ):
         input_shape = input_ids.size()
         input_ids = input_ids.view(-1, input_shape[-1])
@@ -221,11 +220,11 @@ class WhisperDecoderLayer(nn.Module):
     def forward(
         self,
         hidden_states: torch.Tensor,
-        attention_mask: Optional[torch.Tensor] = None,
-        self_past_key_value: Optional[Tuple[torch.Tensor]] = None,
-        cross_past_key_value: Optional[Tuple[torch.Tensor]] = None,
-        cache_position: Optional[torch.Tensor] = None,
-        block_tables: Optional[torch.Tensor] = None,
+        attention_mask: torch.Tensor | None = None,
+        self_past_key_value: tuple[torch.Tensor] | None = None,
+        cross_past_key_value: tuple[torch.Tensor] | None = None,
+        cache_position: torch.Tensor | None = None,
+        block_tables: torch.Tensor | None = None,
     ) -> torch.Tensor:
         # Self Attention Block
         residual = hidden_states
@@ -281,11 +280,11 @@ class WhisperSelfAttention(WhisperAttention):
     def forward(
         self,
         hidden_states: torch.Tensor,
-        past_key_value: Optional[Tuple[torch.Tensor]] = None,
-        attention_mask: Optional[torch.Tensor] = None,
-        cache_position: Optional[torch.Tensor] = None,
-        block_tables: Optional[torch.Tensor] = None,
-    ) -> Tuple[torch.Tensor, Optional[torch.Tensor], Optional[Tuple[torch.Tensor]]]:
+        past_key_value: tuple[torch.Tensor] | None = None,
+        attention_mask: torch.Tensor | None = None,
+        cache_position: torch.Tensor | None = None,
+        block_tables: torch.Tensor | None = None,
+    ) -> tuple[torch.Tensor, torch.Tensor | None, tuple[torch.Tensor] | None]:
         bsz, tgt_len, _ = hidden_states.size()
         query_states = self._shape(self.q_proj(hidden_states), tgt_len, bsz)
         query_states = query_states * self.scaling
@@ -293,13 +292,13 @@ class WhisperSelfAttention(WhisperAttention):
         key_states = self._shape(self.k_proj(hidden_states), -1, bsz)
         value_states = self._shape(self.v_proj(hidden_states), -1, bsz)
         block_size = past_key_value[0].shape[-2]
-
+        num_blocks = past_key_value[0].shape[0]
         args = {
             "q": query_states,
             "k": key_states,
             "v": value_states,
-            "kcache": past_key_value[0].view(bsz, self.num_heads, 1, -1, self.head_dim),
-            "vcache": past_key_value[1].view(bsz, self.num_heads, 1, -1, self.head_dim),
+            "kcache": past_key_value[0].view(num_blocks, self.num_heads, 1, -1, self.head_dim),
+            "vcache": past_key_value[1].view(num_blocks, self.num_heads, 1, -1, self.head_dim),
             "seq": cache_position.expand(bsz, 1),
             "scale": torch.tensor(1.0, dtype=torch.float32),
             "block_table": block_tables,
@@ -325,14 +324,14 @@ class WhisperCrossAttention(WhisperAttention):
     def forward(
         self,
         hidden_states: torch.Tensor,
-        past_key_value: Optional[Tuple[torch.Tensor]] = None,
-    ) -> Tuple[torch.Tensor, Optional[torch.Tensor], Optional[Tuple[torch.Tensor]]]:
+        past_key_value: tuple[torch.Tensor] | None = None,
+    ) -> tuple[torch.Tensor, torch.Tensor | None, tuple[torch.Tensor] | None]:
         batch_size, query_len, _ = hidden_states.size()
         query_states = self._shape(self.q_proj(hidden_states), query_len, batch_size)
         query_states = query_states * self.scaling
 
-        key_states = past_key_value[0]
-        value_states = past_key_value[1]
+        key_states = past_key_value[0][:batch_size]
+        value_states = past_key_value[1][:batch_size]
 
         attn_weights = torch.matmul(query_states, key_states.transpose(2, 3))
         attn_weights = nn.functional.softmax(attn_weights, dim=-1)

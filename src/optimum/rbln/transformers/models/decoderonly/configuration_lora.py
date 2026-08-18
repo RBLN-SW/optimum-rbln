@@ -1,6 +1,6 @@
 import json
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any
 
 from huggingface_hub import snapshot_download
 
@@ -45,7 +45,7 @@ class RBLNLoRAAdapterConfig(RBLNSerializableConfigProtocol):
 
         model = RBLNLlamaForCausalLM.from_pretrained(
             model_id,
-            rbln_config=RBLNLlamaForCausalLMConfig(lora_config=lora_config, tensor_parallel_size=tp_size, max_seq_len=8192),
+            rbln_config=RBLNLlamaForCausalLMConfig(lora_config=lora_config, num_devices=tp_size, max_seq_len=8192),
             dtype="auto",
         )
 
@@ -78,32 +78,32 @@ class RBLNLoRAAdapterConfig(RBLNSerializableConfigProtocol):
         self,
         lora_int_id: int,
         lora_name: str,
-        lora_path: Union[str, Path],
-        r: Optional[int] = None,
-        lora_alpha: Optional[float] = None,
-        target_modules: Optional[List[str]] = None,
-        bias: Optional[str] = None,
-        use_rslora: Optional[bool] = None,
-        scaling_factor: Optional[float] = None,
+        lora_path: str | Path,
+        r: int | None = None,
+        lora_alpha: float | None = None,
+        target_modules: list[str] | None = None,
+        bias: str | None = None,
+        use_rslora: bool | None = None,
+        scaling_factor: float | None = None,
     ):
         """
         Args:
             lora_int_id (int): Unique identifier for this LoRA adapter (e.g., 0, 1, 2).
                 This ID will be used during runtime to select which adapter to use.
             lora_name (str): Human-readable name for this adapter (e.g., "math_tuned", "code_tuned").
-            lora_path (Union[str, Path]): Path to the LoRA adapter weights directory or file.
+            lora_path (str | Path): Path to the LoRA adapter weights directory or file.
                 Must be accessible at compile time to load the weights.
-            r (Optional[int]): The rank of the LoRA approximation for this adapter. If None,
+            r (int | None): The rank of the LoRA approximation for this adapter. If None,
                 will be loaded from adapter config file.
-            lora_alpha (Optional[float]): The LoRA scaling parameter for this adapter. If None,
+            lora_alpha (float | None): The LoRA scaling parameter for this adapter. If None,
                 will be loaded from adapter config file.
-            target_modules (Optional[List[str]]): List of module names to apply LoRA to.
+            target_modules (list[str] | None): List of module names to apply LoRA to.
                 If None, will be loaded from adapter config file or inherit from parent RBLNLoRAConfig.
-            bias (Optional[str]): Bias handling strategy. Options: "none", "all", "lora_only".
+            bias (str | None): Bias handling strategy. Options: "none", "all", "lora_only".
                 If None, will be loaded from adapter config file.
-            use_rslora (Optional[bool]): Whether to use Rank-Stabilized LoRA. If None,
+            use_rslora (bool | None): Whether to use Rank-Stabilized LoRA. If None,
                 will be loaded from adapter config file.
-            scaling_factor (Optional[float]): Additional scaling factor for this adapter. Defaults to 1.0.
+            scaling_factor (float | None): Additional scaling factor for this adapter. Defaults to 1.0.
             **kwargs: Additional adapter-specific arguments.
 
         Raises:
@@ -185,7 +185,7 @@ class RBLNLoRAAdapterConfig(RBLNSerializableConfigProtocol):
                 f"Error: {e}"
             ) from e
 
-    def _load_adapter_config(self) -> Dict[str, Any]:
+    def _load_adapter_config(self) -> dict[str, Any]:
         """
         Load adapter configuration from adapter_config.json file.
 
@@ -202,7 +202,7 @@ class RBLNLoRAAdapterConfig(RBLNSerializableConfigProtocol):
             return {}
 
         try:
-            with open(config_path, "r", encoding="utf-8") as f:
+            with open(config_path, encoding="utf-8") as f:
                 adapter_config = json.load(f)
             logger.info(f"Loaded adapter config from {config_path}")
             return adapter_config
@@ -210,7 +210,7 @@ class RBLNLoRAAdapterConfig(RBLNSerializableConfigProtocol):
             logger.warning(f"Failed to load adapter config from {config_path}: {e}, using default values")
             return {}
 
-    def _prepare_for_serialization(self) -> Dict[str, Any]:
+    def _prepare_for_serialization(self) -> dict[str, Any]:
         config_dict = {
             "lora_int_id": self.lora_int_id,
             "lora_name": self.lora_name,
@@ -236,13 +236,13 @@ class RBLNLoRABaseAdapterConfig(RBLNLoRAAdapterConfig):
         self,
         lora_int_id: int = 0,
         lora_name: str = "base",
-        lora_path: Union[str, Path] = "__reserved_base__",
-        r: Optional[int] = 1,
-        lora_alpha: Optional[float] = 1.0,
-        target_modules: Optional[List[str]] = None,
-        bias: Optional[str] = "none",
-        use_rslora: Optional[bool] = False,
-        scaling_factor: Optional[float] = 1.0,
+        lora_path: str | Path = "__reserved_base__",
+        r: int | None = 1,
+        lora_alpha: float | None = 1.0,
+        target_modules: list[str] | None = None,
+        bias: str | None = "none",
+        use_rslora: bool | None = False,
+        scaling_factor: float | None = 1.0,
     ):
         if lora_int_id != 0:
             raise ValueError("RBLNLoRABaseAdapterConfig must have lora_int_id=0")
@@ -283,15 +283,13 @@ class RBLNLoRAConfig(RBLNSerializableConfigProtocol):
     4. Runtime can only switch between pre-compiled adapters
     """
 
-    def __init__(
-        self, adapters: List[Union[Dict[str, Any], RBLNLoRAAdapterConfig]], max_lora_rank: Optional[int] = None
-    ):
+    def __init__(self, adapters: list[dict[str, Any] | RBLNLoRAAdapterConfig], max_lora_rank: int | None = None):
         """
         Args:
-            adapters (List[Union[Dict[str, Any], RBLNLoRAAdapterConfig]]): List of LoRA adapters
+            adapters (list[dict[str, Any] | RBLNLoRAAdapterConfig]): List of LoRA adapters
                 to be compiled into the model. Each adapter must be fully specified with weights
                 accessible at compile time.
-            max_lora_rank (Optional[int]): Maximum rank across all adapters. If None, automatically
+            max_lora_rank (int | None): Maximum rank across all adapters. If None, automatically
                 determined from the provided adapters. Used for memory allocation optimization.
 
         Raises:
@@ -303,7 +301,7 @@ class RBLNLoRAConfig(RBLNSerializableConfigProtocol):
             raise ValueError("adapters list cannot be empty")
 
         # Convert dict adapters to RBLNLoRAAdapterConfig objects
-        self.adapters: List[RBLNLoRAAdapterConfig] = []
+        self.adapters: list[RBLNLoRAAdapterConfig] = []
         for adapter in adapters:
             if isinstance(adapter, dict):
                 self.adapters.append(RBLNLoRAAdapterConfig(**adapter))
@@ -352,26 +350,26 @@ class RBLNLoRAConfig(RBLNSerializableConfigProtocol):
         return len(self.adapters)
 
     @property
-    def adapter_ids(self) -> List[int]:
+    def adapter_ids(self) -> list[int]:
         return [adapter.lora_int_id for adapter in self.adapters]
 
     @property
-    def adapter_names(self) -> List[str]:
+    def adapter_names(self) -> list[str]:
         return [adapter.lora_name for adapter in self.adapters]
 
-    def get_adapter_by_id(self, lora_int_id: int) -> Optional[RBLNLoRAAdapterConfig]:
+    def get_adapter_by_id(self, lora_int_id: int) -> RBLNLoRAAdapterConfig | None:
         for adapter in self.adapters:
             if adapter.lora_int_id == lora_int_id:
                 return adapter
         return None
 
-    def get_adapter_by_name(self, lora_name: str) -> Optional[RBLNLoRAAdapterConfig]:
+    def get_adapter_by_name(self, lora_name: str) -> RBLNLoRAAdapterConfig | None:
         for adapter in self.adapters:
             if adapter.lora_name == lora_name:
                 return adapter
         return None
 
-    def validate_adapter_weights(self) -> Dict[int, bool]:
+    def validate_adapter_weights(self) -> dict[int, bool]:
         validation_results = {}
         for adapter in self.adapters:
             try:
@@ -401,7 +399,7 @@ class RBLNLoRAConfig(RBLNSerializableConfigProtocol):
 
         return validation_results
 
-    def _prepare_for_serialization(self) -> Dict[str, Any]:
+    def _prepare_for_serialization(self) -> dict[str, Any]:
         # Do not serialize the reserved base adapter (id=0)
         serializable_adapters = [adapter for adapter in self.adapters if adapter.lora_int_id != 0]
         serializable_map = {

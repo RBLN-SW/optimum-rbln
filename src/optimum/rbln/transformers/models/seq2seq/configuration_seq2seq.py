@@ -12,10 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Optional
+from typing import Any
 
 from ....configuration_utils import RBLNModelConfig
-from ....utils.deprecation import deprecate_kwarg
 from ....utils.logging import get_logger
 
 
@@ -25,26 +24,25 @@ logger = get_logger()
 class RBLNModelForSeq2SeqLMConfig(RBLNModelConfig):
     support_paged_attention = None
 
-    @deprecate_kwarg(old_name="pad_token_id", version="0.10.0")
     def __init__(
         self,
-        batch_size: Optional[int] = None,
-        enc_max_seq_len: Optional[int] = None,
-        dec_max_seq_len: Optional[int] = None,
-        use_attention_mask: Optional[bool] = None,
-        kvcache_num_blocks: Optional[int] = None,
-        kvcache_block_size: Optional[int] = None,
+        batch_size: int | None = None,
+        enc_max_seq_len: int | None = None,
+        dec_max_seq_len: int | None = None,
+        use_attention_mask: bool | None = None,
+        kvcache_num_blocks: int | None = None,
+        kvcache_block_size: int | None = None,
         **kwargs: Any,
     ):
         """
         Args:
-            batch_size (Optional[int]): The batch size for inference. Defaults to 1.
-            enc_max_seq_len (Optional[int]): Maximum sequence length for the encoder.
-            dec_max_seq_len (Optional[int]): Maximum sequence length for the decoder.
-            use_attention_mask (Optional[bool]): Whether to use attention masks during inference.
-            kvcache_num_blocks (Optional[int]): The total number of blocks to allocate for the
+            batch_size (int | None): The batch size for inference. Defaults to 1.
+            enc_max_seq_len (int | None): Maximum sequence length for the encoder.
+            dec_max_seq_len (int | None): Maximum sequence length for the decoder.
+            use_attention_mask (bool | None): Whether to use attention masks during inference.
+            kvcache_num_blocks (int | None): The total number of blocks to allocate for the
                 PagedAttention KV cache for the SelfAttention. Defaults to batch_size.
-            kvcache_block_size (Optional[int]): Sets the size (in number of tokens) of each block
+            kvcache_block_size (int | None): Sets the size (in number of tokens) of each block
                 in the PagedAttention KV cache for the SelfAttention. Defaults to dec_max_seq_len.
             kwargs: Additional arguments passed to the parent RBLNModelConfig.
 

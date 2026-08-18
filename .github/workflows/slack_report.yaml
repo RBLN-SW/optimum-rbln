@@ -131,16 +131,6 @@ jobs:
             PYTEST_STATUS="✅ Success - All tests passed"
           fi
 
-          # Compiler job is named "check-rebel-compiler-version" (reusable workflow job).
-          COMPILER_CONCLUSION=$(echo "$JOBS" | jq -r '.jobs[] | select(.name | contains("check-rebel-compiler-version") or contains("check-compiler")) | .conclusion' | head -n 1)
-          if [ "$COMPILER_CONCLUSION" = "success" ]; then
-            COMPILER_STATUS="✅ Available"
-          elif [ -z "$COMPILER_CONCLUSION" ] || [ "$COMPILER_CONCLUSION" = "null" ]; then
-            COMPILER_STATUS="⚠️ Unknown"
-          else
-            COMPILER_STATUS="❌ Not Available"
-          fi
-
           BC_RESULT="${{ inputs.bc_result }}"
           INCLUDE_BC=false
           if [ -n "$BC_RESULT" ]; then
@@ -154,8 +144,6 @@ jobs:
             TITLE="❌ $TITLE_BASE"
           elif [ "$INCLUDE_BC" = "true" ] && [ "$BC_RESULT" != "success" ] && [ "$BC_RESULT" != "skipped" ] && [ -n "$BC_RESULT" ]; then
             TITLE="❌ $TITLE_BASE - BC Failed"
-          elif [ "$COMPILER_CONCLUSION" != "success" ] && [ -n "$COMPILER_CONCLUSION" ] && [ "$COMPILER_CONCLUSION" != "null" ]; then
-            TITLE="⚠️ $TITLE_BASE - Compiler Check Failed"
           else
             TITLE="✅ $TITLE_BASE"
           fi
@@ -199,7 +187,6 @@ jobs:
             --arg compiler_version "${{ inputs.compiler_version }}" \
             --arg transformers_version "${{ inputs.transformers_version }}" \
             --arg diffusers_version "${{ inputs.diffusers_version }}" \
-            --arg compiler_status "$COMPILER_STATUS" \
             --arg pytest_status "$PYTEST_STATUS" \
             --argjson bc_blocks "$bc_blocks" \
             '{
@@ -239,13 +226,6 @@ jobs:
                   ]
                 },
                 { type: "divider" },
-                {
-                  type: "section",
-                  fields: [
-                    { type: "mrkdwn", text: "*Compiler Check*" },
-                    { type: "mrkdwn", text: $compiler_status }
-                  ]
-                },
                 {
                   type: "section",
                   fields: [

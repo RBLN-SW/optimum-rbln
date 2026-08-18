@@ -48,7 +48,7 @@ class RBLNWhisperForConditionalGenerationConfig(RBLNModelConfig):
             enc_max_seq_len (int, optional): Maximum sequence length for the encoder.
             dec_max_seq_len (int, optional): Maximum sequence length for the decoder.
             kvcache_num_blocks (int, optional): The total number of blocks to allocate for the
-                PagedAttention KV cache for the SelfAttention. Defaults to batch_size.
+                PagedAttention KV cache for the SelfAttention. Defaults to batch_size + 1.
             kvcache_block_size (int, optional): Sets the size (in number of tokens) of each block
                 in the PagedAttention KV cache for the SelfAttention. Defaults to dec_max_seq_len.
             kwargs: Additional arguments passed to the parent RBLNModelConfig.

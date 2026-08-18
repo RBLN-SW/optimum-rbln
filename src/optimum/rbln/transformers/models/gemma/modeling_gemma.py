@@ -47,7 +47,7 @@ class RBLNGemmaForCausalLM(RBLNDecoderOnlyModelForCausalLM):
             "google/gemma-7b",
             export=True,
             rbln_batch_size=1,
-            rbln_tensor_parallel_size=4,
+            rbln_num_devices=4,
         )
 
 
@@ -55,7 +55,7 @@ class RBLNGemmaForCausalLM(RBLNDecoderOnlyModelForCausalLM):
         rbln_config = {
             "batch_size": 1,
             "max_seq_len": 4096,
-            "tensor_parallel_size": 4,
+            "num_devices": 4,
         }
         model = RBLNGemmaForCausalLM.from_pretrained(
             "google/gemma-7b",
@@ -70,7 +70,7 @@ class RBLNGemmaForCausalLM(RBLNDecoderOnlyModelForCausalLM):
         config = RBLNGemmaForCausalLMConfig(
             batch_size=1,
             max_seq_len=4096,
-            tensor_parallel_size=4
+            num_devices=4
         )
         model = RBLNGemmaForCausalLM.from_pretrained(
             "google/gemma-7b",

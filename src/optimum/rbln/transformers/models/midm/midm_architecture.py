@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import math
-from typing import TYPE_CHECKING, Tuple
+from typing import TYPE_CHECKING
 
 import torch
 import torch.nn as nn
@@ -49,7 +49,7 @@ def apply_rotary_pos_emb(q, k, cos, sin):
 
 class MidmLMHeadModelWrapper(DecoderOnlyWrapper):
     def get_rotary_emb(self, max_seq_len):
-        self.config.rope_theta = 10000
+        self.config.rope_parameters = {"rope_type": "default", "rope_theta": 10000.0}
         self.config.head_dim = self.config.n_embd // self.config.n_head
         self.config.partial_rotary_factor = self.config.rotary_percentage
         return super().get_rotary_emb(max_seq_len=max_seq_len)
@@ -130,7 +130,7 @@ class MidmAttention(DecoderOnlyAttention):
         self.split_size = self_attn.split_size
         self.num_key_value_heads = self_attn.num_heads
 
-    def projection(self, hidden_states, lora_int_id) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    def projection(self, hidden_states, lora_int_id) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         if lora_int_id is not None:
             raise NotImplementedError("LoRA is not supported for MidmAttention")
 

@@ -45,13 +45,13 @@ class RBLNQwen3ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
             "Qwen/Qwen3-4B",
             export=True,
             rbln_batch_size=1,
-            rbln_tensor_parallel_size=4,
+            rbln_num_devices=4,
         )
         # Using a config dictionary
         rbln_config = {
             "batch_size": 1,
             "max_seq_len": 40_960,
-            "tensor_parallel_size": 4,
+            "num_devices": 4,
             "kvcache_partition_len": 8192,
         }
         model = RBLNQwen3ForCausalLM.from_pretrained(
@@ -64,7 +64,7 @@ class RBLNQwen3ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
         config = RBLNQwen3ForCausalLMConfig(
             batch_size=1,
             max_seq_len=40_960,
-            tensor_parallel_size=4,
+            num_devices=4,
             kvcache_partition_len=8192,
         )
         model = RBLNQwen3ForCausalLM.from_pretrained(
@@ -104,7 +104,7 @@ class RBLNQwen3Model(RBLNDecoderOnlyModel):
             export=True,
             rbln_batch_size=1,
             rbln_max_seq_len=40_960,
-            rbln_tensor_parallel_size=4,
+            rbln_num_devices=4,
             rbln_kvcache_partition_len=8192,
         )
     """

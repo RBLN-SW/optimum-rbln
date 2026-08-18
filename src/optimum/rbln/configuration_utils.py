@@ -15,16 +15,16 @@
 import importlib
 import inspect
 import json
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, fields
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Protocol, Tuple, Type, Union, runtime_checkable
+from typing import Any, Protocol, Union, runtime_checkable
 
 import numpy as np
 import torch
 from packaging.version import Version
 
 from .__version__ import __version__
-from .utils.deprecation import deprecate_kwarg, deprecate_method, warn_deprecated_npu
+from .utils.deprecation import deprecate_kwarg, warn_deprecated_npu
 from .utils.logging import get_logger
 from .utils.runtime_utils import ContextRblnConfig
 
@@ -33,10 +33,10 @@ logger = get_logger(__name__)
 
 
 DEFAULT_COMPILED_MODEL_NAME = "compiled_model"
-TypeInputInfo = List[Tuple[str, Tuple[int], str]]
+TypeInputInfo = list[tuple[str, tuple[int], str]]
 
 
-def nested_update(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any]:
+def nested_update(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
     """
     Recursively merge override dict into base dict.
     For nested dicts, values are merged recursively instead of being replaced.
@@ -62,7 +62,7 @@ def nested_update(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, A
 
 @runtime_checkable
 class RBLNSerializableConfigProtocol(Protocol):
-    def _prepare_for_serialization(self) -> Dict[str, Any]: ...
+    def _prepare_for_serialization(self) -> dict[str, Any]: ...
 
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}({self._prepare_for_serialization()})"
@@ -75,18 +75,18 @@ class RBLNCompileConfig:
 
     Attributes:
         compiled_model_name (str): Name of the compiled model.
-        input_info (Union[List[TypeInputInfo], TypeInputInfo]): Information about input tensors.
-        npu (Optional[str]): NPU configuration.
-        tensor_parallel_size (Optional[int]): Size for tensor parallelism.
+        input_info (list[TypeInputInfo] | TypeInputInfo): Information about input tensors.
+        npu (str | None): NPU configuration.
+        num_devices (int | None): Number of devices to distribute the model across.
     """
 
     compiled_model_name: str = DEFAULT_COMPILED_MODEL_NAME
-    input_info: Union[List[TypeInputInfo], TypeInputInfo] = None
-    npu: Optional[str] = None
-    tensor_parallel_size: Optional[int] = None
+    input_info: list[TypeInputInfo] | TypeInputInfo = None
+    npu: str | None = None
+    num_devices: int | None = None
 
     @staticmethod
-    def normalize_dtype(dtype: Union[str, torch.dtype, np.dtype]) -> str:
+    def normalize_dtype(dtype: str | torch.dtype | np.dtype) -> str:
         """
         Convert framework-specific dtype to string representation.
         i.e. torch.float32 -> "float32"
@@ -133,18 +133,18 @@ class RBLNCompileConfig:
         else:
             self.input_info = normalize_input_info(self.input_info)
 
-    def update(self, kwargs: Dict[str, Any]):
+    def update(self, kwargs: dict[str, Any]):
         self.compiled_model_name = kwargs.get("compiled_model_name", self.compiled_model_name)
         self.input_info = kwargs.get("input_info", self.input_info)
         self.npu = kwargs.get("npu", self.npu)
-        self.tensor_parallel_size = kwargs.get("tensor_parallel_size", self.tensor_parallel_size)
+        self.num_devices = kwargs.get("num_devices", self.num_devices)
         return self
 
     def get_dummy_inputs(
         self,
         fill=0,
-        static_tensors: Optional[Dict[str, torch.Tensor]] = None,
-        meta_tensor_names: Optional[List[str]] = None,
+        static_tensors: dict[str, torch.Tensor] | None = None,
+        meta_tensor_names: list[str] | None = None,
     ):
         dummy = []
         static_tensors = static_tensors if static_tensors is not None else {}
@@ -175,10 +175,10 @@ class RBLNCompileConfig:
 
 
 RUNTIME_KEYWORDS = ["create_runtimes", "device", "device_map", "activate_profiler", "timeout"]
-CONFIG_MAPPING: Dict[str, Type["RBLNModelConfig"]] = {}
+CONFIG_MAPPING: dict[str, type["RBLNModelConfig"]] = {}
 
 
-def get_rbln_config_class(rbln_config_class_name: str) -> Type["RBLNModelConfig"]:
+def get_rbln_config_class(rbln_config_class_name: str) -> type["RBLNModelConfig"]:
     cls = getattr(importlib.import_module("optimum.rbln"), rbln_config_class_name, None)
     if cls is None:
         if rbln_config_class_name in CONFIG_MAPPING:
@@ -188,12 +188,12 @@ def get_rbln_config_class(rbln_config_class_name: str) -> Type["RBLNModelConfig"
     return cls
 
 
-def load_config(path: str) -> Tuple[Type["RBLNModelConfig"], Dict[str, Any]]:
+def load_config(path: str) -> tuple[type["RBLNModelConfig"], dict[str, Any]]:
     path = Path(path)
     if path.is_dir():
         path = path / "rbln_config.json"
 
-    with open(path, "r") as jsonf:
+    with open(path) as jsonf:
         config_file = json.load(jsonf)
 
     if "_meta" in config_file:
@@ -227,7 +227,7 @@ class RBLNAutoConfig:
         return cls(**kwargs)
 
     @staticmethod
-    def load_from_dict(config_dict: Dict[str, Any]) -> "RBLNModelConfig":
+    def load_from_dict(config_dict: dict[str, Any]) -> "RBLNModelConfig":
         """
         Build a `RBLNModelConfig` from a plain dictionary.
 
@@ -250,7 +250,7 @@ class RBLNAutoConfig:
             >>> data = {
             ...     "cls_name": "RBLNLlamaForCausalLMConfig",
             ...     "create_runtimes": False,
-            ...     "tensor_parallel_size": 4
+            ...     "num_devices": 4
             ... }
             >>> cfg = RBLNAutoConfig.load_from_dict(data)
         """
@@ -261,7 +261,7 @@ class RBLNAutoConfig:
         return cls(**config_dict)
 
     @staticmethod
-    def register(config: Type["RBLNModelConfig"], exist_ok=False):
+    def register(config: type["RBLNModelConfig"], exist_ok=False):
         """
         Register a new configuration for this class.
 
@@ -283,17 +283,17 @@ class RBLNAutoConfig:
     def from_pretrained(
         cls,
         path: str,
-        rbln_config: Optional[Union[Dict[str, Any], "RBLNModelConfig"]] = None,
+        rbln_config: Union[dict[str, Any], "RBLNModelConfig"] | None = None,
         return_unused_kwargs: bool = False,
-        **kwargs: Optional[Dict[str, Any]],
-    ) -> Union["RBLNModelConfig", Tuple["RBLNModelConfig", Dict[str, Any]]]:
+        **kwargs: dict[str, Any] | None,
+    ) -> Union["RBLNModelConfig", tuple["RBLNModelConfig", dict[str, Any]]]:
         """
         Load RBLNModelConfig from a path.
         Class name is automatically inferred from the `rbln_config.json` file.
 
         Args:
             path (str): Path to the RBLNModelConfig.
-            rbln_config (Optional[Dict[str, Any]]): Additional configuration to override.
+            rbln_config (dict[str, Any] | None): Additional configuration to override.
             return_unused_kwargs (bool): Whether to return unused kwargs.
             kwargs: Additional keyword arguments to override configuration values.
 
@@ -309,42 +309,6 @@ class RBLNAutoConfig:
         return target_cls.from_pretrained(
             path, rbln_config=rbln_config, return_unused_kwargs=return_unused_kwargs, **kwargs
         )
-
-    @classmethod
-    @deprecate_method(version="0.11.0", new_method="from_pretrained")
-    def load(
-        cls,
-        path: str,
-        rbln_config: Optional[Union[Dict[str, Any], "RBLNModelConfig"]] = None,
-        return_unused_kwargs: bool = False,
-        **kwargs: Optional[Dict[str, Any]],
-    ) -> Union["RBLNModelConfig", Tuple["RBLNModelConfig", Dict[str, Any]]]:
-        """
-        Load RBLNModelConfig from a path.
-        Class name is automatically inferred from the `rbln_config.json` file.
-
-        Deprecated:
-            This method is deprecated and will be removed in version 0.11.0.
-            Use `from_pretrained` instead.
-
-        Args:
-            path (str): Path to the RBLNModelConfig file or directory.
-            rbln_config (Optional[Dict[str, Any]]): Additional configuration to override.
-            return_unused_kwargs (bool): Whether to return unused kwargs.
-            kwargs: Additional keyword arguments to override configuration values.
-
-        Returns:
-            RBLNModelConfig: The loaded RBLNModelConfig.
-
-        Examples:
-            ```python
-            # Deprecated usage:
-            config = RBLNAutoConfig.load("/path/to/model")
-            # Recommended usage:
-            config = RBLNAutoConfig.from_pretrained("/path/to/model")
-            ```
-        """
-        return cls.from_pretrained(path, rbln_config=rbln_config, return_unused_kwargs=return_unused_kwargs, **kwargs)
 
 
 class RBLNModelConfig(RBLNSerializableConfigProtocol):
@@ -417,7 +381,7 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
         config.save("/path/to/model")
 
         # Using AutoConfig
-        loaded_config = RBLNAutoConfig.load("/path/to/model")
+        loaded_config = RBLNAutoConfig.from_pretrained("/path/to/model")
         ```
 
 
@@ -440,7 +404,7 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
         config = RBLNLlamaForCausalLMConfig(
             max_seq_len=4096,
             device=[0, 1, 2, 3],
-            tensor_parallel_size=4  # For multi-NPU parallel inference
+            num_devices=4  # For multi-NPU parallel inference
         )
         ```
 
@@ -463,7 +427,7 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
                     "image_size": 336,
                 },
                 "language_model": {
-                    "tensor_parallel_size": 4,  # Distribute across 4 NPUs
+                    "num_devices": 4,  # Distribute across 4 NPUs
                     "max_seq_len": 8192,
                     "use_inputs_embeds": True,
                     "batch_size": 1,
@@ -479,7 +443,7 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
         # Setup a complex multi-device configuration for large language models
         llm_config = RBLNLlamaForCausalLMConfig(
             # Split model across 8 NPUs
-            tensor_parallel_size=8,
+            num_devices=8,
 
             # Runtime options
             device=[8, 9, 10, 11, 12, 13, 14, 15],
@@ -502,7 +466,7 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
             create_runtimes=False,  # Compile only, don't create runtime
             npu="RBLN-CA25",  # Specify target NPU for compilation
             max_seq_len=4096,
-            tensor_parallel_size=4,
+            num_devices=4,
             batch_size=1
         )
 
@@ -555,20 +519,20 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
         "_runtime_options",
         "npu",
         "dtype",
-        "tensor_parallel_size",
+        "num_devices",
         "create_runtimes",
         "device",
         "device_map",
         "activate_profiler",
         "timeout",
     ]
-    submodules: List[str] = []
+    submodules: list[str] = []
     subclass_non_save_attributes = []
     _allow_no_compile_cfgs = False
 
     def initialize_submodule_config(
         self,
-        submodule_config: Optional[Union[Dict[str, Any], "RBLNModelConfig"]] = None,
+        submodule_config: Union[dict[str, Any], "RBLNModelConfig"] | None = None,
         force_kwargs: bool = False,
         **kwargs: Any,
     ) -> "RBLNModelConfig":
@@ -583,7 +547,7 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
             from_predecessor.update(
                 {
                     "npu": self.npu,
-                    "tensor_parallel_size": self.tensor_parallel_size,
+                    "num_devices": self.num_devices,
                     "optimum_rbln_version": self.optimum_rbln_version,
                 }
             )
@@ -591,6 +555,12 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
 
             init_kwargs = from_predecessor
             init_kwargs.update(submodule_config)
+
+            # Drop the inherited `num_devices` so a submodule using the deprecated
+            # `tensor_parallel_size` alias isn't shadowed by it; an explicit submodule
+            # `num_devices` already wins on its own.
+            if "tensor_parallel_size" in submodule_config and "num_devices" not in submodule_config:
+                init_kwargs.pop("num_devices", None)
 
             if force_kwargs:
                 for key, value in kwargs.items():
@@ -614,7 +584,7 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
 
         return submodule_config
 
-    def filter_parameters(self, config_cls: Type["RBLNModelConfig"], parameters: Dict[str, Any]) -> Dict[str, Any]:
+    def filter_parameters(self, config_cls: type["RBLNModelConfig"], parameters: dict[str, Any]) -> dict[str, Any]:
         import importlib
 
         model_cls_name = config_cls.__name__.replace("Config", "")
@@ -632,7 +602,7 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
 
         if model_cls is not None:
             if not getattr(model_cls, "_tp_support", False):
-                filtered_out_params.add("tensor_parallel_size")
+                filtered_out_params.add("num_devices")
 
         filtered_params = {}
         for key, value in parameters.items():
@@ -680,6 +650,12 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
         super().__setattr__(key, value)
 
     @deprecate_kwarg(
+        old_name="tensor_parallel_size",
+        new_name="num_devices",
+        version="0.12.0",
+        raise_if_greater_or_equal_version=False,
+    )
+    @deprecate_kwarg(
         old_name="_torch_dtype",
         new_name="dtype",
         version="0.12.0",
@@ -689,36 +665,36 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
     )
     def __init__(
         self,
-        cls_name: Optional[str] = None,
-        create_runtimes: Optional[bool] = None,
-        device: Optional[Union[int, List[int]]] = None,
-        device_map: Optional[Dict[str, Union[int, List[int]]]] = None,
-        activate_profiler: Optional[bool] = None,
-        npu: Optional[str] = None,
-        tensor_parallel_size: Optional[int] = None,
-        timeout: Optional[int] = None,
-        optimum_rbln_version: Optional[str] = None,
-        dtype: Optional[Union[str, torch.dtype]] = None,
-        _compile_cfgs: Optional[List[RBLNCompileConfig]] = None,
+        cls_name: str | None = None,
+        create_runtimes: bool | None = None,
+        device: int | list[int] | None = None,
+        device_map: dict[str, int | list[int]] | None = None,
+        activate_profiler: bool | None = None,
+        npu: str | None = None,
+        num_devices: int | None = None,
+        timeout: int | None = None,
+        optimum_rbln_version: str | None = None,
+        dtype: str | torch.dtype | None = None,
+        _compile_cfgs: list[RBLNCompileConfig] | None = None,
         *,
-        optimize_host_memory: Optional[bool] = None,
+        optimize_host_memory: bool | None = None,
         **kwargs: Any,
     ):
         """
         Initialize a RBLN model configuration with runtime options and compile configurations.
 
         Args:
-            cls_name (Optional[str]): The class name of the configuration. Defaults to the current class name.
-            create_runtimes (Optional[bool]): Whether to create RBLN runtimes. Defaults to True.
-            device (Optional[Union[int, List[int]]]): The device(s) to load the model onto. Can be a single device ID or a list.
-            device_map (Optional[Dict[str, Union[int, List[int]]]]): Mapping from compiled model names to device IDs.
-            activate_profiler (Optional[bool]): Whether to activate the profiler for performance analysis.
-            npu (Optional[str]): The NPU device name to use for compilation.
-            tensor_parallel_size (Optional[int]): Size for tensor parallelism to distribute the model across devices.
-            timeout (Optional[int]): The timeout for the runtime in seconds. If it isn't provided, it will be set to 60 by default.
-            optimum_rbln_version (Optional[str]): The optimum-rbln version used for this configuration.
-            dtype (Optional[Union[str, torch.dtype]]): The data type to use for the model.
-            _compile_cfgs (List[RBLNCompileConfig]): List of compilation configurations for the model.
+            cls_name (str | None): The class name of the configuration. Defaults to the current class name.
+            create_runtimes (bool | None): Whether to create RBLN runtimes. Defaults to True.
+            device (int | list[int] | None): The device(s) to load the model onto. Can be a single device ID or a list.
+            device_map (dict[str, int | list[int]] | None): Mapping from compiled model names to device IDs.
+            activate_profiler (bool | None): Whether to activate the profiler for performance analysis.
+            npu (str | None): The NPU device name to use for compilation.
+            num_devices (int | None): Number of devices to distribute the model across.
+            timeout (int | None): The timeout for the runtime in seconds. If it isn't provided, it will be set to 60 by default.
+            optimum_rbln_version (str | None): The optimum-rbln version used for this configuration.
+            dtype (str | torch.dtype | None): The data type to use for the model.
+            _compile_cfgs (list[RBLNCompileConfig]): List of compilation configurations for the model.
             kwargs: Additional keyword arguments.
 
         Raises:
@@ -743,9 +719,9 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
         if optimize_host_memory is not None:
             logger.warning("`optimize_host_memory` is deprecated and will be removed in future versions.")
 
-        # Automatically pass npu, tensor_parallel_size to compile_cfgs
+        # Automatically pass npu, num_devices to compile_cfgs
         self.npu = npu
-        self.tensor_parallel_size = tensor_parallel_size
+        self.num_devices = num_devices
 
         if dtype is not None and isinstance(dtype, torch.dtype):
             dtype = RBLNCompileConfig.normalize_dtype(dtype)
@@ -755,12 +731,18 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
             self.optimum_rbln_version = __version__
 
         compile_cfgs = _compile_cfgs if _compile_cfgs is not None else []
-        self._compile_cfgs: List[RBLNCompileConfig] = compile_cfgs
+        self._compile_cfgs: list[RBLNCompileConfig] = compile_cfgs
 
         if not isinstance(self._compile_cfgs, list):
             raise ValueError("`compile_cfgs` must be a list of `RBLNCompileConfig`.")
         if len(self._compile_cfgs) > 0 and not isinstance(self._compile_cfgs[0], RBLNCompileConfig):
-            self.set_compile_cfgs([RBLNCompileConfig(**cfg) for cfg in self._compile_cfgs])
+            compile_cfg_fields = {f.name for f in fields(RBLNCompileConfig)}
+            self.set_compile_cfgs(
+                [
+                    RBLNCompileConfig(**{k: v for k, v in cfg.items() if k in compile_cfg_fields})
+                    for cfg in self._compile_cfgs
+                ]
+            )
 
         if len(kwargs) > 0:
             if optimum_rbln_version is not None:  # loaded from file
@@ -786,7 +768,7 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
         return self.dtype
 
     @torch_dtype.setter
-    def torch_dtype(self, torch_dtype: Union[str, torch.dtype]):
+    def torch_dtype(self, torch_dtype: str | torch.dtype):
         logger.warning_once("`torch_dtype` is deprecated. Use `dtype` instead.")
         self.dtype = torch_dtype
 
@@ -795,7 +777,7 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
         return getattr(torch, self._dtype)
 
     @dtype.setter
-    def dtype(self, dtype: Union[str, torch.dtype]):
+    def dtype(self, dtype: str | torch.dtype):
         if isinstance(dtype, torch.dtype):
             dtype = RBLNCompileConfig.normalize_dtype(dtype)
 
@@ -806,7 +788,7 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
         return self.__class__.__name__[:-6]
 
     @property
-    def rbln_model_cls(self) -> Type:
+    def rbln_model_cls(self) -> type:
         rbln_model_cls = getattr(importlib.import_module("optimum.rbln"), self.rbln_model_cls_name, None)
         if rbln_model_cls is None:
             raise ValueError(
@@ -815,7 +797,7 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
             )
         return rbln_model_cls
 
-    def _prepare_for_serialization(self) -> Dict[str, Any]:
+    def _prepare_for_serialization(self) -> dict[str, Any]:
         # Prepare the attributes map for serialization by converting nested RBLNModelConfig
         # objects to their serializable form.
         serializable_map = {}
@@ -888,10 +870,10 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
         return self._compile_cfgs
 
     @compile_cfgs.setter
-    def compile_cfgs(self, compile_cfgs: List[RBLNCompileConfig]):
+    def compile_cfgs(self, compile_cfgs: list[RBLNCompileConfig]):
         raise RuntimeError("`compile_cfgs` cannot be set directly. Please use `set_compile_cfgs` instead.")
 
-    def set_compile_cfgs(self, compile_cfgs: List[RBLNCompileConfig]):
+    def set_compile_cfgs(self, compile_cfgs: list[RBLNCompileConfig]):
         if not isinstance(compile_cfgs, list):
             raise ValueError("`compile_cfgs` must be a list of `RBLNCompileConfig`.")
         if len(compile_cfgs) == 0:
@@ -902,7 +884,7 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
         self._compile_cfgs = compile_cfgs
         for compile_cfg in self._compile_cfgs:
             compile_cfg.npu = self.npu
-            compile_cfg.tensor_parallel_size = self.tensor_parallel_size
+            compile_cfg.num_devices = self.num_devices
 
         target_npu = self.npu or next((cfg.npu for cfg in self._compile_cfgs if cfg.npu is not None), None)
         warn_deprecated_npu(target_npu)
@@ -943,16 +925,16 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
     def from_pretrained(
         cls,
         path: str,
-        rbln_config: Optional[Union[Dict[str, Any], "RBLNModelConfig"]] = None,
+        rbln_config: Union[dict[str, Any], "RBLNModelConfig"] | None = None,
         return_unused_kwargs: bool = False,
-        **kwargs: Optional[Dict[str, Any]],
-    ) -> Union["RBLNModelConfig", Tuple["RBLNModelConfig", Dict[str, Any]]]:
+        **kwargs: dict[str, Any] | None,
+    ) -> Union["RBLNModelConfig", tuple["RBLNModelConfig", dict[str, Any]]]:
         """
         Load a RBLNModelConfig from a path.
 
         Args:
             path (str): Path to the RBLNModelConfig file or directory containing the config file.
-            rbln_config (Optional[Dict[str, Any]]): Additional configuration to override.
+            rbln_config (dict[str, Any] | None): Additional configuration to override.
             return_unused_kwargs (bool): Whether to return unused kwargs.
             kwargs: Additional keyword arguments to override configuration values.
                     Keys starting with 'rbln_' will have the prefix removed and be used
@@ -1016,8 +998,11 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
         config_file.update(rbln_runtime_kwargs)
         rbln_config = cls(**config_file)
         if len(rbln_kwargs) > 0:
+            non_save_attrs = set(getattr(cls, "subclass_non_save_attributes", []))
             for key, value in rbln_kwargs.items():
-                if getattr(rbln_config, key) != value:
+                if key in non_save_attrs:
+                    setattr(rbln_config, key, value)
+                elif getattr(rbln_config, key) != value:
                     raise ValueError(
                         f"Cannot set the following arguments: {list(rbln_kwargs.keys())} "
                         f"Since the value is already set to {getattr(rbln_config, key)}"
@@ -1028,53 +1013,11 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
             return rbln_config
 
     @classmethod
-    @deprecate_method(version="0.11.0", new_method="from_pretrained")
-    def load(
-        cls,
-        path: str,
-        rbln_config: Optional[Union[Dict[str, Any], "RBLNModelConfig"]] = None,
-        return_unused_kwargs: bool = False,
-        **kwargs: Optional[Dict[str, Any]],
-    ) -> Union["RBLNModelConfig", Tuple["RBLNModelConfig", Dict[str, Any]]]:
-        """
-        Load a RBLNModelConfig from a path.
-
-        Deprecated:
-            This method is deprecated and will be removed in version 0.11.0.
-            Use `from_pretrained` instead.
-
-        Args:
-            path (str): Path to the RBLNModelConfig file or directory containing the config file.
-            rbln_config (Optional[Dict[str, Any]]): Additional configuration to override.
-            return_unused_kwargs (bool): Whether to return unused kwargs.
-            kwargs: Additional keyword arguments to override configuration values.
-                    Keys starting with 'rbln_' will have the prefix removed and be used
-                    to update the configuration.
-
-        Returns:
-            RBLNModelConfig: The loaded configuration instance.
-
-        Note:
-            This method loads the configuration from the specified path and applies any
-            provided overrides. If the loaded configuration class doesn't match the expected
-            class, a warning will be logged.
-
-        Examples:
-            ```python
-            # Deprecated usage:
-            config = RBLNResNetForImageClassificationConfig.load("/path/to/model")
-            # Recommended usage:
-            config = RBLNResNetForImageClassificationConfig.from_pretrained("/path/to/model")
-            ```
-        """
-        return cls.from_pretrained(path, rbln_config=rbln_config, return_unused_kwargs=return_unused_kwargs, **kwargs)
-
-    @classmethod
     def initialize_from_kwargs(
-        cls: Type["RBLNModelConfig"],
-        rbln_config: Optional[Union[Dict[str, Any], "RBLNModelConfig"]] = None,
+        cls: type["RBLNModelConfig"],
+        rbln_config: Union[dict[str, Any], "RBLNModelConfig"] | None = None,
         **kwargs: Any,
-    ) -> Tuple["RBLNModelConfig", Dict[str, Any]]:
+    ) -> tuple["RBLNModelConfig", dict[str, Any]]:
         # Initialize RBLNModelConfig from kwargs.
         kwargs_keys = list(kwargs.keys())
         rbln_kwargs = {key[5:]: kwargs.pop(key) for key in kwargs_keys if key.startswith("rbln_")}
@@ -1092,7 +1035,7 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
 
         return rbln_config, kwargs
 
-    def get_default_values_for_original_cls(self, func_name: str, keys: List[str]) -> Dict[str, Any]:
+    def get_default_values_for_original_cls(self, func_name: str, keys: list[str]) -> dict[str, Any]:
         # Get default values for original class attributes from RBLNModelConfig.
         model_cls = self.rbln_model_cls.get_hf_class()
         func = getattr(model_cls, func_name)
@@ -1126,7 +1069,7 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
         return self._runtime_options["device"]
 
     @device.setter
-    def device(self, device: Union[int, List[int]]):
+    def device(self, device: int | list[int]):
         self._runtime_options["device"] = device
 
     @property
@@ -1143,7 +1086,7 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
         return self._runtime_options["device_map"]
 
     @device_map.setter
-    def device_map(self, device_map: Dict[str, Union[int, List[int]]]):
+    def device_map(self, device_map: dict[str, int | list[int]]):
         self._runtime_options["device_map"] = device_map
 
     @property
@@ -1170,8 +1113,8 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
 
 
 def convert_rbln_config_dict(
-    rbln_config: Optional[Union[Dict[str, Any], RBLNModelConfig]] = None, **kwargs
-) -> Tuple[Optional[Union[Dict[str, Any], RBLNModelConfig]], Dict[str, Any]]:
+    rbln_config: dict[str, Any] | RBLNModelConfig | None = None, **kwargs
+) -> tuple[dict[str, Any] | RBLNModelConfig | None, dict[str, Any]]:
     # Validate and merge rbln_ prefixed kwargs into rbln_config
     kwargs_keys = list(kwargs.keys())
     rbln_kwargs = {key[5:]: kwargs.pop(key) for key in kwargs_keys if key.startswith("rbln_")}

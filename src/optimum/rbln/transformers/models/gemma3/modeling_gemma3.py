@@ -13,12 +13,13 @@
 # limitations under the License.
 import importlib
 import inspect
-from typing import TYPE_CHECKING, Any, Callable, Dict, Optional, Tuple, Union
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any, Optional, Union
 
 import torch
 from transformers import AutoModelForImageTextToText, Gemma3ForConditionalGeneration, PretrainedConfig, PreTrainedModel
+from transformers.initialization import no_init_weights
 from transformers.modeling_outputs import BaseModelOutputWithPooling
-from transformers.modeling_utils import no_init_weights
 from transformers.models.gemma3.modeling_gemma3 import Gemma3TextScaledWordEmbedding
 
 from ....configuration_utils import RBLNCompileConfig, RBLNModelConfig
@@ -112,10 +113,9 @@ class RBLNGemma3ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMix
         self.vision_tower = LoopVisionTower(self.rbln_submodules[0])
         self.language_model = self.rbln_submodules[1]
         self.multi_modal_projector = LoopProjector(self.model[0])
-        self.vocab_size = self.config.text_config.vocab_size
-
-        # Copied from the original class
-        self.pad_token_id = self.config.pad_token_id if self.config.pad_token_id is not None else -1
+        text_config = self.config.text_config
+        self.vocab_size = text_config.vocab_size
+        self.pad_token_id = text_config.pad_token_id if text_config.pad_token_id is not None else -1
         return super().__post_init__(**kwargs)
 
     def get_attn_impl(self) -> str:
@@ -129,15 +129,15 @@ class RBLNGemma3ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMix
 
     @classmethod
     def _wrap_model_if_needed(cls, model: "PreTrainedModel", rbln_config: RBLNModelConfig):
-        return model.multi_modal_projector
+        return model.model.multi_modal_projector
 
     @classmethod
     def _update_rbln_config(
         cls,
-        preprocessors: Optional[Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"]],
+        preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"] | None,
         model: Optional["PreTrainedModel"] = None,
         model_config: Optional["PretrainedConfig"] = None,
-        rbln_config: Optional[RBLNModelConfig] = None,
+        rbln_config: RBLNModelConfig | None = None,
     ) -> RBLNModelConfig:
         image_feature_dim = (model_config.vision_config.image_size // model_config.vision_config.patch_size) ** 2
         feature_size = model_config.vision_config.hidden_size
@@ -187,9 +187,9 @@ class RBLNGemma3ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMix
     def _update_model_kwargs_for_generation(
         self,
         outputs: RBLNDecoderOnlyOutput,
-        model_kwargs: Dict[str, Any],
+        model_kwargs: dict[str, Any],
         **kwargs,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         # update generate_idx
         model_kwargs["generate_idx"] = outputs.generate_idx
         model_kwargs["padded_cache_lengths"] = outputs.padded_cache_lengths
@@ -225,9 +225,9 @@ class RBLNGemma3ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMix
 
     def _preprocess_prefill(
         self,
-        input_ids: Optional[torch.LongTensor] = None,
-        inputs_embeds: Optional[torch.FloatTensor] = None,
-        pixel_values: Optional[torch.FloatTensor] = None,
+        input_ids: torch.LongTensor | None = None,
+        inputs_embeds: torch.FloatTensor | None = None,
+        pixel_values: torch.FloatTensor | None = None,
         **kwargs,
     ):
         if (input_ids is None) ^ (inputs_embeds is not None):
@@ -255,48 +255,20 @@ class RBLNGemma3ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMix
 
         return inputs_embeds
 
-    def get_padded_cache_position(
-        self,
-        cache_position: torch.Tensor,  # shape: [1, seq_len]
-        token_type_ids: torch.Tensor,  # shape: [1, seq_len]
-    ) -> torch.Tensor:
-        seq_len = cache_position[0][-1].item() + 1
-
-        # Find image start positions
-        image_starts = [
-            s
-            for s in torch.where(token_type_ids == 1)[1]
-            if torch.all(token_type_ids[:, s : s + self.rbln_config.image_prefill_chunk_size] == 1)
-        ]
-
-        # Initialize padded tensors
-        padded_input_len = seq_len
-        for image_start in image_starts:
-            pad_needed = (
-                self.rbln_config.image_prefill_chunk_size
-                - (image_start + padded_input_len - seq_len) % self.rbln_config.image_prefill_chunk_size
-            ) % self.rbln_config.image_prefill_chunk_size
-            padded_input_len += pad_needed
-
-        return torch.cat(
-            [cache_position, torch.arange(seq_len, padded_input_len, dtype=torch.int32).unsqueeze(0)],
-            dim=1,
-        )
-
     def forward(
         self,
         input_ids: torch.LongTensor = None,
         attention_mask: torch.Tensor = None,
         token_type_ids: torch.Tensor = None,
         pixel_values: torch.FloatTensor = None,
-        cache_position: Optional[torch.LongTensor] = None,
-        inputs_embeds: Optional[torch.FloatTensor] = None,
-        generate_idx: Optional[torch.Tensor] = None,
-        padded_cache_lengths: Optional[torch.Tensor] = None,
-        position_ids: Optional[torch.Tensor] = None,
-        output_hidden_states: Optional[bool] = None,
-        **lm_kwargs: Dict[str, Any],
-    ) -> Union[Tuple, RBLNDecoderOnlyOutput]:
+        cache_position: torch.LongTensor | None = None,
+        inputs_embeds: torch.FloatTensor | None = None,
+        generate_idx: torch.Tensor | None = None,
+        padded_cache_lengths: torch.Tensor | None = None,
+        position_ids: torch.Tensor | None = None,
+        output_hidden_states: bool | None = None,
+        **lm_kwargs: dict[str, Any],
+    ) -> tuple | RBLNDecoderOnlyOutput:
         output_hidden_states = (
             output_hidden_states
             if output_hidden_states is not None
@@ -329,9 +301,9 @@ class RBLNGemma3ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMix
             )
 
             for b_idx in range(batch_size):
+                # Pass the unpadded cache_position; the chunked-prefill runtime tight-packs and
+                # extends the allocation internally (see RBLNDecoderOnlyChunkedMultimodalPrefillMixin).
                 cache_position = torch.arange(0, generate_idx[b_idx].item(), dtype=torch.int32).unsqueeze(0)
-                token_type_id = token_type_ids[b_idx : b_idx + 1, attention_mask[b_idx].bool()]
-                cache_position = self.get_padded_cache_position(cache_position, token_type_id)
 
                 outputs = self.language_model.prefill_decoder(
                     inputs_embeds=inputs_embeds[b_idx : b_idx + 1],
@@ -440,7 +412,7 @@ class RBLNGemma3ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
         cls,
         model: "PreTrainedModel",
         rbln_config: RBLNModelConfig,
-        preprocessors: Optional[Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"]],
+        preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"] | None,
     ):
         if rbln_config.image_prefill_chunk_size is None:
             rbln_config.image_prefill_chunk_size = model.config.mm_tokens_per_image

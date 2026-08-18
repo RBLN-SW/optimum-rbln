@@ -49,13 +49,13 @@ class RBLNGemma2ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
             "google/gemma-2-9b",
             export=True,
             rbln_batch_size=1,
-            rbln_tensor_parallel_size=4,
+            rbln_num_devices=4,
         )
         # Using a config dictionary
         rbln_config = {
             "batch_size": 1,
             "max_seq_len": 8192,
-            "tensor_parallel_size": 4,
+            "num_devices": 4,
         }
         model = RBLNGemma2ForCausalLM.from_pretrained(
             "google/gemma-2-9b",
@@ -67,7 +67,7 @@ class RBLNGemma2ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
         config = RBLNGemma2ForCausalLMConfig(
             batch_size=1,
             max_seq_len=8192,
-            tensor_parallel_size=4
+            num_devices=4
         )
         model = RBLNGemma2ForCausalLM.from_pretrained(
             "google/gemma-2-9b",

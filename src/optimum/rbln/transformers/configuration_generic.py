@@ -12,27 +12,33 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, List, Optional, Tuple, Union
+from typing import Any
+
+from optimum.rbln.utils.deprecation import deprecate_kwarg
 
 from ..configuration_utils import RBLNModelConfig
 
 
 class RBLNTransformerEncoderConfig(RBLNModelConfig):
-    rbln_model_input_names: Optional[List[str]] = None
+    rbln_model_input_names: list[str] | None = None
 
+    @deprecate_kwarg(old_name="model_input_shapes", version="0.12.0")
     def __init__(
         self,
-        max_seq_len: Optional[int] = None,
-        batch_size: Optional[int] = None,
-        model_input_names: Optional[List[str]] = None,
-        model_input_shapes: Optional[List[Tuple[int, int]]] = None,
+        max_seq_len: int | list[int] | None = None,
+        batch_size: int | None = None,
+        model_input_names: list[str] | None = None,
         **kwargs: Any,
     ):
         """
         Args:
-            max_seq_len (Optional[int]): Maximum sequence length supported by the model.
-            batch_size (Optional[int]): The batch size for inference. Defaults to 1.
-            model_input_names (Optional[List[str]]): Names of the input tensors for the model.
+            max_seq_len (int | list[int] | None): Maximum sequence length supported by the model.
+                A single integer compiles the model for one sequence length. A list of integers enables
+                sequence-length bucketing: the model is compiled for each length on the default
+                ``[batch_size, max_seq_len]`` input layout and, at inference time, the runtime dispatches
+                to the smallest bucket that fits each input.
+            batch_size (int | None): The batch size for inference. Defaults to 1.
+            model_input_names (list[str] | None): Names of the input tensors for the model.
                 Defaults to class-specific rbln_model_input_names if not provided.
             kwargs: Additional arguments passed to the parent RBLNModelConfig.
 
@@ -46,21 +52,20 @@ class RBLNTransformerEncoderConfig(RBLNModelConfig):
             raise ValueError(f"batch_size must be a positive integer, got {self.batch_size}")
 
         self.model_input_names = model_input_names or self.rbln_model_input_names
-        self.model_input_shapes = model_input_shapes
 
 
 class RBLNImageModelConfig(RBLNModelConfig):
     def __init__(
         self,
-        image_size: Optional[Union[int, Tuple[int, int]]] = None,
-        batch_size: Optional[int] = None,
+        image_size: int | tuple[int, int] | None = None,
+        batch_size: int | None = None,
         **kwargs: Any,
     ):
         """
         Args:
-            image_size (Optional[Union[int, Tuple[int, int]]]): The size of input images.
+            image_size (int | tuple[int, int] | None): The size of input images.
                 Can be an integer for square images or a tuple (height, width).
-            batch_size (Optional[int]): The batch size for inference. Defaults to 1.
+            batch_size (int | None): The batch size for inference. Defaults to 1.
             kwargs: Additional arguments passed to the parent RBLNModelConfig.
 
         Raises:

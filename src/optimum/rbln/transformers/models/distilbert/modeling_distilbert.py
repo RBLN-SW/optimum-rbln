@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Optional, Tuple, Union
 
 import torch
 from transformers.modeling_outputs import QuestionAnsweringModelOutput
@@ -33,10 +32,10 @@ class RBLNDistilBertForQuestionAnswering(RBLNModelForQuestionAnswering):
 
     def forward(
         self,
-        input_ids: Optional[torch.Tensor] = None,
-        attention_mask: Optional[torch.Tensor] = None,
+        input_ids: torch.Tensor | None = None,
+        attention_mask: torch.Tensor | None = None,
         **kwargs,
-    ) -> Union[Tuple, QuestionAnsweringModelOutput]:
+    ) -> tuple | QuestionAnsweringModelOutput:
         """
         Forward pass for the RBLN-optimized DistilBERT model for question answering tasks.
 
@@ -48,4 +47,7 @@ class RBLNDistilBertForQuestionAnswering(RBLNModelForQuestionAnswering):
             The model outputs. If return_dict=False is passed, returns a tuple of tensors. Otherwise, returns a QuestionAnsweringModelOutput object.
         """
 
+        # DistilBERT has no token-type (segment) embeddings; drop token_type_ids if a tokenizer
+        # provides it (AutoTokenizer resolves to BertTokenizer for DistilBERT in transformers v5).
+        kwargs.pop("token_type_ids", None)
         return super().forward(input_ids, attention_mask, **kwargs)

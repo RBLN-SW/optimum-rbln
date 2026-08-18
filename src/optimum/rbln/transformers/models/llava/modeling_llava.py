@@ -14,12 +14,13 @@
 
 import importlib
 import inspect
-from typing import TYPE_CHECKING, Any, Callable, List, Optional, Tuple, Union
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any, Optional, Union
 
 import torch
 from transformers import AutoModelForImageTextToText, LlavaForConditionalGeneration, PretrainedConfig, PreTrainedModel
+from transformers.initialization import no_init_weights
 from transformers.modeling_outputs import BaseModelOutputWithPooling
-from transformers.modeling_utils import no_init_weights
 from transformers.models.llava.modeling_llava import LlavaCausalLMOutputWithPast
 
 from ....configuration_utils import RBLNCompileConfig, RBLNModelConfig
@@ -129,7 +130,7 @@ class RBLNLlavaForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMixi
             rbln_config={
                 "vision_tower": {"output_hidden_states": True},
                 "language_model": {
-                    "tensor_parallel_size": 4,
+                    "num_devices": 4,
                     "use_inputs_embeds": True,  # In Llava, language model must use inputs_embeds as input.
                 },
             },
@@ -146,7 +147,7 @@ class RBLNLlavaForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMixi
             batch_size=1,
             max_seq_len=4096,
             use_inputs_embeds=True,
-            tensor_parallel_size=4
+            num_devices=4
         )
         llava_config = RBLNLlavaForConditionalGenerationConfig(
             batch_size=1,
@@ -199,7 +200,9 @@ class RBLNLlavaForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMixi
         self.vision_tower = LoopVisionTower(self.rbln_submodules[0])
         self.language_model = self.rbln_submodules[1]
         self.multi_modal_projector = LoopProjector(self.model[0], rbln_config=self.rbln_config)
-        self.pad_token_id = self.config.pad_token_id if self.config.pad_token_id is not None else -1
+        self.pad_token_id = (
+            self.config.text_config.pad_token_id if self.config.text_config.pad_token_id is not None else -1
+        )
         return super().__post_init__(**kwargs)
 
     def get_attn_impl(self) -> str:
@@ -213,15 +216,15 @@ class RBLNLlavaForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMixi
 
     @classmethod
     def _wrap_model_if_needed(cls, model: "PreTrainedModel", rbln_config: RBLNModelConfig):
-        return model.multi_modal_projector
+        return model.model.multi_modal_projector
 
     @classmethod
     def _update_rbln_config(
         cls,
-        preprocessors: Optional[Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"]],
+        preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"] | None,
         model: Optional["PreTrainedModel"] = None,
         model_config: Optional["PretrainedConfig"] = None,
-        rbln_config: Optional[RBLNModelConfig] = None,
+        rbln_config: RBLNModelConfig | None = None,
     ) -> RBLNModelConfig:
         # support for pixtral that needs padding
         if hasattr(rbln_config.vision_tower, "max_image_size"):
@@ -309,7 +312,7 @@ class RBLNLlavaForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMixi
     def get_image_features(
         self,
         pixel_values: torch.FloatTensor,
-        vision_feature_layer: Union[int, List[int]],
+        vision_feature_layer: int | list[int],
         vision_feature_select_strategy: str,
         **kwargs,
     ):
@@ -394,13 +397,13 @@ class RBLNLlavaForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMixi
 
     def _preprocess_prefill(
         self,
-        input_ids: Optional[torch.LongTensor] = None,
-        pixel_values: Optional[torch.FloatTensor] = None,
-        inputs_embeds: Optional[torch.FloatTensor] = None,
-        vision_feature_layer: Optional[Union[int, List[int]]] = None,
-        vision_feature_select_strategy: Optional[str] = None,
-        return_dict: Optional[bool] = None,
-        image_sizes: Optional[torch.Tensor] = None,
+        input_ids: torch.LongTensor | None = None,
+        pixel_values: torch.FloatTensor | None = None,
+        inputs_embeds: torch.FloatTensor | None = None,
+        vision_feature_layer: int | list[int] | None = None,
+        vision_feature_select_strategy: str | None = None,
+        return_dict: bool | None = None,
+        image_sizes: torch.Tensor | None = None,
         **lm_kwargs,
     ):
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
@@ -440,16 +443,16 @@ class RBLNLlavaForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMixi
 
     def forward(
         self,
-        input_ids: Optional[torch.LongTensor] = None,
-        pixel_values: Optional[torch.FloatTensor] = None,
-        attention_mask: Optional[torch.Tensor] = None,
-        inputs_embeds: Optional[torch.FloatTensor] = None,
-        return_dict: Optional[bool] = None,
-        cache_position: Optional[torch.LongTensor] = None,
-        image_sizes: Optional[torch.Tensor] = None,
-        generate_idx: Optional[torch.Tensor] = None,
+        input_ids: torch.LongTensor | None = None,
+        pixel_values: torch.FloatTensor | None = None,
+        attention_mask: torch.Tensor | None = None,
+        inputs_embeds: torch.FloatTensor | None = None,
+        return_dict: bool | None = None,
+        cache_position: torch.LongTensor | None = None,
+        image_sizes: torch.Tensor | None = None,
+        generate_idx: torch.Tensor | None = None,
         **kwargs,
-    ) -> Union[Tuple, LlavaCausalLMOutputWithPast]:
+    ) -> tuple | LlavaCausalLMOutputWithPast:
         # Prefill
         if cache_position is None:
             inputs_embeds = self._preprocess_prefill(

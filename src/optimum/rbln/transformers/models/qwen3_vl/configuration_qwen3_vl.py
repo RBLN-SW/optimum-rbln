@@ -1,0 +1,116 @@
+# Copyright 2026 Rebellions Inc. All rights reserved.
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at:
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+from typing import Any
+
+from ....configuration_utils import RBLNModelConfig
+from ..decoderonly.configuration_decoderonly import RBLNDecoderOnlyModelConfig, RBLNDecoderOnlyModelForCausalLMConfig
+
+
+class RBLNQwen3VLForConditionalGenerationConfig(RBLNDecoderOnlyModelForCausalLMConfig):
+    """
+    Configuration class for RBLNQwen3VLForConditionalGeneration.
+
+    This configuration class stores the configuration parameters specific to
+    RBLN-optimized Qwen3-VL models for multimodal conditional generation tasks
+    that combine vision and language processing capabilities.
+    """
+
+    submodules = ["visual"]
+    subclass_non_save_attributes = ["_load_visual_runtime", "memory_budget"]
+
+    def __init__(
+        self,
+        use_inputs_embeds: bool = True,
+        visual: RBLNModelConfig | None = None,
+        _load_visual_runtime: bool = True,
+        **kwargs: Any,
+    ):
+        """
+        Args:
+            use_inputs_embeds (bool): Whether or not to use `inputs_embeds` as input. Defaults to `True`.
+            visual (RBLNModelConfig | None): Configuration for the vision encoder component.
+            _load_visual_runtime (bool): Whether to create runtime for the visual encoder submodule.
+                Set to ``False`` on decoder-only nodes in a disaggregated encoder setup to skip
+                loading the visual encoder's compiled model (.rbln) and torch artifacts entirely.
+                When ``False``, pre-computed ``image_embeds`` / ``video_embeds`` must be provided
+                to forward(). Defaults to ``True``.
+            kwargs: Additional arguments passed to the parent `RBLNDecoderOnlyModelForCausalLMConfig`.
+
+        Raises:
+            ValueError: If `use_inputs_embeds` is False.
+        """
+        super().__init__(use_inputs_embeds=use_inputs_embeds, **kwargs)
+        if not self.use_inputs_embeds:
+            raise ValueError(
+                "RBLNQwen3VLForConditionalGenerationConfig requires use_inputs_embeds=True. "
+                "The visual encoder output must be injected into inputs_embeds, whether the "
+                "visual encoder runs locally (_load_visual_runtime=True) or embeddings are "
+                "received from an encoder node (_load_visual_runtime=False)."
+            )
+        self.visual = self.initialize_submodule_config(submodule_config=visual)
+        self._load_visual_runtime = _load_visual_runtime
+
+
+class RBLNQwen3VLModelConfig(RBLNDecoderOnlyModelConfig):
+    submodules = ["visual"]
+    subclass_non_save_attributes = ["_load_visual_runtime", "memory_budget"]
+
+    def __init__(self, visual: RBLNModelConfig | None = None, _load_visual_runtime: bool = True, **kwargs: Any):
+        super().__init__(**kwargs)
+        if not getattr(self, "use_inputs_embeds", True):
+            raise ValueError(
+                "RBLNQwen3VLModelConfig requires use_inputs_embeds=True. "
+                "The visual encoder output must be injected into inputs_embeds, whether the "
+                "visual encoder runs locally (_load_visual_runtime=True) or embeddings are "
+                "received from an encoder node (_load_visual_runtime=False)."
+            )
+        self.visual = self.initialize_submodule_config(submodule_config=visual)
+        self._load_visual_runtime = _load_visual_runtime
+
+
+class RBLNQwen3VLVisionModelConfig(RBLNModelConfig):
+    """
+    Configuration class for RBLNQwen3VLVisionModel.
+
+    This configuration class stores the configuration parameters specific to
+    RBLN-optimized Qwen3-VL vision transformer models for processing images and videos.
+    """
+
+    def __init__(self, max_seq_len: int | list[int] = None, **kwargs: Any):
+        """
+        Args:
+            max_seq_len (int | list[int] | None): Maximum sequence lengths for Vision
+                Transformer attention. Can be an integer or list of integers, each indicating
+                the number of patches in a sequence for an image or video. For example, an image
+                of 224x224 pixels with patch size 16 and spatial_merge_size 2 yields
+                (224/16/2) * (224/16/2) = 49 merged patches. RBLN optimization runs inference
+                per image or video frame, so set `max_seq_len` to match the maximum expected
+                resolution to reduce computation. If not provided, a `ValueError` is raised.
+            kwargs: Additional arguments passed to the parent RBLNModelConfig.
+
+        Raises:
+            ValueError: If `max_seq_len` is None or not provided.
+        """
+        super().__init__(**kwargs)
+
+        if max_seq_len is not None:
+            if isinstance(max_seq_len, int):
+                max_seq_len = [max_seq_len]
+            elif isinstance(max_seq_len, list):
+                max_seq_len.sort(reverse=True)
+        else:
+            raise ValueError("'max_seq_len' must be specified.")
+
+        self.max_seq_len = max_seq_len

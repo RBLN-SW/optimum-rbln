@@ -51,6 +51,7 @@ class RBLNWav2Vec2ForCTC(RBLNModel):
     main_input_name = "input_values"
     auto_model_class = AutoModelForCTC
     rbln_dtype = "float32"
+    _output_class = CausalLMOutput
 
     @classmethod
     def _wrap_model_if_needed(cls, model: torch.nn.Module, rbln_config: RBLNWav2Vec2ForCTCConfig) -> torch.nn.Module:
@@ -62,7 +63,7 @@ class RBLNWav2Vec2ForCTC(RBLNModel):
         preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"],
         model: Optional["PreTrainedModel"] = None,
         model_config: "Wav2Vec2Config" = None,
-        rbln_config: Optional[RBLNWav2Vec2ForCTCConfig] = None,
+        rbln_config: RBLNWav2Vec2ForCTCConfig | None = None,
     ) -> RBLNWav2Vec2ForCTCConfig:
         if rbln_config.max_seq_len is None:
             for tokenizer in preprocessors:
@@ -88,14 +89,12 @@ class RBLNWav2Vec2ForCTC(RBLNModel):
         rbln_config.set_compile_cfgs([rbln_compile_config])
         return rbln_config
 
-    def forward(
-        self, input_values: torch.Tensor, return_dict: Optional[bool] = None, **kwargs
-    ) -> Union[CausalLMOutput, tuple]:
+    def forward(self, input_values: torch.Tensor, return_dict: bool | None = None, **kwargs) -> CausalLMOutput | tuple:
         """
         Forward pass for the RBLN-optimized Wav2Vec2 model for Connectionist Temporal Classification (CTC).
 
         Args:
-            input_values (torch.FloatTensor of shape (batch_size, sequence_length)): Float values of input raw speech waveform. Values can be obtained by loading a .flac or .wav audio file into an array of type List[float] or a numpy.ndarray, e.g. via the soundfile library (pip install soundfile). To prepare the array into input_values, the AutoProcessor should be used for padding and conversion into a tensor of type torch.FloatTensor.
+            input_values (torch.FloatTensor of shape (batch_size, sequence_length)): Float values of input raw speech waveform. Values can be obtained by loading a .flac or .wav audio file into an array of type list[float] or a numpy.ndarray, e.g. via the soundfile library (pip install soundfile). To prepare the array into input_values, the AutoProcessor should be used for padding and conversion into a tensor of type torch.FloatTensor.
             return_dict (bool, optional): Whether or not to return a ModelOutput instead of a plain tuple.
 
         Returns:

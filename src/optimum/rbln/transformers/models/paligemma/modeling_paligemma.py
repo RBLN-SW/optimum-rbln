@@ -14,13 +14,19 @@
 
 import importlib
 import inspect
+from collections.abc import Callable
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, Optional, Tuple, Type, Union
+from typing import TYPE_CHECKING, Any, Union
 
 import torch
-from transformers import AutoModelForVision2Seq, PaliGemmaForConditionalGeneration, PretrainedConfig, PreTrainedModel
+from transformers import (
+    AutoModelForImageTextToText,
+    PaliGemmaForConditionalGeneration,
+    PretrainedConfig,
+    PreTrainedModel,
+)
+from transformers.initialization import no_init_weights
 from transformers.modeling_outputs import BaseModelOutputWithPooling
-from transformers.modeling_utils import no_init_weights
 from transformers.models.paligemma.configuration_paligemma import PaliGemmaConfig
 from transformers.models.paligemma.modeling_paligemma import PaligemmaModelOutputWithPast, PaliGemmaMultiModalProjector
 
@@ -75,19 +81,14 @@ class RBLNPaliGemmaForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGeneration
         model = RBLNPaliGemmaForConditionalGeneration.from_pretrained(
             "google/paligemma2-3b-mix-224",
             export=True,
-            rbln_config={
-                "language_model": {
-                    "prefill_chunk_size": 8192,
-                }
-            },
-            rbln_tensor_parallel_size=4,
+            rbln_num_devices=4,
         )
 
         model.save_pretrained("compiled-paligemma2-3b-mix-224")
         ```
     """
 
-    auto_model_class = AutoModelForVision2Seq
+    auto_model_class = AutoModelForImageTextToText
     _rbln_submodules = [
         {"name": "vision_tower"},
         {"name": "language_model"},
@@ -110,11 +111,11 @@ class RBLNPaliGemmaForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGeneration
     def _update_submodule_rbln_config(
         cls,
         submodule_name: str,
-        submodule_cls: Type["RBLNModel"],
+        submodule_cls: type["RBLNModel"],
         model: "PreTrainedModel",
         submodule_config: PretrainedConfig,
         submodule_rbln_config: RBLNModelConfig,
-        preprocessors: Optional[Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"]],
+        preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"] | None,
     ):
         if submodule_name == "language_model":
             submodule_config.use_sliding_window = False
@@ -133,12 +134,28 @@ class RBLNPaliGemmaForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGeneration
 
         new_language_model.lm_head = model.lm_head
         new_language_model.model = model.model.language_model
+
+        # TODO: make this to use `lm_head.weight` in transformers v5
+        # Now, skipping `lm_head.weight` is handled by the `is_meta` check, so this is a no-op.
+        if new_language_model.lm_head.weight.is_meta:
+            embed_weight = new_language_model.get_input_embeddings().weight
+            new_language_model.lm_head.weight = torch.nn.Parameter(
+                torch.zeros(
+                    new_language_model.lm_head.weight.shape,
+                    dtype=embed_weight.dtype,
+                    device=embed_weight.device,
+                )
+            )
+
         model.model.language_model = new_language_model
         model.lm_head = None
         del model.lm_head
         return model
 
     def __post_init__(self, **kwargs):
+        if isinstance(getattr(self.config, "text_config", None), dict):
+            self.config = PaliGemmaConfig.from_dict(self.config.to_dict())
+
         self.vision_tower = LoopVisionTower(self.rbln_submodules[0])
         self.language_model = self.rbln_submodules[1]
 
@@ -160,7 +177,7 @@ class RBLNPaliGemmaForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGeneration
     ):
         save_dict = {}
         save_dict["embed_tokens"] = model.get_input_embeddings().state_dict()
-        save_dict["multi_modal_projector"] = model.multi_modal_projector.state_dict()
+        save_dict["multi_modal_projector"] = model.model.multi_modal_projector.state_dict()
         torch.save(save_dict, save_dir_path / subfolder / "torch_artifacts.pth")
 
     def get_attn_impl(self) -> str:
@@ -196,9 +213,12 @@ class RBLNPaliGemmaForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGeneration
         generate_idx=None,
         position_ids=None,
         token_type_ids=None,
+        labels=None,
         **kwargs,
     ):
-        # Prepare HF generation
+        # `labels` is a training-only field that PaliGemmaProcessor may include in its output; it has no
+        # effect on generation and is ignored here. Declaring it also mirrors the upstream model (whose
+        # forward lists `labels`), so generate's `_validate_model_kwargs` accepts the processor output as-is.
         is_prefill_phase = generate_idx is None
 
         model_inputs = self.language_model.prepare_inputs_for_generation(
@@ -260,9 +280,9 @@ class RBLNPaliGemmaForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGeneration
 
     def _preprocess_prefill(
         self,
-        input_ids: Optional[torch.LongTensor] = None,
-        inputs_embeds: Optional[torch.FloatTensor] = None,
-        pixel_values: Optional[torch.FloatTensor] = None,
+        input_ids: torch.LongTensor | None = None,
+        inputs_embeds: torch.FloatTensor | None = None,
+        pixel_values: torch.FloatTensor | None = None,
         **kwargs,
     ):
         if (input_ids is None) ^ (inputs_embeds is not None):
@@ -295,12 +315,12 @@ class RBLNPaliGemmaForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGeneration
         attention_mask: torch.LongTensor = None,
         position_ids: torch.LongTensor = None,
         token_type_ids: torch.LongTensor = None,
-        inputs_embeds: Optional[torch.FloatTensor] = None,
+        inputs_embeds: torch.FloatTensor | None = None,
         cache_position: torch.Tensor = None,
-        generate_idx: Optional[torch.Tensor] = None,
-        return_dict: Optional[bool] = None,
+        generate_idx: torch.Tensor | None = None,
+        return_dict: bool | None = None,
         **kwargs,
-    ) -> Union[Tuple, RBLNDecoderOnlyOutput]:
+    ) -> tuple | RBLNDecoderOnlyOutput:
         # Prefill
         if cache_position is None:
             inputs_embeds = self._preprocess_prefill(
@@ -309,6 +329,9 @@ class RBLNPaliGemmaForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGeneration
             logits = []
             inputs = inputs_embeds if inputs_embeds is not None else input_ids
             batch_size = inputs.shape[0]
+
+            if generate_idx is None:
+                generate_idx = torch.full((batch_size, 1), inputs.shape[1], dtype=torch.int32)
 
             for b_idx in range(batch_size):
                 cache_position = torch.arange(0, generate_idx[b_idx].item(), dtype=torch.int32).unsqueeze(0)
@@ -360,12 +383,7 @@ class RBLNPaliGemmaModel(RBLNModel):
         model = RBLNPaliGemmaModel.from_pretrained(
             "google/paligemma2-3b-mix-224",
             export=True,
-            rbln_config={
-                "language_model": {
-                    "prefill_chunk_size": 8192,
-                }
-            },
-            rbln_tensor_parallel_size=4,
+            rbln_num_devices=4,
         )
 
         model.save_pretrained("compiled-paligemma2-3b-mix-224")
@@ -406,11 +424,11 @@ class RBLNPaliGemmaModel(RBLNModel):
     def _update_submodule_rbln_config(
         cls,
         submodule_name: str,
-        submodule_cls: Type["RBLNModel"],
+        submodule_cls: type["RBLNModel"],
         model: "PreTrainedModel",
         submodule_config: PretrainedConfig,
         submodule_rbln_config: RBLNModelConfig,
-        preprocessors: Optional[Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"]],
+        preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"] | None,
     ):
         if submodule_name == "language_model":
             submodule_config.use_sliding_window = False
@@ -480,9 +498,9 @@ class RBLNPaliGemmaModel(RBLNModel):
 
     def _preprocess_prefill(
         self,
-        input_ids: Optional[torch.LongTensor] = None,
-        inputs_embeds: Optional[torch.FloatTensor] = None,
-        pixel_values: Optional[torch.FloatTensor] = None,
+        input_ids: torch.LongTensor | None = None,
+        inputs_embeds: torch.FloatTensor | None = None,
+        pixel_values: torch.FloatTensor | None = None,
         **kwargs,
     ):
         if (input_ids is None) ^ (inputs_embeds is not None):
@@ -511,16 +529,16 @@ class RBLNPaliGemmaModel(RBLNModel):
 
     def forward(
         self,
-        input_ids: Optional[torch.LongTensor] = None,
-        pixel_values: Optional[torch.FloatTensor] = None,
-        attention_mask: Optional[torch.Tensor] = None,
-        position_ids: Optional[torch.LongTensor] = None,
-        token_type_ids: Optional[torch.LongTensor] = None,
-        inputs_embeds: Optional[torch.FloatTensor] = None,
-        output_hidden_states: Optional[bool] = None,
-        return_dict: Optional[bool] = None,
+        input_ids: torch.LongTensor | None = None,
+        pixel_values: torch.FloatTensor | None = None,
+        attention_mask: torch.Tensor | None = None,
+        position_ids: torch.LongTensor | None = None,
+        token_type_ids: torch.LongTensor | None = None,
+        inputs_embeds: torch.FloatTensor | None = None,
+        output_hidden_states: bool | None = None,
+        return_dict: bool | None = None,
         **kwargs,
-    ) -> Union[Tuple, PaligemmaModelOutputWithPast]:
+    ) -> tuple | PaligemmaModelOutputWithPast:
         """
         Forward pass for the RBLN-optimized PaliGemmaModel model.
 

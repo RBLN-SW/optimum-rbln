@@ -12,48 +12,95 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import inspect
 import re
 import threading
-from typing import Any, List, Optional, Union
+from functools import lru_cache
+from typing import Any
 
 import rebel
 import torch
 
 
-def is_compiler_supports_buffer_resize() -> bool:
-    return hasattr(rebel.RBLNCompiledModel, "exp_multiply_buffer_size")
+@lru_cache(maxsize=1)
+def compiler_num_devices_kwarg() -> str:
+    """Return the kwarg name the installed rebel-compiler expects for the device count.
 
-
-def get_available_dram(npu: Optional[str] = None) -> int:
+    Compilers expose this as `num_devices`, but ones predating that name only accept
+    `tensor_parallel_size`. `compile_from_torch` forwards `**kwargs` to `compile`, so we probe
+    `rebel.compile`'s signature to pick the name the installed compiler accepts.
     """
-    Get the available DRAM size of the specified NPU.
+    try:
+        params = inspect.signature(rebel.compile).parameters
+    except (ValueError, TypeError):
+        return "num_devices"
+    return "num_devices" if "num_devices" in params else "tensor_parallel_size"
 
-    Args:
-        npu : Optional[str], default=None
-            The NPU to get the available DRAM size.
-            If None, the function will attempt to retrieve through `ensure_valid_npu()`
 
-    Returns:
-        int
-            The available DRAM size in bytes.
-    """
+def _resolve_npu(npu: str | None = None) -> str:
     if npu is None:
         if not rebel.npu_is_available(0):
             raise RuntimeError("No NPU is available to get available DRAM size.")
-
         npu = rebel.get_npu_name(0)
+    return npu
 
+
+# Total device DRAM and the system DRAM reserved per chiplet, by NPU family.
+def _dram_spec(npu: str) -> tuple[int, int]:
     if npu.startswith("RBLN-CR"):
-        # TODO(jongho): Assuming 4 chiplets.
-        DRAM_NBYTES = 144 * 2**30
-        SYS_DRAM_NBYTES = 4 * 2**30
+        return 144 * 2**30, 1 * 2**30
     elif npu.startswith("RBLN-CA"):
-        DRAM_NBYTES = 16 * 2**30
-        SYS_DRAM_NBYTES = 288 * 2**20
-    else:
-        raise ValueError(f"Unknown npu name: {npu}")
+        return 16 * 2**30, 288 * 2**20
+    raise ValueError(f"Unknown npu name: {npu}")
 
-    return DRAM_NBYTES - SYS_DRAM_NBYTES
+
+def get_available_dram_per_chiplet(num_chiplets: int, npu: str | None = None) -> int:
+    """
+    Get the available DRAM per chiplet. Device DRAM is physically partitioned across
+    chiplets, so an allocation pinned to a chiplet must fit within this amount, not the
+    node total.
+
+    Args:
+        num_chiplets : int
+            Number of chiplets the device DRAM is split across.
+        npu : str | None, default=None
+            The NPU to get the available DRAM size. Resolved from the local device if None.
+
+    Returns:
+        int
+            The available DRAM per chiplet in bytes.
+    """
+    npu = _resolve_npu(npu)
+    dram_nbytes, sys_per_chiplet = _dram_spec(npu)
+    return dram_nbytes // num_chiplets - sys_per_chiplet
+
+
+_BYTE_UNITS = {"B": 1, "KB": 2**10, "MB": 2**20, "GB": 2**30, "TB": 2**40}
+
+
+def parse_byte_size(value: int | str) -> int:
+    """Parse a byte size given as an int (bytes) or a string like "10GB" / "512MB".
+
+    Units are case-insensitive and binary (KB=2**10 ... TB=2**40). Returns a positive int of bytes.
+    """
+    if isinstance(value, bool):
+        raise ValueError(f"Invalid byte size: {value!r}")
+    if isinstance(value, int):
+        nbytes = value
+    elif isinstance(value, str):
+        match = re.fullmatch(r"\s*(\d+)\s*([KMGT]?B)?\s*", value, re.IGNORECASE)
+        if not match:
+            raise ValueError(
+                f"Invalid byte size {value!r}. Expected an integer optionally suffixed with "
+                "B, KB, MB, GB, or TB (e.g. '10GB')."
+            )
+        unit = match.group(2)
+        nbytes = int(match.group(1)) * (_BYTE_UNITS[unit.upper()] if unit else 1)
+    else:
+        raise ValueError(f"Invalid byte size type: {type(value).__name__}")
+    if nbytes <= 0:
+        raise ValueError(f"Byte size must be positive, got {nbytes}.")
+    return nbytes
 
 
 def normalize_npu(npu: str) -> str:
@@ -72,24 +119,22 @@ def normalize_npu(npu: str) -> str:
 
 
 def tp_and_devices_are_ok(
-    tensor_parallel_size: Optional[int] = None,
-    device: Optional[Union[int, List[int]]] = None,
-    npu: Optional[str] = None,
-) -> Optional[str]:
-    if tensor_parallel_size is None:
-        tensor_parallel_size = 1
+    num_devices: int | None = None,
+    device: int | list[int] | None = None,
+    npu: str | None = None,
+) -> str | None:
+    if num_devices is None:
+        num_devices = 1
 
     if device is None:
-        device = list(range(tensor_parallel_size))
+        device = list(range(num_devices))
     elif isinstance(device, int):
         device = [device]
     elif isinstance(device, list):
         if any(not isinstance(d, int) for d in device):
             return "Device must be a(n) (list of) integer(s)."
-        if len(device) != tensor_parallel_size:
-            return (
-                f"The number of devices ({len(device)}) does not match tensor parallel size ({tensor_parallel_size})."
-            )
+        if len(device) != num_devices:
+            return f"The number of devices ({len(device)}) does not match `num_devices` ({num_devices})."
     else:
         return f"Invalid device: {device}"
 
@@ -101,11 +146,8 @@ def tp_and_devices_are_ok(
                 f"Device {device_id} is not a valid NPU device. Please check your NPU status with 'rbln-smi' command."
             )
 
-    if rebel.device_count() < tensor_parallel_size:
-        return (
-            f"Tensor parallel size {tensor_parallel_size} is greater than "
-            f"the number of available devices {rebel.device_count()}."
-        )
+    if rebel.device_count() < num_devices:
+        return f"`num_devices` ({num_devices}) is greater than the number of available devices {rebel.device_count()}."
 
     if npu is not None:
         for device_id in device:
@@ -130,7 +172,7 @@ class RBLNPytorchRuntime:
     def __call__(self, *args: Any, **kwds: Any) -> Any:
         return self.forward(*args, **kwds)
 
-    def forward(self, *args: List["torch.Tensor"], **kwargs: "torch.Tensor"):
+    def forward(self, *args: list["torch.Tensor"], **kwargs: "torch.Tensor"):
         # filtering useless args or kwarg such as None.
         args = list(filter(lambda arg: isinstance(arg, torch.Tensor), args))
         kwargs = dict(filter(lambda kwarg: isinstance(kwarg[1], torch.Tensor) or kwarg[0] == "out", kwargs.items()))
@@ -178,7 +220,7 @@ class UnavailableRuntime:
         """Returns an iterator with self as the only item."""
         return iter([self])
 
-    def forward(self, *args: List["torch.Tensor"], **kwargs: "torch.Tensor"):
+    def forward(self, *args: list["torch.Tensor"], **kwargs: "torch.Tensor"):
         """Raises a detailed RuntimeError explaining why inference cannot be performed."""
         raise RuntimeError(
             "Cannot perform inference: RBLN runtime is not available.\n\n"

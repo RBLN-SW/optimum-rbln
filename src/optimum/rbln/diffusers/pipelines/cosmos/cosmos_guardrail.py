@@ -16,7 +16,7 @@ import os
 import pathlib
 import re
 from functools import partial
-from typing import Any, Dict, Optional, Tuple, Union
+from typing import Any, Optional
 from unittest.mock import patch
 
 import rebel
@@ -26,6 +26,7 @@ from huggingface_hub import snapshot_download
 from transformers import AutoTokenizer, SiglipProcessor
 
 from .... import RBLNAutoModelForCausalLM, RBLNSiglipVisionModel
+from ....modeling_base import normalize_contiguous_
 from ....utils.runtime_utils import RBLNPytorchRuntime, UnavailableRuntime
 from .configuration_cosmos_guardrail import RBLNCosmosSafetyCheckerConfig, RBLNCosmosSafetyCheckerV2Config
 
@@ -37,8 +38,8 @@ if is_cosmos_guardrail_available():
         Blocklist,
         ContentSafetyGuardrail,
         GuardrailRunner,
-        # LlamaGuard3,
         ModelConfig,
+        Qwen3Guard,
         RetinaFaceFilter,
         SafetyClassifier,
         SigLIPEncoder,
@@ -57,7 +58,7 @@ else:
 
     COSMOS_GUARDRAIL_CHECKPOINT = None
 
-    class LlamaGuard3(FailToImportCosmosGuardrail): ...
+    class Qwen3Guard(FailToImportCosmosGuardrail): ...
 
     class Blocklist(FailToImportCosmosGuardrail): ...
 
@@ -128,7 +129,7 @@ class RBLNSigLIPEncoder(SigLIPEncoder):
         self,
         model_name: str = "google/siglip-so400m-patch14-384",
         checkpoint_id: str = COSMOS_GUARDRAIL_CHECKPOINT,
-        rbln_config: Optional[RBLNCosmosSafetyCheckerConfig] = None,
+        rbln_config: RBLNCosmosSafetyCheckerConfig | None = None,
     ):
         torch.nn.Module.__init__(self)
         if is_compiled_dir(checkpoint_id):
@@ -163,7 +164,7 @@ class RBLNRetinaFaceFilter(RetinaFaceFilter):
         checkpoint_id: str = COSMOS_GUARDRAIL_CHECKPOINT,
         batch_size: int = 1,
         confidence_threshold: float = 0.7,
-        rbln_config: Optional[RBLNCosmosSafetyCheckerConfig] = None,
+        rbln_config: RBLNCosmosSafetyCheckerConfig | None = None,
     ):
         torch.nn.Module.__init__(self)
         if is_compiled_dir(checkpoint_id):
@@ -179,6 +180,7 @@ class RBLNRetinaFaceFilter(RetinaFaceFilter):
                 super().__init__(checkpoint_id)
             net = self.net
             del self.net
+            normalize_contiguous_(net)
             self.compiled_model = rebel.compile_from_torch(
                 net,
                 input_info=[
@@ -209,7 +211,7 @@ class RBLNRetinaFaceFilter(RetinaFaceFilter):
                 if self.rbln_config.face_blur_filter.create_runtimes
                 else UnavailableRuntime()
             )
-        except rebel.core.exception.RBLNRuntimeError as e:
+        except RuntimeError as e:
             error_msg = (
                 f"\nFailed to create RBLN runtime: {str(e)}\n\n"
                 f"If you only need to compile the model without loading it to NPU, you can use:\n"
@@ -218,7 +220,7 @@ class RBLNRetinaFaceFilter(RetinaFaceFilter):
                 f"To check your NPU status, run the 'rbln-smi' command in your terminal.\n"
                 f"Make sure your NPU is properly installed and operational."
             )
-            raise rebel.core.exception.RBLNRuntimeError(error_msg) from e
+            raise RuntimeError(error_msg) from e
 
         self.net = RBLNPytorchRuntime(runtime)
 
@@ -257,6 +259,7 @@ class RBLNVideoSafetyModel(VideoSafetyModel):
             safety_filter_local_path = os.path.join(checkpoint_dir, "safety_filter.pt")
             checkpoint = torch.load(safety_filter_local_path, weights_only=True)
             network.load_state_dict({k.replace("network.", ""): v for k, v in checkpoint["model"].items()})
+            normalize_contiguous_(network)
 
             self.compiled_model = rebel.compile_from_torch(
                 network,
@@ -284,7 +287,7 @@ class RBLNVideoSafetyModel(VideoSafetyModel):
                 if self.rbln_config.video_safety_model.create_runtimes
                 else UnavailableRuntime()
             )
-        except rebel.core.exception.RBLNRuntimeError as e:
+        except RuntimeError as e:
             error_msg = (
                 f"\nFailed to create RBLN runtime: {str(e)}\n\n"
                 f"If you only need to compile the model without loading it to NPU, you can use:\n"
@@ -293,7 +296,7 @@ class RBLNVideoSafetyModel(VideoSafetyModel):
                 f"To check your NPU status, run the 'rbln-smi' command in your terminal.\n"
                 f"Make sure your NPU is properly installed and operational."
             )
-            raise rebel.core.exception.RBLNRuntimeError(error_msg) from e
+            raise RuntimeError(error_msg) from e
 
         self.network = RBLNPytorchRuntime(runtime)
 
@@ -324,42 +327,12 @@ class RBLNVideoContentSafetyFilter(VideoContentSafetyFilter):
         self.encoder.save_pretrained(checkpoint_id)
 
 
-# class RBLNLlamaGuard3(LlamaGuard3):
-#     def __init__(
-#         self,
-#         checkpoint_id: str = COSMOS_GUARDRAIL_CHECKPOINT,
-#         base_model_id: str = "meta-llama/Llama-Guard-3-8B",
-#         rbln_config: Optional[RBLNCosmosSafetyCheckerConfig] = None,
-#     ) -> None:
-#         if is_compiled_dir(checkpoint_id):
-#             torch.nn.Module.__init__(self)
-#             cache_dir = pathlib.Path(checkpoint_id) / "llamaguard3"
-#             self.tokenizer = AutoTokenizer.from_pretrained(cache_dir)
-#             self.model = RBLNAutoModelForCausalLM.from_pretrained(cache_dir, rbln_config=rbln_config.llamaguard3)
-
-#         else:
-#             super().__init__(checkpoint_id, base_model_id)
-#             model = self.model
-#             del self.model
-#             self.model = RBLNAutoModelForCausalLM.from_model(model, rbln_config=rbln_config.llamaguard3)
-
-#         self.rbln_config = rbln_config
-#         self.dtype = torch.bfloat16
-#         self.device = torch.device("cpu")
-
-#     def save_pretrained(self, checkpoint_id: str):
-#         cache_dir = pathlib.Path(checkpoint_id) / "llamaguard3"
-#         self.model.save_pretrained(cache_dir)
-#         self.tokenizer.save_pretrained(cache_dir)
-
-
-# https://github.com/nvidia-cosmos/cosmos-predict2.5/blob/main/cosmos_predict2/_src/imaginaire/auxiliary/guardrail/qwen3guard/qwen3guard.py
-class RBLNQwen3Guard(ContentSafetyGuardrail):
+class RBLNQwen3Guard(Qwen3Guard):
     def __init__(
         self,
         checkpoint_id: str = COSMOS_GUARDRAIL_CHECKPOINT,
         base_model_id: str = "Qwen/Qwen3Guard-Gen-0.6B",
-        rbln_config: Optional[RBLNCosmosSafetyCheckerConfig] = None,
+        rbln_config: RBLNCosmosSafetyCheckerConfig | None = None,
     ) -> None:
         """
         RBLNQwen 3 model for text filtering safety check.
@@ -371,8 +344,10 @@ class RBLNQwen3Guard(ContentSafetyGuardrail):
             self.model = RBLNAutoModelForCausalLM.from_pretrained(cache_dir, rbln_config=rbln_config.qwen3guard)
 
         else:
-            self.model = RBLNAutoModelForCausalLM.from_pretrained(base_model_id, rbln_config=rbln_config.qwen3guard)
-            self.tokenizer = AutoTokenizer.from_pretrained(base_model_id)
+            super().__init__(base_model_id)
+            model = self.model
+            del self.model
+            self.model = RBLNAutoModelForCausalLM.from_model(model, rbln_config=rbln_config.qwen3guard)
 
         self.rbln_config = rbln_config
         self.dtype = torch.bfloat16
@@ -418,8 +393,8 @@ class RBLNCosmosSafetyChecker(CosmosSafetyChecker):
     def __init__(
         self,
         checkpoint_id: str = COSMOS_GUARDRAIL_CHECKPOINT,
-        llamaguard_model_id: str = "meta-llama/Llama-Guard-3-8B",
-        rbln_config: Optional[RBLNCosmosSafetyCheckerConfig] = None,
+        textguard_model_id: str = "Qwen/Qwen3Guard-Gen-0.6B",
+        rbln_config: RBLNCosmosSafetyCheckerConfig | None = None,
     ) -> None:
         torch.nn.Module.__init__(self)
         if not COSMOS_AVAILABLE:
@@ -437,13 +412,15 @@ class RBLNCosmosSafetyChecker(CosmosSafetyChecker):
                 Blocklist(COSMOS_GUARDRAIL_CHECKPOINT),  # Changed since it cannot be saved
                 RBLNQwen3Guard(
                     checkpoint_id=checkpoint_id,
+                    base_model_id=textguard_model_id,
                     rbln_config=rbln_config,
                 ),
             ]
         )
 
         self.video_guardrail = GuardrailRunner(
-            safety_models=[RBLNVideoContentSafetyFilter(checkpoint_id=checkpoint_id, rbln_config=rbln_config)],
+            # VideoContentSafetyFilter is omitted because it is not supported in cosmos-guardrail==0.3.1
+            safety_models=[],
             postprocessors=[RBLNRetinaFaceFilter(checkpoint_id=checkpoint_id, rbln_config=rbln_config)],
         )
 
@@ -469,9 +446,9 @@ class RBLNCosmosSafetyChecker(CosmosSafetyChecker):
     def from_pretrained(
         cls,
         checkpoint_id: str,
-        rbln_config: Optional[RBLNCosmosSafetyCheckerConfig] = None,
-        subfolder: Optional[str] = None,
-        export: Optional[bool] = True,
+        rbln_config: RBLNCosmosSafetyCheckerConfig | None = None,
+        subfolder: str | None = None,
+        export: bool | None = True,
         **kwargs,
     ):
         rbln_config, kwargs = cls.prepare_rbln_config(rbln_config=rbln_config, **kwargs)
@@ -486,8 +463,8 @@ class RBLNCosmosSafetyChecker(CosmosSafetyChecker):
 
     @classmethod
     def prepare_rbln_config(
-        cls, rbln_config: Optional[Union[Dict[str, Any], RBLNCosmosSafetyCheckerConfig]] = None, **kwargs
-    ) -> Tuple[RBLNCosmosSafetyCheckerConfig, Dict[str, Any]]:
+        cls, rbln_config: dict[str, Any] | RBLNCosmosSafetyCheckerConfig | None = None, **kwargs
+    ) -> tuple[RBLNCosmosSafetyCheckerConfig, dict[str, Any]]:
         # Extract rbln-config from kwargs and convert it to RBLNCosmosSafetyCheckerConfig.
         rbln_config, kwargs = RBLNCosmosSafetyCheckerConfig.initialize_from_kwargs(rbln_config, **kwargs)
         return rbln_config, kwargs

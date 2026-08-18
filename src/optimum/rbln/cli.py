@@ -18,7 +18,6 @@ import inspect
 import json
 import sys
 from pathlib import Path
-from typing import Optional
 
 from huggingface_hub import hf_hub_download
 
@@ -152,16 +151,16 @@ def _label(text: str) -> str:
 
 EXAMPLES_TEXT = r"""
 Quick start examples
-  1) Compile a Llama chat model for causal LM
-     optimum-rbln-cli --output-dir ./compiled_llama \
-       --model-id meta-llama/Llama-2-7b-chat-hf \
-       --batch-size 2 --tensor-parallel-size 4
+  1) Compile a Qwen3 chat model for causal LM
+     optimum-rbln-cli --output-dir ./compiled_qwen3 \
+       --model-id Qwen/Qwen3-4B \
+       --batch_size 1 --max_seq_len 8192 --num_devices 4
 
   2) Compile with explicit class (Auto sequence classification)
      optimum-rbln-cli --output-dir ./compiled_bert \
        --class RBLNAutoModelForSequenceClassification \
        --model-id bert-base-uncased \
-       --batch-size 8 --max-seq-len 512
+       --batch_size 8 --max_seq_len 512
 
   3) Pass nested rbln_config with dot-notation (e.g., for diffusion)
      optimum-rbln-cli --output-dir ./compiled_sd \
@@ -169,10 +168,10 @@ Quick start examples
        --unet.batch_size 2 --vae.batch_size 1
 
   4) Pass HuggingFace model arguments with --hf-* prefix
-     optimum-rbln-cli --output-dir ./compiled_llama \
-       --model-id meta-llama/Llama-2-7b-chat-hf \
+     optimum-rbln-cli --output-dir ./compiled_qwen3 \
+       --model-id Qwen/Qwen3-4B \
        --hf-trust-remote-code true --hf-dtype bfloat16 \
-       --batch-size 2 --tensor-parallel-size 4
+       --batch_size 1 --num_devices 4
 
 Notes
   - Any extra --key value pairs not defined above are collected into rbln_config
@@ -312,11 +311,11 @@ def _print_rbln_config_options(class_name: str):
     # Curated: common compile-time options that live in RBLNModelConfig (non-runtime)
     print(_underline("\nCommon compile-time options (in rbln_config):"))
     print("  • npu: Target NPU for compilation (e.g., 'RBLN-CA25').")
-    print("  • tensor_parallel_size: Number of NPUs to shard the model at compile time.")
+    print("  • num_devices: Number of NPUs to shard the model across at compile time.")
 
     print(_underline("\nTips:"))
     print("  - Pass config keys as CLI flags, e.g., --batch_size 2 --max_seq_len 4096")
-    print("  - Compile-time examples: --npu RBLN-CA25 --tensor_parallel_size 4")
+    print("  - Compile-time examples: --npu RBLN-CA25 --num_devices 4")
     print("  - Use dot-notation for submodules, e.g., --vision_tower.image_size 336 --language_model.batch_size 1")
     print("  - To see examples: optimum-rbln-cli --examples")
 
@@ -325,12 +324,12 @@ def _read_json_from_model_id(
     model_id: str,
     filename: str,
     *,
-    hf_token: Optional[str] = None,
-    hf_revision: Optional[str] = None,
-    hf_cache_dir: Optional[str] = None,
+    hf_token: str | None = None,
+    hf_revision: str | None = None,
+    hf_cache_dir: str | None = None,
     hf_force_download: bool = False,
     hf_local_files_only: bool = False,
-) -> Optional[dict]:
+) -> dict | None:
     """Read a JSON file (e.g., config.json or model_index.json) from a local path or the HuggingFace Hub.
 
     Args:
@@ -375,12 +374,12 @@ def _read_json_from_model_id(
 def _infer_rbln_class_from_model_id(
     model_id: str,
     *,
-    hf_token: Optional[str] = None,
-    hf_revision: Optional[str] = None,
-    hf_cache_dir: Optional[str] = None,
+    hf_token: str | None = None,
+    hf_revision: str | None = None,
+    hf_cache_dir: str | None = None,
     hf_force_download: bool = False,
     hf_local_files_only: bool = False,
-) -> Optional[str]:
+) -> str | None:
     """Infer RBLN class name from model files by prefixing discovered class with 'RBLN'.
 
     Order of precedence:
@@ -576,7 +575,7 @@ def main():
 
     try:
         # Resolve or infer model class for compilation
-        resolved_class_name: Optional[str] = args.model_class
+        resolved_class_name: str | None = args.model_class
         if not resolved_class_name:
             resolved_class_name = _infer_rbln_class_from_model_id(
                 args.model_id,

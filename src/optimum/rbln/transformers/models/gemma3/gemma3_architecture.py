@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import copy
-from typing import Optional, Tuple, Union
 
 import torch
 
@@ -23,20 +22,21 @@ from ..decoderonly.decoderonly_architecture import (
     DecoderOnlyModel,
     DecoderOnlyWrapper,
     RotaryEmbedding,
+    build_image_prefill_swa_custom_op_args,
     slice_and_unsqueeze_cos_sin,
 )
 
 
 class Gemma3ForCausalLMWrapper(DecoderOnlyWrapper):
     def get_rotary_emb(self, max_seq_len):
-        rotary_emb_global = RotaryEmbedding(config=self.config, max_seq_len_cached=max_seq_len)
-
-        config = copy.deepcopy(self.config)
-        config.rope_theta = config.rope_local_base_freq
-        config.rope_scaling = {"rope_type": "default"}
-        rotary_emb_local = RotaryEmbedding(config=config, max_seq_len_cached=max_seq_len)
-
-        return (rotary_emb_global, rotary_emb_local)
+        rotary_embs = []
+        for layer_type in ("full_attention", "sliding_attention"):
+            params = dict(self.config.rope_parameters[layer_type])
+            config = copy.deepcopy(self.config)
+            config.rope_scaling = params
+            config.rope_parameters = params
+            rotary_embs.append(RotaryEmbedding(config=config, max_seq_len_cached=max_seq_len))
+        return tuple(rotary_embs)
 
     def get_rbln_attn_class(self):
         return Gemma3Attention
@@ -50,6 +50,9 @@ class Gemma3ForCausalLMWrapper(DecoderOnlyWrapper):
 
 class Gemma3TextModel(DecoderOnlyModel):
     # Different from DecoderOnlyModel, this model has global and local rotary embeddings.
+    def get_swa_custom_op_args(self, position_ids, query_position):
+        return build_image_prefill_swa_custom_op_args(self, position_ids, query_position)
+
     def forward(
         self,
         input_ids: torch.Tensor = None,
@@ -58,12 +61,12 @@ class Gemma3TextModel(DecoderOnlyModel):
         cache_position: torch.Tensor = None,
         position_ids: torch.Tensor = None,
         query_position: torch.Tensor = None,
-        past_key_values: Tuple[Tuple[torch.Tensor]] = None,
+        past_key_values: tuple[tuple[torch.Tensor]] = None,
         rotary_emb: torch.nn.Module = None,
-        global_block_tables: Optional[torch.Tensor] = None,
-        local_block_tables: Optional[torch.Tensor] = None,
-        lora_int_id: Optional[torch.Tensor] = None,
-        output_hidden_states: Optional[bool] = None,
+        global_block_tables: torch.Tensor | None = None,
+        local_block_tables: torch.Tensor | None = None,
+        lora_int_id: torch.Tensor | None = None,
+        output_hidden_states: bool | None = None,
     ):
         # retrieve input_ids and inputs_embeds
         if (input_ids is None) ^ (inputs_embeds is not None):
@@ -102,10 +105,10 @@ class Gemma3TextModel(DecoderOnlyModel):
             if output_hidden_states:
                 all_hidden_states += (hidden_states,)
             is_sliding = True if layer_idx in self.sliding_window_layers else False
-            is_sliding_decode = is_sliding and self.phase == "decode"
+            use_swa_mask = is_sliding and self.phase in ("decode", "image_prefill")
             hidden_states = layer(
                 hidden_states=hidden_states,
-                attention_mask=swa_attn_mask if is_sliding_decode else attention_mask,
+                attention_mask=swa_attn_mask if use_swa_mask else attention_mask,
                 seq_positions=sliding_cache_pos if is_sliding else seq_positions,
                 past_key_values=past_key_values,
                 cos=cos_local if is_sliding else cos_global,
@@ -128,12 +131,12 @@ class Gemma3DecoderLayer(DecoderOnlyLayer):
         self,
         hidden_states: torch.Tensor,
         attention_mask: torch.Tensor,
-        seq_positions: Union[torch.LongTensor, Tuple[torch.LongTensor]],
-        past_key_values: Tuple[Tuple[torch.Tensor]],
-        cos: Optional[torch.Tensor] = None,
-        sin: Optional[torch.Tensor] = None,
-        block_tables: Optional[torch.Tensor] = None,
-        lora_int_id: Optional[torch.Tensor] = None,
+        seq_positions: torch.LongTensor | tuple[torch.LongTensor],
+        past_key_values: tuple[tuple[torch.Tensor]],
+        cos: torch.Tensor | None = None,
+        sin: torch.Tensor | None = None,
+        block_tables: torch.Tensor | None = None,
+        lora_int_id: torch.Tensor | None = None,
     ):
         residual = hidden_states
         hidden_states = self.get_pre_attention_layernorm()(hidden_states)

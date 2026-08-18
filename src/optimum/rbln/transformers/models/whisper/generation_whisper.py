@@ -31,11 +31,9 @@ Generation utilities for Whisper.
 Modified from `transformers.models.whisper.generation_whisper.py`
 """
 
-from typing import Any, Dict, Optional, Union
+from typing import Any
 
 import torch
-import transformers
-from packaging import version
 from transformers import GenerationMixin
 from transformers.generation.configuration_utils import GenerationConfig
 from transformers.modeling_outputs import ModelOutput
@@ -45,14 +43,14 @@ from transformers.models.whisper.generation_whisper import WhisperGenerationMixi
 class RBLNWhisperGenerationMixin(WhisperGenerationMixin, GenerationMixin):
     def generate(
         self,
-        input_features: Optional[torch.Tensor] = None,
-        attention_mask: Optional[torch.Tensor] = None,
-        generation_config: Optional[GenerationConfig] = None,
-        return_segments: Optional[bool] = None,
-        return_timestamps: Optional[bool] = None,
-        return_token_timestamps: Optional[bool] = None,
-        **kwargs: Optional[Dict[str, Any]],
-    ) -> Union[ModelOutput, Dict[str, Any], torch.LongTensor]:
+        input_features: torch.Tensor | None = None,
+        attention_mask: torch.Tensor | None = None,
+        generation_config: GenerationConfig | None = None,
+        return_segments: bool | None = None,
+        return_timestamps: bool | None = None,
+        return_token_timestamps: bool | None = None,
+        **kwargs: dict[str, Any] | None,
+    ) -> ModelOutput | dict[str, Any] | torch.LongTensor:
         """
         The generate function is utilized in its standard form as in the HuggingFace transformers library. User can use this function to generate text from the model.
         Check the [HuggingFace transformers documentation](https://huggingface.co/docs/transformers/v4.57.1/en/model_doc/whisper#transformers.WhisperForConditionalGeneration.generate) for more details.
@@ -120,19 +118,12 @@ class RBLNWhisperGenerationMixin(WhisperGenerationMixin, GenerationMixin):
                 num_frames = num_frames - seek
                 num_frames = num_frames[batch_idx_map]
 
-            if version.parse(transformers.__version__) >= version.parse("4.46.0"):
-                seek_outputs["token_timestamps"] = self._extract_token_timestamps(
-                    seek_outputs,
-                    generation_config.alignment_heads,
-                    num_frames=num_frames,
-                    num_input_ids=decoder_input_ids.shape[-1],
-                )
-            else:
-                seek_outputs["token_timestamps"] = self._extract_token_timestamps(
-                    seek_outputs,
-                    generation_config.alignment_heads,
-                    num_frames=num_frames,
-                )
+            seek_outputs["token_timestamps"] = self._extract_token_timestamps(
+                seek_outputs,
+                generation_config.alignment_heads,
+                num_frames=num_frames,
+                num_input_ids=decoder_input_ids.shape[-1],
+            )
         seek_outputs["sequences"] = seek_outputs["sequences"][:, start_idx:]
 
         def split_by_batch_index(values, key, batch_idx):
@@ -150,7 +141,12 @@ class RBLNWhisperGenerationMixin(WhisperGenerationMixin, GenerationMixin):
 
         valid_seekoutputs = []
         for k, v in seek_outputs.items():
-            if v is not None and len(v) > 0 and v[0] is not None:
+            if v is None:
+                continue
+            if not hasattr(v, "__getitem__"):
+                valid_seekoutputs.append((k, v))
+                continue
+            if len(v) > 0 and v[0] is not None:
                 valid_seekoutputs.append((k, v))
         seek_outputs = [
             {k: split_by_batch_index(v, k, i) for k, v in valid_seekoutputs} for i in range(sequence_tokens.shape[0])

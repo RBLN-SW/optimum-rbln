@@ -35,7 +35,6 @@ _import_structure = {
         "RBLNAutoModelForObjectDetection",
         "RBLNAutoModelForSequenceClassification",
         "RBLNAutoModelForSpeechSeq2Seq",
-        "RBLNAutoModelForVision2Seq",
         "RBLNAutoModelForImageTextToText",
         "RBLNAutoModelForTextEncoding",
         "RBLNAutoModelForZeroShotObjectDetection",
@@ -118,6 +117,14 @@ _import_structure = {
         "RBLNDPTForDepthEstimationConfig",
     ],
     "exaone": ["RBLNExaoneForCausalLM", "RBLNExaoneForCausalLMConfig"],
+    "exaone4_5": [
+        "RBLNExaone4_5_ForConditionalGeneration",
+        "RBLNExaone4_5_ForConditionalGenerationConfig",
+        "RBLNExaone4_5_Model",
+        "RBLNExaone4_5_ModelConfig",
+        "RBLNExaone4_5_VisionModel",
+        "RBLNExaone4_5_VisionModelConfig",
+    ],
     "gemma": ["RBLNGemmaForCausalLM", "RBLNGemmaForCausalLMConfig", "RBLNGemmaModel", "RBLNGemmaModelConfig"],
     "gemma2": ["RBLNGemma2ForCausalLM", "RBLNGemma2ForCausalLMConfig", "RBLNGemma2Model", "RBLNGemma2ModelConfig"],
     "gemma3": [
@@ -125,6 +132,14 @@ _import_structure = {
         "RBLNGemma3ForCausalLMConfig",
         "RBLNGemma3ForConditionalGeneration",
         "RBLNGemma3ForConditionalGenerationConfig",
+    ],
+    "gemma4": [
+        "RBLNGemma4ForCausalLM",
+        "RBLNGemma4ForCausalLMConfig",
+        "RBLNGemma4ForConditionalGeneration",
+        "RBLNGemma4ForConditionalGenerationConfig",
+        "RBLNGemma4VisionModel",
+        "RBLNGemma4VisionModelConfig",
     ],
     "gpt_oss": ["RBLNGptOssForCausalLM", "RBLNGptOssForCausalLMConfig"],
     "gpt2": ["RBLNGPT2LMHeadModel", "RBLNGPT2LMHeadModelConfig", "RBLNGPT2Model", "RBLNGPT2ModelConfig"],
@@ -162,7 +177,37 @@ _import_structure = {
     "qwen2": ["RBLNQwen2ForCausalLM", "RBLNQwen2ForCausalLMConfig", "RBLNQwen2Model", "RBLNQwen2ModelConfig"],
     "qwen2_moe": ["RBLNQwen2MoeForCausalLM", "RBLNQwen2MoeForCausalLMConfig"],
     "qwen3": ["RBLNQwen3ForCausalLM", "RBLNQwen3ForCausalLMConfig", "RBLNQwen3Model", "RBLNQwen3ModelConfig"],
+    "qwen3_5": [
+        "RBLNQwen3_5ForCausalLM",
+        "RBLNQwen3_5ForCausalLMConfig",
+        "RBLNQwen3_5ForConditionalGeneration",
+        "RBLNQwen3_5ForConditionalGenerationConfig",
+        "RBLNQwen3_5Model",
+        "RBLNQwen3_5ModelConfig",
+        "RBLNQwen3_5VisionModel",
+        "RBLNQwen3_5VisionModelConfig",
+    ],
     "qwen3_moe": ["RBLNQwen3MoeForCausalLM", "RBLNQwen3MoeForCausalLMConfig"],
+    "qwen3_vl": [
+        "RBLNQwen3VLVisionModel",
+        "RBLNQwen3VLVisionModelConfig",
+        "RBLNQwen3VLForConditionalGeneration",
+        "RBLNQwen3VLForConditionalGenerationConfig",
+        "RBLNQwen3VLModel",
+        "RBLNQwen3VLModelConfig",
+    ],
+    "qwen3_vl_moe": [
+        "RBLNQwen3VLMoeVisionModel",
+        "RBLNQwen3VLMoeVisionModelConfig",
+        "RBLNQwen3VLMoeForConditionalGeneration",
+        "RBLNQwen3VLMoeForConditionalGenerationConfig",
+        "RBLNQwen3VLMoeModel",
+        "RBLNQwen3VLMoeModelConfig",
+    ],
+    "modernbert": [
+        "RBLNModernBertForMaskedLM",
+        "RBLNModernBertForMaskedLMConfig",
+    ],
     "resnet": ["RBLNResNetForImageClassification", "RBLNResNetForImageClassificationConfig"],
     "roberta": [
         "RBLNRobertaForMaskedLM",
@@ -206,6 +251,8 @@ _import_structure = {
         "RBLNGroundingDinoForObjectDetectionConfig",
         "RBLNGroundingDinoEncoder",
         "RBLNGroundingDinoEncoderConfig",
+        "RBLNGroundingDinoTextModel",
+        "RBLNGroundingDinoTextModelConfig",
         "RBLNGroundingDinoDecoder",
         "RBLNGroundingDinoDecoderConfig",
     ],
@@ -228,7 +275,6 @@ if TYPE_CHECKING:
         RBLNAutoModelForSequenceClassification,
         RBLNAutoModelForSpeechSeq2Seq,
         RBLNAutoModelForTextEncoding,
-        RBLNAutoModelForVision2Seq,
         RBLNAutoModelForZeroShotObjectDetection,
     )
     from .bart import (
@@ -278,6 +324,14 @@ if TYPE_CHECKING:
     from .distilbert import RBLNDistilBertForQuestionAnswering, RBLNDistilBertForQuestionAnsweringConfig
     from .dpt import RBLNDPTForDepthEstimation, RBLNDPTForDepthEstimationConfig
     from .exaone import RBLNExaoneForCausalLM, RBLNExaoneForCausalLMConfig
+    from .exaone4_5 import (
+        RBLNExaone4_5_ForConditionalGeneration,
+        RBLNExaone4_5_ForConditionalGenerationConfig,
+        RBLNExaone4_5_Model,
+        RBLNExaone4_5_ModelConfig,
+        RBLNExaone4_5_VisionModel,
+        RBLNExaone4_5_VisionModelConfig,
+    )
     from .gemma import RBLNGemmaForCausalLM, RBLNGemmaForCausalLMConfig, RBLNGemmaModel, RBLNGemmaModelConfig
     from .gemma2 import RBLNGemma2ForCausalLM, RBLNGemma2ForCausalLMConfig, RBLNGemma2Model, RBLNGemma2ModelConfig
     from .gemma3 import (
@@ -285,6 +339,14 @@ if TYPE_CHECKING:
         RBLNGemma3ForCausalLMConfig,
         RBLNGemma3ForConditionalGeneration,
         RBLNGemma3ForConditionalGenerationConfig,
+    )
+    from .gemma4 import (
+        RBLNGemma4ForCausalLM,
+        RBLNGemma4ForCausalLMConfig,
+        RBLNGemma4ForConditionalGeneration,
+        RBLNGemma4ForConditionalGenerationConfig,
+        RBLNGemma4VisionModel,
+        RBLNGemma4VisionModelConfig,
     )
     from .gpt2 import RBLNGPT2LMHeadModel, RBLNGPT2LMHeadModelConfig, RBLNGPT2Model, RBLNGPT2ModelConfig
     from .gpt_oss import RBLNGptOssForCausalLM, RBLNGptOssForCausalLMConfig
@@ -295,6 +357,8 @@ if TYPE_CHECKING:
         RBLNGroundingDinoEncoderConfig,
         RBLNGroundingDinoForObjectDetection,
         RBLNGroundingDinoForObjectDetectionConfig,
+        RBLNGroundingDinoTextModel,
+        RBLNGroundingDinoTextModelConfig,
     )
     from .idefics3 import (
         RBLNIdefics3ForConditionalGeneration,
@@ -308,6 +372,7 @@ if TYPE_CHECKING:
     from .midm import RBLNMidmLMHeadModel, RBLNMidmLMHeadModelConfig
     from .mistral import RBLNMistralForCausalLM, RBLNMistralForCausalLMConfig, RBLNMistralModel, RBLNMistralModelConfig
     from .mixtral import RBLNMixtralForCausalLM, RBLNMixtralForCausalLMConfig
+    from .modernbert import RBLNModernBertForMaskedLM, RBLNModernBertForMaskedLMConfig
     from .opt import RBLNOPTForCausalLM, RBLNOPTForCausalLMConfig, RBLNOPTModel, RBLNOPTModelConfig
     from .paligemma import (
         RBLNPaliGemmaForConditionalGeneration,
@@ -342,7 +407,33 @@ if TYPE_CHECKING:
         RBLNQwen2VLModelConfig,
     )
     from .qwen3 import RBLNQwen3ForCausalLM, RBLNQwen3ForCausalLMConfig, RBLNQwen3Model, RBLNQwen3ModelConfig
+    from .qwen3_5 import (
+        RBLNQwen3_5ForCausalLM,
+        RBLNQwen3_5ForCausalLMConfig,
+        RBLNQwen3_5ForConditionalGeneration,
+        RBLNQwen3_5ForConditionalGenerationConfig,
+        RBLNQwen3_5Model,
+        RBLNQwen3_5ModelConfig,
+        RBLNQwen3_5VisionModel,
+        RBLNQwen3_5VisionModelConfig,
+    )
     from .qwen3_moe import RBLNQwen3MoeForCausalLM, RBLNQwen3MoeForCausalLMConfig
+    from .qwen3_vl import (
+        RBLNQwen3VLForConditionalGeneration,
+        RBLNQwen3VLForConditionalGenerationConfig,
+        RBLNQwen3VLModel,
+        RBLNQwen3VLModelConfig,
+        RBLNQwen3VLVisionModel,
+        RBLNQwen3VLVisionModelConfig,
+    )
+    from .qwen3_vl_moe import (
+        RBLNQwen3VLMoeForConditionalGeneration,
+        RBLNQwen3VLMoeForConditionalGenerationConfig,
+        RBLNQwen3VLMoeModel,
+        RBLNQwen3VLMoeModelConfig,
+        RBLNQwen3VLMoeVisionModel,
+        RBLNQwen3VLMoeVisionModelConfig,
+    )
     from .resnet import RBLNResNetForImageClassification, RBLNResNetForImageClassificationConfig
     from .roberta import (
         RBLNRobertaForMaskedLM,

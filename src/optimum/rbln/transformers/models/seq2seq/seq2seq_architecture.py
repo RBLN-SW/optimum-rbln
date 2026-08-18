@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Optional, Tuple
 
 import torch
 from torch import nn
@@ -84,10 +83,14 @@ class Seq2SeqEncoderWrapper(nn.Module):
         input_ids: torch.Tensor,
         attention_mask: torch.Tensor,
         b_idx: torch.Tensor,
-        *cross_key_values: Tuple[torch.Tensor],
-    ) -> Tuple[torch.Tensor]:
+        *cross_key_values: tuple[torch.Tensor],
+    ) -> tuple[torch.Tensor]:
         # 1. get encoder last_hidden_states
-        encoder_outputs = self.encoder(input_ids=input_ids, attention_mask=attention_mask)
+        # TODO: make this to use `create_bidirectional_mask` in transformers v5
+        from transformers.modeling_attn_mask_utils import _prepare_4d_attention_mask
+
+        encoder_attention_mask = _prepare_4d_attention_mask(attention_mask, torch.float32)
+        encoder_outputs = self.encoder(input_ids=input_ids, attention_mask=encoder_attention_mask)
         last_hidden_states = encoder_outputs[0]
 
         # 2. pre-compute cross_attention's past_key_value which used in decoder phase.
@@ -159,7 +162,7 @@ class Seq2SeqDecoderWrapper(nn.Module):
     def forward(
         self,
         *args,
-    ) -> Tuple[torch.FloatTensor, Tuple[torch.FloatTensor]]:
+    ) -> tuple[torch.FloatTensor, tuple[torch.FloatTensor]]:
         if self.use_attention_mask:
             (
                 input_ids,
@@ -236,7 +239,7 @@ class Seq2SeqForConditionalGeneration(nn.Module):
         self_past_key_values,
         cross_past_key_values,
         cache_position,
-        block_tables: Optional[torch.Tensor] = None,
+        block_tables: torch.Tensor | None = None,
     ):
         hidden_states = self.decoder(
             input_ids=input_ids,
@@ -261,7 +264,7 @@ class Seq2SeqDecoder(torch.nn.Module):
 
     Args:
         model: Original Huggingface model to adapt
-        layers (List[Seq2SeqDecoderLayer]): Modified transformer layers optimized for RBLN
+        layers (list[Seq2SeqDecoderLayer]): Modified transformer layers optimized for RBLN
     """
 
     has_pos_emb = True
@@ -301,7 +304,7 @@ class Seq2SeqDecoder(torch.nn.Module):
         self_past_key_values: torch.Tensor,
         cross_past_key_values: torch.Tensor,
         cache_position: torch.Tensor,
-        block_tables: Optional[torch.Tensor] = None,
+        block_tables: torch.Tensor | None = None,
     ):
         # embedding
         hidden_states = self.get_embedding()(input_ids)
@@ -337,7 +340,7 @@ class Seq2SeqDecoderLayer(torch.nn.Module):
 
     Args:
         model: Original Huggingface model to adapt
-        layers (List[DecoderOnlyLayer]): Modified transformer layers optimized for RBLN
+        layers (list[DecoderOnlyLayer]): Modified transformer layers optimized for RBLN
         self_attn (Seq2SeqSelfAttention): Modified self-attention layer optimized for RBLN
     """
 
@@ -379,11 +382,11 @@ class Seq2SeqDecoderLayer(torch.nn.Module):
         hidden_states: torch.Tensor,
         attention_mask: torch.Tensor,
         encoder_attention_mask: torch.Tensor,
-        self_past_key_value: Tuple[torch.Tensor],
-        cross_past_key_value: Tuple[torch.Tensor],
+        self_past_key_value: tuple[torch.Tensor],
+        cross_past_key_value: tuple[torch.Tensor],
         cache_position: torch.Tensor,
-        block_tables: Optional[torch.Tensor] = None,
-    ) -> Tuple[torch.Tensor, Tuple[torch.Tensor]]:
+        block_tables: torch.Tensor | None = None,
+    ) -> tuple[torch.Tensor, tuple[torch.Tensor]]:
         dummy_encoder_hidden_states = torch.zeros(1, encoder_attention_mask.shape[-1])
 
         # Self Attention Block
@@ -433,7 +436,7 @@ class Seq2SeqSelfAttention(nn.Module):
     def _shape(self, tensor: torch.Tensor, seq_len: int, bsz: int) -> torch.Tensor:
         return tensor.view(bsz, seq_len, 1, self.num_heads, self.head_dim).transpose(1, 3)
 
-    def projection(self, hidden_states) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    def projection(self, hidden_states) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Projects input hidden states into query, key, and value representations.
 
         Args:
@@ -450,11 +453,11 @@ class Seq2SeqSelfAttention(nn.Module):
     def forward(
         self,
         hidden_states: torch.Tensor,
-        past_key_value: Tuple[torch.Tensor],
+        past_key_value: tuple[torch.Tensor],
         attention_mask: torch.Tensor,
         cache_position: torch.Tensor,
-        block_tables: Optional[torch.Tensor] = None,
-    ) -> Tuple[torch.Tensor, Tuple[torch.Tensor]]:
+        block_tables: torch.Tensor | None = None,
+    ) -> tuple[torch.Tensor, tuple[torch.Tensor]]:
         bsz, tgt_len, _ = hidden_states.size()
 
         query_states, key_states, value_states = self.projection(hidden_states=hidden_states)
@@ -504,8 +507,8 @@ class Seq2SeqCrossAttention(nn.Module):
         self,
         hidden_states: torch.Tensor,
         key_value_states: torch.Tensor = None,
-        past_key_value: Optional[object] = None,
-        attention_mask: Optional[torch.Tensor] = None,
+        past_key_value: object | None = None,
+        attention_mask: torch.Tensor | None = None,
     ):
         bsz, tgt_len, _ = hidden_states.size()
         query_states = self.q_proj(hidden_states).view(bsz, -1, self.num_heads, self.head_dim).transpose(1, 2)
