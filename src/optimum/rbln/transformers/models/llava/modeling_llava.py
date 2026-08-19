@@ -386,7 +386,13 @@ class RBLNLlavaForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMixi
             image_features = projected_features[:, :num_real_patches, :]
         else:
             projector_out_size = [
-                pixel_values.shape[0] * pixel_values.shape[1],
+                # Images, not images x channels: this pixel_values is
+                # (num_images, 3, H, W), so dim 1 is the channel count. Multiplying
+                # by it (the LLaVA-NeXT shape, where dim 1 is num_patches) sized the
+                # buffer 3x too large, and get_image_features returned three images'
+                # worth of features for one image. vision_out_size above already
+                # uses shape[0] alone.
+                pixel_values.shape[0],
                 (self.config.vision_config.image_size // self.config.vision_config.patch_size) ** 2,
                 self.config.text_config.hidden_size,
             ]
