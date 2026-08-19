@@ -668,7 +668,7 @@ class RBLNQwen3_5Model(RBLNDecoderOnlyModel):
         **kwargs,
     ):
         batch_size = input_ids.shape[0]
-        inputs_embeds = self.embed_tokens(input_ids).to(self.rbln_config.dtype)
+        inputs_embeds = self.embed_tokens(input_ids)
 
         if pixel_values is not None:
             image_embeds = self.visual(pixel_values, grid_thw=image_grid_thw)
@@ -905,7 +905,7 @@ class RBLNQwen3_5ForConditionalGeneration(RBLNQwen3_5Model, RBLNDecoderOnlyModel
                 f"Cache position size mismatch: got {cache_position.shape[0]}, expected {self.rbln_config.batch_size}."
             )
 
-        inputs_embeds = self.embed_tokens(input_ids).to(self.rbln_config.dtype)
+        inputs_embeds = self.embed_tokens(input_ids)
         position_embeds = []
         for b_idx in range(self.rbln_config.batch_size):
             delta = cache_position[b_idx] + self.rope_deltas[b_idx]

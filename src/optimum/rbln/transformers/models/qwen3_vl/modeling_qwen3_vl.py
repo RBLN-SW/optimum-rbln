@@ -498,7 +498,7 @@ class RBLNQwen3VLModel(RBLNDecoderOnlyModel):
         mm_token_type_ids: torch.IntTensor | None = None,
     ):
         batch_size = input_ids.shape[0]
-        inputs_embeds = self.embed_tokens(input_ids).to(self.rbln_config.dtype)
+        inputs_embeds = self.embed_tokens(input_ids)
 
         image_mask = None
         video_mask = None
@@ -924,7 +924,7 @@ class RBLNQwen3VLForConditionalGeneration(RBLNQwen3VLModel, RBLNDecoderOnlyModel
                 f"Cache position size mismatch: got {cache_position.shape[0]}, expected {self.rbln_config.batch_size}."
             )
 
-        inputs_embeds = self.embed_tokens(input_ids).to(self.rbln_config.dtype)
+        inputs_embeds = self.embed_tokens(input_ids)
         position_embeds = []
         for b_idx in range(self.rbln_config.batch_size):
             delta = cache_position[b_idx] + self.rope_deltas[b_idx]

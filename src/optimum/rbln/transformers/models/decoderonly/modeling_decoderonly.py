@@ -82,6 +82,10 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
             artifacts = torch.load(self.model_save_dir / self.subfolder / "torch_artifacts.pth", weights_only=False)
             self.embed_tokens = self._create_embedding_layer()
             self.embed_tokens.load_state_dict(artifacts["embed_tokens"])
+            # _create_embedding_layer builds an fp32 module and load_state_dict
+            # keeps that dtype, so cast to the compile dtype: the lookup output
+            # feeds the runtime's inputs_embeds, which expects rbln_config.dtype.
+            self.embed_tokens.to(self.rbln_config.dtype)
         else:
             self.embed_tokens = None
 
