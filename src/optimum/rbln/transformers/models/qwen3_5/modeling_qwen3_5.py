@@ -328,9 +328,8 @@ class RBLNQwen3_5VisionModel(RBLNModel):
         self.spatial_merge_unit = config.spatial_merge_size * config.spatial_merge_size
 
         head_dim = config.hidden_size // config.num_heads
-        self.rotary_pos_emb = Qwen3_5VisionRotaryEmbedding(head_dim // 2)
         # Precompute the rotary cos/sin tables up to the largest ViT bucket
-        _freq_table = self.rotary_pos_emb(int(self.max_seq_len.max().item()))
+        _freq_table = Qwen3_5VisionRotaryEmbedding(head_dim // 2)(int(self.max_seq_len.max().item()))
         self.rotary_cos_table = np_cos(_freq_table)
         self.rotary_sin_table = np_sin(_freq_table)
 

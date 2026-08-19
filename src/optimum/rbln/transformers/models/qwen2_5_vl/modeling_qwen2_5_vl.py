@@ -73,8 +73,9 @@ class RBLNQwen2_5_VisionTransformerPretrainedModel(RBLNModel):
         self.patch_size = config.spatial_patch_size
         self.spatial_merge_size = config.spatial_merge_size
         self.spatial_merge_unit = config.spatial_merge_size * config.spatial_merge_size
-        self.rotary_pos_emb = Qwen2_5_VisionRotaryEmbedding((config.hidden_size // config.num_heads) // 2)
-        freq_table = self.rotary_pos_emb(int(self.max_seq_len.max()))
+        freq_table = Qwen2_5_VisionRotaryEmbedding((config.hidden_size // config.num_heads) // 2)(
+            int(self.max_seq_len.max())
+        )
         self.rotary_cos_table = np_cos(freq_table)
         self.rotary_sin_table = np_sin(freq_table)
         with no_init_weights():
