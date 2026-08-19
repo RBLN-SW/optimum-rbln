@@ -12,7 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any, Optional
 
 from ....configuration_utils import RBLNModelConfig
 from ....transformers import RBLNQwen2_5_VLForConditionalGenerationConfig, RBLNT5EncoderModelConfig

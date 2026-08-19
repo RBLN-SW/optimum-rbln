@@ -17,7 +17,7 @@ import inspect
 import json
 from dataclasses import asdict, dataclass, fields
 from pathlib import Path
-from typing import Any, Protocol, Union, runtime_checkable
+from typing import Any, Dict, List, Optional, Protocol, Union, runtime_checkable
 
 import numpy as np
 import torch
