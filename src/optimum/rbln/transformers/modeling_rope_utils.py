@@ -55,9 +55,6 @@ def np_sin(x: torch.Tensor) -> torch.Tensor:
     return torch.from_numpy(np.sin(x.detach().cpu().numpy()))
 
 
-_ROTARY_LOOKUP_MAX_ROWS = 131_072  # ~128MB fp32 cos+sin at head_dim=128; beyond falls back to _dynamic
-
-
 class RotaryLookupTable:
     """Deterministic drop-in for host-side HF rotary modules: cos/sin tables built once
     via np_cos/np_sin, gathered per call; out-of-range positions use the bit-identical
@@ -69,7 +66,7 @@ class RotaryLookupTable:
         self.attention_scaling = rotary_emb.attention_scaling
         half_dim = rotary_emb.inv_freq.shape[0]
         self.inv_freq_full = torch.cat([rotary_emb.inv_freq.float()] * 2)
-        self.table_len = min(max_seq_len, _ROTARY_LOOKUP_MAX_ROWS)
+        self.table_len = max_seq_len
         vals = torch.outer(torch.arange(self.table_len, dtype=torch.float32), self.inv_freq_full)
         self.cos_table = np_cos(vals) * self.attention_scaling
         self.sin_table = np_sin(vals) * self.attention_scaling
