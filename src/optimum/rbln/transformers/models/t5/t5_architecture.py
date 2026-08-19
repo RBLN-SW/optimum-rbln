@@ -33,10 +33,12 @@ logger = logging.get_logger(__name__)
 
 
 def _clamp_finite(hidden_states: torch.Tensor) -> torch.Tensor:
-    # Bound at the dtype's max, not `max - 1000`: upstream only tightens to `max - 1000` when an inf is
-    # already present, so clamping there unconditionally would truncate finite activations that upstream
-    # leaves alone -- and T5 reaches that band, which is why the clamp exists. At `max` this is an
-    # identity on finite inputs and only folds inf down.
+    # Upstream clamps only at float16, so gate on dtype to leave other graphs byte-identical -- comparing
+    # dtypes is static metadata, unlike the `isinf(...).any()` upstream feeds `torch.where`. Bound at the
+    # dtype's max rather than `max - 1000`: upstream only tightens to that when an inf is already present,
+    # so it would truncate finite activations upstream leaves alone, and T5 reaches that band.
+    if hidden_states.dtype != torch.float16:
+        return hidden_states
     bound = torch.finfo(hidden_states.dtype).max
     return torch.clamp(hidden_states, min=-bound, max=bound)
 

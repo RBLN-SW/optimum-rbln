@@ -26,6 +26,7 @@ from transformers.modeling_outputs import BaseModelOutput
 from .configuration_utils import DEFAULT_COMPILED_MODEL_NAME, RBLNModelConfig
 from .modeling_base import RBLNBaseModel
 from .utils.logging import get_logger
+from .utils.runtime_utils import cast_inputs
 
 
 if TYPE_CHECKING:
@@ -275,6 +276,14 @@ class RBLNModel(RBLNBaseModel):
             for compiled_model in compiled_models
         ]
 
+    def _run(self, *args: Any, **kwargs: Any) -> Any:
+        """Run the default compiled graph with inputs cast to the dtypes it declares."""
+        # Buckets differ in shape but not dtype, so the first set answers for all of them.
+        compile_cfg = self.rbln_config.compile_cfgs[0]
+        input_info = compile_cfg.input_info[0] if compile_cfg.is_multiple_input_info else compile_cfg.input_info
+        args, kwargs = cast_inputs(input_info, args, kwargs)
+        return self.model[0](*args, **kwargs)
+
     def forward(self, *args: Any, return_dict: bool | None = None, **kwargs: Any) -> Any:
         """
         Defines the forward pass of `RBLNModel`. The interface mirrors HuggingFace conventions so it can act as a drop-in
@@ -315,7 +324,7 @@ class RBLNModel(RBLNBaseModel):
             return_dict = True if return_dict is None else return_dict
 
         # Get output from the model
-        output = self.model[0](*args, **kwargs)
+        output = self._run(*args, **kwargs)
 
         # Format output according to task requirements
         return self._prepare_output(output, return_dict)

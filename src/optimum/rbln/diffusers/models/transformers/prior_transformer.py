@@ -151,14 +151,11 @@ class RBLNPriorTransformer(RBLNModel):
         Returns:
             (`~diffusers.models.transformers.prior_transformer.PriorTransformerOutput` | tuple)
         """
-        # Align every input with its compiled dtype: `rbln_config.dtype` for the activations, float32 for
-        # `timestep`. Note that `timestep` arrives as a long and `attention_mask` as a bool.
-        dtype = self.rbln_config.dtype
         return super().forward(
-            hidden_states.to(dtype),
-            timestep.float(),
-            proj_embedding.to(dtype),
-            encoder_hidden_states.to(dtype),
-            attention_mask.to(dtype),
+            hidden_states,
+            timestep,
+            proj_embedding,
+            encoder_hidden_states,
+            attention_mask,
             return_dict=return_dict,
         )

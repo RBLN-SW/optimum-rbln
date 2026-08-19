@@ -47,9 +47,12 @@ def _encoder_layer_forward(self, hidden_states, attention_mask, **kwargs):
     hidden_states = self.fc2(self.activation_fn(self.fc1(hidden_states)))
     hidden_states = self.final_layer_norm(residual + hidden_states)
 
-    # Bound at the dtype's max, not `max - 1000`: upstream only clamps when a non-finite value is
-    # already present, so the tighter bound would truncate finite activations it leaves alone. At `max`
-    # this is an identity on finite inputs and only folds inf down.
+    # Upstream clamps only at float16, so gate on dtype to leave other graphs byte-identical -- comparing
+    # dtypes is static metadata, unlike the `isfinite(...).all()` upstream guards with. Bound at the
+    # dtype's max rather than `max - 1000`: upstream only clamps when a non-finite value is already
+    # present, so the tighter bound would truncate finite activations it leaves alone.
+    if hidden_states.dtype != torch.float16:
+        return hidden_states
     bound = torch.finfo(hidden_states.dtype).max
     return torch.clamp(hidden_states, min=-bound, max=bound)
 

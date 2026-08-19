@@ -383,35 +383,31 @@ class RBLNUNet2DConditionModel(RBLNModel):
                 "For details, see: https://docs.rbln.ai/software/optimum/model_api/diffusers/pipelines/stable_diffusion.html#important-batch-size-configuration-for-guidance-scale"
             )
 
-        dtype = self.rbln_config.dtype
-        added_cond_kwargs = (
-            {} if added_cond_kwargs is None else {name: tensor.to(dtype) for name, tensor in added_cond_kwargs.items()}
-        )
+        added_cond_kwargs = added_cond_kwargs or {}
 
         if down_block_additional_residuals is not None:
-            down_block_additional_residuals = [t.contiguous().to(dtype) for t in down_block_additional_residuals]
             return super().forward(
-                sample.contiguous().to(dtype),
-                timestep.float(),
-                encoder_hidden_states.to(dtype),
-                *down_block_additional_residuals,
-                mid_block_additional_residual.to(dtype) if mid_block_additional_residual is not None else None,
+                sample.contiguous(),
+                timestep,
+                encoder_hidden_states,
+                *(t.contiguous() for t in down_block_additional_residuals),
+                mid_block_additional_residual,
                 **added_cond_kwargs,
                 return_dict=return_dict,
             )
 
         if "image_embeds" in added_cond_kwargs:
             return super().forward(
-                sample.contiguous().to(dtype),
-                timestep.float(),
+                sample.contiguous(),
+                timestep,
                 **added_cond_kwargs,
                 return_dict=return_dict,
             )
 
         return super().forward(
-            sample.contiguous().to(dtype),
-            timestep.float(),
-            encoder_hidden_states.to(dtype),
+            sample.contiguous(),
+            timestep,
+            encoder_hidden_states,
             **added_cond_kwargs,
             return_dict=return_dict,
         )

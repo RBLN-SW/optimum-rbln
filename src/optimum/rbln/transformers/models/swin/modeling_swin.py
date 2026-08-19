@@ -321,7 +321,7 @@ class RBLNSwinBackbone(RBLNModel):
         pad_w = self.rbln_config.image_width - original_w
         padded_pixel_values = F.pad(pixel_values, (0, pad_w, 0, pad_h))
 
-        output = self.model[0](padded_pixel_values)
+        output = self._run(padded_pixel_values)
 
         feature_maps = ()
         for _ in range(len(self.config.out_features)):

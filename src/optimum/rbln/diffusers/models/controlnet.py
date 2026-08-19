@@ -253,25 +253,22 @@ class RBLNControlNetModel(RBLNModel):
                 "For details, see: https://docs.rbln.ai/software/optimum/model_api/diffusers/pipelines/controlnet.html#important-batch-size-configuration-for-guidance-scale"
             )
 
-        dtype = self.rbln_config.dtype
-        added_cond_kwargs = (
-            {} if added_cond_kwargs is None else {name: tensor.to(dtype) for name, tensor in added_cond_kwargs.items()}
-        )
+        added_cond_kwargs = added_cond_kwargs or {}
         if self.use_encoder_hidden_states:
-            output = self.model[0](
-                sample.contiguous().to(dtype),
-                timestep.float(),
-                encoder_hidden_states.to(dtype),
-                controlnet_cond.to(dtype),
-                torch.tensor(conditioning_scale, dtype=dtype),
+            output = self._run(
+                sample.contiguous(),
+                timestep,
+                encoder_hidden_states,
+                controlnet_cond,
+                torch.tensor(conditioning_scale),
                 **added_cond_kwargs,
             )
         else:
-            output = self.model[0](
-                sample.contiguous().to(dtype),
-                timestep.float(),
-                controlnet_cond.to(dtype),
-                torch.tensor(conditioning_scale, dtype=dtype),
+            output = self._run(
+                sample.contiguous(),
+                timestep,
+                controlnet_cond,
+                torch.tensor(conditioning_scale),
                 **added_cond_kwargs,
             )
 

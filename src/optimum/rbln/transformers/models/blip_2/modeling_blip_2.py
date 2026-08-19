@@ -129,7 +129,7 @@ class RBLNBlip2VisionModel(RBLNModel):
         batch_size = pixel_values.shape[0]
         outputs = []
         for i in range(batch_size):
-            outputs.append(self.model[0](pixel_values[i : i + 1]))
+            outputs.append(self._run(pixel_values[i : i + 1]))
 
         last_hidden_state = [output[0] for output in outputs]
         pooler_output = [output[1] for output in outputs]
@@ -261,7 +261,7 @@ class RBLNBlip2QFormerModel(RBLNModel):
         outputs = []
         for i in range(batch_size):
             outputs.append(
-                self.model[0](
+                self._run(
                     query_embeds[i : i + 1], encoder_hidden_states[i : i + 1], encoder_attention_mask[i : i + 1]
                 )
             )

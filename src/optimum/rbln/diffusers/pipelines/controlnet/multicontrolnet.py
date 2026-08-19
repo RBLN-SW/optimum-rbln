@@ -121,7 +121,7 @@ class RBLNMultiControlNetModel(RBLNModel):
         ):
             down_samples, mid_sample = controlnet(
                 sample=sample.contiguous(),
-                timestep=timestep.float(),
+                timestep=timestep,
                 encoder_hidden_states=encoder_hidden_states,
                 controlnet_cond=image,
                 conditioning_scale=torch.tensor(scale),

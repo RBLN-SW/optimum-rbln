@@ -220,7 +220,7 @@ class RBLNTransformerEncoder(RBLNModel):
         def unpad(t):
             return t[:, :seq_len] if isinstance(t, torch.Tensor) and t.dim() >= 2 and t.shape[1] == target else t
 
-        output = self.model[0](*(pad(a) for a in args), **{k: pad(v) for k, v in kwargs.items()})
+        output = self._run(*(pad(a) for a in args), **{k: pad(v) for k, v in kwargs.items()})
         output = type(output)(map(unpad, output)) if isinstance(output, (tuple, list)) else unpad(output)
 
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
