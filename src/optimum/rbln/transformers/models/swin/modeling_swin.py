@@ -198,7 +198,6 @@ class _SwinBackbone(torch.nn.Module):
 
 
 class RBLNSwinBackbone(RBLNModel):
-
     @classmethod
     def _wrap_model_if_needed(cls, model: torch.nn.Module, rbln_config: RBLNSwinBackboneConfig) -> torch.nn.Module:
         for layer in model.encoder.layers:

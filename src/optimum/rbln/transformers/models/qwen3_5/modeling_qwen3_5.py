@@ -834,7 +834,6 @@ class RBLNQwen3_5ForConditionalGeneration(RBLNQwen3_5Model, RBLNDecoderOnlyModel
         ```
     """
 
-
     def __post_init__(self, **kwargs):
         super().__post_init__(**kwargs)
         self.rope_deltas = torch.zeros(self.rbln_config.batch_size)
