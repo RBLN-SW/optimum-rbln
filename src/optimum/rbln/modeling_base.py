@@ -474,6 +474,20 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
         return compiled_model
 
     @classmethod
+    def _default_dtype(cls, model: "PreTrainedModel", model_config: "PretrainedConfig") -> torch.dtype:
+        """
+        The dtype to compile at when the caller did not ask for one.
+
+        Args:
+            model: The torch module about to be compiled.
+            model_config: Its HuggingFace config.
+
+        Returns:
+            The checkpoint's dtype, unless a subclass knows the model needs another one.
+        """
+        return model.dtype
+
+    @classmethod
     def update_rbln_config(
         cls,
         preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"] | None,
@@ -481,7 +495,8 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
         model_config: "PretrainedConfig",
         rbln_config: RBLNModelConfig,
     ) -> RBLNModelConfig:
-        rbln_config.dtype = model.dtype
+        if rbln_config._dtype is None:
+            rbln_config.dtype = cls._default_dtype(model, model_config)
         if not cls._supports_non_fp32 and rbln_config.dtype != torch.float32:
             raise NotImplementedError(
                 f"Currently, {cls.__name__} does not support non-fp32 dtype. Please use float32 dtype."
@@ -489,6 +504,12 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
         rbln_config = cls._update_rbln_config(
             preprocessors=preprocessors, model=model, model_config=model_config, rbln_config=rbln_config
         )
+
+        # `_update_rbln_config` may still pin the dtype (a VAE's `force_upcast` does), so align the module
+        # with whatever `rbln_config.dtype` ended up as -- the same object is handed to `get_compiled_model`
+        # below, and a graph declaring one dtype cannot be traced from weights of another. `nn.Module.to` is
+        # in-place and a no-op when the dtypes already agree, which is the case whenever it was derived.
+        model.to(rbln_config.dtype)
 
         if rbln_config.rbln_model_cls_name != cls.__name__:
             raise NameError(

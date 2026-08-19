@@ -725,7 +725,10 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
 
         if dtype is not None and isinstance(dtype, torch.dtype):
             dtype = RBLNCompileConfig.normalize_dtype(dtype)
-        self._dtype = dtype or "float32"
+        # Left unset, `dtype` stays `None` until `update_rbln_config` resolves it from the model. Keeping
+        # "unset" distinct from "float32" is what lets a model's conservative default -- a VAE's
+        # `force_upcast`, say -- apply only when the caller did not ask for a dtype themselves.
+        self._dtype = dtype
         self.optimum_rbln_version = optimum_rbln_version
         if self.optimum_rbln_version is None:
             self.optimum_rbln_version = __version__
@@ -774,7 +777,7 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
 
     @property
     def dtype(self):
-        return getattr(torch, self._dtype)
+        return getattr(torch, self._dtype or "float32")
 
     @dtype.setter
     def dtype(self, dtype: str | torch.dtype):

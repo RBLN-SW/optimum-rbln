@@ -66,7 +66,6 @@ class RBLNAutoencoderKL(RBLNModel):
 
     @classmethod
     def get_compiled_model(cls, model, rbln_config: RBLNAutoencoderKLConfig) -> dict[str, rebel.RBLNCompiledModel]:
-        model = model.to(rbln_config.dtype)
 
         if rbln_config.uses_encoder:
             expected_models = ["encoder", "decoder"]
@@ -129,6 +128,23 @@ class RBLNAutoencoderKL(RBLNModel):
         return rbln_config
 
     @classmethod
+    def _default_dtype(cls, model: "PreTrainedModel", model_config: "PretrainedConfig") -> torch.dtype:
+        # `force_upcast` only says this checkpoint is unstable in float16, not that the caller's pipeline
+        # upcasts it, so float32 is a conservative default rather than a fact -- and which pipelines upcast
+        # is upstream's call, which can change. An explicit `dtype` skips this hook entirely.
+        if getattr(model_config, "force_upcast", False) and model.dtype != torch.float32:
+            logger.warning(
+                f"This VAE's checkpoint is {model.dtype}, but its config sets `force_upcast=True`, so the "
+                "graph is compiled at float32 -- upstream pipelines upcast such a VAE around encode/decode for "
+                "numerical stability, and a compiled graph cannot be moved afterwards. The rest of the pipeline "
+                f"still runs at {model.dtype}. Pass `rbln_dtype=\"{RBLNCompileConfig.normalize_dtype(model.dtype)}\"` "
+                "to compile it at the checkpoint dtype instead -- unlike clearing `force_upcast` on the VAE "
+                "config, that leaves the upcast diffusers performs at runtime untouched."
+            )
+            return torch.float32
+        return model.dtype
+
+    @classmethod
     def _update_rbln_config(
         cls,
         preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"],
@@ -136,16 +152,6 @@ class RBLNAutoencoderKL(RBLNModel):
         model_config: "PretrainedConfig",
         rbln_config: RBLNAutoencoderKLConfig,
     ) -> RBLNAutoencoderKLConfig:
-        if getattr(model_config, "force_upcast", False) and rbln_config.dtype != torch.float32:
-            logger.warning(
-                f"This VAE's checkpoint is {rbln_config.dtype}, but its config sets `force_upcast=True`, so the "
-                "graph is compiled at float32 -- upstream pipelines upcast such a VAE around encode/decode for "
-                "numerical stability, and a compiled graph cannot be moved afterwards. The rest of the pipeline "
-                f"still runs at {rbln_config.dtype}. Set `force_upcast=False` on the VAE config to compile it at "
-                "the checkpoint dtype instead."
-            )
-            rbln_config.dtype = torch.float32
-
         if rbln_config.sample_size is None:
             rbln_config.sample_size = model_config.sample_size
 
