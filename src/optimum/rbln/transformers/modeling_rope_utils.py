@@ -98,7 +98,8 @@ class RotaryLookupTable:
 
 
 def build_rotary_lookup(rotary_emb: torch.nn.Module, max_seq_len: int):
-    if getattr(rotary_emb, "rope_type", "default") == "default":
+    # the table only requires inv_freq to be static after load; dynamic/longrope mutate it at runtime
+    if getattr(rotary_emb, "rope_type", "default") not in ("dynamic", "longrope"):
         return RotaryLookupTable(rotary_emb, max_seq_len)
     logger.warning(
         f"rope_type={rotary_emb.rope_type!r} cannot use the deterministic rotary lookup table; "
