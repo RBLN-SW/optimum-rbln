@@ -18,13 +18,13 @@ import torch
 class ModernBertModelWrapper(torch.nn.Module):
     """Compilation wrapper for ModernBERT encoder models.
 
-    Unlike the generic `TransformerEncoderWrapper`, this wrapper passes the 2D
-    padding `attention_mask` through unchanged instead of expanding it with
-    `_prepare_4d_attention_mask`. ModernBERT uses alternating full / local
-    (sliding-window) attention and builds its two 4D masks internally via
-    `create_bidirectional_mask` and `create_bidirectional_sliding_window_mask`.
-    Pre-expanding the mask here would feed the same global mask to the sliding
-    layers and drop the local windowing, producing incorrect outputs.
+    Like the generic `TransformerEncoderWrapper`, this wrapper passes the 2D
+    padding `attention_mask` through unchanged. ModernBERT uses alternating
+    full / local (sliding-window) attention and builds its two 4D masks
+    internally via `create_bidirectional_mask` and
+    `create_bidirectional_sliding_window_mask`. Pre-expanding the mask here
+    would feed the same global mask to the sliding layers and drop the local
+    windowing, producing incorrect outputs.
 
     `return_dict` is forced off so the traced graph exposes a single `logits`
     tensor; the RBLN runtime rebuilds the `MaskedLMOutput` from it.
