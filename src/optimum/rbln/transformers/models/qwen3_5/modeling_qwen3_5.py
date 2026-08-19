@@ -35,7 +35,7 @@ from ....modeling import RBLNModel
 from ....utils import logging
 from ...cache_utils import FullAttentionKVCacheMeta, LinearAttentionCacheMeta
 from ...modeling_outputs import RBLNDecoderOnlyOutput, _validate_output_hidden_states
-from ...modeling_rope_utils import np_cos, np_sin
+from ...modeling_rope_utils import build_qwen_mrope_lookup, np_cos, np_sin, qwen_vit_rot_pos_ids
 from ..decoderonly.decoderonly_runtime_utils import RBLNPageTableManager
 from ..decoderonly.modeling_decoderonly import RBLNDecoderOnlyModel, RBLNDecoderOnlyModelForCausalLM
 from .configuration_qwen3_5 import (
@@ -328,9 +328,8 @@ class RBLNQwen3_5VisionModel(RBLNModel):
         self.spatial_merge_unit = config.spatial_merge_size * config.spatial_merge_size
 
         head_dim = config.hidden_size // config.num_heads
-        self.rotary_pos_emb = Qwen3_5VisionRotaryEmbedding(head_dim // 2)
         # Precompute the rotary cos/sin tables up to the largest ViT bucket
-        _freq_table = self.rotary_pos_emb(int(self.max_seq_len.max().item()))
+        _freq_table = Qwen3_5VisionRotaryEmbedding(head_dim // 2)(int(self.max_seq_len.max().item()))
         self.rotary_cos_table = np_cos(_freq_table)
         self.rotary_sin_table = np_sin(_freq_table)
 
@@ -400,37 +399,7 @@ class RBLNQwen3_5VisionModel(RBLNModel):
         return rbln_config
 
     def rot_pos_emb(self, grid_thw: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-        merge_size = self.spatial_merge_size
-        device = self.rotary_cos_table.device
-
-        total_tokens = int(torch.prod(grid_thw, dim=1).sum().item())
-        pos_ids = torch.empty((total_tokens, 2), dtype=torch.long, device=device)
-
-        offset = 0
-        for num_frames, height, width in grid_thw:
-            merged_h, merged_w = height // merge_size, width // merge_size
-
-            block_rows = torch.arange(merged_h, device=device)
-            block_cols = torch.arange(merged_w, device=device)
-            intra_row = torch.arange(merge_size, device=device)
-            intra_col = torch.arange(merge_size, device=device)
-
-            row_idx = block_rows[:, None, None, None] * merge_size + intra_row[None, None, :, None]
-            col_idx = block_cols[None, :, None, None] * merge_size + intra_col[None, None, None, :]
-
-            row_idx = row_idx.expand(merged_h, merged_w, merge_size, merge_size).reshape(-1)
-            col_idx = col_idx.expand(merged_h, merged_w, merge_size, merge_size).reshape(-1)
-
-            coords = torch.stack((row_idx, col_idx), dim=-1)
-
-            if num_frames > 1:
-                coords = coords.repeat(num_frames, 1)
-
-            num_tokens = coords.shape[0]
-            pos_ids[offset : offset + num_tokens] = coords
-            offset += num_tokens
-
-        # Gather cos/sin from the tables precomputed at object creation
+        pos_ids = qwen_vit_rot_pos_ids(grid_thw, self.spatial_merge_size)
         cos = self.rotary_cos_table[pos_ids].flatten(1)
         sin = self.rotary_sin_table[pos_ids].flatten(1)
         return cos, sin
@@ -601,7 +570,9 @@ class RBLNQwen3_5Model(RBLNDecoderOnlyModel):
             )
         super().__post_init__(**kwargs)
         self.visual = self.rbln_submodules[0] if self.rbln_submodules else None
-        self.rotary_emb = self._rotary_emb_class(self.config.text_config)
+        self.rotary_emb = build_qwen_mrope_lookup(
+            self._rotary_emb_class(self.config.text_config), self.rbln_config.max_seq_len
+        )
         if not self.can_generate():
             self.block_tables = torch.arange(self.rbln_config.kvcache_num_blocks, dtype=torch.int16)
 
