@@ -31,7 +31,7 @@ from ....configuration_utils import RBLNCompileConfig
 from ....modeling import RBLNModel
 from ....utils.logging import get_logger
 from ...modeling_outputs import RBLNDecoderOnlyOutput, _validate_output_hidden_states
-from ...modeling_rope_utils import np_cos, np_sin, vision_rot_pos_ids
+from ...modeling_rope_utils import np_cos, np_sin, qwen_vit_rot_pos_ids
 from ..decoderonly.modeling_decoderonly import RBLNDecoderOnlyModel, RBLNDecoderOnlyModelForCausalLM
 from .configuration_exaone4_5 import (
     RBLNExaone4_5_ForConditionalGenerationConfig,
@@ -239,7 +239,7 @@ class RBLNExaone4_5_VisionModel(RBLNModel):
 
     def forward(self, hidden_states: torch.Tensor, grid_thw: torch.Tensor) -> torch.Tensor:
         hidden_states = self.patch_embed(hidden_states).to(self.rbln_config.dtype)
-        pos_ids = vision_rot_pos_ids(grid_thw, self.spatial_merge_size)
+        pos_ids = qwen_vit_rot_pos_ids(grid_thw, self.spatial_merge_size)
         window_index, cu_window_seqlens = self.get_window_index(grid_thw)
         cu_window_seqlens = torch.tensor(cu_window_seqlens, dtype=torch.int32)
         cu_window_seqlens = torch.unique_consecutive(cu_window_seqlens)

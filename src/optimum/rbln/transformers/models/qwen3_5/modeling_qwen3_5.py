@@ -35,7 +35,7 @@ from ....modeling import RBLNModel
 from ....utils import logging
 from ...cache_utils import FullAttentionKVCacheMeta, LinearAttentionCacheMeta
 from ...modeling_outputs import RBLNDecoderOnlyOutput, _validate_output_hidden_states
-from ...modeling_rope_utils import build_rotary_lookup, np_cos, np_sin, vision_rot_pos_ids
+from ...modeling_rope_utils import build_qwen_mrope_lookup, np_cos, np_sin, qwen_vit_rot_pos_ids
 from ..decoderonly.decoderonly_runtime_utils import RBLNPageTableManager
 from ..decoderonly.modeling_decoderonly import RBLNDecoderOnlyModel, RBLNDecoderOnlyModelForCausalLM
 from .configuration_qwen3_5 import (
@@ -400,7 +400,7 @@ class RBLNQwen3_5VisionModel(RBLNModel):
         return rbln_config
 
     def rot_pos_emb(self, grid_thw: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-        pos_ids = vision_rot_pos_ids(grid_thw, self.spatial_merge_size)
+        pos_ids = qwen_vit_rot_pos_ids(grid_thw, self.spatial_merge_size)
         cos = self.rotary_cos_table[pos_ids].flatten(1)
         sin = self.rotary_sin_table[pos_ids].flatten(1)
         return cos, sin
@@ -571,7 +571,7 @@ class RBLNQwen3_5Model(RBLNDecoderOnlyModel):
             )
         super().__post_init__(**kwargs)
         self.visual = self.rbln_submodules[0] if self.rbln_submodules else None
-        self.rotary_emb = build_rotary_lookup(
+        self.rotary_emb = build_qwen_mrope_lookup(
             self._rotary_emb_class(self.config.text_config), self.rbln_config.max_seq_len
         )
         if not self.can_generate():

@@ -55,7 +55,7 @@ def np_sin(x: torch.Tensor) -> torch.Tensor:
     return torch.from_numpy(np.sin(x.detach().cpu().numpy()))
 
 
-class RotaryLookupTable:
+class QwenMRopeLookupTable:
     """Deterministic drop-in for host-side HF rotary modules: cos/sin tables built once
     via np_cos/np_sin, gathered per call; out-of-range positions use the bit-identical
     dynamic numpy path. Handles standard mrope ([3, bs, seq, dim], merge in caller) and
@@ -97,10 +97,10 @@ class RotaryLookupTable:
         return self._dynamic(pos_sel)
 
 
-def build_rotary_lookup(rotary_emb: torch.nn.Module, max_seq_len: int):
+def build_qwen_mrope_lookup(rotary_emb: torch.nn.Module, max_seq_len: int):
     # the table only requires inv_freq to be static after load; dynamic/longrope mutate it at runtime
     if getattr(rotary_emb, "rope_type", "default") not in ("dynamic", "longrope"):
-        return RotaryLookupTable(rotary_emb, max_seq_len)
+        return QwenMRopeLookupTable(rotary_emb, max_seq_len)
     logger.warning(
         f"rope_type={rotary_emb.rope_type!r} cannot use the deterministic rotary lookup table; "
         "host cos/sin stays on the torch path and may vary with the thread configuration."
@@ -108,7 +108,7 @@ def build_rotary_lookup(rotary_emb: torch.nn.Module, max_seq_len: int):
     return rotary_emb
 
 
-def vision_rot_pos_ids(grid_thw: torch.Tensor, spatial_merge_size: int) -> torch.Tensor:
+def qwen_vit_rot_pos_ids(grid_thw: torch.Tensor, spatial_merge_size: int) -> torch.Tensor:
     """(h, w) rotary position ids per patch, merge-block ordered (mirrors HF ViT rot_pos_emb)."""
     pos_ids = []
     for t, h, w in grid_thw.tolist():

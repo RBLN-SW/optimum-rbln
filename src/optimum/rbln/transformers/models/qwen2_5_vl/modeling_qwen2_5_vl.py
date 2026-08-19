@@ -38,7 +38,7 @@ from ....configuration_utils import RBLNCompileConfig
 from ....modeling import RBLNModel
 from ....utils.logging import get_logger
 from ...modeling_outputs import RBLNDecoderOnlyOutput, _validate_output_hidden_states
-from ...modeling_rope_utils import build_rotary_lookup, np_cos, np_sin, vision_rot_pos_ids
+from ...modeling_rope_utils import build_qwen_mrope_lookup, np_cos, np_sin, qwen_vit_rot_pos_ids
 from ..decoderonly.modeling_decoderonly import RBLNDecoderOnlyModel, RBLNDecoderOnlyModelForCausalLM
 from .configuration_qwen2_5_vl import (
     RBLNQwen2_5_VisionTransformerPretrainedModelConfig,
@@ -266,7 +266,7 @@ class RBLNQwen2_5_VisionTransformerPretrainedModel(RBLNModel):
 
     def forward(self, hidden_states: torch.Tensor, grid_thw: torch.Tensor) -> torch.Tensor:
         hidden_states = self.patch_embed(hidden_states).to(self.rbln_config.dtype)
-        pos_ids = vision_rot_pos_ids(grid_thw, self.spatial_merge_size)
+        pos_ids = qwen_vit_rot_pos_ids(grid_thw, self.spatial_merge_size)
         window_index, cu_window_seqlens = self.get_window_index(grid_thw)
         cu_window_seqlens = torch.tensor(
             cu_window_seqlens,
@@ -376,7 +376,7 @@ class RBLNQwen2_5_VLModel(RBLNDecoderOnlyModel):
 
         super().__post_init__(**kwargs)
         self.visual = self.rbln_submodules[0]
-        self.rotary_emb = build_rotary_lookup(
+        self.rotary_emb = build_qwen_mrope_lookup(
             self._rotary_emb_class(self.config.text_config), self.rbln_config.max_seq_len
         )
         if not self.can_generate():
