@@ -279,8 +279,8 @@ class RBLNQwen2_5_VisionTransformerPretrainedModel(RBLNModel):
         hidden_states = hidden_states.reshape(seq_len // self.spatial_merge_unit, self.spatial_merge_unit, -1)
         hidden_states = hidden_states[window_index, :, :]
         hidden_states = hidden_states.reshape(seq_len, -1)
-        pos_ids = pos_ids.reshape(seq_len // self.spatial_merge_unit, self.spatial_merge_unit, 2)
-        pos_ids = pos_ids[window_index, :, :].reshape(seq_len, 2)
+        pos_ids = pos_ids.reshape(seq_len // self.spatial_merge_unit, self.spatial_merge_unit, -1)
+        pos_ids = pos_ids[window_index, :, :].reshape(seq_len, -1)
         cos = self.rotary_cos_table[pos_ids].flatten(1)
         sin = self.rotary_sin_table[pos_ids].flatten(1)
         position_embeddings = (
