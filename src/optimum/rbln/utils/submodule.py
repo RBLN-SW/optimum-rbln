@@ -15,7 +15,6 @@
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Union
 
-import torch
 from transformers import PretrainedConfig
 
 from ..configuration_utils import RBLNModelConfig, get_rbln_config_class
@@ -124,11 +123,7 @@ class SubModulesMixin:
             setattr(rbln_config, submodule_name, submodule_rbln_config)
             submodule_rbln_config = submodule_cls._update_submodule_config(model, submodule_rbln_config, preprocessors)
 
-            if not submodule_cls._supports_non_fp32 and getattr(torch_submodule, "dtype", None) not in (
-                None,
-                torch.float32,
-            ):
-                torch_submodule = torch_submodule.to(torch.float32)
+            torch_submodule = submodule_cls._upcast_if_unsupported(torch_submodule, submodule_name)
 
             rbln_submodule = submodule_cls.from_model(
                 model=torch_submodule,

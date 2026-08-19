@@ -326,11 +326,8 @@ class RBLNDiffusionMixin:
                 )
             elif isinstance(submodule, torch.nn.Module):
                 subfolder = prefix + submodule_name
-                # A pipeline can mix dtypes: a submodule whose config pins `torch_dtype` loads there while the
-                # rest follow their checkpoints. Raise the ones whose wrapper cannot handle non-fp32 weights,
-                # mirroring what `RBLNBaseModel._load_submodules` does for transformers submodules.
-                if not submodule_rbln_cls._supports_non_fp32:
-                    submodule = submodule.to(torch.float32)
+                # A pipeline can mix dtypes: a submodule whose config pins `torch_dtype` loads there.
+                submodule = submodule_rbln_cls._upcast_if_unsupported(submodule, submodule_name)
 
                 submodule = submodule_rbln_cls.from_model(
                     model=submodule,
