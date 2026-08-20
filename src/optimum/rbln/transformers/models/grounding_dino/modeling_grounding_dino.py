@@ -732,7 +732,6 @@ def _update_spatial_shapes(model_config, rbln_config):
 
 
 class RBLNGroundingDinoEncoder(RBLNModel):
-
     def __post_init__(self, **kwargs):
         self.encoder_runtime = RBLNPytorchRuntime(self.model[0])
 
@@ -937,7 +936,6 @@ class RBLNGroundingDinoEncoder(RBLNModel):
 
 
 class RBLNGroundingDinoDecoder(RBLNModel):
-
     def __post_init__(self, **kwargs):
         self.decoder_runtime = RBLNPytorchRuntime(self.model[0])
 
