@@ -59,28 +59,6 @@ jobs:
             })
             console.log(result)
 
-  trigger-vllm-model-compilation:
-    name: trigger vllm model compile and generation ci
-    needs: [deploy-on-tag]
-    runs-on: rbln-sw-k8s-4c-32gb
-    container:
-      image: ${{ vars.DEV_CONTAINER_IMAGE }}
-    steps:
-      - uses: actions/github-script@v6
-        with:
-          github-token: ${{ secrets.GIT_PAT }}
-          script: |
-            const result = await github.rest.actions.createWorkflowDispatch({
-              owner: 'rebellions-sw',
-              repo: 'rebel_compiler',
-              workflow_id: 'rebel_dispatch_model_generation_for_vllm.yaml',
-              ref: 'dev',
-              inputs: {
-                optimum_rbln_version: "${{ github.ref_name }}",
-              }
-            })
-            console.log(result)
-
   bc-compile:
     name: BC compile for release tag
     needs: check-tag

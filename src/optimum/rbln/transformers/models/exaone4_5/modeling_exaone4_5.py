@@ -31,6 +31,7 @@ from ....configuration_utils import RBLNCompileConfig
 from ....modeling import RBLNModel
 from ....utils.logging import get_logger
 from ...modeling_outputs import RBLNDecoderOnlyOutput, _validate_output_hidden_states
+from ...modeling_rope_utils import np_cos, np_sin, qwen_vit_rot_pos_ids
 from ..decoderonly.modeling_decoderonly import RBLNDecoderOnlyModel, RBLNDecoderOnlyModelForCausalLM
 from .configuration_exaone4_5 import (
     RBLNExaone4_5_ForConditionalGenerationConfig,
@@ -80,7 +81,11 @@ class RBLNExaone4_5_VisionModel(RBLNModel):
         self.patch_size = config.patch_size
         self.spatial_merge_size = config.spatial_merge_size
         self.spatial_merge_unit = config.spatial_merge_size * config.spatial_merge_size
-        self.rotary_pos_emb = Exaone4_5_VisionRotaryEmbedding((config.hidden_size // config.num_heads) // 2)
+        freq_table = Exaone4_5_VisionRotaryEmbedding((config.hidden_size // config.num_heads) // 2)(
+            int(self.max_seq_len.max())
+        )
+        self.rotary_cos_table = np_cos(freq_table)
+        self.rotary_sin_table = np_sin(freq_table)
         with no_init_weights():
             self.patch_embed = Exaone4_5_PatchEmbed(
                 patch_size=config.patch_size,
@@ -235,7 +240,7 @@ class RBLNExaone4_5_VisionModel(RBLNModel):
 
     def forward(self, hidden_states: torch.Tensor, grid_thw: torch.Tensor) -> torch.Tensor:
         hidden_states = self.patch_embed(hidden_states).to(self.rbln_config.dtype)
-        rotary_pos_emb = self.rot_pos_emb(grid_thw)
+        pos_ids = qwen_vit_rot_pos_ids(grid_thw, self.spatial_merge_size)
         window_index, cu_window_seqlens = self.get_window_index(grid_thw)
         cu_window_seqlens = torch.tensor(cu_window_seqlens, dtype=torch.int32)
         cu_window_seqlens = torch.unique_consecutive(cu_window_seqlens)
@@ -244,11 +249,14 @@ class RBLNExaone4_5_VisionModel(RBLNModel):
         hidden_states = hidden_states.reshape(seq_len // self.spatial_merge_unit, self.spatial_merge_unit, -1)
         hidden_states = hidden_states[window_index, :, :]
         hidden_states = hidden_states.reshape(seq_len, -1)
-        rotary_pos_emb = rotary_pos_emb.reshape(seq_len // self.spatial_merge_unit, self.spatial_merge_unit, -1)
-        rotary_pos_emb = rotary_pos_emb[window_index, :, :]
-        rotary_pos_emb = rotary_pos_emb.reshape(seq_len, -1)
-        emb = torch.cat((rotary_pos_emb, rotary_pos_emb), dim=-1)
-        position_embeddings = (emb.cos().to(self.rbln_config.dtype), emb.sin().to(self.rbln_config.dtype))
+        pos_ids = pos_ids.reshape(seq_len // self.spatial_merge_unit, self.spatial_merge_unit, -1)
+        pos_ids = pos_ids[window_index, :, :].reshape(seq_len, -1)
+        cos = self.rotary_cos_table[pos_ids].flatten(1)
+        sin = self.rotary_sin_table[pos_ids].flatten(1)
+        position_embeddings = (
+            torch.cat((cos, cos), dim=-1).to(self.rbln_config.dtype),
+            torch.cat((sin, sin), dim=-1).to(self.rbln_config.dtype),
+        )
 
         cu_seqlens = torch.repeat_interleave(grid_thw[:, 1] * grid_thw[:, 2], grid_thw[:, 0]).cumsum(
             dim=0, dtype=torch.int32
