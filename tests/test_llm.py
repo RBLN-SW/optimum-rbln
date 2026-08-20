@@ -607,7 +607,8 @@ class TestLlavaNextForConditionalGeneration(LLMTest.TestLLM):
         rbln_class_kwargs = {"rbln_config": rbln_config}
 
         with pytest.raises(
-            ValueError, match="Parameter conflict for 'batch_size': submodule_config has 2, but the parent config requires 1"
+            ValueError,
+            match="Parameter conflict for 'batch_size': submodule_config has 2, but the parent config requires 1",
         ):
             _ = self.RBLN_CLASS.from_pretrained(model_id=self.HF_MODEL_ID, **rbln_class_kwargs)
 
