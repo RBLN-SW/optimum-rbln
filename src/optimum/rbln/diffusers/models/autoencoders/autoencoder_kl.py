@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Union
 
 import rebel
@@ -35,6 +36,26 @@ if TYPE_CHECKING:
     from ...modeling_diffusers import RBLNDiffusionMixin, RBLNDiffusionMixinConfig
 
 logger = get_logger(__name__)
+
+
+@dataclass
+class _PostQuantConv:
+    """
+    Stands in for the `post_quant_conv` submodule a `force_upcast` VAE is expected to expose.
+
+    Upstream pipelines read it two ways: `next(iter(vae.post_quant_conv.parameters())).dtype`, to move
+    the latents onto the VAE's dtype before decoding, and `vae.post_quant_conv.to(dtype)` in
+    animatediff-sdxl. Nothing else touches it, so both are answered from the compiled dtype -- and `to`
+    is a no-op for the same reason it is on the model: a compiled graph cannot be moved.
+    """
+
+    dtype: torch.dtype
+
+    def parameters(self):
+        yield torch.tensor([1.0], dtype=self.dtype)
+
+    def to(self, *args, **kwargs):
+        return self
 
 
 class RBLNAutoencoderKL(RBLNModel):
@@ -63,6 +84,8 @@ class RBLNAutoencoderKL(RBLNModel):
 
         self.decoder = RBLNRuntimeVAEDecoder(runtime=self.model[-1], main_input_name="z")
         self.image_size = self.rbln_config.image_size
+
+        self.post_quant_conv = _PostQuantConv(self.dtype)
 
     @classmethod
     def get_compiled_model(cls, model, rbln_config: RBLNAutoencoderKLConfig) -> dict[str, rebel.RBLNCompiledModel]:
