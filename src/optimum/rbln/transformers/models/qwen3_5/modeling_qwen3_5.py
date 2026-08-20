@@ -33,8 +33,9 @@ from transformers.models.qwen3_5.modeling_qwen3_5 import (
 from ....configuration_utils import RBLNCompileConfig
 from ....modeling import RBLNModel
 from ....utils import logging
+from ...cache_utils import FullAttentionKVCacheMeta, LinearAttentionCacheMeta
 from ...modeling_outputs import RBLNDecoderOnlyOutput, _validate_output_hidden_states
-from ..decoderonly.configuration_decoderonly import KVCacheMeta
+from ...modeling_rope_utils import build_qwen_mrope_lookup, np_cos, np_sin, qwen_vit_rot_pos_ids
 from ..decoderonly.decoderonly_runtime_utils import RBLNPageTableManager
 from ..decoderonly.modeling_decoderonly import RBLNDecoderOnlyModel, RBLNDecoderOnlyModelForCausalLM
 from .configuration_qwen3_5 import (
@@ -217,8 +218,8 @@ class RBLNQwen3_5TextModel(RBLNDecoderOnlyModel):
         # per-layer state: full_attention -> paged KV (key, value); linear_attention -> (conv_state, recurrent_state).
         linear_layers = rbln_config.linear_attention_layers
 
-        if len(rbln_config.kvcache_metas) > 0:
-            input_info.extend([(meta.name, meta.compile_shape, meta.dtype) for meta in rbln_config.kvcache_metas])
+        if len(rbln_config.cache_metas) > 0:
+            input_info.extend([(meta.name, meta.compile_shape, meta.dtype) for meta in rbln_config.cache_metas])
         else:
             kvcache_dtype = rbln_config.dtype
             if rbln_config.quantization and rbln_config.quantization.kv_caches == "fp8":
@@ -227,34 +228,26 @@ class RBLNQwen3_5TextModel(RBLNDecoderOnlyModel):
             # conv/recurrent caches are one shared static tensor, so sized to the max batch (not batch_size=1 for
             # prefill). Prefill writes its own slot (batch_idx); decode runs the full batch.
             _state_dtype = RBLNCompileConfig.normalize_dtype(rbln_config.dtype)
-            kvcache_metas = []
+            cache_metas = []
             for layer_idx in range(num_hidden_layers):
                 if layer_idx in linear_layers:
                     # recurrent cache is stored 3D (B, Hv*Dk, Dv); GatedDeltaNet reshapes to 4D internally.
                     conv_shape, recurrent_shape = _qwen3_5_linear_state_shapes(text_config, rbln_config.batch_size)
-                    kvcache_metas.append(
-                        KVCacheMeta.make(
-                            f"conv_state_{layer_idx}",
-                            layer_idx,
-                            dtype=_state_dtype,
-                            rbln_config=rbln_config,
-                            shape=list(conv_shape),
+                    cache_metas.append(
+                        LinearAttentionCacheMeta.from_config(
+                            f"conv_state_{layer_idx}", layer_idx, shape=list(conv_shape), dtype=_state_dtype
                         )
                     )
-                    kvcache_metas.append(
-                        KVCacheMeta.make(
-                            f"recurrent_state_{layer_idx}",
-                            layer_idx,
-                            dtype=_state_dtype,
-                            rbln_config=rbln_config,
-                            shape=list(recurrent_shape),
+                    cache_metas.append(
+                        LinearAttentionCacheMeta.from_config(
+                            f"recurrent_state_{layer_idx}", layer_idx, shape=list(recurrent_shape), dtype=_state_dtype
                         )
                     )
                 else:
                     for slot in range(2):
                         name = f"past_key_values_{layer_idx * 2 + slot}"
-                        kvcache_metas.append(
-                            KVCacheMeta.make(
+                        cache_metas.append(
+                            FullAttentionKVCacheMeta.from_config(
                                 name,
                                 layer_idx,
                                 num_key_value_heads,
@@ -263,8 +256,8 @@ class RBLNQwen3_5TextModel(RBLNDecoderOnlyModel):
                                 rbln_config,
                             )
                         )
-            input_info.extend([(meta.name, meta.compile_shape, meta.dtype) for meta in kvcache_metas])
-            rbln_config.kvcache_metas.extend(kvcache_metas)
+            input_info.extend([(meta.name, meta.compile_shape, meta.dtype) for meta in cache_metas])
+            rbln_config.cache_metas.extend(cache_metas)
 
         # shared 0/1 masks: runtime feeds zeros on prefill window 0 (reset linear state), ones after (carry). See docs.
         if linear_layers:
@@ -335,11 +328,10 @@ class RBLNQwen3_5VisionModel(RBLNModel):
         self.spatial_merge_unit = config.spatial_merge_size * config.spatial_merge_size
 
         head_dim = config.hidden_size // config.num_heads
-        self.rotary_pos_emb = Qwen3_5VisionRotaryEmbedding(head_dim // 2)
         # Precompute the rotary cos/sin tables up to the largest ViT bucket
-        _freq_table = self.rotary_pos_emb(int(self.max_seq_len.max().item()))
-        self.rotary_cos_table = _freq_table.cos()
-        self.rotary_sin_table = _freq_table.sin()
+        _freq_table = Qwen3_5VisionRotaryEmbedding(head_dim // 2)(int(self.max_seq_len.max().item()))
+        self.rotary_cos_table = np_cos(_freq_table)
+        self.rotary_sin_table = np_sin(_freq_table)
 
         with no_init_weights():
             self.patch_embed = Qwen3_5VisionPatchEmbed(config=config)
@@ -407,37 +399,7 @@ class RBLNQwen3_5VisionModel(RBLNModel):
         return rbln_config
 
     def rot_pos_emb(self, grid_thw: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-        merge_size = self.spatial_merge_size
-        device = self.rotary_cos_table.device
-
-        total_tokens = int(torch.prod(grid_thw, dim=1).sum().item())
-        pos_ids = torch.empty((total_tokens, 2), dtype=torch.long, device=device)
-
-        offset = 0
-        for num_frames, height, width in grid_thw:
-            merged_h, merged_w = height // merge_size, width // merge_size
-
-            block_rows = torch.arange(merged_h, device=device)
-            block_cols = torch.arange(merged_w, device=device)
-            intra_row = torch.arange(merge_size, device=device)
-            intra_col = torch.arange(merge_size, device=device)
-
-            row_idx = block_rows[:, None, None, None] * merge_size + intra_row[None, None, :, None]
-            col_idx = block_cols[None, :, None, None] * merge_size + intra_col[None, None, None, :]
-
-            row_idx = row_idx.expand(merged_h, merged_w, merge_size, merge_size).reshape(-1)
-            col_idx = col_idx.expand(merged_h, merged_w, merge_size, merge_size).reshape(-1)
-
-            coords = torch.stack((row_idx, col_idx), dim=-1)
-
-            if num_frames > 1:
-                coords = coords.repeat(num_frames, 1)
-
-            num_tokens = coords.shape[0]
-            pos_ids[offset : offset + num_tokens] = coords
-            offset += num_tokens
-
-        # Gather cos/sin from the tables precomputed at object creation
+        pos_ids = qwen_vit_rot_pos_ids(grid_thw, self.spatial_merge_size)
         cos = self.rotary_cos_table[pos_ids].flatten(1)
         sin = self.rotary_sin_table[pos_ids].flatten(1)
         return cos, sin
@@ -608,7 +570,9 @@ class RBLNQwen3_5Model(RBLNDecoderOnlyModel):
             )
         super().__post_init__(**kwargs)
         self.visual = self.rbln_submodules[0] if self.rbln_submodules else None
-        self.rotary_emb = self._rotary_emb_class(self.config.text_config)
+        self.rotary_emb = build_qwen_mrope_lookup(
+            self._rotary_emb_class(self.config.text_config), self.rbln_config.max_seq_len
+        )
         if not self.can_generate():
             self.block_tables = torch.arange(self.rbln_config.kvcache_num_blocks, dtype=torch.int16)
 
@@ -784,7 +748,7 @@ class RBLNQwen3_5Model(RBLNDecoderOnlyModel):
         )
         logits = []
         for b_idx in range(batch_size):
-            query_length = attention_mask[b_idx].sum(dim=-1).int().item()
+            query_length = attention_mask[b_idx].sum(dim=-1).int().item() if attention_mask is not None else seq_len
             cache_position = torch.arange(query_length, dtype=torch.int32).unsqueeze(0)
             output = self.prefill_decoder(
                 inputs_embeds=inputs_embeds[b_idx : b_idx + 1],
