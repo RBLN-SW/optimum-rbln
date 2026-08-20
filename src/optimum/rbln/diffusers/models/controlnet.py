@@ -255,18 +255,18 @@ class RBLNControlNetModel(RBLNModel):
 
         added_cond_kwargs = added_cond_kwargs or {}
         if self.use_encoder_hidden_states:
-            output = self._run(
+            output = self.model[0](
                 sample.contiguous(),
-                timestep,
+                timestep.float(),
                 encoder_hidden_states,
                 controlnet_cond,
                 torch.tensor(conditioning_scale),
                 **added_cond_kwargs,
             )
         else:
-            output = self._run(
+            output = self.model[0](
                 sample.contiguous(),
-                timestep,
+                timestep.float(),
                 controlnet_cond,
                 torch.tensor(conditioning_scale),
                 **added_cond_kwargs,

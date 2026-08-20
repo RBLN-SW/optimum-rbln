@@ -158,36 +158,6 @@ def tp_and_devices_are_ok(
     return None
 
 
-def cast_inputs(input_info: list, args: tuple, kwargs: dict) -> tuple[tuple, dict]:
-    """
-    Cast host tensors to the dtypes a compiled graph declares.
-
-    Args:
-        input_info: The graph's `(name, shape, dtype)` list, for a single shape bucket.
-        args: Positional inputs, in `input_info` order.
-        kwargs: Keyword inputs, matched against `input_info` by name.
-
-    Returns:
-        The same inputs, with every float slot converted to its declared dtype.
-    """
-    # The runtime rejects a dtype mismatch outright, and host-side producers never consult
-    # `input_info` -- HF processors emit float32, schedulers emit int64 or float32.
-    if not input_info:
-        return args, kwargs
-
-    def cast(dtype_name, value):
-        # Float slots only: an int or bool slot is an index or a mask, and narrowing one silently
-        # corrupts it. A name the graph never declares is left alone.
-        if dtype_name is None or not isinstance(value, torch.Tensor):
-            return value
-        dtype = getattr(torch, dtype_name)
-        return value.to(dtype) if dtype.is_floating_point and value.dtype != dtype else value
-
-    declared = {name: dtype for name, _, dtype in input_info}
-    args = tuple(cast(input_info[i][2] if i < len(input_info) else None, v) for i, v in enumerate(args))
-    return args, {name: cast(declared.get(name), v) for name, v in kwargs.items()}
-
-
 class RBLNPytorchRuntime:
     mandatory_members = []
 

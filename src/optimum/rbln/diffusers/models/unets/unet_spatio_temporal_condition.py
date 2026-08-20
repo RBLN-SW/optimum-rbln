@@ -198,7 +198,7 @@ class RBLNUNetSpatioTemporalConditionModel(RBLNModel):
             )
         return super().forward(
             sample.contiguous(),
-            timestep,
+            timestep.float(),
             encoder_hidden_states,
             added_time_ids,
             return_dict=return_dict,

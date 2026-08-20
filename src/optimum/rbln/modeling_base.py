@@ -483,8 +483,19 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
             model_config: Its HuggingFace config.
 
         Returns:
-            The checkpoint's dtype, unless a subclass knows the model needs another one.
+            The checkpoint's dtype, except for a `force_upcast` checkpoint, which defaults to float32.
         """
+        if getattr(model_config, "force_upcast", False) and model.dtype != torch.float32:
+            logger.warning(
+                f"This checkpoint is {model.dtype}, but its config sets `force_upcast=True`, so the graph is "
+                "compiled at float32 -- upstream pipelines upcast such a module around encode/decode for "
+                "numerical stability, and a compiled graph cannot be moved afterwards. The rest of the "
+                f'pipeline still runs at {model.dtype}. Pass `rbln_dtype="'
+                f'{RBLNCompileConfig.normalize_dtype(model.dtype)}"` to compile it at the checkpoint dtype '
+                "instead -- unlike clearing `force_upcast` on the config, that leaves the upcast diffusers "
+                "performs at runtime untouched."
+            )
+            return torch.float32
         return model.dtype
 
     @classmethod
@@ -507,28 +518,6 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
             )
         # A graph declaring one dtype cannot be traced from weights of another.
         model.to(rbln_config.dtype)
-
-    @classmethod
-    def _upcast_if_unsupported(cls, module: torch.nn.Module, name: str) -> torch.nn.Module:
-        """
-        Upcast a submodule this class cannot compile at its checkpoint dtype.
-
-        Args:
-            module: The submodule about to be compiled.
-            name: Its name in the parent, for the warning.
-
-        Returns:
-            The submodule, cast to float32 only when this class needs it there.
-        """
-        # Upcasting rather than raising: the caller asked for the parent, not for this dtype.
-        dtype = getattr(module, "dtype", None)
-        if cls._supports_non_fp32 or dtype in (None, torch.float32):
-            return module
-        logger.warning(
-            f"`{cls.__name__}` does not support non-fp32 weights, so `{name}` is compiled at float32 "
-            f"instead of its checkpoint dtype ({dtype})."
-        )
-        return module.to(torch.float32)
 
     @classmethod
     def update_rbln_config(

@@ -108,8 +108,6 @@ class RBLNPriorTransformer(RBLNModel):
 
         input_info = [
             ("hidden_states", [rbln_config.batch_size, rbln_config.embedding_dim], rbln_config.dtype),
-            # `timestep` stays float32: it carries an integer step index, which bfloat16 cannot represent exactly
-            # above 256, and the model casts the embedding it derives from it to the activation dtype itself.
             ("timestep", [], "float32"),
             ("proj_embedding", [rbln_config.batch_size, rbln_config.embedding_dim], rbln_config.dtype),
             (
@@ -151,11 +149,12 @@ class RBLNPriorTransformer(RBLNModel):
         Returns:
             (`~diffusers.models.transformers.prior_transformer.PriorTransformerOutput` | tuple)
         """
+        # Convert timestep(long) and attention_mask(bool) to float
         return super().forward(
             hidden_states,
-            timestep,
+            timestep.float(),
             proj_embedding,
             encoder_hidden_states,
-            attention_mask,
+            attention_mask.float(),
             return_dict=return_dict,
         )

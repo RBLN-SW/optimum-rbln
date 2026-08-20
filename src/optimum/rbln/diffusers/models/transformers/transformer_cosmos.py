@@ -328,7 +328,7 @@ class RBLNCosmosTransformer3DModel(RBLNModel):
             attention_mask,
         ) = self.compute_embedding(hidden_states, timestep, attention_mask, fps, condition_mask, padding_mask)
 
-        hidden_states = self._run(
+        hidden_states = self.model[0].forward(
             hidden_states,
             encoder_hidden_states,
             embedded_timestep,

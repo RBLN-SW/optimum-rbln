@@ -116,7 +116,7 @@ class RBLNDetrForObjectDetection(RBLNModel):
         pixel_values = torch.nn.functional.pad(pixel_values, (0, pad_w, 0, pad_h), value=0)
         pixel_mask = torch.nn.functional.pad(pixel_mask, (0, pad_w, 0, pad_h), value=0)
 
-        output = self._run(pixel_values=pixel_values, pixel_mask=pixel_mask, **kwargs)
+        output = self.model[0](pixel_values=pixel_values, pixel_mask=pixel_mask, **kwargs)
 
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
         if not return_dict:

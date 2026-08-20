@@ -326,9 +326,6 @@ class RBLNDiffusionMixin:
                 )
             elif isinstance(submodule, torch.nn.Module):
                 subfolder = prefix + submodule_name
-                # A pipeline can mix dtypes: a submodule whose config pins `torch_dtype` loads there.
-                submodule = submodule_rbln_cls._upcast_if_unsupported(submodule, submodule_name)
-
                 submodule = submodule_rbln_cls.from_model(
                     model=submodule,
                     subfolder=subfolder,

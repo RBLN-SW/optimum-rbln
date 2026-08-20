@@ -388,7 +388,7 @@ class RBLNUNet2DConditionModel(RBLNModel):
         if down_block_additional_residuals is not None:
             return super().forward(
                 sample.contiguous(),
-                timestep,
+                timestep.float(),
                 encoder_hidden_states,
                 *(t.contiguous() for t in down_block_additional_residuals),
                 mid_block_additional_residual,
@@ -399,14 +399,14 @@ class RBLNUNet2DConditionModel(RBLNModel):
         if "image_embeds" in added_cond_kwargs:
             return super().forward(
                 sample.contiguous(),
-                timestep,
+                timestep.float(),
                 **added_cond_kwargs,
                 return_dict=return_dict,
             )
 
         return super().forward(
             sample.contiguous(),
-            timestep,
+            timestep.float(),
             encoder_hidden_states,
             **added_cond_kwargs,
             return_dict=return_dict,

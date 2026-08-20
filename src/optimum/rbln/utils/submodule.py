@@ -123,8 +123,6 @@ class SubModulesMixin:
             setattr(rbln_config, submodule_name, submodule_rbln_config)
             submodule_rbln_config = submodule_cls._update_submodule_config(model, submodule_rbln_config, preprocessors)
 
-            torch_submodule = submodule_cls._upcast_if_unsupported(torch_submodule, submodule_name)
-
             rbln_submodule = submodule_cls.from_model(
                 model=torch_submodule,
                 config=torch_submodule.config,
