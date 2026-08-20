@@ -66,7 +66,6 @@ class RBLNAutoencoderKL(RBLNModel):
 
     @classmethod
     def get_compiled_model(cls, model, rbln_config: RBLNAutoencoderKLConfig) -> dict[str, rebel.RBLNCompiledModel]:
-
         if rbln_config.uses_encoder:
             expected_models = ["encoder", "decoder"]
         else:
