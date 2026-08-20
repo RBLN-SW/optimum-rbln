@@ -702,6 +702,65 @@ class TestIdefics3ForConditionalGeneration(LLMTest.TestLLM):
         return inputs
 
 
+class TestQwenRotaryLookup(unittest.TestCase):
+    def test_qwen_vit_rot_pos_ids_matches_hf(self):
+        from types import SimpleNamespace
+
+        from transformers.models.qwen2_vl.modeling_qwen2_vl import (
+            Qwen2VisionTransformerPretrainedModel,
+            VisionRotaryEmbedding,
+        )
+
+        from optimum.rbln.transformers.modeling_rope_utils import qwen_vit_rot_pos_ids
+
+        rot = VisionRotaryEmbedding(20)
+        for merge in (1, 2, 4):
+            for grid in (
+                torch.tensor([[1, 4 * merge, 4 * merge]]),
+                torch.tensor([[3, 2 * merge, 6 * merge], [1, 8 * merge, 2 * merge]]),
+            ):
+                mock = SimpleNamespace(spatial_merge_size=merge, rotary_pos_emb=rot)
+                hf = Qwen2VisionTransformerPretrainedModel.rot_pos_emb(mock, grid)
+                table = rot(int(grid[:, 1:].max()))
+                ours = table[qwen_vit_rot_pos_ids(grid, merge)].flatten(1)
+                self.assertTrue(torch.equal(ours, hf))
+
+    def test_qwen_mrope_lookup_matches_hf_module(self):
+        from transformers.models.qwen2_vl.configuration_qwen2_vl import Qwen2VLTextConfig
+        from transformers.models.qwen2_vl.modeling_qwen2_vl import Qwen2VLRotaryEmbedding
+        from transformers.models.qwen3_vl.configuration_qwen3_vl import Qwen3VLTextConfig
+        from transformers.models.qwen3_vl.modeling_qwen3_vl import Qwen3VLTextRotaryEmbedding
+
+        from optimum.rbln.transformers.modeling_rope_utils import QwenMRopeLookupTable, build_qwen_mrope_lookup
+
+        max_pos = 512
+        standard = Qwen2VLRotaryEmbedding(
+            Qwen2VLTextConfig(rope_scaling={"type": "mrope", "rope_type": "default", "mrope_section": [16, 24, 24]})
+        )
+        interleaved = Qwen3VLTextRotaryEmbedding(
+            Qwen3VLTextConfig(
+                rope_scaling={
+                    "type": "mrope",
+                    "rope_type": "default",
+                    "mrope_section": [24, 20, 20],
+                    "mrope_interleaved": True,
+                }
+            )
+        )
+        x = torch.zeros(1)
+        for rot in (standard, interleaved):
+            lut = build_qwen_mrope_lookup(rot, max_pos)
+            self.assertIsInstance(lut, QwenMRopeLookupTable)
+            oob = torch.randint(0, max_pos, (3, 1, 8))
+            oob[0, 0, 0] = max_pos + 3  # falls back to the dynamic path
+            for pos in (torch.randint(0, max_pos, (3, 2, 64)), torch.randint(0, max_pos, (3, 1, 1)), oob):
+                hf_cos, hf_sin = rot(x, pos)
+                lut_cos, lut_sin = lut(x, pos)
+                self.assertEqual(hf_cos.shape, lut_cos.shape)
+                self.assertLess((hf_cos.float() - lut_cos).abs().max().item(), 2e-7)
+                self.assertLess((hf_sin.float() - lut_sin).abs().max().item(), 2e-7)
+
+
 class TestQwen2VLForConditionalGeneration(LLMTest.TestLLM):
     RBLN_AUTO_CLASS = RBLNAutoModelForImageTextToText
     RBLN_CLASS = RBLNQwen2VLForConditionalGeneration

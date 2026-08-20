@@ -38,6 +38,7 @@ from ....configuration_utils import RBLNCompileConfig
 from ....modeling import RBLNModel
 from ....utils.logging import get_logger
 from ...modeling_outputs import _validate_output_hidden_states
+from ...modeling_rope_utils import build_qwen_mrope_lookup, np_cos, np_sin, qwen_vit_rot_pos_ids
 from ..decoderonly.modeling_decoderonly import (
     RBLNDecoderOnlyModel,
     RBLNDecoderOnlyModelForCausalLM,
@@ -72,7 +73,9 @@ class RBLNQwen2VisionTransformerPretrainedModel(RBLNModel):
         self.patch_size = config.spatial_patch_size
         self.spatial_merge_size = config.spatial_merge_size
         self.spatial_merge_unit = config.spatial_merge_size * config.spatial_merge_size
-        self.rotary_pos_emb = VisionRotaryEmbedding((config.embed_dim // config.num_heads) // 2)
+        freq_table = VisionRotaryEmbedding((config.embed_dim // config.num_heads) // 2)(int(self.max_seq_len.max()))
+        self.rotary_cos_table = np_cos(freq_table)
+        self.rotary_sin_table = np_sin(freq_table)
         with no_init_weights():
             self.patch_embed = PatchEmbed(
                 patch_size=config.patch_size,
@@ -185,9 +188,13 @@ class RBLNQwen2VisionTransformerPretrainedModel(RBLNModel):
         # Each image is handled independently for padding and attention mask generation.
 
         hidden_states = self.patch_embed(hidden_states).to(self.rbln_config.dtype)
-        rotary_pos_emb = self.rot_pos_emb(grid_thw)
-        emb = torch.cat((rotary_pos_emb, rotary_pos_emb), dim=-1)
-        position_embeddings = (emb.cos().to(self.rbln_config.dtype), emb.sin().to(self.rbln_config.dtype))
+        pos_ids = qwen_vit_rot_pos_ids(grid_thw, self.spatial_merge_size)
+        cos = self.rotary_cos_table[pos_ids].flatten(1)
+        sin = self.rotary_sin_table[pos_ids].flatten(1)
+        position_embeddings = (
+            torch.cat((cos, cos), dim=-1).to(self.rbln_config.dtype),
+            torch.cat((sin, sin), dim=-1).to(self.rbln_config.dtype),
+        )
 
         cu_seqlens = torch.repeat_interleave(grid_thw[:, 1] * grid_thw[:, 2], grid_thw[:, 0]).cumsum(
             dim=0,
@@ -260,7 +267,9 @@ class RBLNQwen2VLModel(RBLNDecoderOnlyModel):
 
         super().__post_init__(**kwargs)
         self.visual = self.rbln_submodules[0]
-        self.rotary_emb = self._rotary_emb_class(self.config.text_config)
+        self.rotary_emb = build_qwen_mrope_lookup(
+            self._rotary_emb_class(self.config.text_config), self.rbln_config.max_seq_len
+        )
         if not self.can_generate():
             self.block_tables = torch.arange(self.rbln_config.kvcache_num_blocks, dtype=torch.int16)
 
