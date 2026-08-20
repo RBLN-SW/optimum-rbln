@@ -343,7 +343,7 @@ class RBLNDecoderOnlyFlashAttentionMixin:
         # buffers' current block count (`current_blocks`), so a resizable tensor's per-block bytes
         # are size // current_blocks, rescaled to num_blocks; others are fixed. Each 2MB-aligned
         # after scaling, so bytes grow non-linearly.
-        can_resize = {meta.name: meta.can_resize for meta in rbln_config.kvcache_metas}
+        can_resize = {meta.name: meta.can_resize for meta in rbln_config.cache_metas}
         sizes: dict[tuple[int, int], int] = defaultdict(int)
         for key, sizes_at_node in kvcache_tensor_sizes.items():
             resizable = can_resize[key]
@@ -381,9 +381,5 @@ class RBLNDecoderOnlyFlashAttentionMixin:
     ):
         for compiled_model in compiled_models.values():
             compiled_model.exp_multiply_buffer_size(
-                {
-                    kvcache_meta.name: multiplier
-                    for kvcache_meta in rbln_config.kvcache_metas
-                    if kvcache_meta.can_resize
-                }
+                {cache_meta.name: multiplier for cache_meta in rbln_config.cache_metas if cache_meta.can_resize}
             )

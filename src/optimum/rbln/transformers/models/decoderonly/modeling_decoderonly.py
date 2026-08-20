@@ -27,6 +27,7 @@ from transformers.modeling_outputs import BaseModelOutputWithPast
 from ....configuration_utils import RBLNCompileConfig
 from ....modeling import RBLNModel
 from ....utils.logging import get_logger
+from ...cache_utils import FullAttentionKVCacheMeta, SlidingWindowAttentionKVCacheMeta
 from ...modeling_attention_utils import (
     RBLNDecoderOnlyFlashAttentionMixin,
     set_default_values,
@@ -35,7 +36,7 @@ from ...modeling_attention_utils import (
 )
 from ...modeling_outputs import RBLNDecoderOnlyOutput, _validate_output_hidden_states
 from ...utils.rbln_quantization import get_quantized_model
-from .configuration_decoderonly import KVCacheMeta, RBLNDecoderOnlyModelConfig, RBLNDecoderOnlyModelForCausalLMConfig
+from .configuration_decoderonly import RBLNDecoderOnlyModelConfig, RBLNDecoderOnlyModelForCausalLMConfig
 from .decoderonly_architecture import DecoderOnlyWrapper
 from .decoderonly_runtime_utils import RBLNPageTableManager, RBLNRuntimeModel
 from .generation_decoderonly import RBLNDecoderOnlyGenerationMixin
@@ -396,12 +397,12 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
         if rbln_config.use_lora:
             input_info.append(("lora_int_ids", [batch_size], "int32"))
 
-        if len(rbln_config.kvcache_metas) > 0:
+        if len(rbln_config.cache_metas) > 0:
             # Meta is already set, use it
             input_info.extend(
                 [
-                    (kvcache_meta.name, kvcache_meta.compile_shape, kvcache_meta.dtype)
-                    for kvcache_meta in rbln_config.kvcache_metas
+                    (cache_meta.name, cache_meta.compile_shape, cache_meta.dtype)
+                    for cache_meta in rbln_config.cache_metas
                 ]
             )
 
@@ -410,22 +411,23 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
             if rbln_config.quantization and rbln_config.quantization.kv_caches == "fp8":
                 kvcache_dtype = "float8_e4m3fn"
 
-            kvcache_metas = []
+            kvcache_dtype = RBLNCompileConfig.normalize_dtype(kvcache_dtype)
+            cache_metas = []
             for i in range(num_hidden_layers * 2):
                 layer_idx = i // 2
                 name = f"past_key_values_{i}"
-                kvcache_meta = KVCacheMeta.make(
-                    name,
-                    layer_idx,
-                    num_key_value_heads,
-                    head_dim,
-                    RBLNCompileConfig.normalize_dtype(kvcache_dtype),
-                    rbln_config,
-                )
-                kvcache_metas.append(kvcache_meta)
-                input_info.append((name, kvcache_meta.compile_shape, kvcache_meta.dtype))
+                if rbln_config.sliding_window is not None and layer_idx in rbln_config.sliding_window_layers:
+                    cache_meta = SlidingWindowAttentionKVCacheMeta.from_config(
+                        name, layer_idx, num_key_value_heads, head_dim, kvcache_dtype, rbln_config
+                    )
+                else:
+                    cache_meta = FullAttentionKVCacheMeta.from_config(
+                        name, layer_idx, num_key_value_heads, head_dim, kvcache_dtype, rbln_config
+                    )
+                cache_metas.append(cache_meta)
+                input_info.append((name, cache_meta.compile_shape, cache_meta.dtype))
 
-            rbln_config.kvcache_metas.extend(kvcache_metas)
+            rbln_config.cache_metas.extend(cache_metas)
 
         return input_info
 

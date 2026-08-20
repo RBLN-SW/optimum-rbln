@@ -27,6 +27,7 @@ from transformers.models.qwen3_vl_moe.modeling_qwen3_vl_moe import (
     Qwen3VLMoeVisionRotaryEmbedding,
 )
 
+from ...modeling_rope_utils import np_cos, np_sin
 from ..decoderonly.decoderonly_runtime_utils import RBLNPageTableManager, RBLNRuntimeModel
 from ..qwen3_vl.modeling_qwen3_vl import (
     RBLNQwen3VLForConditionalGeneration,
@@ -52,7 +53,9 @@ class RBLNQwen3VLMoeVisionModel(RBLNQwen3VLVisionModel):
         self.spatial_merge_unit = config.spatial_merge_size * config.spatial_merge_size
 
         head_dim = config.hidden_size // config.num_heads
-        self.rotary_pos_emb = Qwen3VLMoeVisionRotaryEmbedding(head_dim // 2)
+        freq_table = Qwen3VLMoeVisionRotaryEmbedding(head_dim // 2)(int(self.max_seq_len.max()))
+        self.rotary_cos_table = np_cos(freq_table)
+        self.rotary_sin_table = np_sin(freq_table)
         self.deepstack_visual_indexes = config.deepstack_visual_indexes
 
         with no_init_weights():
