@@ -23,6 +23,58 @@ def test_version_is_str():
     assert isinstance(__version__, str)
 
 
+def test_bare_pretrained_config_resolves_model_class():
+    # vLLM's mistral-format parser (params.json) yields a base PretrainedConfig
+    # with model_type "transformer"; only `architectures` identifies the model.
+    from transformers import MistralConfig, PretrainedConfig
+
+    from optimum.rbln import RBLNAutoModelForCausalLM, RBLNMistralForCausalLM
+
+    config_dict = MistralConfig(
+        hidden_size=64,
+        intermediate_size=128,
+        num_hidden_layers=2,
+        num_attention_heads=4,
+        num_key_value_heads=2,
+        vocab_size=128,
+        architectures=["MistralForCausalLM"],
+    ).to_dict()
+    config_dict["model_type"] = "transformer"
+    bare_config = PretrainedConfig.from_dict(config_dict)
+
+    rbln_cls = RBLNAutoModelForCausalLM.get_rbln_cls("dummy/mistral", export=True, config=bare_config)
+    assert rbln_cls is RBLNMistralForCausalLM
+
+
+def test_upgrade_bare_config_recovers_concrete_class():
+    from transformers import MistralConfig, PretrainedConfig
+
+    from optimum.rbln.transformers.models.auto.auto_factory import _upgrade_bare_config
+
+    reference = MistralConfig(
+        hidden_size=64,
+        intermediate_size=128,
+        num_hidden_layers=2,
+        num_attention_heads=4,
+        num_key_value_heads=2,
+        vocab_size=128,
+        architectures=["MistralForCausalLM"],
+    )
+    config_dict = reference.to_dict()
+    config_dict["model_type"] = "transformer"
+    upgraded = _upgrade_bare_config(PretrainedConfig.from_dict(config_dict))
+
+    assert type(upgraded) is MistralConfig
+    assert upgraded.model_type == "mistral"
+    assert upgraded.to_dict() == reference.to_dict()
+
+    # Unresolvable architectures are left untouched.
+    unknown = PretrainedConfig.from_dict({"architectures": ["NoSuchModel"]})
+    assert _upgrade_bare_config(unknown) is unknown
+    no_arch = PretrainedConfig.from_dict({})
+    assert _upgrade_bare_config(no_arch) is no_arch
+
+
 @pytest.mark.parametrize(
     "current_version, expect_raise",
     [
