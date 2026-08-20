@@ -595,12 +595,8 @@ def pooler_mask_from_position_ids(
     """Which soft-token slots of the pooler output hold a real patch block.
 
     `pixel_position_ids` is (batch, max_patches, 2) with (-1, -1) marking padding,
-    and the pooler averages each `pooling_kernel_size**2` block into one soft
-    token, so row i holds `valid_patches(i) // k**2` real tokens at the front.
-
-    This is the same arithmetic vllm-rbln uses to split the returned features per
-    image, so deriving the mask here keeps the producer and the consumer in
-    agreement by construction rather than by assumption.
+    and the pooler averages each `pooling_kernel_size**2` block into one soft token,
+    so row i holds `valid_patches(i) // k**2` real tokens at the front.
     """
     valid_patches = (~(pixel_position_ids == -1).all(dim=-1)).sum(dim=-1)
     valid_soft_tokens = valid_patches // (pooling_kernel_size * pooling_kernel_size)
@@ -838,13 +834,8 @@ class RBLNGemma4ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMix
 
         vision_outputs = self.vision_tower(pixel_values, pixel_position_ids, out=vision_out_buffer)
         pooler_output = self.embed_vision(vision_outputs.last_hidden_state.float(), out=projector_out_buffer)
-        # Strip padding using the mask derived from the position ids rather than the
-        # one the tower returns. The two agree on device; they do not when the model
-        # never reaches one — with `device=-1` the tower hands back an all-valid mask,
-        # so the padding slots survive and the caller's split rejects the result
-        # (measured: mask true=280 of 280, position ids describe 266). Deriving it
-        # host-side costs a few CPU ops and makes producer and consumer agree by
-        # construction; a disagreement on real devices is logged rather than hidden.
+        # The position ids are the same source the caller splits the features by, so
+        # deriving the mask from them keeps the two in agreement by construction.
         host_mask = pooler_mask_from_position_ids(pixel_position_ids, max_soft_tokens, pooling)
         if not torch.equal(vision_outputs.pooler_mask, host_mask):
             logger.warning(

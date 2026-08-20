@@ -11,14 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""The pooler mask Gemma4 strips padding with, derived from the position ids.
-
-The tower is supposed to return this mask, and on device it does. When the model
-never reaches a device (`device=-1`, as CI's dummy runs) it comes back all-valid,
-the padding slots survive, and the caller's per-image split rejects a tensor that
-is longer than the prompt reserved. Deriving it from the position ids is the same
-arithmetic the caller uses, so these cases pin that the two cannot drift.
-"""
+"""The pooler mask Gemma4 strips padding with, derived from the position ids."""
 
 import pytest
 import torch
