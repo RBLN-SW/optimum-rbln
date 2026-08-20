@@ -261,9 +261,7 @@ class RBLNBlip2QFormerModel(RBLNModel):
         outputs = []
         for i in range(batch_size):
             outputs.append(
-                self._run(
-                    query_embeds[i : i + 1], encoder_hidden_states[i : i + 1], encoder_attention_mask[i : i + 1]
-                )
+                self._run(query_embeds[i : i + 1], encoder_hidden_states[i : i + 1], encoder_attention_mask[i : i + 1])
             )
 
         sequence_output = [output[0] for output in outputs]

@@ -137,7 +137,7 @@ class RBLNAutoencoderKL(RBLNModel):
                 f"This VAE's checkpoint is {model.dtype}, but its config sets `force_upcast=True`, so the "
                 "graph is compiled at float32 -- upstream pipelines upcast such a VAE around encode/decode for "
                 "numerical stability, and a compiled graph cannot be moved afterwards. The rest of the pipeline "
-                f"still runs at {model.dtype}. Pass `rbln_dtype=\"{RBLNCompileConfig.normalize_dtype(model.dtype)}\"` "
+                f'still runs at {model.dtype}. Pass `rbln_dtype="{RBLNCompileConfig.normalize_dtype(model.dtype)}"` '
                 "to compile it at the checkpoint dtype instead -- unlike clearing `force_upcast` on the VAE "
                 "config, that leaves the upcast diffusers performs at runtime untouched."
             )
