@@ -68,9 +68,6 @@ class RBLNGroundingDinoTextModel(RBLNBertModel):
 
     rbln_model_input_names = ["input_ids", "attention_mask", "token_type_ids", "position_ids"]
     _hf_class = BertModel
-    # Opts back in, overriding `RBLNBertModel`'s fp32 pin: without this the text backbone would be the
-    # only submodule forced to fp32 while backbone/encoder/decoder follow the checkpoint dtype.
-    _supports_non_fp32 = True
 
     @classmethod
     def _update_rbln_config(
@@ -900,11 +897,13 @@ class RBLNGroundingDinoEncoder(RBLNModel):
             vision_attention_mask.to(self.rbln_config.dtype).unsqueeze(-1).repeat(1, 1, self.config.d_model)
         )
 
+        # The text backbone is a separate graph and may run at a different dtype than this one, so align its
+        # outputs with this graph's inputs.
         enc_outputs = self.encoder_runtime(
-            vision_features=vision_features,
+            vision_features=vision_features.to(self.rbln_config.dtype),
             vision_attention_mask=vision_attention_mask,
-            vision_position_embedding=vision_position_embedding,
-            text_features=text_features,
+            vision_position_embedding=vision_position_embedding.to(self.rbln_config.dtype),
+            text_features=text_features.to(self.rbln_config.dtype),
             text_attention_mask=text_attention_mask.to(self.rbln_config.dtype),
             text_self_attention_masks=text_self_attention_masks.to(self.rbln_config.dtype),
             reference_points=reference_points,
@@ -1081,14 +1080,16 @@ class RBLNGroundingDinoDecoder(RBLNModel):
         )
 
         # Forward pass through the decoder
+        # The encoder is a separate graph and may run at a different dtype than this one, so align its outputs
+        # with this graph's inputs.
         outputs = self.decoder_runtime(
-            inputs_embeds=inputs_embeds,
-            vision_encoder_hidden_states=vision_encoder_hidden_states,
+            inputs_embeds=inputs_embeds.to(self.rbln_config.dtype),
+            vision_encoder_hidden_states=vision_encoder_hidden_states.to(self.rbln_config.dtype),
             vision_encoder_attention_mask=reshaped_vision_encoder_attention_mask,
-            text_encoder_hidden_states=text_encoder_hidden_states,
+            text_encoder_hidden_states=text_encoder_hidden_states.to(self.rbln_config.dtype),
             text_encoder_attention_mask=text_encoder_attention_mask.to(self.rbln_config.dtype),
-            reference_points=reference_points,
-            valid_ratios=valid_ratios,
+            reference_points=reference_points.to(self.rbln_config.dtype),
+            valid_ratios=valid_ratios.to(self.rbln_config.dtype),
         )
 
         if not return_dict:
