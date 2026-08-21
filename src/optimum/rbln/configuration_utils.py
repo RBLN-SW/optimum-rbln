@@ -777,7 +777,7 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
 
     @property
     def dtype(self):
-        return getattr(torch, self._dtype or "float32")
+        return getattr(torch, self._dtype)
 
     @dtype.setter
     def dtype(self, dtype: str | torch.dtype):
