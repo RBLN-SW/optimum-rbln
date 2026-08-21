@@ -149,12 +149,11 @@ class RBLNPriorTransformer(RBLNModel):
         Returns:
             (`~diffusers.models.transformers.prior_transformer.PriorTransformerOutput` | tuple)
         """
-        # Convert timestep(long) and attention_mask(bool) to float
         return super().forward(
             hidden_states,
             timestep.float(),
             proj_embedding,
             encoder_hidden_states,
-            attention_mask.float(),
+            attention_mask.to(self.rbln_config.dtype),
             return_dict=return_dict,
         )
