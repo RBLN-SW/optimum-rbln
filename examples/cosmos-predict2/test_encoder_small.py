@@ -38,8 +38,8 @@ from optimum.rbln.diffusers.models.autoencoders.autoencoder_kl_wan import (
 )
 
 
-H = int(sys.argv[1]) if len(sys.argv) > 1 else 256
-W = int(sys.argv[2]) if len(sys.argv) > 2 else 256
+H = int(sys.argv[1]) if len(sys.argv) > 1 else 704
+W = int(sys.argv[2]) if len(sys.argv) > 2 else 1280
 DEV = int(sys.argv[3]) if len(sys.argv) > 3 else 0
 CHUNK = 4  # EN encodes 4 input frames -> 1 latent frame
 
