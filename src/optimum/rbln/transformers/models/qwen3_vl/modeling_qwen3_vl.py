@@ -416,6 +416,7 @@ class RBLNQwen3VLModel(RBLNDecoderOnlyModel):
                 self.config.text_config.vocab_size,
                 self.config.text_config.hidden_size,
                 getattr(self.config.text_config, "pad_token_id", None),
+                dtype=self.rbln_config.dtype,
             )
         return embed_tokens
 

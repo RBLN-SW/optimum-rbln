@@ -280,6 +280,7 @@ class RBLNQwen2VLModel(RBLNDecoderOnlyModel):
                 self.config.text_config.vocab_size,
                 self.config.text_config.hidden_size,
                 self.config.text_config.pad_token_id,
+                dtype=self.rbln_config.dtype,
             )
         return embed_tokens
 
