@@ -295,6 +295,36 @@ class RBLNDiffusionMixin:
         return compiled_submodules
 
     @classmethod
+    def _warn_on_mixed_dtypes(cls, model: torch.nn.Module, passed_submodules: dict[str, RBLNModel]) -> None:
+        """
+        Point out submodules that disagree on dtype, before any of them is compiled.
+
+        Each submodule is compiled at the dtype its own weights carry, and a compiled graph declares one
+        exact dtype per input -- the runtime does not promote. So a pipeline whose submodules disagree
+        compiles cleanly and may then fail on its first call, wherever one hands a tensor to the next. The
+        usual cause is a submodule loaded without the dtype the rest of the pipeline got: `torch_dtype`
+        left unset makes diffusers fall back to float32 while transformers adopts the checkpoint's own
+        dtype. Mixing them can also be deliberate, so this only warns.
+        """
+        dtypes = {}
+        for name in cls._submodules:
+            submodule = passed_submodules.get(name) or getattr(model, name, None)
+            if isinstance(submodule, torch.nn.Module) and not isinstance(submodule, RBLNModel):
+                dtype = getattr(submodule, "dtype", None)
+                if dtype is not None:
+                    dtypes[name] = dtype
+
+        if len(set(dtypes.values())) > 1:
+            listed = ", ".join(f"{name}={dtype}" for name, dtype in dtypes.items())
+            logger.warning(
+                f"The submodules of this pipeline were loaded at more than one dtype ({listed}). Each is "
+                "compiled at the dtype its own weights carry, and the runtime rejects a dtype a graph was "
+                "not compiled for, so passing a tensor from one submodule to another may fail. Pass "
+                "`torch_dtype=` to `from_pretrained` to load the whole pipeline at one dtype, unless the "
+                "mix is intended."
+            )
+
+    @classmethod
     def _compile_submodules(
         cls,
         model: torch.nn.Module,
@@ -304,6 +334,7 @@ class RBLNDiffusionMixin:
         prefix: str | None = "",
     ) -> dict[str, RBLNModel]:
         compiled_submodules = {}
+        cls._warn_on_mixed_dtypes(model, passed_submodules)
 
         for submodule_name in cls._submodules:
             submodule = passed_submodules.get(submodule_name) or getattr(model, submodule_name, None)
