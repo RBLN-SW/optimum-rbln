@@ -76,6 +76,7 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
     _decoder_wrapper_cls = DecoderOnlyWrapper
     _use_rotary_emb = True
     _supports_non_fp32 = True
+    _supports_weight_free = True
 
     def __post_init__(self, **kwargs):
         if self.rbln_config.use_inputs_embeds:
@@ -183,6 +184,14 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
         return val
 
     @classmethod
+    def _prepare_weight_free_export(
+        cls, model: PreTrainedModel, rbln_config: RBLNDecoderOnlyModelForCausalLMConfig
+    ) -> None:
+        if rbln_config.use_image_prefill:
+            raise ValueError("Weight-free checkpoint linking does not support image prefill yet.")
+        super()._prepare_weight_free_export(model, rbln_config)
+
+    @classmethod
     def save_torch_artifacts(
         cls,
         model: PreTrainedModel,
@@ -251,6 +260,7 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
                 device=rbln_config.device,
                 example_inputs=example_inputs,
                 compile_context=compile_context,
+                weight_free=rbln_config.weight_free,
             )
             return compiled_model
         finally:

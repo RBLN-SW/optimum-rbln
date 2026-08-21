@@ -18,6 +18,42 @@ from pathlib import Path
 from huggingface_hub import HfApi, get_token, hf_hub_download, try_to_load_from_cache
 from huggingface_hub.errors import LocalEntryNotFoundError
 
+from .weight_source import GENERATED_WEIGHT_FILENAME
+
+
+def _ensure_generated_weight_file(
+    config_path: Path,
+    *,
+    model_id: str | Path,
+    subfolder: str,
+    token: bool | str,
+    revision: str | None,
+    cache_dir: str | None,
+    force_download: bool,
+    local_files_only: bool,
+) -> None:
+    with open(config_path) as config_file:
+        config = json.load(config_file)
+    if not config.get("generated_weight_map"):
+        return
+
+    generated_path = config_path.parent / GENERATED_WEIGHT_FILENAME
+    if generated_path.is_file():
+        return
+    if local_files_only:
+        raise FileNotFoundError(f"Missing generated tensor file in local cache: {generated_path}")
+
+    filename = GENERATED_WEIGHT_FILENAME if subfolder == "" else f"{subfolder}/{GENERATED_WEIGHT_FILENAME}"
+    hf_hub_download(
+        repo_id=str(model_id),
+        filename=filename,
+        token=token,
+        revision=revision,
+        cache_dir=cache_dir,
+        force_download=force_download,
+        local_files_only=False,
+    )
+
 
 def pull_compiled_model_from_hub(
     model_id: str | Path,
@@ -52,9 +88,18 @@ def pull_compiled_model_from_hub(
             # Validate files found in cache
             rbln_config_filenames = [config_path] if config_path.exists() else []
             validate_files(rbln_files, rbln_config_filenames, f"cached repository {model_id}")
-
             # If local_files_only is True, return cached directory without API call
             if local_files_only:
+                _ensure_generated_weight_file(
+                    config_path,
+                    model_id=model_id,
+                    subfolder=subfolder,
+                    token=token,
+                    revision=revision,
+                    cache_dir=cache_dir,
+                    force_download=force_download,
+                    local_files_only=True,
+                )
                 return cache_dir_path
 
             # If local_files_only is False, ensure all files are downloaded
@@ -87,6 +132,17 @@ def pull_compiled_model_from_hub(
                     # File might not exist in repo, skip it
                     pass
 
+            _ensure_generated_weight_file(
+                Path(rbln_config_cache_path),
+                model_id=model_id,
+                subfolder=subfolder,
+                token=token,
+                revision=revision,
+                cache_dir=cache_dir,
+                force_download=force_download,
+                local_files_only=False,
+            )
+
             # Note: We skip the API call here since we're using cached files
             # If there are additional files in the repo that aren't cached,
             # they won't be downloaded.
@@ -109,6 +165,16 @@ def pull_compiled_model_from_hub(
             rbln_files = list(cache_dir_path.glob("*.rbln"))
             rbln_config_filenames = [Path(rbln_config_cache_path)] if Path(rbln_config_cache_path).exists() else []
             validate_files(rbln_files, rbln_config_filenames, f"cached repository {model_id}")
+            _ensure_generated_weight_file(
+                Path(rbln_config_cache_path),
+                model_id=model_id,
+                subfolder=subfolder,
+                token=token,
+                revision=revision,
+                cache_dir=cache_dir,
+                force_download=force_download,
+                local_files_only=True,
+            )
             return cache_dir_path
         except LocalEntryNotFoundError as err:
             raise FileNotFoundError(

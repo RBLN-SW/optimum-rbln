@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import importlib
+import json
 import os
 import shutil
 from pathlib import Path
@@ -30,6 +31,7 @@ from .utils.logging import get_logger
 from .utils.runtime_utils import UnavailableRuntime, compiler_num_devices_kwarg, tp_and_devices_are_ok
 from .utils.save_utils import maybe_load_preprocessors
 from .utils.submodule import SubModulesMixin
+from .utils.weight_source import GENERATED_WEIGHT_FILENAME, iter_weight_windows, resolve_weight_index
 
 
 if TYPE_CHECKING:
@@ -67,6 +69,7 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
     config_name = "config.json"
     hf_library_name = "transformers"
     _supports_non_fp32 = False
+    _supports_weight_free = False
 
     def __init__(
         self,
@@ -185,6 +188,119 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
         return rbln_compiled_models
 
     @classmethod
+    def _update_weight_source_for_export(
+        cls,
+        rbln_config: RBLNModelConfig,
+        model_id: str | Path,
+        model: "PreTrainedModel",
+        subfolder: str,
+        revision: str | None,
+        variant: str | None,
+        dtype_override: Any,
+    ) -> None:
+        if not rbln_config.weight_free:
+            return
+        if dtype_override not in (None, "auto"):
+            raise ValueError(
+                "Weight-free checkpoint linking does not support dtype conversion; "
+                "load the Hugging Face checkpoint with dtype='auto'."
+            )
+        source_path = Path(model_id)
+        source_id = str(source_path.resolve()) if source_path.exists() else str(model_id)
+        rbln_config.weight_source = {
+            "model_id": source_id,
+            "subfolder": subfolder,
+            "revision": model.config._commit_hash or revision,
+            "variant": variant,
+        }
+
+    @classmethod
+    def _prepare_weight_free_export(cls, model: "PreTrainedModel", rbln_config: RBLNModelConfig) -> None:
+        """Last check and fixup before a weight-free graph is handed to the compiler."""
+        if not rbln_config.weight_source:
+            raise ValueError(
+                "Weight-free checkpoint linking requires from_pretrained(..., export=True) "
+                "with a Hugging Face model id or local checkpoint path."
+            )
+        # The name map keys tensors by storage identity, so normalize before the compiler does.
+        normalize_contiguous_(model)
+
+    @staticmethod
+    def _group_runtimes_by_weight_pool(
+        runtime_plans: list[tuple[rebel.Runtime, list[dict[str, Any]]]],
+    ) -> list[tuple[list[dict[str, Any]], list[tuple[rebel.Runtime, list[dict[str, Any]]]]]]:
+        """Bucket runtimes that fill one shared weight pool, keyed by window layout.
+
+        Sibling runtimes of one compiled graph (e.g. prefill and decode) share a pool
+        and must be fed the same tensors; separately compiled members of a model (e.g.
+        an encoder and a decoder) do not, and get a pool each.
+        """
+        pools: dict[str, tuple[list[dict[str, Any]], list[tuple[rebel.Runtime, list[dict[str, Any]]]]]] = {}
+        for runtime, plan in runtime_plans:
+            if not plan:
+                continue
+            layout = [{key: value for key, value in window.items() if key != "graph_ids"} for window in plan]
+            pools.setdefault(json.dumps(layout, sort_keys=True), (plan, []))[1].append((runtime, plan))
+        return list(pools.values())
+
+    @classmethod
+    def _load_runtime_weights(
+        cls,
+        models: list[rebel.Runtime],
+        rbln_config: RBLNModelConfig,
+        artifact_dir: Path | None,
+        token: bool | str | None,
+        cache_dir: str | None,
+        local_files_only: bool,
+    ) -> None:
+        if not rbln_config.create_runtimes or not rbln_config.weight_free:
+            return
+        if not rbln_config.weight_source:
+            raise ValueError("Weight-free artifact has no Hugging Face weight source metadata.")
+        if artifact_dir is None:
+            raise ValueError("Weight-free runtime creation requires an artifact directory.")
+
+        runtime_plans = [(runtime, runtime.weight_load_plan()) for runtime in models]
+        pools = cls._group_runtimes_by_weight_pool(runtime_plans)
+
+        # A weight consumed only by a host op belongs to no device window.
+        host_only: list[tuple[rebel.Runtime, set[str]]] = []
+        for runtime, plan in runtime_plans:
+            windowed = {name for window in plan for name in window["names"]}
+            leftover = runtime.required_weight_names() - windowed
+            if leftover:
+                host_only.append((runtime, leftover))
+
+        if not pools and not host_only:
+            return
+
+        key_to_file = resolve_weight_index(
+            rbln_config.weight_source,
+            token=token,
+            cache_dir=cache_dir,
+            local_files_only=local_files_only,
+        )
+        generated_weight_file = artifact_dir / GENERATED_WEIGHT_FILENAME if rbln_config.generated_weight_map else None
+
+        def materialize(windows: list[dict[str, Any]]):
+            return iter_weight_windows(
+                key_to_file=key_to_file,
+                name_map=rbln_config.weight_name_map,
+                generated_weight_map=rbln_config.generated_weight_map,
+                generated_weight_file=generated_weight_file,
+                windows=windows,
+            )
+
+        for reference_plan, group in pools:
+            for window_index, (_window, weight_chunk) in enumerate(materialize(reference_plan)):
+                for runtime, plan in group:
+                    runtime.load_weight_window(weight_chunk, plan[window_index]["graph_ids"])
+
+        for runtime, leftover in host_only:
+            _, weight_chunk = next(materialize([{"names": sorted(leftover)}]))
+            runtime.load_weights(weight_chunk, partial=True)
+
+    @classmethod
     def _from_pretrained(
         cls,
         model_id: str | Path,
@@ -287,6 +403,9 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
             model_save_dir=model_save_dir,
             subfolder=subfolder,
             rbln_submodules=rbln_submodules,
+            token=token,
+            cache_dir=cache_dir,
+            local_files_only=local_files_only,
             **kwargs,
         )
 
@@ -299,6 +418,9 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
         model_save_dir: Path | str,
         subfolder: Path | str,
         rbln_submodules: list["RBLNBaseModel"] | None = None,
+        token: bool | str | None = None,
+        cache_dir: str | None = None,
+        local_files_only: bool = False,
         **kwargs,
     ):
         if rbln_submodules is None:
@@ -317,6 +439,16 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
                 cls._create_runtimes(rbln_compiled_models, rbln_config)
                 if rbln_config.create_runtimes
                 else UnavailableRuntime()
+            )
+            artifact_root = model_save_dir.name if isinstance(model_save_dir, TemporaryDirectory) else model_save_dir
+            artifact_dir = Path(artifact_root) / subfolder if artifact_root is not None else None
+            cls._load_runtime_weights(
+                models=models,
+                rbln_config=rbln_config,
+                artifact_dir=artifact_dir,
+                token=token,
+                cache_dir=cache_dir,
+                local_files_only=local_files_only,
             )
 
         except RuntimeError as e:
@@ -360,6 +492,15 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
         rbln_config, kwargs = cls.prepare_rbln_config(**kwargs)
 
         model: PreTrainedModel = cls.get_pytorch_model(model_id=model_id, rbln_config=rbln_config, **kwargs)
+        cls._update_weight_source_for_export(
+            rbln_config=rbln_config,
+            model_id=model_id,
+            model=model,
+            subfolder=subfolder,
+            revision=kwargs.get("revision"),
+            variant=kwargs.get("variant"),
+            dtype_override=kwargs.get("dtype", kwargs.get("torch_dtype")),
+        )
         preprocessors = maybe_load_preprocessors(model_id, subfolder=subfolder)
         return cls.from_model(
             model, preprocessors=preprocessors, model_save_dir=model_save_dir, rbln_config=rbln_config, **kwargs
@@ -451,6 +592,7 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
         rbln_compile_config: RBLNCompileConfig,
         create_runtimes: bool,
         device: int | list[int],
+        weight_free: bool,
         **kwargs,
     ):
         if create_runtimes:
@@ -468,6 +610,7 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
             model,
             input_info=rbln_compile_config.input_info,
             npu=rbln_compile_config.npu,
+            weight_free=weight_free,
             **{compiler_num_devices_kwarg(): rbln_compile_config.num_devices},
             **kwargs,
         )
@@ -489,6 +632,8 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
         rbln_config = cls._update_rbln_config(
             preprocessors=preprocessors, model=model, model_config=model_config, rbln_config=rbln_config
         )
+        if rbln_config.weight_free and not cls._supports_weight_free:
+            raise ValueError(f"{cls.__name__} does not support weight-free compilation.")
 
         if rbln_config.rbln_model_cls_name != cls.__name__:
             raise NameError(

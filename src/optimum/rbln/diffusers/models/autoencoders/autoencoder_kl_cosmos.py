@@ -103,6 +103,7 @@ class RBLNAutoencoderKLCosmos(RBLNModel):
                     encoder_model,
                     rbln_compile_config=rbln_config.compile_cfgs[0],
                     create_runtimes=rbln_config.create_runtimes,
+                    weight_free=rbln_config.weight_free,
                     device=rbln_config.device_map["encoder"],
                 )
                 compiled_models["encoder"] = enc_compiled_model
@@ -112,6 +113,7 @@ class RBLNAutoencoderKLCosmos(RBLNModel):
                 decoder_model,
                 rbln_compile_config=rbln_config.compile_cfgs[-1],
                 create_runtimes=rbln_config.create_runtimes,
+                weight_free=rbln_config.weight_free,
                 device=rbln_config.device_map["decoder"],
             )
             compiled_models["decoder"] = dec_compiled_model

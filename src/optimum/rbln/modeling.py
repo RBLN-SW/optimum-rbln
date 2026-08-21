@@ -26,6 +26,7 @@ from transformers.modeling_outputs import BaseModelOutput
 from .configuration_utils import DEFAULT_COMPILED_MODEL_NAME, RBLNModelConfig
 from .modeling_base import RBLNBaseModel
 from .utils.logging import get_logger
+from .utils.weight_source import build_weight_map, save_generated_weight_state
 
 
 if TYPE_CHECKING:
@@ -60,6 +61,25 @@ class RBLNModel(RBLNBaseModel):
         return model
 
     @classmethod
+    def _save_weight_free_artifacts(
+        cls,
+        model: "PreTrainedModel",
+        artifact_dir: Path,
+        rbln_config: RBLNModelConfig,
+    ) -> None:
+        """Record how compiled weight names reach the checkpoint, and save what it cannot.
+
+        Must run before the config is serialized, since the maps live in the config.
+        """
+        if not rbln_config.weight_free:
+            return
+        wrapped_model = cls._wrap_model_if_needed(model, rbln_config)
+        name_map, generated_name_map, generated_state = build_weight_map(model, wrapped_model)
+        rbln_config.weight_name_map = name_map
+        rbln_config.generated_weight_map = generated_name_map
+        save_generated_weight_state(generated_state, artifact_dir)
+
+    @classmethod
     def get_compiled_model(cls, model: "PreTrainedModel", rbln_config: RBLNModelConfig):
         if rbln_config._allow_no_compile_cfgs:
             return {}
@@ -71,6 +91,7 @@ class RBLNModel(RBLNBaseModel):
             rbln_compile_config=rbln_compile_config,
             create_runtimes=rbln_config.create_runtimes,
             device=rbln_config.device,
+            weight_free=rbln_config.weight_free,
         )
         return compiled_model
 
@@ -186,6 +207,9 @@ class RBLNModel(RBLNBaseModel):
             preprocessors=preprocessors, model=model, model_config=config, rbln_config=rbln_config
         )
 
+        if rbln_config.weight_free:
+            cls._prepare_weight_free_export(model, rbln_config)
+
         compiled_model: rebel.RBLNCompiledModel | dict[str, rebel.RBLNCompiledModel] = cls.get_compiled_model(
             model, rbln_config=rbln_config
         )
@@ -198,6 +222,9 @@ class RBLNModel(RBLNBaseModel):
             compiled_models = compiled_model
         for compiled_model_name, cm in compiled_models.items():
             cm.save(save_dir_path / subfolder / f"{compiled_model_name}.rbln")
+
+        cls._save_weight_free_artifacts(model, save_dir_path / subfolder, rbln_config)
+
         rbln_config.save(save_dir_path / subfolder)
 
         config.save_pretrained(save_dir_path / subfolder)

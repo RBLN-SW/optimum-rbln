@@ -228,6 +228,11 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
                 f"{self.lora_config.adapter_ids}. Max rank: {self.lora_config.max_lora_rank}"
             )
 
+        if self.weight_free and self.quantization:
+            raise ValueError("Weight-free checkpoint linking does not support quantization yet.")
+        if self.weight_free and self.lora_config:
+            raise ValueError("Weight-free checkpoint linking does not support LoRA yet.")
+
         self.attn_impl = attn_impl
         self.kvcache_partition_len = kvcache_partition_len
         self.kvcache_block_size = kvcache_block_size
