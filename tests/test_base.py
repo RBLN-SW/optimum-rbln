@@ -194,7 +194,10 @@ class BaseTest:
                     if os.path.exists(compiled_model_path):
                         with ContextRblnConfig(device=DUMMY_DEVICE_CODE):
                             cls.model = cls.RBLN_CLASS.from_pretrained(compiled_model_path)
-                if not hasattr(cls, "model"):
+                # Check cls.__dict__, not hasattr: hasattr also finds a parent test class's
+                # already-loaded model, silently running this class against a model compiled
+                # with the parent's (possibly incompatible) rbln_config.
+                if "model" not in cls.__dict__:
                     raise unittest.SkipTest("Compiled model not found")
 
         @classmethod

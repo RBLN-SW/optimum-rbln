@@ -709,7 +709,7 @@ class RBLNQwen3VLModel(RBLNDecoderOnlyModel):
 
         logits = []
         for b_idx in range(batch_size):
-            query_length = attention_mask[b_idx].sum(dim=-1).int().item()
+            query_length = attention_mask[b_idx].sum(dim=-1).int().item() if attention_mask is not None else seq_len
             cache_position = torch.arange(query_length, dtype=torch.int32).unsqueeze(0)
 
             output = self.prefill_decoder(
