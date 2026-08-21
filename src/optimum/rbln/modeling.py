@@ -169,7 +169,7 @@ class RBLNModel(RBLNBaseModel):
         for preprocessor in preprocessors:
             preprocessor.save_pretrained(save_dir_path / subfolder)
 
-        cls._resolve_dtype(model, config, rbln_config)
+        cls._resolve_dtype(model, rbln_config)
 
         # Load submodules
         if len(cls._rbln_submodules) > 0:

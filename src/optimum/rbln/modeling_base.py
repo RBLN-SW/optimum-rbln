@@ -474,44 +474,19 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
         return compiled_model
 
     @classmethod
-    def _default_dtype(cls, model: "PreTrainedModel", model_config: "PretrainedConfig") -> torch.dtype:
-        """
-        The dtype to compile at when the caller did not ask for one.
-
-        Args:
-            model: The torch module about to be compiled.
-            model_config: Its HuggingFace config.
-
-        Returns:
-            The checkpoint's dtype, except for a `force_upcast` checkpoint, which defaults to float32.
-        """
-        if getattr(model_config, "force_upcast", False) and model.dtype != torch.float32:
-            logger.warning(
-                f"This checkpoint is {model.dtype}, but its config sets `force_upcast=True`, so the graph is "
-                "compiled at float32 -- upstream pipelines upcast such a module around encode/decode for "
-                "numerical stability, and a compiled graph cannot be moved afterwards. The rest of the "
-                f'pipeline still runs at {model.dtype}. Pass `rbln_dtype="'
-                f'{RBLNCompileConfig.normalize_dtype(model.dtype)}"` to compile it at the checkpoint dtype '
-                "instead -- unlike clearing `force_upcast` on the config, that leaves the upcast diffusers "
-                "performs at runtime untouched."
-            )
-            return torch.float32
-        return model.dtype
-
-    @classmethod
-    def _resolve_dtype(
-        cls, model: "PreTrainedModel", model_config: "PretrainedConfig", rbln_config: RBLNModelConfig
-    ) -> None:
+    def _resolve_dtype(cls, model: "PreTrainedModel", rbln_config: RBLNModelConfig) -> None:
         """
         Settle the compile dtype and align the module with it.
 
+        Left unset, the dtype is the checkpoint's. A submodule that has to be compiled at another one is
+        pinned by whatever knows that -- a pipeline's `_upcasts_vae`, say -- before this runs.
+
         Args:
             model: The torch module about to be compiled. Cast in place to the resolved dtype.
-            model_config: Its HuggingFace config.
             rbln_config: The config whose `dtype` is filled in when the caller left it unset.
         """
         if rbln_config._dtype is None:
-            rbln_config.dtype = cls._default_dtype(model, model_config)
+            rbln_config.dtype = model.dtype
         if not cls._supports_non_fp32 and rbln_config.dtype != torch.float32:
             raise NotImplementedError(
                 f"Currently, {cls.__name__} does not support non-fp32 dtype. Please use float32 dtype."
