@@ -845,9 +845,7 @@ class RBLNGemma4ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMix
             torch.empty(size=projector_out_size, dtype=self.compiled_image_features_dtype, device="cpu")
         ]
 
-        vision_outputs = self.vision_tower(
-            pixel_values.to(vision_cfg.dtype), pixel_position_ids, out=vision_out_buffer
-        )
+        vision_outputs = self.vision_tower(pixel_values, pixel_position_ids, out=vision_out_buffer)
         pooler_output = self.embed_vision(
             vision_outputs.last_hidden_state.to(self.compiled_image_features_dtype), out=projector_out_buffer
         )
