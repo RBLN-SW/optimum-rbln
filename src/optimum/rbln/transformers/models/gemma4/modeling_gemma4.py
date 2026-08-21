@@ -443,7 +443,9 @@ class RBLNGemma4ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
                 self.config.pad_token_id,
                 embed_scale=self.config.hidden_size_per_layer_input**0.5,
             )
-        return embed_per_layer
+        # Gemma4TextScaledWordEmbedding does not forward a dtype kwarg to
+        # nn.Embedding, so cast the module instead.
+        return embed_per_layer.to(self.rbln_config.dtype)
 
     def __post_init__(self, **kwargs):
         artifacts_path = self.model_save_dir / self.subfolder / "torch_artifacts.pth"
@@ -452,14 +454,12 @@ class RBLNGemma4ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
         if self.rbln_config.use_inputs_embeds and "embed_tokens" in artifacts:
             self.embed_tokens = self._create_embedding_layer()
             self.embed_tokens.load_state_dict(artifacts["embed_tokens"])
-            self.embed_tokens.to(self.rbln_config.dtype)
         else:
             self.embed_tokens = None
 
         if getattr(self.config, "hidden_size_per_layer_input", 0) and "embed_tokens_per_layer" in artifacts:
             self.embed_tokens_per_layer = self._create_per_layer_embedding_layer()
             self.embed_tokens_per_layer.load_state_dict(artifacts["embed_tokens_per_layer"])
-            self.embed_tokens_per_layer.to(self.rbln_config.dtype)
         else:
             self.embed_tokens_per_layer = None
 
@@ -517,7 +517,9 @@ class RBLNGemma4ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
                 self.config.pad_token_id,
                 embed_scale=self.config.hidden_size**0.5,
             )
-        return embed_tokens
+        # Gemma4TextScaledWordEmbedding does not forward a dtype kwarg to
+        # nn.Embedding, so cast the module instead.
+        return embed_tokens.to(self.rbln_config.dtype)
 
     @classmethod
     def _pre_populate_cache_metas(
