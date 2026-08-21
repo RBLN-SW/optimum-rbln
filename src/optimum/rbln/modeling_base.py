@@ -474,27 +474,6 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
         return compiled_model
 
     @classmethod
-    def _resolve_dtype(cls, model: "PreTrainedModel", rbln_config: RBLNModelConfig) -> None:
-        """
-        Settle the compile dtype and align the module with it.
-
-        Left unset, the dtype is the checkpoint's. A submodule that has to be compiled at another one is
-        pinned by whatever knows that -- a pipeline's `_upcasts_vae`, say -- before this runs.
-
-        Args:
-            model: The torch module about to be compiled. Cast in place to the resolved dtype.
-            rbln_config: The config whose `dtype` is filled in when the caller left it unset.
-        """
-        if rbln_config._dtype is None:
-            rbln_config.dtype = model.dtype
-        if not cls._supports_non_fp32 and rbln_config.dtype != torch.float32:
-            raise NotImplementedError(
-                f"Currently, {cls.__name__} does not support non-fp32 dtype. Please use float32 dtype."
-            )
-        # A graph declaring one dtype cannot be traced from weights of another.
-        model.to(rbln_config.dtype)
-
-    @classmethod
     def update_rbln_config(
         cls,
         preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"] | None,
@@ -502,6 +481,11 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
         model_config: "PretrainedConfig",
         rbln_config: RBLNModelConfig,
     ) -> RBLNModelConfig:
+        rbln_config.dtype = model.dtype
+        if not cls._supports_non_fp32 and rbln_config.dtype != torch.float32:
+            raise NotImplementedError(
+                f"Currently, {cls.__name__} does not support non-fp32 dtype. Please use float32 dtype."
+            )
         rbln_config = cls._update_rbln_config(
             preprocessors=preprocessors, model=model, model_config=model_config, rbln_config=rbln_config
         )
