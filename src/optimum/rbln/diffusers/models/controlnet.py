@@ -217,7 +217,7 @@ class RBLNControlNetModel(RBLNModel):
         timestep: torch.Tensor | float | int,
         encoder_hidden_states: torch.Tensor,
         controlnet_cond: torch.FloatTensor,
-        conditioning_scale: torch.Tensor = 1.0,
+        conditioning_scale: float = 1.0,
         added_cond_kwargs: dict[str, torch.Tensor] | None = None,
         return_dict: bool = True,
         **kwargs,
@@ -230,7 +230,7 @@ class RBLNControlNetModel(RBLNModel):
             timestep (torch.Tensor | float | int): The number of timesteps to denoise an input.
             encoder_hidden_states (torch.Tensor): The encoder hidden states.
             controlnet_cond (torch.FloatTensor): The conditional input tensor of shape `(batch_size, max_seq_len, hidden_size)`.
-            conditioning_scale (torch.Tensor): The scale factor for ControlNet outputs.
+            conditioning_scale (float): The scale factor for ControlNet outputs.
             added_cond_kwargs (dict[str, torch.Tensor]): Additional conditions for the Stable Diffusion XL UNet.
             return_dict (bool): Whether or not to return a [`~diffusers.models.controlnets.controlnet.ControlNetOutput`] instead of a plain tuple
 
@@ -250,13 +250,14 @@ class RBLNControlNetModel(RBLNModel):
             )
 
         added_cond_kwargs = added_cond_kwargs or {}
+        conditioning_scale = torch.as_tensor(conditioning_scale, dtype=self.rbln_config.dtype)
         if self.use_encoder_hidden_states:
             output = self.model[0](
                 sample.contiguous(),
                 timestep.float(),
                 encoder_hidden_states,
                 controlnet_cond,
-                torch.tensor(conditioning_scale),
+                conditioning_scale,
                 **added_cond_kwargs,
             )
         else:
@@ -264,7 +265,7 @@ class RBLNControlNetModel(RBLNModel):
                 sample.contiguous(),
                 timestep.float(),
                 controlnet_cond,
-                torch.tensor(conditioning_scale),
+                conditioning_scale,
                 **added_cond_kwargs,
             )
 

@@ -124,7 +124,7 @@ class RBLNMultiControlNetModel(RBLNModel):
                 timestep=timestep.float(),
                 encoder_hidden_states=encoder_hidden_states,
                 controlnet_cond=image,
-                conditioning_scale=torch.tensor(scale),
+                conditioning_scale=scale,
                 return_dict=return_dict,
             )
 
