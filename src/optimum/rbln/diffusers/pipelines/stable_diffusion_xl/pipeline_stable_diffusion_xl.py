@@ -29,3 +29,4 @@ class RBLNStableDiffusionXLPipeline(RBLNDiffusionMixin, StableDiffusionXLPipelin
     original_class = StableDiffusionXLPipeline
     _rbln_config_class = RBLNStableDiffusionXLPipelineConfig
     _submodules = ["text_encoder", "text_encoder_2", "unet", "vae"]
+    _upcasts_vae = True

@@ -58,6 +58,7 @@ class RBLNStableDiffusionXLControlNetPipeline(RBLNDiffusionMixin, StableDiffusio
     original_class = StableDiffusionXLControlNetPipeline
     _rbln_config_class = RBLNStableDiffusionXLControlNetPipelineConfig
     _submodules = ["text_encoder", "text_encoder_2", "unet", "vae", "controlnet"]
+    _upcasts_vae = True
 
     # Almost copied from diffusers.pipelines.controlnet.pipeline_controlnet_sd_xl.py
     def check_inputs(

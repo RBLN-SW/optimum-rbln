@@ -73,6 +73,7 @@ class RBLNDiffusionMixin:
     _connected_classes = {}
     _submodules = []
     _optional_submodules = []
+    _upcasts_vae = False
     _prefix = {}
 
     @staticmethod
@@ -326,6 +327,15 @@ class RBLNDiffusionMixin:
                 )
             elif isinstance(submodule, torch.nn.Module):
                 subfolder = prefix + submodule_name
+                submodule_config = getattr(rbln_config, submodule_name)
+                if (
+                    cls._upcasts_vae
+                    and submodule_name == "vae"
+                    and getattr(submodule.config, "force_upcast", False)
+                    and submodule_config._dtype is None
+                ):
+                    submodule_config.dtype = torch.float32
+
                 submodule = submodule_rbln_cls.from_model(
                     model=submodule,
                     subfolder=subfolder,

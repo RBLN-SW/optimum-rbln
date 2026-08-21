@@ -29,3 +29,4 @@ class RBLNStableDiffusionXLInpaintPipeline(RBLNDiffusionMixin, StableDiffusionXL
     original_class = StableDiffusionXLInpaintPipeline
     _rbln_config_class = RBLNStableDiffusionXLInpaintPipelineConfig
     _submodules = ["text_encoder", "text_encoder_2", "unet", "vae"]
+    _upcasts_vae = True
