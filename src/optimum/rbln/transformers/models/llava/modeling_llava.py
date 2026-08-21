@@ -128,7 +128,6 @@ class RBLNLlavaForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMixi
             "llava-hf/llava-1.5-7b-hf",
             export=True,
             rbln_config={
-                "vision_tower": {"output_hidden_states": True},
                 "language_model": {
                     "num_devices": 4,
                     "use_inputs_embeds": True,  # In Llava, language model must use inputs_embeds as input.

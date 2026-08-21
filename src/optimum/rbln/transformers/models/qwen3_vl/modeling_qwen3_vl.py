@@ -385,6 +385,7 @@ class RBLNQwen3VLModel(RBLNDecoderOnlyModel):
                 self.config.text_config.vocab_size,
                 self.config.text_config.hidden_size,
                 getattr(self.config.text_config, "pad_token_id", None),
+                dtype=self.rbln_config.dtype,
             )
         return embed_tokens
 
@@ -467,7 +468,7 @@ class RBLNQwen3VLModel(RBLNDecoderOnlyModel):
         mm_token_type_ids: torch.IntTensor | None = None,
     ):
         batch_size = input_ids.shape[0]
-        inputs_embeds = self.embed_tokens(input_ids).to(self.rbln_config.dtype)
+        inputs_embeds = self.embed_tokens(input_ids)
 
         image_mask = None
         video_mask = None
@@ -708,7 +709,7 @@ class RBLNQwen3VLModel(RBLNDecoderOnlyModel):
 
         logits = []
         for b_idx in range(batch_size):
-            query_length = attention_mask[b_idx].sum(dim=-1).int().item()
+            query_length = attention_mask[b_idx].sum(dim=-1).int().item() if attention_mask is not None else seq_len
             cache_position = torch.arange(query_length, dtype=torch.int32).unsqueeze(0)
 
             output = self.prefill_decoder(
@@ -892,7 +893,7 @@ class RBLNQwen3VLForConditionalGeneration(RBLNQwen3VLModel, RBLNDecoderOnlyModel
                 f"Cache position size mismatch: got {cache_position.shape[0]}, expected {self.rbln_config.batch_size}."
             )
 
-        inputs_embeds = self.embed_tokens(input_ids).to(self.rbln_config.dtype)
+        inputs_embeds = self.embed_tokens(input_ids)
         position_embeds = []
         for b_idx in range(self.rbln_config.batch_size):
             delta = cache_position[b_idx] + self.rope_deltas[b_idx]

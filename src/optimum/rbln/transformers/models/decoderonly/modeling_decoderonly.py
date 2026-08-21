@@ -202,6 +202,7 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
                 self.config.vocab_size,
                 self.config.hidden_size,
                 self.config.pad_token_id,
+                dtype=self.rbln_config.dtype,
             )
         return embed_tokens
 

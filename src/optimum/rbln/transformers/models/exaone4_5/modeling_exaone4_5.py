@@ -344,6 +344,7 @@ class RBLNExaone4_5_Model(RBLNDecoderOnlyModel):
                 self.config.text_config.vocab_size,
                 self.config.text_config.hidden_size,
                 self.config.text_config.pad_token_id,
+                dtype=self.rbln_config.dtype,
             )
         return embed_tokens
 
@@ -381,7 +382,7 @@ class RBLNExaone4_5_Model(RBLNDecoderOnlyModel):
         video_grid_thw: torch.LongTensor = None,
         second_per_grid_ts: torch.Tensor = None,
     ):
-        inputs_embeds = self.embed_tokens(input_ids).to(self.rbln_config.dtype)
+        inputs_embeds = self.embed_tokens(input_ids)
 
         if pixel_values is not None:
             image_embeds = self.visual(pixel_values, grid_thw=image_grid_thw)
