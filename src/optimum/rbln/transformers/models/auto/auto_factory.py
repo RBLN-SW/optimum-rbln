@@ -17,6 +17,7 @@ import warnings
 from pathlib import Path
 from typing import Any
 
+import transformers
 from transformers import AutoConfig, PretrainedConfig, PreTrainedModel
 from transformers.dynamic_module_utils import get_class_from_dynamic_module
 from transformers.models.auto.auto_factory import _get_model_class
@@ -29,6 +30,28 @@ from optimum.rbln.utils.model_utils import (
     convert_rbln_to_hf_model_name,
     get_rbln_model_cls,
 )
+
+
+def _upgrade_bare_config(config: PretrainedConfig) -> PretrainedConfig:
+    """Rebuild a bare ``PretrainedConfig`` as its concrete config class.
+
+    Non-HF config parsers (e.g. vLLM's mistral-format loader) hand over an
+    instance of the base ``PretrainedConfig``, whose class carries no model
+    identity and whose ``model_type`` can be a parser artifact ("transformer").
+    Recover the concrete class from ``architectures`` so class-based model
+    resolution and eager model loading work downstream. Returns the config
+    unchanged if the architecture cannot be resolved.
+    """
+    architectures = getattr(config, "architectures", None) or []
+    hf_model_cls = getattr(transformers, architectures[0], None) if architectures else None
+    config_cls = getattr(hf_model_cls, "config_class", None)
+    if config_cls is None:
+        return config
+
+    config_dict = config.to_dict()
+    # Drop the parser's model_type so the concrete class's canonical one wins.
+    config_dict.pop("model_type", None)
+    return config_cls.from_dict(config_dict)
 
 
 class _BaseAutoModelClass:
@@ -128,6 +151,9 @@ class _BaseAutoModelClass:
                 **kwargs,
             )
 
+        if type(config) is PretrainedConfig:
+            config = _upgrade_bare_config(config)
+
         # Get hf_model_class from Config
         has_remote_code = (
             hasattr(config, "auto_map") and convert_rbln_to_hf_model_name(cls.__name__) in config.auto_map
@@ -215,6 +241,11 @@ class _BaseAutoModelClass:
         Returns:
             RBLNBaseModel: An instantiated RBLN model ready for inference on RBLN NPUs.
         """
+        # Upgrade here (not only in infer_hf_model_class) so the concrete
+        # config also reaches the resolved class's from_pretrained.
+        if type(kwargs.get("config")) is PretrainedConfig:
+            kwargs["config"] = _upgrade_bare_config(kwargs["config"])
+
         rbln_cls = cls.get_rbln_cls(model_id, export=export, **kwargs)
         return rbln_cls.from_pretrained(model_id, export=export, rbln_config=rbln_config, **kwargs)
 
