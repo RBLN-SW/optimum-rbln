@@ -49,8 +49,6 @@ class _ControlNetModel(torch.nn.Module):
         time_ids: torch.Tensor | None = None,
     ):
         if text_embeds is not None and time_ids is not None:
-            # `time_ids`' sinusoidal embedding is always float32, and the concat below rejects mixed dtypes
-            # under export.
             added_cond_kwargs = {"text_embeds": text_embeds.float(), "time_ids": time_ids}
         else:
             added_cond_kwargs = {}
@@ -83,8 +81,6 @@ class _ControlNetModel_Cross_Attention(torch.nn.Module):
         time_ids: torch.Tensor | None = None,
     ):
         if text_embeds is not None and time_ids is not None:
-            # `time_ids`' sinusoidal embedding is always float32, and the concat below rejects mixed dtypes
-            # under export.
             added_cond_kwargs = {"text_embeds": text_embeds.float(), "time_ids": time_ids}
         else:
             added_cond_kwargs = {}

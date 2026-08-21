@@ -105,8 +105,6 @@ class _UNet_SDXL(torch.nn.Module):
             mid_block_additional_residual = None
 
         if "text_embeds" in added_cond_kwargs:
-            # `time_ids`' sinusoidal embedding is always float32 (`Timesteps` has no parameters to cast), and
-            # the concat below rejects mixed dtypes under export.
             added_cond_kwargs["text_embeds"] = added_cond_kwargs["text_embeds"].float()
 
         unet_out = self.unet(
