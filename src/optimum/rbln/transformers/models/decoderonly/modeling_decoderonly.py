@@ -198,9 +198,6 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
             torch.save(save_dict, save_dir_path / subfolder / "torch_artifacts.pth")
 
     def _create_embedding_layer(self):
-        # Created in the compile dtype: load_state_dict casts the fp32
-        # checkpoint into it, and the lookup output feeds the runtime's
-        # inputs_embeds, which expects rbln_config.dtype.
         with no_init_weights():
             embed_tokens = torch.nn.Embedding(
                 self.config.vocab_size,
