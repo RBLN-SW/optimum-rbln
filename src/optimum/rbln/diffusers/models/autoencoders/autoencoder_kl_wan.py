@@ -219,6 +219,22 @@ def _encode(self, x: torch.Tensor):
 """
 
 
+def _to_cdhw_cache(x: torch.Tensor) -> torch.Tensor:
+    # channel-first (n,c,d,h,w) -> cache (n, d, c*h*w). Folding C into the merged c*h*w axis means there
+    # is no standalone channel dim for the device to 64-block-pad (NCDHW64c): the stored cache carries the
+    # true c*h*w (a multiple of 64), so the read and write physical views match exactly. This avoids both
+    # the AnnotatePhysicalView reconcile (channel-last stored C=128 padded vs read C=96) and the SHM
+    # blow-up (channel-last needs a transpose+aligned_pad chain; c*h*w needs neither). W never scrambles.
+    n, c, d, h, w = x.shape
+    return x.permute(0, 2, 1, 3, 4).reshape(n, d, c * h * w).contiguous()
+
+
+def _from_cdhw_cache(cache: torch.Tensor, c: int, h: int, w: int) -> torch.Tensor:
+    # cache (n, d, c*h*w) -> channel-first (n, c, d, h, w).
+    n, d, _chw = cache.shape
+    return cache.reshape(n, d, c, h, w).permute(0, 2, 1, 3, 4)
+
+
 class _VAEWanEncoder0(torch.nn.Module):
     """Wrapper module for Wan VAE encoder extraction."""
 
@@ -237,14 +253,14 @@ class _VAEWanEncoder0(torch.nn.Module):
         out = self.encoder(x, feat_cache=self._enc_feat_map, feat_idx=self._enc_conv_idx)
         out = self.quant_conv(out)
         position = torch.tensor(0, dtype=torch.int16)  # 0 is dummy; next chunk slices this frame out
-        axis = torch.tensor(1, dtype=torch.int16)  # channel-last (n,d,h,w,c): frame D is axis 1
+        axis = torch.tensor(1, dtype=torch.int16)  # cdhw (n,d,c*h*w): frame D is axis 1
         dummy_outs = []
         for cache, feat_cache_item, cache_dim in zip(
             list(args)[1:], self._enc_feat_map[1 : len(self.cache_dims)], self.cache_dims[1:], strict=False
         ):
             if cache_dim[2] == 2:
                 feat_cache_item = torch.nn.functional.pad(feat_cache_item, (0, 0, 0, 0, 1, 0))  # pad D 1->2
-            feat_cache_item = feat_cache_item.permute(0, 2, 3, 4, 1).contiguous()  # (n,c,d,h,w) -> (n,d,h,w,c)
+            feat_cache_item = _to_cdhw_cache(feat_cache_item)  # (n,c,d,h,w) -> (n,d,c*h*w)
             dummy_outs.append(torch.ops.rbln_custom_ops.rbln_cache_update(cache, feat_cache_item, position, axis))
         # idx 0: runtime output, kept CHANNEL-FIRST (n,c,d,h,w) -- it is I/O, not static, so no permute.
         fc0 = torch.nn.functional.pad(self._enc_feat_map[0], (0, 0, 0, 0, 1, 0)).contiguous()  # pad D 1->2
@@ -271,18 +287,19 @@ class _VAEWanEncoderN(torch.nn.Module):
         # After the encoder, write idx 1.. back channel-last via rbln_cache_update; idx 0 is returned
         # channel-first for the next chunk (no layout flip).
         feat_cache_reshaped = [args[0]]  # idx0 already channel-first (n,c,d,h,w)
-        for cache in list(args)[1:]:
-            feat_cache_reshaped.append(cache.permute(0, 4, 1, 2, 3))
+        for i, cache in enumerate(list(args)[1:], start=1):
+            c_, h_, w_ = self.cache_dims[i][1], self.cache_dims[i][3], self.cache_dims[i][4]
+            feat_cache_reshaped.append(_from_cdhw_cache(cache, c_, h_, w_))  # (n,d,c*h*w) -> (n,c,d,h,w)
 
         feat_idx = torch.zeros(1, dtype=torch.int32)
         out = self.encoder(x, feat_cache=feat_cache_reshaped, feat_idx=feat_idx)
         out = self.quant_conv(out)
 
         position = torch.tensor(0, dtype=torch.int16)
-        axis = torch.tensor(1, dtype=torch.int16)  # channel-last (n,d,h,w,c): frame D is axis 1
+        axis = torch.tensor(1, dtype=torch.int16)  # cdhw (n,d,c*h*w): frame D is axis 1
         dummy_outs = []
         for cache, item in zip(list(args)[1:], feat_cache_reshaped[1:], strict=False):
-            item = item.permute(0, 2, 3, 4, 1).contiguous()  # (n,c,d,h,w) -> (n,d,h,w,c)
+            item = _to_cdhw_cache(item)  # (n,c,d,h,w) -> (n,d,c*h*w)
             dummy_outs.append(torch.ops.rbln_custom_ops.rbln_cache_update(cache, item, position, axis))
         return out, feat_cache_reshaped[0].contiguous(), dummy_outs  # idx0 channel-first (no flip)
 
@@ -304,7 +321,7 @@ class _VAEWanDecoder0(torch.nn.Module):
         # into DN makes post_quant_conv + upsample3d + idx0-output fail the RblnTensor layout pass).
         out = self.decoder(x, feat_cache=self._feat_map, feat_idx=self._conv_idx, first_chunk=True)
         position = torch.tensor(0, dtype=torch.int16)  # 0 is dummy; next chunk slices this frame out
-        axis = torch.tensor(1, dtype=torch.int16)  # channel-last (n,d,h,w,c): frame D is axis 1
+        axis = torch.tensor(1, dtype=torch.int16)  # cdhw (n,d,c*h*w): frame D is axis 1
         dummy_outs = []
         for cache, feat_cache_item, _cache_dim in zip(
             list(args), self._feat_map[1 : len(self.cache_dims)], self.cache_dims[1:], strict=False
@@ -313,10 +330,10 @@ class _VAEWanDecoder0(torch.nn.Module):
                 # diffusers upsample3d stores a "Rep" string on the first chunk (no real cache). Write
                 # zeros (from the static input, no big SHM const) so DN's time_conv(x, 0) == the "Rep"
                 # no-context path exactly.
-                feat_cache_item = cache * 0.0  # channel-last (n,d,h,w,c) zeros
+                feat_cache_item = cache * 0.0  # cdhw (n,d,c*h*w) zeros (same shape as the cache slot)
             else:
                 feat_cache_item = torch.nn.functional.pad(feat_cache_item, (0, 0, 0, 0, 1, 0))  # pad D 1->2
-                feat_cache_item = feat_cache_item.permute(0, 2, 3, 4, 1).contiguous()  # (n,c,d,h,w) -> (n,d,h,w,c)
+                feat_cache_item = _to_cdhw_cache(feat_cache_item)  # (n,c,d,h,w) -> (n,d,c*h*w)
             dummy_outs.append(torch.ops.rbln_custom_ops.rbln_cache_update(cache, feat_cache_item, position, axis))
         # idx 0: runtime output, kept CHANNEL-FIRST (n,c,d,h,w) -- I/O, not static, so no permute.
         fc0 = torch.nn.functional.pad(self._feat_map[0], (0, 0, 0, 0, 1, 0)).contiguous()  # pad D 1->2
@@ -342,17 +359,18 @@ class _VAEWanDecoderN(torch.nn.Module):
         # caches back channel-last via rbln_cache_update. idx 0 is a runtime output. post_quant_conv is
         # applied on the host before the loop (see _VAEWanDecoder0).
         feat_cache_reshaped = [args[0]]  # idx0 already channel-first (n,c,d,h,w), runtime I/O
-        for cache in list(args)[1:]:
-            feat_cache_reshaped.append(cache.permute(0, 4, 1, 2, 3))
+        for i, cache in enumerate(list(args)[1:], start=1):
+            c_, h_, w_ = self.cache_dims[i][1], self.cache_dims[i][3], self.cache_dims[i][4]
+            feat_cache_reshaped.append(_from_cdhw_cache(cache, c_, h_, w_))  # (n,d,c*h*w) -> (n,c,d,h,w)
 
         feat_idx = torch.zeros(1, dtype=torch.int32)
         out = self.decoder(x, feat_cache=feat_cache_reshaped, feat_idx=feat_idx)
 
         position = torch.tensor(0, dtype=torch.int16)
-        axis = torch.tensor(1, dtype=torch.int16)  # channel-last (n,d,h,w,c): frame D is axis 1
+        axis = torch.tensor(1, dtype=torch.int16)  # cdhw (n,d,c*h*w): frame D is axis 1
         dummy_outs = []
         for cache, item in zip(list(args)[1:], feat_cache_reshaped[1:], strict=False):
-            item = item.permute(0, 2, 3, 4, 1).contiguous()  # (n,c,d,h,w) -> (n,d,h,w,c)
+            item = _to_cdhw_cache(item)  # (n,c,d,h,w) -> (n,d,c*h*w)
             dummy_outs.append(torch.ops.rbln_custom_ops.rbln_cache_update(cache, item, position, axis))
         return out, feat_cache_reshaped[0].contiguous(), dummy_outs  # idx0 channel-first (no flip)
 
@@ -615,8 +633,8 @@ class RBLNAutoencoderKLWan(RBLNModel):
                     vae_enc_0_input_info.append((f"feat_cache_{i}", [n0, c0, d0, h0, w0], "float32"))
                     vae_enc_1_input_info.append((f"feat_cache_{i}", [n1, c1, d1, h1, w1], "float32"))
                 else:
-                    vae_enc_0_input_info.append((f"feat_cache_{i}", [n0, d0, h0, w0, c0], "float32"))  # channel-last
-                    vae_enc_1_input_info.append((f"feat_cache_{i}", [n1, d1, h1, w1, c1], "float32"))  # channel-last
+                    vae_enc_0_input_info.append((f"feat_cache_{i}", [n0, d0, c0 * h0 * w0], "float32"))  # cdhw (n,d,c*h*w)
+                    vae_enc_1_input_info.append((f"feat_cache_{i}", [n1, d1, c1 * h1 * w1], "float32"))  # cdhw (n,d,c*h*w)
 
             compile_cfgs.append(RBLNCompileConfig(compiled_model_name="encoder_0", input_info=vae_enc_0_input_info))
             compile_cfgs.append(RBLNCompileConfig(compiled_model_name="encoder_n", input_info=vae_enc_1_input_info))
@@ -645,9 +663,9 @@ class RBLNAutoencoderKLWan(RBLNModel):
         for i, (shape_0, shape_n) in enumerate(zip(dec_cache_0, dec_cache_n, strict=False)):
             n0, c0, d0, h0, w0 = shape_0
             nn, cn, dn, hn, wn = shape_n
-            if i > 0:  # D0 generates idx 0 (runtime output); only idx 1.. are D0 inputs (static, channel-last)
-                vae_dec_0_input_info.append((f"feat_cache_{i}", [n0, d0, h0, w0, c0], "float32"))  # channel-last
-                vae_dec_n_input_info.append((f"feat_cache_{i}", [nn, dn, hn, wn, cn], "float32"))  # channel-last
+            if i > 0:  # D0 generates idx 0 (runtime output); only idx 1.. are D0 inputs (static, cdhw)
+                vae_dec_0_input_info.append((f"feat_cache_{i}", [n0, d0, c0 * h0 * w0], "float32"))  # cdhw (n,d,c*h*w)
+                vae_dec_n_input_info.append((f"feat_cache_{i}", [nn, dn, cn * hn * wn], "float32"))  # cdhw (n,d,c*h*w)
             else:  # idx 0 is runtime I/O (DN input) -> channel-first (n,c,d,h,w), no scramble concern
                 vae_dec_n_input_info.append((f"feat_cache_{i}", [nn, cn, dn, hn, wn], "float32"))
 
