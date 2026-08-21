@@ -119,6 +119,11 @@ class RBLNQwen3_5RuntimeModel(RBLNRuntimeModel):
         if prefix_cached_len > 0:
             raise NotImplementedError("Prefix caching is not supported for the Qwen3.5 hybrid model.")
         logits = None
+        # For logits_to_keep == 0 (bare text model) the graph emits full-chunk hidden states as
+        # "logits", so every window must be collected — keeping only the last window would drop
+        # all earlier windows of a multi-chunk prompt and return padded chunk width.
+        collect_full_logits = self.rbln_config.logits_to_keep == 0
+        all_logits = [] if collect_full_logits else None
         all_hidden_states = [] if self.rbln_config.output_hidden_states else None
 
         for step in range(0, inputs.shape[1], chunk):
@@ -178,31 +183,37 @@ class RBLNQwen3_5RuntimeModel(RBLNRuntimeModel):
             # For logits_to_keep == 1 every window overwrites the single logits row, so the final value
             # is the last window's (the next-token logits). Intermediate windows only advance the states.
             logits, hidden = self._run(named)
+            if collect_full_logits:
+                # keep only this window's valid (non-right-padding) tokens
+                all_logits.append(logits[:, :valid_count, :])
             if self.rbln_config.output_hidden_states:
                 # keep only this window's valid (non-right-padding) tokens
                 all_hidden_states.append(tuple(h[:, :valid_count, :] for h in hidden))
+
+        def place_at_mask_slots(valid_output: torch.Tensor) -> torch.Tensor:
+            # `_prepare_prefill_inputs` strips padding (inputs[:, mask_bool]) before the graph, so the
+            # graph only produced `query_length` valid tokens. Scatter them back to their mask slots
+            # (padding stays zero) so outputs line up with the attention mask.
+            if attention_mask is None:
+                return valid_output
+            full_len = attention_mask.shape[-1]
+            start = int(torch.nonzero(attention_mask.reshape(-1), as_tuple=False)[0].item())
+            buf = torch.zeros(1, full_len, valid_output.shape[-1], dtype=valid_output.dtype)
+            buf[:, start : start + query_length, :] = valid_output
+            return buf
+
+        if collect_full_logits:
+            # Concat per-window valid tokens along seq -> [1, query_length, hidden].
+            logits = place_at_mask_slots(torch.cat(all_logits, dim=1))
 
         final_hidden_states = None
         if self.rbln_config.output_hidden_states:
             # Concat each layer's per-window valid tokens along seq -> [1, query_length, hidden].
             n_hidden = len(all_hidden_states[0])
-            valid_hidden = [
-                torch.cat([window[layer] for window in all_hidden_states], dim=1) for layer in range(n_hidden)
-            ]
-            if attention_mask is not None:
-                # `_prepare_prefill_inputs` strips padding (inputs[:, mask_bool]) before the graph, so the
-                # graph only produced `query_length` valid tokens. Scatter them back to their mask slots
-                # (padding stays zero) so hidden states line up with the attention mask.
-                full_len = attention_mask.shape[-1]
-                start = int(torch.nonzero(attention_mask.reshape(-1), as_tuple=False)[0].item())
-                placed = []
-                for vh in valid_hidden:
-                    buf = torch.zeros(1, full_len, vh.shape[-1], dtype=vh.dtype)
-                    buf[:, start : start + query_length, :] = vh
-                    placed.append(buf)
-                final_hidden_states = tuple(placed)
-            else:
-                final_hidden_states = tuple(valid_hidden)
+            final_hidden_states = tuple(
+                place_at_mask_slots(torch.cat([window[layer] for window in all_hidden_states], dim=1))
+                for layer in range(n_hidden)
+            )
 
         # padded_cache_lengths (from _prepare_prefill_inputs) is threaded back so the base
         # RBLNDecoderOnlyModelForCausalLM.forward can accumulate it per batch (the VL forward ignores it).
