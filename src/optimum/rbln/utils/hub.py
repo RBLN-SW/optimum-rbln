@@ -16,7 +16,7 @@ import json
 from pathlib import Path
 
 from huggingface_hub import HfApi, get_token, hf_hub_download, try_to_load_from_cache
-from huggingface_hub.errors import LocalEntryNotFoundError
+from huggingface_hub.errors import EntryNotFoundError, LocalEntryNotFoundError
 
 
 def pull_compiled_model_from_hub(
@@ -115,6 +115,21 @@ def pull_compiled_model_from_hub(
                 f"Could not find compiled model files for {model_id} in local cache. "
                 f"Set local_files_only=False to download from HuggingFace Hub."
             ) from err
+
+    # A repo without `rbln_config.json` holds no compiled model, and resolving that one file
+    # tells us so without listing the repository, which is charged to the Hub's `api` rate limit.
+    try:
+        hf_hub_download(
+            repo_id=model_id,
+            filename=config_filename,
+            token=token,
+            revision=revision,
+            cache_dir=cache_dir,
+            force_download=force_download,
+            local_files_only=local_files_only,
+        )
+    except EntryNotFoundError as err:
+        raise FileNotFoundError(f"Could not find `rbln_config.json` file in repository {model_id}") from err
 
     # List files from repository. This only happens when:
     # 1. Config is not cached, OR
