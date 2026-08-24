@@ -216,7 +216,7 @@ class RBLNGemma4ForConditionalGenerationConfig(RBLNModelConfig):
         )
         self.language_model = self.initialize_submodule_config(
             submodule_config=language_model,
-            force_kwargs=True,
+            batch_size=batch_size,
             use_inputs_embeds=True,
         )
 
