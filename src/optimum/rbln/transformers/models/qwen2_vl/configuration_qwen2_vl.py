@@ -45,7 +45,7 @@ class RBLNQwen2VLForConditionalGenerationConfig(RBLNDecoderOnlyModelForCausalLMC
                 "RBLNQwen2VLForConditionalGenerationConfig does not allow `use_inputs_embeds` to be set to False, "
                 "as RBLNQwen2VLForConditionalGeneration accepts only `inputs_embeds` as input."
             )
-        self.visual = self.initialize_submodule_config(submodule_config=visual)
+        self.visual = self.initialize_submodule_config(submodule_config=visual, batch_size=1, force_kwargs=True)
 
 
 class RBLNQwen2VLModelConfig(RBLNDecoderOnlyModelConfig):
@@ -57,11 +57,11 @@ class RBLNQwen2VLModelConfig(RBLNDecoderOnlyModelConfig):
 
     def __init__(self, visual: RBLNModelConfig | None = None, **kwargs: dict[str, Any]):
         super().__init__(**kwargs)
-        self.visual = self.initialize_submodule_config(submodule_config=visual)
+        self.visual = self.initialize_submodule_config(submodule_config=visual, batch_size=1, force_kwargs=True)
 
 
 class RBLNQwen2VisionTransformerPretrainedModelConfig(RBLNModelConfig):
-    def __init__(self, max_seq_len: int | list[int] = None, **kwargs: dict[str, Any]):
+    def __init__(self, max_seq_len: int | list[int] = None, batch_size: int = 1, **kwargs: dict[str, Any]):
         """
         Args:
             max_seq_len (int | list[int] | None): Maximum sequence lengths for Vision
@@ -71,13 +71,14 @@ class RBLNQwen2VisionTransformerPretrainedModelConfig(RBLNModelConfig):
                 so `max_seq_len` must be at least 256. RBLN optimization runs inference per image
                 or video frame, so set `max_seq_len` to match the maximum expected resolution to
                 optimize computation. If not provided, a `ValueError` is raised.
+            batch_size (int): the vision encoder runs one image at a time (the parent config forces this
+                by default), so only `batch_size=1` is supported.
             kwargs: Additional arguments passed to the parent RBLNModelConfig.
 
         Raises:
-            ValueError: If batch_size is not a positive integer.
+            ValueError: If `batch_size` is not 1.
             ValueError: If `max_seq_len` (or any value in the list) is not a positive integer.
             ValueError: If `max_seq_len` is insufficient for the expected image/video resolution.
-            ValueError: If `batch_size` (inherited from RBLNModelConfig) is not a positive integer.
 
         Max Seq Len:
             Since `Qwen2VLForConditionalGeneration` performs inference on a per-image or per-frame basis,
@@ -88,6 +89,10 @@ class RBLNQwen2VisionTransformerPretrainedModelConfig(RBLNModelConfig):
             Therefore, `max_seq_len` must be at least 256.
         """
         super().__init__(**kwargs)
+
+        if batch_size != 1:
+            raise ValueError(f"The Qwen2-VL vision encoder only supports batch_size=1, got {batch_size}.")
+        self.batch_size = batch_size
 
         if max_seq_len is not None:
             if isinstance(max_seq_len, int):

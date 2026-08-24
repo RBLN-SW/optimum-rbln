@@ -59,7 +59,7 @@ class RBLNQwen3VLForConditionalGenerationConfig(RBLNDecoderOnlyModelForCausalLMC
                 "visual encoder runs locally (_load_visual_runtime=True) or embeddings are "
                 "received from an encoder node (_load_visual_runtime=False)."
             )
-        self.visual = self.initialize_submodule_config(submodule_config=visual)
+        self.visual = self.initialize_submodule_config(submodule_config=visual, batch_size=1, force_kwargs=True)
         self._load_visual_runtime = _load_visual_runtime
 
 
@@ -76,7 +76,7 @@ class RBLNQwen3VLModelConfig(RBLNDecoderOnlyModelConfig):
                 "visual encoder runs locally (_load_visual_runtime=True) or embeddings are "
                 "received from an encoder node (_load_visual_runtime=False)."
             )
-        self.visual = self.initialize_submodule_config(submodule_config=visual)
+        self.visual = self.initialize_submodule_config(submodule_config=visual, batch_size=1, force_kwargs=True)
         self._load_visual_runtime = _load_visual_runtime
 
 
@@ -88,7 +88,7 @@ class RBLNQwen3VLVisionModelConfig(RBLNModelConfig):
     RBLN-optimized Qwen3-VL vision transformer models for processing images and videos.
     """
 
-    def __init__(self, max_seq_len: int | list[int] = None, **kwargs: Any):
+    def __init__(self, max_seq_len: int | list[int] = None, batch_size: int = 1, **kwargs: Any):
         """
         Args:
             max_seq_len (int | list[int] | None): Maximum sequence lengths for Vision
@@ -98,12 +98,19 @@ class RBLNQwen3VLVisionModelConfig(RBLNModelConfig):
                 (224/16/2) * (224/16/2) = 49 merged patches. RBLN optimization runs inference
                 per image or video frame, so set `max_seq_len` to match the maximum expected
                 resolution to reduce computation. If not provided, a `ValueError` is raised.
+            batch_size (int): the vision encoder runs one image at a time (the parent config forces this
+                by default), so only `batch_size=1` is supported.
             kwargs: Additional arguments passed to the parent RBLNModelConfig.
 
         Raises:
             ValueError: If `max_seq_len` is None or not provided.
+            ValueError: If `batch_size` is not 1.
         """
         super().__init__(**kwargs)
+
+        if batch_size != 1:
+            raise ValueError(f"The Qwen3-VL vision encoder only supports batch_size=1, got {batch_size}.")
+        self.batch_size = batch_size
 
         if max_seq_len is not None:
             if isinstance(max_seq_len, int):
