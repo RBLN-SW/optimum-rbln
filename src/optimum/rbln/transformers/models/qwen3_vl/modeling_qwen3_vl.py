@@ -63,7 +63,6 @@ class RBLNQwen3VLVisionModel(RBLNModel):
     """
 
     auto_model_class = None
-    _supports_non_fp32 = True
     _tp_support = True
 
     def __post_init__(self, **kwargs):
@@ -777,7 +776,6 @@ class RBLNQwen3VLForConditionalGeneration(RBLNQwen3VLModel, RBLNDecoderOnlyModel
 
     auto_model_class = AutoModelForImageTextToText
     _decoder_wrapper_cls = Qwen3VL_LanguageModelWrapper
-    _supports_non_fp32 = True
     _use_rotary_emb = False
     _rbln_submodules = [
         {"name": "visual"},

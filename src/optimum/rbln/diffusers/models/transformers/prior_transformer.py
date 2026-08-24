@@ -107,15 +107,15 @@ class RBLNPriorTransformer(RBLNModel):
         rbln_config.num_embeddings = rbln_config.num_embeddings or model_config.num_embeddings
 
         input_info = [
-            ("hidden_states", [rbln_config.batch_size, rbln_config.embedding_dim], "float32"),
+            ("hidden_states", [rbln_config.batch_size, rbln_config.embedding_dim], rbln_config.dtype),
             ("timestep", [], "float32"),
-            ("proj_embedding", [rbln_config.batch_size, rbln_config.embedding_dim], "float32"),
+            ("proj_embedding", [rbln_config.batch_size, rbln_config.embedding_dim], rbln_config.dtype),
             (
                 "encoder_hidden_states",
                 [rbln_config.batch_size, rbln_config.num_embeddings, rbln_config.embedding_dim],
-                "float32",
+                rbln_config.dtype,
             ),
-            ("attention_mask", [rbln_config.batch_size, rbln_config.num_embeddings], "float32"),
+            ("attention_mask", [rbln_config.batch_size, rbln_config.num_embeddings], rbln_config.dtype),
         ]
 
         rbln_compile_config = RBLNCompileConfig(input_info=input_info)
@@ -149,12 +149,11 @@ class RBLNPriorTransformer(RBLNModel):
         Returns:
             (`~diffusers.models.transformers.prior_transformer.PriorTransformerOutput` | tuple)
         """
-        # Convert timestep(long) and attention_mask(bool) to float
         return super().forward(
             hidden_states,
             timestep.float(),
             proj_embedding,
             encoder_hidden_states,
-            attention_mask.float(),
+            attention_mask.to(self.rbln_config.dtype),
             return_dict=return_dict,
         )

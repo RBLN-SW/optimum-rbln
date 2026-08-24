@@ -13,6 +13,8 @@
 # limitations under the License.
 
 
+from types import MethodType
+
 import torch
 from torch import nn
 from transformers.utils import logging
@@ -30,8 +32,56 @@ from ..seq2seq.seq2seq_architecture import (
 logger = logging.get_logger(__name__)
 
 
+def _clamp_finite(hidden_states: torch.Tensor) -> torch.Tensor:
+    # Upstream clamps only at float16, so gate on dtype to leave other graphs byte-identical -- comparing
+    # dtypes is static metadata, unlike the `isinf(...).any()` upstream feeds `torch.where`. Bound at the
+    # dtype's max rather than `max - 1000`: upstream only tightens to that when an inf is already present,
+    # so it would truncate finite activations upstream leaves alone, and T5 reaches that band.
+    if hidden_states.dtype != torch.float16:
+        return hidden_states
+    bound = torch.finfo(hidden_states.dtype).max
+    return torch.clamp(hidden_states, min=-bound, max=bound)
+
+
+def _encoder_block_forward(
+    self,
+    hidden_states,
+    attention_mask=None,
+    position_bias=None,
+    encoder_hidden_states=None,
+    encoder_attention_mask=None,
+    encoder_decoder_position_bias=None,
+    past_key_values=None,
+    use_cache=False,
+    output_attentions=False,
+    return_dict=True,
+    **kwargs,
+):
+    # Mirrors `T5Block.forward` for an encoder block, minus the cross-attention an encoder never runs
+    # and with the clamps unguarded: upstream builds their bound with `torch.where(...)`, a float32
+    # tensor that makes `clamp` mix dtypes under export.
+    self_attention_outputs = self.layer[0](
+        hidden_states,
+        attention_mask=attention_mask,
+        position_bias=position_bias,
+        past_key_values=past_key_values,
+        use_cache=use_cache,
+        output_attentions=output_attentions,
+    )
+    hidden_states = _clamp_finite(self_attention_outputs[0])
+    hidden_states = _clamp_finite(self.layer[-1](hidden_states))
+    return (hidden_states,) + self_attention_outputs[1:]
+
+
+def patch_encoder_blocks(encoder: nn.Module) -> None:
+    """Swap in an export-safe forward on every block of a T5 encoder stack."""
+    for block in encoder.block:
+        block.forward = MethodType(_encoder_block_forward, block)
+
+
 class T5Wrapper:
     def __init__(self, model: nn.Module, enc_max_seq_len: int, dec_max_seq_len: int = None):
+        patch_encoder_blocks(model.get_encoder())
         self.encoder = T5EncoderWrapper(model, enc_max_seq_len)
         self.decoder = T5DecoderWrapper(model, dec_max_seq_len=dec_max_seq_len)
 
@@ -207,7 +257,7 @@ class T5LayerSelfAttention(Seq2SeqSelfAttention):
             past_key_value[0].view(bsz, self.num_heads, 1, -1, self.head_dim),
             past_key_value[1].view(bsz, self.num_heads, 1, -1, self.head_dim),
             cache_position,
-            torch.tensor(1.0, dtype=torch.float32),  # scale
+            torch.tensor(1.0, dtype=query_states.dtype),  # scale
             block_tables,
             block_size,
         )

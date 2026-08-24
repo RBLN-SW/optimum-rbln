@@ -220,7 +220,7 @@ class RBLNLlavaNextForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGeneration
             (
                 "image_features",
                 [rbln_config.vision_tower.batch_size, selected_image_feature_dim, feature_size],
-                "float32",
+                rbln_config.dtype,
             )
         ]
         rbln_compile_config = RBLNCompileConfig(input_info=input_info)
@@ -307,15 +307,19 @@ class RBLNLlavaNextForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGeneration
         pooler_out_size = [pixel_values.shape[0] * pixel_values.shape[1], self.config.vision_config.hidden_size]
         vision_out_buffer = []
         for _ in range(self.config.vision_config.num_hidden_layers + 2):
-            vision_out_buffer.append(torch.empty(size=vision_out_size, dtype=torch.float32, device="cpu"))
-        vision_out_buffer.insert(1, torch.empty(size=pooler_out_size, dtype=torch.float32, device="cpu"))
+            vision_out_buffer.append(
+                torch.empty(size=vision_out_size, dtype=self.rbln_config.vision_tower.dtype, device="cpu")
+            )
+        vision_out_buffer.insert(
+            1, torch.empty(size=pooler_out_size, dtype=self.rbln_config.vision_tower.dtype, device="cpu")
+        )
 
         projector_out_size = [
             pixel_values.shape[0] * pixel_values.shape[1],
             (self.config.vision_config.image_size // self.config.vision_config.patch_size) ** 2,
             self.config.text_config.hidden_size,
         ]
-        projector_out_buffer = [torch.empty(size=projector_out_size, dtype=torch.float32, device="cpu")]
+        projector_out_buffer = [torch.empty(size=projector_out_size, dtype=self.rbln_config.dtype, device="cpu")]
 
         if pixel_values.dim() == 5:
             # stacked if input is (batch_size, num_patches, num_channels, height, width)
@@ -327,7 +331,9 @@ class RBLNLlavaNextForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGeneration
             # otherwise has to be stacked from list of (num_patches, num_channels, height, width)
             raise ValueError(f"pixel_values of shape {pixel_values.shape}, expect to be of 4 or 5 dimensions")
 
-        image_features = self.vision_tower(pixel_values, output_hidden_states=True, out=vision_out_buffer)
+        image_features = self.vision_tower(
+            pixel_values.to(self.rbln_config.vision_tower.dtype), output_hidden_states=True, out=vision_out_buffer
+        )
         # If we have one vision feature layer, return the corresponding hidden states,
         # otherwise, select the hidden states of each feature layer and concatenate them
         if isinstance(vision_feature_layer, int):
@@ -341,7 +347,9 @@ class RBLNLlavaNextForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGeneration
         elif vision_feature_select_strategy == "full":
             selected_image_feature = selected_image_feature
 
-        image_features = self.multi_modal_projector(selected_image_feature, out=projector_out_buffer)
+        image_features = self.multi_modal_projector(
+            selected_image_feature.to(self.rbln_config.dtype), out=projector_out_buffer
+        )
         image_features = torch.split(image_features, image_num_patches, dim=0)
         return image_features
 
