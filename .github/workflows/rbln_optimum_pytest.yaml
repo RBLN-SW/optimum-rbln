@@ -43,6 +43,7 @@ on:
 
 env:
   HF_HOME: ${{ secrets.HF_HOME }}
+  HF_HUB_DISABLE_TELEMETRY: "1"
   HF_USER_ID: ${{ inputs.enable_hf_hub_tests && secrets.MODEL_HUB_ID || '' }}
   HF_AUTH_TOKEN: ${{ inputs.enable_hf_hub_tests && secrets.MODEL_HUB_ACCESS || '' }}
 
@@ -141,6 +142,13 @@ jobs:
         run: |
           uv pip install --extra-index-url ${{ secrets.DEV_PKG_URL }} rebel-compiler==${{ inputs.rebel_compiler_version }}
 
+      - name: Warm HF model cache
+        if: steps.should_skip.outputs.skip != 'true'
+        run: |
+          # Download any test-referenced repo missing from the shared HF cache;
+          # the test run below is fully offline (HF_HUB_OFFLINE=1).
+          uv run --no-sync python .github/scripts/warm_hf_cache.py
+
       - name: Prepare artifact paths
         run: |
           ensure_dir() {
@@ -157,6 +165,10 @@ jobs:
         if: steps.should_skip.outputs.skip != 'true'
         env:
           OPTIMUM_RBLN_TEST_LEVEL: ${{ inputs.test_level }}
+          # The cache is warmed above, so tests never call the Hub API (the
+          # rate limit is shared account-wide with the other repos' CIs).
+          # Hub push/pull tests are the exception and need the network.
+          HF_HUB_OFFLINE: ${{ inputs.enable_hf_hub_tests && '0' || '1' }}
         run: |
           EXTRA_PYTEST_ARGS=""
           if [ "${{ inputs.save_artifacts_path }}" != "" ]; then
