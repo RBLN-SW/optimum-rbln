@@ -250,6 +250,50 @@ def test_submodule_config_dict_deprecated_tensor_parallel_size():
     assert sub_inherit.num_devices == 2
 
 
+def _submodule_batch_size(sub):
+    return sub["batch_size"] if isinstance(sub, dict) else sub.batch_size
+
+
+@pytest.mark.parametrize(
+    "config_cls_name, lm_key",
+    [
+        ("RBLNGemma3ForConditionalGenerationConfig", "language_model"),
+        ("RBLNGemma4ForConditionalGenerationConfig", "language_model"),
+        ("RBLNLlavaForConditionalGenerationConfig", "language_model"),
+        ("RBLNLlavaNextForConditionalGenerationConfig", "language_model"),
+        ("RBLNBlip2ForConditionalGenerationConfig", "language_model"),
+        ("RBLNIdefics3ForConditionalGenerationConfig", "text_model"),
+    ],
+)
+def test_composite_vlm_batch_size_propagation(config_cls_name, lm_key):
+    """Regression: a top-level `batch_size` must reach the language-model submodule as a
+    soft default — a submodule-only `batch_size` must not conflict with the parent's unset
+    (None) value, and when both are set the submodule wins."""
+    import optimum.rbln
+
+    config_cls = getattr(optimum.rbln, config_cls_name)
+
+    cfg = config_cls(batch_size=2)
+    assert _submodule_batch_size(getattr(cfg, lm_key)) == 2
+
+    cfg = config_cls(**{lm_key: {"batch_size": 4}})
+    assert _submodule_batch_size(getattr(cfg, lm_key)) == 4
+
+    cfg = config_cls(batch_size=1, **{lm_key: {"batch_size": 4}})
+    assert _submodule_batch_size(getattr(cfg, lm_key)) == 4
+
+    cfg = config_cls(batch_size=4, **{lm_key: {"batch_size": 4}})
+    assert _submodule_batch_size(getattr(cfg, lm_key)) == 4
+
+
+def test_colqwen2_submodule_only_kwargs_no_conflict():
+    """Regression: `vlm`-only settings must not conflict with the parent's unset (None) kwargs."""
+    import optimum.rbln
+
+    cfg = optimum.rbln.RBLNColQwen2ForRetrievalConfig(vlm={"batch_size": 4, "output_hidden_states": True})
+    assert _submodule_batch_size(cfg.vlm) == 4
+
+
 @pytest.mark.parametrize(
     "invalid_param",
     [
