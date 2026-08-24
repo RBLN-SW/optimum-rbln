@@ -1,4 +1,5 @@
 import inspect
+import json
 import os
 import random
 import shutil
@@ -7,15 +8,19 @@ import unittest
 from collections.abc import Iterable
 from contextlib import nullcontext as does_not_raise
 from enum import Enum
+from unittest import mock
 from unittest.mock import patch
 
+import httpx
 import pytest
 import transformers
 from diffusers import DiffusionPipeline
+from huggingface_hub.errors import EntryNotFoundError, HfHubHTTPError
 from transformers import AutoConfig, CLIPConfig
 
 from optimum.rbln import __version__
 from optimum.rbln.configuration_utils import ContextRblnConfig
+from optimum.rbln.transformers.utils import rbln_quantization
 from optimum.rbln.utils.deprecation import deprecate_method
 
 
@@ -438,3 +443,84 @@ class DisallowedTestBase:
         @classmethod
         def get_rbln_local_dir(cls):
             return os.path.basename(cls.HF_MODEL_ID) + "-local"
+
+
+class TestWeightFileDiscovery:
+    """`load_weight_files` must resolve shard names without listing the repository tree.
+
+    The tree endpoint is charged to the Hub's `api` rate limit and, unlike `hf_hub_download`,
+    neither retries on 429 nor falls back to the local cache.
+    """
+
+    SHARDS = ["model-00001-of-00002.safetensors", "model-00002-of-00002.safetensors"]
+
+    @staticmethod
+    def _repo(tmp_path, filenames, weight_map=None):
+        for name in filenames:
+            path = tmp_path / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.touch()
+        if weight_map is not None:
+            (tmp_path / "model.safetensors.index.json").write_text(json.dumps({"weight_map": weight_map}))
+        served = {p.relative_to(tmp_path).as_posix(): str(p) for p in tmp_path.rglob("*") if p.is_file()}
+
+        def download(repo_id, filename, **kwargs):
+            if filename not in served:
+                raise EntryNotFoundError(f"{filename} not found in {repo_id}")
+            return served[filename]
+
+        return download
+
+    def _load(self, download, list_repo_files=None, snapshot_download=None, **kwargs):
+        no_tree = mock.Mock(side_effect=AssertionError("list_repo_files must not be called"))
+        with (
+            mock.patch.object(rbln_quantization, "hf_hub_download", download),
+            mock.patch.object(rbln_quantization, "list_repo_files", list_repo_files or no_tree),
+            mock.patch.object(rbln_quantization, "snapshot_download", snapshot_download or no_tree),
+        ):
+            return [os.path.basename(p) for p in rbln_quantization.load_weight_files("dummy/repo", **kwargs)]
+
+    def test_index_resolves_shards_without_listing_the_tree(self, tmp_path):
+        weight_map = {f"layer.{i}.weight": self.SHARDS[i % 2] for i in range(64)}
+        download = self._repo(tmp_path, self.SHARDS, weight_map)
+
+        assert self._load(download) == self.SHARDS
+
+    def test_index_shards_are_deduplicated(self, tmp_path):
+        weight_map = {f"layer.{i}.weight": self.SHARDS[0] for i in range(64)}
+        download = self._repo(tmp_path, self.SHARDS, weight_map)
+
+        assert self._load(download) == [self.SHARDS[0]]
+
+    def test_repo_without_index_falls_back_to_the_single_weight_file(self, tmp_path):
+        download = self._repo(tmp_path, ["model.safetensors"])
+
+        assert self._load(download) == ["model.safetensors"]
+
+    def test_repo_without_index_or_single_file_lists_the_tree(self, tmp_path):
+        download = self._repo(tmp_path, ["custom-000.safetensors", "original/model.safetensors"])
+        listing = mock.Mock(return_value=["custom-000.safetensors", "original/model.safetensors", "config.json"])
+
+        files = self._load(download, list_repo_files=listing, exception_keywords=["original"])
+
+        assert files == ["custom-000.safetensors"]
+        listing.assert_called_once()
+
+    def test_unlistable_repo_falls_back_to_the_cached_snapshot(self, tmp_path):
+        download = self._repo(tmp_path, ["custom-000.safetensors"])
+        response = httpx.Response(429, request=httpx.Request("GET", "https://huggingface.co/api/models/dummy/repo"))
+        rate_limited = mock.Mock(side_effect=HfHubHTTPError("429 Too Many Requests", response=response))
+
+        files = self._load(download, list_repo_files=rate_limited, snapshot_download=lambda **kw: str(tmp_path))
+
+        assert files == ["custom-000.safetensors"]
+
+    def test_local_directory_keyword_is_matched_against_the_file_name(self, tmp_path):
+        model_dir = tmp_path / "original-checkpoint"
+        model_dir.mkdir()
+        for name in self.SHARDS:
+            (model_dir / name).touch()
+
+        files = rbln_quantization.load_weight_files(str(model_dir), exception_keywords=["original"])
+
+        assert [os.path.basename(p) for p in files] == self.SHARDS

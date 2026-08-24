@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import glob
+import json
 import os
 from collections.abc import Iterable
 from typing import (
@@ -21,12 +22,14 @@ from typing import (
 )
 
 import torch
-from huggingface_hub import hf_hub_download, list_repo_files
+from huggingface_hub import hf_hub_download, list_repo_files, snapshot_download
+from huggingface_hub.errors import EntryNotFoundError, HfHubHTTPError, OfflineModeIsEnabled
 from safetensors.torch import load_file
 from torch.nn import Linear, Parameter
 from transformers import AutoConfig
 from transformers.initialization import no_init_weights
 from transformers.modeling_utils import get_state_dict_dtype
+from transformers.utils import SAFE_WEIGHTS_INDEX_NAME, SAFE_WEIGHTS_NAME
 
 from ...configuration_utils import RBLNSerializableConfigProtocol
 from ...utils.logging import get_logger
@@ -240,6 +243,80 @@ def get_quantized_model(
     return model
 
 
+def _select_safetensors(filenames: Iterable[str], exception_keywords: list[str]) -> list[str]:
+    return sorted(
+        name
+        for name in filenames
+        if name.endswith(".safetensors") and not any(keyword in name for keyword in exception_keywords)
+    )
+
+
+def _shard_names_from_index(index_path: str) -> list[str]:
+    with open(index_path) as f:
+        weight_map = json.load(f).get("weight_map") or {}
+    return list(dict.fromkeys(weight_map.values()))
+
+
+def _download_optional(filename: str, **hub_kwargs) -> str | None:
+    """Download `filename`, or return None when the repo does not carry it."""
+    try:
+        return hf_hub_download(filename=filename, **hub_kwargs)
+    except EntryNotFoundError:
+        return None
+
+
+def _resolve_weight_names(
+    model_id: str,
+    exception_keywords: list[str],
+    token: bool | str | None,
+    revision: str | None,
+    cache_dir: str | None,
+    force_download: bool,
+    local_files_only: bool,
+) -> list[str]:
+    """Resolve the repo-relative safetensors names carried by a Hub repository.
+
+    The safetensors index is preferred over listing the repository, because the tree
+    endpoint is charged to the Hub's narrow `api` rate limit and, unlike `hf_hub_download`,
+    it neither retries on 429 nor falls back to the local cache.
+    """
+    hub_kwargs = {
+        "repo_id": model_id,
+        "token": token,
+        "revision": revision,
+        "cache_dir": cache_dir,
+        "force_download": force_download,
+        "local_files_only": local_files_only,
+    }
+
+    index_path = _download_optional(SAFE_WEIGHTS_INDEX_NAME, **hub_kwargs)
+    if index_path is not None:
+        names = _select_safetensors(_shard_names_from_index(index_path), exception_keywords)
+        if names:
+            return names
+
+    if _download_optional(SAFE_WEIGHTS_NAME, **hub_kwargs) is not None:
+        return _select_safetensors([SAFE_WEIGHTS_NAME], exception_keywords)
+
+    logger.warning(
+        f"{model_id} carries neither {SAFE_WEIGHTS_INDEX_NAME} nor {SAFE_WEIGHTS_NAME}, so its weight files have to be"
+        " discovered by listing the repository, which is charged to the Hub's `api` rate limit."
+    )
+    try:
+        repo_files = list_repo_files(model_id, revision=revision, token=token)
+    except (OfflineModeIsEnabled, HfHubHTTPError) as e:
+        logger.warning(f"Could not list {model_id} ({e}). Falling back to the cached snapshot.")
+        snapshot_dir = snapshot_download(
+            repo_id=model_id, revision=revision, token=token, cache_dir=cache_dir, local_files_only=True
+        )
+        repo_files = [
+            os.path.relpath(path, snapshot_dir)
+            for path in glob.glob(f"{snapshot_dir}/**/*.safetensors", recursive=True)
+        ]
+
+    return _select_safetensors(repo_files, exception_keywords)
+
+
 def load_weight_files(
     model_id: str,
     token: bool | str | None = None,
@@ -254,37 +331,30 @@ def load_weight_files(
     """
     exception_keywords = exception_keywords or []
     if os.path.isdir(model_id):
-        safetensor_files = glob.glob(f"{model_id}/*.safetensors")
+        # Keyed by name so that a keyword matching `model_id` itself cannot filter every file out.
+        by_name = {os.path.relpath(path, model_id): path for path in glob.glob(f"{model_id}/*.safetensors")}
+        safetensor_files = [by_name[name] for name in _select_safetensors(by_name, exception_keywords)]
     else:
-        try:
-            # List all files in the repository
-            repo_files = list_repo_files(model_id, revision=revision, token=token)
-            # Filter for safetensors files
-            safetensor_files = []
-
-            for file in repo_files:
-                if file.endswith(".safetensors"):
-                    exculde = False
-                    for except_key in exception_keywords:
-                        if except_key in file:
-                            exculde = True
-                            break
-
-                    if not exculde:
-                        # Download the safetensors file
-                        downloaded_file = hf_hub_download(
-                            repo_id=model_id,
-                            filename=file,
-                            revision=revision,
-                            token=token,
-                            cache_dir=cache_dir,
-                            force_download=force_download,
-                            local_files_only=local_files_only,
-                        )
-                        safetensor_files.append(downloaded_file)
-        except Exception as e:
-            logger.error(f"Failed to download safetensors files from Hugging Face Hub: {e}")
-            raise e
+        safetensor_files = [
+            hf_hub_download(
+                repo_id=model_id,
+                filename=name,
+                revision=revision,
+                token=token,
+                cache_dir=cache_dir,
+                force_download=force_download,
+                local_files_only=local_files_only,
+            )
+            for name in _resolve_weight_names(
+                model_id,
+                exception_keywords,
+                token=token,
+                revision=revision,
+                cache_dir=cache_dir,
+                force_download=force_download,
+                local_files_only=local_files_only,
+            )
+        ]
 
     if not safetensor_files:
         raise FileNotFoundError(f"No safetensors files found for model_id: {model_id}")
