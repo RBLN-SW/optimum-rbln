@@ -48,7 +48,7 @@ from optimum.rbln import (
     RBLNT5ForConditionalGeneration,
 )
 
-from .test_base import BaseTest, DisallowedTestBase, TestLevel
+from .test_base import BaseTest, DisallowedTestBase, TestLevel, from_pretrained_cache_first
 
 
 RANDOM_ATTN_MASK = torch.randint(low=0, high=2, size=(1, 512), generator=torch.manual_seed(42), dtype=torch.int64)
@@ -67,10 +67,15 @@ class LLMTest:
         HF_CONFIG_KWARGS_PREPROCESSOR = {"padding_side": "left"}
 
         def get_tokenizer(self):
-            PreProcessor = AutoProcessor if self.IS_MULTIMODAL else AutoTokenizer
-            if getattr(self, "_tokenizer", None) is None:
-                self._tokenizer = PreProcessor.from_pretrained(self.HF_MODEL_ID, **self.HF_CONFIG_KWARGS_PREPROCESSOR)
-            return self._tokenizer
+            # Cache on the concrete class: unittest builds a new instance per test
+            # method, so an instance attribute reloads the tokenizer every test.
+            cls = type(self)
+            if "_tokenizer" not in cls.__dict__:
+                PreProcessor = AutoProcessor if self.IS_MULTIMODAL else AutoTokenizer
+                cls._tokenizer = from_pretrained_cache_first(
+                    PreProcessor, self.HF_MODEL_ID, **self.HF_CONFIG_KWARGS_PREPROCESSOR
+                )
+            return cls._tokenizer
 
         def get_inputs(self):
             self.get_tokenizer().pad_token = self.get_tokenizer().eos_token
@@ -255,7 +260,7 @@ class TestQwen3MoeForCausalLM(LLMTest.TestLLM):
 
     @classmethod
     def setUpClass(cls):
-        config = AutoConfig.from_pretrained(cls.HF_MODEL_ID)
+        config = from_pretrained_cache_first(AutoConfig, cls.HF_MODEL_ID)
         config.num_hidden_layers = 3
         config.max_position_embeddings = 4096
         config.hidden_size = 128
@@ -276,7 +281,7 @@ class TestQwen3_5ForCausalLM(LLMTest.TestLLM):
 
     @classmethod
     def setUpClass(cls):
-        config = AutoConfig.from_pretrained(cls.HF_MODEL_ID).get_text_config()
+        config = from_pretrained_cache_first(AutoConfig, cls.HF_MODEL_ID).get_text_config()
         config.num_hidden_layers = 4
         config.layer_types = ["linear_attention", "linear_attention", "linear_attention", "full_attention"]
         cls.HF_CONFIG_KWARGS.update({"config": config, "ignore_mismatched_sizes": True})
@@ -552,7 +557,7 @@ class TestLlavaNextForConditionalGeneration(LLMTest.TestLLM):
     # override
     @classmethod
     def setUpClass(cls):
-        config = AutoConfig.from_pretrained(cls.HF_MODEL_ID, revision=cls.HF_CONFIG_KWARGS["revision"])
+        config = from_pretrained_cache_first(AutoConfig, cls.HF_MODEL_ID, revision=cls.HF_CONFIG_KWARGS["revision"])
         text_config = json.loads(config.text_config.to_json_string())
         text_config["num_hidden_layers"] = 1
         kwargs = {"text_config": text_config}
@@ -610,7 +615,7 @@ class TestLlavaNextForConditionalGeneration(LLMTest.TestLLM):
             ValueError,
             match="Parameter conflict for 'batch_size': submodule_config has 2, but the parent config requires 1",
         ):
-            _ = self.RBLN_CLASS.from_pretrained(model_id=self.HF_MODEL_ID, **rbln_class_kwargs)
+            _ = from_pretrained_cache_first(self.RBLN_CLASS, self.HF_MODEL_ID, **rbln_class_kwargs)
 
     def test_propagate_config(self):
         rbln_config = {
@@ -618,7 +623,7 @@ class TestLlavaNextForConditionalGeneration(LLMTest.TestLLM):
         }
         rbln_class_kwargs = {"rbln_config": rbln_config}
 
-        model = self.RBLN_CLASS.from_pretrained(model_id=self.HF_MODEL_ID, **rbln_class_kwargs)
+        model = from_pretrained_cache_first(self.RBLN_CLASS, self.HF_MODEL_ID, **rbln_class_kwargs)
 
         assert not model.rbln_config.vision_tower.create_runtimes
         assert not model.rbln_config.language_model.create_runtimes
@@ -636,7 +641,7 @@ class TestBlip2ForConditionalGeneration(LLMTest.TestLLM):
     # override
     @classmethod
     def setUpClass(cls):
-        config = AutoConfig.from_pretrained(cls.HF_MODEL_ID)
+        config = from_pretrained_cache_first(AutoConfig, cls.HF_MODEL_ID)
 
         text_config = json.loads(config.text_config.to_json_string())
         text_config["num_hidden_layers"] = 1
@@ -685,7 +690,7 @@ class TestIdefics3ForConditionalGeneration(LLMTest.TestLLM):
 
     @classmethod
     def setUpClass(cls):
-        config = AutoConfig.from_pretrained(cls.HF_MODEL_ID)
+        config = from_pretrained_cache_first(AutoConfig, cls.HF_MODEL_ID)
         text_config = json.loads(config.text_config.to_json_string())
         text_config["num_hidden_layers"] = 1
         kwargs = {"text_config": text_config}
@@ -778,7 +783,7 @@ class TestQwen2VLForConditionalGeneration(LLMTest.TestLLM):
 
     @classmethod
     def setUpClass(cls):
-        config = AutoConfig.from_pretrained(cls.HF_MODEL_ID)
+        config = from_pretrained_cache_first(AutoConfig, cls.HF_MODEL_ID)
         vision_config = json.loads(config.vision_config.to_json_string())
         text_config = json.loads(config.text_config.to_json_string())
         text_config["num_hidden_layers"] = 1
@@ -791,8 +796,8 @@ class TestQwen2VLForConditionalGeneration(LLMTest.TestLLM):
 
     @classmethod
     def get_tokenizer(cls):
-        if getattr(cls, "_tokenizer", None) is None:
-            cls._tokenizer = AutoProcessor.from_pretrained(cls.HF_MODEL_ID, max_pixels=64 * 14 * 14)
+        if "_tokenizer" not in cls.__dict__:
+            cls._tokenizer = from_pretrained_cache_first(AutoProcessor, cls.HF_MODEL_ID, max_pixels=64 * 14 * 14)
         return cls._tokenizer
 
     def get_inputs(self):
@@ -807,7 +812,7 @@ class TestQwen2VLForConditionalGeneration(LLMTest.TestLLM):
     def test_propagate_config(self):
         self.RBLN_CLASS_KWARGS["rbln_config"].update({"create_runtimes": False})
 
-        model = self.RBLN_CLASS.from_pretrained(model_id=self.HF_MODEL_ID, **self.RBLN_CLASS_KWARGS)
+        model = from_pretrained_cache_first(self.RBLN_CLASS, self.HF_MODEL_ID, **self.RBLN_CLASS_KWARGS)
 
         assert not model.rbln_config.visual.create_runtimes
         assert not model.rbln_config.create_runtimes
@@ -832,7 +837,7 @@ class TestQwen2_5_VLForConditionalGeneration(LLMTest.TestLLM):
 
     @classmethod
     def setUpClass(cls):
-        config = AutoConfig.from_pretrained(cls.HF_MODEL_ID)
+        config = from_pretrained_cache_first(AutoConfig, cls.HF_MODEL_ID)
         vision_config = json.loads(config.vision_config.to_json_string())
         text_config = json.loads(config.text_config.to_json_string())
         text_config["num_hidden_layers"] = 1
@@ -855,7 +860,7 @@ class TestQwen2_5_VLForConditionalGeneration(LLMTest.TestLLM):
     def test_propagate_config(self):
         self.RBLN_CLASS_KWARGS["rbln_config"].update({"create_runtimes": False})
 
-        model = self.RBLN_CLASS.from_pretrained(model_id=self.HF_MODEL_ID, **self.RBLN_CLASS_KWARGS)
+        model = from_pretrained_cache_first(self.RBLN_CLASS, self.HF_MODEL_ID, **self.RBLN_CLASS_KWARGS)
 
         assert not model.rbln_config.visual.create_runtimes
         assert not model.rbln_config.create_runtimes
@@ -880,7 +885,7 @@ class TestQwen3VLForConditionalGeneration(LLMTest.TestLLM):
 
     @classmethod
     def setUpClass(cls):
-        config = AutoConfig.from_pretrained(cls.HF_MODEL_ID)
+        config = from_pretrained_cache_first(AutoConfig, cls.HF_MODEL_ID)
         text_config = json.loads(config.text_config.to_json_string())
         text_config["num_hidden_layers"] = 1
         kwargs = {"text_config": text_config}
@@ -899,7 +904,7 @@ class TestQwen3VLForConditionalGeneration(LLMTest.TestLLM):
     def test_propagate_config(self):
         self.RBLN_CLASS_KWARGS["rbln_config"].update({"create_runtimes": False})
 
-        model = self.RBLN_CLASS.from_pretrained(model_id=self.HF_MODEL_ID, **self.RBLN_CLASS_KWARGS)
+        model = from_pretrained_cache_first(self.RBLN_CLASS, self.HF_MODEL_ID, **self.RBLN_CLASS_KWARGS)
 
         assert not model.rbln_config.visual.create_runtimes
         assert not model.rbln_config.create_runtimes
@@ -965,7 +970,7 @@ class TestQwen3VLMoeForConditionalGeneration(LLMTest.TestLLM):
 
     @classmethod
     def setUpClass(cls):
-        config = AutoConfig.from_pretrained(cls.HF_MODEL_ID)
+        config = from_pretrained_cache_first(AutoConfig, cls.HF_MODEL_ID)
         text_config = json.loads(config.text_config.to_json_string())
         vision_config = json.loads(config.vision_config.to_json_string())
         vision_config["depth"] = 1
@@ -1004,7 +1009,7 @@ class TestQwen3_5ForConditionalGeneration(LLMTest.TestLLM):
 
     @classmethod
     def setUpClass(cls):
-        config = AutoConfig.from_pretrained(cls.HF_MODEL_ID)
+        config = from_pretrained_cache_first(AutoConfig, cls.HF_MODEL_ID)
         text_config = json.loads(config.text_config.to_json_string())
         text_config["num_hidden_layers"] = 4
         text_config["layer_types"] = ["linear_attention", "linear_attention", "linear_attention", "full_attention"]
@@ -1077,7 +1082,7 @@ class TestGemma3ForConditionalGeneration(LLMTest.TestLLM):
     # override
     @classmethod
     def setUpClass(cls):
-        config = AutoConfig.from_pretrained(cls.HF_MODEL_ID, revision=cls.HF_CONFIG_KWARGS["revision"])
+        config = from_pretrained_cache_first(AutoConfig, cls.HF_MODEL_ID, revision=cls.HF_CONFIG_KWARGS["revision"])
         text_config = json.loads(config.text_config.to_json_string())
         text_config["num_hidden_layers"] = 2
         text_config["layer_types"] = ["full_attention", "sliding_attention"]
@@ -1120,7 +1125,7 @@ class TestGemma3ForCausalLM(LLMTest.TestLLM):
 
     @classmethod
     def setUpClass(cls):
-        hf_config = AutoConfig.from_pretrained(cls.HF_MODEL_ID)
+        hf_config = from_pretrained_cache_first(AutoConfig, cls.HF_MODEL_ID)
         hf_config.num_hidden_layers = 2
         hf_config.layer_types = ["full_attention", "sliding_attention"]
         hf_config.sliding_window_pattern = 2

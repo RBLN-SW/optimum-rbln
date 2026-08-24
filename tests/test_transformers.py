@@ -48,7 +48,7 @@ from optimum.rbln.transformers.models.auto.modeling_auto import (
 from optimum.rbln.utils.runtime_utils import ContextRblnConfig
 from optimum.rbln.utils.save_utils import maybe_load_preprocessors
 
-from .test_base import BaseHubTest, BaseTest, TestLevel
+from .test_base import BaseHubTest, BaseTest, TestLevel, from_pretrained_cache_first
 
 
 RANDOM_INPUT_IDS = torch.randint(low=0, high=50, size=(1, 512), generator=torch.manual_seed(42), dtype=torch.int64)
@@ -86,7 +86,8 @@ class TestResNetModel(BaseTest.TestModel, BaseHubTest.TestHub):
             HF_CLASS = self.HF_AUTO_CLASS or self.HF_CLASS
             with ContextRblnConfig(device=self.DEVICE):
                 preprocessors = maybe_load_preprocessors(self.HF_MODEL_ID)
-                model = HF_CLASS.from_pretrained(
+                model = from_pretrained_cache_first(
+                    HF_CLASS,
                     self.HF_MODEL_ID,
                     **self.HF_CONFIG_KWARGS,
                     **{
@@ -112,7 +113,8 @@ class TestResNetModel(BaseTest.TestModel, BaseHubTest.TestHub):
 
     def test_failed_to_create_runtime(self):
         with self.assertRaises(ValueError):
-            _ = self.RBLN_CLASS.from_pretrained(
+            _ = from_pretrained_cache_first(
+                self.RBLN_CLASS,
                 self.HF_MODEL_ID,
                 export=True,
                 rbln_device=[0, 1, 2, 3],
@@ -190,8 +192,8 @@ class TestT5EncoderModel(BaseTest.TestModel):
             if os.path.exists(cls.get_rbln_local_dir()):
                 shutil.rmtree(cls.get_rbln_local_dir())
 
-            t5_encoder_model = T5EncoderModel.from_pretrained(
-                cls.HF_MODEL_ID, return_dict=False, **cls.HF_CONFIG_KWARGS
+            t5_encoder_model = from_pretrained_cache_first(
+                T5EncoderModel, cls.HF_MODEL_ID, return_dict=False, **cls.HF_CONFIG_KWARGS
             )
             cls.model = cls.RBLN_CLASS.from_model(
                 model=t5_encoder_model,
@@ -256,7 +258,7 @@ class TestWhisperModel(BaseTest.TestModel):
         import numpy as np
         from transformers import AutoProcessor, pipeline
 
-        processor = AutoProcessor.from_pretrained(self.HF_MODEL_ID)
+        processor = from_pretrained_cache_first(AutoProcessor, self.HF_MODEL_ID)
 
         pipe = pipeline(
             "automatic-speech-recognition",
@@ -531,7 +533,7 @@ class TestColQwen2Model(BaseTest.TestModel):
 
     @classmethod
     def setUpClass(cls):
-        config = AutoConfig.from_pretrained(cls.HF_MODEL_ID)
+        config = from_pretrained_cache_first(AutoConfig, cls.HF_MODEL_ID)
 
         # Reduce model size for faster testing
         vision_config = json.loads(config.vlm_config.vision_config.to_json_string())
@@ -547,7 +549,7 @@ class TestColQwen2Model(BaseTest.TestModel):
     def get_processor(self):
         from transformers import ColQwen2Processor
 
-        processor = ColQwen2Processor.from_pretrained(self.HF_MODEL_ID)
+        processor = from_pretrained_cache_first(ColQwen2Processor, self.HF_MODEL_ID)
         return processor
 
     def get_inputs(self):
@@ -747,7 +749,8 @@ class TestGroundingDinoModel(BaseTest.TestModel):
     def setUpClass(cls):
         from transformers import GroundingDinoConfig
 
-        config = GroundingDinoConfig.from_pretrained(
+        config = from_pretrained_cache_first(
+            GroundingDinoConfig,
             cls.HF_MODEL_ID,
             # with `decoder_bbox_embed_share=True` v5 ties
             # `bbox_embed.0` into `bbox_embed.[1+]`, and its tie_weights
