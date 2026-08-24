@@ -49,7 +49,7 @@ class _ControlNetModel(torch.nn.Module):
         time_ids: torch.Tensor | None = None,
     ):
         if text_embeds is not None and time_ids is not None:
-            added_cond_kwargs = {"text_embeds": text_embeds, "time_ids": time_ids}
+            added_cond_kwargs = {"text_embeds": text_embeds.float(), "time_ids": time_ids}
         else:
             added_cond_kwargs = {}
 
@@ -81,7 +81,7 @@ class _ControlNetModel_Cross_Attention(torch.nn.Module):
         time_ids: torch.Tensor | None = None,
     ):
         if text_embeds is not None and time_ids is not None:
-            added_cond_kwargs = {"text_embeds": text_embeds, "time_ids": time_ids}
+            added_cond_kwargs = {"text_embeds": text_embeds.float(), "time_ids": time_ids}
         else:
             added_cond_kwargs = {}
 
@@ -172,7 +172,7 @@ class RBLNControlNetModel(RBLNModel):
                     rbln_config.unet_sample_size[0],
                     rbln_config.unet_sample_size[1],
                 ],
-                "float32",
+                rbln_config.dtype,
             ),
             ("timestep", [], "float32"),
         ]
@@ -183,7 +183,7 @@ class RBLNControlNetModel(RBLNModel):
                 (
                     "encoder_hidden_states",
                     [rbln_config.batch_size, rbln_config.max_seq_len, model_config.cross_attention_dim],
-                    "float32",
+                    rbln_config.dtype,
                 )
             )
 
@@ -191,14 +191,17 @@ class RBLNControlNetModel(RBLNModel):
             (
                 "controlnet_cond",
                 [rbln_config.batch_size, 3, rbln_config.vae_sample_size[0], rbln_config.vae_sample_size[1]],
-                "float32",
+                rbln_config.dtype,
             )
         )
-        input_info.append(("conditioning_scale", [], "float32"))
+        input_info.append(("conditioning_scale", [], rbln_config.dtype))
 
         if hasattr(model_config, "addition_embed_type") and model_config.addition_embed_type == "text_time":
-            input_info.append(("text_embeds", [rbln_config.batch_size, rbln_config.text_model_hidden_size], "float32"))
-            input_info.append(("time_ids", [rbln_config.batch_size, 6], "float32"))
+            # Kept at the checkpoint dtype; the wrappers promote it for the concat inside the graph.
+            input_info.append(
+                ("text_embeds", [rbln_config.batch_size, rbln_config.text_model_hidden_size], rbln_config.dtype)
+            )
+            input_info.append(("time_ids", [rbln_config.batch_size, 6], rbln_config.dtype))
 
         rbln_compile_config = RBLNCompileConfig(input_info=input_info)
         rbln_config.set_compile_cfgs([rbln_compile_config])
@@ -214,7 +217,7 @@ class RBLNControlNetModel(RBLNModel):
         timestep: torch.Tensor | float | int,
         encoder_hidden_states: torch.Tensor,
         controlnet_cond: torch.FloatTensor,
-        conditioning_scale: torch.Tensor = 1.0,
+        conditioning_scale: float = 1.0,
         added_cond_kwargs: dict[str, torch.Tensor] | None = None,
         return_dict: bool = True,
         **kwargs,
@@ -227,7 +230,7 @@ class RBLNControlNetModel(RBLNModel):
             timestep (torch.Tensor | float | int): The number of timesteps to denoise an input.
             encoder_hidden_states (torch.Tensor): The encoder hidden states.
             controlnet_cond (torch.FloatTensor): The conditional input tensor of shape `(batch_size, max_seq_len, hidden_size)`.
-            conditioning_scale (torch.Tensor): The scale factor for ControlNet outputs.
+            conditioning_scale (float): The scale factor for ControlNet outputs.
             added_cond_kwargs (dict[str, torch.Tensor]): Additional conditions for the Stable Diffusion XL UNet.
             return_dict (bool): Whether or not to return a [`~diffusers.models.controlnets.controlnet.ControlNetOutput`] instead of a plain tuple
 
@@ -246,14 +249,15 @@ class RBLNControlNetModel(RBLNModel):
                 "For details, see: https://docs.rbln.ai/software/optimum/model_api/diffusers/pipelines/controlnet.html#important-batch-size-configuration-for-guidance-scale"
             )
 
-        added_cond_kwargs = {} if added_cond_kwargs is None else added_cond_kwargs
+        added_cond_kwargs = added_cond_kwargs or {}
+        conditioning_scale = torch.as_tensor(conditioning_scale, dtype=self.rbln_config.dtype)
         if self.use_encoder_hidden_states:
             output = self.model[0](
                 sample.contiguous(),
                 timestep.float(),
                 encoder_hidden_states,
                 controlnet_cond,
-                torch.tensor(conditioning_scale),
+                conditioning_scale,
                 **added_cond_kwargs,
             )
         else:
@@ -261,7 +265,7 @@ class RBLNControlNetModel(RBLNModel):
                 sample.contiguous(),
                 timestep.float(),
                 controlnet_cond,
-                torch.tensor(conditioning_scale),
+                conditioning_scale,
                 **added_cond_kwargs,
             )
 

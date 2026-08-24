@@ -120,7 +120,7 @@ class RBLNSD3Transformer2DModel(RBLNModel):
                     rbln_config.sample_size[0],
                     rbln_config.sample_size[1],
                 ],
-                "float32",
+                rbln_config.dtype,
             ),
             (
                 "encoder_hidden_states",
@@ -129,7 +129,7 @@ class RBLNSD3Transformer2DModel(RBLNModel):
                     rbln_config.prompt_embed_length,
                     model_config.joint_attention_dim,
                 ],
-                "float32",
+                rbln_config.dtype,
             ),
             (
                 "pooled_projections",
@@ -137,7 +137,7 @@ class RBLNSD3Transformer2DModel(RBLNModel):
                     rbln_config.batch_size,
                     model_config.pooled_projection_dim,
                 ],
-                "float32",
+                rbln_config.dtype,
             ),
             ("timestep", [rbln_config.batch_size], "float32"),
         ]
@@ -187,5 +187,9 @@ class RBLNSD3Transformer2DModel(RBLNModel):
             )
 
         return super().forward(
-            hidden_states, encoder_hidden_states, pooled_projections, timestep, return_dict=return_dict
+            hidden_states,
+            encoder_hidden_states,
+            pooled_projections,
+            timestep,
+            return_dict=return_dict,
         )

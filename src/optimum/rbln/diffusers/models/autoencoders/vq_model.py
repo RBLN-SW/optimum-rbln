@@ -118,7 +118,7 @@ class RBLNVQModel(RBLNModel):
                         rbln_config.sample_size[0],
                         rbln_config.sample_size[1],
                     ],
-                    "float32",
+                    rbln_config.dtype,
                 )
             ]
             enc_rbln_compile_config = RBLNCompileConfig(compiled_model_name="encoder", input_info=enc_input_info)
@@ -133,7 +133,7 @@ class RBLNVQModel(RBLNModel):
                     rbln_config.latent_sample_size[0],
                     rbln_config.latent_sample_size[1],
                 ],
-                "float32",
+                rbln_config.dtype,
             )
         ]
         dec_rbln_compile_config = RBLNCompileConfig(compiled_model_name="decoder", input_info=dec_input_info)
@@ -185,7 +185,7 @@ class RBLNVQModel(RBLNModel):
         Returns:
             The quantized latent representation or a specific output object.
         """
-        posterior = self.encoder.encode(x)
+        posterior = self.encoder.encode(x.to(self.rbln_config.dtype))
         if not return_dict:
             return (posterior,)
         return VQEncoderOutput(latents=posterior)
@@ -205,7 +205,7 @@ class RBLNVQModel(RBLNModel):
         Returns:
             The decoded image or a DecoderOutput object.
         """
-        dec, commit_loss = self.decoder.decode(h, **kwargs)
+        dec, commit_loss = self.decoder.decode(h.to(self.rbln_config.dtype), **kwargs)
         if not return_dict:
             return (dec, commit_loss)
         return DecoderOutput(sample=dec, commit_loss=commit_loss)

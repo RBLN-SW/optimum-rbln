@@ -69,7 +69,7 @@ class RBLNDetrForObjectDetection(RBLNModel):
                 (
                     "pixel_values",
                     [rbln_config.batch_size, 3, height, width],
-                    "float32",
+                    rbln_config.dtype,
                 ),
                 (
                     "pixel_mask",

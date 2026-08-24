@@ -53,7 +53,7 @@ class RBLNColPaliForRetrievalWrapper(nn.Module):
         return new_model
 
     def forward(self, inputs_embeds: torch.Tensor, attention_mask: torch.Tensor, position_ids: torch.Tensor):
-        attention_mask = (1.0 - attention_mask) * torch.finfo(torch.float32).min
+        attention_mask = (1.0 - attention_mask) * torch.finfo(inputs_embeds.dtype).min
         attention_mask = attention_mask[:, None, None, None, :]
 
         hidden_states, all_hidden_states = self.language_model(

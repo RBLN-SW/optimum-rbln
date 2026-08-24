@@ -101,7 +101,7 @@ class RBLNBlip2VisionModel(RBLNModel):
                     model_config.image_size,
                     model_config.image_size,
                 ],
-                "float32",
+                rbln_config.dtype,
             ),
         ]
 
@@ -214,7 +214,7 @@ class RBLNBlip2QFormerModel(RBLNModel):
                     rbln_config.num_query_tokens,
                     model_config.hidden_size,
                 ],
-                "float32",
+                rbln_config.dtype,
             ),
             (
                 "encoder_hidden_states",
@@ -224,7 +224,7 @@ class RBLNBlip2QFormerModel(RBLNModel):
                     rbln_config.image_text_hidden_size + 1,
                     model_config.encoder_hidden_size,
                 ],
-                "float32",
+                rbln_config.dtype,
             ),
             (
                 "encoder_attention_mask",
@@ -383,7 +383,7 @@ class RBLNBlip2ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMixi
                     model_config.num_query_tokens,
                     model_config.qformer_config.hidden_size,
                 ],
-                "float32",
+                rbln_config.dtype,
             ),
         ]
 
@@ -399,7 +399,7 @@ class RBLNBlip2ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMixi
         **kwargs,
     ) -> torch.Tensor:
         vision_outputs = self.vision_model(
-            pixel_values=pixel_values,
+            pixel_values=pixel_values.to(self.rbln_config.vision_model.dtype),
             return_dict=True,
             interpolate_pos_encoding=interpolate_pos_encoding,
         )

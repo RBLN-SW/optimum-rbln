@@ -69,7 +69,6 @@ class RBLNExaone4_5_VisionModel(RBLNModel):
     """
 
     auto_model_class = None
-    _supports_non_fp32 = True
     _tp_support = True
 
     def __post_init__(self, **kwargs):
@@ -317,7 +316,6 @@ class RBLNExaone4_5_VisionModel(RBLNModel):
 class RBLNExaone4_5_Model(RBLNDecoderOnlyModel):
     auto_model_class = AutoModelForImageTextToText
     _decoder_wrapper_cls = Exaone4_5LanguageModelWrapper
-    _supports_non_fp32 = True
     _rbln_submodule_prefix = "model"
     _rbln_submodules = [{"name": "visual"}]
     _config_class = Exaone4_5_Config
@@ -480,7 +478,6 @@ class RBLNExaone4_5_ForConditionalGeneration(RBLNExaone4_5_Model, RBLNDecoderOnl
 
     auto_model_class = AutoModelForImageTextToText
     _decoder_wrapper_cls = Exaone4_5LanguageModelWrapper
-    _supports_non_fp32 = True
     _rbln_submodules = [{"name": "visual"}]
 
     def can_generate(self):

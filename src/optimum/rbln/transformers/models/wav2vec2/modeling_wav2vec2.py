@@ -50,7 +50,6 @@ class RBLNWav2Vec2ForCTC(RBLNModel):
 
     main_input_name = "input_values"
     auto_model_class = AutoModelForCTC
-    rbln_dtype = "float32"
     _output_class = CausalLMOutput
 
     @classmethod
@@ -81,7 +80,7 @@ class RBLNWav2Vec2ForCTC(RBLNModel):
                         rbln_config.batch_size,
                         rbln_config.max_seq_len,
                     ],
-                    "float32",
+                    rbln_config.dtype,
                 )
             ]
         )

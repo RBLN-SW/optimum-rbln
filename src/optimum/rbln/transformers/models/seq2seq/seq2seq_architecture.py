@@ -86,11 +86,7 @@ class Seq2SeqEncoderWrapper(nn.Module):
         *cross_key_values: tuple[torch.Tensor],
     ) -> tuple[torch.Tensor]:
         # 1. get encoder last_hidden_states
-        # TODO: make this to use `create_bidirectional_mask` in transformers v5
-        from transformers.modeling_attn_mask_utils import _prepare_4d_attention_mask
-
-        encoder_attention_mask = _prepare_4d_attention_mask(attention_mask, torch.float32)
-        encoder_outputs = self.encoder(input_ids=input_ids, attention_mask=encoder_attention_mask)
+        encoder_outputs = self.encoder(input_ids=input_ids, attention_mask=attention_mask)
         last_hidden_states = encoder_outputs[0]
 
         # 2. pre-compute cross_attention's past_key_value which used in decoder phase.
@@ -473,7 +469,7 @@ class Seq2SeqSelfAttention(nn.Module):
             past_key_value[0].view(bsz, self.num_heads, 1, -1, self.head_dim),
             past_key_value[1].view(bsz, self.num_heads, 1, -1, self.head_dim),
             cache_position,
-            torch.tensor(1.0, dtype=torch.float32),  # scale
+            torch.tensor(1.0, dtype=query_states.dtype),  # scale
             block_tables,
             block_size,
         ]
