@@ -117,4 +117,6 @@ class RBLNBlip2ForConditionalGenerationConfig(RBLNModelConfig):
             submodule_config=vision_model, batch_size=1, force_kwargs=True
         )
         self.qformer = self.initialize_submodule_config(submodule_config=qformer, batch_size=1, force_kwargs=True)
-        self.language_model = self.initialize_submodule_config(submodule_config=language_model)
+        self.language_model = self.initialize_submodule_config(
+            submodule_config=language_model, batch_size=batch_size, force_kwargs=True
+        )

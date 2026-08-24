@@ -543,6 +543,10 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
             return submodule_config
 
         if isinstance(submodule_config, dict):
+            # A None-valued kwarg means the parent left it unset: it neither propagates to the
+            # submodule nor participates in the force_kwargs conflict check.
+            kwargs = {key: value for key, value in kwargs.items() if value is not None}
+
             from_predecessor = self._runtime_options.copy()
             from_predecessor.update(
                 {

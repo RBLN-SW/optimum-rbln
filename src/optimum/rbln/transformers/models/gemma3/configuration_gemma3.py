@@ -93,7 +93,9 @@ class RBLNGemma3ForConditionalGenerationConfig(RBLNModelConfig):
         self.vision_tower = self.initialize_submodule_config(
             submodule_config=vision_tower, batch_size=1, force_kwargs=True
         )
-        self.language_model = self.initialize_submodule_config(submodule_config=language_model)
+        self.language_model = self.initialize_submodule_config(
+            submodule_config=language_model, batch_size=batch_size, force_kwargs=True
+        )
 
     @property
     def image_prefill_chunk_size(self):
