@@ -83,7 +83,6 @@ class RBLNColQwen2ForRetrievalConfig(RBLNDecoderOnlyModelConfig):
             submodule_config=vlm,
             batch_size=batch_size,
             output_hidden_states=output_hidden_states,
-            force_kwargs=True,
             logits_to_keep=0,
             use_inputs_embeds=True,
         )

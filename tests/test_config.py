@@ -266,9 +266,9 @@ def _submodule_batch_size(sub):
     ],
 )
 def test_composite_vlm_batch_size_propagation(config_cls_name, lm_key):
-    """Regression: a top-level `batch_size` must reach the language-model submodule, a
-    submodule-only `batch_size` must not conflict with the parent's unset (None) value,
-    and setting both to different values must raise."""
+    """Regression: a top-level `batch_size` must reach the language-model submodule as a
+    soft default — a submodule-only `batch_size` must not conflict with the parent's unset
+    (None) value, and when both are set the submodule wins."""
     import optimum.rbln
 
     config_cls = getattr(optimum.rbln, config_cls_name)
@@ -279,8 +279,8 @@ def test_composite_vlm_batch_size_propagation(config_cls_name, lm_key):
     cfg = config_cls(**{lm_key: {"batch_size": 4}})
     assert _submodule_batch_size(getattr(cfg, lm_key)) == 4
 
-    with pytest.raises(ValueError, match="Parameter conflict for 'batch_size'"):
-        config_cls(batch_size=1, **{lm_key: {"batch_size": 4}})
+    cfg = config_cls(batch_size=1, **{lm_key: {"batch_size": 4}})
+    assert _submodule_batch_size(getattr(cfg, lm_key)) == 4
 
     cfg = config_cls(batch_size=4, **{lm_key: {"batch_size": 4}})
     assert _submodule_batch_size(getattr(cfg, lm_key)) == 4
