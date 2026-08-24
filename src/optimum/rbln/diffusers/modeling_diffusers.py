@@ -73,6 +73,11 @@ class RBLNDiffusionMixin:
     _connected_classes = {}
     _submodules = []
     _optional_submodules = []
+    # Whether this pipeline acts on a VAE's `force_upcast` by moving it to float32 around encode/decode.
+    # The config alone cannot tell: `force_upcast` is the `AutoencoderKL` constructor default, so nearly
+    # every VAE carries it while only some pipelines read it -- SD3 declares it and still ignores it. Since
+    # a compiled graph cannot be moved at runtime, the pipelines that do read it get a float32 VAE at
+    # compile time, and the rest keep the checkpoint dtype, as upstream runs them.
     _upcasts_vae = False
     _prefix = {}
 
