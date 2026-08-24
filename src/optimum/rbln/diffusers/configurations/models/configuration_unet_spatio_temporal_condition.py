@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Optional, Tuple
+from typing import Any
 
 from ....configuration_utils import RBLNModelConfig
 
@@ -22,19 +22,19 @@ class RBLNUNetSpatioTemporalConditionModelConfig(RBLNModelConfig):
 
     def __init__(
         self,
-        batch_size: Optional[int] = None,
-        sample_size: Optional[Tuple[int, int]] = None,
-        in_features: Optional[int] = None,
-        num_frames: Optional[int] = None,
+        batch_size: int | None = None,
+        sample_size: tuple[int, int] | None = None,
+        in_features: int | None = None,
+        num_frames: int | None = None,
         **kwargs: Any,
     ):
         """
         Args:
-            batch_size (Optional[int]): The batch size for inference. Defaults to 1.
-            sample_size (Optional[Tuple[int, int]]): The spatial dimensions (height, width) of the generated samples.
+            batch_size (int | None): The batch size for inference. Defaults to 1.
+            sample_size (tuple[int, int] | None): The spatial dimensions (height, width) of the generated samples.
                 If an integer is provided, it's used for both height and width.
-            in_features (Optional[int]): Number of input features for the model.
-            num_frames (Optional[int]): The number of frames in the generated video.
+            in_features (int | None): Number of input features for the model.
+            num_frames (int | None): The number of frames in the generated video.
             kwargs: Additional arguments passed to the parent RBLNModelConfig.
 
         Raises:

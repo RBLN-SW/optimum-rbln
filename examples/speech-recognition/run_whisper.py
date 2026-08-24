@@ -1,11 +1,18 @@
+import argparse
 import os
 
-import fire
 import torch
 from datasets import load_dataset
 from transformers import AutoProcessor, pipeline
 
 from optimum.rbln import RBLNWhisperForConditionalGeneration
+
+
+# You can compile the model ahead of time with the CLI and then load the
+# artifacts here by passing the output directory as --model-id:
+#
+#   optimum-rbln-cli --model-id openai/whisper-tiny -o whisper-tiny \
+#       --batch_size 1
 
 
 def prepare_shortform(model_id, batch_size):
@@ -44,60 +51,58 @@ def prepare_longform(model_id, batch_size):
     return processor, input_features, attention_mask
 
 
-def main(
-    model_id: str = "openai/whisper-tiny",
-    # rbln config
-    batch_size: int = 1,
-    from_transformers: bool = False,
-    return_token_timestamps: bool = False,  # valid_only with shortform?
-    # generation config
-    long_form: bool = False,
-    pipe: bool = False,
-):
+def parse_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--model-id", default="openai/whisper-tiny")
+    parser.add_argument("--batch-size", type=int, default=1)
+    parser.add_argument("--return-token-timestamps", action="store_true")
+    parser.add_argument("--long-form", action="store_true")
+    parser.add_argument("--pipe", action="store_true")
+    return parser.parse_args()
+
+
+def main():
+    args = parse_args()
+
     # set kwargs
     rbln_kwargs = {}
     gen_kwargs = {"return_timestamps": True}
-    if return_token_timestamps:
+    if args.return_token_timestamps:
         gen_kwargs.update({"return_token_timestamps": True})
         rbln_kwargs.update({"rbln_token_timestamps": True})
 
     # compile or load model
-    if from_transformers:
-        model = RBLNWhisperForConditionalGeneration.from_pretrained(
-            model_id=model_id,
-            export=True,
-            rbln_batch_size=batch_size,
-            **rbln_kwargs,
-        )
-        model.save_pretrained(os.path.basename(model_id))
+    if os.path.isdir(args.model_id):
+        model = RBLNWhisperForConditionalGeneration.from_pretrained(args.model_id)
     else:
         model = RBLNWhisperForConditionalGeneration.from_pretrained(
-            model_id=os.path.basename(model_id),
-            export=False,
+            args.model_id,
+            rbln_batch_size=args.batch_size,
+            **rbln_kwargs,
         )
 
     # generation strategy
     # 1. short_form
     # 2. long_form
     # 3. pipe
-    if not long_form and not pipe:
-        processor, input_features = prepare_shortform(model_id, batch_size)
+    if not args.long_form and not args.pipe:
+        processor, input_features = prepare_shortform(args.model_id, args.batch_size)
         outputs = model.generate(
             input_features=input_features,
             **gen_kwargs,
         )
 
-        generated_ids = outputs["sequences"] if return_token_timestamps else outputs
-        transcriptions = processor.batch_decode(generated_ids, skip_special_tokens=True, decode_with_timestamps=True)
+        generated_ids = outputs["sequences"] if isinstance(outputs, dict) else outputs
+        transcriptions = processor.batch_decode(generated_ids, skip_special_tokens=True)
 
         print("---RBLN Shortform Generate Result ---")
         for i, transcription in enumerate(transcriptions):
             print(f"transcription {i} : {transcription}")
-            if return_token_timestamps:
+            if args.return_token_timestamps:
                 print(f"token_timestamps {i} : {outputs['token_timestamps'][i]}")
 
-    if long_form:
-        processor, input_features, attention_mask = prepare_longform(model_id, batch_size)
+    if args.long_form:
+        processor, input_features, attention_mask = prepare_longform(args.model_id, args.batch_size)
         outputs = model.generate(
             input_features=input_features,
             attention_mask=attention_mask,
@@ -105,14 +110,14 @@ def main(
         )
 
         generated_ids = outputs.get("sequences") if isinstance(outputs, dict) else outputs
-        transcriptions = processor.batch_decode(generated_ids, skip_special_tokens=True, decode_with_timestamps=True)
+        transcriptions = processor.batch_decode(generated_ids, skip_special_tokens=True)
 
         print("---RBLN Longform Generate Result ---")
         for i, transcription in enumerate(transcriptions):
             print(f"transcription {i} : {transcription}")
 
-    if pipe:
-        processor = AutoProcessor.from_pretrained(model_id)
+    if args.pipe:
+        processor = AutoProcessor.from_pretrained(args.model_id)
         dataset = load_dataset("distil-whisper/librispeech_long", "clean", split="validation")
         sample = dataset[0]["audio"]
         pipe = pipeline(
@@ -122,9 +127,9 @@ def main(
             feature_extractor=processor.feature_extractor,
             chunk_length_s=30,
             return_timestamps=True,
-            batch_size=batch_size,
+            batch_size=args.batch_size,
         )
-        generate_kwargs = {"repetition_penalty": 1.3}
+        generate_kwargs = {"repetition_penalty": 1.3, "num_beams": 1}
 
         with torch.no_grad():
             outputs = pipe(sample, generate_kwargs=generate_kwargs)
@@ -136,4 +141,4 @@ def main(
 
 
 if __name__ == "__main__":
-    fire.Fire(main)
+    main()

@@ -1,5 +1,4 @@
 import math
-from typing import Tuple
 
 import torch
 import torch.nn as nn
@@ -74,7 +73,7 @@ class Qwen2_5_VLVisionBlock(torch.nn.Module):
         self,
         hidden_states: torch.Tensor,
         attn_masks: torch.Tensor,
-        position_embeddings: Tuple[torch.Tensor, torch.Tensor],
+        position_embeddings: tuple[torch.Tensor, torch.Tensor],
     ) -> torch.Tensor:
         hidden_states = hidden_states + self.attn(
             self.norm1(hidden_states),
@@ -100,7 +99,7 @@ class Qwen2_5_VLVisionFullAttention(nn.Module):
         self,
         hidden_states: torch.Tensor,
         attn_masks: torch.Tensor,
-        position_embeddings: Tuple[torch.Tensor, torch.Tensor],
+        position_embeddings: tuple[torch.Tensor, torch.Tensor],
     ) -> torch.Tensor:
         seq_length = hidden_states.shape[0]
         hidden_states = hidden_states.unsqueeze(0)
@@ -140,7 +139,7 @@ class Qwen2_5_VLVisionWindowAttention(nn.Module):
         self,
         hidden_states: torch.Tensor,
         attn_masks: torch.Tensor,
-        position_embeddings: Tuple[torch.Tensor, torch.Tensor],
+        position_embeddings: tuple[torch.Tensor, torch.Tensor],
     ) -> torch.Tensor:
         seq_length = hidden_states.shape[0]
         num_windows = seq_length // self.window_seq_len

@@ -14,7 +14,7 @@
 
 import inspect
 from abc import ABC
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Any, Optional, Union
 
 import rebel
 import torch
@@ -40,7 +40,7 @@ if TYPE_CHECKING:
 class RBLNRuntimeEncoder(RBLNPytorchRuntime):
     mandatory_members = ["main_input_name"]
 
-    def forward(self, *args: List[torch.Tensor], **kwargs: torch.Tensor):
+    def forward(self, *args: list[torch.Tensor], **kwargs: torch.Tensor):
         output = super().forward(*args, **kwargs)
         return BaseModelOutput(last_hidden_state=output)
 
@@ -53,7 +53,7 @@ class RBLNRuntimeDecoder(RBLNPytorchRuntime):
         runtime: rebel.Runtime,
         batch_size: int,
         dec_max_seq_len: int,
-        use_attention_mask: Optional[bool] = None,
+        use_attention_mask: bool | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(runtime, **kwargs)
@@ -64,13 +64,13 @@ class RBLNRuntimeDecoder(RBLNPytorchRuntime):
 
     def forward(
         self,
-        decoder_input_ids: Optional[torch.LongTensor] = None,
-        attention_mask: Optional[torch.FloatTensor] = None,
-        decoder_attention_mask: Optional[torch.BoolTensor] = None,
-        cache_position: Optional[torch.Tensor] = None,
-        block_tables: Optional[torch.Tensor] = None,
+        decoder_input_ids: torch.LongTensor | None = None,
+        attention_mask: torch.FloatTensor | None = None,
+        decoder_attention_mask: torch.BoolTensor | None = None,
+        cache_position: torch.Tensor | None = None,
+        block_tables: torch.Tensor | None = None,
         **kwargs,
-    ) -> Tuple[torch.FloatTensor]:
+    ) -> tuple[torch.FloatTensor]:
         batch_size = decoder_input_ids.shape[0]
         if batch_size != self.batch_size:
             raise RuntimeError(
@@ -155,14 +155,14 @@ class RBLNModelForSeq2SeqLM(RBLNModel, GenerationMixin, ABC):
         for (name, _, _), tensor in zip(enc_compile_config.input_info, enc_example_inputs, strict=False):
             if "key_value_states" in name:
                 static_tensors[name] = tensor
-                context.mark_static_address(tensor)
+                context.mark_static_address(tensor, name)
 
         dec_example_inputs = dec_compile_config.get_dummy_inputs(fill=0, static_tensors=static_tensors)
 
         # Mark decoder's static tensors (self kv states)
         for (name, _, _), tensor in zip(dec_compile_config.input_info, dec_example_inputs, strict=False):
             if "key_value_states" in name:
-                context.mark_static_address(tensor)
+                context.mark_static_address(tensor, name)
 
         compiled_encoder = cls.compile(
             wrapped_model.encoder,
@@ -205,7 +205,7 @@ class RBLNModelForSeq2SeqLM(RBLNModel, GenerationMixin, ABC):
         preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"],
         model: Optional["PreTrainedModel"] = None,
         model_config: Optional["PretrainedConfig"] = None,
-        rbln_config: Optional[RBLNModelForSeq2SeqLMConfig] = None,
+        rbln_config: RBLNModelForSeq2SeqLMConfig | None = None,
     ) -> RBLNModelForSeq2SeqLMConfig:
         if not cls.support_causal_attn:
             rbln_config.use_attention_mask = True
@@ -256,7 +256,7 @@ class RBLNModelForSeq2SeqLM(RBLNModel, GenerationMixin, ABC):
         # model input info
         enc_input_info = [
             ("input_ids", [1, rbln_config.enc_max_seq_len], "int64"),
-            ("attention_mask", [1, rbln_config.enc_max_seq_len], "float32"),
+            ("attention_mask", [1, rbln_config.enc_max_seq_len], rbln_config.dtype),
             ("block_tables", [1], "int16"),
         ]
         enc_input_info.extend(
@@ -269,7 +269,7 @@ class RBLNModelForSeq2SeqLM(RBLNModel, GenerationMixin, ABC):
                         rbln_config.enc_max_seq_len,
                         d_kv,
                     ],
-                    "float32",
+                    rbln_config.dtype,
                 )
                 for i in range(n_layer * 2)
             ]
@@ -277,7 +277,7 @@ class RBLNModelForSeq2SeqLM(RBLNModel, GenerationMixin, ABC):
 
         dec_input_info = [
             ("input_ids", [rbln_config.batch_size, 1], "int64"),
-            ("encoder_attention_mask", [rbln_config.batch_size, rbln_config.enc_max_seq_len], "float32"),
+            ("encoder_attention_mask", [rbln_config.batch_size, rbln_config.enc_max_seq_len], rbln_config.dtype),
             (
                 "cache_position",
                 [rbln_config.batch_size, 1],
@@ -295,7 +295,7 @@ class RBLNModelForSeq2SeqLM(RBLNModel, GenerationMixin, ABC):
                         rbln_config.enc_max_seq_len,
                         d_kv,
                     ],
-                    "float32",
+                    rbln_config.dtype,
                 )
                 for i in range(n_layer * 2)
             ]
@@ -310,7 +310,7 @@ class RBLNModelForSeq2SeqLM(RBLNModel, GenerationMixin, ABC):
                         rbln_config.dec_max_seq_len,
                         d_kv,
                     ],
-                    "float32",
+                    rbln_config.dtype,
                 )
                 for i in range(n_layer * 2)
             ]
@@ -318,7 +318,7 @@ class RBLNModelForSeq2SeqLM(RBLNModel, GenerationMixin, ABC):
 
         if rbln_config.use_attention_mask:
             dec_input_info.insert(
-                1, ("attention_mask", [rbln_config.batch_size, rbln_config.dec_max_seq_len], "float32")
+                1, ("attention_mask", [rbln_config.batch_size, rbln_config.dec_max_seq_len], rbln_config.dtype)
             )
 
         enc_compile_config = RBLNCompileConfig(compiled_model_name="encoder", input_info=enc_input_info)
@@ -331,9 +331,9 @@ class RBLNModelForSeq2SeqLM(RBLNModel, GenerationMixin, ABC):
     @classmethod
     def _create_runtimes(
         cls,
-        compiled_models: List[rebel.RBLNCompiledModel],
+        compiled_models: list[rebel.RBLNCompiledModel],
         rbln_config: RBLNModelForSeq2SeqLMConfig,
-    ) -> List[rebel.Runtime]:
+    ) -> list[rebel.Runtime]:
         if any(model_name not in rbln_config.device_map for model_name in ["encoder", "decoder"]):
             cls._raise_missing_compiled_file_error(["encoder", "decoder"])
 
@@ -375,12 +375,12 @@ class RBLNModelForSeq2SeqLM(RBLNModel, GenerationMixin, ABC):
         max_seq_len = self.rbln_config.dec_max_seq_len
         decoder_batch_size = input_ids.shape[0]
         input_ids = input_ids[:, cur_seq_len - 1 : cur_seq_len].contiguous()
-        decoder_attention_mask = torch.zeros(decoder_batch_size, max_seq_len, dtype=torch.float32)
+        decoder_attention_mask = torch.zeros(decoder_batch_size, max_seq_len, dtype=self.rbln_config.dtype)
         decoder_attention_mask[:, :cur_seq_len] = 1
 
         return {
             "decoder_input_ids": input_ids,
-            "attention_mask": attention_mask.to(torch.float32),
+            "attention_mask": attention_mask.to(self.rbln_config.dtype),
             "decoder_attention_mask": decoder_attention_mask,
             "cache_position": cache_position,
         }
@@ -388,9 +388,9 @@ class RBLNModelForSeq2SeqLM(RBLNModel, GenerationMixin, ABC):
     def forward(
         self,
         decoder_input_ids: torch.LongTensor = None,
-        cache_position: Union[List[torch.Tensor], torch.Tensor] = None,
+        cache_position: list[torch.Tensor] | torch.Tensor = None,
         **kwargs,
-    ) -> Tuple[torch.FloatTensor]:
+    ) -> tuple[torch.FloatTensor]:
         # common decoder
         cache_position = torch.full((self.rbln_config.batch_size, 1), cache_position, dtype=torch.int32)
         logits = self.decoder(decoder_input_ids=decoder_input_ids, cache_position=cache_position, **kwargs).logits
@@ -403,9 +403,9 @@ class RBLNModelForSeq2SeqLM(RBLNModel, GenerationMixin, ABC):
         self,
         inputs_tensor: torch.Tensor,
         model_kwargs,
-        model_input_name: Optional[str] = None,
+        model_input_name: str | None = None,
         generation_config: Optional["GenerationConfig"] = None,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         # 1. get encoder
         encoder = self.get_encoder()
 
@@ -447,7 +447,9 @@ class RBLNModelForSeq2SeqLM(RBLNModel, GenerationMixin, ABC):
         for b in range(batch_size):
             block_tables = torch.tensor([b], dtype=torch.int16)
             encoder_kwargs["input_ids"] = inputs_tensor[b].unsqueeze(0)
-            encoder_kwargs["attention_mask"] = model_kwargs["attention_mask"][b].unsqueeze(0).to(torch.float32)
+            encoder_kwargs["attention_mask"] = (
+                model_kwargs["attention_mask"][b].unsqueeze(0).to(self.rbln_config.dtype)
+            )
             model_kwargs["encoder_outputs"] = encoder(**encoder_kwargs, block_tables=block_tables)
 
         return model_kwargs
@@ -455,10 +457,10 @@ class RBLNModelForSeq2SeqLM(RBLNModel, GenerationMixin, ABC):
     def generate(
         self,
         input_ids: torch.LongTensor,
-        attention_mask: Optional[torch.LongTensor] = None,
-        generation_config: Optional[GenerationConfig] = None,
+        attention_mask: torch.LongTensor | None = None,
+        generation_config: GenerationConfig | None = None,
         **kwargs,
-    ) -> Union[ModelOutput, torch.LongTensor]:
+    ) -> ModelOutput | torch.LongTensor:
         """
         The generate function is utilized in its standard form as in the HuggingFace transformers library. User can use this function to generate text from the model.
         Check the [HuggingFace transformers documentation](https://huggingface.co/docs/transformers/v4.57.1/en/main_classes/text_generation#transformers.GenerationMixin.generate) for more details.

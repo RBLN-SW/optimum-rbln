@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import List, Optional
 
 import torch
 import torch.nn.functional as F
@@ -29,13 +28,13 @@ class RBLNQwen3VLRuntimeModel(RBLNRuntimeModel):
     def _prepare_prefill_inputs(
         self,
         inputs: torch.Tensor,
-        cache_position: Optional[torch.Tensor] = None,
-        attention_mask: Optional[torch.Tensor] = None,
-        position_ids: Optional[torch.Tensor] = None,
-        position_embed: Optional[torch.Tensor] = None,
-        token_type_ids: Optional[torch.Tensor] = None,
-        visual_pos_mask: Optional[torch.Tensor] = None,
-        deepstack_embeds: Optional[List[torch.Tensor]] = None,
+        cache_position: torch.Tensor | None = None,
+        attention_mask: torch.Tensor | None = None,
+        position_ids: torch.Tensor | None = None,
+        position_embed: torch.Tensor | None = None,
+        token_type_ids: torch.Tensor | None = None,
+        visual_pos_mask: torch.Tensor | None = None,
+        deepstack_embeds: list[torch.Tensor] | None = None,
     ):
         (
             inputs,
@@ -76,19 +75,19 @@ class RBLNQwen3VLRuntimeModel(RBLNRuntimeModel):
 
     def forward(
         self,
-        input_ids: Optional[torch.LongTensor] = None,
-        inputs_embeds: Optional[torch.Tensor] = None,
+        input_ids: torch.LongTensor | None = None,
+        inputs_embeds: torch.Tensor | None = None,
         cache_position: torch.Tensor = None,
-        attention_mask: Optional[torch.Tensor] = None,
-        batch_idx: Optional[int] = None,
-        block_tables: Optional[torch.Tensor] = None,
-        position_embed: Optional[torch.Tensor] = None,
-        position_ids: Optional[torch.Tensor] = None,
-        token_type_ids: Optional[torch.Tensor] = None,
-        local_block_tables: Optional[torch.Tensor] = None,
-        lora_int_ids: Optional[torch.Tensor] = None,
-        visual_pos_mask: Optional[torch.Tensor] = None,
-        deepstack_embeds: Optional[List[torch.Tensor]] = None,
+        attention_mask: torch.Tensor | None = None,
+        batch_idx: int | None = None,
+        block_tables: torch.Tensor | None = None,
+        position_embed: torch.Tensor | None = None,
+        position_ids: torch.Tensor | None = None,
+        token_type_ids: torch.Tensor | None = None,
+        local_block_tables: torch.Tensor | None = None,
+        lora_int_ids: torch.Tensor | None = None,
+        visual_pos_mask: torch.Tensor | None = None,
+        deepstack_embeds: list[torch.Tensor] | None = None,
     ):
         inputs = self.inputs_embeddings_if_needed(input_ids, inputs_embeds)
         block_tables, local_block_tables, is_external_block_tables = (
@@ -133,18 +132,18 @@ class RBLNQwen3VLRuntimeModel(RBLNRuntimeModel):
     def prefill_forward(
         self,
         inputs: torch.Tensor,
-        cache_position: Optional[torch.Tensor] = None,
-        attention_mask: Optional[torch.Tensor] = None,
-        batch_idx: Optional[int] = None,
-        block_tables: Optional[torch.Tensor] = None,
-        is_external_block_tables: Optional[bool] = None,
-        position_ids: Optional[torch.Tensor] = None,
-        position_embed: Optional[torch.Tensor] = None,
-        token_type_ids: Optional[torch.Tensor] = None,
-        local_block_tables: Optional[torch.Tensor] = None,
-        lora_int_ids: Optional[torch.Tensor] = None,
-        visual_pos_mask: Optional[torch.Tensor] = None,
-        deepstack_embeds: Optional[List[torch.Tensor]] = None,
+        cache_position: torch.Tensor | None = None,
+        attention_mask: torch.Tensor | None = None,
+        batch_idx: int | None = None,
+        block_tables: torch.Tensor | None = None,
+        is_external_block_tables: bool | None = None,
+        position_ids: torch.Tensor | None = None,
+        position_embed: torch.Tensor | None = None,
+        token_type_ids: torch.Tensor | None = None,
+        local_block_tables: torch.Tensor | None = None,
+        lora_int_ids: torch.Tensor | None = None,
+        visual_pos_mask: torch.Tensor | None = None,
+        deepstack_embeds: list[torch.Tensor] | None = None,
     ) -> torch.FloatTensor:
         if self.rbln_config.use_lora and lora_int_ids is None:
             if self.lora_int_ids is None:
@@ -202,8 +201,9 @@ class RBLNQwen3VLRuntimeModel(RBLNRuntimeModel):
             if chunked_attention_mask is not None:
                 if self.rbln_config.use_position_ids:
                     valid_len = min(chunk_size, query_length - step)
-                    for i in range(valid_len):
-                        cache_idx = cache_pos_chunk[0, i].item()
+                    # do not reuse `i` here: it is the chunk index selecting `out_buffers[i]` below
+                    for pos in range(valid_len):
+                        cache_idx = cache_pos_chunk[0, pos].item()
                         if cache_idx < chunked_attention_mask.shape[-1]:
                             chunked_attention_mask[0, cache_idx] = 1
                 else:
@@ -261,19 +261,27 @@ class RBLNQwen3VLRuntimeModel(RBLNRuntimeModel):
                 out=out_buffers[i],
             )
 
-        if self.rbln_config.logits_to_keep > 0:
-            output_logits = output_logits[:, :query_length, :]
+        if attention_mask is not None:
+            valid_start_index = int(torch.nonzero(attention_mask, as_tuple=False)[0][0].item())
+            mask_indices = torch.nonzero(attention_mask, as_tuple=True)[0]
         else:
-            output_logits = output_logits[:, :query_length, :]
-            if attention_mask is not None:
-                new_output_logits = torch.full(
-                    (1, attention_mask.shape[-1], output_logits.shape[-1]),
-                    fill_value=1e-10,
-                    dtype=output_logits.dtype,
-                )
-                mask_indices = torch.nonzero(attention_mask, as_tuple=True)[0]
-                new_output_logits.index_copy_(dim=-2, index=mask_indices, source=output_logits)
-                output_logits = new_output_logits
+            valid_start_index = 0
+            mask_indices = None
+
+        def scatter_to_mask_width(padded_output: torch.Tensor) -> torch.Tensor:
+            valid_output = padded_output[:, valid_start_index : valid_start_index + query_length, :]
+            if mask_indices is None:
+                return valid_output
+            full_output = torch.full(
+                (1, attention_mask.shape[-1], padded_output.shape[-1]),
+                fill_value=1e-10,
+                dtype=padded_output.dtype,
+            )
+            full_output.index_copy_(dim=-2, index=mask_indices, source=valid_output)
+            return full_output
+
+        if self.rbln_config.logits_to_keep == 0:
+            output_logits = scatter_to_mask_width(output_logits)
 
         if self.rbln_config.can_generate and not is_external_block_tables and self.rbln_config.use_attention_mask:
             if self.rbln_config.use_position_ids:
@@ -283,7 +291,7 @@ class RBLNQwen3VLRuntimeModel(RBLNRuntimeModel):
                 self.dec_attn_mask[batch_idx, :, :, :query_length] = 1
 
         if self.rbln_config.output_hidden_states:
-            output_hidden_states = tuple(hs[:, :query_length, :] for hs in output_hidden_states)
+            output_hidden_states = tuple(scatter_to_mask_width(hs) for hs in output_hidden_states)
             return RBLNDecoderOnlyOutput(logits=output_logits, hidden_states=output_hidden_states)
         else:
             return RBLNDecoderOnlyOutput(logits=output_logits, hidden_states=None)

@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Optional, Tuple, Union
+from typing import Any
 
 from ...configuration_generic import RBLNModelForImageClassificationConfig
 
@@ -18,15 +18,15 @@ from ...configuration_generic import RBLNModelForImageClassificationConfig
 class RBLNSwinBackboneConfig(RBLNModelForImageClassificationConfig):
     def __init__(
         self,
-        image_size: Optional[Union[int, Tuple[int, int]]] = None,
-        batch_size: Optional[int] = None,
-        output_hidden_states: Optional[bool] = None,
-        output_attentions: Optional[bool] = None,
+        image_size: int | tuple[int, int] | None = None,
+        batch_size: int | None = None,
+        output_hidden_states: bool | None = None,
+        output_attentions: bool | None = None,
         **kwargs: Any,
     ):
         """
         Args:
-            batch_size (Optional[int]): The batch size for text processing. Defaults to 1.
+            batch_size (int | None): The batch size for text processing. Defaults to 1.
             kwargs: Additional arguments passed to the parent RBLNModelConfig.
 
         Raises:

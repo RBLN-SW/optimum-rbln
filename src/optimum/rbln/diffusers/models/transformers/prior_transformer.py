@@ -13,7 +13,7 @@
 # limitations under the License.
 
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Union
 
 import torch
 from diffusers.models.transformers.prior_transformer import PriorTransformer, PriorTransformerOutput
@@ -107,15 +107,15 @@ class RBLNPriorTransformer(RBLNModel):
         rbln_config.num_embeddings = rbln_config.num_embeddings or model_config.num_embeddings
 
         input_info = [
-            ("hidden_states", [rbln_config.batch_size, rbln_config.embedding_dim], "float32"),
+            ("hidden_states", [rbln_config.batch_size, rbln_config.embedding_dim], rbln_config.dtype),
             ("timestep", [], "float32"),
-            ("proj_embedding", [rbln_config.batch_size, rbln_config.embedding_dim], "float32"),
+            ("proj_embedding", [rbln_config.batch_size, rbln_config.embedding_dim], rbln_config.dtype),
             (
                 "encoder_hidden_states",
                 [rbln_config.batch_size, rbln_config.num_embeddings, rbln_config.embedding_dim],
-                "float32",
+                rbln_config.dtype,
             ),
-            ("attention_mask", [rbln_config.batch_size, rbln_config.num_embeddings], "float32"),
+            ("attention_mask", [rbln_config.batch_size, rbln_config.num_embeddings], rbln_config.dtype),
         ]
 
         rbln_compile_config = RBLNCompileConfig(input_info=input_info)
@@ -129,32 +129,31 @@ class RBLNPriorTransformer(RBLNModel):
     def forward(
         self,
         hidden_states: torch.Tensor,
-        timestep: Union[torch.Tensor, float, int],
+        timestep: torch.Tensor | float | int,
         proj_embedding: torch.Tensor,
-        encoder_hidden_states: Optional[torch.Tensor] = None,
-        attention_mask: Optional[torch.Tensor] = None,
+        encoder_hidden_states: torch.Tensor | None = None,
+        attention_mask: torch.Tensor | None = None,
         return_dict: bool = True,
-    ) -> Union[PriorTransformerOutput, Tuple]:
+    ) -> PriorTransformerOutput | tuple:
         """
         Forward pass for the RBLN-optimized PriorTransformer.
 
         Args:
             hidden_states (torch.Tensor): The currently predicted image embeddings.
-            timestep (Union[torch.Tensor, float, int]): Current denoising step.
+            timestep (torch.Tensor | float | int): Current denoising step.
             proj_embedding (torch.Tensor): Projected embedding vector the denoising process is conditioned on.
-            encoder_hidden_states (Optional[torch.Tensor]): Hidden states of the text embeddings the denoising process is conditioned on.
-            attention_mask (Optional[torch.Tensor]): Text mask for the text embeddings.
+            encoder_hidden_states (torch.Tensor | None): Hidden states of the text embeddings the denoising process is conditioned on.
+            attention_mask (torch.Tensor | None): Text mask for the text embeddings.
             return_dict (bool): Whether or not to return a [`~diffusers.models.transformers.prior_transformer.PriorTransformerOutput`] instead of a plain tuple.
 
         Returns:
-            (Union[`~diffusers.models.transformers.prior_transformer.PriorTransformerOutput`, Tuple])
+            (`~diffusers.models.transformers.prior_transformer.PriorTransformerOutput` | tuple)
         """
-        # Convert timestep(long) and attention_mask(bool) to float
         return super().forward(
             hidden_states,
             timestep.float(),
             proj_embedding,
             encoder_hidden_states,
-            attention_mask.float(),
+            attention_mask.to(self.rbln_config.dtype),
             return_dict=return_dict,
         )

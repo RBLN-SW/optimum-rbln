@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Optional
 
 import torch
 import torch.nn as nn
@@ -43,7 +42,7 @@ class Qwen3VLMoeAttention(Qwen3VLAttention):
 
 
 class Qwen3VLMoeLayer(DecoderOnlyLayer):
-    def __init__(self, layer, self_attn: DecoderOnlyAttention, lora_config: Optional[RBLNLoRAConfig] = None):
+    def __init__(self, layer, self_attn: DecoderOnlyAttention, lora_config: RBLNLoRAConfig | None = None):
         super().__init__(layer, self_attn, lora_config)
         self.mlp = (
             Qwen3VLMoeSparseMoeBlock(layer.mlp)

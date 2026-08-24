@@ -38,6 +38,8 @@ from optimum.rbln import (
     RBLNQwen2Model,
     RBLNQwen2MoeForCausalLM,
     RBLNQwen2VLForConditionalGeneration,
+    RBLNQwen3_5ForCausalLM,
+    RBLNQwen3_5ForConditionalGeneration,
     RBLNQwen3ForCausalLM,
     RBLNQwen3Model,
     RBLNQwen3MoeForCausalLM,
@@ -148,6 +150,26 @@ class LLMTest:
     class TestLLMWithoutLMHead(TestLLM):
         RBLN_AUTO_CLASS = RBLNAutoModel
 
+        def test_forward_prompt_length_multiple_of_prefill_chunk_size(self):
+            # Regression test for #649: when the prompt length was an exact multiple of
+            # `prefill_chunk_size`, prefill trimmed the whole sequence ([:, :-0, :]) and
+            # returned an empty last_hidden_state.
+            chunk_size = self.model.rbln_config.prefill_chunk_size
+            batch_size = self.model.rbln_config.batch_size
+            max_seq_len = self.model.rbln_config.max_seq_len
+            hidden_size = self.model.config.hidden_size
+
+            for length in (chunk_size, chunk_size * 2):
+                if length > max_seq_len:
+                    continue
+                with self.subTest(length=length):
+                    input_ids = torch.ones((batch_size, length), dtype=torch.int64)
+                    output = self.model(input_ids=input_ids, attention_mask=torch.ones_like(input_ids))
+                    self.assertEqual(output.last_hidden_state.shape, (batch_size, length, hidden_size))
+                    if self.model.rbln_config.output_hidden_states:
+                        for hidden_state in output.hidden_states:
+                            self.assertEqual(hidden_state.shape, (batch_size, length, hidden_size))
+
 
 class TestMistralForCausalLM(LLMTest.TestLLM):
     RBLN_CLASS = RBLNMistralForCausalLM
@@ -243,6 +265,22 @@ class TestQwen3MoeForCausalLM(LLMTest.TestLLM):
 
 class TestQwen3Model_UAM(TestQwen3Model):
     RBLN_CLASS_KWARGS = {"rbln_config": {"use_attention_mask": True}}
+
+
+class TestQwen3_5ForCausalLM(LLMTest.TestLLM):
+    RBLN_CLASS = RBLNQwen3_5ForCausalLM
+    HF_MODEL_ID = "Qwen/Qwen3.5-0.8B"
+    RBLN_AUTO_CLASS = None
+    RBLN_CLASS_KWARGS = {"rbln_config": {"num_devices": 1, "max_seq_len": 8192, "kvcache_partition_len": 4096}}
+    HF_CONFIG_KWARGS = {}
+
+    @classmethod
+    def setUpClass(cls):
+        config = AutoConfig.from_pretrained(cls.HF_MODEL_ID).get_text_config()
+        config.num_hidden_layers = 4
+        config.layer_types = ["linear_attention", "linear_attention", "linear_attention", "full_attention"]
+        cls.HF_CONFIG_KWARGS.update({"config": config, "ignore_mismatched_sizes": True})
+        return super().setUpClass()
 
 
 class TestOPTForCausalLM(LLMTest.TestLLM):
@@ -443,7 +481,7 @@ class TestLlavaForConditionalGeneration(LLMTest.TestLLM):
 
     def get_inputs(self):
         tokenizer = self.get_tokenizer()
-        img_path = f"{os.path.dirname(__file__)}/../assets/rbln_logo.png"
+        img_path = f"{os.path.dirname(__file__)}/../assets/rbln_logo_light.png"
         image = Image.open(img_path)
         inputs = tokenizer(images=[image], text=[self.PROMPT], return_tensors="pt", padding=True)
         inputs["max_new_tokens"] = 20
@@ -523,7 +561,7 @@ class TestLlavaNextForConditionalGeneration(LLMTest.TestLLM):
 
     def get_inputs(self):
         tokenizer = self.get_tokenizer()
-        img_path = f"{os.path.dirname(__file__)}/../assets/rbln_logo.png"
+        img_path = f"{os.path.dirname(__file__)}/../assets/rbln_logo_light.png"
         image = Image.open(img_path)
         inputs = tokenizer(images=[image], text=[self.PROMPT], return_tensors="pt", padding=True)
         inputs["max_new_tokens"] = 20
@@ -569,7 +607,8 @@ class TestLlavaNextForConditionalGeneration(LLMTest.TestLLM):
         rbln_class_kwargs = {"rbln_config": rbln_config}
 
         with pytest.raises(
-            ValueError, match="Parameter conflict for 'batch_size': submodule_config has 2, but kwargs has 1"
+            ValueError,
+            match="Parameter conflict for 'batch_size': submodule_config has 2, but the parent config requires 1",
         ):
             _ = self.RBLN_CLASS.from_pretrained(model_id=self.HF_MODEL_ID, **rbln_class_kwargs)
 
@@ -612,7 +651,7 @@ class TestBlip2ForConditionalGeneration(LLMTest.TestLLM):
 
     def get_inputs(self):
         tokenizer = self.get_tokenizer()
-        img_path = f"{os.path.dirname(__file__)}/../assets/rbln_logo.png"
+        img_path = f"{os.path.dirname(__file__)}/../assets/rbln_logo_light.png"
         image = Image.open(img_path)
         inputs = tokenizer(images=image, text=self.PROMPT, return_tensors="pt", padding=True)
         inputs["max_new_tokens"] = 20
@@ -655,13 +694,72 @@ class TestIdefics3ForConditionalGeneration(LLMTest.TestLLM):
 
     def get_inputs(self):
         tokenizer = self.get_tokenizer()
-        img_path = f"{os.path.dirname(__file__)}/../assets/rbln_logo.png"
+        img_path = f"{os.path.dirname(__file__)}/../assets/rbln_logo_light.png"
         image = Image.open(img_path)
         text = tokenizer.apply_chat_template(self.PROMPT, add_generation_prompt=True)
         inputs = tokenizer(images=[image], text=[text], return_tensors="pt", padding=True)
         inputs["max_new_tokens"] = 20
         inputs["do_sample"] = False
         return inputs
+
+
+class TestQwenRotaryLookup(unittest.TestCase):
+    def test_qwen_vit_rot_pos_ids_matches_hf(self):
+        from types import SimpleNamespace
+
+        from transformers.models.qwen2_vl.modeling_qwen2_vl import (
+            Qwen2VisionTransformerPretrainedModel,
+            VisionRotaryEmbedding,
+        )
+
+        from optimum.rbln.transformers.modeling_rope_utils import qwen_vit_rot_pos_ids
+
+        rot = VisionRotaryEmbedding(20)
+        for merge in (1, 2, 4):
+            for grid in (
+                torch.tensor([[1, 4 * merge, 4 * merge]]),
+                torch.tensor([[3, 2 * merge, 6 * merge], [1, 8 * merge, 2 * merge]]),
+            ):
+                mock = SimpleNamespace(spatial_merge_size=merge, rotary_pos_emb=rot)
+                hf = Qwen2VisionTransformerPretrainedModel.rot_pos_emb(mock, grid)
+                table = rot(int(grid[:, 1:].max()))
+                ours = table[qwen_vit_rot_pos_ids(grid, merge)].flatten(1)
+                self.assertTrue(torch.equal(ours, hf))
+
+    def test_qwen_mrope_lookup_matches_hf_module(self):
+        from transformers.models.qwen2_vl.configuration_qwen2_vl import Qwen2VLTextConfig
+        from transformers.models.qwen2_vl.modeling_qwen2_vl import Qwen2VLRotaryEmbedding
+        from transformers.models.qwen3_vl.configuration_qwen3_vl import Qwen3VLTextConfig
+        from transformers.models.qwen3_vl.modeling_qwen3_vl import Qwen3VLTextRotaryEmbedding
+
+        from optimum.rbln.transformers.modeling_rope_utils import QwenMRopeLookupTable, build_qwen_mrope_lookup
+
+        max_pos = 512
+        standard = Qwen2VLRotaryEmbedding(
+            Qwen2VLTextConfig(rope_scaling={"type": "mrope", "rope_type": "default", "mrope_section": [16, 24, 24]})
+        )
+        interleaved = Qwen3VLTextRotaryEmbedding(
+            Qwen3VLTextConfig(
+                rope_scaling={
+                    "type": "mrope",
+                    "rope_type": "default",
+                    "mrope_section": [24, 20, 20],
+                    "mrope_interleaved": True,
+                }
+            )
+        )
+        x = torch.zeros(1)
+        for rot in (standard, interleaved):
+            lut = build_qwen_mrope_lookup(rot, max_pos)
+            self.assertIsInstance(lut, QwenMRopeLookupTable)
+            oob = torch.randint(0, max_pos, (3, 1, 8))
+            oob[0, 0, 0] = max_pos + 3  # falls back to the dynamic path
+            for pos in (torch.randint(0, max_pos, (3, 2, 64)), torch.randint(0, max_pos, (3, 1, 1)), oob):
+                hf_cos, hf_sin = rot(x, pos)
+                lut_cos, lut_sin = lut(x, pos)
+                self.assertEqual(hf_cos.shape, lut_cos.shape)
+                self.assertLess((hf_cos.float() - lut_cos).abs().max().item(), 2e-7)
+                self.assertLess((hf_sin.float() - lut_sin).abs().max().item(), 2e-7)
 
 
 class TestQwen2VLForConditionalGeneration(LLMTest.TestLLM):
@@ -699,7 +797,7 @@ class TestQwen2VLForConditionalGeneration(LLMTest.TestLLM):
 
     def get_inputs(self):
         tokenizer = self.get_tokenizer()
-        img_path = f"{os.path.dirname(__file__)}/../assets/rbln_logo.png"
+        img_path = f"{os.path.dirname(__file__)}/../assets/rbln_logo_light.png"
         image = Image.open(img_path)
         inputs = tokenizer(images=[image], text=[self.PROMPT], return_tensors="pt", padding=True)
         inputs["max_new_tokens"] = 20
@@ -747,7 +845,7 @@ class TestQwen2_5_VLForConditionalGeneration(LLMTest.TestLLM):
 
     def get_inputs(self):
         tokenizer = self.get_tokenizer()
-        img_path = f"{os.path.dirname(__file__)}/../assets/rbln_logo.png"
+        img_path = f"{os.path.dirname(__file__)}/../assets/rbln_logo_light.png"
         image = Image.open(img_path)
         inputs = tokenizer(images=[image], text=[self.PROMPT], return_tensors="pt", padding=True)
         inputs["max_new_tokens"] = 20
@@ -791,7 +889,7 @@ class TestQwen3VLForConditionalGeneration(LLMTest.TestLLM):
 
     def get_inputs(self):
         tokenizer = self.get_tokenizer()
-        img_path = f"{os.path.dirname(__file__)}/../assets/rbln_logo.png"
+        img_path = f"{os.path.dirname(__file__)}/../assets/rbln_logo_light.png"
         image = Image.open(img_path)
         inputs = tokenizer(images=[image], text=[self.PROMPT], return_tensors="pt", padding=True)
         inputs["max_new_tokens"] = 20
@@ -805,6 +903,47 @@ class TestQwen3VLForConditionalGeneration(LLMTest.TestLLM):
 
         assert not model.rbln_config.visual.create_runtimes
         assert not model.rbln_config.create_runtimes
+
+
+class TestQwen3VLForConditionalGeneration_OutputHiddenStates(TestQwen3VLForConditionalGeneration):
+    # Two prompts of different lengths: the shorter one is left-padded, exercising the
+    # padded-batch prefill output aggregation (hidden states must come back at full mask width
+    # and left-padded rows must not leak into the valid region).
+    PROMPTS = [
+        TestQwen3VLForConditionalGeneration.PROMPT,
+        "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\n<|vision_start|><|image_pad|><|vision_end|>What is the main color of this image? Answer in one short sentence, please.<|im_end|>\n<|im_start|>assistant\n",
+    ]
+    HF_CONFIG_KWARGS = {}  # Initialize empty to avoid sharing with other classes
+    HF_CONFIG_KWARGS_PREPROCESSOR = {
+        "min_pixels": 64 * 16 * 16,
+        "max_pixels": 64 * 16 * 16,
+        "padding_side": "left",
+    }
+    RBLN_CLASS_KWARGS = {
+        "rbln_config": {
+            "visual": {"max_seq_len": 512},
+            "num_devices": 1,
+            "kvcache_partition_len": 8192,
+            "max_seq_len": 16_384,
+            "batch_size": 2,
+            "output_hidden_states": True,
+        }
+    }
+
+    def get_inputs(self):
+        tokenizer = self.get_tokenizer()
+        img_path = f"{os.path.dirname(__file__)}/../assets/rbln_logo_light.png"
+        image = Image.open(img_path)
+        inputs = tokenizer(images=[image, image], text=self.PROMPTS, return_tensors="pt", padding=True)
+        inputs["max_new_tokens"] = 4
+        inputs["do_sample"] = False
+        return inputs
+
+    def test_generate(self):
+        self._test_output_hidden_states_generation()
+
+    def test_propagate_config(self):
+        self.skipTest("Covered by TestQwen3VLForConditionalGeneration.")
 
 
 class TestQwen3VLMoeForConditionalGeneration(LLMTest.TestLLM):
@@ -838,12 +977,90 @@ class TestQwen3VLMoeForConditionalGeneration(LLMTest.TestLLM):
 
     def get_inputs(self):
         tokenizer = self.get_tokenizer()
-        img_path = f"{os.path.dirname(__file__)}/../assets/rbln_logo.png"
+        img_path = f"{os.path.dirname(__file__)}/../assets/rbln_logo_light.png"
         image = Image.open(img_path)
         inputs = tokenizer(images=[image], text=[self.PROMPT], return_tensors="pt", padding=True)
         inputs["max_new_tokens"] = 20
         inputs["do_sample"] = False
         return inputs
+
+
+class TestQwen3_5ForConditionalGeneration(LLMTest.TestLLM):
+    RBLN_AUTO_CLASS = RBLNAutoModelForImageTextToText
+    RBLN_CLASS = RBLNQwen3_5ForConditionalGeneration
+    HF_MODEL_ID = "Qwen/Qwen3.5-0.8B"
+    PROMPT = "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\n<|vision_start|><|image_pad|><|vision_end|>Describe this image.<|im_end|>\n<|im_start|>assistant\n"
+    RBLN_CLASS_KWARGS = {
+        "rbln_config": {
+            "visual": {"max_seq_len": 512},
+            "num_devices": 1,
+            "kvcache_partition_len": 4096,
+            "max_seq_len": 8192,
+        }
+    }
+    IS_MULTIMODAL = True
+    HF_CONFIG_KWARGS = {}
+    HF_CONFIG_KWARGS_PREPROCESSOR = {"min_pixels": 64 * 16 * 16, "max_pixels": 64 * 16 * 16}
+
+    @classmethod
+    def setUpClass(cls):
+        config = AutoConfig.from_pretrained(cls.HF_MODEL_ID)
+        text_config = json.loads(config.text_config.to_json_string())
+        text_config["num_hidden_layers"] = 4
+        text_config["layer_types"] = ["linear_attention", "linear_attention", "linear_attention", "full_attention"]
+        vision_config = json.loads(config.vision_config.to_json_string())
+        vision_config["depth"] = 4
+        cls.HF_CONFIG_KWARGS.update({"text_config": text_config, "vision_config": vision_config})
+        return super().setUpClass()
+
+    def get_inputs(self):
+        tokenizer = self.get_tokenizer()
+        img_path = f"{os.path.dirname(__file__)}/../assets/rbln_logo_light.png"
+        image = Image.open(img_path)
+        inputs = tokenizer(images=[image], text=[self.PROMPT], return_tensors="pt", padding=True)
+        inputs["max_new_tokens"] = 20
+        inputs["do_sample"] = False
+        return inputs
+
+
+class TestQwen3_5ForConditionalGeneration_OutputHiddenStates(TestQwen3_5ForConditionalGeneration):
+    # Left-padded input (padding_side="left", padding="max_length") so the output_hidden_states
+    # aggregation runs with a non-zero start (start > 0). This exercises the scatter-back offset and
+    # the full-width copy_ from the #658 bug family, which a non-padded prompt (start == 0) never hits.
+    # Kept at batch 1 so the BC-inference job can reuse its saved artifact (a batch-size change would
+    # not match the reused artifact).
+    RBLN_CLASS_KWARGS = {
+        "rbln_config": {
+            "visual": {"max_seq_len": 512},
+            "num_devices": 1,
+            "kvcache_partition_len": 4096,
+            "max_seq_len": 8192,
+            "output_hidden_states": True,
+        }
+    }
+    HF_CONFIG_KWARGS_PREPROCESSOR = {
+        "min_pixels": 64 * 16 * 16,
+        "max_pixels": 64 * 16 * 16,
+        "padding_side": "left",
+    }
+
+    def get_inputs(self):
+        tokenizer = self.get_tokenizer()
+        img_path = f"{os.path.dirname(__file__)}/../assets/rbln_logo_light.png"
+        image = Image.open(img_path)
+        inputs = tokenizer(
+            images=[image],
+            text=[self.PROMPT],
+            return_tensors="pt",
+            padding="max_length",
+            max_length=64,
+        )
+        inputs["max_new_tokens"] = 20
+        inputs["do_sample"] = False
+        return inputs
+
+    def test_generate(self):
+        self._test_output_hidden_states_generation()
 
 
 class TestGemma3ForConditionalGeneration(LLMTest.TestLLM):
@@ -874,7 +1091,7 @@ class TestGemma3ForConditionalGeneration(LLMTest.TestLLM):
 
     def get_inputs(self):
         tokenizer = self.get_tokenizer()
-        img_path = f"{os.path.dirname(__file__)}/../assets/rbln_logo.png"
+        img_path = f"{os.path.dirname(__file__)}/../assets/rbln_logo_light.png"
         image = Image.open(img_path)
         image = image.convert("RGB")
         inputs = tokenizer(images=[image], text=[self.PROMPT], return_tensors="pt", padding=True)
@@ -1023,7 +1240,7 @@ class TestDisallowedLlama_3(DisallowedTestBase.DisallowedTest):
     RBLN_CLASS = RBLNLlamaForCausalLM
     HF_MODEL_ID = "afmck/testing-llama-tiny"
     HF_CONFIG_KWARGS = {"num_hidden_layers": 1, "max_position_embeddings": 8192}
-    RBLN_CLASS_KWARGS = {"rbln_config": {"attn_impl": "flash_attn", "kvcache_partition_len": 1024}}
+    RBLN_CLASS_KWARGS = {"rbln_config": {"attn_impl": "flash_attn", "kvcache_partition_len": 512}}
 
 
 class TestDisallowedLlama_4(DisallowedTestBase.DisallowedTest):

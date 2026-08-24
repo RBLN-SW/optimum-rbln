@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from typing import Any, Optional
+from typing import Any
 
 from ....configuration_utils import RBLNModelConfig
 from ....utils.logging import get_logger
@@ -33,11 +33,8 @@ class RBLNColPaliForRetrievalConfig(RBLNModelConfig):
 
         # Create a configuration object
         config = RBLNColPaliForRetrievalConfig(
-            vlm={
-                "language_model": {"prefill_chunk_size": 8192},
-            }
             output_hidden_states=False,
-            num_devices=4
+            num_devices=4,
         )
 
         # Use the configuration with from_pretrained
@@ -54,16 +51,16 @@ class RBLNColPaliForRetrievalConfig(RBLNModelConfig):
 
     def __init__(
         self,
-        batch_size: Optional[int] = None,
-        vlm: Optional[RBLNModelConfig] = None,
-        output_hidden_states: Optional[bool] = None,
+        batch_size: int | None = None,
+        vlm: RBLNModelConfig | None = None,
+        output_hidden_states: bool | None = None,
         **kwargs: Any,
     ):
         """
         Args:
-            batch_size (Optional[int]): The batch size for the model.
-            vlm (Optional[RBLNModelConfig]): Configuration for the VLM component.
-            output_hidden_states (Optional[bool]): Whether to output the hidden states of the decoder. Defaults to False.
+            batch_size (int | None): The batch size for the model.
+            vlm (RBLNModelConfig | None): Configuration for the VLM component.
+            output_hidden_states (bool | None): Whether to output the hidden states of the decoder. Defaults to False.
             kwargs: Additional arguments passed to the parent RBLNModelConfig.
         Raises:
             ValueError: If batch_size is not a positive integer.

@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from typing import Any, Optional
+from typing import Any
 
 import rebel
 import torch
@@ -33,7 +33,7 @@ class RBLNGemma3RuntimeModel(RBLNDecoderOnlyChunkedMultimodalPrefillMixin, RBLNR
 
     _prefill_output_cls = RBLNGemma3ForCausalLMOutput
 
-    def __init__(self, *args: Any, image_prefill: Optional[rebel.Runtime] = None, **kwargs: Any) -> None:
+    def __init__(self, *args: Any, image_prefill: rebel.Runtime | None = None, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         self.image_prefill = RBLNPytorchRuntime(image_prefill)
         self.prefill = RBLNPytorchRuntime(self.runtime) if self.phase == "prefill" else None
@@ -42,14 +42,14 @@ class RBLNGemma3RuntimeModel(RBLNDecoderOnlyChunkedMultimodalPrefillMixin, RBLNR
         self,
         runtime,
         input_chunk: torch.Tensor,
-        per_layer_chunk: Optional[torch.Tensor],
+        per_layer_chunk: torch.Tensor | None,
         cache_pos_chunk: torch.Tensor,
         block_tables: torch.Tensor,
-        local_block_tables: Optional[torch.Tensor],
+        local_block_tables: torch.Tensor | None,
         query_position: torch.Tensor,
         chunked_attention_mask: torch.Tensor,
-        position_ids_chunk: Optional[torch.Tensor],
-        lora_int_ids: Optional[torch.Tensor],
+        position_ids_chunk: torch.Tensor | None,
+        lora_int_ids: torch.Tensor | None,
     ):
         # Gemma3 has no per-layer inputs, so `per_layer_chunk` is ignored. Argument order mirrors
         # Gemma3ForCausalLMWrapper.prepare_forward_args. The callee owns the `use_lora` gate.

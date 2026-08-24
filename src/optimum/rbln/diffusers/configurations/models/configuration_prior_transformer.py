@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Optional
+from typing import Any
 
 from ....configuration_utils import RBLNModelConfig
 
@@ -29,16 +29,16 @@ class RBLNPriorTransformerConfig(RBLNModelConfig):
 
     def __init__(
         self,
-        batch_size: Optional[int] = None,
-        embedding_dim: Optional[int] = None,
-        num_embeddings: Optional[int] = None,
+        batch_size: int | None = None,
+        embedding_dim: int | None = None,
+        num_embeddings: int | None = None,
         **kwargs: Any,
     ):
         """
         Args:
-            batch_size (Optional[int]): The batch size for inference. Defaults to 1.
-            embedding_dim (Optional[int]): Dimension of the embedding vectors in the model.
-            num_embeddings (Optional[int]): Number of discrete embeddings in the codebook.
+            batch_size (int | None): The batch size for inference. Defaults to 1.
+            embedding_dim (int | None): Dimension of the embedding vectors in the model.
+            num_embeddings (int | None): Number of discrete embeddings in the codebook.
             kwargs: Additional arguments passed to the parent RBLNModelConfig.
 
         Raises:

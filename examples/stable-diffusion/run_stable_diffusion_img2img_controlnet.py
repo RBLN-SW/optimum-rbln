@@ -1,6 +1,6 @@
+import argparse
 import os
 
-import fire
 import numpy as np
 import torch
 from diffusers import ControlNetModel, UniPCMultistepScheduler
@@ -10,14 +10,27 @@ from transformers import pipeline
 from optimum.rbln import RBLNDPTForDepthEstimation, RBLNStableDiffusionControlNetImg2ImgPipeline
 
 
-def main(
-    diffusion_model_id: str = "runwayml/stable-diffusion-v1-5",
-    from_diffusers: bool = False,
-    controlnet_model_id: str = "lllyasviel/control_v11f1p_sd15_depth",
-    depth_estimator_model_id: str = "Intel/dpt-large",
-    prompt: str = "lego batman and robin",
-):
-    controlnet = ControlNetModel.from_pretrained(controlnet_model_id)
+# You can compile the model ahead of time with the CLI and then load the
+# artifacts here by passing the output directory as --diffusion-model-id:
+#
+#   optimum-rbln-cli --model-id runwayml/stable-diffusion-v1-5 -o stable-diffusion-v1-5 \
+#       --unet.batch_size 2 --controlnet.batch_size 2
+#   optimum-rbln-cli --model-id Intel/dpt-large -o dpt-large
+
+
+def parse_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--diffusion-model-id", default="runwayml/stable-diffusion-v1-5")
+    parser.add_argument("--controlnet-model-id", default="lllyasviel/control_v11f1p_sd15_depth")
+    parser.add_argument("--depth-estimator-model-id", default="Intel/dpt-large")
+    parser.add_argument("--prompt", default="lego batman and robin")
+    return parser.parse_args()
+
+
+def main():
+    args = parse_args()
+
+    controlnet = ControlNetModel.from_pretrained(args.controlnet_model_id)
 
     image = load_image(
         "https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/diffusers/controlnet-img2img.jpg"
@@ -34,51 +47,35 @@ def main(
 
     img_width, img_height = image.size
 
-    if from_diffusers:
+    if os.path.isdir(args.diffusion_model_id):
+        pipe = RBLNStableDiffusionControlNetImg2ImgPipeline.from_pretrained(args.diffusion_model_id)
+    else:
         pipe = RBLNStableDiffusionControlNetImg2ImgPipeline.from_pretrained(
-            model_id=diffusion_model_id,
+            args.diffusion_model_id,
             controlnet=controlnet,
             rbln_img_width=img_width,
             rbln_img_height=img_height,
             rbln_config={
-                "unet": {
-                    "batch_size": 2,
-                },
-                "controlnet": {
-                    "batch_size": 2,
-                },
+                "unet": {"batch_size": 2},
+                "controlnet": {"batch_size": 2},
             },
-            export=True,
-            scheduler=UniPCMultistepScheduler.from_pretrained(diffusion_model_id, subfolder="scheduler"),
-        )
-        pipe.save_pretrained(os.path.basename(diffusion_model_id))
-        de_model = RBLNDPTForDepthEstimation.from_pretrained(
-            model_id=depth_estimator_model_id,
-            export=True,
-        )
-        de_model.save_pretrained(os.path.basename(depth_estimator_model_id))
-    else:
-        pipe = RBLNStableDiffusionControlNetImg2ImgPipeline.from_pretrained(
-            model_id=os.path.basename(diffusion_model_id),
-            export=False,
-        )
-        de_model = RBLNDPTForDepthEstimation.from_pretrained(
-            model_id=os.path.basename(depth_estimator_model_id),
-            export=False,
+            scheduler=UniPCMultistepScheduler.from_pretrained(args.diffusion_model_id, subfolder="scheduler"),
         )
 
-    depth_estimator = pipeline("depth-estimation", model=de_model, image_processor=depth_estimator_model_id)
+    de_model = RBLNDPTForDepthEstimation.from_pretrained(args.depth_estimator_model_id)
+
+    depth_estimator = pipeline("depth-estimation", model=de_model, image_processor=args.depth_estimator_model_id)
     depth_map = get_depth_map(image, depth_estimator).unsqueeze(0)
 
     image = pipe(
-        prompt=prompt,
+        prompt=args.prompt,
         image=image,
         control_image=depth_map,
         generator=torch.manual_seed(42),
     ).images[0]
 
-    image.save(f"{prompt}-img2img.png")
+    image.save(f"{args.prompt}-img2img.png")
 
 
 if __name__ == "__main__":
-    fire.Fire(main)
+    main()

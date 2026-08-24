@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import math
-from typing import TYPE_CHECKING, Tuple
+from typing import TYPE_CHECKING
 
 import torch
 import torch.nn as nn
@@ -130,7 +130,7 @@ class MidmAttention(DecoderOnlyAttention):
         self.split_size = self_attn.split_size
         self.num_key_value_heads = self_attn.num_heads
 
-    def projection(self, hidden_states, lora_int_id) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    def projection(self, hidden_states, lora_int_id) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         if lora_int_id is not None:
             raise NotImplementedError("LoRA is not supported for MidmAttention")
 

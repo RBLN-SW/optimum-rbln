@@ -14,8 +14,9 @@
 
 import importlib
 import inspect
+from collections.abc import Callable
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, Dict, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Any, Optional, Union
 
 import torch
 from transformers import (
@@ -27,14 +28,16 @@ from transformers import (
 )
 from transformers.initialization import no_init_weights
 from transformers.modeling_outputs import BaseModelOutputWithPooling
+from transformers.models.gemma4.modeling_gemma4 import Gemma4VisionRotaryEmbedding
 
 from ....configuration_utils import RBLNCompileConfig, RBLNModelConfig
 from ....modeling import RBLNModel
 from ....utils.logging import get_logger
+from ...cache_utils import FullAttentionKVCacheMeta, SlidingWindowAttentionKVCacheMeta
 from ...modeling_attention_utils import validate_sliding_window
 from ...modeling_outputs import RBLNDecoderOnlyOutput
+from ...modeling_rope_utils import np_cos, np_sin
 from ...utils.rbln_runtime_wrapper import LoopProcessor
-from ..decoderonly.configuration_decoderonly import KVCacheMeta
 from ..decoderonly.decoderonly_runtime_utils import RBLNPageTableManager
 from ..decoderonly.generation_decoderonly import RBLNDecoderOnlyGenerationMixin
 from ..decoderonly.modeling_decoderonly import RBLNDecoderOnlyModelForCausalLM
@@ -106,17 +109,16 @@ class RBLNGemma4VisionModel(RBLNModel):
     - transferring the checkpoint weights of the original into an optimized RBLN graph,
     - compiling the resulting graph using the RBLN compiler.
 
-    `patch_embedder` (per-patch linear projection + 2D position embedding lookup) and
-    `rotary_emb` (multidimensional cos/sin tables) both run on the host (CPU). `patch_embedder`
-    weights are persisted as a saved torch artifact; `rotary_emb` is recreated from config since
-    its `inv_freq` buffer is non-persistent. The compiled `Gemma4VisionModelWrapper`
+    `patch_embedder` (per-patch linear projection + 2D position embedding lookup) and the
+    multidimensional rotary cos/sin tables both run on the host (CPU). `patch_embedder` weights are
+    persisted as a saved torch artifact; the rotary tables are precomputed from config at load time
+    so each forward only gathers rows from them. The compiled `Gemma4VisionModelWrapper`
     (encoder-layers -> pooler) takes the host-computed `inputs_embeds`, `pixel_position_ids`,
     and `(cos, sin)` rotary tables as inputs. Padding within `max_patches` is handled by the
     encoder via `pixel_position_ids == -1` markers.
     """
 
     auto_model_class = AutoModel
-    _supports_non_fp32 = True
     _tp_support = True
 
     @classmethod
@@ -126,10 +128,10 @@ class RBLNGemma4VisionModel(RBLNModel):
     @classmethod
     def _update_rbln_config(
         cls,
-        preprocessors: Optional[Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"]],
-        model: Optional[PreTrainedModel] = None,
-        model_config: Optional[PretrainedConfig] = None,
-        rbln_config: Optional[RBLNGemma4VisionModelConfig] = None,
+        preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"] | None,
+        model: PreTrainedModel | None = None,
+        model_config: PretrainedConfig | None = None,
+        rbln_config: RBLNGemma4VisionModelConfig | None = None,
     ) -> RBLNGemma4VisionModelConfig:
         if rbln_config.pooling_kernel_size is None:
             rbln_config.pooling_kernel_size = model_config.pooling_kernel_size
@@ -175,12 +177,6 @@ class RBLNGemma4VisionModel(RBLNModel):
             patch_embedder = Gemma4VisionPatchEmbedder(self.config)
         return patch_embedder
 
-    def _create_rotary_emb(self) -> torch.nn.Module:
-        from transformers.models.gemma4.modeling_gemma4 import Gemma4VisionRotaryEmbedding
-
-        rotary_emb = Gemma4VisionRotaryEmbedding(self.config)
-        return rotary_emb
-
     def __post_init__(self, **kwargs):
         artifacts_path = self.model_save_dir / self.subfolder / "torch_artifacts.pth"
         artifacts = torch.load(artifacts_path, weights_only=False) if artifacts_path.exists() else {}
@@ -191,7 +187,17 @@ class RBLNGemma4VisionModel(RBLNModel):
             self.patch_embedder.eval()
         else:
             self.patch_embedder = None
-        self.rotary_emb = self._create_rotary_emb().eval()
+
+        max_patches = max(self.rbln_config.get_max_patches())
+        table_positions = torch.cat([torch.arange(max_patches), torch.tensor([-1])])
+        # Replicates Gemma4VisionRotaryEmbedding.forward for a single spatial axis
+        # (both axes share the same inv_freq); cos/sin go through the deterministic helpers.
+        rotary_emb = Gemma4VisionRotaryEmbedding(self.config)
+        freqs = table_positions[:, None].float() * rotary_emb.inv_freq[None, :].float()
+        emb = torch.cat((freqs, freqs), dim=-1)
+        self.rotary_cos_table = np_cos(emb) * rotary_emb.attention_scaling
+        self.rotary_sin_table = np_sin(emb) * rotary_emb.attention_scaling
+
         super().__post_init__(**kwargs)
 
     def forward(
@@ -208,9 +214,9 @@ class RBLNGemma4VisionModel(RBLNModel):
         padding_positions = (pixel_position_ids == -1).all(dim=-1)
         with torch.no_grad():
             inputs_embeds = self.patch_embedder(pixel_values, pixel_position_ids, padding_positions)
-            cos, sin = self.rotary_emb(inputs_embeds, pixel_position_ids)
-        cos = cos.to(self.rbln_config.dtype)
-        sin = sin.to(self.rbln_config.dtype)
+
+        cos = self.rotary_cos_table[pixel_position_ids].flatten(2).to(self.rbln_config.dtype)
+        sin = self.rotary_sin_table[pixel_position_ids].flatten(2).to(self.rbln_config.dtype)
 
         valid = (~padding_positions).to(inputs_embeds.dtype)
         attn_mask = (1.0 - valid) * torch.finfo(inputs_embeds.dtype).min
@@ -242,7 +248,6 @@ class RBLNGemma4ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
     """
 
     _decoder_wrapper_cls = Gemma4ForCausalLMWrapper
-    _supports_non_fp32 = True
 
     @classmethod
     def get_input_info(
@@ -252,7 +257,7 @@ class RBLNGemma4ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
         rbln_config: RBLNGemma4ForCausalLMConfig,
         model_config: PretrainedConfig,
     ):
-        cls._pre_populate_kvcache_metas(model_config, rbln_config)
+        cls._pre_populate_cache_metas(model_config, rbln_config)
 
         base_info = super().get_input_info(
             batch_size=batch_size,
@@ -277,10 +282,10 @@ class RBLNGemma4ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
     @classmethod
     def _update_rbln_config(
         cls,
-        preprocessors: Optional[Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"]] = None,
-        model: Optional[PreTrainedModel] = None,
-        model_config: Optional[PretrainedConfig] = None,
-        rbln_config: Optional[RBLNGemma4ForCausalLMConfig] = None,
+        preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"] | None = None,
+        model: PreTrainedModel | None = None,
+        model_config: PretrainedConfig | None = None,
+        rbln_config: RBLNGemma4ForCausalLMConfig | None = None,
     ) -> RBLNGemma4ForCausalLMConfig:
         if rbln_config.max_seq_len is None:
             rbln_config.max_seq_len = getattr(model_config, "max_position_embeddings", None) or getattr(
@@ -288,6 +293,10 @@ class RBLNGemma4ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
             )
         if rbln_config.max_seq_len is None:
             raise ValueError("`max_seq_len` should be specified.")
+
+        # Resolve attention defaults first — this also fills in `prefill_chunk_size`, which
+        # `validate_sliding_window` below depends on.
+        rbln_config = cls._update_attention_config(model, model_config, rbln_config)
 
         layer_types = getattr(model_config, "layer_types", None)
         all_full_attention = layer_types is not None and all(t == "full_attention" for t in layer_types)
@@ -300,8 +309,6 @@ class RBLNGemma4ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
             rbln_config = cls._update_sliding_window_config(model_config, rbln_config)
             if rbln_config.sliding_window is not None:
                 validate_sliding_window(rbln_config)
-
-        rbln_config = cls._update_attention_config(model, model_config, rbln_config)
 
         prefill_input_info = cls.get_input_info(
             batch_size=1,
@@ -434,7 +441,9 @@ class RBLNGemma4ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
                 self.config.pad_token_id,
                 embed_scale=self.config.hidden_size_per_layer_input**0.5,
             )
-        return embed_per_layer
+        # Gemma4TextScaledWordEmbedding does not forward a dtype kwarg to
+        # nn.Embedding, so cast the module instead.
+        return embed_per_layer.to(self.rbln_config.dtype)
 
     def __post_init__(self, **kwargs):
         artifacts_path = self.model_save_dir / self.subfolder / "torch_artifacts.pth"
@@ -442,15 +451,13 @@ class RBLNGemma4ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
 
         if self.rbln_config.use_inputs_embeds and "embed_tokens" in artifacts:
             self.embed_tokens = self._create_embedding_layer()
-            self.embed_tokens.load_state_dict(artifacts["embed_tokens"])
-            self.embed_tokens.to(self.rbln_config.dtype)
+            self.embed_tokens.load_state_dict(artifacts["embed_tokens"], assign=True)
         else:
             self.embed_tokens = None
 
         if getattr(self.config, "hidden_size_per_layer_input", 0) and "embed_tokens_per_layer" in artifacts:
             self.embed_tokens_per_layer = self._create_per_layer_embedding_layer()
-            self.embed_tokens_per_layer.load_state_dict(artifacts["embed_tokens_per_layer"])
-            self.embed_tokens_per_layer.to(self.rbln_config.dtype)
+            self.embed_tokens_per_layer.load_state_dict(artifacts["embed_tokens_per_layer"], assign=True)
         else:
             self.embed_tokens_per_layer = None
 
@@ -487,7 +494,7 @@ class RBLNGemma4ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
             **common_kwargs,
         )
 
-        self.decoders: Dict[int, RBLNGemma4RuntimeModel] = {}
+        self.decoders: dict[int, RBLNGemma4RuntimeModel] = {}
         if self.can_generate():
             for i, batch_size in enumerate(self.rbln_config.decoder_batch_sizes):
                 self.decoders[batch_size] = RBLNGemma4RuntimeModel(
@@ -508,23 +515,25 @@ class RBLNGemma4ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
                 self.config.pad_token_id,
                 embed_scale=self.config.hidden_size**0.5,
             )
-        return embed_tokens
+        # Gemma4TextScaledWordEmbedding does not forward a dtype kwarg to
+        # nn.Embedding, so cast the module instead.
+        return embed_tokens.to(self.rbln_config.dtype)
 
     @classmethod
-    def _pre_populate_kvcache_metas(
+    def _pre_populate_cache_metas(
         cls,
         model_config: "PretrainedConfig",
         rbln_config: RBLNGemma4ForCausalLMConfig,
     ) -> None:
-        # Pre-populates rbln_config.kvcache_metas with per-layer-heterogeneous KV shapes.
+        # Pre-populates rbln_config.cache_metas with per-layer-heterogeneous KV shapes.
         # Gemma4 mixes two layer kinds:
         #   sliding_attention: head_dim=config.head_dim, num_kv=config.num_key_value_heads.
         #   full_attention: head_dim=config.global_head_dim,
         #     num_kv=config.num_global_key_value_heads (attention_k_eq_v=True) or num_key_value_heads.
-        # Base get_input_info short-circuits on a non-empty kvcache_metas list and uses these entries
+        # Base get_input_info short-circuits on a non-empty cache_metas list and uses these entries
         # verbatim as compile-time KV cache input shapes — the only way to express per-layer
         # heterogeneous KV geometry in the current pipeline.
-        if len(rbln_config.kvcache_metas) > 0:
+        if len(rbln_config.cache_metas) > 0:
             return  # already populated (e.g. loaded from disk)
 
         dtype_str = RBLNCompileConfig.normalize_dtype(rbln_config.dtype)
@@ -554,9 +563,10 @@ class RBLNGemma4ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
             num_kv = num_kv_sliding if is_sliding else num_kv_full
             head_dim = head_dim_sliding if is_sliding else head_dim_full
 
+            meta_cls = SlidingWindowAttentionKVCacheMeta if is_sliding else FullAttentionKVCacheMeta
             for kv_offset, _ in enumerate(("key", "value")):
                 name = f"past_key_values_{layer_idx * 2 + kv_offset}"
-                meta = KVCacheMeta.make(
+                meta = meta_cls.from_config(
                     name=name,
                     layer_index=layer_idx,
                     num_key_value_heads=num_kv,
@@ -564,14 +574,14 @@ class RBLNGemma4ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
                     dtype=dtype_str,
                     rbln_config=rbln_config,
                 )
-                rbln_config.kvcache_metas.append(meta)
+                rbln_config.cache_metas.append(meta)
 
     @classmethod
     def _update_submodule_config(
         cls,
         model: "PreTrainedModel",
         rbln_config: RBLNModelConfig,
-        preprocessors: Optional[Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"]],
+        preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"] | None,
     ):
         if rbln_config.image_prefill_chunk_size is None:
             rbln_config.image_prefill_chunk_size = [rbln_config.prefill_chunk_size]
@@ -614,7 +624,6 @@ class RBLNGemma4ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMix
         {"name": "vision_tower"},
         {"name": "language_model"},
     ]
-    _supports_non_fp32 = True
 
     @staticmethod
     def _reject_unsupported_modalities(
@@ -668,6 +677,35 @@ class RBLNGemma4ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMix
         )
         super().__post_init__(**kwargs)
 
+    @property
+    def compiled_image_features_dtype(self) -> torch.dtype:
+        # `embed_vision`'s `image_features` input follows `rbln_config.dtype`; that is the basis going
+        # forward. An artifact compiled before that was true has a different `image_features` dtype baked
+        # into its graph, so read the dtype back from the saved compile config and feed the graph what it
+        # was actually compiled with. That keeps such artifacts loading and running instead of failing on
+        # a buffer/graph dtype mismatch, so it only ever warns -- raising would break the case it exists
+        # to support.
+        #
+        # Once optimum-rbln reaches 0.12.0 this is deleted outright:
+        #   1. Delete this property.
+        #   2. In `get_image_features`, replace both uses of `self.compiled_image_features_dtype`
+        #      with `self.rbln_config.dtype`.
+        compile_cfg = self.rbln_config.compile_cfgs[0]
+        input_info = compile_cfg.input_info[0] if compile_cfg.is_multiple_input_info else compile_cfg.input_info
+        compiled_dtype = getattr(torch, next(item[2] for item in input_info if item[0] == "image_features"))
+
+        if compiled_dtype != self.rbln_config.dtype:
+            logger.warning_once(
+                f"This artifact's `embed_vision` was compiled with `image_features` dtype "
+                f"`{compiled_dtype}`, which differs from the current `rbln_config.dtype` "
+                f"(`{self.rbln_config.dtype}`). `image_features` is being fed at the compiled dtype so "
+                "this artifact keeps working; recompile it so `embed_vision` picks up the current "
+                "`rbln_config.dtype`. Support for artifacts whose `embed_vision` compiled "
+                "`image_features` dtype differs from `rbln_config.dtype` is deprecated and will be "
+                "removed in version 0.12.0."
+            )
+        return compiled_dtype
+
     def get_attn_impl(self) -> str:
         return self.rbln_config.language_model.attn_impl
 
@@ -684,10 +722,10 @@ class RBLNGemma4ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMix
     @classmethod
     def _update_rbln_config(
         cls,
-        preprocessors: Optional[Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"]],
+        preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"] | None,
         model: Optional["PreTrainedModel"] = None,
         model_config: Optional["PretrainedConfig"] = None,
-        rbln_config: Optional[RBLNModelConfig] = None,
+        rbln_config: RBLNModelConfig | None = None,
     ) -> RBLNModelConfig:
         vision_cfg = model_config.vision_config
         vt_cfg = rbln_config.vision_tower
@@ -704,7 +742,7 @@ class RBLNGemma4ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMix
         input_infos = []
         for max_soft_tokens in max_soft_tokens_list:
             input_info = [
-                ("image_features", [1, max_soft_tokens, vision_hidden_size], "float32"),
+                ("image_features", [1, max_soft_tokens, vision_hidden_size], rbln_config.dtype),
             ]
             input_infos.append(input_info)
         compile_cfgs = RBLNCompileConfig(input_info=input_infos)
@@ -755,9 +793,9 @@ class RBLNGemma4ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMix
     def _update_model_kwargs_for_generation(
         self,
         outputs: RBLNDecoderOnlyOutput,
-        model_kwargs: Dict[str, Any],
+        model_kwargs: dict[str, Any],
         **kwargs,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         model_kwargs["generate_idx"] = outputs.generate_idx
         model_kwargs["padded_cache_lengths"] = outputs.padded_cache_lengths
         return model_kwargs
@@ -807,10 +845,14 @@ class RBLNGemma4ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMix
             torch.empty(size=vision_out_0_size, dtype=self.rbln_config.vision_tower.dtype, device="cpu"),
             torch.empty(size=vision_out_1_size, dtype=torch.bool, device="cpu"),
         ]
-        projector_out_buffer = [torch.empty(size=projector_out_size, dtype=torch.float32, device="cpu")]
+        projector_out_buffer = [
+            torch.empty(size=projector_out_size, dtype=self.compiled_image_features_dtype, device="cpu")
+        ]
 
         vision_outputs = self.vision_tower(pixel_values, pixel_position_ids, out=vision_out_buffer)
-        pooler_output = self.embed_vision(vision_outputs.last_hidden_state.float(), out=projector_out_buffer)
+        pooler_output = self.embed_vision(
+            vision_outputs.last_hidden_state.to(self.compiled_image_features_dtype), out=projector_out_buffer
+        )
         pooler_output = pooler_output[vision_outputs.pooler_mask]
         return pooler_output
 
@@ -832,12 +874,12 @@ class RBLNGemma4ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMix
 
     def _preprocess_prefill(
         self,
-        input_ids: Optional[torch.LongTensor] = None,
-        inputs_embeds: Optional[torch.FloatTensor] = None,
-        pixel_values: Optional[torch.FloatTensor] = None,
-        image_position_ids: Optional[torch.LongTensor] = None,
-        pixel_values_videos: Optional[torch.FloatTensor] = None,
-        video_position_ids: Optional[torch.LongTensor] = None,
+        input_ids: torch.LongTensor | None = None,
+        inputs_embeds: torch.FloatTensor | None = None,
+        pixel_values: torch.FloatTensor | None = None,
+        image_position_ids: torch.LongTensor | None = None,
+        pixel_values_videos: torch.FloatTensor | None = None,
+        video_position_ids: torch.LongTensor | None = None,
         **kwargs,
     ):
         if (input_ids is None) ^ (inputs_embeds is not None):
@@ -891,19 +933,19 @@ class RBLNGemma4ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMix
         token_type_ids: torch.Tensor = None,
         pixel_values: torch.FloatTensor = None,
         image_position_ids: torch.LongTensor = None,
-        cache_position: Optional[torch.LongTensor] = None,
-        inputs_embeds: Optional[torch.FloatTensor] = None,
-        generate_idx: Optional[torch.Tensor] = None,
-        padded_cache_lengths: Optional[torch.Tensor] = None,
-        position_ids: Optional[torch.Tensor] = None,
-        mm_token_type_ids: Optional[torch.Tensor] = None,
-        output_hidden_states: Optional[bool] = None,
-        pixel_values_videos: Optional[torch.Tensor] = None,
-        video_position_ids: Optional[torch.Tensor] = None,
-        input_features: Optional[torch.Tensor] = None,
-        input_features_mask: Optional[torch.Tensor] = None,
-        **lm_kwargs: Dict[str, Any],
-    ) -> Union[Tuple, RBLNDecoderOnlyOutput]:
+        cache_position: torch.LongTensor | None = None,
+        inputs_embeds: torch.FloatTensor | None = None,
+        generate_idx: torch.Tensor | None = None,
+        padded_cache_lengths: torch.Tensor | None = None,
+        position_ids: torch.Tensor | None = None,
+        mm_token_type_ids: torch.Tensor | None = None,
+        output_hidden_states: bool | None = None,
+        pixel_values_videos: torch.Tensor | None = None,
+        video_position_ids: torch.Tensor | None = None,
+        input_features: torch.Tensor | None = None,
+        input_features_mask: torch.Tensor | None = None,
+        **lm_kwargs: dict[str, Any],
+    ) -> tuple | RBLNDecoderOnlyOutput:
         self._reject_unsupported_modalities(input_features, input_features_mask)
 
         output_hidden_states = (

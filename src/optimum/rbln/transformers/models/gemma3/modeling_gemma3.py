@@ -13,7 +13,8 @@
 # limitations under the License.
 import importlib
 import inspect
-from typing import TYPE_CHECKING, Any, Callable, Dict, Optional, Tuple, Union
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any, Optional, Union
 
 import torch
 from transformers import AutoModelForImageTextToText, Gemma3ForConditionalGeneration, PretrainedConfig, PreTrainedModel
@@ -133,15 +134,15 @@ class RBLNGemma3ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMix
     @classmethod
     def _update_rbln_config(
         cls,
-        preprocessors: Optional[Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"]],
+        preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"] | None,
         model: Optional["PreTrainedModel"] = None,
         model_config: Optional["PretrainedConfig"] = None,
-        rbln_config: Optional[RBLNModelConfig] = None,
+        rbln_config: RBLNModelConfig | None = None,
     ) -> RBLNModelConfig:
         image_feature_dim = (model_config.vision_config.image_size // model_config.vision_config.patch_size) ** 2
         feature_size = model_config.vision_config.hidden_size
 
-        input_info = [("image_features", [rbln_config.batch_size, image_feature_dim, feature_size], "float32")]
+        input_info = [("image_features", [rbln_config.batch_size, image_feature_dim, feature_size], rbln_config.dtype)]
         rbln_compile_config = RBLNCompileConfig(input_info=input_info)
         rbln_config.set_compile_cfgs([rbln_compile_config])
         return rbln_config
@@ -186,9 +187,9 @@ class RBLNGemma3ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMix
     def _update_model_kwargs_for_generation(
         self,
         outputs: RBLNDecoderOnlyOutput,
-        model_kwargs: Dict[str, Any],
+        model_kwargs: dict[str, Any],
         **kwargs,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         # update generate_idx
         model_kwargs["generate_idx"] = outputs.generate_idx
         model_kwargs["padded_cache_lengths"] = outputs.padded_cache_lengths
@@ -216,17 +217,23 @@ class RBLNGemma3ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMix
             self.config.mm_tokens_per_image,
             self.config.text_config.hidden_size,
         ]
-        vision_out_buffer.append(torch.empty(size=vision_out_size, dtype=torch.float32, device="cpu"))
-        projector_out_buffer = [torch.empty(size=projector_out_size, dtype=torch.float32, device="cpu")]
-        vision_outputs = self.vision_tower(pixel_values, out=vision_out_buffer).last_hidden_state
-        image_features = self.multi_modal_projector(vision_outputs, out=projector_out_buffer)
+        vision_out_buffer.append(
+            torch.empty(size=vision_out_size, dtype=self.rbln_config.vision_tower.dtype, device="cpu")
+        )
+        projector_out_buffer = [torch.empty(size=projector_out_size, dtype=self.rbln_config.dtype, device="cpu")]
+        vision_outputs = self.vision_tower(
+            pixel_values.to(self.rbln_config.vision_tower.dtype), out=vision_out_buffer
+        ).last_hidden_state
+        image_features = self.multi_modal_projector(
+            vision_outputs.to(self.rbln_config.dtype), out=projector_out_buffer
+        )
         return image_features
 
     def _preprocess_prefill(
         self,
-        input_ids: Optional[torch.LongTensor] = None,
-        inputs_embeds: Optional[torch.FloatTensor] = None,
-        pixel_values: Optional[torch.FloatTensor] = None,
+        input_ids: torch.LongTensor | None = None,
+        inputs_embeds: torch.FloatTensor | None = None,
+        pixel_values: torch.FloatTensor | None = None,
         **kwargs,
     ):
         if (input_ids is None) ^ (inputs_embeds is not None):
@@ -260,14 +267,14 @@ class RBLNGemma3ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMix
         attention_mask: torch.Tensor = None,
         token_type_ids: torch.Tensor = None,
         pixel_values: torch.FloatTensor = None,
-        cache_position: Optional[torch.LongTensor] = None,
-        inputs_embeds: Optional[torch.FloatTensor] = None,
-        generate_idx: Optional[torch.Tensor] = None,
-        padded_cache_lengths: Optional[torch.Tensor] = None,
-        position_ids: Optional[torch.Tensor] = None,
-        output_hidden_states: Optional[bool] = None,
-        **lm_kwargs: Dict[str, Any],
-    ) -> Union[Tuple, RBLNDecoderOnlyOutput]:
+        cache_position: torch.LongTensor | None = None,
+        inputs_embeds: torch.FloatTensor | None = None,
+        generate_idx: torch.Tensor | None = None,
+        padded_cache_lengths: torch.Tensor | None = None,
+        position_ids: torch.Tensor | None = None,
+        output_hidden_states: bool | None = None,
+        **lm_kwargs: dict[str, Any],
+    ) -> tuple | RBLNDecoderOnlyOutput:
         output_hidden_states = (
             output_hidden_states
             if output_hidden_states is not None
@@ -361,11 +368,12 @@ class RBLNGemma3ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
     """
 
     _decoder_wrapper_cls = Gemma3ForCausalLMWrapper
-    _supports_non_fp32 = False
 
     def setup_runtime(self):
         # Initialize shared resources to be used across Runtime instances (prefill and decode phases)
-        dec_attn_mask = torch.zeros(self.rbln_config.batch_size, self.rbln_config.max_seq_len, dtype=torch.float32)
+        dec_attn_mask = torch.zeros(
+            self.rbln_config.batch_size, self.rbln_config.max_seq_len, dtype=self.rbln_config.dtype
+        )
         page_table_manager = RBLNPageTableManager(self.rbln_config)
 
         common_kwargs = {
@@ -404,14 +412,16 @@ class RBLNGemma3ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
                 self.config.pad_token_id,
                 embed_scale=self.config.hidden_size**0.5,
             )
-        return embed_tokens
+        # Gemma3TextScaledWordEmbedding does not forward a dtype kwarg to
+        # nn.Embedding, so cast the module instead.
+        return embed_tokens.to(self.rbln_config.dtype)
 
     @classmethod
     def _update_submodule_config(
         cls,
         model: "PreTrainedModel",
         rbln_config: RBLNModelConfig,
-        preprocessors: Optional[Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"]],
+        preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"] | None,
     ):
         if rbln_config.image_prefill_chunk_size is None:
             rbln_config.image_prefill_chunk_size = model.config.mm_tokens_per_image

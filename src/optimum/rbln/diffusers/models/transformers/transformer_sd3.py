@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Any, Union
 
 import torch
 from diffusers.models.modeling_outputs import Transformer2DModelOutput
@@ -45,8 +45,8 @@ class SD3Transformer2DModelWrapper(torch.nn.Module):
         pooled_projections: torch.FloatTensor = None,
         timestep: torch.LongTensor = None,
         # need controlnet support?
-        block_controlnet_hidden_states: List = None,
-        joint_attention_kwargs: Optional[Dict[str, Any]] = None,
+        block_controlnet_hidden_states: list = None,
+        joint_attention_kwargs: dict[str, Any] | None = None,
         return_dict: bool = True,
     ):
         return self.model(
@@ -120,7 +120,7 @@ class RBLNSD3Transformer2DModel(RBLNModel):
                     rbln_config.sample_size[0],
                     rbln_config.sample_size[1],
                 ],
-                "float32",
+                rbln_config.dtype,
             ),
             (
                 "encoder_hidden_states",
@@ -129,7 +129,7 @@ class RBLNSD3Transformer2DModel(RBLNModel):
                     rbln_config.prompt_embed_length,
                     model_config.joint_attention_dim,
                 ],
-                "float32",
+                rbln_config.dtype,
             ),
             (
                 "pooled_projections",
@@ -137,7 +137,7 @@ class RBLNSD3Transformer2DModel(RBLNModel):
                     rbln_config.batch_size,
                     model_config.pooled_projection_dim,
                 ],
-                "float32",
+                rbln_config.dtype,
             ),
             ("timestep", [rbln_config.batch_size], "float32"),
         ]
@@ -156,11 +156,11 @@ class RBLNSD3Transformer2DModel(RBLNModel):
         encoder_hidden_states: torch.FloatTensor = None,
         pooled_projections: torch.FloatTensor = None,
         timestep: torch.LongTensor = None,
-        block_controlnet_hidden_states: List = None,
-        joint_attention_kwargs: Optional[Dict[str, Any]] = None,
+        block_controlnet_hidden_states: list = None,
+        joint_attention_kwargs: dict[str, Any] | None = None,
         return_dict: bool = True,
         **kwargs,
-    ) -> Union[Transformer2DModelOutput, Tuple]:
+    ) -> Transformer2DModelOutput | tuple:
         """
         Forward pass for the RBLN-optimized SD3Transformer2DModel.
 
@@ -172,7 +172,7 @@ class RBLNSD3Transformer2DModel(RBLNModel):
             return_dict (bool): Whether or not to return a [`~diffusers.models.modeling_output.Transformer2DModelOutput`] instead of a plain tuple.
 
         Returns:
-            (Union[`~diffusers.models.modeling_output.Transformer2DModelOutput`, Tuple])
+            (`~diffusers.models.modeling_output.Transformer2DModelOutput` | tuple)
         """
         sample_batch_size = hidden_states.size()[0]
         compiled_batch_size = self.compiled_batch_size
@@ -187,5 +187,9 @@ class RBLNSD3Transformer2DModel(RBLNModel):
             )
 
         return super().forward(
-            hidden_states, encoder_hidden_states, pooled_projections, timestep, return_dict=return_dict
+            hidden_states,
+            encoder_hidden_states,
+            pooled_projections,
+            timestep,
+            return_dict=return_dict,
         )

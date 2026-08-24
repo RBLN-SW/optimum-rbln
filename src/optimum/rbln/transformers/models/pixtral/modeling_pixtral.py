@@ -13,7 +13,7 @@
 # limitations under the License.
 
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Any, Optional, Union
 
 import rebel
 import torch
@@ -58,8 +58,8 @@ class RBLNRuntimePixtralVisionModel(RBLNPytorchRuntime):
         self,
         pixel_values: torch.Tensor,
         image_sizes: torch.Tensor,
-        output_hidden_states: Optional[bool] = None,
-        return_dict: Optional[bool] = None,
+        output_hidden_states: bool | None = None,
+        return_dict: bool | None = None,
         **kwargs,
     ):
         if pixel_values.shape[2] > self.max_image_size[0] or pixel_values.shape[3] > self.max_image_size[1]:
@@ -94,7 +94,7 @@ class RBLNRuntimePixtralVisionModel(RBLNPytorchRuntime):
             h_patched_original = image_sizes[i, 0] // self.patch_size
             w_patched_original = image_sizes[i, 1] // self.patch_size
 
-            single_pixel_values = pixel_values[i : i + 1]
+            single_pixel_values = pixel_values[i : i + 1].to(self.patch_conv.weight.dtype)
             patch_embed = self.patch_conv(single_pixel_values)
             patch_embed_seq = patch_embed[:, :, :h_patched_original, :w_patched_original].flatten(2).transpose(1, 2)
             patch_embed_seq = self.ln_pre(patch_embed_seq)
@@ -123,7 +123,9 @@ class RBLNRuntimePixtralVisionModel(RBLNPytorchRuntime):
             )
 
             attention_mask = torch.full(
-                (1, patch_embed_seq.shape[-2]), fill_value=torch.finfo(patch_embed_seq.dtype).min
+                (1, patch_embed_seq.shape[-2]),
+                fill_value=torch.finfo(patch_embed_seq.dtype).min,
+                dtype=patch_embed_seq.dtype,
             )
             attention_mask[:, : h_patched_original * w_patched_original] = 0
             if "out" in kwargs:
@@ -208,8 +210,8 @@ class RBLNPixtralVisionModel(RBLNModel):
                 bias=False,
             )
             self.ln_pre = PixtralRMSNorm(self.config.hidden_size, eps=1e-5)
-        self.patch_conv.load_state_dict(artifacts["patch_conv"])
-        self.ln_pre.load_state_dict(artifacts["ln_pre"])
+        self.patch_conv.load_state_dict(artifacts["patch_conv"], assign=True)
+        self.ln_pre.load_state_dict(artifacts["ln_pre"], assign=True)
         self.model = RBLNRuntimePixtralVisionModel(
             self.model[0],
             main_input_name="pixel_values",
@@ -247,7 +249,7 @@ class RBLNPixtralVisionModel(RBLNModel):
         preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"],
         model: Optional["PreTrainedModel"] = None,
         model_config: "PixtralVisionConfig" = None,
-        rbln_config: Optional[RBLNPixtralVisionModelConfig] = None,
+        rbln_config: RBLNPixtralVisionModelConfig | None = None,
     ) -> RBLNPixtralVisionModelConfig:
         if rbln_config.max_image_size is None:
             rbln_config.max_image_size = (model_config.image_size, model_config.image_size)
@@ -264,16 +266,16 @@ class RBLNPixtralVisionModel(RBLNModel):
                 (
                     "patch_embeds",
                     [1, num_total_patches, model_config.hidden_size],
-                    "float32",
+                    rbln_config.dtype,
                 ),
-                ("attention_mask", [1, num_total_patches], "float32"),
+                ("attention_mask", [1, num_total_patches], rbln_config.dtype),
                 (
                     "position_embeddings_1",
                     [
                         num_total_patches,
                         model_config.head_dim,
                     ],
-                    "float32",
+                    rbln_config.dtype,
                 ),
                 (
                     "position_embeddings_2",
@@ -281,7 +283,7 @@ class RBLNPixtralVisionModel(RBLNModel):
                         num_total_patches,
                         model_config.head_dim,
                     ],
-                    "float32",
+                    rbln_config.dtype,
                 ),
             ]
         )
@@ -291,12 +293,12 @@ class RBLNPixtralVisionModel(RBLNModel):
 
     def forward(
         self,
-        pixel_values: Optional[torch.FloatTensor] = None,
-        image_sizes: Optional[torch.FloatTensor] = None,
-        output_hidden_states: Optional[bool] = None,
+        pixel_values: torch.FloatTensor | None = None,
+        image_sizes: torch.FloatTensor | None = None,
+        output_hidden_states: bool | None = None,
         return_dict: bool = True,
         **kwargs,
-    ) -> Union[Tuple, BaseModelOutput]:
+    ) -> tuple | BaseModelOutput:
         """
         Forward pass for the RBLN-optimized Pixtral vision model.
 

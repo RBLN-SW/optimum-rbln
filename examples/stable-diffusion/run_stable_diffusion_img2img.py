@@ -1,7 +1,7 @@
+import argparse
 import os
 from io import BytesIO
 
-import fire
 import requests
 import torch
 from PIL import Image
@@ -9,49 +9,52 @@ from PIL import Image
 from optimum.rbln import RBLNStableDiffusionImg2ImgPipeline
 
 
-def main(
-    model_id: str = "runwayml/stable-diffusion-v1-5",
-    from_diffusers: bool = False,
-    prompt: str = "A fantasy landscape, trending on artstation",
-    img_width: int = 768,
-    img_height: int = 512,
-    guidance_scale: float = 7.5,
-    strength: float = 0.75,
-):
+# You can compile the model ahead of time with the CLI and then load the
+# artifacts here by passing the output directory as --model-id:
+#
+#   optimum-rbln-cli --model-id runwayml/stable-diffusion-v1-5 -o stable-diffusion-v1-5 \
+#       --img_width 768 --img_height 512 --unet.batch_size 2
+
+
+def parse_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--model-id", default="runwayml/stable-diffusion-v1-5")
+    parser.add_argument("--prompt", default="A fantasy landscape, trending on artstation")
+    parser.add_argument("--img-width", type=int, default=768)
+    parser.add_argument("--img-height", type=int, default=512)
+    parser.add_argument("--guidance-scale", type=float, default=7.5)
+    parser.add_argument("--strength", type=float, default=0.75)
+    return parser.parse_args()
+
+
+def main():
+    args = parse_args()
+
     url = "https://raw.githubusercontent.com/CompVis/stable-diffusion/main/assets/stable-samples/img2img/sketch-mountains-input.jpg"
     response = requests.get(url)
     init_image = Image.open(BytesIO(response.content)).convert("RGB")
-    init_image = init_image.resize((img_width, img_height))
+    init_image = init_image.resize((args.img_width, args.img_height))
 
-    if from_diffusers:
-        pipe = RBLNStableDiffusionImg2ImgPipeline.from_pretrained(
-            model_id=model_id,
-            export=True,
-            rbln_img_width=img_width,
-            rbln_img_height=img_height,
-            rbln_config={
-                "unet": {
-                    "batch_size": 2,
-                },
-            },
-        )
-        pipe.save_pretrained(os.path.basename(model_id))
+    if os.path.isdir(args.model_id):
+        pipe = RBLNStableDiffusionImg2ImgPipeline.from_pretrained(args.model_id)
     else:
         pipe = RBLNStableDiffusionImg2ImgPipeline.from_pretrained(
-            model_id=os.path.basename(model_id),
-            export=False,
+            args.model_id,
+            rbln_img_width=args.img_width,
+            rbln_img_height=args.img_height,
+            rbln_config={"unet": {"batch_size": 2}},
         )
 
     image = pipe(
-        prompt=prompt,
+        prompt=args.prompt,
         image=init_image,
-        strength=strength,
-        guidance_scale=guidance_scale,
+        strength=args.strength,
+        guidance_scale=args.guidance_scale,
         generator=torch.manual_seed(42),
     ).images[0]
 
-    image.save(f"{prompt}.png")
+    image.save(f"{args.prompt}.png")
 
 
 if __name__ == "__main__":
-    fire.Fire(main)
+    main()

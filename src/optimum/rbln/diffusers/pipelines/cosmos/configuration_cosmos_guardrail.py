@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Optional, Tuple
+from typing import Any
 
 from ....configuration_utils import RBLNAutoConfig, RBLNModelConfig
 from ....transformers import RBLNSiglipVisionModelConfig
@@ -25,9 +25,9 @@ class RBLNVideoSafetyModelConfig(RBLNModelConfig):
 
     def __init__(
         self,
-        batch_size: Optional[int] = None,
-        input_size: Optional[int] = None,
-        image_size: Optional[Tuple[int, int]] = None,
+        batch_size: int | None = None,
+        input_size: int | None = None,
+        image_size: tuple[int, int] | None = None,
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -42,8 +42,8 @@ class RBLNRetinaFaceFilterConfig(RBLNModelConfig):
 
     def __init__(
         self,
-        batch_size: Optional[int] = None,
-        image_size: Optional[Tuple[int, int]] = None,
+        batch_size: int | None = None,
+        image_size: tuple[int, int] | None = None,
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -60,16 +60,16 @@ class RBLNCosmosSafetyCheckerConfig(RBLNModelConfig):
 
     def __init__(
         self,
-        qwen3guard: Optional[RBLNModelConfig] = None,
-        video_safety_model: Optional[RBLNModelConfig] = None,
-        face_blur_filter: Optional[RBLNModelConfig] = None,
-        siglip_encoder: Optional[RBLNSiglipVisionModelConfig] = None,
+        qwen3guard: RBLNModelConfig | None = None,
+        video_safety_model: RBLNModelConfig | None = None,
+        face_blur_filter: RBLNModelConfig | None = None,
+        siglip_encoder: RBLNSiglipVisionModelConfig | None = None,
         *,
-        batch_size: Optional[int] = None,
-        image_size: Optional[Tuple[int, int]] = None,
-        height: Optional[int] = None,
-        width: Optional[int] = None,
-        max_seq_len: Optional[int] = None,
+        batch_size: int | None = None,
+        image_size: tuple[int, int] | None = None,
+        height: int | None = None,
+        width: int | None = None,
+        max_seq_len: int | None = None,
         **kwargs: Any,
     ):
         super().__init__(**kwargs)

@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Optional, Tuple, Union
 
 import torch
 from transformers.modeling_outputs import (
@@ -47,12 +46,12 @@ class RBLNBertModel(RBLNTransformerEncoderForFeatureExtraction):
 
     def forward(
         self,
-        input_ids: Optional[torch.Tensor] = None,
-        attention_mask: Optional[torch.Tensor] = None,
-        token_type_ids: Optional[torch.Tensor] = None,
-        position_ids: Optional[torch.Tensor] = None,
+        input_ids: torch.Tensor | None = None,
+        attention_mask: torch.Tensor | None = None,
+        token_type_ids: torch.Tensor | None = None,
+        position_ids: torch.Tensor | None = None,
         **kwargs,
-    ) -> Union[BaseModelOutputWithPoolingAndCrossAttentions, Tuple]:
+    ) -> BaseModelOutputWithPoolingAndCrossAttentions | tuple:
         """
         Forward pass for the RBLN-optimized BERT model for feature extraction tasks.
 
@@ -95,11 +94,11 @@ class RBLNBertForMaskedLM(RBLNModelForMaskedLM):
 
     def forward(
         self,
-        input_ids: Optional[torch.Tensor] = None,
-        attention_mask: Optional[torch.Tensor] = None,
-        token_type_ids: Optional[torch.Tensor] = None,
+        input_ids: torch.Tensor | None = None,
+        attention_mask: torch.Tensor | None = None,
+        token_type_ids: torch.Tensor | None = None,
         **kwargs,
-    ) -> Union[MaskedLMOutput, Tuple]:
+    ) -> MaskedLMOutput | tuple:
         """
         Forward pass for the RBLN-optimized BERT model for masked language modeling tasks.
 
@@ -128,11 +127,11 @@ class RBLNBertForQuestionAnswering(RBLNModelForQuestionAnswering):
 
     def forward(
         self,
-        input_ids: Optional[torch.Tensor] = None,
-        attention_mask: Optional[torch.Tensor] = None,
-        token_type_ids: Optional[torch.Tensor] = None,
+        input_ids: torch.Tensor | None = None,
+        attention_mask: torch.Tensor | None = None,
+        token_type_ids: torch.Tensor | None = None,
         **kwargs,
-    ) -> Union[QuestionAnsweringModelOutput, Tuple]:
+    ) -> QuestionAnsweringModelOutput | tuple:
         """
         Forward pass for the RBLN-optimized BERT model for question answering tasks.
 

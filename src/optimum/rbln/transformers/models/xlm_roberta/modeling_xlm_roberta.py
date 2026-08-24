@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Optional, Union
 
 import torch
 from transformers.modeling_outputs import BaseModelOutputWithPoolingAndCrossAttentions, SequenceClassifierOutput
@@ -27,11 +26,11 @@ class RBLNXLMRobertaModel(RBLNTransformerEncoderForFeatureExtraction):
 
     def forward(
         self,
-        input_ids: Optional[torch.Tensor] = None,
-        attention_mask: Optional[torch.Tensor] = None,
-        token_type_ids: Optional[torch.Tensor] = None,
+        input_ids: torch.Tensor | None = None,
+        attention_mask: torch.Tensor | None = None,
+        token_type_ids: torch.Tensor | None = None,
         **kwargs,
-    ) -> Union[BaseModelOutputWithPoolingAndCrossAttentions, tuple]:
+    ) -> BaseModelOutputWithPoolingAndCrossAttentions | tuple:
         """
         Forward pass for the RBLN-optimized XLM-RoBERTa base model.
 
@@ -59,11 +58,11 @@ class RBLNXLMRobertaForSequenceClassification(RBLNModelForSequenceClassification
 
     def forward(
         self,
-        input_ids: Optional[torch.LongTensor] = None,
-        attention_mask: Optional[torch.FloatTensor] = None,
-        token_type_ids: Optional[torch.LongTensor] = None,
+        input_ids: torch.LongTensor | None = None,
+        attention_mask: torch.FloatTensor | None = None,
+        token_type_ids: torch.LongTensor | None = None,
         **kwargs,
-    ) -> Union[SequenceClassifierOutput, tuple]:
+    ) -> SequenceClassifierOutput | tuple:
         """
         Forward pass for the RBLN-optimized XLM-RoBERTa model for sequence classification.
 

@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Dict, Optional
+from typing import Any
 
 from ....configuration_utils import RBLNModelConfig
 from ....utils.logging import get_logger
@@ -26,31 +26,31 @@ class RBLNAutoencoderKLCosmosConfig(RBLNModelConfig):
 
     def __init__(
         self,
-        batch_size: Optional[int] = None,
-        uses_encoder: Optional[bool] = None,
-        num_frames: Optional[int] = None,
-        height: Optional[int] = None,
-        width: Optional[int] = None,
-        num_channels_latents: Optional[int] = None,
-        vae_scale_factor_temporal: Optional[int] = None,
-        vae_scale_factor_spatial: Optional[int] = None,
-        use_slicing: Optional[bool] = None,
-        **kwargs: Dict[str, Any],
+        batch_size: int | None = None,
+        uses_encoder: bool | None = None,
+        num_frames: int | None = None,
+        height: int | None = None,
+        width: int | None = None,
+        num_channels_latents: int | None = None,
+        vae_scale_factor_temporal: int | None = None,
+        vae_scale_factor_spatial: int | None = None,
+        use_slicing: bool | None = None,
+        **kwargs: dict[str, Any],
     ):
         """
         Args:
-            batch_size (Optional[int]): The batch size for inference. Defaults to 1.
-            uses_encoder (Optional[bool]): Whether to include the encoder part of the VAE in the model.
+            batch_size (int | None): The batch size for inference. Defaults to 1.
+            uses_encoder (bool | None): Whether to include the encoder part of the VAE in the model.
                 When False, only the decoder is used (for latent-to-video conversion).
-            num_frames (Optional[int]): The number of frames in the generated video. Defaults to 121.
-            height (Optional[int]): The height in pixels of the generated video. Defaults to 704.
-            width (Optional[int]): The width in pixels of the generated video. Defaults to 1280.
-            num_channels_latents (Optional[int]): The number of channels in latent space.
-            vae_scale_factor_temporal (Optional[int]): The scaling factor between time space and latent space.
+            num_frames (int | None): The number of frames in the generated video. Defaults to 121.
+            height (int | None): The height in pixels of the generated video. Defaults to 704.
+            width (int | None): The width in pixels of the generated video. Defaults to 1280.
+            num_channels_latents (int | None): The number of channels in latent space.
+            vae_scale_factor_temporal (int | None): The scaling factor between time space and latent space.
                 Determines how much shorter the latent representations are compared to the original videos.
-            vae_scale_factor_spatial (Optional[int]): The scaling factor between pixel space and latent space.
+            vae_scale_factor_spatial (int | None): The scaling factor between pixel space and latent space.
                 Determines how much smaller the latent representations are compared to the original videos.
-            use_slicing (Optional[bool]): Enable sliced VAE encoding and decoding.
+            use_slicing (bool | None): Enable sliced VAE encoding and decoding.
                 If True, the VAE will split the input tensor in slices to compute encoding or decoding in several steps.
             kwargs: Additional arguments passed to the parent RBLNModelConfig.
 

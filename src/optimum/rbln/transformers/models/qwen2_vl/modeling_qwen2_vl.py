@@ -13,8 +13,9 @@
 # limitations under the License.
 
 import inspect
+from collections.abc import Callable
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, Optional, Union
+from typing import TYPE_CHECKING, Any, Optional, Union
 
 import torch
 from transformers import (
@@ -37,6 +38,7 @@ from ....configuration_utils import RBLNCompileConfig
 from ....modeling import RBLNModel
 from ....utils.logging import get_logger
 from ...modeling_outputs import _validate_output_hidden_states
+from ...modeling_rope_utils import build_qwen_mrope_lookup, np_cos, np_sin, qwen_vit_rot_pos_ids
 from ..decoderonly.modeling_decoderonly import (
     RBLNDecoderOnlyModel,
     RBLNDecoderOnlyModelForCausalLM,
@@ -62,7 +64,6 @@ if TYPE_CHECKING:
 
 class RBLNQwen2VisionTransformerPretrainedModel(RBLNModel):
     auto_model_class = None
-    _supports_non_fp32 = True
 
     def __post_init__(self, **kwargs):
         self.transformer = self.model[0]
@@ -72,7 +73,9 @@ class RBLNQwen2VisionTransformerPretrainedModel(RBLNModel):
         self.patch_size = config.spatial_patch_size
         self.spatial_merge_size = config.spatial_merge_size
         self.spatial_merge_unit = config.spatial_merge_size * config.spatial_merge_size
-        self.rotary_pos_emb = VisionRotaryEmbedding((config.embed_dim // config.num_heads) // 2)
+        freq_table = VisionRotaryEmbedding((config.embed_dim // config.num_heads) // 2)(int(self.max_seq_len.max()))
+        self.rotary_cos_table = np_cos(freq_table)
+        self.rotary_sin_table = np_sin(freq_table)
         with no_init_weights():
             self.patch_embed = PatchEmbed(
                 patch_size=config.patch_size,
@@ -117,7 +120,7 @@ class RBLNQwen2VisionTransformerPretrainedModel(RBLNModel):
         preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"],
         model: Optional["PreTrainedModel"] = None,
         model_config: "PretrainedConfig" = None,
-        rbln_config: Optional[RBLNQwen2VisionTransformerPretrainedModelConfig] = None,
+        rbln_config: RBLNQwen2VisionTransformerPretrainedModelConfig | None = None,
     ) -> RBLNQwen2VisionTransformerPretrainedModelConfig:
         hidden_size = model_config.embed_dim
         num_heads = model_config.num_heads
@@ -185,9 +188,13 @@ class RBLNQwen2VisionTransformerPretrainedModel(RBLNModel):
         # Each image is handled independently for padding and attention mask generation.
 
         hidden_states = self.patch_embed(hidden_states).to(self.rbln_config.dtype)
-        rotary_pos_emb = self.rot_pos_emb(grid_thw)
-        emb = torch.cat((rotary_pos_emb, rotary_pos_emb), dim=-1)
-        position_embeddings = (emb.cos().to(self.rbln_config.dtype), emb.sin().to(self.rbln_config.dtype))
+        pos_ids = qwen_vit_rot_pos_ids(grid_thw, self.spatial_merge_size)
+        cos = self.rotary_cos_table[pos_ids].flatten(1)
+        sin = self.rotary_sin_table[pos_ids].flatten(1)
+        position_embeddings = (
+            torch.cat((cos, cos), dim=-1).to(self.rbln_config.dtype),
+            torch.cat((sin, sin), dim=-1).to(self.rbln_config.dtype),
+        )
 
         cu_seqlens = torch.repeat_interleave(grid_thw[:, 1] * grid_thw[:, 2], grid_thw[:, 0]).cumsum(
             dim=0,
@@ -240,7 +247,6 @@ class RBLNQwen2VisionTransformerPretrainedModel(RBLNModel):
 class RBLNQwen2VLModel(RBLNDecoderOnlyModel):
     auto_model_class = AutoModelForImageTextToText
     _decoder_wrapper_cls = Qwen2VL_LanguageModelWrapper
-    _supports_non_fp32 = True
     _use_rotary_emb = False
     _rbln_submodules = [
         {"name": "visual"},
@@ -261,7 +267,9 @@ class RBLNQwen2VLModel(RBLNDecoderOnlyModel):
 
         super().__post_init__(**kwargs)
         self.visual = self.rbln_submodules[0]
-        self.rotary_emb = self._rotary_emb_class(self.config.text_config)
+        self.rotary_emb = build_qwen_mrope_lookup(
+            self._rotary_emb_class(self.config.text_config), self.rbln_config.max_seq_len
+        )
         if not self.can_generate():
             self.block_tables = torch.arange(self.rbln_config.kvcache_num_blocks, dtype=torch.int16)
 
@@ -279,6 +287,7 @@ class RBLNQwen2VLModel(RBLNDecoderOnlyModel):
                 self.config.text_config.vocab_size,
                 self.config.text_config.hidden_size,
                 self.config.text_config.pad_token_id,
+                dtype=self.rbln_config.dtype,
             )
         return embed_tokens
 
@@ -327,10 +336,10 @@ class RBLNQwen2VLModel(RBLNDecoderOnlyModel):
         pixel_values_videos: torch.FloatTensor = None,
         image_grid_thw: torch.LongTensor = None,
         video_grid_thw: torch.LongTensor = None,
-        mm_token_type_ids: Optional[torch.IntTensor] = None,
+        mm_token_type_ids: torch.IntTensor | None = None,
     ):
         batch_size = input_ids.shape[0]
-        inputs_embeds = self.embed_tokens(input_ids).to(self.rbln_config.dtype)
+        inputs_embeds = self.embed_tokens(input_ids)
 
         if pixel_values is not None:
             image_embeds = self.visual(pixel_values, grid_thw=image_grid_thw)
@@ -410,17 +419,17 @@ class RBLNQwen2VLModel(RBLNDecoderOnlyModel):
 
     def forward(
         self,
-        input_ids: Optional[torch.LongTensor] = None,
-        inputs_embeds: Optional[torch.FloatTensor] = None,
-        attention_mask: Optional[torch.Tensor] = None,
-        pixel_values: Optional[torch.Tensor] = None,
-        pixel_values_videos: Optional[torch.FloatTensor] = None,
-        image_grid_thw: Optional[torch.LongTensor] = None,
-        video_grid_thw: Optional[torch.LongTensor] = None,
-        cache_position: Optional[torch.LongTensor] = None,
-        output_hidden_states: Optional[bool] = None,
-        return_dict: Optional[bool] = None,
-        mm_token_type_ids: Optional[torch.IntTensor] = None,
+        input_ids: torch.LongTensor | None = None,
+        inputs_embeds: torch.FloatTensor | None = None,
+        attention_mask: torch.Tensor | None = None,
+        pixel_values: torch.Tensor | None = None,
+        pixel_values_videos: torch.FloatTensor | None = None,
+        image_grid_thw: torch.LongTensor | None = None,
+        video_grid_thw: torch.LongTensor | None = None,
+        cache_position: torch.LongTensor | None = None,
+        output_hidden_states: bool | None = None,
+        return_dict: bool | None = None,
+        mm_token_type_ids: torch.IntTensor | None = None,
         **kwargs,
     ) -> RBLNDecoderOnlyOutput:
         inputs_embeds, position_embed, rope_deltas = self._preprocess_prefill(
@@ -521,7 +530,6 @@ class RBLNQwen2VLForConditionalGeneration(RBLNQwen2VLModel, RBLNDecoderOnlyModel
 
     auto_model_class = AutoModelForImageTextToText
     _decoder_wrapper_cls = Qwen2VL_LanguageModelWrapper
-    _supports_non_fp32 = True
     _use_rotary_emb = False
     _rbln_submodules = [
         {"name": "visual"},
@@ -542,9 +550,9 @@ class RBLNQwen2VLForConditionalGeneration(RBLNQwen2VLModel, RBLNDecoderOnlyModel
     def prepare_inputs_for_generation(
         self,
         input_ids: torch.LongTensor,
-        generate_idx: Optional[torch.Tensor] = None,
-        attention_mask: Optional[torch.LongTensor] = None,
-        inputs_embeds: Optional[torch.Tensor] = None,
+        generate_idx: torch.Tensor | None = None,
+        attention_mask: torch.LongTensor | None = None,
+        inputs_embeds: torch.Tensor | None = None,
         pixel_values=None,
         pixel_values_videos=None,
         image_grid_thw=None,
@@ -594,7 +602,7 @@ class RBLNQwen2VLForConditionalGeneration(RBLNQwen2VLModel, RBLNDecoderOnlyModel
                 f"Cache position size mismatch: got {cache_position.shape[0]}, expected {self.rbln_config.batch_size}."
             )
 
-        inputs_embeds = self.embed_tokens(input_ids).to(self.rbln_config.dtype)
+        inputs_embeds = self.embed_tokens(input_ids)
         position_embeds = []
         for b_idx in range(self.rbln_config.batch_size):
             delta = cache_position[b_idx] + self.rope_deltas[b_idx]
@@ -610,18 +618,18 @@ class RBLNQwen2VLForConditionalGeneration(RBLNQwen2VLModel, RBLNDecoderOnlyModel
 
     def forward(
         self,
-        input_ids: Optional[torch.LongTensor] = None,
-        inputs_embeds: Optional[torch.FloatTensor] = None,
-        attention_mask: Optional[torch.Tensor] = None,
-        pixel_values: Optional[torch.Tensor] = None,
-        pixel_values_videos: Optional[torch.FloatTensor] = None,
-        image_grid_thw: Optional[torch.LongTensor] = None,
-        video_grid_thw: Optional[torch.LongTensor] = None,
-        cache_position: Optional[torch.LongTensor] = None,
-        generate_idx: Optional[torch.Tensor] = None,
-        return_dict: Optional[bool] = None,
-        output_hidden_states: Optional[bool] = None,
-        mm_token_type_ids: Optional[torch.IntTensor] = None,
+        input_ids: torch.LongTensor | None = None,
+        inputs_embeds: torch.FloatTensor | None = None,
+        attention_mask: torch.Tensor | None = None,
+        pixel_values: torch.Tensor | None = None,
+        pixel_values_videos: torch.FloatTensor | None = None,
+        image_grid_thw: torch.LongTensor | None = None,
+        video_grid_thw: torch.LongTensor | None = None,
+        cache_position: torch.LongTensor | None = None,
+        generate_idx: torch.Tensor | None = None,
+        return_dict: bool | None = None,
+        output_hidden_states: bool | None = None,
+        mm_token_type_ids: torch.IntTensor | None = None,
         **kwargs,
     ) -> RBLNDecoderOnlyOutput:
         output_hidden_states = _validate_output_hidden_states(output_hidden_states, self.rbln_config)

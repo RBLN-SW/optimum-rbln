@@ -15,7 +15,7 @@
 import os
 import pathlib
 from functools import partial
-from typing import Any, Dict, Optional, Tuple, Union
+from typing import Any, Optional
 from unittest.mock import patch
 
 import rebel
@@ -117,7 +117,7 @@ class RBLNSigLIPEncoder(SigLIPEncoder):
         self,
         model_name: str = "google/siglip-so400m-patch14-384",
         checkpoint_id: str = COSMOS_GUARDRAIL_CHECKPOINT,
-        rbln_config: Optional[RBLNCosmosSafetyCheckerConfig] = None,
+        rbln_config: RBLNCosmosSafetyCheckerConfig | None = None,
     ):
         torch.nn.Module.__init__(self)
         if is_compiled_dir(checkpoint_id):
@@ -152,7 +152,7 @@ class RBLNRetinaFaceFilter(RetinaFaceFilter):
         checkpoint_id: str = COSMOS_GUARDRAIL_CHECKPOINT,
         batch_size: int = 1,
         confidence_threshold: float = 0.7,
-        rbln_config: Optional[RBLNCosmosSafetyCheckerConfig] = None,
+        rbln_config: RBLNCosmosSafetyCheckerConfig | None = None,
     ):
         torch.nn.Module.__init__(self)
         if is_compiled_dir(checkpoint_id):
@@ -320,7 +320,7 @@ class RBLNQwen3Guard(Qwen3Guard):
         self,
         checkpoint_id: str = COSMOS_GUARDRAIL_CHECKPOINT,
         base_model_id: str = "Qwen/Qwen3Guard-Gen-0.6B",
-        rbln_config: Optional[RBLNCosmosSafetyCheckerConfig] = None,
+        rbln_config: RBLNCosmosSafetyCheckerConfig | None = None,
     ) -> None:
         if is_compiled_dir(checkpoint_id):
             torch.nn.Module.__init__(self)
@@ -353,7 +353,7 @@ class RBLNCosmosSafetyChecker(CosmosSafetyChecker):
         self,
         checkpoint_id: str = COSMOS_GUARDRAIL_CHECKPOINT,
         textguard_model_id: str = "Qwen/Qwen3Guard-Gen-0.6B",
-        rbln_config: Optional[RBLNCosmosSafetyCheckerConfig] = None,
+        rbln_config: RBLNCosmosSafetyCheckerConfig | None = None,
     ) -> None:
         torch.nn.Module.__init__(self)
         if not COSMOS_AVAILABLE:
@@ -405,9 +405,9 @@ class RBLNCosmosSafetyChecker(CosmosSafetyChecker):
     def from_pretrained(
         cls,
         checkpoint_id: str,
-        rbln_config: Optional[RBLNCosmosSafetyCheckerConfig] = None,
-        subfolder: Optional[str] = None,
-        export: Optional[bool] = True,
+        rbln_config: RBLNCosmosSafetyCheckerConfig | None = None,
+        subfolder: str | None = None,
+        export: bool | None = True,
         **kwargs,
     ):
         rbln_config, kwargs = cls.prepare_rbln_config(rbln_config=rbln_config, **kwargs)
@@ -422,8 +422,8 @@ class RBLNCosmosSafetyChecker(CosmosSafetyChecker):
 
     @classmethod
     def prepare_rbln_config(
-        cls, rbln_config: Optional[Union[Dict[str, Any], RBLNCosmosSafetyCheckerConfig]] = None, **kwargs
-    ) -> Tuple[RBLNCosmosSafetyCheckerConfig, Dict[str, Any]]:
+        cls, rbln_config: dict[str, Any] | RBLNCosmosSafetyCheckerConfig | None = None, **kwargs
+    ) -> tuple[RBLNCosmosSafetyCheckerConfig, dict[str, Any]]:
         # Extract rbln-config from kwargs and convert it to RBLNCosmosSafetyCheckerConfig.
         rbln_config, kwargs = RBLNCosmosSafetyCheckerConfig.initialize_from_kwargs(rbln_config, **kwargs)
         return rbln_config, kwargs

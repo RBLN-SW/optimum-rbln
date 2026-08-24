@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Optional, Tuple, Union
+from typing import Any
 
 from ...configuration_generic import RBLNImageModelConfig
 
@@ -27,15 +27,15 @@ class RBLNDetrForObjectDetectionConfig(RBLNImageModelConfig):
 
     def __init__(
         self,
-        image_size: Optional[Union[int, Tuple[int, int]]] = None,
-        batch_size: Optional[int] = None,
+        image_size: int | tuple[int, int] | None = None,
+        batch_size: int | None = None,
         **kwargs: Any,
     ):
         """
         Args:
-            image_size (Optional[Union[int, Tuple[int, int]]]): The size of input images
+            image_size (int | tuple[int, int] | None): The size of input images
                 for compile shape. Can be an integer for square images or a tuple (height, width).
-            batch_size (Optional[int]): The batch size for inference. Defaults to 1.
+            batch_size (int | None): The batch size for inference. Defaults to 1.
             kwargs: Additional arguments passed to the parent RBLNModelConfig.
 
         Raises:

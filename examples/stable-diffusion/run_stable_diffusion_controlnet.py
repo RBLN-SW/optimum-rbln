@@ -1,7 +1,7 @@
+import argparse
 import os
 
 import cv2
-import fire
 import numpy as np
 import torch
 from diffusers import ControlNetModel, UniPCMultistepScheduler
@@ -11,13 +11,25 @@ from PIL import Image
 from optimum.rbln import RBLNStableDiffusionControlNetPipeline
 
 
-def main(
-    diffusion_model_id: str = "runwayml/stable-diffusion-v1-5",
-    from_diffusers: bool = False,
-    controlnet_model_id: str = "lllyasviel/sd-controlnet-canny",
-    prompt: str = "the mona lisa",
-):
-    controlnet = ControlNetModel.from_pretrained(controlnet_model_id)
+# You can compile the model ahead of time with the CLI and then load the
+# artifacts here by passing the output directory as --diffusion-model-id:
+#
+#   optimum-rbln-cli --model-id runwayml/stable-diffusion-v1-5 -o stable-diffusion-v1-5 \
+#       --unet.batch_size 2 --controlnet.batch_size 2
+
+
+def parse_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--diffusion-model-id", default="runwayml/stable-diffusion-v1-5")
+    parser.add_argument("--controlnet-model-id", default="lllyasviel/sd-controlnet-canny")
+    parser.add_argument("--prompt", default="the mona lisa")
+    return parser.parse_args()
+
+
+def main():
+    args = parse_args()
+
+    controlnet = ControlNetModel.from_pretrained(args.controlnet_model_id)
 
     image = load_image(
         "https://hf.co/datasets/huggingface/documentation-images/resolve/main/diffusers/input_image_vermeer.png"
@@ -32,38 +44,29 @@ def main(
 
     img_width, img_height = image.size
 
-    if from_diffusers:
+    if os.path.isdir(args.diffusion_model_id):
+        pipe = RBLNStableDiffusionControlNetPipeline.from_pretrained(args.diffusion_model_id)
+    else:
         pipe = RBLNStableDiffusionControlNetPipeline.from_pretrained(
-            model_id=diffusion_model_id,
+            args.diffusion_model_id,
             controlnet=controlnet,
             rbln_img_width=img_width,
             rbln_img_height=img_height,
             rbln_config={
-                "unet": {
-                    "batch_size": 2,
-                },
-                "controlnet": {
-                    "batch_size": 2,
-                },
+                "unet": {"batch_size": 2},
+                "controlnet": {"batch_size": 2},
             },
-            export=True,
-            scheduler=UniPCMultistepScheduler.from_pretrained(diffusion_model_id, subfolder="scheduler"),
-        )
-        pipe.save_pretrained(os.path.basename(diffusion_model_id))
-    else:
-        pipe = RBLNStableDiffusionControlNetPipeline.from_pretrained(
-            model_id=os.path.basename(diffusion_model_id),
-            export=False,
+            scheduler=UniPCMultistepScheduler.from_pretrained(args.diffusion_model_id, subfolder="scheduler"),
         )
 
     image = pipe(
-        prompt=prompt,
+        prompt=args.prompt,
         image=canny_image,
         generator=torch.manual_seed(42),
     ).images[0]
 
-    image.save(f"{prompt}.png")
+    image.save(f"{args.prompt}.png")
 
 
 if __name__ == "__main__":
-    fire.Fire(main)
+    main()

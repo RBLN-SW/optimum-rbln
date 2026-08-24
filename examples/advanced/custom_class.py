@@ -26,7 +26,7 @@ for completely custom architectures without a corresponding HuggingFace implemen
 This example demonstrates creating a custom RBLN class for the ResNet model from transformers.
 """
 
-from typing import TYPE_CHECKING, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Optional, Union
 
 import torch
 from transformers import ResNetModel  # noqa: F401
@@ -58,7 +58,7 @@ class RBLNResNetModel(RBLNModel):
     @classmethod
     def _update_rbln_config(
         cls,
-        preprocessors: Optional[Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"]] = None,
+        preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"] | None = None,
         model: Optional["PreTrainedModel"] = None,
         model_config: Optional["PretrainedConfig"] = None,
         rbln_config: Optional["RBLNResNetModelConfig"] = None,
@@ -85,7 +85,7 @@ class RBLNResNetModel(RBLNModel):
         rbln_config.set_compile_cfgs([RBLNCompileConfig(input_info=input_info)])
         return rbln_config
 
-    def forward(self, pixel_values, return_dict: Optional[bool] = None, **kwargs):
+    def forward(self, pixel_values, return_dict: bool | None = None, **kwargs):
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
 
         # self.model is a list of rebel.Runtime objects
@@ -109,7 +109,7 @@ class RBLNResNetModel(RBLNModel):
 # - batch_size: Batch size for inference
 # - image_size: Input image dimensions (height, width)
 class RBLNResNetModelConfig(RBLNModelConfig):
-    def __init__(self, batch_size: int = None, image_size: Optional[Tuple[int, int]] = None, **kwargs):
+    def __init__(self, batch_size: int = None, image_size: tuple[int, int] | None = None, **kwargs):
         super().__init__(**kwargs)
         self.batch_size = batch_size or 1
         self.image_size = image_size or (224, 224)
@@ -130,11 +130,9 @@ RBLNAutoConfig.register(RBLNResNetModelConfig)
 # STEP 4: Usage Example - Creating and using the custom RBLN model
 # ----------------------------------------------------------------
 # Initialize the model from a pretrained HuggingFace model
-# The 'export=True' parameter triggers the model compilation process
-# rbln_image_size and rbln_batch_size are passed to the custom configuration
-my_model = RBLNResNetModel.from_pretrained(
-    "microsoft/resnet-50", export=True, rbln_image_size=(224, 224), rbln_batch_size=1
-)
+# Passing a HuggingFace model id compiles the model; rbln_image_size and
+# rbln_batch_size are passed to the custom configuration
+my_model = RBLNResNetModel.from_pretrained("microsoft/resnet-50", rbln_image_size=(224, 224), rbln_batch_size=1)
 
 # Save the compiled model for later use
 my_model.save_pretrained("my_resnet_model_saved")

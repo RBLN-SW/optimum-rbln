@@ -22,15 +22,63 @@ jobs:
 
       - name: Get compiler version
         id: get_version
+        env:
+          OBEDIENTS_API_TOKEN: ${{ secrets.OBEDIENTS_API_TOKEN }}
+          OBEDIENTS_API_URL: ${{ secrets.OBEDIENTS_API_URL }}
         run: |
+          set -euo pipefail
+          API="${OBEDIENTS_API_URL}/v2/organizations/main/pipelines/nightly"
+          AUTH="Authorization: Bearer ${OBEDIENTS_API_TOKEN}"
+
+          # 1. Latest passed *amd64* nightly build on dev. The list also
+          #    contains "nightly-build-AArch64" (ARM) and nixl-triggered
+          #    builds; only the canonical "nightly-build" carries the amd64
+          #    prod package + version manifest, so filter by message.
+          BUILD_NUMBER=$( \
+            curl -fsS --retry 5 --retry-max-time 120 -H "$AUTH" \
+              "${API}/builds?branch=dev&state=passed&per_page=30" \
+            | jq -r 'first((if type=="array" then . else .items end)[] | select(.message=="nightly-build") | .number) // empty' \
+          )
+          if [ -z "$BUILD_NUMBER" ]; then
+            echo "No passed 'nightly-build' found on dev" >&2
+            exit 1
+          fi
+
+          # 2. Locate the version manifest artifact. The list response has no
+          #    download_url; only the per-artifact GET returns it.
+          ART_RESP=$( \
+            curl -fsS --retry 5 --retry-max-time 120 -H "$AUTH" \
+              "${API}/builds/${BUILD_NUMBER}/artifacts" \
+          )
+          ART_URL=$( \
+            printf '%s' "$ART_RESP" \
+            | jq -r 'first((if type=="array" then . else .items end)[] | select(.path=="compiler-nightly-version") | .url) // empty' \
+          )
+          if [ -z "$ART_URL" ]; then
+            echo "compiler-nightly-version artifact missing on build #${BUILD_NUMBER}; artifact list response was:" >&2
+            printf '%s\n' "$ART_RESP" >&2
+            exit 1
+          fi
+          ART_META=$(curl -fsS --retry 5 --retry-max-time 120 -H "$AUTH" "$ART_URL")
+          DL_URL=$(printf '%s' "$ART_META" | jq -r '.download_url // empty')
+          if [ -z "$DL_URL" ]; then
+            echo "no download_url for compiler-nightly-version artifact on build #${BUILD_NUMBER}; artifact response was:" >&2
+            printf '%s\n' "$ART_META" >&2
+            exit 1
+          fi
+
+          # 3. Read VERSION_PROD (download_url is pre-signed, no auth header needed).
+          LATEST_VERSION=$(curl -fsSL --retry 5 "$DL_URL" | grep '^VERSION_PROD=' | cut -d '=' -f2-)
+          if [ -z "$LATEST_VERSION" ]; then
+            echo "VERSION_PROD not found in manifest of build #${BUILD_NUMBER}" >&2
+            exit 1
+          fi
+
           CUR_VERSION=$(grep rebel_compiler_version .github/version.yaml | cut -d ':' -f2 | tr -d ' ')
-          LATEST_VERSION=$( \
-                            curl -s "${{ secrets.DEV_PKG_URL }}/rebel-compiler/json" | \
-                            jq -r '.releases | keys | .[]' | \
-                            grep prod | \
-                            grep -v "latestumd" | \
-                            python .github/scripts/parsing_latest_version.py
-                          )
+
+          echo "Latest (nightly build #${BUILD_NUMBER}): $LATEST_VERSION"
+          echo "Current (.github/version.yaml): $CUR_VERSION"
+
           echo "compiler_version=$LATEST_VERSION" >> $GITHUB_OUTPUT
           echo "cur_version=$CUR_VERSION" >> $GITHUB_OUTPUT
 

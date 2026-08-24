@@ -1,4 +1,4 @@
-from typing import Any, Optional
+from typing import Any
 
 from ....configuration_utils import RBLNModelConfig
 
@@ -13,18 +13,18 @@ class RBLNTimeSeriesTransformerForPredictionConfig(RBLNModelConfig):
 
     def __init__(
         self,
-        batch_size: Optional[int] = None,
-        enc_max_seq_len: Optional[int] = None,
-        dec_max_seq_len: Optional[int] = None,
-        num_parallel_samples: Optional[int] = None,
+        batch_size: int | None = None,
+        enc_max_seq_len: int | None = None,
+        dec_max_seq_len: int | None = None,
+        num_parallel_samples: int | None = None,
         **kwargs: Any,
     ):
         """
         Args:
-            batch_size (Optional[int]): The batch size for inference. Defaults to 1.
-            enc_max_seq_len (Optional[int]): Maximum sequence length for the encoder.
-            dec_max_seq_len (Optional[int]): Maximum sequence length for the decoder.
-            num_parallel_samples (Optional[int]): Number of samples to generate in parallel during prediction.
+            batch_size (int | None): The batch size for inference. Defaults to 1.
+            enc_max_seq_len (int | None): Maximum sequence length for the encoder.
+            dec_max_seq_len (int | None): Maximum sequence length for the decoder.
+            num_parallel_samples (int | None): Number of samples to generate in parallel during prediction.
             kwargs: Additional arguments passed to the parent RBLNModelConfig.
 
         Raises:

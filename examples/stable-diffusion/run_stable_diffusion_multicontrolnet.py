@@ -1,8 +1,7 @@
+import argparse
 import os
-from typing import List, Optional
 
 import cv2
-import fire
 import numpy as np
 import torch
 from controlnet_aux import OpenposeDetector
@@ -13,13 +12,25 @@ from PIL import Image
 from optimum.rbln import RBLNStableDiffusionControlNetPipeline
 
 
-def main(
-    diffusion_model_id: str = "runwayml/stable-diffusion-v1-5",
-    from_diffusers: bool = False,
-    controlnet_model_id: Optional[List[str]] = None,
-    prompt: str = "a giant standing in a fantasy landscape, best quality",
-    negative_prompt: str = "monochrome, lowres, bad anatomy, worst quality, low quality",
-):
+# You can compile the model ahead of time with the CLI and then load the
+# artifacts here by passing the output directory as --diffusion-model-id:
+#
+#   optimum-rbln-cli --model-id runwayml/stable-diffusion-v1-5 -o stable-diffusion-v1-5 \
+#       --img_width 512 --img_height 512 --unet.batch_size 1 --controlnet.batch_size 1
+
+
+def parse_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--diffusion-model-id", default="runwayml/stable-diffusion-v1-5")
+    parser.add_argument("--controlnet-model-id", nargs="+", default=None)
+    parser.add_argument("--prompt", default="a giant standing in a fantasy landscape, best quality")
+    parser.add_argument("--negative-prompt", default="monochrome, lowres, bad anatomy, worst quality, low quality")
+    return parser.parse_args()
+
+
+def main():
+    args = parse_args()
+
     canny_image = load_image(
         "https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/diffusers/landscape.png"
     )
@@ -44,6 +55,7 @@ def main(
     )
     openpose_image = openpose(openpose_image)
 
+    controlnet_model_id = args.controlnet_model_id
     if controlnet_model_id is None:
         controlnet_model_id = [
             "lllyasviel/sd-controlnet-openpose",
@@ -55,36 +67,35 @@ def main(
         controlnet = ControlNetModel.from_pretrained(cmi)
         controlnets.append(controlnet)
 
-    if from_diffusers:
+    if os.path.isdir(args.diffusion_model_id):
+        pipe = RBLNStableDiffusionControlNetPipeline.from_pretrained(args.diffusion_model_id)
+    else:
         pipe = RBLNStableDiffusionControlNetPipeline.from_pretrained(
-            model_id=diffusion_model_id,
+            args.diffusion_model_id,
             controlnet=controlnets,
             rbln_img_width=512,
             rbln_img_height=512,
-            export=True,
-            scheduler=UniPCMultistepScheduler.from_pretrained(diffusion_model_id, subfolder="scheduler"),
-        )
-        pipe.save_pretrained(os.path.basename(diffusion_model_id))
-    else:
-        pipe = RBLNStableDiffusionControlNetPipeline.from_pretrained(
-            model_id=os.path.basename(diffusion_model_id),
-            export=False,
+            rbln_config={
+                "unet": {"batch_size": 1},
+                "controlnet": {"batch_size": 1},
+            },
+            scheduler=UniPCMultistepScheduler.from_pretrained(args.diffusion_model_id, subfolder="scheduler"),
         )
 
     images = [openpose_image, canny_image]
 
     image = pipe(
-        prompt,
+        args.prompt,
         images,
-        negative_prompt=negative_prompt,
+        negative_prompt=args.negative_prompt,
         num_inference_steps=20,
         guidance_scale=0.0,
         controlnet_conditioning_scale=[1.0, 0.8],
         generator=torch.Generator(device="cpu").manual_seed(42),
     ).images[0]
 
-    image.save(f"{prompt}.jpg")
+    image.save(f"{args.prompt}.jpg")
 
 
 if __name__ == "__main__":
-    fire.Fire(main)
+    main()

@@ -1,10 +1,17 @@
+import argparse
 import os
 
-import fire
 import torch
 from transformers import RobertaTokenizerFast
 
 from optimum.rbln import RBLNRobertaForMaskedLM
+
+
+# You can compile the model ahead of time with the CLI and then load the
+# artifacts here by passing the output directory as --model-id:
+#
+#   optimum-rbln-cli --model-id ehsanaghaei/SecureBERT -o SecureBERT \
+#       --max_seq_len 512 --batch_size 1
 
 
 # Function to predict the masked words in a sentence
@@ -38,24 +45,24 @@ def predict(sent, tokenizer, runtime, max_seq_len=512, topk=10, print_results=Tr
     return words
 
 
-def main(
-    model_id: str = "ehsanaghaei/SecureBERT",
-    from_transformers: bool = True,
-    max_seq_len: int = 512,
-    batch_size: int = 1,
-):
-    if from_transformers:
-        model = RBLNRobertaForMaskedLM.from_pretrained(
-            model_id=model_id,
-            export=True,
-            rbln_max_seq_len=max_seq_len,
-            rbln_batch_size=batch_size,
-        )
-        model.save_pretrained(os.path.basename(model_id))
+def parse_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--model-id", default="ehsanaghaei/SecureBERT")
+    parser.add_argument("--max-seq-len", type=int, default=512)
+    parser.add_argument("--batch-size", type=int, default=1)
+    return parser.parse_args()
+
+
+def main():
+    args = parse_args()
+
+    if os.path.isdir(args.model_id):
+        model = RBLNRobertaForMaskedLM.from_pretrained(args.model_id)
     else:
         model = RBLNRobertaForMaskedLM.from_pretrained(
-            model_id=os.path.basename(model_id),
-            export=False,
+            args.model_id,
+            rbln_max_seq_len=args.max_seq_len,
+            rbln_batch_size=args.batch_size,
         )
 
     # Example sentence
@@ -68,11 +75,11 @@ def main(
     # sent.append("Adversaries may also compromise sites then include malicious content designed to collect website authentication <mask> from visitors.")
     print("SecureBERT: ")
 
-    tokenizer = RobertaTokenizerFast.from_pretrained(model_id)
+    tokenizer = RobertaTokenizerFast.from_pretrained(args.model_id)
 
     # Predict masked tokens
     predict(sent, tokenizer, model)
 
 
 if __name__ == "__main__":
-    fire.Fire(main)
+    main()

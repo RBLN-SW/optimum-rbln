@@ -1,6 +1,5 @@
 import math
 from pathlib import Path
-from typing import Optional
 
 import safetensors.torch
 import torch
@@ -166,7 +165,7 @@ class LoRALinear(nn.Module):
             "lora_b_weights", torch.stack(lora_b_transposed, dim=0).to(self.weight.dtype)
         )  # [num_adapters, rank, out_features]
 
-    def forward(self, x: torch.Tensor, lora_int_id: Optional[torch.Tensor] = None) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, lora_int_id: torch.Tensor | None = None) -> torch.Tensor:
         """
         Forward pass that combines base linear transformation with LoRA.
 

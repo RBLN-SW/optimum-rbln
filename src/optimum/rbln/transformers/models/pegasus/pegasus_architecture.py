@@ -12,11 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Tuple
+
+import copy
 
 import torch
 from torch import nn
-from transformers.modeling_attn_mask_utils import _prepare_4d_attention_mask
+from transformers.masking_utils import create_bidirectional_mask
 from transformers.utils import logging
 
 from ..seq2seq.seq2seq_architecture import (
@@ -64,11 +65,27 @@ class PegasusDecoder(Seq2SeqDecoder):
         self.embed_positions = model.embed_positions
         self.embed_scale = getattr(model, "embed_scale", None)
         self.final_layer_norm = getattr(model, "layer_norm", None)
+        # Only `eager` yields the additive float mask this decoder adds to its scores; copy the config so
+        # pinning it cannot change how the caller's model attends.
+        self._mask_config = copy.copy(model.config)
+        self._mask_config._attn_implementation = "eager"
 
     def prepare_attn_mask(self, attention_mask, encoder_attention_mask, **kwargs):
         if attention_mask is not None:
             attention_mask = attention_mask[:, None, None, :]
-        encoder_attention_mask = _prepare_4d_attention_mask(encoder_attention_mask, torch.float32, tgt_len=1)
+        # `inputs_embeds` is only read for the batch size, query length, and the mask's dtype.
+        dummy_embeds = torch.empty(
+            encoder_attention_mask.shape[0],
+            1,
+            1,
+            dtype=encoder_attention_mask.dtype,
+            device=encoder_attention_mask.device,
+        )
+        encoder_attention_mask = create_bidirectional_mask(
+            config=self._mask_config,
+            inputs_embeds=dummy_embeds,
+            attention_mask=encoder_attention_mask,
+        )
 
         return attention_mask, encoder_attention_mask
 
@@ -143,7 +160,7 @@ class PegasusSelfAttention(Seq2SeqSelfAttention):
         else:
             self.attn_decode = torch.ops.rbln_custom_ops.paged_causal_attn_decode
 
-    def projection(self, hidden_states) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    def projection(self, hidden_states) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         query_states = self.q_proj(hidden_states) * self.scaling
         key_states = self.k_proj(hidden_states)
         value_states = self.v_proj(hidden_states)

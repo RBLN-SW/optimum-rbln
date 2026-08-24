@@ -35,11 +35,10 @@ import logging
 import os
 import sys
 import threading
-from typing import Optional
 
 
 _lock = threading.Lock()
-_default_handler: Optional[logging.Handler] = None
+_default_handler: logging.Handler | None = None
 
 
 log_levels = {
@@ -98,7 +97,7 @@ def _configure_library_root_logger() -> None:
         library_root_logger.propagate = False
 
 
-def get_logger(name: Optional[str] = None) -> logging.Logger:
+def get_logger(name: str | None = None) -> logging.Logger:
     """
     Return a logger with the specified name.
     """

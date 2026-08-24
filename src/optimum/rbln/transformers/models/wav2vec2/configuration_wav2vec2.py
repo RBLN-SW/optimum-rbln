@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Optional
+from typing import Any
 
 from ....configuration_utils import RBLNModelConfig
 
@@ -27,8 +27,8 @@ class RBLNWav2Vec2ForCTCConfig(RBLNModelConfig):
 
     def __init__(
         self,
-        max_seq_len: Optional[int] = None,
-        batch_size: Optional[int] = None,
+        max_seq_len: int | None = None,
+        batch_size: int | None = None,
         **kwargs: Any,
     ):
         super().__init__(**kwargs)

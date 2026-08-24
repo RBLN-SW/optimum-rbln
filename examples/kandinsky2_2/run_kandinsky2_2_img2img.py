@@ -1,49 +1,52 @@
+import argparse
 import os
 
-import fire
 import torch
 from diffusers.utils import load_image
 
 from optimum.rbln import RBLNKandinskyV22Img2ImgPipeline, RBLNKandinskyV22PriorPipeline
 
 
-def main(
-    prior_model_id: str = "kandinsky-community/kandinsky-2-2-prior",
-    inpaint_model_id: str = "kandinsky-community/kandinsky-2-2-decoder",
-    from_diffusers: bool = False,
-    prompt: str = "A red cartoon frog, 4k",
-):
+# You can compile the models ahead of time with the CLI and then load the
+# artifacts here by passing the output directories as --prior-model-id / --inpaint-model-id:
+#
+#   optimum-rbln-cli --model-id kandinsky-community/kandinsky-2-2-prior -o kandinsky-2-2-prior \
+#       --prior.batch_size 2
+#   optimum-rbln-cli --model-id kandinsky-community/kandinsky-2-2-decoder -o kandinsky-2-2-decoder \
+#       --img_height 768 --img_width 768 --unet.batch_size 2
+
+
+def parse_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--prior-model-id", default="kandinsky-community/kandinsky-2-2-prior")
+    parser.add_argument("--inpaint-model-id", default="kandinsky-community/kandinsky-2-2-decoder")
+    parser.add_argument("--prompt", default="A red cartoon frog, 4k")
+    return parser.parse_args()
+
+
+def main():
+    args = parse_args()
+
     img_url = "https://huggingface.co/datasets/hf-internal-testing/diffusers-images/resolve/main/kandinsky/frog.png"
     init_image = load_image(img_url)
 
-    if from_diffusers:
+    if os.path.isdir(args.inpaint_model_id):
+        prior_pipe = RBLNKandinskyV22PriorPipeline.from_pretrained(args.prior_model_id)
+        pipe = RBLNKandinskyV22Img2ImgPipeline.from_pretrained(args.inpaint_model_id)
+    else:
         prior_pipe = RBLNKandinskyV22PriorPipeline.from_pretrained(
-            model_id=prior_model_id,
-            export=True,
+            args.prior_model_id,
             rbln_config={"prior": {"batch_size": 2}},
         )
-        prior_pipe.save_pretrained(os.path.basename(prior_model_id))
-
         pipe = RBLNKandinskyV22Img2ImgPipeline.from_pretrained(
-            model_id=inpaint_model_id,
-            export=True,
+            args.inpaint_model_id,
             rbln_img_height=768,
             rbln_img_width=768,
             rbln_config={"unet": {"batch_size": 2}},
         )
-        pipe.save_pretrained(os.path.basename(inpaint_model_id))
-    else:
-        prior_pipe = RBLNKandinskyV22PriorPipeline.from_pretrained(
-            model_id=os.path.basename(prior_model_id),
-            export=False,
-        )
-        pipe = RBLNKandinskyV22Img2ImgPipeline.from_pretrained(
-            model_id=os.path.basename(inpaint_model_id),
-            export=False,
-        )
 
     generator = torch.manual_seed(42)
-    image_emb, zero_image_emb = prior_pipe(prompt, generator=generator, return_dict=False)
+    image_emb, zero_image_emb = prior_pipe(args.prompt, generator=generator, return_dict=False)
 
     out = pipe(
         image=init_image,
@@ -56,8 +59,8 @@ def main(
         generator=generator,
     )
     image = out.images[0]
-    image.save(f"{prompt}.png")
+    image.save(f"{args.prompt}.png")
 
 
 if __name__ == "__main__":
-    fire.Fire(main)
+    main()

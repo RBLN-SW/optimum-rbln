@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import copy
-from typing import Optional, Tuple, Union
 
 import torch
 
@@ -62,12 +61,12 @@ class Gemma3TextModel(DecoderOnlyModel):
         cache_position: torch.Tensor = None,
         position_ids: torch.Tensor = None,
         query_position: torch.Tensor = None,
-        past_key_values: Tuple[Tuple[torch.Tensor]] = None,
+        past_key_values: tuple[tuple[torch.Tensor]] = None,
         rotary_emb: torch.nn.Module = None,
-        global_block_tables: Optional[torch.Tensor] = None,
-        local_block_tables: Optional[torch.Tensor] = None,
-        lora_int_id: Optional[torch.Tensor] = None,
-        output_hidden_states: Optional[bool] = None,
+        global_block_tables: torch.Tensor | None = None,
+        local_block_tables: torch.Tensor | None = None,
+        lora_int_id: torch.Tensor | None = None,
+        output_hidden_states: bool | None = None,
     ):
         # retrieve input_ids and inputs_embeds
         if (input_ids is None) ^ (inputs_embeds is not None):
@@ -132,12 +131,12 @@ class Gemma3DecoderLayer(DecoderOnlyLayer):
         self,
         hidden_states: torch.Tensor,
         attention_mask: torch.Tensor,
-        seq_positions: Union[torch.LongTensor, Tuple[torch.LongTensor]],
-        past_key_values: Tuple[Tuple[torch.Tensor]],
-        cos: Optional[torch.Tensor] = None,
-        sin: Optional[torch.Tensor] = None,
-        block_tables: Optional[torch.Tensor] = None,
-        lora_int_id: Optional[torch.Tensor] = None,
+        seq_positions: torch.LongTensor | tuple[torch.LongTensor],
+        past_key_values: tuple[tuple[torch.Tensor]],
+        cos: torch.Tensor | None = None,
+        sin: torch.Tensor | None = None,
+        block_tables: torch.Tensor | None = None,
+        lora_int_id: torch.Tensor | None = None,
     ):
         residual = hidden_states
         hidden_states = self.get_pre_attention_layernorm()(hidden_states)

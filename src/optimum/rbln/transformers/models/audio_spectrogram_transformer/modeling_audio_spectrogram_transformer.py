@@ -47,7 +47,7 @@ class RBLNASTForAudioClassification(RBLNModel):
         preprocessors: "AutoFeatureExtractor" = None,
         model: Optional["PreTrainedModel"] = None,
         model_config: "PretrainedConfig" = None,
-        rbln_config: Optional[RBLNASTForAudioClassificationConfig] = None,
+        rbln_config: RBLNASTForAudioClassificationConfig | None = None,
     ) -> RBLNASTForAudioClassificationConfig:
         num_mel_bins = getattr(model_config, "num_mel_bins", None)
 
@@ -65,7 +65,7 @@ class RBLNASTForAudioClassification(RBLNModel):
             (
                 "input_values",
                 [rbln_config.batch_size, rbln_config.max_length, num_mel_bins],
-                "float32",
+                rbln_config.dtype,
             ),
         ]
 

@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Optional, Tuple
+from typing import Any
 
 from ....configuration_utils import RBLNModelConfig
 from ....transformers import RBLNCLIPTextModelWithProjectionConfig, RBLNT5EncoderModelConfig
@@ -25,45 +25,45 @@ class RBLNStableDiffusion3PipelineBaseConfig(RBLNModelConfig):
 
     def __init__(
         self,
-        transformer: Optional[RBLNSD3Transformer2DModelConfig] = None,
-        text_encoder: Optional[RBLNCLIPTextModelWithProjectionConfig] = None,
-        text_encoder_2: Optional[RBLNCLIPTextModelWithProjectionConfig] = None,
-        text_encoder_3: Optional[RBLNT5EncoderModelConfig] = None,
-        vae: Optional[RBLNAutoencoderKLConfig] = None,
+        transformer: RBLNSD3Transformer2DModelConfig | None = None,
+        text_encoder: RBLNCLIPTextModelWithProjectionConfig | None = None,
+        text_encoder_2: RBLNCLIPTextModelWithProjectionConfig | None = None,
+        text_encoder_3: RBLNT5EncoderModelConfig | None = None,
+        vae: RBLNAutoencoderKLConfig | None = None,
         *,
-        max_seq_len: Optional[int] = None,
-        sample_size: Optional[Tuple[int, int]] = None,
-        image_size: Optional[Tuple[int, int]] = None,
-        batch_size: Optional[int] = None,
-        img_height: Optional[int] = None,
-        img_width: Optional[int] = None,
-        height: Optional[int] = None,
-        width: Optional[int] = None,
-        guidance_scale: Optional[float] = None,
+        max_seq_len: int | None = None,
+        sample_size: tuple[int, int] | None = None,
+        image_size: tuple[int, int] | None = None,
+        batch_size: int | None = None,
+        img_height: int | None = None,
+        img_width: int | None = None,
+        height: int | None = None,
+        width: int | None = None,
+        guidance_scale: float | None = None,
         **kwargs: Any,
     ):
         """
         Args:
-            transformer (Optional[RBLNSD3Transformer2DModelConfig]): Configuration for the transformer model component.
+            transformer (RBLNSD3Transformer2DModelConfig | None): Configuration for the transformer model component.
                 Initialized as RBLNSD3Transformer2DModelConfig if not provided.
-            text_encoder (Optional[RBLNCLIPTextModelWithProjectionConfig]): Configuration for the primary text encoder.
+            text_encoder (RBLNCLIPTextModelWithProjectionConfig | None): Configuration for the primary text encoder.
                 Initialized as RBLNCLIPTextModelWithProjectionConfig if not provided.
-            text_encoder_2 (Optional[RBLNCLIPTextModelWithProjectionConfig]): Configuration for the secondary text encoder.
+            text_encoder_2 (RBLNCLIPTextModelWithProjectionConfig | None): Configuration for the secondary text encoder.
                 Initialized as RBLNCLIPTextModelWithProjectionConfig if not provided.
-            text_encoder_3 (Optional[RBLNT5EncoderModelConfig]): Configuration for the tertiary text encoder.
+            text_encoder_3 (RBLNT5EncoderModelConfig | None): Configuration for the tertiary text encoder.
                 Initialized as RBLNT5EncoderModelConfig if not provided.
-            vae (Optional[RBLNAutoencoderKLConfig]): Configuration for the VAE model component.
+            vae (RBLNAutoencoderKLConfig | None): Configuration for the VAE model component.
                 Initialized as RBLNAutoencoderKLConfig if not provided.
-            max_seq_len (Optional[int]): Maximum sequence length for text inputs. Defaults to 256.
-            sample_size (Optional[Tuple[int, int]]): Spatial dimensions for the transformer model.
-            image_size (Optional[Tuple[int, int]]): Dimensions for the generated images.
+            max_seq_len (int | None): Maximum sequence length for text inputs. Defaults to 256.
+            sample_size (tuple[int, int] | None): Spatial dimensions for the transformer model.
+            image_size (tuple[int, int] | None): Dimensions for the generated images.
                 Cannot be used together with img_height/img_width.
-            batch_size (Optional[int]): Batch size for inference, applied to all submodules.
-            img_height (Optional[int]): Height of the generated images.
-            img_width (Optional[int]): Width of the generated images.
-            height (Optional[int]): Height of the generated images.
-            width (Optional[int]): Width of the generated images.
-            guidance_scale (Optional[float]): Scale for classifier-free guidance.
+            batch_size (int | None): Batch size for inference, applied to all submodules.
+            img_height (int | None): Height of the generated images.
+            img_width (int | None): Width of the generated images.
+            height (int | None): Height of the generated images.
+            width (int | None): Width of the generated images.
+            guidance_scale (float | None): Scale for classifier-free guidance.
             kwargs: Additional arguments passed to the parent RBLNModelConfig.
 
         Raises:

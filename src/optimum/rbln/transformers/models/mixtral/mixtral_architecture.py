@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Optional
 
 import torch
 from torch import nn
@@ -30,7 +29,7 @@ class MixtralWrapper(DecoderOnlyWrapper):
 class MixtralLayer(DecoderOnlyLayer):
     _MLP_ATTR = None
 
-    def __init__(self, layer, self_attn: DecoderOnlyAttention, lora_config: Optional[RBLNLoRAConfig] = None):
+    def __init__(self, layer, self_attn: DecoderOnlyAttention, lora_config: RBLNLoRAConfig | None = None):
         super().__init__(layer, self_attn, lora_config)
         self.mlp = MixtralSparseMoeBlock(layer.mlp)
 

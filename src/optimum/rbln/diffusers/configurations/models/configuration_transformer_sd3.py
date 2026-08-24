@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Optional, Tuple, Union
+from typing import Any
 
 from ....configuration_utils import RBLNModelConfig
 
@@ -29,17 +29,17 @@ class RBLNSD3Transformer2DModelConfig(RBLNModelConfig):
 
     def __init__(
         self,
-        batch_size: Optional[int] = None,
-        sample_size: Optional[Union[int, Tuple[int, int]]] = None,
-        prompt_embed_length: Optional[int] = None,
+        batch_size: int | None = None,
+        sample_size: int | tuple[int, int] | None = None,
+        prompt_embed_length: int | None = None,
         **kwargs: Any,
     ):
         """
         Args:
-            batch_size (Optional[int]): The batch size for inference. Defaults to 1.
-            sample_size (Optional[Union[int, Tuple[int, int]]]): The spatial dimensions (height, width)
+            batch_size (int | None): The batch size for inference. Defaults to 1.
+            sample_size (int | tuple[int, int] | None): The spatial dimensions (height, width)
                 of the generated samples. If an integer is provided, it's used for both height and width.
-            prompt_embed_length (Optional[int]): The length of the embedded prompt vectors that
+            prompt_embed_length (int | None): The length of the embedded prompt vectors that
                 will be used to condition the transformer model.
             kwargs: Additional arguments passed to the parent RBLNModelConfig.
 

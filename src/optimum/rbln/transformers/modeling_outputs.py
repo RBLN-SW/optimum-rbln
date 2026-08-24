@@ -13,7 +13,6 @@
 # limitations under the License.
 
 from dataclasses import dataclass
-from typing import Optional, Tuple
 
 import torch
 from transformers.modeling_outputs import ModelOutput
@@ -26,12 +25,12 @@ class RBLNDecoderOnlyOutput(ModelOutput):
     logits: torch.FloatTensor = None
     generate_idx: torch.Tensor = None
     padded_cache_lengths: int = None
-    hidden_states: Tuple[torch.FloatTensor] = None
+    hidden_states: tuple[torch.FloatTensor] = None
 
 
 @dataclass
 class RBLNGemma3ForCausalLMOutput(RBLNDecoderOnlyOutput):
-    attention_mask: Optional[torch.Tensor] = None
+    attention_mask: torch.Tensor | None = None
 
 
 @dataclass
@@ -42,10 +41,10 @@ class RBLNGemma4ForCausalLMOutput(RBLNGemma3ForCausalLMOutput):
 @dataclass
 class RBLNSeq2SeqTSDecoderOutput(ModelOutput):
     last_hidden_states: torch.FloatTensor = None
-    params: Tuple[torch.FloatTensor] = None
+    params: tuple[torch.FloatTensor] = None
 
 
-def _validate_output_hidden_states(output_hidden_states: Optional[bool], rbln_config: RBLNModelConfig):
+def _validate_output_hidden_states(output_hidden_states: bool | None, rbln_config: RBLNModelConfig):
     output_hidden_states = (
         output_hidden_states if output_hidden_states is not None else rbln_config.output_hidden_states
     )
@@ -58,7 +57,7 @@ def _validate_output_hidden_states(output_hidden_states: Optional[bool], rbln_co
     return output_hidden_states
 
 
-def _validate_output_attentions(output_attentions: Optional[bool], rbln_config: RBLNModelConfig):
+def _validate_output_attentions(output_attentions: bool | None, rbln_config: RBLNModelConfig):
     output_attentions = output_attentions if output_attentions is not None else rbln_config.output_attentions
     if output_attentions != rbln_config.output_attentions:
         raise ValueError(

@@ -13,7 +13,8 @@
 # limitations under the License.
 
 import inspect
-from typing import Any, Callable, Optional, Tuple, Union
+from collections.abc import Callable
+from typing import Any
 
 import torch
 from transformers import BartForConditionalGeneration, PreTrainedModel
@@ -39,10 +40,10 @@ class RBLNBartModel(RBLNTransformerEncoderForFeatureExtraction):
 
     def forward(
         self,
-        input_ids: Optional[torch.Tensor] = None,
-        attention_mask: Optional[torch.Tensor] = None,
+        input_ids: torch.Tensor | None = None,
+        attention_mask: torch.Tensor | None = None,
         **kwargs,
-    ) -> Union[Tuple, Seq2SeqModelOutput]:
+    ) -> tuple | Seq2SeqModelOutput:
         """
         Forward pass for the RBLN-optimized BART model for feature extraction tasks.
 

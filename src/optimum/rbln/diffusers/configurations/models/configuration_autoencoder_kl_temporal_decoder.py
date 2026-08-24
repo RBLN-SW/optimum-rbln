@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Optional, Tuple
+from typing import Any
 
 from ....configuration_utils import RBLNModelConfig
 
@@ -20,25 +20,25 @@ from ....configuration_utils import RBLNModelConfig
 class RBLNAutoencoderKLTemporalDecoderConfig(RBLNModelConfig):
     def __init__(
         self,
-        batch_size: Optional[int] = None,
-        sample_size: Optional[Tuple[int, int]] = None,
-        uses_encoder: Optional[bool] = None,
-        num_frames: Optional[int] = None,
-        decode_chunk_size: Optional[int] = None,
-        vae_scale_factor: Optional[float] = None,
+        batch_size: int | None = None,
+        sample_size: tuple[int, int] | None = None,
+        uses_encoder: bool | None = None,
+        num_frames: int | None = None,
+        decode_chunk_size: int | None = None,
+        vae_scale_factor: float | None = None,
         **kwargs: Any,
     ):
         """
         Args:
-            batch_size (Optional[int]): The batch size for inference. Defaults to 1.
-            sample_size (Optional[Tuple[int, int]]): The spatial dimensions (height, width) of the input/output images.
+            batch_size (int | None): The batch size for inference. Defaults to 1.
+            sample_size (tuple[int, int] | None): The spatial dimensions (height, width) of the input/output images.
                 If an integer is provided, it's used for both height and width.
-            uses_encoder (Optional[bool]): Whether to include the encoder part of the VAE in the model.
+            uses_encoder (bool | None): Whether to include the encoder part of the VAE in the model.
                 When False, only the decoder is used (for latent-to-image conversion).
-            num_frames (Optional[int]): The number of frames in the generated video.
-            decode_chunk_size (Optional[int]): The number of frames to decode at once during VAE decoding.
+            num_frames (int | None): The number of frames in the generated video.
+            decode_chunk_size (int | None): The number of frames to decode at once during VAE decoding.
                 Useful for managing memory usage during video generation.
-            vae_scale_factor (Optional[float]): The scaling factor between pixel space and latent space.
+            vae_scale_factor (float | None): The scaling factor between pixel space and latent space.
                 Determines how much smaller the latent representations are compared to the original images.
             kwargs: Additional arguments passed to the parent RBLNModelConfig.
 

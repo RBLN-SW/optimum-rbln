@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import TYPE_CHECKING, Dict, List, Tuple, Union
+from typing import TYPE_CHECKING, Union
 
 import rebel
 import torch  # noqa: I001
@@ -74,7 +74,7 @@ class RBLNAutoencoderKLTemporalDecoder(RBLNModel):
     @classmethod
     def get_compiled_model(
         cls, model, rbln_config: RBLNAutoencoderKLTemporalDecoderConfig
-    ) -> Dict[str, rebel.RBLNCompiledModel]:
+    ) -> dict[str, rebel.RBLNCompiledModel]:
         compiled_models = {}
         if rbln_config.uses_encoder:
             encoder_model, decoder_model = cls._wrap_model_if_needed(model, rbln_config)
@@ -103,7 +103,7 @@ class RBLNAutoencoderKLTemporalDecoder(RBLNModel):
         pipe: "RBLNDiffusionMixin",
         rbln_config: RBLNAutoencoderKLTemporalDecoderConfig,
         return_vae_scale_factor: bool = False,
-    ) -> Tuple[int, int]:
+    ) -> tuple[int, int]:
         sample_size = rbln_config.sample_size
         if hasattr(pipe, "vae_scale_factor"):
             vae_scale_factor = pipe.vae_scale_factor
@@ -184,7 +184,7 @@ class RBLNAutoencoderKLTemporalDecoder(RBLNModel):
                         rbln_config.sample_size[0],
                         rbln_config.sample_size[1],
                     ],
-                    "float32",
+                    rbln_config.dtype,
                 )
             ]
             compile_cfgs.append(RBLNCompileConfig(compiled_model_name="encoder", input_info=vae_enc_input_info))
@@ -199,7 +199,7 @@ class RBLNAutoencoderKLTemporalDecoder(RBLNModel):
                     rbln_config.latent_sample_size[0],
                     rbln_config.latent_sample_size[1],
                 ],
-                "float32",
+                rbln_config.dtype,
             )
         ]
         compile_cfgs.append(RBLNCompileConfig(compiled_model_name="decoder", input_info=vae_dec_input_info))
@@ -210,9 +210,9 @@ class RBLNAutoencoderKLTemporalDecoder(RBLNModel):
     @classmethod
     def _create_runtimes(
         cls,
-        compiled_models: List[rebel.RBLNCompiledModel],
+        compiled_models: list[rebel.RBLNCompiledModel],
         rbln_config: RBLNAutoencoderKLTemporalDecoderConfig,
-    ) -> List[rebel.Runtime]:
+    ) -> list[rebel.Runtime]:
         if len(compiled_models) == 1:
             # decoder
             expected_models = ["decoder"]
@@ -236,7 +236,7 @@ class RBLNAutoencoderKLTemporalDecoder(RBLNModel):
 
     def encode(
         self, x: torch.FloatTensor, return_dict: bool = True
-    ) -> Union[AutoencoderKLOutput, Tuple[DiagonalGaussianDistribution]]:
+    ) -> AutoencoderKLOutput | tuple[DiagonalGaussianDistribution]:
         """
         Encode an input image into a latent representation.
 
@@ -248,7 +248,7 @@ class RBLNAutoencoderKLTemporalDecoder(RBLNModel):
         Returns:
             The latent representation or AutoencoderKLOutput if return_dict=True
         """
-        posterior = self.encoder.encode(x)
+        posterior = self.encoder.encode(x.to(self.rbln_config.dtype))
 
         if not return_dict:
             return (posterior,)
@@ -267,7 +267,7 @@ class RBLNAutoencoderKLTemporalDecoder(RBLNModel):
         Returns:
             The decoded video or DecoderOutput if return_dict=True
         """
-        decoded = self.decoder.decode(z)
+        decoded = self.decoder.decode(z.to(self.rbln_config.dtype))
 
         if not return_dict:
             return (decoded,)
