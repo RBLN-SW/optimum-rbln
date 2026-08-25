@@ -36,7 +36,7 @@ class RBLNMultiControlNetModel(RBLNModel):
         models: list[RBLNControlNetModel],
     ):
         self.nets = models
-        self.dtype = torch.float32
+        self.dtype = models[0].dtype
 
     @property
     def compiled_models(self):
