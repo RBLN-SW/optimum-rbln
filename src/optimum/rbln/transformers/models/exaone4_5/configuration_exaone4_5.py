@@ -50,7 +50,7 @@ class RBLNExaone4_5_ForConditionalGenerationConfig(RBLNDecoderOnlyModelForCausal
                 "RBLNExaone4_5_ForConditionalGenerationConfig does not allow `use_inputs_embeds=False` "
                 "because multimodal prefill requires embedding replacement."
             )
-        self.visual = visual
+        self.visual = self.initialize_submodule_config(submodule_config=visual, batch_size=1, force_kwargs=True)
 
 
 class RBLNExaone4_5_ModelConfig(RBLNDecoderOnlyModelConfig):
@@ -62,7 +62,7 @@ class RBLNExaone4_5_ModelConfig(RBLNDecoderOnlyModelConfig):
 
     def __init__(self, visual: RBLNModelConfig | None = None, **kwargs: Any):
         super().__init__(**kwargs)
-        self.visual = self.initialize_submodule_config(submodule_config=visual)
+        self.visual = self.initialize_submodule_config(submodule_config=visual, batch_size=1, force_kwargs=True)
 
 
 class RBLNExaone4_5_VisionModelConfig(RBLNModelConfig):
@@ -74,19 +74,27 @@ class RBLNExaone4_5_VisionModelConfig(RBLNModelConfig):
     mechanisms for processing images and videos.
     """
 
-    def __init__(self, max_seq_len: int | list[int] = None, **kwargs: Any):
+    def __init__(self, max_seq_len: int | list[int] = None, batch_size: int | None = None, **kwargs: Any):
         """
         Args:
             max_seq_len (int | list[int] | None): Maximum sequence lengths for Vision
                 Transformer attention. Can be an integer or list of integers, each indicating
                 the number of patches in a sequence for an image or video. For window-based
                 attention, `max_seq_len` must be a multiple of `(window_size / patch_size)^2`.
+            batch_size (int | None): the vision encoder runs one image at a time (the parent config forces
+                this by default), so only `batch_size=1` is supported. Defaults to 1.
             kwargs: Additional arguments passed to the parent RBLNModelConfig.
 
         Raises:
             ValueError: If `max_seq_len` is None or not provided.
+            ValueError: If `batch_size` is not 1.
         """
         super().__init__(**kwargs)
+
+        batch_size = batch_size or 1
+        if batch_size != 1:
+            raise ValueError(f"The EXAONE-4.5 vision encoder only supports batch_size=1, got {batch_size}.")
+        self.batch_size = batch_size
 
         if max_seq_len is not None:
             if isinstance(max_seq_len, int):
