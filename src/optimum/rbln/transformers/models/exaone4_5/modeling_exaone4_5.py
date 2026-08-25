@@ -26,6 +26,7 @@ from transformers.models.exaone4_5.modeling_exaone4_5 import (
     Exaone4_5_VisionModel,
     Exaone4_5_VisionRotaryEmbedding,
 )
+from transformers.vision_utils import get_vision_window_index
 
 from ....configuration_utils import RBLNCompileConfig
 from ....modeling import RBLNModel
@@ -82,7 +83,7 @@ class RBLNExaone4_5_VisionModel(RBLNModel):
         self.spatial_merge_size = config.spatial_merge_size
         self.spatial_merge_unit = config.spatial_merge_size * config.spatial_merge_size
         freq_table = Exaone4_5_VisionRotaryEmbedding((config.hidden_size // config.num_heads) // 2)(
-            int(self.max_seq_len.max())
+            torch.arange(int(self.max_seq_len.max()))
         )
         self.rotary_cos_table = np_cos(freq_table)
         self.rotary_sin_table = np_sin(freq_table)
@@ -241,9 +242,12 @@ class RBLNExaone4_5_VisionModel(RBLNModel):
     def forward(self, hidden_states: torch.Tensor, grid_thw: torch.Tensor) -> torch.Tensor:
         hidden_states = self.patch_embed(hidden_states).to(self.rbln_config.dtype)
         pos_ids = qwen_vit_rot_pos_ids(grid_thw, self.spatial_merge_size)
-        window_index, cu_window_seqlens = self.get_window_index(grid_thw)
-        cu_window_seqlens = torch.tensor(cu_window_seqlens, dtype=torch.int32)
-        cu_window_seqlens = torch.unique_consecutive(cu_window_seqlens)
+        window_index, cu_window_seqlens = get_vision_window_index(
+            grid_thw,
+            spatial_merge_size=self.spatial_merge_size,
+            window_size=self.window_size,
+            patch_size=self.patch_size,
+        )
 
         seq_len, _ = hidden_states.size()
         hidden_states = hidden_states.reshape(seq_len // self.spatial_merge_unit, self.spatial_merge_unit, -1)

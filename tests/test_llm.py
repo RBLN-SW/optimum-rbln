@@ -722,7 +722,7 @@ class TestQwenRotaryLookup(unittest.TestCase):
             ):
                 mock = SimpleNamespace(spatial_merge_size=merge, rotary_pos_emb=rot)
                 hf = Qwen2VisionTransformerPretrainedModel.rot_pos_emb(mock, grid)
-                table = rot(int(grid[:, 1:].max()))
+                table = rot(torch.arange(int(grid[:, 1:].max())))
                 ours = table[qwen_vit_rot_pos_ids(grid, merge)].flatten(1)
                 self.assertTrue(torch.equal(ours, hf))
 

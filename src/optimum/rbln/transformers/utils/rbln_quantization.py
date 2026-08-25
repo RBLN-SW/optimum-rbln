@@ -228,8 +228,13 @@ def get_quantized_model(
         **kwargs,
     )
 
+    # transformers >=5.9 `from_config` writes the resolved dtype back onto `config`;
+    # keep the checkpoint dtype so the saved config.json is not stamped with the
+    # fp32 compile dtype.
+    config_dtype = config.dtype
     with no_init_weights():
         model = hf_auto_model_class.from_config(config, dtype=dtype)
+    config.dtype = config_dtype
 
     # Quantize the model
     update_layers_to_quantize(model, model.dtype, rbln_quantization)

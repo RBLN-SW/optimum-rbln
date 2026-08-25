@@ -36,24 +36,21 @@ from ..decoderonly.decoderonly_architecture import (
 
 class Gemma4ForCausalLMWrapper(DecoderOnlyWrapper):
     # Extends DecoderOnlyWrapper with two Gemma4-specific behaviors:
-    # 1. Two RoPE caches: one for full-attention layers (global_head_dim, proportional rope_type)
-    #    and one for sliding-attention layers (head_dim, default rope_type). Mirrors Gemma3 wrapper.
+    # 1. Two RoPE caches: one for full-attention layers (per_layer_config head_dim, proportional
+    #    rope_type) and one for sliding-attention layers (default rope_type). Mirrors Gemma3 wrapper.
     # 2. A per_layer_inputs positional argument is extracted from wrapper inputs and forwarded
     #    to Gemma4TextModel.
 
     def get_rotary_emb(self, max_seq_len):
-        # full_attention layers use `global_head_dim`, sliding_attention layers use `head_dim`.
-        head_dims = {
-            "full_attention": getattr(self.config, "global_head_dim", None) or self.config.head_dim,
-            "sliding_attention": self.config.head_dim,
-        }
+        per_layer_config = self.config.per_layer_config
         rotary_embs = []
         for layer_type in ("full_attention", "sliding_attention"):
             params = dict(self.config.rope_parameters[layer_type])
             config = copy.deepcopy(self.config)
+            config.per_layer_config = None
             config.rope_scaling = params
             config.rope_parameters = params
-            config.head_dim = head_dims[layer_type]
+            config.head_dim = per_layer_config[layer_type].head_dim
             rotary_embs.append(RotaryEmbedding(config=config, max_seq_len_cached=max_seq_len))
         return tuple(rotary_embs)
 
@@ -365,10 +362,10 @@ class Gemma4TextAttention(DecoderOnlyAttention):
     # Extends DecoderOnlyAttention with Gemma4-specific behaviors:
     # - q_norm, k_norm, v_norm applied per-head pre-RoPE/pre-attention; v_norm uses
     #   Gemma4RMSNorm(with_scale=False), which the base forward does not apply — overridden below.
-    # - head_dim differs between sliding (config.head_dim) and full (config.global_head_dim) layers;
+    # - head_dim differs between sliding and full layers (config.per_layer_config);
     #   self_attn.head_dim already encodes this.
-    # - num_key_value_heads is recomputed from the projection shape to handle num_global_key_value_heads
-    #   and attention_k_eq_v knobs not exposed as standard attributes.
+    # - num_key_value_heads is recomputed from the projection shape to handle the per-layer
+    #   num_key_value_heads / attention_k_eq_v overrides without touching config attributes.
     # - Attention scaling is hardcoded to 1.0 (HF Gemma4TextAttention.scaling); q_norm/k_norm RMSNorm
     #   supplies magnitude normalization in place of the 1/sqrt(d_k) factor.
 
@@ -717,7 +714,10 @@ class Gemma4VisionModelWrapper(nn.Module):
             output_length=output_length,
         )
 
+        # The transformers >=5.9 pooler returns float32-scaled features; standardize in
+        # float32 and cast back to the working dtype (mirrors Gemma4VisionModel.forward).
         if self.standardize:
-            hidden_states = (hidden_states - self.std_bias) * self.std_scale
+            hidden_states = (hidden_states - self.std_bias.float()) * self.std_scale.float()
+        hidden_states = hidden_states.to(inputs_embeds.dtype)
 
         return hidden_states, pooler_mask
