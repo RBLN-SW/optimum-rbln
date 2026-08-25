@@ -22,23 +22,15 @@ from optimum.rbln import (
 )
 
 
-RESNET_ID = "hf-internal-testing/tiny-random-ResNetForImageClassification"
-SD_PIPE_ID = "hf-internal-testing/tiny-sd-pipe"
-LLAVA_NEXT_ID = "trl-internal-testing/tiny-LlavaNextForConditionalGeneration"
-LLAMA_TINY_ID = "afmck/testing-llama-tiny"
-# Read by tests/conftest.py to keep these served from the local cache.
-HUB_REPOS = (RESNET_ID, SD_PIPE_ID, LLAVA_NEXT_ID, LLAMA_TINY_ID)
-
-
 @pytest.fixture
 def model_id():
-    return RESNET_ID
+    return "hf-internal-testing/tiny-random-ResNetForImageClassification"
 
 
 @pytest.fixture
 def stable_diffusion_model():
     model = RBLNStableDiffusionPipeline.from_pretrained(
-        SD_PIPE_ID,
+        "hf-internal-testing/tiny-sd-pipe",
         export=True,
         rbln_config={
             "unet": {
@@ -203,7 +195,7 @@ def test_load_config_object(model_id, tmp_path):
 def test_submodule_config_dict():
     """Test loading submodule model with configuration passed as a dictionary."""
     model = RBLNLlavaNextForConditionalGeneration.from_pretrained(
-        LLAVA_NEXT_ID,
+        "trl-internal-testing/tiny-LlavaNextForConditionalGeneration",
         export=True,
         rbln_language_model={"max_seq_len": 16384, "use_inputs_embeds": True, "batch_size": 2},
     )
@@ -217,7 +209,7 @@ def test_submodule_config_object():
     rbln_config = RBLNMistralForCausalLMConfig(max_seq_len=16384, use_inputs_embeds=True, batch_size=2)
 
     model = RBLNLlavaNextForConditionalGeneration.from_pretrained(
-        LLAVA_NEXT_ID,
+        "trl-internal-testing/tiny-LlavaNextForConditionalGeneration",
         export=True,
         rbln_language_model=rbln_config,
     )
@@ -406,7 +398,7 @@ def test_prefill_chunk_size_npu_wiring_e2e(tmp_path):
     NPU-aware `prefill_chunk_size` default (512 on RBLN-CR) and survives save/reload.
     Pinning `npu` compiles for RBLN-CR03 without a CR device attached."""
     model = RBLNLlamaForCausalLM.from_pretrained(
-        LLAMA_TINY_ID,
+        "afmck/testing-llama-tiny",
         export=True,
         num_hidden_layers=1,
         rbln_config={"npu": "RBLN-CR03", "create_runtimes": False, "max_seq_len": 1024},

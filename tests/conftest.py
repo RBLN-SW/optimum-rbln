@@ -35,7 +35,7 @@ def pytest_runtest_setup(item):
 
 def declared_repos(item):
     """Hub repos the test declares, through class attributes or a `HUB_REPOS`
-    tuple on the class or module for repos loaded from inside a test body."""
+    tuple for repos loaded from inside a test body."""
     repos = set()
     cls = getattr(item, "cls", None)
     if cls is not None:
@@ -44,9 +44,8 @@ def declared_repos(item):
             repo_id = getattr(cls, attr, None)
             if isinstance(repo_id, str) and "/" in repo_id:
                 repos.add((repo_id, rev))
-    for owner in (cls, getattr(item, "module", None)):
-        for repo_id in getattr(owner, "HUB_REPOS", ()):
-            repos.add((repo_id, None))
+    for repo_id in getattr(cls, "HUB_REPOS", ()):
+        repos.add((repo_id, None))
     return repos
 
 
