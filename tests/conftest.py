@@ -27,8 +27,6 @@ def declared_repos(item):
     cls = getattr(item, "cls", None)
     revision = (getattr(cls, "HF_CONFIG_KWARGS", None) or {}).get("revision")
     repos = [(getattr(cls, "HF_MODEL_ID", None), revision), (getattr(cls, "CONTROLNET_ID", None), None)]
-    # HUB_REPOS declares repos that a test body loads without holding them in an attribute.
-    repos += [(repo_id, None) for repo_id in getattr(cls, "HUB_REPOS", ())]
     return [(repo_id, rev) for repo_id, rev in repos if repo_id]
 
 

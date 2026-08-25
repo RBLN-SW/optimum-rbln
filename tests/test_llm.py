@@ -1171,7 +1171,6 @@ class TestQLlamaForCausalLM(LLMTest.TestLLM):
 
 class TestMultiLora(LLMTest.TestLLM):
     HF_MODEL_ID = "meta-llama/Llama-3.1-8B-Instruct"
-    HUB_REPOS = ("nvidia/llama-3.1-nemoguard-8b-topic-control", "reissbaker/llama-3.1-8b-abliterated-lora")
     HF_CONFIG_KWARGS = {"num_hidden_layers": 1, "max_position_embeddings": 1024}
     RBLN_CLASS = RBLNLlamaForCausalLM
     RBLN_CLASS_KWARGS = {
