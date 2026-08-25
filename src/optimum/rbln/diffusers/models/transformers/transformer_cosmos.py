@@ -131,10 +131,13 @@ class RBLNCosmosTransformer3DModel(RBLNModel):
                 patch_size=self.config.patch_size,
             )
             self.learnable_pos_embed.load_state_dict(artifacts["learnable_pos_embed"])
+            self.learnable_pos_embed.to(self.rbln_config.dtype)
         self.patch_embed = CosmosPatchEmbed(patch_embed_in_channels, hidden_size, self.config.patch_size, bias=False)
         self.patch_embed.load_state_dict(artifacts["patch_embed"])
+        self.patch_embed.to(self.rbln_config.dtype)
         self.time_embed = CosmosEmbedding(hidden_size, hidden_size)
         self.time_embed.load_state_dict(artifacts["time_embed"])
+        self.time_embed.to(self.rbln_config.dtype)
 
     def compute_embedding(
         self,
