@@ -32,8 +32,11 @@ from diffusers.models.autoencoders.autoencoder_kl_wan import AutoencoderKLWan
 from rebel.compile_context import CompileContext
 
 from optimum.rbln.diffusers.models.autoencoders.autoencoder_kl_wan import (
+    _CACHE_LAYOUT,
+    _EN_WAR,
     _VAEWanEncoder0,
     _VAEWanEncoderN,
+    _cache_input_shape,
     get_cache_size_enc,
 )
 
@@ -54,8 +57,8 @@ NC = len(cache_0)
 def cache_shape(shape, is_idx0):
     n, c, d, h, w = shape
     if is_idx0:
-        return [n, c, d, h, w]        # idx0: channel-first runtime I/O
-    return [n, d, c * h * w]          # idx1..: cdhw static (n, d, c*h*w)
+        return [n, c, d, h, w]              # idx0: channel-first runtime I/O
+    return _cache_input_shape(shape)        # idx1..: follows RBLN_WAN_CACHE_LAYOUT (flat/chw/cl)
 
 
 # Encoder E0 AND EN both take feat_cache_0 (idx0, channel-first I/O) + idx1..(cdhw static). NOTE: unlike
@@ -67,6 +70,9 @@ e0_ii = [("x", [1, in_ch, 1, H, W], "float32")] + [
 en_ii = [("x", [1, in_ch, CHUNK, H, W], "float32")] + [
     (f"feat_cache_{i}", cache_shape(cache_n[i], i == 0), "float32") for i in range(NC)
 ]
+if _EN_WAR:
+    # runtime-0.0 scalar feeding the EN write-after-read edge (mirrors the shipping input_info)
+    en_ii.append(("war_zero", [1], "float32"))
 
 
 def dummies(input_info, static=None):
@@ -123,7 +129,8 @@ ref = torch.cat(ref, dim=2)
 # reads idx1.. (device=rbln) + takes feat_cache_0 (E0's fc0) as I/O input.
 o0 = re0(video[:, :, :1])
 print("E0 ran:", tuple(o0[0].shape), flush=True)
-oN = ren(video[:, :, 1:1 + CHUNK], o0[1])
+war_kw = {"war_zero": torch.zeros(1, dtype=torch.float32)} if _EN_WAR else {}
+oN = ren(video[:, :, 1:1 + CHUNK], o0[1], **war_kw)
 print("EN ran:", tuple(oN[0].shape), flush=True)
 mine = torch.cat([o0[0], oN[0]], dim=2)
 

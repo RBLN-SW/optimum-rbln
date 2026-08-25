@@ -3,9 +3,9 @@ Standalone Wan VAE **decoder** compile+run test at a small resolution (raw rebel
 
 What it does:
   1. builds an explicit D0 (first_chunk) / DN (steady-state) forward over vae.decoder,
-  2. caches are CDHW-flattened  (n, d, c*h*w)  -- folding C into the merged axis so the device does NOT
-     64-block-pad the channel (that avoids the AnnotatePhysicalView reconcile and the SHM blow-up that
-     channel-last / (n,c,d,h*w) layouts hit on the current compiler),
+  2. caches are FLAT  (n, c, d, h*w)  -- spatial flattened, following RBLN_WAN_CACHE_LAYOUT (default
+     "flat"); on the current compiler (>= e7cd7e9d) the reference-port channel padding is fixed, so flat
+     compiles cleanly (earlier builds needed chw = (n,d,c*h*w) to avoid the AnnotatePhysicalView reconcile),
   3. idx0 (conv_in cache) is runtime I/O (channel-first), threaded D0->DN,
   4. idx1..31 are shared static DRAM: D0 writes them via rbln_cache_update, DN reads them back.
      Sharing is set up at compile time: ONE CompileContext + mark_static_address on the SAME tensor
@@ -31,7 +31,13 @@ import torch
 from diffusers.models.autoencoders.autoencoder_kl_wan import AutoencoderKLWan
 from rebel.compile_context import CompileContext
 
-from optimum.rbln.diffusers.models.autoencoders.autoencoder_kl_wan import get_cache_size_dec
+from optimum.rbln.diffusers.models.autoencoders.autoencoder_kl_wan import (
+    _cache_axis,
+    _cache_input_shape,
+    _from_cache,
+    _to_cache,
+    get_cache_size_dec,
+)
 
 
 H = int(sys.argv[1]) if len(sys.argv) > 1 else 256
@@ -40,7 +46,7 @@ DEV = int(sys.argv[3]) if len(sys.argv) > 3 else 0
 
 CACHE_T = 2
 POS = torch.tensor(0, dtype=torch.int16)
-AXIS = torch.tensor(1, dtype=torch.int16)  # cache layout (n, d, c*h*w): the frame(D) axis is axis 1
+AXIS = torch.tensor(_cache_axis(), dtype=torch.int16)  # frame(D) axis of the selected layout (flat -> 2)
 NC = 32  # decoder cached-conv count (idx0 = conv_in I/O, idx1..31 = static)
 
 
@@ -98,14 +104,13 @@ class Ctx:
         return self.args[idx] if not self.first else self.args[idx - 1]  # D0 dropped idx0 input
 
     def _to_cache(self, new):
-        # channel-first (n,c,d,h,w) -> (n, d, c*h*w)
-        n, c, d, h, w = new.shape
-        return new.permute(0, 2, 1, 3, 4).reshape(n, d, c * h * w).contiguous()
+        # channel-first (n,c,d,h,w) -> selected layout (flat: (n,c,d,h*w))
+        return _to_cache(new)
 
     def _from_cache(self, idx):
-        # (n, d, c*h*w) -> channel-first (n,c,d,h,w)
-        n, c, _d, h, w = self.dims[idx]
-        return self._slot(idx).reshape(n, CACHE_T, c, h, w).permute(0, 2, 1, 3, 4)
+        # selected-layout cache -> channel-first (n,c,d,h,w)
+        _n, c, _d, h, w = self.dims[idx]
+        return _from_cache(self._slot(idx), c, h, w)
 
     def cc(self, conv, x):
         idx = self.feat_idx[0]; self.feat_idx[0] += 1
@@ -183,8 +188,8 @@ lh, lw = H // 8, W // 8
 def cache_shape(shape, is_idx0):
     n, c, d, h, w = shape
     if is_idx0:
-        return [n, c, d, h, w]        # idx0: channel-first runtime I/O
-    return [n, d, c * h * w]          # idx1..: cdhw static (n, d, c*h*w)
+        return [n, c, d, h, w]              # idx0: channel-first runtime I/O
+    return _cache_input_shape(shape)        # idx1..: follows RBLN_WAN_CACHE_LAYOUT (flat -> (n,c,d,h*w))
 
 
 # D0 inputs: z + idx1..31 (idx0 is a D0 OUTPUT). DN inputs: z + idx0(I/O) + idx1..31.
@@ -221,6 +226,7 @@ print("both compiled OK", flush=True)
 rd0 = cd0.create_runtime(device=DEV, tensor_type="pt")
 rdn = cdn.create_runtime(device=DEV, tensor_type="pt")
 print("runtimes created", flush=True)
+import pdb; pdb.set_trace()
 
 # ---- run + native reference (pearson) ----
 from scipy.stats import pearsonr  # noqa: E402
