@@ -1,23 +1,15 @@
-"""Keep the suite off the account-level Hugging Face Hub rate limit.
+"""Serve Hub loads from the local cache instead of revalidating them.
 
-`from_pretrained` revalidates even a warm cache with one HEAD request per file,
-and this suite loads ~90 models against an account shared with the other CI
-pipelines. Tests therefore run with the Hub switched off. A test keeps it on
-only when it is marked `@pytest.mark.hub` or when a repo it declares is not in
-the cache yet, so adding a model needs no separate warm-up step.
-
-Setting `HF_HUB_OFFLINE` explicitly disables this and leaves the mode alone.
+`from_pretrained` sends one HEAD request per file even on a warm cache, against
+an account shared with the other CI pipelines. Tests therefore run with the Hub
+switched off; a test keeps it on when it is marked `@pytest.mark.hub` or when a
+repo it declares is not cached yet.
 """
 
-import os
 import warnings
 
 from huggingface_hub import constants, snapshot_download
 from huggingface_hub.errors import LocalEntryNotFoundError
-
-
-HF_HUB_OFFLINE_IS_PINNED = "HF_HUB_OFFLINE" in os.environ
-CACHED_REPOS = set()
 
 
 def pytest_configure(config):
@@ -25,39 +17,25 @@ def pytest_configure(config):
 
 
 def pytest_runtest_setup(item):
-    # Runs before setUpClass, which is where most models are loaded.
-    if HF_HUB_OFFLINE_IS_PINNED:
-        return
+    # A hook, not a fixture: this has to run before setUpClass, where models are loaded.
     constants.HF_HUB_OFFLINE = item.get_closest_marker("hub") is None and all(
         is_cached(repo_id, revision) for repo_id, revision in declared_repos(item)
     )
 
 
 def declared_repos(item):
-    """Hub repos the test declares, through class attributes or a `HUB_REPOS`
-    tuple for repos loaded from inside a test body."""
-    repos = set()
     cls = getattr(item, "cls", None)
-    if cls is not None:
-        revision = (getattr(cls, "HF_CONFIG_KWARGS", None) or {}).get("revision")
-        for attr, rev in (("HF_MODEL_ID", revision), ("CONTROLNET_ID", None)):
-            repo_id = getattr(cls, attr, None)
-            if isinstance(repo_id, str) and "/" in repo_id:
-                repos.add((repo_id, rev))
-    for repo_id in getattr(cls, "HUB_REPOS", ()):
-        repos.add((repo_id, None))
-    return repos
+    revision = (getattr(cls, "HF_CONFIG_KWARGS", None) or {}).get("revision")
+    repos = [(getattr(cls, "HF_MODEL_ID", None), revision), (getattr(cls, "CONTROLNET_ID", None), None)]
+    # HUB_REPOS declares repos that a test body loads without holding them in an attribute.
+    repos += [(repo_id, None) for repo_id in getattr(cls, "HUB_REPOS", ())]
+    return [(repo_id, rev) for repo_id, rev in repos if repo_id]
 
 
 def is_cached(repo_id, revision):
-    # Only hits are remembered: a repo downloaded by the first test that needs it
-    # serves the rest of the session from the cache.
-    if (repo_id, revision) in CACHED_REPOS:
-        return True
     try:
         snapshot_download(repo_id, revision=revision, local_files_only=True)
     except LocalEntryNotFoundError:
-        warnings.warn(f"{repo_id} is not in the HF cache; tests using it will download it from the Hub", stacklevel=2)
+        warnings.warn(f"{repo_id} is not in the HF cache; it will be downloaded from the Hub", stacklevel=2)
         return False
-    CACHED_REPOS.add((repo_id, revision))
     return True
