@@ -137,6 +137,7 @@ def require_hf_token(test_case):
 
 class BaseHubTest:
     class TestHub(unittest.TestCase):
+        @pytest.mark.hub
         @require_hf_token
         @require_hf_user_id
         def test_push_to_hub(self):
@@ -189,6 +190,7 @@ class BaseHubTest:
 
                 self.assertEqual(remote_hash, cfg.from_local)
 
+        @pytest.mark.hub
         @require_hf_token
         @require_hf_user_id
         def test_z_pull_compiled_model_from_hub(self):
