@@ -134,7 +134,7 @@ class RBLNTimeSeriesTransformerForPrediction(RBLNModel):
         with no_init_weights():
             self._origin_model = TimeSeriesTransformerForPrediction._from_config(self.config)
         artifacts = torch.load(self.model_save_dir / self.subfolder / "torch_artifacts.pth", weights_only=False)
-        self._origin_model.model.embedder.load_state_dict(artifacts["embedder"])
+        self._origin_model.model.embedder.load_state_dict(artifacts["embedder"], assign=True)
         self.encoder = RBLNRuntimeEncoder(
             runtime=self.model[0],
             main_input_name="inputs_embeds",
@@ -176,14 +176,14 @@ class RBLNTimeSeriesTransformerForPrediction(RBLNModel):
         for (name, _, _), tensor in zip(enc_compile_config.input_info, enc_example_inputs, strict=False):
             if "key_value_states" in name:
                 static_tensors[name] = tensor
-                context.mark_static_address(tensor)
+                context.mark_static_address(tensor, name)
 
         dec_example_inputs = dec_compile_config.get_dummy_inputs(fill=0, static_tensors=static_tensors)
 
         # Mark decoder's static tensors (self kv states)
         for (name, _, _), tensor in zip(dec_compile_config.input_info, dec_example_inputs, strict=False):
             if "key_value_states" in name:
-                context.mark_static_address(tensor)
+                context.mark_static_address(tensor, name)
 
         compiled_encoder = cls.compile(
             wrapped_model.encoder,
@@ -241,7 +241,7 @@ class RBLNTimeSeriesTransformerForPrediction(RBLNModel):
             (
                 "inputs_embeds",
                 [rbln_config.batch_size, model_config.context_length, model_config.feature_size],
-                "float32",
+                rbln_config.dtype,
             ),
         ]
         enc_input_info.extend(
@@ -255,7 +255,7 @@ class RBLNTimeSeriesTransformerForPrediction(RBLNModel):
                         model_config.context_length,
                         model_config.d_model // model_config.decoder_attention_heads,
                     ],
-                    "float32",
+                    rbln_config.dtype,
                 )
             ]
         )
@@ -264,9 +264,9 @@ class RBLNTimeSeriesTransformerForPrediction(RBLNModel):
             (
                 "inputs_embeds",
                 [rbln_config.batch_size * rbln_config.num_parallel_samples, 1, model_config.feature_size],
-                "float32",
+                rbln_config.dtype,
             ),
-            ("attention_mask", [1, rbln_config.dec_max_seq_len], "float32"),
+            ("attention_mask", [1, rbln_config.dec_max_seq_len], rbln_config.dtype),
             ("cache_position", [], "int32"),
             ("block_tables", [1, 1], "int16"),
         ]
@@ -281,7 +281,7 @@ class RBLNTimeSeriesTransformerForPrediction(RBLNModel):
                         model_config.context_length,  # 24
                         model_config.d_model // model_config.decoder_attention_heads,  # 13
                     ],
-                    "float32",
+                    rbln_config.dtype,
                 )
             ]
         )
@@ -297,7 +297,7 @@ class RBLNTimeSeriesTransformerForPrediction(RBLNModel):
                         rbln_config.dec_max_seq_len,
                         model_config.d_model // model_config.encoder_attention_heads,
                     ],
-                    "float32",
+                    rbln_config.dtype,
                 )
                 for i in range(model_config.decoder_layers * 2)
             ]

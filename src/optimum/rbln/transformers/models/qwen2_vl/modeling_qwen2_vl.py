@@ -38,6 +38,7 @@ from ....configuration_utils import RBLNCompileConfig
 from ....modeling import RBLNModel
 from ....utils.logging import get_logger
 from ...modeling_outputs import _validate_output_hidden_states
+from ...modeling_rope_utils import build_qwen_mrope_lookup, np_cos, np_sin, qwen_vit_rot_pos_ids
 from ..decoderonly.modeling_decoderonly import (
     RBLNDecoderOnlyModel,
     RBLNDecoderOnlyModelForCausalLM,
@@ -63,7 +64,6 @@ if TYPE_CHECKING:
 
 class RBLNQwen2VisionTransformerPretrainedModel(RBLNModel):
     auto_model_class = None
-    _supports_non_fp32 = True
 
     def __post_init__(self, **kwargs):
         self.transformer = self.model[0]
@@ -73,7 +73,9 @@ class RBLNQwen2VisionTransformerPretrainedModel(RBLNModel):
         self.patch_size = config.spatial_patch_size
         self.spatial_merge_size = config.spatial_merge_size
         self.spatial_merge_unit = config.spatial_merge_size * config.spatial_merge_size
-        self.rotary_pos_emb = VisionRotaryEmbedding((config.embed_dim // config.num_heads) // 2)
+        freq_table = VisionRotaryEmbedding((config.embed_dim // config.num_heads) // 2)(int(self.max_seq_len.max()))
+        self.rotary_cos_table = np_cos(freq_table)
+        self.rotary_sin_table = np_sin(freq_table)
         with no_init_weights():
             self.patch_embed = PatchEmbed(
                 patch_size=config.patch_size,
@@ -123,20 +125,21 @@ class RBLNQwen2VisionTransformerPretrainedModel(RBLNModel):
         hidden_size = model_config.embed_dim
         num_heads = model_config.num_heads
         head_dim = hidden_size // num_heads
+        batch_size = rbln_config.batch_size
 
         input_infos = []
         for max_seq_len in rbln_config.max_seq_len:
             input_info = [
                 ("hidden_states", [max_seq_len, hidden_size], rbln_config.dtype),
-                ("full_attn_masks", [1, 1, max_seq_len, max_seq_len], rbln_config.dtype),
+                ("full_attn_masks", [batch_size, 1, max_seq_len, max_seq_len], rbln_config.dtype),
                 (
                     "cos",
-                    [1, 1, max_seq_len, head_dim],
+                    [batch_size, 1, max_seq_len, head_dim],
                     rbln_config.dtype,
                 ),
                 (
                     "sin",
-                    [1, 1, max_seq_len, head_dim],
+                    [batch_size, 1, max_seq_len, head_dim],
                     rbln_config.dtype,
                 ),
             ]
@@ -186,9 +189,13 @@ class RBLNQwen2VisionTransformerPretrainedModel(RBLNModel):
         # Each image is handled independently for padding and attention mask generation.
 
         hidden_states = self.patch_embed(hidden_states).to(self.rbln_config.dtype)
-        rotary_pos_emb = self.rot_pos_emb(grid_thw)
-        emb = torch.cat((rotary_pos_emb, rotary_pos_emb), dim=-1)
-        position_embeddings = (emb.cos().to(self.rbln_config.dtype), emb.sin().to(self.rbln_config.dtype))
+        pos_ids = qwen_vit_rot_pos_ids(grid_thw, self.spatial_merge_size)
+        cos = self.rotary_cos_table[pos_ids].flatten(1)
+        sin = self.rotary_sin_table[pos_ids].flatten(1)
+        position_embeddings = (
+            torch.cat((cos, cos), dim=-1).to(self.rbln_config.dtype),
+            torch.cat((sin, sin), dim=-1).to(self.rbln_config.dtype),
+        )
 
         cu_seqlens = torch.repeat_interleave(grid_thw[:, 1] * grid_thw[:, 2], grid_thw[:, 0]).cumsum(
             dim=0,
@@ -241,7 +248,6 @@ class RBLNQwen2VisionTransformerPretrainedModel(RBLNModel):
 class RBLNQwen2VLModel(RBLNDecoderOnlyModel):
     auto_model_class = AutoModelForImageTextToText
     _decoder_wrapper_cls = Qwen2VL_LanguageModelWrapper
-    _supports_non_fp32 = True
     _use_rotary_emb = False
     _rbln_submodules = [
         {"name": "visual"},
@@ -262,7 +268,9 @@ class RBLNQwen2VLModel(RBLNDecoderOnlyModel):
 
         super().__post_init__(**kwargs)
         self.visual = self.rbln_submodules[0]
-        self.rotary_emb = self._rotary_emb_class(self.config.text_config)
+        self.rotary_emb = build_qwen_mrope_lookup(
+            self._rotary_emb_class(self.config.text_config), self.rbln_config.max_seq_len
+        )
         if not self.can_generate():
             self.block_tables = torch.arange(self.rbln_config.kvcache_num_blocks, dtype=torch.int16)
 
@@ -280,6 +288,7 @@ class RBLNQwen2VLModel(RBLNDecoderOnlyModel):
                 self.config.text_config.vocab_size,
                 self.config.text_config.hidden_size,
                 self.config.text_config.pad_token_id,
+                dtype=self.rbln_config.dtype,
             )
         return embed_tokens
 
@@ -331,7 +340,7 @@ class RBLNQwen2VLModel(RBLNDecoderOnlyModel):
         mm_token_type_ids: torch.IntTensor | None = None,
     ):
         batch_size = input_ids.shape[0]
-        inputs_embeds = self.embed_tokens(input_ids).to(self.rbln_config.dtype)
+        inputs_embeds = self.embed_tokens(input_ids)
 
         if pixel_values is not None:
             image_embeds = self.visual(pixel_values, grid_thw=image_grid_thw)
@@ -522,7 +531,6 @@ class RBLNQwen2VLForConditionalGeneration(RBLNQwen2VLModel, RBLNDecoderOnlyModel
 
     auto_model_class = AutoModelForImageTextToText
     _decoder_wrapper_cls = Qwen2VL_LanguageModelWrapper
-    _supports_non_fp32 = True
     _use_rotary_emb = False
     _rbln_submodules = [
         {"name": "visual"},
@@ -595,7 +603,7 @@ class RBLNQwen2VLForConditionalGeneration(RBLNQwen2VLModel, RBLNDecoderOnlyModel
                 f"Cache position size mismatch: got {cache_position.shape[0]}, expected {self.rbln_config.batch_size}."
             )
 
-        inputs_embeds = self.embed_tokens(input_ids).to(self.rbln_config.dtype)
+        inputs_embeds = self.embed_tokens(input_ids)
         position_embeds = []
         for b_idx in range(self.rbln_config.batch_size):
             delta = cache_position[b_idx] + self.rope_deltas[b_idx]

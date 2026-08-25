@@ -31,6 +31,7 @@ from ....configuration_utils import RBLNCompileConfig
 from ....modeling import RBLNModel
 from ....utils.logging import get_logger
 from ...modeling_outputs import RBLNDecoderOnlyOutput, _validate_output_hidden_states
+from ...modeling_rope_utils import np_cos, np_sin, qwen_vit_rot_pos_ids
 from ..decoderonly.modeling_decoderonly import RBLNDecoderOnlyModel, RBLNDecoderOnlyModelForCausalLM
 from .configuration_exaone4_5 import (
     RBLNExaone4_5_ForConditionalGenerationConfig,
@@ -68,7 +69,6 @@ class RBLNExaone4_5_VisionModel(RBLNModel):
     """
 
     auto_model_class = None
-    _supports_non_fp32 = True
     _tp_support = True
 
     def __post_init__(self, **kwargs):
@@ -80,7 +80,11 @@ class RBLNExaone4_5_VisionModel(RBLNModel):
         self.patch_size = config.patch_size
         self.spatial_merge_size = config.spatial_merge_size
         self.spatial_merge_unit = config.spatial_merge_size * config.spatial_merge_size
-        self.rotary_pos_emb = Exaone4_5_VisionRotaryEmbedding((config.hidden_size // config.num_heads) // 2)
+        freq_table = Exaone4_5_VisionRotaryEmbedding((config.hidden_size // config.num_heads) // 2)(
+            int(self.max_seq_len.max())
+        )
+        self.rotary_cos_table = np_cos(freq_table)
+        self.rotary_sin_table = np_sin(freq_table)
         with no_init_weights():
             self.patch_embed = Exaone4_5_PatchEmbed(
                 patch_size=config.patch_size,
@@ -130,6 +134,7 @@ class RBLNExaone4_5_VisionModel(RBLNModel):
         num_heads = model_config.num_heads
         head_dim = hidden_size // num_heads
         window_seq_len = (window_size // patch_size) ** 2
+        batch_size = rbln_config.batch_size
 
         input_infos = []
         for max_seq_len in rbln_config.max_seq_len:
@@ -140,14 +145,14 @@ class RBLNExaone4_5_VisionModel(RBLNModel):
 
             input_info = [
                 ("hidden_states", [max_seq_len, hidden_size], rbln_config.dtype),
-                ("full_attn_masks", [1, 1, max_seq_len, max_seq_len], rbln_config.dtype),
+                ("full_attn_masks", [batch_size, 1, max_seq_len, max_seq_len], rbln_config.dtype),
                 (
                     "window_attn_masks",
                     [max_seq_len // window_seq_len, 1, window_seq_len, window_seq_len],
                     rbln_config.dtype,
                 ),
-                ("cos", [1, 1, max_seq_len, head_dim], rbln_config.dtype),
-                ("sin", [1, 1, max_seq_len, head_dim], rbln_config.dtype),
+                ("cos", [batch_size, 1, max_seq_len, head_dim], rbln_config.dtype),
+                ("sin", [batch_size, 1, max_seq_len, head_dim], rbln_config.dtype),
             ]
             input_infos.append(input_info)
 
@@ -235,7 +240,7 @@ class RBLNExaone4_5_VisionModel(RBLNModel):
 
     def forward(self, hidden_states: torch.Tensor, grid_thw: torch.Tensor) -> torch.Tensor:
         hidden_states = self.patch_embed(hidden_states).to(self.rbln_config.dtype)
-        rotary_pos_emb = self.rot_pos_emb(grid_thw)
+        pos_ids = qwen_vit_rot_pos_ids(grid_thw, self.spatial_merge_size)
         window_index, cu_window_seqlens = self.get_window_index(grid_thw)
         cu_window_seqlens = torch.tensor(cu_window_seqlens, dtype=torch.int32)
         cu_window_seqlens = torch.unique_consecutive(cu_window_seqlens)
@@ -244,11 +249,14 @@ class RBLNExaone4_5_VisionModel(RBLNModel):
         hidden_states = hidden_states.reshape(seq_len // self.spatial_merge_unit, self.spatial_merge_unit, -1)
         hidden_states = hidden_states[window_index, :, :]
         hidden_states = hidden_states.reshape(seq_len, -1)
-        rotary_pos_emb = rotary_pos_emb.reshape(seq_len // self.spatial_merge_unit, self.spatial_merge_unit, -1)
-        rotary_pos_emb = rotary_pos_emb[window_index, :, :]
-        rotary_pos_emb = rotary_pos_emb.reshape(seq_len, -1)
-        emb = torch.cat((rotary_pos_emb, rotary_pos_emb), dim=-1)
-        position_embeddings = (emb.cos().to(self.rbln_config.dtype), emb.sin().to(self.rbln_config.dtype))
+        pos_ids = pos_ids.reshape(seq_len // self.spatial_merge_unit, self.spatial_merge_unit, -1)
+        pos_ids = pos_ids[window_index, :, :].reshape(seq_len, -1)
+        cos = self.rotary_cos_table[pos_ids].flatten(1)
+        sin = self.rotary_sin_table[pos_ids].flatten(1)
+        position_embeddings = (
+            torch.cat((cos, cos), dim=-1).to(self.rbln_config.dtype),
+            torch.cat((sin, sin), dim=-1).to(self.rbln_config.dtype),
+        )
 
         cu_seqlens = torch.repeat_interleave(grid_thw[:, 1] * grid_thw[:, 2], grid_thw[:, 0]).cumsum(
             dim=0, dtype=torch.int32
@@ -308,7 +316,6 @@ class RBLNExaone4_5_VisionModel(RBLNModel):
 class RBLNExaone4_5_Model(RBLNDecoderOnlyModel):
     auto_model_class = AutoModelForImageTextToText
     _decoder_wrapper_cls = Exaone4_5LanguageModelWrapper
-    _supports_non_fp32 = True
     _rbln_submodule_prefix = "model"
     _rbln_submodules = [{"name": "visual"}]
     _config_class = Exaone4_5_Config
@@ -338,6 +345,7 @@ class RBLNExaone4_5_Model(RBLNDecoderOnlyModel):
                 self.config.text_config.vocab_size,
                 self.config.text_config.hidden_size,
                 self.config.text_config.pad_token_id,
+                dtype=self.rbln_config.dtype,
             )
         return embed_tokens
 
@@ -375,7 +383,7 @@ class RBLNExaone4_5_Model(RBLNDecoderOnlyModel):
         video_grid_thw: torch.LongTensor = None,
         second_per_grid_ts: torch.Tensor = None,
     ):
-        inputs_embeds = self.embed_tokens(input_ids).to(self.rbln_config.dtype)
+        inputs_embeds = self.embed_tokens(input_ids)
 
         if pixel_values is not None:
             image_embeds = self.visual(pixel_values, grid_thw=image_grid_thw)
@@ -470,7 +478,6 @@ class RBLNExaone4_5_ForConditionalGeneration(RBLNExaone4_5_Model, RBLNDecoderOnl
 
     auto_model_class = AutoModelForImageTextToText
     _decoder_wrapper_cls = Exaone4_5LanguageModelWrapper
-    _supports_non_fp32 = True
     _rbln_submodules = [{"name": "visual"}]
 
     def can_generate(self):

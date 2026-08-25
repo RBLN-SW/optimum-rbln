@@ -36,6 +36,7 @@ from ....utils.logging import get_logger
 from ...cache_utils import FullAttentionKVCacheMeta, SlidingWindowAttentionKVCacheMeta
 from ...modeling_attention_utils import validate_sliding_window
 from ...modeling_outputs import RBLNDecoderOnlyOutput
+from ...modeling_rope_utils import np_cos, np_sin
 from ...utils.rbln_runtime_wrapper import LoopProcessor
 from ..decoderonly.decoderonly_runtime_utils import RBLNPageTableManager
 from ..decoderonly.generation_decoderonly import RBLNDecoderOnlyGenerationMixin
@@ -118,7 +119,6 @@ class RBLNGemma4VisionModel(RBLNModel):
     """
 
     auto_model_class = AutoModel
-    _supports_non_fp32 = True
     _tp_support = True
 
     @classmethod
@@ -190,12 +190,13 @@ class RBLNGemma4VisionModel(RBLNModel):
 
         max_patches = max(self.rbln_config.get_max_patches())
         table_positions = torch.cat([torch.arange(max_patches), torch.tensor([-1])])
-        cos_table, sin_table = Gemma4VisionRotaryEmbedding(self.config).eval()(
-            torch.empty(1), table_positions[None, :, None].expand(1, -1, 2)
-        )
-        per_axis_dim = cos_table.shape[-1] // 2
-        self.rotary_cos_table = cos_table[0, :, :per_axis_dim]
-        self.rotary_sin_table = sin_table[0, :, :per_axis_dim]
+        # Replicates Gemma4VisionRotaryEmbedding.forward for a single spatial axis
+        # (both axes share the same inv_freq); cos/sin go through the deterministic helpers.
+        rotary_emb = Gemma4VisionRotaryEmbedding(self.config)
+        freqs = table_positions[:, None].float() * rotary_emb.inv_freq[None, :].float()
+        emb = torch.cat((freqs, freqs), dim=-1)
+        self.rotary_cos_table = np_cos(emb) * rotary_emb.attention_scaling
+        self.rotary_sin_table = np_sin(emb) * rotary_emb.attention_scaling
 
         super().__post_init__(**kwargs)
 
@@ -247,7 +248,6 @@ class RBLNGemma4ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
     """
 
     _decoder_wrapper_cls = Gemma4ForCausalLMWrapper
-    _supports_non_fp32 = True
 
     @classmethod
     def get_input_info(
@@ -441,7 +441,9 @@ class RBLNGemma4ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
                 self.config.pad_token_id,
                 embed_scale=self.config.hidden_size_per_layer_input**0.5,
             )
-        return embed_per_layer
+        # Gemma4TextScaledWordEmbedding does not forward a dtype kwarg to
+        # nn.Embedding, so cast the module instead.
+        return embed_per_layer.to(self.rbln_config.dtype)
 
     def __post_init__(self, **kwargs):
         artifacts_path = self.model_save_dir / self.subfolder / "torch_artifacts.pth"
@@ -449,15 +451,13 @@ class RBLNGemma4ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
 
         if self.rbln_config.use_inputs_embeds and "embed_tokens" in artifacts:
             self.embed_tokens = self._create_embedding_layer()
-            self.embed_tokens.load_state_dict(artifacts["embed_tokens"])
-            self.embed_tokens.to(self.rbln_config.dtype)
+            self.embed_tokens.load_state_dict(artifacts["embed_tokens"], assign=True)
         else:
             self.embed_tokens = None
 
         if getattr(self.config, "hidden_size_per_layer_input", 0) and "embed_tokens_per_layer" in artifacts:
             self.embed_tokens_per_layer = self._create_per_layer_embedding_layer()
-            self.embed_tokens_per_layer.load_state_dict(artifacts["embed_tokens_per_layer"])
-            self.embed_tokens_per_layer.to(self.rbln_config.dtype)
+            self.embed_tokens_per_layer.load_state_dict(artifacts["embed_tokens_per_layer"], assign=True)
         else:
             self.embed_tokens_per_layer = None
 
@@ -515,7 +515,9 @@ class RBLNGemma4ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
                 self.config.pad_token_id,
                 embed_scale=self.config.hidden_size**0.5,
             )
-        return embed_tokens
+        # Gemma4TextScaledWordEmbedding does not forward a dtype kwarg to
+        # nn.Embedding, so cast the module instead.
+        return embed_tokens.to(self.rbln_config.dtype)
 
     @classmethod
     def _pre_populate_cache_metas(
@@ -622,7 +624,6 @@ class RBLNGemma4ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMix
         {"name": "vision_tower"},
         {"name": "language_model"},
     ]
-    _supports_non_fp32 = True
 
     @staticmethod
     def _reject_unsupported_modalities(
@@ -676,6 +677,35 @@ class RBLNGemma4ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMix
         )
         super().__post_init__(**kwargs)
 
+    @property
+    def compiled_image_features_dtype(self) -> torch.dtype:
+        # `embed_vision`'s `image_features` input follows `rbln_config.dtype`; that is the basis going
+        # forward. An artifact compiled before that was true has a different `image_features` dtype baked
+        # into its graph, so read the dtype back from the saved compile config and feed the graph what it
+        # was actually compiled with. That keeps such artifacts loading and running instead of failing on
+        # a buffer/graph dtype mismatch, so it only ever warns -- raising would break the case it exists
+        # to support.
+        #
+        # Once optimum-rbln reaches 0.12.0 this is deleted outright:
+        #   1. Delete this property.
+        #   2. In `get_image_features`, replace both uses of `self.compiled_image_features_dtype`
+        #      with `self.rbln_config.dtype`.
+        compile_cfg = self.rbln_config.compile_cfgs[0]
+        input_info = compile_cfg.input_info[0] if compile_cfg.is_multiple_input_info else compile_cfg.input_info
+        compiled_dtype = getattr(torch, next(item[2] for item in input_info if item[0] == "image_features"))
+
+        if compiled_dtype != self.rbln_config.dtype:
+            logger.warning_once(
+                f"This artifact's `embed_vision` was compiled with `image_features` dtype "
+                f"`{compiled_dtype}`, which differs from the current `rbln_config.dtype` "
+                f"(`{self.rbln_config.dtype}`). `image_features` is being fed at the compiled dtype so "
+                "this artifact keeps working; recompile it so `embed_vision` picks up the current "
+                "`rbln_config.dtype`. Support for artifacts whose `embed_vision` compiled "
+                "`image_features` dtype differs from `rbln_config.dtype` is deprecated and will be "
+                "removed in version 0.12.0."
+            )
+        return compiled_dtype
+
     def get_attn_impl(self) -> str:
         return self.rbln_config.language_model.attn_impl
 
@@ -712,7 +742,7 @@ class RBLNGemma4ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMix
         input_infos = []
         for max_soft_tokens in max_soft_tokens_list:
             input_info = [
-                ("image_features", [1, max_soft_tokens, vision_hidden_size], "float32"),
+                ("image_features", [1, max_soft_tokens, vision_hidden_size], rbln_config.dtype),
             ]
             input_infos.append(input_info)
         compile_cfgs = RBLNCompileConfig(input_info=input_infos)
@@ -815,10 +845,14 @@ class RBLNGemma4ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMix
             torch.empty(size=vision_out_0_size, dtype=self.rbln_config.vision_tower.dtype, device="cpu"),
             torch.empty(size=vision_out_1_size, dtype=torch.bool, device="cpu"),
         ]
-        projector_out_buffer = [torch.empty(size=projector_out_size, dtype=torch.float32, device="cpu")]
+        projector_out_buffer = [
+            torch.empty(size=projector_out_size, dtype=self.compiled_image_features_dtype, device="cpu")
+        ]
 
         vision_outputs = self.vision_tower(pixel_values, pixel_position_ids, out=vision_out_buffer)
-        pooler_output = self.embed_vision(vision_outputs.last_hidden_state.float(), out=projector_out_buffer)
+        pooler_output = self.embed_vision(
+            vision_outputs.last_hidden_state.to(self.compiled_image_features_dtype), out=projector_out_buffer
+        )
         pooler_output = pooler_output[vision_outputs.pooler_mask]
         return pooler_output
 

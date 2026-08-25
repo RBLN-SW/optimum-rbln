@@ -29,8 +29,97 @@
 import math
 from typing import Optional
 
+import numpy as np
 import torch
 from transformers import PretrainedConfig
+
+from ..utils.logging import get_logger
+
+
+logger = get_logger(__name__)
+
+
+def np_cos(x: torch.Tensor) -> torch.Tensor:
+    """cos(x) computed on the host via numpy.
+
+    torch's CPU cos/sin kernels are not bit-reproducible: the result can differ in the
+    last bits depending on the OMP/MKL thread configuration and the tensor size, while
+    numpy's are reproducible across thread counts. Any cos/sin computed on the host
+    (e.g. rotary tables fed to a compiled graph as inputs) must use these helpers.
+    """
+    return torch.from_numpy(np.cos(x.detach().cpu().numpy()))
+
+
+def np_sin(x: torch.Tensor) -> torch.Tensor:
+    """sin(x) computed on the host via numpy. See `np_cos` for why."""
+    return torch.from_numpy(np.sin(x.detach().cpu().numpy()))
+
+
+class QwenMRopeLookupTable:
+    """Deterministic drop-in for host-side HF rotary modules: cos/sin tables built once
+    via np_cos/np_sin, gathered per call; out-of-range positions use the bit-identical
+    dynamic numpy path. Handles standard mrope ([3, bs, seq, dim], merge in caller) and
+    interleaved mrope (axis selection baked into the gather index). Default rope_type only.
+    """
+
+    def __init__(self, rotary_emb: torch.nn.Module, max_seq_len: int):
+        self.attention_scaling = rotary_emb.attention_scaling
+        half_dim = rotary_emb.inv_freq.shape[0]
+        self.inv_freq_full = torch.cat([rotary_emb.inv_freq.float()] * 2)
+        self.table_len = max_seq_len
+        vals = torch.outer(torch.arange(self.table_len, dtype=torch.float32), self.inv_freq_full)
+        self.cos_table = np_cos(vals) * self.attention_scaling
+        self.sin_table = np_sin(vals) * self.attention_scaling
+
+        self.interleave_index = None
+        if hasattr(rotary_emb, "apply_interleaved_mrope"):
+            section = rotary_emb.mrope_section
+            sigma = torch.zeros(half_dim, dtype=torch.long)
+            sigma[1 : section[1] * 3 : 3] = 1
+            sigma[2 : section[2] * 3 : 3] = 2
+            self.interleave_index = torch.cat([sigma, sigma])
+            self.col_index = torch.arange(2 * half_dim)
+
+    def _dynamic(self, pos_per_column: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        vals = pos_per_column.float() * self.inv_freq_full
+        return np_cos(vals) * self.attention_scaling, np_sin(vals) * self.attention_scaling
+
+    def __call__(self, x: torch.Tensor, position_ids: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        if position_ids.ndim == 2:
+            position_ids = position_ids[None, ...].expand(3, *position_ids.shape)
+        if self.interleave_index is None:
+            if 0 <= position_ids.min() and position_ids.max() < self.table_len:
+                return self.cos_table[position_ids], self.sin_table[position_ids]
+            return self._dynamic(position_ids[..., None])
+        pos_sel = position_ids[self.interleave_index].permute(1, 2, 0)
+        if 0 <= pos_sel.min() and pos_sel.max() < self.table_len:
+            return self.cos_table[pos_sel, self.col_index], self.sin_table[pos_sel, self.col_index]
+        return self._dynamic(pos_sel)
+
+
+def build_qwen_mrope_lookup(rotary_emb: torch.nn.Module, max_seq_len: int):
+    # the table only requires inv_freq to be static after load; dynamic/longrope mutate it at runtime
+    if getattr(rotary_emb, "rope_type", "default") not in ("dynamic", "longrope"):
+        return QwenMRopeLookupTable(rotary_emb, max_seq_len)
+    logger.warning(
+        f"rope_type={rotary_emb.rope_type!r} cannot use the deterministic rotary lookup table; "
+        "host cos/sin stays on the torch path and may vary with the thread configuration."
+    )
+    return rotary_emb
+
+
+def qwen_vit_rot_pos_ids(grid_thw: torch.Tensor, spatial_merge_size: int) -> torch.Tensor:
+    """(h, w) rotary position ids per patch, merge-block ordered (mirrors HF ViT rot_pos_emb)."""
+    pos_ids = []
+    for t, h, w in grid_thw.tolist():
+        hpos = torch.arange(h).unsqueeze(1).expand(-1, w)
+        hpos = hpos.reshape(h // spatial_merge_size, spatial_merge_size, w // spatial_merge_size, spatial_merge_size)
+        hpos = hpos.permute(0, 2, 1, 3).flatten()
+        wpos = torch.arange(w).unsqueeze(0).expand(h, -1)
+        wpos = wpos.reshape(h // spatial_merge_size, spatial_merge_size, w // spatial_merge_size, spatial_merge_size)
+        wpos = wpos.permute(0, 2, 1, 3).flatten()
+        pos_ids.append(torch.stack([hpos, wpos], dim=-1).repeat(t, 1))
+    return torch.cat(pos_ids, dim=0)
 
 
 def _get_rope_theta(config: PretrainedConfig) -> float:

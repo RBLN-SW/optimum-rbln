@@ -58,6 +58,7 @@ class RBLNStableDiffusionXLControlNetImg2ImgPipeline(RBLNDiffusionMixin, StableD
     original_class = StableDiffusionXLControlNetImg2ImgPipeline
     _rbln_config_class = RBLNStableDiffusionXLControlNetImg2ImgPipelineConfig
     _submodules = ["text_encoder", "text_encoder_2", "unet", "vae", "controlnet"]
+    _upcasts_vae = True
 
     # Almost copied from diffusers.pipelines.controlnet.pipeline_controlnet_sd_xl_img2img.py
     def check_inputs(

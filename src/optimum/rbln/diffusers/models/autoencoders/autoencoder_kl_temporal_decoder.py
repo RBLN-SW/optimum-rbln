@@ -184,7 +184,7 @@ class RBLNAutoencoderKLTemporalDecoder(RBLNModel):
                         rbln_config.sample_size[0],
                         rbln_config.sample_size[1],
                     ],
-                    "float32",
+                    rbln_config.dtype,
                 )
             ]
             compile_cfgs.append(RBLNCompileConfig(compiled_model_name="encoder", input_info=vae_enc_input_info))
@@ -199,7 +199,7 @@ class RBLNAutoencoderKLTemporalDecoder(RBLNModel):
                     rbln_config.latent_sample_size[0],
                     rbln_config.latent_sample_size[1],
                 ],
-                "float32",
+                rbln_config.dtype,
             )
         ]
         compile_cfgs.append(RBLNCompileConfig(compiled_model_name="decoder", input_info=vae_dec_input_info))
@@ -248,7 +248,7 @@ class RBLNAutoencoderKLTemporalDecoder(RBLNModel):
         Returns:
             The latent representation or AutoencoderKLOutput if return_dict=True
         """
-        posterior = self.encoder.encode(x)
+        posterior = self.encoder.encode(x.to(self.rbln_config.dtype))
 
         if not return_dict:
             return (posterior,)
@@ -267,7 +267,7 @@ class RBLNAutoencoderKLTemporalDecoder(RBLNModel):
         Returns:
             The decoded video or DecoderOutput if return_dict=True
         """
-        decoded = self.decoder.decode(z)
+        decoded = self.decoder.decode(z.to(self.rbln_config.dtype))
 
         if not return_dict:
             return (decoded,)

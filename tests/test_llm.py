@@ -607,7 +607,8 @@ class TestLlavaNextForConditionalGeneration(LLMTest.TestLLM):
         rbln_class_kwargs = {"rbln_config": rbln_config}
 
         with pytest.raises(
-            ValueError, match="Parameter conflict for 'batch_size': submodule_config has 2, but kwargs has 1"
+            ValueError,
+            match="Parameter conflict for 'batch_size': submodule_config has 2, but the parent config requires 1",
         ):
             _ = self.RBLN_CLASS.from_pretrained(model_id=self.HF_MODEL_ID, **rbln_class_kwargs)
 
@@ -700,6 +701,65 @@ class TestIdefics3ForConditionalGeneration(LLMTest.TestLLM):
         inputs["max_new_tokens"] = 20
         inputs["do_sample"] = False
         return inputs
+
+
+class TestQwenRotaryLookup(unittest.TestCase):
+    def test_qwen_vit_rot_pos_ids_matches_hf(self):
+        from types import SimpleNamespace
+
+        from transformers.models.qwen2_vl.modeling_qwen2_vl import (
+            Qwen2VisionTransformerPretrainedModel,
+            VisionRotaryEmbedding,
+        )
+
+        from optimum.rbln.transformers.modeling_rope_utils import qwen_vit_rot_pos_ids
+
+        rot = VisionRotaryEmbedding(20)
+        for merge in (1, 2, 4):
+            for grid in (
+                torch.tensor([[1, 4 * merge, 4 * merge]]),
+                torch.tensor([[3, 2 * merge, 6 * merge], [1, 8 * merge, 2 * merge]]),
+            ):
+                mock = SimpleNamespace(spatial_merge_size=merge, rotary_pos_emb=rot)
+                hf = Qwen2VisionTransformerPretrainedModel.rot_pos_emb(mock, grid)
+                table = rot(int(grid[:, 1:].max()))
+                ours = table[qwen_vit_rot_pos_ids(grid, merge)].flatten(1)
+                self.assertTrue(torch.equal(ours, hf))
+
+    def test_qwen_mrope_lookup_matches_hf_module(self):
+        from transformers.models.qwen2_vl.configuration_qwen2_vl import Qwen2VLTextConfig
+        from transformers.models.qwen2_vl.modeling_qwen2_vl import Qwen2VLRotaryEmbedding
+        from transformers.models.qwen3_vl.configuration_qwen3_vl import Qwen3VLTextConfig
+        from transformers.models.qwen3_vl.modeling_qwen3_vl import Qwen3VLTextRotaryEmbedding
+
+        from optimum.rbln.transformers.modeling_rope_utils import QwenMRopeLookupTable, build_qwen_mrope_lookup
+
+        max_pos = 512
+        standard = Qwen2VLRotaryEmbedding(
+            Qwen2VLTextConfig(rope_scaling={"type": "mrope", "rope_type": "default", "mrope_section": [16, 24, 24]})
+        )
+        interleaved = Qwen3VLTextRotaryEmbedding(
+            Qwen3VLTextConfig(
+                rope_scaling={
+                    "type": "mrope",
+                    "rope_type": "default",
+                    "mrope_section": [24, 20, 20],
+                    "mrope_interleaved": True,
+                }
+            )
+        )
+        x = torch.zeros(1)
+        for rot in (standard, interleaved):
+            lut = build_qwen_mrope_lookup(rot, max_pos)
+            self.assertIsInstance(lut, QwenMRopeLookupTable)
+            oob = torch.randint(0, max_pos, (3, 1, 8))
+            oob[0, 0, 0] = max_pos + 3  # falls back to the dynamic path
+            for pos in (torch.randint(0, max_pos, (3, 2, 64)), torch.randint(0, max_pos, (3, 1, 1)), oob):
+                hf_cos, hf_sin = rot(x, pos)
+                lut_cos, lut_sin = lut(x, pos)
+                self.assertEqual(hf_cos.shape, lut_cos.shape)
+                self.assertLess((hf_cos.float() - lut_cos).abs().max().item(), 2e-7)
+                self.assertLess((hf_sin.float() - lut_sin).abs().max().item(), 2e-7)
 
 
 class TestQwen2VLForConditionalGeneration(LLMTest.TestLLM):
@@ -845,6 +905,47 @@ class TestQwen3VLForConditionalGeneration(LLMTest.TestLLM):
         assert not model.rbln_config.create_runtimes
 
 
+class TestQwen3VLForConditionalGeneration_OutputHiddenStates(TestQwen3VLForConditionalGeneration):
+    # Two prompts of different lengths: the shorter one is left-padded, exercising the
+    # padded-batch prefill output aggregation (hidden states must come back at full mask width
+    # and left-padded rows must not leak into the valid region).
+    PROMPTS = [
+        TestQwen3VLForConditionalGeneration.PROMPT,
+        "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\n<|vision_start|><|image_pad|><|vision_end|>What is the main color of this image? Answer in one short sentence, please.<|im_end|>\n<|im_start|>assistant\n",
+    ]
+    HF_CONFIG_KWARGS = {}  # Initialize empty to avoid sharing with other classes
+    HF_CONFIG_KWARGS_PREPROCESSOR = {
+        "min_pixels": 64 * 16 * 16,
+        "max_pixels": 64 * 16 * 16,
+        "padding_side": "left",
+    }
+    RBLN_CLASS_KWARGS = {
+        "rbln_config": {
+            "visual": {"max_seq_len": 512},
+            "num_devices": 1,
+            "kvcache_partition_len": 8192,
+            "max_seq_len": 16_384,
+            "batch_size": 2,
+            "output_hidden_states": True,
+        }
+    }
+
+    def get_inputs(self):
+        tokenizer = self.get_tokenizer()
+        img_path = f"{os.path.dirname(__file__)}/../assets/rbln_logo_light.png"
+        image = Image.open(img_path)
+        inputs = tokenizer(images=[image, image], text=self.PROMPTS, return_tensors="pt", padding=True)
+        inputs["max_new_tokens"] = 4
+        inputs["do_sample"] = False
+        return inputs
+
+    def test_generate(self):
+        self._test_output_hidden_states_generation()
+
+    def test_propagate_config(self):
+        self.skipTest("Covered by TestQwen3VLForConditionalGeneration.")
+
+
 class TestQwen3VLMoeForConditionalGeneration(LLMTest.TestLLM):
     RBLN_AUTO_CLASS = RBLNAutoModelForImageTextToText
     RBLN_CLASS = RBLNQwen3VLMoeForConditionalGeneration
@@ -920,6 +1021,46 @@ class TestQwen3_5ForConditionalGeneration(LLMTest.TestLLM):
         inputs["max_new_tokens"] = 20
         inputs["do_sample"] = False
         return inputs
+
+
+class TestQwen3_5ForConditionalGeneration_OutputHiddenStates(TestQwen3_5ForConditionalGeneration):
+    # Left-padded input (padding_side="left", padding="max_length") so the output_hidden_states
+    # aggregation runs with a non-zero start (start > 0). This exercises the scatter-back offset and
+    # the full-width copy_ from the #658 bug family, which a non-padded prompt (start == 0) never hits.
+    # Kept at batch 1 so the BC-inference job can reuse its saved artifact (a batch-size change would
+    # not match the reused artifact).
+    RBLN_CLASS_KWARGS = {
+        "rbln_config": {
+            "visual": {"max_seq_len": 512},
+            "num_devices": 1,
+            "kvcache_partition_len": 4096,
+            "max_seq_len": 8192,
+            "output_hidden_states": True,
+        }
+    }
+    HF_CONFIG_KWARGS_PREPROCESSOR = {
+        "min_pixels": 64 * 16 * 16,
+        "max_pixels": 64 * 16 * 16,
+        "padding_side": "left",
+    }
+
+    def get_inputs(self):
+        tokenizer = self.get_tokenizer()
+        img_path = f"{os.path.dirname(__file__)}/../assets/rbln_logo_light.png"
+        image = Image.open(img_path)
+        inputs = tokenizer(
+            images=[image],
+            text=[self.PROMPT],
+            return_tensors="pt",
+            padding="max_length",
+            max_length=64,
+        )
+        inputs["max_new_tokens"] = 20
+        inputs["do_sample"] = False
+        return inputs
+
+    def test_generate(self):
+        self._test_output_hidden_states_generation()
 
 
 class TestGemma3ForConditionalGeneration(LLMTest.TestLLM):

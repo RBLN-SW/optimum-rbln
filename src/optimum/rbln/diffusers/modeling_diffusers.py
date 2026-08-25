@@ -73,6 +73,12 @@ class RBLNDiffusionMixin:
     _connected_classes = {}
     _submodules = []
     _optional_submodules = []
+    # Whether this pipeline acts on a VAE's `force_upcast` by moving it to float32 around encode/decode.
+    # The config alone cannot tell: `force_upcast` is the `AutoencoderKL` constructor default, so nearly
+    # every VAE carries it while only some pipelines read it -- SD3 declares it and still ignores it. Since
+    # a compiled graph cannot be moved at runtime, the pipelines that do read it get a float32 VAE at
+    # compile time, and the rest keep the checkpoint dtype, as upstream runs them.
+    _upcasts_vae = False
     _prefix = {}
 
     @staticmethod
@@ -202,12 +208,6 @@ class RBLNDiffusionMixin:
             )
 
         if export:
-            # transformers v5 defaults dtype to "auto", which loads checkpoints in their
-            # native bf16/fp16. RBLN diffusion submodels only support fp32 weights, so fall
-            # back to fp32
-            if "dtype" not in kwargs and "torch_dtype" not in kwargs:
-                kwargs["torch_dtype"] = torch.float32
-
             # keep submodules if user passed any of them.
             passed_submodules = {
                 name: kwargs.pop(name)
@@ -302,6 +302,36 @@ class RBLNDiffusionMixin:
         return compiled_submodules
 
     @classmethod
+    def _warn_on_mixed_dtypes(cls, model: torch.nn.Module, passed_submodules: dict[str, RBLNModel]) -> None:
+        """
+        Point out submodules that disagree on dtype, before any of them is compiled.
+
+        Each submodule is compiled at the dtype its own weights carry, and a compiled graph declares one
+        exact dtype per input -- the runtime does not promote. So a pipeline whose submodules disagree
+        compiles cleanly and may then fail on its first call, wherever one hands a tensor to the next. The
+        usual cause is a submodule loaded without the dtype the rest of the pipeline got: `torch_dtype`
+        left unset makes diffusers fall back to float32 while transformers adopts the checkpoint's own
+        dtype. Mixing them can also be deliberate, so this only warns.
+        """
+        dtypes = {}
+        for name in cls._submodules:
+            submodule = passed_submodules.get(name) or getattr(model, name, None)
+            if isinstance(submodule, torch.nn.Module) and not isinstance(submodule, RBLNModel):
+                dtype = getattr(submodule, "dtype", None)
+                if dtype is not None:
+                    dtypes[name] = dtype
+
+        if len(set(dtypes.values())) > 1:
+            listed = ", ".join(f"{name}={dtype}" for name, dtype in dtypes.items())
+            logger.warning(
+                f"The submodules of this pipeline were loaded at more than one dtype ({listed}). Each is "
+                "compiled at the dtype its own weights carry, and the runtime rejects a dtype a graph was "
+                "not compiled for, so passing a tensor from one submodule to another may fail. Pass "
+                "`torch_dtype=` to `from_pretrained` to load the whole pipeline at one dtype, unless the "
+                "mix is intended."
+            )
+
+    @classmethod
     def _compile_submodules(
         cls,
         model: torch.nn.Module,
@@ -311,6 +341,7 @@ class RBLNDiffusionMixin:
         prefix: str | None = "",
     ) -> dict[str, RBLNModel]:
         compiled_submodules = {}
+        cls._warn_on_mixed_dtypes(model, passed_submodules)
 
         for submodule_name in cls._submodules:
             submodule = passed_submodules.get(submodule_name) or getattr(model, submodule_name, None)
@@ -334,6 +365,9 @@ class RBLNDiffusionMixin:
                 )
             elif isinstance(submodule, torch.nn.Module):
                 subfolder = prefix + submodule_name
+                if cls._upcasts_vae and submodule_name == "vae" and getattr(submodule.config, "force_upcast", False):
+                    submodule = submodule.to(torch.float32)
+
                 submodule = submodule_rbln_cls.from_model(
                     model=submodule,
                     subfolder=subfolder,

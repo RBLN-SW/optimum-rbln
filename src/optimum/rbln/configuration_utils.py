@@ -568,7 +568,8 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
                         if init_kwargs[key] != value:
                             raise ValueError(
                                 f"Parameter conflict for '{key}': submodule_config has {init_kwargs[key]}, "
-                                f"but kwargs has {value}. Using kwargs value: {value}"
+                                f"but the parent config requires {value}. Set them to the same value, or "
+                                f"leave the parent's unset so it follows the submodule."
                             )
                         init_kwargs[key] = value
 
