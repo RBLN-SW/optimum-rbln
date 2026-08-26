@@ -244,7 +244,7 @@ class RBLNSwinBackbone(RBLNModel):
                     rbln_config.image_height,
                     rbln_config.image_width,
                 ],
-                "float32",
+                rbln_config.dtype,
             ),
         ]
 

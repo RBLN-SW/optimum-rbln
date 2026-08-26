@@ -70,7 +70,6 @@ class RBLNExaone4_5_VisionModel(RBLNModel):
     """
 
     auto_model_class = None
-    _supports_non_fp32 = True
     _tp_support = True
 
     def __post_init__(self, **kwargs):
@@ -136,6 +135,7 @@ class RBLNExaone4_5_VisionModel(RBLNModel):
         num_heads = model_config.num_heads
         head_dim = hidden_size // num_heads
         window_seq_len = (window_size // patch_size) ** 2
+        batch_size = rbln_config.batch_size
 
         input_infos = []
         for max_seq_len in rbln_config.max_seq_len:
@@ -146,14 +146,14 @@ class RBLNExaone4_5_VisionModel(RBLNModel):
 
             input_info = [
                 ("hidden_states", [max_seq_len, hidden_size], rbln_config.dtype),
-                ("full_attn_masks", [1, 1, max_seq_len, max_seq_len], rbln_config.dtype),
+                ("full_attn_masks", [batch_size, 1, max_seq_len, max_seq_len], rbln_config.dtype),
                 (
                     "window_attn_masks",
                     [max_seq_len // window_seq_len, 1, window_seq_len, window_seq_len],
                     rbln_config.dtype,
                 ),
-                ("cos", [1, 1, max_seq_len, head_dim], rbln_config.dtype),
-                ("sin", [1, 1, max_seq_len, head_dim], rbln_config.dtype),
+                ("cos", [batch_size, 1, max_seq_len, head_dim], rbln_config.dtype),
+                ("sin", [batch_size, 1, max_seq_len, head_dim], rbln_config.dtype),
             ]
             input_infos.append(input_info)
 
@@ -320,7 +320,6 @@ class RBLNExaone4_5_VisionModel(RBLNModel):
 class RBLNExaone4_5_Model(RBLNDecoderOnlyModel):
     auto_model_class = AutoModelForImageTextToText
     _decoder_wrapper_cls = Exaone4_5LanguageModelWrapper
-    _supports_non_fp32 = True
     _rbln_submodule_prefix = "model"
     _rbln_submodules = [{"name": "visual"}]
     _config_class = Exaone4_5_Config
@@ -483,7 +482,6 @@ class RBLNExaone4_5_ForConditionalGeneration(RBLNExaone4_5_Model, RBLNDecoderOnl
 
     auto_model_class = AutoModelForImageTextToText
     _decoder_wrapper_cls = Exaone4_5LanguageModelWrapper
-    _supports_non_fp32 = True
     _rbln_submodules = [{"name": "visual"}]
 
     def can_generate(self):

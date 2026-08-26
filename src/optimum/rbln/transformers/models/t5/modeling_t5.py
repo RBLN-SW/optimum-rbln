@@ -18,13 +18,12 @@ from typing import TYPE_CHECKING, Any
 
 import torch
 from transformers import AutoModelForTextEncoding, T5EncoderModel, T5ForConditionalGeneration
-from transformers.modeling_attn_mask_utils import _prepare_4d_attention_mask
 from transformers.modeling_outputs import BaseModelOutputWithPastAndCrossAttentions
 
 from ...modeling_generic import RBLNTransformerEncoderForFeatureExtraction
 from ...models.seq2seq import RBLNModelForSeq2SeqLM
 from .configuration_t5 import RBLNT5EncoderModelConfig, RBLNT5ForConditionalGenerationConfig
-from .t5_architecture import T5Wrapper
+from .t5_architecture import T5Wrapper, patch_encoder_blocks
 
 
 if TYPE_CHECKING:
@@ -34,18 +33,14 @@ if TYPE_CHECKING:
 
 
 class T5EncoderWrapper(torch.nn.Module):
-    def __init__(self, model: "T5EncoderModel") -> None:
+    def __init__(self, model: "T5EncoderModel", rbln_config: "RBLNT5EncoderModelConfig") -> None:
         super().__init__()
+        patch_encoder_blocks(model.get_encoder())
         self.model = model
+        self.rbln_config = rbln_config
 
     def forward(self, *args, **kwargs):
         kwargs.pop("return_dict", None)
-        # TODO: make this to use `create_bidirectional_mask` in transformers v5
-        args = list(args)
-        if len(args) > 1 and torch.is_tensor(args[1]) and args[1].dim() == 2:
-            args[1] = _prepare_4d_attention_mask(args[1], torch.float32)
-        if "attention_mask" in kwargs and kwargs["attention_mask"] is not None and kwargs["attention_mask"].dim() == 2:
-            kwargs["attention_mask"] = _prepare_4d_attention_mask(kwargs["attention_mask"], torch.float32)
         return self.model(*args, **kwargs, return_dict=False)
 
 
@@ -77,7 +72,7 @@ class RBLNT5EncoderModel(RBLNTransformerEncoderForFeatureExtraction):
 
     @classmethod
     def _wrap_model_if_needed(self, model: "PreTrainedModel", rbln_config: RBLNT5EncoderModelConfig):
-        return T5EncoderWrapper(model)
+        return T5EncoderWrapper(model, rbln_config)
 
     @classmethod
     def update_rbln_config_using_pipe(

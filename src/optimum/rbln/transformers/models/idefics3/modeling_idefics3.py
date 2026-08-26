@@ -75,6 +75,7 @@ class RBLNRuntimeVisionModel(RBLNPytorchRuntime):
             )
             patch_attention_mask = patch_attention_mask.to(dtype=torch.bool, device=pixel_values.device)
 
+        pixel_values = pixel_values.to(self.embeddings.patch_embedding.weight.dtype)
         hidden_states = self.embeddings(pixel_values=pixel_values, patch_attention_mask=patch_attention_mask)
 
         return super().forward(hidden_states.contiguous(), **kwargs)
@@ -87,7 +88,7 @@ class RBLNIdefics3VisionTransformer(RBLNModel):
         artifacts = torch.load(self.model_save_dir / self.subfolder / "torch_artifacts.pth", weights_only=False)
         with no_init_weights():
             self.embeddings = Idefics3VisionEmbeddings(self.config)
-        self.embeddings.load_state_dict(artifacts["embeddings"])
+        self.embeddings.load_state_dict(artifacts["embeddings"], assign=True)
         self.model = RBLNRuntimeVisionModel(
             self.model[0], main_input_name="pixel_values", config=self.config, embeddings=self.embeddings
         )
@@ -145,7 +146,7 @@ class RBLNIdefics3VisionTransformer(RBLNModel):
                     (model_config.image_size // model_config.patch_size) ** 2,
                     model_config.hidden_size,
                 ],
-                "float32",
+                rbln_config.dtype,
             ),
         ]
 
@@ -165,7 +166,7 @@ class RBLNIdefics3VisionTransformer(RBLNModel):
             (self.config.image_size // self.config.patch_size) ** 2,
             self.config.hidden_size,
         ]
-        last_hidden_state = torch.empty(size=last_hidden_state_size, dtype=torch.float32, device="cpu")
+        last_hidden_state = torch.empty(size=last_hidden_state_size, dtype=self.rbln_config.dtype, device="cpu")
         for i in range(pixel_values.shape[0]):
             if patch_attention_mask is not None:
                 batch_attention_mask = patch_attention_mask[i : i + 1,]
@@ -289,7 +290,7 @@ class RBLNIdefics3ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationM
                     (model_config.vision_config.image_size // model_config.vision_config.patch_size) ** 2,
                     model_config.vision_config.hidden_size,
                 ],
-                "float32",
+                rbln_config.dtype,
             ),
         ]
 
@@ -406,7 +407,8 @@ class RBLNIdefics3ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationM
             image_hidden_states.shape[1] // self.config.scale_factor**2,
             self.config.text_config.hidden_size,
         ]
-        image_features = torch.empty(size=connector_output_size, dtype=torch.float32, device="cpu")
+        image_features = torch.empty(size=connector_output_size, dtype=self.rbln_config.dtype, device="cpu")
+        image_hidden_states = image_hidden_states.to(self.rbln_config.dtype)
         for i in range(image_hidden_states.shape[0]):
             self.connector(image_hidden_states[i : i + 1,], out=image_features[i : i + 1,])
 

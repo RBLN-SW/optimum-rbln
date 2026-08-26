@@ -131,10 +131,13 @@ class RBLNCosmosTransformer3DModel(RBLNModel):
                 patch_size=self.config.patch_size,
             )
             self.learnable_pos_embed.load_state_dict(artifacts["learnable_pos_embed"])
+            self.learnable_pos_embed.to(self.rbln_config.dtype)
         self.patch_embed = CosmosPatchEmbed(patch_embed_in_channels, hidden_size, self.config.patch_size, bias=False)
         self.patch_embed.load_state_dict(artifacts["patch_embed"])
+        self.patch_embed.to(self.rbln_config.dtype)
         self.time_embed = CosmosEmbedding(hidden_size, hidden_size)
         self.time_embed.load_state_dict(artifacts["time_embed"])
+        self.time_embed.to(self.rbln_config.dtype)
 
     def compute_embedding(
         self,
@@ -250,7 +253,7 @@ class RBLNCosmosTransformer3DModel(RBLNModel):
                     hidden_dim,
                     hidden_size,
                 ],
-                "float32",
+                rbln_config.dtype,
             ),
             (
                 "encoder_hidden_states",
@@ -259,13 +262,13 @@ class RBLNCosmosTransformer3DModel(RBLNModel):
                     rbln_config.max_seq_len,
                     rbln_config.embedding_dim,
                 ],
-                "float32",
+                rbln_config.dtype,
             ),
-            ("embedded_timestep", [rbln_config.batch_size, hidden_size], "float32"),
-            ("temb", [1, hidden_size * 3], "float32"),
+            ("embedded_timestep", [rbln_config.batch_size, hidden_size], rbln_config.dtype),
+            ("temb", [1, hidden_size * 3], rbln_config.dtype),
             ("image_rotary_emb_0", [hidden_dim, attention_head_dim], "float32"),
             ("image_rotary_emb_1", [hidden_dim, attention_head_dim], "float32"),
-            ("extra_pos_emb", [rbln_config.batch_size, hidden_dim, hidden_size], "float32"),
+            ("extra_pos_emb", [rbln_config.batch_size, hidden_dim, hidden_size], rbln_config.dtype),
         ]
 
         compile_config = RBLNCompileConfig(input_info=input_info)

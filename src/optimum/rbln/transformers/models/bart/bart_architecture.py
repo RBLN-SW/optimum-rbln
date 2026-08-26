@@ -13,9 +13,12 @@
 # limitations under the License.
 
 
+import copy
+from types import MethodType
+
 import torch
 from torch import nn
-from transformers.modeling_attn_mask_utils import _prepare_4d_attention_mask
+from transformers.masking_utils import create_bidirectional_mask
 from transformers.utils import logging
 
 from ..seq2seq.seq2seq_architecture import (
@@ -32,8 +35,33 @@ from ..seq2seq.seq2seq_architecture import (
 logger = logging.get_logger(__name__)
 
 
+def _encoder_layer_forward(self, hidden_states, attention_mask, **kwargs):
+    # Mirrors `BartEncoderLayer.forward` minus the dropouts, which are inert at eval, and with the
+    # trailing clamp unguarded: upstream guards it with `not torch.isfinite(...).all()`, a
+    # data-dependent branch that `torch.export` cannot resolve.
+    residual = hidden_states
+    hidden_states, _ = self.self_attn(hidden_states, attention_mask=attention_mask, **kwargs)
+    hidden_states = self.self_attn_layer_norm(residual + hidden_states)
+
+    residual = hidden_states
+    hidden_states = self.fc2(self.activation_fn(self.fc1(hidden_states)))
+    hidden_states = self.final_layer_norm(residual + hidden_states)
+
+    # Upstream clamps only at float16, so gate on dtype to leave other graphs byte-identical -- comparing
+    # dtypes is static metadata, unlike the `isfinite(...).all()` upstream guards with. Bound at the
+    # dtype's max rather than `max - 1000`: upstream only clamps when a non-finite value is already
+    # present, so the tighter bound would truncate finite activations it leaves alone.
+    if hidden_states.dtype != torch.float16:
+        return hidden_states
+    bound = torch.finfo(hidden_states.dtype).max
+    return torch.clamp(hidden_states, min=-bound, max=bound)
+
+
 class BartWrapper:
     def __init__(self, model: nn.Module, enc_max_seq_len: int, use_attention_mask: bool):
+        for layer in model.get_encoder().layers:
+            layer.forward = MethodType(_encoder_layer_forward, layer)
+
         self.encoder = Seq2SeqEncoderWrapper(model, enc_max_seq_len)
         self.decoder = BartDecoderWrapper(model, use_attention_mask=use_attention_mask)
 
@@ -63,11 +91,24 @@ class BartDecoder(Seq2SeqDecoder):
         self.embed_positions = model.embed_positions
         self.layernorm_embedding = model.layernorm_embedding
         self.embed_scale = getattr(model, "embed_scale", None)
+        self._mask_config = copy.copy(model.config)
+        self._mask_config._attn_implementation = "eager"
 
     def prepare_attn_mask(self, attention_mask, encoder_attention_mask, **kwargs):
         if attention_mask is not None:
             attention_mask = attention_mask[:, None, None, :]
-        encoder_attention_mask = _prepare_4d_attention_mask(encoder_attention_mask, torch.float32, tgt_len=1)
+        dummy_embeds = torch.empty(
+            encoder_attention_mask.shape[0],
+            1,
+            1,
+            dtype=encoder_attention_mask.dtype,
+            device=encoder_attention_mask.device,
+        )
+        encoder_attention_mask = create_bidirectional_mask(
+            config=self._mask_config,
+            inputs_embeds=dummy_embeds,
+            attention_mask=encoder_attention_mask,
+        )
 
         return attention_mask, encoder_attention_mask
 

@@ -64,7 +64,6 @@ class RBLNQwen3VLVisionModel(RBLNModel):
     """
 
     auto_model_class = None
-    _supports_non_fp32 = True
     _tp_support = True
 
     def __post_init__(self, **kwargs):
@@ -129,14 +128,15 @@ class RBLNQwen3VLVisionModel(RBLNModel):
         hidden_size = model_config.hidden_size
         num_heads = model_config.num_heads
         head_dim = hidden_size // num_heads
+        batch_size = rbln_config.batch_size
 
         input_infos = []
         for max_seq_len in rbln_config.max_seq_len:
             input_info = [
                 ("hidden_states", [max_seq_len, hidden_size], rbln_config.dtype),
-                ("attn_mask", [1, 1, max_seq_len, max_seq_len], rbln_config.dtype),
-                ("cos", [1, 1, max_seq_len, head_dim], rbln_config.dtype),
-                ("sin", [1, 1, max_seq_len, head_dim], rbln_config.dtype),
+                ("attn_mask", [batch_size, 1, max_seq_len, max_seq_len], rbln_config.dtype),
+                ("cos", [batch_size, 1, max_seq_len, head_dim], rbln_config.dtype),
+                ("sin", [batch_size, 1, max_seq_len, head_dim], rbln_config.dtype),
             ]
             input_infos.append(input_info)
 
@@ -727,7 +727,6 @@ class RBLNQwen3VLForConditionalGeneration(RBLNQwen3VLModel, RBLNDecoderOnlyModel
 
     auto_model_class = AutoModelForImageTextToText
     _decoder_wrapper_cls = Qwen3VL_LanguageModelWrapper
-    _supports_non_fp32 = True
     _use_rotary_emb = False
     _rbln_submodules = [
         {"name": "visual"},
