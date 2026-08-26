@@ -386,7 +386,8 @@ class RBLNLlavaForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMixi
             image_features = projected_features[:, :num_real_patches, :]
         else:
             projector_out_size = [
-                pixel_values.shape[0] * pixel_values.shape[1],
+                # pixel_values is (num_images, channels, height, width).
+                pixel_values.shape[0],
                 (self.config.vision_config.image_size // self.config.vision_config.patch_size) ** 2,
                 self.config.text_config.hidden_size,
             ]
