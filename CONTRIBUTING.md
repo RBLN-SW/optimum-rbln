@@ -37,7 +37,7 @@ We will then take care of the issue as soon as possible.
 	git checkout -b a-descriptive-name-for-my-changes
 	```
 
-	**do not** work on the `main` branch.
+	**do not** work on the `dev` branch.
 
 4. Set up a development environment by running the following command in a virtual environment:
 
@@ -70,7 +70,7 @@ We will then take care of the issue as soon as possible.
 
 	```bash
 	git fetch upstream
-	git rebase upstream/main
+	git rebase upstream/dev
     ```
 
    Push the changes to your account using:
