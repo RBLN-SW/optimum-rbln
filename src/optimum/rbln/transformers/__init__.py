@@ -31,6 +31,7 @@ _import_structure = {
         "RBLNAutoModelForMaskedLM",
         "RBLNAutoModelForQuestionAnswering",
         "RBLNAutoModelForSeq2SeqLM",
+        "RBLNAutoModelForObjectDetection",
         "RBLNAutoModelForSequenceClassification",
         "RBLNAutoModelForSpeechSeq2Seq",
         "RBLNAutoModelForVision2Seq",
@@ -168,6 +169,12 @@ _import_structure = {
         "RBLNQwen3ForCausalLMConfig",
         "RBLNQwen3Model",
         "RBLNQwen3ModelConfig",
+        "RBLNQwen3VLForConditionalGeneration",
+        "RBLNQwen3VLForConditionalGenerationConfig",
+        "RBLNQwen3VLModel",
+        "RBLNQwen3VLModelConfig",
+        "RBLNQwen3VLVisionModel",
+        "RBLNQwen3VLVisionModelConfig",
         "RBLNResNetForImageClassification",
         "RBLNResNetForImageClassificationConfig",
         "RBLNRobertaForMaskedLM",
@@ -195,6 +202,7 @@ _import_structure = {
         "RBLNXLMRobertaModel",
         "RBLNXLMRobertaModelConfig",
     ],
+    "utils": ["RBLNQuantizationConfig"],
 }
 
 if TYPE_CHECKING:
@@ -209,6 +217,7 @@ if TYPE_CHECKING:
         RBLNAutoModelForImageClassification,
         RBLNAutoModelForImageTextToText,
         RBLNAutoModelForMaskedLM,
+        RBLNAutoModelForObjectDetection,
         RBLNAutoModelForQuestionAnswering,
         RBLNAutoModelForSeq2SeqLM,
         RBLNAutoModelForSequenceClassification,
@@ -346,6 +355,12 @@ if TYPE_CHECKING:
         RBLNQwen3ModelConfig,
         RBLNQwen3MoeForCausalLM,
         RBLNQwen3MoeForCausalLMConfig,
+        RBLNQwen3VLForConditionalGeneration,
+        RBLNQwen3VLForConditionalGenerationConfig,
+        RBLNQwen3VLModel,
+        RBLNQwen3VLModelConfig,
+        RBLNQwen3VLVisionModel,
+        RBLNQwen3VLVisionModelConfig,
         RBLNResNetForImageClassification,
         RBLNResNetForImageClassificationConfig,
         RBLNRobertaForMaskedLM,
@@ -373,6 +388,7 @@ if TYPE_CHECKING:
         RBLNXLMRobertaModel,
         RBLNXLMRobertaModelConfig,
     )
+    from .utils import RBLNQuantizationConfig
 else:
     import sys
 

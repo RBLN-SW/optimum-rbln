@@ -166,6 +166,7 @@ class RBLNModel(RBLNBaseModel):
             rbln_submodules = cls._load_submodules(
                 model=model,
                 model_save_dir=save_dir,
+                subfolder=subfolder,
                 rbln_config=rbln_config,
                 preprocessors=preprocessors,
                 **kwargs,

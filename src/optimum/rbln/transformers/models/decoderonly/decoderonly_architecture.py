@@ -692,6 +692,12 @@ class DecoderOnlyAttention(nn.Module):
         setattr(self, self.get_attention_name(), self.create_attention_op())
         self.__post_init__(self_attn)
 
+        # Copy kv cache scales from original attention module if present
+        if hasattr(self_attn, "k_scale"):
+            self.k_scale = self_attn.k_scale
+        if hasattr(self_attn, "v_scale"):
+            self.v_scale = self_attn.v_scale
+
     def _init_lora_weights(self):
         """Initialize LoRA adapter weights by replacing linear layers with LoRALinear."""
         for proj_name in ["q_proj", "k_proj", "v_proj", "o_proj"]:
@@ -795,13 +801,8 @@ class DecoderOnlyAttention(nn.Module):
         return 1 / math.sqrt(self_attn.head_dim)
 
     def maybe_get_kvcache_scale(self) -> Tuple[Optional[torch.Tensor], Optional[torch.Tensor]]:
-        if hasattr(self, "k_proj") and hasattr(self, "v_proj"):
-            k_scale = getattr(self.k_proj, "k_scale", None)
-            v_scale = getattr(self.v_proj, "v_scale", None)
-        else:
-            k_scale = None
-            v_scale = None
-
+        k_scale = getattr(self, "k_scale", None)
+        v_scale = getattr(self, "v_scale", None)
         return k_scale, v_scale
 
     def forward(

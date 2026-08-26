@@ -27,23 +27,20 @@ class MixtralWrapper(DecoderOnlyWrapper):
 
 
 class MixtralLayer(DecoderOnlyLayer):
-    _MLP_ATTR = ("block_sparse_moe",)
+    _MLP_ATTR = None
 
     def __init__(self, layer, self_attn: DecoderOnlyAttention, lora_config: Optional[RBLNLoRAConfig] = None):
         super().__init__(layer, self_attn, lora_config)
-        self.block_sparse_moe = MixtralSparseMoeBlock(self.mlp)
-
-    def get_mlp(self) -> nn.Module:
-        return self.block_sparse_moe
+        self.mlp = MixtralSparseMoeBlock(layer.block_sparse_moe)
 
 
 class MixtralSparseMoeBlock(nn.Module):
     def __init__(self, model: nn.Module):
         super().__init__()
-        # self.num_experts = model.num_experts
         self.top_k = model.top_k
         self.gate = model.gate
         self.experts = MixtralBlockSparseTop2MLP(model.experts, self.top_k)
+        model.experts = None
 
     def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
         batch_size, sequence_length, hidden_dim = hidden_states.shape
@@ -58,19 +55,13 @@ class MixtralSparseMoeBlock(nn.Module):
 class MixtralBlockSparseTop2MLP(nn.Module):
     def __init__(self, expert_list, top_k):
         super().__init__()
-        self.hidden_dim = expert_list[0].hidden_dim
-        self.ffn_dim = expert_list[0].ffn_dim
         self.top_k = top_k
 
-        self.num_experts = len(expert_list)
-        self.w1 = nn.Linear(self.hidden_dim, self.num_experts * self.ffn_dim, bias=False)
-        self.w2 = nn.Linear(self.num_experts * self.ffn_dim, self.hidden_dim, bias=False)
-        self.w3 = nn.Linear(self.hidden_dim, self.num_experts * self.ffn_dim, bias=False)
-        self.w1.weight.data = torch.stack([expert.w1.weight.data for expert in expert_list], dim=0)
-        self.w2.weight.data = torch.stack([expert.w2.weight.data for expert in expert_list], dim=0)
-        self.w3.weight.data = torch.stack([expert.w3.weight.data for expert in expert_list], dim=0)
+        self.w1_weight = nn.Parameter(torch.stack([expert.w1.weight.data for expert in expert_list], dim=0))
+        self.w2_weight = nn.Parameter(torch.stack([expert.w2.weight.data for expert in expert_list], dim=0))
+        self.w3_weight = nn.Parameter(torch.stack([expert.w3.weight.data for expert in expert_list], dim=0))
 
     def forward(self, x, router_logits):
         return torch.ops.rbln_custom_ops.custom_moe_glu(
-            x, self.w1.weight, self.w3.weight, self.w2.weight, router_logits, self.top_k, True
+            x, self.w1_weight, self.w3_weight, self.w2_weight, router_logits, self.top_k, True
         )

@@ -123,6 +123,9 @@ class RBLNGptOssForCausalLM(RBLNDecoderOnlyModelForCausalLM):
         config: Optional[PretrainedConfig] = None,
         **kwargs,
     ) -> PreTrainedModel:
+        # FIXME: workaround for functionality
+        dtype = torch.float32
+
         safetensor_files = load_weight_files(model_id, exception_keywords=["original"])
         state_dict = {k: v for f in safetensor_files for k, v in load_file(f).items()}
 

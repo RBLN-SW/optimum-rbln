@@ -152,7 +152,7 @@ class RBLNDecoderOnlyFlashAttentionMixin:
         )
         if rbln_config.kvcache_num_blocks < rbln_config.num_min_blocks:
             raise ValueError(
-                "Memory is not enought for full sequence length. "
+                "Memory is not enough for full sequence length. "
                 "Please consider decreasing `max_seq_len` to reduce the number of blocks."
             )
         cls.multiply_kv_cache_num_blocks(
@@ -186,7 +186,9 @@ class RBLNDecoderOnlyFlashAttentionMixin:
                 if len(alloc_per_node) != num_node:
                     alloc_per_node += [0] * (num_node - len(alloc_per_node))
 
-                alloc_per_node_without_dram = [a + b for a, b in zip(alloc_per_node_without_dram, alloc_per_node)]
+                alloc_per_node_without_dram = [
+                    a + b for a, b in zip(alloc_per_node_without_dram, alloc_per_node, strict=False)
+                ]
 
         remaining_dram_at_node: list[int] = [
             available_dram - without_dramtensor for without_dramtensor in alloc_per_node_without_dram

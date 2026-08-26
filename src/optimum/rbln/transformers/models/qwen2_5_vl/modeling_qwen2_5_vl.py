@@ -50,6 +50,8 @@ logger = get_logger(__name__)
 if TYPE_CHECKING:
     from transformers import AutoFeatureExtractor, AutoProcessor, AutoTokenizer
 
+    from ....diffusers.modeling_diffusers import RBLNDiffusionMixin, RBLNDiffusionMixinConfig
+
 
 class RBLNQwen2_5_VisionTransformerPretrainedModel(RBLNModel):
     """
@@ -630,6 +632,12 @@ class RBLNQwen2_5_VLForConditionalGeneration(RBLNQwen2_5_VLModel, RBLNDecoderOnl
     def _reconstruct_model_if_needed(cls, model: "PreTrainedModel"):
         model.model.lm_head = model.lm_head
         return model
+
+    @classmethod
+    def update_rbln_config_using_pipe(
+        cls, pipe: "RBLNDiffusionMixin", rbln_config: "RBLNDiffusionMixinConfig", submodule_name: str
+    ) -> "RBLNDiffusionMixinConfig":
+        return rbln_config
 
     def prepare_inputs_for_generation(
         self,

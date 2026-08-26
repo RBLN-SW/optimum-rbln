@@ -195,7 +195,7 @@ class RBLNStableDiffusionControlNetImg2ImgPipeline(RBLNDiffusionMixin, StableDif
                     f"`control_guidance_start`: {control_guidance_start} has {len(control_guidance_start)} elements but there are {len(self.controlnet.nets)} controlnets available. Make sure to provide {len(self.controlnet.nets)}."
                 )
 
-        for start, end in zip(control_guidance_start, control_guidance_end):
+        for start, end in zip(control_guidance_start, control_guidance_end, strict=False):
             if start >= end:
                 raise ValueError(
                     f"control guidance start: {start} cannot be larger or equal to control guidance end: {end}."
@@ -531,7 +531,7 @@ class RBLNStableDiffusionControlNetImg2ImgPipeline(RBLNDiffusionMixin, StableDif
         for i in range(len(timesteps)):
             keeps = [
                 1.0 - float(i / len(timesteps) < s or (i + 1) / len(timesteps) > e)
-                for s, e in zip(control_guidance_start, control_guidance_end)
+                for s, e in zip(control_guidance_start, control_guidance_end, strict=False)
             ]
             controlnet_keep.append(keeps[0] if isinstance(controlnet, RBLNControlNetModel) else keeps)
 
@@ -554,7 +554,9 @@ class RBLNStableDiffusionControlNetImg2ImgPipeline(RBLNDiffusionMixin, StableDif
                     controlnet_prompt_embeds = prompt_embeds
 
                 if isinstance(controlnet_keep[i], list):
-                    cond_scale = [c * s for c, s in zip(controlnet_conditioning_scale, controlnet_keep[i])]
+                    cond_scale = [
+                        c * s for c, s in zip(controlnet_conditioning_scale, controlnet_keep[i], strict=False)
+                    ]
                 else:
                     controlnet_cond_scale = controlnet_conditioning_scale
                     if isinstance(controlnet_cond_scale, list):
