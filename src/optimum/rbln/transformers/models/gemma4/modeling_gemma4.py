@@ -527,9 +527,9 @@ class RBLNGemma4ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
     ) -> None:
         # Pre-populates rbln_config.cache_metas with per-layer-heterogeneous KV shapes.
         # Gemma4 mixes two layer kinds whose head_dim/num_key_value_heads come from
-        # config.per_layer_config (transformers >=5.9 moved global_head_dim /
-        # num_global_key_value_heads into per-layer overrides; reading the top-level
-        # attributes raises AmbiguousGlobalPerLayerAttributeError).
+        # config.per_layer_config (transformers >=5.15 builds it from global_head_dim /
+        # num_global_key_value_heads; reading those top-level attributes raises
+        # AmbiguousGlobalPerLayerAttributeError).
         # Base get_input_info short-circuits on a non-empty cache_metas list and uses these entries
         # verbatim as compile-time KV cache input shapes — the only way to express per-layer
         # heterogeneous KV geometry in the current pipeline.

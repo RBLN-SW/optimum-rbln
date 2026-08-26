@@ -358,10 +358,8 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
     ):
         model_config = model_config.get_text_config()
         num_attention_heads = getattr(model_config, "n_head", None) or model_config.num_attention_heads
-        num_key_value_heads = getattr(model_config, "num_key_value_heads", None) or num_attention_heads
         num_hidden_layers = getattr(model_config, "n_layer", None) or model_config.num_hidden_layers
         hidden_size = getattr(model_config, "n_embd", None) or model_config.hidden_size
-        head_dim = getattr(model_config, "head_dim", None) or hidden_size // num_attention_heads
         is_prefill = query_length > 1
 
         input_info = []
@@ -407,6 +405,10 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
             )
 
         else:
+            # Heterogeneous configs (e.g. Gemma4 on transformers>=5.15) raise on these global reads;
+            # they pre-populate cache_metas and never reach this branch.
+            num_key_value_heads = getattr(model_config, "num_key_value_heads", None) or num_attention_heads
+            head_dim = getattr(model_config, "head_dim", None) or hidden_size // num_attention_heads
             kvcache_dtype = rbln_config.dtype
             if rbln_config.quantization and rbln_config.quantization.kv_caches == "fp8":
                 kvcache_dtype = "float8_e4m3fn"
