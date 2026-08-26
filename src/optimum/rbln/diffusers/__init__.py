@@ -64,6 +64,7 @@ _import_structure = {
         "RBLNUNetSpatioTemporalConditionModelConfig",
         "RBLNStableVideoDiffusionPipelineConfig",
         "RBLNAutoencoderKLTemporalDecoderConfig",
+        "RBLNAutoencoderKLWanConfig",
     ],
     "pipelines": [
         "RBLNAutoPipelineForImage2Image",
@@ -110,6 +111,7 @@ _import_structure = {
         "RBLNAutoencoderKLTemporalDecoder",
         "RBLNPriorTransformer",
         "RBLNVQModel",
+        "RBLNAutoencoderKLWan",
     ],
     "modeling_diffusers": [
         "RBLNDiffusionMixin",
@@ -155,6 +157,7 @@ if TYPE_CHECKING:
         RBLNUNet2DConditionModelConfig,
         RBLNUNetSpatioTemporalConditionModelConfig,
         RBLNVQModelConfig,
+        RBLNAutoencoderKLWanConfig,
     )
     from .modeling_diffusers import RBLNDiffusionMixin
     from .models import (

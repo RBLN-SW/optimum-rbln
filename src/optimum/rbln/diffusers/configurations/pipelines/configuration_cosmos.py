@@ -12,13 +12,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Optional
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any, Optional
 
 from ....configuration_utils import RBLNModelConfig
 from ....transformers import RBLNQwen2_5_VLForConditionalGenerationConfig, RBLNT5EncoderModelConfig
 from ....utils.logging import get_logger
-from ...pipelines.cosmos.cosmos_guardrail import RBLNCosmosSafetyCheckerConfig, RBLNCosmosSafetyCheckerV2Config
 from ..models import RBLNAutoencoderKLCosmosConfig, RBLNAutoencoderKLWanConfig, RBLNCosmosTransformer3DModelConfig
+
+if TYPE_CHECKING:
+    from ...pipelines.cosmos.configuration_cosmos_guardrail import (
+        RBLNCosmosSafetyCheckerConfig,
+        RBLNCosmosSafetyCheckerV2Config,
+    )
 
 
 logger = get_logger(__name__)
@@ -209,7 +216,8 @@ class RBLNCosmos2VideoToWorldPipelineConfig(RBLNCosmos2PipelineBaseConfig):
 class RBLNCosmos2_5_PredictBasePipelineConfig(RBLNModelConfig):
     """Config for Cosmos-Predict2.5 Pipeline"""
 
-    submodules = ["text_encoder", "transformer", "vae", "safety_checker"]
+    # submodules = ["text_encoder", "transformer", "vae", "safety_checker"]
+    submodules = ["text_encoder"]
     _vae_uses_encoder = True
 
     def __init__(

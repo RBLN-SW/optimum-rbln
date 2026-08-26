@@ -222,6 +222,7 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
 
             if len(cls._rbln_submodules) > 0:
                 if rbln_submodules is None:
+                    # Use model_path_subfolder instead of model_id to support nested submodules
                     rbln_submodules = cls._load_submodules(
                         model_save_dir=model_id, subfolder=subfolder, rbln_config=rbln_config, **kwargs
                     )
