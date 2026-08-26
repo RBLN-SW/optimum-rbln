@@ -25,7 +25,7 @@ from ...configurations.pipelines.configuration_cosmos import RBLNCosmos2_5_Predi
 from ...modeling_diffusers import RBLNDiffusionMixin
 from ...models.autoencoders.autoencoder_kl_wan import RBLNAutoencoderKLWan
 from ...models.transformers.transformer_cosmos import RBLNCosmosTransformer3DModel
-from .cosmos_guardrail import RBLNCosmosSafetyCheckerV2
+from .cosmos_guardrail import RBLNCosmosSafetyChecker
 
 
 logger = get_logger(__name__)
@@ -41,7 +41,9 @@ class RBLNCosmos2_5_PredictBasePipeline(RBLNDiffusionMixin, Cosmos2_5_PredictBas
 
     original_class = Cosmos2_5_PredictBasePipeline
     # _submodules = ["text_encoder", "transformer", "vae"]
-    _submodules = ["vae"]
+    _submodules = ["text_encoder"]
+    # _submodules = ["transformer"]
+    # _submodules = ["vae"]
     # _optional_submodules = ["safety_checker"]
     _optional_submodules = []
 
@@ -52,10 +54,10 @@ class RBLNCosmos2_5_PredictBasePipeline(RBLNDiffusionMixin, Cosmos2_5_PredictBas
         transformer: RBLNCosmosTransformer3DModel,
         vae: RBLNAutoencoderKLWan,
         scheduler: UniPCMultistepScheduler,
-        safety_checker: RBLNCosmosSafetyCheckerV2 = None,
+        safety_checker: RBLNCosmosSafetyChecker = None,
     ):
         if safety_checker is None:
-            # safety_checker = RBLNCosmosSafetyCheckerV2()
+            # safety_checker = RBLNCosmosSafetyChecker()
             safety_checker = None
 
         super().__init__(
@@ -84,13 +86,13 @@ class RBLNCosmos2_5_PredictBasePipeline(RBLNDiffusionMixin, Cosmos2_5_PredictBas
         model_id: str,
         *,
         export: bool = False,
-        safety_checker: Optional[RBLNCosmosSafetyCheckerV2] = None,
+        safety_checker: Optional[RBLNCosmosSafetyChecker] = None,
         rbln_config: Optional[Union[Dict[str, Any], RBLNCosmos2_5_PredictBasePipelineConfig]] = None,
         **kwargs: Dict[str, Any],
     ):
         rbln_config, kwargs = cls.get_rbln_config_class().initialize_from_kwargs(rbln_config, **kwargs)
         if safety_checker is None and export:
-            # safety_checker = RBLNCosmosSafetyCheckerV2(rbln_config=rbln_config.safety_checker)
+            # safety_checker = RBLNCosmosSafetyChecker(rbln_config=rbln_config.safety_checker)
             safety_checker = None
 
         return super().from_pretrained(

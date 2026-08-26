@@ -38,6 +38,7 @@ class RBLNCosmosTransformer3DModelConfig(RBLNModelConfig):
         num_latent_frames: int | None = None,
         latent_height: int | None = None,
         latent_width: int | None = None,
+        is_v2w: bool | None = None,
         **kwargs: Any,
     ):
         """

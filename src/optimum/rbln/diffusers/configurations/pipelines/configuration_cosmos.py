@@ -220,7 +220,9 @@ class RBLNCosmos2_5_PredictBasePipelineConfig(RBLNModelConfig):
     """Config for Cosmos-Predict2.5 Pipeline"""
 
     # submodules = ["text_encoder", "transformer", "vae", "safety_checker"]
-    submodules = ["text_encoder"]
+    submodules = ["text_encoder", "transformer", "vae"]
+    # submodules = ["transformer"]
+    # submodules = ["text_encoder"]
     _vae_uses_encoder = True
 
     def __init__(
@@ -282,13 +284,13 @@ class RBLNCosmos2_5_PredictBasePipelineConfig(RBLNModelConfig):
             width=width,
             num_frames=num_frames,
         )
-        self.safety_checker = self.initialize_submodule_config(
-            safety_checker,
-            cls_name="RBLNCosmosSafetyCheckerV2Config",
-            batch_size=batch_size,
-            height=height,
-            width=width,
-        )
+        # self.safety_checker = self.initialize_submodule_config(
+        #     safety_checker,
+        #     cls_name="RBLNCosmosSafetyCheckerConfig",
+        #     batch_size=batch_size,
+        #     height=height,
+        #     width=width,
+        # )
 
     @property
     def batch_size(self):

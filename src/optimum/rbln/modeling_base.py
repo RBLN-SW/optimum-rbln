@@ -685,3 +685,9 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
                 "If so, try assigning them to different NPU devices."
             )
         return help_msg
+
+    @classmethod
+    def update_rbln_config_using_pipe(
+        cls, pipe: "RBLNDiffusionMixin", rbln_config: "RBLNModelConfig", submodule_name: str
+    ) -> "RBLNModelConfig":
+        return rbln_config

@@ -990,6 +990,7 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
 
             # update submodule runtime
             for submodule in rbln_config.submodules:
+                import pdb; pdb.set_trace()
                 if str(config_file[submodule]) != str(getattr(rbln_config, submodule)):
                     raise ValueError(
                         f"Passed rbln_config has different attributes for submodule {submodule} than the config_file"
