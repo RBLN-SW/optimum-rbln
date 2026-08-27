@@ -147,6 +147,7 @@ class RBLNCosmosTransformer3DModel(RBLNModel):
                 torch.nn.GELU(),
             )
             self.crossattn_proj.load_state_dict(artifacts["crossattn_proj"])
+            self.crossattn_proj.to(self.rbln_config.dtype)
         self.time_embed.to(self.rbln_config.dtype)
 
     def compute_embedding(
@@ -159,6 +160,8 @@ class RBLNCosmosTransformer3DModel(RBLNModel):
         condition_mask: torch.Tensor | None = None,
         padding_mask: torch.Tensor | None = None,
     ):
+        # Normalize to this model's compute dtype.
+        encoder_hidden_states = encoder_hidden_states.to(self.rbln_config.dtype)
         batch_size, num_channels, num_frames, height, width = hidden_states.shape
 
         # 1. Concatenate padding mask if needed & prepare attention mask
