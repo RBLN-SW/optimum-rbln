@@ -81,6 +81,11 @@ class SubModulesMixin:
         submodule_prefix = getattr(cls, "_rbln_submodule_prefix", None)
         submodule_postfix = getattr(cls, "_rbln_submodule_postfix", None)
         preprocessors = kwargs.pop("preprocessors", [])
+        # Nest submodule artifacts under the parent's subfolder so that a parent compiled
+        # with a non-empty subfolder (e.g. a VLM text_encoder inside a diffusers pipeline)
+        # keeps its submodules inside its own directory. This matches the load path, which
+        # resolves submodules relative to the parent's directory (model_path_subfolder).
+        parent_subfolder = kwargs.pop("parent_subfolder", "")
 
         for submodule in cls._rbln_submodules:
             submodule_name = submodule["name"]
@@ -126,7 +131,7 @@ class SubModulesMixin:
             rbln_submodule = submodule_cls.from_model(
                 model=torch_submodule,
                 config=torch_submodule.config,
-                subfolder=submodule_name,
+                subfolder=f"{parent_subfolder}/{submodule_name}" if parent_subfolder else submodule_name,
                 model_save_dir=model_save_dir,
                 rbln_config=submodule_rbln_config,
                 **kwargs,
