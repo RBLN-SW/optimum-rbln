@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Optional
+from typing import Any
 
 from ....configuration_utils import RBLNModelConfig
 from ....utils.logging import get_logger
@@ -26,15 +26,15 @@ class RBLNAutoencoderKLWanConfig(RBLNModelConfig):
 
     def __init__(
         self,
-        batch_size: Optional[int] = None,
-        uses_encoder: Optional[bool] = None,
-        num_frames: Optional[int] = None,
-        height: Optional[int] = None,
-        width: Optional[int] = None,
-        num_channels_latents: Optional[int] = None,
-        vae_scale_factor_temporal: Optional[int] = None,
-        vae_scale_factor_spatial: Optional[int] = None,
-        use_slicing: Optional[bool] = None,
+        batch_size: int | None = None,
+        uses_encoder: bool | None = None,
+        num_frames: int | None = None,
+        height: int | None = None,
+        width: int | None = None,
+        num_channels_latents: int | None = None,
+        vae_scale_factor_temporal: int | None = None,
+        vae_scale_factor_spatial: int | None = None,
+        use_slicing: bool | None = None,
         **kwargs: Any,
     ):
         """
@@ -69,7 +69,7 @@ class RBLNAutoencoderKLWanConfig(RBLNModelConfig):
             logger.warning("The batch size of Wan VAE Decoder will be explicitly 1 for memory efficiency.")
             self.batch_size = 1
 
-        self.uses_encoder = uses_encoder or True # FIXME(seinpark): tmp patch
+        self.uses_encoder = uses_encoder or True  # FIXME(seinpark): tmp patch
         self.num_frames = num_frames or 93
         self.height = height or 704
         self.width = width or 1280

@@ -17,7 +17,12 @@ from typing import TYPE_CHECKING, Union
 
 import rebel
 import torch
-from diffusers.models.autoencoders.autoencoder_kl_wan import AutoencoderKLWan, patchify, unpatchify
+from diffusers.models.autoencoders.autoencoder_kl_wan import (
+    AutoencoderKLWan,
+    WanCausalConv3d,
+    patchify,
+    unpatchify,
+)
 from diffusers.models.autoencoders.vae import DecoderOutput, DiagonalGaussianDistribution
 from diffusers.models.modeling_outputs import AutoencoderKLOutput
 from rebel.compile_context import CompileContext
@@ -555,15 +560,20 @@ class RBLNAutoencoderKLWan(RBLNModel):
         self.use_slicing = False
         self.use_tiling = False
 
-        # post_quant_conv weights (persisted in config) -> rebuild for host-side application in _decode.
-        pqc_w = getattr(self.rbln_config, "post_quant_conv_weight", None)
-        if pqc_w is not None:
-            pqc_b = getattr(self.rbln_config, "post_quant_conv_bias", None)
-            self._pqc_weight = torch.tensor(pqc_w, dtype=torch.float32)
-            self._pqc_bias = torch.tensor(pqc_b, dtype=torch.float32) if pqc_b is not None else None
+        # post_quant_conv (saved via save_torch_artifacts) -> rebuild for host-side application
+        # in _decode.
+        artifacts = torch.load(self.model_save_dir / self.subfolder / "torch_artifacts.pth", weights_only=False)
+        pqc_state = artifacts.get("post_quant_conv")
+        if pqc_state is not None:
+            self.post_quant_conv = WanCausalConv3d(self.config.z_dim, self.config.z_dim, 1)
+            self.post_quant_conv.load_state_dict(pqc_state)
         else:
-            self._pqc_weight = None
-            self._pqc_bias = None
+            self.post_quant_conv = None
+
+    @classmethod
+    def save_torch_artifacts(cls, model, save_dir_path, subfolder, rbln_config):
+        save_dict = {"post_quant_conv": model.post_quant_conv.state_dict()}
+        torch.save(save_dict, save_dir_path / subfolder / "torch_artifacts.pth")
 
     @classmethod
     def _wrap_model_if_needed(cls, model: torch.nn.Module, rbln_config: RBLNAutoencoderKLWanConfig) -> torch.nn.Module:
@@ -751,8 +761,12 @@ class RBLNAutoencoderKLWan(RBLNModel):
                     vae_enc_0_input_info.append((f"feat_cache_{i}", [n0, c0, d0, h0, w0], "float32"))
                     vae_enc_1_input_info.append((f"feat_cache_{i}", [n1, c1, d1, h1, w1], "float32"))
                 else:
-                    vae_enc_0_input_info.append((f"feat_cache_{i}", _cache_input_shape(shape_0), "float32"))  # (n,c,d,h,w) -> selected layout
-                    vae_enc_1_input_info.append((f"feat_cache_{i}", _cache_input_shape(shape_1), "float32"))  # (n,c,d,h,w) -> selected layout
+                    vae_enc_0_input_info.append(
+                        (f"feat_cache_{i}", _cache_input_shape(shape_0), "float32")
+                    )  # (n,c,d,h,w) -> selected layout
+                    vae_enc_1_input_info.append(
+                        (f"feat_cache_{i}", _cache_input_shape(shape_1), "float32")
+                    )  # (n,c,d,h,w) -> selected layout
 
             if _EN_WAR:
                 # runtime-0.0 scalar feeding the EN write-after-read edge (see _EN_WAR). Not static.
@@ -786,8 +800,12 @@ class RBLNAutoencoderKLWan(RBLNModel):
             n0, c0, d0, h0, w0 = shape_0
             nn, cn, dn, hn, wn = shape_n
             if i > 0:  # D0 generates idx 0 (runtime output); only idx 1.. are D0 inputs (static, chw)
-                vae_dec_0_input_info.append((f"feat_cache_{i}", _cache_input_shape(shape_0), "float32"))  # (n,c,d,h,w) -> selected layout
-                vae_dec_n_input_info.append((f"feat_cache_{i}", _cache_input_shape(shape_n), "float32"))  # (n,c,d,h,w) -> selected layout
+                vae_dec_0_input_info.append(
+                    (f"feat_cache_{i}", _cache_input_shape(shape_0), "float32")
+                )  # (n,c,d,h,w) -> selected layout
+                vae_dec_n_input_info.append(
+                    (f"feat_cache_{i}", _cache_input_shape(shape_n), "float32")
+                )  # (n,c,d,h,w) -> selected layout
             else:  # idx 0 is runtime I/O (DN input) -> channel-first (n,c,d,h,w), no scramble concern
                 vae_dec_n_input_info.append((f"feat_cache_{i}", [nn, cn, dn, hn, wn], "float32"))
 
@@ -798,15 +816,6 @@ class RBLNAutoencoderKLWan(RBLNModel):
         compile_cfgs.append(RBLNCompileConfig(compiled_model_name="decoder_0", input_info=vae_dec_0_input_info))
         compile_cfgs.append(RBLNCompileConfig(compiled_model_name="decoder_n", input_info=vae_dec_n_input_info))
 
-        # post_quant_conv (1x1x1 pointwise) is applied on the host before the decode loop rather than
-        # folded into the decoder graphs: folding it into DN makes the (post_quant_conv + upsample3d +
-        # idx0-output) combination fail the compiler's RblnTensor layout pass. It is tiny (z_dim x z_dim),
-        # so its weights are persisted in the config and rebuilt at runtime (survives save/load).
-        pqc = model.post_quant_conv
-        rbln_config.post_quant_conv_weight = pqc.weight.detach().float().cpu().numpy().tolist()
-        rbln_config.post_quant_conv_bias = (
-            pqc.bias.detach().float().cpu().numpy().tolist() if pqc.bias is not None else None
-        )
 
         rbln_config.set_compile_cfgs(compile_cfgs)
         return rbln_config
@@ -888,9 +897,8 @@ class RBLNAutoencoderKLWan(RBLNModel):
         # handed off as runtime tensors between chunks (channel-first). post_quant_conv (1x1x1 pointwise)
         # is applied here on the host, before the loop -- it cannot be folded into DN (see
         # _VAEWanDecoder0), and being pointwise it commutes with the causal cache concat downstream.
-        if self._pqc_weight is not None:
-            bias = self._pqc_bias.to(z.dtype) if self._pqc_bias is not None else None
-            z = torch.nn.functional.conv3d(z, self._pqc_weight.to(z.dtype), bias)
+        if self.post_quant_conv is not None:
+            z = self.post_quant_conv.to(z.dtype)(z)
         _, _, num_frame, _, _ = z.shape
         war_kw = {"war_zero": torch.zeros(1, dtype=torch.float32)} if _EN_WAR else {}
         outs = []
