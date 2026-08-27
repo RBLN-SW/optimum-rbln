@@ -17,7 +17,7 @@ import inspect
 import json
 from dataclasses import asdict, dataclass, fields
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Protocol, Union, runtime_checkable
+from typing import Any, Protocol, Union, runtime_checkable
 
 import numpy as np
 import torch
@@ -817,7 +817,7 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
 
         return serializable_map
 
-    def to_dict(self, exclude_defaults: bool = True) -> Dict[str, Any]:
+    def to_dict(self, exclude_defaults: bool = True) -> dict[str, Any]:
         """
         Convert config to a dictionary for passing to from_pretrained.
 
@@ -958,9 +958,15 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
         if cls_reserved != cls:
             logger.warning(f"Expected {cls.__name__}, but got {cls_reserved.__name__}.")
 
+        if isinstance(rbln_config, RBLNModelConfig):
+            # At load time, a passed config object is a carrier of runtime overrides,
+            # not a complete config. Extract its runtime options (top-level and per-submodule)
+            # and merge them through the dict path below.
+            rbln_config = rbln_config.to_dict()
+
         if isinstance(rbln_config, dict):
             for key, value in rbln_config.items():
-                if key not in kwargs:
+                if f"rbln_{key}" not in kwargs:
                     kwargs[f"rbln_{key}"] = value
 
         rbln_keys = [key for key in kwargs.keys() if key.startswith("rbln_")]
@@ -984,18 +990,6 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
             if update_dict:
                 nested_update(submodule_config, update_dict)
             config_file[submodule] = RBLNAutoConfig.load_from_dict(submodule_config)
-
-        if isinstance(rbln_config, RBLNModelConfig):
-            config_file.update(rbln_config._runtime_options)
-
-            # update submodule runtime
-            for submodule in rbln_config.submodules:
-                import pdb; pdb.set_trace()
-                if str(config_file[submodule]) != str(getattr(rbln_config, submodule)):
-                    raise ValueError(
-                        f"Passed rbln_config has different attributes for submodule {submodule} than the config_file"
-                    )
-                config_file[submodule] = getattr(rbln_config, submodule)
 
         config_file.update(rbln_runtime_kwargs)
         rbln_config = cls(**config_file)
