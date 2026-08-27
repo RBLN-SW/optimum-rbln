@@ -33,7 +33,7 @@ import numpy as np
 import torch
 from transformers import PretrainedConfig
 
-from ..utils.logging import get_logger
+from .utils.logging import get_logger
 
 
 logger = get_logger(__name__)

@@ -19,8 +19,8 @@ import torch
 from torch import nn
 from transformers import PretrainedConfig, PreTrainedModel
 
+from ....modeling_rope_utils import ROPE_INIT_FUNCTIONS, np_cos, np_sin
 from ....utils import logging
-from ...modeling_rope_utils import ROPE_INIT_FUNCTIONS, np_cos, np_sin
 from .configuration_lora import RBLNLoRAConfig
 from .lora_architecture import LoRALinear
 
