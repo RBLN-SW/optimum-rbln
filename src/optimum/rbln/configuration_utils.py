@@ -955,7 +955,7 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
             logger.warning(f"Expected {cls.__name__}, but got {cls_reserved.__name__}.")
 
         if isinstance(rbln_config, RBLNModelConfig):
-            # At load time, a passed config object is a carrier of runtime overrides,
+            # At `export=False` time, a passed config object is a carrier of runtime overrides,
             # not a complete config. Extract its runtime options (top-level and per-submodule)
             # and merge them through the dict path below.
             rbln_config = rbln_config.get_runtime_overrides()
