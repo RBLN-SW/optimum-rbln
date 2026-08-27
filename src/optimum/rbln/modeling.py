@@ -176,6 +176,7 @@ class RBLNModel(RBLNBaseModel):
                 model_save_dir=save_dir,
                 rbln_config=rbln_config,
                 preprocessors=preprocessors,
+                parent_subfolder=subfolder,
                 **kwargs,
             )
         else:
@@ -191,7 +192,7 @@ class RBLNModel(RBLNBaseModel):
         )
 
         # Save compiled models (.rbln)
-        (save_dir_path / subfolder).mkdir(exist_ok=True)
+        (save_dir_path / subfolder).mkdir(parents=True, exist_ok=True)
         if not isinstance(compiled_model, dict):
             compiled_models = {DEFAULT_COMPILED_MODEL_NAME: compiled_model}
         else:
