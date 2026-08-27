@@ -547,6 +547,9 @@ class RBLNQwen2_5_VLModel(RBLNDecoderOnlyModel):
         mm_token_type_ids: torch.IntTensor | None = None,
         **kwargs,
     ) -> RBLNDecoderOnlyOutput:
+        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+        if attention_mask is None:
+            attention_mask = torch.ones_like(input_ids)
         inputs_embeds, position_embed, rope_deltas = self._preprocess_prefill(
             input_ids,
             attention_mask,
@@ -592,7 +595,7 @@ class RBLNQwen2_5_VLModel(RBLNDecoderOnlyModel):
             )
             logits.append(output.logits)
             if self.rbln_config.output_hidden_states:
-                for l_idx in range(self.config.num_hidden_layers + 1):
+                for l_idx in range(self.config.text_config.num_hidden_layers + 1):
                     all_hidden_states[l_idx][b_idx].copy_(output.hidden_states[l_idx][0])
         logits = torch.cat(logits, dim=0)
 
@@ -751,8 +754,13 @@ class RBLNQwen2_5_VLForConditionalGeneration(RBLNQwen2_5_VLModel, RBLNDecoderOnl
         **kwargs,
     ) -> RBLNDecoderOnlyOutput:
         output_hidden_states = _validate_output_hidden_states(output_hidden_states, self.rbln_config)
+        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
         # Prefill
         if cache_position is None:
+            if attention_mask is None:
+                attention_mask = torch.ones_like(input_ids)
+            if generate_idx is None:
+                generate_idx = attention_mask.sum(dim=-1, keepdim=True).int()
             inputs_embeds, position_embed, rope_deltas = self._preprocess_prefill(
                 input_ids,
                 attention_mask,
@@ -793,7 +801,7 @@ class RBLNQwen2_5_VLForConditionalGeneration(RBLNQwen2_5_VLModel, RBLNDecoderOnl
                 )
                 logits.append(output.logits)
                 if self.rbln_config.output_hidden_states:
-                    for l_idx in range(self.config.num_hidden_layers + 1):
+                    for l_idx in range(self.config.text_config.num_hidden_layers + 1):
                         all_hidden_states[l_idx][b_idx].copy_(output.hidden_states[l_idx][0])
             logits = torch.cat(logits, dim=0)
         # Decoder
