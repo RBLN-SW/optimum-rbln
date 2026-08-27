@@ -13,7 +13,7 @@
 # limitations under the License.
 
 
-from typing import Any, Dict, Optional, Union
+from typing import Any
 
 from diffusers import Cosmos2_5_PredictBasePipeline
 from diffusers.schedulers import UniPCMultistepScheduler
@@ -40,8 +40,9 @@ class RBLNCosmos2_5_PredictBasePipeline(RBLNDiffusionMixin, Cosmos2_5_PredictBas
     """
 
     original_class = Cosmos2_5_PredictBasePipeline
-    # _submodules = ["text_encoder", "transformer", "vae"]
-    _submodules = ["text_encoder"]
+    _submodules = ["text_encoder", "transformer", "vae"]
+    # _submodules = ["text_encoder", "transformer"]
+    # _submodules = ["text_encoder"]
     # _submodules = ["transformer"]
     # _submodules = ["vae"]
     # _optional_submodules = ["safety_checker"]
@@ -78,6 +79,18 @@ class RBLNCosmos2_5_PredictBasePipeline(RBLNDiffusionMixin, Cosmos2_5_PredictBas
                 f"The transformer in this pipeline is compiled with 'max_seq_len={self.transformer.rbln_config.max_seq_len}'. 'max_sequence_length' set by the user will be ignored"
             )
             kwargs.pop("max_sequence_length")
+
+        for key in ("height", "width", "num_frames"):
+            compiled_value = getattr(self.transformer.rbln_config, key, None)
+            if compiled_value is None:
+                continue
+            if kwargs.get(key) is not None and kwargs[key] != compiled_value:
+                raise ValueError(
+                    f"The transformer in this pipeline is compiled with '{key}={compiled_value}', "
+                    f"but '{key}={kwargs[key]}' was requested. Recompile the pipeline with the "
+                    f"desired value, or drop '{key}' to use the compiled one."
+                )
+            kwargs[key] = compiled_value
         return kwargs
 
     @classmethod
@@ -86,9 +99,9 @@ class RBLNCosmos2_5_PredictBasePipeline(RBLNDiffusionMixin, Cosmos2_5_PredictBas
         model_id: str,
         *,
         export: bool = False,
-        safety_checker: Optional[RBLNCosmosSafetyChecker] = None,
-        rbln_config: Optional[Union[Dict[str, Any], RBLNCosmos2_5_PredictBasePipelineConfig]] = None,
-        **kwargs: Dict[str, Any],
+        safety_checker: RBLNCosmosSafetyChecker | None = None,
+        rbln_config: dict[str, Any] | RBLNCosmos2_5_PredictBasePipelineConfig | None = None,
+        **kwargs: dict[str, Any],
     ):
         rbln_config, kwargs = cls.get_rbln_config_class().initialize_from_kwargs(rbln_config, **kwargs)
         if safety_checker is None and export:
