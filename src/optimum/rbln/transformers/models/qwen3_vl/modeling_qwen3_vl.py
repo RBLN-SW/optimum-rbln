@@ -35,9 +35,9 @@ from transformers.models.qwen3_vl.modeling_qwen3_vl import (
 
 from ....configuration_utils import RBLNCompileConfig
 from ....modeling import RBLNModel
+from ....modeling_rope_utils import build_qwen_mrope_lookup, np_cos, np_sin, qwen_vit_rot_pos_ids
 from ....utils.logging import get_logger
 from ...modeling_outputs import RBLNDecoderOnlyOutput, _validate_output_hidden_states
-from ...modeling_rope_utils import build_qwen_mrope_lookup, np_cos, np_sin, qwen_vit_rot_pos_ids
 from ..decoderonly.decoderonly_runtime_utils import RBLNPageTableManager, RBLNRuntimeModel
 from ..decoderonly.modeling_decoderonly import RBLNDecoderOnlyModel, RBLNDecoderOnlyModelForCausalLM
 from .configuration_qwen3_vl import (

@@ -712,7 +712,7 @@ class TestQwenRotaryLookup(unittest.TestCase):
             VisionRotaryEmbedding,
         )
 
-        from optimum.rbln.transformers.modeling_rope_utils import qwen_vit_rot_pos_ids
+        from optimum.rbln.modeling_rope_utils import qwen_vit_rot_pos_ids
 
         rot = VisionRotaryEmbedding(20)
         for merge in (1, 2, 4):
@@ -732,7 +732,7 @@ class TestQwenRotaryLookup(unittest.TestCase):
         from transformers.models.qwen3_vl.configuration_qwen3_vl import Qwen3VLTextConfig
         from transformers.models.qwen3_vl.modeling_qwen3_vl import Qwen3VLTextRotaryEmbedding
 
-        from optimum.rbln.transformers.modeling_rope_utils import QwenMRopeLookupTable, build_qwen_mrope_lookup
+        from optimum.rbln.modeling_rope_utils import QwenMRopeLookupTable, build_qwen_mrope_lookup
 
         max_pos = 512
         standard = Qwen2VLRotaryEmbedding(

@@ -27,7 +27,7 @@ from transformers.models.qwen3_vl_moe.modeling_qwen3_vl_moe import (
     Qwen3VLMoeVisionRotaryEmbedding,
 )
 
-from ...modeling_rope_utils import np_cos, np_sin
+from ....modeling_rope_utils import np_cos, np_sin
 from ..decoderonly.decoderonly_runtime_utils import RBLNPageTableManager, RBLNRuntimeModel
 from ..qwen3_vl.modeling_qwen3_vl import (
     RBLNQwen3VLForConditionalGeneration,
