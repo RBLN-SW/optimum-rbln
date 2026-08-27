@@ -81,10 +81,6 @@ class SubModulesMixin:
         submodule_prefix = getattr(cls, "_rbln_submodule_prefix", None)
         submodule_postfix = getattr(cls, "_rbln_submodule_postfix", None)
         preprocessors = kwargs.pop("preprocessors", [])
-        # Nest submodule artifacts under the parent's subfolder so that a parent compiled
-        # with a non-empty subfolder (e.g. a VLM text_encoder inside a diffusers pipeline)
-        # keeps its submodules inside its own directory. This matches the load path, which
-        # resolves submodules relative to the parent's directory (model_path_subfolder).
         parent_subfolder = kwargs.pop("parent_subfolder", "")
 
         for submodule in cls._rbln_submodules:
