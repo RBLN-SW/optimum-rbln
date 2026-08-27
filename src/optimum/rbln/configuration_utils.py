@@ -817,32 +817,31 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
 
         return serializable_map
 
-    def to_dict(self, exclude_defaults: bool = True) -> dict[str, Any]:
+    def get_runtime_overrides(self) -> dict[str, Any]:
         """
-        Convert config to a dictionary for passing to from_pretrained.
+        Extract the runtime options set on this config, for passing to from_pretrained.
 
-        This method returns runtime options and optionally filters out
-        empty/default values that would conflict with loaded configs.
-        Submodule configs are recursively converted to dictionaries.
-
-        Args:
-            exclude_defaults: If True, exclude None values, empty lists,
-                and other default values that shouldn't override loaded config.
+        Returns only the runtime options (device, device_map, create_runtimes,
+        activate_profiler, timeout) that are explicitly set, recursively including
+        submodules. Compile-time attributes are not included: when loading a compiled
+        model they come from the artifact's rbln_config.json, and this dict is merged
+        on top of it.
 
         Returns:
-            Dictionary containing runtime options and non-default config values.
+            Dictionary of explicitly-set runtime options, keyed like the rbln_config
+            dict accepted by from_pretrained.
         """
 
         def filter_runtime(cfg):
             # Recursively extract runtime options from config (RBLNModelConfig or dict)
             if isinstance(cfg, RBLNModelConfig):
-                return cfg.to_dict(exclude_defaults=exclude_defaults)
+                return cfg.get_runtime_overrides()
             if not isinstance(cfg, dict):
                 return None
             result = {}
             for k, v in cfg.items():
                 if k in RUNTIME_KEYWORDS:
-                    if not exclude_defaults or v is not None:
+                    if v is not None:
                         result[k] = v
                 elif isinstance(v, dict):
                     nested = filter_runtime(v)
@@ -850,15 +849,12 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
                         result[k] = nested
             return result or None
 
-        result = {k: v for k, v in self._runtime_options.items() if not exclude_defaults or v is not None}
+        result = {k: v for k, v in self._runtime_options.items() if v is not None}
 
         for name in self.submodules:
             filtered = filter_runtime(getattr(self, name, None))
             if filtered:
                 result[name] = filtered
-
-        if not exclude_defaults:
-            result.update(self._prepare_for_serialization())
 
         return result
 
@@ -962,7 +958,7 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
             # At load time, a passed config object is a carrier of runtime overrides,
             # not a complete config. Extract its runtime options (top-level and per-submodule)
             # and merge them through the dict path below.
-            rbln_config = rbln_config.to_dict()
+            rbln_config = rbln_config.get_runtime_overrides()
 
         if isinstance(rbln_config, dict):
             for key, value in rbln_config.items():
