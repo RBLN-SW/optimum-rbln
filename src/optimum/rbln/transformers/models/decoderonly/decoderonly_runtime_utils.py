@@ -452,8 +452,8 @@ class RBLNRuntimeModel(RBLNPytorchRuntime):
             int(torch.nonzero(attention_mask, as_tuple=False)[0][0].item()) if attention_mask is not None else 0
         )
 
+        text_config = self.config.get_text_config()
         if self.logits_last_dim is None:
-            text_config = self.config.get_text_config()
             logits_last_dim = text_config.vocab_size if self.rbln_config.can_generate else text_config.hidden_size
         else:
             logits_last_dim = self.logits_last_dim
@@ -480,11 +480,11 @@ class RBLNRuntimeModel(RBLNPytorchRuntime):
             hidden_states_size = (
                 1,
                 padded_mask_length,
-                self.config.hidden_size,
+                text_config.hidden_size,
             )
             output_hidden_states = [
                 torch.full(hidden_states_size, fill_value=1e-10, dtype=self.rbln_config.dtype)
-                for _ in range(self.config.num_hidden_layers + 1)
+                for _ in range(text_config.num_hidden_layers + 1)
             ]
 
             for i in range(padded_input_length // self.rbln_config.prefill_chunk_size):
