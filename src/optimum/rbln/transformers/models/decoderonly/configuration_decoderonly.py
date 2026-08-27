@@ -247,7 +247,9 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
         if phases is not None:
             self.validate_phases_type(phases)
         self.phases = phases or self._default_phases
-        self.logits_to_keep = logits_to_keep or self._default_logits_to_keep
+        # 0 is a meaningful value here (keep every position's logits), so it must not
+        # fall through to the class default the way an unset `None` does.
+        self.logits_to_keep = logits_to_keep if logits_to_keep is not None else self._default_logits_to_keep
         if self.logits_to_keep is not None and self.logits_to_keep > 1:
             raise NotImplementedError("`logits_to_keep` > 1 is currently not supported for RBLN models.")
 

@@ -217,6 +217,24 @@ def test_submodule_config_object():
     assert model.rbln_config.language_model.batch_size == 2
 
 
+def test_logits_to_keep_zero_survives_construction_and_reload(tmp_path):
+    """`logits_to_keep=0` asks the prefill graph for every position's logits, and 0 is falsy.
+
+    It used to collapse to the class default on both paths, so a CausalLM could not request
+    all-position logits at all, and a config saved with 0 came back as 1 -- leaving the
+    runtime passing `query_position` to a graph compiled without that input.
+    """
+    cfg = RBLNLlamaForCausalLMConfig(logits_to_keep=0)
+    assert cfg.logits_to_keep == 0
+
+    config_path = tmp_path / "rbln_config.json"
+    cfg.save(str(config_path))
+    assert RBLNLlamaForCausalLMConfig.from_pretrained(str(config_path)).logits_to_keep == 0
+
+    # Leaving it unset still falls back to the per-class default.
+    assert RBLNLlamaForCausalLMConfig().logits_to_keep == 1
+
+
 def test_num_devices_deprecated_alias():
     """`tensor_parallel_size` is the deprecated alias of `num_devices` and must still map through."""
     cfg = RBLNMistralForCausalLMConfig(num_devices=4)
