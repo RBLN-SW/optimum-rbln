@@ -316,16 +316,22 @@ def _from_cache(cache: torch.Tensor, c: int, h: int, w: int) -> torch.Tensor:
     return _from_cl_cache(cache)
 
 
-# EN/DN write-after-read (WAR) workaround. Toggle with RBLN_WAN_EN_WAR (default "1" = on).
+# EN/DN write-after-read (WAR) workaround. Toggle with RBLN_WAN_EN_WAR (default "0" = off).
 # In a steady-state chunk (EN/DN) the SAME static cache is both read (previous history) and written
-# (rbln_cache_update). cache_update is an opaque/stateful op whose dummy output nobody consumes, so the
-# compiler does not model a read->write anti-dependency and may schedule the write BEFORE the reads ->
-# the chunk reads its own freshly written values -> corruption (encoder chunk0 pearson 0.99999->0.9994,
-# maxdiff 0.05->0.52). The compiler cannot express that ordering yet, so we manufacture a data edge:
-# make the written value depend on `out` (available only after the reads + full compute) by adding a
-# 0-valued tensor derived from `out`. The 0 comes from a RUNTIME input war_zero (a compile-time 0.0
-# would constant-fold and drop the dependency). This mirrors the rbln_model_zoo enc_compile_opt3_EN_WAR.
-_EN_WAR = os.environ.get("RBLN_WAN_EN_WAR", "1") == "1"
+# (rbln_cache_update). On older compilers, cache_update is an opaque/stateful op whose dummy output
+# nobody consumes, so the compiler does not model a read->write anti-dependency and may schedule the
+# write BEFORE the reads -> the chunk reads its own freshly written values -> corruption (encoder
+# pearson 0.999999 -> 0.999734). The workaround manufactures a data edge: make the written value depend
+# on `out` (available only after the reads + full compute) by adding a 0-valued tensor derived from
+# `out` (via the runtime input war_zero; a compile-time 0.0 would constant-fold the edge away).
+#
+# Since compiler 0.11.3.dev87 (fix/cosmos-vae-cache-store-scheduling) the compiler orders same-buffer
+# reads before the cache-store itself AND flushes cache stores early. The WAR edge then becomes
+# actively harmful: pinning every write after `out` defeats the early flush and blows up the
+# intermediate footprint (full-res EN 3.9 GiB -> 10.9 GiB). Default is therefore OFF; set
+# RBLN_WAN_EN_WAR=1 only when compiling with a pre-fix compiler. The setting is baked into the
+# compiled graph (war_zero input), so compile and load must agree.
+_EN_WAR = os.environ.get("RBLN_WAN_EN_WAR", "0") == "1"
 
 
 def _war_edge(out: torch.Tensor, war_zero: torch.Tensor) -> torch.Tensor:
