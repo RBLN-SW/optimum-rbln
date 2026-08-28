@@ -350,13 +350,21 @@ class _VAEWanEncoder0(torch.nn.Module):
         self.encoder = vae.encoder
         self.quant_conv = vae.quant_conv  # 1x1x1 pointwise -> fold into the graph (per-chunk == concat-then-quant)
         self.cache_dims = get_cache_size_enc(height, width)[0]
-        self.clear_cache(vae)
+        self._enc_conv_num = vae._cached_conv_counts["encoder"]
+        self.clear_cache()
+
+    def clear_cache(self):
+        # Mirrors AutoencoderKLWan.clear_cache. The idx counter must stay a plain-int list:
+        # a tensor counter makes feat_cache[idx] data-dependent and breaks torch.export.
+        self._enc_conv_idx = [0]
+        self._enc_feat_map = [None] * self._enc_conv_num
 
     def forward(self, x, *args) -> torch.Tensor:
         # E0 (first chunk): the encoder generates all conv feat-caches. idx 1.. are written to shared
         # device-resident static DRAM via rbln_cache_update; idx 0 concatenates with the f32 input at
         # conv_in downstream, so it is a runtime output. Caches are stored CHANNEL-LAST (n,d,h,w,c):
         # only C gets 64-aligned padding, so W is never scrambled (flat/NCHW gave pearson 0.98).
+        self.clear_cache()
         out = self.encoder(x, feat_cache=self._enc_feat_map, feat_idx=self._enc_conv_idx)
         out = self.quant_conv(out)
         position = torch.tensor(0, dtype=torch.int16)  # 0 is dummy; next chunk slices this frame out
@@ -373,11 +381,6 @@ class _VAEWanEncoder0(torch.nn.Module):
         fc0 = torch.nn.functional.pad(self._enc_feat_map[0], (0, 0, 0, 0, 1, 0)).contiguous()  # pad D 1->2
         return out, fc0, dummy_outs
 
-    def clear_cache(self, vae):
-        self._enc_conv_num = vae._cached_conv_counts["encoder"]
-        self._enc_conv_idx = [0]
-        self._enc_feat_map = [None] * self._enc_conv_num
-
 
 class _VAEWanEncoderN(torch.nn.Module):
     """Wrapper module for Wan VAE encoder extraction."""
@@ -387,6 +390,13 @@ class _VAEWanEncoderN(torch.nn.Module):
         self.encoder = vae.encoder
         self.quant_conv = vae.quant_conv  # 1x1x1 pointwise -> fold into the graph
         self.cache_dims = get_cache_size_enc(height, width)[1]
+        self.clear_cache()
+
+    def clear_cache(self):
+        # Mirrors AutoencoderKLWan.clear_cache. EN's feat caches arrive as runtime args, so only the
+        # idx counter is state here. It must stay a plain-int list: a tensor counter makes
+        # feat_cache[idx] data-dependent and breaks torch.export.
+        self._enc_conv_idx = [0]
 
     def forward(self, x, *args) -> torch.Tensor:
         # EN (steady state): idx 0 is a runtime I/O input, already CHANNEL-FIRST (n,c,d,h,w) -- used
@@ -397,14 +407,14 @@ class _VAEWanEncoderN(torch.nn.Module):
         # is not mistaken for a cache slot.
         war_zero = args[-1] if _EN_WAR else None
         caches = args[:-1] if _EN_WAR else args
+        self.clear_cache()
 
         feat_cache_reshaped = [caches[0]]  # idx0 already channel-first (n,c,d,h,w)
         for i, cache in enumerate(list(caches)[1:], start=1):
             c_, h_, w_ = self.cache_dims[i][1], self.cache_dims[i][3], self.cache_dims[i][4]
             feat_cache_reshaped.append(_from_cache(cache, c_, h_, w_))  # cache (selected layout) -> (n,c,d,h,w)
 
-        feat_idx = torch.zeros(1, dtype=torch.int32)
-        out = self.encoder(x, feat_cache=feat_cache_reshaped, feat_idx=feat_idx)
+        out = self.encoder(x, feat_cache=feat_cache_reshaped, feat_idx=self._enc_conv_idx)
         out = self.quant_conv(out)
 
         position = torch.tensor(0, dtype=torch.int16)
@@ -426,7 +436,14 @@ class _VAEWanDecoder0(torch.nn.Module):
         super().__init__()
         self.decoder = vae.decoder
         self.cache_dims = get_cache_size_dec(height, width)[0]
-        self.clear_cache(vae)
+        self._conv_num = vae._cached_conv_counts["decoder"]
+        self.clear_cache()
+
+    def clear_cache(self):
+        # Mirrors AutoencoderKLWan.clear_cache. The idx counter must stay a plain-int list:
+        # a tensor counter makes feat_cache[idx] data-dependent and breaks torch.export.
+        self._conv_idx = [0]
+        self._feat_map = [None] * self._conv_num
 
     def forward(self, x, *args) -> torch.Tensor:
         # D0 (first chunk): the decoder generates all conv feat-caches. idx 1.. are written to shared
@@ -434,6 +451,7 @@ class _VAEWanDecoder0(torch.nn.Module):
         # 64-aligned padding, W is never scrambled); idx 0 concatenates with the f32 latent at conv_in
         # so it is a runtime output. post_quant_conv is applied on the host before the loop (folding it
         # into DN makes post_quant_conv + upsample3d + idx0-output fail the RblnTensor layout pass).
+        self.clear_cache()
         out = self.decoder(x, feat_cache=self._feat_map, feat_idx=self._conv_idx, first_chunk=True)
         position = torch.tensor(0, dtype=torch.int16)  # 0 is dummy; next chunk slices this frame out
         axis = torch.tensor(_cache_axis(), dtype=torch.int16)  # cache_update D axis (layout-dependent)
@@ -454,11 +472,6 @@ class _VAEWanDecoder0(torch.nn.Module):
         fc0 = torch.nn.functional.pad(self._feat_map[0], (0, 0, 0, 0, 1, 0)).contiguous()  # pad D 1->2
         return out, fc0, dummy_outs
 
-    def clear_cache(self, vae):
-        self._conv_num = vae._cached_conv_counts["decoder"]
-        self._conv_idx = [0]
-        self._feat_map = [None] * self._conv_num
-
 
 class _VAEWanDecoderN(torch.nn.Module):
     """Wrapper module for Wan VAE decoder extraction."""
@@ -467,6 +480,13 @@ class _VAEWanDecoderN(torch.nn.Module):
         super().__init__()
         self.decoder = vae.decoder
         self.cache_dims = get_cache_size_dec(height, width)[1]
+        self.clear_cache()
+
+    def clear_cache(self):
+        # Mirrors AutoencoderKLWan.clear_cache. DN's feat caches arrive as runtime args, so only the
+        # idx counter is state here. It must stay a plain-int list: a tensor counter makes
+        # feat_cache[idx] data-dependent and breaks torch.export.
+        self._conv_idx = [0]
 
     def forward(self, x, *args) -> torch.Tensor:
         # DN (steady state): idx 0 is a runtime input; idx 1.. are read from shared static DRAM. Read
@@ -477,14 +497,14 @@ class _VAEWanDecoderN(torch.nn.Module):
         # is not mistaken for a cache slot.
         war_zero = args[-1] if _EN_WAR else None
         caches = args[:-1] if _EN_WAR else args
+        self.clear_cache()
 
         feat_cache_reshaped = [caches[0]]  # idx0 already channel-first (n,c,d,h,w), runtime I/O
         for i, cache in enumerate(list(caches)[1:], start=1):
             c_, h_, w_ = self.cache_dims[i][1], self.cache_dims[i][3], self.cache_dims[i][4]
             feat_cache_reshaped.append(_from_cache(cache, c_, h_, w_))  # cache (selected layout) -> (n,c,d,h,w)
 
-        feat_idx = torch.zeros(1, dtype=torch.int32)
-        out = self.decoder(x, feat_cache=feat_cache_reshaped, feat_idx=feat_idx)
+        out = self.decoder(x, feat_cache=feat_cache_reshaped, feat_idx=self._conv_idx)
 
         position = torch.tensor(0, dtype=torch.int16)
         axis = torch.tensor(_cache_axis(), dtype=torch.int16)  # cache_update D axis (layout-dependent)
