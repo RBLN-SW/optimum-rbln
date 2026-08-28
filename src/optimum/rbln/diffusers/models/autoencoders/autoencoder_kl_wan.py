@@ -649,7 +649,7 @@ class RBLNAutoencoderKLWan(RBLNModel):
             dec_models[0],
             rbln_compile_config=rbln_config.compile_cfgs[-2],
             create_runtimes=rbln_config.create_runtimes,
-            device=rbln_config.device_map["decoder_0"],
+            device=rbln_config.device_for("decoder_0"),
             example_inputs=dec0_example_inputs,
             compile_context=context,
         )
@@ -659,7 +659,7 @@ class RBLNAutoencoderKLWan(RBLNModel):
             dec_models[1],
             rbln_compile_config=rbln_config.compile_cfgs[-1],
             create_runtimes=rbln_config.create_runtimes,
-            device=rbln_config.device_map["decoder_n"],
+            device=rbln_config.device_for("decoder_n"),
             example_inputs=decn_example_inputs,
             compile_context=context,
         )
@@ -851,10 +851,7 @@ class RBLNAutoencoderKLWan(RBLNModel):
         else:
             expected_models = ["decoder_0", "decoder_n"]
 
-        if any(model_name not in rbln_config.device_map for model_name in expected_models):
-            cls._raise_missing_compiled_file_error(expected_models)
-
-        device_vals = [rbln_config.device_map[model_name] for model_name in expected_models]
+        device_vals = [rbln_config.device_for(model_name) for model_name in expected_models]
         return [
             rebel.Runtime(
                 compiled_model,
