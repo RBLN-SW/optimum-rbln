@@ -85,10 +85,6 @@ class SubModulesMixin:
         submodule_prefix = getattr(cls, "_rbln_submodule_prefix", None)
         submodule_postfix = getattr(cls, "_rbln_submodule_postfix", None)
         preprocessors = kwargs.pop("preprocessors", [])
-        # Nest submodule artifacts under the parent's subfolder so that a parent compiled
-        # with a non-empty subfolder (e.g. a VLM text_encoder inside a diffusers pipeline)
-        # keeps its submodules inside its own directory. This matches the load path, which
-        # resolves submodules relative to the parent's directory (model_path_subfolder).
         parent_subfolder = kwargs.pop("parent_subfolder", "")
 
         for submodule in cls._rbln_submodules:
@@ -162,8 +158,7 @@ class SubModulesMixin:
             json_file_path = submodule_save_dir / submodule_name / "config.json"
             if not json_file_path.exists():
                 # Artifacts saved before the nested submodule layout kept a nested parent's
-                # submodules as SIBLINGS of the parent directory; fall back there. Delete this
-                # block once that backward compatibility is dropped.
+                # submodules as siblings of the parent directory; fall back here.
                 legacy_json_file_path = submodule_save_dir.parent / submodule_name / "config.json"
                 if legacy_json_file_path.exists():
                     logger.warning(

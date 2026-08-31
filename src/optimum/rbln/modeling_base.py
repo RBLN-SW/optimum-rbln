@@ -238,9 +238,6 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
 
             if len(cls._rbln_submodules) > 0:
                 if rbln_submodules is None:
-                    # Resolve submodules relative to this model's own directory so that a nested
-                    # parent (e.g. a VLM text_encoder inside a diffusers pipeline) finds them under
-                    # itself.
                     rbln_submodules = cls._load_submodules(
                         model_save_dir=model_path_subfolder, rbln_config=rbln_config, **kwargs
                     )
