@@ -16,7 +16,7 @@ import os
 import pathlib
 import re
 from functools import partial
-from typing import Any, Optional, Union, Tuple, Dict
+from typing import Any, Optional
 from unittest.mock import patch
 
 import rebel
@@ -36,7 +36,6 @@ if is_cosmos_guardrail_available():
     from cosmos_guardrail.cosmos_guardrail import (
         COSMOS_GUARDRAIL_CHECKPOINT,
         Blocklist,
-        ContentSafetyGuardrail,
         GuardrailRunner,
         ModelConfig,
         Qwen3Guard,
@@ -468,87 +467,3 @@ class RBLNCosmosSafetyChecker(CosmosSafetyChecker):
         # Extract rbln-config from kwargs and convert it to RBLNCosmosSafetyCheckerConfig.
         rbln_config, kwargs = RBLNCosmosSafetyCheckerConfig.initialize_from_kwargs(rbln_config, **kwargs)
         return rbln_config, kwargs
-
-
-# class RBLNCosmosSafetyCheckerV2(RBLNCosmosSafetyChecker):
-#     """
-#     RBLN-accelerated implementation of Cosmos Safety Checker.
-#     """
-
-#     def __init__(
-#         self,
-#         checkpoint_id: str = COSMOS_GUARDRAIL_CHECKPOINT,
-#         qwen3guard_model_id: str = "Qwen/Qwen3Guard-Gen-0.6B",
-#         rbln_config: Optional[RBLNCosmosSafetyCheckerV2Config] = None,
-#     ) -> None:
-#         torch.nn.Module.__init__(self)
-#         if not COSMOS_AVAILABLE:
-#             raise ImportError(
-#                 "`cosmos_guardrail` is not installed. Please install it to use the safety checker for Cosmos: `pip install cosmos_guardrail`."
-#             )
-
-#         if rbln_config is None:
-#             rbln_config = RBLNCosmosSafetyCheckerV2Config()
-#         elif isinstance(rbln_config, dict):
-#             rbln_config = RBLNCosmosSafetyCheckerV2Config(**rbln_config)
-
-#         self.text_guardrail = GuardrailRunner(
-#             safety_models=[
-#                 Blocklist(COSMOS_GUARDRAIL_CHECKPOINT),  # Changed since it cannot be saved
-#                 RBLNQwen3Guard(
-#                     checkpoint_id=checkpoint_id,
-#                     base_model_id=qwen3guard_model_id,
-#                     rbln_config=rbln_config,
-#                 ),
-#             ]
-#         )
-
-#         self.video_guardrail = GuardrailRunner(
-#             safety_models=[RBLNVideoContentSafetyFilter(checkpoint_id=checkpoint_id, rbln_config=rbln_config)],
-#             postprocessors=[RBLNRetinaFaceFilter(checkpoint_id=checkpoint_id, rbln_config=rbln_config)],
-#         )
-
-#         self.rbln_config = rbln_config
-
-#     def save_pretrained(self, save_dir: str):
-#         for text_safety_models in self.text_guardrail.safety_models:
-#             if isinstance(text_safety_models, RBLNQwen3Guard):
-#                 text_safety_models.save_pretrained(save_dir)
-
-#         for video_safety_models in self.video_guardrail.safety_models:
-#             if isinstance(video_safety_models, RBLNVideoContentSafetyFilter):
-#                 video_safety_models.save_pretrained(save_dir)
-
-#         for postprocessors in self.video_guardrail.postprocessors:
-#             if isinstance(postprocessors, RBLNRetinaFaceFilter):
-#                 postprocessors.save_pretrained(save_dir)
-
-#         self.rbln_config._frozen = True  # Ad-hoc to save config
-#         self.rbln_config.save(save_dir)
-
-#     @classmethod
-#     def from_pretrained(
-#         cls,
-#         checkpoint_id: str,
-#         rbln_config: Optional[RBLNCosmosSafetyCheckerV2Config] = None,
-#         subfolder: Optional[str] = None,
-#         export: Optional[bool] = True,
-#         **kwargs,
-#     ):
-#         rbln_config, kwargs = cls.prepare_rbln_config(rbln_config=rbln_config, **kwargs)
-
-#         if len(kwargs) > 0:
-#             raise ValueError(f"Unexpected arguments: {kwargs.keys()}")
-
-#         if subfolder is not None:
-#             checkpoint_id = os.path.join(checkpoint_id, subfolder)
-
-#         return cls(checkpoint_id=checkpoint_id, rbln_config=rbln_config)
-
-#     @classmethod
-#     def prepare_rbln_config(
-#         cls, rbln_config: Optional[Union[Dict[str, Any], RBLNCosmosSafetyCheckerV2Config]] = None, **kwargs
-#     ) -> Tuple[RBLNCosmosSafetyCheckerV2Config, Dict[str, Any]]:
-#         # Extract rbln-config from kwargs and convert it to RBLNCosmosSafetyCheckerConfig.
-#         rbln_config, kwargs = RBLNCosmosSafetyCheckerV2Config.initialize_from_kwargs(rbln_config, **kwargs)
-#         return rbln_config, kwargs
