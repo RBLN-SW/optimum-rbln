@@ -104,12 +104,7 @@ def parse_byte_size(value: int | str) -> int:
 
 
 def npu_is_cr13_or_later(npu: str | None = None) -> bool:
-    """Whether the target NPU routes flash attention to the in-memory batched kernel:
-    RBLN-CR13 and later, i.e. every CR except CR03 (mirrors rebel-compiler's `_is_evt1`).
-
-    Falls back to the locally attached device when `npu` is None; returns False when
-    neither is available.
-    """
+    """Whether the NPU is RBLN-CR13 or later — every CR except CR03 (rebel-compiler's `_is_evt1`)."""
     npu = npu or (rebel.get_npu_name(0) if rebel.npu_is_available(0) else None)
     if not npu:
         return False

@@ -564,10 +564,8 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
         # `validate_sliding_window` below depends on.
         rbln_config = cls._update_attention_config(model, model_config, rbln_config)
 
-        # On RBLN-CR13+ the compiler routes mask-less flash attention to the in-memory batched
-        # kernel (rebel_compiler#13163), whose batches must be sorted by sequence length
-        # (descending). No graph-side change is involved — this pins and serializes the fact
-        # that the runtime must sort, so a loaded model sorts without re-deriving the target.
+        # mirror the compiler's in-memory kernel routing (rebel_compiler#13163);
+        # serialized so a loaded model knows to sort
         if rbln_config.use_batch_attn_opt is None:
             rbln_config.use_batch_attn_opt = (
                 npu_is_cr13_or_later(rbln_config.npu)
@@ -807,31 +805,14 @@ class RBLNDecoderOnlyModelForCausalLM(RBLNDecoderOnlyModel, RBLNDecoderOnlyGener
     def _maybe_sort_inputs_for_batch_attn_opt(
         self, model_inputs: dict, inputs_sorted: bool = False
     ) -> torch.Tensor | None:
-        """Sort batch-indexed inputs in-place for the in-memory batched attention kernel.
-
-        The kernel requires per-batch sequences sorted by length (descending, long-to-short —
-        the same order vllm-rbln's VLLM_RBLN_SORT_BATCH produces) so its per-group index_list
-        bounds and partition skip-gating hold. The KV cache on device is laid out
-        in that sorted order starting from the prefill call (`cache_position is None`)
-        and the same permutation must be reused for every subsequent decode call. The
-        inverse is then applied to the outputs in `_maybe_unsort_outputs_for_batch_attn_opt`
-        so external callers never see the sorted device-side state.
-
-        Args:
-            model_inputs: dict of {name: Tensor or None} batch-indexed inputs. Mutated
-                in place to contain sorted tensors when sorting is applied.
-            inputs_sorted: The caller guarantees inputs are already in the sorted order
-                (e.g. the `generate()` fast path); skip sorting and unsorting entirely.
-
-        Returns:
-            unsort_idx, or None when no sorting was applied.
-        """
+        # The in-memory batched attention kernel needs batches sorted by length (descending).
+        # The permutation is fixed at prefill (device KV layout) and reapplied every decode;
+        # returns unsort_idx, or None when nothing was sorted (incl. inputs_sorted=True).
         shape_src = model_inputs.get("inputs_embeds")
         if shape_src is None:
             shape_src = model_inputs.get("input_ids")
         if inputs_sorted or shape_src is None or shape_src.shape[0] <= 1 or not self.rbln_config.use_batch_attn_opt:
-            # Clear any cached permutation from a prior generation so a stale index can't
-            # leak into a subsequent decode call with a different shape or sortedness.
+            # clear cached permutation so a stale index can't leak into a later decode
             self._rbln_sort_idx = None
             self._rbln_unsort_idx = None
             return None
@@ -846,9 +827,7 @@ class RBLNDecoderOnlyModelForCausalLM(RBLNDecoderOnlyModel, RBLNDecoderOnlyGener
         else:
             sort_idx = getattr(self, "_rbln_sort_idx", None)
             unsort_idx = getattr(self, "_rbln_unsort_idx", None)
-            # Sorting is a correctness requirement of the in-memory batched attention kernel: a
-            # decode call whose permutation is unknown would silently read the KV cache in
-            # the wrong order, so fail loudly instead.
+            # a decode with an unknown permutation would silently read the KV cache wrong
             if sort_idx is None:
                 raise RuntimeError(
                     "Batched decode requires the batch permutation established at prefill. Run the "
@@ -872,11 +851,7 @@ class RBLNDecoderOnlyModelForCausalLM(RBLNDecoderOnlyModel, RBLNDecoderOnlyGener
 
     @staticmethod
     def _maybe_unsort_outputs_for_batch_attn_opt(unsort_idx: torch.Tensor | None, outputs: dict) -> None:
-        """Apply the inverse of the batched-decode sort to outputs, mutating in place.
-
-        Tensors are unsorted on dim 0; tuples (e.g. `hidden_states`) are unsorted
-        element-wise. No-op when `unsort_idx` is None.
-        """
+        # undo the sort on outputs in place; tuples element-wise
         if unsort_idx is None:
             return
 

@@ -129,12 +129,10 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
                 Defaults to 0 if DecoderOnlyModel is used, 1 if DecoderOnlyModelForCausalLM is used.
             output_hidden_states (bool | None): Whether to output the hidden states of the decoder. Defaults to False.
             cache_metas (list["CacheMeta"] | None): The metadata for the cache tensors. Handled internally if not provided. Defaults to None.
-            use_batch_attn_opt (bool | None): Whether the compiled decode attention runs the
-                in-memory batched kernel, which requires batch inputs sorted by sequence length
-                (descending); the runtime applies the sort transparently. When unset, it is
-                resolved at compile time to match the compiler's routing: True on RBLN-CR13 and
-                later with mask-less flash attention, False otherwise. The resolved value is
-                serialized with the model so a loaded model sorts without re-deriving the target.
+            use_batch_attn_opt (bool | None): Whether decode attention runs the in-memory
+                batched kernel, which requires batches sorted by sequence length (descending);
+                the runtime sorts transparently. Resolved at compile time when unset
+                (RBLN-CR13+ with mask-less flash attention) and serialized with the model.
             kwargs: Additional arguments passed to the parent RBLNModelConfig.
 
         Raises:

@@ -7,8 +7,8 @@ from optimum.rbln.transformers.models.decoderonly.configuration_decoderonly impo
 )
 from optimum.rbln.transformers.models.decoderonly.generation_decoderonly import (
     RBLNDecoderOnlyGenerationMixin,
-    expand_batch_perm_idx,
-    unsort_generate_outputs,
+    _expand_batch_perm_idx,
+    _unsort_generate_outputs,
 )
 from optimum.rbln.transformers.models.decoderonly.modeling_decoderonly import RBLNDecoderOnlyModelForCausalLM
 from optimum.rbln.utils.runtime_utils import npu_is_cr13_or_later
@@ -21,18 +21,18 @@ UNSORT_IDX = torch.argsort(SORT_IDX)
 
 def test_expand_batch_perm_idx():
     perm = torch.tensor([2, 0, 1])
-    assert expand_batch_perm_idx(perm, 3).tolist() == [2, 0, 1]
-    assert expand_batch_perm_idx(perm, 6).tolist() == [4, 5, 0, 1, 2, 3]
+    assert _expand_batch_perm_idx(perm, 3).tolist() == [2, 0, 1]
+    assert _expand_batch_perm_idx(perm, 6).tolist() == [4, 5, 0, 1, 2, 3]
 
 
 def test_unsort_tensor_roundtrip():
     x = torch.arange(8).reshape(4, 2)
-    assert torch.equal(unsort_generate_outputs(x.index_select(0, SORT_IDX), UNSORT_IDX), x)
+    assert torch.equal(_unsort_generate_outputs(x.index_select(0, SORT_IDX), UNSORT_IDX), x)
 
     # num_return_sequences=2: rows grouped per sample via repeat_interleave
     x2 = x.repeat_interleave(2, dim=0)
     sorted_x2 = x.index_select(0, SORT_IDX).repeat_interleave(2, dim=0)
-    assert torch.equal(unsort_generate_outputs(sorted_x2, UNSORT_IDX), x2)
+    assert torch.equal(_unsort_generate_outputs(sorted_x2, UNSORT_IDX), x2)
 
 
 def test_unsort_model_output_fields():
@@ -46,7 +46,7 @@ def test_unsort_model_output_fields():
         attentions = ((sorted_x.float().unsqueeze(1),),)
         hidden_states = None
 
-    out = unsort_generate_outputs(Output(), UNSORT_IDX)
+    out = _unsort_generate_outputs(Output(), UNSORT_IDX)
     assert torch.equal(out.sequences, x)
     assert torch.equal(out.scores[1], x.float() * 2)
     assert torch.equal(out.attentions[0][0], x.float().unsqueeze(1))

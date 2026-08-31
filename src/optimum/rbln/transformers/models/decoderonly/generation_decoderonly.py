@@ -24,12 +24,9 @@ if TYPE_CHECKING:
     from ...modeling_outputs import RBLNDecoderOnlyOutput
 
 
-def expand_batch_perm_idx(perm_idx: torch.Tensor, num_rows: int) -> torch.Tensor:
-    """Expand a batch permutation to `num_rows = batch * n` rows grouped per sample.
-
-    HF generation expands inputs with repeat_interleave (e.g. `num_return_sequences`),
-    keeping each sample's rows contiguous, so the permutation expands group-wise.
-    """
+def _expand_batch_perm_idx(perm_idx: torch.Tensor, num_rows: int) -> torch.Tensor:
+    # HF expands rows per sample via repeat_interleave (num_return_sequences), so the
+    # permutation expands group-wise.
     batch_size = perm_idx.shape[0]
     n = num_rows // batch_size
     if n == 1:
@@ -37,15 +34,14 @@ def expand_batch_perm_idx(perm_idx: torch.Tensor, num_rows: int) -> torch.Tensor
     return (perm_idx[:, None] * n + torch.arange(n, device=perm_idx.device)).reshape(-1)
 
 
-def unsort_generate_outputs(
+def _unsort_generate_outputs(
     outputs: ModelOutput | torch.Tensor, unsort_idx: torch.Tensor
 ) -> ModelOutput | torch.Tensor:
-    """Apply the inverse batch permutation to `generate()` outputs, for any decoding strategy."""
     if isinstance(outputs, torch.Tensor):
-        return outputs.index_select(0, expand_batch_perm_idx(unsort_idx, outputs.shape[0]))
+        return outputs.index_select(0, _expand_batch_perm_idx(unsort_idx, outputs.shape[0]))
 
     num_rows = outputs.sequences.shape[0]
-    idx = expand_batch_perm_idx(unsort_idx, num_rows)
+    idx = _expand_batch_perm_idx(unsort_idx, num_rows)
 
     def _unsort(value):
         if value is None:
@@ -67,10 +63,8 @@ def unsort_generate_outputs(
 class RBLNDecoderOnlyGenerationMixin(GenerationMixin):
     _supports_cache_class = False  # Needed for GenerationMixin
     _is_stateful = False  # Needed for GenerationMixin
-    # Batch-dim inputs generate() permutes for the in-memory batched attention kernel. The sort
-    # is mandatory whenever the model was compiled with use_batch_attn_opt; multimodal subclasses
-    # whose extra inputs are not plain batch-first tensors (flattened patch layouts, per-sample
-    # module state, ...) must extend the sort with their own input permutation.
+    # kwargs generate() sorts for use_batch_attn_opt; multimodal subclasses must extend
+    # this for inputs that are not plain batch-first tensors.
     _generate_batch_sortable_kwargs = ("attention_mask", "inputs_embeds", "token_type_ids", "lora_int_ids")
 
     def _reorder_cache(self, past_key_values, beam_idx):
@@ -86,11 +80,8 @@ class RBLNDecoderOnlyGenerationMixin(GenerationMixin):
         inputs_sorted: bool = False,
         **kwargs,
     ):
-        # NOTE: The in-memory batched attention kernel (rbln_config.use_batch_attn_opt) requires batch
-        # inputs sorted by sequence length on the device side so its per-partition early-exit
-        # contract is respected. generate() sorts the whole generation upfront and marks it with
-        # `inputs_sorted=True` (zero per-step cost); a direct forward() call without that marker
-        # is sorted/unsorted transparently inside forward() itself.
+        # use_batch_attn_opt needs length-sorted batches: generate() sorts once upfront
+        # (inputs_sorted=True); a bare forward() call sorts/unsorts per call instead.
         model_inputs = {}
         is_prefill_phase = generate_idx is None
 
@@ -175,16 +166,12 @@ class RBLNDecoderOnlyGenerationMixin(GenerationMixin):
         unsort_idx = None
         batch_input = input_ids if input_ids is not None else kwargs.get("inputs_embeds")
         if (
-            # getattr: multimodal top-level configs are plain RBLNModelConfig without the field;
-            # their generation-time sorting is wired family-by-family, not through this entry.
+            # getattr: multimodal top-level configs lack the field
             getattr(self.rbln_config, "use_batch_attn_opt", None)
             and batch_input is not None
             and batch_input.shape[0] > 1
         ):
-            # Sort the whole generation upfront: the HF loop then runs in the sorted order the
-            # in-memory batched attention kernel requires, with zero per-step cost, and forward() is
-            # told to trust the given order via `inputs_sorted`. The inverse permutation is
-            # applied to the returned outputs below, covering every decoding strategy.
+            # sort once before the HF loop (zero per-step cost); outputs are unsorted below
             mask = kwargs.get("attention_mask")
             lengths = (
                 mask.sum(dim=-1)
@@ -203,5 +190,5 @@ class RBLNDecoderOnlyGenerationMixin(GenerationMixin):
 
         outputs = super().generate(input_ids, **kwargs)
         if unsort_idx is not None:
-            outputs = unsort_generate_outputs(outputs, unsort_idx)
+            outputs = _unsort_generate_outputs(outputs, unsort_idx)
         return outputs
