@@ -38,7 +38,7 @@ class RBLNCosmosTransformer3DModelConfig(RBLNModelConfig):
         num_latent_frames: int | None = None,
         latent_height: int | None = None,
         latent_width: int | None = None,
-        is_v2w: bool | None = None,
+        uses_per_frame_timestep: bool | None = None,
         **kwargs: Any,
     ):
         """
@@ -53,6 +53,11 @@ class RBLNCosmosTransformer3DModelConfig(RBLNModelConfig):
             num_channels_latents (int | None): The number of channels in latent space.
             latent_height (int | None): The height in pixels in latent space.
             latent_width (int | None): The width in pixels in latent space.
+            uses_per_frame_timestep (bool | None): Whether the pipeline feeds a per-frame timestep
+                tensor ([B, 1, T, 1, 1]; conditioning frames at t=0) instead of a per-batch scalar.
+                Decides the compiled shapes of embedded_timestep/temb. When None, inferred from the
+                model config (Cosmos-Predict2.5, fingerprinted by use_crossattn_projection, is
+                always per-frame; older families default to per-batch).
             kwargs: Additional arguments passed to the parent RBLNModelConfig.
 
         Raises:
@@ -73,7 +78,7 @@ class RBLNCosmosTransformer3DModelConfig(RBLNModelConfig):
         self.latent_height = latent_height
         self.latent_width = latent_width
         self.embedding_dim = embedding_dim
-        self.is_v2w = is_v2w
+        self.uses_per_frame_timestep = uses_per_frame_timestep
 
         if not isinstance(self.batch_size, int) or self.batch_size < 0:
             raise ValueError(f"batch_size must be a positive integer, got {self.batch_size}")

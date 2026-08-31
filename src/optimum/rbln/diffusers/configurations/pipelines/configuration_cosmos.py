@@ -14,7 +14,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any
 
 from ....configuration_utils import RBLNModelConfig
 from ....transformers import RBLNQwen2_5_VLForConditionalGenerationConfig, RBLNT5EncoderModelConfig
@@ -85,7 +85,6 @@ class RBLNCosmosPipelineBaseConfig(RBLNModelConfig):
             height=height,
             width=width,
             num_frames=num_frames,
-            is_v2w=self.__class__._vae_uses_encoder,
         )
         self.vae = self.initialize_submodule_config(
             vae,
@@ -131,16 +130,16 @@ class RBLNCosmos2PipelineBaseConfig(RBLNModelConfig):
 
     def __init__(
         self,
-        text_encoder: Optional[RBLNT5EncoderModelConfig] = None,
-        transformer: Optional[RBLNCosmosTransformer3DModelConfig] = None,
-        vae: Optional[RBLNAutoencoderKLWanConfig] = None,
-        safety_checker: Optional[RBLNCosmosSafetyCheckerConfig] = None,
+        text_encoder: RBLNT5EncoderModelConfig | None = None,
+        transformer: RBLNCosmosTransformer3DModelConfig | None = None,
+        vae: RBLNAutoencoderKLWanConfig | None = None,
+        safety_checker: RBLNCosmosSafetyCheckerConfig | None = None,
         *,
-        batch_size: Optional[int] = None,
-        height: Optional[int] = None,
-        width: Optional[int] = None,
-        num_frames: Optional[int] = None,
-        max_seq_len: Optional[int] = None,
+        batch_size: int | None = None,
+        height: int | None = None,
+        width: int | None = None,
+        num_frames: int | None = None,
+        max_seq_len: int | None = None,
         **kwargs: Any,
     ):
         """
@@ -176,7 +175,7 @@ class RBLNCosmos2PipelineBaseConfig(RBLNModelConfig):
             height=height,
             width=width,
             num_frames=num_frames,
-            is_v2w=self.__class__._vae_uses_encoder,
+            uses_per_frame_timestep=self.__class__._vae_uses_encoder,  # predict2: only v2w feeds per-frame timesteps
         )
         self.vae = self.initialize_submodule_config(
             vae,
@@ -221,22 +220,24 @@ class RBLNCosmos2_5_PredictBasePipelineConfig(RBLNModelConfig):
 
     # submodules = ["text_encoder", "transformer", "vae", "safety_checker"]
     submodules = ["text_encoder", "transformer", "vae"]
+    # submodules = ["text_encoder", "transformer"]
+    # submodules = ["vae"]
     # submodules = ["transformer"]
     # submodules = ["text_encoder"]
     _vae_uses_encoder = True
 
     def __init__(
         self,
-        text_encoder: Optional[RBLNQwen2_5_VLForConditionalGenerationConfig] = None,
-        transformer: Optional[RBLNCosmosTransformer3DModelConfig] = None,
-        vae: Optional[RBLNAutoencoderKLWanConfig] = None,
-        safety_checker: Optional[RBLNCosmosSafetyCheckerV2Config] = None,
+        text_encoder: RBLNQwen2_5_VLForConditionalGenerationConfig | None = None,
+        transformer: RBLNCosmosTransformer3DModelConfig | None = None,
+        vae: RBLNAutoencoderKLWanConfig | None = None,
+        safety_checker: RBLNCosmosSafetyCheckerV2Config | None = None,
         *,
-        batch_size: Optional[int] = None,
-        height: Optional[int] = None,
-        width: Optional[int] = None,
-        num_frames: Optional[int] = None,
-        max_seq_len: Optional[int] = None,
+        batch_size: int | None = None,
+        height: int | None = None,
+        width: int | None = None,
+        num_frames: int | None = None,
+        max_seq_len: int | None = None,
         **kwargs: Any,
     ):
         """
@@ -273,7 +274,7 @@ class RBLNCosmos2_5_PredictBasePipelineConfig(RBLNModelConfig):
             height=height,
             width=width,
             num_frames=num_frames,
-            is_v2w=self.__class__._vae_uses_encoder,
+            uses_per_frame_timestep=True,  # predict2.5 unified conditioning always feeds per-frame timesteps
         )
         self.vae = self.initialize_submodule_config(
             vae,

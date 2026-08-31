@@ -335,7 +335,11 @@ class RBLNCosmosTransformer3DModel(RBLNModel):
             ),
         ]
 
-        if model_config.use_crossattn_projection or (model_config.extra_pos_embed_type is None and rbln_config.is_v2w):
+        uses_per_frame_timestep = rbln_config.uses_per_frame_timestep
+        if uses_per_frame_timestep is None:
+            # For Cosmos-Predict2.5 (unified conditioning) always feeds per-frame timesteps
+            uses_per_frame_timestep = bool(model_config.use_crossattn_projection)
+        if uses_per_frame_timestep:
             input_info.append(
                 ("embedded_timestep", [rbln_config.batch_size, hidden_dim, hidden_size], rbln_config.dtype),
             )
