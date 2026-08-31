@@ -140,6 +140,9 @@ class SubModulesMixin:
     @classmethod
     def _load_submodules_from_compiled_models(cls, model_save_dir: str, rbln_config: RBLNModelConfig, **kwargs):
         rbln_submodules = []
+        # Artifacts saved before the nested layout kept a nested parent's submodules as
+        # SIBLINGS of the parent directory; fall back there when the nested path is absent.
+        legacy_save_dir = kwargs.pop("legacy_save_dir", None)
 
         for submodule in cls._rbln_submodules:
             submodule_name = submodule["name"]
@@ -150,11 +153,17 @@ class SubModulesMixin:
             # RBLNModelConfig -> RBLNModel
             submodule_cls = get_rbln_model_cls(submodule_rbln_config.rbln_model_cls_name)
 
-            json_file_path = Path(model_save_dir) / submodule_name / "config.json"
+            submodule_save_dir = model_save_dir
+            json_file_path = Path(submodule_save_dir) / submodule_name / "config.json"
+            if not json_file_path.exists() and legacy_save_dir is not None:
+                legacy_json_file_path = Path(legacy_save_dir) / submodule_name / "config.json"
+                if legacy_json_file_path.exists():
+                    submodule_save_dir = legacy_save_dir
+                    json_file_path = legacy_json_file_path
             config = PretrainedConfig.from_json_file(json_file_path)
 
             rbln_submodule = submodule_cls._from_pretrained(
-                model_id=model_save_dir,
+                model_id=submodule_save_dir,
                 config=config,
                 subfolder=submodule_name,
                 rbln_config=submodule_rbln_config,
