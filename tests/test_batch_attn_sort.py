@@ -8,6 +8,7 @@ from optimum.rbln.transformers.models.decoderonly.configuration_decoderonly impo
 from optimum.rbln.transformers.models.decoderonly.generation_decoderonly import (
     RBLNDecoderOnlyGenerationMixin,
     _expand_batch_perm_idx,
+    _permute_flat_segments,
 )
 from optimum.rbln.transformers.models.decoderonly.modeling_decoderonly import RBLNDecoderOnlyModelForCausalLM
 from optimum.rbln.utils.runtime_utils import npu_is_cr13_or_later
@@ -22,6 +23,18 @@ def test_expand_batch_perm_idx():
     perm = torch.tensor([2, 0, 1])
     assert _expand_batch_perm_idx(perm, 3).tolist() == [2, 0, 1]
     assert _expand_batch_perm_idx(perm, 6).tolist() == [4, 5, 0, 1, 2, 3]
+
+
+def test_permute_flat_segments():
+    # samples own [2, 1, 3] rows; permutation [2, 0, 1] moves whole segments
+    x = torch.arange(6)
+    out = _permute_flat_segments(x, [2, 1, 3], torch.tensor([2, 0, 1]))
+    assert out.tolist() == [3, 4, 5, 0, 1, 2]
+
+    # roundtrip: permuting back with the inverse restores the original
+    inv = torch.argsort(torch.tensor([2, 0, 1]))
+    back = _permute_flat_segments(out, [3, 2, 1], inv)
+    assert torch.equal(back, x)
 
 
 def test_unsort_tensor_roundtrip():

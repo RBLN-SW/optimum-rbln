@@ -34,6 +34,13 @@ def _expand_batch_perm_idx(perm_idx: torch.Tensor, num_rows: int) -> torch.Tenso
     return (perm_idx[:, None] * n + torch.arange(n, device=perm_idx.device)).reshape(-1)
 
 
+def _permute_flat_segments(tensor: torch.Tensor, seg_lens: list[int], perm_idx: torch.Tensor) -> torch.Tensor:
+    # reorder per-sample segments stacked on dim 0 (flattened multimodal layouts,
+    # e.g. pixel_values [total_patches, dim] or grid_thw [num_images, 3])
+    segments = torch.split(tensor, seg_lens, dim=0)
+    return torch.cat([segments[i] for i in perm_idx.tolist()], dim=0)
+
+
 class RBLNDecoderOnlyGenerationMixin(GenerationMixin):
     _supports_cache_class = False  # Needed for GenerationMixin
     _is_stateful = False  # Needed for GenerationMixin
@@ -41,6 +48,12 @@ class RBLNDecoderOnlyGenerationMixin(GenerationMixin):
 
     def _reorder_cache(self, past_key_values, beam_idx):
         raise NotImplementedError
+
+    @property
+    def _batch_sort_enabled(self) -> bool:
+        # getattr: multimodal top-level configs lack the field — composition models
+        # override this to read their language model's config
+        return bool(getattr(self.rbln_config, "use_batch_attn_opt", None))
 
     @staticmethod
     def _unsort_generation_outputs(
@@ -171,12 +184,7 @@ class RBLNDecoderOnlyGenerationMixin(GenerationMixin):
         self, input_ids: torch.LongTensor | None, kwargs: dict
     ) -> tuple[torch.LongTensor | None, torch.Tensor | None]:
         batch_input = input_ids if input_ids is not None else kwargs.get("inputs_embeds")
-        if (
-            # getattr: multimodal top-level configs lack the field
-            not getattr(self.rbln_config, "use_batch_attn_opt", None)
-            or batch_input is None
-            or batch_input.shape[0] <= 1
-        ):
+        if not self._batch_sort_enabled or batch_input is None or batch_input.shape[0] <= 1:
             return input_ids, None
 
         mask = kwargs.get("attention_mask")
