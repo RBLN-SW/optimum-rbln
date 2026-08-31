@@ -566,7 +566,7 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
 
         # On RBLN-CR13+ the compiler routes mask-less flash attention to the in-memory batched
         # kernel (rebel_compiler#13163), whose batches must be sorted by sequence length
-        # (ascending). No graph-side change is involved — this pins and serializes the fact
+        # (descending). No graph-side change is involved — this pins and serializes the fact
         # that the runtime must sort, so a loaded model sorts without re-deriving the target.
         if rbln_config.use_batch_attn_opt is None:
             rbln_config.use_batch_attn_opt = (
@@ -809,9 +809,9 @@ class RBLNDecoderOnlyModelForCausalLM(RBLNDecoderOnlyModel, RBLNDecoderOnlyGener
     ) -> torch.Tensor | None:
         """Sort batch-indexed inputs in-place for the in-memory batched attention kernel.
 
-        The kernel requires per-batch sequences sorted by length (ascending) so its
-        per-group index_list bounds and partition skip-gating hold (see
-        rbln_paged_flash_causal_attn_in_memory.mlir). The KV cache on device is laid out
+        The kernel requires per-batch sequences sorted by length (descending, long-to-short —
+        the same order vllm-rbln's VLLM_RBLN_SORT_BATCH produces) so its per-group index_list
+        bounds and partition skip-gating hold. The KV cache on device is laid out
         in that sorted order starting from the prefill call (`cache_position is None`)
         and the same permutation must be reused for every subsequent decode call. The
         inverse is then applied to the outputs in `_maybe_unsort_outputs_for_batch_attn_opt`
@@ -839,7 +839,7 @@ class RBLNDecoderOnlyModelForCausalLM(RBLNDecoderOnlyModel, RBLNDecoderOnlyGener
         is_prefill = model_inputs.get("cache_position") is None
         if is_prefill:
             lengths = model_inputs["generate_idx"].squeeze(-1).to(torch.int32)
-            sort_idx = torch.argsort(lengths)
+            sort_idx = torch.argsort(lengths, descending=True)
             unsort_idx = torch.argsort(sort_idx)
             self._rbln_sort_idx = sort_idx
             self._rbln_unsort_idx = unsort_idx
@@ -853,7 +853,7 @@ class RBLNDecoderOnlyModelForCausalLM(RBLNDecoderOnlyModel, RBLNDecoderOnlyGener
                 raise RuntimeError(
                     "Batched decode requires the batch permutation established at prefill. Run the "
                     "prefill step through forward() first, or pass `inputs_sorted=True` with inputs "
-                    "already sorted by sequence length (ascending, matching the KV cache layout)."
+                    "already sorted by sequence length (descending, matching the KV cache layout)."
                 )
             if sort_idx.shape[0] != shape_src.shape[0]:
                 raise RuntimeError(

@@ -15,7 +15,7 @@ from optimum.rbln.utils.runtime_utils import npu_is_cr13_or_later
 
 
 LENGTHS = torch.tensor([3, 7, 5, 7])
-SORT_IDX = torch.argsort(LENGTHS)
+SORT_IDX = torch.argsort(LENGTHS, descending=True)
 UNSORT_IDX = torch.argsort(SORT_IDX)
 
 
@@ -72,7 +72,7 @@ def test_generate_fast_path_sorts_and_unsorts(monkeypatch):
     mask = torch.tensor([[0, 1, 1, 1], [0, 0, 0, 1], [0, 0, 1, 1]])
     result = _FakeCausalLM(use_batch_attn_opt=True).generate(ids, attention_mask=mask)
 
-    expected_sort = torch.tensor([1, 2, 0])  # lengths 3, 1, 2 -> ascending
+    expected_sort = torch.tensor([0, 2, 1])  # lengths 3, 1, 2 -> descending
     assert captured["kwargs"]["inputs_sorted"] is True
     assert torch.equal(captured["input_ids"], ids.index_select(0, expected_sort))
     assert torch.equal(captured["kwargs"]["attention_mask"], mask.index_select(0, expected_sort))
@@ -135,7 +135,7 @@ def _prefill_inputs():
 def test_forward_sort_prefill_then_decode():
     model = _FakeForwardModel()
     assert model._sort(_prefill_inputs()) is not None
-    assert model._rbln_sort_idx.tolist() == [1, 2, 0]
+    assert model._rbln_sort_idx.tolist() == [0, 2, 1]
 
     decode = dict(_prefill_inputs(), cache_position=torch.ones(3, 1, dtype=torch.int32))
     mask_before = decode["attention_mask"]

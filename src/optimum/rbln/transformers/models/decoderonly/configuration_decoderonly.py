@@ -131,7 +131,7 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
             cache_metas (list["CacheMeta"] | None): The metadata for the cache tensors. Handled internally if not provided. Defaults to None.
             use_batch_attn_opt (bool | None): Whether the compiled decode attention runs the
                 in-memory batched kernel, which requires batch inputs sorted by sequence length
-                (ascending); the runtime applies the sort transparently. When unset, it is
+                (descending); the runtime applies the sort transparently. When unset, it is
                 resolved at compile time to match the compiler's routing: True on RBLN-CR13 and
                 later with mask-less flash attention, False otherwise. The resolved value is
                 serialized with the model so a loaded model sorts without re-deriving the target.
