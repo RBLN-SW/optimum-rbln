@@ -884,10 +884,6 @@ class RBLNDecoderOnlyModelForCausalLM(RBLNDecoderOnlyModel, RBLNDecoderOnlyGener
         inputs_sorted: bool = False,
         **kwargs,
     ) -> tuple[torch.FloatTensor]:
-        # Forward method for the RBLN-optimized model, designed for integration with the HuggingFace generate API.
-        # For continuous batching, the prefill stage processes one batch at a time and updates the KV cache using batch_idx.
-        # A for-loop ensures synchronization with the HuggingFace generate API.
-        # The decoder stage operates as usual, processing inputs in batch mode.
         if self.rbln_config.use_lora and lora_int_ids is None:
             if self.lora_int_ids is None:
                 raise ValueError(
@@ -919,16 +915,33 @@ class RBLNDecoderOnlyModelForCausalLM(RBLNDecoderOnlyModel, RBLNDecoderOnlyGener
             "lora_int_ids": lora_int_ids,
         }
         unsort_idx = self._maybe_sort_inputs_for_batch_attn_opt(batch_inputs, inputs_sorted=inputs_sorted)
-        input_ids = batch_inputs["input_ids"]
-        inputs_embeds = batch_inputs["inputs_embeds"]
-        cache_position = batch_inputs["cache_position"]
-        attention_mask = batch_inputs["attention_mask"]
-        generate_idx = batch_inputs["generate_idx"]
-        padded_cache_lengths = batch_inputs["padded_cache_lengths"]
-        position_ids = batch_inputs["position_ids"]
-        token_type_ids = batch_inputs["token_type_ids"]
-        lora_int_ids = batch_inputs["lora_int_ids"]
+        batch_outputs = self._forward_prefill_or_decode(**batch_inputs)
+        self._maybe_unsort_outputs_for_batch_attn_opt(unsort_idx, batch_outputs)
 
+        if not return_dict:
+            return (
+                batch_outputs["logits"],
+                batch_outputs["generate_idx"],
+                batch_outputs["padded_cache_lengths"],
+                batch_outputs["hidden_states"],
+            )
+        else:
+            return RBLNDecoderOnlyOutput(**batch_outputs)
+
+    def _forward_prefill_or_decode(
+        self,
+        input_ids: torch.LongTensor | None,
+        inputs_embeds: torch.Tensor | None,
+        cache_position: torch.Tensor | None,
+        attention_mask: torch.LongTensor | None,
+        generate_idx: torch.Tensor | None,
+        padded_cache_lengths: torch.Tensor | None,
+        position_ids: torch.Tensor | None,
+        token_type_ids: torch.Tensor | None,
+        lora_int_ids: torch.Tensor | None,
+    ) -> dict:
+        # For continuous batching, the prefill stage processes one batch at a time and updates
+        # the KV cache using batch_idx; the decoder stage runs in batch mode.
         # Prefill
         if cache_position is None:
             logits = []
@@ -999,24 +1012,9 @@ class RBLNDecoderOnlyModelForCausalLM(RBLNDecoderOnlyModel, RBLNDecoderOnlyGener
             logits = outputs.logits
             all_hidden_states = outputs.hidden_states
 
-        batch_outputs = {
+        return {
             "logits": logits,
             "generate_idx": generate_idx,
             "padded_cache_lengths": padded_cache_lengths,
             "hidden_states": all_hidden_states,
         }
-        self._maybe_unsort_outputs_for_batch_attn_opt(unsort_idx, batch_outputs)
-        logits = batch_outputs["logits"]
-        generate_idx = batch_outputs["generate_idx"]
-        padded_cache_lengths = batch_outputs["padded_cache_lengths"]
-        all_hidden_states = batch_outputs["hidden_states"]
-
-        if not return_dict:
-            return logits, generate_idx, padded_cache_lengths, all_hidden_states
-        else:
-            return RBLNDecoderOnlyOutput(
-                logits=logits,
-                generate_idx=generate_idx,
-                padded_cache_lengths=padded_cache_lengths,
-                hidden_states=all_hidden_states,
-            )

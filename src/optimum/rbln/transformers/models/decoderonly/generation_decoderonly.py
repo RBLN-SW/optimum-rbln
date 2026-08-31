@@ -63,8 +63,6 @@ def _unsort_generate_outputs(
 class RBLNDecoderOnlyGenerationMixin(GenerationMixin):
     _supports_cache_class = False  # Needed for GenerationMixin
     _is_stateful = False  # Needed for GenerationMixin
-    # kwargs generate() sorts for use_batch_attn_opt; multimodal subclasses must extend
-    # this for inputs that are not plain batch-first tensors.
     _generate_batch_sortable_kwargs = ("attention_mask", "inputs_embeds", "token_type_ids", "lora_int_ids")
 
     def _reorder_cache(self, past_key_values, beam_idx):
@@ -163,32 +161,36 @@ class RBLNDecoderOnlyGenerationMixin(GenerationMixin):
         if attention_mask is not None:
             kwargs["attention_mask"] = attention_mask
 
-        unsort_idx = None
-        batch_input = input_ids if input_ids is not None else kwargs.get("inputs_embeds")
-        if (
-            # getattr: multimodal top-level configs lack the field
-            getattr(self.rbln_config, "use_batch_attn_opt", None)
-            and batch_input is not None
-            and batch_input.shape[0] > 1
-        ):
-            # sort once before the HF loop (zero per-step cost); outputs are unsorted below
-            mask = kwargs.get("attention_mask")
-            lengths = (
-                mask.sum(dim=-1)
-                if mask is not None
-                else torch.full((batch_input.shape[0],), batch_input.shape[1], dtype=torch.long)
-            )
-            sort_idx = torch.argsort(lengths, descending=True)
-            unsort_idx = torch.argsort(sort_idx)
-            if input_ids is not None:
-                input_ids = input_ids.index_select(0, sort_idx)
-            for name in self._generate_batch_sortable_kwargs:
-                value = kwargs.get(name)
-                if isinstance(value, torch.Tensor) and value.dim() >= 1:
-                    kwargs[name] = value.index_select(0, sort_idx)
-            kwargs["inputs_sorted"] = True
-
+        input_ids, unsort_idx = self._sort_generation_inputs(input_ids, kwargs)
         outputs = super().generate(input_ids, **kwargs)
         if unsort_idx is not None:
             outputs = _unsort_generate_outputs(outputs, unsort_idx)
         return outputs
+
+    def _sort_generation_inputs(
+        self, input_ids: torch.LongTensor | None, kwargs: dict
+    ) -> tuple[torch.LongTensor | None, torch.Tensor | None]:
+        batch_input = input_ids if input_ids is not None else kwargs.get("inputs_embeds")
+        if (
+            # getattr: multimodal top-level configs lack the field
+            not getattr(self.rbln_config, "use_batch_attn_opt", None)
+            or batch_input is None
+            or batch_input.shape[0] <= 1
+        ):
+            return input_ids, None
+
+        mask = kwargs.get("attention_mask")
+        lengths = (
+            mask.sum(dim=-1)
+            if mask is not None
+            else torch.full((batch_input.shape[0],), batch_input.shape[1], dtype=torch.long)
+        )
+        sort_idx = torch.argsort(lengths, descending=True)
+        if input_ids is not None:
+            input_ids = input_ids.index_select(0, sort_idx)
+        for name in self._generate_batch_sortable_kwargs:
+            value = kwargs.get(name)
+            if isinstance(value, torch.Tensor) and value.dim() >= 1:
+                kwargs[name] = value.index_select(0, sort_idx)
+        kwargs["inputs_sorted"] = True
+        return input_ids, torch.argsort(sort_idx)
