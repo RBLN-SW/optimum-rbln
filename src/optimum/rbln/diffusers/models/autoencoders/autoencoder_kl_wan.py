@@ -933,11 +933,11 @@ class RBLNAutoencoderKLWan(RBLNModel):
         # handed off as runtime tensors between chunks (channel-first). post_quant_conv (1x1x1 pointwise)
         # is applied here on the host, before the loop -- it cannot be folded into DN (see
         # _VAEWanDecoder0), and being pointwise it commutes with the causal cache concat downstream.
-        z = z.to(getattr(torch, self.rbln_config.dtype))
+        z = z.to(self.rbln_config.dtype)
         if self.post_quant_conv is not None:
             z = self.post_quant_conv.to(z.dtype)(z)
         _, _, num_frame, _, _ = z.shape
-        war_kw = {"war_zero": torch.zeros(1, dtype=getattr(torch, self.rbln_config.dtype))} if _EN_WAR else {}
+        war_kw = {"war_zero": torch.zeros(1, dtype=self.rbln_config.dtype)} if _EN_WAR else {}
         outs = []
         feat_cache_0 = None
         for i in range(num_frame):
@@ -959,13 +959,13 @@ class RBLNAutoencoderKLWan(RBLNModel):
         # frame 0 (chunk E0), then each subsequent 4 input frames -> 1 latent frame (chunk EN). The idx-0
         # conv cache (feat_cache_0) is handed off as a runtime tensor between chunks; idx 1.. persist on
         # device via shared static DRAM (rbln_cache_update). quant_conv is folded into each chunk's graph.
-        x = x.to(getattr(torch, self.rbln_config.dtype))
+        x = x.to(self.rbln_config.dtype)
         if self.config.patch_size is not None:
             x = patchify(x, patch_size=self.config.patch_size)
 
         _, _, num_frame, _, _ = x.shape
         iter_ = 1 + (num_frame - 1) // 4
-        war_kw = {"war_zero": torch.zeros(1, dtype=getattr(torch, self.rbln_config.dtype))} if _EN_WAR else {}
+        war_kw = {"war_zero": torch.zeros(1, dtype=self.rbln_config.dtype)} if _EN_WAR else {}
         outs = []
         feat_cache_0 = None
         for i in range(iter_):
