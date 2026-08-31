@@ -238,9 +238,16 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
 
             if len(cls._rbln_submodules) > 0:
                 if rbln_submodules is None:
-                    # Use model_path_subfolder instead of model_id to support nested submodules
+                    # Resolve submodules relative to this model's own directory so that a nested
+                    # parent (e.g. a VLM text_encoder inside a diffusers pipeline) finds them under
+                    # itself. Artifacts saved before the nested layout kept a nested parent's
+                    # submodules as siblings of the parent directory; legacy_save_dir lets those
+                    # still load.
                     rbln_submodules = cls._load_submodules(
-                        model_save_dir=model_path_subfolder, rbln_config=rbln_config, **kwargs
+                        model_save_dir=model_path_subfolder,
+                        legacy_save_dir=str(Path(model_path_subfolder).parent) if subfolder else None,
+                        rbln_config=rbln_config,
+                        **kwargs,
                     )
             elif rbln_submodules is None:
                 rbln_submodules = []
