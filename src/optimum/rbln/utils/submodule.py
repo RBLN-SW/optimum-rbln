@@ -164,7 +164,8 @@ class SubModulesMixin:
                 if legacy_json_file_path.exists():
                     logger.warning(
                         f"Loading submodule '{submodule_name}' from the pre-nested (sibling) layout "
-                        f"at {legacy_json_file_path.parent}. Re-saving this model migrates it to the "
+                        f"at {legacy_json_file_path.parent}. Support for this layout may be removed "
+                        "in a future release; recompile the model to produce an artifact in the "
                         "nested layout."
                     )
                     submodule_save_dir = submodule_save_dir.parent
