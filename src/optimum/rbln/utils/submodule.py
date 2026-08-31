@@ -158,8 +158,7 @@ class SubModulesMixin:
             json_file_path = submodule_save_dir / submodule_name / "config.json"
             if not json_file_path.exists():
                 # Artifacts saved before the nested submodule layout kept a nested parent's
-                # submodules as SIBLINGS of the parent directory; fall back there. Delete this
-                # block once that backward compatibility is dropped.
+                # submodules as siblings of the parent directory; fall back here.
                 legacy_json_file_path = submodule_save_dir.parent / submodule_name / "config.json"
                 if legacy_json_file_path.exists():
                     logger.warning(
