@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import inspect
-import os
 from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Union
@@ -240,16 +239,10 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
         quantization=None,
         phase: str = "prefill",
     ) -> rebel.RBLNCompiledModel:
-        # rebel-compiler currently keys `apply_batch_decode_transform` off this env var
-        # (Config.cpp). Force it to match the pinned config for the duration of the compile so
-        # the traced graph and the compiler transform can never disagree, whatever the caller's
-        # environment says.
-        batch_attn_env = os.environ.get("VLLM_RBLN_BATCH_ATTN_OPT")
         try:
             wrapped_model.phase = phase
             if quantization:
                 quantization.maybe_set_quantization_env()
-            os.environ["VLLM_RBLN_BATCH_ATTN_OPT"] = "1" if rbln_config.use_batch_attn_opt else "0"
             original_linear = torch.nn.functional.linear
             torch.nn.functional.linear = torch.ops.rbln_custom_ops.linear
             compiled_model = cls.compile(
@@ -265,10 +258,6 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
             torch.nn.functional.linear = original_linear
             if quantization:
                 quantization.maybe_reset_quantization_env()
-            if batch_attn_env is None:
-                os.environ.pop("VLLM_RBLN_BATCH_ATTN_OPT", None)
-            else:
-                os.environ["VLLM_RBLN_BATCH_ATTN_OPT"] = batch_attn_env
 
     @classmethod
     def _get_compile_context(cls, compile_config: RBLNCompileConfig, example_inputs: list[torch.Tensor]):

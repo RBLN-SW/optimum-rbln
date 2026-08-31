@@ -67,11 +67,10 @@ def unsort_generate_outputs(
 class RBLNDecoderOnlyGenerationMixin(GenerationMixin):
     _supports_cache_class = False  # Needed for GenerationMixin
     _is_stateful = False  # Needed for GenerationMixin
-    # Whether generate() may sort the raw inputs upfront for the batched dynamic decode kernel.
-    # Multimodal subclasses must set this to False: their extra inputs (flattened patch layouts,
-    # module-level per-sample state, ...) cannot be permuted by a plain batch-dim index_select,
-    # so they sort inside their own forward() instead.
-    _supports_generate_batch_sort = True
+    # Batch-dim inputs generate() permutes for the batched dynamic decode kernel. The sort is
+    # mandatory whenever the model was compiled with use_batch_attn_opt; multimodal subclasses
+    # whose extra inputs are not plain batch-first tensors (flattened patch layouts, per-sample
+    # module state, ...) must extend the sort with their own input permutation.
     _generate_batch_sortable_kwargs = ("attention_mask", "inputs_embeds", "token_type_ids", "lora_int_ids")
 
     def _reorder_cache(self, past_key_values, beam_idx):
@@ -176,8 +175,9 @@ class RBLNDecoderOnlyGenerationMixin(GenerationMixin):
         unsort_idx = None
         batch_input = input_ids if input_ids is not None else kwargs.get("inputs_embeds")
         if (
-            self._supports_generate_batch_sort
-            and self.rbln_config.use_batch_attn_opt
+            # getattr: multimodal top-level configs are plain RBLNModelConfig without the field;
+            # their generation-time sorting is wired family-by-family, not through this entry.
+            getattr(self.rbln_config, "use_batch_attn_opt", None)
             and batch_input is not None
             and batch_input.shape[0] > 1
         ):

@@ -94,6 +94,24 @@ def test_generate_fast_path_disabled(monkeypatch):
     assert torch.equal(result, ids)
 
 
+def test_generate_config_without_field(monkeypatch):
+    # Multimodal top-level configs are plain RBLNModelConfig without use_batch_attn_opt
+    captured = {}
+
+    def fake_generate(self, input_ids, **kwargs):
+        captured["kwargs"] = kwargs
+        return input_ids
+
+    monkeypatch.setattr(GenerationMixin, "generate", fake_generate)
+
+    model = _FakeCausalLM(use_batch_attn_opt=False)
+    model.rbln_config = type("Cfg", (), {})()
+    ids = torch.tensor([[1, 2], [3, 4]])
+    result = model.generate(ids)
+    assert "inputs_sorted" not in captured["kwargs"]
+    assert torch.equal(result, ids)
+
+
 class _FakeForwardModel:
     rbln_config = type("Cfg", (), {"use_batch_attn_opt": True})()
     _sort = RBLNDecoderOnlyModelForCausalLM._maybe_sort_inputs_for_batch_attn_opt
