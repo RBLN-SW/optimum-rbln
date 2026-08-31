@@ -34,32 +34,6 @@ def _expand_batch_perm_idx(perm_idx: torch.Tensor, num_rows: int) -> torch.Tenso
     return (perm_idx[:, None] * n + torch.arange(n, device=perm_idx.device)).reshape(-1)
 
 
-def _unsort_generate_outputs(
-    outputs: ModelOutput | torch.Tensor, unsort_idx: torch.Tensor
-) -> ModelOutput | torch.Tensor:
-    if isinstance(outputs, torch.Tensor):
-        return outputs.index_select(0, _expand_batch_perm_idx(unsort_idx, outputs.shape[0]))
-
-    num_rows = outputs.sequences.shape[0]
-    idx = _expand_batch_perm_idx(unsort_idx, num_rows)
-
-    def _unsort(value):
-        if value is None:
-            return None
-        if isinstance(value, (tuple, list)):
-            reordered = [_unsort(v) for v in value]
-            return tuple(reordered) if isinstance(value, tuple) else reordered
-        if isinstance(value, torch.Tensor) and value.dim() >= 1 and value.shape[0] == num_rows:
-            return value.index_select(0, idx)
-        return value
-
-    for field in ("sequences", "scores", "logits", "attentions", "hidden_states"):
-        value = getattr(outputs, field, None)
-        if value is not None:
-            setattr(outputs, field, _unsort(value))
-    return outputs
-
-
 class RBLNDecoderOnlyGenerationMixin(GenerationMixin):
     _supports_cache_class = False  # Needed for GenerationMixin
     _is_stateful = False  # Needed for GenerationMixin
@@ -67,6 +41,32 @@ class RBLNDecoderOnlyGenerationMixin(GenerationMixin):
 
     def _reorder_cache(self, past_key_values, beam_idx):
         raise NotImplementedError
+
+    @staticmethod
+    def _unsort_generation_outputs(
+        outputs: ModelOutput | torch.Tensor, unsort_idx: torch.Tensor
+    ) -> ModelOutput | torch.Tensor:
+        if isinstance(outputs, torch.Tensor):
+            return outputs.index_select(0, _expand_batch_perm_idx(unsort_idx, outputs.shape[0]))
+
+        num_rows = outputs.sequences.shape[0]
+        idx = _expand_batch_perm_idx(unsort_idx, num_rows)
+
+        def _unsort(value):
+            if value is None:
+                return None
+            if isinstance(value, (tuple, list)):
+                reordered = [_unsort(v) for v in value]
+                return tuple(reordered) if isinstance(value, tuple) else reordered
+            if isinstance(value, torch.Tensor) and value.dim() >= 1 and value.shape[0] == num_rows:
+                return value.index_select(0, idx)
+            return value
+
+        for field in ("sequences", "scores", "logits", "attentions", "hidden_states"):
+            value = getattr(outputs, field, None)
+            if value is not None:
+                setattr(outputs, field, _unsort(value))
+        return outputs
 
     def prepare_inputs_for_generation(
         self,
@@ -164,7 +164,7 @@ class RBLNDecoderOnlyGenerationMixin(GenerationMixin):
         input_ids, unsort_idx = self._sort_generation_inputs(input_ids, kwargs)
         outputs = super().generate(input_ids, **kwargs)
         if unsort_idx is not None:
-            outputs = _unsort_generate_outputs(outputs, unsort_idx)
+            outputs = self._unsort_generation_outputs(outputs, unsort_idx)
         return outputs
 
     def _sort_generation_inputs(
