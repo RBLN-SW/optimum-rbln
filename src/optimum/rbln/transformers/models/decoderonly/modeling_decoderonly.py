@@ -27,7 +27,7 @@ from transformers.modeling_outputs import BaseModelOutputWithPast
 from ....configuration_utils import RBLNCompileConfig
 from ....modeling import RBLNModel
 from ....utils.logging import get_logger
-from ....utils.runtime_utils import npu_is_cr
+from ....utils.runtime_utils import npu_is_cr13_or_later
 from ...cache_utils import FullAttentionKVCacheMeta, SlidingWindowAttentionKVCacheMeta
 from ...modeling_attention_utils import (
     RBLNDecoderOnlyFlashAttentionMixin,
@@ -564,11 +564,16 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
         # `validate_sliding_window` below depends on.
         rbln_config = cls._update_attention_config(model, model_config, rbln_config)
 
-        # The batched dynamic decode transform is mandatory on the RBLN-CR family. It changes
-        # the compiled decode graph, so the resolved value must be pinned here (and serialized)
-        # rather than read from the environment at request time.
+        # On RBLN-CR13+ the compiler routes mask-less flash attention to the in-memory batched
+        # kernel (rebel_compiler#13163), whose batches must be sorted by sequence length
+        # (ascending). No graph-side change is involved — this pins and serializes the fact
+        # that the runtime must sort, so a loaded model sorts without re-deriving the target.
         if rbln_config.use_batch_attn_opt is None:
-            rbln_config.use_batch_attn_opt = npu_is_cr(rbln_config.npu)
+            rbln_config.use_batch_attn_opt = (
+                npu_is_cr13_or_later(rbln_config.npu)
+                and rbln_config.attn_impl == "flash_attn"
+                and not rbln_config.use_attention_mask
+            )
 
         layer_types = getattr(model_config, "layer_types", None)
         all_full_attention = layer_types is not None and all(t == "full_attention" for t in layer_types)
@@ -802,10 +807,11 @@ class RBLNDecoderOnlyModelForCausalLM(RBLNDecoderOnlyModel, RBLNDecoderOnlyGener
     def _maybe_sort_inputs_for_batch_attn_opt(
         self, model_inputs: dict, inputs_sorted: bool = False
     ) -> torch.Tensor | None:
-        """Sort batch-indexed inputs in-place for the batched dynamic decode kernel.
+        """Sort batch-indexed inputs in-place for the in-memory batched attention kernel.
 
-        The kernel expects per-batch sequences sorted by length (descending) so its
-        per-partition early-exit contract is honored. The KV cache on device is laid out
+        The kernel requires per-batch sequences sorted by length (ascending) so its
+        per-group index_list bounds and partition skip-gating hold (see
+        rbln_paged_flash_causal_attn_in_memory.mlir). The KV cache on device is laid out
         in that sorted order starting from the prefill call (`cache_position is None`)
         and the same permutation must be reused for every subsequent decode call. The
         inverse is then applied to the outputs in `_maybe_unsort_outputs_for_batch_attn_opt`
@@ -833,21 +839,21 @@ class RBLNDecoderOnlyModelForCausalLM(RBLNDecoderOnlyModel, RBLNDecoderOnlyGener
         is_prefill = model_inputs.get("cache_position") is None
         if is_prefill:
             lengths = model_inputs["generate_idx"].squeeze(-1).to(torch.int32)
-            sort_idx = torch.argsort(lengths, descending=True)
+            sort_idx = torch.argsort(lengths)
             unsort_idx = torch.argsort(sort_idx)
             self._rbln_sort_idx = sort_idx
             self._rbln_unsort_idx = unsort_idx
         else:
             sort_idx = getattr(self, "_rbln_sort_idx", None)
             unsort_idx = getattr(self, "_rbln_unsort_idx", None)
-            # Sorting is a correctness requirement of the batched dynamic decode kernel: a
+            # Sorting is a correctness requirement of the in-memory batched attention kernel: a
             # decode call whose permutation is unknown would silently read the KV cache in
             # the wrong order, so fail loudly instead.
             if sort_idx is None:
                 raise RuntimeError(
                     "Batched decode requires the batch permutation established at prefill. Run the "
                     "prefill step through forward() first, or pass `inputs_sorted=True` with inputs "
-                    "already sorted by sequence length (descending, matching the KV cache layout)."
+                    "already sorted by sequence length (ascending, matching the KV cache layout)."
                 )
             if sort_idx.shape[0] != shape_src.shape[0]:
                 raise RuntimeError(

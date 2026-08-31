@@ -103,14 +103,18 @@ def parse_byte_size(value: int | str) -> int:
     return nbytes
 
 
-def npu_is_cr(npu: str | None = None) -> bool:
-    """Whether the target NPU belongs to the RBLN-CR family.
+def npu_is_cr13_or_later(npu: str | None = None) -> bool:
+    """Whether the target NPU routes flash attention to the in-memory batched kernel:
+    RBLN-CR13 and later, i.e. every CR except CR03 (mirrors rebel-compiler's `_is_evt1`).
 
     Falls back to the locally attached device when `npu` is None; returns False when
-    neither is available (CA-compatible behavior).
+    neither is available.
     """
     npu = npu or (rebel.get_npu_name(0) if rebel.npu_is_available(0) else None)
-    return normalize_npu(npu).startswith("RBLN-CR") if npu else False
+    if not npu:
+        return False
+    normalized = normalize_npu(npu)
+    return normalized.startswith("RBLN-CR") and normalized != "RBLN-CR0"
 
 
 def normalize_npu(npu: str) -> str:

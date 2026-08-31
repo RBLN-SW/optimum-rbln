@@ -67,8 +67,8 @@ def unsort_generate_outputs(
 class RBLNDecoderOnlyGenerationMixin(GenerationMixin):
     _supports_cache_class = False  # Needed for GenerationMixin
     _is_stateful = False  # Needed for GenerationMixin
-    # Batch-dim inputs generate() permutes for the batched dynamic decode kernel. The sort is
-    # mandatory whenever the model was compiled with use_batch_attn_opt; multimodal subclasses
+    # Batch-dim inputs generate() permutes for the in-memory batched attention kernel. The sort
+    # is mandatory whenever the model was compiled with use_batch_attn_opt; multimodal subclasses
     # whose extra inputs are not plain batch-first tensors (flattened patch layouts, per-sample
     # module state, ...) must extend the sort with their own input permutation.
     _generate_batch_sortable_kwargs = ("attention_mask", "inputs_embeds", "token_type_ids", "lora_int_ids")
@@ -86,7 +86,7 @@ class RBLNDecoderOnlyGenerationMixin(GenerationMixin):
         inputs_sorted: bool = False,
         **kwargs,
     ):
-        # NOTE: The batched dynamic decode kernel (rbln_config.use_batch_attn_opt) requires batch
+        # NOTE: The in-memory batched attention kernel (rbln_config.use_batch_attn_opt) requires batch
         # inputs sorted by sequence length on the device side so its per-partition early-exit
         # contract is respected. generate() sorts the whole generation upfront and marks it with
         # `inputs_sorted=True` (zero per-step cost); a direct forward() call without that marker
@@ -182,7 +182,7 @@ class RBLNDecoderOnlyGenerationMixin(GenerationMixin):
             and batch_input.shape[0] > 1
         ):
             # Sort the whole generation upfront: the HF loop then runs in the sorted order the
-            # batched dynamic decode kernel requires, with zero per-step cost, and forward() is
+            # in-memory batched attention kernel requires, with zero per-step cost, and forward() is
             # told to trust the given order via `inputs_sorted`. The inverse permutation is
             # applied to the returned outputs below, covering every decoding strategy.
             mask = kwargs.get("attention_mask")
@@ -191,7 +191,7 @@ class RBLNDecoderOnlyGenerationMixin(GenerationMixin):
                 if mask is not None
                 else torch.full((batch_input.shape[0],), batch_input.shape[1], dtype=torch.long)
             )
-            sort_idx = torch.argsort(lengths, descending=True)
+            sort_idx = torch.argsort(lengths)
             unsort_idx = torch.argsort(sort_idx)
             if input_ids is not None:
                 input_ids = input_ids.index_select(0, sort_idx)
