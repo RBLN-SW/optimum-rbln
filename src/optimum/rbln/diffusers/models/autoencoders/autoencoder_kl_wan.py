@@ -642,16 +642,20 @@ class RBLNAutoencoderKLWan(RBLNModel):
         if rbln_config.uses_encoder:
             encoder_models, decoder_models = cls._wrap_model_if_needed(model, rbln_config)
             context, enc0_example_inputs, encn_example_inputs = cls.get_enc_compile_cfg(context, rbln_config)
-            enc_compiled_model_0 = rebel.compile_from_torch(
+            enc_compiled_model_0 = cls.compile(
                 encoder_models[0],
-                input_info=rbln_config.compile_cfgs[0].input_info,
+                rbln_compile_config=rbln_config.compile_cfgs[0],
+                create_runtimes=rbln_config.create_runtimes,
+                device=rbln_config.device_for("encoder_0"),
                 example_inputs=enc0_example_inputs,
                 compile_context=context,
             )
             compiled_models["encoder_0"] = enc_compiled_model_0
-            enc_compiled_model_n = rebel.compile_from_torch(
+            enc_compiled_model_n = cls.compile(
                 encoder_models[1],
-                input_info=rbln_config.compile_cfgs[1].input_info,
+                rbln_compile_config=rbln_config.compile_cfgs[1],
+                create_runtimes=rbln_config.create_runtimes,
+                device=rbln_config.device_for("encoder_n"),
                 example_inputs=encn_example_inputs,
                 compile_context=context,
             )
