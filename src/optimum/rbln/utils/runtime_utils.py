@@ -103,6 +103,16 @@ def parse_byte_size(value: int | str) -> int:
     return nbytes
 
 
+def npu_is_cr(npu: str | None = None) -> bool:
+    """Whether the target NPU belongs to the RBLN-CR family.
+
+    Falls back to the locally attached device when `npu` is None; returns False when
+    neither is available (CA-compatible behavior).
+    """
+    npu = npu or (rebel.get_npu_name(0) if rebel.npu_is_available(0) else None)
+    return normalize_npu(npu).startswith("RBLN-CR") if npu else False
+
+
 def normalize_npu(npu: str) -> str:
     """Normalize the NPU string by removing the form factor."""
     match = re.match(r"(RBLN-CA|RBLN-CR)(\d+)", npu)

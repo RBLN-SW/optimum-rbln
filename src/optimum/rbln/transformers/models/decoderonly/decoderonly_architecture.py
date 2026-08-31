@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import math
-import os
 from typing import TYPE_CHECKING, Optional
 
 import torch
@@ -31,11 +30,6 @@ if TYPE_CHECKING:
 
 
 logger = logging.get_logger(__name__)
-
-
-def _is_batch_attn_opt_enabled() -> bool:
-    """Check whether VLLM_RBLN_BATCH_ATTN_OPT env var is set to enable batched dynamic decode."""
-    return os.environ.get("VLLM_RBLN_BATCH_ATTN_OPT", "0") == "1"
 
 
 class DecoderOnlyWrapper(nn.Module):
@@ -523,14 +517,16 @@ class DecoderOnlyModel(nn.Module):
             hidden_states = hidden_states + position_embeds
             cos, sin = None, None
 
-        # Decide whether to take the batched dynamic decode path (VLLM_RBLN_BATCH_ATTN_OPT).
-        # When the env var is set, rebel-compiler is also configured (via Config.cpp reading
-        # the same env var) to dispatch `apply_batch_decode_transform` for batch_size > 1
-        # decode ops — that transform asserts `seq` is [B, 1] and generates the attn_mask /
-        # valid_batch / blk_offset internally, so we must pass [B, 1] seq AND no mask here.
-        # Outside this mode we keep the partition-unrolled `seq` shape ([B, P]).
+        # Decide whether to take the batched dynamic decode path (rbln_config.use_batch_attn_opt,
+        # resolved from the target NPU at compile time — mandatory on the RBLN-CR family). In this
+        # mode rebel-compiler dispatches `apply_batch_decode_transform` for batch_size > 1 decode
+        # ops — that transform asserts `seq` is [B, 1] and generates the attn_mask / valid_batch /
+        # blk_offset internally, so we must pass [B, 1] seq AND no mask here. Outside this mode we
+        # keep the partition-unrolled `seq` shape ([B, P]).
         batch_size = inputs_embeds.shape[0]
-        is_batch_attn_opt_decode = _is_batch_attn_opt_enabled() and self.phase == "decode" and batch_size > 1
+        is_batch_attn_opt_decode = (
+            bool(self.rbln_config.use_batch_attn_opt) and self.phase == "decode" and batch_size > 1
+        )
 
         # Get sequence positions for flash attention.
         # The compiler uses `seq` as the cache position to compute block index and offset
@@ -1029,9 +1025,9 @@ class AttentionOp(nn.Module):
             k_scale: Scale applied to key
             v_scale: Scale applied to value
             is_batch_attn_opt_decode: If True, dispatch the batched dynamic decode path
-                (VLLM_RBLN_BATCH_ATTN_OPT). `seq_position` is then [B, 1] (raw cache
-                position per batch) and a 2D mask is force-attached so the kernel can
-                handle per-batch attention without graph-level partition unrolling.
+                (rbln_config.use_batch_attn_opt). `seq_position` is then [B, 1] (raw cache
+                position per batch) and no mask is forwarded — the compiler transform
+                generates it, handling per-batch attention without partition unrolling.
             s_aux: Auxiliary states for attention sinks
 
         Returns:

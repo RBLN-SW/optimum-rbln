@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import inspect
+import os
 from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Union
@@ -27,6 +28,7 @@ from transformers.modeling_outputs import BaseModelOutputWithPast
 from ....configuration_utils import RBLNCompileConfig
 from ....modeling import RBLNModel
 from ....utils.logging import get_logger
+from ....utils.runtime_utils import npu_is_cr
 from ...cache_utils import FullAttentionKVCacheMeta, SlidingWindowAttentionKVCacheMeta
 from ...modeling_attention_utils import (
     RBLNDecoderOnlyFlashAttentionMixin,
@@ -39,7 +41,7 @@ from ...utils.rbln_quantization import get_quantized_model
 from .configuration_decoderonly import RBLNDecoderOnlyModelConfig, RBLNDecoderOnlyModelForCausalLMConfig
 from .decoderonly_architecture import DecoderOnlyWrapper
 from .decoderonly_runtime_utils import RBLNPageTableManager, RBLNRuntimeModel
-from .generation_decoderonly import RBLNDecoderOnlyGenerationMixin, _is_batch_attn_opt_enabled
+from .generation_decoderonly import RBLNDecoderOnlyGenerationMixin
 
 
 logger = get_logger()
@@ -238,10 +240,16 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
         quantization=None,
         phase: str = "prefill",
     ) -> rebel.RBLNCompiledModel:
+        # rebel-compiler currently keys `apply_batch_decode_transform` off this env var
+        # (Config.cpp). Force it to match the pinned config for the duration of the compile so
+        # the traced graph and the compiler transform can never disagree, whatever the caller's
+        # environment says.
+        batch_attn_env = os.environ.get("VLLM_RBLN_BATCH_ATTN_OPT")
         try:
             wrapped_model.phase = phase
             if quantization:
                 quantization.maybe_set_quantization_env()
+            os.environ["VLLM_RBLN_BATCH_ATTN_OPT"] = "1" if rbln_config.use_batch_attn_opt else "0"
             original_linear = torch.nn.functional.linear
             torch.nn.functional.linear = torch.ops.rbln_custom_ops.linear
             compiled_model = cls.compile(
@@ -257,6 +265,10 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
             torch.nn.functional.linear = original_linear
             if quantization:
                 quantization.maybe_reset_quantization_env()
+            if batch_attn_env is None:
+                os.environ.pop("VLLM_RBLN_BATCH_ATTN_OPT", None)
+            else:
+                os.environ["VLLM_RBLN_BATCH_ATTN_OPT"] = batch_attn_env
 
     @classmethod
     def _get_compile_context(cls, compile_config: RBLNCompileConfig, example_inputs: list[torch.Tensor]):
@@ -563,6 +575,12 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
         # `validate_sliding_window` below depends on.
         rbln_config = cls._update_attention_config(model, model_config, rbln_config)
 
+        # The batched dynamic decode transform is mandatory on the RBLN-CR family. It changes
+        # the compiled decode graph, so the resolved value must be pinned here (and serialized)
+        # rather than read from the environment at request time.
+        if rbln_config.use_batch_attn_opt is None:
+            rbln_config.use_batch_attn_opt = npu_is_cr(rbln_config.npu)
+
         layer_types = getattr(model_config, "layer_types", None)
         all_full_attention = layer_types is not None and all(t == "full_attention" for t in layer_types)
 
@@ -792,30 +810,33 @@ class RBLNDecoderOnlyModelForCausalLM(RBLNDecoderOnlyModel, RBLNDecoderOnlyGener
         lora_int_ids = [available_adapters[name] for name in adapter_names]
         self.set_lora_int_ids(torch.tensor(lora_int_ids, dtype=torch.int32))
 
-    def _maybe_sort_inputs_for_batch_attn_opt(self, model_inputs: dict) -> torch.Tensor | None:
-        """Sort batch-indexed inputs in-place for the VLLM_RBLN_BATCH_ATTN_OPT path.
+    def _maybe_sort_inputs_for_batch_attn_opt(
+        self, model_inputs: dict, inputs_sorted: bool = False
+    ) -> torch.Tensor | None:
+        """Sort batch-indexed inputs in-place for the batched dynamic decode kernel.
 
-        The batched dynamic decode kernel expects per-batch sequences sorted by length
-        (descending) so its per-partition early-exit contract is honored. The KV cache
-        on device is laid out in that sorted order starting from the prefill call
-        (`cache_position is None`) and the same permutation must be reused for every
-        subsequent decode call. The inverse is then applied to the outputs in
-        `_maybe_unsort_outputs_for_batch_attn_opt` so external callers never see
-        the sorted device-side state.
+        The kernel expects per-batch sequences sorted by length (descending) so its
+        per-partition early-exit contract is honored. The KV cache on device is laid out
+        in that sorted order starting from the prefill call (`cache_position is None`)
+        and the same permutation must be reused for every subsequent decode call. The
+        inverse is then applied to the outputs in `_maybe_unsort_outputs_for_batch_attn_opt`
+        so external callers never see the sorted device-side state.
 
         Args:
             model_inputs: dict of {name: Tensor or None} batch-indexed inputs. Mutated
                 in place to contain sorted tensors when sorting is applied.
+            inputs_sorted: The caller guarantees inputs are already in the sorted order
+                (e.g. the `generate()` fast path); skip sorting and unsorting entirely.
 
         Returns:
-            unsort_idx, or None when no sorting was applied (single-batch / opt disabled).
+            unsort_idx, or None when no sorting was applied.
         """
         shape_src = model_inputs.get("inputs_embeds")
         if shape_src is None:
             shape_src = model_inputs.get("input_ids")
-        if shape_src is None or shape_src.shape[0] <= 1 or not _is_batch_attn_opt_enabled():
+        if inputs_sorted or shape_src is None or shape_src.shape[0] <= 1 or not self.rbln_config.use_batch_attn_opt:
             # Clear any cached permutation from a prior generation so a stale index can't
-            # leak into a subsequent decode call with a different (single-batch / opt-off) shape.
+            # leak into a subsequent decode call with a different shape or sortedness.
             self._rbln_sort_idx = None
             self._rbln_unsort_idx = None
             return None
@@ -830,16 +851,25 @@ class RBLNDecoderOnlyModelForCausalLM(RBLNDecoderOnlyModel, RBLNDecoderOnlyGener
         else:
             sort_idx = getattr(self, "_rbln_sort_idx", None)
             unsort_idx = getattr(self, "_rbln_unsort_idx", None)
-            # Defensive: if decode batch size diverges from the prefill-time sort, the cached
-            # permutation can't apply. Skip sorting rather than silently corrupting outputs.
-            if sort_idx is not None and sort_idx.shape[0] != shape_src.shape[0]:
-                sort_idx = None
-                unsort_idx = None
-
-        if sort_idx is None:
-            return None
+            # Sorting is a correctness requirement of the batched dynamic decode kernel: a
+            # decode call whose permutation is unknown would silently read the KV cache in
+            # the wrong order, so fail loudly instead.
+            if sort_idx is None:
+                raise RuntimeError(
+                    "Batched decode requires the batch permutation established at prefill. Run the "
+                    "prefill step through forward() first, or pass `inputs_sorted=True` with inputs "
+                    "already sorted by sequence length (descending, matching the KV cache layout)."
+                )
+            if sort_idx.shape[0] != shape_src.shape[0]:
+                raise RuntimeError(
+                    f"Decode batch size ({shape_src.shape[0]}) does not match the batch size "
+                    f"sorted at prefill ({sort_idx.shape[0]}); the cached permutation cannot apply."
+                )
 
         for k, v in model_inputs.items():
+            # attention_mask is unused by the decode runtime; skip its per-step copy.
+            if not is_prefill and k == "attention_mask":
+                continue
             if isinstance(v, torch.Tensor) and v.dim() >= 1:
                 model_inputs[k] = v.index_select(0, sort_idx)
 
@@ -881,6 +911,7 @@ class RBLNDecoderOnlyModelForCausalLM(RBLNDecoderOnlyModel, RBLNDecoderOnlyGener
         lora_int_ids: torch.Tensor | None = None,
         return_dict: torch.Tensor | None = None,
         output_hidden_states: bool | None = None,
+        inputs_sorted: bool = False,
         **kwargs,
     ) -> tuple[torch.FloatTensor]:
         # Forward method for the RBLN-optimized model, designed for integration with the HuggingFace generate API.
@@ -917,7 +948,7 @@ class RBLNDecoderOnlyModelForCausalLM(RBLNDecoderOnlyModel, RBLNDecoderOnlyGener
             "token_type_ids": token_type_ids,
             "lora_int_ids": lora_int_ids,
         }
-        unsort_idx = self._maybe_sort_inputs_for_batch_attn_opt(batch_inputs)
+        unsort_idx = self._maybe_sort_inputs_for_batch_attn_opt(batch_inputs, inputs_sorted=inputs_sorted)
         input_ids = batch_inputs["input_ids"]
         inputs_embeds = batch_inputs["inputs_embeds"]
         cache_position = batch_inputs["cache_position"]

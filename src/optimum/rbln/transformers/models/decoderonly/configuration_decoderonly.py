@@ -65,6 +65,7 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
         logits_to_keep: int | None = None,
         output_hidden_states: bool | None = None,
         cache_metas: list["CacheMeta"] | None = None,
+        use_batch_attn_opt: bool | None = None,
         **kwargs: Any,
     ):
         """
@@ -128,6 +129,12 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
                 Defaults to 0 if DecoderOnlyModel is used, 1 if DecoderOnlyModelForCausalLM is used.
             output_hidden_states (bool | None): Whether to output the hidden states of the decoder. Defaults to False.
             cache_metas (list["CacheMeta"] | None): The metadata for the cache tensors. Handled internally if not provided. Defaults to None.
+            use_batch_attn_opt (bool | None): Whether to compile the decode graph for the batched
+                dynamic decode attention kernel. That kernel requires batch inputs sorted by
+                sequence length (descending); the runtime applies the sort transparently. When
+                unset, it is resolved at compile time from the target NPU: True on the RBLN-CR
+                family (where the transform is mandatory), False otherwise. This changes the
+                compiled graph, so the resolved value is serialized with the model.
             kwargs: Additional arguments passed to the parent RBLNModelConfig.
 
         Raises:
@@ -252,6 +259,7 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
             raise NotImplementedError("`logits_to_keep` > 1 is currently not supported for RBLN models.")
 
         self.output_hidden_states = output_hidden_states or False
+        self.use_batch_attn_opt = use_batch_attn_opt
 
         self.decoder_batch_sizes = None
         if "decode" in self.phases:

@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import os
 from typing import TYPE_CHECKING, Any
 
 import torch
@@ -25,14 +24,55 @@ if TYPE_CHECKING:
     from ...modeling_outputs import RBLNDecoderOnlyOutput
 
 
-def _is_batch_attn_opt_enabled() -> bool:
-    """Check whether VLLM_RBLN_BATCH_ATTN_OPT env var is set to enable batched dynamic decode."""
-    return os.environ.get("VLLM_RBLN_BATCH_ATTN_OPT", "0") == "1"
+def expand_batch_perm_idx(perm_idx: torch.Tensor, num_rows: int) -> torch.Tensor:
+    """Expand a batch permutation to `num_rows = batch * n` rows grouped per sample.
+
+    HF generation expands inputs with repeat_interleave (e.g. `num_return_sequences`),
+    keeping each sample's rows contiguous, so the permutation expands group-wise.
+    """
+    batch_size = perm_idx.shape[0]
+    n = num_rows // batch_size
+    if n == 1:
+        return perm_idx
+    return (perm_idx[:, None] * n + torch.arange(n, device=perm_idx.device)).reshape(-1)
+
+
+def unsort_generate_outputs(
+    outputs: ModelOutput | torch.Tensor, unsort_idx: torch.Tensor
+) -> ModelOutput | torch.Tensor:
+    """Apply the inverse batch permutation to `generate()` outputs, for any decoding strategy."""
+    if isinstance(outputs, torch.Tensor):
+        return outputs.index_select(0, expand_batch_perm_idx(unsort_idx, outputs.shape[0]))
+
+    num_rows = outputs.sequences.shape[0]
+    idx = expand_batch_perm_idx(unsort_idx, num_rows)
+
+    def _unsort(value):
+        if value is None:
+            return None
+        if isinstance(value, (tuple, list)):
+            reordered = [_unsort(v) for v in value]
+            return tuple(reordered) if isinstance(value, tuple) else reordered
+        if isinstance(value, torch.Tensor) and value.dim() >= 1 and value.shape[0] == num_rows:
+            return value.index_select(0, idx)
+        return value
+
+    for field in ("sequences", "scores", "logits", "attentions", "hidden_states"):
+        value = getattr(outputs, field, None)
+        if value is not None:
+            setattr(outputs, field, _unsort(value))
+    return outputs
 
 
 class RBLNDecoderOnlyGenerationMixin(GenerationMixin):
     _supports_cache_class = False  # Needed for GenerationMixin
     _is_stateful = False  # Needed for GenerationMixin
+    # Whether generate() may sort the raw inputs upfront for the batched dynamic decode kernel.
+    # Multimodal subclasses must set this to False: their extra inputs (flattened patch layouts,
+    # module-level per-sample state, ...) cannot be permuted by a plain batch-dim index_select,
+    # so they sort inside their own forward() instead.
+    _supports_generate_batch_sort = True
+    _generate_batch_sortable_kwargs = ("attention_mask", "inputs_embeds", "token_type_ids", "lora_int_ids")
 
     def _reorder_cache(self, past_key_values, beam_idx):
         raise NotImplementedError
@@ -44,13 +84,14 @@ class RBLNDecoderOnlyGenerationMixin(GenerationMixin):
         attention_mask: torch.LongTensor | None = None,
         inputs_embeds: torch.Tensor | None = None,
         padded_cache_lengths: torch.Tensor | None = None,
+        inputs_sorted: bool = False,
         **kwargs,
     ):
-        # NOTE: The batched dynamic decode path (VLLM_RBLN_BATCH_ATTN_OPT=1) requires inputs to
-        # be sorted by sequence length on the device side so the kernel's per-partition early-exit
-        # contract is respected. That sort is applied transparently inside `forward()` (and its
-        # inverse is applied to the outputs) so all callers — including HF GenerationMixin and
-        # direct prefill/decode orchestrators — can keep using inputs in their original order.
+        # NOTE: The batched dynamic decode kernel (rbln_config.use_batch_attn_opt) requires batch
+        # inputs sorted by sequence length on the device side so its per-partition early-exit
+        # contract is respected. generate() sorts the whole generation upfront and marks it with
+        # `inputs_sorted=True` (zero per-step cost); a direct forward() call without that marker
+        # is sorted/unsorted transparently inside forward() itself.
         model_inputs = {}
         is_prefill_phase = generate_idx is None
 
@@ -91,6 +132,7 @@ class RBLNDecoderOnlyGenerationMixin(GenerationMixin):
                 "generate_idx": generate_idx,
                 "position_ids": position_ids,
                 "padded_cache_lengths": padded_cache_lengths,
+                "inputs_sorted": inputs_sorted,
             }
         )
 
@@ -131,4 +173,35 @@ class RBLNDecoderOnlyGenerationMixin(GenerationMixin):
         if attention_mask is not None:
             kwargs["attention_mask"] = attention_mask
 
-        return super().generate(input_ids, **kwargs)
+        unsort_idx = None
+        batch_input = input_ids if input_ids is not None else kwargs.get("inputs_embeds")
+        if (
+            self._supports_generate_batch_sort
+            and self.rbln_config.use_batch_attn_opt
+            and batch_input is not None
+            and batch_input.shape[0] > 1
+        ):
+            # Sort the whole generation upfront: the HF loop then runs in the sorted order the
+            # batched dynamic decode kernel requires, with zero per-step cost, and forward() is
+            # told to trust the given order via `inputs_sorted`. The inverse permutation is
+            # applied to the returned outputs below, covering every decoding strategy.
+            mask = kwargs.get("attention_mask")
+            lengths = (
+                mask.sum(dim=-1)
+                if mask is not None
+                else torch.full((batch_input.shape[0],), batch_input.shape[1], dtype=torch.long)
+            )
+            sort_idx = torch.argsort(lengths, descending=True)
+            unsort_idx = torch.argsort(sort_idx)
+            if input_ids is not None:
+                input_ids = input_ids.index_select(0, sort_idx)
+            for name in self._generate_batch_sortable_kwargs:
+                value = kwargs.get(name)
+                if isinstance(value, torch.Tensor) and value.dim() >= 1:
+                    kwargs[name] = value.index_select(0, sort_idx)
+            kwargs["inputs_sorted"] = True
+
+        outputs = super().generate(input_ids, **kwargs)
+        if unsort_idx is not None:
+            outputs = unsort_generate_outputs(outputs, unsort_idx)
+        return outputs
