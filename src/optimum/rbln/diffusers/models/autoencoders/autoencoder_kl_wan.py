@@ -565,6 +565,19 @@ class RBLNAutoencoderKLWan(RBLNModel):
     hf_library_name = "diffusers"
     _rbln_config_class = RBLNAutoencoderKLWanConfig
 
+
+    @classmethod
+    def _reconstruct_model_if_needed(cls, model: "PreTrainedModel"):
+        # The upstream Wan VAE ships fp32 weights only; normalize the module to fp32 even when
+        # the pipeline was loaded in a lower dtype.
+        if model.dtype != torch.float32:
+            logger.warning(
+                f"RBLNAutoencoderKLWan was handed a {model.dtype} module; casting it to float32 "
+                "for compilation, as the upstream Wan VAE ships fp32 weights only."
+            )
+            model = model.to(torch.float32)
+        return super()._reconstruct_model_if_needed(model)
+
     def __post_init__(self, **kwargs):
         super().__post_init__(**kwargs)
         self.temperal_downsample = self.config.temperal_downsample
@@ -756,7 +769,7 @@ class RBLNAutoencoderKLWan(RBLNModel):
                         rbln_config.height,
                         rbln_config.width,
                     ],
-                    "float32",
+                    rbln_config.dtype,
                 ),
             ]
             CHUNK_SIZE = 4
@@ -770,7 +783,7 @@ class RBLNAutoencoderKLWan(RBLNModel):
                         rbln_config.height,
                         rbln_config.width,
                     ],
-                    "float32",
+                    rbln_config.dtype,
                 ),
             ]
             # Caches are shared device-resident static DRAM across E0/EN (idx 1..), written by
@@ -784,19 +797,19 @@ class RBLNAutoencoderKLWan(RBLNModel):
                 if i == 0:
                     # idx 0 is runtime I/O (handed off between chunks), NOT static DRAM -> keep it
                     # channel-first (n,c,d,h,w); the W-scramble only affects the cache_update/static path.
-                    vae_enc_0_input_info.append((f"feat_cache_{i}", [n0, c0, d0, h0, w0], "float32"))
-                    vae_enc_1_input_info.append((f"feat_cache_{i}", [n1, c1, d1, h1, w1], "float32"))
+                    vae_enc_0_input_info.append((f"feat_cache_{i}", [n0, c0, d0, h0, w0], rbln_config.dtype))
+                    vae_enc_1_input_info.append((f"feat_cache_{i}", [n1, c1, d1, h1, w1], rbln_config.dtype))
                 else:
                     vae_enc_0_input_info.append(
-                        (f"feat_cache_{i}", _cache_input_shape(shape_0), "float32")
+                        (f"feat_cache_{i}", _cache_input_shape(shape_0), rbln_config.dtype)
                     )  # (n,c,d,h,w) -> selected layout
                     vae_enc_1_input_info.append(
-                        (f"feat_cache_{i}", _cache_input_shape(shape_1), "float32")
+                        (f"feat_cache_{i}", _cache_input_shape(shape_1), rbln_config.dtype)
                     )  # (n,c,d,h,w) -> selected layout
 
             if _EN_WAR:
                 # runtime-0.0 scalar feeding the EN write-after-read edge (see _EN_WAR). Not static.
-                vae_enc_1_input_info.append(("war_zero", [1], "float32"))
+                vae_enc_1_input_info.append(("war_zero", [1], rbln_config.dtype))
 
             compile_cfgs.append(RBLNCompileConfig(compiled_model_name="encoder_0", input_info=vae_enc_0_input_info))
             compile_cfgs.append(RBLNCompileConfig(compiled_model_name="encoder_n", input_info=vae_enc_1_input_info))
@@ -817,27 +830,27 @@ class RBLNAutoencoderKLWan(RBLNModel):
         # channels, e.g. 24). The VAE decoder conv_in expects z_dim channels.
         z_dim = getattr(model_config, "z_dim", rbln_config.num_channels_latents)
         vae_dec_0_input_info = [
-            ("z", [batch_size, z_dim, 1, latent_height, latent_width], "float32"),
+            ("z", [batch_size, z_dim, 1, latent_height, latent_width], rbln_config.dtype),
         ]
         vae_dec_n_input_info = [
-            ("z", [batch_size, z_dim, 1, latent_height, latent_width], "float32"),
+            ("z", [batch_size, z_dim, 1, latent_height, latent_width], rbln_config.dtype),
         ]
         for i, (shape_0, shape_n) in enumerate(zip(dec_cache_0, dec_cache_n, strict=False)):
             n0, c0, d0, h0, w0 = shape_0
             nn, cn, dn, hn, wn = shape_n
             if i > 0:  # D0 generates idx 0 (runtime output); only idx 1.. are D0 inputs (static, chw)
                 vae_dec_0_input_info.append(
-                    (f"feat_cache_{i}", _cache_input_shape(shape_0), "float32")
+                    (f"feat_cache_{i}", _cache_input_shape(shape_0), rbln_config.dtype)
                 )  # (n,c,d,h,w) -> selected layout
                 vae_dec_n_input_info.append(
-                    (f"feat_cache_{i}", _cache_input_shape(shape_n), "float32")
+                    (f"feat_cache_{i}", _cache_input_shape(shape_n), rbln_config.dtype)
                 )  # (n,c,d,h,w) -> selected layout
             else:  # idx 0 is runtime I/O (DN input) -> channel-first (n,c,d,h,w), no scramble concern
-                vae_dec_n_input_info.append((f"feat_cache_{i}", [nn, cn, dn, hn, wn], "float32"))
+                vae_dec_n_input_info.append((f"feat_cache_{i}", [nn, cn, dn, hn, wn], rbln_config.dtype))
 
         if _EN_WAR:
             # runtime-0.0 scalar feeding the DN write-after-read edge (see _EN_WAR). Not static.
-            vae_dec_n_input_info.append(("war_zero", [1], "float32"))
+            vae_dec_n_input_info.append(("war_zero", [1], rbln_config.dtype))
 
         compile_cfgs.append(RBLNCompileConfig(compiled_model_name="decoder_0", input_info=vae_dec_0_input_info))
         compile_cfgs.append(RBLNCompileConfig(compiled_model_name="decoder_n", input_info=vae_dec_n_input_info))
@@ -920,10 +933,11 @@ class RBLNAutoencoderKLWan(RBLNModel):
         # handed off as runtime tensors between chunks (channel-first). post_quant_conv (1x1x1 pointwise)
         # is applied here on the host, before the loop -- it cannot be folded into DN (see
         # _VAEWanDecoder0), and being pointwise it commutes with the causal cache concat downstream.
+        z = z.to(getattr(torch, self.rbln_config.dtype))
         if self.post_quant_conv is not None:
             z = self.post_quant_conv.to(z.dtype)(z)
         _, _, num_frame, _, _ = z.shape
-        war_kw = {"war_zero": torch.zeros(1, dtype=torch.float32)} if _EN_WAR else {}
+        war_kw = {"war_zero": torch.zeros(1, dtype=getattr(torch, self.rbln_config.dtype))} if _EN_WAR else {}
         outs = []
         feat_cache_0 = None
         for i in range(num_frame):
@@ -945,12 +959,13 @@ class RBLNAutoencoderKLWan(RBLNModel):
         # frame 0 (chunk E0), then each subsequent 4 input frames -> 1 latent frame (chunk EN). The idx-0
         # conv cache (feat_cache_0) is handed off as a runtime tensor between chunks; idx 1.. persist on
         # device via shared static DRAM (rbln_cache_update). quant_conv is folded into each chunk's graph.
+        x = x.to(getattr(torch, self.rbln_config.dtype))
         if self.config.patch_size is not None:
             x = patchify(x, patch_size=self.config.patch_size)
 
         _, _, num_frame, _, _ = x.shape
         iter_ = 1 + (num_frame - 1) // 4
-        war_kw = {"war_zero": torch.zeros(1, dtype=torch.float32)} if _EN_WAR else {}
+        war_kw = {"war_zero": torch.zeros(1, dtype=getattr(torch, self.rbln_config.dtype))} if _EN_WAR else {}
         outs = []
         feat_cache_0 = None
         for i in range(iter_):
