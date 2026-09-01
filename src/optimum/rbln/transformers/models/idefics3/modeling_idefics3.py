@@ -36,7 +36,7 @@ from ....configuration_utils import RBLNCompileConfig, RBLNModelConfig
 from ....modeling import RBLNModel
 from ....utils.runtime_utils import RBLNPytorchRuntime
 from ...modeling_outputs import RBLNDecoderOnlyOutput
-from ..decoderonly.generation_decoderonly import RBLNDecoderOnlyGenerationMixin
+from ...utils.generation_multimodal import RBLNMultimodalBatchSortMixin
 
 
 if TYPE_CHECKING:
@@ -185,7 +185,7 @@ class RBLNIdefics3VisionTransformer(RBLNModel):
             return BaseModelOutput(last_hidden_state=last_hidden_state)
 
 
-class RBLNIdefics3ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMixin):
+class RBLNIdefics3ForConditionalGeneration(RBLNModel, RBLNMultimodalBatchSortMixin):
     """
     RBLNIdefics3ForConditionalGeneration is a multi-modal model that integrates vision and language processing capabilities,
     optimized for RBLN NPUs. It is designed for conditional generation tasks that involve both image and text inputs.
@@ -227,6 +227,20 @@ class RBLNIdefics3ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationM
     auto_model_class = AutoModelForImageTextToText
     _rbln_submodules = [{"name": "vision_model"}, {"name": "text_model"}]
     _rbln_submodule_prefix = "model"
+    _lm_attr_name = "text_model"
+    # pixel_values (B, num_images, C, H, W) and pixel_attention_mask (B, num_images, H, W) are batch-first
+    _generate_batch_sortable_kwargs = RBLNMultimodalBatchSortMixin._generate_batch_sortable_kwargs + (
+        "pixel_values",
+        "pixel_attention_mask",
+    )
+    # image_hidden_states is (num_images, seq, dim); each patch image is one placeholder run
+    _image_indexed_kwargs = ("image_hidden_states",)
+
+    @property
+    def _tokens_per_image(self) -> int | None:
+        # placeholder tokens per patch image, mirroring the connector output length
+        vision_config = self.config.vision_config
+        return (vision_config.image_size // vision_config.patch_size) ** 2 // self.config.scale_factor**2
 
     def __getattr__(self, __name: str) -> Any:
         def redirect(func):
@@ -309,6 +323,7 @@ class RBLNIdefics3ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationM
         pixel_attention_mask=None,
         image_hidden_states=None,
         generate_idx=None,
+        inputs_sorted=False,
         **kwargs,
     ):
         is_prefill_phase = generate_idx is None
@@ -348,6 +363,7 @@ class RBLNIdefics3ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationM
                 "image_hidden_states": image_hidden_states,
                 "cache_position": cache_position,
                 "generate_idx": generate_idx,
+                "inputs_sorted": inputs_sorted,
             }
         )
         return model_inputs
@@ -465,8 +481,10 @@ class RBLNIdefics3ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationM
         cache_position: torch.Tensor = None,
         generate_idx: torch.Tensor | None = None,
         return_dict: bool | None = None,
+        inputs_sorted: bool = False,
         **kwargs,
     ) -> tuple | Idefics3CausalLMOutputWithPast:
+        self._require_sorted_batch_inputs(inputs_embeds if inputs_embeds is not None else input_ids, inputs_sorted)
         # Prefill
         if cache_position is None:
             inputs_embeds = self._preprocess_prefill(
