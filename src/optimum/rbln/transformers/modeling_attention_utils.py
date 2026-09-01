@@ -10,6 +10,8 @@ from ..utils.runtime_utils import get_available_dram_per_chiplet, parse_byte_siz
 
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable
+
     from .models.decoderonly.configuration_decoderonly import RBLNDecoderOnlyModelForCausalLMConfig
 
 
@@ -134,15 +136,60 @@ def align_2MB(x: int) -> int:
     return align(x, 2**21)
 
 
-def get_alloc_memory_by_key(compiled_models: dict[str, rebel.RBLNCompiledModel]) -> dict[str, int]:
-    alloc_memory_by_key = defaultdict(int)
-    # Get the actual memory allocation of each node by key
-    for compiled_model in compiled_models.values():
-        alloc_per_node_by_key = compiled_model.get_alloc_per_node_by_key()
-        for key, memory_per_node in alloc_per_node_by_key.items():
-            alloc_memory_by_key[key] += sum(memory_per_node)
+def _joint_report(compiled_models: "Iterable[rebel.RBLNCompiledModel]", api_name: str):
+    """The compiler's joint allocation report for `compiled_models`, or None to sum per model.
 
-    return alloc_memory_by_key
+    Models compiled in one `CompileContext` share their weight pool, and each model's own
+    report includes the pool it needs resident, so adding the reports up charges one device
+    allocation once per model. The compiler's set-based API runs a single dedup over the
+    whole set instead. It returns None when the compiler is too old to have the API, and when
+    the artifacts turn out to come from different compile contexts — those share nothing, so
+    summing them per model is already the right answer.
+    """
+    api = getattr(rebel, api_name, None)
+    if api is None:
+        return None
+    try:
+        return api(compiled_models)
+    except RuntimeError:
+        return None
+
+
+def alloc_per_node_by_key(compiled_models: "Iterable[rebel.RBLNCompiledModel]") -> dict[str, list[int]]:
+    """Device memory the models allocate together on each NPU, by memory key."""
+    compiled_models = list(compiled_models)
+    joint = _joint_report(compiled_models, "exp_get_alloc_per_node_by_key")
+    if joint is not None:
+        return joint
+
+    total: dict[str, list[int]] = {}
+    for compiled_model in compiled_models:
+        for key, sizes_at_node in compiled_model.get_alloc_per_node_by_key().items():
+            accumulated = total.setdefault(key, [0] * len(sizes_at_node))
+            for node_id, size in enumerate(sizes_at_node):
+                accumulated[node_id] += size
+    return total
+
+
+def alloc_per_chiplet_by_key(compiled_models: "Iterable[rebel.RBLNCompiledModel]") -> dict[str, list[list[int]]]:
+    """Per-chiplet counterpart of `alloc_per_node_by_key`, indexed [node_id][chiplet_id]."""
+    compiled_models = list(compiled_models)
+    joint = _joint_report(compiled_models, "exp_get_alloc_per_chiplet_by_key")
+    if joint is not None:
+        return joint
+
+    total: dict[str, list[list[int]]] = {}
+    for compiled_model in compiled_models:
+        for key, sizes_at_node in compiled_model.get_alloc_per_chiplet_by_key().items():
+            accumulated = total.setdefault(key, [[0] * len(sizes_at_chiplet) for sizes_at_chiplet in sizes_at_node])
+            for node_id, sizes_at_chiplet in enumerate(sizes_at_node):
+                for chiplet_id, size in enumerate(sizes_at_chiplet):
+                    accumulated[node_id][chiplet_id] += size
+    return total
+
+
+def get_alloc_memory_by_key(compiled_models: dict[str, rebel.RBLNCompiledModel]) -> dict[str, int]:
+    return {key: sum(sizes_at_node) for key, sizes_at_node in alloc_per_node_by_key(compiled_models.values()).items()}
 
 
 def format_byte_size(nbytes: int) -> str:
@@ -256,14 +303,13 @@ class RBLNDecoderOnlyFlashAttentionMixin:
         alloc_without_dram: dict[tuple[int, int], int] = defaultdict(int)
         chiplets: set[tuple[int, int]] = set()
 
-        for compiled_model in compiled_models.values():
-            for key, alloc_per_chiplet in compiled_model.get_alloc_per_chiplet_by_key().items():
-                if key == "DramTensor":
-                    continue
-                for node_id, sizes_at_chiplet in enumerate(alloc_per_chiplet):
-                    for chiplet_id, size in enumerate(sizes_at_chiplet):
-                        alloc_without_dram[(node_id, chiplet_id)] += size
-                        chiplets.add((node_id, chiplet_id))
+        for key, alloc_per_chiplet in alloc_per_chiplet_by_key(compiled_models.values()).items():
+            if key == "DramTensor":
+                continue
+            for node_id, sizes_at_chiplet in enumerate(alloc_per_chiplet):
+                for chiplet_id, size in enumerate(sizes_at_chiplet):
+                    alloc_without_dram[(node_id, chiplet_id)] += size
+                    chiplets.add((node_id, chiplet_id))
 
         # kvcache_tensor_sizes[key][node_id][chiplet_id] = alloc_size
         kvcache_tensor_sizes: dict[str, list[list[int]]] = compiled_models["prefill"].exp_get_dram_tensor_sizes()
