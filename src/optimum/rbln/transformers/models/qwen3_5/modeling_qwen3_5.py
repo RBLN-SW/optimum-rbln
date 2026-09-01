@@ -36,9 +36,9 @@ from ....modeling_rope_utils import build_qwen_mrope_lookup, np_cos, np_sin, qwe
 from ....utils import logging
 from ...cache_utils import FullAttentionKVCacheMeta, LinearAttentionCacheMeta
 from ...modeling_outputs import RBLNDecoderOnlyOutput, _validate_output_hidden_states
+from ...utils.generation_multimodal import RBLNVisionBatchSortMixin
 from ..decoderonly.decoderonly_runtime_utils import RBLNPageTableManager
 from ..decoderonly.modeling_decoderonly import RBLNDecoderOnlyModel, RBLNDecoderOnlyModelForCausalLM
-from ..qwen2_vl.modeling_qwen2_vl import RBLNVisionBatchSortMixin
 from .configuration_qwen3_5 import (
     RBLNQwen3_5ForConditionalGenerationConfig,  # noqa: F401
     RBLNQwen3_5ModelConfig,  # noqa: F401
@@ -912,7 +912,7 @@ class RBLNQwen3_5ForConditionalGeneration(RBLNVisionBatchSortMixin, RBLNQwen3_5M
         inputs_sorted: bool = False,
         **kwargs,
     ) -> RBLNDecoderOnlyOutput:
-        self._check_batch_inputs_sorted(input_ids if input_ids is not None else inputs_embeds, inputs_sorted)
+        self._require_sorted_batch_inputs(input_ids if input_ids is not None else inputs_embeds, inputs_sorted)
         output_hidden_states = _validate_output_hidden_states(output_hidden_states, self.rbln_config)
         text_config = self.config.get_text_config()
         if cache_position is None:  # prefill

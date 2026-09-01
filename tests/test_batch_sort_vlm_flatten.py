@@ -6,11 +6,9 @@ import torch
 from optimum.rbln.transformers.models.decoderonly.generation_decoderonly import RBLNDecoderOnlyGenerationMixin
 from optimum.rbln.transformers.models.exaone4_5.modeling_exaone4_5 import RBLNExaone4_5_ForConditionalGeneration
 from optimum.rbln.transformers.models.qwen2_5_vl.modeling_qwen2_5_vl import RBLNQwen2_5_VLForConditionalGeneration
-from optimum.rbln.transformers.models.qwen2_vl.modeling_qwen2_vl import (
-    RBLNQwen2VLForConditionalGeneration,
-    RBLNVisionBatchSortMixin,
-)
+from optimum.rbln.transformers.models.qwen2_vl.modeling_qwen2_vl import RBLNQwen2VLForConditionalGeneration
 from optimum.rbln.transformers.models.qwen3_vl.modeling_qwen3_vl import RBLNQwen3VLForConditionalGeneration
+from optimum.rbln.transformers.utils.generation_multimodal import RBLNVisionBatchSortMixin
 
 
 VS, IMG, VID = 90, 91, 92
@@ -210,17 +208,17 @@ def test_gate_off_noop():
     assert "inputs_sorted" not in kwargs
 
 
-def test_check_batch_inputs_sorted_guard():
+def test_require_sorted_batch_inputs_guard():
     model = _make_model(RBLNQwen2VLForConditionalGeneration)
     batch = torch.zeros(2, 4, dtype=torch.long)
     with pytest.raises(RuntimeError, match="sorted by sequence length"):
-        model._check_batch_inputs_sorted(batch, False)
-    model._check_batch_inputs_sorted(batch, True)
-    model._check_batch_inputs_sorted(batch[:1], False)
-    model._check_batch_inputs_sorted(None, False)
+        model._require_sorted_batch_inputs(batch, False)
+    model._require_sorted_batch_inputs(batch, True)
+    model._require_sorted_batch_inputs(batch[:1], False)
+    model._require_sorted_batch_inputs(None, False)
 
     off = _make_model(RBLNQwen2VLForConditionalGeneration, use_batch_attn_opt=False)
-    off._check_batch_inputs_sorted(batch, False)
+    off._require_sorted_batch_inputs(batch, False)
 
 
 def test_sort_requires_input_ids_for_vision():

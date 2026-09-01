@@ -38,10 +38,10 @@ from ....modeling import RBLNModel
 from ....modeling_rope_utils import build_qwen_mrope_lookup, np_cos, np_sin, qwen_vit_rot_pos_ids
 from ....utils.logging import get_logger
 from ...modeling_outputs import RBLNDecoderOnlyOutput, _validate_output_hidden_states
+from ...utils.generation_multimodal import RBLNVisionBatchSortMixin, _per_sample_patch_lens
 from ..decoderonly.decoderonly_runtime_utils import RBLNPageTableManager, RBLNRuntimeModel
 from ..decoderonly.generation_decoderonly import _permute_flat_segments
 from ..decoderonly.modeling_decoderonly import RBLNDecoderOnlyModel, RBLNDecoderOnlyModelForCausalLM
-from ..qwen2_vl.modeling_qwen2_vl import RBLNVisionBatchSortMixin, _per_sample_patch_lens
 from .configuration_qwen3_vl import (
     RBLNQwen3VLForConditionalGenerationConfig,
     RBLNQwen3VLVisionModelConfig,
@@ -964,7 +964,7 @@ class RBLNQwen3VLForConditionalGeneration(RBLNVisionBatchSortMixin, RBLNQwen3VLM
         inputs_sorted: bool = False,
         **kwargs,
     ) -> RBLNDecoderOnlyOutput:
-        self._check_batch_inputs_sorted(input_ids if input_ids is not None else inputs_embeds, inputs_sorted)
+        self._require_sorted_batch_inputs(input_ids if input_ids is not None else inputs_embeds, inputs_sorted)
         output_hidden_states = _validate_output_hidden_states(output_hidden_states, self.rbln_config)
         # Prefill
         if cache_position is None:

@@ -39,8 +39,8 @@ from ....modeling import RBLNModel
 from ....modeling_rope_utils import build_qwen_mrope_lookup, np_cos, np_sin, qwen_vit_rot_pos_ids
 from ....utils.logging import get_logger
 from ...modeling_outputs import RBLNDecoderOnlyOutput, _validate_output_hidden_states
+from ...utils.generation_multimodal import RBLNVisionBatchSortMixin
 from ..decoderonly.modeling_decoderonly import RBLNDecoderOnlyModel, RBLNDecoderOnlyModelForCausalLM
-from ..qwen2_vl.modeling_qwen2_vl import RBLNVisionBatchSortMixin
 from .configuration_qwen2_5_vl import (
     RBLNQwen2_5_VisionTransformerPretrainedModelConfig,
     RBLNQwen2_5_VLForConditionalGenerationConfig,
@@ -758,7 +758,7 @@ class RBLNQwen2_5_VLForConditionalGeneration(
         inputs_sorted: bool = False,
         **kwargs,
     ) -> RBLNDecoderOnlyOutput:
-        self._check_batch_inputs_sorted(input_ids if input_ids is not None else inputs_embeds, inputs_sorted)
+        self._require_sorted_batch_inputs(input_ids if input_ids is not None else inputs_embeds, inputs_sorted)
         output_hidden_states = _validate_output_hidden_states(output_hidden_states, self.rbln_config)
         # Prefill
         if cache_position is None:
