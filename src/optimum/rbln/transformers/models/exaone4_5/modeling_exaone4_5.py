@@ -33,6 +33,7 @@ from ....modeling_rope_utils import np_cos, np_sin, qwen_vit_rot_pos_ids
 from ....utils.logging import get_logger
 from ...modeling_outputs import RBLNDecoderOnlyOutput, _validate_output_hidden_states
 from ..decoderonly.modeling_decoderonly import RBLNDecoderOnlyModel, RBLNDecoderOnlyModelForCausalLM
+from ..qwen2_vl.modeling_qwen2_vl import RBLNVisionBatchSortMixin
 from .configuration_exaone4_5 import (
     RBLNExaone4_5_ForConditionalGenerationConfig,
     RBLNExaone4_5_VisionModelConfig,
@@ -57,6 +58,27 @@ def _disable_mtp(model_config):
         text_config._num_mtp_layers = 0
     if hasattr(text_config, "layer_types") and hasattr(text_config, "num_hidden_layers"):
         text_config.layer_types = text_config.layer_types[: text_config.num_hidden_layers]
+
+
+def _grid_rows_by_token_count(
+    input_ids: torch.Tensor, token_id: int, grid_thw: torch.Tensor | None, merge_unit: int
+) -> list[int]:
+    # grid row i yields prod(grid_thw[i]) // merge_unit placeholder tokens; walk the
+    # flattened rows in order, assigning them to samples by each row's token count
+    if grid_thw is None:
+        return [0] * input_ids.shape[0]
+    tokens_per_grid = (grid_thw.prod(dim=-1) // merge_unit).tolist()
+    rows, grid_idx = [], 0
+    for b_idx in range(input_ids.shape[0]):
+        needed = int((input_ids[b_idx] == token_id).sum().item())
+        start = grid_idx
+        while needed > 0:
+            if grid_idx >= len(tokens_per_grid) or tokens_per_grid[grid_idx] > needed:
+                raise ValueError("Vision grids do not align with per-sample vision token counts.")
+            needed -= tokens_per_grid[grid_idx]
+            grid_idx += 1
+        rows.append(grid_idx - start)
+    return rows
 
 
 class RBLNExaone4_5_VisionModel(RBLNModel):
@@ -466,7 +488,9 @@ class RBLNExaone4_5_Model(RBLNDecoderOnlyModel):
         )
 
 
-class RBLNExaone4_5_ForConditionalGeneration(RBLNExaone4_5_Model, RBLNDecoderOnlyModelForCausalLM):
+class RBLNExaone4_5_ForConditionalGeneration(
+    RBLNVisionBatchSortMixin, RBLNExaone4_5_Model, RBLNDecoderOnlyModelForCausalLM
+):
     """
     RBLNExaone4_5_ForConditionalGeneration is a multi-modal model that integrates vision and language
     processing capabilities, optimized for RBLN NPUs. It is designed for conditional generation tasks
@@ -482,6 +506,20 @@ class RBLNExaone4_5_ForConditionalGeneration(RBLNExaone4_5_Model, RBLNDecoderOnl
 
     def can_generate(self):
         return True
+
+    def _vision_grid_rows_per_sample(
+        self, input_ids: torch.LongTensor, attention_mask: torch.Tensor | None, kwargs: dict
+    ) -> tuple[list[int], list[int]]:
+        # no vision_start marker: _preprocess_prefill consumes grids in flattened order
+        # via masked_scatter, so per-sample ownership follows each row's token count
+        merge_unit = self.config.vision_config.spatial_merge_size**2
+        image_rows = _grid_rows_by_token_count(
+            input_ids, self.config.image_token_id, kwargs.get("image_grid_thw"), merge_unit
+        )
+        video_rows = _grid_rows_by_token_count(
+            input_ids, self.config.video_token_id, kwargs.get("video_grid_thw"), merge_unit
+        )
+        return image_rows, video_rows
 
     @classmethod
     def _reconstruct_model_if_needed(cls, model: "PreTrainedModel"):
@@ -499,6 +537,7 @@ class RBLNExaone4_5_ForConditionalGeneration(RBLNExaone4_5_Model, RBLNDecoderOnl
         image_grid_thw=None,
         video_grid_thw=None,
         second_per_grid_ts=None,
+        inputs_sorted: bool = False,
         **kwargs,
     ):
         model_inputs = {}
@@ -527,6 +566,7 @@ class RBLNExaone4_5_ForConditionalGeneration(RBLNExaone4_5_Model, RBLNDecoderOnl
                 "image_grid_thw": image_grid_thw,
                 "video_grid_thw": video_grid_thw,
                 "second_per_grid_ts": second_per_grid_ts,
+                "inputs_sorted": inputs_sorted,
             }
         )
         return model_inputs
@@ -545,8 +585,10 @@ class RBLNExaone4_5_ForConditionalGeneration(RBLNExaone4_5_Model, RBLNDecoderOnl
         generate_idx: torch.Tensor | None = None,
         return_dict: bool | None = None,
         output_hidden_states: bool | None = None,
+        inputs_sorted: bool = False,
         **kwargs,
     ) -> RBLNDecoderOnlyOutput:
+        self._check_batch_inputs_sorted(input_ids if input_ids is not None else inputs_embeds, inputs_sorted)
         output_hidden_states = _validate_output_hidden_states(output_hidden_states, self.rbln_config)
 
         if cache_position is None:
