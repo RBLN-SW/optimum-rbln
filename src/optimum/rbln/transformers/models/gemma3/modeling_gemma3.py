@@ -25,9 +25,9 @@ from transformers.models.gemma3.modeling_gemma3 import Gemma3TextScaledWordEmbed
 from ....configuration_utils import RBLNCompileConfig, RBLNModelConfig
 from ....modeling import RBLNModel
 from ...modeling_outputs import RBLNDecoderOnlyOutput
+from ...utils.generation_multimodal import RBLNMultimodalBatchSortMixin
 from ...utils.rbln_runtime_wrapper import LoopProcessor
 from ..decoderonly.decoderonly_runtime_utils import RBLNPageTableManager
-from ..decoderonly.generation_decoderonly import RBLNDecoderOnlyGenerationMixin
 from ..decoderonly.modeling_decoderonly import RBLNDecoderOnlyModelForCausalLM
 from .gemma3_architecture import Gemma3ForCausalLMWrapper
 from .gemma3_runtime_utils import RBLNGemma3RuntimeModel
@@ -74,12 +74,17 @@ class LoopProjector(LoopProcessor):
         return output[0]
 
 
-class RBLNGemma3ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMixin):
+class RBLNGemma3ForConditionalGeneration(RBLNModel, RBLNMultimodalBatchSortMixin):
     auto_model_class = AutoModelForImageTextToText
     _rbln_submodules = [
         {"name": "vision_tower"},
         {"name": "language_model"},
     ]
+    _image_indexed_kwargs = ("pixel_values",)
+
+    @property
+    def _tokens_per_image(self) -> int | None:
+        return self.config.mm_tokens_per_image
 
     def __getattr__(self, __name: str) -> Any:
         def redirect(func):
@@ -273,8 +278,10 @@ class RBLNGemma3ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMix
         padded_cache_lengths: torch.Tensor | None = None,
         position_ids: torch.Tensor | None = None,
         output_hidden_states: bool | None = None,
+        inputs_sorted: bool = False,
         **lm_kwargs: dict[str, Any],
     ) -> tuple | RBLNDecoderOnlyOutput:
+        self._require_sorted_batch_inputs(inputs_embeds if inputs_embeds is not None else input_ids, inputs_sorted)
         output_hidden_states = (
             output_hidden_states
             if output_hidden_states is not None
