@@ -567,7 +567,7 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
         # mirror the compiler's in-memory kernel routing (rebel_compiler#13163);
         # serialized so a loaded model knows to sort
         if rbln_config.use_batch_attn_opt is None:
-            rbln_config.use_batch_attn_opt = (
+            rbln_config._use_batch_attn_opt = (
                 npu_is_cr13_or_later(rbln_config.npu)
                 and rbln_config.attn_impl == "flash_attn"
                 and not rbln_config.use_attention_mask
