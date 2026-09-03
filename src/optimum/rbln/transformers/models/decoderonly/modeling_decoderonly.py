@@ -565,10 +565,12 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
         rbln_config = cls._update_attention_config(model, model_config, rbln_config)
 
         # mirror the compiler's in-memory kernel routing (rebel_compiler#13163);
-        # serialized so a loaded model knows to sort
+        # serialized so a loaded model knows to sort. Sorting is a batched-DECODE
+        # contract — prefill-only models run the kernel one row at a time.
         if rbln_config.use_batch_attn_opt is None:
             rbln_config._use_batch_attn_opt = (
-                npu_is_cr13_or_later(rbln_config.npu)
+                rbln_config.can_generate
+                and npu_is_cr13_or_later(rbln_config.npu)
                 and rbln_config.attn_impl == "flash_attn"
                 and not rbln_config.use_attention_mask
             )

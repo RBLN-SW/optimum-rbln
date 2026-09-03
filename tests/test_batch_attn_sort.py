@@ -200,6 +200,17 @@ def test_use_batch_attn_opt_not_user_settable():
         cfg.use_batch_attn_opt = True
 
 
+def test_use_batch_attn_opt_derivation_gates_on_decode():
+    # sorting is a batched-DECODE contract: prefill-only (encoder-style) configs must not
+    # derive True — the derivation is gated on can_generate ("decode" in phases)
+    from optimum.rbln.transformers.models.decoderonly.configuration_decoderonly import RBLNDecoderOnlyModelConfig
+
+    prefill_only = RBLNDecoderOnlyModelConfig(max_seq_len=8192, npu="RBLN-CR13")
+    assert prefill_only.can_generate is False
+    causal = RBLNDecoderOnlyModelForCausalLMConfig(max_seq_len=8192, npu="RBLN-CR13")
+    assert causal.can_generate is True
+
+
 def test_npu_is_cr13_or_later():
     assert npu_is_cr13_or_later("RBLN-CR13") is True
     assert npu_is_cr13_or_later("RBLN-CR31") is True
