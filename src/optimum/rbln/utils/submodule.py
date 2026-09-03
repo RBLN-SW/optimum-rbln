@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING, Any, Union
 from transformers import PretrainedConfig
 
 from ..configuration_utils import RBLNModelConfig, get_rbln_config_class
+from ..utils.logging import get_logger
 from ..utils.model_utils import get_rbln_model_cls
 
 
@@ -25,6 +26,9 @@ if TYPE_CHECKING:
     from transformers import AutoFeatureExtractor, AutoProcessor, AutoTokenizer, PreTrainedModel
 
     from ..modeling import RBLNModel
+
+
+logger = get_logger(__name__)
 
 
 class SubModulesMixin:
@@ -81,6 +85,7 @@ class SubModulesMixin:
         submodule_prefix = getattr(cls, "_rbln_submodule_prefix", None)
         submodule_postfix = getattr(cls, "_rbln_submodule_postfix", None)
         preprocessors = kwargs.pop("preprocessors", [])
+        parent_subfolder = kwargs.pop("parent_subfolder", "")
 
         for submodule in cls._rbln_submodules:
             submodule_name = submodule["name"]
@@ -126,7 +131,7 @@ class SubModulesMixin:
             rbln_submodule = submodule_cls.from_model(
                 model=torch_submodule,
                 config=torch_submodule.config,
-                subfolder=submodule_name,
+                subfolder=f"{parent_subfolder}/{submodule_name}" if parent_subfolder else submodule_name,
                 model_save_dir=model_save_dir,
                 rbln_config=submodule_rbln_config,
                 **kwargs,
@@ -149,11 +154,25 @@ class SubModulesMixin:
             # RBLNModelConfig -> RBLNModel
             submodule_cls = get_rbln_model_cls(submodule_rbln_config.rbln_model_cls_name)
 
-            json_file_path = Path(model_save_dir) / submodule_name / "config.json"
+            submodule_save_dir = Path(model_save_dir)
+            json_file_path = submodule_save_dir / submodule_name / "config.json"
+            if not json_file_path.exists():
+                # Artifacts saved before the nested submodule layout kept a nested parent's
+                # submodules as siblings of the parent directory; fall back here.
+                legacy_json_file_path = submodule_save_dir.parent / submodule_name / "config.json"
+                if legacy_json_file_path.exists():
+                    logger.warning(
+                        f"Loading submodule '{submodule_name}' from the pre-nested (sibling) layout "
+                        f"at {legacy_json_file_path.parent}. Support for this layout will be removed "
+                        "in v0.12.0; recompile the model to produce an artifact in the "
+                        "nested layout."
+                    )
+                    submodule_save_dir = submodule_save_dir.parent
+                    json_file_path = legacy_json_file_path
             config = PretrainedConfig.from_json_file(json_file_path)
 
             rbln_submodule = submodule_cls._from_pretrained(
-                model_id=model_save_dir,
+                model_id=str(submodule_save_dir),
                 config=config,
                 subfolder=submodule_name,
                 rbln_config=submodule_rbln_config,
