@@ -19,16 +19,17 @@ from torch import Tensor
 def compute_masked_routing_weight_softmax_first(router_logits: Tensor, top_k: int, renormalize: bool) -> Tensor:
     #   renormalize=True : topk → softmax-of-topk → scatter  (post_norm)
     #   renormalize=False: softmax → topk → scatter           (pre_norm)
-    router_logits_t = router_logits.transpose(0, 1)  # [T, E] -> [E, T]
+    # HF routes in fp32 (softmax(..., dtype=torch.float)) and casts the weights back to the logits dtype.
+    router_logits_t = router_logits.transpose(0, 1).to(torch.float32)  # [T, E] -> [E, T]
     if renormalize:
         topk_values, topk_ids = torch.topk(router_logits_t, top_k, dim=0)
         topk_weights = torch.softmax(topk_values, dim=0)
     else:
         routing = torch.softmax(router_logits_t, dim=0)
         topk_weights, topk_ids = torch.topk(routing, top_k, dim=0)
-    masked = torch.zeros_like(router_logits_t, dtype=router_logits.dtype)
+    masked = torch.zeros_like(router_logits_t)
     masked.scatter_(0, topk_ids, topk_weights)
-    return masked  # [E, T]
+    return masked.to(router_logits.dtype)  # [E, T]
 
 
 def compute_masked_routing_weight_topk_first(router_logits: Tensor, top_k: int) -> Tensor:

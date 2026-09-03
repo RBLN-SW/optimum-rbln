@@ -479,7 +479,10 @@ class DecoderOnlyModel(nn.Module):
         if inputs_embeds is None:
             inputs_embeds = self.get_embedding()(input_ids)
 
-        hidden_states = inputs_embeds * self.hidden_multiplier
+        hidden_states = inputs_embeds
+        if self.hidden_multiplier != 1:
+            # HF rounds the scale to the embedding dtype before multiplying (e.g. sqrt(3072) -> 55.5 in bf16).
+            hidden_states = hidden_states * torch.tensor(self.hidden_multiplier, dtype=hidden_states.dtype)
 
         # get cos,sin vector if needed
         position_ids = position_ids if position_ids is not None else cache_position
@@ -1324,8 +1327,8 @@ class RotaryEmbedding(nn.Module):
 
     def forward(self, x, seq_len):
         return (
-            self._cos_cached[:seq_len].to(dtype=torch.float32),
-            self._sin_cached[:seq_len].to(dtype=torch.float32),
+            self._cos_cached[:seq_len].to(dtype=x.dtype),
+            self._sin_cached[:seq_len].to(dtype=x.dtype),
         )
 
 
@@ -1355,11 +1358,8 @@ def rotate_half(x):
 
 def apply_rotary_pos_emb(q, k, cos, sin):
     """Applies Rotary Position Embedding to the query and key tensors."""
-    dtype = q.dtype
     q_embed = (q * cos) + (rotate_half(q) * sin)
     k_embed = (k * cos) + (rotate_half(k) * sin)
-    q_embed = q_embed.to(dtype)
-    k_embed = k_embed.to(dtype)
     return q_embed, k_embed
 
 
