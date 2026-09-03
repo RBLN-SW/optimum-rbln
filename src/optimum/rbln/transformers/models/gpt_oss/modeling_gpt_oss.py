@@ -132,8 +132,10 @@ class RBLNGptOssForCausalLM(RBLNDecoderOnlyModelForCausalLM):
         if config is None:
             config, kwargs = AutoConfig.from_pretrained(model_id, return_unused_kwargs=True)
 
+        config_dtype = config.dtype
         with no_init_weights():
             model = AutoModelForCausalLM.from_config(config, dtype=dtype, **kwargs)
+        config.dtype = config_dtype
 
         _replace_with_mxfp4_linear(model, config)
         model.load_state_dict(state_dict, strict=False)

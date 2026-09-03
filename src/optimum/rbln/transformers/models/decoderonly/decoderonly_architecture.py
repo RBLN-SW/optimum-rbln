@@ -352,7 +352,9 @@ def build_image_prefill_swa_custom_op_args(model, position_ids, query_position):
         valid_q = q_idx < valid_input_len
         valid_kv = torch.logical_or(in_past, in_chunk)
         if model.phase == "image_prefill":
-            attn = valid_q & valid_kv & torch.logical_or(swa, in_chunk)
+            # transformers >=5.13 (#46850) clips the bidirectional image grant by the sliding window:
+            # sliding mask = AND(kv > q - window, OR(causal, blockwise bidirectional)).
+            attn = valid_q & valid_kv & torch.logical_or(swa, in_chunk & (gap < max_cache_len))
         else:
             attn = valid_q & valid_kv & swa
         attn_mask = torch.where(attn, 1.0, 0.0).to(model.rbln_config.dtype)

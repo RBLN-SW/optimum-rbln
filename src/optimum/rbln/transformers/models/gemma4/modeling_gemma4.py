@@ -526,10 +526,10 @@ class RBLNGemma4ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
         rbln_config: RBLNGemma4ForCausalLMConfig,
     ) -> None:
         # Pre-populates rbln_config.cache_metas with per-layer-heterogeneous KV shapes.
-        # Gemma4 mixes two layer kinds:
-        #   sliding_attention: head_dim=config.head_dim, num_kv=config.num_key_value_heads.
-        #   full_attention: head_dim=config.global_head_dim,
-        #     num_kv=config.num_global_key_value_heads (attention_k_eq_v=True) or num_key_value_heads.
+        # Gemma4 mixes two layer kinds whose head_dim/num_key_value_heads come from
+        # config.per_layer_config (transformers >=5.15 builds it from global_head_dim /
+        # num_global_key_value_heads; reading those top-level attributes raises
+        # AmbiguousGlobalPerLayerAttributeError).
         # Base get_input_info short-circuits on a non-empty cache_metas list and uses these entries
         # verbatim as compile-time KV cache input shapes — the only way to express per-layer
         # heterogeneous KV geometry in the current pipeline.
@@ -548,20 +548,13 @@ class RBLNGemma4ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
                 f"({model_config.num_hidden_layers})."
             )
 
-        head_dim_sliding = model_config.head_dim
-        num_kv_sliding = model_config.num_key_value_heads
-        head_dim_full = getattr(model_config, "global_head_dim", None) or head_dim_sliding
-        attention_k_eq_v = bool(getattr(model_config, "attention_k_eq_v", False))
-        num_kv_full = (
-            getattr(model_config, "num_global_key_value_heads", None) or num_kv_sliding
-            if attention_k_eq_v
-            else num_kv_sliding
-        )
+        per_layer_config = model_config.per_layer_config
 
         for layer_idx in range(model_config.num_hidden_layers):
             is_sliding = layer_types[layer_idx] == "sliding_attention"
-            num_kv = num_kv_sliding if is_sliding else num_kv_full
-            head_dim = head_dim_sliding if is_sliding else head_dim_full
+            layer_config = per_layer_config[layer_idx]
+            num_kv = layer_config.num_key_value_heads
+            head_dim = layer_config.head_dim
 
             meta_cls = SlidingWindowAttentionKVCacheMeta if is_sliding else FullAttentionKVCacheMeta
             for kv_offset, _ in enumerate(("key", "value")):
