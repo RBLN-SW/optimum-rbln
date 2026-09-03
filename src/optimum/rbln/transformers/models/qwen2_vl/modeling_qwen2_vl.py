@@ -36,9 +36,9 @@ from transformers.models.qwen2_vl.modeling_qwen2_vl import (
 
 from ....configuration_utils import RBLNCompileConfig
 from ....modeling import RBLNModel
+from ....modeling_rope_utils import build_qwen_mrope_lookup, np_cos, np_sin, qwen_vit_rot_pos_ids
 from ....utils.logging import get_logger
 from ...modeling_outputs import _validate_output_hidden_states
-from ...modeling_rope_utils import build_qwen_mrope_lookup, np_cos, np_sin, qwen_vit_rot_pos_ids
 from ..decoderonly.modeling_decoderonly import (
     RBLNDecoderOnlyModel,
     RBLNDecoderOnlyModelForCausalLM,
@@ -433,6 +433,8 @@ class RBLNQwen2VLModel(RBLNDecoderOnlyModel):
         mm_token_type_ids: torch.IntTensor | None = None,
         **kwargs,
     ) -> RBLNDecoderOnlyOutput:
+        if attention_mask is None:
+            attention_mask = torch.ones_like(input_ids)
         inputs_embeds, position_embed, rope_deltas = self._preprocess_prefill(
             input_ids,
             attention_mask,
@@ -636,6 +638,10 @@ class RBLNQwen2VLForConditionalGeneration(RBLNQwen2VLModel, RBLNDecoderOnlyModel
         output_hidden_states = _validate_output_hidden_states(output_hidden_states, self.rbln_config)
         # Prefill
         if cache_position is None:
+            if attention_mask is None:
+                attention_mask = torch.ones_like(input_ids)
+            if generate_idx is None:
+                generate_idx = attention_mask.sum(dim=-1, keepdim=True).int()
             inputs_embeds, position_embed, rope_deltas = self._preprocess_prefill(
                 input_ids,
                 attention_mask,

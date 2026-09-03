@@ -712,7 +712,7 @@ class TestQwenRotaryLookup(unittest.TestCase):
             VisionRotaryEmbedding,
         )
 
-        from optimum.rbln.transformers.modeling_rope_utils import qwen_vit_rot_pos_ids
+        from optimum.rbln.modeling_rope_utils import qwen_vit_rot_pos_ids
 
         rot = VisionRotaryEmbedding(20)
         for merge in (1, 2, 4):
@@ -732,7 +732,7 @@ class TestQwenRotaryLookup(unittest.TestCase):
         from transformers.models.qwen3_vl.configuration_qwen3_vl import Qwen3VLTextConfig
         from transformers.models.qwen3_vl.modeling_qwen3_vl import Qwen3VLTextRotaryEmbedding
 
-        from optimum.rbln.transformers.modeling_rope_utils import QwenMRopeLookupTable, build_qwen_mrope_lookup
+        from optimum.rbln.modeling_rope_utils import QwenMRopeLookupTable, build_qwen_mrope_lookup
 
         max_pos = 512
         standard = Qwen2VLRotaryEmbedding(
@@ -859,6 +859,43 @@ class TestQwen2_5_VLForConditionalGeneration(LLMTest.TestLLM):
 
         assert not model.rbln_config.visual.create_runtimes
         assert not model.rbln_config.create_runtimes
+
+
+class TestQwen2_5_VLForConditionalGeneration_OutputHiddenStates(TestQwen2_5_VLForConditionalGeneration):
+    # Two prompts of different lengths: the shorter one is left-padded, exercising the
+    # padded-batch prefill output aggregation (hidden states must come back at full mask width
+    # and left-padded rows must not leak into the valid region).
+    PROMPTS = [
+        TestQwen2_5_VLForConditionalGeneration.PROMPT,
+        "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\n<|vision_start|><|image_pad|><|vision_end|>What is the main color of this image? Answer in one short sentence, please.<|im_end|>\n<|im_start|>assistant\n",
+    ]
+    HF_CONFIG_KWARGS = {}  # Initialize empty to avoid sharing with other classes
+    HF_CONFIG_KWARGS_PREPROCESSOR = {"max_pixels": 64 * 14 * 14, "padding_side": "left"}
+    RBLN_CLASS_KWARGS = {
+        "rbln_config": {
+            "visual": {"max_seq_len": 512},
+            "num_devices": 1,
+            "kvcache_partition_len": 16_384,
+            "max_seq_len": 32_768,
+            "batch_size": 2,
+            "output_hidden_states": True,
+        }
+    }
+
+    def get_inputs(self):
+        tokenizer = self.get_tokenizer()
+        img_path = f"{os.path.dirname(__file__)}/../assets/rbln_logo_light.png"
+        image = Image.open(img_path)
+        inputs = tokenizer(images=[image, image], text=self.PROMPTS, return_tensors="pt", padding=True)
+        inputs["max_new_tokens"] = 4
+        inputs["do_sample"] = False
+        return inputs
+
+    def test_generate(self):
+        self._test_output_hidden_states_generation()
+
+    def test_propagate_config(self):
+        self.skipTest("Covered by TestQwen2_5_VLForConditionalGeneration.")
 
 
 class TestQwen3VLForConditionalGeneration(LLMTest.TestLLM):
