@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import copy
-import math
 
 import torch
 import torch.nn.functional as F
@@ -27,10 +26,20 @@ from ..decoderonly.decoderonly_architecture import (
     DecoderOnlyModel,
     DecoderOnlyWrapper,
     RotaryEmbedding,
-    apply_rotary_pos_emb,
     apply_rotary_pos_emb_partial,
+    rotate_half,
     slice_and_unsqueeze_cos_sin,
 )
+
+
+def apply_rotary_pos_emb_vision(q, k, cos, sin):
+    # Mirrors HF `apply_rotary_pos_emb_vision`: rotate in fp32 and round once.
+    orig_q_dtype, orig_k_dtype = q.dtype, k.dtype
+    q, k = q.float(), k.float()
+    cos, sin = cos.float(), sin.float()
+    q_embed = (q * cos) + (rotate_half(q) * sin)
+    k_embed = (k * cos) + (rotate_half(k) * sin)
+    return q_embed.to(orig_q_dtype), k_embed.to(orig_k_dtype)
 
 
 class Qwen3_5VisionAttention(nn.Module):
@@ -42,7 +51,7 @@ class Qwen3_5VisionAttention(nn.Module):
         self.head_dim = getattr(model, "head_dim", model.proj.in_features // model.num_heads)
         self.qkv = model.qkv
         self.proj = model.proj
-        self.scale = torch.tensor(1 / math.sqrt(self.head_dim), dtype=rbln_config.dtype)
+        self.scale = self.head_dim**-0.5
 
     def forward(
         self,
@@ -56,7 +65,7 @@ class Qwen3_5VisionAttention(nn.Module):
             self.qkv(hidden_states).reshape(1, seq_length, 3, self.num_heads, -1).permute(2, 0, 3, 1, 4).unbind(0)
         )
         cos, sin = position_embeddings
-        q, k = apply_rotary_pos_emb(q, k, cos, sin)
+        q, k = apply_rotary_pos_emb_vision(q, k, cos, sin)
         attn_output = nn.functional.scaled_dot_product_attention(
             q,
             k,
@@ -64,7 +73,7 @@ class Qwen3_5VisionAttention(nn.Module):
             attn_mask=attn_mask,
             dropout_p=0.0,
             is_causal=False,
-            scale=self.scale.item(),
+            scale=self.scale,
         )
         attn_output = attn_output.transpose(1, 2)
         attn_output = attn_output.reshape(1, seq_length, -1)
@@ -110,7 +119,6 @@ class Qwen3_5VisionModelWrapper(nn.Module):
         sin: torch.Tensor,
     ) -> torch.Tensor:
         attn_mask = (1.0 - attn_mask) * torch.finfo(hidden_states.dtype).min
-        cos, sin = cos.to(hidden_states.dtype), sin.to(hidden_states.dtype)
         for block in self.blocks:
             hidden_states = block(hidden_states, attn_mask, (cos, sin))
         return self.merger(hidden_states)
@@ -388,8 +396,8 @@ class Qwen3_5GatedDeltaNet(nn.Module):
         if "prefill" in self._phase:
             # Triangular masks built
             _cshape = (1, 1, 1, self.chunk_size, self.chunk_size)
-            chunk_tril_incl = torch.tril(torch.ones(_cshape, device=query.device, dtype=query.dtype), diagonal=0)
-            chunk_tril_strict = torch.tril(torch.ones(_cshape, device=query.device, dtype=query.dtype), diagonal=-1)
+            chunk_tril_incl = torch.tril(torch.ones(_cshape, device=query.device, dtype=torch.float32), diagonal=0)
+            chunk_tril_strict = torch.tril(torch.ones(_cshape, device=query.device, dtype=torch.float32), diagonal=-1)
             core_attn_out, new_recurrent_state = rbln_chunk_gated_delta_rule(
                 query,
                 key,

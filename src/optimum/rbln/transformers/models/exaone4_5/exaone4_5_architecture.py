@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import math
 from typing import TYPE_CHECKING
 
 import torch
@@ -22,7 +21,7 @@ from ..decoderonly.decoderonly_architecture import (
     DecoderOnlyAttention,
     DecoderOnlyLayer,
     DecoderOnlyWrapper,
-    apply_rotary_pos_emb,
+    rotate_half,
 )
 from .configuration_exaone4_5 import RBLNExaone4_5_VisionModelConfig
 
@@ -106,6 +105,16 @@ class Exaone4_5VisionBlock(torch.nn.Module):
         return hidden_states
 
 
+def apply_rotary_pos_emb_vision(q, k, cos, sin):
+    # Mirrors HF `apply_rotary_pos_emb_vision`: rotate in fp32 and round once.
+    orig_q_dtype, orig_k_dtype = q.dtype, k.dtype
+    q, k = q.float(), k.float()
+    cos, sin = cos.float(), sin.float()
+    q_embed = (q * cos) + (rotate_half(q) * sin)
+    k_embed = (k * cos) + (rotate_half(k) * sin)
+    return q_embed.to(orig_q_dtype), k_embed.to(orig_k_dtype)
+
+
 class Exaone4_5VisionFullAttention(nn.Module):
     def __init__(self, model: nn.Module, rbln_config: RBLNExaone4_5_VisionModelConfig) -> None:
         super().__init__()
@@ -118,7 +127,7 @@ class Exaone4_5VisionFullAttention(nn.Module):
         self.kv_dim = self.num_key_value_heads * self.head_dim
         self.qkv = model.qkv
         self.proj = model.proj
-        self.scale = torch.tensor(1 / math.sqrt(self.head_dim), dtype=rbln_config.dtype)
+        self.scale = self.head_dim**-0.5
 
     def forward(
         self,
@@ -144,7 +153,7 @@ class Exaone4_5VisionFullAttention(nn.Module):
             v = v.repeat_interleave(repeat_factor, dim=1).permute(1, 0, 2).unsqueeze(0)
 
         cos, sin = position_embeddings
-        q, k = apply_rotary_pos_emb(q, k, cos, sin)
+        q, k = apply_rotary_pos_emb_vision(q, k, cos, sin)
 
         attn_output = nn.functional.scaled_dot_product_attention(
             q,
@@ -153,7 +162,7 @@ class Exaone4_5VisionFullAttention(nn.Module):
             attn_mask=attn_masks,
             dropout_p=0.0,
             is_causal=False,
-            scale=self.scale.item(),
+            scale=self.scale,
         )
         attn_output = attn_output.transpose(1, 2)
         attn_output = attn_output.reshape(1, seq_length, -1)
@@ -174,7 +183,7 @@ class Exaone4_5VisionWindowAttention(nn.Module):
         self.qkv = model.qkv
         self.proj = model.proj
         self.window_seq_len = window_seq_len
-        self.scale = torch.tensor(1 / math.sqrt(self.head_dim), dtype=rbln_config.dtype)
+        self.scale = self.head_dim**-0.5
 
     def forward(
         self,
@@ -207,7 +216,7 @@ class Exaone4_5VisionWindowAttention(nn.Module):
         cos, sin = position_embeddings
         cos = cos.reshape(num_windows, 1, seq_length // num_windows, -1)
         sin = sin.reshape(num_windows, 1, seq_length // num_windows, -1)
-        q, k = apply_rotary_pos_emb(q, k, cos, sin)
+        q, k = apply_rotary_pos_emb_vision(q, k, cos, sin)
 
         attn_output = nn.functional.scaled_dot_product_attention(
             q,
@@ -216,7 +225,7 @@ class Exaone4_5VisionWindowAttention(nn.Module):
             attn_mask=attn_masks,
             dropout_p=0.0,
             is_causal=False,
-            scale=self.scale.item(),
+            scale=self.scale,
         )
         attn_output = attn_output.transpose(1, 2)
         attn_output = attn_output.reshape(1, seq_length, -1)
