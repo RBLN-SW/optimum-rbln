@@ -37,7 +37,7 @@ from ....utils.logging import get_logger
 from ...cache_utils import FullAttentionKVCacheMeta, SlidingWindowAttentionKVCacheMeta
 from ...modeling_attention_utils import validate_sliding_window
 from ...modeling_outputs import RBLNDecoderOnlyOutput
-from ...utils.generation_multimodal import RBLNMultimodalBatchSortMixin
+from ...utils.generation_multimodal import RBLNMultimodalBatchSortMixin, _placeholder_run_counts
 from ...utils.rbln_runtime_wrapper import LoopProcessor
 from ..decoderonly.decoderonly_runtime_utils import RBLNPageTableManager
 from ..decoderonly.modeling_decoderonly import RBLNDecoderOnlyModelForCausalLM
@@ -629,23 +629,23 @@ class RBLNGemma4ForConditionalGeneration(RBLNModel, RBLNMultimodalBatchSortMixin
         "mm_token_type_ids",
     )
 
+    def _images_per_sample(self, input_ids: torch.LongTensor | None) -> list[int]:
+        # each image is one contiguous placeholder run
+        return _placeholder_run_counts(input_ids, self._image_token_id)
+
     def _sort_extra_generation_inputs(
         self, input_ids: torch.LongTensor | None, kwargs: dict, sort_idx: torch.Tensor
     ) -> None:
         super()._sort_extra_generation_inputs(input_ids, kwargs, sort_idx)
         pixel_values_videos = kwargs.get("pixel_values_videos")
         if isinstance(pixel_values_videos, torch.Tensor) and pixel_values_videos.shape[0] > 0:
+            videos = self._collect_segment_kwargs(kwargs, ("pixel_values_videos", "video_position_ids"))
             # (num_videos, num_frames, ...): every frame is its own placeholder run
             # (frames are separated by timestamp text, see the class docstring)
-            self._permute_segment_kwargs(
-                input_ids,
-                kwargs,
-                sort_idx,
-                ("pixel_values_videos", "video_position_ids"),
-                getattr(self.config, "video_token_id", None),
-                None,
-                runs_per_segment=pixel_values_videos.shape[1],
+            videos_per_sample = _placeholder_run_counts(
+                input_ids, getattr(self.config, "video_token_id", None), runs_per_segment=pixel_values_videos.shape[1]
             )
+            self._apply_segment_perm(videos, kwargs, sort_idx, videos_per_sample)
 
     @staticmethod
     def _reject_unsupported_modalities(

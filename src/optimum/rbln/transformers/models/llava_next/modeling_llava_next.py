@@ -37,7 +37,7 @@ from transformers.models.llava_next.modeling_llava_next import (
 from ....configuration_utils import RBLNCompileConfig, RBLNModelConfig
 from ....modeling import RBLNModel
 from ....utils.logging import get_logger
-from ...utils.generation_multimodal import RBLNMultimodalBatchSortMixin
+from ...utils.generation_multimodal import RBLNMultimodalBatchSortMixin, _placeholder_run_counts
 from ...utils.rbln_runtime_wrapper import LoopProcessor
 from ..decoderonly.modeling_decoderonly import RBLNDecoderOnlyOutput
 
@@ -132,6 +132,10 @@ class RBLNLlavaNextForConditionalGeneration(RBLNModel, RBLNMultimodalBatchSortMi
     ]
     # pixel_values is (num_images, num_patches, C, H, W); image_sizes is (num_images, 2)
     _image_indexed_kwargs = ("pixel_values", "image_sizes")
+
+    def _images_per_sample(self, input_ids: torch.LongTensor | None) -> list[int]:
+        # variable anyres expansion: one contiguous run per image
+        return _placeholder_run_counts(input_ids, self._image_token_id)
 
     def __getattr__(self, __name: str) -> Any:
         def redirect(func):

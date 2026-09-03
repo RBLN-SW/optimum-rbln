@@ -27,7 +27,11 @@ from ....configuration_utils import RBLNCompileConfig, RBLNModelConfig
 from ....modeling import RBLNModel
 from ....utils.logging import get_logger
 from ...modeling_outputs import RBLNDecoderOnlyOutput
-from ...utils.generation_multimodal import RBLNMultimodalBatchSortMixin
+from ...utils.generation_multimodal import (
+    RBLNMultimodalBatchSortMixin,
+    _placeholder_run_counts,
+    _placeholder_token_counts,
+)
 from ...utils.rbln_runtime_wrapper import LoopProcessor
 
 
@@ -169,9 +173,13 @@ class RBLNLlavaForConditionalGeneration(RBLNModel, RBLNMultimodalBatchSortMixin)
     # pixel_values is (num_images, C, H, W); image_sizes is (num_images, 2) for pixtral
     _image_indexed_kwargs = ("pixel_values", "image_sizes")
 
-    @property
-    def _tokens_per_image(self) -> int | None:
-        return getattr(self.config, "image_seq_length", None)
+    def _images_per_sample(self, input_ids: torch.LongTensor | None) -> list[int]:
+        image_seq_length = getattr(self.config, "image_seq_length", None)
+        if image_seq_length:
+            # fixed-size expansion: adjacent images merge runs, so count tokens
+            return _placeholder_token_counts(input_ids, self._image_token_id, image_seq_length)
+        # variable-size (pixtral-style): one contiguous run per image; [IMG_BREAK] rows raise
+        return _placeholder_run_counts(input_ids, self._image_token_id)
 
     def __getattr__(self, __name: str) -> Any:
         def redirect(func):

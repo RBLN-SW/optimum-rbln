@@ -17,11 +17,46 @@ import torch
 from ..models.decoderonly.generation_decoderonly import RBLNDecoderOnlyGenerationMixin
 
 
+_UNMAPPABLE_BATCH_SORT = (
+    "Cannot map image inputs to batch samples for the sorting `use_batch_attn_opt` requires. "
+    "Pass inputs already sorted by sequence length (descending) with `inputs_sorted=True`."
+)
+
+
 def _permute_flat_segments(tensor: torch.Tensor, seg_lens: list[int], perm_idx: torch.Tensor) -> torch.Tensor:
     # reorder per-sample segments stacked on dim 0 (flattened multimodal layouts,
     # e.g. pixel_values [total_patches, dim] or grid_thw [num_images, 3])
     segments = torch.split(tensor, seg_lens, dim=0)
     return torch.cat([segments[i] for i in perm_idx.tolist()], dim=0)
+
+
+def _placeholder_run_counts(
+    input_ids: torch.LongTensor | None, token_id: int | None, runs_per_segment: int = 1
+) -> list[int]:
+    # variable-size expansions: each segment is `runs_per_segment` contiguous placeholder runs
+    if input_ids is None or token_id is None:
+        raise RuntimeError(_UNMAPPABLE_BATCH_SORT)
+    is_placeholder = input_ids == token_id
+    run_starts = is_placeholder.clone()
+    run_starts[:, 1:] &= ~is_placeholder[:, :-1]
+    counts = run_starts.sum(dim=1)
+    if runs_per_segment > 1:
+        if not bool((counts % runs_per_segment == 0).all()):
+            raise RuntimeError(_UNMAPPABLE_BATCH_SORT)
+        counts = counts // runs_per_segment
+    return counts.tolist()
+
+
+def _placeholder_token_counts(
+    input_ids: torch.LongTensor | None, token_id: int | None, tokens_per_segment: int | None
+) -> list[int]:
+    # fixed-size expansions: adjacent segments merge runs, so divide token totals instead
+    if input_ids is None or token_id is None or not tokens_per_segment:
+        raise RuntimeError(_UNMAPPABLE_BATCH_SORT)
+    counts = (input_ids == token_id).sum(dim=1)
+    if not bool((counts % tokens_per_segment == 0).all()):
+        raise RuntimeError(_UNMAPPABLE_BATCH_SORT)
+    return (counts // tokens_per_segment).tolist()
 
 
 class RBLNBatchSortGuardMixin:
@@ -43,8 +78,9 @@ class RBLNMultimodalBatchSortMixin(RBLNBatchSortGuardMixin, RBLNDecoderOnlyGener
     # Composition VLMs keep a plain RBLNModelConfig at the top level; the batched-attention
     # contract (use_batch_attn_opt) lives on the inner language model's config.
     _lm_attr_name = "language_model"
-    # generate kwargs stacked over images on dim 0, mapped to samples by placeholder-token
-    # order in input_ids; batch-first extras go in _generate_batch_sortable_kwargs instead.
+    # generate kwargs stacked over images on dim 0; each family declares how those segments
+    # map to batch rows via _images_per_sample. Batch-first extras go in
+    # _generate_batch_sortable_kwargs instead.
     _image_indexed_kwargs: tuple[str, ...] = ()
 
     @property
@@ -60,10 +96,6 @@ class RBLNMultimodalBatchSortMixin(RBLNBatchSortGuardMixin, RBLNDecoderOnlyGener
                 return token_id
         return None
 
-    @property
-    def _tokens_per_image(self) -> int | None:
-        return None
-
     def _sort_generation_inputs(
         self, input_ids: torch.LongTensor | None, kwargs: dict
     ) -> tuple[torch.LongTensor | None, torch.Tensor | None]:
@@ -76,66 +108,37 @@ class RBLNMultimodalBatchSortMixin(RBLNBatchSortGuardMixin, RBLNDecoderOnlyGener
     def _sort_extra_generation_inputs(
         self, input_ids: torch.LongTensor | None, kwargs: dict, sort_idx: torch.Tensor
     ) -> None:
-        self._permute_segment_kwargs(
-            input_ids, kwargs, sort_idx, self._image_indexed_kwargs, self._image_token_id, self._tokens_per_image
+        tensors = self._collect_segment_kwargs(kwargs, self._image_indexed_kwargs)
+        if tensors:
+            self._apply_segment_perm(tensors, kwargs, sort_idx, self._images_per_sample(input_ids))
+
+    def _images_per_sample(self, input_ids: torch.LongTensor | None) -> list[int]:
+        # each family declares its own placeholder scheme, via _placeholder_run_counts
+        # (variable-size expansions) or _placeholder_token_counts (fixed-size)
+        raise NotImplementedError(
+            f"{type(self).__name__} declares _image_indexed_kwargs but no _images_per_sample mapping."
         )
 
-    def _permute_segment_kwargs(
-        self,
-        input_ids: torch.LongTensor | None,
-        kwargs: dict,
-        sort_idx: torch.Tensor,
-        names: tuple[str, ...],
-        token_id: int | None,
-        tokens_per_segment: int | None,
-        runs_per_segment: int = 1,
-    ) -> None:
+    @staticmethod
+    def _collect_segment_kwargs(kwargs: dict, names: tuple[str, ...]) -> dict[str, torch.Tensor]:
         tensors = {
             name: value for name in names if isinstance(value := kwargs.get(name), torch.Tensor) and value.shape[0] > 0
         }
-        if not tensors:
-            return
-        num_segments = next(iter(tensors.values())).shape[0]
-        if any(value.shape[0] != num_segments for value in tensors.values()):
+        if len({value.shape[0] for value in tensors.values()}) > 1:
             raise RuntimeError(
                 f"Image-indexed inputs {tuple(tensors)} disagree on the number of images; "
                 "cannot reorder them for batch-attention sorting."
             )
-        seg_lens = self._segments_per_sample(input_ids, num_segments, token_id, tokens_per_segment, runs_per_segment)
+        return tensors
+
+    @staticmethod
+    def _apply_segment_perm(
+        tensors: dict[str, torch.Tensor], kwargs: dict, sort_idx: torch.Tensor, seg_lens: list[int]
+    ) -> None:
+        if sum(seg_lens) != next(iter(tensors.values())).shape[0]:
+            raise RuntimeError(_UNMAPPABLE_BATCH_SORT)
         for name, value in tensors.items():
             kwargs[name] = _permute_flat_segments(value, seg_lens, sort_idx)
-
-    def _segments_per_sample(
-        self,
-        input_ids: torch.LongTensor | None,
-        num_segments: int,
-        token_id: int | None,
-        tokens_per_segment: int | None,
-        runs_per_segment: int,
-    ) -> list[int]:
-        # map dim-0-stacked segments (images/videos) back to batch rows through the
-        # placeholder tokens each sample carries
-        if input_ids is not None and token_id is not None:
-            is_placeholder = input_ids == token_id
-            # each image (or video frame) expands to one contiguous placeholder run
-            run_starts = is_placeholder.clone()
-            run_starts[:, 1:] &= ~is_placeholder[:, :-1]
-            run_counts = run_starts.sum(dim=1)
-            if int(run_counts.sum()) == num_segments * runs_per_segment and bool(
-                (run_counts % runs_per_segment == 0).all()
-            ):
-                return (run_counts // runs_per_segment).tolist()
-            # adjacent placeholders merge runs; fixed-size expansions can still split by token count
-            if tokens_per_segment:
-                token_counts = is_placeholder.sum(dim=1)
-                if int(token_counts.sum()) == num_segments * tokens_per_segment and bool(
-                    (token_counts % tokens_per_segment == 0).all()
-                ):
-                    return (token_counts // tokens_per_segment).tolist()
-        raise RuntimeError(
-            "Cannot map image inputs to batch samples for the sorting `use_batch_attn_opt` requires. "
-            "Pass inputs already sorted by sequence length (descending) with `inputs_sorted=True`."
-        )
 
 
 def _per_sample_patch_lens(grid_thw: torch.Tensor, rows_per_sample: list[int]) -> list[int]:

@@ -25,7 +25,7 @@ from transformers.models.gemma3.modeling_gemma3 import Gemma3TextScaledWordEmbed
 from ....configuration_utils import RBLNCompileConfig, RBLNModelConfig
 from ....modeling import RBLNModel
 from ...modeling_outputs import RBLNDecoderOnlyOutput
-from ...utils.generation_multimodal import RBLNMultimodalBatchSortMixin
+from ...utils.generation_multimodal import RBLNMultimodalBatchSortMixin, _placeholder_token_counts
 from ...utils.rbln_runtime_wrapper import LoopProcessor
 from ..decoderonly.decoderonly_runtime_utils import RBLNPageTableManager
 from ..decoderonly.modeling_decoderonly import RBLNDecoderOnlyModelForCausalLM
@@ -82,9 +82,9 @@ class RBLNGemma3ForConditionalGeneration(RBLNModel, RBLNMultimodalBatchSortMixin
     ]
     _image_indexed_kwargs = ("pixel_values",)
 
-    @property
-    def _tokens_per_image(self) -> int | None:
-        return self.config.mm_tokens_per_image
+    def _images_per_sample(self, input_ids: torch.LongTensor | None) -> list[int]:
+        # fixed mm_tokens_per_image expansion; adjacent images merge runs, so count tokens
+        return _placeholder_token_counts(input_ids, self._image_token_id, self.config.mm_tokens_per_image)
 
     def __getattr__(self, __name: str) -> Any:
         def redirect(func):

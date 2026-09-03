@@ -36,7 +36,7 @@ from ....configuration_utils import RBLNCompileConfig, RBLNModelConfig
 from ....modeling import RBLNModel
 from ....utils.runtime_utils import RBLNPytorchRuntime
 from ...modeling_outputs import RBLNDecoderOnlyOutput
-from ...utils.generation_multimodal import RBLNMultimodalBatchSortMixin
+from ...utils.generation_multimodal import RBLNMultimodalBatchSortMixin, _placeholder_token_counts
 
 
 if TYPE_CHECKING:
@@ -236,11 +236,11 @@ class RBLNIdefics3ForConditionalGeneration(RBLNModel, RBLNMultimodalBatchSortMix
     # image_hidden_states is (num_images, seq, dim); each patch image is one placeholder run
     _image_indexed_kwargs = ("image_hidden_states",)
 
-    @property
-    def _tokens_per_image(self) -> int | None:
-        # placeholder tokens per patch image, mirroring the connector output length
+    def _images_per_sample(self, input_ids: torch.LongTensor | None) -> list[int]:
+        # placeholder tokens per patch image mirror the connector output length
         vision_config = self.config.vision_config
-        return (vision_config.image_size // vision_config.patch_size) ** 2 // self.config.scale_factor**2
+        tokens_per_patch = (vision_config.image_size // vision_config.patch_size) ** 2 // self.config.scale_factor**2
+        return _placeholder_token_counts(input_ids, self._image_token_id, tokens_per_patch)
 
     def __getattr__(self, __name: str) -> Any:
         def redirect(func):
