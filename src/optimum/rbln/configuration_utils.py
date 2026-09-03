@@ -1081,42 +1081,6 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
     def device_map(self, device_map: dict[str, int | list[int]]):
         self._runtime_options["device_map"] = device_map
 
-    def device_for(self, compiled_model_name: str) -> int | list[int] | None:
-        """
-        Resolve the device for one compiled model from `device_map`.
-
-        An exact key always wins; otherwise the longest key that is an
-        underscore-boundary prefix of the name matches, so one group key covers
-        all of its chunks (e.g. `device_map={"encoder": 0, "decoder": 1}` covers
-        encoder_0/encoder_n/decoder_0/decoder_n).
-
-        Args:
-            compiled_model_name: Name of the compiled model to place.
-
-        Returns:
-            The device id (or list of ids) the compiled model should run on.
-
-        Raises:
-            KeyError: If an explicit `device_map` covers the name neither exactly
-                nor by a group prefix.
-        """
-        device_map = self.device_map
-        if not device_map:
-            return self.device
-        if compiled_model_name in device_map:
-            return device_map[compiled_model_name]
-        best = max(
-            (key for key in device_map if compiled_model_name.startswith(key + "_")),
-            key=len,
-            default=None,
-        )
-        if best is None:
-            raise KeyError(
-                f"device_map {sorted(device_map)} does not cover compiled model "
-                f"'{compiled_model_name}'. Provide the exact name or a group prefix."
-            )
-        return device_map[best]
-
     @property
     def activate_profiler(self):
         context = ContextRblnConfig.get_current_context()["activate_profiler"]

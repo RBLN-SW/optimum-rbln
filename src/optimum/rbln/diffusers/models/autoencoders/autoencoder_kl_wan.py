@@ -564,7 +564,27 @@ class RBLNAutoencoderKLWan(RBLNModel):
     auto_model_class = AutoencoderKLWan
     hf_library_name = "diffusers"
     _rbln_config_class = RBLNAutoencoderKLWanConfig
+    # Group aliases for `device_map`: one group key places every chunk of that group, e.g.
+    # `device_map={"encoder": 0, "decoder": 1}`. An exact compiled-model name still wins.
+    _device_map_groups = {
+        "encoder_0": "encoder",
+        "encoder_n": "encoder",
+        "decoder_0": "decoder",
+        "decoder_n": "decoder",
+    }
 
+    @classmethod
+    def _device_for(cls, rbln_config: RBLNAutoencoderKLWanConfig, compiled_model_name: str) -> int | list[int] | None:
+        device_map = rbln_config.device_map
+        if compiled_model_name in device_map:
+            return device_map[compiled_model_name]
+        group = cls._device_map_groups.get(compiled_model_name)
+        if group is not None and group in device_map:
+            return device_map[group]
+        raise KeyError(
+            f"device_map {sorted(device_map)} does not cover compiled model '{compiled_model_name}'. "
+            f"Provide the exact name or one of the group keys {sorted(set(cls._device_map_groups.values()))}."
+        )
 
     @classmethod
     def _reconstruct_model_if_needed(cls, model: "PreTrainedModel"):
@@ -646,7 +666,7 @@ class RBLNAutoencoderKLWan(RBLNModel):
                 encoder_models[0],
                 rbln_compile_config=rbln_config.compile_cfgs[0],
                 create_runtimes=rbln_config.create_runtimes,
-                device=rbln_config.device_for("encoder_0"),
+                device=cls._device_for(rbln_config, "encoder_0"),
                 example_inputs=enc0_example_inputs,
                 compile_context=context,
             )
@@ -655,7 +675,7 @@ class RBLNAutoencoderKLWan(RBLNModel):
                 encoder_models[1],
                 rbln_compile_config=rbln_config.compile_cfgs[1],
                 create_runtimes=rbln_config.create_runtimes,
-                device=rbln_config.device_for("encoder_n"),
+                device=cls._device_for(rbln_config, "encoder_n"),
                 example_inputs=encn_example_inputs,
                 compile_context=context,
             )
@@ -672,7 +692,7 @@ class RBLNAutoencoderKLWan(RBLNModel):
             dec_models[0],
             rbln_compile_config=rbln_config.compile_cfgs[-2],
             create_runtimes=rbln_config.create_runtimes,
-            device=rbln_config.device_for("decoder_0"),
+            device=cls._device_for(rbln_config, "decoder_0"),
             example_inputs=dec0_example_inputs,
             compile_context=context,
         )
@@ -682,7 +702,7 @@ class RBLNAutoencoderKLWan(RBLNModel):
             dec_models[1],
             rbln_compile_config=rbln_config.compile_cfgs[-1],
             create_runtimes=rbln_config.create_runtimes,
-            device=rbln_config.device_for("decoder_n"),
+            device=cls._device_for(rbln_config, "decoder_n"),
             example_inputs=decn_example_inputs,
             compile_context=context,
         )
@@ -859,7 +879,6 @@ class RBLNAutoencoderKLWan(RBLNModel):
         compile_cfgs.append(RBLNCompileConfig(compiled_model_name="decoder_0", input_info=vae_dec_0_input_info))
         compile_cfgs.append(RBLNCompileConfig(compiled_model_name="decoder_n", input_info=vae_dec_n_input_info))
 
-
         rbln_config.set_compile_cfgs(compile_cfgs)
         return rbln_config
 
@@ -874,7 +893,7 @@ class RBLNAutoencoderKLWan(RBLNModel):
         else:
             expected_models = ["decoder_0", "decoder_n"]
 
-        device_vals = [rbln_config.device_for(model_name) for model_name in expected_models]
+        device_vals = [cls._device_for(rbln_config, model_name) for model_name in expected_models]
         return [
             rebel.Runtime(
                 compiled_model,
