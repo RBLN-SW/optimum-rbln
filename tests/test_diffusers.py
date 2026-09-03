@@ -19,7 +19,7 @@ from optimum.rbln import (
     RBLNStableVideoDiffusionPipeline,
 )
 
-from .test_base import BaseHubTest, BaseTest
+from .test_base import BaseHubTest, BaseTest, from_pretrained_cache_first
 
 
 class TestSDModel(BaseTest.TestModel, BaseHubTest.TestHub):
@@ -137,7 +137,7 @@ class TestSDControlNetModel(BaseTest.TestModel):
 
     @classmethod
     def setUpClass(cls):
-        controlnet = ControlNetModel.from_pretrained(cls.CONTROLNET_ID)
+        controlnet = from_pretrained_cache_first(ControlNetModel, cls.CONTROLNET_ID)
         cls.RBLN_CLASS_KWARGS["controlnet"] = controlnet
         return super().setUpClass()
 
@@ -168,7 +168,7 @@ class TestSDXLControlNetModel(BaseTest.TestModel):
 
     @classmethod
     def setUpClass(cls):
-        controlnet = ControlNetModel.from_pretrained(cls.CONTROLNET_ID)
+        controlnet = from_pretrained_cache_first(ControlNetModel, cls.CONTROLNET_ID)
         cls.RBLN_CLASS_KWARGS["controlnet"] = controlnet
         return super().setUpClass()
 
@@ -239,8 +239,8 @@ class TestSDMultiControlNetModel(BaseTest.TestModel):
 
     @classmethod
     def setUpClass(cls):
-        controlnet = ControlNetModel.from_pretrained(cls.CONTROLNET_ID)
-        controlnet_1 = ControlNetModel.from_pretrained(cls.CONTROLNET_ID)
+        controlnet = from_pretrained_cache_first(ControlNetModel, cls.CONTROLNET_ID)
+        controlnet_1 = from_pretrained_cache_first(ControlNetModel, cls.CONTROLNET_ID)
         controlnets = [controlnet, controlnet_1]
         cls.RBLN_CLASS_KWARGS["controlnet"] = controlnets
         return super().setUpClass()
@@ -282,7 +282,7 @@ class TestKandinskyV22Model(BaseTest.TestModel):
         rbln_class_kwargs_copy = self.RBLN_CLASS_KWARGS.copy()
         rbln_class_kwargs_copy["rbln_config"] = rbln_config
         with self.subTest():
-            _ = self.RBLN_CLASS.from_pretrained(model_id=self.HF_MODEL_ID, **rbln_class_kwargs_copy)
+            _ = from_pretrained_cache_first(self.RBLN_CLASS, self.HF_MODEL_ID, **rbln_class_kwargs_copy)
         with self.subTest():
             self.assertEqual(_.prior_text_encoder.rbln_config.batch_size, 2)
             self.assertEqual(_.prior_prior.rbln_config.batch_size, 4)
