@@ -168,10 +168,23 @@ def test_forward_sort_inputs_sorted_skips():
 
 
 def test_use_batch_attn_opt_serialized():
-    cfg = RBLNDecoderOnlyModelForCausalLMConfig(max_seq_len=1024, use_batch_attn_opt=True, npu="RBLN-CR31")
+    cfg = RBLNDecoderOnlyModelForCausalLMConfig(max_seq_len=1024, _use_batch_attn_opt=True, npu="RBLN-CR31")
+    assert cfg.use_batch_attn_opt is True
     serialized = cfg._prepare_for_serialization()
-    assert serialized.get("use_batch_attn_opt") is True
+    assert serialized.get("_use_batch_attn_opt") is True
     assert "npu" not in serialized
+    # round-trip: the serialized form reconstructs through __init__
+    assert RBLNDecoderOnlyModelForCausalLMConfig(max_seq_len=1024, _use_batch_attn_opt=True).use_batch_attn_opt is True
+
+
+def test_use_batch_attn_opt_not_user_settable():
+    with pytest.raises(ValueError, match="[Uu]nexpected"):
+        RBLNDecoderOnlyModelForCausalLMConfig(max_seq_len=1024, use_batch_attn_opt=True)
+
+    cfg = RBLNDecoderOnlyModelForCausalLMConfig(max_seq_len=1024)
+    assert cfg.use_batch_attn_opt is None
+    with pytest.raises(AttributeError):
+        cfg.use_batch_attn_opt = True
 
 
 def test_npu_is_cr13_or_later():

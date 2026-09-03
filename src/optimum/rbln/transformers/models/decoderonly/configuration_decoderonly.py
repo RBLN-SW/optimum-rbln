@@ -65,7 +65,7 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
         logits_to_keep: int | None = None,
         output_hidden_states: bool | None = None,
         cache_metas: list["CacheMeta"] | None = None,
-        use_batch_attn_opt: bool | None = None,
+        _use_batch_attn_opt: bool | None = None,
         **kwargs: Any,
     ):
         """
@@ -129,10 +129,6 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
                 Defaults to 0 if DecoderOnlyModel is used, 1 if DecoderOnlyModelForCausalLM is used.
             output_hidden_states (bool | None): Whether to output the hidden states of the decoder. Defaults to False.
             cache_metas (list["CacheMeta"] | None): The metadata for the cache tensors. Handled internally if not provided. Defaults to None.
-            use_batch_attn_opt (bool | None): Whether decode attention runs the in-memory
-                batched kernel, which requires batches sorted by sequence length (descending);
-                the runtime sorts transparently. Resolved at compile time when unset
-                (RBLN-CR13+ with mask-less flash attention) and serialized with the model.
             kwargs: Additional arguments passed to the parent RBLNModelConfig.
 
         Raises:
@@ -257,7 +253,9 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
             raise NotImplementedError("`logits_to_keep` > 1 is currently not supported for RBLN models.")
 
         self.output_hidden_states = output_hidden_states or False
-        self.use_batch_attn_opt = use_batch_attn_opt
+        # internal, not a user knob: resolved at compile time to mirror the compiler's
+        # in-memory kernel routing, serialized so a loaded model knows to sort
+        self._use_batch_attn_opt = _use_batch_attn_opt
 
         self.decoder_batch_sizes = None
         if "decode" in self.phases:
@@ -319,6 +317,13 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
         # position ids but no separate image_prefill phase, the compiled prefill attends
         # bidirectionally within a chunk, so the whole prompt must fit in a single chunk.
         return self.use_attention_mask and self.use_position_ids and not self.use_image_prefill
+
+    @property
+    def use_batch_attn_opt(self) -> bool | None:
+        # read-only: whether decode attention runs the in-memory batched kernel, which
+        # requires batches sorted by sequence length (descending). Resolved at compile time
+        # from the target NPU/attention config — never set by the user.
+        return self._use_batch_attn_opt
 
     @property
     def image_prefill_runtime_idx(self):
