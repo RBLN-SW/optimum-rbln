@@ -38,9 +38,8 @@ from ....modeling import RBLNModel
 from ....modeling_rope_utils import build_qwen_mrope_lookup, np_cos, np_sin, qwen_vit_rot_pos_ids
 from ....utils.logging import get_logger
 from ...modeling_outputs import RBLNDecoderOnlyOutput, _validate_output_hidden_states
-from ...utils.generation_multimodal import RBLNVisionBatchSortMixin, _per_sample_patch_lens
+from ...utils.generation_multimodal import RBLNVisionBatchSortMixin, _per_sample_patch_lens, _permute_flat_segments
 from ..decoderonly.decoderonly_runtime_utils import RBLNPageTableManager, RBLNRuntimeModel
-from ..decoderonly.generation_decoderonly import _permute_flat_segments
 from ..decoderonly.modeling_decoderonly import RBLNDecoderOnlyModel, RBLNDecoderOnlyModelForCausalLM
 from .configuration_qwen3_vl import (
     RBLNQwen3VLForConditionalGenerationConfig,

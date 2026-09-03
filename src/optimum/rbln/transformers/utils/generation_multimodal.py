@@ -14,10 +14,14 @@
 
 import torch
 
-from ..models.decoderonly.generation_decoderonly import (
-    RBLNDecoderOnlyGenerationMixin,
-    _permute_flat_segments,
-)
+from ..models.decoderonly.generation_decoderonly import RBLNDecoderOnlyGenerationMixin
+
+
+def _permute_flat_segments(tensor: torch.Tensor, seg_lens: list[int], perm_idx: torch.Tensor) -> torch.Tensor:
+    # reorder per-sample segments stacked on dim 0 (flattened multimodal layouts,
+    # e.g. pixel_values [total_patches, dim] or grid_thw [num_images, 3])
+    segments = torch.split(tensor, seg_lens, dim=0)
+    return torch.cat([segments[i] for i in perm_idx.tolist()], dim=0)
 
 
 class RBLNBatchSortGuardMixin:

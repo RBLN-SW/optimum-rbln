@@ -8,10 +8,22 @@ from optimum.rbln.transformers.models.exaone4_5.modeling_exaone4_5 import RBLNEx
 from optimum.rbln.transformers.models.qwen2_5_vl.modeling_qwen2_5_vl import RBLNQwen2_5_VLForConditionalGeneration
 from optimum.rbln.transformers.models.qwen2_vl.modeling_qwen2_vl import RBLNQwen2VLForConditionalGeneration
 from optimum.rbln.transformers.models.qwen3_vl.modeling_qwen3_vl import RBLNQwen3VLForConditionalGeneration
-from optimum.rbln.transformers.utils.generation_multimodal import RBLNVisionBatchSortMixin
+from optimum.rbln.transformers.utils.generation_multimodal import RBLNVisionBatchSortMixin, _permute_flat_segments
 
 
 VS, IMG, VID = 90, 91, 92
+
+
+def test_permute_flat_segments():
+    # samples own [2, 1, 3] rows; permutation [2, 0, 1] moves whole segments
+    x = torch.arange(6)
+    out = _permute_flat_segments(x, [2, 1, 3], torch.tensor([2, 0, 1]))
+    assert out.tolist() == [3, 4, 5, 0, 1, 2]
+
+    # roundtrip: permuting back with the inverse restores the original
+    inv = torch.argsort(torch.tensor([2, 0, 1]))
+    back = _permute_flat_segments(out, [3, 2, 1], inv)
+    assert torch.equal(back, x)
 
 
 def _make_model(cls, use_batch_attn_opt=True, **config_attrs):

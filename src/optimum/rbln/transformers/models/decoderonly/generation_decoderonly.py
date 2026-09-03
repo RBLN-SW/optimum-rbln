@@ -34,13 +34,6 @@ def _expand_batch_perm_idx(perm_idx: torch.Tensor, num_rows: int) -> torch.Tenso
     return (perm_idx[:, None] * n + torch.arange(n, device=perm_idx.device)).reshape(-1)
 
 
-def _permute_flat_segments(tensor: torch.Tensor, seg_lens: list[int], perm_idx: torch.Tensor) -> torch.Tensor:
-    # reorder per-sample segments stacked on dim 0 (flattened multimodal layouts,
-    # e.g. pixel_values [total_patches, dim] or grid_thw [num_images, 3])
-    segments = torch.split(tensor, seg_lens, dim=0)
-    return torch.cat([segments[i] for i in perm_idx.tolist()], dim=0)
-
-
 class RBLNDecoderOnlyGenerationMixin(GenerationMixin):
     _supports_cache_class = False  # Needed for GenerationMixin
     _is_stateful = False  # Needed for GenerationMixin
