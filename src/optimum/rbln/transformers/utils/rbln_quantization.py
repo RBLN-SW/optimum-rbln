@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import glob
+import json
 import os
 from collections.abc import Iterable
 from typing import (
@@ -22,11 +23,13 @@ from typing import (
 
 import torch
 from huggingface_hub import hf_hub_download, list_repo_files
+from huggingface_hub.errors import EntryNotFoundError
 from safetensors.torch import load_file
 from torch.nn import Linear, Parameter
 from transformers import AutoConfig
 from transformers.initialization import no_init_weights
 from transformers.modeling_utils import get_state_dict_dtype
+from transformers.utils import SAFE_WEIGHTS_INDEX_NAME
 
 from ...configuration_utils import RBLNSerializableConfigProtocol
 from ...utils.logging import get_logger
@@ -240,6 +243,38 @@ def get_quantized_model(
     return model
 
 
+def _resolve_weight_names(
+    model_id: str,
+    token: bool | str | None,
+    revision: str | None,
+    cache_dir: str | None,
+    force_download: bool,
+    local_files_only: bool,
+) -> list[str]:
+    """List the files of a repo, from its safetensors index when it has one.
+
+    Listing the repository is the fallback rather than the default because, unlike
+    `hf_hub_download`, that endpoint neither retries on 429 nor falls back to the cache.
+    """
+    try:
+        index_path = hf_hub_download(
+            repo_id=model_id,
+            filename=SAFE_WEIGHTS_INDEX_NAME,
+            revision=revision,
+            token=token,
+            cache_dir=cache_dir,
+            force_download=force_download,
+            local_files_only=local_files_only,
+        )
+    except EntryNotFoundError:
+        logger.warning(f"{model_id} has no {SAFE_WEIGHTS_INDEX_NAME}, so its files have to be listed from the Hub.")
+        return list_repo_files(model_id, revision=revision, token=token)
+
+    with open(index_path) as f:
+        weight_map = json.load(f).get("weight_map") or {}
+    return list(dict.fromkeys(weight_map.values()))
+
+
 def load_weight_files(
     model_id: str,
     token: bool | str | None = None,
@@ -257,8 +292,7 @@ def load_weight_files(
         safetensor_files = glob.glob(f"{model_id}/*.safetensors")
     else:
         try:
-            # List all files in the repository
-            repo_files = list_repo_files(model_id, revision=revision, token=token)
+            repo_files = _resolve_weight_names(model_id, token, revision, cache_dir, force_download, local_files_only)
             # Filter for safetensors files
             safetensor_files = []
 

@@ -122,15 +122,27 @@ class RBLNGptOssForCausalLM(RBLNDecoderOnlyModelForCausalLM):
         dtype: str | torch.dtype = None,
         torch_dtype: str | torch.dtype = None,
         config: PretrainedConfig | None = None,
+        token: bool | str | None = None,
+        revision: str | None = None,
+        cache_dir: str | None = None,
+        force_download: bool = False,
+        local_files_only: bool = False,
         **kwargs,
     ) -> PreTrainedModel:
         dtype = cls._get_dtype(dtype, torch_dtype)
+        hub_kwargs = {
+            "token": token,
+            "revision": revision,
+            "cache_dir": cache_dir,
+            "force_download": force_download,
+            "local_files_only": local_files_only,
+        }
 
-        safetensor_files = load_weight_files(model_id, exception_keywords=["original"])
+        safetensor_files = load_weight_files(model_id, exception_keywords=["original"], **hub_kwargs)
         state_dict = {k: v for f in safetensor_files for k, v in load_file(f).items()}
 
         if config is None:
-            config, kwargs = AutoConfig.from_pretrained(model_id, return_unused_kwargs=True)
+            config, kwargs = AutoConfig.from_pretrained(model_id, return_unused_kwargs=True, **hub_kwargs)
 
         with no_init_weights():
             model = AutoModelForCausalLM.from_config(config, dtype=dtype, **kwargs)
