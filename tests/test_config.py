@@ -455,3 +455,122 @@ def test_qwen_vl_parent_rejects_conflicting_vision_batch_size(parent_cls_name, v
 
 if __name__ == "__main__":
     pytest.main()
+
+
+# ---------------------------------------------------------------------------
+# Loading with an RBLNModelConfig object (treated as runtime overrides)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def saved_vlm_config_dir(tmp_path):
+    """A saved rbln_config.json of a model with a nested submodule (visual), as a compile would leave it."""
+    from optimum.rbln import (
+        RBLNQwen2_5_VisionTransformerPretrainedModelConfig,
+        RBLNQwen2_5_VLForConditionalGenerationConfig,
+    )
+
+    visual = RBLNQwen2_5_VisionTransformerPretrainedModelConfig(max_seq_len=256)
+    visual.set_compile_cfgs(
+        [RBLNCompileConfig(compiled_model_name="compiled_model", input_info=[("hidden_states", (256, 32), "float32")])]
+    )
+    config = RBLNQwen2_5_VLForConditionalGenerationConfig(
+        visual=visual, max_seq_len=512, kvcache_num_blocks=1, kvcache_block_size=512
+    )
+    config.set_compile_cfgs(
+        [RBLNCompileConfig(compiled_model_name="prefill", input_info=[("inputs_embeds", (1, 128, 32), "float32")])]
+    )
+    config.freeze()
+    config.save(str(tmp_path))
+    return str(tmp_path)
+
+
+def test_get_runtime_overrides():
+    """get_runtime_overrides extracts only explicitly-set runtime options, recursively."""
+    from optimum.rbln import RBLNQwen2_5_VLForConditionalGenerationConfig
+
+    partial = RBLNQwen2_5_VLForConditionalGenerationConfig(visual={"device": 1}, device=[0, 1])
+    assert partial.get_runtime_overrides() == {"device": [0, 1], "visual": {"device": 1}}
+
+    # Nothing set -> nothing extracted: defaults filled during objectification must not leak.
+    empty = RBLNQwen2_5_VLForConditionalGenerationConfig()
+    assert empty.get_runtime_overrides() == {}
+
+
+def test_load_with_partial_config_object(saved_vlm_config_dir):
+    """A partially-initialized config object (what a diffusers pipeline passes down) loads fine:
+    runtime options are applied, compile-time attributes come from disk."""
+    from optimum.rbln import RBLNQwen2_5_VLForConditionalGenerationConfig
+
+    partial = RBLNQwen2_5_VLForConditionalGenerationConfig(visual={"device": 1}, device=[0, 1])
+    assert isinstance(partial.visual, dict), "objectification leaves the nested submodule as a dict"
+
+    loaded = RBLNQwen2_5_VLForConditionalGenerationConfig.from_pretrained(saved_vlm_config_dir, rbln_config=partial)
+
+    # runtime options from the object
+    assert loaded.device == [0, 1]
+    assert loaded.visual.device == 1
+    # compile-time attributes from disk, not from the default-filled object
+    assert loaded.max_seq_len == 512
+    assert loaded.visual.max_seq_len == [256]
+    assert len(loaded.visual.compile_cfgs) == 1
+
+
+def test_load_with_config_object_propagates_device_to_submodule(saved_vlm_config_dir):
+    """A top-level device on the object reaches submodules, like the dict path always did."""
+    from optimum.rbln import RBLNQwen2_5_VLForConditionalGenerationConfig
+
+    partial = RBLNQwen2_5_VLForConditionalGenerationConfig(device=[2, 3])
+    loaded = RBLNQwen2_5_VLForConditionalGenerationConfig.from_pretrained(saved_vlm_config_dir, rbln_config=partial)
+    assert loaded.device == [2, 3]
+    assert loaded.visual.device == [2, 3]
+
+
+def test_load_config_object_equivalent_to_dict(saved_vlm_config_dir):
+    """Passing an object must behave exactly like passing the equivalent override dict."""
+    from optimum.rbln import RBLNQwen2_5_VLForConditionalGenerationConfig
+
+    overrides = {"device": [0, 1], "visual": {"device": 1}}
+    via_dict = RBLNQwen2_5_VLForConditionalGenerationConfig.from_pretrained(
+        saved_vlm_config_dir, rbln_config=dict(overrides)
+    )
+    via_object = RBLNQwen2_5_VLForConditionalGenerationConfig.from_pretrained(
+        saved_vlm_config_dir, rbln_config=RBLNQwen2_5_VLForConditionalGenerationConfig(**overrides)
+    )
+    assert str(via_dict) == str(via_object)
+    assert via_dict.device == via_object.device
+    assert via_dict.visual.device == via_object.visual.device
+
+
+def test_load_with_config_object_kwarg_precedence(saved_vlm_config_dir):
+    """An explicit rbln_* kwarg wins over the value carried by the config object."""
+    from optimum.rbln import RBLNQwen2_5_VLForConditionalGenerationConfig
+
+    partial = RBLNQwen2_5_VLForConditionalGenerationConfig(device=[0, 1])
+    loaded = RBLNQwen2_5_VLForConditionalGenerationConfig.from_pretrained(
+        saved_vlm_config_dir, rbln_config=partial, rbln_device=[6, 7]
+    )
+    assert loaded.device == [6, 7]
+
+
+def test_load_with_config_object_ignores_non_runtime_attrs(saved_vlm_config_dir):
+    """Non-runtime attributes on a passed object are ignored; disk values win."""
+    from optimum.rbln import RBLNQwen2_5_VLForConditionalGenerationConfig
+
+    partial = RBLNQwen2_5_VLForConditionalGenerationConfig(max_seq_len=1024)
+    loaded = RBLNQwen2_5_VLForConditionalGenerationConfig.from_pretrained(saved_vlm_config_dir, rbln_config=partial)
+    assert loaded.max_seq_len == 512
+
+
+def test_load_with_roundtrip_config_object(saved_vlm_config_dir):
+    """A fully-loaded config passed back in (the nested-submodule load path) keeps working,
+    and runtime mutations on it are honored."""
+    from optimum.rbln import RBLNQwen2_5_VLForConditionalGenerationConfig
+
+    first = RBLNQwen2_5_VLForConditionalGenerationConfig.from_pretrained(saved_vlm_config_dir)
+    first.visual.device = 2
+
+    second = RBLNQwen2_5_VLForConditionalGenerationConfig.from_pretrained(saved_vlm_config_dir, rbln_config=first)
+    assert second.visual.device == 2
+    assert second.max_seq_len == 512
+    assert len(second.visual.compile_cfgs) == 1
