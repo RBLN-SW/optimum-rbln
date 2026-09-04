@@ -18,7 +18,7 @@ from ..models.decoderonly.generation_decoderonly import RBLNDecoderOnlyGeneratio
 
 
 _UNMAPPABLE_BATCH_SORT = (
-    "Cannot map image inputs to batch samples for the sorting `use_batch_attn_opt` requires. "
+    "Cannot map image inputs to batch samples for the sorting `requires_batch_sort` requires. "
     "Pass inputs already sorted by sequence length (descending) with `inputs_sorted=True`."
 )
 
@@ -87,7 +87,7 @@ class RBLNBatchSortGuardMixin:
             return
         if batch_input is not None and batch_input.shape[0] > 1:
             raise RuntimeError(
-                "This model was compiled with `use_batch_attn_opt`, which requires batch inputs sorted by "
+                "This model was compiled with `requires_batch_sort`, which requires batch inputs sorted by "
                 "sequence length (descending). Use generate(), which sorts and unsorts automatically, or "
                 "pass `inputs_sorted=True` with inputs already sorted."
             )
@@ -96,13 +96,13 @@ class RBLNBatchSortGuardMixin:
 class RBLNMultimodalBatchSortMixin(RBLNBatchSortGuardMixin, RBLNDecoderOnlyGenerationMixin):
     _lm_attr_name = "language_model"
     # image-first kwargs, mapped to rows by _images_per_sample; batch-first extras go in
-    # _generate_batch_sortable_kwargs instead
+    # _batch_sortable_kwargs instead
     _image_indexed_kwargs: tuple[str, ...] = ()
 
     @property
     def _batch_sort_enabled(self) -> bool:
         language_model = getattr(self, self._lm_attr_name, None)
-        return bool(language_model is not None and getattr(language_model.rbln_config, "use_batch_attn_opt", None))
+        return bool(language_model is not None and getattr(language_model.rbln_config, "requires_batch_sort", None))
 
     @property
     def _image_token_id(self) -> int | None:
@@ -126,7 +126,7 @@ class RBLNMultimodalBatchSortMixin(RBLNBatchSortGuardMixin, RBLNDecoderOnlyGener
     ) -> None:
         tensors = self._collect_segment_kwargs(kwargs, self._image_indexed_kwargs)
         if tensors:
-            self._apply_segment_perm(tensors, kwargs, sort_idx, self._images_per_sample(input_ids, kwargs))
+            self._permute_segment_kwargs(tensors, kwargs, sort_idx, self._images_per_sample(input_ids, kwargs))
 
     def _images_per_sample(self, input_ids: torch.LongTensor | None, kwargs: dict) -> list[int]:
         raise NotImplementedError(
@@ -146,7 +146,7 @@ class RBLNMultimodalBatchSortMixin(RBLNBatchSortGuardMixin, RBLNDecoderOnlyGener
         return tensors
 
     @staticmethod
-    def _apply_segment_perm(
+    def _permute_segment_kwargs(
         tensors: dict[str, torch.Tensor], kwargs: dict, sort_idx: torch.Tensor, seg_lens: list[int]
     ) -> None:
         if sum(seg_lens) != next(iter(tensors.values())).shape[0]:
@@ -167,10 +167,8 @@ def _per_sample_patch_lens(grid_thw: torch.Tensor, rows_per_sample: list[int]) -
 
 class RBLNVisionBatchSortMixin(RBLNBatchSortGuardMixin):
     _video_grid_rows_are_chunks = False  # qwen3-style video grids are per temporal chunk
-    _generate_batch_sortable_kwargs = RBLNDecoderOnlyGenerationMixin._generate_batch_sortable_kwargs + (
-        "mm_token_type_ids",
-    )
-    _vision_sortable_keys = (
+    _batch_sortable_kwargs = RBLNDecoderOnlyGenerationMixin._batch_sortable_kwargs + ("mm_token_type_ids",)
+    _vision_sortable_kwargs = (
         "pixel_values",
         "pixel_values_videos",
         "image_grid_thw",
@@ -184,7 +182,7 @@ class RBLNVisionBatchSortMixin(RBLNBatchSortGuardMixin):
         presort_input_ids = input_ids
         presort_mask = kwargs.get("attention_mask")
         input_ids, unsort_idx = super()._sort_generation_inputs(input_ids, kwargs)
-        if unsort_idx is None or not any(kwargs.get(k) is not None for k in self._vision_sortable_keys):
+        if unsort_idx is None or not any(kwargs.get(k) is not None for k in self._vision_sortable_kwargs):
             return input_ids, unsort_idx
         if presort_input_ids is None:
             raise RuntimeError("Batch sorting flattened vision inputs requires input_ids.")

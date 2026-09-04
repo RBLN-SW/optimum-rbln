@@ -625,9 +625,7 @@ class RBLNGemma4ForConditionalGeneration(RBLNModel, RBLNMultimodalBatchSortMixin
         {"name": "language_model"},
     ]
     _image_indexed_kwargs = ("pixel_values", "image_position_ids")
-    _generate_batch_sortable_kwargs = RBLNMultimodalBatchSortMixin._generate_batch_sortable_kwargs + (
-        "mm_token_type_ids",
-    )
+    _batch_sortable_kwargs = RBLNMultimodalBatchSortMixin._batch_sortable_kwargs + ("mm_token_type_ids",)
 
     def _images_per_sample(self, input_ids: torch.LongTensor | None, kwargs: dict) -> list[int]:
         return _placeholder_run_counts(input_ids, self._image_token_id)
@@ -643,7 +641,7 @@ class RBLNGemma4ForConditionalGeneration(RBLNModel, RBLNMultimodalBatchSortMixin
             videos_per_sample = _placeholder_run_counts(
                 input_ids, getattr(self.config, "video_token_id", None), runs_per_segment=pixel_values_videos.shape[1]
             )
-            self._apply_segment_perm(videos, kwargs, sort_idx, videos_per_sample)
+            self._permute_segment_kwargs(videos, kwargs, sort_idx, videos_per_sample)
 
     @staticmethod
     def _reject_unsupported_modalities(

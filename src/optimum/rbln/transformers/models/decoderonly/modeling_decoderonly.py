@@ -567,8 +567,8 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
         # mirror the compiler's in-memory kernel routing (rebel_compiler#13163);
         # serialized so a loaded model knows to sort. Sorting is a batched-DECODE
         # contract — prefill-only models run the kernel one row at a time.
-        if rbln_config.use_batch_attn_opt is None:
-            rbln_config._use_batch_attn_opt = (
+        if rbln_config.requires_batch_sort is None:
+            rbln_config._requires_batch_sort = (
                 rbln_config.can_generate
                 and npu_is_cr13_or_later(rbln_config.npu)
                 and rbln_config.attn_impl == "flash_attn"
@@ -804,16 +804,14 @@ class RBLNDecoderOnlyModelForCausalLM(RBLNDecoderOnlyModel, RBLNDecoderOnlyGener
         lora_int_ids = [available_adapters[name] for name in adapter_names]
         self.set_lora_int_ids(torch.tensor(lora_int_ids, dtype=torch.int32))
 
-    def _maybe_sort_inputs_for_batch_attn_opt(
-        self, model_inputs: dict, inputs_sorted: bool = False
-    ) -> torch.Tensor | None:
+    def _maybe_sort_batch_inputs(self, model_inputs: dict, inputs_sorted: bool = False) -> torch.Tensor | None:
         # The in-memory batched attention kernel needs batches sorted by length (descending).
         # The permutation is fixed at prefill (device KV layout) and reapplied every decode;
         # returns unsort_idx, or None when nothing was sorted (incl. inputs_sorted=True).
         shape_src = model_inputs.get("inputs_embeds")
         if shape_src is None:
             shape_src = model_inputs.get("input_ids")
-        if inputs_sorted or shape_src is None or shape_src.shape[0] <= 1 or not self.rbln_config.use_batch_attn_opt:
+        if inputs_sorted or shape_src is None or shape_src.shape[0] <= 1 or not self.rbln_config.requires_batch_sort:
             # clear cached permutation so a stale index can't leak into a later decode
             self._rbln_sort_idx = None
             self._rbln_unsort_idx = None
@@ -852,7 +850,7 @@ class RBLNDecoderOnlyModelForCausalLM(RBLNDecoderOnlyModel, RBLNDecoderOnlyGener
         return unsort_idx
 
     @staticmethod
-    def _maybe_unsort_outputs_for_batch_attn_opt(unsort_idx: torch.Tensor | None, outputs: dict) -> None:
+    def _maybe_unsort_batch_outputs(unsort_idx: torch.Tensor | None, outputs: dict) -> None:
         # undo the sort on outputs in place; tuples element-wise
         if unsort_idx is None:
             return
@@ -916,9 +914,9 @@ class RBLNDecoderOnlyModelForCausalLM(RBLNDecoderOnlyModel, RBLNDecoderOnlyGener
             "token_type_ids": token_type_ids,
             "lora_int_ids": lora_int_ids,
         }
-        unsort_idx = self._maybe_sort_inputs_for_batch_attn_opt(batch_inputs, inputs_sorted=inputs_sorted)
+        unsort_idx = self._maybe_sort_batch_inputs(batch_inputs, inputs_sorted=inputs_sorted)
         batch_outputs = self._forward_prefill_or_decode(**batch_inputs)
-        self._maybe_unsort_outputs_for_batch_attn_opt(unsort_idx, batch_outputs)
+        self._maybe_unsort_batch_outputs(unsort_idx, batch_outputs)
 
         if not return_dict:
             return (

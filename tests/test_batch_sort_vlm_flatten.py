@@ -26,9 +26,9 @@ def test_permute_flat_segments():
     assert torch.equal(back, x)
 
 
-def _make_model(cls, use_batch_attn_opt=True, **config_attrs):
+def _make_model(cls, requires_batch_sort=True, **config_attrs):
     model = object.__new__(cls)
-    model.rbln_config = SimpleNamespace(use_batch_attn_opt=use_batch_attn_opt)
+    model.rbln_config = SimpleNamespace(requires_batch_sort=requires_batch_sort)
     model.config = SimpleNamespace(vision_start_token_id=VS, image_token_id=IMG, video_token_id=VID, **config_attrs)
     return model
 
@@ -207,7 +207,7 @@ def test_exaone4_5_misaligned_grids_raise():
 
 
 def test_gate_off_noop():
-    model = _make_model(RBLNQwen2VLForConditionalGeneration, use_batch_attn_opt=False)
+    model = _make_model(RBLNQwen2VLForConditionalGeneration, requires_batch_sort=False)
     ids = torch.tensor([[0, VS, IMG, 3], [1, 2, 3, 4]])
     grids = torch.tensor([[1, 2, 2]])
     pixels = torch.zeros(4, 3)
@@ -229,7 +229,7 @@ def test_require_sorted_batch_inputs_guard():
     model._require_sorted_batch_inputs(batch[:1], False)
     model._require_sorted_batch_inputs(None, False)
 
-    off = _make_model(RBLNQwen2VLForConditionalGeneration, use_batch_attn_opt=False)
+    off = _make_model(RBLNQwen2VLForConditionalGeneration, requires_batch_sort=False)
     off._require_sorted_batch_inputs(batch, False)
 
 

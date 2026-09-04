@@ -94,7 +94,7 @@ class RBLNPaliGemmaForConditionalGeneration(RBLNModel, RBLNMultimodalBatchSortMi
         {"name": "language_model"},
     ]
     # one image per sample: pixel_values is batch-first (batch_size, C, H, W)
-    _generate_batch_sortable_kwargs = RBLNMultimodalBatchSortMixin._generate_batch_sortable_kwargs + ("pixel_values",)
+    _batch_sortable_kwargs = RBLNMultimodalBatchSortMixin._batch_sortable_kwargs + ("pixel_values",)
 
     def __getattr__(self, __name: str) -> Any:
         def redirect(func):

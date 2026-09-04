@@ -37,7 +37,7 @@ def _expand_batch_perm_idx(perm_idx: torch.Tensor, num_rows: int) -> torch.Tenso
 class RBLNDecoderOnlyGenerationMixin(GenerationMixin):
     _supports_cache_class = False  # Needed for GenerationMixin
     _is_stateful = False  # Needed for GenerationMixin
-    _generate_batch_sortable_kwargs = ("attention_mask", "inputs_embeds", "token_type_ids", "lora_int_ids")
+    _batch_sortable_kwargs = ("attention_mask", "inputs_embeds", "token_type_ids", "lora_int_ids")
 
     def _reorder_cache(self, past_key_values, beam_idx):
         raise NotImplementedError
@@ -45,7 +45,7 @@ class RBLNDecoderOnlyGenerationMixin(GenerationMixin):
     @property
     def _batch_sort_enabled(self) -> bool:
         # getattr: multimodal top-level configs lack the field
-        return bool(getattr(self.rbln_config, "use_batch_attn_opt", None))
+        return bool(getattr(self.rbln_config, "requires_batch_sort", None))
 
     @staticmethod
     def _unsort_generation_outputs(
@@ -83,7 +83,7 @@ class RBLNDecoderOnlyGenerationMixin(GenerationMixin):
         inputs_sorted: bool = False,
         **kwargs,
     ):
-        # use_batch_attn_opt needs length-sorted batches: generate() sorts once upfront
+        # requires_batch_sort needs length-sorted batches: generate() sorts once upfront
         # (inputs_sorted=True); a bare forward() call sorts/unsorts per call instead.
         model_inputs = {}
         is_prefill_phase = generate_idx is None
@@ -188,7 +188,7 @@ class RBLNDecoderOnlyGenerationMixin(GenerationMixin):
         sort_idx = torch.argsort(lengths, descending=True)
         if input_ids is not None:
             input_ids = input_ids.index_select(0, sort_idx)
-        for name in self._generate_batch_sortable_kwargs:
+        for name in self._batch_sortable_kwargs:
             value = kwargs.get(name)
             if isinstance(value, torch.Tensor) and value.dim() >= 1:
                 kwargs[name] = value.index_select(0, sort_idx)

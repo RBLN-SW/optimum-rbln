@@ -229,7 +229,7 @@ class RBLNIdefics3ForConditionalGeneration(RBLNModel, RBLNMultimodalBatchSortMix
     _rbln_submodule_prefix = "model"
     _lm_attr_name = "text_model"
     # pixel_values (B, num_images, C, H, W) and pixel_attention_mask (B, num_images, H, W) are batch-first
-    _generate_batch_sortable_kwargs = RBLNMultimodalBatchSortMixin._generate_batch_sortable_kwargs + (
+    _batch_sortable_kwargs = RBLNMultimodalBatchSortMixin._batch_sortable_kwargs + (
         "pixel_values",
         "pixel_attention_mask",
     )

@@ -13,9 +13,9 @@ IMG = 99
 VID = 98
 
 
-def _fake_model(cls, config_fields, lm_attr="language_model", use_batch_attn_opt=True):
+def _fake_model(cls, config_fields, lm_attr="language_model", requires_batch_sort=True):
     model = cls.__new__(cls)
-    lm_config = type("Cfg", (), {"use_batch_attn_opt": use_batch_attn_opt})()
+    lm_config = type("Cfg", (), {"requires_batch_sort": requires_batch_sort})()
     setattr(model, lm_attr, type("LM", (), {"rbln_config": lm_config})())
     model.config = type("Config", (), config_fields)()
     return model
@@ -52,7 +52,7 @@ def test_gemma3_gate_off_is_noop():
     model = _fake_model(
         RBLNGemma3ForConditionalGeneration,
         {"image_token_index": IMG, "mm_tokens_per_image": 2},
-        use_batch_attn_opt=None,
+        requires_batch_sort=None,
     )
     input_ids = torch.tensor([[1, 2], [3, 4]])
     kwargs = {"attention_mask": torch.tensor([[1, 1], [1, 0]]), "pixel_values": torch.zeros(2, 1, 1, 1)}
@@ -268,7 +268,7 @@ def test_paligemma_sorts_batch_first_pixel_values():
 def test_forward_guard_requires_sorted_inputs():
     model = _fake_model(RBLNLlavaForConditionalGeneration, {"image_token_index": IMG, "image_seq_length": 2})
     batch_input = torch.zeros(2, 4, dtype=torch.long)
-    with pytest.raises(RuntimeError, match="use_batch_attn_opt"):
+    with pytest.raises(RuntimeError, match="requires_batch_sort"):
         model._require_sorted_batch_inputs(batch_input, inputs_sorted=False)
     model._require_sorted_batch_inputs(batch_input, inputs_sorted=True)
     model._require_sorted_batch_inputs(batch_input[:1], inputs_sorted=False)
@@ -276,6 +276,6 @@ def test_forward_guard_requires_sorted_inputs():
     disabled = _fake_model(
         RBLNLlavaForConditionalGeneration,
         {"image_token_index": IMG, "image_seq_length": 2},
-        use_batch_attn_opt=None,
+        requires_batch_sort=None,
     )
     disabled._require_sorted_batch_inputs(batch_input, inputs_sorted=False)
