@@ -39,7 +39,7 @@ from ...configurations import RBLNCosmosTransformer3DModelConfig
 if TYPE_CHECKING:
     from transformers import AutoFeatureExtractor, AutoProcessor, AutoTokenizer, PretrainedConfig, PreTrainedModel
 
-    from ...modeling_diffusers import RBLNCosmosTransformer3DModelConfig, RBLNDiffusionMixin, RBLNDiffusionMixinConfig
+    from ...modeling_diffusers import RBLNDiffusionMixin, RBLNDiffusionMixinConfig
 
 
 logger = get_logger(__name__)
@@ -169,7 +169,7 @@ class RBLNCosmosTransformer3DModel(RBLNModel):
             rope_scale=self.config.rope_scale,
         )
         self.rope.load_state_dict(artifacts["rope"])
-        if artifacts["learnable_pos_embed"] is None:
+        if artifacts.get("learnable_pos_embed") is None:
             self.learnable_pos_embed = None
         else:
             self.learnable_pos_embed = CosmosLearnablePositionalEmbed(
@@ -188,17 +188,31 @@ class RBLNCosmosTransformer3DModel(RBLNModel):
             time_proj.num_channels, time_proj.flip_sin_to_cos, time_proj.downscale_freq_shift, time_proj.scale
         )
         self.time_embed.load_state_dict(artifacts["time_embed"])
+        if artifacts.get("crossattn_proj") is None:
+            self.crossattn_proj = None
+        else:
+            self.crossattn_proj = torch.nn.Sequential(
+                torch.nn.Linear(
+                    self.config.crossattn_proj_in_channels, self.config.encoder_hidden_states_channels, bias=True
+                ),
+                torch.nn.GELU(),
+            )
+            self.crossattn_proj.load_state_dict(artifacts["crossattn_proj"])
+            self.crossattn_proj.to(self.rbln_config.dtype)
         self.time_embed.to(self.rbln_config.dtype)
 
     def compute_embedding(
         self,
         hidden_states: torch.Tensor,
+        encoder_hidden_states: torch.Tensor,
         timestep: torch.Tensor,
         attention_mask: torch.Tensor | None = None,
         fps: int | None = None,
         condition_mask: torch.Tensor | None = None,
         padding_mask: torch.Tensor | None = None,
     ):
+        # Normalize to this model's compute dtype.
+        encoder_hidden_states = encoder_hidden_states.to(self.rbln_config.dtype)
         batch_size, num_channels, num_frames, height, width = hidden_states.shape
 
         # 1. Concatenate padding mask if needed & prepare attention mask
@@ -222,14 +236,37 @@ class RBLNCosmosTransformer3DModel(RBLNModel):
 
         # 3. Patchify input
         p_t, p_h, p_w = self.config.patch_size
+        post_patch_num_frames = num_frames // p_t
+        post_patch_height = height // p_h
+        post_patch_width = width // p_w
         hidden_states = self.patch_embed(hidden_states)
         hidden_states = hidden_states.flatten(1, 3)  # [B, T, H, W, C] -> [B, THW, C]
 
         # 4. Timestep embeddings
-        temb, embedded_timestep = self.time_embed(hidden_states, timestep)
+        if timestep.ndim == 1:
+            temb, embedded_timestep = self.time_embed(hidden_states, timestep)
+        elif timestep.ndim == 5:
+            assert timestep.shape == (batch_size, 1, num_frames, 1, 1), (
+                f"Expected timestep to have shape [B, 1, T, 1, 1], but got {timestep.shape}"
+            )
+            timestep = timestep.flatten()
+            temb, embedded_timestep = self.time_embed(hidden_states, timestep)
+            # We can do this because num_frames == post_patch_num_frames, as p_t is 1
+            temb, embedded_timestep = (
+                x.view(batch_size, post_patch_num_frames, 1, 1, -1)
+                .expand(-1, -1, post_patch_height, post_patch_width, -1)
+                .flatten(1, 3)
+                for x in (temb, embedded_timestep)
+            )  # [BT, C] -> [B, T, 1, 1, C] -> [B, T, H, W, C] -> [B, THW, C]
+        else:
+            raise AssertionError("Unsupported shape of `timestep`")
+
+        if self.config.use_crossattn_projection:
+            encoder_hidden_states = self.crossattn_proj(encoder_hidden_states)
 
         return (
             hidden_states,
+            encoder_hidden_states,
             temb,
             embedded_timestep,
             image_rotary_emb[0],
@@ -254,13 +291,45 @@ class RBLNCosmosTransformer3DModel(RBLNModel):
     def update_rbln_config_using_pipe(
         cls, pipe: "RBLNDiffusionMixin", rbln_config: "RBLNDiffusionMixinConfig", submodule_name: str
     ) -> RBLNCosmosTransformer3DModelConfig:
+        if rbln_config.transformer.num_frames is None:
+            if pipe.transformer.config.extra_pos_embed_type is None:
+                rbln_config.transformer.num_frames = 93 if rbln_config.vae.uses_encoder else 1
+            else:
+                rbln_config.transformer.num_frames = 121
+
+        if rbln_config.transformer.height is None:
+            if (
+                pipe.transformer.config.extra_pos_embed_type is None
+                and not rbln_config.vae.uses_encoder
+                and not pipe.transformer.config.use_crossattn_projection
+            ):
+                rbln_config.transformer.height = 768
+            else:
+                rbln_config.transformer.height = 704
+
+        if rbln_config.transformer.width is None:
+            if (
+                pipe.transformer.config.extra_pos_embed_type is None
+                and not rbln_config.vae.uses_encoder
+                and not pipe.transformer.config.use_crossattn_projection
+            ):
+                rbln_config.transformer.width = 1360
+            else:
+                rbln_config.transformer.width = 1280
+
         rbln_config.transformer.num_latent_frames = (
             rbln_config.transformer.num_frames - 1
         ) // pipe.vae_scale_factor_temporal + 1
         rbln_config.transformer.latent_height = rbln_config.transformer.height // pipe.vae_scale_factor_spatial
         rbln_config.transformer.latent_width = rbln_config.transformer.width // pipe.vae_scale_factor_spatial
-        rbln_config.transformer.max_seq_len = pipe.text_encoder.config.n_positions
-        rbln_config.transformer.embedding_dim = pipe.text_encoder.encoder.embed_tokens.embedding_dim
+        # The cross-attention sequence length must match what the RBLN text encoder was compiled to.
+        rbln_config.transformer.max_seq_len = rbln_config.text_encoder.max_seq_len
+        if pipe.transformer.config.use_crossattn_projection:
+            # Predict2.5 feeds the layer-concatenated embeddings; only the transformer knows their width.
+            rbln_config.transformer.embedding_dim = pipe.transformer.config.encoder_hidden_states_channels
+        else:
+            # T5 families feed the raw last hidden state, so the text encoder defines the width.
+            rbln_config.transformer.embedding_dim = pipe.text_encoder.encoder.embed_tokens.embedding_dim
 
         return rbln_config
 
@@ -278,6 +347,8 @@ class RBLNCosmosTransformer3DModel(RBLNModel):
             save_dict["learnable_pos_embed"] = model.learnable_pos_embed.state_dict()
         save_dict["patch_embed"] = model.patch_embed.state_dict()
         save_dict["time_embed"] = model.time_embed.state_dict()
+        if model.config.use_crossattn_projection:
+            save_dict["crossattn_proj"] = model.crossattn_proj.state_dict()
         torch.save(save_dict, save_dir_path / subfolder / "torch_artifacts.pth")
 
     @classmethod
@@ -288,6 +359,13 @@ class RBLNCosmosTransformer3DModel(RBLNModel):
         model_config: "PretrainedConfig",
         rbln_config: "RBLNCosmosTransformer3DModelConfig",
     ) -> RBLNCosmosTransformer3DModelConfig:
+        missing = [
+            name
+            for name in ("num_latent_frames", "latent_height", "latent_width", "max_seq_len", "embedding_dim")
+            if getattr(rbln_config, name) is None
+        ]
+        if missing:
+            raise ValueError(f"{', '.join(missing)} must be specified to compile RBLNCosmosTransformer3DModel. ")
         p_t, p_h, p_w = model_config.patch_size
         hidden_dim = (
             (rbln_config.num_latent_frames // p_t)
@@ -295,7 +373,7 @@ class RBLNCosmosTransformer3DModel(RBLNModel):
             * (rbln_config.latent_width // p_w)
         )
         attention_head_dim = model_config.attention_head_dim
-        hidden_size = model.config.num_attention_heads * model.config.attention_head_dim
+        hidden_size = model_config.num_attention_heads * model_config.attention_head_dim
         input_info = [
             (
                 "hidden_states",
@@ -315,12 +393,38 @@ class RBLNCosmosTransformer3DModel(RBLNModel):
                 ],
                 rbln_config.dtype,
             ),
-            ("embedded_timestep", [rbln_config.batch_size, hidden_size], rbln_config.dtype),
-            ("temb", [1, hidden_size * 3], rbln_config.dtype),
-            ("image_rotary_emb_0", [hidden_dim, attention_head_dim], "float32"),
-            ("image_rotary_emb_1", [hidden_dim, attention_head_dim], "float32"),
-            ("extra_pos_emb", [rbln_config.batch_size, hidden_dim, hidden_size], rbln_config.dtype),
         ]
+
+        uses_per_frame_timestep = rbln_config.uses_per_frame_timestep
+        if uses_per_frame_timestep is None:
+            # For Cosmos-Predict2.5 (unified conditioning) always feeds per-frame timesteps
+            uses_per_frame_timestep = bool(model_config.use_crossattn_projection)
+        if uses_per_frame_timestep:
+            input_info.append(
+                ("embedded_timestep", [rbln_config.batch_size, hidden_dim, hidden_size], rbln_config.dtype),
+            )
+            input_info.append(
+                ("temb", [1, hidden_dim, hidden_size * 3], rbln_config.dtype),
+            )
+        else:
+            input_info.append(
+                ("embedded_timestep", [rbln_config.batch_size, hidden_size], rbln_config.dtype),
+            )
+            input_info.append(
+                ("temb", [1, hidden_size * 3], rbln_config.dtype),
+            )
+
+        input_info.append(
+            ("image_rotary_emb_0", [hidden_dim, attention_head_dim], "float32"),
+        )
+        input_info.append(
+            ("image_rotary_emb_1", [hidden_dim, attention_head_dim], "float32"),
+        )
+
+        if model_config.extra_pos_embed_type is not None:
+            input_info.append(
+                ("extra_pos_emb", [rbln_config.batch_size, hidden_dim, hidden_size], rbln_config.dtype),
+            )
 
         compile_config = RBLNCompileConfig(input_info=input_info)
         rbln_config.set_compile_cfgs([compile_config])
@@ -374,23 +478,37 @@ class RBLNCosmosTransformer3DModel(RBLNModel):
         """
         (
             hidden_states,
+            encoder_hidden_states,
             temb,
             embedded_timestep,
             image_rotary_emb_0,
             image_rotary_emb_1,
             extra_pos_emb,
             attention_mask,
-        ) = self.compute_embedding(hidden_states, timestep, attention_mask, fps, condition_mask, padding_mask)
-
-        hidden_states = self.model[0].forward(
-            hidden_states,
-            encoder_hidden_states,
-            embedded_timestep,
-            temb,
-            image_rotary_emb_0,
-            image_rotary_emb_1,
-            extra_pos_emb,
+        ) = self.compute_embedding(
+            hidden_states, encoder_hidden_states, timestep, attention_mask, fps, condition_mask, padding_mask
         )
+
+        if self.config.extra_pos_embed_type is None:
+            hidden_states = self.model[0].forward(
+                hidden_states,
+                encoder_hidden_states,
+                embedded_timestep,
+                temb,
+                image_rotary_emb_0,
+                image_rotary_emb_1,
+            )
+
+        else:
+            hidden_states = self.model[0].forward(
+                hidden_states,
+                encoder_hidden_states,
+                embedded_timestep,
+                temb,
+                image_rotary_emb_0,
+                image_rotary_emb_1,
+                extra_pos_emb,
+            )
 
         if not return_dict:
             return (hidden_states,)

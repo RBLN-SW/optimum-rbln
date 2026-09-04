@@ -14,6 +14,7 @@
 
 import os
 import pathlib
+import re
 from functools import partial
 from typing import Any, Optional
 from unittest.mock import patch
@@ -75,6 +76,16 @@ else:
     class VideoSafetyModel(FailToImportCosmosGuardrail): ...
 
     cfg_re50 = None
+
+
+UNSAFE_CATEGORIES = {
+    "S1": "Violent",
+    "S2": "Non-violent Illegal Acts",
+    "S3": "Sexual Content or Sexual Acts",
+    "S4": "Suicide & Self-Harm",
+    "S5": "Unethical Acts",
+    "S6": "Jailbreak",
+}
 
 
 def is_compiled_dir(dir: str) -> bool:
@@ -322,6 +333,9 @@ class RBLNQwen3Guard(Qwen3Guard):
         base_model_id: str = "Qwen/Qwen3Guard-Gen-0.6B",
         rbln_config: RBLNCosmosSafetyCheckerConfig | None = None,
     ) -> None:
+        """
+        RBLNQwen 3 model for text filtering safety check.
+        """
         if is_compiled_dir(checkpoint_id):
             torch.nn.Module.__init__(self)
             cache_dir = pathlib.Path(checkpoint_id) / "qwen3guard"
@@ -342,6 +356,32 @@ class RBLNQwen3Guard(Qwen3Guard):
         cache_dir = pathlib.Path(checkpoint_id) / "qwen3guard"
         self.model.save_pretrained(cache_dir)
         self.tokenizer.save_pretrained(cache_dir)
+
+    def extract_label_and_categories(self, prompt):
+        safe_pattern = r"Safety: (Safe|Unsafe|Controversial)"
+        category_pattern = r"(" + "|".join(UNSAFE_CATEGORIES.values()) + ")"
+        messages = [{"role": "user", "content": prompt}]
+
+        text = self.tokenizer.apply_chat_template(messages, tokenize=False)
+        model_inputs = self.tokenizer([text], return_tensors="pt")
+        generated_ids = self.model.generate(**model_inputs, max_new_tokens=128)
+        output_ids = generated_ids[0][len(model_inputs.input_ids[0]) :].tolist()
+        content = self.tokenizer.decode(output_ids, skip_special_tokens=True)
+
+        safe_label_match = re.search(safe_pattern, content)
+        label = safe_label_match.group(1) if safe_label_match else None
+        categories = re.findall(category_pattern, content)
+        if label.lower() == "unsafe":
+            return False, f"Prompt blocked by Qwen3Guard. Safety: {label}, Categories: {categories}"
+        else:
+            return True, ""
+
+    def is_safe(self, prompt: str) -> tuple[bool, str]:
+        """Check if the input prompt is safe according to the Qwen3Guard model."""
+        try:
+            return self.extract_label_and_categories(prompt)
+        except Exception:
+            return True, "Unexpected error occurred when running Qwen3Guard guardrail."
 
 
 class RBLNCosmosSafetyChecker(CosmosSafetyChecker):

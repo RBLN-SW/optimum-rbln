@@ -12,13 +12,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any
 
 from ....configuration_utils import RBLNModelConfig
-from ....transformers import RBLNT5EncoderModelConfig
+from ....transformers import RBLNQwen2_5_VLForConditionalGenerationConfig, RBLNT5EncoderModelConfig
 from ....utils.logging import get_logger
-from ...pipelines.cosmos.cosmos_guardrail import RBLNCosmosSafetyCheckerConfig
-from ..models import RBLNAutoencoderKLCosmosConfig, RBLNCosmosTransformer3DModelConfig
+from ..models import RBLNAutoencoderKLCosmosConfig, RBLNAutoencoderKLWanConfig, RBLNCosmosTransformer3DModelConfig
+
+
+if TYPE_CHECKING:
+    from ...pipelines.cosmos.configuration_cosmos_guardrail import RBLNCosmosSafetyCheckerConfig
 
 
 logger = get_logger(__name__)
@@ -63,6 +68,8 @@ class RBLNCosmosPipelineBaseConfig(RBLNModelConfig):
         """
         super().__init__(**kwargs)
 
+        max_seq_len = max_seq_len or 512
+
         self.text_encoder = self.initialize_submodule_config(
             text_encoder,
             cls_name="RBLNT5EncoderModelConfig",
@@ -77,7 +84,6 @@ class RBLNCosmosPipelineBaseConfig(RBLNModelConfig):
             height=height,
             width=width,
             num_frames=num_frames,
-            fps=fps,
         )
         self.vae = self.initialize_submodule_config(
             vae,
@@ -106,12 +112,195 @@ class RBLNCosmosPipelineBaseConfig(RBLNModelConfig):
 
 
 class RBLNCosmosTextToWorldPipelineConfig(RBLNCosmosPipelineBaseConfig):
-    """Config for Cosmos Text2World Pipeline"""
+    """Config for Cosmos-Predict1 Text2World Pipeline"""
 
     _vae_uses_encoder = False
 
 
 class RBLNCosmosVideoToWorldPipelineConfig(RBLNCosmosPipelineBaseConfig):
-    """Config for Cosmos Video2World Pipeline"""
+    """Config for Cosmos-Predict1 Video2World Pipeline"""
 
     _vae_uses_encoder = True
+
+
+class RBLNCosmos2PipelineBaseConfig(RBLNModelConfig):
+    submodules = ["text_encoder", "transformer", "vae", "safety_checker"]
+    _vae_uses_encoder = False
+
+    def __init__(
+        self,
+        text_encoder: RBLNT5EncoderModelConfig | None = None,
+        transformer: RBLNCosmosTransformer3DModelConfig | None = None,
+        vae: RBLNAutoencoderKLWanConfig | None = None,
+        safety_checker: RBLNCosmosSafetyCheckerConfig | None = None,
+        *,
+        batch_size: int | None = None,
+        height: int | None = None,
+        width: int | None = None,
+        num_frames: int | None = None,
+        max_seq_len: int | None = None,
+        **kwargs: Any,
+    ):
+        """
+        Args:
+            text_encoder (Optional[RBLNT5EncoderModelConfig]): Configuration for the text encoder component.
+                Initialized as RBLNT5EncoderModelConfig if not provided.
+            transformer (Optional[RBLNCosmosTransformer3DModelConfig]): Configuration for the Transformer model component.
+                Initialized as RBLNCosmosTransformer3DModelConfig if not provided.
+            vae (Optional[RBLNAutoencoderKLWanConfig]): Configuration for the VAE model component.
+                Initialized as RBLNAutoencoderKLWanConfig if not provided.
+            safety_checker (Optional[RBLNCosmosSafetyCheckerConfig]): Configuration for the safety checker component.
+                Initialized as RBLNCosmosSafetyCheckerConfig if not provided.
+            batch_size (Optional[int]): Batch size for inference, applied to all submodules.
+            height (Optional[int]): Height of the generated videos.
+            width (Optional[int]): Width of the generated videos.
+            num_frames (Optional[int]): The number of frames in the generated video.
+            max_seq_len (Optional[int]): Maximum sequence length supported by the model.
+            **kwargs: Additional arguments passed to the parent RBLNModelConfig.
+        """
+        super().__init__(**kwargs)
+
+        max_seq_len = max_seq_len or 512
+
+        self.text_encoder = self.initialize_submodule_config(
+            text_encoder,
+            cls_name="RBLNT5EncoderModelConfig",
+            batch_size=batch_size,
+            max_seq_len=max_seq_len,
+        )
+        self.transformer = self.initialize_submodule_config(
+            transformer,
+            cls_name="RBLNCosmosTransformer3DModelConfig",
+            batch_size=batch_size,
+            max_seq_len=max_seq_len,
+            height=height,
+            width=width,
+            num_frames=num_frames,
+            uses_per_frame_timestep=self.__class__._vae_uses_encoder,  # predict2: only v2w feeds per-frame timesteps
+        )
+        self.vae = self.initialize_submodule_config(
+            vae,
+            cls_name="RBLNAutoencoderKLWanConfig",
+            batch_size=batch_size,
+            uses_encoder=self.__class__._vae_uses_encoder,
+            height=height,
+            width=width,
+            num_frames=num_frames,
+        )
+        self.safety_checker = self.initialize_submodule_config(
+            safety_checker,
+            cls_name="RBLNCosmosSafetyCheckerConfig",
+            batch_size=batch_size,
+            height=height,
+            width=width,
+        )
+
+    @property
+    def batch_size(self):
+        return self.vae.batch_size
+
+    @property
+    def max_seq_len(self):
+        return self.text_encoder.max_seq_len
+
+
+class RBLNCosmos2TextToImagePipelineConfig(RBLNCosmos2PipelineBaseConfig):
+    """Config for Cosmos-Predict2 Text2Image Pipeline"""
+
+    _vae_uses_encoder = False
+
+
+class RBLNCosmos2VideoToWorldPipelineConfig(RBLNCosmos2PipelineBaseConfig):
+    """Config for Cosmos-Predict2 Video2World Pipeline"""
+
+    _vae_uses_encoder = True
+
+
+class RBLNCosmos2_5_PredictBasePipelineConfig(RBLNModelConfig):
+    """Config for Cosmos-Predict2.5 Pipeline"""
+
+    # submodules = ["text_encoder", "transformer", "vae", "safety_checker"]
+    submodules = ["text_encoder", "transformer", "vae"]
+    # submodules = ["text_encoder", "transformer"]
+    # submodules = ["vae"]
+    # submodules = ["transformer"]
+    # submodules = ["text_encoder"]
+    _vae_uses_encoder = True
+
+    def __init__(
+        self,
+        text_encoder: RBLNQwen2_5_VLForConditionalGenerationConfig | None = None,
+        transformer: RBLNCosmosTransformer3DModelConfig | None = None,
+        vae: RBLNAutoencoderKLWanConfig | None = None,
+        safety_checker: RBLNCosmosSafetyCheckerConfig | None = None,
+        *,
+        batch_size: int | None = None,
+        height: int | None = None,
+        width: int | None = None,
+        num_frames: int | None = None,
+        max_seq_len: int | None = None,
+        **kwargs: Any,
+    ):
+        """
+        Args:
+            text_encoder (Optional[RBLNQwen2_5_VLForConditionalGenerationConfig]): Configuration for the text encoder component.
+                Initialized as RBLNQwen2_5_VLForConditionalGenerationConfig if not provided.
+            transformer (Optional[RBLNCosmosTransformer3DModelConfig]): Configuration for the Transformer model component.
+                Initialized as RBLNCosmosTransformer3DModelConfig if not provided.
+            vae (Optional[RBLNAutoencoderKLWanConfig]): Configuration for the VAE model component.
+                Initialized as RBLNAutoencoderKLWanConfig if not provided.
+            safety_checker (Optional[RBLNCosmosSafetyCheckerConfig]): Configuration for the safety checker component.
+                Initialized as RBLNCosmosSafetyCheckerConfig if not provided.
+            batch_size (Optional[int]): Batch size for inference, applied to all submodules.
+            height (Optional[int]): Height of the generated videos.
+            width (Optional[int]): Width of the generated videos.
+            num_frames (Optional[int]): The number of frames in the generated video.
+            max_seq_len (Optional[int]): Maximum sequence length supported by the model.
+            **kwargs: Additional arguments passed to the parent RBLNModelConfig.
+        """
+        super().__init__(**kwargs)
+
+        max_seq_len = max_seq_len or 512
+
+        self.text_encoder = self.initialize_submodule_config(
+            text_encoder,
+            cls_name="RBLNQwen2_5_VLForConditionalGenerationConfig",
+            batch_size=batch_size,
+            max_seq_len=max_seq_len,
+            output_hidden_states=True,
+            visual={"max_seq_len": 64, "create_runtimes": False},
+        )
+        self.transformer = self.initialize_submodule_config(
+            transformer,
+            cls_name="RBLNCosmosTransformer3DModelConfig",
+            batch_size=batch_size,
+            max_seq_len=max_seq_len,
+            height=height,
+            width=width,
+            num_frames=num_frames,
+            uses_per_frame_timestep=True,  # predict2.5 unified conditioning always feeds per-frame timesteps
+        )
+        self.vae = self.initialize_submodule_config(
+            vae,
+            cls_name="RBLNAutoencoderKLWanConfig",
+            batch_size=batch_size,
+            uses_encoder=self.__class__._vae_uses_encoder,
+            height=height,
+            width=width,
+            num_frames=num_frames,
+        )
+        # self.safety_checker = self.initialize_submodule_config(
+        #     safety_checker,
+        #     cls_name="RBLNCosmosSafetyCheckerConfig",
+        #     batch_size=batch_size,
+        #     height=height,
+        #     width=width,
+        # )
+
+    @property
+    def batch_size(self):
+        return self.vae.batch_size
+
+    @property
+    def max_seq_len(self):
+        return self.text_encoder.max_seq_len

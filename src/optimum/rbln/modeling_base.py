@@ -35,6 +35,8 @@ from .utils.submodule import SubModulesMixin
 if TYPE_CHECKING:
     from transformers import AutoFeatureExtractor, AutoProcessor, AutoTokenizer, PreTrainedModel
 
+    from .diffusers.modeling_diffusers import RBLNDiffusionMixin
+
 logger = get_logger(__name__)
 
 
@@ -238,7 +240,9 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
 
             if len(cls._rbln_submodules) > 0:
                 if rbln_submodules is None:
-                    rbln_submodules = cls._load_submodules(model_save_dir=model_id, rbln_config=rbln_config, **kwargs)
+                    rbln_submodules = cls._load_submodules(
+                        model_save_dir=model_path_subfolder, rbln_config=rbln_config, **kwargs
+                    )
             elif rbln_submodules is None:
                 rbln_submodules = []
 
@@ -682,3 +686,9 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
                 "If so, try assigning them to different NPU devices."
             )
         return help_msg
+
+    @classmethod
+    def update_rbln_config_using_pipe(
+        cls, pipe: "RBLNDiffusionMixin", rbln_config: "RBLNModelConfig", submodule_name: str
+    ) -> "RBLNModelConfig":
+        return rbln_config

@@ -31,13 +31,13 @@ class RBLNCosmosTransformer3DModelConfig(RBLNModelConfig):
         num_frames: int | None = None,
         height: int | None = None,
         width: int | None = None,
-        fps: int | None = None,
         max_seq_len: int | None = None,
         embedding_dim: int | None = None,
         num_channels_latents: int | None = None,
         num_latent_frames: int | None = None,
         latent_height: int | None = None,
         latent_width: int | None = None,
+        uses_per_frame_timestep: bool | None = None,
         **kwargs: Any,
     ):
         """
@@ -46,12 +46,16 @@ class RBLNCosmosTransformer3DModelConfig(RBLNModelConfig):
             num_frames (int | None): The number of frames in the generated video. Defaults to 121.
             height (int | None): The height in pixels of the generated video. Defaults to 704.
             width (int | None): The width in pixels of the generated video. Defaults to 1280.
-            fps (int | None): The frames per second of the generated video.  Defaults to 30.
             max_seq_len (int | None): Maximum sequence length of prompt embeds.
             embedding_dim (int | None): Embedding vector dimension of prompt embeds.
             num_channels_latents (int | None): The number of channels in latent space.
             latent_height (int | None): The height in pixels in latent space.
             latent_width (int | None): The width in pixels in latent space.
+            uses_per_frame_timestep (bool | None): Whether the pipeline feeds a per-frame timestep
+                tensor ([B, 1, T, 1, 1]; conditioning frames at t=0) instead of a per-batch scalar.
+                Decides the compiled shapes of embedded_timestep/temb. When None, inferred from the
+                model config (Cosmos-Predict2.5, fingerprinted by use_crossattn_projection, is
+                always per-frame; older families default to per-batch).
             kwargs: Additional arguments passed to the parent RBLNModelConfig.
 
         Raises:
@@ -62,10 +66,9 @@ class RBLNCosmosTransformer3DModelConfig(RBLNModelConfig):
 
         super().__init__(**kwargs)
         self.batch_size = batch_size or 1
-        self.num_frames = num_frames or 121
-        self.height = height or 704
-        self.width = width or 1280
-        self.fps = fps or 30
+        self.num_frames = num_frames
+        self.height = height
+        self.width = width
 
         self.max_seq_len = max_seq_len
         self.num_channels_latents = num_channels_latents
@@ -73,6 +76,7 @@ class RBLNCosmosTransformer3DModelConfig(RBLNModelConfig):
         self.latent_height = latent_height
         self.latent_width = latent_width
         self.embedding_dim = embedding_dim
+        self.uses_per_frame_timestep = uses_per_frame_timestep
 
         if not isinstance(self.batch_size, int) or self.batch_size < 0:
             raise ValueError(f"batch_size must be a positive integer, got {self.batch_size}")
