@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import os
-from typing import TYPE_CHECKING, Union
+from typing import TYPE_CHECKING, Literal, Union
 
 import rebel
 import torch
@@ -45,142 +45,44 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 
-def get_cache_size_enc(height=704, width=1280):
-    # 사실상 처음에는 전부 1만 나오는데, 그 다음부터 cache frame이 2개씩 쌓이므로 미리 패딩해서 넣어놓음
-    CACHE_SIZE_0 = [
-        # [1, 3, 1, height, width], # first cache
-        [1, 3, 1, height, width],  # padded first cache
-        [1, 96, 1, height, width],
-        [1, 96, 1, height, width],
-        [1, 96, 1, height, width],
-        [1, 96, 1, height, width],
-        [1, 96, 1, height // 2, width // 2],
-        [1, 192, 1, height // 2, width // 2],
-        [1, 192, 1, height // 2, width // 2],
-        [1, 192, 1, height // 2, width // 2],
-        [1, 192, 1, height // 4, width // 4],
-        [1, 192, 1, height // 4, width // 4],
-        [1, 384, 1, height // 4, width // 4],
-        [1, 384, 1, height // 4, width // 4],
-        [1, 384, 1, height // 4, width // 4],
-        [1, 384, 1, height // 8, width // 8],
-        [1, 384, 1, height // 8, width // 8],
-        [1, 384, 1, height // 8, width // 8],
-        [1, 384, 1, height // 8, width // 8],
-        [1, 384, 1, height // 8, width // 8],
-        [1, 384, 1, height // 8, width // 8],
-        [1, 384, 1, height // 8, width // 8],
-        [1, 384, 1, height // 8, width // 8],
-        [1, 384, 1, height // 8, width // 8],
-        [1, 384, 1, height // 8, width // 8],
-    ]
-    PADDED_FRAME = 2
-    NO_PAD_INDICES = {9, 14}  # pre-defined indices where frame dim is always 1
-    PADDED_CACHE_SIZE_0 = [
-        [s[0], s[1], s[2] if i in NO_PAD_INDICES else PADDED_FRAME, s[3], s[4]] for i, s in enumerate(CACHE_SIZE_0)
-    ]
-
-    CACHE_SIZE_N = [
-        [1, 3, 2, height, width],  # first cache
-        [1, 96, 2, height, width],
-        [1, 96, 2, height, width],
-        [1, 96, 2, height, width],
-        [1, 96, 2, height, width],
-        [1, 96, 2, height // 2, width // 2],
-        [1, 192, 2, height // 2, width // 2],
-        [1, 192, 2, height // 2, width // 2],
-        [1, 192, 2, height // 2, width // 2],
-        [1, 192, 1, height // 4, width // 4],
-        [1, 192, 2, height // 4, width // 4],
-        [1, 384, 2, height // 4, width // 4],
-        [1, 384, 2, height // 4, width // 4],
-        [1, 384, 2, height // 4, width // 4],
-        [1, 384, 1, height // 8, width // 8],
-        [1, 384, 2, height // 8, width // 8],
-        [1, 384, 2, height // 8, width // 8],
-        [1, 384, 2, height // 8, width // 8],
-        [1, 384, 2, height // 8, width // 8],
-        [1, 384, 2, height // 8, width // 8],
-        [1, 384, 2, height // 8, width // 8],
-        [1, 384, 2, height // 8, width // 8],
-        [1, 384, 2, height // 8, width // 8],
-        [1, 384, 2, height // 8, width // 8],
-    ]
-    # 두개 다 같은 거 아닌가?
-    return PADDED_CACHE_SIZE_0, CACHE_SIZE_N
+# One (in_channels, cache_depth, spatial_divisor) entry per WanCausalConv3d cache slot, in
+# feat_cache index order. depth 2 = diffusers CACHE_T; depth 1 = the temporal-downsample
+# time_convs, which cache a single frame.
+#
+# The first chunk only produces depth-1 caches, but E0/EN (and D0/DN) share static buffers,
+# so first-chunk caches are pre-padded to the steady-state depth.
+#
+# Cache index 0 is not stored in static DRAM: it feeds conv_in together with the graph input,
+# so it is passed between chunks as runtime I/O (see _update_rbln_config).
+_CACHE_SPECS = {
+    # The first chunk(E0, D0) only produces depth-1 caches, but E0/EN (and D0/DN) share 
+    # static buffers, so first-chunk caches are pre-padded to the steady-state depth.
+    "enc": [
+        (3, 2, 1),
+        *[(96, 2, 1)] * 4,
+        (96, 2, 2),
+        *[(192, 2, 2)] * 3,
+        (192, 1, 4),  # WanResample temporal-downsample time_conv
+        (192, 2, 4),
+        *[(384, 2, 4)] * 3,
+        (384, 1, 8),  # WanResample temporal-downsample time_conv
+        *[(384, 2, 8)] * 9,
+    ],
+    "dec": [
+        (16, 2, 8),
+        *[(384, 2, 8)] * 11,
+        (192, 2, 4),
+        *[(384, 2, 4)] * 6,
+        *[(192, 2, 2)] * 6,
+        *[(96, 2, 1)] * 7,
+    ],
+}
 
 
-def get_cache_size_dec(height=704, width=1280):
-    CACHE_SIZE_0 = [
-        [1, 16, 2, height // 8, width // 8],
-        [1, 384, 2, height // 8, width // 8],
-        [1, 384, 2, height // 8, width // 8],
-        [1, 384, 2, height // 8, width // 8],
-        [1, 384, 2, height // 8, width // 8],
-        [1, 384, 2, height // 8, width // 8],
-        [1, 384, 2, height // 8, width // 8],
-        [1, 384, 2, height // 8, width // 8],
-        [1, 384, 2, height // 8, width // 8],
-        [1, 384, 2, height // 8, width // 8],
-        [1, 384, 2, height // 8, width // 8],
-        [1, 384, 2, height // 8, width // 8],
-        [1, 192, 2, height // 4, width // 4],
-        [1, 384, 2, height // 4, width // 4],
-        [1, 384, 2, height // 4, width // 4],
-        [1, 384, 2, height // 4, width // 4],
-        [1, 384, 2, height // 4, width // 4],
-        [1, 384, 2, height // 4, width // 4],
-        [1, 384, 2, height // 4, width // 4],
-        [1, 192, 2, height // 2, width // 2],
-        [1, 192, 2, height // 2, width // 2],
-        [1, 192, 2, height // 2, width // 2],
-        [1, 192, 2, height // 2, width // 2],
-        [1, 192, 2, height // 2, width // 2],
-        [1, 192, 2, height // 2, width // 2],
-        [1, 96, 2, height, width],
-        [1, 96, 2, height, width],
-        [1, 96, 2, height, width],
-        [1, 96, 2, height, width],
-        [1, 96, 2, height, width],
-        [1, 96, 2, height, width],
-        [1, 96, 2, height, width],
+def get_cache_size(kind: Literal["enc", "dec"], height: int = 704, width: int = 1280) -> list[list[int]]:
+    return [
+        [1, channels, depth, height // divisor, width // divisor] for channels, depth, divisor in _CACHE_SPECS[kind]
     ]
-
-    CACHE_SIZE_N = [
-        [1, 16, 2, height // 8, width // 8],
-        [1, 384, 2, height // 8, width // 8],
-        [1, 384, 2, height // 8, width // 8],
-        [1, 384, 2, height // 8, width // 8],
-        [1, 384, 2, height // 8, width // 8],
-        [1, 384, 2, height // 8, width // 8],
-        [1, 384, 2, height // 8, width // 8],
-        [1, 384, 2, height // 8, width // 8],
-        [1, 384, 2, height // 8, width // 8],
-        [1, 384, 2, height // 8, width // 8],
-        [1, 384, 2, height // 8, width // 8],
-        [1, 384, 2, height // 8, width // 8],
-        [1, 192, 2, height // 4, width // 4],
-        [1, 384, 2, height // 4, width // 4],
-        [1, 384, 2, height // 4, width // 4],
-        [1, 384, 2, height // 4, width // 4],
-        [1, 384, 2, height // 4, width // 4],
-        [1, 384, 2, height // 4, width // 4],
-        [1, 384, 2, height // 4, width // 4],
-        [1, 192, 2, height // 2, width // 2],
-        [1, 192, 2, height // 2, width // 2],
-        [1, 192, 2, height // 2, width // 2],
-        [1, 192, 2, height // 2, width // 2],
-        [1, 192, 2, height // 2, width // 2],
-        [1, 192, 2, height // 2, width // 2],
-        [1, 96, 2, height, width],
-        [1, 96, 2, height, width],
-        [1, 96, 2, height, width],
-        [1, 96, 2, height, width],
-        [1, 96, 2, height, width],
-        [1, 96, 2, height, width],
-        [1, 96, 2, height, width],
-    ]
-    return CACHE_SIZE_0, CACHE_SIZE_N
 
 
 """ AutoencoderKLWan encode logic 참고용
@@ -353,7 +255,7 @@ class _VAEWanEncoder0(torch.nn.Module):
         super().__init__()
         self.encoder = vae.encoder
         self.quant_conv = vae.quant_conv  # 1x1x1 pointwise -> fold into the graph (per-chunk == concat-then-quant)
-        self.cache_dims = get_cache_size_enc(height, width)[0]
+        self.cache_dims = get_cache_size("enc", height, width)
         self._enc_conv_num = vae._cached_conv_counts["encoder"]
         self.clear_cache()
 
@@ -393,7 +295,7 @@ class _VAEWanEncoderN(torch.nn.Module):
         super().__init__()
         self.encoder = vae.encoder
         self.quant_conv = vae.quant_conv  # 1x1x1 pointwise -> fold into the graph
-        self.cache_dims = get_cache_size_enc(height, width)[1]
+        self.cache_dims = get_cache_size("enc", height, width)
         self.clear_cache()
 
     def clear_cache(self):
@@ -439,7 +341,7 @@ class _VAEWanDecoder0(torch.nn.Module):
     def __init__(self, vae: AutoencoderKLWan, height=704, width=1280):
         super().__init__()
         self.decoder = vae.decoder
-        self.cache_dims = get_cache_size_dec(height, width)[0]
+        self.cache_dims = get_cache_size("dec", height, width)
         self._conv_num = vae._cached_conv_counts["decoder"]
         self.clear_cache()
 
@@ -483,7 +385,7 @@ class _VAEWanDecoderN(torch.nn.Module):
     def __init__(self, vae: AutoencoderKLWan, height=704, width=1280):
         super().__init__()
         self.decoder = vae.decoder
-        self.cache_dims = get_cache_size_dec(height, width)[1]
+        self.cache_dims = get_cache_size("dec", height, width)
         self.clear_cache()
 
     def clear_cache(self):
@@ -769,7 +671,7 @@ class RBLNAutoencoderKLWan(RBLNModel):
                 ),
             ]
             CHUNK_SIZE = 4
-            vae_enc_1_input_info = [
+            vae_enc_n_input_info = [
                 (
                     "x",
                     [
@@ -786,29 +688,23 @@ class RBLNAutoencoderKLWan(RBLNModel):
             # rbln_cache_update and read by the encoder. Stored CHANNEL-LAST (n,c,d,h,w) -> (n,d,h,w,c)
             # so only C is 64-aligned padded (W stays a middle axis; flat/NCHW scrambled W -> pearson 0.98).
             # idx 0 is runtime I/O. E0 and EN share the same cache buffers, so both declare all of them.
-            cache_0, cache_1 = get_cache_size_enc(rbln_config.height, rbln_config.width)
-            for i, (shape_0, shape_1) in enumerate(zip(cache_0, cache_1, strict=False)):
-                n0, c0, d0, h0, w0 = shape_0
-                n1, c1, d1, h1, w1 = shape_1
+            for i, shape in enumerate(get_cache_size("enc", rbln_config.height, rbln_config.width)):
                 if i == 0:
                     # idx 0 is runtime I/O (handed off between chunks), NOT static DRAM -> keep it
                     # channel-first (n,c,d,h,w); the W-scramble only affects the cache_update/static path.
-                    vae_enc_0_input_info.append((f"feat_cache_{i}", [n0, c0, d0, h0, w0], rbln_config.dtype))
-                    vae_enc_1_input_info.append((f"feat_cache_{i}", [n1, c1, d1, h1, w1], rbln_config.dtype))
+                    vae_enc_0_input_info.append((f"feat_cache_{i}", list(shape), rbln_config.dtype))
+                    vae_enc_n_input_info.append((f"feat_cache_{i}", list(shape), rbln_config.dtype))
                 else:
-                    vae_enc_0_input_info.append(
-                        (f"feat_cache_{i}", _cache_input_shape(shape_0), rbln_config.dtype)
-                    )  # (n,c,d,h,w) -> selected layout
-                    vae_enc_1_input_info.append(
-                        (f"feat_cache_{i}", _cache_input_shape(shape_1), rbln_config.dtype)
-                    )  # (n,c,d,h,w) -> selected layout
+                    cache_input_shape = _cache_input_shape(shape)  # (n,c,d,h,w) -> selected layout
+                    vae_enc_0_input_info.append((f"feat_cache_{i}", cache_input_shape, rbln_config.dtype))
+                    vae_enc_n_input_info.append((f"feat_cache_{i}", cache_input_shape, rbln_config.dtype))
 
             if _EN_WAR:
                 # runtime-0.0 scalar feeding the EN write-after-read edge (see _EN_WAR). Not static.
-                vae_enc_1_input_info.append(("war_zero", [1], rbln_config.dtype))
+                vae_enc_n_input_info.append(("war_zero", [1], rbln_config.dtype))
 
             compile_cfgs.append(RBLNCompileConfig(compiled_model_name="encoder_0", input_info=vae_enc_0_input_info))
-            compile_cfgs.append(RBLNCompileConfig(compiled_model_name="encoder_n", input_info=vae_enc_1_input_info))
+            compile_cfgs.append(RBLNCompileConfig(compiled_model_name="encoder_n", input_info=vae_enc_n_input_info))
 
         rbln_config.vae_scale_factor_temporal = rbln_config.vae_scale_factor_temporal or 4  # tmp code
         rbln_config.vae_scale_factor_spatial = rbln_config.vae_scale_factor_spatial or 8  # tmp code
@@ -821,7 +717,7 @@ class RBLNAutoencoderKLWan(RBLNModel):
         # stored CHANNEL-LAST (n,c,d,h,w) -> (n,d,h,w,c) so only C is 64-aligned padded (W never
         # scrambled). idx 0 is runtime I/O (concats with the f32 latent at conv_in). D0 does NOT take a
         # feat_cache_0 input (it generates idx 0 as an output); DN takes idx 0 as a runtime input.
-        dec_cache_0, dec_cache_n = get_cache_size_dec(rbln_config.height, rbln_config.width)
+        dec_cache_shapes = get_cache_size("dec", rbln_config.height, rbln_config.width)
         # decoder input channels = VAE z_dim (16), NOT num_channels_latents (the transformer's latent
         # channels, e.g. 24). The VAE decoder conv_in expects z_dim channels.
         z_dim = getattr(model_config, "z_dim", rbln_config.num_channels_latents)
@@ -831,18 +727,13 @@ class RBLNAutoencoderKLWan(RBLNModel):
         vae_dec_n_input_info = [
             ("z", [batch_size, z_dim, 1, latent_height, latent_width], rbln_config.dtype),
         ]
-        for i, (shape_0, shape_n) in enumerate(zip(dec_cache_0, dec_cache_n, strict=False)):
-            n0, c0, d0, h0, w0 = shape_0
-            nn, cn, dn, hn, wn = shape_n
+        for i, shape in enumerate(dec_cache_shapes):
             if i > 0:  # D0 generates idx 0 (runtime output); only idx 1.. are D0 inputs (static, chw)
-                vae_dec_0_input_info.append(
-                    (f"feat_cache_{i}", _cache_input_shape(shape_0), rbln_config.dtype)
-                )  # (n,c,d,h,w) -> selected layout
-                vae_dec_n_input_info.append(
-                    (f"feat_cache_{i}", _cache_input_shape(shape_n), rbln_config.dtype)
-                )  # (n,c,d,h,w) -> selected layout
+                cache_input_shape = _cache_input_shape(shape)  # (n,c,d,h,w) -> selected layout
+                vae_dec_0_input_info.append((f"feat_cache_{i}", cache_input_shape, rbln_config.dtype))
+                vae_dec_n_input_info.append((f"feat_cache_{i}", cache_input_shape, rbln_config.dtype))
             else:  # idx 0 is runtime I/O (DN input) -> channel-first (n,c,d,h,w), no scramble concern
-                vae_dec_n_input_info.append((f"feat_cache_{i}", [nn, cn, dn, hn, wn], rbln_config.dtype))
+                vae_dec_n_input_info.append((f"feat_cache_{i}", list(shape), rbln_config.dtype))
 
         if _EN_WAR:
             # runtime-0.0 scalar feeding the DN write-after-read edge (see _EN_WAR). Not static.
