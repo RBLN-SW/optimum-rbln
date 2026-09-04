@@ -357,6 +357,15 @@ class RBLNCosmosTransformer3DModel(RBLNModel):
         model_config: "PretrainedConfig",
         rbln_config: "RBLNCosmosTransformer3DModelConfig",
     ) -> RBLNCosmosTransformer3DModelConfig:
+        missing = [
+            name
+            for name in ("num_latent_frames", "latent_height", "latent_width", "max_seq_len", "embedding_dim")
+            if getattr(rbln_config, name) is None
+        ]
+        if missing:
+            raise ValueError(
+                f"{', '.join(missing)} must be specified to compile RBLNCosmosTransformer3DModel. "
+            )
         p_t, p_h, p_w = model_config.patch_size
         hidden_dim = (
             (rbln_config.num_latent_frames // p_t)
