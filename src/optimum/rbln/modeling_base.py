@@ -35,6 +35,8 @@ from .utils.submodule import SubModulesMixin
 if TYPE_CHECKING:
     from transformers import AutoFeatureExtractor, AutoProcessor, AutoTokenizer, PreTrainedModel
 
+    from .diffusers.modeling_diffusers import RBLNDiffusionMixin
+
 logger = get_logger(__name__)
 
 
