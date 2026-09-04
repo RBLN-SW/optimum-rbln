@@ -68,6 +68,8 @@ class RBLNCosmosPipelineBaseConfig(RBLNModelConfig):
         """
         super().__init__(**kwargs)
 
+        max_seq_len = max_seq_len or 512
+
         self.text_encoder = self.initialize_submodule_config(
             text_encoder,
             cls_name="RBLNT5EncoderModelConfig",
@@ -157,6 +159,8 @@ class RBLNCosmos2PipelineBaseConfig(RBLNModelConfig):
             **kwargs: Additional arguments passed to the parent RBLNModelConfig.
         """
         super().__init__(**kwargs)
+
+        max_seq_len = max_seq_len or 512
 
         self.text_encoder = self.initialize_submodule_config(
             text_encoder,
@@ -255,6 +259,8 @@ class RBLNCosmos2_5_PredictBasePipelineConfig(RBLNModelConfig):
             **kwargs: Additional arguments passed to the parent RBLNModelConfig.
         """
         super().__init__(**kwargs)
+
+        max_seq_len = max_seq_len or 512
 
         self.text_encoder = self.initialize_submodule_config(
             text_encoder,
