@@ -365,9 +365,7 @@ class RBLNCosmosTransformer3DModel(RBLNModel):
             if getattr(rbln_config, name) is None
         ]
         if missing:
-            raise ValueError(
-                f"{', '.join(missing)} must be specified to compile RBLNCosmosTransformer3DModel. "
-            )
+            raise ValueError(f"{', '.join(missing)} must be specified to compile RBLNCosmosTransformer3DModel. ")
         p_t, p_h, p_w = model_config.patch_size
         hidden_dim = (
             (rbln_config.num_latent_frames // p_t)
