@@ -55,7 +55,7 @@ logger = get_logger(__name__)
 # Cache index 0 is not stored in static DRAM: it feeds conv_in together with the graph input,
 # so it is passed between chunks as runtime I/O (see _update_rbln_config).
 _CACHE_SPECS = {
-    # The first chunk(E0, D0) only produces depth-1 caches, but E0/EN (and D0/DN) share 
+    # The first chunk(E0, D0) only produces depth-1 caches, but E0/EN (and D0/DN) share
     # static buffers, so first-chunk caches are pre-padded to the steady-state depth.
     "enc": [
         (3, 2, 1),
@@ -125,95 +125,28 @@ def _encode(self, x: torch.Tensor):
 """
 
 
-def _to_chw_cache(x: torch.Tensor) -> torch.Tensor:
-    # channel-first (n,c,d,h,w) -> cache (n, d, c*h*w). Folding C into the merged c*h*w axis means there
-    # is no standalone channel dim for the device to 64-block-pad (NCDHW64c): the stored cache carries the
-    # true c*h*w (a multiple of 64), so the read and write physical views match exactly. This avoids both
-    # the AnnotatePhysicalView reconcile (channel-last stored C=128 padded vs read C=96) and the SHM
-    # blow-up (channel-last needs a transpose+aligned_pad chain; c*h*w needs neither). W never scrambles.
-    n, c, d, h, w = x.shape
-    return x.permute(0, 2, 1, 3, 4).reshape(n, d, c * h * w).contiguous()
+# Shared static feat-caches are stored flat: (n, c, d, h, w) -> (n, c, d, h*w). With h*w as the
+# last axis (always a multiple of 64) the device pads nothing, so the stored and read physical
+# views match exactly; keeping W as the last axis instead gets it 64-padded and scrambled.
+_CACHE_FRAME_AXIS = 2  # frame (D) axis of the (n, c, d, h*w) cache, for rbln_cache_update
 
 
-def _from_chw_cache(cache: torch.Tensor, c: int, h: int, w: int) -> torch.Tensor:
-    # cache (n, d, c*h*w) -> channel-first (n, c, d, h, w).
-    n, d, _chw = cache.shape
-    return cache.reshape(n, d, c, h, w).permute(0, 2, 1, 3, 4)
+def _cache_input_shape(shape) -> list:
+    # per-slot (n,c,d,h,w) -> input_info shape of the flat static cache.
+    n, c, d, h, w = shape
+    return [n, c, d, h * w]
 
 
-def _to_flat_cache(x: torch.Tensor) -> torch.Tensor:
-    # channel-first (n,c,d,h,w) -> flat cache (n, c, d, h*w). h*w is the last axis and is always a
-    # multiple of 64, so the spatial axis needs no padding (W never scrambles, unlike keeping W last).
+def _to_cache(x: torch.Tensor) -> torch.Tensor:
+    # channel-first (n,c,d,h,w) -> flat cache (n, c, d, h*w).
     n, c, d, h, w = x.shape
     return x.reshape(n, c, d, h * w).contiguous()
 
 
-def _from_flat_cache(cache: torch.Tensor, h: int, w: int) -> torch.Tensor:
+def _from_cache(cache: torch.Tensor, h: int, w: int) -> torch.Tensor:
     # flat cache (n, c, d, h*w) -> channel-first (n, c, d, h, w).
     n, c, d, _hw = cache.shape
     return cache.reshape(n, c, d, h, w)
-
-
-def _to_cl_cache(x: torch.Tensor) -> torch.Tensor:
-    # channel-first (n,c,d,h,w) -> channel-last (n, d, h, w, c). C is last, so the device 64-aligns C
-    # (96->128 padding is benign there) instead of W; the padded C is what trips the AnnotatePhysicalView
-    # reconcile / SHM on the current compiler -- keep as a toggle for comparison.
-    return x.permute(0, 2, 3, 4, 1).contiguous()
-
-
-def _from_cl_cache(cache: torch.Tensor) -> torch.Tensor:
-    # channel-last (n, d, h, w, c) -> channel-first (n, c, d, h, w).
-    return cache.permute(0, 4, 1, 2, 3)
-
-
-# Cache memory layout for the shared static feat-caches. Select with RBLN_WAN_CACHE_LAYOUT:
-#   "flat" (default) -> (n, c, d, h*w)      -- C kept, spatial flattened (h*w already 64-aligned)
-#   "chw"           -> (n, d, c*h*w)        -- C folded in, no standalone channel dim to 64-pad
-#   "cl"             -> (n, d, h, w, c)      -- channel-last, C is the (64-padded) last axis
-#   "native"        -> (n, c, d, h, w)      -- raw 5D, no reshape. C stays a standalone axis, so this
-#                                              behaves like "flat" for the reconcile (64-pad C 96->128
-#                                              on write vs 96 on read). Kept only to demonstrate that
-#                                              leaving C standalone -- flattened or not -- fails.
-_CACHE_LAYOUT = os.environ.get("RBLN_WAN_CACHE_LAYOUT", "flat")
-
-
-def _cache_axis() -> int:
-    # cache_update frame(D) axis for the selected layout.
-    return {"flat": 2, "chw": 1, "cl": 1, "native": 2}[_CACHE_LAYOUT]
-
-
-def _cache_input_shape(shape) -> list:
-    # per-slot (n,c,d,h,w) -> input_info shape for the static cache under the selected layout.
-    n, c, d, h, w = shape
-    if _CACHE_LAYOUT == "flat":
-        return [n, c, d, h * w]
-    if _CACHE_LAYOUT == "chw":
-        return [n, d, c * h * w]
-    if _CACHE_LAYOUT == "native":
-        return [n, c, d, h, w]
-    return [n, d, h, w, c]  # cl
-
-
-def _to_cache(x: torch.Tensor) -> torch.Tensor:
-    # channel-first (n,c,d,h,w) -> static cache under the selected layout.
-    if _CACHE_LAYOUT == "flat":
-        return _to_flat_cache(x)
-    if _CACHE_LAYOUT == "chw":
-        return _to_chw_cache(x)
-    if _CACHE_LAYOUT == "native":
-        return x.contiguous()  # raw (n,c,d,h,w), no reshape
-    return _to_cl_cache(x)
-
-
-def _from_cache(cache: torch.Tensor, c: int, h: int, w: int) -> torch.Tensor:
-    # static cache -> channel-first (n,c,d,h,w).
-    if _CACHE_LAYOUT == "flat":
-        return _from_flat_cache(cache, h, w)
-    if _CACHE_LAYOUT == "chw":
-        return _from_chw_cache(cache, c, h, w)
-    if _CACHE_LAYOUT == "native":
-        return cache  # already (n,c,d,h,w)
-    return _from_cl_cache(cache)
 
 
 # EN/DN write-after-read (WAR) workaround. Toggle with RBLN_WAN_EN_WAR (default "0" = off).
@@ -274,14 +207,14 @@ class _VAEWanEncoder0(torch.nn.Module):
         out = self.encoder(x, feat_cache=self._enc_feat_map, feat_idx=self._enc_conv_idx)
         out = self.quant_conv(out)
         position = torch.tensor(0, dtype=torch.int16)  # 0 is dummy; next chunk slices this frame out
-        axis = torch.tensor(_cache_axis(), dtype=torch.int16)  # cache_update D axis (layout-dependent)
+        axis = torch.tensor(_CACHE_FRAME_AXIS, dtype=torch.int16)
         dummy_outs = []
         for cache, feat_cache_item, cache_dim in zip(
             list(args)[1:], self._enc_feat_map[1 : len(self.cache_dims)], self.cache_dims[1:], strict=False
         ):
             if cache_dim[2] == 2:
                 feat_cache_item = torch.nn.functional.pad(feat_cache_item, (0, 0, 0, 0, 1, 0))  # pad D 1->2
-            feat_cache_item = _to_cache(feat_cache_item)  # (n,c,d,h,w) -> cache (selected layout)
+            feat_cache_item = _to_cache(feat_cache_item)
             dummy_outs.append(torch.ops.rbln_custom_ops.rbln_cache_update(cache, feat_cache_item, position, axis))
         # idx 0: runtime output, kept CHANNEL-FIRST (n,c,d,h,w) -- it is I/O, not static, so no permute.
         fc0 = torch.nn.functional.pad(self._enc_feat_map[0], (0, 0, 0, 0, 1, 0)).contiguous()  # pad D 1->2
@@ -317,18 +250,18 @@ class _VAEWanEncoderN(torch.nn.Module):
 
         feat_cache_reshaped = [caches[0]]  # idx0 already channel-first (n,c,d,h,w)
         for i, cache in enumerate(list(caches)[1:], start=1):
-            c_, h_, w_ = self.cache_dims[i][1], self.cache_dims[i][3], self.cache_dims[i][4]
-            feat_cache_reshaped.append(_from_cache(cache, c_, h_, w_))  # cache (selected layout) -> (n,c,d,h,w)
+            h_, w_ = self.cache_dims[i][3], self.cache_dims[i][4]
+            feat_cache_reshaped.append(_from_cache(cache, h_, w_))
 
         out = self.encoder(x, feat_cache=feat_cache_reshaped, feat_idx=self._enc_conv_idx)
         out = self.quant_conv(out)
 
         position = torch.tensor(0, dtype=torch.int16)
-        axis = torch.tensor(_cache_axis(), dtype=torch.int16)  # cache_update D axis (layout-dependent)
+        axis = torch.tensor(_CACHE_FRAME_AXIS, dtype=torch.int16)
         war2d = _war_edge(out, war_zero) if _EN_WAR else None  # WAR edge: write depends on out (== reads)
         dummy_outs = []
         for cache, item in zip(list(caches)[1:], feat_cache_reshaped[1:], strict=False):
-            item = _to_cache(item)  # (n,c,d,h,w) -> cache (selected layout)
+            item = _to_cache(item)
             if _EN_WAR:
                 item = _apply_war(item, war2d)  # +0, forces cache_update after the encoder reads
             dummy_outs.append(torch.ops.rbln_custom_ops.rbln_cache_update(cache, item, position, axis))
@@ -360,7 +293,7 @@ class _VAEWanDecoder0(torch.nn.Module):
         self.clear_cache()
         out = self.decoder(x, feat_cache=self._feat_map, feat_idx=self._conv_idx, first_chunk=True)
         position = torch.tensor(0, dtype=torch.int16)  # 0 is dummy; next chunk slices this frame out
-        axis = torch.tensor(_cache_axis(), dtype=torch.int16)  # cache_update D axis (layout-dependent)
+        axis = torch.tensor(_CACHE_FRAME_AXIS, dtype=torch.int16)
         dummy_outs = []
         for cache, feat_cache_item, _cache_dim in zip(
             list(args), self._feat_map[1 : len(self.cache_dims)], self.cache_dims[1:], strict=False
@@ -372,7 +305,7 @@ class _VAEWanDecoder0(torch.nn.Module):
                 feat_cache_item = cache * 0.0  # zeros of the cache slot shape (layout-agnostic)
             else:
                 feat_cache_item = torch.nn.functional.pad(feat_cache_item, (0, 0, 0, 0, 1, 0))  # pad D 1->2
-                feat_cache_item = _to_cache(feat_cache_item)  # (n,c,d,h,w) -> cache (selected layout)
+                feat_cache_item = _to_cache(feat_cache_item)
             dummy_outs.append(torch.ops.rbln_custom_ops.rbln_cache_update(cache, feat_cache_item, position, axis))
         # idx 0: runtime output, kept CHANNEL-FIRST (n,c,d,h,w) -- I/O, not static, so no permute.
         fc0 = torch.nn.functional.pad(self._feat_map[0], (0, 0, 0, 0, 1, 0)).contiguous()  # pad D 1->2
@@ -407,17 +340,17 @@ class _VAEWanDecoderN(torch.nn.Module):
 
         feat_cache_reshaped = [caches[0]]  # idx0 already channel-first (n,c,d,h,w), runtime I/O
         for i, cache in enumerate(list(caches)[1:], start=1):
-            c_, h_, w_ = self.cache_dims[i][1], self.cache_dims[i][3], self.cache_dims[i][4]
-            feat_cache_reshaped.append(_from_cache(cache, c_, h_, w_))  # cache (selected layout) -> (n,c,d,h,w)
+            h_, w_ = self.cache_dims[i][3], self.cache_dims[i][4]
+            feat_cache_reshaped.append(_from_cache(cache, h_, w_))
 
         out = self.decoder(x, feat_cache=feat_cache_reshaped, feat_idx=self._conv_idx)
 
         position = torch.tensor(0, dtype=torch.int16)
-        axis = torch.tensor(_cache_axis(), dtype=torch.int16)  # cache_update D axis (layout-dependent)
+        axis = torch.tensor(_CACHE_FRAME_AXIS, dtype=torch.int16)
         war2d = _war_edge(out, war_zero) if _EN_WAR else None  # WAR edge: write depends on out (== reads)
         dummy_outs = []
         for cache, item in zip(list(caches)[1:], feat_cache_reshaped[1:], strict=False):
-            item = _to_cache(item)  # (n,c,d,h,w) -> cache (selected layout)
+            item = _to_cache(item)
             if _EN_WAR:
                 item = _apply_war(item, war2d)  # +0, forces cache_update after the decoder reads
             dummy_outs.append(torch.ops.rbln_custom_ops.rbln_cache_update(cache, item, position, axis))
@@ -695,7 +628,7 @@ class RBLNAutoencoderKLWan(RBLNModel):
                     vae_enc_0_input_info.append((f"feat_cache_{i}", list(shape), rbln_config.dtype))
                     vae_enc_n_input_info.append((f"feat_cache_{i}", list(shape), rbln_config.dtype))
                 else:
-                    cache_input_shape = _cache_input_shape(shape)  # (n,c,d,h,w) -> selected layout
+                    cache_input_shape = _cache_input_shape(shape)
                     vae_enc_0_input_info.append((f"feat_cache_{i}", cache_input_shape, rbln_config.dtype))
                     vae_enc_n_input_info.append((f"feat_cache_{i}", cache_input_shape, rbln_config.dtype))
 
@@ -729,7 +662,7 @@ class RBLNAutoencoderKLWan(RBLNModel):
         ]
         for i, shape in enumerate(dec_cache_shapes):
             if i > 0:  # D0 generates idx 0 (runtime output); only idx 1.. are D0 inputs (static, chw)
-                cache_input_shape = _cache_input_shape(shape)  # (n,c,d,h,w) -> selected layout
+                cache_input_shape = _cache_input_shape(shape)
                 vae_dec_0_input_info.append((f"feat_cache_{i}", cache_input_shape, rbln_config.dtype))
                 vae_dec_n_input_info.append((f"feat_cache_{i}", cache_input_shape, rbln_config.dtype))
             else:  # idx 0 is runtime I/O (DN input) -> channel-first (n,c,d,h,w), no scramble concern
