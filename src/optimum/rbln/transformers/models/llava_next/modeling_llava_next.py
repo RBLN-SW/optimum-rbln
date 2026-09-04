@@ -133,7 +133,7 @@ class RBLNLlavaNextForConditionalGeneration(RBLNModel, RBLNMultimodalBatchSortMi
     # pixel_values is (num_images, num_patches, C, H, W); image_sizes is (num_images, 2)
     _image_indexed_kwargs = ("pixel_values", "image_sizes")
 
-    def _images_per_sample(self, input_ids: torch.LongTensor | None) -> list[int]:
+    def _images_per_sample(self, input_ids: torch.LongTensor | None, kwargs: dict) -> list[int]:
         # variable anyres expansion: one contiguous run per image
         return _placeholder_run_counts(input_ids, self._image_token_id)
 

@@ -28,8 +28,9 @@ from ....modeling import RBLNModel
 from ....utils.logging import get_logger
 from ...modeling_outputs import RBLNDecoderOnlyOutput
 from ...utils.generation_multimodal import (
+    _UNMAPPABLE_BATCH_SORT,
     RBLNMultimodalBatchSortMixin,
-    _placeholder_run_counts,
+    _match_token_totals,
     _placeholder_token_counts,
 )
 from ...utils.rbln_runtime_wrapper import LoopProcessor
@@ -173,13 +174,27 @@ class RBLNLlavaForConditionalGeneration(RBLNModel, RBLNMultimodalBatchSortMixin)
     # pixel_values is (num_images, C, H, W); image_sizes is (num_images, 2) for pixtral
     _image_indexed_kwargs = ("pixel_values", "image_sizes")
 
-    def _images_per_sample(self, input_ids: torch.LongTensor | None) -> list[int]:
+    def _images_per_sample(self, input_ids: torch.LongTensor | None, kwargs: dict) -> list[int]:
         image_seq_length = getattr(self.config, "image_seq_length", None)
         if image_seq_length:
             # fixed-size expansion: adjacent images merge runs, so count tokens
             return _placeholder_token_counts(input_ids, self._image_token_id, image_seq_length)
-        # variable-size (pixtral-style): one contiguous run per image; [IMG_BREAK] rows raise
-        return _placeholder_run_counts(input_ids, self._image_token_id)
+        # variable-size (pixtral-style): [IMG_BREAK] splits an image into one run per patch
+        # row, so per-image [IMG] counts come from image_sizes instead
+        return _match_token_totals(input_ids, self._image_token_id, self._pixtral_tokens_per_image(kwargs))
+
+    def _pixtral_tokens_per_image(self, kwargs: dict) -> list[int]:
+        image_sizes = kwargs.get("image_sizes")
+        if image_sizes is None:
+            raise RuntimeError(_UNMAPPABLE_BATCH_SORT)
+        vision_config = self.config.vision_config
+        stride = vision_config.patch_size * getattr(vision_config, "spatial_merge_size", 1)
+        tokens = []
+        for height, width in torch.as_tensor(image_sizes).tolist():
+            if height % stride or width % stride:
+                raise RuntimeError(_UNMAPPABLE_BATCH_SORT)
+            tokens.append((height // stride) * (width // stride))
+        return tokens
 
     def __getattr__(self, __name: str) -> Any:
         def redirect(func):

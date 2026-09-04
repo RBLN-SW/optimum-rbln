@@ -236,7 +236,7 @@ class RBLNIdefics3ForConditionalGeneration(RBLNModel, RBLNMultimodalBatchSortMix
     # image_hidden_states is (num_images, seq, dim); each patch image is one placeholder run
     _image_indexed_kwargs = ("image_hidden_states",)
 
-    def _images_per_sample(self, input_ids: torch.LongTensor | None) -> list[int]:
+    def _images_per_sample(self, input_ids: torch.LongTensor | None, kwargs: dict) -> list[int]:
         # placeholder tokens per patch image mirror the connector output length
         vision_config = self.config.vision_config
         tokens_per_patch = (vision_config.image_size // vision_config.patch_size) ** 2 // self.config.scale_factor**2

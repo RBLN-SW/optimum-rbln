@@ -629,7 +629,7 @@ class RBLNGemma4ForConditionalGeneration(RBLNModel, RBLNMultimodalBatchSortMixin
         "mm_token_type_ids",
     )
 
-    def _images_per_sample(self, input_ids: torch.LongTensor | None) -> list[int]:
+    def _images_per_sample(self, input_ids: torch.LongTensor | None, kwargs: dict) -> list[int]:
         # each image is one contiguous placeholder run
         return _placeholder_run_counts(input_ids, self._image_token_id)
 

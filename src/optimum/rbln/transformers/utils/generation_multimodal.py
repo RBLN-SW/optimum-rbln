@@ -59,6 +59,30 @@ def _placeholder_token_counts(
     return (counts // tokens_per_segment).tolist()
 
 
+def _match_token_totals(
+    input_ids: torch.LongTensor | None, token_id: int | None, tokens_per_segment: list[int]
+) -> list[int]:
+    # variable-size expansions whose per-segment token counts are known from side inputs
+    # (e.g. pixtral image_sizes): greedily assign segments, in stacking order, to each row's
+    # placeholder-token total; any leftover or overshoot is unmappable
+    if input_ids is None or token_id is None:
+        raise RuntimeError(_UNMAPPABLE_BATCH_SORT)
+    row_totals = (input_ids == token_id).sum(dim=1).tolist()
+    counts, seg_idx = [], 0
+    for total in row_totals:
+        n = 0
+        while total > 0:
+            if seg_idx >= len(tokens_per_segment) or tokens_per_segment[seg_idx] > total:
+                raise RuntimeError(_UNMAPPABLE_BATCH_SORT)
+            total -= tokens_per_segment[seg_idx]
+            seg_idx += 1
+            n += 1
+        counts.append(n)
+    if seg_idx != len(tokens_per_segment):
+        raise RuntimeError(_UNMAPPABLE_BATCH_SORT)
+    return counts
+
+
 class RBLNBatchSortGuardMixin:
     def _require_sorted_batch_inputs(self, batch_input: torch.Tensor | None, inputs_sorted: bool) -> None:
         # these forwards drive prefill_decoder/decoder themselves, so the base forward's
@@ -110,11 +134,12 @@ class RBLNMultimodalBatchSortMixin(RBLNBatchSortGuardMixin, RBLNDecoderOnlyGener
     ) -> None:
         tensors = self._collect_segment_kwargs(kwargs, self._image_indexed_kwargs)
         if tensors:
-            self._apply_segment_perm(tensors, kwargs, sort_idx, self._images_per_sample(input_ids))
+            self._apply_segment_perm(tensors, kwargs, sort_idx, self._images_per_sample(input_ids, kwargs))
 
-    def _images_per_sample(self, input_ids: torch.LongTensor | None) -> list[int]:
-        # each family declares its own placeholder scheme, via _placeholder_run_counts
-        # (variable-size expansions) or _placeholder_token_counts (fixed-size)
+    def _images_per_sample(self, input_ids: torch.LongTensor | None, kwargs: dict) -> list[int]:
+        # each family declares its own placeholder scheme: _placeholder_run_counts
+        # (variable-size expansions), _placeholder_token_counts (fixed-size), or
+        # _match_token_totals (variable-size with counts known from side inputs in kwargs)
         raise NotImplementedError(
             f"{type(self).__name__} declares _image_indexed_kwargs but no _images_per_sample mapping."
         )

@@ -144,6 +144,52 @@ def test_llava_unmappable_images_raise():
         model._sort_generation_inputs(input_ids, kwargs)
 
 
+def test_llava_pixtral_images_via_image_sizes():
+    # pixtral: [IMG_BREAK] splits an image into one run per patch row, so per-image
+    # [IMG] counts come from image_sizes ((H/stride) * (W/stride))
+    IMG_BREAK = 97
+    vision_config = type("VisionCfg", (), {"patch_size": 2})()
+    model = _fake_model(
+        RBLNLlavaForConditionalGeneration,
+        {"image_token_index": IMG, "image_seq_length": None, "vision_config": vision_config},
+    )
+    # image sizes (4,4)->4 tokens, (2,4)->2, (2,2)->1; images per sample [1, 2, 0]
+    input_ids = torch.tensor(
+        [
+            [IMG, IMG, IMG_BREAK, IMG, IMG, 1],
+            [IMG, IMG, 2, IMG, 3, 4],
+            [5, 6, 7, 8, 9, 0],
+        ]
+    )
+    pixel_values = torch.arange(3, dtype=torch.float).view(3, 1, 1, 1)
+    image_sizes = torch.tensor([[4, 4], [2, 4], [2, 2]])
+    kwargs = {"attention_mask": MASK.clone(), "pixel_values": pixel_values, "image_sizes": image_sizes}
+
+    sorted_ids, unsort_idx = model._sort_generation_inputs(input_ids, kwargs)
+
+    assert torch.equal(sorted_ids, input_ids.index_select(0, SORT))
+    assert torch.equal(kwargs["pixel_values"], _images_by_sample(pixel_values, [1, 2, 0], SORT.tolist()))
+    assert torch.equal(kwargs["image_sizes"], _images_by_sample(image_sizes, [1, 2, 0], SORT.tolist()))
+    assert torch.equal(model._unsort_generation_outputs(sorted_ids, unsort_idx), input_ids)
+
+
+def test_llava_pixtral_mismatched_totals_raise():
+    vision_config = type("VisionCfg", (), {"patch_size": 2})()
+    model = _fake_model(
+        RBLNLlavaForConditionalGeneration,
+        {"image_token_index": IMG, "image_seq_length": None, "vision_config": vision_config},
+    )
+    # row 0 carries 3 [IMG] tokens but no image combination (4, 2, 1) sums to 3 greedily
+    input_ids = torch.tensor([[IMG, IMG, IMG, 1, 2, 3], [4, 5, 6, 7, 8, 9], [10, 11, 12, 13, 14, 0]])
+    kwargs = {
+        "attention_mask": MASK.clone(),
+        "pixel_values": torch.zeros(3, 1, 1, 1),
+        "image_sizes": torch.tensor([[4, 4], [2, 4], [2, 2]]),
+    }
+    with pytest.raises(RuntimeError, match="Cannot map image inputs"):
+        model._sort_generation_inputs(input_ids, kwargs)
+
+
 def test_llava_next_sorts_patched_pixel_values():
     model = _fake_model(RBLNLlavaNextForConditionalGeneration, {"image_token_index": IMG})
     # variable-length runs per image; images per sample [1, 2, 0]
