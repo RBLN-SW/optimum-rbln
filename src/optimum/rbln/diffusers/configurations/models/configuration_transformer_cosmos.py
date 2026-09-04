@@ -31,7 +31,6 @@ class RBLNCosmosTransformer3DModelConfig(RBLNModelConfig):
         num_frames: int | None = None,
         height: int | None = None,
         width: int | None = None,
-        fps: int | None = None,
         max_seq_len: int | None = None,
         embedding_dim: int | None = None,
         num_channels_latents: int | None = None,
@@ -47,7 +46,6 @@ class RBLNCosmosTransformer3DModelConfig(RBLNModelConfig):
             num_frames (int | None): The number of frames in the generated video. Defaults to 121.
             height (int | None): The height in pixels of the generated video. Defaults to 704.
             width (int | None): The width in pixels of the generated video. Defaults to 1280.
-            fps (int | None): The frames per second of the generated video.  Defaults to 30.
             max_seq_len (int | None): Maximum sequence length of prompt embeds.
             embedding_dim (int | None): Embedding vector dimension of prompt embeds.
             num_channels_latents (int | None): The number of channels in latent space.
