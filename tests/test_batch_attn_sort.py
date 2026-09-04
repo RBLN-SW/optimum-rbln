@@ -55,8 +55,8 @@ def test_unsort_model_output_fields():
 
 
 class _FakeCausalLM(RBLNDecoderOnlyGenerationMixin):
-    def __init__(self, use_batch_attn_opt):
-        self.rbln_config = type("Cfg", (), {"use_batch_attn_opt": use_batch_attn_opt})()
+    def __init__(self, requires_batch_sort):
+        self.rbln_config = type("Cfg", (), {"requires_batch_sort": requires_batch_sort})()
 
 
 def test_generate_fast_path_sorts_and_unsorts(monkeypatch):
@@ -71,7 +71,7 @@ def test_generate_fast_path_sorts_and_unsorts(monkeypatch):
 
     ids = torch.tensor([[9, 1, 2, 3], [9, 9, 9, 5], [9, 9, 6, 7]])
     mask = torch.tensor([[0, 1, 1, 1], [0, 0, 0, 1], [0, 0, 1, 1]])
-    result = _FakeCausalLM(use_batch_attn_opt=True).generate(ids, attention_mask=mask)
+    result = _FakeCausalLM(requires_batch_sort=True).generate(ids, attention_mask=mask)
 
     expected_sort = torch.tensor([0, 2, 1])  # lengths 3, 1, 2 -> descending
     assert captured["kwargs"]["inputs_sorted"] is True
@@ -90,13 +90,13 @@ def test_generate_fast_path_disabled(monkeypatch):
     monkeypatch.setattr(GenerationMixin, "generate", fake_generate)
 
     ids = torch.tensor([[1, 2], [3, 4]])
-    result = _FakeCausalLM(use_batch_attn_opt=False).generate(ids)
+    result = _FakeCausalLM(requires_batch_sort=False).generate(ids)
     assert "inputs_sorted" not in captured["kwargs"]
     assert torch.equal(result, ids)
 
 
 def test_generate_config_without_field(monkeypatch):
-    # Multimodal top-level configs are plain RBLNModelConfig without use_batch_attn_opt
+    # Multimodal top-level configs are plain RBLNModelConfig without requires_batch_sort
     captured = {}
 
     def fake_generate(self, input_ids, **kwargs):
@@ -105,7 +105,7 @@ def test_generate_config_without_field(monkeypatch):
 
     monkeypatch.setattr(GenerationMixin, "generate", fake_generate)
 
-    model = _FakeCausalLM(use_batch_attn_opt=False)
+    model = _FakeCausalLM(requires_batch_sort=False)
     model.rbln_config = type("Cfg", (), {})()
     ids = torch.tensor([[1, 2], [3, 4]])
     result = model.generate(ids)
@@ -114,8 +114,8 @@ def test_generate_config_without_field(monkeypatch):
 
 
 class _FakeForwardModel:
-    rbln_config = type("Cfg", (), {"use_batch_attn_opt": True})()
-    _sort = RBLNDecoderOnlyModelForCausalLM._maybe_sort_inputs_for_batch_attn_opt
+    rbln_config = type("Cfg", (), {"requires_batch_sort": True})()
+    _sort = RBLNDecoderOnlyModelForCausalLM._maybe_sort_batch_inputs
 
 
 def _prefill_inputs():
@@ -167,27 +167,29 @@ def test_forward_sort_inputs_sorted_skips():
     assert model._rbln_sort_idx is None
 
 
-def test_use_batch_attn_opt_serialized():
-    cfg = RBLNDecoderOnlyModelForCausalLMConfig(max_seq_len=1024, _use_batch_attn_opt=True, npu="RBLN-CR31")
-    assert cfg.use_batch_attn_opt is True
+def test_requires_batch_sort_serialized():
+    cfg = RBLNDecoderOnlyModelForCausalLMConfig(max_seq_len=1024, _requires_batch_sort=True, npu="RBLN-CR31")
+    assert cfg.requires_batch_sort is True
     serialized = cfg._prepare_for_serialization()
-    assert serialized.get("_use_batch_attn_opt") is True
+    assert serialized.get("_requires_batch_sort") is True
     assert "npu" not in serialized
     # round-trip: the serialized form reconstructs through __init__
-    assert RBLNDecoderOnlyModelForCausalLMConfig(max_seq_len=1024, _use_batch_attn_opt=True).use_batch_attn_opt is True
+    assert (
+        RBLNDecoderOnlyModelForCausalLMConfig(max_seq_len=1024, _requires_batch_sort=True).requires_batch_sort is True
+    )
 
 
-def test_use_batch_attn_opt_not_user_settable():
+def test_requires_batch_sort_not_user_settable():
     with pytest.raises(ValueError, match="[Uu]nexpected"):
-        RBLNDecoderOnlyModelForCausalLMConfig(max_seq_len=1024, use_batch_attn_opt=True)
+        RBLNDecoderOnlyModelForCausalLMConfig(max_seq_len=1024, requires_batch_sort=True)
 
     cfg = RBLNDecoderOnlyModelForCausalLMConfig(max_seq_len=1024)
-    assert cfg.use_batch_attn_opt is None
+    assert cfg.requires_batch_sort is None
     with pytest.raises(AttributeError):
-        cfg.use_batch_attn_opt = True
+        cfg.requires_batch_sort = True
 
 
-def test_use_batch_attn_opt_derivation_gates_on_decode():
+def test_requires_batch_sort_derivation_gates_on_decode():
     # sorting is a batched-DECODE contract: prefill-only (encoder-style) configs must not
     # derive True — the derivation is gated on can_generate ("decode" in phases)
     from optimum.rbln.transformers.models.decoderonly.configuration_decoderonly import RBLNDecoderOnlyModelConfig
