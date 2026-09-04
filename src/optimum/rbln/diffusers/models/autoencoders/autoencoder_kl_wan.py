@@ -26,15 +26,13 @@ from diffusers.models.autoencoders.autoencoder_kl_wan import (
 from diffusers.models.autoencoders.vae import DecoderOutput, DiagonalGaussianDistribution
 from diffusers.models.modeling_outputs import AutoencoderKLOutput
 from rebel.compile_context import CompileContext
-
-# from .vae import RBLNRuntimeWanVAEDecoder, RBLNRuntimeWanVAEEncoder, _VAEWanDecoder, _VAEWanEncoder
 from transformers import PretrainedConfig
 
 from ....configuration_utils import RBLNCompileConfig
 from ....modeling import RBLNModel
 from ....utils.logging import get_logger
-from ....utils.runtime_utils import RBLNPytorchRuntime
 from ...configurations import RBLNAutoencoderKLWanConfig
+from .vae import RBLNRuntimeWanVAEDecoder, RBLNRuntimeWanVAEEncoder
 
 
 if TYPE_CHECKING:
@@ -522,31 +520,6 @@ class _VAEWanDecoderN(torch.nn.Module):
                 item = _apply_war(item, war2d)  # +0, forces cache_update after the decoder reads
             dummy_outs.append(torch.ops.rbln_custom_ops.rbln_cache_update(cache, item, position, axis))
         return out, feat_cache_reshaped[0].contiguous(), dummy_outs  # idx0 channel-first (no flip)
-
-
-class RBLNRuntimeWanVAEEncoder(RBLNPytorchRuntime):
-    """Runtime wrapper for Wan VAE encoder inference."""
-
-    def encode(self, x: torch.FloatTensor, **kwargs) -> torch.FloatTensor:
-        if self.use_slicing and x.shape[0] > 1:
-            encoded_slices = [self.forward(x_slice) for x_slice in x.split(1)]
-            h = torch.cat(encoded_slices)
-        else:
-            h = self.forward(x)
-        posterior = DiagonalGaussianDistribution(h)
-        return posterior
-
-
-class RBLNRuntimeWanVAEDecoder(RBLNPytorchRuntime):
-    """Runtime wrapper for Wan VAE decoder inference."""
-
-    def decode(self, z: torch.FloatTensor, **kwargs) -> torch.FloatTensor:
-        if self.use_slicing and z.shape[0] > 1:
-            decoded_slices = [self.forward(z_slice) for z_slice in z.split(1)]
-            decoded = torch.cat(decoded_slices)
-        else:
-            decoded = self.forward(z)
-        return decoded
 
 
 class RBLNAutoencoderKLWan(RBLNModel):

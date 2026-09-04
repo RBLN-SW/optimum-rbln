@@ -21,7 +21,7 @@ from ....utils.runtime_utils import RBLNPytorchRuntime
 
 
 if TYPE_CHECKING:
-    from diffusers import AutoencoderKL, AutoencoderKLCosmos, AutoencoderKLTemporalDecoder, AutoencoderKLWan, VQModel
+    from diffusers import AutoencoderKL, AutoencoderKLCosmos, AutoencoderKLTemporalDecoder, VQModel
 
 
 class RBLNRuntimeVAEEncoder(RBLNPytorchRuntime):
@@ -58,6 +58,8 @@ class RBLNRuntimeCosmosVAEDecoder(RBLNPytorchRuntime):
 
 
 class RBLNRuntimeWanVAEEncoder(RBLNPytorchRuntime):
+    """Runtime wrapper for Wan VAE encoder inference."""
+
     def encode(self, x: torch.FloatTensor, **kwargs) -> torch.FloatTensor:
         if self.use_slicing and x.shape[0] > 1:
             encoded_slices = [self.forward(x_slice) for x_slice in x.split(1)]
@@ -68,8 +70,16 @@ class RBLNRuntimeWanVAEEncoder(RBLNPytorchRuntime):
         return posterior
 
 
-class RBLNRuntimeWanVAEDecoder(RBLNRuntimeCosmosVAEDecoder):
-    pass
+class RBLNRuntimeWanVAEDecoder(RBLNPytorchRuntime):
+    """Runtime wrapper for Wan VAE decoder inference."""
+
+    def decode(self, z: torch.FloatTensor, **kwargs) -> torch.FloatTensor:
+        if self.use_slicing and z.shape[0] > 1:
+            decoded_slices = [self.forward(z_slice) for z_slice in z.split(1)]
+            decoded = torch.cat(decoded_slices)
+        else:
+            decoded = self.forward(z)
+        return decoded
 
 
 class _VAEDecoder(torch.nn.Module):
@@ -136,26 +146,6 @@ class _VAECosmosEncoder(torch.nn.Module):
 
 class _VAECosmosDecoder(torch.nn.Module):
     def __init__(self, vae: "AutoencoderKLCosmos"):
-        super().__init__()
-        self.vae = vae
-
-    def forward(self, z):
-        vae_out = self.vae._decode(z, return_dict=False)
-        return vae_out
-
-
-class _VAEWanEncoder(torch.nn.Module):
-    def __init__(self, vae: "AutoencoderKLWan"):
-        super().__init__()
-        self.vae = vae
-
-    def forward(self, x):
-        vae_out = self.vae._encode(x)
-        return vae_out
-
-
-class _VAEWanDecoder(torch.nn.Module):
-    def __init__(self, vae: "AutoencoderKLWan"):
         super().__init__()
         self.vae = vae
 
