@@ -39,6 +39,7 @@ from ....modeling import RBLNModel
 from ....modeling_rope_utils import build_qwen_mrope_lookup, np_cos, np_sin, qwen_vit_rot_pos_ids
 from ....utils.logging import get_logger
 from ...modeling_outputs import RBLNDecoderOnlyOutput, _validate_output_hidden_states
+from ...utils.multimodal_batch_sort import RBLNQwenVLBatchSortMixin
 from ..decoderonly.modeling_decoderonly import RBLNDecoderOnlyModel, RBLNDecoderOnlyModelForCausalLM
 from .configuration_qwen2_5_vl import (
     RBLNQwen2_5_VisionTransformerPretrainedModelConfig,
@@ -609,8 +610,10 @@ class RBLNQwen2_5_VLModel(RBLNDecoderOnlyModel):
             )
 
 
-# MRO: RBLNQwen2_5_VLForConditionalGeneration -> RBLNQwen2_5_VLModel -> RBLNDecoderOnlyModelForCausalLM -> RBLNDecoderOnlyModel -> RBLNModel
-class RBLNQwen2_5_VLForConditionalGeneration(RBLNQwen2_5_VLModel, RBLNDecoderOnlyModelForCausalLM):
+# MRO: RBLNQwen2_5_VLForConditionalGeneration -> RBLNQwenVLBatchSortMixin -> RBLNQwen2_5_VLModel -> RBLNDecoderOnlyModelForCausalLM -> RBLNDecoderOnlyModel -> RBLNModel
+class RBLNQwen2_5_VLForConditionalGeneration(
+    RBLNQwenVLBatchSortMixin, RBLNQwen2_5_VLModel, RBLNDecoderOnlyModelForCausalLM
+):
     """
     RBLNQwen2_5_VLForConditionalGeneration is a multi-modal model that integrates vision and language processing capabilities,
     optimized for RBLN NPUs. It is designed for conditional generation tasks that involve both image and text inputs.
@@ -676,6 +679,7 @@ class RBLNQwen2_5_VLForConditionalGeneration(RBLNQwen2_5_VLModel, RBLNDecoderOnl
         video_grid_thw=None,
         second_per_grid_ts=None,
         mm_token_type_ids=None,
+        inputs_sorted: bool = False,
         **kwargs,
     ):
         model_inputs = {}
@@ -706,6 +710,7 @@ class RBLNQwen2_5_VLForConditionalGeneration(RBLNQwen2_5_VLModel, RBLNDecoderOnl
                 "video_grid_thw": video_grid_thw,
                 "second_per_grid_ts": second_per_grid_ts,
                 "mm_token_type_ids": mm_token_type_ids,
+                "inputs_sorted": inputs_sorted,
             }
         )
 
@@ -750,8 +755,10 @@ class RBLNQwen2_5_VLForConditionalGeneration(RBLNQwen2_5_VLModel, RBLNDecoderOnl
         return_dict: bool | None = None,
         output_hidden_states: bool | None = None,
         mm_token_type_ids: torch.IntTensor | None = None,
+        inputs_sorted: bool = False,
         **kwargs,
     ) -> RBLNDecoderOnlyOutput:
+        self._require_sorted_batch_inputs(input_ids if input_ids is not None else inputs_embeds, inputs_sorted)
         output_hidden_states = _validate_output_hidden_states(output_hidden_states, self.rbln_config)
         # Prefill
         if cache_position is None:

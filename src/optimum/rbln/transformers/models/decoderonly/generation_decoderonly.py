@@ -42,6 +42,11 @@ class RBLNDecoderOnlyGenerationMixin(GenerationMixin):
     def _reorder_cache(self, past_key_values, beam_idx):
         raise NotImplementedError
 
+    @property
+    def _batch_sort_enabled(self) -> bool:
+        # getattr: multimodal top-level configs lack the field
+        return bool(getattr(self.rbln_config, "requires_batch_sort", None))
+
     @staticmethod
     def _unsort_generation_outputs(
         outputs: ModelOutput | torch.Tensor, unsort_idx: torch.Tensor
@@ -171,12 +176,7 @@ class RBLNDecoderOnlyGenerationMixin(GenerationMixin):
         self, input_ids: torch.LongTensor | None, kwargs: dict
     ) -> tuple[torch.LongTensor | None, torch.Tensor | None]:
         batch_input = input_ids if input_ids is not None else kwargs.get("inputs_embeds")
-        if (
-            # getattr: multimodal top-level configs lack the field
-            not getattr(self.rbln_config, "requires_batch_sort", None)
-            or batch_input is None
-            or batch_input.shape[0] <= 1
-        ):
+        if not self._batch_sort_enabled or batch_input is None or batch_input.shape[0] <= 1:
             return input_ids, None
 
         mask = kwargs.get("attention_mask")

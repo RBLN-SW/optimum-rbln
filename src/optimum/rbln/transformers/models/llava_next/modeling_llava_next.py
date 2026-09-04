@@ -37,8 +37,8 @@ from transformers.models.llava_next.modeling_llava_next import (
 from ....configuration_utils import RBLNCompileConfig, RBLNModelConfig
 from ....modeling import RBLNModel
 from ....utils.logging import get_logger
+from ...utils.multimodal_batch_sort import RBLNImageIndexedBatchSortMixin, _placeholder_run_counts
 from ...utils.rbln_runtime_wrapper import LoopProcessor
-from ..decoderonly.generation_decoderonly import RBLNDecoderOnlyGenerationMixin
 from ..decoderonly.modeling_decoderonly import RBLNDecoderOnlyOutput
 
 
@@ -94,7 +94,7 @@ class LoopProjector(LoopProcessor):
         return output[0]
 
 
-class RBLNLlavaNextForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMixin):
+class RBLNLlavaNextForConditionalGeneration(RBLNModel, RBLNImageIndexedBatchSortMixin):
     """
     RBLNLlavaNextForConditionalGeneration is a multi-modal model that combines vision and language processing capabilities,
     optimized for RBLN NPUs. It is designed for conditional generation tasks that involve both image and text inputs.
@@ -130,6 +130,11 @@ class RBLNLlavaNextForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGeneration
         {"name": "vision_tower"},
         {"name": "language_model"},
     ]
+    # pixel_values is (num_images, num_patches, C, H, W); image_sizes is (num_images, 2)
+    _image_indexed_kwargs = ("pixel_values", "image_sizes")
+
+    def _images_per_sample(self, input_ids: torch.LongTensor | None, kwargs: dict) -> list[int]:
+        return _placeholder_run_counts(input_ids, self._image_token_id)
 
     def __getattr__(self, __name: str) -> Any:
         def redirect(func):
@@ -236,6 +241,7 @@ class RBLNLlavaNextForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGeneration
         cache_position=None,
         image_sizes=None,
         generate_idx=None,
+        inputs_sorted=False,
         **kwargs,
     ):
         is_prefill_phase = generate_idx is None
@@ -272,6 +278,7 @@ class RBLNLlavaNextForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGeneration
                 "pixel_values": pixel_values,
                 "cache_position": cache_position,
                 "generate_idx": generate_idx,
+                "inputs_sorted": inputs_sorted,
             }
         )
         return model_inputs
@@ -468,8 +475,10 @@ class RBLNLlavaNextForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGeneration
         cache_position: torch.Tensor = None,
         generate_idx: torch.Tensor | None = None,
         return_dict: bool | None = None,
+        inputs_sorted: bool = False,
         **kwargs,
     ) -> tuple | RBLNDecoderOnlyOutput:
+        self._require_sorted_batch_inputs(inputs_embeds if inputs_embeds is not None else input_ids, inputs_sorted)
         # Prefill
         if cache_position is None:
             inputs_embeds = self._preprocess_prefill(

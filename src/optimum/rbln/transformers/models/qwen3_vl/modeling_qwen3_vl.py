@@ -38,6 +38,7 @@ from ....modeling import RBLNModel
 from ....modeling_rope_utils import build_qwen_mrope_lookup, np_cos, np_sin, qwen_vit_rot_pos_ids
 from ....utils.logging import get_logger
 from ...modeling_outputs import RBLNDecoderOnlyOutput, _validate_output_hidden_states
+from ...utils.multimodal_batch_sort import RBLNQwenVLBatchSortMixin, _per_sample_patch_lens, _permute_flat_segments
 from ..decoderonly.decoderonly_runtime_utils import RBLNPageTableManager, RBLNRuntimeModel
 from ..decoderonly.modeling_decoderonly import RBLNDecoderOnlyModel, RBLNDecoderOnlyModelForCausalLM
 from .configuration_qwen3_vl import (
@@ -742,7 +743,7 @@ class RBLNQwen3VLModel(RBLNDecoderOnlyModel):
             )
 
 
-class RBLNQwen3VLForConditionalGeneration(RBLNQwen3VLModel, RBLNDecoderOnlyModelForCausalLM):
+class RBLNQwen3VLForConditionalGeneration(RBLNQwenVLBatchSortMixin, RBLNQwen3VLModel, RBLNDecoderOnlyModelForCausalLM):
     """
     RBLNQwen3VLForConditionalGeneration is a multi-modal model that integrates vision and language processing capabilities,
     optimized for RBLN NPUs. It is designed for conditional generation tasks that involve both image and text inputs.
@@ -783,6 +784,13 @@ class RBLNQwen3VLForConditionalGeneration(RBLNQwen3VLModel, RBLNDecoderOnlyModel
     _rbln_submodules = [
         {"name": "visual"},
     ]
+    _video_grid_rows_are_chunks = True
+    _vision_sortable_kwargs = RBLNQwenVLBatchSortMixin._vision_sortable_kwargs + (
+        "image_embeds",
+        "video_embeds",
+        "deepstack_image_embeds",
+        "deepstack_video_embeds",
+    )
 
     def __post_init__(self, **kwargs):
         super().__post_init__(**kwargs)
@@ -790,6 +798,27 @@ class RBLNQwen3VLForConditionalGeneration(RBLNQwen3VLModel, RBLNDecoderOnlyModel
 
     def can_generate(self):
         return True
+
+    def _sort_vision_kwargs(
+        self, kwargs: dict, sort_idx: torch.Tensor, image_rows: list[int], video_rows: list[int]
+    ) -> None:
+        # encoder-node embeds are flattened in merged tokens; take lengths before super() permutes the grids
+        merge_unit = self.config.vision_config.spatial_merge_size**2
+        for grid_key, embed_key, deepstack_key, seg_rows in (
+            ("image_grid_thw", "image_embeds", "deepstack_image_embeds", image_rows),
+            ("video_grid_thw", "video_embeds", "deepstack_video_embeds", video_rows),
+        ):
+            grid = kwargs.get(grid_key)
+            embeds = kwargs.get(embed_key)
+            deepstack_embeds = kwargs.get(deepstack_key)
+            if grid is None or (embeds is None and deepstack_embeds is None):
+                continue
+            token_lens = [n // merge_unit for n in _per_sample_patch_lens(grid, seg_rows)]
+            if embeds is not None:
+                kwargs[embed_key] = _permute_flat_segments(embeds, token_lens, sort_idx)
+            if deepstack_embeds is not None:
+                kwargs[deepstack_key] = [_permute_flat_segments(t, token_lens, sort_idx) for t in deepstack_embeds]
+        super()._sort_vision_kwargs(kwargs, sort_idx, image_rows, video_rows)
 
     @classmethod
     def _reconstruct_model_if_needed(cls, model: "PreTrainedModel"):
@@ -839,6 +868,7 @@ class RBLNQwen3VLForConditionalGeneration(RBLNQwen3VLModel, RBLNDecoderOnlyModel
         deepstack_image_embeds=None,
         deepstack_video_embeds=None,
         mm_token_type_ids=None,
+        inputs_sorted: bool = False,
         **kwargs,
     ):
         model_inputs = {}
@@ -881,6 +911,7 @@ class RBLNQwen3VLForConditionalGeneration(RBLNQwen3VLModel, RBLNDecoderOnlyModel
                 "deepstack_image_embeds": deepstack_image_embeds,
                 "deepstack_video_embeds": deepstack_video_embeds,
                 "mm_token_type_ids": mm_token_type_ids,
+                "inputs_sorted": inputs_sorted,
             }
         )
 
@@ -928,8 +959,10 @@ class RBLNQwen3VLForConditionalGeneration(RBLNQwen3VLModel, RBLNDecoderOnlyModel
         return_dict: bool | None = None,
         output_hidden_states: bool | None = None,
         mm_token_type_ids: torch.IntTensor | None = None,
+        inputs_sorted: bool = False,
         **kwargs,
     ) -> RBLNDecoderOnlyOutput:
+        self._require_sorted_batch_inputs(input_ids if input_ids is not None else inputs_embeds, inputs_sorted)
         output_hidden_states = _validate_output_hidden_states(output_hidden_states, self.rbln_config)
         # Prefill
         if cache_position is None:
