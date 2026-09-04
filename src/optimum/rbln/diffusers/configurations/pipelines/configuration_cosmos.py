@@ -268,6 +268,7 @@ class RBLNCosmos2_5_PredictBasePipelineConfig(RBLNModelConfig):
             batch_size=batch_size,
             max_seq_len=max_seq_len,
             output_hidden_states=True,
+            visual={"max_seq_len": 64, "create_runtimes": False},
         )
         self.transformer = self.initialize_submodule_config(
             transformer,
