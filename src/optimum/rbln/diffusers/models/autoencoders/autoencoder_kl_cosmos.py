@@ -124,7 +124,9 @@ class RBLNAutoencoderKLCosmos(RBLNModel):
     def update_rbln_config_using_pipe(
         cls, pipe: "RBLNDiffusionMixin", rbln_config: "RBLNDiffusionMixinConfig", submodule_name: str
     ) -> "RBLNDiffusionMixinConfig":
-        rbln_config.vae.num_channels_latents = pipe.transformer.config.in_channels - int(rbln_config.vae.uses_encoder)
+        # out_channels is the pure latent channel count for every Cosmos family; in_channels may
+        # carry an extra condition-mask channel depending on the pipeline.
+        rbln_config.vae.num_channels_latents = pipe.transformer.config.out_channels
         rbln_config.vae.vae_scale_factor_temporal = pipe.vae_scale_factor_temporal
         rbln_config.vae.vae_scale_factor_spatial = pipe.vae_scale_factor_spatial
         return rbln_config

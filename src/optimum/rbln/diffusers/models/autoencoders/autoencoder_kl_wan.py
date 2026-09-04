@@ -713,9 +713,6 @@ class RBLNAutoencoderKLWan(RBLNModel):
     def update_rbln_config_using_pipe(
         cls, pipe: "RBLNDiffusionMixin", rbln_config: "RBLNDiffusionMixinConfig", submodule_name: str
     ) -> "RBLNDiffusionMixinConfig":
-        # For Cosmos2.5 pipeline, get latent channels from transformer config
-        # transformer.config.in_channels - 1 is the num_channels_latents (minus 1 for condition mask)
-
         if rbln_config.vae.height is None:
             rbln_config.vae.height = 704
         if rbln_config.vae.width is None:
@@ -723,7 +720,9 @@ class RBLNAutoencoderKLWan(RBLNModel):
         if rbln_config.vae.num_frames is None:
             rbln_config.vae.num_frames = 93
 
-        rbln_config.vae.num_channels_latents = pipe.transformer.config.in_channels - 1
+        # out_channels is the pure latent channel count for every Cosmos family; in_channels may
+        # carry an extra condition-mask channel depending on the pipeline.
+        rbln_config.vae.num_channels_latents = pipe.transformer.config.out_channels
         rbln_config.vae.vae_scale_factor_temporal = pipe.vae_scale_factor_temporal
         rbln_config.vae.vae_scale_factor_spatial = pipe.vae_scale_factor_spatial
 
