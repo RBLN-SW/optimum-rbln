@@ -103,6 +103,15 @@ def parse_byte_size(value: int | str) -> int:
     return nbytes
 
 
+def npu_is_cr13_or_later(npu: str | None = None) -> bool:
+    """Whether the NPU is RBLN-CR13 or later — every CR except CR03 (rebel-compiler's `_is_evt1`)."""
+    npu = npu or (rebel.get_npu_name(0) if rebel.npu_is_available(0) else None)
+    if not npu:
+        return False
+    normalized = normalize_npu(npu)
+    return normalized.startswith("RBLN-CR") and normalized != "RBLN-CR0"
+
+
 def normalize_npu(npu: str) -> str:
     """Normalize the NPU string by removing the form factor."""
     match = re.match(r"(RBLN-CA|RBLN-CR)(\d+)", npu)

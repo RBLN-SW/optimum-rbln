@@ -65,6 +65,7 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
         logits_to_keep: int | None = None,
         output_hidden_states: bool | None = None,
         cache_metas: list["CacheMeta"] | None = None,
+        _requires_batch_sort: bool | None = None,
         **kwargs: Any,
     ):
         """
@@ -252,6 +253,9 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
             raise NotImplementedError("`logits_to_keep` > 1 is currently not supported for RBLN models.")
 
         self.output_hidden_states = output_hidden_states or False
+        # internal, not a user knob: resolved at compile time to mirror the compiler's
+        # in-memory kernel routing, serialized so a loaded model knows to sort
+        self._requires_batch_sort = _requires_batch_sort
 
         self.decoder_batch_sizes = None
         if "decode" in self.phases:
@@ -313,6 +317,13 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
         # position ids but no separate image_prefill phase, the compiled prefill attends
         # bidirectionally within a chunk, so the whole prompt must fit in a single chunk.
         return self.use_attention_mask and self.use_position_ids and not self.use_image_prefill
+
+    @property
+    def requires_batch_sort(self) -> bool | None:
+        # read-only: whether decode attention runs the in-memory batched kernel, which
+        # requires batches sorted by sequence length (descending). Resolved at compile time
+        # from the target NPU/attention config — never set by the user.
+        return self._requires_batch_sort
 
     @property
     def image_prefill_runtime_idx(self):
