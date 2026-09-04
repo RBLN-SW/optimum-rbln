@@ -24,8 +24,6 @@ _UNMAPPABLE_BATCH_SORT = (
 
 
 def _permute_flat_segments(tensor: torch.Tensor, seg_lens: list[int], perm_idx: torch.Tensor) -> torch.Tensor:
-    # reorder per-sample segments stacked on dim 0 (flattened multimodal layouts,
-    # e.g. pixel_values [total_patches, dim] or grid_thw [num_images, 3])
     segments = torch.split(tensor, seg_lens, dim=0)
     return torch.cat([segments[i] for i in perm_idx.tolist()], dim=0)
 
@@ -62,9 +60,8 @@ def _placeholder_token_counts(
 def _match_token_totals(
     input_ids: torch.LongTensor | None, token_id: int | None, tokens_per_segment: list[int]
 ) -> list[int]:
-    # variable-size expansions whose per-segment token counts are known from side inputs
-    # (e.g. pixtral image_sizes): greedily assign segments, in stacking order, to each row's
-    # placeholder-token total; any leftover or overshoot is unmappable
+    # per-segment token counts known from side inputs (e.g. pixtral image_sizes),
+    # greedily assigned in stacking order to each row's placeholder-token total
     if input_ids is None or token_id is None:
         raise RuntimeError(_UNMAPPABLE_BATCH_SORT)
     row_totals = (input_ids == token_id).sum(dim=1).tolist()
@@ -85,9 +82,7 @@ def _match_token_totals(
 
 class RBLNBatchSortGuardMixin:
     def _require_sorted_batch_inputs(self, batch_input: torch.Tensor | None, inputs_sorted: bool) -> None:
-        # these forwards drive prefill_decoder/decoder themselves, so the base forward's
-        # sorting fallback never runs; an unsorted direct multi-batch call would silently
-        # mis-lay the KV cache
+        # an unsorted direct multi-batch call would silently mis-lay the KV cache
         if inputs_sorted or not self._batch_sort_enabled:
             return
         if batch_input is not None and batch_input.shape[0] > 1:
@@ -99,12 +94,9 @@ class RBLNBatchSortGuardMixin:
 
 
 class RBLNMultimodalBatchSortMixin(RBLNBatchSortGuardMixin, RBLNDecoderOnlyGenerationMixin):
-    # Composition VLMs keep a plain RBLNModelConfig at the top level; the batched-attention
-    # contract (use_batch_attn_opt) lives on the inner language model's config.
     _lm_attr_name = "language_model"
-    # generate kwargs stacked over images on dim 0; each family declares how those segments
-    # map to batch rows via _images_per_sample. Batch-first extras go in
-    # _generate_batch_sortable_kwargs instead.
+    # image-first kwargs, mapped to rows by _images_per_sample; batch-first extras go in
+    # _generate_batch_sortable_kwargs instead
     _image_indexed_kwargs: tuple[str, ...] = ()
 
     @property
@@ -137,9 +129,6 @@ class RBLNMultimodalBatchSortMixin(RBLNBatchSortGuardMixin, RBLNDecoderOnlyGener
             self._apply_segment_perm(tensors, kwargs, sort_idx, self._images_per_sample(input_ids, kwargs))
 
     def _images_per_sample(self, input_ids: torch.LongTensor | None, kwargs: dict) -> list[int]:
-        # each family declares its own placeholder scheme: _placeholder_run_counts
-        # (variable-size expansions), _placeholder_token_counts (fixed-size), or
-        # _match_token_totals (variable-size with counts known from side inputs in kwargs)
         raise NotImplementedError(
             f"{type(self).__name__} declares _image_indexed_kwargs but no _images_per_sample mapping."
         )
@@ -177,8 +166,6 @@ def _per_sample_patch_lens(grid_thw: torch.Tensor, rows_per_sample: list[int]) -
 
 
 class RBLNVisionBatchSortMixin(RBLNBatchSortGuardMixin):
-    # generate-entry batch sorting (use_batch_attn_opt) must carry the flattened vision
-    # inputs (patches / grid rows stacked on dim 0) along with their sample rows.
     _video_grid_rows_are_chunks = False  # qwen3-style video grids are per temporal chunk
     _generate_batch_sortable_kwargs = RBLNDecoderOnlyGenerationMixin._generate_batch_sortable_kwargs + (
         "mm_token_type_ids",
@@ -202,7 +189,7 @@ class RBLNVisionBatchSortMixin(RBLNBatchSortGuardMixin):
         if presort_input_ids is None:
             raise RuntimeError("Batch sorting flattened vision inputs requires input_ids.")
 
-        # per-sample counts come from the pre-sort rows; segments are then permuted to match
+        # counts come from the pre-sort rows
         sort_idx = torch.argsort(unsort_idx)
         image_rows, video_rows = self._vision_grid_rows_per_sample(presort_input_ids, presort_mask, kwargs)
         self._sort_vision_kwargs(kwargs, sort_idx, image_rows, video_rows)

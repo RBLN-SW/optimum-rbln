@@ -630,7 +630,6 @@ class RBLNGemma4ForConditionalGeneration(RBLNModel, RBLNMultimodalBatchSortMixin
     )
 
     def _images_per_sample(self, input_ids: torch.LongTensor | None, kwargs: dict) -> list[int]:
-        # each image is one contiguous placeholder run
         return _placeholder_run_counts(input_ids, self._image_token_id)
 
     def _sort_extra_generation_inputs(
@@ -640,8 +639,7 @@ class RBLNGemma4ForConditionalGeneration(RBLNModel, RBLNMultimodalBatchSortMixin
         pixel_values_videos = kwargs.get("pixel_values_videos")
         if isinstance(pixel_values_videos, torch.Tensor) and pixel_values_videos.shape[0] > 0:
             videos = self._collect_segment_kwargs(kwargs, ("pixel_values_videos", "video_position_ids"))
-            # (num_videos, num_frames, ...): every frame is its own placeholder run
-            # (frames are separated by timestamp text, see the class docstring)
+            # (num_videos, num_frames, ...): every frame is its own run, separated by timestamp text
             videos_per_sample = _placeholder_run_counts(
                 input_ids, getattr(self.config, "video_token_id", None), runs_per_segment=pixel_values_videos.shape[1]
             )

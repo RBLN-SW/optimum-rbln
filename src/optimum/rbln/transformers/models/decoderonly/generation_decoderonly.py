@@ -44,8 +44,7 @@ class RBLNDecoderOnlyGenerationMixin(GenerationMixin):
 
     @property
     def _batch_sort_enabled(self) -> bool:
-        # getattr: multimodal top-level configs lack the field — composition models
-        # override this to read their language model's config
+        # getattr: multimodal top-level configs lack the field
         return bool(getattr(self.rbln_config, "use_batch_attn_opt", None))
 
     @staticmethod

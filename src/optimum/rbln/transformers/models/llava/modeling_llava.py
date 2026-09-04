@@ -175,12 +175,10 @@ class RBLNLlavaForConditionalGeneration(RBLNModel, RBLNMultimodalBatchSortMixin)
     _image_indexed_kwargs = ("pixel_values", "image_sizes")
 
     def _images_per_sample(self, input_ids: torch.LongTensor | None, kwargs: dict) -> list[int]:
-        # LlavaConfig always carries image_seq_length (default 576), so the discriminator is
-        # the vision tower: pixtral expands variably, [IMG_BREAK] splitting an image into one
-        # run per patch row — per-image [IMG] counts come from image_sizes instead
+        # LlavaConfig always carries image_seq_length (default 576), so discriminate by the
+        # vision tower; pixtral's per-image [IMG] counts come from image_sizes instead
         if getattr(getattr(self.config, "vision_config", None), "model_type", None) == "pixtral":
             return _match_token_totals(input_ids, self._image_token_id, self._pixtral_tokens_per_image(kwargs))
-        # fixed-size expansion: adjacent images merge runs, so count tokens
         return _placeholder_token_counts(
             input_ids, self._image_token_id, getattr(self.config, "image_seq_length", None)
         )

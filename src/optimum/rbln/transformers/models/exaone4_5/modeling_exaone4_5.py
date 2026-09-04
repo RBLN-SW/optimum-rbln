@@ -498,8 +498,7 @@ class RBLNExaone4_5_ForConditionalGeneration(
     def _vision_grid_rows_per_sample(
         self, input_ids: torch.LongTensor, attention_mask: torch.Tensor | None, kwargs: dict
     ) -> tuple[list[int], list[int]]:
-        # no vision_start marker: _preprocess_prefill consumes grids in flattened order
-        # via masked_scatter, so per-sample ownership follows each row's token count
+        # no vision_start marker — ownership follows each row's placeholder token count
         merge_unit = self.config.vision_config.spatial_merge_size**2
         image_rows = _grid_rows_by_token_count(
             input_ids, self.config.image_token_id, kwargs.get("image_grid_thw"), merge_unit

@@ -802,8 +802,7 @@ class RBLNQwen3VLForConditionalGeneration(RBLNVisionBatchSortMixin, RBLNQwen3VLM
     def _sort_vision_kwargs(
         self, kwargs: dict, sort_idx: torch.Tensor, image_rows: list[int], video_rows: list[int]
     ) -> None:
-        # pre-computed encoder outputs (encoder-node path) are flattened in merged tokens;
-        # segment lengths must come from the grids before super() permutes them
+        # encoder-node embeds are flattened in merged tokens; take lengths before super() permutes the grids
         merge_unit = self.config.vision_config.spatial_merge_size**2
         for grid_key, embed_key, deepstack_key, seg_rows in (
             ("image_grid_thw", "image_embeds", "deepstack_image_embeds", image_rows),

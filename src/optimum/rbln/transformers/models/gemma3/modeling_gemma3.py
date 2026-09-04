@@ -83,7 +83,6 @@ class RBLNGemma3ForConditionalGeneration(RBLNModel, RBLNMultimodalBatchSortMixin
     _image_indexed_kwargs = ("pixel_values",)
 
     def _images_per_sample(self, input_ids: torch.LongTensor | None, kwargs: dict) -> list[int]:
-        # fixed mm_tokens_per_image expansion; adjacent images merge runs, so count tokens
         return _placeholder_token_counts(input_ids, self._image_token_id, self.config.mm_tokens_per_image)
 
     def __getattr__(self, __name: str) -> Any:
