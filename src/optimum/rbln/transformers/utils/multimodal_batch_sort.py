@@ -57,7 +57,7 @@ def _placeholder_token_counts(
     return (counts // tokens_per_segment).tolist()
 
 
-def _match_token_totals(
+def _matched_token_counts(
     input_ids: torch.LongTensor | None, token_id: int | None, tokens_per_segment: list[int]
 ) -> list[int]:
     # per-segment token counts known from side inputs (e.g. pixtral image_sizes),
@@ -93,7 +93,9 @@ class RBLNBatchSortGuardMixin:
             )
 
 
-class RBLNMultimodalBatchSortMixin(RBLNBatchSortGuardMixin, RBLNDecoderOnlyGenerationMixin):
+class RBLNImageIndexedBatchSortMixin(RBLNBatchSortGuardMixin, RBLNDecoderOnlyGenerationMixin):
+    # for models whose pixel_values stack whole images on dim 0 (no image_grid_thw):
+    # sample ownership is recovered by counting placeholders in input_ids
     _lm_attr_name = "language_model"
     # image-first kwargs, mapped to rows by _images_per_sample; batch-first extras go in
     # _batch_sortable_kwargs instead
@@ -165,7 +167,9 @@ def _per_sample_patch_lens(grid_thw: torch.Tensor, rows_per_sample: list[int]) -
     return lens
 
 
-class RBLNVisionBatchSortMixin(RBLNBatchSortGuardMixin):
+class RBLNQwenVLBatchSortMixin(RBLNBatchSortGuardMixin):
+    # for the Qwen-VL processor lineage (incl. exaone4_5): pixel_values flatten patches
+    # on dim 0 alongside image_grid_thw; sample ownership is recovered from grid rows
     _video_grid_rows_are_chunks = False  # qwen3-style video grids are per temporal chunk
     _batch_sortable_kwargs = RBLNDecoderOnlyGenerationMixin._batch_sortable_kwargs + ("mm_token_type_ids",)
     _vision_sortable_kwargs = (

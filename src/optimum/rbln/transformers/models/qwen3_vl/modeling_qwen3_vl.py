@@ -38,7 +38,7 @@ from ....modeling import RBLNModel
 from ....modeling_rope_utils import build_qwen_mrope_lookup, np_cos, np_sin, qwen_vit_rot_pos_ids
 from ....utils.logging import get_logger
 from ...modeling_outputs import RBLNDecoderOnlyOutput, _validate_output_hidden_states
-from ...utils.generation_multimodal import RBLNVisionBatchSortMixin, _per_sample_patch_lens, _permute_flat_segments
+from ...utils.multimodal_batch_sort import RBLNQwenVLBatchSortMixin, _per_sample_patch_lens, _permute_flat_segments
 from ..decoderonly.decoderonly_runtime_utils import RBLNPageTableManager, RBLNRuntimeModel
 from ..decoderonly.modeling_decoderonly import RBLNDecoderOnlyModel, RBLNDecoderOnlyModelForCausalLM
 from .configuration_qwen3_vl import (
@@ -743,7 +743,7 @@ class RBLNQwen3VLModel(RBLNDecoderOnlyModel):
             )
 
 
-class RBLNQwen3VLForConditionalGeneration(RBLNVisionBatchSortMixin, RBLNQwen3VLModel, RBLNDecoderOnlyModelForCausalLM):
+class RBLNQwen3VLForConditionalGeneration(RBLNQwenVLBatchSortMixin, RBLNQwen3VLModel, RBLNDecoderOnlyModelForCausalLM):
     """
     RBLNQwen3VLForConditionalGeneration is a multi-modal model that integrates vision and language processing capabilities,
     optimized for RBLN NPUs. It is designed for conditional generation tasks that involve both image and text inputs.
@@ -785,7 +785,7 @@ class RBLNQwen3VLForConditionalGeneration(RBLNVisionBatchSortMixin, RBLNQwen3VLM
         {"name": "visual"},
     ]
     _video_grid_rows_are_chunks = True
-    _vision_sortable_kwargs = RBLNVisionBatchSortMixin._vision_sortable_kwargs + (
+    _vision_sortable_kwargs = RBLNQwenVLBatchSortMixin._vision_sortable_kwargs + (
         "image_embeds",
         "video_embeds",
         "deepstack_image_embeds",

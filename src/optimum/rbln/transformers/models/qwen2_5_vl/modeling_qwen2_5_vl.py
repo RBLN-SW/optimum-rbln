@@ -39,7 +39,7 @@ from ....modeling import RBLNModel
 from ....modeling_rope_utils import build_qwen_mrope_lookup, np_cos, np_sin, qwen_vit_rot_pos_ids
 from ....utils.logging import get_logger
 from ...modeling_outputs import RBLNDecoderOnlyOutput, _validate_output_hidden_states
-from ...utils.generation_multimodal import RBLNVisionBatchSortMixin
+from ...utils.multimodal_batch_sort import RBLNQwenVLBatchSortMixin
 from ..decoderonly.modeling_decoderonly import RBLNDecoderOnlyModel, RBLNDecoderOnlyModelForCausalLM
 from .configuration_qwen2_5_vl import (
     RBLNQwen2_5_VisionTransformerPretrainedModelConfig,
@@ -610,9 +610,9 @@ class RBLNQwen2_5_VLModel(RBLNDecoderOnlyModel):
             )
 
 
-# MRO: RBLNQwen2_5_VLForConditionalGeneration -> RBLNVisionBatchSortMixin -> RBLNQwen2_5_VLModel -> RBLNDecoderOnlyModelForCausalLM -> RBLNDecoderOnlyModel -> RBLNModel
+# MRO: RBLNQwen2_5_VLForConditionalGeneration -> RBLNQwenVLBatchSortMixin -> RBLNQwen2_5_VLModel -> RBLNDecoderOnlyModelForCausalLM -> RBLNDecoderOnlyModel -> RBLNModel
 class RBLNQwen2_5_VLForConditionalGeneration(
-    RBLNVisionBatchSortMixin, RBLNQwen2_5_VLModel, RBLNDecoderOnlyModelForCausalLM
+    RBLNQwenVLBatchSortMixin, RBLNQwen2_5_VLModel, RBLNDecoderOnlyModelForCausalLM
 ):
     """
     RBLNQwen2_5_VLForConditionalGeneration is a multi-modal model that integrates vision and language processing capabilities,

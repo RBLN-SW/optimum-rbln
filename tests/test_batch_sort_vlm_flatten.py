@@ -8,7 +8,7 @@ from optimum.rbln.transformers.models.exaone4_5.modeling_exaone4_5 import RBLNEx
 from optimum.rbln.transformers.models.qwen2_5_vl.modeling_qwen2_5_vl import RBLNQwen2_5_VLForConditionalGeneration
 from optimum.rbln.transformers.models.qwen2_vl.modeling_qwen2_vl import RBLNQwen2VLForConditionalGeneration
 from optimum.rbln.transformers.models.qwen3_vl.modeling_qwen3_vl import RBLNQwen3VLForConditionalGeneration
-from optimum.rbln.transformers.utils.generation_multimodal import RBLNVisionBatchSortMixin, _permute_flat_segments
+from optimum.rbln.transformers.utils.multimodal_batch_sort import RBLNQwenVLBatchSortMixin, _permute_flat_segments
 
 
 VS, IMG, VID = 90, 91, 92
@@ -161,14 +161,14 @@ def test_qwen3_vl_moe_inherits_mixin():
         RBLNQwen3VLMoeForConditionalGeneration,
     )
 
-    assert issubclass(RBLNQwen3VLMoeForConditionalGeneration, RBLNVisionBatchSortMixin)
+    assert issubclass(RBLNQwen3VLMoeForConditionalGeneration, RBLNQwenVLBatchSortMixin)
     assert RBLNQwen3VLMoeForConditionalGeneration._video_grid_rows_are_chunks is True
 
 
 def test_qwen3_5_inherits_mixin():
     from optimum.rbln.transformers.models.qwen3_5.modeling_qwen3_5 import RBLNQwen3_5ForConditionalGeneration
 
-    assert issubclass(RBLNQwen3_5ForConditionalGeneration, RBLNVisionBatchSortMixin)
+    assert issubclass(RBLNQwen3_5ForConditionalGeneration, RBLNQwenVLBatchSortMixin)
     assert RBLNQwen3_5ForConditionalGeneration._video_grid_rows_are_chunks is True
 
 

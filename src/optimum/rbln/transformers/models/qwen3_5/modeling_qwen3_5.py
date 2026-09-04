@@ -36,7 +36,7 @@ from ....modeling_rope_utils import build_qwen_mrope_lookup, np_cos, np_sin, qwe
 from ....utils import logging
 from ...cache_utils import FullAttentionKVCacheMeta, LinearAttentionCacheMeta
 from ...modeling_outputs import RBLNDecoderOnlyOutput, _validate_output_hidden_states
-from ...utils.generation_multimodal import RBLNVisionBatchSortMixin
+from ...utils.multimodal_batch_sort import RBLNQwenVLBatchSortMixin
 from ..decoderonly.decoderonly_runtime_utils import RBLNPageTableManager
 from ..decoderonly.modeling_decoderonly import RBLNDecoderOnlyModel, RBLNDecoderOnlyModelForCausalLM
 from .configuration_qwen3_5 import (
@@ -772,7 +772,7 @@ class RBLNQwen3_5Model(RBLNDecoderOnlyModel):
         return RBLNDecoderOnlyOutput(logits=logits, hidden_states=all_hidden_states)
 
 
-class RBLNQwen3_5ForConditionalGeneration(RBLNVisionBatchSortMixin, RBLNQwen3_5Model, RBLNDecoderOnlyModelForCausalLM):
+class RBLNQwen3_5ForConditionalGeneration(RBLNQwenVLBatchSortMixin, RBLNQwen3_5Model, RBLNDecoderOnlyModelForCausalLM):
     """
     RBLNQwen3_5ForConditionalGeneration is a multi-modal model that integrates vision and language processing capabilities,
     optimized for RBLN NPUs. It is designed for conditional generation tasks that involve both image and text inputs.

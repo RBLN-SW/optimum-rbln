@@ -33,7 +33,7 @@ from transformers.models.paligemma.modeling_paligemma import PaligemmaModelOutpu
 from ....configuration_utils import RBLNModelConfig
 from ....modeling import RBLNModel
 from ....utils.logging import get_logger
-from ...utils.generation_multimodal import RBLNMultimodalBatchSortMixin
+from ...utils.multimodal_batch_sort import RBLNImageIndexedBatchSortMixin
 from ...utils.rbln_runtime_wrapper import LoopProcessor
 from ..decoderonly.modeling_decoderonly import RBLNDecoderOnlyOutput
 
@@ -62,7 +62,7 @@ class LoopVisionTower(LoopProcessor):
         )
 
 
-class RBLNPaliGemmaForConditionalGeneration(RBLNModel, RBLNMultimodalBatchSortMixin):
+class RBLNPaliGemmaForConditionalGeneration(RBLNModel, RBLNImageIndexedBatchSortMixin):
     """
     RBLNPaliGemmaForConditionalGeneration is a multi-modal model that integrates vision and language processing capabilities,
     optimized for RBLN NPUs. It is designed for conditional generation tasks that involve both image and text inputs.
@@ -94,7 +94,7 @@ class RBLNPaliGemmaForConditionalGeneration(RBLNModel, RBLNMultimodalBatchSortMi
         {"name": "language_model"},
     ]
     # one image per sample: pixel_values is batch-first (batch_size, C, H, W)
-    _batch_sortable_kwargs = RBLNMultimodalBatchSortMixin._batch_sortable_kwargs + ("pixel_values",)
+    _batch_sortable_kwargs = RBLNImageIndexedBatchSortMixin._batch_sortable_kwargs + ("pixel_values",)
 
     def __getattr__(self, __name: str) -> Any:
         def redirect(func):

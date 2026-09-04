@@ -32,7 +32,7 @@ from ....modeling import RBLNModel
 from ....modeling_rope_utils import np_cos, np_sin, qwen_vit_rot_pos_ids
 from ....utils.logging import get_logger
 from ...modeling_outputs import RBLNDecoderOnlyOutput, _validate_output_hidden_states
-from ...utils.generation_multimodal import RBLNVisionBatchSortMixin, _match_token_totals
+from ...utils.multimodal_batch_sort import RBLNQwenVLBatchSortMixin, _matched_token_counts
 from ..decoderonly.modeling_decoderonly import RBLNDecoderOnlyModel, RBLNDecoderOnlyModelForCausalLM
 from .configuration_exaone4_5 import (
     RBLNExaone4_5_ForConditionalGenerationConfig,
@@ -66,7 +66,7 @@ def _grid_rows_by_token_count(
     # grid row i yields prod(grid_thw[i]) // merge_unit placeholder tokens
     if grid_thw is None:
         return [0] * input_ids.shape[0]
-    return _match_token_totals(input_ids, token_id, (grid_thw.prod(dim=-1) // merge_unit).tolist())
+    return _matched_token_counts(input_ids, token_id, (grid_thw.prod(dim=-1) // merge_unit).tolist())
 
 
 class RBLNExaone4_5_VisionModel(RBLNModel):
@@ -477,7 +477,7 @@ class RBLNExaone4_5_Model(RBLNDecoderOnlyModel):
 
 
 class RBLNExaone4_5_ForConditionalGeneration(
-    RBLNVisionBatchSortMixin, RBLNExaone4_5_Model, RBLNDecoderOnlyModelForCausalLM
+    RBLNQwenVLBatchSortMixin, RBLNExaone4_5_Model, RBLNDecoderOnlyModelForCausalLM
 ):
     """
     RBLNExaone4_5_ForConditionalGeneration is a multi-modal model that integrates vision and language

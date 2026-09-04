@@ -36,7 +36,7 @@ from ....configuration_utils import RBLNCompileConfig, RBLNModelConfig
 from ....modeling import RBLNModel
 from ....utils.runtime_utils import RBLNPytorchRuntime
 from ...modeling_outputs import RBLNDecoderOnlyOutput
-from ...utils.generation_multimodal import RBLNMultimodalBatchSortMixin, _placeholder_token_counts
+from ...utils.multimodal_batch_sort import RBLNImageIndexedBatchSortMixin, _placeholder_token_counts
 
 
 if TYPE_CHECKING:
@@ -185,7 +185,7 @@ class RBLNIdefics3VisionTransformer(RBLNModel):
             return BaseModelOutput(last_hidden_state=last_hidden_state)
 
 
-class RBLNIdefics3ForConditionalGeneration(RBLNModel, RBLNMultimodalBatchSortMixin):
+class RBLNIdefics3ForConditionalGeneration(RBLNModel, RBLNImageIndexedBatchSortMixin):
     """
     RBLNIdefics3ForConditionalGeneration is a multi-modal model that integrates vision and language processing capabilities,
     optimized for RBLN NPUs. It is designed for conditional generation tasks that involve both image and text inputs.
@@ -229,7 +229,7 @@ class RBLNIdefics3ForConditionalGeneration(RBLNModel, RBLNMultimodalBatchSortMix
     _rbln_submodule_prefix = "model"
     _lm_attr_name = "text_model"
     # pixel_values (B, num_images, C, H, W) and pixel_attention_mask (B, num_images, H, W) are batch-first
-    _batch_sortable_kwargs = RBLNMultimodalBatchSortMixin._batch_sortable_kwargs + (
+    _batch_sortable_kwargs = RBLNImageIndexedBatchSortMixin._batch_sortable_kwargs + (
         "pixel_values",
         "pixel_attention_mask",
     )

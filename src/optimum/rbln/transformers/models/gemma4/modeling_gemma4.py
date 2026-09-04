@@ -37,7 +37,7 @@ from ....utils.logging import get_logger
 from ...cache_utils import FullAttentionKVCacheMeta, SlidingWindowAttentionKVCacheMeta
 from ...modeling_attention_utils import validate_sliding_window
 from ...modeling_outputs import RBLNDecoderOnlyOutput
-from ...utils.generation_multimodal import RBLNMultimodalBatchSortMixin, _placeholder_run_counts
+from ...utils.multimodal_batch_sort import RBLNImageIndexedBatchSortMixin, _placeholder_run_counts
 from ...utils.rbln_runtime_wrapper import LoopProcessor
 from ..decoderonly.decoderonly_runtime_utils import RBLNPageTableManager
 from ..decoderonly.modeling_decoderonly import RBLNDecoderOnlyModelForCausalLM
@@ -592,7 +592,7 @@ class RBLNGemma4ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
         return rbln_config
 
 
-class RBLNGemma4ForConditionalGeneration(RBLNModel, RBLNMultimodalBatchSortMixin):
+class RBLNGemma4ForConditionalGeneration(RBLNModel, RBLNImageIndexedBatchSortMixin):
     """
     Gemma4 model for image-text-to-text generation optimized for RBLN NPU.
 
@@ -625,7 +625,7 @@ class RBLNGemma4ForConditionalGeneration(RBLNModel, RBLNMultimodalBatchSortMixin
         {"name": "language_model"},
     ]
     _image_indexed_kwargs = ("pixel_values", "image_position_ids")
-    _batch_sortable_kwargs = RBLNMultimodalBatchSortMixin._batch_sortable_kwargs + ("mm_token_type_ids",)
+    _batch_sortable_kwargs = RBLNImageIndexedBatchSortMixin._batch_sortable_kwargs + ("mm_token_type_ids",)
 
     def _images_per_sample(self, input_ids: torch.LongTensor | None, kwargs: dict) -> list[int]:
         return _placeholder_run_counts(input_ids, self._image_token_id)

@@ -27,10 +27,10 @@ from ....configuration_utils import RBLNCompileConfig, RBLNModelConfig
 from ....modeling import RBLNModel
 from ....utils.logging import get_logger
 from ...modeling_outputs import RBLNDecoderOnlyOutput
-from ...utils.generation_multimodal import (
+from ...utils.multimodal_batch_sort import (
     _UNMAPPABLE_BATCH_SORT,
-    RBLNMultimodalBatchSortMixin,
-    _match_token_totals,
+    RBLNImageIndexedBatchSortMixin,
+    _matched_token_counts,
     _placeholder_token_counts,
 )
 from ...utils.rbln_runtime_wrapper import LoopProcessor
@@ -117,7 +117,7 @@ class LoopProjector(LoopProcessor):
         return output[0]
 
 
-class RBLNLlavaForConditionalGeneration(RBLNModel, RBLNMultimodalBatchSortMixin):
+class RBLNLlavaForConditionalGeneration(RBLNModel, RBLNImageIndexedBatchSortMixin):
     """
     RBLNLlavaForConditionalGeneration is a multi-modal model that combines vision and language processing capabilities,
     optimized for RBLN NPUs. It is designed for conditional generation tasks that involve both image and text inputs.
@@ -178,7 +178,7 @@ class RBLNLlavaForConditionalGeneration(RBLNModel, RBLNMultimodalBatchSortMixin)
         # LlavaConfig always carries image_seq_length (default 576), so discriminate by the
         # vision tower; pixtral's per-image [IMG] counts come from image_sizes instead
         if getattr(getattr(self.config, "vision_config", None), "model_type", None) == "pixtral":
-            return _match_token_totals(input_ids, self._image_token_id, self._pixtral_tokens_per_image(kwargs))
+            return _matched_token_counts(input_ids, self._image_token_id, self._pixtral_tokens_per_image(kwargs))
         return _placeholder_token_counts(
             input_ids, self._image_token_id, getattr(self.config, "image_seq_length", None)
         )
