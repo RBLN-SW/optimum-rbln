@@ -233,7 +233,7 @@ class RBLNIdefics3ForConditionalGeneration(RBLNModel, RBLNMultimodalBatchSortMix
         "pixel_values",
         "pixel_attention_mask",
     )
-    # image_hidden_states is (num_images, seq, dim); each patch image is one placeholder run
+    # image_hidden_states is (num_images, seq, dim); each patch image owns a fixed-size placeholder block
     _image_indexed_kwargs = ("image_hidden_states",)
 
     def _images_per_sample(self, input_ids: torch.LongTensor | None, kwargs: dict) -> list[int]:

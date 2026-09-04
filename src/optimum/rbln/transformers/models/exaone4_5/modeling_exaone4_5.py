@@ -32,7 +32,7 @@ from ....modeling import RBLNModel
 from ....modeling_rope_utils import np_cos, np_sin, qwen_vit_rot_pos_ids
 from ....utils.logging import get_logger
 from ...modeling_outputs import RBLNDecoderOnlyOutput, _validate_output_hidden_states
-from ...utils.generation_multimodal import RBLNVisionBatchSortMixin
+from ...utils.generation_multimodal import RBLNVisionBatchSortMixin, _match_token_totals
 from ..decoderonly.modeling_decoderonly import RBLNDecoderOnlyModel, RBLNDecoderOnlyModelForCausalLM
 from .configuration_exaone4_5 import (
     RBLNExaone4_5_ForConditionalGenerationConfig,
@@ -63,22 +63,10 @@ def _disable_mtp(model_config):
 def _grid_rows_by_token_count(
     input_ids: torch.Tensor, token_id: int, grid_thw: torch.Tensor | None, merge_unit: int
 ) -> list[int]:
-    # grid row i yields prod(grid_thw[i]) // merge_unit placeholder tokens; walk the
-    # flattened rows in order, assigning them to samples by each row's token count
+    # grid row i yields prod(grid_thw[i]) // merge_unit placeholder tokens
     if grid_thw is None:
         return [0] * input_ids.shape[0]
-    tokens_per_grid = (grid_thw.prod(dim=-1) // merge_unit).tolist()
-    rows, grid_idx = [], 0
-    for b_idx in range(input_ids.shape[0]):
-        needed = int((input_ids[b_idx] == token_id).sum().item())
-        start = grid_idx
-        while needed > 0:
-            if grid_idx >= len(tokens_per_grid) or tokens_per_grid[grid_idx] > needed:
-                raise ValueError("Vision grids do not align with per-sample vision token counts.")
-            needed -= tokens_per_grid[grid_idx]
-            grid_idx += 1
-        rows.append(grid_idx - start)
-    return rows
+    return _match_token_totals(input_ids, token_id, (grid_thw.prod(dim=-1) // merge_unit).tolist())
 
 
 class RBLNExaone4_5_VisionModel(RBLNModel):

@@ -202,7 +202,7 @@ def test_exaone4_5_misaligned_grids_raise():
     # sample 0 has 2 image tokens but the first grid yields 4 merged tokens
     ids = torch.tensor([[IMG, IMG, 3, 4], [1, 2, 3, 4]])
     kwargs = {"pixel_values": torch.zeros(16, 3), "image_grid_thw": torch.tensor([[1, 4, 4]])}
-    with pytest.raises(ValueError, match="do not align"):
+    with pytest.raises(RuntimeError, match="Cannot map image inputs"):
         model._sort_generation_inputs(ids, kwargs)
 
 

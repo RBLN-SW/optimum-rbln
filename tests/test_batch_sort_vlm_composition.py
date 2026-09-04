@@ -103,7 +103,7 @@ def test_gemma4_sorts_images_and_videos():
     assert torch.equal(model._unsort_generation_outputs(sorted_ids, unsort_idx), input_ids)
 
 
-def test_llava_run_counting_and_image_sizes():
+def test_llava_token_counting_and_image_sizes():
     model = _fake_model(RBLNLlavaForConditionalGeneration, {"image_token_index": IMG, "image_seq_length": 2})
     # images per sample [1, 2, 0] as separated runs
     input_ids = torch.tensor([[1, IMG, IMG, 2, 0, 0], [IMG, IMG, 3, IMG, IMG, 4], [5, 6, 7, 8, 9, 0]])
@@ -120,7 +120,7 @@ def test_llava_run_counting_and_image_sizes():
     assert torch.equal(model._unsort_generation_outputs(sorted_ids, unsort_idx), input_ids)
 
 
-def test_llava_adjacent_images_fall_back_to_token_count():
+def test_llava_adjacent_images_count_by_tokens():
     model = _fake_model(RBLNLlavaForConditionalGeneration, {"image_token_index": IMG, "image_seq_length": 2})
     # sample 1 has two adjacent images (one merged run of 4 tokens)
     input_ids = torch.tensor([[1, IMG, IMG, 2, 0, 0], [IMG, IMG, IMG, IMG, 3, 4], [5, 6, 7, 8, 9, 0]])
@@ -148,10 +148,11 @@ def test_llava_pixtral_images_via_image_sizes():
     # pixtral: [IMG_BREAK] splits an image into one run per patch row, so per-image
     # [IMG] counts come from image_sizes ((H/stride) * (W/stride))
     IMG_BREAK = 97
-    vision_config = type("VisionCfg", (), {"patch_size": 2})()
+    vision_config = type("VisionCfg", (), {"patch_size": 2, "model_type": "pixtral"})()
     model = _fake_model(
         RBLNLlavaForConditionalGeneration,
-        {"image_token_index": IMG, "image_seq_length": None, "vision_config": vision_config},
+        # image_seq_length is always present on LlavaConfig; the pixtral branch must win anyway
+        {"image_token_index": IMG, "image_seq_length": 576, "vision_config": vision_config},
     )
     # image sizes (4,4)->4 tokens, (2,4)->2, (2,2)->1; images per sample [1, 2, 0]
     input_ids = torch.tensor(
@@ -174,10 +175,10 @@ def test_llava_pixtral_images_via_image_sizes():
 
 
 def test_llava_pixtral_mismatched_totals_raise():
-    vision_config = type("VisionCfg", (), {"patch_size": 2})()
+    vision_config = type("VisionCfg", (), {"patch_size": 2, "model_type": "pixtral"})()
     model = _fake_model(
         RBLNLlavaForConditionalGeneration,
-        {"image_token_index": IMG, "image_seq_length": None, "vision_config": vision_config},
+        {"image_token_index": IMG, "image_seq_length": 576, "vision_config": vision_config},
     )
     # row 0 carries 3 [IMG] tokens but no image combination (4, 2, 1) sums to 3 greedily
     input_ids = torch.tensor([[IMG, IMG, IMG, 1, 2, 3], [4, 5, 6, 7, 8, 9], [10, 11, 12, 13, 14, 0]])
