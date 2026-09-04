@@ -322,11 +322,13 @@ class RBLNCosmosTransformer3DModel(RBLNModel):
         ) // pipe.vae_scale_factor_temporal + 1
         rbln_config.transformer.latent_height = rbln_config.transformer.height // pipe.vae_scale_factor_spatial
         rbln_config.transformer.latent_width = rbln_config.transformer.width // pipe.vae_scale_factor_spatial
+        # The cross-attention sequence length must match what the RBLN text encoder was compiled to.
+        rbln_config.transformer.max_seq_len = rbln_config.text_encoder.max_seq_len
         if pipe.transformer.config.use_crossattn_projection:
-            rbln_config.transformer.max_seq_len = rbln_config.text_encoder.max_seq_len
+            # Predict2.5 feeds the layer-concatenated embeddings; only the transformer knows their width.
             rbln_config.transformer.embedding_dim = pipe.transformer.config.encoder_hidden_states_channels
         else:
-            rbln_config.transformer.max_seq_len = pipe.text_encoder.config.n_positions
+            # T5 families feed the raw last hidden state, so the text encoder defines the width.
             rbln_config.transformer.embedding_dim = pipe.text_encoder.encoder.embed_tokens.embedding_dim
 
         return rbln_config
