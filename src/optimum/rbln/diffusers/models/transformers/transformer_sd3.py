@@ -41,11 +41,11 @@ class SD3Transformer2DModelWrapper(torch.nn.Module):
     def forward(
         self,
         hidden_states: torch.FloatTensor,
-        encoder_hidden_states: torch.FloatTensor = None,
-        pooled_projections: torch.FloatTensor = None,
-        timestep: torch.LongTensor = None,
+        encoder_hidden_states: torch.FloatTensor | None = None,
+        pooled_projections: torch.FloatTensor | None = None,
+        timestep: torch.LongTensor | None = None,
         # need controlnet support?
-        block_controlnet_hidden_states: list = None,
+        block_controlnet_hidden_states: list | None = None,
         joint_attention_kwargs: dict[str, Any] | None = None,
         return_dict: bool = True,
     ):
@@ -153,10 +153,10 @@ class RBLNSD3Transformer2DModel(RBLNModel):
     def forward(
         self,
         hidden_states: torch.FloatTensor,
-        encoder_hidden_states: torch.FloatTensor = None,
-        pooled_projections: torch.FloatTensor = None,
-        timestep: torch.LongTensor = None,
-        block_controlnet_hidden_states: list = None,
+        encoder_hidden_states: torch.FloatTensor | None = None,
+        pooled_projections: torch.FloatTensor | None = None,
+        timestep: torch.LongTensor | None = None,
+        block_controlnet_hidden_states: list | None = None,
         joint_attention_kwargs: dict[str, Any] | None = None,
         return_dict: bool = True,
         **kwargs,

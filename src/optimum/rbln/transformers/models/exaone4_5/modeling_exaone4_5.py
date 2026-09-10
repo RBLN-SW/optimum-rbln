@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import inspect
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional, Union
 
@@ -135,7 +135,7 @@ class RBLNExaone4_5_VisionModel(RBLNModel):
         cls,
         preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"],
         model: Optional["PreTrainedModel"] = None,
-        model_config: "PretrainedConfig" = None,
+        model_config: "PretrainedConfig" | None = None,
         rbln_config: RBLNExaone4_5_VisionModelConfig | None = None,
     ) -> RBLNExaone4_5_VisionModelConfig:
         model_config = model_config.vision_config if hasattr(model_config, "vision_config") else model_config
@@ -371,7 +371,7 @@ class RBLNExaone4_5_Model(RBLNDecoderOnlyModel):
     @classmethod
     def _update_rbln_config(
         cls,
-        preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"] | None = None,
+        preprocessors: Sequence[Any] | None = None,
         model: Optional["PreTrainedModel"] = None,
         model_config: PretrainedConfig | None = None,
         rbln_config: RBLNExaone4_5_ForConditionalGenerationConfig | None = None,
@@ -389,13 +389,13 @@ class RBLNExaone4_5_Model(RBLNDecoderOnlyModel):
 
     def _preprocess_prefill(
         self,
-        input_ids: torch.LongTensor = None,
-        attention_mask: torch.Tensor = None,
-        pixel_values: torch.Tensor = None,
-        pixel_values_videos: torch.FloatTensor = None,
-        image_grid_thw: torch.LongTensor = None,
-        video_grid_thw: torch.LongTensor = None,
-        second_per_grid_ts: torch.Tensor = None,
+        input_ids: torch.LongTensor | None = None,
+        attention_mask: torch.Tensor | None = None,
+        pixel_values: torch.Tensor | None = None,
+        pixel_values_videos: torch.FloatTensor | None = None,
+        image_grid_thw: torch.LongTensor | None = None,
+        video_grid_thw: torch.LongTensor | None = None,
+        second_per_grid_ts: torch.Tensor | None = None,
     ):
         inputs_embeds = self.embed_tokens(input_ids)
 

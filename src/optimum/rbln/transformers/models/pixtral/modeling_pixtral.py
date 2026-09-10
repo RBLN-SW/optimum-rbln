@@ -250,7 +250,7 @@ class RBLNPixtralVisionModel(RBLNModel):
         cls,
         preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"],
         model: Optional["PreTrainedModel"] = None,
-        model_config: "PixtralVisionConfig" = None,
+        model_config: "PixtralVisionConfig" | None = None,
         rbln_config: RBLNPixtralVisionModelConfig | None = None,
     ) -> RBLNPixtralVisionModelConfig:
         if rbln_config.max_image_size is None:

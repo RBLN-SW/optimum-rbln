@@ -15,13 +15,15 @@
 import importlib
 import inspect
 import json
+from collections.abc import Sequence
 from dataclasses import asdict, dataclass, fields
 from pathlib import Path
-from typing import Any, Protocol, Union, runtime_checkable
+from typing import Any, Literal, Protocol, Union, cast, overload, runtime_checkable
 
 import numpy as np
 import torch
 from packaging.version import Version
+from typing_extensions import Self
 
 from .__version__ import __version__
 from .utils.deprecation import deprecate_kwarg, warn_deprecated_npu
@@ -33,7 +35,7 @@ logger = get_logger(__name__)
 
 
 DEFAULT_COMPILED_MODEL_NAME = "compiled_model"
-TypeInputInfo = list[tuple[str, tuple[int], str]]
+TypeInputInfo = Sequence[tuple[str, Sequence[int], str | torch.dtype]]
 
 
 def nested_update(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
@@ -81,7 +83,7 @@ class RBLNCompileConfig:
     """
 
     compiled_model_name: str = DEFAULT_COMPILED_MODEL_NAME
-    input_info: list[TypeInputInfo] | TypeInputInfo = None
+    input_info: Sequence[TypeInputInfo] | TypeInputInfo | None = None
     npu: str | None = None
     num_devices: int | None = None
 
@@ -99,11 +101,10 @@ class RBLNCompileConfig:
         """
         if isinstance(dtype, str):
             return dtype
-        else:
-            dtype: str = repr(dtype).split(".")[-1]
-            if dtype.endswith("'>"):  # numpy
-                dtype = dtype[:-2]
-            return dtype
+        name = repr(dtype).split(".")[-1]
+        if name.endswith("'>"):  # numpy
+            name = name[:-2]
+        return name
 
     @property
     def is_multiple_input_info(self) -> bool:
@@ -125,13 +126,21 @@ class RBLNCompileConfig:
         return False
 
     def __post_init__(self):
-        def normalize_input_info(input_info):
+        def normalize_input_info(input_info: TypeInputInfo) -> TypeInputInfo:
             return [(i[0], i[1], RBLNCompileConfig.normalize_dtype(i[2]) or "float32") for i in input_info]
 
+        if self.input_info is None:
+            raise ValueError("`input_info` is required.")
+
         if self.is_multiple_input_info:
-            self.input_info = [normalize_input_info(info) for info in self.input_info]
+            self.input_info = [normalize_input_info(info) for info in cast(Sequence[TypeInputInfo], self.input_info)]
         else:
-            self.input_info = normalize_input_info(self.input_info)
+            self.input_info = normalize_input_info(cast(TypeInputInfo, self.input_info))
+
+    def _single_input_info(self) -> TypeInputInfo:
+        if self.input_info is None or self.is_multiple_input_info:
+            raise ValueError("`input_info` must describe a single set of inputs.")
+        return cast(TypeInputInfo, self.input_info)
 
     def update(self, kwargs: dict[str, Any]):
         self.compiled_model_name = kwargs.get("compiled_model_name", self.compiled_model_name)
@@ -142,19 +151,20 @@ class RBLNCompileConfig:
 
     def get_dummy_inputs(
         self,
-        fill=0,
+        fill: int | float = 0,
         static_tensors: dict[str, torch.Tensor] | None = None,
         meta_tensor_names: list[str] | None = None,
-    ):
+    ) -> tuple[torch.Tensor, ...]:
         dummy = []
         static_tensors = static_tensors if static_tensors is not None else {}
         meta_tensor_names = meta_tensor_names if meta_tensor_names is not None else []
-        for name, shape, dtype in self.input_info:
+        for name, shape, dtype in self._single_input_info():
+            torch_dtype = getattr(torch, RBLNCompileConfig.normalize_dtype(dtype))
             if name in static_tensors:
                 tensor = static_tensors[name]
                 if shape != list(tensor.shape):
                     raise RuntimeError(f"Different shape for dummy inputs. ({shape} != {list(tensor.shape)})")
-                if getattr(torch, dtype) != tensor.dtype:
+                if torch_dtype != tensor.dtype:
                     raise RuntimeError(f"Different dtype for dummy inputs ({dtype} != {tensor.dtype})")
                 dummy.append(tensor)
             else:
@@ -164,9 +174,9 @@ class RBLNCompileConfig:
                     device = "cpu"
 
                 dummy.append(
-                    torch.fill(torch.empty(*shape, dtype=getattr(torch, dtype), device=torch.device(device)), fill)
+                    torch.fill(torch.empty(*shape, dtype=torch_dtype, device=torch.device(device)), fill)
                     if len(shape) > 0
-                    else torch.tensor(fill, dtype=getattr(torch, dtype), device=torch.device(device))
+                    else torch.tensor(fill, dtype=torch_dtype, device=torch.device(device))
                 )
         return tuple(dummy)
 
@@ -188,12 +198,12 @@ def get_rbln_config_class(rbln_config_class_name: str) -> type["RBLNModelConfig"
     return cls
 
 
-def load_config(path: str) -> tuple[type["RBLNModelConfig"], dict[str, Any]]:
-    path = Path(path)
-    if path.is_dir():
-        path = path / "rbln_config.json"
+def load_config(path: str | Path) -> tuple[type["RBLNModelConfig"], dict[str, Any]]:
+    config_path = Path(path)
+    if config_path.is_dir():
+        config_path = config_path / "rbln_config.json"
 
-    with open(path) as jsonf:
+    with open(config_path) as jsonf:
         config_file = json.load(jsonf)
 
     if "_meta" in config_file:
@@ -201,7 +211,7 @@ def load_config(path: str) -> tuple[type["RBLNModelConfig"], dict[str, Any]]:
 
         if is_legacy_rbln_config:
             raise RuntimeError(
-                f"`{path}` is an old version. Please recompile the model to get the latest config file."
+                f"`{config_path}` is an old version. Please recompile the model to get the latest config file."
             )
 
     cls_name = config_file["cls_name"]
@@ -279,13 +289,44 @@ class RBLNAutoConfig:
 
         CONFIG_MAPPING[config.__name__] = config
 
+    @overload
     @classmethod
     def from_pretrained(
         cls,
-        path: str,
+        path: str | Path,
+        rbln_config: Union[dict[str, Any], "RBLNModelConfig"] | None = None,
+        return_unused_kwargs: Literal[False] = False,
+        **kwargs: Any,
+    ) -> "RBLNModelConfig": ...
+
+    @overload
+    @classmethod
+    def from_pretrained(
+        cls,
+        path: str | Path,
+        rbln_config: Union[dict[str, Any], "RBLNModelConfig"] | None,
+        return_unused_kwargs: Literal[True],
+        **kwargs: Any,
+    ) -> tuple["RBLNModelConfig", dict[str, Any]]: ...
+
+    @overload
+    @classmethod
+    def from_pretrained(
+        cls,
+        path: str | Path,
+        rbln_config: Union[dict[str, Any], "RBLNModelConfig"] | None = None,
+        *,
+        return_unused_kwargs: Literal[True],
+        **kwargs: Any,
+    ) -> tuple["RBLNModelConfig", dict[str, Any]]: ...
+
+    @classmethod
+    def from_pretrained(
+        cls,
+        path: str | Path,
         rbln_config: Union[dict[str, Any], "RBLNModelConfig"] | None = None,
         return_unused_kwargs: bool = False,
-        **kwargs: dict[str, Any] | None,
+        **kwargs: Any,
     ) -> Union["RBLNModelConfig", tuple["RBLNModelConfig", dict[str, Any]]]:
         """
         Load RBLNModelConfig from a path.
@@ -527,7 +568,7 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
         "timeout",
     ]
     submodules: list[str] = []
-    subclass_non_save_attributes = []
+    subclass_non_save_attributes: list[str] = []
     _allow_no_compile_cfgs = False
 
     def initialize_submodule_config(
@@ -535,7 +576,12 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
         submodule_config: Union[dict[str, Any], "RBLNModelConfig"] | None = None,
         force_kwargs: bool = False,
         **kwargs: Any,
-    ) -> "RBLNModelConfig":
+    ) -> Any:
+        """Build the config of a submodule from the parent's runtime options and `kwargs`.
+
+        Returns the submodule config instance when its class is known (an instance was passed, or
+        `cls_name` was given), otherwise the merged kwargs dict for the model class to resolve later.
+        """
         if submodule_config is None:
             submodule_config = {}
 
@@ -703,14 +749,14 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
 
 
         """
-        self._attributes_map = {}
+        self._attributes_map: dict[str, Any] = {}
         self._frozen = False
 
         self.cls_name = cls_name
         if self.cls_name is None:
             self.cls_name = self.__class__.__name__
 
-        self._runtime_options = {}
+        self._runtime_options: dict[str, Any] = {}
         self._runtime_options["create_runtimes"] = create_runtimes
         self._runtime_options["device"] = device
         self._runtime_options["device_map"] = device_map
@@ -789,7 +835,7 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
         return self.__class__.__name__[:-6]
 
     @property
-    def rbln_model_cls(self) -> type:
+    def rbln_model_cls(self) -> type[Any]:
         rbln_model_cls = getattr(importlib.import_module("optimum.rbln"), self.rbln_model_cls_name, None)
         if rbln_model_cls is None:
             raise ValueError(
@@ -801,7 +847,7 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
     def _prepare_for_serialization(self) -> dict[str, Any]:
         # Prepare the attributes map for serialization by converting nested RBLNModelConfig
         # objects to their serializable form.
-        serializable_map = {}
+        serializable_map: dict[str, Any] = {}
         for key, value in self._attributes_map.items():
             if isinstance(value, RBLNSerializableConfigProtocol):
                 # Convert nested RBLNModelConfig to its serializable form
@@ -867,24 +913,55 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
     def is_frozen(self):
         return self._frozen
 
-    def save(self, path: str):
+    def save(self, path: str | Path) -> None:
         # save as json file without runtime attributes
-        path = Path(path)
-        if path.is_dir():
-            path = path / "rbln_config.json"
+        config_path = Path(path)
+        if config_path.is_dir():
+            config_path = config_path / "rbln_config.json"
 
-        with open(path, "w") as jsonf:
+        with open(config_path, "w") as jsonf:
             serializable_data = self._prepare_for_serialization()
             json.dump(serializable_data, jsonf, indent=2)
+
+    @overload
+    @classmethod
+    def from_pretrained(
+        cls,
+        path: str | Path,
+        rbln_config: Union[dict[str, Any], "RBLNModelConfig"] | None = None,
+        return_unused_kwargs: Literal[False] = False,
+        **kwargs: Any,
+    ) -> Self: ...
+
+    @overload
+    @classmethod
+    def from_pretrained(
+        cls,
+        path: str | Path,
+        rbln_config: Union[dict[str, Any], "RBLNModelConfig"] | None,
+        return_unused_kwargs: Literal[True],
+        **kwargs: Any,
+    ) -> tuple[Self, dict[str, Any]]: ...
+
+    @overload
+    @classmethod
+    def from_pretrained(
+        cls,
+        path: str | Path,
+        rbln_config: Union[dict[str, Any], "RBLNModelConfig"] | None = None,
+        *,
+        return_unused_kwargs: Literal[True],
+        **kwargs: Any,
+    ) -> tuple[Self, dict[str, Any]]: ...
 
     @classmethod
     def from_pretrained(
         cls,
-        path: str,
+        path: str | Path,
         rbln_config: Union[dict[str, Any], "RBLNModelConfig"] | None = None,
         return_unused_kwargs: bool = False,
-        **kwargs: dict[str, Any] | None,
-    ) -> Union["RBLNModelConfig", tuple["RBLNModelConfig", dict[str, Any]]]:
+        **kwargs: Any,
+    ) -> Self | tuple[Self, dict[str, Any]]:
         """
         Load a RBLNModelConfig from a path.
 
@@ -952,25 +1029,25 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
                 config_file[submodule] = getattr(rbln_config, submodule)
 
         config_file.update(rbln_runtime_kwargs)
-        rbln_config = cls(**config_file)
+        config = cls(**config_file)
         if len(rbln_kwargs) > 0:
-            non_save_attrs = set(getattr(cls, "subclass_non_save_attributes", []))
+            non_save_attrs = set(cls.subclass_non_save_attributes)
             for key, value in rbln_kwargs.items():
                 if key in non_save_attrs:
-                    setattr(rbln_config, key, value)
-                elif getattr(rbln_config, key) != value:
+                    setattr(config, key, value)
+                elif getattr(config, key) != value:
                     raise ValueError(
                         f"Cannot set the following arguments: {list(rbln_kwargs.keys())} "
-                        f"Since the value is already set to {getattr(rbln_config, key)}"
+                        f"Since the value is already set to {getattr(config, key)}"
                     )
         if return_unused_kwargs:
-            return rbln_config, kwargs
+            return config, kwargs
         else:
-            return rbln_config
+            return config
 
     @classmethod
     def initialize_from_kwargs(
-        cls: type["RBLNModelConfig"],
+        cls,
         rbln_config: Union[dict[str, Any], "RBLNModelConfig"] | None = None,
         **kwargs: Any,
     ) -> tuple["RBLNModelConfig", dict[str, Any]]:

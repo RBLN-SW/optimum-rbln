@@ -22,7 +22,7 @@ from huggingface_hub.errors import LocalEntryNotFoundError
 def pull_compiled_model_from_hub(
     model_id: str | Path,
     subfolder: str,
-    token: bool | str,
+    token: bool | str | None,
     revision: str | None,
     cache_dir: str | None,
     force_download: bool,
@@ -60,7 +60,7 @@ def pull_compiled_model_from_hub(
             # If local_files_only is False, ensure all files are downloaded
             # Download config file (will use cache if available, download if missing)
             rbln_config_cache_path = hf_hub_download(
-                repo_id=model_id,
+                repo_id=str(model_id),
                 filename=config_filename,
                 token=token,
                 revision=revision,
@@ -75,7 +75,7 @@ def pull_compiled_model_from_hub(
                 filename = rbln_file.name if subfolder == "" else f"{subfolder}/{rbln_file.name}"
                 try:
                     hf_hub_download(
-                        repo_id=model_id,
+                        repo_id=str(model_id),
                         filename=filename,
                         token=token,
                         revision=revision,
@@ -97,7 +97,7 @@ def pull_compiled_model_from_hub(
     if local_files_only:
         try:
             rbln_config_cache_path = hf_hub_download(
-                repo_id=model_id,
+                repo_id=str(model_id),
                 filename=config_filename,
                 token=token,
                 revision=revision,
@@ -124,7 +124,7 @@ def pull_compiled_model_from_hub(
     repo_files = list(
         map(
             Path,
-            HfApi().list_repo_files(model_id, revision=revision, token=huggingface_token),
+            HfApi().list_repo_files(str(model_id), revision=revision, token=huggingface_token),
         )
     )
 
@@ -140,7 +140,7 @@ def pull_compiled_model_from_hub(
 
     for filename in filenames:
         rbln_config_cache_path = hf_hub_download(
-            repo_id=model_id,
+            repo_id=str(model_id),
             filename=filename,
             token=token,
             revision=revision,
@@ -178,7 +178,7 @@ def validate_files(
         raise FileNotFoundError(f"Could not find any rbln model file in {location}")
 
 
-def _get_huggingface_token(token: bool | str) -> str:
+def _get_huggingface_token(token: bool | str | None) -> str | None:
     if isinstance(token, str):
         return token
     return get_token()

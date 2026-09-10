@@ -14,9 +14,9 @@
 
 import importlib
 import inspect
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Optional, Union
+from typing import TYPE_CHECKING, Any, Optional
 
 import numpy as np
 import torch
@@ -45,7 +45,7 @@ from ..decoderonly.modeling_decoderonly import RBLNDecoderOnlyOutput
 logger = get_logger(__name__)
 
 if TYPE_CHECKING:
-    from transformers import AutoFeatureExtractor, AutoProcessor, AutoTokenizer, PretrainedConfig
+    from transformers import PretrainedConfig
 
 
 class LoopVisionTower(LoopProcessor):
@@ -207,7 +207,7 @@ class RBLNLlavaNextForConditionalGeneration(RBLNModel, RBLNImageIndexedBatchSort
     @classmethod
     def _update_rbln_config(
         cls,
-        preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"] | None,
+        preprocessors: Sequence[Any] | None,
         model: Optional["PreTrainedModel"] = None,
         model_config: Optional["PretrainedConfig"] = None,
         rbln_config: RBLNModelConfig | None = None,
@@ -413,8 +413,8 @@ class RBLNLlavaNextForConditionalGeneration(RBLNModel, RBLNImageIndexedBatchSort
 
     def _preprocess_prefill(
         self,
-        input_ids: torch.LongTensor = None,
-        pixel_values: torch.FloatTensor = None,
+        input_ids: torch.LongTensor | None = None,
+        pixel_values: torch.FloatTensor | None = None,
         image_sizes: torch.LongTensor | None = None,
         inputs_embeds: torch.FloatTensor | None = None,
         vision_feature_layer: int | None = None,
@@ -467,12 +467,12 @@ class RBLNLlavaNextForConditionalGeneration(RBLNModel, RBLNImageIndexedBatchSort
 
     def forward(
         self,
-        input_ids: torch.LongTensor = None,
-        attention_mask: torch.LongTensor = None,
-        pixel_values: torch.FloatTensor = None,
+        input_ids: torch.LongTensor | None = None,
+        attention_mask: torch.LongTensor | None = None,
+        pixel_values: torch.FloatTensor | None = None,
         image_sizes: torch.LongTensor | None = None,
         inputs_embeds: torch.FloatTensor | None = None,
-        cache_position: torch.Tensor = None,
+        cache_position: torch.Tensor | None = None,
         generate_idx: torch.Tensor | None = None,
         return_dict: bool | None = None,
         inputs_sorted: bool = False,

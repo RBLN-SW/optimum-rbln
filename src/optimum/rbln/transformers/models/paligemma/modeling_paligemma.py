@@ -14,9 +14,9 @@
 
 import importlib
 import inspect
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Union
+from typing import TYPE_CHECKING, Any
 
 import torch
 from transformers import (
@@ -41,7 +41,7 @@ from ..decoderonly.modeling_decoderonly import RBLNDecoderOnlyOutput
 logger = get_logger(__name__)
 
 if TYPE_CHECKING:
-    from transformers import AutoFeatureExtractor, AutoProcessor, AutoTokenizer, PretrainedConfig
+    from transformers import PretrainedConfig
 
 
 class LoopVisionTower(LoopProcessor):
@@ -117,7 +117,7 @@ class RBLNPaliGemmaForConditionalGeneration(RBLNModel, RBLNImageIndexedBatchSort
         model: "PreTrainedModel",
         submodule_config: PretrainedConfig,
         submodule_rbln_config: RBLNModelConfig,
-        preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"] | None,
+        preprocessors: Sequence[Any] | None,
     ):
         if submodule_name == "language_model":
             submodule_config.use_sliding_window = False
@@ -313,13 +313,13 @@ class RBLNPaliGemmaForConditionalGeneration(RBLNModel, RBLNImageIndexedBatchSort
 
     def forward(
         self,
-        input_ids: torch.LongTensor = None,
-        pixel_values: torch.FloatTensor = None,
-        attention_mask: torch.LongTensor = None,
-        position_ids: torch.LongTensor = None,
-        token_type_ids: torch.LongTensor = None,
+        input_ids: torch.LongTensor | None = None,
+        pixel_values: torch.FloatTensor | None = None,
+        attention_mask: torch.LongTensor | None = None,
+        position_ids: torch.LongTensor | None = None,
+        token_type_ids: torch.LongTensor | None = None,
         inputs_embeds: torch.FloatTensor | None = None,
-        cache_position: torch.Tensor = None,
+        cache_position: torch.Tensor | None = None,
         generate_idx: torch.Tensor | None = None,
         return_dict: bool | None = None,
         inputs_sorted: bool = False,
@@ -434,7 +434,7 @@ class RBLNPaliGemmaModel(RBLNModel):
         model: "PreTrainedModel",
         submodule_config: PretrainedConfig,
         submodule_rbln_config: RBLNModelConfig,
-        preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"] | None,
+        preprocessors: Sequence[Any] | None,
     ):
         if submodule_name == "language_model":
             submodule_config.use_sliding_window = False

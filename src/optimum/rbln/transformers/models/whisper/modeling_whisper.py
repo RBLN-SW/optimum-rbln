@@ -13,8 +13,8 @@
 # limitations under the License.
 
 import inspect
-from collections.abc import Callable
-from typing import TYPE_CHECKING, Any, Optional, Union
+from collections.abc import Callable, Sequence
+from typing import TYPE_CHECKING, Any, Optional
 
 import rebel
 import torch
@@ -35,9 +35,6 @@ logger = get_logger(__name__)
 
 if TYPE_CHECKING:
     from transformers import (
-        AutoFeatureExtractor,
-        AutoProcessor,
-        AutoTokenizer,
         GenerationConfig,
         PretrainedConfig,
         PreTrainedModel,
@@ -71,10 +68,10 @@ class RBLNRuntimeDecoder(RBLNPytorchRuntime):
 
     def forward(
         self,
-        decoder_input_ids: torch.Tensor = None,
-        decoder_attention_mask: torch.Tensor = None,
-        cache_position: torch.Tensor = None,
-        block_tables: torch.Tensor = None,
+        decoder_input_ids: torch.Tensor | None = None,
+        decoder_attention_mask: torch.Tensor | None = None,
+        cache_position: torch.Tensor | None = None,
+        block_tables: torch.Tensor | None = None,
     ):
         inputs_bsz = decoder_input_ids.shape[0]
         padded_bsz = self.batch_size - inputs_bsz
@@ -276,7 +273,7 @@ class RBLNWhisperForConditionalGeneration(RBLNModel, RBLNWhisperGenerationMixin)
     @classmethod
     def _update_rbln_config(
         cls,
-        preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"] | None = None,
+        preprocessors: Sequence[Any] | None = None,
         model: Optional["PreTrainedModel"] = None,
         model_config: Optional["PretrainedConfig"] = None,
         rbln_config: RBLNWhisperForConditionalGenerationConfig | None = None,

@@ -96,7 +96,7 @@ class RBLNQwen3_5TextModelConfig(RBLNDecoderOnlyModelConfig):
 class RBLNQwen3_5VisionModelConfig(RBLNModelConfig):
     """Vision encoder config for Qwen3.5: per-image `max_seq_len`."""
 
-    def __init__(self, max_seq_len: int | list[int] = None, batch_size: int = 1, **kwargs: Any):
+    def __init__(self, max_seq_len: int | list[int] | None = None, batch_size: int = 1, **kwargs: Any):
         """
         Args:
             max_seq_len (Optional[Union[int, List[int]]]): Vision Transformer attention max sequence

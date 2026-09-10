@@ -147,12 +147,12 @@ class TimeSeriesTransformersDecoder(nn.Module):
 
     def forward(
         self,
-        inputs_embeds: torch.Tensor = None,
+        inputs_embeds: torch.Tensor | None = None,
         attention_mask: torch.Tensor | None = None,
         self_past_key_values: torch.Tensor | None = None,
         cross_past_key_values: torch.Tensor | None = None,
         cache_position: torch.Tensor | None = None,
-        block_tables: torch.Tensor = None,
+        block_tables: torch.Tensor | None = None,
     ):
         input_shape = inputs_embeds.size()[:-1]
 
@@ -205,7 +205,7 @@ class TimeSeriesTransformersDecoderLayer(nn.Module):
         self_past_key_value: tuple[torch.Tensor] | None = None,
         cross_past_key_value: tuple[torch.Tensor] | None = None,
         cache_position: torch.Tensor | None = None,
-        block_tables: torch.Tensor = None,
+        block_tables: torch.Tensor | None = None,
     ) -> torch.Tensor:
         # Self Attention Block
         residual = hidden_states

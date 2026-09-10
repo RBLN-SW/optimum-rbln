@@ -12,7 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import TYPE_CHECKING, Optional, Union
+from collections.abc import Sequence
+from typing import TYPE_CHECKING, Any, Optional
 
 import torch
 from safetensors.torch import load_file
@@ -32,7 +33,7 @@ from .gpt_oss_architecture import RBLNGptOssWrapper
 
 
 if TYPE_CHECKING:
-    from transformers import AutoFeatureExtractor, AutoProcessor, AutoTokenizer, PreTrainedModel
+    from transformers import PreTrainedModel
 
 logger = get_logger(__name__)
 
@@ -100,7 +101,7 @@ class RBLNGptOssForCausalLM(RBLNDecoderOnlyModelForCausalLM):
     _decoder_wrapper_cls = RBLNGptOssWrapper
 
     @staticmethod
-    def _get_dtype(dtype: str | torch.dtype = None, torch_dtype: str | torch.dtype = None):
+    def _get_dtype(dtype: str | torch.dtype | None = None, torch_dtype: str | torch.dtype | None = None):
         # For BC on torch_dtype argument
         if torch_dtype is not None:
             logger.warning_once("`torch_dtype` is deprecated! Use `dtype` instead!")
@@ -119,8 +120,8 @@ class RBLNGptOssForCausalLM(RBLNDecoderOnlyModelForCausalLM):
         model_id: str,
         *args,
         rbln_config: RBLNDecoderOnlyModelConfig | None = None,
-        dtype: str | torch.dtype = None,
-        torch_dtype: str | torch.dtype = None,
+        dtype: str | torch.dtype | None = None,
+        torch_dtype: str | torch.dtype | None = None,
         config: PretrainedConfig | None = None,
         **kwargs,
     ) -> PreTrainedModel:
@@ -156,7 +157,7 @@ class RBLNGptOssForCausalLM(RBLNDecoderOnlyModelForCausalLM):
     @classmethod
     def _update_rbln_config(
         cls,
-        preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"] | None = None,
+        preprocessors: Sequence[Any] | None = None,
         model: Optional["PreTrainedModel"] = None,
         model_config: Optional["PretrainedConfig"] = None,
         rbln_config: RBLNDecoderOnlyModelForCausalLMConfig | None = None,

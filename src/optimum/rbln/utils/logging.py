@@ -31,10 +31,12 @@ Logging utilities.
 Modified from `transformers.utils.logging.py`
 """
 
+import functools
 import logging
 import os
 import sys
 import threading
+from typing import Any, cast
 
 
 _lock = threading.Lock()
@@ -50,6 +52,42 @@ log_levels = {
 }
 
 _default_log_level = logging.INFO
+
+
+class Logger(logging.Logger):
+    """Typing view of the loggers returned by `get_logger`.
+
+    `warning_once` is installed on `logging.Logger` below, so every logger in the process has it;
+    this class only makes that visible to type checkers.
+    """
+
+    def warning_once(self, *args: Any, **kwargs: Any) -> None: ...
+
+
+@functools.lru_cache(None)
+def _warning_once(self: logging.Logger, *args: Any, **kwargs: Any) -> None:
+    self.warning(*args, **kwargs)
+
+
+logging.Logger.warning_once = _warning_once
+
+
+class Logger(logging.Logger):
+    """Typing view of the loggers returned by `get_logger`.
+
+    `warning_once` is installed on `logging.Logger` below, so every logger in the process has it;
+    this class only makes that visible to type checkers.
+    """
+
+    def warning_once(self, *args: Any, **kwargs: Any) -> None: ...
+
+
+@functools.lru_cache(None)
+def _warning_once(self: logging.Logger, *args: Any, **kwargs: Any) -> None:
+    self.warning(*args, **kwargs)
+
+
+logging.Logger.warning_once = _warning_once
 
 
 def _get_default_logging_level():
@@ -80,12 +118,11 @@ def _configure_library_root_logger() -> None:
         if _default_handler:
             # This library has already configured the library root logger.
             return
-        _default_handler = logging.StreamHandler()  # Set sys.stderr as stream.
         # set defaults based on https://github.com/pyinstaller/pyinstaller/issues/7334#issuecomment-1357447176
         if sys.stderr is None:
             sys.stderr = open(os.devnull, "w")
 
-        _default_handler.flush = sys.stderr.flush
+        _default_handler = logging.StreamHandler(sys.stderr)
 
         # Apply our default configuration to the library root logger.
         library_root_logger = _get_library_root_logger()
@@ -97,7 +134,7 @@ def _configure_library_root_logger() -> None:
         library_root_logger.propagate = False
 
 
-def get_logger(name: str | None = None) -> logging.Logger:
+def get_logger(name: str | None = None) -> Logger:
     """
     Return a logger with the specified name.
     """
@@ -106,4 +143,4 @@ def get_logger(name: str | None = None) -> logging.Logger:
         name = _get_library_name()
 
     _configure_library_root_logger()
-    return logging.getLogger(name)
+    return cast(Logger, logging.getLogger(name))

@@ -44,7 +44,7 @@ class RBLNDetrForObjectDetection(RBLNModel):
         cls,
         preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"],
         model: Optional["PreTrainedModel"] = None,
-        model_config: "DetrConfig" = None,
+        model_config: "DetrConfig" | None = None,
         rbln_config: RBLNDetrForObjectDetectionConfig | None = None,
     ) -> RBLNDetrForObjectDetectionConfig:
         if rbln_config.image_size is None:
@@ -87,7 +87,7 @@ class RBLNDetrForObjectDetection(RBLNModel):
         self,
         pixel_values: torch.Tensor,
         pixel_mask: torch.Tensor | None = None,
-        return_dict: bool = None,
+        return_dict: bool | None = None,
         **kwargs,
     ) -> tuple | DetrObjectDetectionOutput:
         """

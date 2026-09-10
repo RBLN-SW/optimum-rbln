@@ -90,7 +90,7 @@ class CacheMeta(RBLNSerializableConfigProtocol):
         emitted but is only a field of the resizable full-attention cache.
         """
         layer_type = serialized.get("layer_type")
-        subclass = cls._concrete_subclasses().get(layer_type)
+        subclass = cls._concrete_subclasses().get(layer_type) if isinstance(layer_type, str) else None
         if subclass is None:
             raise ValueError(
                 f"Unknown cache `layer_type` {layer_type!r}. This artifact was likely compiled with a "
@@ -123,9 +123,10 @@ class KVCacheMeta(CacheMeta):
         return self.shape[2]
 
     @staticmethod
-    def _validate_num_blocks(num_blocks: int) -> None:
-        if num_blocks <= 0:
+    def _validate_num_blocks(num_blocks: int | None) -> int:
+        if num_blocks is None or num_blocks <= 0:
             raise ValueError("`num_blocks` must be greater than 0 when using KV cache.")
+        return num_blocks
 
 
 @dataclass
@@ -159,7 +160,7 @@ class FullAttentionKVCacheMeta(KVCacheMeta):
             num_blocks, is_auto = rbln_config.num_full_blocks, True
         else:
             num_blocks, is_auto = rbln_config.kvcache_num_blocks, False
-        cls._validate_num_blocks(num_blocks)
+        num_blocks = cls._validate_num_blocks(num_blocks)
         return cls(
             name=name,
             layer_index=layer_index,
@@ -187,7 +188,7 @@ class SlidingWindowAttentionKVCacheMeta(KVCacheMeta):
     ) -> "SlidingWindowAttentionKVCacheMeta":
         block_size = rbln_config.sliding_window
         num_blocks = rbln_config.batch_size
-        cls._validate_num_blocks(num_blocks)
+        num_blocks = cls._validate_num_blocks(num_blocks)
         return cls(
             name=name,
             layer_index=layer_index,

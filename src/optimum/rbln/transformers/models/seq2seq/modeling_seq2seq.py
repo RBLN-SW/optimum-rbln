@@ -387,8 +387,8 @@ class RBLNModelForSeq2SeqLM(RBLNModel, GenerationMixin, ABC):
 
     def forward(
         self,
-        decoder_input_ids: torch.LongTensor = None,
-        cache_position: list[torch.Tensor] | torch.Tensor = None,
+        decoder_input_ids: torch.LongTensor | None = None,
+        cache_position: list[torch.Tensor] | torch.Tensor | None = None,
         **kwargs,
     ) -> tuple[torch.FloatTensor]:
         # common decoder

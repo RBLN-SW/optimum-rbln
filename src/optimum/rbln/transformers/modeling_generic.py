@@ -21,7 +21,8 @@ different model architectures.
 """
 
 import inspect
-from typing import TYPE_CHECKING, Any, Optional, Union
+from collections.abc import Sequence
+from typing import TYPE_CHECKING, Any
 
 import torch
 from torch import nn
@@ -37,7 +38,7 @@ from transformers import (
 )
 from transformers.modeling_outputs import BaseModelOutput, QuestionAnsweringModelOutput
 
-from ..configuration_utils import RBLNCompileConfig
+from ..configuration_utils import RBLNCompileConfig, TypeInputInfo
 from ..modeling import RBLNModel
 from ..utils.logging import get_logger
 from .configuration_generic import (
@@ -47,7 +48,7 @@ from .configuration_generic import (
 
 
 if TYPE_CHECKING:
-    from transformers import AutoFeatureExtractor, AutoProcessor, AutoTokenizer, PreTrainedModel
+    from transformers import PreTrainedModel
 
 logger = get_logger()
 
@@ -56,6 +57,7 @@ class RBLNTransformerEncoder(RBLNModel):
     auto_model_class = AutoModel
     rbln_model_input_names = ["input_ids", "attention_mask", "token_type_ids"]
     rbln_dtype = "int64"
+    rbln_config: RBLNTransformerEncoderConfig
 
     @classmethod
     def _wrap_model_if_needed(cls, model: "PreTrainedModel", rbln_config: RBLNTransformerEncoderConfig) -> nn.Module:
@@ -83,10 +85,10 @@ class RBLNTransformerEncoder(RBLNModel):
     @classmethod
     def _update_rbln_config(
         cls,
-        preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"] | None = None,
-        model: Optional["PreTrainedModel"] = None,
-        model_config: Optional["PretrainedConfig"] = None,
-        rbln_config: RBLNTransformerEncoderConfig | None = None,
+        preprocessors: Sequence[Any] | None,
+        model: "PreTrainedModel",
+        model_config: "PretrainedConfig",
+        rbln_config: RBLNTransformerEncoderConfig,
     ) -> RBLNTransformerEncoderConfig:
         return cls.update_rbln_config_for_transformers_encoder(
             preprocessors=preprocessors,
@@ -98,10 +100,10 @@ class RBLNTransformerEncoder(RBLNModel):
     @classmethod
     def update_rbln_config_for_transformers_encoder(
         cls,
-        preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"] | None = None,
-        model: Optional["PreTrainedModel"] = None,
-        model_config: Optional["PretrainedConfig"] = None,
-        rbln_config: RBLNTransformerEncoderConfig | None = None,
+        preprocessors: Sequence[Any] | None,
+        model: "PreTrainedModel",
+        model_config: "PretrainedConfig",
+        rbln_config: RBLNTransformerEncoderConfig,
     ) -> RBLNTransformerEncoderConfig:
         max_position_embeddings = getattr(model_config, "n_positions", None) or getattr(
             model_config, "max_position_embeddings", None
@@ -110,7 +112,7 @@ class RBLNTransformerEncoder(RBLNModel):
         if rbln_config.max_seq_len is None:
             rbln_config.max_seq_len = max_position_embeddings
             if rbln_config.max_seq_len is None:
-                for tokenizer in preprocessors:
+                for tokenizer in preprocessors or []:
                     if hasattr(tokenizer, "model_max_length"):
                         rbln_config.max_seq_len = tokenizer.model_max_length
                         break
@@ -131,7 +133,7 @@ class RBLNTransformerEncoder(RBLNModel):
         signature_params = inspect.signature(model.forward).parameters.keys()
 
         if rbln_config.model_input_names is None:
-            for tokenizer in preprocessors:
+            for tokenizer in preprocessors or []:
                 if hasattr(tokenizer, "model_input_names"):
                     rbln_config.model_input_names = [
                         name for name in signature_params if name in tokenizer.model_input_names
@@ -161,15 +163,14 @@ class RBLNTransformerEncoder(RBLNModel):
         # Build one input_info set per `max_seq_len` bucket. When more than one bucket is
         # requested, `input_info` becomes a list of input_info sets so the compiled model
         # exposes one executor per bucket and the runtime dispatches by input shape.
-        input_info = [
+        input_infos: list[TypeInputInfo] = [
             [
                 (model_input_name, [rbln_config.batch_size, max_seq_len], cls.rbln_dtype)
                 for model_input_name in rbln_config.model_input_names
             ]
             for max_seq_len in max_seq_lens
         ]
-        if len(input_info) == 1:
-            input_info = input_info[0]
+        input_info: TypeInputInfo | list[TypeInputInfo] = input_infos[0] if len(input_infos) == 1 else input_infos
 
         rbln_config.set_compile_cfgs([RBLNCompileConfig(input_info=input_info)])
         return rbln_config
@@ -215,14 +216,15 @@ class RBLNImageModel(RBLNModel):
     auto_model_class = AutoModel
     main_input_name = "pixel_values"
     output_class = BaseModelOutput
+    rbln_config: RBLNImageModelConfig
 
     @classmethod
     def _update_rbln_config(
         cls,
-        preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"] | None = None,
-        model: Optional["PreTrainedModel"] = None,
-        model_config: Optional["PretrainedConfig"] = None,
-        rbln_config: RBLNImageModelConfig | None = None,
+        preprocessors: Sequence[Any] | None,
+        model: "PreTrainedModel",
+        model_config: "PretrainedConfig",
+        rbln_config: RBLNImageModelConfig,
     ) -> RBLNImageModelConfig:
         return cls.update_rbln_config_for_image_model(
             preprocessors=preprocessors,
@@ -234,13 +236,13 @@ class RBLNImageModel(RBLNModel):
     @classmethod
     def update_rbln_config_for_image_model(
         cls,
-        preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"] | None = None,
-        model: Optional["PreTrainedModel"] = None,
-        model_config: Optional["PretrainedConfig"] = None,
-        rbln_config: RBLNImageModelConfig | None = None,
+        preprocessors: Sequence[Any] | None,
+        model: "PreTrainedModel",
+        model_config: "PretrainedConfig",
+        rbln_config: RBLNImageModelConfig,
     ) -> RBLNImageModelConfig:
         if rbln_config.image_size is None:
-            for processor in preprocessors:
+            for processor in preprocessors or []:
                 if hasattr(processor, "size"):
                     if all(required_key in processor.size for required_key in ["height", "width"]):
                         rbln_config.image_size = (processor.size["height"], processor.size["width"])
@@ -312,7 +314,7 @@ class RBLNModelForDepthEstimation(RBLNImageModel):
     auto_model_class = AutoModelForDepthEstimation
 
     @classmethod
-    def _wrap_model_if_needed(cls, model: "PreTrainedModel", rbln_config: RBLNImageModelConfig):
+    def _wrap_model_if_needed(cls, model: "PreTrainedModel", rbln_config: RBLNImageModelConfig) -> nn.Module:
         class ImageModelWrapper(nn.Module):
             def __init__(self, model: "PreTrainedModel", rbln_config: RBLNImageModelConfig):
                 super().__init__()

@@ -259,9 +259,9 @@ class RBLNStableDiffusionXLControlNetPipeline(RBLNDiffusionMixin, StableDiffusio
     @remove_compile_time_kwargs
     def __call__(
         self,
-        prompt: str | list[str] = None,
+        prompt: str | list[str] | None = None,
         prompt_2: str | list[str] | None = None,
-        image: PipelineImageInput = None,
+        image: PipelineImageInput | None = None,
         height: int | None = None,
         width: int | None = None,
         num_inference_steps: int = 50,
@@ -286,9 +286,9 @@ class RBLNStableDiffusionXLControlNetPipeline(RBLNDiffusionMixin, StableDiffusio
         guess_mode: bool = False,
         control_guidance_start: float | list[float] = 0.0,
         control_guidance_end: float | list[float] = 1.0,
-        original_size: tuple[int, int] = None,
+        original_size: tuple[int, int] | None = None,
         crops_coords_top_left: tuple[int, int] = (0, 0),
-        target_size: tuple[int, int] = None,
+        target_size: tuple[int, int] | None = None,
         negative_original_size: tuple[int, int] | None = None,
         negative_crops_coords_top_left: tuple[int, int] = (0, 0),
         negative_target_size: tuple[int, int] | None = None,

@@ -40,6 +40,7 @@ dependencies = [
     "transformers==5.15.1",
     "diffusers==0.38.0",
     "packaging>=24.1",
+    "typing-extensions>=4.5",
     "tokenizers==0.22.1",
 ]
 
@@ -72,6 +73,7 @@ quality = [
     "ruff>=0.3.3",
     "isort>=5.13.2",
     "hf-doc-builder>=0.5.0",
+    "mypy>=2.3.1",
 ]
 deploy = [
     "twine>=6.0.1",
@@ -154,3 +156,19 @@ known-third-party = ["optimum"]
 [tool.ruff.lint.per-file-ignores]
 # Ignore import violations in all `__init__.py` files.
 "__init__.py" = ["E402", "F401", "F403", "F811"]
+
+[tool.mypy]
+python_version = "3.10"
+files = ["src"]
+mypy_path = "src"
+namespace_packages = true
+explicit_package_bases = true
+check_untyped_defs = true
+no_implicit_optional = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+show_error_codes = true
+
+[[tool.mypy.overrides]]
+module = ["rebel", "rebel.*"]
+ignore_missing_imports = true

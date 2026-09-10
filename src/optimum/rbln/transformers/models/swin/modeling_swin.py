@@ -13,7 +13,8 @@
 # limitations under the License.
 
 import types
-from typing import TYPE_CHECKING, Optional, Union
+from collections.abc import Sequence
+from typing import TYPE_CHECKING, Any, Optional, Union
 
 import torch
 import torch.nn.functional as F
@@ -200,7 +201,7 @@ class RBLNSwinBackbone(RBLNModel):
         cls,
         model: "PreTrainedModel",
         rbln_config: RBLNModelConfig,
-        preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"] | None,
+        preprocessors: Sequence[Any] | None,
     ):
         for processor in preprocessors:
             if rbln_config.image_size is None and hasattr(processor, "image_processor"):
@@ -225,7 +226,7 @@ class RBLNSwinBackbone(RBLNModel):
         cls,
         preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"],
         model: Optional["PreTrainedModel"] = None,
-        model_config: "SwinConfig" = None,
+        model_config: "SwinConfig" | None = None,
         rbln_config: RBLNSwinBackboneConfig | None = None,
     ) -> RBLNSwinBackboneConfig:
         if rbln_config.image_size is None:
@@ -255,8 +256,8 @@ class RBLNSwinBackbone(RBLNModel):
         self,
         pixel_values: torch.FloatTensor | None = None,
         return_dict: bool = True,
-        output_attentions: bool = None,
-        output_hidden_states: bool = None,
+        output_attentions: bool | None = None,
+        output_hidden_states: bool | None = None,
         **kwargs,
     ) -> tuple | BackboneOutput:
         """

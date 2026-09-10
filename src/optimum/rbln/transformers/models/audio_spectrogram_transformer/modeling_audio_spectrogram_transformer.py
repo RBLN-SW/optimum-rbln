@@ -12,7 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import TYPE_CHECKING, Optional
+from collections.abc import Sequence
+from typing import TYPE_CHECKING, Any, Optional
 
 import torch
 from transformers import AutoModelForAudioClassification
@@ -24,7 +25,7 @@ from .configuration_audio_spectrogram_transformer import RBLNASTForAudioClassifi
 
 
 if TYPE_CHECKING:
-    from transformers import AutoFeatureExtractor, PretrainedConfig, PreTrainedModel
+    from transformers import PretrainedConfig, PreTrainedModel
 
 
 class RBLNASTForAudioClassification(RBLNModel):
@@ -44,9 +45,9 @@ class RBLNASTForAudioClassification(RBLNModel):
     @classmethod
     def _update_rbln_config(
         cls,
-        preprocessors: "AutoFeatureExtractor" = None,
+        preprocessors: Sequence[Any] | None = None,
         model: Optional["PreTrainedModel"] = None,
-        model_config: "PretrainedConfig" = None,
+        model_config: "PretrainedConfig" | None = None,
         rbln_config: RBLNASTForAudioClassificationConfig | None = None,
     ) -> RBLNASTForAudioClassificationConfig:
         num_mel_bins = getattr(model_config, "num_mel_bins", None)

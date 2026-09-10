@@ -80,7 +80,7 @@ def patch_encoder_blocks(encoder: nn.Module) -> None:
 
 
 class T5Wrapper:
-    def __init__(self, model: nn.Module, enc_max_seq_len: int, dec_max_seq_len: int = None):
+    def __init__(self, model: nn.Module, enc_max_seq_len: int, dec_max_seq_len: int | None = None):
         patch_encoder_blocks(model.get_encoder())
         self.encoder = T5EncoderWrapper(model, enc_max_seq_len)
         self.decoder = T5DecoderWrapper(model, dec_max_seq_len=dec_max_seq_len)
@@ -102,7 +102,7 @@ class T5EncoderWrapper(Seq2SeqEncoderWrapper):
 
 
 class T5DecoderWrapper(Seq2SeqDecoderWrapper):
-    def __post_init__(self, model, dec_max_seq_len: int = None):
+    def __post_init__(self, model, dec_max_seq_len: int | None = None):
         self.num_layers = self.config.num_layers
         self.conditional_generation = self.convert_to_rbln_conditional_generation(model, dec_max_seq_len)
 
@@ -160,7 +160,7 @@ class T5ForConditionalGeneration(Seq2SeqForConditionalGeneration):
 class T5Decoder(Seq2SeqDecoder):
     has_pos_emb = False
 
-    def __post_init__(self, model: nn.Module, dec_max_seq_len: int = None):
+    def __post_init__(self, model: nn.Module, dec_max_seq_len: int | None = None):
         self.invert_attention_mask = model.invert_attention_mask
         self._dec_position_bias = self.precompute_dec_position_bias(model, dec_max_seq_len)
 
@@ -281,10 +281,10 @@ class T5CrossAttention(nn.Module):
 
     def forward(
         self,
-        hidden_states: torch.Tensor = None,
-        past_key_value: torch.Tensor = None,
-        attention_mask: torch.Tensor = None,
-        key_value_states: torch.Tensor = None,
+        hidden_states: torch.Tensor | None = None,
+        past_key_value: torch.Tensor | None = None,
+        attention_mask: torch.Tensor | None = None,
+        key_value_states: torch.Tensor | None = None,
     ):
         batch_size = hidden_states.shape[0]
 

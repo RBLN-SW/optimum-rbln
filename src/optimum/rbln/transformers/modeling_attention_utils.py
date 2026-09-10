@@ -83,7 +83,7 @@ def set_default_values(
     max_seq_len: int | None = None,
     prefill_chunk_size: int | None = None,
     npu: str | None = None,
-) -> tuple[str, int, int, int]:
+) -> tuple[str, int | None, int | None, int]:
     if attn_impl is None:
         attn_impl = "eager"
 
@@ -169,6 +169,8 @@ def validate_attention_method(
 
 
 def validate_sliding_window(rbln_config: "RBLNDecoderOnlyModelForCausalLMConfig") -> None:
+    if rbln_config.sliding_window is None:
+        raise ValueError("`sliding_window` must be set to validate the sliding window attention.")
     limits = get_attention_limits(rbln_config.npu)
     max_sliding_window = limits.max_sliding_window - rbln_config.prefill_chunk_size
     if rbln_config.sliding_window > max_sliding_window:
@@ -191,7 +193,7 @@ def align_2MB(x: int) -> int:
 
 
 def get_alloc_memory_by_key(compiled_models: dict[str, rebel.RBLNCompiledModel]) -> dict[str, int]:
-    alloc_memory_by_key = defaultdict(int)
+    alloc_memory_by_key: defaultdict[str, int] = defaultdict(int)
     # Get the actual memory allocation of each node by key
     for compiled_model in compiled_models.values():
         alloc_per_node_by_key = compiled_model.get_alloc_per_node_by_key()
@@ -230,8 +232,12 @@ def _resolve_memory_budget(memory_budget: object | None, available_total: int) -
         if not 0.0 < fraction <= 1.0:
             raise ValueError(f"memory_budget fraction must be in (0, 1] (or (0%, 100%]), got {memory_budget!r}.")
         budget = int(available_total * fraction)
-    else:
+    elif isinstance(memory_budget, (int, str)):
         budget = parse_byte_size(memory_budget)
+    else:
+        raise TypeError(
+            f"memory_budget must be None, a float, an int or a string, got {type(memory_budget).__name__}."
+        )
     if budget > available_total:
         raise ValueError(
             f"memory_budget ({budget} bytes) exceeds the target NPU's available DRAM ({available_total} bytes)."
