@@ -19,6 +19,7 @@ import json
 import shutil
 import sys
 from pathlib import Path
+from typing import Any
 
 import rebel
 from huggingface_hub import hf_hub_download
@@ -735,8 +736,8 @@ def main():
         output_path.mkdir(parents=True, exist_ok=True)
 
         # Prepare rbln_config and model_kwargs by parsing all unknown arguments
-        rbln_config = {}
-        model_kwargs = {}  # HuggingFace model args
+        rbln_config: dict[str, Any] = {}
+        model_kwargs: dict[str, Any] = {}  # HuggingFace model args
 
         # Parse all unknown arguments
         i = 0

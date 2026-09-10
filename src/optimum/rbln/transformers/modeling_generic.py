@@ -22,7 +22,7 @@ different model architectures.
 
 import inspect
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 import torch
 from torch import nn
@@ -54,7 +54,7 @@ logger = get_logger()
 
 
 class RBLNTransformerEncoder(RBLNModel):
-    auto_model_class = AutoModel
+    auto_model_class: ClassVar[type[Any]] = AutoModel
     rbln_model_input_names = ["input_ids", "attention_mask", "token_type_ids"]
     rbln_dtype = "int64"
     rbln_config: RBLNTransformerEncoderConfig
@@ -186,7 +186,7 @@ class RBLNTransformerEncoder(RBLNModel):
         buckets = (
             [self.rbln_config.max_seq_len]
             if isinstance(self.rbln_config.max_seq_len, int)
-            else sorted(set(self.rbln_config.max_seq_len))
+            else sorted(set(self.rbln_config.max_seq_len or []))
         )
         input_ids = kwargs.get("input_ids")
         if input_ids is None:
@@ -213,7 +213,7 @@ class RBLNTransformerEncoder(RBLNModel):
 
 
 class RBLNImageModel(RBLNModel):
-    auto_model_class = AutoModel
+    auto_model_class: ClassVar[type[Any]] = AutoModel
     main_input_name = "pixel_values"
     output_class = BaseModelOutput
     rbln_config: RBLNImageModelConfig

@@ -17,7 +17,7 @@ import types
 from collections.abc import Sequence
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import TYPE_CHECKING, Any, Union, get_args, get_origin, get_type_hints
+from typing import TYPE_CHECKING, Any, ClassVar, Union, get_args, get_origin, get_type_hints
 
 import rebel
 import torch
@@ -39,6 +39,8 @@ logger = get_logger(__name__)
 
 
 class RBLNModel(RBLNBaseModel):
+    _output_class: ClassVar[type[Any] | None] = None
+
     @classmethod
     def update_kwargs(cls, kwargs):
         # Update user-given kwargs to get proper pytorch model.
@@ -337,10 +339,11 @@ class RBLNModel(RBLNBaseModel):
         return self._prepare_output(output, return_dict)
 
     @classmethod
-    def get_hf_output_class(cls):
+    def get_hf_output_class(cls) -> type[Any]:
         # Dynamically gets the output class from the corresponding HuggingFace model class.
-        if "_output_class" in cls.__dict__ and cls._output_class is not None:
-            return cls._output_class
+        output_class: type[Any] | None = cls.__dict__.get("_output_class")
+        if output_class is not None:
+            return output_class
 
         hf_class = cls.get_hf_class()
         if hf_class is None:

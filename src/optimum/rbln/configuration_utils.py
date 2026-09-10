@@ -233,8 +233,8 @@ class RBLNAutoConfig:
         cls_name = kwargs.get("cls_name")
         if cls_name is None:
             raise ValueError("`cls_name` is required.")
-        cls = get_rbln_config_class(cls_name)
-        return cls(**kwargs)
+        config_cls = get_rbln_config_class(cls_name)
+        return config_cls(**kwargs)
 
     @staticmethod
     def load_from_dict(config_dict: dict[str, Any]) -> "RBLNModelConfig":
@@ -347,9 +347,9 @@ class RBLNAutoConfig:
             ```
         """
         target_cls, _ = load_config(path)
-        return target_cls.from_pretrained(
-            path, rbln_config=rbln_config, return_unused_kwargs=return_unused_kwargs, **kwargs
-        )
+        if return_unused_kwargs:
+            return target_cls.from_pretrained(path, rbln_config=rbln_config, return_unused_kwargs=True, **kwargs)
+        return target_cls.from_pretrained(path, rbln_config=rbln_config, **kwargs)
 
 
 class RBLNModelConfig(RBLNSerializableConfigProtocol):
@@ -1055,18 +1055,18 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
         kwargs_keys = list(kwargs.keys())
         rbln_kwargs = {key[5:]: kwargs.pop(key) for key in kwargs_keys if key.startswith("rbln_")}
 
+        config: RBLNModelConfig
         if isinstance(rbln_config, dict):
             rbln_config.update(rbln_kwargs)
-            rbln_config = cls(**rbln_config)
-
+            config = cls(**rbln_config)
         elif rbln_config is None:
-            rbln_config = cls(**rbln_kwargs)
-
-        elif isinstance(rbln_config, RBLNModelConfig):
+            config = cls(**rbln_kwargs)
+        else:
             for key, value in rbln_kwargs.items():
                 setattr(rbln_config, key, value)
+            config = rbln_config
 
-        return rbln_config, kwargs
+        return config, kwargs
 
     def get_default_values_for_original_cls(self, func_name: str, keys: list[str]) -> dict[str, Any]:
         # Get default values for original class attributes from RBLNModelConfig.

@@ -69,25 +69,7 @@ def _warning_once(self: logging.Logger, *args: Any, **kwargs: Any) -> None:
     self.warning(*args, **kwargs)
 
 
-logging.Logger.warning_once = _warning_once
-
-
-class Logger(logging.Logger):
-    """Typing view of the loggers returned by `get_logger`.
-
-    `warning_once` is installed on `logging.Logger` below, so every logger in the process has it;
-    this class only makes that visible to type checkers.
-    """
-
-    def warning_once(self, *args: Any, **kwargs: Any) -> None: ...
-
-
-@functools.lru_cache(None)
-def _warning_once(self: logging.Logger, *args: Any, **kwargs: Any) -> None:
-    self.warning(*args, **kwargs)
-
-
-logging.Logger.warning_once = _warning_once
+logging.Logger.warning_once = _warning_once  # type: ignore[attr-defined]
 
 
 def _get_default_logging_level():

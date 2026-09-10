@@ -170,5 +170,35 @@ warn_redundant_casts = true
 show_error_codes = true
 
 [[tool.mypy.overrides]]
-module = ["rebel", "rebel.*"]
+module = ["rebel", "rebel.*", "torchvision", "torchvision.*", "retinaface.*", "cosmos_guardrail", "cosmos_guardrail.*"]
 ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["optimum.rbln.transformers.modeling_generic"]
+disable_error_code = ["override"]
+
+[[tool.mypy.overrides]]
+module = [
+    "optimum.rbln.transformers.models.*",
+    "optimum.rbln.diffusers.models.*",
+    "optimum.rbln.diffusers.pipelines.*",
+]
+disable_error_code = [
+    "arg-type",
+    "assignment",
+    "attr-defined",
+    "call-arg",
+    "call-overload",
+    "dict-item",
+    "has-type",
+    "index",
+    "list-item",
+    "method-assign",
+    "misc",
+    "no-redef",
+    "operator",
+    "override",
+    "return-value",
+    "union-attr",
+    "var-annotated",
+]

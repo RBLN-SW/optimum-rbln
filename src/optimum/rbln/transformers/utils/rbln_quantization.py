@@ -236,6 +236,9 @@ def get_quantized_model(
         model = hf_auto_model_class.from_config(config, dtype=dtype)
     config.dtype = config_dtype
 
+    if rbln_quantization is None:
+        raise ValueError("`rbln_quantization` is required to load a quantized model.")
+
     # Quantize the model
     update_layers_to_quantize(model, model.dtype, rbln_quantization)
 

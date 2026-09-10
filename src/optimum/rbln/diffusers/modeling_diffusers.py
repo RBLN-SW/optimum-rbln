@@ -31,8 +31,9 @@ from ..utils.model_utils import get_rbln_model_cls
 logger = get_logger(__name__)
 
 if TYPE_CHECKING:
-    from diffusers import DiffusionPipeline, ModelMixin
+    from diffusers.models.modeling_utils import ModelMixin
     from diffusers.pipelines.controlnet.multicontrolnet import MultiControlNetModel
+    from diffusers.pipelines.pipeline_utils import DiffusionPipeline
 
     from .pipelines.controlnet import RBLNMultiControlNetModel
 
@@ -382,7 +383,7 @@ class RBLNDiffusionMixin(_PipelineBase):
                     submodule = submodule.to(torch.float32)
 
                 submodule = submodule_rbln_cls.from_model(
-                    model=submodule,
+                    model=cast("ModelMixin", submodule),
                     subfolder=subfolder,
                     model_save_dir=model_save_dir,
                     rbln_config=getattr(rbln_config, submodule_name),
@@ -505,4 +506,4 @@ class RBLNDiffusionMixin(_PipelineBase):
     @remove_compile_time_kwargs
     def __call__(self, *args, **kwargs):
         kwargs = self.handle_additional_kwargs(**kwargs)
-        return super().__call__(*args, **kwargs)
+        return super().__call__(*args, **kwargs)  # type: ignore[misc]

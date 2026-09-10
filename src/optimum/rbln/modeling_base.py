@@ -35,7 +35,7 @@ from .utils.submodule import SubModulesMixin
 
 
 if TYPE_CHECKING:
-    from diffusers import ModelMixin
+    from diffusers.models.modeling_utils import ModelMixin
     from transformers import PreTrainedModel as TransformersPreTrainedModel
 
     HFModel = TransformersPreTrainedModel | ModelMixin
@@ -394,7 +394,7 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
 
     @classmethod
     def get_pytorch_model(
-        cls, model_id: str | Path, rbln_config: RBLNModelConfig | None = None, **kwargs: Any
+        cls, model_id: str | Path, *, rbln_config: RBLNModelConfig | None = None, **kwargs: Any
     ) -> "HFModel":
         raise NotImplementedError
 
@@ -598,8 +598,11 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
         #     Code relying on iterating through all model parameters will not work as expected.
         yield torch.tensor([1.0], dtype=self.dtype, device=torch.device("cpu"))
 
-    def __call__(self, *args, **kwargs):
+    def __call__(self, *args: Any, **kwargs: Any) -> Any:
         return self.forward(*args, **kwargs)
+
+    def forward(self, *args: Any, **kwargs: Any) -> Any:
+        raise NotImplementedError
 
     def __repr__(self):
         has_submodules = len(self.rbln_submodules) > 0

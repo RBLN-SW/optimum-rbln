@@ -169,8 +169,8 @@ def validate_attention_method(
 
 
 def validate_sliding_window(rbln_config: "RBLNDecoderOnlyModelForCausalLMConfig") -> None:
-    if rbln_config.sliding_window is None:
-        raise ValueError("`sliding_window` must be set to validate the sliding window attention.")
+    if rbln_config.sliding_window is None or rbln_config.prefill_chunk_size is None:
+        raise ValueError("`sliding_window` and `prefill_chunk_size` must be set to validate the sliding window.")
     limits = get_attention_limits(rbln_config.npu)
     max_sliding_window = limits.max_sliding_window - rbln_config.prefill_chunk_size
     if rbln_config.sliding_window > max_sliding_window:

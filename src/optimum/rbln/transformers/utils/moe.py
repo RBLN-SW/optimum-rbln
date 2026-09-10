@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from typing import TYPE_CHECKING, Any
+
 import torch
 from torch import Tensor, nn
 
@@ -73,7 +75,13 @@ def release_checkpoint_mmap_(model: nn.Module) -> nn.Module:
     return model
 
 
-class RBLNMoeLoadMixin:
+if TYPE_CHECKING:
+    from ...modeling import RBLNModel as _MixinBase
+else:
+    _MixinBase = object
+
+
+class RBLNMoeLoadMixin(_MixinBase):
     @classmethod
-    def get_pytorch_model(cls, *args, **kwargs):
+    def get_pytorch_model(cls, *args: Any, **kwargs: Any) -> Any:
         return release_checkpoint_mmap_(super().get_pytorch_model(*args, **kwargs))

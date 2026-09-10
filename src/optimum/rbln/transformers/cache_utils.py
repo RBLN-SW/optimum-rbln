@@ -156,15 +156,17 @@ class FullAttentionKVCacheMeta(KVCacheMeta):
         rbln_config: "RBLNDecoderOnlyModelForCausalLMConfig",
     ) -> "FullAttentionKVCacheMeta":
         block_size = rbln_config.kvcache_block_size
+        if block_size is None:
+            raise ValueError("`kvcache_block_size` must be set to build the KV cache.")
         if rbln_config.is_auto_num_blocks:
             num_blocks, is_auto = rbln_config.num_full_blocks, True
         else:
             num_blocks, is_auto = rbln_config.kvcache_num_blocks, False
-        num_blocks = cls._validate_num_blocks(num_blocks)
+        validated_num_blocks = cls._validate_num_blocks(num_blocks)
         return cls(
             name=name,
             layer_index=layer_index,
-            shape=[num_blocks, num_key_value_heads, block_size, head_dim],
+            shape=[validated_num_blocks, num_key_value_heads, block_size, head_dim],
             dtype=dtype,
             is_auto=is_auto,
         )
@@ -187,12 +189,14 @@ class SlidingWindowAttentionKVCacheMeta(KVCacheMeta):
         rbln_config: "RBLNDecoderOnlyModelForCausalLMConfig",
     ) -> "SlidingWindowAttentionKVCacheMeta":
         block_size = rbln_config.sliding_window
+        if block_size is None:
+            raise ValueError("`sliding_window` must be set to build the sliding window KV cache.")
         num_blocks = rbln_config.batch_size
-        num_blocks = cls._validate_num_blocks(num_blocks)
+        validated_num_blocks = cls._validate_num_blocks(num_blocks)
         return cls(
             name=name,
             layer_index=layer_index,
-            shape=[num_blocks, num_key_value_heads, block_size, head_dim],
+            shape=[validated_num_blocks, num_key_value_heads, block_size, head_dim],
             dtype=dtype,
         )
 

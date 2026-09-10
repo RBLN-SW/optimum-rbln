@@ -142,7 +142,7 @@ def check_version_compats() -> None:
         # Common dev case: running from source (e.g. PYTHONPATH=src) without installing the package.
         # package metadata doesn't exist, so fall back to the in-repo version file.
         try:
-            from optimum.rbln.__version__ import __version__ as my_version  # type: ignore
+            from optimum.rbln.__version__ import __version__ as my_version
         except Exception:
             warnings.warn(
                 "Could not determine optimum-rbln version (package metadata missing). "

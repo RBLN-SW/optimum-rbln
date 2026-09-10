@@ -83,8 +83,9 @@ class RBLNImageModelConfig(RBLNModelConfig):
             return self.image_size
         elif isinstance(self.image_size, (list, tuple)):
             return self.image_size[1]
-        else:
+        elif isinstance(self.image_size, dict):
             return self.image_size["width"]
+        raise ValueError("`image_size` is not set.")
 
     @property
     def image_height(self):
@@ -92,8 +93,9 @@ class RBLNImageModelConfig(RBLNModelConfig):
             return self.image_size
         elif isinstance(self.image_size, (list, tuple)):
             return self.image_size[0]
-        else:
+        elif isinstance(self.image_size, dict):
             return self.image_size["height"]
+        raise ValueError("`image_size` is not set.")
 
 
 class RBLNModelForQuestionAnsweringConfig(RBLNTransformerEncoderConfig):

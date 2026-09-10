@@ -1293,6 +1293,7 @@ dependencies = [
     { name = "torchcodec" },
     { name = "torchvision" },
     { name = "transformers" },
+    { name = "typing-extensions" },
 ]
 
 [package.dev-dependencies]
@@ -1336,6 +1337,7 @@ requires-dist = [
     { name = "torchvision", marker = "platform_machine == 'aarch64' and platform_python_implementation == 'CPython'", specifier = "==0.26.0", index = "https://download.pytorch.org/whl/cpu" },
     { name = "torchvision", marker = "platform_machine == 'x86_64' and platform_python_implementation == 'CPython'", specifier = "==0.26.0+cpu", index = "https://download.pytorch.org/whl/cpu" },
     { name = "transformers", specifier = "==5.15.1" },
+    { name = "typing-extensions", specifier = ">=4.5" },
 ]
 
 [package.metadata.requires-dev]

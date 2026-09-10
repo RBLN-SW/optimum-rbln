@@ -104,12 +104,13 @@ class QwenMRopeLookupTable:
         return self._dynamic(pos_sel)
 
 
-def build_qwen_mrope_lookup(rotary_emb: _RotaryEmbedding, max_seq_len: int) -> QwenMRopeLookupTable:
+def build_qwen_mrope_lookup(rotary_emb: _RotaryEmbedding, max_seq_len: int) -> QwenMRopeLookupTable | _RotaryEmbedding:
     # the table only requires inv_freq to be static after load; dynamic/longrope mutate it at runtime
-    if getattr(rotary_emb, "rope_type", "default") not in ("dynamic", "longrope"):
+    rope_type = getattr(rotary_emb, "rope_type", "default")
+    if rope_type not in ("dynamic", "longrope"):
         return QwenMRopeLookupTable(rotary_emb, max_seq_len)
     logger.warning(
-        f"rope_type={rotary_emb.rope_type!r} cannot use the deterministic rotary lookup table; "
+        f"rope_type={rope_type!r} cannot use the deterministic rotary lookup table; "
         "host cos/sin stays on the torch path and may vary with the thread configuration."
     )
     return rotary_emb

@@ -22,6 +22,10 @@ from ..models.decoderonly.generation_decoderonly import RBLNDecoderOnlyGeneratio
 if TYPE_CHECKING:
     from transformers import PretrainedConfig
 
+    _GuardBase = RBLNDecoderOnlyGenerationMixin
+else:
+    _GuardBase = object
+
 
 _UNMAPPABLE_BATCH_SORT = (
     "Cannot map image inputs to batch samples for the sorting `requires_batch_sort` requires. "
@@ -86,7 +90,7 @@ def _matched_token_counts(
     return counts
 
 
-class RBLNBatchSortGuardMixin:
+class RBLNBatchSortGuardMixin(_GuardBase):
     config: "PretrainedConfig"
 
     @property
