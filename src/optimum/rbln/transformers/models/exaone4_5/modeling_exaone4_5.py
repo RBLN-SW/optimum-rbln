@@ -135,7 +135,7 @@ class RBLNExaone4_5_VisionModel(RBLNModel):
         cls,
         preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"],
         model: Optional["PreTrainedModel"] = None,
-        model_config: "PretrainedConfig" | None = None,
+        model_config: "PretrainedConfig | None" = None,
         rbln_config: RBLNExaone4_5_VisionModelConfig | None = None,
     ) -> RBLNExaone4_5_VisionModelConfig:
         model_config = model_config.vision_config if hasattr(model_config, "vision_config") else model_config

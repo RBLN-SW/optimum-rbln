@@ -72,7 +72,7 @@ class RBLNCLIPTextModel(RBLNModel):
         cls,
         preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"],
         model: Optional["PreTrainedModel"] = None,
-        model_config: "CLIPTextConfig" | None = None,
+        model_config: "CLIPTextConfig | None" = None,
         rbln_config: RBLNCLIPTextModelConfig | None = None,
     ) -> RBLNCLIPTextModelConfig:
         input_info = [
@@ -183,7 +183,7 @@ class RBLNCLIPVisionModel(RBLNModel):
         cls,
         preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"],
         model: Optional["PreTrainedModel"] = None,
-        model_config: "CLIPVisionConfig" | None = None,
+        model_config: "CLIPVisionConfig | None" = None,
         rbln_config: RBLNCLIPVisionModelConfig | None = None,
     ) -> RBLNCLIPVisionModelConfig:
         if rbln_config.image_size is None:

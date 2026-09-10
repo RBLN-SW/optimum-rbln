@@ -380,7 +380,7 @@ class RBLNQwen3_5VisionModel(RBLNModel):
         cls,
         preprocessors=None,
         model: Optional["PreTrainedModel"] = None,
-        model_config: "PretrainedConfig" | None = None,
+        model_config: "PretrainedConfig | None" = None,
         rbln_config: RBLNQwen3_5VisionModelConfig | None = None,
     ) -> RBLNQwen3_5VisionModelConfig:
         hidden_size = model_config.hidden_size

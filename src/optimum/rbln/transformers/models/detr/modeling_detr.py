@@ -44,7 +44,7 @@ class RBLNDetrForObjectDetection(RBLNModel):
         cls,
         preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"],
         model: Optional["PreTrainedModel"] = None,
-        model_config: "DetrConfig" | None = None,
+        model_config: "DetrConfig | None" = None,
         rbln_config: RBLNDetrForObjectDetectionConfig | None = None,
     ) -> RBLNDetrForObjectDetectionConfig:
         if rbln_config.image_size is None:

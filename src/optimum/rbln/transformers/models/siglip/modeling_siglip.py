@@ -82,7 +82,7 @@ class RBLNSiglipVisionModel(RBLNModel):
         cls,
         preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"],
         model: Optional["PreTrainedModel"] = None,
-        model_config: "SiglipVisionConfig" | None = None,
+        model_config: "SiglipVisionConfig | None" = None,
         rbln_config: RBLNSiglipVisionModelConfig | None = None,
     ) -> RBLNSiglipVisionModelConfig:
         if rbln_config.image_size is None:

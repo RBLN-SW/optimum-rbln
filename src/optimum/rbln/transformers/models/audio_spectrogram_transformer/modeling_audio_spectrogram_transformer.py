@@ -47,7 +47,7 @@ class RBLNASTForAudioClassification(RBLNModel):
         cls,
         preprocessors: Sequence[Any] | None = None,
         model: Optional["PreTrainedModel"] = None,
-        model_config: "PretrainedConfig" | None = None,
+        model_config: "PretrainedConfig | None" = None,
         rbln_config: RBLNASTForAudioClassificationConfig | None = None,
     ) -> RBLNASTForAudioClassificationConfig:
         num_mel_bins = getattr(model_config, "num_mel_bins", None)

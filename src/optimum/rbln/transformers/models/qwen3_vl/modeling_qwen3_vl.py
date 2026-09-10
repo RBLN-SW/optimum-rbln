@@ -123,7 +123,7 @@ class RBLNQwen3VLVisionModel(RBLNModel):
         cls,
         preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"],
         model: Optional["PreTrainedModel"] = None,
-        model_config: "PretrainedConfig" | None = None,
+        model_config: "PretrainedConfig | None" = None,
         rbln_config: RBLNQwen3VLVisionModelConfig | None = None,
     ) -> RBLNQwen3VLVisionModelConfig:
         hidden_size = model_config.hidden_size

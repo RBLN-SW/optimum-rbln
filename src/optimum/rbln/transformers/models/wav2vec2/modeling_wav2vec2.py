@@ -61,7 +61,7 @@ class RBLNWav2Vec2ForCTC(RBLNModel):
         cls,
         preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"],
         model: Optional["PreTrainedModel"] = None,
-        model_config: "Wav2Vec2Config" | None = None,
+        model_config: "Wav2Vec2Config | None" = None,
         rbln_config: RBLNWav2Vec2ForCTCConfig | None = None,
     ) -> RBLNWav2Vec2ForCTCConfig:
         if rbln_config.max_seq_len is None:

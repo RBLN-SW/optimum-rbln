@@ -226,7 +226,7 @@ class RBLNSwinBackbone(RBLNModel):
         cls,
         preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"],
         model: Optional["PreTrainedModel"] = None,
-        model_config: "SwinConfig" | None = None,
+        model_config: "SwinConfig | None" = None,
         rbln_config: RBLNSwinBackboneConfig | None = None,
     ) -> RBLNSwinBackboneConfig:
         if rbln_config.image_size is None:

@@ -122,7 +122,7 @@ class RBLNQwen2VisionTransformerPretrainedModel(RBLNModel):
         cls,
         preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"],
         model: Optional["PreTrainedModel"] = None,
-        model_config: "PretrainedConfig" | None = None,
+        model_config: "PretrainedConfig | None" = None,
         rbln_config: RBLNQwen2VisionTransformerPretrainedModelConfig | None = None,
     ) -> RBLNQwen2VisionTransformerPretrainedModelConfig:
         hidden_size = model_config.embed_dim

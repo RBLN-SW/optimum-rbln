@@ -122,7 +122,7 @@ class RBLNQwen2_5_VisionTransformerPretrainedModel(RBLNModel):
         cls,
         preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"],
         model: Optional["PreTrainedModel"] = None,
-        model_config: "PretrainedConfig" | None = None,
+        model_config: "PretrainedConfig | None" = None,
         rbln_config: RBLNQwen2_5_VisionTransformerPretrainedModelConfig | None = None,
     ) -> RBLNQwen2_5_VisionTransformerPretrainedModelConfig:
         window_size = model_config.window_size
