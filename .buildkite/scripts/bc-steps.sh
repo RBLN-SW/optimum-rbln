@@ -4,8 +4,13 @@
 # Emits the backward-compatibility steps for `buildkite-agent pipeline upload`.
 # Each release under BC_BASE_PATH holds the artifacts that release compiled
 # (written by the GHA bc_compile workflow on every tag); a step reloads them with
-# the current code on a dummy device, so no NPU is involved -- only memory, which
-# is why the llm step asks for far more than the others.
+# the current code.
+#
+# The load uses a dummy device, but creating the runtime still dlopens
+# librbln-thunk.so, which only an NPU pod has (build #29 failed every model with
+# "Failed to load the RBLN Thunk library" on a CPU pod). GHA gets away with a
+# CPU pool because its runners carry the driver. The llm step also asks for far
+# more memory than the others, matching the 128GB runner it replaces.
 #
 # --latest is what a PR runs (the newest release only), --all is the nightly.
 set -euo pipefail
@@ -49,9 +54,9 @@ for tag in $tags; do
         - "tests/test_${suite}.py"
     image: "\${DEVTOOLS_DOCKER_IMAGE}"
     resources:
-      cpu:
-        requests: "4"
-        limits: "4"
+      npu:
+        count: 1
+        product: "RBLN-CA25"
       memory:
         requests: "$memory"
         limits: "$memory"
