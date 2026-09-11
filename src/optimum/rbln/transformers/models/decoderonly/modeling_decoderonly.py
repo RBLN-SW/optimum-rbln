@@ -15,7 +15,7 @@
 import inspect
 from collections.abc import Callable, Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import rebel
 import torch
@@ -44,9 +44,6 @@ from .generation_decoderonly import RBLNDecoderOnlyGenerationMixin
 
 
 logger = get_logger()
-
-if TYPE_CHECKING:
-    pass
 
 
 class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):

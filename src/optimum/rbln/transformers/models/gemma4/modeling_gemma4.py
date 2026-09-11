@@ -16,7 +16,7 @@ import importlib
 import inspect
 from collections.abc import Callable, Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Optional
+from typing import Any, Optional
 
 import torch
 from transformers import (
@@ -55,10 +55,6 @@ from .gemma4_runtime_utils import RBLNGemma4RuntimeModel
 
 
 logger = get_logger(__name__)
-
-
-if TYPE_CHECKING:
-    pass
 
 
 class LoopVisionTower(LoopProcessor):

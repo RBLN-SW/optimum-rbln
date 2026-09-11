@@ -16,7 +16,7 @@ import importlib
 import inspect
 from collections.abc import Callable, Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Optional
+from typing import Any, Optional
 
 import rebel
 import torch
@@ -37,10 +37,6 @@ from ....modeling import RBLNModel
 from ....utils.runtime_utils import RBLNPytorchRuntime
 from ...modeling_outputs import RBLNDecoderOnlyOutput
 from ...utils.multimodal_batch_sort import RBLNImageIndexedBatchSortMixin, _placeholder_token_counts
-
-
-if TYPE_CHECKING:
-    pass
 
 
 class RBLNRuntimeVisionModel(RBLNPytorchRuntime):
