@@ -11,7 +11,7 @@ from ..utils.runtime_utils import get_available_dram_per_chiplet, parse_byte_siz
 
 
 if TYPE_CHECKING:
-    from .models.decoderonly.configuration_decoderonly import RBLNDecoderOnlyModelForCausalLMConfig
+    from .models.decoderonly.configuration_decoderonly import RBLNDecoderOnlyModelConfig
 
 
 logger = get_logger()
@@ -168,7 +168,7 @@ def validate_attention_method(
             )
 
 
-def validate_sliding_window(rbln_config: "RBLNDecoderOnlyModelForCausalLMConfig") -> None:
+def validate_sliding_window(rbln_config: "RBLNDecoderOnlyModelConfig") -> None:
     if rbln_config.sliding_window is None or rbln_config.prefill_chunk_size is None:
         raise ValueError("`sliding_window` and `prefill_chunk_size` must be set to validate the sliding window.")
     limits = get_attention_limits(rbln_config.npu)
@@ -248,7 +248,7 @@ def _resolve_memory_budget(memory_budget: object | None, available_total: int) -
 class RBLNDecoderOnlyFlashAttentionMixin:
     @classmethod
     def set_kvcache_num_blocks_after_compilation(
-        cls, compiled_models: dict[str, rebel.RBLNCompiledModel], rbln_config: "RBLNDecoderOnlyModelForCausalLMConfig"
+        cls, compiled_models: dict[str, rebel.RBLNCompiledModel], rbln_config: "RBLNDecoderOnlyModelConfig"
     ):
         def _log_memory_usage(compiled_models: dict[str, rebel.RBLNCompiledModel], prefix: str):
             if not logger.isEnabledFor(logging.DEBUG):
@@ -289,7 +289,7 @@ class RBLNDecoderOnlyFlashAttentionMixin:
     def estimate_num_kvcache_blocks(
         cls,
         compiled_models: dict[str, rebel.RBLNCompiledModel],
-        rbln_config: "RBLNDecoderOnlyModelForCausalLMConfig",
+        rbln_config: "RBLNDecoderOnlyModelConfig",
         current_blocks: int = 1,
     ) -> int:
         # `current_blocks` is the block count the loaded buffers already hold: 1 at compile time,
@@ -314,7 +314,7 @@ class RBLNDecoderOnlyFlashAttentionMixin:
     def _collect_chiplet_kvcache_inputs(
         cls,
         compiled_models: dict[str, rebel.RBLNCompiledModel],
-        rbln_config: "RBLNDecoderOnlyModelForCausalLMConfig",
+        rbln_config: "RBLNDecoderOnlyModelConfig",
     ) -> tuple[dict[tuple[int, int], int], dict[str, list[list[int]]], int, set[tuple[int, int]]]:
         # Returns non-KV alloc, KV sizes, per-chiplet DRAM budget, and the (node, chiplet)
         # buckets to check. ATOM reports one chiplet, so it shares the per-chiplet path.
@@ -346,7 +346,7 @@ class RBLNDecoderOnlyFlashAttentionMixin:
     @classmethod
     def _search_num_kvcache_blocks(
         cls,
-        rbln_config: "RBLNDecoderOnlyModelForCausalLMConfig",
+        rbln_config: "RBLNDecoderOnlyModelConfig",
         alloc_without_dram: dict[tuple[int, int], int],
         kvcache_tensor_sizes: dict[str, list[list[int]]],
         available_per_chiplet: int,
@@ -403,7 +403,7 @@ class RBLNDecoderOnlyFlashAttentionMixin:
     def _kvcache_bytes_per_chiplet(
         cls,
         kvcache_tensor_sizes: dict[str, list[list[int]]],
-        rbln_config: "RBLNDecoderOnlyModelForCausalLMConfig",
+        rbln_config: "RBLNDecoderOnlyModelConfig",
         num_blocks: int,
         current_blocks: int = 1,
     ) -> dict[tuple[int, int], int]:
@@ -425,7 +425,7 @@ class RBLNDecoderOnlyFlashAttentionMixin:
     def _required_memory_at(
         cls,
         compiled_models: dict[str, rebel.RBLNCompiledModel],
-        rbln_config: "RBLNDecoderOnlyModelForCausalLMConfig",
+        rbln_config: "RBLNDecoderOnlyModelConfig",
         num_blocks: int,
     ) -> int:
         """Total device-wide kv-cache DRAM (bytes) at `num_blocks`, with 2MB alignment applied.
@@ -444,7 +444,7 @@ class RBLNDecoderOnlyFlashAttentionMixin:
     def multiply_kv_cache_num_blocks(
         cls,
         compiled_models: dict[str, rebel.RBLNCompiledModel],
-        rbln_config: "RBLNDecoderOnlyModelForCausalLMConfig",
+        rbln_config: "RBLNDecoderOnlyModelConfig",
         multiplier: int,
     ):
         for compiled_model in compiled_models.values():
@@ -456,7 +456,7 @@ class RBLNDecoderOnlyFlashAttentionMixin:
     def rescale_kvcache_num_blocks(
         cls,
         compiled_models: dict[str, rebel.RBLNCompiledModel],
-        rbln_config: "RBLNDecoderOnlyModelForCausalLMConfig",
+        rbln_config: "RBLNDecoderOnlyModelConfig",
         target: int,
     ):
         """Resize an already-compiled artifact's kv-cache to `target` blocks.
