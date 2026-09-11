@@ -2,8 +2,9 @@
 # Mirrors the GHA matrix in .github/workflows/rbln_optimum_pytest.yaml.
 #
 # The uploader picks the test level: default for an ordinary PR, full for a
-# [pytest-full] commit (and later for the nightly). It is baked in at upload
-# time -- build.env() cannot see this env block.
+# [pytest-full] commit (and later for the nightly). Both values are baked in at
+# upload time, so a step's `if` below is already a constant when Buildkite
+# evaluates it -- build.env() cannot see this env block.
 
 notify:
   - github_commit_status:
@@ -82,6 +83,12 @@ _if_changed_llm: &if_changed_llm
   exclude:
     - "src/optimum/rbln/diffusers/**"
 
+# GHA spawns the advanced CLI jobs at every level and skips them inside; here the
+# step is not created at all, so no NPU is held just to skip. A full build
+# uploads without --git-diff-base, which is why these carry no if_changed.
+_full_only: &full_only
+  if: "'${OPTIMUM_RBLN_TEST_LEVEL:-default}' == 'full'"
+
 _secrets: &secrets
   UV_INDEX_REBELLIONS_USERNAME: REBEL_SW_DEV_USERNAME
   UV_INDEX_REBELLIONS_PASSWORD: REBEL_SW_DEV_PASSWORD
@@ -125,6 +132,26 @@ steps:
     command:
       - *sync
       - "bash .buildkite/scripts/run-suite.sh cli-basic"
+
+  - label: ":pytest: cli-argument-parsing"
+    <<: *full_only
+    image: "${DEVTOOLS_DOCKER_IMAGE}"
+    resources: *npu
+    secrets: *secrets
+    timeout_in_minutes: 60
+    command:
+      - *sync
+      - "bash .buildkite/scripts/run-suite.sh cli-argument-parsing"
+
+  - label: ":pytest: cli-error-handling"
+    <<: *full_only
+    image: "${DEVTOOLS_DOCKER_IMAGE}"
+    resources: *npu
+    secrets: *secrets
+    timeout_in_minutes: 60
+    command:
+      - *sync
+      - "bash .buildkite/scripts/run-suite.sh cli-error-handling"
 
   - label: ":pytest: transformers"
     if_changed: *if_changed_transformers
