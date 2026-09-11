@@ -56,6 +56,10 @@ class RBLNDiffusionMixin(_PipelineBase):
     This mixin class serves as a base for implementing RBLN-compatible Stable Diffusion pipelines. It contains shared logic for
     handling the core components of Stable Diffusion.
 
+    The class has no base class at runtime. For type checking only it declares `DiffusionPipeline` as its base, because
+    every concrete pipeline mixes it in next to a `DiffusionPipeline` subclass and that is what `self.load_config`,
+    `self.vae` and the `super()` calls resolve to.
+
     To use this mixin:
 
     1. Create a new pipeline class that inherits from both this mixin and the original StableDiffusionPipeline.

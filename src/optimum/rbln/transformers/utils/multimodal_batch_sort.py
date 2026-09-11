@@ -22,10 +22,6 @@ from ..models.decoderonly.generation_decoderonly import RBLNDecoderOnlyGeneratio
 if TYPE_CHECKING:
     from transformers import PretrainedConfig
 
-    _GuardBase = RBLNDecoderOnlyGenerationMixin
-else:
-    _GuardBase = object
-
 
 _UNMAPPABLE_BATCH_SORT = (
     "Cannot map image inputs to batch samples for the sorting `requires_batch_sort` requires. "
@@ -90,8 +86,17 @@ def _matched_token_counts(
     return counts
 
 
-class RBLNBatchSortGuardMixin(_GuardBase):
+class RBLNBatchSortGuardMixin:
     config: "PretrainedConfig"
+
+    if TYPE_CHECKING:
+
+        @property
+        def _batch_sort_enabled(self) -> bool: ...
+
+        def _sort_generation_inputs(
+            self, input_ids: torch.LongTensor | None, kwargs: dict
+        ) -> tuple[torch.LongTensor | None, torch.Tensor | None]: ...
 
     def _require_sorted_batch_inputs(self, batch_input: torch.Tensor | None, inputs_sorted: bool) -> None:
         # an unsorted direct multi-batch call would silently mis-lay the KV cache
