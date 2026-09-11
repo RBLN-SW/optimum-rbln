@@ -1,0 +1,61 @@
+# Entry pipeline for the nightly build, uploaded by optimum-rbln-nightly-ci.
+# Replaces .github/workflows/rbln_scheduled_test.yaml.
+#
+# Everything runs at the full test level against every release's BC artifacts,
+# and the report at the end says what happened. Nothing is path-gated: the
+# uploads pass no --git-diff-base, so if_changed does not apply.
+
+env:
+  BC_BASE_PATH: "/mnt/shared_data/.cache/optimum-rbln/backward_compatibility"
+  UV_CACHE_DIR: "/mnt/uv_cache"
+  UV_LINK_MODE: "symlink"
+  UV_INDEX_STRATEGY: "unsafe-best-match"
+
+_upload: &upload
+  checkout:
+    sparse:
+      paths:
+        - .buildkite
+
+steps:
+  - label: ":mag: ruff"
+    image: "${DEVTOOLS_DOCKER_IMAGE}"
+    command:
+      - "uv sync --locked --python 3.12 --group quality --no-install-project"
+      - "uv run --no-sync ruff format --check ."
+      - "uv run --no-sync ruff check ."
+
+  # The PR gate only checks what a PR changed; the nightly checks every file.
+  - label: ":page_facing_up: docstrings"
+    image: "${DEVTOOLS_DOCKER_IMAGE}"
+    env:
+      DOCSTRINGS_ALL_FILES: "1"
+    command:
+      - "bash .buildkite/scripts/check-docstrings.sh"
+
+  # Sibling jobs: two uploads from one job make the second batch a barrier for
+  # the first.
+  - label: ":sparkles: upload pytest"
+    <<: *upload
+    command: |
+      export OPTIMUM_RBLN_TEST_LEVEL=full
+      export HF_USER_ID=Rebellions
+      buildkite-agent pipeline upload .buildkite/pipelines/pytest/pipeline.yml
+
+  - label: ":sparkles: upload BC"
+    <<: *upload
+    command: |
+      bash .buildkite/scripts/bc-steps.sh --all | buildkite-agent pipeline upload
+
+  # continue_on_failure so a failed suite still gets reported.
+  - wait:
+      continue_on_failure: true
+
+  - label: ":slack: report"
+    soft_fail: true
+    image: "${DEVTOOLS_DOCKER_IMAGE}"
+    secrets:
+      OBEDIENTS_API_TOKEN: BUILDKITE_API_TOKEN
+      SLACK_BOT_TOKEN: SLACK_OAUTH_TOKEN
+    command:
+      - "python3 .buildkite/scripts/slack-report.py"
