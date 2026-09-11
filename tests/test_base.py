@@ -102,6 +102,15 @@ def test_deprecate_method_raises_at_or_past_cutoff(current_version, expect_raise
         stub()
 
 
+def from_pretrained_cache_first(loader, model_id, **kwargs):
+    # Serve from the local HF cache without any Hub API call (CI shares one
+    # account-level rate limit); go online only on a cache miss.
+    try:
+        return loader.from_pretrained(model_id, local_files_only=True, **kwargs)
+    except OSError:
+        return loader.from_pretrained(model_id, **kwargs)
+
+
 DUMMY_DEVICE_CODE = -1
 
 
@@ -234,7 +243,8 @@ class BaseTest:
                 if os.path.exists(cls.get_rbln_local_dir()):
                     shutil.rmtree(cls.get_rbln_local_dir())
                 with ContextRblnConfig(device=cls.DEVICE):
-                    cls.model = cls.RBLN_CLASS.from_pretrained(
+                    cls.model = from_pretrained_cache_first(
+                        cls.RBLN_CLASS,
                         cls.HF_MODEL_ID,
                         model_save_dir=cls.get_rbln_local_dir(),
                         **cls.RBLN_CLASS_KWARGS,
@@ -419,7 +429,8 @@ class DisallowedTestBase:
 
         def test_load(self):
             try:
-                _ = self.RBLN_CLASS.from_pretrained(
+                _ = from_pretrained_cache_first(
+                    self.RBLN_CLASS,
                     self.HF_MODEL_ID,
                     model_save_dir=self.get_rbln_local_dir(),
                     **self.RBLN_CLASS_KWARGS,
