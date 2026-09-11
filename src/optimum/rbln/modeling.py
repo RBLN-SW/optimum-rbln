@@ -116,8 +116,9 @@ class RBLNModel(RBLNBaseModel):
         This method performs the actual model conversion and compilation process.
 
         Args:
-            model (PreTrainedModel): The PyTorch model to be compiled.
-                The object must be an instance of the HuggingFace transformers PreTrainedModel class.
+            model (PreTrainedModel | ModelMixin): The PyTorch model to be compiled.
+                The object must be a HuggingFace transformers `PreTrainedModel` or a Diffusers component based on
+                `diffusers.ModelMixin`, such as a VAE, UNet or ControlNet.
             config (PretrainedConfig | None): The configuration object associated with the model.
             rbln_config (RBLNModelConfig | dict | None): Configuration for RBLN model compilation and runtime.
                 This can be provided as a dictionary or an instance of the model's configuration class (e.g., `RBLNLlamaForCausalLMConfig` for Llama models).
