@@ -15,10 +15,11 @@ env:
   UV_LINK_MODE: "symlink"
   UV_INDEX_STRATEGY: "unsafe-best-match"
   OPTIMUM_RBLN_TEST_LEVEL: "${OPTIMUM_RBLN_TEST_LEVEL:-default}"
-  # The hub tests push to a private repo under this namespace and skip when it is
-  # empty (tests/test_base.py require_hf_user_id), which is how they stay out of
-  # an ordinary PR: only a full build's uploader exports it.
-  HF_USER_ID: "${HF_USER_ID:-}"
+  # The hub tests (tests/test_base.py BaseHubTest) stay off until the vault has a
+  # token that may write under the Rebellions namespace: HF_TOKEN is read-only
+  # there, so enabling them returned 403 in nightly build #1. Once such a secret
+  # exists, map it to HF_AUTH_TOKEN below and export HF_USER_ID=Rebellions from
+  # the full-build uploaders; the tests skip themselves while HF_USER_ID is unset.
 
 # Run a suite only when the PR touches something that can change its result.
 # Honored because .buildkite/pr.yml uploads this file with --git-diff-base; the
@@ -98,7 +99,6 @@ _secrets: &secrets
   UV_INDEX_REBELLIONS_PASSWORD: REBEL_SW_DEV_PASSWORD
   HF_TOKEN: HF_TOKEN
   HF_HOME: HF_HOME
-  HF_AUTH_TOKEN: HF_TOKEN
 
 _sync: &sync "bash .buildkite/scripts/sync.sh"
 

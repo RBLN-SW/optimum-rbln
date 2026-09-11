@@ -39,7 +39,6 @@ steps:
     <<: *upload
     command: |
       export OPTIMUM_RBLN_TEST_LEVEL=full
-      export HF_USER_ID=Rebellions
       buildkite-agent pipeline upload .buildkite/pipelines/pytest/pipeline.yml
 
   - label: ":sparkles: upload BC"
