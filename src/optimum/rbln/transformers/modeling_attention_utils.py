@@ -95,23 +95,19 @@ def set_default_values(
     if prefill_chunk_size % 64 != 0 or prefill_chunk_size <= 0:
         raise ValueError("`prefill_chunk_size` must be a positive integer divisible by 64.")
 
-    if kvcache_partition_len is not None:
-        if attn_impl == "eager":
-            attn_impl = "flash_attn"
-            logger.warning(
-                "A non-null `kvcache_partition_len` was provided, but `attn_impl` was not explicitly set or "
-                "set to 'eager'. Since KV cache partitioning is only supported with flash attention, "
-                "`attn_impl` has been automatically switched to 'flash_attn'."
-            )
+    if kvcache_partition_len is not None and attn_impl == "eager":
+        attn_impl = "flash_attn"
+        logger.warning(
+            "A non-null `kvcache_partition_len` was provided, but `attn_impl` was not explicitly set or "
+            "set to 'eager'. Since KV cache partitioning is only supported with flash attention, "
+            "`attn_impl` has been automatically switched to 'flash_attn'."
+        )
 
     if kvcache_partition_len is None and attn_impl == "flash_attn":
         kvcache_partition_len = get_attention_limits(npu).default_flash_partition_len
 
     if kvcache_block_size is None:
-        if attn_impl == "eager":
-            kvcache_block_size = max_seq_len
-        else:
-            kvcache_block_size = kvcache_partition_len
+        kvcache_block_size = max_seq_len if attn_impl == "eager" else kvcache_partition_len
 
     return attn_impl, kvcache_partition_len, kvcache_block_size, prefill_chunk_size
 

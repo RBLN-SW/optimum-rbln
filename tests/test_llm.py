@@ -134,15 +134,15 @@ class LLMTest:
                     return
 
                 # Check hidden states Shape and Type
-                self.assertTrue(len(output.hidden_states) == inputs["max_new_tokens"])
-                self.assertTrue(isinstance(output.hidden_states, tuple))
+                assert len(output.hidden_states) == inputs["max_new_tokens"]
+                assert isinstance(output.hidden_states, tuple)
                 num_hidden_layers = (
                     self.HF_CONFIG_KWARGS["num_hidden_layers"]
                     if "num_hidden_layers" in self.HF_CONFIG_KWARGS
                     else self.HF_CONFIG_KWARGS["text_config"]["num_hidden_layers"]
                 )
-                self.assertTrue(len(output.hidden_states[0]) == (num_hidden_layers + 1))
-                self.assertTrue(isinstance(output.hidden_states[0], tuple))
+                assert len(output.hidden_states[0]) == num_hidden_layers + 1
+                assert isinstance(output.hidden_states[0], tuple)
                 test_hidden_states = output.hidden_states[0][1]
             else:
                 inputs["output_hidden_states"] = True
@@ -150,12 +150,12 @@ class LLMTest:
                 if REUSE_ARTIFACTS_PATH is not None:
                     return
                 # Check hidden states Shape and Type
-                self.assertTrue(len(output.hidden_states) == (self.HF_CONFIG_KWARGS["num_hidden_layers"] + 1))
-                self.assertTrue(isinstance(output.hidden_states, tuple))
+                assert len(output.hidden_states) == self.HF_CONFIG_KWARGS["num_hidden_layers"] + 1
+                assert isinstance(output.hidden_states, tuple)
                 test_hidden_states = output.hidden_states[1]
 
                 # Check last hidden state corresponds to the last hidden state of the prefill stage
-                self.assertTrue(torch.allclose(output.last_hidden_state, output.hidden_states[-1]))
+                assert torch.allclose(output.last_hidden_state, output.hidden_states[-1])
 
             # Check well-masked hidden states corresponds to attention mask
             for b_idx, bmask in enumerate(inputs.attention_mask):
@@ -164,12 +164,12 @@ class LLMTest:
                 hs_dtype = test_hidden_states.dtype
                 masked = torch.allclose(test_hidden_states[b_idx][masked_indices], torch.zeros([1], dtype=hs_dtype))
                 # 1. all masked hidden states are zero
-                self.assertTrue(masked)
+                assert masked
                 unmasked_tensor = test_hidden_states[b_idx][unmasked_indices]
                 avg_unmasked_tensor = torch.mean(unmasked_tensor.float(), dim=-1)
                 approx_zero = torch.isclose(avg_unmasked_tensor, torch.zeros([1]), atol=1e-5)
                 # 2. check if unmasked hidden states are not masked
-                self.assertFalse(torch.any(approx_zero).item())
+                assert not torch.any(approx_zero).item()
 
     class TestLLMWithoutLMHead(TestLLM):
         RBLN_AUTO_CLASS = RBLNAutoModel
@@ -189,10 +189,10 @@ class LLMTest:
                 with self.subTest(length=length):
                     input_ids = torch.ones((batch_size, length), dtype=torch.int64)
                     output = self.model(input_ids=input_ids, attention_mask=torch.ones_like(input_ids))
-                    self.assertEqual(output.last_hidden_state.shape, (batch_size, length, hidden_size))
+                    assert output.last_hidden_state.shape == (batch_size, length, hidden_size)
                     if self.model.rbln_config.output_hidden_states:
                         for hidden_state in output.hidden_states:
-                            self.assertEqual(hidden_state.shape, (batch_size, length, hidden_size))
+                            assert hidden_state.shape == (batch_size, length, hidden_size)
 
 
 class TestMistralForCausalLM(LLMTest.TestLLM):
@@ -453,46 +453,46 @@ class TestBartModel(LLMTest.TestLLM):
     def test_automap(self):
         # BartForConditionalGeneration -> RBLNBartForConditionalGeneration compile case
         with self.subTest():
-            assert self.RBLN_CLASS == self.RBLN_AUTO_CLASS.get_rbln_cls(
-                self.HF_MODEL_ID,
-                **self.RBLN_CLASS_KWARGS,
-                **self.HF_CONFIG_KWARGS,
+            assert (
+                self.RBLN_AUTO_CLASS.get_rbln_cls(
+                    self.HF_MODEL_ID,
+                    **self.RBLN_CLASS_KWARGS,
+                    **self.HF_CONFIG_KWARGS,
+                )
+                == self.RBLN_CLASS
             )
 
         # BartForConditionalGeneration -> RBLNBartModel compile case
         # Invoked rbln_class is different from config's architecture
-        with self.subTest():
-            with warnings.catch_warnings(record=True) as w:
-                warnings.simplefilter("always")
+        with self.subTest(), warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
 
-                RBLNAutoModel.get_rbln_cls(self.HF_MODEL_ID)
+            RBLNAutoModel.get_rbln_cls(self.HF_MODEL_ID)
 
-                self.assertEqual(len(w), 1)
-                self.assertTrue(issubclass(w[-1].category, UserWarning))
-                self.assertIn("This mismatch could cause some operations", str(w[-1].message))
+            assert len(w) == 1
+            assert issubclass(w[-1].category, UserWarning)
+            assert "This mismatch could cause some operations" in str(w[-1].message)
 
         # BartForConditionalGeneration -> RBLNBartForCausalLM compile case
         # RBLNBartForCausalLM is not yet supported in optimum.rbln
-        with self.subTest():
-            with pytest.raises(AttributeError):
-                RBLNAutoModelForCausalLM.get_rbln_cls(self.HF_MODEL_ID)
+        with self.subTest(), pytest.raises(AttributeError):
+            RBLNAutoModelForCausalLM.get_rbln_cls(self.HF_MODEL_ID)
 
         # RBLNBartForSeq2SeqLM -> RBLNBartForCausalLM load case
-        with self.subTest():
-            with pytest.raises(ValueError):
-                _ = RBLNAutoModelForCausalLM.from_pretrained(
-                    self.get_rbln_local_dir(),
-                    export=False,
-                    rbln_create_runtimes=False,
-                    **self.HF_CONFIG_KWARGS,
-                )
+        with self.subTest(), pytest.raises(ValueError):  # noqa: PT011
+            _ = RBLNAutoModelForCausalLM.from_pretrained(
+                self.get_rbln_local_dir(),
+                export=False,
+                rbln_create_runtimes=False,
+                **self.HF_CONFIG_KWARGS,
+            )
 
 
 class TestLlavaForConditionalGeneration(LLMTest.TestLLM):
     RBLN_AUTO_CLASS = RBLNAutoModelForImageTextToText
     RBLN_CLASS = RBLNLlavaForConditionalGeneration
     HF_MODEL_ID = "trl-internal-testing/tiny-LlavaForConditionalGeneration"
-    PROMPT = "[INST] <image>\nWhat’s shown in this image? [/INST]"
+    PROMPT = "[INST] <image>\nWhat’s shown in this image? [/INST]"  # noqa: RUF001
     RBLN_CLASS_KWARGS = {
         "rbln_config": {
             "vision_tower": {"output_hidden_states": True},
@@ -563,7 +563,7 @@ class TestLlavaNextForConditionalGeneration(LLMTest.TestLLM):
     RBLN_AUTO_CLASS = RBLNAutoModelForImageTextToText
     RBLN_CLASS = RBLNLlavaNextForConditionalGeneration
     HF_MODEL_ID = "trl-internal-testing/tiny-LlavaNextForConditionalGeneration"
-    PROMPT = "[INST] <image>\nWhat’s shown in this image? [/INST]"
+    PROMPT = "[INST] <image>\nWhat’s shown in this image? [/INST]"  # noqa: RUF001
     RBLN_CLASS_KWARGS = {
         "rbln_config": {
             "language_model": {"use_inputs_embeds": True},
@@ -748,7 +748,7 @@ class TestQwenRotaryLookup(unittest.TestCase):
                 hf = Qwen2VisionTransformerPretrainedModel.rot_pos_emb(mock, grid)
                 table = rot(torch.arange(int(grid[:, 1:].max())))
                 ours = table[qwen_vit_rot_pos_ids(grid, merge)].flatten(1)
-                self.assertTrue(torch.equal(ours, hf))
+                assert torch.equal(ours, hf)
 
     def test_qwen_mrope_lookup_matches_hf_module(self):
         from transformers.models.qwen2_vl.configuration_qwen2_vl import Qwen2VLTextConfig
@@ -775,15 +775,15 @@ class TestQwenRotaryLookup(unittest.TestCase):
         x = torch.zeros(1)
         for rot in (standard, interleaved):
             lut = build_qwen_mrope_lookup(rot, max_pos)
-            self.assertIsInstance(lut, QwenMRopeLookupTable)
+            assert isinstance(lut, QwenMRopeLookupTable)
             oob = torch.randint(0, max_pos, (3, 1, 8))
             oob[0, 0, 0] = max_pos + 3  # falls back to the dynamic path
             for pos in (torch.randint(0, max_pos, (3, 2, 64)), torch.randint(0, max_pos, (3, 1, 1)), oob):
                 hf_cos, hf_sin = rot(x, pos)
                 lut_cos, lut_sin = lut(x, pos)
-                self.assertEqual(hf_cos.shape, lut_cos.shape)
-                self.assertLess((hf_cos.float() - lut_cos).abs().max().item(), 2e-7)
-                self.assertLess((hf_sin.float() - lut_sin).abs().max().item(), 2e-7)
+                assert hf_cos.shape == lut_cos.shape
+                assert (hf_cos.float() - lut_cos).abs().max().item() < 2e-07
+                assert (hf_sin.float() - lut_sin).abs().max().item() < 2e-07
 
 
 class TestQwen2VLForConditionalGeneration(LLMTest.TestLLM):
@@ -1258,7 +1258,7 @@ class TestMultiLora_batch(LLMTest.TestLLM):
     # Should check each output corresponds to each prompt
     EXPECTED_OUTPUT = [
         " bench_echointon Ebonylica Lennonnings909 norgeZN°Eusan倍oloadolen逸 Oaksodian surplusaniem",
-        "/topicпідonus343../../../ Mund  Ont ReactionIPAچیIQUE beltーブ204umlu Cortexoisئةτερ",
+        "/topicпідonus343../../../ Mund  Ont ReactionIPAچیIQUE beltーブ204umlu Cortexoisئةτερ",  # noqa: RUF001
     ]
     HF_MODEL_ID = "meta-llama/Llama-3.1-8B-Instruct"
     HF_CONFIG_KWARGS = {"num_hidden_layers": 1, "max_position_embeddings": 1024}
@@ -1341,7 +1341,7 @@ class TestMoeHostMemory(unittest.TestCase):
         before = self._rss()
         model = rbln_cls.get_pytorch_model(tmp, dtype=torch.bfloat16)
         for name, p in model.named_parameters():
-            self.assertTrue(torch.equal(p, src_state_dict[name]), name)
+            assert torch.equal(p, src_state_dict[name]), name
         if config_cls is not None:
             rbln_config = config_cls(max_seq_len=256, batch_size=1, create_runtimes=False)
             rbln_config = rbln_cls.update_rbln_config(
@@ -1350,7 +1350,7 @@ class TestMoeHostMemory(unittest.TestCase):
             wrapped = rbln_cls._wrap_model_if_needed(model, rbln_config)  # noqa: F841
         gc.collect()
         ratio = (self._rss() - before) / checkpoint_bytes
-        self.assertLessEqual(ratio, self.MAX_RSS_RATIO, f"RSS grew {ratio:.2f}x the checkpoint size")
+        assert ratio <= self.MAX_RSS_RATIO, f"RSS grew {ratio:.2f}x the checkpoint size"
 
     def test_per_expert_checkpoints(self):
         moe = {"moe_intermediate_size": 512, "num_experts": 64, "num_experts_per_tok": 4, "decoder_sparse_step": 1}

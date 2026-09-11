@@ -15,7 +15,7 @@
 from typing import TYPE_CHECKING, Union
 
 import rebel
-import torch  # noqa: I001
+import torch
 from diffusers import AutoencoderKLTemporalDecoder
 from diffusers.models.autoencoders.vae import DecoderOutput
 from diffusers.models.modeling_outputs import AutoencoderKLOutput
@@ -107,11 +107,10 @@ class RBLNAutoencoderKLTemporalDecoder(RBLNModel):
         sample_size = rbln_config.sample_size
         if hasattr(pipe, "vae_scale_factor"):
             vae_scale_factor = pipe.vae_scale_factor
+        elif hasattr(pipe.vae.config, "block_out_channels"):
+            vae_scale_factor = 2 ** (len(pipe.vae.config.block_out_channels) - 1)
         else:
-            if hasattr(pipe.vae.config, "block_out_channels"):
-                vae_scale_factor = 2 ** (len(pipe.vae.config.block_out_channels) - 1)
-            else:
-                vae_scale_factor = 8  # vae image processor default value 8 (int)
+            vae_scale_factor = 8  # vae image processor default value 8 (int)
 
         if sample_size is None:
             sample_size = pipe.unet.config.sample_size
@@ -213,11 +212,7 @@ class RBLNAutoencoderKLTemporalDecoder(RBLNModel):
         compiled_models: list[rebel.RBLNCompiledModel],
         rbln_config: RBLNAutoencoderKLTemporalDecoderConfig,
     ) -> list[rebel.Runtime]:
-        if len(compiled_models) == 1:
-            # decoder
-            expected_models = ["decoder"]
-        else:
-            expected_models = ["encoder", "decoder"]
+        expected_models = ["decoder"] if len(compiled_models) == 1 else ["encoder", "decoder"]
 
         if any(model_name not in rbln_config.device_map for model_name in expected_models):
             cls._raise_missing_compiled_file_error(expected_models)

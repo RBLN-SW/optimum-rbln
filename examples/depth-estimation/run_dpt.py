@@ -39,10 +39,7 @@ def main():
 
     inputs = processor(images=image, return_tensors="pt")
 
-    if model.config.is_hybrid:
-        predicted_depth = model(**inputs).predicted_depth[0]
-    else:
-        predicted_depth = model(**inputs).predicted_depth
+    predicted_depth = model(**inputs).predicted_depth[0] if model.config.is_hybrid else model(**inputs).predicted_depth
 
     # interpolate to original size
     prediction = torch.nn.functional.interpolate(

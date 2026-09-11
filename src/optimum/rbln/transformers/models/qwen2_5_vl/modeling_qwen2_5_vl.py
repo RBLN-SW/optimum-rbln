@@ -342,8 +342,8 @@ class RBLNQwen2_5_VisionTransformerPretrainedModel(RBLNModel):
 
             # Depadding
             depadded_output = []
-            for i, valid_len in enumerate(window_valid_lengths):
-                start = i * (window_seq_len // self.spatial_merge_unit)
+            for window_idx, valid_len in enumerate(window_valid_lengths):
+                start = window_idx * (window_seq_len // self.spatial_merge_unit)
                 end = start + (valid_len // self.spatial_merge_unit)
                 depadded_output.append(output[start:end])
             output = torch.cat(depadded_output, dim=0)

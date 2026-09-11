@@ -117,7 +117,7 @@ jobs:
               fi
               ;;
           esac
-          
+
           echo "skip=$SKIP" >> $GITHUB_OUTPUT
 
       - name: Install optimum-rbln (skip sync when possible)
@@ -201,7 +201,7 @@ jobs:
                   ;;
               esac
               echo "Running CLI test: $CLI_TEST_TYPE"
-              uv run --no-sync .github/scripts/test_cli.py "$CLI_TEST_TYPE"
+              uv run --no-sync scripts/test_cli.py "$CLI_TEST_TYPE"
               ;;
           esac
 

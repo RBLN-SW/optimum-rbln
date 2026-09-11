@@ -59,7 +59,6 @@ if TYPE_CHECKING:
         AutoFeatureExtractor,
         AutoProcessor,
         AutoTokenizer,
-        PretrainedConfig,
     )
 
 

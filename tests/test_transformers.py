@@ -3,6 +3,7 @@ import os
 import shutil
 import unittest
 
+import pytest
 import torch
 from PIL import Image
 from transformers import AutoConfig, BertConfig, BertModel, T5EncoderModel, XLMRobertaConfig, XLMRobertaModel
@@ -89,9 +90,7 @@ class TestResNetModel(BaseTest.TestModel, BaseHubTest.TestHub):
                 model = HF_CLASS.from_pretrained(
                     self.HF_MODEL_ID,
                     **self.HF_CONFIG_KWARGS,
-                    **{
-                        "torchscript": True,
-                    },
+                    torchscript=True,
                 )
                 _ = self.RBLN_CLASS.from_model(
                     model,
@@ -103,7 +102,7 @@ class TestResNetModel(BaseTest.TestModel, BaseHubTest.TestHub):
     def _inner_test_save_load(self, tmpdir):
         super()._inner_test_save_load(tmpdir)
 
-        with self.assertRaises(RuntimeError):
+        with pytest.raises(RuntimeError):
             _ = self.RBLN_CLASS.from_pretrained(
                 tmpdir,
                 export=False,
@@ -111,7 +110,7 @@ class TestResNetModel(BaseTest.TestModel, BaseHubTest.TestHub):
             )
 
     def test_failed_to_create_runtime(self):
-        with self.assertRaises(ValueError):
+        with pytest.raises(ValueError):  # noqa: PT011
             _ = self.RBLN_CLASS.from_pretrained(
                 self.HF_MODEL_ID,
                 export=True,
@@ -391,9 +390,9 @@ class TestEncoderMaxSeqLenBucketing(unittest.TestCase):
                 model_input_shapes=[[1, 64], [1, 64]],
             )
 
-        self.assertTrue(any("model_input_shapes" in msg for msg in logs.output))
-        self.assertEqual(config.max_seq_len, [64, 128])
-        self.assertFalse(hasattr(config, "model_input_shapes"))
+        assert any("model_input_shapes" in msg for msg in logs.output)
+        assert config.max_seq_len == [64, 128]
+        assert not hasattr(config, "model_input_shapes")
 
     def _tiny_models(self):
         config_kwargs = {
@@ -434,16 +433,15 @@ class TestEncoderMaxSeqLenBucketing(unittest.TestCase):
                 )
                 try:
                     # One executor per bucket, all in a single compiled model (shared weights).
-                    self.assertEqual(rbln_model.model[0].get_executor_count(), len(self.BUCKETS))
+                    assert rbln_model.model[0].get_executor_count() == len(self.BUCKETS)
 
                     for seq_len, args in inputs.items():
                         output = rbln_model(**args, return_dict=False)[0]
                         reference = references[seq_len]
-                        self.assertEqual(tuple(output.shape), tuple(reference.shape))
+                        assert tuple(output.shape) == tuple(reference.shape)
                         max_diff = (output - reference).abs().max().item()
-                        self.assertTrue(
-                            torch.allclose(output, reference, atol=2e-2, rtol=1e-2),
-                            msg=f"{name} seq_len={seq_len}: outputs diverged (max abs diff {max_diff:.4g})",
+                        assert torch.allclose(output, reference, atol=0.02, rtol=0.01), (
+                            f"{name} seq_len={seq_len}: outputs diverged (max abs diff {max_diff:.4g})"
                         )
                 finally:
                     if os.path.exists(save_dir):
@@ -502,15 +500,14 @@ class TestColPaliModel(BaseTest.TestModel):
         self._inner_propagate_rbln_config(tmpdir)
 
     def _inner_propagate_rbln_config(self, tmpdir):
-        with ContextRblnConfig(create_runtimes=False):
-            with self.subTest():
-                rbln_config = {"vlm": {"vision_tower": {"device": 1}, "language_model": {"device": 2}}}
-                model = self.RBLN_CLASS.from_pretrained(
-                    tmpdir,
-                    rbln_config=rbln_config,
-                )
-                assert model.rbln_config.vlm.vision_tower.device == 1
-                assert model.rbln_config.vlm.language_model.device == 2
+        with ContextRblnConfig(create_runtimes=False), self.subTest():
+            rbln_config = {"vlm": {"vision_tower": {"device": 1}, "language_model": {"device": 2}}}
+            model = self.RBLN_CLASS.from_pretrained(
+                tmpdir,
+                rbln_config=rbln_config,
+            )
+            assert model.rbln_config.vlm.vision_tower.device == 1
+            assert model.rbln_config.vlm.language_model.device == 2
 
 
 class TestColQwen2Model(BaseTest.TestModel):

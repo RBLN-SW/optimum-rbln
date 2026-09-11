@@ -31,7 +31,7 @@ case "$suite" in
     [ -n "$group" ] || { echo "llm needs a group (1-4)" >&2; exit 2; }
     uv run --no-sync pytest -n 1 tests/test_llm.py --splits 4 --group "$group" -vv --durations 0 ;;
   cli-basic)
-    uv run --no-sync .github/scripts/test_cli.py basic ;;
+    uv run --no-sync scripts/test_cli.py basic ;;
   *)
     echo "unknown suite: $suite" >&2; exit 2 ;;
 esac

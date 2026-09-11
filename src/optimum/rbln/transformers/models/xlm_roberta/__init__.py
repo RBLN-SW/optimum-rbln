@@ -17,8 +17,8 @@ from .modeling_xlm_roberta import RBLNXLMRobertaForSequenceClassification, RBLNX
 
 
 __all__ = [
-    "RBLNXLMRobertaModelConfig",
+    "RBLNXLMRobertaForSequenceClassification",
     "RBLNXLMRobertaForSequenceClassificationConfig",
     "RBLNXLMRobertaModel",
-    "RBLNXLMRobertaForSequenceClassification",
+    "RBLNXLMRobertaModelConfig",
 ]

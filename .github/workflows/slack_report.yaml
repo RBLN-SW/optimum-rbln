@@ -249,4 +249,3 @@ jobs:
             -H 'Content-type: application/json; charset=utf-8' \
             --data-binary @"${{ steps.build.outputs.payload_file }}" \
             https://slack.com/api/chat.postMessage
-

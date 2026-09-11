@@ -18,6 +18,6 @@ from .modeling_resnet import RBLNResNetForImageClassification
 
 
 __all__ = [
-    "RBLNResNetForImageClassificationConfig",
     "RBLNResNetForImageClassification",
+    "RBLNResNetForImageClassificationConfig",
 ]

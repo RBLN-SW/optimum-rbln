@@ -11,7 +11,7 @@ steps:
     secrets:
       - GIT_PAT
     command:
-      - "bash .buildkite/scripts/gate-team-member.sh"
+      - "bash scripts/gate-team-member.sh"
 
   # Same checks as .github/workflows/check_code_quality.yml.
   - label: ":mag: ruff"
@@ -31,7 +31,7 @@ steps:
           context: "[OB] docstrings"
     image: "${DEVTOOLS_DOCKER_IMAGE}"
     command:
-      - "bash .buildkite/scripts/check-docstrings.sh"
+      - "bash scripts/check-docstrings.sh"
 
   # All gates must pass before the NPU pipeline is even uploaded.
   - wait: ~

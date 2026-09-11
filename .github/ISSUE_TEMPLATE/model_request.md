@@ -7,15 +7,15 @@ assignees: ''
 ---
 
 ### Model Information
-- Model name: 
-- Model link (HuggingFace/Paper/GitHub): 
-- Task type (e.g., Text Generation, Image Classification): 
+- Model name:
+- Model link (HuggingFace/Paper/GitHub):
+- Task type (e.g., Text Generation, Image Classification):
 
 ### Model Details
-- Input modality (Text/Image/Audio/Other): 
-- Output modality (Text/Image/Audio/Other): 
-- Model size (parameters): 
-- Required memory (if known): 
+- Input modality (Text/Image/Audio/Other):
+- Output modality (Text/Image/Audio/Other):
+- Model size (parameters):
+- Required memory (if known):
 
 ### Input/Output Tensor Information
 - Can input/output shapes be inferred from model config? Yes/No

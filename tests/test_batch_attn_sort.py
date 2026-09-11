@@ -197,7 +197,7 @@ def test_requires_batch_sort_serialized():
 
 
 def test_requires_batch_sort_not_user_settable():
-    with pytest.raises(ValueError, match="[Uu]nexpected"):
+    with pytest.raises(ValueError, match=r"[Uu]nexpected"):
         RBLNDecoderOnlyModelForCausalLMConfig(max_seq_len=1024, requires_batch_sort=True)
 
     cfg = RBLNDecoderOnlyModelForCausalLMConfig(max_seq_len=1024)

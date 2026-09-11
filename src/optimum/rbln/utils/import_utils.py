@@ -152,7 +152,7 @@ def check_version_compats() -> None:
             )
             return
 
-    target_version = list(filter(lambda v: Version(my_version) >= Version(v), RBLN_VERSION_COMPATS.keys()))[0]
+    target_version = next(filter(lambda v: Version(my_version) >= Version(v), RBLN_VERSION_COMPATS.keys()))
     for compat in RBLN_VERSION_COMPATS[target_version]:
         try:
             dep_version = importlib.metadata.version(compat.package_name)
@@ -181,11 +181,10 @@ def check_version_compats() -> None:
                     ImportWarning,
                     stacklevel=2,
                 )
-        else:
-            if not Version(compat.min_version) <= Version(dep_version) < Version(compat.max_version):
-                warnings.warn(
-                    f"optimum-rbln v{my_version} is compatible to {compat.package_name} v{compat.min_version} to v{compat.max_version}. (you are currently using v{dep_version})\n"
-                    "Please refer to our SDK release notes at https://docs.rbln.ai/about_atom/release_note.html",
-                    ImportWarning,
-                    stacklevel=2,
-                )
+        elif not Version(compat.min_version) <= Version(dep_version) < Version(compat.max_version):
+            warnings.warn(
+                f"optimum-rbln v{my_version} is compatible to {compat.package_name} v{compat.min_version} to v{compat.max_version}. (you are currently using v{dep_version})\n"
+                "Please refer to our SDK release notes at https://docs.rbln.ai/about_atom/release_note.html",
+                ImportWarning,
+                stacklevel=2,
+            )

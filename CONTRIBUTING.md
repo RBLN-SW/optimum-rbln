@@ -1,88 +1,128 @@
+# How to contribute to Optimum RBLN
 
-# How to contribute to Optimum?
+Optimum RBLN is an open source project, so all contributions and suggestions are welcome.
 
-Optimum-rbln is an open source project, so all contributions and suggestions are welcome.
-
-You can contribute in many different ways: giving ideas, answering questions, reporting bugs, proposing enhancements, improving the documentation, fixing bugs,...
+You can contribute in many different ways: giving ideas, answering questions, reporting bugs, proposing enhancements, improving the documentation, fixing bugs, and adding support for new models.
 
 Many thanks in advance to every contributor.
 
-## How to work on an open Issue?
+## Asking questions and reporting issues
 
-> If you want to ask a question, we assume that you have read the available [Documentation](https://docs.rbln.ai/software/optimum/optimum_rbln.html).
+> If you want to ask a question, we assume that you have read the available [documentation](https://docs.rbln.ai/software/optimum/optimum_rbln.html).
 
-Before you ask a question, it is best to search for existing [Issues](/issues) that might help you. In case you have found a suitable issue and still need clarification, you can write your question in this issue. It is also advisable to search the internet for answers first.
+Before opening a new issue, search the existing [issues](https://github.com/rbln-sw/optimum-rbln/issues) first. If none of them covers your case, open a [new issue](https://github.com/rbln-sw/optimum-rbln/issues/new/choose) using one of the templates and provide as much context as you can (model id, `rbln_config`, versions of `optimum-rbln` and `rebel-compiler`, full traceback).
 
-If you then still feel the need to ask a question and need clarification, we recommend the following:
+## Development setup
 
-- Open an [Issue](https://github.com/rbln-sw/optimum-rbln/issues/new/choose).
-- Provide as much context as you can about what you're running into.
+### Prerequisites
 
-We will then take care of the issue as soon as possible.
+- Python 3.10 or newer
+- [uv](https://docs.astral.sh/uv/getting-started/installation/), version 0.11.25 or newer
+- `rebel-compiler`, which is available to approved users only. Follow the [installation guide](https://docs.rbln.ai/getting_started/installation_guide.html) to install it into the virtual environment created below. Everything except compiling and running on an NPU works without it.
 
-## How to create a Pull Request?
-1. Fork the [repository](https://github.com/rbln-sw/optimum-rbln) by clicking on the 'Fork' button on the repository's page. This creates a copy of the code under your GitHub user account.
+### Clone and install
 
-2. Clone your fork to your local disk, and add the base repository as a remote:
+Fork the [repository](https://github.com/rbln-sw/optimum-rbln), clone your fork and add the base repository as a remote:
 
-	```bash
-	git clone git@github.com:<your Github handle>/optimum-rbln.git
-	cd optimum-rbln
-	git remote add upstream https://github.com/rbln-sw/optimum-rbln.git
-	```
+```bash
+git clone git@github.com:<your GitHub handle>/optimum-rbln.git
+cd optimum-rbln
+git remote add upstream https://github.com/rbln-sw/optimum-rbln.git
+```
 
-3. Create a new branch to hold your development changes:
+Create the virtual environment and install the project in editable mode together with every dependency group (`tests`, `quality`, `deploy`):
 
-	```bash
-	git checkout -b a-descriptive-name-for-my-changes
-	```
+```bash
+uv sync --all-groups
+```
 
-	**do not** work on the `main` branch.
+`uv sync` creates `.venv`, installs the locked dependencies from `uv.lock` and installs `optimum-rbln` itself in editable mode. Run tools through `uv run <command>` or activate the environment with `source .venv/bin/activate`.
 
-4. Set up a development environment by running the following command in a virtual environment:
+The package version is derived from git tags by `hatch-vcs` and written to `src/optimum/rbln/__version__.py` when the project is installed. After pulling new commits or tags, refresh it with `uv sync --reinstall-package optimum-rbln`.
 
-	```bash
-	pip install -e ".[dev]"
-	```
+### Pre-commit hooks
 
-   (If optimum-rbln was already installed in the virtual environment, remove
-   it with `pip uninstall optimum-rbln` before reinstalling it in editable
-   mode with the `-e` flag.)
+Install the git hooks once after cloning:
 
-5. Develop the features on your branch.
+```bash
+uv run pre-commit install
+```
 
-6. Format your code. Run ruff so that your newly added files look nice with the following command:
+The hooks run `ruff check --fix`, `ruff format`, a `uv.lock` consistency check and a few file hygiene checks on every commit. To run them over the whole repository:
 
-	```bash
-	ruff format .
-	ruff check . --fix
-	```
+```bash
+uv run pre-commit run --all-files
+```
 
-7.  Once you're happy with your changes, add the changed files using `git add` and make a commit with `git commit` to record your changes locally:
+## Making changes
 
-	```bash
-	git add modified_file.py
-	git commit -m "Your commit message"
-	```
+1. Create a branch from `dev`. Do not work on `dev` or `main` directly.
 
-	It is a good idea to sync your copy of the code with the original
-	repository regularly. This way you can quickly account for changes:
+   ```bash
+   git checkout -b a-descriptive-name-for-my-changes upstream/dev
+   ```
 
-	```bash
-	git fetch upstream
-	git rebase upstream/main
-    ```
+2. Develop your change. Keep upstream `dev` merged in regularly so the pull request stays easy to review:
 
-   Push the changes to your account using:
+   ```bash
+   git fetch upstream
+   git rebase upstream/dev
+   ```
+
+3. Format and lint your code. If you installed the pre-commit hooks this happens automatically on commit; otherwise run:
+
+   ```bash
+   uv run ruff format .
+   uv run ruff check . --fix
+   ```
+
+4. Run the tests relevant to your change (see below), commit and push to your fork:
 
    ```bash
    git push -u origin a-descriptive-name-for-my-changes
    ```
 
-8. Once you are satisfied, go the webpage of your fork on GitHub. Click on "Pull request" to send your to the project maintainers for review.
+5. Open a pull request against the `dev` branch. Only critical hotfixes target `main`, and those must be merged into `dev` as well.
+
+### Pull request titles
+
+Pull request titles follow the conventional commit format and are checked by CI:
+
+```
+type(optional scope): description
+```
+
+| Type          | Use it for                                                        |
+| ------------- | ----------------------------------------------------------------- |
+| `model`       | Adding a new model or fixing an existing one                      |
+| `performance` | Making a model or the library itself faster or lighter            |
+| `refactor`    | Re-arranging code without changing behavior                       |
+| `doc`         | Docstring or documentation changes                                |
+| `dependency`  | Dependency and lockfile updates                                   |
+| `release`     | Merging `dev` into `main` for a release                            |
+| `other`       | Anything else, such as CI or tooling changes                      |
+
+## Tests
+
+Tests live in `tests/` and are run with `pytest`. Most of them compile a model and execute it on an RBLN NPU, so they need `rebel-compiler` and a device. Run a single suite with:
+
+```bash
+uv run pytest tests/test_config.py -v
+```
+
+The CI splits the suites into `test_config.py`, `test_transformers.py`, `test_diffusers.py` and `test_llm.py`; the helper scripts it uses are in `scripts/`.
+
+Public classes must have docstrings that `mkdocstrings` can render, because the reference documentation is generated from them. Check the files you changed with:
+
+```bash
+bash scripts/check-docstrings.sh
+```
+
+## Dependencies
+
+Runtime dependencies are declared in `pyproject.toml` and locked in `uv.lock`, which is committed. Change them with `uv add` / `uv remove` (use `--group tests` or `--group quality` for development-only tools) and commit the updated lockfile together with `pyproject.toml`. Dependency updates for `transformers` and `diffusers` are opened automatically by Renovate.
 
 ## Code of conduct
 
-This project adheres to the Rebellions' [code of conduct](CODE_OF_CONDUCT.md).
+This project adheres to the Rebellions [code of conduct](CODE_OF_CONDUCT.md).
 By participating, you are expected to uphold this code.
-

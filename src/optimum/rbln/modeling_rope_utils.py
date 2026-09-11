@@ -88,11 +88,11 @@ class QwenMRopeLookupTable:
         if position_ids.ndim == 2:
             position_ids = position_ids[None, ...].expand(3, *position_ids.shape)
         if self.interleave_index is None:
-            if 0 <= position_ids.min() and position_ids.max() < self.table_len:
+            if position_ids.min() >= 0 and position_ids.max() < self.table_len:
                 return self.cos_table[position_ids], self.sin_table[position_ids]
             return self._dynamic(position_ids[..., None])
         pos_sel = position_ids[self.interleave_index].permute(1, 2, 0)
-        if 0 <= pos_sel.min() and pos_sel.max() < self.table_len:
+        if pos_sel.min() >= 0 and pos_sel.max() < self.table_len:
             return self.cos_table[pos_sel, self.col_index], self.sin_table[pos_sel, self.col_index]
         return self._dynamic(pos_sel)
 

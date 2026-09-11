@@ -71,7 +71,7 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
-      
+
       - name: Get compiler version
         id: get_version
         run: |
@@ -92,9 +92,10 @@ jobs:
 
       - name: check if pr is dependency check
         id: check_title
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
         run: |
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
-          PR_TITLE="${{ github.event.pull_request.title }}"
           LAST_COMMIT_MSG=$(git log -1 --pretty=format:%s)
           DEP_UPDATE_PATTERN="dependency: Update dependency"
 

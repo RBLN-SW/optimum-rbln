@@ -17,7 +17,6 @@ from typing import TYPE_CHECKING, Union
 import torch
 from diffusers import ControlNetModel
 from diffusers.models.controlnets.controlnet import ControlNetOutput
-from transformers import PretrainedConfig
 
 from ....configuration_utils import RBLNCompileConfig, RBLNModelConfig
 from ....modeling import RBLNModel
@@ -28,7 +27,7 @@ from ...modeling_diffusers import RBLNDiffusionMixin, RBLNDiffusionMixinConfig
 
 
 if TYPE_CHECKING:
-    from transformers import AutoFeatureExtractor, AutoProcessor, AutoTokenizer, PreTrainedModel
+    from transformers import AutoFeatureExtractor, AutoProcessor, AutoTokenizer, PretrainedConfig, PreTrainedModel
 
 
 logger = get_logger(__name__)

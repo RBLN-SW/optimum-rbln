@@ -46,19 +46,17 @@ def remove_compile_time_kwargs(func):
             if compiled_image_size is not None:
                 height_exists = "height" in kwargs and kwargs["height"] is not None
                 width_exists = "width" in kwargs and kwargs["width"] is not None
-                if height_exists or width_exists:
-                    if not (
-                        kwargs.get("height", None) == compiled_image_size[0]
-                        and kwargs.get("width", None) == compiled_image_size[1]
-                    ):
-                        logger.warning(
-                            "Image dimension parameters (`height`, `width`) will be ignored during inference. "
-                            "Image dimensions (%s, %s) must be specified during model compilation using from_pretrained(), (%s, %s).",
-                            str(kwargs.get("height", None)),
-                            str(kwargs.get("width", None)),
-                            str(compiled_image_size[0]),
-                            str(compiled_image_size[1]),
-                        )
+                if (height_exists or width_exists) and not (
+                    kwargs.get("height") == compiled_image_size[0] and kwargs.get("width") == compiled_image_size[1]
+                ):
+                    logger.warning(
+                        "Image dimension parameters (`height`, `width`) will be ignored during inference. "
+                        "Image dimensions (%s, %s) must be specified during model compilation using from_pretrained(), (%s, %s).",
+                        str(kwargs.get("height")),
+                        str(kwargs.get("width")),
+                        str(compiled_image_size[0]),
+                        str(compiled_image_size[1]),
+                    )
                 kwargs["height"] = compiled_image_size[0]
                 kwargs["width"] = compiled_image_size[1]
 

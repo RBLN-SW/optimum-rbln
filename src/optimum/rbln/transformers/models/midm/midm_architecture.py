@@ -16,7 +16,7 @@ import math
 from typing import TYPE_CHECKING
 
 import torch
-import torch.nn as nn
+from torch import nn
 
 from ..decoderonly.decoderonly_architecture import (
     DecoderOnlyAttention,

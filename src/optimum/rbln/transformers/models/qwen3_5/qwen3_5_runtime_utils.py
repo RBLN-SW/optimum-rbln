@@ -226,7 +226,7 @@ class RBLNQwen3_5RuntimeModel(RBLNRuntimeModel):
         inputs: torch.Tensor,
         cache_position: torch.Tensor = None,
         block_tables: torch.Tensor = None,
-        is_external_block_tables: bool = None,
+        is_external_block_tables: bool | None = None,
         attention_mask: torch.Tensor | None = None,
         position_embed: torch.Tensor | None = None,
         position_ids: torch.Tensor | None = None,

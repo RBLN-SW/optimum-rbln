@@ -44,7 +44,7 @@ from .configuration_qwen3_5 import (
     MAX_GDN_CHUNK_SIZE,
     RBLNQwen3_5ForConditionalGenerationConfig,  # noqa: F401
     RBLNQwen3_5ModelConfig,  # noqa: F401
-    RBLNQwen3_5VisionModelConfig,  # noqa: F401
+    RBLNQwen3_5VisionModelConfig,
 )
 from .qwen3_5_architecture import (
     Qwen3_5_CausalLMWrapper,

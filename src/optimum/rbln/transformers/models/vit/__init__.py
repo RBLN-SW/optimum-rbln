@@ -16,4 +16,4 @@ from .configuration_vit import RBLNViTForImageClassificationConfig
 from .modeling_vit import RBLNViTForImageClassification
 
 
-__all__ = ["RBLNViTForImageClassificationConfig", "RBLNViTForImageClassification"]
+__all__ = ["RBLNViTForImageClassification", "RBLNViTForImageClassificationConfig"]

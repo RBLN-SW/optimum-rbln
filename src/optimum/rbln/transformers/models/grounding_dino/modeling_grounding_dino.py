@@ -340,7 +340,7 @@ class RBLNGroundingDinoForObjectDetection(RBLNModel):
         text_features = text_outputs.last_hidden_state if return_dict else text_outputs[0]
         text_features = self.text_projection(text_features)
 
-        batch_size, num_channels, height, width = pixel_values.shape
+        batch_size, _, height, width = pixel_values.shape
         device = pixel_values.device
 
         if pixel_mask is None:
@@ -395,16 +395,16 @@ class RBLNGroundingDinoForObjectDetection(RBLNModel):
         for level, (source, mask, pos_embed) in enumerate(
             zip(feature_maps, masks, position_embeddings_list, strict=False)
         ):
-            batch_size, num_channels, height, width = source.shape
+            batch_size, _num_channels, height, width = source.shape
             spatial_shape = (height, width)
             spatial_shapes_list.append(spatial_shape)
-            source = source.flatten(2).transpose(1, 2)
-            mask = mask.flatten(1)
-            pos_embed = pos_embed.flatten(2).transpose(1, 2)
-            lvl_pos_embed = pos_embed + self.level_embed[level].view(1, 1, -1)
+            flat_source = source.flatten(2).transpose(1, 2)
+            flat_mask = mask.flatten(1)
+            flat_pos_embed = pos_embed.flatten(2).transpose(1, 2)
+            lvl_pos_embed = flat_pos_embed + self.level_embed[level].view(1, 1, -1)
             lvl_pos_embed_flatten.append(lvl_pos_embed)
-            source_flatten.append(source)
-            mask_flatten.append(mask)
+            source_flatten.append(flat_source)
+            mask_flatten.append(flat_mask)
         source_flatten = torch.cat(source_flatten, 1)
         mask_flatten = torch.cat(mask_flatten, 1)
         lvl_pos_embed_flatten = torch.cat(lvl_pos_embed_flatten, 1)
@@ -512,7 +512,11 @@ class RBLNGroundingDinoForObjectDetection(RBLNModel):
                 if value is not None
             )
             tuple_outputs = (
-                (decoder_outputs[0], init_reference_points) + decoder_outputs[1:] + encoder_outputs + enc_outputs
+                decoder_outputs[0],
+                init_reference_points,
+                *decoder_outputs[1:],
+                *encoder_outputs,
+                *enc_outputs,
             )
 
             return tuple_outputs
@@ -564,7 +568,7 @@ class RBLNGroundingDinoForObjectDetection(RBLNModel):
         token_type_ids: torch.LongTensor | None = None,
         attention_mask: torch.LongTensor | None = None,
     ):
-        batch_size, seq_len = input_ids.shape
+        _batch_size, seq_len = input_ids.shape
         max_text_len = self.config.max_text_len
         token_type_ids = token_type_ids if token_type_ids is not None else torch.zeros_like(input_ids)
         attention_mask = attention_mask if attention_mask is not None else torch.ones_like(input_ids)
@@ -643,10 +647,7 @@ class RBLNGroundingDinoForObjectDetection(RBLNModel):
             # predict class and bounding box deltas for each stage
             num_levels = hidden_states.shape[1]
             for level in range(num_levels):
-                if level == 0:
-                    reference = init_reference_points
-                else:
-                    reference = inter_references_points[:, level - 1]
+                reference = init_reference_points if level == 0 else inter_references_points[:, level - 1]
                 reference = torch.special.logit(reference, eps=1e-5)
                 outputs_class = self.class_embed[level](
                     vision_hidden_state=hidden_states[:, level],
@@ -710,14 +711,13 @@ def _update_spatial_shapes(model_config, rbln_config):
         return (image_size + patch_size - 1) // patch_size
 
     # update spatial_shapes
-    spatial_shapes = []
     backbone_config = model_config.backbone_config
     num_patched_h = num_patches(rbln_config.image_height, backbone_config.patch_size)
     num_patched_w = num_patches(rbln_config.image_height, backbone_config.patch_size)
-    for out_layer in backbone_config.out_indices:
-        spatial_shapes.append(
-            [down_sampled_size(num_patched_h, out_layer - 1), down_sampled_size(num_patched_w, out_layer - 1)]
-        )
+    spatial_shapes = [
+        [down_sampled_size(num_patched_h, out_layer - 1), down_sampled_size(num_patched_w, out_layer - 1)]
+        for out_layer in backbone_config.out_indices
+    ]
 
     # Lowest resolution feature maps are obtained via 3x3 stride 2 convolutions on the final stage
     if model_config.num_feature_levels > len(spatial_shapes):

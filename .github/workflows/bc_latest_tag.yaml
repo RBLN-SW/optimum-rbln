@@ -35,7 +35,7 @@ jobs:
           latest_tag=$(
             find "$BC_BASE_PATH" -maxdepth 1 -mindepth 1 -type d -not -name '.*' -printf '%f\n' \
             | sed 's/_/./g' \
-            | python3 .github/scripts/parsing_latest_version.py
+            | python3 scripts/parsing_latest_version.py
           )
           if [ -z "$latest_tag" ]; then
             echo "No tag directories found under BC_BASE_PATH" >&2

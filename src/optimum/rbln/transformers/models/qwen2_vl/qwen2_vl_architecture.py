@@ -1,7 +1,7 @@
 import math
 
 import torch
-import torch.nn as nn
+from torch import nn
 from transformers import PreTrainedModel
 
 from ..decoderonly.decoderonly_architecture import (

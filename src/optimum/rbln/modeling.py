@@ -360,7 +360,7 @@ class RBLNModel(RBLNBaseModel):
         else:
             output_class = self.get_hf_output_class()
             if hasattr(output_class, "loss"):
-                tuple_output = (None,) + tuple_output
+                tuple_output = (None, *tuple_output)
 
             # Truncate if we have too many outputs, otherwise use as is
             if hasattr(output_class, "__annotations__"):

@@ -16,4 +16,4 @@ from .configuration_distilbert import RBLNDistilBertForQuestionAnsweringConfig
 from .modeling_distilbert import RBLNDistilBertForQuestionAnswering
 
 
-__all__ = ["RBLNDistilBertForQuestionAnsweringConfig", "RBLNDistilBertForQuestionAnswering"]
+__all__ = ["RBLNDistilBertForQuestionAnswering", "RBLNDistilBertForQuestionAnsweringConfig"]

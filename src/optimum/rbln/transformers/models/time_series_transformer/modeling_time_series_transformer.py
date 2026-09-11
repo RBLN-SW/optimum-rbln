@@ -432,6 +432,6 @@ class RBLNTimeSeriesTransformerForPrediction(RBLNModel):
 
         return SampleTSPredictionOutput(
             sequences=concat_future_samples.reshape(
-                (-1, num_parallel_samples, self.config.prediction_length) + self._origin_model.target_shape,
+                (-1, num_parallel_samples, self.config.prediction_length, *self._origin_model.target_shape),
             )
         )

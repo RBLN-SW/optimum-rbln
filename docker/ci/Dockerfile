@@ -64,5 +64,3 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     mkdir -p /opt/uv-cache && cp -a /root/.cache/uv/. /opt/uv-cache/ && \
     # Record the lockfile hash baked into this image (used by workflows to skip re-sync).
     sha256sum uv.lock > /opt/uv.lock.sha256
-
-

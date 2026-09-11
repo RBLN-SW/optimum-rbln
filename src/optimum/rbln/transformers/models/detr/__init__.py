@@ -18,6 +18,6 @@ from .modeling_detr import RBLNDetrForObjectDetection
 
 
 __all__ = [
-    "RBLNDetrForObjectDetectionConfig",
     "RBLNDetrForObjectDetection",
+    "RBLNDetrForObjectDetectionConfig",
 ]

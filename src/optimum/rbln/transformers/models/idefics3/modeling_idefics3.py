@@ -169,10 +169,7 @@ class RBLNIdefics3VisionTransformer(RBLNModel):
         ]
         last_hidden_state = torch.empty(size=last_hidden_state_size, dtype=self.rbln_config.dtype, device="cpu")
         for i in range(pixel_values.shape[0]):
-            if patch_attention_mask is not None:
-                batch_attention_mask = patch_attention_mask[i : i + 1,]
-            else:
-                batch_attention_mask = None
+            batch_attention_mask = patch_attention_mask[i : i + 1,] if patch_attention_mask is not None else None
 
             self.model(
                 pixel_values[i : i + 1,],
@@ -230,7 +227,8 @@ class RBLNIdefics3ForConditionalGeneration(RBLNModel, RBLNImageIndexedBatchSortM
     _rbln_submodule_prefix = "model"
     _lm_attr_name = "text_model"
     # pixel_values (B, num_images, C, H, W) and pixel_attention_mask (B, num_images, H, W) are batch-first
-    _batch_sortable_kwargs = RBLNImageIndexedBatchSortMixin._batch_sortable_kwargs + (
+    _batch_sortable_kwargs = (
+        *RBLNImageIndexedBatchSortMixin._batch_sortable_kwargs,
         "pixel_values",
         "pixel_attention_mask",
     )
@@ -333,8 +331,6 @@ class RBLNIdefics3ForConditionalGeneration(RBLNModel, RBLNImageIndexedBatchSortM
         if is_prefill_phase:
             generate_idx = attention_mask.sum(dim=-1, keepdim=True).int()
             cache_position = None
-            pixel_values = pixel_values
-            pixel_attention_mask = pixel_attention_mask
         else:
             if inputs_embeds is not None:
                 raise NotImplementedError("Specifying inputs_embeds in decoder phase is not supported.")
@@ -379,7 +375,7 @@ class RBLNIdefics3ForConditionalGeneration(RBLNModel, RBLNImageIndexedBatchSortM
         inputs_embeds: torch.Tensor | None,
         image_hidden_states: torch.Tensor | None,
     ):
-        num_images, _, vision_hidden_size = image_hidden_states.shape
+        _num_images, _, vision_hidden_size = image_hidden_states.shape
         special_image_token_mask = input_ids == self.config.image_token_id
         new_inputs_embeds = inputs_embeds.clone()
         reshaped_image_hidden_states = image_hidden_states.view(-1, vision_hidden_size)
@@ -393,7 +389,7 @@ class RBLNIdefics3ForConditionalGeneration(RBLNModel, RBLNImageIndexedBatchSortM
         pixel_attention_mask: torch.BoolTensor | None = None,
         **kwargs,
     ) -> torch.Tensor:
-        batch_size, num_images, num_channels, height, width = pixel_values.shape
+        batch_size, num_images, _num_channels, _height, _width = pixel_values.shape
         pixel_values = pixel_values.to(dtype=self.dtype)  # fp16 compatibility
         pixel_values = pixel_values.view(batch_size * num_images, *pixel_values.shape[2:])
 
@@ -440,11 +436,7 @@ class RBLNIdefics3ForConditionalGeneration(RBLNModel, RBLNImageIndexedBatchSortM
         image_hidden_states: torch.FloatTensor | None = None,
         **kwargs,
     ):
-        if input_ids is not None:
-            batch_size, _ = input_ids.shape
-        elif inputs_embeds is not None:
-            batch_size, _, _ = inputs_embeds.shape
-        else:
+        if input_ids is None and inputs_embeds is None:
             raise ValueError("You have to specify either input_ids or inputs_embeds")
 
         if inputs_embeds is not None and input_ids is None:

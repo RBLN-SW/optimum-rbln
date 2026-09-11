@@ -1,7 +1,7 @@
 import math
 
 import torch
-import torch.nn as nn
+from torch import nn
 from transformers import PreTrainedModel
 
 from ..decoderonly.decoderonly_architecture import DecoderOnlyWrapper, apply_rotary_pos_emb
@@ -25,7 +25,7 @@ class Qwen2_5_VisionTransformerWrapper(nn.Module):
     ):
         wrapped_blocks = []
         for i, block in enumerate(blocks):
-            is_full_attn = True if i in self.fullatt_block_indexes else False
+            is_full_attn = i in self.fullatt_block_indexes
             wrapped_blocks.append(Qwen2_5_VLVisionBlock(block, is_full_attn, window_seq_len, rbln_config))
         return nn.ModuleList(wrapped_blocks)
 
@@ -144,9 +144,9 @@ class Qwen2_5_VLVisionWindowAttention(nn.Module):
         seq_length = hidden_states.shape[0]
         num_windows = seq_length // self.window_seq_len
 
-        window_hidden_states = []
-        for i in range(0, seq_length, self.window_seq_len):
-            window_hidden_states.append(hidden_states[i : i + self.window_seq_len])
+        window_hidden_states = [
+            hidden_states[i : i + self.window_seq_len] for i in range(0, seq_length, self.window_seq_len)
+        ]
         hidden_states = torch.stack(window_hidden_states)
 
         q, k, v = (

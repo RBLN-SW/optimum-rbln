@@ -14,11 +14,11 @@
 
 import copy
 import math
+from typing import TYPE_CHECKING
 
 import torch
 import torch.nn.functional as F
 from torch import nn
-from transformers import PreTrainedModel
 from transformers.models.qwen3_5.modeling_qwen3_5 import l2norm
 
 from ..decoderonly.decoderonly_architecture import (
@@ -31,6 +31,10 @@ from ..decoderonly.decoderonly_architecture import (
     apply_rotary_pos_emb_partial,
     slice_and_unsqueeze_cos_sin,
 )
+
+
+if TYPE_CHECKING:
+    from transformers import PreTrainedModel
 
 
 class Qwen3_5VisionAttention(nn.Module):
@@ -175,7 +179,7 @@ def rbln_chunk_gated_delta_rule(
 
     # inter-chunk: sequential carry across sub-chunks.
     core_chunks = []
-    for i in range(0, n_chunks):
+    for i in range(n_chunks):
         q_i, k_i, v_i = query[:, :, i], key[:, :, i], value[:, :, i]
         attn_intra = (q_i @ k_i.transpose(-1, -2)) * decay_mask[:, :, i]
         v_prime = k_cumdecay[:, :, i] @ last_recurrent_state
@@ -567,8 +571,8 @@ class Qwen3_5Model(DecoderOnlyModel):
         cache_position: torch.Tensor = None,
         position_ids: torch.Tensor = None,
         query_position: torch.Tensor = None,
-        past_key_values: tuple[tuple[torch.Tensor]] = None,
-        past_states: tuple[tuple[torch.Tensor]] = None,
+        past_key_values: tuple[tuple[torch.Tensor]] | None = None,
+        past_states: tuple[tuple[torch.Tensor]] | None = None,
         rotary_emb: nn.Module | None = None,
         global_block_tables: torch.Tensor | None = None,
         local_block_tables: torch.Tensor | None = None,
@@ -660,8 +664,8 @@ class Qwen3_5ForCausalLM(DecoderOnlyForCausalLM):
         cache_position: torch.Tensor = None,
         position_ids: torch.Tensor = None,
         query_position: torch.Tensor = None,
-        past_key_values: tuple[tuple[torch.Tensor]] = None,
-        past_states: tuple[tuple[torch.Tensor]] = None,
+        past_key_values: tuple[tuple[torch.Tensor]] | None = None,
+        past_states: tuple[tuple[torch.Tensor]] | None = None,
         rotary_emb: nn.Module = None,
         global_block_tables: torch.Tensor | None = None,
         local_block_tables: torch.Tensor | None = None,

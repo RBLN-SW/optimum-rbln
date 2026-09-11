@@ -17,7 +17,6 @@ from typing import TYPE_CHECKING, Any, Union
 import torch
 from diffusers.models.modeling_outputs import Transformer2DModelOutput
 from diffusers.models.transformers.transformer_sd3 import SD3Transformer2DModel
-from transformers import PretrainedConfig
 
 from ....configuration_utils import RBLNCompileConfig, RBLNModelConfig
 from ....modeling import RBLNModel
@@ -26,7 +25,7 @@ from ...configurations import RBLNSD3Transformer2DModelConfig
 
 
 if TYPE_CHECKING:
-    from transformers import AutoFeatureExtractor, AutoProcessor, AutoTokenizer, PreTrainedModel
+    from transformers import AutoFeatureExtractor, AutoProcessor, AutoTokenizer, PretrainedConfig, PreTrainedModel
 
     from ...modeling_diffusers import RBLNDiffusionMixin, RBLNDiffusionMixinConfig
 
@@ -45,7 +44,7 @@ class SD3Transformer2DModelWrapper(torch.nn.Module):
         pooled_projections: torch.FloatTensor = None,
         timestep: torch.LongTensor = None,
         # need controlnet support?
-        block_controlnet_hidden_states: list = None,
+        block_controlnet_hidden_states: list | None = None,
         joint_attention_kwargs: dict[str, Any] | None = None,
         return_dict: bool = True,
     ):
@@ -156,7 +155,7 @@ class RBLNSD3Transformer2DModel(RBLNModel):
         encoder_hidden_states: torch.FloatTensor = None,
         pooled_projections: torch.FloatTensor = None,
         timestep: torch.LongTensor = None,
-        block_controlnet_hidden_states: list = None,
+        block_controlnet_hidden_states: list | None = None,
         joint_attention_kwargs: dict[str, Any] | None = None,
         return_dict: bool = True,
         **kwargs,

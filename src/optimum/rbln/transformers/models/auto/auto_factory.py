@@ -69,7 +69,7 @@ class _BaseAutoModelClass:
         cls,
         pretrained_model_name_or_path: str | Path,
         *args: Any,
-        export: bool = None,
+        export: bool | None = None,
         **kwargs: Any,
     ):
         """
@@ -161,12 +161,12 @@ class _BaseAutoModelClass:
         if has_remote_code:
             class_ref = config.auto_map[convert_rbln_to_hf_model_name(cls.__name__)]
             model_class = get_class_from_dynamic_module(class_ref, pretrained_model_name_or_path, **kwargs)
-        elif type(config) in cls._model_mapping.keys():
+        elif type(config) in cls._model_mapping:
             model_class = _get_model_class(config, cls._model_mapping)
         else:
             raise ValueError(
                 f"Unrecognized configuration class {config.__class__} for this kind of AutoModel: {cls.__name__}.\n"
-                f"Model type should be one of {', '.join(c.__name__ for c in cls._model_mapping.keys())}."
+                f"Model type should be one of {', '.join(c.__name__ for c in cls._model_mapping)}."
             )
 
         if model_class.__name__ != config.architectures[0]:
@@ -208,7 +208,7 @@ class _BaseAutoModelClass:
     def from_pretrained(
         cls,
         model_id: str | Path,
-        export: bool = None,
+        export: bool | None = None,
         rbln_config: dict | RBLNModelConfig | None = None,
         **kwargs: dict[str, Any] | None,
     ) -> RBLNBaseModel:
@@ -292,8 +292,7 @@ class _BaseAutoModelClass:
             raise ValueError("`rbln_cls` must be a subclass of RBLNBaseModel.")
 
         native_cls = getattr(importlib.import_module("optimum.rbln"), rbln_cls.__name__, None)
-        if rbln_cls.__name__ in MODEL_MAPPING or native_cls is not None:
-            if not exist_ok:
-                raise ValueError(f"Model for {rbln_cls.__name__} already registered.")
+        if (rbln_cls.__name__ in MODEL_MAPPING or native_cls is not None) and not exist_ok:
+            raise ValueError(f"Model for {rbln_cls.__name__} already registered.")
 
         MODEL_MAPPING[rbln_cls.__name__] = rbln_cls

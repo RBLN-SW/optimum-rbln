@@ -17,8 +17,8 @@ from .modeling_roberta import RBLNRobertaForMaskedLM, RBLNRobertaForSequenceClas
 
 
 __all__ = [
-    "RBLNRobertaForMaskedLMConfig",
-    "RBLNRobertaForSequenceClassificationConfig",
     "RBLNRobertaForMaskedLM",
+    "RBLNRobertaForMaskedLMConfig",
     "RBLNRobertaForSequenceClassification",
+    "RBLNRobertaForSequenceClassificationConfig",
 ]

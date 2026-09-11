@@ -17,6 +17,6 @@ from .modeling_modernbert import RBLNModernBertForMaskedLM
 
 
 __all__ = [
-    "RBLNModernBertForMaskedLMConfig",
     "RBLNModernBertForMaskedLM",
+    "RBLNModernBertForMaskedLMConfig",
 ]

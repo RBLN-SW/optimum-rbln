@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import contextlib
 import json
 from pathlib import Path
 
@@ -73,7 +74,7 @@ def pull_compiled_model_from_hub(
             # Download all .rbln files found in cache (hf_hub_download will use cache if available)
             for rbln_file in rbln_files:
                 filename = rbln_file.name if subfolder == "" else f"{subfolder}/{rbln_file.name}"
-                try:
+                with contextlib.suppress(LocalEntryNotFoundError):
                     hf_hub_download(
                         repo_id=model_id,
                         filename=filename,
@@ -83,9 +84,6 @@ def pull_compiled_model_from_hub(
                         force_download=force_download,
                         local_files_only=False,
                     )
-                except LocalEntryNotFoundError:
-                    # File might not exist in repo, skip it
-                    pass
 
             # Note: We skip the API call here since we're using cached files
             # If there are additional files in the repo that aren't cached,

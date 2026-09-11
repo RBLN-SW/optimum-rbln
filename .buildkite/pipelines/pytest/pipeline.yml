@@ -39,7 +39,7 @@ _if_changed_cli: &if_changed_cli
     - "src/**"
     - "tests/__init__.py"
     - "tests/test_base.py"
-    - ".github/scripts/test_cli.py"
+    - "scripts/test_cli.py"
 
 _if_changed_diffusers: &if_changed_diffusers
   include:
@@ -94,7 +94,7 @@ _sync: &sync |
   if [ ! -f src/optimum/rbln/__version__.py ]; then
     uv run --no-sync python -c "import importlib.metadata as m, pathlib; pathlib.Path('src/optimum/rbln/__version__.py').write_text('__version__ = version = %r\n' % m.version('optimum-rbln'))"
   fi
-  bash .buildkite/scripts/install-rebel-compiler.sh
+  bash scripts/install-rebel-compiler.sh
 
 _npu: &npu
   npu:
@@ -110,7 +110,7 @@ steps:
     timeout_in_minutes: 60
     command:
       - *sync
-      - "bash .buildkite/scripts/run-suite.sh config"
+      - "bash scripts/run-suite.sh config"
 
   - label: ":pytest: cli-basic"
     if_changed: *if_changed_cli
@@ -120,7 +120,7 @@ steps:
     timeout_in_minutes: 60
     command:
       - *sync
-      - "bash .buildkite/scripts/run-suite.sh cli-basic"
+      - "bash scripts/run-suite.sh cli-basic"
 
   - label: ":pytest: transformers"
     if_changed: *if_changed_transformers
@@ -130,7 +130,7 @@ steps:
     timeout_in_minutes: 60
     command:
       - *sync
-      - "bash .buildkite/scripts/run-suite.sh transformers"
+      - "bash scripts/run-suite.sh transformers"
 
   - label: ":pytest: diffusers"
     if_changed: *if_changed_diffusers
@@ -140,7 +140,7 @@ steps:
     timeout_in_minutes: 60
     command:
       - *sync
-      - "bash .buildkite/scripts/run-suite.sh diffusers"
+      - "bash scripts/run-suite.sh diffusers"
 
   - label: ":pytest: llm 1/4"
     if_changed: *if_changed_llm
@@ -150,7 +150,7 @@ steps:
     timeout_in_minutes: 60
     command:
       - *sync
-      - "bash .buildkite/scripts/run-suite.sh llm 1"
+      - "bash scripts/run-suite.sh llm 1"
 
   - label: ":pytest: llm 2/4"
     if_changed: *if_changed_llm
@@ -160,7 +160,7 @@ steps:
     timeout_in_minutes: 60
     command:
       - *sync
-      - "bash .buildkite/scripts/run-suite.sh llm 2"
+      - "bash scripts/run-suite.sh llm 2"
 
   - label: ":pytest: llm 3/4"
     if_changed: *if_changed_llm
@@ -170,7 +170,7 @@ steps:
     timeout_in_minutes: 60
     command:
       - *sync
-      - "bash .buildkite/scripts/run-suite.sh llm 3"
+      - "bash scripts/run-suite.sh llm 3"
 
   - label: ":pytest: llm 4/4"
     if_changed: *if_changed_llm
@@ -180,4 +180,4 @@ steps:
     timeout_in_minutes: 60
     command:
       - *sync
-      - "bash .buildkite/scripts/run-suite.sh llm 4"
+      - "bash scripts/run-suite.sh llm 4"

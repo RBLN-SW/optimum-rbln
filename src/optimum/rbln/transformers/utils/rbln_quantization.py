@@ -214,9 +214,8 @@ def get_quantized_model(
     # otherwise AutoConfig.from_pretrained will raise an error.
     n_layer_keys = ["num_hidden_layers", "n_layers"]
     for n_layer_key in n_layer_keys:
-        if n_layer_key in kwargs:
-            if kwargs[n_layer_key] is None:
-                kwargs.pop(n_layer_key)
+        if n_layer_key in kwargs and kwargs[n_layer_key] is None:
+            kwargs.pop(n_layer_key)
 
     config = AutoConfig.from_pretrained(
         model_id,
@@ -433,10 +432,7 @@ def canonicalize_checkpoint_items(
                 if len(wshape) == 2:
                     out_features = int(wshape[0])
 
-            if out_features is not None:
-                t = _coerce_per_out_channel_scale(t, out_features)
-            else:
-                t = _scalar_value_as_1d(t)
+            t = _coerce_per_out_channel_scale(t, out_features) if out_features is not None else _scalar_value_as_1d(t)
 
             results.append((target_key, t))
             continue
@@ -453,11 +449,7 @@ def canonicalize_checkpoint_items(
             # For quark-like formats, expand to k/v
             kv_items = _kv_split_items(key, t)
             for k2, v2 in kv_items:
-                if v2.ndim == 0:
-                    pass
-                else:
-                    v2 = _1d_value_as_scalar(v2)
-                results.append((k2, v2))
+                results.append((k2, v2 if v2.ndim == 0 else _1d_value_as_scalar(v2)))
             continue
 
         if _matches_any_alias(key, "k_scale") or _matches_any_alias(key, "v_scale"):
@@ -465,7 +457,7 @@ def canonicalize_checkpoint_items(
             parts = key.split(".")
             # If parent is a projection layer (e.g., k_proj, v_proj), move scale up to self_attn level
             if len(parts) >= 2 and parts[-2] in ("k_proj", "v_proj"):
-                target_key = ".".join(parts[:-2] + [canonical_name])
+                target_key = ".".join([*parts[:-2], canonical_name])
             else:
                 target_key = _replace_last_with(key, canonical_name)
 
@@ -513,19 +505,14 @@ def load_weights_from_files(
                 loaded_input_scale = True
             if key.endswith("weight_scale"):
                 loaded_weight_scale = True
-            if key.endswith("k_scale") or key.endswith("v_scale"):
+            if key.endswith(("k_scale", "v_scale")):
                 loaded_kv_scale = True
 
             # Copy into parameters or buffers
             if key in model_params:
-                # Ensure dtype compatibility
-                if model_params[key].dtype != value.dtype:
-                    value = value.to(model_params[key].dtype)
-                model_params[key].data.copy_(value)
+                model_params[key].data.copy_(value.to(model_params[key].dtype))
             elif key in model_buffers:
-                if model_buffers[key].dtype != value.dtype:
-                    value = value.to(model_buffers[key].dtype)
-                model_buffers[key].data.copy_(value)
+                model_buffers[key].data.copy_(value.to(model_buffers[key].dtype))
             else:
                 unloaded_keys.append(key)
 
@@ -556,11 +543,11 @@ def is_target_for_qlinear_replacement(layer_name: str, layer: torch.nn.Module) -
     """
     Checks if a layer is a target for qlinear replacement.
     """
-    return layer_name.split(".")[-1] in QUANTIZED_WEIGHTS and isinstance(layer, torch.nn.Linear)
+    return layer_name.rsplit(".", maxsplit=1)[-1] in QUANTIZED_WEIGHTS and isinstance(layer, torch.nn.Linear)
 
 
 def is_target_for_adding_kv_scales(layer_name: str) -> bool:
-    return layer_name.split(".")[-1] in ["self_attn"]
+    return layer_name.rsplit(".", maxsplit=1)[-1] in ["self_attn"]
 
 
 def get_parent_and_child(module: torch.nn.Module, full_name: str) -> tuple:

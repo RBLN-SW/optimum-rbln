@@ -453,10 +453,7 @@ class RBLNWhisperForConditionalGeneration(RBLNModel, RBLNWhisperGenerationMixin)
                     cross_attentions.append(decoder_output.cross_attentions)
                     lm_logits = decoder_output.logits
 
-            if self.rbln_token_timestamps:
-                cross_attentions = torch.cat(cross_attentions, dim=-2)
-            else:
-                cross_attentions = None
+            cross_attentions = torch.cat(cross_attentions, dim=-2) if self.rbln_token_timestamps else None
 
             return Seq2SeqLMOutput(logits=lm_logits, cross_attentions=cross_attentions)
 

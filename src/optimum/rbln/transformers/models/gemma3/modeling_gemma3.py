@@ -34,7 +34,7 @@ from .gemma3_runtime_utils import RBLNGemma3RuntimeModel
 
 
 if TYPE_CHECKING:
-    from transformers import AutoFeatureExtractor, AutoProcessor, AutoTokenizer, Gemma3ForConditionalGeneration
+    from transformers import AutoFeatureExtractor, AutoProcessor, AutoTokenizer
 
 
 class LoopVisionTower(LoopProcessor):

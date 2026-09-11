@@ -346,7 +346,7 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
         return model
 
     @classmethod
-    def use_query_position(cls, use_local_attention: bool, is_prefill: bool = True, logits_to_keep: int = None):
+    def use_query_position(cls, use_local_attention: bool, is_prefill: bool = True, logits_to_keep: int | None = None):
         return is_prefill and (use_local_attention or logits_to_keep == 1)
 
     @classmethod
@@ -523,28 +523,26 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
                 # Do nothing
                 pass
 
-            else:
-                if rbln_config.kvcache_num_blocks > rbln_config.num_full_blocks:
-                    logger.warning(
-                        f"The set `kvcache_num_blocks` ({rbln_config.kvcache_num_blocks}) is greater"
-                        f" than the required number of blocks ({rbln_config.num_full_blocks})."
-                        "This can cause a failure during model compilation."
-                    )
-                elif rbln_config.kvcache_num_blocks < rbln_config.num_min_blocks:
-                    raise ValueError(
-                        f"The set `kvcache_num_blocks` ({rbln_config.kvcache_num_blocks}) is less"
-                        f" than the minimum number of blocks ({rbln_config.num_min_blocks})."
-                    )
-        else:
-            if rbln_config.is_auto_num_blocks:
-                # Eager attention should use fixed number of blocks.
-                rbln_config.kvcache_num_blocks = rbln_config.num_full_blocks
             elif rbln_config.kvcache_num_blocks > rbln_config.num_full_blocks:
                 logger.warning(
                     f"The set `kvcache_num_blocks` ({rbln_config.kvcache_num_blocks}) is greater"
                     f" than the required number of blocks ({rbln_config.num_full_blocks})."
                     "This can cause a failure during model compilation."
                 )
+            elif rbln_config.kvcache_num_blocks < rbln_config.num_min_blocks:
+                raise ValueError(
+                    f"The set `kvcache_num_blocks` ({rbln_config.kvcache_num_blocks}) is less"
+                    f" than the minimum number of blocks ({rbln_config.num_min_blocks})."
+                )
+        elif rbln_config.is_auto_num_blocks:
+            # Eager attention should use fixed number of blocks.
+            rbln_config.kvcache_num_blocks = rbln_config.num_full_blocks
+        elif rbln_config.kvcache_num_blocks > rbln_config.num_full_blocks:
+            logger.warning(
+                f"The set `kvcache_num_blocks` ({rbln_config.kvcache_num_blocks}) is greater"
+                f" than the required number of blocks ({rbln_config.num_full_blocks})."
+                "This can cause a failure during model compilation."
+            )
 
         return rbln_config
 
@@ -688,7 +686,7 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
         """
         inputs = inputs_embeds if inputs_embeds is not None else input_ids
         batch_size = inputs.shape[0]
-        position_embed = kwargs.get("position_embed", None)
+        position_embed = kwargs.get("position_embed")
 
         if batch_size != self.rbln_config.batch_size:
             raise ValueError(
@@ -788,10 +786,7 @@ class RBLNDecoderOnlyModelForCausalLM(RBLNDecoderOnlyModel, RBLNDecoderOnlyGener
             raise ValueError("Model is not configured with LoRA. Cannot set adapter.")
 
         # Convert single adapter name to list for uniform processing
-        if isinstance(adapter_name, str):
-            adapter_names = [adapter_name]
-        else:
-            adapter_names = adapter_name
+        adapter_names = [adapter_name] if isinstance(adapter_name, str) else adapter_name
 
         # Validate that all adapter names exist
         available_adapters = {

@@ -41,14 +41,14 @@ def infer_module_name(file_path: Path) -> str:
 
     # Remove .py extension from the last part
     if module_parts and module_parts[-1].endswith(".py"):
-        module_parts = module_parts[:-1] + (module_parts[-1][:-3],)
+        module_parts = (*module_parts[:-1], module_parts[-1][:-3])
 
     # Join with dots
     module_name = ".".join(module_parts)
     return module_name
 
 
-def test_mkdocstrings_parsing(file_path: Path, module_name: str = None) -> bool:
+def check_mkdocstrings_parsing(file_path: Path, module_name: str | None = None) -> bool:
     """Test if mkdocstrings can parse the module documentation."""
     try:
         if module_name:
@@ -68,7 +68,7 @@ def test_mkdocstrings_parsing(file_path: Path, module_name: str = None) -> bool:
                     "⚠️ No module name provided, and the file is not a configuration or modeling file, skipping mkdocstrings test"
                 )
                 return True
-            print(f"ℹ️  Auto-inferred module name: {inferred_module}")
+            print(f"Auto-inferred module name: {inferred_module}")
             test_content = f"""# Test Documentation
 
 :::{inferred_module}
@@ -97,7 +97,7 @@ plugins:
             (docs_dir / "index.md").write_text(test_content)
 
             result = subprocess.run(
-                ["mkdocs", "build", "--strict"], cwd=tmp_path, capture_output=True, text=True, timeout=10
+                ["mkdocs", "build", "--strict"], cwd=tmp_path, capture_output=True, text=True, timeout=10, check=False
             )
 
             if result.returncode != 0:
@@ -147,7 +147,7 @@ def main():
         print(f"📦 Module: {module_name}")
 
     # Test mkdocstrings compatibility
-    mkdocs_ok = test_mkdocstrings_parsing(file_path, module_name)
+    mkdocs_ok = check_mkdocstrings_parsing(file_path, module_name)
 
     if mkdocs_ok:
         print("✅ mkdocstrings parsing test passed!")
