@@ -32,6 +32,10 @@ case "$suite" in
     uv run --no-sync pytest -n 1 tests/test_llm.py --splits 4 --group "$group" -vv --durations 0 ;;
   cli-basic)
     uv run --no-sync .github/scripts/test_cli.py basic ;;
+  cli-argument-parsing)
+    uv run --no-sync .github/scripts/test_cli.py argument-parsing ;;
+  cli-error-handling)
+    uv run --no-sync .github/scripts/test_cli.py error-handling ;;
   *)
     echo "unknown suite: $suite" >&2; exit 2 ;;
 esac

@@ -36,12 +36,20 @@ steps:
   # All gates must pass before the NPU pipeline is even uploaded.
   - wait: ~
 
+  # A [pytest-full] commit (the compiler-update bot's PRs) runs every suite at the
+  # full level, so it uploads without --git-diff-base: nothing is path-gated away.
   - label: ":sparkles: upload pytest"
     checkout:
       sparse:
         paths:
           - .buildkite
     command: |
-      TARGET_BRANCH=$${BUILDKITE_PULL_REQUEST_BASE_BRANCH:-dev}
-      git fetch origin $$TARGET_BRANCH
-      buildkite-agent pipeline upload .buildkite/pipelines/pytest/pipeline.yml --git-diff-base origin/$$TARGET_BRANCH
+      if [[ "$$BUILDKITE_MESSAGE" == *"[pytest-full]"* ]]; then
+        echo "--- :mag: [pytest-full] in commit message"
+        export OPTIMUM_RBLN_TEST_LEVEL=full
+        buildkite-agent pipeline upload .buildkite/pipelines/pytest/pipeline.yml
+      else
+        TARGET_BRANCH=$${BUILDKITE_PULL_REQUEST_BASE_BRANCH:-dev}
+        git fetch origin $$TARGET_BRANCH
+        buildkite-agent pipeline upload .buildkite/pipelines/pytest/pipeline.yml --git-diff-base origin/$$TARGET_BRANCH
+      fi
