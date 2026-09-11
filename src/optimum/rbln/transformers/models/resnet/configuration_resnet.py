@@ -46,3 +46,8 @@ class RBLNResNetForImageClassificationConfig(RBLNModelForImageClassificationConf
         """
         super().__init__(image_size=image_size, batch_size=batch_size, **kwargs)
         self.output_hidden_states = output_hidden_states
+
+
+__all__ = [
+    "RBLNResNetForImageClassificationConfig",
+]

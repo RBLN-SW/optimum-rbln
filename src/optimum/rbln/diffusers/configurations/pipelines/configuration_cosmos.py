@@ -115,3 +115,9 @@ class RBLNCosmosVideoToWorldPipelineConfig(RBLNCosmosPipelineBaseConfig):
     """Config for Cosmos Video2World Pipeline"""
 
     _vae_uses_encoder = True
+
+
+__all__ = [
+    "RBLNCosmosTextToWorldPipelineConfig",
+    "RBLNCosmosVideoToWorldPipelineConfig",
+]

@@ -43,3 +43,9 @@ class RBLNGemma2ModelConfig(RBLNDecoderOnlyModelConfig):
     Configuration class for RBLN Gemma2 models.
     This class is an alias of RBLNDecoderOnlyModelConfig.
     """
+
+
+__all__ = [
+    "RBLNGemma2ForCausalLMConfig",
+    "RBLNGemma2ModelConfig",
+]

@@ -239,3 +239,12 @@ class RBLNQwen3_5ForConditionalGenerationConfig(RBLNDecoderOnlyModelForCausalLMC
         self._load_visual_runtime = _load_visual_runtime
         self.gdn_chunk_size = MAX_GDN_CHUNK_SIZE if gdn_chunk_size is None else gdn_chunk_size
         self.linear_attention_layers = linear_attention_layers or []
+
+
+__all__ = [
+    "RBLNQwen3_5ForCausalLMConfig",
+    "RBLNQwen3_5ForConditionalGenerationConfig",
+    "RBLNQwen3_5ModelConfig",
+    "RBLNQwen3_5TextModelConfig",
+    "RBLNQwen3_5VisionModelConfig",
+]

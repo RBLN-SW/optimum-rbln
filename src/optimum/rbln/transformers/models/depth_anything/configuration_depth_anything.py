@@ -22,3 +22,8 @@ class RBLNDepthAnythingForDepthEstimationConfig(RBLNModelForDepthEstimationConfi
     This configuration class stores the configuration parameters specific to
     RBLN-optimized Depth Anything V2 Small models for depth estimation tasks.
     """
+
+
+__all__ = [
+    "RBLNDepthAnythingForDepthEstimationConfig",
+]

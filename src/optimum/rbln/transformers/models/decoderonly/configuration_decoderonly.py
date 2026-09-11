@@ -385,3 +385,9 @@ class RBLNDecoderOnlyModelForCausalLMConfig(RBLNDecoderOnlyModelConfig):
 
     _default_phases = ["prefill", "decode"]
     _default_logits_to_keep = 1
+
+
+__all__ = [
+    "RBLNDecoderOnlyModelConfig",
+    "RBLNDecoderOnlyModelForCausalLMConfig",
+]

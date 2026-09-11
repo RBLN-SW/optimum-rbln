@@ -835,3 +835,10 @@ class RBLNQwen2_5_VLForConditionalGeneration(
                 generate_idx=generate_idx,
                 hidden_states=all_hidden_states,
             )
+
+
+__all__ = [
+    "RBLNQwen2_5_VLForConditionalGeneration",
+    "RBLNQwen2_5_VLModel",
+    "RBLNQwen2_5_VisionTransformerPretrainedModel",
+]

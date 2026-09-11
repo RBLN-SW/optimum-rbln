@@ -125,3 +125,8 @@ class RBLNCosmosVideoToWorldPipeline(RBLNDiffusionMixin, CosmosVideoToWorldPipel
         return super().from_pretrained(
             model_id, export=export, safety_checker=safety_checker, rbln_config=rbln_config, **kwargs
         )
+
+
+__all__ = [
+    "RBLNCosmosVideoToWorldPipeline",
+]

@@ -12,6 +12,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .prior_transformer import RBLNPriorTransformer
-from .transformer_cosmos import RBLNCosmosTransformer3DModel
-from .transformer_sd3 import RBLNSD3Transformer2DModel
+from typing import TYPE_CHECKING
+
+from transformers.utils import _LazyModule
+
+from ....utils.import_utils import define_import_structure
+
+
+if TYPE_CHECKING:
+    from .prior_transformer import *
+    from .transformer_cosmos import *
+    from .transformer_sd3 import *
+else:
+    import sys
+
+    _file = globals()["__file__"]
+    sys.modules[__name__] = _LazyModule(__name__, _file, define_import_structure(_file), module_spec=__spec__)

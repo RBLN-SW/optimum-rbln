@@ -69,3 +69,9 @@ class RBLNRobertaForSequenceClassification(RBLNModelForSequenceClassification):
             The model outputs. If return_dict=False is passed, returns a tuple of tensors. Otherwise, returns a SequenceClassifierOutput object.
         """
         return super().forward(input_ids, attention_mask, **kwargs)
+
+
+__all__ = [
+    "RBLNRobertaForMaskedLM",
+    "RBLNRobertaForSequenceClassification",
+]

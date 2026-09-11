@@ -361,3 +361,14 @@ class RBLNKandinskyV22Img2ImgCombinedPipelineConfig(RBLNKandinskyV22CombinedPipe
     """Configuration class for the Kandinsky V2.2 combined image-to-image pipeline."""
 
     _decoder_pipe_cls = RBLNKandinskyV22Img2ImgPipelineConfig
+
+
+__all__ = [
+    "RBLNKandinskyV22CombinedPipelineConfig",
+    "RBLNKandinskyV22Img2ImgCombinedPipelineConfig",
+    "RBLNKandinskyV22Img2ImgPipelineConfig",
+    "RBLNKandinskyV22InpaintCombinedPipelineConfig",
+    "RBLNKandinskyV22InpaintPipelineConfig",
+    "RBLNKandinskyV22PipelineConfig",
+    "RBLNKandinskyV22PriorPipelineConfig",
+]

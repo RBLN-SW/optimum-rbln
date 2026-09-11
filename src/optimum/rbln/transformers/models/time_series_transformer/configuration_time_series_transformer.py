@@ -39,3 +39,8 @@ class RBLNTimeSeriesTransformerForPredictionConfig(RBLNModelConfig):
         self.enc_max_seq_len = enc_max_seq_len
         self.dec_max_seq_len = dec_max_seq_len
         self.num_parallel_samples = num_parallel_samples
+
+
+__all__ = [
+    "RBLNTimeSeriesTransformerForPredictionConfig",
+]

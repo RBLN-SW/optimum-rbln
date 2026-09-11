@@ -587,3 +587,9 @@ class RBLNPaliGemmaModel(RBLNModel):
             image_hidden_states=image_features if pixel_values is not None else None,
             hidden_states=outputs.hidden_states if output_hidden_states else None,
         )
+
+
+__all__ = [
+    "RBLNPaliGemmaForConditionalGeneration",
+    "RBLNPaliGemmaModel",
+]

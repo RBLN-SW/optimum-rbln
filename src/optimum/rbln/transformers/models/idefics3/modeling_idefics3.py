@@ -524,3 +524,9 @@ class RBLNIdefics3ForConditionalGeneration(RBLNModel, RBLNImageIndexedBatchSortM
                 logits=logits,
                 generate_idx=generate_idx,
             )
+
+
+__all__ = [
+    "RBLNIdefics3ForConditionalGeneration",
+    "RBLNIdefics3VisionTransformer",
+]

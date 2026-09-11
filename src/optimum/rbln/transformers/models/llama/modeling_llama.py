@@ -102,3 +102,9 @@ class RBLNLlamaModel(RBLNDecoderOnlyModel):
     """
 
     _decoder_wrapper_cls = LlamaWrapper
+
+
+__all__ = [
+    "RBLNLlamaForCausalLM",
+    "RBLNLlamaModel",
+]

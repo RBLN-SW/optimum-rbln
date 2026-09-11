@@ -441,3 +441,9 @@ class RBLNGemma3ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
             rbln_config.phases = ["prefill", "image_prefill", "decode"]
 
         return rbln_config
+
+
+__all__ = [
+    "RBLNGemma3ForCausalLM",
+    "RBLNGemma3ForConditionalGeneration",
+]

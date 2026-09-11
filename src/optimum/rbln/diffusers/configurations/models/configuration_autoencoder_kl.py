@@ -71,3 +71,8 @@ class RBLNAutoencoderKLConfig(RBLNModelConfig):
     @property
     def latent_sample_size(self):
         return (self.image_size[0] // self.vae_scale_factor, self.image_size[1] // self.vae_scale_factor)
+
+
+__all__ = [
+    "RBLNAutoencoderKLConfig",
+]

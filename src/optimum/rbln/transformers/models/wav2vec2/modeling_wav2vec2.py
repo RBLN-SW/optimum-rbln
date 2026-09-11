@@ -100,3 +100,8 @@ class RBLNWav2Vec2ForCTC(RBLNModel):
             The model outputs. If return_dict=False is passed, returns a tuple of tensors. Otherwise, returns a CausalLMOutput object.
         """
         return super().forward(input_values=input_values, return_dict=return_dict, **kwargs)
+
+
+__all__ = [
+    "RBLNWav2Vec2ForCTC",
+]

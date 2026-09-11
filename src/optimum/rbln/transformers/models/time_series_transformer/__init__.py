@@ -12,14 +12,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Portions of this software are licensed under the Apache License,
-# Version 2.0. See the NOTICE file distributed with this work for
-# additional information regarding copyright ownership.
+from typing import TYPE_CHECKING
 
-# All other portions of this software, including proprietary code,
-# are the intellectual property of Rebellions Inc. and may not be
-# copied, modified, or distributed without prior written permission
-# from Rebellions Inc.
+from transformers.utils import _LazyModule
 
-from .configuration_time_series_transformer import RBLNTimeSeriesTransformerForPredictionConfig
-from .modeling_time_series_transformer import RBLNTimeSeriesTransformerForPrediction
+from ....utils.import_utils import define_import_structure
+
+
+if TYPE_CHECKING:
+    from .configuration_time_series_transformer import *
+    from .modeling_time_series_transformer import *
+else:
+    import sys
+
+    _file = globals()["__file__"]
+    sys.modules[__name__] = _LazyModule(__name__, _file, define_import_structure(_file), module_spec=__spec__)

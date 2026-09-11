@@ -491,3 +491,8 @@ class RBLNDiffusionMixin:
     def __call__(self, *args, **kwargs):
         kwargs = self.handle_additional_kwargs(**kwargs)
         return super().__call__(*args, **kwargs)
+
+
+__all__ = [
+    "RBLNDiffusionMixin",
+]

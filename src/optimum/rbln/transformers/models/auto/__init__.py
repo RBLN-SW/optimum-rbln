@@ -12,20 +12,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .modeling_auto import (
-    RBLNAutoModel,
-    RBLNAutoModelForAudioClassification,
-    RBLNAutoModelForCausalLM,
-    RBLNAutoModelForCTC,
-    RBLNAutoModelForDepthEstimation,
-    RBLNAutoModelForImageClassification,
-    RBLNAutoModelForImageTextToText,
-    RBLNAutoModelForMaskedLM,
-    RBLNAutoModelForObjectDetection,
-    RBLNAutoModelForQuestionAnswering,
-    RBLNAutoModelForSeq2SeqLM,
-    RBLNAutoModelForSequenceClassification,
-    RBLNAutoModelForSpeechSeq2Seq,
-    RBLNAutoModelForTextEncoding,
-    RBLNAutoModelForZeroShotObjectDetection,
-)
+from typing import TYPE_CHECKING
+
+from transformers.utils import _LazyModule
+
+from ....utils.import_utils import define_import_structure
+
+
+if TYPE_CHECKING:
+    from .modeling_auto import *
+else:
+    import sys
+
+    _file = globals()["__file__"]
+    sys.modules[__name__] = _LazyModule(__name__, _file, define_import_structure(_file), module_spec=__spec__)

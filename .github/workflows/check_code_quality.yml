@@ -27,3 +27,4 @@ jobs:
         run: |
           uv run --no-sync ruff format --check .
           uv run --no-sync ruff check .
+          uv run --no-sync python scripts/check_inits.py

@@ -40,3 +40,8 @@ class RBLNExaoneForCausalLMConfig(RBLNDecoderOnlyModelForCausalLMConfig):
     )
     ```
     """
+
+
+__all__ = [
+    "RBLNExaoneForCausalLMConfig",
+]

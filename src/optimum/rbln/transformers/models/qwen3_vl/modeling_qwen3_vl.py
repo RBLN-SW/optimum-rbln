@@ -995,3 +995,10 @@ class RBLNQwen3VLForConditionalGeneration(RBLNQwenVLBatchSortMixin, RBLNQwen3VLM
                 generate_idx=generate_idx,
                 hidden_states=all_hidden_states,
             )
+
+
+__all__ = [
+    "RBLNQwen3VLForConditionalGeneration",
+    "RBLNQwen3VLModel",
+    "RBLNQwen3VLVisionModel",
+]

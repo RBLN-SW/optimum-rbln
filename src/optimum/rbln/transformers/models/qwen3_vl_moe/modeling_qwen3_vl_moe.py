@@ -136,3 +136,10 @@ class RBLNQwen3VLMoeForConditionalGeneration(RBLNMoeLoadMixin, RBLNQwen3VLForCon
     _decoder_wrapper_cls = Qwen3VLMoe_LanguageModelWrapper
     _use_rotary_emb = False
     _rbln_submodules = [{"name": "visual"}]
+
+
+__all__ = [
+    "RBLNQwen3VLMoeForConditionalGeneration",
+    "RBLNQwen3VLMoeModel",
+    "RBLNQwen3VLMoeVisionModel",
+]

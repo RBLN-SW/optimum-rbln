@@ -30,3 +30,8 @@ class RBLNStableDiffusionXLImg2ImgPipeline(RBLNDiffusionMixin, StableDiffusionXL
     _rbln_config_class = RBLNStableDiffusionXLImg2ImgPipelineConfig
     _submodules = ["text_encoder", "text_encoder_2", "unet", "vae"]
     _upcasts_vae = True
+
+
+__all__ = [
+    "RBLNStableDiffusionXLImg2ImgPipeline",
+]

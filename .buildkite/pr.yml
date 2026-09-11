@@ -23,6 +23,7 @@ steps:
       - "uv sync --locked --python 3.12 --group quality --no-install-project"
       - "uv run --no-sync ruff format --check ."
       - "uv run --no-sync ruff check ."
+      - "uv run --no-sync python scripts/check_inits.py"
 
   # Same check as .github/workflows/test-docstrings.yml.
   - label: ":page_facing_up: docstrings"

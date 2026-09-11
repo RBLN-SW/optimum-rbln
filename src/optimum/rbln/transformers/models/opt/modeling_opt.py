@@ -100,3 +100,9 @@ class RBLNOPTModel(RBLNDecoderOnlyModel):
             model.decoder.layers[i] = cls.modify_opt_decoder_layer(model.decoder.layers[i])
 
         return cls._decoder_wrapper_cls(model, rbln_config=rbln_config, use_rotary_emb=cls._use_rotary_emb).eval()
+
+
+__all__ = [
+    "RBLNOPTForCausalLM",
+    "RBLNOPTModel",
+]

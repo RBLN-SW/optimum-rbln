@@ -12,17 +12,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .configuration_qwen3_5 import (
-    RBLNQwen3_5ForCausalLMConfig,
-    RBLNQwen3_5ForConditionalGenerationConfig,
-    RBLNQwen3_5ModelConfig,
-    RBLNQwen3_5TextModelConfig,
-    RBLNQwen3_5VisionModelConfig,
-)
-from .modeling_qwen3_5 import (
-    RBLNQwen3_5ForCausalLM,
-    RBLNQwen3_5ForConditionalGeneration,
-    RBLNQwen3_5Model,
-    RBLNQwen3_5TextModel,
-    RBLNQwen3_5VisionModel,
-)
+from typing import TYPE_CHECKING
+
+from transformers.utils import _LazyModule
+
+from ....utils.import_utils import define_import_structure
+
+
+if TYPE_CHECKING:
+    from .configuration_qwen3_5 import *
+    from .modeling_qwen3_5 import *
+else:
+    import sys
+
+    _file = globals()["__file__"]
+    sys.modules[__name__] = _LazyModule(__name__, _file, define_import_structure(_file), module_spec=__spec__)

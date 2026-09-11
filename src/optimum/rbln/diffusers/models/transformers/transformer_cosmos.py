@@ -396,3 +396,8 @@ class RBLNCosmosTransformer3DModel(RBLNModel):
             return (hidden_states,)
         else:
             return Transformer2DModelOutput(sample=hidden_states)
+
+
+__all__ = [
+    "RBLNCosmosTransformer3DModel",
+]

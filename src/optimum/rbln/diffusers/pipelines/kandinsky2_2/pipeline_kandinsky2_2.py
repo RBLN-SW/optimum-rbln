@@ -32,3 +32,8 @@ class RBLNKandinskyV22Pipeline(RBLNDiffusionMixin, KandinskyV22Pipeline):
 
     def get_compiled_image_size(self):
         return self.movq.image_size
+
+
+__all__ = [
+    "RBLNKandinskyV22Pipeline",
+]

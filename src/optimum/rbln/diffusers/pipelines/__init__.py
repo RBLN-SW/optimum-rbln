@@ -16,98 +16,20 @@ from typing import TYPE_CHECKING
 
 from transformers.utils import _LazyModule
 
+from ...utils.import_utils import define_import_structure
 
-_import_structure = {
-    "auto_pipeline": [
-        "RBLNAutoPipelineForImage2Image",
-        "RBLNAutoPipelineForInpainting",
-        "RBLNAutoPipelineForText2Image",
-    ],
-    "controlnet": [
-        "RBLNMultiControlNetModel",
-        "RBLNStableDiffusionControlNetImg2ImgPipeline",
-        "RBLNStableDiffusionControlNetPipeline",
-        "RBLNStableDiffusionXLControlNetImg2ImgPipeline",
-        "RBLNStableDiffusionXLControlNetPipeline",
-    ],
-    "cosmos": [
-        "RBLNCosmosTextToWorldPipeline",
-        "RBLNCosmosVideoToWorldPipeline",
-        "RBLNCosmosSafetyChecker",
-    ],
-    "kandinsky2_2": [
-        "RBLNKandinskyV22CombinedPipeline",
-        "RBLNKandinskyV22Img2ImgCombinedPipeline",
-        "RBLNKandinskyV22InpaintCombinedPipeline",
-        "RBLNKandinskyV22InpaintPipeline",
-        "RBLNKandinskyV22Img2ImgPipeline",
-        "RBLNKandinskyV22PriorPipeline",
-        "RBLNKandinskyV22Pipeline",
-    ],
-    "stable_diffusion": [
-        "RBLNStableDiffusionImg2ImgPipeline",
-        "RBLNStableDiffusionPipeline",
-        "RBLNStableDiffusionInpaintPipeline",
-    ],
-    "stable_diffusion_xl": [
-        "RBLNStableDiffusionXLImg2ImgPipeline",
-        "RBLNStableDiffusionXLPipeline",
-        "RBLNStableDiffusionXLInpaintPipeline",
-    ],
-    "stable_diffusion_3": [
-        "RBLNStableDiffusion3Pipeline",
-        "RBLNStableDiffusion3Img2ImgPipeline",
-        "RBLNStableDiffusion3InpaintPipeline",
-    ],
-    "stable_video_diffusion": [
-        "RBLNStableVideoDiffusionPipeline",
-    ],
-}
+
 if TYPE_CHECKING:
-    from .auto_pipeline import (
-        RBLNAutoPipelineForImage2Image,
-        RBLNAutoPipelineForInpainting,
-        RBLNAutoPipelineForText2Image,
-    )
-    from .controlnet import (
-        RBLNMultiControlNetModel,
-        RBLNStableDiffusionControlNetImg2ImgPipeline,
-        RBLNStableDiffusionControlNetPipeline,
-        RBLNStableDiffusionXLControlNetImg2ImgPipeline,
-        RBLNStableDiffusionXLControlNetPipeline,
-    )
-    from .cosmos import RBLNCosmosSafetyChecker, RBLNCosmosTextToWorldPipeline, RBLNCosmosVideoToWorldPipeline
-    from .kandinsky2_2 import (
-        RBLNKandinskyV22CombinedPipeline,
-        RBLNKandinskyV22Img2ImgCombinedPipeline,
-        RBLNKandinskyV22Img2ImgPipeline,
-        RBLNKandinskyV22InpaintCombinedPipeline,
-        RBLNKandinskyV22InpaintPipeline,
-        RBLNKandinskyV22Pipeline,
-        RBLNKandinskyV22PriorPipeline,
-    )
-    from .stable_diffusion import (
-        RBLNStableDiffusionImg2ImgPipeline,
-        RBLNStableDiffusionInpaintPipeline,
-        RBLNStableDiffusionPipeline,
-    )
-    from .stable_diffusion_3 import (
-        RBLNStableDiffusion3Img2ImgPipeline,
-        RBLNStableDiffusion3InpaintPipeline,
-        RBLNStableDiffusion3Pipeline,
-    )
-    from .stable_diffusion_xl import (
-        RBLNStableDiffusionXLImg2ImgPipeline,
-        RBLNStableDiffusionXLInpaintPipeline,
-        RBLNStableDiffusionXLPipeline,
-    )
-    from .stable_video_diffusion import RBLNStableVideoDiffusionPipeline
+    from .auto_pipeline import *
+    from .controlnet import *
+    from .cosmos import *
+    from .kandinsky2_2 import *
+    from .stable_diffusion import *
+    from .stable_diffusion_3 import *
+    from .stable_diffusion_xl import *
+    from .stable_video_diffusion import *
 else:
     import sys
 
-    sys.modules[__name__] = _LazyModule(
-        __name__,
-        globals()["__file__"],
-        _import_structure,
-        module_spec=__spec__,
-    )
+    _file = globals()["__file__"]
+    sys.modules[__name__] = _LazyModule(__name__, _file, define_import_structure(_file), module_spec=__spec__)

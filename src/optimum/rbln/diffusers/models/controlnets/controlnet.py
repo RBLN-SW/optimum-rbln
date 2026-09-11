@@ -283,3 +283,8 @@ class RBLNControlNetModel(RBLNModel):
                 down_block_res_samples=output[:-1],
                 mid_block_res_sample=output[-1],
             )
+
+
+__all__ = [
+    "RBLNControlNetModel",
+]

@@ -12,12 +12,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from typing import TYPE_CHECKING
 
-from .configuration_resnet import RBLNResNetForImageClassificationConfig
-from .modeling_resnet import RBLNResNetForImageClassification
+from transformers.utils import _LazyModule
+
+from ....utils.import_utils import define_import_structure
 
 
-__all__ = [
-    "RBLNResNetForImageClassificationConfig",
-    "RBLNResNetForImageClassification",
-]
+if TYPE_CHECKING:
+    from .configuration_resnet import *
+    from .modeling_resnet import *
+else:
+    import sys
+
+    _file = globals()["__file__"]
+    sys.modules[__name__] = _LazyModule(__name__, _file, define_import_structure(_file), module_spec=__spec__)

@@ -22,3 +22,8 @@ class RBLNModernBertForMaskedLMConfig(RBLNModelForMaskedLMConfig):
     This configuration class stores the configuration parameters specific to
     RBLN-optimized ModernBERT models for masked language modeling tasks.
     """
+
+
+__all__ = [
+    "RBLNModernBertForMaskedLMConfig",
+]

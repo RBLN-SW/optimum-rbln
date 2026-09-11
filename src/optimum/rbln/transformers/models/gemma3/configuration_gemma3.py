@@ -102,3 +102,9 @@ class RBLNGemma3ForConditionalGenerationConfig(RBLNModelConfig):
     @property
     def prefill_chunk_size(self):
         return self.language_model.prefill_chunk_size
+
+
+__all__ = [
+    "RBLNGemma3ForCausalLMConfig",
+    "RBLNGemma3ForConditionalGenerationConfig",
+]

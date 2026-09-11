@@ -304,3 +304,10 @@ class RBLNAutoPipelineForInpainting(RBLNAutoPipelineBase, AutoPipelineForInpaint
             orig_class_name = orig_class_name.replace(to_replace, "ControlInpaintPipeline")
 
         return orig_class_name
+
+
+__all__ = [
+    "RBLNAutoPipelineForImage2Image",
+    "RBLNAutoPipelineForInpainting",
+    "RBLNAutoPipelineForText2Image",
+]

@@ -70,3 +70,9 @@ class RBLNPegasusForConditionalGeneration(RBLNModelForSeq2SeqLM):
             return redirect(val)
 
         return val
+
+
+__all__ = [
+    "RBLNPegasusForConditionalGeneration",
+    "RBLNPegasusModel",
+]

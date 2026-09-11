@@ -40,3 +40,8 @@ class RBLNMidmLMHeadModelConfig(RBLNDecoderOnlyModelForCausalLMConfig):
     )
     ```
     """
+
+
+__all__ = [
+    "RBLNMidmLMHeadModelConfig",
+]

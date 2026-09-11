@@ -485,3 +485,8 @@ class RBLNWhisperForConditionalGeneration(RBLNModel, RBLNWhisperGenerationMixin)
             lm_logits = decoder_output.logits
             self.language_cross = decoder_output.cross_attentions
             return Seq2SeqLMOutput(logits=lm_logits)
+
+
+__all__ = [
+    "RBLNWhisperForConditionalGeneration",
+]

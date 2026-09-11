@@ -128,3 +128,8 @@ class RBLNDetrForObjectDetection(RBLNModel):
             last_hidden_state=output[2],
             encoder_last_hidden_state=output[3],
         )
+
+
+__all__ = [
+    "RBLNDetrForObjectDetection",
+]

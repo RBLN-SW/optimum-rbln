@@ -1,34 +1,34 @@
-from .configuration_controlnet import (
-    RBLNStableDiffusionControlNetImg2ImgPipelineConfig,
-    RBLNStableDiffusionControlNetPipelineConfig,
-    RBLNStableDiffusionXLControlNetImg2ImgPipelineConfig,
-    RBLNStableDiffusionXLControlNetPipelineConfig,
-)
-from .configuration_cosmos import RBLNCosmosTextToWorldPipelineConfig, RBLNCosmosVideoToWorldPipelineConfig
-from .configuration_kandinsky2_2 import (
-    RBLNKandinskyV22CombinedPipelineConfig,
-    RBLNKandinskyV22Img2ImgCombinedPipelineConfig,
-    RBLNKandinskyV22Img2ImgPipelineConfig,
-    RBLNKandinskyV22InpaintCombinedPipelineConfig,
-    RBLNKandinskyV22InpaintPipelineConfig,
-    RBLNKandinskyV22PipelineConfig,
-    RBLNKandinskyV22PriorPipelineConfig,
-)
-from .configuration_stable_diffusion import (
-    RBLNStableDiffusionImg2ImgPipelineConfig,
-    RBLNStableDiffusionInpaintPipelineConfig,
-    RBLNStableDiffusionPipelineConfig,
-)
-from .configuration_stable_diffusion_3 import (
-    RBLNStableDiffusion3Img2ImgPipelineConfig,
-    RBLNStableDiffusion3InpaintPipelineConfig,
-    RBLNStableDiffusion3PipelineConfig,
-)
-from .configuration_stable_diffusion_xl import (
-    RBLNStableDiffusionXLImg2ImgPipelineConfig,
-    RBLNStableDiffusionXLInpaintPipelineConfig,
-    RBLNStableDiffusionXLPipelineConfig,
-)
-from .configuration_stable_video_diffusion import (
-    RBLNStableVideoDiffusionPipelineConfig,
-)
+# Copyright 2025 Rebellions Inc. All rights reserved.
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at:
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+from typing import TYPE_CHECKING
+
+from transformers.utils import _LazyModule
+
+from ....utils.import_utils import define_import_structure
+
+
+if TYPE_CHECKING:
+    from .configuration_controlnet import *
+    from .configuration_cosmos import *
+    from .configuration_kandinsky2_2 import *
+    from .configuration_stable_diffusion import *
+    from .configuration_stable_diffusion_3 import *
+    from .configuration_stable_diffusion_xl import *
+    from .configuration_stable_video_diffusion import *
+else:
+    import sys
+
+    _file = globals()["__file__"]
+    sys.modules[__name__] = _LazyModule(__name__, _file, define_import_structure(_file), module_spec=__spec__)
