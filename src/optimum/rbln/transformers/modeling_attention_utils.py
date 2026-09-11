@@ -235,7 +235,7 @@ def _resolve_memory_budget(memory_budget: object | None, available_total: int) -
     elif isinstance(memory_budget, (int, str)):
         budget = parse_byte_size(memory_budget)
     else:
-        raise TypeError(
+        raise ValueError(
             f"memory_budget must be None, a float, an int or a string, got {type(memory_budget).__name__}."
         )
     if budget > available_total:

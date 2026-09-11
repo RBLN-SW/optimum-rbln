@@ -22,7 +22,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, Union, get_args, get_origin, ge
 import rebel
 import torch
 from huggingface_hub.constants import HUGGINGFACE_HUB_CACHE
-from transformers import PretrainedConfig, PreTrainedModel
+from transformers import PretrainedConfig
 from transformers.modeling_outputs import BaseModelOutput
 from typing_extensions import Self
 
@@ -155,7 +155,7 @@ class RBLNModel(RBLNBaseModel):
         # Save configs
         raw_config: Any = model.config if config is None else config
 
-        if isinstance(model, PreTrainedModel) and model.can_generate():
+        if hasattr(model, "can_generate") and model.can_generate():
             import json
 
             generation_config = model.generation_config
