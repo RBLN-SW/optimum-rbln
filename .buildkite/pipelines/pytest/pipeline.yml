@@ -15,6 +15,10 @@ env:
   UV_LINK_MODE: "symlink"
   UV_INDEX_STRATEGY: "unsafe-best-match"
   OPTIMUM_RBLN_TEST_LEVEL: "${OPTIMUM_RBLN_TEST_LEVEL:-default}"
+  # The hub tests push to a private repo under this namespace and skip themselves
+  # while it is unset (tests/test_base.py require_hf_user_id), which is how they
+  # stay out of an ordinary PR: only a full build's uploader exports it.
+  HF_USER_ID: "${HF_USER_ID:-}"
 
 # Run a suite only when the PR touches something that can change its result.
 # Honored because .buildkite/pr.yml uploads this file with --git-diff-base; the
@@ -94,6 +98,9 @@ _secrets: &secrets
   UV_INDEX_REBELLIONS_PASSWORD: REBEL_SW_DEV_PASSWORD
   HF_TOKEN: HF_TOKEN
   HF_HOME: HF_HOME
+  # HF_TOKEN reads gated models; only this one may create a repo under
+  # Rebellions, which is what test_push_to_hub does.
+  HF_AUTH_TOKEN: MODEL_HUB_ACCESS
 
 _sync: &sync "bash .buildkite/scripts/sync.sh"
 

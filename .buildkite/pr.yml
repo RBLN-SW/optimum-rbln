@@ -56,6 +56,7 @@ steps:
       if [[ "$$BUILDKITE_MESSAGE" == *"[pytest-full]"* ]]; then
         echo "--- :mag: [pytest-full] in commit message"
         export OPTIMUM_RBLN_TEST_LEVEL=full
+        export HF_USER_ID=Rebellions
         buildkite-agent pipeline upload .buildkite/pipelines/pytest/pipeline.yml
       else
         TARGET_BRANCH=$${BUILDKITE_PULL_REQUEST_BASE_BRANCH:-dev}
