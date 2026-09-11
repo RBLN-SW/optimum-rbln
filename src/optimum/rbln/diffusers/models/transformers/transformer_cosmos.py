@@ -601,7 +601,7 @@ class RBLNCosmosTransformer3DModel(RBLNModel):
         )
 
         if block_controlnet_hidden_states is not None:
-            # Transfer2.5 graph: residuals stacked into one input, img context appended last.
+            # Transfer2.5: residuals stacked into one input, img context appended last.
             controlnet_states = torch.stack(
                 [state.to(self.rbln_config.dtype) for state in block_controlnet_hidden_states], dim=0
             )

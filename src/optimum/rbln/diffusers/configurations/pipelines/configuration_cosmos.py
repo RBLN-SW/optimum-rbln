@@ -326,9 +326,6 @@ class RBLNCosmos2_5_TransferPipelineConfig(RBLNCosmos2_5_PredictBasePipelineConf
 
     submodules = ["text_encoder", "transformer", "vae", "controlnet", "safety_checker"]
     _vae_uses_encoder = True
-    # compile-time size defaults, matching Cosmos2_5_TransferPipeline.__call__
-    # (num_frames is the CHUNK size: transfer generates long videos auto-regressively
-    # in num_frames_per_chunk windows, so the compiled shapes are per chunk)
     _default_height = 704
     _default_width = 1280
     _default_num_frames = 93
