@@ -15,6 +15,10 @@ env:
   UV_LINK_MODE: "symlink"
   UV_INDEX_STRATEGY: "unsafe-best-match"
   OPTIMUM_RBLN_TEST_LEVEL: "${OPTIMUM_RBLN_TEST_LEVEL:-default}"
+  # The hub tests push to a private repo under this namespace and skip themselves
+  # while it is unset (tests/test_base.py require_hf_user_id), which is how they
+  # stay out of an ordinary PR: only a full build's uploader exports it.
+  HF_USER_ID: "${HF_USER_ID:-}"
 
 # Run a suite only when the PR touches something that can change its result.
 # Honored because .buildkite/pr.yml uploads this file with --git-diff-base; the
@@ -94,20 +98,11 @@ _secrets: &secrets
   UV_INDEX_REBELLIONS_PASSWORD: REBEL_SW_DEV_PASSWORD
   HF_TOKEN: HF_TOKEN
   HF_HOME: HF_HOME
+  # HF_TOKEN reads gated models; only this one may create a repo under
+  # Rebellions, which is what test_push_to_hub does.
+  HF_AUTH_TOKEN: MODEL_HUB_ACCESS
 
-# Pods share UV_CACHE_DIR, so a step often reuses an editable build another pod
-# made. That is what we want -- rebuilding it costs ~18s per step and the install
-# is editable, so the code always comes from this checkout -- but only the pod
-# that built it has the gitignored src/optimum/rbln/__version__.py the hatch-vcs
-# hook writes. The others write it here from the installed metadata; the code
-# reads nothing but __version__ from it.
-_sync: &sync |
-  echo '--- :package: uv sync'
-  uv sync --locked --python 3.12 --group tests
-  if [ ! -f src/optimum/rbln/__version__.py ]; then
-    uv run --no-sync python -c "import importlib.metadata as m, pathlib; pathlib.Path('src/optimum/rbln/__version__.py').write_text('__version__ = version = %r\n' % m.version('optimum-rbln'))"
-  fi
-  bash .buildkite/scripts/install-rebel-compiler.sh
+_sync: &sync "bash .buildkite/scripts/sync.sh"
 
 _npu: &npu
   npu:
