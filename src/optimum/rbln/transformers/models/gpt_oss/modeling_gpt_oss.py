@@ -13,7 +13,7 @@
 # limitations under the License.
 
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Optional
 
 import torch
 from safetensors.torch import load_file
@@ -22,6 +22,7 @@ from transformers.initialization import no_init_weights
 from transformers.integrations.mxfp4 import Mxfp4GptOssExperts
 from transformers.modeling_utils import PreTrainedModel
 
+from ....modeling_base import Preprocessor
 from ....utils.logging import get_logger
 from ...models.decoderonly import (
     RBLNDecoderOnlyModelConfig,
@@ -157,7 +158,7 @@ class RBLNGptOssForCausalLM(RBLNDecoderOnlyModelForCausalLM):
     @classmethod
     def _update_rbln_config(
         cls,
-        preprocessors: Sequence[Any] | None = None,
+        preprocessors: Sequence[Preprocessor] | None = None,
         model: Optional["PreTrainedModel"] = None,
         model_config: Optional["PretrainedConfig"] = None,
         rbln_config: RBLNDecoderOnlyModelForCausalLMConfig | None = None,

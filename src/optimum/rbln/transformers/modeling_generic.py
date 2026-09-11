@@ -40,6 +40,7 @@ from transformers.modeling_outputs import BaseModelOutput, QuestionAnsweringMode
 
 from ..configuration_utils import RBLNCompileConfig, TypeInputInfo
 from ..modeling import RBLNModel
+from ..modeling_base import Preprocessor
 from ..utils.logging import get_logger
 from .configuration_generic import (
     RBLNImageModelConfig,
@@ -85,7 +86,7 @@ class RBLNTransformerEncoder(RBLNModel):
     @classmethod
     def _update_rbln_config(
         cls,
-        preprocessors: Sequence[Any] | None,
+        preprocessors: Sequence[Preprocessor] | None,
         model: "PreTrainedModel",
         model_config: "PretrainedConfig",
         rbln_config: RBLNTransformerEncoderConfig,
@@ -100,7 +101,7 @@ class RBLNTransformerEncoder(RBLNModel):
     @classmethod
     def update_rbln_config_for_transformers_encoder(
         cls,
-        preprocessors: Sequence[Any] | None,
+        preprocessors: Sequence[Preprocessor] | None,
         model: "PreTrainedModel",
         model_config: "PretrainedConfig",
         rbln_config: RBLNTransformerEncoderConfig,
@@ -221,7 +222,7 @@ class RBLNImageModel(RBLNModel):
     @classmethod
     def _update_rbln_config(
         cls,
-        preprocessors: Sequence[Any] | None,
+        preprocessors: Sequence[Preprocessor] | None,
         model: "PreTrainedModel",
         model_config: "PretrainedConfig",
         rbln_config: RBLNImageModelConfig,
@@ -236,7 +237,7 @@ class RBLNImageModel(RBLNModel):
     @classmethod
     def update_rbln_config_for_image_model(
         cls,
-        preprocessors: Sequence[Any] | None,
+        preprocessors: Sequence[Preprocessor] | None,
         model: "PreTrainedModel",
         model_config: "PretrainedConfig",
         rbln_config: RBLNImageModelConfig,

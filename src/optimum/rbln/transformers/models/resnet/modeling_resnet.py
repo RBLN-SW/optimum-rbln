@@ -14,11 +14,12 @@
 
 
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Optional
 
 import torch
 from transformers.modeling_outputs import ImageClassifierOutputWithNoAttention
 
+from ....modeling_base import Preprocessor
 from ...modeling_generic import RBLNModelForImageClassification
 from .configuration_resnet import RBLNResNetForImageClassificationConfig
 
@@ -39,7 +40,7 @@ class RBLNResNetForImageClassification(RBLNModelForImageClassification):
     @classmethod
     def _update_rbln_config(
         cls,
-        preprocessors: Sequence[Any] | None = None,
+        preprocessors: Sequence[Preprocessor] | None = None,
         model: Optional["PreTrainedModel"] = None,
         model_config: Optional["PretrainedConfig"] = None,
         rbln_config: Optional["RBLNResNetForImageClassificationConfig"] = None,

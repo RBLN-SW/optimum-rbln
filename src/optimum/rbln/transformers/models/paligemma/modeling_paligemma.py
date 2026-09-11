@@ -32,6 +32,7 @@ from transformers.models.paligemma.modeling_paligemma import PaligemmaModelOutpu
 
 from ....configuration_utils import RBLNModelConfig
 from ....modeling import RBLNModel
+from ....modeling_base import Preprocessor
 from ....utils.logging import get_logger
 from ...utils.multimodal_batch_sort import RBLNImageIndexedBatchSortMixin
 from ...utils.rbln_runtime_wrapper import LoopProcessor
@@ -117,7 +118,7 @@ class RBLNPaliGemmaForConditionalGeneration(RBLNModel, RBLNImageIndexedBatchSort
         model: "PreTrainedModel",
         submodule_config: PretrainedConfig,
         submodule_rbln_config: RBLNModelConfig,
-        preprocessors: Sequence[Any] | None,
+        preprocessors: Sequence[Preprocessor] | None,
     ):
         if submodule_name == "language_model":
             submodule_config.use_sliding_window = False
@@ -434,7 +435,7 @@ class RBLNPaliGemmaModel(RBLNModel):
         model: "PreTrainedModel",
         submodule_config: PretrainedConfig,
         submodule_rbln_config: RBLNModelConfig,
-        preprocessors: Sequence[Any] | None,
+        preprocessors: Sequence[Preprocessor] | None,
     ):
         if submodule_name == "language_model":
             submodule_config.use_sliding_window = False

@@ -12,7 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import TYPE_CHECKING, Optional, Union
+from collections.abc import Sequence
+from typing import TYPE_CHECKING, Optional
 
 import torch
 from transformers import CLIPTextConfig, CLIPTextModel, CLIPVisionConfig, CLIPVisionModel
@@ -21,6 +22,7 @@ from transformers.models.clip.modeling_clip import CLIPTextModelOutput, CLIPVisi
 
 from ....configuration_utils import RBLNCompileConfig
 from ....modeling import RBLNModel
+from ....modeling_base import Preprocessor
 from ....utils.logging import get_logger
 from .configuration_clip import RBLNCLIPTextModelConfig, RBLNCLIPVisionModelConfig
 
@@ -28,7 +30,7 @@ from .configuration_clip import RBLNCLIPTextModelConfig, RBLNCLIPVisionModelConf
 logger = get_logger(__name__)
 
 if TYPE_CHECKING:
-    from transformers import AutoFeatureExtractor, AutoProcessor, AutoTokenizer, CLIPTextModel, PreTrainedModel
+    from transformers import CLIPTextModel, PreTrainedModel
 
     from ....diffusers.modeling_diffusers import RBLNDiffusionMixin, RBLNDiffusionMixinConfig
 
@@ -70,7 +72,7 @@ class RBLNCLIPTextModel(RBLNModel):
     @classmethod
     def _update_rbln_config(
         cls,
-        preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"],
+        preprocessors: Sequence[Preprocessor],
         model: Optional["PreTrainedModel"] = None,
         model_config: "CLIPTextConfig | None" = None,
         rbln_config: RBLNCLIPTextModelConfig | None = None,
@@ -181,7 +183,7 @@ class RBLNCLIPVisionModel(RBLNModel):
     @classmethod
     def _update_rbln_config(
         cls,
-        preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"],
+        preprocessors: Sequence[Preprocessor],
         model: Optional["PreTrainedModel"] = None,
         model_config: "CLIPVisionConfig | None" = None,
         rbln_config: RBLNCLIPVisionModelConfig | None = None,

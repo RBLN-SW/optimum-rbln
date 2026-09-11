@@ -14,7 +14,7 @@
 
 from collections.abc import Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Optional, Union
+from typing import TYPE_CHECKING, Optional
 
 import torch
 from torch import Tensor, nn
@@ -36,6 +36,7 @@ from transformers.pytorch_utils import meshgrid
 
 from ....configuration_utils import RBLNCompileConfig, RBLNModelConfig
 from ....modeling import RBLNModel
+from ....modeling_base import Preprocessor
 from ....utils.runtime_utils import RBLNPytorchRuntime
 from ..bert.modeling_bert import RBLNBertModel
 from .configuration_grounding_dino import (
@@ -52,9 +53,6 @@ from .grounding_dino_architecture import (
 
 if TYPE_CHECKING:
     from transformers import (
-        AutoFeatureExtractor,
-        AutoProcessor,
-        AutoTokenizer,
         PretrainedConfig,
         PreTrainedModel,
     )
@@ -269,7 +267,7 @@ class RBLNGroundingDinoForObjectDetection(RBLNModel):
     @classmethod
     def _update_rbln_config(
         cls,
-        preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"],
+        preprocessors: Sequence[Preprocessor],
         model: Optional["PreTrainedModel"] = None,
         model_config: RBLNGroundingDinoForObjectDetectionConfig | None = None,
         rbln_config: RBLNGroundingDinoForObjectDetectionConfig | None = None,
@@ -748,7 +746,7 @@ class RBLNGroundingDinoEncoder(RBLNModel):
         cls,
         model: "PreTrainedModel",
         rbln_config: RBLNModelConfig,
-        preprocessors: Sequence[Any] | None,
+        preprocessors: Sequence[Preprocessor] | None,
     ):
         for processor in preprocessors:
             if rbln_config.image_size is None and hasattr(processor, "image_processor"):
@@ -771,7 +769,7 @@ class RBLNGroundingDinoEncoder(RBLNModel):
     @classmethod
     def _update_rbln_config(
         cls,
-        preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"],
+        preprocessors: Sequence[Preprocessor],
         model: Optional["PreTrainedModel"] = None,
         model_config: RBLNGroundingDinoEncoderConfig | None = None,
         rbln_config: RBLNGroundingDinoEncoderConfig | None = None,
@@ -951,7 +949,7 @@ class RBLNGroundingDinoDecoder(RBLNModel):
         cls,
         model: "PreTrainedModel",
         rbln_config: RBLNModelConfig,
-        preprocessors: Sequence[Any] | None,
+        preprocessors: Sequence[Preprocessor] | None,
     ):
         for processor in preprocessors:
             if rbln_config.image_size is None and hasattr(processor, "image_processor"):
@@ -975,7 +973,7 @@ class RBLNGroundingDinoDecoder(RBLNModel):
     @classmethod
     def _update_rbln_config(
         cls,
-        preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"],
+        preprocessors: Sequence[Preprocessor],
         model: Optional["PreTrainedModel"] = None,
         model_config: RBLNGroundingDinoDecoderConfig | None = None,
         rbln_config: RBLNGroundingDinoEncoderConfig | None = None,

@@ -22,7 +22,16 @@ from typing import TYPE_CHECKING, Any, ClassVar, cast
 
 import rebel
 import torch
-from transformers import AutoConfig, AutoModel, GenerationConfig, PretrainedConfig
+from transformers import (
+    AutoConfig,
+    AutoModel,
+    BaseImageProcessor,
+    FeatureExtractionMixin,
+    GenerationConfig,
+    PretrainedConfig,
+    PreTrainedTokenizerBase,
+    ProcessorMixin,
+)
 from transformers.utils.hub import PushToHubMixin
 from typing_extensions import Self
 
@@ -41,6 +50,8 @@ if TYPE_CHECKING:
     HFModel = TransformersPreTrainedModel | ModelMixin
 
 logger = get_logger(__name__)
+
+Preprocessor = PreTrainedTokenizerBase | BaseImageProcessor | FeatureExtractionMixin | ProcessorMixin
 
 
 def normalize_contiguous_(model: torch.nn.Module) -> torch.nn.Module:
@@ -411,7 +422,7 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
     @classmethod
     def _update_rbln_config(
         cls,
-        preprocessors: Sequence[Any] | None,
+        preprocessors: Sequence[Preprocessor] | None,
         model: "HFModel",
         model_config: "PretrainedConfig",
         rbln_config: RBLNModelConfig,
@@ -529,7 +540,7 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
     @classmethod
     def update_rbln_config(
         cls,
-        preprocessors: Sequence[Any] | None,
+        preprocessors: Sequence[Preprocessor] | None,
         model: "HFModel",
         model_config: "PretrainedConfig",
         rbln_config: RBLNModelConfig,

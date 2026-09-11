@@ -12,8 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from collections.abc import Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Optional, Union
+from typing import TYPE_CHECKING, Any, Optional
 
 import rebel
 import torch
@@ -25,6 +26,7 @@ from transformers.models.pixtral.modeling_pixtral import PixtralRMSNorm, Pixtral
 
 from ....configuration_utils import RBLNCompileConfig, RBLNModelConfig
 from ....modeling import RBLNModel
+from ....modeling_base import Preprocessor
 from ....utils.logging import get_logger
 from ....utils.runtime_utils import RBLNPytorchRuntime
 from .configuration_pixtral import RBLNPixtralVisionModelConfig
@@ -34,7 +36,7 @@ from .pixtral_architecture import PixtralAttention
 logger = get_logger(__name__)
 
 if TYPE_CHECKING:
-    from transformers import AutoFeatureExtractor, AutoProcessor, AutoTokenizer, PreTrainedModel
+    from transformers import PreTrainedModel
 
 
 class RBLNRuntimePixtralVisionModel(RBLNPytorchRuntime):
@@ -248,7 +250,7 @@ class RBLNPixtralVisionModel(RBLNModel):
     @classmethod
     def _update_rbln_config(
         cls,
-        preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"],
+        preprocessors: Sequence[Preprocessor],
         model: Optional["PreTrainedModel"] = None,
         model_config: "PixtralVisionConfig | None" = None,
         rbln_config: RBLNPixtralVisionModelConfig | None = None,

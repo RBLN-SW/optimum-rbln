@@ -27,7 +27,7 @@ from transformers.modeling_outputs import BaseModelOutput
 from typing_extensions import Self
 
 from .configuration_utils import DEFAULT_COMPILED_MODEL_NAME, RBLNModelConfig
-from .modeling_base import RBLNBaseModel
+from .modeling_base import Preprocessor, RBLNBaseModel
 from .utils.logging import get_logger
 
 
@@ -84,7 +84,7 @@ class RBLNModel(RBLNBaseModel):
     @classmethod
     def _update_rbln_config(
         cls,
-        preprocessors: Sequence[Any] | None,
+        preprocessors: Sequence[Preprocessor] | None,
         model: "HFModel",
         model_config: "PretrainedConfig",
         rbln_config: RBLNModelConfig,

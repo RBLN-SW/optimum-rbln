@@ -36,6 +36,7 @@ from transformers.modeling_outputs import SampleTSPredictionOutput, Seq2SeqTSMod
 
 from ....configuration_utils import RBLNCompileConfig
 from ....modeling import RBLNModel
+from ....modeling_base import Preprocessor
 from ....utils.runtime_utils import RBLNPytorchRuntime
 from ...modeling_outputs import RBLNSeq2SeqTSDecoderOutput
 from .configuration_time_series_transformer import RBLNTimeSeriesTransformerForPredictionConfig
@@ -223,7 +224,7 @@ class RBLNTimeSeriesTransformerForPrediction(RBLNModel):
     @classmethod
     def _update_rbln_config(
         cls,
-        preprocessors: Sequence[Any] | None = None,
+        preprocessors: Sequence[Preprocessor] | None = None,
         model: Optional["PreTrainedModel"] = None,
         model_config: Optional["PretrainedConfig"] = None,
         rbln_config: RBLNTimeSeriesTransformerForPredictionConfig | None = None,

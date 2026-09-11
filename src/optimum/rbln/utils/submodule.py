@@ -27,6 +27,7 @@ if TYPE_CHECKING:
     from transformers import PreTrainedModel
 
     from ..modeling import RBLNModel
+    from ..modeling_base import Preprocessor
 
 
 logger = get_logger(__name__)
@@ -62,7 +63,7 @@ class SubModulesMixin:
         cls,
         model: "PreTrainedModel",
         rbln_config: RBLNModelConfig,
-        preprocessors: Sequence[Any] | None,
+        preprocessors: "Sequence[Preprocessor] | None",
     ):
         return rbln_config
 
@@ -74,7 +75,7 @@ class SubModulesMixin:
         model: "PreTrainedModel",
         submodule_config: PretrainedConfig,
         submodule_rbln_config: RBLNModelConfig,
-        preprocessors: Sequence[Any] | None,
+        preprocessors: "Sequence[Preprocessor] | None",
     ):
         return submodule_rbln_config
 
