@@ -14,7 +14,8 @@
 
 import inspect
 from abc import ABC
-from typing import TYPE_CHECKING, Any, Optional, Union
+from collections.abc import Sequence
+from typing import TYPE_CHECKING, Any, Optional
 
 import rebel
 import torch
@@ -26,6 +27,7 @@ from transformers.modeling_outputs import BaseModelOutput, ModelOutput, Seq2SeqL
 
 from ....configuration_utils import RBLNCompileConfig
 from ....modeling import RBLNModel
+from ....modeling_base import Preprocessor
 from ....utils.logging import get_logger
 from ....utils.runtime_utils import RBLNPytorchRuntime
 from .configuration_seq2seq import RBLNModelForSeq2SeqLMConfig
@@ -34,7 +36,7 @@ from .configuration_seq2seq import RBLNModelForSeq2SeqLMConfig
 logger = get_logger(__name__)
 
 if TYPE_CHECKING:
-    from transformers import AutoFeatureExtractor, AutoProcessor, AutoTokenizer, PretrainedConfig
+    from transformers import PretrainedConfig
 
 
 class RBLNRuntimeEncoder(RBLNPytorchRuntime):
@@ -202,7 +204,7 @@ class RBLNModelForSeq2SeqLM(RBLNModel, GenerationMixin, ABC):
     @classmethod
     def _update_rbln_config(
         cls,
-        preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"],
+        preprocessors: Sequence[Preprocessor],
         model: Optional["PreTrainedModel"] = None,
         model_config: Optional["PretrainedConfig"] = None,
         rbln_config: RBLNModelForSeq2SeqLMConfig | None = None,
@@ -387,8 +389,8 @@ class RBLNModelForSeq2SeqLM(RBLNModel, GenerationMixin, ABC):
 
     def forward(
         self,
-        decoder_input_ids: torch.LongTensor = None,
-        cache_position: list[torch.Tensor] | torch.Tensor = None,
+        decoder_input_ids: torch.LongTensor | None = None,
+        cache_position: list[torch.Tensor] | torch.Tensor | None = None,
         **kwargs,
     ) -> tuple[torch.FloatTensor]:
         # common decoder

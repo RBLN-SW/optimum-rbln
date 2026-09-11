@@ -13,7 +13,8 @@
 # limitations under the License.
 
 
-from typing import TYPE_CHECKING, Optional, Union
+from collections.abc import Sequence
+from typing import TYPE_CHECKING, Optional
 
 import torch
 from transformers import AutoModelForCTC, Wav2Vec2Config, Wav2Vec2ForCTC
@@ -21,11 +22,12 @@ from transformers.modeling_outputs import CausalLMOutput
 
 from ....configuration_utils import RBLNCompileConfig
 from ....modeling import RBLNModel
+from ....modeling_base import Preprocessor
 from .configuration_wav2vec2 import RBLNWav2Vec2ForCTCConfig
 
 
 if TYPE_CHECKING:
-    from transformers import AutoFeatureExtractor, AutoProcessor, AutoTokenizer, PreTrainedModel
+    from transformers import PreTrainedModel
 
 
 class _Wav2Vec2(torch.nn.Module):
@@ -59,9 +61,9 @@ class RBLNWav2Vec2ForCTC(RBLNModel):
     @classmethod
     def _update_rbln_config(
         cls,
-        preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"],
+        preprocessors: Sequence[Preprocessor],
         model: Optional["PreTrainedModel"] = None,
-        model_config: "Wav2Vec2Config" = None,
+        model_config: "Wav2Vec2Config | None" = None,
         rbln_config: RBLNWav2Vec2ForCTCConfig | None = None,
     ) -> RBLNWav2Vec2ForCTCConfig:
         if rbln_config.max_seq_len is None:

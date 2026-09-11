@@ -12,7 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import TYPE_CHECKING, Any, Optional, Union
+from collections.abc import Sequence
+from typing import TYPE_CHECKING, Any, Optional
 
 import torch
 from transformers import SiglipVisionConfig, SiglipVisionModel
@@ -20,6 +21,7 @@ from transformers.modeling_outputs import BaseModelOutputWithPooling
 
 from ....configuration_utils import RBLNCompileConfig
 from ....modeling import RBLNModel
+from ....modeling_base import Preprocessor
 from ....utils.logging import get_logger
 from ...modeling_outputs import _validate_output_attentions, _validate_output_hidden_states
 from .configuration_siglip import RBLNSiglipVisionModelConfig
@@ -28,7 +30,7 @@ from .configuration_siglip import RBLNSiglipVisionModelConfig
 logger = get_logger(__name__)
 
 if TYPE_CHECKING:
-    from transformers import AutoFeatureExtractor, AutoProcessor, AutoTokenizer, PreTrainedModel
+    from transformers import PreTrainedModel
 
 
 class _SiglipVisionModel(torch.nn.Module):
@@ -80,9 +82,9 @@ class RBLNSiglipVisionModel(RBLNModel):
     @classmethod
     def _update_rbln_config(
         cls,
-        preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"],
+        preprocessors: Sequence[Preprocessor],
         model: Optional["PreTrainedModel"] = None,
-        model_config: "SiglipVisionConfig" = None,
+        model_config: "SiglipVisionConfig | None" = None,
         rbln_config: RBLNSiglipVisionModelConfig | None = None,
     ) -> RBLNSiglipVisionModelConfig:
         if rbln_config.image_size is None:
@@ -119,9 +121,9 @@ class RBLNSiglipVisionModel(RBLNModel):
     def forward(
         self,
         pixel_values: torch.Tensor,
-        return_dict: bool = None,
-        output_attentions: bool = None,
-        output_hidden_states: bool = None,
+        return_dict: bool | None = None,
+        output_attentions: bool | None = None,
+        output_hidden_states: bool | None = None,
         interpolate_pos_encoding: bool = False,
         **kwargs: Any,
     ) -> tuple | BaseModelOutputWithPooling:

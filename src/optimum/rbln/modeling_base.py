@@ -15,14 +15,25 @@
 import importlib
 import os
 import shutil
+from collections.abc import Sequence
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import TYPE_CHECKING, Any, Optional, Union
+from typing import TYPE_CHECKING, Any, ClassVar, cast
 
 import rebel
 import torch
-from transformers import AutoConfig, AutoModel, GenerationConfig, PretrainedConfig
+from transformers import (
+    AutoConfig,
+    AutoModel,
+    BaseImageProcessor,
+    FeatureExtractionMixin,
+    GenerationConfig,
+    PretrainedConfig,
+    PreTrainedTokenizerBase,
+    ProcessorMixin,
+)
 from transformers.utils.hub import PushToHubMixin
+from typing_extensions import Self
 
 from .configuration_utils import RBLNCompileConfig, RBLNModelConfig, get_rbln_config_class
 from .utils.hub import pull_compiled_model_from_hub, validate_files
@@ -33,9 +44,14 @@ from .utils.submodule import SubModulesMixin
 
 
 if TYPE_CHECKING:
-    from transformers import AutoFeatureExtractor, AutoProcessor, AutoTokenizer, PreTrainedModel
+    from diffusers.models.modeling_utils import ModelMixin
+    from transformers import PreTrainedModel as TransformersPreTrainedModel
+
+    HFModel = TransformersPreTrainedModel | ModelMixin
 
 logger = get_logger(__name__)
+
+Preprocessor = PreTrainedTokenizerBase | BaseImageProcessor | FeatureExtractionMixin | ProcessorMixin
 
 
 def normalize_contiguous_(model: torch.nn.Module) -> torch.nn.Module:
@@ -52,7 +68,7 @@ def normalize_contiguous_(model: torch.nn.Module) -> torch.nn.Module:
     return model
 
 
-class PreTrainedModel:  # noqa: F811
+class PreTrainedModel:
     pass
 
 
@@ -62,20 +78,22 @@ class RBLNBaseModelConfig(RBLNModelConfig):
 
 class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
     model_type = "rbln_model"
-    auto_model_class = AutoModel
-    config_class = AutoConfig
+    auto_model_class: ClassVar[type[Any]] = AutoModel
+    config_class: ClassVar[type[Any]] = AutoConfig
     config_name = "config.json"
     hf_library_name = "transformers"
     _supports_non_fp32 = True
+    _hf_class: ClassVar[type[Any] | None] = None
+    _rbln_config_class: ClassVar[type[RBLNModelConfig] | None] = None
 
     def __init__(
         self,
-        models: list[rebel.Runtime],
+        models: list[rebel.Runtime] | UnavailableRuntime,
         config: "PretrainedConfig",
         rbln_config: RBLNModelConfig,
-        model_save_dir: str | Path | TemporaryDirectory | None = None,
+        model_save_dir: str | os.PathLike[str] | TemporaryDirectory | None = None,
         subfolder: str = "",
-        rbln_compiled_models: rebel.RBLNCompiledModel | None = None,
+        rbln_compiled_models: list[rebel.RBLNCompiledModel] | None = None,
         rbln_submodules: list["RBLNBaseModel"] | None = None,
         **kwargs,
     ):
@@ -98,15 +116,17 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
                 model_mapping._extra_content[AutoConfig] = self.__class__
 
         # copied from tranformers PreTrainedModel __init__
+        self.generation_config: GenerationConfig | None = None
         if self.can_generate():
             gen_config_dir = model_save_dir.name if isinstance(model_save_dir, TemporaryDirectory) else model_save_dir
-            try:
-                self.generation_config = GenerationConfig.from_pretrained(gen_config_dir, trust_remote_code=True)
-            except OSError:
-                # transformers v5 raises when `generation_config.json` is absent (v4 returned a default).
+            if gen_config_dir is None:
                 self.generation_config = GenerationConfig()
-        else:
-            self.generation_config = None
+            else:
+                try:
+                    self.generation_config = GenerationConfig.from_pretrained(gen_config_dir, trust_remote_code=True)
+                except OSError:
+                    # transformers v5 raises when `generation_config.json` is absent (v4 returned a default).
+                    self.generation_config = GenerationConfig()
 
         if self.generation_config is not None:
             self.generation_config.use_cache = True
@@ -118,14 +138,15 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
         # FIXME :: model_save_dir is not used after initialized. (This can be used when save/load)
         # This attribute is needed to keep one reference on the temporary directory, since garbage collecting it
         # would end-up removing the directory containing the underlying RBLN model.
-        self._model_save_dir_tempdirectory_instance = None
+        self._model_save_dir_tempdirectory_instance: TemporaryDirectory | None = None
+        self.model_save_dir: Path | None
         if isinstance(model_save_dir, TemporaryDirectory):
             self._model_save_dir_tempdirectory_instance = model_save_dir
             self.model_save_dir = Path(model_save_dir.name)
-        elif isinstance(model_save_dir, str):
-            self.model_save_dir = Path(model_save_dir)
+        elif model_save_dir is None:
+            self.model_save_dir = None
         else:
-            self.model_save_dir = model_save_dir
+            self.model_save_dir = Path(model_save_dir)
         self.subfolder = subfolder
 
         if rbln_submodules is None:
@@ -166,7 +187,9 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
         return str(model_path)
 
     @classmethod
-    def _load_compiled_models(cls, model_path: str, expected_compiled_model_names: list[str]):
+    def _load_compiled_models(
+        cls, model_path: str, expected_compiled_model_names: list[str]
+    ) -> dict[str, rebel.RBLNCompiledModel]:
         compiled_models = Path(model_path).glob("*.rbln")
         expected_compiled_models = [
             Path(model_path) / f"{compiled_model_name}.rbln" for compiled_model_name in expected_compiled_model_names
@@ -193,7 +216,7 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
     def _from_pretrained(
         cls,
         model_id: str | Path,
-        config: Optional["PretrainedConfig"] = None,
+        config: "PretrainedConfig | None" = None,
         token: bool | str | None = None,
         revision: str | None = None,
         force_download: bool = False,
@@ -201,13 +224,13 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
         subfolder: str = "",
         local_files_only: bool = False,
         trust_remote_code: bool = False,
-        model_save_dir: str | Path | TemporaryDirectory | None = None,
+        model_save_dir: str | os.PathLike[str] | TemporaryDirectory | None = None,
         # passed from compile function
-        rbln_config: RBLNModelConfig | None = None,
+        rbln_config: dict[str, Any] | RBLNModelConfig | None = None,
         rbln_compiled_models: dict[str, rebel.RBLNCompiledModel] | None = None,
         rbln_submodules: list["RBLNBaseModel"] | None = None,
         **kwargs,
-    ) -> "RBLNBaseModel":
+    ) -> Self:
         if rbln_compiled_models is None:
             model_path_subfolder = cls._load_compiled_model_dir(
                 model_id=model_id,
@@ -266,18 +289,21 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
 
                     class DummyConfigMixin(ConfigMixin):
                         # Just to load config, We need to specify `config_name`
-                        config_name = "config.json"
+                        config_name = "config.json"  # type: ignore[assignment]
 
-                    config = DummyConfigMixin.load_config(
-                        model_id,
-                        cache_dir=cache_dir,
-                        force_download=force_download,
-                        local_files_only=local_files_only,
-                        revision=revision,
-                        token=token,
-                        subfolder=subfolder,
+                    config_dict = cast(
+                        dict[str, Any],
+                        DummyConfigMixin.load_config(
+                            model_id,
+                            cache_dir=cache_dir,
+                            force_download=force_download,
+                            local_files_only=local_files_only,
+                            revision=revision,
+                            token=token,
+                            subfolder=subfolder,
+                        ),
                     )
-                    config = PretrainedConfig(**config)
+                    config = PretrainedConfig(**config_dict)
 
             compiled_model_names = [cfg.compiled_model_name for cfg in rbln_config.compile_cfgs]
             rbln_compiled_models = cls._load_compiled_models(model_path_subfolder, compiled_model_names)
@@ -286,6 +312,11 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
                 model_save_dir = Path(model_path_subfolder).absolute().parent
             else:
                 model_save_dir = Path(model_path_subfolder).absolute()
+
+        if isinstance(rbln_config, dict) or rbln_config is None or config is None or model_save_dir is None:
+            raise ValueError(
+                "`rbln_config`, `config` and `model_save_dir` must be resolved when `rbln_compiled_models` is given."
+            )
 
         return cls._from_compiled_models(
             rbln_compiled_models=rbln_compiled_models,
@@ -303,11 +334,11 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
         rbln_compiled_models: dict[str, rebel.RBLNCompiledModel],
         rbln_config: RBLNModelConfig,
         config: "PretrainedConfig",
-        model_save_dir: Path | str,
-        subfolder: Path | str,
+        model_save_dir: str | os.PathLike[str] | TemporaryDirectory,
+        subfolder: str,
         rbln_submodules: list["RBLNBaseModel"] | None = None,
         **kwargs,
-    ):
+    ) -> Self:
         if rbln_submodules is None:
             rbln_submodules = []
 
@@ -316,12 +347,12 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
 
         # FIXME:: Should we convert it?
         compiled_model_names = [cfg.compiled_model_name for cfg in rbln_config.compile_cfgs]
-        rbln_compiled_models = [rbln_compiled_models[cm_name] for cm_name in compiled_model_names]
+        compiled_models = [rbln_compiled_models[cm_name] for cm_name in compiled_model_names]
 
         # create runtimes only if `rbln_create_runtimes` is enabled
         try:
-            models = (
-                cls._create_runtimes(rbln_compiled_models, rbln_config)
+            models: list[rebel.Runtime] | UnavailableRuntime = (
+                cls._create_runtimes(compiled_models, rbln_config)
                 if rbln_config.create_runtimes
                 else UnavailableRuntime()
             )
@@ -354,23 +385,49 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
             rbln_config,
             model_save_dir=model_save_dir,
             subfolder=subfolder,
-            rbln_compiled_models=rbln_compiled_models,
+            rbln_compiled_models=compiled_models,
             rbln_submodules=rbln_submodules,
             **kwargs,
         )
 
     @classmethod
-    def _export(cls, model_id: str | Path, **kwargs) -> "RBLNBaseModel":
+    def _export(cls, model_id: str | Path, **kwargs) -> Self:
         subfolder = kwargs.get("subfolder", "")
         model_save_dir = kwargs.pop("model_save_dir", None)
 
         rbln_config, kwargs = cls.prepare_rbln_config(**kwargs)
 
-        model: PreTrainedModel = cls.get_pytorch_model(model_id=model_id, rbln_config=rbln_config, **kwargs)
+        model = cls.get_pytorch_model(model_id=model_id, rbln_config=rbln_config, **kwargs)
         preprocessors = maybe_load_preprocessors(model_id, subfolder=subfolder)
         return cls.from_model(
             model, preprocessors=preprocessors, model_save_dir=model_save_dir, rbln_config=rbln_config, **kwargs
         )
+
+    @classmethod
+    def get_pytorch_model(
+        cls, model_id: str | Path, *, rbln_config: RBLNModelConfig | None = None, **kwargs: Any
+    ) -> "HFModel":
+        raise NotImplementedError
+
+    @classmethod
+    def from_model(cls, model: "HFModel", **kwargs: Any) -> Self:
+        raise NotImplementedError
+
+    @classmethod
+    def _create_runtimes(
+        cls, compiled_models: list[rebel.RBLNCompiledModel], rbln_config: RBLNModelConfig
+    ) -> list[rebel.Runtime]:
+        raise NotImplementedError
+
+    @classmethod
+    def _update_rbln_config(
+        cls,
+        preprocessors: Sequence[Preprocessor] | None,
+        model: "HFModel",
+        model_config: "PretrainedConfig",
+        rbln_config: RBLNModelConfig,
+    ) -> RBLNModelConfig:
+        raise NotImplementedError
 
     @classmethod
     def prepare_rbln_config(
@@ -410,12 +467,12 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
 
     @classmethod
     def from_pretrained(
-        cls: type["RBLNBaseModel"],
+        cls,
         model_id: str | Path,
         export: bool | None = None,
-        rbln_config: dict | RBLNModelConfig | None = None,
+        rbln_config: dict[str, Any] | RBLNModelConfig | None = None,
         **kwargs: Any,
-    ) -> "RBLNBaseModel":
+    ) -> Self:
         """
         The `from_pretrained()` function is utilized in its standard form as in the HuggingFace transformers library.
         User can use this function to load a pre-trained model from the HuggingFace library and convert it to a RBLN model to be run on RBLN NPUs.
@@ -454,12 +511,12 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
     @classmethod
     def compile(
         cls,
-        model,
+        model: torch.nn.Module,
         rbln_compile_config: RBLNCompileConfig,
         create_runtimes: bool,
-        device: int | list[int],
+        device: int | list[int] | None,
         **kwargs,
-    ):
+    ) -> rebel.RBLNCompiledModel:
         if create_runtimes:
             runtime_cannot_be_created = tp_and_devices_are_ok(
                 num_devices=rbln_compile_config.num_devices,
@@ -483,8 +540,8 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
     @classmethod
     def update_rbln_config(
         cls,
-        preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"] | None,
-        model: "PreTrainedModel",
+        preprocessors: Sequence[Preprocessor] | None,
+        model: "HFModel",
         model_config: "PretrainedConfig",
         rbln_config: RBLNModelConfig,
     ) -> RBLNModelConfig:
@@ -505,27 +562,27 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
         return rbln_config
 
     @classmethod
-    def get_hf_class(cls):
-        # Lazily loads and caches the corresponding HuggingFace model class.
-        # Removes 'RBLN' prefix from the class name to get the original class name
-        # (e.g., RBLNLlamaForCausalLM -> LlamaForCausalLM) and imports it from
-        # the transformers/diffusers module.
+    def get_hf_class(cls) -> type[Any] | None:
+        """Lazily load and cache the HuggingFace class this model wraps.
 
-        # Returns:
-        #     type: The original HuggingFace model class
-        if "_hf_class" not in cls.__dict__ or cls._hf_class is None:
-            hf_cls_name = cls.__name__[4:]
+        The class is looked up in `hf_library_name` under the name without the `RBLN` prefix
+        (e.g. `RBLNLlamaForCausalLM` -> `LlamaForCausalLM`).
+        """
+        hf_class: type[Any] | None = cls.__dict__.get("_hf_class")
+        if hf_class is None:
             library = importlib.import_module(cls.hf_library_name)
-            cls._hf_class = getattr(library, hf_cls_name, None)
-        return cls._hf_class
+            hf_class = getattr(library, cls.__name__[4:], None)
+            cls._hf_class = hf_class
+        return hf_class
 
     @classmethod
     def get_rbln_config_class(cls) -> type[RBLNModelConfig]:
         # Lazily loads and caches the corresponding RBLN model config class.
-        if "_rbln_config_class" not in cls.__dict__ or cls._rbln_config_class is None:
-            rbln_config_class_name = cls.__name__ + "Config"
-            cls._rbln_config_class = get_rbln_config_class(rbln_config_class_name)
-        return cls._rbln_config_class
+        rbln_config_class: type[RBLNModelConfig] | None = cls.__dict__.get("_rbln_config_class")
+        if rbln_config_class is None:
+            rbln_config_class = get_rbln_config_class(cls.__name__ + "Config")
+            cls._rbln_config_class = rbln_config_class
+        return rbln_config_class
 
     def can_generate(self):
         return False
@@ -552,8 +609,11 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
         #     Code relying on iterating through all model parameters will not work as expected.
         yield torch.tensor([1.0], dtype=self.dtype, device=torch.device("cpu"))
 
-    def __call__(self, *args, **kwargs):
+    def __call__(self, *args: Any, **kwargs: Any) -> Any:
         return self.forward(*args, **kwargs)
+
+    def forward(self, *args: Any, **kwargs: Any) -> Any:
+        raise NotImplementedError
 
     def __repr__(self):
         has_submodules = len(self.rbln_submodules) > 0
@@ -594,6 +654,9 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
         if os.path.isfile(save_directory):
             logger.error(f"Provided path ({save_directory}) should be a directory, not a file")
             return
+
+        if self.model_save_dir is None:
+            raise FileNotFoundError("Unable to save the model. The model was created without a model directory.")
 
         # Normalize paths to handle relative paths and symlinks
         real_save_dir = Path(self.model_save_dir).resolve() / self.subfolder

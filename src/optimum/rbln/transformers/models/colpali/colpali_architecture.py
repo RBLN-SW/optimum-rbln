@@ -85,7 +85,7 @@ class ColPaliModel(nn.Module):
     def forward(
         self,
         inputs_embeds: torch.Tensor | None = None,
-        attention_mask: torch.Tensor = None,
+        attention_mask: torch.Tensor | None = None,
         rotary_emb: nn.Module | torch.Tensor | None = None,
         position_ids: torch.Tensor | None = None,
     ):

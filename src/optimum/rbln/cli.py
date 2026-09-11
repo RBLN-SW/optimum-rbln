@@ -19,6 +19,7 @@ import json
 import shutil
 import sys
 from pathlib import Path
+from typing import Any, cast
 
 import rebel
 from huggingface_hub import hf_hub_download
@@ -441,6 +442,7 @@ def _handle_kvcache_num_blocks(
     rbln_config.json is the source of truth for the current block count.
     """
     from .transformers.modeling_attention_utils import RBLNDecoderOnlyFlashAttentionMixin
+    from .transformers.models.decoderonly.configuration_decoderonly import RBLNDecoderOnlyModelConfig
 
     src_dir = Path(model_id)
     if not (src_dir.exists() and src_dir.is_dir()):
@@ -455,6 +457,7 @@ def _handle_kvcache_num_blocks(
             f"The model at '{model_id}' ({config_cls.__name__}) does not expose a top-level "
             "resizable kv-cache. Only decoder-only causal LM artifacts are supported."
         )
+    rbln_config = cast(RBLNDecoderOnlyModelConfig, rbln_config)
 
     if get:
         print(rbln_config.kvcache_num_blocks)
@@ -734,8 +737,8 @@ def main():
         output_path.mkdir(parents=True, exist_ok=True)
 
         # Prepare rbln_config and model_kwargs by parsing all unknown arguments
-        rbln_config = {}
-        model_kwargs = {}  # HuggingFace model args
+        rbln_config: dict[str, Any] = {}
+        model_kwargs: dict[str, Any] = {}  # HuggingFace model args
 
         # Parse all unknown arguments
         i = 0

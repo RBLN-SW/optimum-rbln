@@ -12,7 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import TYPE_CHECKING, Any, Union
+from collections.abc import Sequence
+from typing import TYPE_CHECKING, Any
 
 import torch
 from diffusers.models.modeling_outputs import Transformer2DModelOutput
@@ -21,12 +22,13 @@ from transformers import PretrainedConfig
 
 from ....configuration_utils import RBLNCompileConfig, RBLNModelConfig
 from ....modeling import RBLNModel
+from ....modeling_base import Preprocessor
 from ....utils.logging import get_logger
 from ...configurations import RBLNSD3Transformer2DModelConfig
 
 
 if TYPE_CHECKING:
-    from transformers import AutoFeatureExtractor, AutoProcessor, AutoTokenizer, PreTrainedModel
+    from transformers import PreTrainedModel
 
     from ...modeling_diffusers import RBLNDiffusionMixin, RBLNDiffusionMixinConfig
 
@@ -41,11 +43,11 @@ class SD3Transformer2DModelWrapper(torch.nn.Module):
     def forward(
         self,
         hidden_states: torch.FloatTensor,
-        encoder_hidden_states: torch.FloatTensor = None,
-        pooled_projections: torch.FloatTensor = None,
-        timestep: torch.LongTensor = None,
+        encoder_hidden_states: torch.FloatTensor | None = None,
+        pooled_projections: torch.FloatTensor | None = None,
+        timestep: torch.LongTensor | None = None,
         # need controlnet support?
-        block_controlnet_hidden_states: list = None,
+        block_controlnet_hidden_states: list | None = None,
         joint_attention_kwargs: dict[str, Any] | None = None,
         return_dict: bool = True,
     ):
@@ -100,7 +102,7 @@ class RBLNSD3Transformer2DModel(RBLNModel):
     @classmethod
     def _update_rbln_config(
         cls,
-        preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"],
+        preprocessors: Sequence[Preprocessor],
         model: "PreTrainedModel",
         model_config: "PretrainedConfig",
         rbln_config: RBLNSD3Transformer2DModelConfig,
@@ -153,10 +155,10 @@ class RBLNSD3Transformer2DModel(RBLNModel):
     def forward(
         self,
         hidden_states: torch.FloatTensor,
-        encoder_hidden_states: torch.FloatTensor = None,
-        pooled_projections: torch.FloatTensor = None,
-        timestep: torch.LongTensor = None,
-        block_controlnet_hidden_states: list = None,
+        encoder_hidden_states: torch.FloatTensor | None = None,
+        pooled_projections: torch.FloatTensor | None = None,
+        timestep: torch.LongTensor | None = None,
+        block_controlnet_hidden_states: list | None = None,
         joint_attention_kwargs: dict[str, Any] | None = None,
         return_dict: bool = True,
         **kwargs,

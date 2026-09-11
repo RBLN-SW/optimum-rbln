@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any
+from typing import Any, ClassVar
 
 from ....configuration_utils import RBLNModelConfig
 from ....transformers import RBLNCLIPTextModelWithProjectionConfig, RBLNCLIPVisionModelWithProjectionConfig
@@ -216,7 +216,7 @@ class RBLNKandinskyV22CombinedPipelineBaseConfig(RBLNModelConfig):
     """Base configuration class for Kandinsky V2.2 combined pipelines."""
 
     submodules = ["prior_pipe", "decoder_pipe"]
-    _decoder_pipe_cls = RBLNKandinskyV22PipelineConfig
+    _decoder_pipe_cls: ClassVar[type[RBLNKandinskyV22PipelineBaseConfig]] = RBLNKandinskyV22PipelineConfig
 
     def __init__(
         self,

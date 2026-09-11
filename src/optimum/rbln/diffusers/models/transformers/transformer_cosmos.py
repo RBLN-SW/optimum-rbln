@@ -13,8 +13,9 @@
 # limitations under the License.
 
 import math
+from collections.abc import Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING, Union
+from typing import TYPE_CHECKING
 
 import rebel
 import torch
@@ -31,13 +32,14 @@ from torchvision import transforms
 
 from ....configuration_utils import DEFAULT_COMPILED_MODEL_NAME, RBLNCompileConfig, RBLNModelConfig
 from ....modeling import RBLNModel
+from ....modeling_base import Preprocessor
 from ....modeling_rope_utils import np_cos, np_sin
 from ....utils.logging import get_logger
 from ...configurations import RBLNCosmosTransformer3DModelConfig
 
 
 if TYPE_CHECKING:
-    from transformers import AutoFeatureExtractor, AutoProcessor, AutoTokenizer, PretrainedConfig, PreTrainedModel
+    from transformers import PretrainedConfig, PreTrainedModel
 
     from ...modeling_diffusers import RBLNCosmosTransformer3DModelConfig, RBLNDiffusionMixin, RBLNDiffusionMixinConfig
 
@@ -283,7 +285,7 @@ class RBLNCosmosTransformer3DModel(RBLNModel):
     @classmethod
     def _update_rbln_config(
         cls,
-        preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"],
+        preprocessors: Sequence[Preprocessor],
         model: "PreTrainedModel",
         model_config: "PretrainedConfig",
         rbln_config: "RBLNCosmosTransformer3DModelConfig",

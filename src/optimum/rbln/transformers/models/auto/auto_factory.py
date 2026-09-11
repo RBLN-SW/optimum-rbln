@@ -69,7 +69,7 @@ class _BaseAutoModelClass:
         cls,
         pretrained_model_name_or_path: str | Path,
         *args: Any,
-        export: bool = None,
+        export: bool | None = None,
         **kwargs: Any,
     ):
         """
@@ -208,7 +208,7 @@ class _BaseAutoModelClass:
     def from_pretrained(
         cls,
         model_id: str | Path,
-        export: bool = None,
+        export: bool | None = None,
         rbln_config: dict | RBLNModelConfig | None = None,
         **kwargs: dict[str, Any] | None,
     ) -> RBLNBaseModel:

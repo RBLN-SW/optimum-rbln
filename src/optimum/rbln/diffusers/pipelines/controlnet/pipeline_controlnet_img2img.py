@@ -226,9 +226,9 @@ class RBLNStableDiffusionControlNetImg2ImgPipeline(RBLNDiffusionMixin, StableDif
     @remove_compile_time_kwargs
     def __call__(
         self,
-        prompt: str | list[str] = None,
-        image: PipelineImageInput = None,
-        control_image: PipelineImageInput = None,
+        prompt: str | list[str] | None = None,
+        image: PipelineImageInput | None = None,
+        control_image: PipelineImageInput | None = None,
         height: int | None = None,
         width: int | None = None,
         strength: float = 0.8,

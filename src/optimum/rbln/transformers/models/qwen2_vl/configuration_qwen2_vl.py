@@ -61,7 +61,9 @@ class RBLNQwen2VLModelConfig(RBLNDecoderOnlyModelConfig):
 
 
 class RBLNQwen2VisionTransformerPretrainedModelConfig(RBLNModelConfig):
-    def __init__(self, max_seq_len: int | list[int] = None, batch_size: int | None = None, **kwargs: dict[str, Any]):
+    def __init__(
+        self, max_seq_len: int | list[int] | None = None, batch_size: int | None = None, **kwargs: dict[str, Any]
+    ):
         """
         Args:
             max_seq_len (int | list[int] | None): Maximum sequence lengths for Vision

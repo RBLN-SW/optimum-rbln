@@ -13,7 +13,8 @@
 # limitations under the License.
 
 
-from typing import TYPE_CHECKING, Optional, Union
+from collections.abc import Sequence
+from typing import TYPE_CHECKING, Optional
 
 import torch
 from transformers import AutoModelForObjectDetection
@@ -21,11 +22,12 @@ from transformers.models.detr.modeling_detr import DetrConfig, DetrObjectDetecti
 
 from ....configuration_utils import RBLNCompileConfig
 from ....modeling import RBLNModel
+from ....modeling_base import Preprocessor
 from .configuration_detr import RBLNDetrForObjectDetectionConfig
 
 
 if TYPE_CHECKING:
-    from transformers import AutoFeatureExtractor, AutoProcessor, AutoTokenizer, PreTrainedModel
+    from transformers import PreTrainedModel
 
 
 class RBLNDetrForObjectDetection(RBLNModel):
@@ -42,9 +44,9 @@ class RBLNDetrForObjectDetection(RBLNModel):
     @classmethod
     def _update_rbln_config(
         cls,
-        preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"],
+        preprocessors: Sequence[Preprocessor],
         model: Optional["PreTrainedModel"] = None,
-        model_config: "DetrConfig" = None,
+        model_config: "DetrConfig | None" = None,
         rbln_config: RBLNDetrForObjectDetectionConfig | None = None,
     ) -> RBLNDetrForObjectDetectionConfig:
         if rbln_config.image_size is None:
@@ -87,7 +89,7 @@ class RBLNDetrForObjectDetection(RBLNModel):
         self,
         pixel_values: torch.Tensor,
         pixel_mask: torch.Tensor | None = None,
-        return_dict: bool = None,
+        return_dict: bool | None = None,
         **kwargs,
     ) -> tuple | DetrObjectDetectionOutput:
         """

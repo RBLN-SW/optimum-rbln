@@ -27,7 +27,8 @@
 # limitations under the License.
 
 import math
-from typing import Optional
+from collections.abc import Sequence
+from typing import Optional, Protocol
 
 import numpy as np
 import torch
@@ -55,6 +56,12 @@ def np_sin(x: torch.Tensor) -> torch.Tensor:
     return torch.from_numpy(np.sin(x.detach().cpu().numpy()))
 
 
+class _RotaryEmbedding(Protocol):
+    attention_scaling: float
+    inv_freq: torch.Tensor
+    mrope_section: Sequence[int]
+
+
 class QwenMRopeLookupTable:
     """Deterministic drop-in for host-side HF rotary modules: cos/sin tables built once
     via np_cos/np_sin, gathered per call; out-of-range positions use the bit-identical
@@ -62,7 +69,7 @@ class QwenMRopeLookupTable:
     interleaved mrope (axis selection baked into the gather index). Default rope_type only.
     """
 
-    def __init__(self, rotary_emb: torch.nn.Module, max_seq_len: int):
+    def __init__(self, rotary_emb: _RotaryEmbedding, max_seq_len: int):
         self.attention_scaling = rotary_emb.attention_scaling
         half_dim = rotary_emb.inv_freq.shape[0]
         self.inv_freq_full = torch.cat([rotary_emb.inv_freq.float()] * 2)
@@ -71,7 +78,7 @@ class QwenMRopeLookupTable:
         self.cos_table = np_cos(vals) * self.attention_scaling
         self.sin_table = np_sin(vals) * self.attention_scaling
 
-        self.interleave_index = None
+        self.interleave_index: torch.Tensor | None = None
         if hasattr(rotary_emb, "apply_interleaved_mrope"):
             section = rotary_emb.mrope_section
             sigma = torch.zeros(half_dim, dtype=torch.long)
@@ -97,12 +104,13 @@ class QwenMRopeLookupTable:
         return self._dynamic(pos_sel)
 
 
-def build_qwen_mrope_lookup(rotary_emb: torch.nn.Module, max_seq_len: int):
+def build_qwen_mrope_lookup(rotary_emb: _RotaryEmbedding, max_seq_len: int) -> QwenMRopeLookupTable | _RotaryEmbedding:
     # the table only requires inv_freq to be static after load; dynamic/longrope mutate it at runtime
-    if getattr(rotary_emb, "rope_type", "default") not in ("dynamic", "longrope"):
+    rope_type = getattr(rotary_emb, "rope_type", "default")
+    if rope_type not in ("dynamic", "longrope"):
         return QwenMRopeLookupTable(rotary_emb, max_seq_len)
     logger.warning(
-        f"rope_type={rotary_emb.rope_type!r} cannot use the deterministic rotary lookup table; "
+        f"rope_type={rope_type!r} cannot use the deterministic rotary lookup table; "
         "host cos/sin stays on the torch path and may vary with the thread configuration."
     )
     return rotary_emb
@@ -132,7 +140,7 @@ def _get_rope_theta(config: PretrainedConfig) -> float:
 
 
 def _compute_default_rope_parameters(
-    config: PretrainedConfig | None = None,
+    config: PretrainedConfig,
     device: Optional["torch.device"] = None,
     seq_len: int | None = None,
 ) -> tuple["torch.Tensor", float]:
@@ -162,7 +170,7 @@ def _compute_default_rope_parameters(
 
 
 def _compute_linear_scaling_rope_parameters(
-    config: PretrainedConfig | None = None,
+    config: PretrainedConfig,
     device: Optional["torch.device"] = None,
     seq_len: int | None = None,
 ) -> tuple["torch.Tensor", float]:
@@ -192,7 +200,7 @@ def _compute_linear_scaling_rope_parameters(
 
 
 def _compute_dynamic_ntk_parameters(
-    config: PretrainedConfig | None = None,
+    config: PretrainedConfig,
     device: Optional["torch.device"] = None,
     seq_len: int | None = None,
 ) -> tuple["torch.Tensor", float]:

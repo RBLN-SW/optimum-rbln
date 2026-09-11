@@ -13,9 +13,9 @@
 # limitations under the License.
 
 import inspect
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Optional, Union
+from typing import Any, Optional
 
 import torch
 from transformers import (
@@ -37,6 +37,7 @@ from transformers.vision_utils import get_vision_window_index
 
 from ....configuration_utils import RBLNCompileConfig
 from ....modeling import RBLNModel
+from ....modeling_base import Preprocessor
 from ....modeling_rope_utils import build_qwen_mrope_lookup, np_cos, np_sin, qwen_vit_rot_pos_ids
 from ....utils.logging import get_logger
 from ...modeling_outputs import RBLNDecoderOnlyOutput, _validate_output_hidden_states
@@ -50,9 +51,6 @@ from .qwen2_5_vl_architecture import Qwen2_5_VisionTransformerWrapper, Qwen2_5_V
 
 
 logger = get_logger(__name__)
-
-if TYPE_CHECKING:
-    from transformers import AutoFeatureExtractor, AutoProcessor, AutoTokenizer
 
 
 class RBLNQwen2_5_VisionTransformerPretrainedModel(RBLNModel):
@@ -120,9 +118,9 @@ class RBLNQwen2_5_VisionTransformerPretrainedModel(RBLNModel):
     @classmethod
     def _update_rbln_config(
         cls,
-        preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"],
+        preprocessors: Sequence[Preprocessor],
         model: Optional["PreTrainedModel"] = None,
-        model_config: "PretrainedConfig" = None,
+        model_config: "PretrainedConfig | None" = None,
         rbln_config: RBLNQwen2_5_VisionTransformerPretrainedModelConfig | None = None,
     ) -> RBLNQwen2_5_VisionTransformerPretrainedModelConfig:
         window_size = model_config.window_size
@@ -442,13 +440,13 @@ class RBLNQwen2_5_VLModel(RBLNDecoderOnlyModel):
 
     def _preprocess_prefill(
         self,
-        input_ids: torch.LongTensor = None,
-        attention_mask: torch.Tensor = None,
-        pixel_values: torch.Tensor = None,
-        pixel_values_videos: torch.FloatTensor = None,
-        image_grid_thw: torch.LongTensor = None,
-        video_grid_thw: torch.LongTensor = None,
-        second_per_grid_ts: torch.Tensor = None,
+        input_ids: torch.LongTensor | None = None,
+        attention_mask: torch.Tensor | None = None,
+        pixel_values: torch.Tensor | None = None,
+        pixel_values_videos: torch.FloatTensor | None = None,
+        image_grid_thw: torch.LongTensor | None = None,
+        video_grid_thw: torch.LongTensor | None = None,
+        second_per_grid_ts: torch.Tensor | None = None,
         mm_token_type_ids: torch.IntTensor | None = None,
     ):
         batch_size = input_ids.shape[0]
@@ -720,8 +718,8 @@ class RBLNQwen2_5_VLForConditionalGeneration(
 
     def _preprocess_decoder(
         self,
-        input_ids: torch.LongTensor = None,
-        cache_position: torch.LongTensor = None,
+        input_ids: torch.LongTensor | None = None,
+        cache_position: torch.LongTensor | None = None,
     ):
         if self.rbln_config.batch_size != cache_position.shape[0]:
             raise RuntimeError(

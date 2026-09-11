@@ -12,7 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import TYPE_CHECKING, Union
+from collections.abc import Sequence
+from typing import TYPE_CHECKING
 
 import torch
 from diffusers import ControlNetModel
@@ -21,6 +22,7 @@ from transformers import PretrainedConfig
 
 from ....configuration_utils import RBLNCompileConfig, RBLNModelConfig
 from ....modeling import RBLNModel
+from ....modeling_base import Preprocessor
 from ....utils.logging import get_logger
 from ....utils.model_utils import get_rbln_model_cls
 from ...configurations import RBLNControlNetModelConfig
@@ -28,7 +30,7 @@ from ...modeling_diffusers import RBLNDiffusionMixin, RBLNDiffusionMixinConfig
 
 
 if TYPE_CHECKING:
-    from transformers import AutoFeatureExtractor, AutoProcessor, AutoTokenizer, PreTrainedModel
+    from transformers import PreTrainedModel
 
 
 logger = get_logger(__name__)
@@ -149,7 +151,7 @@ class RBLNControlNetModel(RBLNModel):
     @classmethod
     def _update_rbln_config(
         cls,
-        preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"],
+        preprocessors: Sequence[Preprocessor],
         model: "PreTrainedModel",
         model_config: "PretrainedConfig",
         rbln_config: RBLNControlNetModelConfig,

@@ -14,9 +14,9 @@
 
 import importlib
 import inspect
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Optional, Union
+from typing import Any, Optional
 
 import rebel
 import torch
@@ -34,13 +34,10 @@ from transformers.models.idefics3.modeling_idefics3 import Idefics3CausalLMOutpu
 
 from ....configuration_utils import RBLNCompileConfig, RBLNModelConfig
 from ....modeling import RBLNModel
+from ....modeling_base import Preprocessor
 from ....utils.runtime_utils import RBLNPytorchRuntime
 from ...modeling_outputs import RBLNDecoderOnlyOutput
 from ...utils.multimodal_batch_sort import RBLNImageIndexedBatchSortMixin, _placeholder_token_counts
-
-
-if TYPE_CHECKING:
-    from transformers import AutoFeatureExtractor, AutoProcessor, AutoTokenizer
 
 
 class RBLNRuntimeVisionModel(RBLNPytorchRuntime):
@@ -133,7 +130,7 @@ class RBLNIdefics3VisionTransformer(RBLNModel):
     @classmethod
     def _update_rbln_config(
         cls,
-        preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"] | None,
+        preprocessors: Sequence[Preprocessor] | None,
         model: Optional["PreTrainedModel"] = None,
         model_config: Optional["PretrainedConfig"] = None,
         rbln_config: RBLNModelConfig | None = None,
@@ -292,7 +289,7 @@ class RBLNIdefics3ForConditionalGeneration(RBLNModel, RBLNImageIndexedBatchSortM
     @classmethod
     def _update_rbln_config(
         cls,
-        preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"] | None,
+        preprocessors: Sequence[Preprocessor] | None,
         model: Optional["PreTrainedModel"] = None,
         model_config: Optional["PretrainedConfig"] = None,
         rbln_config: RBLNModelConfig | None = None,
@@ -433,7 +430,7 @@ class RBLNIdefics3ForConditionalGeneration(RBLNModel, RBLNImageIndexedBatchSortM
 
     def _preprocess_prefill(
         self,
-        input_ids: torch.LongTensor = None,
+        input_ids: torch.LongTensor | None = None,
         inputs_embeds: torch.FloatTensor | None = None,
         pixel_values: torch.FloatTensor | None = None,
         pixel_attention_mask: torch.BoolTensor | None = None,
@@ -473,13 +470,13 @@ class RBLNIdefics3ForConditionalGeneration(RBLNModel, RBLNImageIndexedBatchSortM
 
     def forward(
         self,
-        input_ids: torch.LongTensor = None,
+        input_ids: torch.LongTensor | None = None,
         attention_mask: torch.Tensor | None = None,
         inputs_embeds: torch.FloatTensor | None = None,
         pixel_values: torch.FloatTensor | None = None,
         pixel_attention_mask: torch.BoolTensor | None = None,
         image_hidden_states: torch.FloatTensor | None = None,
-        cache_position: torch.Tensor = None,
+        cache_position: torch.Tensor | None = None,
         generate_idx: torch.Tensor | None = None,
         return_dict: bool | None = None,
         inputs_sorted: bool = False,

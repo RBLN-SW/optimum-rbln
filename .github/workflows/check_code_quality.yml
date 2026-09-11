@@ -27,3 +27,6 @@ jobs:
         run: |
           uv run --no-sync ruff format --check .
           uv run --no-sync ruff check .
+
+      - name: Check types with mypy
+        run: uv run --no-sync mypy
