@@ -31,12 +31,13 @@ Logging utilities.
 Modified from `transformers.utils.logging.py`
 """
 
-import functools
 import logging
 import os
 import sys
 import threading
-from typing import Any, cast
+from typing import cast
+
+from transformers._typing import TransformersLogger
 
 
 _lock = threading.Lock()
@@ -52,24 +53,6 @@ log_levels = {
 }
 
 _default_log_level = logging.INFO
-
-
-class Logger(logging.Logger):
-    """Typing view of the loggers returned by `get_logger`.
-
-    `warning_once` is installed on `logging.Logger` below, so every logger in the process has it;
-    this class only makes that visible to type checkers.
-    """
-
-    def warning_once(self, *args: Any, **kwargs: Any) -> None: ...
-
-
-@functools.lru_cache(None)
-def _warning_once(self: logging.Logger, *args: Any, **kwargs: Any) -> None:
-    self.warning(*args, **kwargs)
-
-
-logging.Logger.warning_once = _warning_once  # type: ignore[attr-defined]
 
 
 def _get_default_logging_level():
@@ -116,7 +99,7 @@ def _configure_library_root_logger() -> None:
         library_root_logger.propagate = False
 
 
-def get_logger(name: str | None = None) -> Logger:
+def get_logger(name: str | None = None) -> TransformersLogger:
     """
     Return a logger with the specified name.
     """
@@ -125,4 +108,4 @@ def get_logger(name: str | None = None) -> Logger:
         name = _get_library_name()
 
     _configure_library_root_logger()
-    return cast(Logger, logging.getLogger(name))
+    return cast(TransformersLogger, logging.getLogger(name))
