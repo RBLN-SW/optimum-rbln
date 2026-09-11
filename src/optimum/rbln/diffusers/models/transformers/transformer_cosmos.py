@@ -140,6 +140,69 @@ class CosmosTransformer3DModelWrapper(torch.nn.Module):
         return (hidden_states,)
 
 
+class CosmosTransferTransformerWrapper(CosmosTransformer3DModelWrapper):
+    """Transfer2.5 graph: the base blocks plus ControlNet residual injection and image context.
+
+    A separate wrapper (instead of optional inputs on the base one) keeps the Predict graph and
+    its input order byte-identical, and removes any ambiguity in positional input binding.
+    """
+
+    def __init__(
+        self,
+        model: CosmosTransformer3DModel,
+        num_latent_frames: int = 16,
+        latent_height: int = 88,
+        latent_width: int = 160,
+    ) -> None:
+        super().__init__(model, num_latent_frames, latent_height, latent_width)
+        self.controlnet_block_every_n = model.config.controlnet_block_every_n
+        self.uses_img_context = model.config.img_context_dim_in is not None and model.config.img_context_dim_in > 0
+
+    def forward(
+        self,
+        hidden_states: torch.Tensor,
+        encoder_hidden_states: torch.Tensor,
+        embedded_timestep: torch.Tensor,
+        temb: torch.Tensor,
+        image_rotary_emb_0: torch.Tensor,
+        image_rotary_emb_1: torch.Tensor,
+        controlnet_states: torch.Tensor,
+        img_context: torch.Tensor | None = None,
+        return_dict: bool = False,
+    ):
+        image_rotary_emb = [image_rotary_emb_0, image_rotary_emb_1]
+        # Transfer2.5 blocks cross-attend a (text, img) tuple; img is a projected constant
+        # context when the pipeline gives no image (it feeds zeros through img_context_proj).
+        context = (encoder_hidden_states, img_context) if self.uses_img_context else encoder_hidden_states
+
+        for block_idx, block in enumerate(self.model.transformer_blocks):
+            if block_idx % self.controlnet_block_every_n == 0:
+                controlnet_residual = controlnet_states[block_idx // self.controlnet_block_every_n]
+            else:
+                controlnet_residual = None
+            hidden_states = block(
+                hidden_states=hidden_states,
+                encoder_hidden_states=context,
+                embedded_timestep=embedded_timestep,
+                temb=temb,
+                image_rotary_emb=image_rotary_emb,
+                extra_pos_emb=None,
+                attention_mask=None,
+                controlnet_residual=controlnet_residual,
+            )
+        post_patch_num_frames = self.num_latent_frames // self.p_t
+        post_patch_height = self.latent_height // self.p_h
+        post_patch_width = self.latent_width // self.p_w
+        hidden_states = self.model.norm_out(hidden_states, embedded_timestep, temb)
+        hidden_states = self.model.proj_out(hidden_states)
+        hidden_states = hidden_states.unflatten(2, (self.p_h, self.p_w, self.p_t, -1))
+        hidden_states = hidden_states.unflatten(1, (post_patch_num_frames, post_patch_height, post_patch_width))
+        hidden_states = hidden_states.permute(0, 7, 1, 6, 2, 4, 3, 5)
+        hidden_states = hidden_states.flatten(6, 7).flatten(4, 5).flatten(2, 3)
+
+        return (hidden_states,)
+
+
 class RBLNCosmosTransformer3DModel(RBLNModel):
     """
     RBLN implementation of CosmosTransformer3DModel for diffusion models like Cosmos.
@@ -199,6 +262,15 @@ class RBLNCosmosTransformer3DModel(RBLNModel):
             )
             self.crossattn_proj.load_state_dict(artifacts["crossattn_proj"])
             self.crossattn_proj.to(self.rbln_config.dtype)
+        if artifacts.get("img_context_proj") is None:
+            self.img_context_proj = None
+        else:
+            self.img_context_proj = torch.nn.Sequential(
+                torch.nn.Linear(self.config.img_context_dim_in, self.config.img_context_dim_out, bias=True),
+                torch.nn.GELU(),
+            )
+            self.img_context_proj.load_state_dict(artifacts["img_context_proj"])
+            self.img_context_proj.to(self.rbln_config.dtype)
         self.time_embed.to(self.rbln_config.dtype)
 
     def compute_embedding(
@@ -280,7 +352,12 @@ class RBLNCosmosTransformer3DModel(RBLNModel):
         num_latent_frames = rbln_config.num_latent_frames
         latent_height = rbln_config.latent_height
         latent_width = rbln_config.latent_width
-        return CosmosTransformer3DModelWrapper(
+        wrapper_cls = (
+            CosmosTransferTransformerWrapper
+            if getattr(model.config, "controlnet_block_every_n", None)
+            else CosmosTransformer3DModelWrapper
+        )
+        return wrapper_cls(
             model=model,
             num_latent_frames=num_latent_frames,
             latent_height=latent_height,
@@ -349,6 +426,8 @@ class RBLNCosmosTransformer3DModel(RBLNModel):
         save_dict["time_embed"] = model.time_embed.state_dict()
         if model.config.use_crossattn_projection:
             save_dict["crossattn_proj"] = model.crossattn_proj.state_dict()
+        if getattr(model, "img_context_proj", None) is not None:
+            save_dict["img_context_proj"] = model.img_context_proj.state_dict()
         torch.save(save_dict, save_dir_path / subfolder / "torch_artifacts.pth")
 
     @classmethod
@@ -426,6 +505,30 @@ class RBLNCosmosTransformer3DModel(RBLNModel):
                 ("extra_pos_emb", [rbln_config.batch_size, hidden_dim, hidden_size], rbln_config.dtype),
             )
 
+        controlnet_block_every_n = getattr(model_config, "controlnet_block_every_n", None)
+        if controlnet_block_every_n:
+            # Transfer2.5: per-block ControlNet residuals, stacked into a single input.
+            num_controlnet_states = len(range(0, model_config.num_layers, controlnet_block_every_n))
+            input_info.append(
+                (
+                    "controlnet_states",
+                    [num_controlnet_states, rbln_config.batch_size, hidden_dim, hidden_size],
+                    rbln_config.dtype,
+                )
+            )
+            if getattr(model_config, "img_context_dim_in", None):
+                input_info.append(
+                    (
+                        "img_context",
+                        [
+                            rbln_config.batch_size,
+                            model_config.img_context_num_tokens,
+                            model_config.img_context_dim_out,
+                        ],
+                        rbln_config.dtype,
+                    )
+                )
+
         compile_config = RBLNCompileConfig(input_info=input_info)
         rbln_config.set_compile_cfgs([compile_config])
         return rbln_config
@@ -454,11 +557,12 @@ class RBLNCosmosTransformer3DModel(RBLNModel):
         self,
         hidden_states: torch.Tensor,
         timestep: torch.Tensor,
-        encoder_hidden_states: torch.Tensor,
+        encoder_hidden_states: torch.Tensor | tuple,
         attention_mask: torch.Tensor | None = None,
         fps: int | None = None,
         condition_mask: torch.Tensor | None = None,
         padding_mask: torch.Tensor | None = None,
+        block_controlnet_hidden_states: list[torch.Tensor] | None = None,
         return_dict: bool = True,
     ) -> Transformer2DModelOutput | tuple:
         """
@@ -476,6 +580,13 @@ class RBLNCosmosTransformer3DModel(RBLNModel):
         Returns:
             (`~diffusers.models.modeling_output.Transformer2DModelOutput` | tuple)
         """
+        # Transfer2.5 feeds a (text, img) tuple; the img context is projected on the host.
+        img_context = None
+        if isinstance(encoder_hidden_states, tuple):
+            encoder_hidden_states, img_context = encoder_hidden_states
+        if self.img_context_proj is not None and img_context is not None:
+            img_context = self.img_context_proj(img_context.to(self.rbln_config.dtype))
+
         (
             hidden_states,
             encoder_hidden_states,
@@ -489,7 +600,24 @@ class RBLNCosmosTransformer3DModel(RBLNModel):
             hidden_states, encoder_hidden_states, timestep, attention_mask, fps, condition_mask, padding_mask
         )
 
-        if self.config.extra_pos_embed_type is None:
+        if block_controlnet_hidden_states is not None:
+            # Transfer2.5: residuals stacked into one input, img context appended last.
+            controlnet_states = torch.stack(
+                [state.to(self.rbln_config.dtype) for state in block_controlnet_hidden_states], dim=0
+            )
+            inputs = [
+                hidden_states,
+                encoder_hidden_states,
+                embedded_timestep,
+                temb,
+                image_rotary_emb_0,
+                image_rotary_emb_1,
+                controlnet_states,
+            ]
+            if img_context is not None:
+                inputs.append(img_context)
+            hidden_states = self.model[0].forward(*inputs)
+        elif self.config.extra_pos_embed_type is None:
             hidden_states = self.model[0].forward(
                 hidden_states,
                 encoder_hidden_states,

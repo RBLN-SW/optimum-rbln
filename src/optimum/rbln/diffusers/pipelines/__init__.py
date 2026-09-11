@@ -32,6 +32,7 @@ _import_structure = {
     ],
     "cosmos": [
         "RBLNCosmos2_5_PredictBasePipeline",
+        "RBLNCosmos2_5_TransferPipeline",
         "RBLNCosmosTextToWorldPipeline",
         "RBLNCosmosVideoToWorldPipeline",
         "RBLNCosmos2TextToImagePipeline",
@@ -81,6 +82,7 @@ if TYPE_CHECKING:
     )
     from .cosmos import (
         RBLNCosmos2_5_PredictBasePipeline,
+        RBLNCosmos2_5_TransferPipeline,
         RBLNCosmos2TextToImagePipeline,
         RBLNCosmos2VideoToWorldPipeline,
         RBLNCosmosSafetyChecker,

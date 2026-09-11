@@ -19,7 +19,12 @@ from typing import TYPE_CHECKING, Any
 from ....configuration_utils import RBLNModelConfig
 from ....transformers import RBLNQwen2_5_VLForConditionalGenerationConfig, RBLNT5EncoderModelConfig
 from ....utils.logging import get_logger
-from ..models import RBLNAutoencoderKLCosmosConfig, RBLNAutoencoderKLWanConfig, RBLNCosmosTransformer3DModelConfig
+from ..models import (
+    RBLNAutoencoderKLCosmosConfig,
+    RBLNAutoencoderKLWanConfig,
+    RBLNCosmosControlNetModelConfig,
+    RBLNCosmosTransformer3DModelConfig,
+)
 
 
 if TYPE_CHECKING:
@@ -314,3 +319,51 @@ class RBLNCosmos2_5_PredictBasePipelineConfig(RBLNModelConfig):
     @property
     def max_seq_len(self):
         return self.text_encoder.max_seq_len
+
+
+class RBLNCosmos2_5_TransferPipelineConfig(RBLNCosmos2_5_PredictBasePipelineConfig):
+    """Config for Cosmos-Transfer2.5 Pipeline (Predict2.5 base + ControlNet)."""
+
+    submodules = ["text_encoder", "transformer", "vae", "controlnet", "safety_checker"]
+    _vae_uses_encoder = True
+    _default_height = 704
+    _default_width = 1280
+    _default_num_frames = 93
+
+    def __init__(
+        self,
+        controlnet: "RBLNCosmosControlNetModelConfig | None" = None,
+        *,
+        batch_size: int | None = None,
+        height: int | None = None,
+        width: int | None = None,
+        num_frames: int | None = None,
+        max_seq_len: int | None = None,
+        **kwargs: Any,
+    ):
+        """
+        Args:
+            controlnet (Optional[RBLNCosmosControlNetModelConfig]): Configuration for the ControlNet component.
+                Initialized as RBLNCosmosControlNetModelConfig if not provided; its latent geometry is
+                copied from the transformer submodule at compile time.
+            batch_size (Optional[int]): Batch size for inference, applied to all submodules.
+            height (Optional[int]): Height of the generated videos.
+            width (Optional[int]): Width of the generated videos.
+            num_frames (Optional[int]): The number of frames per generated chunk.
+            max_seq_len (Optional[int]): Maximum sequence length supported by the model.
+            **kwargs: Additional arguments passed to the parent config (text_encoder/transformer/vae/safety_checker).
+        """
+        super().__init__(
+            batch_size=batch_size,
+            height=height,
+            width=width,
+            num_frames=num_frames,
+            max_seq_len=max_seq_len,
+            **kwargs,
+        )
+        self.controlnet = self.initialize_submodule_config(
+            controlnet,
+            cls_name="RBLNCosmosControlNetModelConfig",
+            batch_size=batch_size,
+            max_seq_len=self.text_encoder.max_seq_len,
+        )
