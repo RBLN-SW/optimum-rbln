@@ -93,10 +93,6 @@ def _matched_token_counts(
 class RBLNBatchSortGuardMixin(_GuardBase):
     config: "PretrainedConfig"
 
-    @property
-    def _batch_sort_enabled(self) -> bool:
-        raise NotImplementedError
-
     def _require_sorted_batch_inputs(self, batch_input: torch.Tensor | None, inputs_sorted: bool) -> None:
         # an unsorted direct multi-batch call would silently mis-lay the KV cache
         if inputs_sorted or not self._batch_sort_enabled:
