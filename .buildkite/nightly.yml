@@ -46,12 +46,14 @@ steps:
     command: |
       bash .buildkite/scripts/bc-steps.sh --all | buildkite-agent pipeline upload
 
-  # continue_on_failure so a failed suite still gets reported.
-  - wait:
-      continue_on_failure: true
+  # continue_on_failure is a sibling of wait, not a value under it: nested, the
+  # flag is dropped and a failed suite takes the report down with it (build #1).
+  - wait: ~
+    continue_on_failure: true
 
   - label: ":slack: report"
     soft_fail: true
+    allow_dependency_failure: true
     image: "${DEVTOOLS_DOCKER_IMAGE}"
     secrets:
       OBEDIENTS_API_TOKEN: BUILDKITE_API_TOKEN
