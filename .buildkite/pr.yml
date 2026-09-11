@@ -5,6 +5,13 @@ env:
   UV_LINK_MODE: "symlink"
   UV_INDEX_STRATEGY: "unsafe-best-match"
 
+# Every upload job reads only .buildkite; the suites they emit check out in full.
+_upload: &upload
+  checkout:
+    sparse:
+      paths:
+        - .buildkite
+
 steps:
   - label: ":closed_lock_with_key: team-member gate"
     image: "${DEVTOOLS_DOCKER_IMAGE}"
@@ -36,20 +43,29 @@ steps:
   # All gates must pass before the NPU pipeline is even uploaded.
   - wait: ~
 
+  # Each upload job is a sibling: two uploads from one job make the second batch
+  # a barrier for the first, so the suites would wait on each other.
+  #
   # A [pytest-full] commit (the compiler-update bot's PRs) runs every suite at the
-  # full level, so it uploads without --git-diff-base: nothing is path-gated away.
+  # full level and uploads without --git-diff-base: nothing is path-gated away.
   - label: ":sparkles: upload pytest"
-    checkout:
-      sparse:
-        paths:
-          - .buildkite
+    <<: *upload
     command: |
       if [[ "$$BUILDKITE_MESSAGE" == *"[pytest-full]"* ]]; then
         echo "--- :mag: [pytest-full] in commit message"
         export OPTIMUM_RBLN_TEST_LEVEL=full
-        buildkite-agent pipeline upload .buildkite/pipelines/pytest/pipeline.yml
       else
         TARGET_BRANCH=$${BUILDKITE_PULL_REQUEST_BASE_BRANCH:-dev}
         git fetch origin $$TARGET_BRANCH
-        buildkite-agent pipeline upload .buildkite/pipelines/pytest/pipeline.yml --git-diff-base origin/$$TARGET_BRANCH
+        DIFF="--git-diff-base origin/$$TARGET_BRANCH"
       fi
+      buildkite-agent pipeline upload .buildkite/pipelines/pytest/pipeline.yml $${DIFF:-}
+
+  - label: ":sparkles: upload full CLI"
+    <<: *upload
+    command: |
+      if [[ "$$BUILDKITE_MESSAGE" != *"[pytest-full]"* ]]; then
+        echo "not a [pytest-full] build; the advanced CLI suites do not run"
+        exit 0
+      fi
+      buildkite-agent pipeline upload .buildkite/pipelines/pytest/cli-full.yml
