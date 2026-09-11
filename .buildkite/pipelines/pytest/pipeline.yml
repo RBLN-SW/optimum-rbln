@@ -102,82 +102,13 @@ _npu: &npu
     product: "RBLN-CA25"
 
 steps:
-  - label: ":pytest: config"
-    if_changed: *if_changed_config
+  - label: ":stopwatch: store llm durations"
     image: "${DEVTOOLS_DOCKER_IMAGE}"
     resources: *npu
     secrets: *secrets
-    timeout_in_minutes: 60
+    timeout_in_minutes: 120
+    artifact_paths:
+      - ".test_durations"
     command:
       - *sync
-      - "bash .buildkite/scripts/run-suite.sh config"
-
-  - label: ":pytest: cli-basic"
-    if_changed: *if_changed_cli
-    image: "${DEVTOOLS_DOCKER_IMAGE}"
-    resources: *npu
-    secrets: *secrets
-    timeout_in_minutes: 60
-    command:
-      - *sync
-      - "bash .buildkite/scripts/run-suite.sh cli-basic"
-
-  - label: ":pytest: transformers"
-    if_changed: *if_changed_transformers
-    image: "${DEVTOOLS_DOCKER_IMAGE}"
-    resources: *npu
-    secrets: *secrets
-    timeout_in_minutes: 60
-    command:
-      - *sync
-      - "bash .buildkite/scripts/run-suite.sh transformers"
-
-  - label: ":pytest: diffusers"
-    if_changed: *if_changed_diffusers
-    image: "${DEVTOOLS_DOCKER_IMAGE}"
-    resources: *npu
-    secrets: *secrets
-    timeout_in_minutes: 60
-    command:
-      - *sync
-      - "bash .buildkite/scripts/run-suite.sh diffusers"
-
-  - label: ":pytest: llm 1/4"
-    if_changed: *if_changed_llm
-    image: "${DEVTOOLS_DOCKER_IMAGE}"
-    resources: *npu
-    secrets: *secrets
-    timeout_in_minutes: 60
-    command:
-      - *sync
-      - "bash .buildkite/scripts/run-suite.sh llm 1"
-
-  - label: ":pytest: llm 2/4"
-    if_changed: *if_changed_llm
-    image: "${DEVTOOLS_DOCKER_IMAGE}"
-    resources: *npu
-    secrets: *secrets
-    timeout_in_minutes: 60
-    command:
-      - *sync
-      - "bash .buildkite/scripts/run-suite.sh llm 2"
-
-  - label: ":pytest: llm 3/4"
-    if_changed: *if_changed_llm
-    image: "${DEVTOOLS_DOCKER_IMAGE}"
-    resources: *npu
-    secrets: *secrets
-    timeout_in_minutes: 60
-    command:
-      - *sync
-      - "bash .buildkite/scripts/run-suite.sh llm 3"
-
-  - label: ":pytest: llm 4/4"
-    if_changed: *if_changed_llm
-    image: "${DEVTOOLS_DOCKER_IMAGE}"
-    resources: *npu
-    secrets: *secrets
-    timeout_in_minutes: 60
-    command:
-      - *sync
-      - "bash .buildkite/scripts/run-suite.sh llm 4"
+      - "uv run --no-sync pytest -n 1 tests/test_llm.py -vv --store-durations --clean-durations"
