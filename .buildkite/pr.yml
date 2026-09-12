@@ -73,3 +73,25 @@ steps:
         DIFF="--git-diff-base origin/$$TARGET_BRANCH"
       fi
       bash .buildkite/scripts/bc-steps.sh --latest | buildkite-agent pipeline upload $${DIFF:-}
+
+  # continue_on_failure is a sibling of wait, not a value under it: nested, the
+  # flag is dropped and a failed suite takes the report down with it.
+  - wait: ~
+    continue_on_failure: true
+
+  # The compiler-update bot and renovate commit as "[pytest-full] [slack-report]
+  # dependency: ...", and the GHA PR workflow reported those runs to the
+  # playground channel. slack-report.py picks that channel itself for anything
+  # that is not a scheduled build.
+  - label: ":slack: report"
+    if: build.message =~ /\[slack-report\]/
+    soft_fail: true
+    allow_dependency_failure: true
+    image: "${DEVTOOLS_DOCKER_IMAGE}"
+    env:
+      SLACK_TITLE: "Optimum-RBLN PR Full Test Results"
+    secrets:
+      OBEDIENTS_API_TOKEN: BUILDKITE_API_TOKEN
+      SLACK_BOT_TOKEN: SLACK_OAUTH_TOKEN
+    command:
+      - "python3 .buildkite/scripts/slack-report.py"
