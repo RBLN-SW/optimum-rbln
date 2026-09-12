@@ -784,8 +784,10 @@ class TestGroundingDinoModel(BaseTest.TestModel):
                 "window_size": 7,
             },
         )
-        cls.HF_CONFIG_KWARGS["config"] = config
-        cls.HF_CONFIG_KWARGS["ignore_mismatched_sizes"] = True
+        # Rebind rather than mutate: HF_CONFIG_KWARGS resolves to the empty dict
+        # on BaseTest.TestModel, so an in-place write leaks this config into every
+        # class without its own override (ModernBert, DPT) on the same xdist worker.
+        cls.HF_CONFIG_KWARGS = {**cls.HF_CONFIG_KWARGS, "config": config, "ignore_mismatched_sizes": True}
         return super().setUpClass()
 
 
