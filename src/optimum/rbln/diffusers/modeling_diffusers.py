@@ -387,7 +387,7 @@ class RBLNDiffusionMixin:
         prefix: str | None = "",
     ):
         # Compile multiple ControlNet models for a MultiControlNet setup
-        from .models.controlnet import RBLNControlNetModel
+        from .models.controlnets.controlnet import RBLNControlNetModel
         from .pipelines.controlnet import RBLNMultiControlNetModel
 
         compiled_controlnets = []

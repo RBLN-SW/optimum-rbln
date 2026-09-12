@@ -16,7 +16,7 @@
 import torch
 from torch import nn
 
-from ...utils.moe import compute_masked_routing_weight_softmax_first
+from ...utils.moe import compute_masked_routing_weight_softmax_first, split_fused_experts
 from ..decoderonly.configuration_decoderonly import RBLNLoRAConfig
 from ..decoderonly.decoderonly_architecture import DecoderOnlyAttention, DecoderOnlyLayer, DecoderOnlyWrapper
 
@@ -47,7 +47,7 @@ class Qwen2MoeSparseMoeBlock(nn.Module):
         self.norm_topk_prob = model.gate.norm_topk_prob
         gate_weight = model.gate.weight
         gate = nn.Linear(gate_weight.shape[1], gate_weight.shape[0], bias=False)
-        gate.weight = nn.Parameter(gate_weight.detach().clone())
+        gate.weight = model.gate.weight
         self.gate = gate
         self.shared_expert = model.shared_expert
         self.shared_expert_gate = model.shared_expert_gate
@@ -77,14 +77,10 @@ class Qwen2MoeMLP(nn.Module):
 
         # Fused Qwen2MoeExperts: gate_up_proj [E, 2I, H], down_proj [E, H, I].
         self.num_experts = experts.num_experts
-        intermediate_dim = experts.intermediate_dim
-        gate_up = experts.gate_up_proj.detach().clone()
-        self.gate_proj = nn.Linear(1, 1, bias=False)
-        self.up_proj = nn.Linear(1, 1, bias=False)
-        self.down_proj = nn.Linear(1, 1, bias=False)
-        self.gate_proj.weight = nn.Parameter(gate_up[:, :intermediate_dim, :].contiguous())
-        self.up_proj.weight = nn.Parameter(gate_up[:, intermediate_dim:, :].contiguous())
-        self.down_proj.weight = nn.Parameter(experts.down_proj.detach().clone().contiguous())
+        gate, up, down = split_fused_experts(experts)
+        self.register_buffer("gate_proj_weight", gate)
+        self.register_buffer("up_proj_weight", up)
+        self.register_buffer("down_proj_weight", down)
 
     def forward(self, x, router_logits):
         masked_routing_weight = compute_masked_routing_weight_softmax_first(
@@ -92,9 +88,9 @@ class Qwen2MoeMLP(nn.Module):
         )
         return torch.ops.rbln_custom_ops.custom_moe_glu(
             hidden_states=x,
-            gate_proj_weight=self.gate_proj.weight,
-            up_proj_weight=self.up_proj.weight,
-            down_proj_weight=self.down_proj.weight,
+            gate_proj_weight=self.gate_proj_weight,
+            up_proj_weight=self.up_proj_weight,
+            down_proj_weight=self.down_proj_weight,
             masked_routing_weight=masked_routing_weight,
             hidden_act="silu",
         )

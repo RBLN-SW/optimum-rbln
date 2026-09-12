@@ -1,0 +1,211 @@
+# optimum-rbln pytest suites, uploaded by .buildkite/pr.yml.
+# Mirrors the GHA matrix in .github/workflows/rbln_optimum_pytest.yaml.
+#
+# The uploader picks the test level: default for an ordinary PR, full for a
+# [pytest-full] commit (and later for the nightly). Both values are baked in at
+# upload time, so a step's `if` below is already a constant when Buildkite
+# evaluates it -- build.env() cannot see this env block.
+
+notify:
+  - github_commit_status:
+      context: "[OB] Optimum-RBLN pytest"
+
+env:
+  UV_CACHE_DIR: "/mnt/uv_cache"
+  UV_LINK_MODE: "symlink"
+  UV_INDEX_STRATEGY: "unsafe-best-match"
+  OPTIMUM_RBLN_TEST_LEVEL: "${OPTIMUM_RBLN_TEST_LEVEL:-default}"
+  # The hub tests push to a private repo under this namespace and skip themselves
+  # while it is unset (tests/test_base.py require_hf_user_id), which is how they
+  # stay out of an ordinary PR: only a full build's uploader exports it.
+  HF_USER_ID: "${HF_USER_ID:-}"
+
+# Run a suite only when the PR touches something that can change its result.
+# Honored because .buildkite/pr.yml uploads this file with --git-diff-base; the
+# commit status is still reported when every step is skipped.
+#
+# Only the safe split is encoded: transformers/ imports diffusers/ solely under
+# TYPE_CHECKING (clip, t5), so those suites can ignore diffusers/ changes. The
+# reverse is not true -- the diffusers pipelines use CLIP, T5, SigLIP and Qwen3
+# from transformers/ -- so diffusers, config and cli-basic run on any src change.
+_if_changed_config: &if_changed_config
+  include:
+    - ".buildkite/**"
+    - ".github/version.yaml"
+    - "pyproject.toml"
+    - "uv.lock"
+    - "src/**"
+    - "tests/__init__.py"
+    - "tests/test_base.py"
+    - "tests/test_config.py"
+
+_if_changed_cli: &if_changed_cli
+  include:
+    - ".buildkite/**"
+    - ".github/version.yaml"
+    - "pyproject.toml"
+    - "uv.lock"
+    - "src/**"
+    - "tests/__init__.py"
+    - "tests/test_base.py"
+    - ".github/scripts/test_cli.py"
+
+_if_changed_diffusers: &if_changed_diffusers
+  include:
+    - ".buildkite/**"
+    - ".github/version.yaml"
+    - "pyproject.toml"
+    - "uv.lock"
+    - "src/**"
+    - "tests/__init__.py"
+    - "tests/test_base.py"
+    - "tests/test_diffusers.py"
+
+_if_changed_transformers: &if_changed_transformers
+  include:
+    - ".buildkite/**"
+    - ".github/version.yaml"
+    - "pyproject.toml"
+    - "uv.lock"
+    - "src/**"
+    - "tests/__init__.py"
+    - "tests/test_base.py"
+    - "tests/test_transformers.py"
+  exclude:
+    - "src/optimum/rbln/diffusers/**"
+
+_if_changed_llm: &if_changed_llm
+  include:
+    - ".buildkite/**"
+    - ".github/version.yaml"
+    - "pyproject.toml"
+    - "uv.lock"
+    - "src/**"
+    - "tests/__init__.py"
+    - "tests/test_base.py"
+    - "tests/test_llm.py"
+  exclude:
+    - "src/optimum/rbln/diffusers/**"
+
+# GHA spawns the advanced CLI jobs at every level and skips them inside; here the
+# step is not created at all, so no NPU is held just to skip. A full build
+# uploads without --git-diff-base, which is why these carry no if_changed.
+_full_only: &full_only
+  if: "'${OPTIMUM_RBLN_TEST_LEVEL:-default}' == 'full'"
+
+_secrets: &secrets
+  UV_INDEX_REBELLIONS_USERNAME: REBEL_SW_DEV_USERNAME
+  UV_INDEX_REBELLIONS_PASSWORD: REBEL_SW_DEV_PASSWORD
+  HF_TOKEN: HF_TOKEN
+  HF_HOME: HF_HOME
+  # HF_TOKEN reads gated models; only this one may create a repo under
+  # Rebellions, which is what test_push_to_hub does.
+  HF_AUTH_TOKEN: MODEL_HUB_ACCESS
+
+_sync: &sync "bash .buildkite/scripts/sync.sh"
+
+_npu: &npu
+  npu:
+    count: 1
+    product: "RBLN-CA25"
+
+steps:
+  - label: ":pytest: config"
+    if_changed: *if_changed_config
+    image: "${DEVTOOLS_DOCKER_IMAGE}"
+    resources: *npu
+    secrets: *secrets
+    timeout_in_minutes: 60
+    command:
+      - *sync
+      - "bash .buildkite/scripts/run-suite.sh config"
+
+  - label: ":pytest: cli-basic"
+    if_changed: *if_changed_cli
+    image: "${DEVTOOLS_DOCKER_IMAGE}"
+    resources: *npu
+    secrets: *secrets
+    timeout_in_minutes: 60
+    command:
+      - *sync
+      - "bash .buildkite/scripts/run-suite.sh cli-basic"
+
+  - label: ":pytest: cli-argument-parsing"
+    <<: *full_only
+    image: "${DEVTOOLS_DOCKER_IMAGE}"
+    resources: *npu
+    secrets: *secrets
+    timeout_in_minutes: 60
+    command:
+      - *sync
+      - "bash .buildkite/scripts/run-suite.sh cli-argument-parsing"
+
+  - label: ":pytest: cli-error-handling"
+    <<: *full_only
+    image: "${DEVTOOLS_DOCKER_IMAGE}"
+    resources: *npu
+    secrets: *secrets
+    timeout_in_minutes: 60
+    command:
+      - *sync
+      - "bash .buildkite/scripts/run-suite.sh cli-error-handling"
+
+  - label: ":pytest: transformers"
+    if_changed: *if_changed_transformers
+    image: "${DEVTOOLS_DOCKER_IMAGE}"
+    resources: *npu
+    secrets: *secrets
+    timeout_in_minutes: 60
+    command:
+      - *sync
+      - "bash .buildkite/scripts/run-suite.sh transformers"
+
+  - label: ":pytest: diffusers"
+    if_changed: *if_changed_diffusers
+    image: "${DEVTOOLS_DOCKER_IMAGE}"
+    resources: *npu
+    secrets: *secrets
+    timeout_in_minutes: 60
+    command:
+      - *sync
+      - "bash .buildkite/scripts/run-suite.sh diffusers"
+
+  - label: ":pytest: llm 1/4"
+    if_changed: *if_changed_llm
+    image: "${DEVTOOLS_DOCKER_IMAGE}"
+    resources: *npu
+    secrets: *secrets
+    timeout_in_minutes: 60
+    command:
+      - *sync
+      - "bash .buildkite/scripts/run-suite.sh llm 1"
+
+  - label: ":pytest: llm 2/4"
+    if_changed: *if_changed_llm
+    image: "${DEVTOOLS_DOCKER_IMAGE}"
+    resources: *npu
+    secrets: *secrets
+    timeout_in_minutes: 60
+    command:
+      - *sync
+      - "bash .buildkite/scripts/run-suite.sh llm 2"
+
+  - label: ":pytest: llm 3/4"
+    if_changed: *if_changed_llm
+    image: "${DEVTOOLS_DOCKER_IMAGE}"
+    resources: *npu
+    secrets: *secrets
+    timeout_in_minutes: 60
+    command:
+      - *sync
+      - "bash .buildkite/scripts/run-suite.sh llm 3"
+
+  - label: ":pytest: llm 4/4"
+    if_changed: *if_changed_llm
+    image: "${DEVTOOLS_DOCKER_IMAGE}"
+    resources: *npu
+    secrets: *secrets
+    timeout_in_minutes: 60
+    command:
+      - *sync
+      - "bash .buildkite/scripts/run-suite.sh llm 4"

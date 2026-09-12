@@ -143,12 +143,15 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
             `attn_impl` determines the underlying attention mechanism used by the model.
 
             - **`"eager"`** (Default if `kvcache_partition_len` is not set): Uses the standard PyTorch
-                attention implementation. Suitable for sequences up to a certain limit (e.g., 32,768 tokens).
+                attention implementation. `max_seq_len` is capped by the target NPU.
             - **`"flash_attn"`**: Utilizes an optimized Flash Attention implementation, beneficial for
                 longer sequences and potentially faster execution. Requires `max_seq_len` to be at least
-                2,048. If `kvcache_partition_len` is specified, `attn_impl` automatically defaults
-                to `"flash_attn"`. When using `"flash_attn"`, `kvcache_block_size` must equal
-                `kvcache_partition_len`.
+                twice the minimum partition length. If `kvcache_partition_len` is specified, `attn_impl`
+                automatically defaults to `"flash_attn"`. When using `"flash_attn"`,
+                `kvcache_block_size` must equal `kvcache_partition_len`.
+
+            Every bound above is per NPU family; `AttentionLimits` in `modeling_attention_utils` is
+            the single source, and the raised `ValueError` names the resolved family and value.
 
             The choice impacts performance and memory usage, especially for long sequences.
             Constraints related to `max_seq_len` and `kvcache_partition_len` apply when using
@@ -159,11 +162,11 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
             `kvcache_partition_len` is relevant **only** when `attn_impl` is `"flash_attn"`.
 
             - It defines the length (number of tokens) of each partition within the Key-Value (KV) cache.
-            - Must be between 1,024 and 32,768 (inclusive).
+            - Must be between the target NPU's minimum and maximum partition length, inclusive.
             - When using `"flash_attn"`, `max_seq_len` must be a multiple of `kvcache_partition_len`
                 and at least twice its value (`max_seq_len >= 2 * kvcache_partition_len`).
             - If `attn_impl` is `"flash_attn"` and `kvcache_partition_len` is `None`, it defaults to
-                16,384.
+                the target NPU's default partition length.
 
 
         KV Cache Number of Blocks:
@@ -278,7 +281,9 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
                 # Larger batch size should be at the beginning of the list.
                 self.decoder_batch_sizes.sort(reverse=True)
 
-        self.cache_metas: list[CacheMeta] = cache_metas or []
+        self.cache_metas: list[CacheMeta] = [
+            CacheMeta.from_serialized(meta) if isinstance(meta, dict) else meta for meta in cache_metas or []
+        ]
 
     @staticmethod
     def validate_phases_type(phases: list[PhaseType]):

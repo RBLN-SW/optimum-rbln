@@ -103,9 +103,20 @@ def parse_byte_size(value: int | str) -> int:
     return nbytes
 
 
+def resolve_npu_or_none(npu: str | None = None) -> str | None:
+    """The target NPU: the name pinned on the config, else the attached device's, else None.
+
+    Unlike `_resolve_npu` this does not raise — callers that only pick defaults or bounds must
+    keep working on a host with no NPU attached.
+    """
+    if npu is not None:
+        return npu
+    return rebel.get_npu_name(0) if rebel.npu_is_available(0) else None
+
+
 def npu_is_cr13_or_later(npu: str | None = None) -> bool:
     """Whether the NPU is RBLN-CR13 or later — every CR except CR03 (rebel-compiler's `_is_evt1`)."""
-    npu = npu or (rebel.get_npu_name(0) if rebel.npu_is_available(0) else None)
+    npu = resolve_npu_or_none(npu)
     if not npu:
         return False
     normalized = normalize_npu(npu)

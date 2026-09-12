@@ -50,6 +50,25 @@ class RBLNGptOssTopKRouter(nn.Module):
         return F.linear(hidden_states, self.weight, self.bias)  # (seq_len, num_experts)
 
 
+def split_interleaved_experts(model: nn.Module, gate_up_blocks: torch.Tensor, gate_up_scales: torch.Tensor):
+    # mxfp4 GPT-OSS interleaves gate|up along dim 1 (even rows gate, odd rows up); custom_moe_glu_mxfp4 takes
+    # them separately, so the strided halves are copied to be contiguous. The fused source is released
+    # afterwards: the HF experts module is not run once wrapped, and keeping it would double host memory.
+    num_experts, intermediate_size = model.num_experts, model.intermediate_size
+    bias = model.gate_up_proj_bias.data
+    gate_blocks = gate_up_blocks[:, ::2, :, :].reshape(num_experts, intermediate_size, -1).contiguous()
+    gate_scales = gate_up_scales[:, ::2, :].contiguous()
+    gate_bias = bias[:, ::2].reshape(num_experts, intermediate_size).contiguous()
+    up_blocks = gate_up_blocks[:, 1::2, :, :].reshape(num_experts, intermediate_size, -1).contiguous()
+    up_scales = gate_up_scales[:, 1::2, :].contiguous()
+    up_bias = bias[:, 1::2].reshape(num_experts, intermediate_size).contiguous()
+    if hasattr(model, "gate_up_proj_blocks"):
+        model.gate_up_proj_blocks = None
+    else:
+        model.gate_up_proj = None
+    return gate_blocks, gate_scales, gate_bias, up_blocks, up_scales, up_bias
+
+
 class RBLNGptOssExperts(nn.Module):
     def __init__(self, model, top_k: int | None = None):
         super().__init__()
@@ -85,24 +104,15 @@ class RBLNGptOssExperts(nn.Module):
             down_blocks = model.down_proj.data
             down_scales = model.down_proj_scales.data
 
-        self.register_buffer(
-            "gate_proj_blocks",
-            gate_up_blocks[:, ::2, :, :].reshape(self.num_experts, self.intermediate_size, -1),
+        gate_blocks, gate_scales, gate_bias, up_blocks, up_scales, up_bias = split_interleaved_experts(
+            model, gate_up_blocks, gate_up_scales
         )
-        self.register_buffer("gate_proj_scales", gate_up_scales[:, ::2, :])
-        self.register_buffer(
-            "gate_proj_bias",
-            model.gate_up_proj_bias.data[:, ::2].reshape(self.num_experts, self.intermediate_size),
-        )
-
-        self.register_buffer(
-            "up_proj_blocks",
-            gate_up_blocks[:, 1::2, :, :].reshape(self.num_experts, self.intermediate_size, -1),
-        )
-        self.register_buffer("up_proj_scales", gate_up_scales[:, 1::2, :])
-        self.register_buffer(
-            "up_proj_bias", model.gate_up_proj_bias.data[:, 1::2].reshape(self.num_experts, self.intermediate_size)
-        )
+        self.register_buffer("gate_proj_blocks", gate_blocks)
+        self.register_buffer("gate_proj_scales", gate_scales)
+        self.register_buffer("gate_proj_bias", gate_bias)
+        self.register_buffer("up_proj_blocks", up_blocks)
+        self.register_buffer("up_proj_scales", up_scales)
+        self.register_buffer("up_proj_bias", up_bias)
 
         self.register_buffer("down_proj_blocks", down_blocks.reshape(self.num_experts, self.hidden_size, -1))
         self.register_buffer("down_proj_scales", down_scales)

@@ -13,7 +13,8 @@
 # limitations under the License.
 
 from abc import abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
+from inspect import isabstract
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from ..configuration_utils import RBLNSerializableConfigProtocol
@@ -79,6 +80,34 @@ class CacheMeta(RBLNSerializableConfigProtocol):
         # num_key_value_heads/head_dim/rbln_config; linear takes a raw shape) and compute the derived
         # shape.
         ...
+
+    @classmethod
+    def from_serialized(cls, serialized: dict[str, Any]) -> "CacheMeta":
+        """Rebuild a meta from its serialized form, the inverse of ``_prepare_for_serialization``.
+
+        The ``layer_type`` tag selects the concrete subclass, and keys that are not fields of
+        that subclass are dropped: the tag itself is a ``ClassVar``, and ``is_auto`` is always
+        emitted but is only a field of the resizable full-attention cache.
+        """
+        layer_type = serialized.get("layer_type")
+        subclass = cls._concrete_subclasses().get(layer_type)
+        if subclass is None:
+            raise ValueError(
+                f"Unknown cache `layer_type` {layer_type!r}. This artifact was likely compiled with a "
+                f"newer optimum-rbln; known types are {sorted(cls._concrete_subclasses())}."
+            )
+        field_names = {field.name for field in fields(subclass)}
+        return subclass(**{key: value for key, value in serialized.items() if key in field_names})
+
+    @classmethod
+    def _concrete_subclasses(cls) -> dict[str, type["CacheMeta"]]:
+        # Instantiable metas below `cls`, keyed by their `layer_type` tag.
+        found: dict[str, type["CacheMeta"]] = {}
+        for subclass in cls.__subclasses__():
+            found.update(subclass._concrete_subclasses())
+            if not isabstract(subclass):
+                found[subclass.layer_type] = subclass
+        return found
 
 
 @dataclass

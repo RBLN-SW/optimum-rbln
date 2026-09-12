@@ -1,0 +1,75 @@
+# Entry pipeline for PR builds. Gates run first; the pytest pipeline is uploaded
+# only after they pass, with --git-diff-base so if_changed in that pipeline works.
+env:
+  # Where every release's compiled artifacts live, written by the GHA bc_compile
+  # workflow on each tag. Same path as the GHA BC_BASE_PATH repository variable.
+  BC_BASE_PATH: "/mnt/shared_data/.cache/optimum-rbln/backward_compatibility"
+  UV_CACHE_DIR: "/mnt/uv_cache"
+  UV_LINK_MODE: "symlink"
+  UV_INDEX_STRATEGY: "unsafe-best-match"
+
+# Both upload jobs read only .buildkite; the suites they emit check out in full.
+_upload: &upload
+  checkout:
+    sparse:
+      paths:
+        - .buildkite
+
+steps:
+  - label: ":closed_lock_with_key: team-member gate"
+    image: "${DEVTOOLS_DOCKER_IMAGE}"
+    secrets:
+      - GIT_PAT
+    command:
+      - "bash .buildkite/scripts/gate-team-member.sh"
+
+  # Same checks as .github/workflows/check_code_quality.yml.
+  - label: ":mag: ruff"
+    notify:
+      - github_commit_status:
+          context: "[OB] code quality"
+    image: "${DEVTOOLS_DOCKER_IMAGE}"
+    command:
+      - "uv sync --locked --python 3.12 --group quality --no-install-project"
+      - "uv run --no-sync ruff format --check ."
+      - "uv run --no-sync ruff check ."
+
+  # Same check as .github/workflows/test-docstrings.yml.
+  - label: ":page_facing_up: docstrings"
+    notify:
+      - github_commit_status:
+          context: "[OB] docstrings"
+    image: "${DEVTOOLS_DOCKER_IMAGE}"
+    command:
+      - "bash .buildkite/scripts/check-docstrings.sh"
+
+  # All gates must pass before the NPU pipeline is even uploaded.
+  - wait: ~
+
+  # A [pytest-full] commit (the compiler-update bot's PRs) runs every suite at the
+  # full level, so it uploads without --git-diff-base: nothing is path-gated away.
+  # Sibling jobs: two uploads from one job make the second batch a barrier for
+  # the first, so the pytest suites would wait on BC.
+  - label: ":sparkles: upload pytest"
+    <<: *upload
+    command: |
+      if [[ "$$BUILDKITE_MESSAGE" == *"[pytest-full]"* ]]; then
+        echo "--- :mag: [pytest-full] in commit message"
+        export OPTIMUM_RBLN_TEST_LEVEL=full
+        export HF_USER_ID=Rebellions
+        buildkite-agent pipeline upload .buildkite/pipelines/pytest/pipeline.yml
+      else
+        TARGET_BRANCH=$${BUILDKITE_PULL_REQUEST_BASE_BRANCH:-dev}
+        git fetch origin $$TARGET_BRANCH
+        buildkite-agent pipeline upload .buildkite/pipelines/pytest/pipeline.yml --git-diff-base origin/$$TARGET_BRANCH
+      fi
+
+  - label: ":sparkles: upload BC"
+    <<: *upload
+    command: |
+      if [[ "$$BUILDKITE_MESSAGE" != *"[pytest-full]"* ]]; then
+        TARGET_BRANCH=$${BUILDKITE_PULL_REQUEST_BASE_BRANCH:-dev}
+        git fetch origin $$TARGET_BRANCH
+        DIFF="--git-diff-base origin/$$TARGET_BRANCH"
+      fi
+      bash .buildkite/scripts/bc-steps.sh --latest | buildkite-agent pipeline upload $${DIFF:-}

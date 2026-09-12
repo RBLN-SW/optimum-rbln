@@ -21,7 +21,7 @@ from diffusers.pipelines.controlnet.multicontrolnet import MultiControlNetModel
 
 from ....modeling import RBLNModel
 from ....utils.logging import get_logger
-from ...models.controlnet import RBLNControlNetModel
+from ...models.controlnets.controlnet import RBLNControlNetModel
 
 
 logger = get_logger(__name__)

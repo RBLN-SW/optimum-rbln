@@ -12,7 +12,7 @@
 
 # syntax=docker/dockerfile:1.7
 
-ARG UV_VERSION=0.9.18
+ARG UV_VERSION=0.11.33
 FROM ghcr.io/astral-sh/uv:${UV_VERSION} AS uv
 
 FROM python:3.12-slim-bookworm
