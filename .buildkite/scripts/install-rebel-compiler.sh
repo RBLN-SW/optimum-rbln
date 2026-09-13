@@ -1,10 +1,6 @@
 #!/usr/bin/env bash
-# Install the rebel-compiler pinned in .github/version.yaml into the synced venv.
-# Same file the GHA workflows read, so the two CIs test the same compiler.
-#
-# REBEL_COMPILER_VERSION overrides the pin. The compiler's dev-branch CI sets it
-# when it triggers this pipeline, so its downstream gate tests the wheel that
-# build just produced instead of silently re-testing the pinned one.
+# REBEL_COMPILER_VERSION, else the pin in .github/version.yaml (the file the GHA
+# workflows read, so both CIs test the same compiler).
 set -euo pipefail
 
 : "${REBEL_PYPI_INTERNAL_ENDPOINT:?not set}"
