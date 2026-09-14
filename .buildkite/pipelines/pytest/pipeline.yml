@@ -39,6 +39,14 @@ _if_changed_config: &if_changed_config
     - "tests/test_base.py"
     - "tests/test_config.py"
 
+_if_changed_unit_cpu: &if_changed_unit_cpu
+  include:
+    - ".buildkite/**"
+    - "pyproject.toml"
+    - "uv.lock"
+    - "src/**"
+    - "tests/unit/cpu/**"
+
 _if_changed_cli: &if_changed_cli
   include:
     - ".buildkite/**"
@@ -110,6 +118,15 @@ _npu: &npu
     product: "RBLN-CA25"
 
 steps:
+  - label: ":pytest: unit-cpu"
+    if_changed: *if_changed_unit_cpu
+    image: "${DEVTOOLS_DOCKER_IMAGE}"
+    secrets: *secrets
+    timeout_in_minutes: 60
+    command:
+      - *sync
+      - "bash .buildkite/scripts/run-suite.sh unit-cpu"
+
   - label: ":pytest: config"
     if_changed: *if_changed_config
     image: "${DEVTOOLS_DOCKER_IMAGE}"

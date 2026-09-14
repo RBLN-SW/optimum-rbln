@@ -29,6 +29,8 @@ fi
 
 echo "--- :pytest: ${suite}${group:+ (group ${group}/4)}"
 case "$suite" in
+  unit-cpu)
+    uv run --no-sync pytest tests/unit/cpu -vv --durations 0 ;;
   config)
     uv run --no-sync pytest -n 1 tests/test_config.py -vv --durations 0 "${bc[@]}" ;;
   transformers)
