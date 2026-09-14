@@ -283,9 +283,6 @@ class TestQwen3MoeForCausalLM(LLMTest.TestLLM):
         config.num_hidden_layers = 3
         config.max_position_embeddings = 4096
         config.hidden_size = 128
-        # Rebind rather than mutate: neither this class nor LLMTest.TestLLM declares
-        # HF_CONFIG_KWARGS, so an in-place write lands on the empty dict from
-        # BaseTest.TestModel that every class without its own override reads.
         cls.HF_CONFIG_KWARGS = {**cls.HF_CONFIG_KWARGS, "config": config, "ignore_mismatched_sizes": True}
         return super().setUpClass()
 
