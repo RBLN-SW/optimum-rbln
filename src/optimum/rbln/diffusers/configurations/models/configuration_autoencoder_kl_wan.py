@@ -74,8 +74,7 @@ class RBLNAutoencoderKLWanConfig(RBLNModelConfig):
             if not self.use_slicing:
                 self.use_slicing = True
             logger.warning(
-                "Batched Wan VAE graphs are not supported for memory efficiency; "
-                "falling back to per-sample slicing."
+                "Batched Wan VAE graphs are not supported for memory efficiency; falling back to per-sample slicing."
             )
             self.batch_size = 1
 
