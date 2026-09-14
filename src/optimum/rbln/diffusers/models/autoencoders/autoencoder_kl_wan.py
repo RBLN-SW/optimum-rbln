@@ -365,7 +365,9 @@ class RBLNAutoencoderKLWan(RBLNModel):
         super().__post_init__(**kwargs)
         self.temperal_downsample = self.config.temperal_downsample
         self.image_size = self.rbln_config.image_size
-        self.use_slicing = False
+        # Always True (validated by the config): the graphs are batch-1, so a batched request
+        # must run per sample.
+        self.use_slicing = self.rbln_config.use_slicing
         self.use_tiling = False
 
         # post_quant_conv (saved via save_torch_artifacts) -> rebuild for host-side application
@@ -715,7 +717,11 @@ class RBLNAutoencoderKLWan(RBLNModel):
         Returns:
             The decoded video or DecoderOutput if return_dict=True
         """
-        decoded = self._decode(z)
+        if self.use_slicing and z.shape[0] > 1:
+            decoded_slices = [self._decode(z_slice) for z_slice in z.split(1)]
+            decoded = torch.cat(decoded_slices)
+        else:
+            decoded = self._decode(z)
 
         if not return_dict:
             return (decoded,)

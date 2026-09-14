@@ -34,6 +34,7 @@ class RBLNAutoencoderKLWanConfig(RBLNModelConfig):
         num_channels_latents: int | None = None,
         vae_scale_factor_temporal: int | None = None,
         vae_scale_factor_spatial: int | None = None,
+        use_slicing: bool = True,
         **kwargs: Any,
     ):
         """
@@ -54,12 +55,22 @@ class RBLNAutoencoderKLWanConfig(RBLNModelConfig):
                 Determines how much shorter the latent representations are compared to the original videos.
             vae_scale_factor_spatial (Optional[int]): The scaling factor between pixel space and latent space.
                 Determines how much smaller the latent representations are compared to the original videos.
+            use_slicing (bool): Whether batched requests run the VAE per sample. Always True for the
+                Wan VAE: its graphs are compiled at batch_size=1, so sliced execution is the only way
+                to serve a batch — False is rejected.
             kwargs: Additional arguments passed to the parent RBLNModelConfig.
 
         Raises:
             ValueError: If batch_size is not a positive integer.
+            ValueError: If use_slicing is False — the batch-1 compiled graphs require sliced execution.
         """
         super().__init__(**kwargs)
+        if use_slicing is not True:
+            raise ValueError(
+                "The Wan VAE graphs are compiled at batch_size=1, so sliced (per-sample) execution "
+                f"is required; use_slicing={use_slicing!r} is not supported."
+            )
+        self.use_slicing = True
         # The Wan VAE decoder's working set is already near the device limit at full
         # resolution, so its graphs are always compiled at batch_size=1 (the Cosmos
         # pipelines run the VAE at batch 1); larger values are clamped with a warning.
