@@ -1,4 +1,4 @@
-# Copyright 2025 Rebellions Inc. All rights reserved.
+# Copyright 2026 Rebellions Inc. All rights reserved.
 
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -17,12 +17,12 @@ from typing import Any
 from ....configuration_utils import RBLNModelConfig
 
 
-class RBLNCosmosTransformer3DModelConfig(RBLNModelConfig):
+class RBLNCosmosControlNetModelConfig(RBLNModelConfig):
     """
-    Configuration class for RBLN Cosmos Transformer models.
+    Configuration class for the RBLN Cosmos ControlNet (Cosmos-Transfer2.5).
 
-    This class inherits from RBLNModelConfig and provides specific configuration options
-    for Transformer models used in diffusion models like Cosmos.
+    The ControlNet shares its latent geometry with the transformer it drives, so the size
+    fields mirror RBLNCosmosTransformer3DModelConfig and are filled by the pipeline config.
     """
 
     def __init__(
@@ -33,34 +33,32 @@ class RBLNCosmosTransformer3DModelConfig(RBLNModelConfig):
         width: int | None = None,
         max_seq_len: int | None = None,
         embedding_dim: int | None = None,
-        num_channels_latents: int | None = None,
         num_latent_frames: int | None = None,
         latent_height: int | None = None,
         latent_width: int | None = None,
-        uses_per_frame_timestep: bool | None = None,
+        img_context_num_tokens: int | None = None,
         **kwargs: Any,
     ):
         """
         Args:
             batch_size (int | None): The batch size for inference. Defaults to 1.
-            num_frames (int | None): The number of frames in the generated video. Defaults to 121.
-            height (int | None): The height in pixels of the generated video. Defaults to 704.
-            width (int | None): The width in pixels of the generated video. Defaults to 1280.
+            num_frames (int | None): The number of frames per generated chunk.
+            height (int | None): The height in pixels of the generated video.
+            width (int | None): The width in pixels of the generated video.
             max_seq_len (int | None): Maximum sequence length of prompt embeds.
-            embedding_dim (int | None): Embedding vector dimension of prompt embeds.
-            num_channels_latents (int | None): The number of channels in latent space.
+            embedding_dim (int | None): Embedding vector dimension of prompt embeds
+                (after the ControlNet's own cross-attention projection input).
+            num_latent_frames (int | None): The number of frames in latent space.
             latent_height (int | None): The height in pixels in latent space.
             latent_width (int | None): The width in pixels in latent space.
-            uses_per_frame_timestep (bool | None): Whether the pipeline feeds a per-frame timestep
-                tensor ([B, 1, T, 1, 1]; conditioning frames at t=0) instead of a per-batch scalar.
+            img_context_num_tokens (int | None): Number of image-context tokens the graph was
+                compiled with; filled from the model config (Transfer2.5 feeds a zero image
+                context of this size when none is given).
             kwargs: Additional arguments passed to the parent RBLNModelConfig.
 
         Raises:
             ValueError: If batch_size is not a positive integer.
         """
-        if kwargs.get("timeout") is None:
-            kwargs["timeout"] = 80
-
         super().__init__(**kwargs)
         self.batch_size = batch_size or 1
         self.num_frames = num_frames
@@ -68,12 +66,11 @@ class RBLNCosmosTransformer3DModelConfig(RBLNModelConfig):
         self.width = width
 
         self.max_seq_len = max_seq_len
-        self.num_channels_latents = num_channels_latents
+        self.embedding_dim = embedding_dim
         self.num_latent_frames = num_latent_frames
         self.latent_height = latent_height
         self.latent_width = latent_width
-        self.embedding_dim = embedding_dim
-        self.uses_per_frame_timestep = uses_per_frame_timestep
+        self.img_context_num_tokens = img_context_num_tokens
 
         if not isinstance(self.batch_size, int) or self.batch_size < 0:
             raise ValueError(f"batch_size must be a positive integer, got {self.batch_size}")

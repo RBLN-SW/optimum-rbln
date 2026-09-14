@@ -13,3 +13,4 @@
 # limitations under the License.
 
 from .controlnet import RBLNControlNetModel
+from .controlnet_cosmos import RBLNCosmosControlNetModel
