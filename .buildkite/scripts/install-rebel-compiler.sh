@@ -23,6 +23,23 @@ index="https://${UV_INDEX_REBELLIONS_USERNAME}:${UV_INDEX_REBELLIONS_PASSWORD}@$
 echo "--- :package: rebel-compiler==${version}"
 uv pip install --extra-index-url "$index" "rebel-compiler==${version}"
 
+# `uv pip` resolves $VIRTUAL_ENV before the project's .venv and the devtools
+# image sets one, so check the environment the suites actually run in instead of
+# trusting the install. Silently landing elsewhere would test the pinned
+# compiler and still report green -- how rebel_compiler #13336 went unnoticed.
+uv run --no-sync python - "${version}" <<'PY'
+import importlib.metadata as md
+import sys
+
+from packaging.version import Version
+
+want = sys.argv[1]
+got = md.version("rebel-compiler")
+if Version(got) != Version(want):
+    sys.exit(f"rebel-compiler is {got} in the test environment, expected {want}")
+print(f"verified rebel-compiler=={got}")
+PY
+
 if [ -n "${REBEL_COMPILER_VERSION:-}" ]; then
   buildkite-agent annotate --style success --context rebel-compiler \
     "rebel-compiler overridden to \`${version}\`" || true
