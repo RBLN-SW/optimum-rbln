@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
-# run-suite.sh <suite> [group]
+# run-suite.sh <suite> [group] [splits]
 # Runs one suite of the GHA matrix, honoring the same [skip-*] commit-message
 # directives. BUILDKITE_MESSAGE is the PR head commit message, as in GHA.
 set -euo pipefail
 
-suite="${1:?usage: run-suite.sh <suite> [group]}"
+suite="${1:?usage: run-suite.sh <suite> [group] [splits]}"
 group="${2:-}"
+splits="${3:-}"
+weights=".buildkite/pipelines/pytest/test-weights.txt"
 
 case "$suite" in
   transformers) tag="[skip-transformers]" ;;
@@ -27,19 +29,28 @@ if [ -n "${REUSE_ARTIFACTS_PATH:-}" ]; then
   group=""
 fi
 
-echo "--- :pytest: ${suite}${group:+ (group ${group}/4)}"
+echo "--- :pytest: ${suite}${group:+ (group ${group}/${splits})}"
 case "$suite" in
   config)
     uv run --no-sync pytest -n 1 tests/test_config.py -vv --durations 0 "${bc[@]}" ;;
   transformers)
-    uv run --no-sync pytest -n 1 tests/test_transformers.py -vv --durations 0 "${bc[@]}" ;;
+    if [ -n "$group" ]; then
+      # Unquoted on purpose: shard.py prints one space-free node id per line.
+      shard=$(uv run --no-sync pytest --collect-only -q tests/test_transformers.py \
+        | python3 .buildkite/scripts/shard.py "$weights" "$group" "$splits")
+      uv run --no-sync pytest -n 1 $shard -vv --durations 0
+    else
+      uv run --no-sync pytest -n 1 tests/test_transformers.py -vv --durations 0 "${bc[@]}"
+    fi ;;
   diffusers)
     uv run --no-sync pytest -n 1 tests/test_diffusers.py -vv --durations 0 "${bc[@]}" ;;
   llm)
     if [ -n "$group" ]; then
-      uv run --no-sync pytest -n 1 tests/test_llm.py --splits 4 --group "$group" -vv --durations 0
+      shard=$(uv run --no-sync pytest --collect-only -q tests/test_llm.py \
+        | python3 .buildkite/scripts/shard.py "$weights" "$group" "$splits")
+      uv run --no-sync pytest -n 1 $shard -vv --durations 0
     else
-      [ ${#bc[@]} -gt 0 ] || { echo "llm needs a group (1-4)" >&2; exit 2; }
+      [ ${#bc[@]} -gt 0 ] || { echo "llm needs a group" >&2; exit 2; }
       uv run --no-sync pytest -n 1 tests/test_llm.py -vv --durations 0 "${bc[@]}"
     fi ;;
   cli-basic)

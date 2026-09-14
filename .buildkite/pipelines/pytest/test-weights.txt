@@ -1,0 +1,91 @@
+# Seconds per test class, used by .buildkite/scripts/shard.py to balance the
+# split suites. Only the split suites (test_llm.py, test_transformers.py) need
+# entries; a class listed nowhere gets the median of its file.
+#
+# Measured on nightly build 6 (2026-09-13, RBLN-CA25) by summing every
+# `--durations 0` entry of a class -- setup dominates, since that is where the
+# model compiles. Entries below a second are rounded away and do not matter for
+# the packing. Regenerate the same way after a suite's runtime shifts; being a
+# little stale only costs balance, never coverage.
+
+164 tests/test_llm.py::TestQwen2_5_VLForConditionalGeneration
+127 tests/test_llm.py::TestQwen3VLForConditionalGeneration
+53 tests/test_llm.py::TestBlip2ForConditionalGeneration
+46 tests/test_llm.py::TestQLlamaForCausalLM
+42 tests/test_llm.py::TestQwen3_5ForConditionalGeneration_OutputHiddenStates
+41 tests/test_llm.py::TestQwen3_5ForConditionalGeneration
+41 tests/test_llm.py::TestQwen3VLForConditionalGeneration_OutputHiddenStates
+40 tests/test_llm.py::TestQwen3VLMoeForConditionalGeneration
+39 tests/test_llm.py::TestMultiLora
+38 tests/test_llm.py::TestGemma3ForConditionalGeneration_OutputHiddenStates
+38 tests/test_llm.py::TestQwen3_5ForCausalLM
+37 tests/test_llm.py::TestQwen2VLForConditionalGeneration
+36 tests/test_llm.py::TestGemma3ForConditionalGeneration
+32 tests/test_llm.py::TestQwen2MoeForCausalLM
+31 tests/test_llm.py::TestExaoneForCausalLM
+30 tests/test_llm.py::TestQwen2_5_VLForConditionalGeneration_OutputHiddenStates
+29 tests/test_llm.py::TestGemma3ForCausalLM
+29 tests/test_llm.py::TestLlavaNextForConditionalGeneration
+23 tests/test_llm.py::TestIdefics3ForConditionalGeneration
+19 tests/test_llm.py::TestMistralForCausalLM
+18 tests/test_llm.py::TestOPTForCausalLM
+17 tests/test_llm.py::TestLlavaForConditionalGeneration
+17 tests/test_llm.py::TestPegasusModel
+16 tests/test_llm.py::TestPhiForCausalLM
+15 tests/test_llm.py::TestQwen2ForCausalLM
+14 tests/test_llm.py::TestQwen2ForCausalLM_OutputHiddenStates
+14 tests/test_llm.py::TestQwen3MoeForCausalLM
+13 tests/test_llm.py::TestBartModel
+12 tests/test_llm.py::TestLlamaForCausalLM_Multibatch
+12 tests/test_llm.py::TestT5Model
+11 tests/test_llm.py::TestMistralModel
+10 tests/test_llm.py::TestGPT2LMHeadModel
+10 tests/test_llm.py::TestPhiModel
+10 tests/test_llm.py::TestQwen3ForCausalLM
+10 tests/test_llm.py::TestQwen3ForCausalLM_UAM
+9 tests/test_llm.py::TestLlamaForCausalLM
+9 tests/test_llm.py::TestLlamaForCausalLM_Flash
+9 tests/test_llm.py::TestOPTModel
+9 tests/test_llm.py::TestQwen2Model
+9 tests/test_llm.py::TestQwen2Model_OutputHiddenStates
+9 tests/test_llm.py::TestQwen3Model
+9 tests/test_llm.py::TestQwen3Model_UAM
+8 tests/test_llm.py::TestMoeHostMemory
+7 tests/test_llm.py::TestGPT2Model
+7 tests/test_llm.py::TestLlamaModel
+6 tests/test_llm.py::TestLlamaModel_Flash
+5 tests/test_llm.py::TestDisallowedLlama_1
+5 tests/test_llm.py::TestDisallowedLlama_2
+5 tests/test_llm.py::TestDisallowedLlama_3
+5 tests/test_llm.py::TestDisallowedLlama_4
+
+72 tests/test_transformers.py::TestGroundingDinoModel
+32 tests/test_transformers.py::TestColPaliModel
+31 tests/test_transformers.py::TestResNetModel
+25 tests/test_transformers.py::TestColQwen2_5Model
+22 tests/test_transformers.py::TestColQwen2Model
+22 tests/test_transformers.py::TestColQwen2Model_Auto
+22 tests/test_transformers.py::TestColQwen2Model_BFloat16
+22 tests/test_transformers.py::TestColQwen2Model_Float32
+19 tests/test_transformers.py::TestWhisperModel
+16 tests/test_transformers.py::TestViTForImageClassification
+15 tests/test_transformers.py::TestTimeSeriesTransformerForPrediction
+14 tests/test_transformers.py::TestDPTModel
+14 tests/test_transformers.py::TestRBLNXLMRobertaForSequenceClassification
+14 tests/test_transformers.py::TestWav2VecModel
+13 tests/test_transformers.py::TestASTForAudioClassification
+13 tests/test_transformers.py::TestWhisperModel_TokenTimestamps
+12 tests/test_transformers.py::TestEncoderMaxSeqLenBucketing
+11 tests/test_transformers.py::TestBartModel
+11 tests/test_transformers.py::TestModernBertForMaskedLM
+11 tests/test_transformers.py::TestPegasusModel
+11 tests/test_transformers.py::TestXLMRobertaModel
+11 tests/test_transformers.py::TestXLMRobertaModelWithTokenTypeIds
+10 tests/test_transformers.py::TestBertModel
+10 tests/test_transformers.py::TestDistilBertForQuestionAnswering
+9 tests/test_transformers.py::TestBertForQuestionAnswering
+8 tests/test_transformers.py::TestBertForMaskedLM
+7 tests/test_transformers.py::TestRobertaForMaskedLM
+7 tests/test_transformers.py::TestRobertaForSequenceClassification
+6 tests/test_transformers.py::TestCLIPTextModel
+3 tests/test_transformers.py::TestT5EncoderModel
