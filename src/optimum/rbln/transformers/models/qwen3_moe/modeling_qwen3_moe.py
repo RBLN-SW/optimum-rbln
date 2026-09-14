@@ -13,10 +13,11 @@
 # limitations under the License.
 
 from ...models.decoderonly import RBLNDecoderOnlyModelForCausalLM
+from ...utils.moe import RBLNMoeLoadMixin
 from .qwen3_moe_architecture import Qwen3MoeWrapper
 
 
-class RBLNQwen3MoeForCausalLM(RBLNDecoderOnlyModelForCausalLM):
+class RBLNQwen3MoeForCausalLM(RBLNMoeLoadMixin, RBLNDecoderOnlyModelForCausalLM):
     """
     The Qwen3 Moe is a Mixture-of-Experts (MoE) variant of Qwen3, available as a base model and an aligned chat model.
     This model inherits from [`RBLNDecoderOnlyModelForCausalLM`]. Check the superclass documentation for the generic methods the library implements for all its models.

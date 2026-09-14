@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import torch
-from torch import Tensor
+from torch import Tensor, nn
 
 
 def compute_masked_routing_weight_softmax_first(router_logits: Tensor, top_k: int, renormalize: bool) -> Tensor:
@@ -40,3 +40,40 @@ def compute_masked_routing_weight_topk_first(router_logits: Tensor, top_k: int) 
     masked = torch.zeros_like(router_logits_t, dtype=router_logits.dtype)
     masked.scatter_(0, topk_ids, topk_weights)
     return masked  # [E, T]
+
+
+def split_fused_experts(experts: nn.Module) -> tuple[Tensor, Tensor, Tensor]:
+    # HF packs gate|up along dim 1 of gate_up_proj [E, 2I, H]; custom_moe_glu takes them separately, so the
+    # halves are copied to be contiguous while down_proj [E, H, I] is shared. The fused tensor is released
+    # afterwards: the HF experts module is not run once wrapped, and keeping it would double host memory.
+    gate_up = experts.gate_up_proj.detach()
+    intermediate_dim = gate_up.shape[1] // 2
+    gate = gate_up[:, :intermediate_dim, :].contiguous()
+    up = gate_up[:, intermediate_dim:, :].contiguous()
+    experts.gate_up_proj = None
+    return gate, up, experts.down_proj.detach()
+
+
+def release_checkpoint_mmap_(model: nn.Module) -> nn.Module:
+    # transformers leaves whatever it did not convert as a view of the safetensors mmap, which keeps the whole
+    # checkpoint resident. Copy everything out except the fused experts gate_up_proj: the wrapper splits it into
+    # gate/up copies and drops it, so once wrapped no view remains and the mapping is released. Dense models
+    # (no gate_up_proj) are left alone; there the mmap is the model itself.
+    modules = list(model.modules())
+    if not any("gate_up_proj" in module._parameters for module in modules):
+        return model
+    for module in modules:
+        for name, param in module.named_parameters(recurse=False):
+            if name != "gate_up_proj":
+                param.data = param.data.clone()
+        # Buffers are installed as the mmap view itself (no Parameter wrap), and a view keeps its base alive
+        # through `.data` swaps, so replace the buffer object instead.
+        for name, buffer in module.named_buffers(recurse=False):
+            setattr(module, name, buffer.detach().clone())
+    return model
+
+
+class RBLNMoeLoadMixin:
+    @classmethod
+    def get_pytorch_model(cls, *args, **kwargs):
+        return release_checkpoint_mmap_(super().get_pytorch_model(*args, **kwargs))

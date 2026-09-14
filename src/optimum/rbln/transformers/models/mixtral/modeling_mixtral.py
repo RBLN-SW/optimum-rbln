@@ -13,10 +13,11 @@
 # limitations under the License.
 
 from ...models.decoderonly import RBLNDecoderOnlyModelForCausalLM
+from ...utils.moe import RBLNMoeLoadMixin
 from .mixtral_architecture import MixtralWrapper
 
 
-class RBLNMixtralForCausalLM(RBLNDecoderOnlyModelForCausalLM):
+class RBLNMixtralForCausalLM(RBLNMoeLoadMixin, RBLNDecoderOnlyModelForCausalLM):
     """
     The Mixtral is a Mixture-of-Experts (MoE) variant of Mixtral, available as a base model and an aligned chat model.
     This model inherits from [`RBLNDecoderOnlyModelForCausalLM`]. Check the superclass documentation for the generic methods the library implements for all its models.

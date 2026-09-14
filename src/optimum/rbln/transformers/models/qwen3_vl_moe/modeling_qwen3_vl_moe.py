@@ -28,6 +28,7 @@ from transformers.models.qwen3_vl_moe.modeling_qwen3_vl_moe import (
 )
 
 from ....modeling_rope_utils import np_cos, np_sin
+from ...utils.moe import RBLNMoeLoadMixin
 from ..decoderonly.decoderonly_runtime_utils import RBLNPageTableManager, RBLNRuntimeModel
 from ..qwen3_vl.modeling_qwen3_vl import (
     RBLNQwen3VLForConditionalGeneration,
@@ -82,7 +83,7 @@ class RBLNQwen3VLMoeVisionModel(RBLNQwen3VLVisionModel):
         return val
 
 
-class RBLNQwen3VLMoeModel(RBLNQwen3VLModel):
+class RBLNQwen3VLMoeModel(RBLNMoeLoadMixin, RBLNQwen3VLModel):
     auto_model_class = AutoModelForImageTextToText
     _decoder_wrapper_cls = Qwen3VLMoe_LanguageModelWrapper
     _use_rotary_emb = False
@@ -130,7 +131,7 @@ class RBLNQwen3VLMoeModel(RBLNQwen3VLModel):
             self.decoder = self.decoders[self.rbln_config.batch_size]
 
 
-class RBLNQwen3VLMoeForConditionalGeneration(RBLNQwen3VLForConditionalGeneration):
+class RBLNQwen3VLMoeForConditionalGeneration(RBLNMoeLoadMixin, RBLNQwen3VLForConditionalGeneration):
     auto_model_class = AutoModelForImageTextToText
     _decoder_wrapper_cls = Qwen3VLMoe_LanguageModelWrapper
     _use_rotary_emb = False

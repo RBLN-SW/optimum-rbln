@@ -7,7 +7,7 @@ It provides a set of tools enabling easy model loading and inference on single a
 authors = [
     {name = "Rebellions Inc.", email = "support@rebellions.ai"},
 ]
-requires-python = ">=3.10,<3.14"
+requires-python = ">=3.10,<3.15"
 readme = "README.md"
 license = "Apache-2.0"
 license-files = ["LICENSE"]
@@ -24,6 +24,7 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 keywords = ["transformers", "diffusers", "inference", "rbln", "atom", "rebel"]
@@ -33,8 +34,8 @@ dependencies = [
     "torchaudio==2.11.0+cpu; platform_machine == 'x86_64' and platform_python_implementation == 'CPython'",
     "torchvision==0.26.0; platform_machine == 'aarch64' and platform_python_implementation == 'CPython'",
     "torchvision==0.26.0+cpu; platform_machine == 'x86_64' and platform_python_implementation == 'CPython'",
-    "torchcodec==0.11.0; platform_machine == 'aarch64' and platform_python_implementation == 'CPython'",
-    "torchcodec==0.11.0+cpu; platform_machine == 'x86_64' and platform_python_implementation == 'CPython'",
+    "torchcodec==0.14.0; platform_machine == 'aarch64' and platform_python_implementation == 'CPython'",
+    "torchcodec==0.14.0+cpu; platform_machine == 'x86_64' and platform_python_implementation == 'CPython'",
     "accelerate>=1.0.1",
     "transformers==5.15.1",
     "diffusers==0.38.0",
@@ -96,6 +97,7 @@ packages = ["src/optimum"]
 allow-direct-references = true
 
 [tool.uv]
+required-version = ">=0.11.25"
 environments = [
     "sys_platform == 'linux' and platform_machine == 'x86_64' and platform_python_implementation == 'CPython'",
     "sys_platform == 'linux' and platform_machine == 'aarch64' and platform_python_implementation == 'CPython'",
@@ -107,8 +109,8 @@ constraint-dependencies = [
     "torchaudio==2.11.0+cpu; platform_machine == 'x86_64' and platform_python_implementation == 'CPython' and sys_platform == 'linux'",
     "torchvision==0.26.0; platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux'",
     "torchvision==0.26.0+cpu; platform_machine == 'x86_64' and platform_python_implementation == 'CPython' and sys_platform == 'linux'",
-    "torchcodec==0.11.0; platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux'",
-    "torchcodec==0.11.0+cpu; platform_machine == 'x86_64' and platform_python_implementation == 'CPython' and sys_platform == 'linux'",
+    "torchcodec==0.14.0; platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux'",
+    "torchcodec==0.14.0+cpu; platform_machine == 'x86_64' and platform_python_implementation == 'CPython' and sys_platform == 'linux'",
 ]
 
 [tool.uv.sources]
