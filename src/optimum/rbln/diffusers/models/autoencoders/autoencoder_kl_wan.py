@@ -557,9 +557,7 @@ class RBLNAutoencoderKLWan(RBLNModel):
                 "compile must pass them in rbln_config."
             )
 
-        # With slicing, batch_size keeps the caller's runtime batch while every graph
-        # compiles at batch 1 (each slice is one runtime call).
-        batch_size = 1 if rbln_config.use_slicing else rbln_config.batch_size
+        batch_size = rbln_config.batch_size
         compile_cfgs = []
         if rbln_config.uses_encoder:
             vae_enc_0_input_info = [
