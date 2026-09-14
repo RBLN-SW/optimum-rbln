@@ -46,23 +46,35 @@ steps:
   # All gates must pass before the NPU pipeline is even uploaded.
   - wait: ~
 
-  # Two uploads from one job would make the second batch a barrier for the first.
+  # A [pytest-full] commit (the compiler-update bot's PRs) runs every suite at the
+  # full level, so it uploads without --git-diff-base: nothing is path-gated away.
+  # A build with no pull request (the compiler's downstream trigger, a manual run)
+  # drops the base too: it would be this very commit, gating every suite away.
+  # Sibling jobs: two uploads from one job make the second batch a barrier for
+  # the first, so the pytest suites would wait on BC.
   - label: ":sparkles: upload pytest"
     <<: *upload
     command: |
       if [[ "$$BUILDKITE_MESSAGE" == *"[pytest-full]"* ]]; then
-        export OPTIMUM_RBLN_TEST_LEVEL=full HF_USER_ID=Rebellions
-      elif [[ "$$BUILDKITE_PULL_REQUEST" != "false" ]]; then
-        git fetch origin "$$BUILDKITE_PULL_REQUEST_BASE_BRANCH"
-        DIFF="--git-diff-base origin/$$BUILDKITE_PULL_REQUEST_BASE_BRANCH"
+        echo "--- :mag: [pytest-full] in commit message"
+        export OPTIMUM_RBLN_TEST_LEVEL=full
+        export HF_USER_ID=Rebellions
+        buildkite-agent pipeline upload .buildkite/pipelines/pytest/pipeline.yml
+      elif [[ "$$BUILDKITE_PULL_REQUEST" == "false" ]]; then
+        echo "--- :mag: not a pull request; no base to diff against"
+        buildkite-agent pipeline upload .buildkite/pipelines/pytest/pipeline.yml
+      else
+        TARGET_BRANCH=$${BUILDKITE_PULL_REQUEST_BASE_BRANCH:-dev}
+        git fetch origin $$TARGET_BRANCH
+        buildkite-agent pipeline upload .buildkite/pipelines/pytest/pipeline.yml --git-diff-base origin/$$TARGET_BRANCH
       fi
-      buildkite-agent pipeline upload .buildkite/pipelines/pytest/pipeline.yml $${DIFF:-}
 
   - label: ":sparkles: upload BC"
     <<: *upload
     command: |
       if [[ "$$BUILDKITE_MESSAGE" != *"[pytest-full]"* && "$$BUILDKITE_PULL_REQUEST" != "false" ]]; then
-        git fetch origin "$$BUILDKITE_PULL_REQUEST_BASE_BRANCH"
-        DIFF="--git-diff-base origin/$$BUILDKITE_PULL_REQUEST_BASE_BRANCH"
+        TARGET_BRANCH=$${BUILDKITE_PULL_REQUEST_BASE_BRANCH:-dev}
+        git fetch origin $$TARGET_BRANCH
+        DIFF="--git-diff-base origin/$$TARGET_BRANCH"
       fi
       bash .buildkite/scripts/bc-steps.sh --latest | buildkite-agent pipeline upload $${DIFF:-}
