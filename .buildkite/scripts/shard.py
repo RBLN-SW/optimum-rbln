@@ -1,42 +1,26 @@
 #!/usr/bin/env python3
-"""shard.py <weights-file> <group> <splits>
+"""shard.py <group> <splits>
 
-Pick the test classes that belong to one shard. Reads `pytest --collect-only -q`
-output on stdin and writes the selected class node ids on stdout.
+Pick the test classes for one shard: reads `pytest --collect-only -q` on stdin,
+writes the class node ids this shard owns on stdout.
 
-Splitting by class rather than by test keeps a model's compile in one shard --
-pytest-split cuts wherever the test count lands, and a class split across two
-shards pays for setUpClass twice. Classes are packed longest-first using the
-measured seconds in the weights file; one the file does not list gets the median
-of its test file, so a newly added test always runs, just not perfectly balanced.
-
-The packing decides only which shard a class lands in. The classes are printed
-back in collection order, because the suite is not order-independent: a class
-whose setUpClass writes to the shared HF_CONFIG_KWARGS leaks into whatever runs
-after it, and running the heaviest class first would put it ahead of everything.
-Dropping a class into another process can only remove such an interaction;
-reordering within a process would create new ones.
+By class, because a class compiles its model in setUpClass and splitting one
+across two shards pays for that twice. Round-robin, because the expensive model
+families sit next to each other in the file, so taking every nth class spreads
+them -- and leaves each shard in collection order, which the suite still relies
+on. Nothing to keep up to date when a test is added or removed.
 """
 
-import statistics
 import sys
 
 
-weights_path, group, splits = sys.argv[1], int(sys.argv[2]), int(sys.argv[3])
-
-weights = {}
-for line in open(weights_path):
-    line = line.split("#", 1)[0].strip()
-    if line:
-        seconds, unit = line.split(None, 1)
-        weights[unit] = float(seconds)
+group, splits = int(sys.argv[1]), int(sys.argv[2])
 
 units = []
 for line in sys.stdin:
     node = line.strip()
     if not node.startswith("tests/") or "::" not in node:
         continue
-    # A class holds the compile, so shard on it; a module-level test is its own unit.
     unit = node.rsplit("::", 1)[0] if node.count("::") > 1 else node
     if unit not in units:
         units.append(unit)
@@ -44,25 +28,8 @@ for line in sys.stdin:
 if not units:
     sys.exit("shard.py: collected no tests -- did `pytest --collect-only` fail?")
 
-median = {}
-for path in {u.split("::", 1)[0] for u in units}:
-    known = [w for u, w in weights.items() if u.startswith(path + "::")]
-    median[path] = statistics.median(known) if known else 1.0
-
-
-def weight(unit):
-    return weights.get(unit, median[unit.split("::", 1)[0]])
-
-
-shards = [[] for _ in range(splits)]
-totals = [0.0] * splits
-for unit in sorted(units, key=lambda u: (-weight(u), u)):
-    i = totals.index(min(totals))
-    shards[i].append(unit)
-    totals[i] += weight(unit)
-
-if not shards[group - 1]:
+shard = units[group - 1 :: splits]
+if not shard:
     sys.exit(f"shard.py: group {group} of {splits} is empty -- more shards than classes?")
 
-selected = set(shards[group - 1])
-print("\n".join(unit for unit in units if unit in selected))
+print("\n".join(shard))

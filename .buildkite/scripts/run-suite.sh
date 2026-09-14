@@ -7,7 +7,6 @@ set -euo pipefail
 suite="${1:?usage: run-suite.sh <suite> [group] [splits]}"
 group="${2:-}"
 splits="${3:-}"
-weights=".buildkite/pipelines/pytest/test-weights.txt"
 
 case "$suite" in
   transformers) tag="[skip-transformers]" ;;
@@ -37,7 +36,7 @@ case "$suite" in
     if [ -n "$group" ]; then
       # Unquoted on purpose: shard.py prints one space-free node id per line.
       shard=$(uv run --no-sync pytest --collect-only -q tests/test_transformers.py \
-        | python3 .buildkite/scripts/shard.py "$weights" "$group" "$splits")
+        | python3 .buildkite/scripts/shard.py "$group" "$splits")
       uv run --no-sync pytest -n 1 $shard -vv --durations 0
     else
       uv run --no-sync pytest -n 1 tests/test_transformers.py -vv --durations 0 "${bc[@]}"
@@ -47,7 +46,7 @@ case "$suite" in
   llm)
     if [ -n "$group" ]; then
       shard=$(uv run --no-sync pytest --collect-only -q tests/test_llm.py \
-        | python3 .buildkite/scripts/shard.py "$weights" "$group" "$splits")
+        | python3 .buildkite/scripts/shard.py "$group" "$splits")
       uv run --no-sync pytest -n 1 $shard -vv --durations 0
     else
       [ ${#bc[@]} -gt 0 ] || { echo "llm needs a group" >&2; exit 2; }

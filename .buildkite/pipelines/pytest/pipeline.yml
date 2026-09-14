@@ -1,10 +1,10 @@
 # optimum-rbln pytest suites, uploaded by .buildkite/pr.yml.
 #
-# llm and transformers are split so no job runs much past five minutes. The
+# llm and transformers are split so no job runs much past six minutes. The
 # split is by test class, not by test: a class compiles its model in
 # setUpClass, so cutting one in half makes two jobs pay for the same compile.
-# .buildkite/scripts/shard.py packs the classes using the measured seconds in
-# ./test-weights.txt; the group count lives here, in the step's arguments.
+# .buildkite/scripts/shard.py deals the classes out round-robin; the group count
+# lives here, in the step's arguments, and is the only thing to tune.
 #
 # The uploader picks the test level: default for an ordinary PR, full for a
 # [pytest-full] commit (and later for the nightly). Both values are baked in at
@@ -185,7 +185,7 @@ steps:
       - *sync
       - "bash .buildkite/scripts/run-suite.sh diffusers"
 
-  - label: ":pytest: llm 1/5"
+  - label: ":pytest: llm 1/6"
     if_changed: *if_changed_llm
     image: "${DEVTOOLS_DOCKER_IMAGE}"
     resources: *npu
@@ -193,9 +193,9 @@ steps:
     timeout_in_minutes: 60
     command:
       - *sync
-      - "bash .buildkite/scripts/run-suite.sh llm 1 5"
+      - "bash .buildkite/scripts/run-suite.sh llm 1 6"
 
-  - label: ":pytest: llm 2/5"
+  - label: ":pytest: llm 2/6"
     if_changed: *if_changed_llm
     image: "${DEVTOOLS_DOCKER_IMAGE}"
     resources: *npu
@@ -203,9 +203,9 @@ steps:
     timeout_in_minutes: 60
     command:
       - *sync
-      - "bash .buildkite/scripts/run-suite.sh llm 2 5"
+      - "bash .buildkite/scripts/run-suite.sh llm 2 6"
 
-  - label: ":pytest: llm 3/5"
+  - label: ":pytest: llm 3/6"
     if_changed: *if_changed_llm
     image: "${DEVTOOLS_DOCKER_IMAGE}"
     resources: *npu
@@ -213,9 +213,9 @@ steps:
     timeout_in_minutes: 60
     command:
       - *sync
-      - "bash .buildkite/scripts/run-suite.sh llm 3 5"
+      - "bash .buildkite/scripts/run-suite.sh llm 3 6"
 
-  - label: ":pytest: llm 4/5"
+  - label: ":pytest: llm 4/6"
     if_changed: *if_changed_llm
     image: "${DEVTOOLS_DOCKER_IMAGE}"
     resources: *npu
@@ -223,9 +223,9 @@ steps:
     timeout_in_minutes: 60
     command:
       - *sync
-      - "bash .buildkite/scripts/run-suite.sh llm 4 5"
+      - "bash .buildkite/scripts/run-suite.sh llm 4 6"
 
-  - label: ":pytest: llm 5/5"
+  - label: ":pytest: llm 5/6"
     if_changed: *if_changed_llm
     image: "${DEVTOOLS_DOCKER_IMAGE}"
     resources: *npu
@@ -233,4 +233,14 @@ steps:
     timeout_in_minutes: 60
     command:
       - *sync
-      - "bash .buildkite/scripts/run-suite.sh llm 5 5"
+      - "bash .buildkite/scripts/run-suite.sh llm 5 6"
+
+  - label: ":pytest: llm 6/6"
+    if_changed: *if_changed_llm
+    image: "${DEVTOOLS_DOCKER_IMAGE}"
+    resources: *npu
+    secrets: *secrets
+    timeout_in_minutes: 60
+    command:
+      - *sync
+      - "bash .buildkite/scripts/run-suite.sh llm 6 6"
