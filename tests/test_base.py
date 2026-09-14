@@ -172,17 +172,7 @@ class BaseHubTest:
                     },
                 )
 
-                # Read back the exact commit the push created; resolving `main` right after
-                # a commit can still serve the previous revision.
                 revision = HfApi(token=HF_AUTH_TOKEN).repo_info(repo_id).sha
-
-                # AutoConfig rather than CLIPConfig for the text encoder: the inherited
-                # PreTrainedConfig.from_pretrained takes `token` as a named argument and
-                # never puts it back into the kwargs it forwards to get_config_dict
-                # (transformers 5.15.1), so the read goes out anonymous, the private repo
-                # answers 404, and huggingface_hub serves whatever the shared cache holds.
-                # AutoConfig forwards the token, and resolves the checkpoint to the
-                # CLIPTextConfig it actually is.
                 cfg = AutoConfig.from_pretrained(
                     repo_id,
                     subfolder="text_encoder" if self.is_diffuser() else "",
