@@ -12,7 +12,7 @@ from unittest.mock import patch
 import pytest
 import transformers
 from diffusers import DiffusionPipeline
-from huggingface_hub import HfApi
+from huggingface_hub import HfApi, hf_hub_download
 from transformers import AutoConfig, CLIPConfig
 
 from optimum.rbln import __version__
@@ -176,22 +176,28 @@ class BaseHubTest:
                 # a commit can still serve the previous revision.
                 revision = HfApi(token=HF_AUTH_TOKEN).repo_info(repo_id).sha
 
-                # If our tests were moved to a public rather than a private repository,
-                # this logic could be as simple as downloading the config file directly
-                # and comparing it.
+                # Download the file instead of letting the config class resolve the repo:
+                # PreTrainedConfig.from_pretrained takes `token` as a named argument and
+                # never forwards it to get_config_dict (transformers 5.15.1), so the read
+                # goes out unauthenticated, the private repo answers 404, and
+                # huggingface_hub quietly serves whatever the shared cache still holds.
                 if self.is_diffuser():
-                    cfg = CLIPConfig.from_pretrained(
+                    config_file = hf_hub_download(
                         repo_id,
+                        "config.json",
                         subfolder="text_encoder",
                         revision=revision,
                         **{TOKEN_KEY: HF_AUTH_TOKEN},
                     )
+                    cfg = CLIPConfig.from_pretrained(os.path.dirname(config_file))
                 else:
-                    cfg = AutoConfig.from_pretrained(
+                    config_file = hf_hub_download(
                         repo_id,
+                        "config.json",
                         revision=revision,
                         **{TOKEN_KEY: HF_AUTH_TOKEN},
                     )
+                    cfg = AutoConfig.from_pretrained(os.path.dirname(config_file))
 
                 self.assertEqual(remote_hash, cfg.from_local)
 
