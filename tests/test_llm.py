@@ -642,7 +642,9 @@ class TestLlavaNextForConditionalGeneration(LLMTest.TestLLM):
         }
         rbln_class_kwargs = {"rbln_config": rbln_config}
 
-        model = self.RBLN_CLASS.from_pretrained(model_id=self.HF_MODEL_ID, **rbln_class_kwargs)
+        model = self.RBLN_CLASS.from_pretrained(
+            model_id=self.HF_MODEL_ID, **self.HF_CONFIG_KWARGS, **rbln_class_kwargs
+        )
 
         assert not model.rbln_config.vision_tower.create_runtimes
         assert not model.rbln_config.language_model.create_runtimes
@@ -829,9 +831,12 @@ class TestQwen2VLForConditionalGeneration(LLMTest.TestLLM):
         return inputs
 
     def test_propagate_config(self):
-        self.RBLN_CLASS_KWARGS["rbln_config"].update({"create_runtimes": False})
+        rbln_config = {**self.RBLN_CLASS_KWARGS["rbln_config"]}
+        rbln_config.update({"create_runtimes": False})
 
-        model = self.RBLN_CLASS.from_pretrained(model_id=self.HF_MODEL_ID, **self.RBLN_CLASS_KWARGS)
+        model = self.RBLN_CLASS.from_pretrained(
+            model_id=self.HF_MODEL_ID, **self.HF_CONFIG_KWARGS, rbln_config=rbln_config
+        )
 
         assert not model.rbln_config.visual.create_runtimes
         assert not model.rbln_config.create_runtimes
@@ -877,9 +882,12 @@ class TestQwen2_5_VLForConditionalGeneration(LLMTest.TestLLM):
         return inputs
 
     def test_propagate_config(self):
-        self.RBLN_CLASS_KWARGS["rbln_config"].update({"create_runtimes": False})
+        rbln_config = {**self.RBLN_CLASS_KWARGS["rbln_config"]}
+        rbln_config.update({"create_runtimes": False})
 
-        model = self.RBLN_CLASS.from_pretrained(model_id=self.HF_MODEL_ID, **self.RBLN_CLASS_KWARGS)
+        model = self.RBLN_CLASS.from_pretrained(
+            model_id=self.HF_MODEL_ID, **self.HF_CONFIG_KWARGS, rbln_config=rbln_config
+        )
 
         assert not model.rbln_config.visual.create_runtimes
         assert not model.rbln_config.create_runtimes
@@ -958,9 +966,12 @@ class TestQwen3VLForConditionalGeneration(LLMTest.TestLLM):
         return inputs
 
     def test_propagate_config(self):
-        self.RBLN_CLASS_KWARGS["rbln_config"].update({"create_runtimes": False})
+        rbln_config = {**self.RBLN_CLASS_KWARGS["rbln_config"]}
+        rbln_config.update({"create_runtimes": False})
 
-        model = self.RBLN_CLASS.from_pretrained(model_id=self.HF_MODEL_ID, **self.RBLN_CLASS_KWARGS)
+        model = self.RBLN_CLASS.from_pretrained(
+            model_id=self.HF_MODEL_ID, **self.HF_CONFIG_KWARGS, rbln_config=rbln_config
+        )
 
         assert not model.rbln_config.visual.create_runtimes
         assert not model.rbln_config.create_runtimes
