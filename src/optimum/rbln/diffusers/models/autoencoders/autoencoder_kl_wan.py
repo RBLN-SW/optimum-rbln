@@ -20,8 +20,6 @@ import torch
 from diffusers.models.autoencoders.autoencoder_kl_wan import (
     AutoencoderKLWan,
     WanCausalConv3d,
-    patchify,
-    unpatchify,
 )
 from diffusers.models.autoencoders.vae import DecoderOutput, DiagonalGaussianDistribution
 from diffusers.models.modeling_outputs import AutoencoderKLOutput
@@ -366,18 +364,12 @@ class RBLNAutoencoderKLWan(RBLNModel):
     def __post_init__(self, **kwargs):
         super().__post_init__(**kwargs)
         self.temperal_downsample = self.config.temperal_downsample
-
-        if self.rbln_config.uses_encoder:
-            self.encoder_0 = RBLNRuntimeWanVAEEncoder(runtime=self.model[0], main_input_name="x", use_slicing=False)
-            self.encoder_n = RBLNRuntimeWanVAEEncoder(runtime=self.model[1], main_input_name="x", use_slicing=False)
-        self.decoder_0 = RBLNRuntimeWanVAEDecoder(runtime=self.model[-2], main_input_name="z", use_slicing=False)
-        self.decoder_n = RBLNRuntimeWanVAEDecoder(runtime=self.model[-1], main_input_name="z", use_slicing=False)
         self.image_size = self.rbln_config.image_size
         self.use_slicing = False
         self.use_tiling = False
 
         # post_quant_conv (saved via save_torch_artifacts) -> rebuild for host-side application
-        # in _decode.
+        # in the decoder wrapper.
         artifacts = torch.load(self.model_save_dir / self.subfolder / "torch_artifacts.pth", weights_only=False)
         pqc_state = artifacts.get("post_quant_conv")
         if pqc_state is not None:
@@ -385,6 +377,27 @@ class RBLNAutoencoderKLWan(RBLNModel):
             self.post_quant_conv.load_state_dict(pqc_state)
         else:
             self.post_quant_conv = None
+
+        # The runtime wrappers own the RBLN chunk split (first-chunk / steady-chunk graphs), so
+        # the model keeps the upstream encoder/decoder shape.
+        if self.rbln_config.uses_encoder:
+            self.encoder = RBLNRuntimeWanVAEEncoder(
+                runtime=self.model[0],
+                encoder_n=self.model[1],
+                main_input_name="x",
+                patch_size=self.config.patch_size,
+                dtype=self.rbln_config.dtype,
+                en_war=_EN_WAR,
+            )
+        self.decoder = RBLNRuntimeWanVAEDecoder(
+            runtime=self.model[-2],
+            decoder_n=self.model[-1],
+            main_input_name="z",
+            patch_size=self.config.patch_size,
+            dtype=self.rbln_config.dtype,
+            post_quant_conv=self.post_quant_conv,
+            en_war=_EN_WAR,
+        )
 
     @classmethod
     def save_torch_artifacts(cls, model, save_dir_path, subfolder, rbln_config):
@@ -710,53 +723,7 @@ class RBLNAutoencoderKLWan(RBLNModel):
         return DecoderOutput(sample=decoded)
 
     def _decode(self, z: torch.Tensor):
-        # RBLN chunked decode. One latent frame per chunk: the first (D0, first_chunk) yields 1 pixel
-        # frame; each subsequent (DN) yields 4 (temporal x4 via upsample3d). All conv feat-caches are
-        # handed off as runtime tensors between chunks (channel-first). post_quant_conv (1x1x1 pointwise)
-        # is applied here on the host, before the loop -- it cannot be folded into DN (see
-        # _VAEWanDecoder0), and being pointwise it commutes with the causal cache concat downstream.
-        z = z.to(self.rbln_config.dtype)
-        if self.post_quant_conv is not None:
-            z = self.post_quant_conv.to(z.dtype)(z)
-        _, _, num_frame, _, _ = z.shape
-        war_kw = {"war_zero": torch.zeros(1, dtype=self.rbln_config.dtype)} if _EN_WAR else {}
-        outs = []
-        feat_cache_0 = None
-        for i in range(num_frame):
-            if i == 0:
-                ret = self.decoder_0(z[:, :, :1, :, :])
-            else:
-                ret = self.decoder_n(z[:, :, i : i + 1, :, :], feat_cache_0, **war_kw)
-            out_i, feat_cache_0 = ret[0], ret[1]  # (decoder_out, feat_cache_0, *dummy_cache_updates)
-            outs.append(out_i)
-
-        out = torch.cat(outs, dim=2) if len(outs) > 1 else outs[0]
-        if self.config.patch_size is not None:
-            out = unpatchify(out, patch_size=self.config.patch_size)
-        out = torch.clamp(out, min=-1.0, max=1.0)
-        return out
+        return self.decoder.decode(z)
 
     def _encode(self, x: torch.Tensor):
-        # RBLN chunked encode. The Wan encoder is causal-temporal: the first latent frame comes from
-        # frame 0 (chunk E0), then each subsequent 4 input frames -> 1 latent frame (chunk EN). The idx-0
-        # conv cache (feat_cache_0) is handed off as a runtime tensor between chunks; idx 1.. persist on
-        # device via shared static DRAM (rbln_cache_update). quant_conv is folded into each chunk's graph.
-        x = x.to(self.rbln_config.dtype)
-        if self.config.patch_size is not None:
-            x = patchify(x, patch_size=self.config.patch_size)
-
-        _, _, num_frame, _, _ = x.shape
-        iter_ = 1 + (num_frame - 1) // 4
-        war_kw = {"war_zero": torch.zeros(1, dtype=self.rbln_config.dtype)} if _EN_WAR else {}
-        outs = []
-        feat_cache_0 = None
-        for i in range(iter_):
-            if i == 0:
-                ret = self.encoder_0(x[:, :, :1, :, :])
-            else:
-                ret = self.encoder_n(x[:, :, 1 + 4 * (i - 1) : 1 + 4 * i, :, :], feat_cache_0, **war_kw)
-            out_i, feat_cache_0 = ret[0], ret[1]  # (encoder_out, feat_cache_0, *dummy_cache_updates)
-            outs.append(out_i)
-
-        enc = torch.cat(outs, dim=2) if len(outs) > 1 else outs[0]
-        return enc
+        return self.encoder.encode(x)

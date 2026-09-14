@@ -15,6 +15,8 @@
 from typing import TYPE_CHECKING, Union
 
 import torch
+from diffusers.models.autoencoders.autoencoder_kl_wan import patchify as wan_patchify
+from diffusers.models.autoencoders.autoencoder_kl_wan import unpatchify as wan_unpatchify
 from diffusers.models.autoencoders.vae import DiagonalGaussianDistribution, IdentityDistribution
 
 from ....utils.runtime_utils import RBLNPytorchRuntime
@@ -58,28 +60,52 @@ class RBLNRuntimeCosmosVAEDecoder(RBLNPytorchRuntime):
 
 
 class RBLNRuntimeWanVAEEncoder(RBLNPytorchRuntime):
-    """Runtime wrapper for Wan VAE encoder inference."""
+    mandatory_members = ["main_input_name", "encoder_n", "patch_size", "dtype", "en_war"]
 
-    def encode(self, x: torch.FloatTensor, **kwargs) -> torch.FloatTensor:
-        if self.use_slicing and x.shape[0] > 1:
-            encoded_slices = [self.forward(x_slice) for x_slice in x.split(1)]
-            h = torch.cat(encoded_slices)
-        else:
-            h = self.forward(x)
-        posterior = DiagonalGaussianDistribution(h)
-        return posterior
+    def encode(self, x: torch.Tensor) -> torch.Tensor:
+        x = x.to(self.dtype)
+        if self.patch_size is not None:
+            x = wan_patchify(x, patch_size=self.patch_size)
+
+        _, _, num_frame, _, _ = x.shape
+        war_kw = {"war_zero": torch.zeros(1, dtype=self.dtype)} if self.en_war else {}
+        outs = []
+        feat_cache_0 = None
+        for i in range(1 + (num_frame - 1) // 4):
+            if i == 0:
+                ret = self.forward(x[:, :, :1, :, :])
+            else:
+                ret = self.encoder_n(x[:, :, 1 + 4 * (i - 1) : 1 + 4 * i, :, :], feat_cache_0, **war_kw)
+            out_i, feat_cache_0 = ret[0], ret[1]  # (encoder_out, feat_cache_0, *dummy_cache_updates)
+            outs.append(out_i)
+
+        return torch.cat(outs, dim=2) if len(outs) > 1 else outs[0]
 
 
 class RBLNRuntimeWanVAEDecoder(RBLNPytorchRuntime):
-    """Runtime wrapper for Wan VAE decoder inference."""
+    mandatory_members = ["main_input_name", "decoder_n", "patch_size", "dtype", "post_quant_conv", "en_war"]
 
-    def decode(self, z: torch.FloatTensor, **kwargs) -> torch.FloatTensor:
-        if self.use_slicing and z.shape[0] > 1:
-            decoded_slices = [self.forward(z_slice) for z_slice in z.split(1)]
-            decoded = torch.cat(decoded_slices)
-        else:
-            decoded = self.forward(z)
-        return decoded
+    def decode(self, z: torch.Tensor) -> torch.Tensor:
+        z = z.to(self.dtype)
+        if self.post_quant_conv is not None:
+            z = self.post_quant_conv.to(z.dtype)(z)
+
+        _, _, num_frame, _, _ = z.shape
+        war_kw = {"war_zero": torch.zeros(1, dtype=self.dtype)} if self.en_war else {}
+        outs = []
+        feat_cache_0 = None
+        for i in range(num_frame):
+            if i == 0:
+                ret = self.forward(z[:, :, :1, :, :])
+            else:
+                ret = self.decoder_n(z[:, :, i : i + 1, :, :], feat_cache_0, **war_kw)
+            out_i, feat_cache_0 = ret[0], ret[1]  # (decoder_out, feat_cache_0, *dummy_cache_updates)
+            outs.append(out_i)
+
+        out = torch.cat(outs, dim=2) if len(outs) > 1 else outs[0]
+        if self.patch_size is not None:
+            out = wan_unpatchify(out, patch_size=self.patch_size)
+        return torch.clamp(out, min=-1.0, max=1.0)
 
 
 class _VAEDecoder(torch.nn.Module):
