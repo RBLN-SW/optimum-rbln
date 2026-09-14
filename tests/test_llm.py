@@ -270,7 +270,6 @@ class TestQwen2MoeForCausalLM(LLMTest.TestLLM):
     # HF_MODEL_ID ="peft-internal-testing/tiny-random-qwen-1.5-MoE"
     HF_MODEL_ID = "Qwen/Qwen1.5-MoE-A2.7B"
     HF_CONFIG_KWARGS = {"num_hidden_layers": 1, "layer_types": ["full_attention"], "max_position_embeddings": 1024}
-    TEST_LEVEL = TestLevel.FULL
 
 
 class TestQwen3MoeForCausalLM(LLMTest.TestLLM):
@@ -1143,7 +1142,6 @@ class TestGemma3ForConditionalGeneration(LLMTest.TestLLM):
     RBLN_CLASS_KWARGS = {"rbln_config": {"language_model": {"use_inputs_embeds": True, "kvcache_partition_len": 4096}}}
     HF_CONFIG_KWARGS = {"revision": "e1f4b0516ec80f86ed75c8cb1d45ede72526ad24"}
     HF_CONFIG_KWARGS_PREPROCESSOR = {"revision": "e1f4b0516ec80f86ed75c8cb1d45ede72526ad24"}
-    TEST_LEVEL = TestLevel.FULL
     IS_MULTIMODAL = True
 
     # override
