@@ -59,9 +59,6 @@ class RBLNAutoencoderKLWanConfig(RBLNModelConfig):
         Raises:
             ValueError: If batch_size is not a positive integer.
         """
-        # `use_slicing` was removed (it never had a runtime effect); drop it from configs
-        # saved by earlier builds so their compiled artifacts still load.
-        kwargs.pop("use_slicing", None)
         super().__init__(**kwargs)
         # The Wan VAE decoder's working set is already near the device limit at full
         # resolution, so its graphs are always compiled at batch_size=1 (the Cosmos
