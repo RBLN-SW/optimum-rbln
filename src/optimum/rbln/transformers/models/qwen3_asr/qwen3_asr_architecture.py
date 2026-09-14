@@ -32,9 +32,6 @@ def get_window_size(config: "Qwen3ASREncoderConfig") -> int:
     return config.max_position_embeddings * (config.n_window_infer // (config.n_window * 2))
 
 
-# Bidirectional attention over one window. HF's windows are variable-length (`torch.split(...,
-# lengths.tolist())`), so every key is real and it attends with `attention_mask=None`. A static
-# graph fixes the window size, audio length does not divide into it, and `attn_bias` masks the tail.
 class Qwen3ASRAudioAttention(nn.Module):
     def __init__(self, model: nn.Module, rbln_config: "RBLNModelConfig"):
         super().__init__()
@@ -128,7 +125,6 @@ class Qwen3ASREncoderWrapper(nn.Module):
         return self.multi_modal_projector(self.ln_post(hidden_states))
 
 
-# The base looks for `model.model.layers`; here the decoder is nested one level deeper.
 class Qwen3ASRLanguageModelWrapper(Qwen3Wrapper):
     def get_decoder_layers(self, model: "PreTrainedModel"):
         return model.get_decoder().layers

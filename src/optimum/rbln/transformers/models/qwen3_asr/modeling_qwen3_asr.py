@@ -32,6 +32,7 @@ from .qwen3_asr_architecture import Qwen3ASREncoderWrapper, Qwen3ASRLanguageMode
 if TYPE_CHECKING:
     from transformers import AutoFeatureExtractor, AutoProcessor, AutoTokenizer
 
+
 # Windows needed to cover one feature-extractor chunk (30s -> 390 tokens -> 4 windows).
 def _default_num_windows(
     model_config: "PretrainedConfig",
@@ -49,9 +50,10 @@ def _default_num_windows(
 
     frames_per_second = feature_extractor.sampling_rate / feature_extractor.hop_length
     frames_per_chunk = model_config.n_window * 2
-    num_tokens = math.ceil(
-        feature_extractor.chunk_length * frames_per_second / frames_per_chunk
-    ) * model_config.max_position_embeddings
+    num_tokens = (
+        math.ceil(feature_extractor.chunk_length * frames_per_second / frames_per_chunk)
+        * model_config.max_position_embeddings
+    )
     return math.ceil(num_tokens / get_window_size(model_config))
 
 
@@ -121,9 +123,6 @@ class RBLNQwen3ASREncoder(RBLNModel):
         rbln_config.set_compile_cfgs([RBLNCompileConfig(input_info=input_info)])
         return rbln_config
 
-    # input_features: `(batch_size, num_mel_bins, padded_feature_length)` log-mel features.
-    # input_features_mask: `(batch_size, padded_feature_length)`, 1 for valid mel frames.
-    # Returns `(total_tokens, output_dim)`, packed sample by sample as the HF encoder does.
     def forward(self, input_features: torch.Tensor, input_features_mask: torch.Tensor) -> torch.Tensor:
         batch_size, num_mel_bins, padded_feature_length = input_features.shape
         if padded_feature_length % self.chunk_len != 0:
@@ -215,7 +214,6 @@ class RBLNQwen3ASRForConditionalGeneration(RBLNQwen3ForCausalLM):
     auto_model_class = AutoModelForMultimodalLM
     _decoder_wrapper_cls = Qwen3ASRLanguageModelWrapper
     _rbln_submodules = [{"name": "audio_tower"}]
-    # The audio inputs are batch-first, so length-sorting a batch must carry them along.
     _batch_sortable_kwargs = RBLNQwen3ForCausalLM._batch_sortable_kwargs + (
         "input_features",
         "input_features_mask",
@@ -257,9 +255,6 @@ class RBLNQwen3ASRForConditionalGeneration(RBLNQwen3ForCausalLM):
         submodule_rbln_config: RBLNModelConfig,
         preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"] | None,
     ) -> RBLNModelConfig:
-        # `_export_submodules_from_model` does not forward `preprocessors` to the submodule's
-        # `from_model`, so the encoder cannot see the feature extractor on its own. Resolve the
-        # default here instead, keeping the compiled shape identical on both export paths.
         if submodule_name == "audio_tower" and submodule_rbln_config.num_windows is None:
             submodule_rbln_config.num_windows = _default_num_windows(submodule_config, preprocessors)
         return submodule_rbln_config
@@ -329,9 +324,7 @@ class RBLNQwen3ASRForConditionalGeneration(RBLNQwen3ForCausalLM):
         inputs = inputs_embeds if inputs_embeds is not None else input_ids
         batch_size, input_len = inputs.shape[0], inputs.shape[1]
         if batch_size > self.rbln_config.batch_size:
-            raise ValueError(
-                f"Input's batch({batch_size}) exceeds compiled batch_size({self.rbln_config.batch_size})"
-            )
+            raise ValueError(f"Input's batch({batch_size}) exceeds compiled batch_size({self.rbln_config.batch_size})")
         if input_len > self.rbln_config.max_seq_len:
             raise ValueError(
                 f"Input's length({input_len}) exceeds compiled max_seq_len({self.rbln_config.max_seq_len})."
