@@ -365,8 +365,6 @@ class RBLNAutoencoderKLWan(RBLNModel):
         super().__post_init__(**kwargs)
         self.temperal_downsample = self.config.temperal_downsample
         self.image_size = self.rbln_config.image_size
-        # Always True (validated by the config): the graphs are batch-1, so a batched request
-        # must run per sample.
         self.use_slicing = self.rbln_config.use_slicing
         self.use_tiling = False
 
@@ -559,7 +557,9 @@ class RBLNAutoencoderKLWan(RBLNModel):
                 "compile must pass them in rbln_config."
             )
 
-        batch_size = rbln_config.batch_size
+        # With slicing, batch_size keeps the caller's runtime batch while every graph
+        # compiles at batch 1 (each slice is one runtime call).
+        batch_size = 1 if rbln_config.use_slicing else rbln_config.batch_size
         compile_cfgs = []
         if rbln_config.uses_encoder:
             vae_enc_0_input_info = [

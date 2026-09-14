@@ -55,31 +55,30 @@ class RBLNAutoencoderKLWanConfig(RBLNModelConfig):
                 Determines how much shorter the latent representations are compared to the original videos.
             vae_scale_factor_spatial (Optional[int]): The scaling factor between pixel space and latent space.
                 Determines how much smaller the latent representations are compared to the original videos.
-            use_slicing (bool): Whether batched requests run the VAE per sample. Always True for the
-                Wan VAE: its graphs are compiled at batch_size=1, so sliced execution is the only way
-                to serve a batch — False is rejected.
+            use_slicing (bool): Run batched requests through the batch-1 compiled graphs one sample
+                at a time. Defaults to True. Batched Wan VAE graphs are not supported (the decoder's
+                working set is already near the device limit), so batch_size > 1 with use_slicing=False
+                falls back to batch_size=1 with slicing enabled, with a warning.
             kwargs: Additional arguments passed to the parent RBLNModelConfig.
 
         Raises:
             ValueError: If batch_size is not a positive integer.
-            ValueError: If use_slicing is False — the batch-1 compiled graphs require sliced execution.
         """
         super().__init__(**kwargs)
-        if use_slicing is not True:
-            raise ValueError(
-                "The Wan VAE graphs are compiled at batch_size=1, so sliced (per-sample) execution "
-                f"is required; use_slicing={use_slicing!r} is not supported."
-            )
-        self.use_slicing = True
+        self.use_slicing = use_slicing
         # The Wan VAE decoder's working set is already near the device limit at full
-        # resolution, so its graphs are always compiled at batch_size=1 (the Cosmos
-        # pipelines run the VAE at batch 1); larger values are clamped with a warning.
+        # resolution, so the graphs are always compiled at batch_size=1 and batched
+        # requests run per sample (use_slicing).
         self.batch_size = batch_size or 1
         if not isinstance(self.batch_size, int) or self.batch_size < 0:
             raise ValueError(f"batch_size must be a positive integer, got {self.batch_size}")
-        elif self.batch_size > 1:
-            logger.warning("The batch size of Wan VAE Decoder will be explicitly 1 for memory efficiency.")
+        elif self.batch_size > 1 and not self.use_slicing:
+            logger.warning(
+                "Batched Wan VAE graphs are not supported for memory efficiency; "
+                "falling back to batch_size=1 with per-sample slicing."
+            )
             self.batch_size = 1
+            self.use_slicing = True
 
         self.uses_encoder = uses_encoder
         # No size defaults here: each pipeline config supplies its own diffusers-default
