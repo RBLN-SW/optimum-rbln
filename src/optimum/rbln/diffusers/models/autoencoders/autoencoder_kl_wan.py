@@ -368,18 +368,10 @@ class RBLNAutoencoderKLWan(RBLNModel):
         self.temperal_downsample = self.config.temperal_downsample
 
         if self.rbln_config.uses_encoder:
-            self.encoder_0 = RBLNRuntimeWanVAEEncoder(
-                runtime=self.model[0], main_input_name="x", use_slicing=self.rbln_config.use_slicing
-            )
-            self.encoder_n = RBLNRuntimeWanVAEEncoder(
-                runtime=self.model[1], main_input_name="x", use_slicing=self.rbln_config.use_slicing
-            )
-        self.decoder_0 = RBLNRuntimeWanVAEDecoder(
-            runtime=self.model[-2], main_input_name="z", use_slicing=self.rbln_config.use_slicing
-        )
-        self.decoder_n = RBLNRuntimeWanVAEDecoder(
-            runtime=self.model[-1], main_input_name="z", use_slicing=self.rbln_config.use_slicing
-        )
+            self.encoder_0 = RBLNRuntimeWanVAEEncoder(runtime=self.model[0], main_input_name="x", use_slicing=False)
+            self.encoder_n = RBLNRuntimeWanVAEEncoder(runtime=self.model[1], main_input_name="x", use_slicing=False)
+        self.decoder_0 = RBLNRuntimeWanVAEDecoder(runtime=self.model[-2], main_input_name="z", use_slicing=False)
+        self.decoder_n = RBLNRuntimeWanVAEDecoder(runtime=self.model[-1], main_input_name="z", use_slicing=False)
         self.image_size = self.rbln_config.image_size
         self.use_slicing = False
         self.use_tiling = False
@@ -552,7 +544,7 @@ class RBLNAutoencoderKLWan(RBLNModel):
                 "compile must pass them in rbln_config."
             )
 
-        batch_size = 1 if rbln_config.use_slicing else rbln_config.batch_size
+        batch_size = rbln_config.batch_size
         compile_cfgs = []
         if rbln_config.uses_encoder:
             vae_enc_0_input_info = [

@@ -34,7 +34,6 @@ class RBLNAutoencoderKLWanConfig(RBLNModelConfig):
         num_channels_latents: int | None = None,
         vae_scale_factor_temporal: int | None = None,
         vae_scale_factor_spatial: int | None = None,
-        use_slicing: bool | None = None,
         **kwargs: Any,
     ):
         """
@@ -55,18 +54,18 @@ class RBLNAutoencoderKLWanConfig(RBLNModelConfig):
                 Determines how much shorter the latent representations are compared to the original videos.
             vae_scale_factor_spatial (Optional[int]): The scaling factor between pixel space and latent space.
                 Determines how much smaller the latent representations are compared to the original videos.
-            use_slicing (Optional[bool]): Enable sliced VAE encoding and decoding.
-                If True, the VAE will split the input tensor in slices to compute encoding or decoding in several steps.
             kwargs: Additional arguments passed to the parent RBLNModelConfig.
 
         Raises:
             ValueError: If batch_size is not a positive integer.
         """
+        # `use_slicing` was removed (it never had a runtime effect); drop it from configs
+        # saved by earlier builds so their compiled artifacts still load.
+        kwargs.pop("use_slicing", None)
         super().__init__(**kwargs)
-        # Since the Wan VAE Decoder already requires significant memory,
-        # Optimum-rbln cannot execute this model on RBLN NPU when the batch size > 1.
-        # However, the Wan VAE Decoder supports batch slicing when the batch size is greater than 1,
-        # Optimum-rbln utilizes this method by compiling with batch_size=1 to enable batch slicing.
+        # The Wan VAE decoder's working set is already near the device limit at full
+        # resolution, so its graphs are always compiled at batch_size=1 (the Cosmos
+        # pipelines run the VAE at batch 1); larger values are clamped with a warning.
         self.batch_size = batch_size or 1
         if not isinstance(self.batch_size, int) or self.batch_size < 0:
             raise ValueError(f"batch_size must be a positive integer, got {self.batch_size}")
@@ -84,7 +83,6 @@ class RBLNAutoencoderKLWanConfig(RBLNModelConfig):
         self.num_channels_latents = num_channels_latents
         self.vae_scale_factor_temporal = vae_scale_factor_temporal
         self.vae_scale_factor_spatial = vae_scale_factor_spatial
-        self.use_slicing = use_slicing or False
 
     @property
     def image_size(self):
