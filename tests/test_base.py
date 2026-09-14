@@ -12,8 +12,8 @@ from unittest.mock import patch
 import pytest
 import transformers
 from diffusers import DiffusionPipeline
-from huggingface_hub import HfApi, hf_hub_download
-from transformers import AutoConfig, CLIPConfig
+from huggingface_hub import HfApi
+from transformers import AutoConfig
 
 from optimum.rbln import __version__
 from optimum.rbln.configuration_utils import ContextRblnConfig
@@ -176,28 +176,19 @@ class BaseHubTest:
                 # a commit can still serve the previous revision.
                 revision = HfApi(token=HF_AUTH_TOKEN).repo_info(repo_id).sha
 
-                # Download the file instead of letting the config class resolve the repo:
+                # AutoConfig rather than CLIPConfig for the text encoder: the inherited
                 # PreTrainedConfig.from_pretrained takes `token` as a named argument and
-                # never forwards it to get_config_dict (transformers 5.15.1), so the read
-                # goes out unauthenticated, the private repo answers 404, and
-                # huggingface_hub quietly serves whatever the shared cache still holds.
-                if self.is_diffuser():
-                    config_file = hf_hub_download(
-                        repo_id,
-                        "config.json",
-                        subfolder="text_encoder",
-                        revision=revision,
-                        **{TOKEN_KEY: HF_AUTH_TOKEN},
-                    )
-                    cfg = CLIPConfig.from_pretrained(os.path.dirname(config_file))
-                else:
-                    config_file = hf_hub_download(
-                        repo_id,
-                        "config.json",
-                        revision=revision,
-                        **{TOKEN_KEY: HF_AUTH_TOKEN},
-                    )
-                    cfg = AutoConfig.from_pretrained(os.path.dirname(config_file))
+                # never puts it back into the kwargs it forwards to get_config_dict
+                # (transformers 5.15.1), so the read goes out anonymous, the private repo
+                # answers 404, and huggingface_hub serves whatever the shared cache holds.
+                # AutoConfig forwards the token, and resolves the checkpoint to the
+                # CLIPTextConfig it actually is.
+                cfg = AutoConfig.from_pretrained(
+                    repo_id,
+                    subfolder="text_encoder" if self.is_diffuser() else "",
+                    revision=revision,
+                    **{TOKEN_KEY: HF_AUTH_TOKEN},
+                )
 
                 self.assertEqual(remote_hash, cfg.from_local)
 
