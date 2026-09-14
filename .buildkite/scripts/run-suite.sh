@@ -34,7 +34,7 @@ case "$suite" in
   transformers)
     uv run --no-sync pytest -n 1 tests/test_transformers.py ${shard:+--shard "$shard"} -vv --durations 0 "${bc[@]}" ;;
   diffusers)
-    uv run --no-sync pytest -n 1 tests/test_diffusers.py -vv --durations 0 "${bc[@]}" ;;
+    uv run --no-sync pytest -n 1 tests/test_diffusers.py ${shard:+--shard "$shard"} -vv --durations 0 "${bc[@]}" ;;
   llm)
     uv run --no-sync pytest -n 1 tests/test_llm.py ${shard:+--shard "$shard"} -vv --durations 0 "${bc[@]}" ;;
   cli-basic)

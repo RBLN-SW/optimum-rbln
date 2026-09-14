@@ -180,7 +180,7 @@ steps:
       - *sync
       - "bash .buildkite/scripts/run-suite.sh transformers 3/3"
 
-  - label: ":pytest: diffusers"
+  - label: ":pytest: diffusers 1/2"
     if_changed: *if_changed_diffusers
     image: "${DEVTOOLS_DOCKER_IMAGE}"
     resources: *npu
@@ -188,7 +188,17 @@ steps:
     timeout_in_minutes: 60
     command:
       - *sync
-      - "bash .buildkite/scripts/run-suite.sh diffusers"
+      - "bash .buildkite/scripts/run-suite.sh diffusers 1/2"
+
+  - label: ":pytest: diffusers 2/2"
+    if_changed: *if_changed_diffusers
+    image: "${DEVTOOLS_DOCKER_IMAGE}"
+    resources: *npu
+    secrets: *secrets
+    timeout_in_minutes: 60
+    command:
+      - *sync
+      - "bash .buildkite/scripts/run-suite.sh diffusers 2/2"
 
   - label: ":pytest: llm 1/6"
     if_changed: *if_changed_llm
