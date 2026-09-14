@@ -33,25 +33,11 @@ case "$suite" in
   config)
     uv run --no-sync pytest -n 1 tests/test_config.py -vv --durations 0 "${bc[@]}" ;;
   transformers)
-    if [ -n "$group" ]; then
-      # Unquoted on purpose: shard.py prints one space-free node id per line.
-      shard=$(uv run --no-sync pytest --collect-only -q tests/test_transformers.py \
-        | python3 .buildkite/scripts/shard.py "$group" "$splits")
-      uv run --no-sync pytest -n 1 $shard -vv --durations 0
-    else
-      uv run --no-sync pytest -n 1 tests/test_transformers.py -vv --durations 0 "${bc[@]}"
-    fi ;;
+    uv run --no-sync pytest -n 1 tests/test_transformers.py ${group:+--shard "$group/$splits"} -vv --durations 0 "${bc[@]}" ;;
   diffusers)
     uv run --no-sync pytest -n 1 tests/test_diffusers.py -vv --durations 0 "${bc[@]}" ;;
   llm)
-    if [ -n "$group" ]; then
-      shard=$(uv run --no-sync pytest --collect-only -q tests/test_llm.py \
-        | python3 .buildkite/scripts/shard.py "$group" "$splits")
-      uv run --no-sync pytest -n 1 $shard -vv --durations 0
-    else
-      [ ${#bc[@]} -gt 0 ] || { echo "llm needs a group" >&2; exit 2; }
-      uv run --no-sync pytest -n 1 tests/test_llm.py -vv --durations 0 "${bc[@]}"
-    fi ;;
+    uv run --no-sync pytest -n 1 tests/test_llm.py ${group:+--shard "$group/$splits"} -vv --durations 0 "${bc[@]}" ;;
   cli-basic)
     uv run --no-sync .github/scripts/test_cli.py basic ;;
   cli-argument-parsing)
