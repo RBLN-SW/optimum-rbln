@@ -12,7 +12,8 @@ from unittest.mock import patch
 import pytest
 import transformers
 from diffusers import DiffusionPipeline
-from transformers import AutoConfig, CLIPConfig
+from huggingface_hub import HfApi
+from transformers import AutoConfig
 
 from optimum.rbln import __version__
 from optimum.rbln.configuration_utils import ContextRblnConfig
@@ -160,32 +161,24 @@ class BaseHubTest:
                 else:
                     self.model.config.from_local = remote_hash
 
+                repo_id = f"{HF_USER_ID}/{self.get_hf_remote_dir()}"
                 self.model.save_pretrained(
                     tmpdirname,
                     push_to_hub=True,
                     private=True,
                     **{
                         TOKEN_KEY: HF_AUTH_TOKEN,
-                        REPO_KEY: f"{HF_USER_ID}/{self.get_hf_remote_dir()}",
+                        REPO_KEY: repo_id,
                     },
                 )
 
-                # If our tests were moved to a public rather than a private repository,
-                # this logic could be as simple as downloading the config file directly
-                # and comparing it.
-                if self.is_diffuser():
-                    cfg = CLIPConfig.from_pretrained(
-                        f"{HF_USER_ID}/{self.get_hf_remote_dir()}",
-                        subfolder="text_encoder",
-                        private=True,
-                        **{TOKEN_KEY: HF_AUTH_TOKEN},
-                    )
-                else:
-                    cfg = AutoConfig.from_pretrained(
-                        f"{HF_USER_ID}/{self.get_hf_remote_dir()}",
-                        private=True,
-                        **{TOKEN_KEY: HF_AUTH_TOKEN},
-                    )
+                revision = HfApi(token=HF_AUTH_TOKEN).repo_info(repo_id).sha
+                cfg = AutoConfig.from_pretrained(
+                    repo_id,
+                    subfolder="text_encoder" if self.is_diffuser() else "",
+                    revision=revision,
+                    **{TOKEN_KEY: HF_AUTH_TOKEN},
+                )
 
                 self.assertEqual(remote_hash, cfg.from_local)
 

@@ -283,7 +283,7 @@ class TestQwen3MoeForCausalLM(LLMTest.TestLLM):
         config.num_hidden_layers = 3
         config.max_position_embeddings = 4096
         config.hidden_size = 128
-        cls.HF_CONFIG_KWARGS.update({"config": config, "ignore_mismatched_sizes": True})
+        cls.HF_CONFIG_KWARGS = {**cls.HF_CONFIG_KWARGS, "config": config, "ignore_mismatched_sizes": True}
         return super().setUpClass()
 
 
