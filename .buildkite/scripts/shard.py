@@ -9,6 +9,13 @@ pytest-split cuts wherever the test count lands, and a class split across two
 shards pays for setUpClass twice. Classes are packed longest-first using the
 measured seconds in the weights file; one the file does not list gets the median
 of its test file, so a newly added test always runs, just not perfectly balanced.
+
+The packing decides only which shard a class lands in. The classes are printed
+back in collection order, because the suite is not order-independent: a class
+whose setUpClass writes to the shared HF_CONFIG_KWARGS leaks into whatever runs
+after it, and running the heaviest class first would put it ahead of everything.
+Dropping a class into another process can only remove such an interaction;
+reordering within a process would create new ones.
 """
 
 import statistics
@@ -57,4 +64,5 @@ for unit in sorted(units, key=lambda u: (-weight(u), u)):
 if not shards[group - 1]:
     sys.exit(f"shard.py: group {group} of {splits} is empty -- more shards than classes?")
 
-print("\n".join(shards[group - 1]))
+selected = set(shards[group - 1])
+print("\n".join(unit for unit in units if unit in selected))
