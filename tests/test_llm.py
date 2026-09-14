@@ -30,6 +30,7 @@ from optimum.rbln import (
     RBLNAutoModel,
     RBLNAutoModelForCausalLM,
     RBLNAutoModelForImageTextToText,
+    RBLNAutoModelForMultimodalLM,
     RBLNAutoModelForSeq2SeqLM,
     RBLNBartForConditionalGeneration,
     RBLNBlip2ForConditionalGeneration,
@@ -63,6 +64,7 @@ from optimum.rbln import (
     RBLNQwen2VLForConditionalGeneration,
     RBLNQwen3_5ForCausalLM,
     RBLNQwen3_5ForConditionalGeneration,
+    RBLNQwen3ASRForConditionalGeneration,
     RBLNQwen3ForCausalLM,
     RBLNQwen3Model,
     RBLNQwen3MoeForCausalLM,
@@ -1133,6 +1135,38 @@ class TestQwen3_5ForConditionalGeneration_OutputHiddenStates(TestQwen3_5ForCondi
 
     def test_generate(self):
         self._test_output_hidden_states_generation()
+
+
+class TestQwen3ASRForConditionalGeneration(LLMTest.TestLLM):
+    RBLN_AUTO_CLASS = RBLNAutoModelForMultimodalLM
+    RBLN_CLASS = RBLNQwen3ASRForConditionalGeneration
+    HF_MODEL_ID = "Qwen/Qwen3-ASR-0.6B-hf"
+    RBLN_CLASS_KWARGS = {"rbln_config": {"max_seq_len": 1024, "audio_tower": {"num_windows": 1}}}
+    IS_MULTIMODAL = True
+    HF_CONFIG_KWARGS = {}  # Initialize empty to avoid sharing with other classes
+    HF_CONFIG_KWARGS_PREPROCESSOR = {}
+
+    @classmethod
+    def setUpClass(cls):
+        config = AutoConfig.from_pretrained(cls.HF_MODEL_ID)
+        text_config = json.loads(config.text_config.to_json_string())
+        text_config["num_hidden_layers"] = 1
+        text_config["layer_types"] = ["full_attention"]
+        audio_config = json.loads(config.audio_config.to_json_string())
+        audio_config["encoder_layers"] = 1
+        cls.HF_CONFIG_KWARGS.update({"text_config": text_config, "audio_config": audio_config})
+        return super().setUpClass()
+
+    def get_inputs(self):
+        # 1s of noise -> one 100-frame chunk, which fits the single compiled window.
+        audio = torch.randn(16000, generator=torch.manual_seed(42)).numpy()
+        inputs = self.get_tokenizer().apply_transcription_request(
+            audio=audio,
+            processor_kwargs={"sampling_rate": 16000, "return_tensors": "pt"},
+        )
+        inputs["max_new_tokens"] = 20
+        inputs["do_sample"] = False
+        return inputs
 
 
 class TestGemma3ForConditionalGeneration(LLMTest.TestLLM):
