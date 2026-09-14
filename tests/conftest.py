@@ -1,10 +1,5 @@
-"""`--shard GROUP/SPLITS` runs one slice of a suite.
-
-It selects whole classes: a class compiles its model in setUpClass, so one split
-across two shards pays for that twice. Dealing them out round-robin spreads the
-heavy model families, which are defined next to each other, and leaves the shard
-in collection order, which the suites still rely on.
-"""
+"""Whole classes, dealt round-robin: a class compiles its model in setUpClass, and
+the shard has to stay in collection order."""
 
 
 def pytest_addoption(parser):

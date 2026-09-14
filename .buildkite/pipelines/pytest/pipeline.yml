@@ -1,10 +1,5 @@
 # optimum-rbln pytest suites, uploaded by .buildkite/pr.yml.
-#
-# llm and transformers are split so no job runs much past six minutes. The
-# split is by test class, not by test: a class compiles its model in
-# setUpClass, so cutting one in half makes two jobs pay for the same compile.
-# tests/conftest.py deals the classes out round-robin via --shard; the count
-# lives here, in the step's arguments, and is the only thing to tune.
+# Mirrors the GHA matrix in .github/workflows/rbln_optimum_pytest.yaml.
 #
 # The uploader picks the test level: default for an ordinary PR, full for a
 # [pytest-full] commit (and later for the nightly). Both values are baked in at
