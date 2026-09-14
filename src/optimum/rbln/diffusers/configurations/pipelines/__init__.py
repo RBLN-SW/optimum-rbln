@@ -6,6 +6,7 @@ from .configuration_controlnet import (
 )
 from .configuration_cosmos import (
     RBLNCosmos2_5_PredictBasePipelineConfig,
+    RBLNCosmos2_5_TransferPipelineConfig,
     RBLNCosmos2TextToImagePipelineConfig,
     RBLNCosmos2VideoToWorldPipelineConfig,
     RBLNCosmosTextToWorldPipelineConfig,
