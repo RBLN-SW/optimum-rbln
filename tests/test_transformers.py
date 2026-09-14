@@ -784,8 +784,7 @@ class TestGroundingDinoModel(BaseTest.TestModel):
                 "window_size": 7,
             },
         )
-        cls.HF_CONFIG_KWARGS["config"] = config
-        cls.HF_CONFIG_KWARGS["ignore_mismatched_sizes"] = True
+        cls.HF_CONFIG_KWARGS = {**cls.HF_CONFIG_KWARGS, "config": config, "ignore_mismatched_sizes": True}
         return super().setUpClass()
 
 
