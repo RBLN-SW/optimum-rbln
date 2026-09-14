@@ -180,7 +180,7 @@ steps:
       - *sync
       - "bash .buildkite/scripts/run-suite.sh diffusers"
 
-  - label: ":pytest: llm 1/6"
+  - label: ":pytest: llm 1/4"
     if_changed: *if_changed_llm
     image: "${DEVTOOLS_DOCKER_IMAGE}"
     resources: *npu
@@ -188,9 +188,9 @@ steps:
     timeout_in_minutes: 60
     command:
       - *sync
-      - "bash .buildkite/scripts/run-suite.sh llm 1/6"
+      - "bash .buildkite/scripts/run-suite.sh llm 1/4"
 
-  - label: ":pytest: llm 2/6"
+  - label: ":pytest: llm 2/4"
     if_changed: *if_changed_llm
     image: "${DEVTOOLS_DOCKER_IMAGE}"
     resources: *npu
@@ -198,9 +198,9 @@ steps:
     timeout_in_minutes: 60
     command:
       - *sync
-      - "bash .buildkite/scripts/run-suite.sh llm 2/6"
+      - "bash .buildkite/scripts/run-suite.sh llm 2/4"
 
-  - label: ":pytest: llm 3/6"
+  - label: ":pytest: llm 3/4"
     if_changed: *if_changed_llm
     image: "${DEVTOOLS_DOCKER_IMAGE}"
     resources: *npu
@@ -208,9 +208,9 @@ steps:
     timeout_in_minutes: 60
     command:
       - *sync
-      - "bash .buildkite/scripts/run-suite.sh llm 3/6"
+      - "bash .buildkite/scripts/run-suite.sh llm 3/4"
 
-  - label: ":pytest: llm 4/6"
+  - label: ":pytest: llm 4/4"
     if_changed: *if_changed_llm
     image: "${DEVTOOLS_DOCKER_IMAGE}"
     resources: *npu
@@ -218,24 +218,4 @@ steps:
     timeout_in_minutes: 60
     command:
       - *sync
-      - "bash .buildkite/scripts/run-suite.sh llm 4/6"
-
-  - label: ":pytest: llm 5/6"
-    if_changed: *if_changed_llm
-    image: "${DEVTOOLS_DOCKER_IMAGE}"
-    resources: *npu
-    secrets: *secrets
-    timeout_in_minutes: 60
-    command:
-      - *sync
-      - "bash .buildkite/scripts/run-suite.sh llm 5/6"
-
-  - label: ":pytest: llm 6/6"
-    if_changed: *if_changed_llm
-    image: "${DEVTOOLS_DOCKER_IMAGE}"
-    resources: *npu
-    secrets: *secrets
-    timeout_in_minutes: 60
-    command:
-      - *sync
-      - "bash .buildkite/scripts/run-suite.sh llm 6/6"
+      - "bash .buildkite/scripts/run-suite.sh llm 4/4"
