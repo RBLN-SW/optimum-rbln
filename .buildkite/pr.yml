@@ -1,5 +1,5 @@
-# Entry pipeline for PR builds. Gates run first; the pytest pipeline is uploaded
-# only after they pass, with --git-diff-base so if_changed in that pipeline works.
+# Entry pipeline for PR builds. Gates run first; the test pipelines are uploaded
+# only after they pass.
 env:
   # Where every release's compiled artifacts live, written by the GHA bc_compile
   # workflow on each tag. Same path as the GHA BC_BASE_PATH repository variable.
@@ -48,7 +48,8 @@ steps:
   - wait: ~
 
   # A [pytest-full] commit (the compiler-update bot's PRs) runs every suite at the
-  # full level, so it uploads without --git-diff-base: nothing is path-gated away.
+  # full level. Suites a change cannot affect are skipped with the [skip-*]
+  # directives run-suite.sh reads, not by path.
   # Sibling jobs: two uploads from one job make the second batch a barrier for
   # the first, so the pytest suites would wait on BC.
   - label: ":sparkles: upload pytest"
@@ -58,19 +59,10 @@ steps:
         echo "--- :mag: [pytest-full] in commit message"
         export OPTIMUM_RBLN_TEST_LEVEL=full
         export HF_USER_ID=Rebellions
-        buildkite-agent pipeline upload .buildkite/pipelines/pytest/pipeline.yml
-      else
-        TARGET_BRANCH=$${BUILDKITE_PULL_REQUEST_BASE_BRANCH:-dev}
-        git fetch origin $$TARGET_BRANCH
-        buildkite-agent pipeline upload .buildkite/pipelines/pytest/pipeline.yml --git-diff-base origin/$$TARGET_BRANCH
       fi
+      buildkite-agent pipeline upload .buildkite/pipelines/pytest/pipeline.yml
 
   - label: ":sparkles: upload BC"
     <<: *upload
     command: |
-      if [[ "$$BUILDKITE_MESSAGE" != *"[pytest-full]"* ]]; then
-        TARGET_BRANCH=$${BUILDKITE_PULL_REQUEST_BASE_BRANCH:-dev}
-        git fetch origin $$TARGET_BRANCH
-        DIFF="--git-diff-base origin/$$TARGET_BRANCH"
-      fi
-      bash .buildkite/scripts/bc-steps.sh --latest | buildkite-agent pipeline upload $${DIFF:-}
+      bash .buildkite/scripts/bc-steps.sh --latest | buildkite-agent pipeline upload
