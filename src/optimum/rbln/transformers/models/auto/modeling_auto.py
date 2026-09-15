@@ -160,3 +160,22 @@ class RBLNAutoModelForObjectDetection(_BaseAutoModelClass):
 
     _model_mapping = MODEL_FOR_OBJECT_DETECTION_MAPPING
     _model_mapping_names = MODEL_FOR_OBJECT_DETECTION_MAPPING_NAMES
+
+
+__all__ = [
+    "RBLNAutoModel",
+    "RBLNAutoModelForAudioClassification",
+    "RBLNAutoModelForCTC",
+    "RBLNAutoModelForCausalLM",
+    "RBLNAutoModelForDepthEstimation",
+    "RBLNAutoModelForImageClassification",
+    "RBLNAutoModelForImageTextToText",
+    "RBLNAutoModelForMaskedLM",
+    "RBLNAutoModelForObjectDetection",
+    "RBLNAutoModelForQuestionAnswering",
+    "RBLNAutoModelForSeq2SeqLM",
+    "RBLNAutoModelForSequenceClassification",
+    "RBLNAutoModelForSpeechSeq2Seq",
+    "RBLNAutoModelForTextEncoding",
+    "RBLNAutoModelForZeroShotObjectDetection",
+]

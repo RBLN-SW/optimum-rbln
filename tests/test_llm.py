@@ -270,7 +270,6 @@ class TestQwen2MoeForCausalLM(LLMTest.TestLLM):
     # HF_MODEL_ID ="peft-internal-testing/tiny-random-qwen-1.5-MoE"
     HF_MODEL_ID = "Qwen/Qwen1.5-MoE-A2.7B"
     HF_CONFIG_KWARGS = {"num_hidden_layers": 1, "layer_types": ["full_attention"], "max_position_embeddings": 1024}
-    TEST_LEVEL = TestLevel.FULL
 
 
 class TestQwen3MoeForCausalLM(LLMTest.TestLLM):
@@ -283,7 +282,7 @@ class TestQwen3MoeForCausalLM(LLMTest.TestLLM):
         config.num_hidden_layers = 3
         config.max_position_embeddings = 4096
         config.hidden_size = 128
-        cls.HF_CONFIG_KWARGS.update({"config": config, "ignore_mismatched_sizes": True})
+        cls.HF_CONFIG_KWARGS = {**cls.HF_CONFIG_KWARGS, "config": config, "ignore_mismatched_sizes": True}
         return super().setUpClass()
 
 
@@ -642,7 +641,9 @@ class TestLlavaNextForConditionalGeneration(LLMTest.TestLLM):
         }
         rbln_class_kwargs = {"rbln_config": rbln_config}
 
-        model = self.RBLN_CLASS.from_pretrained(model_id=self.HF_MODEL_ID, **rbln_class_kwargs)
+        model = self.RBLN_CLASS.from_pretrained(
+            model_id=self.HF_MODEL_ID, **self.HF_CONFIG_KWARGS, **rbln_class_kwargs
+        )
 
         assert not model.rbln_config.vision_tower.create_runtimes
         assert not model.rbln_config.language_model.create_runtimes
@@ -829,9 +830,12 @@ class TestQwen2VLForConditionalGeneration(LLMTest.TestLLM):
         return inputs
 
     def test_propagate_config(self):
-        self.RBLN_CLASS_KWARGS["rbln_config"].update({"create_runtimes": False})
+        rbln_config = {**self.RBLN_CLASS_KWARGS["rbln_config"]}
+        rbln_config.update({"create_runtimes": False})
 
-        model = self.RBLN_CLASS.from_pretrained(model_id=self.HF_MODEL_ID, **self.RBLN_CLASS_KWARGS)
+        model = self.RBLN_CLASS.from_pretrained(
+            model_id=self.HF_MODEL_ID, **self.HF_CONFIG_KWARGS, rbln_config=rbln_config
+        )
 
         assert not model.rbln_config.visual.create_runtimes
         assert not model.rbln_config.create_runtimes
@@ -877,9 +881,12 @@ class TestQwen2_5_VLForConditionalGeneration(LLMTest.TestLLM):
         return inputs
 
     def test_propagate_config(self):
-        self.RBLN_CLASS_KWARGS["rbln_config"].update({"create_runtimes": False})
+        rbln_config = {**self.RBLN_CLASS_KWARGS["rbln_config"]}
+        rbln_config.update({"create_runtimes": False})
 
-        model = self.RBLN_CLASS.from_pretrained(model_id=self.HF_MODEL_ID, **self.RBLN_CLASS_KWARGS)
+        model = self.RBLN_CLASS.from_pretrained(
+            model_id=self.HF_MODEL_ID, **self.HF_CONFIG_KWARGS, rbln_config=rbln_config
+        )
 
         assert not model.rbln_config.visual.create_runtimes
         assert not model.rbln_config.create_runtimes
@@ -958,9 +965,12 @@ class TestQwen3VLForConditionalGeneration(LLMTest.TestLLM):
         return inputs
 
     def test_propagate_config(self):
-        self.RBLN_CLASS_KWARGS["rbln_config"].update({"create_runtimes": False})
+        rbln_config = {**self.RBLN_CLASS_KWARGS["rbln_config"]}
+        rbln_config.update({"create_runtimes": False})
 
-        model = self.RBLN_CLASS.from_pretrained(model_id=self.HF_MODEL_ID, **self.RBLN_CLASS_KWARGS)
+        model = self.RBLN_CLASS.from_pretrained(
+            model_id=self.HF_MODEL_ID, **self.HF_CONFIG_KWARGS, rbln_config=rbln_config
+        )
 
         assert not model.rbln_config.visual.create_runtimes
         assert not model.rbln_config.create_runtimes
@@ -1132,7 +1142,6 @@ class TestGemma3ForConditionalGeneration(LLMTest.TestLLM):
     RBLN_CLASS_KWARGS = {"rbln_config": {"language_model": {"use_inputs_embeds": True, "kvcache_partition_len": 4096}}}
     HF_CONFIG_KWARGS = {"revision": "e1f4b0516ec80f86ed75c8cb1d45ede72526ad24"}
     HF_CONFIG_KWARGS_PREPROCESSOR = {"revision": "e1f4b0516ec80f86ed75c8cb1d45ede72526ad24"}
-    TEST_LEVEL = TestLevel.FULL
     IS_MULTIMODAL = True
 
     # override

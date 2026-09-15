@@ -180,3 +180,8 @@ def _replace_with_mxfp4_linear(
             model._modules[name] = Mxfp4GptOssExperts(config)
         if len(list(module.children())) > 0:
             _replace_with_mxfp4_linear(module, config)
+
+
+__all__ = [
+    "RBLNGptOssForCausalLM",
+]

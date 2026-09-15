@@ -27,3 +27,9 @@ class RBLNOPTModelConfig(RBLNDecoderOnlyModelConfig):
     Configuration class for OPT model.
     Inherits from RBLNDecoderOnlyModelConfig with no additional parameters.
     """
+
+
+__all__ = [
+    "RBLNOPTForCausalLMConfig",
+    "RBLNOPTModelConfig",
+]
