@@ -36,22 +36,19 @@ notify:
 EOF
 echo "steps:"
 for suite in transformers diffusers llm; do
-  # The attached NPU fixes the target SoC: CA22, as every release already under
-  # BC_BASE_PATH was compiled on.
+  # RBLN_FORCE_NPU_NAME fixes the target SoC without hardware, so the compile
+  # holds no NPU. CA22, as every release already under BC_BASE_PATH was built on.
   cat <<EOF
   - label: ":floppy_disk: compile $tag $suite${override:+ @ $override}"
     key: "bc-compile-${suite}"
     image: "\${DEVTOOLS_DOCKER_IMAGE}"
-    resources:
-      npu:
-        count: 1
-        product: "RBLN-CA22"
     secrets:
       UV_INDEX_REBELLIONS_USERNAME: REBEL_SW_DEV_USERNAME
       UV_INDEX_REBELLIONS_PASSWORD: REBEL_SW_DEV_PASSWORD
       HF_TOKEN: HF_TOKEN
       HF_HOME: HF_HOME
     env:
+      RBLN_FORCE_NPU_NAME: "RBLN-CA22"
       OPTIMUM_RBLN_TEST_LEVEL: "full"
       SAVE_ARTIFACTS_PATH: "$BC_BASE_PATH/$encoded"
     timeout_in_minutes: 180
