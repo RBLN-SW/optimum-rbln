@@ -1,5 +1,4 @@
-# optimum-rbln pytest suites, uploaded by .buildkite/pr.yml.
-# Mirrors the GHA matrix in .github/workflows/rbln_optimum_pytest.yaml.
+# optimum-rbln pytest suites, uploaded by .buildkite/pr.yml and nightly.yml.
 #
 # The uploader picks the test level: default for an ordinary PR, full for a
 # [pytest-full] commit (and later for the nightly). Both values are baked in at
