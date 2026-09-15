@@ -17,18 +17,22 @@ elif [ -n "${SAVE_ARTIFACTS_PATH:-}" ]; then
   shard=""
 fi
 
+# Named after the step, so the report can tell two BC releases apart after it
+# downloads every junit file into one directory.
+junit="junit-$(printf '%s' "${BUILDKITE_LABEL:-$suite}" | tr -cs '[:alnum:]' '-').xml"
+
 echo "--- :pytest: ${suite}${shard:+ (shard ${shard})}"
 case "$suite" in
   unit-cpu)
-    uv run --no-sync pytest tests/unit/cpu -vv --durations 0 ;;
+    uv run --no-sync pytest tests/unit/cpu --junitxml "$junit" -vv --durations 0 ;;
   config)
-    uv run --no-sync pytest -n 1 tests/test_config.py -vv --durations 0 "${bc[@]}" ;;
+    uv run --no-sync pytest -n 1 tests/test_config.py --junitxml "$junit" -vv --durations 0 "${bc[@]}" ;;
   transformers)
-    uv run --no-sync pytest -n 1 tests/test_transformers.py ${shard:+--shard "$shard"} -vv --durations 0 "${bc[@]}" ;;
+    uv run --no-sync pytest -n 1 tests/test_transformers.py --junitxml "$junit" ${shard:+--shard "$shard"} -vv --durations 0 "${bc[@]}" ;;
   diffusers)
-    uv run --no-sync pytest -n 1 tests/test_diffusers.py ${shard:+--shard "$shard"} -vv --durations 0 "${bc[@]}" ;;
+    uv run --no-sync pytest -n 1 tests/test_diffusers.py --junitxml "$junit" ${shard:+--shard "$shard"} -vv --durations 0 "${bc[@]}" ;;
   llm)
-    uv run --no-sync pytest -n 1 tests/test_llm.py ${shard:+--shard "$shard"} -vv --durations 0 "${bc[@]}" ;;
+    uv run --no-sync pytest -n 1 tests/test_llm.py --junitxml "$junit" ${shard:+--shard "$shard"} -vv --durations 0 "${bc[@]}" ;;
   cli-basic)
     uv run --no-sync .github/scripts/test_cli.py basic ;;
   cli-argument-parsing)

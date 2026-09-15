@@ -51,6 +51,7 @@ for suite in transformers diffusers llm; do
       OPTIMUM_RBLN_TEST_LEVEL: "full"
       SAVE_ARTIFACTS_PATH: "$BC_BASE_PATH/$encoded"
     timeout_in_minutes: 180
+    artifact_paths: "junit-*.xml"
     command:
       # mkdir -p alone would happily create it on the wrong volume.
       - "test -d $BC_BASE_PATH && mkdir -p $BC_BASE_PATH/$encoded"
