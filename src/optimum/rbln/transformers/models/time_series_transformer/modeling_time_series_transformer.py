@@ -435,3 +435,8 @@ class RBLNTimeSeriesTransformerForPrediction(RBLNModel):
                 (-1, num_parallel_samples, self.config.prediction_length) + self._origin_model.target_shape,
             )
         )
+
+
+__all__ = [
+    "RBLNTimeSeriesTransformerForPrediction",
+]

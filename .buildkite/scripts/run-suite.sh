@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# run-suite.sh <suite> [group]
+# run-suite.sh <suite> [shard]
 # Runs one suite of the GHA matrix, honoring the same [skip-*] commit-message
 # directives. BUILDKITE_MESSAGE is the PR head commit message, as in GHA.
 set -euo pipefail
 
-suite="${1:?usage: run-suite.sh <suite> [group]}"
-group="${2:-}"
+suite="${1:?usage: run-suite.sh <suite> [shard]}"
+shard="${2:-}"   # index/count, e.g. 3/6
 
 case "$suite" in
   transformers) tag="[skip-transformers]" ;;
@@ -24,24 +24,21 @@ fi
 bc=()
 if [ -n "${REUSE_ARTIFACTS_PATH:-}" ]; then
   bc=(-k test_generate)
-  group=""
+  shard=""
 fi
 
-echo "--- :pytest: ${suite}${group:+ (group ${group}/4)}"
+echo "--- :pytest: ${suite}${shard:+ (shard ${shard})}"
 case "$suite" in
+  unit-cpu)
+    uv run --no-sync pytest tests/unit/cpu -vv --durations 0 ;;
   config)
     uv run --no-sync pytest -n 1 tests/test_config.py -vv --durations 0 "${bc[@]}" ;;
   transformers)
-    uv run --no-sync pytest -n 1 tests/test_transformers.py -vv --durations 0 "${bc[@]}" ;;
+    uv run --no-sync pytest -n 1 tests/test_transformers.py ${shard:+--shard "$shard"} -vv --durations 0 "${bc[@]}" ;;
   diffusers)
-    uv run --no-sync pytest -n 1 tests/test_diffusers.py -vv --durations 0 "${bc[@]}" ;;
+    uv run --no-sync pytest -n 1 tests/test_diffusers.py ${shard:+--shard "$shard"} -vv --durations 0 "${bc[@]}" ;;
   llm)
-    if [ -n "$group" ]; then
-      uv run --no-sync pytest -n 1 tests/test_llm.py --splits 4 --group "$group" -vv --durations 0
-    else
-      [ ${#bc[@]} -gt 0 ] || { echo "llm needs a group (1-4)" >&2; exit 2; }
-      uv run --no-sync pytest -n 1 tests/test_llm.py -vv --durations 0 "${bc[@]}"
-    fi ;;
+    uv run --no-sync pytest -n 1 tests/test_llm.py ${shard:+--shard "$shard"} -vv --durations 0 "${bc[@]}" ;;
   cli-basic)
     uv run --no-sync .github/scripts/test_cli.py basic ;;
   cli-argument-parsing)

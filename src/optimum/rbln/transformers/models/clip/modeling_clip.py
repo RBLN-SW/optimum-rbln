@@ -386,3 +386,11 @@ class RBLNCLIPVisionModelWithProjection(RBLNCLIPVisionModel):
                 hidden_states=hidden_states,
                 attentions=attentions,
             )
+
+
+__all__ = [
+    "RBLNCLIPTextModel",
+    "RBLNCLIPTextModelWithProjection",
+    "RBLNCLIPVisionModel",
+    "RBLNCLIPVisionModelWithProjection",
+]

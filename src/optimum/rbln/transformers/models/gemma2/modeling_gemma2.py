@@ -99,3 +99,9 @@ class RBLNGemma2Model(RBLNDecoderOnlyModel):
     """
 
     _decoder_wrapper_cls = Gemma2Wrapper
+
+
+__all__ = [
+    "RBLNGemma2ForCausalLM",
+    "RBLNGemma2Model",
+]

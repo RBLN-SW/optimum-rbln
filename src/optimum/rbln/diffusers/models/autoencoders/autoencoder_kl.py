@@ -276,3 +276,8 @@ class RBLNAutoencoderKL(RBLNModel):
         if not return_dict:
             return (dec,)
         return DecoderOutput(sample=dec)
+
+
+__all__ = [
+    "RBLNAutoencoderKL",
+]

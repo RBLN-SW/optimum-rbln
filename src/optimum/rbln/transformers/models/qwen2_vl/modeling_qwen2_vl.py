@@ -716,3 +716,10 @@ class RBLNQwen2VLForConditionalGeneration(RBLNQwenVLBatchSortMixin, RBLNQwen2VLM
                 generate_idx=generate_idx,
                 hidden_states=all_hidden_states,
             )
+
+
+__all__ = [
+    "RBLNQwen2VLForConditionalGeneration",
+    "RBLNQwen2VLModel",
+    "RBLNQwen2VisionTransformerPretrainedModel",
+]

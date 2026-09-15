@@ -36,3 +36,8 @@ class RBLNQwen3MoeForCausalLMConfig(RBLNDecoderOnlyModelForCausalLMConfig):
     )
     ```
     """
+
+
+__all__ = [
+    "RBLNQwen3MoeForCausalLMConfig",
+]

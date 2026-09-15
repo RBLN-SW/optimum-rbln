@@ -22,3 +22,8 @@ class RBLNViTForImageClassificationConfig(RBLNModelForImageClassificationConfig)
     This configuration class stores the configuration parameters specific to
     RBLN-optimized Vision Transformer (ViT) models for image classification tasks.
     """
+
+
+__all__ = [
+    "RBLNViTForImageClassificationConfig",
+]

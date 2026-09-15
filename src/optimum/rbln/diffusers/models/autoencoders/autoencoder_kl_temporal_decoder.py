@@ -273,3 +273,8 @@ class RBLNAutoencoderKLTemporalDecoder(RBLNModel):
             return (decoded,)
 
         return DecoderOutput(sample=decoded)
+
+
+__all__ = [
+    "RBLNAutoencoderKLTemporalDecoder",
+]

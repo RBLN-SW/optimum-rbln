@@ -40,3 +40,8 @@ class RBLNGptOssForCausalLMConfig(RBLNDecoderOnlyModelForCausalLMConfig):
     )
     ```
     """
+
+
+__all__ = [
+    "RBLNGptOssForCausalLMConfig",
+]

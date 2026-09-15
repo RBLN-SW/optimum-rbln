@@ -516,18 +516,19 @@ def load_weights_from_files(
             if key.endswith("k_scale") or key.endswith("v_scale"):
                 loaded_kv_scale = True
 
-            # Copy into parameters or buffers
             if key in model_params:
-                # Ensure dtype compatibility
-                if model_params[key].dtype != value.dtype:
-                    value = value.to(model_params[key].dtype)
-                model_params[key].data.copy_(value)
+                target = model_params[key]
             elif key in model_buffers:
-                if model_buffers[key].dtype != value.dtype:
-                    value = value.to(model_buffers[key].dtype)
-                model_buffers[key].data.copy_(value)
+                target = model_buffers[key]
             else:
                 unloaded_keys.append(key)
+                continue
+
+            if target.dtype == value.dtype and target.shape == value.shape:
+                # keep the safetensors mmap view; copying would hold the checkpoint twice on the host
+                target.data = value
+            else:
+                target.data.copy_(value.to(target.dtype))
 
     if len(unloaded_keys) > 0:
         logger.warning(f"There are unexpected parameters/buffers on the checkpoint: {unloaded_keys}")
@@ -626,3 +627,8 @@ def convert_to_qfloat_linear(
         weight_scale=weight_scale,
         input_scale=input_scale,
     )
+
+
+__all__ = [
+    "RBLNQuantizationConfig",
+]

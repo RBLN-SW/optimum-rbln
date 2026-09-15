@@ -517,3 +517,8 @@ class RBLNLlavaNextForConditionalGeneration(RBLNModel, RBLNImageIndexedBatchSort
                 logits=logits,
                 generate_idx=generate_idx,
             )
+
+
+__all__ = [
+    "RBLNLlavaNextForConditionalGeneration",
+]

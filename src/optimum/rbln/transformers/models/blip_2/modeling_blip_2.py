@@ -517,3 +517,10 @@ class RBLNBlip2ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMixi
         outputs = self.language_model.generate(**inputs, **generate_kwargs)
 
         return outputs
+
+
+__all__ = [
+    "RBLNBlip2ForConditionalGeneration",
+    "RBLNBlip2QFormerModel",
+    "RBLNBlip2VisionModel",
+]
