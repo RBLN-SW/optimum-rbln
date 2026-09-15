@@ -1,11 +1,19 @@
-import math
-
 import torch
 import torch.nn as nn
 from transformers import PreTrainedModel
 
-from ..decoderonly.decoderonly_architecture import DecoderOnlyWrapper, apply_rotary_pos_emb
+from ..decoderonly.decoderonly_architecture import DecoderOnlyWrapper, rotate_half
 from .configuration_qwen2_5_vl import RBLNQwen2_5_VisionTransformerPretrainedModelConfig
+
+
+def apply_rotary_pos_emb_vision(q, k, cos, sin):
+    # Mirrors HF `apply_rotary_pos_emb_vision`: rotate in fp32 and round once.
+    orig_q_dtype, orig_k_dtype = q.dtype, k.dtype
+    q, k = q.float(), k.float()
+    cos, sin = cos.float(), sin.float()
+    q_embed = (q * cos) + (rotate_half(q) * sin)
+    k_embed = (k * cos) + (rotate_half(k) * sin)
+    return q_embed.to(orig_q_dtype), k_embed.to(orig_k_dtype)
 
 
 class Qwen2_5_VisionTransformerWrapper(nn.Module):
@@ -93,7 +101,7 @@ class Qwen2_5_VLVisionFullAttention(nn.Module):
         self.head_dim = getattr(model, "head_dim", model.proj.in_features // model.num_heads)
         self.qkv = model.qkv
         self.proj = model.proj
-        self.scale = torch.tensor(1 / math.sqrt(self.head_dim), dtype=rbln_config.dtype)
+        self.scale = self.head_dim**-0.5
 
     def forward(
         self,
@@ -108,11 +116,11 @@ class Qwen2_5_VLVisionFullAttention(nn.Module):
         )
 
         cos, sin = position_embeddings
-        q, k = apply_rotary_pos_emb(q, k, cos, sin)
+        q, k = apply_rotary_pos_emb_vision(q, k, cos, sin)
 
         attn_weights = torch.matmul(q, k.transpose(2, 3)) * self.scale
         attn_weights = attn_weights + attn_masks
-        attn_weights = nn.functional.softmax(attn_weights, dim=-1, dtype=hidden_states.dtype)
+        attn_weights = nn.functional.softmax(attn_weights, dim=-1, dtype=torch.float32).to(q.dtype)
         attn_output = torch.matmul(attn_weights, v)
         attn_output = attn_output.transpose(1, 2)
         attn_output = attn_output.reshape(1, seq_length, -1)
@@ -133,7 +141,7 @@ class Qwen2_5_VLVisionWindowAttention(nn.Module):
         self.qkv = model.qkv
         self.proj = model.proj
         self.window_seq_len = window_seq_len
-        self.scale = torch.tensor(1 / math.sqrt(self.head_dim), dtype=rbln_config.dtype)
+        self.scale = self.head_dim**-0.5
 
     def forward(
         self,
@@ -158,12 +166,12 @@ class Qwen2_5_VLVisionWindowAttention(nn.Module):
         cos, sin = position_embeddings
         cos = cos.reshape(num_windows, 1, seq_length // num_windows, -1)
         sin = sin.reshape(num_windows, 1, seq_length // num_windows, -1)
-        q, k = apply_rotary_pos_emb(q, k, cos, sin)
+        q, k = apply_rotary_pos_emb_vision(q, k, cos, sin)
 
         attn_weights = torch.matmul(q, k.transpose(2, 3)) * self.scale
 
         attn_weights = attn_weights + attn_masks
-        attn_weights = nn.functional.softmax(attn_weights, dim=-1)
+        attn_weights = nn.functional.softmax(attn_weights, dim=-1, dtype=torch.float32).to(q.dtype)
         attn_output = torch.matmul(attn_weights, v)
         attn_output = attn_output.transpose(1, 2)
         attn_output = attn_output.reshape(1, seq_length, -1)
