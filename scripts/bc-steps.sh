@@ -73,8 +73,8 @@ for tag in $tags; do
       REUSE_ARTIFACTS_PATH: "$BC_BASE_PATH/$encoded"
     timeout_in_minutes: 60
     command:
-      - "bash .buildkite/scripts/sync.sh"
-      - "bash .buildkite/scripts/run-suite.sh $suite"
+      - "bash scripts/sync.sh"
+      - "bash scripts/run-suite.sh $suite"
 EOF
   done
 done

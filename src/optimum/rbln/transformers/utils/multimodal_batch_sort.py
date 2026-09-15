@@ -66,12 +66,13 @@ def _matched_token_counts(
         raise RuntimeError(_UNMAPPABLE_BATCH_SORT)
     row_totals = (input_ids == token_id).sum(dim=1).tolist()
     counts, seg_idx = [], 0
-    for total in row_totals:
+    for row_total in row_totals:
         n = 0
-        while total > 0:
-            if seg_idx >= len(tokens_per_segment) or tokens_per_segment[seg_idx] > total:
+        remaining = row_total
+        while remaining > 0:
+            if seg_idx >= len(tokens_per_segment) or tokens_per_segment[seg_idx] > remaining:
                 raise RuntimeError(_UNMAPPABLE_BATCH_SORT)
-            total -= tokens_per_segment[seg_idx]
+            remaining -= tokens_per_segment[seg_idx]
             seg_idx += 1
             n += 1
         counts.append(n)
@@ -171,7 +172,7 @@ class RBLNQwenVLBatchSortMixin(RBLNBatchSortGuardMixin):
     # for the Qwen-VL processor lineage (incl. exaone4_5): pixel_values flatten patches
     # on dim 0 alongside image_grid_thw; sample ownership is recovered from grid rows
     _video_grid_rows_are_chunks = False  # qwen3-style video grids are per temporal chunk
-    _batch_sortable_kwargs = RBLNDecoderOnlyGenerationMixin._batch_sortable_kwargs + ("mm_token_type_ids",)
+    _batch_sortable_kwargs = (*RBLNDecoderOnlyGenerationMixin._batch_sortable_kwargs, "mm_token_type_ids")
     _vision_sortable_kwargs = (
         "pixel_values",
         "pixel_values_videos",

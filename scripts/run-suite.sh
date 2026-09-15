@@ -43,11 +43,11 @@ case "$suite" in
       uv run --no-sync pytest -n 1 tests/test_llm.py -vv --durations 0 "${bc[@]}"
     fi ;;
   cli-basic)
-    uv run --no-sync .github/scripts/test_cli.py basic ;;
+    uv run --no-sync scripts/test_cli.py basic ;;
   cli-argument-parsing)
-    uv run --no-sync .github/scripts/test_cli.py argument-parsing ;;
+    uv run --no-sync scripts/test_cli.py argument-parsing ;;
   cli-error-handling)
-    uv run --no-sync .github/scripts/test_cli.py error-handling ;;
+    uv run --no-sync scripts/test_cli.py error-handling ;;
   *)
     echo "unknown suite: $suite" >&2; exit 2 ;;
 esac

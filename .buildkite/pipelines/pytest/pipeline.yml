@@ -48,7 +48,7 @@ _if_changed_cli: &if_changed_cli
     - "src/**"
     - "tests/__init__.py"
     - "tests/test_base.py"
-    - ".github/scripts/test_cli.py"
+    - "scripts/test_cli.py"
 
 _if_changed_diffusers: &if_changed_diffusers
   include:
@@ -102,7 +102,7 @@ _secrets: &secrets
   # Rebellions, which is what test_push_to_hub does.
   HF_AUTH_TOKEN: MODEL_HUB_ACCESS
 
-_sync: &sync "bash .buildkite/scripts/sync.sh"
+_sync: &sync "bash scripts/sync.sh"
 
 _npu: &npu
   npu:
@@ -118,7 +118,7 @@ steps:
     timeout_in_minutes: 60
     command:
       - *sync
-      - "bash .buildkite/scripts/run-suite.sh config"
+      - "bash scripts/run-suite.sh config"
 
   - label: ":pytest: cli-basic"
     if_changed: *if_changed_cli
@@ -128,7 +128,7 @@ steps:
     timeout_in_minutes: 60
     command:
       - *sync
-      - "bash .buildkite/scripts/run-suite.sh cli-basic"
+      - "bash scripts/run-suite.sh cli-basic"
 
   - label: ":pytest: cli-argument-parsing"
     <<: *full_only
@@ -138,7 +138,7 @@ steps:
     timeout_in_minutes: 60
     command:
       - *sync
-      - "bash .buildkite/scripts/run-suite.sh cli-argument-parsing"
+      - "bash scripts/run-suite.sh cli-argument-parsing"
 
   - label: ":pytest: cli-error-handling"
     <<: *full_only
@@ -148,7 +148,7 @@ steps:
     timeout_in_minutes: 60
     command:
       - *sync
-      - "bash .buildkite/scripts/run-suite.sh cli-error-handling"
+      - "bash scripts/run-suite.sh cli-error-handling"
 
   - label: ":pytest: transformers"
     if_changed: *if_changed_transformers
@@ -158,7 +158,7 @@ steps:
     timeout_in_minutes: 60
     command:
       - *sync
-      - "bash .buildkite/scripts/run-suite.sh transformers"
+      - "bash scripts/run-suite.sh transformers"
 
   - label: ":pytest: diffusers"
     if_changed: *if_changed_diffusers
@@ -168,7 +168,7 @@ steps:
     timeout_in_minutes: 60
     command:
       - *sync
-      - "bash .buildkite/scripts/run-suite.sh diffusers"
+      - "bash scripts/run-suite.sh diffusers"
 
   - label: ":pytest: llm 1/4"
     if_changed: *if_changed_llm
@@ -178,7 +178,7 @@ steps:
     timeout_in_minutes: 60
     command:
       - *sync
-      - "bash .buildkite/scripts/run-suite.sh llm 1"
+      - "bash scripts/run-suite.sh llm 1"
 
   - label: ":pytest: llm 2/4"
     if_changed: *if_changed_llm
@@ -188,7 +188,7 @@ steps:
     timeout_in_minutes: 60
     command:
       - *sync
-      - "bash .buildkite/scripts/run-suite.sh llm 2"
+      - "bash scripts/run-suite.sh llm 2"
 
   - label: ":pytest: llm 3/4"
     if_changed: *if_changed_llm
@@ -198,7 +198,7 @@ steps:
     timeout_in_minutes: 60
     command:
       - *sync
-      - "bash .buildkite/scripts/run-suite.sh llm 3"
+      - "bash scripts/run-suite.sh llm 3"
 
   - label: ":pytest: llm 4/4"
     if_changed: *if_changed_llm
@@ -208,4 +208,4 @@ steps:
     timeout_in_minutes: 60
     command:
       - *sync
-      - "bash .buildkite/scripts/run-suite.sh llm 4"
+      - "bash scripts/run-suite.sh llm 4"

@@ -95,9 +95,8 @@ class SubModulesMixin:
             elif submodule_postfix is not None:
                 torch_submodule: PreTrainedModel = getattr(model, submodule_name)
                 torch_submodule = getattr(torch_submodule, submodule_postfix)
-            else:
-                if (torch_submodule := getattr(model, submodule_name, None)) is None:
-                    torch_submodule = getattr(model.model, submodule_name)
+            elif (torch_submodule := getattr(model, submodule_name, None)) is None:
+                torch_submodule = getattr(model.model, submodule_name)
 
             cls_name = torch_submodule.__class__.__name__
             submodule_rbln_config = getattr(rbln_config, submodule_name) or {}

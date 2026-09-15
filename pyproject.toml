@@ -13,7 +13,7 @@ license = "Apache-2.0"
 license-files = ["LICENSE"]
 dynamic = ["version"]
 classifiers = [
-    "Development Status :: 2 - Pre-Alpha",
+    "Development Status :: 4 - Beta",
     "License :: OSI Approved :: Apache Software License",
     "Intended Audience :: Developers",
     "Intended Audience :: Education",
@@ -69,9 +69,8 @@ tests = [
     "simphile>=1.0.2",
 ]
 quality = [
-    "ruff>=0.3.3",
-    "isort>=5.13.2",
-    "hf-doc-builder>=0.5.0",
+    "ruff>=0.15.4",
+    "pre-commit>=4.0.0",
 ]
 deploy = [
     "twine>=6.0.1",
@@ -124,27 +123,46 @@ name = "pytorch-cpu"
 url = "https://download.pytorch.org/whl/cpu"
 explicit = true
 
-[tool.isort]
-default_section = "FIRSTPARTY"
-ensure_newline_before_comments = true
-force_grid_wrap = 0
-include_trailing_comma = true
-known_first_party = "optimum.rbln"
-line_length = 119
-lines_after_imports = 2
-multi_line_output = 3
-use_parentheses = true
-
 [tool.pytest.ini_options]
 doctest_optionflags = "NUMBER NORMALIZE_WHITESPACE ELLIPSIS"
 
 [tool.ruff]
 line-length = 119
+extend-exclude = ["src/optimum/rbln/__version__.py"]
 
 [tool.ruff.lint]
-# Never enforce `E501` (line length violations).
-ignore = ["C901", "E501", "E741", "W605", "UP037"]
-select = ["C", "E", "F", "I", "W", "B", "UP"]
+select = [
+    "B",
+    "C",
+    "E",
+    "F",
+    "I",
+    "PERF",
+    "PIE",
+    "PLC",
+    "PLE",
+    "PLR0402",
+    "PLR1714",
+    "PLR5501",
+    "PLW",
+    "PT",
+    "RUF",
+    "SIM",
+    "TC",
+    "UP",
+    "W",
+]
+ignore = [
+    "C901",
+    "E501",
+    "E741",
+    "W605",
+    "UP037",
+    # Lazy imports inside functions are deliberate: they keep `import optimum.rbln` light.
+    "PLC0415",
+    # Mutable class attributes are the HuggingFace convention for declarative model metadata.
+    "RUF012",
+]
 
 [tool.ruff.lint.isort]
 lines-after-imports = 2

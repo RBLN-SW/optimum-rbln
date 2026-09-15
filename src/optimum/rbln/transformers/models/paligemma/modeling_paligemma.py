@@ -41,7 +41,7 @@ from ..decoderonly.modeling_decoderonly import RBLNDecoderOnlyOutput
 logger = get_logger(__name__)
 
 if TYPE_CHECKING:
-    from transformers import AutoFeatureExtractor, AutoProcessor, AutoTokenizer, PretrainedConfig
+    from transformers import AutoFeatureExtractor, AutoProcessor, AutoTokenizer
 
 
 class LoopVisionTower(LoopProcessor):
@@ -94,7 +94,7 @@ class RBLNPaliGemmaForConditionalGeneration(RBLNModel, RBLNImageIndexedBatchSort
         {"name": "language_model"},
     ]
     # one image per sample: pixel_values is batch-first (batch_size, C, H, W)
-    _batch_sortable_kwargs = RBLNImageIndexedBatchSortMixin._batch_sortable_kwargs + ("pixel_values",)
+    _batch_sortable_kwargs = (*RBLNImageIndexedBatchSortMixin._batch_sortable_kwargs, "pixel_values")
 
     def __getattr__(self, __name: str) -> Any:
         def redirect(func):

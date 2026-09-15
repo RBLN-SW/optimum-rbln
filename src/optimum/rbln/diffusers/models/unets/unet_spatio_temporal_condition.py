@@ -20,7 +20,6 @@ from diffusers.models.unets.unet_spatio_temporal_condition import (
     UNetSpatioTemporalConditionModel,
     UNetSpatioTemporalConditionOutput,
 )
-from transformers import PretrainedConfig
 
 from ....configuration_utils import RBLNCompileConfig
 from ....modeling import RBLNModel
@@ -30,7 +29,7 @@ from ...modeling_diffusers import RBLNDiffusionMixin, RBLNDiffusionMixinConfig
 
 
 if TYPE_CHECKING:
-    from transformers import AutoFeatureExtractor, AutoProcessor, PreTrainedModel
+    from transformers import AutoFeatureExtractor, AutoProcessor, PretrainedConfig, PreTrainedModel
 
 logger = get_logger(__name__)
 

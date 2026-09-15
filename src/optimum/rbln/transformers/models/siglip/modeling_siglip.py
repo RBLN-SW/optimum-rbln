@@ -119,9 +119,9 @@ class RBLNSiglipVisionModel(RBLNModel):
     def forward(
         self,
         pixel_values: torch.Tensor,
-        return_dict: bool = None,
-        output_attentions: bool = None,
-        output_hidden_states: bool = None,
+        return_dict: bool | None = None,
+        output_attentions: bool | None = None,
+        output_hidden_states: bool | None = None,
         interpolate_pos_encoding: bool = False,
         **kwargs: Any,
     ) -> tuple | BaseModelOutputWithPooling:

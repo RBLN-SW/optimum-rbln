@@ -39,7 +39,7 @@ from ...configurations import RBLNCosmosTransformer3DModelConfig
 if TYPE_CHECKING:
     from transformers import AutoFeatureExtractor, AutoProcessor, AutoTokenizer, PretrainedConfig, PreTrainedModel
 
-    from ...modeling_diffusers import RBLNCosmosTransformer3DModelConfig, RBLNDiffusionMixin, RBLNDiffusionMixinConfig
+    from ...modeling_diffusers import RBLNDiffusionMixin, RBLNDiffusionMixinConfig
 
 
 logger = get_logger(__name__)
@@ -199,7 +199,7 @@ class RBLNCosmosTransformer3DModel(RBLNModel):
         condition_mask: torch.Tensor | None = None,
         padding_mask: torch.Tensor | None = None,
     ):
-        batch_size, num_channels, num_frames, height, width = hidden_states.shape
+        batch_size, _num_channels, num_frames, _height, _width = hidden_states.shape
 
         # 1. Concatenate padding mask if needed & prepare attention mask
         if condition_mask is not None:
@@ -221,7 +221,7 @@ class RBLNCosmosTransformer3DModel(RBLNModel):
         extra_pos_emb = self.learnable_pos_embed(hidden_states) if self.config.extra_pos_embed_type else None
 
         # 3. Patchify input
-        p_t, p_h, p_w = self.config.patch_size
+        _p_t, _p_h, _p_w = self.config.patch_size
         hidden_states = self.patch_embed(hidden_states)
         hidden_states = hidden_states.flatten(1, 3)  # [B, T, H, W, C] -> [B, THW, C]
 

@@ -272,7 +272,7 @@ class DecoderOnlyForCausalLM(nn.Module):
         cache_position: torch.Tensor = None,
         position_ids: torch.Tensor = None,
         query_position: torch.Tensor = None,
-        past_key_values: tuple[tuple[torch.Tensor]] = None,
+        past_key_values: tuple[tuple[torch.Tensor]] | None = None,
         rotary_emb: nn.Module = None,
         global_block_tables: torch.Tensor | None = None,
         local_block_tables: torch.Tensor | None = None,
@@ -464,7 +464,7 @@ class DecoderOnlyModel(nn.Module):
         cache_position: torch.Tensor = None,
         position_ids: torch.Tensor = None,
         query_position: torch.Tensor = None,
-        past_key_values: tuple[tuple[torch.Tensor]] = None,
+        past_key_values: tuple[tuple[torch.Tensor]] | None = None,
         rotary_emb: nn.Module | torch.Tensor | None = None,
         global_block_tables: torch.Tensor | None = None,
         local_block_tables: torch.Tensor | None = None,
@@ -538,7 +538,7 @@ class DecoderOnlyModel(nn.Module):
             if output_hidden_states:
                 all_hidden_states += (hidden_states,)
 
-            is_sliding = True if layer_idx in self.sliding_window_layers else False
+            is_sliding = layer_idx in self.sliding_window_layers
             is_sliding_decode = is_sliding and self.phase == "decode"
             hidden_states = layer(
                 hidden_states=hidden_states,
@@ -645,10 +645,7 @@ class DecoderOnlyLayer(nn.Module):
             gate = mlp.gate_proj(hidden_states, lora_int_id)
             up = mlp.up_proj(hidden_states, lora_int_id)
             act_fn = getattr(mlp, "act_fn", None) or getattr(mlp, "activation_fn", None)
-            if act_fn is None:
-                gate = torch.nn.functional.silu(gate)
-            else:
-                gate = act_fn(gate)
+            gate = torch.nn.functional.silu(gate) if act_fn is None else act_fn(gate)
             fused = gate * up
             hidden_states = mlp.down_proj(fused, lora_int_id)
         else:
@@ -901,12 +898,7 @@ class DecoderOnlyAttention(nn.Module):
         )
 
         # Check if using LoRALinear (which accepts lora_int_id) or standard linear layers
-        if self.lora_config:
-            # LoRALinear handles both base projection and LoRA in one forward pass
-            attn_outputs = self.o_proj(attn_output, lora_int_id)
-        else:
-            # Standard linear projection without LoRA
-            attn_outputs = self.o_proj(attn_output)
+        attn_outputs = self.o_proj(attn_output, lora_int_id) if self.lora_config else self.o_proj(attn_output)
 
         return attn_outputs
 
@@ -942,10 +934,7 @@ class AttentionOp(nn.Module):
         phase = "decode" if self.phase == "decode" else "prefill"
 
         if self.use_attention_mask:
-            if self.rbln_config.use_position_ids:
-                attn_op_name = "paged_causal_attn_"
-            else:
-                attn_op_name = "paged_attn_"
+            attn_op_name = "paged_causal_attn_" if self.rbln_config.use_position_ids else "paged_attn_"
         else:
             attn_op_name = "paged_causal_attn_"
 
@@ -999,10 +988,7 @@ class AttentionOp(nn.Module):
         if self.use_attention_mask and not self.rbln_config.use_position_ids:
             attn_mask = attn_mask.unsqueeze(2)
 
-        if self.phase == "decode":
-            batch_size = key_state.shape[0]
-        else:
-            batch_size = 1
+        batch_size = key_state.shape[0] if self.phase == "decode" else 1
 
         query_state = query_state.view(
             batch_size,
@@ -1027,15 +1013,14 @@ class AttentionOp(nn.Module):
         if self.use_attention_mask:
             op_args["mask"] = attn_mask
 
-        if self.phase == "prefill" or self.phase == "image_prefill":
+        if self.phase in {"prefill", "image_prefill"}:
             use_image_prefill = getattr(self.rbln_config, "use_image_prefill", False)
             if use_image_prefill:
                 op_args["is_bidirectional"] = self.phase == "image_prefill"
-            else:
-                if not self.use_attention_mask:
-                    op_args["is_bidirectional"] = False
-                elif self.use_attention_mask and self.rbln_config.use_position_ids:
-                    op_args["is_bidirectional"] = True
+            elif not self.use_attention_mask:
+                op_args["is_bidirectional"] = False
+            elif self.use_attention_mask and self.rbln_config.use_position_ids:
+                op_args["is_bidirectional"] = True
 
         if self.quantization and self.quantization.kv_caches == "fp8":
             if past_key_state.dtype != torch.float8_e4m3fn:
@@ -1082,10 +1067,7 @@ class FlashAttentionOp(AttentionOp):
         phase = "decode" if self.phase == "decode" else "prefill"
 
         if self.use_attention_mask:
-            if self.rbln_config.use_position_ids:
-                attn_op_name = "paged_flash_causal_attn_"
-            else:
-                attn_op_name = "paged_flash_attn_"
+            attn_op_name = "paged_flash_causal_attn_" if self.rbln_config.use_position_ids else "paged_flash_attn_"
         else:
             attn_op_name = "paged_flash_causal_attn_"
 
@@ -1119,10 +1101,7 @@ class FlashAttentionOp(AttentionOp):
         if self.use_attention_mask and not self.rbln_config.use_position_ids:
             attn_mask = attn_mask.unsqueeze(2)
 
-        if self.phase == "decode":
-            batch_size = key_state.shape[0]
-        else:
-            batch_size = 1
+        batch_size = key_state.shape[0] if self.phase == "decode" else 1
 
         query_state = query_state.view(
             batch_size,
@@ -1148,15 +1127,14 @@ class FlashAttentionOp(AttentionOp):
         if self.use_attention_mask:
             op_args["mask"] = attn_mask
 
-        if self.phase == "prefill" or self.phase == "image_prefill":
+        if self.phase in {"prefill", "image_prefill"}:
             use_image_prefill = getattr(self.rbln_config, "use_image_prefill", False)
             if use_image_prefill:
                 op_args["is_bidirectional"] = self.phase == "image_prefill"
-            else:
-                if not self.use_attention_mask:
-                    op_args["is_bidirectional"] = False
-                elif self.use_attention_mask and self.rbln_config.use_position_ids:
-                    op_args["is_bidirectional"] = True
+            elif not self.use_attention_mask:
+                op_args["is_bidirectional"] = False
+            elif self.use_attention_mask and self.rbln_config.use_position_ids:
+                op_args["is_bidirectional"] = True
 
         if self.quantization and self.quantization.kv_caches == "fp8":
             if past_key_state.dtype != torch.float8_e4m3fn:
@@ -1222,16 +1200,14 @@ class SlidingWindowAttentionOp(AttentionOp):
         s_aux: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         assert self.quantization is None, "Sliding window attention does not support quantization"
-        assert k_scale is None and v_scale is None, "Sliding window attention does not support quantization"
+        assert k_scale is None, "Sliding window attention does not support quantization"
+        assert v_scale is None, "Sliding window attention does not support quantization"
 
         # reshape for removing repeat_kv (batch=1 , num_head, 1, q_len=1, head_dim)
         key_state = key_state.unsqueeze(2)
         value_state = value_state.unsqueeze(2)
 
-        if self.phase == "decode":
-            batch_size = key_state.shape[0]
-        else:
-            batch_size = 1
+        batch_size = key_state.shape[0] if self.phase == "decode" else 1
 
         query_state = query_state.view(
             batch_size,
@@ -1254,15 +1230,14 @@ class SlidingWindowAttentionOp(AttentionOp):
             "block_size": block_size,
         }
 
-        if self.phase == "prefill" or self.phase == "image_prefill":
+        if self.phase in {"prefill", "image_prefill"}:
             use_image_prefill = getattr(self.rbln_config, "use_image_prefill", False)
             if use_image_prefill:
                 op_args["is_bidirectional"] = self.phase == "image_prefill"
+            elif self.use_attention_mask and self.rbln_config.use_position_ids:
+                op_args["is_bidirectional"] = True
             else:
-                if self.use_attention_mask and self.rbln_config.use_position_ids:
-                    op_args["is_bidirectional"] = True
-                else:
-                    op_args["is_bidirectional"] = False
+                op_args["is_bidirectional"] = False
 
         if self.phase == "decode":
             op_args["attn_mask"] = attn_mask

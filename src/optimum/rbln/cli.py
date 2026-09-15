@@ -191,7 +191,7 @@ def _list_available_rbln_classes():
     """Return a sorted list of (name, kind) for available RBLN classes; kind in {"Model","Pipeline","Auto"}."""
     try:
         # Import lazily exposed module and enumerate public names
-        import optimum.rbln as rbln  # noqa: WPS433 (third-party import within function)
+        from optimum import rbln
 
         # Import bases for filtering
         RBLNBaseModel = getattr(rbln, "RBLNBaseModel", None)
@@ -512,7 +512,7 @@ def main():
         return
 
     # Apply style preference as early as possible
-    global STYLES_ENABLED
+    global STYLES_ENABLED  # noqa: PLW0603
     if pre_args.no_style:
         STYLES_ENABLED = False
 
@@ -763,22 +763,20 @@ def main():
 
                     if is_hf_arg:
                         model_kwargs[arg_name] = parsed_value
+                    # Check if this is a nested config argument (contains dots)
+                    elif "." in arg_name:
+                        set_nested_dict(rbln_config, arg_name, parsed_value)
                     else:
-                        # Check if this is a nested config argument (contains dots)
-                        if "." in arg_name:
-                            set_nested_dict(rbln_config, arg_name, parsed_value)
-                        else:
-                            rbln_config[arg_name] = parsed_value
+                        rbln_config[arg_name] = parsed_value
                     i += 2
                 else:
                     # Boolean flag
                     if is_hf_arg:
                         model_kwargs[arg_name] = True
+                    elif "." in arg_name:
+                        set_nested_dict(rbln_config, arg_name, True)
                     else:
-                        if "." in arg_name:
-                            set_nested_dict(rbln_config, arg_name, True)
-                        else:
-                            rbln_config[arg_name] = True
+                        rbln_config[arg_name] = True
                     i += 1
             else:
                 i += 1

@@ -37,8 +37,6 @@ class RBLNDiffusionMixinConfig(RBLNModelConfig):
     Configuration class for RBLN diffusion pipelines.
     """
 
-    pass
-
 
 class RBLNDiffusionMixin:
     """
@@ -142,7 +140,7 @@ class RBLNDiffusionMixin:
         cls,
         model_id: str,
         *,
-        export: bool = None,
+        export: bool | None = None,
         model_save_dir: PathLike | None = None,
         rbln_config: dict[str, Any] | None = None,
         lora_ids: str | list[str] | None = None,
@@ -237,14 +235,13 @@ class RBLNDiffusionMixin:
                         model_id, export=False, subfolder=submodule_name, rbln_config=submodule_config
                     )
 
-                else:
-                    if passed_submodule.__class__.__name__.startswith("RBLN"):
-                        submodule = passed_submodule
+                elif passed_submodule.__class__.__name__.startswith("RBLN"):
+                    submodule = passed_submodule
 
-                    elif isinstance(passed_submodule, torch.nn.Module):
-                        raise AssertionError(
-                            f"{submodule_name} is not compiled torch module. If you want to compile, set `export=True`."
-                        )
+                elif isinstance(passed_submodule, torch.nn.Module):
+                    raise AssertionError(
+                        f"{submodule_name} is not compiled torch module. If you want to compile, set `export=True`."
+                    )
 
                 kwargs[submodule_name] = submodule
 
@@ -286,7 +283,7 @@ class RBLNDiffusionMixin:
             connected_pipe_submodules = {}
             prefix = cls._prefix.get(connected_pipe_name, "")
             for submodule_name in connected_pipe_cls._submodules:
-                connected_pipe_submodules[submodule_name] = passed_submodules.get(prefix + submodule_name, None)
+                connected_pipe_submodules[submodule_name] = passed_submodules.get(prefix + submodule_name)
             connected_pipe = getattr(model, connected_pipe_name)
             connected_pipe_compiled_submodules = connected_pipe_cls._compile_submodules(
                 connected_pipe,
@@ -462,10 +459,7 @@ class RBLNDiffusionMixin:
         return model
 
     def get_compiled_image_size(self):
-        if hasattr(self, "vae") and hasattr(self.vae, "image_size"):
-            compiled_image_size = self.vae.image_size
-        else:
-            compiled_image_size = None
+        compiled_image_size = self.vae.image_size if hasattr(self, "vae") and hasattr(self.vae, "image_size") else None
         return compiled_image_size
 
     def handle_additional_kwargs(self, **kwargs):

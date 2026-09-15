@@ -16,7 +16,7 @@ import copy
 from typing import Any
 
 import torch
-import torch.nn as nn
+from torch import nn
 from transformers import PreTrainedModel
 from transformers.activations import ACT2FN
 
@@ -207,7 +207,7 @@ class Gemma4TextModel(DecoderOnlyModel):
         cache_position: torch.Tensor = None,
         position_ids: torch.Tensor = None,
         query_position: torch.Tensor = None,
-        past_key_values: tuple[tuple[torch.Tensor]] = None,
+        past_key_values: tuple[tuple[torch.Tensor]] | None = None,
         rotary_emb: torch.nn.Module = None,
         global_block_tables: torch.Tensor | None = None,
         local_block_tables: torch.Tensor | None = None,
@@ -451,10 +451,7 @@ class Gemma4TextAttention(DecoderOnlyAttention):
             s_aux=getattr(self, "sinks", None),
         )
 
-        if self.lora_config:
-            attn_outputs = self.o_proj(attn_output, lora_int_id)
-        else:
-            attn_outputs = self.o_proj(attn_output)
+        attn_outputs = self.o_proj(attn_output, lora_int_id) if self.lora_config else self.o_proj(attn_output)
 
         return attn_outputs
 
@@ -469,7 +466,7 @@ class Gemma4ForCausalLM(DecoderOnlyForCausalLM):
         cache_position: torch.Tensor = None,
         position_ids: torch.Tensor = None,
         query_position: torch.Tensor = None,
-        past_key_values: tuple[tuple[torch.Tensor]] = None,
+        past_key_values: tuple[tuple[torch.Tensor]] | None = None,
         rotary_emb: nn.Module = None,
         global_block_tables: torch.Tensor | None = None,
         local_block_tables: torch.Tensor | None = None,
@@ -588,7 +585,7 @@ class Gemma4VisionAttention(nn.Module):
     def forward(
         self,
         hidden_states: torch.Tensor,
-        position_embeddings: tuple[torch.Tensor, torch.Tensor] = None,
+        position_embeddings: tuple[torch.Tensor, torch.Tensor] | None = None,
         attention_mask: torch.Tensor | None = None,
         position_ids: torch.Tensor | None = None,
         **kwargs,

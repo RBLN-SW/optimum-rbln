@@ -23,9 +23,9 @@ A clear and concise description of what the bug is.
 ```
 
 2. Steps to reproduce the behavior:
-   1. 
-   2. 
-   3. 
+   1.
+   2.
+   3.
 
 ### Expected Behavior
 A clear and concise description of what you expected to happen.

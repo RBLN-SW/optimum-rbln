@@ -135,13 +135,16 @@ class RBLNStableDiffusionXLControlNetImg2ImgPipeline(RBLNDiffusionMixin, StableD
                 f" {negative_prompt_embeds}. Please make sure to only forward one of the two."
             )
 
-        if prompt_embeds is not None and negative_prompt_embeds is not None:
-            if prompt_embeds.shape != negative_prompt_embeds.shape:
-                raise ValueError(
-                    "`prompt_embeds` and `negative_prompt_embeds` must have the same shape when passed directly, but"
-                    f" got: `prompt_embeds` {prompt_embeds.shape} != `negative_prompt_embeds`"
-                    f" {negative_prompt_embeds.shape}."
-                )
+        if (
+            prompt_embeds is not None
+            and negative_prompt_embeds is not None
+            and prompt_embeds.shape != negative_prompt_embeds.shape
+        ):
+            raise ValueError(
+                "`prompt_embeds` and `negative_prompt_embeds` must have the same shape when passed directly, but"
+                f" got: `prompt_embeds` {prompt_embeds.shape} != `negative_prompt_embeds`"
+                f" {negative_prompt_embeds.shape}."
+            )
 
         if prompt_embeds is not None and pooled_prompt_embeds is None:
             raise ValueError(
@@ -155,27 +158,22 @@ class RBLNStableDiffusionXLControlNetImg2ImgPipeline(RBLNDiffusionMixin, StableD
 
         # `prompt` needs more sophisticated handling when there are multiple
         # conditionings.
-        if isinstance(self.controlnet, RBLNMultiControlNetModel):
-            if isinstance(prompt, list):
-                logger.warning(
-                    f"You have {len(self.controlnet.nets)} ControlNets and you have passed {len(prompt)}"
-                    " prompts. The conditionings will be fixed across the prompts."
-                )
+        if isinstance(self.controlnet, RBLNMultiControlNetModel) and isinstance(prompt, list):
+            logger.warning(
+                f"You have {len(self.controlnet.nets)} ControlNets and you have passed {len(prompt)}"
+                " prompts. The conditionings will be fixed across the prompts."
+            )
 
         # Check `image`
         is_compiled = hasattr(F, "scaled_dot_product_attention") and isinstance(
             self.controlnet, torch._dynamo.eval_frame.OptimizedModule
         )
-        if (
-            isinstance(self.controlnet, RBLNControlNetModel)
-            or is_compiled
-            and isinstance(self.controlnet._orig_mod, RBLNControlNetModel)
+        if isinstance(self.controlnet, RBLNControlNetModel) or (
+            is_compiled and isinstance(self.controlnet._orig_mod, RBLNControlNetModel)
         ):
             self.check_image(image, prompt, prompt_embeds)
-        elif (
-            isinstance(self.controlnet, RBLNMultiControlNetModel)
-            or is_compiled
-            and isinstance(self.controlnet._orig_mod, RBLNMultiControlNetModel)
+        elif isinstance(self.controlnet, RBLNMultiControlNetModel) or (
+            is_compiled and isinstance(self.controlnet._orig_mod, RBLNMultiControlNetModel)
         ):
             if not isinstance(image, list):
                 raise TypeError("For multiple controlnets: `image` must be type `list`")
@@ -197,17 +195,13 @@ class RBLNStableDiffusionXLControlNetImg2ImgPipeline(RBLNDiffusionMixin, StableD
             )
 
         # Check `controlnet_conditioning_scale`
-        if (
-            isinstance(self.controlnet, RBLNControlNetModel)
-            or is_compiled
-            and isinstance(self.controlnet._orig_mod, RBLNControlNetModel)
+        if isinstance(self.controlnet, RBLNControlNetModel) or (
+            is_compiled and isinstance(self.controlnet._orig_mod, RBLNControlNetModel)
         ):
             if not isinstance(controlnet_conditioning_scale, float):
                 raise TypeError("For single controlnet: `controlnet_conditioning_scale` must be type `float`.")
-        elif (
-            isinstance(self.controlnet, RBLNMultiControlNetModel)
-            or is_compiled
-            and isinstance(self.controlnet._orig_mod, RBLNMultiControlNetModel)
+        elif isinstance(self.controlnet, RBLNMultiControlNetModel) or (
+            is_compiled and isinstance(self.controlnet._orig_mod, RBLNMultiControlNetModel)
         ):
             if isinstance(controlnet_conditioning_scale, list):
                 if any(isinstance(i, list) for i in controlnet_conditioning_scale):
@@ -235,11 +229,12 @@ class RBLNStableDiffusionXLControlNetImg2ImgPipeline(RBLNDiffusionMixin, StableD
                 f"`control_guidance_start` has {len(control_guidance_start)} elements, but `control_guidance_end` has {len(control_guidance_end)} elements. Make sure to provide the same number of elements to each list."
             )
 
-        if isinstance(self.controlnet, RBLNMultiControlNetModel):
-            if len(control_guidance_start) != len(self.controlnet.nets):
-                raise ValueError(
-                    f"`control_guidance_start`: {control_guidance_start} has {len(control_guidance_start)} elements but there are {len(self.controlnet.nets)} controlnets available. Make sure to provide {len(self.controlnet.nets)}."
-                )
+        if isinstance(self.controlnet, RBLNMultiControlNetModel) and len(control_guidance_start) != len(
+            self.controlnet.nets
+        ):
+            raise ValueError(
+                f"`control_guidance_start`: {control_guidance_start} has {len(control_guidance_start)} elements but there are {len(self.controlnet.nets)} controlnets available. Make sure to provide {len(self.controlnet.nets)}."
+            )
 
         for start, end in zip(control_guidance_start, control_guidance_end, strict=False):
             if start >= end:
@@ -271,7 +266,7 @@ class RBLNStableDiffusionXLControlNetImg2ImgPipeline(RBLNDiffusionMixin, StableD
     @remove_compile_time_kwargs
     def __call__(
         self,
-        prompt: str | list[str] = None,
+        prompt: str | list[str] | None = None,
         prompt_2: str | list[str] | None = None,
         image: PipelineImageInput = None,
         control_image: PipelineImageInput = None,
@@ -299,9 +294,9 @@ class RBLNStableDiffusionXLControlNetImg2ImgPipeline(RBLNDiffusionMixin, StableD
         guess_mode: bool = False,
         control_guidance_start: float | list[float] = 0.0,
         control_guidance_end: float | list[float] = 1.0,
-        original_size: tuple[int, int] = None,
+        original_size: tuple[int, int] | None = None,
         crops_coords_top_left: tuple[int, int] = (0, 0),
-        target_size: tuple[int, int] = None,
+        target_size: tuple[int, int] | None = None,
         negative_original_size: tuple[int, int] | None = None,
         negative_crops_coords_top_left: tuple[int, int] = (0, 0),
         negative_target_size: tuple[int, int] | None = None,
@@ -608,7 +603,7 @@ class RBLNStableDiffusionXLControlNetImg2ImgPipeline(RBLNDiffusionMixin, StableD
             control_images = []
 
             for control_image_ in control_image:
-                control_image_ = self.prepare_control_image(
+                prepared_control_image = self.prepare_control_image(
                     image=control_image_,
                     width=width,
                     height=height,
@@ -620,7 +615,7 @@ class RBLNStableDiffusionXLControlNetImg2ImgPipeline(RBLNDiffusionMixin, StableD
                     guess_mode=guess_mode,
                 )
 
-                control_images.append(control_image_)
+                control_images.append(prepared_control_image)
 
             control_image = control_images
             height, width = control_image[0].shape[-2:]
@@ -801,7 +796,7 @@ class RBLNStableDiffusionXLControlNetImg2ImgPipeline(RBLNDiffusionMixin, StableD
             self.controlnet.to("cpu")
             torch.cuda.empty_cache()
 
-        if not output_type == "latent":
+        if output_type != "latent":
             # make sure the VAE is in float32 mode, as it overflows in float16
             needs_upcasting = self.vae.dtype == torch.float16 and self.vae.config.force_upcast
 

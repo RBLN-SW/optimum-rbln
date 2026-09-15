@@ -284,9 +284,9 @@ class TestKandinskyV22Model(BaseTest.TestModel):
         with self.subTest():
             _ = self.RBLN_CLASS.from_pretrained(model_id=self.HF_MODEL_ID, **rbln_class_kwargs_copy)
         with self.subTest():
-            self.assertEqual(_.prior_text_encoder.rbln_config.batch_size, 2)
-            self.assertEqual(_.prior_prior.rbln_config.batch_size, 4)
-            self.assertEqual(_.unet.rbln_config.batch_size, 2)
+            assert _.prior_text_encoder.rbln_config.batch_size == 2
+            assert _.prior_prior.rbln_config.batch_size == 4
+            assert _.unet.rbln_config.batch_size == 2
 
 
 class TestKandinskyV22Img2ImgModel(BaseTest.TestModel):

@@ -44,7 +44,7 @@ class RBLNAutoPipelineBase:
     _model_mapping_names = None
 
     @classmethod
-    def get_rbln_cls(cls, pretrained_model_name_or_path: str | Path, export: bool = None, **kwargs):
+    def get_rbln_cls(cls, pretrained_model_name_or_path: str | Path, export: bool | None = None, **kwargs):
         if isinstance(pretrained_model_name_or_path, Path):
             pretrained_model_name_or_path = pretrained_model_name_or_path.as_posix()
 
@@ -150,10 +150,7 @@ class RBLNAutoPipelineBase:
     @classmethod
     def get_pipeline_key_name(cls, config, **kwargs):
         orig_class_name = config["_class_name"]
-        if "ControlPipeline" in orig_class_name:
-            to_replace = "ControlPipeline"
-        else:
-            to_replace = "Pipeline"
+        to_replace = "ControlPipeline" if "ControlPipeline" in orig_class_name else "Pipeline"
 
         if "controlnet" in kwargs:
             if isinstance(kwargs["controlnet"], ControlNetUnionModel):
@@ -173,7 +170,7 @@ class RBLNAutoPipelineBase:
         cls,
         model_id: str | Path,
         *,
-        export: bool = None,
+        export: bool | None = None,
         rbln_config: dict[str, Any] | RBLNModelConfig | None = None,
         **kwargs: Any,
     ) -> RBLNBaseModel:
@@ -220,9 +217,8 @@ class RBLNAutoPipelineBase:
             raise ValueError("`rbln_cls` must be a subclass of RBLNBaseModel.")
 
         native_cls = getattr(importlib.import_module("optimum.rbln"), rbln_cls.__name__, None)
-        if rbln_cls.__name__ in MODEL_MAPPING or native_cls is not None:
-            if not exist_ok:
-                raise ValueError(f"Model for {rbln_cls.__name__} already registered.")
+        if (rbln_cls.__name__ in MODEL_MAPPING or native_cls is not None) and not exist_ok:
+            raise ValueError(f"Model for {rbln_cls.__name__} already registered.")
 
         MODEL_MAPPING[rbln_cls.__name__] = rbln_cls
 

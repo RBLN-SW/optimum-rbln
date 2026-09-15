@@ -1,4 +1,5 @@
 import os
+import re
 import shutil
 import tempfile
 
@@ -185,11 +186,10 @@ def test_load_config_object(model_id, tmp_path):
     assert not loaded_config.create_runtimes, "Load with rbln_ prefix: create_runtimes mismatch"
 
     # Subtest 4: Load with rbln_ prefix
-    with pytest.raises(ValueError, match="Cannot set the following arguments: ['image_size']*"):
-        loaded_config = RBLNResNetForImageClassificationConfig.from_pretrained(
+    with pytest.raises(ValueError, match=re.escape("Cannot set the following arguments: ['image_size']")):
+        RBLNResNetForImageClassificationConfig.from_pretrained(
             str(config_path), rbln_create_runtimes=False, rbln_config={"image_size": 256}
         )
-        assert not loaded_config.create_runtimes, "Load with rbln_ prefix: create_runtimes mismatch"
 
 
 def test_submodule_config_dict():
@@ -266,7 +266,7 @@ def _submodule_batch_size(sub):
 
 
 @pytest.mark.parametrize(
-    "config_cls_name, lm_key",
+    ("config_cls_name", "lm_key"),
     [
         ("RBLNGemma3ForConditionalGenerationConfig", "language_model"),
         ("RBLNGemma4ForConditionalGenerationConfig", "language_model"),
@@ -319,13 +319,14 @@ def test_colqwen2_submodule_only_kwargs_no_conflict():
 def test_invalid_config_parameters(model_id, invalid_param):
     """Test robust handling of various invalid configuration parameters."""
     # check invaild params
-    if "rbln_tensor_parallel_size" in invalid_param:
-        if rebel.device_count() <= invalid_param["rbln_tensor_parallel_size"]:
-            pytest.skip("Sufficient devices for invalid tensor_parallel_size check")
+    if (
+        "rbln_tensor_parallel_size" in invalid_param
+        and rebel.device_count() <= invalid_param["rbln_tensor_parallel_size"]
+    ):
+        pytest.skip("Sufficient devices for invalid tensor_parallel_size check")
 
-    if "rbln_device" in invalid_param:
-        if rebel.device_count() - 1 <= invalid_param["rbln_device"]:
-            pytest.skip("Sufficient devices for invalid rbln_device check")
+    if "rbln_device" in invalid_param and rebel.device_count() - 1 <= invalid_param["rbln_device"]:
+        pytest.skip("Sufficient devices for invalid rbln_device check")
 
     with pytest.raises((ValueError, TypeError)):
         _ = RBLNResNetForImageClassification.from_pretrained(model_id, **invalid_param)
@@ -351,7 +352,7 @@ def test_custom_class(model_id):
         return self.model[0](pixel_values)
 
     class RBLNResNetModelConfig(RBLNModelConfig):
-        def __init__(self, batch_size: int = None, image_size: tuple[int, int] | None = None, **kwargs):
+        def __init__(self, batch_size: int | None = None, image_size: tuple[int, int] | None = None, **kwargs):
             super().__init__(**kwargs)
             self.batch_size = batch_size or 1
             self.image_size = image_size or (64, 64)
@@ -434,14 +435,14 @@ class TestAttentionLimits:
         monkeypatch.setattr(rebel, "npu_is_available", lambda *args: False)
         assert get_attention_limits().name == "ATOM"
 
-    @pytest.mark.parametrize("npu,cap", [("RBLN-CA22", 32_768), ("RBLN-CR13", 16_384)])
+    @pytest.mark.parametrize(("npu", "cap"), [("RBLN-CA22", 32_768), ("RBLN-CR13", 16_384)])
     def test_eager_max_seq_len_cap(self, npu, cap):
         # REBEL rejecting 32_768 here is deploy #1443, which aborted the compiler instead.
         self._validate("eager", cap, npu=npu)
         with pytest.raises(ValueError, match=f"limit of {cap}"):
             self._validate("eager", 2 * cap, npu=npu)
 
-    @pytest.mark.parametrize("npu,cap", [("RBLN-CA22", 32_768), ("RBLN-CR13", 16_384)])
+    @pytest.mark.parametrize(("npu", "cap"), [("RBLN-CA22", 32_768), ("RBLN-CR13", 16_384)])
     def test_flash_partition_len_range(self, npu, cap):
         self._validate("flash_attn", 2 * cap, kvcache_partition_len=cap, npu=npu)
         with pytest.raises(ValueError, match="supported range"):
@@ -449,7 +450,7 @@ class TestAttentionLimits:
         with pytest.raises(ValueError, match="supported range"):
             self._validate("flash_attn", 4_096, kvcache_partition_len=512, npu=npu)
 
-    @pytest.mark.parametrize("npu,default", [("RBLN-CA22", 16_384), ("RBLN-CR13", 8_192)])
+    @pytest.mark.parametrize(("npu", "default"), [("RBLN-CA22", 16_384), ("RBLN-CR13", 8_192)])
     def test_flash_partition_len_default(self, npu, default):
         from optimum.rbln.transformers.modeling_attention_utils import set_default_values
 
@@ -467,7 +468,9 @@ class TestAttentionLimits:
         assert limits.default_flash_partition_len <= limits.max_flash_partition_len
         assert limits.min_flash_max_seq_len == 2 * limits.min_flash_partition_len
 
-    @pytest.mark.parametrize("npu,prefill_chunk_size,bound", [("RBLN-CA22", 128, 32_640), ("RBLN-CR13", 512, 32_255)])
+    @pytest.mark.parametrize(
+        ("npu", "prefill_chunk_size", "bound"), [("RBLN-CA22", 128, 32_640), ("RBLN-CR13", 512, 32_255)]
+    )
     def test_sliding_window_bound(self, npu, prefill_chunk_size, bound):
         from optimum.rbln.transformers.modeling_attention_utils import validate_sliding_window
 
@@ -532,7 +535,7 @@ def _import_config(name):
     return getattr(optimum.rbln, name)
 
 
-@pytest.mark.parametrize("parent_cls_name, vision_cls_name", QWEN_VL_VISION_CONFIGS)
+@pytest.mark.parametrize(("parent_cls_name", "vision_cls_name"), QWEN_VL_VISION_CONFIGS)
 def test_qwen_vl_parent_forces_vision_batch_size(parent_cls_name, vision_cls_name):
     """The parent config forces batch_size=1 onto the visual submodule."""
     parent_cls = _import_config(parent_cls_name)
@@ -540,12 +543,12 @@ def test_qwen_vl_parent_forces_vision_batch_size(parent_cls_name, vision_cls_nam
     assert config.visual.batch_size == 1
 
 
-@pytest.mark.parametrize("parent_cls_name, vision_cls_name", QWEN_VL_VISION_CONFIGS)
+@pytest.mark.parametrize(("parent_cls_name", "vision_cls_name"), QWEN_VL_VISION_CONFIGS)
 def test_qwen_vl_parent_rejects_conflicting_vision_batch_size(parent_cls_name, vision_cls_name):
     """A submodule batch_size that conflicts with the forced value is caught by the parent's
     force_kwargs check (before the vision config is even instantiated), not by the vision guard."""
     parent_cls = _import_config(parent_cls_name)
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="Parameter conflict for 'batch_size'"):
         parent_cls(max_seq_len=1024, visual={"cls_name": vision_cls_name, "max_seq_len": 256, "batch_size": 2})
 
 

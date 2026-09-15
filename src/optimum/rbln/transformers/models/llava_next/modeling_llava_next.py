@@ -65,10 +65,7 @@ class LoopVisionTower(LoopProcessor):
         last_hidden_states = output[0]
         pooler_output = output[1]
 
-        if not output[2:]:
-            hidden_states = None
-        else:
-            hidden_states = tuple(output[2:])
+        hidden_states = None if not output[2:] else tuple(output[2:])
 
         return BaseModelOutputWithPooling(
             last_hidden_state=last_hidden_states,
@@ -250,7 +247,6 @@ class RBLNLlavaNextForConditionalGeneration(RBLNModel, RBLNImageIndexedBatchSort
         if is_prefill_phase:
             generate_idx = attention_mask.sum(dim=-1, keepdim=True).int()
             cache_position = None
-            pixel_values = pixel_values
             model_inputs.update({"image_sizes": image_sizes})
         else:
             if inputs_embeds is not None:
@@ -312,11 +308,10 @@ class RBLNLlavaNextForConditionalGeneration(RBLNModel, RBLNImageIndexedBatchSort
             self.config.vision_config.hidden_size,
         ]
         pooler_out_size = [pixel_values.shape[0] * pixel_values.shape[1], self.config.vision_config.hidden_size]
-        vision_out_buffer = []
-        for _ in range(self.config.vision_config.num_hidden_layers + 2):
-            vision_out_buffer.append(
-                torch.empty(size=vision_out_size, dtype=self.rbln_config.vision_tower.dtype, device="cpu")
-            )
+        vision_out_buffer = [
+            torch.empty(size=vision_out_size, dtype=self.rbln_config.vision_tower.dtype, device="cpu")
+            for _ in range(self.config.vision_config.num_hidden_layers + 2)
+        ]
         vision_out_buffer.insert(
             1, torch.empty(size=pooler_out_size, dtype=self.rbln_config.vision_tower.dtype, device="cpu")
         )
@@ -351,8 +346,6 @@ class RBLNLlavaNextForConditionalGeneration(RBLNModel, RBLNImageIndexedBatchSort
 
         if vision_feature_select_strategy == "default":
             selected_image_feature = selected_image_feature[:, 1:]
-        elif vision_feature_select_strategy == "full":
-            selected_image_feature = selected_image_feature
 
         image_features = self.multi_modal_projector(
             selected_image_feature.to(self.rbln_config.dtype), out=projector_out_buffer
@@ -363,10 +356,10 @@ class RBLNLlavaNextForConditionalGeneration(RBLNModel, RBLNImageIndexedBatchSort
     def pack_image_features(self, image_features, image_sizes, vision_feature_select_strategy, image_newline=None):
         new_image_features = []
         feature_lens = []
-        for image_idx, image_feature in enumerate(image_features):
-            if image_feature.shape[0] > 1:
-                base_image_feature = image_feature[0]
-                image_feature = image_feature[1:]
+        for image_idx, patches in enumerate(image_features):
+            if patches.shape[0] > 1:
+                base_image_feature = patches[0]
+                image_feature = patches[1:]
                 height = width = self.config.vision_config.image_size // self.config.vision_config.patch_size
 
                 num_patch_height, num_patch_width = get_anyres_image_grid_shape(
@@ -402,7 +395,7 @@ class RBLNLlavaNextForConditionalGeneration(RBLNModel, RBLNImageIndexedBatchSort
                 image_feature = image_feature.flatten(1, 2).transpose(0, 1)
                 image_feature = torch.cat((base_image_feature, image_feature), dim=0)
             else:
-                image_feature = image_feature[0]
+                image_feature = patches[0]
                 if image_newline is not None:
                     image_feature = torch.cat((image_feature, image_newline[None].to(image_feature)), dim=0)
             new_image_features.append(image_feature)
@@ -451,7 +444,7 @@ class RBLNLlavaNextForConditionalGeneration(RBLNModel, RBLNImageIndexedBatchSort
             )
 
             # NOTE we only support multimodal_patch_merge_type == "spatial_unpad"
-            image_features, feature_lens = self.pack_image_features(
+            image_features, _feature_lens = self.pack_image_features(
                 image_features,
                 image_sizes,
                 vision_feature_select_strategy=vision_feature_select_strategy,

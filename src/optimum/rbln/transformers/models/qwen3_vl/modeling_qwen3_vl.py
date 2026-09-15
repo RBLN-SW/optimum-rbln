@@ -736,7 +736,8 @@ class RBLNQwen3VLForConditionalGeneration(RBLNQwenVLBatchSortMixin, RBLNQwen3VLM
         {"name": "visual"},
     ]
     _video_grid_rows_are_chunks = True
-    _vision_sortable_kwargs = RBLNQwenVLBatchSortMixin._vision_sortable_kwargs + (
+    _vision_sortable_kwargs = (
+        *RBLNQwenVLBatchSortMixin._vision_sortable_kwargs,
         "image_embeds",
         "video_embeds",
         "deepstack_image_embeds",

@@ -32,7 +32,7 @@ from .gpt_oss_architecture import RBLNGptOssWrapper
 
 
 if TYPE_CHECKING:
-    from transformers import AutoFeatureExtractor, AutoProcessor, AutoTokenizer, PreTrainedModel
+    from transformers import AutoFeatureExtractor, AutoProcessor, AutoTokenizer
 
 logger = get_logger(__name__)
 

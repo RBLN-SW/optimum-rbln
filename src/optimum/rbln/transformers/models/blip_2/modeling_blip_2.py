@@ -128,9 +128,7 @@ class RBLNBlip2VisionModel(RBLNModel):
         """
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
         batch_size = pixel_values.shape[0]
-        outputs = []
-        for i in range(batch_size):
-            outputs.append(self.model[0](pixel_values[i : i + 1]))
+        outputs = [self.model[0](pixel_values[i : i + 1]) for i in range(batch_size)]
 
         last_hidden_state = [output[0] for output in outputs]
         pooler_output = [output[1] for output in outputs]
@@ -260,13 +258,10 @@ class RBLNBlip2QFormerModel(RBLNModel):
         """
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
         batch_size = query_embeds.shape[0]
-        outputs = []
-        for i in range(batch_size):
-            outputs.append(
-                self.model[0](
-                    query_embeds[i : i + 1], encoder_hidden_states[i : i + 1], encoder_attention_mask[i : i + 1]
-                )
-            )
+        outputs = [
+            self.model[0](query_embeds[i : i + 1], encoder_hidden_states[i : i + 1], encoder_attention_mask[i : i + 1])
+            for i in range(batch_size)
+        ]
 
         sequence_output = [output[0] for output in outputs]
         pooled_output = [output[1] for output in outputs]
@@ -490,7 +485,7 @@ class RBLNBlip2ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMixi
         if inputs_embeds is None:
             if input_ids is None:
                 image_tokens = [self.config.image_token_index] * self.config.num_query_tokens
-                start_tokens = image_tokens + [self.config.text_config.bos_token_id]
+                start_tokens = [*image_tokens, self.config.text_config.bos_token_id]
                 input_ids = torch.tensor([start_tokens], dtype=torch.long, device=language_model_inputs.device)
                 input_ids = input_ids.repeat(batch_size, 1)
             inputs_embeds = self.get_input_embeddings()(input_ids)

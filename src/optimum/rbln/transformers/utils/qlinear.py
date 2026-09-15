@@ -1,6 +1,6 @@
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
+from torch import nn
 
 
 class QLinear(nn.Module):
@@ -42,9 +42,8 @@ class QIntLinear(QLinear):
             x_scale = torch.clamp(x_scale, min=finfo.eps)
 
             x = (x / x_scale).clamp(min=iinfo.min, max=iinfo.max)
-        else:
-            if self.input_scale is not None:
-                x = (x / self.input_scale).clamp(min=iinfo.min, max=iinfo.max)
+        elif self.input_scale is not None:
+            x = (x / self.input_scale).clamp(min=iinfo.min, max=iinfo.max)
 
         weight = self.weight * self.weight_scale
         qact = F.linear(x, weight, self.bias)
