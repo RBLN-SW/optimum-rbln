@@ -3,17 +3,19 @@
 #
 # Emits the steps that compile one release's artifacts into BC_BASE_PATH, which
 # bc-steps.sh reloads later. The UI filter passes every v*, so the release check
-# is here.
+# is here -- except for BC_TAG, which is a person naming the tag.
 set -euo pipefail
 
 tag="${1:-${BUILDKITE_TAG:-${BC_TAG:-}}}"
 [ -n "$tag" ] || { echo "no tag: set BC_TAG on a build that is not a tag build" >&2; exit 1; }
 : "${BC_BASE_PATH:?not set}"
 
-version="${tag#v}"
-if ! [[ "$version" =~ ^[0-9]+(\.[0-9]+)*(\.post[0-9]+|post[0-9]+)?$ ]]; then
-  echo "$tag is not a stable release; no artifacts to compile" >&2
-  exit 0
+if [ -n "${BUILDKITE_TAG:-}" ] || [ -z "${BC_TAG:-}" ]; then
+  version="${tag#v}"
+  if ! [[ "$version" =~ ^[0-9]+(\.[0-9]+)*(\.post[0-9]+|post[0-9]+)?$ ]]; then
+    echo "$tag is not a stable release; no artifacts to compile" >&2
+    exit 0
+  fi
 fi
 
 # bc-steps.sh decodes these back.
