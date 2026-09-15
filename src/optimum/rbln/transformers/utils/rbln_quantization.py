@@ -482,18 +482,6 @@ def canonicalize_checkpoint_items(
     return results
 
 
-def _load_tensor(target: torch.Tensor, value: torch.Tensor) -> None:
-    """Adopt the checkpoint tensor when it already matches, otherwise cast and copy it.
-
-    Checkpoint tensors are safetensors mmap views. Adopting them keeps the weights file-backed, so the
-    host does not hold an anonymous copy of the checkpoint next to the mapping while compiling.
-    """
-    if target.dtype == value.dtype and target.shape == value.shape:
-        target.data = value
-        return
-    target.data.copy_(value.to(target.dtype))
-
-
 def load_weights_from_files(
     model: torch.nn.Module,
     safetensors: list[dict[str, torch.Tensor]],
@@ -529,11 +517,18 @@ def load_weights_from_files(
                 loaded_kv_scale = True
 
             if key in model_params:
-                _load_tensor(model_params[key], value)
+                target = model_params[key]
             elif key in model_buffers:
-                _load_tensor(model_buffers[key], value)
+                target = model_buffers[key]
             else:
                 unloaded_keys.append(key)
+                continue
+
+            if target.dtype == value.dtype and target.shape == value.shape:
+                # keep the safetensors mmap view; copying would hold the checkpoint twice on the host
+                target.data = value
+            else:
+                target.data.copy_(value.to(target.dtype))
 
     if len(unloaded_keys) > 0:
         logger.warning(f"There are unexpected parameters/buffers on the checkpoint: {unloaded_keys}")
