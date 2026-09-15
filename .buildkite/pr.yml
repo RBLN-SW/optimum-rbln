@@ -66,3 +66,19 @@ steps:
     <<: *upload
     command: |
       bash .buildkite/scripts/bc-steps.sh --latest | buildkite-agent pipeline upload
+
+  - wait: ~
+    continue_on_failure: true
+
+  - label: ":slack: report"
+    if: build.message =~ /\[slack-report\]/
+    soft_fail: true
+    allow_dependency_failure: true
+    image: "${DEVTOOLS_DOCKER_IMAGE}"
+    env:
+      SLACK_TITLE: "Optimum-RBLN PR Test Results"
+    secrets:
+      OBEDIENTS_API_TOKEN: BUILDKITE_API_TOKEN
+      SLACK_BOT_TOKEN: SLACK_OAUTH_TOKEN
+    command:
+      - "python3 .buildkite/scripts/slack-report.py"
