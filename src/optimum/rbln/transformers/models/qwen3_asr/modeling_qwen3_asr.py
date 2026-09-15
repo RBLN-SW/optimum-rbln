@@ -414,3 +414,9 @@ class RBLNQwen3ASRForConditionalGeneration(RBLNQwen3ForCausalLM):
         if model_inputs.get("cache_position") is None:
             model_inputs.update(input_features=input_features, input_features_mask=input_features_mask)
         return model_inputs
+
+
+__all__ = [
+    "RBLNQwen3ASREncoder",
+    "RBLNQwen3ASRForConditionalGeneration",
+]

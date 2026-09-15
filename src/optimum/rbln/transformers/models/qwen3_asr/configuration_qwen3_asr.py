@@ -75,3 +75,9 @@ class RBLNQwen3ASRForConditionalGenerationConfig(RBLNQwen3ForCausalLMConfig):
                 "as audio embeddings are merged into the text embeddings before the decoder runs."
             )
         self.audio_tower = self.initialize_submodule_config(submodule_config=audio_tower)
+
+
+__all__ = [
+    "RBLNQwen3ASREncoderConfig",
+    "RBLNQwen3ASRForConditionalGenerationConfig",
+]
