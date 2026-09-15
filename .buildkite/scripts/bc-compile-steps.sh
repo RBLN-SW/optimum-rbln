@@ -38,6 +38,8 @@ echo "steps:"
 for suite in transformers diffusers llm; do
   # RBLN_FORCE_NPU_NAME fixes the target SoC without hardware, so the compile
   # holds no NPU. CA22, as every release already under BC_BASE_PATH was built on.
+  # setUpClass still creates a dummy runtime, which dlopens librbln-thunk.so, so
+  # the pod needs the shared UMD the BC steps already borrow.
   cat <<EOF
   - label: ":floppy_disk: compile $tag $suite${override:+ @ $override}"
     key: "bc-compile-${suite}"
@@ -48,6 +50,7 @@ for suite in transformers diffusers llm; do
       HF_TOKEN: HF_TOKEN
       HF_HOME: HF_HOME
     env:
+      LD_LIBRARY_PATH: "/mnt/shared_data/cross-volume/umd:/mnt/shared_data/umd:/mnt/cross_data/umd"
       RBLN_FORCE_NPU_NAME: "RBLN-CA22"
       OPTIMUM_RBLN_TEST_LEVEL: "full"
       SAVE_ARTIFACTS_PATH: "$BC_BASE_PATH/$encoded"
