@@ -1056,3 +1056,10 @@ class RBLNGemma4ForConditionalGeneration(RBLNMoeLoadMixin, RBLNModel, RBLNImageI
             padded_cache_lengths=padded_cache_lengths,
             hidden_states=all_hidden_states,
         )
+
+
+__all__ = [
+    "RBLNGemma4ForCausalLM",
+    "RBLNGemma4ForConditionalGeneration",
+    "RBLNGemma4VisionModel",
+]

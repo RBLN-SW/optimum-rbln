@@ -192,3 +192,8 @@ class RBLNSD3Transformer2DModel(RBLNModel):
             timestep,
             return_dict=return_dict,
         )
+
+
+__all__ = [
+    "RBLNSD3Transformer2DModel",
+]

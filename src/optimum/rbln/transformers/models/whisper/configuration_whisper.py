@@ -70,3 +70,8 @@ class RBLNWhisperForConditionalGenerationConfig(RBLNModelConfig):
         self.use_attention_mask = self.use_attention_mask or False
         self.kvcache_num_blocks = kvcache_num_blocks
         self.kvcache_block_size = kvcache_block_size
+
+
+__all__ = [
+    "RBLNWhisperForConditionalGenerationConfig",
+]

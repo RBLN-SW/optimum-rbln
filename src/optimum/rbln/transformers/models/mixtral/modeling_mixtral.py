@@ -67,3 +67,8 @@ class RBLNMixtralForCausalLM(RBLNMoeLoadMixin, RBLNDecoderOnlyModelForCausalLM):
     """
 
     _decoder_wrapper_cls = MixtralWrapper
+
+
+__all__ = [
+    "RBLNMixtralForCausalLM",
+]

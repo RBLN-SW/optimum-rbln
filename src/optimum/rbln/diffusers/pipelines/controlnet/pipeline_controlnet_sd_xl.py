@@ -827,3 +827,8 @@ class RBLNStableDiffusionXLControlNetPipeline(RBLNDiffusionMixin, StableDiffusio
             return (image,)
 
         return StableDiffusionXLPipelineOutput(images=image)
+
+
+__all__ = [
+    "RBLNStableDiffusionXLControlNetPipeline",
+]

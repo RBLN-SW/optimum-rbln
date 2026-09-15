@@ -102,3 +102,8 @@ class RBLNResNetForImageClassification(RBLNModelForImageClassification):
             )
 
         return super().forward(pixel_values=pixel_values, return_dict=return_dict, **kwargs)
+
+
+__all__ = [
+    "RBLNResNetForImageClassification",
+]

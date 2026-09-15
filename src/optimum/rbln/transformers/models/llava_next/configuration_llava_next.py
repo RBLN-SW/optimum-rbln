@@ -68,3 +68,8 @@ class RBLNLlavaNextForConditionalGenerationConfig(RBLNModelConfig):
             submodule_config=language_model,
             batch_size=batch_size,
         )
+
+
+__all__ = [
+    "RBLNLlavaNextForConditionalGenerationConfig",
+]

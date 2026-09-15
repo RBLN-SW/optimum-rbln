@@ -51,3 +51,8 @@ class RBLNDistilBertForQuestionAnswering(RBLNModelForQuestionAnswering):
         # provides it (AutoTokenizer resolves to BertTokenizer for DistilBERT in transformers v5).
         kwargs.pop("token_type_ids", None)
         return super().forward(input_ids, attention_mask, **kwargs)
+
+
+__all__ = [
+    "RBLNDistilBertForQuestionAnswering",
+]

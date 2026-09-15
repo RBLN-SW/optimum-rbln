@@ -1017,3 +1017,9 @@ class RBLNDecoderOnlyModelForCausalLM(RBLNDecoderOnlyModel, RBLNDecoderOnlyGener
             "padded_cache_lengths": padded_cache_lengths,
             "hidden_states": all_hidden_states,
         }
+
+
+__all__ = [
+    "RBLNDecoderOnlyModel",
+    "RBLNDecoderOnlyModelForCausalLM",
+]

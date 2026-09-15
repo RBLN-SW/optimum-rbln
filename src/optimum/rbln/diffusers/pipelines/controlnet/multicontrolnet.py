@@ -136,3 +136,8 @@ class RBLNMultiControlNetModel(RBLNModel):
                 mid_block_res_sample += mid_sample
 
         return down_block_res_samples, mid_block_res_sample
+
+
+__all__ = [
+    "RBLNMultiControlNetModel",
+]

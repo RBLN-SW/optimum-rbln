@@ -48,3 +48,9 @@ class RBLNQwen2ModelConfig(RBLNDecoderOnlyModelConfig):
 
     This class is an alias of RBLNDecoderOnlyModelConfig.
     """
+
+
+__all__ = [
+    "RBLNQwen2ForCausalLMConfig",
+    "RBLNQwen2ModelConfig",
+]

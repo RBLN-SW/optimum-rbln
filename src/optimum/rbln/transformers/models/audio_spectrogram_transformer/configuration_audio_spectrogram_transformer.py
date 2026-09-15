@@ -43,3 +43,8 @@ class RBLNASTForAudioClassificationConfig(RBLNModelConfig):
             raise ValueError(f"batch_size must be a positive integer, got {self.batch_size}")
 
         self.max_length = max_length
+
+
+__all__ = [
+    "RBLNASTForAudioClassificationConfig",
+]
