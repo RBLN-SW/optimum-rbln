@@ -28,8 +28,8 @@ EOF
 echo "steps:"
 for suite in transformers diffusers llm; do
   # RBLN_FORCE_NPU_NAME picks the SoC without hardware: CA22, as every release
-  # under BC_BASE_PATH was. The dummy device and the UMD are for a release whose
-  # tests predate the conftest fixture and still build runtimes.
+  # under BC_BASE_PATH was. The UMD is for a release whose tests predate the
+  # conftest fixture and still build runtimes.
   # .buildkite is the one path not taken from the tag: older releases carry none.
   cat <<EOF
   - label: ":floppy_disk: compile $tag $suite${override:+ @ $override}"
@@ -43,7 +43,6 @@ for suite in transformers diffusers llm; do
     env:
       LD_LIBRARY_PATH: "/mnt/shared_data/cross-volume/umd:/mnt/shared_data/umd:/mnt/cross_data/umd"
       RBLN_FORCE_NPU_NAME: "RBLN-CA22"
-      RBLN_DUMMY_DEVICE: "1"
       OPTIMUM_RBLN_TEST_LEVEL: "full"
       SAVE_ARTIFACTS_PATH: "$BC_BASE_PATH/$encoded"
     timeout_in_minutes: 180
