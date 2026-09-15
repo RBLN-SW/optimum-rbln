@@ -4,6 +4,9 @@
 # Emits the steps that compile one release's artifacts into BC_BASE_PATH, which
 # bc-steps.sh reloads on every later PR and nightly.
 #
+# The tag comes from the build. BC_TAG names it on a build that has none, which
+# is how a release gets backfilled -- the workflow_dispatch bc_compile.yaml took.
+#
 # The UI filter passes every v*, so the release policy lives here: a pre-release
 # emits nothing and the build passes empty.
 #
@@ -12,8 +15,8 @@
 # not what that release shipped.
 set -euo pipefail
 
-tag="${1:-${BUILDKITE_TAG:-}}"
-[ -n "$tag" ] || { echo "no tag: pass one or set BUILDKITE_TAG" >&2; exit 1; }
+tag="${1:-${BUILDKITE_TAG:-${BC_TAG:-}}}"
+[ -n "$tag" ] || { echo "no tag: set BC_TAG on a build that is not a tag build" >&2; exit 1; }
 : "${BC_BASE_PATH:?not set}"
 
 version="${tag#v}"
