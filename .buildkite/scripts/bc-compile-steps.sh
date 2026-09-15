@@ -2,11 +2,8 @@
 # bc-compile-steps.sh [tag]
 #
 # Emits the steps that compile one release's artifacts into BC_BASE_PATH, which
-# bc-steps.sh reloads on every later PR and nightly. BC_TAG names the tag on a
-# build that has none, which is how a release gets backfilled.
-#
-# The UI filter passes every v*, so the release policy lives here: a pre-release
-# emits nothing and the build passes empty.
+# bc-steps.sh reloads later. The UI filter passes every v*, so the release check
+# is here.
 set -euo pipefail
 
 tag="${1:-${BUILDKITE_TAG:-${BC_TAG:-}}}"
@@ -30,12 +27,9 @@ notify:
 EOF
 echo "steps:"
 for suite in transformers diffusers llm; do
-  # RBLN_FORCE_NPU_NAME fixes the target SoC without hardware: CA22, as every
-  # release under BC_BASE_PATH was built on. UMD as in bc-steps.sh -- the dummy
-  # runtime setUpClass creates still dlopens the thunk.
-  #
-  # The build's commit is the tag only when a tag triggered it. .buildkite is the
-  # one path not taken from the tag: older releases carry none.
+  # RBLN_FORCE_NPU_NAME picks the SoC without hardware: CA22, as every release
+  # under BC_BASE_PATH was. UMD as in bc-steps.sh. .buildkite is the one path not
+  # taken from the tag -- older releases carry none.
   cat <<EOF
   - label: ":floppy_disk: compile $tag $suite${override:+ @ $override}"
     key: "bc-compile-${suite}"
