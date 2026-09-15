@@ -1,23 +1,10 @@
 #!/usr/bin/env bash
 # run-suite.sh <suite> [shard]
-# Runs one suite of the GHA matrix, honoring the same [skip-*] commit-message
-# directives. BUILDKITE_MESSAGE is the PR head commit message, as in GHA.
+# Runs one suite. The [skip-*] directives are guards on the steps that call this.
 set -euo pipefail
 
 suite="${1:?usage: run-suite.sh <suite> [shard]}"
 shard="${2:-}"   # index/count, e.g. 3/6
-
-case "$suite" in
-  transformers) tag="[skip-transformers]" ;;
-  diffusers)    tag="[skip-diffusers]" ;;
-  llm)          tag="[skip-llms]" ;;
-  cli-*)        tag="[skip-cli]" ;;
-  *)            tag="" ;;
-esac
-if [ -n "$tag" ] && [[ "${BUILDKITE_MESSAGE:-}" == *"$tag"* ]]; then
-  echo "Found $tag in commit message, skipping $suite"
-  exit 0
-fi
 
 # A backward-compatibility run is one release's artifacts, compiled at its tag
 # (SAVE) or reloaded later (REUSE): one test carries it, and no shard.

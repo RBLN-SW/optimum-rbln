@@ -19,10 +19,22 @@ env:
   # stay out of an ordinary PR: only a full build's uploader exports it.
   HF_USER_ID: "${HF_USER_ID:-}"
 
-# GHA spawns the advanced CLI jobs at every level and skips them inside; here the
-# step is not created at all, so no NPU is held just to skip.
-_full_only: &full_only
-  if: "'${OPTIMUM_RBLN_TEST_LEVEL:-default}' == 'full'"
+# Both guards are read at upload time, so a step they turn down is never created
+# and holds no NPU. GHA spawned the job either way and skipped inside it.
+_no_transformers: &no_transformers
+  if: build.message !~ /\[skip-transformers\]/
+
+_no_diffusers: &no_diffusers
+  if: build.message !~ /\[skip-diffusers\]/
+
+_no_llm: &no_llm
+  if: build.message !~ /\[skip-llms\]/
+
+_no_cli: &no_cli
+  if: build.message !~ /\[skip-cli\]/
+
+_cli_full: &cli_full
+  if: "'${OPTIMUM_RBLN_TEST_LEVEL:-default}' == 'full' && build.message !~ /\\[skip-cli\\]/"
 
 _secrets: &secrets
   UV_INDEX_REBELLIONS_USERNAME: REBEL_SW_DEV_USERNAME
@@ -59,6 +71,7 @@ steps:
       - "bash .buildkite/scripts/run-suite.sh config"
 
   - label: ":pytest: cli-basic"
+    <<: *no_cli
     image: "${DEVTOOLS_DOCKER_IMAGE}"
     resources: *npu
     secrets: *secrets
@@ -68,7 +81,7 @@ steps:
       - "bash .buildkite/scripts/run-suite.sh cli-basic"
 
   - label: ":pytest: cli-argument-parsing"
-    <<: *full_only
+    <<: *cli_full
     image: "${DEVTOOLS_DOCKER_IMAGE}"
     resources: *npu
     secrets: *secrets
@@ -78,7 +91,7 @@ steps:
       - "bash .buildkite/scripts/run-suite.sh cli-argument-parsing"
 
   - label: ":pytest: cli-error-handling"
-    <<: *full_only
+    <<: *cli_full
     image: "${DEVTOOLS_DOCKER_IMAGE}"
     resources: *npu
     secrets: *secrets
@@ -88,6 +101,7 @@ steps:
       - "bash .buildkite/scripts/run-suite.sh cli-error-handling"
 
   - label: ":pytest: transformers 1/3"
+    <<: *no_transformers
     image: "${DEVTOOLS_DOCKER_IMAGE}"
     resources: *npu
     secrets: *secrets
@@ -97,6 +111,7 @@ steps:
       - "bash .buildkite/scripts/run-suite.sh transformers 1/3"
 
   - label: ":pytest: transformers 2/3"
+    <<: *no_transformers
     image: "${DEVTOOLS_DOCKER_IMAGE}"
     resources: *npu
     secrets: *secrets
@@ -106,6 +121,7 @@ steps:
       - "bash .buildkite/scripts/run-suite.sh transformers 2/3"
 
   - label: ":pytest: transformers 3/3"
+    <<: *no_transformers
     image: "${DEVTOOLS_DOCKER_IMAGE}"
     resources: *npu
     secrets: *secrets
@@ -115,6 +131,7 @@ steps:
       - "bash .buildkite/scripts/run-suite.sh transformers 3/3"
 
   - label: ":pytest: diffusers 1/2"
+    <<: *no_diffusers
     image: "${DEVTOOLS_DOCKER_IMAGE}"
     resources: *npu
     secrets: *secrets
@@ -124,6 +141,7 @@ steps:
       - "bash .buildkite/scripts/run-suite.sh diffusers 1/2"
 
   - label: ":pytest: diffusers 2/2"
+    <<: *no_diffusers
     image: "${DEVTOOLS_DOCKER_IMAGE}"
     resources: *npu
     secrets: *secrets
@@ -133,6 +151,7 @@ steps:
       - "bash .buildkite/scripts/run-suite.sh diffusers 2/2"
 
   - label: ":pytest: llm 1/6"
+    <<: *no_llm
     image: "${DEVTOOLS_DOCKER_IMAGE}"
     resources: *npu
     secrets: *secrets
@@ -142,6 +161,7 @@ steps:
       - "bash .buildkite/scripts/run-suite.sh llm 1/6"
 
   - label: ":pytest: llm 2/6"
+    <<: *no_llm
     image: "${DEVTOOLS_DOCKER_IMAGE}"
     resources: *npu
     secrets: *secrets
@@ -151,6 +171,7 @@ steps:
       - "bash .buildkite/scripts/run-suite.sh llm 2/6"
 
   - label: ":pytest: llm 3/6"
+    <<: *no_llm
     image: "${DEVTOOLS_DOCKER_IMAGE}"
     resources: *npu
     secrets: *secrets
@@ -160,6 +181,7 @@ steps:
       - "bash .buildkite/scripts/run-suite.sh llm 3/6"
 
   - label: ":pytest: llm 4/6"
+    <<: *no_llm
     image: "${DEVTOOLS_DOCKER_IMAGE}"
     resources: *npu
     secrets: *secrets
@@ -169,6 +191,7 @@ steps:
       - "bash .buildkite/scripts/run-suite.sh llm 4/6"
 
   - label: ":pytest: llm 5/6"
+    <<: *no_llm
     image: "${DEVTOOLS_DOCKER_IMAGE}"
     resources: *npu
     secrets: *secrets
@@ -178,6 +201,7 @@ steps:
       - "bash .buildkite/scripts/run-suite.sh llm 5/6"
 
   - label: ":pytest: llm 6/6"
+    <<: *no_llm
     image: "${DEVTOOLS_DOCKER_IMAGE}"
     resources: *npu
     secrets: *secrets

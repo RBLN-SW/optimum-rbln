@@ -29,6 +29,8 @@ notify:
 EOF
 echo "steps:"
 for suite in transformers diffusers llm; do
+    # llm answers to [skip-llms], the others to their own name.
+    case "$suite" in llm) skip="skip-llms" ;; *) skip="skip-$suite" ;; esac
   # RBLN_FORCE_NPU_NAME picks the SoC without hardware: CA22, as every release
   # under BC_BASE_PATH was. The UMD is for a release whose tests predate the
   # conftest fixture and still build runtimes.
@@ -36,6 +38,7 @@ for suite in transformers diffusers llm; do
   cat <<EOF
   - label: ":floppy_disk: compile $tag $suite${override:+ @ $override}"
     key: "bc-compile-${suite}"
+    if: build.message !~ /\[${skip}\]/
     image: "\${DEVTOOLS_DOCKER_IMAGE}"
     secrets:
       UV_INDEX_REBELLIONS_USERNAME: REBEL_SW_DEV_USERNAME

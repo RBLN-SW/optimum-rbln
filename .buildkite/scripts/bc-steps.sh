@@ -40,10 +40,13 @@ echo "steps:"
 for tag in $tags; do
   encoded="${tag//./_}"
   for suite in transformers diffusers llm; do
+    # llm answers to [skip-llms], the others to their own name.
+    case "$suite" in llm) skip="skip-llms" ;; *) skip="skip-$suite" ;; esac
     if [ "$suite" = llm ]; then memory="128Gi"; else memory="32Gi"; fi
     cat <<EOF
   - label: ":rewind: BC $tag $suite"
     key: "bc-${encoded}-${suite}"
+    if: build.message !~ /\[${skip}\]/
     image: "\${DEVTOOLS_DOCKER_IMAGE}"
     resources:
       cpu:
