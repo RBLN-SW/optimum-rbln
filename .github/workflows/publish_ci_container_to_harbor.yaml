@@ -6,8 +6,8 @@ on:
     branches:
       - dev
     paths:
-      - uv.lock
-      - pyproject.toml
+      - docker/ci/Dockerfile
+      - .github/workflows/publish_ci_container_to_harbor.yaml
 
 permissions:
   contents: read
@@ -39,7 +39,7 @@ jobs:
           username: ${{ secrets.PKG_GATE0 }}
           password: ${{ secrets.PKG_GATE1 }}
 
-      - name: Build and push (auto on dev lockfile change)
+      - name: Build and push
         uses: docker/build-push-action@v6
         with:
           context: ${{ env.CONTEXT }}
