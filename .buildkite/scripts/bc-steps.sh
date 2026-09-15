@@ -44,16 +44,6 @@ for tag in $tags; do
     cat <<EOF
   - label: ":rewind: BC $tag $suite"
     key: "bc-${encoded}-${suite}"
-    if_changed:
-      include:
-        - ".buildkite/**"
-        - ".github/version.yaml"
-        - "pyproject.toml"
-        - "uv.lock"
-        - "src/**"
-        - "tests/__init__.py"
-        - "tests/test_base.py"
-        - "tests/test_${suite}.py"
     image: "\${DEVTOOLS_DOCKER_IMAGE}"
     resources:
       cpu:
