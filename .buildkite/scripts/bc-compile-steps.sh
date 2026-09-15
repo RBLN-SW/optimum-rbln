@@ -43,9 +43,10 @@ for suite in transformers diffusers llm; do
   # setUpClass still creates a dummy runtime, which dlopens librbln-thunk.so, so
   # the pod needs the shared UMD the BC steps already borrow.
   #
-  # The build's commit is the tag only when a tag triggered it, so take the tree
-  # from the tag explicitly -- everything but .buildkite, which old releases do
-  # not carry. Same split the GHA job had: workflow from dev, code from the tag.
+  # The build's commit is the tag only when a tag triggered it, so check the tag
+  # out explicitly and put .buildkite back: releases older than the migration
+  # carry none, and the scripts running the job have to come from somewhere that
+  # does. Same split the GHA job had -- workflow from dev, ref: <tag> for code.
   cat <<EOF
   - label: ":floppy_disk: compile $tag $suite${override:+ @ $override}"
     key: "bc-compile-${suite}"
@@ -65,7 +66,8 @@ for suite in transformers diffusers llm; do
       # Fail in seconds, not after a three-hour compile, if this pod's
       # /mnt/shared_data is not the volume holding the other releases.
       - "test -d $BC_BASE_PATH && mkdir -p $BC_BASE_PATH/$encoded"
-      - "git fetch -q origin refs/tags/$tag && git checkout -q FETCH_HEAD -- src tests pyproject.toml uv.lock .github/version.yaml"
+      - "git fetch -q origin refs/tags/$tag && git checkout -q --detach FETCH_HEAD"
+      - "git checkout -q \$\$BUILDKITE_COMMIT -- .buildkite"
       - "bash .buildkite/scripts/sync.sh"
       - "bash .buildkite/scripts/run-suite.sh $suite"
 EOF
