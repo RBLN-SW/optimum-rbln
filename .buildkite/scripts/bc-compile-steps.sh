@@ -28,8 +28,8 @@ EOF
 echo "steps:"
 for suite in transformers diffusers llm; do
   # RBLN_FORCE_NPU_NAME picks the SoC without hardware: CA22, as every release
-  # under BC_BASE_PATH was. RBLN_DUMMY_DEVICE covers the rest -- test_llm.py sets
-  # DEVICE = None, so the guard counts real devices. UMD as in bc-steps.sh.
+  # under BC_BASE_PATH was. The dummy device and the UMD are for a release whose
+  # tests predate the conftest fixture and still build runtimes.
   # .buildkite is the one path not taken from the tag: older releases carry none.
   cat <<EOF
   - label: ":floppy_disk: compile $tag $suite${override:+ @ $override}"
