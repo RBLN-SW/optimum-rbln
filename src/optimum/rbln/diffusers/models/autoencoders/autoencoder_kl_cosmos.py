@@ -243,3 +243,8 @@ class RBLNAutoencoderKLCosmos(RBLNModel):
             return (decoded,)
 
         return DecoderOutput(sample=decoded)
+
+
+__all__ = [
+    "RBLNAutoencoderKLCosmos",
+]

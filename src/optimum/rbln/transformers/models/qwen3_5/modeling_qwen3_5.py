@@ -929,3 +929,12 @@ class RBLNQwen3_5ForConditionalGeneration(RBLNQwenVLBatchSortMixin, RBLNQwen3_5M
         if not return_dict:
             return logits, generate_idx
         return RBLNDecoderOnlyOutput(logits=logits, generate_idx=generate_idx, hidden_states=all_hidden_states)
+
+
+__all__ = [
+    "RBLNQwen3_5ForCausalLM",
+    "RBLNQwen3_5ForConditionalGeneration",
+    "RBLNQwen3_5Model",
+    "RBLNQwen3_5TextModel",
+    "RBLNQwen3_5VisionModel",
+]

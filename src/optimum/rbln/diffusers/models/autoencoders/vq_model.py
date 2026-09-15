@@ -209,3 +209,8 @@ class RBLNVQModel(RBLNModel):
         if not return_dict:
             return (dec, commit_loss)
         return DecoderOutput(sample=dec, commit_loss=commit_loss)
+
+
+__all__ = [
+    "RBLNVQModel",
+]

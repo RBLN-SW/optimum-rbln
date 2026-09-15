@@ -157,3 +157,10 @@ class RBLNStableDiffusionXLInpaintPipelineConfig(RBLNStableDiffusionXLPipelineBa
     """Config for SDXL Inpainting Pipeline"""
 
     _vae_uses_encoder = True
+
+
+__all__ = [
+    "RBLNStableDiffusionXLImg2ImgPipelineConfig",
+    "RBLNStableDiffusionXLInpaintPipelineConfig",
+    "RBLNStableDiffusionXLPipelineConfig",
+]

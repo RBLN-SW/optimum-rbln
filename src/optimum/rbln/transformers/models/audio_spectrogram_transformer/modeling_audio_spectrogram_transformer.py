@@ -89,3 +89,8 @@ class RBLNASTForAudioClassification(RBLNModel):
         """
 
         return super().forward(input_values, **kwargs)
+
+
+__all__ = [
+    "RBLNASTForAudioClassification",
+]
