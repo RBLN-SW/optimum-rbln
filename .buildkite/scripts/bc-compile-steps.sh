@@ -1,31 +1,24 @@
 #!/usr/bin/env bash
 # bc-compile-steps.sh [tag]
 #
-# Emits the steps that compile one release's artifacts into BC_BASE_PATH, for
-# `buildkite-agent pipeline upload`. bc-steps.sh reloads those artifacts with the
-# then-current code on every later PR and nightly.
+# Emits the steps that compile one release's artifacts into BC_BASE_PATH, which
+# bc-steps.sh reloads on every later PR and nightly.
 #
-# The UI filter lets every v* tag through, so the release policy lives here: a
-# pre-release emits nothing and the build passes empty. Same regex the GHA
-# check-tag job held, kept where it can be read and run (bash bc-compile-steps.sh
-# v0.11.3rc1).
-#
-# No compiler version to pass: the checkout is the tag, so sync.sh installs the
-# compiler that release pinned in .github/version.yaml.
+# The UI filter passes every v*, so the release policy lives here: a pre-release
+# emits nothing and the build passes empty.
 set -euo pipefail
 
 tag="${1:-${BUILDKITE_TAG:-}}"
 [ -n "$tag" ] || { echo "no tag: pass one or set BUILDKITE_TAG" >&2; exit 1; }
 : "${BC_BASE_PATH:?not set}"
 
-# Accept X.Y.Z[.more][.postN|postN]; reject rc, dev and anything else.
 version="${tag#v}"
 if ! [[ "$version" =~ ^[0-9]+(\.[0-9]+)*(\.post[0-9]+|post[0-9]+)?$ ]]; then
   echo "$tag is not a stable release; no artifacts to compile" >&2
   exit 0
 fi
 
-# Directory names encode the tag with underscores, as bc-steps.sh decodes them.
+# bc-steps.sh decodes these back.
 encoded="${tag//./_}"
 
 cat <<'EOF'
@@ -35,8 +28,8 @@ notify:
 EOF
 echo "steps:"
 for suite in transformers diffusers llm; do
-  # The attached NPU fixes the artifacts' target SoC. CA22, as the GHA ca22-1
-  # runner produced -- every release already under BC_BASE_PATH is CA22.
+  # The attached NPU fixes the target SoC: CA22, as every release already under
+  # BC_BASE_PATH was compiled on.
   cat <<EOF
   - label: ":floppy_disk: compile $tag $suite"
     key: "bc-compile-${suite}"

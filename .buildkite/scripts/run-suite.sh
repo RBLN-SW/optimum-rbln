@@ -19,9 +19,8 @@ if [ -n "$tag" ] && [[ "${BUILDKITE_MESSAGE:-}" == *"$tag"* ]]; then
   exit 0
 fi
 
-# A backward-compatibility run is one release's artifacts: compiled at its tag
-# (SAVE) or reloaded on a dummy device by a later build (REUSE). Either way one
-# test carries it and the suite is small enough not to split.
+# A backward-compatibility run is one release's artifacts, compiled at its tag
+# (SAVE) or reloaded later (REUSE): one test carries it, and no shard.
 bc=()
 if [ -n "${REUSE_ARTIFACTS_PATH:-}" ]; then
   bc=(-k test_generate)

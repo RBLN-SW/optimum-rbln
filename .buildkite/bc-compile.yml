@@ -1,9 +1,5 @@
 # Entry pipeline for the tag build, uploaded by optimum-rbln-bc-compile.
 # Replaces .github/workflows/bc_compile.yaml.
-#
-# Compiles this release's artifacts into BC_BASE_PATH so every later PR and
-# nightly can reload them. bc-compile-steps.sh decides whether the tag is a
-# release at all; a pre-release emits no steps and this build passes empty.
 
 env:
   BC_BASE_PATH: "/mnt/shared_data/.cache/optimum-rbln/backward_compatibility"
@@ -13,7 +9,6 @@ env:
 
 steps:
   - label: ":sparkles: upload BC compile"
-    # Reads only .buildkite; the suites it emits check out the tag in full.
     checkout:
       sparse:
         paths:
