@@ -283,7 +283,10 @@ class RBLNCosmos2_5_PredictBasePipelineConfig(RBLNModelConfig):
             batch_size=batch_size,
             max_seq_len=max_seq_len,
             output_hidden_states=True,
-            visual={"max_seq_len": 64, "create_runtimes": False},
+            # text-only prompts: the vision tower is compiled at the minimal window but its
+            # compiled model is never even loaded at runtime
+            visual={"max_seq_len": 64},
+            _load_visual_runtime=False,
         )
         self.transformer = self.initialize_submodule_config(
             transformer,
