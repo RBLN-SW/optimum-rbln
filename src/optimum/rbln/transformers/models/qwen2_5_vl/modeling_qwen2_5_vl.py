@@ -368,6 +368,18 @@ class RBLNQwen2_5_VLModel(RBLNDecoderOnlyModel):
     _get_rope_index_func = Qwen2_5_VLModel.get_rope_index
     get_vision_position_ids = Qwen2_5_VLModel.get_vision_position_ids
 
+    @classmethod
+    def _load_submodules(cls, model_save_dir, rbln_config, model=None, **kwargs):
+        # _compile_visual_module=False is saved with the artifact: the visual encoder was never
+        # compiled, so there is nothing to compile at export or to load afterwards.
+        if not getattr(rbln_config, "_compile_visual_module", True):
+            return []
+        # Loading with _load_visual_runtime=False skips the visual encoder entirely (no
+        # compiled-model read, no torch artifacts); text-only callers never miss it.
+        if model is None and not getattr(rbln_config, "_load_visual_runtime", True):
+            return []
+        return super()._load_submodules(model_save_dir, rbln_config, model=model, **kwargs)
+
     def __post_init__(self, **kwargs):
         if hasattr(self.config, "embedding_dim"):
             self.embedding_dim = self.config.embedding_dim
@@ -378,7 +390,7 @@ class RBLNQwen2_5_VLModel(RBLNDecoderOnlyModel):
             )
 
         super().__post_init__(**kwargs)
-        self.visual = self.rbln_submodules[0]
+        self.visual = self.rbln_submodules[0] if self.rbln_submodules else None
         self.rotary_emb = build_qwen_mrope_lookup(
             self._rotary_emb_class(self.config.text_config), self.rbln_config.max_seq_len
         )
@@ -455,6 +467,11 @@ class RBLNQwen2_5_VLModel(RBLNDecoderOnlyModel):
         inputs_embeds = self.embed_tokens(input_ids)
 
         if pixel_values is not None:
+            if self.visual is None:
+                raise RuntimeError(
+                    "The visual encoder is not loaded (_load_visual_runtime=False); "
+                    "this model can only process text inputs."
+                )
             image_embeds = self.visual(pixel_values, grid_thw=image_grid_thw)
             n_image_tokens = (input_ids == self.config.image_token_id).sum().item()
             n_image_features = image_embeds.shape[0]
@@ -471,6 +488,11 @@ class RBLNQwen2_5_VLModel(RBLNDecoderOnlyModel):
             inputs_embeds = inputs_embeds.masked_scatter(mask_expanded, image_embeds)
 
         if pixel_values_videos is not None:
+            if self.visual is None:
+                raise RuntimeError(
+                    "The visual encoder is not loaded (_load_visual_runtime=False); "
+                    "this model can only process text inputs."
+                )
             video_embeds = self.visual(pixel_values_videos, grid_thw=video_grid_thw)
             n_video_tokens = (input_ids == self.config.video_token_id).sum().item()
             n_video_features = video_embeds.shape[0]
