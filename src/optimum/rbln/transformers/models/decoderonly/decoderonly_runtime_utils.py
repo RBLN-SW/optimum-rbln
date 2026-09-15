@@ -108,7 +108,7 @@ class RBLNPageTableManager:
                     block_idx = position // self.rbln_config.kvcache_block_size
                     self.update_block(batch_idx, block_idx)
 
-                return self.replace_empty_block(self.block_tables[batch_idx])
+                return self.replace_empty_block(self.block_tables[batch_idx : batch_idx + 1])
             # Case for 'decoder' phase, iterate over the cache positions to allocate necessary blocks
             else:
                 for b_idx in range(batch_size):
@@ -123,7 +123,7 @@ class RBLNPageTableManager:
                 return None
             else:
                 return (
-                    torch.tensor([batch_idx], dtype=torch.int16)
+                    torch.tensor([[batch_idx]], dtype=torch.int16)
                     if phase == "prefill"
                     else torch.arange(batch_size, dtype=torch.int16).view(batch_size, -1)
                 )
