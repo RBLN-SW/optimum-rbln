@@ -2,19 +2,11 @@
 # bc-compile-steps.sh [tag]
 #
 # Emits the steps that compile one release's artifacts into BC_BASE_PATH, which
-# bc-steps.sh reloads on every later PR and nightly.
-#
-# The tag comes from the build. BC_TAG names it on a build that has none, which
-# is how a release gets backfilled -- the workflow_dispatch bc_compile.yaml took.
-# Either way the steps take the release's own tree from the tag, so the artifacts
-# are what that release compiled, with the compiler it pinned.
+# bc-steps.sh reloads on every later PR and nightly. BC_TAG names the tag on a
+# build that has none, which is how a release gets backfilled.
 #
 # The UI filter passes every v*, so the release policy lives here: a pre-release
 # emits nothing and the build passes empty.
-#
-# REBEL_COMPILER_VERSION on the build overrides the compiler the tag pinned, and
-# then names it in every label -- artifacts compiled with anything but the pin are
-# not what that release shipped.
 set -euo pipefail
 
 tag="${1:-${BUILDKITE_TAG:-${BC_TAG:-}}}"
@@ -38,15 +30,12 @@ notify:
 EOF
 echo "steps:"
 for suite in transformers diffusers llm; do
-  # RBLN_FORCE_NPU_NAME fixes the target SoC without hardware, so the compile
-  # holds no NPU. CA22, as every release already under BC_BASE_PATH was built on.
-  # setUpClass still creates a dummy runtime, which dlopens librbln-thunk.so, so
-  # the pod needs the shared UMD the BC steps already borrow.
+  # RBLN_FORCE_NPU_NAME fixes the target SoC without hardware: CA22, as every
+  # release under BC_BASE_PATH was built on. UMD as in bc-steps.sh -- the dummy
+  # runtime setUpClass creates still dlopens the thunk.
   #
-  # The build's commit is the tag only when a tag triggered it, so check the tag
-  # out explicitly and put .buildkite back: releases older than the migration
-  # carry none, and the scripts running the job have to come from somewhere that
-  # does. Same split the GHA job had -- workflow from dev, ref: <tag> for code.
+  # The build's commit is the tag only when a tag triggered it. .buildkite is the
+  # one path not taken from the tag: older releases carry none.
   cat <<EOF
   - label: ":floppy_disk: compile $tag $suite${override:+ @ $override}"
     key: "bc-compile-${suite}"
@@ -63,8 +52,7 @@ for suite in transformers diffusers llm; do
       SAVE_ARTIFACTS_PATH: "$BC_BASE_PATH/$encoded"
     timeout_in_minutes: 180
     command:
-      # Fail in seconds, not after a three-hour compile, if this pod's
-      # /mnt/shared_data is not the volume holding the other releases.
+      # mkdir -p alone would happily create it on the wrong volume.
       - "test -d $BC_BASE_PATH && mkdir -p $BC_BASE_PATH/$encoded"
       - "git fetch -q origin refs/tags/$tag && git checkout -q --detach FETCH_HEAD"
       - "git checkout -q \$\$BUILDKITE_COMMIT -- .buildkite"
