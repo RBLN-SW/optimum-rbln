@@ -80,3 +80,8 @@ class RBLNModernBertForMaskedLM(RBLNModelForMaskedLM):
             The model outputs. If return_dict=False is passed, returns a tuple of tensors. Otherwise, returns a MaskedLMOutput object.
         """
         return super().forward(input_ids, attention_mask, **kwargs)
+
+
+__all__ = [
+    "RBLNModernBertForMaskedLM",
+]

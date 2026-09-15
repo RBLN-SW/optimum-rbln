@@ -38,3 +38,8 @@ class RBLNDepthAnythingForDepthEstimation(RBLNModelForDepthEstimation):
             The model outputs. If return_dict=False is passed, returns a tuple of tensors. Otherwise, returns a DepthEstimatorOutput object.
         """
         return super().forward(pixel_values, **kwargs)
+
+
+__all__ = [
+    "RBLNDepthAnythingForDepthEstimation",
+]

@@ -647,3 +647,10 @@ class RBLNExaone4_5_ForConditionalGeneration(
             generate_idx=generate_idx,
             hidden_states=all_hidden_states,
         )
+
+
+__all__ = [
+    "RBLNExaone4_5_ForConditionalGeneration",
+    "RBLNExaone4_5_Model",
+    "RBLNExaone4_5_VisionModel",
+]

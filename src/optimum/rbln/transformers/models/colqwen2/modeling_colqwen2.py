@@ -180,3 +180,8 @@ class RBLNColQwen2ForRetrieval(RBLNModel):
             embeddings=embeddings,
             hidden_states=hidden_states,
         )
+
+
+__all__ = [
+    "RBLNColQwen2ForRetrieval",
+]

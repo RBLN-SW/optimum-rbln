@@ -332,3 +332,8 @@ class RBLNSwinBackbone(RBLNModel):
                 hidden_states=hidden_states,
                 attentions=attentions,
             )
+
+
+__all__ = [
+    "RBLNSwinBackbone",
+]

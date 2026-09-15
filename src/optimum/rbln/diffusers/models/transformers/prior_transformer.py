@@ -159,3 +159,8 @@ class RBLNPriorTransformer(RBLNModel):
             attention_mask.to(self.rbln_config.dtype),
             return_dict=return_dict,
         )
+
+
+__all__ = [
+    "RBLNPriorTransformer",
+]

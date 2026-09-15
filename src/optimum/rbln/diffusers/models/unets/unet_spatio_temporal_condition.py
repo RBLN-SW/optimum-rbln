@@ -205,3 +205,8 @@ class RBLNUNetSpatioTemporalConditionModel(RBLNModel):
             added_time_ids,
             return_dict=return_dict,
         )
+
+
+__all__ = [
+    "RBLNUNetSpatioTemporalConditionModel",
+]

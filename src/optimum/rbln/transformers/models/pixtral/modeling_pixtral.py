@@ -334,3 +334,8 @@ class RBLNPixtralVisionModel(RBLNModel):
         )
 
         return output
+
+
+__all__ = [
+    "RBLNPixtralVisionModel",
+]

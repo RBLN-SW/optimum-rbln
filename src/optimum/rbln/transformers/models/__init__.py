@@ -16,459 +16,66 @@ from typing import TYPE_CHECKING
 
 from transformers.utils import _LazyModule
 
+from ...utils.import_utils import define_import_structure
 
-_import_structure = {
-    "audio_spectrogram_transformer": [
-        "RBLNASTForAudioClassification",
-        "RBLNASTForAudioClassificationConfig",
-    ],
-    "auto": [
-        "RBLNAutoModel",
-        "RBLNAutoModelForAudioClassification",
-        "RBLNAutoModelForCausalLM",
-        "RBLNAutoModelForCTC",
-        "RBLNAutoModelForDepthEstimation",
-        "RBLNAutoModelForImageClassification",
-        "RBLNAutoModelForMaskedLM",
-        "RBLNAutoModelForQuestionAnswering",
-        "RBLNAutoModelForSeq2SeqLM",
-        "RBLNAutoModelForObjectDetection",
-        "RBLNAutoModelForSequenceClassification",
-        "RBLNAutoModelForSpeechSeq2Seq",
-        "RBLNAutoModelForImageTextToText",
-        "RBLNAutoModelForTextEncoding",
-        "RBLNAutoModelForZeroShotObjectDetection",
-    ],
-    "bart": [
-        "RBLNBartForConditionalGeneration",
-        "RBLNBartModel",
-        "RBLNBartForConditionalGenerationConfig",
-        "RBLNBartModelConfig",
-    ],
-    "bert": [
-        "RBLNBertModel",
-        "RBLNBertModelConfig",
-        "RBLNBertForQuestionAnswering",
-        "RBLNBertForQuestionAnsweringConfig",
-        "RBLNBertForMaskedLM",
-        "RBLNBertForMaskedLMConfig",
-    ],
-    "blip_2": [
-        "RBLNBlip2VisionModelConfig",
-        "RBLNBlip2VisionModel",
-        "RBLNBlip2ForConditionalGeneration",
-        "RBLNBlip2ForConditionalGenerationConfig",
-        "RBLNBlip2QFormerModel",
-        "RBLNBlip2QFormerModelConfig",
-    ],
-    "clip": [
-        "RBLNCLIPTextModel",
-        "RBLNCLIPTextModelConfig",
-        "RBLNCLIPTextModelWithProjection",
-        "RBLNCLIPTextModelWithProjectionConfig",
-        "RBLNCLIPVisionModel",
-        "RBLNCLIPVisionModelConfig",
-        "RBLNCLIPVisionModelWithProjection",
-        "RBLNCLIPVisionModelWithProjectionConfig",
-    ],
-    "colpali": [
-        "RBLNColPaliForRetrieval",
-        "RBLNColPaliForRetrievalConfig",
-    ],
-    "colqwen2": [
-        "RBLNColQwen2ForRetrieval",
-        "RBLNColQwen2ForRetrievalConfig",
-    ],
-    "detr": [
-        "RBLNDetrForObjectDetection",
-        "RBLNDetrForObjectDetectionConfig",
-    ],
-    "distilbert": [
-        "RBLNDistilBertForQuestionAnswering",
-        "RBLNDistilBertForQuestionAnsweringConfig",
-    ],
-    "qwen2_5_vl": [
-        "RBLNQwen2_5_VisionTransformerPretrainedModel",
-        "RBLNQwen2_5_VisionTransformerPretrainedModelConfig",
-        "RBLNQwen2_5_VLForConditionalGeneration",
-        "RBLNQwen2_5_VLForConditionalGenerationConfig",
-        "RBLNQwen2_5_VLModel",
-        "RBLNQwen2_5_VLModelConfig",
-    ],
-    "qwen2_vl": [
-        "RBLNQwen2VisionTransformerPretrainedModel",
-        "RBLNQwen2VisionTransformerPretrainedModelConfig",
-        "RBLNQwen2VLForConditionalGeneration",
-        "RBLNQwen2VLForConditionalGenerationConfig",
-        "RBLNQwen2VLModel",
-        "RBLNQwen2VLModelConfig",
-    ],
-    "decoderonly": [
-        "RBLNDecoderOnlyModelConfig",
-        "RBLNDecoderOnlyModel",
-        "RBLNDecoderOnlyModelForCausalLM",
-        "RBLNDecoderOnlyModelForCausalLMConfig",
-        "RBLNLoRAAdapterConfig",
-        "RBLNLoRAConfig",
-    ],
-    "depth_anything": ["RBLNDepthAnythingForDepthEstimationConfig", "RBLNDepthAnythingForDepthEstimation"],
-    "dpt": [
-        "RBLNDPTForDepthEstimation",
-        "RBLNDPTForDepthEstimationConfig",
-    ],
-    "exaone": ["RBLNExaoneForCausalLM", "RBLNExaoneForCausalLMConfig"],
-    "exaone4_5": [
-        "RBLNExaone4_5_ForConditionalGeneration",
-        "RBLNExaone4_5_ForConditionalGenerationConfig",
-        "RBLNExaone4_5_Model",
-        "RBLNExaone4_5_ModelConfig",
-        "RBLNExaone4_5_VisionModel",
-        "RBLNExaone4_5_VisionModelConfig",
-    ],
-    "gemma": ["RBLNGemmaForCausalLM", "RBLNGemmaForCausalLMConfig", "RBLNGemmaModel", "RBLNGemmaModelConfig"],
-    "gemma2": ["RBLNGemma2ForCausalLM", "RBLNGemma2ForCausalLMConfig", "RBLNGemma2Model", "RBLNGemma2ModelConfig"],
-    "gemma3": [
-        "RBLNGemma3ForCausalLM",
-        "RBLNGemma3ForCausalLMConfig",
-        "RBLNGemma3ForConditionalGeneration",
-        "RBLNGemma3ForConditionalGenerationConfig",
-    ],
-    "gemma4": [
-        "RBLNGemma4ForCausalLM",
-        "RBLNGemma4ForCausalLMConfig",
-        "RBLNGemma4ForConditionalGeneration",
-        "RBLNGemma4ForConditionalGenerationConfig",
-        "RBLNGemma4VisionModel",
-        "RBLNGemma4VisionModelConfig",
-    ],
-    "gpt_oss": ["RBLNGptOssForCausalLM", "RBLNGptOssForCausalLMConfig"],
-    "gpt2": ["RBLNGPT2LMHeadModel", "RBLNGPT2LMHeadModelConfig", "RBLNGPT2Model", "RBLNGPT2ModelConfig"],
-    "idefics3": [
-        "RBLNIdefics3VisionTransformer",
-        "RBLNIdefics3ForConditionalGeneration",
-        "RBLNIdefics3ForConditionalGenerationConfig",
-        "RBLNIdefics3VisionTransformerConfig",
-    ],
-    "llava": ["RBLNLlavaForConditionalGeneration", "RBLNLlavaForConditionalGenerationConfig"],
-    "llama": ["RBLNLlamaForCausalLM", "RBLNLlamaForCausalLMConfig", "RBLNLlamaModel", "RBLNLlamaModelConfig"],
-    "opt": ["RBLNOPTForCausalLM", "RBLNOPTForCausalLMConfig", "RBLNOPTModel", "RBLNOPTModelConfig"],
-    "pegasus": [
-        "RBLNPegasusForConditionalGeneration",
-        "RBLNPegasusModel",
-        "RBLNPegasusForConditionalGenerationConfig",
-        "RBLNPegasusModelConfig",
-    ],
-    "paligemma": [
-        "RBLNPaliGemmaForConditionalGeneration",
-        "RBLNPaliGemmaForConditionalGenerationConfig",
-        "RBLNPaliGemmaModel",
-        "RBLNPaliGemmaModelConfig",
-    ],
-    "llava_next": ["RBLNLlavaNextForConditionalGeneration", "RBLNLlavaNextForConditionalGenerationConfig"],
-    "midm": ["RBLNMidmLMHeadModel", "RBLNMidmLMHeadModelConfig"],
-    "pixtral": ["RBLNPixtralVisionModel", "RBLNPixtralVisionModelConfig"],
-    "mistral": [
-        "RBLNMistralForCausalLM",
-        "RBLNMistralForCausalLMConfig",
-        "RBLNMistralModel",
-        "RBLNMistralModelConfig",
-    ],
-    "phi": ["RBLNPhiForCausalLM", "RBLNPhiForCausalLMConfig", "RBLNPhiModel", "RBLNPhiModelConfig"],
-    "qwen2": ["RBLNQwen2ForCausalLM", "RBLNQwen2ForCausalLMConfig", "RBLNQwen2Model", "RBLNQwen2ModelConfig"],
-    "qwen2_moe": ["RBLNQwen2MoeForCausalLM", "RBLNQwen2MoeForCausalLMConfig"],
-    "qwen3": ["RBLNQwen3ForCausalLM", "RBLNQwen3ForCausalLMConfig", "RBLNQwen3Model", "RBLNQwen3ModelConfig"],
-    "qwen3_5": [
-        "RBLNQwen3_5ForCausalLM",
-        "RBLNQwen3_5ForCausalLMConfig",
-        "RBLNQwen3_5ForConditionalGeneration",
-        "RBLNQwen3_5ForConditionalGenerationConfig",
-        "RBLNQwen3_5Model",
-        "RBLNQwen3_5ModelConfig",
-        "RBLNQwen3_5VisionModel",
-        "RBLNQwen3_5VisionModelConfig",
-    ],
-    "qwen3_moe": ["RBLNQwen3MoeForCausalLM", "RBLNQwen3MoeForCausalLMConfig"],
-    "qwen3_vl": [
-        "RBLNQwen3VLVisionModel",
-        "RBLNQwen3VLVisionModelConfig",
-        "RBLNQwen3VLForConditionalGeneration",
-        "RBLNQwen3VLForConditionalGenerationConfig",
-        "RBLNQwen3VLModel",
-        "RBLNQwen3VLModelConfig",
-    ],
-    "qwen3_vl_moe": [
-        "RBLNQwen3VLMoeVisionModel",
-        "RBLNQwen3VLMoeVisionModelConfig",
-        "RBLNQwen3VLMoeForConditionalGeneration",
-        "RBLNQwen3VLMoeForConditionalGenerationConfig",
-        "RBLNQwen3VLMoeModel",
-        "RBLNQwen3VLMoeModelConfig",
-    ],
-    "modernbert": [
-        "RBLNModernBertForMaskedLM",
-        "RBLNModernBertForMaskedLMConfig",
-    ],
-    "resnet": ["RBLNResNetForImageClassification", "RBLNResNetForImageClassificationConfig"],
-    "roberta": [
-        "RBLNRobertaForMaskedLM",
-        "RBLNRobertaForMaskedLMConfig",
-        "RBLNRobertaForSequenceClassification",
-        "RBLNRobertaForSequenceClassificationConfig",
-    ],
-    "siglip": [
-        "RBLNSiglipVisionModel",
-        "RBLNSiglipVisionModelConfig",
-    ],
-    "mixtral": [
-        "RBLNMixtralForCausalLM",
-        "RBLNMixtralForCausalLMConfig",
-    ],
-    "swin": [
-        "RBLNSwinBackbone",
-        "RBLNSwinBackboneConfig",
-    ],
-    "time_series_transformer": [
-        "RBLNTimeSeriesTransformerForPrediction",
-        "RBLNTimeSeriesTransformerForPredictionConfig",
-    ],
-    "t5": [
-        "RBLNT5EncoderModel",
-        "RBLNT5ForConditionalGeneration",
-        "RBLNT5EncoderModelConfig",
-        "RBLNT5ForConditionalGenerationConfig",
-    ],
-    "vit": ["RBLNViTForImageClassification", "RBLNViTForImageClassificationConfig"],
-    "wav2vec2": ["RBLNWav2Vec2ForCTC", "RBLNWav2Vec2ForCTCConfig"],
-    "whisper": ["RBLNWhisperForConditionalGeneration", "RBLNWhisperForConditionalGenerationConfig"],
-    "xlm_roberta": [
-        "RBLNXLMRobertaModel",
-        "RBLNXLMRobertaModelConfig",
-        "RBLNXLMRobertaForSequenceClassification",
-        "RBLNXLMRobertaForSequenceClassificationConfig",
-    ],
-    "grounding_dino": [
-        "RBLNGroundingDinoForObjectDetection",
-        "RBLNGroundingDinoForObjectDetectionConfig",
-        "RBLNGroundingDinoEncoder",
-        "RBLNGroundingDinoEncoderConfig",
-        "RBLNGroundingDinoTextModel",
-        "RBLNGroundingDinoTextModelConfig",
-        "RBLNGroundingDinoDecoder",
-        "RBLNGroundingDinoDecoderConfig",
-    ],
-}
 
 if TYPE_CHECKING:
-    from .audio_spectrogram_transformer import RBLNASTForAudioClassification, RBLNASTForAudioClassificationConfig
-    from .auto import (
-        RBLNAutoModel,
-        RBLNAutoModelForAudioClassification,
-        RBLNAutoModelForCausalLM,
-        RBLNAutoModelForCTC,
-        RBLNAutoModelForDepthEstimation,
-        RBLNAutoModelForImageClassification,
-        RBLNAutoModelForImageTextToText,
-        RBLNAutoModelForMaskedLM,
-        RBLNAutoModelForObjectDetection,
-        RBLNAutoModelForQuestionAnswering,
-        RBLNAutoModelForSeq2SeqLM,
-        RBLNAutoModelForSequenceClassification,
-        RBLNAutoModelForSpeechSeq2Seq,
-        RBLNAutoModelForTextEncoding,
-        RBLNAutoModelForZeroShotObjectDetection,
-    )
-    from .bart import (
-        RBLNBartForConditionalGeneration,
-        RBLNBartForConditionalGenerationConfig,
-        RBLNBartModel,
-        RBLNBartModelConfig,
-    )
-    from .bert import (
-        RBLNBertForMaskedLM,
-        RBLNBertForMaskedLMConfig,
-        RBLNBertForQuestionAnswering,
-        RBLNBertForQuestionAnsweringConfig,
-        RBLNBertModel,
-        RBLNBertModelConfig,
-    )
-    from .blip_2 import (
-        RBLNBlip2ForConditionalGeneration,
-        RBLNBlip2ForConditionalGenerationConfig,
-        RBLNBlip2QFormerModel,
-        RBLNBlip2QFormerModelConfig,
-        RBLNBlip2VisionModel,
-        RBLNBlip2VisionModelConfig,
-    )
-    from .clip import (
-        RBLNCLIPTextModel,
-        RBLNCLIPTextModelConfig,
-        RBLNCLIPTextModelWithProjection,
-        RBLNCLIPTextModelWithProjectionConfig,
-        RBLNCLIPVisionModel,
-        RBLNCLIPVisionModelConfig,
-        RBLNCLIPVisionModelWithProjection,
-        RBLNCLIPVisionModelWithProjectionConfig,
-    )
-    from .colpali import RBLNColPaliForRetrieval, RBLNColPaliForRetrievalConfig
-    from .colqwen2 import RBLNColQwen2ForRetrieval, RBLNColQwen2ForRetrievalConfig
-    from .decoderonly import (
-        RBLNDecoderOnlyModel,
-        RBLNDecoderOnlyModelConfig,
-        RBLNDecoderOnlyModelForCausalLM,
-        RBLNDecoderOnlyModelForCausalLMConfig,
-        RBLNLoRAAdapterConfig,
-        RBLNLoRAConfig,
-    )
-    from .depth_anything import RBLNDepthAnythingForDepthEstimation, RBLNDepthAnythingForDepthEstimationConfig
-    from .detr import RBLNDetrForObjectDetection, RBLNDetrForObjectDetectionConfig
-    from .distilbert import RBLNDistilBertForQuestionAnswering, RBLNDistilBertForQuestionAnsweringConfig
-    from .dpt import RBLNDPTForDepthEstimation, RBLNDPTForDepthEstimationConfig
-    from .exaone import RBLNExaoneForCausalLM, RBLNExaoneForCausalLMConfig
-    from .exaone4_5 import (
-        RBLNExaone4_5_ForConditionalGeneration,
-        RBLNExaone4_5_ForConditionalGenerationConfig,
-        RBLNExaone4_5_Model,
-        RBLNExaone4_5_ModelConfig,
-        RBLNExaone4_5_VisionModel,
-        RBLNExaone4_5_VisionModelConfig,
-    )
-    from .gemma import RBLNGemmaForCausalLM, RBLNGemmaForCausalLMConfig, RBLNGemmaModel, RBLNGemmaModelConfig
-    from .gemma2 import RBLNGemma2ForCausalLM, RBLNGemma2ForCausalLMConfig, RBLNGemma2Model, RBLNGemma2ModelConfig
-    from .gemma3 import (
-        RBLNGemma3ForCausalLM,
-        RBLNGemma3ForCausalLMConfig,
-        RBLNGemma3ForConditionalGeneration,
-        RBLNGemma3ForConditionalGenerationConfig,
-    )
-    from .gemma4 import (
-        RBLNGemma4ForCausalLM,
-        RBLNGemma4ForCausalLMConfig,
-        RBLNGemma4ForConditionalGeneration,
-        RBLNGemma4ForConditionalGenerationConfig,
-        RBLNGemma4VisionModel,
-        RBLNGemma4VisionModelConfig,
-    )
-    from .gpt2 import RBLNGPT2LMHeadModel, RBLNGPT2LMHeadModelConfig, RBLNGPT2Model, RBLNGPT2ModelConfig
-    from .gpt_oss import RBLNGptOssForCausalLM, RBLNGptOssForCausalLMConfig
-    from .grounding_dino import (
-        RBLNGroundingDinoDecoder,
-        RBLNGroundingDinoDecoderConfig,
-        RBLNGroundingDinoEncoder,
-        RBLNGroundingDinoEncoderConfig,
-        RBLNGroundingDinoForObjectDetection,
-        RBLNGroundingDinoForObjectDetectionConfig,
-        RBLNGroundingDinoTextModel,
-        RBLNGroundingDinoTextModelConfig,
-    )
-    from .idefics3 import (
-        RBLNIdefics3ForConditionalGeneration,
-        RBLNIdefics3ForConditionalGenerationConfig,
-        RBLNIdefics3VisionTransformer,
-        RBLNIdefics3VisionTransformerConfig,
-    )
-    from .llama import RBLNLlamaForCausalLM, RBLNLlamaForCausalLMConfig, RBLNLlamaModel, RBLNLlamaModelConfig
-    from .llava import RBLNLlavaForConditionalGeneration, RBLNLlavaForConditionalGenerationConfig
-    from .llava_next import RBLNLlavaNextForConditionalGeneration, RBLNLlavaNextForConditionalGenerationConfig
-    from .midm import RBLNMidmLMHeadModel, RBLNMidmLMHeadModelConfig
-    from .mistral import RBLNMistralForCausalLM, RBLNMistralForCausalLMConfig, RBLNMistralModel, RBLNMistralModelConfig
-    from .mixtral import RBLNMixtralForCausalLM, RBLNMixtralForCausalLMConfig
-    from .modernbert import RBLNModernBertForMaskedLM, RBLNModernBertForMaskedLMConfig
-    from .opt import RBLNOPTForCausalLM, RBLNOPTForCausalLMConfig, RBLNOPTModel, RBLNOPTModelConfig
-    from .paligemma import (
-        RBLNPaliGemmaForConditionalGeneration,
-        RBLNPaliGemmaForConditionalGenerationConfig,
-        RBLNPaliGemmaModel,
-        RBLNPaliGemmaModelConfig,
-    )
-    from .pegasus import (
-        RBLNPegasusForConditionalGeneration,
-        RBLNPegasusForConditionalGenerationConfig,
-        RBLNPegasusModel,
-        RBLNPegasusModelConfig,
-    )
-    from .phi import RBLNPhiForCausalLM, RBLNPhiForCausalLMConfig, RBLNPhiModel, RBLNPhiModelConfig
-    from .pixtral import RBLNPixtralVisionModel, RBLNPixtralVisionModelConfig
-    from .qwen2 import RBLNQwen2ForCausalLM, RBLNQwen2ForCausalLMConfig, RBLNQwen2Model, RBLNQwen2ModelConfig
-    from .qwen2_5_vl import (
-        RBLNQwen2_5_VisionTransformerPretrainedModel,
-        RBLNQwen2_5_VisionTransformerPretrainedModelConfig,
-        RBLNQwen2_5_VLForConditionalGeneration,
-        RBLNQwen2_5_VLForConditionalGenerationConfig,
-        RBLNQwen2_5_VLModel,
-        RBLNQwen2_5_VLModelConfig,
-    )
-    from .qwen2_moe import RBLNQwen2MoeForCausalLM, RBLNQwen2MoeForCausalLMConfig
-    from .qwen2_vl import (
-        RBLNQwen2VisionTransformerPretrainedModel,
-        RBLNQwen2VisionTransformerPretrainedModelConfig,
-        RBLNQwen2VLForConditionalGeneration,
-        RBLNQwen2VLForConditionalGenerationConfig,
-        RBLNQwen2VLModel,
-        RBLNQwen2VLModelConfig,
-    )
-    from .qwen3 import RBLNQwen3ForCausalLM, RBLNQwen3ForCausalLMConfig, RBLNQwen3Model, RBLNQwen3ModelConfig
-    from .qwen3_5 import (
-        RBLNQwen3_5ForCausalLM,
-        RBLNQwen3_5ForCausalLMConfig,
-        RBLNQwen3_5ForConditionalGeneration,
-        RBLNQwen3_5ForConditionalGenerationConfig,
-        RBLNQwen3_5Model,
-        RBLNQwen3_5ModelConfig,
-        RBLNQwen3_5VisionModel,
-        RBLNQwen3_5VisionModelConfig,
-    )
-    from .qwen3_moe import RBLNQwen3MoeForCausalLM, RBLNQwen3MoeForCausalLMConfig
-    from .qwen3_vl import (
-        RBLNQwen3VLForConditionalGeneration,
-        RBLNQwen3VLForConditionalGenerationConfig,
-        RBLNQwen3VLModel,
-        RBLNQwen3VLModelConfig,
-        RBLNQwen3VLVisionModel,
-        RBLNQwen3VLVisionModelConfig,
-    )
-    from .qwen3_vl_moe import (
-        RBLNQwen3VLMoeForConditionalGeneration,
-        RBLNQwen3VLMoeForConditionalGenerationConfig,
-        RBLNQwen3VLMoeModel,
-        RBLNQwen3VLMoeModelConfig,
-        RBLNQwen3VLMoeVisionModel,
-        RBLNQwen3VLMoeVisionModelConfig,
-    )
-    from .resnet import RBLNResNetForImageClassification, RBLNResNetForImageClassificationConfig
-    from .roberta import (
-        RBLNRobertaForMaskedLM,
-        RBLNRobertaForMaskedLMConfig,
-        RBLNRobertaForSequenceClassification,
-        RBLNRobertaForSequenceClassificationConfig,
-    )
-    from .siglip import RBLNSiglipVisionModel, RBLNSiglipVisionModelConfig
-    from .swin import RBLNSwinBackbone, RBLNSwinBackboneConfig
-    from .t5 import (
-        RBLNT5EncoderModel,
-        RBLNT5EncoderModelConfig,
-        RBLNT5ForConditionalGeneration,
-        RBLNT5ForConditionalGenerationConfig,
-    )
-    from .time_series_transformer import (
-        RBLNTimeSeriesTransformerForPrediction,
-        RBLNTimeSeriesTransformerForPredictionConfig,
-    )
-    from .vit import RBLNViTForImageClassification, RBLNViTForImageClassificationConfig
-    from .wav2vec2 import RBLNWav2Vec2ForCTC, RBLNWav2Vec2ForCTCConfig
-    from .whisper import RBLNWhisperForConditionalGeneration, RBLNWhisperForConditionalGenerationConfig
-    from .xlm_roberta import (
-        RBLNXLMRobertaForSequenceClassification,
-        RBLNXLMRobertaForSequenceClassificationConfig,
-        RBLNXLMRobertaModel,
-        RBLNXLMRobertaModelConfig,
-    )
-
+    from .audio_spectrogram_transformer import *
+    from .auto import *
+    from .bart import *
+    from .bert import *
+    from .blip_2 import *
+    from .clip import *
+    from .colpali import *
+    from .colqwen2 import *
+    from .decoderonly import *
+    from .depth_anything import *
+    from .detr import *
+    from .distilbert import *
+    from .dpt import *
+    from .exaone import *
+    from .exaone4_5 import *
+    from .gemma import *
+    from .gemma2 import *
+    from .gemma3 import *
+    from .gemma4 import *
+    from .gpt2 import *
+    from .gpt_oss import *
+    from .grounding_dino import *
+    from .idefics3 import *
+    from .llama import *
+    from .llava import *
+    from .llava_next import *
+    from .midm import *
+    from .mistral import *
+    from .mixtral import *
+    from .modernbert import *
+    from .opt import *
+    from .paligemma import *
+    from .pegasus import *
+    from .phi import *
+    from .pixtral import *
+    from .qwen2 import *
+    from .qwen2_5_vl import *
+    from .qwen2_moe import *
+    from .qwen2_vl import *
+    from .qwen3 import *
+    from .qwen3_5 import *
+    from .qwen3_moe import *
+    from .qwen3_vl import *
+    from .qwen3_vl_moe import *
+    from .resnet import *
+    from .roberta import *
+    from .siglip import *
+    from .swin import *
+    from .t5 import *
+    from .time_series_transformer import *
+    from .vit import *
+    from .wav2vec2 import *
+    from .whisper import *
+    from .xlm_roberta import *
 else:
     import sys
 
-    sys.modules[__name__] = _LazyModule(
-        __name__,
-        globals()["__file__"],
-        _import_structure,
-        module_spec=__spec__,
-    )
+    _file = globals()["__file__"]
+    sys.modules[__name__] = _LazyModule(__name__, _file, define_import_structure(_file), module_spec=__spec__)

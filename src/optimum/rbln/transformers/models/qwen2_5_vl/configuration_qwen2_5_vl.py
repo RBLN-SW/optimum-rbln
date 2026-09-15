@@ -128,3 +128,10 @@ class RBLNQwen2_5_VisionTransformerPretrainedModelConfig(RBLNModelConfig):
             raise ValueError("'max_seq_len' must be specified.")
 
         self.max_seq_len = max_seq_len
+
+
+__all__ = [
+    "RBLNQwen2_5_VLForConditionalGenerationConfig",
+    "RBLNQwen2_5_VLModelConfig",
+    "RBLNQwen2_5_VisionTransformerPretrainedModelConfig",
+]

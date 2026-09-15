@@ -411,3 +411,8 @@ class RBLNUNet2DConditionModel(RBLNModel):
             **added_cond_kwargs,
             return_dict=return_dict,
         )
+
+
+__all__ = [
+    "RBLNUNet2DConditionModel",
+]
