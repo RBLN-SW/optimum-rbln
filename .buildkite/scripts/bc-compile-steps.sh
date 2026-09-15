@@ -6,6 +6,8 @@
 #
 # The tag comes from the build. BC_TAG names it on a build that has none, which
 # is how a release gets backfilled -- the workflow_dispatch bc_compile.yaml took.
+# Either way the steps take the release's own tree from the tag, so the artifacts
+# are what that release compiled, with the compiler it pinned.
 #
 # The UI filter passes every v*, so the release policy lives here: a pre-release
 # emits nothing and the build passes empty.
@@ -40,6 +42,10 @@ for suite in transformers diffusers llm; do
   # holds no NPU. CA22, as every release already under BC_BASE_PATH was built on.
   # setUpClass still creates a dummy runtime, which dlopens librbln-thunk.so, so
   # the pod needs the shared UMD the BC steps already borrow.
+  #
+  # The build's commit is the tag only when a tag triggered it, so take the tree
+  # from the tag explicitly -- everything but .buildkite, which old releases do
+  # not carry. Same split the GHA job had: workflow from dev, code from the tag.
   cat <<EOF
   - label: ":floppy_disk: compile $tag $suite${override:+ @ $override}"
     key: "bc-compile-${suite}"
@@ -59,6 +65,7 @@ for suite in transformers diffusers llm; do
       # Fail in seconds, not after a three-hour compile, if this pod's
       # /mnt/shared_data is not the volume holding the other releases.
       - "test -d $BC_BASE_PATH && mkdir -p $BC_BASE_PATH/$encoded"
+      - "git fetch -q origin refs/tags/$tag && git checkout -q FETCH_HEAD -- src tests pyproject.toml uv.lock .github/version.yaml"
       - "bash .buildkite/scripts/sync.sh"
       - "bash .buildkite/scripts/run-suite.sh $suite"
 EOF
