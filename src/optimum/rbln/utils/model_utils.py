@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import importlib
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 
 if TYPE_CHECKING:
@@ -23,7 +23,7 @@ if TYPE_CHECKING:
 RBLN_PREFIX = "RBLN"
 
 
-MODEL_MAPPING = {}
+MODEL_MAPPING: dict[str, type[Any]] = {}
 
 
 def convert_hf_to_rbln_model_name(hf_model_name: str):

@@ -13,19 +13,26 @@
 # limitations under the License.
 
 from dataclasses import dataclass
+from typing import Protocol
 
 import torch
 from transformers.modeling_outputs import ModelOutput
 
-from ..configuration_utils import RBLNModelConfig
+
+class _OutputHiddenStatesConfig(Protocol):
+    output_hidden_states: bool | None
+
+
+class _OutputAttentionsConfig(Protocol):
+    output_attentions: bool | None
 
 
 @dataclass
 class RBLNDecoderOnlyOutput(ModelOutput):
-    logits: torch.FloatTensor = None
-    generate_idx: torch.Tensor = None
-    padded_cache_lengths: int = None
-    hidden_states: tuple[torch.FloatTensor] = None
+    logits: torch.FloatTensor | None = None
+    generate_idx: torch.Tensor | None = None
+    padded_cache_lengths: int | None = None
+    hidden_states: tuple[torch.FloatTensor, ...] | None = None
 
 
 @dataclass
@@ -40,11 +47,13 @@ class RBLNGemma4ForCausalLMOutput(RBLNGemma3ForCausalLMOutput):
 
 @dataclass
 class RBLNSeq2SeqTSDecoderOutput(ModelOutput):
-    last_hidden_states: torch.FloatTensor = None
-    params: tuple[torch.FloatTensor] = None
+    last_hidden_states: torch.FloatTensor | None = None
+    params: tuple[torch.FloatTensor, ...] | None = None
 
 
-def _validate_output_hidden_states(output_hidden_states: bool | None, rbln_config: RBLNModelConfig):
+def _validate_output_hidden_states(
+    output_hidden_states: bool | None, rbln_config: _OutputHiddenStatesConfig
+) -> bool | None:
     output_hidden_states = (
         output_hidden_states if output_hidden_states is not None else rbln_config.output_hidden_states
     )
@@ -57,7 +66,7 @@ def _validate_output_hidden_states(output_hidden_states: bool | None, rbln_confi
     return output_hidden_states
 
 
-def _validate_output_attentions(output_attentions: bool | None, rbln_config: RBLNModelConfig):
+def _validate_output_attentions(output_attentions: bool | None, rbln_config: _OutputAttentionsConfig) -> bool | None:
     output_attentions = output_attentions if output_attentions is not None else rbln_config.output_attentions
     if output_attentions != rbln_config.output_attentions:
         raise ValueError(

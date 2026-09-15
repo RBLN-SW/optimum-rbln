@@ -14,14 +14,16 @@ class QLinear(nn.Module):
     ):
         super().__init__()
 
+        if weight is None:
+            raise ValueError("weight is required")
+        if weight_scale is None:
+            raise ValueError("weight_scale is required")
+
         self.weight = weight
         self.bias = bias
         self.weight_scale = weight_scale
         self.input_scale = input_scale
         self.dynamic = dynamic
-
-        if weight_scale is None:
-            raise ValueError("weight_scale is required")
 
     def dtype(self) -> torch.dtype:
         return self.weight.dtype

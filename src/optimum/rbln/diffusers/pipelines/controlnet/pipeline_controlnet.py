@@ -234,12 +234,12 @@ class RBLNStableDiffusionControlNetPipeline(RBLNDiffusionMixin, StableDiffusionC
     @remove_compile_time_kwargs
     def __call__(
         self,
-        prompt: str | list[str] = None,
-        image: PipelineImageInput = None,
+        prompt: str | list[str] | None = None,
+        image: PipelineImageInput | None = None,
         height: int | None = None,
         width: int | None = None,
         num_inference_steps: int = 50,
-        timesteps: list[int] = None,
+        timesteps: list[int] | None = None,
         guidance_scale: float = 7.5,
         negative_prompt: str | list[str] | None = None,
         num_images_per_prompt: int | None = 1,

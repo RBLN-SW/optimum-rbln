@@ -90,7 +90,7 @@ class CacheMeta(RBLNSerializableConfigProtocol):
         emitted but is only a field of the resizable full-attention cache.
         """
         layer_type = serialized.get("layer_type")
-        subclass = cls._concrete_subclasses().get(layer_type)
+        subclass = cls._concrete_subclasses().get(layer_type) if isinstance(layer_type, str) else None
         if subclass is None:
             raise ValueError(
                 f"Unknown cache `layer_type` {layer_type!r}. This artifact was likely compiled with a "
@@ -123,9 +123,10 @@ class KVCacheMeta(CacheMeta):
         return self.shape[2]
 
     @staticmethod
-    def _validate_num_blocks(num_blocks: int) -> None:
-        if num_blocks <= 0:
+    def _validate_num_blocks(num_blocks: int | None) -> int:
+        if num_blocks is None or num_blocks <= 0:
             raise ValueError("`num_blocks` must be greater than 0 when using KV cache.")
+        return num_blocks
 
 
 @dataclass
@@ -155,15 +156,17 @@ class FullAttentionKVCacheMeta(KVCacheMeta):
         rbln_config: "RBLNDecoderOnlyModelForCausalLMConfig",
     ) -> "FullAttentionKVCacheMeta":
         block_size = rbln_config.kvcache_block_size
+        if block_size is None:
+            raise ValueError("`kvcache_block_size` must be set to build the KV cache.")
         if rbln_config.is_auto_num_blocks:
             num_blocks, is_auto = rbln_config.num_full_blocks, True
         else:
             num_blocks, is_auto = rbln_config.kvcache_num_blocks, False
-        cls._validate_num_blocks(num_blocks)
+        validated_num_blocks = cls._validate_num_blocks(num_blocks)
         return cls(
             name=name,
             layer_index=layer_index,
-            shape=[num_blocks, num_key_value_heads, block_size, head_dim],
+            shape=[validated_num_blocks, num_key_value_heads, block_size, head_dim],
             dtype=dtype,
             is_auto=is_auto,
         )
@@ -186,12 +189,14 @@ class SlidingWindowAttentionKVCacheMeta(KVCacheMeta):
         rbln_config: "RBLNDecoderOnlyModelForCausalLMConfig",
     ) -> "SlidingWindowAttentionKVCacheMeta":
         block_size = rbln_config.sliding_window
+        if block_size is None:
+            raise ValueError("`sliding_window` must be set to build the sliding window KV cache.")
         num_blocks = rbln_config.batch_size
-        cls._validate_num_blocks(num_blocks)
+        validated_num_blocks = cls._validate_num_blocks(num_blocks)
         return cls(
             name=name,
             layer_index=layer_index,
-            shape=[num_blocks, num_key_value_heads, block_size, head_dim],
+            shape=[validated_num_blocks, num_key_value_heads, block_size, head_dim],
             dtype=dtype,
         )
 

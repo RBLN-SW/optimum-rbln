@@ -13,8 +13,8 @@
 # limitations under the License.
 import importlib
 import inspect
-from collections.abc import Callable
-from typing import TYPE_CHECKING, Any, Optional, Union
+from collections.abc import Callable, Sequence
+from typing import TYPE_CHECKING, Any, Optional
 
 import torch
 from transformers import AutoModelForImageTextToText, Gemma3ForConditionalGeneration, PretrainedConfig, PreTrainedModel
@@ -24,6 +24,7 @@ from transformers.models.gemma3.modeling_gemma3 import Gemma3TextScaledWordEmbed
 
 from ....configuration_utils import RBLNCompileConfig, RBLNModelConfig
 from ....modeling import RBLNModel
+from ....modeling_base import Preprocessor
 from ...modeling_outputs import RBLNDecoderOnlyOutput
 from ...utils.multimodal_batch_sort import RBLNImageIndexedBatchSortMixin, _placeholder_token_counts
 from ...utils.rbln_runtime_wrapper import LoopProcessor
@@ -34,7 +35,7 @@ from .gemma3_runtime_utils import RBLNGemma3RuntimeModel
 
 
 if TYPE_CHECKING:
-    from transformers import AutoFeatureExtractor, AutoProcessor, AutoTokenizer, Gemma3ForConditionalGeneration
+    from transformers import Gemma3ForConditionalGeneration
 
 
 class LoopVisionTower(LoopProcessor):
@@ -138,7 +139,7 @@ class RBLNGemma3ForConditionalGeneration(RBLNModel, RBLNImageIndexedBatchSortMix
     @classmethod
     def _update_rbln_config(
         cls,
-        preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"] | None,
+        preprocessors: Sequence[Preprocessor] | None,
         model: Optional["PreTrainedModel"] = None,
         model_config: Optional["PretrainedConfig"] = None,
         rbln_config: RBLNModelConfig | None = None,
@@ -267,10 +268,10 @@ class RBLNGemma3ForConditionalGeneration(RBLNModel, RBLNImageIndexedBatchSortMix
 
     def forward(
         self,
-        input_ids: torch.LongTensor = None,
-        attention_mask: torch.Tensor = None,
-        token_type_ids: torch.Tensor = None,
-        pixel_values: torch.FloatTensor = None,
+        input_ids: torch.LongTensor | None = None,
+        attention_mask: torch.Tensor | None = None,
+        token_type_ids: torch.Tensor | None = None,
+        pixel_values: torch.FloatTensor | None = None,
         cache_position: torch.LongTensor | None = None,
         inputs_embeds: torch.FloatTensor | None = None,
         generate_idx: torch.Tensor | None = None,
@@ -427,7 +428,7 @@ class RBLNGemma3ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
         cls,
         model: "PreTrainedModel",
         rbln_config: RBLNModelConfig,
-        preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"] | None,
+        preprocessors: Sequence[Preprocessor] | None,
     ):
         if rbln_config.image_prefill_chunk_size is None:
             rbln_config.image_prefill_chunk_size = model.config.mm_tokens_per_image

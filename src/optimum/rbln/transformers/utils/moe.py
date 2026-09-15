@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from typing import Any
+
 import torch
 from torch import Tensor, nn
 
@@ -46,12 +48,12 @@ def split_fused_experts(experts: nn.Module) -> tuple[Tensor, Tensor, Tensor]:
     # HF packs gate|up along dim 1 of gate_up_proj [E, 2I, H]; custom_moe_glu takes them separately, so the
     # halves are copied to be contiguous while down_proj [E, H, I] is shared. The fused tensor is released
     # afterwards: the HF experts module is not run once wrapped, and keeping it would double host memory.
-    gate_up = experts.gate_up_proj.detach()
+    gate_up = experts.get_parameter("gate_up_proj").detach()
     intermediate_dim = gate_up.shape[1] // 2
     gate = gate_up[:, :intermediate_dim, :].contiguous()
     up = gate_up[:, intermediate_dim:, :].contiguous()
-    experts.gate_up_proj = None
-    return gate, up, experts.down_proj.detach()
+    experts.register_parameter("gate_up_proj", None)
+    return gate, up, experts.get_parameter("down_proj").detach()
 
 
 def release_checkpoint_mmap_(model: nn.Module) -> nn.Module:
@@ -75,5 +77,5 @@ def release_checkpoint_mmap_(model: nn.Module) -> nn.Module:
 
 class RBLNMoeLoadMixin:
     @classmethod
-    def get_pytorch_model(cls, *args, **kwargs):
-        return release_checkpoint_mmap_(super().get_pytorch_model(*args, **kwargs))
+    def get_pytorch_model(cls, *args: Any, **kwargs: Any) -> Any:
+        return release_checkpoint_mmap_(super().get_pytorch_model(*args, **kwargs))  # type: ignore[misc]
