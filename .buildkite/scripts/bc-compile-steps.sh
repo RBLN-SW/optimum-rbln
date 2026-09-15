@@ -6,6 +6,10 @@
 #
 # The UI filter passes every v*, so the release policy lives here: a pre-release
 # emits nothing and the build passes empty.
+#
+# REBEL_COMPILER_VERSION on the build overrides the compiler the tag pinned, and
+# then names it in every label -- artifacts compiled with anything but the pin are
+# not what that release shipped.
 set -euo pipefail
 
 tag="${1:-${BUILDKITE_TAG:-}}"
@@ -20,6 +24,7 @@ fi
 
 # bc-steps.sh decodes these back.
 encoded="${tag//./_}"
+override="${REBEL_COMPILER_VERSION:-}"
 
 cat <<'EOF'
 notify:
@@ -31,7 +36,7 @@ for suite in transformers diffusers llm; do
   # The attached NPU fixes the target SoC: CA22, as every release already under
   # BC_BASE_PATH was compiled on.
   cat <<EOF
-  - label: ":floppy_disk: compile $tag $suite"
+  - label: ":floppy_disk: compile $tag $suite${override:+ @ $override}"
     key: "bc-compile-${suite}"
     image: "\${DEVTOOLS_DOCKER_IMAGE}"
     resources:
@@ -48,6 +53,9 @@ for suite in transformers diffusers llm; do
       SAVE_ARTIFACTS_PATH: "$BC_BASE_PATH/$encoded"
     timeout_in_minutes: 180
     command:
+      # Fail in seconds, not after a three-hour compile, if this pod's
+      # /mnt/shared_data is not the volume holding the other releases.
+      - "test -d $BC_BASE_PATH && mkdir -p $BC_BASE_PATH/$encoded"
       - "bash .buildkite/scripts/sync.sh"
       - "bash .buildkite/scripts/run-suite.sh $suite"
 EOF
