@@ -11,8 +11,11 @@ from __future__ import annotations
 import json
 import os
 import re
+import subprocess
 import sys
+import tempfile
 import urllib.request
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 
@@ -31,6 +34,36 @@ def pinned_version(path: str, pattern: str) -> str:
     except OSError:
         return "unknown"
     return match.group(1) if match else "unknown"
+
+
+def failed_tests() -> list[str]:
+    """The tests behind the failed jobs, from the junit files the suites upload.
+
+    Job states say which step went red; these say which model did. Best effort:
+    a build with no artifacts reports as it did before.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        try:
+            subprocess.run(
+                ["buildkite-agent", "artifact", "download", "junit-*.xml", tmp],
+                check=True,
+                capture_output=True,
+                timeout=120,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return []
+        names = set()
+        for path in Path(tmp).rglob("junit-*.xml"):
+            try:
+                root = ET.parse(path).getroot()
+            except ET.ParseError:
+                continue
+            for case in root.iter("testcase"):
+                if case.find("failure") is None and case.find("error") is None:
+                    continue
+                cls = (case.get("classname") or "").rsplit(".", 1)[-1]
+                names.add(f"{cls}.{case.get('name')}" if cls else case.get("name", "?"))
+    return sorted(names)
 
 
 def summarize(jobs: list[dict], prefix: str) -> tuple[str, int, int]:
@@ -105,7 +138,18 @@ def main() -> int:
         {"type": "section", "fields": [{"type": "mrkdwn", "text": "*BC*"}, {"type": "mrkdwn", "text": bc_status}]},
     ]
 
+    tests = failed_tests() if (pytest_failed or bc_failed) else []
+    if tests:
+        shown = ", ".join(f"`{t}`" for t in tests[:10])
+        if len(tests) > 10:
+            shown += f" +{len(tests) - 10} more"
+        blocks.append(
+            {"type": "section", "fields": [{"type": "mrkdwn", "text": "*Failed*"}, {"type": "mrkdwn", "text": shown}]}
+        )
+
     print(f"{title}\n  pytest: {pytest_status}\n  BC: {bc_status}")
+    for t in tests:
+        print(f"    {t}")
     payload = json.dumps({"channel": channel, "text": title, "blocks": blocks}).encode()
     req = urllib.request.Request(
         "https://slack.com/api/chat.postMessage",

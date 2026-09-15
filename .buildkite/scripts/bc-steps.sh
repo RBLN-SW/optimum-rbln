@@ -65,6 +65,7 @@ for tag in $tags; do
       OPTIMUM_RBLN_TEST_LEVEL: "full"
       REUSE_ARTIFACTS_PATH: "$BC_BASE_PATH/$encoded"
     timeout_in_minutes: 60
+    artifact_paths: "junit-*.xml"
     command:
       - "bash .buildkite/scripts/sync.sh"
       - "bash .buildkite/scripts/run-suite.sh $suite"
