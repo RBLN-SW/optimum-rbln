@@ -15,3 +15,4 @@ if [ ! -f src/optimum/rbln/__version__.py ]; then
   uv run --no-sync python -c "import importlib.metadata as m, pathlib; pathlib.Path('src/optimum/rbln/__version__.py').write_text('__version__ = version = %r\n' % m.version('optimum-rbln'))"
 fi
 bash .buildkite/scripts/install-rebel-compiler.sh
+bash .buildkite/scripts/rebel-compiler-override.sh
