@@ -18,8 +18,8 @@ if [ -n "${BUILDKITE_TAG:-}" ] || [ -z "${BC_TAG:-}" ]; then
   fi
 fi
 
-# bc-steps.sh decodes these back.
-encoded="${tag//./_}"
+# bc-steps.sh decodes these back. Slashes too, so a branch stays one directory.
+encoded="${tag//[.\/]/_}"
 override="${REBEL_COMPILER_VERSION:-}"
 
 cat <<'EOF'
@@ -51,7 +51,7 @@ for suite in transformers diffusers llm; do
     command:
       # mkdir -p alone would happily create it on the wrong volume.
       - "test -d $BC_BASE_PATH && mkdir -p $BC_BASE_PATH/$encoded"
-      - "git fetch -q origin refs/tags/$tag && git checkout -q --detach FETCH_HEAD"
+      - "git fetch -q origin $tag && git checkout -q --detach FETCH_HEAD"
       - "git checkout -q \$\$BUILDKITE_COMMIT -- .buildkite"
       - "bash .buildkite/scripts/sync.sh"
       - "bash .buildkite/scripts/run-suite.sh $suite"
