@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import math
-from typing import TYPE_CHECKING, Any, Optional, Union
+from typing import TYPE_CHECKING, Any, Union
 
 import torch
 import torch.nn as nn
@@ -73,10 +73,17 @@ class RBLNQwen3ASREncoder(RBLNModel):
 
     auto_model_class = None
 
-    def __post_init__(self, **kwargs: Any):
-        self.window_size = get_window_size(self.config)
-        self.chunk_len = self.config.n_window * 2
-        self.chunks_per_window = self.config.n_window_infer // self.chunk_len
+    @property
+    def chunk_len(self) -> int:
+        return self.config.n_window * 2
+
+    @property
+    def window_size(self) -> int:
+        return get_window_size(self.config)
+
+    @property
+    def chunks_per_window(self) -> int:
+        return self.config.n_window_infer // self.chunk_len
 
     @classmethod
     def _wrap_model_if_needed(cls, model: "PreTrainedModel", rbln_config: RBLNQwen3ASREncoderConfig):
@@ -86,8 +93,8 @@ class RBLNQwen3ASREncoder(RBLNModel):
     def _update_rbln_config(
         cls,
         preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"] | None = None,
-        model: Optional["PreTrainedModel"] = None,
-        model_config: Optional["PretrainedConfig"] = None,
+        model: PreTrainedModel | None = None,
+        model_config: PretrainedConfig | None = None,
         rbln_config: RBLNQwen3ASREncoderConfig | None = None,
     ) -> RBLNQwen3ASREncoderConfig:
         if rbln_config.num_windows is None:
@@ -263,8 +270,8 @@ class RBLNQwen3ASRForConditionalGeneration(RBLNQwen3ForCausalLM):
     def _update_rbln_config(
         cls,
         preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"] | None = None,
-        model: Optional["PreTrainedModel"] = None,
-        model_config: Optional["PretrainedConfig"] = None,
+        model: PreTrainedModel | None = None,
+        model_config: PretrainedConfig | None = None,
         rbln_config: RBLNQwen3ASRForConditionalGenerationConfig | None = None,
     ) -> RBLNQwen3ASRForConditionalGenerationConfig:
         return super()._update_rbln_config(
