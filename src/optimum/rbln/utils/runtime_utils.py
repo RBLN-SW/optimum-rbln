@@ -16,7 +16,7 @@ import inspect
 import re
 import threading
 from functools import lru_cache
-from typing import Any
+from typing import Any, ClassVar
 
 import rebel
 import torch
@@ -179,7 +179,7 @@ def tp_and_devices_are_ok(
 
 
 class RBLNPytorchRuntime:
-    mandatory_members = []
+    mandatory_members: ClassVar[list[str]] = []
 
     def __init__(self, runtime: rebel.Runtime, **kwargs) -> None:
         self.runtime = runtime
@@ -192,12 +192,13 @@ class RBLNPytorchRuntime:
     def __call__(self, *args: Any, **kwds: Any) -> Any:
         return self.forward(*args, **kwds)
 
-    def forward(self, *args: list["torch.Tensor"], **kwargs: "torch.Tensor"):
+    def forward(self, *args: Any, **kwargs: Any) -> Any:
         # filtering useless args or kwarg such as None.
-        args = list(filter(lambda arg: isinstance(arg, torch.Tensor), args))
-        kwargs = dict(filter(lambda kwarg: isinstance(kwarg[1], torch.Tensor) or kwarg[0] == "out", kwargs.items()))
-        output = self.runtime(*args, **kwargs)
-        return output
+        tensor_args = [arg for arg in args if isinstance(arg, torch.Tensor)]
+        tensor_kwargs = {
+            key: value for key, value in kwargs.items() if isinstance(value, torch.Tensor) or key == "out"
+        }
+        return self.runtime(*tensor_args, **tensor_kwargs)
 
     def __repr__(self) -> str:
         return repr(self.runtime)

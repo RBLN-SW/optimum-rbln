@@ -13,9 +13,9 @@
 # limitations under the License.
 
 import inspect
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Union
+from typing import Any
 
 import rebel
 import torch
@@ -26,6 +26,7 @@ from transformers.modeling_outputs import BaseModelOutputWithPast
 
 from ....configuration_utils import RBLNCompileConfig
 from ....modeling import RBLNModel
+from ....modeling_base import Preprocessor
 from ....utils.logging import get_logger
 from ....utils.runtime_utils import npu_is_cr13_or_later
 from ...cache_utils import FullAttentionKVCacheMeta, SlidingWindowAttentionKVCacheMeta
@@ -44,9 +45,6 @@ from .generation_decoderonly import RBLNDecoderOnlyGenerationMixin
 
 
 logger = get_logger()
-
-if TYPE_CHECKING:
-    from transformers import AutoFeatureExtractor, AutoProcessor, AutoTokenizer
 
 
 class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
@@ -346,7 +344,7 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
         return model
 
     @classmethod
-    def use_query_position(cls, use_local_attention: bool, is_prefill: bool = True, logits_to_keep: int = None):
+    def use_query_position(cls, use_local_attention: bool, is_prefill: bool = True, logits_to_keep: int | None = None):
         return is_prefill and (use_local_attention or logits_to_keep == 1)
 
     @classmethod
@@ -551,7 +549,7 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
     @classmethod
     def _update_rbln_config(
         cls,
-        preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"] | None = None,
+        preprocessors: Sequence[Preprocessor] | None = None,
         model: PreTrainedModel | None = None,
         model_config: PretrainedConfig | None = None,
         rbln_config: RBLNDecoderOnlyModelForCausalLMConfig | None = None,

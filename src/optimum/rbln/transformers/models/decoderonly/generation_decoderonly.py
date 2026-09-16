@@ -37,7 +37,7 @@ def _expand_batch_perm_idx(perm_idx: torch.Tensor, num_rows: int) -> torch.Tenso
 class RBLNDecoderOnlyGenerationMixin(GenerationMixin):
     _supports_cache_class = False  # Needed for GenerationMixin
     _is_stateful = False  # Needed for GenerationMixin
-    _batch_sortable_kwargs = ("attention_mask", "inputs_embeds", "token_type_ids", "lora_int_ids")
+    _batch_sortable_kwargs: tuple[str, ...] = ("attention_mask", "inputs_embeds", "token_type_ids", "lora_int_ids")
 
     def _reorder_cache(self, past_key_values, beam_idx):
         raise NotImplementedError

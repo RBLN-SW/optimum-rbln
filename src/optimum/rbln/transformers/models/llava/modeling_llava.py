@@ -14,8 +14,8 @@
 
 import importlib
 import inspect
-from collections.abc import Callable
-from typing import TYPE_CHECKING, Any, Optional, Union
+from collections.abc import Callable, Sequence
+from typing import TYPE_CHECKING, Any, Optional
 
 import torch
 from transformers import AutoModelForImageTextToText, LlavaForConditionalGeneration, PretrainedConfig, PreTrainedModel
@@ -25,6 +25,7 @@ from transformers.models.llava.modeling_llava import LlavaCausalLMOutputWithPast
 
 from ....configuration_utils import RBLNCompileConfig, RBLNModelConfig
 from ....modeling import RBLNModel
+from ....modeling_base import Preprocessor
 from ....utils.logging import get_logger
 from ...modeling_outputs import RBLNDecoderOnlyOutput
 from ...utils.multimodal_batch_sort import (
@@ -39,7 +40,7 @@ from ...utils.rbln_runtime_wrapper import LoopProcessor
 logger = get_logger(__name__)
 
 if TYPE_CHECKING:
-    from transformers import AutoFeatureExtractor, AutoProcessor, AutoTokenizer, PretrainedConfig
+    from transformers import PretrainedConfig
 
 
 class LoopVisionTower(LoopProcessor):
@@ -249,7 +250,7 @@ class RBLNLlavaForConditionalGeneration(RBLNModel, RBLNImageIndexedBatchSortMixi
     @classmethod
     def _update_rbln_config(
         cls,
-        preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"] | None,
+        preprocessors: Sequence[Preprocessor] | None,
         model: Optional["PreTrainedModel"] = None,
         model_config: Optional["PretrainedConfig"] = None,
         rbln_config: RBLNModelConfig | None = None,

@@ -31,13 +31,13 @@ class RBLNWhisperForConditionalGenerationConfig(RBLNModelConfig):
 
     def __init__(
         self,
-        batch_size: int = None,
-        token_timestamps: bool = None,
-        use_attention_mask: bool = None,
-        enc_max_seq_len: int = None,
-        dec_max_seq_len: int = None,
-        kvcache_num_blocks: int = None,
-        kvcache_block_size: int = None,
+        batch_size: int | None = None,
+        token_timestamps: bool | None = None,
+        use_attention_mask: bool | None = None,
+        enc_max_seq_len: int | None = None,
+        dec_max_seq_len: int | None = None,
+        kvcache_num_blocks: int | None = None,
+        kvcache_block_size: int | None = None,
         **kwargs: Any,
     ):
         """

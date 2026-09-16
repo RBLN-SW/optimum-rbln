@@ -12,9 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from typing import TYPE_CHECKING
+
 import torch
 
 from ..models.decoderonly.generation_decoderonly import RBLNDecoderOnlyGenerationMixin
+
+
+if TYPE_CHECKING:
+    from transformers import PretrainedConfig
 
 
 _UNMAPPABLE_BATCH_SORT = (
@@ -81,6 +87,17 @@ def _matched_token_counts(
 
 
 class RBLNBatchSortGuardMixin:
+    config: "PretrainedConfig"
+
+    if TYPE_CHECKING:
+
+        @property
+        def _batch_sort_enabled(self) -> bool: ...
+
+        def _sort_generation_inputs(
+            self, input_ids: torch.LongTensor | None, kwargs: dict
+        ) -> tuple[torch.LongTensor | None, torch.Tensor | None]: ...
+
     def _require_sorted_batch_inputs(self, batch_input: torch.Tensor | None, inputs_sorted: bool) -> None:
         # an unsorted direct multi-batch call would silently mis-lay the KV cache
         if inputs_sorted or not self._batch_sort_enabled:
