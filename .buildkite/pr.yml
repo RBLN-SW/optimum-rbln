@@ -1,0 +1,84 @@
+# Entry pipeline for PR builds. Gates run first; the test pipelines are uploaded
+# only after they pass.
+env:
+  # Where every release's compiled artifacts live, written by the tag build
+  # (.buildkite/bc-compile.yml).
+  BC_BASE_PATH: "${OPTIMUM_BC_BASE_PATH}"
+  UV_CACHE_DIR: "${UV_CACHE_PATH}"
+  UV_LINK_MODE: "symlink"
+  UV_INDEX_STRATEGY: "unsafe-best-match"
+
+# Both upload jobs read only .buildkite; the suites they emit check out in full.
+_upload: &upload
+  checkout:
+    sparse:
+      paths:
+        - .buildkite
+
+steps:
+  - label: ":closed_lock_with_key: team-member gate"
+    image: "${DEVTOOLS_DOCKER_IMAGE}"
+    secrets:
+      - GIT_PAT
+    command:
+      - "bash .buildkite/scripts/gate-team-member.sh"
+
+  - label: ":mag: code quality"
+    notify:
+      - github_commit_status:
+          context: "[OB] code quality"
+    image: "${DEVTOOLS_DOCKER_IMAGE}"
+    command:
+      - "uv sync --locked --python 3.12 --group quality --no-install-project"
+      - "uv run --no-sync ruff format --check ."
+      - "uv run --no-sync ruff check ."
+      - "uv run --no-sync mypy"
+      - "uv run --no-sync python scripts/check_inits.py"
+
+  # Same check as .github/workflows/test-docstrings.yml.
+  - label: ":page_facing_up: docstrings"
+    notify:
+      - github_commit_status:
+          context: "[OB] docstrings"
+    image: "${DEVTOOLS_DOCKER_IMAGE}"
+    command:
+      - "bash .buildkite/scripts/check-docstrings.sh"
+
+  # All gates must pass before the NPU pipeline is even uploaded.
+  - wait: ~
+
+  # A [pytest-full] commit (the compiler-update bot's PRs) runs every suite at the
+  # full level. Suites a change cannot affect are skipped with the [skip-*]
+  # directives run-suite.sh reads, not by path.
+  # Sibling jobs: two uploads from one job make the second batch a barrier for
+  # the first, so the pytest suites would wait on BC.
+  - label: ":sparkles: upload pytest"
+    <<: *upload
+    command: |
+      if [[ "$$BUILDKITE_MESSAGE" == *"[pytest-full]"* ]]; then
+        echo "--- :mag: [pytest-full] in commit message"
+        export OPTIMUM_RBLN_TEST_LEVEL=full
+        export HF_USER_ID=Rebellions
+      fi
+      buildkite-agent pipeline upload .buildkite/pipelines/pytest/pipeline.yml
+
+  - label: ":sparkles: upload BC"
+    <<: *upload
+    command: |
+      bash .buildkite/scripts/bc-steps.sh --latest | buildkite-agent pipeline upload
+
+  - wait: ~
+    continue_on_failure: true
+
+  - label: ":slack: report"
+    if: build.message =~ /\[slack-report\]/
+    soft_fail: true
+    allow_dependency_failure: true
+    image: "${DEVTOOLS_DOCKER_IMAGE}"
+    env:
+      SLACK_TITLE: "Optimum-RBLN PR Test Results"
+    secrets:
+      OBEDIENTS_API_TOKEN: BUILDKITE_API_TOKEN
+      SLACK_BOT_TOKEN: SLACK_OAUTH_TOKEN
+    command:
+      - "python3 .buildkite/scripts/slack-report.py"

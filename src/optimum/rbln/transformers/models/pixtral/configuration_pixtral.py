@@ -20,7 +20,7 @@ from ....configuration_utils import RBLNModelConfig
 class RBLNPixtralVisionModelConfig(RBLNModelConfig):
     def __init__(
         self,
-        max_image_size: tuple = None,
+        max_image_size: tuple | None = None,
         batch_size: int | None = None,
         output_hidden_states: bool | None = None,
         **kwargs: Any,
@@ -41,3 +41,8 @@ class RBLNPixtralVisionModelConfig(RBLNModelConfig):
 
         self.max_image_size = max_image_size
         self.output_hidden_states = output_hidden_states
+
+
+__all__ = [
+    "RBLNPixtralVisionModelConfig",
+]

@@ -87,3 +87,9 @@ class RBLNIdefics3ForConditionalGenerationConfig(RBLNModelConfig):
             submodule_config=vision_model, batch_size=1, force_kwargs=True
         )
         self.text_model = self.initialize_submodule_config(submodule_config=text_model, batch_size=batch_size)
+
+
+__all__ = [
+    "RBLNIdefics3ForConditionalGenerationConfig",
+    "RBLNIdefics3VisionTransformerConfig",
+]

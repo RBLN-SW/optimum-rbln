@@ -48,3 +48,9 @@ class RBLNGPT2ModelConfig(RBLNDecoderOnlyModelConfig):
     )
     ```
     """
+
+
+__all__ = [
+    "RBLNGPT2LMHeadModelConfig",
+    "RBLNGPT2ModelConfig",
+]

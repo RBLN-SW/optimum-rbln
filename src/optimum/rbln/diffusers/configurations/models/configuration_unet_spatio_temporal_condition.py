@@ -57,3 +57,8 @@ class RBLNUNetSpatioTemporalConditionModelConfig(RBLNModelConfig):
     @property
     def batch_size_is_specified(self):
         return self._batch_size_is_specified
+
+
+__all__ = [
+    "RBLNUNetSpatioTemporalConditionModelConfig",
+]

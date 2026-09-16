@@ -1,0 +1,227 @@
+# optimum-rbln pytest suites, uploaded by .buildkite/pr.yml and nightly.yml.
+#
+# The uploader picks the test level: default for an ordinary PR, full for a
+# [pytest-full] commit (and later for the nightly). Both values are baked in at
+# upload time, so a step's `if` below is already a constant when Buildkite
+# evaluates it -- build.env() cannot see this env block.
+
+notify:
+  - github_commit_status:
+      context: "[OB] Optimum-RBLN pytest"
+
+env:
+  UV_CACHE_DIR: "${UV_CACHE_PATH}"
+  UV_LINK_MODE: "symlink"
+  UV_INDEX_STRATEGY: "unsafe-best-match"
+  OPTIMUM_RBLN_TEST_LEVEL: "${OPTIMUM_RBLN_TEST_LEVEL:-default}"
+  # The hub tests push to a private repo under this namespace and skip themselves
+  # while it is unset (tests/test_base.py require_hf_user_id), which is how they
+  # stay out of an ordinary PR: only a full build's uploader exports it.
+  HF_USER_ID: "${HF_USER_ID:-}"
+
+# Both guards are read at upload time, so a step they turn down is never created
+# and holds no NPU. GHA spawned the job either way and skipped inside it.
+_no_transformers: &no_transformers
+  if: build.message !~ /\[skip-transformers\]/
+
+_no_diffusers: &no_diffusers
+  if: build.message !~ /\[skip-diffusers\]/
+
+_no_llm: &no_llm
+  if: build.message !~ /\[skip-llms\]/
+
+_no_cli: &no_cli
+  if: build.message !~ /\[skip-cli\]/
+
+_cli_full: &cli_full
+  if: "'${OPTIMUM_RBLN_TEST_LEVEL:-default}' == 'full' && build.message !~ /\\[skip-cli\\]/"
+
+_secrets: &secrets
+  UV_INDEX_REBELLIONS_USERNAME: REBEL_SW_DEV_USERNAME
+  UV_INDEX_REBELLIONS_PASSWORD: REBEL_SW_DEV_PASSWORD
+  HF_TOKEN: HF_TOKEN
+  HF_HOME: HF_HOME
+  # HF_TOKEN reads gated models; only this one may create a repo under
+  # Rebellions, which is what test_push_to_hub does.
+  HF_AUTH_TOKEN: MODEL_HUB_ACCESS
+
+_sync: &sync "bash .buildkite/scripts/sync.sh"
+
+_npu: &npu
+  npu:
+    count: 1
+    product: "RBLN-CA25"
+
+steps:
+  - label: ":pytest: unit-cpu"
+    image: "${DEVTOOLS_DOCKER_IMAGE}"
+    secrets: *secrets
+    timeout_in_minutes: 60
+    artifact_paths: "junit-*.xml"
+    command:
+      - *sync
+      - "bash .buildkite/scripts/run-suite.sh unit-cpu"
+
+  - label: ":pytest: config"
+    image: "${DEVTOOLS_DOCKER_IMAGE}"
+    resources: *npu
+    secrets: *secrets
+    timeout_in_minutes: 60
+    artifact_paths: "junit-*.xml"
+    command:
+      - *sync
+      - "bash .buildkite/scripts/run-suite.sh config"
+
+  - label: ":pytest: cli-basic"
+    <<: *no_cli
+    image: "${DEVTOOLS_DOCKER_IMAGE}"
+    resources: *npu
+    secrets: *secrets
+    timeout_in_minutes: 60
+    artifact_paths: "junit-*.xml"
+    command:
+      - *sync
+      - "bash .buildkite/scripts/run-suite.sh cli-basic"
+
+  - label: ":pytest: cli-argument-parsing"
+    <<: *cli_full
+    image: "${DEVTOOLS_DOCKER_IMAGE}"
+    resources: *npu
+    secrets: *secrets
+    timeout_in_minutes: 60
+    artifact_paths: "junit-*.xml"
+    command:
+      - *sync
+      - "bash .buildkite/scripts/run-suite.sh cli-argument-parsing"
+
+  - label: ":pytest: cli-error-handling"
+    <<: *cli_full
+    image: "${DEVTOOLS_DOCKER_IMAGE}"
+    resources: *npu
+    secrets: *secrets
+    timeout_in_minutes: 60
+    artifact_paths: "junit-*.xml"
+    command:
+      - *sync
+      - "bash .buildkite/scripts/run-suite.sh cli-error-handling"
+
+  - label: ":pytest: transformers 1/3"
+    <<: *no_transformers
+    image: "${DEVTOOLS_DOCKER_IMAGE}"
+    resources: *npu
+    secrets: *secrets
+    timeout_in_minutes: 60
+    artifact_paths: "junit-*.xml"
+    command:
+      - *sync
+      - "bash .buildkite/scripts/run-suite.sh transformers 1/3"
+
+  - label: ":pytest: transformers 2/3"
+    <<: *no_transformers
+    image: "${DEVTOOLS_DOCKER_IMAGE}"
+    resources: *npu
+    secrets: *secrets
+    timeout_in_minutes: 60
+    artifact_paths: "junit-*.xml"
+    command:
+      - *sync
+      - "bash .buildkite/scripts/run-suite.sh transformers 2/3"
+
+  - label: ":pytest: transformers 3/3"
+    <<: *no_transformers
+    image: "${DEVTOOLS_DOCKER_IMAGE}"
+    resources: *npu
+    secrets: *secrets
+    timeout_in_minutes: 60
+    artifact_paths: "junit-*.xml"
+    command:
+      - *sync
+      - "bash .buildkite/scripts/run-suite.sh transformers 3/3"
+
+  - label: ":pytest: diffusers 1/2"
+    <<: *no_diffusers
+    image: "${DEVTOOLS_DOCKER_IMAGE}"
+    resources: *npu
+    secrets: *secrets
+    timeout_in_minutes: 60
+    artifact_paths: "junit-*.xml"
+    command:
+      - *sync
+      - "bash .buildkite/scripts/run-suite.sh diffusers 1/2"
+
+  - label: ":pytest: diffusers 2/2"
+    <<: *no_diffusers
+    image: "${DEVTOOLS_DOCKER_IMAGE}"
+    resources: *npu
+    secrets: *secrets
+    timeout_in_minutes: 60
+    artifact_paths: "junit-*.xml"
+    command:
+      - *sync
+      - "bash .buildkite/scripts/run-suite.sh diffusers 2/2"
+
+  - label: ":pytest: llm 1/6"
+    <<: *no_llm
+    image: "${DEVTOOLS_DOCKER_IMAGE}"
+    resources: *npu
+    secrets: *secrets
+    timeout_in_minutes: 60
+    artifact_paths: "junit-*.xml"
+    command:
+      - *sync
+      - "bash .buildkite/scripts/run-suite.sh llm 1/6"
+
+  - label: ":pytest: llm 2/6"
+    <<: *no_llm
+    image: "${DEVTOOLS_DOCKER_IMAGE}"
+    resources: *npu
+    secrets: *secrets
+    timeout_in_minutes: 60
+    artifact_paths: "junit-*.xml"
+    command:
+      - *sync
+      - "bash .buildkite/scripts/run-suite.sh llm 2/6"
+
+  - label: ":pytest: llm 3/6"
+    <<: *no_llm
+    image: "${DEVTOOLS_DOCKER_IMAGE}"
+    resources: *npu
+    secrets: *secrets
+    timeout_in_minutes: 60
+    artifact_paths: "junit-*.xml"
+    command:
+      - *sync
+      - "bash .buildkite/scripts/run-suite.sh llm 3/6"
+
+  - label: ":pytest: llm 4/6"
+    <<: *no_llm
+    image: "${DEVTOOLS_DOCKER_IMAGE}"
+    resources: *npu
+    secrets: *secrets
+    timeout_in_minutes: 60
+    artifact_paths: "junit-*.xml"
+    command:
+      - *sync
+      - "bash .buildkite/scripts/run-suite.sh llm 4/6"
+
+  - label: ":pytest: llm 5/6"
+    <<: *no_llm
+    image: "${DEVTOOLS_DOCKER_IMAGE}"
+    resources: *npu
+    secrets: *secrets
+    timeout_in_minutes: 60
+    artifact_paths: "junit-*.xml"
+    command:
+      - *sync
+      - "bash .buildkite/scripts/run-suite.sh llm 5/6"
+
+  - label: ":pytest: llm 6/6"
+    <<: *no_llm
+    image: "${DEVTOOLS_DOCKER_IMAGE}"
+    resources: *npu
+    secrets: *secrets
+    timeout_in_minutes: 60
+    artifact_paths: "junit-*.xml"
+    command:
+      - *sync
+      - "bash .buildkite/scripts/run-suite.sh llm 6/6"

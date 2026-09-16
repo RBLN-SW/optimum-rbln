@@ -143,3 +143,8 @@ class RBLNMidmLMHeadModel(RBLNDecoderOnlyModelForCausalLM):
         if isinstance(val, Callable) and "self" in set(inspect.signature(val).parameters):
             return redirect(val)
         return val
+
+
+__all__ = [
+    "RBLNMidmLMHeadModel",
+]

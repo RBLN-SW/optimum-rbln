@@ -48,3 +48,9 @@ class RBLNPhiModelConfig(RBLNDecoderOnlyModelConfig):
 
     This class is an alias of RBLNDecoderOnlyModelConfig.
     """
+
+
+__all__ = [
+    "RBLNPhiForCausalLMConfig",
+    "RBLNPhiModelConfig",
+]

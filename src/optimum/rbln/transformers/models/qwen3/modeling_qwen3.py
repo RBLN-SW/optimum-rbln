@@ -111,3 +111,9 @@ class RBLNQwen3Model(RBLNDecoderOnlyModel):
 
     _decoder_wrapper_cls = Qwen3Wrapper
     _use_rotary_emb = True
+
+
+__all__ = [
+    "RBLNQwen3ForCausalLM",
+    "RBLNQwen3Model",
+]

@@ -31,13 +31,13 @@ class RBLNWhisperForConditionalGenerationConfig(RBLNModelConfig):
 
     def __init__(
         self,
-        batch_size: int = None,
-        token_timestamps: bool = None,
-        use_attention_mask: bool = None,
-        enc_max_seq_len: int = None,
-        dec_max_seq_len: int = None,
-        kvcache_num_blocks: int = None,
-        kvcache_block_size: int = None,
+        batch_size: int | None = None,
+        token_timestamps: bool | None = None,
+        use_attention_mask: bool | None = None,
+        enc_max_seq_len: int | None = None,
+        dec_max_seq_len: int | None = None,
+        kvcache_num_blocks: int | None = None,
+        kvcache_block_size: int | None = None,
         **kwargs: Any,
     ):
         """
@@ -70,3 +70,8 @@ class RBLNWhisperForConditionalGenerationConfig(RBLNModelConfig):
         self.use_attention_mask = self.use_attention_mask or False
         self.kvcache_num_blocks = kvcache_num_blocks
         self.kvcache_block_size = kvcache_block_size
+
+
+__all__ = [
+    "RBLNWhisperForConditionalGenerationConfig",
+]
