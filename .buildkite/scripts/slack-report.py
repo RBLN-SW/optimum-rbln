@@ -36,11 +36,12 @@ def pinned_version(path: str, pattern: str) -> str:
     return match.group(1) if match else "unknown"
 
 
-def failed_tests() -> list[str]:
-    """The tests behind the failed jobs, from the junit files the suites upload.
+def failed_tests() -> dict[str, list[str]]:
+    """The tests behind the failed jobs, by the step that ran them.
 
-    Job states say which step went red; these say which model did. Best effort:
-    a build with no artifacts reports as it did before.
+    Job states say which step went red; these say which model did, and which of
+    six llm shards to rerun. Best effort: a build with no artifacts reports as it
+    did before.
     """
     with tempfile.TemporaryDirectory() as tmp:
         try:
@@ -52,18 +53,22 @@ def failed_tests() -> list[str]:
             )
         except (OSError, subprocess.SubprocessError):
             return []
-        names = set()
+        groups: dict[str, set[str]] = {}
         for path in Path(tmp).rglob("junit-*.xml"):
             try:
                 root = ET.parse(path).getroot()
             except ET.ParseError:
                 continue
-            for case in root.iter("testcase"):
-                if case.find("failure") is None and case.find("error") is None:
-                    continue
-                cls = (case.get("classname") or "").rsplit(".", 1)[-1]
-                names.add(f"{cls}.{case.get('name')}" if cls else case.get("name", "?"))
-    return sorted(names)
+            for suite in root.iter("testsuite"):
+                # run-suite.sh sets junit_suite_name to the step label.
+                step = re.sub(r"^:[\w+-]+:\s*", "", suite.get("name") or path.stem)
+                for case in suite.iter("testcase"):
+                    if case.find("failure") is None and case.find("error") is None:
+                        continue
+                    cls = (case.get("classname") or "").rsplit(".", 1)[-1]
+                    name = f"{cls}.{case.get('name')}" if cls else case.get("name", "?")
+                    groups.setdefault(step, set()).add(name)
+    return {step: sorted(names) for step, names in sorted(groups.items())}
 
 
 def summarize(jobs: list[dict], prefix: str) -> tuple[str, int, int]:
@@ -151,8 +156,10 @@ def main() -> int:
     tests = failed_tests() if (pytest_failed or bc_failed) else []
 
     print(f"{title}\n  pytest: {pytest_status}\n  BC: {bc_status}")
-    for t in tests:
-        print(f"    {t}")
+    for step, names in tests.items():
+        print(f"    {step}")
+        for name in names:
+            print(f"      {name}")
     # Slack answers 200 even when it refuses the message.
     body = slack_post(slack_token, {"channel": channel, "text": title, "blocks": blocks})
     if not body.get("ok"):
@@ -160,14 +167,23 @@ def main() -> int:
         return 1
 
     if tests:
-        shown, rest = tests[:100], max(0, len(tests) - 100)
-        listing = "\n".join(shown) + (f"\n... and {rest} more" if rest else "")
+        total = sum(len(names) for names in tests.values())
+        lines, shown = [], 0
+        for step, names in tests.items():
+            if shown >= 100:
+                break
+            lines.append(step)
+            for name in names[: 100 - shown]:
+                lines.append(f"  {name}")
+            shown += min(len(names), 100 - shown)
+        if shown < total:
+            lines.append(f"... and {total - shown} more")
         reply = slack_post(
             slack_token,
             {
                 "channel": channel,
                 "thread_ts": body["ts"],
-                "text": f"*{len(tests)} failed*\n```{listing}```",
+                "text": f"*{total} failed*\n```" + "\n".join(lines) + "```",
             },
         )
         if not reply.get("ok"):

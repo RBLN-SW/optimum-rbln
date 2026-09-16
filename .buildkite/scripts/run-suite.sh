@@ -18,21 +18,23 @@ elif [ -n "${SAVE_ARTIFACTS_PATH:-}" ]; then
 fi
 
 # Named after the step, so the report can tell two BC releases apart after it
-# downloads every junit file into one directory.
-junit="junit-$(printf '%s' "${BUILDKITE_LABEL:-$suite}" | tr -cs '[:alnum:]' '-').xml"
+# downloads every junit file into one directory, and labelled inside so it can
+# group what failed by the step that ran it.
+label="${BUILDKITE_LABEL:-$suite}"
+report=(--junitxml "junit-$(printf '%s' "$label" | tr -cs '[:alnum:]' '-').xml" -o junit_suite_name="$label")
 
 echo "--- :pytest: ${suite}${shard:+ (shard ${shard})}"
 case "$suite" in
   unit-cpu)
-    uv run --no-sync pytest tests/unit/cpu --junitxml "$junit" -vv --durations 0 ;;
+    uv run --no-sync pytest tests/unit/cpu "${report[@]}" -vv --durations 0 ;;
   config)
-    uv run --no-sync pytest -n 1 tests/test_config.py --junitxml "$junit" -vv --durations 0 "${bc[@]}" ;;
+    uv run --no-sync pytest -n 1 tests/test_config.py "${report[@]}" -vv --durations 0 "${bc[@]}" ;;
   transformers)
-    uv run --no-sync pytest -n 1 tests/test_transformers.py --junitxml "$junit" ${shard:+--shard "$shard"} -vv --durations 0 "${bc[@]}" ;;
+    uv run --no-sync pytest -n 1 tests/test_transformers.py "${report[@]}" ${shard:+--shard "$shard"} -vv --durations 0 "${bc[@]}" ;;
   diffusers)
-    uv run --no-sync pytest -n 1 tests/test_diffusers.py --junitxml "$junit" ${shard:+--shard "$shard"} -vv --durations 0 "${bc[@]}" ;;
+    uv run --no-sync pytest -n 1 tests/test_diffusers.py "${report[@]}" ${shard:+--shard "$shard"} -vv --durations 0 "${bc[@]}" ;;
   llm)
-    uv run --no-sync pytest -n 1 tests/test_llm.py --junitxml "$junit" ${shard:+--shard "$shard"} -vv --durations 0 "${bc[@]}" ;;
+    uv run --no-sync pytest -n 1 tests/test_llm.py "${report[@]}" ${shard:+--shard "$shard"} -vv --durations 0 "${bc[@]}" ;;
   cli-basic)
     uv run --no-sync .github/scripts/test_cli.py basic ;;
   cli-argument-parsing)
