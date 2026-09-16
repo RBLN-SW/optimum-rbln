@@ -49,7 +49,7 @@ class RBLNCosmosVideoToWorldPipeline(RBLNDiffusionMixin, CosmosVideoToWorldPipel
         transformer: RBLNCosmosTransformer3DModel,
         vae: RBLNAutoencoderKLCosmos,
         scheduler: EDMEulerScheduler,
-        safety_checker: RBLNCosmosSafetyChecker = None,
+        safety_checker: RBLNCosmosSafetyChecker | None = None,
     ):
         if safety_checker is None:
             safety_checker = RBLNCosmosSafetyChecker()
