@@ -933,9 +933,6 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
             if submodule not in config_file:
                 raise ValueError(f"Submodule {submodule} not found in rbln_config.json.")
             submodule_config = config_file[submodule]
-            if submodule_config is None:
-                # A submodule saved as null was skipped at export (never compiled); keep it absent.
-                continue
             submodule_config.update(rbln_runtime_kwargs)
 
             update_dict = rbln_submodule_kwargs.pop(submodule, {})

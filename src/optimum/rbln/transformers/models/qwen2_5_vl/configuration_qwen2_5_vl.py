@@ -28,15 +28,13 @@ class RBLNQwen2_5_VLForConditionalGenerationConfig(RBLNDecoderOnlyModelForCausal
     """
 
     submodules = ["visual"]
-    # the shrunk instance-level `submodules` is reconstructed from _compile_visual_module
-    subclass_non_save_attributes = ["_load_visual_runtime", "submodules"]
+    subclass_non_save_attributes = ["_load_visual_runtime"]
 
     def __init__(
         self,
         use_inputs_embeds: bool = True,
         visual: RBLNModelConfig | None = None,
         _load_visual_runtime: bool = True,
-        _compile_visual_module: bool = True,
         **kwargs: Any,
     ):
         """
@@ -48,10 +46,6 @@ class RBLNQwen2_5_VLForConditionalGenerationConfig(RBLNDecoderOnlyModelForCausal
                 the visual encoder's compiled model (.rbln) and torch artifacts entirely. When
                 ``False``, calls with ``pixel_values`` / ``pixel_values_videos`` raise. Defaults
                 to ``True``.
-            _compile_visual_module (bool): Whether to compile the visual encoder at export.
-                Unlike ``_load_visual_runtime`` this is saved with the artifact, so a compile
-                with ``False`` produces a text-only artifact (no visual graph on disk) that
-                skips the visual encoder on every load. Defaults to ``True``.
             kwargs: Additional arguments passed to the parent `RBLNDecoderOnlyModelForCausalLMConfig`.
 
         Raises:
@@ -66,14 +60,7 @@ class RBLNQwen2_5_VLForConditionalGenerationConfig(RBLNDecoderOnlyModelForCausal
                 "RBLNQwen2_5_VLForConditionalGenerationConfig does not allow `use_inputs_embeds` to be set to False, "
                 "as RBLNQwen2_5_VLForConditionalGeneration accepts only `inputs_embeds` as input."
             )
-        self._compile_visual_module = _compile_visual_module
-        # A skipped visual module has no config to validate (and nothing is saved for it) --
-        # drop it from this instance's submodule list so freeze/serialization pass over it.
-        if _compile_visual_module:
-            self.visual = self.initialize_submodule_config(submodule_config=visual, batch_size=1, force_kwargs=True)
-        else:
-            self.visual = None
-            self.submodules = [name for name in self.submodules if name != "visual"]
+        self.visual = self.initialize_submodule_config(submodule_config=visual, batch_size=1, force_kwargs=True)
         self._load_visual_runtime = _load_visual_runtime
 
 
@@ -83,25 +70,11 @@ class RBLNQwen2_5_VLModelConfig(RBLNDecoderOnlyModelConfig):
     """
 
     submodules = ["visual"]
-    # the shrunk instance-level `submodules` is reconstructed from _compile_visual_module
-    subclass_non_save_attributes = ["_load_visual_runtime", "submodules"]
+    subclass_non_save_attributes = ["_load_visual_runtime"]
 
-    def __init__(
-        self,
-        visual: RBLNModelConfig | None = None,
-        _load_visual_runtime: bool = True,
-        _compile_visual_module: bool = True,
-        **kwargs: Any,
-    ):
+    def __init__(self, visual: RBLNModelConfig | None = None, _load_visual_runtime: bool = True, **kwargs: Any):
         super().__init__(**kwargs)
-        self._compile_visual_module = _compile_visual_module
-        # A skipped visual module has no config to validate (and nothing is saved for it) --
-        # drop it from this instance's submodule list so freeze/serialization pass over it.
-        if _compile_visual_module:
-            self.visual = self.initialize_submodule_config(submodule_config=visual, batch_size=1, force_kwargs=True)
-        else:
-            self.visual = None
-            self.submodules = [name for name in self.submodules if name != "visual"]
+        self.visual = self.initialize_submodule_config(submodule_config=visual, batch_size=1, force_kwargs=True)
         self._load_visual_runtime = _load_visual_runtime
 
 

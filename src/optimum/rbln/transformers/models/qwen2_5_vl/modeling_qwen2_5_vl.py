@@ -370,10 +370,6 @@ class RBLNQwen2_5_VLModel(RBLNDecoderOnlyModel):
 
     @classmethod
     def _load_submodules(cls, model_save_dir, rbln_config, model=None, **kwargs):
-        # _compile_visual_module=False is saved with the artifact: the visual encoder was never
-        # compiled, so there is nothing to compile at export or to load afterwards.
-        if not getattr(rbln_config, "_compile_visual_module", True):
-            return []
         # Loading with _load_visual_runtime=False skips the visual encoder entirely (no
         # compiled-model read, no torch artifacts); text-only callers never miss it.
         if model is None and not getattr(rbln_config, "_load_visual_runtime", True):
