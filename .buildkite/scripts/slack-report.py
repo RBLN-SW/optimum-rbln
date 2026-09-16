@@ -81,6 +81,16 @@ def summarize(jobs: list[dict], prefix: str) -> tuple[str, int, int]:
     return f"✅ {len(ran)}/{len(ran)} passed", 0, len(ran)
 
 
+def slack_post(token: str, payload: dict) -> dict:
+    req = urllib.request.Request(
+        "https://slack.com/api/chat.postMessage",
+        data=json.dumps(payload).encode(),
+        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json; charset=utf-8"},
+    )
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        return json.loads(resp.read().decode())
+
+
 def main() -> int:
     token = os.environ.get("OBEDIENTS_API_TOKEN")
     slack_token = os.environ.get("SLACK_BOT_TOKEN")
@@ -139,32 +149,29 @@ def main() -> int:
     ]
 
     tests = failed_tests() if (pytest_failed or bc_failed) else []
-    if tests:
-        shown = ", ".join(f"`{t}`" for t in tests[:10])
-        if len(tests) > 10:
-            shown += f" +{len(tests) - 10} more"
-        blocks.append(
-            {"type": "section", "fields": [{"type": "mrkdwn", "text": "*Failed*"}, {"type": "mrkdwn", "text": shown}]}
-        )
 
     print(f"{title}\n  pytest: {pytest_status}\n  BC: {bc_status}")
     for t in tests:
         print(f"    {t}")
-    payload = json.dumps({"channel": channel, "text": title, "blocks": blocks}).encode()
-    req = urllib.request.Request(
-        "https://slack.com/api/chat.postMessage",
-        data=payload,
-        headers={
-            "Authorization": f"Bearer {slack_token}",
-            "Content-Type": "application/json; charset=utf-8",
-        },
-    )
-    with urllib.request.urlopen(req, timeout=30) as resp:
-        body = json.loads(resp.read().decode())
     # Slack answers 200 even when it refuses the message.
+    body = slack_post(slack_token, {"channel": channel, "text": title, "blocks": blocks})
     if not body.get("ok"):
         print(f"Slack refused the message: {body.get('error')}", file=sys.stderr)
         return 1
+
+    if tests:
+        shown, rest = tests[:100], max(0, len(tests) - 100)
+        listing = "\n".join(shown) + (f"\n... and {rest} more" if rest else "")
+        reply = slack_post(
+            slack_token,
+            {
+                "channel": channel,
+                "thread_ts": body["ts"],
+                "text": f"*{len(tests)} failed*\n```{listing}```",
+            },
+        )
+        if not reply.get("ok"):
+            print(f"Slack refused the thread reply: {reply.get('error')}", file=sys.stderr)
     return 0
 
 
