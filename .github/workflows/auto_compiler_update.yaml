@@ -11,9 +11,7 @@ env:
 
 jobs:
   fetch-version:
-    runs-on: rbln-sw-k8s-4c-32gb
-    container:
-      image: ${{ vars.DEV_CONTAINER_IMAGE }}
+    runs-on: rbln-sw-k8s-general
     outputs:
       compiler_version: ${{ steps.get_version.outputs.compiler_version }}
       need_pr: ${{ steps.check_pr_needed.outputs.need_pr }}
@@ -96,9 +94,7 @@ jobs:
           echo "need_pr=$NEED_PR" >> $GITHUB_OUTPUT
 
   create-pr:
-    runs-on: rbln-sw-k8s-4c-32gb
-    container:
-      image: ${{ vars.DEV_CONTAINER_IMAGE }}
+    runs-on: rbln-sw-k8s-general
     needs: fetch-version
     if: ${{ needs.fetch-version.outputs.need_pr == 'true' }}
     steps:

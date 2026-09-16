@@ -16,9 +16,7 @@ jobs:
   trigger-vllm-rbln-pkg-update:
     name: trigger vllm-rbln pkg update PR
     needs: [deploy-on-tag]
-    runs-on: rbln-sw-k8s-4c-32gb
-    container:
-      image: ${{ vars.DEV_CONTAINER_IMAGE }}
+    runs-on: rbln-sw-k8s-general
     steps:
       - uses: actions/github-script@v6
         with:
