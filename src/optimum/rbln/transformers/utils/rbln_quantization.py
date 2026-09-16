@@ -519,6 +519,7 @@ def load_weights_from_files(
             if key.endswith("k_scale") or key.endswith("v_scale"):
                 loaded_kv_scale = True
 
+            target: torch.Tensor
             if key in model_params:
                 target = model_params[key]
             elif key in model_buffers:
