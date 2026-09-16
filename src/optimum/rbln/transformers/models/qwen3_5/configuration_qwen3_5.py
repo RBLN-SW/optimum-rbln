@@ -162,8 +162,7 @@ class RBLNQwen3_5ModelConfig(DeprecatedLoadVisualRuntimeMixin, RBLNDecoderOnlyMo
                 delta rule. Must divide `prefill_chunk_size`. Defaults to `MAX_GDN_CHUNK_SIZE` (128).
             linear_attention_layers (list[int] | None): The linear_attention (GatedDeltaNet)
                 layer indices, populated automatically from `layer_types` at compile time (not user-set).
-            visual (Optional[RBLNModelConfig]): Configuration for the vision encoder submodule. Pass
-                ``{"create_runtimes": False}`` on decoder-only nodes in a disaggregated setup.
+            visual (Optional[RBLNModelConfig]): Configuration for the vision encoder submodule.
             kwargs: Additional arguments passed to `RBLNDecoderOnlyModelConfig`.
 
         Raises:
@@ -231,9 +230,7 @@ class RBLNQwen3_5ForConditionalGenerationConfig(
             linear_attention_layers (list[int] | None): The linear_attention (GatedDeltaNet)
                 layer indices, populated automatically from `layer_types` at compile time (not user-set).
             use_inputs_embeds (bool): Must be True — the vision encoder output is injected into inputs_embeds.
-            visual (Optional[RBLNModelConfig]): Configuration for the vision encoder submodule. Pass
-                ``{"create_runtimes": False}`` on decoder-only nodes in a disaggregated setup; pre-computed
-                image_embeds must then be fed to forward().
+            visual (Optional[RBLNModelConfig]): Configuration for the vision encoder submodule.
             kwargs: Additional arguments passed to `RBLNDecoderOnlyModelForCausalLMConfig`.
 
         Raises:

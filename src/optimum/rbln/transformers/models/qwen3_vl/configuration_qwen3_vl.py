@@ -70,10 +70,7 @@ class RBLNQwen3VLForConditionalGenerationConfig(
         """
         Args:
             use_inputs_embeds (bool): Whether or not to use `inputs_embeds` as input. Defaults to `True`.
-            visual (RBLNModelConfig | None): Configuration for the vision encoder component. On a
-                decoder-only node of a disaggregated encoder setup, pass ``{"create_runtimes": False}``
-                so the visual encoder's compiled model (.rbln) is neither read nor loaded onto the NPU;
-                forward() then requires pre-computed ``image_embeds`` / ``video_embeds``.
+            visual (RBLNModelConfig | None): Configuration for the vision encoder component.
             kwargs: Additional arguments passed to the parent `RBLNDecoderOnlyModelForCausalLMConfig`.
 
         Raises:
