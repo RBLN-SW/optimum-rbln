@@ -18,7 +18,7 @@ jobs:
     needs: [deploy-on-tag]
     runs-on: rbln-sw-k8s-general
     steps:
-      - uses: actions/github-script@v6
+      - uses: actions/github-script@v8
         with:
           github-token: ${{ secrets.GIT_PAT }}
           script: |

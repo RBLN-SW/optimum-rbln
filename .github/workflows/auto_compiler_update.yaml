@@ -17,7 +17,7 @@ jobs:
       need_pr: ${{ steps.check_pr_needed.outputs.need_pr }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v5
         with:
           ref: "dev"
 
@@ -99,7 +99,7 @@ jobs:
     if: ${{ needs.fetch-version.outputs.need_pr == 'true' }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: "dev"
 
@@ -109,7 +109,7 @@ jobs:
 
       - name: Create PR for updated files
         id: create-pr-step
-        uses: peter-evans/create-pull-request@v7
+        uses: peter-evans/create-pull-request@v8
         with:
           token: ${{ env.TOKEN }}
           commit-message: "[pytest-full] [slack-report] dependency: Update dependency rebel-compiler to ${{ needs.fetch-version.outputs.compiler_version }}"

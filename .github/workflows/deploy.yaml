@@ -12,7 +12,7 @@ jobs:
     runs-on: rbln-sw-k8s-general
     steps:
       - name: Checkout the repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: rbln-sw/optimum-rbln
           fetch-depth: 0
