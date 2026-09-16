@@ -40,10 +40,13 @@ echo "steps:"
 for tag in $tags; do
   encoded="${tag//./_}"
   for suite in transformers diffusers llm; do
+    # llm answers to [skip-llms], the others to their own name.
+    case "$suite" in llm) skip="skip-llms" ;; *) skip="skip-$suite" ;; esac
     if [ "$suite" = llm ]; then memory="128Gi"; else memory="32Gi"; fi
     cat <<EOF
   - label: ":rewind: BC $tag $suite"
     key: "bc-${encoded}-${suite}"
+    if: build.message !~ /\[${skip}\]/
     image: "\${DEVTOOLS_DOCKER_IMAGE}"
     resources:
       cpu:
@@ -62,6 +65,7 @@ for tag in $tags; do
       OPTIMUM_RBLN_TEST_LEVEL: "full"
       REUSE_ARTIFACTS_PATH: "$BC_BASE_PATH/$encoded"
     timeout_in_minutes: 60
+    artifact_paths: "junit-*.xml"
     command:
       - "bash .buildkite/scripts/sync.sh"
       - "bash .buildkite/scripts/run-suite.sh $suite"
