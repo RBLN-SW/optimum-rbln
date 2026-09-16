@@ -46,7 +46,7 @@ for suite in transformers diffusers llm; do
       HF_TOKEN: HF_TOKEN
       HF_HOME: HF_HOME
     env:
-      LD_LIBRARY_PATH: "/mnt/shared_data/cross-volume/umd:/mnt/shared_data/umd:/mnt/cross_data/umd"
+      LD_LIBRARY_PATH: "\${UMD_PATH}"
       RBLN_FORCE_NPU_NAME: "RBLN-CA22"
       OPTIMUM_RBLN_TEST_LEVEL: "full"
       SAVE_ARTIFACTS_PATH: "$BC_BASE_PATH/$encoded"
