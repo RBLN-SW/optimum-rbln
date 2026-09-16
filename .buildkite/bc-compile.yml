@@ -1,0 +1,19 @@
+# Entry pipeline for the tag build, uploaded by optimum-rbln-bc-compile.
+# Replaces .github/workflows/bc_compile.yaml.
+
+env:
+  BC_BASE_PATH: "/mnt/shared_data/.cache/optimum-rbln/backward_compatibility"
+  UV_CACHE_DIR: "/mnt/uv_cache"
+  UV_LINK_MODE: "symlink"
+  UV_INDEX_STRATEGY: "unsafe-best-match"
+
+steps:
+  - label: ":sparkles: upload BC compile"
+    checkout:
+      sparse:
+        paths:
+          - .buildkite
+    command: |
+      steps=$$(bash .buildkite/scripts/bc-compile-steps.sh)
+      [ -n "$$steps" ] || exit 0
+      printf '%s\n' "$$steps" | buildkite-agent pipeline upload

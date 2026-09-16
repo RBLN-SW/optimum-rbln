@@ -3,7 +3,7 @@
 #
 # Emits the backward-compatibility steps for `buildkite-agent pipeline upload`.
 # Each release under BC_BASE_PATH holds the artifacts that release compiled
-# (written by the GHA bc_compile workflow on every tag); a step reloads them with
+# (written by the tag build, .buildkite/bc-compile.yml); a step reloads them with
 # the current code.
 #
 # The load uses a dummy device, so no NPU is involved -- but creating the runtime
@@ -40,20 +40,13 @@ echo "steps:"
 for tag in $tags; do
   encoded="${tag//./_}"
   for suite in transformers diffusers llm; do
+    # llm answers to [skip-llms], the others to their own name.
+    case "$suite" in llm) skip="skip-llms" ;; *) skip="skip-$suite" ;; esac
     if [ "$suite" = llm ]; then memory="128Gi"; else memory="32Gi"; fi
     cat <<EOF
   - label: ":rewind: BC $tag $suite"
     key: "bc-${encoded}-${suite}"
-    if_changed:
-      include:
-        - ".buildkite/**"
-        - ".github/version.yaml"
-        - "pyproject.toml"
-        - "uv.lock"
-        - "src/**"
-        - "tests/__init__.py"
-        - "tests/test_base.py"
-        - "tests/test_${suite}.py"
+    if: build.message !~ /\[${skip}\]/
     image: "\${DEVTOOLS_DOCKER_IMAGE}"
     resources:
       cpu:
@@ -72,6 +65,7 @@ for tag in $tags; do
       OPTIMUM_RBLN_TEST_LEVEL: "full"
       REUSE_ARTIFACTS_PATH: "$BC_BASE_PATH/$encoded"
     timeout_in_minutes: 60
+    artifact_paths: "junit-*.xml"
     command:
       - "bash .buildkite/scripts/sync.sh"
       - "bash .buildkite/scripts/run-suite.sh $suite"

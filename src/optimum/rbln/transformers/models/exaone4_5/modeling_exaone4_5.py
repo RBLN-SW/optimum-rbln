@@ -13,9 +13,9 @@
 # limitations under the License.
 
 import inspect
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Optional, Union
+from typing import Any, Optional
 
 import torch
 from transformers import AutoModelForImageTextToText, PretrainedConfig, PreTrainedModel
@@ -30,6 +30,7 @@ from transformers.vision_utils import get_vision_window_index
 
 from ....configuration_utils import RBLNCompileConfig
 from ....modeling import RBLNModel
+from ....modeling_base import Preprocessor
 from ....modeling_rope_utils import np_cos, np_sin, qwen_vit_rot_pos_ids
 from ....utils.logging import get_logger
 from ...modeling_outputs import RBLNDecoderOnlyOutput, _validate_output_hidden_states
@@ -43,9 +44,6 @@ from .exaone4_5_architecture import Exaone4_5LanguageModelWrapper, Exaone4_5Visi
 
 
 logger = get_logger(__name__)
-
-if TYPE_CHECKING:
-    from transformers import AutoFeatureExtractor, AutoProcessor, AutoTokenizer
 
 
 # TODO: if needed, add back the MTP with compile option
@@ -133,9 +131,9 @@ class RBLNExaone4_5_VisionModel(RBLNModel):
     @classmethod
     def _update_rbln_config(
         cls,
-        preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"],
+        preprocessors: Sequence[Preprocessor],
         model: Optional["PreTrainedModel"] = None,
-        model_config: "PretrainedConfig" = None,
+        model_config: "PretrainedConfig | None" = None,
         rbln_config: RBLNExaone4_5_VisionModelConfig | None = None,
     ) -> RBLNExaone4_5_VisionModelConfig:
         model_config = model_config.vision_config if hasattr(model_config, "vision_config") else model_config
@@ -371,7 +369,7 @@ class RBLNExaone4_5_Model(RBLNDecoderOnlyModel):
     @classmethod
     def _update_rbln_config(
         cls,
-        preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"] | None = None,
+        preprocessors: Sequence[Preprocessor] | None = None,
         model: Optional["PreTrainedModel"] = None,
         model_config: PretrainedConfig | None = None,
         rbln_config: RBLNExaone4_5_ForConditionalGenerationConfig | None = None,
@@ -389,13 +387,13 @@ class RBLNExaone4_5_Model(RBLNDecoderOnlyModel):
 
     def _preprocess_prefill(
         self,
-        input_ids: torch.LongTensor = None,
-        attention_mask: torch.Tensor = None,
-        pixel_values: torch.Tensor = None,
-        pixel_values_videos: torch.FloatTensor = None,
-        image_grid_thw: torch.LongTensor = None,
-        video_grid_thw: torch.LongTensor = None,
-        second_per_grid_ts: torch.Tensor = None,
+        input_ids: torch.LongTensor | None = None,
+        attention_mask: torch.Tensor | None = None,
+        pixel_values: torch.Tensor | None = None,
+        pixel_values_videos: torch.FloatTensor | None = None,
+        image_grid_thw: torch.LongTensor | None = None,
+        video_grid_thw: torch.LongTensor | None = None,
+        second_per_grid_ts: torch.Tensor | None = None,
     ):
         inputs_embeds = self.embed_tokens(input_ids)
 

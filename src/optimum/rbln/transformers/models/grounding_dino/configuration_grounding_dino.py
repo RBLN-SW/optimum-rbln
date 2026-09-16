@@ -60,10 +60,10 @@ class RBLNGroundingDinoForObjectDetectionConfig(RBLNImageModelConfig):
         """
         Args:
             batch_size (int | None): The batch size for image and text processing. Defaults to 1.
-            encoder ("RBLNModelConfig" | None): The encoder configuration. Defaults to None.
-            decoder ("RBLNModelConfig" | None): The decoder configuration. Defaults to None.
-            text_backbone ("RBLNModelConfig" | None): The text backbone configuration. Defaults to None.
-            backbone ("RBLNModelConfig" | None): The backbone configuration. Defaults to None.
+            encoder ("RBLNModelConfig | None"): The encoder configuration. Defaults to None.
+            decoder ("RBLNModelConfig | None"): The decoder configuration. Defaults to None.
+            text_backbone ("RBLNModelConfig | None"): The text backbone configuration. Defaults to None.
+            backbone ("RBLNModelConfig | None"): The backbone configuration. Defaults to None.
             output_attentions (bool | None): Whether to output attentions. Defaults to None.
             output_hidden_states (bool | None): Whether to output hidden states. Defaults to None.
             kwargs: Additional arguments passed to the parent RBLNModelConfig.

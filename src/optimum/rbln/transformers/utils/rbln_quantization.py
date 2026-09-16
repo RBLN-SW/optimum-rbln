@@ -30,7 +30,7 @@ from transformers.modeling_utils import get_state_dict_dtype
 
 from ...configuration_utils import RBLNSerializableConfigProtocol
 from ...utils.logging import get_logger
-from .qlinear import QFloatLinear, QIntLinear
+from .qlinear import QFloatLinear, QIntLinear, QLinear
 
 
 if TYPE_CHECKING:
@@ -145,7 +145,7 @@ class QuantizedLayerFactory:
     def __init__(self, quantization_config: RBLNQuantizationConfig):
         self.quantization_config = quantization_config
 
-    def create_linear(self, layer: Linear, scale_dtype: torch.dtype) -> Linear:
+    def create_linear(self, layer: Linear, scale_dtype: torch.dtype) -> QLinear:
         if self.quantization_config.weights in ["int4", "int8"]:
             return self.convert_to_qint_linear(layer, scale_dtype)
         elif self.quantization_config.weights == "fp8":
@@ -153,10 +153,10 @@ class QuantizedLayerFactory:
         else:
             raise ValueError(f"Invalid quantization weights: {self.quantization_config.weights}")
 
-    def convert_to_qint_linear(self, layer: Linear, scale_dtype: torch.dtype) -> Linear:
+    def convert_to_qint_linear(self, layer: Linear, scale_dtype: torch.dtype) -> QIntLinear:
         return convert_to_qint_linear(layer, self.quantization_config, scale_dtype)
 
-    def convert_to_qfloat_linear(self, layer: Linear, scale_dtype: torch.dtype) -> Linear:
+    def convert_to_qfloat_linear(self, layer: Linear, scale_dtype: torch.dtype) -> QFloatLinear:
         return convert_to_qfloat_linear(layer, self.quantization_config, scale_dtype)
 
 
@@ -236,6 +236,9 @@ def get_quantized_model(
         model = hf_auto_model_class.from_config(config, dtype=dtype)
     config.dtype = config_dtype
 
+    if rbln_quantization is None:
+        raise ValueError("`rbln_quantization` is required to load a quantized model.")
+
     # Quantize the model
     update_layers_to_quantize(model, model.dtype, rbln_quantization)
 
@@ -300,7 +303,7 @@ def load_weight_files(
 def update_layers_to_quantize(
     module: torch.nn.Module,
     scale_dtype: torch.dtype,
-    rbln_quantization: RBLNQuantizationConfig | None = None,
+    rbln_quantization: RBLNQuantizationConfig,
 ) -> None:
     """
     Updates specified linear layers to quantized (qlinear) layers in the given module.
@@ -485,8 +488,8 @@ def canonicalize_checkpoint_items(
 def load_weights_from_files(
     model: torch.nn.Module,
     safetensors: list[dict[str, torch.Tensor]],
-    rbln_quantization: RBLNQuantizationConfig | None = None,
-):
+    rbln_quantization: RBLNQuantizationConfig,
+) -> None:
     """
     Load safetensor file data directly into the model from provided safetensor files.
     """
@@ -516,18 +519,20 @@ def load_weights_from_files(
             if key.endswith("k_scale") or key.endswith("v_scale"):
                 loaded_kv_scale = True
 
-            # Copy into parameters or buffers
+            target: torch.Tensor
             if key in model_params:
-                # Ensure dtype compatibility
-                if model_params[key].dtype != value.dtype:
-                    value = value.to(model_params[key].dtype)
-                model_params[key].data.copy_(value)
+                target = model_params[key]
             elif key in model_buffers:
-                if model_buffers[key].dtype != value.dtype:
-                    value = value.to(model_buffers[key].dtype)
-                model_buffers[key].data.copy_(value)
+                target = model_buffers[key]
             else:
                 unloaded_keys.append(key)
+                continue
+
+            if target.dtype == value.dtype and target.shape == value.shape:
+                # keep the safetensors mmap view; copying would hold the checkpoint twice on the host
+                target.data = value
+            else:
+                target.data.copy_(value.to(target.dtype))
 
     if len(unloaded_keys) > 0:
         logger.warning(f"There are unexpected parameters/buffers on the checkpoint: {unloaded_keys}")
@@ -583,7 +588,7 @@ def access_attribute(obj: Any, attributes: list[str]) -> Any:
 
 def convert_to_qint_linear(
     layer: Linear, rbln_quantization: RBLNQuantizationConfig, scale_dtype: torch.dtype
-) -> Linear:
+) -> QIntLinear:
     """
     Converts a standard linear layer to a quantized linear (qlinear) layer with a custom forward pass.
     """
@@ -607,7 +612,7 @@ def convert_to_qint_linear(
 
 def convert_to_qfloat_linear(
     layer: Linear, rbln_quantization: RBLNQuantizationConfig, scale_dtype: torch.dtype
-) -> Linear:
+) -> QFloatLinear:
     """
     Converts a standard linear layer to a fp8 linear layer with a custom forward pass.
     """

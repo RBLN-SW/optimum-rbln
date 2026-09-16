@@ -2,6 +2,7 @@
 # Install the rebel-compiler pinned in .github/version.yaml into the synced venv.
 # Same file the GHA workflows read, so the two CIs test the same compiler.
 set -euo pipefail
+[ -z "${REBEL_COMPILER_VERSION:-}" ] || exit 0
 
 : "${REBEL_PYPI_INTERNAL_ENDPOINT:?not set}"
 : "${UV_INDEX_REBELLIONS_USERNAME:?not set}"

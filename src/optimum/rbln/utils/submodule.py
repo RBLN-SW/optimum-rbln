@@ -12,8 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from collections.abc import Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Union
+from typing import TYPE_CHECKING, Any
 
 from transformers import PretrainedConfig
 
@@ -23,9 +24,10 @@ from ..utils.model_utils import get_rbln_model_cls
 
 
 if TYPE_CHECKING:
-    from transformers import AutoFeatureExtractor, AutoProcessor, AutoTokenizer, PreTrainedModel
+    from transformers import PreTrainedModel
 
     from ..modeling import RBLNModel
+    from ..modeling_base import Preprocessor
 
 
 logger = get_logger(__name__)
@@ -61,7 +63,7 @@ class SubModulesMixin:
         cls,
         model: "PreTrainedModel",
         rbln_config: RBLNModelConfig,
-        preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"] | None,
+        preprocessors: "Sequence[Preprocessor] | None",
     ):
         return rbln_config
 
@@ -73,7 +75,7 @@ class SubModulesMixin:
         model: "PreTrainedModel",
         submodule_config: PretrainedConfig,
         submodule_rbln_config: RBLNModelConfig,
-        preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"] | None,
+        preprocessors: "Sequence[Preprocessor] | None",
     ):
         return submodule_rbln_config
 
@@ -90,13 +92,12 @@ class SubModulesMixin:
         for submodule in cls._rbln_submodules:
             submodule_name = submodule["name"]
             if submodule_prefix is not None:
-                torch_submodule: PreTrainedModel = getattr(model, submodule_prefix)
-                torch_submodule = getattr(torch_submodule, submodule_name)
+                torch_submodule = getattr(getattr(model, submodule_prefix), submodule_name)
             elif submodule_postfix is not None:
-                torch_submodule: PreTrainedModel = getattr(model, submodule_name)
-                torch_submodule = getattr(torch_submodule, submodule_postfix)
+                torch_submodule = getattr(getattr(model, submodule_name), submodule_postfix)
             else:
-                if (torch_submodule := getattr(model, submodule_name, None)) is None:
+                torch_submodule = getattr(model, submodule_name, None)
+                if torch_submodule is None:
                     torch_submodule = getattr(model.model, submodule_name)
 
             cls_name = torch_submodule.__class__.__name__
