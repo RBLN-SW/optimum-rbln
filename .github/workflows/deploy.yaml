@@ -9,17 +9,21 @@ on:
 
 jobs:
   deploy:
-    runs-on: rbln-sw-k8s-4c-32gb
-    container:
-      image: ${{ vars.DEV_CONTAINER_IMAGE }}
+    runs-on: rbln-sw-k8s-general
     steps:
       - name: Checkout the repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: rbln-sw/optimum-rbln
           fetch-depth: 0
           ref: ${{ inputs.version }}
           token: ${{ secrets.GITHUB_TOKEN }}
+
+      # The image this used to run in had both baked in.
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          python-version: "3.12"
 
       - name: Install dependencies
         run: uv sync --frozen --only-group deploy
