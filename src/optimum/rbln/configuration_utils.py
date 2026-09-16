@@ -863,6 +863,56 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
 
         return serializable_map
 
+    def get_load_overrides(self) -> dict[str, Any]:
+        """
+        Extract the options that must cross the load boundary, for passing to from_pretrained.
+
+        Returns the explicitly-set runtime options (device, device_map, create_runtimes,
+        activate_profiler, timeout) and the subclass-specific non-save attributes
+        (load-behavior flags such as `_load_visual_runtime`, which are never serialized so
+        they can only travel with the caller), recursively including submodules.
+        Compile-time attributes are not included: when loading a compiled model they come
+        from the artifact's rbln_config.json, and this dict is merged on top of it.
+
+        Returns:
+            Dictionary of load overrides, keyed like the rbln_config dict accepted by
+            from_pretrained.
+        """
+
+        def filter_dict(cfg: dict) -> dict[str, Any] | None:
+            # A submodule left as a plain dict: its config class (and thus its
+            # subclass_non_save_attributes) is unknown here, so only runtime options are kept.
+            result = {}
+            for k, v in cfg.items():
+                if k in RUNTIME_KEYWORDS:
+                    if v is not None:
+                        result[k] = v
+                elif isinstance(v, dict):
+                    nested = filter_dict(v)
+                    if nested:
+                        result[k] = nested
+            return result or None
+
+        result = {k: v for k, v in self._runtime_options.items() if v is not None}
+
+        for name in self.subclass_non_save_attributes:
+            value = getattr(self, name, None)
+            if value is not None:
+                result[name] = value
+
+        for name in self.submodules:
+            submodule = getattr(self, name, None)
+            if isinstance(submodule, RBLNModelConfig):
+                filtered = submodule.get_load_overrides() or None
+            elif isinstance(submodule, dict):
+                filtered = filter_dict(submodule)
+            else:
+                filtered = None
+            if filtered:
+                result[name] = filtered
+
+        return result
+
     def __repr__(self):
         repr_dict = self._prepare_for_serialization()
         return json.dumps(repr_dict, indent=2)
@@ -992,7 +1042,7 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
 
         if isinstance(rbln_config, dict):
             for key, value in rbln_config.items():
-                if key not in kwargs:
+                if f"rbln_{key}" not in kwargs:
                     kwargs[f"rbln_{key}"] = value
 
         rbln_keys = [key for key in kwargs.keys() if key.startswith("rbln_")]
