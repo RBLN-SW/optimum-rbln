@@ -637,7 +637,7 @@ def test_load_with_partial_config_object_raises(saved_vlm_config_dir):
     partial = RBLNQwen2_5_VLForConditionalGenerationConfig(visual={"device": 1}, device=[0, 1])
     assert isinstance(partial.visual, dict), "objectification leaves the nested submodule as a dict"
 
-    with pytest.raises(ValueError, match="get_load_overrides"):
+    with pytest.raises(ValueError, match="different attributes for submodule"):
         RBLNQwen2_5_VLForConditionalGenerationConfig.from_pretrained(saved_vlm_config_dir, rbln_config=partial)
 
 
