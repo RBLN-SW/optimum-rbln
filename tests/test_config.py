@@ -568,7 +568,12 @@ def test_qwen3_5_gdn_chunk_size_default_is_decoupled_from_prefill():
 
 
 # ---------------------------------------------------------------------------
-# Loading with an RBLNModelConfig object (treated as runtime overrides)
+# Loading with an RBLNModelConfig object
+#
+# At load time only a config loaded from the same artifact can be passed as an
+# object (round-trip); a hand-constructed partial is rejected by the gate.
+# Callers holding a partial object (e.g. the diffusers mixin) reduce it to a
+# dict with get_load_overrides() and go through the dict path.
 # ---------------------------------------------------------------------------
 
 
@@ -595,27 +600,60 @@ def saved_vlm_config_dir(tmp_path):
     return str(tmp_path)
 
 
-def test_get_runtime_overrides():
-    """get_runtime_overrides extracts only explicitly-set runtime options, recursively."""
+def test_get_load_overrides():
+    """get_load_overrides extracts only explicitly-set runtime options, recursively."""
     from optimum.rbln import RBLNQwen2_5_VLForConditionalGenerationConfig
 
     partial = RBLNQwen2_5_VLForConditionalGenerationConfig(visual={"device": 1}, device=[0, 1])
-    assert partial.get_runtime_overrides() == {"device": [0, 1], "visual": {"device": 1}}
+    assert partial.get_load_overrides() == {"device": [0, 1], "visual": {"device": 1}}
 
     # Nothing set -> nothing extracted: defaults filled during objectification must not leak.
     empty = RBLNQwen2_5_VLForConditionalGenerationConfig()
-    assert empty.get_runtime_overrides() == {}
+    assert empty.get_load_overrides() == {}
+
+    # Compile-time attributes never cross the load boundary; the artifact's values win.
+    partial = RBLNQwen2_5_VLForConditionalGenerationConfig(max_seq_len=1024)
+    assert "max_seq_len" not in partial.get_load_overrides()
 
 
-def test_load_with_partial_config_object(saved_vlm_config_dir):
-    """A partially-initialized config object (what a diffusers pipeline passes down) loads fine:
-    runtime options are applied, compile-time attributes come from disk."""
+def test_get_load_overrides_includes_non_save_flags():
+    """Load-behavior flags (subclass_non_save_attributes) must cross the load boundary:
+    they are never serialized, so they can only travel with the caller."""
+    from optimum.rbln import RBLNQwen2_5_VLForConditionalGenerationConfig, RBLNQwen3VLForConditionalGenerationConfig
+
+    cfg = RBLNQwen3VLForConditionalGenerationConfig(device=0, _load_visual_runtime=False)
+    overrides = cfg.get_load_overrides()
+    assert overrides["_load_visual_runtime"] is False
+    assert overrides["device"] == 0
+
+    # A submodule left as a plain dict keeps runtime options only: its config class is
+    # unknown at this point, so its non-save attributes cannot be identified.
+    cfg = RBLNQwen2_5_VLForConditionalGenerationConfig(visual={"device": 1, "_some_load_flag": False})
+    assert cfg.get_load_overrides()["visual"] == {"device": 1}
+
+
+def test_load_with_partial_config_object_raises(saved_vlm_config_dir):
+    """A hand-constructed config object is default-filled and cannot match the artifact's
+    compile-time attributes, so the load-time gate rejects it (instead of silently
+    replacing or ignoring anything) and points at the dict path."""
     from optimum.rbln import RBLNQwen2_5_VLForConditionalGenerationConfig
 
     partial = RBLNQwen2_5_VLForConditionalGenerationConfig(visual={"device": 1}, device=[0, 1])
     assert isinstance(partial.visual, dict), "objectification leaves the nested submodule as a dict"
 
-    loaded = RBLNQwen2_5_VLForConditionalGenerationConfig.from_pretrained(saved_vlm_config_dir, rbln_config=partial)
+    with pytest.raises(ValueError, match="get_load_overrides"):
+        RBLNQwen2_5_VLForConditionalGenerationConfig.from_pretrained(saved_vlm_config_dir, rbln_config=partial)
+
+
+def test_load_with_reduced_partial_object(saved_vlm_config_dir):
+    """The mixin-style flow: a partial object reduced with get_load_overrides() loads through
+    the dict path — runtime options applied, compile-time attributes from disk."""
+    from optimum.rbln import RBLNQwen2_5_VLForConditionalGenerationConfig
+
+    partial = RBLNQwen2_5_VLForConditionalGenerationConfig(visual={"device": 1}, device=[0, 1])
+    loaded = RBLNQwen2_5_VLForConditionalGenerationConfig.from_pretrained(
+        saved_vlm_config_dir, rbln_config=partial.get_load_overrides()
+    )
 
     # runtime options from the object
     assert loaded.device == [0, 1]
@@ -626,50 +664,26 @@ def test_load_with_partial_config_object(saved_vlm_config_dir):
     assert len(loaded.visual.compile_cfgs) == 1
 
 
-def test_load_with_config_object_propagates_device_to_submodule(saved_vlm_config_dir):
-    """A top-level device on the object reaches submodules, like the dict path always did."""
+def test_load_with_reduced_object_propagates_device_to_submodule(saved_vlm_config_dir):
+    """A top-level device in the reduced overrides reaches submodules, like any dict."""
     from optimum.rbln import RBLNQwen2_5_VLForConditionalGenerationConfig
 
     partial = RBLNQwen2_5_VLForConditionalGenerationConfig(device=[2, 3])
-    loaded = RBLNQwen2_5_VLForConditionalGenerationConfig.from_pretrained(saved_vlm_config_dir, rbln_config=partial)
+    loaded = RBLNQwen2_5_VLForConditionalGenerationConfig.from_pretrained(
+        saved_vlm_config_dir, rbln_config=partial.get_load_overrides()
+    )
     assert loaded.device == [2, 3]
     assert loaded.visual.device == [2, 3]
 
 
-def test_load_config_object_equivalent_to_dict(saved_vlm_config_dir):
-    """Passing an object must behave exactly like passing the equivalent override dict."""
+def test_load_with_dict_kwarg_precedence(saved_vlm_config_dir):
+    """An explicit rbln_* kwarg wins over the value carried by the rbln_config dict."""
     from optimum.rbln import RBLNQwen2_5_VLForConditionalGenerationConfig
 
-    overrides = {"device": [0, 1], "visual": {"device": 1}}
-    via_dict = RBLNQwen2_5_VLForConditionalGenerationConfig.from_pretrained(
-        saved_vlm_config_dir, rbln_config=dict(overrides)
-    )
-    via_object = RBLNQwen2_5_VLForConditionalGenerationConfig.from_pretrained(
-        saved_vlm_config_dir, rbln_config=RBLNQwen2_5_VLForConditionalGenerationConfig(**overrides)
-    )
-    assert str(via_dict) == str(via_object)
-    assert via_dict.device == via_object.device
-    assert via_dict.visual.device == via_object.visual.device
-
-
-def test_load_with_config_object_kwarg_precedence(saved_vlm_config_dir):
-    """An explicit rbln_* kwarg wins over the value carried by the config object."""
-    from optimum.rbln import RBLNQwen2_5_VLForConditionalGenerationConfig
-
-    partial = RBLNQwen2_5_VLForConditionalGenerationConfig(device=[0, 1])
     loaded = RBLNQwen2_5_VLForConditionalGenerationConfig.from_pretrained(
-        saved_vlm_config_dir, rbln_config=partial, rbln_device=[6, 7]
+        saved_vlm_config_dir, rbln_config={"device": [0, 1]}, rbln_device=[6, 7]
     )
     assert loaded.device == [6, 7]
-
-
-def test_load_with_config_object_ignores_non_runtime_attrs(saved_vlm_config_dir):
-    """Non-runtime attributes on a passed object are ignored; disk values win."""
-    from optimum.rbln import RBLNQwen2_5_VLForConditionalGenerationConfig
-
-    partial = RBLNQwen2_5_VLForConditionalGenerationConfig(max_seq_len=1024)
-    loaded = RBLNQwen2_5_VLForConditionalGenerationConfig.from_pretrained(saved_vlm_config_dir, rbln_config=partial)
-    assert loaded.max_seq_len == 512
 
 
 def test_load_with_roundtrip_config_object(saved_vlm_config_dir):
