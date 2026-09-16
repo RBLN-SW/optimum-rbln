@@ -9,9 +9,15 @@
 # reads nothing but __version__ from it.
 set -euo pipefail
 
+# A BC compile runs on the release's own tree, whose lockfile today's uv cannot
+# re-resolve; --frozen takes it as written, as the GHA job did.
+lock=--locked
+[ -z "${SAVE_ARTIFACTS_PATH:-}" ] || lock=--frozen
+
 echo '--- :package: uv sync'
-uv sync --locked --python 3.12 --group tests
+uv sync "$lock" --python 3.12 --group tests
 if [ ! -f src/optimum/rbln/__version__.py ]; then
   uv run --no-sync python -c "import importlib.metadata as m, pathlib; pathlib.Path('src/optimum/rbln/__version__.py').write_text('__version__ = version = %r\n' % m.version('optimum-rbln'))"
 fi
 bash .buildkite/scripts/install-rebel-compiler.sh
+bash .buildkite/scripts/rebel-compiler-override.sh

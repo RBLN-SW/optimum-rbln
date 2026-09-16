@@ -3,7 +3,7 @@
 #
 # Emits the backward-compatibility steps for `buildkite-agent pipeline upload`.
 # Each release under BC_BASE_PATH holds the artifacts that release compiled
-# (written by the GHA bc_compile workflow on every tag); a step reloads them with
+# (written by the tag build, .buildkite/bc-compile.yml); a step reloads them with
 # the current code.
 #
 # The load uses a dummy device, so no NPU is involved -- but creating the runtime
@@ -44,16 +44,6 @@ for tag in $tags; do
     cat <<EOF
   - label: ":rewind: BC $tag $suite"
     key: "bc-${encoded}-${suite}"
-    if_changed:
-      include:
-        - ".buildkite/**"
-        - ".github/version.yaml"
-        - "pyproject.toml"
-        - "uv.lock"
-        - "src/**"
-        - "tests/__init__.py"
-        - "tests/test_base.py"
-        - "tests/test_${suite}.py"
     image: "\${DEVTOOLS_DOCKER_IMAGE}"
     resources:
       cpu:
