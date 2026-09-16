@@ -817,42 +817,51 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
 
         return serializable_map
 
-    def get_runtime_overrides(self) -> dict[str, Any]:
+    def get_load_overrides(self) -> dict[str, Any]:
         """
-        Extract the runtime options set on this config, for passing to from_pretrained.
+        Extract the options that must cross the load boundary, for passing to from_pretrained.
 
-        Returns only the runtime options (device, device_map, create_runtimes,
-        activate_profiler, timeout) that are explicitly set, recursively including
-        submodules. Compile-time attributes are not included: when loading a compiled
-        model they come from the artifact's rbln_config.json, and this dict is merged
-        on top of it.
+        Returns the explicitly-set runtime options (device, device_map, create_runtimes,
+        activate_profiler, timeout) and the subclass-specific non-save attributes
+        (load-behavior flags such as `_load_visual_runtime`, which are never serialized so
+        they can only travel with the caller), recursively including submodules.
+        Compile-time attributes are not included: when loading a compiled model they come
+        from the artifact's rbln_config.json, and this dict is merged on top of it.
 
         Returns:
-            Dictionary of explicitly-set runtime options, keyed like the rbln_config
-            dict accepted by from_pretrained.
+            Dictionary of load overrides, keyed like the rbln_config dict accepted by
+            from_pretrained.
         """
 
-        def filter_runtime(cfg):
-            # Recursively extract runtime options from config (RBLNModelConfig or dict)
-            if isinstance(cfg, RBLNModelConfig):
-                return cfg.get_runtime_overrides()
-            if not isinstance(cfg, dict):
-                return None
+        def filter_dict(cfg: dict) -> dict[str, Any] | None:
+            # A submodule left as a plain dict: its config class (and thus its
+            # subclass_non_save_attributes) is unknown here, so only runtime options are kept.
             result = {}
             for k, v in cfg.items():
                 if k in RUNTIME_KEYWORDS:
                     if v is not None:
                         result[k] = v
                 elif isinstance(v, dict):
-                    nested = filter_runtime(v)
+                    nested = filter_dict(v)
                     if nested:
                         result[k] = nested
             return result or None
 
         result = {k: v for k, v in self._runtime_options.items() if v is not None}
 
+        for name in self.subclass_non_save_attributes:
+            value = getattr(self, name, None)
+            if value is not None:
+                result[name] = value
+
         for name in self.submodules:
-            filtered = filter_runtime(getattr(self, name, None))
+            submodule = getattr(self, name, None)
+            if isinstance(submodule, RBLNModelConfig):
+                filtered = submodule.get_load_overrides() or None
+            elif isinstance(submodule, dict):
+                filtered = filter_dict(submodule)
+            else:
+                filtered = None
             if filtered:
                 result[name] = filtered
 
@@ -954,12 +963,6 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
         if cls_reserved != cls:
             logger.warning(f"Expected {cls.__name__}, but got {cls_reserved.__name__}.")
 
-        if isinstance(rbln_config, RBLNModelConfig):
-            # At `export=False` time, a passed config object is a carrier of runtime overrides,
-            # not a complete config. Extract its runtime options (top-level and per-submodule)
-            # and merge them through the dict path below.
-            rbln_config = rbln_config.get_runtime_overrides()
-
         if isinstance(rbln_config, dict):
             for key, value in rbln_config.items():
                 if f"rbln_{key}" not in kwargs:
@@ -986,6 +989,26 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
             if update_dict:
                 nested_update(submodule_config, update_dict)
             config_file[submodule] = RBLNAutoConfig.load_from_dict(submodule_config)
+
+        if isinstance(rbln_config, RBLNModelConfig):
+            config_file.update(rbln_config._runtime_options)
+
+            # A config object passed at load time must carry the same compile-time attributes as
+            # the artifact, which only a config loaded from that artifact can (`_compile_cfgs`
+            # exists nowhere else). The comparison excludes runtime options and other non-save
+            # attributes, since `__repr__` serializes neither.
+            for submodule in rbln_config.submodules:
+                if str(config_file[submodule]) != str(getattr(rbln_config, submodule)):
+                    raise ValueError(
+                        f"The `rbln_config` object passed at load time does not match the artifact's "
+                        f"saved config for submodule `{submodule}`. Only a config loaded from the same "
+                        f"artifact (e.g. via `{cls.__name__}.from_pretrained`) can be passed as an "
+                        f"object, since compile-time attributes exist only in the artifact's "
+                        f"rbln_config.json. To override runtime options, pass a dict instead, e.g. "
+                        f"`rbln_config={{'{submodule}': {{'device': 0}}}}`, or reduce the object with "
+                        f"`get_load_overrides()`."
+                    )
+                config_file[submodule] = getattr(rbln_config, submodule)
 
         config_file.update(rbln_runtime_kwargs)
         rbln_config = cls(**config_file)
