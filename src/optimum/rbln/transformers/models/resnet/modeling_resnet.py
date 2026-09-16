@@ -13,16 +13,18 @@
 # limitations under the License.
 
 
-from typing import TYPE_CHECKING, Optional, Union
+from collections.abc import Sequence
+from typing import TYPE_CHECKING, Optional
 
 import torch
 from transformers.modeling_outputs import ImageClassifierOutputWithNoAttention
 
+from ....modeling_base import Preprocessor
 from ...modeling_generic import RBLNModelForImageClassification
 
 
 if TYPE_CHECKING:
-    from transformers import AutoFeatureExtractor, AutoProcessor, AutoTokenizer, PretrainedConfig, PreTrainedModel
+    from transformers import PretrainedConfig, PreTrainedModel
 
     from .configuration_resnet import RBLNResNetForImageClassificationConfig
 
@@ -39,7 +41,7 @@ class RBLNResNetForImageClassification(RBLNModelForImageClassification):
     @classmethod
     def _update_rbln_config(
         cls,
-        preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"] | None = None,
+        preprocessors: Sequence[Preprocessor] | None = None,
         model: Optional["PreTrainedModel"] = None,
         model_config: Optional["PretrainedConfig"] = None,
         rbln_config: Optional["RBLNResNetForImageClassificationConfig"] = None,

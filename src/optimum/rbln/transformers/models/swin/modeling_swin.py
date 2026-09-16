@@ -13,7 +13,8 @@
 # limitations under the License.
 
 import types
-from typing import TYPE_CHECKING, Optional, Union
+from collections.abc import Sequence
+from typing import TYPE_CHECKING, Optional
 
 import torch
 import torch.nn.functional as F
@@ -21,6 +22,7 @@ from transformers.models.swin.modeling_swin import BackboneOutput
 
 from ....configuration_utils import RBLNCompileConfig, RBLNModelConfig
 from ....modeling import RBLNModel
+from ....modeling_base import Preprocessor
 from ....utils.logging import get_logger
 from .configuration_swin import RBLNSwinBackboneConfig
 
@@ -29,9 +31,6 @@ logger = get_logger(__name__)
 
 if TYPE_CHECKING:
     from transformers import (
-        AutoFeatureExtractor,
-        AutoProcessor,
-        AutoTokenizer,
         PreTrainedModel,
         SwinBackbone,
         SwinConfig,
@@ -200,7 +199,7 @@ class RBLNSwinBackbone(RBLNModel):
         cls,
         model: "PreTrainedModel",
         rbln_config: RBLNModelConfig,
-        preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"] | None,
+        preprocessors: Sequence[Preprocessor] | None,
     ):
         for processor in preprocessors:
             if rbln_config.image_size is None and hasattr(processor, "image_processor"):
@@ -223,9 +222,9 @@ class RBLNSwinBackbone(RBLNModel):
     @classmethod
     def _update_rbln_config(
         cls,
-        preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"],
+        preprocessors: Sequence[Preprocessor],
         model: Optional["PreTrainedModel"] = None,
-        model_config: "SwinConfig" = None,
+        model_config: "SwinConfig | None" = None,
         rbln_config: RBLNSwinBackboneConfig | None = None,
     ) -> RBLNSwinBackboneConfig:
         if rbln_config.image_size is None:

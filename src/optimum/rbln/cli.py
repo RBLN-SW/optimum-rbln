@@ -19,6 +19,7 @@ import json
 import shutil
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING, Any, cast
 
 import rebel
 from huggingface_hub import hf_hub_download
@@ -27,6 +28,10 @@ from .__version__ import __version__
 from .configuration_utils import RBLNModelConfig, load_config
 from .utils.model_utils import get_rbln_model_cls
 from .utils.runtime_utils import ContextRblnConfig
+
+
+if TYPE_CHECKING:
+    from .transformers.models.decoderonly.configuration_decoderonly import RBLNDecoderOnlyModelConfig
 
 
 def set_nested_dict(dictionary, key_path, value):
@@ -455,6 +460,7 @@ def _handle_kvcache_num_blocks(
             f"The model at '{model_id}' ({config_cls.__name__}) does not expose a top-level "
             "resizable kv-cache. Only decoder-only causal LM artifacts are supported."
         )
+    rbln_config = cast("RBLNDecoderOnlyModelConfig", rbln_config)
 
     if get:
         print(rbln_config.kvcache_num_blocks)
@@ -734,8 +740,8 @@ def main():
         output_path.mkdir(parents=True, exist_ok=True)
 
         # Prepare rbln_config and model_kwargs by parsing all unknown arguments
-        rbln_config = {}
-        model_kwargs = {}  # HuggingFace model args
+        rbln_config: dict[str, Any] = {}
+        model_kwargs: dict[str, Any] = {}  # HuggingFace model args
 
         # Parse all unknown arguments
         i = 0

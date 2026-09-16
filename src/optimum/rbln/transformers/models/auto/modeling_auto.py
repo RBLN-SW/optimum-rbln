@@ -27,6 +27,8 @@ from transformers.models.auto.modeling_auto import (
     MODEL_FOR_IMAGE_TEXT_TO_TEXT_MAPPING_NAMES,
     MODEL_FOR_MASKED_LM_MAPPING,
     MODEL_FOR_MASKED_LM_MAPPING_NAMES,
+    MODEL_FOR_MULTIMODAL_LM_MAPPING,
+    MODEL_FOR_MULTIMODAL_LM_MAPPING_NAMES,
     MODEL_FOR_OBJECT_DETECTION_MAPPING,
     MODEL_FOR_OBJECT_DETECTION_MAPPING_NAMES,
     MODEL_FOR_QUESTION_ANSWERING_MAPPING,
@@ -120,6 +122,13 @@ class RBLNAutoModelForMaskedLM(_BaseAutoModelClass):
     _model_mapping_names = MODEL_FOR_MASKED_LM_MAPPING_NAMES
 
 
+class RBLNAutoModelForMultimodalLM(_BaseAutoModelClass):
+    """Automatically detect Multimodal Language Models."""
+
+    _model_mapping = MODEL_FOR_MULTIMODAL_LM_MAPPING
+    _model_mapping_names = MODEL_FOR_MULTIMODAL_LM_MAPPING_NAMES
+
+
 class RBLNAutoModelForAudioClassification(_BaseAutoModelClass):
     """Automatically detect Audio Classification Models."""
 
@@ -171,6 +180,7 @@ __all__ = [
     "RBLNAutoModelForImageClassification",
     "RBLNAutoModelForImageTextToText",
     "RBLNAutoModelForMaskedLM",
+    "RBLNAutoModelForMultimodalLM",
     "RBLNAutoModelForObjectDetection",
     "RBLNAutoModelForQuestionAnswering",
     "RBLNAutoModelForSeq2SeqLM",

@@ -280,10 +280,10 @@ class T5CrossAttention(nn.Module):
 
     def forward(
         self,
-        hidden_states: torch.Tensor = None,
-        past_key_value: torch.Tensor = None,
-        attention_mask: torch.Tensor = None,
-        key_value_states: torch.Tensor = None,
+        hidden_states: torch.Tensor | None = None,
+        past_key_value: torch.Tensor | None = None,
+        attention_mask: torch.Tensor | None = None,
+        key_value_states: torch.Tensor | None = None,
     ):
         batch_size = hidden_states.shape[0]
 

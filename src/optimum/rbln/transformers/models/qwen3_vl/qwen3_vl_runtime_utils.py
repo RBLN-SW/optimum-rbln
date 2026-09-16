@@ -77,7 +77,7 @@ class RBLNQwen3VLRuntimeModel(RBLNRuntimeModel):
         self,
         input_ids: torch.LongTensor | None = None,
         inputs_embeds: torch.Tensor | None = None,
-        cache_position: torch.Tensor = None,
+        cache_position: torch.Tensor | None = None,
         attention_mask: torch.Tensor | None = None,
         batch_idx: int | None = None,
         block_tables: torch.Tensor | None = None,

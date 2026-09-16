@@ -1,5 +1,4 @@
-# optimum-rbln pytest suites, uploaded by .buildkite/pr.yml.
-# Mirrors the GHA matrix in .github/workflows/rbln_optimum_pytest.yaml.
+# optimum-rbln pytest suites, uploaded by .buildkite/pr.yml and nightly.yml.
 #
 # The uploader picks the test level: default for an ordinary PR, full for a
 # [pytest-full] commit (and later for the nightly). Both values are baked in at
@@ -20,78 +19,22 @@ env:
   # stay out of an ordinary PR: only a full build's uploader exports it.
   HF_USER_ID: "${HF_USER_ID:-}"
 
-# Run a suite only when the PR touches something that can change its result.
-# Honored because .buildkite/pr.yml uploads this file with --git-diff-base; the
-# commit status is still reported when every step is skipped.
-#
-# Only the safe split is encoded: transformers/ imports diffusers/ solely under
-# TYPE_CHECKING (clip, t5), so those suites can ignore diffusers/ changes. The
-# reverse is not true -- the diffusers pipelines use CLIP, T5, SigLIP and Qwen3
-# from transformers/ -- so diffusers, config and cli-basic run on any src change.
-_if_changed_config: &if_changed_config
-  include:
-    - ".buildkite/**"
-    - ".github/version.yaml"
-    - "pyproject.toml"
-    - "uv.lock"
-    - "src/**"
-    - "tests/__init__.py"
-    - "tests/test_base.py"
-    - "tests/test_config.py"
+# Both guards are read at upload time, so a step they turn down is never created
+# and holds no NPU. GHA spawned the job either way and skipped inside it.
+_no_transformers: &no_transformers
+  if: build.message !~ /\[skip-transformers\]/
 
-_if_changed_cli: &if_changed_cli
-  include:
-    - ".buildkite/**"
-    - ".github/version.yaml"
-    - "pyproject.toml"
-    - "uv.lock"
-    - "src/**"
-    - "tests/__init__.py"
-    - "tests/test_base.py"
-    - "scripts/test_cli.py"
+_no_diffusers: &no_diffusers
+  if: build.message !~ /\[skip-diffusers\]/
 
-_if_changed_diffusers: &if_changed_diffusers
-  include:
-    - ".buildkite/**"
-    - ".github/version.yaml"
-    - "pyproject.toml"
-    - "uv.lock"
-    - "src/**"
-    - "tests/__init__.py"
-    - "tests/test_base.py"
-    - "tests/test_diffusers.py"
+_no_llm: &no_llm
+  if: build.message !~ /\[skip-llms\]/
 
-_if_changed_transformers: &if_changed_transformers
-  include:
-    - ".buildkite/**"
-    - ".github/version.yaml"
-    - "pyproject.toml"
-    - "uv.lock"
-    - "src/**"
-    - "tests/__init__.py"
-    - "tests/test_base.py"
-    - "tests/test_transformers.py"
-  exclude:
-    - "src/optimum/rbln/diffusers/**"
+_no_cli: &no_cli
+  if: build.message !~ /\[skip-cli\]/
 
-_if_changed_llm: &if_changed_llm
-  include:
-    - ".buildkite/**"
-    - ".github/version.yaml"
-    - "pyproject.toml"
-    - "uv.lock"
-    - "src/**"
-    - "tests/__init__.py"
-    - "tests/test_base.py"
-    - "tests/test_llm.py"
-  exclude:
-    - "src/optimum/rbln/diffusers/**"
-
-# GHA spawns the advanced CLI jobs at every level and skips them inside; here the
-# step is not created at all, so no NPU is held just to skip. A full build
-# uploads without --git-diff-base, which is why these carry no if_changed.
-_full_only: &full_only
-  if: "'${OPTIMUM_RBLN_TEST_LEVEL:-default}' == 'full'"
+_cli_full: &cli_full
+  if: "'${OPTIMUM_RBLN_TEST_LEVEL:-default}' == 'full' && build.message !~ /\\[skip-cli\\]/"
 
 _secrets: &secrets
   UV_INDEX_REBELLIONS_USERNAME: REBEL_SW_DEV_USERNAME
@@ -110,102 +53,175 @@ _npu: &npu
     product: "RBLN-CA25"
 
 steps:
+  - label: ":pytest: unit-cpu"
+    image: "${DEVTOOLS_DOCKER_IMAGE}"
+    secrets: *secrets
+    timeout_in_minutes: 60
+    artifact_paths: "junit-*.xml"
+    command:
+      - *sync
+      - "bash scripts/run-suite.sh unit-cpu"
+
   - label: ":pytest: config"
-    if_changed: *if_changed_config
     image: "${DEVTOOLS_DOCKER_IMAGE}"
     resources: *npu
     secrets: *secrets
     timeout_in_minutes: 60
+    artifact_paths: "junit-*.xml"
     command:
       - *sync
       - "bash scripts/run-suite.sh config"
 
   - label: ":pytest: cli-basic"
-    if_changed: *if_changed_cli
+    <<: *no_cli
     image: "${DEVTOOLS_DOCKER_IMAGE}"
     resources: *npu
     secrets: *secrets
     timeout_in_minutes: 60
+    artifact_paths: "junit-*.xml"
     command:
       - *sync
       - "bash scripts/run-suite.sh cli-basic"
 
   - label: ":pytest: cli-argument-parsing"
-    <<: *full_only
+    <<: *cli_full
     image: "${DEVTOOLS_DOCKER_IMAGE}"
     resources: *npu
     secrets: *secrets
     timeout_in_minutes: 60
+    artifact_paths: "junit-*.xml"
     command:
       - *sync
       - "bash scripts/run-suite.sh cli-argument-parsing"
 
   - label: ":pytest: cli-error-handling"
-    <<: *full_only
+    <<: *cli_full
     image: "${DEVTOOLS_DOCKER_IMAGE}"
     resources: *npu
     secrets: *secrets
     timeout_in_minutes: 60
+    artifact_paths: "junit-*.xml"
     command:
       - *sync
       - "bash scripts/run-suite.sh cli-error-handling"
 
-  - label: ":pytest: transformers"
-    if_changed: *if_changed_transformers
+  - label: ":pytest: transformers 1/3"
+    <<: *no_transformers
     image: "${DEVTOOLS_DOCKER_IMAGE}"
     resources: *npu
     secrets: *secrets
     timeout_in_minutes: 60
+    artifact_paths: "junit-*.xml"
     command:
       - *sync
-      - "bash scripts/run-suite.sh transformers"
+      - "bash scripts/run-suite.sh transformers 1/3"
 
-  - label: ":pytest: diffusers"
-    if_changed: *if_changed_diffusers
+  - label: ":pytest: transformers 2/3"
+    <<: *no_transformers
     image: "${DEVTOOLS_DOCKER_IMAGE}"
     resources: *npu
     secrets: *secrets
     timeout_in_minutes: 60
+    artifact_paths: "junit-*.xml"
     command:
       - *sync
-      - "bash scripts/run-suite.sh diffusers"
+      - "bash scripts/run-suite.sh transformers 2/3"
 
-  - label: ":pytest: llm 1/4"
-    if_changed: *if_changed_llm
+  - label: ":pytest: transformers 3/3"
+    <<: *no_transformers
     image: "${DEVTOOLS_DOCKER_IMAGE}"
     resources: *npu
     secrets: *secrets
     timeout_in_minutes: 60
+    artifact_paths: "junit-*.xml"
     command:
       - *sync
-      - "bash scripts/run-suite.sh llm 1"
+      - "bash scripts/run-suite.sh transformers 3/3"
 
-  - label: ":pytest: llm 2/4"
-    if_changed: *if_changed_llm
+  - label: ":pytest: diffusers 1/2"
+    <<: *no_diffusers
     image: "${DEVTOOLS_DOCKER_IMAGE}"
     resources: *npu
     secrets: *secrets
     timeout_in_minutes: 60
+    artifact_paths: "junit-*.xml"
     command:
       - *sync
-      - "bash scripts/run-suite.sh llm 2"
+      - "bash scripts/run-suite.sh diffusers 1/2"
 
-  - label: ":pytest: llm 3/4"
-    if_changed: *if_changed_llm
+  - label: ":pytest: diffusers 2/2"
+    <<: *no_diffusers
     image: "${DEVTOOLS_DOCKER_IMAGE}"
     resources: *npu
     secrets: *secrets
     timeout_in_minutes: 60
+    artifact_paths: "junit-*.xml"
     command:
       - *sync
-      - "bash scripts/run-suite.sh llm 3"
+      - "bash scripts/run-suite.sh diffusers 2/2"
 
-  - label: ":pytest: llm 4/4"
-    if_changed: *if_changed_llm
+  - label: ":pytest: llm 1/6"
+    <<: *no_llm
     image: "${DEVTOOLS_DOCKER_IMAGE}"
     resources: *npu
     secrets: *secrets
     timeout_in_minutes: 60
+    artifact_paths: "junit-*.xml"
     command:
       - *sync
-      - "bash scripts/run-suite.sh llm 4"
+      - "bash scripts/run-suite.sh llm 1/6"
+
+  - label: ":pytest: llm 2/6"
+    <<: *no_llm
+    image: "${DEVTOOLS_DOCKER_IMAGE}"
+    resources: *npu
+    secrets: *secrets
+    timeout_in_minutes: 60
+    artifact_paths: "junit-*.xml"
+    command:
+      - *sync
+      - "bash scripts/run-suite.sh llm 2/6"
+
+  - label: ":pytest: llm 3/6"
+    <<: *no_llm
+    image: "${DEVTOOLS_DOCKER_IMAGE}"
+    resources: *npu
+    secrets: *secrets
+    timeout_in_minutes: 60
+    artifact_paths: "junit-*.xml"
+    command:
+      - *sync
+      - "bash scripts/run-suite.sh llm 3/6"
+
+  - label: ":pytest: llm 4/6"
+    <<: *no_llm
+    image: "${DEVTOOLS_DOCKER_IMAGE}"
+    resources: *npu
+    secrets: *secrets
+    timeout_in_minutes: 60
+    artifact_paths: "junit-*.xml"
+    command:
+      - *sync
+      - "bash scripts/run-suite.sh llm 4/6"
+
+  - label: ":pytest: llm 5/6"
+    <<: *no_llm
+    image: "${DEVTOOLS_DOCKER_IMAGE}"
+    resources: *npu
+    secrets: *secrets
+    timeout_in_minutes: 60
+    artifact_paths: "junit-*.xml"
+    command:
+      - *sync
+      - "bash scripts/run-suite.sh llm 5/6"
+
+  - label: ":pytest: llm 6/6"
+    <<: *no_llm
+    image: "${DEVTOOLS_DOCKER_IMAGE}"
+    resources: *npu
+    secrets: *secrets
+    timeout_in_minutes: 60
+    artifact_paths: "junit-*.xml"
+    command:
+      - *sync
+      - "bash scripts/run-suite.sh llm 6/6"

@@ -34,7 +34,7 @@ class LoopProcessor(Module, ABC):
         return repr(self.model)
 
     def _is_batch_implemented(self) -> bool:
-        return self._forward_batch.__func__ is not LoopProcessor._forward_batch
+        return type(self)._forward_batch is not LoopProcessor._forward_batch
 
     def forward(self, *args, force_loop: bool = False, **kwargs) -> Any:
         if not force_loop and self._is_batch_implemented():
@@ -72,7 +72,7 @@ class LoopProcessor(Module, ABC):
         pass
 
     def _prepare_inputs_before_loop(self, *args, **kwargs) -> dict[str, Any]:
-        pass
+        return {}
 
     @abstractmethod
     def _process_outputs(self, outputs: list[Any], **kwargs) -> Any:

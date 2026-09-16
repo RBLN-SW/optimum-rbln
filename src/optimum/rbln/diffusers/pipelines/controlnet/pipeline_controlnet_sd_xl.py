@@ -256,7 +256,7 @@ class RBLNStableDiffusionXLControlNetPipeline(RBLNDiffusionMixin, StableDiffusio
         self,
         prompt: str | list[str] | None = None,
         prompt_2: str | list[str] | None = None,
-        image: PipelineImageInput = None,
+        image: PipelineImageInput | None = None,
         height: int | None = None,
         width: int | None = None,
         num_inference_steps: int = 50,
