@@ -370,8 +370,6 @@ class RBLNQwen2_5_VLModel(RBLNDecoderOnlyModel):
 
     @classmethod
     def _load_submodules(cls, model_save_dir, rbln_config, model=None, **kwargs):
-        # Loading with _load_visual_runtime=False skips the visual encoder entirely (no
-        # compiled-model read, no torch artifacts); text-only callers never miss it.
         if model is None and not getattr(rbln_config, "_load_visual_runtime", True):
             return []
         return super()._load_submodules(model_save_dir, rbln_config, model=model, **kwargs)
