@@ -1070,20 +1070,11 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
         if isinstance(rbln_config, RBLNModelConfig):
             config_file.update(rbln_config._runtime_options)
 
-            # A config object passed at load time must carry the same compile-time attributes as
-            # the artifact, which only a config loaded from that artifact can (`_compile_cfgs`
-            # exists nowhere else). The comparison excludes runtime options and other non-save
-            # attributes, since `__repr__` serializes neither.
+            # update submodule runtime
             for submodule in rbln_config.submodules:
                 if str(config_file[submodule]) != str(getattr(rbln_config, submodule)):
                     raise ValueError(
-                        f"The `rbln_config` object passed at load time does not match the artifact's "
-                        f"saved config for submodule `{submodule}`. Only a config loaded from the same "
-                        f"artifact (e.g. via `{cls.__name__}.from_pretrained`) can be passed as an "
-                        f"object, since compile-time attributes exist only in the artifact's "
-                        f"rbln_config.json. To override runtime options, pass a dict instead, e.g. "
-                        f"`rbln_config={{'{submodule}': {{'device': 0}}}}`, or reduce the object with "
-                        f"`get_load_overrides()`."
+                        f"Passed rbln_config has different attributes for submodule {submodule} than the config_file"
                     )
                 config_file[submodule] = getattr(rbln_config, submodule)
 

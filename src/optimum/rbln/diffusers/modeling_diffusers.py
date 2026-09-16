@@ -252,11 +252,8 @@ class RBLNDiffusionMixin(_PipelineBase):
                     submodule_cls = get_rbln_model_cls(class_name)
                     submodule_config = getattr(rbln_config, submodule_name)
                     if isinstance(submodule_config, RBLNModelConfig):
-                        # The pipeline config above was objectified from user input, so this
-                        # submodule config is a default-filled partial, not the complete config
-                        # recorded in the artifact. Reduce it to its load overrides (runtime
-                        # options and load-behavior flags) and let the artifact's
-                        # rbln_config.json fill in the compile-time attributes.
+                        # This submodule config is a default-filled partial, not the complete
+                        # config recorded in the artifact.
                         submodule_config = submodule_config.get_load_overrides()
                     submodule = submodule_cls.from_pretrained(
                         model_id, export=False, subfolder=submodule_name, rbln_config=submodule_config
