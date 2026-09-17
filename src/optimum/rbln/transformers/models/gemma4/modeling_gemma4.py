@@ -263,14 +263,15 @@ class RBLNGemma4ForCausalLM(RBLNMoeLoadMixin, RBLNDecoderOnlyModelForCausalLM):
             rbln_config=rbln_config,
             model_config=model_config,
         )
-        if getattr(model_config, "hidden_size_per_layer_input", 0):
+        text_config = model_config.get_text_config()
+        if getattr(text_config, "hidden_size_per_layer_input", 0):
             per_layer_entry = (
                 "per_layer_inputs",
                 [
                     batch_size,
                     query_length,
-                    model_config.num_hidden_layers,
-                    model_config.hidden_size_per_layer_input,
+                    text_config.num_hidden_layers,
+                    text_config.hidden_size_per_layer_input,
                 ],
                 rbln_config.dtype,
             )
@@ -432,12 +433,13 @@ class RBLNGemma4ForCausalLM(RBLNMoeLoadMixin, RBLNDecoderOnlyModelForCausalLM):
     def _create_per_layer_embedding_layer(self):
         from transformers.models.gemma4.modeling_gemma4 import Gemma4TextScaledWordEmbedding
 
+        text_config = self.config.get_text_config()
         with no_init_weights():
             embed_per_layer = Gemma4TextScaledWordEmbedding(
-                self.config.vocab_size_per_layer_input,
-                self.config.num_hidden_layers * self.config.hidden_size_per_layer_input,
-                self.config.pad_token_id,
-                embed_scale=self.config.hidden_size_per_layer_input**0.5,
+                text_config.vocab_size_per_layer_input,
+                text_config.num_hidden_layers * text_config.hidden_size_per_layer_input,
+                getattr(text_config, "pad_token_id", None),
+                embed_scale=text_config.hidden_size_per_layer_input**0.5,
             )
         # Gemma4TextScaledWordEmbedding does not forward a dtype kwarg to
         # nn.Embedding, so cast the module instead.
@@ -506,12 +508,13 @@ class RBLNGemma4ForCausalLM(RBLNMoeLoadMixin, RBLNDecoderOnlyModelForCausalLM):
     def _create_embedding_layer(self):
         from transformers.models.gemma4.modeling_gemma4 import Gemma4TextScaledWordEmbedding
 
+        text_config = self.config.get_text_config()
         with no_init_weights():
             embed_tokens = Gemma4TextScaledWordEmbedding(
-                self.config.vocab_size,
-                self.config.hidden_size,
-                self.config.pad_token_id,
-                embed_scale=self.config.hidden_size**0.5,
+                text_config.vocab_size,
+                text_config.hidden_size,
+                getattr(text_config, "pad_token_id", None),
+                embed_scale=text_config.hidden_size**0.5,
             )
         # Gemma4TextScaledWordEmbedding does not forward a dtype kwarg to
         # nn.Embedding, so cast the module instead.
