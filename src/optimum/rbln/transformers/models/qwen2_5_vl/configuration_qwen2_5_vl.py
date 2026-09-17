@@ -28,24 +28,17 @@ class RBLNQwen2_5_VLForConditionalGenerationConfig(RBLNDecoderOnlyModelForCausal
     """
 
     submodules = ["visual"]
-    subclass_non_save_attributes = ["_load_visual_runtime"]
 
     def __init__(
         self,
         use_inputs_embeds: bool = True,
         visual: RBLNModelConfig | None = None,
-        _load_visual_runtime: bool = True,
         **kwargs: Any,
     ):
         """
         Args:
             use_inputs_embeds (bool): Whether or not to use `inputs_embeds` as input. Defaults to `True`.
             visual (RBLNModelConfig | None): Configuration for the vision encoder component.
-            _load_visual_runtime (bool): Whether to load the visual encoder submodule. Set to
-                ``False`` for text-only usage (e.g., as the Cosmos text encoder) to skip loading
-                the visual encoder's compiled model (.rbln) and torch artifacts entirely. When
-                ``False``, calls with ``pixel_values`` / ``pixel_values_videos`` raise. Defaults
-                to ``True``.
             kwargs: Additional arguments passed to the parent `RBLNDecoderOnlyModelForCausalLMConfig`.
 
         Raises:
@@ -61,7 +54,6 @@ class RBLNQwen2_5_VLForConditionalGenerationConfig(RBLNDecoderOnlyModelForCausal
                 "as RBLNQwen2_5_VLForConditionalGeneration accepts only `inputs_embeds` as input."
             )
         self.visual = self.initialize_submodule_config(submodule_config=visual, batch_size=1, force_kwargs=True)
-        self._load_visual_runtime = _load_visual_runtime
 
 
 class RBLNQwen2_5_VLModelConfig(RBLNDecoderOnlyModelConfig):
@@ -70,12 +62,10 @@ class RBLNQwen2_5_VLModelConfig(RBLNDecoderOnlyModelConfig):
     """
 
     submodules = ["visual"]
-    subclass_non_save_attributes = ["_load_visual_runtime"]
 
-    def __init__(self, visual: RBLNModelConfig | None = None, _load_visual_runtime: bool = True, **kwargs: Any):
+    def __init__(self, visual: RBLNModelConfig | None = None, **kwargs: Any):
         super().__init__(**kwargs)
         self.visual = self.initialize_submodule_config(submodule_config=visual, batch_size=1, force_kwargs=True)
-        self._load_visual_runtime = _load_visual_runtime
 
 
 class RBLNQwen2_5_VisionTransformerPretrainedModelConfig(RBLNModelConfig):
