@@ -10,7 +10,7 @@ notify:
       context: "[OB] Optimum-RBLN pytest"
 
 env:
-  UV_CACHE_DIR: "/mnt/uv_cache"
+  UV_CACHE_DIR: "${UV_CACHE_PATH}"
   UV_LINK_MODE: "symlink"
   UV_INDEX_STRATEGY: "unsafe-best-match"
   OPTIMUM_RBLN_TEST_LEVEL: "${OPTIMUM_RBLN_TEST_LEVEL:-default}"
