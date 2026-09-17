@@ -390,3 +390,8 @@ class RBLNCosmosControlNetModel(RBLNModel):
         if not return_dict:
             return (result,)
         return CosmosControlNetOutput(control_block_samples=result)
+
+
+__all__ = [
+    "RBLNCosmosControlNetModel",
+]

@@ -12,13 +12,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import os
-from os import environ
+from typing import TYPE_CHECKING
+
+from transformers.utils import _LazyModule
+
+from ....utils.import_utils import define_import_structure
 
 
-this_path = os.path.abspath(__file__)
-local_dir = "/" + os.path.join(*this_path.split("/")[:-1]) + "/hf_hub_cached"
-environ["LOCAL_CACHE_ROOT_CUSTOM_CODE_MIDM"] = local_dir
+if TYPE_CHECKING:
+    from .configuration_exaone import *
+    from .modeling_exaone import *
+else:
+    import sys
 
-from .configuration_exaone import RBLNExaoneForCausalLMConfig
-from .modeling_exaone import RBLNExaoneForCausalLM
+    _file = globals()["__file__"]
+    sys.modules[__name__] = _LazyModule(__name__, _file, define_import_structure(_file), module_spec=__spec__)

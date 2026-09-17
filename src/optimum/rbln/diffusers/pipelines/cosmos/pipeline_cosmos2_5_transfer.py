@@ -135,3 +135,8 @@ class RBLNCosmos2_5_TransferPipeline(RBLNDiffusionMixin, Cosmos2_5_TransferPipel
         return super().from_pretrained(
             model_id, export=export, safety_checker=safety_checker, rbln_config=rbln_config, **kwargs
         )
+
+
+__all__ = [
+    "RBLNCosmos2_5_TransferPipeline",
+]

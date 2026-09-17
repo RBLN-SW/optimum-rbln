@@ -67,3 +67,8 @@ class RBLNQwen3MoeForCausalLM(RBLNMoeLoadMixin, RBLNDecoderOnlyModelForCausalLM)
     """
 
     _decoder_wrapper_cls = Qwen3MoeWrapper
+
+
+__all__ = [
+    "RBLNQwen3MoeForCausalLM",
+]

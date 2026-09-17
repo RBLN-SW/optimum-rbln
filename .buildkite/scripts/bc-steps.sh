@@ -3,16 +3,14 @@
 #
 # Emits the backward-compatibility steps for `buildkite-agent pipeline upload`.
 # Each release under BC_BASE_PATH holds the artifacts that release compiled
-# (written by the GHA bc_compile workflow on every tag); a step reloads them with
+# (written by the tag build, .buildkite/bc-compile.yml); a step reloads them with
 # the current code.
 #
 # The load uses a dummy device, so no NPU is involved -- but creating the runtime
 # still dlopens librbln-thunk.so, and a CPU pod has no UMD of its own (build #29
-# failed every model with "Failed to load the RBLN Thunk library"). The shared
-# UMD on LD_LIBRARY_PATH is what rebel_compiler's own no-device pytest step uses;
-# the extra entries are the other mounts it is published under, and a path that
-# does not exist is ignored. The llm step asks for far more memory than the
-# others, matching the 128GB runner it replaces.
+# failed every model with "Failed to load the RBLN Thunk library"), hence UMD_PATH.
+# The llm step asks for far more memory than the others, matching the 128GB runner
+# it replaces.
 #
 # --latest is what a PR runs (the newest release only), --all is the nightly.
 set -euo pipefail
@@ -40,20 +38,13 @@ echo "steps:"
 for tag in $tags; do
   encoded="${tag//./_}"
   for suite in transformers diffusers llm; do
+    # llm answers to [skip-llms], the others to their own name.
+    case "$suite" in llm) skip="skip-llms" ;; *) skip="skip-$suite" ;; esac
     if [ "$suite" = llm ]; then memory="128Gi"; else memory="32Gi"; fi
     cat <<EOF
   - label: ":rewind: BC $tag $suite"
     key: "bc-${encoded}-${suite}"
-    if_changed:
-      include:
-        - ".buildkite/**"
-        - ".github/version.yaml"
-        - "pyproject.toml"
-        - "uv.lock"
-        - "src/**"
-        - "tests/__init__.py"
-        - "tests/test_base.py"
-        - "tests/test_${suite}.py"
+    if: build.message !~ /\[${skip}\]/
     image: "\${DEVTOOLS_DOCKER_IMAGE}"
     resources:
       cpu:
@@ -68,10 +59,11 @@ for tag in $tags; do
       HF_TOKEN: HF_TOKEN
       HF_HOME: HF_HOME
     env:
-      LD_LIBRARY_PATH: "/mnt/shared_data/cross-volume/umd:/mnt/shared_data/umd:/mnt/cross_data/umd"
+      LD_LIBRARY_PATH: "\${UMD_PATH}"
       OPTIMUM_RBLN_TEST_LEVEL: "full"
       REUSE_ARTIFACTS_PATH: "$BC_BASE_PATH/$encoded"
     timeout_in_minutes: 60
+    artifact_paths: "junit-*.xml"
     command:
       - "bash .buildkite/scripts/sync.sh"
       - "bash .buildkite/scripts/run-suite.sh $suite"

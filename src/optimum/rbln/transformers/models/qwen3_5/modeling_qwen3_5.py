@@ -380,7 +380,7 @@ class RBLNQwen3_5VisionModel(RBLNModel):
         cls,
         preprocessors=None,
         model: Optional["PreTrainedModel"] = None,
-        model_config: "PretrainedConfig" = None,
+        model_config: "PretrainedConfig | None" = None,
         rbln_config: RBLNQwen3_5VisionModelConfig | None = None,
     ) -> RBLNQwen3_5VisionModelConfig:
         hidden_size = model_config.hidden_size
@@ -834,8 +834,8 @@ class RBLNQwen3_5ForConditionalGeneration(RBLNQwenVLBatchSortMixin, RBLNQwen3_5M
 
     def _preprocess_decoder(
         self,
-        input_ids: torch.LongTensor = None,
-        cache_position: torch.LongTensor = None,
+        input_ids: torch.LongTensor | None = None,
+        cache_position: torch.LongTensor | None = None,
     ):
         if self.rbln_config.batch_size != cache_position.shape[0]:
             raise RuntimeError(
@@ -929,3 +929,12 @@ class RBLNQwen3_5ForConditionalGeneration(RBLNQwenVLBatchSortMixin, RBLNQwen3_5M
         if not return_dict:
             return logits, generate_idx
         return RBLNDecoderOnlyOutput(logits=logits, generate_idx=generate_idx, hidden_states=all_hidden_states)
+
+
+__all__ = [
+    "RBLNQwen3_5ForCausalLM",
+    "RBLNQwen3_5ForConditionalGeneration",
+    "RBLNQwen3_5Model",
+    "RBLNQwen3_5TextModel",
+    "RBLNQwen3_5VisionModel",
+]

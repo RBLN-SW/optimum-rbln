@@ -53,3 +53,9 @@ class RBLNGPT2Model(RBLNDecoderOnlyModel):
 
     _decoder_wrapper_cls = GPT2Wrapper
     _use_rotary_emb = False
+
+
+__all__ = [
+    "RBLNGPT2LMHeadModel",
+    "RBLNGPT2Model",
+]

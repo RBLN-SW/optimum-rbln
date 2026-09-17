@@ -104,3 +104,8 @@ class RBLNCosmos2_5_PredictBasePipeline(RBLNDiffusionMixin, Cosmos2_5_PredictBas
         return super().from_pretrained(
             model_id, export=export, safety_checker=safety_checker, rbln_config=rbln_config, **kwargs
         )
+
+
+__all__ = [
+    "RBLNCosmos2_5_PredictBasePipeline",
+]

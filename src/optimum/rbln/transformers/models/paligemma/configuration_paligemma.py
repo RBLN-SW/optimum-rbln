@@ -127,3 +127,9 @@ class RBLNPaliGemmaModelConfig(RBLNModelConfig):
             use_inputs_embeds=True,
             output_hidden_states=output_hidden_states,
         )
+
+
+__all__ = [
+    "RBLNPaliGemmaForConditionalGenerationConfig",
+    "RBLNPaliGemmaModelConfig",
+]

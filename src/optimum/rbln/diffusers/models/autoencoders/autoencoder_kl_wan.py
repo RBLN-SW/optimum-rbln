@@ -731,3 +731,8 @@ class RBLNAutoencoderKLWan(RBLNModel):
 
     def _encode(self, x: torch.Tensor):
         return self.encoder.encode(x)
+
+
+__all__ = [
+    "RBLNAutoencoderKLWan",
+]

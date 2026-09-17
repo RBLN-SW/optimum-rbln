@@ -92,3 +92,8 @@ class RBLNCosmos2TextToImagePipeline(RBLNDiffusionMixin, Cosmos2TextToImagePipel
         return super().from_pretrained(
             model_id, export=export, safety_checker=safety_checker, rbln_config=rbln_config, **kwargs
         )
+
+
+__all__ = [
+    "RBLNCosmos2TextToImagePipeline",
+]

@@ -14,7 +14,7 @@
 
 import inspect
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import torch
 from transformers import AutoModelForImageTextToText, PreTrainedModel, Qwen3VLMoeConfig
@@ -38,10 +38,6 @@ from ..qwen3_vl.modeling_qwen3_vl import (
 from .configuration_qwen3_vl_moe import RBLNQwen3VLMoeVisionModelConfig
 from .qwen3_vl_moe_architecture import Qwen3VLMoe_LanguageModelWrapper, Qwen3VLMoeVisionModelWrapper
 from .qwen3_vl_moe_runtime_utils import RBLNQwen3VLMoeRuntimeModel
-
-
-if TYPE_CHECKING:
-    pass
 
 
 class RBLNQwen3VLMoeVisionModel(RBLNQwen3VLVisionModel):
@@ -136,3 +132,10 @@ class RBLNQwen3VLMoeForConditionalGeneration(RBLNMoeLoadMixin, RBLNQwen3VLForCon
     _decoder_wrapper_cls = Qwen3VLMoe_LanguageModelWrapper
     _use_rotary_emb = False
     _rbln_submodules = [{"name": "visual"}]
+
+
+__all__ = [
+    "RBLNQwen3VLMoeForConditionalGeneration",
+    "RBLNQwen3VLMoeModel",
+    "RBLNQwen3VLMoeVisionModel",
+]

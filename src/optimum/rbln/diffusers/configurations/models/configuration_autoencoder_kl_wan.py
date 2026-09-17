@@ -90,3 +90,8 @@ class RBLNAutoencoderKLWanConfig(RBLNModelConfig):
     @property
     def image_size(self):
         return (self.height, self.width)
+
+
+__all__ = [
+    "RBLNAutoencoderKLWanConfig",
+]

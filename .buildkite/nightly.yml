@@ -2,12 +2,11 @@
 # Replaces .github/workflows/rbln_scheduled_test.yaml.
 #
 # Everything runs at the full test level against every release's BC artifacts,
-# and the report at the end says what happened. Nothing is path-gated: the
-# uploads pass no --git-diff-base, so if_changed does not apply.
+# and the report at the end says what happened.
 
 env:
-  BC_BASE_PATH: "/mnt/shared_data/.cache/optimum-rbln/backward_compatibility"
-  UV_CACHE_DIR: "/mnt/uv_cache"
+  BC_BASE_PATH: "${OPTIMUM_BC_BASE_PATH}"
+  UV_CACHE_DIR: "${UV_CACHE_PATH}"
   UV_LINK_MODE: "symlink"
   UV_INDEX_STRATEGY: "unsafe-best-match"
 

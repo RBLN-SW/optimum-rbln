@@ -29,3 +29,10 @@ class RBLNQwen3VLMoeModelConfig(RBLNQwen3VLModelConfig):
 
 class RBLNQwen3VLMoeVisionModelConfig(RBLNQwen3VLVisionModelConfig):
     pass
+
+
+__all__ = [
+    "RBLNQwen3VLMoeForConditionalGenerationConfig",
+    "RBLNQwen3VLMoeModelConfig",
+    "RBLNQwen3VLMoeVisionModelConfig",
+]

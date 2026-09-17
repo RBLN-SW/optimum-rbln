@@ -91,3 +91,9 @@ class RBLNMistralModel(RBLNDecoderOnlyModel):
     """
 
     _decoder_wrapper_cls = MistralWrapper
+
+
+__all__ = [
+    "RBLNMistralForCausalLM",
+    "RBLNMistralModel",
+]

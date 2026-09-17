@@ -12,10 +12,23 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .cosmos_guardrail import RBLNCosmosSafetyChecker
-from .pipeline_cosmos2_5_predict import RBLNCosmos2_5_PredictBasePipeline
-from .pipeline_cosmos2_5_transfer import RBLNCosmos2_5_TransferPipeline
-from .pipeline_cosmos2_text2image import RBLNCosmos2TextToImagePipeline
-from .pipeline_cosmos2_video2world import RBLNCosmos2VideoToWorldPipeline
-from .pipeline_cosmos_text2world import RBLNCosmosTextToWorldPipeline
-from .pipeline_cosmos_video2world import RBLNCosmosVideoToWorldPipeline
+from typing import TYPE_CHECKING
+
+from transformers.utils import _LazyModule
+
+from ....utils.import_utils import define_import_structure
+
+
+if TYPE_CHECKING:
+    from .cosmos_guardrail import *
+    from .pipeline_cosmos2_5_predict import *
+    from .pipeline_cosmos2_5_transfer import *
+    from .pipeline_cosmos2_text2image import *
+    from .pipeline_cosmos2_video2world import *
+    from .pipeline_cosmos_text2world import *
+    from .pipeline_cosmos_video2world import *
+else:
+    import sys
+
+    _file = globals()["__file__"]
+    sys.modules[__name__] = _LazyModule(__name__, _file, define_import_structure(_file), module_spec=__spec__)

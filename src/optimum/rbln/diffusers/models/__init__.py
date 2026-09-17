@@ -16,52 +16,16 @@ from typing import TYPE_CHECKING
 
 from transformers.utils import _LazyModule
 
+from ...utils.import_utils import define_import_structure
 
-_import_structure = {
-    "autoencoders": [
-        "RBLNAutoencoderKL",
-        "RBLNAutoencoderKLCosmos",
-        "RBLNAutoencoderKLWan",
-        "RBLNVQModel",
-        "RBLNAutoencoderKLTemporalDecoder",
-        "RBLNAutoencoderKLWan",
-    ],
-    "unets": [
-        "RBLNUNet2DConditionModel",
-        "RBLNUNetSpatioTemporalConditionModel",
-    ],
-    "controlnets": ["RBLNControlNetModel", "RBLNCosmosControlNetModel"],
-    "transformers": [
-        "RBLNPriorTransformer",
-        "RBLNCosmosTransformer3DModel",
-        "RBLNSD3Transformer2DModel",
-    ],
-}
 
 if TYPE_CHECKING:
-    from .autoencoders import (
-        RBLNAutoencoderKL,
-        RBLNAutoencoderKLCosmos,
-        RBLNAutoencoderKLTemporalDecoder,
-        RBLNAutoencoderKLWan,
-        RBLNVQModel,
-    )
-    from .controlnets import RBLNControlNetModel, RBLNCosmosControlNetModel
-    from .transformers import (
-        RBLNCosmosTransformer3DModel,
-        RBLNPriorTransformer,
-        RBLNSD3Transformer2DModel,
-    )
-    from .unets import (
-        RBLNUNet2DConditionModel,
-        RBLNUNetSpatioTemporalConditionModel,
-    )
+    from .autoencoders import *
+    from .controlnets import *
+    from .transformers import *
+    from .unets import *
 else:
     import sys
 
-    sys.modules[__name__] = _LazyModule(
-        __name__,
-        globals()["__file__"],
-        _import_structure,
-        module_spec=__spec__,
-    )
+    _file = globals()["__file__"]
+    sys.modules[__name__] = _LazyModule(__name__, _file, define_import_structure(_file), module_spec=__spec__)

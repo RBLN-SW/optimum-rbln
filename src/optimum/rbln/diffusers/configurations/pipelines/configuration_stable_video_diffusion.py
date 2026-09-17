@@ -112,3 +112,8 @@ class RBLNStableVideoDiffusionPipelineConfig(RBLNModelConfig):
     @property
     def image_size(self):
         return self.vae.sample_size
+
+
+__all__ = [
+    "RBLNStableVideoDiffusionPipelineConfig",
+]

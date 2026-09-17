@@ -76,7 +76,11 @@ class RBLNPageTableManager:
             raise RuntimeError(self.NO_BLOCKS_ERROR)
 
     def get_block_tables(
-        self, cache_position: torch.Tensor, batch_idx: int = None, batch_size: int = None, phase: str = "prefill"
+        self,
+        cache_position: torch.Tensor,
+        batch_idx: int | None = None,
+        batch_size: int | None = None,
+        phase: str = "prefill",
     ) -> torch.Tensor:
         """
         Manages and returns the KV cache block tables.
@@ -150,7 +154,7 @@ class RBLNPageTableManager:
         self,
         batch_size,
         cache_position: torch.Tensor,
-        batch_idx: int = None,
+        batch_idx: int | None = None,
         phase: str = "prefill",
         block_tables: torch.Tensor | None = None,
         local_block_tables: torch.Tensor | None = None,
@@ -224,7 +228,7 @@ class RBLNRuntimeModel(RBLNPytorchRuntime):
         self,
         input_ids: torch.LongTensor | None = None,
         inputs_embeds: torch.Tensor | None = None,
-        cache_position: torch.Tensor = None,
+        cache_position: torch.Tensor | None = None,
         attention_mask: torch.Tensor | None = None,
         batch_idx: int | None = None,
         block_tables: torch.Tensor | None = None,
@@ -275,9 +279,9 @@ class RBLNRuntimeModel(RBLNPytorchRuntime):
     def decode_forward(
         self,
         inputs: torch.Tensor,
-        cache_position: torch.Tensor = None,
-        block_tables: torch.Tensor = None,
-        is_external_block_tables: bool = None,
+        cache_position: torch.Tensor | None = None,
+        block_tables: torch.Tensor | None = None,
+        is_external_block_tables: bool | None = None,
         attention_mask: torch.Tensor | None = None,
         position_embed: torch.Tensor | None = None,
         position_ids: torch.Tensor | None = None,
@@ -889,7 +893,7 @@ class RBLNDecoderOnlyChunkedMultimodalPrefillMixin:
         self,
         input_ids: torch.LongTensor | None = None,
         inputs_embeds: torch.Tensor | None = None,
-        cache_position: torch.Tensor = None,
+        cache_position: torch.Tensor | None = None,
         attention_mask: torch.Tensor | None = None,
         batch_idx: int | None = None,
         block_tables: torch.Tensor | None = None,
@@ -945,11 +949,11 @@ class RBLNDecoderOnlyChunkedMultimodalPrefillMixin:
     def prefill_forward(
         self,
         inputs: torch.Tensor,
-        cache_position: torch.Tensor = None,
+        cache_position: torch.Tensor | None = None,
         attention_mask: torch.Tensor | None = None,
-        batch_idx: int = None,
-        block_tables: torch.Tensor = None,
-        is_external_block_tables: bool = None,
+        batch_idx: int | None = None,
+        block_tables: torch.Tensor | None = None,
+        is_external_block_tables: bool | None = None,
         position_ids: torch.Tensor | None = None,
         position_embed: torch.Tensor | None = None,
         token_type_ids: torch.Tensor | None = None,

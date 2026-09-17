@@ -49,7 +49,7 @@ class RBLNCosmosVideoToWorldPipeline(RBLNDiffusionMixin, CosmosVideoToWorldPipel
         transformer: RBLNCosmosTransformer3DModel,
         vae: RBLNAutoencoderKLCosmos,
         scheduler: EDMEulerScheduler,
-        safety_checker: RBLNCosmosSafetyChecker = None,
+        safety_checker: RBLNCosmosSafetyChecker | None = None,
     ):
         if safety_checker is None:
             safety_checker = RBLNCosmosSafetyChecker()
@@ -125,3 +125,8 @@ class RBLNCosmosVideoToWorldPipeline(RBLNDiffusionMixin, CosmosVideoToWorldPipel
         return super().from_pretrained(
             model_id, export=export, safety_checker=safety_checker, rbln_config=rbln_config, **kwargs
         )
+
+
+__all__ = [
+    "RBLNCosmosVideoToWorldPipeline",
+]
