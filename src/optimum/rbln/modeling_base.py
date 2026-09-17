@@ -330,10 +330,11 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
                     config = PretrainedConfig(**config_dict)
 
             compiled_model_names = [cfg.compiled_model_name for cfg in rbln_config.compile_cfgs]
+            compiled_model_paths = cls._resolve_compiled_model_paths(model_path_subfolder, compiled_model_names)
             if rbln_config.create_runtimes:
-                rbln_compiled_models = cls._load_compiled_models(model_path_subfolder, compiled_model_names)
-            else:
-                cls._resolve_compiled_model_paths(model_path_subfolder, compiled_model_names)
+                rbln_compiled_models = {
+                    cm_name: rebel.RBLNCompiledModel(path) for cm_name, path in compiled_model_paths.items()
+                }
 
             if subfolder != "":
                 model_save_dir = Path(model_path_subfolder).absolute().parent
