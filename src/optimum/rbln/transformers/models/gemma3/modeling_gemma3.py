@@ -417,7 +417,7 @@ class RBLNGemma3ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
             embed_tokens = Gemma3TextScaledWordEmbedding(
                 text_config.vocab_size,
                 text_config.hidden_size,
-                getattr(text_config, "pad_token_id", None),
+                text_config.pad_token_id,
                 embed_scale=text_config.hidden_size**0.5,
             )
         # Gemma3TextScaledWordEmbedding does not forward a dtype kwarg to

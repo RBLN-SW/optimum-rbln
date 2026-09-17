@@ -438,7 +438,7 @@ class RBLNGemma4ForCausalLM(RBLNMoeLoadMixin, RBLNDecoderOnlyModelForCausalLM):
             embed_per_layer = Gemma4TextScaledWordEmbedding(
                 text_config.vocab_size_per_layer_input,
                 text_config.num_hidden_layers * text_config.hidden_size_per_layer_input,
-                getattr(text_config, "pad_token_id", None),
+                text_config.pad_token_id,
                 embed_scale=text_config.hidden_size_per_layer_input**0.5,
             )
         # Gemma4TextScaledWordEmbedding does not forward a dtype kwarg to
@@ -513,7 +513,7 @@ class RBLNGemma4ForCausalLM(RBLNMoeLoadMixin, RBLNDecoderOnlyModelForCausalLM):
             embed_tokens = Gemma4TextScaledWordEmbedding(
                 text_config.vocab_size,
                 text_config.hidden_size,
-                getattr(text_config, "pad_token_id", None),
+                text_config.pad_token_id,
                 embed_scale=text_config.hidden_size**0.5,
             )
         # Gemma4TextScaledWordEmbedding does not forward a dtype kwarg to

@@ -201,7 +201,7 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
             embed_tokens = torch.nn.Embedding(
                 text_config.vocab_size,
                 text_config.hidden_size,
-                getattr(text_config, "pad_token_id", None),
+                text_config.pad_token_id,
                 dtype=self.rbln_config.dtype,
             )
         return embed_tokens
@@ -555,9 +555,7 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
         model_config: PretrainedConfig | None = None,
         rbln_config: RBLNDecoderOnlyModelForCausalLMConfig | None = None,
     ) -> RBLNDecoderOnlyModelForCausalLMConfig:
-        # Resolve the text section for the attributes read here. Downstream hooks
-        # (`get_input_info`, `_update_sliding_window_config`) take the raw `model_config`
-        # because some of them also need sibling sections such as `vision_config`.
+        # downstream hooks get the raw model_config: some need sibling sections (e.g. vision_config)
         text_config = model_config.get_text_config()
 
         if rbln_config.max_seq_len is None:
@@ -700,8 +698,6 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
             )
         output_hidden_states = _validate_output_hidden_states(output_hidden_states, self.rbln_config)
 
-        # `get_text_config()` returns the config itself on flat configs and the nested text section on
-        # composite ones, so subclasses with a composite config reach this path without an override.
         text_config = self.config.get_text_config()
 
         all_last_hidden_states = []
