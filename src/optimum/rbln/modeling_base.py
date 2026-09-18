@@ -292,7 +292,7 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
                         config_name = "config.json"  # type: ignore[assignment]
 
                     config_dict = cast(
-                        dict[str, Any],
+                        "dict[str, Any]",
                         DummyConfigMixin.load_config(
                             model_id,
                             cache_dir=cache_dir,
@@ -359,7 +359,7 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
 
         except RuntimeError as e:
             error_msg = (
-                f"\nFailed to create RBLN runtime: {str(e)}\n\n"
+                f"\nFailed to create RBLN runtime: {e!s}\n\n"
                 f"If you only need to compile the model without loading it to NPU, you can use:\n"
                 f"  from_pretrained(..., rbln_create_runtimes=False) or\n"
                 f"  from_pretrained(..., rbln_config={{..., 'create_runtimes': False}})\n\n"

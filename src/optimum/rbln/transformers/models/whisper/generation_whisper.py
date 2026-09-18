@@ -60,7 +60,7 @@ class RBLNWhisperGenerationMixin(WhisperGenerationMixin, GenerationMixin):
             attention_mask (torch.Tensor, optional): Attention mask needs to be passed when doing long-form transcription using a batch size > 1.
             generation_config (GenerationConfig, optional): The generation configuration to be used as base parametrization for the generation call. **kwargs passed to generate matching the attributes of generation_config will override them.
                 If generation_config is not provided, the default will be used, which had the following loading priority: 1) from the generation_config.json model file, if it exists; 2) from the model configuration.
-                Please note that unspecified parameters will inherit [GenerationConfig](https://huggingface.co/docs/transformers/v4.57.1/en/main_classes/text_generation#transformers.GenerationConfig)’s default values.
+                Please note that unspecified parameters will inherit [GenerationConfig](https://huggingface.co/docs/transformers/v4.57.1/en/main_classes/text_generation#transformers.GenerationConfig)'s default values.
             return_segments (bool, optional): Whether to return segments.
             return_timestamps (bool, optional): Whether to return the timestamps with the text. For audios longer than 30 seconds, it is necessary to set return_timestamps=True.
             return_token_timestamps (bool, optional): Whether to return token timestamps.
@@ -69,13 +69,12 @@ class RBLNWhisperGenerationMixin(WhisperGenerationMixin, GenerationMixin):
         Returns:
             Transcribes or translates log-mel input features to a sequence of auto-regressively generated token ids.
         """
-        if kwargs.get("num_beams", None) is not None:
-            if kwargs.get("num_beams") != 1:
-                raise ValueError(
-                    "Beam search is not supported in RBLNWhisperGenerationMixin. "
-                    "Received num_beams={num_beams}, but only num_beams=1 is allowed. "
-                    "Please set num_beams=1 for greedy search or adjust your configuration."
-                )
+        if kwargs.get("num_beams") is not None and kwargs.get("num_beams") != 1:
+            raise ValueError(
+                "Beam search is not supported in RBLNWhisperGenerationMixin. "
+                "Received num_beams={num_beams}, but only num_beams=1 is allowed. "
+                "Please set num_beams=1 for greedy search or adjust your configuration."
+            )
 
         return super().generate(
             input_features,

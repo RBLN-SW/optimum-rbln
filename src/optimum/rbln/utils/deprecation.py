@@ -198,10 +198,9 @@ def deprecate_kwarg(
                 message = f"{message} {additional_message}"
 
             # update minimum_action if argument is ALREADY deprecated (current version >= deprecated version)
-            if is_greater_or_equal_version and message is not None:
+            if is_greater_or_equal_version and message is not None and raise_if_greater_or_equal_version:
                 # change to NOTIFY -> RAISE  in case we want to raise error for already deprecated arguments
-                if raise_if_greater_or_equal_version:
-                    minimum_action = Action.RAISE
+                minimum_action = Action.RAISE
 
             # raise error or notify user
             if minimum_action == Action.RAISE:

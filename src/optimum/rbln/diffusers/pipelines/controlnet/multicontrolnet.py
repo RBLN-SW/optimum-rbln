@@ -54,10 +54,7 @@ class RBLNMultiControlNetModel(RBLNModel):
         idx = 0
         controlnets = []
         subfolder_name = kwargs.pop("subfolder", None)
-        if subfolder_name is not None:
-            model_path_to_load = model_id + "/" + subfolder_name
-        else:
-            model_path_to_load = model_id
+        model_path_to_load = model_id + "/" + subfolder_name if subfolder_name is not None else model_id
 
         base_model_path_to_load = model_path_to_load
 

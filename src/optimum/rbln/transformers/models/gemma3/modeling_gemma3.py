@@ -14,7 +14,7 @@
 import importlib
 import inspect
 from collections.abc import Callable, Sequence
-from typing import TYPE_CHECKING, Any, Optional
+from typing import Any, Optional
 
 import torch
 from transformers import AutoModelForImageTextToText, Gemma3ForConditionalGeneration, PretrainedConfig, PreTrainedModel
@@ -32,10 +32,6 @@ from ..decoderonly.decoderonly_runtime_utils import RBLNPageTableManager
 from ..decoderonly.modeling_decoderonly import RBLNDecoderOnlyModelForCausalLM
 from .gemma3_architecture import Gemma3ForCausalLMWrapper
 from .gemma3_runtime_utils import RBLNGemma3RuntimeModel
-
-
-if TYPE_CHECKING:
-    from transformers import Gemma3ForConditionalGeneration
 
 
 class LoopVisionTower(LoopProcessor):

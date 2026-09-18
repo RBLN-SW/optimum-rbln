@@ -117,7 +117,7 @@ class RBLNCompileConfig:
                 and isinstance(item[0], str)  # name
                 and isinstance(item[1], (tuple, list))  # shape
                 and all(isinstance(x, int) for x in item[1])
-                and (isinstance(item[2], str) or isinstance(item[2], torch.dtype))  # dtype
+                and isinstance(item[2], (str, torch.dtype))  # dtype
                 for item in input_info
             )
 
@@ -133,14 +133,14 @@ class RBLNCompileConfig:
             raise ValueError("`input_info` is required.")
 
         if self.is_multiple_input_info:
-            self.input_info = [normalize_input_info(info) for info in cast(Sequence[TypeInputInfo], self.input_info)]
+            self.input_info = [normalize_input_info(info) for info in cast("Sequence[TypeInputInfo]", self.input_info)]
         else:
-            self.input_info = normalize_input_info(cast(TypeInputInfo, self.input_info))
+            self.input_info = normalize_input_info(cast("TypeInputInfo", self.input_info))
 
     def _single_input_info(self) -> TypeInputInfo:
         if self.input_info is None or self.is_multiple_input_info:
             raise ValueError("`input_info` must describe a single set of inputs.")
-        return cast(TypeInputInfo, self.input_info)
+        return cast("TypeInputInfo", self.input_info)
 
     def update(self, kwargs: dict[str, Any]):
         self.compiled_model_name = kwargs.get("compiled_model_name", self.compiled_model_name)
@@ -168,10 +168,7 @@ class RBLNCompileConfig:
                     raise RuntimeError(f"Different dtype for dummy inputs ({dtype} != {tensor.dtype})")
                 dummy.append(tensor)
             else:
-                if name in meta_tensor_names:
-                    device = "meta"
-                else:
-                    device = "cpu"
+                device = "meta" if name in meta_tensor_names else "cpu"
 
                 dummy.append(
                     torch.fill(torch.empty(*shape, dtype=torch_dtype, device=torch.device(device)), fill)
@@ -283,9 +280,8 @@ class RBLNAutoConfig:
             raise ValueError("`config` must be a subclass of RBLNModelConfig.")
 
         native_cls = getattr(importlib.import_module("optimum.rbln"), config.__name__, None)
-        if config.__name__ in CONFIG_MAPPING or native_cls is not None:
-            if not exist_ok:
-                raise ValueError(f"Configuration for {config.__name__} already registered.")
+        if (config.__name__ in CONFIG_MAPPING or native_cls is not None) and not exist_ok:
+            raise ValueError(f"Configuration for {config.__name__} already registered.")
 
         CONFIG_MAPPING[config.__name__] = config
 
@@ -647,9 +643,8 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
 
         filtered_out_params = set()
 
-        if model_cls is not None:
-            if not getattr(model_cls, "_tp_support", False):
-                filtered_out_params.add("num_devices")
+        if model_cls is not None and not getattr(model_cls, "_tp_support", False):
+            filtered_out_params.add("num_devices")
 
         filtered_params = {}
         for key, value in parameters.items():
@@ -670,11 +665,10 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
         ):
             self._attributes_map[key] = value
 
-        if hasattr(self, "_frozen") and self._frozen:
-            if not hasattr(self, key) or getattr(self, key) != value:
-                raise RuntimeError(
-                    f"`{self.__class__.__name__}` is frozen. Cannot update or set attribute after freezing."
-                )
+        if hasattr(self, "_frozen") and self._frozen and (not hasattr(self, key) or getattr(self, key) != value):
+            raise RuntimeError(
+                f"`{self.__class__.__name__}` is frozen. Cannot update or set attribute after freezing."
+            )
 
         # If the submodule is a dict, Instantiate the submodule config class
         if key in self.submodules and isinstance(value, dict) and (cls_name := value.get("cls_name")):
@@ -949,9 +943,8 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
             not isinstance(self._compile_cfgs, list)
             or len(self._compile_cfgs) == 0
             or not all(isinstance(cfg, RBLNCompileConfig) for cfg in self._compile_cfgs)
-        ):
-            if not self._allow_no_compile_cfgs:
-                raise RuntimeError("`compile_cfgs` must contain at least one `RBLNCompileConfig` before freezing.")
+        ) and not self._allow_no_compile_cfgs:
+            raise RuntimeError("`compile_cfgs` must contain at least one `RBLNCompileConfig` before freezing.")
 
         for submodule_name in self.submodules:
             submodule_config = getattr(self, submodule_name, None)
@@ -1045,7 +1038,7 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
                 if f"rbln_{key}" not in kwargs:
                     kwargs[f"rbln_{key}"] = value
 
-        rbln_keys = [key for key in kwargs.keys() if key.startswith("rbln_")]
+        rbln_keys = [key for key in kwargs if key.startswith("rbln_")]
         rbln_runtime_kwargs = {key[5:]: kwargs.pop(key) for key in rbln_keys if key[5:] in RUNTIME_KEYWORDS}
         rbln_submodule_kwargs = {key[5:]: kwargs.pop(key) for key in rbln_keys if key[5:] in cls.submodules}
 

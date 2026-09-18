@@ -14,7 +14,7 @@
 
 
 import torch
-import torch.nn as nn
+from torch import nn
 
 from ..decoderonly.decoderonly_architecture import apply_rotary_pos_emb
 

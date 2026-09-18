@@ -106,12 +106,12 @@ pip install optimum-rbln --extra-index-url https://download.pytorch.org/whl/cpu
 
 - Install [uv](https://docs.astral.sh/uv/) (refer to [this link](https://docs.astral.sh/uv/getting-started/installation/) for detailed commands)
 
-The below command installs `optimum-rbln` along with its dependencies.
+The below commands create a virtual environment in `.venv` and install `optimum-rbln` in editable mode along with its dependencies. See [CONTRIBUTING.md](CONTRIBUTING.md) for the full development setup.
 
 ```bash
 git clone https://github.com/rbln-sw/optimum-rbln.git
 cd optimum-rbln
-./scripts/uv-sync.sh
+uv sync
 ```
 
 ### Need Help?

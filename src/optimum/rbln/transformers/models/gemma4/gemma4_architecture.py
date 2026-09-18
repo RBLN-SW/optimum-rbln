@@ -16,7 +16,7 @@ import copy
 from typing import Any
 
 import torch
-import torch.nn as nn
+from torch import nn
 from transformers import PreTrainedModel
 from transformers.activations import ACT2FN
 
@@ -451,10 +451,7 @@ class Gemma4TextAttention(DecoderOnlyAttention):
             s_aux=getattr(self, "sinks", None),
         )
 
-        if self.lora_config:
-            attn_outputs = self.o_proj(attn_output, lora_int_id)
-        else:
-            attn_outputs = self.o_proj(attn_output)
+        attn_outputs = self.o_proj(attn_output, lora_int_id) if self.lora_config else self.o_proj(attn_output)
 
         return attn_outputs
 

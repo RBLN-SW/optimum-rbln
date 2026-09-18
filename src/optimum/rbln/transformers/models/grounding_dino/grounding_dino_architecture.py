@@ -18,13 +18,14 @@ from typing import TYPE_CHECKING
 import torch
 import torch.nn.functional as F
 from torch import Tensor
-from transformers.models.grounding_dino.modeling_grounding_dino import (
-    GroundingDinoDecoder,
-    GroundingDinoEncoder,
-)
 
 
 if TYPE_CHECKING:
+    from transformers.models.grounding_dino.modeling_grounding_dino import (
+        GroundingDinoDecoder,
+        GroundingDinoEncoder,
+    )
+
     from .configuration_grounding_dino import RBLNGroundingDinoDecoderConfig, RBLNGroundingDinoEncoderConfig
 
 
@@ -229,7 +230,6 @@ class _GroundingDinoDecoder(torch.nn.Module):
             text_encoder_attention_mask = text_encoder_attention_mask.repeat(
                 1, self.config.decoder_attention_heads, self.config.num_queries, 1
             )
-            text_encoder_attention_mask = text_encoder_attention_mask
             text_encoder_attention_mask = text_encoder_attention_mask * torch.finfo(torch.float16).min
 
         for idx, decoder_layer in enumerate(self.layers):
@@ -404,11 +404,10 @@ class _GroundingDinoMultiscaleDeformableAttention(torch.nn.Module):
                 (spatial_shapes[:, 0] * spatial_shapes[:, 1]).sum().item() == sequence_length,
                 "Make sure to align the spatial shapes with the sequence length of the encoder hidden states",
             )
-        else:
-            if (spatial_shapes[:, 0] * spatial_shapes[:, 1]).sum() != sequence_length:
-                raise ValueError(
-                    "Make sure to align the spatial shapes with the sequence length of the encoder hidden states"
-                )
+        elif (spatial_shapes[:, 0] * spatial_shapes[:, 1]).sum() != sequence_length:
+            raise ValueError(
+                "Make sure to align the spatial shapes with the sequence length of the encoder hidden states"
+            )
 
         value = self.value_proj(encoder_hidden_states)
         if attention_mask is not None:

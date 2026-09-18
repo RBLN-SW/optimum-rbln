@@ -21,7 +21,6 @@ import torch
 from diffusers import AutoencoderKL
 from diffusers.models.autoencoders.vae import DecoderOutput
 from diffusers.models.modeling_outputs import AutoencoderKLOutput
-from transformers import PretrainedConfig
 
 from ....configuration_utils import RBLNCompileConfig
 from ....modeling import RBLNModel
@@ -32,7 +31,6 @@ from .vae import RBLNRuntimeVAEDecoder, RBLNRuntimeVAEEncoder, _VAEDecoder, _VAE
 
 
 if TYPE_CHECKING:
-    import torch
     from transformers import PretrainedConfig, PreTrainedModel
 
     from ...modeling_diffusers import RBLNDiffusionMixin, RBLNDiffusionMixinConfig
@@ -91,17 +89,11 @@ class RBLNAutoencoderKL(RBLNModel):
 
     @classmethod
     def get_compiled_model(cls, model, rbln_config: RBLNAutoencoderKLConfig) -> dict[str, rebel.RBLNCompiledModel]:
-        if rbln_config.uses_encoder:
-            expected_models = ["encoder", "decoder"]
-        else:
-            expected_models = ["decoder"]
+        expected_models = ["encoder", "decoder"] if rbln_config.uses_encoder else ["decoder"]
 
         compiled_models = {}
         for i, model_name in enumerate(expected_models):
-            if model_name == "encoder":
-                wrapped_model = _VAEEncoder(model)
-            else:
-                wrapped_model = _VAEDecoder(model)
+            wrapped_model = _VAEEncoder(model) if model_name == "encoder" else _VAEDecoder(model)
 
             wrapped_model.eval()
 
@@ -217,12 +209,7 @@ class RBLNAutoencoderKL(RBLNModel):
         compiled_models: list[rebel.RBLNCompiledModel],
         rbln_config: RBLNAutoencoderKLConfig,
     ) -> list[rebel.Runtime]:
-        if len(compiled_models) == 1:
-            # decoder
-            expected_models = ["decoder"]
-        else:
-            # encoder, decoder
-            expected_models = ["encoder", "decoder"]
+        expected_models = ["decoder"] if len(compiled_models) == 1 else ["encoder", "decoder"]
 
         if any(model_name not in rbln_config.device_map for model_name in expected_models):
             cls._raise_missing_compiled_file_error(expected_models)

@@ -114,8 +114,8 @@ class TimeSeriesTransformersDecoderWrapper(torch.nn.Module):
         self_past_key_values = ()
         cross_past_key_values = ()
         for i in range(0, self.num_layers * 2, 2):
-            self_past_key_values = self_past_key_values + ((self_kv_cache[i], self_kv_cache[i + 1]),)
-            cross_past_key_values = cross_past_key_values + ((cross_kv_cache[i], cross_kv_cache[i + 1]),)
+            self_past_key_values = (*self_past_key_values, (self_kv_cache[i], self_kv_cache[i + 1]))
+            cross_past_key_values = (*cross_past_key_values, (cross_kv_cache[i], cross_kv_cache[i + 1]))
 
         # Decode
         last_hidden_states = self.decoder(
@@ -321,7 +321,6 @@ class TimeSeriesTransformersCrossAttention(TimeSeriesTransformersSelfAttention):
         value_states = past_key_value[1].unsqueeze(1)
 
         attn_weights = torch.matmul(query_states, key_states.transpose(3, 4))
-        attn_weights = attn_weights
         attn_weights = nn.functional.softmax(attn_weights, dim=-1)
 
         attn_output = torch.matmul(attn_weights, value_states)

@@ -16,7 +16,7 @@ import math
 from typing import TYPE_CHECKING, Any, Union
 
 import torch
-import torch.nn as nn
+from torch import nn
 from transformers import AutoModelForMultimodalLM, PretrainedConfig, PreTrainedModel
 from transformers.initialization import no_init_weights
 from transformers.models.qwen3_asr.feature_extraction_qwen3_asr import Qwen3ASRFeatureExtractor
@@ -221,10 +221,7 @@ class RBLNQwen3ASRForConditionalGeneration(RBLNQwen3ForCausalLM):
     auto_model_class = AutoModelForMultimodalLM
     _decoder_wrapper_cls = Qwen3ASRLanguageModelWrapper
     _rbln_submodules = [{"name": "audio_tower"}]
-    _batch_sortable_kwargs = RBLNQwen3ForCausalLM._batch_sortable_kwargs + (
-        "input_features",
-        "input_features_mask",
-    )
+    _batch_sortable_kwargs = (*RBLNQwen3ForCausalLM._batch_sortable_kwargs, "input_features", "input_features_mask")
 
     def __post_init__(self, **kwargs: Any):
         super().__post_init__(**kwargs)

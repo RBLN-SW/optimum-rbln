@@ -30,7 +30,7 @@ steps:
     env:
       DOCSTRINGS_ALL_FILES: "1"
     command:
-      - "bash .buildkite/scripts/check-docstrings.sh"
+      - "bash scripts/check-docstrings.sh"
 
   # Sibling jobs: two uploads from one job make the second batch a barrier for
   # the first.
@@ -44,7 +44,7 @@ steps:
   - label: ":sparkles: upload BC"
     <<: *upload
     command: |
-      bash .buildkite/scripts/bc-steps.sh --all | buildkite-agent pipeline upload
+      bash scripts/bc-steps.sh --all | buildkite-agent pipeline upload
 
   # continue_on_failure is a sibling of wait, not a value under it: nested, the
   # flag is dropped and a failed suite takes the report down with it (build #1).
@@ -59,4 +59,4 @@ steps:
       OBEDIENTS_API_TOKEN: BUILDKITE_API_TOKEN
       SLACK_BOT_TOKEN: SLACK_OAUTH_TOKEN
     command:
-      - "python3 .buildkite/scripts/slack-report.py"
+      - "python3 scripts/slack-report.py"
