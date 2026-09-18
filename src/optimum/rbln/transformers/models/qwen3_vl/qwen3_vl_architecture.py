@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import math
 from typing import TYPE_CHECKING
 
 import torch
@@ -24,7 +23,7 @@ from ..decoderonly.decoderonly_architecture import (
     DecoderOnlyForCausalLM,
     DecoderOnlyModel,
     DecoderOnlyWrapper,
-    apply_rotary_pos_emb,
+    rotate_half,
     slice_and_unsqueeze_cos_sin,
 )
 from .configuration_qwen3_vl import RBLNQwen3VLVisionModelConfig
@@ -32,6 +31,16 @@ from .configuration_qwen3_vl import RBLNQwen3VLVisionModelConfig
 
 if TYPE_CHECKING:
     from .configuration_qwen3_vl import RBLNQwen3VLForConditionalGenerationConfig
+
+
+def apply_rotary_pos_emb_vision(q, k, cos, sin):
+    # Mirrors HF `apply_rotary_pos_emb_vision`: rotate in fp32 and round once.
+    orig_q_dtype, orig_k_dtype = q.dtype, k.dtype
+    q, k = q.float(), k.float()
+    cos, sin = cos.float(), sin.float()
+    q_embed = (q * cos) + (rotate_half(q) * sin)
+    k_embed = (k * cos) + (rotate_half(k) * sin)
+    return q_embed.to(orig_q_dtype), k_embed.to(orig_k_dtype)
 
 
 class Qwen3VLVisionModelWrapper(nn.Module):
@@ -112,7 +121,7 @@ class Qwen3VLVisionAttention(nn.Module):
         self.head_dim = getattr(model, "head_dim", model.proj.in_features // model.num_heads)
         self.qkv = model.qkv
         self.proj = model.proj
-        self.scale = torch.tensor(1 / math.sqrt(self.head_dim), dtype=rbln_config.dtype)
+        self.scale = self.head_dim**-0.5
 
     def forward(
         self,
@@ -126,7 +135,7 @@ class Qwen3VLVisionAttention(nn.Module):
             self.qkv(hidden_states).reshape(1, seq_length, 3, self.num_heads, -1).permute(2, 0, 3, 1, 4).unbind(0)
         )
         cos, sin = position_embeddings
-        q, k = apply_rotary_pos_emb(q, k, cos, sin)
+        q, k = apply_rotary_pos_emb_vision(q, k, cos, sin)
         attn_output = nn.functional.scaled_dot_product_attention(
             q,
             k,
@@ -134,7 +143,7 @@ class Qwen3VLVisionAttention(nn.Module):
             attn_mask=attn_mask,
             dropout_p=0.0,
             is_causal=False,
-            scale=self.scale.item(),
+            scale=self.scale,
         )
         attn_output = attn_output.transpose(1, 2)
         attn_output = attn_output.reshape(1, seq_length, -1)
