@@ -22,3 +22,8 @@ class RBLNDPTForDepthEstimationConfig(RBLNModelForDepthEstimationConfig):
     This configuration class stores the configuration parameters specific to
     RBLN-optimized DPT (Dense Prediction Transformer) models for depth estimation tasks.
     """
+
+
+__all__ = [
+    "RBLNDPTForDepthEstimationConfig",
+]

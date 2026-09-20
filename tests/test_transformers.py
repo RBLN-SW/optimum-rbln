@@ -343,7 +343,6 @@ class TestRBLNXLMRobertaForSequenceClassification(BaseTest.TestModel):
 class TestXLMRobertaModel(BaseTest.TestModel):
     RBLN_AUTO_CLASS = [RBLNAutoModelForTextEncoding, RBLNAutoModel]
     RBLN_CLASS = RBLNXLMRobertaModel
-    TEST_LEVEL = TestLevel.FULL
     # HF_MODEL_ID = "hf-internal-testing/tiny-xlm-roberta"
 
     # FIXME:: Update to internal once enabled tiny model
@@ -477,7 +476,6 @@ class TestCLIPTextModel(BaseTest.TestModel):
     HF_CONFIG_KWARGS = {
         "num_hidden_layers": 1,
     }
-    TEST_LEVEL = TestLevel.FULL
 
 
 class TestColPaliModel(BaseTest.TestModel):
@@ -576,28 +574,24 @@ class TestColQwen2Model(BaseTest.TestModel):
 
 
 class TestColQwen2Model_BFloat16(TestColQwen2Model):
-    TEST_LEVEL = TestLevel.FULL
     HF_CONFIG_KWARGS = {
         "dtype": torch.bfloat16,
     }
 
 
 class TestColQwen2Model_Auto(TestColQwen2Model):
-    TEST_LEVEL = TestLevel.FULL
     HF_CONFIG_KWARGS = {
         "dtype": "auto",
     }
 
 
 class TestColQwen2Model_Float32(TestColQwen2Model):
-    TEST_LEVEL = TestLevel.FULL
     HF_CONFIG_KWARGS = {
         "dtype": torch.float32,
     }
 
 
 class TestColQwen2_5Model(TestColQwen2Model):
-    TEST_LEVEL = TestLevel.FULL
     HF_MODEL_ID = "Sahil-Kabir/colqwen2.5-v0.2-hf"
 
 
@@ -684,7 +678,6 @@ class TestDistilBertForQuestionAnswering(BaseTest.TestModel):
         "input_ids": RANDOM_INPUT_IDS,
         "attention_mask": RANDOM_ATTN_MASK,
     }
-    TEST_LEVEL = TestLevel.FULL
 
 
 class TestRobertaForMaskedLM(BaseTest.TestModel):
@@ -699,7 +692,6 @@ class TestRobertaForMaskedLM(BaseTest.TestModel):
     HF_CONFIG_KWARGS = {
         "num_hidden_layers": 1,
     }
-    TEST_LEVEL = TestLevel.FULL
 
 
 class TestRobertaForSequenceClassification(BaseTest.TestModel):
@@ -714,7 +706,6 @@ class TestRobertaForSequenceClassification(BaseTest.TestModel):
     HF_CONFIG_KWARGS = {
         "num_hidden_layers": 1,
     }
-    TEST_LEVEL = TestLevel.FULL
 
 
 class TestViTForImageClassification(BaseTest.TestModel):
@@ -734,7 +725,6 @@ class TestGroundingDinoModel(BaseTest.TestModel):
         "pixel_values": torch.randn(1, 3, 1333, 1333, generator=torch.manual_seed(42)),
         "input_ids": torch.randint(low=0, high=50, size=(1, 256), generator=torch.manual_seed(42), dtype=torch.int64),
     }
-    TEST_LEVEL = TestLevel.FULL
     RBLN_CLASS_KWARGS = {
         "rbln_config": {
             "encoder": {"image_size": (1333, 1333)},
@@ -784,8 +774,7 @@ class TestGroundingDinoModel(BaseTest.TestModel):
                 "window_size": 7,
             },
         )
-        cls.HF_CONFIG_KWARGS["config"] = config
-        cls.HF_CONFIG_KWARGS["ignore_mismatched_sizes"] = True
+        cls.HF_CONFIG_KWARGS = {**cls.HF_CONFIG_KWARGS, "config": config, "ignore_mismatched_sizes": True}
         return super().setUpClass()
 
 

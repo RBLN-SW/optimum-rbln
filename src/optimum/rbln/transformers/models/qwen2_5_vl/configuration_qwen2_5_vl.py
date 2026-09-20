@@ -77,7 +77,7 @@ class RBLNQwen2_5_VisionTransformerPretrainedModelConfig(RBLNModelConfig):
     mechanisms for processing images and videos.
     """
 
-    def __init__(self, max_seq_len: int | list[int] = None, batch_size: int | None = None, **kwargs: Any):
+    def __init__(self, max_seq_len: int | list[int] | None = None, batch_size: int | None = None, **kwargs: Any):
         """
         Args:
             max_seq_len (int | list[int] | None): Maximum sequence lengths for Vision
@@ -128,3 +128,10 @@ class RBLNQwen2_5_VisionTransformerPretrainedModelConfig(RBLNModelConfig):
             raise ValueError("'max_seq_len' must be specified.")
 
         self.max_seq_len = max_seq_len
+
+
+__all__ = [
+    "RBLNQwen2_5_VLForConditionalGenerationConfig",
+    "RBLNQwen2_5_VLModelConfig",
+    "RBLNQwen2_5_VisionTransformerPretrainedModelConfig",
+]

@@ -154,3 +154,10 @@ class RBLNStableDiffusionInpaintPipelineConfig(RBLNStableDiffusionPipelineBaseCo
     """
 
     _vae_uses_encoder = True
+
+
+__all__ = [
+    "RBLNStableDiffusionImg2ImgPipelineConfig",
+    "RBLNStableDiffusionInpaintPipelineConfig",
+    "RBLNStableDiffusionPipelineConfig",
+]

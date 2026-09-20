@@ -79,3 +79,9 @@ class RBLNXLMRobertaForSequenceClassification(RBLNModelForSequenceClassification
             kwargs.setdefault("token_type_ids", token_type_ids)
 
         return super().forward(input_ids=input_ids, attention_mask=attention_mask, **kwargs)
+
+
+__all__ = [
+    "RBLNXLMRobertaForSequenceClassification",
+    "RBLNXLMRobertaModel",
+]

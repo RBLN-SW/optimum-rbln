@@ -29,6 +29,7 @@ from transformers.models.qwen3_5.modeling_qwen3_5 import (
     Qwen3_5VisionPatchEmbed,
     Qwen3_5VisionRotaryEmbedding,
 )
+from transformers.vision_utils import get_vision_interpolation_indices_and_weights
 
 from ....configuration_utils import RBLNCompileConfig
 from ....modeling import RBLNModel
@@ -36,9 +37,11 @@ from ....modeling_rope_utils import build_qwen_mrope_lookup, np_cos, np_sin, qwe
 from ....utils import logging
 from ...cache_utils import FullAttentionKVCacheMeta, LinearAttentionCacheMeta
 from ...modeling_outputs import RBLNDecoderOnlyOutput, _validate_output_hidden_states
+from ...utils.multimodal_batch_sort import RBLNQwenVLBatchSortMixin
 from ..decoderonly.decoderonly_runtime_utils import RBLNPageTableManager
 from ..decoderonly.modeling_decoderonly import RBLNDecoderOnlyModel, RBLNDecoderOnlyModelForCausalLM
 from .configuration_qwen3_5 import (
+    MAX_GDN_CHUNK_SIZE,
     RBLNQwen3_5ForConditionalGenerationConfig,  # noqa: F401
     RBLNQwen3_5ModelConfig,  # noqa: F401
     RBLNQwen3_5VisionModelConfig,  # noqa: F401
@@ -164,13 +167,17 @@ class RBLNQwen3_5TextModel(RBLNDecoderOnlyModel):
         rbln_config = super()._update_rbln_config(
             preprocessors=preprocessors, model=model, model_config=model_config, rbln_config=rbln_config
         )
-        if rbln_config.gdn_chunk_size is None:
-            rbln_config.gdn_chunk_size = rbln_config.prefill_chunk_size
-        if rbln_config.gdn_chunk_size > 128:
+        if rbln_config.gdn_chunk_size > MAX_GDN_CHUNK_SIZE:
             raise ValueError(
-                f"gdn_chunk_size must be <= 128, got {rbln_config.gdn_chunk_size}. "
+                f"gdn_chunk_size must be <= {MAX_GDN_CHUNK_SIZE}, got {rbln_config.gdn_chunk_size}. "
                 "Larger GatedDeltaNet sub-chunk sizes are not supported yet — "
-                "set gdn_chunk_size to a value <= 128 that divides prefill_chunk_size."
+                f"set gdn_chunk_size to a value <= {MAX_GDN_CHUNK_SIZE} that divides prefill_chunk_size."
+            )
+        if rbln_config.prefill_chunk_size % rbln_config.gdn_chunk_size != 0:
+            raise ValueError(
+                f"gdn_chunk_size must divide prefill_chunk_size, got gdn_chunk_size="
+                f"{rbln_config.gdn_chunk_size} and prefill_chunk_size={rbln_config.prefill_chunk_size}. "
+                f"Set gdn_chunk_size to a divisor of prefill_chunk_size that is <= {MAX_GDN_CHUNK_SIZE}."
             )
         return rbln_config
 
@@ -328,7 +335,7 @@ class RBLNQwen3_5VisionModel(RBLNModel):
 
         head_dim = config.hidden_size // config.num_heads
         # Precompute the rotary cos/sin tables up to the largest ViT bucket
-        _freq_table = Qwen3_5VisionRotaryEmbedding(head_dim // 2)(int(self.max_seq_len.max().item()))
+        _freq_table = Qwen3_5VisionRotaryEmbedding(head_dim // 2)(torch.arange(int(self.max_seq_len.max().item())))
         self.rotary_cos_table = np_cos(_freq_table)
         self.rotary_sin_table = np_sin(_freq_table)
 
@@ -373,7 +380,7 @@ class RBLNQwen3_5VisionModel(RBLNModel):
         cls,
         preprocessors=None,
         model: Optional["PreTrainedModel"] = None,
-        model_config: "PretrainedConfig" = None,
+        model_config: "PretrainedConfig | None" = None,
         rbln_config: RBLNQwen3_5VisionModelConfig | None = None,
     ) -> RBLNQwen3_5VisionModelConfig:
         hidden_size = model_config.hidden_size
@@ -404,65 +411,14 @@ class RBLNQwen3_5VisionModel(RBLNModel):
         return cos, sin
 
     def fast_pos_embed_interpolate(self, grid_thw: torch.Tensor) -> torch.Tensor:
-        grid_ts, grid_hs, grid_ws = grid_thw[:, 0], grid_thw[:, 1], grid_thw[:, 2]
-
-        idx_list = [[] for _ in range(4)]
-        weight_list = [[] for _ in range(4)]
-
-        for t, h, w in zip(grid_ts, grid_hs, grid_ws, strict=False):  # noqa: B007
-            h_idxs = torch.linspace(0, self.num_grid_per_side - 1, h)
-            w_idxs = torch.linspace(0, self.num_grid_per_side - 1, w)
-
-            h_idxs_floor = h_idxs.int()
-            w_idxs_floor = w_idxs.int()
-            h_idxs_ceil = (h_idxs.int() + 1).clip(max=self.num_grid_per_side - 1)
-            w_idxs_ceil = (w_idxs.int() + 1).clip(max=self.num_grid_per_side - 1)
-
-            dh = h_idxs - h_idxs_floor
-            dw = w_idxs - w_idxs_floor
-
-            base_h = h_idxs_floor * self.num_grid_per_side
-            base_h_ceil = h_idxs_ceil * self.num_grid_per_side
-
-            indices = [
-                (base_h[None].T + w_idxs_floor[None]).flatten(),
-                (base_h[None].T + w_idxs_ceil[None]).flatten(),
-                (base_h_ceil[None].T + w_idxs_floor[None]).flatten(),
-                (base_h_ceil[None].T + w_idxs_ceil[None]).flatten(),
-            ]
-
-            weights = [
-                ((1 - dh)[None].T * (1 - dw)[None]).flatten(),
-                ((1 - dh)[None].T * dw[None]).flatten(),
-                (dh[None].T * (1 - dw)[None]).flatten(),
-                (dh[None].T * dw[None]).flatten(),
-            ]
-
-            for i in range(4):
-                idx_list[i].extend(indices[i].tolist())
-                weight_list[i].extend(weights[i].tolist())
-
-        idx_tensor = torch.tensor(idx_list, dtype=torch.long, device=self.pos_embed.weight.device)
-        weight_tensor = torch.tensor(
-            weight_list, dtype=self.pos_embed.weight.dtype, device=self.pos_embed.weight.device
+        interp_indices, interp_weights = get_vision_interpolation_indices_and_weights(
+            grid_thw,
+            num_grid_per_side=self.num_grid_per_side,
+            mode="bilinear",
+            align_corners=True,
+            spatial_merge_size=self.spatial_merge_size,
         )
-        pos_embeds = self.pos_embed(idx_tensor) * weight_tensor[:, :, None]
-        patch_pos_embeds = pos_embeds[0] + pos_embeds[1] + pos_embeds[2] + pos_embeds[3]
-
-        patch_pos_embeds = patch_pos_embeds.split([h * w for h, w in zip(grid_hs, grid_ws, strict=False)])
-
-        patch_pos_embeds_permute = []
-        merge_size = self.spatial_merge_size
-        for pos_embed, t, h, w in zip(patch_pos_embeds, grid_ts, grid_hs, grid_ws, strict=False):
-            pos_embed = pos_embed.repeat(t, 1)
-            pos_embed = (
-                pos_embed.view(t, h // merge_size, merge_size, w // merge_size, merge_size, -1)
-                .permute(0, 1, 3, 2, 4, 5)
-                .flatten(0, 4)
-            )
-            patch_pos_embeds_permute.append(pos_embed)
-        patch_pos_embeds = torch.cat(patch_pos_embeds_permute)
-        return patch_pos_embeds
+        return (self.pos_embed(interp_indices) * interp_weights[:, :, None]).sum(1)
 
     @staticmethod
     def _pad_hidden_states(
@@ -607,13 +563,17 @@ class RBLNQwen3_5Model(RBLNDecoderOnlyModel):
         rbln_config = super()._update_rbln_config(
             preprocessors=preprocessors, model=model, model_config=model_config, rbln_config=rbln_config
         )
-        if rbln_config.gdn_chunk_size is None:
-            rbln_config.gdn_chunk_size = rbln_config.prefill_chunk_size
-        if rbln_config.gdn_chunk_size > 128:
+        if rbln_config.gdn_chunk_size > MAX_GDN_CHUNK_SIZE:
             raise ValueError(
-                f"gdn_chunk_size must be <= 128, got {rbln_config.gdn_chunk_size}. "
+                f"gdn_chunk_size must be <= {MAX_GDN_CHUNK_SIZE}, got {rbln_config.gdn_chunk_size}. "
                 "Larger GatedDeltaNet sub-chunk sizes are not supported yet — "
-                "set gdn_chunk_size to a value <= 128 that divides prefill_chunk_size."
+                f"set gdn_chunk_size to a value <= {MAX_GDN_CHUNK_SIZE} that divides prefill_chunk_size."
+            )
+        if rbln_config.prefill_chunk_size % rbln_config.gdn_chunk_size != 0:
+            raise ValueError(
+                f"gdn_chunk_size must divide prefill_chunk_size, got gdn_chunk_size="
+                f"{rbln_config.gdn_chunk_size} and prefill_chunk_size={rbln_config.prefill_chunk_size}. "
+                f"Set gdn_chunk_size to a divisor of prefill_chunk_size that is <= {MAX_GDN_CHUNK_SIZE}."
             )
         return rbln_config
 
@@ -724,6 +684,7 @@ class RBLNQwen3_5Model(RBLNDecoderOnlyModel):
         output_hidden_states: bool | None = None,
         **kwargs,
     ) -> RBLNDecoderOnlyOutput:
+        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
         output_hidden_states = _validate_output_hidden_states(output_hidden_states, self.rbln_config)
         if attention_mask is None:
             attention_mask = torch.ones_like(input_ids)
@@ -771,7 +732,7 @@ class RBLNQwen3_5Model(RBLNDecoderOnlyModel):
         return RBLNDecoderOnlyOutput(logits=logits, hidden_states=all_hidden_states)
 
 
-class RBLNQwen3_5ForConditionalGeneration(RBLNQwen3_5Model, RBLNDecoderOnlyModelForCausalLM):
+class RBLNQwen3_5ForConditionalGeneration(RBLNQwenVLBatchSortMixin, RBLNQwen3_5Model, RBLNDecoderOnlyModelForCausalLM):
     """
     RBLNQwen3_5ForConditionalGeneration is a multi-modal model that integrates vision and language processing capabilities,
     optimized for RBLN NPUs. It is designed for conditional generation tasks that involve both image and text inputs.
@@ -809,6 +770,8 @@ class RBLNQwen3_5ForConditionalGeneration(RBLNQwen3_5Model, RBLNDecoderOnlyModel
         ```
     """
 
+    _video_grid_rows_are_chunks = True
+
     def __post_init__(self, **kwargs):
         super().__post_init__(**kwargs)
         self.rope_deltas = torch.zeros(self.rbln_config.batch_size)
@@ -836,6 +799,7 @@ class RBLNQwen3_5ForConditionalGeneration(RBLNQwen3_5Model, RBLNDecoderOnlyModel
         image_grid_thw=None,
         video_grid_thw=None,
         mm_token_type_ids=None,
+        inputs_sorted: bool = False,
         **kwargs,
     ):
         model_inputs = {}
@@ -863,14 +827,15 @@ class RBLNQwen3_5ForConditionalGeneration(RBLNQwen3_5Model, RBLNDecoderOnlyModel
                 "image_grid_thw": image_grid_thw,
                 "video_grid_thw": video_grid_thw,
                 "mm_token_type_ids": mm_token_type_ids,
+                "inputs_sorted": inputs_sorted,
             }
         )
         return model_inputs
 
     def _preprocess_decoder(
         self,
-        input_ids: torch.LongTensor = None,
-        cache_position: torch.LongTensor = None,
+        input_ids: torch.LongTensor | None = None,
+        cache_position: torch.LongTensor | None = None,
     ):
         if self.rbln_config.batch_size != cache_position.shape[0]:
             raise RuntimeError(
@@ -904,8 +869,11 @@ class RBLNQwen3_5ForConditionalGeneration(RBLNQwen3_5Model, RBLNDecoderOnlyModel
         return_dict: bool | None = None,
         mm_token_type_ids: torch.IntTensor | None = None,
         output_hidden_states: bool | None = None,
+        inputs_sorted: bool = False,
         **kwargs,
     ) -> RBLNDecoderOnlyOutput:
+        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+        self._require_sorted_batch_inputs(input_ids if input_ids is not None else inputs_embeds, inputs_sorted)
         output_hidden_states = _validate_output_hidden_states(output_hidden_states, self.rbln_config)
         text_config = self.config.get_text_config()
         if cache_position is None:  # prefill
@@ -961,3 +929,12 @@ class RBLNQwen3_5ForConditionalGeneration(RBLNQwen3_5Model, RBLNDecoderOnlyModel
         if not return_dict:
             return logits, generate_idx
         return RBLNDecoderOnlyOutput(logits=logits, generate_idx=generate_idx, hidden_states=all_hidden_states)
+
+
+__all__ = [
+    "RBLNQwen3_5ForCausalLM",
+    "RBLNQwen3_5ForConditionalGeneration",
+    "RBLNQwen3_5Model",
+    "RBLNQwen3_5TextModel",
+    "RBLNQwen3_5VisionModel",
+]

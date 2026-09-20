@@ -12,8 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from collections.abc import Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Optional, Union
+from typing import TYPE_CHECKING, Any, Optional
 
 import rebel
 import torch
@@ -25,6 +26,7 @@ from transformers.models.pixtral.modeling_pixtral import PixtralRMSNorm, Pixtral
 
 from ....configuration_utils import RBLNCompileConfig, RBLNModelConfig
 from ....modeling import RBLNModel
+from ....modeling_base import Preprocessor
 from ....utils.logging import get_logger
 from ....utils.runtime_utils import RBLNPytorchRuntime
 from .configuration_pixtral import RBLNPixtralVisionModelConfig
@@ -34,7 +36,7 @@ from .pixtral_architecture import PixtralAttention
 logger = get_logger(__name__)
 
 if TYPE_CHECKING:
-    from transformers import AutoFeatureExtractor, AutoProcessor, AutoTokenizer, PreTrainedModel
+    from transformers import PreTrainedModel
 
 
 class RBLNRuntimePixtralVisionModel(RBLNPytorchRuntime):
@@ -48,6 +50,7 @@ class RBLNRuntimePixtralVisionModel(RBLNPytorchRuntime):
         **kwargs: Any,
     ) -> None:
         super().__init__(runtime, **kwargs)
+        self.config = config
         self.patch_positional_embedding = PixtralRotaryEmbedding(config)
         self.patch_size = config.patch_size
         self.image_size = config.image_size
@@ -62,6 +65,7 @@ class RBLNRuntimePixtralVisionModel(RBLNPytorchRuntime):
         return_dict: bool | None = None,
         **kwargs,
     ):
+        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
         if pixel_values.shape[2] > self.max_image_size[0] or pixel_values.shape[3] > self.max_image_size[1]:
             raise ValueError("The height() and width of pixel_values can't be larger than max_image_size.")
 
@@ -246,9 +250,9 @@ class RBLNPixtralVisionModel(RBLNModel):
     @classmethod
     def _update_rbln_config(
         cls,
-        preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"],
+        preprocessors: Sequence[Preprocessor],
         model: Optional["PreTrainedModel"] = None,
-        model_config: "PixtralVisionConfig" = None,
+        model_config: "PixtralVisionConfig | None" = None,
         rbln_config: RBLNPixtralVisionModelConfig | None = None,
     ) -> RBLNPixtralVisionModelConfig:
         if rbln_config.max_image_size is None:
@@ -330,3 +334,8 @@ class RBLNPixtralVisionModel(RBLNModel):
         )
 
         return output
+
+
+__all__ = [
+    "RBLNPixtralVisionModel",
+]

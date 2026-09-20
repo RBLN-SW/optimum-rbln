@@ -12,7 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import TYPE_CHECKING, Optional, Union
+from collections.abc import Sequence
+from typing import TYPE_CHECKING, Optional
 
 import torch
 from safetensors.torch import load_file
@@ -21,6 +22,7 @@ from transformers.initialization import no_init_weights
 from transformers.integrations.mxfp4 import Mxfp4GptOssExperts
 from transformers.modeling_utils import PreTrainedModel
 
+from ....modeling_base import Preprocessor
 from ....utils.logging import get_logger
 from ...models.decoderonly import (
     RBLNDecoderOnlyModelConfig,
@@ -32,7 +34,7 @@ from .gpt_oss_architecture import RBLNGptOssWrapper
 
 
 if TYPE_CHECKING:
-    from transformers import AutoFeatureExtractor, AutoProcessor, AutoTokenizer, PreTrainedModel
+    from transformers import PreTrainedModel
 
 logger = get_logger(__name__)
 
@@ -100,7 +102,7 @@ class RBLNGptOssForCausalLM(RBLNDecoderOnlyModelForCausalLM):
     _decoder_wrapper_cls = RBLNGptOssWrapper
 
     @staticmethod
-    def _get_dtype(dtype: str | torch.dtype = None, torch_dtype: str | torch.dtype = None):
+    def _get_dtype(dtype: str | torch.dtype | None = None, torch_dtype: str | torch.dtype | None = None):
         # For BC on torch_dtype argument
         if torch_dtype is not None:
             logger.warning_once("`torch_dtype` is deprecated! Use `dtype` instead!")
@@ -119,8 +121,8 @@ class RBLNGptOssForCausalLM(RBLNDecoderOnlyModelForCausalLM):
         model_id: str,
         *args,
         rbln_config: RBLNDecoderOnlyModelConfig | None = None,
-        dtype: str | torch.dtype = None,
-        torch_dtype: str | torch.dtype = None,
+        dtype: str | torch.dtype | None = None,
+        torch_dtype: str | torch.dtype | None = None,
         config: PretrainedConfig | None = None,
         **kwargs,
     ) -> PreTrainedModel:
@@ -132,8 +134,10 @@ class RBLNGptOssForCausalLM(RBLNDecoderOnlyModelForCausalLM):
         if config is None:
             config, kwargs = AutoConfig.from_pretrained(model_id, return_unused_kwargs=True)
 
+        config_dtype = config.dtype
         with no_init_weights():
             model = AutoModelForCausalLM.from_config(config, dtype=dtype, **kwargs)
+        config.dtype = config_dtype
 
         _replace_with_mxfp4_linear(model, config)
         model.load_state_dict(state_dict, strict=False)
@@ -154,7 +158,7 @@ class RBLNGptOssForCausalLM(RBLNDecoderOnlyModelForCausalLM):
     @classmethod
     def _update_rbln_config(
         cls,
-        preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"] | None = None,
+        preprocessors: Sequence[Preprocessor] | None = None,
         model: Optional["PreTrainedModel"] = None,
         model_config: Optional["PretrainedConfig"] = None,
         rbln_config: RBLNDecoderOnlyModelForCausalLMConfig | None = None,
@@ -178,3 +182,8 @@ def _replace_with_mxfp4_linear(
             model._modules[name] = Mxfp4GptOssExperts(config)
         if len(list(module.children())) > 0:
             _replace_with_mxfp4_linear(module, config)
+
+
+__all__ = [
+    "RBLNGptOssForCausalLM",
+]

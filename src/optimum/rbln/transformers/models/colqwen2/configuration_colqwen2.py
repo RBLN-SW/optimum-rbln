@@ -86,3 +86,8 @@ class RBLNColQwen2ForRetrievalConfig(RBLNDecoderOnlyModelConfig):
             logits_to_keep=0,
             use_inputs_embeds=True,
         )
+
+
+__all__ = [
+    "RBLNColQwen2ForRetrievalConfig",
+]

@@ -30,3 +30,8 @@ class RBLNStableDiffusionPipeline(RBLNDiffusionMixin, StableDiffusionPipeline):
     original_class = StableDiffusionPipeline
     _rbln_config_class = RBLNStableDiffusionPipelineConfig
     _submodules = ["vae", "text_encoder", "unet"]
+
+
+__all__ = [
+    "RBLNStableDiffusionPipeline",
+]

@@ -502,7 +502,7 @@ class Seq2SeqCrossAttention(nn.Module):
     def forward(
         self,
         hidden_states: torch.Tensor,
-        key_value_states: torch.Tensor = None,
+        key_value_states: torch.Tensor | None = None,
         past_key_value: object | None = None,
         attention_mask: torch.Tensor | None = None,
     ):

@@ -44,7 +44,7 @@ class RBLNAutoPipelineBase:
     _model_mapping_names = None
 
     @classmethod
-    def get_rbln_cls(cls, pretrained_model_name_or_path: str | Path, export: bool = None, **kwargs):
+    def get_rbln_cls(cls, pretrained_model_name_or_path: str | Path, export: bool | None = None, **kwargs):
         if isinstance(pretrained_model_name_or_path, Path):
             pretrained_model_name_or_path = pretrained_model_name_or_path.as_posix()
 
@@ -173,7 +173,7 @@ class RBLNAutoPipelineBase:
         cls,
         model_id: str | Path,
         *,
-        export: bool = None,
+        export: bool | None = None,
         rbln_config: dict[str, Any] | RBLNModelConfig | None = None,
         **kwargs: Any,
     ) -> RBLNBaseModel:
@@ -304,3 +304,10 @@ class RBLNAutoPipelineForInpainting(RBLNAutoPipelineBase, AutoPipelineForInpaint
             orig_class_name = orig_class_name.replace(to_replace, "ControlInpaintPipeline")
 
         return orig_class_name
+
+
+__all__ = [
+    "RBLNAutoPipelineForImage2Image",
+    "RBLNAutoPipelineForInpainting",
+    "RBLNAutoPipelineForText2Image",
+]
