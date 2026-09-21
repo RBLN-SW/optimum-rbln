@@ -106,21 +106,6 @@ class CosmosTransformer3DModelWrapper(torch.nn.Module):
         self.latent_width = latent_width
         self.p_t, self.p_h, self.p_w = model.config.patch_size
 
-    def _expand_timestep_tokens(
-        self, hidden_states: torch.Tensor, embedded_timestep: torch.Tensor, temb: torch.Tensor
-    ) -> tuple[torch.Tensor, torch.Tensor]:
-        # Per-frame timestep embeddings arrive as [B, T, C] / [B, T, 3C] and the blocks' adaLN
-        # modulation is per-token, so broadcast the frames over the spatial tokens here.
-        if embedded_timestep.dim() != 3 or embedded_timestep.shape[1] == hidden_states.shape[1]:
-            return embedded_timestep, temb
-        tokens_per_frame = (self.latent_height // self.p_h) * (self.latent_width // self.p_w)
-
-        def expand(x: torch.Tensor) -> torch.Tensor:
-            batch, frames, channels = x.shape
-            return x.unsqueeze(2).expand(batch, frames, tokens_per_frame, channels).reshape(batch, -1, channels)
-
-        return expand(embedded_timestep), expand(temb)
-
     def forward(
         self,
         hidden_states: torch.Tensor,
@@ -134,7 +119,6 @@ class CosmosTransformer3DModelWrapper(torch.nn.Module):
         return_dict: bool = False,
     ):
         image_rotary_emb = [image_rotary_emb_0, image_rotary_emb_1]
-        embedded_timestep, temb = self._expand_timestep_tokens(hidden_states, embedded_timestep, temb)
         for block in self.model.transformer_blocks:
             hidden_states = block(
                 hidden_states=hidden_states,
@@ -189,7 +173,6 @@ class CosmosTransferTransformerWrapper(CosmosTransformer3DModelWrapper):
         return_dict: bool = False,
     ):
         image_rotary_emb = [image_rotary_emb_0, image_rotary_emb_1]
-        embedded_timestep, temb = self._expand_timestep_tokens(hidden_states, embedded_timestep, temb)
         # Transfer2.5 blocks cross-attend a (text, img) tuple; img is a projected constant
         # context when the pipeline gives no image (it feeds zeros through img_context_proj).
         context = (encoder_hidden_states, img_context) if self.uses_img_context else encoder_hidden_states
@@ -328,6 +311,8 @@ class RBLNCosmosTransformer3DModel(RBLNModel):
         # 3. Patchify input
         p_t, p_h, p_w = self.config.patch_size
         post_patch_num_frames = num_frames // p_t
+        post_patch_height = height // p_h
+        post_patch_width = width // p_w
         hidden_states = self.patch_embed(hidden_states)
         hidden_states = hidden_states.flatten(1, 3)  # [B, T, H, W, C] -> [B, THW, C]
 
@@ -340,9 +325,13 @@ class RBLNCosmosTransformer3DModel(RBLNModel):
             )
             timestep = timestep.flatten()
             temb, embedded_timestep = self.time_embed(hidden_states, timestep)
+            # We can do this because num_frames == post_patch_num_frames, as p_t is 1
             temb, embedded_timestep = (
-                x.view(batch_size, post_patch_num_frames, -1) for x in (temb, embedded_timestep)
-            )
+                x.view(batch_size, post_patch_num_frames, 1, 1, -1)
+                .expand(-1, -1, post_patch_height, post_patch_width, -1)
+                .flatten(1, 3)
+                for x in (temb, embedded_timestep)
+            )  # [BT, C] -> [B, T, 1, 1, C] -> [B, T, H, W, C] -> [B, THW, C]
         else:
             raise AssertionError("Unsupported shape of `timestep`")
 
@@ -492,13 +481,11 @@ class RBLNCosmosTransformer3DModel(RBLNModel):
             # For Cosmos-Predict2.5 (unified conditioning) always feeds per-frame timesteps
             uses_per_frame_timestep = bool(model_config.use_crossattn_projection)
         if uses_per_frame_timestep:
-            # The wrapper broadcasts frames over the spatial tokens, keeping these inputs tiny.
-            num_frames = rbln_config.num_latent_frames // p_t
             input_info.append(
-                ("embedded_timestep", [rbln_config.batch_size, num_frames, hidden_size], rbln_config.dtype),
+                ("embedded_timestep", [rbln_config.batch_size, hidden_dim, hidden_size], rbln_config.dtype),
             )
             input_info.append(
-                ("temb", [rbln_config.batch_size, num_frames, hidden_size * 3], rbln_config.dtype),
+                ("temb", [1, hidden_dim, hidden_size * 3], rbln_config.dtype),
             )
         else:
             input_info.append(
