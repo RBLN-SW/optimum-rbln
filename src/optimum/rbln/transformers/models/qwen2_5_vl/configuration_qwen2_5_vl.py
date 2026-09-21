@@ -77,7 +77,13 @@ class RBLNQwen2_5_VisionTransformerPretrainedModelConfig(RBLNModelConfig):
     mechanisms for processing images and videos.
     """
 
-    def __init__(self, max_seq_len: int | list[int] | None = None, batch_size: int | None = None, **kwargs: Any):
+    def __init__(
+        self,
+        max_seq_len: int | list[int] | None = None,
+        batch_size: int | None = None,
+        _rotary_dtype: str | None = None,
+        **kwargs: Any,
+    ):
         """
         Args:
             max_seq_len (int | list[int] | None): Maximum sequence lengths for Vision
@@ -113,6 +119,8 @@ class RBLNQwen2_5_VisionTransformerPretrainedModelConfig(RBLNModelConfig):
                 `(112 / 14)^2 = 64`, meaning valid values for `max_seq_len` include 64, 128, 192, 256, etc.
         """
         super().__init__(**kwargs)
+        # Internal, like _compile_cfgs: compile records the dtype the vision rotary tables were fed in.
+        self._rotary_dtype = _rotary_dtype
 
         batch_size = batch_size or 1
         if batch_size != 1:
