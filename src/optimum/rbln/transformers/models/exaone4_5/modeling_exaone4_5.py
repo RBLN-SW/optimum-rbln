@@ -31,7 +31,7 @@ from transformers.vision_utils import get_vision_window_index
 from ....configuration_utils import RBLNCompileConfig
 from ....modeling import RBLNModel
 from ....modeling_base import Preprocessor
-from ....modeling_rope_utils import np_cos, np_sin, qwen_vit_rot_pos_ids
+from ....modeling_rope_utils import compiled_vision_rotary_dtype, np_cos, np_sin, qwen_vit_rot_pos_ids
 from ....utils.logging import get_logger
 from ...modeling_outputs import RBLNDecoderOnlyOutput, _validate_output_hidden_states
 from ...utils.multimodal_batch_sort import RBLNQwenVLBatchSortMixin, _matched_token_counts
@@ -94,6 +94,7 @@ class RBLNExaone4_5_VisionModel(RBLNModel):
         )
         self.rotary_cos_table = np_cos(freq_table)
         self.rotary_sin_table = np_sin(freq_table)
+        self.rotary_dtype = compiled_vision_rotary_dtype(self.rbln_config)
         with no_init_weights():
             self.patch_embed = Exaone4_5_PatchEmbed(
                 patch_size=config.patch_size,
@@ -145,8 +146,6 @@ class RBLNExaone4_5_VisionModel(RBLNModel):
         window_seq_len = (window_size // patch_size) ** 2
         batch_size = rbln_config.batch_size
 
-        # HF keeps the vision rotary tables in fp32; the wrapper rotates in fp32 and rounds once.
-        rbln_config._rotary_dtype = "float32"
         input_infos = []
         for max_seq_len in rbln_config.max_seq_len:
             if max_seq_len % window_seq_len > 0:
@@ -162,8 +161,9 @@ class RBLNExaone4_5_VisionModel(RBLNModel):
                     [max_seq_len // window_seq_len, 1, window_seq_len, window_seq_len],
                     rbln_config.dtype,
                 ),
-                ("cos", [batch_size, 1, max_seq_len, head_dim], rbln_config._rotary_dtype),
-                ("sin", [batch_size, 1, max_seq_len, head_dim], rbln_config._rotary_dtype),
+                # HF keeps the vision rotary tables in fp32; the wrapper rotates in fp32 and rounds once.
+                ("cos", [batch_size, 1, max_seq_len, head_dim], torch.float32),
+                ("sin", [batch_size, 1, max_seq_len, head_dim], torch.float32),
             ]
             input_infos.append(input_info)
 
@@ -267,15 +267,9 @@ class RBLNExaone4_5_VisionModel(RBLNModel):
         pos_ids = pos_ids[window_index, :, :].reshape(seq_len, -1)
         cos = self.rotary_cos_table[pos_ids].flatten(1)
         sin = self.rotary_sin_table[pos_ids].flatten(1)
-        # Artifacts compiled before this field existed were compiled in the activation dtype.
-        rotary_dtype = (
-            getattr(torch, self.rbln_config._rotary_dtype)
-            if self.rbln_config._rotary_dtype
-            else self.rbln_config.dtype
-        )
         position_embeddings = (
-            torch.cat((cos, cos), dim=-1).to(rotary_dtype),
-            torch.cat((sin, sin), dim=-1).to(rotary_dtype),
+            torch.cat((cos, cos), dim=-1).to(self.rotary_dtype),
+            torch.cat((sin, sin), dim=-1).to(self.rotary_dtype),
         )
 
         cu_seqlens = torch.repeat_interleave(grid_thw[:, 1] * grid_thw[:, 2], grid_thw[:, 0]).cumsum(

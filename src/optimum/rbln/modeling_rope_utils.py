@@ -28,7 +28,7 @@
 
 import math
 from collections.abc import Sequence
-from typing import Optional, Protocol
+from typing import TYPE_CHECKING, Optional, Protocol
 
 import numpy as np
 import torch
@@ -36,6 +36,9 @@ from transformers import PretrainedConfig
 
 from .utils.logging import get_logger
 
+
+if TYPE_CHECKING:
+    from .configuration_utils import RBLNModelConfig
 
 logger = get_logger(__name__)
 
@@ -54,6 +57,33 @@ def np_cos(x: torch.Tensor) -> torch.Tensor:
 def np_sin(x: torch.Tensor) -> torch.Tensor:
     """sin(x) computed on the host via numpy. See `np_cos` for why."""
     return torch.from_numpy(np.sin(x.detach().cpu().numpy()))
+
+
+def compiled_vision_rotary_dtype(rbln_config: "RBLNModelConfig") -> torch.dtype:
+    """dtype the vision encoder graph expects for its `cos`/`sin` inputs, read back from the artifact.
+
+    HF builds the vision rotary tables in fp32 and rotates in fp32, so the graph declares `cos`/`sin`
+    as fp32; that is the basis going forward. Artifacts compiled before that declared them in the
+    activation dtype and the runtime rejects an fp32 tensor for them, so read the dtype the graph was
+    actually compiled with from the saved compile config and feed that. The compile config already
+    records every input's dtype, so nothing new has to be stored. This only ever warns -- raising would
+    break the case it exists to support.
+
+    Once optimum-rbln reaches 0.12.0 this is deleted outright: drop the helper and hand `cos`/`sin`
+    to the graph as fp32.
+    """
+    compile_cfg = rbln_config.compile_cfgs[0]
+    input_info = compile_cfg.input_info[0] if compile_cfg.is_multiple_input_info else compile_cfg.input_info
+    compiled_dtype = getattr(torch, next(dtype for name, _, dtype in input_info if name == "cos"))
+
+    if compiled_dtype != torch.float32:
+        logger.warning_once(
+            f"This artifact's vision encoder was compiled with `cos`/`sin` in `{compiled_dtype}`, so the "
+            "vision rotary tables are rounded to that dtype before entering the graph. Recompile it so "
+            "`cos`/`sin` are fed in fp32 as in HF. Support for artifacts whose vision encoder compiled "
+            "`cos`/`sin` in the activation dtype is deprecated and will be removed in version 0.12.0."
+        )
+    return compiled_dtype
 
 
 class _RotaryEmbedding(Protocol):

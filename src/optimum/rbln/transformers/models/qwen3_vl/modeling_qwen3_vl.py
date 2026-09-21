@@ -37,7 +37,13 @@ from transformers.vision_utils import get_vision_interpolation_indices_and_weigh
 from ....configuration_utils import RBLNCompileConfig
 from ....modeling import RBLNModel
 from ....modeling_base import Preprocessor
-from ....modeling_rope_utils import build_qwen_mrope_lookup, np_cos, np_sin, qwen_vit_rot_pos_ids
+from ....modeling_rope_utils import (
+    build_qwen_mrope_lookup,
+    compiled_vision_rotary_dtype,
+    np_cos,
+    np_sin,
+    qwen_vit_rot_pos_ids,
+)
 from ....utils.logging import get_logger
 from ...modeling_outputs import RBLNDecoderOnlyOutput, _validate_output_hidden_states
 from ...utils.multimodal_batch_sort import RBLNQwenVLBatchSortMixin, _per_sample_patch_lens, _permute_flat_segments
@@ -77,6 +83,7 @@ class RBLNQwen3VLVisionModel(RBLNModel):
         freq_table = Qwen3VLVisionRotaryEmbedding(head_dim // 2)(torch.arange(int(self.max_seq_len.max())))
         self.rotary_cos_table = np_cos(freq_table)
         self.rotary_sin_table = np_sin(freq_table)
+        self.rotary_dtype = compiled_vision_rotary_dtype(self.rbln_config)
         self.deepstack_visual_indexes = config.deepstack_visual_indexes
 
         with no_init_weights():
@@ -129,15 +136,14 @@ class RBLNQwen3VLVisionModel(RBLNModel):
         head_dim = hidden_size // num_heads
         batch_size = rbln_config.batch_size
 
-        # HF keeps the vision rotary tables in fp32; the wrapper rotates in fp32 and rounds once.
-        rbln_config._rotary_dtype = "float32"
         input_infos = []
         for max_seq_len in rbln_config.max_seq_len:
             input_info = [
                 ("hidden_states", [max_seq_len, hidden_size], rbln_config.dtype),
                 ("attn_mask", [batch_size, 1, max_seq_len, max_seq_len], rbln_config.dtype),
-                ("cos", [batch_size, 1, max_seq_len, head_dim], rbln_config._rotary_dtype),
-                ("sin", [batch_size, 1, max_seq_len, head_dim], rbln_config._rotary_dtype),
+                # HF keeps the vision rotary tables in fp32; the wrapper rotates in fp32 and rounds once.
+                ("cos", [batch_size, 1, max_seq_len, head_dim], torch.float32),
+                ("sin", [batch_size, 1, max_seq_len, head_dim], torch.float32),
             ]
             input_infos.append(input_info)
 
@@ -193,15 +199,9 @@ class RBLNQwen3VLVisionModel(RBLNModel):
         hidden_states = hidden_states.reshape(seq_len, -1)
         cos = self.rotary_cos_table[pos_ids].flatten(1)
         sin = self.rotary_sin_table[pos_ids].flatten(1)
-        # Artifacts compiled before this field existed were compiled in the activation dtype.
-        rotary_dtype = (
-            getattr(torch, self.rbln_config._rotary_dtype)
-            if self.rbln_config._rotary_dtype
-            else self.rbln_config.dtype
-        )
         position_embeddings = (
-            torch.cat((cos, cos), dim=-1).to(rotary_dtype),
-            torch.cat((sin, sin), dim=-1).to(rotary_dtype),
+            torch.cat((cos, cos), dim=-1).to(self.rotary_dtype),
+            torch.cat((sin, sin), dim=-1).to(self.rotary_dtype),
         )
 
         cu_seqlens = torch.repeat_interleave(grid_thw[:, 1] * grid_thw[:, 2], grid_thw[:, 0]).cumsum(
