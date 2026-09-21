@@ -68,6 +68,9 @@ class RBLNQwen3VLVisionModel(RBLNModel):
     def __post_init__(self, **kwargs):
         self.transformer = self.model[0]
         self.max_seq_len = torch.tensor(sorted(self.rbln_config.max_seq_len, reverse=False))
+        # Artifacts compiled before #763 declared cos/sin in the activation dtype; feed what the graph was compiled with.
+        cos_dtype = next(dtype for name, _, dtype in self.rbln_config.compile_cfgs[0].input_info[0] if name == "cos")
+        self.rotary_dtype = getattr(torch, cos_dtype) if isinstance(cos_dtype, str) else cos_dtype
         config = self.config
         self.patch_size = config.patch_size
         self.spatial_merge_size = config.spatial_merge_size
@@ -193,8 +196,8 @@ class RBLNQwen3VLVisionModel(RBLNModel):
         cos = self.rotary_cos_table[pos_ids].flatten(1)
         sin = self.rotary_sin_table[pos_ids].flatten(1)
         position_embeddings = (
-            torch.cat((cos, cos), dim=-1),
-            torch.cat((sin, sin), dim=-1),
+            torch.cat((cos, cos), dim=-1).to(self.rotary_dtype),
+            torch.cat((sin, sin), dim=-1).to(self.rotary_dtype),
         )
 
         cu_seqlens = torch.repeat_interleave(grid_thw[:, 1] * grid_thw[:, 2], grid_thw[:, 0]).cumsum(
