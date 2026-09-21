@@ -63,6 +63,7 @@ class PixtralAttention(nn.Module):
 
         attn_weights = torch.matmul(query_states, key_states.transpose(3, 4)) * self.scaling
         attn_weights = attn_weights + attention_mask
+        # HF: softmax in fp32, probabilities cast back to the query dtype before P @ V.
         attn_weights = nn.functional.softmax(attn_weights, dim=-1, dtype=torch.float32).to(query_states.dtype)
         attn_output = torch.matmul(attn_weights, value_states)
         attn_output = attn_output.transpose(1, 3)

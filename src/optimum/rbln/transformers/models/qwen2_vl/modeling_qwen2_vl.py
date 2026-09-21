@@ -133,6 +133,7 @@ class RBLNQwen2VisionTransformerPretrainedModel(RBLNModel):
             input_info = [
                 ("hidden_states", [max_seq_len, hidden_size], rbln_config.dtype),
                 ("full_attn_masks", [batch_size, 1, max_seq_len, max_seq_len], rbln_config.dtype),
+                # HF keeps the vision rotary tables in fp32; the wrapper rotates in fp32 and rounds once.
                 (
                     "cos",
                     [batch_size, 1, max_seq_len, head_dim],

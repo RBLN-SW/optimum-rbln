@@ -120,6 +120,7 @@ class Qwen2_5_VLVisionFullAttention(nn.Module):
 
         attn_weights = torch.matmul(q, k.transpose(2, 3)) * self.scale
         attn_weights = attn_weights + attn_masks
+        # HF eager attention: softmax in fp32, probabilities back in the query dtype.
         attn_weights = nn.functional.softmax(attn_weights, dim=-1, dtype=torch.float32).to(q.dtype)
         attn_output = torch.matmul(attn_weights, v)
         attn_output = attn_output.transpose(1, 2)
@@ -171,6 +172,7 @@ class Qwen2_5_VLVisionWindowAttention(nn.Module):
         attn_weights = torch.matmul(q, k.transpose(2, 3)) * self.scale
 
         attn_weights = attn_weights + attn_masks
+        # HF eager attention: softmax in fp32, probabilities back in the query dtype.
         attn_weights = nn.functional.softmax(attn_weights, dim=-1, dtype=torch.float32).to(q.dtype)
         attn_output = torch.matmul(attn_weights, v)
         attn_output = attn_output.transpose(1, 2)

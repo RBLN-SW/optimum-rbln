@@ -146,6 +146,7 @@ class RBLNQwen2_5_VisionTransformerPretrainedModel(RBLNModel):
                     [max_seq_len // window_seq_len, 1, window_seq_len, window_seq_len],
                     rbln_config.dtype,
                 ),
+                # HF keeps the vision rotary tables in fp32; the wrapper rotates in fp32 and rounds once.
                 (
                     "cos",
                     [batch_size, 1, max_seq_len, head_dim],
