@@ -66,24 +66,16 @@ def compiled_vision_rotary_dtype(rbln_config: "RBLNModelConfig") -> torch.dtype:
     as fp32; that is the basis going forward. Artifacts compiled before that declared them in the
     activation dtype and the runtime rejects an fp32 tensor for them, so read the dtype the graph was
     actually compiled with from the saved compile config and feed that. The compile config already
-    records every input's dtype, so nothing new has to be stored. This only ever warns -- raising would
-    break the case it exists to support.
+    records every input's dtype, so nothing new has to be stored, and the numerical difference is
+    below what shows up on device, so this stays silent rather than asking for a recompile.
 
-    Once optimum-rbln reaches 0.12.0 this is deleted outright: drop the helper and hand `cos`/`sin`
-    to the graph as fp32.
+    DEPRECATED: the activation-dtype fallback is kept only for artifacts compiled before fp32
+    `cos`/`sin`. Once optimum-rbln reaches 0.12.0 delete this helper and have the vision hosts hand
+    `cos`/`sin` to the graph as `torch.float32`.
     """
     compile_cfg = rbln_config.compile_cfgs[0]
     input_info = compile_cfg.input_info[0] if compile_cfg.is_multiple_input_info else compile_cfg.input_info
-    compiled_dtype = getattr(torch, next(dtype for name, _, dtype in input_info if name == "cos"))
-
-    if compiled_dtype != torch.float32:
-        logger.warning_once(
-            f"This artifact's vision encoder was compiled with `cos`/`sin` in `{compiled_dtype}`, so the "
-            "vision rotary tables are rounded to that dtype before entering the graph. Recompile it so "
-            "`cos`/`sin` are fed in fp32 as in HF. Support for artifacts whose vision encoder compiled "
-            "`cos`/`sin` in the activation dtype is deprecated and will be removed in version 0.12.0."
-        )
-    return compiled_dtype
+    return getattr(torch, next(dtype for name, _, dtype in input_info if name == "cos"))
 
 
 class _RotaryEmbedding(Protocol):
