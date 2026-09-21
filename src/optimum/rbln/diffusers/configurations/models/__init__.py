@@ -22,10 +22,12 @@ from ....utils.import_utils import define_import_structure
 if TYPE_CHECKING:
     from .configuration_autoencoder_kl import *
     from .configuration_autoencoder_kl_cosmos import *
+    from .configuration_autoencoder_kl_qwenimage import *
     from .configuration_autoencoder_kl_temporal_decoder import *
     from .configuration_controlnet import *
     from .configuration_prior_transformer import *
     from .configuration_transformer_cosmos import *
+    from .configuration_transformer_qwenimage import *
     from .configuration_transformer_sd3 import *
     from .configuration_unet_2d_condition import *
     from .configuration_unet_spatio_temporal_condition import *

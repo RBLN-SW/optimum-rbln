@@ -22,6 +22,7 @@ from ....utils.import_utils import define_import_structure
 if TYPE_CHECKING:
     from .autoencoder_kl import *
     from .autoencoder_kl_cosmos import *
+    from .autoencoder_kl_qwenimage import *
     from .autoencoder_kl_temporal_decoder import *
     from .vq_model import *
 else:
