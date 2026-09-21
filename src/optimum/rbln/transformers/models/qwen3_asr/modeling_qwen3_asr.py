@@ -16,16 +16,14 @@ import math
 from typing import TYPE_CHECKING, Any, Union
 
 import torch
-import torch.nn as nn
 from transformers import AutoModelForMultimodalLM, PretrainedConfig, PreTrainedModel
-from transformers.initialization import no_init_weights
 from transformers.models.qwen3_asr.feature_extraction_qwen3_asr import Qwen3ASRFeatureExtractor
 from transformers.models.qwen3_asr.modeling_qwen3_asr import Qwen3ASREncoder
 
 from ....configuration_utils import RBLNCompileConfig, RBLNModelConfig
 from ....modeling import RBLNModel
 from ..qwen3.modeling_qwen3 import RBLNQwen3ForCausalLM
-from .configuration_qwen3_asr import RBLNQwen3ASREncoderConfig, RBLNQwen3ASRForConditionalGenerationConfig
+from .configuration_qwen3_asr import RBLNQwen3ASREncoderConfig
 from .qwen3_asr_architecture import Qwen3ASREncoderWrapper, Qwen3ASRLanguageModelWrapper, get_window_size
 
 
@@ -230,21 +228,6 @@ class RBLNQwen3ASRForConditionalGeneration(RBLNQwen3ForCausalLM):
         super().__post_init__(**kwargs)
         self.audio_tower = self.rbln_submodules[0]
 
-    @property
-    def logits_last_dim(self):
-        return self.config.get_text_config().vocab_size
-
-    def _create_embedding_layer(self):
-        text_config = self.config.get_text_config()
-        with no_init_weights():
-            embed_tokens = nn.Embedding(
-                text_config.vocab_size,
-                text_config.hidden_size,
-                text_config.pad_token_id,
-                dtype=self.rbln_config.dtype,
-            )
-        return embed_tokens
-
     @classmethod
     def _reconstruct_model_if_needed(cls, model: "PreTrainedModel"):
         # HF keeps the projector beside the audio tower but only ever runs the two together;
@@ -266,21 +249,6 @@ class RBLNQwen3ASRForConditionalGeneration(RBLNQwen3ForCausalLM):
             submodule_rbln_config.num_windows = _default_num_windows(submodule_config, preprocessors)
         return submodule_rbln_config
 
-    @classmethod
-    def _update_rbln_config(
-        cls,
-        preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"] | None = None,
-        model: PreTrainedModel | None = None,
-        model_config: PretrainedConfig | None = None,
-        rbln_config: RBLNQwen3ASRForConditionalGenerationConfig | None = None,
-    ) -> RBLNQwen3ASRForConditionalGenerationConfig:
-        return super()._update_rbln_config(
-            preprocessors=preprocessors,
-            model=model,
-            model_config=model_config.get_text_config(),
-            rbln_config=rbln_config,
-        )
-
     def _merge_audio_embeds(
         self,
         input_ids: torch.LongTensor,
@@ -301,74 +269,6 @@ class RBLNQwen3ASRForConditionalGeneration(RBLNQwen3ForCausalLM):
         return inputs_embeds.masked_scatter(
             audio_mask.unsqueeze(-1).expand_as(inputs_embeds), audio_embeds.to(inputs_embeds.dtype)
         )
-
-    def _forward_prefill_or_decode(
-        self,
-        input_ids: torch.LongTensor | None,
-        inputs_embeds: torch.Tensor | None,
-        cache_position: torch.Tensor | None,
-        attention_mask: torch.LongTensor | None,
-        generate_idx: torch.Tensor | None,
-        padded_cache_lengths: torch.Tensor | None,
-        position_ids: torch.Tensor | None,
-        token_type_ids: torch.Tensor | None,
-        lora_int_ids: torch.Tensor | None,
-    ) -> dict:
-        if cache_position is not None:
-            return super()._forward_prefill_or_decode(
-                input_ids=input_ids,
-                inputs_embeds=inputs_embeds,
-                cache_position=cache_position,
-                attention_mask=attention_mask,
-                generate_idx=generate_idx,
-                padded_cache_lengths=padded_cache_lengths,
-                position_ids=position_ids,
-                token_type_ids=token_type_ids,
-                lora_int_ids=lora_int_ids,
-            )
-
-        text_config = self.config.get_text_config()
-        inputs = inputs_embeds if inputs_embeds is not None else input_ids
-        batch_size, input_len = inputs.shape[0], inputs.shape[1]
-        if batch_size > self.rbln_config.batch_size:
-            raise ValueError(f"Input's batch({batch_size}) exceeds compiled batch_size({self.rbln_config.batch_size})")
-        if input_len > self.rbln_config.max_seq_len:
-            raise ValueError(
-                f"Input's length({input_len}) exceeds compiled max_seq_len({self.rbln_config.max_seq_len})."
-            )
-
-        all_hidden_states = (
-            tuple(
-                torch.zeros(batch_size, input_len, text_config.hidden_size, dtype=self.rbln_config.dtype)
-                for _ in range(text_config.num_hidden_layers + 1)
-            )
-            if self.rbln_config.output_hidden_states
-            else None
-        )
-        logits = []
-        for b_idx in range(batch_size):
-            outputs = self.prefill_decoder(
-                input_ids=inputs[b_idx : b_idx + 1] if inputs_embeds is None else None,
-                inputs_embeds=inputs[b_idx : b_idx + 1] if inputs_embeds is not None else None,
-                attention_mask=attention_mask[b_idx] if attention_mask is not None else None,
-                position_ids=position_ids[b_idx : b_idx + 1] if position_ids is not None else None,
-                cache_position=torch.arange(0, generate_idx[b_idx].item(), dtype=torch.int32).unsqueeze(0),
-                batch_idx=b_idx,
-                token_type_ids=token_type_ids[b_idx : b_idx + 1] if token_type_ids is not None else None,
-                lora_int_ids=lora_int_ids[b_idx : b_idx + 1] if lora_int_ids is not None else None,
-            )
-            padded_cache_lengths[b_idx] += outputs.padded_cache_lengths
-            logits.append(outputs.logits)
-            if self.rbln_config.output_hidden_states:
-                for l_idx in range(text_config.num_hidden_layers + 1):
-                    all_hidden_states[l_idx][b_idx].copy_(outputs.hidden_states[l_idx][0])
-
-        return {
-            "logits": torch.cat(logits, dim=0),
-            "generate_idx": generate_idx,
-            "padded_cache_lengths": padded_cache_lengths,
-            "hidden_states": all_hidden_states,
-        }
 
     def forward(
         self,
