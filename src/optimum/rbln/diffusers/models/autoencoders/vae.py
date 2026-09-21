@@ -75,7 +75,7 @@ class RBLNRuntimeWanVAEEncoder(RBLNPytorchRuntime):
                 ret = self.forward(x[:, :, :1, :, :])
             else:
                 ret = self.encoder_n(x[:, :, 1 + 4 * (i - 1) : 1 + 4 * i, :, :], feat_cache_0)
-            out_i, feat_cache_0 = ret[0], ret[1]  # (encoder_out, feat_cache_0, *dummy_cache_updates)
+            out_i, feat_cache_0 = ret[0], ret[1]
             outs.append(out_i)
 
         return torch.cat(outs, dim=2) if len(outs) > 1 else outs[0]
@@ -97,7 +97,7 @@ class RBLNRuntimeWanVAEDecoder(RBLNPytorchRuntime):
                 ret = self.forward(z[:, :, :1, :, :])
             else:
                 ret = self.decoder_n(z[:, :, i : i + 1, :, :], feat_cache_0)
-            out_i, feat_cache_0 = ret[0], ret[1]  # (decoder_out, feat_cache_0, *dummy_cache_updates)
+            out_i, feat_cache_0 = ret[0], ret[1]
             outs.append(out_i)
 
         out = torch.cat(outs, dim=2) if len(outs) > 1 else outs[0]
