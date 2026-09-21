@@ -60,7 +60,7 @@ class RBLNRuntimeCosmosVAEDecoder(RBLNPytorchRuntime):
 
 
 class RBLNRuntimeWanVAEEncoder(RBLNPytorchRuntime):
-    mandatory_members = ["main_input_name", "encoder_n", "patch_size", "dtype", "en_war"]
+    mandatory_members = ["main_input_name", "encoder_n", "patch_size", "dtype"]
 
     def encode(self, x: torch.Tensor) -> torch.Tensor:
         x = x.to(self.dtype)
@@ -68,14 +68,13 @@ class RBLNRuntimeWanVAEEncoder(RBLNPytorchRuntime):
             x = wan_patchify(x, patch_size=self.patch_size)
 
         _, _, num_frame, _, _ = x.shape
-        war_kw = {"war_zero": torch.zeros(1, dtype=self.dtype)} if self.en_war else {}
         outs = []
         feat_cache_0 = None
         for i in range(1 + (num_frame - 1) // 4):
             if i == 0:
                 ret = self.forward(x[:, :, :1, :, :])
             else:
-                ret = self.encoder_n(x[:, :, 1 + 4 * (i - 1) : 1 + 4 * i, :, :], feat_cache_0, **war_kw)
+                ret = self.encoder_n(x[:, :, 1 + 4 * (i - 1) : 1 + 4 * i, :, :], feat_cache_0)
             out_i, feat_cache_0 = ret[0], ret[1]  # (encoder_out, feat_cache_0, *dummy_cache_updates)
             outs.append(out_i)
 
@@ -83,7 +82,7 @@ class RBLNRuntimeWanVAEEncoder(RBLNPytorchRuntime):
 
 
 class RBLNRuntimeWanVAEDecoder(RBLNPytorchRuntime):
-    mandatory_members = ["main_input_name", "decoder_n", "patch_size", "dtype", "post_quant_conv", "en_war"]
+    mandatory_members = ["main_input_name", "decoder_n", "patch_size", "dtype", "post_quant_conv"]
 
     def decode(self, z: torch.Tensor) -> torch.Tensor:
         z = z.to(self.dtype)
@@ -91,14 +90,13 @@ class RBLNRuntimeWanVAEDecoder(RBLNPytorchRuntime):
             z = self.post_quant_conv.to(z.dtype)(z)
 
         _, _, num_frame, _, _ = z.shape
-        war_kw = {"war_zero": torch.zeros(1, dtype=self.dtype)} if self.en_war else {}
         outs = []
         feat_cache_0 = None
         for i in range(num_frame):
             if i == 0:
                 ret = self.forward(z[:, :, :1, :, :])
             else:
-                ret = self.decoder_n(z[:, :, i : i + 1, :, :], feat_cache_0, **war_kw)
+                ret = self.decoder_n(z[:, :, i : i + 1, :, :], feat_cache_0)
             out_i, feat_cache_0 = ret[0], ret[1]  # (decoder_out, feat_cache_0, *dummy_cache_updates)
             outs.append(out_i)
 

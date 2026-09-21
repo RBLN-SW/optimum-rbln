@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import os
 from typing import TYPE_CHECKING, Literal, Union
 
 import rebel
@@ -104,38 +103,6 @@ def _from_cache(cache: torch.Tensor, h: int, w: int) -> torch.Tensor:
     return cache.reshape(n, c, d, h, w)
 
 
-# EN/DN write-after-read (WAR) workaround. Toggle with RBLN_WAN_EN_WAR (default "0" = off).
-# In a steady-state chunk (EN/DN) the SAME static cache is both read (previous history) and written
-# (rbln_cache_update). On older compilers, cache_update is an opaque/stateful op whose dummy output
-# nobody consumes, so the compiler does not model a read->write anti-dependency and may schedule the
-# write BEFORE the reads -> the chunk reads its own freshly written values -> corruption (encoder
-# pearson 0.999999 -> 0.999734). The workaround manufactures a data edge: make the written value depend
-# on `out` (available only after the reads + full compute) by adding a 0-valued tensor derived from
-# `out` (via the runtime input war_zero; a compile-time 0.0 would constant-fold the edge away).
-#
-# Since compiler 0.11.3.dev87 (fix/cosmos-vae-cache-store-scheduling) the compiler orders same-buffer
-# reads before the cache-store itself AND flushes cache stores early. The WAR edge then becomes
-# actively harmful: pinning every write after `out` defeats the early flush and blows up the
-# intermediate footprint (full-res EN 3.9 GiB -> 10.9 GiB). Default is therefore OFF; set
-# RBLN_WAN_EN_WAR=1 only when compiling with a pre-fix compiler. The setting is baked into the
-# compiled graph (war_zero input), so compile and load must agree.
-_EN_WAR = os.environ.get("RBLN_WAN_EN_WAR", "0") == "1"
-
-
-def _war_edge(out: torch.Tensor, war_zero: torch.Tensor) -> torch.Tensor:
-    # 0-valued (1,64) tensor that DEPENDS on `out`. 64-wide + 2D so the op maps to the device
-    # (a rank<2 / scalar edge is pushed to host and the dependency is lost).
-    return (out.reshape(-1)[:64] * war_zero.reshape(())).reshape(1, 64)
-
-
-def _apply_war(item: torch.Tensor, war2d: torch.Tensor) -> torch.Tensor:
-    # Add war2d (==0) to the first 64 columns of the last cache axis and re-concat the rest. The value
-    # is unchanged; the point is the `out` dependency. cat (not a full reshape / slice-assign scatter)
-    # keeps it device-mappable and avoids LegalizeScatter.
-    head = item[..., :64] + war2d
-    return torch.cat([head, item[..., 64:]], dim=-1)
-
-
 class _VAEWanEncoder0(torch.nn.Module):
     """Wrapper module for Wan VAE encoder extraction."""
 
@@ -197,10 +164,7 @@ class _VAEWanEncoderN(torch.nn.Module):
         # directly, no permute. idx 1.. are read from shared static DRAM (channel-last -> channel-first).
         # After the encoder, write idx 1.. back channel-last via rbln_cache_update; idx 0 is returned
         # channel-first for the next chunk (no layout flip).
-        # With WAR on, the last positional arg is the runtime-0.0 war_zero (see _EN_WAR); strip it so it
-        # is not mistaken for a cache slot.
-        war_zero = args[-1] if _EN_WAR else None
-        caches = args[:-1] if _EN_WAR else args
+        caches = args
         self.clear_cache()
 
         feat_cache_reshaped = [caches[0]]  # idx0 already channel-first (n,c,d,h,w)
@@ -213,12 +177,9 @@ class _VAEWanEncoderN(torch.nn.Module):
 
         position = torch.tensor(0, dtype=torch.int16)
         axis = torch.tensor(_CACHE_FRAME_AXIS, dtype=torch.int16)
-        war2d = _war_edge(out, war_zero) if _EN_WAR else None  # WAR edge: write depends on out (== reads)
         dummy_outs = []
         for cache, item in zip(list(caches)[1:], feat_cache_reshaped[1:], strict=False):
             item = _to_cache(item)
-            if _EN_WAR:
-                item = _apply_war(item, war2d)  # +0, forces cache_update after the encoder reads
             dummy_outs.append(torch.ops.rbln_custom_ops.rbln_cache_update(cache, item, position, axis))
         return out, feat_cache_reshaped[0].contiguous(), dummy_outs  # idx0 channel-first (no flip)
 
@@ -287,10 +248,7 @@ class _VAEWanDecoderN(torch.nn.Module):
         # each channel-last (n,d,h,w,c) back to (n,c,d,h,w), run the decoder, then write the updated
         # caches back channel-last via rbln_cache_update. idx 0 is a runtime output. post_quant_conv is
         # applied on the host before the loop (see _VAEWanDecoder0).
-        # With WAR on, the last positional arg is the runtime-0.0 war_zero (see _EN_WAR); strip it so it
-        # is not mistaken for a cache slot.
-        war_zero = args[-1] if _EN_WAR else None
-        caches = args[:-1] if _EN_WAR else args
+        caches = args
         self.clear_cache()
 
         feat_cache_reshaped = [caches[0]]  # idx0 already channel-first (n,c,d,h,w), runtime I/O
@@ -302,12 +260,9 @@ class _VAEWanDecoderN(torch.nn.Module):
 
         position = torch.tensor(0, dtype=torch.int16)
         axis = torch.tensor(_CACHE_FRAME_AXIS, dtype=torch.int16)
-        war2d = _war_edge(out, war_zero) if _EN_WAR else None  # WAR edge: write depends on out (== reads)
         dummy_outs = []
         for cache, item in zip(list(caches)[1:], feat_cache_reshaped[1:], strict=False):
             item = _to_cache(item)
-            if _EN_WAR:
-                item = _apply_war(item, war2d)  # +0, forces cache_update after the decoder reads
             dummy_outs.append(torch.ops.rbln_custom_ops.rbln_cache_update(cache, item, position, axis))
         return out, feat_cache_reshaped[0].contiguous(), dummy_outs  # idx0 channel-first (no flip)
 
@@ -387,7 +342,6 @@ class RBLNAutoencoderKLWan(RBLNModel):
                 main_input_name="x",
                 patch_size=self.config.patch_size,
                 dtype=self.rbln_config.dtype,
-                en_war=_EN_WAR,
             )
         self.decoder = RBLNRuntimeWanVAEDecoder(
             runtime=self.model[-2],
@@ -396,7 +350,6 @@ class RBLNAutoencoderKLWan(RBLNModel):
             patch_size=self.config.patch_size,
             dtype=self.rbln_config.dtype,
             post_quant_conv=self.post_quant_conv,
-            en_war=_EN_WAR,
         )
 
     @classmethod
@@ -602,10 +555,6 @@ class RBLNAutoencoderKLWan(RBLNModel):
                     vae_enc_0_input_info.append((f"feat_cache_{i}", cache_input_shape, rbln_config.dtype))
                     vae_enc_n_input_info.append((f"feat_cache_{i}", cache_input_shape, rbln_config.dtype))
 
-            if _EN_WAR:
-                # runtime-0.0 scalar feeding the EN write-after-read edge (see _EN_WAR). Not static.
-                vae_enc_n_input_info.append(("war_zero", [1], rbln_config.dtype))
-
             compile_cfgs.append(RBLNCompileConfig(compiled_model_name="encoder_0", input_info=vae_enc_0_input_info))
             compile_cfgs.append(RBLNCompileConfig(compiled_model_name="encoder_n", input_info=vae_enc_n_input_info))
 
@@ -643,10 +592,6 @@ class RBLNAutoencoderKLWan(RBLNModel):
                 vae_dec_n_input_info.append((f"feat_cache_{i}", cache_input_shape, rbln_config.dtype))
             else:  # idx 0 is runtime I/O (DN input) -> channel-first (n,c,d,h,w), no scramble concern
                 vae_dec_n_input_info.append((f"feat_cache_{i}", list(shape), rbln_config.dtype))
-
-        if _EN_WAR:
-            # runtime-0.0 scalar feeding the DN write-after-read edge (see _EN_WAR). Not static.
-            vae_dec_n_input_info.append(("war_zero", [1], rbln_config.dtype))
 
         compile_cfgs.append(RBLNCompileConfig(compiled_model_name="decoder_0", input_info=vae_dec_0_input_info))
         compile_cfgs.append(RBLNCompileConfig(compiled_model_name="decoder_n", input_info=vae_dec_n_input_info))
