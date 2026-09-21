@@ -37,7 +37,13 @@ from transformers.models.qwen2_vl.modeling_qwen2_vl import (
 from ....configuration_utils import RBLNCompileConfig
 from ....modeling import RBLNModel
 from ....modeling_base import Preprocessor
-from ....modeling_rope_utils import build_qwen_mrope_lookup, np_cos, np_sin, qwen_vit_rot_pos_ids
+from ....modeling_rope_utils import (
+    build_qwen_mrope_lookup,
+    compiled_vision_rotary_dtype,
+    np_cos,
+    np_sin,
+    qwen_vit_rot_pos_ids,
+)
 from ....utils.logging import get_logger
 from ...modeling_outputs import _validate_output_hidden_states
 from ...utils.multimodal_batch_sort import RBLNQwenVLBatchSortMixin
@@ -77,6 +83,7 @@ class RBLNQwen2VisionTransformerPretrainedModel(RBLNModel):
         )
         self.rotary_cos_table = np_cos(freq_table)
         self.rotary_sin_table = np_sin(freq_table)
+        self.rotary_dtype = compiled_vision_rotary_dtype(self.rbln_config)
         with no_init_weights():
             self.patch_embed = PatchEmbed(
                 patch_size=config.patch_size,
@@ -133,15 +140,16 @@ class RBLNQwen2VisionTransformerPretrainedModel(RBLNModel):
             input_info = [
                 ("hidden_states", [max_seq_len, hidden_size], rbln_config.dtype),
                 ("full_attn_masks", [batch_size, 1, max_seq_len, max_seq_len], rbln_config.dtype),
+                # HF keeps the vision rotary tables in fp32; the wrapper rotates in fp32 and rounds once.
                 (
                     "cos",
                     [batch_size, 1, max_seq_len, head_dim],
-                    rbln_config.dtype,
+                    torch.float32,
                 ),
                 (
                     "sin",
                     [batch_size, 1, max_seq_len, head_dim],
-                    rbln_config.dtype,
+                    torch.float32,
                 ),
             ]
             input_infos.append(input_info)
@@ -194,8 +202,8 @@ class RBLNQwen2VisionTransformerPretrainedModel(RBLNModel):
         cos = self.rotary_cos_table[pos_ids].flatten(1)
         sin = self.rotary_sin_table[pos_ids].flatten(1)
         position_embeddings = (
-            torch.cat((cos, cos), dim=-1).to(self.rbln_config.dtype),
-            torch.cat((sin, sin), dim=-1).to(self.rbln_config.dtype),
+            torch.cat((cos, cos), dim=-1).to(self.rotary_dtype),
+            torch.cat((sin, sin), dim=-1).to(self.rotary_dtype),
         )
 
         cu_seqlens = torch.repeat_interleave(grid_thw[:, 1] * grid_thw[:, 2], grid_thw[:, 0]).cumsum(
