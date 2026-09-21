@@ -14,7 +14,9 @@
 
 from typing import Any
 
-from ....configuration_utils import RBLNModelConfig
+import torch
+
+from ....configuration_utils import RBLNCompileConfig, RBLNModelConfig
 from ..decoderonly.configuration_decoderonly import RBLNDecoderOnlyModelConfig, RBLNDecoderOnlyModelForCausalLMConfig
 
 
@@ -62,7 +64,11 @@ class RBLNQwen2VLModelConfig(RBLNDecoderOnlyModelConfig):
 
 class RBLNQwen2VisionTransformerPretrainedModelConfig(RBLNModelConfig):
     def __init__(
-        self, max_seq_len: int | list[int] | None = None, batch_size: int | None = None, **kwargs: dict[str, Any]
+        self,
+        max_seq_len: int | list[int] | None = None,
+        batch_size: int | None = None,
+        rotary_dtype: str | torch.dtype | None = None,
+        **kwargs: dict[str, Any],
     ):
         """
         Args:
@@ -75,6 +81,9 @@ class RBLNQwen2VisionTransformerPretrainedModelConfig(RBLNModelConfig):
                 optimize computation. If not provided, a `ValueError` is raised.
             batch_size (int | None): the vision encoder runs one image at a time (the parent config forces
                 this by default), so only `batch_size=1` is supported. Defaults to 1.
+            rotary_dtype (str | torch.dtype | None): dtype of the rotary cos/sin tables fed to the vision
+                graph. Compile sets `float32`; artifacts compiled before that carry no value and were
+                compiled in the activation dtype.
             kwargs: Additional arguments passed to the parent RBLNModelConfig.
 
         Raises:
@@ -91,6 +100,7 @@ class RBLNQwen2VisionTransformerPretrainedModelConfig(RBLNModelConfig):
             Therefore, `max_seq_len` must be at least 256.
         """
         super().__init__(**kwargs)
+        self.rotary_dtype = RBLNCompileConfig.normalize_dtype(rotary_dtype) if rotary_dtype is not None else None
 
         batch_size = batch_size or 1
         if batch_size != 1:

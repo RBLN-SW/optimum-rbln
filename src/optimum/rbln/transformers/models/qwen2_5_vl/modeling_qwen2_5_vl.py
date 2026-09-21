@@ -67,9 +67,6 @@ class RBLNQwen2_5_VisionTransformerPretrainedModel(RBLNModel):
     def __post_init__(self, **kwargs):
         self.transformer = self.model[0]
         self.max_seq_len = torch.tensor(sorted(self.rbln_config.max_seq_len, reverse=False))
-        # Artifacts compiled before #763 declared cos/sin in the activation dtype; feed what the graph was compiled with.
-        cos_dtype = next(dtype for name, _, dtype in self.rbln_config.compile_cfgs[0].input_info[0] if name == "cos")
-        self.rotary_dtype = getattr(torch, cos_dtype) if isinstance(cos_dtype, str) else cos_dtype
         config = self.config
         self.window_size = config.window_size
         self.patch_size = config.spatial_patch_size
@@ -134,6 +131,8 @@ class RBLNQwen2_5_VisionTransformerPretrainedModel(RBLNModel):
         window_seq_len = (window_size // patch_size) ** 2
         batch_size = rbln_config.batch_size
 
+        # HF keeps the vision rotary tables in fp32; the wrapper rotates in fp32 and rounds once.
+        rbln_config.rotary_dtype = rbln_config.rotary_dtype or "float32"
         input_infos = []
         for max_seq_len in rbln_config.max_seq_len:
             if max_seq_len % window_seq_len > 0:
@@ -149,16 +148,15 @@ class RBLNQwen2_5_VisionTransformerPretrainedModel(RBLNModel):
                     [max_seq_len // window_seq_len, 1, window_seq_len, window_seq_len],
                     rbln_config.dtype,
                 ),
-                # HF keeps the vision rotary tables in fp32; the wrapper rotates in fp32 and rounds once.
                 (
                     "cos",
                     [batch_size, 1, max_seq_len, head_dim],
-                    torch.float32,
+                    rbln_config.rotary_dtype,
                 ),
                 (
                     "sin",
                     [batch_size, 1, max_seq_len, head_dim],
-                    torch.float32,
+                    rbln_config.rotary_dtype,
                 ),
             ]
             input_infos.append(input_info)
@@ -287,9 +285,13 @@ class RBLNQwen2_5_VisionTransformerPretrainedModel(RBLNModel):
         pos_ids = pos_ids[window_index, :, :].reshape(seq_len, -1)
         cos = self.rotary_cos_table[pos_ids].flatten(1)
         sin = self.rotary_sin_table[pos_ids].flatten(1)
+        # Artifacts compiled before #763 carry no rotary_dtype and were compiled in the activation dtype.
+        rotary_dtype = (
+            getattr(torch, self.rbln_config.rotary_dtype) if self.rbln_config.rotary_dtype else self.rbln_config.dtype
+        )
         position_embeddings = (
-            torch.cat((cos, cos), dim=-1).to(self.rotary_dtype),
-            torch.cat((sin, sin), dim=-1).to(self.rotary_dtype),
+            torch.cat((cos, cos), dim=-1).to(rotary_dtype),
+            torch.cat((sin, sin), dim=-1).to(rotary_dtype),
         )
 
         cu_seqlens = torch.repeat_interleave(grid_thw[:, 1] * grid_thw[:, 2], grid_thw[:, 0]).cumsum(
