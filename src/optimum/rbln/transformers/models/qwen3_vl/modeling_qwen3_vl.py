@@ -134,8 +134,8 @@ class RBLNQwen3VLVisionModel(RBLNModel):
             input_info = [
                 ("hidden_states", [max_seq_len, hidden_size], rbln_config.dtype),
                 ("attn_mask", [batch_size, 1, max_seq_len, max_seq_len], rbln_config.dtype),
-                ("cos", [batch_size, 1, max_seq_len, head_dim], rbln_config.dtype),
-                ("sin", [batch_size, 1, max_seq_len, head_dim], rbln_config.dtype),
+                ("cos", [batch_size, 1, max_seq_len, head_dim], torch.float32),
+                ("sin", [batch_size, 1, max_seq_len, head_dim], torch.float32),
             ]
             input_infos.append(input_info)
 
@@ -192,8 +192,8 @@ class RBLNQwen3VLVisionModel(RBLNModel):
         cos = self.rotary_cos_table[pos_ids].flatten(1)
         sin = self.rotary_sin_table[pos_ids].flatten(1)
         position_embeddings = (
-            torch.cat((cos, cos), dim=-1).to(self.rbln_config.dtype),
-            torch.cat((sin, sin), dim=-1).to(self.rbln_config.dtype),
+            torch.cat((cos, cos), dim=-1),
+            torch.cat((sin, sin), dim=-1),
         )
 
         cu_seqlens = torch.repeat_interleave(grid_thw[:, 1] * grid_thw[:, 2], grid_thw[:, 0]).cumsum(
