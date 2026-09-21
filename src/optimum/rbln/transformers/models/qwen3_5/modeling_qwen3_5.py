@@ -394,7 +394,6 @@ class RBLNQwen3_5VisionModel(RBLNModel):
                 ("hidden_states", [max_seq_len, hidden_size], rbln_config.dtype),
                 ("attn_mask", [batch_size, 1, max_seq_len, max_seq_len], rbln_config.dtype),
                 # cos/sin enter the device at fp32 and are cast to the device dtype inside the vision model
-                # HF keeps the vision rotary tables in fp32; the wrapper rotates in fp32 and rounds once.
                 ("cos", [batch_size, 1, max_seq_len, head_dim], torch.float32),
                 ("sin", [batch_size, 1, max_seq_len, head_dim], torch.float32),
             ]
@@ -458,6 +457,7 @@ class RBLNQwen3_5VisionModel(RBLNModel):
         hidden_states = hidden_states.reshape(seq_len, -1)
         cos = torch.cat((cos, cos), dim=-1)
         sin = torch.cat((sin, sin), dim=-1)
+        # fp32->device-dtype cast happens on-device in the vision wrapper
         position_embeddings = (cos, sin)
 
         cu_seqlens = torch.repeat_interleave(grid_thw[:, 1] * grid_thw[:, 2], grid_thw[:, 0]).cumsum(
