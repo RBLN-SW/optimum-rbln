@@ -94,8 +94,10 @@ class RBLNModel(RBLNBaseModel):
         return rbln_config
 
     @classmethod
-    def update_rbln_config_using_pipe(cls, pipe: Any, rbln_config: RBLNModelConfig, submodule_name: str) -> Any:
-        raise NotImplementedError
+    def update_rbln_config_using_pipe(
+        cls, pipe: Any, rbln_config: RBLNModelConfig, submodule_name: str
+    ) -> "RBLNModelConfig":
+        return rbln_config
 
     @classmethod
     def _reconstruct_model_if_needed(cls, model: "HFModel") -> "HFModel":
