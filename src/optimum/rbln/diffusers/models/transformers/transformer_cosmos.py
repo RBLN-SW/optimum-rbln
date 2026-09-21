@@ -106,6 +106,98 @@ class CosmosTransformer3DModelWrapper(torch.nn.Module):
         self.latent_width = latent_width
         self.p_t, self.p_h, self.p_w = model.config.patch_size
 
+    @staticmethod
+    def _uses_per_frame_modulation(hidden_states: torch.Tensor, embedded_timestep: torch.Tensor) -> bool:
+        return embedded_timestep.ndim == 3 and embedded_timestep.shape[1] != hidden_states.shape[1]
+
+    @staticmethod
+    def _frame_modulation(
+        norm: torch.nn.Module, embedded_timestep: torch.Tensor, temb: torch.Tensor | None, num_chunks: int
+    ) -> tuple[torch.Tensor, ...]:
+        # Same math as CosmosAdaLayerNorm{,Zero}.forward, on [B, T, C] instead of [B, THW, C].
+        modulation = norm.linear_2(norm.linear_1(norm.activation(embedded_timestep)))
+        if temb is not None:
+            modulation = modulation + temb[..., : modulation.shape[-1]]
+        return tuple(x.unsqueeze(2) for x in modulation.chunk(num_chunks, dim=-1))
+
+    @staticmethod
+    def _per_frame(hidden_states: torch.Tensor, num_frames: int) -> torch.Tensor:
+        batch_size, num_tokens, channels = hidden_states.shape
+        return hidden_states.view(batch_size, num_frames, num_tokens // num_frames, channels)
+
+    def _ada_layer_norm(
+        self,
+        norm: torch.nn.Module,
+        hidden_states: torch.Tensor,
+        embedded_timestep: torch.Tensor,
+        temb: torch.Tensor | None,
+        num_chunks: int,
+    ) -> tuple[torch.Tensor, torch.Tensor | None]:
+        chunks = self._frame_modulation(norm, embedded_timestep, temb, num_chunks)
+        shift, scale = chunks[0], chunks[1]
+        gate = chunks[2] if num_chunks == 3 else None
+        normed = self._per_frame(norm.norm(hidden_states), embedded_timestep.shape[1])
+        normed = normed * (1 + scale) + shift
+        return normed.flatten(1, 2), gate
+
+    def _gated_residual(self, hidden_states: torch.Tensor, gate: torch.Tensor, output: torch.Tensor) -> torch.Tensor:
+        return hidden_states + (gate * self._per_frame(output, gate.shape[1])).flatten(1, 2)
+
+    def _block_forward(
+        self,
+        block: torch.nn.Module,
+        hidden_states: torch.Tensor,
+        encoder_hidden_states,
+        embedded_timestep: torch.Tensor,
+        temb: torch.Tensor,
+        image_rotary_emb: list[torch.Tensor],
+        extra_pos_emb: torch.Tensor | None = None,
+        attention_mask: torch.Tensor | None = None,
+        controlnet_residual: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        if (
+            not self._uses_per_frame_modulation(hidden_states, embedded_timestep)
+            or block.before_proj is not None
+            or block.after_proj is not None
+        ):
+            return block(
+                hidden_states=hidden_states,
+                encoder_hidden_states=encoder_hidden_states,
+                embedded_timestep=embedded_timestep,
+                temb=temb,
+                image_rotary_emb=image_rotary_emb,
+                extra_pos_emb=extra_pos_emb,
+                attention_mask=attention_mask,
+                controlnet_residual=controlnet_residual,
+            )
+
+        if extra_pos_emb is not None:
+            hidden_states = hidden_states + extra_pos_emb
+
+        norm_hidden_states, gate = self._ada_layer_norm(block.norm1, hidden_states, embedded_timestep, temb, 3)
+        attn_output = block.attn1(norm_hidden_states, image_rotary_emb=image_rotary_emb)
+        hidden_states = self._gated_residual(hidden_states, gate, attn_output)
+
+        norm_hidden_states, gate = self._ada_layer_norm(block.norm2, hidden_states, embedded_timestep, temb, 3)
+        attn_output = block.attn2(
+            norm_hidden_states, encoder_hidden_states=encoder_hidden_states, attention_mask=attention_mask
+        )
+        hidden_states = self._gated_residual(hidden_states, gate, attn_output)
+
+        norm_hidden_states, gate = self._ada_layer_norm(block.norm3, hidden_states, embedded_timestep, temb, 3)
+        ff_output = block.ff(norm_hidden_states)
+        hidden_states = self._gated_residual(hidden_states, gate, ff_output)
+
+        if controlnet_residual is not None:
+            hidden_states = hidden_states + controlnet_residual
+        return hidden_states
+
+    def _norm_out(self, hidden_states: torch.Tensor, embedded_timestep: torch.Tensor, temb: torch.Tensor):
+        if not self._uses_per_frame_modulation(hidden_states, embedded_timestep):
+            return self.model.norm_out(hidden_states, embedded_timestep, temb)
+        normed, _ = self._ada_layer_norm(self.model.norm_out, hidden_states, embedded_timestep, temb, 2)
+        return normed
+
     def forward(
         self,
         hidden_states: torch.Tensor,
@@ -120,7 +212,8 @@ class CosmosTransformer3DModelWrapper(torch.nn.Module):
     ):
         image_rotary_emb = [image_rotary_emb_0, image_rotary_emb_1]
         for block in self.model.transformer_blocks:
-            hidden_states = block(
+            hidden_states = self._block_forward(
+                block,
                 hidden_states=hidden_states,
                 encoder_hidden_states=encoder_hidden_states,
                 embedded_timestep=embedded_timestep,
@@ -132,7 +225,7 @@ class CosmosTransformer3DModelWrapper(torch.nn.Module):
         post_patch_num_frames = self.num_latent_frames // self.p_t
         post_patch_height = self.latent_height // self.p_h
         post_patch_width = self.latent_width // self.p_w
-        hidden_states = self.model.norm_out(hidden_states, embedded_timestep, temb)
+        hidden_states = self._norm_out(hidden_states, embedded_timestep, temb)
         hidden_states = self.model.proj_out(hidden_states)
         hidden_states = hidden_states.unflatten(2, (self.p_h, self.p_w, self.p_t, -1))
         hidden_states = hidden_states.unflatten(1, (post_patch_num_frames, post_patch_height, post_patch_width))
@@ -182,20 +275,19 @@ class CosmosTransferTransformerWrapper(CosmosTransformer3DModelWrapper):
                 controlnet_residual = controlnet_states[block_idx // self.controlnet_block_every_n]
             else:
                 controlnet_residual = None
-            hidden_states = block(
+            hidden_states = self._block_forward(
+                block,
                 hidden_states=hidden_states,
                 encoder_hidden_states=context,
                 embedded_timestep=embedded_timestep,
                 temb=temb,
                 image_rotary_emb=image_rotary_emb,
-                extra_pos_emb=None,
-                attention_mask=None,
                 controlnet_residual=controlnet_residual,
             )
         post_patch_num_frames = self.num_latent_frames // self.p_t
         post_patch_height = self.latent_height // self.p_h
         post_patch_width = self.latent_width // self.p_w
-        hidden_states = self.model.norm_out(hidden_states, embedded_timestep, temb)
+        hidden_states = self._norm_out(hidden_states, embedded_timestep, temb)
         hidden_states = self.model.proj_out(hidden_states)
         hidden_states = hidden_states.unflatten(2, (self.p_h, self.p_w, self.p_t, -1))
         hidden_states = hidden_states.unflatten(1, (post_patch_num_frames, post_patch_height, post_patch_width))
@@ -325,13 +417,9 @@ class RBLNCosmosTransformer3DModel(RBLNModel):
             )
             timestep = timestep.flatten()
             temb, embedded_timestep = self.time_embed(hidden_states, timestep)
-            # We can do this because num_frames == post_patch_num_frames, as p_t is 1
-            temb, embedded_timestep = (
-                x.view(batch_size, post_patch_num_frames, 1, 1, -1)
-                .expand(-1, -1, post_patch_height, post_patch_width, -1)
-                .flatten(1, 3)
-                for x in (temb, embedded_timestep)
-            )  # [BT, C] -> [B, T, 1, 1, C] -> [B, T, H, W, C] -> [B, THW, C]
+            # The graph broadcasts the per-frame modulation over H*W itself; expanding it to
+            # every token here would put [B, THW, 3C] tensors (2.6 GB for 14B) on the device.
+            temb, embedded_timestep = (x.view(batch_size, post_patch_num_frames, -1) for x in (temb, embedded_timestep))
         else:
             raise AssertionError("Unsupported shape of `timestep`")
 
@@ -481,11 +569,12 @@ class RBLNCosmosTransformer3DModel(RBLNModel):
             # For Cosmos-Predict2.5 (unified conditioning) always feeds per-frame timesteps
             uses_per_frame_timestep = bool(model_config.use_crossattn_projection)
         if uses_per_frame_timestep:
+            num_frames = rbln_config.num_latent_frames // p_t
             input_info.append(
-                ("embedded_timestep", [rbln_config.batch_size, hidden_dim, hidden_size], rbln_config.dtype),
+                ("embedded_timestep", [rbln_config.batch_size, num_frames, hidden_size], rbln_config.dtype),
             )
             input_info.append(
-                ("temb", [1, hidden_dim, hidden_size * 3], rbln_config.dtype),
+                ("temb", [1, num_frames, hidden_size * 3], rbln_config.dtype),
             )
         else:
             input_info.append(
