@@ -231,8 +231,7 @@ class RBLNCosmosControlNetModel(RBLNModel):
                 f"Expected timestep to have shape [B, 1, T, 1, 1], but got {timestep.shape}"
             )
             temb, embedded_timestep = self.time_embed(base_hidden_states, timestep.flatten())
-            # Keep the embeddings per-frame: the graph broadcasts them over the spatial tokens
-            # (see CosmosPerFrameAdaLNMixin), so the H*W-fold expansion never crosses into it.
+            # Keep the embeddings per-frame
             temb, embedded_timestep = (
                 x.view(B, post_patch_num_frames, -1) for x in (temb, embedded_timestep)
             )  # [BT, C] -> [B, T, C]
