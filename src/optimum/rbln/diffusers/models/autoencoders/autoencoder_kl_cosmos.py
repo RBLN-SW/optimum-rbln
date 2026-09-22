@@ -25,7 +25,7 @@ from transformers import PretrainedConfig
 
 from ....configuration_utils import RBLNCompileConfig
 from ....modeling import RBLNModel
-from ....modeling_base import Preprocessor
+from ....modeling_base import Preprocessor, RBLNBaseModel
 from ....utils.logging import get_logger
 from ...configurations import RBLNAutoencoderKLCosmosConfig
 from .vae import RBLNRuntimeCosmosVAEDecoder, RBLNRuntimeCosmosVAEEncoder, _VAECosmosDecoder, _VAECosmosEncoder
@@ -85,7 +85,7 @@ class RBLNAutoencoderKLCosmos(RBLNModel):
 
     @classmethod
     def get_compiled_model(
-        cls, model, rbln_config: RBLNAutoencoderKLCosmosConfig
+        cls, model, rbln_config: RBLNAutoencoderKLCosmosConfig, colocated_models: list[RBLNBaseModel] | None = None
     ) -> dict[str, rebel.RBLNCompiledModel]:
         def replaced_forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
             if self.temporal_pad != 0:

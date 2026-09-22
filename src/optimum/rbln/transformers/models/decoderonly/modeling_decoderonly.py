@@ -26,7 +26,7 @@ from transformers.modeling_outputs import BaseModelOutputWithPast
 
 from ....configuration_utils import RBLNCompileConfig
 from ....modeling import RBLNModel
-from ....modeling_base import Preprocessor
+from ....modeling_base import Preprocessor, RBLNBaseModel
 from ....utils.logging import get_logger
 from ....utils.runtime_utils import npu_is_cr13_or_later
 from ...cache_utils import FullAttentionKVCacheMeta, SlidingWindowAttentionKVCacheMeta
@@ -272,7 +272,12 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
 
     @classmethod
     @torch.inference_mode()
-    def get_compiled_model(cls, model: PreTrainedModel, rbln_config: RBLNDecoderOnlyModelForCausalLMConfig):
+    def get_compiled_model(
+        cls,
+        model: PreTrainedModel,
+        rbln_config: RBLNDecoderOnlyModelForCausalLMConfig,
+        colocated_models: list[RBLNBaseModel] | None = None,
+    ):
         wrapped_model = cls._wrap_model_if_needed(model, rbln_config)
         prefill_compile_config = rbln_config.compile_cfgs[0]
 
@@ -328,7 +333,7 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
                 compiled_models[f"decoder_batch_{batch_size}"] = compiled_decoder
 
         if rbln_config.is_auto_num_blocks:
-            cls.set_kvcache_num_blocks_after_compilation(compiled_models, rbln_config)
+            cls.set_kvcache_num_blocks_after_compilation(compiled_models, rbln_config, colocated_models)
 
         return compiled_models
 
