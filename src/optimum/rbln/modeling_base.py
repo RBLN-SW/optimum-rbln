@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, cast
 
 import rebel
 import torch
+from huggingface_hub.errors import OfflineModeIsEnabled
 from transformers import (
     AutoConfig,
     AutoModel,
@@ -462,7 +463,9 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
                 local_files_only=local_files_only,
             )
             return True
-        except (FileNotFoundError, KeyError):
+        except (FileNotFoundError, KeyError, OfflineModeIsEnabled):
+            # A repo the Hub cannot be asked about is a repo with no compiled model in it:
+            # the caller only wants to know whether to export, and offline mode is an answer.
             return False
 
     @classmethod
