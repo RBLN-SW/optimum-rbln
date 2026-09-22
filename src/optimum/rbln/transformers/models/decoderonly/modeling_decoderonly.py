@@ -514,6 +514,7 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
             kvcache_partition_len=rbln_config.kvcache_partition_len,
             kvcache_block_size=rbln_config.kvcache_block_size,
             max_seq_len=rbln_config.max_seq_len,
+            npu=rbln_config.npu,
         )
 
         # Validate kvcache_num_blocks against `num_min_blocks` / `num_full_blocks`.

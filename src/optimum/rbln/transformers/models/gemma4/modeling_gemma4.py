@@ -37,6 +37,7 @@ from ....utils.logging import get_logger
 from ...cache_utils import FullAttentionKVCacheMeta, SlidingWindowAttentionKVCacheMeta
 from ...modeling_attention_utils import validate_sliding_window
 from ...modeling_outputs import RBLNDecoderOnlyOutput
+from ...utils.moe import RBLNMoeLoadMixin
 from ...utils.multimodal_batch_sort import RBLNImageIndexedBatchSortMixin, _placeholder_run_counts
 from ...utils.rbln_runtime_wrapper import LoopProcessor
 from ..decoderonly.decoderonly_runtime_utils import RBLNPageTableManager
@@ -231,7 +232,7 @@ class RBLNGemma4VisionModel(RBLNModel):
         return BaseModelOutputWithPooling(last_hidden_state=hidden_states)
 
 
-class RBLNGemma4ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
+class RBLNGemma4ForCausalLM(RBLNMoeLoadMixin, RBLNDecoderOnlyModelForCausalLM):
     """
     Gemma4 model with a causal language modeling head optimized for RBLN NPU.
 
@@ -585,7 +586,7 @@ class RBLNGemma4ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
         return rbln_config
 
 
-class RBLNGemma4ForConditionalGeneration(RBLNModel, RBLNImageIndexedBatchSortMixin):
+class RBLNGemma4ForConditionalGeneration(RBLNMoeLoadMixin, RBLNModel, RBLNImageIndexedBatchSortMixin):
     """
     Gemma4 model for image-text-to-text generation optimized for RBLN NPU.
 
