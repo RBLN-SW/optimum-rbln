@@ -45,3 +45,8 @@ class RBLNStableVideoDiffusionPipeline(RBLNDiffusionMixin, StableVideoDiffusionP
         if compiled_decode_chunk_size is not None:
             kwargs["decode_chunk_size"] = compiled_decode_chunk_size
         return kwargs
+
+
+__all__ = [
+    "RBLNStableVideoDiffusionPipeline",
+]

@@ -14,8 +14,8 @@
 
 import importlib
 import inspect
-from collections.abc import Callable
-from typing import TYPE_CHECKING, Any, Optional, Union
+from collections.abc import Callable, Sequence
+from typing import TYPE_CHECKING, Any, Optional
 
 import torch
 from transformers import AutoModelForImageTextToText, LlavaForConditionalGeneration, PretrainedConfig, PreTrainedModel
@@ -25,16 +25,22 @@ from transformers.models.llava.modeling_llava import LlavaCausalLMOutputWithPast
 
 from ....configuration_utils import RBLNCompileConfig, RBLNModelConfig
 from ....modeling import RBLNModel
+from ....modeling_base import Preprocessor
 from ....utils.logging import get_logger
 from ...modeling_outputs import RBLNDecoderOnlyOutput
+from ...utils.multimodal_batch_sort import (
+    _UNMAPPABLE_BATCH_SORT,
+    RBLNImageIndexedBatchSortMixin,
+    _matched_token_counts,
+    _placeholder_token_counts,
+)
 from ...utils.rbln_runtime_wrapper import LoopProcessor
-from ..decoderonly.generation_decoderonly import RBLNDecoderOnlyGenerationMixin
 
 
 logger = get_logger(__name__)
 
 if TYPE_CHECKING:
-    from transformers import AutoFeatureExtractor, AutoProcessor, AutoTokenizer, PretrainedConfig
+    from transformers import PretrainedConfig
 
 
 class LoopVisionTower(LoopProcessor):
@@ -112,7 +118,7 @@ class LoopProjector(LoopProcessor):
         return output[0]
 
 
-class RBLNLlavaForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMixin):
+class RBLNLlavaForConditionalGeneration(RBLNModel, RBLNImageIndexedBatchSortMixin):
     """
     RBLNLlavaForConditionalGeneration is a multi-modal model that combines vision and language processing capabilities,
     optimized for RBLN NPUs. It is designed for conditional generation tasks that involve both image and text inputs.
@@ -166,6 +172,30 @@ class RBLNLlavaForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMixi
         {"name": "vision_tower"},
         {"name": "language_model"},
     ]
+    # pixel_values is (num_images, C, H, W); image_sizes is (num_images, 2) for pixtral
+    _image_indexed_kwargs = ("pixel_values", "image_sizes")
+
+    def _images_per_sample(self, input_ids: torch.LongTensor | None, kwargs: dict) -> list[int]:
+        # LlavaConfig always carries image_seq_length (default 576), so discriminate by the
+        # vision tower; pixtral's per-image [IMG] counts come from image_sizes instead
+        if getattr(getattr(self.config, "vision_config", None), "model_type", None) == "pixtral":
+            return _matched_token_counts(input_ids, self._image_token_id, self._pixtral_tokens_per_image(kwargs))
+        return _placeholder_token_counts(
+            input_ids, self._image_token_id, getattr(self.config, "image_seq_length", None)
+        )
+
+    def _pixtral_tokens_per_image(self, kwargs: dict) -> list[int]:
+        image_sizes = kwargs.get("image_sizes")
+        if image_sizes is None:
+            raise RuntimeError(_UNMAPPABLE_BATCH_SORT)
+        vision_config = self.config.vision_config
+        stride = vision_config.patch_size * getattr(vision_config, "spatial_merge_size", 1)
+        tokens = []
+        for height, width in torch.as_tensor(image_sizes).tolist():
+            if height % stride or width % stride:
+                raise RuntimeError(_UNMAPPABLE_BATCH_SORT)
+            tokens.append((height // stride) * (width // stride))
+        return tokens
 
     def __getattr__(self, __name: str) -> Any:
         def redirect(func):
@@ -220,7 +250,7 @@ class RBLNLlavaForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMixi
     @classmethod
     def _update_rbln_config(
         cls,
-        preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"] | None,
+        preprocessors: Sequence[Preprocessor] | None,
         model: Optional["PreTrainedModel"] = None,
         model_config: Optional["PretrainedConfig"] = None,
         rbln_config: RBLNModelConfig | None = None,
@@ -264,6 +294,7 @@ class RBLNLlavaForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMixi
         cache_position=None,
         image_sizes=None,
         generate_idx=None,
+        inputs_sorted=False,
         **kwargs,
     ):
         is_prefill_phase = generate_idx is None
@@ -300,6 +331,7 @@ class RBLNLlavaForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMixi
                 "pixel_values": pixel_values,
                 "cache_position": cache_position,
                 "generate_idx": generate_idx,
+                "inputs_sorted": inputs_sorted,
             }
         )
         return model_inputs
@@ -396,7 +428,8 @@ class RBLNLlavaForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMixi
             image_features = projected_features[:, :num_real_patches, :]
         else:
             projector_out_size = [
-                pixel_values.shape[0] * pixel_values.shape[1],
+                # pixel_values is (num_images, channels, height, width).
+                pixel_values.shape[0],
                 (self.config.vision_config.image_size // self.config.vision_config.patch_size) ** 2,
                 self.config.text_config.hidden_size,
             ]
@@ -463,8 +496,11 @@ class RBLNLlavaForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMixi
         cache_position: torch.LongTensor | None = None,
         image_sizes: torch.Tensor | None = None,
         generate_idx: torch.Tensor | None = None,
+        inputs_sorted: bool = False,
         **kwargs,
     ) -> tuple | LlavaCausalLMOutputWithPast:
+        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+        self._require_sorted_batch_inputs(inputs_embeds if inputs_embeds is not None else input_ids, inputs_sorted)
         # Prefill
         if cache_position is None:
             inputs_embeds = self._preprocess_prefill(
@@ -502,3 +538,8 @@ class RBLNLlavaForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMixi
                 logits=logits,
                 generate_idx=generate_idx,
             )
+
+
+__all__ = [
+    "RBLNLlavaForConditionalGeneration",
+]

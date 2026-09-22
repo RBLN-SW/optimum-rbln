@@ -1,23 +1,44 @@
+import gc
+import glob
 import json
 import os
+import tempfile
 import unittest
 import warnings
 
 import pytest
 import torch
 from PIL import Image
-from transformers import AutoConfig, AutoProcessor, AutoTokenizer
+from safetensors.torch import save_file
+from transformers import (
+    AutoConfig,
+    AutoProcessor,
+    AutoTokenizer,
+    Gemma4ForCausalLM,
+    Gemma4TextConfig,
+    MixtralConfig,
+    MixtralForCausalLM,
+    Qwen2MoeConfig,
+    Qwen2MoeForCausalLM,
+    Qwen3MoeConfig,
+    Qwen3MoeForCausalLM,
+    Qwen3VLMoeConfig,
+    Qwen3VLMoeForConditionalGeneration,
+)
 
 from optimum.rbln import (
     RBLNAutoModel,
     RBLNAutoModelForCausalLM,
     RBLNAutoModelForImageTextToText,
+    RBLNAutoModelForMultimodalLM,
     RBLNAutoModelForSeq2SeqLM,
     RBLNBartForConditionalGeneration,
     RBLNBlip2ForConditionalGeneration,
     RBLNExaoneForCausalLM,
     RBLNGemma3ForCausalLM,
     RBLNGemma3ForConditionalGeneration,
+    RBLNGemma4ForCausalLM,
+    RBLNGemma4ForCausalLMConfig,
     RBLNGPT2LMHeadModel,
     RBLNGPT2Model,
     RBLNIdefics3ForConditionalGeneration,
@@ -28,6 +49,8 @@ from optimum.rbln import (
     RBLNLoRAAdapterConfig,
     RBLNMistralForCausalLM,
     RBLNMistralModel,
+    RBLNMixtralForCausalLM,
+    RBLNMixtralForCausalLMConfig,
     RBLNOPTForCausalLM,
     RBLNOPTModel,
     RBLNPegasusForConditionalGeneration,
@@ -37,12 +60,15 @@ from optimum.rbln import (
     RBLNQwen2ForCausalLM,
     RBLNQwen2Model,
     RBLNQwen2MoeForCausalLM,
+    RBLNQwen2MoeForCausalLMConfig,
     RBLNQwen2VLForConditionalGeneration,
     RBLNQwen3_5ForCausalLM,
     RBLNQwen3_5ForConditionalGeneration,
+    RBLNQwen3ASRForConditionalGeneration,
     RBLNQwen3ForCausalLM,
     RBLNQwen3Model,
     RBLNQwen3MoeForCausalLM,
+    RBLNQwen3MoeForCausalLMConfig,
     RBLNQwen3VLForConditionalGeneration,
     RBLNQwen3VLMoeForConditionalGeneration,
     RBLNT5ForConditionalGeneration,
@@ -246,7 +272,6 @@ class TestQwen2MoeForCausalLM(LLMTest.TestLLM):
     # HF_MODEL_ID ="peft-internal-testing/tiny-random-qwen-1.5-MoE"
     HF_MODEL_ID = "Qwen/Qwen1.5-MoE-A2.7B"
     HF_CONFIG_KWARGS = {"num_hidden_layers": 1, "layer_types": ["full_attention"], "max_position_embeddings": 1024}
-    TEST_LEVEL = TestLevel.FULL
 
 
 class TestQwen3MoeForCausalLM(LLMTest.TestLLM):
@@ -259,7 +284,7 @@ class TestQwen3MoeForCausalLM(LLMTest.TestLLM):
         config.num_hidden_layers = 3
         config.max_position_embeddings = 4096
         config.hidden_size = 128
-        cls.HF_CONFIG_KWARGS.update({"config": config, "ignore_mismatched_sizes": True})
+        cls.HF_CONFIG_KWARGS = {**cls.HF_CONFIG_KWARGS, "config": config, "ignore_mismatched_sizes": True}
         return super().setUpClass()
 
 
@@ -618,7 +643,9 @@ class TestLlavaNextForConditionalGeneration(LLMTest.TestLLM):
         }
         rbln_class_kwargs = {"rbln_config": rbln_config}
 
-        model = self.RBLN_CLASS.from_pretrained(model_id=self.HF_MODEL_ID, **rbln_class_kwargs)
+        model = self.RBLN_CLASS.from_pretrained(
+            model_id=self.HF_MODEL_ID, **self.HF_CONFIG_KWARGS, **rbln_class_kwargs
+        )
 
         assert not model.rbln_config.vision_tower.create_runtimes
         assert not model.rbln_config.language_model.create_runtimes
@@ -712,7 +739,7 @@ class TestQwenRotaryLookup(unittest.TestCase):
             VisionRotaryEmbedding,
         )
 
-        from optimum.rbln.transformers.modeling_rope_utils import qwen_vit_rot_pos_ids
+        from optimum.rbln.modeling_rope_utils import qwen_vit_rot_pos_ids
 
         rot = VisionRotaryEmbedding(20)
         for merge in (1, 2, 4):
@@ -722,7 +749,7 @@ class TestQwenRotaryLookup(unittest.TestCase):
             ):
                 mock = SimpleNamespace(spatial_merge_size=merge, rotary_pos_emb=rot)
                 hf = Qwen2VisionTransformerPretrainedModel.rot_pos_emb(mock, grid)
-                table = rot(int(grid[:, 1:].max()))
+                table = rot(torch.arange(int(grid[:, 1:].max())))
                 ours = table[qwen_vit_rot_pos_ids(grid, merge)].flatten(1)
                 self.assertTrue(torch.equal(ours, hf))
 
@@ -732,7 +759,7 @@ class TestQwenRotaryLookup(unittest.TestCase):
         from transformers.models.qwen3_vl.configuration_qwen3_vl import Qwen3VLTextConfig
         from transformers.models.qwen3_vl.modeling_qwen3_vl import Qwen3VLTextRotaryEmbedding
 
-        from optimum.rbln.transformers.modeling_rope_utils import QwenMRopeLookupTable, build_qwen_mrope_lookup
+        from optimum.rbln.modeling_rope_utils import QwenMRopeLookupTable, build_qwen_mrope_lookup
 
         max_pos = 512
         standard = Qwen2VLRotaryEmbedding(
@@ -805,9 +832,12 @@ class TestQwen2VLForConditionalGeneration(LLMTest.TestLLM):
         return inputs
 
     def test_propagate_config(self):
-        self.RBLN_CLASS_KWARGS["rbln_config"].update({"create_runtimes": False})
+        rbln_config = {**self.RBLN_CLASS_KWARGS["rbln_config"]}
+        rbln_config.update({"create_runtimes": False})
 
-        model = self.RBLN_CLASS.from_pretrained(model_id=self.HF_MODEL_ID, **self.RBLN_CLASS_KWARGS)
+        model = self.RBLN_CLASS.from_pretrained(
+            model_id=self.HF_MODEL_ID, **self.HF_CONFIG_KWARGS, rbln_config=rbln_config
+        )
 
         assert not model.rbln_config.visual.create_runtimes
         assert not model.rbln_config.create_runtimes
@@ -853,12 +883,52 @@ class TestQwen2_5_VLForConditionalGeneration(LLMTest.TestLLM):
         return inputs
 
     def test_propagate_config(self):
-        self.RBLN_CLASS_KWARGS["rbln_config"].update({"create_runtimes": False})
+        rbln_config = {**self.RBLN_CLASS_KWARGS["rbln_config"]}
+        rbln_config.update({"create_runtimes": False})
 
-        model = self.RBLN_CLASS.from_pretrained(model_id=self.HF_MODEL_ID, **self.RBLN_CLASS_KWARGS)
+        model = self.RBLN_CLASS.from_pretrained(
+            model_id=self.HF_MODEL_ID, **self.HF_CONFIG_KWARGS, rbln_config=rbln_config
+        )
 
         assert not model.rbln_config.visual.create_runtimes
         assert not model.rbln_config.create_runtimes
+
+
+class TestQwen2_5_VLForConditionalGeneration_OutputHiddenStates(TestQwen2_5_VLForConditionalGeneration):
+    # Two prompts of different lengths: the shorter one is left-padded, exercising the
+    # padded-batch prefill output aggregation (hidden states must come back at full mask width
+    # and left-padded rows must not leak into the valid region).
+    PROMPTS = [
+        TestQwen2_5_VLForConditionalGeneration.PROMPT,
+        "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\n<|vision_start|><|image_pad|><|vision_end|>What is the main color of this image? Answer in one short sentence, please.<|im_end|>\n<|im_start|>assistant\n",
+    ]
+    HF_CONFIG_KWARGS = {}  # Initialize empty to avoid sharing with other classes
+    HF_CONFIG_KWARGS_PREPROCESSOR = {"max_pixels": 64 * 14 * 14, "padding_side": "left"}
+    RBLN_CLASS_KWARGS = {
+        "rbln_config": {
+            "visual": {"max_seq_len": 512},
+            "num_devices": 1,
+            "kvcache_partition_len": 16_384,
+            "max_seq_len": 32_768,
+            "batch_size": 2,
+            "output_hidden_states": True,
+        }
+    }
+
+    def get_inputs(self):
+        tokenizer = self.get_tokenizer()
+        img_path = f"{os.path.dirname(__file__)}/../assets/rbln_logo_light.png"
+        image = Image.open(img_path)
+        inputs = tokenizer(images=[image, image], text=self.PROMPTS, return_tensors="pt", padding=True)
+        inputs["max_new_tokens"] = 4
+        inputs["do_sample"] = False
+        return inputs
+
+    def test_generate(self):
+        self._test_output_hidden_states_generation()
+
+    def test_propagate_config(self):
+        self.skipTest("Covered by TestQwen2_5_VLForConditionalGeneration.")
 
 
 class TestQwen3VLForConditionalGeneration(LLMTest.TestLLM):
@@ -897,9 +967,12 @@ class TestQwen3VLForConditionalGeneration(LLMTest.TestLLM):
         return inputs
 
     def test_propagate_config(self):
-        self.RBLN_CLASS_KWARGS["rbln_config"].update({"create_runtimes": False})
+        rbln_config = {**self.RBLN_CLASS_KWARGS["rbln_config"]}
+        rbln_config.update({"create_runtimes": False})
 
-        model = self.RBLN_CLASS.from_pretrained(model_id=self.HF_MODEL_ID, **self.RBLN_CLASS_KWARGS)
+        model = self.RBLN_CLASS.from_pretrained(
+            model_id=self.HF_MODEL_ID, **self.HF_CONFIG_KWARGS, rbln_config=rbln_config
+        )
 
         assert not model.rbln_config.visual.create_runtimes
         assert not model.rbln_config.create_runtimes
@@ -1063,6 +1136,38 @@ class TestQwen3_5ForConditionalGeneration_OutputHiddenStates(TestQwen3_5ForCondi
         self._test_output_hidden_states_generation()
 
 
+class TestQwen3ASRForConditionalGeneration(LLMTest.TestLLM):
+    RBLN_AUTO_CLASS = RBLNAutoModelForMultimodalLM
+    RBLN_CLASS = RBLNQwen3ASRForConditionalGeneration
+    HF_MODEL_ID = "Qwen/Qwen3-ASR-0.6B-hf"
+    RBLN_CLASS_KWARGS = {"rbln_config": {"max_seq_len": 1024, "audio_tower": {"num_windows": 1}}}
+    IS_MULTIMODAL = True
+    HF_CONFIG_KWARGS = {}  # Initialize empty to avoid sharing with other classes
+    HF_CONFIG_KWARGS_PREPROCESSOR = {}
+
+    @classmethod
+    def setUpClass(cls):
+        config = AutoConfig.from_pretrained(cls.HF_MODEL_ID)
+        text_config = json.loads(config.text_config.to_json_string())
+        text_config["num_hidden_layers"] = 1
+        text_config["layer_types"] = ["full_attention"]
+        audio_config = json.loads(config.audio_config.to_json_string())
+        audio_config["encoder_layers"] = 1
+        cls.HF_CONFIG_KWARGS.update({"text_config": text_config, "audio_config": audio_config})
+        return super().setUpClass()
+
+    def get_inputs(self):
+        # 1s of noise -> one 100-frame chunk, which fits the single compiled window.
+        audio = torch.randn(16000, generator=torch.manual_seed(42)).numpy()
+        inputs = self.get_tokenizer().apply_transcription_request(
+            audio=audio,
+            processor_kwargs={"sampling_rate": 16000, "return_tensors": "pt"},
+        )
+        inputs["max_new_tokens"] = 20
+        inputs["do_sample"] = False
+        return inputs
+
+
 class TestGemma3ForConditionalGeneration(LLMTest.TestLLM):
     RBLN_AUTO_CLASS = RBLNAutoModelForImageTextToText
     RBLN_CLASS = RBLNGemma3ForConditionalGeneration
@@ -1071,7 +1176,6 @@ class TestGemma3ForConditionalGeneration(LLMTest.TestLLM):
     RBLN_CLASS_KWARGS = {"rbln_config": {"language_model": {"use_inputs_embeds": True, "kvcache_partition_len": 4096}}}
     HF_CONFIG_KWARGS = {"revision": "e1f4b0516ec80f86ed75c8cb1d45ede72526ad24"}
     HF_CONFIG_KWARGS_PREPROCESSOR = {"revision": "e1f4b0516ec80f86ed75c8cb1d45ede72526ad24"}
-    TEST_LEVEL = TestLevel.FULL
     IS_MULTIMODAL = True
 
     # override
@@ -1249,6 +1353,142 @@ class TestDisallowedLlama_4(DisallowedTestBase.DisallowedTest):
     HF_MODEL_ID = "afmck/testing-llama-tiny"
     HF_CONFIG_KWARGS = {"num_hidden_layers": 1, "max_position_embeddings": 1024}
     RBLN_CLASS_KWARGS = {"rbln_config": {"attn_impl": "flash_attn", "kvcache_partition_len": 2048}}
+
+
+class TestMoeHostMemory(unittest.TestCase):
+    # Loading an MoE checkpoint and building the wrapper must not hold more than one copy of the weights:
+    # dev kept up to three (expert copies plus the whole checkpoint still mapped). Ratios are measured against
+    # the safetensors size, with synthetic models large enough that allocator noise is a few percent.
+    MAX_RSS_RATIO = 1.5
+    BASE = {
+        "vocab_size": 1024,
+        "hidden_size": 512,
+        "intermediate_size": 512,
+        "num_attention_heads": 8,
+        "num_key_value_heads": 2,
+        "max_position_embeddings": 256,
+        "dtype": torch.bfloat16,
+    }
+
+    @staticmethod
+    def _rss():
+        return sum(
+            int(line.split()[1]) * 1024
+            for line in open("/proc/self/status")
+            if line.startswith(("RssAnon:", "RssFile:", "RssShmem:"))
+        )
+
+    def _check(self, rbln_cls, config_cls, tmp, src_state_dict):
+        checkpoint_bytes = sum(os.path.getsize(f) for f in glob.glob(f"{tmp}/*.safetensors"))
+        gc.collect()
+        before = self._rss()
+        model = rbln_cls.get_pytorch_model(tmp, dtype=torch.bfloat16)
+        for name, p in model.named_parameters():
+            self.assertTrue(torch.equal(p, src_state_dict[name]), name)
+        if config_cls is not None:
+            rbln_config = config_cls(max_seq_len=256, batch_size=1, create_runtimes=False)
+            rbln_config = rbln_cls.update_rbln_config(
+                preprocessors=None, model=model, model_config=model.config, rbln_config=rbln_config
+            )
+            wrapped = rbln_cls._wrap_model_if_needed(model, rbln_config)  # noqa: F841
+        gc.collect()
+        ratio = (self._rss() - before) / checkpoint_bytes
+        self.assertLessEqual(ratio, self.MAX_RSS_RATIO, f"RSS grew {ratio:.2f}x the checkpoint size")
+
+    def test_per_expert_checkpoints(self):
+        moe = {"moe_intermediate_size": 512, "num_experts": 64, "num_experts_per_tok": 4, "decoder_sparse_step": 1}
+        cases = [
+            (
+                Qwen3MoeForCausalLM,
+                RBLNQwen3MoeForCausalLM,
+                RBLNQwen3MoeForCausalLMConfig,
+                Qwen3MoeConfig(**self.BASE, **moe, num_hidden_layers=8),
+            ),
+            (
+                Qwen2MoeForCausalLM,
+                RBLNQwen2MoeForCausalLM,
+                RBLNQwen2MoeForCausalLMConfig,
+                Qwen2MoeConfig(**self.BASE, **moe, shared_expert_intermediate_size=512, num_hidden_layers=4),
+            ),
+            (
+                MixtralForCausalLM,
+                RBLNMixtralForCausalLM,
+                RBLNMixtralForCausalLMConfig,
+                MixtralConfig(**self.BASE, num_local_experts=64, num_experts_per_tok=4, num_hidden_layers=4),
+            ),
+        ]
+        for hf_cls, rbln_cls, config_cls, config in cases:
+            with self.subTest(hf_cls.__name__), tempfile.TemporaryDirectory() as tmp:
+                src = hf_cls(config).to(torch.bfloat16).eval()
+                src.save_pretrained(tmp)  # written back per-expert, like the hub checkpoints
+                state_dict = {k: v.clone() for k, v in src.state_dict().items()}
+                del src
+                self._check(rbln_cls, config_cls, tmp, state_dict)
+
+    def test_fused_checkpoint(self):
+        # Gemma4 checkpoints are natively fused; the experts load as mmap views and only the wrapper copies them.
+        base = {k: v for k, v in self.BASE.items() if k != "intermediate_size"}
+        config = Gemma4TextConfig(
+            **base,
+            intermediate_size=512,
+            head_dim=64,
+            enable_moe_block=True,
+            num_experts=64,
+            top_k_experts=4,
+            moe_intermediate_size=512,
+            num_hidden_layers=4,
+            sliding_window=64,
+            layer_types=["full_attention", "sliding_attention", "full_attention", "full_attention"],
+            vocab_size_per_layer_input=1024,
+            hidden_size_per_layer_input=64,
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            src = Gemma4ForCausalLM(config).to(torch.bfloat16).eval()
+            src.save_pretrained(tmp)
+            state_dict = {k: v.clone() for k, v in src.state_dict().items()}
+            del src
+            self._check(RBLNGemma4ForCausalLM, RBLNGemma4ForCausalLMConfig, tmp, state_dict)
+
+    def test_qwen3_vl_moe_hub_layout(self):
+        # Hub checkpoints store the experts transposed; transformers transposes them into new memory at load.
+        text = {k: v for k, v in self.BASE.items() if k != "dtype"}
+        text.update(
+            moe_intermediate_size=128,  # 2I and I must differ from hidden_size for Transpose(check_dims)
+            num_hidden_layers=4,
+            num_experts=64,
+            num_experts_per_tok=4,
+            decoder_sparse_step=1,
+            rope_scaling={"rope_type": "default", "mrope_section": [16, 8, 8]},
+        )
+        vision = {
+            "depth": 1,
+            "hidden_size": 32,
+            "intermediate_size": 64,
+            "num_heads": 2,
+            "out_hidden_size": 512,
+            "patch_size": 14,
+            "spatial_merge_size": 2,
+            "temporal_patch_size": 2,
+            "deepstack_visual_indexes": [0],
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            src = Qwen3VLMoeForConditionalGeneration(Qwen3VLMoeConfig(text_config=text, vision_config=vision))
+            src = src.to(torch.bfloat16).eval()
+            state_dict = {k: v.clone() for k, v in src.state_dict().items()}
+            save_file(
+                {
+                    k: (
+                        v.transpose(1, 2).contiguous()
+                        if k.endswith(("experts.gate_up_proj", "experts.down_proj"))
+                        else v.contiguous()
+                    )
+                    for k, v in state_dict.items()
+                },
+                f"{tmp}/model.safetensors",
+            )
+            src.config.save_pretrained(tmp)
+            del src
+            self._check(RBLNQwen3VLMoeForConditionalGeneration, None, tmp, state_dict)
 
 
 if __name__ == "__main__":

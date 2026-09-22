@@ -198,3 +198,8 @@ class RBLNColPaliForRetrieval(RBLNModel):
             hidden_states=vlm_hidden_states,
             image_hidden_states=vlm_image_hidden_states,
         )
+
+
+__all__ = [
+    "RBLNColPaliForRetrieval",
+]

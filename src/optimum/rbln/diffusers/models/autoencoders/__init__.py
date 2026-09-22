@@ -12,7 +12,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .autoencoder_kl import RBLNAutoencoderKL
-from .autoencoder_kl_cosmos import RBLNAutoencoderKLCosmos
-from .autoencoder_kl_temporal_decoder import RBLNAutoencoderKLTemporalDecoder
-from .vq_model import RBLNVQModel
+from typing import TYPE_CHECKING
+
+from transformers.utils import _LazyModule
+
+from ....utils.import_utils import define_import_structure
+
+
+if TYPE_CHECKING:
+    from .autoencoder_kl import *
+    from .autoencoder_kl_cosmos import *
+    from .autoencoder_kl_temporal_decoder import *
+    from .vq_model import *
+else:
+    import sys
+
+    _file = globals()["__file__"]
+    sys.modules[__name__] = _LazyModule(__name__, _file, define_import_structure(_file), module_spec=__spec__)

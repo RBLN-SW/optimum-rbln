@@ -21,7 +21,7 @@ from diffusers.pipelines.controlnet.multicontrolnet import MultiControlNetModel
 
 from ....modeling import RBLNModel
 from ....utils.logging import get_logger
-from ...models.controlnet import RBLNControlNetModel
+from ...models.controlnets.controlnet import RBLNControlNetModel
 
 
 logger = get_logger(__name__)
@@ -36,7 +36,7 @@ class RBLNMultiControlNetModel(RBLNModel):
         models: list[RBLNControlNetModel],
     ):
         self.nets = models
-        self.dtype = torch.float32
+        self.dtype = models[0].dtype
 
     @property
     def compiled_models(self):
@@ -139,3 +139,8 @@ class RBLNMultiControlNetModel(RBLNModel):
                 mid_block_res_sample += mid_sample
 
         return down_block_res_samples, mid_block_res_sample
+
+
+__all__ = [
+    "RBLNMultiControlNetModel",
+]

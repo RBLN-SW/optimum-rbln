@@ -36,3 +36,8 @@ class RBLNMixtralForCausalLMConfig(RBLNDecoderOnlyModelForCausalLMConfig):
     )
     ```
     """
+
+
+__all__ = [
+    "RBLNMixtralForCausalLMConfig",
+]

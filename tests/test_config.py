@@ -217,6 +217,17 @@ def test_submodule_config_object():
     assert model.rbln_config.language_model.batch_size == 2
 
 
+def test_logits_to_keep_zero_survives_construction_and_reload(tmp_path):
+    cfg = RBLNLlamaForCausalLMConfig(logits_to_keep=0)
+    assert cfg.logits_to_keep == 0
+
+    config_path = tmp_path / "rbln_config.json"
+    cfg.save(str(config_path))
+    assert RBLNLlamaForCausalLMConfig.from_pretrained(str(config_path)).logits_to_keep == 0
+
+    assert RBLNLlamaForCausalLMConfig().logits_to_keep == 1
+
+
 def test_num_devices_deprecated_alias():
     """`tensor_parallel_size` is the deprecated alias of `num_devices` and must still map through."""
     cfg = RBLNMistralForCausalLMConfig(num_devices=4)
@@ -392,6 +403,102 @@ class TestPrefillChunkSizeDefault:
             self._resolve(prefill_chunk_size=invalid_chunk_size, npu="RBLN-CA22")
 
 
+class TestAttentionLimits:
+    """Per-NPU-family bounds on the extent of the KV cache's dynamic axis (ATOM 32k / REBEL 16k)."""
+
+    @staticmethod
+    def _validate(attn_impl, max_seq_len, kvcache_partition_len=None, npu=None):
+        from optimum.rbln.transformers.modeling_attention_utils import validate_attention_method
+
+        validate_attention_method(
+            attn_impl=attn_impl,
+            kvcache_partition_len=kvcache_partition_len,
+            kvcache_block_size=max_seq_len if attn_impl == "eager" else kvcache_partition_len,
+            max_seq_len=max_seq_len,
+            npu=npu,
+        )
+
+    def test_family_resolution(self, monkeypatch):
+        from optimum.rbln.transformers.modeling_attention_utils import get_attention_limits
+
+        assert get_attention_limits("RBLN-CA22").name == "ATOM"
+        assert get_attention_limits("RBLN-CR13").name == "REBEL"
+        with pytest.raises(ValueError, match="Unknown npu name"):
+            get_attention_limits("RBLN-XX99")
+
+        monkeypatch.setattr(rebel, "npu_is_available", lambda *args: True)
+        monkeypatch.setattr(rebel, "get_npu_name", lambda *args: "RBLN-CR13")
+        assert get_attention_limits().name == "REBEL"
+        assert get_attention_limits("RBLN-CA22").name == "ATOM"
+
+        monkeypatch.setattr(rebel, "npu_is_available", lambda *args: False)
+        assert get_attention_limits().name == "ATOM"
+
+    @pytest.mark.parametrize("npu,cap", [("RBLN-CA22", 32_768), ("RBLN-CR13", 16_384)])
+    def test_eager_max_seq_len_cap(self, npu, cap):
+        # REBEL rejecting 32_768 here is deploy #1443, which aborted the compiler instead.
+        self._validate("eager", cap, npu=npu)
+        with pytest.raises(ValueError, match=f"limit of {cap}"):
+            self._validate("eager", 2 * cap, npu=npu)
+
+    @pytest.mark.parametrize("npu,cap", [("RBLN-CA22", 32_768), ("RBLN-CR13", 16_384)])
+    def test_flash_partition_len_range(self, npu, cap):
+        self._validate("flash_attn", 2 * cap, kvcache_partition_len=cap, npu=npu)
+        with pytest.raises(ValueError, match="supported range"):
+            self._validate("flash_attn", 4 * cap, kvcache_partition_len=2 * cap, npu=npu)
+        with pytest.raises(ValueError, match="supported range"):
+            self._validate("flash_attn", 4_096, kvcache_partition_len=512, npu=npu)
+
+    @pytest.mark.parametrize("npu,default", [("RBLN-CA22", 16_384), ("RBLN-CR13", 8_192)])
+    def test_flash_partition_len_default(self, npu, default):
+        from optimum.rbln.transformers.modeling_attention_utils import set_default_values
+
+        attn_impl, partition_len, block_size, _ = set_default_values(
+            attn_impl="flash_attn", max_seq_len=65_536, npu=npu
+        )
+        assert (attn_impl, partition_len, block_size) == ("flash_attn", default, default)
+
+    @pytest.mark.parametrize("npu", ["RBLN-CA22", "RBLN-CR13"])
+    def test_record_is_self_consistent(self, npu):
+        from optimum.rbln.transformers.modeling_attention_utils import get_attention_limits
+
+        limits = get_attention_limits(npu)
+        assert limits.min_flash_partition_len <= limits.default_flash_partition_len
+        assert limits.default_flash_partition_len <= limits.max_flash_partition_len
+        assert limits.min_flash_max_seq_len == 2 * limits.min_flash_partition_len
+
+    @pytest.mark.parametrize("npu,prefill_chunk_size,bound", [("RBLN-CA22", 128, 32_640), ("RBLN-CR13", 512, 32_255)])
+    def test_sliding_window_bound(self, npu, prefill_chunk_size, bound):
+        from optimum.rbln.transformers.modeling_attention_utils import validate_sliding_window
+
+        def validate(sliding_window):
+            validate_sliding_window(
+                RBLNLlamaForCausalLMConfig(
+                    max_seq_len=8_192,
+                    sliding_window=sliding_window,
+                    prefill_chunk_size=prefill_chunk_size,
+                    npu=npu,
+                )
+            )
+
+        validate(bound)
+        with pytest.raises(ValueError, match=f"at most {bound}"):
+            validate(bound + 1)
+
+
+def test_attention_limits_npu_wiring():
+    """Compile-time wiring: `rbln_config.npu` flows through `_update_attention_config` into the
+    NPU-aware limits. `update_rbln_config` runs before `get_compiled_model`, so pinning a REBEL
+    target rejects eager 32k without compiling anything."""
+    with pytest.raises(ValueError, match="REBEL limit of 16384"):
+        RBLNLlamaForCausalLM.from_pretrained(
+            "afmck/testing-llama-tiny",
+            export=True,
+            num_hidden_layers=1,
+            rbln_config={"npu": "RBLN-CR03", "create_runtimes": False, "max_seq_len": 32768},
+        )
+
+
 @pytest.mark.skip(reason="Compilation fails: cross-compiling for RBLN-CR03 on a CA25 runner, need to fix it")
 def test_prefill_chunk_size_npu_wiring_e2e(tmp_path):
     """Compile-time wiring: `rbln_config.npu` flows through `_update_attention_config` into the
@@ -410,5 +517,194 @@ def test_prefill_chunk_size_npu_wiring_e2e(tmp_path):
     assert reloaded_config.prefill_chunk_size == 512
 
 
+QWEN_VL_VISION_CONFIGS = [
+    ("RBLNQwen2VLForConditionalGenerationConfig", "RBLNQwen2VisionTransformerPretrainedModelConfig"),
+    ("RBLNQwen2_5_VLForConditionalGenerationConfig", "RBLNQwen2_5_VisionTransformerPretrainedModelConfig"),
+    ("RBLNQwen3VLForConditionalGenerationConfig", "RBLNQwen3VLVisionModelConfig"),
+    ("RBLNQwen3_5ForConditionalGenerationConfig", "RBLNQwen3_5VisionModelConfig"),
+    ("RBLNExaone4_5_ForConditionalGenerationConfig", "RBLNExaone4_5_VisionModelConfig"),
+]
+
+
+def _import_config(name):
+    import optimum.rbln
+
+    return getattr(optimum.rbln, name)
+
+
+@pytest.mark.parametrize("parent_cls_name, vision_cls_name", QWEN_VL_VISION_CONFIGS)
+def test_qwen_vl_parent_forces_vision_batch_size(parent_cls_name, vision_cls_name):
+    """The parent config forces batch_size=1 onto the visual submodule."""
+    parent_cls = _import_config(parent_cls_name)
+    config = parent_cls(max_seq_len=1024, visual={"cls_name": vision_cls_name, "max_seq_len": 256})
+    assert config.visual.batch_size == 1
+
+
+@pytest.mark.parametrize("parent_cls_name, vision_cls_name", QWEN_VL_VISION_CONFIGS)
+def test_qwen_vl_parent_rejects_conflicting_vision_batch_size(parent_cls_name, vision_cls_name):
+    """A submodule batch_size that conflicts with the forced value is caught by the parent's
+    force_kwargs check (before the vision config is even instantiated), not by the vision guard."""
+    parent_cls = _import_config(parent_cls_name)
+    with pytest.raises(ValueError):
+        parent_cls(max_seq_len=1024, visual={"cls_name": vision_cls_name, "max_seq_len": 256, "batch_size": 2})
+
+
 if __name__ == "__main__":
     pytest.main()
+
+
+# ---------------------------------------------------------------------------
+# Loading with an RBLNModelConfig object
+#
+# At load time only a config loaded from the same artifact can be passed as an
+# object (round-trip); a hand-constructed partial is rejected by the gate.
+# Callers holding a partial object (e.g. the diffusers mixin) reduce it to a
+# dict with get_load_overrides() and go through the dict path.
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def saved_vlm_config_dir(tmp_path):
+    """A saved rbln_config.json of a model with a nested submodule (visual), as a compile would leave it."""
+    from optimum.rbln import (
+        RBLNQwen2_5_VisionTransformerPretrainedModelConfig,
+        RBLNQwen2_5_VLForConditionalGenerationConfig,
+    )
+
+    visual = RBLNQwen2_5_VisionTransformerPretrainedModelConfig(max_seq_len=256)
+    visual.set_compile_cfgs(
+        [RBLNCompileConfig(compiled_model_name="compiled_model", input_info=[("hidden_states", (256, 32), "float32")])]
+    )
+    config = RBLNQwen2_5_VLForConditionalGenerationConfig(
+        visual=visual, max_seq_len=512, kvcache_num_blocks=1, kvcache_block_size=512
+    )
+    config.set_compile_cfgs(
+        [RBLNCompileConfig(compiled_model_name="prefill", input_info=[("inputs_embeds", (1, 128, 32), "float32")])]
+    )
+    config.freeze()
+    config.save(str(tmp_path))
+    return str(tmp_path)
+
+
+def test_get_load_overrides():
+    """get_load_overrides extracts only explicitly-set runtime options, recursively.
+
+    Besides the asserted keys, the class's own subclass_non_save_attributes may appear
+    (non-None load flags are always carried), so the assertions tolerate exactly those —
+    keeping this test stable when the config class gains such a flag.
+    """
+    from optimum.rbln import RBLNQwen2_5_VLForConditionalGenerationConfig
+
+    non_save = set(RBLNQwen2_5_VLForConditionalGenerationConfig.subclass_non_save_attributes)
+
+    partial = RBLNQwen2_5_VLForConditionalGenerationConfig(visual={"device": 1}, device=[0, 1])
+    overrides = partial.get_load_overrides()
+    assert overrides["device"] == [0, 1]
+    assert overrides["visual"] == {"device": 1}
+    assert set(overrides) - {"device", "visual"} <= non_save
+
+    # Nothing set -> nothing extracted: defaults filled during objectification must not leak.
+    empty = RBLNQwen2_5_VLForConditionalGenerationConfig()
+    assert set(empty.get_load_overrides()) <= non_save
+
+    # Compile-time attributes never cross the load boundary; the artifact's values win.
+    partial = RBLNQwen2_5_VLForConditionalGenerationConfig(max_seq_len=1024)
+    assert "max_seq_len" not in partial.get_load_overrides()
+
+
+def test_get_load_overrides_includes_non_save_flags():
+    """Load-behavior flags (subclass_non_save_attributes) must cross the load boundary:
+    they are never serialized, so they can only travel with the caller."""
+    from optimum.rbln import RBLNQwen2_5_VLForConditionalGenerationConfig, RBLNQwen3VLForConditionalGenerationConfig
+
+    cfg = RBLNQwen3VLForConditionalGenerationConfig(device=0, _load_visual_runtime=False)
+    overrides = cfg.get_load_overrides()
+    assert overrides["_load_visual_runtime"] is False
+    assert overrides["device"] == 0
+
+    # A submodule left as a plain dict keeps runtime options only: its config class is
+    # unknown at this point, so its non-save attributes cannot be identified.
+    cfg = RBLNQwen2_5_VLForConditionalGenerationConfig(visual={"device": 1, "_some_load_flag": False})
+    assert cfg.get_load_overrides()["visual"] == {"device": 1}
+
+
+def test_load_with_partial_config_object_raises(saved_vlm_config_dir):
+    """A hand-constructed config object is default-filled and cannot match the artifact's
+    compile-time attributes, so the load-time gate rejects it (instead of silently
+    replacing or ignoring anything) and points at the dict path."""
+    from optimum.rbln import RBLNQwen2_5_VLForConditionalGenerationConfig
+
+    partial = RBLNQwen2_5_VLForConditionalGenerationConfig(visual={"device": 1}, device=[0, 1])
+    assert isinstance(partial.visual, dict), "objectification leaves the nested submodule as a dict"
+
+    with pytest.raises(ValueError, match="different attributes for submodule"):
+        RBLNQwen2_5_VLForConditionalGenerationConfig.from_pretrained(saved_vlm_config_dir, rbln_config=partial)
+
+
+def test_load_with_reduced_partial_object(saved_vlm_config_dir):
+    """The mixin-style flow: a partial object reduced with get_load_overrides() loads through
+    the dict path — runtime options applied, compile-time attributes from disk."""
+    from optimum.rbln import RBLNQwen2_5_VLForConditionalGenerationConfig
+
+    partial = RBLNQwen2_5_VLForConditionalGenerationConfig(visual={"device": 1}, device=[0, 1])
+    loaded = RBLNQwen2_5_VLForConditionalGenerationConfig.from_pretrained(
+        saved_vlm_config_dir, rbln_config=partial.get_load_overrides()
+    )
+
+    # runtime options from the object
+    assert loaded.device == [0, 1]
+    assert loaded.visual.device == 1
+    # compile-time attributes from disk, not from the default-filled object
+    assert loaded.max_seq_len == 512
+    assert loaded.visual.max_seq_len == [256]
+    assert len(loaded.visual.compile_cfgs) == 1
+
+
+def test_load_with_reduced_object_propagates_device_to_submodule(saved_vlm_config_dir):
+    """A top-level device in the reduced overrides reaches submodules, like any dict."""
+    from optimum.rbln import RBLNQwen2_5_VLForConditionalGenerationConfig
+
+    partial = RBLNQwen2_5_VLForConditionalGenerationConfig(device=[2, 3])
+    loaded = RBLNQwen2_5_VLForConditionalGenerationConfig.from_pretrained(
+        saved_vlm_config_dir, rbln_config=partial.get_load_overrides()
+    )
+    assert loaded.device == [2, 3]
+    assert loaded.visual.device == [2, 3]
+
+
+def test_load_with_dict_kwarg_precedence(saved_vlm_config_dir):
+    """An explicit rbln_* kwarg wins over the value carried by the rbln_config dict."""
+    from optimum.rbln import RBLNQwen2_5_VLForConditionalGenerationConfig
+
+    loaded = RBLNQwen2_5_VLForConditionalGenerationConfig.from_pretrained(
+        saved_vlm_config_dir, rbln_config={"device": [0, 1]}, rbln_device=[6, 7]
+    )
+    assert loaded.device == [6, 7]
+
+
+def test_load_with_roundtrip_config_object(saved_vlm_config_dir):
+    """A fully-loaded config passed back in (the nested-submodule load path) keeps working,
+    and runtime mutations on it are honored."""
+    from optimum.rbln import RBLNQwen2_5_VLForConditionalGenerationConfig
+
+    first = RBLNQwen2_5_VLForConditionalGenerationConfig.from_pretrained(saved_vlm_config_dir)
+    first.visual.device = 2
+
+    second = RBLNQwen2_5_VLForConditionalGenerationConfig.from_pretrained(saved_vlm_config_dir, rbln_config=first)
+    assert second.visual.device == 2
+    assert second.max_seq_len == 512
+    assert len(second.visual.compile_cfgs) == 1
+
+
+def test_qwen3_5_gdn_chunk_size_default_is_decoupled_from_prefill():
+    from optimum.rbln import RBLNQwen3_5ForCausalLMConfig, RBLNQwen3_5ModelConfig
+    from optimum.rbln.transformers.models.qwen3_5.configuration_qwen3_5 import MAX_GDN_CHUNK_SIZE
+
+    for cls, kwargs in (
+        (RBLNQwen3_5ForCausalLMConfig, {}),
+        (RBLNQwen3_5ModelConfig, {"use_inputs_embeds": True}),
+    ):
+        assert cls(**kwargs).gdn_chunk_size == MAX_GDN_CHUNK_SIZE
+        assert cls(prefill_chunk_size=512, **kwargs).gdn_chunk_size == MAX_GDN_CHUNK_SIZE
+        # An explicit value is preserved.
+        assert cls(gdn_chunk_size=64, **kwargs).gdn_chunk_size == 64

@@ -19,8 +19,8 @@ import torch
 from torch import nn
 from transformers import PretrainedConfig, PreTrainedModel
 
+from ....modeling_rope_utils import ROPE_INIT_FUNCTIONS, np_cos, np_sin
 from ....utils import logging
-from ...modeling_rope_utils import ROPE_INIT_FUNCTIONS, np_cos, np_sin
 from .configuration_lora import RBLNLoRAConfig
 from .lora_architecture import LoRALinear
 
@@ -266,14 +266,14 @@ class DecoderOnlyForCausalLM(nn.Module):
 
     def forward(
         self,
-        input_ids: torch.Tensor = None,
-        inputs_embeds: torch.Tensor = None,
-        attention_mask: torch.Tensor = None,
-        cache_position: torch.Tensor = None,
-        position_ids: torch.Tensor = None,
-        query_position: torch.Tensor = None,
-        past_key_values: tuple[tuple[torch.Tensor]] = None,
-        rotary_emb: nn.Module = None,
+        input_ids: torch.Tensor | None = None,
+        inputs_embeds: torch.Tensor | None = None,
+        attention_mask: torch.Tensor | None = None,
+        cache_position: torch.Tensor | None = None,
+        position_ids: torch.Tensor | None = None,
+        query_position: torch.Tensor | None = None,
+        past_key_values: tuple[tuple[torch.Tensor]] | None = None,
+        rotary_emb: nn.Module | None = None,
         global_block_tables: torch.Tensor | None = None,
         local_block_tables: torch.Tensor | None = None,
         lora_int_id: torch.Tensor | None = None,
@@ -352,7 +352,9 @@ def build_image_prefill_swa_custom_op_args(model, position_ids, query_position):
         valid_q = q_idx < valid_input_len
         valid_kv = torch.logical_or(in_past, in_chunk)
         if model.phase == "image_prefill":
-            attn = valid_q & valid_kv & torch.logical_or(swa, in_chunk)
+            # transformers >=5.13 (#46850) clips the bidirectional image grant by the sliding window:
+            # sliding mask = AND(kv > q - window, OR(causal, blockwise bidirectional)).
+            attn = valid_q & valid_kv & torch.logical_or(swa, in_chunk & (gap < max_cache_len))
         else:
             attn = valid_q & valid_kv & swa
         attn_mask = torch.where(attn, 1.0, 0.0).to(model.rbln_config.dtype)
@@ -456,13 +458,13 @@ class DecoderOnlyModel(nn.Module):
 
     def forward(
         self,
-        input_ids: torch.Tensor = None,
+        input_ids: torch.Tensor | None = None,
         inputs_embeds: torch.Tensor | None = None,
-        attention_mask: torch.Tensor = None,
-        cache_position: torch.Tensor = None,
-        position_ids: torch.Tensor = None,
-        query_position: torch.Tensor = None,
-        past_key_values: tuple[tuple[torch.Tensor]] = None,
+        attention_mask: torch.Tensor | None = None,
+        cache_position: torch.Tensor | None = None,
+        position_ids: torch.Tensor | None = None,
+        query_position: torch.Tensor | None = None,
+        past_key_values: tuple[tuple[torch.Tensor]] | None = None,
         rotary_emb: nn.Module | torch.Tensor | None = None,
         global_block_tables: torch.Tensor | None = None,
         local_block_tables: torch.Tensor | None = None,

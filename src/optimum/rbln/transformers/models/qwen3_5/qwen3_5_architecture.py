@@ -142,7 +142,7 @@ def rbln_chunk_gated_delta_rule(
         query = l2norm(query, dim=-1, eps=1e-6)
         key = l2norm(key, dim=-1, eps=1e-6)
     query, key, value, beta, g = [
-        x.transpose(1, 2).contiguous().to(initial_dtype) for x in (query, key, value, beta, g)
+        x.transpose(1, 2).contiguous().to(torch.float32) for x in (query, key, value, beta, g)
     ]
     scale = 1 / (query.shape[-1] ** 0.5)
     query = query * scale
@@ -171,7 +171,7 @@ def rbln_chunk_gated_delta_rule(
     # entry, so reshaping it to 4D (B, Hv, Dk, Dv) here is safe.
     last_recurrent_state = initial_state.reshape(
         initial_state.shape[0], query.shape[1], query.shape[-1], value.shape[-1]
-    )
+    ).to(torch.float32)
 
     # inter-chunk: sequential carry across sub-chunks.
     core_chunks = []
@@ -193,13 +193,13 @@ def rbln_chunk_gated_delta_rule(
 
     # concat sub-chunk outputs along seq
     core = torch.cat(core_chunks, dim=2)
-    core = core.transpose(1, 2).contiguous()
+    core = core.transpose(1, 2).contiguous().to(initial_dtype)
     # return the final state in the 3D cache layout (B, Hv*Dk, Dv) to match the static cache.
     last_recurrent_state = last_recurrent_state.reshape(
         last_recurrent_state.shape[0],
         last_recurrent_state.shape[1] * last_recurrent_state.shape[2],
         last_recurrent_state.shape[3],
-    )
+    ).to(initial_dtype)
     return core, last_recurrent_state
 
 
@@ -211,6 +211,8 @@ def rbln_recurrent_gated_delta_rule_step(query, key, value, g, beta, initial_sta
     cache and reshaped to 4D here only after a compute (``* g_t``).
     """
     initial_dtype = query.dtype
+    query, key, value, g, beta = [x.to(torch.float32) for x in (query, key, value, g, beta)]
+    initial_state = initial_state.to(torch.float32)
     batch_size, _, num_v_heads, k_head_dim = query.shape
     v_head_dim = value.shape[-1]
     q = query.reshape(batch_size, num_v_heads, k_head_dim)
@@ -374,7 +376,7 @@ class Qwen3_5GatedDeltaNet(nn.Module):
         value = value.reshape(batch_size, seq_len, -1, self.head_v_dim)
 
         beta = b.sigmoid()
-        g = -self.A_log.exp() * F.softplus(a + self.dt_bias)
+        g = -self.A_log.float().exp() * F.softplus(a.float() + self.dt_bias)
         if prefill:
             # padding tokens have nonzero q/k/v/g via biases; zero g/beta so they don't pollute the recurrent-state sum and its decay.
             g = g * valid_mask
@@ -559,14 +561,14 @@ class Qwen3_5Model(DecoderOnlyModel):
 
     def forward(
         self,
-        input_ids: torch.Tensor = None,
+        input_ids: torch.Tensor | None = None,
         inputs_embeds: torch.Tensor | None = None,
-        attention_mask: torch.Tensor = None,
-        cache_position: torch.Tensor = None,
-        position_ids: torch.Tensor = None,
-        query_position: torch.Tensor = None,
-        past_key_values: tuple[tuple[torch.Tensor]] = None,
-        past_states: tuple[tuple[torch.Tensor]] = None,
+        attention_mask: torch.Tensor | None = None,
+        cache_position: torch.Tensor | None = None,
+        position_ids: torch.Tensor | None = None,
+        query_position: torch.Tensor | None = None,
+        past_key_values: tuple[tuple[torch.Tensor]] | None = None,
+        past_states: tuple[tuple[torch.Tensor]] | None = None,
         rotary_emb: nn.Module | None = None,
         global_block_tables: torch.Tensor | None = None,
         local_block_tables: torch.Tensor | None = None,
@@ -652,15 +654,15 @@ class Qwen3_5Model(DecoderOnlyModel):
 class Qwen3_5ForCausalLM(DecoderOnlyForCausalLM):
     def forward(
         self,
-        input_ids: torch.Tensor = None,
-        inputs_embeds: torch.Tensor = None,
-        attention_mask: torch.Tensor = None,
-        cache_position: torch.Tensor = None,
-        position_ids: torch.Tensor = None,
-        query_position: torch.Tensor = None,
-        past_key_values: tuple[tuple[torch.Tensor]] = None,
-        past_states: tuple[tuple[torch.Tensor]] = None,
-        rotary_emb: nn.Module = None,
+        input_ids: torch.Tensor | None = None,
+        inputs_embeds: torch.Tensor | None = None,
+        attention_mask: torch.Tensor | None = None,
+        cache_position: torch.Tensor | None = None,
+        position_ids: torch.Tensor | None = None,
+        query_position: torch.Tensor | None = None,
+        past_key_values: tuple[tuple[torch.Tensor]] | None = None,
+        past_states: tuple[tuple[torch.Tensor]] | None = None,
+        rotary_emb: nn.Module | None = None,
         global_block_tables: torch.Tensor | None = None,
         local_block_tables: torch.Tensor | None = None,
         lora_int_id: torch.Tensor | None = None,

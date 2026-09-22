@@ -41,3 +41,8 @@ class RBLNViTForImageClassification(RBLNModelForImageClassification):
 
         """
         return super().forward(pixel_values, **kwargs)
+
+
+__all__ = [
+    "RBLNViTForImageClassification",
+]
