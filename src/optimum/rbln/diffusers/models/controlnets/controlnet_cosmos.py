@@ -309,8 +309,7 @@ class RBLNCosmosControlNetModel(RBLNModel):
                 [rbln_config.batch_size, rbln_config.max_seq_len, rbln_config.embedding_dim],
                 rbln_config.dtype,
             ),
-            # Transfer2.5 always feeds per-frame timesteps ([B, 1, T, 1, 1]). They stay per-frame
-            # here too; the graph broadcasts them over the spatial tokens.
+            # Transfer2.5 always feeds per-frame timesteps ([B, 1, T, 1, 1]).
             ("embedded_timestep", [rbln_config.batch_size, num_frames, hidden_size], rbln_config.dtype),
             ("temb", [rbln_config.batch_size, num_frames, hidden_size * 3], rbln_config.dtype),
             ("image_rotary_emb_0", [hidden_dim, model_config.attention_head_dim], "float32"),
@@ -319,7 +318,6 @@ class RBLNCosmosControlNetModel(RBLNModel):
         ]
         if model_config.img_context_dim_in is not None and model_config.img_context_dim_in > 0:
             if rbln_config.img_context_num_tokens is None:
-                # The token count lives on the transformer config (the pipeline hook copies it);
                 # 256 is the CosmosTransformer3DModel default.
                 rbln_config.img_context_num_tokens = 256
             input_info.append(
