@@ -91,36 +91,32 @@ class RBLNTimesteps(Timesteps):
         return emb
 
 
-class CosmosTransformer3DModelWrapper(torch.nn.Module):
-    def __init__(
-        self,
-        model: CosmosTransformer3DModel,
-        num_latent_frames: int = 16,
-        latent_height: int = 88,
-        latent_width: int = 160,
-    ) -> None:
-        super().__init__()
-        self.model = model
-        self.num_latent_frames = num_latent_frames
-        self.latent_height = latent_height
-        self.latent_width = latent_width
-        self.p_t, self.p_h, self.p_w = model.config.patch_size
+class CosmosPerFrameAdaLNMixin:
+    """`CosmosTransformerBlock.forward` with the adaLN modulation kept per-frame.
+
+    Shared by the transformer and the ControlNet: a per-frame timestep gives only T
+    distinct modulation values, so computing them on [B, T, C] and broadcasting over the
+    [B, T, HW, C] view of the hidden states keeps the H*W-fold expansion out of the graph.
+    """
+
+    @staticmethod
+    def _as_per_frame(embedded_timestep: torch.Tensor, temb: torch.Tensor):
+        # A global timestep arrives as [B, C]/[B, 3C]; treat it as a single frame.
+        if embedded_timestep.dim() == 2:
+            return embedded_timestep.unsqueeze(1), temb.unsqueeze(1)  # [B, 1, C], [B, 1, 3C]
+        return embedded_timestep, temb  # [B, T, C], [B, T, 3C]
 
     def _per_frame(self, x: torch.Tensor, num_frames: int) -> torch.Tensor:
         batch, num_tokens, channels = x.shape
         return x.view(batch, num_frames, num_tokens // num_frames, channels)
 
     def _adaln(self, norm, hidden_states, embedded_timestep, temb, gated: bool):
-        # CosmosAdaLayerNorm{,Zero}.forward with the modulation kept per-frame ([B, T, C]): the
-        # frames broadcast over the spatial tokens of the [B, T, HW, C] view, so the per-token
-        # expansion never materializes. Expanding it (host- or graph-side) put a resident
-        # [B, THW, 3C] tensor on the device — 2.4 GiB at 14B 704x1280x93 and a tp=8 DRAM OOM.
         modulation = norm.linear_2(norm.linear_1(norm.activation(embedded_timestep)))
         if temb is not None:
             modulation = modulation + temb[..., : modulation.shape[-1]]
         parts = [p.unsqueeze(2) for p in modulation.chunk(3 if gated else 2, dim=-1)]  # [B, T, 1, C]
         normed = self._per_frame(norm.norm(hidden_states), embedded_timestep.shape[1])
-        normed = (normed * (1 + parts[1]) + parts[0]).flatten(1, 2)
+        normed = (normed * (1 + parts[1]) + parts[0]).flatten(1, 2)  # [B, THW, C]
         return (normed, parts[2]) if gated else normed
 
     def _gated_add(self, hidden_states: torch.Tensor, gate: torch.Tensor, output: torch.Tensor) -> torch.Tensor:
@@ -136,10 +132,10 @@ class CosmosTransformer3DModelWrapper(torch.nn.Module):
         image_rotary_emb,
         extra_pos_emb=None,
         attention_mask=None,
+        latents=None,
     ):
-        # CosmosTransformerBlock.forward routed through the per-frame _adaln above. Blocks with
-        # the ControlNet-style projections belong to the ControlNet wrapper, not this path.
-        assert block.before_proj is None and block.after_proj is None
+        if block.before_proj is not None:
+            hidden_states = block.before_proj(hidden_states) + latents
         if extra_pos_emb is not None:
             hidden_states = hidden_states + extra_pos_emb
         normed, gate = self._adaln(block.norm1, hidden_states, embedded_timestep, temb, gated=True)
@@ -148,15 +144,26 @@ class CosmosTransformer3DModelWrapper(torch.nn.Module):
         attn_output = block.attn2(normed, encoder_hidden_states=context, attention_mask=attention_mask)
         hidden_states = self._gated_add(hidden_states, gate, attn_output)
         normed, gate = self._adaln(block.norm3, hidden_states, embedded_timestep, temb, gated=True)
-        return self._gated_add(hidden_states, gate, block.ff(normed))
+        hidden_states = self._gated_add(hidden_states, gate, block.ff(normed))
+        if block.after_proj is not None:
+            return hidden_states, block.after_proj(hidden_states)
+        return hidden_states
 
-    @staticmethod
-    def _as_per_frame(embedded_timestep: torch.Tensor, temb: torch.Tensor):
-        # A global timestep arrives as [B, C]/[B, 3C] (Predict1/2 — contract unchanged); treat it
-        # as a single frame so every model shares the per-frame path.
-        if embedded_timestep.dim() == 2:
-            return embedded_timestep.unsqueeze(1), temb.unsqueeze(1)
-        return embedded_timestep, temb
+
+class CosmosTransformer3DModelWrapper(CosmosPerFrameAdaLNMixin, torch.nn.Module):
+    def __init__(
+        self,
+        model: CosmosTransformer3DModel,
+        num_latent_frames: int = 16,
+        latent_height: int = 88,
+        latent_width: int = 160,
+    ) -> None:
+        super().__init__()
+        self.model = model
+        self.num_latent_frames = num_latent_frames
+        self.latent_height = latent_height
+        self.latent_width = latent_width
+        self.p_t, self.p_h, self.p_w = model.config.patch_size
 
     def forward(
         self,

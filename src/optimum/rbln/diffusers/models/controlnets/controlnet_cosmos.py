@@ -23,7 +23,11 @@ from torchvision import transforms
 from ....configuration_utils import RBLNCompileConfig, RBLNModelConfig
 from ....modeling import RBLNModel
 from ...configurations import RBLNCosmosControlNetModelConfig
-from ..transformers.transformer_cosmos import RBLNCosmosRotaryPosEmbed, RBLNTimesteps
+from ..transformers.transformer_cosmos import (
+    CosmosPerFrameAdaLNMixin,
+    RBLNCosmosRotaryPosEmbed,
+    RBLNTimesteps,
+)
 
 
 if TYPE_CHECKING:
@@ -32,7 +36,7 @@ if TYPE_CHECKING:
     from ...modeling_diffusers import RBLNDiffusionMixin, RBLNDiffusionMixinConfig
 
 
-class CosmosControlNetWrapper(torch.nn.Module):
+class CosmosControlNetWrapper(CosmosPerFrameAdaLNMixin, torch.nn.Module):
     """Compile graph: the ControlNet block stack. Embeddings are computed on the host."""
 
     def __init__(self, model: CosmosControlNetModel):
@@ -53,23 +57,21 @@ class CosmosControlNetWrapper(torch.nn.Module):
         img_context: torch.Tensor | None = None,
     ):
         image_rotary_emb = [image_rotary_emb_0, image_rotary_emb_1]
+        embedded_timestep, temb = self._as_per_frame(embedded_timestep, temb)
         # The cross-attention processor of Transfer2.5 blocks expects a (text, img) tuple.
         context = (encoder_hidden_states, img_context) if self.uses_img_context else encoder_hidden_states
 
         outputs = []
         hidden_states = control_hidden_states
         for block_idx, block in enumerate(self.control_blocks):
-            hidden_states, control_proj = block(
-                hidden_states=hidden_states,
-                encoder_hidden_states=context,
-                embedded_timestep=embedded_timestep,
-                temb=temb,
-                image_rotary_emb=image_rotary_emb,
-                extra_pos_emb=None,
-                attention_mask=None,
-                controlnet_residual=None,
+            hidden_states, control_proj = self._block_forward(
+                block,
+                hidden_states,
+                context,
+                embedded_timestep,
+                temb,
+                image_rotary_emb,
                 latents=base_hidden_states,
-                block_idx=block_idx,
             )
             outputs.append(control_proj * conditioning_scales[block_idx : block_idx + 1].reshape(1, 1, 1))
         return tuple(outputs)
@@ -218,8 +220,6 @@ class RBLNCosmosControlNetModel(RBLNModel):
         # 4. Patchify both streams.
         p_t, p_h, p_w = self.config.patch_size
         post_patch_num_frames = T // p_t
-        post_patch_height = H // p_h
-        post_patch_width = W // p_w
         control_hidden_states = self.patch_embed(control_hidden_states).flatten(1, 3)
         base_hidden_states = self.patch_embed_base(base_hidden_states).flatten(1, 3)
 
@@ -231,12 +231,11 @@ class RBLNCosmosControlNetModel(RBLNModel):
                 f"Expected timestep to have shape [B, 1, T, 1, 1], but got {timestep.shape}"
             )
             temb, embedded_timestep = self.time_embed(base_hidden_states, timestep.flatten())
+            # Keep the embeddings per-frame: the graph broadcasts them over the spatial tokens
+            # (see CosmosPerFrameAdaLNMixin), so the H*W-fold expansion never crosses into it.
             temb, embedded_timestep = (
-                x.view(B, post_patch_num_frames, 1, 1, -1)
-                .expand(-1, -1, post_patch_height, post_patch_width, -1)
-                .flatten(1, 3)
-                for x in (temb, embedded_timestep)
-            )
+                x.view(B, post_patch_num_frames, -1) for x in (temb, embedded_timestep)
+            )  # [BT, C] -> [B, T, C]
         else:
             raise AssertionError("Unsupported shape of `timestep`")
 
@@ -294,6 +293,7 @@ class RBLNCosmosControlNetModel(RBLNModel):
             raise ValueError(f"{', '.join(missing)} must be specified to compile RBLNCosmosControlNetModel.")
 
         p_t, p_h, p_w = model_config.patch_size
+        num_frames = rbln_config.num_latent_frames // p_t
         hidden_dim = (
             (rbln_config.num_latent_frames // p_t)
             * (rbln_config.latent_height // p_h)
@@ -310,9 +310,10 @@ class RBLNCosmosControlNetModel(RBLNModel):
                 [rbln_config.batch_size, rbln_config.max_seq_len, rbln_config.embedding_dim],
                 rbln_config.dtype,
             ),
-            # Transfer2.5 always feeds per-frame timesteps ([B, 1, T, 1, 1]).
-            ("embedded_timestep", [rbln_config.batch_size, hidden_dim, hidden_size], rbln_config.dtype),
-            ("temb", [1, hidden_dim, hidden_size * 3], rbln_config.dtype),
+            # Transfer2.5 always feeds per-frame timesteps ([B, 1, T, 1, 1]). They stay per-frame
+            # here too; the graph broadcasts them over the spatial tokens.
+            ("embedded_timestep", [rbln_config.batch_size, num_frames, hidden_size], rbln_config.dtype),
+            ("temb", [rbln_config.batch_size, num_frames, hidden_size * 3], rbln_config.dtype),
             ("image_rotary_emb_0", [hidden_dim, model_config.attention_head_dim], "float32"),
             ("image_rotary_emb_1", [hidden_dim, model_config.attention_head_dim], "float32"),
             ("conditioning_scales", [n_blocks], rbln_config.dtype),
