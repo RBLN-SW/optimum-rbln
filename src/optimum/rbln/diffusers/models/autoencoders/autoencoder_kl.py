@@ -25,7 +25,7 @@ from transformers import PretrainedConfig
 
 from ....configuration_utils import RBLNCompileConfig
 from ....modeling import RBLNModel
-from ....modeling_base import Preprocessor
+from ....modeling_base import Preprocessor, RBLNBaseModel
 from ....utils.logging import get_logger
 from ...configurations import RBLNAutoencoderKLConfig
 from .vae import RBLNRuntimeVAEDecoder, RBLNRuntimeVAEEncoder, _VAEDecoder, _VAEEncoder
@@ -90,7 +90,9 @@ class RBLNAutoencoderKL(RBLNModel):
         self.post_quant_conv = _PostQuantConv(self.dtype)
 
     @classmethod
-    def get_compiled_model(cls, model, rbln_config: RBLNAutoencoderKLConfig) -> dict[str, rebel.RBLNCompiledModel]:
+    def get_compiled_model(
+        cls, model, rbln_config: RBLNAutoencoderKLConfig, colocated_models: list[RBLNBaseModel] | None = None
+    ) -> dict[str, rebel.RBLNCompiledModel]:
         if rbln_config.uses_encoder:
             expected_models = ["encoder", "decoder"]
         else:

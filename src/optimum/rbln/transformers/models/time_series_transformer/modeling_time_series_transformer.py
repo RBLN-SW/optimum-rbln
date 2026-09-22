@@ -36,7 +36,7 @@ from transformers.modeling_outputs import SampleTSPredictionOutput, Seq2SeqTSMod
 
 from ....configuration_utils import RBLNCompileConfig
 from ....modeling import RBLNModel
-from ....modeling_base import Preprocessor
+from ....modeling_base import Preprocessor, RBLNBaseModel
 from ....utils.runtime_utils import RBLNPytorchRuntime
 from ...modeling_outputs import RBLNSeq2SeqTSDecoderOutput
 from .configuration_time_series_transformer import RBLNTimeSeriesTransformerForPredictionConfig
@@ -162,7 +162,12 @@ class RBLNTimeSeriesTransformerForPrediction(RBLNModel):
 
     @classmethod
     @torch.inference_mode()
-    def get_compiled_model(cls, model, rbln_config: RBLNTimeSeriesTransformerForPredictionConfig):
+    def get_compiled_model(
+        cls,
+        model,
+        rbln_config: RBLNTimeSeriesTransformerForPredictionConfig,
+        colocated_models: list[RBLNBaseModel] | None = None,
+    ):
         wrapped_model = cls._wrap_model_if_needed(model, rbln_config)
 
         enc_compile_config = rbln_config.compile_cfgs[0]

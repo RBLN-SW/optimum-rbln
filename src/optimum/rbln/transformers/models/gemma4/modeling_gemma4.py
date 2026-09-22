@@ -32,7 +32,7 @@ from transformers.models.gemma4.modeling_gemma4 import Gemma4VisionRotaryEmbeddi
 
 from ....configuration_utils import RBLNCompileConfig, RBLNModelConfig
 from ....modeling import RBLNModel
-from ....modeling_base import Preprocessor
+from ....modeling_base import Preprocessor, RBLNBaseModel
 from ....modeling_rope_utils import np_cos, np_sin
 from ....utils.logging import get_logger
 from ...cache_utils import FullAttentionKVCacheMeta, SlidingWindowAttentionKVCacheMeta
@@ -351,7 +351,12 @@ class RBLNGemma4ForCausalLM(RBLNMoeLoadMixin, RBLNDecoderOnlyModelForCausalLM):
 
     @classmethod
     @torch.inference_mode()
-    def get_compiled_model(cls, model: PreTrainedModel, rbln_config: RBLNGemma4ForCausalLMConfig):
+    def get_compiled_model(
+        cls,
+        model: PreTrainedModel,
+        rbln_config: RBLNGemma4ForCausalLMConfig,
+        colocated_models: list[RBLNBaseModel] | None = None,
+    ):
         wrapped_model = cls._wrap_model_if_needed(model, rbln_config)
         prefill_compile_config = rbln_config.compile_cfgs[0]
 
@@ -407,7 +412,7 @@ class RBLNGemma4ForCausalLM(RBLNMoeLoadMixin, RBLNDecoderOnlyModelForCausalLM):
                 )
 
         if rbln_config.is_auto_num_blocks:
-            cls.set_kvcache_num_blocks_after_compilation(compiled_models, rbln_config)
+            cls.set_kvcache_num_blocks_after_compilation(compiled_models, rbln_config, colocated_models)
 
         return compiled_models
 
