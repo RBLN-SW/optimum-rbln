@@ -663,6 +663,10 @@ class RBLNQwen2_5_VLForConditionalGeneration(
         return True
 
     @classmethod
+    def update_rbln_config_using_pipe(cls, pipe: Any, rbln_config: Any, submodule_name: str) -> Any:
+        return rbln_config
+
+    @classmethod
     def _reconstruct_model_if_needed(cls, model: "PreTrainedModel"):
         model.model.lm_head = model.lm_head
         return model

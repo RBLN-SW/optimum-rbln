@@ -21,6 +21,7 @@ from ....utils.import_utils import define_import_structure
 
 if TYPE_CHECKING:
     from .controlnet import *
+    from .controlnet_cosmos import *
 else:
     import sys
 
