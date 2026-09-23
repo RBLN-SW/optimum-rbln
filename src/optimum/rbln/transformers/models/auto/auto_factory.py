@@ -292,7 +292,8 @@ class _BaseAutoModelClass:
             raise ValueError("`rbln_cls` must be a subclass of RBLNBaseModel.")
 
         native_cls = getattr(importlib.import_module("optimum.rbln"), rbln_cls.__name__, None)
-        if (rbln_cls.__name__ in MODEL_MAPPING or native_cls is not None) and not exist_ok:
-            raise ValueError(f"Model for {rbln_cls.__name__} already registered.")
+        if rbln_cls.__name__ in MODEL_MAPPING or native_cls is not None:
+            if not exist_ok:
+                raise ValueError(f"Model for {rbln_cls.__name__} already registered.")
 
         MODEL_MAPPING[rbln_cls.__name__] = rbln_cls

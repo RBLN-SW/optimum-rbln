@@ -164,6 +164,9 @@ ignore = [
     "PLC0415",
     # Mutable class attributes are the HuggingFace convention for declarative model metadata.
     "RUF012",
+    # Explicit if/else blocks and nested ifs read better here than ternaries and long `and` chains.
+    "SIM102",
+    "SIM108",
 ]
 
 [tool.ruff.lint.isort]

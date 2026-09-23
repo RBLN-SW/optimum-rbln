@@ -214,8 +214,9 @@ def get_quantized_model(
     # otherwise AutoConfig.from_pretrained will raise an error.
     n_layer_keys = ["num_hidden_layers", "n_layers"]
     for n_layer_key in n_layer_keys:
-        if n_layer_key in kwargs and kwargs[n_layer_key] is None:
-            kwargs.pop(n_layer_key)
+        if n_layer_key in kwargs:
+            if kwargs[n_layer_key] is None:
+                kwargs.pop(n_layer_key)
 
     config = AutoConfig.from_pretrained(
         model_id,
@@ -435,7 +436,10 @@ def canonicalize_checkpoint_items(
                 if len(wshape) == 2:
                     out_features = int(wshape[0])
 
-            t = _coerce_per_out_channel_scale(t, out_features) if out_features is not None else _scalar_value_as_1d(t)
+            if out_features is not None:
+                t = _coerce_per_out_channel_scale(t, out_features)
+            else:
+                t = _scalar_value_as_1d(t)
 
             results.append((target_key, t))
             continue

@@ -166,7 +166,10 @@ class RBLNIdefics3VisionTransformer(RBLNModel):
         ]
         last_hidden_state = torch.empty(size=last_hidden_state_size, dtype=self.rbln_config.dtype, device="cpu")
         for i in range(pixel_values.shape[0]):
-            batch_attention_mask = patch_attention_mask[i : i + 1,] if patch_attention_mask is not None else None
+            if patch_attention_mask is not None:
+                batch_attention_mask = patch_attention_mask[i : i + 1,]
+            else:
+                batch_attention_mask = None
 
             self.model(
                 pixel_values[i : i + 1,],

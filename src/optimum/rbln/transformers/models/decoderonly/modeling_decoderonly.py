@@ -784,7 +784,10 @@ class RBLNDecoderOnlyModelForCausalLM(RBLNDecoderOnlyModel, RBLNDecoderOnlyGener
             raise ValueError("Model is not configured with LoRA. Cannot set adapter.")
 
         # Convert single adapter name to list for uniform processing
-        adapter_names = [adapter_name] if isinstance(adapter_name, str) else adapter_name
+        if isinstance(adapter_name, str):
+            adapter_names = [adapter_name]
+        else:
+            adapter_names = adapter_name
 
         # Validate that all adapter names exist
         available_adapters = {

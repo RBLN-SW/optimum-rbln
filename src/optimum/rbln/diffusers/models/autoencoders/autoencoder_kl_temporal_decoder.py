@@ -214,7 +214,11 @@ class RBLNAutoencoderKLTemporalDecoder(RBLNModel):
         compiled_models: list[rebel.RBLNCompiledModel],
         rbln_config: RBLNAutoencoderKLTemporalDecoderConfig,
     ) -> list[rebel.Runtime]:
-        expected_models = ["decoder"] if len(compiled_models) == 1 else ["encoder", "decoder"]
+        if len(compiled_models) == 1:
+            # decoder
+            expected_models = ["decoder"]
+        else:
+            expected_models = ["encoder", "decoder"]
 
         if any(model_name not in rbln_config.device_map for model_name in expected_models):
             cls._raise_missing_compiled_file_error(expected_models)

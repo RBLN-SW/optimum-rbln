@@ -483,7 +483,10 @@ class RBLNDiffusionMixin(_PipelineBase):
         return model
 
     def get_compiled_image_size(self):
-        compiled_image_size = self.vae.image_size if hasattr(self, "vae") and hasattr(self.vae, "image_size") else None
+        if hasattr(self, "vae") and hasattr(self.vae, "image_size"):
+            compiled_image_size = self.vae.image_size
+        else:
+            compiled_image_size = None
         return compiled_image_size
 
     def handle_additional_kwargs(self, **kwargs):

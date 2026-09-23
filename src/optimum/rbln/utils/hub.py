@@ -74,6 +74,7 @@ def pull_compiled_model_from_hub(
             # Download all .rbln files found in cache (hf_hub_download will use cache if available)
             for rbln_file in rbln_files:
                 filename = rbln_file.name if subfolder == "" else f"{subfolder}/{rbln_file.name}"
+                # File might not exist in repo, skip it
                 with contextlib.suppress(LocalEntryNotFoundError):
                     hf_hub_download(
                         repo_id=str(model_id),

@@ -82,7 +82,10 @@ class LoopVisionTower(LoopProcessor):
             output = kwargs["out"]
             last_hidden_states = output[0]
 
-            hidden_states = None if not output[2:] else tuple(output[2:])
+            if not output[2:]:
+                hidden_states = None
+            else:
+                hidden_states = tuple(output[2:])
 
         return BaseModelOutputWithPooling(
             last_hidden_state=last_hidden_states,

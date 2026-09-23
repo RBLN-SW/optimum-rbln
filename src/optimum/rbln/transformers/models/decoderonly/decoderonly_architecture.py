@@ -645,7 +645,10 @@ class DecoderOnlyLayer(nn.Module):
             gate = mlp.gate_proj(hidden_states, lora_int_id)
             up = mlp.up_proj(hidden_states, lora_int_id)
             act_fn = getattr(mlp, "act_fn", None) or getattr(mlp, "activation_fn", None)
-            gate = torch.nn.functional.silu(gate) if act_fn is None else act_fn(gate)
+            if act_fn is None:
+                gate = torch.nn.functional.silu(gate)
+            else:
+                gate = act_fn(gate)
             fused = gate * up
             hidden_states = mlp.down_proj(fused, lora_int_id)
         else:
@@ -898,7 +901,12 @@ class DecoderOnlyAttention(nn.Module):
         )
 
         # Check if using LoRALinear (which accepts lora_int_id) or standard linear layers
-        attn_outputs = self.o_proj(attn_output, lora_int_id) if self.lora_config else self.o_proj(attn_output)
+        if self.lora_config:
+            # LoRALinear handles both base projection and LoRA in one forward pass
+            attn_outputs = self.o_proj(attn_output, lora_int_id)
+        else:
+            # Standard linear projection without LoRA
+            attn_outputs = self.o_proj(attn_output)
 
         return attn_outputs
 
@@ -934,7 +942,10 @@ class AttentionOp(nn.Module):
         phase = "decode" if self.phase == "decode" else "prefill"
 
         if self.use_attention_mask:
-            attn_op_name = "paged_causal_attn_" if self.rbln_config.use_position_ids else "paged_attn_"
+            if self.rbln_config.use_position_ids:
+                attn_op_name = "paged_causal_attn_"
+            else:
+                attn_op_name = "paged_attn_"
         else:
             attn_op_name = "paged_causal_attn_"
 
@@ -988,7 +999,10 @@ class AttentionOp(nn.Module):
         if self.use_attention_mask and not self.rbln_config.use_position_ids:
             attn_mask = attn_mask.unsqueeze(2)
 
-        batch_size = key_state.shape[0] if self.phase == "decode" else 1
+        if self.phase == "decode":
+            batch_size = key_state.shape[0]
+        else:
+            batch_size = 1
 
         query_state = query_state.view(
             batch_size,
@@ -1067,7 +1081,10 @@ class FlashAttentionOp(AttentionOp):
         phase = "decode" if self.phase == "decode" else "prefill"
 
         if self.use_attention_mask:
-            attn_op_name = "paged_flash_causal_attn_" if self.rbln_config.use_position_ids else "paged_flash_attn_"
+            if self.rbln_config.use_position_ids:
+                attn_op_name = "paged_flash_causal_attn_"
+            else:
+                attn_op_name = "paged_flash_attn_"
         else:
             attn_op_name = "paged_flash_causal_attn_"
 
@@ -1101,7 +1118,10 @@ class FlashAttentionOp(AttentionOp):
         if self.use_attention_mask and not self.rbln_config.use_position_ids:
             attn_mask = attn_mask.unsqueeze(2)
 
-        batch_size = key_state.shape[0] if self.phase == "decode" else 1
+        if self.phase == "decode":
+            batch_size = key_state.shape[0]
+        else:
+            batch_size = 1
 
         query_state = query_state.view(
             batch_size,
@@ -1207,7 +1227,10 @@ class SlidingWindowAttentionOp(AttentionOp):
         key_state = key_state.unsqueeze(2)
         value_state = value_state.unsqueeze(2)
 
-        batch_size = key_state.shape[0] if self.phase == "decode" else 1
+        if self.phase == "decode":
+            batch_size = key_state.shape[0]
+        else:
+            batch_size = 1
 
         query_state = query_state.view(
             batch_size,

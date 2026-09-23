@@ -89,11 +89,17 @@ class RBLNAutoencoderKL(RBLNModel):
 
     @classmethod
     def get_compiled_model(cls, model, rbln_config: RBLNAutoencoderKLConfig) -> dict[str, rebel.RBLNCompiledModel]:
-        expected_models = ["encoder", "decoder"] if rbln_config.uses_encoder else ["decoder"]
+        if rbln_config.uses_encoder:
+            expected_models = ["encoder", "decoder"]
+        else:
+            expected_models = ["decoder"]
 
         compiled_models = {}
         for i, model_name in enumerate(expected_models):
-            wrapped_model = _VAEEncoder(model) if model_name == "encoder" else _VAEDecoder(model)
+            if model_name == "encoder":
+                wrapped_model = _VAEEncoder(model)
+            else:
+                wrapped_model = _VAEDecoder(model)
 
             wrapped_model.eval()
 
@@ -209,7 +215,12 @@ class RBLNAutoencoderKL(RBLNModel):
         compiled_models: list[rebel.RBLNCompiledModel],
         rbln_config: RBLNAutoencoderKLConfig,
     ) -> list[rebel.Runtime]:
-        expected_models = ["decoder"] if len(compiled_models) == 1 else ["encoder", "decoder"]
+        if len(compiled_models) == 1:
+            # decoder
+            expected_models = ["decoder"]
+        else:
+            # encoder, decoder
+            expected_models = ["encoder", "decoder"]
 
         if any(model_name not in rbln_config.device_map for model_name in expected_models):
             cls._raise_missing_compiled_file_error(expected_models)

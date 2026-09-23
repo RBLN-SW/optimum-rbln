@@ -451,7 +451,10 @@ class Gemma4TextAttention(DecoderOnlyAttention):
             s_aux=getattr(self, "sinks", None),
         )
 
-        attn_outputs = self.o_proj(attn_output, lora_int_id) if self.lora_config else self.o_proj(attn_output)
+        if self.lora_config:
+            attn_outputs = self.o_proj(attn_output, lora_int_id)
+        else:
+            attn_outputs = self.o_proj(attn_output)
 
         return attn_outputs
 

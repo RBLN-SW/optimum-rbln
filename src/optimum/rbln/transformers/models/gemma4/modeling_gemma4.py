@@ -912,14 +912,14 @@ class RBLNGemma4ForConditionalGeneration(RBLNMoeLoadMixin, RBLNModel, RBLNImageI
             inputs_embeds = self.get_input_embeddings()(llm_input_ids)
         inputs_embeds = inputs_embeds.to(self.rbln_config.language_model.dtype)
 
-        if (
-            (pixel_values is not None and image_position_ids is not None)
-            or (pixel_values_videos is not None and video_position_ids is not None)
-        ) and input_ids is None:
-            raise ValueError(
-                "multimodal prefill requires `input_ids` for image/video-token mask construction; "
-                "received inputs_embeds-only"
-            )
+        if (pixel_values is not None and image_position_ids is not None) or (
+            pixel_values_videos is not None and video_position_ids is not None
+        ):
+            if input_ids is None:
+                raise ValueError(
+                    "multimodal prefill requires `input_ids` for image/video-token mask construction; "
+                    "received inputs_embeds-only"
+                )
 
         if pixel_values is not None and image_position_ids is not None:
             image_features = self.get_image_features(pixel_values, image_position_ids)

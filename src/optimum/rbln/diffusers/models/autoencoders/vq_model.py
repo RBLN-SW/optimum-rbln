@@ -66,11 +66,17 @@ class RBLNVQModel(RBLNModel):
 
     @classmethod
     def get_compiled_model(cls, model, rbln_config: RBLNModelConfig):
-        expected_models = ["encoder", "decoder"] if rbln_config.uses_encoder else ["decoder"]
+        if rbln_config.uses_encoder:
+            expected_models = ["encoder", "decoder"]
+        else:
+            expected_models = ["decoder"]
 
         compiled_models = {}
         for i, model_name in enumerate(expected_models):
-            wrapped_model = _VQEncoder(model) if model_name == "encoder" else _VQDecoder(model)
+            if model_name == "encoder":
+                wrapped_model = _VQEncoder(model)
+            else:
+                wrapped_model = _VQDecoder(model)
 
             wrapped_model.eval()
 
@@ -144,7 +150,12 @@ class RBLNVQModel(RBLNModel):
         compiled_models: list[rebel.RBLNCompiledModel],
         rbln_config: RBLNVQModelConfig,
     ) -> list[rebel.Runtime]:
-        expected_models = ["decoder"] if len(compiled_models) == 1 else ["encoder", "decoder"]
+        if len(compiled_models) == 1:
+            # decoder
+            expected_models = ["decoder"]
+        else:
+            # encoder, decoder
+            expected_models = ["encoder", "decoder"]
 
         if any(model_name not in rbln_config.device_map for model_name in expected_models):
             cls._raise_missing_compiled_file_error(expected_models)

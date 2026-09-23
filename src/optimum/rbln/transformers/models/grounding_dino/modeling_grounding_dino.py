@@ -646,7 +646,10 @@ class RBLNGroundingDinoForObjectDetection(RBLNModel):
             # predict class and bounding box deltas for each stage
             num_levels = hidden_states.shape[1]
             for level in range(num_levels):
-                reference = init_reference_points if level == 0 else inter_references_points[:, level - 1]
+                if level == 0:
+                    reference = init_reference_points
+                else:
+                    reference = inter_references_points[:, level - 1]
                 reference = torch.special.logit(reference, eps=1e-5)
                 outputs_class = self.class_embed[level](
                     vision_hidden_state=hidden_states[:, level],
