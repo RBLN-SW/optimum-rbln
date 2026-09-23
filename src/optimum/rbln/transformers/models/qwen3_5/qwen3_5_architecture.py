@@ -261,6 +261,8 @@ class Qwen3_5GatedDeltaNet(nn.Module):
 
     conv_state is stored as ``(B, K-1, conv_dim)`` (innermost = conv_dim, a multiple of 64 as
     RBLN requires) and transposed to ``(B, conv_dim, K-1)`` only inside the math.
+    With ``gdn_grouped_conv_state``, it is stored as ``(B, Hk*5*(K-1), Dk)``,
+    grouping Q, K and three V heads so every shard can update its own cache.
     """
 
     def __init__(self, linear_attn: nn.Module, rbln_config, layer_idx: int):
@@ -304,6 +306,23 @@ class Qwen3_5GatedDeltaNet(nn.Module):
 
         self.prefill_chunk_size = rbln_config.prefill_chunk_size
         self.chunk_size = rbln_config.gdn_chunk_size
+        self.gdn_custom_kernel = rbln_config.gdn_custom_kernel
+        self.gdn_grouped_conv_state = rbln_config.gdn_grouped_conv_state
+        if self.gdn_custom_kernel:
+            if (
+                rbln_config.batch_size != 1
+                or self.prefill_chunk_size != 512
+                or self.chunk_size != 128
+                or self.head_k_dim != 128
+                or self.head_v_dim != 128
+                or self.num_v_heads != 3 * self.num_k_heads
+            ):
+                raise ValueError(
+                    "gdn_custom_kernel requires batch 1, prefill 512, GDN chunk 128, "
+                    "head dimensions 128 and V:QK heads 3:1."
+                )
+            if not hasattr(torch.ops.rbln, "gdn_prefill") or not hasattr(torch.ops.rbln, "gdn_decode"):
+                raise RuntimeError("gdn_custom_kernel requires a rebel_compiler build with GDN core custom ops.")
 
     @property
     def phase(self):
@@ -344,18 +363,51 @@ class Qwen3_5GatedDeltaNet(nn.Module):
         k_in = self.in_proj_k(hidden_states)
         v_in = self.in_proj_v(hidden_states)
 
-        q_cf = torch.cat([conv_state[:, :, :kd].transpose(1, 2), q_in.transpose(1, 2)], dim=-1)
-        k_cf = torch.cat([conv_state[:, :, kd : 2 * kd].transpose(1, 2), k_in.transpose(1, 2)], dim=-1)
-        v_cf = torch.cat([conv_state[:, :, 2 * kd :].transpose(1, 2), v_in.transpose(1, 2)], dim=-1)
-        x_cf = torch.cat([q_cf, k_cf, v_cf], dim=1)
+        if self.gdn_grouped_conv_state:
+            grouped_cache = conv_state.reshape(batch_size, self.num_k_heads, 5, k_1, self.head_k_dim)
+            q_cache = grouped_cache[:, :, 0].permute(0, 2, 1, 3).reshape(batch_size, k_1, kd)
+            k_cache = grouped_cache[:, :, 1].permute(0, 2, 1, 3).reshape(batch_size, k_1, kd)
+            v_cache = grouped_cache[:, :, 2:].permute(0, 3, 1, 2, 4).reshape(batch_size, k_1, vd)
+            q_cf = torch.cat([q_cache.transpose(1, 2), q_in.transpose(1, 2)], dim=-1)
+            k_cf = torch.cat([k_cache.transpose(1, 2), k_in.transpose(1, 2)], dim=-1)
+            v_cf = torch.cat([v_cache.transpose(1, 2), v_in.transpose(1, 2)], dim=-1)
+        else:
+            q_cf = torch.cat([conv_state[:, :, :kd].transpose(1, 2), q_in.transpose(1, 2)], dim=-1)
+            k_cf = torch.cat([conv_state[:, :, kd : 2 * kd].transpose(1, 2), k_in.transpose(1, 2)], dim=-1)
+            v_cf = torch.cat([conv_state[:, :, 2 * kd :].transpose(1, 2), v_in.transpose(1, 2)], dim=-1)
+        conv_inputs = (q_cf, k_cf, v_cf)
+        # Slice before joining channels so only the small carried state needs a gather.
+        state_inputs = conv_inputs if self.gdn_custom_kernel else (torch.cat(conv_inputs, dim=1),)
 
         if prefill:
             # new conv_state = the last K-1 conv INPUTS. In PREFILL the window is right-padded, so the last K-1 cols
             # are nonzero padding (via projection biases); select the last K-1 VALID cols via query_position.
-            states = [x_cf[:, :, query_position.to(torch.int).unsqueeze(0) + i] for i in range(1, k_1 + 1)]
-            new_conv_state = torch.cat(states, dim=2).transpose(1, 2).contiguous()
+            indices = [query_position.to(torch.int).unsqueeze(0) + i for i in range(1, k_1 + 1)]
+            if self.gdn_grouped_conv_state:
+                # Expose heads before joining positions; a padded last-dimension reshape would end the shard.
+                state_parts = [
+                    torch.stack(
+                        [
+                            x[:, :, index].reshape(batch_size, self.num_k_heads, -1, self.head_k_dim)
+                            for index in indices
+                        ],
+                        dim=3,
+                    )
+                    for x in state_inputs
+                ]
+            else:
+                state_parts = [torch.cat([x[:, :, index] for index in indices], dim=2) for x in state_inputs]
         else:
-            new_conv_state = x_cf[:, :, -k_1:].transpose(1, 2).contiguous()
+            state_parts = [x[:, :, -k_1:] for x in state_inputs]
+            if self.gdn_grouped_conv_state:
+                state_parts = [
+                    x.reshape(batch_size, self.num_k_heads, -1, self.head_k_dim, k_1).transpose(-1, -2)
+                    for x in state_parts
+                ]
+        if self.gdn_grouped_conv_state:
+            new_conv_state = torch.cat(state_parts, dim=2).reshape(batch_size, -1, self.head_k_dim).contiguous()
+        else:
+            new_conv_state = torch.cat(state_parts, dim=1).transpose(1, 2).contiguous()
 
         _cw, _cb = self.conv1d.weight, self.conv1d.bias
         query = F.silu(
@@ -381,11 +433,27 @@ class Qwen3_5GatedDeltaNet(nn.Module):
             # padding tokens have nonzero q/k/v/g via biases; zero g/beta so they don't pollute the recurrent-state sum and its decay.
             g = g * valid_mask
             beta = beta * valid_mask
-        if self.num_v_heads // self.num_k_heads > 1:
+        if not self.gdn_custom_kernel and self.num_v_heads // self.num_k_heads > 1:
             query = query.repeat_interleave(self.num_v_heads // self.num_k_heads, dim=2)
             key = key.repeat_interleave(self.num_v_heads // self.num_k_heads, dim=2)
 
-        if "prefill" in self._phase:
+        if self.gdn_custom_kernel:
+            grouped = (
+                query.transpose(1, 2).contiguous(),
+                key.transpose(1, 2).contiguous(),
+                value.reshape(batch_size, seq_len, self.num_k_heads, 3, self.head_v_dim)
+                .permute(0, 2, 3, 1, 4)
+                .contiguous(),
+                g.reshape(batch_size, seq_len, self.num_k_heads, 3).permute(0, 2, 3, 1).contiguous(),
+                beta.reshape(batch_size, seq_len, self.num_k_heads, 3).permute(0, 2, 3, 1).contiguous(),
+                recurrent_state.reshape(batch_size, self.num_k_heads, 3, self.head_k_dim, self.head_v_dim),
+            )
+            core_op = torch.ops.rbln.gdn_prefill if "prefill" in self._phase else torch.ops.rbln.gdn_decode
+            core_attn_out, new_recurrent_state = core_op(*grouped)
+            new_recurrent_state = new_recurrent_state.reshape(
+                batch_size, self.num_v_heads * self.head_k_dim, self.head_v_dim
+            )
+        elif "prefill" in self._phase:
             # Triangular masks built
             _cshape = (1, 1, 1, self.chunk_size, self.chunk_size)
             chunk_tril_incl = torch.tril(torch.ones(_cshape, device=query.device, dtype=query.dtype), diagonal=0)
@@ -408,9 +476,15 @@ class Qwen3_5GatedDeltaNet(nn.Module):
                 query, key, value, g, beta, recurrent_state, use_qk_l2norm_in_kernel=True
             )
 
-        core_attn_out = core_attn_out.reshape(-1, self.head_v_dim)
-        z = z.reshape(-1, self.head_v_dim)
-        core_attn_out = self.norm(core_attn_out, z)
+        if self.gdn_custom_kernel:
+            # Keep the shardable head axis outside the sequence axis through
+            # norm/gating; flattening sequence*heads would require a strided cut.
+            z = z.reshape(batch_size, seq_len, self.num_k_heads, 3, self.head_v_dim).permute(0, 2, 3, 1, 4)
+            core_attn_out = self.norm(core_attn_out, z).permute(0, 3, 1, 2, 4)
+        else:
+            core_attn_out = core_attn_out.reshape(-1, self.head_v_dim)
+            z = z.reshape(-1, self.head_v_dim)
+            core_attn_out = self.norm(core_attn_out, z)
         core_attn_out = core_attn_out.reshape(batch_size, seq_len, -1)
         output = self.out_proj(core_attn_out)
         return output, new_conv_state, new_recurrent_state.contiguous()

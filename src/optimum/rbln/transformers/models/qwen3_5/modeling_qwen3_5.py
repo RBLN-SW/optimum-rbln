@@ -73,11 +73,17 @@ def _qwen3_5_build_compile_context(compile_config, example_inputs):
     return context, static_tensors
 
 
-def _qwen3_5_linear_state_shapes(text_config, batch_size: int):
+def _qwen3_5_linear_state_shapes(text_config, batch_size: int, grouped_conv_state: bool = False):
     conv_dim = 2 * (text_config.linear_num_key_heads * text_config.linear_key_head_dim) + (
         text_config.linear_num_value_heads * text_config.linear_value_head_dim
     )
     conv_state_shape = (batch_size, text_config.linear_conv_kernel_dim - 1, conv_dim)
+    if grouped_conv_state:
+        conv_state_shape = (
+            batch_size,
+            text_config.linear_num_key_heads * 5 * (text_config.linear_conv_kernel_dim - 1),
+            text_config.linear_key_head_dim,
+        )
     # recurrent state/mask are 3D (B, Hv*Dk, Dv) — see the get_input_info comment: merging Hv into dim1 keeps
     # the shared static cache laid out identically in the prefill/decode graphs (no channel-pad mismatch).
     recurrent_state_shape = (
@@ -113,7 +119,7 @@ def _qwen3_5_setup_hybrid_runtime(model):
 
     # Prefill runs one item at a time (batch=1) and writes its `batch_position` slot, so its state MASKS are
     # batch=1 sized (they gate the single slot the graph reads); the underlying cache is max-batch (get_input_info).
-    conv_shape, recur_shape = _qwen3_5_linear_state_shapes(text_config, 1)
+    conv_shape, recur_shape = _qwen3_5_linear_state_shapes(text_config, 1, rbln_config.gdn_grouped_conv_state)
     model.prefill_decoder = RBLNQwen3_5RuntimeModel(
         runtime=model.model[0],
         phase="prefill",
@@ -127,7 +133,9 @@ def _qwen3_5_setup_hybrid_runtime(model):
     if model.can_generate():
         model.decoders = {}
         for i, batch_size in enumerate(rbln_config.decoder_batch_sizes):
-            conv_shape, recur_shape = _qwen3_5_linear_state_shapes(text_config, batch_size)
+            conv_shape, recur_shape = _qwen3_5_linear_state_shapes(
+                text_config, batch_size, rbln_config.gdn_grouped_conv_state
+            )
             model.decoders[batch_size] = RBLNQwen3_5RuntimeModel(
                 runtime=model.model[i + 1],
                 phase="decode",
@@ -239,7 +247,9 @@ class RBLNQwen3_5TextModel(RBLNDecoderOnlyModel):
             for layer_idx in range(num_hidden_layers):
                 if layer_idx in linear_layers:
                     # recurrent cache is stored 3D (B, Hv*Dk, Dv); GatedDeltaNet reshapes to 4D internally.
-                    conv_shape, recurrent_shape = _qwen3_5_linear_state_shapes(text_config, rbln_config.batch_size)
+                    conv_shape, recurrent_shape = _qwen3_5_linear_state_shapes(
+                        text_config, rbln_config.batch_size, rbln_config.gdn_grouped_conv_state
+                    )
                     cache_metas.append(
                         LinearAttentionCacheMeta.from_config(
                             f"conv_state_{layer_idx}", layer_idx, shape=list(conv_shape), dtype=_state_dtype
@@ -269,7 +279,9 @@ class RBLNQwen3_5TextModel(RBLNDecoderOnlyModel):
         # shared 0/1 masks: runtime feeds zeros on prefill window 0 (reset linear state), ones after (carry). See docs.
         if linear_layers:
             # masks match the per-call graph batch (batch_size), so reuse the helper with the same shapes.
-            conv_mask_shape, recurrent_mask_shape = _qwen3_5_linear_state_shapes(text_config, batch_size)
+            conv_mask_shape, recurrent_mask_shape = _qwen3_5_linear_state_shapes(
+                text_config, batch_size, rbln_config.gdn_grouped_conv_state
+            )
             input_info.append(("conv_state_mask", list(conv_mask_shape), rbln_config.dtype))
             input_info.append(("recurrent_state_mask", list(recurrent_mask_shape), rbln_config.dtype))
             # per-token validity (1=real, 0=right-padding); host-built, GatedDeltaNet uses it to drop padding.

@@ -48,11 +48,17 @@ class RBLNQwen3_5ForCausalLMConfig(RBLNDecoderOnlyModelForCausalLMConfig):
     def __init__(
         self,
         gdn_chunk_size: int | None = None,
+        gdn_custom_kernel: bool = False,
+        gdn_grouped_conv_state: bool = False,
         linear_attention_layers: list[int] | None = None,
         **kwargs: Any,
     ):
         """
         Args:
+            gdn_custom_kernel (bool): Opt into the experimental head-sharded GDN core.
+                Requires batch 1, prefill 512, GDN chunk 128, head dimensions 128 and V:QK heads 3:1.
+            gdn_grouped_conv_state (bool): Store conv cache by QK head for local shard updates.
+                Requires `gdn_custom_kernel=True` and re-export; defaults to False for cache-layout compatibility.
             gdn_chunk_size (Optional[int]): GatedDeltaNet prefill sub-chunk size. Each prefill window
                 is split into `prefill_chunk_size // gdn_chunk_size` sub-chunks processed by the chunked
                 delta rule. Must divide `prefill_chunk_size`. Defaults to `MAX_GDN_CHUNK_SIZE` (128).
@@ -62,6 +68,10 @@ class RBLNQwen3_5ForCausalLMConfig(RBLNDecoderOnlyModelForCausalLMConfig):
         """
         super().__init__(**kwargs)
         self.gdn_chunk_size = MAX_GDN_CHUNK_SIZE if gdn_chunk_size is None else gdn_chunk_size
+        self.gdn_custom_kernel = gdn_custom_kernel
+        self.gdn_grouped_conv_state = gdn_grouped_conv_state
+        if gdn_grouped_conv_state and not gdn_custom_kernel:
+            raise ValueError("gdn_grouped_conv_state requires gdn_custom_kernel=True.")
         self.linear_attention_layers = linear_attention_layers or []
 
 
@@ -76,11 +86,17 @@ class RBLNQwen3_5TextModelConfig(RBLNDecoderOnlyModelConfig):
     def __init__(
         self,
         gdn_chunk_size: int | None = None,
+        gdn_custom_kernel: bool = False,
+        gdn_grouped_conv_state: bool = False,
         linear_attention_layers: list[int] | None = None,
         **kwargs: Any,
     ):
         """
         Args:
+            gdn_custom_kernel (bool): Opt into the experimental head-sharded GDN core.
+                Requires batch 1, prefill 512, GDN chunk 128, head dimensions 128 and V:QK heads 3:1.
+            gdn_grouped_conv_state (bool): Store conv cache by QK head for local shard updates.
+                Requires `gdn_custom_kernel=True` and re-export; defaults to False for cache-layout compatibility.
             gdn_chunk_size (Optional[int]): GatedDeltaNet prefill sub-chunk size. Each prefill window
                 is split into `prefill_chunk_size // gdn_chunk_size` sub-chunks processed by the chunked
                 delta rule. Must divide `prefill_chunk_size`. Defaults to `MAX_GDN_CHUNK_SIZE` (128).
@@ -90,6 +106,10 @@ class RBLNQwen3_5TextModelConfig(RBLNDecoderOnlyModelConfig):
         """
         super().__init__(**kwargs)
         self.gdn_chunk_size = MAX_GDN_CHUNK_SIZE if gdn_chunk_size is None else gdn_chunk_size
+        self.gdn_custom_kernel = gdn_custom_kernel
+        self.gdn_grouped_conv_state = gdn_grouped_conv_state
+        if gdn_grouped_conv_state and not gdn_custom_kernel:
+            raise ValueError("gdn_grouped_conv_state requires gdn_custom_kernel=True.")
         self.linear_attention_layers = linear_attention_layers or []
 
 
@@ -143,6 +163,8 @@ class RBLNQwen3_5ModelConfig(RBLNDecoderOnlyModelConfig):
     def __init__(
         self,
         gdn_chunk_size: int | None = None,
+        gdn_custom_kernel: bool = False,
+        gdn_grouped_conv_state: bool = False,
         linear_attention_layers: list[int] | None = None,
         visual: RBLNModelConfig | None = None,
         _load_visual_runtime: bool = True,
@@ -150,6 +172,10 @@ class RBLNQwen3_5ModelConfig(RBLNDecoderOnlyModelConfig):
     ):
         """
         Args:
+            gdn_custom_kernel (bool): Opt into the experimental head-sharded GDN core.
+                Requires batch 1, prefill 512, GDN chunk 128, head dimensions 128 and V:QK heads 3:1.
+            gdn_grouped_conv_state (bool): Store conv cache by QK head for local shard updates.
+                Requires `gdn_custom_kernel=True` and re-export; defaults to False for cache-layout compatibility.
             gdn_chunk_size (Optional[int]): GatedDeltaNet prefill sub-chunk size. Each prefill window is
                 split into `prefill_chunk_size // gdn_chunk_size` sub-chunks processed by the chunked
                 delta rule. Must divide `prefill_chunk_size`. Defaults to `MAX_GDN_CHUNK_SIZE` (128).
@@ -173,6 +199,10 @@ class RBLNQwen3_5ModelConfig(RBLNDecoderOnlyModelConfig):
         self.visual = self.initialize_submodule_config(submodule_config=visual, force_kwargs=True, batch_size=1)
         self._load_visual_runtime = _load_visual_runtime
         self.gdn_chunk_size = MAX_GDN_CHUNK_SIZE if gdn_chunk_size is None else gdn_chunk_size
+        self.gdn_custom_kernel = gdn_custom_kernel
+        self.gdn_grouped_conv_state = gdn_grouped_conv_state
+        if gdn_grouped_conv_state and not gdn_custom_kernel:
+            raise ValueError("gdn_grouped_conv_state requires gdn_custom_kernel=True.")
         self.linear_attention_layers = linear_attention_layers or []
 
 
@@ -205,6 +235,8 @@ class RBLNQwen3_5ForConditionalGenerationConfig(RBLNDecoderOnlyModelForCausalLMC
     def __init__(
         self,
         gdn_chunk_size: int | None = None,
+        gdn_custom_kernel: bool = False,
+        gdn_grouped_conv_state: bool = False,
         linear_attention_layers: list[int] | None = None,
         use_inputs_embeds: bool = True,
         visual: RBLNModelConfig | None = None,
@@ -213,6 +245,10 @@ class RBLNQwen3_5ForConditionalGenerationConfig(RBLNDecoderOnlyModelForCausalLMC
     ):
         """
         Args:
+            gdn_custom_kernel (bool): Opt into the experimental head-sharded GDN core.
+                Requires batch 1, prefill 512, GDN chunk 128, head dimensions 128 and V:QK heads 3:1.
+            gdn_grouped_conv_state (bool): Store conv cache by QK head for local shard updates.
+                Requires `gdn_custom_kernel=True` and re-export; defaults to False for cache-layout compatibility.
             gdn_chunk_size (Optional[int]): GatedDeltaNet prefill sub-chunk size. Each prefill window is
                 split into `prefill_chunk_size // gdn_chunk_size` sub-chunks. Must divide
                 `prefill_chunk_size`. Defaults to `MAX_GDN_CHUNK_SIZE` (128). See rbln_chunk_gated_delta_rule.
@@ -238,6 +274,10 @@ class RBLNQwen3_5ForConditionalGenerationConfig(RBLNDecoderOnlyModelForCausalLMC
         self.visual = self.initialize_submodule_config(submodule_config=visual, force_kwargs=True, batch_size=1)
         self._load_visual_runtime = _load_visual_runtime
         self.gdn_chunk_size = MAX_GDN_CHUNK_SIZE if gdn_chunk_size is None else gdn_chunk_size
+        self.gdn_custom_kernel = gdn_custom_kernel
+        self.gdn_grouped_conv_state = gdn_grouped_conv_state
+        if gdn_grouped_conv_state and not gdn_custom_kernel:
+            raise ValueError("gdn_grouped_conv_state requires gdn_custom_kernel=True.")
         self.linear_attention_layers = linear_attention_layers or []
 
 
