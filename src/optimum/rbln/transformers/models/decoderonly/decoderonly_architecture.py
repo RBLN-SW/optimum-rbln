@@ -538,7 +538,7 @@ class DecoderOnlyModel(nn.Module):
             if output_hidden_states:
                 all_hidden_states += (hidden_states,)
 
-            is_sliding = True if layer_idx in self.sliding_window_layers else False
+            is_sliding = layer_idx in self.sliding_window_layers
             is_sliding_decode = is_sliding and self.phase == "decode"
             hidden_states = layer(
                 hidden_states=hidden_states,
@@ -1027,15 +1027,14 @@ class AttentionOp(nn.Module):
         if self.use_attention_mask:
             op_args["mask"] = attn_mask
 
-        if self.phase == "prefill" or self.phase == "image_prefill":
+        if self.phase in {"prefill", "image_prefill"}:
             use_image_prefill = getattr(self.rbln_config, "use_image_prefill", False)
             if use_image_prefill:
                 op_args["is_bidirectional"] = self.phase == "image_prefill"
-            else:
-                if not self.use_attention_mask:
-                    op_args["is_bidirectional"] = False
-                elif self.use_attention_mask and self.rbln_config.use_position_ids:
-                    op_args["is_bidirectional"] = True
+            elif not self.use_attention_mask:
+                op_args["is_bidirectional"] = False
+            elif self.use_attention_mask and self.rbln_config.use_position_ids:
+                op_args["is_bidirectional"] = True
 
         if self.quantization and self.quantization.kv_caches == "fp8":
             if past_key_state.dtype != torch.float8_e4m3fn:
@@ -1148,15 +1147,14 @@ class FlashAttentionOp(AttentionOp):
         if self.use_attention_mask:
             op_args["mask"] = attn_mask
 
-        if self.phase == "prefill" or self.phase == "image_prefill":
+        if self.phase in {"prefill", "image_prefill"}:
             use_image_prefill = getattr(self.rbln_config, "use_image_prefill", False)
             if use_image_prefill:
                 op_args["is_bidirectional"] = self.phase == "image_prefill"
-            else:
-                if not self.use_attention_mask:
-                    op_args["is_bidirectional"] = False
-                elif self.use_attention_mask and self.rbln_config.use_position_ids:
-                    op_args["is_bidirectional"] = True
+            elif not self.use_attention_mask:
+                op_args["is_bidirectional"] = False
+            elif self.use_attention_mask and self.rbln_config.use_position_ids:
+                op_args["is_bidirectional"] = True
 
         if self.quantization and self.quantization.kv_caches == "fp8":
             if past_key_state.dtype != torch.float8_e4m3fn:
@@ -1222,7 +1220,8 @@ class SlidingWindowAttentionOp(AttentionOp):
         s_aux: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         assert self.quantization is None, "Sliding window attention does not support quantization"
-        assert k_scale is None and v_scale is None, "Sliding window attention does not support quantization"
+        assert k_scale is None, "Sliding window attention does not support quantization"
+        assert v_scale is None, "Sliding window attention does not support quantization"
 
         # reshape for removing repeat_kv (batch=1 , num_head, 1, q_len=1, head_dim)
         key_state = key_state.unsqueeze(2)
@@ -1254,15 +1253,14 @@ class SlidingWindowAttentionOp(AttentionOp):
             "block_size": block_size,
         }
 
-        if self.phase == "prefill" or self.phase == "image_prefill":
+        if self.phase in {"prefill", "image_prefill"}:
             use_image_prefill = getattr(self.rbln_config, "use_image_prefill", False)
             if use_image_prefill:
                 op_args["is_bidirectional"] = self.phase == "image_prefill"
+            elif self.use_attention_mask and self.rbln_config.use_position_ids:
+                op_args["is_bidirectional"] = True
             else:
-                if self.use_attention_mask and self.rbln_config.use_position_ids:
-                    op_args["is_bidirectional"] = True
-                else:
-                    op_args["is_bidirectional"] = False
+                op_args["is_bidirectional"] = False
 
         if self.phase == "decode":
             op_args["attn_mask"] = attn_mask

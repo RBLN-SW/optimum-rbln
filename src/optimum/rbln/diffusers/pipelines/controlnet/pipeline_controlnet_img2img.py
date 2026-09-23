@@ -127,16 +127,12 @@ class RBLNStableDiffusionControlNetImg2ImgPipeline(RBLNDiffusionMixin, StableDif
         is_compiled = hasattr(F, "scaled_dot_product_attention") and isinstance(
             self.controlnet, torch._dynamo.eval_frame.OptimizedModule
         )
-        if (
-            isinstance(self.controlnet, RBLNControlNetModel)
-            or is_compiled
-            and isinstance(self.controlnet._orig_mod, RBLNControlNetModel)
+        if isinstance(self.controlnet, RBLNControlNetModel) or (
+            is_compiled and isinstance(self.controlnet._orig_mod, RBLNControlNetModel)
         ):
             self.check_image(image, prompt, prompt_embeds)
-        elif (
-            isinstance(self.controlnet, RBLNMultiControlNetModel)
-            or is_compiled
-            and isinstance(self.controlnet._orig_mod, RBLNMultiControlNetModel)
+        elif isinstance(self.controlnet, RBLNMultiControlNetModel) or (
+            is_compiled and isinstance(self.controlnet._orig_mod, RBLNMultiControlNetModel)
         ):
             if not isinstance(image, list):
                 raise TypeError("For multiple controlnets: `image` must be type `list`")
@@ -158,17 +154,13 @@ class RBLNStableDiffusionControlNetImg2ImgPipeline(RBLNDiffusionMixin, StableDif
             )
 
         # Check `controlnet_conditioning_scale`
-        if (
-            isinstance(self.controlnet, RBLNControlNetModel)
-            or is_compiled
-            and isinstance(self.controlnet._orig_mod, RBLNControlNetModel)
+        if isinstance(self.controlnet, RBLNControlNetModel) or (
+            is_compiled and isinstance(self.controlnet._orig_mod, RBLNControlNetModel)
         ):
             if not isinstance(controlnet_conditioning_scale, float):
                 raise TypeError("For single controlnet: `controlnet_conditioning_scale` must be type `float`.")
-        elif (
-            isinstance(self.controlnet, RBLNMultiControlNetModel)
-            or is_compiled
-            and isinstance(self.controlnet._orig_mod, RBLNMultiControlNetModel)
+        elif isinstance(self.controlnet, RBLNMultiControlNetModel) or (
+            is_compiled and isinstance(self.controlnet._orig_mod, RBLNMultiControlNetModel)
         ):
             if isinstance(controlnet_conditioning_scale, list):
                 if any(isinstance(i, list) for i in controlnet_conditioning_scale):
@@ -480,7 +472,7 @@ class RBLNStableDiffusionControlNetImg2ImgPipeline(RBLNDiffusionMixin, StableDif
             control_images = []
 
             for control_image_ in control_image:
-                control_image_ = self.prepare_control_image(
+                prepared_control_image = self.prepare_control_image(
                     image=control_image_,
                     width=width,
                     height=height,
@@ -492,7 +484,7 @@ class RBLNStableDiffusionControlNetImg2ImgPipeline(RBLNDiffusionMixin, StableDif
                     guess_mode=guess_mode,
                 )
 
-                control_images.append(control_image_)
+                control_images.append(prepared_control_image)
 
             control_image = control_images
         else:
@@ -625,7 +617,7 @@ class RBLNStableDiffusionControlNetImg2ImgPipeline(RBLNDiffusionMixin, StableDif
             self.controlnet.to("cpu")
             torch.cuda.empty_cache()
 
-        if not output_type == "latent":
+        if output_type != "latent":
             image = self.vae.decode(latents / self.vae.config.scaling_factor, return_dict=False, generator=generator)[
                 0
             ]

@@ -21,7 +21,7 @@ steps:
     secrets:
       - GIT_PAT
     command:
-      - "bash .buildkite/scripts/gate-team-member.sh"
+      - "bash scripts/gate-team-member.sh"
 
   - label: ":mag: code quality"
     notify:
@@ -42,7 +42,7 @@ steps:
           context: "[OB] docstrings"
     image: "${DEVTOOLS_DOCKER_IMAGE}"
     command:
-      - "bash .buildkite/scripts/check-docstrings.sh"
+      - "bash scripts/check-docstrings.sh"
 
   # All gates must pass before the NPU pipeline is even uploaded.
   - wait: ~
@@ -65,7 +65,7 @@ steps:
   - label: ":sparkles: upload BC"
     <<: *upload
     command: |
-      bash .buildkite/scripts/bc-steps.sh --latest | buildkite-agent pipeline upload
+      bash scripts/bc-steps.sh --latest | buildkite-agent pipeline upload
 
   - wait: ~
     continue_on_failure: true
@@ -81,4 +81,4 @@ steps:
       OBEDIENTS_API_TOKEN: BUILDKITE_API_TOKEN
       SLACK_BOT_TOKEN: SLACK_OAUTH_TOKEN
     command:
-      - "python3 .buildkite/scripts/slack-report.py"
+      - "python3 scripts/slack-report.py"

@@ -35,5 +35,5 @@ export PATH="/tmp/docstrings-venv/bin:$PATH"
 
 echo "--- :page_facing_up: ${#selected[@]} files"
 printf '%s\n' "${selected[@]}" | xargs -P 16 -n 1 sh -c \
-  'python .github/scripts/validate_docstrings.py "$0" && echo "ok $0" || { echo "FAILED $0"; exit 1; }'
+  'python scripts/validate_docstrings.py "$0" && echo "ok $0" || { echo "FAILED $0"; exit 1; }'
 echo "All docstring tests passed"

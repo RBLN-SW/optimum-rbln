@@ -45,7 +45,7 @@ _secrets: &secrets
   # Rebellions, which is what test_push_to_hub does.
   HF_AUTH_TOKEN: MODEL_HUB_ACCESS
 
-_sync: &sync "bash .buildkite/scripts/sync.sh"
+_sync: &sync "bash scripts/sync.sh"
 
 _npu: &npu
   npu:
@@ -60,7 +60,7 @@ steps:
     artifact_paths: "junit-*.xml"
     command:
       - *sync
-      - "bash .buildkite/scripts/run-suite.sh unit-cpu"
+      - "bash scripts/run-suite.sh unit-cpu"
 
   - label: ":pytest: config"
     image: "${DEVTOOLS_DOCKER_IMAGE}"
@@ -70,7 +70,7 @@ steps:
     artifact_paths: "junit-*.xml"
     command:
       - *sync
-      - "bash .buildkite/scripts/run-suite.sh config"
+      - "bash scripts/run-suite.sh config"
 
   - label: ":pytest: cli-basic"
     <<: *no_cli
@@ -81,7 +81,7 @@ steps:
     artifact_paths: "junit-*.xml"
     command:
       - *sync
-      - "bash .buildkite/scripts/run-suite.sh cli-basic"
+      - "bash scripts/run-suite.sh cli-basic"
 
   - label: ":pytest: cli-argument-parsing"
     <<: *cli_full
@@ -92,7 +92,7 @@ steps:
     artifact_paths: "junit-*.xml"
     command:
       - *sync
-      - "bash .buildkite/scripts/run-suite.sh cli-argument-parsing"
+      - "bash scripts/run-suite.sh cli-argument-parsing"
 
   - label: ":pytest: cli-error-handling"
     <<: *cli_full
@@ -103,7 +103,7 @@ steps:
     artifact_paths: "junit-*.xml"
     command:
       - *sync
-      - "bash .buildkite/scripts/run-suite.sh cli-error-handling"
+      - "bash scripts/run-suite.sh cli-error-handling"
 
   - label: ":pytest: transformers 1/3"
     <<: *no_transformers
@@ -114,7 +114,7 @@ steps:
     artifact_paths: "junit-*.xml"
     command:
       - *sync
-      - "bash .buildkite/scripts/run-suite.sh transformers 1/3"
+      - "bash scripts/run-suite.sh transformers 1/3"
 
   - label: ":pytest: transformers 2/3"
     <<: *no_transformers
@@ -125,7 +125,7 @@ steps:
     artifact_paths: "junit-*.xml"
     command:
       - *sync
-      - "bash .buildkite/scripts/run-suite.sh transformers 2/3"
+      - "bash scripts/run-suite.sh transformers 2/3"
 
   - label: ":pytest: transformers 3/3"
     <<: *no_transformers
@@ -136,7 +136,7 @@ steps:
     artifact_paths: "junit-*.xml"
     command:
       - *sync
-      - "bash .buildkite/scripts/run-suite.sh transformers 3/3"
+      - "bash scripts/run-suite.sh transformers 3/3"
 
   - label: ":pytest: diffusers 1/2"
     <<: *no_diffusers
@@ -147,7 +147,7 @@ steps:
     artifact_paths: "junit-*.xml"
     command:
       - *sync
-      - "bash .buildkite/scripts/run-suite.sh diffusers 1/2"
+      - "bash scripts/run-suite.sh diffusers 1/2"
 
   - label: ":pytest: diffusers 2/2"
     <<: *no_diffusers
@@ -158,7 +158,7 @@ steps:
     artifact_paths: "junit-*.xml"
     command:
       - *sync
-      - "bash .buildkite/scripts/run-suite.sh diffusers 2/2"
+      - "bash scripts/run-suite.sh diffusers 2/2"
 
   - label: ":pytest: llm 1/6"
     <<: *no_llm
@@ -169,7 +169,7 @@ steps:
     artifact_paths: "junit-*.xml"
     command:
       - *sync
-      - "bash .buildkite/scripts/run-suite.sh llm 1/6"
+      - "bash scripts/run-suite.sh llm 1/6"
 
   - label: ":pytest: llm 2/6"
     <<: *no_llm
@@ -180,7 +180,7 @@ steps:
     artifact_paths: "junit-*.xml"
     command:
       - *sync
-      - "bash .buildkite/scripts/run-suite.sh llm 2/6"
+      - "bash scripts/run-suite.sh llm 2/6"
 
   - label: ":pytest: llm 3/6"
     <<: *no_llm
@@ -191,7 +191,7 @@ steps:
     artifact_paths: "junit-*.xml"
     command:
       - *sync
-      - "bash .buildkite/scripts/run-suite.sh llm 3/6"
+      - "bash scripts/run-suite.sh llm 3/6"
 
   - label: ":pytest: llm 4/6"
     <<: *no_llm
@@ -202,7 +202,7 @@ steps:
     artifact_paths: "junit-*.xml"
     command:
       - *sync
-      - "bash .buildkite/scripts/run-suite.sh llm 4/6"
+      - "bash scripts/run-suite.sh llm 4/6"
 
   - label: ":pytest: llm 5/6"
     <<: *no_llm
@@ -213,7 +213,7 @@ steps:
     artifact_paths: "junit-*.xml"
     command:
       - *sync
-      - "bash .buildkite/scripts/run-suite.sh llm 5/6"
+      - "bash scripts/run-suite.sh llm 5/6"
 
   - label: ":pytest: llm 6/6"
     <<: *no_llm
@@ -224,4 +224,4 @@ steps:
     artifact_paths: "junit-*.xml"
     command:
       - *sync
-      - "bash .buildkite/scripts/run-suite.sh llm 6/6"
+      - "bash scripts/run-suite.sh llm 6/6"

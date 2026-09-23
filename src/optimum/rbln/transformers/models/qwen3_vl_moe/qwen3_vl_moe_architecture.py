@@ -14,7 +14,7 @@
 
 
 import torch
-import torch.nn as nn
+from torch import nn
 
 from ...utils.moe import compute_masked_routing_weight_softmax_first, split_fused_experts
 from ..decoderonly.configuration_lora import RBLNLoRAConfig

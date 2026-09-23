@@ -16,7 +16,7 @@ import copy
 from typing import Any
 
 import torch
-import torch.nn as nn
+from torch import nn
 from transformers import PreTrainedModel
 from transformers.activations import ACT2FN
 

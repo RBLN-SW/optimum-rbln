@@ -18,7 +18,6 @@ from typing import TYPE_CHECKING, Any
 import torch
 from diffusers.models.modeling_outputs import Transformer2DModelOutput
 from diffusers.models.transformers.transformer_sd3 import SD3Transformer2DModel
-from transformers import PretrainedConfig
 
 from ....configuration_utils import RBLNCompileConfig, RBLNModelConfig
 from ....modeling import RBLNModel
@@ -28,7 +27,7 @@ from ...configurations import RBLNSD3Transformer2DModelConfig
 
 
 if TYPE_CHECKING:
-    from transformers import PreTrainedModel
+    from transformers import PretrainedConfig, PreTrainedModel
 
     from ...modeling_diffusers import RBLNDiffusionMixin, RBLNDiffusionMixinConfig
 

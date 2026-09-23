@@ -18,7 +18,6 @@ from typing import TYPE_CHECKING, Any
 
 import torch
 from diffusers.models.unets.unet_2d_condition import UNet2DConditionModel, UNet2DConditionOutput
-from transformers import PretrainedConfig
 
 from ....configuration_utils import RBLNCompileConfig
 from ....modeling import RBLNModel
@@ -29,7 +28,7 @@ from ...modeling_diffusers import RBLNDiffusionMixin, RBLNDiffusionMixinConfig
 
 
 if TYPE_CHECKING:
-    from transformers import PreTrainedModel
+    from transformers import PretrainedConfig, PreTrainedModel
 
 logger = get_logger(__name__)
 
@@ -241,7 +240,7 @@ class RBLNUNet2DConditionModel(RBLNModel):
         rbln_config.unet.sample_size = cls.get_unet_sample_size(
             pipe, rbln_config.unet, image_size=rbln_config.image_size
         )
-        rbln_config.unet.use_additional_residuals = "controlnet" in pipe.config.keys()
+        rbln_config.unet.use_additional_residuals = "controlnet" in pipe.config
 
         return rbln_config
 

@@ -303,7 +303,6 @@ class RBLNLlavaForConditionalGeneration(RBLNModel, RBLNImageIndexedBatchSortMixi
         if is_prefill_phase:
             generate_idx = attention_mask.sum(dim=-1, keepdim=True).int()
             cache_position = None
-            pixel_values = pixel_values
             model_inputs.update({"image_sizes": image_sizes})
         else:
             if inputs_embeds is not None:
@@ -369,11 +368,10 @@ class RBLNLlavaForConditionalGeneration(RBLNModel, RBLNImageIndexedBatchSortMixi
             ]
             pooler_out_size = [pixel_values.shape[0], self.config.vision_config.hidden_size]
 
-        vision_out_buffer = []
-        for _ in range(self.config.vision_config.num_hidden_layers + 2):
-            vision_out_buffer.append(
-                torch.empty(size=vision_out_size, dtype=self.rbln_config.vision_tower.dtype, device="cpu")
-            )
+        vision_out_buffer = [
+            torch.empty(size=vision_out_size, dtype=self.rbln_config.vision_tower.dtype, device="cpu")
+            for _ in range(self.config.vision_config.num_hidden_layers + 2)
+        ]
         if pooler_out_size is not None:
             vision_out_buffer.insert(
                 1, torch.empty(size=pooler_out_size, dtype=self.rbln_config.vision_tower.dtype, device="cpu")

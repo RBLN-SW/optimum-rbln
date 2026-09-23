@@ -75,7 +75,7 @@ class LoRALinear(nn.Module):
 
         # Try to load weights in order of preference
         weight_files = [
-            ("adapter_model.safetensors", lambda p: safetensors.torch.load_file(p)),
+            ("adapter_model.safetensors", safetensors.torch.load_file),
             ("adapter_model.bin", lambda p: torch.load(p, map_location="cpu")),
             ("pytorch_model.bin", lambda p: torch.load(p, map_location="cpu")),
         ]

@@ -18,7 +18,6 @@ from typing import TYPE_CHECKING, Optional
 
 import torch
 import torch.nn.functional as F
-from transformers import SwinConfig
 from transformers.models.swin.modeling_swin import BackboneOutput
 
 from ....configuration_utils import RBLNCompileConfig, RBLNModelConfig
@@ -34,6 +33,7 @@ if TYPE_CHECKING:
     from transformers import (
         PreTrainedModel,
         SwinBackbone,
+        SwinConfig,
     )
     from transformers.models.swin.modeling_swin import SwinEncoder
 
@@ -156,12 +156,12 @@ class _SwinBackbone(torch.nn.Module):
         for stage, hidden_state in zip(self.stage_names, hidden_states, strict=False):
             if stage in self.out_features:
                 batch_size, num_channels, height, width = hidden_state.shape
-                hidden_state = hidden_state.permute(0, 2, 3, 1).contiguous()
-                hidden_state = hidden_state.view(batch_size, height * width, num_channels)
-                hidden_state = self.hidden_states_norms[stage](hidden_state)
-                hidden_state = hidden_state.view(batch_size, height, width, num_channels)
-                hidden_state = hidden_state.permute(0, 3, 1, 2).contiguous()
-                feature_maps += (hidden_state,)
+                feature_map = hidden_state.permute(0, 2, 3, 1).contiguous()
+                feature_map = feature_map.view(batch_size, height * width, num_channels)
+                feature_map = self.hidden_states_norms[stage](feature_map)
+                feature_map = feature_map.view(batch_size, height, width, num_channels)
+                feature_map = feature_map.permute(0, 3, 1, 2).contiguous()
+                feature_maps += (feature_map,)
 
         output = (feature_maps,)
 
@@ -230,7 +230,7 @@ class RBLNSwinBackbone(RBLNModel):
         if rbln_config.image_size is None:
             for processor in preprocessors:
                 if hasattr(processor, "size"):
-                    if all(required_key in processor.size.keys() for required_key in ["height", "width"]):
+                    if all(required_key in processor.size for required_key in ["height", "width"]):
                         rbln_config.image_size = (processor.size["height"], processor.size["width"])
                     break
 

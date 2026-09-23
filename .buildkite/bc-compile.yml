@@ -14,6 +14,6 @@ steps:
         paths:
           - .buildkite
     command: |
-      steps=$$(bash .buildkite/scripts/bc-compile-steps.sh)
+      steps=$$(bash scripts/bc-compile-steps.sh)
       [ -n "$$steps" ] || exit 0
       printf '%s\n' "$$steps" | buildkite-agent pipeline upload

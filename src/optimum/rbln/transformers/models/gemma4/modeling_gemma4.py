@@ -616,7 +616,7 @@ class RBLNGemma4ForConditionalGeneration(RBLNMoeLoadMixin, RBLNModel, RBLNImageI
         {"name": "language_model"},
     ]
     _image_indexed_kwargs = ("pixel_values", "image_position_ids")
-    _batch_sortable_kwargs = RBLNImageIndexedBatchSortMixin._batch_sortable_kwargs + ("mm_token_type_ids",)
+    _batch_sortable_kwargs = (*RBLNImageIndexedBatchSortMixin._batch_sortable_kwargs, "mm_token_type_ids")
 
     def _images_per_sample(self, input_ids: torch.LongTensor | None, kwargs: dict) -> list[int]:
         return _placeholder_run_counts(input_ids, self._image_token_id)

@@ -161,12 +161,12 @@ class _BaseAutoModelClass:
         if has_remote_code:
             class_ref = config.auto_map[convert_rbln_to_hf_model_name(cls.__name__)]
             model_class = get_class_from_dynamic_module(class_ref, pretrained_model_name_or_path, **kwargs)
-        elif type(config) in cls._model_mapping.keys():
+        elif type(config) in cls._model_mapping:
             model_class = _get_model_class(config, cls._model_mapping)
         else:
             raise ValueError(
                 f"Unrecognized configuration class {config.__class__} for this kind of AutoModel: {cls.__name__}.\n"
-                f"Model type should be one of {', '.join(c.__name__ for c in cls._model_mapping.keys())}."
+                f"Model type should be one of {', '.join(c.__name__ for c in cls._model_mapping)}."
             )
 
         if model_class.__name__ != config.architectures[0]:
