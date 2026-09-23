@@ -19,6 +19,9 @@ from ..decoderonly.configuration_decoderonly import RBLNDecoderOnlyModelConfig, 
 
 
 MAX_GDN_CHUNK_SIZE = 128
+# The `gdn_custom_kernel` cores are unrolled per value/QK head ratio and per prefill chunk count.
+GDN_CUSTOM_RATIOS = (1, 2, 3, 4)
+GDN_CUSTOM_PREFILL_SIZES = (128, 256, 512)
 
 
 class RBLNQwen3_5ForCausalLMConfig(RBLNDecoderOnlyModelForCausalLMConfig):
@@ -56,9 +59,11 @@ class RBLNQwen3_5ForCausalLMConfig(RBLNDecoderOnlyModelForCausalLMConfig):
         """
         Args:
             gdn_custom_kernel (bool): Opt into the experimental head-sharded GDN core.
-                Requires batch 1, prefill 512, GDN chunk 128, head dimensions 128 and V:QK heads 3:1.
-            gdn_grouped_conv_state (bool): Store conv cache by QK head for local shard updates.
-                Requires `gdn_custom_kernel=True` and re-export; defaults to False for cache-layout compatibility.
+                Requires head dimensions 128, 1-4 value heads per Q/K head, `prefill_chunk_size`
+                of 128, 256 or 512 and `gdn_chunk_size` 128. Requires re-exporting the model.
+            gdn_grouped_conv_state (bool): Store the conv cache grouped by Q/K head so each head shard owns a
+                contiguous slice. Requires `gdn_custom_kernel=True` and re-export; defaults to False for
+                cache-layout compatibility.
             gdn_chunk_size (Optional[int]): GatedDeltaNet prefill sub-chunk size. Each prefill window
                 is split into `prefill_chunk_size // gdn_chunk_size` sub-chunks processed by the chunked
                 delta rule. Must divide `prefill_chunk_size`. Defaults to `MAX_GDN_CHUNK_SIZE` (128).
@@ -94,9 +99,11 @@ class RBLNQwen3_5TextModelConfig(RBLNDecoderOnlyModelConfig):
         """
         Args:
             gdn_custom_kernel (bool): Opt into the experimental head-sharded GDN core.
-                Requires batch 1, prefill 512, GDN chunk 128, head dimensions 128 and V:QK heads 3:1.
-            gdn_grouped_conv_state (bool): Store conv cache by QK head for local shard updates.
-                Requires `gdn_custom_kernel=True` and re-export; defaults to False for cache-layout compatibility.
+                Requires head dimensions 128, 1-4 value heads per Q/K head, `prefill_chunk_size`
+                of 128, 256 or 512 and `gdn_chunk_size` 128. Requires re-exporting the model.
+            gdn_grouped_conv_state (bool): Store the conv cache grouped by Q/K head so each head shard owns a
+                contiguous slice. Requires `gdn_custom_kernel=True` and re-export; defaults to False for
+                cache-layout compatibility.
             gdn_chunk_size (Optional[int]): GatedDeltaNet prefill sub-chunk size. Each prefill window
                 is split into `prefill_chunk_size // gdn_chunk_size` sub-chunks processed by the chunked
                 delta rule. Must divide `prefill_chunk_size`. Defaults to `MAX_GDN_CHUNK_SIZE` (128).
@@ -173,9 +180,11 @@ class RBLNQwen3_5ModelConfig(RBLNDecoderOnlyModelConfig):
         """
         Args:
             gdn_custom_kernel (bool): Opt into the experimental head-sharded GDN core.
-                Requires batch 1, prefill 512, GDN chunk 128, head dimensions 128 and V:QK heads 3:1.
-            gdn_grouped_conv_state (bool): Store conv cache by QK head for local shard updates.
-                Requires `gdn_custom_kernel=True` and re-export; defaults to False for cache-layout compatibility.
+                Requires head dimensions 128, 1-4 value heads per Q/K head, `prefill_chunk_size`
+                of 128, 256 or 512 and `gdn_chunk_size` 128. Requires re-exporting the model.
+            gdn_grouped_conv_state (bool): Store the conv cache grouped by Q/K head so each head shard owns a
+                contiguous slice. Requires `gdn_custom_kernel=True` and re-export; defaults to False for
+                cache-layout compatibility.
             gdn_chunk_size (Optional[int]): GatedDeltaNet prefill sub-chunk size. Each prefill window is
                 split into `prefill_chunk_size // gdn_chunk_size` sub-chunks processed by the chunked
                 delta rule. Must divide `prefill_chunk_size`. Defaults to `MAX_GDN_CHUNK_SIZE` (128).
@@ -246,9 +255,11 @@ class RBLNQwen3_5ForConditionalGenerationConfig(RBLNDecoderOnlyModelForCausalLMC
         """
         Args:
             gdn_custom_kernel (bool): Opt into the experimental head-sharded GDN core.
-                Requires batch 1, prefill 512, GDN chunk 128, head dimensions 128 and V:QK heads 3:1.
-            gdn_grouped_conv_state (bool): Store conv cache by QK head for local shard updates.
-                Requires `gdn_custom_kernel=True` and re-export; defaults to False for cache-layout compatibility.
+                Requires head dimensions 128, 1-4 value heads per Q/K head, `prefill_chunk_size`
+                of 128, 256 or 512 and `gdn_chunk_size` 128. Requires re-exporting the model.
+            gdn_grouped_conv_state (bool): Store the conv cache grouped by Q/K head so each head shard owns a
+                contiguous slice. Requires `gdn_custom_kernel=True` and re-export; defaults to False for
+                cache-layout compatibility.
             gdn_chunk_size (Optional[int]): GatedDeltaNet prefill sub-chunk size. Each prefill window is
                 split into `prefill_chunk_size // gdn_chunk_size` sub-chunks. Must divide
                 `prefill_chunk_size`. Defaults to `MAX_GDN_CHUNK_SIZE` (128). See rbln_chunk_gated_delta_rule.
