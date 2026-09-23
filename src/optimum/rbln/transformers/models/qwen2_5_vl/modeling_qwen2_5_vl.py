@@ -306,7 +306,7 @@ class RBLNQwen2_5_VisionTransformerPretrainedModel(RBLNModel):
             window_indice = cu_window_seqlens[cu_window_seqlens.index(image_s) : cu_window_seqlens.index(image_e) + 1]
 
             # Select the nearest higher max_seq_len from the available compiled models.
-            window_padded_len = len(window_indice) * window_seq_len
+            window_padded_len = (len(window_indice) - 1) * window_seq_len
             try:
                 ws_index = torch.searchsorted(self.max_seq_len, window_padded_len).item()
                 max_seq_len = self.max_seq_len[ws_index]
