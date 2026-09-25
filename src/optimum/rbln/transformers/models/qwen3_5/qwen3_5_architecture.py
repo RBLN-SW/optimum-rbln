@@ -458,56 +458,52 @@ class Qwen3_5GatedDeltaNet(nn.Module):
         k_in = self.in_proj_k(hidden_states).reshape(batch_size, seq_len, heads, dim).transpose(1, 2)
         v_in = self.in_proj_v(hidden_states).reshape(batch_size, seq_len, heads, ratio, dim).permute(0, 2, 3, 1, 4)
 
+        # Q, K and the r value heads of each Q/K head share one channel-last window [B, Hk*(2+r), K-1+S, D]: the
+        # carried K-1 inputs, then this call's S inputs. One set of conv ops covers all of them.
+        groups = heads * (2 + ratio)
         if self.gdn_grouped_conv_state:
-            cache = conv_state.reshape(batch_size, heads, 2 + ratio, k_1, dim)
-            q_prev, k_prev, v_prev = cache[:, :, 0], cache[:, :, 1], cache[:, :, 2:]
+            prev = conv_state.reshape(batch_size, groups, k_1, dim)
         else:
             kd = self.key_dim
             q_prev = conv_state[:, :, :kd].reshape(batch_size, k_1, heads, dim).transpose(1, 2)
             k_prev = conv_state[:, :, kd : 2 * kd].reshape(batch_size, k_1, heads, dim).transpose(1, 2)
             v_prev = conv_state[:, :, 2 * kd :].reshape(batch_size, k_1, heads, ratio, dim).permute(0, 2, 3, 1, 4)
-        # Channel-last windows [.., K-1+S, D]: the carried K-1 inputs, then this call's S inputs.
-        q_win = torch.cat([q_prev, q_in], dim=2)
-        k_win = torch.cat([k_prev, k_in], dim=2)
-        v_win = torch.cat([v_prev, v_in], dim=3)
+            prev = torch.cat([q_prev.unsqueeze(2), k_prev.unsqueeze(2), v_prev], dim=2)
+            prev = prev.reshape(batch_size, groups, k_1, dim)
+        new = torch.cat([q_in.unsqueeze(2), k_in.unsqueeze(2), v_in], dim=2).reshape(batch_size, groups, seq_len, dim)
+        window = torch.cat([prev, new], dim=2)
 
         # The next call carries the last K-1 inputs; a right-padded prefill window ends at query_position.
-        def carried(window, axis):
-            if not prefill:
-                return window.narrow(axis, seq_len, k_1)
+        if prefill:
             position = query_position.to(torch.int).unsqueeze(0)
-            lead = (slice(None),) * axis
-            return torch.cat([window[(*lead, position + i)] for i in range(1, k_1 + 1)], dim=axis)
-
-        q_next, k_next, v_next = carried(q_win, 2), carried(k_win, 2), carried(v_win, 3)
-        if self.gdn_grouped_conv_state:
-            new_conv_state = torch.cat([q_next.unsqueeze(2), k_next.unsqueeze(2), v_next], dim=2)
-            new_conv_state = new_conv_state.reshape(batch_size, -1, dim)
+            carried = torch.cat([window[:, :, position + i] for i in range(1, k_1 + 1)], dim=2)
         else:
+            carried = window.narrow(2, seq_len, k_1)
+        if self.gdn_grouped_conv_state:
+            new_conv_state = carried.reshape(batch_size, -1, dim)
+        else:
+            carried = carried.reshape(batch_size, heads, 2 + ratio, k_1, dim)
             new_conv_state = torch.cat(
                 [
-                    q_next.transpose(1, 2).reshape(batch_size, k_1, -1),
-                    k_next.transpose(1, 2).reshape(batch_size, k_1, -1),
-                    v_next.permute(0, 3, 1, 2, 4).reshape(batch_size, k_1, -1),
+                    carried[:, :, 0].transpose(1, 2).reshape(batch_size, k_1, -1),
+                    carried[:, :, 1].transpose(1, 2).reshape(batch_size, k_1, -1),
+                    carried[:, :, 2:].permute(0, 3, 1, 2, 4).reshape(batch_size, k_1, -1),
                 ],
                 dim=-1,
             )
 
         # Depthwise conv as K per-channel taps along the window's time axis.
-        weight, bias = self.conv1d.weight[:, 0], self.conv1d.bias
-        splits = (self.key_dim, self.key_dim, self.value_dim)
-        shapes = ((heads, dim), (heads, dim), (heads, ratio, dim))
-        convolved = []
-        for index, (window, part_weight, shape) in enumerate(
-            zip((q_win, k_win, v_win), weight.split(splits), shapes, strict=True)
-        ):
-            axis = window.dim() - 2
-            taps = part_weight.reshape(*shape, k_1 + 1)
-            out = sum(window.narrow(axis, tap, seq_len) * taps[..., tap].unsqueeze(-2) for tap in range(k_1 + 1))
-            if bias is not None:
-                out = out + bias.split(splits)[index].reshape(shape).unsqueeze(-2)
-            convolved.append(F.silu(out))
-        query, key, value = convolved
+        def per_group(channels):
+            q_part, k_part, v_part = channels.split((self.key_dim, self.key_dim, self.value_dim))
+            parts = (q_part.reshape(heads, 1, -1), k_part.reshape(heads, 1, -1), v_part.reshape(heads, ratio, -1))
+            return torch.cat(parts, dim=1).reshape(groups, dim, *channels.shape[1:])
+
+        taps = per_group(self.conv1d.weight[:, 0])
+        out = sum(window.narrow(2, tap, seq_len) * taps[..., tap].unsqueeze(-2) for tap in range(k_1 + 1))
+        if self.conv1d.bias is not None:
+            out = out + per_group(self.conv1d.bias).unsqueeze(-2)
+        convolved = F.silu(out).reshape(batch_size, heads, 2 + ratio, seq_len, dim)
+        query, key, value = convolved[:, :, 0], convolved[:, :, 1], convolved[:, :, 2:]
 
         beta = b.sigmoid()
         g = -self.A_log.float().exp() * F.softplus(a.float() + self.dt_bias)
