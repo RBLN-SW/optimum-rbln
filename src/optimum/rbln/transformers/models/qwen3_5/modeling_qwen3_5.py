@@ -406,7 +406,7 @@ class RBLNQwen3_5VisionModel(RBLNModel):
         for max_seq_len in rbln_config.max_seq_len:
             input_info = [
                 ("hidden_states", [max_seq_len, hidden_size], rbln_config.dtype),
-                ("attn_mask", [batch_size, 1, max_seq_len, max_seq_len], rbln_config.dtype),
+                ("attn_mask", [batch_size, 1, 1, max_seq_len], rbln_config.dtype),
                 # cos/sin enter the device at fp32 and are cast to the device dtype inside the vision model
                 ("cos", [batch_size, 1, max_seq_len, head_dim], torch.float32),
                 ("sin", [batch_size, 1, max_seq_len, head_dim], torch.float32),
@@ -434,11 +434,18 @@ class RBLNQwen3_5VisionModel(RBLNModel):
         )
         return (self.pos_embed(interp_indices) * interp_weights[:, :, None]).sum(1)
 
+    def _takes_square_mask(self, bucket: int) -> bool:
+        """Exports made before the key-padding mask take an [S, S] attention mask."""
+        input_info = self.rbln_config.compile_cfgs[0].input_info[bucket]
+        shape = next(info[1] for info in input_info if info[0] == "attn_mask")
+        return shape[-2] != 1
+
     @staticmethod
     def _pad_hidden_states(
         hidden_states: torch.Tensor,
         position_embeddings: tuple[torch.Tensor, torch.Tensor],
         max_seq_len: int,
+        square_mask: bool = False,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, int]:
         seq_len = hidden_states.shape[0]
         valid_len = seq_len
@@ -454,10 +461,15 @@ class RBLNQwen3_5VisionModel(RBLNModel):
             sin = torch.cat([sin, pos_padding], dim=0)
             position_embeddings = (cos, sin)
 
-        attn_mask = torch.ones(1, 1, max_seq_len, max_seq_len, dtype=hidden_states.dtype)
+        # Masking the keys is enough: a padded query row's output is dropped, so a
+        # [1, 1, 1, S] key-padding mask gives the same valid outputs as an [S, S]
+        # mask at 1/S of the host-to-device transfer.
+        rows = max_seq_len if square_mask else 1
+        attn_mask = torch.ones(1, 1, rows, max_seq_len, dtype=hidden_states.dtype)
         if valid_len < max_seq_len:
-            attn_mask[:, :, valid_len:, :] = 0
             attn_mask[:, :, :, valid_len:] = 0
+            if square_mask:
+                attn_mask[:, :, valid_len:, :] = 0
 
         return hidden_states, position_embeddings, attn_mask, valid_len
 
@@ -498,7 +510,7 @@ class RBLNQwen3_5VisionModel(RBLNModel):
                 ) from e
 
             image_hidden, (image_cos, image_sin), attn_mask, valid_len = self._pad_hidden_states(
-                image_hidden, (image_cos, image_sin), max_seq_len
+                image_hidden, (image_cos, image_sin), max_seq_len, self._takes_square_mask(ws_index)
             )
 
             output = self.transformer(
