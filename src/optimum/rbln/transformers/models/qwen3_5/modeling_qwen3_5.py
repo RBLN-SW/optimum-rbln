@@ -461,9 +461,8 @@ class RBLNQwen3_5VisionModel(RBLNModel):
             sin = torch.cat([sin, pos_padding], dim=0)
             position_embeddings = (cos, sin)
 
-        # Masking the keys is enough: a padded query row's output is dropped, so a
-        # [1, 1, 1, S] key-padding mask gives the same valid outputs as an [S, S]
-        # mask at 1/S of the host-to-device transfer.
+        # A padded query row's output is dropped, so masking the keys alone gives the
+        # same valid outputs at 1/S of the transfer.
         rows = max_seq_len if square_mask else 1
         attn_mask = torch.ones(1, 1, rows, max_seq_len, dtype=hidden_states.dtype)
         if valid_len < max_seq_len:
