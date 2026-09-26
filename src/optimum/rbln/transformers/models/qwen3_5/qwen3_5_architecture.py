@@ -31,7 +31,21 @@ from ..decoderonly.decoderonly_architecture import (
     apply_rotary_pos_emb_partial,
     slice_and_unsqueeze_cos_sin,
 )
-from .configuration_qwen3_5 import GDN_CUSTOM_PREFILL_SIZES, GDN_CUSTOM_RATIOS
+
+
+def resolve_gdn_custom_kernel(rbln_config, head_k_dim, head_v_dim) -> bool:
+    """Whether the GatedDeltaNet core runs as the `rbln::gdn_*` custom ops: the recorded choice of an export,
+    else whether the ops serve this configuration."""
+    if rbln_config.gdn_custom_kernel is not None:
+        return rbln_config.gdn_custom_kernel
+    return (
+        head_k_dim == 128
+        and head_v_dim == 128
+        and rbln_config.prefill_chunk_size % 128 == 0
+        and rbln_config.gdn_chunk_size == 128
+        and hasattr(torch.ops.rbln, "gdn_prefill")
+        and hasattr(torch.ops.rbln, "gdn_decode")
+    )
 
 
 class Qwen3_5VisionAttention(nn.Module):
@@ -263,11 +277,10 @@ class Qwen3_5GatedDeltaNet(nn.Module):
     conv_state is stored as ``(B, K-1, conv_dim)`` (innermost = conv_dim, a multiple of 64 as
     RBLN requires) and transposed to ``(B, conv_dim, K-1)`` only inside the math.
 
-    With ``gdn_custom_kernel`` the delta rule runs as one ``rbln::gdn_prefill``/``rbln::gdn_decode`` op whose
-    only shardable axis is the Q/K head, and everything around it keeps that head axis outermost: the depthwise
-    conv becomes K per-channel taps over a channel-last window, so no op needs a channel cut across a time axis.
-    ``gdn_grouped_conv_state`` additionally stores the conv cache as ``(B, Hk*(2+r)*(K-1), Dk)`` (Q, K and the
-    r value heads of each Q/K head together), so each head shard owns a contiguous slice of the cache.
+    With ``gdn_custom_kernel`` the delta rule runs as one ``rbln::gdn_prefill``/``rbln::gdn_decode`` op, and
+    everything around it keeps the Q/K head axis outermost so tensor parallelism can shard by it: the depthwise
+    conv becomes K per-channel taps over a channel-last window, and the conv cache is stored as
+    ``(B, Hk*(2+r)*(K-1), Dk)`` (Q, K and the r value heads of each Q/K head together).
     """
 
     def __init__(self, linear_attn: nn.Module, rbln_config, layer_idx: int):
@@ -311,24 +324,7 @@ class Qwen3_5GatedDeltaNet(nn.Module):
 
         self.prefill_chunk_size = rbln_config.prefill_chunk_size
         self.chunk_size = rbln_config.gdn_chunk_size
-        self.gdn_custom_kernel = rbln_config.gdn_custom_kernel
-        self.gdn_grouped_conv_state = rbln_config.gdn_grouped_conv_state
-        if self.gdn_custom_kernel:
-            ratio, uneven = divmod(self.num_v_heads, self.num_k_heads)
-            if (
-                uneven
-                or ratio not in GDN_CUSTOM_RATIOS
-                or self.head_k_dim != 128
-                or self.head_v_dim != 128
-                or self.prefill_chunk_size not in GDN_CUSTOM_PREFILL_SIZES
-                or self.chunk_size != 128
-            ):
-                raise ValueError(
-                    f"gdn_custom_kernel requires head dimensions 128, {GDN_CUSTOM_RATIOS} value heads per Q/K head, "
-                    f"prefill_chunk_size in {GDN_CUSTOM_PREFILL_SIZES} and gdn_chunk_size 128."
-                )
-            if not hasattr(torch.ops.rbln, "gdn_prefill") or not hasattr(torch.ops.rbln, "gdn_decode"):
-                raise RuntimeError("gdn_custom_kernel requires a rebel_compiler build with GDN core custom ops.")
+        self.gdn_custom_kernel = resolve_gdn_custom_kernel(rbln_config, self.head_k_dim, self.head_v_dim)
 
     @property
     def phase(self):
@@ -461,15 +457,7 @@ class Qwen3_5GatedDeltaNet(nn.Module):
         # Q, K and the r value heads of each Q/K head share one channel-last window [B, Hk*(2+r), K-1+S, D]: the
         # carried K-1 inputs, then this call's S inputs. One set of conv ops covers all of them.
         groups = heads * (2 + ratio)
-        if self.gdn_grouped_conv_state:
-            prev = conv_state.reshape(batch_size, groups, k_1, dim)
-        else:
-            kd = self.key_dim
-            q_prev = conv_state[:, :, :kd].reshape(batch_size, k_1, heads, dim).transpose(1, 2)
-            k_prev = conv_state[:, :, kd : 2 * kd].reshape(batch_size, k_1, heads, dim).transpose(1, 2)
-            v_prev = conv_state[:, :, 2 * kd :].reshape(batch_size, k_1, heads, ratio, dim).permute(0, 2, 3, 1, 4)
-            prev = torch.cat([q_prev.unsqueeze(2), k_prev.unsqueeze(2), v_prev], dim=2)
-            prev = prev.reshape(batch_size, groups, k_1, dim)
+        prev = conv_state.reshape(batch_size, groups, k_1, dim)
         new = torch.cat([q_in.unsqueeze(2), k_in.unsqueeze(2), v_in], dim=2).reshape(batch_size, groups, seq_len, dim)
         window = torch.cat([prev, new], dim=2)
 
@@ -479,18 +467,7 @@ class Qwen3_5GatedDeltaNet(nn.Module):
             carried = torch.cat([window[:, :, position + i] for i in range(1, k_1 + 1)], dim=2)
         else:
             carried = window.narrow(2, seq_len, k_1)
-        if self.gdn_grouped_conv_state:
-            new_conv_state = carried.reshape(batch_size, -1, dim)
-        else:
-            carried = carried.reshape(batch_size, heads, 2 + ratio, k_1, dim)
-            new_conv_state = torch.cat(
-                [
-                    carried[:, :, 0].transpose(1, 2).reshape(batch_size, k_1, -1),
-                    carried[:, :, 1].transpose(1, 2).reshape(batch_size, k_1, -1),
-                    carried[:, :, 2:].permute(0, 3, 1, 2, 4).reshape(batch_size, k_1, -1),
-                ],
-                dim=-1,
-            )
+        new_conv_state = carried.reshape(batch_size, -1, dim)
 
         # Depthwise conv as K per-channel taps along the window's time axis.
         def per_group(channels):

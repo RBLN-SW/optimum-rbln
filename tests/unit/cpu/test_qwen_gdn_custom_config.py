@@ -11,7 +11,10 @@ from optimum.rbln.transformers.models.qwen3_5.configuration_qwen3_5 import (
     RBLNQwen3_5ModelConfig,
     RBLNQwen3_5TextModelConfig,
 )
-from optimum.rbln.transformers.models.qwen3_5.modeling_qwen3_5 import _qwen3_5_linear_state_shapes
+from optimum.rbln.transformers.models.qwen3_5.modeling_qwen3_5 import (
+    _qwen3_5_linear_state_shapes,
+    _qwen3_5_resolve_gdn_custom_kernel,
+)
 from optimum.rbln.transformers.models.qwen3_5.qwen3_5_architecture import Qwen3_5GatedDeltaNet
 
 
@@ -24,27 +27,23 @@ from optimum.rbln.transformers.models.qwen3_5.qwen3_5_architecture import Qwen3_
         RBLNQwen3_5TextModelConfig,
     ],
 )
-@pytest.mark.parametrize("grouped_conv_state", [False, True])
-def test_gdn_custom_kernel_is_opt_in_and_serialized(config_class, grouped_conv_state, tmp_path):
+def test_gdn_custom_kernel_is_recorded_and_serialized(config_class, tmp_path):
     kwargs = {"max_seq_len": 4096, "batch_size": 1, "prefill_chunk_size": 512}
     if config_class in (RBLNQwen3_5ForConditionalGenerationConfig, RBLNQwen3_5ModelConfig):
         kwargs.update(
             use_inputs_embeds=True,
             visual={"cls_name": "RBLNQwen3_5VisionModelConfig", "max_seq_len": 1024},
         )
-    assert config_class(**kwargs).gdn_custom_kernel is False
-    assert config_class(**kwargs).gdn_grouped_conv_state is False
-    with pytest.raises(ValueError, match="requires gdn_custom_kernel"):
-        config_class(gdn_grouped_conv_state=True, **kwargs)
-    config = config_class(gdn_custom_kernel=True, gdn_grouped_conv_state=grouped_conv_state, **kwargs)
+    assert config_class(**kwargs).gdn_custom_kernel is None
+    config = config_class(gdn_custom_kernel=True, **kwargs)
     config.save(tmp_path)
     assert config_class.from_pretrained(tmp_path).gdn_custom_kernel is True
-    assert config_class.from_pretrained(tmp_path).gdn_grouped_conv_state is grouped_conv_state
+    # An export from before the custom core loads with the native core.
     path = tmp_path / "rbln_config.json"
     saved = json.loads(path.read_text())
-    del saved["gdn_grouped_conv_state"]
+    del saved["gdn_custom_kernel"]
     path.write_text(json.dumps(saved))
-    assert config_class.from_pretrained(tmp_path).gdn_grouped_conv_state is False
+    assert config_class.from_pretrained(tmp_path).gdn_custom_kernel is None
 
 
 def _gdn_models(ratio, prefill_size, gate_bias, batch_size=1):
@@ -68,11 +67,10 @@ def _gdn_models(ratio, prefill_size, gate_bias, batch_size=1):
                 batch_size=batch_size,
                 prefill_chunk_size=prefill_size,
                 gdn_custom_kernel=custom,
-                gdn_grouped_conv_state=grouped,
             ),
             layer_idx=0,
         )
-        for custom, grouped in ((False, False), (True, False), (True, True))
+        for custom in (False, True)
     ]
     return hf_config, models
 
@@ -94,22 +92,21 @@ def _flat(grouped, ratio):
 
 
 def _compare(outputs, ratio):
-    # Grouped and flat conv caches hold the same values; the custom core matches the native path.
-    for expected, actual in zip(outputs[1], (outputs[2][0], _flat(outputs[2][1], ratio), outputs[2][2]), strict=True):
-        torch.testing.assert_close(actual, expected, rtol=0, atol=0)
-    for expected, actual in zip(outputs[0], outputs[1], strict=True):
-        torch.testing.assert_close(actual, expected, rtol=1e-4, atol=1e-5)
-    torch.testing.assert_close(outputs[1][1], outputs[0][1], rtol=0, atol=0)
+    # The custom core matches the native path; its grouped conv cache holds the native cache's values.
+    native, custom = outputs
+    torch.testing.assert_close(custom[0], native[0], rtol=1e-4, atol=1e-5)
+    torch.testing.assert_close(_flat(custom[1], ratio), native[1], rtol=0, atol=0)
+    torch.testing.assert_close(custom[2], native[2], rtol=1e-4, atol=1e-5)
 
 
-@pytest.mark.parametrize("ratio", [1, 2, 3])
-@pytest.mark.parametrize("prefill_size", [128, 512])
+@pytest.mark.parametrize("ratio", [1, 2, 3, 5])
+@pytest.mark.parametrize("prefill_size", [128, 384, 512])
 @pytest.mark.parametrize("gate_bias", [False, True])
 def test_gdn_custom_model_prefill_decode_and_reset(ratio, prefill_size, gate_bias):
     hf_config, models = _gdn_models(ratio, prefill_size, gate_bias)
     conv_dim, units = 512 + 256 * ratio, 2 * ratio
     initial = (torch.randn(1, 3, conv_dim), torch.randn(1, units * 128, 128))
-    states = [initial, initial, (_grouped(initial[0], ratio), initial[1])]
+    states = [initial, (_grouped(initial[0], ratio), initial[1])]
     assert _qwen3_5_linear_state_shapes(hf_config, 1) == ((1, 3, conv_dim), (1, units * 128, 128))
     assert _qwen3_5_linear_state_shapes(hf_config, 1, True) == ((1, 2 * (2 + ratio) * 3, 128), (1, units * 128, 128))
     with torch.inference_mode():
@@ -156,7 +153,7 @@ def test_gdn_custom_model_batched_decode(ratio):
     batch = 3
     _, models = _gdn_models(ratio, 512, gate_bias=True, batch_size=batch)
     initial = (torch.randn(batch, 3, 512 + 256 * ratio), torch.randn(batch, 2 * ratio * 128, 128) * 0.1)
-    states = [initial, initial, (_grouped(initial[0], ratio), initial[1])]
+    states = [initial, (_grouped(initial[0], ratio), initial[1])]
     with torch.inference_mode():
         for _ in range(2):
             hidden = torch.randn(batch, 1, 64)
@@ -169,27 +166,31 @@ def test_gdn_custom_model_batched_decode(ratio):
 
 
 @pytest.mark.parametrize(
-    "overrides",
+    "overrides, prefill_size, gdn_chunk_size, expected",
     [
-        {"linear_num_value_heads": 10},
-        {"linear_num_value_heads": 3},
-        {"linear_key_head_dim": 64},
-        {"prefill_chunk_size": 384},
+        ({}, 512, 128, True),
+        ({"linear_num_value_heads": 10}, 384, 128, True),
+        ({"linear_key_head_dim": 64}, 512, 128, False),
+        ({}, 64, 64, False),
     ],
 )
-def test_gdn_custom_kernel_rejects_unsupported_shapes(overrides):
-    prefill_size = overrides.pop("prefill_chunk_size", 512)
-    config = {
-        "hidden_size": 64,
-        "linear_num_key_heads": 2,
-        "linear_num_value_heads": 6,
-        "linear_key_head_dim": 128,
-        "linear_value_head_dim": 128,
-        **overrides,
-    }
-    native = NativeGdn(Qwen3_5TextConfig(**config), layer_idx=0)
-    rbln_config = RBLNQwen3_5TextModelConfig(
-        max_seq_len=4096, batch_size=1, prefill_chunk_size=prefill_size, gdn_custom_kernel=True
-    )
-    with pytest.raises(ValueError, match="gdn_custom_kernel requires"):
-        Qwen3_5GatedDeltaNet(native, rbln_config, layer_idx=0)
+def test_gdn_custom_kernel_serves_supported_configs(overrides, prefill_size, gdn_chunk_size, expected):
+    dims = {"linear_num_value_heads": 6, "linear_key_head_dim": 128, "linear_value_head_dim": 128, **overrides}
+    text_config = Qwen3_5TextConfig(hidden_size=64, linear_num_key_heads=2, **dims)
+    native = NativeGdn(text_config, layer_idx=0)
+
+    def rbln_config(**options):
+        return RBLNQwen3_5TextModelConfig(
+            max_seq_len=4096,
+            batch_size=1,
+            prefill_chunk_size=prefill_size,
+            gdn_chunk_size=gdn_chunk_size,
+            **options,
+        )
+
+    assert Qwen3_5GatedDeltaNet(native, rbln_config(), layer_idx=0).gdn_custom_kernel is expected
+    # An export records the choice; a recorded choice wins.
+    config = rbln_config()
+    _qwen3_5_resolve_gdn_custom_kernel(text_config, config)
+    assert config.gdn_custom_kernel is expected
+    assert Qwen3_5GatedDeltaNet(native, rbln_config(gdn_custom_kernel=False), layer_idx=0).gdn_custom_kernel is False
