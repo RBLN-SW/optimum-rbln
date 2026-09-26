@@ -50,11 +50,21 @@ from .qwen3_5_architecture import (
     Qwen3_5_CausalLMWrapper,
     Qwen3_5_LanguageModelWrapper,
     Qwen3_5VisionModelWrapper,
+    resolve_gdn_custom_kernel,
 )
 from .qwen3_5_runtime_utils import RBLNQwen3_5RuntimeModel
 
 
 logger = logging.get_logger(__name__)
+
+
+def _qwen3_5_resolve_gdn_custom_kernel(model_config, rbln_config):
+    # Records the choice before the input info is built, so the conv cache shape
+    # follows it; an export keeps it for its runtime.
+    text_config = model_config.get_text_config()
+    rbln_config.gdn_custom_kernel = resolve_gdn_custom_kernel(
+        rbln_config, text_config.linear_key_head_dim, text_config.linear_value_head_dim
+    )
 
 
 def _qwen3_5_build_compile_context(compile_config, example_inputs):
@@ -73,11 +83,20 @@ def _qwen3_5_build_compile_context(compile_config, example_inputs):
     return context, static_tensors
 
 
-def _qwen3_5_linear_state_shapes(text_config, batch_size: int):
+def _qwen3_5_linear_state_shapes(text_config, batch_size: int, grouped_conv_state: bool = False):
+    # The custom GDN core keeps the conv cache grouped by Q/K head.
     conv_dim = 2 * (text_config.linear_num_key_heads * text_config.linear_key_head_dim) + (
         text_config.linear_num_value_heads * text_config.linear_value_head_dim
     )
     conv_state_shape = (batch_size, text_config.linear_conv_kernel_dim - 1, conv_dim)
+    if grouped_conv_state:
+        # Q, K and the value heads of each Q/K head, each carrying K-1 inputs.
+        groups = 2 + text_config.linear_num_value_heads // text_config.linear_num_key_heads
+        conv_state_shape = (
+            batch_size,
+            text_config.linear_num_key_heads * groups * (text_config.linear_conv_kernel_dim - 1),
+            text_config.linear_key_head_dim,
+        )
     # recurrent state/mask are 3D (B, Hv*Dk, Dv) — see the get_input_info comment: merging Hv into dim1 keeps
     # the shared static cache laid out identically in the prefill/decode graphs (no channel-pad mismatch).
     recurrent_state_shape = (
@@ -113,7 +132,7 @@ def _qwen3_5_setup_hybrid_runtime(model):
 
     # Prefill runs one item at a time (batch=1) and writes its `batch_position` slot, so its state MASKS are
     # batch=1 sized (they gate the single slot the graph reads); the underlying cache is max-batch (get_input_info).
-    conv_shape, recur_shape = _qwen3_5_linear_state_shapes(text_config, 1)
+    conv_shape, recur_shape = _qwen3_5_linear_state_shapes(text_config, 1, bool(rbln_config.gdn_custom_kernel))
     model.prefill_decoder = RBLNQwen3_5RuntimeModel(
         runtime=model.model[0],
         phase="prefill",
@@ -127,7 +146,9 @@ def _qwen3_5_setup_hybrid_runtime(model):
     if model.can_generate():
         model.decoders = {}
         for i, batch_size in enumerate(rbln_config.decoder_batch_sizes):
-            conv_shape, recur_shape = _qwen3_5_linear_state_shapes(text_config, batch_size)
+            conv_shape, recur_shape = _qwen3_5_linear_state_shapes(
+                text_config, batch_size, bool(rbln_config.gdn_custom_kernel)
+            )
             model.decoders[batch_size] = RBLNQwen3_5RuntimeModel(
                 runtime=model.model[i + 1],
                 phase="decode",
@@ -164,6 +185,7 @@ class RBLNQwen3_5TextModel(RBLNDecoderOnlyModel):
     @classmethod
     def _update_rbln_config(cls, preprocessors=None, model=None, model_config=None, rbln_config=None):
         rbln_config.linear_attention_layers = _qwen3_5_linear_layer_indices(model_config)
+        _qwen3_5_resolve_gdn_custom_kernel(model_config, rbln_config)
         rbln_config = super()._update_rbln_config(
             preprocessors=preprocessors, model=model, model_config=model_config, rbln_config=rbln_config
         )
@@ -239,7 +261,9 @@ class RBLNQwen3_5TextModel(RBLNDecoderOnlyModel):
             for layer_idx in range(num_hidden_layers):
                 if layer_idx in linear_layers:
                     # recurrent cache is stored 3D (B, Hv*Dk, Dv); GatedDeltaNet reshapes to 4D internally.
-                    conv_shape, recurrent_shape = _qwen3_5_linear_state_shapes(text_config, rbln_config.batch_size)
+                    conv_shape, recurrent_shape = _qwen3_5_linear_state_shapes(
+                        text_config, rbln_config.batch_size, bool(rbln_config.gdn_custom_kernel)
+                    )
                     cache_metas.append(
                         LinearAttentionCacheMeta.from_config(
                             f"conv_state_{layer_idx}", layer_idx, shape=list(conv_shape), dtype=_state_dtype
@@ -269,7 +293,9 @@ class RBLNQwen3_5TextModel(RBLNDecoderOnlyModel):
         # shared 0/1 masks: runtime feeds zeros on prefill window 0 (reset linear state), ones after (carry). See docs.
         if linear_layers:
             # masks match the per-call graph batch (batch_size), so reuse the helper with the same shapes.
-            conv_mask_shape, recurrent_mask_shape = _qwen3_5_linear_state_shapes(text_config, batch_size)
+            conv_mask_shape, recurrent_mask_shape = _qwen3_5_linear_state_shapes(
+                text_config, batch_size, bool(rbln_config.gdn_custom_kernel)
+            )
             input_info.append(("conv_state_mask", list(conv_mask_shape), rbln_config.dtype))
             input_info.append(("recurrent_state_mask", list(recurrent_mask_shape), rbln_config.dtype))
             # per-token validity (1=real, 0=right-padding); host-built, GatedDeltaNet uses it to drop padding.
@@ -392,7 +418,7 @@ class RBLNQwen3_5VisionModel(RBLNModel):
         for max_seq_len in rbln_config.max_seq_len:
             input_info = [
                 ("hidden_states", [max_seq_len, hidden_size], rbln_config.dtype),
-                ("attn_mask", [batch_size, 1, max_seq_len, max_seq_len], rbln_config.dtype),
+                ("attn_mask", [batch_size, 1, 1, max_seq_len], rbln_config.dtype),
                 # cos/sin enter the device at fp32 and are cast to the device dtype inside the vision model
                 ("cos", [batch_size, 1, max_seq_len, head_dim], torch.float32),
                 ("sin", [batch_size, 1, max_seq_len, head_dim], torch.float32),
@@ -420,11 +446,18 @@ class RBLNQwen3_5VisionModel(RBLNModel):
         )
         return (self.pos_embed(interp_indices) * interp_weights[:, :, None]).sum(1)
 
+    def _takes_square_mask(self, bucket: int) -> bool:
+        """Exports made before the key-padding mask take an [S, S] attention mask."""
+        input_info = self.rbln_config.compile_cfgs[0].input_info[bucket]
+        shape = next(info[1] for info in input_info if info[0] == "attn_mask")
+        return shape[-2] != 1
+
     @staticmethod
     def _pad_hidden_states(
         hidden_states: torch.Tensor,
         position_embeddings: tuple[torch.Tensor, torch.Tensor],
         max_seq_len: int,
+        square_mask: bool = False,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, int]:
         seq_len = hidden_states.shape[0]
         valid_len = seq_len
@@ -440,10 +473,14 @@ class RBLNQwen3_5VisionModel(RBLNModel):
             sin = torch.cat([sin, pos_padding], dim=0)
             position_embeddings = (cos, sin)
 
-        attn_mask = torch.ones(1, 1, max_seq_len, max_seq_len, dtype=hidden_states.dtype)
+        # A padded query row's output is dropped, so masking the keys alone gives the
+        # same valid outputs at 1/S of the transfer.
+        rows = max_seq_len if square_mask else 1
+        attn_mask = torch.ones(1, 1, rows, max_seq_len, dtype=hidden_states.dtype)
         if valid_len < max_seq_len:
-            attn_mask[:, :, valid_len:, :] = 0
             attn_mask[:, :, :, valid_len:] = 0
+            if square_mask:
+                attn_mask[:, :, valid_len:, :] = 0
 
         return hidden_states, position_embeddings, attn_mask, valid_len
 
@@ -484,7 +521,7 @@ class RBLNQwen3_5VisionModel(RBLNModel):
                 ) from e
 
             image_hidden, (image_cos, image_sin), attn_mask, valid_len = self._pad_hidden_states(
-                image_hidden, (image_cos, image_sin), max_seq_len
+                image_hidden, (image_cos, image_sin), max_seq_len, self._takes_square_mask(ws_index)
             )
 
             output = self.transformer(
@@ -560,6 +597,7 @@ class RBLNQwen3_5Model(RBLNDecoderOnlyModel):
     @classmethod
     def _update_rbln_config(cls, preprocessors=None, model=None, model_config=None, rbln_config=None):
         rbln_config.linear_attention_layers = _qwen3_5_linear_layer_indices(model_config)
+        _qwen3_5_resolve_gdn_custom_kernel(model_config, rbln_config)
         rbln_config = super()._update_rbln_config(
             preprocessors=preprocessors, model=model, model_config=model_config, rbln_config=rbln_config
         )
