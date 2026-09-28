@@ -331,6 +331,25 @@ class Qwen3_5GatedDeltaNet(nn.Module):
         self.prefill_chunk_size = rbln_config.prefill_chunk_size
         self.chunk_size = rbln_config.gdn_chunk_size
         self.gdn_custom_kernel = resolve_gdn_custom_kernel(rbln_config, self.head_k_dim, self.head_v_dim)
+        # A decode step's conv runs as `rbln_custom_ops::causal_conv1d_update` when the compiler provides it; it
+        # reads the same conv cache as the window path.
+        self.conv_update_op = (
+            self.gdn_custom_kernel
+            and self.conv1d.bias is None
+            and hasattr(torch.ops.rbln_custom_ops, "causal_conv1d_update")
+        )
+        if self.conv_update_op:
+            # The conv taps in 64-channel blocks [G, D/64, K, 64], as the op takes them.
+            taps = self._by_group(self.conv1d.weight.data[:, 0])
+            taps = taps.reshape(taps.shape[0], -1, 64, self.conv_kernel_size).transpose(2, 3)
+            self.register_buffer("conv_taps", taps.contiguous(), persistent=False)
+
+    def _by_group(self, channels):
+        """Conv channels [conv_dim, ...] -> [Hk*(2+r), D, ...]: Q, K and the r value heads of each Q/K head."""
+        heads, ratio = self.num_k_heads, self.num_v_heads // self.num_k_heads
+        q_part, k_part, v_part = channels.split((self.key_dim, self.key_dim, self.value_dim))
+        parts = (q_part.reshape(heads, 1, -1), k_part.reshape(heads, 1, -1), v_part.reshape(heads, ratio, -1))
+        return torch.cat(parts, dim=1).reshape(heads * (2 + ratio), self.head_k_dim, *channels.shape[1:])
 
     @property
     def phase(self):
@@ -467,32 +486,35 @@ class Qwen3_5GatedDeltaNet(nn.Module):
         k_in = self.in_proj_k(hidden_states).reshape(batch_size, seq_len, heads, dim).transpose(1, 2)
         v_in = self.in_proj_v(hidden_states).reshape(batch_size, seq_len, heads, ratio, dim).permute(0, 2, 3, 1, 4)
 
-        # Q, K and the r value heads of each Q/K head share one channel-last window [B, Hk*(2+r), K-1+S, D]: the
-        # carried K-1 inputs, then this call's S inputs. One set of conv ops covers all of them.
+        # Q, K and the r value heads of each Q/K head are Hk*(2+r) channel groups of D. The conv cache keeps their
+        # last K-1 inputs channel last, [B, Hk*(2+r), K-1, D].
         groups = heads * (2 + ratio)
-        prev = conv_state.reshape(batch_size, groups, k_1, dim)
         new = torch.cat([q_in.unsqueeze(2), k_in.unsqueeze(2), v_in], dim=2).reshape(batch_size, groups, seq_len, dim)
-        window = torch.cat([prev, new], dim=2)
-
-        # The next call carries the last K-1 inputs; a right-padded prefill window ends at query_position.
-        if prefill:
-            position = query_position.to(torch.int).unsqueeze(0)
-            carried = torch.cat([window[:, :, position + i] for i in range(1, k_1 + 1)], dim=2)
+        slot = torch.tensor(0, dtype=torch.int16) if slot is None else slot
+        if seq_len == 1 and self.conv_update_op:
+            # One step: the op shifts the cached window by this input in place and returns silu(conv).
+            x = new.reshape(batch_size, groups, dim)
+            convolved = torch.ops.rbln_custom_ops.causal_conv1d_update(x, conv_state, self.conv_taps, slot)
+            convolved = convolved.reshape(batch_size, heads, 2 + ratio, seq_len, dim)
+            new_conv_state = None
         else:
-            carried = window.narrow(2, seq_len, k_1)
-        new_conv_state = carried.reshape(batch_size, -1, dim)
+            # A channel-last window [B, Hk*(2+r), K-1+S, D]: the carried K-1 inputs, then this call's S inputs.
+            window = torch.cat([conv_state.reshape(batch_size, groups, k_1, dim), new], dim=2)
 
-        # Depthwise conv as K per-channel taps along the window's time axis.
-        def per_group(channels):
-            q_part, k_part, v_part = channels.split((self.key_dim, self.key_dim, self.value_dim))
-            parts = (q_part.reshape(heads, 1, -1), k_part.reshape(heads, 1, -1), v_part.reshape(heads, ratio, -1))
-            return torch.cat(parts, dim=1).reshape(groups, dim, *channels.shape[1:])
+            # The next call carries the last K-1 inputs; a right-padded prefill window ends at query_position.
+            if prefill:
+                position = query_position.to(torch.int).unsqueeze(0)
+                carried = torch.cat([window[:, :, position + i] for i in range(1, k_1 + 1)], dim=2)
+            else:
+                carried = window.narrow(2, seq_len, k_1)
+            new_conv_state = carried
 
-        taps = per_group(self.conv1d.weight[:, 0])
-        out = sum(window.narrow(2, tap, seq_len) * taps[..., tap].unsqueeze(-2) for tap in range(k_1 + 1))
-        if self.conv1d.bias is not None:
-            out = out + per_group(self.conv1d.bias).unsqueeze(-2)
-        convolved = F.silu(out).reshape(batch_size, heads, 2 + ratio, seq_len, dim)
+            # Depthwise conv as K per-channel taps along the window's time axis.
+            taps = self._by_group(self.conv1d.weight[:, 0])
+            out = sum(window.narrow(2, tap, seq_len) * taps[..., tap].unsqueeze(-2) for tap in range(k_1 + 1))
+            if self.conv1d.bias is not None:
+                out = out + self._by_group(self.conv1d.bias).unsqueeze(-2)
+            convolved = F.silu(out).reshape(batch_size, heads, 2 + ratio, seq_len, dim)
         query, key, value = convolved[:, :, 0], convolved[:, :, 1], convolved[:, :, 2:]
 
         beta = b.sigmoid()
@@ -503,7 +525,6 @@ class Qwen3_5GatedDeltaNet(nn.Module):
             beta = beta * valid_mask
         g = g.reshape(batch_size, seq_len, heads, ratio).permute(0, 2, 3, 1).contiguous()
         beta = beta.reshape(batch_size, seq_len, heads, ratio).permute(0, 2, 3, 1).contiguous()
-        slot = torch.tensor(0, dtype=torch.int16) if slot is None else slot
         operands = (query.contiguous(), key.contiguous(), value.contiguous(), g, beta, recurrent_state, slot)
         if "prefill" in self._phase:
             carry = torch.ones(batch_size, dtype=value.dtype) if carry is None else carry
@@ -513,7 +534,7 @@ class Qwen3_5GatedDeltaNet(nn.Module):
 
         core_attn_out = self.norm(core_attn_out, z).permute(0, 3, 1, 2, 4).reshape(batch_size, seq_len, -1)
         output = self.out_proj(core_attn_out)
-        return output, new_conv_state.contiguous(), None
+        return output, None if new_conv_state is None else new_conv_state.contiguous(), None
 
 
 class Qwen3_5LinearDecoderLayer(nn.Module):
@@ -734,9 +755,10 @@ class Qwen3_5Model(DecoderOnlyModel):
                     slot=_pos,
                 )
                 _axis0 = torch.tensor(0, dtype=torch.int16)
-                new_states.append(
-                    torch.ops.rbln_custom_ops.rbln_cache_update(conv_state, new_conv_state, _pos, _axis0)
-                )
+                if new_conv_state is not None:
+                    new_states.append(
+                        torch.ops.rbln_custom_ops.rbln_cache_update(conv_state, new_conv_state, _pos, _axis0)
+                    )
                 if new_recurrent_state is not None:
                     new_states.append(
                         torch.ops.rbln_custom_ops.rbln_cache_update(recurrent_state, new_recurrent_state, _pos, _axis0)
