@@ -50,7 +50,7 @@ logger = get_logger(__name__)
 def _disable_mtp(model_config):
     if model_config is None:
         return
-    text_config = getattr(model_config, "text_config", model_config)
+    text_config = model_config.get_text_config()
     if hasattr(text_config, "num_nextn_predict_layers"):
         text_config.num_nextn_predict_layers = 0
     if hasattr(text_config, "_num_mtp_layers"):
@@ -345,21 +345,11 @@ class RBLNExaone4_5_Model(RBLNDecoderOnlyModel):
 
     @property
     def logits_last_dim(self):
-        text_config = self.config.text_config
+        text_config = self.config.get_text_config()
         if self.can_generate():
             return text_config.vocab_size
         else:
             return text_config.hidden_size
-
-    def _create_embedding_layer(self):
-        with no_init_weights():
-            embed_tokens = torch.nn.Embedding(
-                self.config.text_config.vocab_size,
-                self.config.text_config.hidden_size,
-                self.config.text_config.pad_token_id,
-                dtype=self.rbln_config.dtype,
-            )
-        return embed_tokens
 
     @classmethod
     def _wrap_model_if_needed(cls, model: "PreTrainedModel", rbln_config):
@@ -376,12 +366,11 @@ class RBLNExaone4_5_Model(RBLNDecoderOnlyModel):
     ):
         if model is not None:
             _disable_mtp(model.config)
-        text_config = model_config.text_config if hasattr(model_config, "text_config") else model_config
-        _disable_mtp(text_config)
+        _disable_mtp(model_config)
         return super()._update_rbln_config(
             preprocessors=preprocessors,
             model=model,
-            model_config=text_config,
+            model_config=model_config,
             rbln_config=rbln_config,
         )
 
