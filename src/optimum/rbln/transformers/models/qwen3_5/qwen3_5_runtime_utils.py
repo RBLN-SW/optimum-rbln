@@ -68,6 +68,8 @@ class RBLNQwen3_5RuntimeModel(RBLNRuntimeModel):
         order = self.runtime._index_to_input_name
         args = [named_inputs[order[k]] for k in range(len(order))]
         out = super(RBLNRuntimeModel, self).forward(*args)
+        if isinstance(out, torch.Tensor):  # the logits alone: every state is updated in place
+            out = (out,)
         hidden_states = None
         if self.rbln_config.output_hidden_states:
             n_hidden = self.config.num_hidden_layers + 1
