@@ -84,8 +84,8 @@ def _qwen3_5_build_compile_context(compile_config, example_inputs):
 
 
 def _qwen3_5_linear_state_shapes(text_config, batch_size: int, custom_kernel: bool = False):
-    # The custom GDN core keeps the conv cache grouped by Q/K head and the recurrent
-    # state in the blocked layout of rbln::gdn_* (see rebel.ops.torch_custom_ops.gdn).
+    # The custom GDN core keeps the conv cache grouped by Q/K head and the recurrent state
+    # as rbln_custom_ops::gdn_* take it (see rebel.ops.torch_custom_ops.gdn).
     conv_dim = 2 * (text_config.linear_num_key_heads * text_config.linear_key_head_dim) + (
         text_config.linear_num_value_heads * text_config.linear_value_head_dim
     )
@@ -106,8 +106,23 @@ def _qwen3_5_linear_state_shapes(text_config, batch_size: int, custom_kernel: bo
         text_config.linear_value_head_dim,
     )
     if custom_kernel:
-        recurrent_state_shape = (batch_size, recurrent_state_shape[1] * text_config.linear_value_head_dim // 64, 64)
+        heads = text_config.linear_num_key_heads
+        recurrent_state_shape = (
+            batch_size,
+            heads,
+            text_config.linear_num_value_heads // heads,
+            text_config.linear_value_head_dim // 64,
+            text_config.linear_key_head_dim,
+            64,
+        )
     return conv_state_shape, recurrent_state_shape
+
+
+def _qwen3_5_linear_mask_shapes(text_config, batch_size: int, custom_kernel: bool = False):
+    """The prefill carry masks: shaped like the states, except that the custom GDN core takes one value per row
+    for its recurrent state."""
+    conv_mask_shape, recurrent_mask_shape = _qwen3_5_linear_state_shapes(text_config, batch_size, custom_kernel)
+    return conv_mask_shape, (batch_size,) if custom_kernel else recurrent_mask_shape
 
 
 def _qwen3_5_linear_layer_indices(model_config) -> list[int]:
@@ -135,7 +150,7 @@ def _qwen3_5_setup_hybrid_runtime(model):
 
     # Prefill runs one item at a time (batch=1) and writes its `batch_position` slot, so its state MASKS are
     # batch=1 sized (they gate the single slot the graph reads); the underlying cache is max-batch (get_input_info).
-    conv_shape, recur_shape = _qwen3_5_linear_state_shapes(text_config, 1, bool(rbln_config.gdn_custom_kernel))
+    conv_shape, recur_shape = _qwen3_5_linear_mask_shapes(text_config, 1, bool(rbln_config.gdn_custom_kernel))
     model.prefill_decoder = RBLNQwen3_5RuntimeModel(
         runtime=model.model[0],
         phase="prefill",
@@ -149,7 +164,7 @@ def _qwen3_5_setup_hybrid_runtime(model):
     if model.can_generate():
         model.decoders = {}
         for i, batch_size in enumerate(rbln_config.decoder_batch_sizes):
-            conv_shape, recur_shape = _qwen3_5_linear_state_shapes(
+            conv_shape, recur_shape = _qwen3_5_linear_mask_shapes(
                 text_config, batch_size, bool(rbln_config.gdn_custom_kernel)
             )
             model.decoders[batch_size] = RBLNQwen3_5RuntimeModel(
@@ -263,7 +278,8 @@ class RBLNQwen3_5TextModel(RBLNDecoderOnlyModel):
             cache_metas = []
             for layer_idx in range(num_hidden_layers):
                 if layer_idx in linear_layers:
-                    # recurrent cache is stored 3D (B, Hv*Dk, Dv); GatedDeltaNet reshapes to 4D internally.
+                    # the native core keeps the recurrent cache 3D (B, Hv*Dk, Dv) and reshapes it to 4D internally;
+                    # the custom core keeps it as its ops take it.
                     conv_shape, recurrent_shape = _qwen3_5_linear_state_shapes(
                         text_config, rbln_config.batch_size, bool(rbln_config.gdn_custom_kernel)
                     )
@@ -296,7 +312,7 @@ class RBLNQwen3_5TextModel(RBLNDecoderOnlyModel):
         # shared 0/1 masks: runtime feeds zeros on prefill window 0 (reset linear state), ones after (carry). See docs.
         if linear_layers:
             # masks match the per-call graph batch (batch_size), so reuse the helper with the same shapes.
-            conv_mask_shape, recurrent_mask_shape = _qwen3_5_linear_state_shapes(
+            conv_mask_shape, recurrent_mask_shape = _qwen3_5_linear_mask_shapes(
                 text_config, batch_size, bool(rbln_config.gdn_custom_kernel)
             )
             input_info.append(("conv_state_mask", list(conv_mask_shape), rbln_config.dtype))

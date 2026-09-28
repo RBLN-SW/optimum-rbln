@@ -13,6 +13,7 @@ from optimum.rbln.transformers.models.qwen3_5.configuration_qwen3_5 import (
     RBLNQwen3_5TextModelConfig,
 )
 from optimum.rbln.transformers.models.qwen3_5.modeling_qwen3_5 import (
+    _qwen3_5_linear_mask_shapes,
     _qwen3_5_linear_state_shapes,
     _qwen3_5_resolve_gdn_custom_kernel,
 )
@@ -97,17 +98,28 @@ def _custom_states(native_states):
     conv, recurrent = native_states
     ratio = conv.shape[-1] // 256 - 2
     batch = recurrent.shape[0]
-    return _grouped(conv, ratio), block_state(recurrent.reshape(batch, -1, 128, 128)).reshape(batch, -1, 64)
+    return _grouped(conv, ratio), block_state(recurrent.reshape(batch, 2, ratio, 128, 128))
 
 
-def _compare(outputs, ratio):
+def _step(models, states, hidden, kwargs):
+    """Runs both models and carries their states: the native one returns its new recurrent state, the custom one
+    updates its recurrent cache in place and returns None for it."""
+    outputs = []
+    for index, model in enumerate(models):
+        output = model(hidden, *states[index], **kwargs[index])
+        assert (output[2] is None) is model.gdn_custom_kernel
+        states[index] = (output[1], states[index][1] if output[2] is None else output[2])
+        outputs.append(output[0])
+    return outputs
+
+
+def _compare(outputs, states, ratio):
     # The custom core matches the native path; its caches hold the native caches' values.
-    native, custom = outputs
-    batch = native[2].shape[0]
-    torch.testing.assert_close(custom[0], native[0], rtol=1e-4, atol=1e-5)
-    torch.testing.assert_close(_flat(custom[1], ratio), native[1], rtol=0, atol=0)
-    recurrent = unblock_state(custom[2].reshape(batch, -1, 2, 128, 64)).reshape_as(native[2])
-    torch.testing.assert_close(recurrent, native[2], rtol=1e-4, atol=1e-5)
+    (native, custom), (native_states, custom_states) = outputs, states
+    torch.testing.assert_close(custom, native, rtol=1e-4, atol=1e-5)
+    torch.testing.assert_close(_flat(custom_states[0], ratio), native_states[0], rtol=0, atol=0)
+    recurrent = unblock_state(custom_states[1]).reshape_as(native_states[1])
+    torch.testing.assert_close(recurrent, native_states[1], rtol=1e-4, atol=1e-5)
 
 
 @pytest.mark.parametrize("ratio", [1, 2, 3, 5])
@@ -119,7 +131,11 @@ def test_gdn_custom_model_prefill_decode_and_reset(ratio, prefill_size, gate_bia
     initial = (torch.randn(1, 3, conv_dim), torch.randn(1, units * 128, 128))
     states = [initial, _custom_states(initial)]
     assert _qwen3_5_linear_state_shapes(hf_config, 1) == ((1, 3, conv_dim), (1, units * 128, 128))
-    assert _qwen3_5_linear_state_shapes(hf_config, 1, True) == ((1, 2 * (2 + ratio) * 3, 128), (1, units * 256, 64))
+    assert _qwen3_5_linear_state_shapes(hf_config, 1, True) == (
+        (1, 2 * (2 + ratio) * 3, 128),
+        (1, 2, ratio, 2, 128, 64),
+    )
+    assert _qwen3_5_linear_mask_shapes(hf_config, 1, True) == ((1, 2 * (2 + ratio) * 3, 128), (1,))
     with torch.inference_mode():
         for phase, valid, reset in (
             ("prefill", prefill_size, True),
@@ -141,22 +157,26 @@ def test_gdn_custom_model_prefill_decode_and_reset(ratio, prefill_size, gate_bia
                     "valid_mask": mask,
                     "query_position": torch.tensor(valid - 1),
                 }
-            outputs = []
-            for index, model in enumerate(models):
+            per_model, norm_shapes = [], []
+            for model in models:
                 model.phase = phase
                 model_kwargs = dict(kwargs)
                 if phase == "prefill":
-                    model_kwargs["conv_state_mask"] = torch.full_like(states[index][0], 0 if reset else 1)
-                    model_kwargs["recurrent_state_mask"] = torch.full_like(states[index][1], 0 if reset else 1)
-                norm_shapes = []
-                with model.norm.register_forward_pre_hook(
-                    lambda module, args, shapes=norm_shapes: shapes.append(tuple(tuple(value.shape) for value in args))
-                ):
-                    outputs.append(model(hidden, *states[index], **model_kwargs))
-                shape = (1, 2, ratio, seq, 128) if model.gdn_custom_kernel else (seq * units, 128)
-                assert norm_shapes == [(shape, shape)]
-                states[index] = outputs[-1][1:]
-            _compare(outputs, ratio)
+                    conv_mask, recurrent_mask = _qwen3_5_linear_mask_shapes(hf_config, 1, model.gdn_custom_kernel)
+                    model_kwargs["conv_state_mask"] = torch.full(conv_mask, 0.0 if reset else 1.0)
+                    model_kwargs["recurrent_state_mask"] = torch.full(recurrent_mask, 0.0 if reset else 1.0)
+                per_model.append(model_kwargs)
+
+            def record(module, args, shapes=norm_shapes):
+                shapes.append(tuple(tuple(value.shape) for value in args))
+
+            # Both models wrap the native layer's one norm.
+            hook = models[0].norm.register_forward_pre_hook(record)
+            outputs = _step(models, states, hidden, per_model)
+            hook.remove()
+            custom_shape = (1, 2, ratio, seq, 128)
+            assert norm_shapes == [((seq * units, 128),) * 2, (custom_shape,) * 2]
+            _compare(outputs, states, ratio)
 
 
 @pytest.mark.parametrize("ratio", [1, 3])
@@ -167,13 +187,10 @@ def test_gdn_custom_model_batched_decode(ratio):
     states = [initial, _custom_states(initial)]
     with torch.inference_mode():
         for _ in range(2):
-            hidden = torch.randn(batch, 1, 64)
-            outputs = []
-            for index, model in enumerate(models):
+            for model in models:
                 model.phase = "decode"
-                outputs.append(model(hidden, *states[index]))
-                states[index] = outputs[-1][1:]
-            _compare(outputs, ratio)
+            outputs = _step(models, states, torch.randn(batch, 1, 64), [{}, {}])
+            _compare(outputs, states, ratio)
 
 
 @pytest.mark.parametrize(
