@@ -222,3 +222,19 @@ def test_gdn_custom_kernel_serves_supported_configs(overrides, prefill_size, gdn
     _qwen3_5_resolve_gdn_custom_kernel(text_config, config)
     assert config.gdn_custom_kernel is expected
     assert Qwen3_5GatedDeltaNet(native, rbln_config(gdn_custom_kernel=False), layer_idx=0).gdn_custom_kernel is False
+
+
+@pytest.mark.parametrize("npu, expected", [("RBLN-CA25", True), ("RBLN-CA22", True), ("RBLN-CR13", False)])
+def test_gdn_custom_kernel_runs_on_atom_only(npu, expected):
+    text_config = Qwen3_5TextConfig(
+        hidden_size=64,
+        linear_num_key_heads=2,
+        linear_num_value_heads=6,
+        linear_key_head_dim=128,
+        linear_value_head_dim=128,
+    )
+    config = RBLNQwen3_5TextModelConfig(
+        max_seq_len=4096, batch_size=1, prefill_chunk_size=512, gdn_chunk_size=128, npu=npu
+    )
+    _qwen3_5_resolve_gdn_custom_kernel(text_config, config)
+    assert config.gdn_custom_kernel is expected

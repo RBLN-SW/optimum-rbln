@@ -21,6 +21,8 @@ from torch import nn
 from transformers import PreTrainedModel
 from transformers.models.qwen3_5.modeling_qwen3_5 import l2norm
 
+from ....utils.runtime_utils import normalize_npu, resolve_npu_or_none
+
 from ..decoderonly.decoderonly_architecture import (
     DecoderOnlyAttention,
     DecoderOnlyForCausalLM,
@@ -38,8 +40,11 @@ def resolve_gdn_custom_kernel(rbln_config, head_k_dim, head_v_dim) -> bool:
     export, else whether the ops serve this configuration."""
     if rbln_config.gdn_custom_kernel is not None:
         return rbln_config.gdn_custom_kernel
+    # The kernels are validated on ATOM only; an unknown target (no device, no `npu`) keeps them.
+    npu = resolve_npu_or_none(rbln_config.npu)
     return (
-        head_k_dim == 128
+        (npu is None or normalize_npu(npu).startswith("RBLN-CA"))
+        and head_k_dim == 128
         and head_v_dim == 128
         and rbln_config.prefill_chunk_size % 128 == 0
         and rbln_config.gdn_chunk_size == 128
