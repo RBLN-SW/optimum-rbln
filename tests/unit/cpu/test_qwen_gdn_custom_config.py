@@ -2,6 +2,7 @@ import json
 
 import pytest
 import torch
+from rebel.ops.torch_custom_ops.gdn import block_state, unblock_state
 from transformers.models.qwen3_5.configuration_qwen3_5 import Qwen3_5TextConfig
 from transformers.models.qwen3_5.modeling_qwen3_5 import Qwen3_5GatedDeltaNet as NativeGdn
 
@@ -91,12 +92,22 @@ def _flat(grouped, ratio):
     )
 
 
+def _custom_states(native_states):
+    """The native (conv, recurrent) caches in the custom core's layouts."""
+    conv, recurrent = native_states
+    ratio = conv.shape[-1] // 256 - 2
+    batch = recurrent.shape[0]
+    return _grouped(conv, ratio), block_state(recurrent.reshape(batch, -1, 128, 128)).reshape(batch, -1, 64)
+
+
 def _compare(outputs, ratio):
-    # The custom core matches the native path; its grouped conv cache holds the native cache's values.
+    # The custom core matches the native path; its caches hold the native caches' values.
     native, custom = outputs
+    batch = native[2].shape[0]
     torch.testing.assert_close(custom[0], native[0], rtol=1e-4, atol=1e-5)
     torch.testing.assert_close(_flat(custom[1], ratio), native[1], rtol=0, atol=0)
-    torch.testing.assert_close(custom[2], native[2], rtol=1e-4, atol=1e-5)
+    recurrent = unblock_state(custom[2].reshape(batch, -1, 2, 128, 64)).reshape_as(native[2])
+    torch.testing.assert_close(recurrent, native[2], rtol=1e-4, atol=1e-5)
 
 
 @pytest.mark.parametrize("ratio", [1, 2, 3, 5])
@@ -106,9 +117,9 @@ def test_gdn_custom_model_prefill_decode_and_reset(ratio, prefill_size, gate_bia
     hf_config, models = _gdn_models(ratio, prefill_size, gate_bias)
     conv_dim, units = 512 + 256 * ratio, 2 * ratio
     initial = (torch.randn(1, 3, conv_dim), torch.randn(1, units * 128, 128))
-    states = [initial, (_grouped(initial[0], ratio), initial[1])]
+    states = [initial, _custom_states(initial)]
     assert _qwen3_5_linear_state_shapes(hf_config, 1) == ((1, 3, conv_dim), (1, units * 128, 128))
-    assert _qwen3_5_linear_state_shapes(hf_config, 1, True) == ((1, 2 * (2 + ratio) * 3, 128), (1, units * 128, 128))
+    assert _qwen3_5_linear_state_shapes(hf_config, 1, True) == ((1, 2 * (2 + ratio) * 3, 128), (1, units * 256, 64))
     with torch.inference_mode():
         for phase, valid, reset in (
             ("prefill", prefill_size, True),
@@ -129,7 +140,6 @@ def test_gdn_custom_model_prefill_decode_and_reset(ratio, prefill_size, gate_bia
                 kwargs = {
                     "valid_mask": mask,
                     "query_position": torch.tensor(valid - 1),
-                    "recurrent_state_mask": torch.full_like(initial[1], 0 if reset else 1),
                 }
             outputs = []
             for index, model in enumerate(models):
@@ -137,6 +147,7 @@ def test_gdn_custom_model_prefill_decode_and_reset(ratio, prefill_size, gate_bia
                 model_kwargs = dict(kwargs)
                 if phase == "prefill":
                     model_kwargs["conv_state_mask"] = torch.full_like(states[index][0], 0 if reset else 1)
+                    model_kwargs["recurrent_state_mask"] = torch.full_like(states[index][1], 0 if reset else 1)
                 norm_shapes = []
                 with model.norm.register_forward_pre_hook(
                     lambda module, args, shapes=norm_shapes: shapes.append(tuple(tuple(value.shape) for value in args))
@@ -153,7 +164,7 @@ def test_gdn_custom_model_batched_decode(ratio):
     batch = 3
     _, models = _gdn_models(ratio, 512, gate_bias=True, batch_size=batch)
     initial = (torch.randn(batch, 3, 512 + 256 * ratio), torch.randn(batch, 2 * ratio * 128, 128) * 0.1)
-    states = [initial, (_grouped(initial[0], ratio), initial[1])]
+    states = [initial, _custom_states(initial)]
     with torch.inference_mode():
         for _ in range(2):
             hidden = torch.randn(batch, 1, 64)

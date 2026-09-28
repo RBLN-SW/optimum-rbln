@@ -83,13 +83,14 @@ def _qwen3_5_build_compile_context(compile_config, example_inputs):
     return context, static_tensors
 
 
-def _qwen3_5_linear_state_shapes(text_config, batch_size: int, grouped_conv_state: bool = False):
-    # The custom GDN core keeps the conv cache grouped by Q/K head.
+def _qwen3_5_linear_state_shapes(text_config, batch_size: int, custom_kernel: bool = False):
+    # The custom GDN core keeps the conv cache grouped by Q/K head and the recurrent
+    # state in the blocked layout of rbln::gdn_* (see rebel.ops.torch_custom_ops.gdn).
     conv_dim = 2 * (text_config.linear_num_key_heads * text_config.linear_key_head_dim) + (
         text_config.linear_num_value_heads * text_config.linear_value_head_dim
     )
     conv_state_shape = (batch_size, text_config.linear_conv_kernel_dim - 1, conv_dim)
-    if grouped_conv_state:
+    if custom_kernel:
         # Q, K and the value heads of each Q/K head, each carrying K-1 inputs.
         groups = 2 + text_config.linear_num_value_heads // text_config.linear_num_key_heads
         conv_state_shape = (
@@ -104,6 +105,8 @@ def _qwen3_5_linear_state_shapes(text_config, batch_size: int, grouped_conv_stat
         text_config.linear_num_value_heads * text_config.linear_key_head_dim,
         text_config.linear_value_head_dim,
     )
+    if custom_kernel:
+        recurrent_state_shape = (batch_size, recurrent_state_shape[1] * text_config.linear_value_head_dim // 64, 64)
     return conv_state_shape, recurrent_state_shape
 
 

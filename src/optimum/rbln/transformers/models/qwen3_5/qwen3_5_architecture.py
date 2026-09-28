@@ -490,13 +490,13 @@ class Qwen3_5GatedDeltaNet(nn.Module):
             beta = beta * valid_mask
         g = g.reshape(batch_size, seq_len, heads, ratio).permute(0, 2, 3, 1).contiguous()
         beta = beta.reshape(batch_size, seq_len, heads, ratio).permute(0, 2, 3, 1).contiguous()
-        state = recurrent_state.reshape(batch_size, heads, ratio, dim, dim)
+        state = recurrent_state.reshape(batch_size, heads, ratio, self.head_v_dim // 64, dim, 64)
 
         core_op = torch.ops.rbln.gdn_prefill if "prefill" in self._phase else torch.ops.rbln.gdn_decode
         core_attn_out, new_recurrent_state = core_op(
             query.contiguous(), key.contiguous(), value.contiguous(), g, beta, state
         )
-        new_recurrent_state = new_recurrent_state.reshape(batch_size, self.num_v_heads * dim, dim)
+        new_recurrent_state = new_recurrent_state.reshape(batch_size, -1, 64)
 
         core_attn_out = self.norm(core_attn_out, z).permute(0, 3, 1, 2, 4).reshape(batch_size, seq_len, -1)
         output = self.out_proj(core_attn_out)
