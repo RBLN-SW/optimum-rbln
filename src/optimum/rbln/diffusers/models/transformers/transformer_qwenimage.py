@@ -13,7 +13,9 @@
 # limitations under the License.
 
 import types
+from collections import OrderedDict
 from contextlib import contextmanager
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Union
 
 import torch
@@ -21,6 +23,7 @@ from diffusers.models.modeling_outputs import Transformer2DModelOutput
 from diffusers.models.transformers.transformer_qwenimage import (
     QwenImageTransformer2DModel,
     QwenImageTransformerBlock,
+    QwenTimestepProjEmbeddings,
 )
 from transformers import PretrainedConfig
 
@@ -133,6 +136,97 @@ def _patch_rope_to_real(transformer, img_shapes, txt_seq_lens, dtype):
 
 
 # ═══════════════════════════════════════════════════════════════════════
+# Modulation hoisting
+#
+# Every block owns ``img_mod`` / ``txt_mod`` = SiLU + Linear(dim, 6*dim), whose
+# only input is the timestep embedding: 12.7 GiB of weights (60 blocks) that
+# never look at a token.  Compiled into the graph they are kept on a single
+# memory node of the chip (rebel 0.11.2, RBLN-CR13: the transformer takes 30.7
+# of that node's 35 GiB), so no other runtime fits beside the transformer.
+# Computing them on the host and feeding the results as one small input frees
+# that node.  Measured on the real model (first denoising step, fp32 reference):
+#   hoist txt_mod only   6.4 GiB off node 0, same speed, error unchanged (8.8 -> 9.0% at 8 blocks)
+#   hoist img_mod too    balanced nodes and a 17% faster forward, but the compiler
+#                        repartitions the image stream and the error grows with depth
+#                        (11% vs 4% after 60 blocks)  -> opt-in via hoist_modulation="all"
+# ═══════════════════════════════════════════════════════════════════════
+
+MODULATION_WEIGHTS_FILE = "modulation.pth"
+
+
+class _ModulationHolder:
+    """Slot the wrapper fills with the ``mod_params`` input on every forward."""
+
+    def __init__(self) -> None:
+        self.params: torch.Tensor | None = None
+
+
+class _ModulationFromInput(torch.nn.Module):
+    """Stand-in for a block's ``img_mod`` / ``txt_mod``: returns this block's precomputed rows."""
+
+    def __init__(self, holder: _ModulationHolder, layer_idx: int, row_start: int, row_end: int) -> None:
+        super().__init__()
+        self._holder = holder
+        self.layer_idx, self.row_start, self.row_end = layer_idx, row_start, row_end
+
+    def forward(self, temb: torch.Tensor) -> torch.Tensor:
+        return self._holder.params[self.layer_idx, self.row_start : self.row_end]
+
+
+class QwenImageModulationNet(torch.nn.Module):
+    """Host-side copy of the hoisted layers: timestep -> modulation parameters of every block.
+
+    Output ``[num_layers, rows, 6*dim]``. With ``mode="all"`` the first ``img_rows`` rows are ``img_mod(temb)``
+    (``2*B`` rows when ``zero_cond_t`` doubles the timestep, else ``B``) followed by ``B`` rows of ``txt_mod``;
+    with ``mode="txt"`` only the ``B`` ``txt_mod`` rows are produced.
+    """
+
+    def __init__(self, num_layers: int, inner_dim: int, zero_cond_t: bool, mode: str = "txt") -> None:
+        super().__init__()
+        if mode not in ("txt", "all"):
+            raise ValueError(f"mode must be 'txt' or 'all', got {mode!r}")
+        self.mode, self.zero_cond_t = mode, zero_cond_t
+        self.time_text_embed = QwenTimestepProjEmbeddings(embedding_dim=inner_dim)
+        mod = lambda: torch.nn.Sequential(torch.nn.SiLU(), torch.nn.Linear(inner_dim, 6 * inner_dim, bias=True))  # noqa: E731
+        self.img_mod = torch.nn.ModuleList(mod() for _ in range(num_layers)) if mode == "all" else None
+        self.txt_mod = torch.nn.ModuleList(mod() for _ in range(num_layers))
+
+    @classmethod
+    def from_transformer(cls, model: QwenImageTransformer2DModel, mode: str) -> "QwenImageModulationNet":
+        cfg = model.config
+        net = cls(
+            cfg.num_layers,
+            cfg.num_attention_heads * cfg.attention_head_dim,
+            bool(getattr(cfg, "zero_cond_t", False)),
+            mode,
+        )
+        net.time_text_embed.load_state_dict(model.time_text_embed.state_dict())
+        for i, block in enumerate(model.transformer_blocks):
+            if net.img_mod is not None:
+                net.img_mod[i].load_state_dict(block.img_mod.state_dict())
+            net.txt_mod[i].load_state_dict(block.txt_mod.state_dict())
+        return net.to(next(model.parameters()).dtype).eval()
+
+    @torch.no_grad()
+    def forward(self, timestep: torch.Tensor, dtype: torch.dtype) -> torch.Tensor:
+        # Mirrors QwenImageTransformer2DModel.forward: cast, double for zero_cond_t, embed, modulate. Computed in
+        # this module's own dtype (fp32 on the host, see __post_init__) and rounded once, to `dtype`, at the end.
+        compute_dtype = self.txt_mod[0][1].weight.dtype
+        timestep = timestep.to(compute_dtype)
+        if self.zero_cond_t:
+            timestep = torch.cat([timestep, timestep * 0], dim=0)
+        temb = self.time_text_embed(timestep, timestep)  # second arg only supplies the dtype
+        txt_temb = torch.chunk(temb, 2, dim=0)[0] if self.zero_cond_t else temb
+        if self.mode == "all":
+            rows = [
+                torch.cat([im(temb), tx(txt_temb)], dim=0) for im, tx in zip(self.img_mod, self.txt_mod, strict=True)
+            ]
+        else:
+            rows = [tx(txt_temb) for tx in self.txt_mod]
+        return torch.stack(rows, dim=0).to(dtype)
+
+
+# ═══════════════════════════════════════════════════════════════════════
 # Wrapper
 # ═══════════════════════════════════════════════════════════════════════
 
@@ -159,11 +253,33 @@ class QwenImageTransformer2DModelWrapper(torch.nn.Module):
         model: QwenImageTransformer2DModel,
         img_shapes: list,
         txt_seq_lens: list,
+        hoist_modulation: str = "none",
+        batch_size: int = 1,
     ) -> None:
         super().__init__()
         self.model = model
         self.img_shapes = img_shapes
         self.txt_seq_lens = txt_seq_lens
+        self.hoist_modulation = hoist_modulation
+        self._holder = _ModulationHolder()
+        self._replaced: list[tuple[torch.nn.Module, torch.nn.Module, torch.nn.Module]] = []
+        if hoist_modulation in ("txt", "all"):
+            img_rows = (
+                (2 * batch_size if getattr(model.config, "zero_cond_t", False) else batch_size)
+                if hoist_modulation == "all"
+                else 0
+            )
+            for i, block in enumerate(model.transformer_blocks):
+                self._replaced.append((block, block.img_mod, block.txt_mod))
+                if hoist_modulation == "all":
+                    block.img_mod = _ModulationFromInput(self._holder, i, 0, img_rows)
+                block.txt_mod = _ModulationFromInput(self._holder, i, img_rows, img_rows + batch_size)
+
+    def restore(self) -> None:
+        """Put the original ``img_mod`` / ``txt_mod`` modules back (the hoisted weights are saved from them)."""
+        for block, img_mod, txt_mod in self._replaced:
+            block.img_mod, block.txt_mod = img_mod, txt_mod
+        self._replaced.clear()
 
     def forward(
         self,
@@ -171,7 +287,10 @@ class QwenImageTransformer2DModelWrapper(torch.nn.Module):
         encoder_hidden_states: torch.FloatTensor,
         timestep: torch.FloatTensor,
         encoder_hidden_states_mask: torch.FloatTensor,
+        mod_params: torch.FloatTensor | None = None,
     ) -> torch.Tensor:
+        if self.hoist_modulation in ("txt", "all"):
+            self._holder.params = mod_params
         batch_size = hidden_states.shape[0]
         image_seq_len = hidden_states.shape[1]
 
@@ -211,6 +330,10 @@ class RBLNQwenImageTransformer2DModel(RBLNModel):
     1. **Real RoPE** – replaces ``apply_rotary_emb_qwen`` (complex ops).
     2. **Arithmetic _modulate** – replaces ``torch.where`` branch.
     3. **Pre-computed RoPE buffers** – eliminates runtime ``torch.polar``.
+
+    With ``hoist_modulation`` (default ``"txt"``) the blocks' ``txt_mod`` (and with
+    ``"all"`` also ``img_mod``) are replaced by an input during compilation; their
+    weights are saved to ``modulation.pth`` and evaluated on the host per timestep.
     """
 
     hf_library_name = "diffusers"
@@ -221,6 +344,54 @@ class RBLNQwenImageTransformer2DModel(RBLNModel):
 
     def __post_init__(self, **kwargs):
         super().__post_init__(**kwargs)
+        self._modulation_net: QwenImageModulationNet | None = None
+        self._modulation_cache: "OrderedDict[tuple, torch.Tensor]" = OrderedDict()
+        # The artifact is authoritative: a graph compiled with hoisting takes a 5th input, `mod_params`.
+        # (The config attribute may be unset on artifacts compiled before this option existed.)
+        mod_input = next(
+            (entry for entry in self.rbln_config.compile_cfgs[0].input_info if entry[0] == "mod_params"), None
+        )
+        if mod_input is not None:
+            cfg = self.config
+            mode = self.rbln_config.hoist_modulation
+            if mode not in ("txt", "all"):  # config predates the mode string: infer from the input's row count
+                mode = "txt" if mod_input[1][1] == self.rbln_config.batch_size else "all"
+            net = QwenImageModulationNet(
+                cfg.num_layers,
+                cfg.num_attention_heads * cfg.attention_head_dim,
+                bool(getattr(cfg, "zero_cond_t", False)),
+                mode,
+            )
+            candidates = [
+                Path(self.model_save_dir) / self.subfolder / MODULATION_WEIGHTS_FILE,
+                Path(self.model_save_dir) / MODULATION_WEIGHTS_FILE,
+            ]
+            path = next((c for c in candidates if c.is_file()), None)
+            if path is None:
+                raise FileNotFoundError(
+                    f"{MODULATION_WEIGHTS_FILE} not found under {self.model_save_dir}: this transformer was compiled "
+                    "with hoist_modulation=True and needs the hoisted weights next to compiled_model.rbln."
+                )
+            net.load_state_dict(torch.load(path, map_location="cpu", weights_only=True))
+            # fp32 on the host (12.7 GiB of RAM for txt, 25 GiB for all, on the 60-block model).
+            self._modulation_net = net.float().eval().requires_grad_(False)
+
+    def _runtime_dtype(self) -> torch.dtype:
+        dtype = self.rbln_config.dtype
+        return getattr(torch, dtype) if isinstance(dtype, str) else dtype
+
+    def _modulation_params(self, timestep: torch.Tensor) -> torch.Tensor:
+        """Modulation parameters for this timestep, cached: a schedule reuses the same timesteps every request."""
+        key = tuple(timestep.detach().float().flatten().tolist())
+        cached = self._modulation_cache.get(key)
+        if cached is not None:
+            self._modulation_cache.move_to_end(key)
+            return cached
+        params = self._modulation_net(timestep.detach().cpu(), self._runtime_dtype())
+        self._modulation_cache[key] = params
+        if len(self._modulation_cache) > 256:
+            self._modulation_cache.popitem(last=False)
+        return params
 
     @contextmanager
     def cache_context(self, name: str):
@@ -246,7 +417,13 @@ class RBLNQwenImageTransformer2DModel(RBLNModel):
     @classmethod
     def _wrap_model_if_needed(cls, model: torch.nn.Module, rbln_config: RBLNModelConfig) -> torch.nn.Module:
         img_shapes, txt_seq_lens = cls._get_compile_time_constants(rbln_config)
-        return QwenImageTransformer2DModelWrapper(model, img_shapes, txt_seq_lens).eval()
+        return QwenImageTransformer2DModelWrapper(
+            model,
+            img_shapes,
+            txt_seq_lens,
+            hoist_modulation=rbln_config.hoist_modulation or "none",
+            batch_size=rbln_config.batch_size,
+        ).eval()
 
     @classmethod
     def get_compiled_model(cls, model, rbln_config: RBLNQwenImageTransformer2DModelConfig):
@@ -254,6 +431,7 @@ class RBLNQwenImageTransformer2DModel(RBLNModel):
 
         original_rotary = _tq.apply_rotary_emb_qwen
         original_modulate = QwenImageTransformerBlock._modulate
+        wrapped = None
 
         try:
             # Patch 1 – real-number RoPE
@@ -274,8 +452,22 @@ class RBLNQwenImageTransformer2DModel(RBLNModel):
         finally:
             _tq.apply_rotary_emb_qwen = original_rotary
             QwenImageTransformerBlock._modulate = original_modulate
+            if wrapped is not None:
+                wrapped.restore()  # save_torch_artifacts below needs the real img_mod / txt_mod
 
         return compiled_model
+
+    @classmethod
+    def save_torch_artifacts(
+        cls,
+        model: QwenImageTransformer2DModel,
+        save_dir_path: Path,
+        subfolder: str,
+        rbln_config: RBLNQwenImageTransformer2DModelConfig,
+    ) -> None:
+        if rbln_config.hoist_modulation in ("txt", "all"):
+            net = QwenImageModulationNet.from_transformer(model, rbln_config.hoist_modulation)
+            torch.save(net.state_dict(), Path(save_dir_path) / subfolder / MODULATION_WEIGHTS_FILE)
 
     # ── config ────────────────────────────────────────────────────────
 
@@ -306,6 +498,9 @@ class RBLNQwenImageTransformer2DModel(RBLNModel):
             if isinstance(cfg, dict):
                 return cfg.get(key, default)
             return getattr(cfg, key, default)
+
+        if rbln_config.hoist_modulation is None:
+            rbln_config.hoist_modulation = "txt"
 
         if rbln_config._sample_size is None:
             rbln_config._sample_size = model_config.sample_size
@@ -338,6 +533,22 @@ class RBLNQwenImageTransformer2DModel(RBLNModel):
                 rbln_config.dtype,
             ),
         ]
+        if rbln_config.hoist_modulation in ("txt", "all"):
+            inner_dim = _cfg_get(model_config, "num_attention_heads") * _cfg_get(model_config, "attention_head_dim")
+            img_rows = 0
+            if rbln_config.hoist_modulation == "all":
+                img_rows = (
+                    2 * rbln_config.batch_size
+                    if _cfg_get(model_config, "zero_cond_t", False)
+                    else rbln_config.batch_size
+                )
+            input_info.append(
+                (
+                    "mod_params",
+                    [_cfg_get(model_config, "num_layers"), img_rows + rbln_config.batch_size, 6 * inner_dim],
+                    rbln_config.dtype,
+                )
+            )
 
         rbln_config.set_compile_cfgs([RBLNCompileConfig(input_info=input_info)])
         return rbln_config
@@ -385,13 +596,10 @@ class RBLNQwenImageTransformer2DModel(RBLNModel):
                 value=0.0,
             )
 
-        return super().forward(
-            hidden_states,
-            encoder_hidden_states,
-            timestep,
-            mask,
-            return_dict=return_dict,
-        )
+        inputs = [hidden_states, encoder_hidden_states, timestep, mask]
+        if self._modulation_net is not None:
+            inputs.append(self._modulation_params(timestep))
+        return super().forward(*inputs, return_dict=return_dict)
 
 
 __all__ = [
