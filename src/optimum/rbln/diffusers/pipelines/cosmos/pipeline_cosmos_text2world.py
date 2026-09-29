@@ -20,14 +20,10 @@ from diffusers.schedulers import EDMEulerScheduler
 from transformers import T5TokenizerFast
 
 from ....transformers.models.t5.modeling_t5 import RBLNT5EncoderModel
-from ....utils.logging import get_logger
 from ...modeling_diffusers import RBLNDiffusionMixin
 from ...models.autoencoders.autoencoder_kl_cosmos import RBLNAutoencoderKLCosmos
 from ...models.transformers.transformer_cosmos import RBLNCosmosTransformer3DModel
 from .cosmos_guardrail import RBLNCosmosSafetyChecker
-
-
-logger = get_logger(__name__)
 
 
 class RBLNCosmosTextToWorldPipeline(RBLNDiffusionMixin, CosmosTextToWorldPipeline):
