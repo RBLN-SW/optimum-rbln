@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING, Any
 
 from ....configuration_utils import RBLNModelConfig
 from ....transformers import RBLNQwen2_5_VLForConditionalGenerationConfig, RBLNT5EncoderModelConfig
+from ....utils.deprecation import deprecate_kwarg
 from ....utils.logging import get_logger
 from ..models import (
     RBLNAutoencoderKLCosmosConfig,
@@ -38,6 +39,13 @@ class RBLNCosmosPipelineBaseConfig(RBLNModelConfig):
     submodules = ["text_encoder", "transformer", "vae", "safety_checker"]
     _vae_uses_encoder = False
 
+    @deprecate_kwarg(
+        old_name="fps",
+        version="0.12.0",
+        additional_message="`fps` is not a compile-time parameter: it only scales the temporal RoPE, "
+        "which is computed on the host at run time. Pass it to the pipeline call instead, where "
+        "diffusers already takes it.",
+    )
     def __init__(
         self,
         text_encoder: RBLNT5EncoderModelConfig | None = None,
@@ -49,7 +57,6 @@ class RBLNCosmosPipelineBaseConfig(RBLNModelConfig):
         height: int | None = None,
         width: int | None = None,
         num_frames: int | None = None,
-        fps: int | None = None,
         max_seq_len: int | None = None,
         **kwargs: Any,
     ):
@@ -67,7 +74,6 @@ class RBLNCosmosPipelineBaseConfig(RBLNModelConfig):
             height (int | None): Height of the generated videos.
             width (int | None): Width of the generated videos.
             num_frames (int | None): The number of frames in the generated video.
-            fps (int | None): The frames per second of the generated video.
             max_seq_len (int | None): Maximum sequence length supported by the model.
             kwargs: Additional arguments passed to the parent RBLNModelConfig.
         """
