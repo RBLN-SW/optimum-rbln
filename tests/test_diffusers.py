@@ -358,13 +358,7 @@ class _MockCosmosSafetyChecker:
 
 
 class _MockedSafetyCheckerMixin:
-    """Compile the Cosmos pipelines against a stand-in safety checker.
-
-    `_construct_pipe` records every optional submodule as `("optimum.rbln", <class name>)`,
-    which holds for the real `RBLNCosmosSafetyChecker` but not for this mock. A reload then
-    imports `optimum.rbln.<mock name>` to type-check what the caller passed, and fails. Blank
-    the entry after compiling, the way rbln-executor does before it saves a pipeline.
-    """
+    """Compile the Cosmos pipelines against a stand-in safety checker."""
 
     # goes into every from_pretrained call of the base test (initial export and reloads)
     HF_CONFIG_KWARGS = {"safety_checker": _MockCosmosSafetyChecker()}
