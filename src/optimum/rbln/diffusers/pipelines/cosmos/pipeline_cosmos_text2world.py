@@ -60,9 +60,7 @@ class RBLNCosmosTextToWorldPipeline(RBLNDiffusionMixin, CosmosTextToWorldPipelin
         )
 
     def handle_additional_kwargs(self, **kwargs):
-        # Fill in a compiled shape only when the caller left it out, so the default of the HF
-        # `__call__` does not stand in for what this pipeline was compiled with. A caller who
-        # asks for a different shape keeps their value and gets the runtime's own error.
+        # Swap the HF default for the compiled shape; a value the caller passed is kept.
         compiled_num_frames = self.transformer.rbln_config.num_frames
         if compiled_num_frames is not None and kwargs.get("num_frames") is None:
             kwargs["num_frames"] = compiled_num_frames
