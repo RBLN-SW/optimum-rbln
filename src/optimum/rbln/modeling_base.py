@@ -49,7 +49,6 @@ if TYPE_CHECKING:
 
     HFModel = TransformersPreTrainedModel | ModelMixin
 
-
 logger = get_logger(__name__)
 
 Preprocessor = PreTrainedTokenizerBase | BaseImageProcessor | FeatureExtractionMixin | ProcessorMixin

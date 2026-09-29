@@ -36,7 +36,10 @@ class RBLNCosmos2_5_PredictBasePipeline(RBLNDiffusionMixin, Cosmos2_5_PredictBas
     RBLN-accelerated implementation of Cosmos-Predict2.5 pipeline.
 
     This pipeline compiles Cosmos-Predict2.5 models to run efficiently on RBLN NPUs, enabling high-performance
-    inference for generating images that follow physical laws with enhanced visual quality.
+    inference for generating videos that follow physical laws with enhanced visual quality.
+
+    One pipeline serves the three conditioning modes: Text2World (no visual input), Image2World
+    (`image=...`) and Video2World (`video=...`).
     """
 
     original_class = Cosmos2_5_PredictBasePipeline
