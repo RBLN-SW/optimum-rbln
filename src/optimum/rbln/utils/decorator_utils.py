@@ -39,7 +39,8 @@ def remove_compile_time_kwargs(func):
         check_params = {"height", "width"}
         params = inspect.signature(self.original_class.__call__).parameters
 
-        # Swap the HF default for the compiled size; a value the caller passed is kept.
+        # If height and width exist in the base pipeline's __call__ method arguments
+        # Otherwise, if there is no height or width of kwargs, it is filled based on the compiled size.
         if check_params.issubset(params):
             compiled_image_size = self.get_compiled_image_size()
             if compiled_image_size is not None:
