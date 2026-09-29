@@ -65,14 +65,16 @@ class RBLNCosmos2TextToImagePipeline(RBLNDiffusionMixin, Cosmos2TextToImagePipel
         )
 
     def handle_additional_kwargs(self, **kwargs):
-        if (
-            "max_sequence_length" in kwargs
-            and kwargs["max_sequence_length"] != self.transformer.rbln_config.max_seq_len
-        ):
-            logger.warning(
-                f"The transformer in this pipeline is compiled with 'max_seq_len={self.transformer.rbln_config.max_seq_len}'. 'max_sequence_length' set by the user will be ignored"
-            )
-            kwargs.pop("max_sequence_length")
+        # Set the compiled values, do not drop the keys: a dropped key falls back to the
+        # default of the HF `__call__`, which is not the shape this pipeline was compiled for.
+        compiled_max_seq_len = self.transformer.rbln_config.max_seq_len
+        if compiled_max_seq_len is not None:
+            if kwargs.get("max_sequence_length") is not None and kwargs["max_sequence_length"] != compiled_max_seq_len:
+                logger.warning(
+                    f"The transformer in this pipeline is compiled with 'max_seq_len={compiled_max_seq_len}'. "
+                    "'max_sequence_length' set by the user will be ignored"
+                )
+            kwargs["max_sequence_length"] = compiled_max_seq_len
         return kwargs
 
     @classmethod
