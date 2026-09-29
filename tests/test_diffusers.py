@@ -1,3 +1,4 @@
+import os
 import unittest
 
 import torch
@@ -356,14 +357,33 @@ class _MockCosmosSafetyChecker:
         return frames
 
 
-class TestCosmos2_5PredictModel(BaseTest.TestModel):
+class _MockedSafetyCheckerMixin:
+    """Compile the Cosmos pipelines against a stand-in safety checker.
+
+    `_construct_pipe` records every optional submodule as `("optimum.rbln", <class name>)`,
+    which holds for the real `RBLNCosmosSafetyChecker` but not for this mock. A reload then
+    imports `optimum.rbln.<mock name>` to type-check what the caller passed, and fails. Blank
+    the entry after compiling, the way rbln-executor does before it saves a pipeline.
+    """
+
+    # goes into every from_pretrained call of the base test (initial export and reloads)
+    HF_CONFIG_KWARGS = {"safety_checker": _MockCosmosSafetyChecker()}
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        local_dir = cls.get_rbln_local_dir()
+        if os.path.isdir(local_dir):
+            cls.model.register_to_config(safety_checker=(None, None))
+            cls.model.save_config(local_dir)
+
+
+class TestCosmos2_5PredictModel(_MockedSafetyCheckerMixin, BaseTest.TestModel):
     RBLN_CLASS = RBLNCosmos2_5_PredictBasePipeline
     # tiny-random pipeline mirroring nvidia/Cosmos-Predict2.5-2B (diffusers/base/post-trained):
     # shrunk transformer/text encoder, real-architecture Wan VAE (the RBLN wrapper's cache
     # shapes are tied to it), real tokenizer/scheduler configs.
     HF_MODEL_ID = "rbln/tiny-cosmos-2.5-predict"
-    # goes into every from_pretrained call of the base test (initial export and reloads)
-    HF_CONFIG_KWARGS = {"safety_checker": _MockCosmosSafetyChecker()}
     GENERATION_KWARGS = {
         "prompt": "dance monkey",
         "num_inference_steps": 2,
@@ -385,12 +405,11 @@ class TestCosmos2_5PredictModel(BaseTest.TestModel):
     }
 
 
-class TestCosmos2Text2ImageModel(BaseTest.TestModel):
+class TestCosmos2Text2ImageModel(_MockedSafetyCheckerMixin, BaseTest.TestModel):
     RBLN_CLASS = RBLNCosmos2TextToImagePipeline
     # tiny-random pipeline mirroring nvidia/Cosmos-Predict2-2B-Text2Image (shrunk
     # transformer/T5, real-architecture Wan VAE, real tokenizer/scheduler configs)
     HF_MODEL_ID = "rbln/tiny-cosmos2-text2image"
-    HF_CONFIG_KWARGS = {"safety_checker": _MockCosmosSafetyChecker()}
     GENERATION_KWARGS = {
         "prompt": "dance monkey",
         "num_inference_steps": 2,
@@ -409,13 +428,12 @@ class TestCosmos2Text2ImageModel(BaseTest.TestModel):
     }
 
 
-class TestCosmos2_5TransferModel(BaseTest.TestModel):
+class TestCosmos2_5TransferModel(_MockedSafetyCheckerMixin, BaseTest.TestModel):
     RBLN_CLASS = RBLNCosmos2_5_TransferPipeline
     # tiny-random Transfer2.5: Predict2.5 tiny base + a 2-block ControlNet, loaded from its own
     # repo like the official layout (pipeline with controlnet null + separate controlnet weights)
     HF_MODEL_ID = "rbln/tiny-cosmos-2.5-transfer"
     CONTROLNET_ID = "rbln/tiny-cosmos-2.5-transfer-controlnet-edge"
-    HF_CONFIG_KWARGS = {"safety_checker": _MockCosmosSafetyChecker()}
     GENERATION_KWARGS = {
         "prompt": "dance monkey",
         "num_inference_steps": 2,
@@ -446,12 +464,11 @@ class TestCosmos2_5TransferModel(BaseTest.TestModel):
         return inputs
 
 
-class TestCosmos2Video2WorldModel(BaseTest.TestModel):
+class TestCosmos2Video2WorldModel(_MockedSafetyCheckerMixin, BaseTest.TestModel):
     RBLN_CLASS = RBLNCosmos2VideoToWorldPipeline
     # tiny-random pipeline mirroring nvidia/Cosmos-Predict2-2B-Video2World
     # (in_channels 17, rope_scale (1, 3, 3); otherwise same recipe as the t2i tiny)
     HF_MODEL_ID = "rbln/tiny-cosmos2-video2world"
-    HF_CONFIG_KWARGS = {"safety_checker": _MockCosmosSafetyChecker()}
     GENERATION_KWARGS = {
         "prompt": "dance monkey",
         "image": torch.randn(1, 3, 64, 64, generator=torch.manual_seed(42)).uniform_(0, 1),
