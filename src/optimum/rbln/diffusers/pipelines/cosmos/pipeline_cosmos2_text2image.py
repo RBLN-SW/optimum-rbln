@@ -61,7 +61,8 @@ class RBLNCosmos2TextToImagePipeline(RBLNDiffusionMixin, Cosmos2TextToImagePipel
         )
 
     def handle_additional_kwargs(self, **kwargs):
-        # Swap the HF default for the compiled shape; a value the caller passed is kept.
+        # If there is no max_sequence_length of kwargs,
+        # it is filled based on the compiled value.
         compiled_max_seq_len = self.transformer.rbln_config.max_seq_len
         if compiled_max_seq_len is not None and kwargs.get("max_sequence_length") is None:
             kwargs["max_sequence_length"] = compiled_max_seq_len
