@@ -78,9 +78,7 @@ class RBLNCosmos2_5_TransferPipeline(RBLNDiffusionMixin, Cosmos2_5_TransferPipel
         )
 
     def handle_additional_kwargs(self, **kwargs):
-        # Fill in a compiled shape only when the caller left it out, so the default of the HF
-        # `__call__` does not stand in for what this pipeline was compiled with. A caller who
-        # asks for a different shape keeps their value and gets the runtime's own error.
+        # Swap the HF default for the compiled shape; a value the caller passed is kept.
         compiled_max_seq_len = self.transformer.rbln_config.max_seq_len
         if compiled_max_seq_len is not None and kwargs.get("max_sequence_length") is None:
             kwargs["max_sequence_length"] = compiled_max_seq_len
