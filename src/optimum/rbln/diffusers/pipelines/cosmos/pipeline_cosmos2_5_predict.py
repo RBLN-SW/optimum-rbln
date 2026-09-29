@@ -74,8 +74,6 @@ class RBLNCosmos2_5_PredictBasePipeline(RBLNDiffusionMixin, Cosmos2_5_PredictBas
             )
             kwargs.pop("max_sequence_length")
 
-        # `height` and `width` are handled for every pipeline by `remove_compile_time_kwargs`,
-        # which wraps `__call__` and runs before this method.
         compiled_num_frames = self.transformer.rbln_config.num_frames
         if compiled_num_frames is not None:
             if kwargs.get("num_frames") is not None and kwargs["num_frames"] != compiled_num_frames:
