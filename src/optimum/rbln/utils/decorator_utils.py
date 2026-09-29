@@ -27,7 +27,7 @@ def remove_compile_time_kwargs(func):
 
     For RBLN-optimized pipelines, several parameters must be determined during compilation
     and cannot be modified during inference. This decorator:
-    1. Removes and warns about image dimension parameters (height, width)
+    1. Fills in the image dimensions (height, width) the caller left out
     2. Removes and warns about LoRA scale in cross_attention_kwargs
 
     Args:
@@ -39,28 +39,16 @@ def remove_compile_time_kwargs(func):
         check_params = {"height", "width"}
         params = inspect.signature(self.original_class.__call__).parameters
 
-        # If height and width exist in the base pipeline's __call__ method arguments
-        # Otherwise, if there is no height or width of kwargs, it is filled based on the compiled size.
+        # Fill in a compiled shape only when the caller left it out, so the default of the HF
+        # `__call__` does not stand in for what the pipeline was compiled with. A caller who
+        # asks for a different shape keeps their value and gets the runtime's own error.
         if check_params.issubset(params):
             compiled_image_size = self.get_compiled_image_size()
             if compiled_image_size is not None:
-                height_exists = "height" in kwargs and kwargs["height"] is not None
-                width_exists = "width" in kwargs and kwargs["width"] is not None
-                if height_exists or width_exists:
-                    if not (
-                        kwargs.get("height", None) == compiled_image_size[0]
-                        and kwargs.get("width", None) == compiled_image_size[1]
-                    ):
-                        logger.warning(
-                            "Image dimension parameters (`height`, `width`) will be ignored during inference. "
-                            "Image dimensions (%s, %s) must be specified during model compilation using from_pretrained(), (%s, %s).",
-                            str(kwargs.get("height", None)),
-                            str(kwargs.get("width", None)),
-                            str(compiled_image_size[0]),
-                            str(compiled_image_size[1]),
-                        )
-                kwargs["height"] = compiled_image_size[0]
-                kwargs["width"] = compiled_image_size[1]
+                if kwargs.get("height") is None:
+                    kwargs["height"] = compiled_image_size[0]
+                if kwargs.get("width") is None:
+                    kwargs["width"] = compiled_image_size[1]
 
         if "cross_attention_kwargs" in kwargs:
             cross_attention_kwargs = kwargs.get("cross_attention_kwargs")
