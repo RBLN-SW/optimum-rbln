@@ -91,12 +91,11 @@ def _qwen3_5_linear_state_shapes(text_config, batch_size: int, custom_kernel: bo
     )
     conv_state_shape = (batch_size, text_config.linear_conv_kernel_dim - 1, conv_dim)
     if custom_kernel:
-        # Q, K and the value heads of each Q/K head, each carrying its last K-1 inputs channel last.
+        # Q, K and the value heads of each Q/K head, each carrying K-1 inputs.
         groups = 2 + text_config.linear_num_value_heads // text_config.linear_num_key_heads
         conv_state_shape = (
             batch_size,
-            text_config.linear_num_key_heads * groups,
-            text_config.linear_conv_kernel_dim - 1,
+            text_config.linear_num_key_heads * groups * (text_config.linear_conv_kernel_dim - 1),
             text_config.linear_key_head_dim,
         )
     # recurrent state/mask are 3D (B, Hv*Dk, Dv) — see the get_input_info comment: merging Hv into dim1 keeps

@@ -78,17 +78,19 @@ def _gdn_models(ratio, prefill_size, gate_bias, batch_size=1):
 
 
 def _grouped(flat, ratio):
-    """Flat (B, K-1, conv_dim) cache -> (B, Hk*(2+r), K-1, 128): grouped by Q/K head, channel last."""
+    """Flat (B, K-1, conv_dim) cache -> (B, Hk*(2+r)*(K-1), 128) grouped by Q/K head."""
     batch = flat.shape[0]
     parts = flat.split((256, 256, 256 * ratio), dim=2)
-    grouped = torch.cat([x.reshape(batch, 3, 2, -1, 128) for x in parts], dim=3)
-    return grouped.reshape(batch, 3, -1, 128).transpose(1, 2).contiguous()
+    grouped = torch.cat([x.reshape(batch, 3, 2, -1, 128).permute(0, 2, 3, 1, 4) for x in parts], dim=2)
+    return grouped.reshape(batch, -1, 128)
 
 
 def _flat(grouped, ratio):
     batch = grouped.shape[0]
-    grouped = grouped.transpose(1, 2).reshape(batch, 3, 2, 2 + ratio, 128)
-    return torch.cat([x.reshape(batch, 3, -1) for x in grouped.split((1, 1, ratio), dim=3)], dim=2)
+    grouped = grouped.reshape(batch, 2, 2 + ratio, 3, 128)
+    return torch.cat(
+        [x.permute(0, 3, 1, 2, 4).reshape(batch, 3, -1) for x in grouped.split((1, 1, ratio), dim=2)], dim=2
+    )
 
 
 def _custom_states(native_states):
@@ -106,9 +108,7 @@ def _step(models, states, hidden, kwargs):
     for index, model in enumerate(models):
         output = model(hidden, *states[index], **kwargs[index])
         assert (output[2] is None) is model.gdn_custom_kernel
-        # A decode step's conv cache is updated in place too.
-        conv_state = states[index][0] if output[1] is None else output[1]
-        states[index] = (conv_state, states[index][1] if output[2] is None else output[2])
+        states[index] = (output[1], states[index][1] if output[2] is None else output[2])
         outputs.append(output[0])
     return outputs
 
@@ -131,9 +131,11 @@ def test_gdn_custom_model_prefill_decode_and_reset(ratio, prefill_size, gate_bia
     initial = (torch.randn(1, 3, conv_dim), torch.randn(1, units * 128, 128))
     states = [initial, _custom_states(initial)]
     assert _qwen3_5_linear_state_shapes(hf_config, 1) == ((1, 3, conv_dim), (1, units * 128, 128))
-    conv_shape = (1, 2 * (2 + ratio), 3, 128)
-    assert _qwen3_5_linear_state_shapes(hf_config, 1, True) == (conv_shape, (1, 2, ratio, 2, 128, 64))
-    assert _qwen3_5_linear_mask_shapes(hf_config, 1, True) == (conv_shape, (1,))
+    assert _qwen3_5_linear_state_shapes(hf_config, 1, True) == (
+        (1, 2 * (2 + ratio) * 3, 128),
+        (1, 2, ratio, 2, 128, 64),
+    )
+    assert _qwen3_5_linear_mask_shapes(hf_config, 1, True) == ((1, 2 * (2 + ratio) * 3, 128), (1,))
     with torch.inference_mode():
         for phase, valid, reset in (
             ("prefill", prefill_size, True),
