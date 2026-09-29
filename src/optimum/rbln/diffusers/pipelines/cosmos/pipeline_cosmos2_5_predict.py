@@ -20,15 +20,11 @@ from diffusers.schedulers import UniPCMultistepScheduler
 from transformers import AutoTokenizer
 
 from ....transformers.models.qwen2_5_vl import RBLNQwen2_5_VLForConditionalGeneration
-from ....utils.logging import get_logger
 from ...configurations.pipelines.configuration_cosmos import RBLNCosmos2_5_PredictBasePipelineConfig
 from ...modeling_diffusers import RBLNDiffusionMixin
 from ...models.autoencoders.autoencoder_kl_wan import RBLNAutoencoderKLWan
 from ...models.transformers.transformer_cosmos import RBLNCosmosTransformer3DModel
 from .cosmos_guardrail import RBLNCosmosSafetyChecker
-
-
-logger = get_logger(__name__)
 
 
 class RBLNCosmos2_5_PredictBasePipeline(RBLNDiffusionMixin, Cosmos2_5_PredictBasePipeline):
