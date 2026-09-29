@@ -105,8 +105,6 @@ class RBLNCosmos2_5_TransferPipeline(RBLNDiffusionMixin, Cosmos2_5_TransferPipel
                 )
             kwargs["num_frames_per_chunk"] = compiled_num_frames
 
-        # `height` and `width` are handled for every pipeline by `remove_compile_time_kwargs`,
-        # which wraps `__call__` and runs before this method.
         return kwargs
 
     @classmethod
