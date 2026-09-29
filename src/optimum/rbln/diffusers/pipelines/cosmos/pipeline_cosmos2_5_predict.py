@@ -74,17 +74,16 @@ class RBLNCosmos2_5_PredictBasePipeline(RBLNDiffusionMixin, Cosmos2_5_PredictBas
             )
             kwargs.pop("max_sequence_length")
 
-        for key in ("height", "width", "num_frames"):
-            compiled_value = getattr(self.transformer.rbln_config, key, None)
-            if compiled_value is None:
-                continue
-            if kwargs.get(key) is not None and kwargs[key] != compiled_value:
-                raise ValueError(
-                    f"The transformer in this pipeline is compiled with '{key}={compiled_value}', "
-                    f"but '{key}={kwargs[key]}' was requested. Recompile the pipeline with the "
-                    f"desired value, or drop '{key}' to use the compiled one."
+        # `height` and `width` are handled for every pipeline by `remove_compile_time_kwargs`,
+        # which wraps `__call__` and runs before this method.
+        compiled_num_frames = self.transformer.rbln_config.num_frames
+        if compiled_num_frames is not None:
+            if kwargs.get("num_frames") is not None and kwargs["num_frames"] != compiled_num_frames:
+                logger.warning(
+                    f"The transformer in this pipeline is compiled with 'num_frames={compiled_num_frames}'. "
+                    "'num_frames' set by the user will be ignored"
                 )
-            kwargs[key] = compiled_value
+            kwargs["num_frames"] = compiled_num_frames
         return kwargs
 
     @classmethod

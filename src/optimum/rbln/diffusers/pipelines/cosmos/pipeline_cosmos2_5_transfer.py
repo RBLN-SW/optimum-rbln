@@ -105,17 +105,8 @@ class RBLNCosmos2_5_TransferPipeline(RBLNDiffusionMixin, Cosmos2_5_TransferPipel
                 )
             kwargs["num_frames_per_chunk"] = compiled_num_frames
 
-        for key in ("height", "width"):
-            compiled_value = getattr(self.transformer.rbln_config, key, None)
-            if compiled_value is None:
-                continue
-            if kwargs.get(key) is not None and kwargs[key] != compiled_value:
-                raise ValueError(
-                    f"The transformer in this pipeline is compiled with '{key}={compiled_value}', "
-                    f"but '{key}={kwargs[key]}' was requested. Recompile the pipeline with the "
-                    f"desired value, or drop '{key}' to use the compiled one."
-                )
-            kwargs[key] = compiled_value
+        # `height` and `width` are handled for every pipeline by `remove_compile_time_kwargs`,
+        # which wraps `__call__` and runs before this method.
         return kwargs
 
     @classmethod
