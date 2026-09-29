@@ -15,6 +15,7 @@
 from typing import Any
 
 from ....configuration_utils import RBLNModelConfig
+from ....utils.deprecation import deprecate_kwarg
 
 
 class RBLNCosmosTransformer3DModelConfig(RBLNModelConfig):
@@ -25,6 +26,15 @@ class RBLNCosmosTransformer3DModelConfig(RBLNModelConfig):
     for Transformer models used in diffusion models like Cosmos.
     """
 
+    # `fps` was saved into `rbln_config.json` up to 0.11.3, so artifacts compiled by those
+    # versions still carry it. Absorb it on load instead of rejecting the whole config.
+    @deprecate_kwarg(
+        old_name="fps",
+        version="0.12.0",
+        additional_message="`fps` is not a compile-time parameter: it only scales the temporal RoPE, "
+        "which is computed on the host at run time. Pass it to the pipeline call instead, where "
+        "diffusers already takes it.",
+    )
     def __init__(
         self,
         batch_size: int | None = None,
