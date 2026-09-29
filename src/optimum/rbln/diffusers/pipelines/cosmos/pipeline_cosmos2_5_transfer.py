@@ -82,31 +82,17 @@ class RBLNCosmos2_5_TransferPipeline(RBLNDiffusionMixin, Cosmos2_5_TransferPipel
         )
 
     def handle_additional_kwargs(self, **kwargs):
-        # Set the compiled values, do not drop the keys: a dropped key falls back to the
-        # default of the HF `__call__`, which is not the shape this pipeline was compiled for.
+        # Fill in a compiled shape only when the caller left it out, so the default of the HF
+        # `__call__` does not stand in for what this pipeline was compiled with. A caller who
+        # asks for a different shape keeps their value and gets the runtime's own error.
         compiled_max_seq_len = self.transformer.rbln_config.max_seq_len
-        if compiled_max_seq_len is not None:
-            if kwargs.get("max_sequence_length") is not None and kwargs["max_sequence_length"] != compiled_max_seq_len:
-                logger.warning(
-                    f"The transformer in this pipeline is compiled with 'max_seq_len={compiled_max_seq_len}'. "
-                    "'max_sequence_length' set by the user will be ignored"
-                )
+        if compiled_max_seq_len is not None and kwargs.get("max_sequence_length") is None:
             kwargs["max_sequence_length"] = compiled_max_seq_len
-
         # The chunk window is a compiled shape; the total output length (num_frames) stays free
         # because transfer generates long videos chunk by chunk on the host.
         compiled_num_frames = self.transformer.rbln_config.num_frames
-        if compiled_num_frames is not None:
-            if (
-                kwargs.get("num_frames_per_chunk") is not None
-                and kwargs["num_frames_per_chunk"] != compiled_num_frames
-            ):
-                logger.warning(
-                    f"The transformer in this pipeline is compiled with 'num_frames={compiled_num_frames}' per chunk. "
-                    "'num_frames_per_chunk' set by the user will be ignored"
-                )
+        if compiled_num_frames is not None and kwargs.get("num_frames_per_chunk") is None:
             kwargs["num_frames_per_chunk"] = compiled_num_frames
-
         return kwargs
 
     @classmethod
