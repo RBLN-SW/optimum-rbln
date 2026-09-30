@@ -50,6 +50,7 @@ for suite in transformers diffusers llm; do
       RBLN_FORCE_NPU_NAME: "RBLN-CA22"
       OPTIMUM_RBLN_TEST_LEVEL: "full"
       SAVE_ARTIFACTS_PATH: "$BC_BASE_PATH/$encoded"
+      OPTIMUM_RBLN_REAL_COMPILE: "1"
     timeout_in_minutes: 180
     artifact_paths: "junit-*.xml"
     command:

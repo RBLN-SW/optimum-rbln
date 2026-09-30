@@ -62,6 +62,7 @@ for tag in $tags; do
       LD_LIBRARY_PATH: "\${UMD_PATH}"
       OPTIMUM_RBLN_TEST_LEVEL: "full"
       REUSE_ARTIFACTS_PATH: "$BC_BASE_PATH/$encoded"
+      OPTIMUM_RBLN_REAL_COMPILE: "1"
     timeout_in_minutes: 60
     artifact_paths: "junit-*.xml"
     command:
