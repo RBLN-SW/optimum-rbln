@@ -402,7 +402,7 @@ class _GroundingDinoMultiscaleDeformableAttention(torch.nn.Module):
         if torch.compiler.is_exporting():
             torch._check(
                 (spatial_shapes[:, 0] * spatial_shapes[:, 1]).sum().item() == sequence_length,
-                "Make sure to align the spatial shapes with the sequence length of the encoder hidden states",
+                lambda: "Make sure to align the spatial shapes with the sequence length of the encoder hidden states",
             )
         else:
             if (spatial_shapes[:, 0] * spatial_shapes[:, 1]).sum() != sequence_length:
