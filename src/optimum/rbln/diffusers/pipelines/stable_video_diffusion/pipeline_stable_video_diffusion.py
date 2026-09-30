@@ -37,12 +37,14 @@ class RBLNStableVideoDiffusionPipeline(RBLNDiffusionMixin, StableVideoDiffusionP
     _upcasts_vae = True
 
     def handle_additional_kwargs(self, **kwargs):
+        # If there is no num_frames or decode_chunk_size of kwargs,
+        # it is filled based on the compiled value.
         compiled_num_frames = self.unet.rbln_config.num_frames
-        if compiled_num_frames is not None:
+        if compiled_num_frames is not None and kwargs.get("num_frames") is None:
             kwargs["num_frames"] = compiled_num_frames
 
         compiled_decode_chunk_size = self.vae.rbln_config.decode_chunk_size
-        if compiled_decode_chunk_size is not None:
+        if compiled_decode_chunk_size is not None and kwargs.get("decode_chunk_size") is None:
             kwargs["decode_chunk_size"] = compiled_decode_chunk_size
         return kwargs
 
