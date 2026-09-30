@@ -199,19 +199,22 @@ class T5Block(Seq2SeqDecoderLayer):
         self.self_attn_layer_norm = decoder_layer.layer[0].layer_norm
         self.encoder_attn_layer_norm = decoder_layer.layer[1].layer_norm
         self.cross_attn = T5CrossAttention(decoder_layer.layer[1].EncDecAttention)
-        self.ff_layer = decoder_layer.layer[2]
+        self._ff_layer = decoder_layer.layer[2]
+
+    def ff_layer(self, hidden_states):
+        return _clamp_finite(self._ff_layer(hidden_states))
 
     def pre_self_attn_layer_norm(self, hidden_states):
         return self.self_attn_layer_norm(hidden_states)
 
     def post_self_attn_layer_norm(self, hidden_states):
-        return hidden_states
+        return _clamp_finite(hidden_states)
 
     def pre_cross_attn_layer_norm(self, hidden_states):
         return self.encoder_attn_layer_norm(hidden_states)
 
     def post_cross_attn_layer_norm(self, hidden_states):
-        return hidden_states
+        return _clamp_finite(hidden_states)
 
 
 class T5LayerSelfAttention(Seq2SeqSelfAttention):
