@@ -185,7 +185,6 @@ def rbln_chunk_gated_delta_rule(
 
         incr_i = incr[:, :, i]
         g_total = incr_i.sum(dim=-1, keepdim=True)
-        # incr_i is fp32 (HF casts) while tril_strict carries query.dtype (bf16); torch >= 2.13 rejects mixed-dtype matmul.
         decay_to_end = incr_i @ tril_strict[0, 0, 0].to(incr_i.dtype)
         last_recurrent_state = (
             last_recurrent_state * g_total.unsqueeze(-1).exp()
