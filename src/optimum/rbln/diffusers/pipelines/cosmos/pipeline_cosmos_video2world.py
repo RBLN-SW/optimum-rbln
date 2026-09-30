@@ -20,14 +20,10 @@ from diffusers.schedulers import EDMEulerScheduler
 from transformers import T5TokenizerFast
 
 from ....transformers.models.t5.modeling_t5 import RBLNT5EncoderModel
-from ....utils.logging import get_logger
 from ...modeling_diffusers import RBLNDiffusionMixin
 from ...models.autoencoders.autoencoder_kl_cosmos import RBLNAutoencoderKLCosmos
 from ...models.transformers.transformer_cosmos import RBLNCosmosTransformer3DModel
 from .cosmos_guardrail import RBLNCosmosSafetyChecker
-
-
-logger = get_logger(__name__)
 
 
 class RBLNCosmosVideoToWorldPipeline(RBLNDiffusionMixin, CosmosVideoToWorldPipeline):
@@ -64,19 +60,14 @@ class RBLNCosmosVideoToWorldPipeline(RBLNDiffusionMixin, CosmosVideoToWorldPipel
         )
 
     def handle_additional_kwargs(self, **kwargs):
-        if "num_frames" in kwargs and kwargs["num_frames"] != self.transformer.rbln_config.num_frames:
-            logger.warning(
-                f"The transformer in this pipeline is compiled with 'num_frames={self.transformer.rbln_config.num_frames}'. 'num_frames' set by the user will be ignored"
-            )
-            kwargs.pop("num_frames")
-        if (
-            "max_sequence_length" in kwargs
-            and kwargs["max_sequence_length"] != self.transformer.rbln_config.max_seq_len
-        ):
-            logger.warning(
-                f"The transformer in this pipeline is compiled with 'max_seq_len={self.transformer.rbln_config.max_seq_len}'. 'max_sequence_length' set by the user will be ignored"
-            )
-            kwargs.pop("max_sequence_length")
+        # If there is no num_frames or max_sequence_length of kwargs,
+        # it is filled based on the compiled value.
+        compiled_num_frames = self.transformer.rbln_config.num_frames
+        if compiled_num_frames is not None and kwargs.get("num_frames") is None:
+            kwargs["num_frames"] = compiled_num_frames
+        compiled_max_seq_len = self.transformer.rbln_config.max_seq_len
+        if compiled_max_seq_len is not None and kwargs.get("max_sequence_length") is None:
+            kwargs["max_sequence_length"] = compiled_max_seq_len
         return kwargs
 
     @classmethod
