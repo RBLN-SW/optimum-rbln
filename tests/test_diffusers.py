@@ -325,7 +325,8 @@ class TestSVDImg2VidModel(BaseTest.TestModel):
         "generator": torch.manual_seed(42),
         "image": torch.randn(1, 3, 32, 32, generator=torch.manual_seed(42)).uniform_(0, 1),
         "num_frames": 2,
-        "decode_chunk_size": 2,
+        # `decode_chunk_size` is left out on purpose: `chunk_frame` compiles the decoder for the
+        # closest divisor below `num_frames`, which is 1 here, so the pipeline fills in that 1.
         "output_type": "pt",
         "height": 32,
         "width": 32,
