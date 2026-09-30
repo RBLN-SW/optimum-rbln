@@ -1,6 +1,8 @@
 # Entry pipeline for PR builds. Gates run first; the test pipelines are uploaded
 # only after they pass.
 env:
+  # Temporary baseline run: keep pytest and BC on the real SDK.
+  OPTIMUM_RBLN_REAL_COMPILE: "1"
   # Where every release's compiled artifacts live, written by the tag build
   # (.buildkite/bc-compile.yml).
   BC_BASE_PATH: "${OPTIMUM_BC_BASE_PATH}"

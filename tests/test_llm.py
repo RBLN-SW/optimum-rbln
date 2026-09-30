@@ -74,7 +74,7 @@ from optimum.rbln import (
     RBLNT5ForConditionalGeneration,
 )
 
-from .test_base import BaseTest, DisallowedTestBase, TestLevel
+from .test_base import BaseTest, DisallowedTestBase, TestLevel, requires_compile
 
 
 RANDOM_ATTN_MASK = torch.randint(low=0, high=2, size=(1, 512), generator=torch.manual_seed(42), dtype=torch.int64)
@@ -209,12 +209,14 @@ class TestMistralModel(LLMTest.TestLLMWithoutLMHead):
     HF_CONFIG_KWARGS = {"num_hidden_layers": 1, "max_position_embeddings": 1024, "sliding_window": 512}
 
 
+@requires_compile
 class TestQwen2ForCausalLM(LLMTest.TestLLM):
     RBLN_CLASS = RBLNQwen2ForCausalLM
     HF_MODEL_ID = "Qwen/Qwen2-0.5B-Instruct"
     HF_CONFIG_KWARGS = {"num_hidden_layers": 1, "layer_types": ["full_attention"], "max_position_embeddings": 1024}
 
 
+@requires_compile
 class TestQwen2Model(LLMTest.TestLLMWithoutLMHead):
     RBLN_CLASS = RBLNQwen2Model
     HF_MODEL_ID = "Qwen/Qwen2-0.5B-Instruct"
@@ -843,6 +845,7 @@ class TestQwen2VLForConditionalGeneration(LLMTest.TestLLM):
         assert not model.rbln_config.create_runtimes
 
 
+@requires_compile
 class TestQwen2_5_VLForConditionalGeneration(LLMTest.TestLLM):
     RBLN_AUTO_CLASS = RBLNAutoModelForImageTextToText
     RBLN_CLASS = RBLNQwen2_5_VLForConditionalGeneration
@@ -931,6 +934,7 @@ class TestQwen2_5_VLForConditionalGeneration_OutputHiddenStates(TestQwen2_5_VLFo
         self.skipTest("Covered by TestQwen2_5_VLForConditionalGeneration.")
 
 
+@requires_compile
 class TestQwen3VLForConditionalGeneration(LLMTest.TestLLM):
     RBLN_AUTO_CLASS = RBLNAutoModelForImageTextToText
     RBLN_CLASS = RBLNQwen3VLForConditionalGeneration
@@ -1058,6 +1062,7 @@ class TestQwen3VLMoeForConditionalGeneration(LLMTest.TestLLM):
         return inputs
 
 
+@requires_compile
 class TestQwen3_5ForConditionalGeneration(LLMTest.TestLLM):
     RBLN_AUTO_CLASS = RBLNAutoModelForImageTextToText
     RBLN_CLASS = RBLNQwen3_5ForConditionalGeneration
@@ -1168,6 +1173,7 @@ class TestQwen3ASRForConditionalGeneration(LLMTest.TestLLM):
         return inputs
 
 
+@requires_compile
 class TestGemma3ForConditionalGeneration(LLMTest.TestLLM):
     RBLN_AUTO_CLASS = RBLNAutoModelForImageTextToText
     RBLN_CLASS = RBLNGemma3ForConditionalGeneration
@@ -1294,6 +1300,7 @@ class TestMultiLora(LLMTest.TestLLM):
         return super().get_inputs()
 
 
+@requires_compile
 @unittest.skip("Compilation fails: with CR25 + CR03, need to fix it")
 class TestMultiLora_batch(LLMTest.TestLLM):
     PROMPT = ["Who are you?", "What is the capital of France?"]

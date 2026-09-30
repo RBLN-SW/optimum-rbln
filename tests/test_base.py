@@ -19,6 +19,8 @@ from optimum.rbln import __version__
 from optimum.rbln.configuration_utils import ContextRblnConfig
 from optimum.rbln.utils.deprecation import deprecate_method
 
+from .fake_rbln import is_fake_compile
+
 
 def test_version_is_str():
     assert isinstance(__version__, str)
@@ -123,6 +125,13 @@ def require_hf_user_id(test_case):
         return unittest.skip("test requires hf token as `HF_USER_ID` environment variable")(test_case)
     else:
         return test_case
+
+
+def requires_compile(test_case):
+    """Route a model test class, including inherited tests, to the compiled-models suite."""
+    if not isinstance(test_case, type):
+        raise TypeError("requires_compile must mark a whole model test class")
+    return pytest.mark.requires_compile(test_case)
 
 
 def require_hf_token(test_case):
@@ -306,7 +315,7 @@ class BaseTest:
 
             output = self.postprocess(inputs, output)
             REUSE_ARTIFACTS_PATH = os.environ.get("REUSE_ARTIFACTS_PATH", None)
-            if self.EXPECTED_OUTPUT and self.DEVICE is None and REUSE_ARTIFACTS_PATH is None:
+            if self.EXPECTED_OUTPUT and self.DEVICE is None and REUSE_ARTIFACTS_PATH is None and not is_fake_compile():
                 from simphile import jaccard_similarity
 
                 if isinstance(self.EXPECTED_OUTPUT, str):

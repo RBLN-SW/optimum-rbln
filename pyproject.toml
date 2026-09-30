@@ -139,6 +139,7 @@ use_parentheses = true
 
 [tool.pytest.ini_options]
 doctest_optionflags = "NUMBER NORMALIZE_WHITESPACE ELLIPSIS"
+markers = ["requires_compile: model classes whose full API tests need real compiled outputs"]
 
 [tool.ruff]
 line-length = 119

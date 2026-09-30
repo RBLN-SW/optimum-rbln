@@ -48,7 +48,7 @@ from optimum.rbln.transformers.models.auto.modeling_auto import (
 from optimum.rbln.utils.runtime_utils import ContextRblnConfig
 from optimum.rbln.utils.save_utils import maybe_load_preprocessors
 
-from .test_base import BaseHubTest, BaseTest, TestLevel
+from .test_base import BaseHubTest, BaseTest, TestLevel, requires_compile
 
 
 RANDOM_INPUT_IDS = torch.randint(low=0, high=50, size=(1, 512), generator=torch.manual_seed(42), dtype=torch.int64)
@@ -361,6 +361,7 @@ class TestXLMRobertaModel(BaseTest.TestModel):
     }
 
 
+@requires_compile
 class TestEncoderMaxSeqLenBucketing(unittest.TestCase):
     """Sequence-length bucketing for feature-extraction encoders.
 
@@ -603,6 +604,8 @@ class TestWav2VecModel(BaseTest.TestModel):
     RBLN_CLASS_KWARGS = {"rbln_max_seq_len": 160005}
 
 
+# Zero outputs are not valid distribution parameters for the host-side sampling.
+@requires_compile
 class TestTimeSeriesTransformerForPrediction(BaseTest.TestModel):
     RBLN_AUTO_CLASS = None
     RBLN_CLASS = RBLNTimeSeriesTransformerForPrediction
