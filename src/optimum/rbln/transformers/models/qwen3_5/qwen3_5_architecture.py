@@ -205,7 +205,7 @@ def rbln_chunk_gated_delta_rule(
 
         incr_i = incr[:, :, i]
         g_total = incr_i.sum(dim=-1, keepdim=True)
-        decay_to_end = incr_i @ tril_strict[0, 0, 0]
+        decay_to_end = incr_i @ tril_strict[0, 0, 0].to(incr_i.dtype)
         last_recurrent_state = (
             last_recurrent_state * g_total.unsqueeze(-1).exp()
             + (k_i * decay_to_end.exp().unsqueeze(-1)).transpose(-1, -2) @ v_new

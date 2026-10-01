@@ -322,6 +322,9 @@ class RBLNQwen3Guard(Qwen3Guard):
         base_model_id: str = "Qwen/Qwen3Guard-Gen-0.6B",
         rbln_config: RBLNCosmosSafetyCheckerConfig | None = None,
     ) -> None:
+        """
+        RBLNQwen 3 model for text filtering safety check.
+        """
         if is_compiled_dir(checkpoint_id):
             torch.nn.Module.__init__(self)
             cache_dir = pathlib.Path(checkpoint_id) / "qwen3guard"
