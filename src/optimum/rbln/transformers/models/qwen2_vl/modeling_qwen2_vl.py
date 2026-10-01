@@ -283,16 +283,6 @@ class RBLNQwen2VLModel(RBLNDecoderOnlyModel):
         else:
             return self.embedding_dim if hasattr(self, "embedding_dim") else text_config.hidden_size
 
-    def _create_embedding_layer(self):
-        with no_init_weights():
-            embed_tokens = torch.nn.Embedding(
-                self.config.text_config.vocab_size,
-                self.config.text_config.hidden_size,
-                self.config.text_config.pad_token_id,
-                dtype=self.rbln_config.dtype,
-            )
-        return embed_tokens
-
     @classmethod
     def get_input_info(
         cls,

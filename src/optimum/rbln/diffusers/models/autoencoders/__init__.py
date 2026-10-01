@@ -24,6 +24,7 @@ if TYPE_CHECKING:
     from .autoencoder_kl_cosmos import *
     from .autoencoder_kl_qwenimage import *
     from .autoencoder_kl_temporal_decoder import *
+    from .autoencoder_kl_wan import *
     from .vq_model import *
 else:
     import sys
