@@ -22,7 +22,6 @@ from transformers import PreTrainedModel
 from transformers.models.qwen3_5.modeling_qwen3_5 import l2norm
 
 from ....utils.runtime_utils import normalize_npu, resolve_npu_or_none
-
 from ..decoderonly.decoderonly_architecture import (
     DecoderOnlyAttention,
     DecoderOnlyForCausalLM,
