@@ -49,6 +49,7 @@ class RBLNQwen3_5ForCausalLMConfig(RBLNDecoderOnlyModelForCausalLMConfig):
         self,
         gdn_chunk_size: int | None = None,
         linear_attention_layers: list[int] | None = None,
+        gdn_custom_kernel: bool | None = None,
         **kwargs: Any,
     ):
         """
@@ -58,11 +59,15 @@ class RBLNQwen3_5ForCausalLMConfig(RBLNDecoderOnlyModelForCausalLMConfig):
                 delta rule. Must divide `prefill_chunk_size`. Defaults to `MAX_GDN_CHUNK_SIZE` (128).
             linear_attention_layers (list[int] | None): The linear_attention (GatedDeltaNet)
                 layer indices, populated automatically from `layer_types` at compile time (not user-set).
+            gdn_custom_kernel (bool | None): Whether the GatedDeltaNet core runs as the `rbln::gdn_prefill` /
+                `rbln::gdn_decode` custom ops, set automatically at compile time (not user-set). They serve
+                any `prefill_chunk_size` that is a multiple of 128 with `gdn_chunk_size` 128.
             kwargs: Additional arguments passed to `RBLNDecoderOnlyModelForCausalLMConfig`.
         """
         super().__init__(**kwargs)
         self.gdn_chunk_size = MAX_GDN_CHUNK_SIZE if gdn_chunk_size is None else gdn_chunk_size
         self.linear_attention_layers = linear_attention_layers or []
+        self.gdn_custom_kernel = gdn_custom_kernel
 
 
 class RBLNQwen3_5TextModelConfig(RBLNDecoderOnlyModelConfig):
@@ -77,6 +82,7 @@ class RBLNQwen3_5TextModelConfig(RBLNDecoderOnlyModelConfig):
         self,
         gdn_chunk_size: int | None = None,
         linear_attention_layers: list[int] | None = None,
+        gdn_custom_kernel: bool | None = None,
         **kwargs: Any,
     ):
         """
@@ -86,11 +92,15 @@ class RBLNQwen3_5TextModelConfig(RBLNDecoderOnlyModelConfig):
                 delta rule. Must divide `prefill_chunk_size`. Defaults to `MAX_GDN_CHUNK_SIZE` (128).
             linear_attention_layers (list[int] | None): The linear_attention (GatedDeltaNet)
                 layer indices, populated automatically from `layer_types` at compile time (not user-set).
+            gdn_custom_kernel (bool | None): Whether the GatedDeltaNet core runs as the `rbln::gdn_prefill` /
+                `rbln::gdn_decode` custom ops, set automatically at compile time (not user-set). They serve
+                any `prefill_chunk_size` that is a multiple of 128 with `gdn_chunk_size` 128.
             kwargs: Additional arguments passed to `RBLNDecoderOnlyModelConfig`.
         """
         super().__init__(**kwargs)
         self.gdn_chunk_size = MAX_GDN_CHUNK_SIZE if gdn_chunk_size is None else gdn_chunk_size
         self.linear_attention_layers = linear_attention_layers or []
+        self.gdn_custom_kernel = gdn_custom_kernel
 
 
 class RBLNQwen3_5VisionModelConfig(RBLNModelConfig):
@@ -144,6 +154,7 @@ class RBLNQwen3_5ModelConfig(RBLNDecoderOnlyModelConfig):
         self,
         gdn_chunk_size: int | None = None,
         linear_attention_layers: list[int] | None = None,
+        gdn_custom_kernel: bool | None = None,
         visual: RBLNModelConfig | None = None,
         _load_visual_runtime: bool = True,
         **kwargs: Any,
@@ -155,6 +166,9 @@ class RBLNQwen3_5ModelConfig(RBLNDecoderOnlyModelConfig):
                 delta rule. Must divide `prefill_chunk_size`. Defaults to `MAX_GDN_CHUNK_SIZE` (128).
             linear_attention_layers (list[int] | None): The linear_attention (GatedDeltaNet)
                 layer indices, populated automatically from `layer_types` at compile time (not user-set).
+            gdn_custom_kernel (bool | None): Whether the GatedDeltaNet core runs as the `rbln::gdn_prefill` /
+                `rbln::gdn_decode` custom ops, set automatically at compile time (not user-set). They serve
+                any `prefill_chunk_size` that is a multiple of 128 with `gdn_chunk_size` 128.
             visual (Optional[RBLNModelConfig]): Configuration for the vision encoder submodule.
             _load_visual_runtime (bool): Whether to create the visual encoder runtime (False on
                 decoder-only nodes in a disaggregated setup). Defaults to True.
@@ -174,6 +188,7 @@ class RBLNQwen3_5ModelConfig(RBLNDecoderOnlyModelConfig):
         self._load_visual_runtime = _load_visual_runtime
         self.gdn_chunk_size = MAX_GDN_CHUNK_SIZE if gdn_chunk_size is None else gdn_chunk_size
         self.linear_attention_layers = linear_attention_layers or []
+        self.gdn_custom_kernel = gdn_custom_kernel
 
 
 class RBLNQwen3_5ForConditionalGenerationConfig(RBLNDecoderOnlyModelForCausalLMConfig):
@@ -206,6 +221,7 @@ class RBLNQwen3_5ForConditionalGenerationConfig(RBLNDecoderOnlyModelForCausalLMC
         self,
         gdn_chunk_size: int | None = None,
         linear_attention_layers: list[int] | None = None,
+        gdn_custom_kernel: bool | None = None,
         use_inputs_embeds: bool = True,
         visual: RBLNModelConfig | None = None,
         _load_visual_runtime: bool = True,
@@ -218,6 +234,9 @@ class RBLNQwen3_5ForConditionalGenerationConfig(RBLNDecoderOnlyModelForCausalLMC
                 `prefill_chunk_size`. Defaults to `MAX_GDN_CHUNK_SIZE` (128). See rbln_chunk_gated_delta_rule.
             linear_attention_layers (list[int] | None): The linear_attention (GatedDeltaNet)
                 layer indices, populated automatically from `layer_types` at compile time (not user-set).
+            gdn_custom_kernel (bool | None): Whether the GatedDeltaNet core runs as the `rbln::gdn_prefill` /
+                `rbln::gdn_decode` custom ops, set automatically at compile time (not user-set). They serve
+                any `prefill_chunk_size` that is a multiple of 128 with `gdn_chunk_size` 128.
             use_inputs_embeds (bool): Must be True — the vision encoder output is injected into inputs_embeds.
             visual (Optional[RBLNModelConfig]): Configuration for the vision encoder submodule.
             _load_visual_runtime (bool): Whether to create the visual encoder runtime. Set False on
@@ -239,6 +258,7 @@ class RBLNQwen3_5ForConditionalGenerationConfig(RBLNDecoderOnlyModelForCausalLMC
         self._load_visual_runtime = _load_visual_runtime
         self.gdn_chunk_size = MAX_GDN_CHUNK_SIZE if gdn_chunk_size is None else gdn_chunk_size
         self.linear_attention_layers = linear_attention_layers or []
+        self.gdn_custom_kernel = gdn_custom_kernel
 
 
 __all__ = [
