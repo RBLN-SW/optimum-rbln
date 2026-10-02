@@ -672,24 +672,18 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
             if not getattr(model_cls, "_tp_support", False):
                 filtered_out_params.add("num_devices")
 
+        narrows_placements = "num_devices" in filtered_out_params
+
         filtered_params = {}
         for key, value in parameters.items():
             if key in filtered_out_params:
                 logger.debug(
                     f"Parameter '{key}' filtered out for {config_cls.__name__} (not supported by model flags)."
                 )
-            else:
-                filtered_params[key] = value
-
-        if "num_devices" in filtered_out_params:
-            for key in PLACEMENT_KEYWORDS:
-                if key in filtered_params:
-                    narrowed = narrow_placement(filtered_params[key])
-                    if narrowed != filtered_params[key]:
-                        logger.debug(
-                            f"Narrowed `{key}` to {narrowed} for {config_cls.__name__}, which runs on one device."
-                        )
-                        filtered_params[key] = narrowed
+                continue
+            if narrows_placements and key in PLACEMENT_KEYWORDS:
+                value = narrow_placement(value)
+            filtered_params[key] = value
 
         return filtered_params
 
