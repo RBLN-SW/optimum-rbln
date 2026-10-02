@@ -315,6 +315,15 @@ class RBLNVideoContentSafetyFilter(VideoContentSafetyFilter):
         self.encoder.save_pretrained(checkpoint_id)
 
 
+def guardrail_max_seq_len(tokenizer, prompt_budget: int) -> int:
+    """`prompt_budget` prompt tokens plus the safety-policy template Qwen3Guard wraps around every prompt.
+
+    Rounded up to the 64-token granularity decoder-only sequence lengths compile on.
+    """
+    wrapper = tokenizer.apply_chat_template([{"role": "user", "content": ""}], tokenize=False)
+    return -(-(prompt_budget + len(tokenizer(wrapper).input_ids)) // 64) * 64
+
+
 class RBLNQwen3Guard(Qwen3Guard):
     def __init__(
         self,
@@ -335,6 +344,8 @@ class RBLNQwen3Guard(Qwen3Guard):
             super().__init__(base_model_id)
             model = self.model
             del self.model
+            if rbln_config.qwen3guard.max_seq_len is None:
+                rbln_config.qwen3guard.max_seq_len = guardrail_max_seq_len(self.tokenizer, rbln_config.max_seq_len)
             self.model = RBLNAutoModelForCausalLM.from_model(model, rbln_config=rbln_config.qwen3guard)
 
         self.rbln_config = rbln_config

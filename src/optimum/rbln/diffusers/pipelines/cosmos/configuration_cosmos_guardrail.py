@@ -54,6 +54,9 @@ class RBLNRetinaFaceFilterConfig(RBLNModelConfig):
 class RBLNCosmosSafetyCheckerConfig(RBLNModelConfig):
     """
     Configuration class for RBLN Cosmos Safety Checker.
+
+    `max_seq_len` is the prompt budget in tokens. Qwen3Guard is compiled to it plus its own chat template at
+    export (`qwen3guard.max_seq_len`), unless that is set explicitly.
     """
 
     submodules = ["qwen3guard", "video_safety_model", "face_blur_filter", "siglip_encoder"]
@@ -64,20 +67,19 @@ class RBLNCosmosSafetyCheckerConfig(RBLNModelConfig):
         video_safety_model: RBLNModelConfig | None = None,
         face_blur_filter: RBLNModelConfig | None = None,
         siglip_encoder: RBLNSiglipVisionModelConfig | None = None,
+        max_seq_len: int | None = None,
         *,
         batch_size: int | None = None,
         image_size: tuple[int, int] | None = None,
         height: int | None = None,
         width: int | None = None,
-        max_seq_len: int | None = None,
         **kwargs: Any,
     ):
         super().__init__(**kwargs)
         if height is not None and width is not None:
             image_size = (height, width)
 
-        if max_seq_len is None:
-            max_seq_len = 512
+        self.max_seq_len = max_seq_len or 512
 
         num_devices = kwargs.get("num_devices", kwargs.get("tensor_parallel_size"))
 
@@ -86,7 +88,6 @@ class RBLNCosmosSafetyCheckerConfig(RBLNModelConfig):
             cls_name="RBLNQwen3ForCausalLMConfig",
             batch_size=batch_size,
             num_devices=num_devices,
-            max_seq_len=max_seq_len,
         )
         # VideoContentSafetyFilter is omitted because it is not supported in cosmos-guardrail==0.3.1
         self.face_blur_filter = self.initialize_submodule_config(

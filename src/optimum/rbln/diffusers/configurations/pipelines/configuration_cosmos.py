@@ -74,7 +74,8 @@ class RBLNCosmosPipelineBaseConfig(RBLNModelConfig):
             height (int | None): Height of the generated videos.
             width (int | None): Width of the generated videos.
             num_frames (int | None): The number of frames in the generated video.
-            max_seq_len (int | None): Maximum sequence length supported by the model.
+            max_seq_len (int | None): Prompt budget in tokens; the text encoder, the transformer and the
+                safety checker's text guardrail are all sized to it.
             kwargs: Additional arguments passed to the parent RBLNModelConfig.
         """
         super().__init__(**kwargs)
@@ -111,6 +112,7 @@ class RBLNCosmosPipelineBaseConfig(RBLNModelConfig):
             batch_size=batch_size,
             height=height,
             width=width,
+            max_seq_len=max_seq_len,
         )
 
     @property
@@ -169,7 +171,8 @@ class RBLNCosmos2PipelineBaseConfig(RBLNModelConfig):
             height (Optional[int]): Height of the generated videos.
             width (Optional[int]): Width of the generated videos.
             num_frames (Optional[int]): The number of frames in the generated video.
-            max_seq_len (Optional[int]): Maximum sequence length supported by the model.
+            max_seq_len (Optional[int]): Prompt budget in tokens; the text encoder, the transformer and the
+                safety checker's text guardrail are all sized to it.
             **kwargs: Additional arguments passed to the parent RBLNModelConfig.
         """
         super().__init__(**kwargs)
@@ -210,6 +213,7 @@ class RBLNCosmos2PipelineBaseConfig(RBLNModelConfig):
             batch_size=batch_size,
             height=height,
             width=width,
+            max_seq_len=max_seq_len,
         )
 
     @property
@@ -273,7 +277,8 @@ class RBLNCosmos2_5_PredictBasePipelineConfig(RBLNModelConfig):
             height (Optional[int]): Height of the generated videos.
             width (Optional[int]): Width of the generated videos.
             num_frames (Optional[int]): The number of frames in the generated video.
-            max_seq_len (Optional[int]): Maximum sequence length supported by the model.
+            max_seq_len (Optional[int]): Prompt budget in tokens; the text encoder, the transformer and the
+                safety checker's text guardrail are all sized to it.
             **kwargs: Additional arguments passed to the parent RBLNModelConfig.
         """
         super().__init__(**kwargs)
@@ -316,6 +321,7 @@ class RBLNCosmos2_5_PredictBasePipelineConfig(RBLNModelConfig):
             batch_size=batch_size,
             height=height,
             width=width,
+            max_seq_len=max_seq_len,
         )
 
     @property
@@ -356,7 +362,8 @@ class RBLNCosmos2_5_TransferPipelineConfig(RBLNCosmos2_5_PredictBasePipelineConf
             height (Optional[int]): Height of the generated videos.
             width (Optional[int]): Width of the generated videos.
             num_frames (Optional[int]): The number of frames per generated chunk.
-            max_seq_len (Optional[int]): Maximum sequence length supported by the model.
+            max_seq_len (Optional[int]): Prompt budget in tokens; the text encoder, the transformer and the
+                safety checker's text guardrail are all sized to it.
             **kwargs: Additional arguments passed to the parent config (text_encoder/transformer/vae/safety_checker).
         """
         super().__init__(
