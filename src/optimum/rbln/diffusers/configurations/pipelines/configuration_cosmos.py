@@ -289,8 +289,7 @@ class RBLNCosmos2_5_PredictBasePipelineConfig(RBLNModelConfig):
             batch_size=batch_size,
             max_seq_len=max_seq_len,
             output_hidden_states=True,
-            # The visual tower is never called
-            visual={"max_seq_len": 64, "create_runtimes": False},
+            visual={"max_seq_len": 64, "create_runtimes": False}, # The visual tower is never called
             force_kwargs=True,
         )
         self.transformer = self.initialize_submodule_config(
