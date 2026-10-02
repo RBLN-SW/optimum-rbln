@@ -186,8 +186,6 @@ class RBLNCompileConfig:
 
 RUNTIME_KEYWORDS = ["create_runtimes", "device", "device_map", "activate_profiler", "timeout"]
 
-PLACEMENT_KEYWORDS = ["device", "device_map"]
-
 
 def narrow_placement(placement: Any) -> Any:
     """Reduce a `device` or `device_map` placement to the first device it names."""
@@ -673,7 +671,7 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
                     f"Parameter '{key}' filtered out for {config_cls.__name__} (not supported by model flags)."
                 )
                 continue
-            if narrows_placements and key in PLACEMENT_KEYWORDS:
+            if narrows_placements and key in ("device", "device_map"):
                 value = narrow_placement(value)
             filtered_params[key] = value
 
