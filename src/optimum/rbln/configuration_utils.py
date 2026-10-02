@@ -190,15 +190,7 @@ PLACEMENT_KEYWORDS = ["device", "device_map"]
 
 
 def narrow_placement(placement: Any) -> Any:
-    """The same placement, addressing one device.
-
-    `device` and `device_map` say which devices a config's runtimes are placed on, and are
-    only meaningful against the `num_devices` they are sized to: the runtime refuses a
-    placement whose width differs (`tp_and_devices_are_ok`). Where that width is reduced to
-    one the placement has to follow, keeping the devices it already names rather than
-    falling back to device 0 — which on a dummy-device run is not even the same kind of
-    device.
-    """
+    """Reduce a `device` or `device_map` placement to the first device it names."""
     if isinstance(placement, (list, tuple)):
         return placement[0] if placement else placement
     if isinstance(placement, dict):

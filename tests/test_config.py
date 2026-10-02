@@ -273,14 +273,8 @@ def test_submodule_config_dict_deprecated_tensor_parallel_size():
     ids=["device-list", "dummy-devices", "device-scalar", "device-map-lists", "device-map-scalar"],
 )
 def test_a_placement_follows_the_width_it_was_sized_to(placement, narrowed):
-    """A placement is only meaningful against the `num_devices` it was sized to.
-
-    `initialize_submodule_config` hands a submodule the parent's runtime options, the
-    placements among them, alongside `num_devices`. Where `num_devices` is dropped because
-    the submodule is not `_tp_support`, a placement left at the parent's width describes a
-    one-device model placed on N, and runtime creation raises naming neither the submodule
-    nor the parent it came from.
-    """
+    """Dropping `num_devices` for a non-TP submodule must narrow the placement with it,
+    or the config describes a one-device model placed on N."""
     parent = RBLNMistralForCausalLMConfig(num_devices=8)
 
     filtered = parent.filter_parameters(RBLNResNetForImageClassificationConfig, {"num_devices": 8, **placement})
@@ -290,7 +284,7 @@ def test_a_placement_follows_the_width_it_was_sized_to(placement, narrowed):
 
 
 def test_a_tensor_parallel_submodule_keeps_its_placement():
-    """The narrowing is tied to the filtering: where the width survives, so does the placement."""
+    """Where `num_devices` survives, so does the placement."""
     parent = RBLNMistralForCausalLMConfig(num_devices=4)
 
     filtered = parent.filter_parameters(RBLNMistralForCausalLMConfig, {"num_devices": 4, "device": [0, 1, 2, 3]})
@@ -299,7 +293,7 @@ def test_a_tensor_parallel_submodule_keeps_its_placement():
 
 
 def test_the_parent_hands_down_both_the_width_and_the_placement():
-    """What makes the pair separable in the first place."""
+    """A submodule inherits both, which is what lets them come apart."""
     parent = RBLNMistralForCausalLMConfig(num_devices=8, device=[0, 1, 2, 3, 4, 5, 6, 7])
 
     inherited = parent.initialize_submodule_config(submodule_config={})
