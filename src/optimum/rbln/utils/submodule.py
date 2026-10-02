@@ -83,7 +83,7 @@ class SubModulesMixin:
     def _export_submodules_from_model(
         cls, model: "PreTrainedModel", model_save_dir: str, rbln_config: RBLNModelConfig, **kwargs
     ) -> list["RBLNModel"]:
-        rbln_submodules = []
+        rbln_submodules: list["RBLNModel"] = []
         submodule_prefix = getattr(cls, "_rbln_submodule_prefix", None)
         submodule_postfix = getattr(cls, "_rbln_submodule_postfix", None)
         preprocessors = kwargs.pop("preprocessors", [])
@@ -135,6 +135,7 @@ class SubModulesMixin:
                 subfolder=f"{parent_subfolder}/{submodule_name}" if parent_subfolder else submodule_name,
                 model_save_dir=model_save_dir,
                 rbln_config=submodule_rbln_config,
+                colocated_models=list(rbln_submodules),
                 **kwargs,
             )
 

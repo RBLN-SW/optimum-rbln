@@ -66,8 +66,11 @@ class RBLNModel(RBLNBaseModel):
 
     @classmethod
     def get_compiled_model(
-        cls, model: "HFModel", rbln_config: RBLNModelConfig
+        cls, model: "HFModel", rbln_config: RBLNModelConfig, colocated_models: list[RBLNBaseModel] | None = None
     ) -> rebel.RBLNCompiledModel | dict[str, rebel.RBLNCompiledModel]:
+        # `colocated_models`: already-compiled RBLN models that will share NPU devices with this one
+        # (its own submodules, or sibling submodules of a parent). Subclasses that size buffers to
+        # the remaining DRAM reserve their allocation.
         if rbln_config._allow_no_compile_cfgs:
             return {}
 
@@ -201,8 +204,10 @@ class RBLNModel(RBLNBaseModel):
             preprocessors=preprocessors, model=model, model_config=config, rbln_config=rbln_config
         )
 
+        # Sibling submodules already compiled by the parent, plus this model's own submodules.
+        colocated_models = kwargs.pop("colocated_models", []) + rbln_submodules
         compiled_model: rebel.RBLNCompiledModel | dict[str, rebel.RBLNCompiledModel] = cls.get_compiled_model(
-            model, rbln_config=rbln_config
+            model, rbln_config=rbln_config, colocated_models=colocated_models
         )
 
         # Save compiled models (.rbln)

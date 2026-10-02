@@ -24,7 +24,7 @@ from transformers.modeling_outputs import BaseModelOutput, Seq2SeqLMOutput
 
 from ....configuration_utils import RBLNCompileConfig
 from ....modeling import RBLNModel
-from ....modeling_base import Preprocessor
+from ....modeling_base import Preprocessor, RBLNBaseModel
 from ....utils.logging import get_logger
 from ....utils.runtime_utils import RBLNPytorchRuntime
 from .configuration_whisper import RBLNWhisperForConditionalGenerationConfig
@@ -211,7 +211,12 @@ class RBLNWhisperForConditionalGeneration(RBLNModel, RBLNWhisperGenerationMixin)
 
     @classmethod
     @torch.inference_mode()
-    def get_compiled_model(cls, model, rbln_config: RBLNWhisperForConditionalGenerationConfig):
+    def get_compiled_model(
+        cls,
+        model,
+        rbln_config: RBLNWhisperForConditionalGenerationConfig,
+        colocated_models: list[RBLNBaseModel] | None = None,
+    ):
         wrapped_model = cls._wrap_model_if_needed(model, rbln_config)
 
         enc_compile_config = rbln_config.compile_cfgs[0]

@@ -11,6 +11,7 @@ from ..utils.runtime_utils import get_available_dram_per_chiplet, parse_byte_siz
 
 
 if TYPE_CHECKING:
+    from ..modeling_base import RBLNBaseModel
     from .models.decoderonly.configuration_decoderonly import RBLNDecoderOnlyModelConfig
 
 
@@ -248,7 +249,10 @@ def _resolve_memory_budget(memory_budget: object | None, available_total: int) -
 class RBLNDecoderOnlyFlashAttentionMixin:
     @classmethod
     def set_kvcache_num_blocks_after_compilation(
-        cls, compiled_models: dict[str, rebel.RBLNCompiledModel], rbln_config: "RBLNDecoderOnlyModelConfig"
+        cls,
+        compiled_models: dict[str, rebel.RBLNCompiledModel],
+        rbln_config: "RBLNDecoderOnlyModelConfig",
+        colocated_models: list["RBLNBaseModel"] | None = None,
     ):
         def _log_memory_usage(compiled_models: dict[str, rebel.RBLNCompiledModel], prefix: str):
             if not logger.isEnabledFor(logging.DEBUG):
@@ -270,7 +274,7 @@ class RBLNDecoderOnlyFlashAttentionMixin:
         _log_memory_usage(compiled_models, "Before adjusting kvcache_num_blocks:")
 
         rbln_config.kvcache_num_blocks = cls.estimate_num_kvcache_blocks(
-            compiled_models=compiled_models, rbln_config=rbln_config
+            compiled_models=compiled_models, rbln_config=rbln_config, colocated_models=colocated_models
         )
         if rbln_config.kvcache_num_blocks < rbln_config.num_min_blocks:
             raise ValueError(
@@ -291,9 +295,12 @@ class RBLNDecoderOnlyFlashAttentionMixin:
         compiled_models: dict[str, rebel.RBLNCompiledModel],
         rbln_config: "RBLNDecoderOnlyModelConfig",
         current_blocks: int = 1,
+        colocated_models: list["RBLNBaseModel"] | None = None,
     ) -> int:
         # `current_blocks` is the block count the loaded buffers already hold: 1 at compile time,
         # or `rbln_config.kvcache_num_blocks` when re-estimating for an already-resized artifact.
+        # `colocated_models` are already-compiled RBLN models (e.g. a vision encoder submodule)
+        # whose device memory must be reserved on the devices they share with this model.
         if "prefill" not in rbln_config.phases:
             logger.warning(
                 "Not estimating number of KV cache blocks since `prefill` phase is not in the `phases` list."
@@ -304,7 +311,7 @@ class RBLNDecoderOnlyFlashAttentionMixin:
         # total can still OOM a single chiplet; the search below bounds blocks by the
         # tightest chiplet.
         alloc_without_dram, kvcache_tensor_sizes, available_per_chiplet, chiplets = (
-            cls._collect_chiplet_kvcache_inputs(compiled_models, rbln_config)
+            cls._collect_chiplet_kvcache_inputs(compiled_models, rbln_config, colocated_models)
         )
         return cls._search_num_kvcache_blocks(
             rbln_config, alloc_without_dram, kvcache_tensor_sizes, available_per_chiplet, chiplets, current_blocks
@@ -315,6 +322,7 @@ class RBLNDecoderOnlyFlashAttentionMixin:
         cls,
         compiled_models: dict[str, rebel.RBLNCompiledModel],
         rbln_config: "RBLNDecoderOnlyModelConfig",
+        colocated_models: list["RBLNBaseModel"] | None = None,
     ) -> tuple[dict[tuple[int, int], int], dict[str, list[list[int]]], int, set[tuple[int, int]]]:
         # Returns non-KV alloc, KV sizes, per-chiplet DRAM budget, and the (node, chiplet)
         # buckets to check. ATOM reports one chiplet, so it shares the per-chiplet path.
@@ -329,6 +337,28 @@ class RBLNDecoderOnlyFlashAttentionMixin:
                     for chiplet_id, size in enumerate(sizes_at_chiplet):
                         alloc_without_dram[(node_id, chiplet_id)] += size
                         chiplets.add((node_id, chiplet_id))
+
+        # A colocated model's node N lands on its own `device[N]`; count its whole allocation
+        # against the local node mapped to the same device. `device=None` means node N runs on
+        # device N, so two unset device lists are treated as fully overlapping.
+        def device_ids(device: int | list[int] | None, num_nodes: int) -> list[int]:
+            if device is None:
+                return list(range(num_nodes))
+            return [device] if isinstance(device, int) else list(device)
+
+        local_num_nodes = max((node_id for node_id, _ in chiplets), default=0) + 1
+        node_by_device = {dev: node for node, dev in enumerate(device_ids(rbln_config.device, local_num_nodes))}
+        for colocated in colocated_models or []:
+            for compiled_model in colocated.compiled_models or []:
+                alloc_by_key = compiled_model.get_alloc_per_chiplet_by_key()
+                num_nodes = max((len(alloc) for alloc in alloc_by_key.values()), default=0)
+                devices = device_ids(colocated.rbln_config.device, num_nodes)
+                for alloc_per_chiplet in alloc_by_key.values():
+                    for dev, sizes_at_chiplet in zip(devices, alloc_per_chiplet, strict=False):
+                        if dev not in node_by_device:
+                            continue
+                        for chiplet_id, size in enumerate(sizes_at_chiplet):
+                            alloc_without_dram[(node_by_device[dev], chiplet_id)] += size
 
         # kvcache_tensor_sizes[key][node_id][chiplet_id] = alloc_size
         kvcache_tensor_sizes: dict[str, list[list[int]]] = compiled_models["prefill"].exp_get_dram_tensor_sizes()

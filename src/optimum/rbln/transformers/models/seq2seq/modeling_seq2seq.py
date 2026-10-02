@@ -27,7 +27,7 @@ from transformers.modeling_outputs import BaseModelOutput, ModelOutput, Seq2SeqL
 
 from ....configuration_utils import RBLNCompileConfig
 from ....modeling import RBLNModel
-from ....modeling_base import Preprocessor
+from ....modeling_base import Preprocessor, RBLNBaseModel
 from ....utils.logging import get_logger
 from ....utils.runtime_utils import RBLNPytorchRuntime
 from .configuration_seq2seq import RBLNModelForSeq2SeqLMConfig
@@ -142,7 +142,12 @@ class RBLNModelForSeq2SeqLM(RBLNModel, GenerationMixin, ABC):
 
     @classmethod
     @torch.inference_mode()
-    def get_compiled_model(cls, model: PreTrainedModel, rbln_config: RBLNModelForSeq2SeqLMConfig):
+    def get_compiled_model(
+        cls,
+        model: PreTrainedModel,
+        rbln_config: RBLNModelForSeq2SeqLMConfig,
+        colocated_models: list[RBLNBaseModel] | None = None,
+    ):
         wrapped_model = cls._wrap_model_if_needed(model, rbln_config)
 
         enc_compile_config = rbln_config.compile_cfgs[0]
