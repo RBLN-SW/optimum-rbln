@@ -261,45 +261,51 @@ def test_submodule_config_dict_deprecated_tensor_parallel_size():
     assert sub_inherit.num_devices == 2
 
 
-def test_non_tp_submodule_does_not_inherit_a_device_list():
-    """A submodule that cannot be tensor-parallel must not keep the parent's device list.
+@pytest.mark.parametrize(
+    "placement, narrowed",
+    [
+        ({"device": [0, 1, 2, 3, 4, 5, 6, 7]}, {"device": 0}),
+        ({"device": [-1, -2, -3, -4]}, {"device": -1}),
+        ({"device": 3}, {"device": 3}),
+        ({"device_map": {"encoder": [0, 1], "decoder": [2, 3]}}, {"device_map": {"encoder": 0, "decoder": 2}}),
+        ({"device_map": {"encoder": 0}}, {"device_map": {"encoder": 0}}),
+    ],
+    ids=["device-list", "dummy-devices", "device-scalar", "device-map-lists", "device-map-scalar"],
+)
+def test_a_placement_follows_the_width_it_was_sized_to(placement, narrowed):
+    """A placement is only meaningful against the `num_devices` it was sized to.
 
-    `initialize_submodule_config` hands a submodule the parent's runtime options, `device`
-    among them, alongside `num_devices`. `filter_parameters` then drops `num_devices` for a
-    submodule whose model class is not `_tp_support`, and the device list sized to it used to
-    survive — so the config described a one-device model placed on N devices, and runtime
-    creation raised with neither the submodule nor the inheritance named.
+    `initialize_submodule_config` hands a submodule the parent's runtime options, the
+    placements among them, alongside `num_devices`. Where `num_devices` is dropped because
+    the submodule is not `_tp_support`, a placement left at the parent's width describes a
+    one-device model placed on N, and runtime creation raises naming neither the submodule
+    nor the parent it came from.
     """
+    parent = RBLNMistralForCausalLMConfig(num_devices=8)
+
+    filtered = parent.filter_parameters(RBLNResNetForImageClassificationConfig, {"num_devices": 8, **placement})
+
+    assert "num_devices" not in filtered
+    assert filtered == narrowed
+
+
+def test_a_tensor_parallel_submodule_keeps_its_placement():
+    """The narrowing is tied to the filtering: where the width survives, so does the placement."""
+    parent = RBLNMistralForCausalLMConfig(num_devices=4)
+
+    filtered = parent.filter_parameters(RBLNMistralForCausalLMConfig, {"num_devices": 4, "device": [0, 1, 2, 3]})
+
+    assert filtered == {"num_devices": 4, "device": [0, 1, 2, 3]}
+
+
+def test_the_parent_hands_down_both_the_width_and_the_placement():
+    """What makes the pair separable in the first place."""
     parent = RBLNMistralForCausalLMConfig(num_devices=8, device=[0, 1, 2, 3, 4, 5, 6, 7])
+
     inherited = parent.initialize_submodule_config(submodule_config={})
-    assert inherited["device"] == [0, 1, 2, 3, 4, 5, 6, 7]
+
     assert inherited["num_devices"] == 8
-
-    filtered = parent.filter_parameters(RBLNResNetForImageClassificationConfig, inherited)
-
-    assert "num_devices" not in filtered, "ResNet is not tensor-parallel"
-    assert filtered["device"] == 0, "the list it was sized to is gone, so the list must go too"
-
-
-def test_a_tensor_parallel_submodule_keeps_its_device_list():
-    """The narrowing is tied to the filtering: where `num_devices` survives, so does the list."""
-    parent = RBLNMistralForCausalLMConfig(num_devices=4, device=[0, 1, 2, 3])
-    inherited = parent.initialize_submodule_config(submodule_config={})
-
-    filtered = parent.filter_parameters(RBLNMistralForCausalLMConfig, inherited)
-
-    assert filtered["num_devices"] == 4
-    assert filtered["device"] == [0, 1, 2, 3]
-
-
-def test_a_single_device_is_left_alone():
-    """Nothing to narrow, and a scalar must not become anything else."""
-    parent = RBLNMistralForCausalLMConfig(num_devices=8, device=3)
-    inherited = parent.initialize_submodule_config(submodule_config={})
-
-    filtered = parent.filter_parameters(RBLNResNetForImageClassificationConfig, inherited)
-
-    assert filtered["device"] == 3
+    assert inherited["device"] == [0, 1, 2, 3, 4, 5, 6, 7]
 
 
 def _submodule_batch_size(sub):

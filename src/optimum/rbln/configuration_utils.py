@@ -185,6 +185,27 @@ class RBLNCompileConfig:
 
 
 RUNTIME_KEYWORDS = ["create_runtimes", "device", "device_map", "activate_profiler", "timeout"]
+
+PLACEMENT_KEYWORDS = ["device", "device_map"]
+
+
+def narrow_placement(placement: Any) -> Any:
+    """The same placement, addressing one device.
+
+    `device` and `device_map` say which devices a config's runtimes are placed on, and are
+    only meaningful against the `num_devices` they are sized to: the runtime refuses a
+    placement whose width differs (`tp_and_devices_are_ok`). Where that width is reduced to
+    one the placement has to follow, keeping the devices it already names rather than
+    falling back to device 0 — which on a dummy-device run is not even the same kind of
+    device.
+    """
+    if isinstance(placement, (list, tuple)):
+        return placement[0] if placement else placement
+    if isinstance(placement, dict):
+        return {name: narrow_placement(value) for name, value in placement.items()}
+    return placement
+
+
 CONFIG_MAPPING: dict[str, type["RBLNModelConfig"]] = {}
 
 
@@ -660,23 +681,15 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
             else:
                 filtered_params[key] = value
 
-        # A submodule that cannot be tensor-parallel runs on one device, so a list of them
-        # can never be right for it. It is handed one anyway: initialize_submodule_config
-        # passes the parent's runtime options down, `device` among them, sized to the
-        # `num_devices` dropped just above. Left as a list it reaches runtime creation,
-        # which compares it with a model compiled for one device and raises "The number of
-        # devices provided (N) does not match the number of devices in the compiled model
-        # (1)" — naming neither the submodule nor the parent it was inherited from.
-        # The first entry is the device the parent would have placed it on, and is what the
-        # callers that work around this write out by hand.
         if "num_devices" in filtered_out_params:
-            device = filtered_params.get("device")
-            if isinstance(device, (list, tuple)) and len(device) > 1:
-                logger.debug(
-                    f"Narrowing inherited `device` {list(device)} to {device[0]} for "
-                    f"{config_cls.__name__}, which runs on a single device."
-                )
-                filtered_params["device"] = device[0]
+            for key in PLACEMENT_KEYWORDS:
+                if key in filtered_params:
+                    narrowed = narrow_placement(filtered_params[key])
+                    if narrowed != filtered_params[key]:
+                        logger.debug(
+                            f"Narrowed `{key}` to {narrowed} for {config_cls.__name__}, which runs on one device."
+                        )
+                        filtered_params[key] = narrowed
 
         return filtered_params
 
