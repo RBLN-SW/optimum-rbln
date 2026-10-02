@@ -289,13 +289,7 @@ class RBLNCosmos2_5_PredictBasePipelineConfig(RBLNModelConfig):
             batch_size=batch_size,
             max_seq_len=max_seq_len,
             output_hidden_states=True,
-            # The visual tower is never called: Cosmos prompts are text only, and conditioning
-            # media enters through the VAE encoder. It is a mandatory submodule all the same, so
-            # compile the smallest legal graph and create no runtime for it.
-            #
-            # `force_kwargs` makes these the pipeline's to set. A submodule dict replaces the
-            # one here rather than merging into it, so naming `visual` with a single key used to
-            # drop the rest in silence; now it is reported.
+            # The visual tower is never called
             visual={"max_seq_len": 64, "create_runtimes": False},
             force_kwargs=True,
         )
