@@ -660,6 +660,24 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
             else:
                 filtered_params[key] = value
 
+        # A submodule that cannot be tensor-parallel runs on one device, so a list of them
+        # can never be right for it. It is handed one anyway: initialize_submodule_config
+        # passes the parent's runtime options down, `device` among them, sized to the
+        # `num_devices` dropped just above. Left as a list it reaches runtime creation,
+        # which compares it with a model compiled for one device and raises "The number of
+        # devices provided (N) does not match the number of devices in the compiled model
+        # (1)" — naming neither the submodule nor the parent it was inherited from.
+        # The first entry is the device the parent would have placed it on, and is what the
+        # callers that work around this write out by hand.
+        if "num_devices" in filtered_out_params:
+            device = filtered_params.get("device")
+            if isinstance(device, (list, tuple)) and len(device) > 1:
+                logger.debug(
+                    f"Narrowing inherited `device` {list(device)} to {device[0]} for "
+                    f"{config_cls.__name__}, which runs on a single device."
+                )
+                filtered_params["device"] = device[0]
+
         return filtered_params
 
     def __setattr__(self, key, value):
