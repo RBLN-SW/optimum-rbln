@@ -261,12 +261,10 @@ class RBLNStableDiffusionControlNetImg2ImgPipeline(RBLNDiffusionMixin, StableDif
         Args:
             prompt (`str` or `list[str]`, *optional*):
                 The prompt or prompts to guide image generation. If not defined, you need to pass `prompt_embeds`.
-            image (`torch.FloatTensor`, `PIL.Image.Image`, `np.ndarray`, `list[torch.FloatTensor]`, `list[PIL.Image.Image]`, `list[np.ndarray]`,:
-                    `list[list[torch.FloatTensor]]`, `list[list[np.ndarray]]` or `list[list[PIL.Image.Image]]`):
+            image (`torch.FloatTensor`, `PIL.Image.Image`, `np.ndarray`, `list[torch.FloatTensor]`, `list[PIL.Image.Image]`, `list[np.ndarray]`, `list[list[torch.FloatTensor]]`, `list[list[np.ndarray]]` or `list[list[PIL.Image.Image]]`):
                 The initial image to be used as the starting point for the image generation process. Can also accept
                 image latents as `image`, and if passing latents directly they are not encoded again.
-            control_image (`torch.FloatTensor`, `PIL.Image.Image`, `np.ndarray`, `list[torch.FloatTensor]`, `list[PIL.Image.Image]`, `list[np.ndarray]`,:
-                    `list[list[torch.FloatTensor]]`, `list[list[np.ndarray]]` or `list[list[PIL.Image.Image]]`):
+            control_image (`torch.FloatTensor`, `PIL.Image.Image`, `np.ndarray`, `list[torch.FloatTensor]`, `list[PIL.Image.Image]`, `list[np.ndarray]`, `list[list[torch.FloatTensor]]`, `list[list[np.ndarray]]` or `list[list[PIL.Image.Image]]`):
                 The ControlNet input condition to provide guidance to the `unet` for generation. If the type is
                 specified as `torch.FloatTensor`, it is passed to ControlNet as is. `PIL.Image.Image` can also be
                 accepted as an image. The dimensions of the output image defaults to `image`'s dimensions. If height
