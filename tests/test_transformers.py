@@ -381,16 +381,19 @@ class TestEncoderMaxSeqLenBucketing(unittest.TestCase):
         if env_coverage.value < cls.TEST_LEVEL.value:
             raise unittest.SkipTest(f"Skipped test : Test Coverage {env_coverage.name} < {cls.TEST_LEVEL.name}")
 
-    def test_model_input_shapes_is_deprecated(self):
+    def test_model_input_shapes_is_refused(self):
+        """0.12.0 is the cutoff the decorator names, and the package is past it, so the
+        argument is refused rather than warned about — the policy's second phase."""
         from optimum.rbln.transformers.configuration_generic import RBLNTransformerEncoderConfig
 
-        with self.assertLogs("optimum.rbln.utils.deprecation", level="WARNING") as logs:
-            config = RBLNTransformerEncoderConfig(
+        with self.assertRaises(ValueError) as refused:
+            RBLNTransformerEncoderConfig(
                 max_seq_len=[64, 128],
                 model_input_shapes=[[1, 64], [1, 64]],
             )
+        self.assertIn("model_input_shapes", str(refused.exception))
 
-        self.assertTrue(any("model_input_shapes" in msg for msg in logs.output))
+        config = RBLNTransformerEncoderConfig(max_seq_len=[64, 128])
         self.assertEqual(config.max_seq_len, [64, 128])
         self.assertFalse(hasattr(config, "model_input_shapes"))
 

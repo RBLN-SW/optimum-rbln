@@ -17,7 +17,7 @@ from transformers import AutoConfig
 
 from optimum.rbln import __version__
 from optimum.rbln.configuration_utils import ContextRblnConfig
-from optimum.rbln.utils.deprecation import deprecate_method
+from optimum.rbln.utils.deprecation import deprecate_kwarg, deprecate_method
 
 
 def test_version_is_str():
@@ -76,7 +76,9 @@ def test_upgrade_bare_config_recovers_concrete_class():
     assert _upgrade_bare_config(no_arch) is no_arch
 
 
-@pytest.mark.parametrize(
+# A deprecation notifies until its cutoff and refuses from it on, whatever release
+# suffix the version carries; both decorators answer to the same table.
+AROUND_A_CUTOFF = pytest.mark.parametrize(
     "current_version, expect_raise",
     [
         pytest.param("1.9.5", False, id="below"),
@@ -90,6 +92,9 @@ def test_upgrade_bare_config_recovers_concrete_class():
         pytest.param("1.10.1", True, id="patch-above"),
     ],
 )
+
+
+@AROUND_A_CUTOFF
 def test_deprecate_method_raises_at_or_past_cutoff(current_version, expect_raise):
     expectation = pytest.raises(ValueError, match="deprecated") if expect_raise else does_not_raise()
 
@@ -101,6 +106,24 @@ def test_deprecate_method_raises_at_or_past_cutoff(current_version, expect_raise
 
     with expectation:
         stub()
+
+
+@AROUND_A_CUTOFF
+def test_deprecate_kwarg_raises_at_or_past_cutoff(current_version, expect_raise):
+    """The decorator reads the version where it is applied, so the stub is decorated
+    under the patch and called outside it."""
+    with patch("optimum.rbln.utils.deprecation.__version__", current_version):
+
+        @deprecate_kwarg(old_name="gone", version="1.10.0")
+        def stub(**kwargs):
+            return kwargs
+
+    if expect_raise:
+        with pytest.raises(ValueError, match="gone"):
+            stub(gone=1)
+    else:
+        assert stub(gone=1) == {}, "below the cutoff the argument is dropped, not passed on"
+    assert stub(kept=1) == {"kept": 1}
 
 
 DUMMY_DEVICE_CODE = -1
