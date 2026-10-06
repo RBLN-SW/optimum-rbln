@@ -200,7 +200,7 @@ class RBLNIdefics3ForConditionalGeneration(RBLNModel, RBLNImageIndexedBatchSortM
         from optimum.rbln import RBLNIdefics3ForConditionalGeneration
 
         model = RBLNIdefics3ForConditionalGeneration.from_pretrained(
-            "HuggingFaceM4/idefics3-8b",
+            "HuggingFaceM4/Idefics3-8B-Llama3",
             export=True,
             rbln_config={
                 "vision_model": {
@@ -218,7 +218,7 @@ class RBLNIdefics3ForConditionalGeneration(RBLNModel, RBLNImageIndexedBatchSortM
             },
         )
 
-        model.save_pretrained("compiled-idefics3-8b")
+        model.save_pretrained("compiled-Idefics3-8B-Llama3")
         ```
     """
 
