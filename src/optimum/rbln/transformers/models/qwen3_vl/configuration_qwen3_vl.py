@@ -94,8 +94,8 @@ class RBLNQwen3VLVisionModelConfig(RBLNModelConfig):
             max_seq_len (int | list[int] | None): Maximum sequence lengths for Vision
                 Transformer attention. Can be an integer or list of integers, each indicating
                 the number of patches in a sequence for an image or video. For example, an image
-                of 224x224 pixels with patch size 16 and spatial_merge_size 2 yields
-                (224/16/2) * (224/16/2) = 49 merged patches. RBLN optimization runs inference
+                of 224x224 pixels with patch size 16 yields (224/16) * (224/16) = 196 patches;
+                the ViT counts them before the 2x2 spatial merge. RBLN optimization runs inference
                 per image or video frame, so set `max_seq_len` to match the maximum expected
                 resolution to reduce computation. If not provided, a `ValueError` is raised.
             batch_size (int | None): the vision encoder runs one image at a time (the parent config forces
