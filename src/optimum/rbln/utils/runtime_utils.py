@@ -233,7 +233,9 @@ class RBLNRuntime:
     Each bucket of the compiled model runs with an executor of its own, and a call runs the one
     whose input shapes are those of the inputs given. Every executor binds the weights and the
     tensors given as `tensors` that its function takes, such as a KV cache other compiled models
-    share; the inputs left, in the order the model takes them, are what a call gives.
+    share; the inputs left, in the order the model takes them, are what a call gives. A result that
+    is one of these inputs comes back as the value given for it, and one that is a tensor the model
+    updates in place as an empty tensor.
     """
 
     def __init__(
@@ -287,8 +289,8 @@ class RBLNRuntime:
                 for a, t in zip(results, targets, strict=True)
             ]
         outputs = []
-        for a, target, given, result in zip(results, targets, into, executor(*inputs, out=into), strict=True):
-            if a.access != "write":
+        for target, given, result in zip(targets, into, executor(*inputs, out=into), strict=True):
+            if isinstance(result, (rbln.Tensor, rbln.HostTensor)):
                 outputs.append(torch.empty(0))
             elif given is not None:
                 outputs.append(target if target is not None else given)
