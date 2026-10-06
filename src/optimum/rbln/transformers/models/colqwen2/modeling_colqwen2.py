@@ -57,7 +57,7 @@ class RBLNColQwen2ForRetrieval(RBLNModel):
                 "max_seq_len": 16384 * 7,
             },
         }
-        model = RBLNColQwen2ForRetrieval.from_pretrained("vidore/colqwen2-v1.0-hf", rbln_config=config)
+        model = RBLNColQwen2ForRetrieval.from_pretrained("vidore/colqwen2-v1.0-hf", export=True, rbln_config=rbln_config)
         model.save_pretrained("compiled-colqwen2-v1.0-hf")
 
         # The document page screenshots from your corpus. Below are dummy images.

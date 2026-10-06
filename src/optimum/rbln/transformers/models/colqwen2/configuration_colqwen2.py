@@ -28,7 +28,7 @@ class RBLNColQwen2ForRetrievalConfig(RBLNDecoderOnlyModelConfig):
 
     Example usage:
         ```python
-        from optimum.rbln import RBLNColQwen2ForRetrievalConfig, RBLNColQwen2ForRetrievalConfig
+        from optimum.rbln import RBLNColQwen2ForRetrieval, RBLNColQwen2ForRetrievalConfig
 
         # Create a configuration object
         config = RBLNColQwen2ForRetrievalConfig(
