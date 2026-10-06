@@ -14,7 +14,6 @@
 
 from typing import TYPE_CHECKING, Literal, Union
 
-import rebel
 import torch
 from diffusers.models.autoencoders.autoencoder_kl_wan import (
     AutoencoderKLWan,
@@ -22,12 +21,13 @@ from diffusers.models.autoencoders.autoencoder_kl_wan import (
 )
 from diffusers.models.autoencoders.vae import DecoderOutput, DiagonalGaussianDistribution
 from diffusers.models.modeling_outputs import AutoencoderKLOutput
-from rebel.compile_context import CompileContext
 from transformers import PretrainedConfig
 
 from ....configuration_utils import RBLNCompileConfig
 from ....modeling import RBLNModel
+from ....utils.compiled_model import RBLNCompiledModel, RBLNWeights
 from ....utils.logging import get_logger
+from ....utils.runtime_utils import RBLNRuntime, create_runtimes, open_devices, zeroed_tensors
 from ...configurations import RBLNAutoencoderKLWanConfig
 from .vae import RBLNRuntimeWanVAEDecoder, RBLNRuntimeWanVAEEncoder
 
@@ -341,58 +341,55 @@ class RBLNAutoencoderKLWan(RBLNModel):
         else:
             return (decoder_model_0, decoder_model_n)
 
+    @staticmethod
+    def _is_shared_cache(name: str) -> bool:
+        # The first feature cache passes from chunk to chunk as an input; the others stay on device.
+        return "feat_cache" in name and name != "feat_cache_0"
+
     @classmethod
-    def get_compiled_model(cls, model, rbln_config: RBLNAutoencoderKLWanConfig) -> dict[str, rebel.RBLNCompiledModel]:
+    def _compile_chunks(
+        cls,
+        names: tuple[str, str],
+        models: tuple[torch.nn.Module, torch.nn.Module],
+        compile_cfgs: list,
+        rbln_config: RBLNAutoencoderKLWanConfig,
+    ) -> dict[str, RBLNCompiledModel]:
+        """Compiles the models of the first chunk and of the chunks after it, which wrap one module:
+        they share its weights, and the feature caches laid out as the first chunk lays them."""
+        weights = RBLNWeights.of(models[0], names[0].split("_")[0])
+        first = cls.compile(
+            models[0],
+            rbln_compile_config=compile_cfgs[0],
+            create_runtimes=rbln_config.create_runtimes,
+            device=cls._device_for(rbln_config, names[0]),
+            weights=weights,
+        )
+        asked = {a.name: a.type for a in first.functions[0].args if cls._is_shared_cache(a.name)}
+        rest = cls.compile(
+            models[1],
+            rbln_compile_config=compile_cfgs[1],
+            create_runtimes=rbln_config.create_runtimes,
+            device=cls._device_for(rbln_config, names[1]),
+            weights=weights,
+            asked=asked,
+        )
+        return {names[0]: first, names[1]: rest}
+
+    @classmethod
+    def get_compiled_model(cls, model, rbln_config: RBLNAutoencoderKLWanConfig) -> dict[str, RBLNCompiledModel]:
         compiled_models = {}
-        # E0 and EN wrap the SAME vae.encoder -> share its weights on device (use_weight_sharing).
-        context = CompileContext(use_weight_sharing=True)
         if rbln_config.uses_encoder:
             encoder_models, decoder_models = cls._wrap_model_if_needed(model, rbln_config)
-            context, enc0_example_inputs, encn_example_inputs = cls.get_enc_compile_cfg(context, rbln_config)
-            enc_compiled_model_0 = cls.compile(
-                encoder_models[0],
-                rbln_compile_config=rbln_config.compile_cfgs[0],
-                create_runtimes=rbln_config.create_runtimes,
-                device=cls._device_for(rbln_config, "encoder_0"),
-                example_inputs=enc0_example_inputs,
-                compile_context=context,
+            compiled_models.update(
+                cls._compile_chunks(
+                    ("encoder_0", "encoder_n"), encoder_models, rbln_config.compile_cfgs[:2], rbln_config
+                )
             )
-            compiled_models["encoder_0"] = enc_compiled_model_0
-            enc_compiled_model_n = cls.compile(
-                encoder_models[1],
-                rbln_compile_config=rbln_config.compile_cfgs[1],
-                create_runtimes=rbln_config.create_runtimes,
-                device=cls._device_for(rbln_config, "encoder_n"),
-                example_inputs=encn_example_inputs,
-                compile_context=context,
-            )
-            compiled_models["encoder_n"] = enc_compiled_model_n
-            dec_models = decoder_models
         else:
-            dec_models = cls._wrap_model_if_needed(model, rbln_config)
-
-        # D0 and DN wrap the SAME vae.decoder -> share its weights on device (use_weight_sharing).
-        context = CompileContext(use_weight_sharing=True)  # Separate from the encoder's static-cache context
-        context, dec0_example_inputs, decn_example_inputs = cls.get_dec_compile_cfg(context, rbln_config)
-        dec_compiled_model_0 = cls.compile(
-            dec_models[0],
-            rbln_compile_config=rbln_config.compile_cfgs[-2],
-            create_runtimes=rbln_config.create_runtimes,
-            device=cls._device_for(rbln_config, "decoder_0"),
-            example_inputs=dec0_example_inputs,
-            compile_context=context,
+            decoder_models = cls._wrap_model_if_needed(model, rbln_config)
+        compiled_models.update(
+            cls._compile_chunks(("decoder_0", "decoder_n"), decoder_models, rbln_config.compile_cfgs[-2:], rbln_config)
         )
-        compiled_models["decoder_0"] = dec_compiled_model_0
-
-        dec_compiled_model_n = cls.compile(
-            dec_models[1],
-            rbln_compile_config=rbln_config.compile_cfgs[-1],
-            create_runtimes=rbln_config.create_runtimes,
-            device=cls._device_for(rbln_config, "decoder_n"),
-            example_inputs=decn_example_inputs,
-            compile_context=context,
-        )
-        compiled_models["decoder_n"] = dec_compiled_model_n
         return compiled_models
 
     @classmethod
@@ -411,42 +408,6 @@ class RBLNAutoencoderKLWan(RBLNModel):
         rbln_config.vae.vae_scale_factor_spatial = pipe.vae_scale_factor_spatial
 
         return rbln_config
-
-    @classmethod
-    def get_enc_compile_cfg(cls, context, rbln_config):
-        encoder_0_compile_config = rbln_config.compile_cfgs[0]
-        encoder_n_compile_config = rbln_config.compile_cfgs[1]
-
-        enc0_example_inputs = encoder_0_compile_config.get_dummy_inputs(fill=0)
-        static_tensors = {}
-        for (name, _, _), tensor in zip(encoder_0_compile_config.input_info, enc0_example_inputs, strict=False):
-            if ("feat_cache" in name) and ("feat_cache_0" not in name):
-                static_tensors[name] = tensor
-                context.mark_static_address(tensor)
-
-        encn_example_inputs = encoder_n_compile_config.get_dummy_inputs(fill=0, static_tensors=static_tensors)
-        for (name, _, _), tensor in zip(encoder_n_compile_config.input_info, encn_example_inputs, strict=False):
-            if ("feat_cache" in name) and ("feat_cache_0" not in name):
-                context.mark_static_address(tensor)
-        return context, enc0_example_inputs, encn_example_inputs
-
-    @classmethod
-    def get_dec_compile_cfg(cls, context, rbln_config):
-        decoder_0_compile_config = rbln_config.compile_cfgs[-2]
-        decoder_n_compile_config = rbln_config.compile_cfgs[-1]
-
-        dec0_example_inputs = decoder_0_compile_config.get_dummy_inputs(fill=0)
-        static_tensors = {}
-        for (name, _, _), tensor in zip(decoder_0_compile_config.input_info, dec0_example_inputs, strict=False):
-            if "feat_cache" in name:
-                static_tensors[name] = tensor
-                context.mark_static_address(tensor)
-
-        decn_example_inputs = decoder_n_compile_config.get_dummy_inputs(fill=0, static_tensors=static_tensors)
-        for (name, _, _), tensor in zip(decoder_n_compile_config.input_info, decn_example_inputs, strict=False):
-            if ("feat_cache" in name) and ("feat_cache_0" not in name):
-                context.mark_static_address(tensor)
-        return context, dec0_example_inputs, decn_example_inputs
 
     @classmethod
     def _update_rbln_config(
@@ -541,25 +502,22 @@ class RBLNAutoencoderKLWan(RBLNModel):
     @classmethod
     def _create_runtimes(
         cls,
-        compiled_models: list[rebel.RBLNCompiledModel],
+        compiled_models: list[RBLNCompiledModel],
         rbln_config: RBLNAutoencoderKLWanConfig,
-    ) -> list[rebel.Runtime]:
+    ) -> list[RBLNRuntime]:
         if rbln_config.uses_encoder:
-            expected_models = ["encoder_0", "encoder_n", "decoder_0", "decoder_n"]
+            pairs = [("encoder_0", "encoder_n"), ("decoder_0", "decoder_n")]
         else:
-            expected_models = ["decoder_0", "decoder_n"]
+            pairs = [("decoder_0", "decoder_n")]
 
-        device_vals = [cls._device_for(rbln_config, model_name) for model_name in expected_models]
-        return [
-            rebel.Runtime(
-                compiled_model,
-                tensor_type="pt",
-                device=device_val,
-                activate_profiler=rbln_config.activate_profiler,
-                timeout=rbln_config.timeout,
-            )
-            for compiled_model, device_val in zip(compiled_models, device_vals, strict=False)
-        ]
+        runtimes = []
+        for pair, models in zip(pairs, zip(compiled_models[::2], compiled_models[1::2], strict=True), strict=True):
+            first = models[0].functions[0]
+            device_vals = [cls._device_for(rbln_config, name) for name in pair]
+            devices = open_devices(device_vals[0], first.num_devices, first.npu)
+            caches = zeroed_tensors(first, [a.name for a in first.args if cls._is_shared_cache(a.name)], devices)
+            runtimes += create_runtimes(list(models), device_vals, tensors=caches)
+        return runtimes
 
     def encode(
         self, x: torch.Tensor, return_dict: bool = True

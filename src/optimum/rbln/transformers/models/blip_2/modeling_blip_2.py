@@ -39,11 +39,11 @@ from ..decoderonly.generation_decoderonly import RBLNDecoderOnlyGenerationMixin
 logger = logging.get_logger(__name__)
 
 if TYPE_CHECKING:
-    import rebel
+    from ....utils.runtime_utils import RBLNRuntime
 
 
 class LoopProjector(LoopProcessor):
-    def __init__(self, language_projection: Union[RBLNModel, "rebel.Runtime"]):
+    def __init__(self, language_projection: Union[RBLNModel, "RBLNRuntime"]):
         super().__init__(model=language_projection)
 
     def _get_batch_size(self, query_output, **kwargs):

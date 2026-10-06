@@ -15,11 +15,10 @@
 from collections import deque
 from typing import TYPE_CHECKING, Any, Optional
 
-import rebel
 import torch
 import torch.nn.functional as F
 
-from ....utils.runtime_utils import RBLNPytorchRuntime
+from ....utils.runtime_utils import RBLNPytorchRuntime, RBLNRuntime
 from ...modeling_outputs import RBLNDecoderOnlyOutput
 from .configuration_decoderonly import RBLNDecoderOnlyModelForCausalLMConfig
 
@@ -184,7 +183,7 @@ class RBLNRuntimeModel(RBLNPytorchRuntime):
 
     def __init__(
         self,
-        runtime: rebel.Runtime,
+        runtime: RBLNRuntime,
         phase: str,
         batch_size: int,
         dec_attn_mask: torch.Tensor,

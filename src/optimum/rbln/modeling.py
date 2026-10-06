@@ -19,7 +19,6 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import TYPE_CHECKING, Any, ClassVar, Union, get_args, get_origin, get_type_hints
 
-import rebel
 import torch
 from huggingface_hub.constants import HUGGINGFACE_HUB_CACHE
 from transformers import PretrainedConfig
@@ -28,7 +27,9 @@ from typing_extensions import Self
 
 from .configuration_utils import DEFAULT_COMPILED_MODEL_NAME, RBLNModelConfig
 from .modeling_base import Preprocessor, RBLNBaseModel
+from .utils.compiled_model import RBLNCompiledModel
 from .utils.logging import get_logger
+from .utils.runtime_utils import RBLNRuntime, create_runtimes
 
 
 if TYPE_CHECKING:
@@ -67,7 +68,7 @@ class RBLNModel(RBLNBaseModel):
     @classmethod
     def get_compiled_model(
         cls, model: "HFModel", rbln_config: RBLNModelConfig
-    ) -> rebel.RBLNCompiledModel | dict[str, rebel.RBLNCompiledModel]:
+    ) -> RBLNCompiledModel | dict[str, RBLNCompiledModel]:
         if rbln_config._allow_no_compile_cfgs:
             return {}
 
@@ -201,7 +202,7 @@ class RBLNModel(RBLNBaseModel):
             preprocessors=preprocessors, model=model, model_config=config, rbln_config=rbln_config
         )
 
-        compiled_model: rebel.RBLNCompiledModel | dict[str, rebel.RBLNCompiledModel] = cls.get_compiled_model(
+        compiled_model: RBLNCompiledModel | dict[str, RBLNCompiledModel] = cls.get_compiled_model(
             model, rbln_config=rbln_config
         )
 
@@ -274,25 +275,18 @@ class RBLNModel(RBLNBaseModel):
     @classmethod
     def _create_runtimes(
         cls,
-        compiled_models: list[rebel.RBLNCompiledModel],
+        compiled_models: list[RBLNCompiledModel],
         rbln_config: RBLNModelConfig,
-    ) -> list[rebel.Runtime]:
+    ) -> list[RBLNRuntime]:
         if len(rbln_config.compile_cfgs) == 0:
             return []
 
         if DEFAULT_COMPILED_MODEL_NAME not in rbln_config.device_map:
             cls._raise_missing_compiled_file_error([DEFAULT_COMPILED_MODEL_NAME])
 
-        return [
-            rebel.Runtime(
-                compiled_model,
-                tensor_type="pt",
-                device=rbln_config.device_map[DEFAULT_COMPILED_MODEL_NAME],
-                activate_profiler=rbln_config.activate_profiler,
-                timeout=rbln_config.timeout,
-            )
-            for compiled_model in compiled_models
-        ]
+        return create_runtimes(
+            compiled_models, [rbln_config.device_map[DEFAULT_COMPILED_MODEL_NAME]] * len(compiled_models)
+        )
 
     def forward(self, *args: Any, return_dict: bool | None = None, **kwargs: Any) -> Any:
         """

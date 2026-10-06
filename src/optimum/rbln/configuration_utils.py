@@ -80,12 +80,15 @@ class RBLNCompileConfig:
         input_info (list[TypeInputInfo] | TypeInputInfo): Information about input tensors.
         npu (str | None): NPU configuration.
         num_devices (int | None): Number of devices to distribute the model across.
+        values_file (str | None): The value file holding the weights the compiled model reads, which
+            the compiled models of one module share. Set when the model is compiled.
     """
 
     compiled_model_name: str = DEFAULT_COMPILED_MODEL_NAME
     input_info: Sequence[TypeInputInfo] | TypeInputInfo | None = None
     npu: str | None = None
     num_devices: int | None = None
+    values_file: str | None = None
 
     @staticmethod
     def normalize_dtype(dtype: str | torch.dtype | np.dtype) -> str:
@@ -137,48 +140,18 @@ class RBLNCompileConfig:
         else:
             self.input_info = normalize_input_info(cast(TypeInputInfo, self.input_info))
 
-    def _single_input_info(self) -> TypeInputInfo:
-        if self.input_info is None or self.is_multiple_input_info:
-            raise ValueError("`input_info` must describe a single set of inputs.")
-        return cast(TypeInputInfo, self.input_info)
+    @property
+    def num_buckets(self) -> int:
+        """The sets of input shapes the model is compiled for, each into a function of its own."""
+        return len(cast(Sequence[TypeInputInfo], self.input_info)) if self.is_multiple_input_info else 1
 
     def update(self, kwargs: dict[str, Any]):
         self.compiled_model_name = kwargs.get("compiled_model_name", self.compiled_model_name)
         self.input_info = kwargs.get("input_info", self.input_info)
         self.npu = kwargs.get("npu", self.npu)
         self.num_devices = kwargs.get("num_devices", self.num_devices)
+        self.values_file = kwargs.get("values_file", self.values_file)
         return self
-
-    def get_dummy_inputs(
-        self,
-        fill: int | float = 0,
-        static_tensors: dict[str, torch.Tensor] | None = None,
-        meta_tensor_names: list[str] | None = None,
-    ) -> tuple[torch.Tensor, ...]:
-        dummy = []
-        static_tensors = static_tensors if static_tensors is not None else {}
-        meta_tensor_names = meta_tensor_names if meta_tensor_names is not None else []
-        for name, shape, dtype in self._single_input_info():
-            torch_dtype = getattr(torch, RBLNCompileConfig.normalize_dtype(dtype))
-            if name in static_tensors:
-                tensor = static_tensors[name]
-                if shape != list(tensor.shape):
-                    raise RuntimeError(f"Different shape for dummy inputs. ({shape} != {list(tensor.shape)})")
-                if torch_dtype != tensor.dtype:
-                    raise RuntimeError(f"Different dtype for dummy inputs ({dtype} != {tensor.dtype})")
-                dummy.append(tensor)
-            else:
-                if name in meta_tensor_names:
-                    device = "meta"
-                else:
-                    device = "cpu"
-
-                dummy.append(
-                    torch.fill(torch.empty(*shape, dtype=torch_dtype, device=torch.device(device)), fill)
-                    if len(shape) > 0
-                    else torch.tensor(fill, dtype=torch_dtype, device=torch.device(device))
-                )
-        return tuple(dummy)
 
     def asdict(self):
         return asdict(self)

@@ -17,18 +17,25 @@ from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any
 
-import rebel
 import torch
-from rebel.compile_context import CompileContext
 from transformers import AutoModel, AutoModelForCausalLM, PretrainedConfig, PreTrainedModel
 from transformers.initialization import no_init_weights
 from transformers.modeling_outputs import BaseModelOutputWithPast
 
+import rbln
+
 from ....configuration_utils import RBLNCompileConfig
 from ....modeling import RBLNModel
 from ....modeling_base import Preprocessor
+from ....utils.compiled_model import RBLNCompiledModel, RBLNWeights
 from ....utils.logging import get_logger
-from ....utils.runtime_utils import npu_is_cr13_or_later
+from ....utils.runtime_utils import (
+    RBLNRuntime,
+    create_runtimes,
+    npu_is_cr13_or_later,
+    open_devices,
+    zeroed_tensors,
+)
 from ...cache_utils import FullAttentionKVCacheMeta, SlidingWindowAttentionKVCacheMeta
 from ...modeling_attention_utils import (
     RBLNDecoderOnlyFlashAttentionMixin,
@@ -231,102 +238,68 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
     def _compile_model(
         cls,
         wrapped_model,
-        compile_config,
-        example_inputs,
-        compile_context,
+        compile_config: RBLNCompileConfig,
+        weights: RBLNWeights,
         rbln_config: RBLNDecoderOnlyModelForCausalLMConfig,
-        quantization=None,
         phase: str = "prefill",
-    ) -> rebel.RBLNCompiledModel:
+        asked: dict[str, rbln.TensorType] | None = None,
+    ) -> RBLNCompiledModel:
+        quantization = rbln_config.quantization
         try:
             wrapped_model.phase = phase
             if quantization:
                 quantization.maybe_set_quantization_env()
             original_linear = torch.nn.functional.linear
             torch.nn.functional.linear = torch.ops.rbln_custom_ops.linear
-            compiled_model = cls.compile(
+            return cls.compile(
                 wrapped_model,
                 compile_config,
                 create_runtimes=rbln_config.create_runtimes,
                 device=rbln_config.device,
-                example_inputs=example_inputs,
-                compile_context=compile_context,
+                weights=weights,
+                asked=asked,
+                dynamic=[meta.name for meta in rbln_config.cache_metas if meta.can_resize],
             )
-            return compiled_model
         finally:
             torch.nn.functional.linear = original_linear
             if quantization:
                 quantization.maybe_reset_quantization_env()
 
     @classmethod
-    def _get_compile_context(cls, compile_config: RBLNCompileConfig, example_inputs: list[torch.Tensor]):
-        context = CompileContext(use_weight_sharing=True)
-
-        # Mark static tensors (self kv states)
-        static_tensors = {}
-        for (name, _, _), tensor in zip(compile_config.input_info, example_inputs, strict=False):
-            if "past_key_values" in name:
-                static_tensors[name] = tensor
-                context.mark_static_address(tensor, name)
-
-        return context, static_tensors
-
-    @classmethod
-    @torch.inference_mode()
-    def get_compiled_model(cls, model: PreTrainedModel, rbln_config: RBLNDecoderOnlyModelForCausalLMConfig):
-        wrapped_model = cls._wrap_model_if_needed(model, rbln_config)
-        prefill_compile_config = rbln_config.compile_cfgs[0]
-
-        # Here we use meta tensor, for the memory efficiency.
-        meta_tensor_names = [name for name, _, _ in prefill_compile_config.input_info if "past_key_values" in name]
-        prefill_example_inputs = prefill_compile_config.get_dummy_inputs(fill=0, meta_tensor_names=meta_tensor_names)
-        context, static_tensors = cls._get_compile_context(prefill_compile_config, prefill_example_inputs)
-
-        compiled_models: dict[str, rebel.RBLNCompiledModel] = {}
-        compiled_models["prefill"] = cls._compile_model(
-            wrapped_model,
-            prefill_compile_config,
-            prefill_example_inputs,
-            context,
-            rbln_config,
-            rbln_config.quantization,
-            phase="prefill",
-        )
-
+    def _phase_compile_configs(
+        cls, rbln_config: RBLNDecoderOnlyModelForCausalLMConfig
+    ) -> list[tuple[str, RBLNCompileConfig, str]]:
+        """The compiled models other than prefill, each by name with its compile config and phase."""
+        phases = []
         if rbln_config.use_image_prefill:
-            image_prefill_compile_config = rbln_config.compile_cfgs[rbln_config.image_prefill_runtime_idx]
-            image_prefill_example_inputs = image_prefill_compile_config.get_dummy_inputs(
-                fill=0, static_tensors=static_tensors
+            phases.append(
+                ("image_prefill", rbln_config.compile_cfgs[rbln_config.image_prefill_runtime_idx], "image_prefill")
             )
-            compiled_image_prefill = cls._compile_model(
-                wrapped_model,
-                image_prefill_compile_config,
-                image_prefill_example_inputs,
-                context,
-                rbln_config,
-                rbln_config.quantization,
-                phase="image_prefill",
-            )
-            compiled_models["image_prefill"] = compiled_image_prefill
-
         if rbln_config.can_generate:
-            wrapped_model.phase = "decode"
             for batch_size, dec_compile_config in zip(
                 rbln_config.decoder_batch_sizes,
                 rbln_config.compile_cfgs[rbln_config.decoder_runtime_idx :],
                 strict=False,
             ):
-                dec_example_inputs = dec_compile_config.get_dummy_inputs(fill=0, static_tensors=static_tensors)
-                compiled_decoder = cls._compile_model(
-                    wrapped_model,
-                    dec_compile_config,
-                    dec_example_inputs,
-                    context,
-                    rbln_config,
-                    rbln_config.quantization,
-                    phase="decode",
-                )
-                compiled_models[f"decoder_batch_{batch_size}"] = compiled_decoder
+                phases.append((f"decoder_batch_{batch_size}", dec_compile_config, "decode"))
+        return phases
+
+    @classmethod
+    @torch.inference_mode()
+    def get_compiled_model(cls, model: PreTrainedModel, rbln_config: RBLNDecoderOnlyModelForCausalLMConfig):
+        """Compiles prefill, then every other phase with the caches laid out as prefill lays them, so
+        that one tensor of each cache serves them all; their weights go into one value file."""
+        wrapped_model = cls._wrap_model_if_needed(model, rbln_config)
+        weights = RBLNWeights.of(wrapped_model, "model")
+        compiled_models: dict[str, RBLNCompiledModel] = {
+            "prefill": cls._compile_model(wrapped_model, rbln_config.compile_cfgs[0], weights, rbln_config)
+        }
+        prefill = compiled_models["prefill"].functions[0]
+        asked = {meta.name: prefill.arg(meta.name).type for meta in rbln_config.cache_metas}
+        for name, compile_config, phase in cls._phase_compile_configs(rbln_config):
+            compiled_models[name] = cls._compile_model(
+                wrapped_model, compile_config, weights, rbln_config, phase=phase, asked=asked
+            )
 
         if rbln_config.is_auto_num_blocks:
             cls.set_kvcache_num_blocks_after_compilation(compiled_models, rbln_config)
@@ -634,27 +607,32 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
         return rbln_config
 
     @classmethod
+    def _create_caches(
+        cls, prefill: RBLNCompiledModel, devices: list[rbln.Device], rbln_config: RBLNDecoderOnlyModelConfig
+    ) -> dict[str, rbln.Tensor]:
+        """A zeroed tensor of each cache on `devices`, which every phase binds; a paged cache that can
+        be resized holds `kvcache_num_blocks` blocks."""
+        names = [meta.name for meta in rbln_config.cache_metas]
+        return zeroed_tensors(prefill.functions[0], names, devices, num_blocks=rbln_config.kvcache_num_blocks)
+
+    @classmethod
     def _create_runtimes(
         cls,
-        compiled_models: list[rebel.RBLNCompiledModel],
+        compiled_models: list[RBLNCompiledModel],
         rbln_config: RBLNDecoderOnlyModelForCausalLMConfig,
-    ) -> list[rebel.Runtime]:
+    ) -> list[RBLNRuntime]:
         expected_model_names = rbln_config.expected_compiled_model_names
 
         if any(model_name not in rbln_config.device_map for model_name in expected_model_names):
             cls._raise_missing_compiled_file_error(expected_model_names)
 
-        ret_val = [
-            rebel.Runtime(
-                compiled_models[i],
-                tensor_type="pt",
-                device=rbln_config.device_map[model_name],
-                activate_profiler=rbln_config.activate_profiler,
-                timeout=rbln_config.timeout,
-            )
-            for i, model_name in enumerate(expected_model_names)
-        ]
-        return ret_val
+        prefill = compiled_models[0].functions[0]
+        devices = open_devices(rbln_config.device_map[expected_model_names[0]], prefill.num_devices, prefill.npu)
+        return create_runtimes(
+            compiled_models,
+            [rbln_config.device_map[model_name] for model_name in expected_model_names],
+            tensors=cls._create_caches(compiled_models[0], devices, rbln_config),
+        )
 
     @classmethod
     def _get_class_specific_oom_help_msg(cls) -> str:

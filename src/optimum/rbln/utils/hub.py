@@ -70,8 +70,10 @@ def pull_compiled_model_from_hub(
             )
             cache_dir_path = Path(rbln_config_cache_path).parent
 
-            # Download all .rbln files found in cache (hf_hub_download will use cache if available)
-            for rbln_file in rbln_files:
+            # Download the compiled-model files found in cache: the function files of every bucket and
+            # the value files of the weights (hf_hub_download will use cache if available)
+            compiled_files = [p for pattern in ("*.rbln", "*.rbln.*", "*.rblnv") for p in cache_dir_path.glob(pattern)]
+            for rbln_file in compiled_files:
                 filename = rbln_file.name if subfolder == "" else f"{subfolder}/{rbln_file.name}"
                 try:
                     hf_hub_download(

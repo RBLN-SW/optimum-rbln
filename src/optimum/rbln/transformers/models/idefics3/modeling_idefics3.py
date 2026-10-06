@@ -18,7 +18,6 @@ from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any, Optional
 
-import rebel
 import torch
 from transformers import (
     AutoModelForImageTextToText,
@@ -35,7 +34,7 @@ from transformers.models.idefics3.modeling_idefics3 import Idefics3CausalLMOutpu
 from ....configuration_utils import RBLNCompileConfig, RBLNModelConfig
 from ....modeling import RBLNModel
 from ....modeling_base import Preprocessor
-from ....utils.runtime_utils import RBLNPytorchRuntime
+from ....utils.runtime_utils import RBLNPytorchRuntime, RBLNRuntime
 from ...modeling_outputs import RBLNDecoderOnlyOutput
 from ...utils.multimodal_batch_sort import RBLNImageIndexedBatchSortMixin, _placeholder_token_counts
 
@@ -45,7 +44,7 @@ class RBLNRuntimeVisionModel(RBLNPytorchRuntime):
 
     def __init__(
         self,
-        runtime: rebel.Runtime,
+        runtime: RBLNRuntime,
         config: Idefics3VisionConfig,
         **kwargs: Any,
     ) -> None:

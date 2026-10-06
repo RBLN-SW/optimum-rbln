@@ -15,7 +15,6 @@
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
-import rebel
 import torch
 from diffusers.models.autoencoders.autoencoder_kl_cosmos import AutoencoderKLCosmos, CosmosCausalConv3d
 from diffusers.models.autoencoders.vae import DecoderOutput
@@ -25,7 +24,9 @@ from torch.nn import functional as F
 from ....configuration_utils import RBLNCompileConfig
 from ....modeling import RBLNModel
 from ....modeling_base import Preprocessor
+from ....utils.compiled_model import RBLNCompiledModel
 from ....utils.logging import get_logger
+from ....utils.runtime_utils import RBLNRuntime, create_runtimes
 from ...configurations import RBLNAutoencoderKLCosmosConfig
 from .vae import RBLNRuntimeCosmosVAEDecoder, RBLNRuntimeCosmosVAEEncoder, _VAECosmosDecoder, _VAECosmosEncoder
 
@@ -83,9 +84,7 @@ class RBLNAutoencoderKLCosmos(RBLNModel):
             return decoder_model
 
     @classmethod
-    def get_compiled_model(
-        cls, model, rbln_config: RBLNAutoencoderKLCosmosConfig
-    ) -> dict[str, rebel.RBLNCompiledModel]:
+    def get_compiled_model(cls, model, rbln_config: RBLNAutoencoderKLCosmosConfig) -> dict[str, RBLNCompiledModel]:
         def replaced_forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
             if self.temporal_pad != 0:
                 hidden_states_prev = hidden_states[:, :, :1, ...].repeat(1, 1, self.temporal_pad, 1, 1)
@@ -182,9 +181,9 @@ class RBLNAutoencoderKLCosmos(RBLNModel):
     @classmethod
     def _create_runtimes(
         cls,
-        compiled_models: list[rebel.RBLNCompiledModel],
+        compiled_models: list[RBLNCompiledModel],
         rbln_config: RBLNAutoencoderKLCosmosConfig,
-    ) -> list[rebel.Runtime]:
+    ) -> list[RBLNRuntime]:
         if len(compiled_models) == 1:
             # decoder
             expected_models = ["decoder"]
@@ -195,16 +194,7 @@ class RBLNAutoencoderKLCosmos(RBLNModel):
             cls._raise_missing_compiled_file_error(expected_models)
 
         device_vals = [rbln_config.device_map[model_name] for model_name in expected_models]
-        return [
-            rebel.Runtime(
-                compiled_model,
-                tensor_type="pt",
-                device=device_val,
-                activate_profiler=rbln_config.activate_profiler,
-                timeout=rbln_config.timeout,
-            )
-            for compiled_model, device_val in zip(compiled_models, device_vals, strict=False)
-        ]
+        return create_runtimes(compiled_models, device_vals)
 
     def encode(
         self, x: torch.FloatTensor, return_dict: bool = True, **kwargs: dict[str, Any]

@@ -20,7 +20,6 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import TYPE_CHECKING, Any, ClassVar, cast
 
-import rebel
 import torch
 from transformers import (
     AutoConfig,
@@ -35,10 +34,13 @@ from transformers import (
 from transformers.utils.hub import PushToHubMixin
 from typing_extensions import Self
 
+import rbln.ops  # noqa: F401  # defines torch.ops.rbln_custom_ops, which the model wrappers call
+
 from .configuration_utils import RBLNCompileConfig, RBLNModelConfig, get_rbln_config_class
+from .utils.compiled_model import RBLNCompiledModel, RBLNWeights, compile_model
 from .utils.hub import pull_compiled_model_from_hub, validate_files
 from .utils.logging import get_logger
-from .utils.runtime_utils import UnavailableRuntime, compiler_num_devices_kwarg, tp_and_devices_are_ok
+from .utils.runtime_utils import RBLNRuntime, UnavailableRuntime, tp_and_devices_are_ok
 from .utils.save_utils import maybe_load_preprocessors
 from .utils.submodule import SubModulesMixin
 
@@ -88,12 +90,12 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
 
     def __init__(
         self,
-        models: list[rebel.Runtime] | UnavailableRuntime,
+        models: list[RBLNRuntime] | UnavailableRuntime,
         config: "PretrainedConfig",
         rbln_config: RBLNModelConfig,
         model_save_dir: str | os.PathLike[str] | TemporaryDirectory | None = None,
         subfolder: str = "",
-        rbln_compiled_models: list[rebel.RBLNCompiledModel] | None = None,
+        rbln_compiled_models: list[RBLNCompiledModel] | None = None,
         rbln_submodules: list["RBLNBaseModel"] | None = None,
         **kwargs,
     ):
@@ -188,13 +190,12 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
 
     @classmethod
     def _load_compiled_models(
-        cls, model_path: str, expected_compiled_model_names: list[str]
-    ) -> dict[str, rebel.RBLNCompiledModel]:
-        compiled_models = Path(model_path).glob("*.rbln")
-        expected_compiled_models = [
-            Path(model_path) / f"{compiled_model_name}.rbln" for compiled_model_name in expected_compiled_model_names
+        cls, model_path: str, compile_cfgs: list[RBLNCompileConfig]
+    ) -> dict[str, RBLNCompiledModel]:
+        expected_names = {cfg.compiled_model_name for cfg in compile_cfgs}
+        unexpected_compiled_models = [
+            cm for cm in Path(model_path).glob("*.rbln") if cm.name.removesuffix(".rbln") not in expected_names
         ]
-        unexpected_compiled_models = [cm for cm in compiled_models if cm not in expected_compiled_models]
         if unexpected_compiled_models:
             # TODO(jongho): fix after May release. raise error if unexpected compiled models are found
             logger.warning(
@@ -202,14 +203,25 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
                 f"Please check the model path: {model_path}"
             )
 
+        weights: dict[str, RBLNWeights] = {}
         rbln_compiled_models = {}
-        for compiled_model in expected_compiled_models:
+        for cfg in compile_cfgs:
+            compiled_model = Path(model_path) / f"{cfg.compiled_model_name}.rbln"
             if not compiled_model.exists():
                 raise FileNotFoundError(
                     f"Expected RBLN compiled model '{compiled_model.name}' not found at '{model_path}'. "
                     "Please ensure all models specified in `rbln_config` are present."
                 )
-            rbln_compiled_models[compiled_model.stem] = rebel.RBLNCompiledModel(compiled_model)
+            if cfg.values_file is None:
+                raise ValueError(
+                    f"'{compiled_model}' was compiled by a version of optimum-rbln whose models this version "
+                    "cannot load. Please compile the model again."
+                )
+            if cfg.values_file not in weights:
+                weights[cfg.values_file] = RBLNWeights.load(Path(model_path) / cfg.values_file)
+            rbln_compiled_models[cfg.compiled_model_name] = RBLNCompiledModel.load(
+                compiled_model, cfg.num_buckets, weights[cfg.values_file]
+            )
         return rbln_compiled_models
 
     @classmethod
@@ -227,7 +239,7 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
         model_save_dir: str | os.PathLike[str] | TemporaryDirectory | None = None,
         # passed from compile function
         rbln_config: dict[str, Any] | RBLNModelConfig | None = None,
-        rbln_compiled_models: dict[str, rebel.RBLNCompiledModel] | None = None,
+        rbln_compiled_models: dict[str, RBLNCompiledModel] | None = None,
         rbln_submodules: list["RBLNBaseModel"] | None = None,
         **kwargs,
     ) -> Self:
@@ -305,8 +317,7 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
                     )
                     config = PretrainedConfig(**config_dict)
 
-            compiled_model_names = [cfg.compiled_model_name for cfg in rbln_config.compile_cfgs]
-            rbln_compiled_models = cls._load_compiled_models(model_path_subfolder, compiled_model_names)
+            rbln_compiled_models = cls._load_compiled_models(model_path_subfolder, rbln_config.compile_cfgs)
 
             if subfolder != "":
                 model_save_dir = Path(model_path_subfolder).absolute().parent
@@ -331,7 +342,7 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
     @classmethod
     def _from_compiled_models(
         cls,
-        rbln_compiled_models: dict[str, rebel.RBLNCompiledModel],
+        rbln_compiled_models: dict[str, RBLNCompiledModel],
         rbln_config: RBLNModelConfig,
         config: "PretrainedConfig",
         model_save_dir: str | os.PathLike[str] | TemporaryDirectory,
@@ -351,7 +362,7 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
 
         # create runtimes only if `rbln_create_runtimes` is enabled
         try:
-            models: list[rebel.Runtime] | UnavailableRuntime = (
+            models: list[RBLNRuntime] | UnavailableRuntime = (
                 cls._create_runtimes(compiled_models, rbln_config)
                 if rbln_config.create_runtimes
                 else UnavailableRuntime()
@@ -367,7 +378,7 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
                 f"Make sure your NPU is properly installed and operational."
             )
 
-            if "Lack of device memory" in str(e):
+            if "cannot allocate" in str(e):
                 oom_help_msg = "\n\nNot enough NPU memory to load the model. \n\n"
                 oom_help_msg += cls._get_class_specific_oom_help_msg()
                 oom_help_msg += "\n\nFor a detailed guide, "
@@ -415,8 +426,8 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
 
     @classmethod
     def _create_runtimes(
-        cls, compiled_models: list[rebel.RBLNCompiledModel], rbln_config: RBLNModelConfig
-    ) -> list[rebel.Runtime]:
+        cls, compiled_models: list[RBLNCompiledModel], rbln_config: RBLNModelConfig
+    ) -> list[RBLNRuntime]:
         raise NotImplementedError
 
     @classmethod
@@ -515,8 +526,17 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
         rbln_compile_config: RBLNCompileConfig,
         create_runtimes: bool,
         device: int | list[int] | None,
-        **kwargs,
-    ) -> rebel.RBLNCompiledModel:
+        weights: RBLNWeights | None = None,
+        asked: dict[str, Any] | None = None,
+        dynamic: Sequence[str] = (),
+    ) -> RBLNCompiledModel:
+        """Compiles `model` for each bucket of inputs `rbln_compile_config` gives.
+
+        `weights` gathers the compiled models of one module, whose weights are saved once for all
+        of them; `asked` gives, by name, the type an input must have, such as the `type` of an arg
+        of another compiled model that shares the input's tensor; and `dynamic` the inputs whose
+        outermost axis is the number of blocks of a paged cache, which is set when the model loads.
+        """
         if create_runtimes:
             runtime_cannot_be_created = tp_and_devices_are_ok(
                 num_devices=rbln_compile_config.num_devices,
@@ -527,15 +547,7 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
                 raise ValueError(runtime_cannot_be_created)
 
         normalize_contiguous_(model)
-
-        compiled_model = rebel.compile_from_torch(
-            model,
-            input_info=rbln_compile_config.input_info,
-            npu=rbln_compile_config.npu,
-            **{compiler_num_devices_kwarg(): rbln_compile_config.num_devices},
-            **kwargs,
-        )
-        return compiled_model
+        return compile_model(model, rbln_compile_config, weights=weights, asked=asked, dynamic=dynamic)
 
     @classmethod
     def update_rbln_config(

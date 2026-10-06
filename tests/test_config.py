@@ -3,7 +3,6 @@ import shutil
 import tempfile
 
 import pytest
-import rebel
 import torch
 
 from optimum.rbln import (
@@ -20,6 +19,7 @@ from optimum.rbln import (
     RBLNResNetForImageClassificationConfig,
     RBLNStableDiffusionPipeline,
 )
+from optimum.rbln.utils import runtime_utils
 
 
 @pytest.fixture
@@ -52,7 +52,7 @@ def test_stable_diffusion_config(stable_diffusion_model):
     assert model.unet.rbln_config.create_runtimes is False
     assert model.unet.compiled_models[0]._meta["npu"] == "RBLN-CA22"
 
-    npu = rebel.get_npu_name()
+    npu = runtime_utils.get_npu_name()
     assert model.text_encoder.compiled_models[0]._meta["npu"] == npu
 
 
@@ -320,11 +320,11 @@ def test_invalid_config_parameters(model_id, invalid_param):
     """Test robust handling of various invalid configuration parameters."""
     # check invaild params
     if "rbln_tensor_parallel_size" in invalid_param:
-        if rebel.device_count() <= invalid_param["rbln_tensor_parallel_size"]:
+        if runtime_utils.device_count() <= invalid_param["rbln_tensor_parallel_size"]:
             pytest.skip("Sufficient devices for invalid tensor_parallel_size check")
 
     if "rbln_device" in invalid_param:
-        if rebel.device_count() - 1 <= invalid_param["rbln_device"]:
+        if runtime_utils.device_count() - 1 <= invalid_param["rbln_device"]:
             pytest.skip("Sufficient devices for invalid rbln_device check")
 
     with pytest.raises((ValueError, TypeError)):
@@ -386,12 +386,12 @@ class TestPrefillChunkSizeDefault:
         assert self._resolve(npu="RBLN-CA22") == 128
 
     def test_falls_back_to_attached_npu(self, monkeypatch):
-        monkeypatch.setattr(rebel, "get_npu_name", lambda *args: "RBLN-CR03")
+        monkeypatch.setattr(runtime_utils, "get_npu_name", lambda *args: "RBLN-CR03")
         assert self._resolve() == 512
 
     def test_defaults_to_128_without_attached_npu(self, monkeypatch):
         # Compiling on a host without an NPU: get_npu_name returns None -> fall back to 128.
-        monkeypatch.setattr(rebel, "get_npu_name", lambda *args: None)
+        monkeypatch.setattr(runtime_utils, "get_npu_name", lambda *args: None)
         assert self._resolve() == 128
 
     def test_explicit_value_wins_over_npu_default(self):
@@ -426,12 +426,11 @@ class TestAttentionLimits:
         with pytest.raises(ValueError, match="Unknown npu name"):
             get_attention_limits("RBLN-XX99")
 
-        monkeypatch.setattr(rebel, "npu_is_available", lambda *args: True)
-        monkeypatch.setattr(rebel, "get_npu_name", lambda *args: "RBLN-CR13")
+        monkeypatch.setattr(runtime_utils, "get_npu_name", lambda *args: "RBLN-CR13")
         assert get_attention_limits().name == "REBEL"
         assert get_attention_limits("RBLN-CA22").name == "ATOM"
 
-        monkeypatch.setattr(rebel, "npu_is_available", lambda *args: False)
+        monkeypatch.setattr(runtime_utils, "get_npu_name", lambda *args: None)
         assert get_attention_limits().name == "ATOM"
 
     @pytest.mark.parametrize("npu,cap", [("RBLN-CA22", 32_768), ("RBLN-CR13", 16_384)])

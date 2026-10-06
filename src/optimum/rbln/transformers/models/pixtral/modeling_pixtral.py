@@ -16,7 +16,6 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional
 
-import rebel
 import torch
 import torch.nn as nn
 from transformers import PixtralVisionConfig, PixtralVisionModel
@@ -28,7 +27,7 @@ from ....configuration_utils import RBLNCompileConfig, RBLNModelConfig
 from ....modeling import RBLNModel
 from ....modeling_base import Preprocessor
 from ....utils.logging import get_logger
-from ....utils.runtime_utils import RBLNPytorchRuntime
+from ....utils.runtime_utils import RBLNPytorchRuntime, RBLNRuntime
 from .configuration_pixtral import RBLNPixtralVisionModelConfig
 from .pixtral_architecture import PixtralAttention
 
@@ -44,7 +43,7 @@ class RBLNRuntimePixtralVisionModel(RBLNPytorchRuntime):
 
     def __init__(
         self,
-        runtime: rebel.Runtime,
+        runtime: RBLNRuntime,
         config: PixtralVisionConfig,
         rbln_config: RBLNPixtralVisionModelConfig,
         **kwargs: Any,

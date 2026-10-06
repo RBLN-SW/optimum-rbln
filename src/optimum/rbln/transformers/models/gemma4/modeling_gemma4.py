@@ -351,26 +351,10 @@ class RBLNGemma4ForCausalLM(RBLNMoeLoadMixin, RBLNDecoderOnlyModelForCausalLM):
         return rbln_config
 
     @classmethod
-    @torch.inference_mode()
-    def get_compiled_model(cls, model: PreTrainedModel, rbln_config: RBLNGemma4ForCausalLMConfig):
-        wrapped_model = cls._wrap_model_if_needed(model, rbln_config)
-        prefill_compile_config = rbln_config.compile_cfgs[0]
-
-        meta_tensor_names = [name for name, _, _ in prefill_compile_config.input_info if "past_key_values" in name]
-        prefill_example_inputs = prefill_compile_config.get_dummy_inputs(fill=0, meta_tensor_names=meta_tensor_names)
-        context, static_tensors = cls._get_compile_context(prefill_compile_config, prefill_example_inputs)
-
-        compiled_models = {}
-        compiled_models["prefill"] = cls._compile_model(
-            wrapped_model,
-            prefill_compile_config,
-            prefill_example_inputs,
-            context,
-            rbln_config,
-            rbln_config.quantization,
-            phase="prefill",
-        )
-
+    def _phase_compile_configs(
+        cls, rbln_config: RBLNGemma4ForCausalLMConfig
+    ) -> list[tuple[str, RBLNCompileConfig, str]]:
+        phases = []
         if rbln_config.use_image_prefill:
             # image_prefill buckets occupy compile_cfgs[1 : 1+N] (right after prefill at index 0).
             ip_start = rbln_config.image_prefill_runtime_idx
@@ -378,39 +362,15 @@ class RBLNGemma4ForCausalLM(RBLNMoeLoadMixin, RBLNDecoderOnlyModelForCausalLM):
             for chunk_size, ip_compile_config in zip(
                 rbln_config.image_prefill_chunk_size, ip_compile_configs, strict=True
             ):
-                ip_example_inputs = ip_compile_config.get_dummy_inputs(fill=0, static_tensors=static_tensors)
-                compiled_models[f"image_prefill_{chunk_size}"] = cls._compile_model(
-                    wrapped_model,
-                    ip_compile_config,
-                    ip_example_inputs,
-                    context,
-                    rbln_config,
-                    rbln_config.quantization,
-                    phase="image_prefill",
-                )
-
+                phases.append((f"image_prefill_{chunk_size}", ip_compile_config, "image_prefill"))
         if rbln_config.can_generate:
-            wrapped_model.phase = "decode"
             for batch_size, dec_compile_config in zip(
                 rbln_config.decoder_batch_sizes,
                 rbln_config.compile_cfgs[rbln_config.decoder_runtime_idx :],
                 strict=False,
             ):
-                dec_example_inputs = dec_compile_config.get_dummy_inputs(fill=0, static_tensors=static_tensors)
-                compiled_models[f"decoder_batch_{batch_size}"] = cls._compile_model(
-                    wrapped_model,
-                    dec_compile_config,
-                    dec_example_inputs,
-                    context,
-                    rbln_config,
-                    rbln_config.quantization,
-                    phase="decode",
-                )
-
-        if rbln_config.is_auto_num_blocks:
-            cls.set_kvcache_num_blocks_after_compilation(compiled_models, rbln_config)
-
-        return compiled_models
+                phases.append((f"decoder_batch_{batch_size}", dec_compile_config, "decode"))
+        return phases
 
     @classmethod
     def save_torch_artifacts(

@@ -15,7 +15,6 @@
 from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
-import rebel
 import torch  # noqa: I001
 from diffusers import AutoencoderKLTemporalDecoder
 from diffusers.models.autoencoders.vae import DecoderOutput
@@ -25,7 +24,9 @@ from transformers import PretrainedConfig
 from ....configuration_utils import RBLNCompileConfig
 from ....modeling import RBLNModel
 from ....modeling_base import Preprocessor
+from ....utils.compiled_model import RBLNCompiledModel
 from ....utils.logging import get_logger
+from ....utils.runtime_utils import RBLNRuntime, create_runtimes
 from ...configurations import RBLNAutoencoderKLTemporalDecoderConfig
 from ...modeling_diffusers import RBLNDiffusionMixin
 from .vae import (
@@ -76,7 +77,7 @@ class RBLNAutoencoderKLTemporalDecoder(RBLNModel):
     @classmethod
     def get_compiled_model(
         cls, model, rbln_config: RBLNAutoencoderKLTemporalDecoderConfig
-    ) -> dict[str, rebel.RBLNCompiledModel]:
+    ) -> dict[str, RBLNCompiledModel]:
         compiled_models = {}
         if rbln_config.uses_encoder:
             encoder_model, decoder_model = cls._wrap_model_if_needed(model, rbln_config)
@@ -212,9 +213,9 @@ class RBLNAutoencoderKLTemporalDecoder(RBLNModel):
     @classmethod
     def _create_runtimes(
         cls,
-        compiled_models: list[rebel.RBLNCompiledModel],
+        compiled_models: list[RBLNCompiledModel],
         rbln_config: RBLNAutoencoderKLTemporalDecoderConfig,
-    ) -> list[rebel.Runtime]:
+    ) -> list[RBLNRuntime]:
         if len(compiled_models) == 1:
             # decoder
             expected_models = ["decoder"]
@@ -225,16 +226,7 @@ class RBLNAutoencoderKLTemporalDecoder(RBLNModel):
             cls._raise_missing_compiled_file_error(expected_models)
 
         device_vals = [rbln_config.device_map[model_name] for model_name in expected_models]
-        return [
-            rebel.Runtime(
-                compiled_model,
-                tensor_type="pt",
-                device=device_val,
-                activate_profiler=rbln_config.activate_profiler,
-                timeout=rbln_config.timeout,
-            )
-            for compiled_model, device_val in zip(compiled_models, device_vals, strict=False)
-        ]
+        return create_runtimes(compiled_models, device_vals)
 
     def encode(
         self, x: torch.FloatTensor, return_dict: bool = True

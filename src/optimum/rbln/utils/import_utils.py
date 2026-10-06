@@ -133,7 +133,7 @@ RBLN_VERSION_COMPATS = {
 
 
 def is_rbln_available() -> bool:
-    return importlib.util.find_spec("rebel-compiler") is not None
+    return importlib.util.find_spec("rbln") is not None
 
 
 def check_version_compats() -> None:

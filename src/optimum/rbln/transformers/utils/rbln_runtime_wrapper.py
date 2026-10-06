@@ -22,11 +22,11 @@ from ...modeling import RBLNModel
 
 
 if TYPE_CHECKING:
-    import rebel
+    from ...utils.runtime_utils import RBLNRuntime
 
 
 class LoopProcessor(Module, ABC):
-    def __init__(self, model: Union[RBLNModel, "rebel.Runtime"]):
+    def __init__(self, model: Union[RBLNModel, "RBLNRuntime"]):
         super().__init__()
         self.model = model
 

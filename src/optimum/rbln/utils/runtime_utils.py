@@ -12,40 +12,49 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import inspect
+import math
 import re
 import threading
-from functools import lru_cache
-from typing import Any, ClassVar
+from collections.abc import Mapping, Sequence
+from functools import cache
+from typing import TYPE_CHECKING, Any, ClassVar
 
-import rebel
+import numpy as np
 import torch
 
+import rbln
 
-@lru_cache(maxsize=1)
-def compiler_num_devices_kwarg() -> str:
-    """Return the kwarg name the installed rebel-compiler expects for the device count.
 
-    Compilers expose this as `num_devices`, but ones predating that name only accept
-    `tensor_parallel_size`. `compile_from_torch` forwards `**kwargs` to `compile`, so we probe
-    `rebel.compile`'s signature to pick the name the installed compiler accepts.
-    """
+if TYPE_CHECKING:
+    from .compiled_model import RBLNCompiledModel
+
+
+def device_count() -> int:
+    """The NPUs the process may use: those `RBLN_DEVICES` names, or every NPU of the host."""
     try:
-        params = inspect.signature(rebel.compile).parameters
-    except (ValueError, TypeError):
-        return "num_devices"
-    return "num_devices" if "num_devices" in params else "tensor_parallel_size"
+        return rbln.device_count()
+    except RuntimeError:
+        return 0
+
+
+def npu_is_available(device: int = 0) -> bool:
+    return 0 <= device < device_count()
+
+
+@cache
+def get_npu_name(device: int = 0) -> str | None:
+    """The kind of NPU device `device` of the process is, or None when it has no such device."""
+    return rbln.Device(device).npu if npu_is_available(device) else None
 
 
 def _resolve_npu(npu: str | None = None) -> str:
     if npu is None:
-        if not rebel.npu_is_available(0):
+        npu = get_npu_name(0)
+        if npu is None:
             raise RuntimeError("No NPU is available to get available DRAM size.")
-        npu = rebel.get_npu_name(0)
     return npu
 
 
-# Total device DRAM and the system DRAM reserved per chiplet, by NPU family.
 def _dram_spec(npu: str) -> tuple[int, int]:
     if npu.startswith("RBLN-CR"):
         return 144 * 2**30, 1 * 2**30
@@ -111,7 +120,7 @@ def resolve_npu_or_none(npu: str | None = None) -> str | None:
     """
     if npu is not None:
         return npu
-    return rebel.get_npu_name(0) if rebel.npu_is_available(0) else None
+    return get_npu_name(0)
 
 
 def npu_is_cr13_or_later(npu: str | None = None) -> bool:
@@ -161,27 +170,205 @@ def tp_and_devices_are_ok(
     for device_id in device:
         if device_id < 0:  # if any device is dummy device, skip it
             return None
-        if rebel.get_npu_name(device_id) is None:
+        if get_npu_name(device_id) is None:
             return (
                 f"Device {device_id} is not a valid NPU device. Please check your NPU status with 'rbln-smi' command."
             )
 
-    if rebel.device_count() < num_devices:
-        return f"`num_devices` ({num_devices}) is greater than the number of available devices {rebel.device_count()}."
+    if device_count() < num_devices:
+        return f"`num_devices` ({num_devices}) is greater than the number of available devices {device_count()}."
 
     if npu is not None:
         for device_id in device:
-            npu_name = rebel.get_npu_name(device_id)
+            npu_name = get_npu_name(device_id)
             if normalize_npu(npu_name) != normalize_npu(npu):
                 return f"Device {device_id} ({npu_name}) is not on the same NPU as {npu}."
 
     return None
 
 
+def open_devices(device: int | Sequence[int] | None, count: int, npu: str) -> list[rbln.Device]:
+    """The devices a function compiled for `count` devices of kind `npu` runs on when given
+    `device`: devices of the process by number, the first `count` when None, or for a negative
+    number a dummy device of the kind, which takes no NPU memory and runs nothing."""
+    ids = list(range(count)) if device is None else [device] if isinstance(device, int) else list(device)
+    if any(i < 0 for i in ids):
+        if count != 1:
+            raise RuntimeError(f"a dummy device runs a model compiled for one device, not {count}")
+        return [rbln.Device.open_dummy(npu)]
+    if len(ids) != count:
+        raise RuntimeError(f"The model is compiled for {count} devices, not {ids}.")
+    return [rbln.Device(ids[0])] if count == 1 else list(rbln.Device.group(ids))
+
+
+def _is_scratch(arg: rbln.Arg) -> bool:
+    return arg.name == "scratch" and not arg.sources
+
+
+def _torch_of(value: Any) -> torch.Tensor:
+    if isinstance(value, torch.Tensor):
+        return value
+    array = np.asarray(value)
+    if array.dtype.name == "bfloat16":
+        return torch.from_numpy(array.view(np.int16)).view(torch.bfloat16)
+    return torch.from_numpy(array)
+
+
+def _decodable_into(arg: rbln.Arg, target: torch.Tensor) -> torch.Tensor | None:
+    """`target` viewed as the logical value of result `arg`, to decode straight into, or None when
+    it cannot take that value as it is."""
+    logical = arg.logical
+    if logical.dynamic_axes or target.device.type != "cpu" or target.requires_grad:
+        return None
+    if not target.is_contiguous() or str(target.dtype).removeprefix("torch.") != logical.dtype:
+        return None
+    if target.numel() != math.prod(logical.shape):
+        return None
+    return target.view(list(logical.shape))
+
+
+class RBLNRuntime:
+    """A compiled model loaded on NPUs, which a call runs on torch tensors.
+
+    Each bucket of the compiled model runs with an executor of its own, and a call runs the one
+    whose input shapes are those of the inputs given. Every executor binds the weights and the
+    tensors given as `tensors` that its function takes, such as a KV cache other compiled models
+    share; the inputs left, in the order the model takes them, are what a call gives.
+    """
+
+    def __init__(
+        self,
+        compiled_model: "RBLNCompiledModel",
+        devices: list[rbln.Device],
+        weights: list[dict[str, Any]],
+        tensors: Mapping[str, Any] | None = None,
+    ) -> None:
+        self.compiled_model = compiled_model
+        self.devices = devices
+        names = {a.name for a in compiled_model.functions[0].args}
+        self.shared = {name: t for name, t in (tensors or {}).items() if name in names}
+        self.executors: list[rbln.Executor] = []
+        for function, held in zip(compiled_model.functions, weights, strict=True):
+            bound = {**held, **self.shared}
+            for a in function.args:
+                if _is_scratch(a) and a.name not in bound:
+                    bound[a.name] = rbln.empty_like(a, devices)
+            self.executors.append(rbln.Executor(function, devices, tensors=bound))
+        first = compiled_model.functions[0]
+        bound = set(self.executors[0].tensors)
+        self.input_names = [
+            a.name for a in first.args if a.shards and a.used and a.access == "read" and a.name not in bound
+        ]
+        self._buckets = {
+            tuple(tuple(function.arg(name).logical.shape) for name in self.input_names): executor
+            for function, executor in zip(compiled_model.functions, self.executors, strict=True)
+        }
+
+    def __call__(self, *args: Any, out: Any = None, **kwargs: Any) -> Any:
+        return self.forward(*args, out=out, **kwargs)
+
+    def forward(self, *args: Any, out: Any = None, **kwargs: Any) -> Any:
+        inputs = list(args) + [kwargs[name] for name in self.input_names[len(args) :] if name in kwargs]
+        executor = self._bucket(inputs)
+        results = [executor.function.arg(name) for name in executor.function.results]
+        if out is None:
+            targets: list[torch.Tensor | None] = [None] * len(results)
+            into = [
+                None
+                if a.access != "write" or a.logical.dynamic_axes
+                else torch.empty(list(a.logical.shape), dtype=getattr(torch, a.logical.dtype))
+                for a in results
+            ]
+        else:
+            targets = [out] if isinstance(out, torch.Tensor) else list(out)
+            targets += [None] * (len(results) - len(targets))
+            into = [
+                _decodable_into(a, t) if t is not None and a.access == "write" else None
+                for a, t in zip(results, targets, strict=True)
+            ]
+        outputs = []
+        for a, target, given, result in zip(results, targets, into, executor(*inputs, out=into), strict=True):
+            if a.access != "write":
+                outputs.append(torch.empty(0))
+            elif given is not None:
+                outputs.append(target if target is not None else given)
+            elif target is not None:
+                outputs.append(target.copy_(_torch_of(result).reshape(target.shape)))
+            else:
+                outputs.append(_torch_of(result))
+        return outputs[0] if len(outputs) == 1 else outputs
+
+    def _bucket(self, inputs: list[Any]) -> rbln.Executor:
+        if len(self._buckets) == 1:
+            return self.executors[0]
+        shapes = tuple(tuple(np.shape(x)) for x in inputs)
+        executor = self._buckets.get(shapes)
+        if executor is None:
+            raise TypeError(
+                f"No bucket takes inputs of shapes {list(shapes)}; the buckets take {list(self._buckets)}."
+            )
+        return executor
+
+    def copy_kv_cache(self, src_block: int, dst_block: int) -> None:
+        """Copies block `src_block` of every shared tensor into block `dst_block` on its devices,
+        the blocks of a paged KV cache being its outermost axis. A block is copied whole: a request
+        reads no position of it past those it writes after the ones it shares."""
+        function = self.compiled_model.functions[0]
+        for name, tensor in self.shared.items():
+            arg = function.arg(name)
+            rbln.copy(arg.view(tensor, dst_block, dst_block + 1), arg.view(tensor, src_block, src_block + 1))
+
+    def __repr__(self) -> str:
+        return f"RBLNRuntime({self.compiled_model!r}, devices={self.devices!r})"
+
+
+def zeroed_tensors(
+    function: rbln.Function, names: Sequence[str], devices: list[rbln.Device], **axes: int
+) -> dict[str, rbln.Tensor]:
+    """A zeroed tensor of each arg of `function` that `names` gives, on `devices`, with the dynamic
+    axes `axes` names at their values, for the compiled models that share it to bind."""
+    tensors = {}
+    for name in names:
+        arg = function.arg(name)
+        dynamic = {d.name for d in arg.logical.dynamic_axes}
+        tensors[name] = rbln.empty_like(arg, devices, **{k: v for k, v in axes.items() if k in dynamic})
+        for shard in tensors[name].shards:
+            shard.device.fill(shard, 0, shard.nbytes, 0)
+    return tensors
+
+
+def create_runtimes(
+    compiled_models: Sequence["RBLNCompiledModel"],
+    devices: Sequence[int | Sequence[int] | None],
+    tensors: Mapping[str, Any] | None = None,
+) -> list[RBLNRuntime]:
+    """Loads `compiled_models` on their devices, each compiled model on the devices at its place in
+    `devices`. Compiled models of one module on the same devices share the tensors of the weights
+    they hold alike, and every runtime binds `tensors` where its functions take them."""
+    opened = []
+    for compiled_model, device in zip(compiled_models, devices, strict=True):
+        first = compiled_model.functions[0]
+        opened.append(open_devices(device, first.num_devices, first.npu))
+    held: dict[int, list[dict[str, Any]]] = {}
+    groups: dict[tuple[int, tuple[int, ...]], list[int]] = {}
+    for i, (compiled_model, ds) in enumerate(zip(compiled_models, opened, strict=True)):
+        groups.setdefault((id(compiled_model.weights), tuple((d.id, d.npu) for d in ds)), []).append(i)
+    for members in groups.values():
+        functions = [f for i in members for f in compiled_models[i].functions]
+        weights = compiled_models[members[0]].weights.materialize(functions, opened[members[0]])
+        for i in members:
+            held[i] = weights[: len(compiled_models[i].functions)]
+            weights = weights[len(compiled_models[i].functions) :]
+    return [
+        RBLNRuntime(compiled_model, ds, held[i], tensors)
+        for i, (compiled_model, ds) in enumerate(zip(compiled_models, opened, strict=True))
+    ]
+
+
 class RBLNPytorchRuntime:
     mandatory_members: ClassVar[list[str]] = []
 
-    def __init__(self, runtime: rebel.Runtime, **kwargs) -> None:
+    def __init__(self, runtime: "RBLNRuntime", **kwargs) -> None:
         self.runtime = runtime
         for key, value in kwargs.items():
             setattr(self, key, value)

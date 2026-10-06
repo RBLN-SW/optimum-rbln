@@ -433,7 +433,7 @@ class TestEncoderMaxSeqLenBucketing(unittest.TestCase):
                 )
                 try:
                     # One executor per bucket, all in a single compiled model (shared weights).
-                    self.assertEqual(rbln_model.model[0].get_executor_count(), len(self.BUCKETS))
+                    self.assertEqual(len(rbln_model.model[0].executors), len(self.BUCKETS))
 
                     for seq_len, args in inputs.items():
                         output = rbln_model(**args, return_dict=False)[0]

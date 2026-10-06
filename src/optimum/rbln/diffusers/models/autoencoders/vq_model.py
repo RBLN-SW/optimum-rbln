@@ -15,7 +15,6 @@
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
-import rebel
 import torch
 from diffusers import VQModel
 from diffusers.models.autoencoders.vae import DecoderOutput
@@ -24,7 +23,9 @@ from diffusers.models.autoencoders.vq_model import VQEncoderOutput
 from ....configuration_utils import RBLNCompileConfig, RBLNModelConfig
 from ....modeling import RBLNModel
 from ....modeling_base import Preprocessor
+from ....utils.compiled_model import RBLNCompiledModel
 from ....utils.logging import get_logger
+from ....utils.runtime_utils import RBLNRuntime, create_runtimes
 from ...configurations.models.configuration_vq_model import RBLNVQModelConfig
 from ...modeling_diffusers import RBLNDiffusionMixin, RBLNDiffusionMixinConfig
 from .vae import RBLNRuntimeVQDecoder, RBLNRuntimeVQEncoder, _VQDecoder, _VQEncoder
@@ -147,9 +148,9 @@ class RBLNVQModel(RBLNModel):
     @classmethod
     def _create_runtimes(
         cls,
-        compiled_models: list[rebel.RBLNCompiledModel],
+        compiled_models: list[RBLNCompiledModel],
         rbln_config: RBLNVQModelConfig,
-    ) -> list[rebel.Runtime]:
+    ) -> list[RBLNRuntime]:
         if len(compiled_models) == 1:
             # decoder
             expected_models = ["decoder"]
@@ -161,16 +162,7 @@ class RBLNVQModel(RBLNModel):
             cls._raise_missing_compiled_file_error(expected_models)
 
         device_vals = [rbln_config.device_map[model_name] for model_name in expected_models]
-        return [
-            rebel.Runtime(
-                compiled_model,
-                tensor_type="pt",
-                device=device_val,
-                activate_profiler=rbln_config.activate_profiler,
-                timeout=rbln_config.timeout,
-            )
-            for compiled_model, device_val in zip(compiled_models, device_vals, strict=False)
-        ]
+        return create_runtimes(compiled_models, device_vals)
 
     def encode(
         self, x: torch.FloatTensor, return_dict: bool = True, **kwargs: Any

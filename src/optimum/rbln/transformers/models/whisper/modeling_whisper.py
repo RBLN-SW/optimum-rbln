@@ -16,17 +16,17 @@ import inspect
 from collections.abc import Callable, Sequence
 from typing import TYPE_CHECKING, Any, Optional
 
-import rebel
 import torch
-from rebel.compile_context import CompileContext
 from transformers import AutoModelForSpeechSeq2Seq, WhisperForConditionalGeneration, WhisperModel
 from transformers.modeling_outputs import BaseModelOutput, Seq2SeqLMOutput
 
 from ....configuration_utils import RBLNCompileConfig
 from ....modeling import RBLNModel
 from ....modeling_base import Preprocessor
+from ....utils.compiled_model import RBLNCompiledModel
 from ....utils.logging import get_logger
-from ....utils.runtime_utils import RBLNPytorchRuntime
+from ....utils.runtime_utils import RBLNPytorchRuntime, RBLNRuntime
+from ...utils.encoder_decoder import compile_encoder_decoder, create_encoder_decoder_runtimes
 from .configuration_whisper import RBLNWhisperForConditionalGenerationConfig
 from .generation_whisper import RBLNWhisperGenerationMixin
 from .whisper_architecture import WhisperWrapper
@@ -55,7 +55,7 @@ class RBLNRuntimeDecoder(RBLNPytorchRuntime):
 
     def __init__(
         self,
-        runtime: rebel.Runtime,
+        runtime: RBLNRuntime,
         batch_size: int,
         dec_max_seq_len: int,
         use_attention_mask: bool | None = None,
@@ -210,49 +210,8 @@ class RBLNWhisperForConditionalGeneration(RBLNModel, RBLNWhisperGenerationMixin)
         )
 
     @classmethod
-    @torch.inference_mode()
     def get_compiled_model(cls, model, rbln_config: RBLNWhisperForConditionalGenerationConfig):
-        wrapped_model = cls._wrap_model_if_needed(model, rbln_config)
-
-        enc_compile_config = rbln_config.compile_cfgs[0]
-        dec_compile_config = rbln_config.compile_cfgs[1]
-
-        context = CompileContext(use_weight_sharing=False)
-
-        enc_example_inputs = enc_compile_config.get_dummy_inputs(fill=0)
-
-        # Mark encoder's static tensors (cross kv states)
-        static_tensors = {}
-        for (name, _, _), tensor in zip(enc_compile_config.input_info, enc_example_inputs, strict=False):
-            if "key_value_states" in name:
-                static_tensors[name] = tensor
-                context.mark_static_address(tensor, name)
-
-        dec_example_inputs = dec_compile_config.get_dummy_inputs(fill=0, static_tensors=static_tensors)
-
-        # Mark decoder's static tensors (self kv states)
-        for (name, _, _), tensor in zip(dec_compile_config.input_info, dec_example_inputs, strict=False):
-            if "key_value_states" in name:
-                context.mark_static_address(tensor, name)
-
-        compiled_encoder = cls.compile(
-            wrapped_model.encoder,
-            enc_compile_config,
-            create_runtimes=rbln_config.create_runtimes,
-            device=rbln_config.device,
-            example_inputs=enc_example_inputs,
-            compile_context=context,
-        )
-        compiled_decoder = cls.compile(
-            wrapped_model.decoder,
-            dec_compile_config,
-            create_runtimes=rbln_config.create_runtimes,
-            device=rbln_config.device,
-            example_inputs=dec_example_inputs,
-            compile_context=context,
-        )
-
-        return {"encoder": compiled_encoder, "decoder": compiled_decoder}
+        return compile_encoder_decoder(cls, cls._wrap_model_if_needed(model, rbln_config), rbln_config)
 
     @classmethod
     def _update_paged_attention_config(
@@ -357,28 +316,10 @@ class RBLNWhisperForConditionalGeneration(RBLNModel, RBLNWhisperGenerationMixin)
     @classmethod
     def _create_runtimes(
         cls,
-        compiled_models: list[rebel.RBLNCompiledModel],
+        compiled_models: list[RBLNCompiledModel],
         rbln_config: RBLNWhisperForConditionalGenerationConfig,
-    ) -> list[rebel.Runtime]:
-        if any(model_name not in rbln_config.device_map for model_name in ["encoder", "decoder"]):
-            cls._raise_missing_compiled_file_error(["encoder", "decoder"])
-
-        return [
-            rebel.Runtime(
-                compiled_models[0],
-                tensor_type="pt",
-                device=rbln_config.device_map["encoder"],
-                activate_profiler=rbln_config.activate_profiler,
-                timeout=rbln_config.timeout,
-            ),
-            rebel.Runtime(
-                compiled_models[1],
-                tensor_type="pt",
-                device=rbln_config.device_map["decoder"],
-                activate_profiler=rbln_config.activate_profiler,
-                timeout=rbln_config.timeout,
-            ),
-        ]
+    ) -> list[RBLNRuntime]:
+        return create_encoder_decoder_runtimes(cls, compiled_models, rbln_config)
 
     def prepare_inputs_for_generation(
         self,

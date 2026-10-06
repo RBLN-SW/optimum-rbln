@@ -17,7 +17,6 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-import rebel
 import torch
 from diffusers import CosmosTransformer3DModel
 from diffusers.models.embeddings import Timesteps
@@ -34,7 +33,9 @@ from ....configuration_utils import DEFAULT_COMPILED_MODEL_NAME, RBLNCompileConf
 from ....modeling import RBLNModel
 from ....modeling_base import Preprocessor
 from ....modeling_rope_utils import np_cos, np_sin
+from ....utils.compiled_model import RBLNCompiledModel
 from ....utils.logging import get_logger
+from ....utils.runtime_utils import RBLNRuntime, create_runtimes
 from ...configurations import RBLNCosmosTransformer3DModelConfig
 
 
@@ -597,22 +598,15 @@ class RBLNCosmosTransformer3DModel(RBLNModel):
     @classmethod
     def _create_runtimes(
         cls,
-        compiled_models: list[rebel.RBLNCompiledModel],
+        compiled_models: list[RBLNCompiledModel],
         rbln_config: RBLNModelConfig,
-    ) -> list[rebel.Runtime]:
+    ) -> list[RBLNRuntime]:
         if DEFAULT_COMPILED_MODEL_NAME not in rbln_config.device_map:
             cls._raise_missing_compiled_file_error([DEFAULT_COMPILED_MODEL_NAME])
 
-        return [
-            rebel.Runtime(
-                compiled_model,
-                tensor_type="pt",
-                device=rbln_config.device_map[DEFAULT_COMPILED_MODEL_NAME],
-                activate_profiler=rbln_config.activate_profiler,
-                timeout=rbln_config.timeout,
-            )
-            for compiled_model in compiled_models
-        ]
+        return create_runtimes(
+            compiled_models, [rbln_config.device_map[DEFAULT_COMPILED_MODEL_NAME]] * len(compiled_models)
+        )
 
     def forward(
         self,

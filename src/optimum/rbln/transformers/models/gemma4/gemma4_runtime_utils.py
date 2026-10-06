@@ -14,9 +14,9 @@
 
 from typing import Any
 
-import rebel
 import torch
 
+from ....utils.runtime_utils import RBLNRuntime
 from ...modeling_outputs import RBLNDecoderOnlyOutput, RBLNGemma4ForCausalLMOutput
 from ..decoderonly.decoderonly_runtime_utils import (
     RBLNDecoderOnlyChunkedMultimodalPrefillMixin,
@@ -38,7 +38,7 @@ class RBLNGemma4RuntimeModel(RBLNDecoderOnlyChunkedMultimodalPrefillMixin, RBLNR
     def __init__(
         self,
         *args: Any,
-        image_prefills: dict[int, rebel.Runtime] | None = None,
+        image_prefills: dict[int, RBLNRuntime] | None = None,
         embed_tokens_per_layer: torch.nn.Module | None = None,
         num_hidden_layers: int | None = None,
         hidden_size_per_layer_input: int | None = None,

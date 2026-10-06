@@ -18,7 +18,6 @@ from pathlib import Path
 from typing import Any, Optional
 
 import torch
-from rebel.compile_context import CompileContext
 from transformers import AutoModelForCausalLM, AutoModelForImageTextToText, PretrainedConfig, PreTrainedModel
 from transformers.initialization import no_init_weights
 from transformers.models.qwen3_5.configuration_qwen3_5 import Qwen3_5Config
@@ -55,22 +54,6 @@ from .qwen3_5_runtime_utils import RBLNQwen3_5RuntimeModel
 
 
 logger = logging.get_logger(__name__)
-
-
-def _qwen3_5_build_compile_context(compile_config, example_inputs):
-    def is_static_state(name: str) -> bool:
-        if "past_key_values" in name:
-            return True
-        return ("conv_state" in name or "recurrent_state" in name) and not name.endswith("_mask")
-
-    context = CompileContext(use_weight_sharing=True)
-    static_tensors = {}
-    for (name, _, _), tensor in zip(compile_config.input_info, example_inputs, strict=False):
-        if not is_static_state(name):
-            continue
-        static_tensors[name] = tensor
-        context.mark_static_address(tensor, name)
-    return context, static_tensors
 
 
 def _qwen3_5_linear_state_shapes(text_config, batch_size: int):
@@ -146,8 +129,8 @@ class RBLNQwen3_5TextModel(RBLNDecoderOnlyModel):
     `linear_attention` (GatedDeltaNet) layers carry a `conv_state` + `recurrent_state` instead. The two
     state tensors reuse the layer's two `past_key_values` slots positionally. This class owns the hybrid
     wiring — `get_input_info` (per-layer tensor specs), `setup_runtime` (the mask-injecting
-    `RBLNQwen3_5RuntimeModel`), `_get_compile_context` (mark conv/recurrent static) and `_update_rbln_config`
-    (validate `layer_types`). `RBLNQwen3_5ForCausalLM` adds the LM head on top, mirroring how
+    `RBLNQwen3_5RuntimeModel`) and `_update_rbln_config` (validate `layer_types`). The conv/recurrent
+    states are cache metas, so every phase shares one tensor of each as it shares the KV cache. `RBLNQwen3_5ForCausalLM` adds the LM head on top, mirroring how
     `RBLNDecoderOnlyModelForCausalLM` extends `RBLNDecoderOnlyModel`.
     """
 
@@ -156,10 +139,6 @@ class RBLNQwen3_5TextModel(RBLNDecoderOnlyModel):
 
     def setup_runtime(self):
         _qwen3_5_setup_hybrid_runtime(self)
-
-    @classmethod
-    def _get_compile_context(cls, compile_config, example_inputs):
-        return _qwen3_5_build_compile_context(compile_config, example_inputs)
 
     @classmethod
     def _update_rbln_config(cls, preprocessors=None, model=None, model_config=None, rbln_config=None):
@@ -768,10 +747,6 @@ class RBLNQwen3_5ForConditionalGeneration(RBLNQwenVLBatchSortMixin, RBLNQwen3_5M
 
     def can_generate(self):
         return True
-
-    @classmethod
-    def _get_compile_context(cls, compile_config, example_inputs):
-        return _qwen3_5_build_compile_context(compile_config, example_inputs)
 
     @classmethod
     def _reconstruct_model_if_needed(cls, model: "PreTrainedModel"):

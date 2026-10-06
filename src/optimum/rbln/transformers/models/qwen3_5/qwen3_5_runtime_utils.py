@@ -25,8 +25,8 @@ class RBLNQwen3_5RuntimeModel(RBLNRuntimeModel):
     ``full_attention`` layers use the on-device paged KV cache (handled by the base runtime, whose
     buffers are static and never passed at call time). The ``linear_attention`` (GatedDeltaNet) layers
     carry two extra states per layer — ``conv_state`` and ``recurrent_state`` — which are ALSO on-device
-    STATIC caches: they are marked static (``mark_static_address``) in the Qwen3.5 compile context
-    (``_qwen3_5_build_compile_context``) and read + written entirely in-graph via ``rbln_cache_update``.
+    caches: like the KV cache they are cache metas, one tensor of which every phase binds, and are read +
+    written entirely in-graph via ``rbln_cache_update``.
     So, like the KV cache, they live in device DRAM and are NEVER passed at call time — this runtime does
     NOT hold state values on the host:
 
@@ -36,7 +36,7 @@ class RBLNQwen3_5RuntimeModel(RBLNRuntimeModel):
     and ``recurrent_state_mask`` — which the GatedDeltaNet multiplies into the state it reads: ZEROS on
     prefill window 0 (fresh sequence, so the stale static cache is discarded) and ONES afterwards (carry
     whatever the previous window/step wrote). ``_run`` maps the named inputs onto the runtime's own
-    input order via ``_index_to_input_name``.
+    input order via ``input_names``.
     """
 
     def __init__(
@@ -65,7 +65,7 @@ class RBLNQwen3_5RuntimeModel(RBLNRuntimeModel):
         When output_hidden_states is set, the trailing `num_hidden_layers + 1` outputs are the per-layer
         hidden states — taking the LAST n_hidden avoids having to count the new_states.
         """
-        order = self.runtime._index_to_input_name
+        order = self.runtime.input_names
         args = [named_inputs[order[k]] for k in range(len(order))]
         out = super(RBLNRuntimeModel, self).forward(*args)
         hidden_states = None

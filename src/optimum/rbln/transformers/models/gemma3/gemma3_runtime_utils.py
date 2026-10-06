@@ -13,9 +13,9 @@
 # limitations under the License.
 from typing import Any
 
-import rebel
 import torch
 
+from ....utils.runtime_utils import RBLNRuntime
 from ...modeling_outputs import RBLNGemma3ForCausalLMOutput
 from ..decoderonly.decoderonly_runtime_utils import (
     RBLNDecoderOnlyChunkedMultimodalPrefillMixin,
@@ -33,7 +33,7 @@ class RBLNGemma3RuntimeModel(RBLNDecoderOnlyChunkedMultimodalPrefillMixin, RBLNR
 
     _prefill_output_cls = RBLNGemma3ForCausalLMOutput
 
-    def __init__(self, *args: Any, image_prefill: rebel.Runtime | None = None, **kwargs: Any) -> None:
+    def __init__(self, *args: Any, image_prefill: RBLNRuntime | None = None, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         self.image_prefill = RBLNPytorchRuntime(image_prefill)
         self.prefill = RBLNPytorchRuntime(self.runtime) if self.phase == "prefill" else None

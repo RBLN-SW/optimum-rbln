@@ -18,15 +18,16 @@ from functools import partial
 from typing import Any, Optional
 from unittest.mock import patch
 
-import rebel
 import torch
 from diffusers.utils import is_cosmos_guardrail_available
 from huggingface_hub import snapshot_download
 from transformers import AutoTokenizer, SiglipProcessor
 
 from .... import RBLNAutoModelForCausalLM, RBLNSiglipVisionModel
+from ....configuration_utils import RBLNCompileConfig
 from ....modeling_base import normalize_contiguous_
-from ....utils.runtime_utils import RBLNPytorchRuntime, UnavailableRuntime
+from ....utils.compiled_model import RBLNCompiledModel, RBLNWeights, compile_model
+from ....utils.runtime_utils import RBLNPytorchRuntime, UnavailableRuntime, create_runtimes
 from .configuration_cosmos_guardrail import RBLNCosmosSafetyCheckerConfig
 
 
@@ -112,6 +113,11 @@ def get_image_features(
     )[1]
 
 
+def _load(path: pathlib.Path) -> RBLNCompiledModel:
+    """A compiled model saved at `path` with the value file of its own weights beside it."""
+    return RBLNCompiledModel.load(path, 1, RBLNWeights.load(path.with_suffix(".rblnv")))
+
+
 class RBLNSigLIPEncoder(SigLIPEncoder):
     def __init__(
         self,
@@ -156,9 +162,7 @@ class RBLNRetinaFaceFilter(RetinaFaceFilter):
     ):
         torch.nn.Module.__init__(self)
         if is_compiled_dir(checkpoint_id):
-            self.compiled_model = rebel.RBLNCompiledModel(
-                pathlib.Path(checkpoint_id) / "face_blur_filter" / "retinaface.rbln"
-            )
+            self.compiled_model = _load(pathlib.Path(checkpoint_id) / "face_blur_filter" / "retinaface.rbln")
             self.cfg = cfg_re50
             self.batch_size = batch_size
             self.confidence_threshold = confidence_threshold
@@ -169,33 +173,31 @@ class RBLNRetinaFaceFilter(RetinaFaceFilter):
             net = self.net
             del self.net
             normalize_contiguous_(net)
-            self.compiled_model = rebel.compile_from_torch(
+            self.compiled_model = compile_model(
                 net,
-                input_info=[
-                    (
-                        "frames",
-                        [
-                            self.batch_size,
-                            3,
-                            rbln_config.face_blur_filter.image_size[0],
-                            rbln_config.face_blur_filter.image_size[1],
-                        ],
-                        "float32",
-                    )
-                ],
-                npu=rbln_config.face_blur_filter.npu,
+                RBLNCompileConfig(
+                    compiled_model_name="retinaface",
+                    input_info=[
+                        (
+                            "frames",
+                            [
+                                self.batch_size,
+                                3,
+                                rbln_config.face_blur_filter.image_size[0],
+                                rbln_config.face_blur_filter.image_size[1],
+                            ],
+                            "float32",
+                        )
+                    ],
+                    npu=rbln_config.face_blur_filter.npu,
+                ),
             )
 
         self.rbln_config = rbln_config
 
         try:
             runtime = (
-                rebel.Runtime(
-                    self.compiled_model,
-                    tensor_type="pt",
-                    device=self.rbln_config.face_blur_filter.device,
-                    activate_profiler=rbln_config.face_blur_filter.activate_profiler,
-                )
+                create_runtimes([self.compiled_model], [self.rbln_config.face_blur_filter.device])[0]
                 if self.rbln_config.face_blur_filter.create_runtimes
                 else UnavailableRuntime()
             )
@@ -231,7 +233,7 @@ class RBLNVideoSafetyModel(VideoSafetyModel):
         self.rbln_config = rbln_config
 
         if is_compiled_dir(checkpoint_id):
-            self.compiled_model = rebel.RBLNCompiledModel(
+            self.compiled_model = _load(
                 pathlib.Path(checkpoint_id) / "video_content_safety_filter" / "safety_filter.rbln"
             )
         else:
@@ -249,29 +251,27 @@ class RBLNVideoSafetyModel(VideoSafetyModel):
             network.load_state_dict({k.replace("network.", ""): v for k, v in checkpoint["model"].items()})
             normalize_contiguous_(network)
 
-            self.compiled_model = rebel.compile_from_torch(
+            self.compiled_model = compile_model(
                 network,
-                input_info=[
-                    (
-                        "data",
-                        [
-                            self.rbln_config.video_safety_model.batch_size,
-                            self.rbln_config.video_safety_model.input_size,
-                        ],
-                        "float32",
-                    )
-                ],
-                npu=self.rbln_config.video_safety_model.npu,
+                RBLNCompileConfig(
+                    compiled_model_name="safety_filter",
+                    input_info=[
+                        (
+                            "data",
+                            [
+                                self.rbln_config.video_safety_model.batch_size,
+                                self.rbln_config.video_safety_model.input_size,
+                            ],
+                            "float32",
+                        )
+                    ],
+                    npu=self.rbln_config.video_safety_model.npu,
+                ),
             )
 
         try:
             runtime = (
-                rebel.Runtime(
-                    self.compiled_model,
-                    tensor_type="pt",
-                    device=self.rbln_config.video_safety_model.device,
-                    activate_profiler=rbln_config.video_safety_model.activate_profiler,
-                )
+                create_runtimes([self.compiled_model], [self.rbln_config.video_safety_model.device])[0]
                 if self.rbln_config.video_safety_model.create_runtimes
                 else UnavailableRuntime()
             )
