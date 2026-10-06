@@ -22,7 +22,7 @@ from ..configuration_utils import RBLNModelConfig
 class RBLNTransformerEncoderConfig(RBLNModelConfig):
     rbln_model_input_names: list[str] | None = None
 
-    @deprecate_kwarg(old_name="model_input_shapes", version="0.12.0")
+    @deprecate_kwarg(old_name="model_input_shapes", version="0.13.0")
     def __init__(
         self,
         max_seq_len: int | list[int] | None = None,
