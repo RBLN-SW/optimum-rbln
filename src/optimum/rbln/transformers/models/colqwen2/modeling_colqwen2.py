@@ -53,8 +53,7 @@ class RBLNColQwen2ForRetrieval(RBLNModel):
                     "max_seq_len": 6400,
                 },
                 "num_devices": 4,
-                "kvcache_partition_len": 16384,
-                "max_seq_len": 16384 * 7,
+                "max_seq_len": 32_768,
             },
         }
         model = RBLNColQwen2ForRetrieval.from_pretrained("vidore/colqwen2-v1.0-hf", export=True, rbln_config=rbln_config)
