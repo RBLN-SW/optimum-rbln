@@ -306,7 +306,7 @@ class RBLNQwen2_5_VisionTransformerPretrainedModel(RBLNModel):
             window_indice = cu_window_seqlens[cu_window_seqlens.index(image_s) : cu_window_seqlens.index(image_e) + 1]
 
             # Select the nearest higher max_seq_len from the available compiled models.
-            window_padded_len = len(window_indice) * window_seq_len
+            window_padded_len = (len(window_indice) - 1) * window_seq_len
             try:
                 ws_index = torch.searchsorted(self.max_seq_len, window_padded_len).item()
                 max_seq_len = self.max_seq_len[ws_index]
@@ -390,16 +390,6 @@ class RBLNQwen2_5_VLModel(RBLNDecoderOnlyModel):
             return text_config.vocab_size
         else:
             return self.embedding_dim if hasattr(self, "embedding_dim") else text_config.hidden_size
-
-    def _create_embedding_layer(self):
-        with no_init_weights():
-            embed_tokens = torch.nn.Embedding(
-                self.config.text_config.vocab_size,
-                self.config.text_config.hidden_size,
-                self.config.text_config.pad_token_id,
-                dtype=self.rbln_config.dtype,
-            )
-        return embed_tokens
 
     @classmethod
     def get_input_info(
@@ -661,6 +651,10 @@ class RBLNQwen2_5_VLForConditionalGeneration(
 
     def can_generate(self):
         return True
+
+    @classmethod
+    def update_rbln_config_using_pipe(cls, pipe: Any, rbln_config: Any, submodule_name: str) -> Any:
+        return rbln_config
 
     @classmethod
     def _reconstruct_model_if_needed(cls, model: "PreTrainedModel"):

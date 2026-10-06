@@ -34,7 +34,7 @@ class RBLNQwen3VLRuntimeModel(RBLNRuntimeModel):
         position_embed: torch.Tensor | None = None,
         token_type_ids: torch.Tensor | None = None,
         visual_pos_mask: torch.Tensor | None = None,
-        deepstack_embeds: list[torch.Tensor] | None = None,
+        deepstack_embeds: torch.Tensor | None = None,
     ):
         (
             inputs,
@@ -48,6 +48,13 @@ class RBLNQwen3VLRuntimeModel(RBLNRuntimeModel):
         ) = super()._prepare_prefill_inputs(
             inputs, cache_position, attention_mask, position_ids, position_embed, token_type_ids
         )
+
+        if attention_mask is not None:
+            mask_bool = attention_mask.to(dtype=torch.bool)
+            if visual_pos_mask is not None:
+                visual_pos_mask = visual_pos_mask[:, mask_bool]
+            if deepstack_embeds is not None:
+                deepstack_embeds = deepstack_embeds[:, mask_bool, :]
 
         padded_input_len = inputs.shape[1]
         if visual_pos_mask is not None:
@@ -87,7 +94,7 @@ class RBLNQwen3VLRuntimeModel(RBLNRuntimeModel):
         local_block_tables: torch.Tensor | None = None,
         lora_int_ids: torch.Tensor | None = None,
         visual_pos_mask: torch.Tensor | None = None,
-        deepstack_embeds: list[torch.Tensor] | None = None,
+        deepstack_embeds: torch.Tensor | None = None,
     ):
         inputs = self.inputs_embeddings_if_needed(input_ids, inputs_embeds)
         block_tables, local_block_tables, is_external_block_tables = (
@@ -143,7 +150,7 @@ class RBLNQwen3VLRuntimeModel(RBLNRuntimeModel):
         local_block_tables: torch.Tensor | None = None,
         lora_int_ids: torch.Tensor | None = None,
         visual_pos_mask: torch.Tensor | None = None,
-        deepstack_embeds: list[torch.Tensor] | None = None,
+        deepstack_embeds: torch.Tensor | None = None,
     ) -> torch.FloatTensor:
         if self.rbln_config.use_lora and lora_int_ids is None:
             if self.lora_int_ids is None:
