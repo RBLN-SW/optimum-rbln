@@ -40,11 +40,13 @@ class RBLNQwen3ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
         ```python
         from optimum.rbln import RBLNQwen3ForCausalLM
         # Simple usage using rbln_* arguments
-        # `max_seq_len` is automatically inferred from the model config
+        # Qwen3-4B's 40,960-token context is over the eager-attention limit,
+        # so `max_seq_len` is set here; see below for the full context with flash attention
         model = RBLNQwen3ForCausalLM.from_pretrained(
             "Qwen/Qwen3-4B",
             export=True,
             rbln_batch_size=1,
+            rbln_max_seq_len=8192,
             rbln_num_devices=4,
         )
         # Using a config dictionary
@@ -98,7 +100,6 @@ class RBLNQwen3Model(RBLNDecoderOnlyModel):
         ```python
         from optimum.rbln import RBLNQwen3Model
         # Simple usage using rbln_* arguments
-        # `max_seq_len` is automatically inferred from the model config
         model = RBLNQwen3Model.from_pretrained(
             "Qwen/Qwen3-Embedding-4B",
             export=True,
@@ -107,6 +108,7 @@ class RBLNQwen3Model(RBLNDecoderOnlyModel):
             rbln_num_devices=4,
             rbln_kvcache_partition_len=8192,
         )
+        ```
     """
 
     _decoder_wrapper_cls = Qwen3Wrapper
