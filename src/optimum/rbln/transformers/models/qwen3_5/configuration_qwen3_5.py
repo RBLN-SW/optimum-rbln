@@ -101,7 +101,7 @@ class RBLNQwen3_5VisionModelConfig(RBLNModelConfig):
         Args:
             max_seq_len (Optional[Union[int, List[int]]]): Vision Transformer attention max sequence
                 length(s) = number of patches per image/video, counted before the 2x2 spatial merge
-                (a 224x224 image with patch size 16 gives (224/16) * (224/16) = 196). RBLN runs inference per image, so
+                (a 512x512 image with patch size 16 gives (512/16) * (512/16) = 1024). RBLN runs inference per image, so
                 set this to the max expected resolution to bound compute. Required.
             batch_size (int): the vision encoder runs one image at a time (the parent config forces this
                 by default).
