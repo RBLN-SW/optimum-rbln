@@ -21,8 +21,7 @@ from typing import TYPE_CHECKING, Any, ClassVar
 
 import numpy as np
 import torch
-
-import rbln
+from rebel import v2
 
 
 if TYPE_CHECKING:
@@ -32,7 +31,7 @@ if TYPE_CHECKING:
 def device_count() -> int:
     """The NPUs the process may use: those `RBLN_DEVICES` names, or every NPU of the host."""
     try:
-        return rbln.device_count()
+        return v2.device_count()
     except RuntimeError:
         return 0
 
@@ -44,7 +43,7 @@ def npu_is_available(device: int = 0) -> bool:
 @cache
 def get_npu_name(device: int = 0) -> str | None:
     """The kind of NPU device `device` of the process is, or None when it has no such device."""
-    return rbln.Device(device).npu if npu_is_available(device) else None
+    return v2.Device(device).npu if npu_is_available(device) else None
 
 
 def _resolve_npu(npu: str | None = None) -> str:
@@ -187,7 +186,7 @@ def tp_and_devices_are_ok(
     return None
 
 
-def open_devices(device: int | Sequence[int] | None, count: int, npu: str) -> list[rbln.Device]:
+def open_devices(device: int | Sequence[int] | None, count: int, npu: str) -> list[v2.Device]:
     """The devices a function compiled for `count` devices of kind `npu` runs on when given
     `device`: devices of the process by number, the first `count` when None, or for a negative
     number a dummy device of the kind, which takes no NPU memory and runs nothing."""
@@ -195,13 +194,13 @@ def open_devices(device: int | Sequence[int] | None, count: int, npu: str) -> li
     if any(i < 0 for i in ids):
         if count != 1:
             raise RuntimeError(f"a dummy device runs a model compiled for one device, not {count}")
-        return [rbln.Device.open_dummy(npu)]
+        return [v2.Device.open_dummy(npu)]
     if len(ids) != count:
         raise RuntimeError(f"The model is compiled for {count} devices, not {ids}.")
-    return [rbln.Device(ids[0])] if count == 1 else list(rbln.Device.group(ids))
+    return [v2.Device(ids[0])] if count == 1 else list(v2.Device.group(ids))
 
 
-def _is_scratch(arg: rbln.Arg) -> bool:
+def _is_scratch(arg: v2.Arg) -> bool:
     return arg.name == "scratch" and not arg.sources
 
 
@@ -214,7 +213,7 @@ def _torch_of(value: Any) -> torch.Tensor:
     return torch.from_numpy(array)
 
 
-def _decodable_into(arg: rbln.Arg, target: torch.Tensor) -> torch.Tensor | None:
+def _decodable_into(arg: v2.Arg, target: torch.Tensor) -> torch.Tensor | None:
     """`target` viewed as the logical value of result `arg`, to decode straight into, or None when
     it cannot take that value as it is."""
     logical = arg.logical
@@ -241,7 +240,7 @@ class RBLNRuntime:
     def __init__(
         self,
         compiled_model: "RBLNCompiledModel",
-        devices: list[rbln.Device],
+        devices: list[v2.Device],
         weights: list[dict[str, Any]],
         tensors: Mapping[str, Any] | None = None,
     ) -> None:
@@ -249,13 +248,13 @@ class RBLNRuntime:
         self.devices = devices
         names = {a.name for a in compiled_model.functions[0].args}
         self.shared = {name: t for name, t in (tensors or {}).items() if name in names}
-        self.executors: list[rbln.Executor] = []
+        self.executors: list[v2.Executor] = []
         for function, held in zip(compiled_model.functions, weights, strict=True):
             bound = {**held, **self.shared}
             for a in function.args:
                 if _is_scratch(a) and a.name not in bound:
-                    bound[a.name] = rbln.empty_like(a, devices)
-            self.executors.append(rbln.Executor(function, devices, tensors=bound))
+                    bound[a.name] = v2.empty_like(a, devices)
+            self.executors.append(v2.Executor(function, devices, tensors=bound))
         first = compiled_model.functions[0]
         bound = set(self.executors[0].tensors)
         self.input_names = [
@@ -290,7 +289,7 @@ class RBLNRuntime:
             ]
         outputs = []
         for target, given, result in zip(targets, into, executor(*inputs, out=into), strict=True):
-            if isinstance(result, (rbln.Tensor, rbln.HostTensor)):
+            if isinstance(result, (v2.Tensor, v2.HostTensor)):
                 outputs.append(torch.empty(0))
             elif given is not None:
                 outputs.append(target if target is not None else given)
@@ -300,7 +299,7 @@ class RBLNRuntime:
                 outputs.append(_torch_of(result))
         return outputs[0] if len(outputs) == 1 else outputs
 
-    def _bucket(self, inputs: list[Any]) -> rbln.Executor:
+    def _bucket(self, inputs: list[Any]) -> v2.Executor:
         if len(self._buckets) == 1:
             return self.executors[0]
         shapes = tuple(tuple(np.shape(x)) for x in inputs)
@@ -318,22 +317,22 @@ class RBLNRuntime:
         function = self.compiled_model.functions[0]
         for name, tensor in self.shared.items():
             arg = function.arg(name)
-            rbln.copy(arg.view(tensor, dst_block, dst_block + 1), arg.view(tensor, src_block, src_block + 1))
+            v2.copy(arg.view(tensor, dst_block, dst_block + 1), arg.view(tensor, src_block, src_block + 1))
 
     def __repr__(self) -> str:
         return f"RBLNRuntime({self.compiled_model!r}, devices={self.devices!r})"
 
 
 def zeroed_tensors(
-    function: rbln.Function, names: Sequence[str], devices: list[rbln.Device], **axes: int
-) -> dict[str, rbln.Tensor]:
+    function: v2.Function, names: Sequence[str], devices: list[v2.Device], **axes: int
+) -> dict[str, v2.Tensor]:
     """A zeroed tensor of each arg of `function` that `names` gives, on `devices`, with the dynamic
     axes `axes` names at their values, for the compiled models that share it to bind."""
     tensors = {}
     for name in names:
         arg = function.arg(name)
         dynamic = {d.name for d in arg.logical.dynamic_axes}
-        tensors[name] = rbln.empty_like(arg, devices, **{k: v for k, v in axes.items() if k in dynamic})
+        tensors[name] = v2.empty_like(arg, devices, **{k: v for k, v in axes.items() if k in dynamic})
         for shard in tensors[name].shards:
             shard.device.fill(shard, 0, shard.nbytes, 0)
     return tensors

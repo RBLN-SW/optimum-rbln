@@ -20,8 +20,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import torch
-
-import rbln
+from rebel import v2
 
 
 if TYPE_CHECKING:
@@ -42,7 +41,7 @@ class RBLNWeights:
         self.name = name
         self._state_dict = state_dict
         self._path = path
-        self._values: rbln.Values | None = None
+        self._values: v2.Values | None = None
         self.members: list["RBLNCompiledModel"] = []
 
     @classmethod
@@ -69,19 +68,19 @@ class RBLNWeights:
             return
         if self._state_dict is not None:
             functions = [f for member in self.members for f in member.functions]
-            rbln.save_values(path, functions, self._state_dict)
+            v2.save_values(path, functions, self._state_dict)
         else:
             shutil.copyfile(self._path, path)
         self._state_dict, self._path, self._values = None, path, None
 
-    def materialize(self, functions: list[rbln.Function], devices: Any) -> list[dict[str, Any]]:
+    def materialize(self, functions: list[v2.Function], devices: Any) -> list[dict[str, Any]]:
         """For each of `functions`, the tensors of its weights on `devices`; functions that hold a
         weight alike share one tensor of it."""
         if self._state_dict is not None:
-            return rbln.materialize(functions, self._state_dict, devices=devices)
+            return v2.materialize(functions, self._state_dict, devices=devices)
         if self._values is None:
-            self._values = rbln.load_values(self._path)
-        return rbln.materialize(functions, values=self._values, devices=devices)
+            self._values = v2.load_values(self._path)
+        return v2.materialize(functions, values=self._values, devices=devices)
 
 
 class RBLNCompiledModel:
@@ -92,7 +91,7 @@ class RBLNCompiledModel:
     beside it at `<name>.rbln.<bucket>`, with the value file of its weights.
     """
 
-    def __init__(self, functions: list[rbln.Function], weights: RBLNWeights) -> None:
+    def __init__(self, functions: list[v2.Function], weights: RBLNWeights) -> None:
         self.functions = functions
         self.weights = weights
         weights.members.append(self)
@@ -107,7 +106,7 @@ class RBLNCompiledModel:
     @classmethod
     def load(cls, path: str | Path, buckets: int, weights: RBLNWeights) -> "RBLNCompiledModel":
         path = Path(path)
-        return cls([rbln.load(bucket_path(path, bucket)) for bucket in range(buckets)], weights)
+        return cls([v2.load(bucket_path(path, bucket)) for bucket in range(buckets)], weights)
 
     def __repr__(self) -> str:
         return f"RBLNCompiledModel({self.functions!r})"
@@ -119,15 +118,15 @@ def bucket_path(path: Path, bucket: int) -> Path:
 
 def input_types(
     input_info: list[tuple[str, list[int], str]], dynamic: Collection[str] = ()
-) -> dict[str, rbln.TensorType]:
+) -> dict[str, v2.TensorType]:
     """`input_info` as the types of the inputs, by name, in the order the model takes them. The
     outermost axis of an input `dynamic` names is the number of blocks of a paged cache, left open
     from the extent `input_info` gives it on."""
     types = {}
     for name, shape, dtype in input_info:
         if name in dynamic:
-            shape = [rbln.Dynamic("num_blocks", min=shape[0]), *shape[1:]]
-        types[name] = rbln.TensorType(shape, dtype)
+            shape = [v2.Dynamic("num_blocks", min=shape[0]), *shape[1:]]
+        types[name] = v2.TensorType(shape, dtype)
     return types
 
 
@@ -135,7 +134,7 @@ def compile_model(
     model: torch.nn.Module,
     compile_config: "RBLNCompileConfig",
     weights: RBLNWeights | None = None,
-    asked: Mapping[str, rbln.TensorType] | None = None,
+    asked: Mapping[str, v2.TensorType] | None = None,
     dynamic: Collection[str] = (),
 ) -> RBLNCompiledModel:
     """Compiles `model` for each bucket of inputs `compile_config` gives.
@@ -153,16 +152,16 @@ def compile_model(
         types = input_types(info, dynamic)
         if asked:
             types.update({name: t for name, t in asked.items() if name in types})
-        functions.append(rbln.compile(model, types, npu=compile_config.npu, devices=compile_config.num_devices or 1))
+        functions.append(v2.compile(model, types, npu=compile_config.npu, devices=compile_config.num_devices or 1))
     compile_config.values_file = weights.filename
     return RBLNCompiledModel(functions, weights)
 
 
-def _grid(function: rbln.Function) -> list[list[int]]:
+def _grid(function: v2.Function) -> list[list[int]]:
     return [[0] * len(chiplets) for chiplets in function.program_nbytes]
 
 
-def _add(grid: list[list[int]], arg: rbln.Arg, blocks: int | None = None) -> None:
+def _add(grid: list[list[int]], arg: v2.Arg, blocks: int | None = None) -> None:
     for shard in arg.shards:
         nbytes = shard["min_nbytes"]
         if blocks is not None and shard.get("step_nbytes"):

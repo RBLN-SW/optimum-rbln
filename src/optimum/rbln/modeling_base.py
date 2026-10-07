@@ -20,6 +20,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import TYPE_CHECKING, Any, ClassVar, cast
 
+import rebel.v2.ops  # noqa: F401  # defines torch.ops.rbln_custom_ops, which the model wrappers call
 import torch
 from transformers import (
     AutoConfig,
@@ -33,8 +34,6 @@ from transformers import (
 )
 from transformers.utils.hub import PushToHubMixin
 from typing_extensions import Self
-
-import rbln.ops  # noqa: F401  # defines torch.ops.rbln_custom_ops, which the model wrappers call
 
 from .configuration_utils import RBLNCompileConfig, RBLNModelConfig, get_rbln_config_class
 from .utils.compiled_model import RBLNCompiledModel, RBLNWeights, compile_model

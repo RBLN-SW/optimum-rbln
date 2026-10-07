@@ -18,11 +18,10 @@ from pathlib import Path
 from typing import Any
 
 import torch
+from rebel import v2
 from transformers import AutoModel, AutoModelForCausalLM, PretrainedConfig, PreTrainedModel
 from transformers.initialization import no_init_weights
 from transformers.modeling_outputs import BaseModelOutputWithPast
-
-import rbln
 
 from ....configuration_utils import RBLNCompileConfig
 from ....modeling import RBLNModel
@@ -242,7 +241,7 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
         weights: RBLNWeights,
         rbln_config: RBLNDecoderOnlyModelForCausalLMConfig,
         phase: str = "prefill",
-        asked: dict[str, rbln.TensorType] | None = None,
+        asked: dict[str, v2.TensorType] | None = None,
     ) -> RBLNCompiledModel:
         quantization = rbln_config.quantization
         try:
@@ -608,8 +607,8 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
 
     @classmethod
     def _create_caches(
-        cls, prefill: RBLNCompiledModel, devices: list[rbln.Device], rbln_config: RBLNDecoderOnlyModelConfig
-    ) -> dict[str, rbln.Tensor]:
+        cls, prefill: RBLNCompiledModel, devices: list[v2.Device], rbln_config: RBLNDecoderOnlyModelConfig
+    ) -> dict[str, v2.Tensor]:
         """A zeroed tensor of each cache on `devices`, which every phase binds; a paged cache that can
         be resized holds `kvcache_num_blocks` blocks."""
         names = [meta.name for meta in rbln_config.cache_metas]
