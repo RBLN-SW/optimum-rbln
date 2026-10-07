@@ -45,7 +45,7 @@ class RBLNColQwen2ForRetrieval(RBLNModel):
         from PIL import Image
         from transformers import ColQwen2Processor
 
-        from optimum.rbln import RBLNColQwen2ForRetrieval, RBLNColQwen2ForRetrievalConfig
+        from optimum.rbln import RBLNColQwen2ForRetrieval
 
         rbln_config = {
             "vlm": {
