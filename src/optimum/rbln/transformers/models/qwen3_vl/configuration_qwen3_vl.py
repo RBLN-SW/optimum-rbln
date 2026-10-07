@@ -95,9 +95,10 @@ class RBLNQwen3VLVisionModelConfig(RBLNModelConfig):
                 Transformer attention. Can be an integer or list of integers, each indicating
                 the number of patches in a sequence for an image or video. For example, an image
                 of 512x512 pixels with patch size 16 yields (512/16) * (512/16) = 1024 patches;
-                the ViT counts them before the 2x2 spatial merge. RBLN optimization runs inference
-                per image or video frame, so set `max_seq_len` to match the maximum expected
-                resolution to reduce computation. If not provided, a `ValueError` is raised.
+                the ViT counts them before the 2x2 spatial merge, on the size after the processor's
+                resize. RBLN optimization runs inference per image, or per temporal patch (2 frames)
+                of a video, so set `max_seq_len` to match the maximum expected resolution to reduce
+                computation. If not provided, a `ValueError` is raised.
             batch_size (int | None): the vision encoder runs one image at a time (the parent config forces
                 this by default), so only `batch_size=1` is supported. Defaults to 1.
             kwargs: Additional arguments passed to the parent RBLNModelConfig.
