@@ -143,7 +143,11 @@ class RBLNLlavaForConditionalGeneration(RBLNModel, RBLNImageIndexedBatchSortMixi
         model.save_pretrained("compiled-llava-1.5-7b-hf")
 
         # Using a RBLNLlavaForConditionalGenerationConfig instance (recommended for type checking)
-        from optimum.rbln import RBLNLlavaForConditionalGenerationConfig
+        from optimum.rbln import (
+            RBLNCLIPVisionModelConfig,
+            RBLNLlamaForCausalLMConfig,
+            RBLNLlavaForConditionalGenerationConfig,
+        )
         vision_config = RBLNCLIPVisionModelConfig(
             batch_size=1,
             output_hidden_states=True

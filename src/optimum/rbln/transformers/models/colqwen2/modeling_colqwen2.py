@@ -45,7 +45,7 @@ class RBLNColQwen2ForRetrieval(RBLNModel):
         from PIL import Image
         from transformers import ColQwen2Processor
 
-        from optimum.rbln import RBLNColQwen2ForRetrieval, RBLNColQwen2ForRetrievalConfig
+        from optimum.rbln import RBLNColQwen2ForRetrieval
 
         rbln_config = {
             "vlm": {
@@ -53,11 +53,11 @@ class RBLNColQwen2ForRetrieval(RBLNModel):
                     "max_seq_len": 6400,
                 },
                 "num_devices": 4,
-                "kvcache_partition_len": 16384,
-                "max_seq_len": 16384 * 7,
+                "attn_impl": "flash_attn",
+                "max_seq_len": 32_768,
             },
         }
-        model = RBLNColQwen2ForRetrieval.from_pretrained("vidore/colqwen2-v1.0-hf", rbln_config=config)
+        model = RBLNColQwen2ForRetrieval.from_pretrained("vidore/colqwen2-v1.0-hf", export=True, rbln_config=rbln_config)
         model.save_pretrained("compiled-colqwen2-v1.0-hf")
 
         # The document page screenshots from your corpus. Below are dummy images.
