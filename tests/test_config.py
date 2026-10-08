@@ -549,6 +549,37 @@ def test_qwen_vl_parent_rejects_conflicting_vision_batch_size(parent_cls_name, v
         parent_cls(max_seq_len=1024, visual={"cls_name": vision_cls_name, "max_seq_len": 256, "batch_size": 2})
 
 
+LOAD_VISUAL_RUNTIME_CONFIGS = [
+    ("RBLNQwen3VLForConditionalGenerationConfig", "RBLNQwen3VLVisionModelConfig"),
+    ("RBLNQwen3VLModelConfig", "RBLNQwen3VLVisionModelConfig"),
+    ("RBLNQwen3_5ForConditionalGenerationConfig", "RBLNQwen3_5VisionModelConfig"),
+    ("RBLNQwen3_5ModelConfig", "RBLNQwen3_5VisionModelConfig"),
+]
+
+
+@pytest.mark.parametrize("parent_cls_name, vision_cls_name", LOAD_VISUAL_RUNTIME_CONFIGS)
+def test_deprecated_load_visual_runtime(parent_cls_name, vision_cls_name):
+    """`_load_visual_runtime` is the deprecated spelling of `visual={"create_runtimes": ...}`. The load path
+    applies it after construction via setattr, and there it must reach the visual config (an instance or, at
+    compile time, still a dict) without being serialized. As a constructor kwarg it only ever was a no-op, so
+    it is accepted with a warning and dropped."""
+    parent_cls = _import_config(parent_cls_name)
+    kwargs = {"max_seq_len": 1024, "use_inputs_embeds": True}
+
+    config = parent_cls(visual={"cls_name": vision_cls_name, "max_seq_len": 256}, **kwargs)
+    assert config.visual.create_runtimes is True
+    config._load_visual_runtime = False
+    assert config.visual.create_runtimes is False
+    assert "_load_visual_runtime" not in config._attributes_map
+
+    config = parent_cls(visual={"max_seq_len": 256}, **kwargs)
+    config._load_visual_runtime = False
+    assert config.visual["create_runtimes"] is False
+
+    config = parent_cls(visual={"cls_name": vision_cls_name, "max_seq_len": 256}, _load_visual_runtime=False, **kwargs)
+    assert config.visual.create_runtimes is True
+
+
 if __name__ == "__main__":
     pytest.main()
 
