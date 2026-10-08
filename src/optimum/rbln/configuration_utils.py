@@ -877,8 +877,7 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
         from the artifact's rbln_config.json, and this dict is merged on top of it.
 
         Returns:
-            Dictionary of load overrides, keyed like the rbln_config dict accepted by
-            from_pretrained.
+            Dictionary of load overrides, keyed like the ``rbln_config`` dict accepted by ``from_pretrained``.
         """
 
         def filter_dict(cfg: dict) -> dict[str, Any] | None:
