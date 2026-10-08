@@ -260,9 +260,10 @@ class RBLNRuntime:
         self.input_names = [
             a.name for a in first.args if a.shards and a.used and a.access == "read" and a.name not in bound
         ]
+        self._results = [[function.arg(name) for name in function.results] for function in compiled_model.functions]
         self._buckets = {
-            tuple(tuple(function.arg(name).logical.shape) for name in self.input_names): executor
-            for function, executor in zip(compiled_model.functions, self.executors, strict=True)
+            tuple(tuple(function.arg(name).logical.shape) for name in self.input_names): index
+            for index, function in enumerate(compiled_model.functions)
         }
 
     def __call__(self, *args: Any, out: Any = None, **kwargs: Any) -> Any:
@@ -270,23 +271,20 @@ class RBLNRuntime:
 
     def forward(self, *args: Any, out: Any = None, **kwargs: Any) -> Any:
         inputs = list(args) + [kwargs[name] for name in self.input_names[len(args) :] if name in kwargs]
-        executor = self._bucket(inputs)
-        results = [executor.function.arg(name) for name in executor.function.results]
+        index = self._bucket(inputs)
+        executor, results = self.executors[index], self._results[index]
         if out is None:
-            targets: list[torch.Tensor | None] = [None] * len(results)
-            into = [
-                None
-                if a.access != "write" or a.logical.dynamic_axes
-                else torch.empty(list(a.logical.shape), dtype=getattr(torch, a.logical.dtype))
-                for a in results
+            outputs = [
+                torch.empty(0) if isinstance(result, (v2.Tensor, v2.HostTensor)) else _torch_of(result)
+                for result in executor(*inputs)
             ]
-        else:
-            targets = [out] if isinstance(out, torch.Tensor) else list(out)
-            targets += [None] * (len(results) - len(targets))
-            into = [
-                _decodable_into(a, t) if t is not None and a.access == "write" else None
-                for a, t in zip(results, targets, strict=True)
-            ]
+            return outputs[0] if len(outputs) == 1 else outputs
+        targets = [out] if isinstance(out, torch.Tensor) else list(out)
+        targets += [None] * (len(results) - len(targets))
+        into = [
+            _decodable_into(a, t) if t is not None and a.access == "write" else None
+            for a, t in zip(results, targets, strict=True)
+        ]
         outputs = []
         for target, given, result in zip(targets, into, executor(*inputs, out=into), strict=True):
             if isinstance(result, (v2.Tensor, v2.HostTensor)):
@@ -299,16 +297,16 @@ class RBLNRuntime:
                 outputs.append(_torch_of(result))
         return outputs[0] if len(outputs) == 1 else outputs
 
-    def _bucket(self, inputs: list[Any]) -> v2.Executor:
+    def _bucket(self, inputs: list[Any]) -> int:
         if len(self._buckets) == 1:
-            return self.executors[0]
+            return 0
         shapes = tuple(tuple(np.shape(x)) for x in inputs)
-        executor = self._buckets.get(shapes)
-        if executor is None:
+        index = self._buckets.get(shapes)
+        if index is None:
             raise TypeError(
                 f"No bucket takes inputs of shapes {list(shapes)}; the buckets take {list(self._buckets)}."
             )
-        return executor
+        return index
 
     def copy_kv_cache(self, src_block: int, dst_block: int) -> None:
         """Copies block `src_block` of every shared tensor into block `dst_block` on its devices,

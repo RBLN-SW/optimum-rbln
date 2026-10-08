@@ -567,7 +567,15 @@ class RBLNRuntimeModel(RBLNPytorchRuntime):
                 "Compile the model with `prefill_chunk_size` >= the maximum input length."
             )
 
-        out_buffers, output_logits, output_hidden_states = self._prepare_prefill_outputs(query_length, attention_mask)
+        # Keeping the last chunk's logits alone, a chunk takes them as the runtime returns them, in place.
+        keep_last = self.rbln_config.logits_to_keep == 1 and not self.rbln_config.output_hidden_states
+        if keep_last:
+            chunks = -(-query_length // self.rbln_config.prefill_chunk_size)
+            out_buffers, output_logits, output_hidden_states = [None] * chunks, None, None
+        else:
+            out_buffers, output_logits, output_hidden_states = self._prepare_prefill_outputs(
+                query_length, attention_mask
+            )
 
         # Assumed that prefix caching was performed externally if cache_position doesn't start from 0.
         prefix_cached_len = cache_position[0][0].item()
@@ -627,7 +635,9 @@ class RBLNRuntimeModel(RBLNPytorchRuntime):
                 query_position = None
 
             # Forward pass for the current chunk
-            _ = super().forward(
+            if keep_last:
+                output_logits = None
+            result = super().forward(
                 input_chunk,
                 cache_pos_chunk,
                 block_tables,
@@ -639,6 +649,8 @@ class RBLNRuntimeModel(RBLNPytorchRuntime):
                 lora_int_ids if self.rbln_config.use_lora else None,
                 out=out_buffers[i],
             )
+            if keep_last:
+                output_logits = result
 
         # Aggregate output_logits
         padding_size = (self.rbln_config.prefill_chunk_size - query_length) % self.rbln_config.prefill_chunk_size
