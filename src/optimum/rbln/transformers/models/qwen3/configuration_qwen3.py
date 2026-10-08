@@ -30,6 +30,7 @@ class RBLNQwen3ForCausalLMConfig(RBLNDecoderOnlyModelForCausalLMConfig):
         batch_size=1,
         max_seq_len=40960,
         num_devices=4,
+        attn_impl="flash_attn",
         kvcache_partition_len=8192
     )
 
@@ -58,6 +59,7 @@ class RBLNQwen3ModelConfig(RBLNDecoderOnlyModelConfig):
         batch_size=1,
         max_seq_len=40960,
         num_devices=4,
+        attn_impl="flash_attn",
         kvcache_partition_len=8192
     )
 
