@@ -48,7 +48,7 @@ class RBLNQwen3ModelConfig(RBLNDecoderOnlyModelConfig):
     """
     Configuration class for RBLN Qwen3 models.
 
-    This class is an alias of RBLNDecoderOnlyModelForCausalLMConfig.
+    This class is an alias of RBLNDecoderOnlyModelConfig.
 
     Example usage:
     ```python
