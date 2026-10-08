@@ -53,6 +53,7 @@ class RBLNColQwen2ForRetrieval(RBLNModel):
                     "max_seq_len": 6400,
                 },
                 "num_devices": 4,
+                "attn_impl": "flash_attn",
                 "max_seq_len": 32_768,
             },
         }
