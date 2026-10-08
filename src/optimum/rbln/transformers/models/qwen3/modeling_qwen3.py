@@ -54,6 +54,7 @@ class RBLNQwen3ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
             "batch_size": 1,
             "max_seq_len": 40_960,
             "num_devices": 4,
+            "attn_impl": "flash_attn",
             "kvcache_partition_len": 8192,
         }
         model = RBLNQwen3ForCausalLM.from_pretrained(
@@ -67,6 +68,7 @@ class RBLNQwen3ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
             batch_size=1,
             max_seq_len=40_960,
             num_devices=4,
+            attn_impl="flash_attn",
             kvcache_partition_len=8192,
         )
         model = RBLNQwen3ForCausalLM.from_pretrained(
@@ -106,6 +108,7 @@ class RBLNQwen3Model(RBLNDecoderOnlyModel):
             rbln_batch_size=1,
             rbln_max_seq_len=40_960,
             rbln_num_devices=4,
+            rbln_attn_impl="flash_attn",
             rbln_kvcache_partition_len=8192,
         )
         ```
