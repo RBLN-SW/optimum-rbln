@@ -35,7 +35,17 @@ class Olmo2Attention(DecoderOnlyAttention):
         self, hidden_states, lora_int_id: torch.Tensor | None = None
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         query_states, key_states, value_states = super().projection(hidden_states, lora_int_id)
-        return self.full_q_norm(query_states), self.full_k_norm(key_states), value_states
+        if query_states.shape != key_states.shape:
+            return self.full_q_norm(query_states), self.full_k_norm(key_states), value_states
+
+        # One reduction over a stacked q/k pair instead of one per norm: each full-projection norm is an
+        # all-reduce of its statistic once the heads are sharded.
+        dtype = query_states.dtype
+        stacked = torch.stack([query_states, key_states]).float()
+        stacked = stacked * torch.rsqrt(stacked.pow(2).mean(-1, keepdim=True) + self.full_q_norm.variance_epsilon)
+        query_states = self.full_q_norm.weight * stacked[0].to(dtype)
+        key_states = self.full_k_norm.weight * stacked[1].to(dtype)
+        return query_states, key_states, value_states
 
 
 class Olmo2Layer(DecoderOnlyLayer):
