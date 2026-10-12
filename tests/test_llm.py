@@ -71,6 +71,8 @@ from optimum.rbln import (
     RBLNQwen3MoeForCausalLMConfig,
     RBLNQwen3VLForConditionalGeneration,
     RBLNQwen3VLMoeForConditionalGeneration,
+    RBLNSmolLM3ForCausalLM,
+    RBLNSmolLM3Model,
     RBLNT5ForConditionalGeneration,
 )
 
@@ -351,6 +353,28 @@ class TestLlamaModel_Flash(LLMTest.TestLLMWithoutLMHead):
 class TestLlamaForCausalLM_Multibatch(TestLlamaForCausalLM):
     PROMPT = ["Who are you?", "What is the capital of France?", "What is the capital of Germany?"]
     RBLN_CLASS_KWARGS = {"rbln_config": {"batch_size": 3, "decoder_batch_sizes": [3, 2, 1]}}
+
+
+class TestSmolLM3ForCausalLM(LLMTest.TestLLM):
+    RBLN_CLASS = RBLNSmolLM3ForCausalLM
+    HF_MODEL_ID = "HuggingFaceTB/SmolLM3-3B"
+    HF_CONFIG_KWARGS = {
+        "num_hidden_layers": 4,
+        "layer_types": ["full_attention"] * 4,
+        "no_rope_layers": [1, 1, 1, 0],
+        "max_position_embeddings": 1024,
+    }
+
+
+class TestSmolLM3Model(LLMTest.TestLLMWithoutLMHead):
+    RBLN_CLASS = RBLNSmolLM3Model
+    HF_MODEL_ID = "HuggingFaceTB/SmolLM3-3B"
+    HF_CONFIG_KWARGS = {
+        "num_hidden_layers": 4,
+        "layer_types": ["full_attention"] * 4,
+        "no_rope_layers": [1, 1, 1, 0],
+        "max_position_embeddings": 1024,
+    }
 
 
 class TestGPT2LMHeadModel(LLMTest.TestLLM):
