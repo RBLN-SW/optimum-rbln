@@ -428,13 +428,12 @@ class RBLNQwen3_5VisionModel(RBLNModel):
         Matched by bucket size, not position: the config sorts `max_seq_len` descending while `forward`
         searches it ascending.
         """
-        input_infos = self.rbln_config.compile_cfgs[0].input_info
-        if input_infos and not isinstance(input_infos[0], list):
-            input_infos = [input_infos]
-        for input_info in input_infos:
-            shape = next(info[1] for info in input_info if info[0] == "attn_mask")
-            if shape[-1] == max_seq_len:
-                return shape[-2]
+        compile_cfg = self.rbln_config.compile_cfgs[0]
+        buckets = compile_cfg.input_info if compile_cfg.is_multiple_input_info else [compile_cfg.input_info]
+        for input_info in buckets:
+            for name, shape, _ in input_info:
+                if name == "attn_mask" and shape[-1] == max_seq_len:
+                    return shape[-2]
         raise ValueError(f"No compiled vision bucket takes max_seq_len {max_seq_len}.")
 
     def _pad_hidden_states(

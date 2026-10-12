@@ -2,6 +2,7 @@ from types import SimpleNamespace
 
 import torch
 
+from optimum.rbln.configuration_utils import RBLNCompileConfig
 from optimum.rbln.transformers.models.qwen3_5.configuration_qwen3_5 import RBLNQwen3_5VisionModelConfig
 from optimum.rbln.transformers.models.qwen3_5.modeling_qwen3_5 import RBLNQwen3_5VisionModel
 
@@ -19,7 +20,7 @@ def _model_declaring(*mask_shapes: list[int]) -> RBLNQwen3_5VisionModel:
         for shape in mask_shapes
     ]
     model = RBLNQwen3_5VisionModel.__new__(RBLNQwen3_5VisionModel)
-    model.rbln_config = SimpleNamespace(compile_cfgs=[SimpleNamespace(input_info=input_infos)])
+    model.rbln_config = SimpleNamespace(compile_cfgs=[RBLNCompileConfig(input_info=input_infos)])
     return model
 
 
@@ -80,7 +81,7 @@ def test_declared_mask_rows_accepts_a_single_bucket_input_info():
     single = RBLNQwen3_5VisionModel.__new__(RBLNQwen3_5VisionModel)
     single.rbln_config = SimpleNamespace(
         compile_cfgs=[
-            SimpleNamespace(
+            RBLNCompileConfig(
                 input_info=[("hidden_states", [8, 16], torch.float32), ("attn_mask", [1, 1, 1, 8], torch.float32)]
             )
         ]
