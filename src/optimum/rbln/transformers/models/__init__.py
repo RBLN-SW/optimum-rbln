@@ -20,6 +20,7 @@ from ...utils.import_utils import define_import_structure
 
 
 if TYPE_CHECKING:
+    from .albert import *
     from .audio_spectrogram_transformer import *
     from .auto import *
     from .bart import *
@@ -28,9 +29,12 @@ if TYPE_CHECKING:
     from .clip import *
     from .colpali import *
     from .colqwen2 import *
+    from .convnext import *
+    from .deberta_v2 import *
     from .decoderonly import *
     from .depth_anything import *
     from .detr import *
+    from .dinov2 import *
     from .distilbert import *
     from .dpt import *
     from .exaone import *

@@ -37,6 +37,22 @@ class RBLNSwinBackboneConfig(RBLNModelForImageClassificationConfig):
         self.output_attentions = output_attentions
 
 
+class RBLNSwinForImageClassificationConfig(RBLNModelForImageClassificationConfig):
+    """Static image configuration for Swin classification."""
+
+    def __init__(self, use_rsd_annotation: bool = False, **kwargs: Any):
+        """Optionally use annotation-based sharding for independent image batches.
+
+        The default retains the existing compiler path. Annotation can improve
+        batch parallelism, but its benefit depends on batch size and hardware.
+        """
+        if not isinstance(use_rsd_annotation, bool):
+            raise ValueError("use_rsd_annotation must be a bool.")
+        super().__init__(**kwargs)
+        self.use_rsd_annotation = use_rsd_annotation
+
+
 __all__ = [
+    "RBLNSwinForImageClassificationConfig",
     "RBLNSwinBackboneConfig",
 ]

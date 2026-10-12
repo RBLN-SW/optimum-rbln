@@ -18,14 +18,17 @@ from typing import TYPE_CHECKING, Optional
 
 import torch
 import torch.nn.functional as F
+from rebel.compile_context import CompileContext
 from transformers import SwinConfig
+from transformers.modeling_outputs import ImageClassifierOutput
 from transformers.models.swin.modeling_swin import BackboneOutput
 
 from ....configuration_utils import RBLNCompileConfig, RBLNModelConfig
 from ....modeling import RBLNModel
 from ....modeling_base import Preprocessor
 from ....utils.logging import get_logger
-from .configuration_swin import RBLNSwinBackboneConfig
+from ...modeling_generic import RBLNModelForImageClassification
+from .configuration_swin import RBLNSwinBackboneConfig, RBLNSwinForImageClassificationConfig
 
 
 logger = get_logger(__name__)
@@ -77,6 +80,11 @@ def get_attn_mask(self, height, width, dtype, device):
     else:
         attn_mask = None
     return attn_mask
+
+
+def get_precomputed_attn_mask(self, height, width, dtype, device):
+    mask = self.rbln_attn_mask
+    return mask.to(dtype=dtype, device=device) if mask is not None else None
 
 
 class _SwinEncoder(torch.nn.Module):
@@ -334,6 +342,66 @@ class RBLNSwinBackbone(RBLNModel):
             )
 
 
+class _SwinForImageClassification(torch.nn.Module):
+    def __init__(self, model):
+        super().__init__()
+        self.embeddings = model.swin.embeddings
+        self.encoder = _SwinEncoder(model.swin.encoder)
+        self.layernorm = model.swin.layernorm
+        self.pooler = model.swin.pooler
+        self.classifier = model.classifier
+
+    def forward(self, pixel_values):
+        hidden_states, dimensions = self.embeddings(pixel_values)
+        hidden_states = self.encoder(hidden_states, dimensions)[0]
+        hidden_states = self.layernorm(hidden_states)
+        pooled_output = self.pooler(hidden_states.transpose(1, 2)).flatten(1)
+        return self.classifier(pooled_output)
+
+
+class RBLNSwinForImageClassification(RBLNModelForImageClassification):
+    """Swin image classification with a static shifted-window attention mask."""
+
+    rbln_config: RBLNSwinForImageClassificationConfig
+    _output_class = ImageClassifierOutput
+
+    @classmethod
+    def get_compiled_model(cls, model, rbln_config):
+        if not rbln_config.use_rsd_annotation:
+            return super().get_compiled_model(model, rbln_config)
+        return cls.compile(
+            cls._wrap_model_if_needed(model, rbln_config),
+            rbln_compile_config=rbln_config.compile_cfgs[0],
+            create_runtimes=rbln_config.create_runtimes,
+            device=rbln_config.device,
+            compile_context=CompileContext(use_weight_sharing=True),
+            use_weight_sharing=True,
+        )
+
+    @classmethod
+    def _wrap_model_if_needed(cls, model, rbln_config):
+        image_height, image_width = rbln_config.compile_cfgs[0].input_info[0][1][-2:]
+        patch_size = model.swin.embeddings.patch_embeddings.patch_size
+        height = (image_height + patch_size[0] - 1) // patch_size[0]
+        width = (image_width + patch_size[1] - 1) // patch_size[1]
+        for stage in model.swin.encoder.layers:
+            for block in stage.blocks:
+                block.set_shift_and_window_size((height, width))
+                window = block.window_size
+                padded_height = (height + window - 1) // window * window
+                padded_width = (width + window - 1) // window * window
+                # This mask depends only on the compiled image size. Building it
+                # during tracing introduces host operations between device calls.
+                parameter = next(block.parameters())
+                mask = get_attn_mask(block, padded_height, padded_width, parameter.dtype, parameter.device)
+                block.register_buffer("rbln_attn_mask", mask, persistent=False)
+                block.get_attn_mask = types.MethodType(get_precomputed_attn_mask, block)
+            if stage.downsample is not None:
+                height, width = (height + 1) // 2, (width + 1) // 2
+        return _SwinForImageClassification(model).eval()
+
+
 __all__ = [
+    "RBLNSwinForImageClassification",
     "RBLNSwinBackbone",
 ]
