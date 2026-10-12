@@ -47,6 +47,7 @@ def main():
     parser.add_argument("--compiled-dir", type=str, default=None)
     parser.add_argument("--device", type=int, default=0)
     parser.add_argument("--tensor-parallel-size", type=int, default=None, help="num_devices for the compile")
+    parser.add_argument("--layers-per-graph", type=int, default=None, help="max transformer blocks per graph")
     parser.add_argument("--timeout", type=int, default=60, help="runtime timeout in seconds")
     parser.add_argument("--desc", type=str, default=None)
     parser.add_argument("--notes", type=str, default="")
@@ -89,6 +90,8 @@ def main():
 
     compiled_dir = Path(args.compiled_dir) if args.compiled_dir else None
     rbln_config = {"batch_size": args.batch_size, "num_frames": args.num_frames, "device": args.device}
+    if args.layers_per_graph:
+        rbln_config["layers_per_graph"] = args.layers_per_graph
     if args.tensor_parallel_size:
         rbln_config["num_devices"] = args.tensor_parallel_size
         rbln_config["device"] = list(range(args.device, args.device + args.tensor_parallel_size))
@@ -149,6 +152,8 @@ def main():
             "dtype_rbln": str(rbln.rbln_config.dtype),
             "dtype_reference": "torch.float32 (CPU)",
             "tensor_parallel_size": args.tensor_parallel_size,
+            "layers_per_graph": rbln.rbln_config.layers_per_graph,
+            "compiled_graphs": [cfg.compiled_model_name for cfg in rbln.rbln_config.compile_cfgs],
             "compiled_dir": str(compiled_dir) if compiled_dir else None,
             "compile_time_s": compile_time,
             "rbln_forward_time_s": rbln_time,

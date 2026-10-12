@@ -8,6 +8,11 @@
 
 ## 로그
 
+### 환경 변경 (venv_optimum)
+- `pytest-xdist==3.8.0` 설치 (repo dev 의존성, uv.lock 버전). `-n 1` 실행에 필요.
+- `cosmos-guardrail` 0.1.0 → **0.3.2** (`--no-deps`). repo 코드가 `cosmos_guardrail.cosmos_guardrail.Qwen3Guard`를 import하는데 0.1.0에는 없어서
+  `tests/test_diffusers.py` 수집 자체가 ImportError로 실패했다 (내 변경과 무관).
+
 ### 2026-10-12 23:14 — 시작, 환경 확인
 - `import rebel / diffusers / optimum.rbln` 모두 OK. `optimum.rbln.__file__` = `~/optimum-rbln/src/optimum/rbln/__init__.py` (editable 설치 확인).
 - NPU 32개 모두 idle (rbln-stat). VAE는 `RBLN_DEVICES=8`, Transformer는 `RBLN_DEVICES=12` 사용.
@@ -74,7 +79,35 @@
 | 1 | OK | 66.0s | 6.1 GB | 0.72 GiB | 0.35s | 0.999996 | max\|diff\| 0.0128, a=1.00158, allclose True |
 | 2 | OK | 74.4s | | | 0.64s | 0.999996 | allclose True |
 | 8 | OK | 157.4s | | 1.91 GiB | 2.54s | 0.999995 | max\|diff\| 0.0116, a=1.00142, allclose True |
-| 30 | 컴파일 OK | 553.0s | | | — | — | **실행 시 `SYS_KERNEL_TIMEOUT`** (60s; L8이 2.5s라 느린 게 아니라 hang). 조사 중 (L16 bisect) |
+| 16 | OK | 294.2s | | 2.98 GiB | 5.05s | 0.999993 | allclose True. alloc: CmdStream 0.117 GiB, Kernel 1.76 GiB |
+| 18 | OK | 340.3s | | 2.79 GiB (alloc) | 5.67s | 0.999992 | allclose True. CmdStream 0.180 GiB |
+| 19 | OK | 350.5s | | | 6.03s | 0.999993 | allclose True |
+| **20** | 컴파일 OK | 366.2s | | 3.01 GiB (alloc) | — | — | **실행 hang: `SYS_KERNEL_TIMEOUT`**. CmdStream 0.199 GiB |
+| 24 | 컴파일 OK | 435.3s | | 3.49 GiB (alloc) | — | — | hang (`SYS_KERNEL_TIMEOUT`). CmdStream 0.238 GiB |
+| 30 | 컴파일 OK | 553.0s / 613.5s | | 4.20 GiB (alloc) | — | — | hang. **timeout 600s로도 hang** → 느린 게 아니라 멈춤. CmdStream 0.299 GiB |
+
+- **깨지기 시작하는 레이어 수: 20** (1/2/8/16/18/19 OK, 20/24/30 hang). 메모리는 충분(≤4.2 GiB)하고, 시간도 레이어당 ~0.31s로 선형이라 컴파일러/런타임 쪽 스케일 문제(그래프 크기, CmdStream 크기 등)로 보인다.
+- **workaround: 그래프 분할.** `RBLNCogVideoXTransformer3DModelConfig.layers_per_graph`(기본 16) 단위로 블록을 나눠 여러 그래프로 컴파일하고 host에서 연결
+  (`CogVideoXTransformer3DModelSegment`: 첫 segment = time/patch embedding + 블록, 마지막 = 블록 + norm/proj/unpatchify. 중간 텐서 hidden_states (B,17550,1920) 등은 host 경유).
+  CPU에서 HF forward와 max|diff| 0.0 (5 layers, 2-layer segment) 확인.
+
+| 구성 | 컴파일 | 시간 | host peak RSS | device | RBLN fwd | r | 비고 |
+|---|---|---|---|---|---|---|---|
+| L30 random, 2 graph × 15 | OK | 499.1s | 24.9 GB | 5.89 GiB | 9.44s | 0.999990 | max\|diff\| 0.0159, a=1.00151 b=2.5e-5, allclose True |
+| **L30 실제 가중치 (THUDM/CogVideoX-2b), 2 graph × 15** | **OK** | 420.3s | 24.8 GB | 5.89 GiB | 9.44s | **0.999970** | **P0-2c 달성.** max\|diff\| 0.0317, mean\|diff\| 0.0041, rel_l2 0.0085, a=0.99951 b=-0.00202, allclose False (max diff가 atol 2e-2 초과). latent frame별 r 0.99996–0.99997. 입력: seed 0, hidden (1,13,16,60,90), text (1,226,4096), t=500 |
+
+### P0-3 회귀 테스트 (2026-10-13 00:26)
+- `RBLN_DEVICES=16,17,18,19 python -m pytest -n 1 tests/test_diffusers.py -k "Cosmos or SVD" -vv`
+  → **35 passed, 5 skipped, 15 subtests passed in 245.27s**. skip 5개는 각 클래스의 `test_automap` (RBLN_AUTO_CLASS 없음).
+  Cosmos2.5 Predict / Cosmos2.5 Transfer / Cosmos2 Text2Image / Cosmos2 Video2World / SVD 모두 test_generate, save_load 등 통과.
+
+### P1-7 테스트 `TestCogVideoXModel`
+- tiny 파이프라인을 `setUpClass`에서 로컬 생성 → 임시 디렉터리에 `save_pretrained` → `HF_MODEL_ID`로 사용 (hub 업로드 없음).
+  T5 1 layer d_model 32 (토크나이저는 CogVideoX-2b 것), transformer 1 layer 2 heads×16, VAE block_out_channels (8,8,8,8) layers_per_block 1.
+  17 frames 128x128 (latent 5 → decoder_0 + decoder_n 모두 사용, latent 16x16이라 cache h*w 모두 64 배수).
+- 첫 실행: `test_generate` 실패 — `CogVideoXPipeline`이 `self.transformer.cache_context("cond_uncond")`(diffusers CacheMixin)를 호출.
+  → `RBLNCogVideoXTransformer3DModel.cache_context` no-op context manager 추가.
+- `RBLN_DEVICES=24,25,26,27 python -m pytest -n 1 tests/test_diffusers.py -k CogVideoX -vv` → **7 passed, 1 skipped (test_automap), 3 subtests passed in 31.84s**.
 
 ## 산출물 (영상/프레임)
 - `/home/seinpark/nas_data/cogvideox/outputs/20261012_2326_vae_stageA_lat1/` — VAE latent 1 → 1 frame, CPU vs RBLN (frames_cpu/, frames_rbln/ PNG), r=0.999992
@@ -84,4 +117,6 @@
 - `/home/seinpark/nas_data/cogvideox/outputs/20261013_0009_dbg_dn_256x384_convdep_bf16/` — **깨진 결과 (보관)**: per-conv write + conv 출력 의존성, dn frame r 0.35–0.90
 - `/home/seinpark/nas_data/cogvideox/outputs/20261013_0015_vae_stageC_lat5_f17/` — latent 5 → 17 frames (d0 + 1×dn), r=0.999992, 정상
 - `/home/seinpark/nas_data/cogvideox/outputs/20261013_0015_vae_stageD_lat13_f49/` — **P0-1b**: latent 13 → 49 frames (d0 + 5×dn), r=0.999994, 전 frame PNG + video_cpu.mp4/video_rbln.mp4 + latents.pt
-- `/home/seinpark/nas_data/cogvideox/outputs/20261012_2328_transformer_L1_rand/`, `..._L2_rand/`, `..._L8_rand/` — transformer 입력/출력 텐서 (inputs.pt, outputs.pt, meta.json)
+- `/home/seinpark/nas_data/cogvideox/outputs/20261012_2328_transformer_L1_rand/`, `..._L2_rand/`, `..._L8_rand/`, `20261013_0009_transformer_L16_rand/` — transformer 입력/출력 텐서 (inputs.pt, outputs.pt, meta.json)
+- `/home/seinpark/nas_data/cogvideox/outputs/20261013_0032_transformer_L30_rand_seg/` — L30 random, 2 graph, r=0.999990
+- `/home/seinpark/nas_data/cogvideox/outputs/20261013_0031_transformer_L30_real/` — **P0-2c**: L30 실제 가중치, r=0.999970

@@ -1,4 +1,5 @@
 import os
+import tempfile
 import unittest
 
 import torch
@@ -9,6 +10,7 @@ from optimum.rbln import (
     RBLNAutoPipelineForImage2Image,
     # RBLNAutoPipelineForInpainting, FIXME: add inpainting tests
     RBLNAutoPipelineForText2Image,
+    RBLNCogVideoXPipeline,
     RBLNCosmos2_5_PredictBasePipeline,
     RBLNCosmos2_5_TransferPipeline,
     RBLNCosmos2TextToImagePipeline,
@@ -481,6 +483,108 @@ class TestCosmos2Video2WorldModel(_MockedSafetyCheckerMixin, BaseTest.TestModel)
             "num_frames": 9,
         },
     }
+
+
+def _save_tiny_cogvideox_pipeline(save_dir: str) -> None:
+    """Build a tiny random CogVideoX pipeline locally (no hub upload) and save it to `save_dir`."""
+    from diffusers import (
+        AutoencoderKLCogVideoX,
+        CogVideoXDDIMScheduler,
+        CogVideoXPipeline,
+        CogVideoXTransformer3DModel,
+    )
+    from transformers import AutoTokenizer, T5Config, T5EncoderModel
+
+    torch.manual_seed(0)
+    # The real tokenizer only provides the vocabulary; every model below is tiny and random.
+    tokenizer = AutoTokenizer.from_pretrained("THUDM/CogVideoX-2b", subfolder="tokenizer")
+    text_encoder = T5EncoderModel(
+        T5Config(
+            vocab_size=len(tokenizer),
+            d_model=32,
+            d_ff=37,
+            d_kv=8,
+            num_layers=1,
+            num_heads=4,
+            relative_attention_num_buckets=8,
+        )
+    )
+    transformer = CogVideoXTransformer3DModel(
+        num_attention_heads=2,
+        attention_head_dim=16,
+        in_channels=4,
+        out_channels=4,
+        time_embed_dim=8,
+        text_embed_dim=32,
+        num_layers=1,
+        sample_width=16,
+        sample_height=16,
+        sample_frames=17,
+        patch_size=2,
+        temporal_compression_ratio=4,
+        max_text_seq_length=16,
+    )
+    # Keep the latent at 16x16 (128x128 pixels): every flat cache h*w is then a multiple of 64,
+    # and very small resolutions hit compiler asserts in the causal-conv VAE graphs.
+    vae = AutoencoderKLCogVideoX(
+        in_channels=3,
+        out_channels=3,
+        down_block_types=("CogVideoXDownBlock3D",) * 4,
+        up_block_types=("CogVideoXUpBlock3D",) * 4,
+        block_out_channels=(8, 8, 8, 8),
+        latent_channels=4,
+        layers_per_block=1,
+        norm_num_groups=2,
+        temporal_compression_ratio=4,
+    )
+    pipe = CogVideoXPipeline(
+        tokenizer=tokenizer,
+        text_encoder=text_encoder,
+        vae=vae,
+        transformer=transformer,
+        scheduler=CogVideoXDDIMScheduler(),
+    )
+    pipe.save_pretrained(save_dir)
+
+
+class TestCogVideoXModel(BaseTest.TestModel):
+    RBLN_CLASS = RBLNCogVideoXPipeline
+    # 17 frames -> 5 latent frames: the VAE runs decoder_0 (3 latents) and decoder_n (2 latents).
+    GENERATION_KWARGS = {
+        "prompt": "a cat playing a piano",
+        "num_inference_steps": 2,
+        "generator": torch.manual_seed(42),
+        "num_frames": 17,
+        "height": 128,
+        "width": 128,
+        "max_sequence_length": 16,
+        "output_type": "pt",
+    }
+    RBLN_CLASS_KWARGS = {
+        "export": True,
+        "rbln_config": {
+            "height": 128,
+            "width": 128,
+            "num_frames": 17,
+            "max_seq_len": 16,
+        },
+    }
+
+    @classmethod
+    def setUpClass(cls):
+        cls._tiny_dir = tempfile.TemporaryDirectory()
+        _save_tiny_cogvideox_pipeline(cls._tiny_dir.name)
+        cls.HF_MODEL_ID = cls._tiny_dir.name
+        super().setUpClass()
+
+    @classmethod
+    def tearDownClass(cls):
+        super().tearDownClass()
+        cls._tiny_dir.cleanup()
+
+    def test_generate(self):
+        output = self.model(**self.get_inputs())[0]
+        self.assertEqual(tuple(output.shape), (1, 17, 3, 128, 128))
 
 
 if __name__ == "__main__":
