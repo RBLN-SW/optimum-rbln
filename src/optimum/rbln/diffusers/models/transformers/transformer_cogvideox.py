@@ -118,7 +118,7 @@ class RBLNCogVideoXTransformer3DModel(RBLNModel):
     @staticmethod
     def _segment_bounds(num_layers: int, layers_per_graph: int) -> list[tuple[int, int]]:
         num_graphs = -(-num_layers // layers_per_graph)
-        # Even split, e.g. 30 layers with layers_per_graph=16 -> 15 + 15.
+        # Even split, e.g. 30 layers with layers_per_graph=7 -> 5 graphs of 6.
         bounds = [round(i * num_layers / num_graphs) for i in range(num_graphs + 1)]
         return list(zip(bounds[:-1], bounds[1:], strict=True))
 
@@ -200,6 +200,10 @@ class RBLNCogVideoXTransformer3DModel(RBLNModel):
             rbln_config.max_text_seq_length = model_config.max_text_seq_length
         if rbln_config.vae_scale_factor_temporal is None:
             rbln_config.vae_scale_factor_temporal = model_config.temporal_compression_ratio
+        if rbln_config.layers_per_graph is None:
+            # A graph hangs on the device once its command stream passes about 0.19 GiB, and the
+            # stream grows with the batch (see RBLNCogVideoXTransformer3DModelConfig.layers_per_graph).
+            rbln_config.layers_per_graph = max(1, 15 // rbln_config.batch_size)
 
         inner_dim = model_config.num_attention_heads * model_config.attention_head_dim
         batch_size = rbln_config.batch_size
@@ -285,7 +289,11 @@ class RBLNCogVideoXTransformer3DModel(RBLNModel):
         timestep = timestep.reshape(-1).expand(sample_batch_size)
         timestep_proj = self.time_proj(timestep).to(torch.float32)
 
-        outputs = (hidden_states.contiguous(), encoder_hidden_states.contiguous(), timestep_proj.contiguous())
+        outputs = (
+            hidden_states.to(self.dtype).contiguous(),
+            encoder_hidden_states.to(self.dtype).contiguous(),
+            timestep_proj.contiguous(),
+        )
         for runtime in self.model:
             outputs = runtime(*outputs)
         return self._prepare_output(outputs, return_dict)

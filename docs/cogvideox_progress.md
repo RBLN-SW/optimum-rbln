@@ -96,6 +96,25 @@
 | L30 random, 2 graph × 15 | OK | 499.1s | 24.9 GB | 5.89 GiB | 9.44s | 0.999990 | max\|diff\| 0.0159, a=1.00151 b=2.5e-5, allclose True |
 | **L30 실제 가중치 (THUDM/CogVideoX-2b), 2 graph × 15** | **OK** | 420.3s | 24.8 GB | 5.89 GiB | 9.44s | **0.999970** | **P0-2c 달성.** max\|diff\| 0.0317, mean\|diff\| 0.0041, rel_l2 0.0085, a=0.99951 b=-0.00202, allclose False (max diff가 atol 2e-2 초과). latent frame별 r 0.99996–0.99997. 입력: seed 0, hidden (1,13,16,60,90), text (1,226,4096), t=500 |
 
+#### transformer hang 조건 정리 (CmdStream 크기와 상관)
+| 구성 | CmdStream (GiB) | 결과 |
+|---|---|---|
+| batch 1, 15 layers (segment) | 0.111 | OK |
+| batch 1, 16 | 0.117 | OK |
+| batch 1, 18 | 0.180 | OK |
+| batch 1, 19 | 0.189 | OK |
+| batch 1, 20 | 0.199 | hang |
+| batch 1, 24 | 0.238 | hang |
+| batch 1, 30 | 0.299 | hang |
+| batch 2 (CFG), 15 (segment) | 0.328 / 0.324 | hang (P1 E2E 첫 시도) |
+| batch 2 (CFG), 6 (segment ×5) | 0.098–0.133 | OK |
+- 한 그래프의 command stream이 약 0.19 GiB를 넘으면 hang한다 (원인은 컴파일러/런타임 쪽, 미확정). batch 2는 layer당 CmdStream이 약 2배.
+- `layers_per_graph` 기본값 = `max(1, 15 // batch_size)` (batch 1 → 2×15, batch 2 → 5×6). batch는 파이프라인이 CFG로 2배로 바꿀 수 있어 컴파일 시점에 결정.
+
+- batch 2 (CFG) 실제 가중치 L30, 기본값 5 graph × 6: 컴파일 1339.4s, forward 19.06s, device peak 11.47 GiB,
+  **r=0.999969**, max|diff| 0.0336, mean|diff| 0.0041, rel_l2 0.0086, a=0.99898 b=-0.00203, allclose False. latent frame별 r 0.99996–0.99997.
+  산출물: `outputs/20261013_0138_transformer_L30_real_b2/`
+
 ### P0-3 회귀 테스트 (2026-10-13 00:26)
 - `RBLN_DEVICES=16,17,18,19 python -m pytest -n 1 tests/test_diffusers.py -k "Cosmos or SVD" -vv`
   → **35 passed, 5 skipped, 15 subtests passed in 245.27s**. skip 5개는 각 클래스의 `test_automap` (RBLN_AUTO_CLASS 없음).
@@ -109,6 +128,20 @@
   → `RBLNCogVideoXTransformer3DModel.cache_context` no-op context manager 추가.
 - `RBLN_DEVICES=24,25,26,27 python -m pytest -n 1 tests/test_diffusers.py -k CogVideoX -vv` → **7 passed, 1 skipped (test_automap), 3 subtests passed in 31.84s**.
 
+### P1-5 Pipeline E2E 진행 기록
+- CPU golden: `examples/cogvideo/run_e2e.py cpu` (diffusers CogVideoXPipeline fp32, prompt=panda, seed 42, 49 frames, 50 steps, guidance 6) — CPU에서 약 63s/step.
+- RBLN 1차 (`20261013_0034_e2e`, 실패): export=True 컴파일+저장 1392s OK, export=False 로드 OK, 생성 실패 — `cache_context` 없음 → 추가.
+- RBLN 2차 (`20261013_0107_e2e`, 실패): T5가 fp16으로 컴파일돼(fp32 T5-XXL은 한 device에 안 들어감) 파이프라인 latent가 fp16 → transformer 입력 dtype 오류.
+  → `RBLNCogVideoXPipeline.encode_prompt`가 transformer dtype(fp32)으로 embeds를 반환 (latent/scheduler fp32 유지), transformer forward에서 입력 cast.
+- RBLN 3차 (`20261013_0110_e2e`, 실패): batch 2 transformer segment(15 layers, CmdStream 0.328 GiB)가 hang → `layers_per_graph` 기본값 변경 (위).
+- **RBLN 4차 (`20261013_0112_e2e`, 성공)**: `RBLNCogVideoXPipeline.from_pretrained("THUDM/CogVideoX-2b", export=True)` 컴파일+`save_pretrained` 1587s
+  → `export=False` 재로드 58.1s → 49 frames 생성 954.9s (50 steps, CFG batch 2, transformer 5 graph × 6 layers). devices: text_encoder/transformer/vae 각 1개.
+  - CPU golden 대비 (같은 prompt, seed 42): **video r=0.955, PSNR 23.6 dB**, frame별 r 0.925–0.972, PSNR 21.3–25.6 dB. 최종 latent r=0.985.
+    a=0.962 b=-0.017, mean|diff| 0.054, max|diff| 2.05.
+  - 눈으로 확인: `compare_cpu_vs_rbln.png` (frame 0/12/24/36/48, 위 CPU / 아래 RBLN) — 구도, 판다/기타, 움직임이 같다. 배경 판다 자세 등 세부만 다르다. 깨짐 없음.
+  - 차이의 원인 분리: CPU golden의 latent를 RBLN VAE로 decode → golden video와 r=0.999991, PSNR 57.3 dB. 즉 VAE는 정확하고,
+    차이는 50 step 동안 누적되는 denoising 궤적 차이다 (transformer 1 step r=0.99997, T5는 device에서 fp16).
+
 ## 산출물 (영상/프레임)
 - `/home/seinpark/nas_data/cogvideox/outputs/20261012_2326_vae_stageA_lat1/` — VAE latent 1 → 1 frame, CPU vs RBLN (frames_cpu/, frames_rbln/ PNG), r=0.999992
 - `/home/seinpark/nas_data/cogvideox/outputs/20261012_2334_vae_stageB_lat3_f9_d0only/` — VAE latent 3 → 9 frames (decoder_0만), r=0.999988, video_cpu.mp4 / video_rbln.mp4
@@ -117,6 +150,10 @@
 - `/home/seinpark/nas_data/cogvideox/outputs/20261013_0009_dbg_dn_256x384_convdep_bf16/` — **깨진 결과 (보관)**: per-conv write + conv 출력 의존성, dn frame r 0.35–0.90
 - `/home/seinpark/nas_data/cogvideox/outputs/20261013_0015_vae_stageC_lat5_f17/` — latent 5 → 17 frames (d0 + 1×dn), r=0.999992, 정상
 - `/home/seinpark/nas_data/cogvideox/outputs/20261013_0015_vae_stageD_lat13_f49/` — **P0-1b**: latent 13 → 49 frames (d0 + 5×dn), r=0.999994, 전 frame PNG + video_cpu.mp4/video_rbln.mp4 + latents.pt
+- `/home/seinpark/nas_data/cogvideox/outputs/20261013_0033_e2e_cpu_golden/` — **P1-5 CPU golden** (fp32, panda prompt, seed 42, 50 steps): video_cpu.mp4, 49 frames, latents_cpu.pt
+- `/home/seinpark/nas_data/cogvideox/outputs/20261013_0034_e2e/`, `20261013_0107_e2e/`, `20261013_0110_e2e/` — **실패한 E2E 시도 (영상 없음, meta.json에 원인)**
+- `/home/seinpark/nas_data/cogvideox/outputs/20261013_0112_e2e/` — **P1-5 RBLN E2E** video_rbln.mp4, 49 frames, latents_rbln.pt, compare_cpu_vs_rbln.png. r=0.955, PSNR 23.6 dB vs golden
+- `/home/seinpark/nas_data/cogvideox/outputs/20261013_0138_transformer_L30_real_b2/` — transformer batch 2 실제 가중치, r=0.999969
 - `/home/seinpark/nas_data/cogvideox/outputs/20261012_2328_transformer_L1_rand/`, `..._L2_rand/`, `..._L8_rand/`, `20261013_0009_transformer_L16_rand/` — transformer 입력/출력 텐서 (inputs.pt, outputs.pt, meta.json)
 - `/home/seinpark/nas_data/cogvideox/outputs/20261013_0032_transformer_L30_rand_seg/` — L30 random, 2 graph, r=0.999990
 - `/home/seinpark/nas_data/cogvideox/outputs/20261013_0031_transformer_L30_real/` — **P0-2c**: L30 실제 가중치, r=0.999970

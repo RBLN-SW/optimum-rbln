@@ -51,8 +51,9 @@ class RBLNCogVideoXTransformer3DModelConfig(RBLNModelConfig):
                 transformer config `temporal_compression_ratio`.
             layers_per_graph (int | None): The maximum number of transformer blocks in one compiled graph.
                 The model runs as ceil(num_layers / layers_per_graph) graphs of even size, chained on the
-                host. Defaults to 16: at 49 frames 480x720, one graph with 24 or 30 CogVideoX-2b blocks
-                compiles but hangs on the device (SYS_KERNEL_TIMEOUT), while 16 blocks run.
+                host. Defaults to max(1, 15 // batch_size). At 49 frames 480x720 a graph hangs on the device
+                (SYS_KERNEL_TIMEOUT) once its command stream passes about 0.19 GiB: at batch 1, 19 blocks
+                run and 20 hang; at batch 2, 15 blocks hang.
             kwargs: Additional arguments passed to the parent RBLNModelConfig.
 
         Raises:
@@ -69,7 +70,8 @@ class RBLNCogVideoXTransformer3DModelConfig(RBLNModelConfig):
         self.sample_size = tuple(sample_size) if sample_size is not None else None
         self.max_text_seq_length = max_text_seq_length
         self.vae_scale_factor_temporal = vae_scale_factor_temporal
-        self.layers_per_graph = layers_per_graph or 16
+        # None: resolved from the final batch size at compile time (the pipeline may double it).
+        self.layers_per_graph = layers_per_graph
 
     @property
     def batch_size_is_specified(self):
