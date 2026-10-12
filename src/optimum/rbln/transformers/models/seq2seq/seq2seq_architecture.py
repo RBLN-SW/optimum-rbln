@@ -93,10 +93,14 @@ class Seq2SeqEncoderWrapper(nn.Module):
         cross_kv = []
         for k_proj, v_proj in zip(self.cross_k_projects, self.cross_v_projects, strict=False):
             past_k = (
-                k_proj(last_hidden_states).view(1, self.encoder_max_length, self.num_heads, self.d_kv).transpose(1, 2)
+                k_proj(last_hidden_states)
+                .view(input_ids.shape[0], self.encoder_max_length, self.num_heads, self.d_kv)
+                .transpose(1, 2)
             )
             past_v = (
-                v_proj(last_hidden_states).view(1, self.encoder_max_length, self.num_heads, self.d_kv).transpose(1, 2)
+                v_proj(last_hidden_states)
+                .view(input_ids.shape[0], self.encoder_max_length, self.num_heads, self.d_kv)
+                .transpose(1, 2)
             )
 
             cross_kv.append(past_k)

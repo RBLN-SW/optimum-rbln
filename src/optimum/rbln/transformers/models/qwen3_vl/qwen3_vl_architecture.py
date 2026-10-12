@@ -60,7 +60,8 @@ class Qwen3VLVisionModelWrapper(nn.Module):
         cos: torch.Tensor,
         sin: torch.Tensor,
     ):
-        attn_mask = (1.0 - attn_mask) * torch.finfo(hidden_states.dtype).min
+        # Keep the runtime's binary mask boolean so the compiler can use masked SDPA.
+        attn_mask = attn_mask.bool()
 
         deepstack_features = []
         for layer_num, block in enumerate(self.blocks):

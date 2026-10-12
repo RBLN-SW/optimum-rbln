@@ -68,6 +68,7 @@ class RBLNBartForConditionalGeneration(RBLNModelForSeq2SeqLM):
     """
 
     support_causal_attn = True
+    batch_encoder_by_default = True
 
     @classmethod
     def _wrap_model_if_needed(self, model: PreTrainedModel, rbln_config: RBLNBartForConditionalGenerationConfig):

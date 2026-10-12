@@ -179,6 +179,31 @@ def _require_sorted_cache_position(cache_position: torch.Tensor) -> None:
         )
 
 
+class BidirectionalPrefillBuckets:
+    """Route a complete prompt to one prefill graph, preserving bidirectional context."""
+
+    def __init__(self, runtimes):
+        self.runtimes = dict(sorted(runtimes.items()))
+
+    def __call__(self, *args, **kwargs):
+        inputs = kwargs.get("inputs_embeds")
+        if inputs is None:
+            inputs = kwargs.get("input_ids")
+        if inputs is None and args:
+            inputs = args[0]
+        if inputs is None:
+            raise ValueError("Either input_ids or inputs_embeds must be provided.")
+        length = inputs.shape[1]
+        cache_position = kwargs.get("cache_position")
+        # Keep the existing prefix-cache alignment contract of the largest graph.
+        if cache_position is not None and int(cache_position.flatten()[0]) > 0:
+            return self.runtimes[max(self.runtimes)](*args, **kwargs)
+        for size, runtime in self.runtimes.items():
+            if length <= size:
+                return runtime(*args, **kwargs)
+        raise ValueError(f"Input length {length} exceeds largest prefill bucket {max(self.runtimes)}.")
+
+
 class RBLNRuntimeModel(RBLNPytorchRuntime):
     mandatory_members = ["main_input_name", "embed_tokens"]
 

@@ -12,8 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import copy
 import inspect
 from collections.abc import Callable, Sequence
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -40,11 +42,35 @@ from ...modeling_outputs import RBLNDecoderOnlyOutput, _validate_output_hidden_s
 from ...utils.rbln_quantization import get_quantized_model
 from .configuration_decoderonly import RBLNDecoderOnlyModelConfig, RBLNDecoderOnlyModelForCausalLMConfig
 from .decoderonly_architecture import DecoderOnlyWrapper
-from .decoderonly_runtime_utils import RBLNPageTableManager, RBLNRuntimeModel
+from .decoderonly_runtime_utils import BidirectionalPrefillBuckets, RBLNPageTableManager, RBLNRuntimeModel
 from .generation_decoderonly import RBLNDecoderOnlyGenerationMixin
 
 
 logger = get_logger()
+
+
+def _prefill_bucket_config(config, size):
+    # A runtime/compile view; the serialized config retains the full input capacity.
+    bucket = copy.copy(config)
+    object.__setattr__(bucket, "_attributes_map", dict(config._attributes_map))
+    object.__setattr__(bucket, "prefill_chunk_size", size)
+    bucket._attributes_map["prefill_chunk_size"] = size
+    return bucket
+
+
+@contextmanager
+def _use_prefill_bucket_config(wrapped_model, config):
+    # Reuse generated parameters (e.g. attention scales and converted norms) so
+    # CompileContext recognizes the same weight storage across every graph.
+    original = wrapped_model.rbln_config
+    modules = [m for m in wrapped_model.modules() if getattr(m, "rbln_config", None) is original]
+    try:
+        for module in modules:
+            module.rbln_config = config
+        yield
+    finally:
+        for module in modules:
+            module.rbln_config = original
 
 
 class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
@@ -115,11 +141,24 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
             logits_last_dim=self.logits_last_dim,
             **common_kwargs,
         )
+        if self.rbln_config.extra_prefill_chunk_sizes:
+            bucket_runtimes = {self.rbln_config.prefill_chunk_size: self.prefill_decoder}
+            for index, size in enumerate(self.rbln_config.extra_prefill_chunk_sizes, start=1):
+                bucket_kwargs = dict(common_kwargs)
+                bucket_kwargs["rbln_config"] = _prefill_bucket_config(self.rbln_config, size)
+                bucket_runtimes[size] = RBLNRuntimeModel(
+                    runtime=self.model[index],
+                    phase="prefill",
+                    batch_size=self.rbln_config.batch_size,
+                    logits_last_dim=self.logits_last_dim,
+                    **bucket_kwargs,
+                )
+            self.prefill_decoder = BidirectionalPrefillBuckets(bucket_runtimes)
         if self.can_generate():
             self.decoders = {}
             for i, batch_size in enumerate(self.rbln_config.decoder_batch_sizes):
                 self.decoders[batch_size] = RBLNRuntimeModel(
-                    runtime=self.model[i + 1],
+                    runtime=self.model[i + self.rbln_config.decoder_runtime_idx],
                     phase="decode",
                     batch_size=batch_size,
                     **common_kwargs,
@@ -292,6 +331,21 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
             rbln_config.quantization,
             phase="prefill",
         )
+
+        for index, size in enumerate(rbln_config.extra_prefill_chunk_sizes, start=1):
+            bucket_config = _prefill_bucket_config(rbln_config, size)
+            bucket_compile_config = rbln_config.compile_cfgs[index]
+            bucket_inputs = bucket_compile_config.get_dummy_inputs(fill=0, static_tensors=static_tensors)
+            with _use_prefill_bucket_config(wrapped_model, bucket_config):
+                compiled_models[f"prefill_{size}"] = cls._compile_model(
+                    wrapped_model,
+                    bucket_compile_config,
+                    bucket_inputs,
+                    context,
+                    bucket_config,
+                    bucket_config.quantization,
+                    phase="prefill",
+                )
 
         if rbln_config.use_image_prefill:
             image_prefill_compile_config = rbln_config.compile_cfgs[rbln_config.image_prefill_runtime_idx]
@@ -592,6 +646,23 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
             if rbln_config.sliding_window is not None:
                 validate_sliding_window(rbln_config)
 
+        if any(size > rbln_config.prefill_chunk_size for size in (rbln_config.prefill_chunk_sizes or [])):
+            raise ValueError("`prefill_chunk_sizes` cannot exceed the resolved prefill_chunk_size.")
+        if rbln_config.prefill_chunk_sizes is None and rbln_config.use_bidirectional_prefill:
+            # Custom runtime subclasses must opt in after implementing bucket routing.
+            if cls.setup_runtime is RBLNDecoderOnlyModel.setup_runtime and not rbln_config.use_lora:
+                sizes = []
+                size = 512
+                while size < rbln_config.prefill_chunk_size:
+                    sizes.append(size)
+                    size *= 2
+                rbln_config.prefill_chunk_sizes = sizes + [rbln_config.prefill_chunk_size]
+        if rbln_config.extra_prefill_chunk_sizes:
+            if not rbln_config.use_bidirectional_prefill or rbln_config.use_lora:
+                raise ValueError("`prefill_chunk_sizes` requires bidirectional prefill without LoRA.")
+            if cls.setup_runtime is not RBLNDecoderOnlyModel.setup_runtime:
+                raise ValueError("`prefill_chunk_sizes` requires a runtime supporting bidirectional buckets.")
+
         prefill_input_info = cls.get_input_info(
             batch_size=1,
             query_length=rbln_config.prefill_chunk_size,
@@ -601,6 +672,15 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
 
         prefill_compile_config = RBLNCompileConfig(compiled_model_name="prefill", input_info=prefill_input_info)
         compile_cfgs = [prefill_compile_config]
+        for size in rbln_config.extra_prefill_chunk_sizes:
+            compile_cfgs.append(
+                RBLNCompileConfig(
+                    compiled_model_name=f"prefill_{size}",
+                    input_info=cls.get_input_info(
+                        batch_size=1, query_length=size, rbln_config=rbln_config, model_config=model_config
+                    ),
+                )
+            )
 
         if rbln_config.use_image_prefill:
             if rbln_config.prefill_chunk_size != rbln_config.image_prefill_chunk_size:

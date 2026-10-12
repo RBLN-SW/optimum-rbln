@@ -32,11 +32,14 @@ class RBLNModelForSeq2SeqLMConfig(RBLNModelConfig):
         use_attention_mask: bool | None = None,
         kvcache_num_blocks: int | None = None,
         kvcache_block_size: int | None = None,
+        encoder_batch_size: int | None = None,
         **kwargs: Any,
     ):
         """
         Args:
             batch_size (int | None): The batch size for inference. Defaults to 1.
+            encoder_batch_size (int | None): Rows encoded per invocation. Must divide batch_size.
+                New BART exports default to batch_size; other families default to 1.
             enc_max_seq_len (int | None): Maximum sequence length for the encoder.
             dec_max_seq_len (int | None): Maximum sequence length for the decoder.
             use_attention_mask (bool | None): Whether to use attention masks during inference.
@@ -53,6 +56,18 @@ class RBLNModelForSeq2SeqLMConfig(RBLNModelConfig):
         self.batch_size = batch_size or 1
         if not isinstance(self.batch_size, int) or self.batch_size < 0:
             raise ValueError(f"batch_size must be a positive integer, got {self.batch_size}")
+
+        if encoder_batch_size is not None and (
+            type(encoder_batch_size) is not int
+            or encoder_batch_size < 1
+            or encoder_batch_size > self.batch_size
+            or self.batch_size % encoder_batch_size
+        ):
+            raise ValueError(
+                f"encoder_batch_size must be a positive integer divisor of batch_size "
+                f"({self.batch_size}), got {encoder_batch_size}"
+            )
+        self.encoder_batch_size = encoder_batch_size
 
         self.enc_max_seq_len = enc_max_seq_len
         self.dec_max_seq_len = dec_max_seq_len
