@@ -393,8 +393,6 @@ class RBLNQwen3_5VisionModel(RBLNModel):
         for max_seq_len in rbln_config.max_seq_len:
             input_info = [
                 ("hidden_states", [max_seq_len, hidden_size], rbln_config.dtype),
-                # Key-padding mask: a padded query row's output is dropped, so masking the keys alone
-                # gives the same valid outputs at 1/max_seq_len of the host-to-device transfer.
                 ("attn_mask", [batch_size, 1, 1, max_seq_len], rbln_config.dtype),
                 # cos/sin enter the device at fp32 and are cast to the device dtype inside the vision model
                 ("cos", [batch_size, 1, max_seq_len, head_dim], torch.float32),
