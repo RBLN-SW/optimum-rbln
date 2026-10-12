@@ -185,10 +185,11 @@ def device_usage(
             for node, chiplets in enumerate(function.program_nbytes):
                 for chiplet, nbytes in enumerate(chiplets):
                     usage["Kernel"][node][chiplet] += nbytes
+            values = function.values
             for a in function.args:
                 if not a.shards or a.name in shared or a.host_bindable:
                     continue
-                if a.sources and a.access != "write":
+                if a.sources and all(values[s]["role"] == "state" for s in a.sources):
                     key = (id(compiled_model.weights), a.name, a.type_id, tuple(s.get("pool") for s in a.shards))
                     if key not in seen:
                         seen.add(key)

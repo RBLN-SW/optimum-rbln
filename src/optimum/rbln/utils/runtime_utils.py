@@ -255,14 +255,10 @@ class RBLNRuntime:
                 if _is_scratch(a) and a.name not in bound:
                     bound[a.name] = v2.empty_like(a, devices)
             self.executors.append(v2.Executor(function, devices, tensors=bound))
-        first = compiled_model.functions[0]
-        bound = set(self.executors[0].tensors)
-        self.input_names = [
-            a.name for a in first.args if a.shards and a.used and a.access == "read" and a.name not in bound
-        ]
+        self.input_names = self.executors[0].inputs
         self._results = [[function.arg(name) for name in function.results] for function in compiled_model.functions]
         self._buckets = {
-            tuple(tuple(function.arg(name).logical.shape) for name in self.input_names): index
+            tuple(tuple(function.values[name]["logical"].shape) for name in self.input_names): index
             for index, function in enumerate(compiled_model.functions)
         }
 
