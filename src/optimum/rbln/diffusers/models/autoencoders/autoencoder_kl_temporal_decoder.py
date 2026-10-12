@@ -24,7 +24,7 @@ from transformers import PretrainedConfig
 
 from ....configuration_utils import RBLNCompileConfig
 from ....modeling import RBLNModel
-from ....modeling_base import Preprocessor
+from ....modeling_base import Preprocessor, RBLNBaseModel
 from ....utils.logging import get_logger
 from ...configurations import RBLNAutoencoderKLTemporalDecoderConfig
 from ...modeling_diffusers import RBLNDiffusionMixin
@@ -75,7 +75,10 @@ class RBLNAutoencoderKLTemporalDecoder(RBLNModel):
 
     @classmethod
     def get_compiled_model(
-        cls, model, rbln_config: RBLNAutoencoderKLTemporalDecoderConfig
+        cls,
+        model,
+        rbln_config: RBLNAutoencoderKLTemporalDecoderConfig,
+        colocated_models: list[RBLNBaseModel] | None = None,
     ) -> dict[str, rebel.RBLNCompiledModel]:
         compiled_models = {}
         if rbln_config.uses_encoder:

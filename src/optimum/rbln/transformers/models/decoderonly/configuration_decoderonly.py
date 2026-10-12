@@ -176,7 +176,8 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
             - **Automatic Determination (Default)**: If `kvcache_num_blocks` is `0` (default), the number of blocks
                 is automatically determined during compilation to fit within the available DRAM on the NPU. This allows
                 the model to utilize the remaining memory after compilation without manual tuning, providing optimal
-                cache capacity for better performance with long sequences or larger batches.
+                cache capacity for better performance with long sequences or larger batches. Memory already taken
+                by other compiled models sharing the same devices (e.g. a vision encoder submodule) is reserved.
             - **Manual Setting**: You can explicitly set the number of blocks to a positive integer. This provides
                 finer control but requires careful consideration of memory limits. Setting it too high may lead to
                 compilation errors if it exceeds available memory. The system will issue warnings if your

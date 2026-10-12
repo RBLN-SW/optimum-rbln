@@ -23,7 +23,7 @@ from diffusers.models.autoencoders.vq_model import VQEncoderOutput
 
 from ....configuration_utils import RBLNCompileConfig, RBLNModelConfig
 from ....modeling import RBLNModel
-from ....modeling_base import Preprocessor
+from ....modeling_base import Preprocessor, RBLNBaseModel
 from ....utils.logging import get_logger
 from ...configurations.models.configuration_vq_model import RBLNVQModelConfig
 from ...modeling_diffusers import RBLNDiffusionMixin, RBLNDiffusionMixinConfig
@@ -65,7 +65,9 @@ class RBLNVQModel(RBLNModel):
         self.image_size = self.rbln_config.image_size
 
     @classmethod
-    def get_compiled_model(cls, model, rbln_config: RBLNModelConfig):
+    def get_compiled_model(
+        cls, model, rbln_config: RBLNModelConfig, colocated_models: list[RBLNBaseModel] | None = None
+    ):
         if rbln_config.uses_encoder:
             expected_models = ["encoder", "decoder"]
         else:
