@@ -332,8 +332,6 @@ class Qwen3_5GatedDeltaNet(nn.Module):
         recurrent_state_mask: torch.Tensor | None = None,
         slot: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor | None]:
-        batch_size, seq_len, _ = hidden_states.shape
-        k_1 = self.conv_kernel_size - 1
         prefill = "prefill" in self._phase and valid_mask is not None
 
         # PREFILL window 0 starts from zero carried state: the runtime feeds a zeros mask for window 0 and a
@@ -345,12 +343,19 @@ class Qwen3_5GatedDeltaNet(nn.Module):
             # The ops read and update rows [slot, slot + B) of the whole recurrent cache, and take the recurrent
             # mask as one value per row.
             carry = recurrent_state_mask if prefill else None
-            return self._custom_forward(
+            return self._custom_core(
                 hidden_states, conv_state, recurrent_state, slot, carry, query_position, valid_mask, prefill
             )
 
         if prefill and recurrent_state_mask is not None:
             recurrent_state = recurrent_state * recurrent_state_mask
+        return self._native_core(hidden_states, conv_state, recurrent_state, query_position, valid_mask, prefill)
+
+    def _native_core(self, hidden_states, conv_state, recurrent_state, query_position, valid_mask, prefill):
+        """The delta rule in plain torch. Serves every configuration the custom ops do not: a REBEL target,
+        a `gdn_chunk_size` other than 128, and an artifact compiled before `gdn_custom_kernel`."""
+        batch_size, seq_len, _ = hidden_states.shape
+        k_1 = self.conv_kernel_size - 1
 
         z = self.in_proj_z(hidden_states).reshape(batch_size, seq_len, -1, self.head_v_dim)
         b = self.in_proj_b(hidden_states)
@@ -432,10 +437,10 @@ class Qwen3_5GatedDeltaNet(nn.Module):
         output = self.out_proj(core_attn_out)
         return output, new_conv_state, new_recurrent_state.contiguous()
 
-    def _custom_forward(
+    def _custom_core(
         self, hidden_states, conv_state, recurrent_state, slot, carry, query_position, valid_mask, prefill
     ):
-        """The ``gdn_custom_kernel`` path; every tensor keeps the Q/K head outermost after the batch. Returns no new
+        """The delta rule as one ``rbln_custom_ops::gdn_*`` op; every tensor keeps the Q/K head outermost after the batch. Returns no new
         recurrent state: the op writes it into ``recurrent_state`` at ``slot``."""
         batch_size, seq_len, _ = hidden_states.shape
         heads, ratio = self.num_k_heads, self.num_v_heads // self.num_k_heads
