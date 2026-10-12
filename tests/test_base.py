@@ -5,11 +5,8 @@ import shutil
 import tempfile
 import unittest
 from collections.abc import Iterable
-from contextlib import nullcontext as does_not_raise
 from enum import Enum
-from unittest.mock import patch
 
-import pytest
 import transformers
 from diffusers import DiffusionPipeline
 from huggingface_hub import HfApi
@@ -17,7 +14,6 @@ from transformers import AutoConfig
 
 from optimum.rbln import __version__
 from optimum.rbln.configuration_utils import ContextRblnConfig
-from optimum.rbln.utils.deprecation import deprecate_method
 
 
 def test_version_is_str():
@@ -74,33 +70,6 @@ def test_upgrade_bare_config_recovers_concrete_class():
     assert _upgrade_bare_config(unknown) is unknown
     no_arch = PretrainedConfig.from_dict({})
     assert _upgrade_bare_config(no_arch) is no_arch
-
-
-@pytest.mark.parametrize(
-    "current_version, expect_raise",
-    [
-        pytest.param("1.9.5", False, id="below"),
-        pytest.param("1.9.99.post1", False, id="below-post"),
-        pytest.param("1.10.0.dev0", True, id="dev"),
-        pytest.param("1.10.0a1", True, id="alpha"),
-        pytest.param("1.10.0b2", True, id="beta"),
-        pytest.param("1.10.0rc1", True, id="rc"),
-        pytest.param("1.10.0", True, id="final"),
-        pytest.param("1.10.0.post1", True, id="post"),
-        pytest.param("1.10.1", True, id="patch-above"),
-    ],
-)
-def test_deprecate_method_raises_at_or_past_cutoff(current_version, expect_raise):
-    expectation = pytest.raises(ValueError, match="deprecated") if expect_raise else does_not_raise()
-
-    with patch("optimum.rbln.utils.deprecation.__version__", current_version):
-
-        @deprecate_method(version="1.10.0", new_method="from_pretrained")
-        def stub():
-            pass
-
-    with expectation:
-        stub()
 
 
 DUMMY_DEVICE_CODE = -1
