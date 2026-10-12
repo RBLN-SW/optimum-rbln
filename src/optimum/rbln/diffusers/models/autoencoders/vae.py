@@ -106,6 +106,31 @@ class RBLNRuntimeWanVAEDecoder(RBLNPytorchRuntime):
         return torch.clamp(out, min=-1.0, max=1.0)
 
 
+class RBLNRuntimeCogVideoXVAEDecoder(RBLNPytorchRuntime):
+    mandatory_members = ["main_input_name", "decoder_n", "first_chunk_size", "frame_batch_size", "dtype"]
+
+    def decode(self, z: torch.Tensor) -> torch.Tensor:
+        z = z.to(self.dtype)
+        num_frame = z.shape[2]
+        # Mirrors AutoencoderKLCogVideoX._decode: the first chunk also takes the odd remainder frame.
+        first = min(num_frame, self.frame_batch_size + num_frame % self.frame_batch_size)
+        if first != self.first_chunk_size or (num_frame > first and self.decoder_n is None):
+            raise ValueError(
+                f"Cannot decode {num_frame} latent frames: the first chunk has {first} frames, but the graphs were "
+                f"compiled for a first chunk of {self.first_chunk_size} frames"
+                f"{'' if self.decoder_n is not None else ' with no later chunks'}."
+            )
+
+        ret = self.forward(z[:, :, :first].contiguous())
+        outs, feat_cache_0 = [ret[0]], ret[1]
+        for start in range(first, num_frame, self.frame_batch_size):
+            ret = self.decoder_n(z[:, :, start : start + self.frame_batch_size].contiguous(), feat_cache_0)
+            outs.append(ret[0])
+            feat_cache_0 = ret[1]
+
+        return torch.cat(outs, dim=2) if len(outs) > 1 else outs[0]
+
+
 class _VAEDecoder(torch.nn.Module):
     def __init__(self, vae: "AutoencoderKL"):
         super().__init__()
