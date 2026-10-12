@@ -439,13 +439,13 @@ class RBLNQwen3_5VisionModel(RBLNModel):
                 return shape[-2]
         raise ValueError(f"No compiled vision bucket takes max_seq_len {max_seq_len}.")
 
-    @staticmethod
     def _pad_hidden_states(
+        self,
         hidden_states: torch.Tensor,
         position_embeddings: tuple[torch.Tensor, torch.Tensor],
         max_seq_len: int,
-        mask_rows: int = 1,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, int]:
+        mask_rows = self._declared_mask_rows(max_seq_len)
         seq_len = hidden_states.shape[0]
         valid_len = seq_len
 
@@ -506,7 +506,7 @@ class RBLNQwen3_5VisionModel(RBLNModel):
                 ) from e
 
             image_hidden, (image_cos, image_sin), attn_mask, valid_len = self._pad_hidden_states(
-                image_hidden, (image_cos, image_sin), max_seq_len, self._declared_mask_rows(max_seq_len)
+                image_hidden, (image_cos, image_sin), max_seq_len
             )
 
             output = self.transformer(

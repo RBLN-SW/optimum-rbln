@@ -10,14 +10,16 @@ def _to_bias(mask: torch.Tensor) -> torch.Tensor:
     return (1.0 - mask) * torch.finfo(mask.dtype).min
 
 
-def _model_declaring(*mask_shapes: list[int]) -> SimpleNamespace:
-    """A stand-in carrying only the compiled input_info `_declared_mask_rows` reads."""
+def _model_declaring(*mask_shapes: list[int]) -> RBLNQwen3_5VisionModel:
+    """A real instance carrying only the compiled input_info the mask path reads, left uninitialized
+    so the test does not need an artifact."""
     input_infos = [
         [("hidden_states", [shape[-1], 16], torch.float32), ("attn_mask", shape, torch.float32)]
         for shape in mask_shapes
     ]
-    compile_cfgs = [SimpleNamespace(input_info=input_infos)]
-    return SimpleNamespace(rbln_config=SimpleNamespace(compile_cfgs=compile_cfgs))
+    model = RBLNQwen3_5VisionModel.__new__(RBLNQwen3_5VisionModel)
+    model.rbln_config = SimpleNamespace(compile_cfgs=[SimpleNamespace(input_info=input_infos)])
+    return model
 
 
 def test_key_padding_mask_matches_square_mask_on_valid_rows():
@@ -26,8 +28,11 @@ def test_key_padding_mask_matches_square_mask_on_valid_rows():
     hidden = torch.randn(seq_len, dim)
     rotary = (torch.randn(seq_len, 4), torch.randn(seq_len, 4))
 
-    _, _, key_mask, valid_len = RBLNQwen3_5VisionModel._pad_hidden_states(hidden, rotary, bucket, mask_rows=1)
-    _, _, square_mask, _ = RBLNQwen3_5VisionModel._pad_hidden_states(hidden, rotary, bucket, mask_rows=bucket)
+    # The mask each export declares, built the way forward() builds it.
+    this_export = _model_declaring([1, 1, 1, bucket])
+    older_export = _model_declaring([1, 1, bucket, bucket])
+    _, _, key_mask, valid_len = this_export._pad_hidden_states(hidden, rotary, bucket)
+    _, _, square_mask, _ = older_export._pad_hidden_states(hidden, rotary, bucket)
 
     assert key_mask.shape == (1, 1, 1, bucket)
     assert square_mask.shape == (1, 1, bucket, bucket)
@@ -44,7 +49,8 @@ def test_a_full_bucket_is_unmasked():
     hidden = torch.randn(8, 16)
     rotary = (torch.randn(8, 4), torch.randn(8, 4))
 
-    _, _, mask, valid_len = RBLNQwen3_5VisionModel._pad_hidden_states(hidden, rotary, 8, mask_rows=1)
+    model = _model_declaring([1, 1, 1, 8])
+    _, _, mask, valid_len = model._pad_hidden_states(hidden, rotary, 8)
 
     assert valid_len == 8
     assert (mask == 1.0).all()
@@ -52,8 +58,8 @@ def test_a_full_bucket_is_unmasked():
 
 def test_declared_mask_rows_follows_the_export():
     # This export declares the key-padding mask; one made before it declares max_seq_len rows.
-    assert RBLNQwen3_5VisionModel._declared_mask_rows(_model_declaring([1, 1, 1, 8]), 8) == 1
-    assert RBLNQwen3_5VisionModel._declared_mask_rows(_model_declaring([1, 1, 8, 8]), 8) == 8
+    assert _model_declaring([1, 1, 1, 8])._declared_mask_rows(8) == 1
+    assert _model_declaring([1, 1, 8, 8])._declared_mask_rows(8) == 8
 
 
 def test_declared_mask_rows_matches_the_bucket_by_size():
@@ -61,20 +67,19 @@ def test_declared_mask_rows_matches_the_bucket_by_size():
     # so the bucket must be found by its size rather than by position.
     model = _model_declaring([1, 1, 16, 16], [1, 1, 1, 8])
 
-    assert RBLNQwen3_5VisionModel._declared_mask_rows(model, 16) == 16
-    assert RBLNQwen3_5VisionModel._declared_mask_rows(model, 8) == 1
+    assert model._declared_mask_rows(16) == 16
+    assert model._declared_mask_rows(8) == 1
 
 
 def test_declared_mask_rows_accepts_a_single_bucket_input_info():
     # RBLNCompileConfig keeps one bucket as a bare input_info rather than a list of them.
-    single = SimpleNamespace(
-        rbln_config=SimpleNamespace(
-            compile_cfgs=[
-                SimpleNamespace(
-                    input_info=[("hidden_states", [8, 16], torch.float32), ("attn_mask", [1, 1, 1, 8], torch.float32)]
-                )
-            ]
-        )
+    single = RBLNQwen3_5VisionModel.__new__(RBLNQwen3_5VisionModel)
+    single.rbln_config = SimpleNamespace(
+        compile_cfgs=[
+            SimpleNamespace(
+                input_info=[("hidden_states", [8, 16], torch.float32), ("attn_mask", [1, 1, 1, 8], torch.float32)]
+            )
+        ]
     )
 
-    assert RBLNQwen3_5VisionModel._declared_mask_rows(single, 8) == 1
+    assert single._declared_mask_rows(8) == 1
