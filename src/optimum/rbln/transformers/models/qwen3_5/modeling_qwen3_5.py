@@ -445,7 +445,6 @@ class RBLNQwen3_5VisionModel(RBLNModel):
         position_embeddings: tuple[torch.Tensor, torch.Tensor],
         max_seq_len: int,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, int]:
-        mask_rows = self._declared_mask_rows(max_seq_len)
         seq_len = hidden_states.shape[0]
         valid_len = seq_len
 
@@ -460,6 +459,7 @@ class RBLNQwen3_5VisionModel(RBLNModel):
             sin = torch.cat([sin, pos_padding], dim=0)
             position_embeddings = (cos, sin)
 
+        mask_rows = self._declared_mask_rows(max_seq_len)
         attn_mask = torch.ones(1, 1, mask_rows, max_seq_len, dtype=hidden_states.dtype)
         if valid_len < max_seq_len:
             attn_mask[:, :, :, valid_len:] = 0

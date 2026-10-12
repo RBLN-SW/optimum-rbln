@@ -2,6 +2,7 @@ from types import SimpleNamespace
 
 import torch
 
+from optimum.rbln.transformers.models.qwen3_5.configuration_qwen3_5 import RBLNQwen3_5VisionModelConfig
 from optimum.rbln.transformers.models.qwen3_5.modeling_qwen3_5 import RBLNQwen3_5VisionModel
 
 
@@ -83,3 +84,19 @@ def test_declared_mask_rows_accepts_a_single_bucket_input_info():
     )
 
     assert single._declared_mask_rows(8) == 1
+
+
+def test_a_fresh_export_declares_and_reads_back_one_row():
+    """What _update_rbln_config compiles and what _pad_hidden_states feeds must agree."""
+    buckets = [5120, 16384]
+    rbln_config = RBLNQwen3_5VisionModelConfig(max_seq_len=buckets, batch_size=1)
+    model_config = SimpleNamespace(hidden_size=1152, num_heads=16)
+
+    RBLNQwen3_5VisionModel._update_rbln_config(model_config=model_config, rbln_config=rbln_config)
+
+    model = RBLNQwen3_5VisionModel.__new__(RBLNQwen3_5VisionModel)
+    model.rbln_config = rbln_config
+    for bucket in buckets:
+        assert model._declared_mask_rows(bucket) == 1
+        _, _, mask, _ = model._pad_hidden_states(torch.randn(8, 1152), (torch.randn(8, 4), torch.randn(8, 4)), bucket)
+        assert mask.shape == (1, 1, 1, bucket)
