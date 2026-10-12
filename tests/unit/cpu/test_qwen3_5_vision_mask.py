@@ -29,7 +29,9 @@ def test_key_padding_mask_matches_square_mask_on_valid_rows():
     hidden = torch.randn(seq_len, dim)
     rotary = (torch.randn(seq_len, 4), torch.randn(seq_len, 4))
 
-    # The mask each export declares, built the way forward() builds it.
+    # The mask each export declares, built the way forward() builds it. The older path is
+    # deprecated: from optimum-rbln 0.12.0 it raises, and this assertion is the reminder to
+    # delete both it and _mask_padded_keys_and_queries.
     this_export = _model_declaring([1, 1, 1, bucket])
     older_export = _model_declaring([1, 1, bucket, bucket])
     _, _, key_mask, valid_len = this_export._pad_hidden_states(hidden, rotary, bucket)

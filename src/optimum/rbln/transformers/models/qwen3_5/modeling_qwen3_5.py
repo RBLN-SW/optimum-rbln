@@ -35,6 +35,7 @@ from ....configuration_utils import RBLNCompileConfig
 from ....modeling import RBLNModel
 from ....modeling_rope_utils import build_qwen_mrope_lookup, np_cos, np_sin, qwen_vit_rot_pos_ids
 from ....utils import logging
+from ....utils.deprecation import deprecate_method
 from ...cache_utils import FullAttentionKVCacheMeta, LinearAttentionCacheMeta
 from ...modeling_outputs import RBLNDecoderOnlyOutput, _validate_output_hidden_states
 from ...utils.multimodal_batch_sort import RBLNQwenVLBatchSortMixin
@@ -462,12 +463,30 @@ class RBLNQwen3_5VisionModel(RBLNModel):
         mask_rows = self._declared_mask_rows(max_seq_len)
         attn_mask = torch.ones(1, 1, mask_rows, max_seq_len, dtype=hidden_states.dtype)
         if valid_len < max_seq_len:
-            attn_mask[:, :, :, valid_len:] = 0
             if mask_rows > 1:
-                # An export that predates the key-padding mask also masks the padded query rows.
-                attn_mask[:, :, valid_len:, :] = 0
+                self._mask_padded_keys_and_queries(attn_mask, valid_len)
+            else:
+                self._mask_padded_keys(attn_mask, valid_len)
 
         return hidden_states, position_embeddings, attn_mask, valid_len
+
+    @staticmethod
+    def _mask_padded_keys(attn_mask: torch.Tensor, valid_len: int) -> None:
+        """Mask the padded keys, in place. Every query row then attends to the valid keys only."""
+        attn_mask[:, :, :, valid_len:] = 0
+
+    @staticmethod
+    @deprecate_method(
+        version="0.12.0",
+        additional_message=(
+            "It fills the [S, S] attention mask of a vision encoder exported before the key-padding mask. "
+            "Re-export the model to stop using it."
+        ),
+    )
+    def _mask_padded_keys_and_queries(attn_mask: torch.Tensor, valid_len: int) -> None:
+        """Mask the padded keys and the padded query rows, in place, as an [S, S] export expects."""
+        attn_mask[:, :, :, valid_len:] = 0
+        attn_mask[:, :, valid_len:, :] = 0
 
     def forward(self, hidden_states: torch.Tensor, grid_thw: torch.Tensor) -> torch.Tensor:
         hidden_states = self.patch_embed(hidden_states).to(self.rbln_config.dtype)
