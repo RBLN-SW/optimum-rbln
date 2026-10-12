@@ -66,7 +66,7 @@ def _gdn_models(ratio, prefill_size, gate_bias, batch_size=1):
         native.in_proj_a.bias = torch.nn.Parameter(torch.randn(2 * ratio) * 0.1)
         native.in_proj_b.bias = torch.nn.Parameter(torch.randn(2 * ratio) * 0.1)
     models = [
-        Qwen3_5GatedDeltaNet(
+        Qwen3_5GatedDeltaNet.from_config(
             native,
             RBLNQwen3_5TextModelConfig(
                 max_seq_len=4096,
@@ -111,7 +111,7 @@ def _step(models, states, hidden, kwargs):
     outputs = []
     for index, model in enumerate(models):
         output = model(hidden, *states[index], **kwargs[index])
-        assert (output[2] is None) is model.gdn_custom_kernel
+        assert (output[2] is None) is model.updates_state_in_place
         states[index] = (output[1], states[index][1] if output[2] is None else output[2])
         outputs.append(output[0])
     return outputs
@@ -166,7 +166,7 @@ def test_gdn_custom_model_prefill_decode_and_reset(ratio, prefill_size, gate_bia
                 model.phase = phase
                 model_kwargs = dict(kwargs)
                 if phase == "prefill":
-                    conv_mask, recurrent_mask = _qwen3_5_linear_mask_shapes(hf_config, 1, model.gdn_custom_kernel)
+                    conv_mask, recurrent_mask = _qwen3_5_linear_mask_shapes(hf_config, 1, model.updates_state_in_place)
                     model_kwargs["conv_state_mask"] = torch.full(conv_mask, 0.0 if reset else 1.0)
                     model_kwargs["recurrent_state_mask"] = torch.full(recurrent_mask, 0.0 if reset else 1.0)
                 per_model.append(model_kwargs)
@@ -224,11 +224,12 @@ def test_gdn_custom_kernel_serves_supported_configs(overrides, prefill_size, gdn
     config = rbln_config()
     resolve_gdn_custom_kernel(text_config, config)
     assert config.gdn_custom_kernel is expected
-    assert Qwen3_5GatedDeltaNet(native, config, layer_idx=0).gdn_custom_kernel is expected
+    assert Qwen3_5GatedDeltaNet.from_config(native, config, layer_idx=0).updates_state_in_place is expected
     # A recorded choice wins over the capability check, and an artifact that predates the field
     # (None) keeps the native core.
-    assert Qwen3_5GatedDeltaNet(native, rbln_config(gdn_custom_kernel=False), layer_idx=0).gdn_custom_kernel is False
-    assert Qwen3_5GatedDeltaNet(native, rbln_config(), layer_idx=0).gdn_custom_kernel is False
+    for options in ({"gdn_custom_kernel": False}, {}):
+        core = Qwen3_5GatedDeltaNet.from_config(native, rbln_config(**options), layer_idx=0)
+        assert core.updates_state_in_place is False
 
 
 @pytest.mark.parametrize("npu, expected", [("RBLN-CA25", True), ("RBLN-CA22", True), ("RBLN-CR13", False)])
