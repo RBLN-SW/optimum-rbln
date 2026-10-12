@@ -426,8 +426,8 @@ class RBLNQwen3_5VisionModel(RBLNModel):
     def _declared_mask_rows(self, max_seq_len: int) -> int:
         """How many query rows the compiled `attn_mask` of the `max_seq_len` bucket declares.
 
-        The host must feed the shape its artifact declares: this export's key-padding mask has one row,
-        while an export made before it has `max_seq_len` rows. Buckets are matched by their size, not by
+        The host must feed the shape its artifact declares: an artifact compiled from the key-padding
+        mask onward has one query row, while one compiled before it has `max_seq_len` rows. Buckets are matched by their size, not by
         position: `RBLNQwen3_5VisionModelConfig` sorts `max_seq_len` descending and `forward` searches it
         ascending, so the two orders do not agree.
         """
@@ -479,12 +479,13 @@ class RBLNQwen3_5VisionModel(RBLNModel):
     @deprecate_method(
         version="0.12.0",
         additional_message=(
-            "It fills the [S, S] attention mask of a vision encoder exported before the key-padding mask. "
-            "Re-export the model to stop using it."
+            "It fills the [S, S] attention mask of a vision encoder compiled before the key-padding mask. "
+            "That artifact keeps working; recompile it to stop using this path."
         ),
     )
     def _mask_padded_keys_and_queries(attn_mask: torch.Tensor, valid_len: int) -> None:
-        """Mask the padded keys and the padded query rows, in place, as an [S, S] export expects."""
+        """Mask the padded keys and the padded query rows, in place, as an artifact compiled before the
+        key-padding mask expects."""
         attn_mask[:, :, :, valid_len:] = 0
         attn_mask[:, :, valid_len:, :] = 0
 

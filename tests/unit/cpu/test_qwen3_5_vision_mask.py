@@ -29,13 +29,13 @@ def test_key_padding_mask_matches_square_mask_on_valid_rows():
     hidden = torch.randn(seq_len, dim)
     rotary = (torch.randn(seq_len, 4), torch.randn(seq_len, 4))
 
-    # The mask each export declares, built the way forward() builds it. The older path is
+    # The mask each artifact declares, built the way forward() builds it. The older path is
     # deprecated: from optimum-rbln 0.12.0 it raises, and this assertion is the reminder to
     # delete both it and _mask_padded_keys_and_queries.
-    this_export = _model_declaring([1, 1, 1, bucket])
-    older_export = _model_declaring([1, 1, bucket, bucket])
-    _, _, key_mask, valid_len = this_export._pad_hidden_states(hidden, rotary, bucket)
-    _, _, square_mask, _ = older_export._pad_hidden_states(hidden, rotary, bucket)
+    this_build = _model_declaring([1, 1, 1, bucket])
+    older_build = _model_declaring([1, 1, bucket, bucket])
+    _, _, key_mask, valid_len = this_build._pad_hidden_states(hidden, rotary, bucket)
+    _, _, square_mask, _ = older_build._pad_hidden_states(hidden, rotary, bucket)
 
     assert key_mask.shape == (1, 1, 1, bucket)
     assert square_mask.shape == (1, 1, bucket, bucket)
@@ -59,8 +59,9 @@ def test_a_full_bucket_is_unmasked():
     assert (mask == 1.0).all()
 
 
-def test_declared_mask_rows_follows_the_export():
-    # This export declares the key-padding mask; one made before it declares max_seq_len rows.
+def test_declared_mask_rows_follows_the_artifact():
+    # An artifact compiled from this change onward declares the key-padding mask;
+    # one compiled before it declares max_seq_len rows.
     assert _model_declaring([1, 1, 1, 8])._declared_mask_rows(8) == 1
     assert _model_declaring([1, 1, 8, 8])._declared_mask_rows(8) == 8
 
@@ -88,7 +89,7 @@ def test_declared_mask_rows_accepts_a_single_bucket_input_info():
     assert single._declared_mask_rows(8) == 1
 
 
-def test_a_fresh_export_declares_and_reads_back_one_row():
+def test_a_fresh_compile_declares_and_reads_back_one_row():
     """What _update_rbln_config compiles and what _pad_hidden_states feeds must agree."""
     buckets = [5120, 16384]
     rbln_config = RBLNQwen3_5VisionModelConfig(max_seq_len=buckets, batch_size=1)
