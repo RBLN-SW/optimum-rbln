@@ -306,8 +306,7 @@ class RBLNStableDiffusionXLControlNetPipeline(RBLNDiffusionMixin, StableDiffusio
             prompt_2 (`str` or `list[str]`, *optional*):
                 The prompt or prompts to be sent to `tokenizer_2` and `text_encoder_2`. If not defined, `prompt` is
                 used in both text-encoders.
-            image (`torch.FloatTensor`, `PIL.Image.Image`, `np.ndarray`, `list[torch.FloatTensor]`, `list[PIL.Image.Image]`, `list[np.ndarray]`,:
-                    `list[list[torch.FloatTensor]]`, `list[list[np.ndarray]]` or `list[list[PIL.Image.Image]]`):
+            image (`torch.FloatTensor`, `PIL.Image.Image`, `np.ndarray`, `list[torch.FloatTensor]`, `list[PIL.Image.Image]`, `list[np.ndarray]`, `list[list[torch.FloatTensor]]`, `list[list[np.ndarray]]` or `list[list[PIL.Image.Image]]`):
                 The ControlNet input condition to provide guidance to the `unet` for generation. If the type is
                 specified as `torch.FloatTensor`, it is passed to ControlNet as is. `PIL.Image.Image` can also be
                 accepted as an image. The dimensions of the output image defaults to `image`'s dimensions. If height

@@ -243,7 +243,7 @@ def deprecate_method(
             A wrapped function that handles the deprecation warning or error.
     Examples:
         >>> class MyClass:
-        ...     @deprecate_method(version="0.12.0", new_method="from_pretrained")
+        ...     @deprecate_method(version="0.13.0", new_method="from_pretrained")
         ...     def load(self, path):
         ...         return self.from_pretrained(path)
     """

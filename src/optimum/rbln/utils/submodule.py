@@ -165,7 +165,7 @@ class SubModulesMixin:
                     logger.warning(
                         f"Loading submodule '{submodule_name}' from the pre-nested (sibling) layout "
                         f"at {legacy_json_file_path.parent}. Support for this layout will be removed "
-                        "in v0.12.0; recompile the model to produce an artifact in the "
+                        "in v0.13.0; recompile the model to produce an artifact in the "
                         "nested layout."
                     )
                     submodule_save_dir = submodule_save_dir.parent
