@@ -41,6 +41,7 @@ if TYPE_CHECKING:
     from .gemma4 import *
     from .gpt2 import *
     from .gpt_oss import *
+    from .granite import *
     from .grounding_dino import *
     from .idefics3 import *
     from .llama import *
