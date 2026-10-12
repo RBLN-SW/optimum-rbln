@@ -142,6 +142,37 @@
   - 차이의 원인 분리: CPU golden의 latent를 RBLN VAE로 decode → golden video와 r=0.999991, PSNR 57.3 dB. 즉 VAE는 정확하고,
     차이는 50 step 동안 누적되는 denoising 궤적 차이다 (transformer 1 step r=0.99997, T5는 device에서 fp16).
 
+### P1-6 예제
+- `RBLN_DEVICES=20,21,22 python examples/cogvideo/run_cogvideo.py --model-dir .../compiled/pipeline_cogvideox_2b_v2 --out-dir .../outputs/20261013_0158_run_cogvideo_example`
+  → 49 frames + video_rbln.mp4 저장, 17:46 (로드 + 50 steps + decode), Exit 0. 프레임 확인: 판다/기타/대나무 숲, 깨짐 없음.
+
+### 최종 재확인 (2026-10-13 02:0x, 최종 코드 c00255bd 기준)
+- `pytest -n 1 tests/test_diffusers.py -k CogVideoX -vv` → 7 passed, 1 skipped, 3 subtests passed
+- `pytest -n 1 tests/test_diffusers.py -k "Cosmos or SVD" -vv` → 35 passed, 5 skipped, 15 subtests passed
+- `git diff origin/dev..HEAD`: 22 files, +2274 / -0. 공유 코드(`modeling.py`, `modeling_base.py`, `configuration_utils.py`, `modeling_diffusers.py`) 변경 없음,
+  `vae.py`는 새 클래스 `RBLNRuntimeCogVideoXVAEDecoder` 추가만.
+
+## 요약 / 남은 블로커 / 다음 단계
+**P0 전부 달성, P1 전부 달성.**
+- P0-1 VAE decoder: latent 1 → 3 → 5 → 13 단계별 컴파일·실행. 49 frames r=0.999994 (frame별 r ≥ 0.999974, 누적 오차 없음).
+- P0-2 Transformer: L1/2/8/16/18/19 단일 그래프 OK, L20 이상 단일 그래프는 device hang → 그래프 분할로 L30 실제 가중치 r=0.999970 (batch 2: 0.999969).
+- P0-3 회귀: Cosmos/SVD 35 passed. P0-4: ruff 깨끗 (브랜치 기준), 로컬 commit.
+- P1: 파이프라인 E2E (golden 대비 PSNR 23.6dB, 시각적 동일, VAE 단독 57.3dB), 예제, 테스트.
+
+컴파일러 쪽에 남은 문제 (workaround로 우회, 컴파일러 수정은 하지 않음):
+1. `rbln_cache_update`: flat 축이 64 배수가 아니면 컴파일 실패 / assert (`repro_cache_update_shape.py`). workaround: zero-pad.
+2. static buffer의 write-after-read 순서 미보장 (`repro_cache_update_war.py`). VAE는 Wan과 같이 end write로 맞게 동작하지만, toy에서는 end write도 깨짐 → 근본 수정 필요.
+3. 그래프 간 intermediate 공유가 "먼저 컴파일된 그래프가 클 때만" 동작 → decoder_n을 먼저 컴파일해서 우회.
+4. 한 그래프의 command stream이 약 0.19 GiB를 넘으면 실행 hang (`SYS_KERNEL_TIMEOUT`). → transformer를 `layers_per_graph` 단위로 분할. 최소 repro 미작성
+   (재현: `verify_transformer.py --num-layers 20 --random-init --layers-per-graph 64`).
+5. 240x360 VAE에서 `ScatterInfo size mismatch` assert (축소 해상도 디버그용이라 우회만 함).
+
+다음 단계 후보:
+- 위 1–4를 컴파일러 팀에 repro와 함께 보고 (특히 2: 정확성 문제).
+- transformer segment 사이 hidden_states를 host 대신 device tensor로 넘기기 (현재 step당 ~0.26 GB 왕복).
+- VAE encoder (image-to-video, `uses_encoder=True`), CogVideoX-5b (rotary embedding) 지원.
+- T5를 fp32로 (2 device) 돌리면 golden과의 E2E 차이가 줄어드는지 확인.
+
 ## 산출물 (영상/프레임)
 - `/home/seinpark/nas_data/cogvideox/outputs/20261012_2326_vae_stageA_lat1/` — VAE latent 1 → 1 frame, CPU vs RBLN (frames_cpu/, frames_rbln/ PNG), r=0.999992
 - `/home/seinpark/nas_data/cogvideox/outputs/20261012_2334_vae_stageB_lat3_f9_d0only/` — VAE latent 3 → 9 frames (decoder_0만), r=0.999988, video_cpu.mp4 / video_rbln.mp4
@@ -153,6 +184,7 @@
 - `/home/seinpark/nas_data/cogvideox/outputs/20261013_0033_e2e_cpu_golden/` — **P1-5 CPU golden** (fp32, panda prompt, seed 42, 50 steps): video_cpu.mp4, 49 frames, latents_cpu.pt
 - `/home/seinpark/nas_data/cogvideox/outputs/20261013_0034_e2e/`, `20261013_0107_e2e/`, `20261013_0110_e2e/` — **실패한 E2E 시도 (영상 없음, meta.json에 원인)**
 - `/home/seinpark/nas_data/cogvideox/outputs/20261013_0112_e2e/` — **P1-5 RBLN E2E** video_rbln.mp4, 49 frames, latents_rbln.pt, compare_cpu_vs_rbln.png. r=0.955, PSNR 23.6 dB vs golden
+- `/home/seinpark/nas_data/cogvideox/outputs/20261013_0158_run_cogvideo_example/` — **P1-6** 예제 실행 결과 (짧은 panda prompt, seed 42): video_rbln.mp4, 49 frames
 - `/home/seinpark/nas_data/cogvideox/outputs/20261013_0138_transformer_L30_real_b2/` — transformer batch 2 실제 가중치, r=0.999969
 - `/home/seinpark/nas_data/cogvideox/outputs/20261012_2328_transformer_L1_rand/`, `..._L2_rand/`, `..._L8_rand/`, `20261013_0009_transformer_L16_rand/` — transformer 입력/출력 텐서 (inputs.pt, outputs.pt, meta.json)
 - `/home/seinpark/nas_data/cogvideox/outputs/20261013_0032_transformer_L30_rand_seg/` — L30 random, 2 graph, r=0.999990
