@@ -52,6 +52,7 @@ if TYPE_CHECKING:
 class LoopVisionTower(LoopProcessor):
     def __init__(self, vision_tower: "RBLNModel"):
         super().__init__(model=vision_tower.model[0])
+        self.output_hidden_state_indices = vision_tower.rbln_config.output_hidden_state_indices
 
     def _get_batch_size(self, pixel_values, **kwargs):
         return pixel_values.shape[0]
@@ -63,6 +64,8 @@ class LoopVisionTower(LoopProcessor):
 
     def _process_outputs(self, outputs: list, **kwargs) -> "BaseModelOutputWithPooling":
         output = kwargs["out"]
+        if self.output_hidden_state_indices is not None:
+            return BaseModelOutputWithPooling(hidden_states=tuple(output))
         last_hidden_states = output[0]
         pooler_output = output[1]
 
@@ -202,6 +205,15 @@ class RBLNLlavaNextForConditionalGeneration(RBLNModel, RBLNImageIndexedBatchSort
         return self.language_model.get_input_embeddings()
 
     @classmethod
+    def _update_submodule_rbln_config(
+        cls, submodule_name, submodule_cls, model, submodule_config, submodule_rbln_config, preprocessors
+    ):
+        if submodule_name == "vision_tower":
+            layers = model.config.vision_feature_layer
+            submodule_rbln_config.output_hidden_state_indices = [layers] if isinstance(layers, int) else list(layers)
+        return submodule_rbln_config
+
+    @classmethod
     def _wrap_model_if_needed(cls, model: "PreTrainedModel", rbln_config: RBLNModelConfig):
         return model.model.multi_modal_projector
 
@@ -213,7 +225,8 @@ class RBLNLlavaNextForConditionalGeneration(RBLNModel, RBLNImageIndexedBatchSort
         model_config: Optional["PretrainedConfig"] = None,
         rbln_config: RBLNModelConfig | None = None,
     ) -> RBLNModelConfig:
-        feature_size = model_config.vision_config.hidden_size
+        layers = model_config.vision_feature_layer
+        feature_size = model_config.vision_config.hidden_size * (1 if isinstance(layers, int) else len(layers))
 
         # Calculating `num_positions` : See CLIPVisionEmbeddings of transformers for more details.
         num_positions = (model_config.vision_config.image_size // model_config.vision_config.patch_size) ** 2 + 1
@@ -306,24 +319,38 @@ class RBLNLlavaNextForConditionalGeneration(RBLNModel, RBLNImageIndexedBatchSort
             for imsize in image_sizes
         ]
 
-        # prepare out buffer for pre-allocation
+        # Allocate only real crops, including flattened 4D inputs and padded 5D inputs.
+        num_crops = sum(image_num_patches)
         vision_out_size = [
-            pixel_values.shape[0] * pixel_values.shape[1],
+            num_crops,
             (self.config.vision_config.image_size // self.config.vision_config.patch_size) ** 2 + 1,
             self.config.vision_config.hidden_size,
         ]
-        pooler_out_size = [pixel_values.shape[0] * pixel_values.shape[1], self.config.vision_config.hidden_size]
-        vision_out_buffer = []
-        for _ in range(self.config.vision_config.num_hidden_layers + 2):
-            vision_out_buffer.append(
-                torch.empty(size=vision_out_size, dtype=self.rbln_config.vision_tower.dtype, device="cpu")
+        indices = self.rbln_config.vision_tower.output_hidden_state_indices
+        requested_layers = [vision_feature_layer] if isinstance(vision_feature_layer, int) else vision_feature_layer
+        if indices is not None:
+            count = self.config.vision_config.num_hidden_layers + 1
+            selected_layers = []
+            for layer in requested_layers:
+                if layer < -count or layer >= count or layer % count not in indices:
+                    raise ValueError(f"vision_feature_layer {layer} was not compiled; recompile with this layer")
+                selected_layers.append(indices.index(layer % count))
+            output_count = len(indices)
+        else:
+            selected_layers = requested_layers
+            output_count = self.config.vision_config.num_hidden_layers + 2
+        vision_out_buffer = [
+            torch.empty(size=vision_out_size, dtype=self.rbln_config.vision_tower.dtype, device="cpu")
+            for _ in range(output_count)
+        ]
+        if indices is None:
+            pooler_out_size = [num_crops, self.config.vision_config.hidden_size]
+            vision_out_buffer.insert(
+                1, torch.empty(size=pooler_out_size, dtype=self.rbln_config.vision_tower.dtype, device="cpu")
             )
-        vision_out_buffer.insert(
-            1, torch.empty(size=pooler_out_size, dtype=self.rbln_config.vision_tower.dtype, device="cpu")
-        )
 
         projector_out_size = [
-            pixel_values.shape[0] * pixel_values.shape[1],
+            num_crops,
             (self.config.vision_config.image_size // self.config.vision_config.patch_size) ** 2,
             self.config.text_config.hidden_size,
         ]
@@ -345,9 +372,9 @@ class RBLNLlavaNextForConditionalGeneration(RBLNModel, RBLNImageIndexedBatchSort
         # If we have one vision feature layer, return the corresponding hidden states,
         # otherwise, select the hidden states of each feature layer and concatenate them
         if isinstance(vision_feature_layer, int):
-            selected_image_feature = image_features.hidden_states[vision_feature_layer]
+            selected_image_feature = image_features.hidden_states[selected_layers[0]]
         else:
-            hs_pool = [image_features.hidden_states[layer_idx] for layer_idx in vision_feature_layer]
+            hs_pool = [image_features.hidden_states[layer_idx] for layer_idx in selected_layers]
             selected_image_feature = torch.cat(hs_pool, dim=-1)
 
         if vision_feature_select_strategy == "default":

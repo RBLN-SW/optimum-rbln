@@ -33,7 +33,7 @@ class RBLNQwen3_5RuntimeModel(RBLNRuntimeModel):
         prefill window 0 -> ... -> prefill window N -> decode step 0 -> decode step 1 -> ...
 
     The runtime's only linear-state job is to inject two 0/1 control masks per call — ``conv_state_mask``
-    and ``recurrent_state_mask`` — which the GatedDeltaNet multiplies into the state it reads: ZEROS on
+    and ``recurrent_state_mask`` — which reset or carry the state it reads: ZEROS on
     prefill window 0 (fresh sequence, so the stale static cache is discarded) and ONES afterwards (carry
     whatever the previous window/step wrote). ``_run`` maps the named inputs onto the runtime's own
     input order via ``_index_to_input_name``.
@@ -44,6 +44,7 @@ class RBLNQwen3_5RuntimeModel(RBLNRuntimeModel):
         *args,
         conv_state_shape=None,
         recurrent_state_shape=None,
+        recurrent_state_mask_shape=None,
         state_dtype: torch.dtype = torch.float32,
         **kwargs,
     ):
@@ -55,8 +56,15 @@ class RBLNQwen3_5RuntimeModel(RBLNRuntimeModel):
         # Prefill state masks: zeros on window 0 (fresh sequence), ones afterwards (carry over).
         self._conv_mask_zeros = torch.zeros(self.conv_state_shape, dtype=state_dtype)
         self._conv_mask_ones = torch.ones(self.conv_state_shape, dtype=state_dtype)
-        self._recurrent_mask_zeros = torch.zeros(self.recurrent_state_shape, dtype=state_dtype)
-        self._recurrent_mask_ones = torch.ones(self.recurrent_state_shape, dtype=state_dtype)
+        recurrent_mask_shape = recurrent_state_mask_shape
+        if recurrent_mask_shape is None:
+            recurrent_mask_shape = (
+                (self.recurrent_state_shape[0],)
+                if len(self.recurrent_state_shape) == 6
+                else self.recurrent_state_shape
+            )
+        self._recurrent_mask_zeros = torch.zeros(recurrent_mask_shape, dtype=state_dtype)
+        self._recurrent_mask_ones = torch.ones(recurrent_mask_shape, dtype=state_dtype)
         self._valid_mask_prefill_full = torch.ones(1, self.rbln_config.prefill_chunk_size, 1, dtype=state_dtype)
 
     def _run(self, named_inputs: dict):

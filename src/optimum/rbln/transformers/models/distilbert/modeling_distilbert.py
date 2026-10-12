@@ -16,7 +16,7 @@
 import torch
 from transformers.modeling_outputs import QuestionAnsweringModelOutput
 
-from ...modeling_generic import RBLNModelForQuestionAnswering
+from ...modeling_generic import RBLNModelForMaskedLM, RBLNModelForQuestionAnswering
 
 
 class RBLNDistilBertForQuestionAnswering(RBLNModelForQuestionAnswering):
@@ -53,6 +53,37 @@ class RBLNDistilBertForQuestionAnswering(RBLNModelForQuestionAnswering):
         return super().forward(input_ids, attention_mask, **kwargs)
 
 
+class RBLNDistilBertForMaskedLM(RBLNModelForMaskedLM):
+    """DistilBERT masked language modeling without segment embeddings."""
+
+    rbln_model_input_names = ["input_ids", "attention_mask"]
+
+    @classmethod
+    def _wrap_model_if_needed(cls, model, rbln_config):
+        class MaskedLMWrapper(torch.nn.Module):
+            def __init__(self, model):
+                super().__init__()
+                self.model = model
+
+            def forward(self, input_ids, attention_mask):
+                return self.model(
+                    input_ids=input_ids,
+                    attention_mask=attention_mask,
+                    output_hidden_states=False,
+                    output_attentions=False,
+                    return_dict=False,
+                )[0]
+
+        return MaskedLMWrapper(model).eval()
+
+    def forward(self, input_ids, attention_mask=None, **kwargs):
+        if attention_mask is None:
+            attention_mask = torch.ones_like(input_ids)
+        kwargs.pop("token_type_ids", None)
+        return super().forward(input_ids, attention_mask, **kwargs)
+
+
 __all__ = [
     "RBLNDistilBertForQuestionAnswering",
+    "RBLNDistilBertForMaskedLM",
 ]

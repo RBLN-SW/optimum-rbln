@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from ...configuration_generic import RBLNModelForQuestionAnsweringConfig
+from ...configuration_generic import RBLNModelForMaskedLMConfig, RBLNModelForQuestionAnsweringConfig
 
 
 class RBLNDistilBertForQuestionAnsweringConfig(RBLNModelForQuestionAnsweringConfig):
@@ -24,6 +24,11 @@ class RBLNDistilBertForQuestionAnsweringConfig(RBLNModelForQuestionAnsweringConf
     """
 
 
+class RBLNDistilBertForMaskedLMConfig(RBLNModelForMaskedLMConfig):
+    """Static sequence and batch configuration for DistilBERT masked LM."""
+
+
 __all__ = [
     "RBLNDistilBertForQuestionAnsweringConfig",
+    "RBLNDistilBertForMaskedLMConfig",
 ]

@@ -50,6 +50,7 @@ class RBLNCLIPVisionModelConfig(RBLNModelConfig):
         interpolate_pos_encoding: bool | None = None,
         output_hidden_states: bool | None = None,
         output_attentions: bool | None = None,
+        output_hidden_state_indices: list[int] | None = None,
         **kwargs: Any,
     ):
         """
@@ -60,6 +61,9 @@ class RBLNCLIPVisionModelConfig(RBLNModelConfig):
             interpolate_pos_encoding (bool | None): Whether or not to interpolate pre-trained position encodings. Defaults to `False`.
             output_hidden_states (bool | None): Whether or not to return the hidden states of all layers.
             output_attentions (bool | None): Whether or not to return the attentions tensors of all attention layers
+            output_hidden_state_indices (list[int] | None): Return only these hidden states, omitting
+                last_hidden_state and pooler_output. Negative indices follow Python indexing.
+                Requires output_hidden_states=True and output_attentions=False. Defaults to None.
             kwargs: Additional arguments passed to the parent RBLNModelConfig.
 
         Raises:
@@ -74,6 +78,16 @@ class RBLNCLIPVisionModelConfig(RBLNModelConfig):
         self.interpolate_pos_encoding = interpolate_pos_encoding or False
         self.output_hidden_states = output_hidden_states
         self.output_attentions = output_attentions
+        if output_hidden_state_indices is not None:
+            if (
+                not isinstance(output_hidden_state_indices, list)
+                or not output_hidden_state_indices
+                or any(type(index) is not int for index in output_hidden_state_indices)
+            ):
+                raise ValueError("output_hidden_state_indices must be a nonempty list of integers")
+            if output_hidden_states is False or output_attentions:
+                raise ValueError("output_hidden_state_indices requires hidden states and excludes attentions")
+        self.output_hidden_state_indices = output_hidden_state_indices
 
     @property
     def image_width(self):

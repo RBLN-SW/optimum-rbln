@@ -55,6 +55,7 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
         quantization: dict[str, Any] | RBLNQuantizationConfig | None = None,
         lora_config: dict[str, Any] | RBLNLoRAConfig | None = None,
         prefill_chunk_size: int | None = None,
+        prefill_chunk_sizes: list[int] | None = None,
         kvcache_num_blocks: int | None = None,
         memory_budget: int | float | str | None = None,
         decoder_batch_sizes: list[int] | None = None,
@@ -100,6 +101,9 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
                 processing input sequences. When unset, it is resolved at compile time to 512 on
                 RBLN-CR NPUs and 128 otherwise. Must be a positive integer divisible by 64.
                 Affects prefill performance and memory usage.
+            prefill_chunk_sizes (list[int] | None): Optional bidirectional prefill sizes, in multiples of 64.
+                Defaults to automatic powers of two starting at 512 when the runtime supports routing.
+                An empty list keeps only prefill_chunk_size; max_seq_len remains unchanged.
             kvcache_num_blocks (int | None): The total number of blocks to allocate for the
                 PagedAttention KV cache at compile time. Defaults to 0 (automatically determined).
                 See the "KV Cache Number of Blocks (`kvcache_num_blocks`)" section below for details.
@@ -236,6 +240,20 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
         self.kvcache_partition_len = kvcache_partition_len
         self.kvcache_block_size = kvcache_block_size
         self.prefill_chunk_size = prefill_chunk_size
+        if prefill_chunk_sizes is not None:
+            if (
+                not isinstance(prefill_chunk_sizes, list)
+                or any(type(size) is not int or size <= 0 or size % 64 for size in prefill_chunk_sizes)
+                or len(set(prefill_chunk_sizes)) != len(prefill_chunk_sizes)
+                or (
+                    (prefill_chunk_size or max_seq_len) is not None
+                    and any(size > (prefill_chunk_size or max_seq_len) for size in prefill_chunk_sizes)
+                )
+            ):
+                raise ValueError(
+                    "`prefill_chunk_sizes` must contain distinct positive multiples of 64 within prefill_chunk_size."
+                )
+        self.prefill_chunk_sizes = sorted(prefill_chunk_sizes) if prefill_chunk_sizes is not None else None
         self.kvcache_num_blocks = kvcache_num_blocks if kvcache_num_blocks is not None else 0
         self.memory_budget = memory_budget
         if self.memory_budget is not None and self.kvcache_num_blocks > 0:
@@ -335,19 +353,29 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
         return self.phases.index("image_prefill")
 
     @property
+    def extra_prefill_chunk_sizes(self):
+        return [
+            size
+            for size in (self.prefill_chunk_sizes or [])
+            if self.prefill_chunk_size is not None and size < self.prefill_chunk_size
+        ]
+
+    @property
     def expected_compiled_model_names(self):
         # ["prefill", "image_prefill", "decoder_batch_1", "decoder_batch_2", ...]
         if self.can_generate:
-            return self.phases[: self.decoder_runtime_idx] + [
-                f"decoder_batch_{batch_size}" for batch_size in self.decoder_batch_sizes
-            ]
+            return (
+                self.phases[: self.phases.index("decode")]
+                + [f"prefill_{size}" for size in self.extra_prefill_chunk_sizes]
+                + [f"decoder_batch_{batch_size}" for batch_size in self.decoder_batch_sizes]
+            )
         else:
-            return self.phases
+            return self.phases + [f"prefill_{size}" for size in self.extra_prefill_chunk_sizes]
 
     @property
     def decoder_runtime_idx(self):
         if self.can_generate:
-            return self.phases.index("decode")
+            return self.phases.index("decode") + len(self.extra_prefill_chunk_sizes)
         else:
             raise ValueError("`decode` phase is not in the phases.")
 

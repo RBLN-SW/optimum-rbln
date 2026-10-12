@@ -16,7 +16,11 @@
 import torch
 from transformers.modeling_outputs import BaseModelOutputWithPoolingAndCrossAttentions, SequenceClassifierOutput
 
-from ...modeling_generic import RBLNModelForSequenceClassification, RBLNTransformerEncoderForFeatureExtraction
+from ...modeling_generic import (
+    RBLNModelForMaskedLM,
+    RBLNModelForSequenceClassification,
+    RBLNTransformerEncoderForFeatureExtraction,
+)
 
 
 class RBLNXLMRobertaModel(RBLNTransformerEncoderForFeatureExtraction):
@@ -81,7 +85,37 @@ class RBLNXLMRobertaForSequenceClassification(RBLNModelForSequenceClassification
         return super().forward(input_ids=input_ids, attention_mask=attention_mask, **kwargs)
 
 
+class RBLNXLMRobertaForMaskedLM(RBLNModelForMaskedLM):
+    """XLM-RoBERTa masked language modeling with primary vocabulary logits."""
+
+    rbln_model_input_names = ["input_ids", "attention_mask"]
+
+    @classmethod
+    def _wrap_model_if_needed(cls, model, rbln_config):
+        class MaskedLMWrapper(torch.nn.Module):
+            def __init__(self, model):
+                super().__init__()
+                self.model = model
+
+            def forward(self, input_ids, attention_mask):
+                return self.model(
+                    input_ids=input_ids,
+                    attention_mask=attention_mask,
+                    output_hidden_states=False,
+                    output_attentions=False,
+                    return_dict=False,
+                )[0]
+
+        return MaskedLMWrapper(model).eval()
+
+    def forward(self, input_ids, attention_mask=None, **kwargs):
+        if attention_mask is None:
+            attention_mask = torch.ones_like(input_ids)
+        return super().forward(input_ids, attention_mask, **kwargs)
+
+
 __all__ = [
+    "RBLNXLMRobertaForMaskedLM",
     "RBLNXLMRobertaForSequenceClassification",
     "RBLNXLMRobertaModel",
 ]

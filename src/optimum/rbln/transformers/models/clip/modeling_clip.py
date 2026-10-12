@@ -137,12 +137,14 @@ class _VisionEncoder(torch.nn.Module):
         interpolate_pos_encoding: bool,
         output_hidden_states: bool,
         output_attentions: bool,
+        output_hidden_state_indices: list[int] | None = None,
     ):
         super().__init__()
         self.enc = enc
         self.interpolate_pos_encoding = interpolate_pos_encoding
         self.output_hidden_states = output_hidden_states
         self.output_attentions = output_attentions
+        self.output_hidden_state_indices = output_hidden_state_indices
 
     def forward(self, inp):
         enc_out = self.enc(
@@ -152,6 +154,8 @@ class _VisionEncoder(torch.nn.Module):
             output_attentions=self.output_attentions,
             return_dict=False,
         )
+        if self.output_hidden_state_indices is not None:
+            return tuple(enc_out[2][index] for index in self.output_hidden_state_indices)
         return enc_out
 
 
@@ -171,6 +175,7 @@ class RBLNCLIPVisionModel(RBLNModel):
             "interpolate_pos_encoding": rbln_config.interpolate_pos_encoding,
             "output_hidden_states": rbln_config.output_hidden_states,
             "output_attentions": rbln_config.output_attentions,
+            "output_hidden_state_indices": rbln_config.output_hidden_state_indices,
         }
         return _VisionEncoder(model, **wrapper_cfg).eval()
 
@@ -202,6 +207,18 @@ class RBLNCLIPVisionModel(RBLNModel):
 
         if rbln_config.output_hidden_states is None:
             rbln_config.output_hidden_states = getattr(model_config, "output_hidden_states", False)
+
+        if rbln_config.output_hidden_state_indices is not None:
+            if cls is not RBLNCLIPVisionModel:
+                raise ValueError("output_hidden_state_indices is supported only for CLIPVisionModel")
+            if not rbln_config.output_hidden_states or rbln_config.output_attentions:
+                raise ValueError("output_hidden_state_indices requires hidden states and excludes attentions")
+            count = model_config.num_hidden_layers + 1
+            if any(index < -count or index >= count for index in rbln_config.output_hidden_state_indices):
+                raise ValueError("output_hidden_state_indices contains an out-of-range layer")
+            rbln_config.output_hidden_state_indices = [
+                index % count for index in rbln_config.output_hidden_state_indices
+            ]
 
         rbln_compile_config = RBLNCompileConfig(
             input_info=[
@@ -278,6 +295,12 @@ class RBLNCLIPVisionModel(RBLNModel):
     def _prepare_output(self, output, return_dict):
         # Prepare model output based on return_dict flag.
         # This method can be overridden by subclasses to provide task-specific output handling.
+        if self.rbln_config.output_hidden_state_indices is not None:
+            hidden_states = tuple(output) if isinstance(output, (list, tuple)) else (output,)
+            if not return_dict:
+                return (hidden_states,)
+            return BaseModelOutputWithPooling(hidden_states=hidden_states)
+
         last_hidden_state = output.pop(0)
         pooler_output = output.pop(0)
         vision_config = self.config.vision_config if hasattr(self.config, "vision_config") else self.config

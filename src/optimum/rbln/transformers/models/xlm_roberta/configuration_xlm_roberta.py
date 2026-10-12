@@ -13,6 +13,7 @@
 # limitations under the License.
 
 from ...configuration_generic import (
+    RBLNModelForMaskedLMConfig,
     RBLNModelForSequenceClassificationConfig,
     RBLNTransformerEncoderForFeatureExtractionConfig,
 )
@@ -32,7 +33,12 @@ class RBLNXLMRobertaForSequenceClassificationConfig(RBLNModelForSequenceClassifi
     """
 
 
+class RBLNXLMRobertaForMaskedLMConfig(RBLNModelForMaskedLMConfig):
+    """Configuration for XLM-RoBERTa masked language modeling."""
+
+
 __all__ = [
+    "RBLNXLMRobertaForMaskedLMConfig",
     "RBLNXLMRobertaForSequenceClassificationConfig",
     "RBLNXLMRobertaModelConfig",
 ]

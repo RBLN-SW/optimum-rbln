@@ -33,6 +33,10 @@ from ..decoderonly.decoderonly_architecture import (
 )
 
 
+def gdn_kernel_supported(key_dim, value_dim):
+    return key_dim == 128 and value_dim == 128
+
+
 class Qwen3_5VisionAttention(nn.Module):
     def __init__(self, model: nn.Module, rbln_config) -> None:
         super().__init__()
@@ -255,9 +259,11 @@ def rbln_recurrent_gated_delta_rule_step(query, key, value, g, beta, initial_sta
 class Qwen3_5GatedDeltaNet(nn.Module):
     """GatedDeltaNet token mixer for RBLN (conv_state + recurrent_state are on-device static caches).
 
-    PREFILL uses the parallel chunked delta rule (``rbln_chunk_gated_delta_rule``, which lowers on RBLN);
-    DECODE (seq=1) uses the recurrent delta rule. Both consume/return the same state layout so a
-    chunk-prefill seamlessly hands its ``recurrent_state`` to recurrent-decode.
+    For 128-dimensional heads and 128-token chunks, the grouped GDN kernels
+    mutate a shared blocked state cache [B, Hk, Hv/Hk, 2, 128, 64]. Prefill and
+    decode shard the same head axis and pass a slot directly to that cache.
+    Smaller prefill chunks retain their configured Torch recurrence and share
+    that cache with the grouped decode kernel; other head dimensions use Torch.
 
     conv_state is stored as ``(B, K-1, conv_dim)`` (innermost = conv_dim, a multiple of 64 as
     RBLN requires) and transposed to ``(B, conv_dim, K-1)`` only inside the math.
@@ -304,6 +310,7 @@ class Qwen3_5GatedDeltaNet(nn.Module):
 
         self.prefill_chunk_size = rbln_config.prefill_chunk_size
         self.chunk_size = rbln_config.gdn_chunk_size
+        self.use_gdn_custom_kernel = gdn_kernel_supported(self.head_k_dim, self.head_v_dim)
 
     @property
     def phase(self):
@@ -312,6 +319,10 @@ class Qwen3_5GatedDeltaNet(nn.Module):
     @phase.setter
     def phase(self, phase: str):
         self._phase = phase
+
+    @property
+    def uses_gdn_kernel_for_phase(self):
+        return self.use_gdn_custom_kernel and ("prefill" not in self._phase or self.chunk_size == 128)
 
     def forward(
         self,
@@ -322,6 +333,7 @@ class Qwen3_5GatedDeltaNet(nn.Module):
         valid_mask: torch.Tensor | None = None,
         conv_state_mask: torch.Tensor | None = None,
         recurrent_state_mask: torch.Tensor | None = None,
+        state_slot: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         batch_size, seq_len, _ = hidden_states.shape
         k_1 = self.conv_kernel_size - 1
@@ -332,7 +344,7 @@ class Qwen3_5GatedDeltaNet(nn.Module):
         if prefill:
             if conv_state_mask is not None:
                 conv_state = conv_state * conv_state_mask
-            if recurrent_state_mask is not None:
+            if recurrent_state_mask is not None and not self.use_gdn_custom_kernel:
                 recurrent_state = recurrent_state * recurrent_state_mask
 
         z = self.in_proj_z(hidden_states).reshape(batch_size, seq_len, -1, self.head_v_dim)
@@ -381,32 +393,72 @@ class Qwen3_5GatedDeltaNet(nn.Module):
             # padding tokens have nonzero q/k/v/g via biases; zero g/beta so they don't pollute the recurrent-state sum and its decay.
             g = g * valid_mask
             beta = beta * valid_mask
-        if self.num_v_heads // self.num_k_heads > 1:
-            query = query.repeat_interleave(self.num_v_heads // self.num_k_heads, dim=2)
-            key = key.repeat_interleave(self.num_v_heads // self.num_k_heads, dim=2)
-
-        if "prefill" in self._phase:
-            # Triangular masks built
-            _cshape = (1, 1, 1, self.chunk_size, self.chunk_size)
-            chunk_tril_incl = torch.tril(torch.ones(_cshape, device=query.device, dtype=query.dtype), diagonal=0)
-            chunk_tril_strict = torch.tril(torch.ones(_cshape, device=query.device, dtype=query.dtype), diagonal=-1)
-            core_attn_out, new_recurrent_state = rbln_chunk_gated_delta_rule(
-                query,
-                key,
-                value,
-                g,
-                beta,
-                chunk_tril_incl,
-                chunk_tril_strict,
-                recurrent_state,
-                self.prefill_chunk_size,
-                self.chunk_size,
-                use_qk_l2norm_in_kernel=True,
-            )
+        if self.uses_gdn_kernel_for_phase:
+            ratio = self.num_v_heads // self.num_k_heads
+            query = query.transpose(1, 2).contiguous()
+            key = key.transpose(1, 2).contiguous()
+            value = value.transpose(1, 2).reshape(batch_size, self.num_k_heads, ratio, seq_len, 128).contiguous()
+            g = g.transpose(1, 2).reshape(batch_size, self.num_k_heads, ratio, seq_len).contiguous()
+            beta = beta.transpose(1, 2).reshape(batch_size, self.num_k_heads, ratio, seq_len).contiguous()
+            slot = state_slot if state_slot is not None else torch.tensor(0, dtype=torch.int16)
+            if "prefill" in self._phase:
+                has_initial = recurrent_state_mask
+                if has_initial is None:
+                    has_initial = torch.ones(batch_size, dtype=query.dtype, device=query.device)
+                core_attn_out = torch.ops.rbln_custom_ops.gdn_prefill(
+                    query, key, value, g, beta, recurrent_state, slot, has_initial
+                )
+            else:
+                core_attn_out = torch.ops.rbln_custom_ops.gdn_decode(query, key, value, g, beta, recurrent_state, slot)
+            core_attn_out = core_attn_out.reshape(batch_size, self.num_v_heads, seq_len, 128).transpose(1, 2)
+            new_recurrent_state = recurrent_state
         else:
-            core_attn_out, new_recurrent_state = rbln_recurrent_gated_delta_rule_step(
-                query, key, value, g, beta, recurrent_state, use_qk_l2norm_in_kernel=True
-            )
+            if self.use_gdn_custom_kernel:
+                # Non-128 prefill chunks retain the configured Torch recurrence,
+                # but share the blocked head cache with the custom decode kernel.
+                slot = state_slot if state_slot is not None else torch.tensor(0, dtype=torch.int16)
+                rows = slot.to(torch.int).reshape(1) + torch.arange(batch_size, device=query.device, dtype=torch.int)
+                recurrent_state = (
+                    recurrent_state[rows].permute(0, 1, 2, 4, 3, 5).reshape(batch_size, self.num_v_heads * 128, 128)
+                )
+                if recurrent_state_mask is not None:
+                    recurrent_state = recurrent_state * recurrent_state_mask.reshape(batch_size, 1, 1)
+            if self.num_v_heads // self.num_k_heads > 1:
+                query = query.repeat_interleave(self.num_v_heads // self.num_k_heads, dim=2)
+                key = key.repeat_interleave(self.num_v_heads // self.num_k_heads, dim=2)
+
+            if "prefill" in self._phase:
+                # Triangular masks built
+                _cshape = (1, 1, 1, self.chunk_size, self.chunk_size)
+                chunk_tril_incl = torch.tril(torch.ones(_cshape, device=query.device, dtype=query.dtype), diagonal=0)
+                chunk_tril_strict = torch.tril(
+                    torch.ones(_cshape, device=query.device, dtype=query.dtype), diagonal=-1
+                )
+                core_attn_out, new_recurrent_state = rbln_chunk_gated_delta_rule(
+                    query,
+                    key,
+                    value,
+                    g,
+                    beta,
+                    chunk_tril_incl,
+                    chunk_tril_strict,
+                    recurrent_state,
+                    self.prefill_chunk_size,
+                    self.chunk_size,
+                    use_qk_l2norm_in_kernel=True,
+                )
+            else:
+                core_attn_out, new_recurrent_state = rbln_recurrent_gated_delta_rule_step(
+                    query, key, value, g, beta, recurrent_state, use_qk_l2norm_in_kernel=True
+                )
+            if self.use_gdn_custom_kernel:
+                new_recurrent_state = (
+                    new_recurrent_state.reshape(
+                        batch_size, self.num_k_heads, self.num_v_heads // self.num_k_heads, 128, 2, 64
+                    )
+                    .permute(0, 1, 2, 4, 3, 5)
+                    .contiguous()
+                )
 
         core_attn_out = core_attn_out.reshape(-1, self.head_v_dim)
         z = z.reshape(-1, self.head_v_dim)
@@ -445,6 +497,7 @@ class Qwen3_5LinearDecoderLayer(nn.Module):
         valid_mask: torch.Tensor | None = None,
         conv_state_mask: torch.Tensor | None = None,
         recurrent_state_mask: torch.Tensor | None = None,
+        state_slot: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         residual = hidden_states
         hidden_states = self.input_layernorm(hidden_states)
@@ -456,6 +509,7 @@ class Qwen3_5LinearDecoderLayer(nn.Module):
             valid_mask=valid_mask,
             conv_state_mask=conv_state_mask,
             recurrent_state_mask=recurrent_state_mask,
+            state_slot=state_slot,
         )
         hidden_states = residual + hidden_states
 
@@ -612,7 +666,11 @@ class Qwen3_5Model(DecoderOnlyModel):
                 if slotted:
                     # PREFILL processes ONE item -> take its slot [batch_idx] from the max-batch cache -> (1, ...).
                     conv_in = conv_state[batch_idx.to(torch.int).unsqueeze(0)]
-                    recurrent_in = recurrent_state[batch_idx.to(torch.int).unsqueeze(0)]
+                    recurrent_in = (
+                        recurrent_state
+                        if layer.linear_attn.use_gdn_custom_kernel
+                        else recurrent_state[batch_idx.to(torch.int).unsqueeze(0)]
+                    )
                     _pos = batch_idx.to(torch.int16)
                 else:
                     conv_in, recurrent_in = conv_state, recurrent_state
@@ -625,14 +683,19 @@ class Qwen3_5Model(DecoderOnlyModel):
                     valid_mask=valid_mask,
                     conv_state_mask=conv_state_mask,
                     recurrent_state_mask=recurrent_state_mask,
+                    state_slot=_pos,
                 )
                 _axis0 = torch.tensor(0, dtype=torch.int16)
                 new_states.append(
                     torch.ops.rbln_custom_ops.rbln_cache_update(conv_state, new_conv_state, _pos, _axis0)
                 )
-                new_states.append(
-                    torch.ops.rbln_custom_ops.rbln_cache_update(recurrent_state, new_recurrent_state, _pos, _axis0)
-                )
+                # The GDN custom op already mutates the static reference cache.
+                # Returning that cache as a value makes functionalization clone
+                # it and loses the reference port needed for per-head residency.
+                if not layer.linear_attn.uses_gdn_kernel_for_phase:
+                    new_states.append(
+                        torch.ops.rbln_custom_ops.rbln_cache_update(recurrent_state, new_recurrent_state, _pos, _axis0)
+                    )
             else:
                 hidden_states = layer(
                     hidden_states=hidden_states,

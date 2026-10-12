@@ -121,6 +121,7 @@ class RBLNModelForSeq2SeqLM(RBLNModel, GenerationMixin, ABC):
     main_input_name = "input_ids"
     auto_model_class = AutoModelForSeq2SeqLM
     support_causal_attn = None
+    batch_encoder_by_default = False
     _is_stateful = False
 
     def __post_init__(self, **kwargs):
@@ -255,10 +256,13 @@ class RBLNModelForSeq2SeqLM(RBLNModel, GenerationMixin, ABC):
         if rbln_config.support_paged_attention:
             cls._update_paged_attention_config(model_config, rbln_config)
 
+        if rbln_config.encoder_batch_size is None:
+            rbln_config.encoder_batch_size = rbln_config.batch_size if cls.batch_encoder_by_default else 1
+
         # model input info
         enc_input_info = [
-            ("input_ids", [1, rbln_config.enc_max_seq_len], "int64"),
-            ("attention_mask", [1, rbln_config.enc_max_seq_len], rbln_config.dtype),
+            ("input_ids", [rbln_config.encoder_batch_size, rbln_config.enc_max_seq_len], "int64"),
+            ("attention_mask", [rbln_config.encoder_batch_size, rbln_config.enc_max_seq_len], rbln_config.dtype),
             ("block_tables", [1], "int16"),
         ]
         enc_input_info.extend(
@@ -446,11 +450,17 @@ class RBLNModelForSeq2SeqLM(RBLNModel, GenerationMixin, ABC):
         encoder_kwargs["output_hidden_states"] = False
         encoder_kwargs["output_attentions"] = False
 
-        for b in range(batch_size):
+        # Configs saved before encoder batching was introduced retain their batch-one encoder.
+        encoder_batch_size = self.rbln_config.encoder_batch_size or 1
+        if batch_size % encoder_batch_size:
+            raise ValueError(
+                f"Encoder input batch ({batch_size}) must be divisible by encoder_batch_size ({encoder_batch_size})."
+            )
+        for b in range(0, batch_size, encoder_batch_size):
             block_tables = torch.tensor([b], dtype=torch.int16)
-            encoder_kwargs["input_ids"] = inputs_tensor[b].unsqueeze(0)
-            encoder_kwargs["attention_mask"] = (
-                model_kwargs["attention_mask"][b].unsqueeze(0).to(self.rbln_config.dtype)
+            encoder_kwargs["input_ids"] = inputs_tensor[b : b + encoder_batch_size]
+            encoder_kwargs["attention_mask"] = model_kwargs["attention_mask"][b : b + encoder_batch_size].to(
+                self.rbln_config.dtype
             )
             model_kwargs["encoder_outputs"] = encoder(**encoder_kwargs, block_tables=block_tables)
 
