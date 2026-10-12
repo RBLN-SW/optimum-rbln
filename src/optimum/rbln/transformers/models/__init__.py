@@ -54,6 +54,7 @@ if TYPE_CHECKING:
     from .paligemma import *
     from .pegasus import *
     from .phi import *
+    from .phi3 import *
     from .pixtral import *
     from .qwen2 import *
     from .qwen2_5_vl import *
