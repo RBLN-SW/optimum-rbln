@@ -473,7 +473,7 @@ class RBLNQwen3_5VisionModel(RBLNModel):
 
     @staticmethod
     @deprecate_method(
-        version="0.12.0",
+        version="0.13.0",
         additional_message=(
             "It fills the [S, S] attention mask of a vision encoder compiled before the key-padding mask. "
             "That artifact keeps working; recompile it to stop using this path."

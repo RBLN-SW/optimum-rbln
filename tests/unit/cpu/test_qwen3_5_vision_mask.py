@@ -31,7 +31,7 @@ def test_key_padding_mask_matches_square_mask_on_valid_rows():
     rotary = (torch.randn(seq_len, 4), torch.randn(seq_len, 4))
 
     # The mask each artifact declares, built the way forward() builds it. The older path is
-    # deprecated: from optimum-rbln 0.12.0 it raises, and this assertion is the reminder to
+    # deprecated: from optimum-rbln 0.13.0 it raises, and this assertion is the reminder to
     # delete both it and _mask_padded_keys_and_queries.
     this_build = _model_declaring([1, 1, 1, bucket])
     older_build = _model_declaring([1, 1, bucket, bucket])
