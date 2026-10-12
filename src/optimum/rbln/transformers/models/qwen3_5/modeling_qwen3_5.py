@@ -392,7 +392,9 @@ class RBLNQwen3_5VisionModel(RBLNModel):
         for max_seq_len in rbln_config.max_seq_len:
             input_info = [
                 ("hidden_states", [max_seq_len, hidden_size], rbln_config.dtype),
-                ("attn_mask", [batch_size, 1, max_seq_len, max_seq_len], rbln_config.dtype),
+                # Key-padding mask: a padded query row's output is dropped, so masking the keys alone
+                # gives the same valid outputs at 1/max_seq_len of the host-to-device transfer.
+                ("attn_mask", [batch_size, 1, 1, max_seq_len], rbln_config.dtype),
                 # cos/sin enter the device at fp32 and are cast to the device dtype inside the vision model
                 ("cos", [batch_size, 1, max_seq_len, head_dim], torch.float32),
                 ("sin", [batch_size, 1, max_seq_len, head_dim], torch.float32),
@@ -420,11 +422,29 @@ class RBLNQwen3_5VisionModel(RBLNModel):
         )
         return (self.pos_embed(interp_indices) * interp_weights[:, :, None]).sum(1)
 
+    def _declared_mask_rows(self, max_seq_len: int) -> int:
+        """How many query rows the compiled `attn_mask` of the `max_seq_len` bucket declares.
+
+        The host must feed the shape its artifact declares: this export's key-padding mask has one row,
+        while an export made before it has `max_seq_len` rows. Buckets are matched by their size, not by
+        position: `RBLNQwen3_5VisionModelConfig` sorts `max_seq_len` descending and `forward` searches it
+        ascending, so the two orders do not agree.
+        """
+        input_infos = self.rbln_config.compile_cfgs[0].input_info
+        if input_infos and not isinstance(input_infos[0], list):
+            input_infos = [input_infos]
+        for input_info in input_infos:
+            shape = next(info[1] for info in input_info if info[0] == "attn_mask")
+            if shape[-1] == max_seq_len:
+                return shape[-2]
+        raise ValueError(f"No compiled vision bucket takes max_seq_len {max_seq_len}.")
+
     @staticmethod
     def _pad_hidden_states(
         hidden_states: torch.Tensor,
         position_embeddings: tuple[torch.Tensor, torch.Tensor],
         max_seq_len: int,
+        mask_rows: int = 1,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, int]:
         seq_len = hidden_states.shape[0]
         valid_len = seq_len
@@ -440,10 +460,12 @@ class RBLNQwen3_5VisionModel(RBLNModel):
             sin = torch.cat([sin, pos_padding], dim=0)
             position_embeddings = (cos, sin)
 
-        attn_mask = torch.ones(1, 1, max_seq_len, max_seq_len, dtype=hidden_states.dtype)
+        attn_mask = torch.ones(1, 1, mask_rows, max_seq_len, dtype=hidden_states.dtype)
         if valid_len < max_seq_len:
-            attn_mask[:, :, valid_len:, :] = 0
             attn_mask[:, :, :, valid_len:] = 0
+            if mask_rows > 1:
+                # An export that predates the key-padding mask also masks the padded query rows.
+                attn_mask[:, :, valid_len:, :] = 0
 
         return hidden_states, position_embeddings, attn_mask, valid_len
 
@@ -484,7 +506,7 @@ class RBLNQwen3_5VisionModel(RBLNModel):
                 ) from e
 
             image_hidden, (image_cos, image_sin), attn_mask, valid_len = self._pad_hidden_states(
-                image_hidden, (image_cos, image_sin), max_seq_len
+                image_hidden, (image_cos, image_sin), max_seq_len, self._declared_mask_rows(max_seq_len)
             )
 
             output = self.transformer(
