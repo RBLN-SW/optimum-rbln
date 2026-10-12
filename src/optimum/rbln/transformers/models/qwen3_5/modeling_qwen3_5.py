@@ -422,12 +422,11 @@ class RBLNQwen3_5VisionModel(RBLNModel):
         return (self.pos_embed(interp_indices) * interp_weights[:, :, None]).sum(1)
 
     def _declared_mask_rows(self, max_seq_len: int) -> int:
-        """How many query rows the compiled `attn_mask` of the `max_seq_len` bucket declares.
+        """How many query rows the `max_seq_len` bucket declares: one from the key-padding mask onward,
+        `max_seq_len` for an artifact compiled before it.
 
-        The host must feed the shape its artifact declares: an artifact compiled from the key-padding
-        mask onward has one query row, while one compiled before it has `max_seq_len` rows. Buckets are matched by their size, not by
-        position: `RBLNQwen3_5VisionModelConfig` sorts `max_seq_len` descending and `forward` searches it
-        ascending, so the two orders do not agree.
+        Matched by bucket size, not position: the config sorts `max_seq_len` descending while `forward`
+        searches it ascending.
         """
         input_infos = self.rbln_config.compile_cfgs[0].input_info
         if input_infos and not isinstance(input_infos[0], list):
