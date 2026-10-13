@@ -12,13 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import copy
 from collections.abc import Sequence
 from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any
 
 import torch
-from diffusers.models.embeddings import Timesteps
 from diffusers.models.modeling_outputs import Transformer2DModelOutput
 from diffusers.models.transformers.cogvideox_transformer_3d import CogVideoXTransformer3DModel
 
@@ -38,27 +36,15 @@ logger = get_logger(__name__)
 
 
 class CogVideoXTransformer3DModelWrapper(torch.nn.Module):
-    """
-    Compile graph of CogVideoXTransformer3DModel.
-
-    The sinusoidal timestep projection (`time_proj`, no weights) runs on the host, because sin/cos of
-    timesteps up to 999 lose precision on the device. The graph takes its output as `timestep_proj`,
-    so `time_proj` is an identity here and the rest of the HF forward runs unchanged.
-    """
-
     def __init__(self, model: CogVideoXTransformer3DModel) -> None:
         super().__init__()
-        # Shallow copy with its own child-module table: shares every weight with `model`, but swapping
-        # `time_proj` does not change the caller's model.
-        self.model = copy.copy(model)
-        self.model._modules = dict(model._modules)
-        self.model.time_proj = torch.nn.Identity()
+        self.model = model
 
-    def forward(self, hidden_states: torch.Tensor, encoder_hidden_states: torch.Tensor, timestep_proj: torch.Tensor):
+    def forward(self, hidden_states: torch.Tensor, encoder_hidden_states: torch.Tensor, timestep: torch.Tensor):
         return self.model(
             hidden_states=hidden_states,
             encoder_hidden_states=encoder_hidden_states,
-            timestep=timestep_proj,
+            timestep=timestep,
             return_dict=False,
         )
 
@@ -75,11 +61,6 @@ class RBLNCogVideoXTransformer3DModel(RBLNModel):
     auto_model_class = CogVideoXTransformer3DModel
     _rbln_config_class = RBLNCogVideoXTransformer3DModelConfig
     _output_class = Transformer2DModelOutput
-
-    def __post_init__(self, **kwargs):
-        super().__post_init__(**kwargs)
-        inner_dim = self.config.num_attention_heads * self.config.attention_head_dim
-        self.time_proj = Timesteps(inner_dim, self.config.flip_sin_to_cos, self.config.freq_shift)
 
     @classmethod
     def _wrap_model_if_needed(
@@ -124,7 +105,6 @@ class RBLNCogVideoXTransformer3DModel(RBLNModel):
         if rbln_config.vae_scale_factor_temporal is None:
             rbln_config.vae_scale_factor_temporal = model_config.temporal_compression_ratio
 
-        inner_dim = model_config.num_attention_heads * model_config.attention_head_dim
         batch_size = rbln_config.batch_size
         latent_h, latent_w = rbln_config.sample_size
         input_info = [
@@ -138,7 +118,7 @@ class RBLNCogVideoXTransformer3DModel(RBLNModel):
                 [batch_size, rbln_config.max_text_seq_length, model_config.text_embed_dim],
                 rbln_config.dtype,
             ),
-            ("timestep_proj", [batch_size, inner_dim], "float32"),
+            ("timestep", [batch_size], "float32"),
         ]
         compile_cfgs = [RBLNCompileConfig(input_info=input_info)]
         rbln_config.set_compile_cfgs(compile_cfgs)
@@ -195,13 +175,12 @@ class RBLNCogVideoXTransformer3DModel(RBLNModel):
 
         if not torch.is_tensor(timestep):
             timestep = torch.tensor([timestep])
-        timestep = timestep.reshape(-1).expand(sample_batch_size)
-        timestep_proj = self.time_proj(timestep).to(torch.float32)
+        timestep = timestep.reshape(-1).expand(sample_batch_size).to(torch.float32)
 
         return super().forward(
             hidden_states.to(self.dtype).contiguous(),
             encoder_hidden_states.to(self.dtype).contiguous(),
-            timestep_proj.contiguous(),
+            timestep.contiguous(),
             return_dict=return_dict,
         )
 
