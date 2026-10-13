@@ -65,6 +65,11 @@ def resolve_gdn_custom_kernel(model_config, rbln_config) -> None:
     an artifact compiled before this field, or one whose configuration the ops do not serve, keeps
     the native core. The ops are validated on ATOM only; an unknown target (no device, no `npu`)
     keeps them.
+
+    Runs before `super()._update_rbln_config` fills the defaults, so it reads no field that
+    `set_default_values` owns -- `prefill_chunk_size` is still None here. It does not need to: the
+    ops want a prefill window that is a multiple of 128, and `_update_rbln_config` already rejects a
+    `gdn_chunk_size` that does not divide `prefill_chunk_size`, so `gdn_chunk_size == 128` gives it.
     """
     if rbln_config.gdn_custom_kernel is not None:
         return
@@ -74,7 +79,6 @@ def resolve_gdn_custom_kernel(model_config, rbln_config) -> None:
         (npu is None or normalize_npu(npu).startswith("RBLN-CA"))
         and text_config.linear_key_head_dim == 128
         and text_config.linear_value_head_dim == 128
-        and rbln_config.prefill_chunk_size % 128 == 0
         and rbln_config.gdn_chunk_size == MAX_GDN_CHUNK_SIZE
         and hasattr(torch.ops.rbln_custom_ops, "gdn_prefill")
         and hasattr(torch.ops.rbln_custom_ops, "gdn_decode")

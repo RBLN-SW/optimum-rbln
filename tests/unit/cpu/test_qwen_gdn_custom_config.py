@@ -246,3 +246,22 @@ def test_gdn_custom_kernel_runs_on_atom_only(npu, expected):
     )
     resolve_gdn_custom_kernel(text_config, config)
     assert config.gdn_custom_kernel is expected
+
+
+def test_gdn_custom_kernel_resolves_before_the_defaults_are_filled():
+    # _update_rbln_config resolves this before super() fills the defaults, so every field it reads
+    # must already be set. `prefill_chunk_size` is not: set_default_values owns it, and a config
+    # that leaves it out carries None until then.
+    text_config = Qwen3_5TextConfig(
+        hidden_size=64,
+        linear_num_key_heads=2,
+        linear_num_value_heads=6,
+        linear_key_head_dim=128,
+        linear_value_head_dim=128,
+    )
+    config = RBLNQwen3_5TextModelConfig(max_seq_len=4096, batch_size=1)
+    assert config.prefill_chunk_size is None
+
+    resolve_gdn_custom_kernel(text_config, config)
+
+    assert config.gdn_custom_kernel is True
