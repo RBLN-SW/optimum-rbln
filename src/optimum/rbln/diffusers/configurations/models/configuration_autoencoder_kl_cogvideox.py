@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Literal
+from typing import Any
 
 from ....configuration_utils import RBLNModelConfig
 from ....utils.logging import get_logger
@@ -36,7 +36,6 @@ class RBLNAutoencoderKLCogVideoXConfig(RBLNModelConfig):
         vae_scale_factor_spatial: int | None = None,
         num_latent_frames_batch_size: int | None = None,
         cache_dtype: str | None = None,
-        cache_layout: Literal["transpose", "pad"] | None = None,
         use_slicing: bool = True,
         **kwargs: Any,
     ):
@@ -60,14 +59,6 @@ class RBLNAutoencoderKLCogVideoXConfig(RBLNModelConfig):
                 also takes the odd remainder frame.
             cache_dtype (Optional[str]): The dtype of the temporal conv caches that stay on the device
                 between decoder calls. Defaults to "bfloat16".
-            cache_layout (Optional[str]): How a temporal conv cache whose flattened h*w is not a multiple of 64
-                is stored on the device (the device needs the last axis to be a multiple of 64; at 480x720 this
-                is the case for the 60x90 and 120x180 caches). Caches with h*w a multiple of 64 are always
-                stored as (n, c, d, h*w).
-                "transpose" (default): stored as (n, h*w, d, c), permuted inside the graph (needs c to be a
-                multiple of 64; otherwise the cache is padded). Uses 0.43 GiB less device memory at 480x720,
-                49 frames.
-                "pad": stored as (n, c, d, h*w) with h*w zero-padded to a multiple of 64. About 3% faster.
             use_slicing (bool): Run batched requests one sample at a time on the batch-1 compiled graphs.
                 Defaults to True; a batch_size > 1 request is normalized to 1 with a warning.
             kwargs: Additional arguments passed to the parent RBLNModelConfig.
@@ -110,9 +101,6 @@ class RBLNAutoencoderKLCogVideoXConfig(RBLNModelConfig):
         self.vae_scale_factor_spatial = vae_scale_factor_spatial
         self.num_latent_frames_batch_size = num_latent_frames_batch_size or 2
         self.cache_dtype = cache_dtype or "bfloat16"
-        self.cache_layout = cache_layout or "transpose"
-        if self.cache_layout not in ("transpose", "pad"):
-            raise ValueError(f"cache_layout must be 'transpose' or 'pad', got {self.cache_layout!r}")
 
     @property
     def image_size(self):
@@ -120,6 +108,8 @@ class RBLNAutoencoderKLCogVideoXConfig(RBLNModelConfig):
 
     @property
     def num_latent_frames(self) -> int:
+        if self.num_frames is None or self.vae_scale_factor_temporal is None:
+            raise ValueError("`num_frames` and `vae_scale_factor_temporal` must be set to get `num_latent_frames`.")
         return (self.num_frames - 1) // self.vae_scale_factor_temporal + 1
 
     @property

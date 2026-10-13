@@ -80,6 +80,8 @@ class RBLNCogVideoXTransformer3DModelConfig(RBLNModelConfig):
 
     @property
     def num_latent_frames(self) -> int:
+        if self.num_frames is None or self.vae_scale_factor_temporal is None:
+            raise ValueError("`num_frames` and `vae_scale_factor_temporal` must be set to get `num_latent_frames`.")
         return (self.num_frames - 1) // self.vae_scale_factor_temporal + 1
 
 
