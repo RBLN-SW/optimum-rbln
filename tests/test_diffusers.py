@@ -517,24 +517,25 @@ def _save_tiny_cogvideox_pipeline(save_dir: str) -> None:
         time_embed_dim=8,
         text_embed_dim=32,
         num_layers=1,
-        sample_width=16,
-        sample_height=16,
+        sample_width=90,
+        sample_height=60,
         sample_frames=17,
         patch_size=2,
         temporal_compression_ratio=4,
         max_text_seq_length=16,
     )
-    # Keep the latent at 16x16 (128x128 pixels): every flat cache h*w is then a multiple of 64,
-    # and very small resolutions hit compiler asserts in the causal-conv VAE graphs.
+    # 480x720 like CogVideoX-2b: the 60x90 and 120x180 caches (h*w not a multiple of 64) take the
+    # default "transpose" cache layout, which needs 64-aligned channels. Smaller resolutions (e.g.
+    # 120x120, 240x360) hit a compiler assert (ScatterInfo size mismatch) in the causal-conv VAE graphs.
     vae = AutoencoderKLCogVideoX(
         in_channels=3,
         out_channels=3,
         down_block_types=("CogVideoXDownBlock3D",) * 4,
         up_block_types=("CogVideoXUpBlock3D",) * 4,
-        block_out_channels=(8, 8, 8, 8),
+        block_out_channels=(64, 64, 64, 64),
         latent_channels=4,
         layers_per_block=1,
-        norm_num_groups=2,
+        norm_num_groups=32,
         temporal_compression_ratio=4,
     )
     pipe = CogVideoXPipeline(
@@ -555,16 +556,16 @@ class TestCogVideoXModel(BaseTest.TestModel):
         "num_inference_steps": 2,
         "generator": torch.manual_seed(42),
         "num_frames": 17,
-        "height": 128,
-        "width": 128,
+        "height": 480,
+        "width": 720,
         "max_sequence_length": 16,
         "output_type": "pt",
     }
     RBLN_CLASS_KWARGS = {
         "export": True,
         "rbln_config": {
-            "height": 128,
-            "width": 128,
+            "height": 480,
+            "width": 720,
             "num_frames": 17,
             "max_seq_len": 16,
         },
@@ -584,7 +585,7 @@ class TestCogVideoXModel(BaseTest.TestModel):
 
     def test_generate(self):
         output = self.model(**self.get_inputs())[0]
-        self.assertEqual(tuple(output.shape), (1, 17, 3, 128, 128))
+        self.assertEqual(tuple(output.shape), (1, 17, 3, 480, 720))
 
 
 if __name__ == "__main__":

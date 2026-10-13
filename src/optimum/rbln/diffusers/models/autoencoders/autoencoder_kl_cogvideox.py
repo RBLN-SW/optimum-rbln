@@ -98,35 +98,59 @@ def get_cache_size(
     ]
 
 
-# The device rejects an rbln_cache_update whose flat h*w axis is not a multiple of 64
-# (h*w = 5400 fails the partition check; 21600 hits a FoldMemoryTransfer assert; see
-# examples/cogvideo/repro_cache_update_shape.py). 480x720 has 60x90 and 120x180 caches, so the
-# flat axis is zero-padded to this multiple. Aligned shapes (e.g. the Wan VAE sizes) are unchanged.
-_CACHE_HW_ALIGN = 64
+# The last axis of a static cache must be a multiple of 64 (DRAM rows are 128B aligned; with h*w = 5400
+# a (1, 512, 2, 5400) cache update fails the partition check with "wrong shape for custom op").
+# 480x720 has 60x90 and 120x180 caches, so each cache gets one of these layouts:
+#   "flat":    (n, c, d, h*w)        when h*w is a multiple of 64 (the 240x360 and 480x720 caches)
+#   "chlast":  (n, h*w, d, c)        otherwise, with RBLNAutoencoderKLCogVideoXConfig.cache_layout="transpose"
+#                                    and c a multiple of 64: written through a real permute
+#                                    (n, c, d, h, w) -> (n, h, w, d, c), like the Qwen3.5 conv state (B, K-1, C)
+#   "padded":  (n, c, d, pad64(h*w)) otherwise (cache_layout="pad", or c not a multiple of 64): the flat axis
+#                                    zero-padded to a multiple of 64
+# At 480x720, 49 frames, "transpose" saves 0.43 GiB of device memory and "pad" decodes about 3% faster.
+# A plain reshape to (n, h*w, d, c) without the permute does not compile: it re-cuts the 128B-padded
+# w rows into c-wide rows, and the full decoder then aborts in FoldMemoryTransfer.
+_CACHE_ALIGN = 64
 
 
 def _padded_hw(h: int, w: int) -> int:
-    return -(-(h * w) // _CACHE_HW_ALIGN) * _CACHE_HW_ALIGN
+    return -(-(h * w) // _CACHE_ALIGN) * _CACHE_ALIGN
 
 
-def _cache_input_shape(shape) -> list:
-    # per-slot (n,c,d,h,w) -> input_info shape of the flat static cache.
+def _cache_layout(c: int, h: int, w: int, mode: str) -> str:
+    if (h * w) % _CACHE_ALIGN == 0:
+        return "flat"
+    if mode == "transpose" and c % _CACHE_ALIGN == 0:
+        return "chlast"
+    return "padded"
+
+
+def _cache_input_shape(shape, mode: str) -> list:
+    # per-slot (n,c,d,h,w) -> input_info shape of the static cache.
     n, c, d, h, w = shape
-    return [n, c, d, _padded_hw(h, w)]
+    layout = _cache_layout(c, h, w, mode)
+    if layout == "chlast":
+        return [n, h * w, d, c]
+    return [n, c, d, h * w if layout == "flat" else _padded_hw(h, w)]
 
 
-def _to_cache(x: torch.Tensor) -> torch.Tensor:
+def _to_cache(x: torch.Tensor, mode: str) -> torch.Tensor:
     n, c, d, h, w = x.shape
+    layout = _cache_layout(c, h, w, mode)
+    if layout == "chlast":
+        return x.permute(0, 3, 4, 2, 1).reshape(n, h * w, d, c).contiguous()
     x = x.reshape(n, c, d, h * w)
-    pad = _padded_hw(h, w) - h * w
-    if pad:
-        x = torch.nn.functional.pad(x, (0, pad))
+    if layout == "padded":
+        x = torch.nn.functional.pad(x, (0, _padded_hw(h, w) - h * w))
     return x.contiguous()
 
 
-def _from_cache(cache: torch.Tensor, h: int, w: int) -> torch.Tensor:
-    n, c, d, hw = cache.shape
-    if hw != h * w:
+def _from_cache(cache: torch.Tensor, c: int, h: int, w: int, mode: str) -> torch.Tensor:
+    n, _, d, _ = cache.shape
+    layout = _cache_layout(c, h, w, mode)
+    if layout == "chlast":
+        return cache.reshape(n, h, w, d, c).permute(0, 4, 3, 1, 2)
+    if layout == "padded":
         cache = cache[..., : h * w]
     return cache.reshape(n, c, d, h, w)
 
@@ -144,12 +168,14 @@ def _set_path(tree: dict, path: Sequence[str], value: torch.Tensor) -> None:
 
 
 class _VAECogVideoXDecoderBase(torch.nn.Module):
-    def __init__(self, vae: AutoencoderKLCogVideoX, latent_height: int, latent_width: int):
+    def __init__(self, vae: AutoencoderKLCogVideoX, latent_height: int, latent_width: int, cache_layout: str):
         super().__init__()
         self.decoder = vae.decoder
+        self.cache_layout = cache_layout
         convs = get_cache_convs(self.decoder)
         self.cache_paths = [path for path, _, _ in convs]
         self.cache_hw = [(latent_height * scale, latent_width * scale) for _, _, scale in convs]
+        self.cache_channels = [conv.conv.in_channels for _, conv, _ in convs]
 
     def _decode(self, z: torch.Tensor, conv_cache: dict | None, caches: Sequence[torch.Tensor]):
         """
@@ -157,15 +183,14 @@ class _VAECogVideoXDecoderBase(torch.nn.Module):
 
         All writes stay at the end of the graph, as in the Wan VAE. Writing each cache right after its
         conv (to free the slices early) corrupts the decoder_n output on the device: the new cache does
-        not depend on the old one that the same conv read, so the write can run before that read
-        (see examples/cogvideo/repro_cache_update_war.py).
+        not depend on the old one that the same conv read, so the write can run before that read.
         """
         out, new_cache = self.decoder(z, conv_cache=conv_cache)
         position = torch.tensor(0, dtype=torch.int16)
         axis = torch.tensor(_CACHE_FRAME_AXIS, dtype=torch.int16)
         dummy_outs = []
         for path, cache in zip(self.cache_paths[1:], caches, strict=True):
-            item = _to_cache(_get_path(new_cache, path)).to(cache.dtype)
+            item = _to_cache(_get_path(new_cache, path), self.cache_layout).to(cache.dtype)
             dummy_outs.append(torch.ops.rbln_custom_ops.rbln_cache_update(cache, item, position, axis))
         # idx 0 (conv_in cache, a slice of z): runtime output
         return out, _get_path(new_cache, self.cache_paths[0]).contiguous(), dummy_outs
@@ -184,8 +209,10 @@ class _VAECogVideoXDecoderN(_VAECogVideoXDecoderBase):
     def forward(self, z, cache_0, *caches) -> torch.Tensor:
         conv_cache = {}
         _set_path(conv_cache, self.cache_paths[0], cache_0)
-        for path, (h, w), cache in zip(self.cache_paths[1:], self.cache_hw[1:], caches, strict=True):
-            _set_path(conv_cache, path, _from_cache(cache, h, w).to(z.dtype))
+        for path, c, (h, w), cache in zip(
+            self.cache_paths[1:], self.cache_channels[1:], self.cache_hw[1:], caches, strict=True
+        ):
+            _set_path(conv_cache, path, _from_cache(cache, c, h, w, self.cache_layout).to(z.dtype))
         return self._decode(z, conv_cache, caches)
 
 
@@ -241,9 +268,10 @@ class RBLNAutoencoderKLCogVideoX(RBLNModel):
     ) -> torch.nn.Module:
         latent_h = rbln_config.height // rbln_config.vae_scale_factor_spatial
         latent_w = rbln_config.width // rbln_config.vae_scale_factor_spatial
-        decoder_models = [_VAECogVideoXDecoder0(model, latent_h, latent_w).eval()]
+        layout = rbln_config.cache_layout
+        decoder_models = [_VAECogVideoXDecoder0(model, latent_h, latent_w, layout).eval()]
         if cls._needs_decoder_n(rbln_config):
-            decoder_models.append(_VAECogVideoXDecoderN(model, latent_h, latent_w).eval())
+            decoder_models.append(_VAECogVideoXDecoderN(model, latent_h, latent_w, layout).eval())
         return tuple(decoder_models)
 
     @classmethod
@@ -351,8 +379,9 @@ class RBLNAutoencoderKLCogVideoX(RBLNModel):
         # The static caches stay on the device, so their dtype is free: bf16 halves ~5.3 GiB of fp32
         # buffers at 480x720, which decoder_0 + decoder_n need to fit on one device.
         for i, shape in enumerate(cache_shapes[1:], start=1):
-            dec_0_input_info.append((f"feat_cache_{i}", _cache_input_shape(shape), rbln_config.cache_dtype))
-            dec_n_input_info.append((f"feat_cache_{i}", _cache_input_shape(shape), rbln_config.cache_dtype))
+            cache_shape = _cache_input_shape(shape, rbln_config.cache_layout)
+            dec_0_input_info.append((f"feat_cache_{i}", cache_shape, rbln_config.cache_dtype))
+            dec_n_input_info.append((f"feat_cache_{i}", cache_shape, rbln_config.cache_dtype))
 
         compile_cfgs = [RBLNCompileConfig(compiled_model_name="decoder_0", input_info=dec_0_input_info)]
         if cls._needs_decoder_n(rbln_config):
