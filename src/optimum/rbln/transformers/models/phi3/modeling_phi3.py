@@ -1,4 +1,4 @@
-# Copyright 2025 Rebellions Inc. All rights reserved.
+# Copyright 2026 Rebellions Inc. All rights reserved.
 
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -26,14 +26,12 @@ logger = logging.get_logger(__name__)
 
 class _Phi3FullAttentionMixin:
     @classmethod
-    def _update_rbln_config(cls, preprocessors=None, model=None, model_config=None, rbln_config=None):
-        # Phi-3 checkpoints ship a sliding_window (262144) larger than any context they support, so every layer
-        # is plain full attention.
-        text_config = model_config.get_text_config()
-        sliding_window = getattr(text_config, "sliding_window", None)
-        if sliding_window is not None and sliding_window >= text_config.max_position_embeddings:
-            text_config.sliding_window = None
-        return super()._update_rbln_config(preprocessors, model, model_config, rbln_config)
+    def _update_sliding_window_config(cls, model_config, rbln_config):
+        # A sliding window that spans the whole compiled sequence never masks anything,
+        # so treat every layer as full attention (e.g. Phi-3.5/Phi-4-mini ship sliding_window=262144).
+        if model_config.get_text_config().sliding_window >= rbln_config.max_seq_len:
+            return rbln_config
+        return super()._update_sliding_window_config(model_config, rbln_config)
 
 
 class RBLNPhi3ForCausalLM(_Phi3FullAttentionMixin, RBLNDecoderOnlyModelForCausalLM):
