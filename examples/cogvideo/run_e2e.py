@@ -4,7 +4,7 @@
     python examples/cogvideo/run_e2e.py cpu
 2) RBLN: compile (export=True) and save, reload with export=False, generate with the same seed,
    compare with the golden video (per-frame PSNR and Pearson r):
-    RBLN_DEVICES=20,21,22 python examples/cogvideo/run_e2e.py rbln --golden <golden dir> \
+    RBLN_DEVICES=0,1,2,3,4,5,6,7,8,9 python examples/cogvideo/run_e2e.py rbln --golden <golden dir> \
         --compiled-dir /home/seinpark/nas_data/cogvideox/compiled/pipeline_cogvideox_2b
 
 Each run writes a new folder under OUT_ROOT (video, frames, latents, meta.json).
@@ -138,7 +138,11 @@ def main():
     pipe = RBLNCogVideoXPipeline.from_pretrained(
         compiled_dir,
         export=False,
-        rbln_config={"text_encoder": {"device": 0}, "transformer": {"device": 1}, "vae": {"device": 2}},
+        rbln_config={
+            "text_encoder": {"device": 0},
+            "transformer": {"device": list(range(1, 9))},
+            "vae": {"device": 9},
+        },
     )
     print(f"load (export=False): {time.time() - t0:.1f}s")
     video, gen_time = generate(pipe, args, out_dir, "rbln")

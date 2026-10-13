@@ -115,6 +115,46 @@
   **r=0.999969**, max|diff| 0.0336, mean|diff| 0.0041, rel_l2 0.0086, a=0.99898 b=-0.00203, allclose False. latent frame별 r 0.99996–0.99997.
   산출물: `outputs/20261013_0138_transformer_L30_real_b2/`
 
+### Transformer tensor parallel (TP8) — 2026-10-13 11:50~
+- 사용자 요청: transformer는 최소 TP8, **VAE에는 RSD를 쓰지 않는다**.
+- 실제 가중치 L30, batch 2 (CFG), 같은 입력(seed 0):
+
+| 구성 | 컴파일 | forward | device당 CmdStream | device당 메모리 | r | 비고 |
+|---|---|---|---|---|---|---|
+| TP1, 6 layer × 5 graph (이전 기본값) | 1339.4s | 19.06s | 0.098–0.133 GiB | 11.47 GiB | 0.999969 | |
+| **TP8, 단일 graph 30 layer** | 395.2s | **4.12s** | 0.043–0.062 GiB | 1.1–2.2 GiB | **0.999974** | max\|diff\| 0.030, a=0.99960 b=-0.00171. hang 없음 |
+| TP8, 6 layer × 5 graph | 711.3s | 4.33s | 0.010–0.014 GiB | | 0.999969 | |
+
+- head 30개는 8로 나누어떨어지지 않지만(hidden 1920/8=240) 컴파일러 RSD sharding이 문제없이 나눴다.
+- TP8에서는 device당 command stream이 hang 기준(~0.19 GiB)보다 훨씬 작아 **그래프 분할이 필요 없다**.
+- 코드 반영:
+  - `RBLNCogVideoXPipelineConfig`: transformer `num_devices` 기본값 8 (`num_devices=self.num_devices or 8`), 사용자가 지정하면 그 값.
+  - `layers_per_graph` 기본값 = `max(1, 15 * num_devices // batch_size)` → TP8이면 단일 graph, TP1이면 기존처럼 분할.
+  - VAE: 파이프라인 config가 VAE에 `num_devices=1`을 넘기고 (파이프라인 수준 num_devices가 상속되지 않게),
+    `RBLNAutoencoderKLCogVideoXConfig`는 `num_devices > 1`이면 ValueError.
+  - 예제 device 배치: text_encoder 1개, transformer 8개, vae 1개 (총 10개).
+- tiny 테스트도 TP8 기본값으로 컴파일됨을 확인 (transformer 8 node 단일 graph, VAE decoder_0/n 1 node). `-k CogVideoX` → 7 passed, 1 skipped.
+- 산출물: `outputs/20261013_1159_transformer_L30_real_b2_tp8_single/`, `outputs/20261013_1205_transformer_L30_real_b2_tp8_seg/`
+
+- **TP8 파이프라인 E2E** (`outputs/20261013_1207_e2e/`): export=True 컴파일+저장 649s (TP1 때 1587s), export=False 로드 125.2s,
+  **50 step 생성 206.4s** (TP1 954.9s → 4.6배). CPU golden 대비 video **r=0.962, PSNR 24.4 dB** (frame별 r 0.939–0.977), 최종 latent r=0.988.
+  `compare_cpu_vs_rbln.png`: 장면/움직임 동일, 깨짐 없음.
+
+### VAE cache 레이아웃 대안: (n, h*w, d, c) — 시도했으나 실패, 패딩 방식 유지
+- 아이디어(사용자 제안): cache를 (n, h*w, d, c)로 선언하면 마지막 축이 채널(512/256/128, 모두 64 배수)이라 패딩이 필요 없다.
+  매번 position 0에서 d 전체를 덮어쓰므로 permute 없이 plain reshape(같은 byte 순서)로 충분하다. CPU에서 `vae.decode`와 max|diff| 0.0.
+- 단독 repro: (1,5400,2,512), (1,21600,2,512), (1,21600,2,256), (1,86400,2,256), (1,345600,2,256), (1,345600,2,128) 모두 PASS.
+  (1,5400,2,16)은 FAIL이지만 idx 0(conv_in)은 static buffer가 아니라 무관.
+- **VAE 전체 그래프(480x720, 49 frames)에서는 컴파일러 abort.** 어느 cache에 적용해도 실패:
+  | 새 레이아웃 적용 범위 | 결과 |
+  |---|---|
+  | 전체 | `a memory.store still writes a DRAM-view concatenate; FoldMemoryTransfer must fold every such store into chunks` |
+  | idx 1–20 (패딩 필요한 것) | 같은 FoldMemoryTransfer assert |
+  | idx 1–12 (60x90) | `device-resident reference port built-shape mismatch for key=...` |
+  | idx 21–37 (원래 64 배수) | 같은 FoldMemoryTransfer assert |
+- shape 자체가 아니라, 활성값 (n,c,d,h,w)와 버퍼 (n,h*w,d,c) 사이의 (device 레이아웃이 호환되지 않는) reshape를 decoder 그래프 안에서 처리하지 못하는 것으로 보인다.
+  → (n, c, d, h*w) + h*w zero-pad 유지. 컴파일러 보고 대상에 추가.
+
 ### P0-3 회귀 테스트 (2026-10-13 00:26)
 - `RBLN_DEVICES=16,17,18,19 python -m pytest -n 1 tests/test_diffusers.py -k "Cosmos or SVD" -vv`
   → **35 passed, 5 skipped, 15 subtests passed in 245.27s**. skip 5개는 각 클래스의 `test_automap` (RBLN_AUTO_CLASS 없음).
@@ -166,6 +206,7 @@
 4. 한 그래프의 command stream이 약 0.19 GiB를 넘으면 실행 hang (`SYS_KERNEL_TIMEOUT`). → transformer를 `layers_per_graph` 단위로 분할. 최소 repro 미작성
    (재현: `verify_transformer.py --num-layers 20 --random-init --layers-per-graph 64`).
 5. 240x360 VAE에서 `ScatterInfo size mismatch` assert (축소 해상도 디버그용이라 우회만 함).
+6. cache를 (n, h*w, d, c)로 reshape해 두면 VAE 전체 그래프에서 FoldMemoryTransfer / reference port shape mismatch assert (위 절). 패딩으로 우회.
 
 다음 단계 후보:
 - 위 1–4를 컴파일러 팀에 repro와 함께 보고 (특히 2: 정확성 문제).
@@ -184,6 +225,8 @@
 - `/home/seinpark/nas_data/cogvideox/outputs/20261013_0033_e2e_cpu_golden/` — **P1-5 CPU golden** (fp32, panda prompt, seed 42, 50 steps): video_cpu.mp4, 49 frames, latents_cpu.pt
 - `/home/seinpark/nas_data/cogvideox/outputs/20261013_0034_e2e/`, `20261013_0107_e2e/`, `20261013_0110_e2e/` — **실패한 E2E 시도 (영상 없음, meta.json에 원인)**
 - `/home/seinpark/nas_data/cogvideox/outputs/20261013_0112_e2e/` — **P1-5 RBLN E2E** video_rbln.mp4, 49 frames, latents_rbln.pt, compare_cpu_vs_rbln.png. r=0.955, PSNR 23.6 dB vs golden
+- `/home/seinpark/nas_data/cogvideox/outputs/20261013_1207_e2e/` — **P1-5 재실행 (transformer TP8)**: video_rbln.mp4, 49 frames, compare_cpu_vs_rbln.png. r=0.962, PSNR 24.4 dB vs golden
+- `/home/seinpark/nas_data/cogvideox/outputs/20261013_1159_transformer_L30_real_b2_tp8_single/`, `20261013_1205_..._tp8_seg/` — transformer TP8 검증 텐서
 - `/home/seinpark/nas_data/cogvideox/outputs/20261013_0158_run_cogvideo_example/` — **P1-6** 예제 실행 결과 (짧은 panda prompt, seed 42): video_rbln.mp4, 49 frames
 - `/home/seinpark/nas_data/cogvideox/outputs/20261013_0138_transformer_L30_real_b2/` — transformer batch 2 실제 가중치, r=0.999969
 - `/home/seinpark/nas_data/cogvideox/outputs/20261012_2328_transformer_L1_rand/`, `..._L2_rand/`, `..._L8_rand/`, `20261013_0009_transformer_L16_rand/` — transformer 입력/출력 텐서 (inputs.pt, outputs.pt, meta.json)

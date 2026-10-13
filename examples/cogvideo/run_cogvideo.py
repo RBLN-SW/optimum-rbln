@@ -1,11 +1,11 @@
 """Generate a video with CogVideoX-2b on RBLN NPUs.
 
-    RBLN_DEVICES=0,1,2 python examples/cogvideo/run_cogvideo.py \
+    RBLN_DEVICES=0,1,2,3,4,5,6,7,8,9 python examples/cogvideo/run_cogvideo.py \
         --model-dir rbln-CogVideoX-2b --out-dir /path/to/new/output/folder
 
 The first run compiles the text encoder, transformer and VAE (export=True) and saves them to
---model-dir; later runs load the compiled artifacts. The transformer and the VAE each need most of
-one device, so each submodule gets its own device.
+--model-dir; later runs load the compiled artifacts. The transformer runs with tensor parallel over
+8 devices; the text encoder and the VAE get one device each (10 devices in total).
 """
 
 import argparse
@@ -35,7 +35,8 @@ def main():
     parser.add_argument("--seed", type=int, default=42)
     args = parser.parse_args()
 
-    devices = {"text_encoder": {"device": 0}, "transformer": {"device": 1}, "vae": {"device": 2}}
+    # text_encoder: 1 device, transformer: tensor parallel over 8 devices, vae: 1 device (10 in total).
+    devices = {"text_encoder": {"device": 0}, "transformer": {"device": list(range(1, 9))}, "vae": {"device": 9}}
     if not os.path.exists(os.path.join(args.model_dir, "model_index.json")):
         pipe = RBLNCogVideoXPipeline.from_pretrained(
             args.model_id,

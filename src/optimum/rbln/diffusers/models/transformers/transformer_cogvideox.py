@@ -203,7 +203,9 @@ class RBLNCogVideoXTransformer3DModel(RBLNModel):
         if rbln_config.layers_per_graph is None:
             # A graph hangs on the device once its command stream passes about 0.19 GiB, and the
             # stream grows with the batch (see RBLNCogVideoXTransformer3DModelConfig.layers_per_graph).
-            rbln_config.layers_per_graph = max(1, 15 // rbln_config.batch_size)
+            # Tensor parallel splits the stream across devices (TP8 at batch 2: 0.06 GiB per device for
+            # all 30 CogVideoX-2b blocks), so with num_devices the whole model fits in one graph.
+            rbln_config.layers_per_graph = max(1, 15 * (rbln_config.num_devices or 1) // rbln_config.batch_size)
 
         inner_dim = model_config.num_attention_heads * model_config.attention_head_dim
         batch_size = rbln_config.batch_size

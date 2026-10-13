@@ -22,6 +22,12 @@ Result (rebel 0.12.1.dev99+g18b188f8, 2026-10-12): the flat h*w axis must be a m
     PASS (1, 512, 2, 5408) (1, 512, 2, 5440) (1, 512, 2, 5632) (1, 512, 2, 21632)
     PASS (1, 256, 2, 86400) (1, 128, 2, 345600) (1, 16, 2, 5408)
 Workaround in autoencoder_kl_cogvideox.py: zero-pad the flat axis to a multiple of 64 (_CACHE_HW_ALIGN).
+
+Channels-last alternative (2026-10-13): the (n, h*w, d, c) shapes all PASS here, e.g. (1, 5400, 2, 512),
+(1, 21600, 2, 256), (1, 345600, 2, 128); only (1, 5400, 2, 16) FAILs. But storing the VAE caches that way
+(a plain reshape of the (n, c, d, h, w) activation) aborts the full decoder compile with the
+FoldMemoryTransfer assert above, or "device-resident reference port built-shape mismatch" when only the
+60x90 caches use it. So this single-op repro passing does not mean the layout works in the real graph.
 """
 
 import sys

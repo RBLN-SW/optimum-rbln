@@ -67,6 +67,13 @@ class RBLNAutoencoderKLCogVideoXConfig(RBLNModelConfig):
             ValueError: If batch_size is not a positive integer.
         """
         super().__init__(**kwargs)
+        # The decoder graphs share static conv caches on one device; RSD does not shard the conv
+        # graphs either (num_devices=2 kept the same per-node intermediate), so the VAE stays on one device.
+        if self.num_devices is not None and self.num_devices > 1:
+            raise ValueError(
+                f"RBLNAutoencoderKLCogVideoX runs on one device; got num_devices={self.num_devices}. "
+                "Set num_devices on the transformer config only."
+            )
         self.use_slicing = use_slicing
         # Like the Wan VAE, the full-resolution decoder working set is near the device limit,
         # so the graphs are always compiled at batch_size=1 and batched requests run per sample.
