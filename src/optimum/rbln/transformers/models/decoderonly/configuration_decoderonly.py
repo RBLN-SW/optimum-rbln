@@ -41,7 +41,7 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
     _default_logits_to_keep = 0
     subclass_non_save_attributes = ["memory_budget"]
 
-    @deprecate_kwarg(old_name="kvcache_metas", new_name="cache_metas", version="0.12.0")
+    @deprecate_kwarg(old_name="kvcache_metas", new_name="cache_metas", version="0.13.0")
     def __init__(
         self,
         batch_size: int | None = None,

@@ -1,0 +1,621 @@
+# Copyright 2026 Rebellions Inc. All rights reserved.
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at:
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+from typing import TYPE_CHECKING, Literal, Union
+
+import rebel
+import torch
+from diffusers.models.autoencoders.autoencoder_kl_wan import (
+    AutoencoderKLWan,
+    WanCausalConv3d,
+)
+from diffusers.models.autoencoders.vae import DecoderOutput, DiagonalGaussianDistribution
+from diffusers.models.modeling_outputs import AutoencoderKLOutput
+from rebel.compile_context import CompileContext
+from transformers import PretrainedConfig
+
+from ....configuration_utils import RBLNCompileConfig
+from ....modeling import RBLNModel
+from ....utils.logging import get_logger
+from ...configurations import RBLNAutoencoderKLWanConfig
+from .vae import RBLNRuntimeWanVAEDecoder, RBLNRuntimeWanVAEEncoder
+
+
+if TYPE_CHECKING:
+    import torch
+    from diffusers.models.autoencoders.vae import DiagonalGaussianDistribution
+    from transformers import AutoFeatureExtractor, AutoProcessor, AutoTokenizer, PretrainedConfig, PreTrainedModel
+
+    from ...modeling_diffusers import RBLNDiffusionMixin, RBLNDiffusionMixinConfig
+
+logger = get_logger(__name__)
+
+
+_CACHE_SPECS = {
+    # The first chunk(E0, D0) only produces depth-1 caches, but E0/EN (and D0/DN) share
+    # static buffers, so first-chunk caches are pre-padded to the steady-state depth.
+    "enc": [
+        (3, 2, 1),
+        *[(96, 2, 1)] * 4,
+        (96, 2, 2),
+        *[(192, 2, 2)] * 3,
+        (192, 1, 4),  # WanResample temporal-downsample time_conv
+        (192, 2, 4),
+        *[(384, 2, 4)] * 3,
+        (384, 1, 8),  # WanResample temporal-downsample time_conv
+        *[(384, 2, 8)] * 9,
+    ],
+    "dec": [
+        (16, 2, 8),
+        *[(384, 2, 8)] * 11,
+        (192, 2, 4),
+        *[(384, 2, 4)] * 6,
+        *[(192, 2, 2)] * 6,
+        *[(96, 2, 1)] * 7,
+    ],
+}
+
+
+def get_cache_size(kind: Literal["enc", "dec"], height: int = 704, width: int = 1280) -> list[list[int]]:
+    return [
+        [1, channels, depth, height // divisor, width // divisor] for channels, depth, divisor in _CACHE_SPECS[kind]
+    ]
+
+
+# frame (D) axis of the (n, c, d, h*w) cache, for rbln_cache_update
+_CACHE_FRAME_AXIS = 2
+
+
+def _cache_input_shape(shape) -> list:
+    # per-slot (n,c,d,h,w) -> input_info shape of the flat static cache.
+    n, c, d, h, w = shape
+    return [n, c, d, h * w]
+
+
+def _to_cache(x: torch.Tensor) -> torch.Tensor:
+    n, c, d, h, w = x.shape
+    return x.reshape(n, c, d, h * w).contiguous()
+
+
+def _from_cache(cache: torch.Tensor, h: int, w: int) -> torch.Tensor:
+    n, c, d, _hw = cache.shape
+    return cache.reshape(n, c, d, h, w)
+
+
+class _VAEWanEncoder0(torch.nn.Module):
+    """Wrapper module for Wan VAE encoder extraction."""
+
+    def __init__(self, vae: AutoencoderKLWan, height=704, width=1280):
+        super().__init__()
+        self.encoder = vae.encoder
+        self.quant_conv = vae.quant_conv
+        self.cache_dims = get_cache_size("enc", height, width)
+        self._enc_conv_num = vae._cached_conv_counts["encoder"]
+        self.clear_cache()
+
+    def clear_cache(self):
+        # Mirrors AutoencoderKLWan.clear_cache.
+        self._enc_conv_idx = [0]
+        self._enc_feat_map = [None] * self._enc_conv_num
+
+    def forward(self, x, *args) -> torch.Tensor:
+        self.clear_cache()
+        out = self.encoder(x, feat_cache=self._enc_feat_map, feat_idx=self._enc_conv_idx)
+        out = self.quant_conv(out)
+        position = torch.tensor(0, dtype=torch.int16)
+        axis = torch.tensor(_CACHE_FRAME_AXIS, dtype=torch.int16)
+        dummy_outs = []
+        for cache, cache_item, cache_dim in zip(
+            list(args)[1:], self._enc_feat_map[1 : len(self.cache_dims)], self.cache_dims[1:], strict=False
+        ):
+            if cache_dim[2] == 2:
+                cache_item = torch.nn.functional.pad(cache_item, (0, 0, 0, 0, 1, 0))  # pad D 1->2
+            cache_item = _to_cache(cache_item)
+            dummy_outs.append(torch.ops.rbln_custom_ops.rbln_cache_update(cache, cache_item, position, axis))
+        # idx 0: runtime output
+        fc0 = torch.nn.functional.pad(self._enc_feat_map[0], (0, 0, 0, 0, 1, 0)).contiguous()  # pad D 1->2
+        return out, fc0, dummy_outs
+
+
+class _VAEWanEncoderN(torch.nn.Module):
+    """Wrapper module for Wan VAE encoder extraction."""
+
+    def __init__(self, vae: AutoencoderKLWan, height=704, width=1280):
+        super().__init__()
+        self.encoder = vae.encoder
+        self.quant_conv = vae.quant_conv  # 1x1x1 pointwise -> fold into the graph
+        self.cache_dims = get_cache_size("enc", height, width)
+        self.clear_cache()
+
+    def clear_cache(self):
+        # Mirrors AutoencoderKLWan.clear_cache. EN's feat caches arrive as runtime args, so only the
+        # idx counter is state here.
+        self._enc_conv_idx = [0]
+
+    def forward(self, x, *args) -> torch.Tensor:
+        # After the encoder, write idx 1.. back channel-last via rbln_cache_update; idx 0 is returned
+        caches = args
+        self.clear_cache()
+
+        feat_cache_reshaped = [caches[0]]
+        for i, cache in enumerate(list(caches)[1:], start=1):
+            h_, w_ = self.cache_dims[i][3], self.cache_dims[i][4]
+            feat_cache_reshaped.append(_from_cache(cache, h_, w_))
+
+        out = self.encoder(x, feat_cache=feat_cache_reshaped, feat_idx=self._enc_conv_idx)
+        out = self.quant_conv(out)
+
+        position = torch.tensor(0, dtype=torch.int16)
+        axis = torch.tensor(_CACHE_FRAME_AXIS, dtype=torch.int16)
+        dummy_outs = []
+        for cache, item in zip(list(caches)[1:], feat_cache_reshaped[1:], strict=False):
+            item = _to_cache(item)
+            dummy_outs.append(torch.ops.rbln_custom_ops.rbln_cache_update(cache, item, position, axis))
+        return out, feat_cache_reshaped[0].contiguous(), dummy_outs
+
+
+class _VAEWanDecoder0(torch.nn.Module):
+    """Wrapper module for Wan VAE decoder extraction."""
+
+    def __init__(self, vae: AutoencoderKLWan, height=704, width=1280):
+        super().__init__()
+        self.decoder = vae.decoder
+        self.cache_dims = get_cache_size("dec", height, width)
+        self._conv_num = vae._cached_conv_counts["decoder"]
+        self.clear_cache()
+
+    def clear_cache(self):
+        # Mirrors AutoencoderKLWan.clear_cache.
+        self._conv_idx = [0]
+        self._feat_map = [None] * self._conv_num
+
+    def forward(self, x, *args) -> torch.Tensor:
+        self.clear_cache()
+        out = self.decoder(x, feat_cache=self._feat_map, feat_idx=self._conv_idx, first_chunk=True)
+        position = torch.tensor(0, dtype=torch.int16)
+        axis = torch.tensor(_CACHE_FRAME_AXIS, dtype=torch.int16)
+        dummy_outs = []
+        for cache, cache_item, _cache_dim in zip(
+            list(args), self._feat_map[1 : len(self.cache_dims)], self.cache_dims[1:], strict=False
+        ):
+            if isinstance(cache_item, str):
+                # diffusers upsample3d stores a "Rep" string on the first chunk (no real cache).
+                cache_item = cache * 0.0
+            else:
+                cache_item = torch.nn.functional.pad(cache_item, (0, 0, 0, 0, 1, 0))  # pad D 1->2
+                cache_item = _to_cache(cache_item)
+            dummy_outs.append(torch.ops.rbln_custom_ops.rbln_cache_update(cache, cache_item, position, axis))
+        # idx 0: runtime output
+        fc0 = torch.nn.functional.pad(self._feat_map[0], (0, 0, 0, 0, 1, 0)).contiguous()  # pad D 1->2
+        return out, fc0, dummy_outs
+
+
+class _VAEWanDecoderN(torch.nn.Module):
+    """Wrapper module for Wan VAE decoder extraction."""
+
+    def __init__(self, vae: AutoencoderKLWan, height=704, width=1280):
+        super().__init__()
+        self.decoder = vae.decoder
+        self.cache_dims = get_cache_size("dec", height, width)
+        self.clear_cache()
+
+    def clear_cache(self):
+        # Mirrors AutoencoderKLWan.clear_cache. DN's feat caches arrive as runtime args, so only the
+        # idx counter is state here.
+        self._conv_idx = [0]
+
+    def forward(self, x, *args) -> torch.Tensor:
+        caches = args
+        self.clear_cache()
+
+        feat_cache_reshaped = [caches[0]]
+        for i, cache in enumerate(list(caches)[1:], start=1):
+            h_, w_ = self.cache_dims[i][3], self.cache_dims[i][4]
+            feat_cache_reshaped.append(_from_cache(cache, h_, w_))
+
+        out = self.decoder(x, feat_cache=feat_cache_reshaped, feat_idx=self._conv_idx)
+
+        position = torch.tensor(0, dtype=torch.int16)
+        axis = torch.tensor(_CACHE_FRAME_AXIS, dtype=torch.int16)
+        dummy_outs = []
+        for cache, item in zip(list(caches)[1:], feat_cache_reshaped[1:], strict=False):
+            item = _to_cache(item)
+            dummy_outs.append(torch.ops.rbln_custom_ops.rbln_cache_update(cache, item, position, axis))
+        return out, feat_cache_reshaped[0].contiguous(), dummy_outs
+
+
+class RBLNAutoencoderKLWan(RBLNModel):
+    """
+    RBLN implementation of AutoencoderKLWan for diffusion models.
+
+    This model is used to accelerate AutoencoderKLWan models from diffusers library on RBLN NPUs.
+    It can be configured to include both encoder and decoder, or just the decoder part for latent-to-video
+    conversion.
+
+    This class inherits from [`RBLNModel`]. Check the superclass documentation for the generic methods
+    the library implements for all its models.
+    """
+
+    auto_model_class = AutoencoderKLWan
+    hf_library_name = "diffusers"
+    _rbln_config_class = RBLNAutoencoderKLWanConfig
+    # Group aliases for `device_map`: one group key places every chunk of that group, e.g.
+    # `device_map={"encoder": 0, "decoder": 1}`. An exact compiled-model name still wins.
+    _device_map_groups = {
+        "encoder_0": "encoder",
+        "encoder_n": "encoder",
+        "decoder_0": "decoder",
+        "decoder_n": "decoder",
+    }
+
+    @classmethod
+    def _device_for(cls, rbln_config: RBLNAutoencoderKLWanConfig, compiled_model_name: str) -> int | list[int] | None:
+        device_map = rbln_config.device_map
+        if compiled_model_name in device_map:
+            return device_map[compiled_model_name]
+        group = cls._device_map_groups.get(compiled_model_name)
+        if group is not None and group in device_map:
+            return device_map[group]
+        raise KeyError(
+            f"device_map {sorted(device_map)} does not cover compiled model '{compiled_model_name}'. "
+            f"Provide the exact name or one of the group keys {sorted(set(cls._device_map_groups.values()))}."
+        )
+
+    @classmethod
+    def _reconstruct_model_if_needed(cls, model: "PreTrainedModel"):
+        # The upstream Wan VAE ships fp32 weights only; normalize the module to fp32 even when
+        # the pipeline was loaded in a lower dtype.
+        if model.dtype != torch.float32:
+            logger.warning(
+                f"RBLNAutoencoderKLWan was handed a {model.dtype} module; casting it to float32 "
+                "for compilation, as the upstream Wan VAE ships fp32 weights only."
+            )
+            model = model.to(torch.float32)
+        return super()._reconstruct_model_if_needed(model)
+
+    def __post_init__(self, **kwargs):
+        super().__post_init__(**kwargs)
+        self.temperal_downsample = self.config.temperal_downsample
+        self.image_size = self.rbln_config.image_size
+        self.use_slicing = self.rbln_config.use_slicing
+        self.use_tiling = False
+
+        artifacts = torch.load(self.model_save_dir / self.subfolder / "torch_artifacts.pth", weights_only=False)
+        pqc_state = artifacts.get("post_quant_conv")
+        if pqc_state is not None:
+            self.post_quant_conv = WanCausalConv3d(self.config.z_dim, self.config.z_dim, 1)
+            self.post_quant_conv.load_state_dict(pqc_state)
+        else:
+            self.post_quant_conv = None
+
+        if self.rbln_config.uses_encoder:
+            self.encoder = RBLNRuntimeWanVAEEncoder(
+                runtime=self.model[0],
+                encoder_n=self.model[1],
+                main_input_name="x",
+                patch_size=self.config.patch_size,
+                dtype=self.rbln_config.dtype,
+            )
+        self.decoder = RBLNRuntimeWanVAEDecoder(
+            runtime=self.model[-2],
+            decoder_n=self.model[-1],
+            main_input_name="z",
+            patch_size=self.config.patch_size,
+            dtype=self.rbln_config.dtype,
+            post_quant_conv=self.post_quant_conv,
+        )
+
+    @classmethod
+    def save_torch_artifacts(cls, model, save_dir_path, subfolder, rbln_config):
+        save_dict = {"post_quant_conv": model.post_quant_conv.state_dict()}
+        torch.save(save_dict, save_dir_path / subfolder / "torch_artifacts.pth")
+
+    @classmethod
+    def _wrap_model_if_needed(cls, model: torch.nn.Module, rbln_config: RBLNAutoencoderKLWanConfig) -> torch.nn.Module:
+        h, w = rbln_config.height, rbln_config.width
+        decoder_model_0 = _VAEWanDecoder0(model, height=h, width=w)
+        decoder_model_0.eval()
+
+        decoder_model_n = _VAEWanDecoderN(model, height=h, width=w)
+        decoder_model_n.eval()
+
+        if rbln_config.uses_encoder:
+            encoder_model_0 = _VAEWanEncoder0(model, height=h, width=w)
+            encoder_model_0.eval()
+
+            encoder_model_n = _VAEWanEncoderN(model, height=h, width=w)
+            encoder_model_n.eval()
+
+            return (encoder_model_0, encoder_model_n), (decoder_model_0, decoder_model_n)
+        else:
+            return (decoder_model_0, decoder_model_n)
+
+    @classmethod
+    def get_compiled_model(cls, model, rbln_config: RBLNAutoencoderKLWanConfig) -> dict[str, rebel.RBLNCompiledModel]:
+        compiled_models = {}
+        # E0 and EN wrap the SAME vae.encoder -> share its weights on device (use_weight_sharing).
+        context = CompileContext(use_weight_sharing=True)
+        if rbln_config.uses_encoder:
+            encoder_models, decoder_models = cls._wrap_model_if_needed(model, rbln_config)
+            context, enc0_example_inputs, encn_example_inputs = cls.get_enc_compile_cfg(context, rbln_config)
+            enc_compiled_model_0 = cls.compile(
+                encoder_models[0],
+                rbln_compile_config=rbln_config.compile_cfgs[0],
+                create_runtimes=rbln_config.create_runtimes,
+                device=cls._device_for(rbln_config, "encoder_0"),
+                example_inputs=enc0_example_inputs,
+                compile_context=context,
+            )
+            compiled_models["encoder_0"] = enc_compiled_model_0
+            enc_compiled_model_n = cls.compile(
+                encoder_models[1],
+                rbln_compile_config=rbln_config.compile_cfgs[1],
+                create_runtimes=rbln_config.create_runtimes,
+                device=cls._device_for(rbln_config, "encoder_n"),
+                example_inputs=encn_example_inputs,
+                compile_context=context,
+            )
+            compiled_models["encoder_n"] = enc_compiled_model_n
+            dec_models = decoder_models
+        else:
+            dec_models = cls._wrap_model_if_needed(model, rbln_config)
+
+        # D0 and DN wrap the SAME vae.decoder -> share its weights on device (use_weight_sharing).
+        context = CompileContext(use_weight_sharing=True)  # Separate from the encoder's static-cache context
+        context, dec0_example_inputs, decn_example_inputs = cls.get_dec_compile_cfg(context, rbln_config)
+        dec_compiled_model_0 = cls.compile(
+            dec_models[0],
+            rbln_compile_config=rbln_config.compile_cfgs[-2],
+            create_runtimes=rbln_config.create_runtimes,
+            device=cls._device_for(rbln_config, "decoder_0"),
+            example_inputs=dec0_example_inputs,
+            compile_context=context,
+        )
+        compiled_models["decoder_0"] = dec_compiled_model_0
+
+        dec_compiled_model_n = cls.compile(
+            dec_models[1],
+            rbln_compile_config=rbln_config.compile_cfgs[-1],
+            create_runtimes=rbln_config.create_runtimes,
+            device=cls._device_for(rbln_config, "decoder_n"),
+            example_inputs=decn_example_inputs,
+            compile_context=context,
+        )
+        compiled_models["decoder_n"] = dec_compiled_model_n
+        return compiled_models
+
+    @classmethod
+    def update_rbln_config_using_pipe(
+        cls, pipe: "RBLNDiffusionMixin", rbln_config: "RBLNDiffusionMixinConfig", submodule_name: str
+    ) -> "RBLNDiffusionMixinConfig":
+        if rbln_config.vae.height is None:
+            rbln_config.vae.height = 704
+        if rbln_config.vae.width is None:
+            rbln_config.vae.width = 1280
+        if rbln_config.vae.num_frames is None:
+            rbln_config.vae.num_frames = 93
+
+        rbln_config.vae.num_channels_latents = pipe.transformer.config.out_channels
+        rbln_config.vae.vae_scale_factor_temporal = pipe.vae_scale_factor_temporal
+        rbln_config.vae.vae_scale_factor_spatial = pipe.vae_scale_factor_spatial
+
+        return rbln_config
+
+    @classmethod
+    def get_enc_compile_cfg(cls, context, rbln_config):
+        encoder_0_compile_config = rbln_config.compile_cfgs[0]
+        encoder_n_compile_config = rbln_config.compile_cfgs[1]
+
+        enc0_example_inputs = encoder_0_compile_config.get_dummy_inputs(fill=0)
+        static_tensors = {}
+        for (name, _, _), tensor in zip(encoder_0_compile_config.input_info, enc0_example_inputs, strict=False):
+            if ("feat_cache" in name) and ("feat_cache_0" not in name):
+                static_tensors[name] = tensor
+                context.mark_static_address(tensor)
+
+        encn_example_inputs = encoder_n_compile_config.get_dummy_inputs(fill=0, static_tensors=static_tensors)
+        for (name, _, _), tensor in zip(encoder_n_compile_config.input_info, encn_example_inputs, strict=False):
+            if ("feat_cache" in name) and ("feat_cache_0" not in name):
+                context.mark_static_address(tensor)
+        return context, enc0_example_inputs, encn_example_inputs
+
+    @classmethod
+    def get_dec_compile_cfg(cls, context, rbln_config):
+        decoder_0_compile_config = rbln_config.compile_cfgs[-2]
+        decoder_n_compile_config = rbln_config.compile_cfgs[-1]
+
+        dec0_example_inputs = decoder_0_compile_config.get_dummy_inputs(fill=0)
+        static_tensors = {}
+        for (name, _, _), tensor in zip(decoder_0_compile_config.input_info, dec0_example_inputs, strict=False):
+            if "feat_cache" in name:
+                static_tensors[name] = tensor
+                context.mark_static_address(tensor)
+
+        decn_example_inputs = decoder_n_compile_config.get_dummy_inputs(fill=0, static_tensors=static_tensors)
+        for (name, _, _), tensor in zip(decoder_n_compile_config.input_info, decn_example_inputs, strict=False):
+            if ("feat_cache" in name) and ("feat_cache_0" not in name):
+                context.mark_static_address(tensor)
+        return context, dec0_example_inputs, decn_example_inputs
+
+    @classmethod
+    def _update_rbln_config(
+        cls,
+        preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"],
+        model: "PreTrainedModel",
+        model_config: "PretrainedConfig",
+        rbln_config: RBLNAutoencoderKLWanConfig,
+    ) -> RBLNAutoencoderKLWanConfig:
+        missing = [key for key in ("height", "width", "num_frames") if getattr(rbln_config, key) is None]
+        if missing:
+            raise ValueError(
+                f"{', '.join(f'`{key}`' for key in missing)} must be specified to compile the Wan VAE. "
+                "Compiling through a pipeline fills them with that pipeline's defaults; a standalone "
+                "compile must pass them in rbln_config."
+            )
+
+        batch_size = rbln_config.batch_size
+        compile_cfgs = []
+        if rbln_config.uses_encoder:
+            vae_enc_0_input_info = [
+                (
+                    "x",
+                    [
+                        batch_size,
+                        model_config.in_channels,
+                        1,  # encode one slice at a time
+                        rbln_config.height,
+                        rbln_config.width,
+                    ],
+                    rbln_config.dtype,
+                ),
+            ]
+            CHUNK_SIZE = 4
+            vae_enc_n_input_info = [
+                (
+                    "x",
+                    [
+                        batch_size,
+                        model_config.in_channels,
+                        CHUNK_SIZE,  # encode CHUNK_SIZE slices at a time
+                        rbln_config.height,
+                        rbln_config.width,
+                    ],
+                    rbln_config.dtype,
+                ),
+            ]
+            for i, shape in enumerate(get_cache_size("enc", rbln_config.height, rbln_config.width)):
+                if i == 0:
+                    vae_enc_0_input_info.append((f"feat_cache_{i}", list(shape), rbln_config.dtype))
+                    vae_enc_n_input_info.append((f"feat_cache_{i}", list(shape), rbln_config.dtype))
+                else:
+                    cache_input_shape = _cache_input_shape(shape)
+                    vae_enc_0_input_info.append((f"feat_cache_{i}", cache_input_shape, rbln_config.dtype))
+                    vae_enc_n_input_info.append((f"feat_cache_{i}", cache_input_shape, rbln_config.dtype))
+
+            compile_cfgs.append(RBLNCompileConfig(compiled_model_name="encoder_0", input_info=vae_enc_0_input_info))
+            compile_cfgs.append(RBLNCompileConfig(compiled_model_name="encoder_n", input_info=vae_enc_n_input_info))
+
+        if rbln_config.num_channels_latents is None:
+            rbln_config.num_channels_latents = model_config.z_dim
+        if rbln_config.vae_scale_factor_temporal is None:
+            rbln_config.vae_scale_factor_temporal = 2 ** sum(model_config.temperal_downsample)
+        if rbln_config.vae_scale_factor_spatial is None:
+            rbln_config.vae_scale_factor_spatial = 2 ** len(model_config.temperal_downsample)
+
+        latent_height = rbln_config.height // rbln_config.vae_scale_factor_spatial
+        latent_width = rbln_config.width // rbln_config.vae_scale_factor_spatial
+
+        dec_cache_shapes = get_cache_size("dec", rbln_config.height, rbln_config.width)
+        z_dim = getattr(model_config, "z_dim", rbln_config.num_channels_latents)
+        vae_dec_0_input_info = [
+            ("z", [batch_size, z_dim, 1, latent_height, latent_width], rbln_config.dtype),
+        ]
+        vae_dec_n_input_info = [
+            ("z", [batch_size, z_dim, 1, latent_height, latent_width], rbln_config.dtype),
+        ]
+        for i, shape in enumerate(dec_cache_shapes):
+            if i > 0:
+                cache_input_shape = _cache_input_shape(shape)
+                vae_dec_0_input_info.append((f"feat_cache_{i}", cache_input_shape, rbln_config.dtype))
+                vae_dec_n_input_info.append((f"feat_cache_{i}", cache_input_shape, rbln_config.dtype))
+            else:
+                vae_dec_n_input_info.append((f"feat_cache_{i}", list(shape), rbln_config.dtype))
+
+        compile_cfgs.append(RBLNCompileConfig(compiled_model_name="decoder_0", input_info=vae_dec_0_input_info))
+        compile_cfgs.append(RBLNCompileConfig(compiled_model_name="decoder_n", input_info=vae_dec_n_input_info))
+
+        rbln_config.set_compile_cfgs(compile_cfgs)
+        return rbln_config
+
+    @classmethod
+    def _create_runtimes(
+        cls,
+        compiled_models: list[rebel.RBLNCompiledModel],
+        rbln_config: RBLNAutoencoderKLWanConfig,
+    ) -> list[rebel.Runtime]:
+        if rbln_config.uses_encoder:
+            expected_models = ["encoder_0", "encoder_n", "decoder_0", "decoder_n"]
+        else:
+            expected_models = ["decoder_0", "decoder_n"]
+
+        device_vals = [cls._device_for(rbln_config, model_name) for model_name in expected_models]
+        return [
+            rebel.Runtime(
+                compiled_model,
+                tensor_type="pt",
+                device=device_val,
+                activate_profiler=rbln_config.activate_profiler,
+                timeout=rbln_config.timeout,
+            )
+            for compiled_model, device_val in zip(compiled_models, device_vals, strict=False)
+        ]
+
+    def encode(
+        self, x: torch.Tensor, return_dict: bool = True
+    ) -> AutoencoderKLOutput | tuple[DiagonalGaussianDistribution]:
+        """
+        Encode an input video into a latent representation.
+
+        Args:
+            x: The input video to encode.
+            return_dict:
+                Whether to return output as a dictionary. Defaults to True.
+
+        Returns:
+            The latent representation or AutoencoderKLOutput if return_dict=True
+        """
+        if self.use_slicing and x.shape[0] > 1:
+            encoded_slices = [self._encode(x_slice) for x_slice in x.split(1)]
+            h = torch.cat(encoded_slices)
+        else:
+            h = self._encode(x)
+        posterior = DiagonalGaussianDistribution(h)
+
+        if not return_dict:
+            return (posterior,)
+        return AutoencoderKLOutput(latent_dist=posterior)
+
+    def decode(self, z: torch.Tensor, return_dict: bool = True) -> torch.Tensor | DecoderOutput:
+        """
+        Decode a latent representation into a video.
+
+        Args:
+            z: The latent representation to decode.
+            return_dict:
+                Whether to return output as a dictionary. Defaults to True.
+
+        Returns:
+            The decoded video or DecoderOutput if return_dict=True
+        """
+        if self.use_slicing and z.shape[0] > 1:
+            decoded_slices = [self._decode(z_slice) for z_slice in z.split(1)]
+            decoded = torch.cat(decoded_slices)
+        else:
+            decoded = self._decode(z)
+
+        if not return_dict:
+            return (decoded,)
+
+        return DecoderOutput(sample=decoded)
+
+    def _decode(self, z: torch.Tensor):
+        return self.decoder.decode(z)
+
+    def _encode(self, x: torch.Tensor):
+        return self.encoder.encode(x)
+
+
+__all__ = [
+    "RBLNAutoencoderKLWan",
+]

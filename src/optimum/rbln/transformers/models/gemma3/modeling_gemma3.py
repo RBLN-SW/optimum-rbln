@@ -412,12 +412,13 @@ class RBLNGemma3ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
         self.decoder = self.decoders[self.rbln_config.batch_size]
 
     def _create_embedding_layer(self):
+        text_config = self.config.get_text_config()
         with no_init_weights():
             embed_tokens = Gemma3TextScaledWordEmbedding(
-                self.config.vocab_size,
-                self.config.hidden_size,
-                self.config.pad_token_id,
-                embed_scale=self.config.hidden_size**0.5,
+                text_config.vocab_size,
+                text_config.hidden_size,
+                text_config.pad_token_id,
+                embed_scale=text_config.hidden_size**0.5,
             )
         # Gemma3TextScaledWordEmbedding does not forward a dtype kwarg to
         # nn.Embedding, so cast the module instead.

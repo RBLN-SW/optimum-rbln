@@ -250,7 +250,7 @@ class DecoderOnlyForCausalLM(nn.Module):
 
     def __init__(self, causal_lm: PreTrainedModel, model: nn.Module):
         super().__init__()
-        self.config = causal_lm.config
+        self.config = causal_lm.config.get_text_config()
         self.model = model
         self._phase = "prefill"
         self.lm_head = causal_lm.lm_head

@@ -130,7 +130,7 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
 
     @property
     def logits_last_dim(self):
-        return self.config.hidden_size
+        return self.config.get_text_config().hidden_size
 
     @classmethod
     def get_quantized_model(
@@ -196,11 +196,12 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
             torch.save(save_dict, save_dir_path / subfolder / "torch_artifacts.pth")
 
     def _create_embedding_layer(self):
+        text_config = self.config.get_text_config()
         with no_init_weights():
             embed_tokens = torch.nn.Embedding(
-                self.config.vocab_size,
-                self.config.hidden_size,
-                self.config.pad_token_id,
+                text_config.vocab_size,
+                text_config.hidden_size,
+                text_config.pad_token_id,
                 dtype=self.rbln_config.dtype,
             )
         return embed_tokens
@@ -554,9 +555,12 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
         model_config: PretrainedConfig | None = None,
         rbln_config: RBLNDecoderOnlyModelForCausalLMConfig | None = None,
     ) -> RBLNDecoderOnlyModelForCausalLMConfig:
+        # downstream hooks get the raw model_config: some need sibling sections (e.g. vision_config)
+        text_config = model_config.get_text_config()
+
         if rbln_config.max_seq_len is None:
-            rbln_config.max_seq_len = getattr(model_config, "max_position_embeddings", None) or getattr(
-                model_config, "n_positions", None
+            rbln_config.max_seq_len = getattr(text_config, "max_position_embeddings", None) or getattr(
+                text_config, "n_positions", None
             )
         if rbln_config.max_seq_len is None:
             raise ValueError("`max_seq_len` should be specified.")
@@ -576,12 +580,12 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
                 and not rbln_config.use_attention_mask
             )
 
-        layer_types = getattr(model_config, "layer_types", None)
+        layer_types = getattr(text_config, "layer_types", None)
         all_full_attention = layer_types is not None and all(t == "full_attention" for t in layer_types)
 
         if (
-            getattr(model_config, "sliding_window", None) is not None
-            and getattr(model_config, "use_sliding_window", True)
+            getattr(text_config, "sliding_window", None) is not None
+            and getattr(text_config, "use_sliding_window", True)
             and not all_full_attention
         ):
             rbln_config = cls._update_sliding_window_config(model_config, rbln_config)
@@ -694,16 +698,18 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
             )
         output_hidden_states = _validate_output_hidden_states(output_hidden_states, self.rbln_config)
 
+        text_config = self.config.get_text_config()
+
         all_last_hidden_states = []
         all_hidden_states = (
             tuple(
                 torch.zeros(
                     self.rbln_config.batch_size,
                     inputs.shape[1],
-                    self.config.hidden_size,
+                    text_config.hidden_size,
                     dtype=self.rbln_config.dtype,
                 )
-                for _ in range(self.config.num_hidden_layers + 1)
+                for _ in range(text_config.num_hidden_layers + 1)
             )
             if output_hidden_states
             else None
@@ -724,7 +730,7 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
             )
             all_last_hidden_states.append(outputs.logits)
             if self.rbln_config.output_hidden_states:
-                for l_idx in range(self.config.num_hidden_layers + 1):
+                for l_idx in range(text_config.num_hidden_layers + 1):
                     all_hidden_states[l_idx][b_idx].copy_(outputs.hidden_states[l_idx][0])
 
         last_hidden_states = torch.concat(all_last_hidden_states, dim=0)
@@ -756,7 +762,7 @@ class RBLNDecoderOnlyModelForCausalLM(RBLNDecoderOnlyModel, RBLNDecoderOnlyGener
 
     @property
     def logits_last_dim(self):
-        return self.config.vocab_size
+        return self.config.get_text_config().vocab_size
 
     def set_lora_int_ids(self, lora_int_ids: torch.Tensor | None):
         if isinstance(lora_int_ids, int):
@@ -959,10 +965,11 @@ class RBLNDecoderOnlyModelForCausalLM(RBLNDecoderOnlyModel, RBLNDecoderOnlyGener
                     f"Input's length({input_len}) exceeds compiled max_seq_len({self.rbln_config.max_seq_len})."
                 )
 
+            text_config = self.config.get_text_config()
             all_hidden_states = (
                 tuple(
-                    torch.zeros(batch_size, input_len, self.config.hidden_size, dtype=self.rbln_config.dtype)
-                    for _ in range(self.config.num_hidden_layers + 1)
+                    torch.zeros(batch_size, input_len, text_config.hidden_size, dtype=self.rbln_config.dtype)
+                    for _ in range(text_config.num_hidden_layers + 1)
                 )
                 if self.rbln_config.output_hidden_states
                 else None
@@ -982,7 +989,7 @@ class RBLNDecoderOnlyModelForCausalLM(RBLNDecoderOnlyModel, RBLNDecoderOnlyGener
                 padded_cache_lengths[b_idx] += outputs.padded_cache_lengths
                 logits.append(outputs.logits)
                 if self.rbln_config.output_hidden_states:
-                    for l_idx in range(self.config.num_hidden_layers + 1):
+                    for l_idx in range(text_config.num_hidden_layers + 1):
                         all_hidden_states[l_idx][b_idx].copy_(outputs.hidden_states[l_idx][0])
             logits = torch.cat(logits, dim=0)
         # Decoder
