@@ -106,6 +106,17 @@ class RBLNRuntimeWanVAEDecoder(RBLNPytorchRuntime):
         return torch.clamp(out, min=-1.0, max=1.0)
 
 
+class RBLNRuntimeCogVideoXVAEEncoder(RBLNPytorchRuntime):
+    mandatory_members = ["main_input_name", "dtype"]
+
+    def encode(self, x: torch.Tensor) -> torch.Tensor:
+        if x.shape[2] != 1:
+            raise ValueError(
+                f"The CogVideoX VAE encoder is compiled for 1-frame images (image-to-video), got {x.shape[2]} frames."
+            )
+        return self.forward(x.to(self.dtype).contiguous())
+
+
 class RBLNRuntimeCogVideoXVAEDecoder(RBLNPytorchRuntime):
     mandatory_members = ["main_input_name", "decoder_n", "first_chunk_size", "frame_batch_size", "dtype"]
 

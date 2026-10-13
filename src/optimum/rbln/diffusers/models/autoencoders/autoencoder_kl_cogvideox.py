@@ -22,7 +22,8 @@ from diffusers.models.autoencoders.autoencoder_kl_cogvideox import (
     CogVideoXCausalConv3d,
     CogVideoXDecoder3D,
 )
-from diffusers.models.autoencoders.vae import DecoderOutput
+from diffusers.models.autoencoders.vae import DecoderOutput, DiagonalGaussianDistribution
+from diffusers.models.modeling_outputs import AutoencoderKLOutput
 from rebel.compile_context import CompileContext
 
 from ....configuration_utils import RBLNCompileConfig
@@ -30,7 +31,7 @@ from ....modeling import RBLNModel
 from ....modeling_base import Preprocessor
 from ....utils.logging import get_logger
 from ...configurations import RBLNAutoencoderKLCogVideoXConfig
-from .vae import RBLNRuntimeCogVideoXVAEDecoder
+from .vae import RBLNRuntimeCogVideoXVAEDecoder, RBLNRuntimeCogVideoXVAEEncoder
 
 
 if TYPE_CHECKING:
@@ -202,14 +203,34 @@ class _VAECogVideoXDecoderN(_VAECogVideoXDecoderBase):
         return self._decode(z, conv_cache, caches)
 
 
+class _VAECogVideoXEncoder(torch.nn.Module):
+    """Wrapper module for the CogVideoX VAE encoder on a 1-frame image (image-to-video).
+
+    diffusers encodes fewer than `num_sample_frames_batch_size` (8) frames in one call with no conv cache,
+    so the image is one graph without static caches.
+    """
+
+    def __init__(self, vae: AutoencoderKLCogVideoX):
+        super().__init__()
+        self.encoder = vae.encoder
+        self.quant_conv = vae.quant_conv
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        h, _ = self.encoder(x, conv_cache=None)
+        if self.quant_conv is not None:
+            h = self.quant_conv(h)
+        return h
+
+
 class RBLNAutoencoderKLCogVideoX(RBLNModel):
     """
     RBLN implementation of AutoencoderKLCogVideoX for diffusion models.
 
     This model is used to accelerate AutoencoderKLCogVideoX models from diffusers library on RBLN NPUs.
-    Only the decoder (latent-to-video) is compiled. Like the Wan VAE, the temporal conv caches stay on the
-    device as static buffers and the frame loop runs on the host: `decoder_0` decodes the first latent chunk
-    without a cache and `decoder_n` decodes each later chunk with the previous cache.
+    Like the Wan VAE, the decoder's temporal conv caches stay on the device as static buffers and the frame
+    loop runs on the host: `decoder_0` decodes the first latent chunk without a cache and `decoder_n` decodes
+    each later chunk with the previous cache. With `uses_encoder` (image-to-video), `encoder` encodes a
+    1-frame image.
 
     This class inherits from [`RBLNModel`]. Check the superclass documentation for the generic methods
     the library implements for all its models.
@@ -235,14 +256,22 @@ class RBLNAutoencoderKLCogVideoX(RBLNModel):
         self.use_tiling = False
         self.num_latent_frames_batch_size = self.rbln_config.num_latent_frames_batch_size
 
+        # By index: without runtimes, self.model is an UnavailableRuntime (len 0, any index returns itself).
+        runtimes = {cfg.compiled_model_name: self.model[i] for i, cfg in enumerate(self.rbln_config.compile_cfgs)}
         self.decoder = RBLNRuntimeCogVideoXVAEDecoder(
-            runtime=self.model[0],
-            decoder_n=self.model[1] if len(self.model) > 1 else None,
+            runtime=runtimes["decoder_0"],
+            decoder_n=runtimes.get("decoder_n"),
             main_input_name="z",
             first_chunk_size=self.rbln_config.first_chunk_size,
             frame_batch_size=self.rbln_config.num_latent_frames_batch_size,
             dtype=self.rbln_config.dtype,
         )
+        if "encoder" in runtimes:
+            self.encoder = RBLNRuntimeCogVideoXVAEEncoder(
+                runtime=runtimes["encoder"], main_input_name="x", dtype=self.rbln_config.dtype
+            )
+        else:
+            self.encoder = None
 
     @classmethod
     def _needs_decoder_n(cls, rbln_config: RBLNAutoencoderKLCogVideoXConfig) -> bool:
@@ -254,57 +283,67 @@ class RBLNAutoencoderKLCogVideoX(RBLNModel):
     ) -> torch.nn.Module:
         latent_h = rbln_config.height // rbln_config.vae_scale_factor_spatial
         latent_w = rbln_config.width // rbln_config.vae_scale_factor_spatial
-        decoder_models = [_VAECogVideoXDecoder0(model, latent_h, latent_w).eval()]
+        models = [_VAECogVideoXDecoder0(model, latent_h, latent_w).eval()]
         if cls._needs_decoder_n(rbln_config):
-            decoder_models.append(_VAECogVideoXDecoderN(model, latent_h, latent_w).eval())
-        return tuple(decoder_models)
+            models.append(_VAECogVideoXDecoderN(model, latent_h, latent_w).eval())
+        if rbln_config.uses_encoder:
+            models.append(_VAECogVideoXEncoder(model).eval())
+        return tuple(models)
 
     @classmethod
     def get_compiled_model(
         cls, model, rbln_config: RBLNAutoencoderKLCogVideoXConfig
     ) -> dict[str, rebel.RBLNCompiledModel]:
-        dec_models = cls._wrap_model_if_needed(model, rbln_config)
+        models = dict(
+            zip(
+                [cfg.compiled_model_name for cfg in rbln_config.compile_cfgs],
+                cls._wrap_model_if_needed(model, rbln_config),
+                strict=True,
+            )
+        )
 
         # D0 and DN wrap the SAME vae.decoder -> share its weights on device (use_weight_sharing).
         context = CompileContext(use_weight_sharing=True)
         context, example_inputs = cls.get_dec_compile_cfg(context, rbln_config)
 
         # Graphs of one CompileSession reuse an earlier graph's intermediate buffer when it is large
-        # enough, and only then. decoder_n needs the larger one (7.25 GiB vs 4.40 GiB at 480x720,
-        # 49 frames), so compile it first and let decoder_0 reuse it; the other order allocates both
-        # and does not fit on one device.
+        # enough, and only then. decoder_n needs the largest one (7.25 GiB vs 4.40 GiB at 480x720,
+        # 49 frames), so compile it first and let decoder_0 (and the encoder) reuse it; the other order
+        # allocates several buffers and does not fit on one device.
+        order = [name for name in ("decoder_n", "decoder_0", "encoder") if name in models]
+        cfgs = {cfg.compiled_model_name: cfg for cfg in rbln_config.compile_cfgs}
         compiled = {}
-        jobs = list(zip(dec_models, rbln_config.compile_cfgs, example_inputs, strict=True))
-        for dec_model, compile_cfg, inputs in reversed(jobs):
-            compiled[compile_cfg.compiled_model_name] = cls.compile(
-                dec_model,
-                rbln_compile_config=compile_cfg,
+        for name in order:
+            compiled[name] = cls.compile(
+                models[name],
+                rbln_compile_config=cfgs[name],
                 create_runtimes=rbln_config.create_runtimes,
-                device=rbln_config.device_map[compile_cfg.compiled_model_name],
-                example_inputs=inputs,
+                device=rbln_config.device_map[name],
+                example_inputs=example_inputs[name],
                 compile_context=context,
             )
-        compiled_models = {cfg.compiled_model_name: compiled[cfg.compiled_model_name] for _, cfg, _ in jobs}
-        return compiled_models
+        return {cfg.compiled_model_name: compiled[cfg.compiled_model_name] for cfg in rbln_config.compile_cfgs}
 
     @classmethod
     def get_dec_compile_cfg(cls, context, rbln_config):
-        decoder_0_compile_config = rbln_config.compile_cfgs[0]
-        dec0_example_inputs = decoder_0_compile_config.get_dummy_inputs(fill=0)
+        cfgs = {cfg.compiled_model_name: cfg for cfg in rbln_config.compile_cfgs}
+        example_inputs = {}
+        dec0_example_inputs = cfgs["decoder_0"].get_dummy_inputs(fill=0)
         static_tensors = {}
-        for (name, _, _), tensor in zip(decoder_0_compile_config.input_info, dec0_example_inputs, strict=True):
+        for (name, _, _), tensor in zip(cfgs["decoder_0"].input_info, dec0_example_inputs, strict=True):
             if "feat_cache" in name:
                 static_tensors[name] = tensor
                 context.mark_static_address(tensor)
-        example_inputs = [dec0_example_inputs]
+        example_inputs["decoder_0"] = dec0_example_inputs
 
-        if len(rbln_config.compile_cfgs) > 1:
-            decoder_n_compile_config = rbln_config.compile_cfgs[1]
-            decn_example_inputs = decoder_n_compile_config.get_dummy_inputs(fill=0, static_tensors=static_tensors)
-            for (name, _, _), tensor in zip(decoder_n_compile_config.input_info, decn_example_inputs, strict=True):
+        if "decoder_n" in cfgs:
+            decn_example_inputs = cfgs["decoder_n"].get_dummy_inputs(fill=0, static_tensors=static_tensors)
+            for (name, _, _), tensor in zip(cfgs["decoder_n"].input_info, decn_example_inputs, strict=True):
                 if ("feat_cache" in name) and ("feat_cache_0" not in name):
                     context.mark_static_address(tensor)
-            example_inputs.append(decn_example_inputs)
+            example_inputs["decoder_n"] = decn_example_inputs
+        if "encoder" in cfgs:
+            example_inputs["encoder"] = cfgs["encoder"].get_dummy_inputs(fill=0)
         return context, example_inputs
 
     @classmethod
@@ -371,6 +410,16 @@ class RBLNAutoencoderKLCogVideoX(RBLNModel):
         compile_cfgs = [RBLNCompileConfig(compiled_model_name="decoder_0", input_info=dec_0_input_info)]
         if cls._needs_decoder_n(rbln_config):
             compile_cfgs.append(RBLNCompileConfig(compiled_model_name="decoder_n", input_info=dec_n_input_info))
+        if rbln_config.uses_encoder:
+            # Image-to-video encodes one image as a 1-frame video.
+            enc_input_info = [
+                (
+                    "x",
+                    [batch_size, model_config.in_channels, 1, rbln_config.height, rbln_config.width],
+                    rbln_config.dtype,
+                )
+            ]
+            compile_cfgs.append(RBLNCompileConfig(compiled_model_name="encoder", input_info=enc_input_info))
 
         rbln_config.set_compile_cfgs(compile_cfgs)
         return rbln_config
@@ -393,8 +442,31 @@ class RBLNAutoencoderKLCogVideoX(RBLNModel):
             for compiled_model, name in zip(compiled_models, names, strict=True)
         ]
 
-    def encode(self, x: torch.Tensor, return_dict: bool = True):
-        raise NotImplementedError("RBLNAutoencoderKLCogVideoX compiles the decoder only; encode is not supported.")
+    def encode(
+        self, x: torch.Tensor, return_dict: bool = True
+    ) -> AutoencoderKLOutput | tuple[DiagonalGaussianDistribution]:
+        """
+        Encode a 1-frame image (image-to-video) into a latent distribution.
+
+        Args:
+            x: The image to encode, shaped (batch, channels, 1, height, width).
+            return_dict:
+                Whether to return output as a dictionary. Defaults to True.
+
+        Returns:
+            The latent distribution or AutoencoderKLOutput if return_dict=True
+        """
+        if self.encoder is None:
+            raise ValueError("The VAE was compiled without the encoder; compile it with `uses_encoder=True`.")
+        if self.use_slicing and x.shape[0] > 1:
+            h = torch.cat([self.encoder.encode(x_slice) for x_slice in x.split(1)])
+        else:
+            h = self.encoder.encode(x)
+        posterior = DiagonalGaussianDistribution(h)
+
+        if not return_dict:
+            return (posterior,)
+        return AutoencoderKLOutput(latent_dist=posterior)
 
     def decode(self, z: torch.Tensor, return_dict: bool = True) -> torch.Tensor | DecoderOutput:
         """

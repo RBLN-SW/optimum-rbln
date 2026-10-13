@@ -21,6 +21,7 @@ from ....utils.import_utils import define_import_structure
 
 if TYPE_CHECKING:
     from .pipeline_cogvideox import *
+    from .pipeline_cogvideox_image2video import *
 else:
     import sys
 

@@ -43,7 +43,7 @@ class RBLNAutoencoderKLCogVideoXConfig(RBLNModelConfig):
         Args:
             batch_size (Optional[int]): The batch size for inference. Defaults to 1.
             uses_encoder (Optional[bool]): Whether to include the encoder part of the VAE in the model.
-                Only the decoder is supported now, so this must be False or None.
+                Image-to-video uses it to encode the input image as a 1-frame video; text-to-video does not.
             num_frames (Optional[int]): The number of frames in the generated video. Filled by the
                 pipeline config; required for a standalone compile.
             height (Optional[int]): The height in pixels of the generated video. Filled by the
@@ -85,8 +85,6 @@ class RBLNAutoencoderKLCogVideoXConfig(RBLNModelConfig):
             )
             self.batch_size = 1
 
-        if uses_encoder:
-            raise NotImplementedError("RBLNAutoencoderKLCogVideoX supports the decoder only (uses_encoder=False).")
         self.uses_encoder = uses_encoder
         self.num_frames = num_frames
         self.height = height

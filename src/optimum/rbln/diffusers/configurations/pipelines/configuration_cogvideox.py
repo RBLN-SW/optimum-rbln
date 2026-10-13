@@ -101,6 +101,13 @@ class RBLNCogVideoXPipelineConfig(RBLNModelConfig):
         return self.text_encoder.max_seq_len
 
 
+class RBLNCogVideoXImageToVideoPipelineConfig(RBLNCogVideoXPipelineConfig):
+    """Config for the CogVideoX image-to-video pipeline. The VAE also compiles its encoder for the input image."""
+
+    _vae_uses_encoder = True
+
+
 __all__ = [
+    "RBLNCogVideoXImageToVideoPipelineConfig",
     "RBLNCogVideoXPipelineConfig",
 ]
