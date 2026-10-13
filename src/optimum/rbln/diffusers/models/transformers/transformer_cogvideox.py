@@ -12,17 +12,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import copy
 from collections.abc import Sequence
 from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any
 
-import rebel
 import torch
 from diffusers.models.embeddings import Timesteps
 from diffusers.models.modeling_outputs import Transformer2DModelOutput
 from diffusers.models.transformers.cogvideox_transformer_3d import CogVideoXTransformer3DModel
 
-from ....configuration_utils import DEFAULT_COMPILED_MODEL_NAME, RBLNCompileConfig
+from ....configuration_utils import RBLNCompileConfig
 from ....modeling import RBLNModel
 from ....modeling_base import Preprocessor
 from ....utils.logging import get_logger
@@ -37,64 +37,30 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 
-class CogVideoXTransformer3DModelSegment(torch.nn.Module):
+class CogVideoXTransformer3DModelWrapper(torch.nn.Module):
     """
-    Compile graph of one segment (a range of transformer blocks) of CogVideoXTransformer3DModel.
-
-    The model runs as one or more graphs, `layers_per_graph` blocks each: one graph with all 30 blocks of
-    CogVideoX-2b hangs on the device (see `RBLNCogVideoXTransformer3DModelConfig.layers_per_graph`).
-    The steps mirror `CogVideoXTransformer3DModel.forward` (no rotary embedding, no ofs, no gradient
-    checkpointing):
-
-    - the first segment takes (hidden_states, encoder_hidden_states, timestep_proj), runs the time and
-      patch embeddings, and splits the text and video tokens;
-    - the other segments take (hidden_states, encoder_hidden_states, emb) from the previous one;
-    - the last segment adds the final norms, the projection and the unpatchify.
+    Compile graph of CogVideoXTransformer3DModel.
 
     The sinusoidal timestep projection (`time_proj`, no weights) runs on the host, because sin/cos of
-    timesteps up to 999 lose precision on the device. The first graph takes its output as `timestep_proj`.
+    timesteps up to 999 lose precision on the device. The graph takes its output as `timestep_proj`,
+    so `time_proj` is an identity here and the rest of the HF forward runs unchanged.
     """
 
-    def __init__(self, model: CogVideoXTransformer3DModel, start: int, end: int, latent_shape: Sequence[int]):
+    def __init__(self, model: CogVideoXTransformer3DModel) -> None:
         super().__init__()
-        self.is_first = start == 0
-        self.is_last = end == len(model.transformer_blocks)
-        if self.is_first:
-            self.time_embedding = model.time_embedding
-            self.patch_embed = model.patch_embed
-            self.embedding_dropout = model.embedding_dropout
-        self.transformer_blocks = torch.nn.ModuleList(model.transformer_blocks[start:end])
-        if self.is_last:
-            self.norm_final = model.norm_final
-            self.norm_out = model.norm_out
-            self.proj_out = model.proj_out
-        self.patch_size = model.config.patch_size
-        self.num_frames, self.height, self.width = latent_shape
+        # Shallow copy with its own child-module table: shares every weight with `model`, but swapping
+        # `time_proj` does not change the caller's model.
+        self.model = copy.copy(model)
+        self.model._modules = dict(model._modules)
+        self.model.time_proj = torch.nn.Identity()
 
-    def forward(self, hidden_states: torch.Tensor, encoder_hidden_states: torch.Tensor, emb: torch.Tensor):
-        batch_size = hidden_states.shape[0]
-        if self.is_first:
-            # `emb` is the host-side timestep_proj here.
-            emb = self.time_embedding(emb.to(hidden_states.dtype), None)
-            hidden_states = self.embedding_dropout(self.patch_embed(encoder_hidden_states, hidden_states))
-            text_seq_length = encoder_hidden_states.shape[1]
-            encoder_hidden_states = hidden_states[:, :text_seq_length]
-            hidden_states = hidden_states[:, text_seq_length:]
-
-        for block in self.transformer_blocks:
-            hidden_states, encoder_hidden_states = block(
-                hidden_states=hidden_states, encoder_hidden_states=encoder_hidden_states, temb=emb
-            )
-
-        if not self.is_last:
-            return hidden_states, encoder_hidden_states, emb
-
-        hidden_states = self.norm_final(hidden_states)
-        hidden_states = self.norm_out(hidden_states, temb=emb)
-        hidden_states = self.proj_out(hidden_states)
-        p = self.patch_size
-        output = hidden_states.reshape(batch_size, self.num_frames, self.height // p, self.width // p, -1, p, p)
-        return output.permute(0, 1, 4, 2, 5, 3, 6).flatten(5, 6).flatten(3, 4)
+    def forward(self, hidden_states: torch.Tensor, encoder_hidden_states: torch.Tensor, timestep_proj: torch.Tensor):
+        return self.model(
+            hidden_states=hidden_states,
+            encoder_hidden_states=encoder_hidden_states,
+            timestep=timestep_proj,
+            return_dict=False,
+        )
 
 
 class RBLNCogVideoXTransformer3DModel(RBLNModel):
@@ -115,59 +81,16 @@ class RBLNCogVideoXTransformer3DModel(RBLNModel):
         inner_dim = self.config.num_attention_heads * self.config.attention_head_dim
         self.time_proj = Timesteps(inner_dim, self.config.flip_sin_to_cos, self.config.freq_shift)
 
-    @staticmethod
-    def _segment_bounds(num_layers: int, layers_per_graph: int) -> list[tuple[int, int]]:
-        num_graphs = -(-num_layers // layers_per_graph)
-        # Even split, e.g. 30 layers with layers_per_graph=7 -> 5 graphs of 6.
-        bounds = [round(i * num_layers / num_graphs) for i in range(num_graphs + 1)]
-        return list(zip(bounds[:-1], bounds[1:], strict=True))
-
     @classmethod
     def _wrap_model_if_needed(
         cls, model: torch.nn.Module, rbln_config: RBLNCogVideoXTransformer3DModelConfig
-    ) -> list[torch.nn.Module]:
+    ) -> torch.nn.Module:
         if model.config.use_rotary_positional_embeddings or getattr(model, "ofs_embedding", None) is not None:
             raise NotImplementedError(
                 "RBLNCogVideoXTransformer3DModel supports CogVideoX-2b style models only "
                 "(no rotary positional embeddings, no ofs embedding)."
             )
-        latent_shape = (rbln_config.num_latent_frames, *rbln_config.sample_size)
-        return [
-            CogVideoXTransformer3DModelSegment(model, start, end, latent_shape).eval()
-            for start, end in cls._segment_bounds(model.config.num_layers, rbln_config.layers_per_graph)
-        ]
-
-    @classmethod
-    def get_compiled_model(
-        cls, model: torch.nn.Module, rbln_config: RBLNCogVideoXTransformer3DModelConfig
-    ) -> dict[str, rebel.RBLNCompiledModel]:
-        segments = cls._wrap_model_if_needed(model, rbln_config)
-        return {
-            cfg.compiled_model_name: cls.compile(
-                segment,
-                rbln_compile_config=cfg,
-                create_runtimes=rbln_config.create_runtimes,
-                device=rbln_config.device_map[cfg.compiled_model_name],
-            )
-            for segment, cfg in zip(segments, rbln_config.compile_cfgs, strict=True)
-        }
-
-    @classmethod
-    def _create_runtimes(
-        cls,
-        compiled_models: list[rebel.RBLNCompiledModel],
-        rbln_config: RBLNCogVideoXTransformer3DModelConfig,
-    ) -> list[rebel.Runtime]:
-        return [
-            rebel.Runtime(
-                compiled_model,
-                tensor_type="pt",
-                device=rbln_config.device_map[cfg.compiled_model_name],
-                activate_profiler=rbln_config.activate_profiler,
-                timeout=rbln_config.timeout,
-            )
-            for compiled_model, cfg in zip(compiled_models, rbln_config.compile_cfgs, strict=True)
-        ]
+        return CogVideoXTransformer3DModelWrapper(model).eval()
 
     @classmethod
     def update_rbln_config_using_pipe(
@@ -200,40 +123,24 @@ class RBLNCogVideoXTransformer3DModel(RBLNModel):
             rbln_config.max_text_seq_length = model_config.max_text_seq_length
         if rbln_config.vae_scale_factor_temporal is None:
             rbln_config.vae_scale_factor_temporal = model_config.temporal_compression_ratio
-        if rbln_config.layers_per_graph is None:
-            # A graph hangs on the device once its command stream passes about 0.19 GiB, and the
-            # stream grows with the batch (see RBLNCogVideoXTransformer3DModelConfig.layers_per_graph).
-            # Tensor parallel splits the stream across devices (TP8 at batch 2: 0.06 GiB per device for
-            # all 30 CogVideoX-2b blocks), so with num_devices the whole model fits in one graph.
-            rbln_config.layers_per_graph = max(1, 15 * (rbln_config.num_devices or 1) // rbln_config.batch_size)
 
         inner_dim = model_config.num_attention_heads * model_config.attention_head_dim
         batch_size = rbln_config.batch_size
         latent_h, latent_w = rbln_config.sample_size
-        p = model_config.patch_size
-        text_len = rbln_config.max_text_seq_length
-        video_len = rbln_config.num_latent_frames * (latent_h // p) * (latent_w // p)
-        first_input_info = [
+        input_info = [
             (
                 "hidden_states",
                 [batch_size, rbln_config.num_latent_frames, model_config.in_channels, latent_h, latent_w],
                 rbln_config.dtype,
             ),
-            ("encoder_hidden_states", [batch_size, text_len, model_config.text_embed_dim], rbln_config.dtype),
+            (
+                "encoder_hidden_states",
+                [batch_size, rbln_config.max_text_seq_length, model_config.text_embed_dim],
+                rbln_config.dtype,
+            ),
             ("timestep_proj", [batch_size, inner_dim], "float32"),
         ]
-        next_input_info = [
-            ("hidden_states", [batch_size, video_len, inner_dim], rbln_config.dtype),
-            ("encoder_hidden_states", [batch_size, text_len, inner_dim], rbln_config.dtype),
-            ("emb", [batch_size, model_config.time_embed_dim], rbln_config.dtype),
-        ]
-
-        bounds = cls._segment_bounds(model_config.num_layers, rbln_config.layers_per_graph)
-        compile_cfgs = []
-        for i, (start, end) in enumerate(bounds):
-            name = DEFAULT_COMPILED_MODEL_NAME if len(bounds) == 1 else f"segment_{i}_layers_{start}_{end}"
-            input_info = first_input_info if start == 0 else next_input_info
-            compile_cfgs.append(RBLNCompileConfig(compiled_model_name=name, input_info=input_info))
+        compile_cfgs = [RBLNCompileConfig(input_info=input_info)]
         rbln_config.set_compile_cfgs(compile_cfgs)
         return rbln_config
 
@@ -291,14 +198,12 @@ class RBLNCogVideoXTransformer3DModel(RBLNModel):
         timestep = timestep.reshape(-1).expand(sample_batch_size)
         timestep_proj = self.time_proj(timestep).to(torch.float32)
 
-        outputs = (
+        return super().forward(
             hidden_states.to(self.dtype).contiguous(),
             encoder_hidden_states.to(self.dtype).contiguous(),
             timestep_proj.contiguous(),
+            return_dict=return_dict,
         )
-        for runtime in self.model:
-            outputs = runtime(*outputs)
-        return self._prepare_output(outputs, return_dict)
 
 
 __all__ = [

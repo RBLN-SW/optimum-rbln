@@ -17,6 +17,9 @@ from typing import Any
 from ....configuration_utils import RBLNModelConfig
 
 
+MIN_NUM_DEVICES = 8
+
+
 class RBLNCogVideoXTransformer3DModelConfig(RBLNModelConfig):
     """
     Configuration class for RBLN CogVideoX Transformer models.
@@ -34,7 +37,6 @@ class RBLNCogVideoXTransformer3DModelConfig(RBLNModelConfig):
         sample_size: tuple[int, int] | None = None,
         max_text_seq_length: int | None = None,
         vae_scale_factor_temporal: int | None = None,
-        layers_per_graph: int | None = None,
         **kwargs: Any,
     ):
         """
@@ -49,19 +51,26 @@ class RBLNCogVideoXTransformer3DModelConfig(RBLNModelConfig):
                 transformer config `max_text_seq_length`.
             vae_scale_factor_temporal (int | None): The temporal compression of the VAE. Defaults to the
                 transformer config `temporal_compression_ratio`.
-            layers_per_graph (int | None): The maximum number of transformer blocks in one compiled graph.
-                The model runs as ceil(num_layers / layers_per_graph) graphs of even size, chained on the
-                host. Defaults to max(1, 15 * num_devices // batch_size). At 49 frames 480x720 a graph hangs on
-                the device (SYS_KERNEL_TIMEOUT) once its command stream on one device passes about 0.19 GiB: on one
-                device, 19 blocks run and 20 hang at batch 1, and 15 blocks hang at batch 2. With num_devices=8
-                all 30 blocks at batch 2 take 0.06 GiB per device, so the model runs as one graph.
-            kwargs: Additional arguments passed to the parent RBLNModelConfig.
+            kwargs: Additional arguments passed to the parent RBLNModelConfig. `num_devices` (tensor parallel)
+                defaults to 8 and must be at least 8: on fewer devices the 30-block CogVideoX-2b graph at 49 frames
+                480x720 hangs on the device (SYS_KERNEL_TIMEOUT).
 
         Raises:
-            ValueError: If batch_size is not a positive integer.
+            ValueError: If batch_size is not a positive integer, or num_devices is less than 8.
         """
         super().__init__(**kwargs)
         self._batch_size_is_specified = batch_size is not None
+
+        # One graph holds all transformer blocks; it hangs on the device once its command stream on one
+        # device passes about 0.19 GiB (20 blocks at batch 1 on one device). Tensor parallel over 8 devices
+        # keeps all 30 CogVideoX-2b blocks at batch 2 at 0.06 GiB per device.
+        if self.num_devices is None:
+            self.num_devices = MIN_NUM_DEVICES
+        if self.num_devices < MIN_NUM_DEVICES:
+            raise ValueError(
+                f"RBLNCogVideoXTransformer3DModel needs num_devices >= {MIN_NUM_DEVICES} (tensor parallel), got "
+                f"{self.num_devices}: on fewer devices the compiled graph can hang on the device."
+            )
 
         self.batch_size = batch_size or 1
         if not isinstance(self.batch_size, int) or self.batch_size < 0:
@@ -71,8 +80,6 @@ class RBLNCogVideoXTransformer3DModelConfig(RBLNModelConfig):
         self.sample_size = tuple(sample_size) if sample_size is not None else None
         self.max_text_seq_length = max_text_seq_length
         self.vae_scale_factor_temporal = vae_scale_factor_temporal
-        # None: resolved from the final batch size at compile time (the pipeline may double it).
-        self.layers_per_graph = layers_per_graph
 
     @property
     def batch_size_is_specified(self):
