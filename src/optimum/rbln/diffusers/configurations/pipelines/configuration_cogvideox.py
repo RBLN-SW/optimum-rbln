@@ -71,8 +71,6 @@ class RBLNCogVideoXPipelineConfig(RBLNModelConfig):
         self.transformer = self.initialize_submodule_config(
             transformer,
             cls_name="RBLNCogVideoXTransformer3DModelConfig",
-            # Tensor parallel over 8 devices: 4.6x faster than one device at batch 2 (4.1 s vs 19.1 s per
-            # step at 49 frames 480x720), and the 30 blocks fit in one graph.
             num_devices=self.num_devices or 8,
             num_frames=num_frames,
             max_text_seq_length=max_seq_len,
@@ -80,7 +78,6 @@ class RBLNCogVideoXPipelineConfig(RBLNModelConfig):
         self.vae = self.initialize_submodule_config(
             vae,
             cls_name="RBLNAutoencoderKLCogVideoXConfig",
-            # A pipeline-level num_devices (tensor parallel for the transformer) must not reach the VAE.
             num_devices=1,
             batch_size=batch_size,
             uses_encoder=self.__class__._vae_uses_encoder,

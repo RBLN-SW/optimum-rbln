@@ -61,9 +61,6 @@ class RBLNCogVideoXTransformer3DModelConfig(RBLNModelConfig):
         super().__init__(**kwargs)
         self._batch_size_is_specified = batch_size is not None
 
-        # One graph holds all transformer blocks; it hangs on the device once its command stream on one
-        # device passes about 0.19 GiB (20 blocks at batch 1 on one device). Tensor parallel over 8 devices
-        # keeps all 30 CogVideoX-2b blocks at batch 2 at 0.06 GiB per device.
         if self.num_devices is None:
             self.num_devices = MIN_NUM_DEVICES
         if self.num_devices < MIN_NUM_DEVICES:
