@@ -181,6 +181,57 @@ class Qwen3_5GatedDeltaNet(nn.Module):
     def phase(self, phase: str):
         self._phase = phase
 
+    def _by_group(self, channels: torch.Tensor) -> torch.Tensor:
+        """Conv channels `[conv_dim, ...]` -> `[Hk*(2+r), D, ...]`: Q, K and the r value heads of each Q/K head."""
+        heads, ratio = self.num_k_heads, self.num_v_heads // self.num_k_heads
+        q_part, k_part, v_part = channels.split((self.key_dim, self.key_dim, self.value_dim))
+        parts = (q_part.reshape(heads, 1, -1), k_part.reshape(heads, 1, -1), v_part.reshape(heads, ratio, -1))
+        return torch.cat(parts, dim=1).reshape(heads * (2 + ratio), self.head_k_dim, *channels.shape[1:])
+
+    def _short_conv(
+        self,
+        hidden_states: torch.Tensor,
+        conv_state: torch.Tensor,
+        prefill: bool,
+        query_position: torch.Tensor | None,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        """The short causal depthwise convolution, and the inputs the next call carries.
+
+        Q, K and the r value heads of each Q/K head share one channel-last window `[B, Hk*(2+r), K-1+S, D]`:
+        the carried K-1 inputs, then this call's S inputs. One set of conv ops covers all of them, and the
+        Q/K head stays outermost so tensor parallelism can shard by it.
+        """
+        batch_size, seq_len, _ = hidden_states.shape
+        heads, ratio = self.num_k_heads, self.num_v_heads // self.num_k_heads
+        dim, k_1 = self.head_k_dim, self.conv_kernel_size - 1
+        groups = heads * (2 + ratio)
+
+        q_in = self.in_proj_q(hidden_states).reshape(batch_size, seq_len, heads, dim).transpose(1, 2)
+        k_in = self.in_proj_k(hidden_states).reshape(batch_size, seq_len, heads, dim).transpose(1, 2)
+        v_in = self.in_proj_v(hidden_states).reshape(batch_size, seq_len, heads, ratio, dim).permute(0, 2, 3, 1, 4)
+        new = torch.cat([q_in.unsqueeze(2), k_in.unsqueeze(2), v_in], dim=2).reshape(batch_size, groups, seq_len, dim)
+        window = torch.cat([conv_state.reshape(batch_size, groups, k_1, dim), new], dim=2)
+
+        # The next call carries the last K-1 inputs; a right-padded prefill window ends at query_position.
+        if prefill:
+            position = query_position.to(torch.int).unsqueeze(0)
+            carried = torch.cat([window[:, :, position + i] for i in range(1, k_1 + 1)], dim=2)
+        else:
+            carried = window.narrow(2, seq_len, k_1)
+
+        # K per-channel taps along the window's time axis.
+        taps = self._by_group(self.conv1d.weight[:, 0])
+        out = sum(window.narrow(2, tap, seq_len) * taps[..., tap].unsqueeze(-2) for tap in range(k_1 + 1))
+        if self.conv1d.bias is not None:
+            out = out + self._by_group(self.conv1d.bias).unsqueeze(-2)
+        convolved = F.silu(out).reshape(batch_size, heads, 2 + ratio, seq_len, dim)
+        return (
+            convolved[:, :, 0],
+            convolved[:, :, 1],
+            convolved[:, :, 2:],
+            carried.reshape(batch_size, -1, dim),
+        )
+
     def forward(
         self,
         hidden_states: torch.Tensor,
@@ -200,42 +251,14 @@ class Qwen3_5GatedDeltaNet(nn.Module):
         # Returns no new recurrent state: the op writes it into `recurrent_state` at `slot`.
         batch_size, seq_len, _ = hidden_states.shape
         heads, ratio = self.num_k_heads, self.num_v_heads // self.num_k_heads
-        dim, k_1 = self.head_k_dim, self.conv_kernel_size - 1
+        dim = self.head_k_dim
 
         z = self.in_proj_z(hidden_states).reshape(batch_size, seq_len, heads, ratio, dim).permute(0, 2, 3, 1, 4)
         b = self.in_proj_b(hidden_states)
         a = self.in_proj_a(hidden_states)
-        q_in = self.in_proj_q(hidden_states).reshape(batch_size, seq_len, heads, dim).transpose(1, 2)
-        k_in = self.in_proj_k(hidden_states).reshape(batch_size, seq_len, heads, dim).transpose(1, 2)
-        v_in = self.in_proj_v(hidden_states).reshape(batch_size, seq_len, heads, ratio, dim).permute(0, 2, 3, 1, 4)
-
-        # Q, K and the r value heads of each Q/K head share one channel-last window [B, Hk*(2+r), K-1+S, D]: the
-        # carried K-1 inputs, then this call's S inputs. One set of conv ops covers all of them.
-        groups = heads * (2 + ratio)
-        prev = conv_state.reshape(batch_size, groups, k_1, dim)
-        new = torch.cat([q_in.unsqueeze(2), k_in.unsqueeze(2), v_in], dim=2).reshape(batch_size, groups, seq_len, dim)
-        window = torch.cat([prev, new], dim=2)
-
-        # The next call carries the last K-1 inputs; a right-padded prefill window ends at query_position.
-        if prefill:
-            position = query_position.to(torch.int).unsqueeze(0)
-            carried = torch.cat([window[:, :, position + i] for i in range(1, k_1 + 1)], dim=2)
-        else:
-            carried = window.narrow(2, seq_len, k_1)
-        new_conv_state = carried.reshape(batch_size, -1, dim)
-
-        # Depthwise conv as K per-channel taps along the window's time axis.
-        def per_group(channels):
-            q_part, k_part, v_part = channels.split((self.key_dim, self.key_dim, self.value_dim))
-            parts = (q_part.reshape(heads, 1, -1), k_part.reshape(heads, 1, -1), v_part.reshape(heads, ratio, -1))
-            return torch.cat(parts, dim=1).reshape(groups, dim, *channels.shape[1:])
-
-        taps = per_group(self.conv1d.weight[:, 0])
-        out = sum(window.narrow(2, tap, seq_len) * taps[..., tap].unsqueeze(-2) for tap in range(k_1 + 1))
-        if self.conv1d.bias is not None:
-            out = out + per_group(self.conv1d.bias).unsqueeze(-2)
-        convolved = F.silu(out).reshape(batch_size, heads, 2 + ratio, seq_len, dim)
-        query, key, value = convolved[:, :, 0], convolved[:, :, 1], convolved[:, :, 2:]
+        query, key, value, new_conv_state = self._short_conv(
+            hidden_states, conv_state, prefill=prefill, query_position=query_position
+        )
 
         beta = b.sigmoid()
         g = -self.A_log.float().exp() * F.softplus(a.float() + self.dt_bias)
