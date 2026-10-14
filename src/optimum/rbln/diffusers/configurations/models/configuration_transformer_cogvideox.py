@@ -37,7 +37,6 @@ class RBLNCogVideoXTransformer3DModelConfig(RBLNModelConfig):
         sample_size: tuple[int, int] | None = None,
         max_text_seq_length: int | None = None,
         vae_scale_factor_temporal: int | None = None,
-        layers_per_graph: int | None = None,
         **kwargs: Any,
     ):
         """
@@ -52,17 +51,12 @@ class RBLNCogVideoXTransformer3DModelConfig(RBLNModelConfig):
                 transformer config `max_text_seq_length`.
             vae_scale_factor_temporal (int | None): The temporal compression of the VAE. Defaults to the
                 transformer config `temporal_compression_ratio`.
-            layers_per_graph (int | None): The maximum number of transformer blocks in one compiled graph. The model
-                runs as ceil(num_layers / layers_per_graph) graphs of even size, chained on the host. A graph fails on
-                the device (SYS_KERNEL_TIMEOUT) once one run takes about 10 s, so the default comes from the blocks x
-                batch x video tokens x width that fit: at 49 frames 480x720 and batch 2, CogVideoX-2b (30 blocks)
-                runs as one graph and CogVideoX-5b-I2V (42 blocks) as two graphs of 21.
             kwargs: Additional arguments passed to the parent RBLNModelConfig. `num_devices` (tensor parallel)
                 defaults to 8 and must be at least 8: on fewer devices the 30-block CogVideoX-2b graph at 49 frames
                 480x720 hangs on the device (SYS_KERNEL_TIMEOUT).
 
         Raises:
-            ValueError: If batch_size or layers_per_graph is not a positive integer, or num_devices is less than 8.
+            ValueError: If batch_size is not a positive integer, or num_devices is less than 8.
         """
         super().__init__(**kwargs)
         self._batch_size_is_specified = batch_size is not None
@@ -83,10 +77,6 @@ class RBLNCogVideoXTransformer3DModelConfig(RBLNModelConfig):
         self.sample_size = tuple(sample_size) if sample_size is not None else None
         self.max_text_seq_length = max_text_seq_length
         self.vae_scale_factor_temporal = vae_scale_factor_temporal
-        if layers_per_graph is not None and (not isinstance(layers_per_graph, int) or layers_per_graph < 1):
-            raise ValueError(f"layers_per_graph must be a positive integer, got {layers_per_graph}")
-        # None: resolved from the model and the final batch size at compile time (the pipeline may double it).
-        self.layers_per_graph = layers_per_graph
 
     @property
     def batch_size_is_specified(self):

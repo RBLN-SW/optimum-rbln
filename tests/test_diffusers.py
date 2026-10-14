@@ -525,7 +525,7 @@ def _save_tiny_cogvideox_pipeline(save_dir: str, image_to_video: bool = False) -
         out_channels=4,
         time_embed_dim=8,
         text_embed_dim=32,
-        num_layers=2 if image_to_video else 1,
+        num_layers=1,
         sample_width=90,
         sample_height=60,
         sample_frames=17,
@@ -601,8 +601,7 @@ class TestCogVideoXModel(BaseTest.TestModel):
 
 class TestCogVideoXImageToVideoModel(BaseTest.TestModel):
     RBLN_CLASS = RBLNCogVideoXImageToVideoPipeline
-    # The VAE also compiles the 1-frame encoder for the input image. The transformer runs as two graphs of one
-    # block each (layers_per_graph), with the RoPE tables as inputs of both.
+    # The VAE also compiles the 1-frame encoder for the input image.
     GENERATION_KWARGS = {
         "image": Image.new("RGB", (720, 480), color=(120, 80, 40)),
         "prompt": "a cat playing a piano",
@@ -621,7 +620,6 @@ class TestCogVideoXImageToVideoModel(BaseTest.TestModel):
             "width": 720,
             "num_frames": 17,
             "max_seq_len": 16,
-            "transformer": {"layers_per_graph": 1},
         },
     }
 
@@ -645,10 +643,6 @@ class TestCogVideoXImageToVideoModel(BaseTest.TestModel):
         image = torch.rand(1, 3, 1, 480, 720) * 2 - 1
         latent = self.model.vae.encode(image).latent_dist.mean
         self.assertEqual(tuple(latent.shape), (1, 4, 1, 60, 90))
-
-    def test_transformer_segments(self):
-        names = [cfg.compiled_model_name for cfg in self.model.transformer.rbln_config.compile_cfgs]
-        self.assertEqual(names, ["segment_0_layers_0_1", "segment_1_layers_1_2"])
 
 
 if __name__ == "__main__":
