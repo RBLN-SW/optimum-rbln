@@ -68,6 +68,7 @@ if TYPE_CHECKING:
     from .resnet import *
     from .roberta import *
     from .siglip import *
+    from .smollm3 import *
     from .starcoder2 import *
     from .swin import *
     from .t5 import *
