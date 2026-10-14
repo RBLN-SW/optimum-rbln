@@ -54,6 +54,8 @@ from optimum.rbln import (
     RBLNOPTForCausalLM,
     RBLNOPTModel,
     RBLNPegasusForConditionalGeneration,
+    RBLNPhi3ForCausalLM,
+    RBLNPhi3Model,
     RBLNPhiForCausalLM,
     RBLNPhiModel,
     RBLNQwen2_5_VLForConditionalGeneration,
@@ -415,6 +417,28 @@ class TestPhiModel(LLMTest.TestLLMWithoutLMHead):
     RBLN_CLASS = RBLNPhiModel
     HF_MODEL_ID = "microsoft/phi-2"
     HF_CONFIG_KWARGS = {"num_hidden_layers": 1, "max_position_embeddings": 1024, "trust_remote_code": True}
+
+
+class TestPhi3ForCausalLM(LLMTest.TestLLM):
+    RBLN_CLASS = RBLNPhi3ForCausalLM
+    HF_MODEL_ID = "microsoft/Phi-3.5-mini-instruct"
+    HF_CONFIG_KWARGS = {
+        "num_hidden_layers": 1,
+        "max_position_embeddings": 1024,
+        "original_max_position_embeddings": 1024,
+    }
+
+
+class TestPhi3Model(LLMTest.TestLLMWithoutLMHead):
+    RBLN_CLASS = RBLNPhi3Model
+    # The checkpoint's remote-code auto_map has no AutoModel entry, so RBLNAutoModel cannot resolve its config.
+    RBLN_AUTO_CLASS = None
+    HF_MODEL_ID = "microsoft/Phi-3.5-mini-instruct"
+    HF_CONFIG_KWARGS = {
+        "num_hidden_layers": 1,
+        "max_position_embeddings": 1024,
+        "original_max_position_embeddings": 1024,
+    }
 
 
 class TestExaoneForCausalLM(LLMTest.TestLLM):
