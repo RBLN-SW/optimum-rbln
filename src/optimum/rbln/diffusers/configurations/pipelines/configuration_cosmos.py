@@ -17,19 +17,19 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from ....configuration_utils import RBLNModelConfig
-from ....transformers import RBLNQwen2_5_VLForConditionalGenerationConfig, RBLNT5EncoderModelConfig
 from ....utils.deprecation import deprecate_kwarg
 from ....utils.logging import get_logger
-from ..models import (
-    RBLNAutoencoderKLCosmosConfig,
-    RBLNAutoencoderKLWanConfig,
-    RBLNCosmosControlNetModelConfig,
-    RBLNCosmosTransformer3DModelConfig,
-)
 
 
 if TYPE_CHECKING:
+    from ....transformers import RBLNQwen2_5_VLForConditionalGenerationConfig, RBLNT5EncoderModelConfig
     from ...pipelines.cosmos.configuration_cosmos_guardrail import RBLNCosmosSafetyCheckerConfig
+    from ..models import (
+        RBLNAutoencoderKLCosmosConfig,
+        RBLNAutoencoderKLWanConfig,
+        RBLNCosmosControlNetModelConfig,
+        RBLNCosmosTransformer3DModelConfig,
+    )
 
 
 logger = get_logger(__name__)
@@ -377,10 +377,10 @@ class RBLNCosmos2_5_TransferPipelineConfig(RBLNCosmos2_5_PredictBasePipelineConf
 
 
 __all__ = [
-    "RBLNCosmosTextToWorldPipelineConfig",
-    "RBLNCosmosVideoToWorldPipelineConfig",
     "RBLNCosmos2TextToImagePipelineConfig",
     "RBLNCosmos2VideoToWorldPipelineConfig",
     "RBLNCosmos2_5_PredictBasePipelineConfig",
     "RBLNCosmos2_5_TransferPipelineConfig",
+    "RBLNCosmosTextToWorldPipelineConfig",
+    "RBLNCosmosVideoToWorldPipelineConfig",
 ]
