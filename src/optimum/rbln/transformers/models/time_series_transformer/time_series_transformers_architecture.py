@@ -22,11 +22,15 @@
 # from Rebellions Inc.
 
 
+from types import MethodType
+
 import torch
 from torch import nn
 from transformers.modeling_attn_mask_utils import _prepare_4d_causal_attention_mask
 from transformers.modeling_outputs import BaseModelOutput, Seq2SeqLMOutput
 from transformers.utils import logging
+
+from ..bart.bart_architecture import _encoder_layer_forward
 
 
 logger = logging.get_logger(__name__)
@@ -43,6 +47,9 @@ class TimeSeriesTransformersEncoderWrapper(torch.nn.Module):
         super().__init__()
         self.config = model.config
         self.encoder = model.get_encoder()
+        # Same layer layout and data-dependent fp16 clamp guard as BART.
+        for layer in self.encoder.layers:
+            layer.forward = MethodType(_encoder_layer_forward, layer)
         self.num_heads = self.config.decoder_attention_heads
         self.d_kv = self.config.d_model // self.num_heads
         self.cross_k_projects, self.cross_v_projects = self._extract_cross_kv_projects(model.get_decoder().layers)

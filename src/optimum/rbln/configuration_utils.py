@@ -699,13 +699,13 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
     @deprecate_kwarg(
         old_name="tensor_parallel_size",
         new_name="num_devices",
-        version="0.12.0",
+        version="0.13.0",
         raise_if_greater_or_equal_version=False,
     )
     @deprecate_kwarg(
         old_name="_torch_dtype",
         new_name="dtype",
-        version="0.12.0",
+        version="0.13.0",
         deprecated_type=torch.dtype,
         value_replacer=RBLNCompileConfig.normalize_dtype,
         raise_if_greater_or_equal_version=False,
@@ -875,8 +875,7 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
         from the artifact's rbln_config.json, and this dict is merged on top of it.
 
         Returns:
-            Dictionary of load overrides, keyed like the rbln_config dict accepted by
-            from_pretrained.
+            Dictionary of load overrides, keyed like the ``rbln_config`` dict accepted by ``from_pretrained``.
         """
 
         def filter_dict(cfg: dict) -> dict[str, Any] | None:

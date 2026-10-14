@@ -263,14 +263,15 @@ class RBLNGemma4ForCausalLM(RBLNMoeLoadMixin, RBLNDecoderOnlyModelForCausalLM):
             rbln_config=rbln_config,
             model_config=model_config,
         )
-        if getattr(model_config, "hidden_size_per_layer_input", 0):
+        text_config = model_config.get_text_config()
+        if getattr(text_config, "hidden_size_per_layer_input", 0):
             per_layer_entry = (
                 "per_layer_inputs",
                 [
                     batch_size,
                     query_length,
-                    model_config.num_hidden_layers,
-                    model_config.hidden_size_per_layer_input,
+                    text_config.num_hidden_layers,
+                    text_config.hidden_size_per_layer_input,
                 ],
                 rbln_config.dtype,
             )
@@ -432,12 +433,13 @@ class RBLNGemma4ForCausalLM(RBLNMoeLoadMixin, RBLNDecoderOnlyModelForCausalLM):
     def _create_per_layer_embedding_layer(self):
         from transformers.models.gemma4.modeling_gemma4 import Gemma4TextScaledWordEmbedding
 
+        text_config = self.config.get_text_config()
         with no_init_weights():
             embed_per_layer = Gemma4TextScaledWordEmbedding(
-                self.config.vocab_size_per_layer_input,
-                self.config.num_hidden_layers * self.config.hidden_size_per_layer_input,
-                self.config.pad_token_id,
-                embed_scale=self.config.hidden_size_per_layer_input**0.5,
+                text_config.vocab_size_per_layer_input,
+                text_config.num_hidden_layers * text_config.hidden_size_per_layer_input,
+                text_config.pad_token_id,
+                embed_scale=text_config.hidden_size_per_layer_input**0.5,
             )
         # Gemma4TextScaledWordEmbedding does not forward a dtype kwarg to
         # nn.Embedding, so cast the module instead.
@@ -506,12 +508,13 @@ class RBLNGemma4ForCausalLM(RBLNMoeLoadMixin, RBLNDecoderOnlyModelForCausalLM):
     def _create_embedding_layer(self):
         from transformers.models.gemma4.modeling_gemma4 import Gemma4TextScaledWordEmbedding
 
+        text_config = self.config.get_text_config()
         with no_init_weights():
             embed_tokens = Gemma4TextScaledWordEmbedding(
-                self.config.vocab_size,
-                self.config.hidden_size,
-                self.config.pad_token_id,
-                embed_scale=self.config.hidden_size**0.5,
+                text_config.vocab_size,
+                text_config.hidden_size,
+                text_config.pad_token_id,
+                embed_scale=text_config.hidden_size**0.5,
             )
         # Gemma4TextScaledWordEmbedding does not forward a dtype kwarg to
         # nn.Embedding, so cast the module instead.
@@ -695,7 +698,7 @@ class RBLNGemma4ForConditionalGeneration(RBLNMoeLoadMixin, RBLNModel, RBLNImageI
         # a buffer/graph dtype mismatch, so it only ever warns -- raising would break the case it exists
         # to support.
         #
-        # Once optimum-rbln reaches 0.12.0 this is deleted outright:
+        # Once optimum-rbln reaches 0.13.0 this is deleted outright:
         #   1. Delete this property.
         #   2. In `get_image_features`, replace both uses of `self.compiled_image_features_dtype`
         #      with `self.rbln_config.dtype`.
@@ -711,7 +714,7 @@ class RBLNGemma4ForConditionalGeneration(RBLNMoeLoadMixin, RBLNModel, RBLNImageI
                 "this artifact keeps working; recompile it so `embed_vision` picks up the current "
                 "`rbln_config.dtype`. Support for artifacts whose `embed_vision` compiled "
                 "`image_features` dtype differs from `rbln_config.dtype` is deprecated and will be "
-                "removed in version 0.12.0."
+                "removed in version 0.13.0."
             )
         return compiled_dtype
 

@@ -30,7 +30,8 @@ class RBLNQwen3ForCausalLMConfig(RBLNDecoderOnlyModelForCausalLMConfig):
         batch_size=1,
         max_seq_len=40960,
         num_devices=4,
-        kvcache_partition_len=16384
+        attn_impl="flash_attn",
+        kvcache_partition_len=8192
     )
 
     # Use the configuration with from_pretrained
@@ -47,7 +48,7 @@ class RBLNQwen3ModelConfig(RBLNDecoderOnlyModelConfig):
     """
     Configuration class for RBLN Qwen3 models.
 
-    This class is an alias of RBLNDecoderOnlyModelForCausalLMConfig.
+    This class is an alias of RBLNDecoderOnlyModelConfig.
 
     Example usage:
     ```python
@@ -58,7 +59,8 @@ class RBLNQwen3ModelConfig(RBLNDecoderOnlyModelConfig):
         batch_size=1,
         max_seq_len=40960,
         num_devices=4,
-        kvcache_partition_len=16384
+        attn_impl="flash_attn",
+        kvcache_partition_len=8192
     )
 
     # Use the configuration with from_pretrained
