@@ -97,18 +97,22 @@ export는 `define_import_structure`가 `__all__`에서 자동으로 만든다. `
 - **chunk 분할은 diffusers `AutoencoderKLCogVideoX._decode`와 같아야 한다**: 첫 chunk = `min(n, 2 + n % 2)` latent frame,
   이후 2 frame씩 (49 frames → latent 13 → 3 + 2×5). GroupNorm과 시간축 upsample이 chunk에 의존해서, 다르게 나누면 결과가 깨진다.
   - `decoder_0`: 첫 chunk, cache 없이 시작. `decoder_n`: 이후 chunk, 이전 cache를 받는다.
-- conv cache 표는 모듈 트리에서 만든다 (`get_cache_convs`). 축소 config에도 동작.
+- conv cache 목록은 모듈 트리에서 만든다 (`_decoder_conv_caches` → `_ConvCache` 리스트: key path, 채널, depth, h, w).
+  축소 config에도 동작. 2b/5b VAE는 cache 38개.
+- 첫 cache (`conv_in`, latent 16채널 60x90)는 static이 아니다: 그래프 출력으로 돌려주고 runtime이 다음 chunk에
+  `conv_cache_0`으로 넘긴다 (어느 device layout에도 안 맞음). 나머지는 static 입력 `conv_cache_1` …
 - cache는 static buffer + `torch.ops.rbln_custom_ops.rbln_cache_update`. **쓰기는 그래프 끝에서 한 번에** (아래 이슈 3).
 - cache dtype (`cache_dtype`) 기본값은 VAE dtype. device는 16-bit로만 저장하므로 fp32로 선언해도 DRAM은 bf16과 같다
   (2b VAE fp32 그래프에서 fp32 cache / bf16 cache: peak 둘 다 12.982 GiB, 출력 frame md5 동일, §6).
 - `get_compiled_model`은 **`decoder_n`을 먼저 컴파일**한다 (`decoder_n`, `decoder_0`, `encoder` 순, 한
   `CompileContext(use_weight_sharing=True)`). 그래야 나머지가 `decoder_n`의 intermediate 버퍼를 재사용해 한 device에 들어간다.
-- cache 레이아웃 (`_cache_layout(c, h, w)`):
-  - `flat` `(n, c, d, h*w)` — `h*w`가 64의 배수일 때.
-  - `chlast` `(n, h*w, d, c)` — 아니고 `c`가 64의 배수일 때. 쓰기 `x.permute(0,3,4,2,1).reshape(n,h*w,d,c)`,
-    읽기 `cache.reshape(n,h,w,d,c).permute(0,4,3,1,2)` (그래프 안의 실제 transpose).
-  - 둘 다 아니면 `NotImplementedError`.
-  - 480x720에서 60x90, 120x180 cache (h*w = 5400, 21600)가 `chlast`.
+- cache 레이아웃 (`_ConvCache.channels_last`, 블록 이름으로 고정 — 10-14 사용자 요청으로 64 규칙 대신):
+  - `chlast` `(n, h*w, d, c)` — `_CHANNELS_LAST_BLOCKS = ("mid_block", "up_block_0", "up_block_1")` (latent 1배·2배).
+    쓰기 `x.permute(0,3,4,2,1).reshape(n,h*w,d,c)`, 읽기 `cache.reshape(n,h,w,d,c).permute(0,4,3,1,2)` (그래프 안의 실제 transpose).
+  - `flat` `(n, c, d, h*w)` — 나머지 (`up_block_2`, `up_block_3`, `conv_out`; 4배·8배라 latent 크기가 짝수면 항상 정렬).
+  - 이유: `rbln_cache_update`는 마지막 축이 64의 배수여야 한다 (이슈 1, dev102에서도 그대로). 480x720에서 1배·2배 cache의
+    h*w = 5400, 21600. 다른 해상도 (768x1360, 512x512)에서는 이 블록도 flat으로 되지만 transpose해도 동작은 같다.
+  - 정리 전 코드 (64 규칙)와 480x720에서 같은 20개가 `chlast`라 그래프가 같다 (10-14 비트 비교, §6).
 - encoder (I2V, `uses_encoder=True`): `_VAECogVideoXEncoder`가 `encoder(x, conv_cache=None)` + `quant_conv`. 입력 1 frame
   `[B, 3, 1, H, W]`. `encode()`는 `AutoencoderKLOutput(latent_dist=DiagonalGaussianDistribution(h))`. sampling은 host
   (파이프라인의 `retrieve_latents`가 generator로 sample).
@@ -166,7 +170,7 @@ export는 `define_import_structure`가 `__all__`에서 자동으로 만든다. `
 1. **Transformer는 TP ≥ 8, 한 그래프.** 레이어 분할 (`layers_per_graph`) 금지. timeout은 사용자가 드라이버 쪽에서 해결.
 2. **VAE는 device 1개. RSD (`num_devices > 1`) 금지.** config가 막는다. (RSD는 conv 그래프를 나누지도 않아 메모리 이득도 없었다.)
 3. **VAE cache 레이아웃은 flat/chlast (transpose)만.** zero-pad 방식은 버렸다 (작은 VAE에서 실행 시
-   `The input(feat_cache_1) is not specified.`). 기록만 docs에 있다. 코드 주석에 pad 방식을 남기지 않는다.
+   `The input(feat_cache_1) is not specified.`, 지금 이름은 `conv_cache_*`). 기록만 docs에 있다. 코드 주석에 pad 방식을 남기지 않는다.
 4. **timestep은 그래프 안에서** (SD3 방식). host에서 `time_proj`를 하던 이전 방식은 버렸다.
 5. **공유 코드를 바꾸지 않는다.** 새 클래스를 추가한다. t2v 동작을 바꾸지 않는다.
 6. **PR 범위: 코드, 테스트, 사용자가 요청한 docs와 `examples/cogvideo/` 검증 스크립트.** 그 밖의 것을 넣기 전에 묻는다.
@@ -228,6 +232,9 @@ repro 스크립트: `examples/cogvideo/repro_cache_update_shape.py`, `repro_cach
   | decode / CPU 대비 | 22.89s, r=0.999994 | 22.80s, r=0.999994 |
   | 출력 frame (uint8 PNG 49장) | md5 동일 | md5 동일 |
 
+- VAE 코드 정리 (10-14, `_ConvCache` + `_CHANNELS_LAST_BLOCKS`) 전후 비트 비교: 새 코드로 컴파일한 VAE와 정리 전 코드의 산출물에
+  같은 입력을 넣으면 출력이 비트까지 같다. 2b fp32 decode (`vae_f49_480x720_fp32_refactor` vs `vae_f49_480x720_fp32_cachefp32`),
+  5b-I2V bf16 decode + encode (`vae5bi2v_f49_480x720_bf16_enc_refactor` vs `pipeline_cogvideox_5b_i2v_bf16_vaebf16_tp8/vae`).
   `outputs/20261014_1518_vae_f49_fp32_cachefp32/`, `outputs/20261014_1518_vae_f49_fp32_cachebf16/`. 예전 기록의 "fp32 cache OOM
   (DramTensor 5.27 GiB)"은 conv마다 cache를 쓰던 옛 구성의 값이다. 참고 (의미 미확인): 두 산출물 모두 `compiled_model_stats`에
   `feat_cache_21` 이후가 `host_op_reason: WrongShape`로 나온다.
