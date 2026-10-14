@@ -116,11 +116,15 @@ def _qwen3_5_build_compile_context(compile_config, example_inputs):
 
 
 def _qwen3_5_linear_state_shapes(text_config, batch_size: int):
-    """The cache layout `rbln_custom_ops::gdn_*` take (see `rebel.ops.torch_custom_ops.gdn`): the conv cache
-    grouped by Q/K head, the recurrent state blocked by the device's 64 lanes.
+    """The cache layout `rbln_custom_ops::gdn_*` take: the conv cache grouped by Q/K head, and the recurrent
+    state in the ops' own per-state layout, which `rebel` spells so that this does not restate it.
 
     Both graphs read the same static buffers, so prefill and decode take these shapes from here alone.
     """
+    # Imported here, not at module scope: only a compiler that ships the GDN ops has it, and
+    # `validate_gdn_custom_kernel` is what reports that.
+    from rebel.ops.torch_custom_ops.gdn import STATE_BLOCKS
+
     heads = text_config.linear_num_key_heads
     # Q, K and the value heads of each Q/K head, each carrying K-1 inputs.
     groups = 2 + text_config.linear_num_value_heads // heads
@@ -133,9 +137,7 @@ def _qwen3_5_linear_state_shapes(text_config, batch_size: int):
         batch_size,
         heads,
         text_config.linear_num_value_heads // heads,
-        text_config.linear_value_head_dim // 64,
-        text_config.linear_key_head_dim,
-        64,
+        *STATE_BLOCKS,
     )
     return conv_state_shape, recurrent_state_shape
 

@@ -94,7 +94,7 @@ def test_gdn_custom_model_prefill_decode_and_reset(ratio, prefill_size, gate_bia
     states = [initial, _custom_states(initial)]
     assert _qwen3_5_linear_state_shapes(hf_config, 1) == (
         (1, 2 * (2 + ratio) * 3, 128),
-        (1, 2, ratio, 2, 128, 64),
+        (1, 2, ratio, *gdn_ops.STATE_BLOCKS),
     )
     assert _qwen3_5_linear_mask_shape(1) == (1,)
     with torch.inference_mode():
