@@ -580,6 +580,25 @@ def test_deprecated_load_visual_runtime(parent_cls_name, vision_cls_name):
     assert config.visual.create_runtimes is True
 
 
+def test_cosmos2_5_pipeline_owns_the_visual_tower_config():
+    """The Cosmos2.5 pipeline sets the (unused) visual tower's config itself. A submodule dict
+    replaces that dict rather than merging into it, so naming `visual` with one key would drop
+    the rest in silence; `force_kwargs` reports the conflict instead."""
+    from optimum.rbln import RBLNCosmos2_5_PredictBasePipeline  # noqa: F401 - registers the safety checker config
+
+    config_cls = _import_config("RBLNCosmos2_5_PredictBasePipelineConfig")
+
+    visual = config_cls().text_encoder.visual
+    assert visual["max_seq_len"] == 64
+    assert visual["create_runtimes"] is False
+
+    with pytest.raises(ValueError, match="visual"):
+        config_cls(text_encoder={"visual": {"max_seq_len": 64}})
+
+    # placements and widths are the caller's to set and stay untouched
+    assert config_cls(text_encoder={"num_devices": 8}).text_encoder.num_devices == 8
+
+
 if __name__ == "__main__":
     pytest.main()
 
