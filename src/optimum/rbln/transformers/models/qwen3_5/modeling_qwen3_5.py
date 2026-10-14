@@ -421,6 +421,7 @@ class RBLNQwen3_5VisionModel(RBLNModel):
         )
         return (self.pos_embed(interp_indices) * interp_weights[:, :, None]).sum(1)
 
+    # TODO(0.13.0): remove this method with the legacy mask. Every artifact then declares one query row.
     def _declared_mask_rows(self, max_seq_len: int) -> int:
         """How many query rows the `max_seq_len` bucket declares: one from the key-padding mask onward,
         `max_seq_len` for an artifact compiled before it.
@@ -456,6 +457,8 @@ class RBLNQwen3_5VisionModel(RBLNModel):
             sin = torch.cat([sin, pos_padding], dim=0)
             position_embeddings = (cos, sin)
 
+        # TODO(0.13.0): `mask_rows` is always 1 once the legacy mask is gone. Remove the lookup and the
+        # branch, and keep `torch.ones(1, 1, 1, max_seq_len)` with the key-padding fill.
         mask_rows = self._declared_mask_rows(max_seq_len)
         attn_mask = torch.ones(1, 1, mask_rows, max_seq_len, dtype=hidden_states.dtype)
         if valid_len < max_seq_len:
@@ -466,6 +469,8 @@ class RBLNQwen3_5VisionModel(RBLNModel):
 
         return hidden_states, position_embeddings, attn_mask, valid_len
 
+    # TODO(0.13.0): this is the only fill left once the legacy mask is gone, so it can move back into
+    # `_pad_hidden_states`.
     @staticmethod
     def _mask_padded_keys(attn_mask: torch.Tensor, valid_len: int) -> None:
         """Mask the padded keys, in place. Every query row then attends to the valid keys only."""
