@@ -172,27 +172,25 @@ def _qwen3_5_setup_hybrid_runtime(model):
         "state_dtype": model.dtype,
     }
 
-    # Prefill runs one item at a time (batch=1) and writes its `batch_position` slot, so its state MASKS are
-    # batch=1 sized (they gate the single slot the graph reads); the underlying cache is max-batch (get_input_info).
-    state_mask_shape = _qwen3_5_linear_mask_shape(1)
+    # Prefill runs one item at a time (batch=1) and writes its `batch_position` slot, so its state MASK is
+    # batch=1 sized (it gates the single slot the graph reads); the underlying cache is max-batch (get_input_info).
     model.prefill_decoder = RBLNQwen3_5RuntimeModel(
         runtime=model.model[0],
         phase="prefill",
         batch_size=rbln_config.batch_size,
         logits_last_dim=model.logits_last_dim,
-        state_mask_shape=state_mask_shape,
+        state_mask_shape=_qwen3_5_linear_mask_shape(1),
         **common_kwargs,
     )
 
     if model.can_generate():
         model.decoders = {}
         for i, batch_size in enumerate(rbln_config.decoder_batch_sizes):
-            state_mask_shape = _qwen3_5_linear_mask_shape(batch_size)
             model.decoders[batch_size] = RBLNQwen3_5RuntimeModel(
                 runtime=model.model[i + 1],
                 phase="decode",
                 batch_size=batch_size,
-                state_mask_shape=state_mask_shape,
+                state_mask_shape=_qwen3_5_linear_mask_shape(batch_size),
                 **common_kwargs,
             )
         model.decoder = model.decoders[rbln_config.batch_size]
