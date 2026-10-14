@@ -14,5 +14,5 @@ version=$(grep '^rebel_compiler_version:' .github/version.yaml | cut -d ':' -f2 
 host="${REBEL_PYPI_INTERNAL_ENDPOINT%/}"
 index="https://${UV_INDEX_REBELLIONS_USERNAME}:${UV_INDEX_REBELLIONS_PASSWORD}@${host#https://}/simple"
 
-echo "--- :package: rebel-compiler==${version}"
-uv pip install --extra-index-url "$index" "rebel-compiler==${version}"
+echo "--- :package: rebel-compiler[v2]==${version}"
+uv pip install --extra-index-url "$index" "rebel-compiler[v2]==${version}"
