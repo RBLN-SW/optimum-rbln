@@ -593,9 +593,11 @@ class Qwen3_5_CausalLMWrapper(DecoderOnlyWrapper):
     def prepare_forward_args(self, *args):
         args = list(args)
         has_linear = any(t == "linear_attention" for t in self.config.layer_types)
-        batch_idx = args.pop() if (has_linear and "prefill" in self.phase) else None
-        valid_mask = args.pop() if has_linear else None
-        state_mask = args.pop() if has_linear else None
+        # get_input_info declares these three for a prefill graph only.
+        has_prefill_linear = has_linear and "prefill" in self.phase
+        batch_idx = args.pop() if has_prefill_linear else None
+        valid_mask = args.pop() if has_prefill_linear else None
+        state_mask = args.pop() if has_prefill_linear else None
 
         (
             input_ids,
@@ -696,9 +698,11 @@ class Qwen3_5_LanguageModelWrapper(Qwen3_5_CausalLMWrapper):
     def prepare_forward_args(self, *args):
         args = list(args)
         has_linear = any(t == "linear_attention" for t in self.config.layer_types)
-        batch_idx = args.pop() if (has_linear and "prefill" in self.phase) else None
-        valid_mask = args.pop() if has_linear else None
-        state_mask = args.pop() if has_linear else None
+        # get_input_info declares these three for a prefill graph only.
+        has_prefill_linear = has_linear and "prefill" in self.phase
+        batch_idx = args.pop() if has_prefill_linear else None
+        valid_mask = args.pop() if has_prefill_linear else None
+        state_mask = args.pop() if has_prefill_linear else None
         input_ids = None if self.rbln_config.use_inputs_embeds else args.pop(0)
         inputs_embeds = args.pop(0) if self.rbln_config.use_inputs_embeds else None
         cache_position = args.pop(0)

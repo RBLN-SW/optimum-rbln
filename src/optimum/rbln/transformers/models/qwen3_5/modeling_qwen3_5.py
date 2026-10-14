@@ -142,13 +142,6 @@ def _qwen3_5_linear_state_shapes(text_config, batch_size: int):
     return conv_state_shape, recurrent_state_shape
 
 
-def _qwen3_5_linear_mask_shape(batch_size: int):
-    """The prefill carry mask: one value per cache row, 1 to carry that row's state and 0 to start it from
-    zero. It gates both caches -- `gdn_prefill` takes it as `has_initial_state` and the conv window
-    broadcasts it -- and it is the shape the ops take, so the two can never disagree."""
-    return (batch_size,)
-
-
 def _qwen3_5_linear_layer_indices(model_config) -> list[int]:
     text_config = model_config.get_text_config()
     if getattr(text_config, "layer_types", None) is None:
@@ -323,15 +316,17 @@ class RBLNQwen3_5TextModel(RBLNDecoderOnlyModel):
             input_info.extend([(meta.name, meta.compile_shape, meta.dtype) for meta in cache_metas])
             rbln_config.cache_metas.extend(cache_metas)
 
-        # shared 0/1 masks: runtime feeds zeros on prefill window 0 (reset linear state), ones after (carry). See docs.
-        if linear_layers:
-            # the mask matches the per-call graph batch (batch_size), so reuse the helper with the same shape.
-            input_info.append(("state_mask", list(_qwen3_5_linear_mask_shape(batch_size)), rbln_config.dtype))
+        # Prefill-only inputs: the GatedDeltaNet reads them when it carries a window, and a decode step
+        # carries none, so declaring them there would leave inputs nothing consumes.
+        if linear_layers and is_prefill:
+            # One 0/1 value per cache row: zeros on window 0 (fresh sequence, discard the stale cache), ones
+            # after (carry). It gates both caches -- `gdn_prefill` takes it as `has_initial_state` and the conv
+            # window broadcasts it -- so the two can never disagree.
+            input_info.append(("state_mask", [batch_size], rbln_config.dtype))
             # per-token validity (1=real, 0=right-padding); host-built, GatedDeltaNet uses it to drop padding.
             input_info.append(("valid_mask", [batch_size, query_length, 1], rbln_config.dtype))
-            # prefill only: which max-batch slot this per-item (batch=1) call reads/writes in the linear caches.
-            if is_prefill:
-                input_info.append(("batch_idx", [], "int16"))
+            # which max-batch slot this per-item (batch=1) call reads/writes in the linear caches.
+            input_info.append(("batch_idx", [], "int16"))
 
         return input_info
 

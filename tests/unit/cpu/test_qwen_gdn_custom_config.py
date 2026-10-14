@@ -7,7 +7,6 @@ from optimum.rbln.transformers.models.qwen3_5.configuration_qwen3_5 import (
     RBLNQwen3_5TextModelConfig,
 )
 from optimum.rbln.transformers.models.qwen3_5.modeling_qwen3_5 import (
-    _qwen3_5_linear_mask_shape,
     _qwen3_5_linear_state_shapes,
     validate_gdn_custom_kernel,
 )
@@ -96,7 +95,6 @@ def test_gdn_custom_model_prefill_decode_and_reset(ratio, prefill_size, gate_bia
         (1, 2 * (2 + ratio) * 3, 128),
         (1, 2, ratio, *gdn_ops.STATE_BLOCKS),
     )
-    assert _qwen3_5_linear_mask_shape(1) == (1,)
     with torch.inference_mode():
         for phase, valid, reset in (
             ("prefill", prefill_size, True),
@@ -123,8 +121,8 @@ def test_gdn_custom_model_prefill_decode_and_reset(ratio, prefill_size, gate_bia
                 model.phase = phase
                 model_kwargs = dict(kwargs)
                 if phase == "prefill":
-                    shape = _qwen3_5_linear_mask_shape(1)
-                    model_kwargs["state_mask"] = torch.full(shape, 0.0 if reset else 1.0)
+                    # one 0/1 value per cache row, and prefill carries one sequence
+                    model_kwargs["state_mask"] = torch.full((1,), 0.0 if reset else 1.0)
                 per_model.append(model_kwargs)
 
             def record(module, args, shapes=norm_shapes):
