@@ -71,6 +71,8 @@ from optimum.rbln import (
     RBLNQwen3MoeForCausalLMConfig,
     RBLNQwen3VLForConditionalGeneration,
     RBLNQwen3VLMoeForConditionalGeneration,
+    RBLNStarcoder2ForCausalLM,
+    RBLNStarcoder2Model,
     RBLNT5ForConditionalGeneration,
 )
 
@@ -363,6 +365,18 @@ class TestGPT2Model(LLMTest.TestLLMWithoutLMHead):
     RBLN_CLASS = RBLNGPT2Model
     HF_MODEL_ID = "openai-community/gpt2"
     HF_CONFIG_KWARGS = {"n_layer": 1, "max_position_embeddings": 1024}
+
+
+class TestStarcoder2ForCausalLM(LLMTest.TestLLM):
+    RBLN_CLASS = RBLNStarcoder2ForCausalLM
+    HF_MODEL_ID = "hf-internal-testing/tiny-random-Starcoder2ForCausalLM"
+    HF_CONFIG_KWARGS = {"num_hidden_layers": 1, "max_position_embeddings": 1024, "sliding_window": 512}
+
+
+class TestStarcoder2Model(LLMTest.TestLLMWithoutLMHead):
+    RBLN_CLASS = RBLNStarcoder2Model
+    HF_MODEL_ID = "hf-internal-testing/tiny-random-Starcoder2ForCausalLM"
+    HF_CONFIG_KWARGS = {"num_hidden_layers": 1, "max_position_embeddings": 1024, "sliding_window": 512}
 
 
 class TestPhiForCausalLM(LLMTest.TestLLM):
