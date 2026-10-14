@@ -69,6 +69,7 @@ if TYPE_CHECKING:
     from .resnet import *
     from .roberta import *
     from .siglip import *
+    from .starcoder2 import *
     from .swin import *
     from .t5 import *
     from .time_series_transformer import *
