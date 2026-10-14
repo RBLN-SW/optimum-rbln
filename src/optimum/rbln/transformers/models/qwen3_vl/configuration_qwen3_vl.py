@@ -32,7 +32,7 @@ class DeprecatedLoadVisualRuntimeMixin:
 
     @_load_visual_runtime.setter
     @deprecate_method(
-        version="0.12.0", new_method='visual={"create_runtimes": ...}', raise_if_greater_or_equal_version=False
+        version="0.13.0", new_method='visual={"create_runtimes": ...}', raise_if_greater_or_equal_version=False
     )
     def _load_visual_runtime(self, load_visual_runtime: bool) -> None:
         if isinstance(self.visual, dict):
@@ -57,7 +57,7 @@ class RBLNQwen3VLForConditionalGenerationConfig(
 
     @deprecate_kwarg(
         old_name="_load_visual_runtime",
-        version="0.12.0",
+        version="0.13.0",
         additional_message='Pass `visual={"create_runtimes": False}` instead.',
         raise_if_greater_or_equal_version=False,
     )
@@ -92,7 +92,7 @@ class RBLNQwen3VLModelConfig(DeprecatedLoadVisualRuntimeMixin, RBLNDecoderOnlyMo
 
     @deprecate_kwarg(
         old_name="_load_visual_runtime",
-        version="0.12.0",
+        version="0.13.0",
         additional_message='Pass `visual={"create_runtimes": False}` instead.',
         raise_if_greater_or_equal_version=False,
     )

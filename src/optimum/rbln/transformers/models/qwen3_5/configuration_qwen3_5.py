@@ -146,7 +146,7 @@ class RBLNQwen3_5ModelConfig(DeprecatedLoadVisualRuntimeMixin, RBLNDecoderOnlyMo
 
     @deprecate_kwarg(
         old_name="_load_visual_runtime",
-        version="0.12.0",
+        version="0.13.0",
         additional_message='Pass `visual={"create_runtimes": False}` instead.',
         raise_if_greater_or_equal_version=False,
     )
@@ -212,7 +212,7 @@ class RBLNQwen3_5ForConditionalGenerationConfig(
 
     @deprecate_kwarg(
         old_name="_load_visual_runtime",
-        version="0.12.0",
+        version="0.13.0",
         additional_message='Pass `visual={"create_runtimes": False}` instead.',
         raise_if_greater_or_equal_version=False,
     )
