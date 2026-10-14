@@ -132,7 +132,7 @@ export는 `define_import_structure`가 `__all__`에서 자동으로 만든다. `
    `The input(feat_cache_1) is not specified.`). 기록만 docs에 있다. 코드 주석에 pad 방식을 남기지 않는다.
 4. **timestep은 그래프 안에서** (SD3 방식). host에서 `time_proj`를 하던 이전 방식은 버렸다.
 5. **공유 코드를 바꾸지 않는다.** 새 클래스를 추가한다. t2v 동작을 바꾸지 않는다.
-6. **PR에는 코드와 테스트 (+ 사용자가 요청한 docs)만.** examples/검증 스크립트는 넣지 않는다.
+6. **PR 범위: 코드, 테스트, 사용자가 요청한 docs와 `examples/cogvideo/` 검증 스크립트.** 그 밖의 것을 넣기 전에 묻는다.
 
 ---
 
@@ -150,7 +150,7 @@ export는 `define_import_structure`가 `__all__`에서 자동으로 만든다. `
 5. device lockup timeout (위 블로커).
 6. 작은 해상도 VAE (120x120, 240x360)에서 `ScatterInfo size mismatch with shape-based size` assert. 테스트는 480x720을 쓴다.
 
-repro 스크립트: `~/nas_data/cogvideox/scripts/repro_cache_update_shape.py`, `repro_cache_update_war.py`, `repro_cache_layout.py`.
+repro 스크립트: `examples/cogvideo/repro_cache_update_shape.py`, `repro_cache_update_war.py`, `repro_cache_layout.py`.
 
 ---
 
@@ -197,8 +197,9 @@ repro 스크립트: `~/nas_data/cogvideox/scripts/repro_cache_update_shape.py`, 
 - `~/nas_data/cogvideox/generate_i2v.py --tp 8|16 --image <png> --prompt "..."` → `~/nas_data/cogvideox/outputs/<ts>_i2v_gen_tp8/`
   (video.mp4, frames/, input_image.png, meta.json). 실제 생성은 timeout 때문에 아직 검증 안 됨.
 
-### 검증 스크립트 (PR에 없음) `~/nas_data/cogvideox/scripts/`
-원본은 `~/optimum-rbln/examples/cogvideo/` (untracked). 모두 `cog_utils.py`를 import한다 (`compare`, `psnr`, `new_out_dir`, `write_meta`).
+### 검증 스크립트 `examples/cogvideo/` (repo에 있음)
+모두 같은 폴더의 `cog_utils.py`를 import한다 (`compare`, `psnr`, `new_out_dir`, `write_meta`). 결과 폴더 위치는
+`COGVIDEOX_OUT_ROOT` (기본 `~/nas_data/cogvideox/outputs`). 같은 파일의 복사본이 `~/nas_data/cogvideox/scripts/`에도 있다.
 | 스크립트 | 용도 |
 |---|---|
 | `verify_vae.py` | VAE decoder vs CPU |
