@@ -85,7 +85,7 @@
 | `src/optimum/rbln/diffusers/configurations/models/configuration_autoencoder_kl_cogvideox.py` | VAE config. `num_devices > 1`이면 ValueError. `cache_dtype` 기본값 = VAE dtype |
 | `src/optimum/rbln/diffusers/models/transformers/transformer_cogvideox.py` | `RBLNCogVideoXTransformer3DModel`. 한 그래프, timestep·RoPE를 그래프 입력으로 |
 | `src/optimum/rbln/diffusers/configurations/models/configuration_transformer_cogvideox.py` | transformer config. `num_devices` 기본 8, 8 미만이면 ValueError (`MIN_NUM_DEVICES`) |
-| `src/optimum/rbln/diffusers/pipelines/cogvideo/pipeline_cogvideox.py` | `RBLNCogVideoXPipeline`, `RBLNCogVideoXPromptDtypeMixin` |
+| `src/optimum/rbln/diffusers/pipelines/cogvideo/pipeline_cogvideox.py` | `RBLNCogVideoXPipeline` |
 | `src/optimum/rbln/diffusers/pipelines/cogvideo/pipeline_cogvideox_image2video.py` | `RBLNCogVideoXImageToVideoPipeline` |
 | `src/optimum/rbln/diffusers/configurations/pipelines/configuration_cogvideox.py` | `RBLNCogVideoXPipelineConfig` (`_vae_uses_encoder=False`), `RBLNCogVideoXImageToVideoPipelineConfig` (`True`) |
 | `tests/test_diffusers.py` | `_save_tiny_cogvideox_pipeline(save_dir, image_to_video)`, `TestCogVideoXModel`, `TestCogVideoXImageToVideoModel` |
@@ -125,10 +125,13 @@ export는 `define_import_structure`가 `__all__`에서 자동으로 만든다. `
 - `num_devices` (TP) 기본 8, 8 미만 금지.
 
 ### 파이프라인
-- `RBLNCogVideoXPromptDtypeMixin.encode_prompt`: embeds를 transformer dtype으로 돌려준다. `torch_dtype` 없이 로드하면
-  T5만 checkpoint dtype (2b fp16, 5b-I2V **bf16**)이고 transformer는 fp32라서, 이 mixin이 없으면 latent/scheduler가
-  T5 dtype으로 돈다. (예전 설명 "fp32 T5-XXL은 한 device에 안 들어간다"는 틀렸다: 10-14 측정에서 2b T5 fp32 컴파일·실행
-  OK, device peak fp32 8.68 / fp16 8.676 GiB. device가 16-bit로 저장하기 때문.)
+- `encode_prompt`는 upstream 그대로다. 예전의 `RBLNCogVideoXPromptDtypeMixin` (embeds를 transformer dtype으로 바꿔
+  latent/scheduler를 transformer dtype으로 유지)은 upstream과 맞추려고 지웠다 (사용자 결정, 10-14).
+  `torch_dtype` 없이 로드하면 T5는 checkpoint dtype (2b fp16, 5b-I2V bf16), transformer·VAE는 fp32라서 latent/scheduler는
+  upstream처럼 T5 dtype으로 돈다. 에러는 없다: RBLN transformer `forward`와 VAE runtime이 입력을 컴파일된 dtype으로 바꾼다
+  (10-14 확인: 2b·5b-I2V `torch_dtype` 없는 산출물로 2 step, latent dtype = T5 dtype).
+- (예전 설명 "fp32 T5-XXL은 한 device에 안 들어간다"는 틀렸다: 10-14 측정에서 2b T5 fp32 컴파일·실행 OK,
+  device peak fp32 8.68 / fp16 8.676 GiB. device가 16-bit로 저장하기 때문.)
 - 파이프라인 config가 VAE에 `num_devices=1`을 넘긴다.
 - device 배치: text_encoder 1 + transformer 8 (또는 16) + VAE 1.
 
@@ -169,7 +172,7 @@ export는 `define_import_structure`가 `__all__`에서 자동으로 만든다. `
 6. **PR 범위: 코드, 테스트, 사용자가 요청한 docs와 `examples/cogvideo/` 검증 스크립트.** 그 밖의 것을 넣기 전에 묻는다.
 7. **dtype은 upstream을 따른다 (2026-10-14).** 모든 submodule (VAE 포함)은 로드된 `torch_dtype`대로 컴파일한다. VAE를
    fp32로 강제하지 않는다. `cache_dtype` 기본값은 VAE dtype (fp32 예외 없음: device는 16-bit로 저장해서 DRAM 차이가 없다).
-   예제는 모델 카드 dtype을 준다.
+   예제는 모델 카드 dtype을 준다. `encode_prompt` 등 파이프라인 동작도 upstream 그대로 둔다 (dtype을 바꾸는 override 금지).
 
 ---
 
