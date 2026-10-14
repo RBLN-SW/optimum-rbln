@@ -5,7 +5,10 @@
 2) RBLN: compile (export=True) and save, reload with export=False, generate with the same image, prompt and
    seed, compare with the golden video (per-frame PSNR and Pearson r):
     RBLN_DEVICES=16,...,25 python examples/cogvideo/run_i2v_e2e.py rbln --golden <golden dir> \
-        --compiled-dir /home/seinpark/nas_data/cogvideox/compiled/pipeline_cogvideox_5b_i2v_tp8
+        --compiled-dir /home/seinpark/nas_data/cogvideox/compiled/pipeline_cogvideox_5b_i2v_bf16_vaebf16_tp8
+   All submodules (text encoder, transformer, VAE) are compiled at --torch-dtype (default: bfloat16, the
+   CogVideoX-5b-I2V model card dtype), as diffusers runs them with that torch_dtype. The dtype is fixed at
+   compile time: an existing --compiled-dir keeps its own dtype.
 
 Each run writes a new folder under OUT_ROOT (video, frames, latents, meta.json).
 """
@@ -16,7 +19,18 @@ import time
 from pathlib import Path
 
 import torch
-from cog_utils import OUT_ROOT, compare, new_out_dir, psnr, save_video_and_frames, write_meta
+from cog_utils import (
+    OUT_ROOT,
+    TORCH_DTYPE_CHOICES,
+    compare,
+    compiled_dtypes,
+    dtype_name,
+    new_out_dir,
+    psnr,
+    resolve_torch_dtype,
+    save_video_and_frames,
+    write_meta,
+)
 from PIL import Image
 
 
@@ -85,6 +99,12 @@ def main():
     parser.add_argument("--num-frames", type=int, default=49)
     parser.add_argument("--steps", type=int, default=50)
     parser.add_argument("--guidance-scale", type=float, default=6.0)
+    parser.add_argument(
+        "--torch-dtype",
+        choices=TORCH_DTYPE_CHOICES,
+        default="auto",
+        help="rbln: compile dtype (auto: the model card dtype). The CPU golden is always float32.",
+    )
     parser.add_argument("--threads", type=int, default=64)
     parser.add_argument("--notes", type=str, default="")
     args = parser.parse_args()
@@ -129,11 +149,13 @@ def main():
 
     out_dir = new_out_dir("i2v_e2e")
     compiled_dir = Path(args.compiled_dir)
+    torch_dtype = resolve_torch_dtype(MODEL_ID, args.torch_dtype)
     t0 = time.time()
     if not (compiled_dir / "model_index.json").exists():
         pipe = RBLNCogVideoXImageToVideoPipeline.from_pretrained(
             MODEL_ID,
             export=True,
+            torch_dtype=torch_dtype,
             rbln_config={
                 "num_frames": args.num_frames,
                 "guidance_scale": args.guidance_scale,
@@ -156,6 +178,10 @@ def main():
         },
     )
     print(f"load (export=False): {time.time() - t0:.1f}s")
+    dtypes = compiled_dtypes(pipe)
+    print(f"compiled dtypes: {dtypes}")
+    if dtypes["transformer"] != dtype_name(torch_dtype):
+        print(f"WARNING: {compiled_dir} was compiled at {dtypes['transformer']}, not {dtype_name(torch_dtype)}")
     video, gen_time = generate(pipe, args, out_dir, "rbln")
     print(f"RBLN generate: {gen_time:.1f}s")
 
@@ -167,7 +193,8 @@ def main():
         out_dir,
         {
             **meta,
-            "dtype_rbln": "text_encoder fp16, transformer fp32 graph, vae bf16 caches",
+            "torch_dtype": dtype_name(torch_dtype),
+            "dtype_rbln": dtypes,
             "golden_dir": args.golden,
             "compiled_dir": str(compiled_dir),
             "compile_time_s": compile_time,

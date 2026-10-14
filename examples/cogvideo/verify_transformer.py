@@ -1,5 +1,8 @@
 """Compare the RBLN CogVideoX transformer with the CPU fp32 `CogVideoXTransformer3DModel`.
 
+The reference always runs in float32 on the CPU. The RBLN graph is compiled at --torch-dtype (default: the
+model card dtype, float16 for CogVideoX-2b and bfloat16 for CogVideoX-5b-I2V).
+
 Reduced-layer compile check with random weights (no checkpoint load):
     RBLN_DEVICES=12 python examples/cogvideo/verify_transformer.py --num-layers 1 --random-init
 
@@ -17,7 +20,16 @@ import time
 from pathlib import Path
 
 import torch
-from cog_utils import DeviceMemSampler, compare, host_peak_rss_gb, new_out_dir, write_meta
+from cog_utils import (
+    TORCH_DTYPE_CHOICES,
+    DeviceMemSampler,
+    compare,
+    dtype_name,
+    host_peak_rss_gb,
+    new_out_dir,
+    resolve_torch_dtype,
+    write_meta,
+)
 from diffusers import CogVideoXTransformer3DModel
 
 from optimum.rbln import RBLNCogVideoXTransformer3DModel
@@ -65,12 +77,16 @@ def main():
     parser.add_argument("--compiled-dir", type=str, default=None)
     parser.add_argument("--device", type=int, default=0)
     parser.add_argument("--tensor-parallel-size", type=int, default=None, help="num_devices for the compile")
+    parser.add_argument(
+        "--torch-dtype", choices=TORCH_DTYPE_CHOICES, default="auto", help="compile dtype (auto: model card dtype)"
+    )
     parser.add_argument("--timeout", type=int, default=60, help="runtime timeout in seconds")
     parser.add_argument("--desc", type=str, default=None)
     parser.add_argument("--notes", type=str, default="")
     args = parser.parse_args()
 
     model_id = args.model_id
+    torch_dtype = resolve_torch_dtype(model_id, args.torch_dtype)
     config = CogVideoXTransformer3DModel.load_config(model_id, subfolder="transformer")
     if args.num_layers is None:
         args.num_layers = config["num_layers"]
@@ -123,8 +139,9 @@ def main():
             # Compile without runtimes and save first, so the artifact survives a failed device run.
             compiled_dir = compiled_dir or Path(new_out_dir("transformer_compiled_tmp"))
             t0 = time.time()
+            # The CPU reference is done, so cast the model in place to the compile dtype.
             compiled = RBLNCogVideoXTransformer3DModel.from_model(
-                model,
+                model.to(torch_dtype),
                 rbln_config={**{k: v for k, v in rbln_config.items() if k != "device"}, "create_runtimes": False},
             )
             compile_time = time.time() - t0
@@ -151,7 +168,8 @@ def main():
     per_frame = [compare(f"latent frame {f:02d}", out[:, f], ref[:, f])["pearson_r"] for f in range(out.shape[1])]
     print("per-latent-frame r: " + " ".join(f"{r:.5f}" for r in per_frame))
 
-    desc = args.desc or f"transformer_L{cfg.num_layers}_{'rand' if args.random_init else 'real'}"
+    weights = "rand" if args.random_init else "real"
+    desc = args.desc or f"transformer_L{cfg.num_layers}_{weights}_{dtype_name(rbln.rbln_config.dtype)}"
     out_dir = new_out_dir(desc)
     torch.save(
         {"hidden_states": hidden_states, "encoder_hidden_states": encoder_hidden_states, "timestep": timestep},

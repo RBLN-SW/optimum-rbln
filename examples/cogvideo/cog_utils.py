@@ -15,6 +15,36 @@ import torch
 # Each run writes a new folder here. Override with COGVIDEOX_OUT_ROOT.
 OUT_ROOT = Path(os.environ.get("COGVIDEOX_OUT_ROOT", "/home/seinpark/nas_data/cogvideox/outputs"))
 
+# Inference dtype from the model cards ("use the precision the model was trained with"): FP16 for CogVideoX-2b,
+# BF16 for the 5B models. Keyed by the repo name, so THUDM/ and zai-org/ ids both match.
+MODEL_CARD_DTYPE = {
+    "CogVideoX-2b": torch.float16,
+    "CogVideoX-5b": torch.bfloat16,
+    "CogVideoX-5b-I2V": torch.bfloat16,
+    "CogVideoX1.5-5B-I2V": torch.bfloat16,
+}
+TORCH_DTYPE_CHOICES = ["auto", "float16", "bfloat16", "float32"]
+
+
+def resolve_torch_dtype(model_id: str, name: str) -> torch.dtype:
+    """`name` is "auto" (the model card dtype) or a torch dtype name."""
+    if name != "auto":
+        return getattr(torch, name)
+    return MODEL_CARD_DTYPE[model_id.rstrip("/").split("/")[-1]]
+
+
+def dtype_name(dtype) -> str:
+    return str(dtype).removeprefix("torch.")
+
+
+def compiled_dtypes(pipe) -> dict[str, str]:
+    """The dtype of each compiled submodule of an RBLN CogVideoX pipeline, and of the VAE conv caches."""
+    dtypes = {
+        name: dtype_name(getattr(pipe, name).rbln_config.dtype) for name in ("text_encoder", "transformer", "vae")
+    }
+    dtypes["vae_cache"] = dtype_name(pipe.vae.rbln_config.cache_dtype)
+    return dtypes
+
 
 def compare(name: str, out: torch.Tensor, ref: torch.Tensor) -> dict:
     """Pearson r plus the stats that r alone hides (offset, scale, absolute error)."""

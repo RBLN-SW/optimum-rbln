@@ -6,6 +6,10 @@
 The first run compiles the text encoder, transformer and VAE (export=True) and saves them to
 --model-dir; later runs load the compiled artifacts. The transformer runs with tensor parallel over
 8 devices; the text encoder and the VAE get one device each (10 devices in total).
+
+All submodules are compiled at --torch-dtype. The default is float16, the precision the CogVideoX-2b model card
+recommends (the model was trained in FP16). The dtype is fixed at compile time: to change it, compile again into
+a new --model-dir.
 """
 
 import argparse
@@ -33,6 +37,7 @@ def main():
     parser.add_argument("--steps", type=int, default=50)
     parser.add_argument("--guidance-scale", type=float, default=6.0)
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--torch-dtype", choices=["float16", "bfloat16", "float32"], default="float16")
     args = parser.parse_args()
 
     # text_encoder: 1 device, transformer: tensor parallel over 8 devices, vae: 1 device (10 in total).
@@ -41,6 +46,7 @@ def main():
         pipe = RBLNCogVideoXPipeline.from_pretrained(
             args.model_id,
             export=True,
+            torch_dtype=getattr(torch, args.torch_dtype),
             rbln_config={"num_frames": args.num_frames, "guidance_scale": args.guidance_scale, **devices},
         )
         pipe.save_pretrained(args.model_dir)
