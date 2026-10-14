@@ -7,7 +7,7 @@ from optimum.rbln.transformers.models.qwen3_5.configuration_qwen3_5 import (
     RBLNQwen3_5TextModelConfig,
 )
 from optimum.rbln.transformers.models.qwen3_5.modeling_qwen3_5 import (
-    _qwen3_5_linear_mask_shapes,
+    _qwen3_5_linear_mask_shape,
     _qwen3_5_linear_state_shapes,
     validate_gdn_custom_kernel,
 )
@@ -96,7 +96,7 @@ def test_gdn_custom_model_prefill_decode_and_reset(ratio, prefill_size, gate_bia
         (1, 2 * (2 + ratio) * 3, 128),
         (1, 2, ratio, 2, 128, 64),
     )
-    assert _qwen3_5_linear_mask_shapes(hf_config, 1) == ((1, 2 * (2 + ratio) * 3, 128), (1,))
+    assert _qwen3_5_linear_mask_shape(1) == (1,)
     with torch.inference_mode():
         for phase, valid, reset in (
             ("prefill", prefill_size, True),
@@ -119,15 +119,12 @@ def test_gdn_custom_model_prefill_decode_and_reset(ratio, prefill_size, gate_bia
                     "query_position": torch.tensor(valid - 1),
                 }
             per_model, norm_shapes = [], []
-            custom_masks = _qwen3_5_linear_mask_shapes(hf_config, 1)
-            reference_masks = ((1, 3, conv_dim), (1, units * 128, 128))
-            for model, masks in zip(models, (reference_masks, custom_masks), strict=True):
+            for model in models:
                 model.phase = phase
                 model_kwargs = dict(kwargs)
                 if phase == "prefill":
-                    conv_mask, recurrent_mask = masks
-                    model_kwargs["conv_state_mask"] = torch.full(conv_mask, 0.0 if reset else 1.0)
-                    model_kwargs["recurrent_state_mask"] = torch.full(recurrent_mask, 0.0 if reset else 1.0)
+                    shape = _qwen3_5_linear_mask_shape(1)
+                    model_kwargs["state_mask"] = torch.full(shape, 0.0 if reset else 1.0)
                 per_model.append(model_kwargs)
 
             def record(module, args, shapes=norm_shapes):

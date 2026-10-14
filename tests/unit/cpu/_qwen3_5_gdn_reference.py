@@ -159,18 +159,16 @@ class NativeGatedDeltaNetReference(Qwen3_5GatedDeltaNet):
         recurrent_state: torch.Tensor,
         query_position: torch.Tensor | None = None,
         valid_mask: torch.Tensor | None = None,
-        conv_state_mask: torch.Tensor | None = None,
-        recurrent_state_mask: torch.Tensor | None = None,
+        state_mask: torch.Tensor | None = None,
         slot: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor | None]:
         prefill = "prefill" in self._phase and valid_mask is not None
         # PREFILL window 0 starts from zero carried state: the runtime feeds a zeros mask for window 0 and a
         # ones mask afterward. Decode always carries.
         if prefill:
-            if conv_state_mask is not None:
-                conv_state = conv_state * conv_state_mask
-            if recurrent_state_mask is not None:
-                recurrent_state = recurrent_state * recurrent_state_mask
+            if state_mask is not None:
+                conv_state = conv_state * state_mask.reshape(-1, 1, 1)
+                recurrent_state = recurrent_state * state_mask.reshape(-1, 1, 1)
         batch_size, seq_len, _ = hidden_states.shape
         k_1 = self.conv_kernel_size - 1
 

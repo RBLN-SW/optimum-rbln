@@ -193,15 +193,15 @@ class Qwen3_5GatedDeltaNet(nn.Module):
         recurrent_state: torch.Tensor,
         query_position: torch.Tensor | None = None,
         valid_mask: torch.Tensor | None = None,
-        conv_state_mask: torch.Tensor | None = None,
-        recurrent_state_mask: torch.Tensor | None = None,
+        state_mask: torch.Tensor | None = None,
         slot: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         prefill = "prefill" in self._phase and valid_mask is not None
-        if prefill and conv_state_mask is not None:
-            conv_state = conv_state * conv_state_mask
-        # The ops take the recurrent mask as one value per row.
-        carry = recurrent_state_mask if prefill else None
+        # One value per cache row gates both caches: the conv window broadcasts it, and the op takes it as
+        # `has_initial_state`.
+        if prefill and state_mask is not None:
+            conv_state = conv_state * state_mask.reshape(-1, 1, 1)
+        carry = state_mask if prefill else None
         # Returns no new recurrent state: the op writes it into `recurrent_state` at `slot`.
         batch_size, seq_len, _ = hidden_states.shape
         heads, ratio = self.num_k_heads, self.num_v_heads // self.num_k_heads
@@ -290,8 +290,7 @@ class Qwen3_5LinearDecoderLayer(nn.Module):
         recurrent_state: torch.Tensor,
         query_position: torch.Tensor | None = None,
         valid_mask: torch.Tensor | None = None,
-        conv_state_mask: torch.Tensor | None = None,
-        recurrent_state_mask: torch.Tensor | None = None,
+        state_mask: torch.Tensor | None = None,
         slot: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         residual = hidden_states
@@ -302,8 +301,7 @@ class Qwen3_5LinearDecoderLayer(nn.Module):
             recurrent_state,
             query_position=query_position,
             valid_mask=valid_mask,
-            conv_state_mask=conv_state_mask,
-            recurrent_state_mask=recurrent_state_mask,
+            state_mask=state_mask,
             slot=slot,
         )
         hidden_states = residual + hidden_states
@@ -422,8 +420,7 @@ class Qwen3_5Model(DecoderOnlyModel):
         global_block_tables: torch.Tensor | None = None,
         local_block_tables: torch.Tensor | None = None,
         lora_int_id: torch.Tensor | None = None,
-        conv_state_mask: torch.Tensor | None = None,
-        recurrent_state_mask: torch.Tensor | None = None,
+        state_mask: torch.Tensor | None = None,
         valid_mask: torch.Tensor | None = None,
         batch_idx: torch.Tensor | None = None,  # prefill only: which max-batch cache slot this item uses
         output_hidden_states: bool | None = None,
@@ -471,8 +468,7 @@ class Qwen3_5Model(DecoderOnlyModel):
                     recurrent_state,
                     query_position=query_position,
                     valid_mask=valid_mask,
-                    conv_state_mask=conv_state_mask,
-                    recurrent_state_mask=recurrent_state_mask,
+                    state_mask=state_mask,
                     slot=_pos,
                 )
                 # Only the conv cache is written back here; `gdn_prefill` / `gdn_decode` already wrote their
@@ -514,8 +510,7 @@ class Qwen3_5ForCausalLM(DecoderOnlyForCausalLM):
         global_block_tables: torch.Tensor | None = None,
         local_block_tables: torch.Tensor | None = None,
         lora_int_id: torch.Tensor | None = None,
-        conv_state_mask: torch.Tensor | None = None,
-        recurrent_state_mask: torch.Tensor | None = None,
+        state_mask: torch.Tensor | None = None,
         valid_mask: torch.Tensor | None = None,
         batch_idx: torch.Tensor | None = None,
         output_hidden_states: bool | None = None,
@@ -533,8 +528,7 @@ class Qwen3_5ForCausalLM(DecoderOnlyForCausalLM):
             global_block_tables=global_block_tables,
             local_block_tables=local_block_tables,
             lora_int_id=lora_int_id,
-            conv_state_mask=conv_state_mask,
-            recurrent_state_mask=recurrent_state_mask,
+            state_mask=state_mask,
             valid_mask=valid_mask,
             batch_idx=batch_idx,
             output_hidden_states=output_hidden_states,
@@ -606,8 +600,7 @@ class Qwen3_5_CausalLMWrapper(DecoderOnlyWrapper):
         has_linear = any(t == "linear_attention" for t in self.config.layer_types)
         batch_idx = args.pop() if (has_linear and "prefill" in self.phase) else None
         valid_mask = args.pop() if has_linear else None
-        recurrent_state_mask = args.pop() if has_linear else None
-        conv_state_mask = args.pop() if has_linear else None
+        state_mask = args.pop() if has_linear else None
 
         (
             input_ids,
@@ -638,8 +631,7 @@ class Qwen3_5_CausalLMWrapper(DecoderOnlyWrapper):
             past_key_values,
             past_states,
             rotary_emb,
-            conv_state_mask,
-            recurrent_state_mask,
+            state_mask,
             valid_mask,
             batch_idx,
         )
@@ -658,8 +650,7 @@ class Qwen3_5_CausalLMWrapper(DecoderOnlyWrapper):
             past_key_values,
             past_states,
             rotary_emb,
-            conv_state_mask,
-            recurrent_state_mask,
+            state_mask,
             valid_mask,
             batch_idx,
         ) = self.prepare_forward_args(*args)
@@ -677,8 +668,7 @@ class Qwen3_5_CausalLMWrapper(DecoderOnlyWrapper):
             global_block_tables=global_block_tables,
             local_block_tables=local_block_tables,
             lora_int_id=lora_int_id,
-            conv_state_mask=conv_state_mask,
-            recurrent_state_mask=recurrent_state_mask,
+            state_mask=state_mask,
             valid_mask=valid_mask,
             batch_idx=batch_idx,
             output_hidden_states=self.rbln_config.output_hidden_states,
@@ -713,8 +703,7 @@ class Qwen3_5_LanguageModelWrapper(Qwen3_5_CausalLMWrapper):
         has_linear = any(t == "linear_attention" for t in self.config.layer_types)
         batch_idx = args.pop() if (has_linear and "prefill" in self.phase) else None
         valid_mask = args.pop() if has_linear else None
-        recurrent_state_mask = args.pop() if has_linear else None
-        conv_state_mask = args.pop() if has_linear else None
+        state_mask = args.pop() if has_linear else None
         input_ids = None if self.rbln_config.use_inputs_embeds else args.pop(0)
         inputs_embeds = args.pop(0) if self.rbln_config.use_inputs_embeds else None
         cache_position = args.pop(0)
@@ -746,8 +735,7 @@ class Qwen3_5_LanguageModelWrapper(Qwen3_5_CausalLMWrapper):
             past_key_values,
             past_states,
             position_embeds,  # cos/sin
-            conv_state_mask,
-            recurrent_state_mask,
+            state_mask,
             valid_mask,
             batch_idx,
         )
