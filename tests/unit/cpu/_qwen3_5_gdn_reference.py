@@ -152,6 +152,13 @@ class NativeGatedDeltaNetReference(Qwen3_5GatedDeltaNet):
     """The delta rule in plain torch. Serves every configuration the custom ops do not: a REBEL target,
     a `gdn_chunk_size` other than 128, and an artifact compiled before `gdn_custom_kernel`."""
 
+    def __init__(self, linear_attn, rbln_config, layer_idx: int):
+        super().__init__(linear_attn, rbln_config, layer_idx)
+        # The custom core does not need these; the chunked delta rule below does.
+        self.head_v_dim = linear_attn.head_v_dim
+        self.prefill_chunk_size = rbln_config.prefill_chunk_size
+        self.chunk_size = rbln_config.gdn_chunk_size
+
     def forward(
         self,
         hidden_states: torch.Tensor,

@@ -153,10 +153,8 @@ class Qwen3_5GatedDeltaNet(nn.Module):
         self.key_dim = linear_attn.key_dim
         self.value_dim = linear_attn.value_dim
         self.head_k_dim = linear_attn.head_k_dim
-        self.head_v_dim = linear_attn.head_v_dim
         self.num_k_heads = linear_attn.num_k_heads
         self.num_v_heads = linear_attn.num_v_heads
-        self.conv_dim = linear_attn.conv_dim
         self.conv_kernel_size = linear_attn.conv_kernel_size
 
         # Pre-split the fused in_proj_qkv into separate Q/K/V projections: a depthwise conv is per-channel,
@@ -174,9 +172,6 @@ class Qwen3_5GatedDeltaNet(nn.Module):
             _lin.weight = nn.Parameter(_wi.contiguous())
             if _has_bias:
                 _lin.bias = nn.Parameter(_bi.contiguous())
-
-        self.prefill_chunk_size = rbln_config.prefill_chunk_size
-        self.chunk_size = rbln_config.gdn_chunk_size
 
     @property
     def phase(self):

@@ -42,17 +42,17 @@ class RBLNQwen3_5RuntimeModel(RBLNRuntimeModel):
     def __init__(
         self,
         *args,
-        state_mask_shape=None,
         state_dtype: torch.dtype = torch.float32,
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
-        self.state_mask_shape = tuple(state_mask_shape)
         self.state_dtype = state_dtype
 
-        # Prefill state mask: zeros on window 0 (fresh sequence), ones afterwards (carry over).
-        self._state_mask_zeros = torch.zeros(self.state_mask_shape, dtype=state_dtype)
-        self._state_mask_ones = torch.ones(self.state_mask_shape, dtype=state_dtype)
+        # Prefill state mask: zeros on window 0 (fresh sequence), ones afterwards (carry over). One value per
+        # cache row, and prefill runs one sequence per call, so one value. Decode reads no mask -- its graph
+        # declares the input but nothing consumes it, so the compiler drops it and the runtime never takes it.
+        self._state_mask_zeros = torch.zeros(1, dtype=state_dtype)
+        self._state_mask_ones = torch.ones(1, dtype=state_dtype)
         self._valid_mask_prefill_full = torch.ones(1, self.rbln_config.prefill_chunk_size, 1, dtype=state_dtype)
 
     def _run(self, named_inputs: dict):
