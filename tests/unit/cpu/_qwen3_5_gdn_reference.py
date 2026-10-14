@@ -230,8 +230,9 @@ class NativeGatedDeltaNetReference(Qwen3_5GatedDeltaNet):
         if "prefill" in self._phase:
             # Triangular masks built
             _cshape = (1, 1, 1, self.chunk_size, self.chunk_size)
-            chunk_tril_incl = torch.tril(torch.ones(_cshape, device=query.device, dtype=query.dtype), diagonal=0)
-            chunk_tril_strict = torch.tril(torch.ones(_cshape, device=query.device, dtype=query.dtype), diagonal=-1)
+            # fp32 like HF torch_chunk_gated_delta_rule, so `incr @ tril` stays single-dtype for the fp32 kernel.
+            chunk_tril_incl = torch.tril(torch.ones(_cshape, device=query.device, dtype=torch.float32), diagonal=0)
+            chunk_tril_strict = torch.tril(torch.ones(_cshape, device=query.device, dtype=torch.float32), diagonal=-1)
             core_attn_out, new_recurrent_state = rbln_chunk_gated_delta_rule(
                 query,
                 key,
