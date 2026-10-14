@@ -871,8 +871,8 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
 
         Returns the explicitly-set runtime options (device, device_map, create_runtimes,
         activate_profiler, timeout) and the subclass-specific non-save attributes
-        (load-behavior flags such as `_load_visual_runtime`, which are never serialized so
-        they can only travel with the caller), recursively including submodules.
+        (which are never serialized, so they can only travel with the caller),
+        recursively including submodules.
         Compile-time attributes are not included: when loading a compiled model they come
         from the artifact's rbln_config.json, and this dict is merged on top of it.
 

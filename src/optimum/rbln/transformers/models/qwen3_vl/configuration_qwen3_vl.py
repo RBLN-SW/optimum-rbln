@@ -15,7 +15,7 @@
 from typing import Any
 
 from ....configuration_utils import RBLNModelConfig
-from ....utils.deprecation import deprecate_kwarg, deprecate_method
+from ....utils.deprecation import deprecate_method
 from ..decoderonly.configuration_decoderonly import RBLNDecoderOnlyModelConfig, RBLNDecoderOnlyModelForCausalLMConfig
 
 
@@ -40,6 +40,16 @@ class DeprecatedLoadVisualRuntimeMixin:
         else:
             self.visual.create_runtimes = load_visual_runtime
 
+    def get_load_overrides(self) -> dict[str, Any]:
+        """Leaves out the `_load_visual_runtime` alias, whose value `visual` already carries as `create_runtimes`.
+
+        Returns:
+            Dictionary of load overrides, keyed like the ``rbln_config`` dict accepted by ``from_pretrained``.
+        """
+        overrides = super().get_load_overrides()
+        overrides.pop("_load_visual_runtime", None)
+        return overrides
+
 
 class RBLNQwen3VLForConditionalGenerationConfig(
     DeprecatedLoadVisualRuntimeMixin, RBLNDecoderOnlyModelForCausalLMConfig
@@ -55,22 +65,18 @@ class RBLNQwen3VLForConditionalGenerationConfig(
     submodules = ["visual"]
     subclass_non_save_attributes = ["_load_visual_runtime", "memory_budget"]
 
-    @deprecate_kwarg(
-        old_name="_load_visual_runtime",
-        version="0.13.0",
-        additional_message='Pass `visual={"create_runtimes": False}` instead.',
-        raise_if_greater_or_equal_version=False,
-    )
     def __init__(
         self,
         use_inputs_embeds: bool = True,
         visual: RBLNModelConfig | None = None,
+        _load_visual_runtime: bool | None = None,
         **kwargs: Any,
     ):
         """
         Args:
             use_inputs_embeds (bool): Whether or not to use `inputs_embeds` as input. Defaults to `True`.
             visual (RBLNModelConfig | None): Configuration for the vision encoder component.
+            _load_visual_runtime (bool | None): Deprecated. Use `visual={"create_runtimes": ...}` instead.
             kwargs: Additional arguments passed to the parent `RBLNDecoderOnlyModelForCausalLMConfig`.
 
         Raises:
@@ -84,19 +90,15 @@ class RBLNQwen3VLForConditionalGenerationConfig(
                 "visual encoder runs locally or embeddings are received from an encoder node."
             )
         self.visual = self.initialize_submodule_config(submodule_config=visual, batch_size=1, force_kwargs=True)
+        if _load_visual_runtime is not None:
+            self._load_visual_runtime = _load_visual_runtime
 
 
 class RBLNQwen3VLModelConfig(DeprecatedLoadVisualRuntimeMixin, RBLNDecoderOnlyModelConfig):
     submodules = ["visual"]
     subclass_non_save_attributes = ["_load_visual_runtime", "memory_budget"]
 
-    @deprecate_kwarg(
-        old_name="_load_visual_runtime",
-        version="0.13.0",
-        additional_message='Pass `visual={"create_runtimes": False}` instead.',
-        raise_if_greater_or_equal_version=False,
-    )
-    def __init__(self, visual: RBLNModelConfig | None = None, **kwargs: Any):
+    def __init__(self, visual: RBLNModelConfig | None = None, _load_visual_runtime: bool | None = None, **kwargs: Any):
         super().__init__(**kwargs)
         if not getattr(self, "use_inputs_embeds", True):
             raise ValueError(
@@ -105,6 +107,8 @@ class RBLNQwen3VLModelConfig(DeprecatedLoadVisualRuntimeMixin, RBLNDecoderOnlyMo
                 "visual encoder runs locally or embeddings are received from an encoder node."
             )
         self.visual = self.initialize_submodule_config(submodule_config=visual, batch_size=1, force_kwargs=True)
+        if _load_visual_runtime is not None:
+            self._load_visual_runtime = _load_visual_runtime
 
 
 class RBLNQwen3VLVisionModelConfig(RBLNModelConfig):
