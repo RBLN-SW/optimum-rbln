@@ -16,12 +16,9 @@ from diffusers import CogVideoXImageToVideoPipeline
 
 from ...configurations import RBLNCogVideoXImageToVideoPipelineConfig
 from ...modeling_diffusers import RBLNDiffusionMixin
-from .pipeline_cogvideox import RBLNCogVideoXPromptDtypeMixin
 
 
-class RBLNCogVideoXImageToVideoPipeline(
-    RBLNCogVideoXPromptDtypeMixin, RBLNDiffusionMixin, CogVideoXImageToVideoPipeline
-):
+class RBLNCogVideoXImageToVideoPipeline(RBLNDiffusionMixin, CogVideoXImageToVideoPipeline):
     """
     RBLN-accelerated implementation of the CogVideoX image-to-video pipeline (e.g. CogVideoX-5b-I2V).
 

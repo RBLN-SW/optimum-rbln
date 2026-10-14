@@ -12,23 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import torch
 from diffusers import CogVideoXPipeline
 
 from ...configurations import RBLNCogVideoXPipelineConfig
 from ...modeling_diffusers import RBLNDiffusionMixin
 
 
-class RBLNCogVideoXPromptDtypeMixin:
-    def encode_prompt(self, *args, dtype: torch.dtype | None = None, **kwargs):
-        # Without torch_dtype, transformers loads the T5 encoder at its checkpoint dtype (fp16 or bf16)
-        # while diffusers loads the transformer at fp32, and each is compiled at that dtype. The pipeline
-        # takes the latent dtype from the prompt embeddings, so return them in the transformer dtype to
-        # keep the latents and the scheduler at the transformer dtype.
-        return super().encode_prompt(*args, dtype=dtype or self.transformer.dtype, **kwargs)
-
-
-class RBLNCogVideoXPipeline(RBLNCogVideoXPromptDtypeMixin, RBLNDiffusionMixin, CogVideoXPipeline):
+class RBLNCogVideoXPipeline(RBLNDiffusionMixin, CogVideoXPipeline):
     """
     RBLN-accelerated implementation of the CogVideoX text-to-video pipeline.
 
