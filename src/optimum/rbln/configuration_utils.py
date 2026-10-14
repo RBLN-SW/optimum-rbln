@@ -732,7 +732,9 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
 
         Args:
             cls_name (str | None): The class name of the configuration. Defaults to the current class name.
-            create_runtimes (bool | None): Whether to create RBLN runtimes. Defaults to True.
+            create_runtimes (bool | None): Whether to create RBLN runtimes. When False, a model loaded from
+                compiled files also leaves its `.rbln` files unread until `compiled_models` is accessed, so
+                loading costs neither NPU nor host memory. Defaults to True.
             device (int | list[int] | None): The device(s) to load the model onto. Can be a single device ID or a list.
             device_map (dict[str, int | list[int]] | None): Mapping from compiled model names to device IDs.
             activate_profiler (bool | None): Whether to activate the profiler for performance analysis.
@@ -869,8 +871,8 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
 
         Returns the explicitly-set runtime options (device, device_map, create_runtimes,
         activate_profiler, timeout) and the subclass-specific non-save attributes
-        (load-behavior flags such as `_load_visual_runtime`, which are never serialized so
-        they can only travel with the caller), recursively including submodules.
+        (which are never serialized, so they can only travel with the caller),
+        recursively including submodules.
         Compile-time attributes are not included: when loading a compiled model they come
         from the artifact's rbln_config.json, and this dict is merged on top of it.
 
