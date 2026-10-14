@@ -13,6 +13,7 @@
 # limitations under the License.
 
 from collections.abc import Sequence
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import rebel
@@ -39,172 +40,160 @@ if TYPE_CHECKING:
     from ...modeling_diffusers import RBLNDiffusionMixin, RBLNDiffusionMixinConfig
 
 
-# frame (D) axis of the (n, c, d, h*w) cache, for rbln_cache_update
-_CACHE_FRAME_AXIS = 2
+# Blocks that run at 1x and 2x the latent resolution. rbln_cache_update needs the last axis of a static cache
+# to be a multiple of 64 elements (128 bytes), which h*w is not there at 480x720 (5400 and 21600), so their
+# caches are stored channels last: (n, h*w, d, c). At 4x and 8x, h*w is 16x and 64x the latent h*w, which is
+# aligned for even latent sizes (the transformer's 2x2 patches need them), so those caches stay (n, c, d, h*w).
+_CHANNELS_LAST_BLOCKS = ("mid_block", "up_block_0", "up_block_1")
 
 
-def _resnet_cache_convs(prefix: tuple[str, ...], resnets: torch.nn.ModuleList, scale: int) -> list:
-    convs = []
-    for j, resnet in enumerate(resnets):
-        if getattr(resnet, "use_conv_shortcut", False) and isinstance(
-            getattr(resnet, "conv_shortcut", None), CogVideoXCausalConv3d
-        ):
-            raise NotImplementedError("CogVideoX resnets with a causal conv shortcut are not supported.")
-        for name in ("conv1", "conv2"):
-            convs.append(((*prefix, f"resnet_{j}", name), getattr(resnet, name), scale))
-    return convs
-
-
-def get_cache_convs(decoder: CogVideoXDecoder3D) -> list[tuple[tuple[str, ...], CogVideoXCausalConv3d, int]]:
+@dataclass(frozen=True)
+class _ConvCache:
     """
-    List the causal convs of `CogVideoXDecoder3D.forward` that carry a temporal cache, in a fixed order.
+    The temporal cache of one causal conv in the decoder: the last `depth` input frames of that conv.
 
-    The Wan VAE keeps its caches as a constant table. Here they come from the module tree, so a reduced
-    config (fewer blocks or channels) gets the right table too. Each entry is
-    `(conv_cache key path, conv module, spatial scale over the latent)`.
-    Kernel-1 convs (the spatial-norm `conv_y` / `conv_b`) ignore their cache, so they are left out.
+    `path` is its key path in the nested `conv_cache` dict of `CogVideoXDecoder3D.forward`, e.g.
+    ("up_block_0", "resnet_1", "conv2"). diffusers keeps it as (n, c, d, h, w); on the device it is stored as
+    (n, c, d, h*w), or as (n, h*w, d, c) for the `_CHANNELS_LAST_BLOCKS`. The channels-last layout needs a real
+    permute: a plain reshape of (n, c, d, h, w) to that shape aborts the compile in FoldMemoryTransfer.
+    """
+
+    path: tuple[str, ...]
+    channels: int
+    depth: int
+    height: int
+    width: int
+
+    @property
+    def channels_last(self) -> bool:
+        return self.path[0] in _CHANNELS_LAST_BLOCKS
+
+    def shape(self, batch_size: int) -> list[int]:
+        return [batch_size, self.channels, self.depth, self.height, self.width]
+
+    def device_shape(self, batch_size: int) -> list[int]:
+        hw = self.height * self.width
+        if self.channels_last:
+            return [batch_size, hw, self.depth, self.channels]
+        return [batch_size, self.channels, self.depth, hw]
+
+    def to_device(self, x: torch.Tensor) -> torch.Tensor:
+        n, c, d, h, w = x.shape
+        if self.channels_last:
+            return x.permute(0, 3, 4, 2, 1).reshape(n, h * w, d, c).contiguous()
+        return x.reshape(n, c, d, h * w).contiguous()
+
+    def from_device(self, cache: torch.Tensor) -> torch.Tensor:
+        n, c, d, h, w = cache.shape[0], self.channels, self.depth, self.height, self.width
+        if self.channels_last:
+            return cache.reshape(n, h, w, d, c).permute(0, 4, 3, 1, 2)
+        return cache.reshape(n, c, d, h, w)
+
+    def get(self, conv_cache: dict) -> torch.Tensor:
+        for key in self.path:
+            conv_cache = conv_cache[key]
+        return conv_cache
+
+    def put(self, conv_cache: dict, value: torch.Tensor) -> None:
+        for key in self.path[:-1]:
+            conv_cache = conv_cache.setdefault(key, {})
+        conv_cache[self.path[-1]] = value
+
+
+def _decoder_conv_caches(decoder: CogVideoXDecoder3D, latent_height: int, latent_width: int) -> list[_ConvCache]:
+    """
+    The convs of `CogVideoXDecoder3D.forward` that carry a temporal cache, in a fixed order.
+
+    The list comes from the module tree, so reduced configs (fewer blocks or channels) work too. Kernel-1 convs
+    (the spatial-norm `conv_y` / `conv_b`) ignore their cache and are left out.
     """
     convs = [(("conv_in",), decoder.conv_in, 1)]
-    convs += _resnet_cache_convs(("mid_block",), decoder.mid_block.resnets, 1)
+
+    def add_resnets(block_name: str, resnets: torch.nn.ModuleList, scale: int) -> None:
+        for j, resnet in enumerate(resnets):
+            if getattr(resnet, "use_conv_shortcut", False) and isinstance(
+                getattr(resnet, "conv_shortcut", None), CogVideoXCausalConv3d
+            ):
+                raise NotImplementedError("CogVideoX resnets with a causal conv shortcut are not supported.")
+            convs.extend(
+                ((block_name, f"resnet_{j}", name), getattr(resnet, name), scale) for name in ("conv1", "conv2")
+            )
+
+    add_resnets("mid_block", decoder.mid_block.resnets, 1)
     scale = 1
     for i, up_block in enumerate(decoder.up_blocks):
-        convs += _resnet_cache_convs((f"up_block_{i}",), up_block.resnets, scale)
+        add_resnets(f"up_block_{i}", up_block.resnets, scale)
         if up_block.upsamplers is not None:
             scale *= 2
     convs.append((("conv_out",), decoder.conv_out, scale))
 
-    for path, conv, _ in convs:
+    caches = []
+    for path, conv, scale in convs:
         if conv.pad_mode == "replicate" or conv.time_kernel_size < 2:
             raise NotImplementedError(f"Unexpected CogVideoX causal conv at {'.'.join(path)}.")
-    return convs
+        depth = conv.time_kernel_size - 1
+        caches.append(_ConvCache(path, conv.conv.in_channels, depth, latent_height * scale, latent_width * scale))
+    return caches
 
 
-def get_cache_specs(decoder: CogVideoXDecoder3D) -> list[tuple[tuple[str, ...], int, int, int]]:
-    """`(conv_cache key path, channels, depth, spatial scale over the latent)` for each cached conv."""
-    return [
-        (path, conv.conv.in_channels, conv.time_kernel_size - 1, scale)
-        for path, conv, scale in get_cache_convs(decoder)
-    ]
+class _VAECogVideoXDecoder(torch.nn.Module):
+    """
+    One chunk of `AutoencoderKLCogVideoX._decode` as a graph.
 
+    The conv caches carry frames from one chunk to the next. All but the first stay on the device as static
+    buffers (graph inputs `conv_cache_1`, ...), updated with `rbln_cache_update`. The first one, of `conv_in`,
+    holds latent frames (16 channels at 60x90 for 480x720), which fit neither device layout, so the graph
+    returns it and the runtime passes it to the next chunk as `conv_cache_0`.
+    """
 
-def get_cache_size(
-    decoder: CogVideoXDecoder3D, latent_height: int, latent_width: int, batch_size: int = 1
-) -> list[list[int]]:
-    return [
-        [batch_size, channels, depth, latent_height * scale, latent_width * scale]
-        for _, channels, depth, scale in get_cache_specs(decoder)
-    ]
-
-
-# The last axis of a static cache must be a multiple of 64 (DRAM rows are 128B aligned; with h*w = 5400
-# a (1, 512, 2, 5400) cache update fails the partition check with "wrong shape for custom op").
-# 480x720 has 60x90 and 120x180 caches, so each cache gets one of these layouts:
-#   "flat":    (n, c, d, h*w)  when h*w is a multiple of 64 (the 240x360 and 480x720 caches)
-#   "chlast":  (n, h*w, d, c)  otherwise, with c a multiple of 64: written through a real permute
-#                              (n, c, d, h, w) -> (n, h, w, d, c), like the Qwen3.5 conv state (B, K-1, C)
-# A plain reshape to (n, h*w, d, c) without the permute does not compile: it re-cuts the 128B-padded
-# w rows into c-wide rows, and the full decoder then aborts in FoldMemoryTransfer.
-_CACHE_ALIGN = 64
-
-
-def _cache_layout(c: int, h: int, w: int) -> str:
-    if (h * w) % _CACHE_ALIGN == 0:
-        return "flat"
-    if c % _CACHE_ALIGN == 0:
-        return "chlast"
-    raise NotImplementedError(
-        f"A {c}-channel conv cache at {h}x{w} cannot be stored on the device: either the channel count or "
-        f"h*w (the latent resolution times the block's upscale) must be a multiple of {_CACHE_ALIGN}."
-    )
-
-
-def _cache_input_shape(shape) -> list:
-    # per-slot (n,c,d,h,w) -> input_info shape of the static cache.
-    n, c, d, h, w = shape
-    if _cache_layout(c, h, w) == "chlast":
-        return [n, h * w, d, c]
-    return [n, c, d, h * w]
-
-
-def _to_cache(x: torch.Tensor) -> torch.Tensor:
-    n, c, d, h, w = x.shape
-    if _cache_layout(c, h, w) == "chlast":
-        return x.permute(0, 3, 4, 2, 1).reshape(n, h * w, d, c).contiguous()
-    return x.reshape(n, c, d, h * w).contiguous()
-
-
-def _from_cache(cache: torch.Tensor, c: int, h: int, w: int) -> torch.Tensor:
-    n, _, d, _ = cache.shape
-    if _cache_layout(c, h, w) == "chlast":
-        return cache.reshape(n, h, w, d, c).permute(0, 4, 3, 1, 2)
-    return cache.reshape(n, c, d, h, w)
-
-
-def _get_path(tree: dict, path: Sequence[str]) -> torch.Tensor:
-    for key in path:
-        tree = tree[key]
-    return tree
-
-
-def _set_path(tree: dict, path: Sequence[str], value: torch.Tensor) -> None:
-    for key in path[:-1]:
-        tree = tree.setdefault(key, {})
-    tree[path[-1]] = value
-
-
-class _VAECogVideoXDecoderBase(torch.nn.Module):
     def __init__(self, vae: AutoencoderKLCogVideoX, latent_height: int, latent_width: int):
         super().__init__()
         self.decoder = vae.decoder
-        convs = get_cache_convs(self.decoder)
-        self.cache_paths = [path for path, _, _ in convs]
-        self.cache_hw = [(latent_height * scale, latent_width * scale) for _, _, scale in convs]
-        self.cache_channels = [conv.conv.in_channels for _, conv, _ in convs]
+        caches = _decoder_conv_caches(self.decoder, latent_height, latent_width)
+        self.conv_in_cache = caches[0]
+        self.static_caches = caches[1:]
 
-    def _decode(self, z: torch.Tensor, conv_cache: dict | None, caches: Sequence[torch.Tensor]):
-        """
-        Run the HF decoder, then write each new conv cache (idx 1..) to its static buffer.
+    def _decode(self, z: torch.Tensor, conv_cache: dict | None, buffers: Sequence[torch.Tensor]):
+        out, new_conv_cache = self.decoder(z, conv_cache=conv_cache)
 
-        All writes stay at the end of the graph, as in the Wan VAE. Writing each cache right after its
-        conv (to free the slices early) corrupts the decoder_n output on the device: the new cache does
-        not depend on the old one that the same conv read, so the write can run before that read.
-        """
-        out, new_cache = self.decoder(z, conv_cache=conv_cache)
+        # Write all new caches at the end of the graph, as in the Wan VAE. Writing a cache right after its conv
+        # corrupts the decoder_n output: the write does not depend on the read of the old cache by the same conv,
+        # so the device can run it first.
         position = torch.tensor(0, dtype=torch.int16)
-        axis = torch.tensor(_CACHE_FRAME_AXIS, dtype=torch.int16)
-        dummy_outs = []
-        for path, cache in zip(self.cache_paths[1:], caches, strict=True):
-            item = _to_cache(_get_path(new_cache, path)).to(cache.dtype)
-            dummy_outs.append(torch.ops.rbln_custom_ops.rbln_cache_update(cache, item, position, axis))
-        # idx 0 (conv_in cache, a slice of z): runtime output
-        return out, _get_path(new_cache, self.cache_paths[0]).contiguous(), dummy_outs
+        frame_axis = torch.tensor(2, dtype=torch.int16)
+        updates = [
+            torch.ops.rbln_custom_ops.rbln_cache_update(
+                buffer, cache.to_device(cache.get(new_conv_cache)).to(buffer.dtype), position, frame_axis
+            )
+            for cache, buffer in zip(self.static_caches, buffers, strict=True)
+        ]
+        return out, self.conv_in_cache.get(new_conv_cache).contiguous(), updates
 
 
-class _VAECogVideoXDecoder0(_VAECogVideoXDecoderBase):
-    """Wrapper module for the first CogVideoX VAE decoder chunk (no incoming conv cache)."""
+class _VAECogVideoXDecoder0(_VAECogVideoXDecoder):
+    """`decoder_0`: the first chunk, which starts without conv caches."""
 
-    def forward(self, z, *caches) -> torch.Tensor:
-        return self._decode(z, None, caches)
+    def forward(self, z: torch.Tensor, *buffers: torch.Tensor):
+        return self._decode(z, None, buffers)
 
 
-class _VAECogVideoXDecoderN(_VAECogVideoXDecoderBase):
-    """Wrapper module for the later CogVideoX VAE decoder chunks (reads the previous conv cache)."""
+class _VAECogVideoXDecoderN(_VAECogVideoXDecoder):
+    """`decoder_n`: a later chunk, which reads the conv caches of the chunk before it."""
 
-    def forward(self, z, cache_0, *caches) -> torch.Tensor:
+    def forward(self, z: torch.Tensor, conv_in_cache: torch.Tensor, *buffers: torch.Tensor):
         conv_cache = {}
-        _set_path(conv_cache, self.cache_paths[0], cache_0)
-        for path, c, (h, w), cache in zip(
-            self.cache_paths[1:], self.cache_channels[1:], self.cache_hw[1:], caches, strict=True
-        ):
-            _set_path(conv_cache, path, _from_cache(cache, c, h, w).to(z.dtype))
-        return self._decode(z, conv_cache, caches)
+        self.conv_in_cache.put(conv_cache, conv_in_cache)
+        for cache, buffer in zip(self.static_caches, buffers, strict=True):
+            cache.put(conv_cache, cache.from_device(buffer).to(z.dtype))
+        return self._decode(z, conv_cache, buffers)
 
 
 class _VAECogVideoXEncoder(torch.nn.Module):
-    """Wrapper module for the CogVideoX VAE encoder on a 1-frame image (image-to-video).
+    """
+    `encoder`: the CogVideoX VAE encoder on a 1-frame image (image-to-video).
 
-    diffusers encodes fewer than `num_sample_frames_batch_size` (8) frames in one call with no conv cache,
-    so the image is one graph without static caches.
+    diffusers encodes fewer than `num_sample_frames_batch_size` (8) frames in one call without a conv cache, so
+    the image is one graph without static caches.
     """
 
     def __init__(self, vae: AutoencoderKLCogVideoX):
@@ -254,99 +243,84 @@ class RBLNAutoencoderKLCogVideoX(RBLNModel):
             frame_batch_size=self.rbln_config.num_latent_frames_batch_size,
             dtype=self.rbln_config.dtype,
         )
+        self.encoder = None
         if "encoder" in runtimes:
             self.encoder = RBLNRuntimeCogVideoXVAEEncoder(
                 runtime=runtimes["encoder"], main_input_name="x", dtype=self.rbln_config.dtype
             )
-        else:
-            self.encoder = None
 
-    @classmethod
-    def _needs_decoder_n(cls, rbln_config: RBLNAutoencoderKLCogVideoXConfig) -> bool:
-        return rbln_config.num_latent_frames > rbln_config.first_chunk_size
+    @staticmethod
+    def _latent_size(rbln_config: RBLNAutoencoderKLCogVideoXConfig) -> tuple[int, int]:
+        return (
+            rbln_config.height // rbln_config.vae_scale_factor_spatial,
+            rbln_config.width // rbln_config.vae_scale_factor_spatial,
+        )
 
     @classmethod
     def _wrap_model_if_needed(
         cls, model: torch.nn.Module, rbln_config: RBLNAutoencoderKLCogVideoXConfig
-    ) -> torch.nn.Module:
-        latent_h = rbln_config.height // rbln_config.vae_scale_factor_spatial
-        latent_w = rbln_config.width // rbln_config.vae_scale_factor_spatial
-        models = [_VAECogVideoXDecoder0(model, latent_h, latent_w).eval()]
-        if cls._needs_decoder_n(rbln_config):
-            models.append(_VAECogVideoXDecoderN(model, latent_h, latent_w).eval())
-        if rbln_config.uses_encoder:
-            models.append(_VAECogVideoXEncoder(model).eval())
-        return tuple(models)
+    ) -> tuple[torch.nn.Module, ...]:
+        """One graph per compile config, in the same order."""
+        latent_height, latent_width = cls._latent_size(rbln_config)
+        graphs = {
+            "decoder_0": lambda: _VAECogVideoXDecoder0(model, latent_height, latent_width),
+            "decoder_n": lambda: _VAECogVideoXDecoderN(model, latent_height, latent_width),
+            "encoder": lambda: _VAECogVideoXEncoder(model),
+        }
+        return tuple(graphs[cfg.compiled_model_name]().eval() for cfg in rbln_config.compile_cfgs)
 
     @classmethod
     def get_compiled_model(
         cls, model, rbln_config: RBLNAutoencoderKLCogVideoXConfig
     ) -> dict[str, rebel.RBLNCompiledModel]:
-        models = dict(
-            zip(
-                [cfg.compiled_model_name for cfg in rbln_config.compile_cfgs],
-                cls._wrap_model_if_needed(model, rbln_config),
-                strict=True,
-            )
-        )
-
-        # D0 and DN wrap the SAME vae.decoder -> share its weights on device (use_weight_sharing).
-        context = CompileContext(use_weight_sharing=True)
-        context, example_inputs = cls.get_dec_compile_cfg(context, rbln_config)
-
-        # Graphs of one CompileSession reuse an earlier graph's intermediate buffer when it is large
-        # enough, and only then. decoder_n needs the largest one (7.25 GiB vs 4.40 GiB at 480x720,
-        # 49 frames), so compile it first and let decoder_0 (and the encoder) reuse it; the other order
-        # allocates several buffers and does not fit on one device.
-        order = [name for name in ("decoder_n", "decoder_0", "encoder") if name in models]
         cfgs = {cfg.compiled_model_name: cfg for cfg in rbln_config.compile_cfgs}
+        graphs = dict(zip(cfgs, cls._wrap_model_if_needed(model, rbln_config), strict=True))
+
+        # decoder_0 and decoder_n wrap the same vae.decoder and share its weights on the device. They also share
+        # the static cache buffers: decoder_n gets the same dummy tensors as decoder_0.
+        context = CompileContext(use_weight_sharing=True)
+        example_inputs = {"decoder_0": cfgs["decoder_0"].get_dummy_inputs(fill=0)}
+        buffers = {
+            name: tensor
+            for (name, _, _), tensor in zip(cfgs["decoder_0"].input_info, example_inputs["decoder_0"], strict=True)
+            if name != "z"
+        }
+        for tensor in buffers.values():
+            context.mark_static_address(tensor)
+        if "decoder_n" in cfgs:
+            example_inputs["decoder_n"] = cfgs["decoder_n"].get_dummy_inputs(fill=0, static_tensors=buffers)
+        if "encoder" in cfgs:
+            example_inputs["encoder"] = cfgs["encoder"].get_dummy_inputs(fill=0)
+
+        # A graph reuses the intermediate buffer of a graph compiled before it in the same context only if that
+        # buffer is large enough. decoder_n needs the largest one (7.25 GiB vs 4.40 GiB for decoder_0 at 480x720,
+        # 49 frames), so it goes first; in the other order the graphs do not fit on one device together.
         compiled = {}
-        for name in order:
+        for name in sorted(graphs, key=("decoder_n", "decoder_0", "encoder").index):
             compiled[name] = cls.compile(
-                models[name],
+                graphs[name],
                 rbln_compile_config=cfgs[name],
                 create_runtimes=rbln_config.create_runtimes,
                 device=rbln_config.device_map[name],
                 example_inputs=example_inputs[name],
                 compile_context=context,
             )
-        return {cfg.compiled_model_name: compiled[cfg.compiled_model_name] for cfg in rbln_config.compile_cfgs}
-
-    @classmethod
-    def get_dec_compile_cfg(cls, context, rbln_config):
-        cfgs = {cfg.compiled_model_name: cfg for cfg in rbln_config.compile_cfgs}
-        example_inputs = {}
-        dec0_example_inputs = cfgs["decoder_0"].get_dummy_inputs(fill=0)
-        static_tensors = {}
-        for (name, _, _), tensor in zip(cfgs["decoder_0"].input_info, dec0_example_inputs, strict=True):
-            if "feat_cache" in name:
-                static_tensors[name] = tensor
-                context.mark_static_address(tensor)
-        example_inputs["decoder_0"] = dec0_example_inputs
-
-        if "decoder_n" in cfgs:
-            decn_example_inputs = cfgs["decoder_n"].get_dummy_inputs(fill=0, static_tensors=static_tensors)
-            for (name, _, _), tensor in zip(cfgs["decoder_n"].input_info, decn_example_inputs, strict=True):
-                if ("feat_cache" in name) and ("feat_cache_0" not in name):
-                    context.mark_static_address(tensor)
-            example_inputs["decoder_n"] = decn_example_inputs
-        if "encoder" in cfgs:
-            example_inputs["encoder"] = cfgs["encoder"].get_dummy_inputs(fill=0)
-        return context, example_inputs
+        return {name: compiled[name] for name in cfgs}
 
     @classmethod
     def update_rbln_config_using_pipe(
         cls, pipe: "RBLNDiffusionMixin", rbln_config: "RBLNDiffusionMixinConfig", submodule_name: str
     ) -> "RBLNDiffusionMixinConfig":
+        transformer_config = pipe.transformer.config
         vae_scale_factor_spatial = pipe.vae_scale_factor_spatial
         if rbln_config.vae.height is None:
-            rbln_config.vae.height = pipe.transformer.config.sample_height * vae_scale_factor_spatial
+            rbln_config.vae.height = transformer_config.sample_height * vae_scale_factor_spatial
         if rbln_config.vae.width is None:
-            rbln_config.vae.width = pipe.transformer.config.sample_width * vae_scale_factor_spatial
+            rbln_config.vae.width = transformer_config.sample_width * vae_scale_factor_spatial
         if rbln_config.vae.num_frames is None:
-            rbln_config.vae.num_frames = pipe.transformer.config.sample_frames
+            rbln_config.vae.num_frames = transformer_config.sample_frames
 
-        rbln_config.vae.num_channels_latents = pipe.transformer.config.out_channels
+        rbln_config.vae.num_channels_latents = transformer_config.out_channels
         rbln_config.vae.vae_scale_factor_temporal = pipe.vae_scale_factor_temporal
         rbln_config.vae.vae_scale_factor_spatial = vae_scale_factor_spatial
         return rbln_config
@@ -373,42 +347,42 @@ class RBLNAutoencoderKLCogVideoX(RBLNModel):
             rbln_config.vae_scale_factor_temporal = model_config.temporal_compression_ratio
         if rbln_config.vae_scale_factor_spatial is None:
             rbln_config.vae_scale_factor_spatial = 2 ** (len(model_config.block_out_channels) - 1)
-
-        latent_height = rbln_config.height // rbln_config.vae_scale_factor_spatial
-        latent_width = rbln_config.width // rbln_config.vae_scale_factor_spatial
-        batch_size = rbln_config.batch_size
-        z_channels = model_config.latent_channels
-        cache_shapes = get_cache_size(model.decoder, latent_height, latent_width, batch_size)
         if rbln_config.cache_dtype is None:
             rbln_config.cache_dtype = RBLNCompileConfig.normalize_dtype(rbln_config.dtype)
 
-        def z_info(num_latent_frames):
-            return ("z", [batch_size, z_channels, num_latent_frames, latent_height, latent_width], rbln_config.dtype)
-
-        dec_0_input_info = [z_info(rbln_config.first_chunk_size)]
-        dec_n_input_info = [
-            z_info(rbln_config.num_latent_frames_batch_size),
-            ("feat_cache_0", list(cache_shapes[0]), rbln_config.dtype),
+        batch_size = rbln_config.batch_size
+        dtype = rbln_config.dtype
+        latent_height, latent_width = cls._latent_size(rbln_config)
+        caches = _decoder_conv_caches(model.decoder, latent_height, latent_width)
+        buffer_info = [
+            (f"conv_cache_{i}", cache.device_shape(batch_size), rbln_config.cache_dtype)
+            for i, cache in enumerate(caches[1:], start=1)
         ]
-        # The static caches stay on the device between decoder calls (dtype: `cache_dtype`).
-        for i, shape in enumerate(cache_shapes[1:], start=1):
-            cache_shape = _cache_input_shape(shape)
-            dec_0_input_info.append((f"feat_cache_{i}", cache_shape, rbln_config.cache_dtype))
-            dec_n_input_info.append((f"feat_cache_{i}", cache_shape, rbln_config.cache_dtype))
 
-        compile_cfgs = [RBLNCompileConfig(compiled_model_name="decoder_0", input_info=dec_0_input_info)]
-        if cls._needs_decoder_n(rbln_config):
-            compile_cfgs.append(RBLNCompileConfig(compiled_model_name="decoder_n", input_info=dec_n_input_info))
+        def z_info(num_latent_frames: int):
+            return (
+                "z",
+                [batch_size, model_config.latent_channels, num_latent_frames, latent_height, latent_width],
+                dtype,
+            )
+
+        compile_cfgs = [
+            RBLNCompileConfig(
+                compiled_model_name="decoder_0", input_info=[z_info(rbln_config.first_chunk_size)] + buffer_info
+            )
+        ]
+        if rbln_config.num_latent_frames > rbln_config.first_chunk_size:
+            decoder_n_info = [
+                z_info(rbln_config.num_latent_frames_batch_size),
+                ("conv_cache_0", caches[0].shape(batch_size), dtype),
+            ]
+            compile_cfgs.append(
+                RBLNCompileConfig(compiled_model_name="decoder_n", input_info=decoder_n_info + buffer_info)
+            )
         if rbln_config.uses_encoder:
             # Image-to-video encodes one image as a 1-frame video.
-            enc_input_info = [
-                (
-                    "x",
-                    [batch_size, model_config.in_channels, 1, rbln_config.height, rbln_config.width],
-                    rbln_config.dtype,
-                )
-            ]
-            compile_cfgs.append(RBLNCompileConfig(compiled_model_name="encoder", input_info=enc_input_info))
+            image_info = ("x", [batch_size, model_config.in_channels, 1, rbln_config.height, rbln_config.width], dtype)
+            compile_cfgs.append(RBLNCompileConfig(compiled_model_name="encoder", input_info=[image_info]))
 
         rbln_config.set_compile_cfgs(compile_cfgs)
         return rbln_config
@@ -419,16 +393,16 @@ class RBLNAutoencoderKLCogVideoX(RBLNModel):
         compiled_models: list[rebel.RBLNCompiledModel],
         rbln_config: RBLNAutoencoderKLCogVideoXConfig,
     ) -> list[rebel.Runtime]:
-        names = [cfg.compiled_model_name for cfg in rbln_config.compile_cfgs]
+        # Each graph goes to its own device from device_map (the base class uses one device for all).
         return [
             rebel.Runtime(
                 compiled_model,
                 tensor_type="pt",
-                device=rbln_config.device_map[name],
+                device=rbln_config.device_map[cfg.compiled_model_name],
                 activate_profiler=rbln_config.activate_profiler,
                 timeout=rbln_config.timeout,
             )
-            for compiled_model, name in zip(compiled_models, names, strict=True)
+            for compiled_model, cfg in zip(compiled_models, rbln_config.compile_cfgs, strict=True)
         ]
 
     def encode(
