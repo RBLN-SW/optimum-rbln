@@ -1,55 +1,24 @@
-import json
-
 import pytest
 import torch
 from transformers.models.qwen3_5.configuration_qwen3_5 import Qwen3_5TextConfig
 from transformers.models.qwen3_5.modeling_qwen3_5 import Qwen3_5GatedDeltaNet as NativeGdn
 
 from optimum.rbln.transformers.models.qwen3_5.configuration_qwen3_5 import (
-    RBLNQwen3_5ForCausalLMConfig,
-    RBLNQwen3_5ForConditionalGenerationConfig,
-    RBLNQwen3_5ModelConfig,
     RBLNQwen3_5TextModelConfig,
 )
 from optimum.rbln.transformers.models.qwen3_5.modeling_qwen3_5 import (
     _qwen3_5_linear_mask_shapes,
     _qwen3_5_linear_state_shapes,
-    resolve_gdn_custom_kernel,
+    validate_gdn_custom_kernel,
 )
 from optimum.rbln.transformers.models.qwen3_5.qwen3_5_architecture import Qwen3_5GatedDeltaNet
+
+from ._qwen3_5_gdn_reference import NativeGatedDeltaNetReference
 
 
 # The custom core only exists on a rebel-compiler that registers the GDN ops.
 gdn_ops = pytest.importorskip("rebel.ops.torch_custom_ops.gdn")
 block_state, unblock_state = gdn_ops.block_state, gdn_ops.unblock_state
-
-
-@pytest.mark.parametrize(
-    "config_class",
-    [
-        RBLNQwen3_5ForCausalLMConfig,
-        RBLNQwen3_5ForConditionalGenerationConfig,
-        RBLNQwen3_5ModelConfig,
-        RBLNQwen3_5TextModelConfig,
-    ],
-)
-def test_gdn_custom_kernel_is_recorded_and_serialized(config_class, tmp_path):
-    kwargs = {"max_seq_len": 4096, "batch_size": 1, "prefill_chunk_size": 512}
-    if config_class in (RBLNQwen3_5ForConditionalGenerationConfig, RBLNQwen3_5ModelConfig):
-        kwargs.update(
-            use_inputs_embeds=True,
-            visual={"cls_name": "RBLNQwen3_5VisionModelConfig", "max_seq_len": 1024},
-        )
-    assert config_class(**kwargs).gdn_custom_kernel is None
-    config = config_class(gdn_custom_kernel=True, **kwargs)
-    config.save(tmp_path)
-    assert config_class.from_pretrained(tmp_path).gdn_custom_kernel is True
-    # An export from before the custom core loads with the native core.
-    path = tmp_path / "rbln_config.json"
-    saved = json.loads(path.read_text())
-    del saved["gdn_custom_kernel"]
-    path.write_text(json.dumps(saved))
-    assert config_class.from_pretrained(tmp_path).gdn_custom_kernel is None
 
 
 def _gdn_models(ratio, prefill_size, gate_bias, batch_size=1):
@@ -65,19 +34,8 @@ def _gdn_models(ratio, prefill_size, gate_bias, batch_size=1):
     if gate_bias:
         native.in_proj_a.bias = torch.nn.Parameter(torch.randn(2 * ratio) * 0.1)
         native.in_proj_b.bias = torch.nn.Parameter(torch.randn(2 * ratio) * 0.1)
-    models = [
-        Qwen3_5GatedDeltaNet.from_config(
-            native,
-            RBLNQwen3_5TextModelConfig(
-                max_seq_len=4096,
-                batch_size=batch_size,
-                prefill_chunk_size=prefill_size,
-                gdn_custom_kernel=custom,
-            ),
-            layer_idx=0,
-        )
-        for custom in (False, True)
-    ]
+    rbln_config = RBLNQwen3_5TextModelConfig(max_seq_len=4096, batch_size=batch_size, prefill_chunk_size=prefill_size)
+    models = [core(native, rbln_config, layer_idx=0) for core in (NativeGatedDeltaNetReference, Qwen3_5GatedDeltaNet)]
     return hf_config, models
 
 
@@ -106,13 +64,13 @@ def _custom_states(native_states):
 
 
 def _step(models, states, hidden, kwargs):
-    """Runs both models and carries their states: the native one returns its new recurrent state, the custom one
-    updates its recurrent cache in place and returns None for it."""
+    """Runs both cores and carries their states: the reference returns its new recurrent state, the custom core
+    updates its recurrent cache in place and returns the conv state alone."""
     outputs = []
     for index, model in enumerate(models):
         output = model(hidden, *states[index], **kwargs[index])
-        assert (output[2] is None) is model.updates_state_in_place
-        states[index] = (output[1], states[index][1] if output[2] is None else output[2])
+        recurrent = output[2] if len(output) == 3 else states[index][1]
+        states[index] = (output[1], recurrent)
         outputs.append(output[0])
     return outputs
 
@@ -134,12 +92,11 @@ def test_gdn_custom_model_prefill_decode_and_reset(ratio, prefill_size, gate_bia
     conv_dim, units = 512 + 256 * ratio, 2 * ratio
     initial = (torch.randn(1, 3, conv_dim), torch.randn(1, units * 128, 128))
     states = [initial, _custom_states(initial)]
-    assert _qwen3_5_linear_state_shapes(hf_config, 1) == ((1, 3, conv_dim), (1, units * 128, 128))
-    assert _qwen3_5_linear_state_shapes(hf_config, 1, True) == (
+    assert _qwen3_5_linear_state_shapes(hf_config, 1) == (
         (1, 2 * (2 + ratio) * 3, 128),
         (1, 2, ratio, 2, 128, 64),
     )
-    assert _qwen3_5_linear_mask_shapes(hf_config, 1, True) == ((1, 2 * (2 + ratio) * 3, 128), (1,))
+    assert _qwen3_5_linear_mask_shapes(hf_config, 1) == ((1, 2 * (2 + ratio) * 3, 128), (1,))
     with torch.inference_mode():
         for phase, valid, reset in (
             ("prefill", prefill_size, True),
@@ -162,11 +119,13 @@ def test_gdn_custom_model_prefill_decode_and_reset(ratio, prefill_size, gate_bia
                     "query_position": torch.tensor(valid - 1),
                 }
             per_model, norm_shapes = [], []
-            for model in models:
+            custom_masks = _qwen3_5_linear_mask_shapes(hf_config, 1)
+            reference_masks = ((1, 3, conv_dim), (1, units * 128, 128))
+            for model, masks in zip(models, (reference_masks, custom_masks), strict=True):
                 model.phase = phase
                 model_kwargs = dict(kwargs)
                 if phase == "prefill":
-                    conv_mask, recurrent_mask = _qwen3_5_linear_mask_shapes(hf_config, 1, model.updates_state_in_place)
+                    conv_mask, recurrent_mask = masks
                     model_kwargs["conv_state_mask"] = torch.full(conv_mask, 0.0 if reset else 1.0)
                     model_kwargs["recurrent_state_mask"] = torch.full(recurrent_mask, 0.0 if reset else 1.0)
                 per_model.append(model_kwargs)
@@ -197,71 +156,44 @@ def test_gdn_custom_model_batched_decode(ratio):
             _compare(outputs, states, ratio)
 
 
+def _text_config(**overrides):
+    dims = {"linear_num_value_heads": 6, "linear_key_head_dim": 128, "linear_value_head_dim": 128, **overrides}
+    return Qwen3_5TextConfig(hidden_size=64, linear_num_key_heads=2, **dims)
+
+
 @pytest.mark.parametrize(
-    "overrides, prefill_size, gdn_chunk_size, expected",
+    "overrides, gdn_chunk_size, npu, message",
     [
-        ({}, 512, 128, True),
-        ({"linear_num_value_heads": 10}, 384, 128, True),
-        ({"linear_key_head_dim": 64}, 512, 128, False),
-        ({}, 64, 64, False),
+        ({"linear_key_head_dim": 64}, 128, None, "linear_key_head_dim"),
+        ({"linear_value_head_dim": 64}, 128, None, "linear_value_head_dim"),
+        ({}, 64, None, "gdn_chunk_size"),
+        ({}, 128, "RBLN-CR13", "ATOM"),
     ],
 )
-def test_gdn_custom_kernel_serves_supported_configs(overrides, prefill_size, gdn_chunk_size, expected):
-    dims = {"linear_num_value_heads": 6, "linear_key_head_dim": 128, "linear_value_head_dim": 128, **overrides}
-    text_config = Qwen3_5TextConfig(hidden_size=64, linear_num_key_heads=2, **dims)
-    native = NativeGdn(text_config, layer_idx=0)
-
-    def rbln_config(**options):
-        return RBLNQwen3_5TextModelConfig(
-            max_seq_len=4096,
-            batch_size=1,
-            prefill_chunk_size=prefill_size,
-            gdn_chunk_size=gdn_chunk_size,
-            **options,
-        )
-
-    # _update_rbln_config decides and records; the wrapper only consumes what it recorded.
-    config = rbln_config()
-    resolve_gdn_custom_kernel(text_config, config)
-    assert config.gdn_custom_kernel is expected
-    assert Qwen3_5GatedDeltaNet.from_config(native, config, layer_idx=0).updates_state_in_place is expected
-    # A recorded choice wins over the capability check, and an artifact that predates the field
-    # (None) keeps the native core.
-    for options in ({"gdn_custom_kernel": False}, {}):
-        core = Qwen3_5GatedDeltaNet.from_config(native, rbln_config(**options), layer_idx=0)
-        assert core.updates_state_in_place is False
-
-
-@pytest.mark.parametrize("npu, expected", [("RBLN-CA25", True), ("RBLN-CA22", True), ("RBLN-CR13", False)])
-def test_gdn_custom_kernel_runs_on_atom_only(npu, expected):
-    text_config = Qwen3_5TextConfig(
-        hidden_size=64,
-        linear_num_key_heads=2,
-        linear_num_value_heads=6,
-        linear_key_head_dim=128,
-        linear_value_head_dim=128,
+def test_gdn_custom_kernel_rejects_what_the_ops_do_not_serve(overrides, gdn_chunk_size, npu, message):
+    # The core always runs as the ops, so a configuration they cannot take fails at config time with a
+    # message that names the field, not at compile time as a shape mismatch.
+    config = RBLNQwen3_5TextModelConfig(
+        max_seq_len=4096, batch_size=1, prefill_chunk_size=512, gdn_chunk_size=gdn_chunk_size, npu=npu
     )
+    with pytest.raises(ValueError, match=message):
+        validate_gdn_custom_kernel(_text_config(**overrides), config)
+
+
+@pytest.mark.parametrize("npu", ["RBLN-CA25", "RBLN-CA22", None])
+def test_gdn_custom_kernel_takes_atom_and_an_unknown_target(npu):
+    # An unknown target (no device, no `npu`) is not refused: the compile decides it later.
     config = RBLNQwen3_5TextModelConfig(
         max_seq_len=4096, batch_size=1, prefill_chunk_size=512, gdn_chunk_size=128, npu=npu
     )
-    resolve_gdn_custom_kernel(text_config, config)
-    assert config.gdn_custom_kernel is expected
+    validate_gdn_custom_kernel(_text_config(), config)
 
 
-def test_gdn_custom_kernel_resolves_before_the_defaults_are_filled():
-    # _update_rbln_config resolves this before super() fills the defaults, so every field it reads
-    # must already be set. `prefill_chunk_size` is not: set_default_values owns it, and a config
-    # that leaves it out carries None until then.
-    text_config = Qwen3_5TextConfig(
-        hidden_size=64,
-        linear_num_key_heads=2,
-        linear_num_value_heads=6,
-        linear_key_head_dim=128,
-        linear_value_head_dim=128,
-    )
+def test_gdn_custom_kernel_validates_before_the_defaults_are_filled():
+    # _update_rbln_config validates before super() fills the defaults, so every field it reads must
+    # already be set. `prefill_chunk_size` is not: set_default_values owns it, and a config that
+    # leaves it out carries None until then.
     config = RBLNQwen3_5TextModelConfig(max_seq_len=4096, batch_size=1)
     assert config.prefill_chunk_size is None
 
-    resolve_gdn_custom_kernel(text_config, config)
-
-    assert config.gdn_custom_kernel is True
+    validate_gdn_custom_kernel(_text_config(), config)
