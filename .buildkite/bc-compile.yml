@@ -13,6 +13,7 @@ steps:
       sparse:
         paths:
           - .buildkite
+          - scripts
     command: |
       steps=$$(bash scripts/bc-compile-steps.sh)
       [ -n "$$steps" ] || exit 0

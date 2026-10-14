@@ -15,6 +15,7 @@ _upload: &upload
     sparse:
       paths:
         - .buildkite
+        - scripts
 
 steps:
   - label: ":mag: ruff"

@@ -8,12 +8,13 @@ env:
   UV_LINK_MODE: "symlink"
   UV_INDEX_STRATEGY: "unsafe-best-match"
 
-# Both upload jobs read only .buildkite; the suites they emit check out in full.
+# Both upload jobs read only .buildkite and scripts; the suites they emit check out in full.
 _upload: &upload
   checkout:
     sparse:
       paths:
         - .buildkite
+        - scripts
 
 steps:
   - label: ":closed_lock_with_key: team-member gate"
