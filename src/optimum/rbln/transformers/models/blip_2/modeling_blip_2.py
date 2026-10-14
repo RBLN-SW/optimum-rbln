@@ -468,7 +468,7 @@ class RBLNBlip2ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMixi
         inputs_embeds: torch.FloatTensor | None = None,
         interpolate_pos_encoding: bool = False,
         **generate_kwargs,
-    ) -> list[torch.LongTensor]:
+    ) -> torch.LongTensor:
         """
         The generate function is utilized in its standard form as in the HuggingFace transformers library. User can use this function to generate text from the model.
         Check the [HuggingFace transformers documentation](https://huggingface.co/docs/transformers/v4.57.1/en/model_doc/blip-2#transformers.Blip2ForConditionalGeneration.generate) for more details.
@@ -480,7 +480,9 @@ class RBLNBlip2ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMixi
             inputs_embeds (torch.FloatTensor, optional): Embedded representation of the inputs. Should be float, not int tokens.
             interpolate_pos_encoding (bool, optional, defaults to False): Whether to interpolate the positional encoding of the image embeddings.
         Returns:
-            A list of strings of length batch_size * num_captions.
+            torch.LongTensor: Generated token IDs of shape `(batch_size, sequence_length)`. For decoder-only
+            language models such as OPT, the sequence includes the image placeholder and prompt tokens before
+            the generated ones. Decode it with `processor.batch_decode(outputs, skip_special_tokens=True)`.
         """
         batch_size = pixel_values.shape[0]
         language_model_inputs = self.get_image_features(
