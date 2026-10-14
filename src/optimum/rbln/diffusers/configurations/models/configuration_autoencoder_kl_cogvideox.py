@@ -58,7 +58,7 @@ class RBLNAutoencoderKLCogVideoXConfig(RBLNModelConfig):
                 call after the first one decodes. Defaults to 2, the value diffusers uses. The first call
                 also takes the odd remainder frame.
             cache_dtype (Optional[str]): The dtype of the temporal conv caches that stay on the device
-                between decoder calls. Defaults to "bfloat16".
+                between decoder calls. Defaults to the VAE dtype.
             use_slicing (bool): Run batched requests one sample at a time on the batch-1 compiled graphs.
                 Defaults to True; a batch_size > 1 request is normalized to 1 with a warning.
             kwargs: Additional arguments passed to the parent RBLNModelConfig.
@@ -94,7 +94,7 @@ class RBLNAutoencoderKLCogVideoXConfig(RBLNModelConfig):
         self.vae_scale_factor_temporal = vae_scale_factor_temporal
         self.vae_scale_factor_spatial = vae_scale_factor_spatial
         self.num_latent_frames_batch_size = num_latent_frames_batch_size or 2
-        self.cache_dtype = cache_dtype or "bfloat16"
+        self.cache_dtype = cache_dtype
 
     @property
     def image_size(self):

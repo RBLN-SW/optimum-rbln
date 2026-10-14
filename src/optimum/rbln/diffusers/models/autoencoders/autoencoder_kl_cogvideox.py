@@ -29,7 +29,6 @@ from rebel.compile_context import CompileContext
 from ....configuration_utils import RBLNCompileConfig
 from ....modeling import RBLNModel
 from ....modeling_base import Preprocessor
-from ....utils.logging import get_logger
 from ...configurations import RBLNAutoencoderKLCogVideoXConfig
 from .vae import RBLNRuntimeCogVideoXVAEDecoder, RBLNRuntimeCogVideoXVAEEncoder
 
@@ -38,8 +37,6 @@ if TYPE_CHECKING:
     from transformers import PretrainedConfig, PreTrainedModel
 
     from ...modeling_diffusers import RBLNDiffusionMixin, RBLNDiffusionMixinConfig
-
-logger = get_logger(__name__)
 
 
 # frame (D) axis of the (n, c, d, h*w) cache, for rbln_cache_update
@@ -240,15 +237,6 @@ class RBLNAutoencoderKLCogVideoX(RBLNModel):
     hf_library_name = "diffusers"
     _rbln_config_class = RBLNAutoencoderKLCogVideoXConfig
 
-    @classmethod
-    def _reconstruct_model_if_needed(cls, model: "PreTrainedModel"):
-        if model.dtype != torch.float32:
-            logger.warning(
-                f"RBLNAutoencoderKLCogVideoX was handed a {model.dtype} module; casting it to float32 for compilation."
-            )
-            model = model.to(torch.float32)
-        return super()._reconstruct_model_if_needed(model)
-
     def __post_init__(self, **kwargs):
         super().__post_init__(**kwargs)
         self.image_size = self.rbln_config.image_size
@@ -391,6 +379,8 @@ class RBLNAutoencoderKLCogVideoX(RBLNModel):
         batch_size = rbln_config.batch_size
         z_channels = model_config.latent_channels
         cache_shapes = get_cache_size(model.decoder, latent_height, latent_width, batch_size)
+        if rbln_config.cache_dtype is None:
+            rbln_config.cache_dtype = RBLNCompileConfig.normalize_dtype(rbln_config.dtype)
 
         def z_info(num_latent_frames):
             return ("z", [batch_size, z_channels, num_latent_frames, latent_height, latent_width], rbln_config.dtype)
@@ -400,8 +390,7 @@ class RBLNAutoencoderKLCogVideoX(RBLNModel):
             z_info(rbln_config.num_latent_frames_batch_size),
             ("feat_cache_0", list(cache_shapes[0]), rbln_config.dtype),
         ]
-        # The static caches stay on the device, so their dtype is free: bf16 halves ~5.3 GiB of fp32
-        # buffers at 480x720, which decoder_0 + decoder_n need to fit on one device.
+        # The static caches stay on the device between decoder calls (dtype: `cache_dtype`).
         for i, shape in enumerate(cache_shapes[1:], start=1):
             cache_shape = _cache_input_shape(shape)
             dec_0_input_info.append((f"feat_cache_{i}", cache_shape, rbln_config.cache_dtype))

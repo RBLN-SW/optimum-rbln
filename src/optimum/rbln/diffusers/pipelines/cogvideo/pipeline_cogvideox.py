@@ -21,10 +21,10 @@ from ...modeling_diffusers import RBLNDiffusionMixin
 
 class RBLNCogVideoXPromptDtypeMixin:
     def encode_prompt(self, *args, dtype: torch.dtype | None = None, **kwargs):
-        # The T5 encoder is compiled in its checkpoint dtype (fp16; fp32 T5-XXL does not fit one device),
-        # while the transformer and VAE graphs are fp32. The pipeline takes the latent dtype from the
-        # prompt embeddings, so return them in the transformer dtype to keep the latents and the
-        # scheduler in fp32.
+        # Without torch_dtype, transformers loads the T5 encoder at its checkpoint dtype (fp16 or bf16)
+        # while diffusers loads the transformer at fp32, and each is compiled at that dtype. The pipeline
+        # takes the latent dtype from the prompt embeddings, so return them in the transformer dtype to
+        # keep the latents and the scheduler at the transformer dtype.
         return super().encode_prompt(*args, dtype=dtype or self.transformer.dtype, **kwargs)
 
 
