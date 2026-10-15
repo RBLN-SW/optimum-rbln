@@ -494,16 +494,16 @@ class TestCogVideoXModel(BaseTest.TestModel):
         "num_inference_steps": 2,
         "generator": torch.manual_seed(42),
         "num_frames": 17,
-        "height": 480,
-        "width": 720,
+        "height": 128,
+        "width": 128,
         "max_sequence_length": 16,
         "output_type": "pt",
     }
     RBLN_CLASS_KWARGS = {
         "export": True,
         "rbln_config": {
-            "height": 480,
-            "width": 720,
+            "height": 128,
+            "width": 128,
             "num_frames": 17,
             "max_sequence_length": 16,
             "transformer": {"num_devices": 4},
@@ -512,7 +512,7 @@ class TestCogVideoXModel(BaseTest.TestModel):
 
     def test_generate(self):
         output = self.model(**self.get_inputs())[0]
-        self.assertEqual(tuple(output.shape), (1, 17, 3, 480, 720))
+        self.assertEqual(tuple(output.shape), (1, 17, 3, 128, 128))
 
 
 class TestCogVideoXImageToVideoModel(BaseTest.TestModel):
@@ -520,21 +520,21 @@ class TestCogVideoXImageToVideoModel(BaseTest.TestModel):
     RBLN_CLASS = RBLNCogVideoXImageToVideoPipeline
     # The VAE also compiles the 1-frame encoder for the input image.
     GENERATION_KWARGS = {
-        "image": Image.new("RGB", (720, 480), color=(120, 80, 40)),
+        "image": Image.new("RGB", (128, 128), color=(120, 80, 40)),
         "prompt": "a cat playing a piano",
         "num_inference_steps": 2,
         "generator": torch.manual_seed(42),
         "num_frames": 17,
-        "height": 480,
-        "width": 720,
+        "height": 128,
+        "width": 128,
         "max_sequence_length": 16,
         "output_type": "pt",
     }
     RBLN_CLASS_KWARGS = {
         "export": True,
         "rbln_config": {
-            "height": 480,
-            "width": 720,
+            "height": 128,
+            "width": 128,
             "num_frames": 17,
             "max_sequence_length": 16,
             "transformer": {"num_devices": 4},
@@ -543,12 +543,12 @@ class TestCogVideoXImageToVideoModel(BaseTest.TestModel):
 
     def test_generate(self):
         output = self.model(**self.get_inputs())[0]
-        self.assertEqual(tuple(output.shape), (1, 17, 3, 480, 720))
+        self.assertEqual(tuple(output.shape), (1, 17, 3, 128, 128))
 
     def test_encode_image(self):
-        image = torch.rand(1, 3, 1, 480, 720) * 2 - 1
+        image = torch.rand(1, 3, 1, 128, 128) * 2 - 1
         latent = self.model.vae.encode(image).latent_dist.mean
-        self.assertEqual(tuple(latent.shape), (1, 4, 1, 60, 90))
+        self.assertEqual(tuple(latent.shape), (1, 4, 1, 16, 16))
 
 
 if __name__ == "__main__":
