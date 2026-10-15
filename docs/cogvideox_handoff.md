@@ -5,7 +5,7 @@
 [cogvideox_i2v_progress.md](cogvideox_i2v_progress.md) (5b image-to-video)에 있다. 두 문서의 앞부분 설명 중 일부는
 나중에 바뀌었다. **이 문서와 다르면 이 문서가 맞다.**
 
-마지막 갱신: 2026-10-15, 브랜치 `seinpark/cogvideox` @ `a4084dd7` (+ 이 문서 갱신 커밋)
+마지막 갱신: 2026-10-15, 브랜치 `seinpark/cogvideox` @ `ea4c525c` (+ 이 문서 갱신 커밋)
 
 ---
 
@@ -88,7 +88,7 @@
 | `src/optimum/rbln/diffusers/pipelines/cogvideo/pipeline_cogvideox.py` | `RBLNCogVideoXPipeline` |
 | `src/optimum/rbln/diffusers/pipelines/cogvideo/pipeline_cogvideox_image2video.py` | `RBLNCogVideoXImageToVideoPipeline` |
 | `src/optimum/rbln/diffusers/configurations/pipelines/configuration_cogvideox.py` | `RBLNCogVideoXPipelineConfig` (`_vae_uses_encoder=False`), `RBLNCogVideoXImageToVideoPipelineConfig` (`True`) |
-| `tests/test_diffusers.py` | `_save_tiny_cogvideox_pipeline(save_dir, image_to_video)`, `TestCogVideoXModel`, `TestCogVideoXImageToVideoModel` |
+| `tests/test_diffusers.py` | `TestCogVideoXModel` (`rbln/tiny-cogvideox-text2video`), `TestCogVideoXImageToVideoModel` (`rbln/tiny-cogvideox-image2video`). 허브 tiny는 10-15에 예전 `_save_tiny_cogvideox_pipeline`으로 만들어 올렸다 (원본 `~/nas_data/cogvideox/tiny_checkpoints/`) |
 
 export는 `define_import_structure`가 `__all__`에서 자동으로 만든다. `from optimum.rbln import RBLNCogVideoXImageToVideoPipeline` 동작.
 
