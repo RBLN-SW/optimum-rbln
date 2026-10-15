@@ -777,6 +777,36 @@ class TestGroundingDinoModel(BaseTest.TestModel):
         cls.HF_CONFIG_KWARGS = {**cls.HF_CONFIG_KWARGS, "config": config, "ignore_mismatched_sizes": True}
         return super().setUpClass()
 
+    def test_return_dict_false(self):
+        inputs = self.get_inputs()
+        tuple_output = self.model(**inputs, return_dict=False)
+        dict_output = self.model(**inputs, return_dict=True)
+
+        def shapes(value):
+            if isinstance(value, torch.Tensor):
+                return value.shape
+            assert isinstance(value, tuple), f"unexpected {type(value).__name__} in the tuple output"
+            return [shapes(item) for item in value]
+
+        # As in transformers, the tuple holds the dict's outputs in the same order and nesting.
+        assert shapes(tuple_output) == shapes(dict_output.to_tuple())
+
+
+class TestGroundingDinoModelOutputHiddenStates(TestGroundingDinoModel):
+    GENERATION_KWARGS = {
+        "pixel_values": torch.randn(1, 3, 640, 960, generator=torch.manual_seed(42)),
+        "input_ids": torch.randint(low=0, high=50, size=(1, 256), generator=torch.manual_seed(42), dtype=torch.int64),
+        "output_attentions": True,
+        "output_hidden_states": True,
+    }
+    RBLN_CLASS_KWARGS = {
+        "rbln_config": {
+            "encoder": {"image_size": (640, 960), "output_attentions": True, "output_hidden_states": True},
+            "decoder": {"image_size": (640, 960), "output_attentions": True, "output_hidden_states": True},
+            "backbone": {"image_size": (640, 960)},
+        }
+    }
+
 
 if __name__ == "__main__":
     unittest.main()
