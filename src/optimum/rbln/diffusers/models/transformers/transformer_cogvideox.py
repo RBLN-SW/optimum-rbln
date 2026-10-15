@@ -96,7 +96,6 @@ class RBLNCogVideoXTransformer3DModel(RBLNModel):
                 rbln_config.vae.height // pipe.vae_scale_factor_spatial,
                 rbln_config.vae.width // pipe.vae_scale_factor_spatial,
             )
-        transformer_config.vae_scale_factor_temporal = pipe.vae_scale_factor_temporal
         return rbln_config
 
     @classmethod
@@ -113,15 +112,14 @@ class RBLNCogVideoXTransformer3DModel(RBLNModel):
             rbln_config.sample_size = (model_config.sample_height, model_config.sample_width)
         if rbln_config.max_text_seq_length is None:
             rbln_config.max_text_seq_length = model_config.max_text_seq_length
-        if rbln_config.vae_scale_factor_temporal is None:
-            rbln_config.vae_scale_factor_temporal = model_config.temporal_compression_ratio
 
         batch_size = rbln_config.batch_size
         latent_h, latent_w = rbln_config.sample_size
+        num_latent_frames = (rbln_config.num_frames - 1) // model_config.temporal_compression_ratio + 1
         input_info = [
             (
                 "hidden_states",
-                [batch_size, rbln_config.num_latent_frames, model_config.in_channels, latent_h, latent_w],
+                [batch_size, num_latent_frames, model_config.in_channels, latent_h, latent_w],
                 rbln_config.dtype,
             ),
             (
@@ -135,7 +133,7 @@ class RBLNCogVideoXTransformer3DModel(RBLNModel):
             # The pipeline builds the 3D RoPE tables on the host (_prepare_rotary_positional_embeddings).
             p = model_config.patch_size
             rope_shape = [
-                rbln_config.num_latent_frames * (latent_h // p) * (latent_w // p),
+                num_latent_frames * (latent_h // p) * (latent_w // p),
                 model_config.attention_head_dim,
             ]
             input_info.append(("image_rotary_emb_cos", rope_shape, "float32"))

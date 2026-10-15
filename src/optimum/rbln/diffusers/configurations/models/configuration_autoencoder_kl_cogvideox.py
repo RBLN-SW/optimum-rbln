@@ -15,10 +15,6 @@
 from typing import Any
 
 from ....configuration_utils import RBLNModelConfig
-from ....utils.logging import get_logger
-
-
-logger = get_logger(__name__)
 
 
 class RBLNAutoencoderKLCogVideoXConfig(RBLNModelConfig):
@@ -31,14 +27,13 @@ class RBLNAutoencoderKLCogVideoXConfig(RBLNModelConfig):
         num_frames: int | None = None,
         height: int | None = None,
         width: int | None = None,
-        vae_scale_factor_temporal: int | None = None,
-        vae_scale_factor_spatial: int | None = None,
         use_slicing: bool = True,
         **kwargs: Any,
     ):
         """
         Args:
-            batch_size (Optional[int]): The batch size for inference. Defaults to 1.
+            batch_size (Optional[int]): The batch size of the compiled graphs. Defaults to 1; the pipelines
+                always compile the VAE with batch 1 and slicing on.
             uses_encoder (Optional[bool]): Whether to include the encoder part of the VAE in the model.
                 Image-to-video uses it to encode the input image as a 1-frame video; text-to-video does not.
             num_frames (Optional[int]): The number of frames in the generated video. Filled by the
@@ -47,51 +42,27 @@ class RBLNAutoencoderKLCogVideoXConfig(RBLNModelConfig):
                 pipeline config; required for a standalone compile.
             width (Optional[int]): The width in pixels of the generated video. Filled by the
                 pipeline config; required for a standalone compile.
-            vae_scale_factor_temporal (Optional[int]): The scaling factor between time space and latent space.
-            vae_scale_factor_spatial (Optional[int]): The scaling factor between pixel space and latent space.
-            use_slicing (bool): Run batched requests one sample at a time on the batch-1 compiled graphs.
-                Defaults to True; a batch_size > 1 request is normalized to 1 with a warning.
+            use_slicing (bool): Run a batched request one sample at a time, as diffusers `use_slicing`
+                (it splits the batch axis only). Defaults to True.
             kwargs: Additional arguments passed to the parent RBLNModelConfig.
 
         Raises:
             ValueError: If batch_size is not a positive integer.
         """
         super().__init__(**kwargs)
-        if self.num_devices is not None and self.num_devices > 1:
-            raise ValueError(
-                f"RBLNAutoencoderKLCogVideoX runs on one device; got num_devices={self.num_devices}. "
-                "Set num_devices on the transformer config only."
-            )
         self.use_slicing = use_slicing
         self.batch_size = batch_size or 1
         if not isinstance(self.batch_size, int) or self.batch_size < 0:
             raise ValueError(f"batch_size must be a positive integer, got {self.batch_size}")
-        elif self.batch_size > 1:
-            if not self.use_slicing:
-                self.use_slicing = True
-            logger.warning(
-                "Batched CogVideoX VAE graphs are not supported for memory efficiency; "
-                "falling back to per-sample slicing."
-            )
-            self.batch_size = 1
 
         self.uses_encoder = uses_encoder
         self.num_frames = num_frames
         self.height = height
         self.width = width
 
-        self.vae_scale_factor_temporal = vae_scale_factor_temporal
-        self.vae_scale_factor_spatial = vae_scale_factor_spatial
-
     @property
     def image_size(self):
         return (self.height, self.width)
-
-    @property
-    def num_latent_frames(self) -> int:
-        if self.num_frames is None or self.vae_scale_factor_temporal is None:
-            raise ValueError("`num_frames` and `vae_scale_factor_temporal` must be set to get `num_latent_frames`.")
-        return (self.num_frames - 1) // self.vae_scale_factor_temporal + 1
 
 
 __all__ = [

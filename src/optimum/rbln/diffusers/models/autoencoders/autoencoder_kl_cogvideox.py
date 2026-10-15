@@ -252,18 +252,16 @@ class RBLNAutoencoderKLCogVideoX(RBLNModel):
             )
 
     @staticmethod
-    def _latent_size(rbln_config: RBLNAutoencoderKLCogVideoXConfig) -> tuple[int, int]:
-        return (
-            rbln_config.height // rbln_config.vae_scale_factor_spatial,
-            rbln_config.width // rbln_config.vae_scale_factor_spatial,
-        )
+    def _latent_size(model: AutoencoderKLCogVideoX, rbln_config: RBLNAutoencoderKLCogVideoXConfig) -> tuple[int, int]:
+        spatial_compression = 2 ** (len(model.config.block_out_channels) - 1)
+        return rbln_config.height // spatial_compression, rbln_config.width // spatial_compression
 
     @classmethod
     def _wrap_model_if_needed(
         cls, model: torch.nn.Module, rbln_config: RBLNAutoencoderKLCogVideoXConfig
     ) -> tuple[torch.nn.Module, ...]:
         """One graph per compile config, in the same order."""
-        latent_height, latent_width = cls._latent_size(rbln_config)
+        latent_height, latent_width = cls._latent_size(model, rbln_config)
         graphs = {
             "decoder_0": lambda: _VAECogVideoXDecoder0(model, latent_height, latent_width),
             "decoder_n": lambda: _VAECogVideoXDecoderN(model, latent_height, latent_width),
@@ -321,9 +319,6 @@ class RBLNAutoencoderKLCogVideoX(RBLNModel):
             rbln_config.vae.width = transformer_config.sample_width * vae_scale_factor_spatial
         if rbln_config.vae.num_frames is None:
             rbln_config.vae.num_frames = transformer_config.sample_frames
-
-        rbln_config.vae.vae_scale_factor_temporal = pipe.vae_scale_factor_temporal
-        rbln_config.vae.vae_scale_factor_spatial = vae_scale_factor_spatial
         return rbln_config
 
     @classmethod
@@ -342,19 +337,14 @@ class RBLNAutoencoderKLCogVideoX(RBLNModel):
                 "compile must pass them in rbln_config."
             )
 
-        if rbln_config.vae_scale_factor_temporal is None:
-            rbln_config.vae_scale_factor_temporal = model_config.temporal_compression_ratio
-        if rbln_config.vae_scale_factor_spatial is None:
-            rbln_config.vae_scale_factor_spatial = 2 ** (len(model_config.block_out_channels) - 1)
-
         batch_size = rbln_config.batch_size
         dtype = rbln_config.dtype
         # Same chunks as AutoencoderKLCogVideoX._decode: `num_latent_frames_batch_size` (2) latent frames per call,
         # and the first call also takes the odd remainder frame.
         frame_batch = model.num_latent_frames_batch_size
-        num_latent_frames = rbln_config.num_latent_frames
+        num_latent_frames = (rbln_config.num_frames - 1) // model_config.temporal_compression_ratio + 1
         first_chunk = min(num_latent_frames, frame_batch + num_latent_frames % frame_batch)
-        latent_height, latent_width = cls._latent_size(rbln_config)
+        latent_height, latent_width = cls._latent_size(model, rbln_config)
         caches = _decoder_conv_caches(model.decoder, latent_height, latent_width)
         buffer_info = [
             (f"conv_cache_{i}", cache.device_shape(batch_size), dtype) for i, cache in enumerate(caches[1:], start=1)

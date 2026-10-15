@@ -44,8 +44,8 @@ class RBLNCogVideoXPipelineConfig(RBLNModelConfig):
             text_encoder (RBLNT5EncoderModelConfig | None): Configuration for the T5 text encoder.
             transformer (RBLNCogVideoXTransformer3DModelConfig | None): Configuration for the transformer.
             vae (RBLNAutoencoderKLCogVideoXConfig | None): Configuration for the VAE (decoder only).
-            batch_size (int | None): Batch size for inference (number of prompts), applied to all submodules.
-                The VAE always runs on one device.
+            batch_size (int | None): Batch size for inference (number of prompts), for the text encoder and
+                the transformer. The VAE always runs one sample at a time (batch 1, slicing on) on one device.
             num_frames (int | None): Number of frames in the generated video. Defaults to the transformer
                 config `sample_frames` (49 for CogVideoX-2b).
             height (int | None): Height of the generated video. Defaults to 480 for CogVideoX-2b.
@@ -76,15 +76,18 @@ class RBLNCogVideoXPipelineConfig(RBLNModelConfig):
             num_frames=num_frames,
             max_text_seq_length=max_sequence_length,
         )
+        # The pipeline runs the VAE on one device, one sample at a time: batch-1 graphs with slicing on.
+        # Pipeline values left unset are not passed, so they do not conflict with values set on the VAE.
+        pipeline_values = {"num_frames": num_frames, "height": height, "width": width}
         self.vae = self.initialize_submodule_config(
             vae,
             cls_name="RBLNAutoencoderKLCogVideoXConfig",
+            force_kwargs=True,
             num_devices=1,
-            batch_size=batch_size,
+            batch_size=1,
+            use_slicing=True,
             uses_encoder=self.__class__._vae_uses_encoder,
-            num_frames=num_frames,
-            height=height,
-            width=width,
+            **{key: value for key, value in pipeline_values.items() if value is not None},
         )
 
         if guidance_scale is None:

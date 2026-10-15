@@ -33,7 +33,6 @@ class RBLNCogVideoXTransformer3DModelConfig(RBLNModelConfig):
         num_frames: int | None = None,
         sample_size: tuple[int, int] | None = None,
         max_text_seq_length: int | None = None,
-        vae_scale_factor_temporal: int | None = None,
         **kwargs: Any,
     ):
         """
@@ -47,8 +46,6 @@ class RBLNCogVideoXTransformer3DModelConfig(RBLNModelConfig):
             max_text_seq_length (int | None): The length of the text embeddings. Defaults to the
                 transformer config `max_text_seq_length`; a pipeline sets it from `max_sequence_length`.
                 Models with positional embeddings (CogVideoX-2b, CogVideoX-5b-I2V) need the config value.
-            vae_scale_factor_temporal (int | None): The temporal compression of the VAE. Defaults to the
-                transformer config `temporal_compression_ratio`.
             kwargs: Additional arguments passed to the parent RBLNModelConfig.
 
         Raises:
@@ -64,17 +61,10 @@ class RBLNCogVideoXTransformer3DModelConfig(RBLNModelConfig):
         self.num_frames = num_frames
         self.sample_size = tuple(sample_size) if sample_size is not None else None
         self.max_text_seq_length = max_text_seq_length
-        self.vae_scale_factor_temporal = vae_scale_factor_temporal
 
     @property
     def batch_size_is_specified(self):
         return self._batch_size_is_specified
-
-    @property
-    def num_latent_frames(self) -> int:
-        if self.num_frames is None or self.vae_scale_factor_temporal is None:
-            raise ValueError("`num_frames` and `vae_scale_factor_temporal` must be set to get `num_latent_frames`.")
-        return (self.num_frames - 1) // self.vae_scale_factor_temporal + 1
 
 
 __all__ = [
