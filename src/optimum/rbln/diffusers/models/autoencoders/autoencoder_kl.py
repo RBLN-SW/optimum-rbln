@@ -32,8 +32,7 @@ from .vae import RBLNRuntimeVAEDecoder, RBLNRuntimeVAEEncoder, _VAEDecoder, _VAE
 
 
 if TYPE_CHECKING:
-    import torch
-    from transformers import PretrainedConfig, PreTrainedModel
+    from transformers import PreTrainedModel
 
     from ...modeling_diffusers import RBLNDiffusionMixin, RBLNDiffusionMixinConfig
 

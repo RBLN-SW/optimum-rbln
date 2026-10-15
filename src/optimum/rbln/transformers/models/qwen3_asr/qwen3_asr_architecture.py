@@ -15,7 +15,7 @@
 from typing import TYPE_CHECKING
 
 import torch
-import torch.nn as nn
+from torch import nn
 
 from ..qwen3.qwen3_architecture import Qwen3Wrapper
 

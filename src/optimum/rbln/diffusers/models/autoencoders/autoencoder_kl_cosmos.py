@@ -31,7 +31,6 @@ from .vae import RBLNRuntimeCosmosVAEDecoder, RBLNRuntimeCosmosVAEEncoder, _VAEC
 
 
 if TYPE_CHECKING:
-    import torch
     from transformers import PretrainedConfig, PreTrainedModel
 
     from ...modeling_diffusers import RBLNDiffusionMixin, RBLNDiffusionMixinConfig
@@ -242,6 +241,7 @@ class RBLNAutoencoderKLCosmos(RBLNModel):
 
         if not return_dict:
             return (decoded,)
+
         return DecoderOutput(sample=decoded)
 
 

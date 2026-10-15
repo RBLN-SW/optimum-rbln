@@ -15,7 +15,7 @@
 import inspect
 from collections.abc import Callable, Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Optional
+from typing import Any, Optional
 
 import torch
 from transformers import (
@@ -54,11 +54,6 @@ from .qwen2_vl_architecture import Qwen2VisionTransformerWrapper, Qwen2VL_Langua
 
 
 logger = get_logger(__name__)
-
-if TYPE_CHECKING:
-    from transformers import (
-        PretrainedConfig,
-    )
 
 
 class RBLNQwen2VisionTransformerPretrainedModel(RBLNModel):

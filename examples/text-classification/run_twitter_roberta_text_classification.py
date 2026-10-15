@@ -23,10 +23,13 @@ NUM_CLASS = 4
 # Preprocess text
 def preprocess(text):
     new_text = []
-    for t in text.split(" "):
-        t = "@user" if t.startswith("@") and len(t) > 1 else t
-        t = "http" if t.startswith("http") else t
-        new_text.append(t)
+    for token in text.split(" "):
+        if token.startswith("@") and len(token) > 1:
+            new_text.append("@user")
+        elif token.startswith("http"):
+            new_text.append("http")
+        else:
+            new_text.append(token)
     return " ".join(new_text)
 
 

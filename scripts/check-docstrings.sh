@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Mirrors .github/workflows/test-docstrings.yml: check that mkdocstrings can parse
-# the src/*.py files this PR changes. DOCSTRINGS_ALL_FILES=1 checks every file.
+# Check that mkdocstrings can parse the src/*.py files this PR changes.
+# DOCSTRINGS_ALL_FILES=1 checks every file.
 set -euo pipefail
 
 base="${BUILDKITE_PULL_REQUEST_BASE_BRANCH:-dev}"
@@ -35,5 +35,5 @@ export PATH="/tmp/docstrings-venv/bin:$PATH"
 
 echo "--- :page_facing_up: ${#selected[@]} files"
 printf '%s\n' "${selected[@]}" | xargs -P 16 -n 1 sh -c \
-  'python .github/scripts/validate_docstrings.py "$0" && echo "ok $0" || { echo "FAILED $0"; exit 1; }'
+  'python scripts/validate_docstrings.py "$0" && echo "ok $0" || { echo "FAILED $0"; exit 1; }'
 echo "All docstring tests passed"
