@@ -71,19 +71,19 @@ class _ConvCache:
     def shape(self, batch_size: int) -> list[int]:
         return [batch_size, self.channels, self.depth, self.height, self.width]
 
-    def device_shape(self, batch_size: int) -> list[int]:
+    def compile_shape(self, batch_size: int) -> list[int]:
         hw = self.height * self.width
         if self.channels_last:
             return [batch_size, hw, self.depth, self.channels]
         return [batch_size, self.channels, self.depth, hw]
 
-    def to_device(self, x: torch.Tensor) -> torch.Tensor:
+    def to_cache(self, x: torch.Tensor) -> torch.Tensor:
         n, c, d, h, w = x.shape
         if self.channels_last:
             return x.permute(0, 3, 4, 2, 1).reshape(n, h * w, d, c).contiguous()
         return x.reshape(n, c, d, h * w).contiguous()
 
-    def from_device(self, cache: torch.Tensor) -> torch.Tensor:
+    def from_cache(self, cache: torch.Tensor) -> torch.Tensor:
         n, c, d, h, w = cache.shape[0], self.channels, self.depth, self.height, self.width
         if self.channels_last:
             return cache.reshape(n, h, w, d, c).permute(0, 4, 3, 1, 2)
@@ -163,7 +163,7 @@ class _VAECogVideoXDecoder(torch.nn.Module):
         frame_axis = torch.tensor(2, dtype=torch.int16)
         updates = [
             torch.ops.rbln_custom_ops.rbln_cache_update(
-                buffer, cache.to_device(cache.get(new_conv_cache)).to(buffer.dtype), position, frame_axis
+                buffer, cache.to_cache(cache.get(new_conv_cache)).to(buffer.dtype), position, frame_axis
             )
             for cache, buffer in zip(self.static_caches, buffers, strict=True)
         ]
@@ -184,7 +184,7 @@ class _VAECogVideoXDecoderN(_VAECogVideoXDecoder):
         conv_cache = {}
         self.conv_in_cache.put(conv_cache, conv_in_cache)
         for cache, buffer in zip(self.static_caches, buffers, strict=True):
-            cache.put(conv_cache, cache.from_device(buffer).to(z.dtype))
+            cache.put(conv_cache, cache.from_cache(buffer).to(z.dtype))
         return self._decode(z, conv_cache, buffers)
 
 
@@ -347,7 +347,7 @@ class RBLNAutoencoderKLCogVideoX(RBLNModel):
         latent_height, latent_width = cls._latent_size(model, rbln_config)
         caches = _decoder_conv_caches(model.decoder, latent_height, latent_width)
         buffer_info = [
-            (f"conv_cache_{i}", cache.device_shape(batch_size), dtype) for i, cache in enumerate(caches[1:], start=1)
+            (f"conv_cache_{i}", cache.compile_shape(batch_size), dtype) for i, cache in enumerate(caches[1:], start=1)
         ]
 
         def z_info(num_latent_frames: int):
