@@ -58,12 +58,17 @@ class RBLNQwen3_5RuntimeModel(RBLNRuntimeModel):
     def _run(self, named_inputs: dict):
         """Order inputs by the runtime's own signature and invoke; return (logits, hidden_states).
 
-        When output_hidden_states is set, the trailing `num_hidden_layers + 1` outputs are the per-layer
-        hidden states — taking the LAST n_hidden avoids having to count the new_states.
+        A GDN model's layers write their own cache rows and return nothing, so the graph has one output,
+        or `num_hidden_layers + 1` more when output_hidden_states is set.
         """
         order = self.runtime._index_to_input_name
         args = [named_inputs[order[k]] for k in range(len(order))]
         out = super(RBLNRuntimeModel, self).forward(*args)
+        # A graph with a single output hands back that tensor, not a sequence holding it. Indexing it
+        # as a sequence then takes the logits' first row and loses a dimension, which generation does
+        # not reject -- it samples along the wrong axis and emits token 0 forever.
+        if isinstance(out, torch.Tensor):
+            out = (out,)
         hidden_states = None
         if self.rbln_config.output_hidden_states:
             n_hidden = self.config.num_hidden_layers + 1
