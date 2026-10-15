@@ -76,8 +76,6 @@ class RBLNCogVideoXPipelineConfig(RBLNModelConfig):
             num_frames=num_frames,
             max_text_seq_length=max_sequence_length,
         )
-        # The pipeline runs the VAE on one device, one sample at a time: batch-1 graphs with slicing on.
-        # Pipeline values left unset are not passed, so they do not conflict with values set on the VAE.
         pipeline_values = {"num_frames": num_frames, "height": height, "width": width}
         self.vae = self.initialize_submodule_config(
             vae,

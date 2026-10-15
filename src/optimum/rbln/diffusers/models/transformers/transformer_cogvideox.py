@@ -130,7 +130,6 @@ class RBLNCogVideoXTransformer3DModel(RBLNModel):
             ("timestep", [batch_size], "float32"),
         ]
         if model_config.use_rotary_positional_embeddings:
-            # The pipeline builds the 3D RoPE tables on the host (_prepare_rotary_positional_embeddings).
             p = model_config.patch_size
             rope_shape = [
                 num_latent_frames * (latent_h // p) * (latent_w // p),

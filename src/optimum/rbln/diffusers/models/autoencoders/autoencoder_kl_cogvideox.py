@@ -40,10 +40,6 @@ if TYPE_CHECKING:
     from ...modeling_diffusers import RBLNDiffusionMixin, RBLNDiffusionMixinConfig
 
 
-# Blocks that run at 1x and 2x the latent resolution. rbln_cache_update needs the last axis of a static cache
-# to be a multiple of 64 elements (128 bytes), which h*w is not there at 480x720 (5400 and 21600), so their
-# caches are stored channels last: (n, h*w, d, c). At 4x and 8x, h*w is 16x and 64x the latent h*w, which is
-# aligned for even latent sizes (the transformer's 2x2 patches need them), so those caches stay (n, c, d, h*w).
 _CHANNELS_LAST_BLOCKS = ("mid_block", "up_block_0", "up_block_1")
 
 
@@ -54,8 +50,7 @@ class _ConvCache:
 
     `path` is its key path in the nested `conv_cache` dict of `CogVideoXDecoder3D.forward`, e.g.
     ("up_block_0", "resnet_1", "conv2"). diffusers keeps it as (n, c, d, h, w); on the device it is stored as
-    (n, c, d, h*w), or as (n, h*w, d, c) for the `_CHANNELS_LAST_BLOCKS`. The channels-last layout needs a real
-    permute: a plain reshape of (n, c, d, h, w) to that shape aborts the compile in FoldMemoryTransfer.
+    (n, c, d, h*w), or as (n, h*w, d, c) for the `_CHANNELS_LAST_BLOCKS`.
     """
 
     path: tuple[str, ...]
@@ -156,9 +151,7 @@ class _VAECogVideoXDecoder(torch.nn.Module):
     def _decode(self, z: torch.Tensor, conv_cache: dict | None, buffers: Sequence[torch.Tensor]):
         out, new_conv_cache = self.decoder(z, conv_cache=conv_cache)
 
-        # Write all new caches at the end of the graph, as in the Wan VAE. Writing a cache right after its conv
-        # corrupts the decoder_n output: the write does not depend on the read of the old cache by the same conv,
-        # so the device can run it first.
+        # Write all new caches at the end of the graph, as in the Wan VAE.
         position = torch.tensor(0, dtype=torch.int16)
         frame_axis = torch.tensor(2, dtype=torch.int16)
         updates = [
@@ -213,10 +206,9 @@ class RBLNAutoencoderKLCogVideoX(RBLNModel):
     RBLN implementation of AutoencoderKLCogVideoX for diffusion models.
 
     This model is used to accelerate AutoencoderKLCogVideoX models from diffusers library on RBLN NPUs.
-    Like the Wan VAE, the decoder's temporal conv caches stay on the device as static buffers and the frame
-    loop runs on the host: `decoder_0` decodes the first latent chunk without a cache and `decoder_n` decodes
-    each later chunk with the previous cache. With `uses_encoder` (image-to-video), `encoder` encodes a
-    1-frame image.
+    The decoder's temporal conv caches stay on the device as static buffers and the frame
+    loop runs on the host: `decoder_0` decodes the first latent chunk without a cache and `decoder_n` decodes each later chunk 
+    with the previous cache. With `uses_encoder` (image-to-video), `encoder` encodes a 1-frame image.
 
     This class inherits from [`RBLNModel`]. Check the superclass documentation for the generic methods
     the library implements for all its models.
@@ -276,8 +268,7 @@ class RBLNAutoencoderKLCogVideoX(RBLNModel):
         cfgs = {cfg.compiled_model_name: cfg for cfg in rbln_config.compile_cfgs}
         graphs = dict(zip(cfgs, cls._wrap_model_if_needed(model, rbln_config), strict=True))
 
-        # decoder_0 and decoder_n wrap the same vae.decoder and share its weights on the device. They also share
-        # the static cache buffers: decoder_n gets the same dummy tensors as decoder_0.
+        # decoder_0 and decoder_n wrap the same vae.decoder and share its weights on the device.
         context = CompileContext(use_weight_sharing=True)
         example_inputs = {"decoder_0": cfgs["decoder_0"].get_dummy_inputs(fill=0)}
         buffers = {
@@ -292,9 +283,6 @@ class RBLNAutoencoderKLCogVideoX(RBLNModel):
         if "encoder" in cfgs:
             example_inputs["encoder"] = cfgs["encoder"].get_dummy_inputs(fill=0)
 
-        # A graph reuses the intermediate buffer of a graph compiled before it in the same context only if that
-        # buffer is large enough. decoder_n needs the largest one (7.25 GiB vs 4.40 GiB for decoder_0 at 480x720,
-        # 49 frames), so it goes first; in the other order the graphs do not fit on one device together.
         compiled = {}
         for name in sorted(graphs, key=("decoder_n", "decoder_0", "encoder").index):
             compiled[name] = cls.compile(
