@@ -99,7 +99,7 @@ type(optional scope): description
 | `refactor`    | Re-arranging code without changing behavior                       |
 | `doc`         | Docstring or documentation changes                                |
 | `dependency`  | Dependency and lockfile updates                                   |
-| `release`     | Merging `dev` into `main` for a release                            |
+| `release`     | Merging `dev` into `main` for a release                           |
 | `other`       | Anything else, such as CI or tooling changes                      |
 
 ## Tests

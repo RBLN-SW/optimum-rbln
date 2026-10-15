@@ -507,7 +507,7 @@ class TestLlavaForConditionalGeneration(LLMTest.TestLLM):
     RBLN_AUTO_CLASS = RBLNAutoModelForImageTextToText
     RBLN_CLASS = RBLNLlavaForConditionalGeneration
     HF_MODEL_ID = "trl-internal-testing/tiny-LlavaForConditionalGeneration"
-    PROMPT = "[INST] <image>\nWhat’s shown in this image? [/INST]"  # noqa: RUF001
+    PROMPT = "[INST] <image>\nWhat’s shown in this image? [/INST]"
     RBLN_CLASS_KWARGS = {
         "rbln_config": {
             "vision_tower": {"output_hidden_states": True},
@@ -578,7 +578,7 @@ class TestLlavaNextForConditionalGeneration(LLMTest.TestLLM):
     RBLN_AUTO_CLASS = RBLNAutoModelForImageTextToText
     RBLN_CLASS = RBLNLlavaNextForConditionalGeneration
     HF_MODEL_ID = "trl-internal-testing/tiny-LlavaNextForConditionalGeneration"
-    PROMPT = "[INST] <image>\nWhat’s shown in this image? [/INST]"  # noqa: RUF001
+    PROMPT = "[INST] <image>\nWhat’s shown in this image? [/INST]"
     RBLN_CLASS_KWARGS = {
         "rbln_config": {
             "language_model": {"use_inputs_embeds": True},
@@ -1315,7 +1315,7 @@ class TestMultiLora_batch(LLMTest.TestLLM):
     # Should check each output corresponds to each prompt
     EXPECTED_OUTPUT = [
         " bench_echointon Ebonylica Lennonnings909 norgeZN°Eusan倍oloadolen逸 Oaksodian surplusaniem",
-        "/topicпідonus343../../../ Mund  Ont ReactionIPAچیIQUE beltーブ204umlu Cortexoisئةτερ",  # noqa: RUF001
+        "/topicпідonus343../../../ Mund  Ont ReactionIPAچیIQUE beltーブ204umlu Cortexoisئةτερ",
     ]
     HF_MODEL_ID = "meta-llama/Llama-3.1-8B-Instruct"
     HF_CONFIG_KWARGS = {"num_hidden_layers": 1, "max_position_embeddings": 1024}

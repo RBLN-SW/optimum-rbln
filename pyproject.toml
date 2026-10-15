@@ -70,7 +70,7 @@ tests = [
     "simphile>=1.0.2",
 ]
 quality = [
-    "ruff>=0.15.4",
+    "ruff>=0.16.7",
     "mypy>=2.3.1",
     "pre-commit>=4.0.0",
 ]
@@ -130,7 +130,6 @@ doctest_optionflags = "NUMBER NORMALIZE_WHITESPACE ELLIPSIS"
 
 [tool.ruff]
 line-length = 119
-extend-exclude = ["src/optimum/rbln/__version__.py"]
 
 [tool.ruff.lint]
 select = [
@@ -166,12 +165,12 @@ ignore = [
     "RUF012",
     # Explicit if/else blocks and nested ifs read better here than ternaries and long `and` chains.
     "SIM102",
+    "SIM108",
     # Only TC004 and TC005 are kept: the others move or quote imports depending on how an annotation is written.
     "TC001",
     "TC002",
     "TC003",
     "TC006",
-    "SIM108",
 ]
 
 [tool.ruff.lint.isort]
@@ -182,6 +181,8 @@ known-third-party = ["optimum"]
 [tool.ruff.lint.per-file-ignores]
 # Ignore import violations in all `__init__.py` files.
 "__init__.py" = ["E402", "F401", "F403", "F811"]
+# Test prompts keep their typographic punctuation verbatim.
+"tests/**" = ["RUF001"]
 
 [tool.mypy]
 python_version = "3.10"

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Mirrors .github/workflows/test-docstrings.yml: check that mkdocstrings can parse
-# the src/*.py files this PR changes. DOCSTRINGS_ALL_FILES=1 checks every file.
+# Check that mkdocstrings can parse the src/*.py files this PR changes.
+# DOCSTRINGS_ALL_FILES=1 checks every file.
 set -euo pipefail
 
 base="${BUILDKITE_PULL_REQUEST_BASE_BRANCH:-dev}"
