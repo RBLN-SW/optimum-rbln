@@ -5,7 +5,7 @@
 [cogvideox_i2v_progress.md](cogvideox_i2v_progress.md) (5b image-to-video)에 있다. 두 문서의 앞부분 설명 중 일부는
 나중에 바뀌었다. **이 문서와 다르면 이 문서가 맞다.**
 
-마지막 갱신: 2026-10-15, 브랜치 `seinpark/cogvideox` @ `73720e9f` (+ 이 문서 갱신 커밋)
+마지막 갱신: 2026-10-15, 브랜치 `seinpark/cogvideox` @ `3a5cc1d8` (+ 이 문서 갱신 커밋)
 
 ---
 
@@ -82,7 +82,7 @@
 |---|---|
 | `src/optimum/rbln/diffusers/models/autoencoders/autoencoder_kl_cogvideox.py` | `RBLNAutoencoderKLCogVideoX`. 그래프 `decoder_0`, `decoder_n`, (I2V) `encoder`. conv cache 표, cache 레이아웃 |
 | `src/optimum/rbln/diffusers/models/autoencoders/vae.py` | 새 런타임 클래스 `RBLNRuntimeCogVideoXVAEDecoder` (chunk 루프), `RBLNRuntimeCogVideoXVAEEncoder` (1 frame) |
-| `src/optimum/rbln/diffusers/configurations/models/configuration_autoencoder_kl_cogvideox.py` | VAE config. `num_devices > 1`이면 ValueError. `cache_dtype` 기본값 = VAE dtype |
+| `src/optimum/rbln/diffusers/configurations/models/configuration_autoencoder_kl_cogvideox.py` | VAE config. `num_devices > 1`이면 ValueError. 사용자 값: `num_frames`, `height`, `width`, `batch_size`, `uses_encoder`, `use_slicing` (+ VAE config에서 채우는 `vae_scale_factor_*`) |
 | `src/optimum/rbln/diffusers/models/transformers/transformer_cogvideox.py` | `RBLNCogVideoXTransformer3DModel`. 한 그래프, timestep·RoPE를 그래프 입력으로 |
 | `src/optimum/rbln/diffusers/configurations/models/configuration_transformer_cogvideox.py` | transformer config. `num_devices`는 다른 모델처럼 기본 None (device 1개). 예제는 8, tiny 테스트는 4를 명시 |
 | `src/optimum/rbln/diffusers/pipelines/cogvideo/pipeline_cogvideox.py` | `RBLNCogVideoXPipeline` |
@@ -102,8 +102,12 @@ export는 `define_import_structure`가 `__all__`에서 자동으로 만든다. `
 - 첫 cache (`conv_in`, latent 16채널 60x90)는 static이 아니다: 그래프 출력으로 돌려주고 runtime이 다음 chunk에
   `conv_cache_0`으로 넘긴다 (어느 device layout에도 안 맞음). 나머지는 static 입력 `conv_cache_1` …
 - cache는 static buffer + `torch.ops.rbln_custom_ops.rbln_cache_update`. **쓰기는 그래프 끝에서 한 번에** (아래 이슈 3).
-- cache dtype (`cache_dtype`) 기본값은 VAE dtype. device는 16-bit로만 저장하므로 fp32로 선언해도 DRAM은 bf16과 같다
-  (2b VAE fp32 그래프에서 fp32 cache / bf16 cache: peak 둘 다 12.982 GiB, 출력 frame md5 동일, §6).
+- cache dtype은 VAE dtype (config 옵션 없음, 10-15에 `cache_dtype` 삭제). device는 16-bit로만 저장하므로 fp32 cache도 DRAM은
+  bf16과 같다 (2b VAE fp32 그래프에서 fp32 cache / bf16 cache: peak 둘 다 12.982 GiB, 출력 frame md5 동일, §6).
+- chunk 크기: 컴파일 때 diffusers VAE의 `num_latent_frames_batch_size` (diffusers가 2로 박아 둔 속성)로 계산한다.
+  실행 때는 저장된 그래프의 z shape에서 읽는다 (`decoder_0` frame 축 = 첫 chunk, `decoder_n` = 이후 chunk).
+  10-15에 config 필드 `num_latent_frames_batch_size`, `cache_dtype`, `num_channels_latents` (쓰지 않던 값)를 지웠다.
+  그 전에 컴파일한 VAE/파이프라인 산출물은 `Unexpected arguments`로 로드되지 않는다 → 다시 컴파일.
 - `get_compiled_model`은 **`decoder_n`을 먼저 컴파일**한다 (`decoder_n`, `decoder_0`, `encoder` 순, 한
   `CompileContext(use_weight_sharing=True)`). 그래야 나머지가 `decoder_n`의 intermediate 버퍼를 재사용해 한 device에 들어간다.
 - cache 레이아웃 (`_ConvCache.channels_last`, 블록 이름으로 고정 — 10-14 사용자 요청으로 64 규칙 대신):
@@ -186,7 +190,7 @@ export는 `define_import_structure`가 `__all__`에서 자동으로 만든다. `
 5. **공유 코드를 바꾸지 않는다.** 새 클래스를 추가한다. t2v 동작을 바꾸지 않는다.
 6. **PR 범위: 코드, 테스트, 사용자가 요청한 docs와 `examples/cogvideo/` 검증 스크립트.** 그 밖의 것을 넣기 전에 묻는다.
 7. **dtype은 upstream을 따른다 (2026-10-14).** 모든 submodule (VAE 포함)은 로드된 `torch_dtype`대로 컴파일한다. VAE를
-   fp32로 강제하지 않는다. `cache_dtype` 기본값은 VAE dtype (fp32 예외 없음: device는 16-bit로 저장해서 DRAM 차이가 없다).
+   fp32로 강제하지 않는다. VAE cache도 VAE dtype (device는 16-bit로 저장해서 DRAM 차이가 없다).
    예제는 모델 카드 dtype을 준다. `encode_prompt` 등 파이프라인 동작도 upstream 그대로 둔다 (dtype을 바꾸는 override 금지).
 
 ---
