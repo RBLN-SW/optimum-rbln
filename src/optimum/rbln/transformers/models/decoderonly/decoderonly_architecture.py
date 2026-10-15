@@ -1054,6 +1054,12 @@ class AttentionOp(nn.Module):
         if attn_op is None:
             raise ValueError(f"Attention operator {attn_op_name} not found.")
 
+        # Tell the compiler the batch arrives length-sorted; older compilers lack the arg.
+        if getattr(self.rbln_config, "requires_batch_sort", None) and any(
+            arg.name == "is_prompt_sorted" for arg in attn_op.default._schema.arguments
+        ):
+            op_args["is_prompt_sorted"] = True
+
         attn_output = attn_op(**op_args)
         attn_output = attn_output.view(batch_size, self.num_heads, -1, self.head_dim)
         attn_output = attn_output.transpose(1, 2).contiguous()
@@ -1175,6 +1181,12 @@ class FlashAttentionOp(AttentionOp):
         if attn_op is None:
             raise ValueError(f"Attention operator {attn_op_name} not found.")
 
+        # Tell the compiler the batch arrives length-sorted; older compilers lack the arg.
+        if getattr(self.rbln_config, "requires_batch_sort", None) and any(
+            arg.name == "is_prompt_sorted" for arg in attn_op.default._schema.arguments
+        ):
+            op_args["is_prompt_sorted"] = True
+
         attn_output = attn_op(**op_args)
         attn_output = attn_output.view(batch_size, self.num_heads, -1, self.head_dim)
         attn_output = attn_output.transpose(1, 2).contiguous()
@@ -1285,6 +1297,12 @@ class SlidingWindowAttentionOp(AttentionOp):
         attn_op = getattr(torch.ops.rbln_custom_ops, attn_op_name, None)
         if attn_op is None:
             raise ValueError(f"Attention operator {attn_op_name} not found.")
+
+        # Tell the compiler the batch arrives length-sorted; older compilers lack the arg.
+        if getattr(self.rbln_config, "requires_batch_sort", None) and any(
+            arg.name == "is_prompt_sorted" for arg in attn_op.default._schema.arguments
+        ):
+            op_args["is_prompt_sorted"] = True
 
         attn_output = attn_op(**op_args)
         attn_output = attn_output.view(batch_size, self.num_heads, -1, self.head_dim)
