@@ -65,8 +65,8 @@ for tag in $tags; do
     timeout_in_minutes: 60
     artifact_paths: "junit-*.xml"
     command:
-      - "bash scripts/sync.sh"
-      - "bash scripts/run-suite.sh $suite"
+      - "bash scripts/ci/sync.sh"
+      - "bash scripts/ci/run-suite.sh $suite"
 EOF
   done
 done

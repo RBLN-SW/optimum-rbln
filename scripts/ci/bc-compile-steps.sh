@@ -57,7 +57,7 @@ for suite in transformers diffusers llm; do
       - "test -d $BC_BASE_PATH && mkdir -p $BC_BASE_PATH/$encoded"
       - "git fetch -q origin $tag && git checkout -q --detach FETCH_HEAD"
       - "git checkout -q \$\$BUILDKITE_COMMIT -- .buildkite scripts"
-      - "bash scripts/sync.sh"
-      - "bash scripts/run-suite.sh $suite"
+      - "bash scripts/ci/sync.sh"
+      - "bash scripts/ci/run-suite.sh $suite"
 EOF
 done

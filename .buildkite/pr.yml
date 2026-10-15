@@ -22,7 +22,7 @@ steps:
     secrets:
       - GIT_PAT
     command:
-      - "bash scripts/gate-team-member.sh"
+      - "bash scripts/ci/gate-team-member.sh"
 
   - label: ":mag: code quality"
     notify:
@@ -66,7 +66,7 @@ steps:
   - label: ":sparkles: upload BC"
     <<: *upload
     command: |
-      bash scripts/bc-steps.sh --latest | buildkite-agent pipeline upload
+      bash scripts/ci/bc-steps.sh --latest | buildkite-agent pipeline upload
 
   - wait: ~
     continue_on_failure: true
@@ -82,4 +82,4 @@ steps:
       OBEDIENTS_API_TOKEN: BUILDKITE_API_TOKEN
       SLACK_BOT_TOKEN: SLACK_OAUTH_TOKEN
     command:
-      - "python3 scripts/slack-report.py"
+      - "python3 scripts/ci/slack-report.py"
