@@ -5,7 +5,7 @@
 [cogvideox_i2v_progress.md](cogvideox_i2v_progress.md) (5b image-to-video)에 있다. 두 문서의 앞부분 설명 중 일부는
 나중에 바뀌었다. **이 문서와 다르면 이 문서가 맞다.**
 
-마지막 갱신: 2026-10-15, 브랜치 `seinpark/cogvideox` @ `3a5cc1d8` (+ 이 문서 갱신 커밋)
+마지막 갱신: 2026-10-15, 브랜치 `seinpark/cogvideox` @ `1f893dc1` (+ 이 문서 갱신 커밋)
 
 ---
 
@@ -82,7 +82,7 @@
 |---|---|
 | `src/optimum/rbln/diffusers/models/autoencoders/autoencoder_kl_cogvideox.py` | `RBLNAutoencoderKLCogVideoX`. 그래프 `decoder_0`, `decoder_n`, (I2V) `encoder`. conv cache 표, cache 레이아웃 |
 | `src/optimum/rbln/diffusers/models/autoencoders/vae.py` | 새 런타임 클래스 `RBLNRuntimeCogVideoXVAEDecoder` (chunk 루프), `RBLNRuntimeCogVideoXVAEEncoder` (1 frame) |
-| `src/optimum/rbln/diffusers/configurations/models/configuration_autoencoder_kl_cogvideox.py` | VAE config. `num_devices > 1`이면 ValueError. 사용자 값: `num_frames`, `height`, `width`, `batch_size`, `uses_encoder`, `use_slicing` (+ VAE config에서 채우는 `vae_scale_factor_*`) |
+| `src/optimum/rbln/diffusers/configurations/models/configuration_autoencoder_kl_cogvideox.py` | VAE config. 필드: `num_frames`, `height`, `width`, `batch_size`, `uses_encoder`, `use_slicing`뿐 (scale factor, chunk 크기, cache dtype은 모델에서 계산, 10-15) |
 | `src/optimum/rbln/diffusers/models/transformers/transformer_cogvideox.py` | `RBLNCogVideoXTransformer3DModel`. 한 그래프, timestep·RoPE를 그래프 입력으로 |
 | `src/optimum/rbln/diffusers/configurations/models/configuration_transformer_cogvideox.py` | transformer config. `num_devices`는 다른 모델처럼 기본 None (device 1개). 예제는 8, tiny 테스트는 4를 명시 |
 | `src/optimum/rbln/diffusers/pipelines/cogvideo/pipeline_cogvideox.py` | `RBLNCogVideoXPipeline` |
@@ -150,7 +150,11 @@ export는 `define_import_structure`가 `__all__`에서 자동으로 만든다. `
 - `handle_additional_kwargs` (두 파이프라인): 호출 때 `num_frames`, `max_sequence_length`를 안 넘기면 컴파일 값
   (`transformer.rbln_config.num_frames`, `.max_text_seq_length`)으로 채운다. 넘긴 값은 그대로 둔다 (Cosmos와 같음, PR #770
   "fill compile-time shapes only when the caller left them out"). 다른 값을 넘기면 T5 입력 shape 에러로 실패한다.
-- 파이프라인 config가 VAE에 `num_devices=1`을 넘긴다.
+- 파이프라인 config가 VAE에 `num_devices=1`, `batch_size=1`, `use_slicing=True`, `uses_encoder`를 `force_kwargs=True`로 넘긴다
+  (10-15). 사용자가 `vae={...}`로 다른 값을 주면 `Parameter conflict` 에러. 파이프라인 단 `num_frames`/`height`/`width`는 값이
+  있을 때만 넘긴다 (안 그러면 `None`이 VAE에만 준 값과 충돌). VAE 단독 컴파일은 자유 (VAE config가 batch를 1로 바꾸던 정규화는
+  지웠다. batch 2 + slicing 꺼짐은 아마 device 메모리 초과로 컴파일이 안 됨, 사용자 판단).
+- `use_slicing`은 diffusers와 같이 batch 축만 나눈다 (`z.split(1)`). frame chunk는 항상, 공간 tiling은 미지원.
 - device 배치: text_encoder 1 + transformer 8 (또는 16) + VAE 1.
 
 ### dtype
@@ -183,7 +187,7 @@ export는 `define_import_structure`가 `__all__`에서 자동으로 만든다. `
 
 1. **Transformer는 한 그래프.** 레이어 분할 (`layers_per_graph`) 금지. timeout은 사용자가 드라이버 쪽에서 해결.
    TP 수는 코드로 강제하지 않는다 (10-15: 이전의 "TP ≥ 8 강제"를 repo 관례에 맞춰 바꿈). 예제에서 8을 준다.
-2. **VAE는 device 1개. RSD (`num_devices > 1`) 금지.** config가 막는다. (RSD는 conv 그래프를 나누지도 않아 메모리 이득도 없었다.)
+2. **파이프라인에서 VAE는 device 1개, batch 1 (slicing).** 파이프라인 config가 `force_kwargs=True`로 고정한다 (10-15). VAE 단독 컴파일은 막지 않는다 (VAE config의 `num_devices > 1` 거부도 10-15에 지움). RSD는 conv 그래프를 나누지도 않아 메모리 이득이 없었다.
 3. **VAE cache 레이아웃은 flat/chlast (transpose)만.** zero-pad 방식은 버렸다 (작은 VAE에서 실행 시
    `The input(feat_cache_1) is not specified.`, 지금 이름은 `conv_cache_*`). 기록만 docs에 있다. 코드 주석에 pad 방식을 남기지 않는다.
 4. **timestep은 그래프 안에서** (SD3 방식). host에서 `time_proj`를 하던 이전 방식은 버렸다.
