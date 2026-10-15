@@ -144,11 +144,14 @@ class _VAECogVideoXDecoder(torch.nn.Module):
     def __init__(self, vae: AutoencoderKLCogVideoX, latent_height: int, latent_width: int):
         super().__init__()
         self.decoder = vae.decoder
+        self.post_quant_conv = vae.post_quant_conv
         caches = get_decoder_conv_caches(self.decoder, latent_height, latent_width)
         self.conv_in_cache = caches[0]
         self.static_caches = caches[1:]
 
     def _decode(self, z: torch.Tensor, conv_cache: dict | None, buffers: Sequence[torch.Tensor]):
+        if self.post_quant_conv is not None:
+            z = self.post_quant_conv(z)
         out, new_conv_cache = self.decoder(z, conv_cache=conv_cache)
 
         # Write all new caches at the end of the graph, as in the Wan VAE.
