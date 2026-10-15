@@ -159,6 +159,7 @@ def main():
             rbln_config={
                 "num_frames": args.num_frames,
                 "guidance_scale": args.guidance_scale,
+                "transformer": {"num_devices": 8},  # tensor parallel over the 8 transformer devices below
                 "create_runtimes": False,
             },
         )

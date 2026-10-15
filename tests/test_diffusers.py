@@ -578,7 +578,8 @@ class TestCogVideoXModel(BaseTest.TestModel):
             "height": 480,
             "width": 720,
             "num_frames": 17,
-            "max_seq_len": 16,
+            "max_sequence_length": 16,
+            "transformer": {"num_devices": 4},
         },
     }
 
@@ -619,7 +620,8 @@ class TestCogVideoXImageToVideoModel(BaseTest.TestModel):
             "height": 480,
             "width": 720,
             "num_frames": 17,
-            "max_seq_len": 16,
+            "max_sequence_length": 16,
+            "transformer": {"num_devices": 4},
         },
     }
 

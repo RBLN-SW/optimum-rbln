@@ -31,6 +31,17 @@ class RBLNCogVideoXImageToVideoPipeline(RBLNDiffusionMixin, CogVideoXImageToVide
     _rbln_config_class = RBLNCogVideoXImageToVideoPipelineConfig
     _submodules = ["text_encoder", "transformer", "vae"]
 
+    def handle_additional_kwargs(self, **kwargs):
+        # If there is no num_frames or max_sequence_length of kwargs,
+        # it is filled based on the compiled value.
+        compiled_num_frames = self.transformer.rbln_config.num_frames
+        if compiled_num_frames is not None and kwargs.get("num_frames") is None:
+            kwargs["num_frames"] = compiled_num_frames
+        compiled_max_seq_len = self.transformer.rbln_config.max_text_seq_length
+        if compiled_max_seq_len is not None and kwargs.get("max_sequence_length") is None:
+            kwargs["max_sequence_length"] = compiled_max_seq_len
+        return kwargs
+
 
 __all__ = [
     "RBLNCogVideoXImageToVideoPipeline",

@@ -35,7 +35,7 @@ class RBLNCogVideoXPipelineConfig(RBLNModelConfig):
         num_frames: int | None = None,
         height: int | None = None,
         width: int | None = None,
-        max_seq_len: int | None = None,
+        max_sequence_length: int | None = None,
         guidance_scale: float | None = None,
         **kwargs: Any,
     ):
@@ -45,13 +45,15 @@ class RBLNCogVideoXPipelineConfig(RBLNModelConfig):
             transformer (RBLNCogVideoXTransformer3DModelConfig | None): Configuration for the transformer.
             vae (RBLNAutoencoderKLCogVideoXConfig | None): Configuration for the VAE (decoder only).
             batch_size (int | None): Batch size for inference (number of prompts), applied to all submodules.
-                The transformer runs with tensor parallel over `num_devices` devices (default 8); the VAE
-                always runs on one device.
+                The VAE always runs on one device.
             num_frames (int | None): Number of frames in the generated video. Defaults to the transformer
                 config `sample_frames` (49 for CogVideoX-2b).
             height (int | None): Height of the generated video. Defaults to 480 for CogVideoX-2b.
             width (int | None): Width of the generated video. Defaults to 720 for CogVideoX-2b.
-            max_seq_len (int | None): Text sequence length. Defaults to 226, the value CogVideoX uses.
+            max_sequence_length (int | None): Length of the encoded prompt, as `max_sequence_length` of the
+                diffusers pipeline call. Sets the text encoder input length and the text length of the
+                transformer graph. Defaults to 226. Like diffusers, models with positional embeddings
+                (CogVideoX-2b, CogVideoX-5b-I2V) only work with the transformer config `max_text_seq_length`.
             guidance_scale (float | None): Scale for classifier-free guidance. When > 1, the transformer
                 batch size is doubled.
             kwargs: Additional arguments passed to the parent RBLNModelConfig.
@@ -60,20 +62,19 @@ class RBLNCogVideoXPipelineConfig(RBLNModelConfig):
         if (height is None) != (width is None):
             raise ValueError("Both height and width must be provided together if used")
 
-        max_seq_len = max_seq_len or 226
+        max_sequence_length = max_sequence_length or 226
         self.text_encoder = self.initialize_submodule_config(
             text_encoder,
             cls_name="RBLNT5EncoderModelConfig",
             batch_size=batch_size,
-            max_seq_len=max_seq_len,
+            max_seq_len=max_sequence_length,
             model_input_names=["input_ids"],
         )
         self.transformer = self.initialize_submodule_config(
             transformer,
             cls_name="RBLNCogVideoXTransformer3DModelConfig",
-            num_devices=self.num_devices or 8,
             num_frames=num_frames,
-            max_text_seq_length=max_seq_len,
+            max_text_seq_length=max_sequence_length,
         )
         self.vae = self.initialize_submodule_config(
             vae,
@@ -97,7 +98,7 @@ class RBLNCogVideoXPipelineConfig(RBLNModelConfig):
         return self.text_encoder.batch_size
 
     @property
-    def max_seq_len(self):
+    def max_sequence_length(self):
         return self.text_encoder.max_seq_len
 
 

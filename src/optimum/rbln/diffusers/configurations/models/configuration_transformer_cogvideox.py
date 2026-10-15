@@ -17,9 +17,6 @@ from typing import Any
 from ....configuration_utils import RBLNModelConfig
 
 
-MIN_NUM_DEVICES = 8
-
-
 class RBLNCogVideoXTransformer3DModelConfig(RBLNModelConfig):
     """
     Configuration class for RBLN CogVideoX Transformer models.
@@ -48,26 +45,17 @@ class RBLNCogVideoXTransformer3DModelConfig(RBLNModelConfig):
             sample_size (tuple[int, int] | None): The latent (height, width). Defaults to the transformer
                 config (`sample_height`, `sample_width`).
             max_text_seq_length (int | None): The length of the text embeddings. Defaults to the
-                transformer config `max_text_seq_length`.
+                transformer config `max_text_seq_length`; a pipeline sets it from `max_sequence_length`.
+                Models with positional embeddings (CogVideoX-2b, CogVideoX-5b-I2V) need the config value.
             vae_scale_factor_temporal (int | None): The temporal compression of the VAE. Defaults to the
                 transformer config `temporal_compression_ratio`.
-            kwargs: Additional arguments passed to the parent RBLNModelConfig. `num_devices` (tensor parallel)
-                defaults to 8 and must be at least 8: on fewer devices the 30-block CogVideoX-2b graph at 49 frames
-                480x720 hangs on the device (SYS_KERNEL_TIMEOUT).
+            kwargs: Additional arguments passed to the parent RBLNModelConfig.
 
         Raises:
-            ValueError: If batch_size is not a positive integer, or num_devices is less than 8.
+            ValueError: If batch_size is not a positive integer.
         """
         super().__init__(**kwargs)
         self._batch_size_is_specified = batch_size is not None
-
-        if self.num_devices is None:
-            self.num_devices = MIN_NUM_DEVICES
-        if self.num_devices < MIN_NUM_DEVICES:
-            raise ValueError(
-                f"RBLNCogVideoXTransformer3DModel needs num_devices >= {MIN_NUM_DEVICES} (tensor parallel), got "
-                f"{self.num_devices}: on fewer devices the compiled graph can hang on the device."
-            )
 
         self.batch_size = batch_size or 1
         if not isinstance(self.batch_size, int) or self.batch_size < 0:

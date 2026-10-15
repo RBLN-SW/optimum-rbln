@@ -47,7 +47,12 @@ def main():
             args.model_id,
             export=True,
             torch_dtype=getattr(torch, args.torch_dtype),
-            rbln_config={"num_frames": args.num_frames, "guidance_scale": args.guidance_scale, **devices},
+            rbln_config={
+                "num_frames": args.num_frames,
+                "guidance_scale": args.guidance_scale,
+                **devices,
+                "transformer": {**devices["transformer"], "num_devices": 8},
+            },
         )
         pipe.save_pretrained(args.model_dir)
     else:
