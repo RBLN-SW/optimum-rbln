@@ -206,9 +206,9 @@ class RBLNAutoencoderKLCogVideoX(RBLNModel):
     RBLN implementation of AutoencoderKLCogVideoX for diffusion models.
 
     This model is used to accelerate AutoencoderKLCogVideoX models from diffusers library on RBLN NPUs.
-    The decoder's temporal conv caches stay on the device as static buffers and the frame
-    loop runs on the host: `decoder_0` decodes the first latent chunk without a cache and `decoder_n` decodes each later chunk 
-    with the previous cache. With `uses_encoder` (image-to-video), `encoder` encodes a 1-frame image.
+    The decoder's temporal conv caches stay on the device as static buffers and the frame loop runs on the host:
+    `decoder_0` decodes the first latent chunk without a cache and `decoder_n` decodes each later chunk with the
+    previous cache. With `uses_encoder` (image-to-video), `encoder` encodes a 1-frame image.
 
     This class inherits from [`RBLNModel`]. Check the superclass documentation for the generic methods
     the library implements for all its models.
