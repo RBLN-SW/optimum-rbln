@@ -5,7 +5,7 @@
 [cogvideox_i2v_progress.md](cogvideox_i2v_progress.md) (5b image-to-video)에 있다. 두 문서의 앞부분 설명 중 일부는
 나중에 바뀌었다. **이 문서와 다르면 이 문서가 맞다.**
 
-마지막 갱신: 2026-10-15, 브랜치 `seinpark/cogvideox` @ `e91e5a2b` (+ 이 문서 갱신 커밋)
+마지막 갱신: 2026-10-15, 브랜치 `seinpark/cogvideox` @ `a4084dd7` (+ 이 문서 갱신 커밋)
 
 ---
 
@@ -97,7 +97,7 @@ export는 `define_import_structure`가 `__all__`에서 자동으로 만든다. `
 - **chunk 분할은 diffusers `AutoencoderKLCogVideoX._decode`와 같아야 한다**: 첫 chunk = `min(n, 2 + n % 2)` latent frame,
   이후 2 frame씩 (49 frames → latent 13 → 3 + 2×5). GroupNorm과 시간축 upsample이 chunk에 의존해서, 다르게 나누면 결과가 깨진다.
   - `decoder_0`: 첫 chunk, cache 없이 시작. `decoder_n`: 이후 chunk, 이전 cache를 받는다.
-- conv cache 목록은 모듈 트리에서 만든다 (`_decoder_conv_caches` → `_ConvCache` 리스트: key path, 채널, depth, h, w).
+- conv cache 목록은 모듈 트리에서 만든다 (`get_decoder_conv_caches` → `_ConvCache` 리스트: key path, 채널, depth, h, w).
   축소 config에도 동작. 2b/5b VAE는 cache 38개.
 - 첫 cache (`conv_in`, latent 16채널 60x90)는 static이 아니다: 그래프 출력으로 돌려주고 runtime이 다음 chunk에
   `conv_cache_0`으로 넘긴다 (어느 device layout에도 안 맞음). 나머지는 static 입력 `conv_cache_1` …
