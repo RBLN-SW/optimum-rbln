@@ -306,7 +306,7 @@ class RBLNGroundingDinoForObjectDetection(RBLNModel):
         output_hidden_states = (
             output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
         )
-        return_dict = return_dict if return_dict is not None else self.config.return_dict
+        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
 
         text_self_attention_masks, position_ids = generate_masks_with_special_tokens_and_transfer_map(input_ids)
 
@@ -618,7 +618,7 @@ class RBLNGroundingDinoForObjectDetection(RBLNModel):
             The model outputs. If return_dict=False is passed, returns a tuple of tensors. Otherwise, returns a GroundingDinoObjectDetectionOutput object.
         """
 
-        return_dict = return_dict if return_dict is not None else self.config.return_dict
+        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
 
         # Pad image to rbln_config.image_height and rbln_config.image_width
         pixel_values, pixel_mask = self.pad_image_to_rbln_config(pixel_values, pixel_mask)
@@ -900,7 +900,7 @@ class RBLNGroundingDinoEncoder(RBLNModel):
         )
         self.validate_output_config(output_attentions, output_hidden_states)
 
-        return_dict = return_dict if return_dict is not None else self.config.return_dict
+        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
         reference_points = self.get_reference_points(spatial_shapes, valid_ratios, device="cpu").to(
             self.rbln_config.dtype
         )
@@ -1079,7 +1079,7 @@ class RBLNGroundingDinoDecoder(RBLNModel):
             output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
         )
         self.validate_output_config(output_attentions, output_hidden_states)
-        return_dict = return_dict if return_dict is not None else self.config.return_dict
+        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
 
         reshaped_vision_encoder_attention_mask = (
             vision_encoder_attention_mask[:, :, None].repeat(1, 1, self.config.d_model).to(self.rbln_config.dtype)
