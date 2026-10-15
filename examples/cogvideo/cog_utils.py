@@ -38,12 +38,8 @@ def dtype_name(dtype) -> str:
 
 
 def compiled_dtypes(pipe) -> dict[str, str]:
-    """The dtype of each compiled submodule of an RBLN CogVideoX pipeline, and of the VAE conv caches."""
-    dtypes = {
-        name: dtype_name(getattr(pipe, name).rbln_config.dtype) for name in ("text_encoder", "transformer", "vae")
-    }
-    dtypes["vae_cache"] = dtype_name(pipe.vae.rbln_config.cache_dtype)
-    return dtypes
+    """The dtype each compiled submodule of an RBLN CogVideoX pipeline runs at (the VAE conv caches use the VAE's)."""
+    return {name: dtype_name(getattr(pipe, name).rbln_config.dtype) for name in ("text_encoder", "transformer", "vae")}
 
 
 def compare(name: str, out: torch.Tensor, ref: torch.Tensor) -> dict:

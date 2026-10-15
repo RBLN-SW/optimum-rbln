@@ -31,11 +31,8 @@ class RBLNAutoencoderKLCogVideoXConfig(RBLNModelConfig):
         num_frames: int | None = None,
         height: int | None = None,
         width: int | None = None,
-        num_channels_latents: int | None = None,
         vae_scale_factor_temporal: int | None = None,
         vae_scale_factor_spatial: int | None = None,
-        num_latent_frames_batch_size: int | None = None,
-        cache_dtype: str | None = None,
         use_slicing: bool = True,
         **kwargs: Any,
     ):
@@ -50,15 +47,8 @@ class RBLNAutoencoderKLCogVideoXConfig(RBLNModelConfig):
                 pipeline config; required for a standalone compile.
             width (Optional[int]): The width in pixels of the generated video. Filled by the
                 pipeline config; required for a standalone compile.
-            num_channels_latents (Optional[int]): The number of channels in latent space. Falls back
-                to the VAE latent_channels.
             vae_scale_factor_temporal (Optional[int]): The scaling factor between time space and latent space.
             vae_scale_factor_spatial (Optional[int]): The scaling factor between pixel space and latent space.
-            num_latent_frames_batch_size (Optional[int]): The number of latent frames that one decoder
-                call after the first one decodes. Defaults to 2, the value diffusers uses. The first call
-                also takes the odd remainder frame.
-            cache_dtype (Optional[str]): The dtype of the temporal conv caches that stay on the device
-                between decoder calls. Defaults to the VAE dtype.
             use_slicing (bool): Run batched requests one sample at a time on the batch-1 compiled graphs.
                 Defaults to True; a batch_size > 1 request is normalized to 1 with a warning.
             kwargs: Additional arguments passed to the parent RBLNModelConfig.
@@ -90,11 +80,8 @@ class RBLNAutoencoderKLCogVideoXConfig(RBLNModelConfig):
         self.height = height
         self.width = width
 
-        self.num_channels_latents = num_channels_latents
         self.vae_scale_factor_temporal = vae_scale_factor_temporal
         self.vae_scale_factor_spatial = vae_scale_factor_spatial
-        self.num_latent_frames_batch_size = num_latent_frames_batch_size or 2
-        self.cache_dtype = cache_dtype
 
     @property
     def image_size(self):
@@ -105,12 +92,6 @@ class RBLNAutoencoderKLCogVideoXConfig(RBLNModelConfig):
         if self.num_frames is None or self.vae_scale_factor_temporal is None:
             raise ValueError("`num_frames` and `vae_scale_factor_temporal` must be set to get `num_latent_frames`.")
         return (self.num_frames - 1) // self.vae_scale_factor_temporal + 1
-
-    @property
-    def first_chunk_size(self) -> int:
-        # Mirrors AutoencoderKLCogVideoX._decode: the first call takes the odd remainder frame too.
-        batch = self.num_latent_frames_batch_size
-        return min(self.num_latent_frames, batch + self.num_latent_frames % batch)
 
 
 __all__ = [

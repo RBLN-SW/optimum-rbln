@@ -231,16 +231,18 @@ class RBLNAutoencoderKLCogVideoX(RBLNModel):
         self.image_size = self.rbln_config.image_size
         self.use_slicing = self.rbln_config.use_slicing
         self.use_tiling = False
-        self.num_latent_frames_batch_size = self.rbln_config.num_latent_frames_batch_size
 
         # By index: without runtimes, self.model is an UnavailableRuntime (len 0, any index returns itself).
         runtimes = {cfg.compiled_model_name: self.model[i] for i, cfg in enumerate(self.rbln_config.compile_cfgs)}
+        # The chunk sizes are the frame axis of the compiled z inputs. Without decoder_n, the graphs decode
+        # exactly the first chunk, which a frame batch of the same size expresses.
+        chunk = {cfg.compiled_model_name: cfg.input_info[0][1][2] for cfg in self.rbln_config.compile_cfgs}
         self.decoder = RBLNRuntimeCogVideoXVAEDecoder(
             runtime=runtimes["decoder_0"],
             decoder_n=runtimes.get("decoder_n"),
             main_input_name="z",
-            first_chunk_size=self.rbln_config.first_chunk_size,
-            frame_batch_size=self.rbln_config.num_latent_frames_batch_size,
+            first_chunk_size=chunk["decoder_0"],
+            frame_batch_size=chunk.get("decoder_n", chunk["decoder_0"]),
             dtype=self.rbln_config.dtype,
         )
         self.encoder = None
@@ -320,7 +322,6 @@ class RBLNAutoencoderKLCogVideoX(RBLNModel):
         if rbln_config.vae.num_frames is None:
             rbln_config.vae.num_frames = transformer_config.sample_frames
 
-        rbln_config.vae.num_channels_latents = transformer_config.out_channels
         rbln_config.vae.vae_scale_factor_temporal = pipe.vae_scale_factor_temporal
         rbln_config.vae.vae_scale_factor_spatial = vae_scale_factor_spatial
         return rbln_config
@@ -341,22 +342,22 @@ class RBLNAutoencoderKLCogVideoX(RBLNModel):
                 "compile must pass them in rbln_config."
             )
 
-        if rbln_config.num_channels_latents is None:
-            rbln_config.num_channels_latents = model_config.latent_channels
         if rbln_config.vae_scale_factor_temporal is None:
             rbln_config.vae_scale_factor_temporal = model_config.temporal_compression_ratio
         if rbln_config.vae_scale_factor_spatial is None:
             rbln_config.vae_scale_factor_spatial = 2 ** (len(model_config.block_out_channels) - 1)
-        if rbln_config.cache_dtype is None:
-            rbln_config.cache_dtype = RBLNCompileConfig.normalize_dtype(rbln_config.dtype)
 
         batch_size = rbln_config.batch_size
         dtype = rbln_config.dtype
+        # Same chunks as AutoencoderKLCogVideoX._decode: `num_latent_frames_batch_size` (2) latent frames per call,
+        # and the first call also takes the odd remainder frame.
+        frame_batch = model.num_latent_frames_batch_size
+        num_latent_frames = rbln_config.num_latent_frames
+        first_chunk = min(num_latent_frames, frame_batch + num_latent_frames % frame_batch)
         latent_height, latent_width = cls._latent_size(rbln_config)
         caches = _decoder_conv_caches(model.decoder, latent_height, latent_width)
         buffer_info = [
-            (f"conv_cache_{i}", cache.device_shape(batch_size), rbln_config.cache_dtype)
-            for i, cache in enumerate(caches[1:], start=1)
+            (f"conv_cache_{i}", cache.device_shape(batch_size), dtype) for i, cache in enumerate(caches[1:], start=1)
         ]
 
         def z_info(num_latent_frames: int):
@@ -367,13 +368,11 @@ class RBLNAutoencoderKLCogVideoX(RBLNModel):
             )
 
         compile_cfgs = [
-            RBLNCompileConfig(
-                compiled_model_name="decoder_0", input_info=[z_info(rbln_config.first_chunk_size)] + buffer_info
-            )
+            RBLNCompileConfig(compiled_model_name="decoder_0", input_info=[z_info(first_chunk)] + buffer_info)
         ]
-        if rbln_config.num_latent_frames > rbln_config.first_chunk_size:
+        if num_latent_frames > first_chunk:
             decoder_n_info = [
-                z_info(rbln_config.num_latent_frames_batch_size),
+                z_info(frame_batch),
                 ("conv_cache_0", caches[0].shape(batch_size), dtype),
             ]
             compile_cfgs.append(

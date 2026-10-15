@@ -52,7 +52,6 @@ def main():
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--compiled-dir", type=str, default=None)
     parser.add_argument("--device", type=int, default=0)
-    parser.add_argument("--cache-dtype", type=str, default=None)
     parser.add_argument("--num-devices", type=int, default=None, help="RSD: split each graph across N devices")
     parser.add_argument("--desc", type=str, default=None)
     parser.add_argument("--notes", type=str, default="")
@@ -87,7 +86,6 @@ def main():
                     "height": args.height,
                     "width": args.width,
                     "create_runtimes": False,
-                    **({"cache_dtype": args.cache_dtype} if args.cache_dtype else {}),
                     **({"num_devices": args.num_devices} if args.num_devices else {}),
                 },
             )
