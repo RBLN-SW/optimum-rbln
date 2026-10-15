@@ -5,7 +5,7 @@
 [cogvideox_i2v_progress.md](cogvideox_i2v_progress.md) (5b image-to-video)에 있다. 두 문서의 앞부분 설명 중 일부는
 나중에 바뀌었다. **이 문서와 다르면 이 문서가 맞다.**
 
-마지막 갱신: 2026-10-15, 브랜치 `seinpark/cogvideox` @ `1f893dc1` (+ 이 문서 갱신 커밋)
+마지막 갱신: 2026-10-15, 브랜치 `seinpark/cogvideox` @ `e91e5a2b` (+ 이 문서 갱신 커밋)
 
 ---
 
@@ -165,7 +165,7 @@ export는 `define_import_structure`가 `__all__`에서 자동으로 만든다. `
   그래서 10-13까지의 산출물은 transformer가 fp32다 (`pipeline_cogvideox_2b_tp8_63acc798`, `pipeline_cogvideox_5b_i2v_tp8/16`).
 - 모델 카드 권장 (학습 precision): CogVideoX-2b **FP16**, CogVideoX-5b / 5b-I2V / 1.5-5B-I2V **BF16**.
   checkpoint: 2b T5·transformer F16, 5b-I2V T5·transformer BF16, VAE는 둘 다 F32.
-  예제 (`examples/cogvideo/`, `~/nas_data/cogvideox/generate_i2v.py`)는 `--torch-dtype auto` = 이 dtype으로 컴파일한다
+  검증 스크립트 (`~/nas_data/cogvideox/scripts_20261015/`, `~/nas_data/cogvideox/generate_i2v.py`)는 `--torch-dtype auto` = 이 dtype으로 컴파일한다
   (`cog_utils.MODEL_CARD_DTYPE`). CPU golden은 정확도 기준이라 항상 fp32.
 - VAE도 로드된 dtype으로 컴파일된다 (upstream diffusers가 `torch_dtype`대로 VAE를 돌리는 것과 같다). 예전 코드의
   fp32 강제 변환 (`_reconstruct_model_if_needed`)은 지웠다 (사용자 결정, 10-14). fp32 VAE가 필요하면 upstream처럼
@@ -192,7 +192,7 @@ export는 `define_import_structure`가 `__all__`에서 자동으로 만든다. `
    `The input(feat_cache_1) is not specified.`, 지금 이름은 `conv_cache_*`). 기록만 docs에 있다. 코드 주석에 pad 방식을 남기지 않는다.
 4. **timestep은 그래프 안에서** (SD3 방식). host에서 `time_proj`를 하던 이전 방식은 버렸다.
 5. **공유 코드를 바꾸지 않는다.** 새 클래스를 추가한다. t2v 동작을 바꾸지 않는다.
-6. **PR 범위: 코드, 테스트, 사용자가 요청한 docs와 `examples/cogvideo/` 검증 스크립트.** 그 밖의 것을 넣기 전에 묻는다.
+6. **PR 범위: 코드, 테스트, 사용자가 요청한 docs.** 검증 스크립트는 PR에서 뺐다 (10-15, NAS `~/nas_data/cogvideox/scripts_20261015/`). 그 밖의 것을 넣기 전에 묻는다.
 7. **dtype은 upstream을 따른다 (2026-10-14).** 모든 submodule (VAE 포함)은 로드된 `torch_dtype`대로 컴파일한다. VAE를
    fp32로 강제하지 않는다. VAE cache도 VAE dtype (device는 16-bit로 저장해서 DRAM 차이가 없다).
    예제는 모델 카드 dtype을 준다. `encode_prompt` 등 파이프라인 동작도 upstream 그대로 둔다 (dtype을 바꾸는 override 금지).
@@ -213,7 +213,7 @@ export는 `define_import_structure`가 `__all__`에서 자동으로 만든다. `
 5. device lockup timeout (위 블로커).
 6. 작은 해상도 VAE (120x120, 240x360)에서 `ScatterInfo size mismatch with shape-based size` assert. 테스트는 480x720을 쓴다.
 
-repro 스크립트: `examples/cogvideo/repro_cache_update_shape.py`, `repro_cache_update_war.py`, `repro_cache_layout.py`.
+repro 스크립트 (`~/nas_data/cogvideox/scripts_20261015/`): `repro_cache_update_shape.py`, `repro_cache_update_war.py`, `repro_cache_layout.py`.
 
 ---
 
@@ -307,9 +307,9 @@ repro 스크립트: `examples/cogvideo/repro_cache_update_shape.py`, `repro_cach
   (video.mp4, frames/, input_image.png, meta.json). 기본 폴더는 `compiled/pipeline_cogvideox_5b_i2v_bf16_vaebf16_tp<tp>` (10-14 변경,
   이전 판은 `generate_i2v.py.bak_20261014`). TP8은 같은 산출물로 `run_i2v_e2e.py`가 E2E를 돌렸다. 이 스크립트 자체로는 아직 안 돌렸다.
 
-### 검증 스크립트 `examples/cogvideo/` (repo에 있음)
+### 검증 스크립트 `~/nas_data/cogvideox/scripts_20261015/` (NAS. 10-15에 PR에서 뺐다. 그 전에는 repo `examples/cogvideo/`)
 모두 같은 폴더의 `cog_utils.py`를 import한다 (`compare`, `psnr`, `new_out_dir`, `write_meta`). 결과 폴더 위치는
-`COGVIDEOX_OUT_ROOT` (기본 `~/nas_data/cogvideox/outputs`). 같은 파일의 복사본이 `~/nas_data/cogvideox/scripts/`에도 있다.
+`COGVIDEOX_OUT_ROOT` (기본 `~/nas_data/cogvideox/outputs`). `~/nas_data/cogvideox/scripts/`는 10-14 버전 (dtype 변경 전)이다.
 | 스크립트 | 용도 |
 |---|---|
 | `verify_vae.py` | VAE decoder vs CPU |
@@ -351,12 +351,12 @@ RBLN_DEVICES=8,9,10,11 python -m pytest tests/test_diffusers.py -k CogVideoX -vv
 RBLN_DEVICES=8,9,10,11,12,13,14,15 python -m pytest tests/test_diffusers.py -k "Cosmos or SVD" -vv   # 회귀
 
 # 2b E2E (컴파일된 폴더가 있으면 컴파일을 건너뛰고 로드만 한다)
-RBLN_DEVICES=16,17,18,19,20,21,22,23,24,25 python examples/cogvideo/run_e2e.py rbln \
+RBLN_DEVICES=16,17,18,19,20,21,22,23,24,25 python ~/nas_data/cogvideox/scripts_20261015/run_e2e.py rbln \
   --golden ~/nas_data/cogvideox/outputs/20261013_0033_e2e_cpu_golden \
   --compiled-dir ~/nas_data/cogvideox/compiled/pipeline_cogvideox_2b_fp16_vaefp16_tp8
 
 # 5b-I2V E2E (bf16). golden은 CPU fp32 (약 3시간, 재사용)
-RBLN_DEVICES=16,17,18,19,20,21,22,23,24,25 python examples/cogvideo/run_i2v_e2e.py rbln \
+RBLN_DEVICES=16,17,18,19,20,21,22,23,24,25 python ~/nas_data/cogvideox/scripts_20261015/run_i2v_e2e.py rbln \
   --golden ~/nas_data/cogvideox/outputs/20261013_2207_i2v_e2e_cpu_golden \
   --compiled-dir ~/nas_data/cogvideox/compiled/pipeline_cogvideox_5b_i2v_bf16_vaebf16_tp8
 
@@ -380,7 +380,9 @@ python .github/scripts/validate_docstrings.py <file>   # 한 번에 파일 하�
 3. (선택) 생성 시간 증가 (2b 206.4s → 237.6s, 21 layer 5.05s → 약 6.0s) 원인 확인. 런타임 dev99 → dev102가 후보.
 4. (선택) 50 step 누적 차이가 sampling 민감도인지 확인 (§6 2b의 CPU 교란 실험).
 5. 컴파일러 팀 보고 후보: 이슈 1–4 (특히 3, 정확성 문제).
-6. CogVideoX1.5-5B-I2V는 사용자가 지시할 때만. 위험: video token 약 2.6배 (실행 시간 증가), 768x1360x81 frames에서
+6. (보류, 별도 PR) VAE temporal conv cache 공통화: CogVideoX `_ConvCache`를 공통 모듈로 빼고 Wan VAE (Cosmos predict2/2.5)도
+   옮기기. PR #804에서는 하지 않는다 (사용자 결정, 10-15). 계획: `~/nas_data/cogvideox/plans/conv_cache_abstraction.md`.
+7. CogVideoX1.5-5B-I2V는 사용자가 지시할 때만. 위험: video token 약 2.6배 (실행 시간 증가), 768x1360x81 frames에서
    VAE decoder 메모리 약 3배 (추정 약 30 GiB, device 15.7 GiB), 가중치는 공유 캐시에 없다.
 
 ---
