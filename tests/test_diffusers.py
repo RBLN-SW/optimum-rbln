@@ -1,5 +1,4 @@
 import os
-import tempfile
 import unittest
 
 import torch
@@ -486,80 +485,8 @@ class TestCosmos2Video2WorldModel(_MockedSafetyCheckerMixin, BaseTest.TestModel)
     }
 
 
-def _save_tiny_cogvideox_pipeline(save_dir: str, image_to_video: bool = False) -> None:
-    """Build a tiny random CogVideoX pipeline locally (no hub upload) and save it to `save_dir`.
-
-    With `image_to_video`, the pipeline is a CogVideoX-5b-I2V-like `CogVideoXImageToVideoPipeline`: the transformer
-    takes the image latents concatenated on the channel axis and uses rotary and learned positional embeddings.
-    """
-    from diffusers import (
-        AutoencoderKLCogVideoX,
-        CogVideoXDDIMScheduler,
-        CogVideoXImageToVideoPipeline,
-        CogVideoXPipeline,
-        CogVideoXTransformer3DModel,
-    )
-    from transformers import AutoTokenizer, T5Config, T5EncoderModel
-
-    torch.manual_seed(0)
-    # The real tokenizer only provides the vocabulary; every model below is tiny and random.
-    tokenizer = AutoTokenizer.from_pretrained("THUDM/CogVideoX-2b", subfolder="tokenizer")
-    text_encoder = T5EncoderModel(
-        T5Config(
-            vocab_size=len(tokenizer),
-            d_model=32,
-            d_ff=37,
-            d_kv=8,
-            num_layers=1,
-            num_heads=4,
-            relative_attention_num_buckets=8,
-        )
-    )
-    i2v_kwargs = (
-        {"use_rotary_positional_embeddings": True, "use_learned_positional_embeddings": True} if image_to_video else {}
-    )
-    transformer = CogVideoXTransformer3DModel(
-        num_attention_heads=2,
-        attention_head_dim=16,
-        in_channels=8 if image_to_video else 4,
-        out_channels=4,
-        time_embed_dim=8,
-        text_embed_dim=32,
-        num_layers=1,
-        sample_width=90,
-        sample_height=60,
-        sample_frames=17,
-        patch_size=2,
-        temporal_compression_ratio=4,
-        max_text_seq_length=16,
-        **i2v_kwargs,
-    )
-    # 480x720 like CogVideoX-2b: the 60x90 and 120x180 caches (h*w not a multiple of 64) take the
-    # default "transpose" cache layout, which needs 64-aligned channels. Smaller resolutions (e.g.
-    # 120x120, 240x360) hit a compiler assert (ScatterInfo size mismatch) in the causal-conv VAE graphs.
-    vae = AutoencoderKLCogVideoX(
-        in_channels=3,
-        out_channels=3,
-        down_block_types=("CogVideoXDownBlock3D",) * 4,
-        up_block_types=("CogVideoXUpBlock3D",) * 4,
-        block_out_channels=(64, 64, 64, 64),
-        latent_channels=4,
-        layers_per_block=1,
-        norm_num_groups=32,
-        temporal_compression_ratio=4,
-    )
-    pipeline_cls = CogVideoXImageToVideoPipeline if image_to_video else CogVideoXPipeline
-    pipe = pipeline_cls(
-        tokenizer=tokenizer,
-        text_encoder=text_encoder,
-        vae=vae,
-        transformer=transformer,
-        scheduler=CogVideoXDDIMScheduler(),
-    )
-    pipe.save_pretrained(save_dir)
-
-
 class TestCogVideoXModel(BaseTest.TestModel):
+    HF_MODEL_ID = "rbln/tiny-cogvideox-text2video"
     RBLN_CLASS = RBLNCogVideoXPipeline
     # 17 frames -> 5 latent frames: the VAE runs decoder_0 (3 latents) and decoder_n (2 latents).
     GENERATION_KWARGS = {
@@ -583,24 +510,13 @@ class TestCogVideoXModel(BaseTest.TestModel):
         },
     }
 
-    @classmethod
-    def setUpClass(cls):
-        cls._tiny_dir = tempfile.TemporaryDirectory()
-        _save_tiny_cogvideox_pipeline(cls._tiny_dir.name)
-        cls.HF_MODEL_ID = cls._tiny_dir.name
-        super().setUpClass()
-
-    @classmethod
-    def tearDownClass(cls):
-        super().tearDownClass()
-        cls._tiny_dir.cleanup()
-
     def test_generate(self):
         output = self.model(**self.get_inputs())[0]
         self.assertEqual(tuple(output.shape), (1, 17, 3, 480, 720))
 
 
 class TestCogVideoXImageToVideoModel(BaseTest.TestModel):
+    HF_MODEL_ID = "rbln/tiny-cogvideox-image2video"
     RBLN_CLASS = RBLNCogVideoXImageToVideoPipeline
     # The VAE also compiles the 1-frame encoder for the input image.
     GENERATION_KWARGS = {
@@ -624,18 +540,6 @@ class TestCogVideoXImageToVideoModel(BaseTest.TestModel):
             "transformer": {"num_devices": 4},
         },
     }
-
-    @classmethod
-    def setUpClass(cls):
-        cls._tiny_dir = tempfile.TemporaryDirectory()
-        _save_tiny_cogvideox_pipeline(cls._tiny_dir.name, image_to_video=True)
-        cls.HF_MODEL_ID = cls._tiny_dir.name
-        super().setUpClass()
-
-    @classmethod
-    def tearDownClass(cls):
-        super().tearDownClass()
-        cls._tiny_dir.cleanup()
 
     def test_generate(self):
         output = self.model(**self.get_inputs())[0]
