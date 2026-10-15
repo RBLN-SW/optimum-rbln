@@ -19,7 +19,7 @@ import json
 import shutil
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, cast
+from typing import Any, cast
 
 import rebel
 from huggingface_hub import hf_hub_download
@@ -28,10 +28,6 @@ from .__version__ import __version__
 from .configuration_utils import RBLNModelConfig, load_config
 from .utils.model_utils import get_rbln_model_cls
 from .utils.runtime_utils import ContextRblnConfig
-
-
-if TYPE_CHECKING:
-    from .transformers.models.decoderonly.configuration_decoderonly import RBLNDecoderOnlyModelConfig
 
 
 def set_nested_dict(dictionary, key_path, value):
@@ -446,6 +442,7 @@ def _handle_kvcache_num_blocks(
     rbln_config.json is the source of truth for the current block count.
     """
     from .transformers.modeling_attention_utils import RBLNDecoderOnlyFlashAttentionMixin
+    from .transformers.models.decoderonly.configuration_decoderonly import RBLNDecoderOnlyModelConfig
 
     src_dir = Path(model_id)
     if not (src_dir.exists() and src_dir.is_dir()):
@@ -460,7 +457,7 @@ def _handle_kvcache_num_blocks(
             f"The model at '{model_id}' ({config_cls.__name__}) does not expose a top-level "
             "resizable kv-cache. Only decoder-only causal LM artifacts are supported."
         )
-    rbln_config = cast("RBLNDecoderOnlyModelConfig", rbln_config)
+    rbln_config = cast(RBLNDecoderOnlyModelConfig, rbln_config)
 
     if get:
         print(rbln_config.kvcache_num_blocks)

@@ -18,14 +18,13 @@ from typing import TYPE_CHECKING
 import torch
 import torch.nn.functional as F
 from torch import Tensor
+from transformers.models.grounding_dino.modeling_grounding_dino import (
+    GroundingDinoDecoder,
+    GroundingDinoEncoder,
+)
 
 
 if TYPE_CHECKING:
-    from transformers.models.grounding_dino.modeling_grounding_dino import (
-        GroundingDinoDecoder,
-        GroundingDinoEncoder,
-    )
-
     from .configuration_grounding_dino import RBLNGroundingDinoDecoderConfig, RBLNGroundingDinoEncoderConfig
 
 

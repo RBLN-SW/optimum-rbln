@@ -292,7 +292,7 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
                         config_name = "config.json"  # type: ignore[assignment]
 
                     config_dict = cast(
-                        "dict[str, Any]",
+                        dict[str, Any],
                         DummyConfigMixin.load_config(
                             model_id,
                             cache_dir=cache_dir,

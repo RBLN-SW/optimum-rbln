@@ -233,7 +233,7 @@ class RBLNDiffusionMixin(_PipelineBase):
 
         else:
             # raise error if any of submodules are torch module.
-            model_index_config = cast("dict[str, Any]", cls.load_config(pretrained_model_name_or_path=model_id))
+            model_index_config = cast(dict[str, Any], cls.load_config(pretrained_model_name_or_path=model_id))
             for submodule_name in cls._submodules + cls._optional_submodules:
                 passed_submodule = kwargs.get(submodule_name, None)
 

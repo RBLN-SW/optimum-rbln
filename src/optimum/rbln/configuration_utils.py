@@ -133,14 +133,14 @@ class RBLNCompileConfig:
             raise ValueError("`input_info` is required.")
 
         if self.is_multiple_input_info:
-            self.input_info = [normalize_input_info(info) for info in cast("Sequence[TypeInputInfo]", self.input_info)]
+            self.input_info = [normalize_input_info(info) for info in cast(Sequence[TypeInputInfo], self.input_info)]
         else:
-            self.input_info = normalize_input_info(cast("TypeInputInfo", self.input_info))
+            self.input_info = normalize_input_info(cast(TypeInputInfo, self.input_info))
 
     def _single_input_info(self) -> TypeInputInfo:
         if self.input_info is None or self.is_multiple_input_info:
             raise ValueError("`input_info` must describe a single set of inputs.")
-        return cast("TypeInputInfo", self.input_info)
+        return cast(TypeInputInfo, self.input_info)
 
     def update(self, kwargs: dict[str, Any]):
         self.compiled_model_name = kwargs.get("compiled_model_name", self.compiled_model_name)

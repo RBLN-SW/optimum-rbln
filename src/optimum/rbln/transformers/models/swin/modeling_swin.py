@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING, Optional
 
 import torch
 import torch.nn.functional as F
+from transformers import SwinConfig
 from transformers.models.swin.modeling_swin import BackboneOutput
 
 from ....configuration_utils import RBLNCompileConfig, RBLNModelConfig
@@ -33,7 +34,6 @@ if TYPE_CHECKING:
     from transformers import (
         PreTrainedModel,
         SwinBackbone,
-        SwinConfig,
     )
     from transformers.models.swin.modeling_swin import SwinEncoder
 

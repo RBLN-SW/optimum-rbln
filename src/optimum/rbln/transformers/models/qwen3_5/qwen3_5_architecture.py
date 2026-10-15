@@ -13,11 +13,11 @@
 # limitations under the License.
 
 import copy
-from typing import TYPE_CHECKING
 
 import torch
 import torch.nn.functional as F
 from torch import nn
+from transformers import PreTrainedModel
 from transformers.models.qwen3_5.modeling_qwen3_5 import l2norm
 
 from ..decoderonly.decoderonly_architecture import (
@@ -30,10 +30,6 @@ from ..decoderonly.decoderonly_architecture import (
     rotate_half,
     slice_and_unsqueeze_cos_sin,
 )
-
-
-if TYPE_CHECKING:
-    from transformers import PreTrainedModel
 
 
 def apply_rotary_pos_emb_vision(q, k, cos, sin):

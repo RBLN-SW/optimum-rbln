@@ -108,4 +108,4 @@ def get_logger(name: str | None = None) -> TransformersLogger:
         name = _get_library_name()
 
     _configure_library_root_logger()
-    return cast("TransformersLogger", logging.getLogger(name))
+    return cast(TransformersLogger, logging.getLogger(name))

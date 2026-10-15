@@ -21,12 +21,11 @@ from transformers.modeling_outputs import ImageClassifierOutputWithNoAttention
 
 from ....modeling_base import Preprocessor
 from ...modeling_generic import RBLNModelForImageClassification
+from .configuration_resnet import RBLNResNetForImageClassificationConfig
 
 
 if TYPE_CHECKING:
     from transformers import PretrainedConfig, PreTrainedModel
-
-    from .configuration_resnet import RBLNResNetForImageClassificationConfig
 
 
 class RBLNResNetForImageClassification(RBLNModelForImageClassification):

@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from collections.abc import Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -23,8 +24,6 @@ from ..utils.model_utils import get_rbln_model_cls
 
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
-
     from transformers import PreTrainedModel
 
     from ..modeling import RBLNModel
