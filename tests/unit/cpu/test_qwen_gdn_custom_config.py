@@ -39,11 +39,11 @@ def _gdn_models(ratio, prefill_size, gate_bias, batch_size=1):
 
 
 def _grouped(flat, ratio):
-    """Flat (B, K-1, conv_dim) cache -> (B, Hk*(2+r)*(K-1), 128) grouped by Q/K head."""
+    """Flat (B, K-1, conv_dim) cache -> (B, Hk*(2+r), K-1, 128) grouped by Q/K head."""
     batch = flat.shape[0]
     parts = flat.split((256, 256, 256 * ratio), dim=2)
     grouped = torch.cat([x.reshape(batch, 3, 2, -1, 128).permute(0, 2, 3, 1, 4) for x in parts], dim=2)
-    return grouped.reshape(batch, -1, 128)
+    return grouped.reshape(batch, -1, 3, 128)
 
 
 def _flat(grouped, ratio):
@@ -63,15 +63,17 @@ def _custom_states(native_states):
 
 
 def _step(models, states, hidden, kwargs):
-    """Runs both cores and carries their states: the reference returns its new recurrent state, the custom core
-    updates its recurrent cache in place and returns the conv state alone."""
-    outputs = []
-    for index, model in enumerate(models):
-        output = model(hidden, *states[index], **kwargs[index])
-        recurrent = output[2] if len(output) == 3 else states[index][1]
-        states[index] = (output[1], recurrent)
-        outputs.append(output[0])
-    return outputs
+    """Runs both cores and carries their states.
+
+    The reference hands its new caches back. The custom core writes both of its own -- the conv cache
+    through `causal_conv1d_*`, the recurrent one through `gdn_*` -- and returns the hidden states alone,
+    so the pair in `states` is the same pair throughout and is compared in place.
+    """
+    reference, custom = models
+    native = reference(hidden, *states[0], **kwargs[0])
+    states[0] = (native[1], native[2] if len(native) == 3 else states[0][1])
+    conv, recurrent = states[1]
+    return [native[0], custom(hidden, conv, recurrent, conv_cache=conv, **kwargs[1])]
 
 
 def _compare(outputs, states, ratio):
@@ -92,7 +94,7 @@ def test_gdn_custom_model_prefill_decode_and_reset(ratio, prefill_size, gate_bia
     initial = (torch.randn(1, 3, conv_dim), torch.randn(1, units * 128, 128))
     states = [initial, _custom_states(initial)]
     assert _qwen3_5_linear_state_shapes(hf_config, 1) == (
-        (1, 2 * (2 + ratio) * 3, 128),
+        (1, 2 * (2 + ratio), 3, 128),
         (1, 2, ratio, *gdn_ops.STATE_BLOCKS),
     )
     with torch.inference_mode():
