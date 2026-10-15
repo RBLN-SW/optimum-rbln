@@ -5,7 +5,7 @@
 [cogvideox_i2v_progress.md](cogvideox_i2v_progress.md) (5b image-to-video)에 있다. 두 문서의 앞부분 설명 중 일부는
 나중에 바뀌었다. **이 문서와 다르면 이 문서가 맞다.**
 
-마지막 갱신: 2026-10-14 15시, 브랜치 `seinpark/cogvideox` @ `64163788` (+ 이 문서 갱신 커밋)
+마지막 갱신: 2026-10-15, 브랜치 `seinpark/cogvideox` @ `73720e9f` (+ 이 문서 갱신 커밋)
 
 ---
 
@@ -84,7 +84,7 @@
 | `src/optimum/rbln/diffusers/models/autoencoders/vae.py` | 새 런타임 클래스 `RBLNRuntimeCogVideoXVAEDecoder` (chunk 루프), `RBLNRuntimeCogVideoXVAEEncoder` (1 frame) |
 | `src/optimum/rbln/diffusers/configurations/models/configuration_autoencoder_kl_cogvideox.py` | VAE config. `num_devices > 1`이면 ValueError. `cache_dtype` 기본값 = VAE dtype |
 | `src/optimum/rbln/diffusers/models/transformers/transformer_cogvideox.py` | `RBLNCogVideoXTransformer3DModel`. 한 그래프, timestep·RoPE를 그래프 입력으로 |
-| `src/optimum/rbln/diffusers/configurations/models/configuration_transformer_cogvideox.py` | transformer config. `num_devices` 기본 8, 8 미만이면 ValueError (`MIN_NUM_DEVICES`) |
+| `src/optimum/rbln/diffusers/configurations/models/configuration_transformer_cogvideox.py` | transformer config. `num_devices`는 다른 모델처럼 기본 None (device 1개). 예제는 8, tiny 테스트는 4를 명시 |
 | `src/optimum/rbln/diffusers/pipelines/cogvideo/pipeline_cogvideox.py` | `RBLNCogVideoXPipeline` |
 | `src/optimum/rbln/diffusers/pipelines/cogvideo/pipeline_cogvideox_image2video.py` | `RBLNCogVideoXImageToVideoPipeline` |
 | `src/optimum/rbln/diffusers/configurations/pipelines/configuration_cogvideox.py` | `RBLNCogVideoXPipelineConfig` (`_vae_uses_encoder=False`), `RBLNCogVideoXImageToVideoPipelineConfig` (`True`) |
@@ -126,7 +126,9 @@ export는 `define_import_structure`가 `__all__`에서 자동으로 만든다. `
 - CFG 때문에 batch는 2 (파이프라인 config가 transformer `batch_size`를 2배로).
 - `cache_context`는 no-op (diffusers 파이프라인이 `self.transformer.cache_context("cond_uncond")`를 부른다).
 - CogVideoX 1.5 (`ofs_embedding`, `patch_size_t`)는 `NotImplementedError`.
-- `num_devices` (TP) 기본 8, 8 미만 금지.
+- `num_devices` (TP)는 코드로 강제하지 않는다 (repo 관례, 10-15 사용자 결정. 예전의 기본 8 / `MIN_NUM_DEVICES`는 지웠다).
+  예제는 `rbln_config={"transformer": {"num_devices": 8}}`, tiny 테스트는 4. 드라이버 기본 lockup timeout (6s)에서는
+  2b를 TP8로 (TP1은 19 layer가 한계), 5b-I2V는 timeout을 끄거나 늘려야 한다 (블로커 절).
 
 ### 파이프라인
 - `encode_prompt`는 upstream 그대로다. 예전의 `RBLNCogVideoXPromptDtypeMixin` (embeds를 transformer dtype으로 바꿔
@@ -136,6 +138,14 @@ export는 `define_import_structure`가 `__all__`에서 자동으로 만든다. `
   (10-14 확인: 2b·5b-I2V `torch_dtype` 없는 산출물로 2 step, latent dtype = T5 dtype).
 - (예전 설명 "fp32 T5-XXL은 한 device에 안 들어간다"는 틀렸다: 10-14 측정에서 2b T5 fp32 컴파일·실행 OK,
   device peak fp32 8.68 / fp16 8.676 GiB. device가 16-bit로 저장하기 때문.)
+- 파이프라인 config는 diffusers `__call__`과 같은 이름 `max_sequence_length` (기본 226)를 받아 T5 `max_seq_len`과 transformer
+  텍스트 길이에 같은 값을 준다 (10-15, 이전 이름 `max_seq_len`). upstream처럼 따로 검사하지 않는다: 2b·5b-I2V는 텍스트 길이가
+  transformer config `max_text_seq_length` (226)와 다르면 diffusers `embeddings.py:769` (`embeds + pos_embedding`) shape 에러
+  (RBLN은 컴파일 trace에서 같은 에러). 위치 임베딩: 2b는 init 때 config로 계산 (config를 224로 init하면 224로 실행됨),
+  5b-I2V는 checkpoint 가중치 `[1, 17776, 3072]` (다른 값으로는 로드 실패). RoPE만 쓰는 모델은 길이 제약 없음. (10-15 실측)
+- `handle_additional_kwargs` (두 파이프라인): 호출 때 `num_frames`, `max_sequence_length`를 안 넘기면 컴파일 값
+  (`transformer.rbln_config.num_frames`, `.max_text_seq_length`)으로 채운다. 넘긴 값은 그대로 둔다 (Cosmos와 같음, PR #770
+  "fill compile-time shapes only when the caller left them out"). 다른 값을 넘기면 T5 입력 shape 에러로 실패한다.
 - 파이프라인 config가 VAE에 `num_devices=1`을 넘긴다.
 - device 배치: text_encoder 1 + transformer 8 (또는 16) + VAE 1.
 
@@ -167,7 +177,8 @@ export는 `define_import_structure`가 `__all__`에서 자동으로 만든다. `
 
 ## 4. 바꾸지 말 것 (사용자 결정과 그 이유)
 
-1. **Transformer는 TP ≥ 8, 한 그래프.** 레이어 분할 (`layers_per_graph`) 금지. timeout은 사용자가 드라이버 쪽에서 해결.
+1. **Transformer는 한 그래프.** 레이어 분할 (`layers_per_graph`) 금지. timeout은 사용자가 드라이버 쪽에서 해결.
+   TP 수는 코드로 강제하지 않는다 (10-15: 이전의 "TP ≥ 8 강제"를 repo 관례에 맞춰 바꿈). 예제에서 8을 준다.
 2. **VAE는 device 1개. RSD (`num_devices > 1`) 금지.** config가 막는다. (RSD는 conv 그래프를 나누지도 않아 메모리 이득도 없었다.)
 3. **VAE cache 레이아웃은 flat/chlast (transpose)만.** zero-pad 방식은 버렸다 (작은 VAE에서 실행 시
    `The input(feat_cache_1) is not specified.`, 지금 이름은 `conv_cache_*`). 기록만 docs에 있다. 코드 주석에 pad 방식을 남기지 않는다.
@@ -327,8 +338,8 @@ source ~/venv_optimum/bin/activate
 export HF_HOME=/mnt/shared_data/groups/sw_dev/.cache/huggingface
 cd ~/optimum-rbln
 
-# 테스트 (device 8개 필요: transformer TP8). 이 venv에는 pytest-xdist가 없어서 -n 1을 쓰지 않는다
-RBLN_DEVICES=8,9,10,11,12,13,14,15 python -m pytest tests/test_diffusers.py -k CogVideoX -vv
+# 테스트 (device 4개 필요: tiny 테스트가 transformer TP4). 이 venv에는 pytest-xdist가 없어서 -n 1을 쓰지 않는다
+RBLN_DEVICES=8,9,10,11 python -m pytest tests/test_diffusers.py -k CogVideoX -vv
 RBLN_DEVICES=8,9,10,11,12,13,14,15 python -m pytest tests/test_diffusers.py -k "Cosmos or SVD" -vv   # 회귀
 
 # 2b E2E (컴파일된 폴더가 있으면 컴파일을 건너뛰고 로드만 한다)
@@ -374,6 +385,6 @@ python .github/scripts/validate_docstrings.py <file>   # 한 번에 파일 하�
 - 원격에 새 커밋이 있으면 그 위에 쌓는다. 원격 커밋을 되돌리거나 덮어쓰지 않는다.
 - 줄임말·변형 이름을 쓸 때는 처음에 정확히 정의한다 (코드와 shape까지). 예: "chlast = `(n, h*w, d, c)`, 쓰기 시 permute".
 - 추정과 측정을 구분해서 말한다. 확인하지 않은 원인을 사실처럼 말하지 않는다.
-- 사용자 결정 (TP ≥ 8, VAE 단일 device, 그래프 분할 금지 등)을 바꾸는 우회가 필요하면 먼저 묻는다.
+- 사용자 결정 (VAE 단일 device, 그래프 분할 금지, dtype은 upstream 등, §4)을 바꾸는 우회가 필요하면 먼저 묻는다.
 - 공유 HF 캐시는 읽기만. 가중치를 다시 받거나 지우지 않는다.
 - 결과 폴더는 덮어쓰지 않는다. 깨진 결과도 보관한다.
