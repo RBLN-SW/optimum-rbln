@@ -118,28 +118,32 @@ class RBLNRuntimeCogVideoXVAEEncoder(RBLNPytorchRuntime):
 
 
 class RBLNRuntimeCogVideoXVAEDecoder(RBLNPytorchRuntime):
-    mandatory_members = ["main_input_name", "decoder_n", "first_chunk_size", "frame_batch_size", "dtype"]
+    mandatory_members = ["main_input_name", "decoder_n", "num_latent_frames_batch_size", "dtype"]
 
     def decode(self, z: torch.Tensor) -> torch.Tensor:
+        # Same chunks as AutoencoderKLCogVideoX._decode: decoder_0 decodes the first chunk, decoder_n each later one.
         z = z.to(self.dtype)
-        num_frame = z.shape[2]
-        # Mirrors AutoencoderKLCogVideoX._decode: the first chunk also takes the odd remainder frame.
-        first = min(num_frame, self.frame_batch_size + num_frame % self.frame_batch_size)
-        if first != self.first_chunk_size or (num_frame > first and self.decoder_n is None):
-            raise ValueError(
-                f"Cannot decode {num_frame} latent frames: the first chunk has {first} frames, but the graphs were "
-                f"compiled for a first chunk of {self.first_chunk_size} frames"
-                f"{'' if self.decoder_n is not None else ' with no later chunks'}."
-            )
+        num_frames = z.shape[2]
+        frame_batch_size = self.num_latent_frames_batch_size
+        num_batches = max(num_frames // frame_batch_size, 1)
+        if num_batches > 1 and self.decoder_n is None:
+            raise ValueError(f"Cannot decode {num_frames} latent frames: the VAE is compiled for one chunk only.")
 
-        ret = self.forward(z[:, :, :first].contiguous())
-        outs, feat_cache_0 = [ret[0]], ret[1]
-        for start in range(first, num_frame, self.frame_batch_size):
-            ret = self.decoder_n(z[:, :, start : start + self.frame_batch_size].contiguous(), feat_cache_0)
-            outs.append(ret[0])
-            feat_cache_0 = ret[1]
+        conv_cache_0 = None
+        dec = []
+        for i in range(num_batches):
+            remaining_frames = num_frames % frame_batch_size
+            start_frame = frame_batch_size * i + (0 if i == 0 else remaining_frames)
+            end_frame = frame_batch_size * (i + 1) + remaining_frames
+            z_intermediate = z[:, :, start_frame:end_frame].contiguous()
+            if i == 0:
+                ret = self.forward(z_intermediate)
+            else:
+                ret = self.decoder_n(z_intermediate, conv_cache_0)
+            dec.append(ret[0])
+            conv_cache_0 = ret[1]
 
-        return torch.cat(outs, dim=2) if len(outs) > 1 else outs[0]
+        return torch.cat(dec, dim=2)
 
 
 class _VAEDecoder(torch.nn.Module):

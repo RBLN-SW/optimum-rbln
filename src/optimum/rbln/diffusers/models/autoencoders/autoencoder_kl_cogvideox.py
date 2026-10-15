@@ -226,15 +226,11 @@ class RBLNAutoencoderKLCogVideoX(RBLNModel):
 
         # By index: without runtimes, self.model is an UnavailableRuntime (len 0, any index returns itself).
         runtimes = {cfg.compiled_model_name: self.model[i] for i, cfg in enumerate(self.rbln_config.compile_cfgs)}
-        # The chunk sizes are the frame axis of the compiled z inputs. Without decoder_n, the graphs decode
-        # exactly the first chunk, which a frame batch of the same size expresses.
-        chunk = {cfg.compiled_model_name: cfg.input_info[0][1][2] for cfg in self.rbln_config.compile_cfgs}
         self.decoder = RBLNRuntimeCogVideoXVAEDecoder(
             runtime=runtimes["decoder_0"],
             decoder_n=runtimes.get("decoder_n"),
             main_input_name="z",
-            first_chunk_size=chunk["decoder_0"],
-            frame_batch_size=chunk.get("decoder_n", chunk["decoder_0"]),
+            num_latent_frames_batch_size=self.rbln_config.num_latent_frames_batch_size,
             dtype=self.rbln_config.dtype,
         )
         self.encoder = None
@@ -327,9 +323,11 @@ class RBLNAutoencoderKLCogVideoX(RBLNModel):
 
         batch_size = rbln_config.batch_size
         dtype = rbln_config.dtype
+        if rbln_config.num_latent_frames_batch_size is None:
+            rbln_config.num_latent_frames_batch_size = model.num_latent_frames_batch_size
         # Same chunks as AutoencoderKLCogVideoX._decode: `num_latent_frames_batch_size` (2) latent frames per call,
         # and the first call also takes the odd remainder frame.
-        frame_batch = model.num_latent_frames_batch_size
+        frame_batch = rbln_config.num_latent_frames_batch_size
         num_latent_frames = (rbln_config.num_frames - 1) // model_config.temporal_compression_ratio + 1
         first_chunk = min(num_latent_frames, frame_batch + num_latent_frames % frame_batch)
         latent_height, latent_width = cls._latent_size(model, rbln_config)

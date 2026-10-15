@@ -27,6 +27,7 @@ class RBLNAutoencoderKLCogVideoXConfig(RBLNModelConfig):
         num_frames: int | None = None,
         height: int | None = None,
         width: int | None = None,
+        num_latent_frames_batch_size: int | None = None,
         use_slicing: bool = True,
         **kwargs: Any,
     ):
@@ -42,6 +43,9 @@ class RBLNAutoencoderKLCogVideoXConfig(RBLNModelConfig):
                 pipeline config; required for a standalone compile.
             width (Optional[int]): The width in pixels of the generated video. Filled by the
                 pipeline config; required for a standalone compile.
+            num_latent_frames_batch_size (Optional[int]): The number of latent frames per decoder call, as
+                `AutoencoderKLCogVideoX.num_latent_frames_batch_size` (2 in diffusers). The first call also takes
+                the remainder frames. Defaults to the value of the loaded model.
             use_slicing (bool): Run a batched request one sample at a time, as diffusers `use_slicing`
                 (it splits the batch axis only). Defaults to True.
             kwargs: Additional arguments passed to the parent RBLNModelConfig.
@@ -59,6 +63,7 @@ class RBLNAutoencoderKLCogVideoXConfig(RBLNModelConfig):
         self.num_frames = num_frames
         self.height = height
         self.width = width
+        self.num_latent_frames_batch_size = num_latent_frames_batch_size
 
     @property
     def image_size(self):
