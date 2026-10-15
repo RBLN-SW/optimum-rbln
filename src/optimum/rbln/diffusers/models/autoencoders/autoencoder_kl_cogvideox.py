@@ -100,7 +100,7 @@ class _ConvCache:
         conv_cache[self.path[-1]] = value
 
 
-def _decoder_conv_caches(decoder: CogVideoXDecoder3D, latent_height: int, latent_width: int) -> list[_ConvCache]:
+def get_decoder_conv_caches(decoder: CogVideoXDecoder3D, latent_height: int, latent_width: int) -> list[_ConvCache]:
     """
     The convs of `CogVideoXDecoder3D.forward` that carry a temporal cache, in a fixed order.
 
@@ -149,7 +149,7 @@ class _VAECogVideoXDecoder(torch.nn.Module):
     def __init__(self, vae: AutoencoderKLCogVideoX, latent_height: int, latent_width: int):
         super().__init__()
         self.decoder = vae.decoder
-        caches = _decoder_conv_caches(self.decoder, latent_height, latent_width)
+        caches = get_decoder_conv_caches(self.decoder, latent_height, latent_width)
         self.conv_in_cache = caches[0]
         self.static_caches = caches[1:]
 
@@ -246,7 +246,7 @@ class RBLNAutoencoderKLCogVideoX(RBLNModel):
             dtype=self.rbln_config.dtype,
         )
         self.encoder = None
-        if "encoder" in runtimes:
+        if self.rbln_config.uses_encoder:
             self.encoder = RBLNRuntimeCogVideoXVAEEncoder(
                 runtime=runtimes["encoder"], main_input_name="x", dtype=self.rbln_config.dtype
             )
@@ -345,7 +345,7 @@ class RBLNAutoencoderKLCogVideoX(RBLNModel):
         num_latent_frames = (rbln_config.num_frames - 1) // model_config.temporal_compression_ratio + 1
         first_chunk = min(num_latent_frames, frame_batch + num_latent_frames % frame_batch)
         latent_height, latent_width = cls._latent_size(model, rbln_config)
-        caches = _decoder_conv_caches(model.decoder, latent_height, latent_width)
+        caches = get_decoder_conv_caches(model.decoder, latent_height, latent_width)
         buffer_info = [
             (f"conv_cache_{i}", cache.compile_shape(batch_size), dtype) for i, cache in enumerate(caches[1:], start=1)
         ]
