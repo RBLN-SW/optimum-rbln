@@ -52,19 +52,16 @@ class RBLNDetrForObjectDetection(RBLNModel):
         if rbln_config.image_size is None:
             for processor in preprocessors:
                 if hasattr(processor, "size"):
-                    if all(required_key in processor.size.keys() for required_key in ["height", "width"]):
-                        height, width = processor.size["height"], processor.size["width"]
-                    elif "longest_edge" in processor.size.keys():
-                        height, width = processor.size["longest_edge"], processor.size["longest_edge"]
+                    if all(required_key in processor.size for required_key in ["height", "width"]):
+                        rbln_config.image_size = (processor.size["height"], processor.size["width"])
+                    elif "longest_edge" in processor.size:
+                        rbln_config.image_size = (processor.size["longest_edge"], processor.size["longest_edge"])
                     break
 
             if rbln_config.image_size is None:
                 raise ValueError("`image_size` should be specified!")
-        else:
-            if isinstance(rbln_config.image_size, int):
-                height, width = rbln_config.image_size, rbln_config.image_size
-            else:
-                height, width = rbln_config.image_size
+
+        height, width = rbln_config.image_height, rbln_config.image_width
 
         rbln_compile_config = RBLNCompileConfig(
             input_info=[

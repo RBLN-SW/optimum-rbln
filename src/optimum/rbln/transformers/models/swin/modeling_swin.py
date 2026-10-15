@@ -230,7 +230,7 @@ class RBLNSwinBackbone(RBLNModel):
         if rbln_config.image_size is None:
             for processor in preprocessors:
                 if hasattr(processor, "size"):
-                    if all(required_key in processor.size.keys() for required_key in ["height", "width"]):
+                    if all(required_key in processor.size for required_key in ["height", "width"]):
                         rbln_config.image_size = (processor.size["height"], processor.size["width"])
                     break
 

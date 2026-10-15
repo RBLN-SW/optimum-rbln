@@ -712,7 +712,7 @@ def _update_spatial_shapes(model_config, rbln_config):
     spatial_shapes = []
     backbone_config = model_config.backbone_config
     num_patched_h = num_patches(rbln_config.image_height, backbone_config.patch_size)
-    num_patched_w = num_patches(rbln_config.image_height, backbone_config.patch_size)
+    num_patched_w = num_patches(rbln_config.image_width, backbone_config.patch_size)
     for out_layer in backbone_config.out_indices:
         spatial_shapes.append(
             [down_sampled_size(num_patched_h, out_layer - 1), down_sampled_size(num_patched_w, out_layer - 1)]
