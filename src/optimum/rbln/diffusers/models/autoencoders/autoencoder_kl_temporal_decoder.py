@@ -38,9 +38,9 @@ from .vae import (
 
 
 if TYPE_CHECKING:
-    from transformers import PretrainedConfig, PreTrainedModel
+    from transformers import PreTrainedModel
 
-    from ...modeling_diffusers import RBLNDiffusionMixin, RBLNDiffusionMixinConfig
+    from ...modeling_diffusers import RBLNDiffusionMixinConfig
 
 logger = get_logger(__name__)
 

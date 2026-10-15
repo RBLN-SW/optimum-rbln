@@ -16,7 +16,7 @@ import importlib
 import inspect
 from collections.abc import Callable, Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Optional
+from typing import Any, Optional
 
 import numpy as np
 import torch
@@ -44,9 +44,6 @@ from ..decoderonly.modeling_decoderonly import RBLNDecoderOnlyOutput
 
 
 logger = get_logger(__name__)
-
-if TYPE_CHECKING:
-    from transformers import PretrainedConfig
 
 
 class LoopVisionTower(LoopProcessor):

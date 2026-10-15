@@ -46,7 +46,7 @@ from .time_series_transformers_architecture import TimeSeriesTransformersWrapper
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
-    from transformers import PretrainedConfig, PreTrainedModel
+    from transformers import PreTrainedModel
 
 
 class RBLNRuntimeEncoder(RBLNPytorchRuntime):

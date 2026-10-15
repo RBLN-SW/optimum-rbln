@@ -15,7 +15,7 @@
 import importlib
 import inspect
 from collections.abc import Callable, Sequence
-from typing import TYPE_CHECKING, Any, Optional
+from typing import Any, Optional
 
 import torch
 from transformers import AutoModelForImageTextToText, LlavaForConditionalGeneration, PretrainedConfig, PreTrainedModel
@@ -38,9 +38,6 @@ from ...utils.rbln_runtime_wrapper import LoopProcessor
 
 
 logger = get_logger(__name__)
-
-if TYPE_CHECKING:
-    from transformers import PretrainedConfig
 
 
 class LoopVisionTower(LoopProcessor):
