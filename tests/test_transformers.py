@@ -774,6 +774,15 @@ class TestGroundingDinoModel(BaseTest.TestModel):
         cls.HF_CONFIG_KWARGS = {**cls.HF_CONFIG_KWARGS, "config": config, "ignore_mismatched_sizes": True}
         return super().setUpClass()
 
+    def test_return_dict_false(self):
+        inputs = self.get_inputs()
+        tuple_output = self.model(**inputs, return_dict=False)
+        dict_output = self.model(**inputs, return_dict=True)
+
+        assert all(isinstance(output, torch.Tensor) for output in tuple_output)
+        assert tuple_output[0].shape == dict_output.logits.shape
+        assert tuple_output[1].shape == dict_output.pred_boxes.shape
+
 
 if __name__ == "__main__":
     unittest.main()

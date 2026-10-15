@@ -432,6 +432,15 @@ class RBLNGroundingDinoForObjectDetection(RBLNModel):
                 output_hidden_states=output_hidden_states,
                 return_dict=True,
             )
+        # A tuple passed as encoder_outputs is wrapped so that both return paths below can read it the same way
+        elif not isinstance(encoder_outputs, GroundingDinoEncoderOutput):
+            encoder_outputs = GroundingDinoEncoderOutput(
+                last_hidden_state_vision=encoder_outputs[0],
+                last_hidden_state_text=encoder_outputs[1],
+                vision_hidden_states=encoder_outputs[2] if output_hidden_states else None,
+                text_hidden_states=encoder_outputs[3] if output_hidden_states else None,
+                attentions=encoder_outputs[-1] if output_attentions else None,
+            )
 
         # Fifth, prepare decoder inputs
         topk_proposals = None
@@ -514,7 +523,7 @@ class RBLNGroundingDinoForObjectDetection(RBLNModel):
                 decoder_outputs[0],
                 init_reference_points,
                 *decoder_outputs[1:],
-                *encoder_outputs,
+                *encoder_outputs.to_tuple(),
                 *enc_outputs,
             )
 
