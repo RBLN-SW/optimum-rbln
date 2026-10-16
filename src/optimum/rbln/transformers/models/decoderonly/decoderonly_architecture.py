@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import math
+from collections.abc import Sequence
 from typing import TYPE_CHECKING, Optional
 
 import torch
@@ -30,6 +31,23 @@ if TYPE_CHECKING:
 
 
 logger = logging.get_logger(__name__)
+
+
+def group_kv_caches_by_layer(
+    caches: list[torch.Tensor], rbln_config: "RBLNDecoderOnlyModelConfig", num_hidden_layers: int
+) -> list[tuple[torch.Tensor, ...]]:
+    """Groups the flat cache inputs by the layer `rbln_config.cache_metas` assigns each of them to.
+
+    A layer gets `(key_cache, value_cache)`, or `(kv_cache,)` when one cache holds both.
+    """
+    if len(caches) != len(rbln_config.cache_metas):
+        raise ValueError(
+            f"Different past_key_values to model's config. {len(caches)} != {len(rbln_config.cache_metas)}"
+        )
+    layers = [[] for _ in range(num_hidden_layers)]
+    for cache, cache_meta in zip(caches, rbln_config.cache_metas, strict=True):
+        layers[cache_meta.layer_index].append(cache)
+    return [tuple(layer) for layer in layers]
 
 
 class DecoderOnlyWrapper(nn.Module):
@@ -155,22 +173,7 @@ class DecoderOnlyWrapper(nn.Module):
         attention_mask = args.pop(0) if self.rbln_config.use_attention_mask else None
         position_ids = args.pop(0) if self.rbln_config.use_position_ids else None
         lora_int_id = args.pop(0) if self.rbln_config.lora_config else None
-        past_key_values = args
-
-        if len(past_key_values) != 2 * self.num_hidden_layers:
-            raise ValueError(
-                f"Different past_key_values to model's config. {len(past_key_values)} != {2 * self.num_hidden_layers}"
-            )
-
-        # [key, value] * n_layer -> ( (key, value) ) * n_layer
-        # cache shape : batch, n_heads, 1, max_seq_len, head_dim
-        _past_key_values = []
-        for i in range(self.num_hidden_layers):
-            key_states = past_key_values[i * 2]
-            value_states = past_key_values[i * 2 + 1]
-            past_key_value = [key_states, value_states]
-            _past_key_values.append(past_key_value)
-        past_key_values = _past_key_values
+        past_key_values = group_kv_caches_by_layer(args, self.rbln_config, self.num_hidden_layers)
 
         if hasattr(self, "rotary_emb_global") and hasattr(self, "rotary_emb_local"):
             rotary_emb = (self.rotary_emb_global, self.rotary_emb_local)
@@ -892,8 +895,7 @@ class DecoderOnlyAttention(nn.Module):
             key_states,
             value_states,
             attention_mask,
-            past_key_state=past_key_values[self.layer_idx][0],
-            past_value_state=past_key_values[self.layer_idx][1],
+            kv_cache=past_key_values[self.layer_idx],
             seq_position=seq_positions,
             scale=self.scale,
             block_tables=block_tables,
@@ -965,8 +967,7 @@ class AttentionOp(nn.Module):
         key_state: torch.Tensor,
         value_state: torch.Tensor,
         attn_mask: torch.Tensor,
-        past_key_state: torch.Tensor,
-        past_value_state: torch.Tensor,
+        kv_cache: Sequence[torch.Tensor],
         seq_position: torch.Tensor,
         scale: torch.Tensor,
         block_tables: torch.Tensor,
@@ -982,8 +983,7 @@ class AttentionOp(nn.Module):
             key_state: Key tensor [1, num_heads, seq_len, head_dim]
             value_state: Value tensor [1, num_heads, seq_len, head_dim]
             attn_mask: Attention mask tensor ∈ {0, 1}
-            past_key_state: Previous key cache states
-            past_value_state: Previous value cache states
+            kv_cache: The layer's key and value caches, or one cache holding both
             seq_position: Current position in sequence
             scale: Scale applied to attn weights
             block_tables: Block tables for paged attention
@@ -995,6 +995,8 @@ class AttentionOp(nn.Module):
         Returns:
             Tensor: attention_output: [batch, num_heads, seq_len, head_dim]
         """
+        past_key_state, past_value_state = kv_cache
+
         # reshape for removing repeat_kv (batch=1 , num_head, 1, q_len=1, head_dim)
         key_state = key_state.unsqueeze(2)  # 1, 32, 1, 128, 128
         value_state = value_state.unsqueeze(2)
@@ -1087,8 +1089,13 @@ class FlashAttentionOp(AttentionOp):
         )
         self.kvcache_partition_size = kvcache_partition_len
 
-    def get_attn_op_name(self):
+    def get_attn_op_name(self, packed_kv_cache: bool = False):
         phase = "decode" if self.phase == "decode" else "prefill"
+
+        if packed_kv_cache:
+            if self.use_attention_mask or (self.quantization and self.quantization.kv_caches == "fp8"):
+                raise NotImplementedError("Only the unmasked, non-fp8 flash causal attention reads a packed KV cache.")
+            return "flash_causal_attention_naive_" + phase
 
         if self.use_attention_mask:
             if self.rbln_config.use_position_ids:
@@ -1111,8 +1118,7 @@ class FlashAttentionOp(AttentionOp):
         key_state,
         value_state,
         attn_mask,
-        past_key_state,
-        past_value_state,
+        kv_cache,
         seq_position,
         scale,
         block_tables,
@@ -1141,42 +1147,57 @@ class FlashAttentionOp(AttentionOp):
             self.head_dim,
         )
 
-        op_args = {
-            "q": query_state,
-            "k": key_state,
-            "v": value_state,
-            "kcache": past_key_state.unsqueeze(2),
-            "vcache": past_value_state.unsqueeze(2),
-            "seq": seq_position,
-            "scale": scale,
-            "block_table": block_tables,
-            "block_size": block_size,
-            "partition": self.kvcache_partition_size,
-        }
+        packed_kv_cache = len(kv_cache) == 1
+        if packed_kv_cache:
+            op_args = {
+                "q": query_state,
+                "k": key_state,
+                "v": value_state,
+                "kv_cache": kv_cache[0],
+                "scale": scale,
+                "seq_idx": seq_position,
+                "block_tables": block_tables,
+                "slot_mapping": scale,
+                "sinks": s_aux,
+            }
+        else:
+            past_key_state, past_value_state = kv_cache
+            op_args = {
+                "q": query_state,
+                "k": key_state,
+                "v": value_state,
+                "kcache": past_key_state.unsqueeze(2),
+                "vcache": past_value_state.unsqueeze(2),
+                "seq": seq_position,
+                "scale": scale,
+                "block_table": block_tables,
+                "block_size": block_size,
+                "partition": self.kvcache_partition_size,
+            }
 
-        if self.use_attention_mask:
-            op_args["mask"] = attn_mask
+            if self.use_attention_mask:
+                op_args["mask"] = attn_mask
 
-        if self.phase == "prefill" or self.phase == "image_prefill":
-            use_image_prefill = getattr(self.rbln_config, "use_image_prefill", False)
-            if use_image_prefill:
-                op_args["is_bidirectional"] = self.phase == "image_prefill"
-            else:
-                if not self.use_attention_mask:
-                    op_args["is_bidirectional"] = False
-                elif self.use_attention_mask and self.rbln_config.use_position_ids:
-                    op_args["is_bidirectional"] = True
+            if self.phase == "prefill" or self.phase == "image_prefill":
+                use_image_prefill = getattr(self.rbln_config, "use_image_prefill", False)
+                if use_image_prefill:
+                    op_args["is_bidirectional"] = self.phase == "image_prefill"
+                else:
+                    if not self.use_attention_mask:
+                        op_args["is_bidirectional"] = False
+                    elif self.use_attention_mask and self.rbln_config.use_position_ids:
+                        op_args["is_bidirectional"] = True
 
-        if self.quantization and self.quantization.kv_caches == "fp8":
-            if past_key_state.dtype != torch.float8_e4m3fn:
-                raise ValueError(f"Unsupported KVCaches type: {past_key_state.dtype}")
-            op_args["k_scale"] = k_scale
-            op_args["v_scale"] = v_scale
+            if self.quantization and self.quantization.kv_caches == "fp8":
+                if past_key_state.dtype != torch.float8_e4m3fn:
+                    raise ValueError(f"Unsupported KVCaches type: {past_key_state.dtype}")
+                op_args["k_scale"] = k_scale
+                op_args["v_scale"] = v_scale
 
-        if s_aux is not None:
-            op_args["s_aux"] = s_aux
+            if s_aux is not None:
+                op_args["s_aux"] = s_aux
 
-        attn_op_name = self.get_attn_op_name()
+        attn_op_name = self.get_attn_op_name(packed_kv_cache)
         attn_op = getattr(torch.ops.rbln_custom_ops, attn_op_name, None)
         if attn_op is None:
             raise ValueError(f"Attention operator {attn_op_name} not found.")
@@ -1226,8 +1247,7 @@ class SlidingWindowAttentionOp(AttentionOp):
         key_state: torch.Tensor,
         value_state: torch.Tensor,
         attn_mask: torch.Tensor | None,
-        past_key_state: torch.Tensor,
-        past_value_state: torch.Tensor,
+        kv_cache: Sequence[torch.Tensor],
         seq_position: tuple[torch.Tensor],
         scale: torch.Tensor,
         block_tables: torch.Tensor,
@@ -1238,6 +1258,7 @@ class SlidingWindowAttentionOp(AttentionOp):
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         assert self.quantization is None, "Sliding window attention does not support quantization"
         assert k_scale is None and v_scale is None, "Sliding window attention does not support quantization"
+        past_key_state, past_value_state = kv_cache
 
         # reshape for removing repeat_kv (batch=1 , num_head, 1, q_len=1, head_dim)
         key_state = key_state.unsqueeze(2)

@@ -4,6 +4,7 @@ from transformers import PreTrainedModel
 
 from ..decoderonly.decoderonly_architecture import (
     DecoderOnlyWrapper,
+    group_kv_caches_by_layer,
     rotate_half,
 )
 from .configuration_qwen2_vl import RBLNQwen2VisionTransformerPretrainedModelConfig
@@ -133,22 +134,7 @@ class Qwen2VL_LanguageModelWrapper(DecoderOnlyWrapper):
         position_ids = None
         attention_mask = args.pop(0) if self.rbln_config.use_attention_mask else None
         lora_int_id = args.pop(0) if self.rbln_config.lora_config else None
-        past_key_values = args
-
-        if len(past_key_values) != 2 * self.num_hidden_layers:
-            raise ValueError(
-                f"Different past_key_values to model's config. {len(past_key_values)} != {2 * self.num_hidden_layers}"
-            )
-
-        # [key, value] * n_layer -> ( (key, value) ) * n_layer
-        # cache shape : batch, n_heads, 1, max_seq_len, head_dim
-        _past_key_values = []
-        for i in range(self.num_hidden_layers):
-            key_states = past_key_values[i * 2]
-            value_states = past_key_values[i * 2 + 1]
-            past_key_value = [key_states, value_states]
-            _past_key_values.append(past_key_value)
-        past_key_values = _past_key_values
+        past_key_values = group_kv_caches_by_layer(args, self.rbln_config, self.num_hidden_layers)
 
         return (
             input_ids,

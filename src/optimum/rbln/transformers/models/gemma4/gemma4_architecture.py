@@ -30,6 +30,7 @@ from ..decoderonly.decoderonly_architecture import (
     DecoderOnlyWrapper,
     RotaryEmbedding,
     build_image_prefill_swa_custom_op_args,
+    group_kv_caches_by_layer,
     slice_and_unsqueeze_cos_sin,
 )
 
@@ -86,19 +87,7 @@ class Gemma4ForCausalLMWrapper(DecoderOnlyWrapper):
         attention_mask = args.pop(0) if self.rbln_config.use_attention_mask else None
         position_ids = args.pop(0) if self.rbln_config.use_position_ids else None
         lora_int_id = args.pop(0) if self.rbln_config.lora_config else None
-        past_key_values = args
-
-        if len(past_key_values) != 2 * self.num_hidden_layers:
-            raise ValueError(
-                f"Different past_key_values to model's config. {len(past_key_values)} != {2 * self.num_hidden_layers}"
-            )
-
-        _past_key_values = []
-        for i in range(self.config.num_hidden_layers):
-            key_states = past_key_values[i * 2]
-            value_states = past_key_values[i * 2 + 1]
-            _past_key_values.append([key_states, value_states])
-        past_key_values = _past_key_values
+        past_key_values = group_kv_caches_by_layer(args, self.rbln_config, self.num_hidden_layers)
 
         rotary_emb = (self.rotary_emb_global, self.rotary_emb_local)
 
@@ -440,8 +429,7 @@ class Gemma4TextAttention(DecoderOnlyAttention):
             key_states,
             value_states,
             attention_mask,
-            past_key_state=past_key_values[self.layer_idx][0],
-            past_value_state=past_key_values[self.layer_idx][1],
+            kv_cache=past_key_values[self.layer_idx],
             seq_position=seq_positions,
             scale=self.scale,
             block_tables=block_tables,
