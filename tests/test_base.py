@@ -238,7 +238,7 @@ class BaseTest:
                     compiled_model_path = os.path.join(REUSE_ARTIFACTS_PATH, cls.get_rbln_local_dir())
                     if os.path.exists(compiled_model_path):
                         with ContextRblnConfig(device=DUMMY_DEVICE_CODE):
-                            cls.model = cls.RBLN_CLASS.from_pretrained(compiled_model_path)
+                            cls.model = cls.RBLN_CLASS.from_pretrained(compiled_model_path, **cls.HF_CONFIG_KWARGS)
                 # Check cls.__dict__, not hasattr: hasattr also finds a parent test class's
                 # already-loaded model, silently running this class against a model compiled
                 # with the parent's (possibly incompatible) rbln_config.
