@@ -615,7 +615,7 @@ class RBLNQwen3VLModel(RBLNDecoderOnlyModel):
         mm_token_type_ids: torch.IntTensor | None = None,
         **kwargs,
     ) -> RBLNDecoderOnlyOutput:
-        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+        return_dict = return_dict if return_dict is not None else self.config.return_dict
         if attention_mask is None:
             attention_mask = torch.ones_like(input_ids)
         inputs_embeds, position_embed, rope_deltas, visual_pos_mask, deepstack_visual_embeds = (
@@ -904,7 +904,7 @@ class RBLNQwen3VLForConditionalGeneration(RBLNQwenVLBatchSortMixin, RBLNQwen3VLM
         inputs_sorted: bool = False,
         **kwargs,
     ) -> RBLNDecoderOnlyOutput:
-        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+        return_dict = return_dict if return_dict is not None else self.config.return_dict
         self._require_sorted_batch_inputs(input_ids if input_ids is not None else inputs_embeds, inputs_sorted)
         output_hidden_states = _validate_output_hidden_states(output_hidden_states, self.rbln_config)
         # Prefill
