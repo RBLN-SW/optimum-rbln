@@ -158,7 +158,7 @@ class RBLNIdefics3VisionTransformer(RBLNModel):
         return_dict: bool | None = None,
         **kwargs,
     ) -> tuple | BaseModelOutput:
-        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+        return_dict = return_dict if return_dict is not None else self.config.return_dict
         last_hidden_state_size = [
             pixel_values.shape[0],
             (self.config.image_size // self.config.patch_size) ** 2,
@@ -482,7 +482,7 @@ class RBLNIdefics3ForConditionalGeneration(RBLNModel, RBLNImageIndexedBatchSortM
         inputs_sorted: bool = False,
         **kwargs,
     ) -> tuple | Idefics3CausalLMOutputWithPast:
-        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+        return_dict = return_dict if return_dict is not None else self.config.return_dict
         self._require_sorted_batch_inputs(inputs_embeds if inputs_embeds is not None else input_ids, inputs_sorted)
         # Prefill
         if cache_position is None:
