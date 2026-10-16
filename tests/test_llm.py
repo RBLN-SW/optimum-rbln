@@ -39,6 +39,8 @@ from optimum.rbln import (
     RBLNGemma3ForConditionalGeneration,
     RBLNGemma4ForCausalLM,
     RBLNGemma4ForCausalLMConfig,
+    RBLNGlm4ForCausalLM,
+    RBLNGlm4Model,
     RBLNGPT2LMHeadModel,
     RBLNGPT2Model,
     RBLNIdefics3ForConditionalGeneration,
@@ -453,6 +455,18 @@ class TestExaoneForCausalLM(LLMTest.TestLLM):
     def test_automap(self):
         # TODO: Test resume in transformers v5.0.0
         pass
+
+
+class TestGlm4ForCausalLM(LLMTest.TestLLM):
+    RBLN_CLASS = RBLNGlm4ForCausalLM
+    HF_MODEL_ID = "zai-org/GLM-4-9B-0414"
+    HF_CONFIG_KWARGS = {"num_hidden_layers": 1, "max_position_embeddings": 1024}
+
+
+class TestGlm4Model(LLMTest.TestLLMWithoutLMHead):
+    RBLN_CLASS = RBLNGlm4Model
+    HF_MODEL_ID = "zai-org/GLM-4-9B-0414"
+    HF_CONFIG_KWARGS = {"num_hidden_layers": 1, "max_position_embeddings": 1024}
 
 
 class TestT5Model(LLMTest.TestLLM):
