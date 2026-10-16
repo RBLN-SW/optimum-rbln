@@ -36,6 +36,7 @@ from ....modeling import RBLNModel
 from ....modeling_rope_utils import build_qwen_mrope_lookup, np_cos, np_sin, qwen_vit_rot_pos_ids
 from ....utils import logging
 from ....utils.deprecation import deprecate_method
+from ....utils.runtime_utils import normalize_npu, resolve_npu_or_none
 from ...cache_utils import FullAttentionKVCacheMeta, LinearAttentionCacheMeta
 from ...modeling_outputs import RBLNDecoderOnlyOutput, _validate_output_hidden_states
 from ...utils.multimodal_batch_sort import RBLNQwenVLBatchSortMixin
@@ -58,6 +59,49 @@ from .qwen3_5_runtime_utils import RBLNQwen3_5RuntimeModel
 logger = logging.get_logger(__name__)
 
 
+def validate_gdn_custom_kernel(model_config, rbln_config) -> None:
+    """Reject a configuration the GatedDeltaNet custom ops do not serve.
+
+    The core always runs as `rbln_custom_ops::gdn_*` and the short conv in front of it as
+    `causal_conv1d_*`, so a configuration they cannot take fails here rather than at compile time,
+    where the converter reports it as a shape mismatch.
+
+    Runs before `super()._update_rbln_config` fills the defaults, so it reads no field that
+    `set_default_values` owns -- `prefill_chunk_size` is still None here. It does not need to: the
+    ops want a prefill window that is a multiple of 128, and `_update_rbln_config` already rejects a
+    `gdn_chunk_size` that does not divide `prefill_chunk_size`, so `gdn_chunk_size == 128` gives it.
+    """
+    wanted = ("gdn_prefill", "gdn_decode", "causal_conv1d_prefill", "causal_conv1d_update")
+    missing = [name for name in wanted if not hasattr(torch.ops.rbln_custom_ops, name)]
+    if missing:
+        raise ValueError(
+            f"This rebel-compiler registers no {missing}. Qwen3.5 runs its GatedDeltaNet core and the "
+            f"short conv in front of it as `rbln_custom_ops::`{list(wanted)}, so it needs a compiler "
+            "that provides them."
+        )
+
+    text_config = model_config.get_text_config()
+    head_dims = (text_config.linear_key_head_dim, text_config.linear_value_head_dim)
+    if head_dims != (128, 128):
+        raise ValueError(
+            f"Qwen3.5 on RBLN needs `linear_key_head_dim` and `linear_value_head_dim` of 128, got {head_dims}. "
+            "The `rbln_custom_ops::gdn_*` kernels take that head dimension only."
+        )
+
+    if rbln_config.gdn_chunk_size != MAX_GDN_CHUNK_SIZE:
+        raise ValueError(
+            f"Qwen3.5 on RBLN needs `gdn_chunk_size` {MAX_GDN_CHUNK_SIZE}, got {rbln_config.gdn_chunk_size}. "
+            "The `rbln_custom_ops::gdn_prefill` kernel takes 128-token chunks only."
+        )
+
+    npu = resolve_npu_or_none(rbln_config.npu)
+    if npu is not None and not normalize_npu(npu).startswith("RBLN-CA"):
+        raise ValueError(
+            f"Qwen3.5 on RBLN runs on ATOM targets only, got {npu}. The `rbln_custom_ops::gdn_prefill` "
+            "kernel comes back non-finite on REBEL."
+        )
+
+
 def _qwen3_5_build_compile_context(compile_config, example_inputs):
     def is_static_state(name: str) -> bool:
         if "past_key_values" in name:
@@ -75,16 +119,30 @@ def _qwen3_5_build_compile_context(compile_config, example_inputs):
 
 
 def _qwen3_5_linear_state_shapes(text_config, batch_size: int):
-    conv_dim = 2 * (text_config.linear_num_key_heads * text_config.linear_key_head_dim) + (
-        text_config.linear_num_value_heads * text_config.linear_value_head_dim
+    """The cache layout `rbln_custom_ops::gdn_*` take: the conv cache grouped by Q/K head, and the recurrent
+    state in the ops' own per-state layout, which `rebel` spells so that this does not restate it.
+
+    Both graphs read the same static buffers, so prefill and decode take these shapes from here alone.
+    """
+    # Imported here, not at module scope: only a compiler that ships the GDN ops has it, and
+    # `validate_gdn_custom_kernel` is what reports that.
+    from rebel.ops.torch_custom_ops.gdn import STATE_BLOCKS
+
+    heads = text_config.linear_num_key_heads
+    # Q, K and the value heads of each Q/K head, each carrying K-1 inputs. The group axis is its own
+    # because `causal_conv1d_*` address the cache by it.
+    groups = heads * (2 + text_config.linear_num_value_heads // heads)
+    conv_state_shape = (
+        batch_size,
+        groups,
+        text_config.linear_conv_kernel_dim - 1,
+        text_config.linear_key_head_dim,
     )
-    conv_state_shape = (batch_size, text_config.linear_conv_kernel_dim - 1, conv_dim)
-    # recurrent state/mask are 3D (B, Hv*Dk, Dv) — see the get_input_info comment: merging Hv into dim1 keeps
-    # the shared static cache laid out identically in the prefill/decode graphs (no channel-pad mismatch).
     recurrent_state_shape = (
         batch_size,
-        text_config.linear_num_value_heads * text_config.linear_key_head_dim,
-        text_config.linear_value_head_dim,
+        heads,
+        text_config.linear_num_value_heads // heads,
+        *STATE_BLOCKS,
     )
     return conv_state_shape, recurrent_state_shape
 
@@ -112,29 +170,23 @@ def _qwen3_5_setup_hybrid_runtime(model):
         "state_dtype": model.dtype,
     }
 
-    # Prefill runs one item at a time (batch=1) and writes its `batch_position` slot, so its state MASKS are
-    # batch=1 sized (they gate the single slot the graph reads); the underlying cache is max-batch (get_input_info).
-    conv_shape, recur_shape = _qwen3_5_linear_state_shapes(text_config, 1)
+    # Prefill runs one item at a time and writes its `batch_position` slot; the underlying caches are
+    # max-batch (get_input_info).
     model.prefill_decoder = RBLNQwen3_5RuntimeModel(
         runtime=model.model[0],
         phase="prefill",
         batch_size=rbln_config.batch_size,
         logits_last_dim=model.logits_last_dim,
-        conv_state_shape=conv_shape,
-        recurrent_state_shape=recur_shape,
         **common_kwargs,
     )
 
     if model.can_generate():
         model.decoders = {}
         for i, batch_size in enumerate(rbln_config.decoder_batch_sizes):
-            conv_shape, recur_shape = _qwen3_5_linear_state_shapes(text_config, batch_size)
             model.decoders[batch_size] = RBLNQwen3_5RuntimeModel(
                 runtime=model.model[i + 1],
                 phase="decode",
                 batch_size=batch_size,
-                conv_state_shape=conv_shape,
-                recurrent_state_shape=recur_shape,
                 **common_kwargs,
             )
         model.decoder = model.decoders[rbln_config.batch_size]
@@ -165,6 +217,7 @@ class RBLNQwen3_5TextModel(RBLNDecoderOnlyModel):
     @classmethod
     def _update_rbln_config(cls, preprocessors=None, model=None, model_config=None, rbln_config=None):
         rbln_config.linear_attention_layers = _qwen3_5_linear_layer_indices(model_config)
+        validate_gdn_custom_kernel(model_config, rbln_config)
         rbln_config = super()._update_rbln_config(
             preprocessors=preprocessors, model=model, model_config=model_config, rbln_config=rbln_config
         )
@@ -239,7 +292,8 @@ class RBLNQwen3_5TextModel(RBLNDecoderOnlyModel):
             cache_metas = []
             for layer_idx in range(num_hidden_layers):
                 if layer_idx in linear_layers:
-                    # recurrent cache is stored 3D (B, Hv*Dk, Dv); GatedDeltaNet reshapes to 4D internally.
+                    # the native core keeps the recurrent cache 3D (B, Hv*Dk, Dv) and reshapes it to 4D internally;
+                    # the custom core keeps it as its ops take it.
                     conv_shape, recurrent_shape = _qwen3_5_linear_state_shapes(text_config, rbln_config.batch_size)
                     cache_metas.append(
                         LinearAttentionCacheMeta.from_config(
@@ -267,17 +321,17 @@ class RBLNQwen3_5TextModel(RBLNDecoderOnlyModel):
             input_info.extend([(meta.name, meta.compile_shape, meta.dtype) for meta in cache_metas])
             rbln_config.cache_metas.extend(cache_metas)
 
-        # shared 0/1 masks: runtime feeds zeros on prefill window 0 (reset linear state), ones after (carry). See docs.
-        if linear_layers:
-            # masks match the per-call graph batch (batch_size), so reuse the helper with the same shapes.
-            conv_mask_shape, recurrent_mask_shape = _qwen3_5_linear_state_shapes(text_config, batch_size)
-            input_info.append(("conv_state_mask", list(conv_mask_shape), rbln_config.dtype))
-            input_info.append(("recurrent_state_mask", list(recurrent_mask_shape), rbln_config.dtype))
+        # Prefill-only inputs: the GatedDeltaNet reads them when it carries a window, and a decode step
+        # carries none, so declaring them there would leave inputs nothing consumes.
+        if linear_layers and is_prefill:
+            # One 0/1 value per cache row: zeros on window 0 (fresh sequence, discard the stale cache), ones
+            # after (carry). It gates both caches -- `gdn_prefill` takes it as `has_initial_state` and the conv
+            # window broadcasts it -- so the two can never disagree.
+            input_info.append(("state_mask", [batch_size], rbln_config.dtype))
             # per-token validity (1=real, 0=right-padding); host-built, GatedDeltaNet uses it to drop padding.
             input_info.append(("valid_mask", [batch_size, query_length, 1], rbln_config.dtype))
-            # prefill only: which max-batch slot this per-item (batch=1) call reads/writes in the linear caches.
-            if is_prefill:
-                input_info.append(("batch_idx", [], "int16"))
+            # which max-batch slot this per-item (batch=1) call reads/writes in the linear caches.
+            input_info.append(("batch_idx", [], "int16"))
 
         return input_info
 
@@ -593,6 +647,7 @@ class RBLNQwen3_5Model(RBLNDecoderOnlyModel):
     @classmethod
     def _update_rbln_config(cls, preprocessors=None, model=None, model_config=None, rbln_config=None):
         rbln_config.linear_attention_layers = _qwen3_5_linear_layer_indices(model_config)
+        validate_gdn_custom_kernel(model_config, rbln_config)
         rbln_config = super()._update_rbln_config(
             preprocessors=preprocessors, model=model, model_config=model_config, rbln_config=rbln_config
         )
