@@ -479,7 +479,7 @@ class RBLNLlavaNextForConditionalGeneration(RBLNModel, RBLNImageIndexedBatchSort
         inputs_sorted: bool = False,
         **kwargs,
     ) -> tuple | RBLNDecoderOnlyOutput:
-        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+        return_dict = return_dict if return_dict is not None else self.config.return_dict
         self._require_sorted_batch_inputs(inputs_embeds if inputs_embeds is not None else input_ids, inputs_sorted)
         # Prefill
         if cache_position is None:
