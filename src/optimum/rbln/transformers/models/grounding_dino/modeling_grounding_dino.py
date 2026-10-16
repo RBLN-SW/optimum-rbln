@@ -430,7 +430,16 @@ class RBLNGroundingDinoForObjectDetection(RBLNModel):
                 text_position_ids=position_ids,
                 output_attentions=output_attentions,
                 output_hidden_states=output_hidden_states,
-                return_dict=True,
+                return_dict=return_dict,
+            )
+        # If the user passed a tuple for encoder_outputs, we wrap it in a GroundingDinoEncoderOutput when return_dict=True
+        elif return_dict and not isinstance(encoder_outputs, GroundingDinoEncoderOutput):
+            encoder_outputs = GroundingDinoEncoderOutput(
+                last_hidden_state_vision=encoder_outputs[0],
+                last_hidden_state_text=encoder_outputs[1],
+                vision_hidden_states=encoder_outputs[2] if output_hidden_states else None,
+                text_hidden_states=encoder_outputs[3] if output_hidden_states else None,
+                attentions=encoder_outputs[-1] if output_attentions else None,
             )
 
         # Fifth, prepare decoder inputs
@@ -511,7 +520,11 @@ class RBLNGroundingDinoForObjectDetection(RBLNModel):
                 if value is not None
             )
             tuple_outputs = (
-                (decoder_outputs[0], init_reference_points) + decoder_outputs[1:] + encoder_outputs + enc_outputs
+                decoder_outputs[0],
+                init_reference_points,
+                *decoder_outputs[1:],
+                *encoder_outputs,
+                *enc_outputs,
             )
 
             return tuple_outputs
@@ -712,7 +725,7 @@ def _update_spatial_shapes(model_config, rbln_config):
     spatial_shapes = []
     backbone_config = model_config.backbone_config
     num_patched_h = num_patches(rbln_config.image_height, backbone_config.patch_size)
-    num_patched_w = num_patches(rbln_config.image_height, backbone_config.patch_size)
+    num_patched_w = num_patches(rbln_config.image_width, backbone_config.patch_size)
     for out_layer in backbone_config.out_indices:
         spatial_shapes.append(
             [down_sampled_size(num_patched_h, out_layer - 1), down_sampled_size(num_patched_w, out_layer - 1)]
@@ -907,31 +920,27 @@ class RBLNGroundingDinoEncoder(RBLNModel):
             reference_points=reference_points,
         )
 
-        if not return_dict:
-            return tuple(enc_outputs)
-
+        # The runtime returns the nested outputs of _GroundingDinoEncoder flattened, so regroup them.
         enc_outputs = list(enc_outputs)
+        num_layers = self.config.encoder_layers
         last_hidden_state_vision = enc_outputs.pop(0)
         last_hidden_state_text = enc_outputs.pop(0)
-        vision_hidden_states = (
-            tuple([enc_outputs.pop(0) for _ in range(self.config.encoder_layers + 1)])
-            if self.rbln_config.output_hidden_states
-            else None
-        )
-        text_hidden_states = (
-            tuple([enc_outputs.pop(0) for _ in range(self.config.encoder_layers + 1)])
-            if self.rbln_config.output_hidden_states
-            else None
-        )
-        attentions = tuple(enc_outputs) if self.rbln_config.output_attentions else None
+        vision_hidden_states = text_hidden_states = attentions = None
+        if self.rbln_config.output_hidden_states:
+            vision_hidden_states = tuple(enc_outputs.pop(0) for _ in range(num_layers + 1))
+            text_hidden_states = tuple(enc_outputs.pop(0) for _ in range(num_layers + 1))
+        if self.rbln_config.output_attentions:
+            # fused vision, fused text, enhanced text and deformable attentions, one per layer each
+            attentions = tuple(tuple(enc_outputs.pop(0) for _ in range(num_layers)) for _ in range(4))
 
-        return GroundingDinoEncoderOutput(
+        encoder_outputs = GroundingDinoEncoderOutput(
             last_hidden_state_vision=last_hidden_state_vision,
             last_hidden_state_text=last_hidden_state_text,
             vision_hidden_states=vision_hidden_states,
             text_hidden_states=text_hidden_states,
             attentions=attentions,
         )
+        return encoder_outputs if return_dict else encoder_outputs.to_tuple()
 
 
 class RBLNGroundingDinoDecoder(RBLNModel):
@@ -1060,9 +1069,9 @@ class RBLNGroundingDinoDecoder(RBLNModel):
         text_encoder_attention_mask: torch.Tensor,
         reference_points: torch.Tensor,
         valid_ratios: torch.Tensor,
-        output_attentions: bool = False,
-        output_hidden_states: bool = False,
-        return_dict: bool = False,
+        output_attentions: bool | None = None,
+        output_hidden_states: bool | None = None,
+        return_dict: bool | None = None,
         **kwargs,
     ):
         output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
@@ -1089,27 +1098,27 @@ class RBLNGroundingDinoDecoder(RBLNModel):
             valid_ratios=valid_ratios.to(self.rbln_config.dtype),
         )
 
-        if not return_dict:
-            return outputs
-
+        # The runtime returns the nested outputs of _GroundingDinoDecoder flattened, so regroup them.
         outputs = list(outputs)
+        num_layers = self.config.decoder_layers
         last_hidden_state = outputs.pop(0)
         intermediate_hidden_states = outputs.pop(0)
         intermediate_reference_points = outputs.pop(0)
-        hidden_states = (
-            tuple([outputs.pop(0) for _ in range(self.config.decoder_layers + 1)])
-            if self.rbln_config.output_hidden_states
-            else None
-        )
-        attentions = tuple(outputs) if self.rbln_config.output_attentions else None
+        hidden_states = attentions = None
+        if self.rbln_config.output_hidden_states:
+            hidden_states = tuple(outputs.pop(0) for _ in range(num_layers + 1))
+        if self.rbln_config.output_attentions:
+            # self, text cross and vision cross attentions, one per layer each
+            attentions = tuple(tuple(outputs.pop(0) for _ in range(num_layers)) for _ in range(3))
 
-        return GroundingDinoDecoderOutput(
+        decoder_outputs = GroundingDinoDecoderOutput(
             last_hidden_state=last_hidden_state,
             intermediate_hidden_states=intermediate_hidden_states,
             intermediate_reference_points=intermediate_reference_points,
             hidden_states=hidden_states,
             attentions=attentions,
         )
+        return decoder_outputs if return_dict else decoder_outputs.to_tuple()
 
 
 __all__ = [
