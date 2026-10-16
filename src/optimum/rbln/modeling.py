@@ -310,7 +310,7 @@ class RBLNModel(RBLNBaseModel):
                 transformers models, or sample, timestep for diffusers models).
             return_dict:
                 Whether to return outputs as a dictionary-like object or as a tuple. When `None`:
-                - For transformers models: Uses `self.config.use_return_dict` (typically `True`)
+                - For transformers models: Uses `self.config.return_dict` (typically `True`)
                 - For diffusers models: Defaults to `True`
             kwargs: Arbitrary keyword arguments containing additional model inputs and parameters,
                 matching the original HuggingFace model's interface.
@@ -329,7 +329,7 @@ class RBLNModel(RBLNBaseModel):
             - Can be used directly in HuggingFace pipelines, transformers.Trainer, and other workflows
         """
         if self.hf_library_name == "transformers":
-            return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+            return_dict = return_dict if return_dict is not None else self.config.return_dict
         else:
             return_dict = True if return_dict is None else return_dict
 
