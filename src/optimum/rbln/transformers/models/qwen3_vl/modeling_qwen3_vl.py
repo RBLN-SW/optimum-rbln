@@ -218,6 +218,9 @@ class RBLNQwen3VLVisionModel(RBLNModel):
             except Exception as e:
                 raise ValueError(
                     f"Required seq_len({image_seq_len}) is larger than available max_seq_len({self.max_seq_len.tolist()})."
+                    " max_seq_len counts vision patches before spatial merging."
+                    " Reduce the processed image/video resolution or recompile the vision encoder"
+                    " with a larger max_seq_len."
                 ) from e
 
             image_hidden, (image_cos, image_sin), attn_mask, valid_len = self._pad_hidden_states(
