@@ -209,7 +209,7 @@ class RBLNTransformerEncoder(RBLNModel):
         output = self.model[0](*(pad(a) for a in args), **{k: pad(v) for k, v in kwargs.items()})
         output = type(output)(map(unpad, output)) if isinstance(output, (tuple, list)) else unpad(output)
 
-        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+        return_dict = return_dict if return_dict is not None else self.config.return_dict
         return self._prepare_output(output, return_dict)
 
 

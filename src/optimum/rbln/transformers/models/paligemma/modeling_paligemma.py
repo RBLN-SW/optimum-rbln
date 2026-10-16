@@ -326,7 +326,7 @@ class RBLNPaliGemmaForConditionalGeneration(RBLNModel, RBLNImageIndexedBatchSort
         inputs_sorted: bool = False,
         **kwargs,
     ) -> tuple | RBLNDecoderOnlyOutput:
-        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+        return_dict = return_dict if return_dict is not None else self.config.return_dict
         self._require_sorted_batch_inputs(inputs_embeds if inputs_embeds is not None else input_ids, inputs_sorted)
         # Prefill
         if cache_position is None:
@@ -562,7 +562,7 @@ class RBLNPaliGemmaModel(RBLNModel):
         Returns:
             PaligemmaModelOutputWithPast or tuple(torch.FloatTensor)
         """
-        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+        return_dict = return_dict if return_dict is not None else self.config.return_dict
         output_hidden_states = (
             output_hidden_states if output_hidden_states is not None else self.rbln_config.output_hidden_states
         )

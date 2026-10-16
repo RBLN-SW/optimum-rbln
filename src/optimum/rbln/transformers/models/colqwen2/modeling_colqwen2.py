@@ -149,7 +149,7 @@ class RBLNColQwen2ForRetrieval(RBLNModel):
         if pixel_values is not None:
             pixel_values = pixel_values.to(dtype=self.dtype)
 
-        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+        return_dict = return_dict if return_dict is not None else self.config.return_dict
 
         # Handle the custom "pixel_values" input obtained with `ColQwen2Processor` through unpadding
         if pixel_values is not None and image_grid_thw is not None:
