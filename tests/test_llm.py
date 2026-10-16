@@ -41,6 +41,8 @@ from optimum.rbln import (
     RBLNGemma4ForCausalLMConfig,
     RBLNGPT2LMHeadModel,
     RBLNGPT2Model,
+    RBLNGraniteForCausalLM,
+    RBLNGraniteModel,
     RBLNIdefics3ForConditionalGeneration,
     RBLNLlamaForCausalLM,
     RBLNLlamaModel,
@@ -213,6 +215,18 @@ class TestMistralModel(LLMTest.TestLLMWithoutLMHead):
     RBLN_CLASS = RBLNMistralModel
     HF_MODEL_ID = "openaccess-ai-collective/tiny-mistral"
     HF_CONFIG_KWARGS = {"num_hidden_layers": 1, "max_position_embeddings": 1024, "sliding_window": 512}
+
+
+class TestGraniteForCausalLM(LLMTest.TestLLM):
+    RBLN_CLASS = RBLNGraniteForCausalLM
+    HF_MODEL_ID = "hf-internal-testing/tiny-random-GraniteForCausalLM"
+    HF_CONFIG_KWARGS = {"num_hidden_layers": 1, "max_position_embeddings": 1024}
+
+
+class TestGraniteModel(LLMTest.TestLLMWithoutLMHead):
+    RBLN_CLASS = RBLNGraniteModel
+    HF_MODEL_ID = "hf-internal-testing/tiny-random-GraniteForCausalLM"
+    HF_CONFIG_KWARGS = {"num_hidden_layers": 1, "max_position_embeddings": 1024}
 
 
 class TestQwen2ForCausalLM(LLMTest.TestLLM):
