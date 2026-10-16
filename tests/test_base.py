@@ -1,3 +1,4 @@
+import gc
 import inspect
 import os
 import random
@@ -265,6 +266,12 @@ class BaseTest:
 
         @classmethod
         def tearDownClass(cls):
+            # One process runs every class in turn, so release this class's runtimes
+            # before the next class loads its own; on the dummy device they all live
+            # in host memory and the BC llm run hit SYS_ENOMEM part-way through.
+            if "model" in cls.__dict__:
+                del cls.model
+                gc.collect()
             if os.path.exists(cls.get_rbln_local_dir()):
                 shutil.rmtree(cls.get_rbln_local_dir())
 
