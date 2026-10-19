@@ -161,7 +161,7 @@ class Qwen3_5GatedDeltaNet(nn.Module):
 
         # Laid out here rather than in the graph, where deriving it instead leaves a region of
         # gathers hanging off the weight that the host-constant materializer refuses.
-        self.register_buffer("conv_weight", self._conv_weight_for_the_ops(), persistent=False)
+        self.register_buffer("conv_weight", self._pack_conv_weight(), persistent=False)
 
         # Pre-split the fused in_proj_qkv into separate Q/K/V projections: a depthwise conv is per-channel,
         # so the channel-axis split commutes with it.
@@ -187,7 +187,7 @@ class Qwen3_5GatedDeltaNet(nn.Module):
     def phase(self, phase: str):
         self._phase = phase
 
-    def _conv_weight_for_the_ops(self) -> torch.Tensor:
+    def _pack_conv_weight(self) -> torch.Tensor:
         """`conv1d.weight` as `causal_conv1d_*` read it: `[Hk*(2+r), D / LANES, K, LANES]`.
 
         Two rearrangements. The channels are regrouped so that a Q/K head's q, k and r value heads
@@ -230,7 +230,7 @@ class Qwen3_5GatedDeltaNet(nn.Module):
 
     def _rbln_causal_conv1d(
         self,
-        hidden_states: torch.Tensor,
+        qkv: torch.Tensor,
         carried: torch.Tensor,
         conv_cache: torch.Tensor,
         slot: torch.Tensor,
@@ -240,20 +240,19 @@ class Qwen3_5GatedDeltaNet(nn.Module):
         """The short causal depthwise convolution, as one `rbln_custom_ops::causal_conv1d_*` call.
 
         The op reads `[B, Hk*(2+r), K-1+S, D]` channel last: the K-1 inputs `carried` holds, then
-        this call's S. One call covers q, k and every value head, and it writes the cache row at
-        `slot` itself, so nothing is handed back for the caller to write.
+        this call's S, which `qkv` carries in the same grouping. One call covers q, k and every
+        value head, and it writes the cache row at `slot` itself, so nothing is handed back for the
+        caller to write.
         """
-        batch_size, seq_len, _ = hidden_states.shape
+        batch_size, _, seq_len, dim = qkv.shape
         heads, ratio = self.num_k_heads, self.num_v_heads // self.num_k_heads
-        dim, k_1 = self.head_k_dim, self.conv_kernel_size - 1
-
-        new = self._project_qkv(hidden_states)
+        k_1 = self.conv_kernel_size - 1
 
         if not prefill:
             # One token per sequence: the op reads the cached inputs, shifts them and writes them
             # back, so neither they nor the ones the next step carries are ever built here.
             convolved = torch.ops.rbln_custom_ops.causal_conv1d_update(
-                new[:, :, 0].contiguous(), conv_cache, self.conv_weight, slot
+                qkv[:, :, 0].contiguous(), conv_cache, self.conv_weight, slot
             ).unsqueeze(2)
             return self._split_groups(convolved, heads, ratio, seq_len, dim)
 
@@ -263,11 +262,11 @@ class Qwen3_5GatedDeltaNet(nn.Module):
         prev = carried.reshape(batch_size, -1, k_1, dim)
         # The same sequence the op builds inside -- the carried inputs, then this call's -- laid out
         # here only to read the tail off it.
-        conv_input = torch.cat([prev, new], dim=2)
+        conv_input = torch.cat([prev, qkv], dim=2)
         position = query_position.to(torch.int).unsqueeze(0)
         tail = torch.cat([conv_input[:, :, position + i] for i in range(1, k_1 + 1)], dim=2)
         convolved = torch.ops.rbln_custom_ops.causal_conv1d_prefill(
-            new.contiguous(), conv_cache, self.conv_weight, slot, prev.contiguous(), tail.contiguous()
+            qkv.contiguous(), conv_cache, self.conv_weight, slot, prev.contiguous(), tail.contiguous()
         )
         return self._split_groups(convolved, heads, ratio, seq_len, dim)
 
@@ -297,8 +296,9 @@ class Qwen3_5GatedDeltaNet(nn.Module):
         z = self.in_proj_z(hidden_states).reshape(batch_size, seq_len, heads, ratio, dim).permute(0, 2, 3, 1, 4)
         b = self.in_proj_b(hidden_states)
         a = self.in_proj_a(hidden_states)
+        qkv = self._project_qkv(hidden_states)
         query, key, value = self._rbln_causal_conv1d(
-            hidden_states, conv_state, conv_cache, slot, prefill=prefill, query_position=query_position
+            qkv, conv_state, conv_cache, slot, prefill=prefill, query_position=query_position
         )
 
         beta = b.sigmoid()
