@@ -39,6 +39,7 @@ if TYPE_CHECKING:
     from .gemma2 import *
     from .gemma3 import *
     from .gemma4 import *
+    from .glm4 import *
     from .gpt2 import *
     from .gpt_oss import *
     from .grounding_dino import *
