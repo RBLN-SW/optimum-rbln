@@ -51,6 +51,8 @@ from optimum.rbln import (
     RBLNMistralModel,
     RBLNMixtralForCausalLM,
     RBLNMixtralForCausalLMConfig,
+    RBLNOlmo2ForCausalLM,
+    RBLNOlmo2Model,
     RBLNOPTForCausalLM,
     RBLNOPTModel,
     RBLNPegasusForConditionalGeneration,
@@ -324,6 +326,18 @@ class TestOPTModel(LLMTest.TestLLMWithoutLMHead):
     RBLN_CLASS = RBLNOPTModel
     HF_MODEL_ID = "facebook/opt-2.7b"
     HF_CONFIG_KWARGS = {"num_hidden_layers": 1, "max_position_embeddings": 2048}
+
+
+class TestOlmo2ForCausalLM(LLMTest.TestLLM):
+    RBLN_CLASS = RBLNOlmo2ForCausalLM
+    HF_MODEL_ID = "hf-internal-testing/tiny-random-Olmo2ForCausalLM"
+    HF_CONFIG_KWARGS = {"num_hidden_layers": 1, "max_position_embeddings": 1024}
+
+
+class TestOlmo2Model(LLMTest.TestLLMWithoutLMHead):
+    RBLN_CLASS = RBLNOlmo2Model
+    HF_MODEL_ID = "hf-internal-testing/tiny-random-Olmo2ForCausalLM"
+    HF_CONFIG_KWARGS = {"num_hidden_layers": 1, "max_position_embeddings": 1024}
 
 
 class TestLlamaForCausalLM(LLMTest.TestLLM):
