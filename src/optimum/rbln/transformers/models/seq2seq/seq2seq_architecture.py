@@ -21,6 +21,42 @@ from transformers.utils import logging
 logger = logging.get_logger(__name__)
 
 
+def group_self_kv_caches_by_layer(
+    self_kv_cache: list[torch.Tensor], num_layers: int
+) -> tuple[tuple[torch.Tensor, ...]]:
+    """Groups the decoder's self-attention cache inputs by layer: each layer gets `(kv_cache,)`, the one
+    `[batch_size, 2, num_heads, 1, max_seq_len, head_dim]` cache holding its key and value."""
+    if len(self_kv_cache) != num_layers:
+        raise ValueError(f"{len(self_kv_cache)} self-attention caches for {num_layers} layers.")
+    return tuple((kv_cache,) for kv_cache in self_kv_cache)
+
+
+def packed_kv_attention_decode(
+    query_states: torch.Tensor,
+    key_states: torch.Tensor,
+    value_states: torch.Tensor,
+    kv_cache: torch.Tensor,
+    attention_mask: torch.Tensor | None,
+    cache_position: torch.Tensor,
+    scale: torch.Tensor,
+    block_tables: torch.Tensor,
+) -> torch.Tensor:
+    """Decodes one token against a `[num_blocks, 2, num_heads, 1, block_size, head_dim]` self-attention cache."""
+    op_args = {
+        "q": query_states,
+        "k": key_states,
+        "v": value_states,
+        "kv_cache": kv_cache,
+        "scale": scale,
+        "seq_idx": cache_position,
+        "block_tables": block_tables,
+        "slot_mapping": scale,
+    }
+    if attention_mask is None:
+        return torch.ops.rbln_custom_ops.flash_causal_attention_naive_decode(**op_args)
+    return torch.ops.rbln_custom_ops.flash_attention_naive_decode(mask=attention_mask.unsqueeze(2), **op_args)
+
+
 class Seq2SeqWrapper:
     """A wrapper class for Seq2Seq models to support RBLN-specific optimizations.
 
@@ -173,13 +209,12 @@ class Seq2SeqDecoderWrapper(nn.Module):
             attention_mask = None
             (input_ids, encoder_attention_mask, cache_position, block_tables, *kv_cache) = args
 
-        self_past_key_values = ()
         cross_past_key_values = ()
         self_kv_cache = kv_cache[self.num_layers * 2 :]
         cross_kv_cache = kv_cache[: self.num_layers * 2]
         for i in range(0, self.num_layers * 2, 2):
-            self_past_key_values = self_past_key_values + ((self_kv_cache[i], self_kv_cache[i + 1]),)
             cross_past_key_values = cross_past_key_values + ((cross_kv_cache[i], cross_kv_cache[i + 1]),)
+        self_past_key_values = group_self_kv_caches_by_layer(self_kv_cache, self.num_layers)
 
         # decode
         lm_logits = self.conditional_generation(
@@ -461,24 +496,16 @@ class Seq2SeqSelfAttention(nn.Module):
         key_states = self._shape(key_states, -1, bsz)
         value_states = self._shape(value_states, -1, bsz)
 
-        block_size = past_key_value[0].shape[-2]
-        args = [
+        attn_output = packed_kv_attention_decode(
             query_states,
             key_states,
             value_states,
-            past_key_value[0].view(bsz, self.num_heads, 1, -1, self.head_dim),
-            past_key_value[1].view(bsz, self.num_heads, 1, -1, self.head_dim),
+            past_key_value[0],
+            attention_mask,
             cache_position,
-            torch.tensor(1.0, dtype=query_states.dtype),  # scale
+            torch.tensor(1.0, dtype=query_states.dtype),
             block_tables,
-            block_size,
-        ]
-        if attention_mask is not None:
-            args.insert(3, attention_mask.unsqueeze(2))
-        else:
-            args.append(None)
-
-        attn_output = self.attn_decode(*args)
+        )
 
         attn_output = attn_output.view(bsz, self.num_heads, -1, self.head_dim).transpose(1, 2)
         attn_output = attn_output.reshape(bsz, -1, self.num_heads * self.head_dim)

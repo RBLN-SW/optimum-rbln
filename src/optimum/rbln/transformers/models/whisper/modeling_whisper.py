@@ -332,13 +332,15 @@ class RBLNWhisperForConditionalGeneration(RBLNModel, RBLNWhisperGenerationMixin)
                     f"self_key_value_states_{i}",
                     [
                         rbln_config.kvcache_num_blocks,
+                        2,
                         model_config.decoder_attention_heads,
+                        1,
                         rbln_config.dec_max_seq_len,
                         model_config.d_model // model_config.encoder_attention_heads,
                     ],
                     rbln_config.dtype,
                 )
-                for i in range(model_config.decoder_layers * 2)
+                for i in range(model_config.decoder_layers)
             ]
         )
 

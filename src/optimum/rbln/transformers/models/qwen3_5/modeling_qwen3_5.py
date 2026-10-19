@@ -231,7 +231,8 @@ class RBLNQwen3_5TextModel(RBLNDecoderOnlyModel):
         else:
             kvcache_dtype = rbln_config.dtype
             if rbln_config.quantization and rbln_config.quantization.kv_caches == "fp8":
-                kvcache_dtype = "float8_e4m3fn"
+                # fp8 KV caches are uint8 containers; the attention op is told their fp8 type.
+                kvcache_dtype = "uint8"
 
             # conv/recurrent caches are one shared static tensor, so sized to the max batch (not batch_size=1 for
             # prefill). Prefill writes its own slot (batch_idx); decode runs the full batch.
@@ -252,18 +253,16 @@ class RBLNQwen3_5TextModel(RBLNDecoderOnlyModel):
                         )
                     )
                 else:
-                    for slot in range(2):
-                        name = f"past_key_values_{layer_idx * 2 + slot}"
-                        cache_metas.append(
-                            FullAttentionKVCacheMeta.from_config(
-                                name,
-                                layer_idx,
-                                num_key_value_heads,
-                                head_dim,
-                                RBLNCompileConfig.normalize_dtype(kvcache_dtype),
-                                rbln_config,
-                            )
+                    cache_metas.append(
+                        FullAttentionKVCacheMeta.from_config(
+                            f"past_key_values_{layer_idx}",
+                            layer_idx,
+                            num_key_value_heads,
+                            head_dim,
+                            RBLNCompileConfig.normalize_dtype(kvcache_dtype),
+                            rbln_config,
                         )
+                    )
             input_info.extend([(meta.name, meta.compile_shape, meta.dtype) for meta in cache_metas])
             rbln_config.cache_metas.extend(cache_metas)
 

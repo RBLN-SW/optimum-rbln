@@ -302,20 +302,9 @@ class RBLNModelForSeq2SeqLM(RBLNModel, GenerationMixin, ABC):
                 for i in range(n_layer * 2)
             ]
         )
+        self_kv_cache_shape = [rbln_config.batch_size, 2, n_head, 1, rbln_config.dec_max_seq_len, d_kv]
         dec_input_info.extend(
-            [
-                (
-                    f"self_key_value_states_{i}",
-                    [
-                        rbln_config.batch_size,
-                        n_head,
-                        rbln_config.dec_max_seq_len,
-                        d_kv,
-                    ],
-                    rbln_config.dtype,
-                )
-                for i in range(n_layer * 2)
-            ]
+            [(f"self_key_value_states_{i}", self_kv_cache_shape, rbln_config.dtype) for i in range(n_layer)]
         )
 
         if rbln_config.use_attention_mask:

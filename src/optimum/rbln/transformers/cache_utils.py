@@ -31,7 +31,7 @@ class CacheMeta(RBLNSerializableConfigProtocol):
     polymorphic hierarchy. Concrete subclasses distinguish the cache algorithm:
 
         CacheMeta
-        ├─ KVCacheMeta                # paged KV: [num_blocks, ..., block_size, head_dim]
+        ├─ KVCacheMeta                # paged KV: [num_blocks, 2, num_heads, 1, block_size, head_dim]
         │   ├─ FullAttentionKVCacheMeta      # resizable when is_auto (grown after compile)
         │   └─ SlidingWindowAttentionKVCacheMeta      # fixed-size window
         └─ LinearAttentionCacheMeta   # conv/recurrent state; raw model-computed shape, never resized
@@ -112,9 +112,11 @@ class CacheMeta(RBLNSerializableConfigProtocol):
 
 @dataclass
 class KVCacheMeta(CacheMeta):
-    """Paged KV cache, either one of a layer's key and value caches,
-    ``shape == [num_blocks, num_heads, block_size, head_dim]``, or both of them in one tensor,
+    """Paged KV cache holding a layer's key and value in one tensor,
     ``shape == [num_blocks, 2, num_heads, 1, block_size, head_dim]``.
+
+    Artifacts compiled before the two were merged carry one meta per key and per value cache,
+    ``shape == [num_blocks, num_heads, block_size, head_dim]``; the block axes read the same.
     """
 
     @property
@@ -157,7 +159,6 @@ class FullAttentionKVCacheMeta(KVCacheMeta):
         head_dim: int,
         dtype: str,
         rbln_config: "RBLNDecoderOnlyModelForCausalLMConfig",
-        holds_key_and_value: bool = False,
     ) -> "FullAttentionKVCacheMeta":
         block_size = rbln_config.kvcache_block_size
         if block_size is None:
@@ -167,10 +168,7 @@ class FullAttentionKVCacheMeta(KVCacheMeta):
         else:
             num_blocks, is_auto = rbln_config.kvcache_num_blocks, False
         validated_num_blocks = cls._validate_num_blocks(num_blocks)
-        if holds_key_and_value:
-            shape = [validated_num_blocks, 2, num_key_value_heads, 1, block_size, head_dim]
-        else:
-            shape = [validated_num_blocks, num_key_value_heads, block_size, head_dim]
+        shape = [validated_num_blocks, 2, num_key_value_heads, 1, block_size, head_dim]
         return cls(name=name, layer_index=layer_index, shape=shape, dtype=dtype, is_auto=is_auto)
 
 
@@ -198,7 +196,7 @@ class SlidingWindowAttentionKVCacheMeta(KVCacheMeta):
         return cls(
             name=name,
             layer_index=layer_index,
-            shape=[validated_num_blocks, num_key_value_heads, block_size, head_dim],
+            shape=[validated_num_blocks, 2, num_key_value_heads, 1, block_size, head_dim],
             dtype=dtype,
         )
 

@@ -349,21 +349,6 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
         return is_prefill and (use_local_attention or logits_to_keep == 1)
 
     @classmethod
-    def use_packed_kv_cache(cls, rbln_config: RBLNDecoderOnlyModelForCausalLMConfig) -> bool:
-        """Whether each layer keeps its key and value in one `[num_blocks, 2, ...]` cache.
-
-        Only the flash causal attention ops read that cache, so a configuration that needs another
-        attention op keeps a separate key and value cache per layer.
-        """
-        return (
-            rbln_config.attn_impl == "flash_attn"
-            and rbln_config.cache_impl == "static"
-            and not rbln_config.use_attention_mask
-            and not rbln_config.use_image_prefill
-            and not (rbln_config.quantization and rbln_config.quantization.kv_caches == "fp8")
-        )
-
-    @classmethod
     def get_input_info(
         cls,
         batch_size: int,
@@ -426,36 +411,26 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
             head_dim = getattr(model_config, "head_dim", None) or hidden_size // num_attention_heads
             kvcache_dtype = rbln_config.dtype
             if rbln_config.quantization and rbln_config.quantization.kv_caches == "fp8":
-                kvcache_dtype = "float8_e4m3fn"
+                # fp8 KV caches are uint8 containers; the attention op is told their fp8 type.
+                kvcache_dtype = "uint8"
 
             kvcache_dtype = RBLNCompileConfig.normalize_dtype(kvcache_dtype)
             cache_metas = []
-            if cls.use_packed_kv_cache(rbln_config):
-                for layer_idx in range(num_hidden_layers):
-                    cache_metas.append(
-                        FullAttentionKVCacheMeta.from_config(
-                            f"past_key_values_{layer_idx}",
-                            layer_idx,
-                            num_key_value_heads,
-                            head_dim,
-                            kvcache_dtype,
-                            rbln_config,
-                            holds_key_and_value=True,
-                        )
+            for layer_idx in range(num_hidden_layers):
+                if rbln_config.sliding_window is not None and layer_idx in rbln_config.sliding_window_layers:
+                    meta_cls = SlidingWindowAttentionKVCacheMeta
+                else:
+                    meta_cls = FullAttentionKVCacheMeta
+                cache_metas.append(
+                    meta_cls.from_config(
+                        f"past_key_values_{layer_idx}",
+                        layer_idx,
+                        num_key_value_heads,
+                        head_dim,
+                        kvcache_dtype,
+                        rbln_config,
                     )
-            else:
-                for i in range(num_hidden_layers * 2):
-                    layer_idx = i // 2
-                    name = f"past_key_values_{i}"
-                    if rbln_config.sliding_window is not None and layer_idx in rbln_config.sliding_window_layers:
-                        cache_meta = SlidingWindowAttentionKVCacheMeta.from_config(
-                            name, layer_idx, num_key_value_heads, head_dim, kvcache_dtype, rbln_config
-                        )
-                    else:
-                        cache_meta = FullAttentionKVCacheMeta.from_config(
-                            name, layer_idx, num_key_value_heads, head_dim, kvcache_dtype, rbln_config
-                        )
-                    cache_metas.append(cache_meta)
+                )
 
             input_info.extend(
                 (cache_meta.name, cache_meta.compile_shape, cache_meta.dtype) for cache_meta in cache_metas

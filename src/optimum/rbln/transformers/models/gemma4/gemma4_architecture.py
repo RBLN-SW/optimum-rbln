@@ -31,6 +31,7 @@ from ..decoderonly.decoderonly_architecture import (
     RotaryEmbedding,
     build_image_prefill_swa_custom_op_args,
     group_kv_caches_by_layer,
+    layer_kv_cache,
     slice_and_unsqueeze_cos_sin,
 )
 
@@ -429,7 +430,7 @@ class Gemma4TextAttention(DecoderOnlyAttention):
             key_states,
             value_states,
             attention_mask,
-            kv_cache=past_key_values[self.layer_idx],
+            kv_cache=layer_kv_cache(past_key_values, self.layer_idx),
             seq_position=seq_positions,
             scale=self.scale,
             block_tables=block_tables,

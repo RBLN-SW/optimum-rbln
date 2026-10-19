@@ -558,17 +558,15 @@ class RBLNGemma4ForCausalLM(RBLNMoeLoadMixin, RBLNDecoderOnlyModelForCausalLM):
             head_dim = layer_config.head_dim
 
             meta_cls = SlidingWindowAttentionKVCacheMeta if is_sliding else FullAttentionKVCacheMeta
-            for kv_offset, _ in enumerate(("key", "value")):
-                name = f"past_key_values_{layer_idx * 2 + kv_offset}"
-                meta = meta_cls.from_config(
-                    name=name,
-                    layer_index=layer_idx,
-                    num_key_value_heads=num_kv,
-                    head_dim=head_dim,
-                    dtype=dtype_str,
-                    rbln_config=rbln_config,
-                )
-                rbln_config.cache_metas.append(meta)
+            meta = meta_cls.from_config(
+                name=f"past_key_values_{layer_idx}",
+                layer_index=layer_idx,
+                num_key_value_heads=num_kv,
+                head_dim=head_dim,
+                dtype=dtype_str,
+                rbln_config=rbln_config,
+            )
+            rbln_config.cache_metas.append(meta)
 
     @classmethod
     def _update_submodule_config(

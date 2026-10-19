@@ -27,6 +27,8 @@ from ..decoderonly.decoderonly_architecture import (
     DecoderOnlyWrapper,
     RotaryEmbedding,
     apply_rotary_pos_emb_partial,
+    group_kv_caches_by_layer,
+    layer_kv_cache,
     rotate_half,
     slice_and_unsqueeze_cos_sin,
 )
@@ -544,7 +546,7 @@ class Qwen3_5Attention(DecoderOnlyAttention):
             key_states,
             value_states,
             attention_mask,
-            kv_cache=past_key_values[self.layer_idx],
+            kv_cache=layer_kv_cache(past_key_values, self.layer_idx),
             seq_position=seq_positions,
             scale=self.scale,
             block_tables=block_tables,
@@ -754,7 +756,7 @@ class Qwen3_5_CausalLMWrapper(DecoderOnlyWrapper):
         return new_model
 
     def _split_layer_states(self, pairs):
-        # Split a per-layer list of pairs by layer type: full_attention -> past_key_values (key, value),
+        # Split the per-layer states by layer type: full_attention -> past_key_values (kv_cache,),
         # linear_attention -> past_states (conv_state, recurrent_state).
         linear = {i for i, t in enumerate(self.config.layer_types) if t == "linear_attention"}
         past_key_values = [pair if i not in linear else None for i, pair in enumerate(pairs)]
@@ -779,11 +781,11 @@ class Qwen3_5_CausalLMWrapper(DecoderOnlyWrapper):
             attention_mask,
             position_ids,
             lora_int_id,
-            pairs,  # base groups the trailing flat per-layer states into (a, b) pairs
+            pairs,  # base groups the trailing flat states by the layer each belongs to
             rotary_emb,
         ) = super().prepare_forward_args(*args)
 
-        # full_attention -> past_key_values (key, value); linear_attention -> past_states (conv, recurrent).
+        # full_attention -> past_key_values (kv_cache,); linear_attention -> past_states (conv, recurrent).
         past_key_values, past_states = self._split_layer_states(pairs)
         return (
             input_ids,
@@ -886,11 +888,8 @@ class Qwen3_5_LanguageModelWrapper(Qwen3_5_CausalLMWrapper):
         attention_mask = args.pop(0) if self.rbln_config.use_attention_mask else None
         lora_int_id = args.pop(0) if self.rbln_config.lora_config else None
 
-        # full_attention -> past_key_values (key, value); linear_attention -> past_states (conv, recurrent).
-        state_args = args
-        if len(state_args) != 2 * self.num_hidden_layers:
-            raise ValueError(f"Different states to model's config. {len(state_args)} != {2 * self.num_hidden_layers}")
-        pairs = [[state_args[i * 2], state_args[i * 2 + 1]] for i in range(self.num_hidden_layers)]
+        # full_attention -> past_key_values (kv_cache,); linear_attention -> past_states (conv, recurrent).
+        pairs = group_kv_caches_by_layer(args, self.rbln_config, self.num_hidden_layers)
         past_key_values, past_states = self._split_layer_states(pairs)
 
         return (

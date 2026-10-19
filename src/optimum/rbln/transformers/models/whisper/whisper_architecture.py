@@ -18,6 +18,8 @@ from torch import nn
 from transformers.modeling_outputs import BaseModelOutput, Seq2SeqLMOutput
 from transformers.utils import logging
 
+from ..seq2seq.seq2seq_architecture import group_self_kv_caches_by_layer, packed_kv_attention_decode
+
 
 logger = logging.get_logger(__name__)
 
@@ -123,11 +125,10 @@ class WhisperDecoderWrapper(torch.nn.Module):
             (decoder_input_ids, cache_position, block_tables, cross_kv_cache, *self_kv_cache) = args
 
         # prepare past_key_values
-        self_past_key_values = ()
         cross_past_key_values = ()
         for i in range(0, self.num_layers * 2, 2):
-            self_past_key_values = self_past_key_values + ((self_kv_cache[i], self_kv_cache[i + 1]),)
             cross_past_key_values = cross_past_key_values + ((cross_kv_cache[i], cross_kv_cache[i + 1]),)
+        self_past_key_values = group_self_kv_caches_by_layer(self_kv_cache, self.num_layers)
 
         # Decode
         sequence_output, cross_attentions = self.decoder(
@@ -291,26 +292,16 @@ class WhisperSelfAttention(WhisperAttention):
 
         key_states = self._shape(self.k_proj(hidden_states), -1, bsz)
         value_states = self._shape(self.v_proj(hidden_states), -1, bsz)
-        block_size = past_key_value[0].shape[-2]
-        num_blocks = past_key_value[0].shape[0]
-        args = {
-            "q": query_states,
-            "k": key_states,
-            "v": value_states,
-            "kcache": past_key_value[0].view(num_blocks, self.num_heads, 1, -1, self.head_dim),
-            "vcache": past_key_value[1].view(num_blocks, self.num_heads, 1, -1, self.head_dim),
-            "seq": cache_position.expand(bsz, 1),
-            "scale": torch.tensor(1.0, dtype=query_states.dtype),
-            "block_table": block_tables,
-            "block_size": block_size,
-        }
-
-        if attention_mask is not None:
-            args["mask"] = attention_mask.unsqueeze(2)
-            attn_output = torch.ops.rbln_custom_ops.paged_attn_decode(**args)
-        else:
-            args["mask"] = None
-            attn_output = torch.ops.rbln_custom_ops.paged_causal_attn_decode(**args)
+        attn_output = packed_kv_attention_decode(
+            query_states,
+            key_states,
+            value_states,
+            past_key_value[0],
+            attention_mask,
+            cache_position.expand(bsz, 1),
+            torch.tensor(1.0, dtype=query_states.dtype),
+            block_tables,
+        )
 
         attn_output = attn_output.view(bsz, self.num_heads, tgt_len, self.head_dim)
         attn_output = attn_output.transpose(1, 2)
