@@ -27,8 +27,6 @@ from ..decoderonly.decoderonly_architecture import (
     DecoderOnlyWrapper,
     RotaryEmbedding,
     apply_rotary_pos_emb_partial,
-    group_kv_caches_by_layer,
-    layer_kv_cache,
     rotate_half,
     slice_and_unsqueeze_cos_sin,
 )
@@ -508,7 +506,7 @@ class Qwen3_5Attention(DecoderOnlyAttention):
         hidden_states: torch.Tensor,
         attention_mask: torch.Tensor,
         seq_positions: torch.LongTensor,
-        past_key_values: tuple[tuple[torch.Tensor]],
+        past_key_values: list[torch.Tensor | None],
         cos: torch.Tensor | None = None,
         sin: torch.Tensor | None = None,
         block_tables: torch.Tensor | None = None,
@@ -546,7 +544,7 @@ class Qwen3_5Attention(DecoderOnlyAttention):
             key_states,
             value_states,
             attention_mask,
-            kv_cache=layer_kv_cache(past_key_values, self.layer_idx),
+            kv_cache=past_key_values[self.layer_idx],
             seq_position=seq_positions,
             scale=self.scale,
             block_tables=block_tables,
@@ -577,7 +575,7 @@ class Qwen3_5Model(DecoderOnlyModel):
         cache_position: torch.Tensor | None = None,
         position_ids: torch.Tensor | None = None,
         query_position: torch.Tensor | None = None,
-        past_key_values: tuple[tuple[torch.Tensor]] | None = None,
+        past_key_values: list[torch.Tensor | None] | None = None,
         past_states: tuple[tuple[torch.Tensor]] | None = None,
         rotary_emb: nn.Module | None = None,
         global_block_tables: torch.Tensor | None = None,
@@ -670,7 +668,7 @@ class Qwen3_5ForCausalLM(DecoderOnlyForCausalLM):
         cache_position: torch.Tensor | None = None,
         position_ids: torch.Tensor | None = None,
         query_position: torch.Tensor | None = None,
-        past_key_values: tuple[tuple[torch.Tensor]] | None = None,
+        past_key_values: list[torch.Tensor | None] | None = None,
         past_states: tuple[tuple[torch.Tensor]] | None = None,
         rotary_emb: nn.Module | None = None,
         global_block_tables: torch.Tensor | None = None,
@@ -755,12 +753,17 @@ class Qwen3_5_CausalLMWrapper(DecoderOnlyWrapper):
             return self.get_rbln_causal_lm_class()(model, new_model)
         return new_model
 
-    def _split_layer_states(self, pairs):
-        # Split the per-layer states by layer type: full_attention -> past_key_values (kv_cache,),
-        # linear_attention -> past_states (conv_state, recurrent_state).
-        linear = {i for i, t in enumerate(self.config.layer_types) if t == "linear_attention"}
-        past_key_values = [pair if i not in linear else None for i, pair in enumerate(pairs)]
-        past_states = [pair if i in linear else None for i, pair in enumerate(pairs)]
+    def _split_layer_states(self, states):
+        # A full_attention layer has one kv_cache, a linear_attention layer (conv_state, recurrent_state).
+        states = iter(states)
+        past_key_values, past_states = [], []
+        for layer_type in self.config.layer_types:
+            if layer_type == "linear_attention":
+                past_key_values.append(None)
+                past_states.append((next(states), next(states)))
+            else:
+                past_key_values.append(next(states))
+                past_states.append(None)
         return past_key_values, past_states
 
     def prepare_forward_args(self, *args):
@@ -781,12 +784,11 @@ class Qwen3_5_CausalLMWrapper(DecoderOnlyWrapper):
             attention_mask,
             position_ids,
             lora_int_id,
-            pairs,  # base groups the trailing flat states by the layer each belongs to
+            states,  # base passes the trailing flat states through ungrouped
             rotary_emb,
         ) = super().prepare_forward_args(*args)
 
-        # full_attention -> past_key_values (kv_cache,); linear_attention -> past_states (conv, recurrent).
-        past_key_values, past_states = self._split_layer_states(pairs)
+        past_key_values, past_states = self._split_layer_states(states)
         return (
             input_ids,
             inputs_embeds,
@@ -888,9 +890,7 @@ class Qwen3_5_LanguageModelWrapper(Qwen3_5_CausalLMWrapper):
         attention_mask = args.pop(0) if self.rbln_config.use_attention_mask else None
         lora_int_id = args.pop(0) if self.rbln_config.lora_config else None
 
-        # full_attention -> past_key_values (kv_cache,); linear_attention -> past_states (conv, recurrent).
-        pairs = group_kv_caches_by_layer(args, self.rbln_config, self.num_hidden_layers)
-        past_key_values, past_states = self._split_layer_states(pairs)
+        past_key_values, past_states = self._split_layer_states(args)
 
         return (
             input_ids,

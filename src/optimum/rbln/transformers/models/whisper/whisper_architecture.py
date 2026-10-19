@@ -18,7 +18,7 @@ from torch import nn
 from transformers.modeling_outputs import BaseModelOutput, Seq2SeqLMOutput
 from transformers.utils import logging
 
-from ..seq2seq.seq2seq_architecture import group_self_kv_caches_by_layer, packed_kv_attention_decode
+from ..seq2seq.seq2seq_architecture import packed_kv_attention_decode
 
 
 logger = logging.get_logger(__name__)
@@ -128,14 +128,13 @@ class WhisperDecoderWrapper(torch.nn.Module):
         cross_past_key_values = ()
         for i in range(0, self.num_layers * 2, 2):
             cross_past_key_values = cross_past_key_values + ((cross_kv_cache[i], cross_kv_cache[i + 1]),)
-        self_past_key_values = group_self_kv_caches_by_layer(self_kv_cache, self.num_layers)
 
         # Decode
         sequence_output, cross_attentions = self.decoder(
             input_ids=decoder_input_ids,
             attention_mask=decoder_attention_mask,
             cache_position=cache_position,
-            self_past_key_values=self_past_key_values,
+            self_past_key_values=self_kv_cache,
             cross_past_key_values=cross_past_key_values,
             block_tables=block_tables,
         )
@@ -222,7 +221,7 @@ class WhisperDecoderLayer(nn.Module):
         self,
         hidden_states: torch.Tensor,
         attention_mask: torch.Tensor | None = None,
-        self_past_key_value: tuple[torch.Tensor] | None = None,
+        self_past_key_value: torch.Tensor | None = None,
         cross_past_key_value: tuple[torch.Tensor] | None = None,
         cache_position: torch.Tensor | None = None,
         block_tables: torch.Tensor | None = None,
@@ -281,7 +280,7 @@ class WhisperSelfAttention(WhisperAttention):
     def forward(
         self,
         hidden_states: torch.Tensor,
-        past_key_value: tuple[torch.Tensor] | None = None,
+        past_key_value: torch.Tensor | None = None,
         attention_mask: torch.Tensor | None = None,
         cache_position: torch.Tensor | None = None,
         block_tables: torch.Tensor | None = None,
@@ -296,7 +295,7 @@ class WhisperSelfAttention(WhisperAttention):
             query_states,
             key_states,
             value_states,
-            past_key_value[0],
+            past_key_value,
             attention_mask,
             cache_position.expand(bsz, 1),
             torch.tensor(1.0, dtype=query_states.dtype),

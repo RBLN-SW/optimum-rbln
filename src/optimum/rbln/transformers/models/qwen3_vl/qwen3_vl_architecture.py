@@ -23,7 +23,6 @@ from ..decoderonly.decoderonly_architecture import (
     DecoderOnlyForCausalLM,
     DecoderOnlyModel,
     DecoderOnlyWrapper,
-    group_kv_caches_by_layer,
     rotate_half,
     slice_and_unsqueeze_cos_sin,
 )
@@ -238,7 +237,7 @@ class Qwen3VL_LanguageModelWrapper(DecoderOnlyWrapper):
             visual_pos_mask = None
             deepstack_visual_embeds = None
 
-        past_key_values = group_kv_caches_by_layer(args, self.rbln_config, self.num_hidden_layers)
+        past_key_values = args
 
         return (
             input_ids,

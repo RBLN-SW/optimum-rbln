@@ -26,7 +26,6 @@ from ..seq2seq.seq2seq_architecture import (
     Seq2SeqEncoderWrapper,
     Seq2SeqForConditionalGeneration,
     Seq2SeqSelfAttention,
-    group_self_kv_caches_by_layer,
 )
 
 
@@ -134,14 +133,13 @@ class T5DecoderWrapper(Seq2SeqDecoderWrapper):
 
         for i in range(0, self.num_layers * 2, 2):
             cross_past_key_values = cross_past_key_values + ((cross_kv_cache[i], cross_kv_cache[i + 1]),)
-        self_past_key_values = group_self_kv_caches_by_layer(self_kv_cache, self.num_layers)
 
         # decode
         lm_logits = self.conditional_generation(
             input_ids=input_ids,
             attention_mask=attention_mask,
             encoder_attention_mask=encoder_attention_mask,
-            self_past_key_values=self_past_key_values,
+            self_past_key_values=self_kv_cache,
             cross_past_key_values=cross_past_key_values,
             cache_position=cache_position,
             block_tables=block_tables,
@@ -235,7 +233,7 @@ class T5LayerSelfAttention(Seq2SeqSelfAttention):
     def forward(
         self,
         hidden_states: torch.Tensor,
-        past_key_value: tuple[torch.Tensor],
+        past_key_value: torch.Tensor,
         attention_mask: torch.Tensor,
         cache_position: torch.Tensor,
         block_tables: torch.Tensor,
@@ -253,7 +251,7 @@ class T5LayerSelfAttention(Seq2SeqSelfAttention):
             query_states,
             key_states,
             value_states,
-            past_key_value[0],
+            past_key_value,
             # Unsqueeze group axis since CustomKernel expects it for group query attention
             attention_mask.unsqueeze(2),
             cache_position,

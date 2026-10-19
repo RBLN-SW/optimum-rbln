@@ -4,7 +4,6 @@ from transformers import PreTrainedModel
 
 from ..decoderonly.decoderonly_architecture import (
     DecoderOnlyWrapper,
-    group_kv_caches_by_layer,
     rotate_half,
 )
 from .configuration_qwen2_vl import RBLNQwen2VisionTransformerPretrainedModelConfig
@@ -134,7 +133,7 @@ class Qwen2VL_LanguageModelWrapper(DecoderOnlyWrapper):
         position_ids = None
         attention_mask = args.pop(0) if self.rbln_config.use_attention_mask else None
         lora_int_id = args.pop(0) if self.rbln_config.lora_config else None
-        past_key_values = group_kv_caches_by_layer(args, self.rbln_config, self.num_hidden_layers)
+        past_key_values = args
 
         return (
             input_ids,

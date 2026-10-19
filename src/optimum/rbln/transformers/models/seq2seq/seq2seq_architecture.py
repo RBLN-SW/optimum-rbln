@@ -21,16 +21,6 @@ from transformers.utils import logging
 logger = logging.get_logger(__name__)
 
 
-def group_self_kv_caches_by_layer(
-    self_kv_cache: list[torch.Tensor], num_layers: int
-) -> tuple[tuple[torch.Tensor, ...]]:
-    """Groups the decoder's self-attention cache inputs by layer: each layer gets `(kv_cache,)`, the one
-    `[batch_size, 2, num_heads, 1, max_seq_len, head_dim]` cache holding its key and value."""
-    if len(self_kv_cache) != num_layers:
-        raise ValueError(f"{len(self_kv_cache)} self-attention caches for {num_layers} layers.")
-    return tuple((kv_cache,) for kv_cache in self_kv_cache)
-
-
 def packed_kv_attention_decode(
     query_states: torch.Tensor,
     key_states: torch.Tensor,
@@ -214,14 +204,13 @@ class Seq2SeqDecoderWrapper(nn.Module):
         cross_kv_cache = kv_cache[: self.num_layers * 2]
         for i in range(0, self.num_layers * 2, 2):
             cross_past_key_values = cross_past_key_values + ((cross_kv_cache[i], cross_kv_cache[i + 1]),)
-        self_past_key_values = group_self_kv_caches_by_layer(self_kv_cache, self.num_layers)
 
         # decode
         lm_logits = self.conditional_generation(
             input_ids=input_ids,
             attention_mask=attention_mask,
             encoder_attention_mask=encoder_attention_mask,
-            self_past_key_values=self_past_key_values,
+            self_past_key_values=self_kv_cache,
             cross_past_key_values=cross_past_key_values,
             cache_position=cache_position,
             block_tables=block_tables,
@@ -413,7 +402,7 @@ class Seq2SeqDecoderLayer(torch.nn.Module):
         hidden_states: torch.Tensor,
         attention_mask: torch.Tensor,
         encoder_attention_mask: torch.Tensor,
-        self_past_key_value: tuple[torch.Tensor],
+        self_past_key_value: torch.Tensor,
         cross_past_key_value: tuple[torch.Tensor],
         cache_position: torch.Tensor,
         block_tables: torch.Tensor | None = None,
@@ -484,7 +473,7 @@ class Seq2SeqSelfAttention(nn.Module):
     def forward(
         self,
         hidden_states: torch.Tensor,
-        past_key_value: tuple[torch.Tensor],
+        past_key_value: torch.Tensor,
         attention_mask: torch.Tensor,
         cache_position: torch.Tensor,
         block_tables: torch.Tensor | None = None,
@@ -500,7 +489,7 @@ class Seq2SeqSelfAttention(nn.Module):
             query_states,
             key_states,
             value_states,
-            past_key_value[0],
+            past_key_value,
             attention_mask,
             cache_position,
             torch.tensor(1.0, dtype=query_states.dtype),

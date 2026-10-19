@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import math
-from collections.abc import Sequence
 from typing import TYPE_CHECKING, Optional
 
 import torch
@@ -31,23 +30,6 @@ if TYPE_CHECKING:
 
 
 logger = logging.get_logger(__name__)
-
-
-def group_kv_caches_by_layer(
-    caches: list[torch.Tensor], rbln_config: "RBLNDecoderOnlyModelConfig", num_hidden_layers: int
-) -> list[tuple[torch.Tensor, ...]]:
-    """Groups the flat cache inputs by the layer `rbln_config.cache_metas` assigns each of them to.
-
-    An attention layer gets `(kv_cache,)`, the one cache holding its key and value.
-    """
-    if len(caches) != len(rbln_config.cache_metas):
-        raise ValueError(
-            f"Different past_key_values to model's config. {len(caches)} != {len(rbln_config.cache_metas)}"
-        )
-    layers = [[] for _ in range(num_hidden_layers)]
-    for cache, cache_meta in zip(caches, rbln_config.cache_metas, strict=True):
-        layers[cache_meta.layer_index].append(cache)
-    return [tuple(layer) for layer in layers]
 
 
 class DecoderOnlyWrapper(nn.Module):
@@ -173,7 +155,7 @@ class DecoderOnlyWrapper(nn.Module):
         attention_mask = args.pop(0) if self.rbln_config.use_attention_mask else None
         position_ids = args.pop(0) if self.rbln_config.use_position_ids else None
         lora_int_id = args.pop(0) if self.rbln_config.lora_config else None
-        past_key_values = group_kv_caches_by_layer(args, self.rbln_config, self.num_hidden_layers)
+        past_key_values = args
 
         if hasattr(self, "rotary_emb_global") and hasattr(self, "rotary_emb_local"):
             rotary_emb = (self.rotary_emb_global, self.rotary_emb_local)
@@ -275,7 +257,7 @@ class DecoderOnlyForCausalLM(nn.Module):
         cache_position: torch.Tensor | None = None,
         position_ids: torch.Tensor | None = None,
         query_position: torch.Tensor | None = None,
-        past_key_values: tuple[tuple[torch.Tensor]] | None = None,
+        past_key_values: list[torch.Tensor] | None = None,
         rotary_emb: nn.Module | None = None,
         global_block_tables: torch.Tensor | None = None,
         local_block_tables: torch.Tensor | None = None,
@@ -467,7 +449,7 @@ class DecoderOnlyModel(nn.Module):
         cache_position: torch.Tensor | None = None,
         position_ids: torch.Tensor | None = None,
         query_position: torch.Tensor | None = None,
-        past_key_values: tuple[tuple[torch.Tensor]] | None = None,
+        past_key_values: list[torch.Tensor] | None = None,
         rotary_emb: nn.Module | torch.Tensor | None = None,
         global_block_tables: torch.Tensor | None = None,
         local_block_tables: torch.Tensor | None = None,
@@ -666,7 +648,7 @@ class DecoderOnlyLayer(nn.Module):
         hidden_states: torch.Tensor,
         attention_mask: torch.Tensor,
         seq_positions: torch.LongTensor,
-        past_key_values: tuple[tuple[torch.Tensor]],
+        past_key_values: list[torch.Tensor],
         cos: torch.Tensor | None = None,
         sin: torch.Tensor | None = None,
         block_tables: torch.Tensor | None = None,
@@ -863,7 +845,7 @@ class DecoderOnlyAttention(nn.Module):
         hidden_states: torch.Tensor,
         attention_mask: torch.Tensor,
         seq_positions: torch.LongTensor,
-        past_key_values: tuple[tuple[torch.Tensor]],
+        past_key_values: list[torch.Tensor],
         cos: torch.Tensor | None = None,
         sin: torch.Tensor | None = None,
         block_tables: torch.Tensor | None = None,
@@ -895,7 +877,7 @@ class DecoderOnlyAttention(nn.Module):
             key_states,
             value_states,
             attention_mask,
-            kv_cache=layer_kv_cache(past_key_values, self.layer_idx),
+            kv_cache=past_key_values[self.layer_idx],
             seq_position=seq_positions,
             scale=self.scale,
             block_tables=block_tables,
@@ -1261,11 +1243,6 @@ def apply_rotary_pos_emb_partial(query_states, key_states, cos, sin, ndim) -> tu
     query_states = torch.cat((query_rot, query_pass), dim=-1)
     key_states = torch.cat((key_rot, key_pass), dim=-1)
     return query_states, key_states
-
-
-def layer_kv_cache(past_key_values: Sequence[tuple[torch.Tensor, ...]], layer_idx: int) -> torch.Tensor:
-    (kv_cache,) = past_key_values[layer_idx]
-    return kv_cache
 
 
 def _get_attr_from_candidates(

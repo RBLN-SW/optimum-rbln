@@ -6,16 +6,13 @@ import torch
 from optimum.rbln.transformers.cache_utils import (
     CacheMeta,
     FullAttentionKVCacheMeta,
-    LinearAttentionCacheMeta,
     SlidingWindowAttentionKVCacheMeta,
 )
 from optimum.rbln.transformers.models.decoderonly.decoderonly_architecture import (
     AttentionOp,
     SlidingWindowAttentionOp,
-    group_kv_caches_by_layer,
-    layer_kv_cache,
 )
-from optimum.rbln.transformers.models.seq2seq.seq2seq_architecture import group_self_kv_caches_by_layer
+from optimum.rbln.transformers.models.qwen3_5.qwen3_5_architecture import Qwen3_5_CausalLMWrapper
 
 
 def _cache_config(**overrides):
@@ -70,23 +67,16 @@ def test_serialized_separate_cache_meta_keeps_its_geometry():
     assert (meta.num_blocks, meta.block_size, meta.compile_shape) == (8, 1024, [8, 4, 1024, 64])
 
 
-def test_group_kv_caches_by_layer():
-    metas = [
-        FullAttentionKVCacheMeta.from_config("past_key_values_0", 0, 4, 64, "float16", _cache_config()),
-        LinearAttentionCacheMeta.from_config("conv_state_1", 1, shape=[2, 3, 64], dtype="float16"),
-        LinearAttentionCacheMeta.from_config("recurrent_state_1", 1, shape=[2, 64, 64], dtype="float16"),
-        SlidingWindowAttentionKVCacheMeta.from_config("past_key_values_2", 2, 4, 64, "float16", _cache_config()),
-    ]
-    caches = [torch.full((1,), index) for index in range(len(metas))]
+def test_qwen3_5_splits_flat_states_by_layer_type():
+    layer_types = ["full_attention", "linear_attention", "full_attention"]
+    wrapper = SimpleNamespace(config=SimpleNamespace(layer_types=layer_types))
+    states = [torch.full((1,), index) for index in range(4)]
 
-    grouped = group_kv_caches_by_layer(caches, SimpleNamespace(cache_metas=metas), 3)
+    past_key_values, past_states = Qwen3_5_CausalLMWrapper._split_layer_states(wrapper, states)
 
-    assert [[int(cache) for cache in layer] for layer in grouped] == [[0], [1, 2], [3]]
-    assert int(layer_kv_cache(grouped, 2)) == 3
-    with pytest.raises(ValueError):
-        layer_kv_cache(grouped, 1)
-    with pytest.raises(ValueError):
-        group_kv_caches_by_layer(caches[:-1], SimpleNamespace(cache_metas=metas), 3)
+    assert [None if cache is None else int(cache) for cache in past_key_values] == [0, None, 3]
+    assert past_states[0] is None and past_states[2] is None
+    assert [int(state) for state in past_states[1]] == [1, 2]
 
 
 @pytest.mark.parametrize(
@@ -126,13 +116,3 @@ def test_sliding_window_attention_op_name():
     assert op.get_attn_op_name() == "sliding_window_attention_naive_prefill"
     op.phase = "decode"
     assert op.get_attn_op_name() == "sliding_window_attention_naive_decode"
-
-
-def test_group_self_kv_caches_by_layer():
-    caches = [torch.full((1,), index) for index in range(3)]
-
-    grouped = group_self_kv_caches_by_layer(caches, 3)
-
-    assert [[int(cache) for cache in layer] for layer in grouped] == [[0], [1], [2]]
-    with pytest.raises(ValueError):
-        group_self_kv_caches_by_layer(caches * 2, 3)

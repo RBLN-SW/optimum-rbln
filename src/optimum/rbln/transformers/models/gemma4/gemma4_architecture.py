@@ -30,8 +30,6 @@ from ..decoderonly.decoderonly_architecture import (
     DecoderOnlyWrapper,
     RotaryEmbedding,
     build_image_prefill_swa_custom_op_args,
-    group_kv_caches_by_layer,
-    layer_kv_cache,
     slice_and_unsqueeze_cos_sin,
 )
 
@@ -88,7 +86,7 @@ class Gemma4ForCausalLMWrapper(DecoderOnlyWrapper):
         attention_mask = args.pop(0) if self.rbln_config.use_attention_mask else None
         position_ids = args.pop(0) if self.rbln_config.use_position_ids else None
         lora_int_id = args.pop(0) if self.rbln_config.lora_config else None
-        past_key_values = group_kv_caches_by_layer(args, self.rbln_config, self.num_hidden_layers)
+        past_key_values = args
 
         rotary_emb = (self.rotary_emb_global, self.rotary_emb_local)
 
@@ -197,7 +195,7 @@ class Gemma4TextModel(DecoderOnlyModel):
         cache_position: torch.Tensor | None = None,
         position_ids: torch.Tensor | None = None,
         query_position: torch.Tensor | None = None,
-        past_key_values: tuple[tuple[torch.Tensor]] | None = None,
+        past_key_values: list[torch.Tensor] | None = None,
         rotary_emb: torch.nn.Module | None = None,
         global_block_tables: torch.Tensor | None = None,
         local_block_tables: torch.Tensor | None = None,
@@ -293,7 +291,7 @@ class Gemma4DecoderLayer(DecoderOnlyLayer):
         hidden_states: torch.Tensor,
         attention_mask: torch.Tensor,
         seq_positions: torch.LongTensor | tuple[torch.LongTensor],
-        past_key_values: tuple[tuple[torch.Tensor]],
+        past_key_values: list[torch.Tensor],
         cos: torch.Tensor | None = None,
         sin: torch.Tensor | None = None,
         block_tables: torch.Tensor | None = None,
@@ -394,7 +392,7 @@ class Gemma4TextAttention(DecoderOnlyAttention):
         hidden_states: torch.Tensor,
         attention_mask: torch.Tensor,
         seq_positions: torch.LongTensor,
-        past_key_values: tuple[tuple[torch.Tensor]],
+        past_key_values: list[torch.Tensor],
         cos: torch.Tensor | None = None,
         sin: torch.Tensor | None = None,
         block_tables: torch.Tensor | None = None,
@@ -430,7 +428,7 @@ class Gemma4TextAttention(DecoderOnlyAttention):
             key_states,
             value_states,
             attention_mask,
-            kv_cache=layer_kv_cache(past_key_values, self.layer_idx),
+            kv_cache=past_key_values[self.layer_idx],
             seq_position=seq_positions,
             scale=self.scale,
             block_tables=block_tables,
@@ -458,7 +456,7 @@ class Gemma4ForCausalLM(DecoderOnlyForCausalLM):
         cache_position: torch.Tensor | None = None,
         position_ids: torch.Tensor | None = None,
         query_position: torch.Tensor | None = None,
-        past_key_values: tuple[tuple[torch.Tensor]] | None = None,
+        past_key_values: list[torch.Tensor] | None = None,
         rotary_emb: nn.Module | None = None,
         global_block_tables: torch.Tensor | None = None,
         local_block_tables: torch.Tensor | None = None,
