@@ -31,14 +31,6 @@ from ..decoderonly.decoderonly_architecture import (
 )
 
 
-def _pack_taps(taps: torch.Tensor) -> torch.Tensor:
-    """Conv taps `[Hk*(2+r), D, K]` -> the weight operand `causal_conv1d_*` take; `rebel` owns that layout."""
-    # Imported here, not at module scope: only a compiler that ships the conv ops has it.
-    from rebel.ops.torch_custom_ops.causal_conv1d import pack_taps
-
-    return pack_taps(taps)
-
-
 def apply_rotary_pos_emb_vision(q, k, cos, sin):
     # Mirrors HF `apply_rotary_pos_emb_vision`: rotate in fp32 and round once.
     orig_q_dtype, orig_k_dtype = q.dtype, k.dtype
@@ -136,9 +128,9 @@ class Qwen3_5GatedDeltaNet(nn.Module):
 
     The delta rule runs as one ``rbln_custom_ops::gdn_prefill`` / ``gdn_decode`` op, which updates its rows
     of the recurrent cache in place like paged attention's KV cache. Everything around it keeps the Q/K head
-    axis outermost so tensor parallelism can shard by it: the depthwise conv becomes K per-channel taps over
-    a channel-last window, and the conv cache is stored as ``(B, Hk*(2+r)*(K-1), Dk)`` (Q, K and the r value
-    heads of each Q/K head together).
+    axis outermost so tensor parallelism can shard by it: the depthwise conv reads its inputs channel
+    last, and the conv cache is stored as ``(B, Hk*(2+r), K-1, Dk)`` (Q, K and the r value heads of
+    each Q/K head together).
 
     PREFILL takes 128-token chunks and DECODE one token; both hand the same recurrent cache rows on, so a
     chunk-prefill flows into recurrent decode without a reshape.
@@ -167,12 +159,9 @@ class Qwen3_5GatedDeltaNet(nn.Module):
         if self.conv1d.bias is not None:
             raise ValueError("rbln_custom_ops::causal_conv1d_* take no bias; this checkpoint's conv1d has one")
 
-        # The taps as the ops want them, grouped here rather than in the graph. A graph that derives them
-        # from conv1d.weight instead carries a region of gathers, and the host-constant materializer
-        # refuses that region.
-        self.register_buffer(
-            "conv_taps", _pack_taps(self._by_group(self.conv1d.weight[:, 0].detach())), persistent=False
-        )
+        # Laid out here rather than in the graph, where deriving it instead leaves a region of
+        # gathers hanging off the weight that the host-constant materializer refuses.
+        self.register_buffer("conv_weight", self._conv_weight_for_the_ops(), persistent=False)
 
         # Pre-split the fused in_proj_qkv into separate Q/K/V projections: a depthwise conv is per-channel,
         # so the channel-axis split commutes with it.
@@ -198,12 +187,25 @@ class Qwen3_5GatedDeltaNet(nn.Module):
     def phase(self, phase: str):
         self._phase = phase
 
-    def _by_group(self, channels: torch.Tensor) -> torch.Tensor:
-        """Conv channels `[conv_dim, ...]` -> `[Hk*(2+r), D, ...]`: Q, K and the r value heads of each Q/K head."""
+    def _conv_weight_for_the_ops(self) -> torch.Tensor:
+        """`conv1d.weight` as `causal_conv1d_*` read it: `[Hk*(2+r), D / LANES, K, LANES]`.
+
+        Two rearrangements. The channels are regrouped so that a Q/K head's q, k and r value heads
+        sit side by side, which is the order the conv ops and the conv cache use. Then a
+        channel's K coefficients are blocked by the device's lane width, which `rebel` owns.
+
+        `conv1d.weight` is `[conv_dim, 1, K]`, the middle axis being 1 for a conv with one group
+        per channel.
+        """
+        # Imported here, not at module scope: only a compiler that ships the conv ops has it.
+        from rebel.ops.torch_custom_ops.causal_conv1d import pack_weight
+
         heads, ratio = self.num_k_heads, self.num_v_heads // self.num_k_heads
+        channels = self.conv1d.weight[:, 0].detach()
         q_part, k_part, v_part = channels.split((self.key_dim, self.key_dim, self.value_dim))
         parts = (q_part.reshape(heads, 1, -1), k_part.reshape(heads, 1, -1), v_part.reshape(heads, ratio, -1))
-        return torch.cat(parts, dim=1).reshape(heads * (2 + ratio), self.head_k_dim, *channels.shape[1:])
+        grouped = torch.cat(parts, dim=1).reshape(heads * (2 + ratio), self.head_k_dim, channels.shape[1])
+        return pack_weight(grouped)
 
     @staticmethod
     def _split_groups(convolved, heads, ratio, seq_len, dim):
@@ -211,7 +213,22 @@ class Qwen3_5GatedDeltaNet(nn.Module):
         grouped = convolved.reshape(convolved.shape[0], heads, 2 + ratio, seq_len, dim)
         return grouped[:, :, 0], grouped[:, :, 1], grouped[:, :, 2:]
 
-    def _short_conv(
+    def _project_qkv(self, hidden_states: torch.Tensor) -> torch.Tensor:
+        """Q, K and the r value heads of each Q/K head, side by side: `[B, Hk*(2+r), S, D]`.
+
+        The head axis stays outermost so tensor parallelism can shard by it: a Q/K head's q, k and r
+        value heads are one run of 2 + r rows, and every cut falls on a head boundary. The conv ops
+        and the conv cache use this same order.
+        """
+        batch_size, seq_len, _ = hidden_states.shape
+        heads, ratio, dim = self.num_k_heads, self.num_v_heads // self.num_k_heads, self.head_k_dim
+        q_in = self.in_proj_q(hidden_states).reshape(batch_size, seq_len, heads, dim).transpose(1, 2)
+        k_in = self.in_proj_k(hidden_states).reshape(batch_size, seq_len, heads, dim).transpose(1, 2)
+        v_in = self.in_proj_v(hidden_states).reshape(batch_size, seq_len, heads, ratio, dim).permute(0, 2, 3, 1, 4)
+        units = torch.cat([q_in.unsqueeze(2), k_in.unsqueeze(2), v_in], dim=2)
+        return units.reshape(batch_size, heads * (2 + ratio), seq_len, dim)
+
+    def _rbln_causal_conv1d(
         self,
         hidden_states: torch.Tensor,
         carried: torch.Tensor,
@@ -222,39 +239,35 @@ class Qwen3_5GatedDeltaNet(nn.Module):
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """The short causal depthwise convolution, as one `rbln_custom_ops::causal_conv1d_*` call.
 
-        Q, K and the r value heads of each Q/K head share one channel-last window `[B, Hk*(2+r), K-1+S, D]`:
-        the K-1 inputs `carried` holds, then this call's S inputs. One op covers all of them, and the Q/K
-        head stays outermost so tensor parallelism can shard by it.
-
-        The op writes the cache row at `slot` itself, so nothing is handed back for the caller to write.
+        The op reads `[B, Hk*(2+r), K-1+S, D]` channel last: the K-1 inputs `carried` holds, then
+        this call's S. One call covers q, k and every value head, and it writes the cache row at
+        `slot` itself, so nothing is handed back for the caller to write.
         """
         batch_size, seq_len, _ = hidden_states.shape
         heads, ratio = self.num_k_heads, self.num_v_heads // self.num_k_heads
         dim, k_1 = self.head_k_dim, self.conv_kernel_size - 1
-        groups = heads * (2 + ratio)
 
-        q_in = self.in_proj_q(hidden_states).reshape(batch_size, seq_len, heads, dim).transpose(1, 2)
-        k_in = self.in_proj_k(hidden_states).reshape(batch_size, seq_len, heads, dim).transpose(1, 2)
-        v_in = self.in_proj_v(hidden_states).reshape(batch_size, seq_len, heads, ratio, dim).permute(0, 2, 3, 1, 4)
-        new = torch.cat([q_in.unsqueeze(2), k_in.unsqueeze(2), v_in], dim=2).reshape(batch_size, groups, seq_len, dim)
+        new = self._project_qkv(hidden_states)
 
         if not prefill:
-            # One token per sequence: the op reads the cached window, shifts it and writes it back, so
-            # neither the window nor the inputs the next step carries is ever built here.
+            # One token per sequence: the op reads the cached inputs, shifts them and writes them
+            # back, so neither they nor the ones the next step carries are ever built here.
             convolved = torch.ops.rbln_custom_ops.causal_conv1d_update(
-                new[:, :, 0].contiguous(), conv_cache, self.conv_taps, slot
+                new[:, :, 0].contiguous(), conv_cache, self.conv_weight, slot
             ).unsqueeze(2)
             return self._split_groups(convolved, heads, ratio, seq_len, dim)
 
         # A right-padded chunk ends at query_position, so that is where the K-1 inputs the next call
         # carries end. The op is handed them rather than slicing them out: that slice starts at a runtime
         # position, and a kernel cannot slice at one.
-        prev = carried.reshape(batch_size, groups, k_1, dim)
-        window = torch.cat([prev, new], dim=2)
+        prev = carried.reshape(batch_size, -1, k_1, dim)
+        # The same sequence the op builds inside -- the carried inputs, then this call's -- laid out
+        # here only to read the tail off it.
+        conv_input = torch.cat([prev, new], dim=2)
         position = query_position.to(torch.int).unsqueeze(0)
-        tail = torch.cat([window[:, :, position + i] for i in range(1, k_1 + 1)], dim=2)
+        tail = torch.cat([conv_input[:, :, position + i] for i in range(1, k_1 + 1)], dim=2)
         convolved = torch.ops.rbln_custom_ops.causal_conv1d_prefill(
-            new.contiguous(), conv_cache, self.conv_taps, slot, prev.contiguous(), tail.contiguous()
+            new.contiguous(), conv_cache, self.conv_weight, slot, prev.contiguous(), tail.contiguous()
         )
         return self._split_groups(convolved, heads, ratio, seq_len, dim)
 
@@ -271,8 +284,8 @@ class Qwen3_5GatedDeltaNet(nn.Module):
     ) -> torch.Tensor:
         prefill = "prefill" in self._phase and valid_mask is not None
         slot = torch.tensor(0, dtype=torch.int16) if slot is None else slot
-        # One value per cache row gates both caches: the conv op is handed a window already zeroed, and
-        # the core op takes the same value as `has_initial_state`.
+        # One value per cache row gates both caches: the conv op is handed inputs already zeroed,
+        # and the core op takes the same value as `has_initial_state`.
         if prefill and state_mask is not None:
             conv_state = conv_state * state_mask.reshape(-1, 1, 1, 1)
         carry = state_mask if prefill else None
@@ -284,7 +297,7 @@ class Qwen3_5GatedDeltaNet(nn.Module):
         z = self.in_proj_z(hidden_states).reshape(batch_size, seq_len, heads, ratio, dim).permute(0, 2, 3, 1, 4)
         b = self.in_proj_b(hidden_states)
         a = self.in_proj_a(hidden_states)
-        query, key, value = self._short_conv(
+        query, key, value = self._rbln_causal_conv1d(
             hidden_states, conv_state, conv_cache, slot, prefill=prefill, query_position=query_position
         )
 

@@ -321,12 +321,12 @@ class RBLNQwen3_5TextModel(RBLNDecoderOnlyModel):
             input_info.extend([(meta.name, meta.compile_shape, meta.dtype) for meta in cache_metas])
             rbln_config.cache_metas.extend(cache_metas)
 
-        # Prefill-only inputs: the GatedDeltaNet reads them when it carries a window, and a decode step
-        # carries none, so declaring them there would leave inputs nothing consumes.
+        # Prefill-only inputs: the GatedDeltaNet reads them when it carries earlier inputs, and a
+        # decode step carries none, so declaring them there would leave inputs nothing consumes.
         if linear_layers and is_prefill:
             # One 0/1 value per cache row: zeros on window 0 (fresh sequence, discard the stale cache), ones
-            # after (carry). It gates both caches -- `gdn_prefill` takes it as `has_initial_state` and the conv
-            # window broadcasts it -- so the two can never disagree.
+            # after (carry). It gates both caches -- `gdn_prefill` takes it as `has_initial_state`
+            # and the conv op is handed inputs it has zeroed -- so the two can never disagree.
             input_info.append(("state_mask", [batch_size], rbln_config.dtype))
             # per-token validity (1=real, 0=right-padding); host-built, GatedDeltaNet uses it to drop padding.
             input_info.append(("valid_mask", [batch_size, query_length, 1], rbln_config.dtype))
