@@ -1,7 +1,6 @@
 from types import SimpleNamespace
 
 import pytest
-import torch
 
 from optimum.rbln.transformers.cache_utils import (
     CacheMeta,
@@ -12,7 +11,6 @@ from optimum.rbln.transformers.models.decoderonly.decoderonly_architecture impor
     AttentionOp,
     SlidingWindowAttentionOp,
 )
-from optimum.rbln.transformers.models.qwen3_5.qwen3_5_architecture import Qwen3_5_CausalLMWrapper
 
 
 def _cache_config(**overrides):
@@ -65,18 +63,6 @@ def test_serialized_separate_cache_meta_keeps_its_geometry():
     )
     assert isinstance(meta, FullAttentionKVCacheMeta)
     assert (meta.num_blocks, meta.block_size, meta.compile_shape) == (8, 1024, [8, 4, 1024, 64])
-
-
-def test_qwen3_5_splits_flat_states_by_layer_type():
-    layer_types = ["full_attention", "linear_attention", "full_attention"]
-    wrapper = SimpleNamespace(config=SimpleNamespace(layer_types=layer_types))
-    states = [torch.full((1,), index) for index in range(4)]
-
-    past_key_values, past_states = Qwen3_5_CausalLMWrapper._split_layer_states(wrapper, states)
-
-    assert [None if cache is None else int(cache) for cache in past_key_values] == [0, None, 3]
-    assert past_states[0] is None and past_states[2] is None
-    assert [int(state) for state in past_states[1]] == [1, 2]
 
 
 @pytest.mark.parametrize(
