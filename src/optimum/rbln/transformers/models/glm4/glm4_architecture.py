@@ -42,11 +42,14 @@ class Glm4Wrapper(DecoderOnlyWrapper):
         return Glm4Attention
 
     def get_rbln_layer_class(self):
-        return Glm4Layer
+        return Glm4DecoderLayer
 
 
 class Glm4Attention(DecoderOnlyAttention):
     def __post_init__(self, self_attn):
+        # The q/k rows are permuted below, which the LoRA deltas would not follow.
+        if self.lora_config:
+            raise NotImplementedError("LoRA is not supported for GLM-4 yet.")
         super().__post_init__(self_attn)
         rotary_factor = getattr(self.config, "rope_parameters", {}).get("partial_rotary_factor", 1.0)
         self.rotary_ndims = int(self.head_dim * rotary_factor)
@@ -73,7 +76,7 @@ class Glm4SplitMLP(nn.Module):
         return self.down_proj(self.act_fn(self.gate_proj(hidden_states)) * self.up_proj(hidden_states))
 
 
-class Glm4Layer(DecoderOnlyLayer):
+class Glm4DecoderLayer(DecoderOnlyLayer):
     _PRE_ATTN_LAYERNORM = ["input_layernorm"]
     _POST_ATTN_LAYERNORM = ["post_attention_layernorm"]
 
