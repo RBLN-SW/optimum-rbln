@@ -22,12 +22,13 @@ class Olmo2Wrapper(DecoderOnlyWrapper):
         return Olmo2Attention
 
     def get_rbln_layer_class(self):
-        return Olmo2Layer
+        return Olmo2DecoderLayer
 
 
 class Olmo2Attention(DecoderOnlyAttention):
     def __post_init__(self, self_attn):
         super().__post_init__(self_attn)
+        # OLMo-2 normalizes q/k over all heads, so the norm has to run here, before the head reshape.
         self.full_q_norm = self_attn.q_norm
         self.full_k_norm = self_attn.k_norm
 
@@ -43,12 +44,12 @@ class Olmo2Attention(DecoderOnlyAttention):
         dtype = query_states.dtype
         stacked = torch.stack([query_states, key_states]).float()
         stacked = stacked * torch.rsqrt(stacked.pow(2).mean(-1, keepdim=True) + self.full_q_norm.variance_epsilon)
-        query_states = self.full_q_norm.weight * stacked[0].to(dtype)
-        key_states = self.full_k_norm.weight * stacked[1].to(dtype)
+        query_states = (self.full_q_norm.weight * stacked[0]).to(dtype)
+        key_states = (self.full_k_norm.weight * stacked[1]).to(dtype)
         return query_states, key_states, value_states
 
 
-class Olmo2Layer(DecoderOnlyLayer):
+class Olmo2DecoderLayer(DecoderOnlyLayer):
     _PRE_ATTN_LAYERNORM = None
     _POST_ATTN_LAYERNORM = ["post_attention_layernorm"]
     _POST_FF_LAYERNORM_ATTRS = ["post_feedforward_layernorm"]
