@@ -28,7 +28,7 @@ class GraniteWrapper(DecoderOnlyWrapper):
         return GraniteAttention
 
     def get_rbln_layer_class(self):
-        return GraniteLayer
+        return GraniteDecoderLayer
 
     def get_rbln_model_class(self):
         return GraniteModel
@@ -42,7 +42,7 @@ class GraniteAttention(DecoderOnlyAttention):
         return self_attn.scaling
 
 
-class GraniteLayer(DecoderOnlyLayer):
+class GraniteDecoderLayer(DecoderOnlyLayer):
     def __init__(self, layer, self_attn, lora_config=None):
         super().__init__(layer, self_attn, lora_config=lora_config)
         self.residual_multiplier = layer.residual_multiplier
