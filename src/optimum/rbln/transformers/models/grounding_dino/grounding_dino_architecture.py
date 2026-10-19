@@ -229,8 +229,8 @@ class _GroundingDinoDecoder(torch.nn.Module):
             text_encoder_attention_mask = text_encoder_attention_mask.repeat(
                 1, self.config.decoder_attention_heads, self.config.num_queries, 1
             )
-            text_encoder_attention_mask = text_encoder_attention_mask
-            text_encoder_attention_mask = text_encoder_attention_mask * torch.finfo(torch.float16).min
+            dtype = text_encoder_hidden_states.dtype
+            text_encoder_attention_mask = text_encoder_attention_mask.to(dtype) * torch.finfo(dtype).min
 
         for idx, decoder_layer in enumerate(self.layers):
             num_coordinates = reference_points.shape[-1]
@@ -243,7 +243,7 @@ class _GroundingDinoDecoder(torch.nn.Module):
             else:
                 raise ValueError("Last dim of reference_points must be 2 or 4, but got {reference_points.shape[-1]}")
             _query_pos = get_sine_pos_embed(reference_points_input[:, :, 0, :], num_pos_feats=self.config.d_model // 2)
-            query_pos = self.reference_points_head(_query_pos)
+            query_pos = self.reference_points_head(_query_pos.to(hidden_states.dtype))
 
             # In original implementation they apply layer norm before outputting intermediate hidden states
             # Though that's not through between layers so the layers use as input the output of the previous layer
@@ -428,7 +428,9 @@ class _GroundingDinoMultiscaleDeformableAttention(torch.nn.Module):
         # batch_size, num_queries, n_heads, n_levels, n_points, 2
         num_coordinates = reference_points.shape[-1]
         if num_coordinates == 2:
-            offset_normalizer = 0.5 * torch.stack([spatial_shapes[..., 1], spatial_shapes[..., 0]], -1)
+            offset_normalizer = 0.5 * torch.stack([spatial_shapes[..., 1], spatial_shapes[..., 0]], -1).to(
+                sampling_offsets.dtype
+            )
             sampling_grids = (
                 2 * reference_points[:, :, None, :, None, :]
                 - 1
@@ -525,7 +527,7 @@ class _GroundingDinoBiMultiHeadAttention(torch.nn.Module):
         if text_attention_mask is not None:
             text_attention_mask = text_attention_mask[:, None, None, :].repeat(1, self.num_heads, 1, 1).flatten(0, 1)
             # RBLN FIX: bool tensor to float tensor
-            mask = text_attention_mask * torch.finfo(torch.float16).min
+            mask = text_attention_mask * torch.finfo(attn_weights.dtype).min
             attn_weights = attn_weights + mask
 
         vision_attn_weights = attn_weights.softmax(dim=-1)

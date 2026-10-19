@@ -35,6 +35,7 @@ from ....configuration_utils import RBLNCompileConfig
 from ....modeling import RBLNModel
 from ....modeling_rope_utils import build_qwen_mrope_lookup, np_cos, np_sin, qwen_vit_rot_pos_ids
 from ....utils import logging
+from ....utils.deprecation import deprecate_method
 from ...cache_utils import FullAttentionKVCacheMeta, LinearAttentionCacheMeta
 from ...modeling_outputs import RBLNDecoderOnlyOutput, _validate_output_hidden_states
 from ...utils.multimodal_batch_sort import RBLNQwenVLBatchSortMixin
@@ -392,7 +393,7 @@ class RBLNQwen3_5VisionModel(RBLNModel):
         for max_seq_len in rbln_config.max_seq_len:
             input_info = [
                 ("hidden_states", [max_seq_len, hidden_size], rbln_config.dtype),
-                ("attn_mask", [batch_size, 1, max_seq_len, max_seq_len], rbln_config.dtype),
+                ("attn_mask", [batch_size, 1, 1, max_seq_len], rbln_config.dtype),
                 # cos/sin enter the device at fp32 and are cast to the device dtype inside the vision model
                 ("cos", [batch_size, 1, max_seq_len, head_dim], torch.float32),
                 ("sin", [batch_size, 1, max_seq_len, head_dim], torch.float32),
@@ -420,8 +421,24 @@ class RBLNQwen3_5VisionModel(RBLNModel):
         )
         return (self.pos_embed(interp_indices) * interp_weights[:, :, None]).sum(1)
 
-    @staticmethod
+    # TODO(0.13.0): remove this method with the legacy mask. Every artifact then declares one query row.
+    def _declared_mask_rows(self, max_seq_len: int) -> int:
+        """How many query rows the `max_seq_len` bucket declares: one from the key-padding mask onward,
+        `max_seq_len` for an artifact compiled before it.
+
+        Matched by bucket size, not position: the config sorts `max_seq_len` descending while `forward`
+        searches it ascending.
+        """
+        compile_cfg = self.rbln_config.compile_cfgs[0]
+        buckets = compile_cfg.input_info if compile_cfg.is_multiple_input_info else [compile_cfg.input_info]
+        for input_info in buckets:
+            for name, shape, _ in input_info:
+                if name == "attn_mask" and shape[-1] == max_seq_len:
+                    return shape[-2]
+        raise ValueError(f"No compiled vision bucket takes max_seq_len {max_seq_len}.")
+
     def _pad_hidden_states(
+        self,
         hidden_states: torch.Tensor,
         position_embeddings: tuple[torch.Tensor, torch.Tensor],
         max_seq_len: int,
@@ -440,12 +457,38 @@ class RBLNQwen3_5VisionModel(RBLNModel):
             sin = torch.cat([sin, pos_padding], dim=0)
             position_embeddings = (cos, sin)
 
-        attn_mask = torch.ones(1, 1, max_seq_len, max_seq_len, dtype=hidden_states.dtype)
+        # TODO(0.13.0): `mask_rows` is always 1 once the legacy mask is gone. Remove the lookup and the
+        # branch, and keep `torch.ones(1, 1, 1, max_seq_len)` with the key-padding fill.
+        mask_rows = self._declared_mask_rows(max_seq_len)
+        attn_mask = torch.ones(1, 1, mask_rows, max_seq_len, dtype=hidden_states.dtype)
         if valid_len < max_seq_len:
-            attn_mask[:, :, valid_len:, :] = 0
-            attn_mask[:, :, :, valid_len:] = 0
+            if mask_rows > 1:
+                self._mask_padded_keys_and_queries(attn_mask, valid_len)
+            else:
+                self._mask_padded_keys(attn_mask, valid_len)
 
         return hidden_states, position_embeddings, attn_mask, valid_len
+
+    # TODO(0.13.0): this is the only fill left once the legacy mask is gone, so it can move back into
+    # `_pad_hidden_states`.
+    @staticmethod
+    def _mask_padded_keys(attn_mask: torch.Tensor, valid_len: int) -> None:
+        """Mask the padded keys, in place. Every query row then attends to the valid keys only."""
+        attn_mask[:, :, :, valid_len:] = 0
+
+    @staticmethod
+    @deprecate_method(
+        version="0.13.0",
+        additional_message=(
+            "It fills the [S, S] attention mask of a vision encoder compiled before the key-padding mask. "
+            "That artifact keeps working; recompile it to stop using this path."
+        ),
+    )
+    def _mask_padded_keys_and_queries(attn_mask: torch.Tensor, valid_len: int) -> None:
+        """Mask the padded keys and the padded query rows, in place, as an artifact compiled before the
+        key-padding mask expects."""
+        attn_mask[:, :, :, valid_len:] = 0
+        attn_mask[:, :, valid_len:, :] = 0
 
     def forward(self, hidden_states: torch.Tensor, grid_thw: torch.Tensor) -> torch.Tensor:
         hidden_states = self.patch_embed(hidden_states).to(self.rbln_config.dtype)
@@ -674,7 +717,7 @@ class RBLNQwen3_5Model(RBLNDecoderOnlyModel):
         output_hidden_states: bool | None = None,
         **kwargs,
     ) -> RBLNDecoderOnlyOutput:
-        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+        return_dict = return_dict if return_dict is not None else self.config.return_dict
         output_hidden_states = _validate_output_hidden_states(output_hidden_states, self.rbln_config)
         if attention_mask is None:
             attention_mask = torch.ones_like(input_ids)
@@ -862,7 +905,7 @@ class RBLNQwen3_5ForConditionalGeneration(RBLNQwenVLBatchSortMixin, RBLNQwen3_5M
         inputs_sorted: bool = False,
         **kwargs,
     ) -> RBLNDecoderOnlyOutput:
-        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+        return_dict = return_dict if return_dict is not None else self.config.return_dict
         self._require_sorted_batch_inputs(input_ids if input_ids is not None else inputs_embeds, inputs_sorted)
         output_hidden_states = _validate_output_hidden_states(output_hidden_states, self.rbln_config)
         text_config = self.config.get_text_config()

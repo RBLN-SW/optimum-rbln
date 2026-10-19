@@ -86,7 +86,7 @@ class RBLNResNetModel(RBLNModel):
         return rbln_config
 
     def forward(self, pixel_values, return_dict: bool | None = None, **kwargs):
-        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+        return_dict = return_dict if return_dict is not None else self.config.return_dict
 
         # self.model is a list of rebel.Runtime objects
         # See https://docs.rbln.ai/software/api/python/python_api.html#rebel.rebel_runtime.Runtime for more details

@@ -1,3 +1,4 @@
+import gc
 import inspect
 import os
 import random
@@ -238,7 +239,7 @@ class BaseTest:
                     compiled_model_path = os.path.join(REUSE_ARTIFACTS_PATH, cls.get_rbln_local_dir())
                     if os.path.exists(compiled_model_path):
                         with ContextRblnConfig(device=DUMMY_DEVICE_CODE):
-                            cls.model = cls.RBLN_CLASS.from_pretrained(compiled_model_path)
+                            cls.model = cls.RBLN_CLASS.from_pretrained(compiled_model_path, **cls.HF_CONFIG_KWARGS)
                 # Check cls.__dict__, not hasattr: hasattr also finds a parent test class's
                 # already-loaded model, silently running this class against a model compiled
                 # with the parent's (possibly incompatible) rbln_config.
@@ -265,6 +266,12 @@ class BaseTest:
 
         @classmethod
         def tearDownClass(cls):
+            # One process runs every class in turn, so release this class's runtimes
+            # before the next class loads its own; on the dummy device they all live
+            # in host memory and the BC llm run hit SYS_ENOMEM part-way through.
+            if "model" in cls.__dict__:
+                del cls.model
+                gc.collect()
             if os.path.exists(cls.get_rbln_local_dir()):
                 shutil.rmtree(cls.get_rbln_local_dir())
 
