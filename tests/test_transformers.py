@@ -624,8 +624,9 @@ class TestTimeSeriesTransformerForPrediction(BaseTest.TestModel):
             original_output_distribution = self.model._origin_model.output_distribution
 
             def patched_output_distribution(self, params, loc=None, scale=None, trailing_n=None):
-                # The dummy device leaves whatever the buffer held, so make df and scale positive.
-                params = [p.abs() + 1e-6 for p in params]
+                # The dummy device leaves whatever the buffer held (zeros, stale data, NaN bit
+                # patterns), so make df, loc and scale finite and positive.
+                params = [torch.nan_to_num(p, nan=0.0, posinf=0.0, neginf=0.0).abs() + 1e-6 for p in params]
                 return original_output_distribution(params, loc=loc, scale=scale, trailing_n=trailing_n)
 
             self.model._origin_model.output_distribution = patched_output_distribution.__get__(
