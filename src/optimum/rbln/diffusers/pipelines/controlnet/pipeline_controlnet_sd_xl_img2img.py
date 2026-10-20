@@ -322,12 +322,10 @@ class RBLNStableDiffusionXLControlNetImg2ImgPipeline(RBLNDiffusionMixin, StableD
             prompt_2 (`str` or `list[str]`, *optional*):
                 The prompt or prompts to be sent to the `tokenizer_2` and `text_encoder_2`. If not defined, `prompt` is
                 used in both text-encoders
-            image (`torch.FloatTensor`, `PIL.Image.Image`, `np.ndarray`, `list[torch.FloatTensor]`, `list[PIL.Image.Image]`, `list[np.ndarray]`,:
-                    `list[list[torch.FloatTensor]]`, `list[list[np.ndarray]]` or `list[list[PIL.Image.Image]]`):
+            image (`torch.FloatTensor`, `PIL.Image.Image`, `np.ndarray`, `list[torch.FloatTensor]`, `list[PIL.Image.Image]`, `list[np.ndarray]`, `list[list[torch.FloatTensor]]`, `list[list[np.ndarray]]` or `list[list[PIL.Image.Image]]`):
                 The initial image will be used as the starting point for the image generation process. Can also accept
                 image latents as `image`, if passing latents directly, it will not be encoded again.
-            control_image (`torch.FloatTensor`, `PIL.Image.Image`, `np.ndarray`, `list[torch.FloatTensor]`, `list[PIL.Image.Image]`, `list[np.ndarray]`,:
-                    `list[list[torch.FloatTensor]]`, `list[list[np.ndarray]]` or `list[list[PIL.Image.Image]]`):
+            control_image (`torch.FloatTensor`, `PIL.Image.Image`, `np.ndarray`, `list[torch.FloatTensor]`, `list[PIL.Image.Image]`, `list[np.ndarray]`, `list[list[torch.FloatTensor]]`, `list[list[np.ndarray]]` or `list[list[PIL.Image.Image]]`):
                 The ControlNet input condition. ControlNet uses this input condition to generate guidance to Unet. If
                 the type is specified as `Torch.FloatTensor`, it is passed to ControlNet as is. `PIL.Image.Image` can
                 also be accepted as an image. The dimensions of the output image defaults to `image`'s dimensions. If
@@ -351,7 +349,7 @@ class RBLNStableDiffusionXLControlNetImg2ImgPipeline(RBLNDiffusionMixin, StableD
             num_inference_steps (`int`, *optional*, defaults to 50):
                 The number of denoising steps. More denoising steps usually lead to a higher quality image at the
                 expense of slower inference.
-            guidance_scale (`float`, *optional*, defaults to 7.5):
+            guidance_scale (`float`, *optional*, defaults to 5.0):
                 Guidance scale as defined in [Classifier-Free Diffusion Guidance](https://arxiv.org/abs/2207.12598).
                 `guidance_scale` is defined as `w` of equation 2. of [Imagen
                 Paper](https://arxiv.org/pdf/2205.11487.pdf). Guidance scale is enabled by setting `guidance_scale >

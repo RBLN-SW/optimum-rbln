@@ -1,3 +1,4 @@
+import gc
 import inspect
 import os
 import random
@@ -45,6 +46,45 @@ def test_bare_pretrained_config_resolves_model_class():
 
     rbln_cls = RBLNAutoModelForCausalLM.get_rbln_cls("dummy/mistral", export=True, config=bare_config)
     assert rbln_cls is RBLNMistralForCausalLM
+
+
+def _save_config_with_stale_remote_code(path):
+    # A model type transformers implements, with an `auto_map` pointing at remote code that no longer imports
+    # (like Phi-4-mini's modeling_phi3.py, which imports the removed `transformers.utils.LossKwargs`).
+    from transformers import LlamaConfig
+
+    config = LlamaConfig(
+        hidden_size=64,
+        intermediate_size=128,
+        num_hidden_layers=2,
+        num_attention_heads=4,
+        vocab_size=128,
+        architectures=["LlamaForCausalLM"],
+    )
+    config.auto_map = {"AutoModelForCausalLM": "modeling_stale.LlamaForCausalLM"}
+    config.save_pretrained(path)
+    (path / "modeling_stale.py").write_text("from transformers.utils import NameRemovedFromTransformers\n")
+
+
+def test_auto_class_prefers_builtin_class_over_remote_code(tmp_path):
+    from optimum.rbln import RBLNAutoModelForCausalLM, RBLNLlamaForCausalLM
+
+    _save_config_with_stale_remote_code(tmp_path)
+
+    assert RBLNAutoModelForCausalLM.get_rbln_cls(str(tmp_path), export=True) is RBLNLlamaForCausalLM
+    assert (
+        RBLNAutoModelForCausalLM.get_rbln_cls(str(tmp_path), export=True, trust_remote_code=False)
+        is RBLNLlamaForCausalLM
+    )
+
+
+def test_auto_class_uses_remote_code_when_trusted(tmp_path):
+    from optimum.rbln import RBLNAutoModelForCausalLM
+
+    _save_config_with_stale_remote_code(tmp_path)
+
+    with pytest.raises(ImportError):
+        RBLNAutoModelForCausalLM.get_rbln_cls(str(tmp_path), export=True, trust_remote_code=True)
 
 
 def test_upgrade_bare_config_recovers_concrete_class():
@@ -238,7 +278,7 @@ class BaseTest:
                     compiled_model_path = os.path.join(REUSE_ARTIFACTS_PATH, cls.get_rbln_local_dir())
                     if os.path.exists(compiled_model_path):
                         with ContextRblnConfig(device=DUMMY_DEVICE_CODE):
-                            cls.model = cls.RBLN_CLASS.from_pretrained(compiled_model_path)
+                            cls.model = cls.RBLN_CLASS.from_pretrained(compiled_model_path, **cls.HF_CONFIG_KWARGS)
                 # Check cls.__dict__, not hasattr: hasattr also finds a parent test class's
                 # already-loaded model, silently running this class against a model compiled
                 # with the parent's (possibly incompatible) rbln_config.
@@ -265,6 +305,12 @@ class BaseTest:
 
         @classmethod
         def tearDownClass(cls):
+            # One process runs every class in turn, so release this class's runtimes
+            # before the next class loads its own; on the dummy device they all live
+            # in host memory and the BC llm run hit SYS_ENOMEM part-way through.
+            if "model" in cls.__dict__:
+                del cls.model
+                gc.collect()
             if os.path.exists(cls.get_rbln_local_dir()):
                 shutil.rmtree(cls.get_rbln_local_dir())
 

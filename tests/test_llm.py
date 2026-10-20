@@ -39,8 +39,12 @@ from optimum.rbln import (
     RBLNGemma3ForConditionalGeneration,
     RBLNGemma4ForCausalLM,
     RBLNGemma4ForCausalLMConfig,
+    RBLNGlm4ForCausalLM,
+    RBLNGlm4Model,
     RBLNGPT2LMHeadModel,
     RBLNGPT2Model,
+    RBLNGraniteForCausalLM,
+    RBLNGraniteModel,
     RBLNIdefics3ForConditionalGeneration,
     RBLNLlamaForCausalLM,
     RBLNLlamaModel,
@@ -51,9 +55,13 @@ from optimum.rbln import (
     RBLNMistralModel,
     RBLNMixtralForCausalLM,
     RBLNMixtralForCausalLMConfig,
+    RBLNOlmo2ForCausalLM,
+    RBLNOlmo2Model,
     RBLNOPTForCausalLM,
     RBLNOPTModel,
     RBLNPegasusForConditionalGeneration,
+    RBLNPhi3ForCausalLM,
+    RBLNPhi3Model,
     RBLNPhiForCausalLM,
     RBLNPhiModel,
     RBLNQwen2_5_VLForConditionalGeneration,
@@ -71,6 +79,10 @@ from optimum.rbln import (
     RBLNQwen3MoeForCausalLMConfig,
     RBLNQwen3VLForConditionalGeneration,
     RBLNQwen3VLMoeForConditionalGeneration,
+    RBLNSmolLM3ForCausalLM,
+    RBLNSmolLM3Model,
+    RBLNStarcoder2ForCausalLM,
+    RBLNStarcoder2Model,
     RBLNT5ForConditionalGeneration,
 )
 
@@ -209,6 +221,18 @@ class TestMistralModel(LLMTest.TestLLMWithoutLMHead):
     HF_CONFIG_KWARGS = {"num_hidden_layers": 1, "max_position_embeddings": 1024, "sliding_window": 512}
 
 
+class TestGraniteForCausalLM(LLMTest.TestLLM):
+    RBLN_CLASS = RBLNGraniteForCausalLM
+    HF_MODEL_ID = "hf-internal-testing/tiny-random-GraniteForCausalLM"
+    HF_CONFIG_KWARGS = {"num_hidden_layers": 1, "max_position_embeddings": 1024}
+
+
+class TestGraniteModel(LLMTest.TestLLMWithoutLMHead):
+    RBLN_CLASS = RBLNGraniteModel
+    HF_MODEL_ID = "hf-internal-testing/tiny-random-GraniteForCausalLM"
+    HF_CONFIG_KWARGS = {"num_hidden_layers": 1, "max_position_embeddings": 1024}
+
+
 class TestQwen2ForCausalLM(LLMTest.TestLLM):
     RBLN_CLASS = RBLNQwen2ForCausalLM
     HF_MODEL_ID = "Qwen/Qwen2-0.5B-Instruct"
@@ -320,6 +344,18 @@ class TestOPTModel(LLMTest.TestLLMWithoutLMHead):
     HF_CONFIG_KWARGS = {"num_hidden_layers": 1, "max_position_embeddings": 2048}
 
 
+class TestOlmo2ForCausalLM(LLMTest.TestLLM):
+    RBLN_CLASS = RBLNOlmo2ForCausalLM
+    HF_MODEL_ID = "hf-internal-testing/tiny-random-Olmo2ForCausalLM"
+    HF_CONFIG_KWARGS = {"num_hidden_layers": 1, "max_position_embeddings": 1024}
+
+
+class TestOlmo2Model(LLMTest.TestLLMWithoutLMHead):
+    RBLN_CLASS = RBLNOlmo2Model
+    HF_MODEL_ID = "hf-internal-testing/tiny-random-Olmo2ForCausalLM"
+    HF_CONFIG_KWARGS = {"num_hidden_layers": 1, "max_position_embeddings": 1024}
+
+
 class TestLlamaForCausalLM(LLMTest.TestLLM):
     RBLN_CLASS = RBLNLlamaForCausalLM
     HF_MODEL_ID = "afmck/testing-llama-tiny"
@@ -353,6 +389,28 @@ class TestLlamaForCausalLM_Multibatch(TestLlamaForCausalLM):
     RBLN_CLASS_KWARGS = {"rbln_config": {"batch_size": 3, "decoder_batch_sizes": [3, 2, 1]}}
 
 
+class TestSmolLM3ForCausalLM(LLMTest.TestLLM):
+    RBLN_CLASS = RBLNSmolLM3ForCausalLM
+    HF_MODEL_ID = "HuggingFaceTB/SmolLM3-3B"
+    HF_CONFIG_KWARGS = {
+        "num_hidden_layers": 4,
+        "layer_types": ["full_attention"] * 4,
+        "no_rope_layers": [1, 1, 1, 0],
+        "max_position_embeddings": 1024,
+    }
+
+
+class TestSmolLM3Model(LLMTest.TestLLMWithoutLMHead):
+    RBLN_CLASS = RBLNSmolLM3Model
+    HF_MODEL_ID = "HuggingFaceTB/SmolLM3-3B"
+    HF_CONFIG_KWARGS = {
+        "num_hidden_layers": 4,
+        "layer_types": ["full_attention"] * 4,
+        "no_rope_layers": [1, 1, 1, 0],
+        "max_position_embeddings": 1024,
+    }
+
+
 class TestGPT2LMHeadModel(LLMTest.TestLLM):
     RBLN_CLASS = RBLNGPT2LMHeadModel
     HF_MODEL_ID = "openai-community/gpt2"
@@ -363,6 +421,18 @@ class TestGPT2Model(LLMTest.TestLLMWithoutLMHead):
     RBLN_CLASS = RBLNGPT2Model
     HF_MODEL_ID = "openai-community/gpt2"
     HF_CONFIG_KWARGS = {"n_layer": 1, "max_position_embeddings": 1024}
+
+
+class TestStarcoder2ForCausalLM(LLMTest.TestLLM):
+    RBLN_CLASS = RBLNStarcoder2ForCausalLM
+    HF_MODEL_ID = "hf-internal-testing/tiny-random-Starcoder2ForCausalLM"
+    HF_CONFIG_KWARGS = {"num_hidden_layers": 1, "max_position_embeddings": 1024, "sliding_window": 512}
+
+
+class TestStarcoder2Model(LLMTest.TestLLMWithoutLMHead):
+    RBLN_CLASS = RBLNStarcoder2Model
+    HF_MODEL_ID = "hf-internal-testing/tiny-random-Starcoder2ForCausalLM"
+    HF_CONFIG_KWARGS = {"num_hidden_layers": 1, "max_position_embeddings": 1024, "sliding_window": 512}
 
 
 class TestPhiForCausalLM(LLMTest.TestLLM):
@@ -379,6 +449,28 @@ class TestPhiModel(LLMTest.TestLLMWithoutLMHead):
     HF_CONFIG_KWARGS = {"num_hidden_layers": 1, "max_position_embeddings": 1024, "trust_remote_code": True}
 
 
+class TestPhi3ForCausalLM(LLMTest.TestLLM):
+    RBLN_CLASS = RBLNPhi3ForCausalLM
+    HF_MODEL_ID = "microsoft/Phi-3.5-mini-instruct"
+    HF_CONFIG_KWARGS = {
+        "num_hidden_layers": 1,
+        "max_position_embeddings": 1024,
+        "original_max_position_embeddings": 1024,
+    }
+
+
+class TestPhi3Model(LLMTest.TestLLMWithoutLMHead):
+    RBLN_CLASS = RBLNPhi3Model
+    # The checkpoint's remote-code auto_map has no AutoModel entry, so RBLNAutoModel cannot resolve its config.
+    RBLN_AUTO_CLASS = None
+    HF_MODEL_ID = "microsoft/Phi-3.5-mini-instruct"
+    HF_CONFIG_KWARGS = {
+        "num_hidden_layers": 1,
+        "max_position_embeddings": 1024,
+        "original_max_position_embeddings": 1024,
+    }
+
+
 class TestExaoneForCausalLM(LLMTest.TestLLM):
     RBLN_CLASS = RBLNExaoneForCausalLM
     HF_MODEL_ID = "LGAI-EXAONE/EXAONE-3.5-2.4B-Instruct"
@@ -391,6 +483,18 @@ class TestExaoneForCausalLM(LLMTest.TestLLM):
     def test_automap(self):
         # TODO: Test resume in transformers v5.0.0
         pass
+
+
+class TestGlm4ForCausalLM(LLMTest.TestLLM):
+    RBLN_CLASS = RBLNGlm4ForCausalLM
+    HF_MODEL_ID = "zai-org/GLM-4-9B-0414"
+    HF_CONFIG_KWARGS = {"num_hidden_layers": 1, "max_position_embeddings": 1024}
+
+
+class TestGlm4Model(LLMTest.TestLLMWithoutLMHead):
+    RBLN_CLASS = RBLNGlm4Model
+    HF_MODEL_ID = "zai-org/GLM-4-9B-0414"
+    HF_CONFIG_KWARGS = {"num_hidden_layers": 1, "max_position_embeddings": 1024}
 
 
 class TestT5Model(LLMTest.TestLLM):
