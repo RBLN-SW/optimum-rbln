@@ -115,6 +115,7 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
             logits_last_dim=self.logits_last_dim,
             **common_kwargs,
         )
+        self.multi_token_decoder: RBLNRuntimeModel | None = None
         if self.can_generate():
             self.decoders = {}
             for i, batch_size in enumerate(self.rbln_config.decoder_batch_sizes):
@@ -127,6 +128,14 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
 
             # NOTE(eunji): Use a decoder whose batch size matches the model's main batch size for compatibility.
             self.decoder = self.decoders[self.rbln_config.batch_size]
+            if self.rbln_config.num_speculative_tokens:
+                runtime_idx = self.rbln_config.expected_compiled_model_names.index("multi_token_decoder")
+                self.multi_token_decoder = RBLNRuntimeModel(
+                    runtime=self.model[runtime_idx],
+                    phase="decode",
+                    batch_size=self.rbln_config.batch_size,
+                    **common_kwargs,
+                )
 
     @property
     def logits_last_dim(self):

@@ -1,6 +1,7 @@
 import os
 import shutil
 import tempfile
+from types import SimpleNamespace
 
 import pytest
 import rebel
@@ -785,3 +786,20 @@ def test_multi_token_decoder_compile_config(monkeypatch, num_speculative_tokens)
     for _, _, caches in calls[1:]:
         assert caches
         assert all(actual is shared for actual, shared in zip(caches, calls[0][2], strict=True))
+
+    model = SimpleNamespace(
+        rbln_config=config,
+        config=model_config,
+        model=list(compiled.values()),
+        embed_tokens=None,
+        dtype=torch.float16,
+        logits_last_dim=model_config.vocab_size,
+        can_generate=lambda: True,
+    )
+    RBLNLlamaForCausalLM.setup_runtime(model)
+    if num_speculative_tokens:
+        assert model.multi_token_decoder.runtime is compiled["multi_token_decoder"]
+        assert model.multi_token_decoder.page_table_manager is model.decoder.page_table_manager
+        assert model.multi_token_decoder.page_table_manager is model.prefill_decoder.page_table_manager
+    else:
+        assert model.multi_token_decoder is None
