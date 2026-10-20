@@ -5,6 +5,7 @@ import tempfile
 import pytest
 import rebel
 import torch
+from transformers import LlamaConfig
 
 from optimum.rbln import (
     RBLNAutoConfig,
@@ -727,3 +728,60 @@ def test_qwen3_5_gdn_chunk_size_default_is_decoupled_from_prefill():
         assert cls(prefill_chunk_size=512, **kwargs).gdn_chunk_size == MAX_GDN_CHUNK_SIZE
         # An explicit value is preserved.
         assert cls(gdn_chunk_size=64, **kwargs).gdn_chunk_size == 64
+
+
+@pytest.mark.parametrize("num_speculative_tokens", [0, 3])
+def test_multi_token_decoder_compile_config(monkeypatch, num_speculative_tokens):
+    batch_size = 2
+    model_config = LlamaConfig(
+        hidden_size=64,
+        intermediate_size=128,
+        num_hidden_layers=1,
+        num_attention_heads=2,
+        num_key_value_heads=1,
+        max_position_embeddings=128,
+    )
+    config = RBLNLlamaForCausalLMConfig(
+        batch_size=batch_size,
+        decoder_batch_sizes=list(range(batch_size, 0, -1)),
+        max_seq_len=128,
+        prefill_chunk_size=128,
+        kvcache_num_blocks=batch_size,
+        num_speculative_tokens=num_speculative_tokens,
+        npu="RBLN-CA25",
+    )
+    config = RBLNLlamaForCausalLM._update_rbln_config(model_config=model_config, rbln_config=config)
+    configs = {cfg.compiled_model_name: cfg for cfg in config.compile_cfgs}
+    assert list(configs) == config.expected_compiled_model_names
+    assert config.batch_size == batch_size
+    for b in range(batch_size, 0, -1):
+        inputs = {name: shape for name, shape, _ in configs[f"decoder_batch_{b}"].input_info}
+        assert inputs["input_ids"] == [b, 1]
+    if num_speculative_tokens:
+        inputs = {name: shape for name, shape, _ in configs["multi_token_decoder"].input_info}
+        assert inputs["input_ids"] == [batch_size, num_speculative_tokens + 1]
+        assert inputs["cache_position"] == [batch_size, num_speculative_tokens + 1]
+        assert inputs["block_tables"] == [batch_size, 1]
+        assert "query_position" not in inputs
+    else:
+        assert "multi_token_decoder" not in configs
+
+    calls = []
+
+    def compile_model(wrapped_model, compile_config, example_inputs, context, rbln_config, quantization, phase):
+        caches = [
+            tensor
+            for (name, _, _), tensor in zip(compile_config.input_info, example_inputs, strict=True)
+            if "past_key_values" in name
+        ]
+        calls.append((compile_config.compiled_model_name, phase, caches))
+        return compile_config.compiled_model_name
+
+    monkeypatch.setattr(RBLNLlamaForCausalLM, "_wrap_model_if_needed", lambda *args: type("Wrapped", (), {})())
+    monkeypatch.setattr(RBLNLlamaForCausalLM, "_compile_model", compile_model)
+    compiled = RBLNLlamaForCausalLM.get_compiled_model(None, config)
+    assert list(compiled) == config.expected_compiled_model_names
+    assert all(phase == "decode" for _, phase, _ in calls[1:])
+    for _, _, caches in calls[1:]:
+        assert caches
+        assert all(actual is shared for actual, shared in zip(caches, calls[0][2], strict=True))
