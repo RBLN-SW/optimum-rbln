@@ -609,6 +609,13 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
         #     Code relying on iterating through all model parameters will not work as expected.
         yield torch.tensor([1.0], dtype=self.dtype, device=torch.device("cpu"))
 
+    def modules(self):
+        # Mimics torch.nn.Module.modules() for code that walks a model's modules looking for
+        # offloading hooks, e.g. diffusers' get_module_execution_device (diffusers >= 0.41).
+        # Only the model itself is yielded: it has no torch submodules, so no hook is found
+        # and callers fall back to `self.device`.
+        yield self
+
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
         return self.forward(*args, **kwargs)
 
