@@ -39,8 +39,12 @@ from optimum.rbln import (
     RBLNGemma3ForConditionalGeneration,
     RBLNGemma4ForCausalLM,
     RBLNGemma4ForCausalLMConfig,
+    RBLNGlm4ForCausalLM,
+    RBLNGlm4Model,
     RBLNGPT2LMHeadModel,
     RBLNGPT2Model,
+    RBLNGraniteForCausalLM,
+    RBLNGraniteModel,
     RBLNIdefics3ForConditionalGeneration,
     RBLNLlamaForCausalLM,
     RBLNLlamaModel,
@@ -51,6 +55,8 @@ from optimum.rbln import (
     RBLNMistralModel,
     RBLNMixtralForCausalLM,
     RBLNMixtralForCausalLMConfig,
+    RBLNOlmo2ForCausalLM,
+    RBLNOlmo2Model,
     RBLNOPTForCausalLM,
     RBLNOPTModel,
     RBLNPegasusForConditionalGeneration,
@@ -215,6 +221,18 @@ class TestMistralModel(LLMTest.TestLLMWithoutLMHead):
     HF_CONFIG_KWARGS = {"num_hidden_layers": 1, "max_position_embeddings": 1024, "sliding_window": 512}
 
 
+class TestGraniteForCausalLM(LLMTest.TestLLM):
+    RBLN_CLASS = RBLNGraniteForCausalLM
+    HF_MODEL_ID = "hf-internal-testing/tiny-random-GraniteForCausalLM"
+    HF_CONFIG_KWARGS = {"num_hidden_layers": 1, "max_position_embeddings": 1024}
+
+
+class TestGraniteModel(LLMTest.TestLLMWithoutLMHead):
+    RBLN_CLASS = RBLNGraniteModel
+    HF_MODEL_ID = "hf-internal-testing/tiny-random-GraniteForCausalLM"
+    HF_CONFIG_KWARGS = {"num_hidden_layers": 1, "max_position_embeddings": 1024}
+
+
 class TestQwen2ForCausalLM(LLMTest.TestLLM):
     RBLN_CLASS = RBLNQwen2ForCausalLM
     HF_MODEL_ID = "Qwen/Qwen2-0.5B-Instruct"
@@ -324,6 +342,18 @@ class TestOPTModel(LLMTest.TestLLMWithoutLMHead):
     RBLN_CLASS = RBLNOPTModel
     HF_MODEL_ID = "facebook/opt-2.7b"
     HF_CONFIG_KWARGS = {"num_hidden_layers": 1, "max_position_embeddings": 2048}
+
+
+class TestOlmo2ForCausalLM(LLMTest.TestLLM):
+    RBLN_CLASS = RBLNOlmo2ForCausalLM
+    HF_MODEL_ID = "hf-internal-testing/tiny-random-Olmo2ForCausalLM"
+    HF_CONFIG_KWARGS = {"num_hidden_layers": 1, "max_position_embeddings": 1024}
+
+
+class TestOlmo2Model(LLMTest.TestLLMWithoutLMHead):
+    RBLN_CLASS = RBLNOlmo2Model
+    HF_MODEL_ID = "hf-internal-testing/tiny-random-Olmo2ForCausalLM"
+    HF_CONFIG_KWARGS = {"num_hidden_layers": 1, "max_position_embeddings": 1024}
 
 
 class TestLlamaForCausalLM(LLMTest.TestLLM):
@@ -453,6 +483,18 @@ class TestExaoneForCausalLM(LLMTest.TestLLM):
     def test_automap(self):
         # TODO: Test resume in transformers v5.0.0
         pass
+
+
+class TestGlm4ForCausalLM(LLMTest.TestLLM):
+    RBLN_CLASS = RBLNGlm4ForCausalLM
+    HF_MODEL_ID = "zai-org/GLM-4-9B-0414"
+    HF_CONFIG_KWARGS = {"num_hidden_layers": 1, "max_position_embeddings": 1024}
+
+
+class TestGlm4Model(LLMTest.TestLLMWithoutLMHead):
+    RBLN_CLASS = RBLNGlm4Model
+    HF_MODEL_ID = "zai-org/GLM-4-9B-0414"
+    HF_CONFIG_KWARGS = {"num_hidden_layers": 1, "max_position_embeddings": 1024}
 
 
 class TestT5Model(LLMTest.TestLLM):
