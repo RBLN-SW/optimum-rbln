@@ -31,8 +31,8 @@ from ..utils.model_utils import get_rbln_model_cls
 logger = get_logger(__name__)
 
 if TYPE_CHECKING:
+    from diffusers.models.controlnets.multicontrolnet import MultiControlNetModel
     from diffusers.models.modeling_utils import ModelMixin
-    from diffusers.pipelines.controlnet.multicontrolnet import MultiControlNetModel
     from diffusers.pipelines.pipeline_utils import DiffusionPipeline
 
     from .pipelines.controlnet import RBLNMultiControlNetModel
