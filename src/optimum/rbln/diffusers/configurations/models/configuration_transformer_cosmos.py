@@ -30,7 +30,7 @@ class RBLNCosmosTransformer3DModelConfig(RBLNModelConfig):
     # versions still carry it. Absorb it on load instead of rejecting the whole config.
     @deprecate_kwarg(
         old_name="fps",
-        version="0.12.0",
+        version="0.13.0",
         additional_message="`fps` is not a compile-time parameter: it only scales the temporal RoPE, "
         "which is computed on the host at run time. Pass it to the pipeline call instead, where "
         "diffusers already takes it.",

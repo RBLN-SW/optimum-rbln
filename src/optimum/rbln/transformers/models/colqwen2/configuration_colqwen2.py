@@ -28,7 +28,7 @@ class RBLNColQwen2ForRetrievalConfig(RBLNDecoderOnlyModelConfig):
 
     Example usage:
         ```python
-        from optimum.rbln import RBLNColQwen2ForRetrievalConfig, RBLNColQwen2ForRetrievalConfig
+        from optimum.rbln import RBLNColQwen2ForRetrieval, RBLNColQwen2ForRetrievalConfig
 
         # Create a configuration object
         config = RBLNColQwen2ForRetrievalConfig(
@@ -38,6 +38,7 @@ class RBLNColQwen2ForRetrievalConfig(RBLNDecoderOnlyModelConfig):
                     "device": 0,
                 },
                 "max_seq_len": 32_768,
+                "attn_impl": "flash_attn",
                 "num_devices": 4,
                 "device": [0, 1, 2, 3],
                 "output_hidden_states": False,

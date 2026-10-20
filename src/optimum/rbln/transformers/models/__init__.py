@@ -39,8 +39,10 @@ if TYPE_CHECKING:
     from .gemma2 import *
     from .gemma3 import *
     from .gemma4 import *
+    from .glm4 import *
     from .gpt2 import *
     from .gpt_oss import *
+    from .granite import *
     from .grounding_dino import *
     from .idefics3 import *
     from .llama import *
@@ -50,10 +52,12 @@ if TYPE_CHECKING:
     from .mistral import *
     from .mixtral import *
     from .modernbert import *
+    from .olmo2 import *
     from .opt import *
     from .paligemma import *
     from .pegasus import *
     from .phi import *
+    from .phi3 import *
     from .pixtral import *
     from .qwen2 import *
     from .qwen2_5_vl import *
@@ -68,6 +72,8 @@ if TYPE_CHECKING:
     from .resnet import *
     from .roberta import *
     from .siglip import *
+    from .smollm3 import *
+    from .starcoder2 import *
     from .swin import *
     from .t5 import *
     from .time_series_transformer import *

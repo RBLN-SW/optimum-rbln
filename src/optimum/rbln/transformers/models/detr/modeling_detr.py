@@ -120,7 +120,7 @@ class RBLNDetrForObjectDetection(RBLNModel):
 
         output = self.model[0](pixel_values=pixel_values, pixel_mask=pixel_mask, **kwargs)
 
-        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+        return_dict = return_dict if return_dict is not None else self.config.return_dict
         if not return_dict:
             return output
 

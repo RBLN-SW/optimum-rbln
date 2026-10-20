@@ -40,8 +40,7 @@ from diffusers.utils.torch_utils import is_compiled_module, is_torch_version
 from ....utils.decorator_utils import remove_compile_time_kwargs
 from ...configurations import RBLNStableDiffusionXLControlNetPipelineConfig
 from ...modeling_diffusers import RBLNDiffusionMixin
-from ...models import RBLNControlNetModel
-from ...pipelines.controlnet.multicontrolnet import RBLNMultiControlNetModel
+from ...models import RBLNControlNetModel, RBLNMultiControlNetModel
 
 
 logger = logging.get_logger(__name__)
@@ -306,8 +305,7 @@ class RBLNStableDiffusionXLControlNetPipeline(RBLNDiffusionMixin, StableDiffusio
             prompt_2 (`str` or `list[str]`, *optional*):
                 The prompt or prompts to be sent to `tokenizer_2` and `text_encoder_2`. If not defined, `prompt` is
                 used in both text-encoders.
-            image (`torch.FloatTensor`, `PIL.Image.Image`, `np.ndarray`, `list[torch.FloatTensor]`, `list[PIL.Image.Image]`, `list[np.ndarray]`,:
-                    `list[list[torch.FloatTensor]]`, `list[list[np.ndarray]]` or `list[list[PIL.Image.Image]]`):
+            image (`torch.FloatTensor`, `PIL.Image.Image`, `np.ndarray`, `list[torch.FloatTensor]`, `list[PIL.Image.Image]`, `list[np.ndarray]`, `list[list[torch.FloatTensor]]`, `list[list[np.ndarray]]` or `list[list[PIL.Image.Image]]`):
                 The ControlNet input condition to provide guidance to the `unet` for generation. If the type is
                 specified as `torch.FloatTensor`, it is passed to ControlNet as is. `PIL.Image.Image` can also be
                 accepted as an image. The dimensions of the output image defaults to `image`'s dimensions. If height

@@ -41,7 +41,7 @@ class RBLNCosmosPipelineBaseConfig(RBLNModelConfig):
 
     @deprecate_kwarg(
         old_name="fps",
-        version="0.12.0",
+        version="0.13.0",
         additional_message="`fps` is not a compile-time parameter: it only scales the temporal RoPE, "
         "which is computed on the host at run time. Pass it to the pipeline call instead, where "
         "diffusers already takes it.",
@@ -289,7 +289,8 @@ class RBLNCosmos2_5_PredictBasePipelineConfig(RBLNModelConfig):
             batch_size=batch_size,
             max_seq_len=max_seq_len,
             output_hidden_states=True,
-            visual={"max_seq_len": 64, "create_runtimes": False},
+            visual={"max_seq_len": 64, "create_runtimes": False},  # The visual tower is never called.
+            force_kwargs=True,
         )
         self.transformer = self.initialize_submodule_config(
             transformer,
