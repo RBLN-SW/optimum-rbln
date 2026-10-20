@@ -35,7 +35,7 @@ if TYPE_CHECKING:
     from diffusers.models.modeling_utils import ModelMixin
     from diffusers.pipelines.pipeline_utils import DiffusionPipeline
 
-    from .pipelines.controlnet import RBLNMultiControlNetModel
+    from .models import RBLNMultiControlNetModel
 
     _PipelineBase = DiffusionPipeline
 else:
@@ -417,7 +417,7 @@ class RBLNDiffusionMixin(_PipelineBase):
     ) -> "RBLNMultiControlNetModel":
         # Compile multiple ControlNet models for a MultiControlNet setup
         from .models.controlnets.controlnet import RBLNControlNetModel
-        from .pipelines.controlnet import RBLNMultiControlNetModel
+        from .models.controlnets.multicontrolnet import RBLNMultiControlNetModel
 
         compiled_controlnets = []
         for i, controlnet in enumerate(controlnets.nets):

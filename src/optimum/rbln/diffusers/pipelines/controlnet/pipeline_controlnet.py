@@ -42,8 +42,7 @@ from ....utils.decorator_utils import remove_compile_time_kwargs
 from ....utils.logging import get_logger
 from ...configurations import RBLNStableDiffusionControlNetPipelineConfig
 from ...modeling_diffusers import RBLNDiffusionMixin
-from ...models import RBLNControlNetModel
-from ...pipelines.controlnet.multicontrolnet import RBLNMultiControlNetModel
+from ...models import RBLNControlNetModel, RBLNMultiControlNetModel
 
 
 logger = get_logger(__name__)
