@@ -76,6 +76,22 @@ class DecoderOnlyWrapper(nn.Module):
             )
 
         self.model = self.convert_to_rbln_class(model, rbln_config.max_seq_len, use_rotary_emb)
+        if rbln_config.nested_compile_region:
+            region_classes = {}
+            for layer in self.model.modules():
+                if not isinstance(layer, DecoderOnlyLayer):
+                    continue
+                layer_cls = type(layer)
+                if layer_cls not in region_classes:
+                    # Class-level forwards preserve export's parameter paths; bound instance methods do not.
+                    region_classes[layer_cls] = type(
+                        layer_cls.__name__,
+                        (layer_cls,),
+                        {"forward": torch.compiler.nested_compile_region(layer_cls.forward)},
+                    )
+                layer.__class__ = region_classes[layer_cls]
+            if not region_classes:
+                raise ValueError("nested_compile_region requires DecoderOnlyLayer instances.")
         self.num_hidden_layers = getattr(self.config, "num_hidden_layers", None) or self.config.n_layer
         self._phase = "prefill"
 
