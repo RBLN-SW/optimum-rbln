@@ -20,7 +20,6 @@ from ....utils.import_utils import define_import_structure
 
 
 if TYPE_CHECKING:
-    from .multicontrolnet import *
     from .pipeline_controlnet import *
     from .pipeline_controlnet_img2img import *
     from .pipeline_controlnet_sd_xl import *

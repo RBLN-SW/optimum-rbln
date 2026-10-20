@@ -40,8 +40,7 @@ from diffusers.utils.torch_utils import is_compiled_module
 from ....utils.decorator_utils import remove_compile_time_kwargs
 from ...configurations import RBLNStableDiffusionXLControlNetImg2ImgPipelineConfig
 from ...modeling_diffusers import RBLNDiffusionMixin
-from ...models import RBLNControlNetModel
-from ...pipelines.controlnet.multicontrolnet import RBLNMultiControlNetModel
+from ...models import RBLNControlNetModel, RBLNMultiControlNetModel
 
 
 logger = logging.get_logger(__name__)
