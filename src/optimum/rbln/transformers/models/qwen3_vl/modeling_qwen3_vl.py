@@ -738,8 +738,10 @@ class RBLNQwen3VLForConditionalGeneration(RBLNQwenVLBatchSortMixin, RBLNQwen3VLM
         super().__post_init__(**kwargs)
         self.rope_deltas = torch.zeros(self.rbln_config.batch_size)
 
-    def can_generate(self):
-        return True
+    @property
+    def logits_last_dim(self):
+        # The graph ends in the LM head, also when it compiles only the prefill phase.
+        return self.config.text_config.vocab_size
 
     def _sort_vision_kwargs(
         self, kwargs: dict, sort_idx: torch.Tensor, image_rows: list[int], video_rows: list[int]
