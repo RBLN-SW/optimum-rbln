@@ -187,6 +187,7 @@ class RBLNIdefics3ForConditionalGeneration(RBLNModel, RBLNImageIndexedBatchSortM
     """
     RBLNIdefics3ForConditionalGeneration is a multi-modal model that integrates vision and language processing capabilities,
     optimized for RBLN NPUs. It is designed for conditional generation tasks that involve both image and text inputs.
+    SmolVLM checkpoints (e.g. `HuggingFaceTB/SmolVLM-Instruct`) use the same architecture and are supported by this class.
 
     This model inherits from [`RBLNModel`]. Check the superclass documentation for the generic methods the library implements for all its models.
 

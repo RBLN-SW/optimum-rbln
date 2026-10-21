@@ -834,6 +834,30 @@ class TestIdefics3ForConditionalGeneration(LLMTest.TestLLM):
         return inputs
 
 
+class TestSmolVLMForConditionalGeneration(TestIdefics3ForConditionalGeneration):
+    # SmolVLM is an Idefics3 checkpoint with a Llama (SmolLM2) text model and 384px image splitting
+    HF_MODEL_ID = "HuggingFaceTB/SmolVLM-Instruct"
+    RBLN_CLASS_KWARGS = {
+        "rbln_config": {
+            "text_model": {
+                "use_inputs_embeds": True,
+                "attn_impl": "flash_attn",
+                "max_seq_len": 8192,
+                "kvcache_partition_len": 4096,
+            }
+        }
+    }
+    HF_CONFIG_KWARGS = {}  # Initialize empty to avoid sharing with other classes
+
+    @classmethod
+    def setUpClass(cls):
+        config = AutoConfig.from_pretrained(cls.HF_MODEL_ID)
+        vision_config = json.loads(config.vision_config.to_json_string())
+        vision_config["num_hidden_layers"] = 1
+        cls.HF_CONFIG_KWARGS.update({"vision_config": vision_config})
+        return super().setUpClass()
+
+
 class TestQwenRotaryLookup(unittest.TestCase):
     def test_qwen_vit_rot_pos_ids_matches_hf(self):
         from types import SimpleNamespace
