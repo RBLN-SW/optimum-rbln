@@ -512,7 +512,7 @@ class TestCogVideoXModel(BaseTest.TestModel):
 
     def test_generate(self):
         output = self.model(**self.get_inputs())[0]
-        self.assertEqual(tuple(output.shape), (1, 17, 3, 128, 128))
+        assert tuple(output.shape) == (1, 17, 3, 128, 128)
 
 
 class TestCogVideoXImageToVideoModel(BaseTest.TestModel):
@@ -543,12 +543,12 @@ class TestCogVideoXImageToVideoModel(BaseTest.TestModel):
 
     def test_generate(self):
         output = self.model(**self.get_inputs())[0]
-        self.assertEqual(tuple(output.shape), (1, 17, 3, 128, 128))
+        assert tuple(output.shape) == (1, 17, 3, 128, 128)
 
     def test_encode_image(self):
         image = torch.rand(1, 3, 1, 128, 128) * 2 - 1
         latent = self.model.vae.encode(image).latent_dist.mean
-        self.assertEqual(tuple(latent.shape), (1, 4, 1, 16, 16))
+        assert tuple(latent.shape) == (1, 4, 1, 16, 16)
 
 
 if __name__ == "__main__":

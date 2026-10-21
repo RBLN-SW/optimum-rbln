@@ -347,7 +347,7 @@ class RBLNAutoencoderKLCogVideoX(RBLNModel):
             )
 
         compile_cfgs = [
-            RBLNCompileConfig(compiled_model_name="decoder_0", input_info=[z_info(first_chunk)] + buffer_info)
+            RBLNCompileConfig(compiled_model_name="decoder_0", input_info=[z_info(first_chunk), *buffer_info])
         ]
         if num_latent_frames > first_chunk:
             decoder_n_info = [
