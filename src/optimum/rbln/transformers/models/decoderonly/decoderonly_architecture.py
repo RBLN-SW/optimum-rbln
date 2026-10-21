@@ -32,6 +32,12 @@ if TYPE_CHECKING:
 logger = logging.get_logger(__name__)
 
 
+@torch.compiler.assume_constant_result
+def _op_accepts(op_name: str, arg_name: str) -> bool:
+    op = getattr(torch.ops.rbln_custom_ops, op_name)
+    return any(arg.name == arg_name for arg in op.default._schema.arguments)
+
+
 class DecoderOnlyWrapper(nn.Module):
     """A wrapper class for decoder-only language models that handles RBLN-specific optimizations and requirements.
 
@@ -1070,9 +1076,7 @@ class AttentionOp(nn.Module):
             raise ValueError(f"Attention operator {attn_op_name} not found.")
 
         # Tell the compiler the batch arrives length-sorted; older compilers lack the arg.
-        if getattr(self.rbln_config, "requires_batch_sort", None) and any(
-            arg.name == "is_prompt_sorted" for arg in attn_op.default._schema.arguments
-        ):
+        if getattr(self.rbln_config, "requires_batch_sort", None) and _op_accepts(attn_op_name, "is_prompt_sorted"):
             op_args["is_prompt_sorted"] = True
 
         attn_output = attn_op(**op_args)
@@ -1196,9 +1200,7 @@ class FlashAttentionOp(AttentionOp):
             raise ValueError(f"Attention operator {attn_op_name} not found.")
 
         # Tell the compiler the batch arrives length-sorted; older compilers lack the arg.
-        if getattr(self.rbln_config, "requires_batch_sort", None) and any(
-            arg.name == "is_prompt_sorted" for arg in attn_op.default._schema.arguments
-        ):
+        if getattr(self.rbln_config, "requires_batch_sort", None) and _op_accepts(attn_op_name, "is_prompt_sorted"):
             op_args["is_prompt_sorted"] = True
 
         attn_output = attn_op(**op_args)
@@ -1313,9 +1315,7 @@ class SlidingWindowAttentionOp(AttentionOp):
             raise ValueError(f"Attention operator {attn_op_name} not found.")
 
         # Tell the compiler the batch arrives length-sorted; older compilers lack the arg.
-        if getattr(self.rbln_config, "requires_batch_sort", None) and any(
-            arg.name == "is_prompt_sorted" for arg in attn_op.default._schema.arguments
-        ):
+        if getattr(self.rbln_config, "requires_batch_sort", None) and _op_accepts(attn_op_name, "is_prompt_sorted"):
             op_args["is_prompt_sorted"] = True
 
         attn_output = attn_op(**op_args)
