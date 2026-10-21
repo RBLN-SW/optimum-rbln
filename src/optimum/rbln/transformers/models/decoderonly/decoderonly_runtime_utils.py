@@ -136,9 +136,9 @@ class RBLNPageTableManager:
 
     # Whether block_tables and local_block_tables are provided by the user
     def is_external_block_tables(self, block_tables: torch.Tensor | None, local_block_tables: torch.Tensor | None):
-        if self.rbln_config.cache_impl == "static" and block_tables is None:
-            return False
-        elif self.rbln_config.cache_impl == "sliding_window" and local_block_tables is None:
+        if (self.rbln_config.cache_impl == "static" and block_tables is None) or (
+            self.rbln_config.cache_impl == "sliding_window" and local_block_tables is None
+        ):
             return False
         elif self.rbln_config.cache_impl == "hybrid":
             if (block_tables is not None) != (local_block_tables is not None):
@@ -335,12 +335,11 @@ class RBLNRuntimeModel(RBLNPytorchRuntime):
 
                     if self.dec_attn_mask is not None and self.batch_size < self.dec_attn_mask.shape[0]:
                         self.dec_attn_mask = self.dec_attn_mask[: self.batch_size]
+                elif is_external_block_tables:
+                    self.dec_attn_mask[b_idx].fill_(0)
+                    self.dec_attn_mask[b_idx, :, :, : decoding_step + 1] = 1
                 else:
-                    if is_external_block_tables:
-                        self.dec_attn_mask[b_idx].fill_(0)
-                        self.dec_attn_mask[b_idx, :, :, : decoding_step + 1] = 1
-                    else:
-                        self.dec_attn_mask[b_idx, :, :, decoding_step] = 1
+                    self.dec_attn_mask[b_idx, :, :, decoding_step] = 1
 
             attention_mask = self.dec_attn_mask
 
@@ -437,8 +436,6 @@ class RBLNRuntimeModel(RBLNPytorchRuntime):
         # Overwrite position_ids and padded_cache_lengths
         if self.rbln_config.use_position_ids and position_ids is None:
             position_ids = cache_position.clone()
-        else:
-            position_ids = position_ids
 
         padded_cache_lengths = 0
 
@@ -645,11 +642,9 @@ class RBLNRuntimeModel(RBLNPytorchRuntime):
         padding_size = (self.rbln_config.prefill_chunk_size - query_length) % self.rbln_config.prefill_chunk_size
         # `-padding_size` as a slice end drops the whole sequence when padding_size == 0 ([:, :-0] == [:, :0])
         trim_end = -padding_size if padding_size > 0 else None
-        if self.rbln_config.logits_to_keep == 1:
-            output_logits = output_logits
-        elif self.rbln_config.logits_to_keep > 1:
+        if self.rbln_config.logits_to_keep > 1:
             output_logits = output_logits[:, -padding_size - self.rbln_config.logits_to_keep : trim_end, :]
-        else:
+        elif self.rbln_config.logits_to_keep != 1:
             output_logits = output_logits[:, :trim_end, :]
 
         all_hidden_states = None

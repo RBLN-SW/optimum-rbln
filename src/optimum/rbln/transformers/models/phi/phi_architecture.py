@@ -26,7 +26,7 @@ from ..decoderonly.decoderonly_architecture import (
 
 
 if TYPE_CHECKING:
-    from transformers import PhiForCausalLM, PhiModel
+    from transformers import PhiModel
 
 
 class PhiWrapper(DecoderOnlyWrapper):

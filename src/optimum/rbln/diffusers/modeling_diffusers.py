@@ -47,8 +47,6 @@ class RBLNDiffusionMixinConfig(RBLNModelConfig):
     Configuration class for RBLN diffusion pipelines.
     """
 
-    pass
-
 
 class RBLNDiffusionMixin(_PipelineBase):
     """
@@ -259,14 +257,13 @@ class RBLNDiffusionMixin(_PipelineBase):
                         model_id, export=False, subfolder=submodule_name, rbln_config=submodule_config
                     )
 
-                else:
-                    if passed_submodule.__class__.__name__.startswith("RBLN"):
-                        submodule = passed_submodule
+                elif passed_submodule.__class__.__name__.startswith("RBLN"):
+                    submodule = passed_submodule
 
-                    elif isinstance(passed_submodule, torch.nn.Module):
-                        raise AssertionError(
-                            f"{submodule_name} is not compiled torch module. If you want to compile, set `export=True`."
-                        )
+                elif isinstance(passed_submodule, torch.nn.Module):
+                    raise AssertionError(
+                        f"{submodule_name} is not compiled torch module. If you want to compile, set `export=True`."
+                    )
 
                     else:
                         # Not an RBLN model and not a torch module (e.g. a stand-in safety
@@ -313,7 +310,7 @@ class RBLNDiffusionMixin(_PipelineBase):
             connected_pipe_submodules: dict[str, RBLNModel | None] = {}
             prefix = cls._prefix.get(connected_pipe_name, "")
             for submodule_name in connected_pipe_cls._submodules:
-                connected_pipe_submodules[submodule_name] = passed_submodules.get(prefix + submodule_name, None)
+                connected_pipe_submodules[submodule_name] = passed_submodules.get(prefix + submodule_name)
             connected_pipe = getattr(model, connected_pipe_name)
             connected_pipe_compiled_submodules = connected_pipe_cls._compile_submodules(
                 connected_pipe,
