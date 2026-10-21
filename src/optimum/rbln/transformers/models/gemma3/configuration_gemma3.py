@@ -61,6 +61,13 @@ class RBLNGemma3ForCausalLMConfig(RBLNDecoderOnlyModelForCausalLMConfig):
         if not (self.use_attention_mask and self.use_position_ids):
             raise ValueError("use_attention_mask and use_position_ids must be True for RBLNGemma3ForCausalLM")
 
+    @property
+    def use_bidirectional_prefill(self) -> bool:
+        # Text prefill is causal, as in transformers' Gemma3ForCausalLM. The two flags forced above
+        # would otherwise select the Prefix-LM rule meant for PaliGemma; only the VLM's
+        # image_prefill graph attends bidirectionally.
+        return False
+
 
 class RBLNGemma3ForConditionalGenerationConfig(RBLNModelConfig):
     submodules = ["vision_tower", "language_model"]
