@@ -568,6 +568,35 @@ def test_cosmos2_5_pipeline_owns_the_visual_tower_config():
     assert config_cls(text_encoder={"num_devices": 8}).text_encoder.num_devices == 8
 
 
+def test_qwenimage21_pipeline_derives_submodule_sizes():
+    """The Qwen-Image 2.1 pipeline config sets the sequence lengths and image sizes of all submodules."""
+    config_cls = _import_config("RBLNQwenImage21PipelineConfig")
+
+    t2i = config_cls()
+    assert t2i.text_encoder.max_seq_len == 512
+    assert t2i.text_encoder.output_hidden_states is True
+    assert t2i.text_encoder.visual["max_seq_len"] == 64
+    assert t2i.text_encoder.visual["create_runtimes"] is None  # A runtime option would also apply at load.
+    assert t2i.transformer.max_seq_len == 512
+    assert t2i.transformer.sample_size == [(64, 64)]
+    assert t2i.vae.sample_size == [(1024, 1024)]
+    assert t2i.vae.uses_encoder is False
+
+    # A 1728x608 condition image is 4104 latent tokens, and 1026 image tokens in the prompt of the text encoder.
+    edit = config_cls(image_size=(1024, 1024), condition_image_size=(608, 1728))
+    assert edit.text_encoder.max_seq_len == 1600  # 512 + 1026, up to a multiple of 64
+    assert edit.text_encoder.visual["max_seq_len"] == [4160]  # 4104 patches, up to a multiple of 64
+    assert edit.transformer.max_seq_len == 512 + 4104
+    assert edit.transformer.sample_size == [(64, 64), (38, 108)]
+    assert edit.vae.uses_encoder is True
+    assert edit.vae.encoder_sample_size == [(608, 1728)]
+
+    with pytest.raises(ValueError, match="multiples of 32"):
+        config_cls(image_size=(1000, 1000))
+    with pytest.raises(ValueError, match="condition_image_size"):
+        config_cls(num_condition_images=1)
+
+
 if __name__ == "__main__":
     pytest.main()
 

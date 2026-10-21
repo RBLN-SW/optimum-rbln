@@ -23,7 +23,13 @@ from ....utils.runtime_utils import RBLNPytorchRuntime
 
 
 if TYPE_CHECKING:
-    from diffusers import AutoencoderKL, AutoencoderKLCosmos, AutoencoderKLTemporalDecoder, VQModel
+    from diffusers import (
+        AutoencoderKL,
+        AutoencoderKLCosmos,
+        AutoencoderKLQwenImage21,
+        AutoencoderKLTemporalDecoder,
+        VQModel,
+    )
 
 
 class RBLNRuntimeVAEEncoder(RBLNPytorchRuntime):
@@ -176,6 +182,26 @@ class _VAECosmosDecoder(torch.nn.Module):
     def forward(self, z):
         vae_out = self.vae._decode(z, return_dict=False)
         return vae_out
+
+
+class _VAEQwenImage21Encoder(torch.nn.Module):
+    # One image: the encoder's frame loop runs once and its feature cache stays empty.
+    def __init__(self, vae: "AutoencoderKLQwenImage21"):
+        super().__init__()
+        self.vae = vae
+
+    def forward(self, x):
+        return self.vae._encode(x)
+
+
+class _VAEQwenImage21Decoder(torch.nn.Module):
+    # One latent frame: the decoder's frame loop runs once and its feature cache stays empty.
+    def __init__(self, vae: "AutoencoderKLQwenImage21"):
+        super().__init__()
+        self.vae = vae
+
+    def forward(self, z):
+        return self.vae._decode(z, return_dict=False)[0]
 
 
 class RBLNRuntimeVQEncoder(RBLNPytorchRuntime):
