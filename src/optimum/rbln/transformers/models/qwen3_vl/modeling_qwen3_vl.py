@@ -727,7 +727,8 @@ class RBLNQwen3VLForConditionalGeneration(RBLNQwenVLBatchSortMixin, RBLNQwen3VLM
         {"name": "visual"},
     ]
     _video_grid_rows_are_chunks = True
-    _vision_sortable_kwargs = RBLNQwenVLBatchSortMixin._vision_sortable_kwargs + (
+    _vision_sortable_kwargs = (
+        *RBLNQwenVLBatchSortMixin._vision_sortable_kwargs,
         "image_embeds",
         "video_embeds",
         "deepstack_image_embeds",
@@ -738,8 +739,9 @@ class RBLNQwen3VLForConditionalGeneration(RBLNQwenVLBatchSortMixin, RBLNQwen3VLM
         super().__post_init__(**kwargs)
         self.rope_deltas = torch.zeros(self.rbln_config.batch_size)
 
-    def can_generate(self):
-        return True
+    @property
+    def logits_last_dim(self):
+        return self.config.text_config.vocab_size
 
     def _sort_vision_kwargs(
         self, kwargs: dict, sort_idx: torch.Tensor, image_rows: list[int], video_rows: list[int]
