@@ -359,7 +359,7 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
 
         except RuntimeError as e:
             error_msg = (
-                f"\nFailed to create RBLN runtime: {str(e)}\n\n"
+                f"\nFailed to create RBLN runtime: {e!s}\n\n"
                 f"If you only need to compile the model without loading it to NPU, you can use:\n"
                 f"  from_pretrained(..., rbln_create_runtimes=False) or\n"
                 f"  from_pretrained(..., rbln_config={{..., 'create_runtimes': False}})\n\n"
@@ -608,6 +608,13 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
         #     This does NOT yield the actual model parameters used by the RBLN runtime.
         #     Code relying on iterating through all model parameters will not work as expected.
         yield torch.tensor([1.0], dtype=self.dtype, device=torch.device("cpu"))
+
+    def modules(self):
+        # Mimics torch.nn.Module.modules() for code that walks a model's modules looking for
+        # offloading hooks, e.g. diffusers' get_module_execution_device (diffusers >= 0.41).
+        # Only the model itself is yielded: it has no torch submodules, so no hook is found
+        # and callers fall back to `self.device`.
+        yield self
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
         return self.forward(*args, **kwargs)

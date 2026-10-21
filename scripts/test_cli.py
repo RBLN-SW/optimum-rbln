@@ -23,7 +23,7 @@ from pathlib import Path
 def run_command(cmd):
     """Run command and return success status."""
     print(f"Running: {' '.join(cmd)}")
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    result = subprocess.run(cmd, capture_output=True, text=True, check=False)
     if result.returncode != 0:
         print(f"❌ Command failed with exit code {result.returncode}")
         print(f"STDOUT: {result.stdout}")
@@ -149,7 +149,9 @@ def test_argument_parsing():
 
     # Test missing required arguments
     print("Testing missing required arguments...")
-    result = subprocess.run(["uv", "run", "python", "-m", "optimum.rbln.cli"], capture_output=True, text=True)
+    result = subprocess.run(
+        ["uv", "run", "python", "-m", "optimum.rbln.cli"], capture_output=True, text=True, check=False
+    )
     if result.returncode == 0:
         print("❌ Expected non-zero exit for missing arguments")
         return False
@@ -173,6 +175,7 @@ def test_argument_parsing():
         ],
         capture_output=True,
         text=True,
+        check=False,
     )
     if result.returncode == 0:
         print("❌ Expected error for invalid model class")
@@ -210,7 +213,7 @@ def test_hf_kwargs():
         "float32",
     ]
 
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    result = subprocess.run(cmd, capture_output=True, text=True, check=False)
     if result.returncode != 0:
         print(f"❌ Command failed with exit code {result.returncode}")
         print(f"STDOUT: {result.stdout}")
@@ -282,6 +285,7 @@ def test_error_handling():
         ],
         capture_output=True,
         text=True,
+        check=False,
     )
     if result.returncode == 0:
         print("❌ Expected error for non-existent model")

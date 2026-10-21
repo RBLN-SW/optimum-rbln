@@ -183,7 +183,7 @@ def rbln_chunk_gated_delta_rule(
 
     # inter-chunk: sequential carry across sub-chunks.
     core_chunks = []
-    for i in range(0, n_chunks):
+    for i in range(n_chunks):
         q_i, k_i, v_i = query[:, :, i], key[:, :, i], value[:, :, i]
         attn_intra = (q_i @ k_i.transpose(-1, -2)) * decay_mask[:, :, i]
         v_prime = k_cumdecay[:, :, i] @ last_recurrent_state

@@ -156,12 +156,12 @@ class _SwinBackbone(torch.nn.Module):
         for stage, hidden_state in zip(self.stage_names, hidden_states, strict=False):
             if stage in self.out_features:
                 batch_size, num_channels, height, width = hidden_state.shape
-                hidden_state = hidden_state.permute(0, 2, 3, 1).contiguous()
-                hidden_state = hidden_state.view(batch_size, height * width, num_channels)
-                hidden_state = self.hidden_states_norms[stage](hidden_state)
-                hidden_state = hidden_state.view(batch_size, height, width, num_channels)
-                hidden_state = hidden_state.permute(0, 3, 1, 2).contiguous()
-                feature_maps += (hidden_state,)
+                feature_map = hidden_state.permute(0, 2, 3, 1).contiguous()
+                feature_map = feature_map.view(batch_size, height * width, num_channels)
+                feature_map = self.hidden_states_norms[stage](feature_map)
+                feature_map = feature_map.view(batch_size, height, width, num_channels)
+                feature_map = feature_map.permute(0, 3, 1, 2).contiguous()
+                feature_maps += (feature_map,)
 
         output = (feature_maps,)
 

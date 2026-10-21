@@ -117,7 +117,7 @@ class RBLNCompileConfig:
                 and isinstance(item[0], str)  # name
                 and isinstance(item[1], (tuple, list))  # shape
                 and all(isinstance(x, int) for x in item[1])
-                and (isinstance(item[2], str) or isinstance(item[2], torch.dtype))  # dtype
+                and isinstance(item[2], (str, torch.dtype))  # dtype
                 for item in input_info
             )
 
@@ -1044,7 +1044,7 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
                 if f"rbln_{key}" not in kwargs:
                     kwargs[f"rbln_{key}"] = value
 
-        rbln_keys = [key for key in kwargs.keys() if key.startswith("rbln_")]
+        rbln_keys = [key for key in kwargs if key.startswith("rbln_")]
         rbln_runtime_kwargs = {key[5:]: kwargs.pop(key) for key in rbln_keys if key[5:] in RUNTIME_KEYWORDS}
         rbln_submodule_kwargs = {key[5:]: kwargs.pop(key) for key in rbln_keys if key[5:] in cls.submodules}
 

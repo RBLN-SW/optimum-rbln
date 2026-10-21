@@ -239,7 +239,7 @@ def _list_available_rbln_classes():
     """Return a sorted list of (name, kind) for available RBLN classes; kind in {"Model","Pipeline","Auto"}."""
     try:
         # Import lazily exposed module and enumerate public names
-        import optimum.rbln as rbln  # noqa: WPS433 (third-party import within function)
+        from optimum import rbln
 
         # Import bases for filtering
         RBLNBaseModel = getattr(rbln, "RBLNBaseModel", None)
@@ -562,7 +562,7 @@ def main():
         return
 
     # Apply style preference as early as possible
-    global STYLES_ENABLED
+    global STYLES_ENABLED  # noqa: PLW0603
     if pre_args.no_style:
         STYLES_ENABLED = False
 
