@@ -348,7 +348,10 @@ class RBLNRuntimeModel(RBLNPytorchRuntime):
                     attention_mask = self.dec_attn_mask
                 else:
                     key_positions = torch.arange(self.rbln_config.max_seq_len, device=cache_position.device)
-                    attention_mask = (key_positions <= cache_position[:, None, :, None]).to(self.dec_attn_mask.dtype)
+                    # Expand cache positions from [B, Q] to [B, 1, Q, 1] for comparison with key positions.
+                    attention_mask = (key_positions <= cache_position.unsqueeze(1).unsqueeze(-1)).to(
+                        self.dec_attn_mask.dtype
+                    )
             else:
                 for b_idx in range(batch_size):
                     decoding_step = cache_position[b_idx, 0].item()
