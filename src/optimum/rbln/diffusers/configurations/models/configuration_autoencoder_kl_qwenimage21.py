@@ -22,7 +22,7 @@ def _image_sizes(size: tuple[int, int] | list[tuple[int, int]] | None) -> list[t
     if size is None:
         return None
     sizes = [size] if isinstance(size[0], int) else size
-    return [tuple(s) for s in sizes]
+    return [(s[0], s[1]) for s in sizes]
 
 
 class RBLNAutoencoderKLQwenImage21Config(RBLNModelConfig):

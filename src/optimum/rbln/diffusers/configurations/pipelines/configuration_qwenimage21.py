@@ -105,6 +105,7 @@ class RBLNQwenImage21PipelineConfig(RBLNModelConfig):
             return math.ceil(length / _SEQ_LEN_MULTIPLE) * _SEQ_LEN_MULTIPLE
 
         condition_tokens = num_condition_images * max(map(latent_tokens, condition_image_size or []), default=0)
+        visual: dict[str, Any]
         if condition_image_size:
             # The vision encoder runs once per condition image, on one patch per latent token, padded to the
             # smallest of its sequence lengths that holds them.
@@ -119,6 +120,7 @@ class RBLNQwenImage21PipelineConfig(RBLNModelConfig):
             cls_name="RBLNQwen3VLForConditionalGenerationConfig",
             batch_size=batch_size,
             max_seq_len=round_up(max_seq_len + condition_tokens // _PATCHES_PER_IMAGE_TOKEN),
+            phases=["prefill"],  # The pipeline reads the hidden states of one forward pass and never generates.
             output_hidden_states=True,
             visual=visual,
         )

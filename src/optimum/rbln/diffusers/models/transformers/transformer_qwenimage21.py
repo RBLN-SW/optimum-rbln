@@ -17,7 +17,7 @@ import weakref
 from collections.abc import Sequence
 from contextlib import contextmanager
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, NamedTuple
+from typing import TYPE_CHECKING, Any, NamedTuple, cast
 
 import rebel
 import torch
@@ -69,7 +69,8 @@ def _kv_cache_len(rbln_config: RBLNQwenImage21Transformer2DModelConfig) -> int:
     starts before `max_seq_len` and the target image starts at most there. Flash attention rounds up to whole
     partitions; its partition-alignment padding can still need more, which the chunk plan reports.
     """
-    num_tokens = max(*_image_chunk_sizes(rbln_config), rbln_config.prefill_chunk_size)
+    # `_update_rbln_config` sets the chunk size before any cache length is computed.
+    num_tokens = max(*_image_chunk_sizes(rbln_config), cast(int, rbln_config.prefill_chunk_size))
     if rbln_config.attn_impl == "flash_attn":
         partition_len = rbln_config.kvcache_partition_len
         num_partitions = max(math.ceil((rbln_config.max_seq_len + num_tokens) / partition_len), 2)

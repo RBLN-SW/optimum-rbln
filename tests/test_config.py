@@ -575,6 +575,7 @@ def test_qwenimage21_pipeline_derives_submodule_sizes():
     t2i = config_cls()
     assert t2i.text_encoder.max_seq_len == 512
     assert t2i.text_encoder.output_hidden_states is True
+    assert t2i.text_encoder.phases == ["prefill"]
     assert t2i.text_encoder.visual["max_seq_len"] == 64
     assert t2i.text_encoder.visual["create_runtimes"] is None  # A runtime option would also apply at load.
     assert t2i.transformer.max_seq_len == 512
