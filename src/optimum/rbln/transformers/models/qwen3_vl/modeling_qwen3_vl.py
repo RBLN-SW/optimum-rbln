@@ -727,7 +727,8 @@ class RBLNQwen3VLForConditionalGeneration(RBLNQwenVLBatchSortMixin, RBLNQwen3VLM
         {"name": "visual"},
     ]
     _video_grid_rows_are_chunks = True
-    _vision_sortable_kwargs = RBLNQwenVLBatchSortMixin._vision_sortable_kwargs + (
+    _vision_sortable_kwargs = (
+        *RBLNQwenVLBatchSortMixin._vision_sortable_kwargs,
         "image_embeds",
         "video_embeds",
         "deepstack_image_embeds",
@@ -740,7 +741,6 @@ class RBLNQwen3VLForConditionalGeneration(RBLNQwenVLBatchSortMixin, RBLNQwen3VLM
 
     @property
     def logits_last_dim(self):
-        # The graph ends in the LM head, also when it compiles only the prefill phase.
         return self.config.text_config.vocab_size
 
     def _sort_vision_kwargs(
