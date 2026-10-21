@@ -104,7 +104,7 @@ class Gemma3TextModel(DecoderOnlyModel):
         for layer_idx, layer in enumerate(self.layers):
             if output_hidden_states:
                 all_hidden_states += (hidden_states,)
-            is_sliding = True if layer_idx in self.sliding_window_layers else False
+            is_sliding = layer_idx in self.sliding_window_layers
             use_swa_mask = is_sliding and self.phase in ("decode", "image_prefill")
             hidden_states = layer(
                 hidden_states=hidden_states,

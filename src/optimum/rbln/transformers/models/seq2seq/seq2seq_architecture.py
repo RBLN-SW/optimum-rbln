@@ -178,8 +178,8 @@ class Seq2SeqDecoderWrapper(nn.Module):
         self_kv_cache = kv_cache[self.num_layers * 2 :]
         cross_kv_cache = kv_cache[: self.num_layers * 2]
         for i in range(0, self.num_layers * 2, 2):
-            self_past_key_values = self_past_key_values + ((self_kv_cache[i], self_kv_cache[i + 1]),)
-            cross_past_key_values = cross_past_key_values + ((cross_kv_cache[i], cross_kv_cache[i + 1]),)
+            self_past_key_values = (*self_past_key_values, (self_kv_cache[i], self_kv_cache[i + 1]))
+            cross_past_key_values = (*cross_past_key_values, (cross_kv_cache[i], cross_kv_cache[i + 1]))
 
         # decode
         lm_logits = self.conditional_generation(
@@ -277,7 +277,6 @@ class Seq2SeqDecoder(torch.nn.Module):
         Abstract method intended to be overridden by subclasses to modify or override
         the attributes of the original model after initialization.
         """
-        pass
 
     def get_embedding(self):
         return self.embed_tokens
@@ -351,7 +350,6 @@ class Seq2SeqDecoderLayer(torch.nn.Module):
         Abstract method intended to be overridden by subclasses to modify or override
         the attributes of the original model after initialization.
         """
-        pass
 
     def pre_self_attn_layer_norm(self, hidden_states):
         raise NotImplementedError(
@@ -427,7 +425,6 @@ class Seq2SeqSelfAttention(nn.Module):
         Abstract method intended to be overridden by subclasses to modify or override
         the attributes of the original model after initialization.
         """
-        pass
 
     def _shape(self, tensor: torch.Tensor, seq_len: int, bsz: int) -> torch.Tensor:
         return tensor.view(bsz, seq_len, 1, self.num_heads, self.head_dim).transpose(1, 3)
@@ -497,7 +494,6 @@ class Seq2SeqCrossAttention(nn.Module):
         """
         Optional post-init hook for subclasses (e.g., to register q/k/v/out projections).
         """
-        pass
 
     def forward(
         self,

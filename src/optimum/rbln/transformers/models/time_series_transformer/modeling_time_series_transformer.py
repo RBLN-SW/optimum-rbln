@@ -46,7 +46,7 @@ from .time_series_transformers_architecture import TimeSeriesTransformersWrapper
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
-    from transformers import PretrainedConfig, PreTrainedModel
+    from transformers import PreTrainedModel
 
 
 class RBLNRuntimeEncoder(RBLNPytorchRuntime):
@@ -433,7 +433,7 @@ class RBLNTimeSeriesTransformerForPrediction(RBLNModel):
 
         return SampleTSPredictionOutput(
             sequences=concat_future_samples.reshape(
-                (-1, num_parallel_samples, self.config.prediction_length) + self._origin_model.target_shape,
+                (-1, num_parallel_samples, self.config.prediction_length, *self._origin_model.target_shape),
             )
         )
 
