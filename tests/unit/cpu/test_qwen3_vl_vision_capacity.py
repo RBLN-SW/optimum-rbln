@@ -25,11 +25,11 @@ def make_vision_model(height, width, buckets):
     return model, hidden_states, torch.tensor([[1, height, width]])
 
 
-@pytest.mark.parametrize("height,width,buckets", [(86, 128, [6400]), (14, 14, [64])])
+@pytest.mark.parametrize(("height", "width", "buckets"), [(86, 128, [6400]), (14, 14, [64])])
 def test_vision_capacity_error_explains_patch_count_and_remedy(height, width, buckets):
     model, hidden_states, grid = make_vision_model(height, width, buckets)
 
-    with pytest.raises(ValueError) as exc:
+    with pytest.raises(ValueError, match="before spatial merging") as exc:
         RBLNQwen3VLVisionModel.forward(model, hidden_states, grid)
 
     message = str(exc.value)

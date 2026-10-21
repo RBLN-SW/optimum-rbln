@@ -166,7 +166,7 @@ class _BaseAutoModelClass:
         has_remote_code = (
             hasattr(config, "auto_map") and convert_rbln_to_hf_model_name(cls.__name__) in config.auto_map
         )
-        if has_remote_code and (trust_remote_code or type(config) not in cls._model_mapping.keys()):
+        if has_remote_code and (trust_remote_code or type(config) not in cls._model_mapping):
             class_ref = config.auto_map[convert_rbln_to_hf_model_name(cls.__name__)]
             model_class = get_class_from_dynamic_module(class_ref, pretrained_model_name_or_path, **kwargs)
         elif type(config) in cls._model_mapping:

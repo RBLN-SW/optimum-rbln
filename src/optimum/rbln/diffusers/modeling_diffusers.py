@@ -265,10 +265,10 @@ class RBLNDiffusionMixin(_PipelineBase):
                         f"{submodule_name} is not compiled torch module. If you want to compile, set `export=True`."
                     )
 
-                    else:
-                        # Not an RBLN model and not a torch module (e.g. a stand-in safety
-                        # checker): keep it, instead of leaking the previous loop's submodule.
-                        submodule = passed_submodule
+                else:
+                    # Not an RBLN model and not a torch module (e.g. a stand-in safety
+                    # checker): keep it, instead of leaking the previous loop's submodule.
+                    submodule = passed_submodule
 
                 kwargs[submodule_name] = submodule
 
