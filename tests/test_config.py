@@ -731,9 +731,9 @@ def test_qwen3_5_gdn_chunk_size_default_is_decoupled_from_prefill():
         assert cls(gdn_chunk_size=64, **kwargs).gdn_chunk_size == 64
 
 
-@pytest.mark.parametrize("num_speculative_tokens", [0, 3])
+@pytest.mark.parametrize("decoder_query_length", [1, 4])
 @pytest.mark.parametrize("use_attention_mask,use_position_ids", [(False, False), (True, False), (True, True)])
-def test_multi_token_decoder_compile_config(monkeypatch, num_speculative_tokens, use_attention_mask, use_position_ids):
+def test_multi_token_decoder_compile_config(monkeypatch, decoder_query_length, use_attention_mask, use_position_ids):
     batch_size = 2
     model_config = LlamaConfig(
         hidden_size=64,
@@ -749,7 +749,7 @@ def test_multi_token_decoder_compile_config(monkeypatch, num_speculative_tokens,
         max_seq_len=128,
         prefill_chunk_size=128,
         kvcache_num_blocks=batch_size,
-        num_speculative_tokens=num_speculative_tokens,
+        decoder_query_length=decoder_query_length,
         npu="RBLN-CA25",
         use_attention_mask=use_attention_mask,
         use_position_ids=use_position_ids,
@@ -761,10 +761,10 @@ def test_multi_token_decoder_compile_config(monkeypatch, num_speculative_tokens,
     for b in range(batch_size, 0, -1):
         inputs = {name: shape for name, shape, _ in configs[f"decoder_batch_{b}"].input_info}
         assert inputs["input_ids"] == [b, 1]
-    if num_speculative_tokens:
+    if decoder_query_length > 1:
         inputs = {name: shape for name, shape, _ in configs["multi_token_decoder"].input_info}
-        assert inputs["input_ids"] == [batch_size, num_speculative_tokens + 1]
-        assert inputs["cache_position"] == [batch_size, num_speculative_tokens + 1]
+        assert inputs["input_ids"] == [batch_size, decoder_query_length]
+        assert inputs["cache_position"] == [batch_size, decoder_query_length]
         assert inputs["block_tables"] == [batch_size, 1]
         assert "query_position" not in inputs
     else:
@@ -800,16 +800,16 @@ def test_multi_token_decoder_compile_config(monkeypatch, num_speculative_tokens,
         can_generate=lambda: True,
     )
     RBLNLlamaForCausalLM.setup_runtime(model)
-    if num_speculative_tokens:
+    if decoder_query_length > 1:
         assert model.multi_token_decoder.runtime is compiled["multi_token_decoder"]
         assert model.multi_token_decoder.page_table_manager is model.decoder.page_table_manager
         assert model.multi_token_decoder.page_table_manager is model.prefill_decoder.page_table_manager
     else:
         assert model.multi_token_decoder is None
 
-    decoder = model.multi_token_decoder if num_speculative_tokens else model.decoder
+    decoder = model.multi_token_decoder if decoder_query_length > 1 else model.decoder
     config._requires_batch_sort = True
-    query_length = num_speculative_tokens + 1
+    query_length = decoder_query_length
     tokens = torch.arange(batch_size * query_length).view(batch_size, query_length)
     positions = torch.tensor([[5], [3]], dtype=torch.int32) + torch.arange(query_length)
     block_tables = torch.tensor([[1], [0]], dtype=torch.int16)

@@ -128,13 +128,13 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
 
             # NOTE(eunji): Use a decoder whose batch size matches the model's main batch size for compatibility.
             self.decoder = self.decoders[self.rbln_config.batch_size]
-            if self.rbln_config.num_speculative_tokens:
+            if self.rbln_config.decoder_query_length > 1:
                 runtime_idx = self.rbln_config.expected_compiled_model_names.index("multi_token_decoder")
                 self.multi_token_decoder = RBLNRuntimeModel(
                     runtime=self.model[runtime_idx],
                     phase="decode",
                     batch_size=self.rbln_config.batch_size,
-                    query_length=self.rbln_config.num_speculative_tokens + 1,
+                    query_length=self.rbln_config.decoder_query_length,
                     **common_kwargs,
                 )
 
@@ -638,14 +638,14 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
                 compile_cfgs.append(
                     RBLNCompileConfig(compiled_model_name=f"decoder_batch_{batch_size}", input_info=dec_input_info)
                 )
-            if rbln_config.num_speculative_tokens:
+            if rbln_config.decoder_query_length > 1:
                 if cls.get_input_info.__func__ is not RBLNDecoderOnlyModel.get_input_info.__func__:
                     raise NotImplementedError(
                         "Multi-token decoder compilation currently supports the base decoder-only input layout."
                     )
                 multi_token_input_info = cls.get_input_info(
                     batch_size=rbln_config.batch_size,
-                    query_length=rbln_config.num_speculative_tokens + 1,
+                    query_length=rbln_config.decoder_query_length,
                     rbln_config=rbln_config,
                     model_config=model_config,
                     is_prefill=False,

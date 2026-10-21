@@ -58,7 +58,7 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
         kvcache_num_blocks: int | None = None,
         memory_budget: int | float | str | None = None,
         decoder_batch_sizes: list[int] | None = None,
-        num_speculative_tokens: int = 0,
+        decoder_query_length: int = 1,
         cache_impl: CacheImplType | None = None,
         sliding_window: int | None = None,
         sliding_window_layers: list[int] | None = None,
@@ -110,8 +110,9 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
                 accepted (convenient for passing through the compile CLI), as are bytes given as an
                 int or string ("10GB", "512MB"). Defaults to None (the full NPU available DRAM).
                 Must not exceed the target NPU's available DRAM.
-            num_speculative_tokens (int): Maximum number of draft tokens. When positive, compile an additional
-                multi-token decoder with input shape [batch_size, num_speculative_tokens + 1]. Defaults to 0.
+            decoder_query_length (int): Number of input tokens processed by the multi-token decoder per call.
+                When greater than 1, compile an additional decoder with input shape [batch_size, decoder_query_length].
+                Defaults to 1, which compiles only the ordinary single-token decoders.
             decoder_batch_sizes (list[int] | None): A list of batch sizes for which separate decoder models will be compiled.
                 This allows the model to handle varying batch sizes efficiently during generation. If not specified,
                 defaults to a list containing only the model's main batch size. When specifying multiple batch sizes:
@@ -260,14 +261,14 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
 
         self.output_hidden_states = output_hidden_states or False
         if (
-            not isinstance(num_speculative_tokens, int)
-            or isinstance(num_speculative_tokens, bool)
-            or num_speculative_tokens < 0
+            not isinstance(decoder_query_length, int)
+            or isinstance(decoder_query_length, bool)
+            or decoder_query_length < 1
         ):
-            raise ValueError("num_speculative_tokens must be a non-negative integer.")
-        if num_speculative_tokens and "decode" not in self.phases:
-            raise ValueError("num_speculative_tokens requires the decode phase.")
-        self.num_speculative_tokens = num_speculative_tokens
+            raise ValueError("decoder_query_length must be a positive integer.")
+        if decoder_query_length > 1 and "decode" not in self.phases:
+            raise ValueError("decoder_query_length requires the decode phase.")
+        self.decoder_query_length = decoder_query_length
         # internal, not a user knob: resolved at compile time to mirror the compiler's
         # in-memory kernel routing, serialized so a loaded model knows to sort
         self._requires_batch_sort = _requires_batch_sort
@@ -353,7 +354,7 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
             names = self.phases[: self.decoder_runtime_idx] + [
                 f"decoder_batch_{batch_size}" for batch_size in self.decoder_batch_sizes
             ]
-            if self.num_speculative_tokens:
+            if self.decoder_query_length > 1:
                 names.append("multi_token_decoder")
             return names
         else:
