@@ -28,7 +28,7 @@
 
 import math
 from collections.abc import Sequence
-from typing import Optional, Protocol
+from typing import TYPE_CHECKING, Optional, Protocol
 
 import numpy as np
 import torch
@@ -36,6 +36,9 @@ from transformers import PretrainedConfig
 
 from .utils.logging import get_logger
 
+
+if TYPE_CHECKING:
+    from .configuration_utils import RBLNModelConfig
 
 logger = get_logger(__name__)
 
@@ -54,6 +57,25 @@ def np_cos(x: torch.Tensor) -> torch.Tensor:
 def np_sin(x: torch.Tensor) -> torch.Tensor:
     """sin(x) computed on the host via numpy. See `np_cos` for why."""
     return torch.from_numpy(np.sin(x.detach().cpu().numpy()))
+
+
+def compiled_vision_rotary_dtype(rbln_config: "RBLNModelConfig") -> torch.dtype:
+    """dtype the vision encoder graph expects for its `cos`/`sin` inputs, read back from the artifact.
+
+    HF builds the vision rotary tables in fp32 and rotates in fp32, so the graph declares `cos`/`sin`
+    as fp32; that is the basis going forward. Artifacts compiled before that declared them in the
+    activation dtype and the runtime rejects an fp32 tensor for them, so read the dtype the graph was
+    actually compiled with from the saved compile config and feed that. The compile config already
+    records every input's dtype, so nothing new has to be stored, and the numerical difference is
+    below what shows up on device, so this stays silent rather than asking for a recompile.
+
+    DEPRECATED: the activation-dtype fallback is kept only for artifacts compiled before fp32
+    `cos`/`sin`. Once optimum-rbln reaches 0.12.0 delete this helper and have the vision hosts hand
+    `cos`/`sin` to the graph as `torch.float32`.
+    """
+    compile_cfg = rbln_config.compile_cfgs[0]
+    input_info = compile_cfg.input_info[0] if compile_cfg.is_multiple_input_info else compile_cfg.input_info
+    return getattr(torch, next(dtype for name, _, dtype in input_info if name == "cos"))
 
 
 class _RotaryEmbedding(Protocol):
