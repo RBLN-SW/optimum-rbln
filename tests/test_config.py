@@ -2,10 +2,12 @@ import os
 import re
 import shutil
 import tempfile
+from types import SimpleNamespace
 
 import pytest
 import rebel
 import torch
+from transformers import LlamaConfig
 
 from optimum.rbln import (
     RBLNAutoConfig,
@@ -729,3 +731,159 @@ def test_qwen3_5_gdn_chunk_size_default_is_decoupled_from_prefill():
         assert cls(prefill_chunk_size=512, **kwargs).gdn_chunk_size == MAX_GDN_CHUNK_SIZE
         # An explicit value is preserved.
         assert cls(gdn_chunk_size=64, **kwargs).gdn_chunk_size == 64
+
+
+@pytest.mark.parametrize("decoder_query_length", [1, 4])
+@pytest.mark.parametrize(("use_attention_mask", "use_position_ids"), [(False, False), (True, False), (True, True)])
+def test_multi_token_decoder_compile_config(monkeypatch, decoder_query_length, use_attention_mask, use_position_ids):
+    batch_size = 2
+    model_config = LlamaConfig(
+        hidden_size=64,
+        intermediate_size=128,
+        num_hidden_layers=1,
+        num_attention_heads=2,
+        num_key_value_heads=1,
+        max_position_embeddings=128,
+    )
+    config = RBLNLlamaForCausalLMConfig(
+        batch_size=batch_size,
+        decoder_batch_sizes=list(range(batch_size, 0, -1)),
+        max_seq_len=128,
+        prefill_chunk_size=128,
+        kvcache_num_blocks=batch_size,
+        decoder_query_length=decoder_query_length,
+        npu="RBLN-CA25",
+        use_attention_mask=use_attention_mask,
+        use_position_ids=use_position_ids,
+    )
+    config = RBLNLlamaForCausalLM._update_rbln_config(model_config=model_config, rbln_config=config)
+    configs = {cfg.compiled_model_name: cfg for cfg in config.compile_cfgs}
+    assert list(configs) == config.expected_compiled_model_names
+    assert config.batch_size == batch_size
+    for b in range(batch_size, 0, -1):
+        inputs = {name: shape for name, shape, _ in configs[f"decoder_batch_{b}"].input_info}
+        assert inputs["input_ids"] == [b, 1]
+    if decoder_query_length > 1:
+        inputs = {name: shape for name, shape, _ in configs["multi_token_decoder"].input_info}
+        assert inputs["input_ids"] == [batch_size, decoder_query_length]
+        assert inputs["cache_position"] == [batch_size, decoder_query_length]
+        assert inputs["block_tables"] == [batch_size, 1]
+        assert "query_position" not in inputs
+    else:
+        assert "multi_token_decoder" not in configs
+
+    calls = []
+
+    def compile_model(wrapped_model, compile_config, example_inputs, context, rbln_config, quantization, phase):
+        caches = [
+            tensor
+            for (name, _, _), tensor in zip(compile_config.input_info, example_inputs, strict=True)
+            if "past_key_values" in name
+        ]
+        calls.append((compile_config.compiled_model_name, phase, caches))
+        return compile_config.compiled_model_name
+
+    monkeypatch.setattr(RBLNLlamaForCausalLM, "_wrap_model_if_needed", lambda *args: type("Wrapped", (), {})())
+    monkeypatch.setattr(RBLNLlamaForCausalLM, "_compile_model", compile_model)
+    compiled = RBLNLlamaForCausalLM.get_compiled_model(None, config)
+    assert list(compiled) == config.expected_compiled_model_names
+    assert all(phase == "decode" for _, phase, _ in calls[1:])
+    for _, _, caches in calls[1:]:
+        assert caches
+        assert all(actual is shared for actual, shared in zip(caches, calls[0][2], strict=True))
+
+    model = SimpleNamespace(
+        rbln_config=config,
+        config=model_config,
+        model=list(compiled.values()),
+        embed_tokens=None,
+        dtype=torch.float16,
+        logits_last_dim=model_config.vocab_size,
+        can_generate=lambda: True,
+    )
+    RBLNLlamaForCausalLM.setup_runtime(model)
+    if decoder_query_length > 1:
+        assert model.multi_token_decoder.runtime is compiled["multi_token_decoder"]
+        assert model.multi_token_decoder.page_table_manager is model.decoder.page_table_manager
+        assert model.multi_token_decoder.page_table_manager is model.prefill_decoder.page_table_manager
+    else:
+        assert model.multi_token_decoder is None
+
+    decoder = model.multi_token_decoder if decoder_query_length > 1 else model.decoder
+    config._requires_batch_sort = True
+    query_length = decoder_query_length
+    tokens = torch.arange(batch_size * query_length).view(batch_size, query_length)
+    positions = torch.tensor([[5], [3]], dtype=torch.int32) + torch.arange(query_length)
+    block_tables = torch.tensor([[1], [0]], dtype=torch.int16)
+    expected_logits = torch.randn(batch_size, query_length, model_config.vocab_size)
+    runtime_calls = []
+
+    def runtime(*args, **kwargs):
+        runtime_calls.append(args)
+        return expected_logits
+
+    decoder.runtime = runtime
+    if use_position_ids:
+        for b in range(batch_size):
+            decoder.dec_attn_mask[b, : positions[b, 0]] = 1
+    output = decoder(
+        input_ids=tokens,
+        cache_position=positions,
+        block_tables=block_tables,
+        position_ids=positions if use_position_ids else None,
+    )
+    assert output.logits is expected_logits
+    args = runtime_calls[0]
+    assert args[0] is tokens
+    assert args[1] is positions
+    assert args[2] is block_tables
+    if use_attention_mask:
+        mask = args[3]
+        limits = positions[:, -1:] if use_position_ids else positions[:, None, :, None]
+        expected_mask = torch.arange(config.max_seq_len) <= limits
+        assert torch.equal(mask, expected_mask)
+
+
+@pytest.mark.parametrize("external_block_tables", [False, True])
+@pytest.mark.parametrize("positions", [[[2, 3], [2, 3]], [[4, 5], [4, 5]], [[2, 3], [3, 4]]])
+def test_multi_token_decoder_block_boundary(monkeypatch, external_block_tables, positions):
+    from optimum.rbln.transformers.models.decoderonly.decoderonly_runtime_utils import (
+        RBLNPageTableManager,
+        RBLNRuntimeModel,
+    )
+
+    config = SimpleNamespace(
+        batch_size=2,
+        max_seq_len=8,
+        kvcache_block_size=4,
+        kvcache_num_blocks=4,
+        use_global_attention=True,
+        use_local_attention=False,
+        use_inputs_embeds=False,
+        cache_impl="static",
+    )
+    manager = RBLNPageTableManager(config)
+    decoder = RBLNRuntimeModel(
+        runtime=None,
+        phase="decode",
+        batch_size=2,
+        query_length=2,
+        dec_attn_mask=None,
+        page_table_manager=manager,
+        rbln_config=config,
+        main_input_name="input_ids",
+        embed_tokens=None,
+    )
+    monkeypatch.setattr(decoder, "decode_forward", lambda *args, **kwargs: "decoded")
+    kwargs = {
+        "input_ids": torch.ones(2, 2, dtype=torch.long),
+        "cache_position": torch.tensor(positions),
+        "block_tables": torch.tensor([[0, 1], [2, 3]]) if external_block_tables else None,
+    }
+    if positions[1] == [3, 4]:
+        with pytest.raises(ValueError, match="cannot cross a KV cache block boundary"):
+            decoder(**kwargs)
+        assert torch.all(manager.block_tables == manager.EMPTY_BLOCK)
+        assert len(manager.free_block_pool) == 4
+    else:
+        assert decoder(**kwargs) == "decoded"

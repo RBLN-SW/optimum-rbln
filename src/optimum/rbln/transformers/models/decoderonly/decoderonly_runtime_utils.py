@@ -116,9 +116,10 @@ class RBLNPageTableManager:
             # Case for 'decoder' phase, iterate over the cache positions to allocate necessary blocks
             else:
                 for b_idx in range(batch_size):
-                    position = cache_position[b_idx][0].item()
-                    block_idx = position // self.rbln_config.kvcache_block_size
-                    self.update_block(b_idx, block_idx)
+                    start_block = int(cache_position[b_idx, 0]) // self.rbln_config.kvcache_block_size
+                    end_block = int(cache_position[b_idx, -1]) // self.rbln_config.kvcache_block_size
+                    for block_idx in range(start_block, end_block + 1):
+                        self.update_block(b_idx, block_idx)
 
                 return self.replace_empty_block(self.block_tables[:batch_size])
 
@@ -171,7 +172,7 @@ class RBLNPageTableManager:
 def _require_sorted_cache_position(cache_position: torch.Tensor) -> None:
     # last line of defense before the in-memory kernel: catches callers that bypass
     # generate()/forward() (e.g. serving stacks driving the runtime directly)
-    lengths = cache_position.reshape(-1)
+    lengths = cache_position[:, 0]
     if not torch.all(lengths[:-1] >= lengths[1:]):
         raise ValueError(
             "This model was compiled with `requires_batch_sort`: decode batches must be sorted by "
@@ -192,6 +193,7 @@ class RBLNRuntimeModel(RBLNPytorchRuntime):
         rbln_config: RBLNDecoderOnlyModelForCausalLMConfig,
         config: Optional["PreTrainedConfig"] = None,
         logits_last_dim: int | None = None,
+        query_length: int = 1,
         **kwargs: Any,
     ) -> None:
         super().__init__(runtime, **kwargs)
@@ -200,6 +202,7 @@ class RBLNRuntimeModel(RBLNPytorchRuntime):
         self.rbln_config = rbln_config
         self.config = config
         self.logits_last_dim = logits_last_dim
+        self.query_length = query_length
 
         # shared resources between prefill and decode phase
         self.dec_attn_mask = dec_attn_mask
@@ -239,6 +242,25 @@ class RBLNRuntimeModel(RBLNPytorchRuntime):
         lora_int_ids: torch.Tensor | None = None,
     ):
         inputs = self.inputs_embeddings_if_needed(input_ids, inputs_embeds)
+        if self.phase == "decode":
+            if inputs.shape[1] != self.query_length:
+                raise ValueError(f"Query length mismatch: got {inputs.shape[1]}, expected {self.query_length}.")
+            if cache_position is None or cache_position.shape != inputs.shape[:2]:
+                raise ValueError(f"cache_position must have shape {list(inputs.shape[:2])}.")
+            if self.query_length > 1:
+                offsets = torch.arange(self.query_length, device=cache_position.device)
+                if not torch.equal(cache_position, cache_position[:, :1] + offsets):
+                    raise ValueError("Multi-token cache positions must be consecutive within each request.")
+                if torch.any(cache_position < 0) or torch.any(cache_position >= self.rbln_config.max_seq_len):
+                    raise ValueError("Multi-token cache positions must be within max_seq_len.")
+                # Split-KV kernels currently write each request's chunk into a single block.
+                block_size = self.rbln_config.kvcache_block_size
+                if torch.any(cache_position[:, 0] % block_size + self.query_length > block_size):
+                    raise ValueError(
+                        "Multi-token decode cannot cross a KV cache block boundary "
+                        f"(query_length={self.query_length}, kvcache_block_size={block_size}). "
+                        "Use the single-token decoder at the boundary."
+                    )
         block_tables, local_block_tables, is_external_block_tables = (
             self.page_table_manager.get_block_tables_if_needed(
                 self.batch_size,
@@ -320,28 +342,39 @@ class RBLNRuntimeModel(RBLNPytorchRuntime):
             )
 
         if self.rbln_config.use_attention_mask and attention_mask is None:
-            for b_idx in range(batch_size):
-                decoding_step = cache_position[b_idx].item()
-                if not (0 <= decoding_step < self.dec_attn_mask.shape[-1]):
-                    raise ValueError(
-                        f"Decoding step {decoding_step} out of bounds for attention mask with shape {self.dec_attn_mask.shape}."
-                    )
-
+            if self.query_length > 1:
                 if self.rbln_config.use_position_ids:
-                    self.dec_attn_mask[b_idx, decoding_step] = 1
-
-                    if self.batch_size < block_tables.shape[0]:
-                        block_tables = block_tables[: self.batch_size]
-
-                    if self.dec_attn_mask is not None and self.batch_size < self.dec_attn_mask.shape[0]:
-                        self.dec_attn_mask = self.dec_attn_mask[: self.batch_size]
-                elif is_external_block_tables:
-                    self.dec_attn_mask[b_idx].fill_(0)
-                    self.dec_attn_mask[b_idx, :, :, : decoding_step + 1] = 1
+                    self.dec_attn_mask.scatter_(1, cache_position.long(), 1)
+                    attention_mask = self.dec_attn_mask
                 else:
-                    self.dec_attn_mask[b_idx, :, :, decoding_step] = 1
+                    key_positions = torch.arange(self.rbln_config.max_seq_len, device=cache_position.device)
+                    # Expand cache positions from [B, Q] to [B, 1, Q, 1] for comparison with key positions.
+                    attention_mask = (key_positions <= cache_position.unsqueeze(1).unsqueeze(-1)).to(
+                        self.dec_attn_mask.dtype
+                    )
+            else:
+                for b_idx in range(batch_size):
+                    decoding_step = cache_position[b_idx, 0].item()
+                    if not (0 <= decoding_step < self.dec_attn_mask.shape[-1]):
+                        raise ValueError(
+                            f"Decoding step {decoding_step} out of bounds for attention mask with shape {self.dec_attn_mask.shape}."
+                        )
 
-            attention_mask = self.dec_attn_mask
+                    if self.rbln_config.use_position_ids:
+                        self.dec_attn_mask[b_idx, decoding_step] = 1
+
+                        if self.batch_size < block_tables.shape[0]:
+                            block_tables = block_tables[: self.batch_size]
+
+                        if self.dec_attn_mask is not None and self.batch_size < self.dec_attn_mask.shape[0]:
+                            self.dec_attn_mask = self.dec_attn_mask[: self.batch_size]
+                    elif is_external_block_tables:
+                        self.dec_attn_mask[b_idx].fill_(0)
+                        self.dec_attn_mask[b_idx, :, :, : decoding_step + 1] = 1
+                    else:
+                        self.dec_attn_mask[b_idx, :, :, decoding_step] = 1
+
+                attention_mask = self.dec_attn_mask
 
         outputs = super().forward(
             inputs,
