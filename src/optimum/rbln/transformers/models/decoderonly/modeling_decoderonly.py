@@ -134,6 +134,7 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
                     runtime=self.model[runtime_idx],
                     phase="decode",
                     batch_size=self.rbln_config.batch_size,
+                    query_length=self.rbln_config.num_speculative_tokens + 1,
                     **common_kwargs,
                 )
 
@@ -799,6 +800,8 @@ class RBLNDecoderOnlyModelForCausalLM(RBLNDecoderOnlyModel, RBLNDecoderOnlyGener
         if self.rbln_config.can_generate:
             for batch_size in self.rbln_config.decoder_batch_sizes:
                 self.decoders[batch_size].lora_int_ids = lora_int_ids
+            if self.multi_token_decoder is not None:
+                self.multi_token_decoder.lora_int_ids = lora_int_ids
 
     def set_adapter(self, adapter_name: str | list[str]) -> None:
         """
