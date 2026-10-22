@@ -1036,6 +1036,9 @@ class AttentionOp(nn.Module):
                 op_args["is_bidirectional"] = self.phase == "image_prefill"
             elif not self.use_attention_mask or self.rbln_config.use_position_ids:
                 op_args["is_bidirectional"] = self.rbln_config._is_prefix_lm
+            else:
+                # paged_attn_* (mask without position ids): the custom op has no is_bidirectional argument
+                pass
 
         if self.quantization and self.quantization.kv_caches == "fp8":
             if past_key_state.dtype != torch.float8_e4m3fn:
@@ -1160,6 +1163,9 @@ class FlashAttentionOp(AttentionOp):
                 op_args["is_bidirectional"] = self.phase == "image_prefill"
             elif not self.use_attention_mask or self.rbln_config.use_position_ids:
                 op_args["is_bidirectional"] = self.rbln_config._is_prefix_lm
+            else:
+                # paged_attn_* (mask without position ids): the custom op has no is_bidirectional argument
+                pass
 
         if self.quantization and self.quantization.kv_caches == "fp8":
             if past_key_state.dtype != torch.float8_e4m3fn:
