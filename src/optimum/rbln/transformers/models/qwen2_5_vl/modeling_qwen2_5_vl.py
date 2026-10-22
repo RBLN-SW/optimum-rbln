@@ -649,8 +649,10 @@ class RBLNQwen2_5_VLForConditionalGeneration(
         super().__post_init__(**kwargs)
         self.rope_deltas = torch.zeros(self.rbln_config.batch_size)
 
-    def can_generate(self):
-        return True
+    @property
+    def logits_last_dim(self):
+        # The graph ends in the LM head, also when it compiles only the prefill phase.
+        return self.config.text_config.vocab_size
 
     @classmethod
     def update_rbln_config_using_pipe(cls, pipe: Any, rbln_config: Any, submodule_name: str) -> Any:

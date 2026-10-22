@@ -809,8 +809,10 @@ class RBLNQwen3_5ForConditionalGeneration(RBLNQwenVLBatchSortMixin, RBLNQwen3_5M
         super().__post_init__(**kwargs)
         self.rope_deltas = torch.zeros(self.rbln_config.batch_size)
 
-    def can_generate(self):
-        return True
+    @property
+    def logits_last_dim(self):
+        # The graph ends in the LM head, also when it compiles only the prefill phase.
+        return self.config.text_config.vocab_size
 
     @classmethod
     def _get_compile_context(cls, compile_config, example_inputs):

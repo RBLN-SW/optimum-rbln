@@ -209,6 +209,37 @@ class LLMTest:
                             assert hidden_state.shape == (batch_size, length, hidden_size)
 
 
+class PrefillOnlyMixin:
+    """Runs the parent test class with `rbln_config={"phases": ["prefill"]}`.
+
+    A decoder-only model compiled without the decode phase has no decode graph and no decode runtime, cannot
+    generate, and its forward returns the last-token logits `[batch, 1, vocab_size]`. The other inherited tests
+    (save/load, automap, ...) run unchanged against the prefill-only artifact.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        rbln_config = {**cls.RBLN_CLASS_KWARGS.get("rbln_config", {}), "phases": ["prefill"]}
+        cls.RBLN_CLASS_KWARGS = {**cls.RBLN_CLASS_KWARGS, "rbln_config": rbln_config}
+        return super().setUpClass()
+
+    def test_generate(self):
+        model = self.model
+        assert not model.can_generate()
+        assert not model.__dict__.get("decoders")
+        assert "decoder" not in model.__dict__
+        assert [cfg.compiled_model_name for cfg in model.rbln_config.compile_cfgs] == ["prefill"]
+
+        # The multimodal get_inputs() add generation kwargs unconditionally; forward() ignores them.
+        inputs = {k: v for k, v in self.get_inputs().items() if k not in ("max_new_tokens", "do_sample")}
+        logits = model(**inputs).logits
+        vocab_size = model.config.get_text_config().vocab_size
+        assert tuple(logits.shape) == (inputs["input_ids"].shape[0], 1, vocab_size)
+
+        with pytest.raises(AttributeError, match="no attribute 'generate'"):
+            model.generate(**inputs, max_new_tokens=2)
+
+
 class TestMistralForCausalLM(LLMTest.TestLLM):
     RBLN_CLASS = RBLNMistralForCausalLM
     HF_MODEL_ID = "openaccess-ai-collective/tiny-mistral"
@@ -947,6 +978,10 @@ class TestQwen2VLForConditionalGeneration(LLMTest.TestLLM):
         assert not model.rbln_config.create_runtimes
 
 
+class TestQwen2VLForConditionalGeneration_PrefillOnly(PrefillOnlyMixin, TestQwen2VLForConditionalGeneration):
+    pass
+
+
 class TestQwen2_5_VLForConditionalGeneration(LLMTest.TestLLM):
     RBLN_AUTO_CLASS = RBLNAutoModelForImageTextToText
     RBLN_CLASS = RBLNQwen2_5_VLForConditionalGeneration
@@ -1035,6 +1070,10 @@ class TestQwen2_5_VLForConditionalGeneration_OutputHiddenStates(TestQwen2_5_VLFo
         self.skipTest("Covered by TestQwen2_5_VLForConditionalGeneration.")
 
 
+class TestQwen2_5_VLForConditionalGeneration_PrefillOnly(PrefillOnlyMixin, TestQwen2_5_VLForConditionalGeneration):
+    TEST_LEVEL = TestLevel.FULL
+
+
 class TestQwen3VLForConditionalGeneration(LLMTest.TestLLM):
     RBLN_AUTO_CLASS = RBLNAutoModelForImageTextToText
     RBLN_CLASS = RBLNQwen3VLForConditionalGeneration
@@ -1121,6 +1160,10 @@ class TestQwen3VLForConditionalGeneration_OutputHiddenStates(TestQwen3VLForCondi
 
     def test_propagate_config(self):
         self.skipTest("Covered by TestQwen3VLForConditionalGeneration.")
+
+
+class TestQwen3VLForConditionalGeneration_PrefillOnly(PrefillOnlyMixin, TestQwen3VLForConditionalGeneration):
+    TEST_LEVEL = TestLevel.FULL
 
 
 class TestQwen3VLMoeForConditionalGeneration(LLMTest.TestLLM):
@@ -1240,6 +1283,10 @@ class TestQwen3_5ForConditionalGeneration_OutputHiddenStates(TestQwen3_5ForCondi
         self._test_output_hidden_states_generation()
 
 
+class TestQwen3_5ForConditionalGeneration_PrefillOnly(PrefillOnlyMixin, TestQwen3_5ForConditionalGeneration):
+    TEST_LEVEL = TestLevel.FULL
+
+
 class TestQwen3ASRForConditionalGeneration(LLMTest.TestLLM):
     RBLN_AUTO_CLASS = RBLNAutoModelForMultimodalLM
     RBLN_CLASS = RBLNQwen3ASRForConditionalGeneration
@@ -1336,6 +1383,10 @@ class TestGemma3ForCausalLM(LLMTest.TestLLM):
         kwargs = {"config": hf_config}
         cls.HF_CONFIG_KWARGS.update(kwargs)
         return super().setUpClass()
+
+
+class TestGemma3ForCausalLM_PrefillOnly(PrefillOnlyMixin, TestGemma3ForCausalLM):
+    pass
 
 
 @unittest.skip("Compilation fails: with CR25 + CR03, need to fix it")

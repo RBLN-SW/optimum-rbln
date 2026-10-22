@@ -484,8 +484,10 @@ class RBLNExaone4_5_ForConditionalGeneration(
     _decoder_wrapper_cls = Exaone4_5LanguageModelWrapper
     _rbln_submodules = [{"name": "visual"}]
 
-    def can_generate(self):
-        return True
+    @property
+    def logits_last_dim(self):
+        # The graph ends in the LM head, also when it compiles only the prefill phase.
+        return self.config.text_config.vocab_size
 
     def _vision_grid_rows_per_sample(
         self, input_ids: torch.LongTensor, attention_mask: torch.Tensor | None, kwargs: dict
