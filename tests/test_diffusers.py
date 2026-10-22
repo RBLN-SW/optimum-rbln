@@ -590,7 +590,7 @@ class TestQwenImage21Model(BaseTest.TestModel):
     def test_generate_edit(self):
         # The same compiled pipeline edits: the condition image goes through the vision and VAE encoders.
         image = self.model(**self.EDIT_KWARGS).images[0]
-        self.assertEqual(image.shape[:2], (256, 256))
+        assert image.shape[:2] == (256, 256)
 
 
 if __name__ == "__main__":

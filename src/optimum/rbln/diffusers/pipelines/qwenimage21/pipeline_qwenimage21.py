@@ -86,7 +86,7 @@ class RBLNQwenImage21Pipeline(RBLNDiffusionMixin, QwenImage21Pipeline):
 
     def _get_qwen_prompt_embeds(
         self,
-        prompt: str | list[str] = None,
+        prompt: str | list[str] | None = None,
         image: list | None = None,
         device: torch.device | None = None,
     ):
@@ -95,7 +95,7 @@ class RBLNQwenImage21Pipeline(RBLNDiffusionMixin, QwenImage21Pipeline):
         # `tie_last_hidden_states=False` (huggingface/transformers#48087).
         device = device or self._execution_device
         prompt = [prompt] if isinstance(prompt, str) else prompt
-        prompt = [" " if not p else p for p in prompt]
+        prompt = [p if p else " " for p in prompt]
         is_t2i = image is None
 
         if is_t2i:
@@ -114,13 +114,12 @@ class RBLNQwenImage21Pipeline(RBLNDiffusionMixin, QwenImage21Pipeline):
                 prompts.append(template.format(t))
             for _ in prompt:
                 for img in image:
-                    if not isinstance(img, PILImage.Image):
-                        img = PILImage.fromarray(img)
-                    if img.mode == "RGBA":
-                        white = PILImage.new("RGB", img.size, (255, 255, 255))
-                        white.paste(img, mask=img.getchannel("A"))
-                        img = white
-                    condition_pil_list.append(img)
+                    pil = img if isinstance(img, PILImage.Image) else PILImage.fromarray(img)
+                    if pil.mode == "RGBA":
+                        white = PILImage.new("RGB", pil.size, (255, 255, 255))
+                        white.paste(pil, mask=pil.getchannel("A"))
+                        pil = white
+                    condition_pil_list.append(pil)
 
         processor_kwargs = {
             "text": prompts,
