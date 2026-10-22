@@ -209,7 +209,6 @@ class RBLNLlavaForConditionalGeneration(RBLNModel, RBLNImageIndexedBatchSortMixi
         return val
 
     def can_generate(self):
-        # Follows the language model's phases: no decode phase, no generation.
         return self.rbln_config.language_model.can_generate
 
     @classmethod
