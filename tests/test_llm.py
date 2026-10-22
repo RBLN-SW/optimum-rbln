@@ -85,6 +85,7 @@ from optimum.rbln import (
     RBLNStarcoder2Model,
     RBLNT5ForConditionalGeneration,
 )
+from optimum.rbln.configuration_utils import ContextRblnConfig
 
 from .test_base import BaseTest, DisallowedTestBase, TestLevel
 
@@ -103,6 +104,7 @@ class LLMTest:
         PROMPT = "Who are you?"
         IS_MULTIMODAL = False
         HF_CONFIG_KWARGS_PREPROCESSOR = {"padding_side": "left"}
+        TEST_PREFILL_ONLY = False  # also compile the model with phases=["prefill"] and check it runs forward only
 
         def get_tokenizer(self):
             PreProcessor = AutoProcessor if self.IS_MULTIMODAL else AutoTokenizer
@@ -133,6 +135,36 @@ class LLMTest:
                 return generated_texts[0]
 
             return generated_texts
+
+        def test_prefill_only(self):
+            if not self.TEST_PREFILL_ONLY:
+                self.skipTest("prefill-only check is not enabled for this model")
+            if os.environ.get("REUSE_ARTIFACTS_PATH") is not None:
+                self.skipTest("BC job reuses prebuilt artifacts")
+
+            rbln_config = {**self.RBLN_CLASS_KWARGS.get("rbln_config", {}), "phases": ["prefill"]}
+            with tempfile.TemporaryDirectory() as tmpdir, ContextRblnConfig(device=self.DEVICE):
+                model = self.RBLN_CLASS.from_pretrained(
+                    self.HF_MODEL_ID,
+                    model_save_dir=tmpdir,
+                    **{**self.RBLN_CLASS_KWARGS, "rbln_config": rbln_config},
+                    **self.HF_CONFIG_KWARGS,
+                )
+                assert not model.can_generate()
+                assert not model.__dict__.get("decoders")
+                assert "decoder" not in model.__dict__
+                assert [cfg.compiled_model_name for cfg in model.rbln_config.compile_cfgs] == ["prefill"]
+
+                # The multimodal get_inputs() add generation kwargs unconditionally; forward() ignores them.
+                inputs = {k: v for k, v in self.get_inputs().items() if k not in ("max_new_tokens", "do_sample")}
+                logits = model(**inputs).logits
+                vocab_size = model.config.get_text_config().vocab_size
+                assert tuple(logits.shape) == (inputs["input_ids"].shape[0], 1, vocab_size)
+
+                with pytest.raises(AttributeError, match="no attribute 'generate'"):
+                    model.generate(**inputs, max_new_tokens=2)
+                del model
+                gc.collect()
 
         def _test_output_hidden_states_generation(self):
             REUSE_ARTIFACTS_PATH = os.environ.get("REUSE_ARTIFACTS_PATH", None)
@@ -207,37 +239,6 @@ class LLMTest:
                     if self.model.rbln_config.output_hidden_states:
                         for hidden_state in output.hidden_states:
                             assert hidden_state.shape == (batch_size, length, hidden_size)
-
-
-class PrefillOnlyMixin:
-    """Runs the parent test class with `rbln_config={"phases": ["prefill"]}`.
-
-    A decoder-only model compiled without the decode phase has no decode graph and no decode runtime, cannot
-    generate, and its forward returns the last-token logits `[batch, 1, vocab_size]`. The other inherited tests
-    (save/load, automap, ...) run unchanged against the prefill-only artifact.
-    """
-
-    @classmethod
-    def setUpClass(cls):
-        rbln_config = {**cls.RBLN_CLASS_KWARGS.get("rbln_config", {}), "phases": ["prefill"]}
-        cls.RBLN_CLASS_KWARGS = {**cls.RBLN_CLASS_KWARGS, "rbln_config": rbln_config}
-        return super().setUpClass()
-
-    def test_generate(self):
-        model = self.model
-        assert not model.can_generate()
-        assert not model.__dict__.get("decoders")
-        assert "decoder" not in model.__dict__
-        assert [cfg.compiled_model_name for cfg in model.rbln_config.compile_cfgs] == ["prefill"]
-
-        # The multimodal get_inputs() add generation kwargs unconditionally; forward() ignores them.
-        inputs = {k: v for k, v in self.get_inputs().items() if k not in ("max_new_tokens", "do_sample")}
-        logits = model(**inputs).logits
-        vocab_size = model.config.get_text_config().vocab_size
-        assert tuple(logits.shape) == (inputs["input_ids"].shape[0], 1, vocab_size)
-
-        with pytest.raises(AttributeError, match="no attribute 'generate'"):
-            model.generate(**inputs, max_new_tokens=2)
 
 
 class TestMistralForCausalLM(LLMTest.TestLLM):
@@ -927,6 +928,7 @@ class TestQwenRotaryLookup(unittest.TestCase):
 class TestQwen2VLForConditionalGeneration(LLMTest.TestLLM):
     RBLN_AUTO_CLASS = RBLNAutoModelForImageTextToText
     RBLN_CLASS = RBLNQwen2VLForConditionalGeneration
+    TEST_PREFILL_ONLY = True
     HF_MODEL_ID = "hf-internal-testing/tiny-random-Qwen2VLForConditionalGeneration"
     PROMPT = "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\n<|vision_start|><|image_pad|><|vision_end|>Describe this image.<|im_end|>\n<|im_start|>assistant\n"
     RBLN_CLASS_KWARGS = {
@@ -978,13 +980,10 @@ class TestQwen2VLForConditionalGeneration(LLMTest.TestLLM):
         assert not model.rbln_config.create_runtimes
 
 
-class TestQwen2VLForConditionalGeneration_PrefillOnly(PrefillOnlyMixin, TestQwen2VLForConditionalGeneration):
-    pass
-
-
 class TestQwen2_5_VLForConditionalGeneration(LLMTest.TestLLM):
     RBLN_AUTO_CLASS = RBLNAutoModelForImageTextToText
     RBLN_CLASS = RBLNQwen2_5_VLForConditionalGeneration
+    TEST_PREFILL_ONLY = True
     HF_MODEL_ID = "Qwen/Qwen2.5-VL-3B-Instruct"  # No tiny model yet.
     PROMPT = "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\n<|vision_start|><|image_pad|><|vision_end|>Describe this image.<|im_end|>\n<|im_start|>assistant\n"
     RBLN_CLASS_KWARGS = {
@@ -1034,6 +1033,7 @@ class TestQwen2_5_VLForConditionalGeneration(LLMTest.TestLLM):
 
 
 class TestQwen2_5_VLForConditionalGeneration_OutputHiddenStates(TestQwen2_5_VLForConditionalGeneration):
+    TEST_PREFILL_ONLY = False
     # Two prompts of different lengths: the shorter one is left-padded, exercising the
     # padded-batch prefill output aggregation (hidden states must come back at full mask width
     # and left-padded rows must not leak into the valid region).
@@ -1070,13 +1070,10 @@ class TestQwen2_5_VLForConditionalGeneration_OutputHiddenStates(TestQwen2_5_VLFo
         self.skipTest("Covered by TestQwen2_5_VLForConditionalGeneration.")
 
 
-class TestQwen2_5_VLForConditionalGeneration_PrefillOnly(PrefillOnlyMixin, TestQwen2_5_VLForConditionalGeneration):
-    TEST_LEVEL = TestLevel.FULL
-
-
 class TestQwen3VLForConditionalGeneration(LLMTest.TestLLM):
     RBLN_AUTO_CLASS = RBLNAutoModelForImageTextToText
     RBLN_CLASS = RBLNQwen3VLForConditionalGeneration
+    TEST_PREFILL_ONLY = True
     HF_MODEL_ID = "Qwen/Qwen3-VL-2B-Instruct"
     PROMPT = "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\n<|vision_start|><|image_pad|><|vision_end|>Describe this image.<|im_end|>\n<|im_start|>assistant\n"
     RBLN_CLASS_KWARGS = {
@@ -1122,6 +1119,7 @@ class TestQwen3VLForConditionalGeneration(LLMTest.TestLLM):
 
 
 class TestQwen3VLForConditionalGeneration_OutputHiddenStates(TestQwen3VLForConditionalGeneration):
+    TEST_PREFILL_ONLY = False
     # Two prompts of different lengths: the shorter one is left-padded, exercising the
     # padded-batch prefill output aggregation (hidden states must come back at full mask width
     # and left-padded rows must not leak into the valid region).
@@ -1160,10 +1158,6 @@ class TestQwen3VLForConditionalGeneration_OutputHiddenStates(TestQwen3VLForCondi
 
     def test_propagate_config(self):
         self.skipTest("Covered by TestQwen3VLForConditionalGeneration.")
-
-
-class TestQwen3VLForConditionalGeneration_PrefillOnly(PrefillOnlyMixin, TestQwen3VLForConditionalGeneration):
-    TEST_LEVEL = TestLevel.FULL
 
 
 class TestQwen3VLMoeForConditionalGeneration(LLMTest.TestLLM):
@@ -1208,6 +1202,7 @@ class TestQwen3VLMoeForConditionalGeneration(LLMTest.TestLLM):
 class TestQwen3_5ForConditionalGeneration(LLMTest.TestLLM):
     RBLN_AUTO_CLASS = RBLNAutoModelForImageTextToText
     RBLN_CLASS = RBLNQwen3_5ForConditionalGeneration
+    TEST_PREFILL_ONLY = True
     HF_MODEL_ID = "Qwen/Qwen3.5-0.8B"
     PROMPT = "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\n<|vision_start|><|image_pad|><|vision_end|>Describe this image.<|im_end|>\n<|im_start|>assistant\n"
     RBLN_CLASS_KWARGS = {
@@ -1244,6 +1239,7 @@ class TestQwen3_5ForConditionalGeneration(LLMTest.TestLLM):
 
 
 class TestQwen3_5ForConditionalGeneration_OutputHiddenStates(TestQwen3_5ForConditionalGeneration):
+    TEST_PREFILL_ONLY = False
     # Left-padded input (padding_side="left", padding="max_length") so the output_hidden_states
     # aggregation runs with a non-zero start (start > 0). This exercises the scatter-back offset and
     # the full-width copy_ from the #658 bug family, which a non-padded prompt (start == 0) never hits.
@@ -1281,10 +1277,6 @@ class TestQwen3_5ForConditionalGeneration_OutputHiddenStates(TestQwen3_5ForCondi
 
     def test_generate(self):
         self._test_output_hidden_states_generation()
-
-
-class TestQwen3_5ForConditionalGeneration_PrefillOnly(PrefillOnlyMixin, TestQwen3_5ForConditionalGeneration):
-    TEST_LEVEL = TestLevel.FULL
 
 
 class TestQwen3ASRForConditionalGeneration(LLMTest.TestLLM):
@@ -1368,6 +1360,7 @@ class TestGemma3ForConditionalGeneration_OutputHiddenStates(TestGemma3ForConditi
 
 class TestGemma3ForCausalLM(LLMTest.TestLLM):
     RBLN_CLASS = RBLNGemma3ForCausalLM
+    TEST_PREFILL_ONLY = True
     HF_MODEL_ID = "google/gemma-3-1b-it"
     HF_CONFIG_KWARGS = {
         "trust_remote_code": True,
@@ -1383,10 +1376,6 @@ class TestGemma3ForCausalLM(LLMTest.TestLLM):
         kwargs = {"config": hf_config}
         cls.HF_CONFIG_KWARGS.update(kwargs)
         return super().setUpClass()
-
-
-class TestGemma3ForCausalLM_PrefillOnly(PrefillOnlyMixin, TestGemma3ForCausalLM):
-    pass
 
 
 @unittest.skip("Compilation fails: with CR25 + CR03, need to fix it")
