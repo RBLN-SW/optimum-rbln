@@ -325,7 +325,8 @@ class RBLNBlip2ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMixi
         return val
 
     def can_generate(self):
-        return True
+        # Follows the language model's phases: no decode phase, no generation.
+        return self.rbln_config.language_model.can_generate
 
     @classmethod
     def save_torch_artifacts(

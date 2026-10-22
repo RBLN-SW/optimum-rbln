@@ -105,7 +105,8 @@ class RBLNPaliGemmaForConditionalGeneration(RBLNModel, RBLNImageIndexedBatchSort
         return val
 
     def can_generate(self):
-        return True
+        # Follows the language model's phases: no decode phase, no generation.
+        return self.rbln_config.language_model.can_generate
 
     @classmethod
     def _update_submodule_rbln_config(

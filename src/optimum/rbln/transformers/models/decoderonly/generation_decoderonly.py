@@ -163,10 +163,12 @@ class RBLNDecoderOnlyGenerationMixin(GenerationMixin):
         """
         if not self.can_generate():
             # Same error kind as transformers: a model without generation support has no `generate`.
+            # A wrapper model (e.g. LLaVA) keeps the phases in its language model's config.
+            phases = getattr(self.rbln_config, "phases", None)
             raise AttributeError(
-                f"'{type(self).__name__}' object has no attribute 'generate': it was compiled with "
-                f"rbln_config.phases={getattr(self.rbln_config, 'phases', None)} (no 'decode' phase), so it only runs "
-                "forward(). Compile it with rbln_config={'phases': ['prefill', 'decode']} to generate."
+                f"'{type(self).__name__}' object has no attribute 'generate': it was compiled without the 'decode' "
+                f"phase{f' (phases={phases})' if phases is not None else ''}, so it only runs forward(). "
+                "Compile it with phases=['prefill', 'decode'] to generate."
             )
         if generation_config is not None:
             kwargs["generation_config"] = generation_config
