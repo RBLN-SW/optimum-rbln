@@ -491,7 +491,7 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
         # Bidirectional prefill attends across the whole prompt, so the prompt must fit in a
         # single prefill chunk — default the chunk size to max_seq_len instead of the generic
         # NPU default, which would silently truncate the bidirectional context.
-        if rbln_config.prefill_chunk_size is None and rbln_config.use_bidirectional_prefill:
+        if rbln_config.prefill_chunk_size is None and rbln_config._is_prefix_lm:
             rbln_config.prefill_chunk_size = rbln_config.max_seq_len
 
         (

@@ -557,7 +557,7 @@ class RBLNRuntimeModel(RBLNPytorchRuntime):
             inputs, cache_position, attention_mask, position_ids, position_embed, token_type_ids=token_type_ids
         )
 
-        if query_length > self.rbln_config.prefill_chunk_size and self.rbln_config.use_bidirectional_prefill:
+        if query_length > self.rbln_config.prefill_chunk_size and self.rbln_config._is_prefix_lm:
             raise ValueError(
                 f"Input length ({query_length}) exceeds `prefill_chunk_size` "
                 f"({self.rbln_config.prefill_chunk_size}). This model prefills with bidirectional "
