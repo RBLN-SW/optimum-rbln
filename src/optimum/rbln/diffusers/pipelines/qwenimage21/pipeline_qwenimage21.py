@@ -35,7 +35,8 @@ class RBLNQwenImage21Pipeline(RBLNDiffusionMixin, QwenImage21Pipeline):
     RBLN-accelerated implementation of the Qwen-Image 2.1 pipeline for text-to-image generation and image editing.
 
     The pipeline compiles the Qwen3-VL text encoder, the block-causal transformer and the VAE for the image sizes in
-    its configuration. Pass `condition_image_size` to also compile for image editing.
+    its configuration. It also compiles for image editing, for a 1024x1024 condition image unless
+    `condition_image_size` lists other sizes, so one compiled pipeline serves both tasks.
 
     Examples:
         ```python
@@ -48,8 +49,6 @@ class RBLNQwenImage21Pipeline(RBLNDiffusionMixin, QwenImage21Pipeline):
             torch_dtype=torch.bfloat16,
             rbln_config={
                 "image_size": (1024, 1024),
-                # Image editing: the size of the condition image after the pipeline resizes it.
-                "condition_image_size": (608, 1728),
                 "text_encoder": {"num_devices": 4, "device": [0, 1, 2, 3]},
                 "transformer": {"num_devices": 4, "device": [4, 5, 6, 7]},
                 "vae": {"device": 8},
@@ -92,6 +91,8 @@ class RBLNQwenImage21Pipeline(RBLNDiffusionMixin, QwenImage21Pipeline):
         device: torch.device | None = None,
     ):
         # Same as upstream, without the forward hook on the final norm: the compiled text encoder already skips it.
+        # TODO: drop this override and the hook in `_compile_submodules` once upstream drops its hook for
+        # `tie_last_hidden_states=False` (huggingface/transformers#48087).
         device = device or self._execution_device
         prompt = [prompt] if isinstance(prompt, str) else prompt
         prompt = [" " if not p else p for p in prompt]

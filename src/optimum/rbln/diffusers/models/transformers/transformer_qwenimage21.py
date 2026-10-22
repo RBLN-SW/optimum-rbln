@@ -16,12 +16,14 @@ import math
 import weakref
 from collections.abc import Sequence
 from contextlib import contextmanager
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, NamedTuple, cast
 
 import rebel
 import torch
 import torch.nn.functional as F
+from diffusers.models.embeddings import apply_rotary_emb
 from diffusers.models.modeling_outputs import Transformer2DModelOutput
 from diffusers.models.transformers.transformer_qwenimage21 import (
     QwenImage21KVCache,
@@ -34,7 +36,7 @@ from rebel.compile_context import CompileContext
 from ....configuration_utils import RBLNCompileConfig
 from ....modeling import RBLNModel
 from ....modeling_base import Preprocessor
-from ....transformers.modeling_attention_utils import set_default_values, validate_attention_method
+from ....transformers.modeling_attention_utils import align, set_default_values, validate_attention_method
 from ....utils.logging import get_logger
 from ...configurations import RBLNQwenImage21Transformer2DModelConfig
 
@@ -71,28 +73,16 @@ def _kv_cache_len(rbln_config: RBLNQwenImage21Transformer2DModelConfig) -> int:
     """
     # `_update_rbln_config` sets the chunk size before any cache length is computed.
     num_tokens = max(*_image_chunk_sizes(rbln_config), cast(int, rbln_config.prefill_chunk_size))
-    if rbln_config.attn_impl == "flash_attn":
-        partition_len = rbln_config.kvcache_partition_len
-        num_partitions = max(math.ceil((rbln_config.max_seq_len + num_tokens) / partition_len), 2)
-        return num_partitions * partition_len
-    return math.ceil((rbln_config.max_seq_len + num_tokens) / 64) * 64
+    # `set_default_values` sets a partition length exactly when the attention is flash.
+    partition_len = rbln_config.kvcache_partition_len
+    if partition_len is not None:
+        return max(align(rbln_config.max_seq_len + num_tokens, partition_len), 2 * partition_len)
+    return align(rbln_config.max_seq_len + num_tokens, 64)
 
 
 def _kv_block_size(rbln_config: RBLNQwenImage21Transformer2DModelConfig) -> int:
     # Eager attention keeps one block per prompt; flash attention one block per partition.
-    if rbln_config.attn_impl == "flash_attn":
-        return rbln_config.kvcache_partition_len
-    return _kv_cache_len(rbln_config)
-
-
-def _apply_rotary_emb(x: torch.Tensor, cos: torch.Tensor, sin: torch.Tensor) -> torch.Tensor:
-    # Real form of the upstream complex rotation (`apply_rotary_emb_qwen(use_real=False)`): the channel pairs
-    # (2i, 2i + 1) rotate as complex numbers. `cos` and `sin` repeat each frequency for both channels of a pair.
-    # `x` is (batch, seq, heads, head_dim) and `cos`/`sin` are (1, seq, 1, head_dim): the compiler's rotary
-    # embedding lowering needs them at the rank of `x`.
-    x_real, x_imag = x.unflatten(-1, (-1, 2)).unbind(-1)
-    x_rotated = torch.stack([-x_imag, x_real], dim=-1).flatten(-2)
-    return (x.float() * cos + x_rotated.float() * sin).to(x.dtype)
+    return rbln_config.kvcache_partition_len or _kv_cache_len(rbln_config)
 
 
 class _PagedAttention(torch.nn.Module):
@@ -142,15 +132,17 @@ class _QwenImage21ChunkMixin:
         value = attn.to_v(hidden_states).unflatten(-1, (-1, head_dim))
         query = attn.norm_q(query).to(value.dtype)
         key = attn.norm_k(key).to(value.dtype)
-        query = _apply_rotary_emb(query, rope_cos, rope_sin)
-        key = _apply_rotary_emb(key, rope_cos, rope_sin)
+        # Real form of the upstream complex rotation: `cos`/`sin` repeat each frequency for both channels of a
+        # pair. The helper broadcasts them to (1, seq, 1, head_dim), the rank of `x` that the compiler's rotary
+        # embedding lowering needs.
+        query = apply_rotary_emb(query, (rope_cos, rope_sin), use_real=True, use_real_unbind_dim=-1, sequence_dim=1)
+        key = apply_rotary_emb(key, (rope_cos, rope_sin), use_real=True, use_real_unbind_dim=-1, sequence_dim=1)
         return query, key, value
 
     def _run_blocks(
         self, hidden_states, modulation, rope_cos, rope_sin, seq, block_table, mask, kv_caches, is_bidirectional
     ):
         scale1, gate1, scale2, gate2 = modulation.chunk(4, dim=-1)
-        rope_cos, rope_sin = rope_cos[None, :, None], rope_sin[None, :, None]
         for index, block in enumerate(self.model.transformer_blocks):
             attn = block.attn
             normed = block.img_norm1(hidden_states) * (1 + scale1)
@@ -226,6 +218,19 @@ class _Chunk(NamedTuple):
     cache_start: int  # KV-cache slot: `start` plus the partition-alignment padding before the chunk
 
 
+@dataclass
+class _KVPrompt:
+    """A prompt's share of the KV cache in device memory."""
+
+    owner: "weakref.ref[QwenImage21KVCache] | None"  # the pipeline's `kv_cache`; None after a call without one
+    prefix_len: int
+    valid: torch.Tensor  # (1, kv_cache_len) bool: the cache slots that hold the prefix
+    last_used: int = 0
+
+    def is_free(self) -> bool:
+        return self.owner is None or self.owner() is None
+
+
 class RBLNQwenImage21Transformer2DModel(RBLNModel):
     """
     RBLN implementation of QwenImage21Transformer2DModel, the single-stream transformer of Qwen-Image 2.1.
@@ -268,20 +273,15 @@ class RBLNQwenImage21Transformer2DModel(RBLNModel):
         self.time_text_embed.to(self.rbln_config.dtype)
         self.pos_embed = QwenImage21Rope(theta=10000, axes_dim=list(self.config.axes_dims_rope))
 
-        names = [cfg.compiled_model_name for cfg in self.rbln_config.compile_cfgs]
-        self.text_prefill = self.model[names.index(_TEXT_PREFILL)]
+        # Indexed, not zipped: without runtimes, `self.model` is one `UnavailableRuntime` for every index.
+        runtimes = {cfg.compiled_model_name: self.model[i] for i, cfg in enumerate(self.rbln_config.compile_cfgs)}
+        self.text_prefill = runtimes[_TEXT_PREFILL]
         self.image_chunks = {
-            num_tokens: self.model[names.index(_image_chunk_name(num_tokens))]
-            for num_tokens in _image_chunk_sizes(self.rbln_config)
+            num_tokens: runtimes[_image_chunk_name(num_tokens)] for num_tokens in _image_chunk_sizes(self.rbln_config)
         }
         self.kv_cache_len = _kv_cache_len(self.rbln_config)
-        self.kv_partition_len = (
-            self.rbln_config.kvcache_partition_len if self.rbln_config.attn_impl == "flash_attn" else None
-        )
         self.kv_blocks_per_prompt = self.kv_cache_len // _kv_block_size(self.rbln_config)
-        # Per prompt cache: the pipeline's `kv_cache` it belongs to (a weak reference, or None after a call without
-        # one), its prefix length and valid slots, and when it was last used.
-        self._kv_prompts = [None] * self.rbln_config.kvcache_num_prompts
+        self._kv_prompts: list[_KVPrompt | None] = [None] * self.rbln_config.kvcache_num_prompts
         self._kv_clock = 0
 
     @classmethod
@@ -299,8 +299,7 @@ class RBLNQwenImage21Transformer2DModel(RBLNModel):
     def _wrap_model_if_needed(
         cls, model: torch.nn.Module, rbln_config: RBLNQwenImage21Transformer2DModelConfig
     ) -> dict[str, torch.nn.Module]:
-        partition_len = rbln_config.kvcache_partition_len if rbln_config.attn_impl == "flash_attn" else None
-        attention = _PagedAttention(model.config.attention_head_dim, partition_len)
+        attention = _PagedAttention(model.config.attention_head_dim, rbln_config.kvcache_partition_len)
         image_chunk = QwenImage21ImageChunkWrapper(model, attention).eval()
         wrapped_models = {_TEXT_PREFILL: QwenImage21TextChunkWrapper(model, attention).eval()}
         for num_tokens in _image_chunk_sizes(rbln_config):
@@ -356,6 +355,10 @@ class RBLNQwenImage21Transformer2DModel(RBLNModel):
     ) -> RBLNQwenImage21Transformer2DModelConfig:
         if rbln_config.batch_size != 1:
             raise NotImplementedError("RBLNQwenImage21Transformer2DModel supports batch_size=1 only.")
+        if not model_config.causal_condition:
+            # The prefix keys and values are computed once and reused at every step, which needs a step-independent
+            # prefix.
+            raise NotImplementedError("RBLNQwenImage21Transformer2DModel supports `causal_condition=True` only.")
         if rbln_config.sample_size is None:
             # 1024x1024, the pipeline default, at 16 pixels per latent token.
             rbln_config.sample_size = [(64, 64)]
@@ -401,32 +404,33 @@ class RBLNQwenImage21Transformer2DModel(RBLNModel):
             (f"{_KV_CACHE_PREFIX}{index}", [num_blocks, num_heads, kv_block_size, head_dim], dtype)
             for index in range(2 * num_layers)
         ]
-        chunk_info = [
-            ("seq", [1, 1], "int32"),
-            ("block_table", [blocks_per_prompt], "int16"),
-            ("mask", [1, kv_cache_len], dtype),
-        ]
-        text_input_info = [
-            ("encoder_hidden_states", [1, chunk_size, model_config.context_in_dim], dtype),
-            ("temb", [1, inner_dim], dtype),
-            ("rope_cos", [chunk_size, head_dim], "float32"),
-            ("rope_sin", [chunk_size, head_dim], "float32"),
-            *chunk_info,
-            *kv_cache_info,
-        ]
-        compile_cfgs = [RBLNCompileConfig(compiled_model_name=_TEXT_PREFILL, input_info=text_input_info)]
-        for num_tokens in _image_chunk_sizes(rbln_config):
-            image_input_info = [
-                ("hidden_states", [1, num_tokens, model_config.in_channels], dtype),
+
+        def chunk_input_info(input_name: str, num_tokens: int, width: int) -> list:
+            # The order of the chunk wrappers' `forward` arguments.
+            return [
+                (input_name, [1, num_tokens, width], dtype),
                 ("temb", [1, inner_dim], dtype),
                 ("rope_cos", [num_tokens, head_dim], "float32"),
                 ("rope_sin", [num_tokens, head_dim], "float32"),
-                *chunk_info,
+                ("seq", [1, 1], "int32"),
+                ("block_table", [blocks_per_prompt], "int16"),
+                ("mask", [1, kv_cache_len], dtype),
                 *kv_cache_info,
             ]
-            compile_cfgs.append(
-                RBLNCompileConfig(compiled_model_name=_image_chunk_name(num_tokens), input_info=image_input_info)
+
+        compile_cfgs = [
+            RBLNCompileConfig(
+                compiled_model_name=_TEXT_PREFILL,
+                input_info=chunk_input_info("encoder_hidden_states", chunk_size, model_config.context_in_dim),
             )
+        ]
+        compile_cfgs += [
+            RBLNCompileConfig(
+                compiled_model_name=_image_chunk_name(num_tokens),
+                input_info=chunk_input_info("hidden_states", num_tokens, model_config.in_channels),
+            )
+            for num_tokens in _image_chunk_sizes(rbln_config)
+        ]
         rbln_config.set_compile_cfgs(compile_cfgs)
         return rbln_config
 
@@ -465,8 +469,9 @@ class RBLNQwenImage21Transformer2DModel(RBLNModel):
     @staticmethod
     def _rope_cos_sin(rotary_emb: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         # One complex frequency per channel pair -> one real value per channel.
-        rotary_emb = torch.view_as_real(rotary_emb).repeat_interleave(2, dim=-2)
-        return rotary_emb[..., 0].contiguous(), rotary_emb[..., 1].contiguous()
+        cos = torch.stack([rotary_emb.real, rotary_emb.real], dim=-1).flatten(-2)
+        sin = torch.stack([rotary_emb.imag, rotary_emb.imag], dim=-1).flatten(-2)
+        return cos, sin
 
     def _resolve_image_chunk(self, num_tokens: int) -> int:
         """The smallest image graph that holds an image block of `num_tokens` latent tokens.
@@ -510,14 +515,15 @@ class RBLNQwenImage21Transformer2DModel(RBLNModel):
             start = end
         runs.append((ids[prefix_len], prefix_len, num_target_tokens, self._resolve_image_chunk(num_target_tokens)))
 
+        partition_len = self.rbln_config.kvcache_partition_len
         chunks = []
         padded = 0
         for image_id, start, num_valid, chunk_size in runs:
             cache_start = start + padded
-            if self.kv_partition_len is not None:
-                offset_in_partition = cache_start % self.kv_partition_len
-                if offset_in_partition + chunk_size > self.kv_partition_len:
-                    padded += self.kv_partition_len - offset_in_partition
+            if partition_len is not None:
+                offset_in_partition = cache_start % partition_len
+                if offset_in_partition + chunk_size > partition_len:
+                    padded += partition_len - offset_in_partition
                     cache_start = start + padded
             if cache_start + chunk_size > self.kv_cache_len:
                 raise ValueError(
@@ -530,7 +536,7 @@ class RBLNQwenImage21Transformer2DModel(RBLNModel):
 
     def _find_kv_prompt(self, kv_cache: QwenImage21KVCache) -> int | None:
         for index, prompt in enumerate(self._kv_prompts):
-            if prompt is not None and prompt["owner"] is not None and prompt["owner"]() is kv_cache:
+            if prompt is not None and prompt.owner is not None and prompt.owner() is kv_cache:
                 return index
         return None
 
@@ -538,17 +544,12 @@ class RBLNQwenImage21Transformer2DModel(RBLNModel):
         """Picks the prompt cache a prefill writes: the one `kv_cache` already holds, else a free one, else the
         least recently used one."""
         index = self._find_kv_prompt(kv_cache) if kv_cache is not None else None
-        if index is None:
-            free = [
-                i
-                for i, prompt in enumerate(self._kv_prompts)
-                if prompt is None or prompt["owner"] is None or prompt["owner"]() is None
-            ]
-            if free:
-                index = free[0]
-            else:
-                index = min(range(len(self._kv_prompts)), key=lambda i: self._kv_prompts[i]["last_used"])
-        return index
+        if index is not None:
+            return index
+        free = [i for i, prompt in enumerate(self._kv_prompts) if prompt is None or prompt.is_free()]
+        if free:
+            return free[0]
+        return min((prompt.last_used, i) for i, prompt in enumerate(self._kv_prompts) if prompt is not None)[1]
 
     def _run_chunk(self, runtime, inputs, temb, rope_cos, rope_sin, chunk: _Chunk, block_table, valid):
         """Runs one chunk at its cache slot, padded to the graph's chunk size. `rope_cos`/`rope_sin` cover the
@@ -599,19 +600,12 @@ class RBLNQwenImage21Transformer2DModel(RBLNModel):
             (`~diffusers.models.modeling_outputs.Transformer2DModelOutput` | tuple): The prediction for the target
             image tokens.
         """
-        if kv_cache is not None and not self.config.causal_condition:
-            raise ValueError(
-                "kv_cache requires `causal_condition=True`. The cache is only valid because text and condition-image "
-                "tokens modulate from t=0, which makes their activations independent of the denoising step."
-            )
         if kv_cache is not None and kv_cache_mode not in ("extract", "cached"):
             raise ValueError(
                 f"kv_cache_mode must be 'extract' or 'cached' when kv_cache is provided, got {kv_cache_mode!r}."
             )
         if kv_cache is None and kv_cache_mode is not None:
             raise ValueError(f"kv_cache_mode is {kv_cache_mode!r} but no kv_cache was passed to hold the prefix.")
-        if not self.config.causal_condition:
-            raise NotImplementedError("RBLNQwenImage21Transformer2DModel supports `causal_condition=True` only.")
 
         batch_size = hidden_states.shape[0]
         if batch_size != self.rbln_config.batch_size:
@@ -627,9 +621,12 @@ class RBLNQwenImage21Transformer2DModel(RBLNModel):
             )
         num_tokens = image_lengths[-1]
 
-        # Joint-sequence layout, as upstream builds it. Each image slot of `img_mask` stands for 2x2 latent tokens.
-        repeats = torch.where(img_mask, _IMG_TOKENS_PER_SLOT, 1)[0]
-        image_pad_mask = torch.repeat_interleave(img_mask[0], repeats)
+        # Joint-sequence layout, as upstream builds it. Each image slot of `img_mask` stands for 2x2 latent tokens:
+        # `vlm_index` maps every joint position to its vision-language position.
+        vlm_index = torch.arange(img_mask.shape[1]).repeat_interleave(
+            torch.where(img_mask[0], _IMG_TOKENS_PER_SLOT, 1)
+        )
+        image_pad_mask = img_mask[0][vlm_index]
         image_ids, target_token_mask = QwenImage21Transformer2DModel.build_token_metadata(
             image_pad_mask, img_shapes[0]
         )
@@ -640,10 +637,7 @@ class RBLNQwenImage21Transformer2DModel(RBLNModel):
                 f"max_seq_len={self.rbln_config.max_seq_len}."
             )
         chunks = self._plan_chunks(image_ids, prefix_len, num_tokens)
-
-        rope_cos, rope_sin = self._rope_cos_sin(
-            self.pos_embed(img_shapes[0], image_pad_mask, device=image_pad_mask.device)
-        )
+        rotary_emb = self.pos_embed(img_shapes[0], image_pad_mask, device=image_pad_mask.device)
 
         dtype = self.rbln_config.dtype
         timestep = timestep.to(dtype)
@@ -654,14 +648,14 @@ class RBLNQwenImage21Transformer2DModel(RBLNModel):
 
         if kv_cache_mode == "cached":
             kv_prompt = self._find_kv_prompt(kv_cache)
-            if kv_prompt is None or self._kv_prompts[kv_prompt]["prefix_len"] != prefix_len:
+            prompt = self._kv_prompts[kv_prompt] if kv_prompt is not None else None
+            if kv_prompt is None or prompt is None or prompt.prefix_len != prefix_len:
                 raise RuntimeError(
                     "The KV cache in device memory holds no keys and values for this kv_cache: another prompt "
                     "overwrote them. Each prompt needs its own cache: compile with kvcache_num_prompts=2 for "
                     "classifier-free guidance."
                 )
             block_table = self._block_table(kv_prompt)
-            valid = self._kv_prompts[kv_prompt]["valid"].clone()
         else:
             kv_prompt = self._claim_kv_prompt(kv_cache)
             block_table = self._block_table(kv_prompt)
@@ -669,29 +663,30 @@ class RBLNQwenImage21Transformer2DModel(RBLNModel):
                 hidden_states,
                 encoder_hidden_states,
                 encoder_hidden_states_mask,
-                img_mask,
+                vlm_index,
                 image_lengths,
                 chunks[:-1],
                 temb[-1:],
-                rope_cos,
-                rope_sin,
+                rotary_emb[:prefix_len],
                 block_table,
             )
             owner = weakref.ref(kv_cache) if kv_cache is not None else None
-            self._kv_prompts[kv_prompt] = {"owner": owner, "prefix_len": prefix_len, "valid": valid.clone()}
+            prompt = self._kv_prompts[kv_prompt] = _KVPrompt(owner, prefix_len, valid)
         self._kv_clock += 1
-        self._kv_prompts[kv_prompt]["last_used"] = self._kv_clock
+        prompt.last_used = self._kv_clock
 
         # The target block starts right after the prefix (or at the next partition) and overwrites the padded tail
         # of the last prefix chunk.
         target = chunks[-1]
+        valid = prompt.valid.clone()
         valid[:, target.cache_start : target.cache_start + num_tokens] = True
+        target_cos, target_sin = self._rope_cos_sin(rotary_emb[prefix_len:])
         output = self._run_chunk(
             self.image_chunks[target.chunk_size],
             hidden_states[:, -num_tokens:].to(dtype),
             temb[:-1],
-            rope_cos[prefix_len:],
-            rope_sin[prefix_len:],
+            target_cos,
+            target_sin,
             target,
             block_table,
             valid,
@@ -711,22 +706,18 @@ class RBLNQwenImage21Transformer2DModel(RBLNModel):
         hidden_states,
         encoder_hidden_states,
         encoder_hidden_states_mask,
-        img_mask,
+        vlm_index,
         image_lengths,
         chunks,
         temb,
-        rope_cos,
-        rope_sin,
+        rotary_emb,
         block_table,
     ):
         """Runs the prefix chunks (prompt text and condition images) into the prompt's KV cache and returns its
-        valid cache slots, shaped (1, kv_cache_len)."""
-        # Joint position -> vision-language position: each image slot spans 2x2 joint positions.
-        vlm_index = torch.repeat_interleave(
-            torch.arange(img_mask.shape[1]), torch.where(img_mask, _IMG_TOKENS_PER_SLOT, 1)[0]
-        )
+        valid cache slots, shaped (1, kv_cache_len). `rotary_emb` covers the prefix."""
+        rope_cos, rope_sin = self._rope_cos_sin(rotary_emb)
         # Right-padded prompt positions are never attended to, as upstream excludes them as keys.
-        prefix_len = sum(chunk.num_valid for chunk in chunks)
+        prefix_len = rotary_emb.shape[0]
         text_valid = torch.ones(prefix_len, dtype=torch.bool)
         if encoder_hidden_states_mask is not None:
             text_valid = encoder_hidden_states_mask[0].bool()[vlm_index[:prefix_len]]

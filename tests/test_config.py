@@ -574,15 +574,23 @@ def test_qwenimage21_pipeline_derives_submodule_sizes():
     """The Qwen-Image 2.1 pipeline config sets the sequence lengths and image sizes of all submodules."""
     config_cls = _import_config("RBLNQwenImage21PipelineConfig")
 
-    t2i = config_cls()
+    # By default it also compiles for editing with a 1024x1024 condition image: 4096 latent tokens, 1024 image tokens.
+    default = config_cls()
+    assert default.text_encoder.max_seq_len == 512 + 1024
+    assert default.text_encoder.output_hidden_states is True
+    assert default.text_encoder.phases == ["prefill"]
+    assert default.text_encoder.visual["max_seq_len"] == [4096]
+    assert default.transformer.max_seq_len == 512 + 4096
+    assert default.transformer.sample_size == [(64, 64)]
+    assert default.vae.sample_size == [(1024, 1024)]
+    assert default.vae.uses_encoder is True
+    assert default.vae.encoder_sample_size == [(1024, 1024)]
+
+    t2i = config_cls(num_condition_images=0)
     assert t2i.text_encoder.max_seq_len == 512
-    assert t2i.text_encoder.output_hidden_states is True
-    assert t2i.text_encoder.phases == ["prefill"]
     assert t2i.text_encoder.visual["max_seq_len"] == 64
     assert t2i.text_encoder.visual["create_runtimes"] is None  # A runtime option would also apply at load.
     assert t2i.transformer.max_seq_len == 512
-    assert t2i.transformer.sample_size == [(64, 64)]
-    assert t2i.vae.sample_size == [(1024, 1024)]
     assert t2i.vae.uses_encoder is False
 
     # A 1728x608 condition image is 4104 latent tokens, and 1026 image tokens in the prompt of the text encoder.
@@ -596,8 +604,8 @@ def test_qwenimage21_pipeline_derives_submodule_sizes():
 
     with pytest.raises(ValueError, match="multiples of 32"):
         config_cls(image_size=(1000, 1000))
-    with pytest.raises(ValueError, match="condition_image_size"):
-        config_cls(num_condition_images=1)
+    with pytest.raises(ValueError, match="num_condition_images"):
+        config_cls(condition_image_size=(608, 1728), num_condition_images=0)
 
 
 if __name__ == "__main__":

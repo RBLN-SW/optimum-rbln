@@ -558,10 +558,20 @@ class TestQwenImage21Model(BaseTest.TestModel):
         "width": 256,
         "output_type": "np",
     }
+    EDIT_KWARGS = {
+        "prompt": "dance monkey",
+        "image": Image.new("RGB", (256, 256), color=(120, 40, 200)),
+        "num_inference_steps": 2,
+        "generator": torch.manual_seed(42),
+        "output_resolution": 256,  # The condition image and the output stay at 256x256.
+        "output_type": "np",
+    }
     RBLN_CLASS_KWARGS = {
         "export": True,
         "rbln_config": {
             "image_size": (256, 256),
+            # Compiled for editing too, as by default. Text-to-image leaves the vision and VAE encoders unused.
+            "condition_image_size": (256, 256),
             "max_seq_len": 128,
         },
     }
@@ -577,25 +587,10 @@ class TestQwenImage21Model(BaseTest.TestModel):
         super().tearDownClass()
         shutil.rmtree(cls.HF_MODEL_ID, ignore_errors=True)
 
-
-class TestQwenImage21EditModel(TestQwenImage21Model):
-    HF_MODEL_ID = "tiny-qwen-image-2.1-edit"
-    GENERATION_KWARGS = {
-        "prompt": "dance monkey",
-        "image": Image.new("RGB", (256, 256), color=(120, 40, 200)),
-        "num_inference_steps": 2,
-        "generator": torch.manual_seed(42),
-        "output_resolution": 256,  # The condition image and the output stay at 256x256.
-        "output_type": "np",
-    }
-    RBLN_CLASS_KWARGS = {
-        "export": True,
-        "rbln_config": {
-            "image_size": (256, 256),
-            "condition_image_size": (256, 256),
-            "max_seq_len": 128,
-        },
-    }
+    def test_generate_edit(self):
+        # The same compiled pipeline edits: the condition image goes through the vision and VAE encoders.
+        image = self.model(**self.EDIT_KWARGS).images[0]
+        self.assertEqual(image.shape[:2], (256, 256))
 
 
 if __name__ == "__main__":

@@ -60,17 +60,18 @@ class RBLNAutoencoderKLQwenImage21(RBLNModel):
 
     def __post_init__(self, **kwargs):
         super().__post_init__(**kwargs)
-        names = [cfg.compiled_model_name for cfg in self.rbln_config.compile_cfgs]
+        # Indexed, not zipped: without runtimes, `self.model` is one `UnavailableRuntime` for every index.
+        runtimes = {cfg.compiled_model_name: self.model[i] for i, cfg in enumerate(self.rbln_config.compile_cfgs)}
         scale = self.config.scale_factor_spatial
         self.encoders = {}
         if self.rbln_config.uses_encoder:
             self.encoders = {
-                (height, width): self.model[names.index(_graph_name("encoder", height, width))]
+                (height, width): runtimes[_graph_name("encoder", height, width)]
                 for height, width in self.rbln_config.encoder_sample_size
             }
         # Keyed by the latent (height, width) the decoder takes.
         self.decoders = {
-            (height // scale, width // scale): self.model[names.index(_graph_name("decoder", height, width))]
+            (height // scale, width // scale): runtimes[_graph_name("decoder", height, width)]
             for height, width in self.rbln_config.sample_size
         }
 
