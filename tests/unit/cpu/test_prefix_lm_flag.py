@@ -1,5 +1,3 @@
-import json
-
 import pytest
 
 from optimum.rbln.transformers.models.decoderonly.configuration_decoderonly import (
@@ -26,21 +24,28 @@ def test_mask_and_position_ids_alone_do_not_imply_prefix_lm():
     assert config._is_prefix_lm is False
 
 
-def test_prefix_lm_is_not_serialized_and_is_redeclared_on_load(tmp_path):
+def test_prefix_lm_survives_the_rbln_config_round_trip():
     config = RBLNDecoderOnlyModelForCausalLMConfig(use_attention_mask=True, use_position_ids=True)
     config._is_prefix_lm = True
-    serialized = config._prepare_for_serialization()
-    assert "_is_prefix_lm" not in serialized
-
-    (tmp_path / "rbln_config.json").write_text(json.dumps(serialized))
-    assert RBLNDecoderOnlyModelForCausalLMConfig.from_pretrained(tmp_path)._is_prefix_lm is False
-    # The passed instance carries it across the load, as the parent's load hook relies on.
-    assert RBLNDecoderOnlyModelForCausalLMConfig.from_pretrained(tmp_path, rbln_config=config)._is_prefix_lm is True
+    reloaded = RBLNDecoderOnlyModelForCausalLMConfig(**config._prepare_for_serialization())
+    assert reloaded._is_prefix_lm is True
 
 
 @pytest.mark.parametrize("parent_cls", [RBLNPaliGemmaForConditionalGeneration, RBLNPaliGemmaModel])
-def test_paligemma_declares_prefix_lm_only_for_the_language_model(parent_cls):
+def test_paligemma_declares_prefix_lm_for_its_language_model(parent_cls):
+    hf_config = type("HFConfig", (), {})()
     lm = RBLNDecoderOnlyModelForCausalLMConfig(use_attention_mask=True, use_position_ids=True)
-    assert parent_cls._update_submodule_rbln_config_on_load("language_model", lm)._is_prefix_lm is True
+    lm = parent_cls._update_submodule_rbln_config("language_model", None, None, hf_config, lm, None)
+    assert lm._is_prefix_lm is True
+    assert hf_config.use_sliding_window is False
+
     vision = RBLNDecoderOnlyModelForCausalLMConfig()
-    assert parent_cls._update_submodule_rbln_config_on_load("vision_tower", vision)._is_prefix_lm is False
+    assert parent_cls._update_submodule_rbln_config("vision_tower", None, None, hf_config, vision, None) is vision
+    assert vision._is_prefix_lm is False
+
+
+@pytest.mark.parametrize("parent_cls", [RBLNPaliGemmaForConditionalGeneration, RBLNPaliGemmaModel])
+def test_paligemma_rejects_a_language_model_without_mask_and_position_ids(parent_cls):
+    lm = RBLNDecoderOnlyModelForCausalLMConfig(use_attention_mask=True)
+    with pytest.raises(ValueError, match="use_position_ids"):
+        parent_cls._update_submodule_rbln_config("language_model", None, None, type("HFConfig", (), {})(), lm, None)

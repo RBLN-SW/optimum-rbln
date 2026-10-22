@@ -39,8 +39,7 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
 
     _default_phases = ["prefill"]
     _default_logits_to_keep = 0
-    subclass_non_save_attributes = ["memory_budget", "_is_prefix_lm"]
-    _is_prefix_lm: bool = False
+    subclass_non_save_attributes = ["memory_budget"]
 
     @deprecate_kwarg(old_name="kvcache_metas", new_name="cache_metas", version="0.13.0")
     def __init__(
@@ -67,6 +66,7 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
         output_hidden_states: bool | None = None,
         cache_metas: list["CacheMeta"] | None = None,
         _requires_batch_sort: bool | None = None,
+        _is_prefix_lm: bool | None = None,
         **kwargs: Any,
     ):
         """
@@ -260,6 +260,10 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
         # internal, not a user knob: resolved at compile time to mirror the compiler's
         # in-memory kernel routing, serialized so a loaded model knows to sort
         self._requires_batch_sort = _requires_batch_sort
+        # internal, not a user knob: the parent model declares it at compile time
+        # (PaliGemma's language model prefills bidirectionally over the whole prompt),
+        # serialized so a loaded model keeps the single-chunk check
+        self._is_prefix_lm = _is_prefix_lm or False
 
         self.decoder_batch_sizes = None
         if "decode" in self.phases:

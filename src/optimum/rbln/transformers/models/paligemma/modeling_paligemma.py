@@ -119,14 +119,13 @@ class RBLNPaliGemmaForConditionalGeneration(RBLNModel, RBLNImageIndexedBatchSort
     ):
         if submodule_name == "language_model":
             submodule_config.use_sliding_window = False
+            if not (submodule_rbln_config.use_attention_mask and submodule_rbln_config.use_position_ids):
+                raise ValueError(
+                    "PaliGemma's language model prefills bidirectionally over the prompt, which requires "
+                    "use_attention_mask=True and use_position_ids=True."
+                )
             submodule_rbln_config._is_prefix_lm = True
 
-        return submodule_rbln_config
-
-    @classmethod
-    def _update_submodule_rbln_config_on_load(cls, submodule_name: str, submodule_rbln_config: RBLNModelConfig):
-        if submodule_name == "language_model":
-            submodule_rbln_config._is_prefix_lm = True
         return submodule_rbln_config
 
     @classmethod
@@ -441,14 +440,13 @@ class RBLNPaliGemmaModel(RBLNModel):
     ):
         if submodule_name == "language_model":
             submodule_config.use_sliding_window = False
+            if not (submodule_rbln_config.use_attention_mask and submodule_rbln_config.use_position_ids):
+                raise ValueError(
+                    "PaliGemma's language model prefills bidirectionally over the prompt, which requires "
+                    "use_attention_mask=True and use_position_ids=True."
+                )
             submodule_rbln_config._is_prefix_lm = True
 
-        return submodule_rbln_config
-
-    @classmethod
-    def _update_submodule_rbln_config_on_load(cls, submodule_name: str, submodule_rbln_config: RBLNModelConfig):
-        if submodule_name == "language_model":
-            submodule_rbln_config._is_prefix_lm = True
         return submodule_rbln_config
 
     @classmethod
