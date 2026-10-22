@@ -811,7 +811,6 @@ class RBLNQwen3_5ForConditionalGeneration(RBLNQwenVLBatchSortMixin, RBLNQwen3_5M
 
     @property
     def logits_last_dim(self):
-        # The graph ends in the LM head, also when it compiles only the prefill phase.
         return self.config.text_config.vocab_size
 
     @classmethod

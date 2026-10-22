@@ -486,7 +486,6 @@ class RBLNExaone4_5_ForConditionalGeneration(
 
     @property
     def logits_last_dim(self):
-        # The graph ends in the LM head, also when it compiles only the prefill phase.
         return self.config.text_config.vocab_size
 
     def _vision_grid_rows_per_sample(
