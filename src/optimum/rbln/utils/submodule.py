@@ -50,6 +50,14 @@ class SubModulesMixin:
             setattr(self, submodule_meta["name"], submodule)
 
     @classmethod
+    def _update_submodule_rbln_config_on_load(
+        cls, submodule_name: str, submodule_rbln_config: RBLNModelConfig
+    ) -> RBLNModelConfig:
+        # Load-time counterpart of `_update_submodule_rbln_config`: re-declare the submodule's
+        # non-serialized config attributes (`subclass_non_save_attributes`).
+        return submodule_rbln_config
+
+    @classmethod
     def _get_submodule_config_class(
         cls, cls_name: str, submodule_rbln_config: dict[str, Any]
     ) -> type[RBLNModelConfig]:
@@ -171,6 +179,7 @@ class SubModulesMixin:
                     submodule_save_dir = submodule_save_dir.parent
                     json_file_path = legacy_json_file_path
             config = PretrainedConfig.from_json_file(json_file_path)
+            submodule_rbln_config = cls._update_submodule_rbln_config_on_load(submodule_name, submodule_rbln_config)
 
             rbln_submodule = submodule_cls._from_pretrained(
                 model_id=str(submodule_save_dir),

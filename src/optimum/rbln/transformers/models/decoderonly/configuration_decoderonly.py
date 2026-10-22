@@ -39,7 +39,8 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
 
     _default_phases = ["prefill"]
     _default_logits_to_keep = 0
-    subclass_non_save_attributes = ["memory_budget"]
+    subclass_non_save_attributes = ["memory_budget", "_is_prefix_lm"]
+    _is_prefix_lm: bool = False
 
     @deprecate_kwarg(old_name="kvcache_metas", new_name="cache_metas", version="0.13.0")
     def __init__(
@@ -315,13 +316,6 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
     @property
     def use_image_prefill(self):
         return "image_prefill" in self.phases
-
-    @property
-    def use_bidirectional_prefill(self):
-        # Prefix-LM style prefill (e.g. PaliGemma's language model): with attention mask and
-        # position ids but no separate image_prefill phase, the compiled prefill attends
-        # bidirectionally within a chunk, so the whole prompt must fit in a single chunk.
-        return self.use_attention_mask and self.use_position_ids and not self.use_image_prefill
 
     @property
     def requires_batch_sort(self) -> bool | None:

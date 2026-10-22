@@ -1079,6 +1079,12 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
 
         config_file.update(rbln_runtime_kwargs)
         config = cls(**config_file)
+        if isinstance(rbln_config, RBLNModelConfig):
+            # Non-serialized attributes travel with the passed instance, as they do with a dict.
+            for name in cls.subclass_non_save_attributes:
+                value = getattr(rbln_config, name, None)
+                if value is not None:
+                    setattr(config, name, value)
         if len(rbln_kwargs) > 0:
             non_save_attrs = set(cls.subclass_non_save_attributes)
             for key, value in rbln_kwargs.items():
