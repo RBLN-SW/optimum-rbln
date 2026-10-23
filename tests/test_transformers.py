@@ -494,6 +494,13 @@ class TestElectraModelBatch8(TestElectraModel):
     GENERATION_KWARGS = {name: tensor.repeat(8, 1) for name, tensor in TestElectraModel.GENERATION_KWARGS.items()}
 
 
+class TestElectraModelBatch16(TestElectraModel):
+    TEST_LEVEL = TestLevel.FULL
+    BATCH_SIZE = 16
+    RBLN_CLASS_KWARGS = {**TestElectraModel.RBLN_CLASS_KWARGS, "rbln_batch_size": 16}
+    GENERATION_KWARGS = {name: tensor.repeat(16, 1) for name, tensor in TestElectraModel.GENERATION_KWARGS.items()}
+
+
 class TestElectraForPreTrainingBatch4(TestElectraForPreTraining):
     TEST_LEVEL = TestLevel.FULL
     BATCH_SIZE = 4
@@ -508,6 +515,13 @@ class TestElectraForPreTrainingBatch8(TestElectraForPreTraining):
     GENERATION_KWARGS = {name: tensor.repeat(8, 1) for name, tensor in TestElectraModel.GENERATION_KWARGS.items()}
 
 
+class TestElectraForPreTrainingBatch16(TestElectraForPreTraining):
+    TEST_LEVEL = TestLevel.FULL
+    BATCH_SIZE = 16
+    RBLN_CLASS_KWARGS = {**TestElectraForPreTraining.RBLN_CLASS_KWARGS, "rbln_batch_size": 16}
+    GENERATION_KWARGS = {name: tensor.repeat(16, 1) for name, tensor in TestElectraModel.GENERATION_KWARGS.items()}
+
+
 class TestElectraForSequenceClassificationBatch4(TestElectraForSequenceClassification):
     TEST_LEVEL = TestLevel.FULL
     BATCH_SIZE = 4
@@ -520,6 +534,13 @@ class TestElectraForSequenceClassificationBatch8(TestElectraForSequenceClassific
     BATCH_SIZE = 8
     RBLN_CLASS_KWARGS = {**TestElectraForSequenceClassification.RBLN_CLASS_KWARGS, "rbln_batch_size": 8}
     GENERATION_KWARGS = {name: tensor.repeat(8, 1) for name, tensor in TestElectraModel.GENERATION_KWARGS.items()}
+
+
+class TestElectraForSequenceClassificationBatch16(TestElectraForSequenceClassification):
+    TEST_LEVEL = TestLevel.FULL
+    BATCH_SIZE = 16
+    RBLN_CLASS_KWARGS = {**TestElectraForSequenceClassification.RBLN_CLASS_KWARGS, "rbln_batch_size": 16}
+    GENERATION_KWARGS = {name: tensor.repeat(16, 1) for name, tensor in TestElectraModel.GENERATION_KWARGS.items()}
 
 
 class TestElectraForPreTrainingBucketing(TestElectraForPreTraining):
