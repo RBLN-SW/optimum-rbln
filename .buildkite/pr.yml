@@ -49,38 +49,21 @@ steps:
   # All gates must pass before the NPU pipeline is even uploaded.
   - wait: ~
 
-  # A [pytest-full] commit (the compiler-update bot's PRs) runs every suite at the
-  # full level. Suites a change cannot affect are skipped with the [skip-*]
-  # directives run-suite.sh reads, not by path.
-  # Sibling jobs: two uploads from one job make the second batch a barrier for
-  # the first, so the pytest suites would wait on BC.
-  - label: ":sparkles: upload pytest"
-    <<: *upload
-    command: |
-      if [[ "$$BUILDKITE_MESSAGE" == *"[pytest-full]"* ]]; then
-        echo "--- :mag: [pytest-full] in commit message"
-        export OPTIMUM_RBLN_TEST_LEVEL=full
-        export HF_USER_ID=Rebellions
-      fi
-      buildkite-agent pipeline upload .buildkite/pipelines/pytest/pipeline.yml
-
-  - label: ":sparkles: upload BC"
-    <<: *upload
-    command: |
-      bash scripts/ci/bc-steps.sh --latest | buildkite-agent pipeline upload
-
-  - wait: ~
-    continue_on_failure: true
-
-  - label: ":slack: report"
-    if: build.message =~ /\[slack-report\]/
-    soft_fail: true
-    allow_dependency_failure: true
+  - label: ":microscope: Chronos-2 CA25 artifact comparison (diagnostic)"
     image: "${DEVTOOLS_DOCKER_IMAGE}"
-    env:
-      SLACK_TITLE: "Optimum-RBLN PR Test Results"
+    timeout_in_minutes: 45
+    resources:
+      npu:
+        count: 1
+        product: "RBLN-CA25"
     secrets:
-      OBEDIENTS_API_TOKEN: BUILDKITE_API_TOKEN
-      SLACK_BOT_TOKEN: SLACK_OAUTH_TOKEN
+      UV_INDEX_REBELLIONS_USERNAME: REBEL_SW_DEV_USERNAME
+      UV_INDEX_REBELLIONS_PASSWORD: REBEL_SW_DEV_PASSWORD
+      HF_TOKEN: HF_TOKEN
+      HF_HOME: HF_HOME
+    artifact_paths:
+      - "debug-chronos2-core-probe/**/*"
     command:
-      - "python3 scripts/ci/slack-report.py"
+      - "bash scripts/ci/sync.sh"
+      - "rbln-smi"
+      - "uv run --no-sync python scripts/diagnostics/chronos2-ca25-core.py"
