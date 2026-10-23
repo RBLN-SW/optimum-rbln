@@ -748,8 +748,8 @@ class TestDinov2Model(BaseTest.TestModel):
         images = [cat, parrots, ImageOps.grayscale(cat).convert("RGB"), ImageOps.mirror(cat)]
         first_inputs = first_output = None
         with torch.no_grad():
-            for offset in range(0, len(images), self.BATCH_SIZE):
-                chunk = images[offset : offset + self.BATCH_SIZE]
+            for offset in range(len(images)):
+                chunk = [images[(offset + index) % len(images)] for index in range(self.BATCH_SIZE)]
                 if self.IMAGE_SIZE is None:
                     inputs = processor(images=chunk, return_tensors="pt")
                 else:
@@ -851,6 +851,42 @@ class TestDinov2ForImageClassificationRectangular(TestDinov2ForImageClassificati
     RBLN_CLASS_KWARGS = TestDinov2ModelRectangular.RBLN_CLASS_KWARGS
     IMAGE_SIZE = (224, 336)
     GENERATION_KWARGS = TestDinov2ModelRectangular.GENERATION_KWARGS
+
+
+class TestDinov2ModelNativeSizeBatch2(TestDinov2ModelNativeSize):
+    BATCH_SIZE = 2
+    RBLN_CLASS_KWARGS = {**TestDinov2ModelNativeSize.RBLN_CLASS_KWARGS, "rbln_batch_size": 2}
+    GENERATION_KWARGS = {"pixel_values": torch.randn(2, 3, 518, 518, generator=torch.manual_seed(42))}
+
+
+class TestDinov2ForImageClassificationNativeSizeBatch2(TestDinov2ForImageClassificationNativeSize):
+    BATCH_SIZE = 2
+    RBLN_CLASS_KWARGS = TestDinov2ModelNativeSizeBatch2.RBLN_CLASS_KWARGS
+    GENERATION_KWARGS = TestDinov2ModelNativeSizeBatch2.GENERATION_KWARGS
+
+
+class TestDinov2ModelNativeSizeBatch4(TestDinov2ModelNativeSize):
+    BATCH_SIZE = 4
+    RBLN_CLASS_KWARGS = {**TestDinov2ModelNativeSize.RBLN_CLASS_KWARGS, "rbln_batch_size": 4}
+    GENERATION_KWARGS = {"pixel_values": torch.randn(4, 3, 518, 518, generator=torch.manual_seed(42))}
+
+
+class TestDinov2ForImageClassificationNativeSizeBatch4(TestDinov2ForImageClassificationNativeSize):
+    BATCH_SIZE = 4
+    RBLN_CLASS_KWARGS = TestDinov2ModelNativeSizeBatch4.RBLN_CLASS_KWARGS
+    GENERATION_KWARGS = TestDinov2ModelNativeSizeBatch4.GENERATION_KWARGS
+
+
+class TestDinov2ModelNativeSizeBatch8(TestDinov2ModelNativeSize):
+    BATCH_SIZE = 8
+    RBLN_CLASS_KWARGS = {**TestDinov2ModelNativeSize.RBLN_CLASS_KWARGS, "rbln_batch_size": 8}
+    GENERATION_KWARGS = {"pixel_values": torch.randn(8, 3, 518, 518, generator=torch.manual_seed(42))}
+
+
+class TestDinov2ForImageClassificationNativeSizeBatch8(TestDinov2ForImageClassificationNativeSize):
+    BATCH_SIZE = 8
+    RBLN_CLASS_KWARGS = TestDinov2ModelNativeSizeBatch8.RBLN_CLASS_KWARGS
+    GENERATION_KWARGS = TestDinov2ModelNativeSizeBatch8.GENERATION_KWARGS
 
 
 class TestViTForImageClassification(BaseTest.TestModel):
