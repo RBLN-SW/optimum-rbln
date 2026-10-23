@@ -1270,10 +1270,8 @@ class SlidingWindowAttentionOp(AttentionOp):
 
         if self.phase in {"prefill", "image_prefill"}:
             use_image_prefill = getattr(self.rbln_config, "use_image_prefill", False)
-            if use_image_prefill:
+            if use_image_prefill or (self.use_attention_mask and self.rbln_config.use_position_ids):
                 op_args["is_bidirectional"] = self.phase == "image_prefill"
-            elif self.use_attention_mask and self.rbln_config.use_position_ids:
-                op_args["is_bidirectional"] = True
             else:
                 op_args["is_bidirectional"] = False
 
