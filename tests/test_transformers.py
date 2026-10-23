@@ -14,6 +14,7 @@ from optimum.rbln import (
     RBLNBertForMaskedLM,
     RBLNBertForQuestionAnswering,
     RBLNBertModel,
+    RBLNChronos2Model,
     RBLNCLIPTextModel,
     RBLNColPaliForRetrieval,
     RBLNColQwen2ForRetrieval,
@@ -788,3 +789,155 @@ class TestGroundingDinoModel(BaseTest.TestModel):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestChronos2Model(BaseTest.TestModel):
+    RBLN_CLASS = RBLNChronos2Model
+    HF_MODEL_ID = "amazon/chronos-2"
+    HF_CONFIG_KWARGS = {"revision": "29ec3766d36d6f73f0696f85560a422f50e8498c"}
+    RBLN_CLASS_KWARGS = {"rbln_batch_size": 1, "rbln_npu": os.environ.get("RBLN_TEST_NPU"), "rbln_num_devices": 1}
+    GENERATION_KWARGS = {"context": torch.sin(torch.arange(8192, dtype=torch.float32) / 10).reshape(1, -1)}
+    BATCH_SIZE = 1
+    DEVICE = 0
+
+    def test_numerical_parity(self):
+        if os.environ.get("SAVE_ARTIFACTS_PATH") or os.environ.get("REUSE_ARTIFACTS_PATH"):
+            self.skipTest("Artifact compatibility mode does not execute on a real NPU.")
+        from chronos import Chronos2Model
+
+        reference = Chronos2Model.from_pretrained(self.HF_MODEL_ID, **self.HF_CONFIG_KWARGS).float().eval()
+        horizon = self.model.prediction_length
+        patches = horizon // self.model.chronos_config.output_patch_size
+        first_inputs = first_output = None
+        with torch.no_grad():
+            for scenario in [
+                "maximum",
+                "grouped-covariates",
+                "partial-grouped-covariates",
+                "independent-missing",
+                "all-missing",
+            ]:
+                actual_batch = min(3, self.BATCH_SIZE) if scenario == "partial-grouped-covariates" else self.BATCH_SIZE
+                length = self.model.context_length if scenario == "maximum" else 257
+                context = torch.stack(
+                    [torch.sin(torch.arange(length, dtype=torch.float32) / 10) + i for i in range(actual_batch)]
+                )
+                groups = torch.arange(actual_batch, dtype=torch.int64)
+                inputs = {"context": context, "group_ids": groups, "num_output_patches": patches}
+                if scenario in {"grouped-covariates", "partial-grouped-covariates"}:
+                    groups[:] = 7
+                    context[:, ::5] = torch.nan
+                    future = torch.full((actual_batch, horizon), torch.nan)
+                    future[0] = torch.cos(torch.arange(horizon) / 9)
+                    inputs["future_covariates"] = future
+                elif scenario == "independent-missing":
+                    context[:, ::3] = torch.nan
+                elif scenario == "all-missing":
+                    context[:] = torch.nan
+                expected = reference(**inputs).quantile_preds
+                actual = self.model(**inputs).quantile_preds
+                assert actual.shape == expected.shape
+                pcc = torch.corrcoef(torch.stack([actual.flatten(), expected.flatten()]))[0, 1]
+                nrmse = (actual - expected).square().mean().sqrt() / expected.square().mean().sqrt().clamp_min(1e-8)
+                print(
+                    "CHRONOS2_PARITY "
+                    + json.dumps(
+                        {
+                            "test_class": type(self).__name__,
+                            "scenario": scenario,
+                            "shape": list(actual.shape),
+                            "pcc": float(pcc),
+                            "nrmse": float(nrmse),
+                        }
+                    ),
+                    flush=True,
+                )
+                assert actual.isfinite().all()
+                assert pcc >= 0.99
+                assert nrmse <= 0.05
+                torch.testing.assert_close(self.model(**inputs).quantile_preds, actual, rtol=0, atol=0)
+                if first_inputs is None:
+                    first_inputs, first_output = inputs, actual.clone()
+            torch.testing.assert_close(self.model(**first_inputs).quantile_preds, first_output, rtol=0, atol=0)
+
+
+class TestChronos2ModelBatch2(TestChronos2Model):
+    TEST_LEVEL = TestLevel.FULL
+    BATCH_SIZE = 2
+    RBLN_CLASS_KWARGS = {**TestChronos2Model.RBLN_CLASS_KWARGS, "rbln_batch_size": 2}
+    GENERATION_KWARGS = {"context": TestChronos2Model.GENERATION_KWARGS["context"].repeat(2, 1)}
+
+
+class TestChronos2ModelBatch4(TestChronos2Model):
+    TEST_LEVEL = TestLevel.FULL
+    BATCH_SIZE = 4
+    RBLN_CLASS_KWARGS = {**TestChronos2Model.RBLN_CLASS_KWARGS, "rbln_batch_size": 4}
+    GENERATION_KWARGS = {"context": TestChronos2Model.GENERATION_KWARGS["context"].repeat(4, 1)}
+
+
+class TestChronos2ModelBatch8(TestChronos2Model):
+    TEST_LEVEL = TestLevel.FULL
+    BATCH_SIZE = 8
+    RBLN_CLASS_KWARGS = {**TestChronos2Model.RBLN_CLASS_KWARGS, "rbln_batch_size": 8}
+    GENERATION_KWARGS = {"context": TestChronos2Model.GENERATION_KWARGS["context"].repeat(8, 1)}
+
+
+class TestChronos2ModelBatch16(TestChronos2Model):
+    TEST_LEVEL = TestLevel.FULL
+    BATCH_SIZE = 16
+    RBLN_CLASS_KWARGS = {**TestChronos2Model.RBLN_CLASS_KWARGS, "rbln_batch_size": 16}
+    GENERATION_KWARGS = {"context": TestChronos2Model.GENERATION_KWARGS["context"].repeat(16, 1)}
+
+
+class TestChronos2ModelBatch32(TestChronos2Model):
+    TEST_LEVEL = TestLevel.FULL
+    BATCH_SIZE = 32
+    RBLN_CLASS_KWARGS = {**TestChronos2Model.RBLN_CLASS_KWARGS, "rbln_batch_size": 32}
+    GENERATION_KWARGS = {"context": TestChronos2Model.GENERATION_KWARGS["context"].repeat(32, 1)}
+
+
+class TestChronos2ModelBatch64(TestChronos2Model):
+    TEST_LEVEL = TestLevel.FULL
+    BATCH_SIZE = 64
+    RBLN_CLASS_KWARGS = {**TestChronos2Model.RBLN_CLASS_KWARGS, "rbln_batch_size": 64}
+    GENERATION_KWARGS = {"context": TestChronos2Model.GENERATION_KWARGS["context"].repeat(64, 1)}
+
+
+class TestChronos2ModelPipeline(TestChronos2Model):
+    TEST_LEVEL = TestLevel.FULL
+    BATCH_SIZE = 4
+    RBLN_CLASS_KWARGS = {
+        **TestChronos2Model.RBLN_CLASS_KWARGS,
+        "rbln_batch_size": 4,
+        "rbln_context_length": 512,
+        "rbln_prediction_length": 36,
+    }
+    GENERATION_KWARGS = {"context": TestChronos2Model.GENERATION_KWARGS["context"][:, :512].repeat(4, 1)}
+
+    def test_native_pipeline(self):
+        if os.environ.get("SAVE_ARTIFACTS_PATH") or os.environ.get("REUSE_ARTIFACTS_PATH"):
+            self.skipTest("Artifact compatibility mode does not execute on a real NPU.")
+        from chronos import Chronos2Model, Chronos2Pipeline
+
+        reference = Chronos2Pipeline(
+            Chronos2Model.from_pretrained(self.HF_MODEL_ID, **self.HF_CONFIG_KWARGS).float().eval()
+        )
+        pipeline = Chronos2Pipeline(self.model)
+        context = torch.stack(
+            [torch.sin(torch.arange(257, dtype=torch.float32) / 10) + i for i in range(3)]
+        ).unsqueeze(0)
+        expected = reference.predict(context, prediction_length=36, context_length=512, batch_size=4)
+        actual = pipeline.predict(context, prediction_length=36, context_length=512, batch_size=4)
+        assert len(actual) == len(expected)
+        for value, target in zip(actual, expected, strict=True):
+            assert value.shape == target.shape
+            pcc = torch.corrcoef(torch.stack([value.flatten(), target.flatten()]))[0, 1]
+            nrmse = (value - target).square().mean().sqrt() / target.square().mean().sqrt().clamp_min(1e-8)
+            print(
+                "CHRONOS2_PIPELINE_PARITY "
+                + json.dumps({"shape": list(value.shape), "pcc": float(pcc), "nrmse": float(nrmse)}),
+                flush=True,
+            )
+            assert value.isfinite().all()
+            assert pcc >= 0.99
+            assert nrmse <= 0.05

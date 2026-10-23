@@ -59,6 +59,10 @@ image.save("image.png")
 + pipe.save_pretrained("compiled_sdxl")
 ```
 
+## Time-Series Forecasting
+
+See the [Chronos-2 example](examples/chronos2/README.md) for native maximum-context forecasting, grouped inputs and the Chronos pipeline.
+
 ## Compile Ahead of Time with the CLI
 
 Instead of compiling inside your script, you can compile a model up front with the `optimum-rbln-cli`

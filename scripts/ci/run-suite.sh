@@ -31,6 +31,8 @@ case "$suite" in
     uv run --no-sync pytest -n 1 tests/test_config.py "${report[@]}" -vv --durations 0 "${bc[@]}" ;;
   transformers)
     uv run --no-sync pytest -n 1 tests/test_transformers.py "${report[@]}" ${shard:+--shard "$shard"} -vv --durations 0 "${bc[@]}" ;;
+  chronos2-cr13)
+    uv run --no-sync pytest -n 1 tests/test_transformers.py -k Chronos2 "${report[@]}" -vv --durations 0 ;;
   diffusers)
     uv run --no-sync pytest -n 1 tests/test_diffusers.py "${report[@]}" ${shard:+--shard "$shard"} -vv --durations 0 "${bc[@]}" ;;
   llm)

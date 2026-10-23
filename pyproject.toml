@@ -44,6 +44,9 @@ dependencies = [
     "tokenizers==0.22.1",
 ]
 
+[project.optional-dependencies]
+chronos = ["chronos-forecasting>=2.3.2,<3"]
+
 [project.urls]
 Homepage = "https://rebellions.ai"
 Documentation = "https://docs.rbln.ai"
@@ -54,6 +57,7 @@ optimum-rbln-cli = "optimum.rbln.cli:main"
 
 [dependency-groups]
 tests = [
+    "chronos-forecasting>=2.3.2,<3",
     "pytest>=8.4.2",
     "pytest-xdist>=3.8.0",
     "pytest-split>=0.9.0",
@@ -197,11 +201,11 @@ warn_redundant_casts = true
 show_error_codes = true
 
 [[tool.mypy.overrides]]
-module = ["rebel", "rebel.*", "torchvision", "torchvision.*", "retinaface.*", "cosmos_guardrail", "cosmos_guardrail.*"]
+module = ["rebel", "rebel.*", "chronos", "chronos.*", "torchvision", "torchvision.*", "retinaface.*", "cosmos_guardrail", "cosmos_guardrail.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
-module = ["optimum.rbln.transformers.modeling_generic"]
+module = ["optimum.rbln.transformers.modeling_generic", "optimum.rbln.chronos.modeling_chronos2"]
 disable_error_code = ["override"]
 
 [[tool.mypy.overrides]]

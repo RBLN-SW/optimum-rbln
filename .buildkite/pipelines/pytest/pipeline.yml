@@ -138,6 +138,23 @@ steps:
       - *sync
       - "bash scripts/ci/run-suite.sh transformers 3/3"
 
+  - label: ":pytest: Chronos-2 CR13 parity"
+    key: "chronos2-cr13"
+    if: "'${OPTIMUM_RBLN_TEST_LEVEL:-default}' == 'full' && build.message !~ /\\[skip-transformers\\]/"
+    image: "${DEVTOOLS_DOCKER_IMAGE}"
+    resources:
+      npu:
+        count: 1
+        product: "RBLN-CR13"
+    secrets: *secrets
+    env:
+      RBLN_TEST_NPU: "RBLN-CR13"
+    timeout_in_minutes: 60
+    artifact_paths: "junit-*.xml"
+    command:
+      - *sync
+      - "bash scripts/ci/run-suite.sh chronos2-cr13"
+
   - label: ":pytest: diffusers 1/2"
     <<: *no_diffusers
     image: "${DEVTOOLS_DOCKER_IMAGE}"
