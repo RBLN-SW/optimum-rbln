@@ -570,6 +570,45 @@ def test_cosmos2_5_pipeline_owns_the_visual_tower_config():
     assert config_cls(text_encoder={"num_devices": 8}).text_encoder.num_devices == 8
 
 
+def test_qwenimage21_pipeline_derives_submodule_sizes():
+    """The Qwen-Image 2.1 pipeline config sets the sequence lengths and image sizes of all submodules."""
+    config_cls = _import_config("RBLNQwenImage21PipelineConfig")
+
+    # By default it also compiles for editing with a 1376x1376 VAE encoder canvas. The largest condition image the
+    # pipeline resizes to that fits it is 1056x1024 (W x H): 4224 latent tokens, 1056 image tokens.
+    default = config_cls()
+    assert default.text_encoder.max_seq_len == 1600  # 512 + 1056, up to a multiple of 64
+    assert default.text_encoder.output_hidden_states is True
+    assert default.text_encoder.phases == ["prefill"]
+    assert default.text_encoder.visual["max_seq_len"] == [4224]
+    assert default.transformer.max_seq_len == 512 + 4224
+    assert default.transformer.sample_size == [(64, 66)]  # The 1024x1024 output runs in this graph, padded.
+    assert default.vae.sample_size == [(1024, 1024)]
+    assert default.vae.uses_encoder is True
+    assert default.vae.encoder_sample_size == [(1376, 1376)]
+
+    # A 1728x608 condition image is 4104 latent tokens, and 1026 image tokens in the prompt of the text encoder.
+    edit = config_cls(image_size=(1024, 1024), condition_image_size=(608, 1728))
+    assert edit.text_encoder.max_seq_len == 1600  # 512 + 1026, up to a multiple of 64
+    assert edit.text_encoder.visual["max_seq_len"] == [4160]  # 4104 patches, up to a multiple of 64
+    assert edit.transformer.max_seq_len == 512 + 4104
+    assert edit.transformer.sample_size == [(38, 108)]
+    assert edit.vae.uses_encoder is True
+    assert edit.vae.encoder_sample_size == [(608, 1728)]
+
+    # The budgets follow the output_resolution the pipeline is called with; a canvas smaller than any resized image
+    # is taken as the condition size itself.
+    small = config_cls(image_size=(256, 256), condition_image_size=(256, 384), output_resolution=256)
+    assert [h * w for h, w in small.transformer.sample_size] == [288]  # e.g. 288x256 (W x H) fits the canvas
+    small_default = config_cls(image_size=(256, 256), condition_image_size=(256, 384))
+    assert small_default.transformer.sample_size == [(16, 16), (16, 24)]
+
+    with pytest.raises(ValueError, match="multiples of 32"):
+        config_cls(image_size=(1000, 1000))
+    with pytest.raises(ValueError, match="num_condition_images"):
+        config_cls(num_condition_images=0)
+
+
 if __name__ == "__main__":
     pytest.main()
 

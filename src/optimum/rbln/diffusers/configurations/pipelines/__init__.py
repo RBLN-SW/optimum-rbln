@@ -23,6 +23,7 @@ if TYPE_CHECKING:
     from .configuration_controlnet import *
     from .configuration_cosmos import *
     from .configuration_kandinsky2_2 import *
+    from .configuration_qwenimage21 import *
     from .configuration_stable_diffusion import *
     from .configuration_stable_diffusion_3 import *
     from .configuration_stable_diffusion_xl import *

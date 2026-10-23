@@ -15,6 +15,8 @@
 from typing import TYPE_CHECKING, Union
 
 import torch
+import torch.nn.functional as F
+from diffusers.models.autoencoders.autoencoder_kl_qwenimage21 import QwenImage21ResidualDownBlock
 from diffusers.models.autoencoders.autoencoder_kl_wan import patchify as wan_patchify
 from diffusers.models.autoencoders.autoencoder_kl_wan import unpatchify as wan_unpatchify
 from diffusers.models.autoencoders.vae import DiagonalGaussianDistribution, IdentityDistribution
@@ -23,7 +25,13 @@ from ....utils.runtime_utils import RBLNPytorchRuntime
 
 
 if TYPE_CHECKING:
-    from diffusers import AutoencoderKL, AutoencoderKLCosmos, AutoencoderKLTemporalDecoder, VQModel
+    from diffusers import (
+        AutoencoderKL,
+        AutoencoderKLCosmos,
+        AutoencoderKLQwenImage21,
+        AutoencoderKLTemporalDecoder,
+        VQModel,
+    )
 
 
 class RBLNRuntimeVAEEncoder(RBLNPytorchRuntime):
@@ -176,6 +184,100 @@ class _VAECosmosDecoder(torch.nn.Module):
     def forward(self, z):
         vae_out = self.vae._decode(z, return_dict=False)
         return vae_out
+
+
+# Additive attention bias for keys outside the image; it vanishes in the softmax in bf16 and fp32.
+_QWENIMAGE21_KEY_MASK_BIAS = -1e9
+
+
+def _qwenimage21_mask_at(mask: torch.Tensor, x: torch.Tensor) -> torch.Tensor:
+    # The image sits at the top left of the canvas and its size is a multiple of the VAE scale factor, so the mask at
+    # any resolution of the encoder is a strided slice of the full one.
+    stride = mask.shape[-2] // x.shape[-2]
+    return mask[..., ::stride, ::stride].to(x.dtype)
+
+
+def _qwenimage21_masked(x: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+    return x * _qwenimage21_mask_at(mask, x)
+
+
+def _qwenimage21_residual_block(block, x: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+    # QwenImage21ResidualBlock.forward for one frame, masked after every convolution.
+    h = _qwenimage21_masked(block.conv_shortcut(x), mask)
+    x = _qwenimage21_masked(block.conv1(block.nonlinearity(block.norm1(x))), mask)
+    x = _qwenimage21_masked(block.conv2(block.dropout(block.nonlinearity(block.norm2(x)))), mask)
+    return x + h
+
+
+def _qwenimage21_attention_block(block, x: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+    # QwenImage21AttentionBlock.forward with the canvas outside the image left out as keys.
+    identity = x
+    batch_size, channels, time, height, width = x.size()
+    x = x.permute(0, 2, 1, 3, 4).reshape(batch_size * time, channels, height, width)
+    x = block.norm(x)
+    qkv = block.to_qkv(x)
+    qkv = qkv.reshape(batch_size * time, 1, channels * 3, -1)
+    qkv = qkv.permute(0, 1, 3, 2).contiguous()
+    q, k, v = qkv.chunk(3, dim=-1)
+    key_mask = _qwenimage21_mask_at(mask, identity).reshape(1, 1, 1, height * width)
+    x = F.scaled_dot_product_attention(q, k, v, attn_mask=(1.0 - key_mask) * _QWENIMAGE21_KEY_MASK_BIAS)
+    x = x.squeeze(1).permute(0, 2, 1).reshape(batch_size * time, channels, height, width)
+    x = block.proj(x)
+    x = x.view(batch_size, time, channels, height, width)
+    x = x.permute(0, 2, 1, 3, 4)
+    return _qwenimage21_masked(x + identity, mask)
+
+
+class _VAEQwenImage21Encoder(torch.nn.Module):
+    """`vae._encode` of one image at the top left of a larger canvas, with the result of the image alone.
+
+    The canvas lets one compiled graph encode every image size that fits it. `mask` is 1 over the image and 0
+    elsewhere. Every convolution of the image alone reads zero padding past the image border, at each layer; so each
+    module output that can turn the canvas outside the image non-zero is multiplied by the mask at its resolution, and
+    the mid-block attention leaves the outside out as keys. The upstream modules run in the order of `_encode` for one
+    frame, whose feature cache leaves the result unchanged.
+
+    The mask is an argument, never module state: compilation clones the module first and would detach any state read
+    through hooks.
+    """
+
+    def __init__(self, vae: "AutoencoderKLQwenImage21"):
+        super().__init__()
+        if vae.config.patch_size is not None or not all(
+            isinstance(block, QwenImage21ResidualDownBlock) for block in vae.encoder.down_blocks
+        ):
+            raise NotImplementedError("The RBLN VAE encoder covers the residual encoder without patchify.")
+        self.vae = vae
+
+    def forward(self, x, mask):
+        encoder = self.vae.encoder
+        x = _qwenimage21_masked(encoder.conv_in(x * mask), mask)
+        for block in encoder.down_blocks:
+            # QwenImage21ResidualDownBlock.forward; the downsampler's time_conv runs only with a cached frame.
+            shortcut = _qwenimage21_masked(block.avg_shortcut(x), mask)
+            for resnet in block.resnets:
+                x = _qwenimage21_residual_block(resnet, x, mask)
+            if block.downsampler is not None:
+                x = _qwenimage21_masked(block.downsampler(x), mask)
+            x = x + shortcut
+        mid = encoder.mid_block
+        x = _qwenimage21_residual_block(mid.resnets[0], x, mask)
+        for attention, resnet in zip(mid.attentions, mid.resnets[1:], strict=True):
+            if attention is not None:
+                x = _qwenimage21_attention_block(attention, x, mask)
+            x = _qwenimage21_residual_block(resnet, x, mask)
+        x = _qwenimage21_masked(encoder.conv_out(encoder.nonlinearity(encoder.norm_out(x))), mask)
+        return _qwenimage21_masked(self.vae.quant_conv(x), mask)
+
+
+class _VAEQwenImage21Decoder(torch.nn.Module):
+    # One latent frame: the decoder's frame loop runs once and its feature cache stays empty.
+    def __init__(self, vae: "AutoencoderKLQwenImage21"):
+        super().__init__()
+        self.vae = vae
+
+    def forward(self, z):
+        return self.vae._decode(z, return_dict=False)[0]
 
 
 class RBLNRuntimeVQEncoder(RBLNPytorchRuntime):
