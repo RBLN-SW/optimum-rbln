@@ -82,7 +82,7 @@ def main():
     images = [cat, cat.resize((256, 256)), cat.resize((128, 512)), cat.resize((512, 128))]
     texts = ["a photo of cats", "a photo of dogs", "a photo of a train", "a photo of parrots"]
     hashes = json.loads(Path(__file__).with_name("siglip2_original_input_hashes.json").read_text())
-    inputs, references, cpu_baselines, cpu_hidden = [], [], [], []
+    inputs, references, cpu_baselines, cpu_hidden, cpu_stages = [], [], [], [], []
     with torch.no_grad():
         for index, (image, text) in enumerate(zip(images, texts, strict=True)):
             inp = processor(
@@ -105,6 +105,7 @@ def main():
             for a, e in zip(baseline, expected, strict=True):
                 torch.testing.assert_close(a, e)
             hidden = embedding(values[1], values[4])
+            stages = []
             for layer, (attention, mlp) in zip(layers, branches, strict=True):
                 mask = create_bidirectional_mask(
                     config=layer.self_attn.config, inputs_embeds=hidden, attention_mask=values[3]
@@ -113,6 +114,8 @@ def main():
                 hidden = hidden + attention(hidden, values[3])
                 hidden = hidden + mlp(hidden)
                 torch.testing.assert_close(hidden, full, rtol=0, atol=0)
+                stages.append(hidden.clone())
+            cpu_stages.append(stages)
             inputs.append(values)
             references.append(expected)
             cpu_baselines.append(baseline)
@@ -188,7 +191,14 @@ def main():
         compile_model("affine-head", wrapper, config.compile_cfgs[0].input_info)
         assert report["compile"]["affine-head"]["inputs"] == report["compile"]["head"]["inputs"]
         report["normalization_cpu_max_deltas"] = normalization_deltas
-        for variant in ["baseline", "fp32-residual", "fp32-residual-normalization"]:
+        report["timing_includes_cpu_diagnostics"] = True
+        for variant in [
+            "baseline",
+            "fp32-residual",
+            "fp32-residual-normalization",
+            "diagnostic-cpu-attention",
+            "diagnostic-cpu-mlp",
+        ]:
             selected = (
                 ["baseline"]
                 if variant == "baseline"
@@ -203,13 +213,40 @@ def main():
                 key: model.create_runtime(tensor_type="pt", device=0) for key, model in compiled_models.items()
             }
 
-            def execute(values, variant=variant, runtimes=runtimes):
+            def execute(values, expected_stages=None, variant=variant, runtimes=runtimes):
                 if variant == "baseline":
-                    return tuple(value.clone() for value in runtimes["baseline"](*values)), None
+                    return tuple(value.clone() for value in runtimes["baseline"](*values)), None, []
                 hidden = runtimes["embedding"](values[1], values[4])
-                for index in range(len(branches)):
-                    hidden = hidden.float() + runtimes[f"attention-{index}"](hidden, values[3]).float()
-                    hidden = hidden.float() + runtimes[f"mlp-{index}"](hidden).float()
+                boundaries = []
+
+                def nrmse(actual, reference):
+                    return float((actual - reference).square().mean().sqrt() / reference.square().mean().sqrt())
+
+                for index, (attention, mlp) in enumerate(branches):
+                    cpu_attention = (
+                        attention(hidden, values[3])
+                        if expected_stages is not None or variant == "diagnostic-cpu-attention"
+                        else None
+                    )
+                    attention_output = (
+                        cpu_attention
+                        if variant == "diagnostic-cpu-attention"
+                        else runtimes[f"attention-{index}"](hidden, values[3]).float()
+                    )
+                    row = {"layer": index}
+                    if expected_stages is not None:
+                        row["attention_same_input_nrmse"] = nrmse(attention_output, cpu_attention)
+                    hidden = hidden.float() + attention_output
+                    cpu_mlp = mlp(hidden) if expected_stages is not None or variant == "diagnostic-cpu-mlp" else None
+                    mlp_output = (
+                        cpu_mlp if variant == "diagnostic-cpu-mlp" else runtimes[f"mlp-{index}"](hidden).float()
+                    )
+                    if expected_stages is not None:
+                        row["mlp_same_input_nrmse"] = nrmse(mlp_output, cpu_mlp)
+                    hidden = hidden.float() + mlp_output
+                    if expected_stages is not None:
+                        row["hidden_total_nrmse"] = nrmse(hidden, expected_stages[index])
+                        boundaries.append(row)
                 hidden_before_head = hidden.clone()
                 head = "head"
                 if variant == "fp32-residual-normalization":
@@ -220,15 +257,23 @@ def main():
                 actual = tuple(
                     value.clone() for value in runtimes[head](values[0], hidden, values[2], values[3], values[5])
                 )
-                return actual, hidden_before_head
+                return actual, hidden_before_head, boundaries
 
             first = None
             for index, (values, expected) in enumerate(zip(inputs, references, strict=True)):
                 start = time.perf_counter()
-                actual, hidden_before_head = execute(values)
+                actual, hidden_before_head, boundaries = execute(values, cpu_stages[index])
                 seconds = time.perf_counter() - start
                 metrics = compare(actual, expected, execute(values)[0])
-                report["cases"].append({"variant": variant, "case": index, "seconds": seconds, "metrics": metrics})
+                report["cases"].append(
+                    {
+                        "variant": variant,
+                        "case": index,
+                        "seconds": seconds,
+                        "metrics": metrics,
+                        "boundaries": boundaries,
+                    }
+                )
                 if hidden_before_head is not None:
                     cpu_postnorm = native.vision_model.post_layernorm(hidden_before_head)
                     report["cases"][-1]["cpu_postnorm_nrmse"] = float(
@@ -252,6 +297,8 @@ def main():
             runtimes.clear()
             compiled_models.clear()
             gc.collect()
+        report["diagnostic_only_variants"] = ["diagnostic-cpu-attention", "diagnostic-cpu-mlp"]
+        (out / "results.json").write_text(json.dumps(report, indent=2))
         failures = [
             row
             for case in report["cases"]
