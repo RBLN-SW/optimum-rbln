@@ -145,7 +145,7 @@ class RBLNLlavaNextForConditionalGeneration(RBLNModel, RBLNImageIndexedBatchSort
         return val
 
     def can_generate(self):
-        return True
+        return self.rbln_config.language_model.can_generate
 
     @classmethod
     def _reconstruct_model_if_needed(cls, model: "PreTrainedModel"):

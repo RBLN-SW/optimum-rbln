@@ -252,7 +252,7 @@ class RBLNIdefics3ForConditionalGeneration(RBLNModel, RBLNImageIndexedBatchSortM
         return val
 
     def can_generate(self):
-        return True
+        return self.rbln_config.text_model.can_generate
 
     @classmethod
     def _reconstruct_model_if_needed(cls, model: "PreTrainedModel"):

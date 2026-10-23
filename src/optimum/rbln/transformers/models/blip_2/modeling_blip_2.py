@@ -325,7 +325,7 @@ class RBLNBlip2ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMixi
         return val
 
     def can_generate(self):
-        return True
+        return self.rbln_config.language_model.can_generate
 
     @classmethod
     def save_torch_artifacts(
