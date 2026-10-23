@@ -54,6 +54,8 @@ def worker(artifact, sync, iterations, label):
         "artifact_sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
         "sdk": importlib.metadata.version("rebel-compiler"),
         "force_sync": os.environ["RBLN_RUNTIME_FORCE_SYNC"],
+        "host_dump": os.environ.get("RBLN_RUNTIME_HOST_DUMP", "0"),
+        "device_dump": os.environ.get("RBLN_RUNTIME_DEVICE_DUMP", "0"),
         "input_hashes": initial_hashes,
         "rows": rows,
     }
@@ -85,16 +87,21 @@ def dump_probe():
                     env={
                         **os.environ,
                         "RBLN_RUNTIME_FORCE_SYNC": "0",
-                        "RBLN_RUNTIME_DEVICE_DUMP": str(mode),
+                        "RBLN_RUNTIME_DEVICE_DUMP": "0",
+                        "RBLN_RUNTIME_HOST_DUMP": str(mode * 2),
+                        "RBLN_VERBOSE": "trace",
                         "RBLN_RUNTIME_DUMP_PATH": str(dump),
                     },
                     timeout=600,
                     check=True,
                 )
             left, right = directories
-            files = sorted(p.relative_to(left) for p in left.rglob("*.bin"))
+            files = sorted(
+                (p.relative_to(left) for p in left.rglob("*.bin")),
+                key=lambda p: (int(p.name.split("_", 1)[0]), str(p)),
+            )
             if mode == 1:
-                assert files, "Device dump flag produced no binary outputs"
+                assert files, "Host dump flag produced no binary outputs"
             differences = []
             retained = 0
             for relative in files:
@@ -121,9 +128,12 @@ def dump_probe():
                     ],
                 }
             )
-    report = {"scope": "byte comparison; includes padding; hook dumps first device address only", "runs": summary}
+    report = {
+        "scope": "host boundary byte comparison; dtype/layout follow executor; differences require interpretation",
+        "runs": summary,
+    }
     (OUTPUT / "device-dump-comparison.json").write_text(json.dumps(report, indent=2))
-    print("CA25_DEVICE_DUMP_COMPARISON", json.dumps(report), flush=True)
+    print("CA25_HOST_DUMP_COMPARISON", json.dumps(report), flush=True)
 
 
 def main():

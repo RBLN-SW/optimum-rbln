@@ -49,7 +49,7 @@ steps:
   # All gates must pass before the NPU pipeline is even uploaded.
   - wait: ~
 
-  - label: ":microscope: Chronos-2 CA25 device output isolation (diagnostic)"
+  - label: ":microscope: Chronos-2 CA25 host boundary isolation (diagnostic)"
     image: "${DEVTOOLS_DOCKER_IMAGE}"
     timeout_in_minutes: 45
     resources:
