@@ -149,7 +149,7 @@ steps:
     secrets: *secrets
     env:
       RBLN_TEST_NPU: "RBLN-CR13"
-    timeout_in_minutes: 60
+    timeout_in_minutes: 120
     artifact_paths: "junit-*.xml"
     command:
       - *sync

@@ -901,6 +901,31 @@ class TestDinov2ForImageClassificationNativeSizeBatch16(TestDinov2ForImageClassi
     GENERATION_KWARGS = TestDinov2ModelNativeSizeBatch16.GENERATION_KWARGS
 
 
+class TestDinov2ModelNativeSizeBatch32(TestDinov2ModelNativeSize):
+    BATCH_SIZE = 32
+    RBLN_CLASS_KWARGS = {**TestDinov2ModelNativeSize.RBLN_CLASS_KWARGS, "rbln_batch_size": 32}
+
+    def get_inputs(self):
+        return {"pixel_values": torch.randn(self.BATCH_SIZE, 3, 518, 518, generator=torch.Generator().manual_seed(42))}
+
+
+class TestDinov2ModelNativeSizeBatch64(TestDinov2ModelNativeSizeBatch32):
+    BATCH_SIZE = 64
+    RBLN_CLASS_KWARGS = {**TestDinov2ModelNativeSize.RBLN_CLASS_KWARGS, "rbln_batch_size": 64}
+
+
+class TestDinov2ForImageClassificationNativeSizeBatch32(TestDinov2ForImageClassificationNativeSize):
+    BATCH_SIZE = 32
+    RBLN_CLASS_KWARGS = TestDinov2ModelNativeSizeBatch32.RBLN_CLASS_KWARGS
+    get_inputs = TestDinov2ModelNativeSizeBatch32.get_inputs
+
+
+class TestDinov2ForImageClassificationNativeSizeBatch64(TestDinov2ForImageClassificationNativeSize):
+    BATCH_SIZE = 64
+    RBLN_CLASS_KWARGS = TestDinov2ModelNativeSizeBatch64.RBLN_CLASS_KWARGS
+    get_inputs = TestDinov2ModelNativeSizeBatch32.get_inputs
+
+
 class TestViTForImageClassification(BaseTest.TestModel):
     RBLN_AUTO_CLASS = RBLNAutoModelForImageClassification
     RBLN_CLASS = RBLNViTForImageClassification
