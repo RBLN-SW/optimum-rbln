@@ -65,7 +65,7 @@ class RBLNQwenImage21PipelineConfig(RBLNModelConfig):
     The pipeline compiles its text encoder, transformer and VAE for a fixed set of image sizes. Text-to-image needs
     only the output sizes. Image editing also needs room for the condition images, which the pipeline resizes to
     about `output_resolution**2` pixels at their aspect ratio: VAE encoder canvases that hold them, and token budgets
-    for the vision encoder and the transformer. The pipeline compiles for image editing by default, and a call
+    for the vision encoder and the transformer. The pipeline always compiles for image editing too, and a call
     without condition images skips those parts.
     """
 
@@ -103,8 +103,6 @@ class RBLNQwenImage21PipelineConfig(RBLNModelConfig):
                 Defaults to (1376, 1376), which holds every condition image from 9:16 to 16:9 at the default
                 `output_resolution`.
             num_condition_images (int | None): The maximum number of condition images in one call. Defaults to 1.
-                Set it to 0 to compile for text-to-image only, which drops the vision and VAE encoders and the
-                condition-image tokens from the sequence lengths and KV caches.
             output_resolution (int | None): The `output_resolution` the pipeline is called with, which sets the
                 size condition images are resized to. Defaults to 1024, the pipeline's default.
             max_seq_len (int | None): The maximum number of text tokens the text encoder reads, without the tokens
@@ -112,21 +110,16 @@ class RBLNQwenImage21PipelineConfig(RBLNModelConfig):
             kwargs: Additional arguments passed to the parent RBLNModelConfig.
 
         Raises:
-            ValueError: If an image size is not a multiple of 32, or if `condition_image_size` is set with
-                `num_condition_images=0`.
+            ValueError: If an image size is not a multiple of 32, or if `num_condition_images` is less than 1.
         """
         super().__init__(**kwargs)
 
         image_size = _image_sizes(image_size) or [(1024, 1024)]
-        condition_image_size = _image_sizes(condition_image_size)
+        condition_image_size = _image_sizes(condition_image_size) or [_DEFAULT_CONDITION_IMAGE_SIZE]
         if num_condition_images is None:
             num_condition_images = 1
-        if num_condition_images == 0 and condition_image_size:
-            raise ValueError("condition_image_size needs num_condition_images of 1 or more.")
-        # Empty when compiling for text-to-image only.
-        condition_image_size = (
-            (condition_image_size or [_DEFAULT_CONDITION_IMAGE_SIZE]) if num_condition_images else []
-        )
+        if num_condition_images < 1:
+            raise ValueError(f"num_condition_images must be 1 or more, not {num_condition_images}.")
         max_seq_len = max_seq_len or 512
 
         not_aligned = [
@@ -161,16 +154,10 @@ class RBLNQwenImage21PipelineConfig(RBLNModelConfig):
                 for sizes, largest in zip(condition_sizes, largest_condition_sizes, strict=True)
             )
 
-        condition_tokens = num_condition_images * max(map(latent_tokens, largest_condition_sizes), default=0)
-        visual: dict[str, Any]
-        if condition_image_size:
-            # The vision encoder runs once per condition image, on one patch per latent token, padded to the
-            # smallest of its sequence lengths that holds them.
-            visual = {"max_seq_len": sorted({round_up(latent_tokens(size)) for size in largest_condition_sizes})}
-        else:
-            # Text-to-image never calls the vision encoder, so it compiles at its smallest size. Its runtime stays
-            # on: `create_runtimes` would also apply when an image-editing artifact loads.
-            visual = {"max_seq_len": 64}
+        condition_tokens = num_condition_images * max(map(latent_tokens, largest_condition_sizes))
+        # The vision encoder runs once per condition image, on one patch per latent token, padded to the smallest of
+        # its sequence lengths that holds them.
+        visual = {"max_seq_len": sorted({round_up(latent_tokens(size)) for size in largest_condition_sizes})}
 
         self.text_encoder = self.initialize_submodule_config(
             text_encoder,
@@ -199,8 +186,8 @@ class RBLNQwenImage21PipelineConfig(RBLNModelConfig):
             cls_name="RBLNAutoencoderKLQwenImage21Config",
             batch_size=batch_size,
             sample_size=image_size,
-            uses_encoder=bool(condition_image_size),
-            encoder_sample_size=condition_image_size or None,
+            uses_encoder=True,
+            encoder_sample_size=condition_image_size,
         )
 
     @property

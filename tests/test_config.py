@@ -587,13 +587,6 @@ def test_qwenimage21_pipeline_derives_submodule_sizes():
     assert default.vae.uses_encoder is True
     assert default.vae.encoder_sample_size == [(1376, 1376)]
 
-    t2i = config_cls(num_condition_images=0)
-    assert t2i.text_encoder.max_seq_len == 512
-    assert t2i.text_encoder.visual["max_seq_len"] == 64
-    assert t2i.text_encoder.visual["create_runtimes"] is None  # A runtime option would also apply at load.
-    assert t2i.transformer.max_seq_len == 512
-    assert t2i.vae.uses_encoder is False
-
     # A 1728x608 condition image is 4104 latent tokens, and 1026 image tokens in the prompt of the text encoder.
     edit = config_cls(image_size=(1024, 1024), condition_image_size=(608, 1728))
     assert edit.text_encoder.max_seq_len == 1600  # 512 + 1026, up to a multiple of 64
@@ -613,7 +606,7 @@ def test_qwenimage21_pipeline_derives_submodule_sizes():
     with pytest.raises(ValueError, match="multiples of 32"):
         config_cls(image_size=(1000, 1000))
     with pytest.raises(ValueError, match="num_condition_images"):
-        config_cls(condition_image_size=(608, 1728), num_condition_images=0)
+        config_cls(num_condition_images=0)
 
 
 if __name__ == "__main__":
