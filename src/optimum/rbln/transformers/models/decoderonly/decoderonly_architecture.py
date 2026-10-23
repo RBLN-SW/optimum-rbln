@@ -610,7 +610,7 @@ class DecoderOnlyLayer(nn.Module):
                 if hasattr(mlp, proj_name):
                     original_linear = getattr(mlp, proj_name)
                     if isinstance(original_linear, nn.Linear):
-                        lora_linear = LoRALinear(
+                        lora_linear = self.get_lora_linear_class()(
                             original_linear=original_linear,
                             lora_config=self.lora_config,
                             projection_name=proj_name,
@@ -641,6 +641,9 @@ class DecoderOnlyLayer(nn.Module):
 
     def get_mlp(self) -> nn.Module:
         return self.mlp
+
+    def get_lora_linear_class(self):
+        return LoRALinear
 
     def forward_mlp(self, hidden_states: torch.Tensor, lora_int_id: torch.Tensor | None = None) -> torch.Tensor:
         mlp = self.get_mlp()
