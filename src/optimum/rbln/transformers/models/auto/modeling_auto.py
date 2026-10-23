@@ -31,6 +31,8 @@ from transformers.models.auto.modeling_auto import (
     MODEL_FOR_MULTIMODAL_LM_MAPPING_NAMES,
     MODEL_FOR_OBJECT_DETECTION_MAPPING,
     MODEL_FOR_OBJECT_DETECTION_MAPPING_NAMES,
+    MODEL_FOR_PRETRAINING_MAPPING,
+    MODEL_FOR_PRETRAINING_MAPPING_NAMES,
     MODEL_FOR_QUESTION_ANSWERING_MAPPING,
     MODEL_FOR_QUESTION_ANSWERING_MAPPING_NAMES,
     MODEL_FOR_SEQ_TO_SEQ_CAUSAL_LM_MAPPING,
@@ -63,6 +65,13 @@ class RBLNAutoModel(_BaseAutoModelClass):
 
     _model_mapping = MODEL_MAPPING
     _model_mapping_names = MODEL_MAPPING_NAMES
+
+
+class RBLNAutoModelForPreTraining(_BaseAutoModelClass):
+    """Automatically detect supported pretraining models."""
+
+    _model_mapping = MODEL_FOR_PRETRAINING_MAPPING
+    _model_mapping_names = MODEL_FOR_PRETRAINING_MAPPING_NAMES
 
 
 class RBLNAutoModelForCTC(_BaseAutoModelClass):
@@ -182,6 +191,7 @@ __all__ = [
     "RBLNAutoModelForMaskedLM",
     "RBLNAutoModelForMultimodalLM",
     "RBLNAutoModelForObjectDetection",
+    "RBLNAutoModelForPreTraining",
     "RBLNAutoModelForQuestionAnswering",
     "RBLNAutoModelForSeq2SeqLM",
     "RBLNAutoModelForSequenceClassification",
