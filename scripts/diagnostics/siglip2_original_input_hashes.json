@@ -1,0 +1,35 @@
+{
+  "input_ids": {
+    "shape": [
+      1,
+      64
+    ],
+    "dtype": "torch.int64",
+    "sha256": "5d8483bed03bd90049c039ee2b26038c8483aa2f7e45e3be584254eb8b1856f4"
+  },
+  "pixel_values": {
+    "shape": [
+      1,
+      256,
+      768
+    ],
+    "dtype": "torch.float32",
+    "sha256": "8d5d143a723a0794cd064166e6069658692961e57ea4b2dc971c5d0169f44e54"
+  },
+  "pixel_attention_mask": {
+    "shape": [
+      1,
+      256
+    ],
+    "dtype": "torch.int32",
+    "sha256": "714ed79e12fb1c24a24fe160f9db21f1a5adc1addf3ea50adc985f107e58f0b3"
+  },
+  "spatial_shapes": {
+    "shape": [
+      1,
+      2
+    ],
+    "dtype": "torch.int64",
+    "sha256": "8aada7c31bb85f5ecaa8c4a3a4c439e390403e7538328b4aee9ad63d650fdbdc"
+  }
+}
