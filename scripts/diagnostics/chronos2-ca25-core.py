@@ -148,16 +148,25 @@ def matmul_probe():
     import torch
 
     class Scores(torch.nn.Module):
+        def __init__(self, product):
+            super().__init__()
+            self.product = product
+
         def forward(self, query, key):
-            return torch.matmul(query, key.transpose(-1, -2))
+            return torch.matmul(query, key.transpose(-1, -2) if self.product == "qk" else key)
 
     torch.set_num_threads(4)
-    model = Scores().eval()
     reports = []
-    for sequence, batch in ((577, 8), (576, 8), (577, 16), (577, 64)):
+    for product, sequence, batch in (("qk", 577, 8), ("pv", 577, 8), ("pv", 576, 8), ("pv", 577, 16)):
+        model = Scores(product).eval()
         generator = torch.Generator().manual_seed(42)
-        query, key = (torch.randn(sequence, 12, batch, 64, generator=generator) for _ in range(2))
-        name = f"matmul-s{sequence}-b{batch}"
+        key = torch.randn(sequence, 12, batch, 64, generator=generator)
+        query = (
+            torch.randn(sequence, 12, batch, 64, generator=generator)
+            if product == "qk"
+            else torch.eye(batch).reshape(1, 1, batch, batch).expand(sequence, 12, batch, batch).contiguous()
+        )
+        name = f"matmul-{product}-s{sequence}-b{batch}"
         with torch.no_grad():
             reference = model(query, key)
             compiled = rebel.compile_from_torch(
