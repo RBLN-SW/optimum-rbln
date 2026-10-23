@@ -5,7 +5,7 @@ import unittest
 
 import pytest
 import torch
-from PIL import Image
+from PIL import Image, ImageOps
 from transformers import AutoConfig, BertConfig, BertModel, T5EncoderModel, XLMRobertaConfig, XLMRobertaModel
 
 from optimum.rbln import (
@@ -17,6 +17,8 @@ from optimum.rbln import (
     RBLNCLIPTextModel,
     RBLNColPaliForRetrieval,
     RBLNColQwen2ForRetrieval,
+    RBLNDinov2ForImageClassification,
+    RBLNDinov2Model,
     RBLNDistilBertForQuestionAnswering,
     RBLNDPTForDepthEstimation,
     RBLNGroundingDinoForObjectDetection,
@@ -705,6 +707,150 @@ class TestRobertaForSequenceClassification(BaseTest.TestModel):
     HF_CONFIG_KWARGS = {
         "num_hidden_layers": 1,
     }
+
+
+class TestDinov2Model(BaseTest.TestModel):
+    RBLN_AUTO_CLASS = RBLNAutoModel
+    RBLN_CLASS = RBLNDinov2Model
+    HF_MODEL_ID = "facebook/dinov2-base"
+    HF_CONFIG_KWARGS = {"revision": "f9e44c814b77203eaa57a6bdbbd535f21ede1415"}
+    RBLN_CLASS_KWARGS = {"rbln_batch_size": 1, "rbln_npu": os.environ.get("RBLN_TEST_NPU")}
+    GENERATION_KWARGS = {"pixel_values": torch.randn(1, 3, 224, 224, generator=torch.manual_seed(42))}
+    TEST_LEVEL = TestLevel.FULL
+    DEVICE = 0
+    BATCH_SIZE = 1
+    IMAGE_SIZE = None
+    CLASSIFICATION = False
+
+    def test_numerical_parity(self):
+        from huggingface_hub import hf_hub_download
+        from transformers import AutoImageProcessor
+
+        if os.environ.get("SAVE_ARTIFACTS_PATH") or os.environ.get("REUSE_ARTIFACTS_PATH"):
+            self.skipTest("Artifact compatibility mode does not execute on a real NPU.")
+        reference, loading = self.get_hf_auto_class().from_pretrained(
+            self.HF_MODEL_ID, **self.HF_CONFIG_KWARGS, output_loading_info=True
+        )
+        assert not loading.get("missing_keys")
+        assert not loading.get("mismatched_keys")
+        reference.float().eval()
+        processor = AutoImageProcessor.from_pretrained(self.HF_MODEL_ID, **self.HF_CONFIG_KWARGS)
+        paths = [
+            hf_hub_download(
+                "huggingface/documentation-images",
+                filename,
+                repo_type="dataset",
+                revision="a9c3851af92cce883828811163f904b61a2550dc",
+            )
+            for filename in ["coco_sample.png", "hub/parrots.png"]
+        ]
+        cat, parrots = [Image.open(path).convert("RGB") for path in paths]
+        images = [cat, parrots, ImageOps.grayscale(cat).convert("RGB"), ImageOps.mirror(cat)]
+        first_inputs = first_output = None
+        with torch.no_grad():
+            for offset in range(0, len(images), self.BATCH_SIZE):
+                chunk = images[offset : offset + self.BATCH_SIZE]
+                if self.IMAGE_SIZE is None:
+                    inputs = processor(images=chunk, return_tensors="pt")
+                else:
+                    height, width = self.IMAGE_SIZE
+                    resized = [image.resize((width, height), Image.Resampling.BICUBIC) for image in chunk]
+                    inputs = processor(images=resized, return_tensors="pt", do_resize=False, do_center_crop=False)
+                assert list(inputs.pixel_values.shape) == self.model.rbln_config.compile_cfgs[0].input_info[0][1]
+                expected = reference(**inputs)
+                actual = self.model(**inputs)
+                if self.CLASSIFICATION:
+                    a, e = actual.logits.float(), expected.logits.float()
+                else:
+                    a, e = actual.last_hidden_state.float(), expected.last_hidden_state.float()
+                assert a.shape == e.shape
+                pcc = torch.corrcoef(torch.stack([a.flatten(), e.flatten()]))[0, 1]
+                nrmse = (a - e).square().mean().sqrt() / e.square().mean().sqrt().clamp_min(1e-8)
+                values = {
+                    "test_class": type(self).__name__,
+                    "offset": offset,
+                    "npu": self.model.rbln_config.npu,
+                    "reference_dtype": str(e.dtype),
+                    "input_shape": list(inputs.pixel_values.shape),
+                    "output_shape": list(a.shape),
+                    "pcc": float(pcc),
+                    "normalized_rmse": float(nrmse),
+                }
+                if self.CLASSIFICATION:
+                    values["labels_equal"] = bool(torch.equal(a.argmax(-1), e.argmax(-1)))
+                else:
+                    values["pooled_cosine"] = float(
+                        torch.nn.functional.cosine_similarity(
+                            actual.pooler_output.float(), expected.pooler_output.float()
+                        ).min()
+                    )
+                    torch.testing.assert_close(actual.pooler_output, actual.last_hidden_state[:, 0], rtol=0, atol=0)
+                print("DINOV2_PARITY " + json.dumps(values), flush=True)
+                assert pcc >= 0.99
+                if self.CLASSIFICATION:
+                    assert nrmse <= 0.05
+                    assert values["labels_equal"]
+                else:
+                    assert values["pooled_cosine"] >= 0.99
+                for a, e in zip(self.model(**inputs).to_tuple(), actual.to_tuple(), strict=True):
+                    torch.testing.assert_close(a, e, rtol=0, atol=0)
+                if first_inputs is None:
+                    first_inputs, first_output = inputs, tuple(value.clone() for value in actual.to_tuple())
+            for a, e in zip(self.model(**first_inputs).to_tuple(), first_output, strict=True):
+                torch.testing.assert_close(a, e, rtol=0, atol=0)
+            reloaded = self.RBLN_AUTO_CLASS.from_pretrained(self.get_rbln_local_dir(), rbln_device=self.DEVICE)
+            for a, e in zip(reloaded(**first_inputs, return_dict=False), first_output, strict=True):
+                torch.testing.assert_close(a, e, rtol=0, atol=0)
+        print(
+            "DINOV2_STATE " + json.dumps({"test_class": type(self).__name__, "repeat_reload_tuple": "passed"}),
+            flush=True,
+        )
+
+
+class TestDinov2ModelBatch2(TestDinov2Model):
+    BATCH_SIZE = 2
+    RBLN_CLASS_KWARGS = {**TestDinov2Model.RBLN_CLASS_KWARGS, "rbln_batch_size": 2, "rbln_image_size": 224}
+    IMAGE_SIZE = (224, 224)
+    GENERATION_KWARGS = {"pixel_values": torch.randn(2, 3, 224, 224, generator=torch.manual_seed(42))}
+
+
+class TestDinov2ModelNativeSize(TestDinov2Model):
+    RBLN_CLASS_KWARGS = {**TestDinov2Model.RBLN_CLASS_KWARGS, "rbln_image_size": 518}
+    IMAGE_SIZE = (518, 518)
+    GENERATION_KWARGS = {"pixel_values": torch.randn(1, 3, 518, 518, generator=torch.manual_seed(42))}
+
+
+class TestDinov2ModelRectangular(TestDinov2Model):
+    RBLN_CLASS_KWARGS = {**TestDinov2Model.RBLN_CLASS_KWARGS, "rbln_image_size": (224, 336)}
+    IMAGE_SIZE = (224, 336)
+    GENERATION_KWARGS = {"pixel_values": torch.randn(1, 3, 224, 336, generator=torch.manual_seed(42))}
+
+
+class TestDinov2ForImageClassification(TestDinov2Model):
+    RBLN_AUTO_CLASS = RBLNAutoModelForImageClassification
+    RBLN_CLASS = RBLNDinov2ForImageClassification
+    HF_MODEL_ID = "facebook/dinov2-base-imagenet1k-1-layer"
+    HF_CONFIG_KWARGS = {"revision": "f9305d2c8048bd65783f64fabfa25429d13cbdbb"}
+    CLASSIFICATION = True
+
+
+class TestDinov2ForImageClassificationBatch2(TestDinov2ForImageClassification):
+    BATCH_SIZE = 2
+    RBLN_CLASS_KWARGS = TestDinov2ModelBatch2.RBLN_CLASS_KWARGS
+    IMAGE_SIZE = (224, 224)
+    GENERATION_KWARGS = TestDinov2ModelBatch2.GENERATION_KWARGS
+
+
+class TestDinov2ForImageClassificationNativeSize(TestDinov2ForImageClassification):
+    RBLN_CLASS_KWARGS = TestDinov2ModelNativeSize.RBLN_CLASS_KWARGS
+    IMAGE_SIZE = (518, 518)
+    GENERATION_KWARGS = TestDinov2ModelNativeSize.GENERATION_KWARGS
+
+
+class TestDinov2ForImageClassificationRectangular(TestDinov2ForImageClassification):
+    RBLN_CLASS_KWARGS = TestDinov2ModelRectangular.RBLN_CLASS_KWARGS
+    IMAGE_SIZE = (224, 336)
+    GENERATION_KWARGS = TestDinov2ModelRectangular.GENERATION_KWARGS
 
 
 class TestViTForImageClassification(BaseTest.TestModel):

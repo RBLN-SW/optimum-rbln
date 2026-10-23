@@ -31,6 +31,13 @@ case "$suite" in
     uv run --no-sync pytest -n 1 tests/test_config.py "${report[@]}" -vv --durations 0 "${bc[@]}" ;;
   transformers)
     uv run --no-sync pytest -n 1 tests/test_transformers.py "${report[@]}" ${shard:+--shard "$shard"} -vv --durations 0 "${bc[@]}" ;;
+  dinov2-cr13)
+    if [ -n "${SAVE_ARTIFACTS_PATH:-}${REUSE_ARTIFACTS_PATH:-}" ]; then
+      echo "dinov2-cr13 requires real numerical execution, not artifact compatibility mode" >&2
+      exit 2
+    fi
+    export RBLN_TEST_NPU=RBLN-CR13
+    uv run --no-sync pytest -n 1 tests/test_transformers.py -k 'TestDinov2 and test_numerical_parity' "${report[@]}" -o junit_logging=all --capture=tee-sys -rP -vv --durations 0 ;;
   diffusers)
     uv run --no-sync pytest -n 1 tests/test_diffusers.py "${report[@]}" ${shard:+--shard "$shard"} -vv --durations 0 "${bc[@]}" ;;
   llm)
