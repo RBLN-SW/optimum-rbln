@@ -1,3 +1,4 @@
+import argparse
 import hashlib
 import importlib.metadata
 import json
@@ -12,7 +13,24 @@ from tests.test_transformers import (
 
 def main():
     assert importlib.metadata.version("rebel-compiler") == "0.12.1.dev327+g00334c8e"
-    root = Path("/mnt/shared_data/users/jaehunryu/nas_data/model-enable-20261024/dinov2-source970-b1024")
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--stage", action="store_true")
+    args = parser.parse_args()
+    root = Path("/mnt/cross_data/model-enable/jaehunryu/dinov2-source970-b1024")
+    if args.stage:
+        source_root = Path("/mnt/shared_data/users/jaehunryu/nas_data/model-enable-20261024/dinov2-source970-b1024")
+        assert not root.exists(), root
+        root.parent.mkdir(parents=True, exist_ok=True)
+        temporary = root.with_name(root.name + ".staging")
+        assert not temporary.exists(), temporary
+        shutil.copytree(source_root, temporary)
+        manifest = json.loads((temporary / "provenance.json").read_text())
+        for name, artifact in manifest["artifacts"].items():
+            with (temporary / name / artifact["file"]).open("rb") as stream:
+                assert hashlib.file_digest(stream, "sha256").hexdigest() == artifact["sha256"]
+        temporary.rename(root)
+        print("DINOV2_STAGED " + str(root), flush=True)
+        return
     provenance = json.loads((root / "provenance.json").read_text())
     source = provenance["source_results"]["environment"]["source_provenance"]
     assert source["head"] == "970308c6eec6e0b794d9a20313d1dc77bc050837"

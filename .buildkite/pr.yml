@@ -49,6 +49,20 @@ steps:
   # All gates must pass before the NPU pipeline is even uploaded.
   - wait: ~
 
+  - label: ":package: Stage frozen B1024 artifacts across clusters"
+    image: "${DEVTOOLS_DOCKER_IMAGE}"
+    agents:
+      queue: k8s
+    secrets:
+      UV_INDEX_REBELLIONS_USERNAME: REBEL_SW_DEV_USERNAME
+      UV_INDEX_REBELLIONS_PASSWORD: REBEL_SW_DEV_PASSWORD
+    timeout_in_minutes: 30
+    command:
+      - "bash scripts/ci/sync.sh"
+      - "uv run --no-sync python -m scripts.diagnostics.dinov2_source1024 --stage"
+
+  - wait: ~
+
   - label: ":microscope: DINOv2 CR13 frozen native B1024 (diagnostic)"
     image: "${DEVTOOLS_DOCKER_IMAGE}"
     agents:
