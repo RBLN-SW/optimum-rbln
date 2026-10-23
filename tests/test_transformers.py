@@ -883,10 +883,22 @@ class TestDinov2ModelNativeSizeBatch8(TestDinov2ModelNativeSize):
     GENERATION_KWARGS = {"pixel_values": torch.randn(8, 3, 518, 518, generator=torch.manual_seed(42))}
 
 
+class TestDinov2ModelNativeSizeBatch16(TestDinov2ModelNativeSize):
+    BATCH_SIZE = 16
+    RBLN_CLASS_KWARGS = {**TestDinov2ModelNativeSize.RBLN_CLASS_KWARGS, "rbln_batch_size": 16}
+    GENERATION_KWARGS = {"pixel_values": torch.randn(16, 3, 518, 518, generator=torch.manual_seed(42))}
+
+
 class TestDinov2ForImageClassificationNativeSizeBatch8(TestDinov2ForImageClassificationNativeSize):
     BATCH_SIZE = 8
     RBLN_CLASS_KWARGS = TestDinov2ModelNativeSizeBatch8.RBLN_CLASS_KWARGS
     GENERATION_KWARGS = TestDinov2ModelNativeSizeBatch8.GENERATION_KWARGS
+
+
+class TestDinov2ForImageClassificationNativeSizeBatch16(TestDinov2ForImageClassificationNativeSize):
+    BATCH_SIZE = 16
+    RBLN_CLASS_KWARGS = TestDinov2ModelNativeSizeBatch16.RBLN_CLASS_KWARGS
+    GENERATION_KWARGS = TestDinov2ModelNativeSizeBatch16.GENERATION_KWARGS
 
 
 class TestViTForImageClassification(BaseTest.TestModel):
