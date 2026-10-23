@@ -1037,7 +1037,7 @@ class AttentionOp(nn.Module):
             elif not self.use_attention_mask:
                 op_args["is_bidirectional"] = False
             elif self.use_attention_mask and self.rbln_config.use_position_ids:
-                op_args["is_bidirectional"] = True
+                op_args["is_bidirectional"] = self.phase == "image_prefill"
 
         if self.quantization and self.quantization.kv_caches == "fp8":
             if past_key_state.dtype != torch.float8_e4m3fn:
@@ -1163,7 +1163,7 @@ class FlashAttentionOp(AttentionOp):
             elif not self.use_attention_mask:
                 op_args["is_bidirectional"] = False
             elif self.use_attention_mask and self.rbln_config.use_position_ids:
-                op_args["is_bidirectional"] = True
+                op_args["is_bidirectional"] = self.phase == "image_prefill"
 
         if self.quantization and self.quantization.kv_caches == "fp8":
             if past_key_state.dtype != torch.float8_e4m3fn:
@@ -1270,10 +1270,8 @@ class SlidingWindowAttentionOp(AttentionOp):
 
         if self.phase in {"prefill", "image_prefill"}:
             use_image_prefill = getattr(self.rbln_config, "use_image_prefill", False)
-            if use_image_prefill:
+            if use_image_prefill or (self.use_attention_mask and self.rbln_config.use_position_ids):
                 op_args["is_bidirectional"] = self.phase == "image_prefill"
-            elif self.use_attention_mask and self.rbln_config.use_position_ids:
-                op_args["is_bidirectional"] = True
             else:
                 op_args["is_bidirectional"] = False
 
