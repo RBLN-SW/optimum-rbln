@@ -926,6 +926,26 @@ class TestDinov2ForImageClassificationNativeSizeBatch64(TestDinov2ForImageClassi
     get_inputs = TestDinov2ModelNativeSizeBatch32.get_inputs
 
 
+class TestDinov2ModelNativeSizeBatch128(TestDinov2ModelNativeSizeBatch32):
+    BATCH_SIZE = 128
+    RBLN_CLASS_KWARGS = {**TestDinov2ModelNativeSize.RBLN_CLASS_KWARGS, "rbln_batch_size": 128}
+
+
+class TestDinov2ModelNativeSizeBatch256(TestDinov2ModelNativeSizeBatch32):
+    BATCH_SIZE = 256
+    RBLN_CLASS_KWARGS = {**TestDinov2ModelNativeSize.RBLN_CLASS_KWARGS, "rbln_batch_size": 256}
+
+
+class TestDinov2ForImageClassificationNativeSizeBatch128(TestDinov2ForImageClassificationNativeSizeBatch32):
+    BATCH_SIZE = 128
+    RBLN_CLASS_KWARGS = TestDinov2ModelNativeSizeBatch128.RBLN_CLASS_KWARGS
+
+
+class TestDinov2ForImageClassificationNativeSizeBatch256(TestDinov2ForImageClassificationNativeSizeBatch32):
+    BATCH_SIZE = 256
+    RBLN_CLASS_KWARGS = TestDinov2ModelNativeSizeBatch256.RBLN_CLASS_KWARGS
+
+
 class TestViTForImageClassification(BaseTest.TestModel):
     RBLN_AUTO_CLASS = RBLNAutoModelForImageClassification
     RBLN_CLASS = RBLNViTForImageClassification
