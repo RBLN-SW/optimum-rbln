@@ -375,7 +375,11 @@ class TestDebertaV3Model(BaseTest.TestModel):
     RBLN_CLASS = RBLNDebertaV2Model
     HF_MODEL_ID = "microsoft/deberta-v3-base"
     HF_CONFIG_KWARGS = {"revision": "8ccc9b6f36199bec6961081d44eb72fb3f7353f3"}
-    RBLN_CLASS_KWARGS = {"rbln_max_seq_len": 512, "rbln_batch_size": 1}
+    RBLN_CLASS_KWARGS = {
+        "rbln_max_seq_len": 512,
+        "rbln_batch_size": 1,
+        "rbln_npu": os.environ.get("RBLN_TEST_NPU"),
+    }
     GENERATION_KWARGS = {
         "input_ids": torch.full((1, 512), 4, dtype=torch.int64),
         "attention_mask": torch.ones((1, 512), dtype=torch.int64),
@@ -405,13 +409,29 @@ class TestDebertaV3Model(BaseTest.TestModel):
         ]
         dynamic = isinstance(self.model.rbln_config.max_seq_len, list)
 
-        def compare(actual, expected, mask):
+        def compare(actual, expected, mask, case):
             assert actual.shape == expected.shape
             a, e = (actual[mask], expected[mask]) if self.OUTPUT_NAME == "last_hidden_state" else (actual, expected)
             pcc = torch.corrcoef(torch.stack([e.flatten(), a.flatten()]))[0, 1]
+            nrmse = (a - e).square().mean().sqrt() / e.square().mean().sqrt().clamp_min(1e-8)
+            print(
+                "DEBERTA_PARITY "
+                + json.dumps(
+                    {
+                        "test_class": type(self).__name__,
+                        "case": case,
+                        "npu": self.model.rbln_config.npu,
+                        "reference_dtype": str(e.dtype),
+                        "shape": list(actual.shape),
+                        "active_tokens": mask.sum(-1).tolist(),
+                        "pcc": float(pcc),
+                        "normalized_rmse": float(nrmse),
+                    }
+                ),
+                flush=True,
+            )
             assert pcc >= 0.99
             if self.OUTPUT_NAME == "logits":
-                nrmse = (a - e).square().mean().sqrt() / e.square().mean().sqrt().clamp_min(1e-8)
                 assert nrmse <= 0.05
                 assert torch.equal(actual.argmax(-1), expected.argmax(-1))
 
@@ -429,7 +449,7 @@ class TestDebertaV3Model(BaseTest.TestModel):
                 )
                 expected = getattr(reference(**inputs), self.OUTPUT_NAME)
                 actual = getattr(self.model(**inputs), self.OUTPUT_NAME)
-                compare(actual, expected, inputs["attention_mask"].bool())
+                compare(actual, expected, inputs["attention_mask"].bool(), f"paired-{offset}")
                 torch.testing.assert_close(getattr(self.model(**inputs), self.OUTPUT_NAME), actual, rtol=0, atol=0)
                 if first_inputs is None:
                     first_inputs, first_output = inputs, actual.clone()
@@ -441,21 +461,28 @@ class TestDebertaV3Model(BaseTest.TestModel):
                 getattr(self.model(**default_inputs), self.OUTPUT_NAME),
                 getattr(reference(**default_inputs), self.OUTPUT_NAME),
                 torch.ones_like(default_inputs["input_ids"], dtype=torch.bool),
+                "default-inputs",
             )
             reloaded = self.RBLN_AUTO_CLASS.from_pretrained(self.get_rbln_local_dir(), rbln_device=self.DEVICE)
             torch.testing.assert_close(
                 getattr(reloaded(**first_inputs), self.OUTPUT_NAME), first_output, rtol=0, atol=0
             )
+            tuple_output = reloaded(**first_inputs, return_dict=False)
+            assert len(tuple_output) == 1
+            torch.testing.assert_close(tuple_output[0], first_output, rtol=0, atol=0)
+            print(
+                f"DEBERTA_STATE {type(self).__name__}: repeated requests, reload and tuple outputs passed", flush=True
+            )
 
 
 class TestDebertaV3ModelBatch2(TestDebertaV3Model):
-    RBLN_CLASS_KWARGS = {"rbln_max_seq_len": 512, "rbln_batch_size": 2}
+    RBLN_CLASS_KWARGS = {**TestDebertaV3Model.RBLN_CLASS_KWARGS, "rbln_batch_size": 2}
     BATCH_SIZE = 2
     GENERATION_KWARGS = {name: tensor.repeat(2, 1) for name, tensor in TestDebertaV3Model.GENERATION_KWARGS.items()}
 
 
 class TestDebertaV3ModelBucketing(TestDebertaV3Model):
-    RBLN_CLASS_KWARGS = {"rbln_max_seq_len": [128, 512], "rbln_batch_size": 1}
+    RBLN_CLASS_KWARGS = {**TestDebertaV3Model.RBLN_CLASS_KWARGS, "rbln_max_seq_len": [128, 512]}
 
 
 class TestDebertaV3ForSequenceClassification(TestDebertaV3Model):
@@ -467,13 +494,13 @@ class TestDebertaV3ForSequenceClassification(TestDebertaV3Model):
 
 
 class TestDebertaV3ForSequenceClassificationBatch2(TestDebertaV3ForSequenceClassification):
-    RBLN_CLASS_KWARGS = {"rbln_max_seq_len": 512, "rbln_batch_size": 2}
+    RBLN_CLASS_KWARGS = {**TestDebertaV3Model.RBLN_CLASS_KWARGS, "rbln_batch_size": 2}
     BATCH_SIZE = 2
     GENERATION_KWARGS = TestDebertaV3ModelBatch2.GENERATION_KWARGS
 
 
 class TestDebertaV3ForSequenceClassificationBucketing(TestDebertaV3ForSequenceClassification):
-    RBLN_CLASS_KWARGS = {"rbln_max_seq_len": [128, 512], "rbln_batch_size": 1}
+    RBLN_CLASS_KWARGS = {**TestDebertaV3Model.RBLN_CLASS_KWARGS, "rbln_max_seq_len": [128, 512]}
 
 
 class TestEncoderMaxSeqLenBucketing(unittest.TestCase):
