@@ -841,6 +841,7 @@ class TestSiglip2Model(BaseTest.TestModel):
                 expected = flatten(reference(**inputs))
                 actual = flatten(self.model(**inputs))
                 repeated = flatten(self.model(**inputs))
+                failures = []
                 for index, (a, e, repeated_value) in enumerate(zip(actual, expected, repeated, strict=True)):
                     nrmse = (a - e).square().mean().sqrt() / e.square().mean().sqrt().clamp_min(1e-8)
                     values = {
@@ -855,14 +856,20 @@ class TestSiglip2Model(BaseTest.TestModel):
                         values["pcc"] = float(torch.corrcoef(torch.stack([a.flatten(), e.flatten()]))[0, 1])
                     if index in (2, 3):
                         values["minimum_cosine"] = float(torch.nn.functional.cosine_similarity(a, e).min())
-                    print("SIGLIP2_PARITY " + json.dumps(values), flush=True)
-                    assert a.isfinite().all()
-                    assert nrmse <= 0.05
+                    checks = {
+                        "finite": bool(a.isfinite().all()),
+                        "nrmse": bool(nrmse <= 0.05),
+                        "repeat": torch.equal(a, repeated_value),
+                    }
                     if "pcc" in values:
-                        assert values["pcc"] >= 0.99
+                        checks["pcc"] = values["pcc"] >= 0.99
                     if "minimum_cosine" in values:
-                        assert values["minimum_cosine"] >= 0.99
-                    torch.testing.assert_close(a, repeated_value, rtol=0, atol=0)
+                        checks["minimum_cosine"] = values["minimum_cosine"] >= 0.99
+                    values["failed_criteria"] = [name for name, passed in checks.items() if not passed]
+                    print("SIGLIP2_PARITY " + json.dumps(values), flush=True)
+                    if values["failed_criteria"]:
+                        failures.append(values)
+                assert not failures, failures
                 if first_inputs is None:
                     first_inputs, first_output = inputs, actual
             for a, e in zip(flatten(self.model(**first_inputs)), first_output, strict=True):
