@@ -54,7 +54,7 @@ steps:
   # directives run-suite.sh reads, not by path.
   # Sibling jobs: two uploads from one job make the second batch a barrier for
   # the first, so the pytest suites would wait on BC.
-  - label: ":microscope: SigLIP2 embedding precision boundary (diagnostic)"
+  - label: ":microscope: SigLIP2 native FP32 residual additions (diagnostic)"
     image: "${DEVTOOLS_DOCKER_IMAGE}"
     agents:
       queue: udc
@@ -74,8 +74,8 @@ steps:
       HF_HOME: HF_HOME
     timeout_in_minutes: 120
     artifact_paths:
-      - "debug-siglip2-embedding-precision/**/*"
+      - "debug-siglip2-residual-precision/**/*"
     command:
       - "bash scripts/ci/sync.sh"
       - "rbln-smi"
-      - "uv run --no-sync python -m scripts.diagnostics.siglip2_embedding_precision"
+      - "uv run --no-sync python -m scripts.diagnostics.siglip2_residual_precision"

@@ -1,0 +1,212 @@
+import argparse
+import gc
+import importlib.metadata
+import json
+import time
+from pathlib import Path
+
+import torch
+from huggingface_hub import hf_hub_download
+from PIL import Image
+from torch import nn
+from transformers import AutoModel, AutoProcessor
+from transformers.masking_utils import create_bidirectional_mask
+from transformers.modeling_outputs import BaseModelOutput
+
+from optimum.rbln import RBLNSiglip2Model, RBLNSiglip2ModelConfig
+from optimum.rbln.transformers.models.siglip2.modeling_siglip2 import patch_position_ids
+
+from .siglip2_embedding_precision import EmbeddedInput, compare, flatten, tensor_hash
+
+
+class AttentionBranch(nn.Module):
+    def __init__(self, layer):
+        super().__init__()
+        self.norm = layer.layer_norm1
+        self.attention = layer.self_attn
+
+    def forward(self, hidden_states, pixel_attention_mask):
+        hidden_states = self.norm(hidden_states)
+        mask = create_bidirectional_mask(
+            config=self.attention.config, inputs_embeds=hidden_states, attention_mask=pixel_attention_mask
+        )
+        return self.attention(hidden_states, attention_mask=mask)[0]
+
+
+class MLPBranch(nn.Module):
+    def __init__(self, layer):
+        super().__init__()
+        self.norm = layer.layer_norm2
+        self.mlp = layer.mlp
+
+    def forward(self, hidden_states):
+        return self.mlp(self.norm(hidden_states))
+
+
+class EmbeddedEncoder(nn.Module):
+    def forward(self, inputs_embeds, attention_mask=None, **kwargs):
+        return BaseModelOutput(last_hidden_state=inputs_embeds)
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--cpu-only", action="store_true")
+    args = parser.parse_args()
+    torch.set_num_threads(4)
+    checkpoint = "google/siglip2-base-patch16-naflex"
+    revision = "b53b807d3a2d5e2b3911292f2d69e5341cdc064c"
+    native = AutoModel.from_pretrained(checkpoint, revision=revision).float().eval()
+    processor = AutoProcessor.from_pretrained(checkpoint, revision=revision)
+    config = RBLNSiglip2Model._update_rbln_config(None, native, native.config, RBLNSiglip2ModelConfig())
+    wrapper = RBLNSiglip2Model._wrap_model_if_needed(native, config)
+    embedding = wrapper.model.vision_model.embeddings
+    layers = list(wrapper.model.vision_model.encoder.layers)
+    branches = [(AttentionBranch(layer).eval(), MLPBranch(layer).eval()) for layer in layers]
+    fixture = hf_hub_download(
+        "huggingface/documentation-images",
+        "coco_sample.png",
+        repo_type="dataset",
+        revision="a9c3851af92cce883828811163f904b61a2550dc",
+    )
+    cat = Image.open(fixture).convert("RGB")
+    images = [cat, cat.resize((256, 256)), cat.resize((128, 512)), cat.resize((512, 128))]
+    texts = ["a photo of cats", "a photo of dogs", "a photo of a train", "a photo of parrots"]
+    hashes = json.loads(Path(__file__).with_name("siglip2_original_input_hashes.json").read_text())
+    inputs, references, cpu_baselines, cpu_hidden = [], [], [], []
+    with torch.no_grad():
+        for index, (image, text) in enumerate(zip(images, texts, strict=True)):
+            inp = processor(
+                images=[image], text=[text], padding="max_length", max_length=64, truncation=True, return_tensors="pt"
+            )
+            if index == 0:
+                for key, expected_hash in hashes.items():
+                    assert tensor_hash(inp[key]) == expected_hash["sha256"], key
+            ids = patch_position_ids(inp.spatial_shapes, 256)
+            values = (
+                inp.input_ids,
+                inp.pixel_values,
+                inp.get("attention_mask", torch.ones_like(inp.input_ids)),
+                inp.pixel_attention_mask.long(),
+                ids,
+                torch.arange(64).unsqueeze(0),
+            )
+            expected = flatten(native(**inp))
+            baseline = tuple(value.clone() for value in wrapper(*values))
+            for a, e in zip(baseline, expected, strict=True):
+                torch.testing.assert_close(a, e)
+            hidden = embedding(values[1], values[4])
+            for layer, (attention, mlp) in zip(layers, branches, strict=True):
+                mask = create_bidirectional_mask(
+                    config=layer.self_attn.config, inputs_embeds=hidden, attention_mask=values[3]
+                )
+                full = layer(hidden, mask)
+                hidden = hidden + attention(hidden, values[3])
+                hidden = hidden + mlp(hidden)
+                torch.testing.assert_close(hidden, full, rtol=0, atol=0)
+            inputs.append(values)
+            references.append(expected)
+            cpu_baselines.append(baseline)
+            cpu_hidden.append(hidden)
+        original_encoder = wrapper.model.vision_model.encoder
+        wrapper.model.vision_model.embeddings = EmbeddedInput()
+        wrapper.model.vision_model.encoder = EmbeddedEncoder()
+        for values, hidden, baseline in zip(inputs, cpu_hidden, cpu_baselines, strict=True):
+            for a, e in zip(wrapper(values[0], hidden, *values[2:]), baseline, strict=True):
+                torch.testing.assert_close(a, e, rtol=0, atol=0)
+        print("SIGLIP2_RESIDUAL_CPU_BITWISE four native geometries and all encoder residuals passed", flush=True)
+        if args.cpu_only:
+            return
+
+        import rebel
+
+        assert importlib.metadata.version("rebel-compiler") == "0.12.1.dev328+g970308c6"
+        out = Path("debug-siglip2-residual-precision")
+        out.mkdir(exist_ok=True)
+        report = {"compiler": importlib.metadata.version("rebel-compiler"), "compile": {}, "cases": []}
+        paths = {}
+
+        def compile_model(name, model, input_info):
+            start = time.perf_counter()
+            compiled = rebel.compile_from_torch(model, input_info=input_info, npu="RBLN-CR13", num_devices=1)
+            path = out / f"{name}.rbln"
+            compiled.save(path)
+            executor = compiled.select_executor()
+            names = [executor.get_input_profile(index).name for index in range(executor.num_inputs)]
+            report["compile"][name] = {
+                "seconds": time.perf_counter() - start,
+                "bytes": compiled.get_total_device_alloc(),
+                "inputs": names,
+            }
+            paths[name] = path
+            print("SIGLIP2_RESIDUAL_COMPILE " + json.dumps({"name": name, **report["compile"][name]}), flush=True)
+            (out / "results.json").write_text(json.dumps(report, indent=2))
+
+        wrapper.model.vision_model.embeddings = embedding
+        wrapper.model.vision_model.encoder = original_encoder
+        compile_model("baseline", wrapper, config.compile_cfgs[0].input_info)
+        compile_model(
+            "embedding", embedding, [("pixel_values", [1, 256, 768], "float32"), ("position_ids", [1, 256], "int64")]
+        )
+        for index, (attention, mlp) in enumerate(branches):
+            compile_model(
+                f"attention-{index}",
+                attention,
+                [("hidden_states", [1, 256, 768], "float32"), ("pixel_attention_mask", [1, 256], "int64")],
+            )
+            compile_model(f"mlp-{index}", mlp, [("hidden_states", [1, 256, 768], "float32")])
+        wrapper.model.vision_model.embeddings = EmbeddedInput()
+        wrapper.model.vision_model.encoder = EmbeddedEncoder()
+        compile_model("head", wrapper, config.compile_cfgs[0].input_info)
+        assert report["compile"]["head"]["inputs"] == [
+            item[0] for item in config.compile_cfgs[0].input_info if item[0] != "patch_position_ids"
+        ]
+
+        for variant in ["baseline", "fp32-residual"]:
+            selected = ["baseline"] if variant == "baseline" else [key for key in paths if key != "baseline"]
+            compiled_models = {key: rebel.RBLNCompiledModel(paths[key]) for key in selected}
+            runtimes = {
+                key: model.create_runtime(tensor_type="pt", device=0) for key, model in compiled_models.items()
+            }
+
+            def execute(values, variant=variant, runtimes=runtimes):
+                if variant == "baseline":
+                    return tuple(value.clone() for value in runtimes["baseline"](*values))
+                hidden = runtimes["embedding"](values[1], values[4])
+                for index in range(len(branches)):
+                    hidden = hidden.float() + runtimes[f"attention-{index}"](hidden, values[3]).float()
+                    hidden = hidden.float() + runtimes[f"mlp-{index}"](hidden).float()
+                return tuple(
+                    value.clone() for value in runtimes["head"](values[0], hidden, values[2], values[3], values[5])
+                )
+
+            first = None
+            for index, (values, expected) in enumerate(zip(inputs, references, strict=True)):
+                start = time.perf_counter()
+                actual = execute(values)
+                seconds = time.perf_counter() - start
+                metrics = compare(actual, expected, execute(values))
+                report["cases"].append({"variant": variant, "case": index, "seconds": seconds, "metrics": metrics})
+                print("SIGLIP2_RESIDUAL_PARITY " + json.dumps(report["cases"][-1]), flush=True)
+                torch.save(
+                    {"inputs": values, "expected": expected, "actual": actual}, out / f"{variant}-case{index}.pt"
+                )
+                (out / "results.json").write_text(json.dumps(report, indent=2))
+                if first is None:
+                    first = actual
+            for a, e in zip(execute(inputs[0]), first, strict=True):
+                torch.testing.assert_close(a, e, rtol=0, atol=0)
+            runtimes.clear()
+            compiled_models.clear()
+            gc.collect()
+        failures = [
+            row
+            for case in report["cases"]
+            if case["variant"] == "fp32-residual"
+            for row in case["metrics"]
+            if row["failed_criteria"]
+        ]
+        assert not failures, failures
+
+
+if __name__ == "__main__":
+    main()
