@@ -202,7 +202,7 @@ class BaseHubTest:
                     self.model.config.from_local = remote_hash
 
                 repo_id = f"{HF_USER_ID}/{self.get_hf_remote_dir()}"
-                self.model.save_pretrained(
+                commit = self.model.save_pretrained(
                     tmpdirname,
                     push_to_hub=True,
                     private=True,
@@ -212,7 +212,7 @@ class BaseHubTest:
                     },
                 )
 
-                revision = HfApi(token=HF_AUTH_TOKEN).repo_info(repo_id).sha
+                revision = commit.oid if commit is not None else HfApi(token=HF_AUTH_TOKEN).repo_info(repo_id).sha
                 cfg = AutoConfig.from_pretrained(
                     repo_id,
                     subfolder="text_encoder" if self.is_diffuser() else "",
