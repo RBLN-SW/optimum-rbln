@@ -170,7 +170,11 @@ def main():
             "seconds": time.perf_counter() - start,
             "bytes": compiled.get_total_device_alloc(),
         }
-        del compiled
+        executor = compiled.select_executor()
+        body_names = [executor.get_input_profile(index).name for index in range(executor.num_inputs)]
+        assert body_names == [item[0] for item in config.compile_cfgs[0].input_info if item[0] != "patch_position_ids"]
+        report["compile"]["body"]["input_names"] = body_names
+        del executor, compiled
         gc.collect()
 
         first = {}
@@ -178,16 +182,17 @@ def main():
             runtimes = {}
             compiled_models = {}
             for component in ["baseline"] if name == "baseline" else ["parts", "body"]:
-                runtimes[component] = rebel.RBLNCompiledModel(artifacts[component]).create_runtime(
-                    tensor_type="pt", device=0
-                )
+                compiled_models[component] = rebel.RBLNCompiledModel(artifacts[component])
+                runtimes[component] = compiled_models[component].create_runtime(tensor_type="pt", device=0)
 
             def execute(values, name=name, runtimes=runtimes):
                 if name == "baseline":
                     return tuple(value.clone() for value in runtimes["baseline"](*values))
                 patch, position = runtimes["parts"](values[1], values[4])
                 embedded = patch.float() + position.float()
-                return tuple(value.clone() for value in runtimes["body"](values[0], embedded, *values[2:]))
+                return tuple(
+                    value.clone() for value in runtimes["body"](values[0], embedded, values[2], values[3], values[5])
+                )
 
             for index, (values, expected) in enumerate(zip(inputs, references, strict=True)):
                 start = time.perf_counter()
