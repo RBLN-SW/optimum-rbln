@@ -800,15 +800,58 @@ class TestChronos2Model(BaseTest.TestModel):
     BATCH_SIZE = 1
     DEVICE = 0
 
+    def _capture_numerical_failure(self, reason, inputs, expected, actual, records):
+        import subprocess
+        from pathlib import Path
+
+        directory = Path(f"debug-chronos2-{type(self).__name__}-{reason}")
+        directory.mkdir(exist_ok=True)
+        shutil.copytree(self.get_rbln_local_dir(), directory / "original", dirs_exist_ok=True)
+        records = list(records)
+        torch.save(
+            {"inputs": inputs, "expected": expected, "actual": actual, "records": records}, directory / "failure.pt"
+        )
+        payload = {"reason": reason, "input_hashes": [r["hashes"] for r in records]}
+        if len(records) == 2:
+            payload["core_inputs_equal"] = records[0]["hashes"] == records[1]["hashes"]
+            payload["core_outputs_equal"] = torch.equal(records[0]["output"], records[1]["output"])
+            payload["core_max_delta"] = float((records[0]["output"] - records[1]["output"]).abs().max())
+        print("CHRONOS2_DIAGNOSTIC " + json.dumps(payload), flush=True)
+        (directory / "diagnostic.json").write_text(json.dumps(payload, indent=2))
+        if os.environ.get("BUILDKITE_BUILD_ID") and shutil.which("buildkite-agent"):
+            uploaded = subprocess.run(["buildkite-agent", "artifact", "upload", f"{directory}/**/*"], check=False)
+            print(f"CHRONOS2_DIAGNOSTIC_UPLOAD {uploaded.returncode}", flush=True)
+
     def test_numerical_parity(self):
         if os.environ.get("SAVE_ARTIFACTS_PATH") or os.environ.get("REUSE_ARTIFACTS_PATH"):
             self.skipTest("Artifact compatibility mode does not execute on a real NPU.")
+        import hashlib
+        from collections import deque
+
         from chronos import Chronos2Model
 
         reference = Chronos2Model.from_pretrained(self.HF_MODEL_ID, **self.HF_CONFIG_KWARGS).float().eval()
         horizon = self.model.prediction_length
         patches = horizon // self.model.chronos_config.output_patch_size
         first_inputs = first_output = None
+        records = deque(maxlen=2)
+        core_runtime = self.model.model[0]
+
+        def record_core(*args):
+            hashes = [hashlib.sha256(t.numpy().tobytes()).hexdigest() for t in args]
+            snapshot = tuple(t.clone() for t in args)
+            output = core_runtime(*args)
+            records.append({"hashes": hashes, "inputs": snapshot, "output": output.clone()})
+            return output
+
+        def run_model(**kwargs):
+            original = self.model.model
+            self.model.model = [record_core]
+            try:
+                return self.model(**kwargs)
+            finally:
+                self.model.model = original
+
         with torch.no_grad():
             for scenario in [
                 "maximum",
@@ -835,7 +878,7 @@ class TestChronos2Model(BaseTest.TestModel):
                 elif scenario == "all-missing":
                     context[:] = torch.nan
                 expected = reference(**inputs).quantile_preds
-                actual = self.model(**inputs).quantile_preds
+                actual = run_model(**inputs).quantile_preds
                 assert actual.shape == expected.shape
                 pcc = torch.corrcoef(torch.stack([actual.flatten(), expected.flatten()]))[0, 1]
                 nrmse = (actual - expected).square().mean().sqrt() / expected.square().mean().sqrt().clamp_min(1e-8)
@@ -854,11 +897,16 @@ class TestChronos2Model(BaseTest.TestModel):
                 )
                 assert actual.isfinite().all()
                 assert pcc >= 0.99
+                if nrmse > 0.05:
+                    self._capture_numerical_failure(scenario, inputs, expected, actual, records)
                 assert nrmse <= 0.05
-                torch.testing.assert_close(self.model(**inputs).quantile_preds, actual, rtol=0, atol=0)
+                repeated = run_model(**inputs).quantile_preds
+                if not torch.equal(repeated, actual):
+                    self._capture_numerical_failure("repeat", inputs, actual, repeated, records)
+                torch.testing.assert_close(repeated, actual, rtol=0, atol=0)
                 if first_inputs is None:
                     first_inputs, first_output = inputs, actual.clone()
-            torch.testing.assert_close(self.model(**first_inputs).quantile_preds, first_output, rtol=0, atol=0)
+            torch.testing.assert_close(run_model(**first_inputs).quantile_preds, first_output, rtol=0, atol=0)
 
 
 class TestChronos2ModelBatch2(TestChronos2Model):
@@ -901,6 +949,20 @@ class TestChronos2ModelBatch64(TestChronos2Model):
     BATCH_SIZE = 64
     RBLN_CLASS_KWARGS = {**TestChronos2Model.RBLN_CLASS_KWARGS, "rbln_batch_size": 64}
     GENERATION_KWARGS = {"context": TestChronos2Model.GENERATION_KWARGS["context"].repeat(64, 1)}
+
+
+class TestChronos2ModelBatch128(TestChronos2Model):
+    TEST_LEVEL = TestLevel.FULL
+    BATCH_SIZE = 128
+    RBLN_CLASS_KWARGS = {**TestChronos2Model.RBLN_CLASS_KWARGS, "rbln_batch_size": 128}
+    GENERATION_KWARGS = {"context": TestChronos2Model.GENERATION_KWARGS["context"].repeat(128, 1)}
+
+
+class TestChronos2ModelBatch256(TestChronos2Model):
+    TEST_LEVEL = TestLevel.FULL
+    BATCH_SIZE = 256
+    RBLN_CLASS_KWARGS = {**TestChronos2Model.RBLN_CLASS_KWARGS, "rbln_batch_size": 256}
+    GENERATION_KWARGS = {"context": TestChronos2Model.GENERATION_KWARGS["context"].repeat(256, 1)}
 
 
 class TestChronos2ModelPipeline(TestChronos2Model):
