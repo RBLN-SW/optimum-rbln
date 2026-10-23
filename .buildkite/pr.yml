@@ -49,7 +49,7 @@ steps:
   # All gates must pass before the NPU pipeline is even uploaded.
   - wait: ~
 
-  - label: ":microscope: Chronos-2 CA25 artifact comparison (diagnostic)"
+  - label: ":microscope: Chronos-2 CA25 device output isolation (diagnostic)"
     image: "${DEVTOOLS_DOCKER_IMAGE}"
     timeout_in_minutes: 45
     resources:
@@ -66,4 +66,4 @@ steps:
     command:
       - "bash scripts/ci/sync.sh"
       - "rbln-smi"
-      - "uv run --no-sync python scripts/diagnostics/chronos2-ca25-core.py"
+      - "uv run --no-sync python scripts/diagnostics/chronos2-ca25-core.py --dump-probe"
