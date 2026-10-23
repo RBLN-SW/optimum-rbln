@@ -812,6 +812,39 @@ class TestChronos2Model(BaseTest.TestModel):
             {"inputs": inputs, "expected": expected, "actual": actual, "records": records}, directory / "failure.pt"
         )
         payload = {"reason": reason, "input_hashes": [r["hashes"] for r in records]}
+        if reason == "repeat" and records:
+            import hashlib
+
+            replay_outputs = []
+            replay_rows = []
+            try:
+                for fresh_inputs in (False, True):
+                    shared_inputs = tuple(t.clone() for t in records[-1]["inputs"])
+                    first = None
+                    for iteration in range(10):
+                        args = tuple(t.clone() for t in shared_inputs) if fresh_inputs else shared_inputs
+                        hashes = [hashlib.sha256(t.numpy().tobytes()).hexdigest() for t in args]
+                        output = self.model.model[0](*args).clone()
+                        if first is None:
+                            first = output.clone()
+                        row = {
+                            "fresh_inputs": fresh_inputs,
+                            "iteration": iteration,
+                            "input_hashes": hashes,
+                            "inputs_unchanged": hashes
+                            == [hashlib.sha256(t.numpy().tobytes()).hexdigest() for t in args],
+                            "output_sha256": hashlib.sha256(output.numpy().tobytes()).hexdigest(),
+                            "delta_first": float((output - first).abs().max()),
+                            "delta_original_first": float((output - records[0]["output"]).abs().max()),
+                            "delta_original_second": float((output - records[-1]["output"]).abs().max()),
+                        }
+                        replay_rows.append(row)
+                        replay_outputs.append(output)
+                        print("CHRONOS2_RAW_REPLAY " + json.dumps(row), flush=True)
+            except Exception as error:
+                payload["raw_replay_error"] = repr(error)
+            payload["raw_replay"] = replay_rows
+            torch.save(replay_outputs, directory / "raw-replay.pt")
         if len(records) == 2:
             payload["core_inputs_equal"] = records[0]["hashes"] == records[1]["hashes"]
             payload["core_outputs_equal"] = torch.equal(records[0]["output"], records[1]["output"])
