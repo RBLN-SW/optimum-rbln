@@ -519,6 +519,26 @@ class TestMPNetModelNativeMaxBatch64(TestMPNetModel):
     }
 
 
+class TestMPNetModelNativeMaxBatch128(TestMPNetModel):
+    TEST_LEVEL = TestLevel.FULL
+    BATCH_SIZE = 128
+    RBLN_CLASS_KWARGS = {**TestMPNetModel.RBLN_CLASS_KWARGS, "rbln_max_seq_len": 512, "rbln_batch_size": 128}
+    GENERATION_KWARGS = {
+        "input_ids": torch.full((128, 512), 4, dtype=torch.int64),
+        "attention_mask": torch.ones((128, 512), dtype=torch.int64),
+    }
+
+
+class TestMPNetModelNativeMaxBatch256(TestMPNetModel):
+    TEST_LEVEL = TestLevel.FULL
+    BATCH_SIZE = 256
+    RBLN_CLASS_KWARGS = {**TestMPNetModel.RBLN_CLASS_KWARGS, "rbln_max_seq_len": 512, "rbln_batch_size": 256}
+    GENERATION_KWARGS = {
+        "input_ids": torch.full((256, 512), 4, dtype=torch.int64),
+        "attention_mask": torch.ones((256, 512), dtype=torch.int64),
+    }
+
+
 class TestEncoderMaxSeqLenBucketing(unittest.TestCase):
     """Sequence-length bucketing for feature-extraction encoders.
 
