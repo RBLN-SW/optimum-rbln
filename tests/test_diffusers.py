@@ -15,6 +15,7 @@ from optimum.rbln import (
     RBLNCosmos2VideoToWorldPipeline,
     RBLNKandinskyV22CombinedPipeline,
     RBLNKandinskyV22Img2ImgCombinedPipeline,
+    RBLNMOSSImagePipeline,
     RBLNStableDiffusion3Img2ImgPipeline,
     RBLNStableDiffusion3Pipeline,
     RBLNStableDiffusionControlNetPipeline,
@@ -479,6 +480,30 @@ class TestCosmos2Video2WorldModel(_MockedSafetyCheckerMixin, BaseTest.TestModel)
             "height": 64,
             "width": 64,
             "num_frames": 9,
+        },
+    }
+
+
+class TestMOSSImageModel(BaseTest.TestModel):
+    RBLN_CLASS = RBLNMOSSImagePipeline
+    # tiny-random pipeline mirroring OpenMOSS-Team/MOSS-Image-Base: shrunk Qwen3.5 text encoder, transformer and
+    # FLUX.2 VAE, the real tokenizer and scheduler config, and the checkpoint's remote-code files in place.
+    HF_MODEL_ID = "rbln/tiny-moss-image"
+    GENERATION_KWARGS = {
+        "prompt": "dance monkey",
+        "num_inference_steps": 2,
+        "generator": torch.manual_seed(42),
+        "height": 64,
+        "width": 64,
+        "output_type": "np",
+    }
+    RBLN_CLASS_KWARGS = {
+        "export": True,
+        "torch_dtype": {"default": torch.bfloat16, "vae": torch.float32},
+        "rbln_config": {
+            "height": 64,
+            "width": 64,
+            "max_sequence_length": 128,
         },
     }
 

@@ -25,6 +25,12 @@ LOADABLE_CLASSES["optimum.rbln"] = {
     "RBLNCosmosSafetyChecker": ["save_pretrained", "from_pretrained"],
 }
 ALL_IMPORTABLE_CLASSES.update(LOADABLE_CLASSES["optimum.rbln"])
+# MOSS-Image ships its transformer and scheduler as remote code. A compiled pipeline records them under the copy
+# in this package, which diffusers loads like a library.
+LOADABLE_CLASSES["optimum.rbln.diffusers.pipelines.moss_image.pipeline_moss_image_upstream"] = {
+    "ModelMixin": ["save_pretrained", "from_pretrained"],
+    "SchedulerMixin": ["save_pretrained", "from_pretrained"],
+}
 
 
 if TYPE_CHECKING:
