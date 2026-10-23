@@ -551,6 +551,32 @@ def test_qwen_vl_parent_rejects_conflicting_vision_batch_size(parent_cls_name, v
         parent_cls(max_seq_len=1024, visual={"cls_name": vision_cls_name, "max_seq_len": 256, "batch_size": 2})
 
 
+def test_moss_image_pipeline_derives_submodule_sizes():
+    """The MOSS-Image pipeline config sets the prompt length and the image size of all submodules."""
+    config_cls = _import_config("RBLNMOSSImagePipelineConfig")
+
+    default = config_cls()
+    assert default.text_encoder.max_seq_len == 512
+    assert default.text_encoder.batch_size == 1  # Upstream encodes one prompt at a time.
+    assert default.text_encoder.phases == ["prefill"]
+    assert default.text_encoder.visual["create_runtimes"] is False  # The vision encoder never runs.
+    assert default.transformer.sample_size == (64, 64)
+    assert default.transformer.max_sequence_length == 512
+    assert default.vae.sample_size == (1024, 1024)
+    assert default.vae.uses_encoder is False
+
+    custom = config_cls(height=768, width=1360, max_sequence_length=300, batch_size=2)
+    assert custom.text_encoder.max_seq_len == 320  # Up to a multiple of 64.
+    assert custom.transformer.sample_size == (48, 85)
+    assert custom.transformer.max_sequence_length == 300
+    assert custom.transformer.batch_size == 2
+    assert custom.vae.sample_size == (768, 1360)
+    assert custom.vae.batch_size == 2
+
+    with pytest.raises(ValueError, match="multiples of 16"):
+        config_cls(height=1000, width=1000)
+
+
 def test_cosmos2_5_pipeline_owns_the_visual_tower_config():
     """The Cosmos2.5 pipeline sets the (unused) visual tower's config itself. A submodule dict
     replaces that dict rather than merging into it, so naming `visual` with one key would drop

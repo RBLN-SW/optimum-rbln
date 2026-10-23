@@ -762,6 +762,12 @@ class Qwen3_5_CausalLMWrapper(DecoderOnlyWrapper):
         past_states = [pair if i in linear else None for i, pair in enumerate(pairs)]
         return past_key_values, past_states
 
+    def uses_query_position(self) -> bool:
+        # GatedDeltaNet picks its new conv state at the last valid token of a prefill window, so the position is an
+        # input also when every position is output.
+        has_linear = any(t == "linear_attention" for t in self.config.layer_types)
+        return super().uses_query_position() or (has_linear and "prefill" in self.phase)
+
     def prepare_forward_args(self, *args):
         args = list(args)
         has_linear = any(t == "linear_attention" for t in self.config.layer_types)
@@ -882,7 +888,7 @@ class Qwen3_5_LanguageModelWrapper(Qwen3_5_CausalLMWrapper):
         global_block_tables = args.pop(0)
         local_block_tables = None
         position_embeds = args.pop(0)
-        query_position = args.pop(0) if self.phase == "prefill" and self.rbln_config.logits_to_keep > 0 else None
+        query_position = args.pop(0) if self.uses_query_position() else None
         position_ids = None
         attention_mask = args.pop(0) if self.rbln_config.use_attention_mask else None
         lora_int_id = args.pop(0) if self.rbln_config.lora_config else None

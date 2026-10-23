@@ -21,6 +21,7 @@ import torch
 from rebel.compile_context import CompileContext
 from transformers import AutoModelForCausalLM, AutoModelForImageTextToText, PretrainedConfig, PreTrainedModel
 from transformers.initialization import no_init_weights
+from transformers.modeling_outputs import BaseModelOutputWithPast
 from transformers.models.qwen3_5.configuration_qwen3_5 import Qwen3_5Config
 from transformers.models.qwen3_5.modeling_qwen3_5 import (
     Qwen3_5Model,
@@ -213,7 +214,9 @@ class RBLNQwen3_5TextModel(RBLNDecoderOnlyModel):
         if rbln_config.use_local_attention:
             input_info.append(("local_block_tables", [1] if is_prefill else [batch_size, 1], "int16"))
 
-        if cls.use_query_position(rbln_config.use_local_attention, is_prefill, rbln_config.logits_to_keep):
+        if cls.use_query_position(rbln_config.use_local_attention, is_prefill, rbln_config.logits_to_keep) or (
+            is_prefill and rbln_config.linear_attention_layers
+        ):
             input_info.append(("query_position", [], "int16"))
 
         if rbln_config.use_attention_mask:
@@ -581,6 +584,10 @@ class RBLNQwen3_5Model(RBLNDecoderOnlyModel):
         else:
             return self.embedding_dim if hasattr(self, "embedding_dim") else self.config.text_config.hidden_size
 
+    @classmethod
+    def update_rbln_config_using_pipe(cls, pipe: Any, rbln_config: Any, submodule_name: str) -> Any:
+        return rbln_config
+
     def _get_position_embeddings(self, hidden_states, position_ids):
         cos, sin = self.rotary_emb(hidden_states, position_ids)
         cos = cos.unsqueeze(1).to(self.rbln_config.dtype)
@@ -589,6 +596,10 @@ class RBLNQwen3_5Model(RBLNDecoderOnlyModel):
 
     def setup_runtime(self):
         _qwen3_5_setup_hybrid_runtime(self)
+
+    @classmethod
+    def _get_compile_context(cls, compile_config, example_inputs):
+        return _qwen3_5_build_compile_context(compile_config, example_inputs)
 
     @classmethod
     def _update_rbln_config(cls, preprocessors=None, model=None, model_config=None, rbln_config=None):
@@ -762,7 +773,7 @@ class RBLNQwen3_5Model(RBLNDecoderOnlyModel):
 
         if not return_dict:
             return logits
-        return RBLNDecoderOnlyOutput(logits=logits, hidden_states=all_hidden_states)
+        return BaseModelOutputWithPast(last_hidden_state=logits, hidden_states=all_hidden_states)
 
 
 class RBLNQwen3_5ForConditionalGeneration(RBLNQwenVLBatchSortMixin, RBLNQwen3_5Model, RBLNDecoderOnlyModelForCausalLM):
@@ -811,10 +822,6 @@ class RBLNQwen3_5ForConditionalGeneration(RBLNQwenVLBatchSortMixin, RBLNQwen3_5M
 
     def can_generate(self):
         return True
-
-    @classmethod
-    def _get_compile_context(cls, compile_config, example_inputs):
-        return _qwen3_5_build_compile_context(compile_config, example_inputs)
 
     @classmethod
     def _reconstruct_model_if_needed(cls, model: "PreTrainedModel"):
