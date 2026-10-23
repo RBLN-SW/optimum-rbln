@@ -406,8 +406,8 @@ class TestElectraModel(BaseTest.TestModel):
         dynamic = isinstance(self.model.rbln_config.max_seq_len, list)
         with torch.no_grad():
             first_inputs = first_output = None
-            for offset in range(0, len(texts), self.BATCH_SIZE):
-                pairs = texts[offset : offset + self.BATCH_SIZE]
+            for offset in range(len(texts)):
+                pairs = [texts[(offset + index) % len(texts)] for index in range(self.BATCH_SIZE)]
                 inputs = tokenizer(
                     [pair[0] for pair in pairs],
                     [pair[1] for pair in pairs],
@@ -478,6 +478,48 @@ class TestElectraForSequenceClassificationBatch2(TestElectraForSequenceClassific
     RBLN_CLASS_KWARGS = {"rbln_max_seq_len": 512, "rbln_batch_size": 2}
     BATCH_SIZE = 2
     GENERATION_KWARGS = TestElectraModelBatch2.GENERATION_KWARGS
+
+
+class TestElectraModelBatch4(TestElectraModel):
+    TEST_LEVEL = TestLevel.FULL
+    BATCH_SIZE = 4
+    RBLN_CLASS_KWARGS = {**TestElectraModel.RBLN_CLASS_KWARGS, "rbln_batch_size": 4}
+    GENERATION_KWARGS = {name: tensor.repeat(4, 1) for name, tensor in TestElectraModel.GENERATION_KWARGS.items()}
+
+
+class TestElectraModelBatch8(TestElectraModel):
+    TEST_LEVEL = TestLevel.FULL
+    BATCH_SIZE = 8
+    RBLN_CLASS_KWARGS = {**TestElectraModel.RBLN_CLASS_KWARGS, "rbln_batch_size": 8}
+    GENERATION_KWARGS = {name: tensor.repeat(8, 1) for name, tensor in TestElectraModel.GENERATION_KWARGS.items()}
+
+
+class TestElectraForPreTrainingBatch4(TestElectraForPreTraining):
+    TEST_LEVEL = TestLevel.FULL
+    BATCH_SIZE = 4
+    RBLN_CLASS_KWARGS = {**TestElectraForPreTraining.RBLN_CLASS_KWARGS, "rbln_batch_size": 4}
+    GENERATION_KWARGS = {name: tensor.repeat(4, 1) for name, tensor in TestElectraModel.GENERATION_KWARGS.items()}
+
+
+class TestElectraForPreTrainingBatch8(TestElectraForPreTraining):
+    TEST_LEVEL = TestLevel.FULL
+    BATCH_SIZE = 8
+    RBLN_CLASS_KWARGS = {**TestElectraForPreTraining.RBLN_CLASS_KWARGS, "rbln_batch_size": 8}
+    GENERATION_KWARGS = {name: tensor.repeat(8, 1) for name, tensor in TestElectraModel.GENERATION_KWARGS.items()}
+
+
+class TestElectraForSequenceClassificationBatch4(TestElectraForSequenceClassification):
+    TEST_LEVEL = TestLevel.FULL
+    BATCH_SIZE = 4
+    RBLN_CLASS_KWARGS = {**TestElectraForSequenceClassification.RBLN_CLASS_KWARGS, "rbln_batch_size": 4}
+    GENERATION_KWARGS = {name: tensor.repeat(4, 1) for name, tensor in TestElectraModel.GENERATION_KWARGS.items()}
+
+
+class TestElectraForSequenceClassificationBatch8(TestElectraForSequenceClassification):
+    TEST_LEVEL = TestLevel.FULL
+    BATCH_SIZE = 8
+    RBLN_CLASS_KWARGS = {**TestElectraForSequenceClassification.RBLN_CLASS_KWARGS, "rbln_batch_size": 8}
+    GENERATION_KWARGS = {name: tensor.repeat(8, 1) for name, tensor in TestElectraModel.GENERATION_KWARGS.items()}
 
 
 class TestElectraForPreTrainingBucketing(TestElectraForPreTraining):
