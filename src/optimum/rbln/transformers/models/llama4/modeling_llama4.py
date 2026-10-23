@@ -99,6 +99,8 @@ class RBLNLlama4ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
                 raise ValueError("Llama 4 chunked attention does not support `use_position_ids=True`.")
             rbln_config.use_attention_mask = True
 
+        if text_config.moe_layers and text_config.num_experts_per_tok != 1:
+            raise NotImplementedError("Llama 4 MoE supports only `num_experts_per_tok=1`.")
         if text_config.moe_layers and rbln_config.use_lora:
             raise ValueError("LoRA is not supported for Llama 4 MoE layers.")
 
