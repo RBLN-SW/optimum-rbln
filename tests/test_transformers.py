@@ -6,7 +6,16 @@ import unittest
 import pytest
 import torch
 from PIL import Image
-from transformers import AutoConfig, BertConfig, BertModel, T5EncoderModel, XLMRobertaConfig, XLMRobertaModel
+from transformers import (
+    AutoConfig,
+    AutoModel,
+    AutoTokenizer,
+    BertConfig,
+    BertModel,
+    T5EncoderModel,
+    XLMRobertaConfig,
+    XLMRobertaModel,
+)
 
 from optimum.rbln import (
     RBLNASTForAudioClassification,
@@ -21,6 +30,7 @@ from optimum.rbln import (
     RBLNDPTForDepthEstimation,
     RBLNGroundingDinoForObjectDetection,
     RBLNModernBertForMaskedLM,
+    RBLNMPNetModel,
     RBLNPegasusModel,
     RBLNResNetForImageClassification,
     RBLNRobertaForMaskedLM,
@@ -357,6 +367,72 @@ class TestXLMRobertaModel(BaseTest.TestModel):
         "num_hidden_layers": 1,
         "vocab_size": 1024,
         "ignore_mismatched_sizes": True,
+    }
+
+
+class TestMPNetModel(BaseTest.TestModel):
+    RBLN_AUTO_CLASS = RBLNAutoModel
+    RBLN_CLASS = RBLNMPNetModel
+    HF_MODEL_ID = "sentence-transformers/all-mpnet-base-v2"
+    HF_CONFIG_KWARGS = {"revision": "e8c3b32edf5434bc2275fc9bab85f82640a19130"}
+    RBLN_CLASS_KWARGS = {"rbln_max_seq_len": 384, "rbln_batch_size": 1}
+    DEVICE = 0
+    BATCH_SIZE = 1
+    GENERATION_KWARGS = {
+        "input_ids": torch.full((1, 384), 4, dtype=torch.int64),
+        "attention_mask": torch.ones((1, 384), dtype=torch.int64),
+    }
+
+    def test_embedding_parity(self):
+        if os.environ.get("SAVE_ARTIFACTS_PATH") or os.environ.get("REUSE_ARTIFACTS_PATH"):
+            self.skipTest("Artifact compatibility mode does not execute on a real NPU.")
+        tokenizer = AutoTokenizer.from_pretrained(self.HF_MODEL_ID, **self.HF_CONFIG_KWARGS)
+        reference = AutoModel.from_pretrained(self.HF_MODEL_ID, **self.HF_CONFIG_KWARGS).eval()
+        texts = [
+            "This is an example sentence.",
+            "Each sentence is converted into an embedding.",
+            "A long document discusses processors and machine learning. " * 80,
+            "",
+        ]
+
+        def pool(hidden, mask):
+            weights = mask.unsqueeze(-1).float()
+            return torch.nn.functional.normalize(
+                (hidden.float() * weights).sum(1) / weights.sum(1).clamp_min(1), dim=-1
+            )
+
+        with torch.no_grad():
+            first_inputs = None
+            first_output = None
+            for offset in range(0, len(texts), self.BATCH_SIZE):
+                inputs = tokenizer(
+                    texts[offset : offset + self.BATCH_SIZE],
+                    padding="max_length",
+                    max_length=384,
+                    truncation=True,
+                    return_tensors="pt",
+                )
+                expected = reference(**inputs).last_hidden_state
+                actual = self.model(**inputs).last_hidden_state
+                active = inputs["attention_mask"].bool()
+                pcc = torch.corrcoef(torch.stack([expected[active].flatten(), actual[active].flatten()]))[0, 1]
+                cosine = torch.nn.functional.cosine_similarity(
+                    pool(expected, inputs["attention_mask"]), pool(actual, inputs["attention_mask"])
+                )
+                assert pcc >= 0.99
+                assert (cosine >= 0.99).all()
+                torch.testing.assert_close(self.model(**inputs).last_hidden_state, actual, rtol=0, atol=0)
+                if first_inputs is None:
+                    first_inputs, first_output = inputs, actual.clone()
+            torch.testing.assert_close(self.model(**first_inputs).last_hidden_state, first_output, rtol=0, atol=0)
+
+
+class TestMPNetModelBatch2(TestMPNetModel):
+    RBLN_CLASS_KWARGS = {"rbln_max_seq_len": 384, "rbln_batch_size": 2}
+    BATCH_SIZE = 2
+    GENERATION_KWARGS = {
+        "input_ids": torch.full((2, 384), 4, dtype=torch.int64),
+        "attention_mask": torch.ones((2, 384), dtype=torch.int64),
     }
 
 
