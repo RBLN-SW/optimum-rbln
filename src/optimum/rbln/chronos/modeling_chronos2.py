@@ -146,6 +146,8 @@ class RBLNChronos2Model(RBLNModel):
             batch,
         )
         normalized = self.model[0](patched_context, mask, patched_future, padded_groups)
+        if isinstance(normalized, (list, tuple)):
+            normalized = normalized[0].float() + normalized[1].float()
         prediction = self.preprocessor.instance_norm.inverse(normalized.flatten(1), loc_scale).reshape(
             batch,
             self.num_quantiles,

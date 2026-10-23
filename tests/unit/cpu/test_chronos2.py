@@ -143,3 +143,27 @@ def test_configuration_roundtrip_and_patch_rounding(tmp_path):
     assert loaded.batch_size == 4
     assert loaded.context_length == 64
     assert loaded.prediction_length == 36
+
+
+@pytest.mark.parametrize("split", [False, True])
+def test_preserves_fp32_output_sum_before_inverse_arcsinh(native, split):
+    model = optimized(native, batch=1)
+    shape = (1, 3, 48)
+    branches = (torch.full(shape, 16.0, dtype=torch.bfloat16), torch.full(shape, 0.0625, dtype=torch.bfloat16))
+    model.model = [lambda *inputs: branches if split else branches[0].float() + branches[1].float()]
+    result = model(context=torch.full((1, 64), torch.nan)).quantile_preds
+    assert result.dtype == torch.float32
+    torch.testing.assert_close(result, torch.sinh(torch.full(shape, 16.0625)), rtol=1e-6, atol=0)
+
+
+def test_preserves_output_head_layer_norm(native):
+    from chronos.chronos2.layers import Chronos2LayerNorm
+
+    head = native.output_patch_embedding
+    head.use_layer_norm = True
+    head.layer_norm = Chronos2LayerNorm(native.num_quantiles * native.chronos_config.output_patch_size)
+    inputs = {"context": torch.randn(1, 64), "num_output_patches": 3}
+    with torch.no_grad():
+        expected = native(**inputs).quantile_preds
+        actual = optimized(native)(**inputs).quantile_preds
+    torch.testing.assert_close(actual, expected)

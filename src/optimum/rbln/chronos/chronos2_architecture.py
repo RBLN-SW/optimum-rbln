@@ -61,9 +61,19 @@ class Chronos2ModelWrapper(torch.nn.Module):
             group_ids=group_ids,
             output_attentions=False,
         ).last_hidden_state
-        output = self.model.output_patch_embedding(hidden[:, -num_future:])
-        return (
-            output.reshape(batch, num_future, self.model.num_quantiles, self.model.chronos_config.output_patch_size)
+        head = self.model.output_patch_embedding
+        forecast = hidden[:, -num_future:]
+        output = head.dropout(head.output_layer(head.act(head.hidden_layer(forecast))))
+        residual = head.residual_layer(forecast)
+        outputs: tuple[torch.Tensor, ...]
+        if head.use_layer_norm:
+            outputs = (head.layer_norm(output + residual),)
+        else:
+            outputs = (output, residual)
+        outputs = tuple(
+            value.reshape(batch, num_future, self.model.num_quantiles, self.model.chronos_config.output_patch_size)
             .permute(0, 2, 1, 3)
             .reshape(batch, self.model.num_quantiles, -1)
+            for value in outputs
         )
+        return outputs[0] if head.use_layer_norm else outputs

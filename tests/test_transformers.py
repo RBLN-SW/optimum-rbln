@@ -800,6 +800,12 @@ class TestChronos2Model(BaseTest.TestModel):
     BATCH_SIZE = 1
     DEVICE = 0
 
+    @staticmethod
+    def _core_prediction(output):
+        if isinstance(output, (list, tuple)):
+            return output[0].float() + output[1].float()
+        return output
+
     def _capture_numerical_failure(self, reason, inputs, expected, actual, records):
         import subprocess
         from pathlib import Path
@@ -824,7 +830,7 @@ class TestChronos2Model(BaseTest.TestModel):
                     for iteration in range(10):
                         args = tuple(t.clone() for t in shared_inputs) if fresh_inputs else shared_inputs
                         hashes = [hashlib.sha256(t.numpy().tobytes()).hexdigest() for t in args]
-                        output = self.model.model[0](*args).clone()
+                        output = self._core_prediction(self.model.model[0](*args)).clone()
                         if first is None:
                             first = output.clone()
                         row = {
@@ -874,7 +880,7 @@ class TestChronos2Model(BaseTest.TestModel):
             hashes = [hashlib.sha256(t.numpy().tobytes()).hexdigest() for t in args]
             snapshot = tuple(t.clone() for t in args)
             output = core_runtime(*args)
-            records.append({"hashes": hashes, "inputs": snapshot, "output": output.clone()})
+            records.append({"hashes": hashes, "inputs": snapshot, "output": self._core_prediction(output).clone()})
             return output
 
         def run_model(**kwargs):
