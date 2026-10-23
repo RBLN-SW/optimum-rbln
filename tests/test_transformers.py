@@ -6,7 +6,15 @@ import unittest
 import pytest
 import torch
 from PIL import Image
-from transformers import AutoConfig, BertConfig, BertModel, T5EncoderModel, XLMRobertaConfig, XLMRobertaModel
+from transformers import (
+    AutoConfig,
+    AutoTokenizer,
+    BertConfig,
+    BertModel,
+    T5EncoderModel,
+    XLMRobertaConfig,
+    XLMRobertaModel,
+)
 
 from optimum.rbln import (
     RBLNASTForAudioClassification,
@@ -17,6 +25,8 @@ from optimum.rbln import (
     RBLNCLIPTextModel,
     RBLNColPaliForRetrieval,
     RBLNColQwen2ForRetrieval,
+    RBLNDebertaV2ForSequenceClassification,
+    RBLNDebertaV2Model,
     RBLNDistilBertForQuestionAnswering,
     RBLNDPTForDepthEstimation,
     RBLNGroundingDinoForObjectDetection,
@@ -358,6 +368,112 @@ class TestXLMRobertaModel(BaseTest.TestModel):
         "vocab_size": 1024,
         "ignore_mismatched_sizes": True,
     }
+
+
+class TestDebertaV3Model(BaseTest.TestModel):
+    RBLN_AUTO_CLASS = RBLNAutoModel
+    RBLN_CLASS = RBLNDebertaV2Model
+    HF_MODEL_ID = "microsoft/deberta-v3-base"
+    HF_CONFIG_KWARGS = {"revision": "8ccc9b6f36199bec6961081d44eb72fb3f7353f3"}
+    RBLN_CLASS_KWARGS = {"rbln_max_seq_len": 512, "rbln_batch_size": 1}
+    GENERATION_KWARGS = {
+        "input_ids": torch.full((1, 512), 4, dtype=torch.int64),
+        "attention_mask": torch.ones((1, 512), dtype=torch.int64),
+    }
+    BATCH_SIZE = 1
+    OUTPUT_NAME = "last_hidden_state"
+    DEVICE = 0
+
+    def test_numerical_parity(self):
+        if os.environ.get("SAVE_ARTIFACTS_PATH") or os.environ.get("REUSE_ARTIFACTS_PATH"):
+            self.skipTest("Artifact compatibility mode does not execute on a real NPU.")
+        tokenizer = AutoTokenizer.from_pretrained(self.HF_MODEL_ID, **self.HF_CONFIG_KWARGS)
+        reference, loading = self.get_hf_auto_class().from_pretrained(
+            self.HF_MODEL_ID, **self.HF_CONFIG_KWARGS, output_loading_info=True
+        )
+        assert not loading.get("missing_keys")
+        assert not loading.get("mismatched_keys")
+        reference.float().eval()
+        texts = [
+            ("A man is eating pizza.", "A man eats something."),
+            ("A black race car starts up in front of a crowd of people.", "A man is driving down a lonely road."),
+            (
+                "A long document discusses processors, language models, and parallel execution. " * 90,
+                "The final paragraph.",
+            ),
+            ("", ""),
+        ]
+        dynamic = isinstance(self.model.rbln_config.max_seq_len, list)
+
+        def compare(actual, expected, mask):
+            assert actual.shape == expected.shape
+            a, e = (actual[mask], expected[mask]) if self.OUTPUT_NAME == "last_hidden_state" else (actual, expected)
+            pcc = torch.corrcoef(torch.stack([e.flatten(), a.flatten()]))[0, 1]
+            assert pcc >= 0.99
+            if self.OUTPUT_NAME == "logits":
+                nrmse = (a - e).square().mean().sqrt() / e.square().mean().sqrt().clamp_min(1e-8)
+                assert nrmse <= 0.05
+                assert torch.equal(actual.argmax(-1), expected.argmax(-1))
+
+        with torch.no_grad():
+            first_inputs = first_output = None
+            for offset in range(0, len(texts), self.BATCH_SIZE):
+                pairs = texts[offset : offset + self.BATCH_SIZE]
+                inputs = tokenizer(
+                    [pair[0] for pair in pairs],
+                    [pair[1] for pair in pairs],
+                    padding=True if dynamic else "max_length",
+                    max_length=512,
+                    truncation=True,
+                    return_tensors="pt",
+                )
+                expected = getattr(reference(**inputs), self.OUTPUT_NAME)
+                actual = getattr(self.model(**inputs), self.OUTPUT_NAME)
+                compare(actual, expected, inputs["attention_mask"].bool())
+                torch.testing.assert_close(getattr(self.model(**inputs), self.OUTPUT_NAME), actual, rtol=0, atol=0)
+                if first_inputs is None:
+                    first_inputs, first_output = inputs, actual.clone()
+            torch.testing.assert_close(
+                getattr(self.model(**first_inputs), self.OUTPUT_NAME), first_output, rtol=0, atol=0
+            )
+            default_inputs = {"input_ids": first_inputs["input_ids"]}
+            compare(
+                getattr(self.model(**default_inputs), self.OUTPUT_NAME),
+                getattr(reference(**default_inputs), self.OUTPUT_NAME),
+                torch.ones_like(default_inputs["input_ids"], dtype=torch.bool),
+            )
+            reloaded = self.RBLN_AUTO_CLASS.from_pretrained(self.get_rbln_local_dir(), rbln_device=self.DEVICE)
+            torch.testing.assert_close(
+                getattr(reloaded(**first_inputs), self.OUTPUT_NAME), first_output, rtol=0, atol=0
+            )
+
+
+class TestDebertaV3ModelBatch2(TestDebertaV3Model):
+    RBLN_CLASS_KWARGS = {"rbln_max_seq_len": 512, "rbln_batch_size": 2}
+    BATCH_SIZE = 2
+    GENERATION_KWARGS = {name: tensor.repeat(2, 1) for name, tensor in TestDebertaV3Model.GENERATION_KWARGS.items()}
+
+
+class TestDebertaV3ModelBucketing(TestDebertaV3Model):
+    RBLN_CLASS_KWARGS = {"rbln_max_seq_len": [128, 512], "rbln_batch_size": 1}
+
+
+class TestDebertaV3ForSequenceClassification(TestDebertaV3Model):
+    RBLN_AUTO_CLASS = RBLNAutoModelForSequenceClassification
+    RBLN_CLASS = RBLNDebertaV2ForSequenceClassification
+    HF_MODEL_ID = "cross-encoder/nli-deberta-v3-base"
+    HF_CONFIG_KWARGS = {"revision": "6c749ce3425cd33b46d187e45b92bbf96ee12ec7"}
+    OUTPUT_NAME = "logits"
+
+
+class TestDebertaV3ForSequenceClassificationBatch2(TestDebertaV3ForSequenceClassification):
+    RBLN_CLASS_KWARGS = {"rbln_max_seq_len": 512, "rbln_batch_size": 2}
+    BATCH_SIZE = 2
+    GENERATION_KWARGS = TestDebertaV3ModelBatch2.GENERATION_KWARGS
+
+
+class TestDebertaV3ForSequenceClassificationBucketing(TestDebertaV3ForSequenceClassification):
+    RBLN_CLASS_KWARGS = {"rbln_max_seq_len": [128, 512], "rbln_batch_size": 1}
 
 
 class TestEncoderMaxSeqLenBucketing(unittest.TestCase):

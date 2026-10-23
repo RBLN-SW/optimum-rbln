@@ -22,6 +22,7 @@ different model architectures.
 
 import inspect
 from collections.abc import Sequence
+from dataclasses import fields
 from typing import TYPE_CHECKING, Any, ClassVar
 
 import torch
@@ -58,6 +59,11 @@ class RBLNTransformerEncoder(RBLNModel):
     auto_model_class: ClassVar[type[Any]] = AutoModel
     rbln_model_input_names = ["input_ids", "attention_mask", "token_type_ids"]
     rbln_dtype = "int64"
+    rbln_sequence_output_names: ClassVar[frozenset[str]] = frozenset(
+        {"last_hidden_state", "encoder_last_hidden_state", "logits", "start_logits", "end_logits"}
+    )
+    # Runtime tuples omit None fields; models with gaps declare their compact order.
+    rbln_output_names: ClassVar[tuple[str, ...] | None] = None
     rbln_config: RBLNTransformerEncoderConfig
 
     @classmethod
@@ -161,6 +167,9 @@ class RBLNTransformerEncoder(RBLNModel):
                 "This is an internal error. Please report it to the developers."
             )
 
+        if len(max_seq_lens) > 1 and "attention_mask" not in rbln_config.model_input_names:
+            raise ValueError("Sequence-length bucketing requires `attention_mask` in `model_input_names`.")
+
         # Build one input_info set per `max_seq_len` bucket. When more than one bucket is
         # requested, `input_info` becomes a list of input_info sets so the compiled model
         # exposes one executor per bucket and the runtime dispatches by input shape.
@@ -203,11 +212,27 @@ class RBLNTransformerEncoder(RBLNModel):
         def pad(t):
             return torch.nn.functional.pad(t, (0, target - seq_len)) if isinstance(t, torch.Tensor) else t
 
-        def unpad(t):
-            return t[:, :seq_len] if isinstance(t, torch.Tensor) and t.dim() >= 2 and t.shape[1] == target else t
+        output_names = self.rbln_output_names or tuple(
+            field.name for field in fields(self.get_hf_output_class()) if field.name != "loss"
+        )
+
+        def unpad(t, index=0):
+            name = output_names[index] if index < len(output_names) else None
+            if (
+                name in self.rbln_sequence_output_names
+                and isinstance(t, torch.Tensor)
+                and t.dim() >= 2
+                and t.shape[1] == target
+            ):
+                return t[:, :seq_len]
+            return t
 
         output = self.model[0](*(pad(a) for a in args), **{k: pad(v) for k, v in kwargs.items()})
-        output = type(output)(map(unpad, output)) if isinstance(output, (tuple, list)) else unpad(output)
+        output = (
+            type(output)(unpad(t, index) for index, t in enumerate(output))
+            if isinstance(output, (tuple, list))
+            else unpad(output)
+        )
 
         return_dict = return_dict if return_dict is not None else self.config.return_dict
         return self._prepare_output(output, return_dict)
@@ -288,6 +313,7 @@ class RBLNModelForQuestionAnswering(RBLNTransformerEncoder):
 
 class RBLNModelForSequenceClassification(RBLNTransformerEncoder):
     auto_model_class = AutoModelForSequenceClassification
+    rbln_sequence_output_names = frozenset()
     rbln_model_input_names = ["input_ids", "attention_mask"]
 
 

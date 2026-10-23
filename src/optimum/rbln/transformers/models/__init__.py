@@ -28,6 +28,7 @@ if TYPE_CHECKING:
     from .clip import *
     from .colpali import *
     from .colqwen2 import *
+    from .deberta_v2 import *
     from .decoderonly import *
     from .depth_anything import *
     from .detr import *
