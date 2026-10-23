@@ -722,79 +722,6 @@ class TestDinov2Model(BaseTest.TestModel):
     IMAGE_SIZE = None
     CLASSIFICATION = False
 
-    def _diagnose_classifier_parity(self, reference, inputs, original):
-        import hashlib
-        import subprocess
-        from pathlib import Path
-
-        import rebel
-
-        class Trace(torch.nn.Module):
-            def __init__(self, model):
-                super().__init__()
-                self.model = model
-
-            def forward(self, pixel_values):
-                output = self.model.dinov2(
-                    pixel_values=pixel_values, output_hidden_states=True, output_attentions=False, return_dict=True
-                )
-                hidden = output.last_hidden_state
-                features = torch.cat([hidden[:, 0], hidden[:, 1:].mean(1)], dim=1)
-                return (self.model.classifier(features), features, hidden, *output.hidden_states)
-
-        pixels = inputs.pixel_values
-        original = original.clone()
-        directory = Path(f"debug-dinov2-{type(self).__name__}")
-        directory.mkdir(exist_ok=True)
-        shutil.copytree(self.get_rbln_local_dir(), directory / "original", dirs_exist_ok=True)
-        torch.save(
-            {"inputs": dict(inputs), "actual_logits": original, "expected_logits": reference(**inputs).logits},
-            directory / "failure.pt",
-        )
-        payload = {
-            "input_sha256": hashlib.sha256(pixels.numpy().tobytes()).hexdigest(),
-            "original_labels": original.argmax(-1).tolist(),
-            "expected_labels": reference(**inputs).logits.argmax(-1).tolist(),
-        }
-        try:
-            trace = Trace(reference).eval()
-            expected = trace(pixels)
-            compiled = rebel.compile_from_torch(
-                trace,
-                input_info=[("pixel_values", list(pixels.shape), "float32")],
-                npu=self.model.rbln_config.npu,
-                num_devices=1,
-            )
-            compiled.save(str(directory / "instrumented.rbln"))
-            runtime = compiled.create_runtime(tensor_type="pt", device=self.DEVICE)
-            actual = runtime(pixels)
-            payload["instrumented_labels"] = actual[0].argmax(-1).tolist()
-            payload["instrumented_delta"] = float((actual[0] - original).abs().max())
-            payload["layers"] = [
-                {
-                    "index": i,
-                    "pcc": float(torch.corrcoef(torch.stack([a.flatten(), e.flatten()]))[0, 1]),
-                    "nrmse": float((a - e).square().mean().sqrt() / e.square().mean().sqrt().clamp_min(1e-8)),
-                }
-                for i, (a, e) in enumerate(zip(actual, expected, strict=True))
-            ]
-            normalized = reference.dinov2.layernorm(actual[-1])
-            variants = {
-                "fp32_head": reference.classifier(actual[1]),
-                "fp32_mean_head": reference.classifier(torch.cat([actual[2][:, 0], actual[2][:, 1:].mean(1)], 1)),
-                "fp32_final_norm_mean_head": reference.classifier(
-                    torch.cat([normalized[:, 0], normalized[:, 1:].mean(1)], 1)
-                ),
-            }
-            payload["variants"] = {name: value.argmax(-1).tolist() for name, value in variants.items()}
-        except Exception as error:
-            payload["diagnostic_error"] = repr(error)
-        print("DINOV2_DIAGNOSTIC " + json.dumps(payload), flush=True)
-        (directory / "diagnostic.json").write_text(json.dumps(payload, indent=2))
-        if os.environ.get("BUILDKITE_BUILD_ID") and shutil.which("buildkite-agent"):
-            uploaded = subprocess.run(["buildkite-agent", "artifact", "upload", f"{directory}/**/*"], check=False)
-            print(f"DINOV2_DIAGNOSTIC_UPLOAD {uploaded.returncode}", flush=True)
-
     def test_numerical_parity(self):
         from huggingface_hub import hf_hub_download
         from transformers import AutoImageProcessor
@@ -862,8 +789,6 @@ class TestDinov2Model(BaseTest.TestModel):
                 assert pcc >= 0.99
                 if self.CLASSIFICATION:
                     assert nrmse <= 0.05
-                    if not values["labels_equal"]:
-                        self._diagnose_classifier_parity(reference, inputs, a)
                     assert values["labels_equal"]
                 else:
                     assert values["pooled_cosine"] >= 0.99

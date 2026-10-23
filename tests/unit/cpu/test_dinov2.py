@@ -117,3 +117,35 @@ def test_native_processor_pixels_match_default_compile_shape(classification):
     pixels = processor(images=Image.new("RGB", (480, 320)), return_tensors="pt").pixel_values
     config = cls._update_rbln_config([processor], native, native.config, config_cls())
     assert config.compile_cfgs[0].input_info[0][1] == list(pixels.shape)
+
+
+@pytest.mark.parametrize("classification", [False, True])
+@pytest.mark.parametrize("size", [(28, 28), (28, 42), (42, 56), {"height": 28, "width": 42}])
+def test_position_encoding_is_precomputed_once(classification, size, monkeypatch):
+    from transformers.models.dinov2.modeling_dinov2 import Dinov2Embeddings
+
+    torch.manual_seed(42)
+    native = tiny_model(classification).float().eval()
+    height, width = (size["height"], size["width"]) if isinstance(size, dict) else size
+    pixels = torch.randn(2, 3, height, width)
+    with torch.no_grad():
+        expected = native(pixels).to_tuple()
+    interpolate = Dinov2Embeddings.interpolate_pos_encoding
+    calls = []
+
+    def record(self, embeddings, height, width):
+        calls.append((embeddings.dtype, height, width))
+        return interpolate(self, embeddings, height, width)
+
+    monkeypatch.setattr(Dinov2Embeddings, "interpolate_pos_encoding", record)
+    cls, config_cls = rbln_classes(classification)
+    config = cls._update_rbln_config(None, native, native.config, config_cls(image_size=size, batch_size=2))
+    wrapper = cls._wrap_model_if_needed(native, config)
+    assert calls == [(torch.float32, height, width)]
+    with torch.no_grad():
+        for _ in range(2):
+            for a, e in zip(wrapper(pixels), expected, strict=True):
+                torch.testing.assert_close(a, e, rtol=0, atol=0)
+    assert calls == [(torch.float32, height, width)]
+    exported = torch.export.export(wrapper, (pixels,))
+    assert not any("upsample_bicubic2d" in str(node.target) for node in exported.graph.nodes)
