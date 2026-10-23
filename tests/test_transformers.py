@@ -437,8 +437,8 @@ class TestDebertaV3Model(BaseTest.TestModel):
 
         with torch.no_grad():
             first_inputs = first_output = None
-            for offset in range(0, len(texts), self.BATCH_SIZE):
-                pairs = texts[offset : offset + self.BATCH_SIZE]
+            for offset in range(len(texts)):
+                pairs = [texts[(offset + index) % len(texts)] for index in range(self.BATCH_SIZE)]
                 inputs = tokenizer(
                     [pair[0] for pair in pairs],
                     [pair[1] for pair in pairs],
@@ -501,6 +501,34 @@ class TestDebertaV3ForSequenceClassificationBatch2(TestDebertaV3ForSequenceClass
 
 class TestDebertaV3ForSequenceClassificationBucketing(TestDebertaV3ForSequenceClassification):
     RBLN_CLASS_KWARGS = {**TestDebertaV3Model.RBLN_CLASS_KWARGS, "rbln_max_seq_len": [128, 512]}
+
+
+class TestDebertaV3ModelBatch4(TestDebertaV3Model):
+    TEST_LEVEL = TestLevel.FULL
+    BATCH_SIZE = 4
+    RBLN_CLASS_KWARGS = {**TestDebertaV3Model.RBLN_CLASS_KWARGS, "rbln_batch_size": 4}
+    GENERATION_KWARGS = {name: tensor.repeat(4, 1) for name, tensor in TestDebertaV3Model.GENERATION_KWARGS.items()}
+
+
+class TestDebertaV3ModelBatch8(TestDebertaV3Model):
+    TEST_LEVEL = TestLevel.FULL
+    BATCH_SIZE = 8
+    RBLN_CLASS_KWARGS = {**TestDebertaV3Model.RBLN_CLASS_KWARGS, "rbln_batch_size": 8}
+    GENERATION_KWARGS = {name: tensor.repeat(8, 1) for name, tensor in TestDebertaV3Model.GENERATION_KWARGS.items()}
+
+
+class TestDebertaV3ForSequenceClassificationBatch4(TestDebertaV3ForSequenceClassification):
+    TEST_LEVEL = TestLevel.FULL
+    BATCH_SIZE = 4
+    RBLN_CLASS_KWARGS = {**TestDebertaV3ForSequenceClassification.RBLN_CLASS_KWARGS, "rbln_batch_size": 4}
+    GENERATION_KWARGS = {name: tensor.repeat(4, 1) for name, tensor in TestDebertaV3Model.GENERATION_KWARGS.items()}
+
+
+class TestDebertaV3ForSequenceClassificationBatch8(TestDebertaV3ForSequenceClassification):
+    TEST_LEVEL = TestLevel.FULL
+    BATCH_SIZE = 8
+    RBLN_CLASS_KWARGS = {**TestDebertaV3ForSequenceClassification.RBLN_CLASS_KWARGS, "rbln_batch_size": 8}
+    GENERATION_KWARGS = {name: tensor.repeat(8, 1) for name, tensor in TestDebertaV3Model.GENERATION_KWARGS.items()}
 
 
 class TestEncoderMaxSeqLenBucketing(unittest.TestCase):
