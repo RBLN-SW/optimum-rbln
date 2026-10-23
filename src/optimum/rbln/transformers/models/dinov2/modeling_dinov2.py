@@ -37,7 +37,9 @@ class Dinov2Wrapper(nn.Module):
 class Dinov2Mixin:
     @classmethod
     def _wrap_model_if_needed(cls, model, rbln_config):
-        return Dinov2Wrapper(deepcopy(model)).eval()
+        compiled_model = deepcopy(model)
+        compiled_model.set_attn_implementation("eager")
+        return Dinov2Wrapper(compiled_model).eval()
 
     @classmethod
     def _update_rbln_config(cls, preprocessors, model, model_config, rbln_config):
