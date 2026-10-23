@@ -13,6 +13,7 @@
 # limitations under the License.
 
 from copy import deepcopy
+from typing import Any
 
 import torch
 from torch import nn
@@ -147,18 +148,18 @@ class RBLNSiglip2Model(RBLNModel):
 
     def forward(
         self,
-        input_ids=None,
-        pixel_values=None,
-        pixel_attention_mask=None,
-        spatial_shapes=None,
-        attention_mask=None,
-        position_ids=None,
-        return_loss=None,
-        return_dict=None,
-        output_hidden_states=None,
-        output_attentions=None,
-        **kwargs,
-    ):
+        input_ids: torch.Tensor | None = None,
+        pixel_values: torch.Tensor | None = None,
+        pixel_attention_mask: torch.Tensor | None = None,
+        spatial_shapes: torch.Tensor | None = None,
+        attention_mask: torch.Tensor | None = None,
+        position_ids: torch.Tensor | None = None,
+        return_loss: bool | None = None,
+        return_dict: bool | None = None,
+        output_hidden_states: bool | None = None,
+        output_attentions: bool | None = None,
+        **kwargs: Any,
+    ) -> Siglip2Output | tuple:
         """Compute normalized embeddings and calibrated image/text similarity.
 
         Args:
