@@ -811,7 +811,7 @@ class RBLNQwen3_5ForConditionalGeneration(RBLNQwenVLBatchSortMixin, RBLNQwen3_5M
 
     @property
     def logits_last_dim(self):
-        return self.config.text_config.vocab_size
+        return self.config.get_text_config().vocab_size
 
     @classmethod
     def _get_compile_context(cls, compile_config, example_inputs):

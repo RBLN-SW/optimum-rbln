@@ -486,7 +486,7 @@ class RBLNExaone4_5_ForConditionalGeneration(
 
     @property
     def logits_last_dim(self):
-        return self.config.text_config.vocab_size
+        return self.config.get_text_config().vocab_size
 
     def _vision_grid_rows_per_sample(
         self, input_ids: torch.LongTensor, attention_mask: torch.Tensor | None, kwargs: dict

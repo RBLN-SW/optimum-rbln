@@ -651,7 +651,7 @@ class RBLNQwen2_5_VLForConditionalGeneration(
 
     @property
     def logits_last_dim(self):
-        return self.config.text_config.vocab_size
+        return self.config.get_text_config().vocab_size
 
     @classmethod
     def update_rbln_config_using_pipe(cls, pipe: Any, rbln_config: Any, submodule_name: str) -> Any:

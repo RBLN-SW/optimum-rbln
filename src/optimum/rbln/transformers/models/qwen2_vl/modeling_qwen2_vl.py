@@ -531,7 +531,7 @@ class RBLNQwen2VLForConditionalGeneration(RBLNQwenVLBatchSortMixin, RBLNQwen2VLM
 
     @property
     def logits_last_dim(self):
-        return self.config.text_config.vocab_size
+        return self.config.get_text_config().vocab_size
 
     @classmethod
     def _reconstruct_model_if_needed(cls, model: "PreTrainedModel"):
