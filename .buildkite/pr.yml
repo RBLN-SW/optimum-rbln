@@ -49,7 +49,7 @@ steps:
   # All gates must pass before the NPU pipeline is even uploaded.
   - wait: ~
 
-  - label: ":microscope: Chronos-2 CA25 probability-value matmul isolation (diagnostic)"
+  - label: ":microscope: Chronos-2 CA25 PV input dtype and padding isolation (diagnostic)"
     image: "${DEVTOOLS_DOCKER_IMAGE}"
     timeout_in_minutes: 45
     resources:
@@ -66,4 +66,4 @@ steps:
     command:
       - "bash scripts/ci/sync.sh"
       - "rbln-smi"
-      - "RBLN_DUMP_LOG=1 RBLN_DUMP_MODE=mlir RBLN_DUMP_PATH=debug-chronos2-core-probe/ir uv run --no-sync python scripts/diagnostics/chronos2-ca25-core.py --matmul-probe"
+      - "RBLN_DUMP_LOG=1 RBLN_DUMP_MODE=mlir RBLN_DUMP_PATH=debug-chronos2-core-probe/ir uv run --no-sync python scripts/diagnostics/pv-input-isolation.py"
