@@ -103,7 +103,6 @@ def dump_probe():
             if mode == 1:
                 assert files, "Host dump flag produced no binary outputs"
             differences = []
-            retained = 0
             for relative in files:
                 a, b = left / relative, right / relative
                 same = (
@@ -111,12 +110,18 @@ def dump_probe():
                 )
                 row = {"path": str(relative), "bytes": a.stat().st_size, "equal": same}
                 differences.append(row)
-                if not same and b.exists() and retained < 4:
-                    for name, path in (("left", a), ("right", b)):
-                        target = OUTPUT / "first-byte-differences" / name / relative
+            output_differences = [r for r in differences if not r["equal"] and "[output_" in r["path"]]
+            selected = {Path(r["path"]) for r in output_differences[:4]}
+            if output_differences:
+                first_node = output_differences[0]["path"].split("_", 1)[0]
+                selected.update(p for p in files if p.name.split("_", 1)[0] == first_node)
+            for relative in sorted(selected):
+                for name, directory in (("left", left), ("right", right)):
+                    path = directory / relative
+                    if path.exists():
+                        target = OUTPUT / "first-output-differences" / name / relative
                         target.parent.mkdir(parents=True, exist_ok=True)
                         shutil.copy2(path, target)
-                    retained += 1
             summary.append(
                 {
                     "mode": mode,
@@ -136,6 +141,58 @@ def dump_probe():
     print("CA25_HOST_DUMP_COMPARISON", json.dumps(report), flush=True)
 
 
+def matmul_probe():
+    import gc
+
+    import rebel
+    import torch
+
+    class Scores(torch.nn.Module):
+        def forward(self, query, key):
+            return torch.matmul(query, key.transpose(-1, -2))
+
+    torch.set_num_threads(4)
+    model = Scores().eval()
+    reports = []
+    for sequence, batch in ((577, 8), (576, 8), (577, 16), (577, 64)):
+        generator = torch.Generator().manual_seed(42)
+        query, key = (torch.randn(sequence, 12, batch, 64, generator=generator) for _ in range(2))
+        name = f"matmul-s{sequence}-b{batch}"
+        with torch.no_grad():
+            reference = model(query, key)
+            compiled = rebel.compile_from_torch(
+                model,
+                input_info=[("query", list(query.shape), "float32"), ("key", list(key.shape), "float32")],
+                npu="RBLN-CA25",
+                num_devices=1,
+            )
+            compiled.save(str(OUTPUT / f"{name}.rbln"))
+            runtime = compiled.create_runtime(tensor_type="pt", device=0)
+            first = None
+            rows = []
+            for iteration in range(10):
+                output = runtime(query, key).clone()
+                if first is None:
+                    first = output.clone()
+                row = {
+                    "iteration": iteration,
+                    "sha256": hashlib.sha256(output.numpy().tobytes()).hexdigest(),
+                    "delta_first": float((output - first).abs().max()),
+                    "nrmse": float((output - reference).square().mean().sqrt() / reference.square().mean().sqrt()),
+                }
+                rows.append(row)
+                print("CA25_SYNTHETIC_MATMUL", name, json.dumps(row), flush=True)
+            reports.append({"name": name, "input_shape": list(query.shape), "rows": rows})
+            if any(r["delta_first"] for r in rows):
+                torch.save(
+                    {"query": query, "key": key, "first": first, "last": output, "reference": reference},
+                    OUTPUT / f"{name}-failure.pt",
+                )
+        del runtime, compiled, query, key, reference, output, first
+        gc.collect()
+    (OUTPUT / "synthetic-matmul.json").write_text(json.dumps(reports, indent=2))
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--artifact", choices=ARTIFACTS)
@@ -143,10 +200,14 @@ def main():
     parser.add_argument("--iterations", type=int, default=20)
     parser.add_argument("--label")
     parser.add_argument("--dump-probe", action="store_true")
+    parser.add_argument("--matmul-probe", action="store_true")
     args = parser.parse_args()
     OUTPUT.mkdir(exist_ok=True)
     if args.artifact:
         worker(args.artifact, args.sync, args.iterations, args.label)
+        return
+    if args.matmul_probe:
+        matmul_probe()
         return
     if args.dump_probe:
         dump_probe()
