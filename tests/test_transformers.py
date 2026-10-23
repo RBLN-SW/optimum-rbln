@@ -1,3 +1,4 @@
+import gc
 import json
 import os
 import shutil
@@ -798,8 +799,11 @@ class TestDinov2Model(BaseTest.TestModel):
                     first_inputs, first_output = inputs, tuple(value.clone() for value in actual.to_tuple())
             for a, e in zip(self.model(**first_inputs).to_tuple(), first_output, strict=True):
                 torch.testing.assert_close(a, e, rtol=0, atol=0)
-            reloaded = self.RBLN_AUTO_CLASS.from_pretrained(self.get_rbln_local_dir(), rbln_device=self.DEVICE)
-            for a, e in zip(reloaded(**first_inputs, return_dict=False), first_output, strict=True):
+            # Release the original runtime so reload needs only one model's device memory.
+            del type(self).model
+            gc.collect()
+            type(self).model = self.RBLN_AUTO_CLASS.from_pretrained(self.get_rbln_local_dir(), rbln_device=self.DEVICE)
+            for a, e in zip(self.model(**first_inputs, return_dict=False), first_output, strict=True):
                 torch.testing.assert_close(a, e, rtol=0, atol=0)
         print(
             "DINOV2_STATE " + json.dumps({"test_class": type(self).__name__, "repeat_reload_tuple": "passed"}),
