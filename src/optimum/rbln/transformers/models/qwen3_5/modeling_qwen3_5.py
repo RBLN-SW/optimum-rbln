@@ -63,15 +63,15 @@ def validate_gdn_custom_kernel(model_config, rbln_config) -> None:
     """Reject a configuration the GatedDeltaNet custom ops do not serve.
 
     The core always runs as `rbln_custom_ops::gdn_*` and the short conv in front of it as
-    `causal_conv1d_*`, so a configuration they cannot take fails here rather than at compile time,
-    where the converter reports it as a shape mismatch.
+    `causal_conv1d_ring`, so a configuration they cannot take fails here rather than at compile
+    time, where the converter reports it as a shape mismatch.
 
     Runs before `super()._update_rbln_config` fills the defaults, so it reads no field that
     `set_default_values` owns -- `prefill_chunk_size` is still None here. It does not need to: the
     ops want a prefill window that is a multiple of 128, and `_update_rbln_config` already rejects a
     `gdn_chunk_size` that does not divide `prefill_chunk_size`, so `gdn_chunk_size == 128` gives it.
     """
-    wanted = ("gdn_prefill", "gdn_decode", "causal_conv1d_prefill", "causal_conv1d_update")
+    wanted = ("gdn_prefill", "gdn_decode", "causal_conv1d_ring")
     missing = [name for name in wanted if not hasattr(torch.ops.rbln_custom_ops, name)]
     if missing:
         raise ValueError(
@@ -129,13 +129,16 @@ def _qwen3_5_linear_state_shapes(text_config, batch_size: int):
     from rebel.ops.torch_custom_ops.gdn import STATE_BLOCKS
 
     heads = text_config.linear_num_key_heads
-    # Q, K and the value heads of each Q/K head, each carrying K-1 inputs. The group axis is its own
-    # because `causal_conv1d_*` address the cache by it.
+    # Q, K and the value heads of each Q/K head. The group axis is its own because
+    # `causal_conv1d_ring` addresses the cache by it.
     groups = heads * (2 + text_config.linear_num_value_heads // heads)
+    # The ring `causal_conv1d_ring` takes: W = K - 1 slots, slot-major, slot p % W holding the
+    # inputs of position p. Slot-major rather than group-major because one slot is the row the op
+    # gathers and scatters.
     conv_state_shape = (
         batch_size,
-        groups,
         text_config.linear_conv_kernel_dim - 1,
+        groups,
         text_config.linear_key_head_dim,
     )
     recurrent_state_shape = (
