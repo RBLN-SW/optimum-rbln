@@ -35,8 +35,9 @@ class RBLNQwenImage21Pipeline(RBLNDiffusionMixin, QwenImage21Pipeline):
     RBLN-accelerated implementation of the Qwen-Image 2.1 pipeline for text-to-image generation and image editing.
 
     The pipeline compiles the Qwen3-VL text encoder, the block-causal transformer and the VAE for the image sizes in
-    its configuration. It also compiles for image editing, for a 1024x1024 condition image unless
-    `condition_image_size` lists other sizes, so one compiled pipeline serves both tasks.
+    its configuration. It also compiles for image editing, with a 1376x1376 VAE encoder canvas that holds every
+    condition image from 9:16 to 16:9 unless `condition_image_size` lists other canvases, so one compiled pipeline
+    serves both tasks.
 
     Examples:
         ```python

@@ -29,8 +29,8 @@ class RBLNAutoencoderKLQwenImage21Config(RBLNModelConfig):
     """
     Configuration class for the RBLN Qwen-Image 2.1 VAE.
 
-    The VAE works on single images. Each image size compiles its own graph: the decoder for every output size, and
-    the encoder, used by image editing, for every condition-image size.
+    The VAE works on single images. The decoder compiles one graph for every output size. The encoder, used by image
+    editing, compiles one graph for every canvas size and encodes any image that fits a canvas.
     """
 
     def __init__(
@@ -48,9 +48,9 @@ class RBLNAutoencoderKLQwenImage21Config(RBLNModelConfig):
                 in pixels, or a list of them. Defaults to (1024, 1024), the pipeline's default output.
             uses_encoder (bool | None): Whether to compile the encoder, which image editing needs to encode the
                 condition images. Defaults to False.
-            encoder_sample_size (tuple[int, int] | list[tuple[int, int]] | None): The (height, width) of the images
-                the encoder takes, in pixels, or a list of them: the condition images after the pipeline resizes them.
-                Defaults to `sample_size`.
+            encoder_sample_size (tuple[int, int] | list[tuple[int, int]] | None): The (height, width) of the
+                encoder canvases, in pixels, or a list of them. An image runs at the top left of the smallest canvas
+                that holds it, so one canvas serves every image size up to its own. Defaults to `sample_size`.
             kwargs: Additional arguments passed to the parent RBLNModelConfig.
 
         Raises:

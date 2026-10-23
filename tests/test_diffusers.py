@@ -571,7 +571,9 @@ class TestQwenImage21Model(BaseTest.TestModel):
         "rbln_config": {
             "image_size": (256, 256),
             # Compiled for editing too, as by default. Text-to-image leaves the vision and VAE encoders unused.
-            "condition_image_size": (256, 256),
+            # The VAE encoder canvas holds both condition images of the edit test.
+            "condition_image_size": (256, 384),
+            "output_resolution": 256,
             "max_seq_len": 128,
         },
     }
@@ -590,6 +592,11 @@ class TestQwenImage21Model(BaseTest.TestModel):
     def test_generate_edit(self):
         # The same compiled pipeline edits: the condition image goes through the vision and VAE encoders.
         image = self.model(**self.EDIT_KWARGS).images[0]
+        assert image.shape[:2] == (256, 256)
+
+        # A 2:1 condition image is resized to 352x192 (W x H) and runs in the 384x256 canvas of the VAE encoder.
+        wide_image = Image.new("RGB", (512, 256), color=(30, 160, 90))
+        image = self.model(**{**self.EDIT_KWARGS, "image": wide_image, "height": 256, "width": 256}).images[0]
         assert image.shape[:2] == (256, 256)
 
 

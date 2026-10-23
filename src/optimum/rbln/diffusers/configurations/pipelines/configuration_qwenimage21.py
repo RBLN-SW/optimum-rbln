@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import itertools
 import math
 from typing import Any
 
@@ -28,9 +29,33 @@ _PATCHES_PER_IMAGE_TOKEN = 4
 # The pipeline rounds image sizes down to multiples of 32.
 _SIZE_MULTIPLE = 32
 _SEQ_LEN_MULTIPLE = 64
-# The pipeline resizes a condition image to `output_resolution**2` pixels at its aspect ratio, 1024**2 by default, so
-# a square condition image becomes 1024x1024.
-_DEFAULT_CONDITION_IMAGE_SIZE = (1024, 1024)
+# The VAE encoder canvas: at the default output_resolution it holds every condition image from 9:16 to 16:9.
+_DEFAULT_CONDITION_IMAGE_SIZE = (1376, 1376)
+_DEFAULT_OUTPUT_RESOLUTION = 1024
+
+
+def _condition_sizes_within(output_resolution: int, height: int, width: int) -> list[tuple[int, int]]:
+    """The (height, width) the pipeline can resize a condition image to that fit a canvas of (height, width).
+
+    The pipeline resizes a condition image to about `output_resolution**2` pixels at its aspect ratio and rounds each
+    side to a multiple of 32 (`calculate_dimensions`). The size only changes where a side crosses a rounding boundary,
+    so one aspect ratio between each pair of neighboring boundaries finds every size.
+    """
+    area = output_resolution**2
+    half = _SIZE_MULTIPLE / 2
+    # Aspect ratios (width / height) whose height and width round to at most the canvas.
+    low, high = area / (height + half) ** 2, (width + half) ** 2 / area
+    bounds = {low, high}
+    for side in range(_SIZE_MULTIPLE, max(height, width) + 2 * _SIZE_MULTIPLE, _SIZE_MULTIPLE):
+        bounds.update(((side - half) ** 2 / area, area / (side - half) ** 2))
+    sizes = set()
+    for lower, upper in itertools.pairwise(sorted(bound for bound in bounds if low <= bound <= high)):
+        ratio = (lower + upper) / 2
+        resized_width = round(math.sqrt(area * ratio) / _SIZE_MULTIPLE) * _SIZE_MULTIPLE
+        resized_height = round(math.sqrt(area / ratio) / _SIZE_MULTIPLE) * _SIZE_MULTIPLE
+        if 0 < resized_height <= height and 0 < resized_width <= width:
+            sizes.add((resized_height, resized_width))
+    return sorted(sizes)
 
 
 class RBLNQwenImage21PipelineConfig(RBLNModelConfig):
@@ -38,9 +63,10 @@ class RBLNQwenImage21PipelineConfig(RBLNModelConfig):
     Configuration class for the RBLN Qwen-Image 2.1 pipeline.
 
     The pipeline compiles its text encoder, transformer and VAE for a fixed set of image sizes. Text-to-image needs
-    only the output sizes. Image editing also needs the sizes of the condition images after the pipeline resizes
-    them, for the vision encoder of the text encoder and for the VAE encoder. The pipeline compiles for image editing
-    by default, and a call without condition images skips those parts.
+    only the output sizes. Image editing also needs room for the condition images, which the pipeline resizes to
+    about `output_resolution**2` pixels at their aspect ratio: VAE encoder canvases that hold them, and token budgets
+    for the vision encoder and the transformer. The pipeline compiles for image editing by default, and a call
+    without condition images skips those parts.
     """
 
     submodules = ["text_encoder", "transformer", "vae"]
@@ -55,6 +81,7 @@ class RBLNQwenImage21PipelineConfig(RBLNModelConfig):
         image_size: tuple[int, int] | list[tuple[int, int]] | None = None,
         condition_image_size: tuple[int, int] | list[tuple[int, int]] | None = None,
         num_condition_images: int | None = None,
+        output_resolution: int | None = None,
         max_seq_len: int | None = None,
         **kwargs: Any,
     ):
@@ -70,12 +97,16 @@ class RBLNQwenImage21PipelineConfig(RBLNModelConfig):
             image_size (tuple[int, int] | list[tuple[int, int]] | None): The (height, width) of the generated image,
                 in pixels, or a list of them. Defaults to (1024, 1024).
             condition_image_size (tuple[int, int] | list[tuple[int, int]] | None): The (height, width) of the
-                condition images for image editing, in pixels, or a list of them. These are the sizes after the
-                pipeline resizes the images to about `output_resolution**2` pixels at their aspect ratio. Defaults to
-                (1024, 1024), the size of a square condition image at the default `output_resolution`.
+                VAE encoder canvases for image editing, in pixels, or a list of them. A condition image, after the
+                pipeline resizes it, runs in the smallest canvas that holds it. Each canvas also sets token budgets
+                for the largest image the pipeline can resize to that fits it, or for the canvas itself if none does.
+                Defaults to (1376, 1376), which holds every condition image from 9:16 to 16:9 at the default
+                `output_resolution`.
             num_condition_images (int | None): The maximum number of condition images in one call. Defaults to 1.
                 Set it to 0 to compile for text-to-image only, which drops the vision and VAE encoders and the
                 condition-image tokens from the sequence lengths and KV caches.
+            output_resolution (int | None): The `output_resolution` the pipeline is called with, which sets the
+                size condition images are resized to. Defaults to 1024, the pipeline's default.
             max_seq_len (int | None): The maximum number of text tokens the text encoder reads, without the tokens
                 of the condition images. Defaults to 512.
             kwargs: Additional arguments passed to the parent RBLNModelConfig.
@@ -98,8 +129,9 @@ class RBLNQwenImage21PipelineConfig(RBLNModelConfig):
         )
         max_seq_len = max_seq_len or 512
 
-        sizes = list(dict.fromkeys(image_size + condition_image_size))
-        not_aligned = [size for size in sizes if size[0] % _SIZE_MULTIPLE or size[1] % _SIZE_MULTIPLE]
+        not_aligned = [
+            size for size in image_size + condition_image_size if size[0] % _SIZE_MULTIPLE or size[1] % _SIZE_MULTIPLE
+        ]
         if not_aligned:
             raise ValueError(
                 f"Image sizes {not_aligned} are not multiples of {_SIZE_MULTIPLE}. The pipeline rounds the height and "
@@ -113,12 +145,28 @@ class RBLNQwenImage21PipelineConfig(RBLNModelConfig):
             # The compiler takes sequence lengths of the text and vision encoders only in multiples of 64.
             return math.ceil(length / _SEQ_LEN_MULTIPLE) * _SEQ_LEN_MULTIPLE
 
-        condition_tokens = num_condition_images * max(map(latent_tokens, condition_image_size), default=0)
+        # The largest condition image each canvas takes; smaller ones pad into its token budgets.
+        output_resolution = output_resolution or _DEFAULT_OUTPUT_RESOLUTION
+        condition_sizes = [
+            _condition_sizes_within(output_resolution, *canvas) or [canvas] for canvas in condition_image_size
+        ]
+        largest_condition_sizes = [max(sizes, key=latent_tokens) for sizes in condition_sizes]
+
+        def in_condition_range(size: tuple[int, int]) -> bool:
+            # The transformer runs an image block in the smallest image graph that holds it. Condition images already
+            # pad into the graph of their canvas from its smallest condition size up, so an output size in that range
+            # runs there too instead of compiling its own graph.
+            return any(
+                min(map(latent_tokens, sizes)) <= latent_tokens(size) <= latent_tokens(largest)
+                for sizes, largest in zip(condition_sizes, largest_condition_sizes, strict=True)
+            )
+
+        condition_tokens = num_condition_images * max(map(latent_tokens, largest_condition_sizes), default=0)
         visual: dict[str, Any]
         if condition_image_size:
             # The vision encoder runs once per condition image, on one patch per latent token, padded to the
             # smallest of its sequence lengths that holds them.
-            visual = {"max_seq_len": sorted({round_up(latent_tokens(size)) for size in condition_image_size})}
+            visual = {"max_seq_len": sorted({round_up(latent_tokens(size)) for size in largest_condition_sizes})}
         else:
             # Text-to-image never calls the vision encoder, so it compiles at its smallest size. Its runtime stays
             # on: `create_runtimes` would also apply when an image-editing artifact loads.
@@ -137,7 +185,12 @@ class RBLNQwenImage21PipelineConfig(RBLNModelConfig):
             transformer,
             cls_name="RBLNQwenImage21Transformer2DModelConfig",
             batch_size=batch_size,
-            sample_size=[(height // _LATENT_TILE, width // _LATENT_TILE) for height, width in sizes],
+            sample_size=[
+                (height // _LATENT_TILE, width // _LATENT_TILE)
+                for height, width in dict.fromkeys(
+                    [size for size in image_size if not in_condition_range(size)] + largest_condition_sizes
+                )
+            ],
             # In the transformer every image token of the prompt becomes the latent tokens it covers.
             max_seq_len=max_seq_len + condition_tokens,
         )

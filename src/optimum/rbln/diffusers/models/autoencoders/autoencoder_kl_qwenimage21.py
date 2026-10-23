@@ -47,8 +47,10 @@ class RBLNAutoencoderKLQwenImage21(RBLNModel):
     """
     RBLN implementation of AutoencoderKLQwenImage21, the image VAE of Qwen-Image 2.1.
 
-    Each image size compiles its own graph: a decoder for every output size and, with `uses_encoder`, an encoder for
-    every condition-image size. Graphs of the same kind share their weights on the device.
+    The decoder compiles one graph for every output size. With `uses_encoder`, the encoder compiles one graph for every
+    canvas in `encoder_sample_size`: an image runs at the top left of the smallest canvas that holds it, with a mask
+    that keeps the result that of the image alone, so one canvas serves many condition-image sizes. Graphs of the
+    same kind share their weights on the device.
 
     This class inherits from [`RBLNModel`]. Check the superclass documentation for the generic methods
     the library implements for all its models.
@@ -141,7 +143,10 @@ class RBLNAutoencoderKLQwenImage21(RBLNModel):
         compile_cfgs = []
         if rbln_config.uses_encoder:
             for height, width in rbln_config.encoder_sample_size:
-                input_info = [("x", [batch_size, model_config.in_channels, 1, height, width], dtype)]
+                input_info = [
+                    ("x", [batch_size, model_config.in_channels, 1, height, width], dtype),
+                    ("mask", [1, 1, 1, height, width], dtype),
+                ]
                 compile_cfgs.append(
                     RBLNCompileConfig(compiled_model_name=_graph_name("encoder", height, width), input_info=input_info)
                 )
@@ -178,6 +183,8 @@ class RBLNAutoencoderKLQwenImage21(RBLNModel):
         """
         Encode a batch of images into latents.
 
+        The images run at the top left of the smallest compiled canvas that holds them.
+
         Args:
             x (torch.Tensor): Images shaped (batch_size, channels, 1, height, width).
             return_dict (bool): Whether to return an `AutoencoderKLOutput` instead of a plain tuple.
@@ -185,14 +192,25 @@ class RBLNAutoencoderKLQwenImage21(RBLNModel):
         Returns:
             (`AutoencoderKLOutput` | tuple): The latent distribution.
         """
-        size = tuple(x.shape[-2:])
-        encoder = self.encoders.get(size)
-        if encoder is None:
+        height, width = x.shape[-2:]
+        scale = self.config.scale_factor_spatial
+        if height % scale or width % scale:
+            raise ValueError(f"The VAE encoder takes image sizes in multiples of {scale}, not {(height, width)}.")
+        canvases = [size for size in self.encoders if size[0] >= height and size[1] >= width]
+        if not canvases:
             raise ValueError(
-                f"The VAE encoder was compiled for image sizes {sorted(self.encoders)}, not {size}. "
-                "Compile with uses_encoder=True and add the size to encoder_sample_size."
+                f"The VAE encoder was compiled for canvases {sorted(self.encoders)}, and none holds an image of "
+                f"{(height, width)}. Compile with uses_encoder=True and add a canvas that holds it to "
+                "encoder_sample_size."
             )
-        posterior = DiagonalGaussianDistribution(encoder(x.to(self.rbln_config.dtype).contiguous()))
+        canvas_size = min(canvases, key=lambda size: size[0] * size[1])
+        dtype = self.rbln_config.dtype
+        canvas = x.new_zeros(*x.shape[:-2], *canvas_size, dtype=dtype)
+        canvas[..., :height, :width] = x
+        mask = torch.zeros(1, 1, 1, *canvas_size, dtype=dtype)
+        mask[..., :height, :width] = 1
+        moments = self.encoders[canvas_size](canvas, mask)
+        posterior = DiagonalGaussianDistribution(moments[..., : height // scale, : width // scale])
         if not return_dict:
             return (posterior,)
         return AutoencoderKLOutput(latent_dist=posterior)
