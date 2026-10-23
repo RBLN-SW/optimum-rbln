@@ -43,6 +43,16 @@ class MLPBranch(nn.Module):
         return self.mlp(self.norm(hidden_states))
 
 
+class AffineNormalization(nn.Module):
+    def __init__(self, normalization):
+        super().__init__()
+        self.weight = normalization.weight
+        self.bias = normalization.bias
+
+    def forward(self, hidden_states):
+        return hidden_states * self.weight + self.bias
+
+
 class EmbeddedEncoder(nn.Module):
     def forward(self, inputs_embeds, attention_mask=None, **kwargs):
         return BaseModelOutput(last_hidden_state=inputs_embeds)
@@ -113,7 +123,20 @@ def main():
         for values, hidden, baseline in zip(inputs, cpu_hidden, cpu_baselines, strict=True):
             for a, e in zip(wrapper(values[0], hidden, *values[2:]), baseline, strict=True):
                 torch.testing.assert_close(a, e, rtol=0, atol=0)
+        normalization = wrapper.model.vision_model.post_layernorm
+        wrapper.model.vision_model.post_layernorm = AffineNormalization(normalization)
+        normalization_deltas = []
+        for values, hidden, baseline in zip(inputs, cpu_hidden, cpu_baselines, strict=True):
+            normalized = torch.nn.functional.layer_norm(hidden, normalization.normalized_shape, eps=normalization.eps)
+            candidate = wrapper(values[0], normalized, *values[2:])
+            deltas = []
+            for a, e in zip(candidate, baseline, strict=True):
+                torch.testing.assert_close(a, e)
+                deltas.append(float((a - e).abs().max()))
+            normalization_deltas.append(deltas)
+        wrapper.model.vision_model.post_layernorm = normalization
         print("SIGLIP2_RESIDUAL_CPU_BITWISE four native geometries and all encoder residuals passed", flush=True)
+        print("SIGLIP2_NORMALIZATION_CPU " + json.dumps(normalization_deltas), flush=True)
         if args.cpu_only:
             return
 
@@ -161,8 +184,20 @@ def main():
             item[0] for item in config.compile_cfgs[0].input_info if item[0] != "patch_position_ids"
         ]
 
-        for variant in ["baseline", "fp32-residual"]:
-            selected = ["baseline"] if variant == "baseline" else [key for key in paths if key != "baseline"]
+        wrapper.model.vision_model.post_layernorm = AffineNormalization(normalization)
+        compile_model("affine-head", wrapper, config.compile_cfgs[0].input_info)
+        assert report["compile"]["affine-head"]["inputs"] == report["compile"]["head"]["inputs"]
+        report["normalization_cpu_max_deltas"] = normalization_deltas
+        for variant in ["baseline", "fp32-residual", "fp32-residual-normalization"]:
+            selected = (
+                ["baseline"]
+                if variant == "baseline"
+                else [
+                    key
+                    for key in paths
+                    if key not in {"baseline", "head" if variant == "fp32-residual-normalization" else "affine-head"}
+                ]
+            )
             compiled_models = {key: rebel.RBLNCompiledModel(paths[key]) for key in selected}
             runtimes = {
                 key: model.create_runtime(tensor_type="pt", device=0) for key, model in compiled_models.items()
@@ -170,30 +205,49 @@ def main():
 
             def execute(values, variant=variant, runtimes=runtimes):
                 if variant == "baseline":
-                    return tuple(value.clone() for value in runtimes["baseline"](*values))
+                    return tuple(value.clone() for value in runtimes["baseline"](*values)), None
                 hidden = runtimes["embedding"](values[1], values[4])
                 for index in range(len(branches)):
                     hidden = hidden.float() + runtimes[f"attention-{index}"](hidden, values[3]).float()
                     hidden = hidden.float() + runtimes[f"mlp-{index}"](hidden).float()
-                return tuple(
-                    value.clone() for value in runtimes["head"](values[0], hidden, values[2], values[3], values[5])
+                hidden_before_head = hidden.clone()
+                head = "head"
+                if variant == "fp32-residual-normalization":
+                    hidden = torch.nn.functional.layer_norm(
+                        hidden, normalization.normalized_shape, eps=normalization.eps
+                    )
+                    head = "affine-head"
+                actual = tuple(
+                    value.clone() for value in runtimes[head](values[0], hidden, values[2], values[3], values[5])
                 )
+                return actual, hidden_before_head
 
             first = None
             for index, (values, expected) in enumerate(zip(inputs, references, strict=True)):
                 start = time.perf_counter()
-                actual = execute(values)
+                actual, hidden_before_head = execute(values)
                 seconds = time.perf_counter() - start
-                metrics = compare(actual, expected, execute(values))
+                metrics = compare(actual, expected, execute(values)[0])
                 report["cases"].append({"variant": variant, "case": index, "seconds": seconds, "metrics": metrics})
+                if hidden_before_head is not None:
+                    cpu_postnorm = native.vision_model.post_layernorm(hidden_before_head)
+                    report["cases"][-1]["cpu_postnorm_nrmse"] = float(
+                        (cpu_postnorm - expected[6]).square().mean().sqrt() / expected[6].square().mean().sqrt()
+                    )
                 print("SIGLIP2_RESIDUAL_PARITY " + json.dumps(report["cases"][-1]), flush=True)
                 torch.save(
-                    {"inputs": values, "expected": expected, "actual": actual}, out / f"{variant}-case{index}.pt"
+                    {
+                        "inputs": values,
+                        "expected": expected,
+                        "actual": actual,
+                        "hidden_before_head": hidden_before_head,
+                    },
+                    out / f"{variant}-case{index}.pt",
                 )
                 (out / "results.json").write_text(json.dumps(report, indent=2))
                 if first is None:
                     first = actual
-            for a, e in zip(execute(inputs[0]), first, strict=True):
+            for a, e in zip(execute(inputs[0])[0], first, strict=True):
                 torch.testing.assert_close(a, e, rtol=0, atol=0)
             runtimes.clear()
             compiled_models.clear()
@@ -201,7 +255,7 @@ def main():
         failures = [
             row
             for case in report["cases"]
-            if case["variant"] == "fp32-residual"
+            if case["variant"] == "fp32-residual-normalization"
             for row in case["metrics"]
             if row["failed_criteria"]
         ]
