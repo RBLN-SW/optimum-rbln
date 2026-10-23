@@ -43,6 +43,14 @@ class MLPBranch(nn.Module):
         return self.mlp(self.norm(hidden_states))
 
 
+class MLPProbe(MLPBranch):
+    def forward(self, hidden_states):
+        normalized = self.norm(hidden_states)
+        projected = self.mlp.fc1(normalized)
+        activated = self.mlp.activation_fn(projected)
+        return self.mlp.fc2(activated), normalized, projected, activated
+
+
 class AffineNormalization(nn.Module):
     def __init__(self, normalization):
         super().__init__()
@@ -72,6 +80,7 @@ def main():
     embedding = wrapper.model.vision_model.embeddings
     layers = list(wrapper.model.vision_model.encoder.layers)
     branches = [(AttentionBranch(layer).eval(), MLPBranch(layer).eval()) for layer in layers]
+    probes = {index: MLPProbe(layers[index]).eval() for index in [0, 6, 11]}
     fixture = hf_hub_download(
         "huggingface/documentation-images",
         "coco_sample.png",
@@ -106,13 +115,16 @@ def main():
                 torch.testing.assert_close(a, e)
             hidden = embedding(values[1], values[4])
             stages = []
-            for layer, (attention, mlp) in zip(layers, branches, strict=True):
+            for layer_index, (layer, (attention, mlp)) in enumerate(zip(layers, branches, strict=True)):
                 mask = create_bidirectional_mask(
                     config=layer.self_attn.config, inputs_embeds=hidden, attention_mask=values[3]
                 )
                 full = layer(hidden, mask)
                 hidden = hidden + attention(hidden, values[3])
-                hidden = hidden + mlp(hidden)
+                mlp_output = mlp(hidden)
+                if layer_index in probes:
+                    torch.testing.assert_close(probes[layer_index](hidden)[0], mlp_output, rtol=0, atol=0)
+                hidden = hidden + mlp_output
                 torch.testing.assert_close(hidden, full, rtol=0, atol=0)
                 stages.append(hidden.clone())
             cpu_stages.append(stages)
@@ -180,6 +192,8 @@ def main():
                 [("hidden_states", [1, 256, 768], "float32"), ("pixel_attention_mask", [1, 256], "int64")],
             )
             compile_model(f"mlp-{index}", mlp, [("hidden_states", [1, 256, 768], "float32")])
+        for index, probe in probes.items():
+            compile_model(f"mlp-probe-{index}", probe, [("hidden_states", [1, 256, 768], "float32")])
         wrapper.model.vision_model.embeddings = EmbeddedInput()
         wrapper.model.vision_model.encoder = EmbeddedEncoder()
         compile_model("head", wrapper, config.compile_cfgs[0].input_info)
@@ -213,7 +227,7 @@ def main():
                 key: model.create_runtime(tensor_type="pt", device=0) for key, model in compiled_models.items()
             }
 
-            def execute(values, expected_stages=None, variant=variant, runtimes=runtimes):
+            def execute(values, expected_stages=None, case_index=None, variant=variant, runtimes=runtimes):
                 if variant == "baseline":
                     return tuple(value.clone() for value in runtimes["baseline"](*values)), None, []
                 hidden = runtimes["embedding"](values[1], values[4])
@@ -243,6 +257,34 @@ def main():
                     )
                     if expected_stages is not None:
                         row["mlp_same_input_nrmse"] = nrmse(mlp_output, cpu_mlp)
+                        if variant == "fp32-residual" and index in probes:
+                            probed = tuple(value.clone() for value in runtimes[f"mlp-probe-{index}"](hidden))
+                            row["probe_matches_original"] = torch.equal(probed[0], mlp_output)
+                            probe = probes[index]
+                            component_expected = (
+                                probe.mlp.fc2(probed[3]),
+                                probe.norm(hidden),
+                                probe.mlp.fc1(probed[1]),
+                                probe.mlp.activation_fn(probed[2]),
+                            )
+                            row["mlp_components_same_input_nrmse"] = {
+                                name: nrmse(a, e)
+                                for name, a, e in zip(
+                                    ["fc2", "normalization", "fc1", "activation"],
+                                    probed,
+                                    component_expected,
+                                    strict=True,
+                                )
+                            }
+                            torch.save(
+                                {
+                                    "input": hidden.clone(),
+                                    "npu": probed,
+                                    "component_expected": component_expected,
+                                    "original_mlp": mlp_output.clone(),
+                                },
+                                out / f"mlp-probe-case{case_index}-layer{index}.pt",
+                            )
                     hidden = hidden.float() + mlp_output
                     if expected_stages is not None:
                         row["hidden_total_nrmse"] = nrmse(hidden, expected_stages[index])
@@ -262,7 +304,7 @@ def main():
             first = None
             for index, (values, expected) in enumerate(zip(inputs, references, strict=True)):
                 start = time.perf_counter()
-                actual, hidden_before_head, boundaries = execute(values, cpu_stages[index])
+                actual, hidden_before_head, boundaries = execute(values, cpu_stages[index], index)
                 seconds = time.perf_counter() - start
                 metrics = compare(actual, expected, execute(values)[0])
                 report["cases"].append(
