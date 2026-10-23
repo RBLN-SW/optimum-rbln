@@ -375,7 +375,7 @@ class TestMPNetModel(BaseTest.TestModel):
     RBLN_CLASS = RBLNMPNetModel
     HF_MODEL_ID = "sentence-transformers/all-mpnet-base-v2"
     HF_CONFIG_KWARGS = {"revision": "e8c3b32edf5434bc2275fc9bab85f82640a19130"}
-    RBLN_CLASS_KWARGS = {"rbln_max_seq_len": 384, "rbln_batch_size": 1}
+    RBLN_CLASS_KWARGS = {"rbln_max_seq_len": 384, "rbln_batch_size": 1, "rbln_npu": os.environ.get("RBLN_TEST_NPU")}
     DEVICE = 0
     BATCH_SIZE = 1
     GENERATION_KWARGS = {
@@ -387,7 +387,7 @@ class TestMPNetModel(BaseTest.TestModel):
         if os.environ.get("SAVE_ARTIFACTS_PATH") or os.environ.get("REUSE_ARTIFACTS_PATH"):
             self.skipTest("Artifact compatibility mode does not execute on a real NPU.")
         tokenizer = AutoTokenizer.from_pretrained(self.HF_MODEL_ID, **self.HF_CONFIG_KWARGS)
-        reference = AutoModel.from_pretrained(self.HF_MODEL_ID, **self.HF_CONFIG_KWARGS).eval()
+        reference = AutoModel.from_pretrained(self.HF_MODEL_ID, **self.HF_CONFIG_KWARGS).float().eval()
         texts = [
             "This is an example sentence.",
             "Each sentence is converted into an embedding.",
@@ -404,11 +404,11 @@ class TestMPNetModel(BaseTest.TestModel):
         with torch.no_grad():
             first_inputs = None
             first_output = None
-            for offset in range(0, len(texts), self.BATCH_SIZE):
+            for offset in range(len(texts)):
                 inputs = tokenizer(
-                    texts[offset : offset + self.BATCH_SIZE],
+                    [texts[(offset + index) % len(texts)] for index in range(self.BATCH_SIZE)],
                     padding="max_length",
-                    max_length=384,
+                    max_length=self.model.rbln_config.max_seq_len,
                     truncation=True,
                     return_tensors="pt",
                 )
@@ -419,6 +419,20 @@ class TestMPNetModel(BaseTest.TestModel):
                 cosine = torch.nn.functional.cosine_similarity(
                     pool(expected, inputs["attention_mask"]), pool(actual, inputs["attention_mask"])
                 )
+                print(
+                    "MPNET_PARITY "
+                    + json.dumps(
+                        {
+                            "test_class": type(self).__name__,
+                            "offset": offset,
+                            "shape": list(actual.shape),
+                            "active_tokens": active.sum(-1).tolist(),
+                            "pcc": float(pcc),
+                            "minimum_pooled_cosine": float(cosine.min()),
+                        }
+                    ),
+                    flush=True,
+                )
                 assert pcc >= 0.99
                 assert (cosine >= 0.99).all()
                 torch.testing.assert_close(self.model(**inputs).last_hidden_state, actual, rtol=0, atol=0)
@@ -428,11 +442,80 @@ class TestMPNetModel(BaseTest.TestModel):
 
 
 class TestMPNetModelBatch2(TestMPNetModel):
-    RBLN_CLASS_KWARGS = {"rbln_max_seq_len": 384, "rbln_batch_size": 2}
+    RBLN_CLASS_KWARGS = {**TestMPNetModel.RBLN_CLASS_KWARGS, "rbln_batch_size": 2}
     BATCH_SIZE = 2
     GENERATION_KWARGS = {
         "input_ids": torch.full((2, 384), 4, dtype=torch.int64),
         "attention_mask": torch.ones((2, 384), dtype=torch.int64),
+    }
+
+
+class TestMPNetModelNativeMaxBatch1(TestMPNetModel):
+    BATCH_SIZE = 1
+    RBLN_CLASS_KWARGS = {**TestMPNetModel.RBLN_CLASS_KWARGS, "rbln_max_seq_len": 512, "rbln_batch_size": 1}
+    GENERATION_KWARGS = {
+        "input_ids": torch.full((1, 512), 4, dtype=torch.int64),
+        "attention_mask": torch.ones((1, 512), dtype=torch.int64),
+    }
+
+
+class TestMPNetModelNativeMaxBatch2(TestMPNetModel):
+    TEST_LEVEL = TestLevel.FULL
+    BATCH_SIZE = 2
+    RBLN_CLASS_KWARGS = {**TestMPNetModel.RBLN_CLASS_KWARGS, "rbln_max_seq_len": 512, "rbln_batch_size": 2}
+    GENERATION_KWARGS = {
+        "input_ids": torch.full((2, 512), 4, dtype=torch.int64),
+        "attention_mask": torch.ones((2, 512), dtype=torch.int64),
+    }
+
+
+class TestMPNetModelNativeMaxBatch4(TestMPNetModel):
+    TEST_LEVEL = TestLevel.FULL
+    BATCH_SIZE = 4
+    RBLN_CLASS_KWARGS = {**TestMPNetModel.RBLN_CLASS_KWARGS, "rbln_max_seq_len": 512, "rbln_batch_size": 4}
+    GENERATION_KWARGS = {
+        "input_ids": torch.full((4, 512), 4, dtype=torch.int64),
+        "attention_mask": torch.ones((4, 512), dtype=torch.int64),
+    }
+
+
+class TestMPNetModelNativeMaxBatch8(TestMPNetModel):
+    TEST_LEVEL = TestLevel.FULL
+    BATCH_SIZE = 8
+    RBLN_CLASS_KWARGS = {**TestMPNetModel.RBLN_CLASS_KWARGS, "rbln_max_seq_len": 512, "rbln_batch_size": 8}
+    GENERATION_KWARGS = {
+        "input_ids": torch.full((8, 512), 4, dtype=torch.int64),
+        "attention_mask": torch.ones((8, 512), dtype=torch.int64),
+    }
+
+
+class TestMPNetModelNativeMaxBatch16(TestMPNetModel):
+    TEST_LEVEL = TestLevel.FULL
+    BATCH_SIZE = 16
+    RBLN_CLASS_KWARGS = {**TestMPNetModel.RBLN_CLASS_KWARGS, "rbln_max_seq_len": 512, "rbln_batch_size": 16}
+    GENERATION_KWARGS = {
+        "input_ids": torch.full((16, 512), 4, dtype=torch.int64),
+        "attention_mask": torch.ones((16, 512), dtype=torch.int64),
+    }
+
+
+class TestMPNetModelNativeMaxBatch32(TestMPNetModel):
+    TEST_LEVEL = TestLevel.FULL
+    BATCH_SIZE = 32
+    RBLN_CLASS_KWARGS = {**TestMPNetModel.RBLN_CLASS_KWARGS, "rbln_max_seq_len": 512, "rbln_batch_size": 32}
+    GENERATION_KWARGS = {
+        "input_ids": torch.full((32, 512), 4, dtype=torch.int64),
+        "attention_mask": torch.ones((32, 512), dtype=torch.int64),
+    }
+
+
+class TestMPNetModelNativeMaxBatch64(TestMPNetModel):
+    TEST_LEVEL = TestLevel.FULL
+    BATCH_SIZE = 64
+    RBLN_CLASS_KWARGS = {**TestMPNetModel.RBLN_CLASS_KWARGS, "rbln_max_seq_len": 512, "rbln_batch_size": 64}
+    GENERATION_KWARGS = {
+        "input_ids": torch.full((64, 512), 4, dtype=torch.int64),
+        "attention_mask": torch.ones((64, 512), dtype=torch.int64),
     }
 
 
