@@ -54,33 +54,60 @@ steps:
   # directives run-suite.sh reads, not by path.
   # Sibling jobs: two uploads from one job make the second batch a barrier for
   # the first, so the pytest suites would wait on BC.
-  - label: ":sparkles: upload pytest"
-    <<: *upload
-    command: |
-      if [[ "$$BUILDKITE_MESSAGE" == *"[pytest-full]"* ]]; then
-        echo "--- :mag: [pytest-full] in commit message"
-        export OPTIMUM_RBLN_TEST_LEVEL=full
-        export HF_USER_ID=Rebellions
-      fi
-      buildkite-agent pipeline upload .buildkite/pipelines/pytest/pipeline.yml
-
-  - label: ":sparkles: upload BC"
-    <<: *upload
-    command: |
-      bash scripts/ci/bc-steps.sh --latest | buildkite-agent pipeline upload
-
-  - wait: ~
-    continue_on_failure: true
-
-  - label: ":slack: report"
-    if: build.message =~ /\[slack-report\]/
-    soft_fail: true
-    allow_dependency_failure: true
+  - label: ":microscope: CA25 native B512 encoder fresh process (diagnostic)"
     image: "${DEVTOOLS_DOCKER_IMAGE}"
-    env:
-      SLACK_TITLE: "Optimum-RBLN PR Test Results"
+    agents:
+      queue: k8s
+    resources:
+      cpu:
+        requests: "16"
+      memory:
+        requests: "96Gi"
+        limits: "96Gi"
+      npu:
+        count: 1
+        product: "RBLN-CA25"
     secrets:
-      OBEDIENTS_API_TOKEN: BUILDKITE_API_TOKEN
-      SLACK_BOT_TOKEN: SLACK_OAUTH_TOKEN
+      UV_INDEX_REBELLIONS_USERNAME: REBEL_SW_DEV_USERNAME
+      UV_INDEX_REBELLIONS_PASSWORD: REBEL_SW_DEV_PASSWORD
+      HF_TOKEN: HF_TOKEN
+      HF_HOME: HF_HOME
+    env:
+      RBLN_TEST_NPU: "RBLN-CA25"
+      OPTIMUM_RBLN_TEST_LEVEL: "full"
+    timeout_in_minutes: 120
+    artifact_paths:
+      - "junit-dinov2-ca25-encoder.xml"
     command:
-      - "python3 scripts/ci/slack-report.py"
+      - "bash scripts/ci/sync.sh"
+      - "rbln-smi"
+      - "uv run --no-sync pytest -n 1 -s -vv tests/test_transformers.py -k 'TestDinov2ModelNativeSizeBatch512 and (test_generate or test_numerical_parity)' --junitxml=junit-dinov2-ca25-encoder.xml"
+
+  - label: ":microscope: CA25 native B512 classifier fresh process (diagnostic)"
+    image: "${DEVTOOLS_DOCKER_IMAGE}"
+    agents:
+      queue: k8s
+    resources:
+      cpu:
+        requests: "16"
+      memory:
+        requests: "96Gi"
+        limits: "96Gi"
+      npu:
+        count: 1
+        product: "RBLN-CA25"
+    secrets:
+      UV_INDEX_REBELLIONS_USERNAME: REBEL_SW_DEV_USERNAME
+      UV_INDEX_REBELLIONS_PASSWORD: REBEL_SW_DEV_PASSWORD
+      HF_TOKEN: HF_TOKEN
+      HF_HOME: HF_HOME
+    env:
+      RBLN_TEST_NPU: "RBLN-CA25"
+      OPTIMUM_RBLN_TEST_LEVEL: "full"
+    timeout_in_minutes: 120
+    artifact_paths:
+      - "junit-dinov2-ca25-classifier.xml"
+    command:
+      - "bash scripts/ci/sync.sh"
+      - "rbln-smi"
+      - "uv run --no-sync pytest -n 1 -s -vv tests/test_transformers.py -k 'TestDinov2ForImageClassificationNativeSizeBatch512 and (test_generate or test_numerical_parity)' --junitxml=junit-dinov2-ca25-classifier.xml"
