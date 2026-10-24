@@ -34,14 +34,16 @@ def artifacts(tmp_path, monkeypatch):
     for name in ("tokenizer.json", "tokenizer_config.json", "compiled_model.rbln"):
         (root / name).write_text(name)
     manifest = {
-        "compiler": harness.SDK,
+        "runtime_sdk": harness.SDK,
+        "compiler_kind": "source-hybrid root4b + AA + f66 HComm",
+        "compiler_dso_sha256": harness.HYBRID_DSO,
         "checkpoint": harness.CHECKPOINT,
         "revision": harness.REVISION,
         "npu": "RBLN-CR13",
         "batch_size": 2048,
         "max_seq_len": 512,
         "reviewed_product_head": harness.PRODUCT,
-        "compile_checkout_head": "not captured",
+        **harness.SOURCE_CONTRACT,
         "device_alloc_bytes": 59856912384,
         "files": {},
     }
@@ -60,7 +62,7 @@ def metadata(path):
         "npu": "RBLN-CR13",
         "num_devices": 1,
         "uuid": "session",
-        "compiler_version": harness.SDK.removesuffix(".prod"),
+        "compiler_version": harness.COMPILER_LABEL,
         "alloc_per_node": [59856912384],
         "inputs": [{"name": name, "shape": [2048, 512], "dtype": "int64"} for name in ("input_ids", "attention_mask")],
         "outputs": [{"shape": shape, "dtype": "float32"} for shape in ([2048, 512, 768], [2048, 768])],
@@ -70,7 +72,7 @@ def metadata(path):
 def test_hashes_and_native_metadata_and_honest_provenance(tmp_path, monkeypatch):
     root = artifacts(tmp_path, monkeypatch)
     result = harness.verify_artifacts(root, inspect_model=metadata)
-    assert result["compile_checkout_head_captured"] is False
+    assert result["compile_checkout_head_captured"] is True
     assert result["manifest"]["reviewed_product_head"] == harness.PRODUCT
     bad = metadata(None)
     bad["inputs"][0]["shape"] = [1024, 512]
@@ -246,3 +248,22 @@ def test_numerical_success_cannot_accept_known_learned_cpu_execution(tmp_path, m
     assert result["accepted"] is False
     assert result["full_device_acceptance"] is False
     assert "learned word and position embedding" in result["full_device_acceptance_blocker"]
+
+
+@pytest.mark.parametrize("field", [*harness.SOURCE_CONTRACT, "compiler_dso_sha256", "runtime_sdk"])
+def test_captured_hybrid_provenance_is_required(tmp_path, monkeypatch, field):
+    root = artifacts(tmp_path, monkeypatch)
+    manifest = json.loads((root / "manifest.json").read_text())
+    manifest[field] = "wrong source/runtime receipt"
+    (root / "manifest.json").write_text(json.dumps(manifest))
+    with pytest.raises(ValueError, match="interface/source"):
+        harness.verify_artifacts(root, inspect_model=metadata)
+
+
+def test_runtime_version_is_separate_from_captured_compiler_label(tmp_path, monkeypatch):
+    root = artifacts(tmp_path, monkeypatch)
+    assert harness.SDK != harness.COMPILER_LABEL
+    wrong = metadata(None)
+    wrong["compiler_version"] = harness.SDK
+    with pytest.raises(ValueError, match="hybrid compiler label"):
+        harness.verify_artifacts(root, inspect_model=lambda path: wrong)

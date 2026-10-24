@@ -29,7 +29,7 @@ class RejectLearnedStack:
             raise AssertionError('Stage imported the learned/compiler stack: ' + name)
 sys.meta_path.insert(0, RejectLearnedStack())
 from scripts.diagnostics import mpnet_b2048_stage
-assert mpnet_b2048_stage.harness.SDK == '0.12.1.dev163+g0c6d4a5e.prod'
+assert mpnet_b2048_stage.harness.SDK == '0.12.1.dev329+g66a3078e'
 """
     subprocess.run([sys.executable, "-c", code], check=True, capture_output=True, text=True)
 

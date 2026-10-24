@@ -13,9 +13,9 @@ from pathlib import Path
 from scripts.diagnostics import mpnet_b2048_frozen as harness
 
 
-SOURCE = Path("/mnt/shared_data/users/jaehunryu/nas_data/model-enable-20261024/mpnet-native-b2048-sdk163")
-DESTINATION = Path("/mnt/cross_data/model-enable/jaehunryu/mpnet-native-b2048-sdk163")
-MANIFEST_SHA256 = "e9d6a72b59e7a3fceb0c702aa76a0fc3ca3afbd28f186856f923eb66e0627e47"
+SOURCE = Path("/mnt/shared_data/users/jaehunryu/nas_data/model-enable-20261024/mpnet-native-b2048-hybrid-hcomm-sdk329")
+DESTINATION = Path("/mnt/cross_data/model-enable/jaehunryu/mpnet-native-b2048-hybrid-hcomm-sdk329")
+MANIFEST_SHA256 = "c15b26e1a3bd1f5af0bdf1482aed7e585c50e4244403b12b05505cb02729a585"
 
 
 def verify_bundle(directory):
@@ -28,10 +28,13 @@ def verify_bundle(directory):
     if hashlib.sha256((directory / "manifest.json").read_bytes()).hexdigest() != MANIFEST_SHA256:
         raise ValueError("Frozen manifest differs from the reviewed SHA256; refusing to overwrite")
     required = {
-        "compiler": harness.SDK,
+        "runtime_sdk": harness.SDK,
+        "compiler_kind": "source-hybrid root4b + AA + f66 HComm",
+        "compiler_dso_sha256": harness.HYBRID_DSO,
         "checkpoint": harness.CHECKPOINT,
         "revision": harness.REVISION,
         "reviewed_product_head": harness.PRODUCT,
+        **harness.SOURCE_CONTRACT,
         "npu": "RBLN-CR13",
         "batch_size": 2048,
         "max_seq_len": 512,

@@ -1,4 +1,4 @@
-# Frozen MPNet B2048 diagnostic. Original quality gates precede the scheduled CR13 slot.
+# Frozen source-hybrid MPNet B2048 / released SDK329 diagnostic. Original quality gates precede the scheduled CR13 slot.
 env:
   # Where every release's compiled artifacts live, written by the tag build
   # (.buildkite/bc-compile.yml).
@@ -74,4 +74,4 @@ steps:
     command:
       - "bash scripts/ci/sync.sh"
       - "mkdir -p debug-mpnet-b2048-frozen"
-      - "set -o pipefail; uv run --no-sync python -m scripts.diagnostics.mpnet_b2048_frozen --artifacts /mnt/cross_data/model-enable/jaehunryu/mpnet-native-b2048-sdk163 2>&1 | tee debug-mpnet-b2048-frozen/runtime.log"
+      - "set -o pipefail; uv run --no-sync python -m scripts.diagnostics.mpnet_b2048_frozen --artifacts /mnt/cross_data/model-enable/jaehunryu/mpnet-native-b2048-hybrid-hcomm-sdk329 2>&1 | tee debug-mpnet-b2048-frozen/runtime.log"
