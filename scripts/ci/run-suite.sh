@@ -31,6 +31,24 @@ case "$suite" in
     uv run --no-sync pytest -n 1 tests/test_config.py "${report[@]}" -vv --durations 0 "${bc[@]}" ;;
   transformers)
     uv run --no-sync pytest -n 1 tests/test_transformers.py "${report[@]}" ${shard:+--shard "$shard"} -vv --durations 0 "${bc[@]}" ;;
+  electra-capacity-cr13)
+    if [ -n "${SAVE_ARTIFACTS_PATH:-}${REUSE_ARTIFACTS_PATH:-}" ]; then
+      echo "electra-capacity-cr13 requires real execution, not artifact compatibility mode." >&2
+      exit 2
+    fi
+    batch="${CAPACITY_BATCH_SIZE:-32}"
+    case "$batch" in 32|64|128|256|512|1024|2048) ;; *) echo "Unsupported capacity batch: $batch" >&2; exit 2 ;; esac
+    export RBLN_TEST_NPU=RBLN-CR13
+    status=0
+    # Separate processes release each head's runtimes before the next head. Each
+    # original test still retains its first model during its exact reload check.
+    for head in TestElectraModel TestElectraForPreTraining TestElectraForSequenceClassification; do
+      test_class="${head}Batch${batch}CR13"
+      uv run --no-sync pytest -n 1 tests/test_electra_capacity.py -k "$test_class and test_numerical_parity" \
+        --junitxml "junit-${suite}-${test_class}.xml" -o junit_suite_name="${label}-${test_class}" \
+        -o junit_logging=all --capture=tee-sys -rP -vv --durations 0 || status=1
+    done
+    exit "$status" ;;
   diffusers)
     uv run --no-sync pytest -n 1 tests/test_diffusers.py "${report[@]}" ${shard:+--shard "$shard"} -vv --durations 0 "${bc[@]}" ;;
   llm)
