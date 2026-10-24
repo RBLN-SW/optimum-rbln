@@ -54,7 +54,7 @@ steps:
   # directives run-suite.sh reads, not by path.
   # Sibling jobs: two uploads from one job make the second batch a barrier for
   # the first, so the pytest suites would wait on BC.
-  - label: ":microscope: TimesFM2.5 B1 split-head FP32 sum and original control (diagnostic)"
+  - label: ":microscope: TimesFM2.5 native B1/2/4/8 explicit DLFloat device control"
     image: "${DEVTOOLS_DOCKER_IMAGE}"
     agents:
       queue: udc
@@ -74,8 +74,8 @@ steps:
       HF_HOME: HF_HOME
     timeout_in_minutes: 120
     artifact_paths:
-      - "debug-timesfm25-split-heads/**/*"
+      - "debug-timesfm25/**/*"
     command:
       - "bash scripts/ci/sync.sh"
       - "rbln-smi"
-      - "uv run --no-sync python -m scripts.diagnostics.timesfm25_split_heads --batches 1 --npu RBLN-CR13 --device 0 --compile-baseline"
+      - "uv run --no-sync python -m scripts.diagnostics.timesfm25_native_core --batches 1 2 4 8 --device 0 --device-dtype float16"

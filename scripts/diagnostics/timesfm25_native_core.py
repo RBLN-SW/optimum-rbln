@@ -195,6 +195,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--batches", nargs="+", type=int, required=True)
     parser.add_argument("--device", type=int, required=True)
+    parser.add_argument("--device-dtype", choices=("float16", "bfloat16"))
     args = parser.parse_args()
     torch.set_num_threads(4)
     fixtures = Path(__file__).parent / "fixtures" / "timesfm25-native"
@@ -218,6 +219,8 @@ def main():
     assert sum(p.numel() for p in core.parameters()) == sum(p.numel() for p in model.parameters())
     report = {
         "compiler": compiler_version,
+        "device_dtype_option": args.device_dtype,
+        "device_dtype_scope": "Public float16 means physical DLFloat; explicit dtype selects force mode. CPU reference and host interfaces remain float32.",
         "original_revision": "1d952420fba87f3c6dee4f240de0f1a0fbc790e3",
         "converted_revision": "5a9806b9b291fad9233b5249d88263f1846304d3",
         "rows": [],
@@ -237,6 +240,7 @@ def main():
                 example_inputs=list(inputs),
                 npu="RBLN-CR13",
                 num_devices=1,
+                dtype=args.device_dtype,
             )
             compiled.save(out / f"core-b{batch}.rbln")
             metadata = rebel.RBLNCompiledModel.inspect(out / f"core-b{batch}.rbln")
