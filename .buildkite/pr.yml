@@ -49,7 +49,17 @@ steps:
   # All gates must pass before the NPU pipeline is even uploaded.
   - wait: ~
 
-  - label: ":microscope: ModernBERT original163 native B1 capture"
+  - label: ":package: Stage SHA-verified CI806 baseline across clusters"
+    key: modernbert-baseline-stage
+    image: "${DEVTOOLS_DOCKER_IMAGE}"
+    agents:
+      queue: k8s
+    timeout_in_minutes: 15
+    command:
+      - "python3 -m scripts.diagnostics.modernbert_baseline_stage"
+
+  - label: ":microscope: ModernBERT original163 native B1 selected boundaries"
+    depends_on: modernbert-baseline-stage
     image: "${DEVTOOLS_DOCKER_IMAGE}"
     agents:
       queue: udc
@@ -67,8 +77,8 @@ steps:
       UV_INDEX_REBELLIONS_PASSWORD: REBEL_SW_DEV_PASSWORD
     timeout_in_minutes: 120
     artifact_paths:
-      - "debug-modernbert-capture/**/*"
+      - "debug-modernbert-boundaries/**/*"
     command:
       - "bash scripts/ci/sync.sh"
-      - "mkdir -p debug-modernbert-capture"
-      - "set -o pipefail; uv run --no-sync python -m scripts.diagnostics.modernbert_capture --arm original --execute 2>&1 | tee debug-modernbert-capture/runtime.log"
+      - "mkdir -p debug-modernbert-boundaries"
+      - "set -o pipefail; uv run --no-sync python -m scripts.diagnostics.modernbert_boundaries --baseline /mnt/cross_data/model-enable/jaehunryu/modernbert-ci806/offset-2.pt --execute 2>&1 | tee debug-modernbert-boundaries/runtime.log"
