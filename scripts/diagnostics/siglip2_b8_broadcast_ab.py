@@ -11,14 +11,14 @@ from .siglip2_b8_logits import metrics
 
 
 def main():
-    source = Path("/mnt/shared_data/users/jaehunryu/nas_data/model-enable-20261024/siglip2-b8-broadcast-ab")
+    source = Path(__file__).parent / "fixtures" / "siglip2-b8-broadcast-ab"
     out = Path("debug-siglip2-b8-ab")
     out.mkdir(exist_ok=True)
     manifest = json.loads((source / "manifest.json").read_text())
     for name, info in manifest.items():
         assert hashlib.sha256((source / name).read_bytes()).hexdigest() == info["sha256"]
     fixture = torch.load(source / "fixture.pt", map_location="cpu", weights_only=True)
-    text, image = fixture["actual"][2:4]
+    text, image = fixture["text"], fixture["image"]
     expected = (text @ image.T) * fixture["logit_scale"].exp() + fixture["logit_bias"]
     results = []
     first = None

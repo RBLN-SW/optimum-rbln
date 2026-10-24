@@ -1,0 +1,14 @@
+{
+  "before.rbln": {
+    "sha256": "a3eeb614e005ea204a8c7000d4331066c09a5009721b305cd482139c8ae8b27f",
+    "bytes": 311798
+  },
+  "fixture.pt": {
+    "sha256": "64b479cfa4d057aa88fe2a13f7640e95cd6c458c648531f7f62c0e0b7ba16254",
+    "bytes": 51357
+  },
+  "after.rbln": {
+    "sha256": "6d882a35db4de818f196dbc4b187d0c7761d78ff8570a05d944ee09eefd28137",
+    "bytes": 311798
+  }
+}
