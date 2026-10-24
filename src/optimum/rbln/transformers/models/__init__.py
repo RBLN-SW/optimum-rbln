@@ -31,6 +31,7 @@ if TYPE_CHECKING:
     from .decoderonly import *
     from .depth_anything import *
     from .detr import *
+    from .dinov2 import *
     from .distilbert import *
     from .dpt import *
     from .exaone import *
