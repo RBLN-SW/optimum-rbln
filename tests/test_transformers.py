@@ -1004,6 +1004,13 @@ class TestChronos2ModelBatch256(TestChronos2Model):
     GENERATION_KWARGS = {"context": TestChronos2Model.GENERATION_KWARGS["context"].repeat(256, 1)}
 
 
+class TestChronos2ModelBatch512(TestChronos2Model):
+    TEST_LEVEL = TestLevel.FULL
+    BATCH_SIZE = 512
+    RBLN_CLASS_KWARGS = {**TestChronos2Model.RBLN_CLASS_KWARGS, "rbln_batch_size": 512}
+    GENERATION_KWARGS = {"context": TestChronos2Model.GENERATION_KWARGS["context"].repeat(512, 1)}
+
+
 class TestChronos2ModelPipeline(TestChronos2Model):
     TEST_LEVEL = TestLevel.FULL
     BATCH_SIZE = 4
