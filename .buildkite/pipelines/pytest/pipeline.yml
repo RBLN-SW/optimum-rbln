@@ -142,7 +142,14 @@ steps:
     key: mpnet-cr13-capacity
     if: "'${OPTIMUM_RBLN_TEST_LEVEL:-default}' == 'full' && build.message !~ /\\[skip-transformers\\]/"
     image: "${DEVTOOLS_DOCKER_IMAGE}"
+    agents:
+      queue: udc
     resources:
+      cpu:
+        requests: "16"
+      memory:
+        requests: "128Gi"
+        limits: "128Gi"
       npu:
         count: 1
         product: "RBLN-CR13"
