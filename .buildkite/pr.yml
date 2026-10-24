@@ -54,64 +54,28 @@ steps:
   # directives run-suite.sh reads, not by path.
   # Sibling jobs: two uploads from one job make the second batch a barrier for
   # the first, so the pytest suites would wait on BC.
-  - label: ":microscope: CA25 native B256 encoder timing and watchdog (diagnostic)"
+  - label: ":microscope: DINOv2 shared static jobs interface (tiny diagnostic)"
     image: "${DEVTOOLS_DOCKER_IMAGE}"
     agents:
       queue: k8s
     resources:
       cpu:
-        requests: "16"
+        requests: "8"
       memory:
-        requests: "96Gi"
-        limits: "96Gi"
+        requests: "16Gi"
+        limits: "16Gi"
       npu:
         count: 1
         product: "RBLN-CA25"
     secrets:
       UV_INDEX_REBELLIONS_USERNAME: REBEL_SW_DEV_USERNAME
       UV_INDEX_REBELLIONS_PASSWORD: REBEL_SW_DEV_PASSWORD
-      HF_TOKEN: HF_TOKEN
-      HF_HOME: HF_HOME
-    env:
-      RBLN_TEST_NPU: "RBLN-CA25"
-      OPTIMUM_RBLN_TEST_LEVEL: "full"
-    timeout_in_minutes: 120
+    timeout_in_minutes: 30
     artifact_paths:
+      - "debug-dinov2-static-jobs/**/*"
       - "debug-dinov2-watchdog/**/*"
-      - "junit-dinov2-ca25-encoder.xml"
     command:
       - "bash scripts/ci/sync.sh"
       - "rbln-smi"
       - "uv run --no-sync python -m scripts.diagnostics.dinov2_watchdog_metadata"
-      - "uv run --no-sync pytest -n 1 -s -vv tests/test_transformers.py -k 'TestDinov2ModelNativeSizeBatch256 and (test_generate or test_numerical_parity)' --durations=10 --durations-min=0.01 --junitxml=junit-dinov2-ca25-encoder.xml"
-
-  - label: ":microscope: CA25 native B256 classifier timing and watchdog (diagnostic)"
-    image: "${DEVTOOLS_DOCKER_IMAGE}"
-    agents:
-      queue: k8s
-    resources:
-      cpu:
-        requests: "16"
-      memory:
-        requests: "96Gi"
-        limits: "96Gi"
-      npu:
-        count: 1
-        product: "RBLN-CA25"
-    secrets:
-      UV_INDEX_REBELLIONS_USERNAME: REBEL_SW_DEV_USERNAME
-      UV_INDEX_REBELLIONS_PASSWORD: REBEL_SW_DEV_PASSWORD
-      HF_TOKEN: HF_TOKEN
-      HF_HOME: HF_HOME
-    env:
-      RBLN_TEST_NPU: "RBLN-CA25"
-      OPTIMUM_RBLN_TEST_LEVEL: "full"
-    timeout_in_minutes: 120
-    artifact_paths:
-      - "debug-dinov2-watchdog/**/*"
-      - "junit-dinov2-ca25-classifier.xml"
-    command:
-      - "bash scripts/ci/sync.sh"
-      - "rbln-smi"
-      - "uv run --no-sync python -m scripts.diagnostics.dinov2_watchdog_metadata"
-      - "uv run --no-sync pytest -n 1 -s -vv tests/test_transformers.py -k 'TestDinov2ForImageClassificationNativeSizeBatch256 and (test_generate or test_numerical_parity)' --durations=10 --durations-min=0.01 --junitxml=junit-dinov2-ca25-classifier.xml"
+      - "uv run --no-sync python -m scripts.diagnostics.dinov2_static_job_probe --artifacts /mnt/shared_data/users/jaehunryu/nas_data/model-enable-20261024/dinov2-static-probe-source970 --device 0"
