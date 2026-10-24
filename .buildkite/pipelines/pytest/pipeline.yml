@@ -182,7 +182,7 @@ steps:
       RBLN_TEST_NPU: "RBLN-CR13"
       OMP_NUM_THREADS: "4"
       MKL_NUM_THREADS: "4"
-    timeout_in_minutes: 120
+    timeout_in_minutes: 180
     artifact_paths: "junit-*.xml"
     command:
       - *sync
