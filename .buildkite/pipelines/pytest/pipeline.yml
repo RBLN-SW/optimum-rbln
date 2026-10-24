@@ -105,6 +105,30 @@ steps:
       - *sync
       - "bash scripts/ci/run-suite.sh cli-error-handling"
 
+  - label: ":pytest: ModernBERT Embed native 8192 on CR13"
+    <<: *no_transformers
+    image: "${DEVTOOLS_DOCKER_IMAGE}"
+    agents:
+      queue: udc
+    resources:
+      cpu:
+        requests: "16"
+      memory:
+        requests: "128Gi"
+        limits: "128Gi"
+      npu:
+        count: 1
+        product: "RBLN-CR13"
+    env:
+      OPTIMUM_RBLN_TEST_LEVEL: full
+      RBLN_TEST_NPU: RBLN-CR13
+    secrets: *secrets
+    timeout_in_minutes: 120
+    artifact_paths: "junit-*.xml"
+    command:
+      - *sync
+      - "bash scripts/ci/run-suite.sh modernbert-cr13"
+
   - label: ":pytest: transformers 1/3"
     <<: *no_transformers
     image: "${DEVTOOLS_DOCKER_IMAGE}"

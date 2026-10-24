@@ -17,13 +17,30 @@ from typing import TYPE_CHECKING
 import torch
 from transformers.modeling_outputs import MaskedLMOutput
 
-from ...modeling_generic import RBLNModelForMaskedLM
-from .configuration_modernbert import RBLNModernBertForMaskedLMConfig
+from ...modeling_generic import RBLNModelForMaskedLM, RBLNTransformerEncoderForFeatureExtraction
+from .configuration_modernbert import RBLNModernBertForMaskedLMConfig, RBLNModernBertModelConfig
 from .modernbert_architecture import ModernBertModelWrapper
 
 
 if TYPE_CHECKING:
     from transformers import PreTrainedModel
+
+
+class RBLNModernBertModel(RBLNTransformerEncoderForFeatureExtraction):
+    """ModernBERT base model returning token hidden states on RBLN devices.
+
+    Uses SDPA and preserves the 2D padding mask so ModernBERT builds its
+    alternating global and local attention masks internally.
+    """
+
+    @classmethod
+    def get_pytorch_model(cls, *args, **kwargs) -> "PreTrainedModel":
+        kwargs["attn_implementation"] = "sdpa"
+        return super().get_pytorch_model(*args, **kwargs)
+
+    @classmethod
+    def _wrap_model_if_needed(cls, model: torch.nn.Module, rbln_config: RBLNModernBertModelConfig) -> torch.nn.Module:
+        return ModernBertModelWrapper(model, rbln_config).eval()
 
 
 class RBLNModernBertForMaskedLM(RBLNModelForMaskedLM):
@@ -84,4 +101,5 @@ class RBLNModernBertForMaskedLM(RBLNModelForMaskedLM):
 
 __all__ = [
     "RBLNModernBertForMaskedLM",
+    "RBLNModernBertModel",
 ]
