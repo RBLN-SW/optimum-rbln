@@ -40,26 +40,38 @@ steps:
   # All gates must pass before the scheduled CR13 diagnostic starts.
   - wait: ~
 
-  - label: ":microscope: MPNet frozen native B2048/512 on CR13"
+  - label: ":package: Stage frozen MPNet B2048 artifacts across clusters"
     image: "${DEVTOOLS_DOCKER_IMAGE}"
     agents:
       queue: k8s
+    timeout_in_minutes: 30
+    command:
+      - "python3 -m scripts.diagnostics.mpnet_b2048_stage"
+
+  - wait: ~
+
+  - label: ":microscope: MPNet frozen native B2048/512 on CR13"
+    image: "${DEVTOOLS_DOCKER_IMAGE}"
+    agents:
+      queue: udc
     resources:
       cpu:
         requests: "16"
       memory:
-        requests: "96Gi"
-        limits: "96Gi"
+        requests: "128Gi"
+        limits: "128Gi"
       npu:
         count: 1
         product: "RBLN-CR13"
     secrets:
       UV_INDEX_REBELLIONS_USERNAME: REBEL_SW_DEV_USERNAME
       UV_INDEX_REBELLIONS_PASSWORD: REBEL_SW_DEV_PASSWORD
+    env:
+      RBLN_TEST_NPU: "RBLN-CR13"
     timeout_in_minutes: 180
     artifact_paths:
       - "debug-mpnet-b2048-frozen/**/*"
     command:
       - "bash scripts/ci/sync.sh"
       - "mkdir -p debug-mpnet-b2048-frozen"
-      - "set -o pipefail; uv run --no-sync python -m scripts.diagnostics.mpnet_b2048_frozen --artifacts /mnt/shared_data/users/jaehunryu/nas_data/model-enable-20261024/mpnet-native-b2048-sdk163 2>&1 | tee debug-mpnet-b2048-frozen/runtime.log"
+      - "set -o pipefail; uv run --no-sync python -m scripts.diagnostics.mpnet_b2048_frozen --artifacts /mnt/cross_data/model-enable/jaehunryu/mpnet-native-b2048-sdk163 2>&1 | tee debug-mpnet-b2048-frozen/runtime.log"
