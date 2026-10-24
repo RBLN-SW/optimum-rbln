@@ -1,5 +1,4 @@
-# Entry pipeline for PR builds. Gates run first; the test pipelines are uploaded
-# only after they pass.
+# Native512 MPNet shared-bias candidate validation on scheduler-owned CR13.
 env:
   # Where every release's compiled artifacts live, written by the tag build
   # (.buildkite/bc-compile.yml).
@@ -7,14 +6,6 @@ env:
   UV_CACHE_DIR: "${UV_CACHE_PATH}"
   UV_LINK_MODE: "symlink"
   UV_INDEX_STRATEGY: "unsafe-best-match"
-
-# Both upload jobs read only .buildkite and scripts; the suites they emit check out in full.
-_upload: &upload
-  checkout:
-    sparse:
-      paths:
-        - .buildkite
-        - scripts
 
 steps:
   - label: ":closed_lock_with_key: team-member gate"
@@ -46,41 +37,40 @@ steps:
     command:
       - "bash scripts/check-docstrings.sh"
 
-  # All gates must pass before the NPU pipeline is even uploaded.
+  # All existing quality/doc gates precede the scheduler-owned CR13 slot.
   - wait: ~
 
-  # A [pytest-full] commit (the compiler-update bot's PRs) runs every suite at the
-  # full level. Suites a change cannot affect are skipped with the [skip-*]
-  # directives run-suite.sh reads, not by path.
-  # Sibling jobs: two uploads from one job make the second batch a barrier for
-  # the first, so the pytest suites would wait on BC.
-  - label: ":sparkles: upload pytest"
-    <<: *upload
-    command: |
-      if [[ "$$BUILDKITE_MESSAGE" == *"[pytest-full]"* ]]; then
-        echo "--- :mag: [pytest-full] in commit message"
-        export OPTIMUM_RBLN_TEST_LEVEL=full
-        export HF_USER_ID=Rebellions
-      fi
-      buildkite-agent pipeline upload .buildkite/pipelines/pytest/pipeline.yml
-
-  - label: ":sparkles: upload BC"
-    <<: *upload
-    command: |
-      bash scripts/ci/bc-steps.sh --latest | buildkite-agent pipeline upload
-
-  - wait: ~
-    continue_on_failure: true
-
-  - label: ":slack: report"
-    if: build.message =~ /\[slack-report\]/
-    soft_fail: true
-    allow_dependency_failure: true
+  - label: ":microscope: MPNet shared bias native512 B1/B2/B4"
     image: "${DEVTOOLS_DOCKER_IMAGE}"
+    agents:
+      queue: udc
+    resources:
+      cpu:
+        requests: "16"
+      memory:
+        requests: "64Gi"
+        limits: "64Gi"
+      npu:
+        count: 1
+        product: "RBLN-CR13"
     env:
-      SLACK_TITLE: "Optimum-RBLN PR Test Results"
+      REBEL_COMPILER_VERSION: "0.12.1.dev163+g0c6d4a5e.prod"
+      OPTIMUM_RBLN_TEST_LEVEL: "full"
+      RBLN_TEST_NPU: "RBLN-CR13"
     secrets:
-      OBEDIENTS_API_TOKEN: BUILDKITE_API_TOKEN
-      SLACK_BOT_TOKEN: SLACK_OAUTH_TOKEN
+      UV_INDEX_REBELLIONS_USERNAME: REBEL_SW_DEV_USERNAME
+      UV_INDEX_REBELLIONS_PASSWORD: REBEL_SW_DEV_PASSWORD
+      HF_TOKEN: HF_TOKEN
+      HF_HOME: HF_HOME
+    timeout_in_minutes: 120
+    artifact_paths:
+      - "debug-mpnet-shared-bias-native512/**/*"
     command:
-      - "python3 scripts/ci/slack-report.py"
+      - "bash scripts/ci/sync.sh"
+      - "mkdir -p debug-mpnet-shared-bias-native512"
+      - >-
+        set -o pipefail;
+        unset RBLN_DUMMY_DEVICE TVM_LIBRARY_PATH;
+        uv run --no-sync python -m scripts.diagnostics.mpnet_shared_bias_native512
+        --out debug-mpnet-shared-bias-native512
+        2>&1 | tee debug-mpnet-shared-bias-native512/runtime.log
