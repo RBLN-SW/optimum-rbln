@@ -1,4 +1,4 @@
-# Native1024 FLUX2 full native pipeline acceptance with original numerical criteria.
+# Native full FLUX2 hybrid SiLU source candidate; original numerical criteria.
 env:
   # Where every release's compiled artifacts live, written by the tag build
   # (.buildkite/bc-compile.yml).
@@ -50,7 +50,7 @@ steps:
 
   - wait: ~
 
-  - label: ":microscope: FLUX2 real-weight native1024 full pipeline on CR13"
+  - label: ":microscope: FLUX2 full pipeline with FP32 SiLU source overlay on CR13"
     image: "${DEVTOOLS_DOCKER_IMAGE}"
     agents:
       queue: udc
@@ -74,4 +74,4 @@ steps:
     command:
       - "bash scripts/ci/sync.sh"
       - "mkdir -p debug-flux2-pipeline"
-      - "set -o pipefail; uv run --no-sync python -m scripts.diagnostics.flux2_pipeline_frozen --execute --artifacts /mnt/cross_data/model-enable/jaehunryu/flux2-klein-native1024-full-pipeline-sdk333 2>&1 | tee debug-flux2-pipeline/runtime.log"
+      - "set -o pipefail; uv run --no-sync python -m scripts.diagnostics.flux2_pipeline_frozen --execute --artifacts /mnt/cross_data/model-enable/jaehunryu/flux2-klein-full-native1024-silu-overlay-sdk333 2>&1 | tee debug-flux2-pipeline/runtime.log"

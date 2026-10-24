@@ -1,4 +1,4 @@
-"""Native1024/prompt512 real-weight full FLUX2 klein pipeline acceptance on scheduled CR13."""
+"""Native FLUX2 full-pipeline candidate: SDK333 plus FP32 SiLU source overlay."""
 
 import argparse
 import importlib
@@ -14,7 +14,7 @@ from scripts.diagnostics.flux2_transformer_frozen import metrics, require_schedu
 
 SDK = "0.12.1.dev333+gf66b88a7"
 REVISION = "e7b7dc27f91deacad38e78976d1f2b499d76a294"
-MANIFEST_SHA = "861395ed528ad89fdddee047c7a79260980b026fecbbb209000bbd3212f1ca3e"
+MANIFEST_SHA = "d0a168125ae8bb3282bfe20749f5e282b586db636737b06ec150f827d25606fa"
 
 
 def verify_bundle(directory):
@@ -42,9 +42,16 @@ def verify_bundle(directory):
         "reference_image_count": 0,
         "denoising_steps": 4,
         "guidance": 1.0,
+        "hybrid_source_overlay": True,
+        "official_patched_SDK_acceptance": False,
+        "compiler_source_commit": "78fd8c151d9882fdd00476c709ffcfb9bbf39807",
+        "unchanged_goldens_thresholds_and_other_components": True,
     }
     if any(manifest.get(k) != v for k, v in expected.items()):
         raise ValueError("Native acceptance profile differs")
+    overlay = manifest.get("source_overlay", {})
+    if overlay.get("method_calls") != 36 or overlay.get("source_dtypes") != {"float32": 36}:
+        raise ValueError("All 36 FP32 SiLU conversions must use the recorded source overlay")
     return manifest
 
 
@@ -57,7 +64,13 @@ def main(argv=None):
     mode.add_argument("--execute", action="store_true")
     args = parser.parse_args(argv)
     args.output.mkdir(parents=True, exist_ok=True)
-    result = {"phase": "preflight", "full_pipeline_npu_acceptance": False}
+    result = {
+        "phase": "preflight",
+        "full_pipeline_npu_acceptance": False,
+        "hybrid_source_overlay": True,
+        "official_patched_SDK_acceptance": False,
+        "compiler_source_commit": "78fd8c151d9882fdd00476c709ffcfb9bbf39807",
+    }
     started = time.monotonic()
     code = 1
     try:
@@ -123,7 +136,7 @@ def main(argv=None):
                 hidden = model.text_encoder(**text["inputs"], output_hidden_states=True, use_cache=False).hidden_states
                 if len(hidden) != 37:
                     raise ValueError("Text encoder must preserve every native hidden-state index")
-                for index in (9, 18, 27):
+                for index in range(37):
                     compare(f"text_layer_{index}", hidden[index], text["hidden_states"][index])
                 embeds, _ = model.encode_prompt(prompt=golden["prompt"], max_sequence_length=512)
                 compare("full_prompt_embeddings", embeds, golden["denoiser"][0]["encoder_hidden_states"])

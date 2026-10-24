@@ -22,6 +22,11 @@ def frozen(tmp_path, monkeypatch):
         "reference_image_count": 0,
         "denoising_steps": 4,
         "guidance": 1.0,
+        "hybrid_source_overlay": True,
+        "official_patched_SDK_acceptance": False,
+        "compiler_source_commit": "78fd8c151d9882fdd00476c709ffcfb9bbf39807",
+        "unchanged_goldens_thresholds_and_other_components": True,
+        "source_overlay": {"method_calls": 36, "source_dtypes": {"float32": 36}},
         "files": {"model/compiled.rbln": {"bytes": artifact.stat().st_size, "sha256": diagnostic.sha256(artifact)}},
     }
     path = tmp_path / "manifest.json"
@@ -71,5 +76,25 @@ def test_frozen_rejects_shortened_native_context(frozen, monkeypatch):
     path = root / "manifest.json"
     path.write_text(json.dumps(manifest))
     monkeypatch.setattr(diagnostic, "MANIFEST_SHA", hashlib.sha256(path.read_bytes()).hexdigest())
+    with pytest.raises(ValueError, match="profile differs"):
+        diagnostic.verify_bundle(root)
+
+
+def test_frozen_rejects_incomplete_source_conversion(frozen, monkeypatch):
+    root, manifest = frozen
+    manifest["source_overlay"]["method_calls"] = 35
+    path = root / "manifest.json"
+    path.write_text(json.dumps(manifest))
+    monkeypatch.setattr(diagnostic, "MANIFEST_SHA", diagnostic.sha256(path))
+    with pytest.raises(ValueError, match="36 FP32 SiLU"):
+        diagnostic.verify_bundle(root)
+
+
+def test_frozen_rejects_official_wheel_claim(frozen, monkeypatch):
+    root, manifest = frozen
+    manifest["official_patched_SDK_acceptance"] = True
+    path = root / "manifest.json"
+    path.write_text(json.dumps(manifest))
+    monkeypatch.setattr(diagnostic, "MANIFEST_SHA", diagnostic.sha256(path))
     with pytest.raises(ValueError, match="profile differs"):
         diagnostic.verify_bundle(root)
