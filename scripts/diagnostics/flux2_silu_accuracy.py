@@ -11,9 +11,9 @@ from scripts.diagnostics.flux2_text_gating import as_outputs
 from scripts.diagnostics.flux2_transformer_frozen import metrics, require_scheduled_execution, sha256
 
 
-MANIFEST_SHA = "5c449137e3cf580b0c84e40c2e83f8ace6bf47f7066dabb530b5951dcf2feba8"
+MANIFEST_SHA = "9342476cf21818d8cc35be684bd0f4046bdb6492221219e88530b92b97f11acb"
 SDK = "0.12.1.dev333+gf66b88a7"
-VARIANTS = ["baseline", "stable_exp", "softmax2", "exp"]
+VARIANTS = ["baseline", "minimum_exp"]
 CASES = ["short_component", "full_original_prompt", "native_valid512", "negative_tail_sweep"]
 
 
@@ -41,7 +41,7 @@ def verify_bundle(directory):
         "not_adopted": True,
         "full_pipeline_npu_acceptance": False,
         "original_graph_causal_attribution": False,
-        "implementation_candidates": ["stable_exp"],
+        "implementation_candidates": ["minimum_exp"],
         "placement_audit_pending": False,
         "accuracy_target_nrmse": 0.005,
         "accuracy_target_pcc": 0.9999,
@@ -143,6 +143,8 @@ def main(argv=None):
                 )
             if not all(result["repeated"].values()) or not all(result["baseline831_identity"].values()):
                 raise ValueError("Baseline identity or accuracy runtime state changed values")
+            if not result["candidate_accuracy"]["minimum_exp"]:
+                raise ValueError("Minimum-exp candidate failed the original accuracy target")
             result.update(phase="diagnostic_finished", diagnostic_completed=True)
             code = 0
     except BaseException:

@@ -9,9 +9,9 @@ from scripts.diagnostics.flux2_silu_accuracy import verify_bundle
 
 
 SOURCE = Path(
-    "/mnt/shared_data/users/jaehunryu/nas_data/model-enable-20261025/flux2-klein/silu-accuracy-bundle-sdk333"
+    "/mnt/shared_data/users/jaehunryu/nas_data/model-enable-20261025/flux2-klein/silu-minimum-exp-bundle-sdk333"
 )
-DESTINATION = Path("/mnt/cross_data/model-enable/jaehunryu/flux2-klein-silu-accuracy-sdk333")
+DESTINATION = Path("/mnt/cross_data/model-enable/jaehunryu/flux2-klein-silu-minimum-exp-sdk333")
 
 
 def stage(source=SOURCE, destination=DESTINATION):

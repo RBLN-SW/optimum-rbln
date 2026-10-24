@@ -75,4 +75,4 @@ steps:
       - "bash scripts/ci/sync.sh"
       - "uv run --no-sync python -m pytest -q tests/unit/cpu/test_flux2_silu_accuracy.py"
       - "mkdir -p debug-flux2-silu-accuracy"
-      - "set -o pipefail; uv run --no-sync python -m scripts.diagnostics.flux2_silu_accuracy --execute --artifacts /mnt/cross_data/model-enable/jaehunryu/flux2-klein-silu-accuracy-sdk333 2>&1 | tee debug-flux2-silu-accuracy/runtime.log"
+      - "set -o pipefail; uv run --no-sync python -m scripts.diagnostics.flux2_silu_accuracy --execute --artifacts /mnt/cross_data/model-enable/jaehunryu/flux2-klein-silu-minimum-exp-sdk333 2>&1 | tee debug-flux2-silu-accuracy/runtime.log"

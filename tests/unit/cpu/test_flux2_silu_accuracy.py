@@ -17,7 +17,7 @@ def bundle(tmp_path, monkeypatch):
         "not_adopted": True,
         "full_pipeline_npu_acceptance": False,
         "original_graph_causal_attribution": False,
-        "implementation_candidates": ["stable_exp"],
+        "implementation_candidates": ["minimum_exp"],
         "placement_audit_pending": False,
         "accuracy_target_nrmse": 0.005,
         "accuracy_target_pcc": 0.9999,
