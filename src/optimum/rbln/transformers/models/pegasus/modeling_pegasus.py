@@ -36,6 +36,8 @@ class RBLNPegasusModel(RBLNTransformerEncoderForFeatureExtraction):
     on RBLN devices, optimized for feature extraction use cases.
     """
 
+    rbln_output_names = ("last_hidden_state", "encoder_last_hidden_state")
+
     rbln_model_input_names = ["input_ids", "attention_mask", "decoder_input_ids", "decoder_attention_mask"]
 
 

@@ -38,6 +38,8 @@ class RBLNBartModel(RBLNTransformerEncoderForFeatureExtraction):
     on RBLN devices, optimized for feature extraction use cases.
     """
 
+    rbln_output_names = ("last_hidden_state", "encoder_last_hidden_state")
+
     def forward(
         self,
         input_ids: torch.Tensor | None = None,

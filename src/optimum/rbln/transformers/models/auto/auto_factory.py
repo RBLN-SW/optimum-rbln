@@ -177,7 +177,7 @@ class _BaseAutoModelClass:
                 f"Model type should be one of {', '.join(c.__name__ for c in cls._model_mapping)}."
             )
 
-        if model_class.__name__ != config.architectures[0]:
+        if config.architectures and model_class.__name__ != config.architectures[0]:
             warnings.warn(
                 f"`{cls.__name__}.from_pretrained()` is invoking `{convert_hf_to_rbln_model_name(model_class.__name__)}.from_pretrained()`, which does not match the "
                 f"expected architecture `RBLN{config.architectures[0]}` from config. This mismatch could cause some operations to not be properly loaded "
