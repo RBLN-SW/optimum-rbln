@@ -1,0 +1,58 @@
+{
+  "falling-positive-step0.pt.gz": {
+    "sha256": "360b493a08b3a03df19607a8062733a24d6e8da0f662a2d229c2a9914ac8f0b9",
+    "bytes": 248841,
+    "source_build": 794,
+    "source_job": "9264e954-2758-49d3-9ac8-9c32d406a341",
+    "source_trace": "cpu-mixed_positive_falling/teacher_forced-positive-step00.pt",
+    "source_trace_sha256": "c99fb20f85939d268fe9620bd44b5cd2562daaafff9c1bd9f151b505fe1dda7a",
+    "input_sha256": [
+      "e36b3e08d58e415ef05293b325a524c5ed904062e999aa447b7e223042006941",
+      "b0bf3832573cf66c624a1b28af41ac44771341e6751cdfd3351d010a08c9b699",
+      "afb981bd9d172f5bbf19ecd5228e9c793b40b0516c22ba29a0ba70e809270e57",
+      "46ec4d9c46ff170ce457a0af7b3b900ca3adf0714dd630d2c6ac05716c534875"
+    ]
+  },
+  "falling-negative-step0.pt.gz": {
+    "sha256": "093d080ea07d247e14da71509eafec26361e6497b360c4e368ea8b5706126d3d",
+    "bytes": 250609,
+    "source_build": 794,
+    "source_job": "9264e954-2758-49d3-9ac8-9c32d406a341",
+    "source_trace": "cpu-mixed_positive_falling/teacher_forced-negative-step00.pt",
+    "source_trace_sha256": "6a6e3455602cbb87444c8840f8c2963f9fa89ce682cda23d121b44794e24bfea",
+    "input_sha256": [
+      "b660ac62f46e47c65f5ebe907e2506d892cc1bb6981750ac96d40511ff4f0630",
+      "b0bf3832573cf66c624a1b28af41ac44771341e6751cdfd3351d010a08c9b699",
+      "afb981bd9d172f5bbf19ecd5228e9c793b40b0516c22ba29a0ba70e809270e57",
+      "46ec4d9c46ff170ce457a0af7b3b900ca3adf0714dd630d2c6ac05716c534875"
+    ]
+  },
+  "h1024-negative-step0.pt.gz": {
+    "sha256": "d55341c5a852f399347633554e3ae210d81473f9d86287bfc481c3579641122f",
+    "bytes": 263373,
+    "source_build": 794,
+    "source_job": "9264e954-2758-49d3-9ac8-9c32d406a341",
+    "source_trace": "cpu-native_limit_horizon1024/teacher_forced-negative-step00.pt",
+    "source_trace_sha256": "d99a1e876f8069ec7b6955a685694fd00b62b2a36032d861810613520371c071",
+    "input_sha256": [
+      "173117def641d2d24c99dd110eb73980096598c74fef3aace51e2e8783385f16",
+      "72390d867f7644c3029e859ca104d90d4a4e6c8cd668c6cc7d76a76817ef6ca4",
+      "7ac4f4e58d9ce7f4cb7c7d889cbf39aed5a975cc4c79eb25a38b4c399ff775ff",
+      "da902be0410f66a84e13120c9adff475af6a245241a944e35dec2afa945cb625"
+    ]
+  },
+  "h1024-teacher-negative-step7.pt.gz": {
+    "sha256": "3e0614f6346dcb7c4b510b937a418944055f33979d2e41eec78436e2a20a1d41",
+    "bytes": 275846,
+    "source_build": 794,
+    "source_job": "9264e954-2758-49d3-9ac8-9c32d406a341",
+    "source_trace": "cpu-native_limit_horizon1024/teacher_forced-negative-step07.pt",
+    "source_trace_sha256": "fbba87609e0f9eed039342558eabc1ddd03edb6a87fc2ad65665a017680308df",
+    "input_sha256": [
+      "bf2f15ce21321e4f9902d232d8e975c46ad17ef554e4f2b63702318462bfbc58",
+      "b0bf3832573cf66c624a1b28af41ac44771341e6751cdfd3351d010a08c9b699",
+      "afb981bd9d172f5bbf19ecd5228e9c793b40b0516c22ba29a0ba70e809270e57",
+      "46ec4d9c46ff170ce457a0af7b3b900ca3adf0714dd630d2c6ac05716c534875"
+    ]
+  }
+}
