@@ -138,6 +138,77 @@ steps:
       - *sync
       - "bash scripts/ci/run-suite.sh transformers 3/3"
 
+  - &electra_capacity_cr13
+    label: ":pytest: ELECTRA native512 B32 CR13 capacity"
+    key: "electra-capacity-cr13-b32"
+    agents:
+      queue: udc
+    if: "'${OPTIMUM_RBLN_TEST_LEVEL:-default}' == 'full' && build.message !~ /\\[skip-transformers\\]/"
+    image: "${DEVTOOLS_DOCKER_IMAGE}"
+    resources:
+      cpu:
+        requests: "16"
+      memory:
+        requests: "64Gi"
+        limits: "64Gi"
+      npu:
+        count: 1
+        product: "RBLN-CR13"
+    secrets: *secrets
+    env: &electra_capacity_cr13_env
+      RBLN_TEST_NPU: "RBLN-CR13"
+      CAPACITY_BATCH_SIZE: "32"
+      OMP_NUM_THREADS: "4"
+      MKL_NUM_THREADS: "4"
+    timeout_in_minutes: 90
+    artifact_paths: "junit-*.xml"
+    command:
+      - *sync
+      - "bash scripts/ci/run-suite.sh electra-capacity-cr13"
+
+  - <<: *electra_capacity_cr13
+    label: ":pytest: ELECTRA native512 B64 CR13 capacity"
+    key: "electra-capacity-cr13-b64"
+    env:
+      <<: *electra_capacity_cr13_env
+      CAPACITY_BATCH_SIZE: "64"
+
+  - <<: *electra_capacity_cr13
+    label: ":pytest: ELECTRA native512 B128 CR13 capacity"
+    key: "electra-capacity-cr13-b128"
+    env:
+      <<: *electra_capacity_cr13_env
+      CAPACITY_BATCH_SIZE: "128"
+
+  - <<: *electra_capacity_cr13
+    label: ":pytest: ELECTRA native512 B256 CR13 capacity"
+    key: "electra-capacity-cr13-b256"
+    env:
+      <<: *electra_capacity_cr13_env
+      CAPACITY_BATCH_SIZE: "256"
+
+  - <<: *electra_capacity_cr13
+    label: ":pytest: ELECTRA native512 B512 CR13 capacity"
+    key: "electra-capacity-cr13-b512"
+    env:
+      <<: *electra_capacity_cr13_env
+      CAPACITY_BATCH_SIZE: "512"
+
+  - <<: *electra_capacity_cr13
+    label: ":pytest: ELECTRA native512 B1024 CR13 capacity"
+    key: "electra-capacity-cr13-b1024"
+    env:
+      <<: *electra_capacity_cr13_env
+      CAPACITY_BATCH_SIZE: "1024"
+
+  - <<: *electra_capacity_cr13
+    label: ":pytest: ELECTRA native512 B2048 CR13 capacity"
+    key: "electra-capacity-cr13-b2048"
+    timeout_in_minutes: 180
+    env:
+      <<: *electra_capacity_cr13_env
+      CAPACITY_BATCH_SIZE: "2048"
+
   - label: ":pytest: diffusers 1/2"
     <<: *no_diffusers
     image: "${DEVTOOLS_DOCKER_IMAGE}"

@@ -6,7 +6,15 @@ import unittest
 import pytest
 import torch
 from PIL import Image
-from transformers import AutoConfig, BertConfig, BertModel, T5EncoderModel, XLMRobertaConfig, XLMRobertaModel
+from transformers import (
+    AutoConfig,
+    AutoTokenizer,
+    BertConfig,
+    BertModel,
+    T5EncoderModel,
+    XLMRobertaConfig,
+    XLMRobertaModel,
+)
 
 from optimum.rbln import (
     RBLNASTForAudioClassification,
@@ -19,6 +27,9 @@ from optimum.rbln import (
     RBLNColQwen2ForRetrieval,
     RBLNDistilBertForQuestionAnswering,
     RBLNDPTForDepthEstimation,
+    RBLNElectraForPreTraining,
+    RBLNElectraForSequenceClassification,
+    RBLNElectraModel,
     RBLNGroundingDinoForObjectDetection,
     RBLNModernBertForMaskedLM,
     RBLNPegasusModel,
@@ -40,6 +51,7 @@ from optimum.rbln.transformers.models.auto.modeling_auto import (
     RBLNAutoModelForDepthEstimation,
     RBLNAutoModelForImageClassification,
     RBLNAutoModelForMaskedLM,
+    RBLNAutoModelForPreTraining,
     RBLNAutoModelForQuestionAnswering,
     RBLNAutoModelForSequenceClassification,
     RBLNAutoModelForSpeechSeq2Seq,
@@ -357,6 +369,189 @@ class TestXLMRobertaModel(BaseTest.TestModel):
         "num_hidden_layers": 1,
         "vocab_size": 1024,
         "ignore_mismatched_sizes": True,
+    }
+
+
+class TestElectraModel(BaseTest.TestModel):
+    RBLN_AUTO_CLASS = RBLNAutoModel
+    RBLN_CLASS = RBLNElectraModel
+    HF_MODEL_ID = "google/electra-base-discriminator"
+    HF_CONFIG_KWARGS = {"revision": "1ae76a97c7e84a4e640876a07453fccd636f0667"}
+    RBLN_CLASS_KWARGS = {"rbln_max_seq_len": 512, "rbln_batch_size": 1}
+    GENERATION_KWARGS = {
+        "input_ids": torch.full((1, 512), 4, dtype=torch.int64),
+        "attention_mask": torch.ones((1, 512), dtype=torch.int64),
+        "token_type_ids": torch.zeros((1, 512), dtype=torch.int64),
+    }
+    BATCH_SIZE = 1
+    OUTPUT_NAME = "last_hidden_state"
+    DEVICE = 0
+
+    def get_inputs(self):
+        inputs = super().get_inputs()
+        names = self.model.rbln_config.model_input_names
+        return {name: value for name, value in inputs.items() if name in names}
+
+    def test_numerical_parity(self):
+        if os.environ.get("SAVE_ARTIFACTS_PATH") or os.environ.get("REUSE_ARTIFACTS_PATH"):
+            self.skipTest("Artifact compatibility mode does not execute on a real NPU.")
+        tokenizer = AutoTokenizer.from_pretrained(self.HF_MODEL_ID, **self.HF_CONFIG_KWARGS)
+        reference = self.get_hf_auto_class().from_pretrained(self.HF_MODEL_ID, **self.HF_CONFIG_KWARGS).eval()
+        texts = [
+            ("The quick brown fox jumps over the lazy dog.", "The fox is quick."),
+            ("The quick brown fox fake over the lazy dog.", "A different sentence appears."),
+            ("A long document discusses processors and language models. " * 90, "The final paragraph."),
+            ("", ""),
+        ]
+        dynamic = isinstance(self.model.rbln_config.max_seq_len, list)
+        with torch.no_grad():
+            first_inputs = first_output = None
+            for offset in range(len(texts)):
+                pairs = [texts[(offset + index) % len(texts)] for index in range(self.BATCH_SIZE)]
+                inputs = tokenizer(
+                    [pair[0] for pair in pairs],
+                    [pair[1] for pair in pairs],
+                    padding=True if dynamic else "max_length",
+                    max_length=512,
+                    truncation=True,
+                    return_tensors="pt",
+                )
+                inputs = {
+                    name: value for name, value in inputs.items() if name in self.model.rbln_config.model_input_names
+                }
+                expected = getattr(reference(**inputs), self.OUTPUT_NAME)
+                actual = getattr(self.model(**inputs), self.OUTPUT_NAME)
+                assert actual.shape == expected.shape
+                if expected.ndim == 3 or (
+                    self.OUTPUT_NAME == "logits" and expected.shape[1] == inputs["input_ids"].shape[1]
+                ):
+                    active = inputs["attention_mask"].bool()
+                    a, e = actual[active], expected[active]
+                else:
+                    a, e = actual, expected
+                pcc = torch.corrcoef(torch.stack([e.flatten(), a.flatten()]))[0, 1]
+                assert pcc >= 0.99
+                if self.OUTPUT_NAME == "logits":
+                    nrmse = (a - e).square().mean().sqrt() / e.square().mean().sqrt().clamp_min(1e-8)
+                    assert nrmse <= 0.05
+                if expected.ndim == 2 and expected.shape[1] != inputs["input_ids"].shape[1]:
+                    assert torch.equal(actual.argmax(-1), expected.argmax(-1))
+                torch.testing.assert_close(getattr(self.model(**inputs), self.OUTPUT_NAME), actual, rtol=0, atol=0)
+                if first_inputs is None:
+                    first_inputs, first_output = inputs, actual.clone()
+            torch.testing.assert_close(
+                getattr(self.model(**first_inputs), self.OUTPUT_NAME), first_output, rtol=0, atol=0
+            )
+            reloaded = self.RBLN_AUTO_CLASS.from_pretrained(self.get_rbln_local_dir(), rbln_device=self.DEVICE)
+            torch.testing.assert_close(
+                getattr(reloaded(**first_inputs), self.OUTPUT_NAME), first_output, rtol=0, atol=0
+            )
+
+
+class TestElectraModelBatch2(TestElectraModel):
+    RBLN_CLASS_KWARGS = {"rbln_max_seq_len": 512, "rbln_batch_size": 2}
+    BATCH_SIZE = 2
+    GENERATION_KWARGS = {name: tensor.repeat(2, 1) for name, tensor in TestElectraModel.GENERATION_KWARGS.items()}
+
+
+class TestElectraForPreTraining(TestElectraModel):
+    RBLN_AUTO_CLASS = RBLNAutoModelForPreTraining
+    RBLN_CLASS = RBLNElectraForPreTraining
+    OUTPUT_NAME = "logits"
+
+
+class TestElectraForPreTrainingBatch2(TestElectraForPreTraining):
+    RBLN_CLASS_KWARGS = {"rbln_max_seq_len": 512, "rbln_batch_size": 2}
+    BATCH_SIZE = 2
+    GENERATION_KWARGS = TestElectraModelBatch2.GENERATION_KWARGS
+
+
+class TestElectraForSequenceClassification(TestElectraModel):
+    RBLN_AUTO_CLASS = RBLNAutoModelForSequenceClassification
+    RBLN_CLASS = RBLNElectraForSequenceClassification
+    HF_MODEL_ID = "pszemraj/electra-small-discriminator-CoLA"
+    HF_CONFIG_KWARGS = {"revision": "021bfb519b178ee4a5ebfa7a784e961498703456"}
+    OUTPUT_NAME = "logits"
+
+
+class TestElectraForSequenceClassificationBatch2(TestElectraForSequenceClassification):
+    RBLN_CLASS_KWARGS = {"rbln_max_seq_len": 512, "rbln_batch_size": 2}
+    BATCH_SIZE = 2
+    GENERATION_KWARGS = TestElectraModelBatch2.GENERATION_KWARGS
+
+
+class TestElectraModelBatch4(TestElectraModel):
+    TEST_LEVEL = TestLevel.FULL
+    BATCH_SIZE = 4
+    RBLN_CLASS_KWARGS = {**TestElectraModel.RBLN_CLASS_KWARGS, "rbln_batch_size": 4}
+    GENERATION_KWARGS = {name: tensor.repeat(4, 1) for name, tensor in TestElectraModel.GENERATION_KWARGS.items()}
+
+
+class TestElectraModelBatch8(TestElectraModel):
+    TEST_LEVEL = TestLevel.FULL
+    BATCH_SIZE = 8
+    RBLN_CLASS_KWARGS = {**TestElectraModel.RBLN_CLASS_KWARGS, "rbln_batch_size": 8}
+    GENERATION_KWARGS = {name: tensor.repeat(8, 1) for name, tensor in TestElectraModel.GENERATION_KWARGS.items()}
+
+
+class TestElectraModelBatch16(TestElectraModel):
+    TEST_LEVEL = TestLevel.FULL
+    BATCH_SIZE = 16
+    RBLN_CLASS_KWARGS = {**TestElectraModel.RBLN_CLASS_KWARGS, "rbln_batch_size": 16}
+    GENERATION_KWARGS = {name: tensor.repeat(16, 1) for name, tensor in TestElectraModel.GENERATION_KWARGS.items()}
+
+
+class TestElectraForPreTrainingBatch4(TestElectraForPreTraining):
+    TEST_LEVEL = TestLevel.FULL
+    BATCH_SIZE = 4
+    RBLN_CLASS_KWARGS = {**TestElectraForPreTraining.RBLN_CLASS_KWARGS, "rbln_batch_size": 4}
+    GENERATION_KWARGS = {name: tensor.repeat(4, 1) for name, tensor in TestElectraModel.GENERATION_KWARGS.items()}
+
+
+class TestElectraForPreTrainingBatch8(TestElectraForPreTraining):
+    TEST_LEVEL = TestLevel.FULL
+    BATCH_SIZE = 8
+    RBLN_CLASS_KWARGS = {**TestElectraForPreTraining.RBLN_CLASS_KWARGS, "rbln_batch_size": 8}
+    GENERATION_KWARGS = {name: tensor.repeat(8, 1) for name, tensor in TestElectraModel.GENERATION_KWARGS.items()}
+
+
+class TestElectraForPreTrainingBatch16(TestElectraForPreTraining):
+    TEST_LEVEL = TestLevel.FULL
+    BATCH_SIZE = 16
+    RBLN_CLASS_KWARGS = {**TestElectraForPreTraining.RBLN_CLASS_KWARGS, "rbln_batch_size": 16}
+    GENERATION_KWARGS = {name: tensor.repeat(16, 1) for name, tensor in TestElectraModel.GENERATION_KWARGS.items()}
+
+
+class TestElectraForSequenceClassificationBatch4(TestElectraForSequenceClassification):
+    TEST_LEVEL = TestLevel.FULL
+    BATCH_SIZE = 4
+    RBLN_CLASS_KWARGS = {**TestElectraForSequenceClassification.RBLN_CLASS_KWARGS, "rbln_batch_size": 4}
+    GENERATION_KWARGS = {name: tensor.repeat(4, 1) for name, tensor in TestElectraModel.GENERATION_KWARGS.items()}
+
+
+class TestElectraForSequenceClassificationBatch8(TestElectraForSequenceClassification):
+    TEST_LEVEL = TestLevel.FULL
+    BATCH_SIZE = 8
+    RBLN_CLASS_KWARGS = {**TestElectraForSequenceClassification.RBLN_CLASS_KWARGS, "rbln_batch_size": 8}
+    GENERATION_KWARGS = {name: tensor.repeat(8, 1) for name, tensor in TestElectraModel.GENERATION_KWARGS.items()}
+
+
+class TestElectraForSequenceClassificationBatch16(TestElectraForSequenceClassification):
+    TEST_LEVEL = TestLevel.FULL
+    BATCH_SIZE = 16
+    RBLN_CLASS_KWARGS = {**TestElectraForSequenceClassification.RBLN_CLASS_KWARGS, "rbln_batch_size": 16}
+    GENERATION_KWARGS = {name: tensor.repeat(16, 1) for name, tensor in TestElectraModel.GENERATION_KWARGS.items()}
+
+
+class TestElectraForPreTrainingBucketing(TestElectraForPreTraining):
+    RBLN_CLASS_KWARGS = {"rbln_max_seq_len": [128, 512], "rbln_batch_size": 1}
+
+
+class TestElectraModelDefaultSegments(TestElectraModel):
+    RBLN_CLASS_KWARGS = {
+        "rbln_max_seq_len": 512,
+        "rbln_batch_size": 1,
+        "rbln_model_input_names": ["input_ids", "attention_mask"],
     }
 
 

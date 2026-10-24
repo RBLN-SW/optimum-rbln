@@ -33,6 +33,7 @@ if TYPE_CHECKING:
     from .detr import *
     from .distilbert import *
     from .dpt import *
+    from .electra import *
     from .exaone import *
     from .exaone4_5 import *
     from .gemma import *
