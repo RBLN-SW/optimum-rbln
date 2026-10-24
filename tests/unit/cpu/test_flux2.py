@@ -74,7 +74,7 @@ def test_rotary_packing_preserves_native_values():
 def test_native_profile_preserves_full_image_and_text_capacity(references):
     from types import SimpleNamespace
 
-    cfg = RBLNFlux2Transformer2DModelConfig(reference_image_count=references, batch_size=2)
+    cfg = RBLNFlux2Transformer2DModelConfig(reference_image_count=references, batch_size=2, npu="RBLN-CR13")
     native_config = SimpleNamespace(in_channels=128, joint_attention_dim=7680, attention_head_dim=128)
     actual = RBLNFlux2Transformer2DModel._update_rbln_config([], None, native_config, cfg)
     profile = {name: (shape, dtype) for name, shape, dtype in actual.compile_cfgs[0].input_info}

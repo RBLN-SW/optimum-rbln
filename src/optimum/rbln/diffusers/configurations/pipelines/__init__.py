@@ -22,6 +22,7 @@ from ....utils.import_utils import define_import_structure
 if TYPE_CHECKING:
     from .configuration_controlnet import *
     from .configuration_cosmos import *
+    from .configuration_flux2 import *
     from .configuration_kandinsky2_2 import *
     from .configuration_stable_diffusion import *
     from .configuration_stable_diffusion_3 import *

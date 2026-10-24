@@ -20,6 +20,7 @@ from ....utils.import_utils import define_import_structure
 
 
 if TYPE_CHECKING:
+    from .flux2_text_encoder import *
     from .prior_transformer import *
     from .transformer_cosmos import *
     from .transformer_flux2 import *

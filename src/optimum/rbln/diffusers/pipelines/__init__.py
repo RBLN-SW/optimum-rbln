@@ -23,6 +23,7 @@ if TYPE_CHECKING:
     from .auto_pipeline import *
     from .controlnet import *
     from .cosmos import *
+    from .flux2 import *
     from .kandinsky2_2 import *
     from .stable_diffusion import *
     from .stable_diffusion_3 import *
