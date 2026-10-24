@@ -1,0 +1,26 @@
+{
+  "cpu-native_limit_horizon1024.pt": {
+    "sha256": "bc0cc2dddf611f75720fdb6190321ad8cd1e233731ad5fb4e46f1819a3c2e78e",
+    "bytes": 108894
+  },
+  "cpu-native_limit_positive.pt": {
+    "sha256": "578f61a4a685add9f3592bc83a82e665f864a38a8c6f0e1fc153974cf03b8af7",
+    "bytes": 79263
+  },
+  "cpu-native_limit_sine.pt": {
+    "sha256": "125262fef83d0336dbfcbacd44b2dc25961121c05ae1348dee5abacd1cf266d4",
+    "bytes": 79155
+  },
+  "cpu-mixed_positive_falling.pt": {
+    "sha256": "5c0e5502af82a41aa4ac13d01c7e663dcbcb56030717842fc0430bb023c6cad7",
+    "bytes": 155769
+  },
+  "cpu-mixed_batch.pt": {
+    "sha256": "26cb902c42a44d199aece1241d5116eb416edb9ca1ff9e3686b042933221b4c9",
+    "bytes": 155573
+  },
+  "cpu-constant.pt": {
+    "sha256": "497e53391dd9b42c95a462db567829fe1420ee42783b60367d2676f4fc9c6934",
+    "bytes": 78992
+  }
+}
