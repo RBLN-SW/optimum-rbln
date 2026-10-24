@@ -955,7 +955,7 @@ class TestDinov2ModelNativeSizeBatch512(TestDinov2ModelNativeSizeBatch32):
     RBLN_CLASS_KWARGS = {
         **TestDinov2ModelNativeSize.RBLN_CLASS_KWARGS,
         "rbln_batch_size": 512,
-        "rbln_encoder_chunk_size": 6,
+        "rbln_encoder_chunk_size": None if os.environ.get("RBLN_TEST_NPU") == "RBLN-CR13" else 6,
     }
 
 
