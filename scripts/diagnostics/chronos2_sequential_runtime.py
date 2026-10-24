@@ -38,16 +38,19 @@ class SequentialRuntimeChain:
     the product wrapper's original FP32 summation and inverse normalization.
     """
 
-    def __init__(self, root, stages, device, event, loader=load_stage):
+    def __init__(self, root, stages, device, event, loader=load_stage, observer=None):
         self.root = Path(root)
         self.stages = stages
         self.device = device
         self.event = event
         self.loader = loader
         self.calls = 0
+        self.observer = observer
 
     def _run(self, stage, inputs):
         name = stage["name"]
+        if self.observer is not None:
+            self.observer("before", self.calls, stage, inputs, None)
         context = self.loader(self.root / stage["file"], self.device)
         started = time.perf_counter()
         with context as runtime:
@@ -84,6 +87,8 @@ class SequentialRuntimeChain:
                 "host_wall_seconds": time.perf_counter() - finished,
             }
         )
+        if self.observer is not None:
+            self.observer("after", self.calls, stage, inputs, frozen)
         return frozen
 
     def __call__(self, *inputs):

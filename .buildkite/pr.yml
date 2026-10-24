@@ -76,5 +76,6 @@ steps:
         --manifest-name manifest-recovered.json
         --manifest-sha256 0eeb40e41cae94010206d8426646e8347bf76d07873663eee5df7cd66bae93c5
         --runtime-library-sha256 4e1bc153f001ae5a8694478052c7df4b05d8b5dbc09c6a27c06153e6decc7a9e
+        --capture-mask-diagnostics
         --out debug-chronos-frozen
         2>&1 | tee debug-chronos-frozen/runtime.log

@@ -75,3 +75,36 @@ lost exact compile timer null. The recovered manifest SHA is
 `0eeb40e41cae94010206d8426646e8347bf76d07873663eee5df7cd66bae93c5`.
 Static all-resident allocation is 42,836,426,752 bytes; the sequential-stage peak
 is 9,225,371,648 bytes, plus runtime overhead and host intermediate buffers.
+
+## CI812 partial-group diagnostic supplement
+
+The six frozen artifacts remain unchanged. CI812 passed maximum and full-batch
+covariate parity but failed the original partial-grouped scenario (three actual
+rows padded to512), PCC0.75863/NRMSE0.670881. Stage jobs completed without the
+previous watchdog failure. This candidate has not met numerical acceptance.
+
+`--capture-mask-diagnostics` adds observation to the same original suite and
+fresh-reload invocation. It does not change the test inputs, masks, thresholds,
+compiled stages or NPU execution. For each partial3 request it saves raw and
+normalized inputs before embedding; all stage input/output hashes, shapes,
+strides and storage offsets; active/selected padded hidden slices; and the
+original CPU expected and NPU actual forecasts before the original PCC assert.
+An optional native CPU embedding oracle evaluates the same normalized first
+three rows for diagnosis only, with no CPU result fed to an NPU stage.
+
+Group-mask comparison streams over all577x1x512x512 values but saves only hashes,
+counts and small active/padded slices. It records native IEEE FP32 mask hashes
+separately from the actual mask. It compares zero-vs-blocked membership exactly,
+including active queries, and records negative/positive/NaN/infinity counts and
+actual extrema. A raw hash difference alone does not identify a bug: the frozen
+init program uses a finite physical negative multiplier rather than IEEE
+finfo.min. These diagnostic comparisons do not replace the original numerical
+criteria. Full group-mask tensors are not written to artifacts.
+
+CPU execution of the exact frozen embedding host-library functions matched all
+151,257,088 native group-permit values for the original partial3 fixture, with
+33,814 permitted entries and zero mismatches. Groups are[0,0,0,3,...,511], with
+no negative IDs; every padded row is isolated. This validates the host function
+bodies with correctly bound inputs. Live host binding, device mask inversion/
+casts and encoder consumption remain open until scheduler captures are read.
+The diagnostic’s host hashing/oracle time is not a matched performance result.

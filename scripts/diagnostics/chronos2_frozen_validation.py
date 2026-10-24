@@ -10,6 +10,7 @@ import shutil
 import tempfile
 import unittest
 from contextlib import ExitStack, contextmanager
+from functools import wraps
 from pathlib import Path
 from unittest.mock import patch
 
@@ -129,7 +130,7 @@ def block_export(*args, **kwargs):
     raise RuntimeError("Frozen diagnostic forbids model export/compilation")
 
 
-def runtime_adapter(manifest, event):
+def runtime_adapter(manifest, event, observer=None):
     """The closure must use each invocation's passed models, including fresh reloads."""
 
     def create(cls, compiled_models, rbln_config):
@@ -157,7 +158,9 @@ def runtime_adapter(manifest, event):
                 gc.collect()
 
         event({"phase": "runtime_chain_created", "compiled_model_object_ids": [id(x) for x in compiled_models]})
-        return [SequentialRuntimeChain(Path("."), manifest["stages"], devices[0], event, loader=loader)]
+        return [
+            SequentialRuntimeChain(Path("."), manifest["stages"], devices[0], event, loader=loader, observer=observer)
+        ]
 
     return create
 
@@ -191,7 +194,7 @@ def verify_runtime_library(expected_sha):
     return {"version": version, "library": next(iter(mapped)), "sha256": expected_sha, "rebel_module": rebel.__file__}
 
 
-def run_suite(root, manifest, work, event):
+def run_suite(root, manifest, work, event, diagnostics=None):
     from optimum.rbln import RBLNChronos2Model
     from optimum.rbln.utils.runtime_utils import ContextRblnConfig
     from tests.test_transformers import TestChronos2ModelBatch512
@@ -232,10 +235,39 @@ def run_suite(root, manifest, work, event):
             original_teardown()
 
     with ExitStack() as stack:
+        if diagnostics is not None:
+            from chronos import Chronos2Model
+
+            cpu_forward = Chronos2Model.forward
+            product_forward = RBLNChronos2Model.forward
+
+            @wraps(cpu_forward)
+            def cpu_capture(model, *args, **kwargs):
+                inputs = {**kwargs, **({"context": args[0]} if args else {})}
+                output = cpu_forward(model, *args, **kwargs)
+                diagnostics.reference(model, inputs, output)
+                return output
+
+            @wraps(product_forward)
+            def product_capture(model, *args, **kwargs):
+                inputs = {**kwargs, **({"context": args[0]} if args else {})}
+                with diagnostics.product_request(inputs):
+                    output = product_forward(model, *args, **kwargs)
+                    diagnostics.product_output(output)
+                    return output
+
+            stack.enter_context(patch.object(Chronos2Model, "forward", cpu_capture))
+            stack.enter_context(patch.object(RBLNChronos2Model, "forward", product_capture))
         for name in ("_export", "compile"):
             stack.enter_context(patch.object(RBLNChronos2Model, name, classmethod(block_export)))
         stack.enter_context(
-            patch.object(RBLNChronos2Model, "_create_runtimes", classmethod(runtime_adapter(manifest, event)))
+            patch.object(
+                RBLNChronos2Model,
+                "_create_runtimes",
+                classmethod(
+                    runtime_adapter(manifest, event, observer=None if diagnostics is None else diagnostics.stage)
+                ),
+            )
         )
         stack.enter_context(patch.object(cls, "setUpClass", classmethod(setup)))
         stack.enter_context(patch.object(cls, "tearDownClass", classmethod(teardown)))
@@ -266,6 +298,7 @@ def main():
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--runtime-library-sha256")
     parser.add_argument("--verify-only", action="store_true")
+    parser.add_argument("--capture-mask-diagnostics", action="store_true")
     args = parser.parse_args()
     args.artifacts = args.artifacts.resolve()
     args.out = args.out.resolve()
@@ -296,7 +329,12 @@ def main():
     os.environ["OPTIMUM_RBLN_TEST_LEVEL"] = "full"
     os.environ["RBLN_TEST_NPU"] = "RBLN-CA25"
     os.chdir(args.out)
-    run_suite(args.artifacts, manifest, args.out.resolve(), event)
+    diagnostics = None
+    if args.capture_mask_diagnostics:
+        from scripts.diagnostics.chronos2_mask_diagnostics import MaskDiagnostics
+
+        diagnostics = MaskDiagnostics(args.out / "mask-diagnostics", event)
+    run_suite(args.artifacts, manifest, args.out.resolve(), event, diagnostics=diagnostics)
 
 
 if __name__ == "__main__":
