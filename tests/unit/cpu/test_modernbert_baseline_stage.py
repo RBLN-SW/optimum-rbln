@@ -102,7 +102,7 @@ def test_busy_writer_lock_is_not_removed(tmp_path, monkeypatch):
 def test_pipeline_stages_on_k8s_before_udc_consumer():
     pipeline = yaml.safe_load(Path(".buildkite/pr.yml").read_text())
     stage = next(s for s in pipeline["steps"] if s.get("key") == "modernbert-baseline-stage")
-    consumer = next(s for s in pipeline["steps"] if "selected boundaries" in s.get("label", ""))
+    consumer = next(s for s in pipeline["steps"] if s.get("key") == "modernbert-first-layer")
     assert stage["agents"]["queue"] == "k8s"
     assert consumer["agents"]["queue"] == "udc"
     assert consumer["depends_on"] == stage["key"]

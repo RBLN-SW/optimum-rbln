@@ -58,7 +58,8 @@ steps:
     command:
       - "python3 -m scripts.diagnostics.modernbert_baseline_stage"
 
-  - label: ":microscope: ModernBERT original163 native B1 selected boundaries"
+  - label: ":microscope: ModernBERT original163 native B1 attention/MLP/residual owners"
+    key: modernbert-first-layer
     depends_on: modernbert-baseline-stage
     image: "${DEVTOOLS_DOCKER_IMAGE}"
     agents:
@@ -77,8 +78,8 @@ steps:
       UV_INDEX_REBELLIONS_PASSWORD: REBEL_SW_DEV_PASSWORD
     timeout_in_minutes: 120
     artifact_paths:
-      - "debug-modernbert-boundaries/**/*"
+      - "debug-modernbert-first-layer/**/*"
     command:
       - "bash scripts/ci/sync.sh"
-      - "mkdir -p debug-modernbert-boundaries"
-      - "set -o pipefail; uv run --no-sync python -m scripts.diagnostics.modernbert_boundaries --baseline /mnt/cross_data/model-enable/jaehunryu/modernbert-ci806/offset-2.pt --execute 2>&1 | tee debug-modernbert-boundaries/runtime.log"
+      - "mkdir -p debug-modernbert-first-layer"
+      - "set -o pipefail; uv run --no-sync python -m scripts.diagnostics.modernbert_first_layer --baseline /mnt/cross_data/model-enable/jaehunryu/modernbert-ci806/offset-2.pt --execute 2>&1 | tee debug-modernbert-first-layer/runtime.log"
