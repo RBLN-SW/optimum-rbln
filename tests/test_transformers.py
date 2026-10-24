@@ -21,6 +21,7 @@ from optimum.rbln import (
     RBLNDPTForDepthEstimation,
     RBLNGroundingDinoForObjectDetection,
     RBLNModernBertForMaskedLM,
+    RBLNModernBertModel,
     RBLNPegasusModel,
     RBLNResNetForImageClassification,
     RBLNRobertaForMaskedLM,
@@ -160,6 +161,104 @@ class TestModernBertForMaskedLM(BaseTest.TestModel):
         "input_ids": RANDOM_INPUT_IDS,
         "attention_mask": RANDOM_ATTN_MASK,
     }
+
+
+class TestModernBertModelNativeMaxSeqLen(BaseTest.TestModel):
+    RBLN_AUTO_CLASS = RBLNAutoModel
+    RBLN_CLASS = RBLNModernBertModel
+    HF_MODEL_ID = "nomic-ai/modernbert-embed-base"
+    HF_CONFIG_KWARGS = {"revision": "d556a88e332558790b210f7bdbe87da2fa94a8d8"}
+    RBLN_CLASS_KWARGS = {
+        "rbln_max_seq_len": 8192,
+        "rbln_batch_size": 1,
+        "rbln_npu": os.environ.get("RBLN_TEST_NPU"),
+    }
+    BATCH_SIZE = 1
+    TEST_LEVEL = TestLevel.FULL
+    DEVICE = 0
+    TEXTS = [
+        "search_query: What is dimensionality reduction?",
+        "search_document: Dimensionality reduction maps high-dimensional observations into fewer dimensions.",
+        "search_document: " + "Processors and machine learning systems analyze long documents. " * 1500,
+        "search_query: ",
+    ]
+
+    def get_inputs(self):
+        return {
+            "input_ids": torch.ones(self.BATCH_SIZE, 8192, dtype=torch.int64),
+            "attention_mask": torch.ones(self.BATCH_SIZE, 8192, dtype=torch.int64),
+        }
+
+    @staticmethod
+    def pooled(hidden, mask):
+        mask = mask[..., None].to(hidden.dtype)
+        return torch.nn.functional.normalize((hidden * mask).sum(1) / mask.sum(1).clamp_min(1), dim=1)
+
+    def test_embedding_parity(self):
+        import gc
+
+        from transformers import AutoModel, AutoTokenizer
+
+        if os.environ.get("SAVE_ARTIFACTS_PATH") or os.environ.get("REUSE_ARTIFACTS_PATH"):
+            self.skipTest("Artifact compatibility mode does not execute on a real NPU.")
+        reference, loading = AutoModel.from_pretrained(
+            self.HF_MODEL_ID, **self.HF_CONFIG_KWARGS, attn_implementation="sdpa", output_loading_info=True
+        )
+        assert not loading["missing_keys"]
+        assert not loading["unexpected_keys"]
+        reference.eval()
+        tokenizer = AutoTokenizer.from_pretrained(self.HF_MODEL_ID, **self.HF_CONFIG_KWARGS)
+        with torch.inference_mode():
+            for offset in range(len(self.TEXTS)):
+                texts = [self.TEXTS[(offset + i) % len(self.TEXTS)] for i in range(self.BATCH_SIZE)]
+                inputs = tokenizer(texts, max_length=8192, padding="max_length", truncation=True, return_tensors="pt")
+                inputs.pop("token_type_ids", None)
+                assert inputs.input_ids.shape == (self.BATCH_SIZE, 8192)
+                for text, mask in zip(texts, inputs.attention_mask, strict=True):
+                    if text == self.TEXTS[2]:
+                        assert mask.sum().item() == 8192
+                expected = reference(**inputs).last_hidden_state
+                actual = self.model(**inputs, return_dict=True)
+                assert actual.last_hidden_state.shape == (self.BATCH_SIZE, 8192, 768)
+                assert torch.isfinite(actual.last_hidden_state).all()
+                for row in range(self.BATCH_SIZE):
+                    valid = inputs.attention_mask[row].bool()
+                    target = expected[row, valid].float().flatten()
+                    value = actual.last_hidden_state[row, valid].float().flatten()
+                    pcc = torch.nn.functional.cosine_similarity(
+                        value - value.mean(), target - target.mean(), dim=0
+                    ).item()
+                    nrmse = ((value - target).square().mean().sqrt() / target.square().mean().sqrt()).item()
+                    cosine = torch.nn.functional.cosine_similarity(
+                        self.pooled(actual.last_hidden_state, inputs.attention_mask)[row],
+                        self.pooled(expected, inputs.attention_mask)[row],
+                        dim=0,
+                    ).item()
+                    print(
+                        f"ModernBERT offset={offset} row={row}: PCC={pcc:.8f}, NRMSE={nrmse:.8f}, cosine={cosine:.8f}"
+                    )
+                    assert pcc >= 0.99
+                    assert nrmse <= 0.05
+                    assert cosine >= 0.99
+                if offset == 0:
+                    first_inputs = {name: value.clone() for name, value in inputs.items()}
+                    first_hidden = actual.last_hidden_state.clone()
+                repeated = self.model(**inputs, return_dict=True)
+                assert torch.equal(actual.last_hidden_state, repeated.last_hidden_state)
+                as_tuple = self.model(**inputs, return_dict=False)
+                assert len(as_tuple) == 1
+                assert torch.equal(actual.last_hidden_state, as_tuple[0])
+            last_hidden = actual.last_hidden_state.clone()
+            returned = self.model(**first_inputs, return_dict=True)
+            assert torch.equal(first_hidden, returned.last_hidden_state)
+            # Release the live device runtime before constructing the reloaded one.
+            del type(self).model
+            gc.collect()
+            type(self).model = self.RBLN_AUTO_CLASS.from_pretrained(self.get_rbln_local_dir(), rbln_device=self.DEVICE)
+            reloaded_first = self.model(**first_inputs, return_dict=True)
+            assert torch.equal(first_hidden, reloaded_first.last_hidden_state)
+            reloaded_last = self.model(**inputs, return_dict=True)
+            assert torch.equal(last_hidden, reloaded_last.last_hidden_state)
 
 
 class TestDPTModel(BaseTest.TestModel):
