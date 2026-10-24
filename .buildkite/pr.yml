@@ -1,5 +1,4 @@
-# Entry pipeline for PR builds. Gates run first; the test pipelines are uploaded
-# only after they pass.
+# Native1024 FLUX2 transformer component diagnostic; full pipeline acceptance remains separate.
 env:
   # Where every release's compiled artifacts live, written by the tag build
   # (.buildkite/bc-compile.yml).
@@ -7,14 +6,6 @@ env:
   UV_CACHE_DIR: "${UV_CACHE_PATH}"
   UV_LINK_MODE: "symlink"
   UV_INDEX_STRATEGY: "unsafe-best-match"
-
-# Both upload jobs read only .buildkite and scripts; the suites they emit check out in full.
-_upload: &upload
-  checkout:
-    sparse:
-      paths:
-        - .buildkite
-        - scripts
 
 steps:
   - label: ":closed_lock_with_key: team-member gate"
@@ -46,41 +37,41 @@ steps:
     command:
       - "bash scripts/check-docstrings.sh"
 
-  # All gates must pass before the NPU pipeline is even uploaded.
+  # All gates must pass before the scheduled CR13 diagnostic starts.
   - wait: ~
 
-  # A [pytest-full] commit (the compiler-update bot's PRs) runs every suite at the
-  # full level. Suites a change cannot affect are skipped with the [skip-*]
-  # directives run-suite.sh reads, not by path.
-  # Sibling jobs: two uploads from one job make the second batch a barrier for
-  # the first, so the pytest suites would wait on BC.
-  - label: ":sparkles: upload pytest"
-    <<: *upload
-    command: |
-      if [[ "$$BUILDKITE_MESSAGE" == *"[pytest-full]"* ]]; then
-        echo "--- :mag: [pytest-full] in commit message"
-        export OPTIMUM_RBLN_TEST_LEVEL=full
-        export HF_USER_ID=Rebellions
-      fi
-      buildkite-agent pipeline upload .buildkite/pipelines/pytest/pipeline.yml
-
-  - label: ":sparkles: upload BC"
-    <<: *upload
-    command: |
-      bash scripts/ci/bc-steps.sh --latest | buildkite-agent pipeline upload
-
-  - wait: ~
-    continue_on_failure: true
-
-  - label: ":slack: report"
-    if: build.message =~ /\[slack-report\]/
-    soft_fail: true
-    allow_dependency_failure: true
+  - label: ":package: Stage native FLUX2 transformer artifacts across clusters"
     image: "${DEVTOOLS_DOCKER_IMAGE}"
-    env:
-      SLACK_TITLE: "Optimum-RBLN PR Test Results"
-    secrets:
-      OBEDIENTS_API_TOKEN: BUILDKITE_API_TOKEN
-      SLACK_BOT_TOKEN: SLACK_OAUTH_TOKEN
+    agents:
+      queue: k8s
+    timeout_in_minutes: 30
     command:
-      - "python3 scripts/ci/slack-report.py"
+      - "python3 -m scripts.diagnostics.flux2_transformer_stage"
+
+  - wait: ~
+
+  - label: ":microscope: FLUX2 real-weight native1024 transformer on CR13"
+    image: "${DEVTOOLS_DOCKER_IMAGE}"
+    agents:
+      queue: udc
+    resources:
+      cpu:
+        requests: "16"
+      memory:
+        requests: "128Gi"
+        limits: "128Gi"
+      npu:
+        count: 1
+        product: "RBLN-CR13"
+    secrets:
+      UV_INDEX_REBELLIONS_USERNAME: REBEL_SW_DEV_USERNAME
+      UV_INDEX_REBELLIONS_PASSWORD: REBEL_SW_DEV_PASSWORD
+    env:
+      RBLN_TEST_NPU: "RBLN-CR13"
+    timeout_in_minutes: 180
+    artifact_paths:
+      - "debug-flux2-transformer/**/*"
+    command:
+      - "bash scripts/ci/sync.sh"
+      - "mkdir -p debug-flux2-transformer"
+      - "set -o pipefail; uv run --no-sync python -m scripts.diagnostics.flux2_transformer_frozen --execute --artifacts /mnt/cross_data/model-enable/jaehunryu/flux2-klein-native1024-transformer-sdk333 2>&1 | tee debug-flux2-transformer/runtime.log"
