@@ -140,6 +140,8 @@ steps:
 
   - label: ":pytest: DeBERTa CR13 parity"
     key: "deberta-cr13"
+    agents:
+      queue: udc
     if: "'${OPTIMUM_RBLN_TEST_LEVEL:-default}' == 'full' && build.message !~ /\\[skip-transformers\\]/"
     image: "${DEVTOOLS_DOCKER_IMAGE}"
     resources:
@@ -158,6 +160,8 @@ steps:
   - &deberta_capacity_cr13
     label: ":pytest: DeBERTa native512 B32 CR13 capacity"
     key: "deberta-capacity-cr13-b32"
+    agents:
+      queue: udc
     if: "'${OPTIMUM_RBLN_TEST_LEVEL:-default}' == 'full' && build.message !~ /\\[skip-transformers\\]/"
     image: "${DEVTOOLS_DOCKER_IMAGE}"
     resources:
