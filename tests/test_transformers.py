@@ -25,6 +25,7 @@ from optimum.rbln import (
     RBLNResNetForImageClassification,
     RBLNRobertaForMaskedLM,
     RBLNRobertaForSequenceClassification,
+    RBLNSiglip2Model,
     RBLNT5EncoderModel,
     RBLNTimeSeriesTransformerForPrediction,
     RBLNViTForImageClassification,
@@ -788,3 +789,124 @@ class TestGroundingDinoModel(BaseTest.TestModel):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestSiglip2Model(BaseTest.TestModel):
+    RBLN_AUTO_CLASS = RBLNAutoModel
+    RBLN_CLASS = RBLNSiglip2Model
+    HF_MODEL_ID = "google/siglip2-base-patch16-naflex"
+    HF_CONFIG_KWARGS = {"revision": "b53b807d3a2d5e2b3911292f2d69e5341cdc064c"}
+    RBLN_CLASS_KWARGS = {"rbln_batch_size": 1, "rbln_npu": os.environ.get("RBLN_TEST_NPU")}
+    BATCH_SIZE = 1
+    DEVICE = 0
+    GENERATION_KWARGS = {
+        "input_ids": torch.full((1, 64), 4, dtype=torch.int64),
+        "pixel_values": torch.zeros(1, 256, 768),
+        "spatial_shapes": torch.tensor([[16, 16]]),
+    }
+
+    def test_numerical_parity(self):
+        from huggingface_hub import hf_hub_download
+        from transformers import AutoModel, AutoProcessor
+
+        if os.environ.get("SAVE_ARTIFACTS_PATH") or os.environ.get("REUSE_ARTIFACTS_PATH"):
+            self.skipTest("Artifact compatibility mode does not execute on a real NPU.")
+        reference = AutoModel.from_pretrained(self.HF_MODEL_ID, **self.HF_CONFIG_KWARGS).float().eval()
+        processor = AutoProcessor.from_pretrained(self.HF_MODEL_ID, **self.HF_CONFIG_KWARGS)
+        path = hf_hub_download(
+            "huggingface/documentation-images",
+            "coco_sample.png",
+            repo_type="dataset",
+            revision="a9c3851af92cce883828811163f904b61a2550dc",
+        )
+        cat = Image.open(path).convert("RGB")
+        images = [cat, cat.resize((256, 256)), cat.resize((128, 512)), cat.resize((512, 128))]
+        texts = ["a photo of cats", "a photo of dogs", "a photo of a train", "a photo of parrots"]
+
+        def flatten(output):
+            values = output.to_tuple()
+            return tuple(v.clone() for v in (*values[:4], *values[4], *values[5]))
+
+        first_inputs = first_output = None
+        with torch.no_grad():
+            for offset in range(4):
+                inputs = processor(
+                    images=[images[(offset + i) % 4] for i in range(self.BATCH_SIZE)],
+                    text=[texts[(offset + i) % 4] for i in range(self.BATCH_SIZE)],
+                    padding="max_length",
+                    max_length=64,
+                    truncation=True,
+                    return_tensors="pt",
+                )
+                expected = flatten(reference(**inputs))
+                actual = flatten(self.model(**inputs))
+                repeated = flatten(self.model(**inputs))
+                failures = []
+                for index, (a, e, repeated_value) in enumerate(zip(actual, expected, repeated, strict=True)):
+                    nrmse = (a - e).square().mean().sqrt() / e.square().mean().sqrt().clamp_min(1e-8)
+                    values = {
+                        "test_class": type(self).__name__,
+                        "offset": offset,
+                        "output": index,
+                        "shape": list(a.shape),
+                        "nrmse": float(nrmse),
+                        "spatial_shapes": inputs.spatial_shapes.tolist(),
+                    }
+                    if a.numel() > 1:
+                        values["pcc"] = float(torch.corrcoef(torch.stack([a.flatten(), e.flatten()]))[0, 1])
+                    if index in (2, 3):
+                        values["minimum_cosine"] = float(torch.nn.functional.cosine_similarity(a, e).min())
+                    checks = {
+                        "finite": bool(a.isfinite().all()),
+                        "nrmse": bool(nrmse <= 0.05),
+                        "repeat": torch.equal(a, repeated_value),
+                    }
+                    if "pcc" in values:
+                        checks["pcc"] = values["pcc"] >= 0.99
+                    if "minimum_cosine" in values:
+                        checks["minimum_cosine"] = values["minimum_cosine"] >= 0.99
+                    values["failed_criteria"] = [name for name, passed in checks.items() if not passed]
+                    print("SIGLIP2_PARITY " + json.dumps(values), flush=True)
+                    if values["failed_criteria"]:
+                        failures.append(values)
+                assert not failures, failures
+                if first_inputs is None:
+                    first_inputs, first_output = inputs, actual
+            for a, e in zip(flatten(self.model(**first_inputs)), first_output, strict=True):
+                torch.testing.assert_close(a, e, rtol=0, atol=0)
+            reloaded = self.RBLN_AUTO_CLASS.from_pretrained(self.get_rbln_local_dir(), rbln_device=self.DEVICE)
+            for a, e in zip(flatten(reloaded(**first_inputs)), first_output, strict=True):
+                torch.testing.assert_close(a, e, rtol=0, atol=0)
+
+
+class TestSiglip2ModelBatch2(TestSiglip2Model):
+    TEST_LEVEL = TestLevel.FULL
+    BATCH_SIZE = 2
+    RBLN_CLASS_KWARGS = {**TestSiglip2Model.RBLN_CLASS_KWARGS, "rbln_batch_size": 2}
+    GENERATION_KWARGS = {
+        "input_ids": torch.full((2, 64), 4, dtype=torch.int64),
+        "pixel_values": torch.zeros(2, 256, 768),
+        "spatial_shapes": torch.tensor([[16, 16]] * 2),
+    }
+
+
+class TestSiglip2ModelBatch4(TestSiglip2Model):
+    TEST_LEVEL = TestLevel.FULL
+    BATCH_SIZE = 4
+    RBLN_CLASS_KWARGS = {**TestSiglip2Model.RBLN_CLASS_KWARGS, "rbln_batch_size": 4}
+    GENERATION_KWARGS = {
+        "input_ids": torch.full((4, 64), 4, dtype=torch.int64),
+        "pixel_values": torch.zeros(4, 256, 768),
+        "spatial_shapes": torch.tensor([[16, 16]] * 4),
+    }
+
+
+class TestSiglip2ModelBatch8(TestSiglip2Model):
+    TEST_LEVEL = TestLevel.FULL
+    BATCH_SIZE = 8
+    RBLN_CLASS_KWARGS = {**TestSiglip2Model.RBLN_CLASS_KWARGS, "rbln_batch_size": 8}
+    GENERATION_KWARGS = {
+        "input_ids": torch.full((8, 64), 4, dtype=torch.int64),
+        "pixel_values": torch.zeros(8, 256, 768),
+        "spatial_shapes": torch.tensor([[16, 16]] * 8),
+    }
