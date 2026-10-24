@@ -46,11 +46,11 @@ steps:
       queue: k8s
     timeout_in_minutes: 30
     command:
-      - "python3 -m scripts.diagnostics.flux2_block0_stage"
+      - "python3 -m scripts.diagnostics.flux2_block0_selective_stage"
 
   - wait: ~
 
-  - label: ":microscope: FLUX2 block0 identity and producer outputs on CR13"
+  - label: ":microscope: FLUX2 block0 selective observation identity on CR13"
     image: "${DEVTOOLS_DOCKER_IMAGE}"
     agents:
       queue: udc
@@ -71,8 +71,8 @@ steps:
       REBEL_COMPILER_VERSION: "0.12.1.dev336+g6a96bd1a"
     timeout_in_minutes: 30
     artifact_paths:
-      - "debug-flux2-block0/**/*"
+      - "debug-flux2-selective/**/*"
     command:
       - "bash scripts/ci/sync.sh"
-      - "mkdir -p debug-flux2-block0"
-      - "set -o pipefail; uv run --no-sync python -m scripts.diagnostics.flux2_block0_native --execute --artifacts /mnt/cross_data/model-enable/jaehunryu/flux2-block0-native-sdk336 2>&1 | tee debug-flux2-block0/runtime.log"
+      - "mkdir -p debug-flux2-selective"
+      - "set -o pipefail; uv run --no-sync python -m scripts.diagnostics.flux2_block0_selective --execute --artifacts /mnt/cross_data/model-enable/jaehunryu/flux2-block0-selective-sdk336 2>&1 | tee debug-flux2-selective/runtime.log"
