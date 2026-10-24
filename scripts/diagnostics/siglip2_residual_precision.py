@@ -81,6 +81,10 @@ def main():
     layers = list(wrapper.model.vision_model.encoder.layers)
     branches = [(AttentionBranch(layer).eval(), MLPBranch(layer).eval()) for layer in layers]
     probes = {index: MLPProbe(layers[index]).eval() for index in [0, 6, 11]}
+    affine_branches = [(AttentionBranch(layer).eval(), MLPBranch(layer).eval()) for layer in layers]
+    for (attention, mlp), (affine_attention, affine_mlp) in zip(branches, affine_branches, strict=True):
+        affine_attention.norm = AffineNormalization(attention.norm)
+        affine_mlp.norm = AffineNormalization(mlp.norm)
     fixture = hf_hub_download(
         "huggingface/documentation-images",
         "coco_sample.png",
@@ -150,6 +154,22 @@ def main():
                 deltas.append(float((a - e).abs().max()))
             normalization_deltas.append(deltas)
         wrapper.model.vision_model.post_layernorm = normalization
+        block_normalization_cpu = []
+        for values, baseline in zip(inputs, cpu_baselines, strict=True):
+            hidden = embedding(values[1], values[4])
+            for (attention, mlp), (affine_attention, affine_mlp) in zip(branches, affine_branches, strict=True):
+                normalized = torch.nn.functional.layer_norm(
+                    hidden, attention.norm.normalized_shape, eps=attention.norm.eps
+                )
+                hidden = hidden + affine_attention(normalized, values[3])
+                normalized = torch.nn.functional.layer_norm(hidden, mlp.norm.normalized_shape, eps=mlp.norm.eps)
+                hidden = hidden + affine_mlp(normalized)
+            candidate = tuple(wrapper(values[0], hidden, *values[2:]))
+            metrics = compare(candidate, baseline, candidate)
+            assert not any(row["failed_criteria"] for row in metrics), metrics
+            assert max(row["nrmse"] for row in metrics) < 1e-5, metrics
+            block_normalization_cpu.append(metrics)
+        print("SIGLIP2_BLOCK_NORMALIZATION_CPU " + json.dumps(block_normalization_cpu), flush=True)
         print("SIGLIP2_RESIDUAL_CPU_BITWISE four native geometries and all encoder residuals passed", flush=True)
         print("SIGLIP2_NORMALIZATION_CPU " + json.dumps(normalization_deltas), flush=True)
         if args.cpu_only:
@@ -194,6 +214,13 @@ def main():
             compile_model(f"mlp-{index}", mlp, [("hidden_states", [1, 256, 768], "float32")])
         for index, probe in probes.items():
             compile_model(f"mlp-probe-{index}", probe, [("hidden_states", [1, 256, 768], "float32")])
+        for index, (attention, mlp) in enumerate(affine_branches):
+            compile_model(
+                f"affine-attention-{index}",
+                attention,
+                [("hidden_states", [1, 256, 768], "float32"), ("pixel_attention_mask", [1, 256], "int64")],
+            )
+            compile_model(f"affine-mlp-{index}", mlp, [("hidden_states", [1, 256, 768], "float32")])
         wrapper.model.vision_model.embeddings = EmbeddedInput()
         wrapper.model.vision_model.encoder = EmbeddedEncoder()
         compile_model("head", wrapper, config.compile_cfgs[0].input_info)
@@ -205,6 +232,8 @@ def main():
         compile_model("affine-head", wrapper, config.compile_cfgs[0].input_info)
         assert report["compile"]["affine-head"]["inputs"] == report["compile"]["head"]["inputs"]
         report["normalization_cpu_max_deltas"] = normalization_deltas
+        report["block_normalization_cpu"] = block_normalization_cpu
+        report["acceptance_variant"] = "fp32-residual-block-normalization"
         report["timing_includes_cpu_diagnostics"] = True
         for variant in [
             "baseline",
@@ -212,6 +241,7 @@ def main():
             "fp32-residual-normalization",
             "diagnostic-cpu-attention",
             "diagnostic-cpu-mlp",
+            "fp32-residual-block-normalization",
         ]:
             selected = (
                 ["baseline"]
@@ -242,18 +272,29 @@ def main():
                         if expected_stages is not None or variant == "diagnostic-cpu-attention"
                         else None
                     )
+                    prefix = "affine-" if variant == "fp32-residual-block-normalization" else ""
+                    attention_input = hidden
+                    if prefix:
+                        attention_input = torch.nn.functional.layer_norm(
+                            hidden, attention.norm.normalized_shape, eps=attention.norm.eps
+                        )
                     attention_output = (
                         cpu_attention
                         if variant == "diagnostic-cpu-attention"
-                        else runtimes[f"attention-{index}"](hidden, values[3]).float()
+                        else runtimes[f"{prefix}attention-{index}"](attention_input, values[3]).float()
                     )
                     row = {"layer": index}
                     if expected_stages is not None:
                         row["attention_same_input_nrmse"] = nrmse(attention_output, cpu_attention)
                     hidden = hidden.float() + attention_output
                     cpu_mlp = mlp(hidden) if expected_stages is not None or variant == "diagnostic-cpu-mlp" else None
+                    mlp_input = hidden
+                    if prefix:
+                        mlp_input = torch.nn.functional.layer_norm(hidden, mlp.norm.normalized_shape, eps=mlp.norm.eps)
                     mlp_output = (
-                        cpu_mlp if variant == "diagnostic-cpu-mlp" else runtimes[f"mlp-{index}"](hidden).float()
+                        cpu_mlp
+                        if variant == "diagnostic-cpu-mlp"
+                        else runtimes[f"{prefix}mlp-{index}"](mlp_input).float()
                     )
                     if expected_stages is not None:
                         row["mlp_same_input_nrmse"] = nrmse(mlp_output, cpu_mlp)
@@ -344,7 +385,7 @@ def main():
         failures = [
             row
             for case in report["cases"]
-            if case["variant"] == "fp32-residual-normalization"
+            if case["variant"] == report["acceptance_variant"]
             for row in case["metrics"]
             if row["failed_criteria"]
         ]
