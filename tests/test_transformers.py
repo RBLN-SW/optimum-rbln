@@ -561,6 +561,22 @@ class TestMPNetModelNativeMaxBatch1024(TestMPNetModel):
     }
 
 
+@unittest.skipUnless(os.environ.get("RBLN_TEST_NPU") == "RBLN-CR13", "CR13 capacity validation requires a CR13 lane")
+class TestMPNetModelNativeMaxBatch2048(TestMPNetModel):
+    TEST_LEVEL = TestLevel.FULL
+    BATCH_SIZE = 2048
+    RBLN_CLASS_KWARGS = {
+        **TestMPNetModel.RBLN_CLASS_KWARGS,
+        "rbln_max_seq_len": 512,
+        "rbln_batch_size": 2048,
+        "rbln_npu": "RBLN-CR13",
+    }
+    GENERATION_KWARGS = {
+        "input_ids": torch.full((2048, 512), 4, dtype=torch.int64),
+        "attention_mask": torch.ones((2048, 512), dtype=torch.int64),
+    }
+
+
 class TestEncoderMaxSeqLenBucketing(unittest.TestCase):
     """Sequence-length bucketing for feature-extraction encoders.
 
