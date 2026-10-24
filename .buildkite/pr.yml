@@ -49,7 +49,7 @@ steps:
   # All gates must pass before the NPU pipeline is even uploaded.
   - wait: ~
 
-  - label: ":microscope: ModernBERT original163 native B1 capture"
+  - label: ":microscope: ModernBERT SDK249 original native B1 control"
     image: "${DEVTOOLS_DOCKER_IMAGE}"
     agents:
       queue: udc
@@ -65,10 +65,12 @@ steps:
     secrets:
       UV_INDEX_REBELLIONS_USERNAME: REBEL_SW_DEV_USERNAME
       UV_INDEX_REBELLIONS_PASSWORD: REBEL_SW_DEV_PASSWORD
+    env:
+      REBEL_COMPILER_VERSION: "0.12.1.dev249+gdef44cb7.prod"
     timeout_in_minutes: 120
     artifact_paths:
       - "debug-modernbert-capture/**/*"
     command:
       - "bash scripts/ci/sync.sh"
       - "mkdir -p debug-modernbert-capture"
-      - "set -o pipefail; uv run --no-sync python -m scripts.diagnostics.modernbert_capture --arm original --execute 2>&1 | tee debug-modernbert-capture/runtime.log"
+      - "set -o pipefail; uv run --no-sync python -m scripts.diagnostics.modernbert_capture --arm original --expected-sdk 0.12.1.dev249+gdef44cb7.prod --execute 2>&1 | tee debug-modernbert-capture/runtime.log"
