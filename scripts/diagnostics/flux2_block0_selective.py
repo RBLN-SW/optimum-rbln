@@ -11,8 +11,8 @@ from scripts.diagnostics.flux2_block0_native import FEATURES, SDK, as_outputs, s
 from scripts.diagnostics.flux2_transformer_frozen import metrics, require_scheduled_execution, sha256
 
 
-MANIFEST_SHA = "45f8b6d14385acd55bd13674faa152997d33a990a97f0aeb658a5accb7466874"
-VARIANTS = {"manual": None, "input_norm": 1, "attention": 2, "post_norm": 4, "gated": 8}
+MANIFEST_SHA = "4bb3d4ece2a2ab8534b5e43b0e9c023fecfafb6d67e207afabad84f305b625b1"
+VARIANTS = {"first_residual": 3}
 FILES = {
     "native.rbln",
     "baseline-compile-result.json",

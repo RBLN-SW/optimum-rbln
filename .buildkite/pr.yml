@@ -50,7 +50,7 @@ steps:
 
   - wait: ~
 
-  - label: ":microscope: FLUX2 block0 selective observation identity on CR13"
+  - label: ":microscope: FLUX2 block0 first residual identity on CR13"
     image: "${DEVTOOLS_DOCKER_IMAGE}"
     agents:
       queue: udc
@@ -75,4 +75,4 @@ steps:
     command:
       - "bash scripts/ci/sync.sh"
       - "mkdir -p debug-flux2-selective"
-      - "set -o pipefail; uv run --no-sync python -m scripts.diagnostics.flux2_block0_selective --execute --artifacts /mnt/cross_data/model-enable/jaehunryu/flux2-block0-selective-sdk336 2>&1 | tee debug-flux2-selective/runtime.log"
+      - "set -o pipefail; uv run --no-sync python -m scripts.diagnostics.flux2_block0_selective --execute --artifacts /mnt/cross_data/model-enable/jaehunryu/flux2-block0-first-residual-sdk336 2>&1 | tee debug-flux2-selective/runtime.log"
