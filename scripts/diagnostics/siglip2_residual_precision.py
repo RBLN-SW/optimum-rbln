@@ -43,6 +43,11 @@ class MLPBranch(nn.Module):
         return self.mlp(self.norm(hidden_states))
 
 
+class MLPFirstProjection(MLPBranch):
+    def forward(self, hidden_states):
+        return self.mlp.fc1(self.norm(hidden_states))
+
+
 class MLPProbe(MLPBranch):
     def forward(self, hidden_states):
         normalized = self.norm(hidden_states)
@@ -85,6 +90,9 @@ def main():
     for (attention, mlp), (affine_attention, affine_mlp) in zip(branches, affine_branches, strict=True):
         affine_attention.norm = AffineNormalization(attention.norm)
         affine_mlp.norm = AffineNormalization(mlp.norm)
+    first_projections = [MLPFirstProjection(layer).eval() for layer in layers]
+    for first, (_, mlp) in zip(first_projections, branches, strict=True):
+        first.norm = AffineNormalization(mlp.norm)
     fixture = hf_hub_download(
         "huggingface/documentation-images",
         "coco_sample.png",
@@ -157,13 +165,18 @@ def main():
         block_normalization_cpu = []
         for values, baseline in zip(inputs, cpu_baselines, strict=True):
             hidden = embedding(values[1], values[4])
-            for (attention, mlp), (affine_attention, affine_mlp) in zip(branches, affine_branches, strict=True):
+            for (attention, mlp), (affine_attention, affine_mlp), first in zip(
+                branches, affine_branches, first_projections, strict=True
+            ):
                 normalized = torch.nn.functional.layer_norm(
                     hidden, attention.norm.normalized_shape, eps=attention.norm.eps
                 )
                 hidden = hidden + affine_attention(normalized, values[3])
                 normalized = torch.nn.functional.layer_norm(hidden, mlp.norm.normalized_shape, eps=mlp.norm.eps)
-                hidden = hidden + affine_mlp(normalized)
+                projected = first(normalized)
+                decomposed = mlp.mlp.fc2(mlp.mlp.activation_fn(projected))
+                torch.testing.assert_close(decomposed, affine_mlp(normalized), rtol=0, atol=0)
+                hidden = hidden + decomposed
             candidate = tuple(wrapper(values[0], hidden, *values[2:]))
             metrics = compare(candidate, baseline, candidate)
             assert not any(row["failed_criteria"] for row in metrics), metrics
@@ -221,6 +234,18 @@ def main():
                 [("hidden_states", [1, 256, 768], "float32"), ("pixel_attention_mask", [1, 256], "int64")],
             )
             compile_model(f"affine-mlp-{index}", mlp, [("hidden_states", [1, 256, 768], "float32")])
+        for index, first in enumerate(first_projections):
+            compile_model(f"affine-fc1-{index}", first, [("hidden_states", [1, 256, 768], "float32")])
+            compile_model(
+                f"fc2-{index}",
+                layers[index].mlp.fc2,
+                [("hidden_states", [1, 256, native.config.vision_config.intermediate_size], "float32")],
+            )
+        compile_model(
+            "activation",
+            layers[0].mlp.activation_fn,
+            [("hidden_states", [1, 256, native.config.vision_config.intermediate_size], "float32")],
+        )
         wrapper.model.vision_model.embeddings = EmbeddedInput()
         wrapper.model.vision_model.encoder = EmbeddedEncoder()
         compile_model("head", wrapper, config.compile_cfgs[0].input_info)
@@ -233,7 +258,7 @@ def main():
         assert report["compile"]["affine-head"]["inputs"] == report["compile"]["head"]["inputs"]
         report["normalization_cpu_max_deltas"] = normalization_deltas
         report["block_normalization_cpu"] = block_normalization_cpu
-        report["acceptance_variant"] = "fp32-residual-block-normalization"
+        report["acceptance_variant"] = "fp32-blocknorm-cpu-activation"
         report["timing_includes_cpu_diagnostics"] = True
         for variant in [
             "baseline",
@@ -242,6 +267,8 @@ def main():
             "diagnostic-cpu-attention",
             "diagnostic-cpu-mlp",
             "fp32-residual-block-normalization",
+            "fp32-blocknorm-npu-activation",
+            "fp32-blocknorm-cpu-activation",
         ]:
             selected = (
                 ["baseline"]
@@ -272,7 +299,8 @@ def main():
                         if expected_stages is not None or variant == "diagnostic-cpu-attention"
                         else None
                     )
-                    prefix = "affine-" if variant == "fp32-residual-block-normalization" else ""
+                    split_activation = variant in {"fp32-blocknorm-npu-activation", "fp32-blocknorm-cpu-activation"}
+                    prefix = "affine-" if variant == "fp32-residual-block-normalization" or split_activation else ""
                     attention_input = hidden
                     if prefix:
                         attention_input = torch.nn.functional.layer_norm(
@@ -291,11 +319,20 @@ def main():
                     mlp_input = hidden
                     if prefix:
                         mlp_input = torch.nn.functional.layer_norm(hidden, mlp.norm.normalized_shape, eps=mlp.norm.eps)
-                    mlp_output = (
-                        cpu_mlp
-                        if variant == "diagnostic-cpu-mlp"
-                        else runtimes[f"{prefix}mlp-{index}"](mlp_input).float()
-                    )
+                    if split_activation:
+                        projected = runtimes[f"affine-fc1-{index}"](mlp_input)
+                        activated = (
+                            mlp.mlp.activation_fn(projected)
+                            if variant == "fp32-blocknorm-cpu-activation"
+                            else runtimes["activation"](projected)
+                        )
+                        mlp_output = runtimes[f"fc2-{index}"](activated).float()
+                    else:
+                        mlp_output = (
+                            cpu_mlp
+                            if variant == "diagnostic-cpu-mlp"
+                            else runtimes[f"{prefix}mlp-{index}"](mlp_input).float()
+                        )
                     if expected_stages is not None:
                         row["mlp_same_input_nrmse"] = nrmse(mlp_output, cpu_mlp)
                         if variant == "fp32-residual" and index in probes:
