@@ -13,7 +13,7 @@ def frozen(tmp_path, monkeypatch):
     artifact.write_bytes(b"immutable trained binary")
     manifest = {
         "revision": diagnostic.REVISION,
-        "sdk": diagnostic.SDK,
+        "sdk": "0.12.1.dev336+g6a96bd1a",
         "target": "RBLN-CR13",
         "num_devices": 1,
         "batch": 1,
@@ -22,11 +22,13 @@ def frozen(tmp_path, monkeypatch):
         "reference_image_count": 0,
         "denoising_steps": 4,
         "guidance": 1.0,
-        "hybrid_source_overlay": True,
-        "official_patched_SDK_acceptance": False,
-        "compiler_source_commit": "78fd8c151d9882fdd00476c709ffcfb9bbf39807",
-        "unchanged_goldens_thresholds_and_other_components": True,
-        "source_overlay": {"method_calls": 36, "source_dtypes": {"float32": 36}},
+        "hybrid_source_overlay": False,
+        "official_wheel_used": True,
+        "model_numerical_acceptance": False,
+        "compiler_source_commit": "6a96bd1a7e1591fc98d96b8a5727ceb6bc67094b",
+        "primitive_commit": "f9ad60764de5a48c331e739a1aa90cf500a43215",
+        "unchanged_original_goldens_and_thresholds": True,
+        "all_components_recompiled_with_official_sdk": True,
         "files": {"model/compiled.rbln": {"bytes": artifact.stat().st_size, "sha256": diagnostic.sha256(artifact)}},
     }
     path = tmp_path / "manifest.json"
@@ -80,19 +82,39 @@ def test_frozen_rejects_shortened_native_context(frozen, monkeypatch):
         diagnostic.verify_bundle(root)
 
 
-def test_frozen_rejects_incomplete_source_conversion(frozen, monkeypatch):
+def test_frozen_rejects_incomplete_component_recompile(frozen, monkeypatch):
     root, manifest = frozen
-    manifest["source_overlay"]["method_calls"] = 35
+    manifest["all_components_recompiled_with_official_sdk"] = False
     path = root / "manifest.json"
     path.write_text(json.dumps(manifest))
     monkeypatch.setattr(diagnostic, "MANIFEST_SHA", diagnostic.sha256(path))
-    with pytest.raises(ValueError, match="36 FP32 SiLU"):
+    with pytest.raises(ValueError, match="profile differs"):
         diagnostic.verify_bundle(root)
 
 
-def test_frozen_rejects_official_wheel_claim(frozen, monkeypatch):
+def test_frozen_rejects_premature_model_acceptance(frozen, monkeypatch):
     root, manifest = frozen
-    manifest["official_patched_SDK_acceptance"] = True
+    manifest["model_numerical_acceptance"] = True
+    path = root / "manifest.json"
+    path.write_text(json.dumps(manifest))
+    monkeypatch.setattr(diagnostic, "MANIFEST_SHA", diagnostic.sha256(path))
+    with pytest.raises(ValueError, match="profile differs"):
+        diagnostic.verify_bundle(root)
+
+
+def test_frozen_rejects_source_overlay_in_official_wheel(frozen, monkeypatch):
+    root, manifest = frozen
+    manifest["source_overlay"] = {"method_calls": 36, "source_dtypes": {"float32": 36}}
+    path = root / "manifest.json"
+    path.write_text(json.dumps(manifest))
+    monkeypatch.setattr(diagnostic, "MANIFEST_SHA", diagnostic.sha256(path))
+    with pytest.raises(ValueError, match="source overlay"):
+        diagnostic.verify_bundle(root)
+
+
+def test_frozen_rejects_old_compiler_pin(frozen, monkeypatch):
+    root, manifest = frozen
+    manifest["compiler_source_commit"] = "0ece4ab38cc84df9d2602e6e1e9c2ef047b2aab3"
     path = root / "manifest.json"
     path.write_text(json.dumps(manifest))
     monkeypatch.setattr(diagnostic, "MANIFEST_SHA", diagnostic.sha256(path))

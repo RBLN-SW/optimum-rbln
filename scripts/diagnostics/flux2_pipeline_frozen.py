@@ -1,4 +1,4 @@
-"""Native FLUX2 full-pipeline candidate: SDK333 plus FP32 SiLU source overlay."""
+"""Native FLUX2 full-pipeline candidate: official SDK336 native SiLU primitives."""
 
 import argparse
 import importlib
@@ -12,9 +12,9 @@ from pathlib import Path
 from scripts.diagnostics.flux2_transformer_frozen import metrics, require_scheduled_execution, sha256
 
 
-SDK = "0.12.1.dev333+gf66b88a7"
+SDK = "0.12.1.dev336+g6a96bd1a"
 REVISION = "e7b7dc27f91deacad38e78976d1f2b499d76a294"
-MANIFEST_SHA = "d0a168125ae8bb3282bfe20749f5e282b586db636737b06ec150f827d25606fa"
+MANIFEST_SHA = "3c0ed461a2ed4b954741eb4960c98b0950e31f803ab0ac15189c2c67127798b1"
 
 
 def verify_bundle(directory):
@@ -42,16 +42,18 @@ def verify_bundle(directory):
         "reference_image_count": 0,
         "denoising_steps": 4,
         "guidance": 1.0,
-        "hybrid_source_overlay": True,
-        "official_patched_SDK_acceptance": False,
-        "compiler_source_commit": "78fd8c151d9882fdd00476c709ffcfb9bbf39807",
-        "unchanged_goldens_thresholds_and_other_components": True,
+        "hybrid_source_overlay": False,
+        "official_wheel_used": True,
+        "model_numerical_acceptance": False,
+        "compiler_source_commit": "6a96bd1a7e1591fc98d96b8a5727ceb6bc67094b",
+        "primitive_commit": "f9ad60764de5a48c331e739a1aa90cf500a43215",
+        "unchanged_original_goldens_and_thresholds": True,
+        "all_components_recompiled_with_official_sdk": True,
     }
     if any(manifest.get(k) != v for k, v in expected.items()):
         raise ValueError("Native acceptance profile differs")
-    overlay = manifest.get("source_overlay", {})
-    if overlay.get("method_calls") != 36 or overlay.get("source_dtypes") != {"float32": 36}:
-        raise ValueError("All 36 FP32 SiLU conversions must use the recorded source overlay")
+    if "source_overlay" in manifest:
+        raise ValueError("Official wheel candidate must not include a source overlay")
     return manifest
 
 
@@ -67,9 +69,9 @@ def main(argv=None):
     result = {
         "phase": "preflight",
         "full_pipeline_npu_acceptance": False,
-        "hybrid_source_overlay": True,
-        "official_patched_SDK_acceptance": False,
-        "compiler_source_commit": "78fd8c151d9882fdd00476c709ffcfb9bbf39807",
+        "hybrid_source_overlay": False,
+        "official_wheel_used": True,
+        "compiler_source_commit": "6a96bd1a7e1591fc98d96b8a5727ceb6bc67094b",
     }
     started = time.monotonic()
     code = 1

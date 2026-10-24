@@ -1,4 +1,4 @@
-# Native full FLUX2 hybrid SiLU source candidate; original numerical criteria.
+# Native full FLUX2 official SDK336 native SiLU candidate; original numerical criteria.
 env:
   # Where every release's compiled artifacts live, written by the tag build
   # (.buildkite/bc-compile.yml).
@@ -50,7 +50,7 @@ steps:
 
   - wait: ~
 
-  - label: ":microscope: FLUX2 full pipeline with FP32 SiLU source overlay on CR13"
+  - label: ":microscope: FLUX2 full pipeline with official SDK336 native SiLU on CR13"
     image: "${DEVTOOLS_DOCKER_IMAGE}"
     agents:
       queue: udc
@@ -68,10 +68,11 @@ steps:
       UV_INDEX_REBELLIONS_PASSWORD: REBEL_SW_DEV_PASSWORD
     env:
       RBLN_TEST_NPU: "RBLN-CR13"
+      REBEL_COMPILER_VERSION: "0.12.1.dev336+g6a96bd1a"
     timeout_in_minutes: 180
     artifact_paths:
       - "debug-flux2-pipeline/**/*"
     command:
       - "bash scripts/ci/sync.sh"
       - "mkdir -p debug-flux2-pipeline"
-      - "set -o pipefail; uv run --no-sync python -m scripts.diagnostics.flux2_pipeline_frozen --execute --artifacts /mnt/cross_data/model-enable/jaehunryu/flux2-klein-full-native1024-silu-overlay-sdk333 2>&1 | tee debug-flux2-pipeline/runtime.log"
+      - "set -o pipefail; uv run --no-sync python -m scripts.diagnostics.flux2_pipeline_frozen --execute --artifacts /mnt/cross_data/model-enable/jaehunryu/flux2-klein-native1024-official-6a96 2>&1 | tee debug-flux2-pipeline/runtime.log"
