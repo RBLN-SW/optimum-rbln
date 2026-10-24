@@ -63,3 +63,29 @@ def test_execute_requires_scheduler_before_loading(tmp_path, monkeypatch):
     monkeypatch.setattr(diagnostic, "load_baseline", lambda *args: pytest.fail("Baseline loaded"))
     assert diagnostic.main(["--execute", "--baseline", str(tmp_path / "missing"), "--output", str(tmp_path)]) == 1
     assert "BUILDKITE_BUILD_ID" in json.loads((tmp_path / "result.json").read_text())["error"]
+
+
+def test_early_boundaries_keep_final_and_selected_original_layers():
+    from scripts.diagnostics.modernbert_boundaries import BOUNDARIES
+
+    assert BOUNDARIES == (0, 4, 9, 14)
+    config = tiny_model().config
+    config.num_hidden_layers = 16
+    config.layer_types = ["full_attention" if index % 3 == 0 else "sliding_attention" for index in range(16)]
+    native = ModernBertModel(config).eval()
+    recorded = {}
+    for index in BOUNDARIES:
+        native.layers[index].register_forward_hook(
+            lambda module, args, output, index=index: recorded.update({index: output.clone()})
+        )
+    ids = torch.randint(1, 128, (1, 17))
+    mask = torch.ones_like(ids)
+    mask[:, -3:] = 0
+    with torch.inference_mode():
+        final = native(input_ids=ids, attention_mask=mask).last_hidden_state
+        expected = {index: tensor.clone() for index, tensor in recorded.items()}
+        actual = BoundaryWrapper(native)(ids, mask)
+    assert len(actual) == 5
+    torch.testing.assert_close(actual[0], final, rtol=0, atol=0)
+    for index, tensor in zip(BOUNDARIES, actual[1:], strict=True):
+        torch.testing.assert_close(tensor, expected[index], rtol=0, atol=0)

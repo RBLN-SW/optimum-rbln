@@ -19,7 +19,7 @@ CHECKPOINT = "nomic-ai/modernbert-embed-base"
 REVISION = "d556a88e332558790b210f7bdbe87da2fa94a8d8"
 SDK = "0.12.1.dev163+g0c6d4a5e.prod"
 BASELINE_SHA256 = "bed9721c662ca682645dee9469a2dbe17c3028559ec4a388c21a3e87f2b267e4"
-BOUNDARIES = (14, 15, 16)  # Zero-based encoder layer indices.
+BOUNDARIES = (0, 4, 9, 14)  # Zero-based encoder layer indices.
 
 
 class BoundaryWrapper(torch.nn.Module):
