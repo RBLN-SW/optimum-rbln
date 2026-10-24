@@ -54,7 +54,7 @@ steps:
   # directives run-suite.sh reads, not by path.
   # Sibling jobs: two uploads from one job make the second batch a barrier for
   # the first, so the pytest suites would wait on BC.
-  - label: ":microscope: CA25 native B512 encoder fresh process (diagnostic)"
+  - label: ":microscope: CA25 native B256 encoder timing and watchdog (diagnostic)"
     image: "${DEVTOOLS_DOCKER_IMAGE}"
     agents:
       queue: k8s
@@ -77,13 +77,15 @@ steps:
       OPTIMUM_RBLN_TEST_LEVEL: "full"
     timeout_in_minutes: 120
     artifact_paths:
+      - "debug-dinov2-watchdog/**/*"
       - "junit-dinov2-ca25-encoder.xml"
     command:
       - "bash scripts/ci/sync.sh"
       - "rbln-smi"
-      - "uv run --no-sync pytest -n 1 -s -vv tests/test_transformers.py -k 'TestDinov2ModelNativeSizeBatch512 and (test_generate or test_numerical_parity)' --junitxml=junit-dinov2-ca25-encoder.xml"
+      - "uv run --no-sync python -m scripts.diagnostics.dinov2_watchdog_metadata"
+      - "uv run --no-sync pytest -n 1 -s -vv tests/test_transformers.py -k 'TestDinov2ModelNativeSizeBatch256 and (test_generate or test_numerical_parity)' --durations=10 --durations-min=0.01 --junitxml=junit-dinov2-ca25-encoder.xml"
 
-  - label: ":microscope: CA25 native B512 classifier fresh process (diagnostic)"
+  - label: ":microscope: CA25 native B256 classifier timing and watchdog (diagnostic)"
     image: "${DEVTOOLS_DOCKER_IMAGE}"
     agents:
       queue: k8s
@@ -106,8 +108,10 @@ steps:
       OPTIMUM_RBLN_TEST_LEVEL: "full"
     timeout_in_minutes: 120
     artifact_paths:
+      - "debug-dinov2-watchdog/**/*"
       - "junit-dinov2-ca25-classifier.xml"
     command:
       - "bash scripts/ci/sync.sh"
       - "rbln-smi"
-      - "uv run --no-sync pytest -n 1 -s -vv tests/test_transformers.py -k 'TestDinov2ForImageClassificationNativeSizeBatch512 and (test_generate or test_numerical_parity)' --junitxml=junit-dinov2-ca25-classifier.xml"
+      - "uv run --no-sync python -m scripts.diagnostics.dinov2_watchdog_metadata"
+      - "uv run --no-sync pytest -n 1 -s -vv tests/test_transformers.py -k 'TestDinov2ForImageClassificationNativeSizeBatch256 and (test_generate or test_numerical_parity)' --durations=10 --durations-min=0.01 --junitxml=junit-dinov2-ca25-classifier.xml"
