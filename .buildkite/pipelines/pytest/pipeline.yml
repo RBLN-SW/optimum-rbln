@@ -155,6 +155,39 @@ steps:
       - *sync
       - "bash scripts/ci/run-suite.sh deberta-cr13"
 
+  - &deberta_capacity_cr13
+    label: ":pytest: DeBERTa native512 B32 CR13 capacity"
+    key: "deberta-capacity-cr13-b32"
+    if: "'${OPTIMUM_RBLN_TEST_LEVEL:-default}' == 'full' && build.message !~ /\\[skip-transformers\\]/"
+    image: "${DEVTOOLS_DOCKER_IMAGE}"
+    resources:
+      cpu:
+        requests: "16"
+      memory:
+        requests: "64Gi"
+        limits: "64Gi"
+      npu:
+        count: 1
+        product: "RBLN-CR13"
+    secrets: *secrets
+    env: &deberta_capacity_cr13_env
+      RBLN_TEST_NPU: "RBLN-CR13"
+      CAPACITY_BATCH_SIZE: "32"
+      OMP_NUM_THREADS: "4"
+      MKL_NUM_THREADS: "4"
+    timeout_in_minutes: 90
+    artifact_paths: "junit-*.xml"
+    command:
+      - *sync
+      - "bash scripts/ci/run-suite.sh deberta-capacity-cr13"
+
+  - <<: *deberta_capacity_cr13
+    label: ":pytest: DeBERTa native512 B64 CR13 capacity"
+    key: "deberta-capacity-cr13-b64"
+    env:
+      <<: *deberta_capacity_cr13_env
+      CAPACITY_BATCH_SIZE: "64"
+
   - label: ":pytest: diffusers 1/2"
     <<: *no_diffusers
     image: "${DEVTOOLS_DOCKER_IMAGE}"
