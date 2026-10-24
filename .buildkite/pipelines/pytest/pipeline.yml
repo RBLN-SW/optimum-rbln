@@ -204,6 +204,7 @@ steps:
   - <<: *electra_capacity_cr13
     label: ":pytest: ELECTRA native512 B2048 CR13 capacity"
     key: "electra-capacity-cr13-b2048"
+    timeout_in_minutes: 180
     env:
       <<: *electra_capacity_cr13_env
       CAPACITY_BATCH_SIZE: "2048"
