@@ -78,20 +78,4 @@ steps:
       - "debug-deberta-classifier/**/*"
     command:
       - "bash scripts/ci/sync.sh"
-      - >-
-        test -z "${SAVE_ARTIFACTS_PATH:-}${REUSE_ARTIFACTS_PATH:-}" || exit 2;
-        mkdir -p debug-deberta-classifier;
-        for name in memory.current memory.peak memory.max memory.events; do
-        if [ -r "/sys/fs/cgroup/$name" ]; then cat "/sys/fs/cgroup/$name" > "debug-deberta-classifier/before-$name"; fi;
-        done
-      - >-
-        set +e;
-        uv run --no-sync pytest -n 1
-        tests/test_deberta_capacity.py::TestDebertaV3ForSequenceClassificationBatch64CR13::test_numerical_parity
-        --junitxml junit-deberta-classifier-b64.xml
-        -o junit_logging=all --capture=tee-sys -rP -vv --durations 0;
-        result=$?;
-        for name in memory.current memory.peak memory.max memory.events; do
-        if [ -r "/sys/fs/cgroup/$name" ]; then cat "/sys/fs/cgroup/$name" > "debug-deberta-classifier/after-$name"; fi;
-        done;
-        exit "$result"
+      - "bash scripts/diagnostics/deberta_classifier_b64.sh"
