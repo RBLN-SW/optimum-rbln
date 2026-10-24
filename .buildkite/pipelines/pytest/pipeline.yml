@@ -164,7 +164,7 @@ steps:
       queue: udc
     if: "'${OPTIMUM_RBLN_TEST_LEVEL:-default}' == 'full' && build.message !~ /\\[skip-transformers\\]/"
     image: "${DEVTOOLS_DOCKER_IMAGE}"
-    resources:
+    resources: &deberta_capacity_cr13_resources
       cpu:
         requests: "16"
       memory:
@@ -188,6 +188,11 @@ steps:
   - <<: *deberta_capacity_cr13
     label: ":pytest: DeBERTa native512 B64 CR13 capacity"
     key: "deberta-capacity-cr13-b64"
+    resources:
+      <<: *deberta_capacity_cr13_resources
+      memory:
+        requests: "128Gi"
+        limits: "128Gi"
     env:
       <<: *deberta_capacity_cr13_env
       CAPACITY_BATCH_SIZE: "64"
