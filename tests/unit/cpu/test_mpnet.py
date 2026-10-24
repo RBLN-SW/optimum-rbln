@@ -3,6 +3,31 @@ import torch
 from transformers import MPNetConfig, MPNetModel
 
 
+def test_mpnet_keeps_one_position_bias_with_distinct_padding_masks():
+    from optimum.rbln.transformers.models.mpnet.mpnet_architecture import MPNetModelWrapper
+
+    torch.manual_seed(42)
+    model = MPNetModel(
+        MPNetConfig(vocab_size=64, hidden_size=32, num_hidden_layers=2, num_attention_heads=4, intermediate_size=64)
+    ).eval()
+    wrapper = MPNetModelWrapper(model).eval()
+    input_ids = torch.randint(4, 64, (4, 17))
+    mask = torch.arange(17)[None, :] < torch.tensor([2, 7, 13, 17])[:, None]
+    input_ids[~mask] = model.config.pad_token_id
+    hidden = torch.zeros(4, 17, model.config.hidden_size)
+    with torch.no_grad():
+        original_bias = model.encoder.compute_position_bias(hidden)
+        shared_bias = wrapper.model.encoder.compute_position_bias(hidden)
+        expected = model(input_ids, mask.long(), return_dict=False)
+        actual = wrapper(input_ids, mask.long())
+
+    assert shared_bias.shape == (1, model.config.num_attention_heads, 17, 17)
+    torch.testing.assert_close(shared_bias.expand_as(original_bias), original_bias, rtol=0, atol=0)
+    for actual_tensor, expected_tensor in zip(actual, expected, strict=True):
+        torch.testing.assert_close(actual_tensor, expected_tensor)
+    assert model.encoder.compute_position_bias(hidden).shape[0] == 4
+
+
 @pytest.mark.parametrize("batch_size", [1, 2])
 @pytest.mark.parametrize("sequence_length", [8, 17])
 @pytest.mark.parametrize("add_pooling_layer", [True, False])

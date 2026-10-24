@@ -16,6 +16,16 @@ import copy
 
 import torch
 from torch import nn
+from transformers.models.mpnet.modeling_mpnet import MPNetEncoder
+
+
+class MPNetSharedPositionBiasEncoder(MPNetEncoder):
+    def compute_position_bias(self, hidden_states, position_ids=None, num_buckets=32):
+        # Default relative positions are identical across rows. The existing
+        # mask add broadcasts this learned bias against each row's mask.
+        if position_ids is None:
+            hidden_states = hidden_states[:1]
+        return super().compute_position_bias(hidden_states, position_ids=position_ids, num_buckets=num_buckets)
 
 
 class MPNetSDPAAttention(nn.Module):
@@ -44,6 +54,7 @@ class MPNetModelWrapper(nn.Module):
     def __init__(self, model):
         super().__init__()
         self.model = copy.deepcopy(model)
+        self.model.encoder.__class__ = MPNetSharedPositionBiasEncoder
         for layer in self.model.encoder.layer:
             layer.attention.attn = MPNetSDPAAttention(layer.attention.attn)
 
