@@ -49,38 +49,49 @@ steps:
   # All gates must pass before the NPU pipeline is even uploaded.
   - wait: ~
 
-  # A [pytest-full] commit (the compiler-update bot's PRs) runs every suite at the
-  # full level. Suites a change cannot affect are skipped with the [skip-*]
-  # directives run-suite.sh reads, not by path.
-  # Sibling jobs: two uploads from one job make the second batch a barrier for
-  # the first, so the pytest suites would wait on BC.
-  - label: ":sparkles: upload pytest"
-    <<: *upload
-    command: |
-      if [[ "$$BUILDKITE_MESSAGE" == *"[pytest-full]"* ]]; then
-        echo "--- :mag: [pytest-full] in commit message"
-        export OPTIMUM_RBLN_TEST_LEVEL=full
-        export HF_USER_ID=Rebellions
-      fi
-      buildkite-agent pipeline upload .buildkite/pipelines/pytest/pipeline.yml
-
-  - label: ":sparkles: upload BC"
-    <<: *upload
-    command: |
-      bash scripts/ci/bc-steps.sh --latest | buildkite-agent pipeline upload
-
-  - wait: ~
-    continue_on_failure: true
-
-  - label: ":slack: report"
-    if: build.message =~ /\[slack-report\]/
-    soft_fail: true
-    allow_dependency_failure: true
+  - label: ":microscope: DeBERTa native512 B64 classifier alone"
     image: "${DEVTOOLS_DOCKER_IMAGE}"
-    env:
-      SLACK_TITLE: "Optimum-RBLN PR Test Results"
+    agents:
+      queue: udc
+    resources:
+      cpu:
+        requests: "16"
+      memory:
+        requests: "64Gi"
+        limits: "64Gi"
+      npu:
+        count: 1
+        product: "RBLN-CR13"
     secrets:
-      OBEDIENTS_API_TOKEN: BUILDKITE_API_TOKEN
-      SLACK_BOT_TOKEN: SLACK_OAUTH_TOKEN
+      UV_INDEX_REBELLIONS_USERNAME: REBEL_SW_DEV_USERNAME
+      UV_INDEX_REBELLIONS_PASSWORD: REBEL_SW_DEV_PASSWORD
+      HF_TOKEN: HF_TOKEN
+      HF_HOME: HF_HOME
+    env:
+      RBLN_TEST_NPU: "RBLN-CR13"
+      OPTIMUM_RBLN_TEST_LEVEL: "full"
+      OMP_NUM_THREADS: "4"
+      MKL_NUM_THREADS: "4"
+    timeout_in_minutes: 90
+    artifact_paths:
+      - "junit-deberta-classifier-b64.xml"
+      - "debug-deberta-classifier/**/*"
     command:
-      - "python3 scripts/ci/slack-report.py"
+      - "bash scripts/ci/sync.sh"
+      - >-
+        test -z "${SAVE_ARTIFACTS_PATH:-}${REUSE_ARTIFACTS_PATH:-}" || exit 2;
+        mkdir -p debug-deberta-classifier;
+        for name in memory.current memory.peak memory.max memory.events; do
+        if [ -r "/sys/fs/cgroup/$name" ]; then cat "/sys/fs/cgroup/$name" > "debug-deberta-classifier/before-$name"; fi;
+        done
+      - >-
+        set +e;
+        uv run --no-sync pytest -n 1
+        tests/test_deberta_capacity.py::TestDebertaV3ForSequenceClassificationBatch64CR13::test_numerical_parity
+        --junitxml junit-deberta-classifier-b64.xml
+        -o junit_logging=all --capture=tee-sys -rP -vv --durations 0;
+        result=$?;
+        for name in memory.current memory.peak memory.max memory.events; do
+        if [ -r "/sys/fs/cgroup/$name" ]; then cat "/sys/fs/cgroup/$name" > "debug-deberta-classifier/after-$name"; fi;
+        done;
+        exit "$result"
