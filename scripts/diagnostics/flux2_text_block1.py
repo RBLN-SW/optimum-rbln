@@ -10,7 +10,7 @@ from pathlib import Path
 from scripts.diagnostics.flux2_transformer_frozen import metrics, require_scheduled_execution, sha256
 
 
-MANIFEST_SHA = "a3ba85d87380686432addc8f2e2be467dceb09fb6f3632c722251684a2234219"
+MANIFEST_SHA = "155054bd2129cd5e4139e7b36257d26b73937c237b070b4c999f9317aefbb564"
 SDK = "0.12.1.dev333+gf66b88a7"
 FEATURES = [
     "input_norm",
@@ -50,6 +50,8 @@ def verify_bundle(directory):
         "physical_outputs": 44,
         "block_index": 1,
         "feature_names": FEATURES,
+        "observation_mechanism": "actual_native_producer_outputs",
+        "required_frontend": "export",
         "diagnostic_only": True,
         "full_pipeline_npu_acceptance": False,
     }
@@ -72,7 +74,7 @@ def identity_checks(values, baseline):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--artifacts", type=Path, required=True)
-    parser.add_argument("--output", type=Path, default=Path("debug-flux2-text-block1"))
+    parser.add_argument("--output", type=Path, default=Path("debug-flux2-text-block1-native-path"))
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--verify-only", action="store_true")
     mode.add_argument("--execute", action="store_true")

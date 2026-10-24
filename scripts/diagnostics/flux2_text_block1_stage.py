@@ -8,8 +8,10 @@ from pathlib import Path
 from scripts.diagnostics.flux2_text_block1 import verify_bundle
 
 
-SOURCE = Path("/mnt/shared_data/users/jaehunryu/nas_data/model-enable-20261025/flux2-klein/text-block1-bundle-sdk333")
-DESTINATION = Path("/mnt/cross_data/model-enable/jaehunryu/flux2-klein-text-block1-sdk333")
+SOURCE = Path(
+    "/mnt/shared_data/users/jaehunryu/nas_data/model-enable-20261025/flux2-klein/text-block1-native-path-bundle-sdk333"
+)
+DESTINATION = Path("/mnt/cross_data/model-enable/jaehunryu/flux2-klein-text-block1-native-path-sdk333")
 
 
 def stage(source=SOURCE, destination=DESTINATION):

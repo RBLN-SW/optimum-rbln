@@ -50,7 +50,7 @@ steps:
 
   - wait: ~
 
-  - label: ":microscope: FLUX2 complete native text graph with second-block intermediate outputs on CR13"
+  - label: ":microscope: FLUX2 actual second-block producer outputs in complete native text graph on CR13"
     image: "${DEVTOOLS_DOCKER_IMAGE}"
     agents:
       queue: udc
@@ -70,9 +70,9 @@ steps:
       RBLN_TEST_NPU: "RBLN-CR13"
     timeout_in_minutes: 180
     artifact_paths:
-      - "debug-flux2-text-block1/**/*"
+      - "debug-flux2-text-block1-native-path/**/*"
     command:
       - "bash scripts/ci/sync.sh"
       - "uv run --no-sync python -m pytest -q tests/unit/cpu/test_flux2_text_block1.py"
-      - "mkdir -p debug-flux2-text-block1"
-      - "set -o pipefail; uv run --no-sync python -m scripts.diagnostics.flux2_text_block1 --execute --artifacts /mnt/cross_data/model-enable/jaehunryu/flux2-klein-text-block1-sdk333 2>&1 | tee debug-flux2-text-block1/runtime.log"
+      - "mkdir -p debug-flux2-text-block1-native-path"
+      - "set -o pipefail; uv run --no-sync python -m scripts.diagnostics.flux2_text_block1 --execute --artifacts /mnt/cross_data/model-enable/jaehunryu/flux2-klein-text-block1-native-path-sdk333 2>&1 | tee debug-flux2-text-block1-native-path/runtime.log"
