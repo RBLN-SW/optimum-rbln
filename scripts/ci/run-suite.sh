@@ -31,6 +31,18 @@ case "$suite" in
     uv run --no-sync pytest -n 1 tests/test_config.py "${report[@]}" -vv --durations 0 "${bc[@]}" ;;
   transformers)
     uv run --no-sync pytest -n 1 tests/test_transformers.py "${report[@]}" ${shard:+--shard "$shard"} -vv --durations 0 "${bc[@]}" ;;
+  mpnet-cr13-native2048)
+    if [ -n "${SAVE_ARTIFACTS_PATH:-}${REUSE_ARTIFACTS_PATH:-}" ]; then
+      echo "mpnet-cr13-native2048 requires original hardware parity, not artifact compatibility mode." >&2
+      exit 2
+    fi
+    if [ "${RBLN_TEST_NPU:-}" != "RBLN-CR13" ]; then
+      echo "mpnet-cr13-native2048 requires the dedicated CR13 scheduler lane." >&2
+      exit 2
+    fi
+    uv run --no-sync pytest -n 1 tests/test_transformers.py "${report[@]}" -k 'TestMPNetModelNativeMaxBatch2048 and test_embedding_parity' -vv --durations 0 ;;
+  mpnet-cr13-capacity)
+    uv run --no-sync pytest -n 1 tests/test_transformers.py "${report[@]}" -k '(TestMPNetModelNativeMaxBatch512 or TestMPNetModelNativeMaxBatch1024) and test_embedding_parity' -vv --durations 0 ;;
   diffusers)
     uv run --no-sync pytest -n 1 tests/test_diffusers.py "${report[@]}" ${shard:+--shard "$shard"} -vv --durations 0 "${bc[@]}" ;;
   llm)
