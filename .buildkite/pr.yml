@@ -40,17 +40,17 @@ steps:
   # All gates must pass before the scheduled CR13 diagnostic starts.
   - wait: ~
 
-  - label: ":package: Stage native FLUX2 trained gate probe artifacts across clusters"
+  - label: ":package: Stage native FLUX2 SiLU accuracy control artifacts across clusters"
     image: "${DEVTOOLS_DOCKER_IMAGE}"
     agents:
       queue: k8s
     timeout_in_minutes: 30
     command:
-      - "python3 -m scripts.diagnostics.flux2_text_gating_stage"
+      - "python3 -m scripts.diagnostics.flux2_silu_accuracy_stage"
 
   - wait: ~
 
-  - label: ":microscope: FLUX2 trained second-block gating probes (not model acceptance) on CR13"
+  - label: ":microscope: FLUX2 SiLU finite-input accuracy controls (not model acceptance) on CR13"
     image: "${DEVTOOLS_DOCKER_IMAGE}"
     agents:
       queue: udc
@@ -70,9 +70,9 @@ steps:
       RBLN_TEST_NPU: "RBLN-CR13"
     timeout_in_minutes: 180
     artifact_paths:
-      - "debug-flux2-text-gating/**/*"
+      - "debug-flux2-silu-accuracy/**/*"
     command:
       - "bash scripts/ci/sync.sh"
-      - "uv run --no-sync python -m pytest -q tests/unit/cpu/test_flux2_text_gating.py"
-      - "mkdir -p debug-flux2-text-gating"
-      - "set -o pipefail; uv run --no-sync python -m scripts.diagnostics.flux2_text_gating --execute --artifacts /mnt/cross_data/model-enable/jaehunryu/flux2-klein-text-gating-probes-sdk333 2>&1 | tee debug-flux2-text-gating/runtime.log"
+      - "uv run --no-sync python -m pytest -q tests/unit/cpu/test_flux2_silu_accuracy.py"
+      - "mkdir -p debug-flux2-silu-accuracy"
+      - "set -o pipefail; uv run --no-sync python -m scripts.diagnostics.flux2_silu_accuracy --execute --artifacts /mnt/cross_data/model-enable/jaehunryu/flux2-klein-silu-accuracy-sdk333 2>&1 | tee debug-flux2-silu-accuracy/runtime.log"
