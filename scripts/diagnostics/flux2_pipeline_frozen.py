@@ -14,7 +14,7 @@ from scripts.diagnostics.flux2_transformer_frozen import metrics, require_schedu
 
 SDK = "0.12.1.dev336+g6a96bd1a"
 REVISION = "e7b7dc27f91deacad38e78976d1f2b499d76a294"
-MANIFEST_SHA = "3c0ed461a2ed4b954741eb4960c98b0950e31f803ab0ac15189c2c67127798b1"
+MANIFEST_SHA = "a125d1cc2358fbcef45248e99ed0ecb2ef16090893154f6d06c5a3c7c680ba16"
 
 
 def verify_bundle(directory):
@@ -39,6 +39,7 @@ def verify_bundle(directory):
         "batch": 1,
         "image_size": [1024, 1024],
         "prompt_length": 512,
+        "actual_valid_prompt_tokens": 512,
         "reference_image_count": 0,
         "denoising_steps": 4,
         "guidance": 1.0,
@@ -112,6 +113,10 @@ def main(argv=None):
                 raise ValueError("Physical device differs from compiled CR13 target")
             golden = torch.load(args.artifacts / "golden.pt", weights_only=True)
             text = torch.load(args.artifacts / "text-golden.pt", weights_only=True)
+            if tuple(text["inputs"]["attention_mask"].shape) != (1, 512) or not bool(
+                text["inputs"]["attention_mask"].all()
+            ):
+                raise ValueError("Native maximum context requires 512 actually valid tokens")
             model = RBLNFlux2KleinPipeline.from_pretrained(
                 args.artifacts / "model",
                 export=False,

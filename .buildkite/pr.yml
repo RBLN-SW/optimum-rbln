@@ -50,7 +50,7 @@ steps:
 
   - wait: ~
 
-  - label: ":microscope: FLUX2 full pipeline with official SDK336 native SiLU on CR13"
+  - label: ":microscope: FLUX2 full native 512-token pipeline with official SDK336 native SiLU on CR13"
     image: "${DEVTOOLS_DOCKER_IMAGE}"
     agents:
       queue: udc
@@ -75,4 +75,4 @@ steps:
     command:
       - "bash scripts/ci/sync.sh"
       - "mkdir -p debug-flux2-pipeline"
-      - "set -o pipefail; uv run --no-sync python -m scripts.diagnostics.flux2_pipeline_frozen --execute --artifacts /mnt/cross_data/model-enable/jaehunryu/flux2-klein-native1024-official-6a96 2>&1 | tee debug-flux2-pipeline/runtime.log"
+      - "set -o pipefail; uv run --no-sync python -m scripts.diagnostics.flux2_pipeline_frozen --execute --artifacts /mnt/cross_data/model-enable/jaehunryu/flux2-klein-native1024-valid512-official-6a96 2>&1 | tee debug-flux2-pipeline/runtime.log"
