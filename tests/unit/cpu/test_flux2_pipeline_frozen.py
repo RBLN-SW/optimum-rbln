@@ -19,6 +19,7 @@ def frozen(tmp_path, monkeypatch):
         "batch": 1,
         "image_size": [1024, 1024],
         "prompt_length": 512,
+        "actual_valid_prompt_tokens": 512,
         "reference_image_count": 0,
         "denoising_steps": 4,
         "guidance": 1.0,
