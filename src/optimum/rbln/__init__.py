@@ -22,6 +22,7 @@ from .utils.import_utils import define_import_structure
 
 
 if TYPE_CHECKING:
+    from .chronos import *
     from .configuration_utils import *
     from .diffusers import *
     from .modeling import *

@@ -14,6 +14,7 @@ from optimum.rbln import (
     RBLNBertForMaskedLM,
     RBLNBertForQuestionAnswering,
     RBLNBertModel,
+    RBLNChronos2Model,
     RBLNCLIPTextModel,
     RBLNColPaliForRetrieval,
     RBLNColQwen2ForRetrieval,
@@ -788,3 +789,263 @@ class TestGroundingDinoModel(BaseTest.TestModel):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestChronos2Model(BaseTest.TestModel):
+    RBLN_CLASS = RBLNChronos2Model
+    HF_MODEL_ID = "amazon/chronos-2"
+    HF_CONFIG_KWARGS = {"revision": "29ec3766d36d6f73f0696f85560a422f50e8498c"}
+    RBLN_CLASS_KWARGS = {"rbln_batch_size": 1, "rbln_npu": os.environ.get("RBLN_TEST_NPU"), "rbln_num_devices": 1}
+    GENERATION_KWARGS = {"context": torch.sin(torch.arange(8192, dtype=torch.float32) / 10).reshape(1, -1)}
+    BATCH_SIZE = 1
+    DEVICE = 0
+
+    @staticmethod
+    def _core_prediction(output):
+        if isinstance(output, (list, tuple)):
+            return output[0].float() + output[1].float()
+        return output
+
+    def _capture_numerical_failure(self, reason, inputs, expected, actual, records):
+        import subprocess
+        from pathlib import Path
+
+        directory = Path(f"debug-chronos2-{type(self).__name__}-{reason}")
+        directory.mkdir(exist_ok=True)
+        shutil.copytree(self.get_rbln_local_dir(), directory / "original", dirs_exist_ok=True)
+        records = list(records)
+        torch.save(
+            {"inputs": inputs, "expected": expected, "actual": actual, "records": records}, directory / "failure.pt"
+        )
+        payload = {"reason": reason, "input_hashes": [r["hashes"] for r in records]}
+        if reason == "repeat" and records:
+            import hashlib
+
+            replay_outputs = []
+            replay_rows = []
+            try:
+                for fresh_inputs in (False, True):
+                    shared_inputs = tuple(t.clone() for t in records[-1]["inputs"])
+                    first = None
+                    for iteration in range(10):
+                        args = tuple(t.clone() for t in shared_inputs) if fresh_inputs else shared_inputs
+                        hashes = [hashlib.sha256(t.numpy().tobytes()).hexdigest() for t in args]
+                        output = self._core_prediction(self.model.model[0](*args)).clone()
+                        if first is None:
+                            first = output.clone()
+                        row = {
+                            "fresh_inputs": fresh_inputs,
+                            "iteration": iteration,
+                            "input_hashes": hashes,
+                            "inputs_unchanged": hashes
+                            == [hashlib.sha256(t.numpy().tobytes()).hexdigest() for t in args],
+                            "output_sha256": hashlib.sha256(output.numpy().tobytes()).hexdigest(),
+                            "delta_first": float((output - first).abs().max()),
+                            "delta_original_first": float((output - records[0]["output"]).abs().max()),
+                            "delta_original_second": float((output - records[-1]["output"]).abs().max()),
+                        }
+                        replay_rows.append(row)
+                        replay_outputs.append(output)
+                        print("CHRONOS2_RAW_REPLAY " + json.dumps(row), flush=True)
+            except Exception as error:
+                payload["raw_replay_error"] = repr(error)
+            payload["raw_replay"] = replay_rows
+            torch.save(replay_outputs, directory / "raw-replay.pt")
+        if len(records) == 2:
+            payload["core_inputs_equal"] = records[0]["hashes"] == records[1]["hashes"]
+            payload["core_outputs_equal"] = torch.equal(records[0]["output"], records[1]["output"])
+            payload["core_max_delta"] = float((records[0]["output"] - records[1]["output"]).abs().max())
+        print("CHRONOS2_DIAGNOSTIC " + json.dumps(payload), flush=True)
+        (directory / "diagnostic.json").write_text(json.dumps(payload, indent=2))
+        if os.environ.get("BUILDKITE_BUILD_ID") and shutil.which("buildkite-agent"):
+            uploaded = subprocess.run(["buildkite-agent", "artifact", "upload", f"{directory}/**/*"], check=False)
+            print(f"CHRONOS2_DIAGNOSTIC_UPLOAD {uploaded.returncode}", flush=True)
+
+    def test_numerical_parity(self):
+        if os.environ.get("SAVE_ARTIFACTS_PATH") or os.environ.get("REUSE_ARTIFACTS_PATH"):
+            self.skipTest("Artifact compatibility mode does not execute on a real NPU.")
+        import hashlib
+        from collections import deque
+
+        from chronos import Chronos2Model
+
+        reference = Chronos2Model.from_pretrained(self.HF_MODEL_ID, **self.HF_CONFIG_KWARGS).float().eval()
+        horizon = self.model.prediction_length
+        patches = horizon // self.model.chronos_config.output_patch_size
+        first_inputs = first_output = None
+        records = deque(maxlen=2)
+        core_runtime = self.model.model[0]
+
+        def record_core(*args):
+            hashes = [hashlib.sha256(t.numpy().tobytes()).hexdigest() for t in args]
+            snapshot = tuple(t.clone() for t in args)
+            output = core_runtime(*args)
+            records.append({"hashes": hashes, "inputs": snapshot, "output": self._core_prediction(output).clone()})
+            return output
+
+        def run_model(**kwargs):
+            original = self.model.model
+            self.model.model = [record_core]
+            try:
+                return self.model(**kwargs)
+            finally:
+                self.model.model = original
+
+        with torch.no_grad():
+            for scenario in [
+                "maximum",
+                "grouped-covariates",
+                "partial-grouped-covariates",
+                "independent-missing",
+                "all-missing",
+            ]:
+                actual_batch = min(3, self.BATCH_SIZE) if scenario == "partial-grouped-covariates" else self.BATCH_SIZE
+                length = self.model.context_length if scenario == "maximum" else 257
+                context = torch.stack(
+                    [torch.sin(torch.arange(length, dtype=torch.float32) / 10) + i for i in range(actual_batch)]
+                )
+                groups = torch.arange(actual_batch, dtype=torch.int64)
+                inputs = {"context": context, "group_ids": groups, "num_output_patches": patches}
+                if scenario in {"grouped-covariates", "partial-grouped-covariates"}:
+                    groups[:] = 7
+                    context[:, ::5] = torch.nan
+                    future = torch.full((actual_batch, horizon), torch.nan)
+                    future[0] = torch.cos(torch.arange(horizon) / 9)
+                    inputs["future_covariates"] = future
+                elif scenario == "independent-missing":
+                    context[:, ::3] = torch.nan
+                elif scenario == "all-missing":
+                    context[:] = torch.nan
+                expected = reference(**inputs).quantile_preds
+                actual = run_model(**inputs).quantile_preds
+                assert actual.shape == expected.shape
+                pcc = torch.corrcoef(torch.stack([actual.flatten(), expected.flatten()]))[0, 1]
+                nrmse = (actual - expected).square().mean().sqrt() / expected.square().mean().sqrt().clamp_min(1e-8)
+                print(
+                    "CHRONOS2_PARITY "
+                    + json.dumps(
+                        {
+                            "test_class": type(self).__name__,
+                            "scenario": scenario,
+                            "shape": list(actual.shape),
+                            "pcc": float(pcc),
+                            "nrmse": float(nrmse),
+                        }
+                    ),
+                    flush=True,
+                )
+                assert actual.isfinite().all()
+                assert pcc >= 0.99
+                if nrmse > 0.05:
+                    self._capture_numerical_failure(scenario, inputs, expected, actual, records)
+                assert nrmse <= 0.05
+                repeated = run_model(**inputs).quantile_preds
+                if not torch.equal(repeated, actual):
+                    self._capture_numerical_failure("repeat", inputs, actual, repeated, records)
+                torch.testing.assert_close(repeated, actual, rtol=0, atol=0)
+                if first_inputs is None:
+                    first_inputs, first_output = inputs, actual.clone()
+            torch.testing.assert_close(run_model(**first_inputs).quantile_preds, first_output, rtol=0, atol=0)
+
+
+class TestChronos2ModelBatch2(TestChronos2Model):
+    TEST_LEVEL = TestLevel.FULL
+    BATCH_SIZE = 2
+    RBLN_CLASS_KWARGS = {**TestChronos2Model.RBLN_CLASS_KWARGS, "rbln_batch_size": 2}
+    GENERATION_KWARGS = {"context": TestChronos2Model.GENERATION_KWARGS["context"].repeat(2, 1)}
+
+
+class TestChronos2ModelBatch4(TestChronos2Model):
+    TEST_LEVEL = TestLevel.FULL
+    BATCH_SIZE = 4
+    RBLN_CLASS_KWARGS = {**TestChronos2Model.RBLN_CLASS_KWARGS, "rbln_batch_size": 4}
+    GENERATION_KWARGS = {"context": TestChronos2Model.GENERATION_KWARGS["context"].repeat(4, 1)}
+
+
+class TestChronos2ModelBatch8(TestChronos2Model):
+    TEST_LEVEL = TestLevel.FULL
+    BATCH_SIZE = 8
+    RBLN_CLASS_KWARGS = {**TestChronos2Model.RBLN_CLASS_KWARGS, "rbln_batch_size": 8}
+    GENERATION_KWARGS = {"context": TestChronos2Model.GENERATION_KWARGS["context"].repeat(8, 1)}
+
+
+class TestChronos2ModelBatch16(TestChronos2Model):
+    TEST_LEVEL = TestLevel.FULL
+    BATCH_SIZE = 16
+    RBLN_CLASS_KWARGS = {**TestChronos2Model.RBLN_CLASS_KWARGS, "rbln_batch_size": 16}
+    GENERATION_KWARGS = {"context": TestChronos2Model.GENERATION_KWARGS["context"].repeat(16, 1)}
+
+
+class TestChronos2ModelBatch32(TestChronos2Model):
+    TEST_LEVEL = TestLevel.FULL
+    BATCH_SIZE = 32
+    RBLN_CLASS_KWARGS = {**TestChronos2Model.RBLN_CLASS_KWARGS, "rbln_batch_size": 32}
+    GENERATION_KWARGS = {"context": TestChronos2Model.GENERATION_KWARGS["context"].repeat(32, 1)}
+
+
+class TestChronos2ModelBatch64(TestChronos2Model):
+    TEST_LEVEL = TestLevel.FULL
+    BATCH_SIZE = 64
+    RBLN_CLASS_KWARGS = {**TestChronos2Model.RBLN_CLASS_KWARGS, "rbln_batch_size": 64}
+    GENERATION_KWARGS = {"context": TestChronos2Model.GENERATION_KWARGS["context"].repeat(64, 1)}
+
+
+class TestChronos2ModelBatch128(TestChronos2Model):
+    TEST_LEVEL = TestLevel.FULL
+    BATCH_SIZE = 128
+    RBLN_CLASS_KWARGS = {**TestChronos2Model.RBLN_CLASS_KWARGS, "rbln_batch_size": 128}
+    GENERATION_KWARGS = {"context": TestChronos2Model.GENERATION_KWARGS["context"].repeat(128, 1)}
+
+
+class TestChronos2ModelBatch256(TestChronos2Model):
+    TEST_LEVEL = TestLevel.FULL
+    BATCH_SIZE = 256
+    RBLN_CLASS_KWARGS = {**TestChronos2Model.RBLN_CLASS_KWARGS, "rbln_batch_size": 256}
+    GENERATION_KWARGS = {"context": TestChronos2Model.GENERATION_KWARGS["context"].repeat(256, 1)}
+
+
+class TestChronos2ModelBatch512(TestChronos2Model):
+    TEST_LEVEL = TestLevel.FULL
+    BATCH_SIZE = 512
+    RBLN_CLASS_KWARGS = {**TestChronos2Model.RBLN_CLASS_KWARGS, "rbln_batch_size": 512}
+    GENERATION_KWARGS = {"context": TestChronos2Model.GENERATION_KWARGS["context"].repeat(512, 1)}
+
+
+class TestChronos2ModelPipeline(TestChronos2Model):
+    TEST_LEVEL = TestLevel.FULL
+    BATCH_SIZE = 4
+    RBLN_CLASS_KWARGS = {
+        **TestChronos2Model.RBLN_CLASS_KWARGS,
+        "rbln_batch_size": 4,
+        "rbln_context_length": 512,
+        "rbln_prediction_length": 36,
+    }
+    GENERATION_KWARGS = {"context": TestChronos2Model.GENERATION_KWARGS["context"][:, :512].repeat(4, 1)}
+
+    def test_native_pipeline(self):
+        if os.environ.get("SAVE_ARTIFACTS_PATH") or os.environ.get("REUSE_ARTIFACTS_PATH"):
+            self.skipTest("Artifact compatibility mode does not execute on a real NPU.")
+        from chronos import Chronos2Model, Chronos2Pipeline
+
+        reference = Chronos2Pipeline(
+            Chronos2Model.from_pretrained(self.HF_MODEL_ID, **self.HF_CONFIG_KWARGS).float().eval()
+        )
+        pipeline = Chronos2Pipeline(self.model)
+        context = torch.stack(
+            [torch.sin(torch.arange(257, dtype=torch.float32) / 10) + i for i in range(3)]
+        ).unsqueeze(0)
+        expected = reference.predict(context, prediction_length=36, context_length=512, batch_size=4)
+        actual = pipeline.predict(context, prediction_length=36, context_length=512, batch_size=4)
+        assert len(actual) == len(expected)
+        for value, target in zip(actual, expected, strict=True):
+            assert value.shape == target.shape
+            pcc = torch.corrcoef(torch.stack([value.flatten(), target.flatten()]))[0, 1]
+            nrmse = (value - target).square().mean().sqrt() / target.square().mean().sqrt().clamp_min(1e-8)
+            print(
+                "CHRONOS2_PIPELINE_PARITY "
+                + json.dumps({"shape": list(value.shape), "pcc": float(pcc), "nrmse": float(nrmse)}),
+                flush=True,
+            )
+            assert value.isfinite().all()
+            assert pcc >= 0.99
+            assert nrmse <= 0.05
