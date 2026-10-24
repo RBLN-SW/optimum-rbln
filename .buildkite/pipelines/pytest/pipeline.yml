@@ -141,6 +141,8 @@ steps:
   - &electra_capacity_cr13
     label: ":pytest: ELECTRA native512 B32 CR13 capacity"
     key: "electra-capacity-cr13-b32"
+    agents:
+      queue: udc
     if: "'${OPTIMUM_RBLN_TEST_LEVEL:-default}' == 'full' && build.message !~ /\\[skip-transformers\\]/"
     image: "${DEVTOOLS_DOCKER_IMAGE}"
     resources:
