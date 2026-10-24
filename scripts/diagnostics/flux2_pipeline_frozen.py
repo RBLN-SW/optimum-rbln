@@ -1,4 +1,4 @@
-"""Native1024/prompt512 real-weight full FLUX2 klein pipeline acceptance on scheduled CR13."""
+"""Native1024/prompt512 real-weight full FLUX2 klein reference-image edit pipeline acceptance on scheduled CR13."""
 
 import argparse
 import importlib
@@ -14,7 +14,7 @@ from scripts.diagnostics.flux2_transformer_frozen import metrics, require_schedu
 
 SDK = "0.12.1.dev333+gf66b88a7"
 REVISION = "e7b7dc27f91deacad38e78976d1f2b499d76a294"
-MANIFEST_SHA = "861395ed528ad89fdddee047c7a79260980b026fecbbb209000bbd3212f1ca3e"
+MANIFEST_SHA = "9f6ec216df3e173ef8a0c8192d650daf13e580da0ada55ff8c5f022cc4dfc108"
 
 
 def verify_bundle(directory):
@@ -39,7 +39,7 @@ def verify_bundle(directory):
         "batch": 1,
         "image_size": [1024, 1024],
         "prompt_length": 512,
-        "reference_image_count": 0,
+        "reference_image_count": 1,
         "denoising_steps": 4,
         "guidance": 1.0,
     }
@@ -129,7 +129,10 @@ def main(argv=None):
                 compare("full_prompt_embeddings", embeds, golden["denoiser"][0]["encoder_hidden_states"])
                 # Teacher-forced decoder control keeps the component error separate
                 # from accumulated denoising error in the full pipeline below.
-                latents = model._unpack_latents_with_ids(golden["step_latents"][-1], golden["denoiser"][0]["img_ids"])
+                latents = model._unpack_latents_with_ids(
+                    golden["step_latents"][-1],
+                    golden["denoiser"][0]["img_ids"][:, : golden["step_latents"][-1].shape[1]],
+                )
                 mean = model.vae.bn.running_mean.view(1, -1, 1, 1)
                 std = (model.vae.bn.running_var.view(1, -1, 1, 1) + model.vae.config.batch_norm_eps).sqrt()
                 decoder_input = model._unpatchify_latents(latents * std + mean)
@@ -162,6 +165,18 @@ def main(argv=None):
                     "max_sequence_length": 512,
                     "output_type": "pt",
                 }
+                from PIL import Image
+
+                with Image.open(args.artifacts / "reference.png") as image:
+                    reference = image.convert("RGB")
+                import hashlib
+
+                pixel_sha = hashlib.sha256(reference.tobytes()).hexdigest()
+                if pixel_sha != manifest["reference_pixel_sha256"] or pixel_sha != golden["reference_pixel_sha256"]:
+                    raise ValueError("Reference image pixels differ from native CPU input")
+                if reference.size != (1024, 1024):
+                    raise ValueError("Original reference geometry must remain 1024 square")
+                kwargs["image"] = reference
                 output = model(**kwargs, callback_on_step_end=callback).images
                 compare("full_pipeline_decoder_raw", raw[0], golden["decoder_raw"])
                 compare("full_pipeline_images", output, golden["images"])

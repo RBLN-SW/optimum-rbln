@@ -19,7 +19,7 @@ def frozen(tmp_path, monkeypatch):
         "batch": 1,
         "image_size": [1024, 1024],
         "prompt_length": 512,
-        "reference_image_count": 0,
+        "reference_image_count": 1,
         "denoising_steps": 4,
         "guidance": 1.0,
         "files": {"model/compiled.rbln": {"bytes": artifact.stat().st_size, "sha256": diagnostic.sha256(artifact)}},
