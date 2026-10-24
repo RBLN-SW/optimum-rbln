@@ -952,7 +952,11 @@ class TestDinov2ForImageClassificationNativeSizeBatch256(TestDinov2ForImageClass
 
 class TestDinov2ModelNativeSizeBatch512(TestDinov2ModelNativeSizeBatch32):
     BATCH_SIZE = 512
-    RBLN_CLASS_KWARGS = {**TestDinov2ModelNativeSize.RBLN_CLASS_KWARGS, "rbln_batch_size": 512}
+    RBLN_CLASS_KWARGS = {
+        **TestDinov2ModelNativeSize.RBLN_CLASS_KWARGS,
+        "rbln_batch_size": 512,
+        "rbln_encoder_chunk_size": 6,
+    }
 
 
 class TestDinov2ForImageClassificationNativeSizeBatch512(TestDinov2ForImageClassificationNativeSizeBatch32):

@@ -15,11 +15,25 @@
 from ...configuration_generic import RBLNImageModelConfig, RBLNModelForImageClassificationConfig
 
 
-class RBLNDinov2ModelConfig(RBLNImageModelConfig):
+class Dinov2ConfigMixin:
+    def __init__(self, encoder_chunk_size: int | None = None, **kwargs):
+        """Optionally split encoder layers into full-batch jobs sharing a device activation.
+
+        None retains the single compiled model. A positive integer caps the number of
+        encoder layers in each job; it does not change the compiled batch size.
+        Job duration and memory requirements must be validated on the target NPU.
+        """
+        if encoder_chunk_size is not None and (type(encoder_chunk_size) is not int or encoder_chunk_size <= 0):
+            raise ValueError("encoder_chunk_size must be a positive integer or None")
+        super().__init__(**kwargs)
+        self.encoder_chunk_size = encoder_chunk_size
+
+
+class RBLNDinov2ModelConfig(Dinov2ConfigMixin, RBLNImageModelConfig):
     pass
 
 
-class RBLNDinov2ForImageClassificationConfig(RBLNModelForImageClassificationConfig):
+class RBLNDinov2ForImageClassificationConfig(Dinov2ConfigMixin, RBLNModelForImageClassificationConfig):
     pass
 
 
