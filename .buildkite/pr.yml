@@ -1,4 +1,4 @@
-# Native1024 FLUX2 full native pipeline acceptance with original numerical criteria.
+# Text-owner experiment only; original full-pipeline numerical failures remain required.
 env:
   # Where every release's compiled artifacts live, written by the tag build
   # (.buildkite/bc-compile.yml).
@@ -40,17 +40,17 @@ steps:
   # All gates must pass before the scheduled CR13 diagnostic starts.
   - wait: ~
 
-  - label: ":package: Stage native FLUX2 full pipeline artifacts across clusters"
+  - label: ":package: Stage native FLUX2 native text A/B artifacts across clusters"
     image: "${DEVTOOLS_DOCKER_IMAGE}"
     agents:
       queue: k8s
     timeout_in_minutes: 30
     command:
-      - "python3 -m scripts.diagnostics.flux2_pipeline_stage"
+      - "python3 -m scripts.diagnostics.flux2_text_owner_stage"
 
   - wait: ~
 
-  - label: ":microscope: FLUX2 real-weight native1024 full pipeline on CR13"
+  - label: ":microscope: FLUX2 real-weight 37-output vs selected4 vs native-static-RoPE text experiment on CR13"
     image: "${DEVTOOLS_DOCKER_IMAGE}"
     agents:
       queue: udc
@@ -70,8 +70,9 @@ steps:
       RBLN_TEST_NPU: "RBLN-CR13"
     timeout_in_minutes: 180
     artifact_paths:
-      - "debug-flux2-pipeline/**/*"
+      - "debug-flux2-text-owner/**/*"
     command:
       - "bash scripts/ci/sync.sh"
-      - "mkdir -p debug-flux2-pipeline"
-      - "set -o pipefail; uv run --no-sync python -m scripts.diagnostics.flux2_pipeline_frozen --execute --artifacts /mnt/cross_data/model-enable/jaehunryu/flux2-klein-native1024-full-pipeline-sdk333 2>&1 | tee debug-flux2-pipeline/runtime.log"
+      - "uv run --no-sync python -m pytest -q tests/unit/cpu/test_flux2_text_owner.py"
+      - "mkdir -p debug-flux2-text-owner"
+      - "set -o pipefail; uv run --no-sync python -m scripts.diagnostics.flux2_text_owner --execute --artifacts /mnt/cross_data/model-enable/jaehunryu/flux2-klein-text-owner-comparison-sdk333-v2 2>&1 | tee debug-flux2-text-owner/runtime.log"
