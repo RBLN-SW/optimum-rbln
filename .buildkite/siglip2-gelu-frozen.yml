@@ -1,0 +1,67 @@
+# Frozen native B1 GELU A/B diagnostic. Original quality gates precede the CA25 slot.
+env:
+  # Where every release's compiled artifacts live, written by the tag build
+  # (.buildkite/bc-compile.yml).
+  BC_BASE_PATH: "${OPTIMUM_BC_BASE_PATH}"
+  UV_CACHE_DIR: "${UV_CACHE_PATH}"
+  UV_LINK_MODE: "symlink"
+  UV_INDEX_STRATEGY: "unsafe-best-match"
+
+steps:
+  - label: ":closed_lock_with_key: team-member gate"
+    image: "${DEVTOOLS_DOCKER_IMAGE}"
+    secrets:
+      - GIT_PAT
+    command:
+      - "bash scripts/ci/gate-team-member.sh"
+
+  - label: ":mag: code quality"
+    notify:
+      - github_commit_status:
+          context: "[OB] code quality"
+    image: "${DEVTOOLS_DOCKER_IMAGE}"
+    command:
+      - "uv sync --locked --python 3.12 --group quality --no-install-project"
+      - "uv run --no-sync ruff format --check ."
+      - "uv run --no-sync ruff check ."
+      - "uv run --no-sync mypy"
+      - "uv run --no-sync python scripts/check_inits.py"
+      # ruff and uv.lock are already checked above; this runs the remaining file hygiene hooks.
+      - "SKIP=ruff-check,ruff-format,uv-lock uv run --no-sync pre-commit run --all-files --show-diff-on-failure"
+
+  - label: ":page_facing_up: docstrings"
+    notify:
+      - github_commit_status:
+          context: "[OB] docstrings"
+    image: "${DEVTOOLS_DOCKER_IMAGE}"
+    command:
+      - "bash scripts/check-docstrings.sh"
+
+  # All gates must pass before the CA25 diagnostic starts.
+  - wait: ~
+
+  - label: ":microscope: SigLIP2 frozen native B1 GELU A/B"
+    image: "${DEVTOOLS_DOCKER_IMAGE}"
+    agents:
+      queue: k8s
+    resources:
+      cpu:
+        requests: "16"
+      memory:
+        requests: "64Gi"
+        limits: "64Gi"
+      npu:
+        count: 1
+        product: "RBLN-CA25"
+    secrets:
+      UV_INDEX_REBELLIONS_USERNAME: REBEL_SW_DEV_USERNAME
+      UV_INDEX_REBELLIONS_PASSWORD: REBEL_SW_DEV_PASSWORD
+      HF_TOKEN: HF_TOKEN
+      HF_HOME: HF_HOME
+    timeout_in_minutes: 120
+    artifact_paths:
+      - "debug-siglip2-gelu-frozen/**/*"
+    command:
+      - "bash scripts/ci/sync.sh"
+      - "mkdir -p debug-siglip2-gelu-frozen"
+      - "set -o pipefail; uv run --no-sync python -m scripts.diagnostics.siglip2_gelu_frozen --artifacts /mnt/shared_data/users/jaehunryu/nas_data/model-enable-20261024/siglip2-gelu-ab-source4b --device 0 2>&1 | tee debug-siglip2-gelu-frozen/runtime.log"
