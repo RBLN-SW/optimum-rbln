@@ -54,7 +54,7 @@ steps:
   # directives run-suite.sh reads, not by path.
   # Sibling jobs: two uploads from one job make the second batch a barrier for
   # the first, so the pytest suites would wait on BC.
-  - label: ":microscope: SigLIP2 matched MLP graphs with CPU or NPU activation (diagnostic)"
+  - label: ":microscope: SigLIP2 matched embedding parts with rounded or FP32 sum (diagnostic)"
     image: "${DEVTOOLS_DOCKER_IMAGE}"
     agents:
       queue: udc

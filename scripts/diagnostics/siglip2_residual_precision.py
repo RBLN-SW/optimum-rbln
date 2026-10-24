@@ -16,7 +16,21 @@ from transformers.modeling_outputs import BaseModelOutput
 from optimum.rbln import RBLNSiglip2Model, RBLNSiglip2ModelConfig
 from optimum.rbln.transformers.models.siglip2.modeling_siglip2 import patch_position_ids
 
-from .siglip2_embedding_precision import EmbeddedInput, compare, flatten, tensor_hash
+from .siglip2_embedding_precision import EmbeddedInput, EmbeddingParts, compare, flatten, tensor_hash
+
+
+def round_dlfloat(value):
+    assert value.dtype == torch.float32
+    assert bool(value.isfinite().all())
+    bits = value.contiguous().view(torch.int32)
+    sign = bits & -2147483648
+    exponent = (bits >> 23) & 255
+    extra = (bits >> 13) & 1023
+    word = ((exponent - 96) << 9) | (extra >> 1)
+    word = word + torch.where(word != 32767, extra & 1, 0)
+    word = torch.where(exponent < 96, 0, torch.where(exponent > 159, 32767, word))
+    result = sign | (((word >> 9) + 96) << 23) | ((word & 511) << 14)
+    return torch.where(word == 0, sign, result).view(torch.float32)
 
 
 class AttentionBranch(nn.Module):
@@ -83,6 +97,7 @@ def main():
     config = RBLNSiglip2Model._update_rbln_config(None, native, native.config, RBLNSiglip2ModelConfig())
     wrapper = RBLNSiglip2Model._wrap_model_if_needed(native, config)
     embedding = wrapper.model.vision_model.embeddings
+    embedding_parts = EmbeddingParts(embedding).eval()
     layers = list(wrapper.model.vision_model.encoder.layers)
     branches = [(AttentionBranch(layer).eval(), MLPBranch(layer).eval()) for layer in layers]
     probes = {index: MLPProbe(layers[index]).eval() for index in [0, 6, 11]}
@@ -126,6 +141,8 @@ def main():
             for a, e in zip(baseline, expected, strict=True):
                 torch.testing.assert_close(a, e)
             hidden = embedding(values[1], values[4])
+            patch, position = embedding_parts(values[1], values[4])
+            torch.testing.assert_close(patch + position, hidden, rtol=0, atol=0)
             stages = []
             for layer_index, (layer, (attention, mlp)) in enumerate(zip(layers, branches, strict=True)):
                 mask = create_bidirectional_mask(
@@ -218,6 +235,11 @@ def main():
         compile_model(
             "embedding", embedding, [("pixel_values", [1, 256, 768], "float32"), ("position_ids", [1, 256], "int64")]
         )
+        compile_model(
+            "embedding-parts",
+            embedding_parts,
+            [("pixel_values", [1, 256, 768], "float32"), ("position_ids", [1, 256], "int64")],
+        )
         for index, (attention, mlp) in enumerate(branches):
             compile_model(
                 f"attention-{index}",
@@ -258,7 +280,7 @@ def main():
         assert report["compile"]["affine-head"]["inputs"] == report["compile"]["head"]["inputs"]
         report["normalization_cpu_max_deltas"] = normalization_deltas
         report["block_normalization_cpu"] = block_normalization_cpu
-        report["acceptance_variant"] = "fp32-blocknorm-cpu-activation"
+        report["acceptance_variant"] = "fp32-blocknorm-cpu-activation-embedding-raw"
         report["timing_includes_cpu_diagnostics"] = True
         for variant in [
             "baseline",
@@ -269,6 +291,8 @@ def main():
             "fp32-residual-block-normalization",
             "fp32-blocknorm-npu-activation",
             "fp32-blocknorm-cpu-activation",
+            "fp32-blocknorm-cpu-activation-embedding-rounded",
+            "fp32-blocknorm-cpu-activation-embedding-raw",
         ]:
             selected = (
                 ["baseline"]
@@ -288,6 +312,18 @@ def main():
                 if variant == "baseline":
                     return tuple(value.clone() for value in runtimes["baseline"](*values)), None, []
                 hidden = runtimes["embedding"](values[1], values[4])
+                embedding_match = None
+                if "-embedding-" in variant:
+                    patch, position = runtimes["embedding-parts"](values[1], values[4])
+                    summed = patch.float() + position.float()
+                    rounded = round_dlfloat(summed)
+                    embedding_match = torch.equal(rounded, hidden)
+                    hidden = rounded if variant.endswith("-rounded") else summed
+                    if expected_stages is not None:
+                        torch.save(
+                            {"patch": patch.clone(), "position": position.clone(), "sum": summed, "rounded": rounded},
+                            out / f"embedding-parts-case{case_index}.pt",
+                        )
                 boundaries = []
 
                 def nrmse(actual, reference):
@@ -299,7 +335,10 @@ def main():
                         if expected_stages is not None or variant == "diagnostic-cpu-attention"
                         else None
                     )
-                    split_activation = variant in {"fp32-blocknorm-npu-activation", "fp32-blocknorm-cpu-activation"}
+                    split_activation = (
+                        variant in {"fp32-blocknorm-npu-activation", "fp32-blocknorm-cpu-activation"}
+                        or "-embedding-" in variant
+                    )
                     prefix = "affine-" if variant == "fp32-residual-block-normalization" or split_activation else ""
                     attention_input = hidden
                     if prefix:
@@ -312,6 +351,8 @@ def main():
                         else runtimes[f"{prefix}attention-{index}"](attention_input, values[3]).float()
                     )
                     row = {"layer": index}
+                    if index == 0 and embedding_match is not None:
+                        row["embedding_parts_rounded_matches_original"] = embedding_match
                     if expected_stages is not None:
                         row["attention_same_input_nrmse"] = nrmse(attention_output, cpu_attention)
                     hidden = hidden.float() + attention_output
@@ -323,7 +364,7 @@ def main():
                         projected = runtimes[f"affine-fc1-{index}"](mlp_input)
                         activated = (
                             mlp.mlp.activation_fn(projected)
-                            if variant == "fp32-blocknorm-cpu-activation"
+                            if variant != "fp32-blocknorm-npu-activation"
                             else runtimes["activation"](projected)
                         )
                         mlp_output = runtimes[f"fc2-{index}"](activated).float()
