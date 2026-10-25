@@ -54,3 +54,25 @@ def test_producer_outputs_accept_native_query_dimensions(monkeypatch):
     query = torch.zeros(1, 512, 32, 128)
     reference = {"original_full_NPU_h1": endpoint, "CPU_features": [None] * 10 + [query]}
     diagnostic.validate_outputs("query", (endpoint, query), reference)
+
+
+@pytest.mark.parametrize("fully_valid", [False, True])
+def test_position_metrics_preserve_declared_sequence_axis(fully_valid):
+    import torch
+
+    reference = torch.arange(24, dtype=torch.float32).reshape(1, 4, 2, 3) + 1
+    actual = reference * 1.001
+    mask = torch.tensor([True, True, fully_valid, fully_valid])
+    expected = diagnostic.position_metrics(actual, reference, mask, sequence_axis=1)
+    transposed = diagnostic.position_metrics(actual.transpose(1, 2), reference.transpose(1, 2), mask, sequence_axis=2)
+    assert transposed == expected
+    assert (expected[1] is None) == fully_valid
+
+
+def test_position_metrics_reject_head_axis_as_sequence_axis():
+    import torch
+
+    reference = torch.arange(24, dtype=torch.float32).reshape(1, 2, 4, 3) + 1
+    mask = torch.tensor([True, True, False, False])
+    with pytest.raises(ValueError, match="sequence axis"):
+        diagnostic.position_metrics(reference, reference, mask, sequence_axis=1)

@@ -12,9 +12,19 @@ from scripts.diagnostics.flux2_block0_native import SDK, as_outputs, same_bits
 from scripts.diagnostics.flux2_transformer_frozen import metrics, require_scheduled_execution, sha256
 
 
-MANIFEST_SHA = "1b6d8e4786e99642da861445c076f1b98483fa57ef30dd4f48d0aa3e68a780ea"
-FEATURES = [*BLOCK_FEATURES, "query_rotary", "key_rotary", "value_heads", "attention_context"]
-VARIANTS = {"manual": None, "query": 10, "key": 11, "value": 12, "context": 13}
+MANIFEST_SHA = "6b65453172de6834907a9ee7b057dd85bf1622be6e71a659d5f5369efb636599"
+FEATURES = [
+    *BLOCK_FEATURES,
+    "query_rotary",
+    "key_rotary",
+    "value_heads",
+    "attention_context",
+    "query_projected",
+    "query_normalized",
+    "query_direct",
+]
+VARIANTS = {"query_projected": 14, "query_normalized": 15, "query_direct": 16}
+SEQUENCE_AXES = {"query_projected": 1, "query_normalized": 1, "query_direct": 2}
 FILES = {
     "native.rbln",
     "baseline-compile-result.json",
@@ -41,6 +51,22 @@ def validate_outputs(variant, values, reference):
         for actual, target in zip(values, expected, strict=True)
     ):
         raise ValueError("Selective producer output ABI differs from frozen reference")
+
+
+def position_metrics(actual, expected, mask, sequence_axis):
+    if (
+        sequence_axis not in {1, 2}
+        or actual.ndim <= sequence_axis
+        or actual.shape != expected.shape
+        or mask.ndim != 1
+        or actual.shape[sequence_axis] != mask.numel()
+    ):
+        raise ValueError("Declared sequence axis differs from the original position mask")
+    actual = actual.movedim(sequence_axis, 1)
+    expected = expected.movedim(sequence_axis, 1)
+    valid = metrics(actual[:, mask], expected[:, mask])
+    padding = metrics(actual[:, ~mask], expected[:, ~mask]) if bool((~mask).any()) else None
+    return valid, padding
 
 
 def verify_bundle(directory):
@@ -87,6 +113,8 @@ def verify_bundle(directory):
         raise ValueError("Original full-model baseline cases differ")
     if manifest.get("experiment") != "selective_observation_endpoint_identity" or manifest.get("variants") != VARIANTS:
         raise ValueError("Selective observation contract differs")
+    if manifest.get("feature_sequence_axes") != SEQUENCE_AXES:
+        raise ValueError("Producer sequence axes differ from the frozen contract")
     return manifest
 
 
@@ -168,11 +196,8 @@ def main(argv=None):
                             **metrics(values[1], ref["CPU_features"][index]),
                         }
                         mask = inputs["attention_mask"][0].bool()
-                        row["valid"] = metrics(values[1][:, mask], ref["CPU_features"][index][:, mask])
-                        row["padding"] = (
-                            metrics(values[1][:, ~mask], ref["CPU_features"][index][:, ~mask])
-                            if bool((~mask).any())
-                            else None
+                        row["valid"], row["padding"] = position_metrics(
+                            values[1], ref["CPU_features"][index], mask, SEQUENCE_AXES[variant]
                         )
                         result["feature_metrics"].append(row)
                 torch.save(actuals, args.output / f"{name}.pt")
