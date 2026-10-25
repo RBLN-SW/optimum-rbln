@@ -21,6 +21,7 @@ from chronos.chronos2.model import Chronos2Model, Chronos2Output
 from ..configuration_utils import RBLNCompileConfig
 from ..modeling import RBLNModel
 from .chronos2_architecture import Chronos2ModelWrapper, Chronos2Preprocessor
+from .chronos2_stages import Chronos2SequentialRuntime, get_chronos2_stages
 from .configuration_chronos2 import RBLNChronos2ModelConfig
 
 
@@ -30,6 +31,10 @@ class RBLNChronos2Model(RBLNModel):
     Context and batch inputs are padded to the compiled capacities. Forecasts use
     exactly the compiled number of future patches; compile a separate configuration
     to change that count. Install ``optimum-rbln[chronos]`` for this model.
+
+    With ``rbln_npu="RBLN-CA25"`` and batch capacity 512 or larger, contiguous
+    encoder stages run one at a time to bound device memory and individual jobs.
+    Full cross-series attention is preserved; stage boundaries use host copies.
     """
 
     rbln_config: RBLNChronos2ModelConfig
@@ -71,6 +76,26 @@ class RBLNChronos2Model(RBLNModel):
     @classmethod
     def _wrap_model_if_needed(cls, model, rbln_config):
         return Chronos2ModelWrapper(model).eval()
+
+    @classmethod
+    def get_compiled_model(cls, model, rbln_config):
+        if rbln_config.npu != "RBLN-CA25" or rbln_config.batch_size < 512:
+            return super().get_compiled_model(model, rbln_config)
+        # Preserve the full cross-series batch while bounding each CA25 job.
+        stages = get_chronos2_stages(model, rbln_config.compile_cfgs[0], chunk_size=min(3, len(model.encoder.block)))
+        rbln_config.set_compile_cfgs([cfg for _, cfg in stages])
+        return {
+            cfg.compiled_model_name: cls.compile(
+                stage, rbln_compile_config=cfg, create_runtimes=False, device=rbln_config.device
+            )
+            for stage, cfg in stages
+        }
+
+    @classmethod
+    def _create_runtimes(cls, compiled_models, rbln_config):
+        if len(rbln_config.compile_cfgs) == 1:
+            return super()._create_runtimes(compiled_models, rbln_config)
+        return [Chronos2SequentialRuntime(compiled_models, rbln_config)]
 
     def __post_init__(self, **kwargs):
         assert self.rbln_config.context_length is not None
