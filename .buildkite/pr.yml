@@ -1,4 +1,4 @@
-# Isolated softmax SDK337 reciprocal diagnostic; frozen original physical corpus.
+# Native full FLUX2 valid512 official SDK339 compensated masked-softmax reduction candidate; original numerical criteria.
 env:
   # Where every release's compiled artifacts live, written by the tag build
   # (.buildkite/bc-compile.yml).
@@ -40,17 +40,17 @@ steps:
   # All gates must pass before the scheduled CR13 diagnostic starts.
   - wait: ~
 
-  - label: ":package: Stage FLUX2 isolated softmax physical corpus across clusters"
+  - label: ":package: Stage native FLUX2 valid512 full pipeline artifacts across clusters"
     image: "${DEVTOOLS_DOCKER_IMAGE}"
     agents:
       queue: k8s
     timeout_in_minutes: 30
     command:
-      - "python3 -m scripts.diagnostics.flux2_softmax_accuracy_stage"
+      - "python3 -m scripts.diagnostics.flux2_pipeline_stage"
 
   - wait: ~
 
-  - label: ":microscope: FLUX2 isolated softmax reciprocal with official SDK337 on CR13"
+  - label: ":microscope: FLUX2 valid512 full pipeline with official SDK339 compensated masked-softmax reduction on CR13"
     image: "${DEVTOOLS_DOCKER_IMAGE}"
     agents:
       queue: udc
@@ -68,11 +68,11 @@ steps:
       UV_INDEX_REBELLIONS_PASSWORD: REBEL_SW_DEV_PASSWORD
     env:
       RBLN_TEST_NPU: "RBLN-CR13"
-      REBEL_COMPILER_VERSION: "0.12.1.dev337+ge09f8a18"
+      REBEL_COMPILER_VERSION: "0.12.1.dev339+g781e7d9f"
     timeout_in_minutes: 180
     artifact_paths:
-      - "debug-flux2-softmax-accuracy/**/*"
+      - "debug-flux2-pipeline/**/*"
     command:
       - "bash scripts/ci/sync.sh"
-      - "mkdir -p debug-flux2-softmax-accuracy"
-      - "set -o pipefail; uv run --no-sync python -m scripts.diagnostics.flux2_softmax_accuracy --execute --artifacts /mnt/cross_data/model-enable/jaehunryu/flux2-softmax-accuracy-sdk337 2>&1 | tee debug-flux2-softmax-accuracy/runtime.log"
+      - "mkdir -p debug-flux2-pipeline"
+      - "set -o pipefail; uv run --no-sync python -m scripts.diagnostics.flux2_pipeline_frozen --execute --artifacts /mnt/cross_data/model-enable/jaehunryu/flux2-klein-native1024-valid512-official-781e 2>&1 | tee debug-flux2-pipeline/runtime.log"

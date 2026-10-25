@@ -1,4 +1,4 @@
-"""Native FLUX2 full-pipeline candidate: official SDK337 masked-softmax correction."""
+"""Native FLUX2 full-pipeline candidate: official SDK339 compensated masked-softmax reduction."""
 
 import argparse
 import importlib
@@ -12,9 +12,9 @@ from pathlib import Path
 from scripts.diagnostics.flux2_transformer_frozen import metrics, require_scheduled_execution, sha256
 
 
-SDK = "0.12.1.dev337+ge09f8a18"
+SDK = "0.12.1.dev339+g781e7d9f"
 REVISION = "e7b7dc27f91deacad38e78976d1f2b499d76a294"
-MANIFEST_SHA = "1b6b09901e591c37f002945f4929994a1b661bfaa386c6fdb06ade2bd85e34ab"
+MANIFEST_SHA = "d73a471509c38c8ccf4b1d80e8e19ab1608eaacf6b94c516b701dcc535b846dc"
 
 
 def verify_bundle(directory):
@@ -46,8 +46,8 @@ def verify_bundle(directory):
         "hybrid_source_overlay": False,
         "official_wheel_used": True,
         "model_numerical_acceptance": False,
-        "compiler_source_commit": "e09f8a18b64491b1a3e1f47eaa6f8434c4cd4374",
-        "primitive_commit": "6ba567512df2f86655601c3fe382823059a1057d",
+        "compiler_source_commit": "781e7d9f1230a2b448f3d9d17389be7831a6975a",
+        "primitive_commit": "017b55f8f23ba8b7c35c854cb584e948b874880b",
         "unchanged_original_goldens_and_thresholds": True,
         "all_components_recompiled_with_official_sdk": True,
     }
@@ -72,7 +72,7 @@ def main(argv=None):
         "full_pipeline_npu_acceptance": False,
         "hybrid_source_overlay": False,
         "official_wheel_used": True,
-        "compiler_source_commit": "e09f8a18b64491b1a3e1f47eaa6f8434c4cd4374",
+        "compiler_source_commit": "781e7d9f1230a2b448f3d9d17389be7831a6975a",
     }
     started = time.monotonic()
     code = 1

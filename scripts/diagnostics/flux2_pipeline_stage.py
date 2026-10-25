@@ -9,9 +9,9 @@ from scripts.diagnostics.flux2_pipeline_frozen import verify_bundle
 
 
 SOURCE = Path(
-    "/mnt/shared_data/users/jaehunryu/nas_data/model-enable-20261025/flux2-klein/full-native1024-valid512-official-e09f"
+    "/mnt/shared_data/users/jaehunryu/nas_data/model-enable-20261025/flux2-klein/full-native1024-valid512-official-781e"
 )
-DESTINATION = Path("/mnt/cross_data/model-enable/jaehunryu/flux2-klein-native1024-valid512-official-e09f")
+DESTINATION = Path("/mnt/cross_data/model-enable/jaehunryu/flux2-klein-native1024-valid512-official-781e")
 
 
 def stage(source=SOURCE, destination=DESTINATION):
