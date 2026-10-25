@@ -1,4 +1,4 @@
-"""Native FLUX2 full-pipeline candidate: official SDK339 compensated masked-softmax reduction."""
+"""Short-prompt FLUX2 full-pipeline comparison: official SDK339 compensated masked-softmax reduction."""
 
 import argparse
 import importlib
@@ -14,7 +14,7 @@ from scripts.diagnostics.flux2_transformer_frozen import metrics, require_schedu
 
 SDK = "0.12.1.dev339+g781e7d9f"
 REVISION = "e7b7dc27f91deacad38e78976d1f2b499d76a294"
-MANIFEST_SHA = "d73a471509c38c8ccf4b1d80e8e19ab1608eaacf6b94c516b701dcc535b846dc"
+MANIFEST_SHA = "1c395254e036ebea5290168e43fa672f54b567d788cff945165a91f4373d0c9e"
 
 
 def verify_bundle(directory):
@@ -39,7 +39,7 @@ def verify_bundle(directory):
         "batch": 1,
         "image_size": [1024, 1024],
         "prompt_length": 512,
-        "actual_valid_prompt_tokens": 512,
+        "actual_valid_prompt_tokens": 25,
         "reference_image_count": 0,
         "denoising_steps": 4,
         "guidance": 1.0,
@@ -113,10 +113,11 @@ def main(argv=None):
                 raise ValueError("Physical device differs from compiled CR13 target")
             golden = torch.load(args.artifacts / "golden.pt", weights_only=True)
             text = torch.load(args.artifacts / "text-golden.pt", weights_only=True)
-            if tuple(text["inputs"]["attention_mask"].shape) != (1, 512) or not bool(
-                text["inputs"]["attention_mask"].all()
+            if (
+                tuple(text["inputs"]["attention_mask"].shape) != (1, 512)
+                or int(text["inputs"]["attention_mask"].sum()) != 25
             ):
-                raise ValueError("Native maximum context requires 512 actually valid tokens")
+                raise ValueError("Original short-prompt profile requires 25 valid tokens padded to 512")
             model = RBLNFlux2KleinPipeline.from_pretrained(
                 args.artifacts / "model",
                 export=False,

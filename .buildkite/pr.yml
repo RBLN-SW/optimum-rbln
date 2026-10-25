@@ -1,4 +1,4 @@
-# Native full FLUX2 valid512 official SDK339 compensated masked-softmax reduction candidate; original numerical criteria.
+# Original short-prompt full FLUX2 official SDK339 compensated masked-softmax reduction candidate; original numerical criteria.
 env:
   # Where every release's compiled artifacts live, written by the tag build
   # (.buildkite/bc-compile.yml).
@@ -40,7 +40,7 @@ steps:
   # All gates must pass before the scheduled CR13 diagnostic starts.
   - wait: ~
 
-  - label: ":package: Stage native FLUX2 valid512 full pipeline artifacts across clusters"
+  - label: ":package: Stage short-prompt FLUX2 full pipeline artifacts across clusters"
     image: "${DEVTOOLS_DOCKER_IMAGE}"
     agents:
       queue: k8s
@@ -50,7 +50,7 @@ steps:
 
   - wait: ~
 
-  - label: ":microscope: FLUX2 valid512 full pipeline with official SDK339 compensated masked-softmax reduction on CR13"
+  - label: ":microscope: FLUX2 short25/padded512 full pipeline with official SDK339 compensated masked-softmax reduction on CR13"
     image: "${DEVTOOLS_DOCKER_IMAGE}"
     agents:
       queue: udc
@@ -75,4 +75,4 @@ steps:
     command:
       - "bash scripts/ci/sync.sh"
       - "mkdir -p debug-flux2-pipeline"
-      - "set -o pipefail; uv run --no-sync python -m scripts.diagnostics.flux2_pipeline_frozen --execute --artifacts /mnt/cross_data/model-enable/jaehunryu/flux2-klein-native1024-valid512-official-781e 2>&1 | tee debug-flux2-pipeline/runtime.log"
+      - "set -o pipefail; uv run --no-sync python -m scripts.diagnostics.flux2_pipeline_frozen --execute --artifacts /mnt/cross_data/model-enable/jaehunryu/flux2-klein-native1024-official-781e 2>&1 | tee debug-flux2-pipeline/runtime.log"

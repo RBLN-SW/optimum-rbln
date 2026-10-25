@@ -19,7 +19,7 @@ def frozen(tmp_path, monkeypatch):
         "batch": 1,
         "image_size": [1024, 1024],
         "prompt_length": 512,
-        "actual_valid_prompt_tokens": 512,
+        "actual_valid_prompt_tokens": 25,
         "reference_image_count": 0,
         "denoising_steps": 4,
         "guidance": 1.0,
@@ -125,7 +125,7 @@ def test_frozen_rejects_old_compiler_pin(frozen, monkeypatch):
 
 def test_frozen_rejects_shortened_valid_token_count(frozen, monkeypatch):
     root, manifest = frozen
-    manifest["actual_valid_prompt_tokens"] = 511
+    manifest["actual_valid_prompt_tokens"] = 24
     path = root / "manifest.json"
     path.write_text(json.dumps(manifest))
     monkeypatch.setattr(diagnostic, "MANIFEST_SHA", diagnostic.sha256(path))
