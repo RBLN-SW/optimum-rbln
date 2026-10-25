@@ -40,21 +40,21 @@ steps:
   # All existing quality/doc gates precede the scheduler-owned CA25 slot.
   - wait: ~
 
-  - label: ":package: Verify and stage whole-model Chronos compiler-fix candidate"
+  - label: ":package: Verify and stage original monolithic Chronos compiler-fix candidate"
     image: "${DEVTOOLS_DOCKER_IMAGE}"
     agents:
       queue: k8s
     timeout_in_minutes: 30
     command:
       - >-
-        python3 -m scripts.diagnostics.chronos2_candidate_validation
-        --artifacts /mnt/shared_data/users/jaehunryu/nas_data/model-enable-20261025/chronos-whole-candidate69/bundle
-        --stage-to /mnt/cross_data/model-enable/jaehunryu/chronos2-whole-candidate69-v1
-        --manifest-sha256 c37bcba1ebb0963177db417be6241f7771291a1a07476034b8601d8fec875784
+        python3 -m scripts.diagnostics.chronos2_monolithic_validation
+        --bundle /mnt/shared_data/users/jaehunryu/nas_data/model-enable-20261025/chronos-monolithic70/bundle
+        --stage-to /mnt/cross_data/model-enable/jaehunryu/chronos2-monolithic-candidate70-v1
+        --manifest-sha256 feceb8b11e1082fef7e9b3c760464da79fa21d98a60d4c4ba553515b1b38b18a
 
   - wait: ~
 
-  - label: ":microscope: Original Chronos full-model B512 suite with compiler fix on CA25"
+  - label: ":microscope: Original unsplit Chronos B512 suite and per-series parity on CA25"
     image: "${DEVTOOLS_DOCKER_IMAGE}"
     agents:
       queue: k8s
@@ -78,15 +78,15 @@ steps:
       HF_HOME: HF_HOME
     timeout_in_minutes: 120
     artifact_paths:
-      - "debug-chronos-whole-candidate/**/*"
+      - "debug-chronos-monolithic/**/*"
     command:
       - "bash scripts/ci/sync.sh"
-      - "mkdir -p debug-chronos-whole-candidate"
+      - "mkdir -p debug-chronos-monolithic"
       - >-
         set -o pipefail;
         unset RBLN_DUMMY_DEVICE TVM_LIBRARY_PATH;
-        uv run --no-sync python -m scripts.diagnostics.chronos2_candidate_validation
-        --artifacts /mnt/cross_data/model-enable/jaehunryu/chronos2-whole-candidate69-v1
-        --manifest-sha256 c37bcba1ebb0963177db417be6241f7771291a1a07476034b8601d8fec875784
-        --out debug-chronos-whole-candidate/run1
-        2>&1 | tee debug-chronos-whole-candidate/runtime.log
+        uv run --no-sync python -m scripts.diagnostics.chronos2_monolithic_validation
+        --bundle /mnt/cross_data/model-enable/jaehunryu/chronos2-monolithic-candidate70-v1
+        --manifest-sha256 feceb8b11e1082fef7e9b3c760464da79fa21d98a60d4c4ba553515b1b38b18a
+        --out debug-chronos-monolithic/run1
+        2>&1 | tee debug-chronos-monolithic/runtime.log

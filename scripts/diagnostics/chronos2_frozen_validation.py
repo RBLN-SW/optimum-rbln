@@ -166,7 +166,7 @@ def runtime_adapter(manifest, event, observer=None):
 
 
 def stage_bundle(root, target, manifest):
-    """Clone the original product configuration, changing only six compile interfaces."""
+    """Clone the original product configuration with the staged compile interfaces."""
     from optimum.rbln import RBLNChronos2ModelConfig
     from optimum.rbln.configuration_utils import RBLNCompileConfig
 
@@ -194,7 +194,7 @@ def verify_runtime_library(expected_sha):
     return {"version": version, "library": next(iter(mapped)), "sha256": expected_sha, "rebel_module": rebel.__file__}
 
 
-def run_suite(root, manifest, work, event, diagnostics=None):
+def run_suite(root, manifest, work, event, diagnostics=None, sequential=True):
     from optimum.rbln import RBLNChronos2Model
     from optimum.rbln.utils.runtime_utils import ContextRblnConfig
     from tests.test_transformers import TestChronos2ModelBatch512
@@ -260,15 +260,16 @@ def run_suite(root, manifest, work, event, diagnostics=None):
             stack.enter_context(patch.object(RBLNChronos2Model, "forward", product_capture))
         for name in ("_export", "compile"):
             stack.enter_context(patch.object(RBLNChronos2Model, name, classmethod(block_export)))
-        stack.enter_context(
-            patch.object(
-                RBLNChronos2Model,
-                "_create_runtimes",
-                classmethod(
-                    runtime_adapter(manifest, event, observer=None if diagnostics is None else diagnostics.stage)
-                ),
+        if sequential:
+            stack.enter_context(
+                patch.object(
+                    RBLNChronos2Model,
+                    "_create_runtimes",
+                    classmethod(
+                        runtime_adapter(manifest, event, observer=None if diagnostics is None else diagnostics.stage)
+                    ),
+                )
             )
-        )
         stack.enter_context(patch.object(cls, "setUpClass", classmethod(setup)))
         stack.enter_context(patch.object(cls, "tearDownClass", classmethod(teardown)))
         suite = unittest.defaultTestLoader.loadTestsFromTestCase(cls)
