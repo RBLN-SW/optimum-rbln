@@ -7,12 +7,14 @@ import time
 import traceback
 from pathlib import Path
 
-from scripts.diagnostics.flux2_block0_native import FEATURES, SDK, as_outputs, same_bits
+from scripts.diagnostics.flux2_block0_native import FEATURES as BLOCK_FEATURES
+from scripts.diagnostics.flux2_block0_native import SDK, as_outputs, same_bits
 from scripts.diagnostics.flux2_transformer_frozen import metrics, require_scheduled_execution, sha256
 
 
-MANIFEST_SHA = "4bb3d4ece2a2ab8534b5e43b0e9c023fecfafb6d67e207afabad84f305b625b1"
-VARIANTS = {"first_residual": 3}
+MANIFEST_SHA = "1b6d8e4786e99642da861445c076f1b98483fa57ef30dd4f48d0aa3e68a780ea"
+FEATURES = [*BLOCK_FEATURES, "query_rotary", "key_rotary", "value_heads", "attention_context"]
+VARIANTS = {"manual": None, "query": 10, "key": 11, "value": 12, "context": 13}
 FILES = {
     "native.rbln",
     "baseline-compile-result.json",
@@ -27,6 +29,18 @@ def faithful_cases(cases):
     if len(cases) != 2 or {case["name"] for case in cases} != {"short_component", "native_valid512"}:
         raise ValueError("Both original baseline cases are required")
     return all(case["matches_original"] is True and case["repeat_exact"] is True for case in cases)
+
+
+def validate_outputs(variant, values, reference):
+    index = VARIANTS[variant]
+    expected = [reference["original_full_NPU_h1"]]
+    if index is not None:
+        expected.append(reference["CPU_features"][index])
+    if len(values) != len(expected) or any(
+        actual.shape != target.shape or actual.dtype != target.dtype
+        for actual, target in zip(values, expected, strict=True)
+    ):
+        raise ValueError("Selective producer output ABI differs from frozen reference")
 
 
 def verify_bundle(directory):
@@ -128,6 +142,7 @@ def main(argv=None):
                 for variant, index in VARIANTS.items():
                     count = 1 if index is None else 2
                     values = as_outputs(runtimes[variant](inputs["hidden"], inputs["attention_mask"]), count)
+                    validate_outputs(variant, values, ref)
                     actuals[variant] = values
                     repeated = as_outputs(runtimes[variant](inputs["hidden"], inputs["attention_mask"]), count)
                     fresh = rebel.Runtime(args.artifacts / f"{variant}.rbln", tensor_type="pt", device=0)

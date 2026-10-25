@@ -9,9 +9,9 @@ from scripts.diagnostics.flux2_block0_selective import verify_bundle
 
 
 SOURCE = Path(
-    "/mnt/shared_data/users/jaehunryu/nas_data/model-enable-20261025/flux2-klein/block0-first-residual-sdk336-bundle"
+    "/mnt/shared_data/users/jaehunryu/nas_data/model-enable-20261025/flux2-klein/block0-attention-producers-sdk336-bundle"
 )
-DESTINATION = Path("/mnt/cross_data/model-enable/jaehunryu/flux2-block0-first-residual-sdk336")
+DESTINATION = Path("/mnt/cross_data/model-enable/jaehunryu/flux2-block0-attention-producers-sdk336")
 
 
 def stage(source=SOURCE, destination=DESTINATION):
