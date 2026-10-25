@@ -41,10 +41,10 @@ def test_missing_observed_output_rejects_abi():
 def test_frozen_bundle_verifies_without_hardware(monkeypatch, tmp_path):
     # Use the retained real bundle's schema without loading its tensors or runtimes.
     manifest = {
-        "sdk": "0.12.1.dev336+g6a96bd1a",
+        "sdk": "0.12.1.dev339+g781e7d9f",
         "revision": "e7b7dc27f91deacad38e78976d1f2b499d76a294",
-        "compiler_source_commit": "6a96bd1a7e1591fc98d96b8a5727ceb6bc67094b",
-        "primitive_commit": "f9ad60764de5a48c331e739a1aa90cf500a43215",
+        "compiler_source_commit": "781e7d9f1230a2b448f3d9d17389be7831a6975a",
+        "primitive_commit": "017b55f8f23ba8b7c35c854cb584e948b874880b",
         "target": "RBLN-CR13",
         "num_devices": 1,
         "batch": 1,
@@ -61,8 +61,8 @@ def test_frozen_bundle_verifies_without_hardware(monkeypatch, tmp_path):
         "original_graph_causal_attribution": False,
         "feature_names": diagnostic.FEATURES,
         "cases": [
-            {"name": "short_component", "source_ci": 836},
-            {"name": "native_valid512", "source_ci": 837},
+            {"name": "short_component", "source_ci": 852},
+            {"name": "native_valid512", "source_ci": 851},
         ],
         "files": {},
     }

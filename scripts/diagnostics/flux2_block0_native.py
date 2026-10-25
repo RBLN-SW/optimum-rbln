@@ -10,8 +10,8 @@ from pathlib import Path
 from scripts.diagnostics.flux2_transformer_frozen import metrics, require_scheduled_execution, sha256
 
 
-SDK = "0.12.1.dev336+g6a96bd1a"
-MANIFEST_SHA = "a3829dc6c7887a385ed44b3df3ea5fe25136aaa841f0dbd6b213fadfd7a2b73e"
+SDK = "0.12.1.dev339+g781e7d9f"
+MANIFEST_SHA = "18619417ace0d89640b86af972bc138804f5fbd0ff5ebcad7452150a8f2f7539"
 FEATURES = [
     "final_residual",
     "input_norm",
@@ -71,8 +71,8 @@ def verify_bundle(directory):
     expected = {
         "sdk": SDK,
         "revision": "e7b7dc27f91deacad38e78976d1f2b499d76a294",
-        "compiler_source_commit": "6a96bd1a7e1591fc98d96b8a5727ceb6bc67094b",
-        "primitive_commit": "f9ad60764de5a48c331e739a1aa90cf500a43215",
+        "compiler_source_commit": "781e7d9f1230a2b448f3d9d17389be7831a6975a",
+        "primitive_commit": "017b55f8f23ba8b7c35c854cb584e948b874880b",
         "target": "RBLN-CR13",
         "num_devices": 1,
         "batch": 1,
@@ -92,8 +92,8 @@ def verify_bundle(directory):
     if any(manifest.get(key) != value for key, value in expected.items()):
         raise ValueError("Partial diagnostic contract differs")
     if [(c["name"], c["source_ci"]) for c in manifest["cases"]] != [
-        ("short_component", 836),
-        ("native_valid512", 837),
+        ("short_component", 852),
+        ("native_valid512", 851),
     ]:
         raise ValueError("Original full-model baseline cases differ")
     return manifest

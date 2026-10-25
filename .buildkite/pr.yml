@@ -1,4 +1,4 @@
-# Original short-prompt full FLUX2 official SDK339 compensated masked-softmax reduction candidate; original numerical criteria.
+# Partial first-block identity diagnostic; original full-model failures remain required.
 env:
   # Where every release's compiled artifacts live, written by the tag build
   # (.buildkite/bc-compile.yml).
@@ -40,17 +40,17 @@ steps:
   # All gates must pass before the scheduled CR13 diagnostic starts.
   - wait: ~
 
-  - label: ":package: Stage short-prompt FLUX2 full pipeline artifacts across clusters"
+  - label: ":package: Stage trained first-block diagnostic artifacts across clusters"
     image: "${DEVTOOLS_DOCKER_IMAGE}"
     agents:
       queue: k8s
     timeout_in_minutes: 30
     command:
-      - "python3 -m scripts.diagnostics.flux2_pipeline_stage"
+      - "python3 -m scripts.diagnostics.flux2_block0_stage"
 
   - wait: ~
 
-  - label: ":microscope: FLUX2 short25/padded512 full pipeline with official SDK339 compensated masked-softmax reduction on CR13"
+  - label: ":microscope: FLUX2 block0 original SDK339 endpoint identity and producer outputs on CR13"
     image: "${DEVTOOLS_DOCKER_IMAGE}"
     agents:
       queue: udc
@@ -69,10 +69,10 @@ steps:
     env:
       RBLN_TEST_NPU: "RBLN-CR13"
       REBEL_COMPILER_VERSION: "0.12.1.dev339+g781e7d9f"
-    timeout_in_minutes: 180
+    timeout_in_minutes: 30
     artifact_paths:
-      - "debug-flux2-pipeline/**/*"
+      - "debug-flux2-block0/**/*"
     command:
       - "bash scripts/ci/sync.sh"
-      - "mkdir -p debug-flux2-pipeline"
-      - "set -o pipefail; uv run --no-sync python -m scripts.diagnostics.flux2_pipeline_frozen --execute --artifacts /mnt/cross_data/model-enable/jaehunryu/flux2-klein-native1024-official-781e 2>&1 | tee debug-flux2-pipeline/runtime.log"
+      - "mkdir -p debug-flux2-block0"
+      - "set -o pipefail; uv run --no-sync python -m scripts.diagnostics.flux2_block0_native --execute --artifacts /mnt/cross_data/model-enable/jaehunryu/flux2-block0-native-sdk339 2>&1 | tee debug-flux2-block0/runtime.log"
