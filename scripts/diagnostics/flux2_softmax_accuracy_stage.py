@@ -9,9 +9,9 @@ from scripts.diagnostics.flux2_softmax_accuracy import verify_bundle
 
 
 SOURCE = Path(
-    "/mnt/shared_data/users/jaehunryu/nas_data/model-enable-20261025/flux2-klein/softmax-accuracy-sdk336-bundle"
+    "/mnt/shared_data/users/jaehunryu/nas_data/model-enable-20261025/flux2-klein/softmax-accuracy-sdk337-bundle"
 )
-DESTINATION = Path("/mnt/cross_data/model-enable/jaehunryu/flux2-softmax-accuracy-sdk336")
+DESTINATION = Path("/mnt/cross_data/model-enable/jaehunryu/flux2-softmax-accuracy-sdk337")
 
 
 def stage(source=SOURCE, destination=DESTINATION):

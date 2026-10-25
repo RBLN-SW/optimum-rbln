@@ -7,12 +7,13 @@ import time
 import traceback
 from pathlib import Path
 
-from scripts.diagnostics.flux2_block0_native import SDK, same_bits
+from scripts.diagnostics.flux2_block0_native import same_bits
 from scripts.diagnostics.flux2_block0_selective import position_metrics
 from scripts.diagnostics.flux2_transformer_frozen import metrics, require_scheduled_execution, sha256
 
 
-MANIFEST_SHA = "9666d0f56201844cc18252e8b0d32b3d9427682fc81ab4e83a1187eb9363f4ea"
+SDK = "0.12.1.dev337+ge09f8a18"
+MANIFEST_SHA = "2fa5b65daaccf61df73efdfe8119db02fa23448009bbdbbd0ed2861c0adb9665"
 FILES = {
     "softmax.rbln",
     "corpus-result.json",
@@ -78,8 +79,8 @@ def verify_bundle(directory):
             raise ValueError(f"Frozen query-core checksum differs: {name}")
     expected = {
         "sdk": SDK,
-        "compiler_source_commit": "6a96bd1a7e1591fc98d96b8a5727ceb6bc67094b",
-        "primitive_commit": "f9ad60764de5a48c331e739a1aa90cf500a43215",
+        "compiler_source_commit": "e09f8a18b64491b1a3e1f47eaa6f8434c4cd4374",
+        "primitive_commit": "6ba567512df2f86655601c3fe382823059a1057d",
         "revision": "e7b7dc27f91deacad38e78976d1f2b499d76a294",
         "target": "RBLN-CR13",
         "num_devices": 1,
