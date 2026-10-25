@@ -11,7 +11,7 @@ notify:
 
 env:
   UV_CACHE_DIR: "${UV_CACHE_PATH}"
-  UV_LINK_MODE: "symlink"
+  UV_LINK_MODE: "copy"
   UV_INDEX_STRATEGY: "unsafe-best-match"
   OPTIMUM_RBLN_TEST_LEVEL: "${OPTIMUM_RBLN_TEST_LEVEL:-default}"
   # The hub tests push to a private repo under this namespace and skip themselves
