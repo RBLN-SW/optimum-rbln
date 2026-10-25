@@ -1,4 +1,4 @@
-"""Short-prompt FLUX2 full-pipeline comparison: official SDK340 DLFloat16 SiLU rounding correction."""
+"""Short-prompt FLUX2 full-pipeline comparison: official SDK342 range-reduced DLFloat16 SiLU."""
 
 import argparse
 import importlib
@@ -12,9 +12,9 @@ from pathlib import Path
 from scripts.diagnostics.flux2_transformer_frozen import metrics, require_scheduled_execution, sha256
 
 
-SDK = "0.12.1.dev340+g0db146e0"
+SDK = "0.12.1.dev342+gffa872ed"
 REVISION = "e7b7dc27f91deacad38e78976d1f2b499d76a294"
-MANIFEST_SHA = "cebc7616d2bfc2b4dbbb729b7d4b7b98bd4028812365cded50519dfac19ff62b"
+MANIFEST_SHA = "48d75bc75ad13cfd2124c8e69f5be79c169f75aae8ebfa7e1a741f52120cca17"
 
 
 def verify_bundle(directory):
@@ -46,8 +46,8 @@ def verify_bundle(directory):
         "hybrid_source_overlay": False,
         "official_wheel_used": True,
         "model_numerical_acceptance": False,
-        "compiler_source_commit": "0db146e0789876255b4f5ce3b3189d8522257e41",
-        "primitive_commit": "1e8b7957edb1b4654b9031d562b4f5034cebce47",
+        "compiler_source_commit": "ffa872ed65f42703d60710b56d975a77b1fd0dcd",
+        "primitive_commit": "bddb88d6abcffd89214ebcb6d8f0f4ed70ecfdfe",
         "unchanged_original_goldens_and_thresholds": True,
         "all_components_recompiled_with_official_sdk": True,
     }
@@ -72,7 +72,7 @@ def main(argv=None):
         "full_pipeline_npu_acceptance": False,
         "hybrid_source_overlay": False,
         "official_wheel_used": True,
-        "compiler_source_commit": "0db146e0789876255b4f5ce3b3189d8522257e41",
+        "compiler_source_commit": "ffa872ed65f42703d60710b56d975a77b1fd0dcd",
     }
     started = time.monotonic()
     code = 1
