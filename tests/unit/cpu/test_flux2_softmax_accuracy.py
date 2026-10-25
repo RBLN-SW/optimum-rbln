@@ -39,3 +39,19 @@ def test_metrics_reject_shape_drift_before_flattening():
     reference = torch.arange(6, dtype=torch.float32).reshape(2, 3) + 1
     with pytest.raises(ValueError, match="output ABI"):
         diagnostic.quantization_metrics(reference.reshape(3, 2), reference, reference)
+
+
+def test_runtime_factory_uses_default_executor_and_explicit_tensor_options(monkeypatch):
+    import rebel
+
+    artifact = object()
+    sentinel = object()
+    calls = []
+
+    def sdk_runtime(model, *, tensor_type, device):
+        calls.append((model, tensor_type, device))
+        return sentinel
+
+    monkeypatch.setattr(rebel, "Runtime", sdk_runtime)
+    assert diagnostic.create_runtime(artifact) is sentinel
+    assert calls == [(artifact, "pt", 0)]

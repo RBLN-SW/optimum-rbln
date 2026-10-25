@@ -53,6 +53,12 @@ def quantization_metrics(actual, reference, ideal):
     }
 
 
+def create_runtime(artifact):
+    import rebel
+
+    return rebel.Runtime(artifact, tensor_type="pt", device=0)
+
+
 def verify_bundle(directory):
     directory = Path(directory)
     if sha256(directory / "manifest.json") != MANIFEST_SHA:
@@ -140,7 +146,7 @@ def main(argv=None):
             metadata = rebel.RBLNCompiledModel.inspect(args.artifacts / "softmax.rbln")
             if metadata["npu"] != "RBLN-CR13" or metadata["num_devices"] != 1 or len(metadata["outputs"]) != 1:
                 raise ValueError("Softmax-accuracy compiled ABI differs")
-            runtime = rebel.Runtime(args.artifacts / "softmax.rbln", "corpus-result.json", tensor_type="pt", device=0)
+            runtime = create_runtime(args.artifacts / "softmax.rbln")
             all_passed = True
             for case in manifest["cases"]:
                 ref = torch.load(args.artifacts / "references" / f"{case}.pt", weights_only=True)
@@ -157,7 +163,7 @@ def main(argv=None):
                     for current in [
                         runtime,
                         runtime,
-                        rebel.Runtime(args.artifacts / "softmax.rbln", tensor_type="pt", device=0),
+                        create_runtime(args.artifacts / "softmax.rbln"),
                     ]:
                         observed = current(to_blocked(logits), mask)
                         if isinstance(observed, (list, tuple)):
