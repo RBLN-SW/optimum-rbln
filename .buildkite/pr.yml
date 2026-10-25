@@ -1,4 +1,4 @@
-# Native full FLUX2 valid512 official SDK339 compensated masked-softmax reduction candidate; original numerical criteria.
+# Native full FLUX2 valid512 official SDK340 DLFloat16 SiLU rounding correction candidate; original numerical criteria.
 env:
   # Where every release's compiled artifacts live, written by the tag build
   # (.buildkite/bc-compile.yml).
@@ -50,7 +50,7 @@ steps:
 
   - wait: ~
 
-  - label: ":microscope: FLUX2 valid512 full pipeline with official SDK339 compensated masked-softmax reduction on CR13"
+  - label: ":microscope: FLUX2 valid512 full pipeline with official SDK340 DLFloat16 SiLU rounding correction on CR13"
     image: "${DEVTOOLS_DOCKER_IMAGE}"
     agents:
       queue: udc
@@ -68,11 +68,11 @@ steps:
       UV_INDEX_REBELLIONS_PASSWORD: REBEL_SW_DEV_PASSWORD
     env:
       RBLN_TEST_NPU: "RBLN-CR13"
-      REBEL_COMPILER_VERSION: "0.12.1.dev339+g781e7d9f"
+      REBEL_COMPILER_VERSION: "0.12.1.dev340+g0db146e0"
     timeout_in_minutes: 180
     artifact_paths:
       - "debug-flux2-pipeline/**/*"
     command:
       - "bash scripts/ci/sync.sh"
       - "mkdir -p debug-flux2-pipeline"
-      - "set -o pipefail; uv run --no-sync python -m scripts.diagnostics.flux2_pipeline_frozen --execute --artifacts /mnt/cross_data/model-enable/jaehunryu/flux2-klein-native1024-valid512-official-781e 2>&1 | tee debug-flux2-pipeline/runtime.log"
+      - "set -o pipefail; uv run --no-sync python -m scripts.diagnostics.flux2_pipeline_frozen --execute --artifacts /mnt/cross_data/model-enable/jaehunryu/flux2-klein-native1024-valid512-official-0db1 2>&1 | tee debug-flux2-pipeline/runtime.log"
