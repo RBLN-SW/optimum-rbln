@@ -4,7 +4,7 @@ env:
   # (.buildkite/bc-compile.yml).
   BC_BASE_PATH: "${OPTIMUM_BC_BASE_PATH}"
   UV_CACHE_DIR: "${UV_CACHE_PATH}"
-  UV_LINK_MODE: "symlink"
+  UV_LINK_MODE: "copy"
   UV_INDEX_STRATEGY: "unsafe-best-match"
 
 steps:
@@ -40,7 +40,21 @@ steps:
   # All existing quality/doc gates precede the scheduler-owned CA25 slot.
   - wait: ~
 
-  - label: ":microscope: Chronos frozen native B512 CA25"
+  - label: ":package: Verify and stage existing Chronos encoder0 diagnostic"
+    image: "${DEVTOOLS_DOCKER_IMAGE}"
+    agents:
+      queue: k8s
+    timeout_in_minutes: 30
+    command:
+      - >-
+        python3 -m scripts.diagnostics.chronos2_encoder0_probe_stage
+        --source /mnt/shared_data/users/jaehunryu/nas_data/model-enable-20261025/chronos2-encoder0-native-probe/bundle-run2
+        --destination /mnt/cross_data/model-enable/jaehunryu/chronos2-encoder0-ci819-boundaries-v2
+        --manifest-sha256 c0fd84103ba0fe35f658595c53355bb5c10bb19422a7b1cb5f4f46a07767b044
+
+  - wait: ~
+
+  - label: ":microscope: Existing Chronos CI819 full512 encoder0 boundaries on CA25"
     image: "${DEVTOOLS_DOCKER_IMAGE}"
     agents:
       queue: k8s
@@ -55,27 +69,21 @@ steps:
         product: "RBLN-CA25"
     env:
       REBEL_COMPILER_VERSION: "0.12.1.dev329+g66a3078e"
-      OPTIMUM_RBLN_TEST_LEVEL: "full"
       RBLN_TEST_NPU: "RBLN-CA25"
     secrets:
       UV_INDEX_REBELLIONS_USERNAME: REBEL_SW_DEV_USERNAME
       UV_INDEX_REBELLIONS_PASSWORD: REBEL_SW_DEV_PASSWORD
-      HF_TOKEN: HF_TOKEN
-      HF_HOME: HF_HOME
-    timeout_in_minutes: 120
+    timeout_in_minutes: 30
     artifact_paths:
-      - "debug-chronos-frozen/**/*"
+      - "debug-chronos-encoder0/**/*"
     command:
       - "bash scripts/ci/sync.sh"
-      - "mkdir -p debug-chronos-frozen"
+      - "mkdir -p debug-chronos-encoder0"
       - >-
         set -o pipefail;
         unset RBLN_DUMMY_DEVICE TVM_LIBRARY_PATH;
-        uv run --no-sync python -m scripts.diagnostics.chronos2_frozen_validation
-        --artifacts /mnt/shared_data/users/jaehunryu/nas_data/model-enable-20261024/chronos2-b512-ca25-staged6da-chunk3
-        --manifest-name manifest-recovered.json
-        --manifest-sha256 0eeb40e41cae94010206d8426646e8347bf76d07873663eee5df7cd66bae93c5
-        --runtime-library-sha256 4e1bc153f001ae5a8694478052c7df4b05d8b5dbc09c6a27c06153e6decc7a9e
-        --capture-mask-diagnostics
-        --out debug-chronos-frozen
-        2>&1 | tee debug-chronos-frozen/runtime.log
+        uv run --no-sync python -m scripts.diagnostics.chronos2_encoder0_probe_run
+        --bundle /mnt/cross_data/model-enable/jaehunryu/chronos2-encoder0-ci819-boundaries-v2
+        --manifest-sha256 c0fd84103ba0fe35f658595c53355bb5c10bb19422a7b1cb5f4f46a07767b044
+        --out debug-chronos-encoder0/run1
+        2>&1 | tee debug-chronos-encoder0/runtime.log
