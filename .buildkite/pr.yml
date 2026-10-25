@@ -1,4 +1,4 @@
-# Partial first-block identity diagnostic; original full-model failures remain required.
+# Native full FLUX2 official SDK337 masked-softmax reciprocal candidate; original numerical criteria.
 env:
   # Where every release's compiled artifacts live, written by the tag build
   # (.buildkite/bc-compile.yml).
@@ -40,17 +40,17 @@ steps:
   # All gates must pass before the scheduled CR13 diagnostic starts.
   - wait: ~
 
-  - label: ":package: Stage trained first-block diagnostic artifacts across clusters"
+  - label: ":package: Stage native FLUX2 full pipeline artifacts across clusters"
     image: "${DEVTOOLS_DOCKER_IMAGE}"
     agents:
       queue: k8s
     timeout_in_minutes: 30
     command:
-      - "python3 -m scripts.diagnostics.flux2_sdpa_components_stage"
+      - "python3 -m scripts.diagnostics.flux2_pipeline_stage"
 
   - wait: ~
 
-  - label: ":microscope: FLUX2 native SDPA decomposition identity diagnostic on CR13"
+  - label: ":microscope: FLUX2 full pipeline with official SDK337 masked-softmax reciprocal on CR13"
     image: "${DEVTOOLS_DOCKER_IMAGE}"
     agents:
       queue: udc
@@ -68,11 +68,11 @@ steps:
       UV_INDEX_REBELLIONS_PASSWORD: REBEL_SW_DEV_PASSWORD
     env:
       RBLN_TEST_NPU: "RBLN-CR13"
-      REBEL_COMPILER_VERSION: "0.12.1.dev336+g6a96bd1a"
-    timeout_in_minutes: 30
+      REBEL_COMPILER_VERSION: "0.12.1.dev337+ge09f8a18"
+    timeout_in_minutes: 180
     artifact_paths:
-      - "debug-flux2-sdpa-components/**/*"
+      - "debug-flux2-pipeline/**/*"
     command:
       - "bash scripts/ci/sync.sh"
-      - "mkdir -p debug-flux2-sdpa-components"
-      - "set -o pipefail; uv run --no-sync python -m scripts.diagnostics.flux2_sdpa_components --execute --artifacts /mnt/cross_data/model-enable/jaehunryu/flux2-sdpa-components-sdk336 2>&1 | tee debug-flux2-sdpa-components/runtime.log"
+      - "mkdir -p debug-flux2-pipeline"
+      - "set -o pipefail; uv run --no-sync python -m scripts.diagnostics.flux2_pipeline_frozen --execute --artifacts /mnt/cross_data/model-enable/jaehunryu/flux2-klein-native1024-official-e09f 2>&1 | tee debug-flux2-pipeline/runtime.log"

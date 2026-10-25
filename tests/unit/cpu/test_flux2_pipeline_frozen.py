@@ -13,7 +13,7 @@ def frozen(tmp_path, monkeypatch):
     artifact.write_bytes(b"immutable trained binary")
     manifest = {
         "revision": diagnostic.REVISION,
-        "sdk": "0.12.1.dev336+g6a96bd1a",
+        "sdk": "0.12.1.dev337+ge09f8a18",
         "target": "RBLN-CR13",
         "num_devices": 1,
         "batch": 1,
@@ -25,8 +25,8 @@ def frozen(tmp_path, monkeypatch):
         "hybrid_source_overlay": False,
         "official_wheel_used": True,
         "model_numerical_acceptance": False,
-        "compiler_source_commit": "6a96bd1a7e1591fc98d96b8a5727ceb6bc67094b",
-        "primitive_commit": "f9ad60764de5a48c331e739a1aa90cf500a43215",
+        "compiler_source_commit": "e09f8a18b64491b1a3e1f47eaa6f8434c4cd4374",
+        "primitive_commit": "6ba567512df2f86655601c3fe382823059a1057d",
         "unchanged_original_goldens_and_thresholds": True,
         "all_components_recompiled_with_official_sdk": True,
         "files": {"model/compiled.rbln": {"bytes": artifact.stat().st_size, "sha256": diagnostic.sha256(artifact)}},
