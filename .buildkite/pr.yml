@@ -5,7 +5,7 @@ env:
   # (.buildkite/bc-compile.yml).
   BC_BASE_PATH: "${OPTIMUM_BC_BASE_PATH}"
   UV_CACHE_DIR: "${UV_CACHE_PATH}"
-  UV_LINK_MODE: "symlink"
+  UV_LINK_MODE: "copy"
   UV_INDEX_STRATEGY: "unsafe-best-match"
 
 # Both upload jobs read only .buildkite and scripts; the suites they emit check out in full.
