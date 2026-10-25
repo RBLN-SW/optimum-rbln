@@ -54,7 +54,7 @@ steps:
 
   - wait: ~
 
-  - label: ":microscope: All-resident Chronos full-model B512 suite on CA25"
+  - label: ":microscope: Sequential Chronos full-model B512 per-series parity on CA25"
     image: "${DEVTOOLS_DOCKER_IMAGE}"
     agents:
       queue: k8s
@@ -78,15 +78,15 @@ steps:
       HF_HOME: HF_HOME
     timeout_in_minutes: 120
     artifact_paths:
-      - "debug-chronos-resident/**/*"
+      - "debug-chronos-sequential-parity/**/*"
     command:
       - "bash scripts/ci/sync.sh"
-      - "mkdir -p debug-chronos-resident"
+      - "mkdir -p debug-chronos-sequential-parity"
       - >-
         set -o pipefail;
         unset RBLN_DUMMY_DEVICE TVM_LIBRARY_PATH;
         uv run --no-sync python -m scripts.diagnostics.chronos2_resident_validation
         --artifacts /mnt/cross_data/model-enable/jaehunryu/chronos2-whole-candidate69-v1
         --manifest-sha256 c37bcba1ebb0963177db417be6241f7771291a1a07476034b8601d8fec875784
-        --out debug-chronos-resident/run1
-        2>&1 | tee debug-chronos-resident/runtime.log
+        --out debug-chronos-sequential-parity/run1 --residency sequential
+        2>&1 | tee debug-chronos-sequential-parity/runtime.log

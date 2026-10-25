@@ -5,8 +5,13 @@ from types import SimpleNamespace
 import pytest
 import torch
 
+from scripts.diagnostics import chronos2_frozen_validation as original
 from scripts.diagnostics.chronos2_frozen_validation import NAMES
-from scripts.diagnostics.chronos2_resident_validation import ResidentRuntimeChain, resident_adapter
+from scripts.diagnostics.chronos2_resident_validation import (
+    ResidentRuntimeChain,
+    residency_context,
+    resident_adapter,
+)
 
 
 def test_resident_boundaries_preserve_all_hidden_rows_and_both_masks():
@@ -57,3 +62,17 @@ def test_reload_uses_only_the_passed_compiled_models():
     config.device_map["forecast"] = 8
     with pytest.raises(ValueError, match="same scheduler-owned"):
         adapter(None, fresh, config)
+
+
+def test_explicit_sequential_mode_retains_unload_adapter_and_restores_resident_patch():
+    adapter = original.runtime_adapter
+    observer = object()
+    audit = SimpleNamespace(stage=observer)
+    with residency_context(audit, "sequential"):
+        assert original.runtime_adapter is adapter
+        assert audit.stage is observer
+    with residency_context(audit, "resident"):
+        assert original.runtime_adapter is resident_adapter
+        assert audit.stage is None
+    assert original.runtime_adapter is adapter
+    assert audit.stage is observer

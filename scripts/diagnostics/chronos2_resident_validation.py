@@ -1,6 +1,7 @@
-"""Validate simultaneous residency of the existing six-stage full Chronos candidate."""
+"""Validate explicit residency modes of the existing six-stage full Chronos candidate."""
 
 import argparse
+import contextlib
 import json
 import os
 from pathlib import Path
@@ -58,11 +59,24 @@ def resident_adapter(manifest, event, observer=None):
     return create
 
 
+@contextlib.contextmanager
+def residency_context(audit, mode):
+    """Sequential mode retains the original unload-before-next-stage adapter."""
+    if mode not in ("resident", "sequential"):
+        raise ValueError("Unknown residency mode")
+    with contextlib.ExitStack() as stack:
+        if mode == "resident":
+            stack.enter_context(patch.object(audit, "stage", None))
+            stack.enter_context(patch.object(original, "runtime_adapter", resident_adapter))
+        yield
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--artifacts", type=Path, required=True)
     parser.add_argument("--manifest-sha256", required=True)
     parser.add_argument("--out", type=Path, required=True)
+    parser.add_argument("--residency", choices=["resident", "sequential"], default="resident")
     args = parser.parse_args()
     args.artifacts = args.artifacts.resolve()
     manifest = validate_candidate(args.artifacts, args.manifest_sha256)
@@ -89,11 +103,19 @@ def main():
             stream.write(json.dumps(value) + "\n")
         print("CHRONOS_RESIDENT " + json.dumps(value), flush=True)
 
-    event({"phase": "verified_before_runtime", "runtime": runtime, "full_model": True, "product_adopted": False})
+    event(
+        {
+            "phase": "verified_before_runtime",
+            "runtime": runtime,
+            "full_model": True,
+            "product_adopted": False,
+            "residency": args.residency,
+        }
+    )
     os.environ["OPTIMUM_RBLN_TEST_LEVEL"] = "full"
     os.chdir(args.out)
     # The full-model prediction audit is independent of stage-boundary observation.
-    with patch.object(audit, "stage", None), patch.object(original, "runtime_adapter", resident_adapter):
+    with residency_context(audit, args.residency):
         try:
             original.run_suite(args.artifacts, manifest, args.out, event, diagnostics=audit)
         finally:
