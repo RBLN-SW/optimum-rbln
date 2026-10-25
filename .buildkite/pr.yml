@@ -46,11 +46,11 @@ steps:
       queue: k8s
     timeout_in_minutes: 30
     command:
-      - "python3 -m scripts.diagnostics.flux2_block0_selective_stage"
+      - "python3 -m scripts.diagnostics.flux2_query_core_stage"
 
   - wait: ~
 
-  - label: ":microscope: FLUX2 block0 query boundary identity on CR13"
+  - label: ":microscope: FLUX2 native-shaped Q norm and RoPE operator diagnostic on CR13"
     image: "${DEVTOOLS_DOCKER_IMAGE}"
     agents:
       queue: udc
@@ -71,8 +71,8 @@ steps:
       REBEL_COMPILER_VERSION: "0.12.1.dev336+g6a96bd1a"
     timeout_in_minutes: 30
     artifact_paths:
-      - "debug-flux2-selective/**/*"
+      - "debug-flux2-query-core/**/*"
     command:
       - "bash scripts/ci/sync.sh"
-      - "mkdir -p debug-flux2-selective"
-      - "set -o pipefail; uv run --no-sync python -m scripts.diagnostics.flux2_block0_selective --execute --artifacts /mnt/cross_data/model-enable/jaehunryu/flux2-block0-query-boundaries-sdk336 2>&1 | tee debug-flux2-selective/runtime.log"
+      - "mkdir -p debug-flux2-query-core"
+      - "set -o pipefail; uv run --no-sync python -m scripts.diagnostics.flux2_query_core --execute --artifacts /mnt/cross_data/model-enable/jaehunryu/flux2-query-core-sdk336 2>&1 | tee debug-flux2-query-core/runtime.log"
