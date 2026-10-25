@@ -19,6 +19,7 @@ def frozen(tmp_path, monkeypatch):
         "batch": 1,
         "image_size": [1024, 1024],
         "prompt_length": 512,
+        "actual_valid_prompt_tokens": 512,
         "reference_image_count": 0,
         "denoising_steps": 4,
         "guidance": 1.0,
@@ -115,6 +116,16 @@ def test_frozen_rejects_source_overlay_in_official_wheel(frozen, monkeypatch):
 def test_frozen_rejects_old_compiler_pin(frozen, monkeypatch):
     root, manifest = frozen
     manifest["compiler_source_commit"] = "0ece4ab38cc84df9d2602e6e1e9c2ef047b2aab3"
+    path = root / "manifest.json"
+    path.write_text(json.dumps(manifest))
+    monkeypatch.setattr(diagnostic, "MANIFEST_SHA", diagnostic.sha256(path))
+    with pytest.raises(ValueError, match="profile differs"):
+        diagnostic.verify_bundle(root)
+
+
+def test_frozen_rejects_shortened_valid_token_count(frozen, monkeypatch):
+    root, manifest = frozen
+    manifest["actual_valid_prompt_tokens"] = 511
     path = root / "manifest.json"
     path.write_text(json.dumps(manifest))
     monkeypatch.setattr(diagnostic, "MANIFEST_SHA", diagnostic.sha256(path))
