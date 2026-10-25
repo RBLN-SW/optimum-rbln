@@ -40,21 +40,21 @@ steps:
   # All existing quality/doc gates precede the scheduler-owned CA25 slot.
   - wait: ~
 
-  - label: ":package: Verify and stage existing Chronos B1 controls"
+  - label: ":package: Verify and stage original Chronos compiler-fix candidate"
     image: "${DEVTOOLS_DOCKER_IMAGE}"
     agents:
       queue: k8s
     timeout_in_minutes: 30
     command:
       - >-
-        python3 -m scripts.diagnostics.chronos2_attention_isolation_stage
-        --source /mnt/shared_data/users/jaehunryu/nas_data/model-enable-20261025/chronos-mask-lowering68/bundle-official342
-        --destination /mnt/cross_data/model-enable/jaehunryu/chronos2-b1-candidate-lowering68-v1
-        --manifest-sha256 178fad50b16df69fd604478562989cbb5d0ad4d13e3cacbf6877d6a9325d72e2
+        python3 -m scripts.diagnostics.chronos2_encoder0_probe_stage
+        --source /mnt/shared_data/users/jaehunryu/nas_data/model-enable-20261025/chronos-mask-lowering68/bundle-original328
+        --destination /mnt/cross_data/model-enable/jaehunryu/chronos2-original-encoder0-candidate68-v1
+        --manifest-sha256 24511c741e3f1615170df35e9d692088fabfdf36c30ae62b1a6cb98fe58f241e
 
   - wait: ~
 
-  - label: ":microscope: Chronos B1 candidate additive-mask lowering on CA25"
+  - label: ":microscope: Original Chronos full512 trained encoder0 candidate on CA25"
     image: "${DEVTOOLS_DOCKER_IMAGE}"
     agents:
       queue: k8s
@@ -62,28 +62,28 @@ steps:
       cpu:
         requests: "8"
       memory:
-        requests: "16Gi"
-        limits: "16Gi"
+        requests: "32Gi"
+        limits: "32Gi"
       npu:
         count: 1
         product: "RBLN-CA25"
     env:
-      REBEL_COMPILER_VERSION: "0.12.1.dev342+gffa872ed"
+      REBEL_COMPILER_VERSION: "0.12.1.dev329+g66a3078e"
       RBLN_TEST_NPU: "RBLN-CA25"
     secrets:
       UV_INDEX_REBELLIONS_USERNAME: REBEL_SW_DEV_USERNAME
       UV_INDEX_REBELLIONS_PASSWORD: REBEL_SW_DEV_PASSWORD
-    timeout_in_minutes: 30
+    timeout_in_minutes: 45
     artifact_paths:
-      - "debug-chronos-b1/official342/**/*"
+      - "debug-chronos-original-candidate/**/*"
     command:
       - "bash scripts/ci/sync.sh"
-      - "mkdir -p debug-chronos-b1/official342"
+      - "mkdir -p debug-chronos-original-candidate"
       - >-
         set -o pipefail;
         unset RBLN_DUMMY_DEVICE TVM_LIBRARY_PATH;
-        uv run --no-sync python -m scripts.diagnostics.chronos2_attention_isolation_run
-        --bundle /mnt/cross_data/model-enable/jaehunryu/chronos2-b1-candidate-lowering68-v1
-        --manifest-sha256 178fad50b16df69fd604478562989cbb5d0ad4d13e3cacbf6877d6a9325d72e2
-        --out debug-chronos-b1/official342/run1
-        2>&1 | tee debug-chronos-b1/official342/runtime.log
+        uv run --no-sync python -m scripts.diagnostics.chronos2_encoder0_candidate_run
+        --bundle /mnt/cross_data/model-enable/jaehunryu/chronos2-original-encoder0-candidate68-v1
+        --manifest-sha256 24511c741e3f1615170df35e9d692088fabfdf36c30ae62b1a6cb98fe58f241e
+        --out debug-chronos-original-candidate/run1
+        2>&1 | tee debug-chronos-original-candidate/runtime.log
