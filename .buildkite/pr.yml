@@ -31,7 +31,7 @@ steps:
   command:
   - bash scripts/check-docstrings.sh
 - wait: null
-- label: ':pytest: Existing SigLIP2 SDK343 RBLN-CA25 B1/2/4/8'
+- label: ':pytest: Existing SigLIP2 SDK343 passive failure capture RBLN-CA25 B1/2/4/8'
   image: ${DEVTOOLS_DOCKER_IMAGE}
   agents:
     queue: k8s
@@ -67,10 +67,10 @@ steps:
     assert h=="44488287fded4255154c870fbd789b1c6ad4d7a5c9e49e39c87d17e191bd1c9a";
     print("SIGLIP2_SDK_RECEIPT "+json.dumps({"version":v,"DSO_sha256":h}))'
   - set -o pipefail; unset TVM_LIBRARY_PATH RBLN_DUMMY_DEVICE SAVE_ARTIFACTS_PATH
-    REUSE_ARTIFACTS_PATH; uv run --no-sync pytest -n 1 tests/test_transformers.py
+    REUSE_ARTIFACTS_PATH; SIGLIP2_FAILURE_CAPTURE_DIR=debug-siglip343/failure-capture uv run --no-sync python -m pytest -p scripts.diagnostics.siglip2_failure_capture -n 1 tests/test_transformers.py
     -k TestSiglip2Model -vv --durations 0 --junitxml=junit-siglip343.xml 2>&1 | tee
     debug-siglip343/runtime.log
-- label: ':pytest: Existing SigLIP2 SDK343 RBLN-CR13 B1/2/4/8'
+- label: ':pytest: Existing SigLIP2 SDK343 passive failure capture RBLN-CR13 B1/2/4/8'
   image: ${DEVTOOLS_DOCKER_IMAGE}
   agents:
     queue: k8s
@@ -106,6 +106,6 @@ steps:
     assert h=="44488287fded4255154c870fbd789b1c6ad4d7a5c9e49e39c87d17e191bd1c9a";
     print("SIGLIP2_SDK_RECEIPT "+json.dumps({"version":v,"DSO_sha256":h}))'
   - set -o pipefail; unset TVM_LIBRARY_PATH RBLN_DUMMY_DEVICE SAVE_ARTIFACTS_PATH
-    REUSE_ARTIFACTS_PATH; uv run --no-sync pytest -n 1 tests/test_transformers.py
+    REUSE_ARTIFACTS_PATH; SIGLIP2_FAILURE_CAPTURE_DIR=debug-siglip343/failure-capture uv run --no-sync python -m pytest -p scripts.diagnostics.siglip2_failure_capture -n 1 tests/test_transformers.py
     -k TestSiglip2Model -vv --durations 0 --junitxml=junit-siglip343.xml 2>&1 | tee
     debug-siglip343/runtime.log
