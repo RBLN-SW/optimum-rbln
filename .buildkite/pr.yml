@@ -1,4 +1,4 @@
-# Frozen full native Chronos B512 validation on scheduler-owned CA25.
+# Existing Chronos captured-input operator diagnostics on scheduler-owned CA25.
 env:
   # Where every release's compiled artifacts live, written by the tag build
   # (.buildkite/bc-compile.yml).
@@ -40,30 +40,30 @@ steps:
   # All existing quality/doc gates precede the scheduler-owned CA25 slot.
   - wait: ~
 
-  - label: ":package: Verify and stage existing Chronos temporal producer diagnostic"
+  - label: ":package: Verify and stage existing Chronos attention operator controls"
     image: "${DEVTOOLS_DOCKER_IMAGE}"
     agents:
       queue: k8s
     timeout_in_minutes: 30
     command:
       - >-
-        python3 -m scripts.diagnostics.chronos2_temporal_producer_stage
-        --source /mnt/shared_data/users/jaehunryu/nas_data/model-enable-20261025/chronos-temporal-producer56/selected-output57/bundle-run1
-        --destination /mnt/cross_data/model-enable/jaehunryu/chronos2-ci819-temporal-producers-v1
-        --manifest-sha256 0e44a75ce896475a74ae8a9a22a21d57ff0ccf78fd662c5166f6e5e689ce7eb8
+        python3 -m scripts.diagnostics.chronos2_attention_isolation_stage
+        --source /mnt/shared_data/users/jaehunryu/nas_data/model-enable-20261025/chronos-attention-isolation65/bundle66
+        --destination /mnt/cross_data/model-enable/jaehunryu/chronos2-attention-isolation-v1
+        --manifest-sha256 e2c0235588f10cf6f689eadc47ca876495f902ccb78bc1e5e703e08418b4a273
 
   - wait: ~
 
-  - label: ":microscope: Existing Chronos full512 true temporal producers on CA25"
+  - label: ":microscope: Existing Chronos captured-input attention controls on CA25"
     image: "${DEVTOOLS_DOCKER_IMAGE}"
     agents:
       queue: k8s
     resources:
       cpu:
-        requests: "16"
+        requests: "8"
       memory:
-        requests: "64Gi"
-        limits: "64Gi"
+        requests: "16Gi"
+        limits: "16Gi"
       npu:
         count: 1
         product: "RBLN-CA25"
@@ -75,15 +75,15 @@ steps:
       UV_INDEX_REBELLIONS_PASSWORD: REBEL_SW_DEV_PASSWORD
     timeout_in_minutes: 30
     artifact_paths:
-      - "debug-chronos-temporal-producers/**/*"
+      - "debug-chronos-attention-isolation/**/*"
     command:
       - "bash scripts/ci/sync.sh"
-      - "mkdir -p debug-chronos-temporal-producers"
+      - "mkdir -p debug-chronos-attention-isolation"
       - >-
         set -o pipefail;
         unset RBLN_DUMMY_DEVICE TVM_LIBRARY_PATH;
-        uv run --no-sync python -m scripts.diagnostics.chronos2_temporal_producer_run
-        --bundle /mnt/cross_data/model-enable/jaehunryu/chronos2-ci819-temporal-producers-v1
-        --manifest-sha256 0e44a75ce896475a74ae8a9a22a21d57ff0ccf78fd662c5166f6e5e689ce7eb8
-        --out debug-chronos-temporal-producers/run1
-        2>&1 | tee debug-chronos-temporal-producers/runtime.log
+        uv run --no-sync python -m scripts.diagnostics.chronos2_attention_isolation_run
+        --bundle /mnt/cross_data/model-enable/jaehunryu/chronos2-attention-isolation-v1
+        --manifest-sha256 e2c0235588f10cf6f689eadc47ca876495f902ccb78bc1e5e703e08418b4a273
+        --out debug-chronos-attention-isolation/run1
+        2>&1 | tee debug-chronos-attention-isolation/runtime.log
