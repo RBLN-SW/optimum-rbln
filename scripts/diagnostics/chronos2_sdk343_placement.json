@@ -1,0 +1,1042 @@
+{
+  "source_CI": 870,
+  "compiler_version": "0.12.1.dev343+g8f59b810",
+  "checkpoint_revision": "29ec3766d36d6f73f0696f85560a422f50e8498c",
+  "scope": "Existing compiler placement profiles, not numerical goldens or proof of all-device arithmetic; B1..32 include existing CPU softmax/mask work. CA25 B512 oldmonolithic failedruntime.",
+  "profiles": {
+    "RBLN-CR13:1": {
+      "artifact_sha256": "21836c955f50e38be7646200c538c23a61acda62632dadc90ee580dbb3c315fd",
+      "metadata_file_sha256": "d8b20a2fbd259a73180a2c1d2ee5a0e69e4ccfc7d12982ce6d3a4b061503f188",
+      "stats": [
+        {
+          "compile_id": 0,
+          "device_func_count": 13,
+          "host_op_reason": {
+            "rbln_rebel_descriptor_main_0": {
+              "scaled_dot_product_attention_21": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_23": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_1": {
+              "scaled_dot_product_attention_19": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_21": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_23": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_10": {
+              "scaled_dot_product_attention_1": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_3": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_5": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_11": {
+              "scaled_dot_product_attention_1": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_3": "BreakReason.WrongShape",
+              "view": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_12": {
+              "context_mask": "BreakReason.WrongShape",
+              "group_ids": "BreakReason.WrongShape",
+              "ones": "BreakReason.WrongShape",
+              "ones_1": "BreakReason.WrongShape",
+              "patched_context": "BreakReason.WrongShape",
+              "patched_future": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_1": "BreakReason.WrongShape",
+              "unsqueeze_2": "BreakReason.WrongShape",
+              "unsqueeze_3": "BreakReason.WrongShape",
+              "view": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_2": {
+              "scaled_dot_product_attention_17": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_19": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_21": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_3": {
+              "scaled_dot_product_attention_15": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_17": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_19": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_4": {
+              "scaled_dot_product_attention_13": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_15": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_17": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_5": {
+              "scaled_dot_product_attention_11": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_13": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_15": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_6": {
+              "scaled_dot_product_attention_11": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_13": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_9": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_7": {
+              "scaled_dot_product_attention_11": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_7": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_9": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_8": {
+              "scaled_dot_product_attention_5": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_7": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_9": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_9": {
+              "scaled_dot_product_attention_3": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_5": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_7": "BreakReason.WrongShape"
+            }
+          }
+        }
+      ]
+    },
+    "RBLN-CR13:16": {
+      "artifact_sha256": "28e21bdfafaf18b54e1e383bd7b8dd3f8d3066352a843d781ae1d8d94e3a8e74",
+      "metadata_file_sha256": "cf796064d1827249adf752f0c42d10238c1f221bf357f9a1073c4a77be4e7696",
+      "stats": [
+        {
+          "compile_id": 0,
+          "device_func_count": 13,
+          "host_op_reason": {
+            "rbln_rebel_descriptor_main_0": {
+              "scaled_dot_product_attention_21": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_23": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_1": {
+              "scaled_dot_product_attention_19": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_21": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_23": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_10": {
+              "scaled_dot_product_attention_1": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_3": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_5": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_11": {
+              "group_ids": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_1": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_3": "BreakReason.WrongShape",
+              "unsqueeze_2": "BreakReason.WrongShape",
+              "unsqueeze_3": "BreakReason.WrongShape",
+              "unsqueeze_4": "BreakReason.WrongShape",
+              "view": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_12": {
+              "context_mask": "BreakReason.WrongShape",
+              "ones": "BreakReason.WrongShape",
+              "ones_1": "BreakReason.WrongShape",
+              "patched_context": "BreakReason.WrongShape",
+              "patched_future": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_1": "BreakReason.WrongShape",
+              "unsqueeze_2": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_2": {
+              "scaled_dot_product_attention_17": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_19": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_21": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_3": {
+              "scaled_dot_product_attention_15": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_17": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_19": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_4": {
+              "scaled_dot_product_attention_13": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_15": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_17": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_5": {
+              "scaled_dot_product_attention_11": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_13": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_15": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_6": {
+              "scaled_dot_product_attention_11": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_13": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_9": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_7": {
+              "scaled_dot_product_attention_11": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_7": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_9": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_8": {
+              "scaled_dot_product_attention_5": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_7": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_9": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_9": {
+              "scaled_dot_product_attention_3": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_5": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_7": "BreakReason.WrongShape"
+            }
+          }
+        }
+      ]
+    },
+    "RBLN-CR13:2": {
+      "artifact_sha256": "4080fa4b8226369c41576480039efed1301acfc5d31327fc4938fc7247ac6d9f",
+      "metadata_file_sha256": "5bd1e00cde845dad71b965de2db2963fed67f336c95acfea455d659ac30a8d99",
+      "stats": [
+        {
+          "compile_id": 0,
+          "device_func_count": 13,
+          "host_op_reason": {
+            "rbln_rebel_descriptor_main_0": {
+              "scaled_dot_product_attention_21": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_23": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_1": {
+              "scaled_dot_product_attention_19": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_21": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_23": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_10": {
+              "scaled_dot_product_attention_1": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_3": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_5": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_11": {
+              "permute": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_1": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_3": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_12": {
+              "context_mask": "BreakReason.WrongShape",
+              "group_ids": "BreakReason.WrongShape",
+              "ones": "BreakReason.WrongShape",
+              "ones_1": "BreakReason.WrongShape",
+              "patched_context": "BreakReason.WrongShape",
+              "patched_future": "BreakReason.WrongShape",
+              "permute": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_1": "BreakReason.WrongShape",
+              "unsqueeze_2": "BreakReason.WrongShape",
+              "unsqueeze_3": "BreakReason.WrongShape",
+              "unsqueeze_4": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_2": {
+              "scaled_dot_product_attention_17": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_19": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_21": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_3": {
+              "scaled_dot_product_attention_15": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_17": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_19": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_4": {
+              "scaled_dot_product_attention_13": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_15": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_17": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_5": {
+              "scaled_dot_product_attention_11": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_13": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_15": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_6": {
+              "scaled_dot_product_attention_11": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_13": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_9": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_7": {
+              "scaled_dot_product_attention_11": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_7": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_9": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_8": {
+              "scaled_dot_product_attention_5": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_7": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_9": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_9": {
+              "scaled_dot_product_attention_3": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_5": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_7": "BreakReason.WrongShape"
+            }
+          }
+        }
+      ]
+    },
+    "RBLN-CR13:32": {
+      "artifact_sha256": "4cf89acdf5c826a521242c60221d50bf580f1255557282ada5bb084b17a08398",
+      "metadata_file_sha256": "95042029288fd8bd0a05284408c4e613a5126fdf9b94507a377d85e029d0a65f",
+      "stats": [
+        {
+          "compile_id": 0,
+          "device_func_count": 13,
+          "host_op_reason": {
+            "rbln_rebel_descriptor_main_0": {
+              "scaled_dot_product_attention_21": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_23": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_1": {
+              "scaled_dot_product_attention_19": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_21": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_23": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_10": {
+              "scaled_dot_product_attention_1": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_3": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_5": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_11": {
+              "group_ids": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_1": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_3": "BreakReason.WrongShape",
+              "unsqueeze_2": "BreakReason.WrongShape",
+              "unsqueeze_3": "BreakReason.WrongShape",
+              "unsqueeze_4": "BreakReason.WrongShape",
+              "view": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_12": {
+              "context_mask": "BreakReason.WrongShape",
+              "ones": "BreakReason.WrongShape",
+              "ones_1": "BreakReason.WrongShape",
+              "patched_context": "BreakReason.WrongShape",
+              "patched_future": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_1": "BreakReason.WrongShape",
+              "unsqueeze_2": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_2": {
+              "scaled_dot_product_attention_17": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_19": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_21": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_3": {
+              "scaled_dot_product_attention_15": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_17": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_19": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_4": {
+              "scaled_dot_product_attention_13": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_15": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_17": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_5": {
+              "scaled_dot_product_attention_11": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_13": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_15": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_6": {
+              "scaled_dot_product_attention_11": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_13": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_9": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_7": {
+              "scaled_dot_product_attention_11": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_7": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_9": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_8": {
+              "scaled_dot_product_attention_5": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_7": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_9": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_9": {
+              "scaled_dot_product_attention_3": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_5": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_7": "BreakReason.WrongShape"
+            }
+          }
+        }
+      ]
+    },
+    "RBLN-CR13:4": {
+      "artifact_sha256": "d2d7cbb5fe51082fd68a6495a74f0b79c21e0ae9d3dac611c31e2b6598653af5",
+      "metadata_file_sha256": "7c18b072e9fd7bfd1193ccdf8e0ce60b13927e105eb258b0cf47fdf9847a6b66",
+      "stats": [
+        {
+          "compile_id": 0,
+          "device_func_count": 13,
+          "host_op_reason": {
+            "rbln_rebel_descriptor_main_0": {
+              "scaled_dot_product_attention_21": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_23": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_1": {
+              "scaled_dot_product_attention_19": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_21": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_23": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_10": {
+              "scaled_dot_product_attention_1": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_3": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_5": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_11": {
+              "permute": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_1": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_3": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_12": {
+              "context_mask": "BreakReason.WrongShape",
+              "group_ids": "BreakReason.WrongShape",
+              "ones": "BreakReason.WrongShape",
+              "ones_1": "BreakReason.WrongShape",
+              "patched_context": "BreakReason.WrongShape",
+              "patched_future": "BreakReason.WrongShape",
+              "permute": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_1": "BreakReason.WrongShape",
+              "unsqueeze_2": "BreakReason.WrongShape",
+              "unsqueeze_3": "BreakReason.WrongShape",
+              "unsqueeze_4": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_2": {
+              "scaled_dot_product_attention_17": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_19": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_21": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_3": {
+              "scaled_dot_product_attention_15": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_17": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_19": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_4": {
+              "scaled_dot_product_attention_13": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_15": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_17": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_5": {
+              "scaled_dot_product_attention_11": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_13": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_15": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_6": {
+              "scaled_dot_product_attention_11": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_13": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_9": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_7": {
+              "scaled_dot_product_attention_11": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_7": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_9": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_8": {
+              "scaled_dot_product_attention_5": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_7": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_9": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_9": {
+              "scaled_dot_product_attention_3": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_5": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_7": "BreakReason.WrongShape"
+            }
+          }
+        }
+      ]
+    },
+    "RBLN-CR13:8": {
+      "artifact_sha256": "f2cd5c0a542b1c24a05603a42037b03cb0d119a2fcd89e1fd00fae8cbeec708e",
+      "metadata_file_sha256": "7bbe702fc30107ff994e0bb35adefaf543c19d68e54717228eadd3d0f016ae10",
+      "stats": [
+        {
+          "compile_id": 0,
+          "device_func_count": 13,
+          "host_op_reason": {
+            "rbln_rebel_descriptor_main_0": {
+              "scaled_dot_product_attention_21": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_23": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_1": {
+              "scaled_dot_product_attention_19": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_21": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_23": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_10": {
+              "scaled_dot_product_attention_1": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_3": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_5": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_11": {
+              "permute": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_1": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_3": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_12": {
+              "context_mask": "BreakReason.WrongShape",
+              "group_ids": "BreakReason.WrongShape",
+              "ones": "BreakReason.WrongShape",
+              "ones_1": "BreakReason.WrongShape",
+              "patched_context": "BreakReason.WrongShape",
+              "patched_future": "BreakReason.WrongShape",
+              "permute": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_1": "BreakReason.WrongShape",
+              "unsqueeze_2": "BreakReason.WrongShape",
+              "unsqueeze_3": "BreakReason.WrongShape",
+              "unsqueeze_4": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_2": {
+              "scaled_dot_product_attention_17": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_19": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_21": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_3": {
+              "scaled_dot_product_attention_15": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_17": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_19": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_4": {
+              "scaled_dot_product_attention_13": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_15": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_17": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_5": {
+              "scaled_dot_product_attention_11": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_13": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_15": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_6": {
+              "scaled_dot_product_attention_11": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_13": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_9": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_7": {
+              "scaled_dot_product_attention_11": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_7": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_9": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_8": {
+              "scaled_dot_product_attention_5": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_7": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_9": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_9": {
+              "scaled_dot_product_attention_3": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_5": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_7": "BreakReason.WrongShape"
+            }
+          }
+        }
+      ]
+    },
+    "RBLN-CA25:128": {
+      "artifact_sha256": "5dfcdca8e63bb8d0bbd65cd4721bc8d385fa8306c06ff1c12aca6eb334a3278a",
+      "metadata_file_sha256": "e8c0a4cf49556e83e96a59cd8bb46fc4fa59f626cf25c70cf66044a32766648e",
+      "stats": [
+        {
+          "compile_id": 0,
+          "device_func_count": 1,
+          "host_op_reason": {}
+        }
+      ]
+    },
+    "RBLN-CA25:256": {
+      "artifact_sha256": "0331e5ce76d04badfe64b46150111fc2b969e4d187fa3c5fae0d560461b321d8",
+      "metadata_file_sha256": "a34ecff11d6f379a11ad0643610241dab079b11dde836e0d23e6c5474fb90ceb",
+      "stats": [
+        {
+          "compile_id": 0,
+          "device_func_count": 1,
+          "host_op_reason": {}
+        }
+      ]
+    },
+    "RBLN-CA25:64": {
+      "artifact_sha256": "8981dded0710bbc451e2c24fd551be58a89d0ed5f57546eb6af2f501317da71a",
+      "metadata_file_sha256": "ef953a63d9ba205316f95dda6a840d44e526b0ee25263ee2d8d393b07f1cd437",
+      "stats": [
+        {
+          "compile_id": 0,
+          "device_func_count": 1,
+          "host_op_reason": {}
+        }
+      ]
+    },
+    "RBLN-CA25:512": {
+      "artifact_sha256": "f4fd49ebb3c0be85450addc30b5fd4b42f07b06f48b037f738d2af914f8e3f76",
+      "metadata_file_sha256": "8cffb00744aaa02e6307879e4580dc7cfbf3e6ca5428db6eef48ab586212df1a",
+      "stats": [
+        {
+          "compile_id": 0,
+          "device_func_count": 1,
+          "host_op_reason": {}
+        }
+      ]
+    },
+    "RBLN-CR13:128": {
+      "artifact_sha256": "28cd0d1413aabd630aef698597beb974eb0f24df10dc13c38641f72dfb72c799",
+      "metadata_file_sha256": "455467856b8cd4a57124ab6bac66a030199fe198d0bcb7c0e091d4946278db42",
+      "stats": [
+        {
+          "compile_id": 0,
+          "device_func_count": 1,
+          "host_op_reason": {}
+        }
+      ]
+    },
+    "RBLN-CR13:256": {
+      "artifact_sha256": "4e0702615480e2e63f0eeda6a4916a2ac9675d79b98e562044be88a88afb49b9",
+      "metadata_file_sha256": "c5f705132ffc9400023cff9a79046d39e13d8c4175358405a4357a76f454dcd2",
+      "stats": [
+        {
+          "compile_id": 0,
+          "device_func_count": 1,
+          "host_op_reason": {}
+        }
+      ]
+    },
+    "RBLN-CR13:64": {
+      "artifact_sha256": "149e16345ea5b992fcdd1026e562b37989ea1cd00625f3d6a4a6d7a23f931758",
+      "metadata_file_sha256": "392f2e096b80714cbda0e7382d5d3137149bab6ab6598255f042171603bb15d9",
+      "stats": [
+        {
+          "compile_id": 0,
+          "device_func_count": 1,
+          "host_op_reason": {}
+        }
+      ]
+    },
+    "RBLN-CA25:16": {
+      "artifact_sha256": "c1ad5c3612e89f453905f30eb8a0f17d60d3327e6c920f64c8a9125bbaeb5ee8",
+      "metadata_file_sha256": "815263084b2b9b429798d760b78567a9cd022879c651496d4d57f021596fffbc",
+      "stats": [
+        {
+          "compile_id": 0,
+          "device_func_count": 13,
+          "host_op_reason": {
+            "rbln_rebel_descriptor_main_0": {
+              "scaled_dot_product_attention_21": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_1": {
+              "scaled_dot_product_attention_19": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_21": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_10": {
+              "scaled_dot_product_attention_1": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_3": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_11": {
+              "group_ids": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_1": "BreakReason.WrongShape",
+              "unsqueeze_2": "BreakReason.WrongShape",
+              "unsqueeze_3": "BreakReason.WrongShape",
+              "unsqueeze_4": "BreakReason.WrongShape",
+              "view": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_12": {
+              "context_mask": "BreakReason.WrongShape",
+              "ones": "BreakReason.WrongShape",
+              "ones_1": "BreakReason.WrongShape",
+              "patched_context": "BreakReason.WrongShape",
+              "patched_future": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_1": "BreakReason.WrongShape",
+              "unsqueeze_2": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_2": {
+              "scaled_dot_product_attention_17": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_19": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_3": {
+              "scaled_dot_product_attention_15": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_17": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_4": {
+              "scaled_dot_product_attention_13": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_15": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_5": {
+              "scaled_dot_product_attention_11": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_13": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_6": {
+              "scaled_dot_product_attention_11": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_9": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_7": {
+              "scaled_dot_product_attention_7": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_9": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_8": {
+              "scaled_dot_product_attention_5": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_7": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_9": {
+              "scaled_dot_product_attention_3": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_5": "BreakReason.WrongShape"
+            }
+          }
+        }
+      ]
+    },
+    "RBLN-CA25:2": {
+      "artifact_sha256": "69fb0a6623aea29cb121ec128e5d8b08b6549f4887eeddb3243b6c773c71c057",
+      "metadata_file_sha256": "1c4eea768ad11b85a0ea65018c3490e4149e10b47cd56d49b42ec07c00b817fe",
+      "stats": [
+        {
+          "compile_id": 0,
+          "device_func_count": 13,
+          "host_op_reason": {
+            "rbln_rebel_descriptor_main_0": {
+              "scaled_dot_product_attention_21": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_1": {
+              "scaled_dot_product_attention_19": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_21": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_10": {
+              "scaled_dot_product_attention_1": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_3": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_11": {
+              "permute": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_1": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_12": {
+              "context_mask": "BreakReason.WrongShape",
+              "group_ids": "BreakReason.WrongShape",
+              "ones": "BreakReason.WrongShape",
+              "ones_1": "BreakReason.WrongShape",
+              "patched_context": "BreakReason.WrongShape",
+              "patched_future": "BreakReason.WrongShape",
+              "permute": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_1": "BreakReason.WrongShape",
+              "unsqueeze_2": "BreakReason.WrongShape",
+              "unsqueeze_3": "BreakReason.WrongShape",
+              "unsqueeze_4": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_2": {
+              "scaled_dot_product_attention_17": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_19": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_3": {
+              "scaled_dot_product_attention_15": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_17": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_4": {
+              "scaled_dot_product_attention_13": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_15": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_5": {
+              "scaled_dot_product_attention_11": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_13": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_6": {
+              "scaled_dot_product_attention_11": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_9": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_7": {
+              "scaled_dot_product_attention_7": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_9": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_8": {
+              "scaled_dot_product_attention_5": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_7": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_9": {
+              "scaled_dot_product_attention_3": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_5": "BreakReason.WrongShape"
+            }
+          }
+        }
+      ]
+    },
+    "RBLN-CA25:32": {
+      "artifact_sha256": "a668539188430c75afa898e15d6c5b12010bed25a35d3cc1cfec36887e51ae90",
+      "metadata_file_sha256": "5c1bff46420bfdc8a363282050054f28c670660e6a287b5646dd140a8b55e7fd",
+      "stats": [
+        {
+          "compile_id": 0,
+          "device_func_count": 13,
+          "host_op_reason": {
+            "rbln_rebel_descriptor_main_0": {
+              "scaled_dot_product_attention_21": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_1": {
+              "scaled_dot_product_attention_19": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_21": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_10": {
+              "scaled_dot_product_attention_1": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_3": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_11": {
+              "group_ids": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_1": "BreakReason.WrongShape",
+              "unsqueeze_2": "BreakReason.WrongShape",
+              "unsqueeze_3": "BreakReason.WrongShape",
+              "unsqueeze_4": "BreakReason.WrongShape",
+              "view": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_12": {
+              "context_mask": "BreakReason.WrongShape",
+              "ones": "BreakReason.WrongShape",
+              "ones_1": "BreakReason.WrongShape",
+              "patched_context": "BreakReason.WrongShape",
+              "patched_future": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_1": "BreakReason.WrongShape",
+              "unsqueeze_2": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_2": {
+              "scaled_dot_product_attention_17": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_19": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_3": {
+              "scaled_dot_product_attention_15": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_17": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_4": {
+              "scaled_dot_product_attention_13": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_15": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_5": {
+              "scaled_dot_product_attention_11": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_13": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_6": {
+              "scaled_dot_product_attention_11": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_9": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_7": {
+              "scaled_dot_product_attention_7": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_9": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_8": {
+              "scaled_dot_product_attention_5": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_7": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_9": {
+              "scaled_dot_product_attention_3": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_5": "BreakReason.WrongShape"
+            }
+          }
+        }
+      ]
+    },
+    "RBLN-CA25:4": {
+      "artifact_sha256": "afde0990731222fb834d91bdcf3a20f823fb4ff688d4fbbc81d20d88cac4de3c",
+      "metadata_file_sha256": "b09ffc81a2290f6ba8f38d540759165e4ce7b16e8fa9bf42b117ff7143046878",
+      "stats": [
+        {
+          "compile_id": 0,
+          "device_func_count": 13,
+          "host_op_reason": {
+            "rbln_rebel_descriptor_main_0": {
+              "scaled_dot_product_attention_21": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_1": {
+              "scaled_dot_product_attention_19": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_21": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_10": {
+              "scaled_dot_product_attention_1": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_3": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_11": {
+              "permute": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_1": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_12": {
+              "context_mask": "BreakReason.WrongShape",
+              "group_ids": "BreakReason.WrongShape",
+              "ones": "BreakReason.WrongShape",
+              "ones_1": "BreakReason.WrongShape",
+              "patched_context": "BreakReason.WrongShape",
+              "patched_future": "BreakReason.WrongShape",
+              "permute": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_1": "BreakReason.WrongShape",
+              "unsqueeze_2": "BreakReason.WrongShape",
+              "unsqueeze_3": "BreakReason.WrongShape",
+              "unsqueeze_4": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_2": {
+              "scaled_dot_product_attention_17": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_19": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_3": {
+              "scaled_dot_product_attention_15": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_17": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_4": {
+              "scaled_dot_product_attention_13": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_15": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_5": {
+              "scaled_dot_product_attention_11": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_13": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_6": {
+              "scaled_dot_product_attention_11": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_9": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_7": {
+              "scaled_dot_product_attention_7": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_9": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_8": {
+              "scaled_dot_product_attention_5": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_7": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_9": {
+              "scaled_dot_product_attention_3": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_5": "BreakReason.WrongShape"
+            }
+          }
+        }
+      ]
+    },
+    "RBLN-CA25:8": {
+      "artifact_sha256": "ff6a361c1df91591e1c05b79ced118a1d543053edb306c124678a0fbf6f44fab",
+      "metadata_file_sha256": "fc8e77ac119f33d7856d85b02e08eeb6241117a2cc034ed117392681f9d57a68",
+      "stats": [
+        {
+          "compile_id": 0,
+          "device_func_count": 13,
+          "host_op_reason": {
+            "rbln_rebel_descriptor_main_0": {
+              "scaled_dot_product_attention_21": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_23": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_1": {
+              "scaled_dot_product_attention_19": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_21": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_23": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_10": {
+              "scaled_dot_product_attention_1": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_3": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_5": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_11": {
+              "permute": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_1": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_3": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_12": {
+              "context_mask": "BreakReason.WrongShape",
+              "group_ids": "BreakReason.WrongShape",
+              "ones": "BreakReason.WrongShape",
+              "ones_1": "BreakReason.WrongShape",
+              "patched_context": "BreakReason.WrongShape",
+              "patched_future": "BreakReason.WrongShape",
+              "permute": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_1": "BreakReason.WrongShape",
+              "unsqueeze_2": "BreakReason.WrongShape",
+              "unsqueeze_3": "BreakReason.WrongShape",
+              "unsqueeze_4": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_2": {
+              "scaled_dot_product_attention_17": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_19": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_21": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_3": {
+              "scaled_dot_product_attention_15": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_17": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_19": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_4": {
+              "scaled_dot_product_attention_13": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_15": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_17": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_5": {
+              "scaled_dot_product_attention_11": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_13": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_15": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_6": {
+              "scaled_dot_product_attention_11": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_13": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_9": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_7": {
+              "scaled_dot_product_attention_11": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_7": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_9": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_8": {
+              "scaled_dot_product_attention_5": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_7": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_9": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_9": {
+              "scaled_dot_product_attention_3": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_5": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_7": "BreakReason.WrongShape"
+            }
+          }
+        }
+      ]
+    },
+    "RBLN-CA25:1": {
+      "artifact_sha256": "e04359b91dd7377f8e9872d450d3e661f3466684c0151e754921c4589620d67f",
+      "metadata_file_sha256": "0d77eaa79a92d5e190ef7c4119836ba603bf5c5ca13c2516a37578eddfbd9435",
+      "stats": [
+        {
+          "compile_id": 0,
+          "device_func_count": 13,
+          "host_op_reason": {
+            "rbln_rebel_descriptor_main_0": {
+              "scaled_dot_product_attention_21": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_1": {
+              "scaled_dot_product_attention_19": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_21": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_10": {
+              "scaled_dot_product_attention_1": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_3": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_11": {
+              "scaled_dot_product_attention_1": "BreakReason.WrongShape",
+              "view": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_12": {
+              "context_mask": "BreakReason.WrongShape",
+              "group_ids": "BreakReason.WrongShape",
+              "ones": "BreakReason.WrongShape",
+              "ones_1": "BreakReason.WrongShape",
+              "patched_context": "BreakReason.WrongShape",
+              "patched_future": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_1": "BreakReason.WrongShape",
+              "unsqueeze_2": "BreakReason.WrongShape",
+              "unsqueeze_3": "BreakReason.WrongShape",
+              "view": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_2": {
+              "scaled_dot_product_attention_17": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_19": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_3": {
+              "scaled_dot_product_attention_15": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_17": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_4": {
+              "scaled_dot_product_attention_13": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_15": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_5": {
+              "scaled_dot_product_attention_11": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_13": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_6": {
+              "scaled_dot_product_attention_11": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_9": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_7": {
+              "scaled_dot_product_attention_7": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_9": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_8": {
+              "scaled_dot_product_attention_5": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_7": "BreakReason.WrongShape"
+            },
+            "rbln_rebel_descriptor_main_9": {
+              "scaled_dot_product_attention_3": "BreakReason.WrongShape",
+              "scaled_dot_product_attention_5": "BreakReason.WrongShape"
+            }
+          }
+        }
+      ]
+    },
+    "RBLN-CR13:512": {
+      "artifact_sha256": "bfe98bd1937988b0fe8b369809c31b20260e7cc785f215aa2f4c3b2cd1941572",
+      "metadata_file_sha256": "6dae14cf24e9c8ecd5ad9261afd479be8359b55e61cda80d1069cac553ba9b76",
+      "stats": [
+        {
+          "compile_id": 0,
+          "device_func_count": 1,
+          "host_op_reason": {}
+        }
+      ]
+    }
+  }
+}

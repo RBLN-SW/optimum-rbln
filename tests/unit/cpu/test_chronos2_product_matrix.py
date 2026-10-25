@@ -1,8 +1,12 @@
 """Bind full-batch compiled interfaces and trained tensors to the native model."""
 
+import json
+from pathlib import Path
+
 import pytest
 
-from scripts.diagnostics.chronos2_official_matrix import expected_interfaces, native_parameter
+from scripts.diagnostics import chronos2_official_matrix as matrix
+from scripts.diagnostics.chronos2_official_matrix import check_placement, expected_interfaces, native_parameter
 
 
 @pytest.mark.parametrize(
@@ -31,3 +35,21 @@ def test_full_joint_batch_and_forecast_interfaces():
     assert outputs == [[[512, 577, 768], "float32"]]
     _, forecast = expected_interfaces("forecast", 512)
     assert forecast == [[[512, 21, 1024], "float32"], [[512, 21, 1024], "float32"]]
+
+
+def test_existing_multifunction_graph_profile_is_preserved():
+    profiles = json.loads(Path(matrix.__file__).with_name("chronos2_sdk343_placement.json").read_text())["profiles"]
+    stats = profiles["RBLN-CA25:1"]["stats"]
+    assert stats[0]["device_func_count"] == 13
+    check_placement(stats, "RBLN-CA25", 1, "compiled_model")
+    with pytest.raises(ValueError, match="placement differs"):
+        check_placement(
+            [{"compile_id": 0, "device_func_count": 1, "host_op_reason": {}}], "RBLN-CA25", 1, "compiled_model"
+        )
+
+
+def test_new_encoder_stage_does_not_accept_host_fallback():
+    with pytest.raises(ValueError, match="placement differs"):
+        check_placement(
+            [{"compile_id": 0, "device_func_count": 2, "host_op_reason": {}}], "RBLN-CA25", 512, "encoder_0"
+        )

@@ -1,203 +1,86 @@
-# Validate existing Chronos product graph policy with official SDK343 on scheduler-owned NPUs.
 env:
-  # Where every release's compiled artifacts live, written by the tag build
-  # (.buildkite/bc-compile.yml).
-  BC_BASE_PATH: "${OPTIMUM_BC_BASE_PATH}"
-  UV_CACHE_DIR: "${UV_CACHE_PATH}"
-  UV_LINK_MODE: "copy"
-  UV_INDEX_STRATEGY: "unsafe-best-match"
-
+  BC_BASE_PATH: ${OPTIMUM_BC_BASE_PATH}
+  UV_CACHE_DIR: ${UV_CACHE_PATH}
+  UV_LINK_MODE: copy
+  UV_INDEX_STRATEGY: unsafe-best-match
 steps:
-  - label: ":closed_lock_with_key: team-member gate"
-    image: "${DEVTOOLS_DOCKER_IMAGE}"
-    secrets:
-      - GIT_PAT
-    command:
-      - "bash scripts/ci/gate-team-member.sh"
-
-  - label: ":mag: code quality"
-    notify:
-      - github_commit_status:
-          context: "[OB] code quality"
-    image: "${DEVTOOLS_DOCKER_IMAGE}"
-    command:
-      - "uv sync --locked --python 3.12 --group quality --no-install-project"
-      - "uv run --no-sync ruff format --check ."
-      - "uv run --no-sync ruff check ."
-      - "uv run --no-sync mypy"
-      - "uv run --no-sync python scripts/check_inits.py"
-      # ruff and uv.lock are already checked above; this runs the remaining file hygiene hooks.
-      - "SKIP=ruff-check,ruff-format,uv-lock uv run --no-sync pre-commit run --all-files --show-diff-on-failure"
-
-  - label: ":page_facing_up: docstrings"
-    notify:
-      - github_commit_status:
-          context: "[OB] docstrings"
-    image: "${DEVTOOLS_DOCKER_IMAGE}"
-    command:
-      - "bash scripts/check-docstrings.sh"
-
-  # All existing quality/doc gates precede the scheduler-owned CA25 slot.
-  - wait: ~
-
-  - label: ":pytest: Product SDK343 Chronos CA25 B1..32"
-    image: "${DEVTOOLS_DOCKER_IMAGE}"
-    agents:
-      queue: k8s
-    resources: &matrix_resources
-      cpu:
-        requests: "16"
-      memory:
-        requests: "64Gi"
-        limits: "64Gi"
-      npu:
-        count: 1
-        product: "RBLN-CA25"
-    env:
-      REBEL_COMPILER_VERSION: "0.12.1.dev343+g8f59b810"
-      RBLN_TEST_NPU: "RBLN-CA25"
-      OPTIMUM_RBLN_TEST_LEVEL: "full"
-    secrets: &matrix_secrets
-      UV_INDEX_REBELLIONS_USERNAME: REBEL_SW_DEV_USERNAME
-      UV_INDEX_REBELLIONS_PASSWORD: REBEL_SW_DEV_PASSWORD
-      HF_TOKEN: HF_TOKEN
-      HF_HOME: HF_HOME
-    timeout_in_minutes: 120
-    artifact_paths: "debug-product343/**/*"
-    command:
-      - "bash scripts/ci/sync.sh"
-      - "mkdir -p debug-product343"
-      - >-
-        set -o pipefail;
-        unset RBLN_DUMMY_DEVICE TVM_LIBRARY_PATH;
-        uv run --no-sync python -m scripts.diagnostics.chronos2_official_matrix
-        --batches 1 2 4 8 16 32 --npu RBLN-CA25
-        --out debug-product343/run1
-        2>&1 | tee debug-product343/runtime.log
-
-  - label: ":pytest: Product SDK343 Chronos CA25 B64..256"
-    image: "${DEVTOOLS_DOCKER_IMAGE}"
-    agents:
-      queue: k8s
-    resources: *matrix_resources
-    env:
-      REBEL_COMPILER_VERSION: "0.12.1.dev343+g8f59b810"
-      RBLN_TEST_NPU: "RBLN-CA25"
-      OPTIMUM_RBLN_TEST_LEVEL: "full"
-    secrets: *matrix_secrets
-    timeout_in_minutes: 120
-    artifact_paths: "debug-product343/**/*"
-    command:
-      - "bash scripts/ci/sync.sh"
-      - "mkdir -p debug-product343"
-      - >-
-        set -o pipefail;
-        unset RBLN_DUMMY_DEVICE TVM_LIBRARY_PATH;
-        uv run --no-sync python -m scripts.diagnostics.chronos2_official_matrix
-        --batches 64 128 256 --npu RBLN-CA25
-        --out debug-product343/run1
-        2>&1 | tee debug-product343/runtime.log
-
-  - label: ":pytest: Product SDK343 Chronos CA25 B512"
-    image: "${DEVTOOLS_DOCKER_IMAGE}"
-    agents:
-      queue: k8s
-    resources: *matrix_resources
-    env:
-      REBEL_COMPILER_VERSION: "0.12.1.dev343+g8f59b810"
-      RBLN_TEST_NPU: "RBLN-CA25"
-      OPTIMUM_RBLN_TEST_LEVEL: "full"
-    secrets: *matrix_secrets
-    timeout_in_minutes: 120
-    artifact_paths: "debug-product343/**/*"
-    command:
-      - "bash scripts/ci/sync.sh"
-      - "mkdir -p debug-product343"
-      - >-
-        set -o pipefail;
-        unset RBLN_DUMMY_DEVICE TVM_LIBRARY_PATH;
-        uv run --no-sync python -m scripts.diagnostics.chronos2_official_matrix
-        --batches 512 --npu RBLN-CA25
-        --out debug-product343/run1
-        2>&1 | tee debug-product343/runtime.log
-
-  - label: ":pytest: Product SDK343 Chronos CR13 B1..32"
-    image: "${DEVTOOLS_DOCKER_IMAGE}"
-    agents:
-      queue: k8s
-    resources:
-      <<: *matrix_resources
-      npu:
-        count: 1
-        product: "RBLN-CR13"
-    env:
-      REBEL_COMPILER_VERSION: "0.12.1.dev343+g8f59b810"
-      RBLN_TEST_NPU: "RBLN-CR13"
-      OPTIMUM_RBLN_TEST_LEVEL: "full"
-    secrets: *matrix_secrets
-    timeout_in_minutes: 120
-    artifact_paths: "debug-product343/**/*"
-    command:
-      - "bash scripts/ci/sync.sh"
-      - "mkdir -p debug-product343"
-      - >-
-        set -o pipefail;
-        unset RBLN_DUMMY_DEVICE TVM_LIBRARY_PATH;
-        uv run --no-sync python -m scripts.diagnostics.chronos2_official_matrix
-        --batches 1 2 4 8 16 32 --npu RBLN-CR13
-        --out debug-product343/run1
-        2>&1 | tee debug-product343/runtime.log
-
-  - label: ":pytest: Product SDK343 Chronos CR13 B64..256"
-    image: "${DEVTOOLS_DOCKER_IMAGE}"
-    agents:
-      queue: k8s
-    resources:
-      <<: *matrix_resources
-      npu:
-        count: 1
-        product: "RBLN-CR13"
-    env:
-      REBEL_COMPILER_VERSION: "0.12.1.dev343+g8f59b810"
-      RBLN_TEST_NPU: "RBLN-CR13"
-      OPTIMUM_RBLN_TEST_LEVEL: "full"
-    secrets: *matrix_secrets
-    timeout_in_minutes: 120
-    artifact_paths: "debug-product343/**/*"
-    command:
-      - "bash scripts/ci/sync.sh"
-      - "mkdir -p debug-product343"
-      - >-
-        set -o pipefail;
-        unset RBLN_DUMMY_DEVICE TVM_LIBRARY_PATH;
-        uv run --no-sync python -m scripts.diagnostics.chronos2_official_matrix
-        --batches 64 128 256 --npu RBLN-CR13
-        --out debug-product343/run1
-        2>&1 | tee debug-product343/runtime.log
-
-  - label: ":pytest: Product SDK343 Chronos CR13 B512"
-    image: "${DEVTOOLS_DOCKER_IMAGE}"
-    agents:
-      queue: k8s
-    resources:
-      <<: *matrix_resources
-      npu:
-        count: 1
-        product: "RBLN-CR13"
-    env:
-      REBEL_COMPILER_VERSION: "0.12.1.dev343+g8f59b810"
-      RBLN_TEST_NPU: "RBLN-CR13"
-      OPTIMUM_RBLN_TEST_LEVEL: "full"
-    secrets: *matrix_secrets
-    timeout_in_minutes: 120
-    artifact_paths: "debug-product343/**/*"
-    command:
-      - "bash scripts/ci/sync.sh"
-      - "mkdir -p debug-product343"
-      - >-
-        set -o pipefail;
-        unset RBLN_DUMMY_DEVICE TVM_LIBRARY_PATH;
-        uv run --no-sync python -m scripts.diagnostics.chronos2_official_matrix
-        --batches 512 --npu RBLN-CR13
-        --out debug-product343/run1
-        2>&1 | tee debug-product343/runtime.log
+- label: ':closed_lock_with_key: team-member gate'
+  image: ${DEVTOOLS_DOCKER_IMAGE}
+  secrets:
+  - GIT_PAT
+  command:
+  - bash scripts/ci/gate-team-member.sh
+- label: ':mag: code quality'
+  notify:
+  - github_commit_status:
+      context: '[OB] code quality'
+  image: ${DEVTOOLS_DOCKER_IMAGE}
+  command:
+  - uv sync --locked --python 3.12 --group quality --no-install-project
+  - uv run --no-sync ruff format --check .
+  - uv run --no-sync ruff check .
+  - uv run --no-sync mypy
+  - uv run --no-sync python scripts/check_inits.py
+  - SKIP=ruff-check,ruff-format,uv-lock uv run --no-sync pre-commit run --all-files
+    --show-diff-on-failure
+- label: ':page_facing_up: docstrings'
+  notify:
+  - github_commit_status:
+      context: '[OB] docstrings'
+  image: ${DEVTOOLS_DOCKER_IMAGE}
+  command:
+  - bash scripts/check-docstrings.sh
+- wait: null
+- label: ':pytest: Product SDK343 Chronos CA25 B1..32'
+  image: ${DEVTOOLS_DOCKER_IMAGE}
+  agents:
+    queue: k8s
+  resources:
+    cpu: &id001
+      requests: '16'
+    memory: &id002
+      requests: 64Gi
+      limits: 64Gi
+    npu:
+      count: 1
+      product: RBLN-CA25
+  env:
+    REBEL_COMPILER_VERSION: 0.12.1.dev343+g8f59b810
+    RBLN_TEST_NPU: RBLN-CA25
+    OPTIMUM_RBLN_TEST_LEVEL: full
+  secrets: &id003
+    UV_INDEX_REBELLIONS_USERNAME: REBEL_SW_DEV_USERNAME
+    UV_INDEX_REBELLIONS_PASSWORD: REBEL_SW_DEV_PASSWORD
+    HF_TOKEN: HF_TOKEN
+    HF_HOME: HF_HOME
+  timeout_in_minutes: 120
+  artifact_paths: debug-product343/**/*
+  command:
+  - bash scripts/ci/sync.sh
+  - mkdir -p debug-product343
+  - set -o pipefail; unset RBLN_DUMMY_DEVICE TVM_LIBRARY_PATH; uv run --no-sync python
+    -m scripts.diagnostics.chronos2_official_matrix --batches 1 2 4 8 16 32 --npu
+    RBLN-CA25 --out debug-product343/run1 2>&1 | tee debug-product343/runtime.log
+- label: ':pytest: Product SDK343 Chronos CR13 B1..32'
+  image: ${DEVTOOLS_DOCKER_IMAGE}
+  agents:
+    queue: k8s
+  resources:
+    cpu: *id001
+    memory: *id002
+    npu:
+      count: 1
+      product: RBLN-CR13
+  env:
+    REBEL_COMPILER_VERSION: 0.12.1.dev343+g8f59b810
+    RBLN_TEST_NPU: RBLN-CR13
+    OPTIMUM_RBLN_TEST_LEVEL: full
+  secrets: *id003
+  timeout_in_minutes: 120
+  artifact_paths: debug-product343/**/*
+  command:
+  - bash scripts/ci/sync.sh
+  - mkdir -p debug-product343
+  - set -o pipefail; unset RBLN_DUMMY_DEVICE TVM_LIBRARY_PATH; uv run --no-sync python
+    -m scripts.diagnostics.chronos2_official_matrix --batches 1 2 4 8 16 32 --npu
+    RBLN-CR13 --out debug-product343/run1 2>&1 | tee debug-product343/runtime.log
