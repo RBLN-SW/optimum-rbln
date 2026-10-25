@@ -70,7 +70,7 @@ def test_explicit_sequential_mode_retains_unload_adapter_and_restores_resident_p
     audit = SimpleNamespace(stage=observer)
     with residency_context(audit, "sequential"):
         assert original.runtime_adapter is adapter
-        assert audit.stage is observer
+        assert audit.stage is None
     with residency_context(audit, "resident"):
         assert original.runtime_adapter is resident_adapter
         assert audit.stage is None

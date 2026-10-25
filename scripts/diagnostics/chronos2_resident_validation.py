@@ -65,8 +65,10 @@ def residency_context(audit, mode):
     if mode not in ("resident", "sequential"):
         raise ValueError("Unknown residency mode")
     with contextlib.ExitStack() as stack:
+        # PredictionAudit records full-model inputs/outputs. Its monolithic-only
+        # stage guard must not be installed as a staged execution observer.
+        stack.enter_context(patch.object(audit, "stage", None))
         if mode == "resident":
-            stack.enter_context(patch.object(audit, "stage", None))
             stack.enter_context(patch.object(original, "runtime_adapter", resident_adapter))
         yield
 
