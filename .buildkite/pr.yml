@@ -1,4 +1,4 @@
-# Existing Chronos captured-input operator diagnostics on scheduler-owned CA25.
+# Existing Chronos B1 lowering and SDK controls on scheduler-owned CA25.
 env:
   # Where every release's compiled artifacts live, written by the tag build
   # (.buildkite/bc-compile.yml).
@@ -40,7 +40,7 @@ steps:
   # All existing quality/doc gates precede the scheduler-owned CA25 slot.
   - wait: ~
 
-  - label: ":package: Verify and stage existing Chronos attention operator controls"
+  - label: ":package: Verify and stage existing Chronos B1 controls"
     image: "${DEVTOOLS_DOCKER_IMAGE}"
     agents:
       queue: k8s
@@ -48,13 +48,18 @@ steps:
     command:
       - >-
         python3 -m scripts.diagnostics.chronos2_attention_isolation_stage
-        --source /mnt/shared_data/users/jaehunryu/nas_data/model-enable-20261025/chronos-attention-isolation65/bundle66
-        --destination /mnt/cross_data/model-enable/jaehunryu/chronos2-attention-isolation-v1
-        --manifest-sha256 e2c0235588f10cf6f689eadc47ca876495f902ccb78bc1e5e703e08418b4a273
+        --source /mnt/shared_data/users/jaehunryu/nas_data/model-enable-20261025/chronos-attention-variants67/bundle-legacy328
+        --destination /mnt/cross_data/model-enable/jaehunryu/chronos2-b1-legacy328-v1
+        --manifest-sha256 124301614a1fb04e2df2d11095918970b8ba957da02888f2961a72854ee728c2
+      - >-
+        python3 -m scripts.diagnostics.chronos2_attention_isolation_stage
+        --source /mnt/shared_data/users/jaehunryu/nas_data/model-enable-20261025/chronos-attention-variants67/bundle-official342
+        --destination /mnt/cross_data/model-enable/jaehunryu/chronos2-b1-official342-v1
+        --manifest-sha256 0bbb04ba371cf2115d1c6055f38182c97832291f5c627936ea7bac98fb1f404b
 
   - wait: ~
 
-  - label: ":microscope: Existing Chronos captured-input attention controls on CA25"
+  - label: ":microscope: Existing Chronos B1 legacy328 controls on CA25"
     image: "${DEVTOOLS_DOCKER_IMAGE}"
     agents:
       queue: k8s
@@ -75,15 +80,49 @@ steps:
       UV_INDEX_REBELLIONS_PASSWORD: REBEL_SW_DEV_PASSWORD
     timeout_in_minutes: 30
     artifact_paths:
-      - "debug-chronos-attention-isolation/**/*"
+      - "debug-chronos-b1/legacy328/**/*"
     command:
       - "bash scripts/ci/sync.sh"
-      - "mkdir -p debug-chronos-attention-isolation"
+      - "mkdir -p debug-chronos-b1/legacy328"
       - >-
         set -o pipefail;
         unset RBLN_DUMMY_DEVICE TVM_LIBRARY_PATH;
         uv run --no-sync python -m scripts.diagnostics.chronos2_attention_isolation_run
-        --bundle /mnt/cross_data/model-enable/jaehunryu/chronos2-attention-isolation-v1
-        --manifest-sha256 e2c0235588f10cf6f689eadc47ca876495f902ccb78bc1e5e703e08418b4a273
-        --out debug-chronos-attention-isolation/run1
-        2>&1 | tee debug-chronos-attention-isolation/runtime.log
+        --bundle /mnt/cross_data/model-enable/jaehunryu/chronos2-b1-legacy328-v1
+        --manifest-sha256 124301614a1fb04e2df2d11095918970b8ba957da02888f2961a72854ee728c2
+        --out debug-chronos-b1/legacy328/run1
+        2>&1 | tee debug-chronos-b1/legacy328/runtime.log
+
+  - label: ":microscope: Existing Chronos B1 official342 controls on CA25"
+    image: "${DEVTOOLS_DOCKER_IMAGE}"
+    agents:
+      queue: k8s
+    resources:
+      cpu:
+        requests: "8"
+      memory:
+        requests: "16Gi"
+        limits: "16Gi"
+      npu:
+        count: 1
+        product: "RBLN-CA25"
+    env:
+      REBEL_COMPILER_VERSION: "0.12.1.dev342+gffa872ed"
+      RBLN_TEST_NPU: "RBLN-CA25"
+    secrets:
+      UV_INDEX_REBELLIONS_USERNAME: REBEL_SW_DEV_USERNAME
+      UV_INDEX_REBELLIONS_PASSWORD: REBEL_SW_DEV_PASSWORD
+    timeout_in_minutes: 30
+    artifact_paths:
+      - "debug-chronos-b1/official342/**/*"
+    command:
+      - "bash scripts/ci/sync.sh"
+      - "mkdir -p debug-chronos-b1/official342"
+      - >-
+        set -o pipefail;
+        unset RBLN_DUMMY_DEVICE TVM_LIBRARY_PATH;
+        uv run --no-sync python -m scripts.diagnostics.chronos2_attention_isolation_run
+        --bundle /mnt/cross_data/model-enable/jaehunryu/chronos2-b1-official342-v1
+        --manifest-sha256 0bbb04ba371cf2115d1c6055f38182c97832291f5c627936ea7bac98fb1f404b
+        --out debug-chronos-b1/official342/run1
+        2>&1 | tee debug-chronos-b1/official342/runtime.log

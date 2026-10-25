@@ -36,10 +36,13 @@ def bundle(tmp_path):
         "observation_rows": [0, 1, 2, 3, 4, 511],
         "cases": [
             {"name": "sdpa_b1", "batch": 1, "explicit": False},
-            {"name": "sdpa_b6", "batch": 6, "explicit": False},
-            {"name": "explicit_b6", "batch": 6, "explicit": True},
+            {"name": "explicit_b1", "batch": 1, "explicit": True},
+            {"name": "bias_b1", "batch": 1, "explicit": True},
+            {"name": "squeezed_b1", "batch": 1, "explicit": True},
         ],
         "criteria": {"nrmse_max": 0.05, "pcc_min": 0.99, "repeat_count": 10},
+        "runtime_SDK": "0.12.1.dev329+g66a3078e",
+        "baseline_bad_output_sha256": runner.BASELINE_BAD_SHA,
     }
     return root, manifest, write_manifest(root, manifest)
 
@@ -68,6 +71,8 @@ def test_same_size_corruption_is_rejected(bundle):
         ("rows", "Captured row mapping"),
         ("geometry", "Operator case geometry"),
         ("criteria", "Diagnostic criteria"),
+        ("baseline", "Legacy BAD control identity"),
+        ("sdk", "Unknown runtime control SDK"),
     ],
 )
 def test_reject_scope_mapping_geometry_and_criteria_changes(bundle, change, message):
@@ -78,8 +83,12 @@ def test_reject_scope_mapping_geometry_and_criteria_changes(bundle, change, mess
         manifest["observation_rows"] = [1, 0, 2, 3, 4, 511]
     elif change == "geometry":
         manifest["cases"][1]["batch"] = 3
-    else:
+    elif change == "criteria":
         manifest["criteria"]["nrmse_max"] = 0.1
+    elif change == "baseline":
+        manifest["baseline_bad_output_sha256"] = "changed"
+    else:
+        manifest["runtime_SDK"] = "unknown"
     digest = write_manifest(root, manifest)
     with pytest.raises(ValueError, match=message):
         runner.verify_bundle(root, digest)
@@ -98,6 +107,14 @@ def test_manifest_digest_is_required(bundle):
     root, _, _ = bundle
     with pytest.raises(ValueError, match="Manifest SHA"):
         runner.verify_bundle(root, hashlib.sha256(b"wrong manifest").hexdigest())
+
+
+def test_official_sdk_control_does_not_require_legacy_bad_output(bundle):
+    root, manifest, _ = bundle
+    manifest["runtime_SDK"] = "0.12.1.dev342+gffa872ed"
+    manifest["baseline_bad_output_sha256"] = None
+    digest = write_manifest(root, manifest)
+    assert runner.verify_bundle(root, digest) == manifest
 
 
 def test_existing_staging_is_never_overwritten(bundle, tmp_path):

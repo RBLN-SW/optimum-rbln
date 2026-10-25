@@ -11,24 +11,27 @@ from pathlib import Path
 
 
 ROWS = [0, 1, 2, 3, 4, 511]
-CASES = [("sdpa_b1", 1, False), ("sdpa_b6", 6, False), ("explicit_b6", 6, True)]
+BASELINE_BAD_SHA = "0e20b3eb8db715cbedab53b88d3cb442ef59aaa67a0f84d9bac76710a22150ef"
+CASES = [("sdpa_b1", 1, False), ("explicit_b1", 1, True), ("bias_b1", 1, True), ("squeezed_b1", 1, True)]
 FILES = {
     "sdpa_b1.rbln",
-    "sdpa_b6.rbln",
-    "explicit_b6.rbln",
+    "explicit_b1.rbln",
+    "bias_b1.rbln",
+    "squeezed_b1.rbln",
     "inputs.pt",
     "goldens.pt",
     "CI862-observed-context.pt",
-    "preparation65.json",
-    "compile-result65.json",
-    "placement-audit65.json",
-    "initgen-binding65.json",
-    "initgen-aggregate65.json",
+    "preparation.json",
+    "compile-report.json",
+    "placement-audit.json",
+    "initgen-binding.json",
     "sdpa_b1-initgen.json",
-    "sdpa_b6-initgen.json",
-    "explicit_b6-initgen.json",
+    "explicit_b1-initgen.json",
+    "bias_b1-initgen.json",
+    "squeezed_b1-initgen.json",
     "original-ci862-result.json",
     "attention_probe.py",
+    "attention_bias_probe.py",
 }
 
 
@@ -76,6 +79,11 @@ def verify_bundle(root, expected_manifest_sha):
         raise ValueError("Operator case geometry changed")
     if manifest["criteria"] != {"nrmse_max": 0.05, "pcc_min": 0.99, "repeat_count": 10}:
         raise ValueError("Diagnostic criteria changed")
+    if manifest["runtime_SDK"] not in ["0.12.1.dev329+g66a3078e", "0.12.1.dev342+gffa872ed"]:
+        raise ValueError("Unknown runtime control SDK")
+    expected_bad = BASELINE_BAD_SHA if manifest["runtime_SDK"] == "0.12.1.dev329+g66a3078e" else None
+    if manifest["baseline_bad_output_sha256"] != expected_bad:
+        raise ValueError("Legacy BAD control identity changed")
     return manifest
 
 
@@ -218,6 +226,8 @@ def main():
             runtime = model.create_runtime(tensor_type="pt", device=0)
             first = output(runtime)
             first_hash = tensor_sha(first)
+            required_bad = manifest["baseline_bad_output_sha256"] if name == "sdpa_b1" else None
+            bad_identity_exact = first_hash == required_bad if required_bad is not None else None
             repeat_hashes = [tensor_sha(output(runtime)) for _ in range(10)]
             repeats_exact = all(value == first_hash for value in repeat_hashes)
             reloaded = rebel.RBLNCompiledModel(args.bundle / (name + ".rbln"))
@@ -228,6 +238,7 @@ def main():
                 and parity["nrmse"] <= 0.05
                 and parity["pcc"] is not None
                 and parity["pcc"] >= 0.99
+                and bad_identity_exact is not False
                 and repeats_exact
                 and reload_exact
             )
@@ -239,6 +250,7 @@ def main():
                     "vs_CI862_variant_context_diagnostic_only": metric(first, captured[:batch]),
                     "output_sha256": tensor_sha(first),
                     "repeat_output_sha256": repeat_hashes,
+                    "legacy_BAD_control_identity_exact": bad_identity_exact,
                     "ten_repeats_exact": repeats_exact,
                     "artifact_reload_exact": reload_exact,
                     "operator_criteria_passed": passed,
