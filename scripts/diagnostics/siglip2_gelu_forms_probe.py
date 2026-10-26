@@ -64,6 +64,7 @@ def main():
         x = torch.load(path, weights_only=True, map_location="cpu")["npu"][2]
         assert list(x.shape) == [1, 256, 3072]
         assert x.dtype == torch.float32
+        assert hashlib.sha256(x.contiguous().numpy().tobytes()).hexdigest() == row["tensor_sha256"]
         with torch.no_grad():
             expected = NativeGelu()(x)
             equivalent = SigmoidGelu()(x)
@@ -84,6 +85,7 @@ def main():
     import rebel
 
     runtimes = {}
+    compiled_models = {}
     for name, model in [("native", NativeGelu()), ("sigmoid", SigmoidGelu())]:
         artifact = args.output / (name + ".rbln")
         compiled = rebel.compile_from_torch(
@@ -95,6 +97,7 @@ def main():
         stats = metadata["subgraph"]["stats"]
         assert stats
         assert all(s["device_func_count"] >= 1 and not s["host_op_reason"] for s in stats)
+        compiled_models[name] = compiled
         runtimes[name] = compiled.create_runtime(tensor_type="pt", device=0)
     failures = []
     first = {}

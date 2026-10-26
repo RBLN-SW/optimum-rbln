@@ -5,27 +5,36 @@
   "files": [
     {
       "filename": "mlp-probe-case0-layer0.pt",
-      "path": "debug-siglip2-residual-precision/mlp-probe-case0-layer0.pt",
-      "bytes": 17305781,
-      "sha256": "597434ce51108d8dd21ab977bbe67bb220292c14ff337649f84a6009dc411df2"
+      "bytes": 3147538,
+      "sha256": "5150fa958a83bb31a6ec73476be52c34844ebd2eb2f4abcccc326f825873be68",
+      "tensor_sha256": "0f6c32d2d710f191971de0188bc25f7185b18d631c8c21472fbd36f762263447",
+      "source_artifact_sha256": "597434ce51108d8dd21ab977bbe67bb220292c14ff337649f84a6009dc411df2",
+      "source_artifact_bytes": 17305781
     },
     {
       "filename": "mlp-probe-case0-layer11.pt",
-      "path": "debug-siglip2-residual-precision/mlp-probe-case0-layer11.pt",
-      "bytes": 17305797,
-      "sha256": "482a5b4c9bbf61a252b4a8c6e24617ae4f54e8c35746aa5c98c30e70172575f6"
+      "bytes": 3147545,
+      "sha256": "7ac696e9ee71af682e34a13eeeb109cae5a705dced607ab41ce010d2af3bfa0f",
+      "tensor_sha256": "4a108bb3806d412829203ac8a61c528cf534a94c7e3e1f671255bfbc69519098",
+      "source_artifact_sha256": "482a5b4c9bbf61a252b4a8c6e24617ae4f54e8c35746aa5c98c30e70172575f6",
+      "source_artifact_bytes": 17305797
     },
     {
       "filename": "mlp-probe-case0-layer6.pt",
-      "path": "debug-siglip2-residual-precision/mlp-probe-case0-layer6.pt",
-      "bytes": 17305781,
-      "sha256": "2dda1e88447f8e7e41fc749d487382fb619d70a4687805d96432db24bcfb1490"
+      "bytes": 3147538,
+      "sha256": "39b27d2304ba125c7882c7e1091c8245d7ac79647879487ddc2e3368ef71d735",
+      "tensor_sha256": "dfbd5c2fa8d5de660d77c25f10fde2d0833cea1fdb71ed8e850066a60bc41f53",
+      "source_artifact_sha256": "2dda1e88447f8e7e41fc749d487382fb619d70a4687805d96432db24bcfb1490",
+      "source_artifact_bytes": 17305781
     },
     {
       "filename": "mlp-probe-case2-layer6.pt",
-      "path": "debug-siglip2-residual-precision/mlp-probe-case2-layer6.pt",
-      "bytes": 17305781,
-      "sha256": "82a6018261c94daffd3b25073280ee5386059f1180a2a8a4700b9ae86b0e45df"
+      "bytes": 3147538,
+      "sha256": "ec1ff3b8a3d197f650327e2af2b1ca5b0177376f762e2a67763ae92eef91c322",
+      "tensor_sha256": "08fb33282adab2c695255c5de3ea49767ec88d3e16f28919d14b3918dca21ca3",
+      "source_artifact_sha256": "82a6018261c94daffd3b25073280ee5386059f1180a2a8a4700b9ae86b0e45df",
+      "source_artifact_bytes": 17305781
     }
-  ]
+  ],
+  "transfer": "Verified original activation bytes only; same-build producer upload/download; no past-build token reuse"
 }
