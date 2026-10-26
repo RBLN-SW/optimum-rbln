@@ -1,11 +1,8 @@
 """Native512 capacity rows, executed only by the dedicated owned CR13 lane."""
 
-import json
 import os
-from pathlib import Path
 
 import pytest
-import rebel
 
 from . import test_transformers as encoder_cases
 
@@ -16,30 +13,7 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-class _CapacityAllocation:
-    @classmethod
-    def setUpClass(cls):
-        print(f"CAPACITY_SETUP {cls.__name__}: original compile/runtime setup starting", flush=True)
-        super().setUpClass()
-        for artifact in sorted(Path(cls.get_rbln_local_dir()).glob("*.rbln")):
-            metadata = rebel.RBLNCompiledModel.inspect(artifact)
-            print(
-                "CAPACITY_ALLOCATION "
-                + json.dumps(
-                    {
-                        "test_class": cls.__name__,
-                        "artifact": str(artifact),
-                        "uuid": metadata["uuid"],
-                        "npu": metadata["npu"],
-                        "npu_aggregate_allocation_bytes": metadata["alloc_per_node"],
-                        "note": "Aggregate per NPU; not a per-chiplet allocation or free-memory reading.",
-                    }
-                ),
-                flush=True,
-            )
-
-
-class TestElectraModelBatch32CR13(_CapacityAllocation, encoder_cases.TestElectraModel):
+class TestElectraModelBatch32CR13(encoder_cases.TestElectraModel):
     TEST_LEVEL = encoder_cases.TestLevel.FULL
     BATCH_SIZE = 32
     RBLN_CLASS_KWARGS = {
@@ -52,7 +26,7 @@ class TestElectraModelBatch32CR13(_CapacityAllocation, encoder_cases.TestElectra
     }
 
 
-class TestElectraForPreTrainingBatch32CR13(_CapacityAllocation, encoder_cases.TestElectraForPreTraining):
+class TestElectraForPreTrainingBatch32CR13(encoder_cases.TestElectraForPreTraining):
     TEST_LEVEL = encoder_cases.TestLevel.FULL
     BATCH_SIZE = 32
     RBLN_CLASS_KWARGS = {
@@ -66,9 +40,7 @@ class TestElectraForPreTrainingBatch32CR13(_CapacityAllocation, encoder_cases.Te
     }
 
 
-class TestElectraForSequenceClassificationBatch32CR13(
-    _CapacityAllocation, encoder_cases.TestElectraForSequenceClassification
-):
+class TestElectraForSequenceClassificationBatch32CR13(encoder_cases.TestElectraForSequenceClassification):
     TEST_LEVEL = encoder_cases.TestLevel.FULL
     BATCH_SIZE = 32
     RBLN_CLASS_KWARGS = {
@@ -82,7 +54,7 @@ class TestElectraForSequenceClassificationBatch32CR13(
     }
 
 
-class TestElectraModelBatch64CR13(_CapacityAllocation, encoder_cases.TestElectraModel):
+class TestElectraModelBatch64CR13(encoder_cases.TestElectraModel):
     TEST_LEVEL = encoder_cases.TestLevel.FULL
     BATCH_SIZE = 64
     RBLN_CLASS_KWARGS = {
@@ -95,7 +67,7 @@ class TestElectraModelBatch64CR13(_CapacityAllocation, encoder_cases.TestElectra
     }
 
 
-class TestElectraForPreTrainingBatch64CR13(_CapacityAllocation, encoder_cases.TestElectraForPreTraining):
+class TestElectraForPreTrainingBatch64CR13(encoder_cases.TestElectraForPreTraining):
     TEST_LEVEL = encoder_cases.TestLevel.FULL
     BATCH_SIZE = 64
     RBLN_CLASS_KWARGS = {
@@ -109,9 +81,7 @@ class TestElectraForPreTrainingBatch64CR13(_CapacityAllocation, encoder_cases.Te
     }
 
 
-class TestElectraForSequenceClassificationBatch64CR13(
-    _CapacityAllocation, encoder_cases.TestElectraForSequenceClassification
-):
+class TestElectraForSequenceClassificationBatch64CR13(encoder_cases.TestElectraForSequenceClassification):
     TEST_LEVEL = encoder_cases.TestLevel.FULL
     BATCH_SIZE = 64
     RBLN_CLASS_KWARGS = {
@@ -125,7 +95,7 @@ class TestElectraForSequenceClassificationBatch64CR13(
     }
 
 
-class TestElectraModelBatch128CR13(_CapacityAllocation, encoder_cases.TestElectraModel):
+class TestElectraModelBatch128CR13(encoder_cases.TestElectraModel):
     TEST_LEVEL = encoder_cases.TestLevel.FULL
     BATCH_SIZE = 128
     RBLN_CLASS_KWARGS = {
@@ -138,7 +108,7 @@ class TestElectraModelBatch128CR13(_CapacityAllocation, encoder_cases.TestElectr
     }
 
 
-class TestElectraForPreTrainingBatch128CR13(_CapacityAllocation, encoder_cases.TestElectraForPreTraining):
+class TestElectraForPreTrainingBatch128CR13(encoder_cases.TestElectraForPreTraining):
     TEST_LEVEL = encoder_cases.TestLevel.FULL
     BATCH_SIZE = 128
     RBLN_CLASS_KWARGS = {
@@ -152,9 +122,7 @@ class TestElectraForPreTrainingBatch128CR13(_CapacityAllocation, encoder_cases.T
     }
 
 
-class TestElectraForSequenceClassificationBatch128CR13(
-    _CapacityAllocation, encoder_cases.TestElectraForSequenceClassification
-):
+class TestElectraForSequenceClassificationBatch128CR13(encoder_cases.TestElectraForSequenceClassification):
     TEST_LEVEL = encoder_cases.TestLevel.FULL
     BATCH_SIZE = 128
     RBLN_CLASS_KWARGS = {
@@ -168,7 +136,7 @@ class TestElectraForSequenceClassificationBatch128CR13(
     }
 
 
-class TestElectraModelBatch256CR13(_CapacityAllocation, encoder_cases.TestElectraModel):
+class TestElectraModelBatch256CR13(encoder_cases.TestElectraModel):
     TEST_LEVEL = encoder_cases.TestLevel.FULL
     BATCH_SIZE = 256
     RBLN_CLASS_KWARGS = {
@@ -181,7 +149,7 @@ class TestElectraModelBatch256CR13(_CapacityAllocation, encoder_cases.TestElectr
     }
 
 
-class TestElectraForPreTrainingBatch256CR13(_CapacityAllocation, encoder_cases.TestElectraForPreTraining):
+class TestElectraForPreTrainingBatch256CR13(encoder_cases.TestElectraForPreTraining):
     TEST_LEVEL = encoder_cases.TestLevel.FULL
     BATCH_SIZE = 256
     RBLN_CLASS_KWARGS = {
@@ -195,9 +163,7 @@ class TestElectraForPreTrainingBatch256CR13(_CapacityAllocation, encoder_cases.T
     }
 
 
-class TestElectraForSequenceClassificationBatch256CR13(
-    _CapacityAllocation, encoder_cases.TestElectraForSequenceClassification
-):
+class TestElectraForSequenceClassificationBatch256CR13(encoder_cases.TestElectraForSequenceClassification):
     TEST_LEVEL = encoder_cases.TestLevel.FULL
     BATCH_SIZE = 256
     RBLN_CLASS_KWARGS = {
@@ -211,7 +177,7 @@ class TestElectraForSequenceClassificationBatch256CR13(
     }
 
 
-class TestElectraModelBatch512CR13(_CapacityAllocation, encoder_cases.TestElectraModel):
+class TestElectraModelBatch512CR13(encoder_cases.TestElectraModel):
     TEST_LEVEL = encoder_cases.TestLevel.FULL
     BATCH_SIZE = 512
     RBLN_CLASS_KWARGS = {
@@ -224,7 +190,7 @@ class TestElectraModelBatch512CR13(_CapacityAllocation, encoder_cases.TestElectr
     }
 
 
-class TestElectraForPreTrainingBatch512CR13(_CapacityAllocation, encoder_cases.TestElectraForPreTraining):
+class TestElectraForPreTrainingBatch512CR13(encoder_cases.TestElectraForPreTraining):
     TEST_LEVEL = encoder_cases.TestLevel.FULL
     BATCH_SIZE = 512
     RBLN_CLASS_KWARGS = {
@@ -238,9 +204,7 @@ class TestElectraForPreTrainingBatch512CR13(_CapacityAllocation, encoder_cases.T
     }
 
 
-class TestElectraForSequenceClassificationBatch512CR13(
-    _CapacityAllocation, encoder_cases.TestElectraForSequenceClassification
-):
+class TestElectraForSequenceClassificationBatch512CR13(encoder_cases.TestElectraForSequenceClassification):
     TEST_LEVEL = encoder_cases.TestLevel.FULL
     BATCH_SIZE = 512
     RBLN_CLASS_KWARGS = {
@@ -254,7 +218,7 @@ class TestElectraForSequenceClassificationBatch512CR13(
     }
 
 
-class TestElectraModelBatch1024CR13(_CapacityAllocation, encoder_cases.TestElectraModel):
+class TestElectraModelBatch1024CR13(encoder_cases.TestElectraModel):
     TEST_LEVEL = encoder_cases.TestLevel.FULL
     BATCH_SIZE = 1024
     RBLN_CLASS_KWARGS = {
@@ -267,7 +231,7 @@ class TestElectraModelBatch1024CR13(_CapacityAllocation, encoder_cases.TestElect
     }
 
 
-class TestElectraForPreTrainingBatch1024CR13(_CapacityAllocation, encoder_cases.TestElectraForPreTraining):
+class TestElectraForPreTrainingBatch1024CR13(encoder_cases.TestElectraForPreTraining):
     TEST_LEVEL = encoder_cases.TestLevel.FULL
     BATCH_SIZE = 1024
     RBLN_CLASS_KWARGS = {
@@ -281,9 +245,7 @@ class TestElectraForPreTrainingBatch1024CR13(_CapacityAllocation, encoder_cases.
     }
 
 
-class TestElectraForSequenceClassificationBatch1024CR13(
-    _CapacityAllocation, encoder_cases.TestElectraForSequenceClassification
-):
+class TestElectraForSequenceClassificationBatch1024CR13(encoder_cases.TestElectraForSequenceClassification):
     TEST_LEVEL = encoder_cases.TestLevel.FULL
     BATCH_SIZE = 1024
     RBLN_CLASS_KWARGS = {
@@ -297,7 +259,7 @@ class TestElectraForSequenceClassificationBatch1024CR13(
     }
 
 
-class TestElectraModelBatch2048CR13(_CapacityAllocation, encoder_cases.TestElectraModel):
+class TestElectraModelBatch2048CR13(encoder_cases.TestElectraModel):
     TEST_LEVEL = encoder_cases.TestLevel.FULL
     BATCH_SIZE = 2048
     RBLN_CLASS_KWARGS = {
@@ -310,7 +272,7 @@ class TestElectraModelBatch2048CR13(_CapacityAllocation, encoder_cases.TestElect
     }
 
 
-class TestElectraForPreTrainingBatch2048CR13(_CapacityAllocation, encoder_cases.TestElectraForPreTraining):
+class TestElectraForPreTrainingBatch2048CR13(encoder_cases.TestElectraForPreTraining):
     TEST_LEVEL = encoder_cases.TestLevel.FULL
     BATCH_SIZE = 2048
     RBLN_CLASS_KWARGS = {
@@ -324,9 +286,7 @@ class TestElectraForPreTrainingBatch2048CR13(_CapacityAllocation, encoder_cases.
     }
 
 
-class TestElectraForSequenceClassificationBatch2048CR13(
-    _CapacityAllocation, encoder_cases.TestElectraForSequenceClassification
-):
+class TestElectraForSequenceClassificationBatch2048CR13(encoder_cases.TestElectraForSequenceClassification):
     TEST_LEVEL = encoder_cases.TestLevel.FULL
     BATCH_SIZE = 2048
     RBLN_CLASS_KWARGS = {
