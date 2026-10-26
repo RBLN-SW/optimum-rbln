@@ -115,6 +115,7 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
             logits_last_dim=self.logits_last_dim,
             **common_kwargs,
         )
+        self.multi_token_decoder: RBLNRuntimeModel | None = None
         if self.can_generate():
             self.decoders = {}
             for i, batch_size in enumerate(self.rbln_config.decoder_batch_sizes):
@@ -127,6 +128,15 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
 
             # NOTE(eunji): Use a decoder whose batch size matches the model's main batch size for compatibility.
             self.decoder = self.decoders[self.rbln_config.batch_size]
+            if self.rbln_config.decoder_query_length > 1:
+                runtime_idx = self.rbln_config.expected_compiled_model_names.index("multi_token_decoder")
+                self.multi_token_decoder = RBLNRuntimeModel(
+                    runtime=self.model[runtime_idx],
+                    phase="decode",
+                    batch_size=self.rbln_config.batch_size,
+                    query_length=self.rbln_config.decoder_query_length,
+                    **common_kwargs,
+                )
 
     @property
     def logits_last_dim(self):
@@ -311,11 +321,7 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
 
         if rbln_config.can_generate:
             wrapped_model.phase = "decode"
-            for batch_size, dec_compile_config in zip(
-                rbln_config.decoder_batch_sizes,
-                rbln_config.compile_cfgs[rbln_config.decoder_runtime_idx :],
-                strict=False,
-            ):
+            for dec_compile_config in rbln_config.compile_cfgs[rbln_config.decoder_runtime_idx :]:
                 dec_example_inputs = dec_compile_config.get_dummy_inputs(fill=0, static_tensors=static_tensors)
                 compiled_decoder = cls._compile_model(
                     wrapped_model,
@@ -326,7 +332,7 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
                     rbln_config.quantization,
                     phase="decode",
                 )
-                compiled_models[f"decoder_batch_{batch_size}"] = compiled_decoder
+                compiled_models[dec_compile_config.compiled_model_name] = compiled_decoder
 
         if rbln_config.is_auto_num_blocks:
             cls.set_kvcache_num_blocks_after_compilation(compiled_models, rbln_config)
@@ -355,12 +361,15 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
         query_length: int,
         rbln_config: RBLNDecoderOnlyModelForCausalLMConfig,
         model_config: PretrainedConfig,
+        *,
+        is_prefill: bool | None = None,
     ):
         model_config = model_config.get_text_config()
         num_attention_heads = getattr(model_config, "n_head", None) or model_config.num_attention_heads
         num_hidden_layers = getattr(model_config, "n_layer", None) or model_config.num_hidden_layers
         hidden_size = getattr(model_config, "n_embd", None) or model_config.hidden_size
-        is_prefill = query_length > 1
+        if is_prefill is None:
+            is_prefill = query_length > 1
 
         input_info = []
         if rbln_config.use_inputs_embeds:
@@ -627,6 +636,21 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
                 compile_cfgs.append(
                     RBLNCompileConfig(compiled_model_name=f"decoder_batch_{batch_size}", input_info=dec_input_info)
                 )
+            if rbln_config.decoder_query_length > 1:
+                if cls.get_input_info.__func__ is not RBLNDecoderOnlyModel.get_input_info.__func__:
+                    raise NotImplementedError(
+                        "Multi-token decoder compilation currently supports the base decoder-only input layout."
+                    )
+                multi_token_input_info = cls.get_input_info(
+                    batch_size=rbln_config.batch_size,
+                    query_length=rbln_config.decoder_query_length,
+                    rbln_config=rbln_config,
+                    model_config=model_config,
+                    is_prefill=False,
+                )
+                compile_cfgs.append(
+                    RBLNCompileConfig(compiled_model_name="multi_token_decoder", input_info=multi_token_input_info)
+                )
         rbln_config.set_compile_cfgs(compile_cfgs)
 
         return rbln_config
@@ -774,6 +798,8 @@ class RBLNDecoderOnlyModelForCausalLM(RBLNDecoderOnlyModel, RBLNDecoderOnlyGener
         if self.rbln_config.can_generate:
             for batch_size in self.rbln_config.decoder_batch_sizes:
                 self.decoders[batch_size].lora_int_ids = lora_int_ids
+            if self.multi_token_decoder is not None:
+                self.multi_token_decoder.lora_int_ids = lora_int_ids
 
     def set_adapter(self, adapter_name: str | list[str]) -> None:
         """

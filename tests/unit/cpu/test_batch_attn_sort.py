@@ -180,6 +180,7 @@ def test_runtime_decode_cache_position_guard():
 
     _require_sorted_cache_position(torch.tensor([[9], [7], [7], [3]], dtype=torch.int32))
     _require_sorted_cache_position(torch.tensor([[5]], dtype=torch.int32))
+    _require_sorted_cache_position(torch.tensor([[9, 10, 11], [7, 8, 9]], dtype=torch.int32))
     with pytest.raises(ValueError, match="descending"):
         _require_sorted_cache_position(torch.tensor([[3], [9], [7]], dtype=torch.int32))
 
