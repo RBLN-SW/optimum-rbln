@@ -283,8 +283,6 @@ class RBLNQwen3VLModel(RBLNDecoderOnlyModel):
         self.rotary_emb = build_qwen_mrope_lookup(
             self._rotary_emb_class(self.config.text_config), self.rbln_config.max_seq_len
         )
-        if not self.can_generate():
-            self.block_tables = torch.arange(self.rbln_config.kvcache_num_blocks, dtype=torch.int16)
 
     def setup_runtime(self):
         page_table_manager = RBLNPageTableManager(self.rbln_config)
@@ -664,7 +662,6 @@ class RBLNQwen3VLModel(RBLNDecoderOnlyModel):
                 cache_position=cache_position,
                 batch_idx=b_idx,
                 position_embed=position_embed[:, b_idx : b_idx + 1],
-                block_tables=self.block_tables,
                 visual_pos_mask=visual_pos_mask[b_idx : b_idx + 1] if visual_pos_mask is not None else None,
                 deepstack_embeds=(deepstack_visual_embeds[b_idx] if deepstack_visual_embeds is not None else None),
             )
