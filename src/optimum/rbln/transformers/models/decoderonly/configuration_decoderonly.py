@@ -67,6 +67,7 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
         nested_compile_region: bool = False,
         cache_metas: list["CacheMeta"] | None = None,
         _requires_batch_sort: bool | None = None,
+        _is_prefix_lm: bool | None = None,
         **kwargs: Any,
     ):
         """
@@ -265,6 +266,10 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
         # internal, not a user knob: resolved at compile time to mirror the compiler's
         # in-memory kernel routing, serialized so a loaded model knows to sort
         self._requires_batch_sort = _requires_batch_sort
+        # internal, not a user knob: the parent model declares it at compile time
+        # (PaliGemma's language model prefills bidirectionally over the whole prompt),
+        # serialized so a loaded model keeps the single-chunk check
+        self._is_prefix_lm = _is_prefix_lm or False
 
         self.decoder_batch_sizes = None
         if "decode" in self.phases:
@@ -321,13 +326,6 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
     @property
     def use_image_prefill(self):
         return "image_prefill" in self.phases
-
-    @property
-    def use_bidirectional_prefill(self):
-        # Prefix-LM style prefill (e.g. PaliGemma's language model): with attention mask and
-        # position ids but no separate image_prefill phase, the compiled prefill attends
-        # bidirectionally within a chunk, so the whole prompt must fit in a single chunk.
-        return self.use_attention_mask and self.use_position_ids and not self.use_image_prefill
 
     @property
     def requires_batch_sort(self) -> bool | None:

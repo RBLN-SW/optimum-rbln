@@ -1056,10 +1056,11 @@ class AttentionOp(nn.Module):
             use_image_prefill = getattr(self.rbln_config, "use_image_prefill", False)
             if use_image_prefill:
                 op_args["is_bidirectional"] = self.phase == "image_prefill"
-            elif not self.use_attention_mask:
-                op_args["is_bidirectional"] = False
-            elif self.use_attention_mask and self.rbln_config.use_position_ids:
-                op_args["is_bidirectional"] = True
+            elif not self.use_attention_mask or self.rbln_config.use_position_ids:
+                op_args["is_bidirectional"] = self.rbln_config._is_prefix_lm
+            else:
+                # paged_attn_* (mask without position ids): the custom op has no is_bidirectional argument
+                pass
 
         if self.quantization and self.quantization.kv_caches == "fp8":
             if past_key_state.dtype != torch.float8_e4m3fn:
@@ -1180,10 +1181,11 @@ class FlashAttentionOp(AttentionOp):
             use_image_prefill = getattr(self.rbln_config, "use_image_prefill", False)
             if use_image_prefill:
                 op_args["is_bidirectional"] = self.phase == "image_prefill"
-            elif not self.use_attention_mask:
-                op_args["is_bidirectional"] = False
-            elif self.use_attention_mask and self.rbln_config.use_position_ids:
-                op_args["is_bidirectional"] = True
+            elif not self.use_attention_mask or self.rbln_config.use_position_ids:
+                op_args["is_bidirectional"] = self.rbln_config._is_prefix_lm
+            else:
+                # paged_attn_* (mask without position ids): the custom op has no is_bidirectional argument
+                pass
 
         if self.quantization and self.quantization.kv_caches == "fp8":
             if past_key_state.dtype != torch.float8_e4m3fn:
@@ -1290,10 +1292,8 @@ class SlidingWindowAttentionOp(AttentionOp):
             use_image_prefill = getattr(self.rbln_config, "use_image_prefill", False)
             if use_image_prefill:
                 op_args["is_bidirectional"] = self.phase == "image_prefill"
-            elif self.use_attention_mask and self.rbln_config.use_position_ids:
-                op_args["is_bidirectional"] = True
             else:
-                op_args["is_bidirectional"] = False
+                op_args["is_bidirectional"] = self.rbln_config._is_prefix_lm
 
         if self.phase == "decode":
             op_args["attn_mask"] = attn_mask
