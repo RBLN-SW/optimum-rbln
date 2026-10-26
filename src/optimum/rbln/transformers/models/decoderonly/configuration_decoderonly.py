@@ -39,7 +39,7 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
 
     _default_phases = ["prefill"]
     _default_logits_to_keep = 0
-    subclass_non_save_attributes = ["memory_budget"]
+    subclass_non_save_attributes = ["memory_budget", "nested_compile_region"]
 
     @deprecate_kwarg(old_name="kvcache_metas", new_name="cache_metas", version="0.13.0")
     def __init__(
@@ -64,6 +64,7 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
         phases: list[PhaseType] | None = None,
         logits_to_keep: int | None = None,
         output_hidden_states: bool | None = None,
+        nested_compile_region: bool = False,
         cache_metas: list["CacheMeta"] | None = None,
         _requires_batch_sort: bool | None = None,
         _is_prefix_lm: bool | None = None,
@@ -71,6 +72,10 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
     ):
         """
         Args:
+            nested_compile_region (bool): Preserve decoder boundaries as nested compile regions.
+                Uses strict export and requires compiler support for nested regions. Defaults to False.
+                This experimental compile-time option is not saved in `rbln_config.json`.
+                This option does not itself lower repeated decoder calls to a loop.
             batch_size (int | None): The batch size for inference. Defaults to 1.
             max_seq_len (int | None): The maximum sequence length supported by the model.
                 If not provided, it attempts to infer from the model's configuration
@@ -257,6 +262,7 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
             raise NotImplementedError("`logits_to_keep` > 1 is currently not supported for RBLN models.")
 
         self.output_hidden_states = output_hidden_states or False
+        self.nested_compile_region = nested_compile_region
         # internal, not a user knob: resolved at compile time to mirror the compiler's
         # in-memory kernel routing, serialized so a loaded model knows to sort
         self._requires_batch_sort = _requires_batch_sort

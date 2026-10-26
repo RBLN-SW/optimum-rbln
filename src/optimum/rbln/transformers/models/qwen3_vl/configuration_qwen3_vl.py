@@ -28,7 +28,10 @@ class RBLNQwen3VLForConditionalGenerationConfig(RBLNDecoderOnlyModelForCausalLMC
     """
 
     submodules = ["visual"]
-    subclass_non_save_attributes = ["_load_visual_runtime", "memory_budget"]
+    subclass_non_save_attributes = [
+        *RBLNDecoderOnlyModelForCausalLMConfig.subclass_non_save_attributes,
+        "_load_visual_runtime",
+    ]
 
     def __init__(
         self,
@@ -65,7 +68,10 @@ class RBLNQwen3VLForConditionalGenerationConfig(RBLNDecoderOnlyModelForCausalLMC
 
 class RBLNQwen3VLModelConfig(RBLNDecoderOnlyModelConfig):
     submodules = ["visual"]
-    subclass_non_save_attributes = ["_load_visual_runtime", "memory_budget"]
+    subclass_non_save_attributes = [
+        *RBLNDecoderOnlyModelConfig.subclass_non_save_attributes,
+        "_load_visual_runtime",
+    ]
 
     def __init__(self, visual: RBLNModelConfig | None = None, _load_visual_runtime: bool = True, **kwargs: Any):
         super().__init__(**kwargs)
