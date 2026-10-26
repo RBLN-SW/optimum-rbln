@@ -1,11 +1,8 @@
 """Native512 capacity rows, executed only by the dedicated owned CR13 lane."""
 
-import json
 import os
-from pathlib import Path
 
 import pytest
-import rebel
 
 from . import test_transformers as encoder_cases
 
@@ -16,30 +13,7 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-class _CapacityAllocation:
-    @classmethod
-    def setUpClass(cls):
-        print(f"CAPACITY_SETUP {cls.__name__}: original compile/runtime setup starting", flush=True)
-        super().setUpClass()
-        for artifact in sorted(Path(cls.get_rbln_local_dir()).glob("*.rbln")):
-            metadata = rebel.RBLNCompiledModel.inspect(artifact)
-            print(
-                "CAPACITY_ALLOCATION "
-                + json.dumps(
-                    {
-                        "test_class": cls.__name__,
-                        "artifact": str(artifact),
-                        "uuid": metadata["uuid"],
-                        "npu": metadata["npu"],
-                        "npu_aggregate_allocation_bytes": metadata["alloc_per_node"],
-                        "note": "Aggregate per NPU; not a per-chiplet allocation or free-memory reading.",
-                    }
-                ),
-                flush=True,
-            )
-
-
-class TestDebertaV3ModelBatch32CR13(_CapacityAllocation, encoder_cases.TestDebertaV3Model):
+class TestDebertaV3ModelBatch32CR13(encoder_cases.TestDebertaV3Model):
     TEST_LEVEL = encoder_cases.TestLevel.FULL
     BATCH_SIZE = 32
     RBLN_CLASS_KWARGS = {
@@ -52,9 +26,7 @@ class TestDebertaV3ModelBatch32CR13(_CapacityAllocation, encoder_cases.TestDeber
     }
 
 
-class TestDebertaV3ForSequenceClassificationBatch32CR13(
-    _CapacityAllocation, encoder_cases.TestDebertaV3ForSequenceClassification
-):
+class TestDebertaV3ForSequenceClassificationBatch32CR13(encoder_cases.TestDebertaV3ForSequenceClassification):
     TEST_LEVEL = encoder_cases.TestLevel.FULL
     BATCH_SIZE = 32
     RBLN_CLASS_KWARGS = {
@@ -68,7 +40,7 @@ class TestDebertaV3ForSequenceClassificationBatch32CR13(
     }
 
 
-class TestDebertaV3ModelBatch64CR13(_CapacityAllocation, encoder_cases.TestDebertaV3Model):
+class TestDebertaV3ModelBatch64CR13(encoder_cases.TestDebertaV3Model):
     TEST_LEVEL = encoder_cases.TestLevel.FULL
     BATCH_SIZE = 64
     RBLN_CLASS_KWARGS = {
@@ -81,9 +53,7 @@ class TestDebertaV3ModelBatch64CR13(_CapacityAllocation, encoder_cases.TestDeber
     }
 
 
-class TestDebertaV3ForSequenceClassificationBatch64CR13(
-    _CapacityAllocation, encoder_cases.TestDebertaV3ForSequenceClassification
-):
+class TestDebertaV3ForSequenceClassificationBatch64CR13(encoder_cases.TestDebertaV3ForSequenceClassification):
     TEST_LEVEL = encoder_cases.TestLevel.FULL
     BATCH_SIZE = 64
     RBLN_CLASS_KWARGS = {
