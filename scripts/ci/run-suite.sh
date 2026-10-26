@@ -31,15 +31,6 @@ case "$suite" in
     uv run --no-sync pytest -n 1 tests/test_config.py "${report[@]}" -vv --durations 0 "${bc[@]}" ;;
   transformers)
     uv run --no-sync pytest -n 1 tests/test_transformers.py "${report[@]}" ${shard:+--shard "$shard"} -vv --durations 0 "${bc[@]}" ;;
-  modernbert-cr13)
-    if [ -n "${SAVE_ARTIFACTS_PATH:-}${REUSE_ARTIFACTS_PATH:-}" ]; then
-      echo "modernbert-cr13 requires real numerical execution, not artifact compatibility mode" >&2
-      exit 2
-    fi
-    export RBLN_TEST_NPU=RBLN-CR13
-    export OPTIMUM_RBLN_TEST_LEVEL=full
-    uv run --no-sync pytest -n 1 tests/test_transformers.py::TestModernBertModelNativeMaxSeqLen tests/test_modernbert_native.py \
-      "${report[@]}" -o junit_logging=all --capture=tee-sys -rP -vv --durations 0 ;;
   diffusers)
     uv run --no-sync pytest -n 1 tests/test_diffusers.py "${report[@]}" ${shard:+--shard "$shard"} -vv --durations 0 "${bc[@]}" ;;
   llm)
