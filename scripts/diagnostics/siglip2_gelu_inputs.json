@@ -1,0 +1,31 @@
+{
+  "build": 780,
+  "build_id": "de6b39c7-f64a-42b2-ba8b-4ca79e4e17a8",
+  "scope": "Original SigLIP2 pre-GELU activation fixtures, no weights; diagnostic inputs only",
+  "files": [
+    {
+      "filename": "mlp-probe-case0-layer0.pt",
+      "path": "debug-siglip2-residual-precision/mlp-probe-case0-layer0.pt",
+      "bytes": 17305781,
+      "sha256": "597434ce51108d8dd21ab977bbe67bb220292c14ff337649f84a6009dc411df2"
+    },
+    {
+      "filename": "mlp-probe-case0-layer11.pt",
+      "path": "debug-siglip2-residual-precision/mlp-probe-case0-layer11.pt",
+      "bytes": 17305797,
+      "sha256": "482a5b4c9bbf61a252b4a8c6e24617ae4f54e8c35746aa5c98c30e70172575f6"
+    },
+    {
+      "filename": "mlp-probe-case0-layer6.pt",
+      "path": "debug-siglip2-residual-precision/mlp-probe-case0-layer6.pt",
+      "bytes": 17305781,
+      "sha256": "2dda1e88447f8e7e41fc749d487382fb619d70a4687805d96432db24bcfb1490"
+    },
+    {
+      "filename": "mlp-probe-case2-layer6.pt",
+      "path": "debug-siglip2-residual-precision/mlp-probe-case2-layer6.pt",
+      "bytes": 17305781,
+      "sha256": "82a6018261c94daffd3b25073280ee5386059f1180a2a8a4700b9ae86b0e45df"
+    }
+  ]
+}

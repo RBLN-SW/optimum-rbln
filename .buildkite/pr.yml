@@ -21,8 +21,7 @@ steps:
   - uv run --no-sync ruff check .
   - uv run --no-sync mypy
   - uv run --no-sync python scripts/check_inits.py
-  - SKIP=ruff-check,ruff-format,uv-lock uv run --no-sync pre-commit run --all-files
-    --show-diff-on-failure
+  - SKIP=ruff-check,ruff-format,uv-lock uv run --no-sync pre-commit run --all-files --show-diff-on-failure
 - label: ':page_facing_up: docstrings'
   notify:
   - github_commit_status:
@@ -31,7 +30,7 @@ steps:
   command:
   - bash scripts/check-docstrings.sh
 - wait: null
-- label: ':pytest: Existing SigLIP2 SDK343 passive failure capture RBLN-CA25 B1/2/4/8'
+- label: ':pytest: Existing SigLIP2 GELU-form component diagnostic RBLN-CA25'
   image: ${DEVTOOLS_DOCKER_IMAGE}
   agents:
     queue: k8s
@@ -56,21 +55,34 @@ steps:
     HF_HOME: HF_HOME
   timeout_in_minutes: 60
   artifact_paths:
-  - debug-siglip343/**/*
-  - junit-siglip343.xml
-  command:
-  - bash scripts/ci/sync.sh
-  - mkdir -p debug-siglip343
-  - uv run --no-sync python -c 'import importlib.metadata as m,hashlib,json; from
-    pathlib import Path; from tvm._ffi import base; v=m.version("rebel-compiler");
-    h=hashlib.sha256(Path(base._LIB._name).read_bytes()).hexdigest(); assert v=="0.12.1.dev343+g8f59b810";
-    assert h=="44488287fded4255154c870fbd789b1c6ad4d7a5c9e49e39c87d17e191bd1c9a";
-    print("SIGLIP2_SDK_RECEIPT "+json.dumps({"version":v,"DSO_sha256":h}))'
-  - set -o pipefail; unset TVM_LIBRARY_PATH RBLN_DUMMY_DEVICE SAVE_ARTIFACTS_PATH
-    REUSE_ARTIFACTS_PATH; SIGLIP2_FAILURE_CAPTURE_DIR=debug-siglip343/failure-capture uv run --no-sync python -m pytest -p scripts.diagnostics.siglip2_failure_capture -n 1 tests/test_transformers.py
-    -k TestSiglip2Model -vv --durations 0 --junitxml=junit-siglip343.xml 2>&1 | tee
-    debug-siglip343/runtime.log
-- label: ':pytest: Existing SigLIP2 SDK343 passive failure capture RBLN-CR13 B1/2/4/8'
+  - debug-gelu85/**/*
+  command: 'bash scripts/ci/sync.sh
+
+    mkdir -p debug-gelu85
+
+    uv run --no-sync python -c ''import importlib.metadata as m,hashlib,json; from pathlib import Path; from tvm._ffi import
+    base; v=m.version("rebel-compiler"); h=hashlib.sha256(Path(base._LIB._name).read_bytes()).hexdigest(); assert v=="0.12.1.dev343+g8f59b810";
+    assert h=="44488287fded4255154c870fbd789b1c6ad4d7a5c9e49e39c87d17e191bd1c9a"; print("SIGLIP2_SDK_RECEIPT "+json.dumps({"version":v,"DSO_sha256":h}))''
+
+    mkdir -p debug-gelu85
+
+    set -euo pipefail
+
+    unset TVM_LIBRARY_PATH RBLN_DUMMY_DEVICE SAVE_ARTIFACTS_PATH REUSE_ARTIFACTS_PATH
+
+    buildkite-agent artifact download debug-siglip2-residual-precision/mlp-probe-case0-layer0.pt . --build de6b39c7-f64a-42b2-ba8b-4ca79e4e17a8
+
+    buildkite-agent artifact download debug-siglip2-residual-precision/mlp-probe-case0-layer11.pt . --build de6b39c7-f64a-42b2-ba8b-4ca79e4e17a8
+
+    buildkite-agent artifact download debug-siglip2-residual-precision/mlp-probe-case0-layer6.pt . --build de6b39c7-f64a-42b2-ba8b-4ca79e4e17a8
+
+    buildkite-agent artifact download debug-siglip2-residual-precision/mlp-probe-case2-layer6.pt . --build de6b39c7-f64a-42b2-ba8b-4ca79e4e17a8
+
+    uv run --no-sync python scripts/diagnostics/siglip2_gelu_forms_probe.py --fixture-root debug-siglip2-residual-precision
+    --output debug-gelu85/run --npu RBLN-CA25 2>&1 | tee debug-gelu85/runtime.log
+
+    '
+- label: ':pytest: Existing SigLIP2 GELU-form component diagnostic RBLN-CR13'
   image: ${DEVTOOLS_DOCKER_IMAGE}
   agents:
     queue: k8s
@@ -95,17 +107,30 @@ steps:
     HF_HOME: HF_HOME
   timeout_in_minutes: 60
   artifact_paths:
-  - debug-siglip343/**/*
-  - junit-siglip343.xml
-  command:
-  - bash scripts/ci/sync.sh
-  - mkdir -p debug-siglip343
-  - uv run --no-sync python -c 'import importlib.metadata as m,hashlib,json; from
-    pathlib import Path; from tvm._ffi import base; v=m.version("rebel-compiler");
-    h=hashlib.sha256(Path(base._LIB._name).read_bytes()).hexdigest(); assert v=="0.12.1.dev343+g8f59b810";
-    assert h=="44488287fded4255154c870fbd789b1c6ad4d7a5c9e49e39c87d17e191bd1c9a";
-    print("SIGLIP2_SDK_RECEIPT "+json.dumps({"version":v,"DSO_sha256":h}))'
-  - set -o pipefail; unset TVM_LIBRARY_PATH RBLN_DUMMY_DEVICE SAVE_ARTIFACTS_PATH
-    REUSE_ARTIFACTS_PATH; SIGLIP2_FAILURE_CAPTURE_DIR=debug-siglip343/failure-capture uv run --no-sync python -m pytest -p scripts.diagnostics.siglip2_failure_capture -n 1 tests/test_transformers.py
-    -k TestSiglip2Model -vv --durations 0 --junitxml=junit-siglip343.xml 2>&1 | tee
-    debug-siglip343/runtime.log
+  - debug-gelu85/**/*
+  command: 'bash scripts/ci/sync.sh
+
+    mkdir -p debug-gelu85
+
+    uv run --no-sync python -c ''import importlib.metadata as m,hashlib,json; from pathlib import Path; from tvm._ffi import
+    base; v=m.version("rebel-compiler"); h=hashlib.sha256(Path(base._LIB._name).read_bytes()).hexdigest(); assert v=="0.12.1.dev343+g8f59b810";
+    assert h=="44488287fded4255154c870fbd789b1c6ad4d7a5c9e49e39c87d17e191bd1c9a"; print("SIGLIP2_SDK_RECEIPT "+json.dumps({"version":v,"DSO_sha256":h}))''
+
+    mkdir -p debug-gelu85
+
+    set -euo pipefail
+
+    unset TVM_LIBRARY_PATH RBLN_DUMMY_DEVICE SAVE_ARTIFACTS_PATH REUSE_ARTIFACTS_PATH
+
+    buildkite-agent artifact download debug-siglip2-residual-precision/mlp-probe-case0-layer0.pt . --build de6b39c7-f64a-42b2-ba8b-4ca79e4e17a8
+
+    buildkite-agent artifact download debug-siglip2-residual-precision/mlp-probe-case0-layer11.pt . --build de6b39c7-f64a-42b2-ba8b-4ca79e4e17a8
+
+    buildkite-agent artifact download debug-siglip2-residual-precision/mlp-probe-case0-layer6.pt . --build de6b39c7-f64a-42b2-ba8b-4ca79e4e17a8
+
+    buildkite-agent artifact download debug-siglip2-residual-precision/mlp-probe-case2-layer6.pt . --build de6b39c7-f64a-42b2-ba8b-4ca79e4e17a8
+
+    uv run --no-sync python scripts/diagnostics/siglip2_gelu_forms_probe.py --fixture-root debug-siglip2-residual-precision
+    --output debug-gelu85/run --npu RBLN-CR13 2>&1 | tee debug-gelu85/runtime.log
+
+    '
