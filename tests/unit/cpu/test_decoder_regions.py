@@ -1,3 +1,4 @@
+import json
 from types import SimpleNamespace
 
 import pytest
@@ -9,19 +10,51 @@ from transformers import Gemma2Config, Gemma2ForCausalLM, Qwen3Config, Qwen3ForC
 from optimum.rbln import (
     RBLNGemma2ForCausalLM,
     RBLNGemma2ForCausalLMConfig,
+    RBLNQwen3_5ForConditionalGenerationConfig,
+    RBLNQwen3_5ModelConfig,
     RBLNQwen3ForCausalLM,
     RBLNQwen3ForCausalLMConfig,
+    RBLNQwen3VLForConditionalGenerationConfig,
+    RBLNQwen3VLModelConfig,
 )
 from optimum.rbln.transformers.models.gpt_oss.gpt_oss_architecture import RBLNGptOssExperts
 
 
 @pytest.mark.parametrize("enabled", [False, True])
-def test_region_config_roundtrip(enabled, tmp_path):
-    config = RBLNQwen3ForCausalLMConfig(nested_compile_region=enabled)
+@pytest.mark.parametrize(
+    ("config_cls", "vision_cls_name"),
+    [
+        (RBLNQwen3ForCausalLMConfig, None),
+        (RBLNQwen3VLForConditionalGenerationConfig, "RBLNQwen3VLVisionModelConfig"),
+        (RBLNQwen3VLModelConfig, "RBLNQwen3VLVisionModelConfig"),
+        (RBLNQwen3_5ForConditionalGenerationConfig, "RBLNQwen3_5VisionModelConfig"),
+        (RBLNQwen3_5ModelConfig, "RBLNQwen3_5VisionModelConfig"),
+    ],
+)
+def test_region_config_not_saved(config_cls, vision_cls_name, enabled, tmp_path):
+    kwargs = (
+        {"use_inputs_embeds": True, "visual": {"cls_name": vision_cls_name, "max_seq_len": 64}}
+        if vision_cls_name
+        else {}
+    )
+    config = config_cls(nested_compile_region=enabled, **kwargs)
+    assert config.nested_compile_region is enabled
     config.save(tmp_path)
-    restored = RBLNQwen3ForCausalLMConfig.from_pretrained(tmp_path)
+    assert "nested_compile_region" not in json.loads((tmp_path / "rbln_config.json").read_text())
+    assert config_cls.from_pretrained(tmp_path).nested_compile_region is False
+    restored = config_cls.from_pretrained(tmp_path, rbln_nested_compile_region=enabled)
     assert restored.nested_compile_region is enabled
-    assert RBLNQwen3ForCausalLMConfig().nested_compile_region is False
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+def test_region_config_legacy_override(enabled, tmp_path):
+    RBLNQwen3ForCausalLMConfig().save(tmp_path)
+    path = tmp_path / "rbln_config.json"
+    saved = json.loads(path.read_text())
+    saved["nested_compile_region"] = enabled
+    path.write_text(json.dumps(saved))
+    restored = RBLNQwen3ForCausalLMConfig.from_pretrained(tmp_path, rbln_nested_compile_region=not enabled)
+    assert restored.nested_compile_region is not enabled
 
 
 @pytest.mark.parametrize("enabled", [False, True])

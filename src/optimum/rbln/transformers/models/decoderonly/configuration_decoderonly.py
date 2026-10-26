@@ -39,7 +39,7 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
 
     _default_phases = ["prefill"]
     _default_logits_to_keep = 0
-    subclass_non_save_attributes = ["memory_budget"]
+    subclass_non_save_attributes = ["memory_budget", "nested_compile_region"]
 
     @deprecate_kwarg(old_name="kvcache_metas", new_name="cache_metas", version="0.13.0")
     def __init__(
@@ -73,6 +73,7 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
         Args:
             nested_compile_region (bool): Preserve decoder boundaries as nested compile regions.
                 Uses strict export and requires compiler support for nested regions. Defaults to False.
+                This experimental compile-time option is not saved in `rbln_config.json`.
                 This option does not itself lower repeated decoder calls to a loop.
             batch_size (int | None): The batch size for inference. Defaults to 1.
             max_seq_len (int | None): The maximum sequence length supported by the model.
