@@ -15,7 +15,7 @@
 from typing import Any
 
 from ....configuration_utils import RBLNModelConfig
-from .configuration_autoencoder_kl_qwenimage21 import _image_sizes
+from .configuration_autoencoder_kl_qwenimage21 import _normalize_image_sizes
 
 
 class RBLNQwenImage21Transformer2DModelConfig(RBLNModelConfig):
@@ -69,7 +69,7 @@ class RBLNQwenImage21Transformer2DModelConfig(RBLNModelConfig):
         if not isinstance(self.batch_size, int) or self.batch_size < 0:
             raise ValueError(f"batch_size must be a positive integer, got {self.batch_size}")
 
-        self.sample_size = _image_sizes(sample_size)
+        self.sample_size = _normalize_image_sizes(sample_size)
         self.max_seq_len = max_seq_len
         self.prefill_chunk_size = prefill_chunk_size
         self.kvcache_num_prompts = kvcache_num_prompts

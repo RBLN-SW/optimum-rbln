@@ -39,7 +39,7 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 
-def _graph_name(kind: str, height: int, width: int) -> str:
+def _get_graph_name(kind: str, height: int, width: int) -> str:
     return f"{kind}_{height}x{width}"
 
 
@@ -68,12 +68,12 @@ class RBLNAutoencoderKLQwenImage21(RBLNModel):
         self.encoders = {}
         if self.rbln_config.uses_encoder:
             self.encoders = {
-                (height, width): runtimes[_graph_name("encoder", height, width)]
+                (height, width): runtimes[_get_graph_name("encoder", height, width)]
                 for height, width in self.rbln_config.encoder_sample_size
             }
         # Keyed by the latent (height, width) the decoder takes.
         self.decoders = {
-            (height // scale, width // scale): runtimes[_graph_name("decoder", height, width)]
+            (height // scale, width // scale): runtimes[_get_graph_name("decoder", height, width)]
             for height, width in self.rbln_config.sample_size
         }
 
@@ -148,12 +148,14 @@ class RBLNAutoencoderKLQwenImage21(RBLNModel):
                     ("mask", [1, 1, 1, height, width], dtype),
                 ]
                 compile_cfgs.append(
-                    RBLNCompileConfig(compiled_model_name=_graph_name("encoder", height, width), input_info=input_info)
+                    RBLNCompileConfig(
+                        compiled_model_name=_get_graph_name("encoder", height, width), input_info=input_info
+                    )
                 )
         for height, width in rbln_config.sample_size:
             input_info = [("z", [batch_size, model_config.z_dim, 1, height // scale, width // scale], dtype)]
             compile_cfgs.append(
-                RBLNCompileConfig(compiled_model_name=_graph_name("decoder", height, width), input_info=input_info)
+                RBLNCompileConfig(compiled_model_name=_get_graph_name("decoder", height, width), input_info=input_info)
             )
         rbln_config.set_compile_cfgs(compile_cfgs)
         return rbln_config

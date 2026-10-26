@@ -19,7 +19,7 @@ from typing import Any
 from ....configuration_utils import RBLNModelConfig
 from ....transformers import RBLNQwen3VLForConditionalGenerationConfig
 from ..models import RBLNAutoencoderKLQwenImage21Config, RBLNQwenImage21Transformer2DModelConfig
-from ..models.configuration_autoencoder_kl_qwenimage21 import _image_sizes
+from ..models.configuration_autoencoder_kl_qwenimage21 import _normalize_image_sizes
 
 
 # One latent token covers a 16x16 pixel tile. The vision encoder also reads 16x16 patches and merges 2x2 of them into
@@ -34,7 +34,7 @@ _DEFAULT_CONDITION_IMAGE_SIZE = (1376, 1376)
 _DEFAULT_OUTPUT_RESOLUTION = 1024
 
 
-def _condition_sizes_within(output_resolution: int, height: int, width: int) -> list[tuple[int, int]]:
+def _get_condition_sizes(output_resolution: int, height: int, width: int) -> list[tuple[int, int]]:
     """The (height, width) the pipeline can resize a condition image to that fit a canvas of (height, width).
 
     The pipeline resizes a condition image to about `output_resolution**2` pixels at its aspect ratio and rounds each
@@ -114,8 +114,8 @@ class RBLNQwenImage21PipelineConfig(RBLNModelConfig):
         """
         super().__init__(**kwargs)
 
-        image_size = _image_sizes(image_size) or [(1024, 1024)]
-        condition_image_size = _image_sizes(condition_image_size) or [_DEFAULT_CONDITION_IMAGE_SIZE]
+        image_size = _normalize_image_sizes(image_size) or [(1024, 1024)]
+        condition_image_size = _normalize_image_sizes(condition_image_size) or [_DEFAULT_CONDITION_IMAGE_SIZE]
         if num_condition_images is None:
             num_condition_images = 1
         if num_condition_images < 1:
@@ -131,7 +131,7 @@ class RBLNQwenImage21PipelineConfig(RBLNModelConfig):
                 f"width down to multiples of {_SIZE_MULTIPLE}, so it never runs these sizes."
             )
 
-        def latent_tokens(size: tuple[int, int]) -> int:
+        def count_latent_tokens(size: tuple[int, int]) -> int:
             return (size[0] // _LATENT_TILE) * (size[1] // _LATENT_TILE)
 
         def round_up(length: int) -> int:
@@ -141,23 +141,23 @@ class RBLNQwenImage21PipelineConfig(RBLNModelConfig):
         # The largest condition image each canvas takes; smaller ones pad into its token budgets.
         output_resolution = output_resolution or _DEFAULT_OUTPUT_RESOLUTION
         condition_sizes = [
-            _condition_sizes_within(output_resolution, *canvas) or [canvas] for canvas in condition_image_size
+            _get_condition_sizes(output_resolution, *canvas) or [canvas] for canvas in condition_image_size
         ]
-        largest_condition_sizes = [max(sizes, key=latent_tokens) for sizes in condition_sizes]
+        largest_condition_sizes = [max(sizes, key=count_latent_tokens) for sizes in condition_sizes]
 
-        def in_condition_range(size: tuple[int, int]) -> bool:
+        def is_in_condition_range(size: tuple[int, int]) -> bool:
             # The transformer runs an image block in the smallest image graph that holds it. Condition images already
             # pad into the graph of their canvas from its smallest condition size up, so an output size in that range
             # runs there too instead of compiling its own graph.
             return any(
-                min(map(latent_tokens, sizes)) <= latent_tokens(size) <= latent_tokens(largest)
+                min(map(count_latent_tokens, sizes)) <= count_latent_tokens(size) <= count_latent_tokens(largest)
                 for sizes, largest in zip(condition_sizes, largest_condition_sizes, strict=True)
             )
 
-        condition_tokens = num_condition_images * max(map(latent_tokens, largest_condition_sizes))
+        condition_tokens = num_condition_images * max(map(count_latent_tokens, largest_condition_sizes))
         # The vision encoder runs once per condition image, on one patch per latent token, padded to the smallest of
         # its sequence lengths that holds them.
-        visual = {"max_seq_len": sorted({round_up(latent_tokens(size)) for size in largest_condition_sizes})}
+        visual = {"max_seq_len": sorted({round_up(count_latent_tokens(size)) for size in largest_condition_sizes})}
 
         self.text_encoder = self.initialize_submodule_config(
             text_encoder,
@@ -175,7 +175,7 @@ class RBLNQwenImage21PipelineConfig(RBLNModelConfig):
             sample_size=[
                 (height // _LATENT_TILE, width // _LATENT_TILE)
                 for height, width in dict.fromkeys(
-                    [size for size in image_size if not in_condition_range(size)] + largest_condition_sizes
+                    [size for size in image_size if not is_in_condition_range(size)] + largest_condition_sizes
                 )
             ],
             # In the transformer every image token of the prompt becomes the latent tokens it covers.

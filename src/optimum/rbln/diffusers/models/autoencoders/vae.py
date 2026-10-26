@@ -190,26 +190,26 @@ class _VAECosmosDecoder(torch.nn.Module):
 _QWENIMAGE21_KEY_MASK_BIAS = -1e9
 
 
-def _qwenimage21_mask_at(mask: torch.Tensor, x: torch.Tensor) -> torch.Tensor:
+def _get_qwenimage21_mask(mask: torch.Tensor, x: torch.Tensor) -> torch.Tensor:
     # The image sits at the top left of the canvas and its size is a multiple of the VAE scale factor, so the mask at
     # any resolution of the encoder is a strided slice of the full one.
     stride = mask.shape[-2] // x.shape[-2]
     return mask[..., ::stride, ::stride].to(x.dtype)
 
 
-def _qwenimage21_masked(x: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
-    return x * _qwenimage21_mask_at(mask, x)
+def _apply_qwenimage21_mask(x: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+    return x * _get_qwenimage21_mask(mask, x)
 
 
-def _qwenimage21_residual_block(block, x: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+def _run_qwenimage21_residual_block(block, x: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
     # QwenImage21ResidualBlock.forward for one frame, masked after every convolution.
-    h = _qwenimage21_masked(block.conv_shortcut(x), mask)
-    x = _qwenimage21_masked(block.conv1(block.nonlinearity(block.norm1(x))), mask)
-    x = _qwenimage21_masked(block.conv2(block.dropout(block.nonlinearity(block.norm2(x)))), mask)
+    h = _apply_qwenimage21_mask(block.conv_shortcut(x), mask)
+    x = _apply_qwenimage21_mask(block.conv1(block.nonlinearity(block.norm1(x))), mask)
+    x = _apply_qwenimage21_mask(block.conv2(block.dropout(block.nonlinearity(block.norm2(x)))), mask)
     return x + h
 
 
-def _qwenimage21_attention_block(block, x: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+def _run_qwenimage21_attention_block(block, x: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
     # QwenImage21AttentionBlock.forward with the canvas outside the image left out as keys.
     identity = x
     batch_size, channels, time, height, width = x.size()
@@ -219,13 +219,13 @@ def _qwenimage21_attention_block(block, x: torch.Tensor, mask: torch.Tensor) -> 
     qkv = qkv.reshape(batch_size * time, 1, channels * 3, -1)
     qkv = qkv.permute(0, 1, 3, 2).contiguous()
     q, k, v = qkv.chunk(3, dim=-1)
-    key_mask = _qwenimage21_mask_at(mask, identity).reshape(1, 1, 1, height * width)
+    key_mask = _get_qwenimage21_mask(mask, identity).reshape(1, 1, 1, height * width)
     x = F.scaled_dot_product_attention(q, k, v, attn_mask=(1.0 - key_mask) * _QWENIMAGE21_KEY_MASK_BIAS)
     x = x.squeeze(1).permute(0, 2, 1).reshape(batch_size * time, channels, height, width)
     x = block.proj(x)
     x = x.view(batch_size, time, channels, height, width)
     x = x.permute(0, 2, 1, 3, 4)
-    return _qwenimage21_masked(x + identity, mask)
+    return _apply_qwenimage21_mask(x + identity, mask)
 
 
 class _VAEQwenImage21Encoder(torch.nn.Module):
@@ -251,23 +251,23 @@ class _VAEQwenImage21Encoder(torch.nn.Module):
 
     def forward(self, x, mask):
         encoder = self.vae.encoder
-        x = _qwenimage21_masked(encoder.conv_in(x * mask), mask)
+        x = _apply_qwenimage21_mask(encoder.conv_in(x * mask), mask)
         for block in encoder.down_blocks:
             # QwenImage21ResidualDownBlock.forward; the downsampler's time_conv runs only with a cached frame.
-            shortcut = _qwenimage21_masked(block.avg_shortcut(x), mask)
+            shortcut = _apply_qwenimage21_mask(block.avg_shortcut(x), mask)
             for resnet in block.resnets:
-                x = _qwenimage21_residual_block(resnet, x, mask)
+                x = _run_qwenimage21_residual_block(resnet, x, mask)
             if block.downsampler is not None:
-                x = _qwenimage21_masked(block.downsampler(x), mask)
+                x = _apply_qwenimage21_mask(block.downsampler(x), mask)
             x = x + shortcut
         mid = encoder.mid_block
-        x = _qwenimage21_residual_block(mid.resnets[0], x, mask)
+        x = _run_qwenimage21_residual_block(mid.resnets[0], x, mask)
         for attention, resnet in zip(mid.attentions, mid.resnets[1:], strict=True):
             if attention is not None:
-                x = _qwenimage21_attention_block(attention, x, mask)
-            x = _qwenimage21_residual_block(resnet, x, mask)
-        x = _qwenimage21_masked(encoder.conv_out(encoder.nonlinearity(encoder.norm_out(x))), mask)
-        return _qwenimage21_masked(self.vae.quant_conv(x), mask)
+                x = _run_qwenimage21_attention_block(attention, x, mask)
+            x = _run_qwenimage21_residual_block(resnet, x, mask)
+        x = _apply_qwenimage21_mask(encoder.conv_out(encoder.nonlinearity(encoder.norm_out(x))), mask)
+        return _apply_qwenimage21_mask(self.vae.quant_conv(x), mask)
 
 
 class _VAEQwenImage21Decoder(torch.nn.Module):

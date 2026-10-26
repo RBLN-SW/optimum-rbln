@@ -17,7 +17,7 @@ from typing import Any
 from ....configuration_utils import RBLNModelConfig
 
 
-def _image_sizes(size: tuple[int, int] | list[tuple[int, int]] | None) -> list[tuple[int, int]] | None:
+def _normalize_image_sizes(size: tuple[int, int] | list[tuple[int, int]] | None) -> list[tuple[int, int]] | None:
     # One (height, width) or a list of them; a saved config holds the list form.
     if size is None:
         return None
@@ -61,9 +61,9 @@ class RBLNAutoencoderKLQwenImage21Config(RBLNModelConfig):
         if not isinstance(self.batch_size, int) or self.batch_size < 0:
             raise ValueError(f"batch_size must be a positive integer, got {self.batch_size}")
 
-        self.sample_size = _image_sizes(sample_size)
+        self.sample_size = _normalize_image_sizes(sample_size)
         self.uses_encoder = uses_encoder
-        self.encoder_sample_size = _image_sizes(encoder_sample_size)
+        self.encoder_sample_size = _normalize_image_sizes(encoder_sample_size)
 
 
 __all__ = [
