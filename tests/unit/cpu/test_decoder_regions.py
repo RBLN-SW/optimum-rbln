@@ -3,6 +3,7 @@ from types import SimpleNamespace
 import pytest
 import rebel
 import torch
+from rebel.core.compilation._impl import clone_nn_module
 from transformers import Gemma2Config, Gemma2ForCausalLM, Qwen3Config, Qwen3ForCausalLM
 
 from optimum.rbln import (
@@ -67,7 +68,10 @@ def test_decoder_export(monkeypatch, enabled, phase, gemma, max_seq_len):
 
     def export(model, **kwargs):
         assert kwargs.get("model_trace_method") == ("export_strict" if enabled else None)
-        result = torch.export.export(model, tuple(kwargs["example_inputs"]), strict=enabled)
+        result = torch.export.export(clone_nn_module(model), tuple(kwargs["example_inputs"]), strict=enabled)
+        assert set(result.graph_signature.inputs_to_parameters.values()) <= set(
+            dict(model.named_parameters(remove_duplicate=False))
+        )
         calls = [n for n in result.graph.nodes if "invoke_subgraph" in str(n.target)]
         assert len(calls) == ((4 if gemma else 3) if enabled else 0)
         if enabled:

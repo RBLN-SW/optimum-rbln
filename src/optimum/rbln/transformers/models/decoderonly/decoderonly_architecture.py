@@ -38,6 +38,14 @@ def _op_accepts(op_name: str, arg_name: str) -> bool:
     return any(arg.name == arg_name for arg in op.default._schema.arguments)
 
 
+class NestedCompileRegionMixin:
+    """Preserve a decoder forward as a nested region through module cloning and export."""
+
+    @torch.compiler.nested_compile_region
+    def forward(self, *args, **kwargs):
+        return super().forward(*args, **kwargs)
+
+
 class DecoderOnlyWrapper(nn.Module):
     """A wrapper class for decoder-only language models that handles RBLN-specific optimizations and requirements.
 
@@ -82,22 +90,10 @@ class DecoderOnlyWrapper(nn.Module):
             )
 
         self.model = self.convert_to_rbln_class(model, rbln_config.max_seq_len, use_rotary_emb)
-        if rbln_config.nested_compile_region:
-            region_classes = {}
-            for layer in self.model.modules():
-                if not isinstance(layer, DecoderOnlyLayer):
-                    continue
-                layer_cls = type(layer)
-                if layer_cls not in region_classes:
-                    # Class-level forwards preserve export's parameter paths; bound instance methods do not.
-                    region_classes[layer_cls] = type(
-                        layer_cls.__name__,
-                        (layer_cls,),
-                        {"forward": torch.compiler.nested_compile_region(layer_cls.forward)},
-                    )
-                layer.__class__ = region_classes[layer_cls]
-            if not region_classes:
-                raise ValueError("nested_compile_region requires DecoderOnlyLayer instances.")
+        if rbln_config.nested_compile_region and not any(
+            isinstance(layer, NestedCompileRegionMixin) for layer in self.model.modules()
+        ):
+            raise ValueError("nested_compile_region requires NestedCompileRegionMixin instances.")
         self.num_hidden_layers = getattr(self.config, "num_hidden_layers", None) or self.config.n_layer
         self._phase = "prefill"
 
@@ -117,7 +113,7 @@ class DecoderOnlyWrapper(nn.Module):
         return DecoderOnlyAttention
 
     def get_rbln_layer_class(self):
-        return DecoderOnlyLayer
+        return DecoderOnlyLayerRegion if self.rbln_config.nested_compile_region else DecoderOnlyLayer
 
     def get_rbln_model_class(self):
         return DecoderOnlyModel
@@ -713,6 +709,10 @@ class DecoderOnlyLayer(nn.Module):
         hidden_states = residual + hidden_states
 
         return hidden_states
+
+
+class DecoderOnlyLayerRegion(NestedCompileRegionMixin, DecoderOnlyLayer):
+    """Decoder layer with a nested compile region around its forward call."""
 
 
 class DecoderOnlyAttention(nn.Module):
