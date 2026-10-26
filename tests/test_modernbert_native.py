@@ -12,37 +12,23 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-class TestModernBertModelNativeMaxSeqLenBatch2(test_transformers.TestModernBertModelNativeMaxSeqLen):
-    BATCH_SIZE = 2
-    RBLN_CLASS_KWARGS = {
-        **test_transformers.TestModernBertModelNativeMaxSeqLen.RBLN_CLASS_KWARGS,
-        "rbln_batch_size": 2,
-        "rbln_npu": "RBLN-CR13",
-    }
-
-
-class TestModernBertModelNativeMaxSeqLenBatch4(test_transformers.TestModernBertModelNativeMaxSeqLen):
-    BATCH_SIZE = 4
-    RBLN_CLASS_KWARGS = {
-        **test_transformers.TestModernBertModelNativeMaxSeqLen.RBLN_CLASS_KWARGS,
-        "rbln_batch_size": 4,
-        "rbln_npu": "RBLN-CR13",
-    }
-
-
-class TestModernBertModelNativeMaxSeqLenBatch8(test_transformers.TestModernBertModelNativeMaxSeqLen):
-    BATCH_SIZE = 8
-    RBLN_CLASS_KWARGS = {
-        **test_transformers.TestModernBertModelNativeMaxSeqLen.RBLN_CLASS_KWARGS,
-        "rbln_batch_size": 8,
-        "rbln_npu": "RBLN-CR13",
-    }
-
-
-class TestModernBertModelNativeMaxSeqLenBatch16(test_transformers.TestModernBertModelNativeMaxSeqLen):
-    BATCH_SIZE = 16
-    RBLN_CLASS_KWARGS = {
-        **test_transformers.TestModernBertModelNativeMaxSeqLen.RBLN_CLASS_KWARGS,
-        "rbln_batch_size": 16,
-        "rbln_npu": "RBLN-CR13",
-    }
+class TestModernBertModelNativeBatches:
+    @pytest.mark.parametrize("batch_size", [2, 4, 8, 16])
+    def test_embedding_parity(self, batch_size):
+        case = type(
+            f"ModernBertModelNativeMaxSeqLenBatch{batch_size}",
+            (test_transformers.TestModernBertModelNativeMaxSeqLen,),
+            {
+                "BATCH_SIZE": batch_size,
+                "RBLN_CLASS_KWARGS": {
+                    **test_transformers.TestModernBertModelNativeMaxSeqLen.RBLN_CLASS_KWARGS,
+                    "rbln_batch_size": batch_size,
+                    "rbln_npu": "RBLN-CR13",
+                },
+            },
+        )
+        try:
+            case.setUpClass()
+            case("test_embedding_parity").test_embedding_parity()
+        finally:
+            case.tearDownClass()
