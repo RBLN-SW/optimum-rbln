@@ -17,6 +17,7 @@ import torch
 
 from ...modeling_outputs import RBLNDecoderOnlyOutput
 from ..decoderonly.decoderonly_runtime_utils import RBLNRuntimeModel
+from .qwen3_5_architecture import CONV_TABLE_INPUTS
 
 
 class RBLNQwen3_5RuntimeModel(RBLNRuntimeModel):
@@ -54,6 +55,14 @@ class RBLNQwen3_5RuntimeModel(RBLNRuntimeModel):
         self._state_mask_zeros = torch.zeros(1, dtype=state_dtype)
         self._state_mask_ones = torch.ones(1, dtype=state_dtype)
         self._valid_mask_prefill_full = torch.ones(1, self.rbln_config.prefill_chunk_size, 1, dtype=state_dtype)
+
+    def _conv_tables(self, state_index, seq_idx, query_len, has_initial_state, tokens: int) -> dict:
+        """The conv ring's index tables for one call, as named graph inputs (see CONV_TABLE_INPUTS)."""
+        from rebel.ops.torch_custom_ops.causal_conv1d_ring import ring_tables
+
+        kernel_size = self.config.get_text_config().linear_conv_kernel_dim
+        tables = ring_tables(state_index, seq_idx, query_len, has_initial_state, tokens, kernel_size - 1, kernel_size)
+        return dict(zip(CONV_TABLE_INPUTS, tables, strict=True))
 
     def _run(self, named_inputs: dict):
         """Order inputs by the runtime's own signature and invoke; return (logits, hidden_states).
@@ -179,6 +188,15 @@ class RBLNQwen3_5RuntimeModel(RBLNRuntimeModel):
                 valid_mask = torch.zeros(input_chunk.shape[0], chunk, 1, dtype=self.state_dtype)
                 valid_mask[:, :valid_count] = 1.0
             named["valid_mask"] = valid_mask
+            named.update(
+                self._conv_tables(
+                    torch.tensor([batch_idx or 0]),
+                    cache_pos_chunk[:, 0],
+                    torch.tensor([valid_count]),
+                    torch.tensor([0 if step == 0 else 1]),
+                    chunk,
+                )
+            )
 
             # For logits_to_keep == 1 every window overwrites the single logits row, so the final value
             # is the last window's (the next-token logits). Intermediate windows only advance the states.
@@ -264,6 +282,11 @@ class RBLNQwen3_5RuntimeModel(RBLNRuntimeModel):
             named["attention_mask"] = attention_mask
         if self.rbln_config.use_lora:
             named["lora_int_ids"] = lora_int_ids
+        # Row b reads and writes cache row b, one token on.
+        ones = torch.ones(self.batch_size, dtype=torch.int32)
+        named.update(
+            self._conv_tables(torch.arange(self.batch_size), cache_position[:, 0], ones, ones, inputs.shape[1])
+        )
 
         logits, hidden_states = self._run(named)
         return RBLNDecoderOnlyOutput(logits=logits, hidden_states=hidden_states)

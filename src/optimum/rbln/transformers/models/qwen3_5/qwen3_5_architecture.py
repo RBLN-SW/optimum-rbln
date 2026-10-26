@@ -31,6 +31,11 @@ from ..decoderonly.decoderonly_architecture import (
 )
 
 
+# The conv ring's index tables, graph inputs of both phases, declared last (see get_input_info); the
+# runtime builds them with `ring_tables`, in its return order.
+CONV_TABLE_INPUTS = ("conv_hist_idx", "conv_ring_idx", "conv_block", "conv_starts", "conv_count")
+
+
 def apply_rotary_pos_emb_vision(q, k, cos, sin):
     # Mirrors HF `apply_rotary_pos_emb_vision`: rotate in fp32 and round once.
     orig_q_dtype, orig_k_dtype = q.dtype, k.dtype
@@ -261,6 +266,27 @@ class Qwen3_5GatedDeltaNet(nn.Module):
         )
         return self._split_groups(convolved.transpose(1, 2).contiguous(), heads, ratio, seq_len, dim)
 
+    def _rbln_causal_conv1d_tabled(
+        self, qkv: torch.Tensor, conv_cache: torch.Tensor, conv_tables: tuple[torch.Tensor, ...]
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """`_rbln_causal_conv1d` with the ring's index tables handed in as graph inputs.
+
+        The runtime builds them on the host (`ring_tables`) from the operands the op would take.
+        Derived in the graph they are integer ops on inputs only, which the device does not run, so
+        they land on the host anyway, as ~45 ops a step ahead of the device rather than a few tensor
+        ops. Every GatedDeltaNet layer of a step reads the same tables.
+        """
+        _, _, seq_len, dim = qkv.shape
+        heads, ratio = self.num_k_heads, self.num_v_heads // self.num_k_heads
+        convolved = torch.ops.rbln_custom_ops.causal_conv1d_ring_tabled(
+            qkv.transpose(1, 2).contiguous(),
+            self.conv_weight,
+            conv_cache,
+            *conv_tables,
+            self.conv_kernel_size - 1,
+        )
+        return self._split_groups(convolved.transpose(1, 2).contiguous(), heads, ratio, seq_len, dim)
+
     def forward(
         self,
         hidden_states: torch.Tensor,
@@ -272,6 +298,7 @@ class Qwen3_5GatedDeltaNet(nn.Module):
         slot: torch.Tensor | None = None,
         conv_cache: torch.Tensor | None = None,
         seq_idx: torch.Tensor | None = None,
+        conv_tables: tuple[torch.Tensor, ...] | None = None,
     ) -> torch.Tensor:
         prefill = "prefill" in self._phase and valid_mask is not None
         slot = torch.tensor(0, dtype=torch.int16) if slot is None else slot
@@ -288,32 +315,37 @@ class Qwen3_5GatedDeltaNet(nn.Module):
         b = self.in_proj_b(hidden_states)
         a = self.in_proj_a(hidden_states)
         qkv = self._project_qkv(hidden_states)
-        # The ring's per-row index operands. Prefill runs one item into cache row `slot`; decode
-        # runs the whole batch, row b into row b, as the cache is laid out.
-        #
-        # Every one of these is derived from an operand, never built as a fresh constant: decode
-        # compiles reusing prefill's weights, so a constant only one of the two graphs holds has
-        # no key to reuse (OpInvalidWeightSharingError).
-        rows = 1 if prefill else batch_size
-        position = seq_idx.to(torch.int32).reshape(rows)
-        ones = torch.ones_like(position)
-        if prefill:
-            state_index = slot.to(torch.int32).reshape(1)
-            # A right-padded chunk's valid tokens end at query_position.
-            valid_len = query_position.to(torch.int32).reshape(1) + 1
+        if conv_tables is not None:
+            query, key, value = self._rbln_causal_conv1d_tabled(
+                qkv, conv_state if conv_cache is None else conv_cache, conv_tables
+            )
         else:
-            # Row b reads cache row b: 0, 1, ... as a running sum rather than an arange constant.
-            state_index = torch.cumsum(ones, dim=0).to(torch.int32) - ones
-            valid_len = ones
-        has_initial_state = ones if carry is None else carry.to(torch.int32).reshape(rows)
-        query, key, value = self._rbln_causal_conv1d(
-            qkv,
-            conv_state if conv_cache is None else conv_cache,
-            state_index,
-            position,
-            valid_len,
-            has_initial_state,
-        )
+            # The ring's per-row index operands. Prefill runs one item into cache row `slot`; decode
+            # runs the whole batch, row b into row b, as the cache is laid out.
+            #
+            # Every one of these is derived from an operand, never built as a fresh constant: decode
+            # compiles reusing prefill's weights, so a constant only one of the two graphs holds has
+            # no key to reuse (OpInvalidWeightSharingError).
+            rows = 1 if prefill else batch_size
+            position = seq_idx.to(torch.int32).reshape(rows)
+            ones = torch.ones_like(position)
+            if prefill:
+                state_index = slot.to(torch.int32).reshape(1)
+                # A right-padded chunk's valid tokens end at query_position.
+                valid_len = query_position.to(torch.int32).reshape(1) + 1
+            else:
+                # Row b reads cache row b: 0, 1, ... as a running sum rather than an arange constant.
+                state_index = torch.cumsum(ones, dim=0).to(torch.int32) - ones
+                valid_len = ones
+            has_initial_state = ones if carry is None else carry.to(torch.int32).reshape(rows)
+            query, key, value = self._rbln_causal_conv1d(
+                qkv,
+                conv_state if conv_cache is None else conv_cache,
+                state_index,
+                position,
+                valid_len,
+                has_initial_state,
+            )
 
         beta = b.sigmoid()
         g = -self.A_log.float().exp() * F.softplus(a.float() + self.dt_bias)
@@ -366,6 +398,7 @@ class Qwen3_5LinearDecoderLayer(nn.Module):
         slot: torch.Tensor | None = None,
         conv_cache: torch.Tensor | None = None,
         seq_idx: torch.Tensor | None = None,
+        conv_tables: tuple[torch.Tensor, ...] | None = None,
     ) -> torch.Tensor:
         residual = hidden_states
         hidden_states = self.input_layernorm(hidden_states)
@@ -379,6 +412,7 @@ class Qwen3_5LinearDecoderLayer(nn.Module):
             slot=slot,
             conv_cache=conv_cache,
             seq_idx=seq_idx,
+            conv_tables=conv_tables,
         )
         hidden_states = residual + hidden_states
 
@@ -499,6 +533,7 @@ class Qwen3_5Model(DecoderOnlyModel):
         state_mask: torch.Tensor | None = None,
         valid_mask: torch.Tensor | None = None,
         batch_idx: torch.Tensor | None = None,  # prefill only: which max-batch cache slot this item uses
+        conv_tables: tuple[torch.Tensor, ...] | None = None,  # the conv ring's index tables (host-built)
         output_hidden_states: bool | None = None,
     ):
         if (input_ids is None) ^ (inputs_embeds is not None):
@@ -548,6 +583,7 @@ class Qwen3_5Model(DecoderOnlyModel):
                     conv_cache=conv_state,
                     # The absolute position of this step's first token: the ring is indexed by it.
                     seq_idx=cache_position[:, 0],
+                    conv_tables=conv_tables,
                 )
             else:
                 hidden_states = layer(
@@ -585,6 +621,7 @@ class Qwen3_5ForCausalLM(DecoderOnlyForCausalLM):
         state_mask: torch.Tensor | None = None,
         valid_mask: torch.Tensor | None = None,
         batch_idx: torch.Tensor | None = None,
+        conv_tables: tuple[torch.Tensor, ...] | None = None,
         output_hidden_states: bool | None = None,
     ):
         hidden_states, all_hidden_states = self.model(
@@ -603,6 +640,7 @@ class Qwen3_5ForCausalLM(DecoderOnlyForCausalLM):
             state_mask=state_mask,
             valid_mask=valid_mask,
             batch_idx=batch_idx,
+            conv_tables=conv_tables,
             output_hidden_states=output_hidden_states,
         )
 
@@ -670,6 +708,10 @@ class Qwen3_5_CausalLMWrapper(DecoderOnlyWrapper):
     def prepare_forward_args(self, *args):
         args = list(args)
         has_linear = any(t == "linear_attention" for t in self.config.layer_types)
+        # get_input_info declares the conv ring's tables last, in both phases.
+        conv_tables = tuple(args[-len(CONV_TABLE_INPUTS) :]) if has_linear else None
+        if has_linear:
+            del args[-len(CONV_TABLE_INPUTS) :]
         # get_input_info declares these three for a prefill graph only.
         has_prefill_linear = has_linear and "prefill" in self.phase
         batch_idx = args.pop() if has_prefill_linear else None
@@ -708,6 +750,7 @@ class Qwen3_5_CausalLMWrapper(DecoderOnlyWrapper):
             state_mask,
             valid_mask,
             batch_idx,
+            conv_tables,
         )
 
     def forward(self, *args):
@@ -727,6 +770,7 @@ class Qwen3_5_CausalLMWrapper(DecoderOnlyWrapper):
             state_mask,
             valid_mask,
             batch_idx,
+            conv_tables,
         ) = self.prepare_forward_args(*args)
 
         logits, all_hidden_states = self.model(
@@ -745,6 +789,7 @@ class Qwen3_5_CausalLMWrapper(DecoderOnlyWrapper):
             state_mask=state_mask,
             valid_mask=valid_mask,
             batch_idx=batch_idx,
+            conv_tables=conv_tables,
             output_hidden_states=self.rbln_config.output_hidden_states,
         )
 
@@ -775,6 +820,10 @@ class Qwen3_5_LanguageModelWrapper(Qwen3_5_CausalLMWrapper):
     def prepare_forward_args(self, *args):
         args = list(args)
         has_linear = any(t == "linear_attention" for t in self.config.layer_types)
+        # get_input_info declares the conv ring's tables last, in both phases.
+        conv_tables = tuple(args[-len(CONV_TABLE_INPUTS) :]) if has_linear else None
+        if has_linear:
+            del args[-len(CONV_TABLE_INPUTS) :]
         # get_input_info declares these three for a prefill graph only.
         has_prefill_linear = has_linear and "prefill" in self.phase
         batch_idx = args.pop() if has_prefill_linear else None
@@ -814,4 +863,5 @@ class Qwen3_5_LanguageModelWrapper(Qwen3_5_CausalLMWrapper):
             state_mask,
             valid_mask,
             batch_idx,
+            conv_tables,
         )

@@ -49,6 +49,7 @@ from .configuration_qwen3_5 import (
     RBLNQwen3_5VisionModelConfig,  # noqa: F401
 )
 from .qwen3_5_architecture import (
+    CONV_TABLE_INPUTS,
     Qwen3_5_CausalLMWrapper,
     Qwen3_5_LanguageModelWrapper,
     Qwen3_5VisionModelWrapper,
@@ -335,6 +336,13 @@ class RBLNQwen3_5TextModel(RBLNDecoderOnlyModel):
             input_info.append(("valid_mask", [batch_size, query_length, 1], rbln_config.dtype))
             # which max-batch slot this per-item (batch=1) call reads/writes in the linear caches.
             input_info.append(("batch_idx", [], "int16"))
+
+        if linear_layers:
+            # The conv ring's index tables, host-built each call (`ring_tables`) and read by every
+            # GatedDeltaNet layer: int16 on 64-lane rows, as the kernel takes them.
+            taps = width = text_config.linear_conv_kernel_dim - 1
+            rows = (batch_size * taps, batch_size * width, batch_size, batch_size, 1)
+            input_info.extend((name, [n, 64], "int16") for name, n in zip(CONV_TABLE_INPUTS, rows, strict=True))
 
         return input_info
 
