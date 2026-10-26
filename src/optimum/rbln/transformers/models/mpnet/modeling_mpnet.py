@@ -19,6 +19,13 @@ from .mpnet_architecture import MPNetModelWrapper
 class RBLNMPNetModel(RBLNTransformerEncoderForFeatureExtraction):
     rbln_model_input_names = ["input_ids", "attention_mask"]
 
+    def forward(self, *args, output_hidden_states=None, output_attentions=None, **kwargs):
+        if output_hidden_states or (output_hidden_states is None and self.config.output_hidden_states):
+            raise NotImplementedError("MPNet does not support `output_hidden_states=True`.")
+        if output_attentions or (output_attentions is None and self.config.output_attentions):
+            raise NotImplementedError("MPNet does not support `output_attentions=True`.")
+        return super().forward(*args, **kwargs)
+
     def _prepare_output(self, output, return_dict):
         output = (output,) if not isinstance(output, (tuple, list)) else tuple(output)
         if len(output) == 1:

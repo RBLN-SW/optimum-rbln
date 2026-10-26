@@ -12,8 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import copy
-
 import torch
 from torch import nn
 from transformers.models.mpnet.modeling_mpnet import MPNetEncoder
@@ -35,28 +33,28 @@ class MPNetSDPAAttention(nn.Module):
 
     def forward(self, hidden_states, attention_mask=None, position_bias=None, output_attentions=False, **kwargs):
         if output_attentions:
-            return self.attention(hidden_states, attention_mask, position_bias, output_attentions=True)
+            raise NotImplementedError("MPNet does not support `output_attentions=True`.")
 
-        attention = self.attention
-        hidden_shape = (*hidden_states.shape[:-1], -1, attention.attention_head_size)
-        query = attention.q(hidden_states).view(hidden_shape).transpose(1, 2)
-        key = attention.k(hidden_states).view(hidden_shape).transpose(1, 2)
-        value = attention.v(hidden_states).view(hidden_shape).transpose(1, 2)
+        hidden_shape = (*hidden_states.shape[:-1], -1, self.attention.attention_head_size)
+        query = self.attention.q(hidden_states).view(hidden_shape).transpose(1, 2)
+        key = self.attention.k(hidden_states).view(hidden_shape).transpose(1, 2)
+        value = self.attention.v(hidden_states).view(hidden_shape).transpose(1, 2)
         mask = position_bias
         if attention_mask is not None:
             mask = attention_mask if mask is None else mask + attention_mask
         context = torch.nn.functional.scaled_dot_product_attention(query, key, value, attn_mask=mask)
-        context = context.transpose(1, 2).reshape(*hidden_states.shape[:-1], attention.all_head_size)
-        return (attention.o(context),)
+        context = context.transpose(1, 2).reshape(*hidden_states.shape[:-1], self.attention.all_head_size)
+        return (self.attention.o(context),)
 
 
 class MPNetModelWrapper(nn.Module):
     def __init__(self, model):
         super().__init__()
-        self.model = copy.deepcopy(model)
+        self.model = model
         self.model.encoder.__class__ = MPNetSharedPositionBiasEncoder
         for layer in self.model.encoder.layer:
-            layer.attention.attn = MPNetSDPAAttention(layer.attention.attn)
+            if not isinstance(layer.attention.attn, MPNetSDPAAttention):
+                layer.attention.attn = MPNetSDPAAttention(layer.attention.attn)
 
     def forward(self, input_ids, attention_mask=None):
         output = self.model(
