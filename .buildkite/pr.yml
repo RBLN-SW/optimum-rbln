@@ -1,20 +1,8 @@
-# Entry pipeline for PR builds. Gates run first; the test pipelines are uploaded
-# only after they pass.
+# Native B1 validation of unchanged DINO model source; SDK329 is job scoped.
 env:
-  # Where every release's compiled artifacts live, written by the tag build
-  # (.buildkite/bc-compile.yml).
-  BC_BASE_PATH: "${OPTIMUM_BC_BASE_PATH}"
   UV_CACHE_DIR: "${UV_CACHE_PATH}"
   UV_LINK_MODE: "symlink"
   UV_INDEX_STRATEGY: "unsafe-best-match"
-
-# Both upload jobs read only .buildkite and scripts; the suites they emit check out in full.
-_upload: &upload
-  checkout:
-    sparse:
-      paths:
-        - .buildkite
-        - scripts
 
 steps:
   - label: ":closed_lock_with_key: team-member gate"
@@ -46,41 +34,33 @@ steps:
     command:
       - "bash scripts/check-docstrings.sh"
 
-  # All gates must pass before the NPU pipeline is even uploaded.
+  # Run the explicit native cases after the ordinary gates pass.
   - wait: ~
 
-  # A [pytest-full] commit (the compiler-update bot's PRs) runs every suite at the
-  # full level. Suites a change cannot affect are skipped with the [skip-*]
-  # directives run-suite.sh reads, not by path.
-  # Sibling jobs: two uploads from one job make the second batch a barrier for
-  # the first, so the pytest suites would wait on BC.
-  - label: ":sparkles: upload pytest"
-    <<: *upload
-    command: |
-      if [[ "$$BUILDKITE_MESSAGE" == *"[pytest-full]"* ]]; then
-        echo "--- :mag: [pytest-full] in commit message"
-        export OPTIMUM_RBLN_TEST_LEVEL=full
-        export HF_USER_ID=Rebellions
-      fi
-      buildkite-agent pipeline upload .buildkite/pipelines/pytest/pipeline.yml
-
-  - label: ":sparkles: upload BC"
-    <<: *upload
-    command: |
-      bash scripts/ci/bc-steps.sh --latest | buildkite-agent pipeline upload
-
-  - wait: ~
-    continue_on_failure: true
-
-  - label: ":slack: report"
-    if: build.message =~ /\[slack-report\]/
-    soft_fail: true
-    allow_dependency_failure: true
+  - label: ":pytest: DINOv2 native B1 CA25 SDK329"
+    key: "dinov2-native-b1"
     image: "${DEVTOOLS_DOCKER_IMAGE}"
-    env:
-      SLACK_TITLE: "Optimum-RBLN PR Test Results"
+    resources:
+      cpu: "16"
+      memory:
+        requests: "64Gi"
+        limits: "64Gi"
+      npu:
+        count: 1
+        product: "RBLN-CA25"
     secrets:
-      OBEDIENTS_API_TOKEN: BUILDKITE_API_TOKEN
-      SLACK_BOT_TOKEN: SLACK_OAUTH_TOKEN
+      UV_INDEX_REBELLIONS_USERNAME: REBEL_SW_DEV_USERNAME
+      UV_INDEX_REBELLIONS_PASSWORD: REBEL_SW_DEV_PASSWORD
+      HF_TOKEN: HF_TOKEN
+      HF_HOME: HF_HOME
+    env:
+      REBEL_COMPILER_VERSION: "0.12.1.dev329+g66a3078e"
+      RBLN_TEST_NPU: "RBLN-CA25"
+      OPTIMUM_RBLN_TEST_LEVEL: "full"
+      HF_USER_ID: ""
+    timeout_in_minutes: 120
+    artifact_paths: "junit-dinov2-native-b1.xml"
     command:
-      - "python3 scripts/ci/slack-report.py"
+      - "bash scripts/ci/sync.sh"
+      - "uv run --no-sync python -c \"import importlib.metadata as m; print('compiler=' + m.version('rebel-compiler')); assert m.version('rebel-compiler') == '0.12.1.dev329+g66a3078e'\""
+      - "uv run --no-sync pytest -n 1 tests/test_transformers.py::TestDinov2ModelNativeSize::test_numerical_parity tests/test_transformers.py::TestDinov2ForImageClassificationNativeSize::test_numerical_parity --junitxml=junit-dinov2-native-b1.xml -vv --durations=0"
