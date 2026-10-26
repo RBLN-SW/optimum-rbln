@@ -767,32 +767,16 @@ class TestDinov2Model(BaseTest.TestModel):
                 assert a.shape == e.shape
                 pcc = torch.corrcoef(torch.stack([a.flatten(), e.flatten()]))[0, 1]
                 nrmse = (a - e).square().mean().sqrt() / e.square().mean().sqrt().clamp_min(1e-8)
-                values = {
-                    "test_class": type(self).__name__,
-                    "offset": offset,
-                    "npu": self.model.rbln_config.npu,
-                    "reference_dtype": str(e.dtype),
-                    "input_shape": list(inputs.pixel_values.shape),
-                    "output_shape": list(a.shape),
-                    "pcc": float(pcc),
-                    "normalized_rmse": float(nrmse),
-                }
-                if self.CLASSIFICATION:
-                    values["labels_equal"] = bool(torch.equal(a.argmax(-1), e.argmax(-1)))
-                else:
-                    values["pooled_cosine"] = float(
-                        torch.nn.functional.cosine_similarity(
-                            actual.pooler_output.float(), expected.pooler_output.float()
-                        ).min()
-                    )
-                    torch.testing.assert_close(actual.pooler_output, actual.last_hidden_state[:, 0], rtol=0, atol=0)
-                print("DINOV2_PARITY " + json.dumps(values), flush=True)
                 assert pcc >= 0.99
                 if self.CLASSIFICATION:
                     assert nrmse <= 0.05
-                    assert values["labels_equal"]
+                    assert torch.equal(a.argmax(-1), e.argmax(-1))
                 else:
-                    assert values["pooled_cosine"] >= 0.99
+                    cosine = torch.nn.functional.cosine_similarity(
+                        actual.pooler_output.float(), expected.pooler_output.float()
+                    )
+                    assert cosine.min() >= 0.99
+                    torch.testing.assert_close(actual.pooler_output, actual.last_hidden_state[:, 0], rtol=0, atol=0)
                 for a, e in zip(self.model(**inputs).to_tuple(), actual.to_tuple(), strict=True):
                     torch.testing.assert_close(a, e, rtol=0, atol=0)
                 if first_inputs is None:
@@ -805,10 +789,6 @@ class TestDinov2Model(BaseTest.TestModel):
             type(self).model = self.RBLN_AUTO_CLASS.from_pretrained(self.get_rbln_local_dir(), rbln_device=self.DEVICE)
             for a, e in zip(self.model(**first_inputs, return_dict=False), first_output, strict=True):
                 torch.testing.assert_close(a, e, rtol=0, atol=0)
-        print(
-            "DINOV2_STATE " + json.dumps({"test_class": type(self).__name__, "repeat_reload_tuple": "passed"}),
-            flush=True,
-        )
 
 
 class TestDinov2ModelBatch2(TestDinov2Model):
