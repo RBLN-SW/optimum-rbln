@@ -23,15 +23,6 @@ MAX_GDN_CHUNK_SIZE = 128
 
 
 def _reject_decoder_batch_bucketing(rbln_config) -> None:
-    """Qwen3.5 compiles one decoder, because the linear_attention state is addressed by batch row.
-
-    `RBLNDecoderOnlyModelConfig.__init__` has already resolved `decoder_batch_sizes` by the time a
-    Qwen3.5 config finishes building, so this is asked here rather than at `_update_rbln_config`,
-    which a vision model only reaches after compiling its visual submodule.
-
-    Only the two configs that generate ask it. A bare backbone's `_default_phases` is `["prefill"]`,
-    so it carries no decoder and `decoder_batch_sizes` stays None.
-    """
     if rbln_config.use_multiple_decoder:
         raise ValueError(
             f"Qwen3.5 takes one decoder batch size, got {rbln_config.decoder_batch_sizes}. "
