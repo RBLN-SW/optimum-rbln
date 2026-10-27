@@ -55,7 +55,8 @@ class RBLNQwen3_5ForCausalLMConfig(RBLNDecoderOnlyModelForCausalLMConfig):
         Args:
             gdn_chunk_size (Optional[int]): GatedDeltaNet prefill sub-chunk size. Each prefill window
                 is split into `prefill_chunk_size // gdn_chunk_size` sub-chunks processed by the chunked
-                delta rule. Must divide `prefill_chunk_size`. Defaults to `MAX_GDN_CHUNK_SIZE` (128).
+                delta rule. The kernel takes `MAX_GDN_CHUNK_SIZE` (128) only, which is the default and
+                the one value compilation accepts; `prefill_chunk_size` must be a multiple of it.
             linear_attention_layers (list[int] | None): The linear_attention (GatedDeltaNet)
                 layer indices, populated automatically from `layer_types` at compile time (not user-set).
             kwargs: Additional arguments passed to `RBLNDecoderOnlyModelForCausalLMConfig`.
@@ -83,7 +84,8 @@ class RBLNQwen3_5TextModelConfig(RBLNDecoderOnlyModelConfig):
         Args:
             gdn_chunk_size (Optional[int]): GatedDeltaNet prefill sub-chunk size. Each prefill window
                 is split into `prefill_chunk_size // gdn_chunk_size` sub-chunks processed by the chunked
-                delta rule. Must divide `prefill_chunk_size`. Defaults to `MAX_GDN_CHUNK_SIZE` (128).
+                delta rule. The kernel takes `MAX_GDN_CHUNK_SIZE` (128) only, which is the default and
+                the one value compilation accepts; `prefill_chunk_size` must be a multiple of it.
             linear_attention_layers (list[int] | None): The linear_attention (GatedDeltaNet)
                 layer indices, populated automatically from `layer_types` at compile time (not user-set).
             kwargs: Additional arguments passed to `RBLNDecoderOnlyModelConfig`.
@@ -154,7 +156,8 @@ class RBLNQwen3_5ModelConfig(RBLNDecoderOnlyModelConfig):
         Args:
             gdn_chunk_size (Optional[int]): GatedDeltaNet prefill sub-chunk size. Each prefill window is
                 split into `prefill_chunk_size // gdn_chunk_size` sub-chunks processed by the chunked
-                delta rule. Must divide `prefill_chunk_size`. Defaults to `MAX_GDN_CHUNK_SIZE` (128).
+                delta rule. The kernel takes `MAX_GDN_CHUNK_SIZE` (128) only, which is the default and
+                the one value compilation accepts; `prefill_chunk_size` must be a multiple of it.
             linear_attention_layers (list[int] | None): The linear_attention (GatedDeltaNet)
                 layer indices, populated automatically from `layer_types` at compile time (not user-set).
             visual (Optional[RBLNModelConfig]): Configuration for the vision encoder submodule.

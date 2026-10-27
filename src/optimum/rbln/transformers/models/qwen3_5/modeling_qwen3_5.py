@@ -67,9 +67,8 @@ def validate_gdn_custom_kernel(model_config, rbln_config) -> None:
     compile time, where the converter reports it as a shape mismatch.
 
     Runs before `super()._update_rbln_config` fills the defaults, so it reads no field that
-    `set_default_values` owns -- `prefill_chunk_size` is still None here. It does not need to: the
-    ops want a prefill window that is a multiple of 128, and `_update_rbln_config` already rejects a
-    `gdn_chunk_size` that does not divide `prefill_chunk_size`, so `gdn_chunk_size == 128` gives it.
+    `set_default_values` owns -- `prefill_chunk_size` is still None here, and `_update_rbln_config`
+    takes it once it is not.
     """
     wanted = ("gdn_prefill", "gdn_decode", "causal_conv1d_ring_tabled")
     missing = [name for name in wanted if not hasattr(torch.ops.rbln_custom_ops, name)]
@@ -217,17 +216,13 @@ class RBLNQwen3_5TextModel(RBLNDecoderOnlyModel):
         rbln_config = super()._update_rbln_config(
             preprocessors=preprocessors, model=model, model_config=model_config, rbln_config=rbln_config
         )
-        if rbln_config.gdn_chunk_size > MAX_GDN_CHUNK_SIZE:
+        # `gdn_chunk_size` is pinned to MAX_GDN_CHUNK_SIZE above, so a prefill window is whole
+        # sub-chunks of it or none.
+        if rbln_config.prefill_chunk_size % MAX_GDN_CHUNK_SIZE != 0:
             raise ValueError(
-                f"gdn_chunk_size must be <= {MAX_GDN_CHUNK_SIZE}, got {rbln_config.gdn_chunk_size}. "
-                "Larger GatedDeltaNet sub-chunk sizes are not supported yet — "
-                f"set gdn_chunk_size to a value <= {MAX_GDN_CHUNK_SIZE} that divides prefill_chunk_size."
-            )
-        if rbln_config.prefill_chunk_size % rbln_config.gdn_chunk_size != 0:
-            raise ValueError(
-                f"gdn_chunk_size must divide prefill_chunk_size, got gdn_chunk_size="
-                f"{rbln_config.gdn_chunk_size} and prefill_chunk_size={rbln_config.prefill_chunk_size}. "
-                f"Set gdn_chunk_size to a divisor of prefill_chunk_size that is <= {MAX_GDN_CHUNK_SIZE}."
+                f"prefill_chunk_size must be a multiple of {MAX_GDN_CHUNK_SIZE}, got "
+                f"{rbln_config.prefill_chunk_size}. The `rbln_custom_ops::gdn_prefill` kernel takes "
+                f"{MAX_GDN_CHUNK_SIZE}-token chunks only."
             )
         return rbln_config
 
@@ -654,17 +649,13 @@ class RBLNQwen3_5Model(RBLNDecoderOnlyModel):
         rbln_config = super()._update_rbln_config(
             preprocessors=preprocessors, model=model, model_config=model_config, rbln_config=rbln_config
         )
-        if rbln_config.gdn_chunk_size > MAX_GDN_CHUNK_SIZE:
+        # `gdn_chunk_size` is pinned to MAX_GDN_CHUNK_SIZE above, so a prefill window is whole
+        # sub-chunks of it or none.
+        if rbln_config.prefill_chunk_size % MAX_GDN_CHUNK_SIZE != 0:
             raise ValueError(
-                f"gdn_chunk_size must be <= {MAX_GDN_CHUNK_SIZE}, got {rbln_config.gdn_chunk_size}. "
-                "Larger GatedDeltaNet sub-chunk sizes are not supported yet — "
-                f"set gdn_chunk_size to a value <= {MAX_GDN_CHUNK_SIZE} that divides prefill_chunk_size."
-            )
-        if rbln_config.prefill_chunk_size % rbln_config.gdn_chunk_size != 0:
-            raise ValueError(
-                f"gdn_chunk_size must divide prefill_chunk_size, got gdn_chunk_size="
-                f"{rbln_config.gdn_chunk_size} and prefill_chunk_size={rbln_config.prefill_chunk_size}. "
-                f"Set gdn_chunk_size to a divisor of prefill_chunk_size that is <= {MAX_GDN_CHUNK_SIZE}."
+                f"prefill_chunk_size must be a multiple of {MAX_GDN_CHUNK_SIZE}, got "
+                f"{rbln_config.prefill_chunk_size}. The `rbln_custom_ops::gdn_prefill` kernel takes "
+                f"{MAX_GDN_CHUNK_SIZE}-token chunks only."
             )
         return rbln_config
 
