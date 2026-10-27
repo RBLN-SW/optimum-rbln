@@ -272,10 +272,6 @@ class Qwen3_5GatedDeltaNet(nn.Module):
     ) -> torch.Tensor:
         prefill = "prefill" in self._phase and valid_mask is not None
         slot = torch.tensor(0, dtype=torch.int16) if slot is None else slot
-        # One value per cache row gates both caches: the ring op takes it as `has_initial_state`
-        # (0 starts from an empty ring without reading the block), and the core op takes the same
-        # value. The conv cache is no longer zeroed here: the ring op honours the flag itself.
-        carry = state_mask if prefill else None
         # Returns no new recurrent state: the op writes it into `recurrent_state` at `slot`.
         batch_size, seq_len, _ = hidden_states.shape
         heads, ratio = self.num_k_heads, self.num_v_heads // self.num_k_heads
@@ -298,9 +294,10 @@ class Qwen3_5GatedDeltaNet(nn.Module):
         g = g.reshape(batch_size, seq_len, heads, ratio).permute(0, 2, 3, 1).contiguous()
         beta = beta.reshape(batch_size, seq_len, heads, ratio).permute(0, 2, 3, 1).contiguous()
         operands = (query.contiguous(), key.contiguous(), value.contiguous(), g, beta, recurrent_state, slot)
-        if "prefill" in self._phase:
-            carry = torch.ones(batch_size, dtype=value.dtype) if carry is None else carry
-            core_attn_out = torch.ops.rbln_custom_ops.gdn_prefill(*operands, carry)
+        if prefill:
+            # `state_mask` is one value per cache row: 0 starts that row from a zero state. It is
+            # declared beside `valid_mask`, so a prefill graph always carries it.
+            core_attn_out = torch.ops.rbln_custom_ops.gdn_prefill(*operands, state_mask)
         else:
             core_attn_out = torch.ops.rbln_custom_ops.gdn_decode(*operands)
 
