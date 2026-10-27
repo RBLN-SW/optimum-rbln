@@ -1,3 +1,5 @@
+import re
+
 import pytest
 import torch
 from transformers.models.qwen3_5.configuration_qwen3_5 import Qwen3_5TextConfig
@@ -7,10 +9,13 @@ from optimum.rbln.transformers.models.qwen3_5.configuration_qwen3_5 import (
     RBLNQwen3_5TextModelConfig,
 )
 from optimum.rbln.transformers.models.qwen3_5.modeling_qwen3_5 import (
+    _qwen3_5_legacy_linear_state_shapes,
     _qwen3_5_linear_state_shapes,
+    _resolve_gdn_custom_kernel,
     validate_gdn_custom_kernel,
 )
 from optimum.rbln.transformers.models.qwen3_5.qwen3_5_architecture import Qwen3_5GatedDeltaNet
+from optimum.rbln.utils.deprecation import warn_deprecated_gdn_graph
 
 from ._qwen3_5_gdn_reference import NativeGatedDeltaNetReference
 
@@ -222,3 +227,54 @@ def test_gdn_custom_kernel_validates_before_the_defaults_are_filled():
     assert config.prefill_chunk_size is None
 
     validate_gdn_custom_kernel(config)
+
+
+def _gdn_config(**overrides):
+    return RBLNQwen3_5TextModelConfig(max_seq_len=4096, batch_size=1, **overrides)
+
+
+def test_an_artifact_without_the_flag_takes_the_graph_path():
+    # A config saved before the custom kernels carries no `use_custom_kernel` at all, and a saved
+    # config is read back through `cls(**saved)`. The missing key has to stay missing, so that the
+    # artifact it describes is driven the way the optimum-rbln that compiled it drove it.
+    old = _gdn_config()
+    assert old.use_custom_kernel is None
+    assert old.uses_custom_kernel is False
+
+    compiled_now = _gdn_config(use_custom_kernel=True)
+    assert compiled_now.uses_custom_kernel is True
+    assert compiled_now._prepare_for_serialization()["use_custom_kernel"] is True
+
+
+def test_compiling_records_the_flag_and_refuses_the_graph_path():
+    # Every compile takes the kernels, and says so in the artifact. Asking for the path they replaced
+    # is asking optimum-rbln to build a graph it no longer builds.
+    config = _gdn_config()
+    config.use_custom_kernel = _resolve_gdn_custom_kernel(config)
+    assert config._prepare_for_serialization()["use_custom_kernel"] is True
+
+    with pytest.raises(ValueError, match="does not compile one"):
+        _resolve_gdn_custom_kernel(_gdn_config(use_custom_kernel=False))
+
+
+def test_the_graph_path_keeps_its_own_cache_layouts():
+    # The runtime sizes that graph's control masks from here, so these are the layouts the artifact
+    # was compiled with: the conv cache channel-last, the recurrent state 3D.
+    text_config = Qwen3_5TextConfig(
+        hidden_size=64,
+        linear_num_key_heads=2,
+        linear_num_value_heads=6,
+        linear_key_head_dim=128,
+        linear_value_head_dim=128,
+    )
+    taps = text_config.linear_conv_kernel_dim - 1
+    assert _qwen3_5_legacy_linear_state_shapes(text_config, 1) == ((1, taps, 2 * 2 * 128 + 6 * 128), (1, 6 * 128, 128))
+    # and they are not the ones the kernels take.
+    assert _qwen3_5_legacy_linear_state_shapes(text_config, 1) != _qwen3_5_linear_state_shapes(text_config, 1)
+
+
+def test_the_graph_path_is_deprecated_not_silent():
+    # Loading such an artifact says so, and at the version that drops the path it stops loading.
+    warn_deprecated_gdn_graph(version="99.0.0")
+    with pytest.raises(ValueError, match=re.escape("was removed in version 0.0.1")):
+        warn_deprecated_gdn_graph(version="0.0.1")

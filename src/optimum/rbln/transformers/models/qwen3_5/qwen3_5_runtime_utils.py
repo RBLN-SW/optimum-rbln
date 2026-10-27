@@ -44,17 +44,28 @@ class RBLNQwen3_5RuntimeModel(RBLNRuntimeModel):
         self,
         *args,
         state_dtype: torch.dtype = torch.float32,
+        legacy_state_shapes: tuple[tuple[int, ...], tuple[int, ...]] | None = None,
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
         self.state_dtype = state_dtype
+        self._valid_mask_prefill_full = torch.ones(1, self.rbln_config.prefill_chunk_size, 1, dtype=state_dtype)
 
         # Prefill state mask: zeros on window 0 (fresh sequence), ones afterwards (carry over). One value per
         # cache row, and prefill runs one sequence per call, so one value. Decode reads no mask -- its graph
         # declares the input but nothing consumes it, so the compiler drops it and the runtime never takes it.
         self._state_mask_zeros = torch.zeros(1, dtype=state_dtype)
         self._state_mask_ones = torch.ones(1, dtype=state_dtype)
-        self._valid_mask_prefill_full = torch.ones(1, self.rbln_config.prefill_chunk_size, 1, dtype=state_dtype)
+
+        # An artifact from before the custom kernels gates each cache with a mask of that cache's own
+        # shape, under its own name, because its GatedDeltaNet multiplies the mask into the state it
+        # reads (`warn_deprecated_gdn_graph`). `_qwen3_5_setup_hybrid_runtime` sizes them.
+        self._legacy_state_masks = {}
+        if legacy_state_shapes is not None:
+            self._legacy_state_masks = {
+                f"{name}_mask": (torch.zeros(shape, dtype=state_dtype), torch.ones(shape, dtype=state_dtype))
+                for name, shape in zip(("conv_state", "recurrent_state"), legacy_state_shapes, strict=True)
+            }
 
     def _conv_tables(self, state_index, seq_idx, query_len, has_initial_state, tokens: int) -> dict:
         """The conv ring's index tables for one call, as named graph inputs (see CONV_TABLE_INPUTS)."""
@@ -172,9 +183,6 @@ class RBLNQwen3_5RuntimeModel(RBLNRuntimeModel):
             if self.rbln_config.use_lora:
                 named["lora_int_ids"] = lora_int_ids
 
-            # State mask: ZERO the carried state on the FIRST prefill window (fresh sequence -> no prior context)
-            named["state_mask"] = self._state_mask_zeros if step == 0 else self._state_mask_ones
-
             # Which max-batch slot of the linear state caches this per-item (batch=1) prefill reads/writes.
             if batch_idx is not None:
                 named["batch_idx"] = torch.tensor(batch_idx, dtype=torch.int16)
@@ -188,15 +196,26 @@ class RBLNQwen3_5RuntimeModel(RBLNRuntimeModel):
                 valid_mask = torch.zeros(input_chunk.shape[0], chunk, 1, dtype=self.state_dtype)
                 valid_mask[:, :valid_count] = 1.0
             named["valid_mask"] = valid_mask
-            named.update(
-                self._conv_tables(
-                    torch.tensor([batch_idx or 0]),
-                    cache_pos_chunk[:, 0],
-                    torch.tensor([valid_count]),
-                    torch.tensor([0 if step == 0 else 1]),
-                    chunk,
+
+            # The state gate: ZERO the carried state on the FIRST prefill window (fresh sequence -> no
+            # prior context), ones afterwards. An artifact from before the custom kernels takes one mask
+            # per cache under its own name instead, and no ring tables.
+            fresh = step == 0
+            if self.rbln_config.uses_custom_kernel:
+                named["state_mask"] = self._state_mask_zeros if fresh else self._state_mask_ones
+                named.update(
+                    self._conv_tables(
+                        torch.tensor([batch_idx or 0]),
+                        cache_pos_chunk[:, 0],
+                        torch.tensor([valid_count]),
+                        torch.tensor([0 if fresh else 1]),
+                        chunk,
+                    )
                 )
-            )
+            else:
+                named.update(
+                    {name: masks[0] if fresh else masks[1] for name, masks in self._legacy_state_masks.items()}
+                )
 
             # For logits_to_keep == 1 every window overwrites the single logits row, so the final value
             # is the last window's (the next-token logits). Intermediate windows only advance the states.
@@ -282,11 +301,13 @@ class RBLNQwen3_5RuntimeModel(RBLNRuntimeModel):
             named["attention_mask"] = attention_mask
         if self.rbln_config.use_lora:
             named["lora_int_ids"] = lora_int_ids
-        # Row b reads and writes cache row b, one token on.
-        ones = torch.ones(self.batch_size, dtype=torch.int32)
-        named.update(
-            self._conv_tables(torch.arange(self.batch_size), cache_position[:, 0], ones, ones, inputs.shape[1])
-        )
+        # Row b reads and writes cache row b, one token on. An artifact from before the custom kernels
+        # carries no ring, and its decode graph consumes no state mask, so it takes nothing here.
+        if self.rbln_config.uses_custom_kernel:
+            ones = torch.ones(self.batch_size, dtype=torch.int32)
+            named.update(
+                self._conv_tables(torch.arange(self.batch_size), cache_position[:, 0], ones, ones, inputs.shape[1])
+            )
 
         logits, hidden_states = self._run(named)
         return RBLNDecoderOnlyOutput(logits=logits, hidden_states=hidden_states)

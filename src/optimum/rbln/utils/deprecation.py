@@ -56,6 +56,22 @@ def _at_or_past_deprecation(current: str, deprecated: str) -> bool:
     return current_base >= packaging.version.Version(deprecated)
 
 
+def warn_deprecated_gdn_graph(version: str = "0.13.0") -> None:
+    """Report a Qwen3.5 artifact compiled before the GatedDeltaNet custom kernels.
+
+    Such an artifact holds a graph that runs its GatedDeltaNet in the graph, with its own cache
+    layouts and its own control inputs, so optimum-rbln drives it the way the version that compiled
+    it did. Recompiling moves it onto the kernels; at `version` that is the only thing it can do.
+    """
+    message = (
+        "This Qwen3.5 artifact was compiled before the GatedDeltaNet custom kernels, so optimum-rbln "
+        "runs its GatedDeltaNet in the graph. That path is deprecated"
+    )
+    if _at_or_past_deprecation(__version__, version):
+        raise ValueError(f"{message} and was removed in version {version}. Recompile the model.")
+    logger.warning_once(f"{message} and will be removed in version {version}. Recompile the model.")
+
+
 # Scenario Table for Deprecation Strategy Example
 # Assume that current version is v0.9.6 and the deprecated version is v0.10.0
 # |--------------------|----------------|----------------|---------------------------------------------|--------------------------------------------------------------------------------------|----------------------------------------------------------------------|

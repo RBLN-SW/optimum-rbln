@@ -35,7 +35,7 @@ from ....configuration_utils import RBLNCompileConfig
 from ....modeling import RBLNModel
 from ....modeling_rope_utils import build_qwen_mrope_lookup, np_cos, np_sin, qwen_vit_rot_pos_ids
 from ....utils import logging
-from ....utils.deprecation import deprecate_method
+from ....utils.deprecation import deprecate_method, warn_deprecated_gdn_graph
 from ...cache_utils import FullAttentionKVCacheMeta, LinearAttentionCacheMeta
 from ...modeling_outputs import RBLNDecoderOnlyOutput, _validate_output_hidden_states
 from ...utils.multimodal_batch_sort import RBLNQwenVLBatchSortMixin
@@ -82,6 +82,22 @@ def validate_gdn_custom_kernel(rbln_config) -> None:
             f"Qwen3.5 on RBLN needs `gdn_chunk_size` {MAX_GDN_CHUNK_SIZE}, got {rbln_config.gdn_chunk_size}. "
             "The `rbln_custom_ops::gdn_prefill` kernel takes 128-token chunks only."
         )
+
+
+def _resolve_gdn_custom_kernel(rbln_config) -> bool:
+    """Record which GatedDeltaNet path this compile takes, and refuse to compile the deprecated one.
+
+    Every compile takes the custom kernels. The field is written anyway, because a saved config
+    without it is how an artifact from before them is recognized at load. A caller that asks for
+    False is asking for the graph those kernels replaced, which this no longer builds.
+    """
+    if rbln_config.use_custom_kernel is False:
+        raise ValueError(
+            "`use_custom_kernel=False` marks an artifact compiled before the GatedDeltaNet custom "
+            "kernels. optimum-rbln loads such an artifact but does not compile one, so leave the "
+            "field unset."
+        )
+    return True
 
 
 def _qwen3_5_build_compile_context(compile_config, example_inputs):
@@ -132,6 +148,26 @@ def _qwen3_5_linear_state_shapes(text_config, batch_size: int):
     return conv_state_shape, recurrent_state_shape
 
 
+def _qwen3_5_legacy_linear_state_shapes(text_config, batch_size: int):
+    """The cache layouts of an artifact compiled before the custom kernels.
+
+    That graph runs the GatedDeltaNet itself, so it keeps the conv cache channel-last and the
+    recurrent state 3D. Nothing here can be inferred from the artifact -- the runtime needs these to
+    size the control masks it feeds such a graph -- so the layouts are restated. See
+    `warn_deprecated_gdn_graph`.
+    """
+    conv_dim = 2 * (text_config.linear_num_key_heads * text_config.linear_key_head_dim) + (
+        text_config.linear_num_value_heads * text_config.linear_value_head_dim
+    )
+    conv_state_shape = (batch_size, text_config.linear_conv_kernel_dim - 1, conv_dim)
+    recurrent_state_shape = (
+        batch_size,
+        text_config.linear_num_value_heads * text_config.linear_key_head_dim,
+        text_config.linear_value_head_dim,
+    )
+    return conv_state_shape, recurrent_state_shape
+
+
 def _qwen3_5_linear_layer_indices(model_config) -> list[int]:
     text_config = model_config.get_text_config()
     if getattr(text_config, "layer_types", None) is None:
@@ -155,23 +191,32 @@ def _qwen3_5_setup_hybrid_runtime(model):
         "state_dtype": model.dtype,
     }
 
+    # An artifact from before the custom kernels gates each cache with a mask of that cache's own
+    # shape, which only this side knows; one compiled with them takes a value per cache row instead.
+    legacy = not rbln_config.uses_custom_kernel
+    if legacy:
+        warn_deprecated_gdn_graph()
+
     # Prefill runs one item at a time and writes its `batch_position` slot; the underlying caches are
-    # max-batch (get_input_info).
+    # max-batch (get_input_info). Its masks gate the single slot the graph reads, so they are batch=1.
     model.prefill_decoder = RBLNQwen3_5RuntimeModel(
         runtime=model.model[0],
         phase="prefill",
         batch_size=rbln_config.batch_size,
         logits_last_dim=model.logits_last_dim,
+        legacy_state_shapes=_qwen3_5_legacy_linear_state_shapes(text_config, 1) if legacy else None,
         **common_kwargs,
     )
 
     if model.can_generate():
         model.decoders = {}
         for i, batch_size in enumerate(rbln_config.decoder_batch_sizes):
+            shapes = _qwen3_5_legacy_linear_state_shapes(text_config, batch_size) if legacy else None
             model.decoders[batch_size] = RBLNQwen3_5RuntimeModel(
                 runtime=model.model[i + 1],
                 phase="decode",
                 batch_size=batch_size,
+                legacy_state_shapes=shapes,
                 **common_kwargs,
             )
         model.decoder = model.decoders[rbln_config.batch_size]
@@ -202,6 +247,7 @@ class RBLNQwen3_5TextModel(RBLNDecoderOnlyModel):
     @classmethod
     def _update_rbln_config(cls, preprocessors=None, model=None, model_config=None, rbln_config=None):
         rbln_config.linear_attention_layers = _qwen3_5_linear_layer_indices(model_config)
+        rbln_config.use_custom_kernel = _resolve_gdn_custom_kernel(rbln_config)
         validate_gdn_custom_kernel(rbln_config)
         rbln_config = super()._update_rbln_config(
             preprocessors=preprocessors, model=model, model_config=model_config, rbln_config=rbln_config
@@ -633,6 +679,7 @@ class RBLNQwen3_5Model(RBLNDecoderOnlyModel):
     @classmethod
     def _update_rbln_config(cls, preprocessors=None, model=None, model_config=None, rbln_config=None):
         rbln_config.linear_attention_layers = _qwen3_5_linear_layer_indices(model_config)
+        rbln_config.use_custom_kernel = _resolve_gdn_custom_kernel(rbln_config)
         validate_gdn_custom_kernel(rbln_config)
         rbln_config = super()._update_rbln_config(
             preprocessors=preprocessors, model=model, model_config=model_config, rbln_config=rbln_config

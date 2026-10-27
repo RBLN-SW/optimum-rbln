@@ -22,7 +22,24 @@ from ..qwen3_vl.configuration_qwen3_vl import DeprecatedLoadVisualRuntimeMixin
 MAX_GDN_CHUNK_SIZE = 128
 
 
-class RBLNQwen3_5ForCausalLMConfig(RBLNDecoderOnlyModelForCausalLMConfig):
+class GdnCustomKernelMixin:
+    """Which GatedDeltaNet path the artifact this config describes was compiled for.
+
+    `use_custom_kernel` is written when the model is compiled, so a saved config that carries no
+    value at all was written before the custom kernels existed. `None` is therefore not a default
+    to fill in but the answer itself, and it has to survive `__init__`: a saved config comes back
+    through `cls(**config_file)`, where a missing key takes whatever `__init__` says.
+    """
+
+    use_custom_kernel: bool | None
+
+    @property
+    def uses_custom_kernel(self) -> bool:
+        """Whether the GatedDeltaNet runs as `rbln_custom_ops::gdn_*` rather than in the graph."""
+        return bool(self.use_custom_kernel)
+
+
+class RBLNQwen3_5ForCausalLMConfig(GdnCustomKernelMixin, RBLNDecoderOnlyModelForCausalLMConfig):
     """
     Configuration class for RBLN Qwen3.5 (text backbone) causal language models.
 
@@ -50,6 +67,7 @@ class RBLNQwen3_5ForCausalLMConfig(RBLNDecoderOnlyModelForCausalLMConfig):
         self,
         gdn_chunk_size: int | None = None,
         linear_attention_layers: list[int] | None = None,
+        use_custom_kernel: bool | None = None,
         **kwargs: Any,
     ):
         """
@@ -59,14 +77,19 @@ class RBLNQwen3_5ForCausalLMConfig(RBLNDecoderOnlyModelForCausalLMConfig):
                 delta rule. Must divide `prefill_chunk_size`. Defaults to `MAX_GDN_CHUNK_SIZE` (128).
             linear_attention_layers (list[int] | None): The linear_attention (GatedDeltaNet)
                 layer indices, populated automatically from `layer_types` at compile time (not user-set).
+            use_custom_kernel (Optional[bool]): Whether the GatedDeltaNet runs as the
+                `rbln_custom_ops::gdn_*` kernels. Set at compile time, not by the user. An artifact
+                compiled before those kernels carries no value here and runs the deprecated in-graph
+                path; see `warn_deprecated_gdn_graph`.
             kwargs: Additional arguments passed to `RBLNDecoderOnlyModelForCausalLMConfig`.
         """
         super().__init__(**kwargs)
         self.gdn_chunk_size = MAX_GDN_CHUNK_SIZE if gdn_chunk_size is None else gdn_chunk_size
         self.linear_attention_layers = linear_attention_layers or []
+        self.use_custom_kernel = use_custom_kernel
 
 
-class RBLNQwen3_5TextModelConfig(RBLNDecoderOnlyModelConfig):
+class RBLNQwen3_5TextModelConfig(GdnCustomKernelMixin, RBLNDecoderOnlyModelConfig):
     """
     Configuration class for the bare RBLN Qwen3.5 text backbone (no LM head, text-only).
 
@@ -78,6 +101,7 @@ class RBLNQwen3_5TextModelConfig(RBLNDecoderOnlyModelConfig):
         self,
         gdn_chunk_size: int | None = None,
         linear_attention_layers: list[int] | None = None,
+        use_custom_kernel: bool | None = None,
         **kwargs: Any,
     ):
         """
@@ -87,11 +111,16 @@ class RBLNQwen3_5TextModelConfig(RBLNDecoderOnlyModelConfig):
                 delta rule. Must divide `prefill_chunk_size`. Defaults to `MAX_GDN_CHUNK_SIZE` (128).
             linear_attention_layers (list[int] | None): The linear_attention (GatedDeltaNet)
                 layer indices, populated automatically from `layer_types` at compile time (not user-set).
+            use_custom_kernel (Optional[bool]): Whether the GatedDeltaNet runs as the
+                `rbln_custom_ops::gdn_*` kernels. Set at compile time, not by the user. An artifact
+                compiled before those kernels carries no value here and runs the deprecated in-graph
+                path; see `warn_deprecated_gdn_graph`.
             kwargs: Additional arguments passed to `RBLNDecoderOnlyModelConfig`.
         """
         super().__init__(**kwargs)
         self.gdn_chunk_size = MAX_GDN_CHUNK_SIZE if gdn_chunk_size is None else gdn_chunk_size
         self.linear_attention_layers = linear_attention_layers or []
+        self.use_custom_kernel = use_custom_kernel
 
 
 class RBLNQwen3_5VisionModelConfig(RBLNModelConfig):
@@ -129,7 +158,7 @@ class RBLNQwen3_5VisionModelConfig(RBLNModelConfig):
         self.max_seq_len = max_seq_len
 
 
-class RBLNQwen3_5ModelConfig(DeprecatedLoadVisualRuntimeMixin, RBLNDecoderOnlyModelConfig):
+class RBLNQwen3_5ModelConfig(GdnCustomKernelMixin, DeprecatedLoadVisualRuntimeMixin, RBLNDecoderOnlyModelConfig):
     """
     Configuration for the bare Qwen3.5 model (vision encoder + hybrid text, no LM head).
 
@@ -150,6 +179,7 @@ class RBLNQwen3_5ModelConfig(DeprecatedLoadVisualRuntimeMixin, RBLNDecoderOnlyMo
         self,
         gdn_chunk_size: int | None = None,
         linear_attention_layers: list[int] | None = None,
+        use_custom_kernel: bool | None = None,
         visual: RBLNModelConfig | None = None,
         _load_visual_runtime: bool | None = None,
         **kwargs: Any,
@@ -161,6 +191,10 @@ class RBLNQwen3_5ModelConfig(DeprecatedLoadVisualRuntimeMixin, RBLNDecoderOnlyMo
                 delta rule. Must divide `prefill_chunk_size`. Defaults to `MAX_GDN_CHUNK_SIZE` (128).
             linear_attention_layers (list[int] | None): The linear_attention (GatedDeltaNet)
                 layer indices, populated automatically from `layer_types` at compile time (not user-set).
+            use_custom_kernel (Optional[bool]): Whether the GatedDeltaNet runs as the
+                `rbln_custom_ops::gdn_*` kernels. Set at compile time, not by the user. An artifact
+                compiled before those kernels carries no value here and runs the deprecated in-graph
+                path; see `warn_deprecated_gdn_graph`.
             visual (Optional[RBLNModelConfig]): Configuration for the vision encoder submodule.
             _load_visual_runtime (bool | None): Deprecated. Use `visual={"create_runtimes": ...}` instead.
             kwargs: Additional arguments passed to `RBLNDecoderOnlyModelConfig`.
@@ -178,12 +212,13 @@ class RBLNQwen3_5ModelConfig(DeprecatedLoadVisualRuntimeMixin, RBLNDecoderOnlyMo
         self.visual = self.initialize_submodule_config(submodule_config=visual, force_kwargs=True, batch_size=1)
         self.gdn_chunk_size = MAX_GDN_CHUNK_SIZE if gdn_chunk_size is None else gdn_chunk_size
         self.linear_attention_layers = linear_attention_layers or []
+        self.use_custom_kernel = use_custom_kernel
         if _load_visual_runtime is not None:
             self._load_visual_runtime = _load_visual_runtime
 
 
 class RBLNQwen3_5ForConditionalGenerationConfig(
-    DeprecatedLoadVisualRuntimeMixin, RBLNDecoderOnlyModelForCausalLMConfig
+    GdnCustomKernelMixin, DeprecatedLoadVisualRuntimeMixin, RBLNDecoderOnlyModelForCausalLMConfig
 ):
     """
     Configuration for `RBLNQwen3_5ForConditionalGeneration` (vision-language).
@@ -217,6 +252,7 @@ class RBLNQwen3_5ForConditionalGenerationConfig(
         self,
         gdn_chunk_size: int | None = None,
         linear_attention_layers: list[int] | None = None,
+        use_custom_kernel: bool | None = None,
         use_inputs_embeds: bool = True,
         visual: RBLNModelConfig | None = None,
         _load_visual_runtime: bool | None = None,
@@ -229,6 +265,10 @@ class RBLNQwen3_5ForConditionalGenerationConfig(
                 `prefill_chunk_size`. Defaults to `MAX_GDN_CHUNK_SIZE` (128). See rbln_chunk_gated_delta_rule.
             linear_attention_layers (list[int] | None): The linear_attention (GatedDeltaNet)
                 layer indices, populated automatically from `layer_types` at compile time (not user-set).
+            use_custom_kernel (Optional[bool]): Whether the GatedDeltaNet runs as the
+                `rbln_custom_ops::gdn_*` kernels. Set at compile time, not by the user. An artifact
+                compiled before those kernels carries no value here and runs the deprecated in-graph
+                path; see `warn_deprecated_gdn_graph`.
             use_inputs_embeds (bool): Must be True — the vision encoder output is injected into inputs_embeds.
             visual (Optional[RBLNModelConfig]): Configuration for the vision encoder submodule.
             _load_visual_runtime (bool | None): Deprecated. Use `visual={"create_runtimes": ...}` instead.
@@ -247,6 +287,7 @@ class RBLNQwen3_5ForConditionalGenerationConfig(
         self.visual = self.initialize_submodule_config(submodule_config=visual, force_kwargs=True, batch_size=1)
         self.gdn_chunk_size = MAX_GDN_CHUNK_SIZE if gdn_chunk_size is None else gdn_chunk_size
         self.linear_attention_layers = linear_attention_layers or []
+        self.use_custom_kernel = use_custom_kernel
         if _load_visual_runtime is not None:
             self._load_visual_runtime = _load_visual_runtime
 
