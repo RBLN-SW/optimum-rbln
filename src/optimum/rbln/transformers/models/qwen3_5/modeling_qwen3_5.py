@@ -72,12 +72,6 @@ def validate_gdn_defaults(rbln_config) -> None:
             f"{rbln_config.gdn_chunk_size} and prefill_chunk_size={rbln_config.prefill_chunk_size}. "
             f"Set gdn_chunk_size to a divisor of prefill_chunk_size that is <= {MAX_GDN_CHUNK_SIZE}."
         )
-    # The linear_attention state is addressed by batch row, so a request is pinned to its row.
-    if rbln_config.use_multiple_decoder:
-        raise ValueError(
-            f"Qwen3.5 takes one decoder batch size, got {rbln_config.decoder_batch_sizes}. "
-            "It does not support decoder batch bucketing."
-        )
 
 
 def _qwen3_5_build_compile_context(compile_config, example_inputs):
