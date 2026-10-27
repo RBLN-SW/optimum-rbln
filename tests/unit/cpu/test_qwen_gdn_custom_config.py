@@ -194,27 +194,15 @@ def test_gdn_custom_model_batched_decode(ratio):
             _compare(outputs, states, ratio, position)
 
 
-def _text_config(**overrides):
-    dims = {"linear_num_value_heads": 6, "linear_key_head_dim": 128, "linear_value_head_dim": 128, **overrides}
-    return Qwen3_5TextConfig(hidden_size=64, linear_num_key_heads=2, **dims)
-
-
-@pytest.mark.parametrize(
-    "overrides, gdn_chunk_size, npu, message",
-    [
-        ({"linear_key_head_dim": 64}, 128, None, "linear_key_head_dim"),
-        ({"linear_value_head_dim": 64}, 128, None, "linear_value_head_dim"),
-        ({}, 64, None, "gdn_chunk_size"),
-    ],
-)
-def test_gdn_custom_kernel_rejects_what_the_ops_do_not_serve(overrides, gdn_chunk_size, npu, message):
+@pytest.mark.parametrize("gdn_chunk_size", [64, 32])
+def test_gdn_custom_kernel_rejects_what_the_ops_do_not_serve(gdn_chunk_size):
     # The core always runs as the ops, so a configuration they cannot take fails at config time with a
     # message that names the field, not at compile time as a shape mismatch.
     config = RBLNQwen3_5TextModelConfig(
-        max_seq_len=4096, batch_size=1, prefill_chunk_size=512, gdn_chunk_size=gdn_chunk_size, npu=npu
+        max_seq_len=4096, batch_size=1, prefill_chunk_size=512, gdn_chunk_size=gdn_chunk_size
     )
-    with pytest.raises(ValueError, match=message):
-        validate_gdn_custom_kernel(_text_config(**overrides), config)
+    with pytest.raises(ValueError, match="gdn_chunk_size"):
+        validate_gdn_custom_kernel(config)
 
 
 @pytest.mark.parametrize("npu", ["RBLN-CA25", "RBLN-CA22", "RBLN-CR13", None])
@@ -223,7 +211,7 @@ def test_gdn_custom_kernel_takes_every_target(npu):
     config = RBLNQwen3_5TextModelConfig(
         max_seq_len=4096, batch_size=1, prefill_chunk_size=512, gdn_chunk_size=128, npu=npu
     )
-    validate_gdn_custom_kernel(_text_config(), config)
+    validate_gdn_custom_kernel(config)
 
 
 def test_gdn_custom_kernel_validates_before_the_defaults_are_filled():
@@ -233,4 +221,4 @@ def test_gdn_custom_kernel_validates_before_the_defaults_are_filled():
     config = RBLNQwen3_5TextModelConfig(max_seq_len=4096, batch_size=1)
     assert config.prefill_chunk_size is None
 
-    validate_gdn_custom_kernel(_text_config(), config)
+    validate_gdn_custom_kernel(config)

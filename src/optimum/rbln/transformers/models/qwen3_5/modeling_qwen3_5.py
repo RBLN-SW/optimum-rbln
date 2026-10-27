@@ -59,17 +59,11 @@ from .qwen3_5_runtime_utils import RBLNQwen3_5RuntimeModel
 logger = logging.get_logger(__name__)
 
 
-def validate_gdn_custom_kernel(model_config, rbln_config) -> None:
+def validate_gdn_custom_kernel(rbln_config) -> None:
     """Reject a configuration the GatedDeltaNet custom ops do not serve.
 
-    The core always runs as `rbln_custom_ops::gdn_*` and the short conv in front of it as
-    `causal_conv1d_ring_tabled`, so a configuration they cannot take fails here rather than at
-    compile time, where the converter reports it as a shape mismatch.
-
     Runs before `super()._update_rbln_config` fills the defaults, so it reads no field that
-    `set_default_values` owns -- `prefill_chunk_size` is still None here. It does not need to: the
-    ops want a prefill window that is a multiple of 128, and `_update_rbln_config` already rejects a
-    `gdn_chunk_size` that does not divide `prefill_chunk_size`, so `gdn_chunk_size == 128` gives it.
+    `set_default_values` owns -- `prefill_chunk_size` is still None here.
     """
     wanted = ("gdn_prefill", "gdn_decode", "causal_conv1d_ring_tabled")
     missing = [name for name in wanted if not hasattr(torch.ops.rbln_custom_ops, name)]
@@ -80,14 +74,9 @@ def validate_gdn_custom_kernel(model_config, rbln_config) -> None:
             "that provides them."
         )
 
-    text_config = model_config.get_text_config()
-    head_dims = (text_config.linear_key_head_dim, text_config.linear_value_head_dim)
-    if head_dims != (128, 128):
-        raise ValueError(
-            f"Qwen3.5 on RBLN needs `linear_key_head_dim` and `linear_value_head_dim` of 128, got {head_dims}. "
-            "The `rbln_custom_ops::gdn_*` kernels take that head dimension only."
-        )
-
+    # The kernel takes 128-token chunks whatever this field holds, and wants a prefill window that is
+    # a multiple of 128. `_update_rbln_config` asks only that the field be <= 128 and divide the
+    # window, which 64 also does -- and `gdn_chunk_size=64` then lets a window of 320 through too.
     if rbln_config.gdn_chunk_size != MAX_GDN_CHUNK_SIZE:
         raise ValueError(
             f"Qwen3.5 on RBLN needs `gdn_chunk_size` {MAX_GDN_CHUNK_SIZE}, got {rbln_config.gdn_chunk_size}. "
@@ -213,7 +202,7 @@ class RBLNQwen3_5TextModel(RBLNDecoderOnlyModel):
     @classmethod
     def _update_rbln_config(cls, preprocessors=None, model=None, model_config=None, rbln_config=None):
         rbln_config.linear_attention_layers = _qwen3_5_linear_layer_indices(model_config)
-        validate_gdn_custom_kernel(model_config, rbln_config)
+        validate_gdn_custom_kernel(rbln_config)
         rbln_config = super()._update_rbln_config(
             preprocessors=preprocessors, model=model, model_config=model_config, rbln_config=rbln_config
         )
@@ -650,7 +639,7 @@ class RBLNQwen3_5Model(RBLNDecoderOnlyModel):
     @classmethod
     def _update_rbln_config(cls, preprocessors=None, model=None, model_config=None, rbln_config=None):
         rbln_config.linear_attention_layers = _qwen3_5_linear_layer_indices(model_config)
-        validate_gdn_custom_kernel(model_config, rbln_config)
+        validate_gdn_custom_kernel(rbln_config)
         rbln_config = super()._update_rbln_config(
             preprocessors=preprocessors, model=model, model_config=model_config, rbln_config=rbln_config
         )
