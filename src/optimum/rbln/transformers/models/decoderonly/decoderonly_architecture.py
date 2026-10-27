@@ -32,6 +32,20 @@ if TYPE_CHECKING:
 logger = logging.get_logger(__name__)
 
 
+@torch.compiler.assume_constant_result
+def _op_accepts(op_name: str, arg_name: str) -> bool:
+    op = getattr(torch.ops.rbln_custom_ops, op_name)
+    return any(arg.name == arg_name for arg in op.default._schema.arguments)
+
+
+class NestedCompileRegionMixin:
+    """Preserve a decoder forward as a nested region through module cloning and export."""
+
+    @torch.compiler.nested_compile_region
+    def forward(self, *args, **kwargs):
+        return super().forward(*args, **kwargs)
+
+
 class DecoderOnlyWrapper(nn.Module):
     """A wrapper class for decoder-only language models that handles RBLN-specific optimizations and requirements.
 
@@ -76,6 +90,10 @@ class DecoderOnlyWrapper(nn.Module):
             )
 
         self.model = self.convert_to_rbln_class(model, rbln_config.max_seq_len, use_rotary_emb)
+        if rbln_config.nested_compile_region and not any(
+            isinstance(layer, NestedCompileRegionMixin) for layer in self.model.modules()
+        ):
+            raise ValueError("nested_compile_region requires NestedCompileRegionMixin instances.")
         self.num_hidden_layers = getattr(self.config, "num_hidden_layers", None) or self.config.n_layer
         self._phase = "prefill"
 
@@ -95,7 +113,7 @@ class DecoderOnlyWrapper(nn.Module):
         return DecoderOnlyAttention
 
     def get_rbln_layer_class(self):
-        return DecoderOnlyLayer
+        return DecoderOnlyLayerRegion if self.rbln_config.nested_compile_region else DecoderOnlyLayer
 
     def get_rbln_model_class(self):
         return DecoderOnlyModel
@@ -541,7 +559,7 @@ class DecoderOnlyModel(nn.Module):
             if output_hidden_states:
                 all_hidden_states += (hidden_states,)
 
-            is_sliding = True if layer_idx in self.sliding_window_layers else False
+            is_sliding = layer_idx in self.sliding_window_layers
             is_sliding_decode = is_sliding and self.phase == "decode"
             hidden_states = layer(
                 hidden_states=hidden_states,
@@ -691,6 +709,10 @@ class DecoderOnlyLayer(nn.Module):
         hidden_states = residual + hidden_states
 
         return hidden_states
+
+
+class DecoderOnlyLayerRegion(NestedCompileRegionMixin, DecoderOnlyLayer):
+    """Decoder layer with a nested compile region around its forward call."""
 
 
 class DecoderOnlyAttention(nn.Module):
@@ -1030,15 +1052,15 @@ class AttentionOp(nn.Module):
         if self.use_attention_mask:
             op_args["mask"] = attn_mask
 
-        if self.phase == "prefill" or self.phase == "image_prefill":
+        if self.phase in {"prefill", "image_prefill"}:
             use_image_prefill = getattr(self.rbln_config, "use_image_prefill", False)
             if use_image_prefill:
                 op_args["is_bidirectional"] = self.phase == "image_prefill"
+            elif not self.use_attention_mask or self.rbln_config.use_position_ids:
+                op_args["is_bidirectional"] = self.rbln_config._is_prefix_lm
             else:
-                if not self.use_attention_mask:
-                    op_args["is_bidirectional"] = False
-                elif self.use_attention_mask and self.rbln_config.use_position_ids:
-                    op_args["is_bidirectional"] = True
+                # paged_attn_* (mask without position ids): the custom op has no is_bidirectional argument
+                pass
 
         if self.quantization and self.quantization.kv_caches == "fp8":
             if past_key_state.dtype != torch.float8_e4m3fn:
@@ -1053,6 +1075,10 @@ class AttentionOp(nn.Module):
         attn_op = getattr(torch.ops.rbln_custom_ops, attn_op_name, None)
         if attn_op is None:
             raise ValueError(f"Attention operator {attn_op_name} not found.")
+
+        # Tell the compiler the batch arrives length-sorted; older compilers lack the arg.
+        if getattr(self.rbln_config, "requires_batch_sort", None) and _op_accepts(attn_op_name, "is_prompt_sorted"):
+            op_args["is_prompt_sorted"] = True
 
         attn_output = attn_op(**op_args)
         attn_output = attn_output.view(batch_size, self.num_heads, -1, self.head_dim)
@@ -1151,15 +1177,15 @@ class FlashAttentionOp(AttentionOp):
         if self.use_attention_mask:
             op_args["mask"] = attn_mask
 
-        if self.phase == "prefill" or self.phase == "image_prefill":
+        if self.phase in {"prefill", "image_prefill"}:
             use_image_prefill = getattr(self.rbln_config, "use_image_prefill", False)
             if use_image_prefill:
                 op_args["is_bidirectional"] = self.phase == "image_prefill"
+            elif not self.use_attention_mask or self.rbln_config.use_position_ids:
+                op_args["is_bidirectional"] = self.rbln_config._is_prefix_lm
             else:
-                if not self.use_attention_mask:
-                    op_args["is_bidirectional"] = False
-                elif self.use_attention_mask and self.rbln_config.use_position_ids:
-                    op_args["is_bidirectional"] = True
+                # paged_attn_* (mask without position ids): the custom op has no is_bidirectional argument
+                pass
 
         if self.quantization and self.quantization.kv_caches == "fp8":
             if past_key_state.dtype != torch.float8_e4m3fn:
@@ -1174,6 +1200,10 @@ class FlashAttentionOp(AttentionOp):
         attn_op = getattr(torch.ops.rbln_custom_ops, attn_op_name, None)
         if attn_op is None:
             raise ValueError(f"Attention operator {attn_op_name} not found.")
+
+        # Tell the compiler the batch arrives length-sorted; older compilers lack the arg.
+        if getattr(self.rbln_config, "requires_batch_sort", None) and _op_accepts(attn_op_name, "is_prompt_sorted"):
+            op_args["is_prompt_sorted"] = True
 
         attn_output = attn_op(**op_args)
         attn_output = attn_output.view(batch_size, self.num_heads, -1, self.head_dim)
@@ -1225,7 +1255,8 @@ class SlidingWindowAttentionOp(AttentionOp):
         s_aux: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         assert self.quantization is None, "Sliding window attention does not support quantization"
-        assert k_scale is None and v_scale is None, "Sliding window attention does not support quantization"
+        assert k_scale is None, "Sliding window attention does not support quantization"
+        assert v_scale is None, "Sliding window attention does not support quantization"
 
         # reshape for removing repeat_kv (batch=1 , num_head, 1, q_len=1, head_dim)
         key_state = key_state.unsqueeze(2)
@@ -1257,15 +1288,12 @@ class SlidingWindowAttentionOp(AttentionOp):
             "block_size": block_size,
         }
 
-        if self.phase == "prefill" or self.phase == "image_prefill":
+        if self.phase in {"prefill", "image_prefill"}:
             use_image_prefill = getattr(self.rbln_config, "use_image_prefill", False)
             if use_image_prefill:
                 op_args["is_bidirectional"] = self.phase == "image_prefill"
             else:
-                if self.use_attention_mask and self.rbln_config.use_position_ids:
-                    op_args["is_bidirectional"] = True
-                else:
-                    op_args["is_bidirectional"] = False
+                op_args["is_bidirectional"] = self.rbln_config._is_prefix_lm
 
         if self.phase == "decode":
             op_args["attn_mask"] = attn_mask
@@ -1285,6 +1313,10 @@ class SlidingWindowAttentionOp(AttentionOp):
         attn_op = getattr(torch.ops.rbln_custom_ops, attn_op_name, None)
         if attn_op is None:
             raise ValueError(f"Attention operator {attn_op_name} not found.")
+
+        # Tell the compiler the batch arrives length-sorted; older compilers lack the arg.
+        if getattr(self.rbln_config, "requires_batch_sort", None) and _op_accepts(attn_op_name, "is_prompt_sorted"):
+            op_args["is_prompt_sorted"] = True
 
         attn_output = attn_op(**op_args)
         attn_output = attn_output.view(batch_size, self.num_heads, -1, self.head_dim)

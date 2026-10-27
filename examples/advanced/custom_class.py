@@ -86,7 +86,7 @@ class RBLNResNetModel(RBLNModel):
         return rbln_config
 
     def forward(self, pixel_values, return_dict: bool | None = None, **kwargs):
-        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+        return_dict = return_dict if return_dict is not None else self.config.return_dict
 
         # self.model is a list of rebel.Runtime objects
         # See https://docs.rbln.ai/software/api/python/python_api.html#rebel.rebel_runtime.Runtime for more details
@@ -109,7 +109,7 @@ class RBLNResNetModel(RBLNModel):
 # - batch_size: Batch size for inference
 # - image_size: Input image dimensions (height, width)
 class RBLNResNetModelConfig(RBLNModelConfig):
-    def __init__(self, batch_size: int = None, image_size: tuple[int, int] | None = None, **kwargs):
+    def __init__(self, batch_size: int | None = None, image_size: tuple[int, int] | None = None, **kwargs):
         super().__init__(**kwargs)
         self.batch_size = batch_size or 1
         self.image_size = image_size or (224, 224)

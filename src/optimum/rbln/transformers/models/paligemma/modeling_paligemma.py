@@ -16,7 +16,7 @@ import importlib
 import inspect
 from collections.abc import Callable, Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import torch
 from transformers import (
@@ -40,9 +40,6 @@ from ..decoderonly.modeling_decoderonly import RBLNDecoderOnlyOutput
 
 
 logger = get_logger(__name__)
-
-if TYPE_CHECKING:
-    from transformers import PretrainedConfig
 
 
 class LoopVisionTower(LoopProcessor):
@@ -95,7 +92,7 @@ class RBLNPaliGemmaForConditionalGeneration(RBLNModel, RBLNImageIndexedBatchSort
         {"name": "language_model"},
     ]
     # one image per sample: pixel_values is batch-first (batch_size, C, H, W)
-    _batch_sortable_kwargs = RBLNImageIndexedBatchSortMixin._batch_sortable_kwargs + ("pixel_values",)
+    _batch_sortable_kwargs = (*RBLNImageIndexedBatchSortMixin._batch_sortable_kwargs, "pixel_values")
 
     def __getattr__(self, __name: str) -> Any:
         def redirect(func):
@@ -122,8 +119,12 @@ class RBLNPaliGemmaForConditionalGeneration(RBLNModel, RBLNImageIndexedBatchSort
     ):
         if submodule_name == "language_model":
             submodule_config.use_sliding_window = False
-        else:
-            return submodule_rbln_config
+            if not (submodule_rbln_config.use_attention_mask and submodule_rbln_config.use_position_ids):
+                raise ValueError(
+                    "PaliGemma's language model prefills bidirectionally over the prompt, which requires "
+                    "use_attention_mask=True and use_position_ids=True."
+                )
+            submodule_rbln_config._is_prefix_lm = True
 
         return submodule_rbln_config
 
@@ -326,7 +327,7 @@ class RBLNPaliGemmaForConditionalGeneration(RBLNModel, RBLNImageIndexedBatchSort
         inputs_sorted: bool = False,
         **kwargs,
     ) -> tuple | RBLNDecoderOnlyOutput:
-        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+        return_dict = return_dict if return_dict is not None else self.config.return_dict
         self._require_sorted_batch_inputs(inputs_embeds if inputs_embeds is not None else input_ids, inputs_sorted)
         # Prefill
         if cache_position is None:
@@ -439,8 +440,12 @@ class RBLNPaliGemmaModel(RBLNModel):
     ):
         if submodule_name == "language_model":
             submodule_config.use_sliding_window = False
-        else:
-            return submodule_rbln_config
+            if not (submodule_rbln_config.use_attention_mask and submodule_rbln_config.use_position_ids):
+                raise ValueError(
+                    "PaliGemma's language model prefills bidirectionally over the prompt, which requires "
+                    "use_attention_mask=True and use_position_ids=True."
+                )
+            submodule_rbln_config._is_prefix_lm = True
 
         return submodule_rbln_config
 
@@ -562,7 +567,7 @@ class RBLNPaliGemmaModel(RBLNModel):
         Returns:
             PaligemmaModelOutputWithPast or tuple(torch.FloatTensor)
         """
-        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+        return_dict = return_dict if return_dict is not None else self.config.return_dict
         output_hidden_states = (
             output_hidden_states if output_hidden_states is not None else self.rbln_config.output_hidden_states
         )

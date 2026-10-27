@@ -45,7 +45,7 @@ from .configuration_qwen3_5 import (
     MAX_GDN_CHUNK_SIZE,
     RBLNQwen3_5ForConditionalGenerationConfig,  # noqa: F401
     RBLNQwen3_5ModelConfig,  # noqa: F401
-    RBLNQwen3_5VisionModelConfig,  # noqa: F401
+    RBLNQwen3_5VisionModelConfig,
 )
 from .qwen3_5_architecture import (
     CONV_TABLE_INPUTS,
@@ -599,12 +599,6 @@ class RBLNQwen3_5Model(RBLNDecoderOnlyModel):
     _get_rope_index_func = Qwen3_5Model.get_rope_index
     get_vision_position_ids = Qwen3_5Model.get_vision_position_ids
 
-    @classmethod
-    def _load_submodules(cls, model_save_dir, rbln_config, model=None, **kwargs):
-        if model is None and not getattr(rbln_config, "_load_visual_runtime", True):
-            return []
-        return super()._load_submodules(model_save_dir, rbln_config, model=model, **kwargs)
-
     def __post_init__(self, **kwargs):
         if hasattr(self.config, "embedding_dim"):
             self.embedding_dim = self.config.embedding_dim
@@ -613,7 +607,7 @@ class RBLNQwen3_5Model(RBLNDecoderOnlyModel):
                 text_config=self.config.text_config, vision_config=self.config.vision_config
             )
         super().__post_init__(**kwargs)
-        self.visual = self.rbln_submodules[0] if self.rbln_submodules else None
+        self.visual = self.rbln_submodules[0]
         self.rotary_emb = build_qwen_mrope_lookup(
             self._rotary_emb_class(self.config.text_config), self.rbln_config.max_seq_len
         )
@@ -764,7 +758,7 @@ class RBLNQwen3_5Model(RBLNDecoderOnlyModel):
         output_hidden_states: bool | None = None,
         **kwargs,
     ) -> RBLNDecoderOnlyOutput:
-        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+        return_dict = return_dict if return_dict is not None else self.config.return_dict
         output_hidden_states = _validate_output_hidden_states(output_hidden_states, self.rbln_config)
         if attention_mask is None:
             attention_mask = torch.ones_like(input_ids)
@@ -952,7 +946,7 @@ class RBLNQwen3_5ForConditionalGeneration(RBLNQwenVLBatchSortMixin, RBLNQwen3_5M
         inputs_sorted: bool = False,
         **kwargs,
     ) -> RBLNDecoderOnlyOutput:
-        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+        return_dict = return_dict if return_dict is not None else self.config.return_dict
         self._require_sorted_batch_inputs(input_ids if input_ids is not None else inputs_embeds, inputs_sorted)
         output_hidden_states = _validate_output_hidden_states(output_hidden_states, self.rbln_config)
         text_config = self.config.get_text_config()

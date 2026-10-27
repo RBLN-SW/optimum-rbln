@@ -16,6 +16,7 @@ from typing import Any
 
 from ....configuration_utils import RBLNModelConfig
 from ..decoderonly.configuration_decoderonly import RBLNDecoderOnlyModelConfig, RBLNDecoderOnlyModelForCausalLMConfig
+from ..qwen3_vl.configuration_qwen3_vl import DeprecatedLoadVisualRuntimeMixin
 
 
 MAX_GDN_CHUNK_SIZE = 128
@@ -128,7 +129,7 @@ class RBLNQwen3_5VisionModelConfig(RBLNModelConfig):
         self.max_seq_len = max_seq_len
 
 
-class RBLNQwen3_5ModelConfig(RBLNDecoderOnlyModelConfig):
+class RBLNQwen3_5ModelConfig(DeprecatedLoadVisualRuntimeMixin, RBLNDecoderOnlyModelConfig):
     """
     Configuration for the bare Qwen3.5 model (vision encoder + hybrid text, no LM head).
 
@@ -140,14 +141,17 @@ class RBLNQwen3_5ModelConfig(RBLNDecoderOnlyModelConfig):
     """
 
     submodules = ["visual"]
-    subclass_non_save_attributes = ["_load_visual_runtime", "memory_budget"]
+    subclass_non_save_attributes = [
+        *RBLNDecoderOnlyModelConfig.subclass_non_save_attributes,
+        "_load_visual_runtime",
+    ]
 
     def __init__(
         self,
         gdn_chunk_size: int | None = None,
         linear_attention_layers: list[int] | None = None,
         visual: RBLNModelConfig | None = None,
-        _load_visual_runtime: bool = True,
+        _load_visual_runtime: bool | None = None,
         **kwargs: Any,
     ):
         """
@@ -158,8 +162,7 @@ class RBLNQwen3_5ModelConfig(RBLNDecoderOnlyModelConfig):
             linear_attention_layers (list[int] | None): The linear_attention (GatedDeltaNet)
                 layer indices, populated automatically from `layer_types` at compile time (not user-set).
             visual (Optional[RBLNModelConfig]): Configuration for the vision encoder submodule.
-            _load_visual_runtime (bool): Whether to create the visual encoder runtime (False on
-                decoder-only nodes in a disaggregated setup). Defaults to True.
+            _load_visual_runtime (bool | None): Deprecated. Use `visual={"create_runtimes": ...}` instead.
             kwargs: Additional arguments passed to `RBLNDecoderOnlyModelConfig`.
 
         Raises:
@@ -173,12 +176,15 @@ class RBLNQwen3_5ModelConfig(RBLNDecoderOnlyModelConfig):
             )
         # The vision encoder runs one image at a time, so force batch_size=1 on the submodule.
         self.visual = self.initialize_submodule_config(submodule_config=visual, force_kwargs=True, batch_size=1)
-        self._load_visual_runtime = _load_visual_runtime
         self.gdn_chunk_size = MAX_GDN_CHUNK_SIZE if gdn_chunk_size is None else gdn_chunk_size
         self.linear_attention_layers = linear_attention_layers or []
+        if _load_visual_runtime is not None:
+            self._load_visual_runtime = _load_visual_runtime
 
 
-class RBLNQwen3_5ForConditionalGenerationConfig(RBLNDecoderOnlyModelForCausalLMConfig):
+class RBLNQwen3_5ForConditionalGenerationConfig(
+    DeprecatedLoadVisualRuntimeMixin, RBLNDecoderOnlyModelForCausalLMConfig
+):
     """
     Configuration for `RBLNQwen3_5ForConditionalGeneration` (vision-language).
 
@@ -202,7 +208,10 @@ class RBLNQwen3_5ForConditionalGenerationConfig(RBLNDecoderOnlyModelForCausalLMC
     """
 
     submodules = ["visual"]
-    subclass_non_save_attributes = ["_load_visual_runtime", "memory_budget"]
+    subclass_non_save_attributes = [
+        *RBLNDecoderOnlyModelForCausalLMConfig.subclass_non_save_attributes,
+        "_load_visual_runtime",
+    ]
 
     def __init__(
         self,
@@ -210,7 +219,7 @@ class RBLNQwen3_5ForConditionalGenerationConfig(RBLNDecoderOnlyModelForCausalLMC
         linear_attention_layers: list[int] | None = None,
         use_inputs_embeds: bool = True,
         visual: RBLNModelConfig | None = None,
-        _load_visual_runtime: bool = True,
+        _load_visual_runtime: bool | None = None,
         **kwargs: Any,
     ):
         """
@@ -222,9 +231,7 @@ class RBLNQwen3_5ForConditionalGenerationConfig(RBLNDecoderOnlyModelForCausalLMC
                 layer indices, populated automatically from `layer_types` at compile time (not user-set).
             use_inputs_embeds (bool): Must be True — the vision encoder output is injected into inputs_embeds.
             visual (Optional[RBLNModelConfig]): Configuration for the vision encoder submodule.
-            _load_visual_runtime (bool): Whether to create the visual encoder runtime. Set False on
-                decoder-only nodes in a disaggregated setup (then pre-computed image_embeds must be fed to
-                forward()). Defaults to True.
+            _load_visual_runtime (bool | None): Deprecated. Use `visual={"create_runtimes": ...}` instead.
             kwargs: Additional arguments passed to `RBLNDecoderOnlyModelForCausalLMConfig`.
 
         Raises:
@@ -238,9 +245,10 @@ class RBLNQwen3_5ForConditionalGenerationConfig(RBLNDecoderOnlyModelForCausalLMC
             )
         # The vision encoder runs one image at a time, so force batch_size=1 on the submodule.
         self.visual = self.initialize_submodule_config(submodule_config=visual, force_kwargs=True, batch_size=1)
-        self._load_visual_runtime = _load_visual_runtime
         self.gdn_chunk_size = MAX_GDN_CHUNK_SIZE if gdn_chunk_size is None else gdn_chunk_size
         self.linear_attention_layers = linear_attention_layers or []
+        if _load_visual_runtime is not None:
+            self._load_visual_runtime = _load_visual_runtime
 
 
 __all__ = [

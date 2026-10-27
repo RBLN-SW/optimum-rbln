@@ -21,6 +21,7 @@ from ..decoderonly.decoderonly_architecture import (
     DecoderOnlyLayer,
     DecoderOnlyModel,
     DecoderOnlyWrapper,
+    NestedCompileRegionMixin,
     RotaryEmbedding,
     build_image_prefill_swa_custom_op_args,
     slice_and_unsqueeze_cos_sin,
@@ -42,7 +43,7 @@ class Gemma3ForCausalLMWrapper(DecoderOnlyWrapper):
         return Gemma3Attention
 
     def get_rbln_layer_class(self):
-        return Gemma3DecoderLayer
+        return Gemma3DecoderLayerRegion if self.rbln_config.nested_compile_region else Gemma3DecoderLayer
 
     def get_rbln_model_class(self):
         return Gemma3TextModel
@@ -104,7 +105,7 @@ class Gemma3TextModel(DecoderOnlyModel):
         for layer_idx, layer in enumerate(self.layers):
             if output_hidden_states:
                 all_hidden_states += (hidden_states,)
-            is_sliding = True if layer_idx in self.sliding_window_layers else False
+            is_sliding = layer_idx in self.sliding_window_layers
             use_swa_mask = is_sliding and self.phase in ("decode", "image_prefill")
             hidden_states = layer(
                 hidden_states=hidden_states,
@@ -162,6 +163,10 @@ class Gemma3DecoderLayer(DecoderOnlyLayer):
         hidden_states = residual + hidden_states
 
         return hidden_states
+
+
+class Gemma3DecoderLayerRegion(NestedCompileRegionMixin, Gemma3DecoderLayer):
+    """Decoder layer with a nested compile region around its forward call."""
 
 
 class Gemma3Attention(DecoderOnlyAttention):

@@ -101,7 +101,7 @@ def get_image_features(
     output_hidden_states = (
         output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
     )
-    return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+    return_dict = return_dict if return_dict is not None else self.config.return_dict
 
     return self(
         pixel_values,
@@ -201,7 +201,7 @@ class RBLNRetinaFaceFilter(RetinaFaceFilter):
             )
         except RuntimeError as e:
             error_msg = (
-                f"\nFailed to create RBLN runtime: {str(e)}\n\n"
+                f"\nFailed to create RBLN runtime: {e!s}\n\n"
                 f"If you only need to compile the model without loading it to NPU, you can use:\n"
                 f"  from_pretrained(..., rbln_create_runtimes=False) or\n"
                 f"  from_pretrained(..., rbln_config={{..., 'create_runtimes': False}})\n\n"
@@ -277,7 +277,7 @@ class RBLNVideoSafetyModel(VideoSafetyModel):
             )
         except RuntimeError as e:
             error_msg = (
-                f"\nFailed to create RBLN runtime: {str(e)}\n\n"
+                f"\nFailed to create RBLN runtime: {e!s}\n\n"
                 f"If you only need to compile the model without loading it to NPU, you can use:\n"
                 f"  from_pretrained(..., rbln_create_runtimes=False) or\n"
                 f"  from_pretrained(..., rbln_config={{..., 'create_runtimes': False}})\n\n"

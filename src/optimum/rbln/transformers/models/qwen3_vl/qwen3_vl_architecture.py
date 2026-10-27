@@ -15,7 +15,7 @@
 from typing import TYPE_CHECKING
 
 import torch
-import torch.nn as nn
+from torch import nn
 from transformers import PreTrainedModel
 
 from ..decoderonly.decoderonly_architecture import (
@@ -57,10 +57,7 @@ class Qwen3VLVisionModelWrapper(nn.Module):
         blocks: torch.nn.ModuleList,
         rbln_config: RBLNQwen3VLVisionModelConfig,
     ):
-        wrapped_blocks = []
-        for block in blocks:
-            wrapped_blocks.append(Qwen3VLVisionBlock(block, rbln_config))
-        return nn.ModuleList(wrapped_blocks)
+        return nn.ModuleList([Qwen3VLVisionBlock(block, rbln_config) for block in blocks])
 
     def forward(
         self,
@@ -430,7 +427,7 @@ class Qwen3VLDecoderOnlyModel(DecoderOnlyModel):
             if output_hidden_states:
                 all_hidden_states += (hidden_states,)
 
-            is_sliding = True if layer_idx in self.sliding_window_layers else False
+            is_sliding = layer_idx in self.sliding_window_layers
             is_sliding_decode = is_sliding and self.phase == "decode"
             hidden_states = layer(
                 hidden_states=hidden_states,

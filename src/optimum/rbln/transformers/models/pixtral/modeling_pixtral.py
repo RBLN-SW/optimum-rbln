@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING, Any, Optional
 
 import rebel
 import torch
-import torch.nn as nn
+from torch import nn
 from transformers import PixtralVisionConfig, PixtralVisionModel
 from transformers.initialization import no_init_weights
 from transformers.modeling_outputs import BaseModelOutput
@@ -65,7 +65,7 @@ class RBLNRuntimePixtralVisionModel(RBLNPytorchRuntime):
         return_dict: bool | None = None,
         **kwargs,
     ):
-        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+        return_dict = return_dict if return_dict is not None else self.config.return_dict
         if pixel_values.shape[2] > self.max_image_size[0] or pixel_values.shape[3] > self.max_image_size[1]:
             raise ValueError("The height() and width of pixel_values can't be larger than max_image_size.")
 
@@ -192,7 +192,7 @@ class _PixtralVisionModel(torch.nn.Module):
             )
             if self.output_hidden_states:
                 all_hidden_states.append(hidden_states)
-        return tuple([hidden_states] + all_hidden_states)
+        return (hidden_states, *all_hidden_states)
 
 
 class RBLNPixtralVisionModel(RBLNModel):

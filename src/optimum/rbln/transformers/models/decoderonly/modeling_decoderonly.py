@@ -244,6 +244,7 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
                 quantization.maybe_set_quantization_env()
             original_linear = torch.nn.functional.linear
             torch.nn.functional.linear = torch.ops.rbln_custom_ops.linear
+            trace_options = {"model_trace_method": "export_strict"} if rbln_config.nested_compile_region else {}
             compiled_model = cls.compile(
                 wrapped_model,
                 compile_config,
@@ -251,6 +252,7 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
                 device=rbln_config.device,
                 example_inputs=example_inputs,
                 compile_context=compile_context,
+                **trace_options,
             )
             return compiled_model
         finally:
@@ -491,7 +493,7 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
         # Bidirectional prefill attends across the whole prompt, so the prompt must fit in a
         # single prefill chunk — default the chunk size to max_seq_len instead of the generic
         # NPU default, which would silently truncate the bidirectional context.
-        if rbln_config.prefill_chunk_size is None and rbln_config.use_bidirectional_prefill:
+        if rbln_config.prefill_chunk_size is None and rbln_config._is_prefix_lm:
             rbln_config.prefill_chunk_size = rbln_config.max_seq_len
 
         (
@@ -522,28 +524,26 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
                 # Do nothing
                 pass
 
-            else:
-                if rbln_config.kvcache_num_blocks > rbln_config.num_full_blocks:
-                    logger.warning(
-                        f"The set `kvcache_num_blocks` ({rbln_config.kvcache_num_blocks}) is greater"
-                        f" than the required number of blocks ({rbln_config.num_full_blocks})."
-                        "This can cause a failure during model compilation."
-                    )
-                elif rbln_config.kvcache_num_blocks < rbln_config.num_min_blocks:
-                    raise ValueError(
-                        f"The set `kvcache_num_blocks` ({rbln_config.kvcache_num_blocks}) is less"
-                        f" than the minimum number of blocks ({rbln_config.num_min_blocks})."
-                    )
-        else:
-            if rbln_config.is_auto_num_blocks:
-                # Eager attention should use fixed number of blocks.
-                rbln_config.kvcache_num_blocks = rbln_config.num_full_blocks
             elif rbln_config.kvcache_num_blocks > rbln_config.num_full_blocks:
                 logger.warning(
                     f"The set `kvcache_num_blocks` ({rbln_config.kvcache_num_blocks}) is greater"
                     f" than the required number of blocks ({rbln_config.num_full_blocks})."
                     "This can cause a failure during model compilation."
                 )
+            elif rbln_config.kvcache_num_blocks < rbln_config.num_min_blocks:
+                raise ValueError(
+                    f"The set `kvcache_num_blocks` ({rbln_config.kvcache_num_blocks}) is less"
+                    f" than the minimum number of blocks ({rbln_config.num_min_blocks})."
+                )
+        elif rbln_config.is_auto_num_blocks:
+            # Eager attention should use fixed number of blocks.
+            rbln_config.kvcache_num_blocks = rbln_config.num_full_blocks
+        elif rbln_config.kvcache_num_blocks > rbln_config.num_full_blocks:
+            logger.warning(
+                f"The set `kvcache_num_blocks` ({rbln_config.kvcache_num_blocks}) is greater"
+                f" than the required number of blocks ({rbln_config.num_full_blocks})."
+                "This can cause a failure during model compilation."
+            )
 
         return rbln_config
 
@@ -690,7 +690,7 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
         """
         inputs = inputs_embeds if inputs_embeds is not None else input_ids
         batch_size = inputs.shape[0]
-        position_embed = kwargs.get("position_embed", None)
+        position_embed = kwargs.get("position_embed")
 
         if batch_size != self.rbln_config.batch_size:
             raise ValueError(
@@ -891,7 +891,7 @@ class RBLNDecoderOnlyModelForCausalLM(RBLNDecoderOnlyModel, RBLNDecoderOnlyGener
         inputs_sorted: bool = False,
         **kwargs,
     ) -> tuple[torch.FloatTensor]:
-        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+        return_dict = return_dict if return_dict is not None else self.config.return_dict
         if self.rbln_config.use_lora and lora_int_ids is None:
             if self.lora_int_ids is None:
                 raise ValueError(

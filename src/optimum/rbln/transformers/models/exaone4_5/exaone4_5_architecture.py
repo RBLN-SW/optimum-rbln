@@ -15,12 +15,13 @@
 from typing import TYPE_CHECKING
 
 import torch
-import torch.nn as nn
+from torch import nn
 
 from ..decoderonly.decoderonly_architecture import (
     DecoderOnlyAttention,
     DecoderOnlyLayer,
     DecoderOnlyWrapper,
+    NestedCompileRegionMixin,
     rotate_half,
 )
 from .configuration_exaone4_5 import RBLNExaone4_5_VisionModelConfig
@@ -244,7 +245,7 @@ class Exaone4_5LanguageModelWrapper(DecoderOnlyWrapper):
         return Exaone4_5Attention
 
     def get_rbln_layer_class(self):
-        return Exaone4_5DecoderLayer
+        return Exaone4_5DecoderLayerRegion if self.rbln_config.nested_compile_region else Exaone4_5DecoderLayer
 
 
 class Exaone4_5Attention(DecoderOnlyAttention):
@@ -304,3 +305,7 @@ class Exaone4_5DecoderLayer(DecoderOnlyLayer):
         hidden_states = residual + hidden_states
 
         return hidden_states
+
+
+class Exaone4_5DecoderLayerRegion(NestedCompileRegionMixin, Exaone4_5DecoderLayer):
+    """Decoder layer with a nested compile region around its forward call."""

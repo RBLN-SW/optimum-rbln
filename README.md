@@ -16,9 +16,9 @@
 
 </div>
 
-🤗 Optimum RBLN provides an interface between HuggingFace libraries ([Transformers](https://huggingface.co/docs/transformers), [Diffusers](https://huggingface.co/docs/diffusers/index)) and RBLN NPUs, including [ATOM](https://rebellions.ai/rebellions-product/rbln-ca25/) and [REBEL](https://rebellions.ai/rebellions-product/rebel/).
+🤗 Optimum RBLN provides an interface between HuggingFace libraries ([Transformers](https://huggingface.co/docs/transformers), [Diffusers](https://huggingface.co/docs/diffusers/index)) and RBLN NPUs, including [ATOM](https://rebellions.ai/rebellions-product/rbln-ca25/) and [Rebel100](https://rebellions.ai/rebellions-product/rebel/).
 
-This library enables seamless integration between the HuggingFace ecosystem and RBLN NPUs through a comprehensive toolkit for model loading and inference across single and multi-NPU environments. While we maintain a list of [officially validated models and tasks](https://docs.rbln.ai/software/optimum/optimum_rbln.html), users can easily adapt other models and tasks with minimal modifications.
+This library enables seamless integration between the HuggingFace ecosystem and RBLN NPUs through a comprehensive toolkit for model loading and inference across single and multi-NPU environments. While we maintain a list of [officially validated models and tasks](https://docs.rbln.ai/latest/software/optimum/index.html), users can easily adapt other models and tasks with minimal modifications.
 
 ## Key Features
 
@@ -87,7 +87,7 @@ optimum-rbln-cli --examples                          # show more usage examples
 
 ## Documentation
 
-Check out [the documentation of Optimum RBLN](https://docs.rbln.ai/software/optimum/optimum_rbln.html) for more advanced usage.
+Check out [the documentation of Optimum RBLN](https://docs.rbln.ai/latest/software/optimum/index.html) for more advanced usage.
 
 ## Getting Started
 
@@ -106,12 +106,12 @@ pip install optimum-rbln --extra-index-url https://download.pytorch.org/whl/cpu
 
 - Install [uv](https://docs.astral.sh/uv/) (refer to [this link](https://docs.astral.sh/uv/getting-started/installation/) for detailed commands)
 
-The below command installs `optimum-rbln` along with its dependencies.
+The below commands create a virtual environment in `.venv` and install `optimum-rbln` in editable mode along with its dependencies. See [CONTRIBUTING.md](CONTRIBUTING.md) for the full development setup.
 
 ```bash
 git clone https://github.com/rbln-sw/optimum-rbln.git
 cd optimum-rbln
-./scripts/uv-sync.sh
+uv sync
 ```
 
 ### Need Help?

@@ -16,13 +16,14 @@ import math
 from typing import TYPE_CHECKING
 
 import torch
-import torch.nn as nn
+from torch import nn
 
 from ..decoderonly.decoderonly_architecture import (
     DecoderOnlyAttention,
     DecoderOnlyLayer,
     DecoderOnlyModel,
     DecoderOnlyWrapper,
+    NestedCompileRegionMixin,
     apply_rotary_pos_emb_partial,
     rotate_half,
 )
@@ -58,7 +59,7 @@ class MidmLMHeadModelWrapper(DecoderOnlyWrapper):
         return MidmAttention
 
     def get_rbln_layer_class(self):
-        return MidmLayer
+        return MidmLayerRegion if self.rbln_config.nested_compile_region else MidmLayer
 
     def get_rbln_model_class(self):
         return MidmModel
@@ -121,6 +122,10 @@ class MidmLayer(DecoderOnlyLayer):
         if self.use_layernorm1p:
             return self.get_layernorm1p(self.post_attention_layernorm)
         return self.post_attention_layernorm
+
+
+class MidmLayerRegion(NestedCompileRegionMixin, MidmLayer):
+    """Decoder layer with a nested compile region around its forward call."""
 
 
 class MidmAttention(DecoderOnlyAttention):

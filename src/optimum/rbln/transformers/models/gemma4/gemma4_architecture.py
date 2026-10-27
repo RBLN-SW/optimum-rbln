@@ -16,7 +16,7 @@ import copy
 from typing import Any
 
 import torch
-import torch.nn as nn
+from torch import nn
 from transformers import PreTrainedModel
 from transformers.activations import ACT2FN
 
@@ -28,6 +28,7 @@ from ..decoderonly.decoderonly_architecture import (
     DecoderOnlyLayer,
     DecoderOnlyModel,
     DecoderOnlyWrapper,
+    NestedCompileRegionMixin,
     RotaryEmbedding,
     build_image_prefill_swa_custom_op_args,
     slice_and_unsqueeze_cos_sin,
@@ -58,7 +59,7 @@ class Gemma4ForCausalLMWrapper(DecoderOnlyWrapper):
         return Gemma4TextAttention
 
     def get_rbln_layer_class(self):
-        return Gemma4DecoderLayer
+        return Gemma4DecoderLayerRegion if self.rbln_config.nested_compile_region else Gemma4DecoderLayer
 
     def get_rbln_model_class(self):
         return Gemma4TextModel
@@ -356,6 +357,10 @@ class Gemma4DecoderLayer(DecoderOnlyLayer):
         if self.layer_scalar is not None:
             hidden_states = hidden_states * self.layer_scalar
         return hidden_states
+
+
+class Gemma4DecoderLayerRegion(NestedCompileRegionMixin, Gemma4DecoderLayer):
+    """Decoder layer with a nested compile region around its forward call."""
 
 
 class Gemma4TextAttention(DecoderOnlyAttention):

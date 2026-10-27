@@ -14,7 +14,7 @@
 
 from typing import TYPE_CHECKING
 
-import torch.nn as nn
+from torch import nn
 
 from ....utils import logging
 from ...models.decoderonly.decoderonly_architecture import (

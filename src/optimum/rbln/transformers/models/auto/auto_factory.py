@@ -21,6 +21,7 @@ import transformers
 from transformers import AutoConfig, PretrainedConfig, PreTrainedModel
 from transformers.dynamic_module_utils import get_class_from_dynamic_module
 from transformers.models.auto.auto_factory import _get_model_class
+from transformers.models.auto.configuration_auto import CONFIG_MAPPING
 
 from optimum.rbln.configuration_utils import RBLNAutoConfig, RBLNModelConfig
 from optimum.rbln.modeling_base import RBLNBaseModel
@@ -140,14 +141,21 @@ class _BaseAutoModelClass:
 
         # Try to load configuration if provided or retrieve it from the model ID
         config = kwargs.pop("config", None)
-        kwargs.update({"trust_remote_code": True})
+        trust_remote_code = kwargs.pop("trust_remote_code", None)
         kwargs["_from_auto"] = True
 
-        # Load configuration if not already provided
+        # Like transformers' Auto classes, a model type transformers implements resolves to its built-in class
+        # unless the caller opts into remote code. A checkpoint's `auto_map` can point at remote code that no
+        # longer imports (Phi-4-mini's modeling_phi3.py imports the removed `LossKwargs`). Checkpoints that only
+        # ship remote code keep loading it by default.
         if not isinstance(config, PretrainedConfig):
+            if trust_remote_code is None:
+                config_dict, _ = PretrainedConfig.get_config_dict(pretrained_model_name_or_path, **kwargs)
+                trust_remote_code = config_dict.get("model_type") not in CONFIG_MAPPING
             config, kwargs = AutoConfig.from_pretrained(
                 pretrained_model_name_or_path,
                 return_unused_kwargs=True,
+                trust_remote_code=trust_remote_code,
                 **kwargs,
             )
 
@@ -158,15 +166,15 @@ class _BaseAutoModelClass:
         has_remote_code = (
             hasattr(config, "auto_map") and convert_rbln_to_hf_model_name(cls.__name__) in config.auto_map
         )
-        if has_remote_code:
+        if has_remote_code and (trust_remote_code or type(config) not in cls._model_mapping):
             class_ref = config.auto_map[convert_rbln_to_hf_model_name(cls.__name__)]
             model_class = get_class_from_dynamic_module(class_ref, pretrained_model_name_or_path, **kwargs)
-        elif type(config) in cls._model_mapping.keys():
+        elif type(config) in cls._model_mapping:
             model_class = _get_model_class(config, cls._model_mapping)
         else:
             raise ValueError(
                 f"Unrecognized configuration class {config.__class__} for this kind of AutoModel: {cls.__name__}.\n"
-                f"Model type should be one of {', '.join(c.__name__ for c in cls._model_mapping.keys())}."
+                f"Model type should be one of {', '.join(c.__name__ for c in cls._model_mapping)}."
             )
 
         if model_class.__name__ != config.architectures[0]:

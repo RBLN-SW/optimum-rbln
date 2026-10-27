@@ -340,8 +340,8 @@ class RBLNQwen2_5_VisionTransformerPretrainedModel(RBLNModel):
 
             # Depadding
             depadded_output = []
-            for i, valid_len in enumerate(window_valid_lengths):
-                start = i * (window_seq_len // self.spatial_merge_unit)
+            for window_idx, valid_len in enumerate(window_valid_lengths):
+                start = window_idx * (window_seq_len // self.spatial_merge_unit)
                 end = start + (valid_len // self.spatial_merge_unit)
                 depadded_output.append(output[start:end])
             output = torch.cat(depadded_output, dim=0)
@@ -537,7 +537,7 @@ class RBLNQwen2_5_VLModel(RBLNDecoderOnlyModel):
         mm_token_type_ids: torch.IntTensor | None = None,
         **kwargs,
     ) -> RBLNDecoderOnlyOutput:
-        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+        return_dict = return_dict if return_dict is not None else self.config.return_dict
         if attention_mask is None:
             attention_mask = torch.ones_like(input_ids)
         inputs_embeds, position_embed, rope_deltas = self._preprocess_prefill(
@@ -752,7 +752,7 @@ class RBLNQwen2_5_VLForConditionalGeneration(
         inputs_sorted: bool = False,
         **kwargs,
     ) -> RBLNDecoderOnlyOutput:
-        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+        return_dict = return_dict if return_dict is not None else self.config.return_dict
         self._require_sorted_batch_inputs(input_ids if input_ids is not None else inputs_embeds, inputs_sorted)
         output_hidden_states = _validate_output_hidden_states(output_hidden_states, self.rbln_config)
         # Prefill

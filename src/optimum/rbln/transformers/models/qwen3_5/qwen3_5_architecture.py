@@ -489,7 +489,7 @@ class Qwen3_5Model(DecoderOnlyModel):
                 seq_positions=cache_position[:, 0], max_seq_len=self.max_seq_len
             )
         else:
-            seq_positions = cache_position.amin(dim=1, keepdim=True)
+            seq_positions = cache_position[:, :1]
 
         all_hidden_states = () if output_hidden_states else None
         for layer_idx, layer in enumerate(self.layers):

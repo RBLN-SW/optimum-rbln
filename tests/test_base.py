@@ -1,3 +1,4 @@
+import gc
 import inspect
 import os
 import random
@@ -17,6 +18,7 @@ from transformers import AutoConfig
 
 from optimum.rbln import __version__
 from optimum.rbln.configuration_utils import ContextRblnConfig
+from optimum.rbln.modeling_base import RBLNBaseModel
 from optimum.rbln.utils.deprecation import deprecate_method
 
 
@@ -45,6 +47,45 @@ def test_bare_pretrained_config_resolves_model_class():
 
     rbln_cls = RBLNAutoModelForCausalLM.get_rbln_cls("dummy/mistral", export=True, config=bare_config)
     assert rbln_cls is RBLNMistralForCausalLM
+
+
+def _save_config_with_stale_remote_code(path):
+    # A model type transformers implements, with an `auto_map` pointing at remote code that no longer imports
+    # (like Phi-4-mini's modeling_phi3.py, which imports the removed `transformers.utils.LossKwargs`).
+    from transformers import LlamaConfig
+
+    config = LlamaConfig(
+        hidden_size=64,
+        intermediate_size=128,
+        num_hidden_layers=2,
+        num_attention_heads=4,
+        vocab_size=128,
+        architectures=["LlamaForCausalLM"],
+    )
+    config.auto_map = {"AutoModelForCausalLM": "modeling_stale.LlamaForCausalLM"}
+    config.save_pretrained(path)
+    (path / "modeling_stale.py").write_text("from transformers.utils import NameRemovedFromTransformers\n")
+
+
+def test_auto_class_prefers_builtin_class_over_remote_code(tmp_path):
+    from optimum.rbln import RBLNAutoModelForCausalLM, RBLNLlamaForCausalLM
+
+    _save_config_with_stale_remote_code(tmp_path)
+
+    assert RBLNAutoModelForCausalLM.get_rbln_cls(str(tmp_path), export=True) is RBLNLlamaForCausalLM
+    assert (
+        RBLNAutoModelForCausalLM.get_rbln_cls(str(tmp_path), export=True, trust_remote_code=False)
+        is RBLNLlamaForCausalLM
+    )
+
+
+def test_auto_class_uses_remote_code_when_trusted(tmp_path):
+    from optimum.rbln import RBLNAutoModelForCausalLM
+
+    _save_config_with_stale_remote_code(tmp_path)
+
+    with pytest.raises(ImportError):
+        RBLNAutoModelForCausalLM.get_rbln_cls(str(tmp_path), export=True, trust_remote_code=True)
 
 
 def test_upgrade_bare_config_recovers_concrete_class():
@@ -77,7 +118,7 @@ def test_upgrade_bare_config_recovers_concrete_class():
 
 
 @pytest.mark.parametrize(
-    "current_version, expect_raise",
+    ("current_version", "expect_raise"),
     [
         pytest.param("1.9.5", False, id="below"),
         pytest.param("1.9.99.post1", False, id="below-post"),
@@ -151,8 +192,8 @@ class BaseHubTest:
                 HF_AUTH_TOKEN = os.environ.get("HF_AUTH_TOKEN", None)
                 HF_USER_ID = os.environ.get("HF_USER_ID", None)
 
-                self.assertTrue(HF_AUTH_TOKEN)
-                self.assertTrue(HF_USER_ID)
+                assert HF_AUTH_TOKEN
+                assert HF_USER_ID
                 TOKEN_KEY = "token"
                 REPO_KEY = "repo_id"
 
@@ -180,7 +221,7 @@ class BaseHubTest:
                     **{TOKEN_KEY: HF_AUTH_TOKEN},
                 )
 
-                self.assertEqual(remote_hash, cfg.from_local)
+                assert remote_hash == cfg.from_local
 
         @require_hf_token
         @require_hf_user_id
@@ -238,7 +279,7 @@ class BaseTest:
                     compiled_model_path = os.path.join(REUSE_ARTIFACTS_PATH, cls.get_rbln_local_dir())
                     if os.path.exists(compiled_model_path):
                         with ContextRblnConfig(device=DUMMY_DEVICE_CODE):
-                            cls.model = cls.RBLN_CLASS.from_pretrained(compiled_model_path)
+                            cls.model = cls.RBLN_CLASS.from_pretrained(compiled_model_path, **cls.HF_CONFIG_KWARGS)
                 # Check cls.__dict__, not hasattr: hasattr also finds a parent test class's
                 # already-loaded model, silently running this class against a model compiled
                 # with the parent's (possibly incompatible) rbln_config.
@@ -265,6 +306,12 @@ class BaseTest:
 
         @classmethod
         def tearDownClass(cls):
+            # One process runs every class in turn, so release this class's runtimes
+            # before the next class loads its own; on the dummy device they all live
+            # in host memory and the BC llm run hit SYS_ENOMEM part-way through.
+            if "model" in cls.__dict__:
+                del cls.model
+                gc.collect()
             if os.path.exists(cls.get_rbln_local_dir()):
                 shutil.rmtree(cls.get_rbln_local_dir())
 
@@ -285,7 +332,7 @@ class BaseTest:
                     )
 
         def test_model_save_dir(self):
-            self.assertTrue(os.path.exists(self.get_rbln_local_dir()), "model_save_dir does not work.")
+            assert os.path.exists(self.get_rbln_local_dir()), "model_save_dir does not work."
 
         def get_inputs(self):
             return self.GENERATION_KWARGS
@@ -297,12 +344,11 @@ class BaseTest:
             inputs = self.get_inputs()
             if self.is_diffuser():
                 output = self.model(**inputs)[0]
+            elif self.model.can_generate():
+                output = self.model.generate(**inputs)
             else:
-                if self.model.can_generate():
-                    output = self.model.generate(**inputs)
-                else:
-                    # encoder-only, resnet, etc..
-                    output = self.model(**inputs)[0]
+                # encoder-only, resnet, etc..
+                output = self.model(**inputs)[0]
 
             output = self.postprocess(inputs, output)
             REUSE_ARTIFACTS_PATH = os.environ.get("REUSE_ARTIFACTS_PATH", None)
@@ -311,22 +357,18 @@ class BaseTest:
 
                 if isinstance(self.EXPECTED_OUTPUT, str):
                     similarity = jaccard_similarity(output, self.EXPECTED_OUTPUT)
-                    self.assertGreater(
-                        similarity, 0.9, msg=f"self.EXPECTED_OUTPUT: {self.EXPECTED_OUTPUT}, output: {output}"
-                    )
+                    assert similarity > 0.9, f"self.EXPECTED_OUTPUT: {self.EXPECTED_OUTPUT}, output: {output}"
                 else:
                     for o, e_o in zip(output, self.EXPECTED_OUTPUT, strict=False):
                         similarity = jaccard_similarity(o, e_o)
-                        self.assertGreater(
-                            similarity, 0.9, msg=f"self.EXPECTED_OUTPUT: {self.EXPECTED_OUTPUT}, output: {output}"
-                        )
+                        assert similarity > 0.9, f"self.EXPECTED_OUTPUT: {self.EXPECTED_OUTPUT}, output: {output}"
 
         def _inner_test_save_load(self, tmpdir):
             with ContextRblnConfig(create_runtimes=False):
                 with self.subTest():
                     self.model.save_pretrained(tmpdir)
                     config_path = os.path.join(tmpdir, self.RBLN_CLASS.config_name)
-                    self.assertTrue(os.path.exists(config_path), "save_pretrained does not work.")
+                    assert os.path.exists(config_path), "save_pretrained does not work."
 
                 with self.subTest():
                     # Test load
@@ -338,11 +380,14 @@ class BaseTest:
                 with self.subTest():
                     # Test saving from exported pipe
                     self.model.save_pretrained(tmpdir)
-                    _ = self.RBLN_CLASS.from_pretrained(
+                    model = self.RBLN_CLASS.from_pretrained(
                         tmpdir,
                         rbln_create_runtimes=False,
                         **self.HF_CONFIG_KWARGS,
                     )
+                    if isinstance(model, RBLNBaseModel):
+                        assert model._compiled_models is None, "create_runtimes=False must not read .rbln files"
+                        assert len(model.compiled_models) == len(model.rbln_config.compile_cfgs)
 
         def test_save_load(self):
             with tempfile.TemporaryDirectory() as tmpdir:
@@ -364,16 +409,22 @@ class BaseTest:
 
             if isinstance(self.RBLN_AUTO_CLASS, Iterable):
                 for auto_class in self.RBLN_AUTO_CLASS:
-                    assert self.RBLN_CLASS == auto_class.get_rbln_cls(
+                    assert (
+                        auto_class.get_rbln_cls(
+                            self.HF_MODEL_ID,
+                            **self.RBLN_CLASS_KWARGS,
+                            **self.HF_CONFIG_KWARGS,
+                        )
+                        == self.RBLN_CLASS
+                    )
+            else:
+                assert (
+                    self.RBLN_AUTO_CLASS.get_rbln_cls(
                         self.HF_MODEL_ID,
                         **self.RBLN_CLASS_KWARGS,
                         **self.HF_CONFIG_KWARGS,
                     )
-            else:
-                assert self.RBLN_CLASS == self.RBLN_AUTO_CLASS.get_rbln_cls(
-                    self.HF_MODEL_ID,
-                    **self.RBLN_CLASS_KWARGS,
-                    **self.HF_CONFIG_KWARGS,
+                    == self.RBLN_CLASS
                 )
 
         # check if this use a pipeline
@@ -419,7 +470,7 @@ class DisallowedTestBase:
                     **self.HF_CONFIG_KWARGS,
                 )
 
-                self.assertTrue(False, "This should be disallowed.")
+                raise AssertionError("This should be disallowed.")
 
             except ValueError:
                 pass

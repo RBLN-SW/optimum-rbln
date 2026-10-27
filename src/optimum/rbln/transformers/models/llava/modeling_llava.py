@@ -15,7 +15,7 @@
 import importlib
 import inspect
 from collections.abc import Callable, Sequence
-from typing import TYPE_CHECKING, Any, Optional
+from typing import Any, Optional
 
 import torch
 from transformers import AutoModelForImageTextToText, LlavaForConditionalGeneration, PretrainedConfig, PreTrainedModel
@@ -38,9 +38,6 @@ from ...utils.rbln_runtime_wrapper import LoopProcessor
 
 
 logger = get_logger(__name__)
-
-if TYPE_CHECKING:
-    from transformers import PretrainedConfig
 
 
 class LoopVisionTower(LoopProcessor):
@@ -307,7 +304,6 @@ class RBLNLlavaForConditionalGeneration(RBLNModel, RBLNImageIndexedBatchSortMixi
         if is_prefill_phase:
             generate_idx = attention_mask.sum(dim=-1, keepdim=True).int()
             cache_position = None
-            pixel_values = pixel_values
             model_inputs.update({"image_sizes": image_sizes})
         else:
             if inputs_embeds is not None:
@@ -373,11 +369,10 @@ class RBLNLlavaForConditionalGeneration(RBLNModel, RBLNImageIndexedBatchSortMixi
             ]
             pooler_out_size = [pixel_values.shape[0], self.config.vision_config.hidden_size]
 
-        vision_out_buffer = []
-        for _ in range(self.config.vision_config.num_hidden_layers + 2):
-            vision_out_buffer.append(
-                torch.empty(size=vision_out_size, dtype=self.rbln_config.vision_tower.dtype, device="cpu")
-            )
+        vision_out_buffer = [
+            torch.empty(size=vision_out_size, dtype=self.rbln_config.vision_tower.dtype, device="cpu")
+            for _ in range(self.config.vision_config.num_hidden_layers + 2)
+        ]
         if pooler_out_size is not None:
             vision_out_buffer.insert(
                 1, torch.empty(size=pooler_out_size, dtype=self.rbln_config.vision_tower.dtype, device="cpu")
@@ -455,7 +450,7 @@ class RBLNLlavaForConditionalGeneration(RBLNModel, RBLNImageIndexedBatchSortMixi
         image_sizes: torch.Tensor | None = None,
         **lm_kwargs,
     ):
-        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+        return_dict = return_dict if return_dict is not None else self.config.return_dict
         vision_feature_layer = (
             vision_feature_layer if vision_feature_layer is not None else self.config.vision_feature_layer
         )
@@ -503,7 +498,7 @@ class RBLNLlavaForConditionalGeneration(RBLNModel, RBLNImageIndexedBatchSortMixi
         inputs_sorted: bool = False,
         **kwargs,
     ) -> tuple | LlavaCausalLMOutputWithPast:
-        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+        return_dict = return_dict if return_dict is not None else self.config.return_dict
         self._require_sorted_batch_inputs(inputs_embeds if inputs_embeds is not None else input_ids, inputs_sorted)
         # Prefill
         if cache_position is None:
