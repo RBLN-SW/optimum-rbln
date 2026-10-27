@@ -36,7 +36,6 @@ from ....modeling import RBLNModel
 from ....modeling_rope_utils import build_qwen_mrope_lookup, np_cos, np_sin, qwen_vit_rot_pos_ids
 from ....utils import logging
 from ....utils.deprecation import deprecate_method
-from ....utils.runtime_utils import normalize_npu, resolve_npu_or_none
 from ...cache_utils import FullAttentionKVCacheMeta, LinearAttentionCacheMeta
 from ...modeling_outputs import RBLNDecoderOnlyOutput, _validate_output_hidden_states
 from ...utils.multimodal_batch_sort import RBLNQwenVLBatchSortMixin
@@ -65,7 +64,7 @@ def validate_gdn_custom_kernel(model_config, rbln_config) -> None:
 
     The core always runs as `rbln_custom_ops::gdn_*` and the short conv in front of it as
     `causal_conv1d_ring_tabled`, so a configuration they cannot take fails here rather than at
-    time, where the converter reports it as a shape mismatch.
+    compile time, where the converter reports it as a shape mismatch.
 
     Runs before `super()._update_rbln_config` fills the defaults, so it reads no field that
     `set_default_values` owns -- `prefill_chunk_size` is still None here. It does not need to: the
@@ -93,13 +92,6 @@ def validate_gdn_custom_kernel(model_config, rbln_config) -> None:
         raise ValueError(
             f"Qwen3.5 on RBLN needs `gdn_chunk_size` {MAX_GDN_CHUNK_SIZE}, got {rbln_config.gdn_chunk_size}. "
             "The `rbln_custom_ops::gdn_prefill` kernel takes 128-token chunks only."
-        )
-
-    npu = resolve_npu_or_none(rbln_config.npu)
-    if npu is not None and not normalize_npu(npu).startswith("RBLN-CA"):
-        raise ValueError(
-            f"Qwen3.5 on RBLN runs on ATOM targets only, got {npu}. The `rbln_custom_ops::gdn_prefill` "
-            "kernel comes back non-finite on REBEL."
         )
 
 
