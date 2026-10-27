@@ -1,7 +1,7 @@
 """The GatedDeltaNet core in plain torch, as the golden for the custom-op core.
 
 Lifted from `qwen3_5_architecture` when that module dropped its native core: every configuration now
-runs as `rbln_custom_ops::gdn_prefill` / `gdn_decode`. The numerics are unchanged, so a test that
+runs as `rbln_custom_ops::chunk_gated_delta_rule` / `recurrent_gated_delta_rule`. The numerics are unchanged, so a test that
 compares the two still compares the custom op against the delta rule it implements.
 """
 

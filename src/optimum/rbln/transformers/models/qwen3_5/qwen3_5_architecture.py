@@ -131,7 +131,7 @@ class Qwen3_5VisionModelWrapper(nn.Module):
 class Qwen3_5GatedDeltaNet(nn.Module):
     """GatedDeltaNet token mixer for RBLN (conv_state + recurrent_state are on-device static caches).
 
-    The delta rule runs as one ``rbln_custom_ops::gdn_prefill`` / ``gdn_decode`` op, which updates its rows
+    The delta rule runs as one ``rbln_custom_ops::chunk_gated_delta_rule`` / ``recurrent_gated_delta_rule`` op, which updates its rows
     of the recurrent cache in place like paged attention's KV cache. Everything around it keeps the Q/K head
     axis outermost so tensor parallelism can shard by it: the depthwise conv reads its inputs channel
     last, and the conv cache is stored as ``(B, Hk*(2+r), K-1, Dk)`` (Q, K and the r value heads of
@@ -300,9 +300,9 @@ class Qwen3_5GatedDeltaNet(nn.Module):
         operands = (query.contiguous(), key.contiguous(), value.contiguous(), g, beta, recurrent_state, slot)
         if "prefill" in self._phase:
             carry = torch.ones(batch_size, dtype=value.dtype) if carry is None else carry
-            core_attn_out = torch.ops.rbln_custom_ops.gdn_prefill(*operands, carry)
+            core_attn_out = torch.ops.rbln_custom_ops.chunk_gated_delta_rule(*operands, carry)
         else:
-            core_attn_out = torch.ops.rbln_custom_ops.gdn_decode(*operands)
+            core_attn_out = torch.ops.rbln_custom_ops.recurrent_gated_delta_rule(*operands)
 
         core_attn_out = self.norm(core_attn_out, z).permute(0, 3, 1, 2, 4).reshape(batch_size, seq_len, -1)
         # Nothing comes back: every op wrote its own cache rows at `slot`.
@@ -504,7 +504,7 @@ class Qwen3_5Model(DecoderOnlyModel):
                 conv_state, recurrent_state = past_states[layer_idx]
                 if batch_idx is not None:
                     # PREFILL processes ONE item -> take its slot [batch_idx] from the max-batch cache -> (1, ...).
-                    # The recurrent cache goes in whole: `gdn_prefill` addresses its own rows by `slot`.
+                    # The recurrent cache goes in whole: `chunk_gated_delta_rule` addresses its own rows by `slot`.
                     conv_in = conv_state[batch_idx.to(torch.int).unsqueeze(0)]
                     _pos = batch_idx.to(torch.int16)
                 else:
