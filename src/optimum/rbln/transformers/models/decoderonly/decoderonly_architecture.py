@@ -510,6 +510,9 @@ class DecoderOnlyModel(nn.Module):
             if isinstance(rotary_emb, torch.Tensor):
                 cos = rotary_emb[0]
                 sin = rotary_emb[1]
+                if self.rbln_config.nested_compile_region:
+                    # Region inputs must not alias the same packed rotary storage.
+                    cos = cos.clone()
             else:
                 cos, sin = rotary_emb(hidden_states, self.max_seq_len)  # dtype carrier, max_seq_len
                 cos, sin = slice_and_unsqueeze_cos_sin(cos, sin, position_ids)
