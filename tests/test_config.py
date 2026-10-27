@@ -559,7 +559,7 @@ LOAD_VISUAL_RUNTIME_CONFIGS = [
 ]
 
 
-@pytest.mark.parametrize("parent_cls_name, vision_cls_name", LOAD_VISUAL_RUNTIME_CONFIGS)
+@pytest.mark.parametrize(("parent_cls_name", "vision_cls_name"), LOAD_VISUAL_RUNTIME_CONFIGS)
 def test_deprecated_load_visual_runtime(parent_cls_name, vision_cls_name):
     """`_load_visual_runtime` is the deprecated spelling of `visual={"create_runtimes": ...}`, both as a
     constructor kwarg and when the load path sets it after construction. Either way it must reach the visual
