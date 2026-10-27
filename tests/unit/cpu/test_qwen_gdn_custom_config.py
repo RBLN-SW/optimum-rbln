@@ -5,13 +5,14 @@ import torch
 from transformers.models.qwen3_5.configuration_qwen3_5 import Qwen3_5TextConfig
 from transformers.models.qwen3_5.modeling_qwen3_5 import Qwen3_5GatedDeltaNet as NativeGdn
 
+from optimum.rbln.configuration_utils import RBLNCompileConfig
 from optimum.rbln.transformers.models.qwen3_5.configuration_qwen3_5 import (
     RBLNQwen3_5TextModelConfig,
 )
 from optimum.rbln.transformers.models.qwen3_5.modeling_qwen3_5 import (
+    _qwen3_5_graph_predates_custom_kernel,
     _qwen3_5_legacy_linear_state_shapes,
     _qwen3_5_linear_state_shapes,
-    _resolve_gdn_custom_kernel,
     validate_gdn_custom_kernel,
 )
 from optimum.rbln.transformers.models.qwen3_5.qwen3_5_architecture import Qwen3_5GatedDeltaNet
@@ -229,32 +230,22 @@ def test_gdn_custom_kernel_validates_before_the_defaults_are_filled():
     validate_gdn_custom_kernel(config)
 
 
-def _gdn_config(**overrides):
-    return RBLNQwen3_5TextModelConfig(max_seq_len=4096, batch_size=1, **overrides)
+def _config_with_graph_inputs(*names):
+    config = RBLNQwen3_5TextModelConfig(max_seq_len=4096, batch_size=1)
+    config.set_compile_cfgs(
+        [RBLNCompileConfig(compiled_model_name="prefill", input_info=[(n, [1], "float32") for n in names])]
+    )
+    return config
 
 
-def test_an_artifact_without_the_flag_takes_the_graph_path():
-    # A config saved before the custom kernels carries no `use_custom_kernel` at all, and a saved
-    # config is read back through `cls(**saved)`. The missing key has to stay missing, so that the
-    # artifact it describes is driven the way the optimum-rbln that compiled it drove it.
-    old = _gdn_config()
-    assert old.use_custom_kernel is None
-    assert old.uses_custom_kernel is False
+def test_a_pre_kernel_artifact_is_recognized_by_its_own_graph():
+    # Nothing in the config marks one: a config written before the kernels could not have written
+    # anything about them. The graph's inputs are what answers, and they differ either way.
+    legacy = _config_with_graph_inputs("input_ids", "conv_state_mask", "recurrent_state_mask", "valid_mask")
+    assert _qwen3_5_graph_predates_custom_kernel(legacy) is True
 
-    compiled_now = _gdn_config(use_custom_kernel=True)
-    assert compiled_now.uses_custom_kernel is True
-    assert compiled_now._prepare_for_serialization()["use_custom_kernel"] is True
-
-
-def test_compiling_records_the_flag_and_refuses_the_graph_path():
-    # Every compile takes the kernels, and says so in the artifact. Asking for the path they replaced
-    # is asking optimum-rbln to build a graph it no longer builds.
-    config = _gdn_config()
-    config.use_custom_kernel = _resolve_gdn_custom_kernel(config)
-    assert config._prepare_for_serialization()["use_custom_kernel"] is True
-
-    with pytest.raises(ValueError, match="does not compile one"):
-        _resolve_gdn_custom_kernel(_gdn_config(use_custom_kernel=False))
+    current = _config_with_graph_inputs("input_ids", "state_mask", "valid_mask", "conv_hist_idx")
+    assert _qwen3_5_graph_predates_custom_kernel(current) is False
 
 
 def test_the_graph_path_keeps_its_own_cache_layouts():

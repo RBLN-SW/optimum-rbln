@@ -84,22 +84,6 @@ def validate_gdn_custom_kernel(rbln_config) -> None:
         )
 
 
-def _resolve_gdn_custom_kernel(rbln_config) -> bool:
-    """Record which GatedDeltaNet path this compile takes, and refuse to compile the deprecated one.
-
-    Every compile takes the custom kernels. The field is written anyway, because a saved config
-    without it is how an artifact from before them is recognized at load. A caller that asks for
-    False is asking for the graph those kernels replaced, which this no longer builds.
-    """
-    if rbln_config.use_custom_kernel is False:
-        raise ValueError(
-            "`use_custom_kernel=False` marks an artifact compiled before the GatedDeltaNet custom "
-            "kernels. optimum-rbln loads such an artifact but does not compile one, so leave the "
-            "field unset."
-        )
-    return True
-
-
 def _qwen3_5_build_compile_context(compile_config, example_inputs):
     def is_static_state(name: str) -> bool:
         if "past_key_values" in name:
@@ -175,6 +159,24 @@ def _qwen3_5_linear_layer_indices(model_config) -> list[int]:
     return [i for i, t in enumerate(text_config.layer_types) if t == "linear_attention"]
 
 
+def _qwen3_5_graph_predates_custom_kernel(rbln_config) -> bool:
+    """Whether this artifact's graphs run the GatedDeltaNet themselves rather than as the kernels.
+
+    The artifact answers this on its own, and has to: a config written before the kernels could not
+    have recorded anything about them. That GatedDeltaNet gates each cache with a 0/1 mask of the
+    cache's own shape, which its graph declares as `conv_state_mask`. The kernels take one value per
+    cache row and the conv ring's index tables instead, so a graph compiled with them never declares
+    that input. See `warn_deprecated_gdn_graph`.
+    """
+    for compile_cfg in rbln_config.compile_cfgs:
+        inputs = compile_cfg.input_info or []
+        if compile_cfg.is_multiple_input_info:
+            inputs = [one for info in inputs for one in info]
+        if any(name == "conv_state_mask" for name, *_ in inputs):
+            return True
+    return False
+
+
 def _qwen3_5_setup_hybrid_runtime(model):
     rbln_config = model.rbln_config
     text_config = model.config.get_text_config()
@@ -193,7 +195,7 @@ def _qwen3_5_setup_hybrid_runtime(model):
 
     # An artifact from before the custom kernels gates each cache with a mask of that cache's own
     # shape, which only this side knows; one compiled with them takes a value per cache row instead.
-    legacy = not rbln_config.uses_custom_kernel
+    legacy = _qwen3_5_graph_predates_custom_kernel(rbln_config)
     if legacy:
         warn_deprecated_gdn_graph()
 
@@ -247,7 +249,6 @@ class RBLNQwen3_5TextModel(RBLNDecoderOnlyModel):
     @classmethod
     def _update_rbln_config(cls, preprocessors=None, model=None, model_config=None, rbln_config=None):
         rbln_config.linear_attention_layers = _qwen3_5_linear_layer_indices(model_config)
-        rbln_config.use_custom_kernel = _resolve_gdn_custom_kernel(rbln_config)
         validate_gdn_custom_kernel(rbln_config)
         rbln_config = super()._update_rbln_config(
             preprocessors=preprocessors, model=model, model_config=model_config, rbln_config=rbln_config
@@ -679,7 +680,6 @@ class RBLNQwen3_5Model(RBLNDecoderOnlyModel):
     @classmethod
     def _update_rbln_config(cls, preprocessors=None, model=None, model_config=None, rbln_config=None):
         rbln_config.linear_attention_layers = _qwen3_5_linear_layer_indices(model_config)
-        rbln_config.use_custom_kernel = _resolve_gdn_custom_kernel(rbln_config)
         validate_gdn_custom_kernel(rbln_config)
         rbln_config = super()._update_rbln_config(
             preprocessors=preprocessors, model=model, model_config=model_config, rbln_config=rbln_config

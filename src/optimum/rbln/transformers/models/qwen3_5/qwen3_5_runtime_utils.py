@@ -59,7 +59,9 @@ class RBLNQwen3_5RuntimeModel(RBLNRuntimeModel):
 
         # An artifact from before the custom kernels gates each cache with a mask of that cache's own
         # shape, under its own name, because its GatedDeltaNet multiplies the mask into the state it
-        # reads (`warn_deprecated_gdn_graph`). `_qwen3_5_setup_hybrid_runtime` sizes them.
+        # reads (`warn_deprecated_gdn_graph`). `_qwen3_5_setup_hybrid_runtime` recognizes such an
+        # artifact and passes the shapes, which only it can work out; nothing else marks one.
+        self._gdn_runs_in_graph = legacy_state_shapes is not None
         self._legacy_state_masks = {}
         if legacy_state_shapes is not None:
             self._legacy_state_masks = {
@@ -201,7 +203,11 @@ class RBLNQwen3_5RuntimeModel(RBLNRuntimeModel):
             # prior context), ones afterwards. An artifact from before the custom kernels takes one mask
             # per cache under its own name instead, and no ring tables.
             fresh = step == 0
-            if self.rbln_config.uses_custom_kernel:
+            if self._gdn_runs_in_graph:
+                named.update(
+                    {name: masks[0] if fresh else masks[1] for name, masks in self._legacy_state_masks.items()}
+                )
+            else:
                 named["state_mask"] = self._state_mask_zeros if fresh else self._state_mask_ones
                 named.update(
                     self._conv_tables(
@@ -211,10 +217,6 @@ class RBLNQwen3_5RuntimeModel(RBLNRuntimeModel):
                         torch.tensor([0 if fresh else 1]),
                         chunk,
                     )
-                )
-            else:
-                named.update(
-                    {name: masks[0] if fresh else masks[1] for name, masks in self._legacy_state_masks.items()}
                 )
 
             # For logits_to_keep == 1 every window overwrites the single logits row, so the final value
@@ -303,7 +305,7 @@ class RBLNQwen3_5RuntimeModel(RBLNRuntimeModel):
             named["lora_int_ids"] = lora_int_ids
         # Row b reads and writes cache row b, one token on. An artifact from before the custom kernels
         # carries no ring, and its decode graph consumes no state mask, so it takes nothing here.
-        if self.rbln_config.uses_custom_kernel:
+        if not self._gdn_runs_in_graph:
             ones = torch.ones(self.batch_size, dtype=torch.int32)
             named.update(
                 self._conv_tables(torch.arange(self.batch_size), cache_position[:, 0], ones, ones, inputs.shape[1])
