@@ -42,12 +42,12 @@ def test_mpnet_native_batch_parity_and_reload(batch_size, tmp_path):
         model_save_dir=tmp_path / "compiled",
     )
     try:
-        test_transformers.assert_mpnet_embedding_parity(model, reference, tokenizer, batch_size)
+        test_transformers.TestMPNetModel.assert_embedding_parity(model, reference, tokenizer, batch_size)
         model.save_pretrained(save_dir)
         model = None
         gc.collect()
         model = RBLNMPNetModel.from_pretrained(save_dir, rbln_device=0)
-        test_transformers.assert_mpnet_embedding_parity(model, reference, tokenizer, batch_size)
+        test_transformers.TestMPNetModel.assert_embedding_parity(model, reference, tokenizer, batch_size)
     finally:
         del model
         gc.collect()

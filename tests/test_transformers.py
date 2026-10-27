@@ -370,47 +370,6 @@ class TestXLMRobertaModel(BaseTest.TestModel):
     }
 
 
-def assert_mpnet_embedding_parity(model, reference, tokenizer, batch_size):
-    texts = [
-        "This is an example sentence.",
-        "Each sentence is converted into an embedding.",
-        "A long document discusses processors and machine learning. " * 80,
-        "",
-    ]
-
-    def pool(hidden, mask):
-        weights = mask.unsqueeze(-1).float()
-        return torch.nn.functional.normalize((hidden.float() * weights).sum(1) / weights.sum(1).clamp_min(1), dim=-1)
-
-    with torch.no_grad():
-        max_valid_tokens = 0
-        first_inputs = None
-        first_output = None
-        for offset in range(len(texts)):
-            inputs = tokenizer(
-                [texts[(offset + index) % len(texts)] for index in range(batch_size)],
-                padding="max_length",
-                max_length=model.rbln_config.max_seq_len,
-                truncation=True,
-                return_tensors="pt",
-            )
-            expected = reference(**inputs).last_hidden_state
-            actual = model(**inputs).last_hidden_state
-            active = inputs["attention_mask"].bool()
-            max_valid_tokens = max(max_valid_tokens, int(active.sum(-1).max()))
-            pcc = torch.corrcoef(torch.stack([expected[active].flatten(), actual[active].flatten()]))[0, 1]
-            cosine = torch.nn.functional.cosine_similarity(
-                pool(expected, inputs["attention_mask"]), pool(actual, inputs["attention_mask"])
-            )
-            assert pcc >= 0.99
-            assert (cosine >= 0.99).all()
-            torch.testing.assert_close(model(**inputs).last_hidden_state, actual, rtol=0, atol=0)
-            if first_inputs is None:
-                first_inputs, first_output = inputs, actual.clone()
-        assert max_valid_tokens == model.rbln_config.max_seq_len
-        torch.testing.assert_close(model(**first_inputs).last_hidden_state, first_output, rtol=0, atol=0)
-
-
 class TestMPNetModel(BaseTest.TestModel):
     RBLN_AUTO_CLASS = RBLNAutoModel
     RBLN_CLASS = RBLNMPNetModel
@@ -423,12 +382,55 @@ class TestMPNetModel(BaseTest.TestModel):
         "attention_mask": torch.ones((1, 512), dtype=torch.int64),
     }
 
+    @staticmethod
+    def assert_embedding_parity(model, reference, tokenizer, batch_size):
+        texts = [
+            "This is an example sentence.",
+            "Each sentence is converted into an embedding.",
+            "A long document discusses processors and machine learning. " * 80,
+            "",
+        ]
+
+        def pool(hidden, mask):
+            weights = mask.unsqueeze(-1).float()
+            return torch.nn.functional.normalize(
+                (hidden.float() * weights).sum(1) / weights.sum(1).clamp_min(1), dim=-1
+            )
+
+        with torch.no_grad():
+            max_valid_tokens = 0
+            first_inputs = None
+            first_output = None
+            for offset in range(len(texts)):
+                inputs = tokenizer(
+                    [texts[(offset + index) % len(texts)] for index in range(batch_size)],
+                    padding="max_length",
+                    max_length=model.rbln_config.max_seq_len,
+                    truncation=True,
+                    return_tensors="pt",
+                )
+                expected = reference(**inputs).last_hidden_state
+                actual = model(**inputs).last_hidden_state
+                active = inputs["attention_mask"].bool()
+                max_valid_tokens = max(max_valid_tokens, int(active.sum(-1).max()))
+                pcc = torch.corrcoef(torch.stack([expected[active].flatten(), actual[active].flatten()]))[0, 1]
+                cosine = torch.nn.functional.cosine_similarity(
+                    pool(expected, inputs["attention_mask"]), pool(actual, inputs["attention_mask"])
+                )
+                assert pcc >= 0.99
+                assert (cosine >= 0.99).all()
+                torch.testing.assert_close(model(**inputs).last_hidden_state, actual, rtol=0, atol=0)
+                if first_inputs is None:
+                    first_inputs, first_output = inputs, actual.clone()
+            assert max_valid_tokens == model.rbln_config.max_seq_len
+            torch.testing.assert_close(model(**first_inputs).last_hidden_state, first_output, rtol=0, atol=0)
+
     def test_embedding_parity(self):
         if os.environ.get("SAVE_ARTIFACTS_PATH") or os.environ.get("REUSE_ARTIFACTS_PATH"):
             self.skipTest("Artifact compatibility mode does not execute on a real NPU.")
         tokenizer = AutoTokenizer.from_pretrained(self.HF_MODEL_ID, **self.HF_CONFIG_KWARGS)
         reference = AutoModel.from_pretrained(self.HF_MODEL_ID, **self.HF_CONFIG_KWARGS).float().eval()
-        assert_mpnet_embedding_parity(self.model, reference, tokenizer, 1)
+        self.assert_embedding_parity(self.model, reference, tokenizer, 1)
 
 
 class TestEncoderMaxSeqLenBucketing(unittest.TestCase):
