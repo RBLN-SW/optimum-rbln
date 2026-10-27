@@ -28,6 +28,9 @@ def _reject_decoder_batch_bucketing(rbln_config) -> None:
     `RBLNDecoderOnlyModelConfig.__init__` has already resolved `decoder_batch_sizes` by the time a
     Qwen3.5 config finishes building, so this is asked here rather than at `_update_rbln_config`,
     which a vision model only reaches after compiling its visual submodule.
+
+    Only the two configs that generate ask it. A bare backbone's `_default_phases` is `["prefill"]`,
+    so it carries no decoder and `decoder_batch_sizes` stays None.
     """
     if rbln_config.use_multiple_decoder:
         raise ValueError(
@@ -107,7 +110,6 @@ class RBLNQwen3_5TextModelConfig(RBLNDecoderOnlyModelConfig):
         super().__init__(**kwargs)
         self.gdn_chunk_size = MAX_GDN_CHUNK_SIZE if gdn_chunk_size is None else gdn_chunk_size
         self.linear_attention_layers = linear_attention_layers or []
-        _reject_decoder_batch_bucketing(self)
 
 
 class RBLNQwen3_5VisionModelConfig(RBLNModelConfig):
@@ -194,7 +196,6 @@ class RBLNQwen3_5ModelConfig(DeprecatedLoadVisualRuntimeMixin, RBLNDecoderOnlyMo
         self.visual = self.initialize_submodule_config(submodule_config=visual, force_kwargs=True, batch_size=1)
         self.gdn_chunk_size = MAX_GDN_CHUNK_SIZE if gdn_chunk_size is None else gdn_chunk_size
         self.linear_attention_layers = linear_attention_layers or []
-        _reject_decoder_batch_bucketing(self)
         if _load_visual_runtime is not None:
             self._load_visual_runtime = _load_visual_runtime
 
