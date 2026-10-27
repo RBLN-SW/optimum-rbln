@@ -134,8 +134,9 @@ class Qwen3_5GatedDeltaNet(nn.Module):
     The delta rule runs as one ``rbln_custom_ops::gdn_prefill`` / ``gdn_decode`` op, which updates its rows
     of the recurrent cache in place like paged attention's KV cache. Everything around it keeps the Q/K head
     axis outermost so tensor parallelism can shard by it: the depthwise conv reads its inputs channel
-    last, and the conv cache is stored as ``(B, Hk*(2+r), K-1, Dk)`` (Q, K and the r value heads of
-    each Q/K head together).
+    last, and the conv cache groups its channels as ``Hk*(2+r)`` (Q, K and the r value heads of each
+    Q/K head together). That group axis sits second, under the ring's ``K-1`` slots:
+    ``(B, K-1, Hk*(2+r), Dk)``, because a slot is the row `causal_conv1d_ring_tabled` gathers.
 
     PREFILL takes 128-token chunks and DECODE one token; both hand the same recurrent cache rows on, so a
     chunk-prefill flows into recurrent decode without a reshape.
@@ -635,18 +636,30 @@ class Qwen3_5_CausalLMWrapper(DecoderOnlyWrapper):
         past_states = [pair if i in linear else None for i, pair in enumerate(pairs)]
         return past_key_values, past_states
 
-    def prepare_forward_args(self, *args):
-        args = list(args)
-        has_linear = any(t == "linear_attention" for t in self.config.layer_types)
+    @property
+    def _has_linear_layer(self) -> bool:
+        return any(t == "linear_attention" for t in self.config.layer_types)
+
+    def _take_gdn_inputs(self, args: list):
+        """Pop the GatedDeltaNet's own inputs off `args`, in the order `get_input_info` declares them.
+
+        A graph with no linear layer, and a decode graph, declares fewer of them and takes None there.
+        """
         # get_input_info declares the conv ring's tables last, in both phases.
-        conv_tables = tuple(args[-len(CONV_TABLE_INPUTS) :]) if has_linear else None
-        if has_linear:
+        conv_tables = None
+        if self._has_linear_layer:
+            conv_tables = tuple(args[-len(CONV_TABLE_INPUTS) :])
             del args[-len(CONV_TABLE_INPUTS) :]
         # get_input_info declares these three for a prefill graph only.
-        has_prefill_linear = has_linear and "prefill" in self.phase
+        has_prefill_linear = self._has_linear_layer and "prefill" in self.phase
         batch_idx = args.pop() if has_prefill_linear else None
         valid_mask = args.pop() if has_prefill_linear else None
         state_mask = args.pop() if has_prefill_linear else None
+        return state_mask, valid_mask, batch_idx, conv_tables
+
+    def prepare_forward_args(self, *args):
+        args = list(args)
+        state_mask, valid_mask, batch_idx, conv_tables = self._take_gdn_inputs(args)
 
         (
             input_ids,
@@ -723,8 +736,9 @@ class Qwen3_5_CausalLMWrapper(DecoderOnlyWrapper):
             output_hidden_states=self.rbln_config.output_hidden_states,
         )
 
-        # Linear-attention state updates are returned so the runtime can persist them on the host; the
-        # per-layer hidden states (n_layers + 1) trail last when output_hidden_states is requested.
+        # The ops write their own rows of both caches, so the graph hands back the logits alone. The
+        # per-layer hidden states (n_layers + 1) trail them when output_hidden_states is requested,
+        # which is how the runtime finds them.
         if self.rbln_config.output_hidden_states:
             return (logits, *all_hidden_states)
         return (logits,)
@@ -749,16 +763,7 @@ class Qwen3_5_LanguageModelWrapper(Qwen3_5_CausalLMWrapper):
 
     def prepare_forward_args(self, *args):
         args = list(args)
-        has_linear = any(t == "linear_attention" for t in self.config.layer_types)
-        # get_input_info declares the conv ring's tables last, in both phases.
-        conv_tables = tuple(args[-len(CONV_TABLE_INPUTS) :]) if has_linear else None
-        if has_linear:
-            del args[-len(CONV_TABLE_INPUTS) :]
-        # get_input_info declares these three for a prefill graph only.
-        has_prefill_linear = has_linear and "prefill" in self.phase
-        batch_idx = args.pop() if has_prefill_linear else None
-        valid_mask = args.pop() if has_prefill_linear else None
-        state_mask = args.pop() if has_prefill_linear else None
+        state_mask, valid_mask, batch_idx, conv_tables = self._take_gdn_inputs(args)
         input_ids = None if self.rbln_config.use_inputs_embeds else args.pop(0)
         inputs_embeds = args.pop(0) if self.rbln_config.use_inputs_embeds else None
         cache_position = args.pop(0)
