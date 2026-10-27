@@ -341,7 +341,7 @@ class RBLNQwen3_5TextModel(RBLNDecoderOnlyModel):
             # The conv ring's index tables, host-built each call (`ring_tables`) and read by every
             # GatedDeltaNet layer: int16 on 64-lane rows, as the kernel takes them.
             taps = width = text_config.linear_conv_kernel_dim - 1
-            rows = (batch_size * taps, batch_size * width, batch_size, batch_size, 1)
+            rows = (batch_size * taps, batch_size * width, batch_size, 1)
             input_info.extend((name, [n, 64], "int16") for name, n in zip(CONV_TABLE_INPUTS, rows, strict=True))
 
         return input_info

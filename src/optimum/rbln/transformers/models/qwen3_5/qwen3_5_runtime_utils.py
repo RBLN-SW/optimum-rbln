@@ -61,7 +61,8 @@ class RBLNQwen3_5RuntimeModel(RBLNRuntimeModel):
         from rebel.ops.torch_custom_ops.causal_conv1d_ring import ring_tables
 
         kernel_size = self.config.get_text_config().linear_conv_kernel_dim
-        tables = ring_tables(state_index, seq_idx, query_len, has_initial_state, tokens, kernel_size - 1, kernel_size)
+        width = kernel_size - 1  # the conv cache is [N, W, ...]: a block holds one ring
+        tables = ring_tables(state_index, seq_idx, query_len, has_initial_state, tokens, width, kernel_size, width)
         return dict(zip(CONV_TABLE_INPUTS, tables, strict=True))
 
     def _run(self, named_inputs: dict):
