@@ -272,7 +272,6 @@ class Qwen3_5GatedDeltaNet(nn.Module):
     ) -> torch.Tensor:
         prefill = "prefill" in self._phase and valid_mask is not None
         slot = torch.tensor(0, dtype=torch.int16) if slot is None else slot
-        # Returns no new recurrent state: the op writes it into `recurrent_state` at `slot`.
         batch_size, seq_len, _ = hidden_states.shape
         heads, ratio = self.num_k_heads, self.num_v_heads // self.num_k_heads
         dim = self.head_k_dim
