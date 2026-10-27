@@ -608,11 +608,6 @@ class Qwen3_5Model(DecoderOnlyModel):
                 seq_positions=cache_position[:, 0], max_seq_len=self.max_seq_len
             )
         else:
-            # The first element, not the minimum: a prefill chunk shorter than
-            # `prefill_chunk_size` is right-padded with zeros, and a zero there is
-            # indistinguishable from position 0, so `amin` would read the padding and
-            # point the attention at the start of the block. This is what every other
-            # model takes here (`DecoderOnlyModel`, Gemma3, Gemma4, Qwen3-VL).
             seq_positions = cache_position[:, :1]
 
         all_hidden_states = () if output_hidden_states else None
