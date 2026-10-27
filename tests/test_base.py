@@ -386,8 +386,8 @@ class BaseTest:
                         **self.HF_CONFIG_KWARGS,
                     )
                     if isinstance(model, RBLNBaseModel):
-                        self.assertIsNone(model._compiled_models, "create_runtimes=False must not read .rbln files")
-                        self.assertEqual(len(model.compiled_models), len(model.rbln_config.compile_cfgs))
+                        assert model._compiled_models is None, "create_runtimes=False must not read .rbln files"
+                        assert len(model.compiled_models) == len(model.rbln_config.compile_cfgs)
 
         def test_save_load(self):
             with tempfile.TemporaryDirectory() as tmpdir:
