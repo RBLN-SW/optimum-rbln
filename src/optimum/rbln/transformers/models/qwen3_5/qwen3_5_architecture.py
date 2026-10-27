@@ -212,12 +212,6 @@ class Qwen3_5GatedDeltaNet(nn.Module):
         grouped = torch.cat(parts, dim=1).reshape(heads * (2 + ratio), self.head_k_dim, channels.shape[1])
         return pack_weight(grouped)
 
-    @staticmethod
-    def _split_groups(convolved, heads, ratio, seq_len, dim):
-        """`[B, Hk*(2+r), S, D]` -> the Q, K and the r V heads of each Q/K head that the delta rule takes."""
-        grouped = convolved.reshape(convolved.shape[0], heads, 2 + ratio, seq_len, dim)
-        return grouped[:, :, 0], grouped[:, :, 1], grouped[:, :, 2:]
-
     def _project_qkv(self, hidden_states: torch.Tensor) -> torch.Tensor:
         """Q, K and the r value heads of each Q/K head, side by side: `[B, Hk*(2+r), S, D]`.
 
@@ -261,7 +255,9 @@ class Qwen3_5GatedDeltaNet(nn.Module):
             *conv_tables,
             self.conv_kernel_size - 1,
         )
-        return self._split_groups(convolved.transpose(1, 2).contiguous(), heads, ratio, seq_len, dim)
+        # Back to the Q, K and the r V heads of each Q/K head that the delta rule takes.
+        grouped = convolved.transpose(1, 2).contiguous().reshape(convolved.shape[0], heads, 2 + ratio, seq_len, dim)
+        return grouped[:, :, 0], grouped[:, :, 1], grouped[:, :, 2:]
 
     def forward(
         self,
