@@ -640,7 +640,7 @@ class Qwen3_5_CausalLMWrapper(DecoderOnlyWrapper):
     def _has_linear_layer(self) -> bool:
         return any(t == "linear_attention" for t in self.config.layer_types)
 
-    def _take_gdn_inputs(self, args: list):
+    def _pop_gdn_inputs(self, args: list):
         """Pop the GatedDeltaNet's own inputs off `args`, in the order `get_input_info` declares them.
 
         A graph with no linear layer, and a decode graph, declares fewer of them and takes None there.
@@ -659,7 +659,7 @@ class Qwen3_5_CausalLMWrapper(DecoderOnlyWrapper):
 
     def prepare_forward_args(self, *args):
         args = list(args)
-        state_mask, valid_mask, batch_idx, conv_tables = self._take_gdn_inputs(args)
+        state_mask, valid_mask, batch_idx, conv_tables = self._pop_gdn_inputs(args)
 
         (
             input_ids,
@@ -763,7 +763,7 @@ class Qwen3_5_LanguageModelWrapper(Qwen3_5_CausalLMWrapper):
 
     def prepare_forward_args(self, *args):
         args = list(args)
-        state_mask, valid_mask, batch_idx, conv_tables = self._take_gdn_inputs(args)
+        state_mask, valid_mask, batch_idx, conv_tables = self._pop_gdn_inputs(args)
         input_ids = None if self.rbln_config.use_inputs_embeds else args.pop(0)
         inputs_embeds = args.pop(0) if self.rbln_config.use_inputs_embeds else None
         cache_position = args.pop(0)
