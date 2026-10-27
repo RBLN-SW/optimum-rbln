@@ -17,8 +17,6 @@ import copy
 import torch
 from torch import nn
 
-from ...utils.moe import compute_masked_routing_weight_softmax_first
-from ..decoderonly.configuration_decoderonly import RBLNLoRAConfig
 from ..decoderonly.decoderonly_architecture import (
     DecoderOnlyAttention,
     DecoderOnlyLayer,
@@ -100,59 +98,8 @@ class Llama4LoRALinear(LoRALinear):
 class Llama4DecoderLayer(DecoderOnlyLayer):
     _MLP_ATTR = ("feed_forward",)
 
-    def __init__(self, layer, self_attn: DecoderOnlyAttention, lora_config: RBLNLoRAConfig | None = None):
-        super().__init__(layer, self_attn, lora_config)
-        self.mlp = (
-            Llama4TextMoe(layer.feed_forward)
-            if layer.feed_forward.__class__.__name__ == "Llama4TextMoe"
-            else layer.feed_forward
-        )
-
     def get_lora_linear_class(self):
         return Llama4LoRALinear
-
-
-class Llama4TextMoe(nn.Module):
-    def __init__(self, model: nn.Module):
-        super().__init__()
-        if model.top_k != 1:
-            raise NotImplementedError("Llama 4 MoE supports only `num_experts_per_tok=1`.")
-        router_weight = model.router.weight
-        self.router = nn.Linear(router_weight.shape[1], router_weight.shape[0], bias=False)
-        self.router.weight = router_weight
-        self.shared_expert = model.shared_expert
-        self.experts = Llama4TextExperts(model.experts)
-
-    def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
-        shape = hidden_states.shape
-        hidden_states = hidden_states.reshape(-1, shape[-1])
-        router_logits = self.router(hidden_states)
-        masked_routing_weight = compute_masked_routing_weight_softmax_first(router_logits, top_k=1, renormalize=True)
-        routing_scores = torch.sigmoid(router_logits.amax(dim=-1, keepdim=True).float()).to(hidden_states.dtype)
-        # Llama 4 weights expert inputs; top-1 permits one scaled input per token.
-        routed_states = hidden_states * routing_scores
-        routed_output = self.experts(routed_states, masked_routing_weight)
-        return (self.shared_expert(hidden_states) + routed_output).reshape(shape)
-
-
-class Llama4TextExperts(nn.Module):
-    def __init__(self, experts: nn.Module):
-        super().__init__()
-        # HF Llama 4 stores [E, H, 2I] and [E, I, H]; the SDK takes linear weights.
-        gate, up = experts.gate_up_proj.detach().chunk(2, dim=-1)
-        self.register_buffer("gate_proj_weight", gate.transpose(1, 2).contiguous())
-        self.register_buffer("up_proj_weight", up.transpose(1, 2).contiguous())
-        self.register_buffer("down_proj_weight", experts.down_proj.detach().transpose(1, 2).contiguous())
-
-    def forward(self, hidden_states: torch.Tensor, masked_routing_weight: torch.Tensor) -> torch.Tensor:
-        return torch.ops.rbln_custom_ops.custom_moe_glu(
-            hidden_states=hidden_states,
-            gate_proj_weight=self.gate_proj_weight,
-            up_proj_weight=self.up_proj_weight,
-            down_proj_weight=self.down_proj_weight,
-            masked_routing_weight=masked_routing_weight,
-            hidden_act="silu",
-        )
 
 
 class Llama4Attention(DecoderOnlyAttention):

@@ -41,7 +41,8 @@ class RBLNLlama4ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
 
     This model inherits from [`RBLNDecoderOnlyModelForCausalLM`] and uses
     [`RBLNLlama4ForCausalLMConfig`]. Both standalone text checkpoints and the
-    language model in multimodal checkpoints such as Llama Guard 4 are supported.
+    language model in dense multimodal checkpoints such as Llama Guard 4 are supported.
+    Mixture-of-experts (MoE) models are not supported.
     Image inputs require a conditional-generation model and are not supported here.
 
     Examples:
@@ -73,6 +74,8 @@ class RBLNLlama4ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
         # Llama4ForCausalLM expects Llama4TextConfig. Its language_model base prefix
         # allows HF to load only the text weights from a multimodal checkpoint.
         text_config = config.get_text_config()
+        if text_config.moe_layers:
+            raise NotImplementedError("Llama 4 MoE models are not supported yet.")
         if text_config.attention_chunk_size is None:
             # Llama Guard 4 disables chunked attention. HF's default layer_types
             # inference only looks at no_rope_layers, including for older configs.
@@ -88,6 +91,8 @@ class RBLNLlama4ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
     @classmethod
     def _update_rbln_config(cls, preprocessors=None, model=None, model_config=None, rbln_config=None):
         text_config = model_config.get_text_config()
+        if text_config.moe_layers:
+            raise NotImplementedError("Llama 4 MoE models are not supported yet.")
         if text_config.attention_chunk_size is None:
             text_config.layer_types = ["full_attention"] * text_config.num_hidden_layers
         if rbln_config.max_seq_len is None:
@@ -98,11 +103,6 @@ class RBLNLlama4ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
             if rbln_config.use_position_ids:
                 raise ValueError("Llama 4 chunked attention does not support `use_position_ids=True`.")
             rbln_config.use_attention_mask = True
-
-        if text_config.moe_layers and text_config.num_experts_per_tok != 1:
-            raise NotImplementedError("Llama 4 MoE supports only `num_experts_per_tok=1`.")
-        if text_config.moe_layers and rbln_config.use_lora:
-            raise ValueError("LoRA is not supported for Llama 4 MoE layers.")
 
         return super()._update_rbln_config(preprocessors, model, text_config, rbln_config)
 
@@ -203,6 +203,8 @@ class RBLNLlama4ForConditionalGeneration(RBLNModel, RBLNImageIndexedBatchSortMix
     def _update_submodule_rbln_config(
         cls, submodule_name, submodule_cls, model, submodule_config, submodule_rbln_config, preprocessors
     ):
+        if model.config.get_text_config().moe_layers:
+            raise NotImplementedError("Llama 4 MoE models are not supported yet.")
         if submodule_name == "language_model" and not submodule_rbln_config.use_inputs_embeds:
             raise ValueError("Llama 4 conditional generation requires language_model.use_inputs_embeds=True.")
         if submodule_name == "vision_model" and submodule_rbln_config.batch_size != 1:
