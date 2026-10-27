@@ -302,7 +302,6 @@ class Qwen3_5GatedDeltaNet(nn.Module):
             core_attn_out = torch.ops.rbln_custom_ops.gdn_decode(*operands)
 
         core_attn_out = self.norm(core_attn_out, z).permute(0, 3, 1, 2, 4).reshape(batch_size, seq_len, -1)
-        # Nothing comes back: every op wrote its own cache rows at `slot`.
         return self.out_proj(core_attn_out)
 
 
