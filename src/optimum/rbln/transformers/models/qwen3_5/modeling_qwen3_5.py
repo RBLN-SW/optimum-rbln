@@ -64,7 +64,7 @@ def validate_gdn_custom_kernel(model_config, rbln_config) -> None:
     """Reject a configuration the GatedDeltaNet custom ops do not serve.
 
     The core always runs as `rbln_custom_ops::gdn_*` and the short conv in front of it as
-    `causal_conv1d_ring`, so a configuration they cannot take fails here rather than at compile
+    `causal_conv1d_ring_tabled`, so a configuration they cannot take fails here rather than at
     time, where the converter reports it as a shape mismatch.
 
     Runs before `super()._update_rbln_config` fills the defaults, so it reads no field that
@@ -72,7 +72,7 @@ def validate_gdn_custom_kernel(model_config, rbln_config) -> None:
     ops want a prefill window that is a multiple of 128, and `_update_rbln_config` already rejects a
     `gdn_chunk_size` that does not divide `prefill_chunk_size`, so `gdn_chunk_size == 128` gives it.
     """
-    wanted = ("gdn_prefill", "gdn_decode", "causal_conv1d_ring")
+    wanted = ("gdn_prefill", "gdn_decode", "causal_conv1d_ring_tabled")
     missing = [name for name in wanted if not hasattr(torch.ops.rbln_custom_ops, name)]
     if missing:
         raise ValueError(
@@ -131,9 +131,9 @@ def _qwen3_5_linear_state_shapes(text_config, batch_size: int):
 
     heads = text_config.linear_num_key_heads
     # Q, K and the value heads of each Q/K head. The group axis is its own because
-    # `causal_conv1d_ring` addresses the cache by it.
+    # `causal_conv1d_ring_tabled` addresses the cache by it.
     groups = heads * (2 + text_config.linear_num_value_heads // heads)
-    # The ring `causal_conv1d_ring` takes: W = K - 1 slots, slot-major, slot p % W holding the
+    # The ring the op takes: W = K - 1 slots, slot-major, slot p % W holding the
     # inputs of position p. Slot-major rather than group-major because one slot is the row the op
     # gathers and scatters.
     conv_state_shape = (
