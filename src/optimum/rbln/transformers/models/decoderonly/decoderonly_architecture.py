@@ -38,6 +38,12 @@ def _is_batch_attn_opt_enabled() -> bool:
     return os.environ.get("VLLM_RBLN_BATCH_ATTN_OPT", "0") == "1"
 
 
+@torch.compiler.assume_constant_result
+def _op_accepts(op_name: str, arg_name: str) -> bool:
+    op = getattr(torch.ops.rbln_custom_ops, op_name)
+    return any(arg.name == arg_name for arg in op.default._schema.arguments)
+
+
 class DecoderOnlyWrapper(nn.Module):
     """A wrapper class for decoder-only language models that handles RBLN-specific optimizations and requirements.
 
@@ -1099,6 +1105,11 @@ class AttentionOp(nn.Module):
         if attn_op is None:
             raise ValueError(f"Attention operator {attn_op_name} not found.")
 
+        # rebel_compiler#14574 selects the batch_decode kernel from this flag instead of
+        # VLLM_RBLN_BATCH_ATTN_OPT; the batch is already sorted by length in forward().
+        if is_batch_attn_opt_decode and _op_accepts(attn_op_name, "is_prompt_sorted"):
+            op_args["is_prompt_sorted"] = True
+
         attn_output = attn_op(**op_args)
         attn_output = attn_output.view(batch_size, self.num_heads, -1, self.head_dim)
         attn_output = attn_output.transpose(1, 2).contiguous()
@@ -1223,6 +1234,11 @@ class FlashAttentionOp(AttentionOp):
         attn_op = getattr(torch.ops.rbln_custom_ops, attn_op_name, None)
         if attn_op is None:
             raise ValueError(f"Attention operator {attn_op_name} not found.")
+
+        # rebel_compiler#14574 selects the batch_decode kernel from this flag instead of
+        # VLLM_RBLN_BATCH_ATTN_OPT; the batch is already sorted by length in forward().
+        if is_batch_attn_opt_decode and _op_accepts(attn_op_name, "is_prompt_sorted"):
+            op_args["is_prompt_sorted"] = True
 
         attn_output = attn_op(**op_args)
         attn_output = attn_output.view(batch_size, self.num_heads, -1, self.head_dim)
