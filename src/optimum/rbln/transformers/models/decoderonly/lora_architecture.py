@@ -90,6 +90,18 @@ class LoRALinear(nn.Module):
             f"Expected one of: {', '.join(filename for filename, _ in weight_files)}"
         )
 
+    def get_layer_key(self) -> str:
+        attn_projs = {"q_proj", "k_proj", "v_proj", "o_proj"}
+        mlp_projs = {"gate_proj", "up_proj", "down_proj"}
+        if self.projection_name in attn_projs:
+            module_type = "self_attn"
+        elif self.projection_name in mlp_projs:
+            module_type = "mlp"
+        else:
+            module_type = "self_attn"
+
+        return f"base_model.model.model.layers.{self.layer_idx}.{module_type}.{self.projection_name}"
+
     def _init_lora_weights(self):
         """Initialize LoRA adapter weights by loading and stacking them."""
 
@@ -105,17 +117,7 @@ class LoRALinear(nn.Module):
 
             adapter_weights = self._load_adapter_weights(adapter.local_adapter_path)
 
-            # Determine module type from projection name
-            attn_projs = {"q_proj", "k_proj", "v_proj", "o_proj"}
-            mlp_projs = {"gate_proj", "up_proj", "down_proj"}
-            if self.projection_name in attn_projs:
-                module_type = "self_attn"
-            elif self.projection_name in mlp_projs:
-                module_type = "mlp"
-            else:
-                module_type = "self_attn"
-
-            layer_key = f"base_model.model.model.layers.{self.layer_idx}.{module_type}.{self.projection_name}"
+            layer_key = self.get_layer_key()
             lora_a_key = f"{layer_key}.lora_A.weight"
             lora_b_key = f"{layer_key}.lora_B.weight"
 

@@ -48,6 +48,8 @@ class Llama4VisionWrapper(nn.Module):
         self.register_buffer("interleave_indices", indices // 2 + indices % 2 * num_pairs, persistent=False)
 
     def _rotate(self, states):
+        # Functionally equivalent to HF's vision_apply_rotary_emb complex rotation;
+        # use real-valued ops and cat/index_select to keep it compilable.
         pairs = states.float().reshape(*states.shape[:-1], -1, 2)
         real, imag = pairs[..., 0], pairs[..., 1]
         out_real = real * self.cos - imag * self.sin
@@ -154,6 +156,9 @@ class Llama4Attention(DecoderOnlyAttention):
             1, 2
         )
 
+        if batch_size > 1 and "prefill" in self.phase:
+            raise NotImplementedError(f"batch size should be 1 if prefill phase, but got {batch_size}.")
+
         if cos is not None and sin is not None:
             query_states, key_states = self.apply_rotary_pos_embed(query_states, key_states, cos, sin)
         if self.qk_norm is not None:
@@ -173,9 +178,6 @@ class Llama4Attention(DecoderOnlyAttention):
             )
             chunk_mask = chunk_mask & (key_positions <= positions[:, :, None])
             attention_mask = attention_mask * chunk_mask[:, None, :, :].to(attention_mask.dtype)
-
-        if batch_size > 1 and "prefill" in self.phase:
-            raise NotImplementedError(f"batch size should be 1 if prefill phase, but got {batch_size}.")
 
         k_scale, v_scale = self.maybe_get_kvcache_scale()
         attn_output = self.get_attention_op()(
