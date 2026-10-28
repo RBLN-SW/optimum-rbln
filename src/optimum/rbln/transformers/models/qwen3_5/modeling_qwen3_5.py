@@ -60,28 +60,21 @@ from .qwen3_5_runtime_utils import RBLNQwen3_5RuntimeModel
 logger = logging.get_logger(__name__)
 
 
-def validate_gdn_custom_kernel(rbln_config) -> None:
-    """Reject a configuration the GatedDeltaNet custom ops do not serve.
+def validate_gdn_custom_kernel() -> None:
+    """Reject a rebel-compiler that registers no GatedDeltaNet custom ops.
 
-    Runs before `super()._update_rbln_config` fills the defaults, so it reads no field that
-    `set_default_values` owns -- `prefill_chunk_size` is still None here.
+    What those ops take of the configuration, `validate_gdn_defaults` checks once the defaults are
+    filled. This asks only whether they are there, and `_update_rbln_config` calls it before anything
+    is built -- before `super()` fills the defaults, and before the VL model exports its visual
+    submodule -- so a compiler that cannot serve this model says so at once.
     """
-    wanted = ("gdn_prefill", "gdn_decode", "causal_conv1d_ring_tabled")
+    wanted = ("chunk_gated_delta_rule", "recurrent_gated_delta_rule", "causal_conv1d_ring_tabled")
     missing = [name for name in wanted if not hasattr(torch.ops.rbln_custom_ops, name)]
     if missing:
         raise ValueError(
             f"This rebel-compiler registers no {missing}. Qwen3.5 runs its GatedDeltaNet core and the "
             f"short conv in front of it as `rbln_custom_ops::`{list(wanted)}, so it needs a compiler "
             "that provides them."
-        )
-
-    # The kernel takes 128-token chunks whatever this field holds, and wants a prefill window that is
-    # a multiple of 128. `_update_rbln_config` asks only that the field be <= 128 and divide the
-    # window, which 64 also does -- and `gdn_chunk_size=64` then lets a window of 320 through too.
-    if rbln_config.gdn_chunk_size != MAX_GDN_CHUNK_SIZE:
-        raise ValueError(
-            f"Qwen3.5 on RBLN needs `gdn_chunk_size` {MAX_GDN_CHUNK_SIZE}, got {rbln_config.gdn_chunk_size}. "
-            "The `rbln_custom_ops::gdn_prefill` kernel takes 128-token chunks only."
         )
 
 
@@ -303,7 +296,7 @@ class RBLNQwen3_5TextModel(RBLNDecoderOnlyModel):
     @classmethod
     def _update_rbln_config(cls, preprocessors=None, model=None, model_config=None, rbln_config=None):
         rbln_config.linear_attention_layers = _qwen3_5_linear_layer_indices(model_config)
-        validate_gdn_custom_kernel(rbln_config)
+        validate_gdn_custom_kernel()
         rbln_config = super()._update_rbln_config(
             preprocessors=preprocessors, model=model, model_config=model_config, rbln_config=rbln_config
         )
@@ -400,7 +393,7 @@ class RBLNQwen3_5TextModel(RBLNDecoderOnlyModel):
         # decode step carries none, so declaring them there would leave inputs nothing consumes.
         if linear_layers and is_prefill:
             # One 0/1 value per cache row: zeros on window 0 (fresh sequence, discard the stale cache), ones
-            # after (carry). It gates both caches -- `gdn_prefill` takes it as `has_initial_state`
+            # after (carry). It gates both caches -- `chunk_gated_delta_rule` takes it as `has_initial_state`
             # and the conv op is handed inputs it has zeroed -- so the two can never disagree.
             input_info.append(("state_mask", [batch_size], rbln_config.dtype))
             # per-token validity (1=real, 0=right-padding); host-built, GatedDeltaNet uses it to drop padding.
@@ -723,7 +716,7 @@ class RBLNQwen3_5Model(RBLNDecoderOnlyModel):
     @classmethod
     def _update_rbln_config(cls, preprocessors=None, model=None, model_config=None, rbln_config=None):
         rbln_config.linear_attention_layers = _qwen3_5_linear_layer_indices(model_config)
-        validate_gdn_custom_kernel(rbln_config)
+        validate_gdn_custom_kernel()
         rbln_config = super()._update_rbln_config(
             preprocessors=preprocessors, model=model, model_config=model_config, rbln_config=rbln_config
         )

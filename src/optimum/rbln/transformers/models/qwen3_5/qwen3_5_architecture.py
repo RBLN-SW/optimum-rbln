@@ -131,8 +131,9 @@ class Qwen3_5VisionModelWrapper(nn.Module):
 class Qwen3_5GatedDeltaNet(nn.Module):
     """GatedDeltaNet token mixer for RBLN (conv_state + recurrent_state are on-device static caches).
 
-    The delta rule runs as one ``rbln_custom_ops::gdn_prefill`` / ``gdn_decode`` op, which updates its rows
-    of the recurrent cache in place like paged attention's KV cache. Everything around it keeps the Q/K head
+    The delta rule runs as one ``rbln_custom_ops::chunk_gated_delta_rule`` /
+    ``recurrent_gated_delta_rule`` op, which updates its rows of the recurrent cache in place like
+    paged attention's KV cache. Everything around it keeps the Q/K head
     axis outermost so tensor parallelism can shard by it: the depthwise conv reads its inputs channel
     last, and the conv cache groups its channels as ``Hk*(2+r)`` (Q, K and the r value heads of each
     Q/K head together). That group axis sits second, under the ring's ``K-1`` slots:
@@ -294,9 +295,9 @@ class Qwen3_5GatedDeltaNet(nn.Module):
         if prefill:
             # `state_mask` is one value per cache row: 0 starts that row from a zero state. It is
             # declared beside `valid_mask`, so a prefill graph always carries it.
-            core_attn_out = torch.ops.rbln_custom_ops.gdn_prefill(*operands, state_mask)
+            core_attn_out = torch.ops.rbln_custom_ops.chunk_gated_delta_rule(*operands, state_mask)
         else:
-            core_attn_out = torch.ops.rbln_custom_ops.gdn_decode(*operands)
+            core_attn_out = torch.ops.rbln_custom_ops.recurrent_gated_delta_rule(*operands)
 
         core_attn_out = self.norm(core_attn_out, z).permute(0, 3, 1, 2, 4).reshape(batch_size, seq_len, -1)
         return self.out_proj(core_attn_out)
@@ -493,8 +494,9 @@ class Qwen3_5Model(DecoderOnlyModel):
                 all_hidden_states += (hidden_states,)
             if layer_idx in self.linear_attention_layers:
                 conv_state, recurrent_state = past_states[layer_idx]
-                # Both caches go in whole, at their max batch: `gdn_prefill` and `gdn_decode` address
-                # their own rows by `slot`, and the conv ring addresses its blocks by table. PREFILL
+                # Both caches go in whole, at their max batch: `chunk_gated_delta_rule` and
+                # `recurrent_gated_delta_rule` address their own rows by `slot`, and the conv ring
+                # addresses its blocks by table. PREFILL
                 # runs ONE item, and `batch_idx` is the row of the caches that item holds.
                 slot = batch_idx.to(torch.int16) if batch_idx is not None else torch.tensor(0, dtype=torch.int16)
                 hidden_states = layer(

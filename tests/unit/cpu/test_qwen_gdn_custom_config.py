@@ -1,4 +1,6 @@
+import inspect
 import re
+from types import SimpleNamespace
 
 import pytest
 import torch
@@ -6,6 +8,7 @@ from transformers.models.qwen3_5.configuration_qwen3_5 import Qwen3_5TextConfig
 from transformers.models.qwen3_5.modeling_qwen3_5 import Qwen3_5GatedDeltaNet as NativeGdn
 
 from optimum.rbln.configuration_utils import RBLNCompileConfig
+from optimum.rbln.transformers.models.qwen3_5 import modeling_qwen3_5
 from optimum.rbln.transformers.models.qwen3_5.configuration_qwen3_5 import (
     RBLNQwen3_5TextModelConfig,
 )
@@ -200,34 +203,21 @@ def test_gdn_custom_model_batched_decode(ratio):
             _compare(outputs, states, ratio, position)
 
 
-@pytest.mark.parametrize("gdn_chunk_size", [64, 32])
-def test_gdn_custom_kernel_rejects_what_the_ops_do_not_serve(gdn_chunk_size):
-    # The core always runs as the ops, so a configuration they cannot take fails at config time with a
-    # message that names the field, not at compile time as a shape mismatch.
-    config = RBLNQwen3_5TextModelConfig(
-        max_seq_len=4096, batch_size=1, prefill_chunk_size=512, gdn_chunk_size=gdn_chunk_size
-    )
-    with pytest.raises(ValueError, match="gdn_chunk_size"):
-        validate_gdn_custom_kernel(config)
+def test_gdn_custom_kernel_needs_a_compiler_that_registers_the_ops(monkeypatch):
+    # The core always runs as the ops, so a compiler without them is reported while the config is
+    # built, by the names it misses -- not at compile time, as a lookup that finds nothing. The
+    # compiler this suite runs on is not asked: which ops it registers is its own business.
+    empty = SimpleNamespace(ops=SimpleNamespace(rbln_custom_ops=object()))
+    monkeypatch.setattr(modeling_qwen3_5, "torch", empty)
+    with pytest.raises(ValueError, match="chunk_gated_delta_rule"):
+        validate_gdn_custom_kernel()
 
 
-@pytest.mark.parametrize("npu", ["RBLN-CA25", "RBLN-CA22", "RBLN-CR13", None])
-def test_gdn_custom_kernel_takes_every_target(npu):
-    # No target is refused here, an unknown one (no device, no `npu`) included: the compile decides.
-    config = RBLNQwen3_5TextModelConfig(
-        max_seq_len=4096, batch_size=1, prefill_chunk_size=512, gdn_chunk_size=128, npu=npu
-    )
-    validate_gdn_custom_kernel(config)
-
-
-def test_gdn_custom_kernel_validates_before_the_defaults_are_filled():
-    # _update_rbln_config validates before super() fills the defaults, so every field it reads must
-    # already be set. `prefill_chunk_size` is not: set_default_values owns it, and a config that
-    # leaves it out carries None until then.
-    config = RBLNQwen3_5TextModelConfig(max_seq_len=4096, batch_size=1)
-    assert config.prefill_chunk_size is None
-
-    validate_gdn_custom_kernel(config)
+def test_gdn_custom_kernel_reads_no_configuration():
+    # It takes no config, which is what lets `_update_rbln_config` call it before `super()` fills the
+    # defaults and before the VL model exports its visual submodule. The fields the ops do constrain
+    # are `validate_gdn_defaults`, which runs after.
+    assert inspect.signature(validate_gdn_custom_kernel).parameters == {}
 
 
 def _config_with_graph_inputs(*names):
