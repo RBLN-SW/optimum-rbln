@@ -61,9 +61,9 @@ class RBLNQwen3_5RuntimeModel(RBLNRuntimeModel):
         # shape, under its own name, because its GatedDeltaNet multiplies the mask into the state it
         # reads (`warn_deprecated_gdn_graph`). `_qwen3_5_setup_hybrid_runtime` recognizes such an
         # artifact and passes the shapes, which only it can work out; nothing else marks one.
-        self._gdn_runs_in_graph = legacy_state_shapes is not None
+        self._is_legacy_graph = legacy_state_shapes is not None
         names = ("conv_state_mask", "recurrent_state_mask")
-        shapes = dict(zip(names, legacy_state_shapes, strict=True)) if self._gdn_runs_in_graph else {}
+        shapes = dict(zip(names, legacy_state_shapes, strict=True)) if self._is_legacy_graph else {}
         self._legacy_masks_fresh = {name: torch.zeros(shape, dtype=state_dtype) for name, shape in shapes.items()}
         self._legacy_masks_carry = {name: torch.ones(shape, dtype=state_dtype) for name, shape in shapes.items()}
 
@@ -202,7 +202,7 @@ class RBLNQwen3_5RuntimeModel(RBLNRuntimeModel):
             # it carries what the one before wrote. An artifact from before the custom kernels takes
             # one mask per cache under its own name instead, and no ring tables.
             has_initial_state = step > 0
-            if self._gdn_runs_in_graph:
+            if self._is_legacy_graph:
                 named.update(self._legacy_masks_carry if has_initial_state else self._legacy_masks_fresh)
             else:
                 named["state_mask"] = self._state_mask_ones if has_initial_state else self._state_mask_zeros
@@ -302,7 +302,7 @@ class RBLNQwen3_5RuntimeModel(RBLNRuntimeModel):
             named["lora_int_ids"] = lora_int_ids
         # Row b reads and writes cache row b, one token on. An artifact from before the custom kernels
         # carries no ring, and its decode graph consumes no state mask, so it takes nothing here.
-        if not self._gdn_runs_in_graph:
+        if not self._is_legacy_graph:
             ones = torch.ones(self.batch_size, dtype=torch.int32)
             named.update(
                 self._conv_tables(torch.arange(self.batch_size), cache_position[:, 0], ones, ones, inputs.shape[1])
