@@ -18,12 +18,17 @@ from torch import nn
 
 from ...utils.moe import compute_masked_routing_weight_softmax_first, split_fused_experts
 from ..decoderonly.configuration_decoderonly import RBLNLoRAConfig
-from ..decoderonly.decoderonly_architecture import DecoderOnlyAttention, DecoderOnlyLayer, DecoderOnlyWrapper
+from ..decoderonly.decoderonly_architecture import (
+    DecoderOnlyAttention,
+    DecoderOnlyLayer,
+    DecoderOnlyWrapper,
+    NestedCompileRegionMixin,
+)
 
 
 class MixtralWrapper(DecoderOnlyWrapper):
     def get_rbln_layer_class(self):
-        return MixtralLayer
+        return MixtralLayerRegion if self.rbln_config.nested_compile_region else MixtralLayer
 
 
 class MixtralLayer(DecoderOnlyLayer):
@@ -32,6 +37,10 @@ class MixtralLayer(DecoderOnlyLayer):
     def __init__(self, layer, self_attn: DecoderOnlyAttention, lora_config: RBLNLoRAConfig | None = None):
         super().__init__(layer, self_attn, lora_config)
         self.mlp = MixtralSparseMoeBlock(layer.mlp)
+
+
+class MixtralLayerRegion(NestedCompileRegionMixin, MixtralLayer):
+    """Decoder layer with a nested compile region around its forward call."""
 
 
 class MixtralSparseMoeBlock(nn.Module):

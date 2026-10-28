@@ -14,7 +14,12 @@
 
 import torch
 
-from ..decoderonly.decoderonly_architecture import DecoderOnlyAttention, DecoderOnlyLayer, DecoderOnlyWrapper
+from ..decoderonly.decoderonly_architecture import (
+    DecoderOnlyAttention,
+    DecoderOnlyLayer,
+    DecoderOnlyWrapper,
+    NestedCompileRegionMixin,
+)
 
 
 class Olmo2Wrapper(DecoderOnlyWrapper):
@@ -22,7 +27,7 @@ class Olmo2Wrapper(DecoderOnlyWrapper):
         return Olmo2Attention
 
     def get_rbln_layer_class(self):
-        return Olmo2DecoderLayer
+        return Olmo2DecoderLayerRegion if self.rbln_config.nested_compile_region else Olmo2DecoderLayer
 
 
 class Olmo2Attention(DecoderOnlyAttention):
@@ -86,3 +91,7 @@ class Olmo2DecoderLayer(DecoderOnlyLayer):
         hidden_states = residual + hidden_states
 
         return hidden_states
+
+
+class Olmo2DecoderLayerRegion(NestedCompileRegionMixin, Olmo2DecoderLayer):
+    """Decoder layer with a nested compile region around its forward call."""

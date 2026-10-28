@@ -241,6 +241,7 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
                 quantization.maybe_set_quantization_env()
             original_linear = torch.nn.functional.linear
             torch.nn.functional.linear = torch.ops.rbln_custom_ops.linear
+            trace_options = {"model_trace_method": "export_strict"} if rbln_config.nested_compile_region else {}
             compiled_model = cls.compile(
                 wrapped_model,
                 compile_config,
@@ -248,6 +249,7 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
                 device=rbln_config.device,
                 example_inputs=example_inputs,
                 compile_context=compile_context,
+                **trace_options,
             )
             return compiled_model
         finally:
@@ -488,7 +490,7 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
         # Bidirectional prefill attends across the whole prompt, so the prompt must fit in a
         # single prefill chunk — default the chunk size to max_seq_len instead of the generic
         # NPU default, which would silently truncate the bidirectional context.
-        if rbln_config.prefill_chunk_size is None and rbln_config.use_bidirectional_prefill:
+        if rbln_config.prefill_chunk_size is None and rbln_config._is_prefix_lm:
             rbln_config.prefill_chunk_size = rbln_config.max_seq_len
 
         (
