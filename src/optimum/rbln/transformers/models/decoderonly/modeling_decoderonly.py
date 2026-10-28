@@ -211,9 +211,6 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
             raise ValueError("Decode stage is not supported in this model.")
         return self.decoder
 
-    def can_generate(self):
-        return self.rbln_config.can_generate
-
     def get_input_embeddings(self):
         return self.embed_tokens
 
