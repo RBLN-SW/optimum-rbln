@@ -32,6 +32,20 @@ if TYPE_CHECKING:
 logger = logging.get_logger(__name__)
 
 
+@torch.compiler.assume_constant_result
+def _op_accepts(op_name: str, arg_name: str) -> bool:
+    op = getattr(torch.ops.rbln_custom_ops, op_name)
+    return any(arg.name == arg_name for arg in op.default._schema.arguments)
+
+
+class NestedCompileRegionMixin:
+    """Preserve a decoder forward as a nested region through module cloning and export."""
+
+    @torch.compiler.nested_compile_region
+    def forward(self, *args, **kwargs):
+        return super().forward(*args, **kwargs)
+
+
 class DecoderOnlyWrapper(nn.Module):
     """A wrapper class for decoder-only language models that handles RBLN-specific optimizations and requirements.
 
@@ -76,6 +90,10 @@ class DecoderOnlyWrapper(nn.Module):
             )
 
         self.model = self.convert_to_rbln_class(model, rbln_config.max_seq_len, use_rotary_emb)
+        if rbln_config.nested_compile_region and not any(
+            isinstance(layer, NestedCompileRegionMixin) for layer in self.model.modules()
+        ):
+            raise ValueError("nested_compile_region requires NestedCompileRegionMixin instances.")
         self.num_hidden_layers = getattr(self.config, "num_hidden_layers", None) or self.config.n_layer
         self._phase = "prefill"
 
@@ -95,7 +113,7 @@ class DecoderOnlyWrapper(nn.Module):
         return DecoderOnlyAttention
 
     def get_rbln_layer_class(self):
-        return DecoderOnlyLayer
+        return DecoderOnlyLayerRegion if self.rbln_config.nested_compile_region else DecoderOnlyLayer
 
     def get_rbln_model_class(self):
         return DecoderOnlyModel
@@ -691,6 +709,10 @@ class DecoderOnlyLayer(nn.Module):
         return hidden_states
 
 
+class DecoderOnlyLayerRegion(NestedCompileRegionMixin, DecoderOnlyLayer):
+    """Decoder layer with a nested compile region around its forward call."""
+
+
 class DecoderOnlyAttention(nn.Module):
     """Attention implementation for decoder-only models optimized for RBLN compilation.
 
@@ -1032,10 +1054,11 @@ class AttentionOp(nn.Module):
             use_image_prefill = getattr(self.rbln_config, "use_image_prefill", False)
             if use_image_prefill:
                 op_args["is_bidirectional"] = self.phase == "image_prefill"
-            elif not self.use_attention_mask:
-                op_args["is_bidirectional"] = False
-            elif self.use_attention_mask and self.rbln_config.use_position_ids:
-                op_args["is_bidirectional"] = True
+            elif not self.use_attention_mask or self.rbln_config.use_position_ids:
+                op_args["is_bidirectional"] = self.rbln_config._is_prefix_lm
+            else:
+                # paged_attn_* (mask without position ids): the custom op has no is_bidirectional argument
+                pass
 
         if self.quantization and self.quantization.kv_caches == "fp8":
             if past_key_state.dtype != torch.float8_e4m3fn:
@@ -1052,9 +1075,7 @@ class AttentionOp(nn.Module):
             raise ValueError(f"Attention operator {attn_op_name} not found.")
 
         # Tell the compiler the batch arrives length-sorted; older compilers lack the arg.
-        if getattr(self.rbln_config, "requires_batch_sort", None) and any(
-            arg.name == "is_prompt_sorted" for arg in attn_op.default._schema.arguments
-        ):
+        if getattr(self.rbln_config, "requires_batch_sort", None) and _op_accepts(attn_op_name, "is_prompt_sorted"):
             op_args["is_prompt_sorted"] = True
 
         attn_output = attn_op(**op_args)
@@ -1158,10 +1179,11 @@ class FlashAttentionOp(AttentionOp):
             use_image_prefill = getattr(self.rbln_config, "use_image_prefill", False)
             if use_image_prefill:
                 op_args["is_bidirectional"] = self.phase == "image_prefill"
-            elif not self.use_attention_mask:
-                op_args["is_bidirectional"] = False
-            elif self.use_attention_mask and self.rbln_config.use_position_ids:
-                op_args["is_bidirectional"] = True
+            elif not self.use_attention_mask or self.rbln_config.use_position_ids:
+                op_args["is_bidirectional"] = self.rbln_config._is_prefix_lm
+            else:
+                # paged_attn_* (mask without position ids): the custom op has no is_bidirectional argument
+                pass
 
         if self.quantization and self.quantization.kv_caches == "fp8":
             if past_key_state.dtype != torch.float8_e4m3fn:
@@ -1178,9 +1200,7 @@ class FlashAttentionOp(AttentionOp):
             raise ValueError(f"Attention operator {attn_op_name} not found.")
 
         # Tell the compiler the batch arrives length-sorted; older compilers lack the arg.
-        if getattr(self.rbln_config, "requires_batch_sort", None) and any(
-            arg.name == "is_prompt_sorted" for arg in attn_op.default._schema.arguments
-        ):
+        if getattr(self.rbln_config, "requires_batch_sort", None) and _op_accepts(attn_op_name, "is_prompt_sorted"):
             op_args["is_prompt_sorted"] = True
 
         attn_output = attn_op(**op_args)
@@ -1270,10 +1290,8 @@ class SlidingWindowAttentionOp(AttentionOp):
             use_image_prefill = getattr(self.rbln_config, "use_image_prefill", False)
             if use_image_prefill:
                 op_args["is_bidirectional"] = self.phase == "image_prefill"
-            elif self.use_attention_mask and self.rbln_config.use_position_ids:
-                op_args["is_bidirectional"] = True
             else:
-                op_args["is_bidirectional"] = False
+                op_args["is_bidirectional"] = self.rbln_config._is_prefix_lm
 
         if self.phase == "decode":
             op_args["attn_mask"] = attn_mask
@@ -1295,9 +1313,7 @@ class SlidingWindowAttentionOp(AttentionOp):
             raise ValueError(f"Attention operator {attn_op_name} not found.")
 
         # Tell the compiler the batch arrives length-sorted; older compilers lack the arg.
-        if getattr(self.rbln_config, "requires_batch_sort", None) and any(
-            arg.name == "is_prompt_sorted" for arg in attn_op.default._schema.arguments
-        ):
+        if getattr(self.rbln_config, "requires_batch_sort", None) and _op_accepts(attn_op_name, "is_prompt_sorted"):
             op_args["is_prompt_sorted"] = True
 
         attn_output = attn_op(**op_args)

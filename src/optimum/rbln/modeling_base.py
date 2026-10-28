@@ -102,7 +102,7 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
         self.rbln_config = rbln_config
         if not rbln_config.is_frozen():
             raise RuntimeError("`rbln_config` must be frozen. Please call `rbln_config.freeze()` first.")
-        self.compiled_models = rbln_compiled_models
+        self._compiled_models = rbln_compiled_models
 
         # Registers the RBLN classes into the transformers AutoModel classes to avoid warnings when creating
         # a pipeline https://github.com/huggingface/transformers/blob/3d3204c025b6b5de013e07dd364208e28b4d9589/src/transformers/pipelines/base.py#L940
@@ -154,6 +154,23 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
         self.rbln_submodules = rbln_submodules
         self.__post_init__(**kwargs)
 
+    @property
+    def compiled_models(self) -> list[rebel.RBLNCompiledModel]:
+        """The compiled models (`.rbln`) this model was loaded from.
+
+        A model loaded with `create_runtimes=False` does not read its `.rbln` files up front; they are
+        read into host memory on first access here and kept for the model's lifetime.
+        """
+        if self._compiled_models is None:
+            if self.model_save_dir is None:
+                raise FileNotFoundError(
+                    "Unable to load the compiled models. The model was created without a model directory."
+                )
+            compiled_model_names = [cfg.compiled_model_name for cfg in self.rbln_config.compile_cfgs]
+            loaded = self._load_compiled_models(str(self.model_save_dir / self.subfolder), compiled_model_names)
+            self._compiled_models = [loaded[cm_name] for cm_name in compiled_model_names]
+        return self._compiled_models
+
     @classmethod
     def _load_compiled_model_dir(
         cls,
@@ -187,14 +204,16 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
         return str(model_path)
 
     @classmethod
-    def _load_compiled_models(
+    def _resolve_compiled_model_paths(
         cls, model_path: str, expected_compiled_model_names: list[str]
-    ) -> dict[str, rebel.RBLNCompiledModel]:
+    ) -> dict[str, Path]:
+        """Map each expected compiled model name to its `.rbln` file, raising if one is missing."""
         compiled_models = Path(model_path).glob("*.rbln")
-        expected_compiled_models = [
-            Path(model_path) / f"{compiled_model_name}.rbln" for compiled_model_name in expected_compiled_model_names
-        ]
-        unexpected_compiled_models = [cm for cm in compiled_models if cm not in expected_compiled_models]
+        expected_compiled_models = {
+            compiled_model_name: Path(model_path) / f"{compiled_model_name}.rbln"
+            for compiled_model_name in expected_compiled_model_names
+        }
+        unexpected_compiled_models = [cm for cm in compiled_models if cm not in expected_compiled_models.values()]
         if unexpected_compiled_models:
             # TODO(jongho): fix after May release. raise error if unexpected compiled models are found
             logger.warning(
@@ -202,15 +221,20 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
                 f"Please check the model path: {model_path}"
             )
 
-        rbln_compiled_models = {}
-        for compiled_model in expected_compiled_models:
+        for compiled_model in expected_compiled_models.values():
             if not compiled_model.exists():
                 raise FileNotFoundError(
                     f"Expected RBLN compiled model '{compiled_model.name}' not found at '{model_path}'. "
                     "Please ensure all models specified in `rbln_config` are present."
                 )
-            rbln_compiled_models[compiled_model.stem] = rebel.RBLNCompiledModel(compiled_model)
-        return rbln_compiled_models
+        return expected_compiled_models
+
+    @classmethod
+    def _load_compiled_models(
+        cls, model_path: str, expected_compiled_model_names: list[str]
+    ) -> dict[str, rebel.RBLNCompiledModel]:
+        compiled_model_paths = cls._resolve_compiled_model_paths(model_path, expected_compiled_model_names)
+        return {cm_name: rebel.RBLNCompiledModel(path) for cm_name, path in compiled_model_paths.items()}
 
     @classmethod
     def _from_pretrained(
@@ -306,7 +330,11 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
                     config = PretrainedConfig(**config_dict)
 
             compiled_model_names = [cfg.compiled_model_name for cfg in rbln_config.compile_cfgs]
-            rbln_compiled_models = cls._load_compiled_models(model_path_subfolder, compiled_model_names)
+            compiled_model_paths = cls._resolve_compiled_model_paths(model_path_subfolder, compiled_model_names)
+            if rbln_config.create_runtimes:
+                rbln_compiled_models = {
+                    cm_name: rebel.RBLNCompiledModel(path) for cm_name, path in compiled_model_paths.items()
+                }
 
             if subfolder != "":
                 model_save_dir = Path(model_path_subfolder).absolute().parent
@@ -331,7 +359,7 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
     @classmethod
     def _from_compiled_models(
         cls,
-        rbln_compiled_models: dict[str, rebel.RBLNCompiledModel],
+        rbln_compiled_models: dict[str, rebel.RBLNCompiledModel] | None,
         rbln_config: RBLNModelConfig,
         config: "PretrainedConfig",
         model_save_dir: str | os.PathLike[str] | TemporaryDirectory,
@@ -345,17 +373,19 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
         if isinstance(model_save_dir, str):
             model_save_dir = Path(model_save_dir)
 
-        # FIXME:: Should we convert it?
         compiled_model_names = [cfg.compiled_model_name for cfg in rbln_config.compile_cfgs]
-        compiled_models = [rbln_compiled_models[cm_name] for cm_name in compiled_model_names]
+        compiled_models = (
+            None
+            if rbln_compiled_models is None
+            else [rbln_compiled_models[cm_name] for cm_name in compiled_model_names]
+        )
 
-        # create runtimes only if `rbln_create_runtimes` is enabled
+        models: list[rebel.Runtime] | UnavailableRuntime = UnavailableRuntime()
         try:
-            models: list[rebel.Runtime] | UnavailableRuntime = (
-                cls._create_runtimes(compiled_models, rbln_config)
-                if rbln_config.create_runtimes
-                else UnavailableRuntime()
-            )
+            if rbln_config.create_runtimes:
+                if compiled_models is None:
+                    raise ValueError("`rbln_compiled_models` must be given to create runtimes.")
+                models = cls._create_runtimes(compiled_models, rbln_config)
 
         except RuntimeError as e:
             error_msg = (
