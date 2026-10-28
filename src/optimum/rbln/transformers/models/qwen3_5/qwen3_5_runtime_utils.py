@@ -65,7 +65,7 @@ class RBLNQwen3_5RuntimeModel(RBLNRuntimeModel):
         self._legacy_masks_zeros = {name: torch.zeros(shape, dtype=state_dtype) for name, shape in shapes.items()}
         self._legacy_masks_ones = {name: torch.ones(shape, dtype=state_dtype) for name, shape in shapes.items()}
 
-    def _conv_tables(self, state_index, seq_idx, query_len, has_initial_state, tokens: int) -> dict:
+    def conv_tables(self, state_index, seq_idx, query_len, has_initial_state, tokens: int) -> dict:
         """The conv ring's index tables for one call, as named graph inputs (see CONV_TABLE_INPUTS)."""
         from rebel.ops.torch_custom_ops.causal_conv1d_ring import ring_tables
 
@@ -207,7 +207,7 @@ class RBLNQwen3_5RuntimeModel(RBLNRuntimeModel):
             else:
                 named["state_mask"] = self._state_mask_ones if has_initial_state else self._state_mask_zeros
                 named.update(
-                    self._conv_tables(
+                    self.conv_tables(
                         torch.tensor([batch_idx or 0]),
                         cache_pos_chunk[:, 0],
                         torch.tensor([valid_count]),
@@ -304,7 +304,7 @@ class RBLNQwen3_5RuntimeModel(RBLNRuntimeModel):
         if not self._is_legacy_graph:
             ones = torch.ones(self.batch_size, dtype=torch.int32)
             named.update(
-                self._conv_tables(torch.arange(self.batch_size), cache_position[:, 0], ones, ones, inputs.shape[1])
+                self.conv_tables(torch.arange(self.batch_size), cache_position[:, 0], ones, ones, inputs.shape[1])
             )
 
         logits, hidden_states = self._run(named)

@@ -148,7 +148,7 @@ def _qwen3_5_linear_layer_indices(model_config) -> list[int]:
     return [i for i, t in enumerate(text_config.layer_types) if t == "linear_attention"]
 
 
-def _uses_custom_kernel(rbln_config) -> bool:
+def uses_custom_kernel(rbln_config) -> bool:
     """Whether this artifact runs its GatedDeltaNet as the custom kernels rather than in the graph."""
     for compile_cfg in rbln_config.compile_cfgs:
         inputs = compile_cfg.input_info or []
@@ -189,7 +189,7 @@ def _qwen3_5_setup_hybrid_runtime(model):
     # Backward compatibility, loading only: a pre-kernel artifact gates each cache with a mask of
     # that cache's own shape, and only the runtime still knows those shapes.
     # TODO(0.13.0): drop it -- this detector, `_qwen3_5_legacy_linear_state_shapes`, the runtime's branch.
-    is_legacy_graph = not _uses_custom_kernel(rbln_config)
+    is_legacy_graph = not uses_custom_kernel(rbln_config)
     if is_legacy_graph:
         warn_deprecated(
             "This Qwen3.5 artifact was compiled before the GatedDeltaNet custom kernels, so "

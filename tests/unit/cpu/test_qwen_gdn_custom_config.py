@@ -12,7 +12,7 @@ from optimum.rbln.transformers.models.qwen3_5.configuration_qwen3_5 import (
 from optimum.rbln.transformers.models.qwen3_5.modeling_qwen3_5 import (
     _qwen3_5_legacy_linear_state_shapes,
     _qwen3_5_linear_state_shapes,
-    _uses_custom_kernel,
+    uses_custom_kernel,
     validate_gdn_custom_kernel,
     warn_deprecated,
 )
@@ -40,10 +40,10 @@ def test_a_pre_kernel_artifact_is_recognized_by_its_own_graph():
     # Nothing in the config marks one: a config written before the kernels could not have written
     # anything about them. The graph's inputs are what answers, and they differ either way.
     legacy = _config_with_graph_inputs("input_ids", "conv_state_mask", "recurrent_state_mask", "valid_mask")
-    assert _uses_custom_kernel(legacy) is False
+    assert uses_custom_kernel(legacy) is False
 
     current = _config_with_graph_inputs("input_ids", "state_mask", "valid_mask", "conv_hist_idx")
-    assert _uses_custom_kernel(current) is True
+    assert uses_custom_kernel(current) is True
 
 
 def test_the_graph_path_keeps_its_own_cache_layouts():
