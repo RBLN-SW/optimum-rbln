@@ -33,7 +33,7 @@ from ..decoderonly.decoderonly_architecture import (
 
 # The conv ring's index tables, graph inputs of both phases, declared last (see get_input_info); the
 # runtime builds them with `ring_tables`, in its return order.
-CONV_TABLE_INPUTS = ("conv_hist_idx", "conv_ring_idx", "conv_block", "conv_starts", "conv_count")
+CONV_TABLE_INPUTS = ("conv_hist_idx", "conv_ring_idx", "conv_block", "conv_count")
 
 
 def apply_rotary_pos_emb_vision(q, k, cos, sin):

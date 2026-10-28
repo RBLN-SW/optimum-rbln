@@ -93,8 +93,9 @@ def _conv_tables(position, valid, reset, tokens, batch=1):
         full(valid),
         full(0 if reset else 1),
         tokens,
-        3,
-        4,
+        width=3,
+        kernel_size=4,
+        cache_rows=3,  # a block is one ring, as the Qwen3.5 conv cache lays it out
     )
 
 
