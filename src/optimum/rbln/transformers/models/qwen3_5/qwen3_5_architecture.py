@@ -162,7 +162,7 @@ class Qwen3_5GatedDeltaNet(nn.Module):
         if self.conv1d.bias is not None:
             raise ValueError("rbln_custom_ops::causal_conv1d_* take no bias; this checkpoint's conv1d has one")
 
-        self.register_buffer("conv_weight", self._pack_conv_weight(), persistent=False)
+        self.register_buffer("conv_weight", self.pack_conv_weight(), persistent=False)
 
         # Pre-split the fused in_proj_qkv into separate Q/K/V projections: a depthwise conv is per-channel,
         # so the channel-axis split commutes with it.
@@ -188,7 +188,7 @@ class Qwen3_5GatedDeltaNet(nn.Module):
     def phase(self, phase: str):
         self._phase = phase
 
-    def _pack_conv_weight(self) -> torch.Tensor:
+    def pack_conv_weight(self) -> torch.Tensor:
         """`conv1d.weight` as `causal_conv1d_ring_tabled` reads it: `[Hk*(2+r), D / LANES, K, LANES]`."""
         from rebel.ops.torch_custom_ops.causal_conv1d_ring import pack_weight
 
@@ -199,7 +199,7 @@ class Qwen3_5GatedDeltaNet(nn.Module):
         grouped = torch.cat(parts, dim=1).reshape(heads * (2 + ratio), self.head_k_dim, channels.shape[1])
         return pack_weight(grouped)
 
-    def _project_qkv(self, hidden_states: torch.Tensor) -> torch.Tensor:
+    def project_qkv(self, hidden_states: torch.Tensor) -> torch.Tensor:
         """Q, K and the r value heads of each Q/K head, side by side: `[B, Hk*(2+r), S, D]`."""
         batch_size, seq_len, _ = hidden_states.shape
         heads, ratio, dim = self.num_k_heads, self.num_v_heads // self.num_k_heads, self.head_k_dim
@@ -209,7 +209,7 @@ class Qwen3_5GatedDeltaNet(nn.Module):
         units = torch.cat([q_in.unsqueeze(2), k_in.unsqueeze(2), v_in], dim=2)
         return units.reshape(batch_size, heads * (2 + ratio), seq_len, dim)
 
-    def _rbln_causal_conv1d(
+    def rbln_causal_conv1d(
         self, qkv: torch.Tensor, conv_state: torch.Tensor, conv_tables: tuple[torch.Tensor, ...]
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """The short causal depthwise convolution, as one `causal_conv1d_ring_tabled` call.
@@ -253,8 +253,8 @@ class Qwen3_5GatedDeltaNet(nn.Module):
         z = self.in_proj_z(hidden_states).reshape(batch_size, seq_len, heads, ratio, dim).permute(0, 2, 3, 1, 4)
         b = self.in_proj_b(hidden_states)
         a = self.in_proj_a(hidden_states)
-        qkv = self._project_qkv(hidden_states)
-        query, key, value = self._rbln_causal_conv1d(qkv, conv_state, conv_tables)
+        qkv = self.project_qkv(hidden_states)
+        query, key, value = self.rbln_causal_conv1d(qkv, conv_state, conv_tables)
 
         beta = b.sigmoid()
         g = -self.A_log.float().exp() * F.softplus(a.float() + self.dt_bias)
@@ -588,7 +588,7 @@ class Qwen3_5_CausalLMWrapper(DecoderOnlyWrapper):
             return self.get_rbln_causal_lm_class()(model, new_model)
         return new_model
 
-    def _split_layer_states(self, pairs):
+    def split_layer_states(self, pairs):
         # Split a per-layer list of pairs by layer type: full_attention -> past_key_values (key, value),
         # linear_attention -> past_states (conv_state, recurrent_state).
         linear = {i for i, t in enumerate(self.config.layer_types) if t == "linear_attention"}
@@ -596,7 +596,7 @@ class Qwen3_5_CausalLMWrapper(DecoderOnlyWrapper):
         past_states = [pair if i in linear else None for i, pair in enumerate(pairs)]
         return past_key_values, past_states
 
-    def _pop_gdn_inputs(self, args: list):
+    def pop_gdn_inputs(self, args: list):
         """Pop the GatedDeltaNet's own inputs off `args`, in the order `get_input_info` declares them."""
         has_linear = any(t == "linear_attention" for t in self.config.layer_types)
 
@@ -613,7 +613,7 @@ class Qwen3_5_CausalLMWrapper(DecoderOnlyWrapper):
 
     def prepare_forward_args(self, *args):
         args = list(args)
-        state_mask, valid_mask, batch_idx, conv_tables = self._pop_gdn_inputs(args)
+        state_mask, valid_mask, batch_idx, conv_tables = self.pop_gdn_inputs(args)
 
         (
             input_ids,
@@ -630,7 +630,7 @@ class Qwen3_5_CausalLMWrapper(DecoderOnlyWrapper):
         ) = super().prepare_forward_args(*args)
 
         # full_attention -> past_key_values (key, value); linear_attention -> past_states (conv, recurrent).
-        past_key_values, past_states = self._split_layer_states(pairs)
+        past_key_values, past_states = self.split_layer_states(pairs)
         return (
             input_ids,
             inputs_embeds,
@@ -714,7 +714,7 @@ class Qwen3_5_LanguageModelWrapper(Qwen3_5_CausalLMWrapper):
 
     def prepare_forward_args(self, *args):
         args = list(args)
-        state_mask, valid_mask, batch_idx, conv_tables = self._pop_gdn_inputs(args)
+        state_mask, valid_mask, batch_idx, conv_tables = self.pop_gdn_inputs(args)
         input_ids = None if self.rbln_config.use_inputs_embeds else args.pop(0)
         inputs_embeds = args.pop(0) if self.rbln_config.use_inputs_embeds else None
         cache_position = args.pop(0)
@@ -731,7 +731,7 @@ class Qwen3_5_LanguageModelWrapper(Qwen3_5_CausalLMWrapper):
         if len(state_args) != 2 * self.num_hidden_layers:
             raise ValueError(f"Different states to model's config. {len(state_args)} != {2 * self.num_hidden_layers}")
         pairs = [[state_args[i * 2], state_args[i * 2 + 1]] for i in range(self.num_hidden_layers)]
-        past_key_values, past_states = self._split_layer_states(pairs)
+        past_key_values, past_states = self.split_layer_states(pairs)
 
         return (
             input_ids,
