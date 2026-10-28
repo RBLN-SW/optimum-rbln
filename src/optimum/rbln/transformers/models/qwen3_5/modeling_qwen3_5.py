@@ -31,11 +31,12 @@ from transformers.models.qwen3_5.modeling_qwen3_5 import (
 )
 from transformers.vision_utils import get_vision_interpolation_indices_and_weights
 
+from ....__version__ import __version__
 from ....configuration_utils import RBLNCompileConfig
 from ....modeling import RBLNModel
 from ....modeling_rope_utils import build_qwen_mrope_lookup, np_cos, np_sin, qwen_vit_rot_pos_ids
 from ....utils import logging
-from ....utils.deprecation import deprecate_method, warn_deprecated_gdn_graph
+from ....utils.deprecation import _at_or_past_deprecation, deprecate_method
 from ...cache_utils import FullAttentionKVCacheMeta, LinearAttentionCacheMeta
 from ...modeling_outputs import RBLNDecoderOnlyOutput, _validate_output_hidden_states
 from ...utils.multimodal_batch_sort import RBLNQwenVLBatchSortMixin
@@ -138,7 +139,7 @@ def _qwen3_5_legacy_linear_state_shapes(text_config, batch_size: int):
     That graph runs the GatedDeltaNet itself, so it keeps the conv cache channel-last and the
     recurrent state 3D. Nothing here can be inferred from the artifact -- the runtime needs these to
     size the control masks it feeds such a graph -- so the layouts are restated. See
-    `warn_deprecated_gdn_graph`.
+    `_qwen3_5_setup_hybrid_runtime`.
     """
     conv_dim = 2 * (text_config.linear_num_key_heads * text_config.linear_key_head_dim) + (
         text_config.linear_num_value_heads * text_config.linear_value_head_dim
@@ -166,7 +167,7 @@ def _qwen3_5_graph_predates_custom_kernel(rbln_config) -> bool:
     have recorded anything about them. That GatedDeltaNet gates each cache with a 0/1 mask of the
     cache's own shape, which its graph declares as `conv_state_mask`. The kernels take one value per
     cache row and the conv ring's index tables instead, so a graph compiled with them never declares
-    that input. See `warn_deprecated_gdn_graph`.
+    that input. The runtime it needs is deprecated; see `_qwen3_5_setup_hybrid_runtime`.
     """
     for compile_cfg in rbln_config.compile_cfgs:
         inputs = compile_cfg.input_info or []
@@ -175,6 +176,38 @@ def _qwen3_5_graph_predates_custom_kernel(rbln_config) -> bool:
         if any(name == "conv_state_mask" for name, *_ in inputs):
             return True
     return False
+
+
+def warn_deprecated(what: str, version: str, remedy: str | None = None) -> None:
+    """Report something optimum-rbln still does but will not do from `version` on.
+
+    What `what` names goes away, and nothing of it stays behind under another name.
+
+    Use this where the caller wrote nothing to deprecate, so there is no signature to hang a notice
+    on: the layout an artifact was saved in, a path that its contents alone select. A keyword
+    argument has a decorator for either end -- `deprecate_kwarg(old_name, new_name=...)` renames one,
+    `deprecate_kwarg(old_name)` alone deletes one -- and `deprecate_method` does the same for a
+    method. Those read the call and rewrite it; this one only reports.
+
+    It sits here rather than beside those decorators because the legacy GatedDeltaNet graph is its
+    one caller. Move it to `utils/deprecation.py` once something else reports this way.
+
+    `what` is the subject of the sentence this builds, so it reads as "<what> is deprecated and will
+    be removed in version <version>." Before `version` that is a warning, once per process; at it and
+    after, the same sentence in the past tense as a `ValueError`, so a release that passes the version
+    turns every notice it left into an error rather than letting one slip through. `remedy` follows as
+    its own sentence, and tells the caller what to do once the thing is gone.
+
+    Examples:
+        >>> warn_deprecated("Reading this file format", version="0.13.0", remedy="Save the model again.")
+    """
+    removed = _at_or_past_deprecation(__version__, version)
+    message = f"{what} is deprecated and {'was removed in' if removed else 'will be removed in'} version {version}."
+    if remedy:
+        message = f"{message} {remedy}"
+    if removed:
+        raise ValueError(message)
+    logger.warning_once(message)
 
 
 def _qwen3_5_setup_hybrid_runtime(model):
@@ -197,7 +230,12 @@ def _qwen3_5_setup_hybrid_runtime(model):
     # shape, which only this side knows; one compiled with them takes a value per cache row instead.
     legacy = _qwen3_5_graph_predates_custom_kernel(rbln_config)
     if legacy:
-        warn_deprecated_gdn_graph()
+        warn_deprecated(
+            "This Qwen3.5 artifact was compiled before the GatedDeltaNet custom kernels, so "
+            "optimum-rbln runs its GatedDeltaNet in the graph. That path",
+            version="0.13.0",
+            remedy="Recompile the model.",
+        )
 
     # Prefill runs one item at a time and writes its `batch_position` slot; the underlying caches are
     # max-batch (get_input_info). Its masks gate the single slot the graph reads, so they are batch=1.

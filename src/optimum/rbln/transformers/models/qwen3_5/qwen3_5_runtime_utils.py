@@ -60,8 +60,8 @@ class RBLNQwen3_5RuntimeModel(RBLNRuntimeModel):
 
         # An artifact from before the custom kernels gates each cache with a mask of that cache's own
         # shape, under its own name, because its GatedDeltaNet multiplies the mask into the state it
-        # reads (`warn_deprecated_gdn_graph`). `_qwen3_5_setup_hybrid_runtime` recognizes such an
-        # artifact and passes the shapes, which only it can work out; nothing else marks one.
+        # reads. `_qwen3_5_setup_hybrid_runtime` recognizes such an artifact and passes the shapes,
+        # which only it can work out; nothing else marks one.
         self._is_legacy_graph = legacy_state_shapes is not None
         names = ("conv_state_mask", "recurrent_state_mask")
         shapes = dict(zip(names, legacy_state_shapes, strict=True)) if self._is_legacy_graph else {}

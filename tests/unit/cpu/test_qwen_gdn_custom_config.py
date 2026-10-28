@@ -14,9 +14,9 @@ from optimum.rbln.transformers.models.qwen3_5.modeling_qwen3_5 import (
     _qwen3_5_legacy_linear_state_shapes,
     _qwen3_5_linear_state_shapes,
     validate_gdn_custom_kernel,
+    warn_deprecated,
 )
 from optimum.rbln.transformers.models.qwen3_5.qwen3_5_architecture import Qwen3_5GatedDeltaNet
-from optimum.rbln.utils.deprecation import warn_deprecated_gdn_graph
 
 from ._qwen3_5_gdn_reference import NativeGatedDeltaNetReference
 
@@ -264,8 +264,8 @@ def test_the_graph_path_keeps_its_own_cache_layouts():
     assert _qwen3_5_legacy_linear_state_shapes(text_config, 1) != _qwen3_5_linear_state_shapes(text_config, 1)
 
 
-def test_the_graph_path_is_deprecated_not_silent():
+def test_a_deprecated_path_warns_until_its_version_and_then_refuses():
     # Loading such an artifact says so, and at the version that drops the path it stops loading.
-    warn_deprecated_gdn_graph(version="99.0.0")
-    with pytest.raises(ValueError, match=re.escape("was removed in version 0.0.1")):
-        warn_deprecated_gdn_graph(version="0.0.1")
+    warn_deprecated("That path", version="99.0.0", remedy="Recompile the model.")
+    with pytest.raises(ValueError, match=re.escape("That path is deprecated and was removed in version 0.0.1.")):
+        warn_deprecated("That path", version="0.0.1")
