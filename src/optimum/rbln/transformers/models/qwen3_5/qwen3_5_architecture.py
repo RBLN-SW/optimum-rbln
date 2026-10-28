@@ -229,7 +229,7 @@ class Qwen3_5GatedDeltaNet(nn.Module):
         return units.reshape(batch_size, heads * (2 + ratio), seq_len, dim)
 
     def _rbln_causal_conv1d(
-        self, qkv: torch.Tensor, conv_cache: torch.Tensor, conv_tables: tuple[torch.Tensor, ...]
+        self, qkv: torch.Tensor, conv_state: torch.Tensor, conv_tables: tuple[torch.Tensor, ...]
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """The short causal depthwise convolution, as one `causal_conv1d_ring_tabled` call.
 
@@ -252,7 +252,7 @@ class Qwen3_5GatedDeltaNet(nn.Module):
         convolved = torch.ops.rbln_custom_ops.causal_conv1d_ring_tabled(
             qkv.transpose(1, 2).contiguous(),
             self.conv_weight,
-            conv_cache,
+            conv_state,
             *conv_tables,
             self.conv_kernel_size - 1,
         )
@@ -268,7 +268,6 @@ class Qwen3_5GatedDeltaNet(nn.Module):
         valid_mask: torch.Tensor | None = None,
         state_mask: torch.Tensor | None = None,
         slot: torch.Tensor | None = None,
-        conv_cache: torch.Tensor | None = None,
         conv_tables: tuple[torch.Tensor, ...] = (),
     ) -> torch.Tensor:
         prefill = "prefill" in self._phase and valid_mask is not None
@@ -281,9 +280,7 @@ class Qwen3_5GatedDeltaNet(nn.Module):
         b = self.in_proj_b(hidden_states)
         a = self.in_proj_a(hidden_states)
         qkv = self._project_qkv(hidden_states)
-        query, key, value = self._rbln_causal_conv1d(
-            qkv, conv_state if conv_cache is None else conv_cache, conv_tables
-        )
+        query, key, value = self._rbln_causal_conv1d(qkv, conv_state, conv_tables)
 
         beta = b.sigmoid()
         g = -self.A_log.float().exp() * F.softplus(a.float() + self.dt_bias)
@@ -333,7 +330,6 @@ class Qwen3_5LinearDecoderLayer(nn.Module):
         valid_mask: torch.Tensor | None = None,
         state_mask: torch.Tensor | None = None,
         slot: torch.Tensor | None = None,
-        conv_cache: torch.Tensor | None = None,
         conv_tables: tuple[torch.Tensor, ...] = (),
     ) -> torch.Tensor:
         residual = hidden_states
@@ -345,7 +341,6 @@ class Qwen3_5LinearDecoderLayer(nn.Module):
             valid_mask=valid_mask,
             state_mask=state_mask,
             slot=slot,
-            conv_cache=conv_cache,
             conv_tables=conv_tables,
         )
         hidden_states = residual + hidden_states
@@ -498,22 +493,17 @@ class Qwen3_5Model(DecoderOnlyModel):
                 all_hidden_states += (hidden_states,)
             if layer_idx in self.linear_attention_layers:
                 conv_state, recurrent_state = past_states[layer_idx]
-                if batch_idx is not None:
-                    # PREFILL processes ONE item -> take its slot [batch_idx] from the max-batch cache -> (1, ...).
-                    # The recurrent cache goes in whole: `gdn_prefill` addresses its own rows by `slot`.
-                    conv_in = conv_state[batch_idx.to(torch.int).unsqueeze(0)]
-                    _pos = batch_idx.to(torch.int16)
-                else:
-                    conv_in = conv_state
-                    _pos = torch.tensor(0, dtype=torch.int16)
+                # Both caches go in whole, at their max batch: `gdn_prefill` and `gdn_decode` address
+                # their own rows by `slot`, and the conv ring addresses its blocks by table. PREFILL
+                # runs ONE item, and `batch_idx` is the row of the caches that item holds.
+                slot = batch_idx.to(torch.int16) if batch_idx is not None else torch.tensor(0, dtype=torch.int16)
                 hidden_states = layer(
                     hidden_states,
-                    conv_in,
+                    conv_state,
                     recurrent_state,
                     valid_mask=valid_mask,
                     state_mask=state_mask,
-                    slot=_pos,
-                    conv_cache=conv_state,
+                    slot=slot,
                     conv_tables=conv_tables,
                 )
             else:

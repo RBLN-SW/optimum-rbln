@@ -106,7 +106,7 @@ def _step(models, states, hidden, kwargs):
     native = reference(hidden, *states[0], **kwargs[0])
     states[0] = (native[1], native[2] if len(native) == 3 else states[0][1])
     conv, recurrent = states[1]
-    return [native[0], custom(hidden, conv, recurrent, conv_cache=conv, **kwargs[1])]
+    return [native[0], custom(hidden, conv, recurrent, **kwargs[1])]
 
 
 def _compare(outputs, states, ratio, position):
