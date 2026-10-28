@@ -23,6 +23,7 @@ if TYPE_CHECKING:
     from .prior_transformer import *
     from .transformer_cosmos import *
     from .transformer_sd3 import *
+    from .transformer_wan_audio import *
 else:
     import sys
 

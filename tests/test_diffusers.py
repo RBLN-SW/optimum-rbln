@@ -15,6 +15,7 @@ from optimum.rbln import (
     RBLNCosmos2VideoToWorldPipeline,
     RBLNKandinskyV22CombinedPipeline,
     RBLNKandinskyV22Img2ImgCombinedPipeline,
+    RBLNMossSoundEffectPipeline,
     RBLNStableDiffusion3Img2ImgPipeline,
     RBLNStableDiffusion3Pipeline,
     RBLNStableDiffusionControlNetPipeline,
@@ -480,6 +481,23 @@ class TestCosmos2Video2WorldModel(_MockedSafetyCheckerMixin, BaseTest.TestModel)
             "width": 64,
             "num_frames": 9,
         },
+    }
+
+
+class TestMossSoundEffectModel(BaseTest.TestModel):
+    RBLN_CLASS = RBLNMossSoundEffectPipeline
+    # tiny-random pipeline in the layout of OpenMOSS-Team/MOSS-SoundEffect-v2.0: shrunk Qwen3 text encoder, DiT and
+    # DAC VAE (same hop length), the real tokenizer and scheduler config; `max_inference_seconds` is 1.
+    HF_MODEL_ID = "rbln/tiny-moss-soundeffect"
+    GENERATION_KWARGS = {
+        "prompt": "dance monkey",
+        "seconds": 1.0,
+        "num_inference_steps": 2,
+        "seed": 42,
+    }
+    RBLN_CLASS_KWARGS = {
+        "export": True,
+        "torch_dtype": {"default": torch.bfloat16, "transformer": torch.float32, "vae": torch.float32},
     }
 
 

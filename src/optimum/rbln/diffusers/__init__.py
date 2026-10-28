@@ -25,6 +25,11 @@ LOADABLE_CLASSES["optimum.rbln"] = {
     "RBLNCosmosSafetyChecker": ["save_pretrained", "from_pretrained"],
 }
 ALL_IMPORTABLE_CLASSES.update(LOADABLE_CLASSES["optimum.rbln"])
+# A compiled MOSS-SoundEffect pipeline records its scheduler under the vendored module, loaded like a library.
+LOADABLE_CLASSES["optimum.rbln.diffusers.pipelines.moss_soundeffect.pipeline_moss_soundeffect_upstream"] = {
+    "ModelMixin": ["save_pretrained", "from_pretrained"],
+    "SchedulerMixin": ["save_pretrained", "from_pretrained"],
+}
 
 
 if TYPE_CHECKING:

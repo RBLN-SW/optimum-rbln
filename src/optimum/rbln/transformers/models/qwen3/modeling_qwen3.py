@@ -13,6 +13,8 @@
 # limitations under the License.
 
 
+from typing import Any
+
 from ....utils import logging
 from ...models.decoderonly import (
     RBLNDecoderOnlyModel,
@@ -80,6 +82,10 @@ class RBLNQwen3ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
     """
 
     _decoder_wrapper_cls = Qwen3Wrapper
+
+    @classmethod
+    def update_rbln_config_using_pipe(cls, pipe: Any, rbln_config: Any, submodule_name: str) -> Any:
+        return rbln_config
 
     def forward(self, *args, **kwargs):
         kwargs["return_dict"] = True

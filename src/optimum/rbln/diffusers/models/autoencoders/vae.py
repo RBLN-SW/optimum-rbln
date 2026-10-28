@@ -25,6 +25,8 @@ from ....utils.runtime_utils import RBLNPytorchRuntime
 if TYPE_CHECKING:
     from diffusers import AutoencoderKL, AutoencoderKLCosmos, AutoencoderKLTemporalDecoder, VQModel
 
+    from ...pipelines.moss_soundeffect.pipeline_moss_soundeffect_upstream import DAC
+
 
 class RBLNRuntimeVAEEncoder(RBLNPytorchRuntime):
     def encode(self, x: torch.FloatTensor, **kwargs) -> torch.FloatTensor:
@@ -175,6 +177,16 @@ class _VAECosmosDecoder(torch.nn.Module):
 
     def forward(self, z):
         vae_out = self.vae._decode(z, return_dict=False)
+        return vae_out
+
+
+class _VAEDACDecoder(torch.nn.Module):
+    def __init__(self, vae: "DAC"):
+        super().__init__()
+        self.vae = vae
+
+    def forward(self, z):
+        vae_out = self.vae.decode(z)
         return vae_out
 
 

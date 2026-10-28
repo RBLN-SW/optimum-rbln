@@ -551,6 +551,29 @@ def test_qwen_vl_parent_rejects_conflicting_vision_batch_size(parent_cls_name, v
         parent_cls(max_seq_len=1024, visual={"cls_name": vision_cls_name, "max_seq_len": 256, "batch_size": 2})
 
 
+def test_moss_soundeffect_pipeline_sets_submodule_configs():
+    """The MOSS-SoundEffect pipeline config pads prompts to 512 tokens and leaves the latent length to the checkpoint."""
+    config_cls = _import_config("RBLNMossSoundEffectPipelineConfig")
+
+    default = config_cls()
+    assert default.text_encoder.max_seq_len == 512
+    assert default.text_encoder.phases == ["prefill"]
+    assert default.text_encoder.output_hidden_states is True
+    assert default.transformer.text_len == 512
+    assert default.transformer.num_latent_frames is None  # From the checkpoint's max_inference_seconds and hop length.
+    assert default.vae.num_latent_frames is None
+
+    custom = config_cls(batch_size=2, max_inference_seconds=5)
+    assert custom.text_encoder.batch_size == 1  # One prompt at a time.
+    assert custom.transformer.batch_size == 2
+    assert custom.vae.batch_size == 2
+    assert custom.transformer.max_inference_seconds == 5
+    assert custom.vae.max_inference_seconds == 5
+
+    with pytest.raises(ValueError, match="batch_size"):
+        config_cls(text_encoder={"batch_size": 2})
+
+
 def test_cosmos2_5_pipeline_owns_the_visual_tower_config():
     """The Cosmos2.5 pipeline sets the (unused) visual tower's config itself. A submodule dict
     replaces that dict rather than merging into it, so naming `visual` with one key would drop
