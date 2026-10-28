@@ -62,12 +62,10 @@ class RBLNQwen3_5RuntimeModel(RBLNRuntimeModel):
         # reads (`warn_deprecated_gdn_graph`). `_qwen3_5_setup_hybrid_runtime` recognizes such an
         # artifact and passes the shapes, which only it can work out; nothing else marks one.
         self._gdn_runs_in_graph = legacy_state_shapes is not None
-        self._legacy_state_masks = {}
-        if legacy_state_shapes is not None:
-            self._legacy_state_masks = {
-                f"{name}_mask": (torch.zeros(shape, dtype=state_dtype), torch.ones(shape, dtype=state_dtype))
-                for name, shape in zip(("conv_state", "recurrent_state"), legacy_state_shapes, strict=True)
-            }
+        names = ("conv_state_mask", "recurrent_state_mask")
+        shapes = dict(zip(names, legacy_state_shapes, strict=True)) if self._gdn_runs_in_graph else {}
+        self._legacy_masks_fresh = {name: torch.zeros(shape, dtype=state_dtype) for name, shape in shapes.items()}
+        self._legacy_masks_carry = {name: torch.ones(shape, dtype=state_dtype) for name, shape in shapes.items()}
 
     def _conv_tables(self, state_index, seq_idx, query_len, has_initial_state, tokens: int) -> dict:
         """The conv ring's index tables for one call, as named graph inputs (see CONV_TABLE_INPUTS)."""
@@ -199,22 +197,21 @@ class RBLNQwen3_5RuntimeModel(RBLNRuntimeModel):
                 valid_mask[:, :valid_count] = 1.0
             named["valid_mask"] = valid_mask
 
-            # The state gate: ZERO the carried state on the FIRST prefill window (fresh sequence -> no
-            # prior context), ones afterwards. An artifact from before the custom kernels takes one mask
-            # per cache under its own name instead, and no ring tables.
-            fresh = step == 0
+            # The state gate, under the name the ops give it: the first prefill window of a sequence
+            # carries nothing, so it reads no state and starts from an empty ring; every window after
+            # it carries what the one before wrote. An artifact from before the custom kernels takes
+            # one mask per cache under its own name instead, and no ring tables.
+            has_initial_state = step > 0
             if self._gdn_runs_in_graph:
-                named.update(
-                    {name: masks[0] if fresh else masks[1] for name, masks in self._legacy_state_masks.items()}
-                )
+                named.update(self._legacy_masks_carry if has_initial_state else self._legacy_masks_fresh)
             else:
-                named["state_mask"] = self._state_mask_zeros if fresh else self._state_mask_ones
+                named["state_mask"] = self._state_mask_ones if has_initial_state else self._state_mask_zeros
                 named.update(
                     self._conv_tables(
                         torch.tensor([batch_idx or 0]),
                         cache_pos_chunk[:, 0],
                         torch.tensor([valid_count]),
-                        torch.tensor([0 if fresh else 1]),
+                        torch.tensor([int(has_initial_state)]),
                         chunk,
                     )
                 )
