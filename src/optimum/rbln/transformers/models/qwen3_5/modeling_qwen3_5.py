@@ -160,28 +160,7 @@ def _uses_custom_kernel(rbln_config) -> bool:
 
 
 def warn_deprecated(what: str, version: str, remedy: str | None = None) -> None:
-    """Report something optimum-rbln still does but will not do from `version` on.
-
-    What `what` names goes away, and nothing of it stays behind under another name.
-
-    Use this where the caller wrote nothing to deprecate, so there is no signature to hang a notice
-    on: the layout an artifact was saved in, a path that its contents alone select. A keyword
-    argument has a decorator for either end -- `deprecate_kwarg(old_name, new_name=...)` renames one,
-    `deprecate_kwarg(old_name)` alone deletes one -- and `deprecate_method` does the same for a
-    method. Those read the call and rewrite it; this one only reports.
-
-    It sits here rather than beside those decorators because the legacy GatedDeltaNet graph is its
-    one caller. Move it to `utils/deprecation.py` once something else reports this way.
-
-    `what` is the subject of the sentence this builds, so it reads as "<what> is deprecated and will
-    be removed in version <version>." Before `version` that is a warning, once per process; at it and
-    after, the same sentence in the past tense as a `ValueError`, so a release that passes the version
-    turns every notice it left into an error rather than letting one slip through. `remedy` follows as
-    its own sentence, and tells the caller what to do once the thing is gone.
-
-    Examples:
-        >>> warn_deprecated("Reading this file format", version="0.13.0", remedy="Save the model again.")
-    """
+    """Custom deprecated function."""
     removed = _at_or_past_deprecation(__version__, version)
     message = f"{what} is deprecated and {'was removed in' if removed else 'will be removed in'} version {version}."
     if remedy:

@@ -31,8 +31,7 @@ from ..decoderonly.decoderonly_architecture import (
 )
 
 
-# The conv ring's index tables, graph inputs of both phases, declared last (see get_input_info); the
-# runtime builds them with `ring_tables`, in its return order.
+# The conv ring's index tables
 CONV_TABLE_INPUTS = ("conv_hist_idx", "conv_ring_idx", "conv_block", "conv_count")
 
 
@@ -131,16 +130,13 @@ class Qwen3_5VisionModelWrapper(nn.Module):
 class Qwen3_5GatedDeltaNet(nn.Module):
     """GatedDeltaNet token mixer for RBLN (conv_state + recurrent_state are on-device static caches).
 
-    The delta rule runs as one ``rbln_custom_ops::chunk_gated_delta_rule`` /
-    ``recurrent_gated_delta_rule`` op, which updates its rows of the recurrent cache in place like
-    paged attention's KV cache. Everything around it keeps the Q/K head
-    axis outermost so tensor parallelism can shard by it: the depthwise conv reads its inputs channel
-    last, and the conv cache groups its channels as ``Hk*(2+r)`` (Q, K and the r value heads of each
-    Q/K head together). That group axis sits second, under the ring's ``K-1`` slots:
-    ``(B, K-1, Hk*(2+r), Dk)``, because a slot is the row `causal_conv1d_ring_tabled` gathers.
+    Two ``rbln_custom_ops`` kernels do the work, and each writes its own cache rows in place:
 
-    PREFILL takes 128-token chunks and DECODE one token; both hand the same recurrent cache rows on, so a
-    chunk-prefill flows into recurrent decode without a reshape.
+    - the short convolution, ``causal_conv1d_ring_tabled``, in both phases. It reads the K - 1
+      inputs before this step off the conv cache's ring and writes this step's tokens back into it,
+      taking the ring's index tables as operands (the runtime builds them with ``ring_tables``).
+    - the delta rule, ``chunk_gated_delta_rule`` on PREFILL and ``recurrent_gated_delta_rule`` on
+      DECODE (seq = 1), over the recurrent cache.
     """
 
     def __init__(self, linear_attn: nn.Module, rbln_config, layer_idx: int):
@@ -166,8 +162,6 @@ class Qwen3_5GatedDeltaNet(nn.Module):
         if self.conv1d.bias is not None:
             raise ValueError("rbln_custom_ops::causal_conv1d_* take no bias; this checkpoint's conv1d has one")
 
-        # Laid out here rather than in the graph, where deriving it instead leaves a region of
-        # gathers hanging off the weight that the host-constant materializer refuses.
         self.register_buffer("conv_weight", self._pack_conv_weight(), persistent=False)
 
         # Pre-split the fused in_proj_qkv into separate Q/K/V projections: a depthwise conv is per-channel,
@@ -195,16 +189,7 @@ class Qwen3_5GatedDeltaNet(nn.Module):
         self._phase = phase
 
     def _pack_conv_weight(self) -> torch.Tensor:
-        """`conv1d.weight` as `causal_conv1d_ring_tabled` reads it: `[Hk*(2+r), D / LANES, K, LANES]`.
-
-        Two rearrangements. The channels are regrouped so that a Q/K head's q, k and r value heads
-        sit side by side, which is the order the conv ops and the conv cache use. Then a
-        channel's K coefficients are blocked by the device's lane width, which `rebel` owns.
-
-        `conv1d.weight` is `[conv_dim, 1, K]`, the middle axis being 1 for a conv with one group
-        per channel.
-        """
-        # Imported here, not at module scope: only a compiler that ships the conv ops has it.
+        """`conv1d.weight` as `causal_conv1d_ring_tabled` reads it: `[Hk*(2+r), D / LANES, K, LANES]`."""
         from rebel.ops.torch_custom_ops.causal_conv1d_ring import pack_weight
 
         heads, ratio = self.num_k_heads, self.num_v_heads // self.num_k_heads
@@ -215,12 +200,7 @@ class Qwen3_5GatedDeltaNet(nn.Module):
         return pack_weight(grouped)
 
     def _project_qkv(self, hidden_states: torch.Tensor) -> torch.Tensor:
-        """Q, K and the r value heads of each Q/K head, side by side: `[B, Hk*(2+r), S, D]`.
-
-        The head axis stays outermost so tensor parallelism can shard by it: a Q/K head's q, k and r
-        value heads are one run of 2 + r rows, and every cut falls on a head boundary. The conv ops
-        and the conv cache use this same order.
-        """
+        """Q, K and the r value heads of each Q/K head, side by side: `[B, Hk*(2+r), S, D]`."""
         batch_size, seq_len, _ = hidden_states.shape
         heads, ratio, dim = self.num_k_heads, self.num_v_heads // self.num_k_heads, self.head_k_dim
         q_in = self.in_proj_q(hidden_states).reshape(batch_size, seq_len, heads, dim).transpose(1, 2)
@@ -235,18 +215,11 @@ class Qwen3_5GatedDeltaNet(nn.Module):
         """The short causal depthwise convolution, as one `causal_conv1d_ring_tabled` call.
 
         One op covers both phases. It reads the K-1 inputs before this step out of each row's ring
-        -- slot p % W of its block, W = K - 1 -- convolves them with this call's tokens, and writes
-        the valid ones back into the ring, so neither phase builds the carried inputs or the tail
-        here. One call covers q, k and every value head.
+        convolves them with this call's tokens, and writes the valid ones back into the ring.
 
         The ring's index tables come in as graph inputs. The runtime builds them on the host
-        (`ring_tables`) from the operands the op would otherwise take. Derived in the graph they are
-        integer ops on inputs only, which the device does not run, so they land on the host anyway,
-        as ~45 ops a step ahead of the device rather than a few tensor ops. Every GatedDeltaNet
+        (`ring_tables`) from the operands the op would otherwise take. Every GatedDeltaNet
         layer of a step reads the same tables.
-
-        The ring takes x token-major while `_project_qkv` keeps the head axis outermost so tensor
-        parallelism can shard by it, hence the transpose on each side.
         """
         _, _, seq_len, dim = qkv.shape
         heads, ratio = self.num_k_heads, self.num_v_heads // self.num_k_heads
@@ -293,8 +266,7 @@ class Qwen3_5GatedDeltaNet(nn.Module):
         beta = beta.reshape(batch_size, seq_len, heads, ratio).permute(0, 2, 3, 1).contiguous()
         operands = (query.contiguous(), key.contiguous(), value.contiguous(), g, beta, recurrent_state, slot)
         if prefill:
-            # `state_mask` is one value per cache row: 0 starts that row from a zero state. It is
-            # declared beside `valid_mask`, so a prefill graph always carries it.
+            # `state_mask` is one value per cache row: 0 starts that row from a zero state.
             core_attn_out = torch.ops.rbln_custom_ops.chunk_gated_delta_rule(*operands, state_mask)
         else:
             core_attn_out = torch.ops.rbln_custom_ops.recurrent_gated_delta_rule(*operands)
@@ -494,10 +466,6 @@ class Qwen3_5Model(DecoderOnlyModel):
                 all_hidden_states += (hidden_states,)
             if layer_idx in self.linear_attention_layers:
                 conv_state, recurrent_state = past_states[layer_idx]
-                # Both caches go in whole, at their max batch: `chunk_gated_delta_rule` and
-                # `recurrent_gated_delta_rule` address their own rows by `slot`, and the conv ring
-                # addresses its blocks by table. PREFILL
-                # runs ONE item, and `batch_idx` is the row of the caches that item holds.
                 slot = batch_idx.to(torch.int16) if batch_idx is not None else torch.tensor(0, dtype=torch.int16)
                 hidden_states = layer(
                     hidden_states,
@@ -629,17 +597,14 @@ class Qwen3_5_CausalLMWrapper(DecoderOnlyWrapper):
         return past_key_values, past_states
 
     def _pop_gdn_inputs(self, args: list):
-        """Pop the GatedDeltaNet's own inputs off `args`, in the order `get_input_info` declares them.
-
-        A graph with no linear layer, and a decode graph, declares fewer of them and takes None there.
-        """
+        """Pop the GatedDeltaNet's own inputs off `args`, in the order `get_input_info` declares them."""
         has_linear = any(t == "linear_attention" for t in self.config.layer_types)
-        # get_input_info declares the conv ring's tables last, in both phases.
+
         conv_tables = None
         if has_linear:
             conv_tables = tuple(args[-len(CONV_TABLE_INPUTS) :])
             del args[-len(CONV_TABLE_INPUTS) :]
-        # get_input_info declares these three for a prefill graph only.
+
         has_prefill_linear = has_linear and "prefill" in self.phase
         batch_idx = args.pop() if has_prefill_linear else None
         valid_mask = args.pop() if has_prefill_linear else None
@@ -725,9 +690,6 @@ class Qwen3_5_CausalLMWrapper(DecoderOnlyWrapper):
             output_hidden_states=self.rbln_config.output_hidden_states,
         )
 
-        # The ops write their own rows of both caches, so the graph hands back the logits alone. The
-        # per-layer hidden states (n_layers + 1) trail them when output_hidden_states is requested,
-        # which is how the runtime finds them.
         if self.rbln_config.output_hidden_states:
             return (logits, *all_hidden_states)
         return (logits,)
