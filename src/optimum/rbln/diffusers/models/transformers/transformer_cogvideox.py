@@ -170,7 +170,8 @@ class RBLNCogVideoXTransformer3DModel(RBLNModel):
             encoder_hidden_states (torch.Tensor): The text embeddings.
             timestep (int | float | torch.LongTensor): The current denoising step.
             timestep_cond (torch.Tensor | None): Not supported; must be None.
-            ofs (int | float | torch.LongTensor | None): Not supported; must be None.
+            ofs (int | float | torch.LongTensor | None): Ignored, as in diffusers for models without the ofs
+                embedding (CogVideoX 1.0).
             image_rotary_emb (tuple[torch.Tensor, torch.Tensor] | None): The RoPE (cos, sin) tables. Required by models
                 with rotary positional embeddings (e.g. CogVideoX-5b-I2V); must be None otherwise.
             attention_kwargs (dict[str, Any] | None): Ignored.
@@ -179,8 +180,8 @@ class RBLNCogVideoXTransformer3DModel(RBLNModel):
         Returns:
             (`~diffusers.models.modeling_outputs.Transformer2DModelOutput` | tuple)
         """
-        if timestep_cond is not None or ofs is not None:
-            raise NotImplementedError("timestep_cond and ofs are not supported.")
+        if timestep_cond is not None:
+            raise NotImplementedError("timestep_cond is not supported.")
         if (image_rotary_emb is not None) != bool(self.config.use_rotary_positional_embeddings):
             raise ValueError(
                 "image_rotary_emb must be given exactly when the model uses rotary positional embeddings "

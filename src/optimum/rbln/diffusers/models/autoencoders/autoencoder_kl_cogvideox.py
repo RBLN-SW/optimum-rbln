@@ -253,12 +253,13 @@ class RBLNAutoencoderKLCogVideoX(RBLNModel):
     ) -> tuple[torch.nn.Module, ...]:
         """One graph per compile config, in the same order."""
         latent_height, latent_width = cls._latent_size(model, rbln_config)
-        graphs = {
-            "decoder_0": lambda: _VAECogVideoXDecoder0(model, latent_height, latent_width),
-            "decoder_n": lambda: _VAECogVideoXDecoderN(model, latent_height, latent_width),
-            "encoder": lambda: _VAECogVideoXEncoder(model),
-        }
-        return tuple(graphs[cfg.compiled_model_name]().eval() for cfg in rbln_config.compile_cfgs)
+        compiled_model_names = [cfg.compiled_model_name for cfg in rbln_config.compile_cfgs]
+        graphs = [_VAECogVideoXDecoder0(model, latent_height, latent_width)]
+        if "decoder_n" in compiled_model_names:
+            graphs.append(_VAECogVideoXDecoderN(model, latent_height, latent_width))
+        if rbln_config.uses_encoder:
+            graphs.append(_VAECogVideoXEncoder(model))
+        return tuple(graph.eval() for graph in graphs)
 
     @classmethod
     def get_compiled_model(
