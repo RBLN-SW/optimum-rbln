@@ -237,8 +237,8 @@ def _qwen3_5_setup_hybrid_runtime(model):
 
     # An artifact from before the custom kernels gates each cache with a mask of that cache's own
     # shape, which only this side knows; one compiled with them takes a value per cache row instead.
-    legacy = _qwen3_5_graph_predates_custom_kernel(rbln_config)
-    if legacy:
+    is_legacy_graph = _qwen3_5_graph_predates_custom_kernel(rbln_config)
+    if is_legacy_graph:
         warn_deprecated(
             "This Qwen3.5 artifact was compiled before the GatedDeltaNet custom kernels, so "
             "optimum-rbln runs its GatedDeltaNet in the graph. That path",
@@ -253,14 +253,14 @@ def _qwen3_5_setup_hybrid_runtime(model):
         phase="prefill",
         batch_size=rbln_config.batch_size,
         logits_last_dim=model.logits_last_dim,
-        legacy_state_shapes=_qwen3_5_legacy_linear_state_shapes(text_config, 1) if legacy else None,
+        legacy_state_shapes=_qwen3_5_legacy_linear_state_shapes(text_config, 1) if is_legacy_graph else None,
         **common_kwargs,
     )
 
     if model.can_generate():
         model.decoders = {}
         for i, batch_size in enumerate(rbln_config.decoder_batch_sizes):
-            shapes = _qwen3_5_legacy_linear_state_shapes(text_config, batch_size) if legacy else None
+            shapes = _qwen3_5_legacy_linear_state_shapes(text_config, batch_size) if is_legacy_graph else None
             model.decoders[batch_size] = RBLNQwen3_5RuntimeModel(
                 runtime=model.model[i + 1],
                 phase="decode",
