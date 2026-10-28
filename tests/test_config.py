@@ -551,6 +551,42 @@ def test_qwen_vl_parent_rejects_conflicting_vision_batch_size(parent_cls_name, v
         parent_cls(max_seq_len=1024, visual={"cls_name": vision_cls_name, "max_seq_len": 256, "batch_size": 2})
 
 
+LOAD_VISUAL_RUNTIME_CONFIGS = [
+    ("RBLNQwen3VLForConditionalGenerationConfig", "RBLNQwen3VLVisionModelConfig"),
+    ("RBLNQwen3VLModelConfig", "RBLNQwen3VLVisionModelConfig"),
+    ("RBLNQwen3_5ForConditionalGenerationConfig", "RBLNQwen3_5VisionModelConfig"),
+    ("RBLNQwen3_5ModelConfig", "RBLNQwen3_5VisionModelConfig"),
+]
+
+
+@pytest.mark.parametrize(("parent_cls_name", "vision_cls_name"), LOAD_VISUAL_RUNTIME_CONFIGS)
+def test_deprecated_load_visual_runtime(parent_cls_name, vision_cls_name):
+    """`_load_visual_runtime` is the deprecated spelling of `visual={"create_runtimes": ...}`, both as a
+    constructor kwarg and when the load path sets it after construction. Either way it must reach the visual
+    config (an instance or, at compile time, still a dict) without being serialized, and `get_load_overrides`
+    carries it only through `visual`, so a reload never applies the alias again."""
+    parent_cls = _import_config(parent_cls_name)
+    kwargs = {"max_seq_len": 1024, "use_inputs_embeds": True}
+
+    config = parent_cls(visual={"cls_name": vision_cls_name, "max_seq_len": 256}, **kwargs)
+    assert config.visual.create_runtimes is True
+    assert "_load_visual_runtime" not in config.get_load_overrides()
+    config._load_visual_runtime = False
+    assert config.visual.create_runtimes is False
+    assert "_load_visual_runtime" not in config._attributes_map
+
+    config = parent_cls(visual={"max_seq_len": 256}, **kwargs)
+    config._load_visual_runtime = False
+    assert config.visual["create_runtimes"] is False
+
+    config = parent_cls(visual={"cls_name": vision_cls_name, "max_seq_len": 256}, _load_visual_runtime=False, **kwargs)
+    assert config.visual.create_runtimes is False
+    assert "_load_visual_runtime" not in config._attributes_map
+    overrides = config.get_load_overrides()
+    assert "_load_visual_runtime" not in overrides
+    assert overrides["visual"]["create_runtimes"] is False
+
+
 def test_cosmos2_5_pipeline_owns_the_visual_tower_config():
     """The Cosmos2.5 pipeline sets the (unused) visual tower's config itself. A submodule dict
     replaces that dict rather than merging into it, so naming `visual` with one key would drop
@@ -634,13 +670,13 @@ def test_get_load_overrides():
 
 
 def test_get_load_overrides_includes_non_save_flags():
-    """Load-behavior flags (subclass_non_save_attributes) must cross the load boundary:
+    """Non-save attributes (subclass_non_save_attributes) must cross the load boundary:
     they are never serialized, so they can only travel with the caller."""
     from optimum.rbln import RBLNQwen2_5_VLForConditionalGenerationConfig, RBLNQwen3VLForConditionalGenerationConfig
 
-    cfg = RBLNQwen3VLForConditionalGenerationConfig(device=0, _load_visual_runtime=False)
+    cfg = RBLNQwen3VLForConditionalGenerationConfig(device=0, memory_budget=0.8)
     overrides = cfg.get_load_overrides()
-    assert overrides["_load_visual_runtime"] is False
+    assert overrides["memory_budget"] == 0.8
     assert overrides["device"] == 0
 
     # A submodule left as a plain dict keeps runtime options only: its config class is

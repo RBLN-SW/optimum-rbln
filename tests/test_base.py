@@ -18,6 +18,7 @@ from transformers import AutoConfig
 
 from optimum.rbln import __version__
 from optimum.rbln.configuration_utils import ContextRblnConfig
+from optimum.rbln.modeling_base import RBLNBaseModel
 from optimum.rbln.utils.deprecation import deprecate_method
 
 
@@ -379,11 +380,14 @@ class BaseTest:
                 with self.subTest():
                     # Test saving from exported pipe
                     self.model.save_pretrained(tmpdir)
-                    _ = self.RBLN_CLASS.from_pretrained(
+                    model = self.RBLN_CLASS.from_pretrained(
                         tmpdir,
                         rbln_create_runtimes=False,
                         **self.HF_CONFIG_KWARGS,
                     )
+                    if isinstance(model, RBLNBaseModel):
+                        assert model._compiled_models is None, "create_runtimes=False must not read .rbln files"
+                        assert len(model.compiled_models) == len(model.rbln_config.compile_cfgs)
 
         def test_save_load(self):
             with tempfile.TemporaryDirectory() as tmpdir:
