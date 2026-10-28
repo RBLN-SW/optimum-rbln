@@ -147,13 +147,31 @@ class Qwen3_5GatedDeltaNet(nn.Module):
         self._phase = "prefill"
 
         self.in_proj_z = linear_attn.in_proj_z
-        self.in_proj_b = linear_attn.in_proj_b
-        self.in_proj_a = linear_attn.in_proj_a
         self.conv1d = linear_attn.conv1d
         self.norm = linear_attn.norm
         self.out_proj = linear_attn.out_proj
-        self.A_log = linear_attn.A_log
-        self.dt_bias = linear_attn.dt_bias
+
+        # a, b and their per-head constants in a 64-lane block per Q/K head: the r value heads of a
+        # Q/K head in lanes 0..r-1 (the value heads are Q/K head first), zeros after. As a flat Hv
+        # axis they sit in one lane block that tensor parallelism cannot cut, so one device computed
+        # g and beta for every head and sent each device its share (an HDMA and a sync per device,
+        # ahead of the delta rule); blocked, the cut falls on whole blocks. -exp(A_log) is taken
+        # here too: derived in the graph, its region (cast, exp, negative, a lane pad) is one the
+        # host-constant materializer refuses.
+        _hk, _r = linear_attn.num_k_heads, linear_attn.num_v_heads // linear_attn.num_k_heads
+
+        def _lane_block(x):
+            return F.pad(x.reshape(_hk, _r, *x.shape[1:]).movedim(1, -1), (0, -_r % 64)).movedim(-1, 1)
+
+        for _name in ("in_proj_a", "in_proj_b"):
+            _src = getattr(linear_attn, _name)
+            _lin = nn.Linear(_src.in_features, _hk * 64, bias=_src.bias is not None)
+            _lin.weight = nn.Parameter(_lane_block(_src.weight.data).reshape(_hk * 64, -1).contiguous())
+            if _src.bias is not None:
+                _lin.bias = nn.Parameter(_lane_block(_src.bias.data).reshape(-1).contiguous())
+            setattr(self, _name, _lin)
+        self.register_buffer("neg_A", _lane_block(-linear_attn.A_log.data.float().exp()).contiguous(), persistent=False)
+        self.dt_bias = nn.Parameter(_lane_block(linear_attn.dt_bias.data).contiguous())
 
         self.key_dim = linear_attn.key_dim
         self.value_dim = linear_attn.value_dim
@@ -312,8 +330,8 @@ class Qwen3_5GatedDeltaNet(nn.Module):
         dim = self.head_k_dim
 
         z = self.in_proj_z(hidden_states).reshape(batch_size, seq_len, heads, ratio, dim).permute(0, 2, 3, 1, 4)
-        b = self.in_proj_b(hidden_states)
-        a = self.in_proj_a(hidden_states)
+        b = self.in_proj_b(hidden_states).reshape(batch_size, seq_len, heads, 64)
+        a = self.in_proj_a(hidden_states).reshape(batch_size, seq_len, heads, 64)
         qkv = self._project_qkv(hidden_states)
         if conv_tables is not None:
             query, key, value = self._rbln_causal_conv1d_tabled(
@@ -348,13 +366,14 @@ class Qwen3_5GatedDeltaNet(nn.Module):
             )
 
         beta = b.sigmoid()
-        g = -self.A_log.float().exp() * F.softplus(a.float() + self.dt_bias)
+        g = self.neg_A * F.softplus(a.float() + self.dt_bias)  # [B, S, Hk, 64], r live lanes
         if prefill:
             # padding tokens have nonzero q/k/v/g via biases; zero g/beta so they don't pollute the recurrent-state sum and its decay.
-            g = g * valid_mask
-            beta = beta * valid_mask
-        g = g.reshape(batch_size, seq_len, heads, ratio).permute(0, 2, 3, 1).contiguous()
-        beta = beta.reshape(batch_size, seq_len, heads, ratio).permute(0, 2, 3, 1).contiguous()
+            g = g * valid_mask.unsqueeze(-1)
+            beta = beta * valid_mask.unsqueeze(-1)
+        # The lanes become rows here, so the r live ones are cut off a row axis.
+        g = g.permute(0, 2, 3, 1)[:, :, :ratio].contiguous()
+        beta = beta.permute(0, 2, 3, 1)[:, :, :ratio].contiguous()
         operands = (query.contiguous(), key.contiguous(), value.contiguous(), g, beta, recurrent_state, slot)
         if "prefill" in self._phase:
             carry = torch.ones(batch_size, dtype=value.dtype) if carry is None else carry
