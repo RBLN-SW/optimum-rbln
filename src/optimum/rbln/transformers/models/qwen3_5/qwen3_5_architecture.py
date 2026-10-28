@@ -763,8 +763,7 @@ class Qwen3_5_CausalLMWrapper(DecoderOnlyWrapper):
         return past_key_values, past_states
 
     def uses_query_position(self) -> bool:
-        # GatedDeltaNet picks its new conv state at the last valid token of a prefill window, so the position is an
-        # input also when every position is output.
+        # GatedDeltaNet reads its conv state at the last valid token, so every prefill window needs the position.
         has_linear = any(t == "linear_attention" for t in self.config.layer_types)
         return super().uses_query_position() or (has_linear and "prefill" in self.phase)
 

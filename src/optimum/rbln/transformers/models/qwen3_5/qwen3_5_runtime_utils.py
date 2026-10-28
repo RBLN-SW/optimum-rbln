@@ -123,8 +123,12 @@ class RBLNQwen3_5RuntimeModel(RBLNRuntimeModel):
         # "logits", so every window must be collected — keeping only the last window would drop
         # all earlier windows of a multi-chunk prompt and return padded chunk width.
         collect_full_logits = self.rbln_config.logits_to_keep == 0
-        # The GatedDeltaNet layers read the position in every prefill window (see `get_input_info`).
-        uses_query_position = self.rbln_config.logits_to_keep > 0 or bool(self.rbln_config.linear_attention_layers)
+        # The base condition, or GatedDeltaNet layers, as in `get_input_info` and `Qwen3_5_CausalLMWrapper`.
+        uses_query_position = (
+            self.rbln_config.use_local_attention
+            or self.rbln_config.logits_to_keep > 0
+            or bool(self.rbln_config.linear_attention_layers)
+        )
         all_logits = [] if collect_full_logits else None
         all_hidden_states = [] if self.rbln_config.output_hidden_states else None
 

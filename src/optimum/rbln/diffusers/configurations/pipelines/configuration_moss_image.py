@@ -20,18 +20,8 @@ from ....transformers import RBLNQwen3_5ModelConfig
 from ..models import RBLNAutoencoderKLFlux2Config, RBLNMOSSImageTransformerConfig
 
 
-# One latent token covers a 16x16 pixel tile: the VAE compresses 8x and the pipeline patchifies 2x2.
-_LATENT_TILE = 16
-# The compiler takes the sequence lengths of the text encoder and its vision encoder in multiples of 64.
-_SEQ_LEN_MULTIPLE = 64
-
-
 class RBLNMOSSImagePipelineConfig(RBLNModelConfig):
-    """
-    Configuration class for the RBLN MOSS-Image pipeline.
-
-    The pipeline compiles its text encoder, transformer and VAE decoder for one image size and one prompt length.
-    """
+    """Config for MOSS-Image Pipeline"""
 
     submodules = ["text_encoder", "transformer", "vae"]
 
@@ -49,47 +39,49 @@ class RBLNMOSSImagePipelineConfig(RBLNModelConfig):
     ):
         """
         Args:
-            text_encoder (RBLNQwen3_5ModelConfig | None): Configuration for the Qwen3.5 text encoder. It encodes one
-                prompt at a time, as upstream does, so its batch size is 1. Its vision encoder never runs: it compiles
-                at the smallest size and gets no runtime.
-            transformer (RBLNMOSSImageTransformerConfig | None): Configuration for the transformer.
-            vae (RBLNAutoencoderKLFlux2Config | None): Configuration for the VAE, which only decodes.
+            text_encoder (RBLNQwen3_5ModelConfig | None): Configuration for the text encoder component.
+                Initialized as RBLNQwen3_5ModelConfig if not provided.
+            transformer (RBLNMOSSImageTransformerConfig | None): Configuration for the Transformer model component.
+                Initialized as RBLNMOSSImageTransformerConfig if not provided.
+            vae (RBLNAutoencoderKLFlux2Config | None): Configuration for the VAE model component.
+                Initialized as RBLNAutoencoderKLFlux2Config if not provided.
             batch_size (int | None): The number of images generated per call (prompts times `num_images_per_prompt`),
                 for the transformer and the VAE. Defaults to 1.
             height (int | None): The height of the generated image, a multiple of 16. Defaults to 1024.
             width (int | None): The width of the generated image, a multiple of 16. Defaults to 1024.
             max_sequence_length (int | None): The number of text tokens the text encoder and the transformer read.
-                A longer prompt is truncated to it, as `max_sequence_length` of the pipeline call truncates upstream.
                 Defaults to 512.
             kwargs: Additional arguments passed to the parent RBLNModelConfig.
 
         Raises:
-            ValueError: If only one of height and width is given, or if either is not a multiple of 16.
+            ValueError: If only one of height and width is given, or if either is not a positive multiple of 16.
         """
         super().__init__(**kwargs)
         if (height is None) != (width is None):
             raise ValueError("Both height and width must be provided together if used")
 
         defaults = self.get_default_values_for_original_cls("__call__", ["height", "width"])
-        height = height or defaults["height"]
-        width = width or defaults["width"]
-        if height % _LATENT_TILE or width % _LATENT_TILE:
-            raise ValueError(f"height and width must be multiples of {_LATENT_TILE}, got {height}x{width}.")
+        height = height if height is not None else defaults["height"]
+        width = width if width is not None else defaults["width"]
+        # One latent token covers 16x16 pixels: the VAE compresses 8x and the pipeline patchifies 2x2.
+        if height <= 0 or width <= 0 or height % 16 or width % 16:
+            raise ValueError("height and width must be positive multiples of 16.")
         max_sequence_length = max_sequence_length or 512
 
         self.text_encoder = self.initialize_submodule_config(
             text_encoder,
             cls_name="RBLNQwen3_5ModelConfig",
-            batch_size=1,
+            batch_size=1,  # Upstream encodes one prompt at a time.
             use_inputs_embeds=True,
-            max_seq_len=math.ceil(max_sequence_length / _SEQ_LEN_MULTIPLE) * _SEQ_LEN_MULTIPLE,
-            visual={"max_seq_len": _SEQ_LEN_MULTIPLE, "create_runtimes": False},
+            # The compiler takes the Qwen text and vision sequence lengths in multiples of 64.
+            max_seq_len=math.ceil(max_sequence_length / 64) * 64,
+            visual={"max_seq_len": 64, "create_runtimes": False},  # The visual tower is never called.
         )
         self.transformer = self.initialize_submodule_config(
             transformer,
             cls_name="RBLNMOSSImageTransformerConfig",
             batch_size=batch_size,
-            sample_size=(height // _LATENT_TILE, width // _LATENT_TILE),
+            sample_size=(height // 16, width // 16),
             max_sequence_length=max_sequence_length,
         )
         self.vae = self.initialize_submodule_config(
@@ -102,7 +94,7 @@ class RBLNMOSSImagePipelineConfig(RBLNModelConfig):
 
     @property
     def batch_size(self):
-        return self.transformer.batch_size
+        return self.vae.batch_size
 
     @property
     def image_size(self):

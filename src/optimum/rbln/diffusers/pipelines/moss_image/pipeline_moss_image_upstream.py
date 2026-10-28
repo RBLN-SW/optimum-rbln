@@ -1,4 +1,4 @@
-# Copyright 2026 Rebellions Inc. All rights reserved.
+# Copyright The MOSS-Image Authors.
 
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,8 +13,8 @@
 # limitations under the License.
 
 # `pipeline_moss_image.py` of https://huggingface.co/OpenMOSS-Team/MOSS-Image-Base (Apache-2.0) at revision
-# 85975793d8b3d432f1b6e27f352abaa4c2a4c0d3, unchanged. diffusers has no MOSS-Image classes; the checkpoint ships them
-# as remote code, and `RBLNMOSSImagePipeline` loads them from this module instead.
+# 85975793d8b3d432f1b6e27f352abaa4c2a4c0d3, unchanged; the checkpoint names no copyright holder. diffusers has no
+# MOSS-Image classes; the checkpoint ships them as remote code, and `RBLNMOSSImagePipeline` loads them from here.
 # ruff: noqa
 # fmt: off
 """MOSSImage modeling and text-to-image pipeline (no Motor/TorchTitan imports).

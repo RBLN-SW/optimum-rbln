@@ -16,7 +16,7 @@ from .configuration_autoencoder_kl import RBLNAutoencoderKLConfig
 
 
 class RBLNAutoencoderKLFlux2Config(RBLNAutoencoderKLConfig):
-    """Configuration class for the RBLN FLUX.2 Variational Autoencoder (VAE)."""
+    """Configuration class for RBLN FLUX.2 Variational Autoencoder (VAE) models."""
 
 
 __all__ = [

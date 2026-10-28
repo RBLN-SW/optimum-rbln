@@ -215,7 +215,7 @@ class RBLNQwen3_5TextModel(RBLNDecoderOnlyModel):
             input_info.append(("local_block_tables", [1] if is_prefill else [batch_size, 1], "int16"))
 
         if cls.use_query_position(rbln_config.use_local_attention, is_prefill, rbln_config.logits_to_keep) or (
-            is_prefill and rbln_config.linear_attention_layers
+            is_prefill and bool(rbln_config.linear_attention_layers)
         ):
             input_info.append(("query_position", [], "int16"))
 
@@ -727,7 +727,7 @@ class RBLNQwen3_5Model(RBLNDecoderOnlyModel):
         mm_token_type_ids: torch.IntTensor | None = None,
         output_hidden_states: bool | None = None,
         **kwargs,
-    ) -> RBLNDecoderOnlyOutput:
+    ) -> BaseModelOutputWithPast:
         return_dict = return_dict if return_dict is not None else self.config.return_dict
         output_hidden_states = _validate_output_hidden_states(output_hidden_states, self.rbln_config)
         if attention_mask is None:

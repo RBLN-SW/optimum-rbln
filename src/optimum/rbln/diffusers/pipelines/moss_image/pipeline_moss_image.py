@@ -14,67 +14,35 @@
 
 from typing import Any
 
-from ...configurations import RBLNMOSSImagePipelineConfig
 from ...modeling_diffusers import RBLNDiffusionMixin
 from . import pipeline_moss_image_upstream
 from .pipeline_moss_image_upstream import MOSSImagePipeline
 
 
-# The library name under which the checkpoint's `model_index.json` lists its transformer and scheduler.
-_REMOTE_CODE_MODULE = "pipeline_moss_image"
-
-
 class RBLNMOSSImagePipeline(RBLNDiffusionMixin, MOSSImagePipeline):
     """
-    RBLN-accelerated implementation of the MOSS-Image text-to-image pipeline.
-
-    The pipeline compiles the Qwen3.5 text encoder, the transformer and the VAE decoder for one image size and one
-    prompt length. The transformer, the scheduler and the pipeline itself ship with the checkpoint as remote code;
-    this package carries a copy of that code, so `trust_remote_code` is not needed.
-
-    Examples:
-        ```python
-        import torch
-        from optimum.rbln import RBLNMOSSImagePipeline
-
-        pipe = RBLNMOSSImagePipeline.from_pretrained(
-            "OpenMOSS-Team/MOSS-Image-Base",
-            export=True,
-            torch_dtype={"default": torch.bfloat16, "vae": torch.float32},
-            rbln_config={
-                "height": 1024,
-                "width": 1024,
-                "text_encoder": {"num_devices": 4, "device": [0, 1, 2, 3]},
-                "transformer": {"num_devices": 4, "device": [4, 5, 6, 7]},
-                "vae": {"device": 8},
-            },
-        )
-        image = pipe("A cat", generator=torch.Generator("cpu").manual_seed(42)).images[0]
-        ```
+    RBLN-accelerated implementation of MOSS-Image pipeline for text-to-image generation.
     """
 
     original_class = MOSSImagePipeline
     _hf_class = MOSSImagePipeline
-    _rbln_config_class = RBLNMOSSImagePipelineConfig
     _submodules = ["text_encoder", "transformer", "vae"]
 
     @classmethod
     def load_config(cls, *args: Any, **kwargs: Any) -> Any:
-        # The checkpoint lists its transformer and scheduler under the remote-code module `pipeline_moss_image`.
-        # Pointing them at the copy in this package makes diffusers load them from here.
         config = super().load_config(*args, **kwargs)
         config_dict = config[0] if isinstance(config, tuple) else config
         for name, value in config_dict.items():
-            if isinstance(value, list) and value[0] == _REMOTE_CODE_MODULE:
+            # Load the checkpoint's remote-code module `pipeline_moss_image` from the copy in this package.
+            if isinstance(value, list) and value[0] == "pipeline_moss_image":
                 config_dict[name] = [pipeline_moss_image_upstream.__name__, value[1]]
         return config
 
-    def handle_additional_kwargs(self, **kwargs: Any) -> dict[str, Any]:
-        # The graph reads a fixed number of text tokens; a longer prompt is truncated to it, as `max_sequence_length`
-        # already truncates upstream.
+    def handle_additional_kwargs(self, **kwargs):
+        # If there is no max_sequence_length of kwargs,
+        # it is filled based on the compiled value.
         compiled_max_sequence_length = self.transformer.rbln_config.max_sequence_length
-        max_sequence_length = kwargs.get("max_sequence_length")
-        if max_sequence_length is None or max_sequence_length > compiled_max_sequence_length:
+        if compiled_max_sequence_length is not None and kwargs.get("max_sequence_length") is None:
             kwargs["max_sequence_length"] = compiled_max_sequence_length
         return kwargs
 

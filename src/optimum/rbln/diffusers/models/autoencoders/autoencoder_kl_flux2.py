@@ -30,10 +30,10 @@ if TYPE_CHECKING:
 
 class RBLNAutoencoderKLFlux2(RBLNAutoencoderKL):
     """
-    RBLN implementation of AutoencoderKLFlux2 (the FLUX.2 VAE) for diffusion models.
+    RBLN implementation of AutoencoderKLFlux2 (VAE) for diffusion models.
 
-    The encoder and decoder compile like those of `RBLNAutoencoderKL`. The batch-norm statistics that FLUX.2
-    pipelines apply to the latents on the host stay available as `bn`.
+    This model is used to accelerate AutoencoderKLFlux2 (VAE) models from diffusers library on RBLN NPUs.
+    The batch-norm statistics that FLUX.2 pipelines apply to the latents on the host stay available as `bn`.
 
     This class inherits from [`RBLNAutoencoderKL`]. Check the superclass documentation for the generic methods
     the library implements for all its models.
@@ -52,8 +52,8 @@ class RBLNAutoencoderKLFlux2(RBLNAutoencoderKL):
             affine=False,
             track_running_stats=True,
         )
-        self.bn.load_state_dict(artifacts["bn"], assign=True)
-        self.bn.eval()
+        self.bn.load_state_dict(artifacts["bn"])
+        self.bn.to(self.rbln_config.dtype)
 
     @classmethod
     def save_torch_artifacts(
@@ -63,7 +63,8 @@ class RBLNAutoencoderKLFlux2(RBLNAutoencoderKL):
         subfolder: str,
         rbln_config: RBLNAutoencoderKLFlux2Config,
     ):
-        torch.save({"bn": model.bn.state_dict()}, save_dir_path / subfolder / "torch_artifacts.pth")
+        save_dict = {"bn": model.bn.state_dict()}
+        torch.save(save_dict, save_dir_path / subfolder / "torch_artifacts.pth")
 
 
 __all__ = [
