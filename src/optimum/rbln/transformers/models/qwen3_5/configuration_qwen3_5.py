@@ -22,6 +22,14 @@ from ..qwen3_vl.configuration_qwen3_vl import DeprecatedLoadVisualRuntimeMixin
 MAX_GDN_CHUNK_SIZE = 128
 
 
+def _reject_decoder_batch_bucketing(rbln_config) -> None:
+    if rbln_config.use_multiple_decoder:
+        raise ValueError(
+            f"Qwen3.5 takes one decoder batch size, got {rbln_config.decoder_batch_sizes}. "
+            "It does not support decoder batch bucketing."
+        )
+
+
 class RBLNQwen3_5ForCausalLMConfig(RBLNDecoderOnlyModelForCausalLMConfig):
     """
     Configuration class for RBLN Qwen3.5 (text backbone) causal language models.
@@ -64,6 +72,7 @@ class RBLNQwen3_5ForCausalLMConfig(RBLNDecoderOnlyModelForCausalLMConfig):
         super().__init__(**kwargs)
         self.gdn_chunk_size = MAX_GDN_CHUNK_SIZE if gdn_chunk_size is None else gdn_chunk_size
         self.linear_attention_layers = linear_attention_layers or []
+        _reject_decoder_batch_bucketing(self)
 
 
 class RBLNQwen3_5TextModelConfig(RBLNDecoderOnlyModelConfig):
@@ -247,6 +256,7 @@ class RBLNQwen3_5ForConditionalGenerationConfig(
         self.visual = self.initialize_submodule_config(submodule_config=visual, force_kwargs=True, batch_size=1)
         self.gdn_chunk_size = MAX_GDN_CHUNK_SIZE if gdn_chunk_size is None else gdn_chunk_size
         self.linear_attention_layers = linear_attention_layers or []
+        _reject_decoder_batch_bucketing(self)
         if _load_visual_runtime is not None:
             self._load_visual_runtime = _load_visual_runtime
 
