@@ -628,22 +628,19 @@ class Qwen3_5_CausalLMWrapper(DecoderOnlyWrapper):
         past_states = [pair if i in linear else None for i, pair in enumerate(pairs)]
         return past_key_values, past_states
 
-    @property
-    def _has_linear_layer(self) -> bool:
-        return any(t == "linear_attention" for t in self.config.layer_types)
-
     def _pop_gdn_inputs(self, args: list):
         """Pop the GatedDeltaNet's own inputs off `args`, in the order `get_input_info` declares them.
 
         A graph with no linear layer, and a decode graph, declares fewer of them and takes None there.
         """
+        has_linear = any(t == "linear_attention" for t in self.config.layer_types)
         # get_input_info declares the conv ring's tables last, in both phases.
         conv_tables = None
-        if self._has_linear_layer:
+        if has_linear:
             conv_tables = tuple(args[-len(CONV_TABLE_INPUTS) :])
             del args[-len(CONV_TABLE_INPUTS) :]
         # get_input_info declares these three for a prefill graph only.
-        has_prefill_linear = self._has_linear_layer and "prefill" in self.phase
+        has_prefill_linear = has_linear and "prefill" in self.phase
         batch_idx = args.pop() if has_prefill_linear else None
         valid_mask = args.pop() if has_prefill_linear else None
         state_mask = args.pop() if has_prefill_linear else None
