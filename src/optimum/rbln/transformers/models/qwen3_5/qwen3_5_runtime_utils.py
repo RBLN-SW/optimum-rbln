@@ -51,9 +51,10 @@ class RBLNQwen3_5RuntimeModel(RBLNRuntimeModel):
         self.state_dtype = state_dtype
         self._valid_mask_prefill_full = torch.ones(1, self.rbln_config.prefill_chunk_size, 1, dtype=state_dtype)
 
-        # Prefill state mask: zeros on window 0 (fresh sequence), ones afterwards (carry over). One value per
-        # cache row, and prefill runs one sequence per call, so one value. Decode reads no mask -- its graph
-        # declares the input but nothing consumes it, so the compiler drops it and the runtime never takes it.
+        # The prefill state mask, one value per cache row -- and prefill runs one sequence per call,
+        # so one value. Zeros where `has_initial_state` is false, which is window 0 of a sequence,
+        # ones for every window after it. Decode reads no mask: its graph declares the input but
+        # nothing consumes it, so the compiler drops it and the runtime never takes it.
         self._state_mask_zeros = torch.zeros(1, dtype=state_dtype)
         self._state_mask_ones = torch.ones(1, dtype=state_dtype)
 
@@ -64,8 +65,8 @@ class RBLNQwen3_5RuntimeModel(RBLNRuntimeModel):
         self._is_legacy_graph = legacy_state_shapes is not None
         names = ("conv_state_mask", "recurrent_state_mask")
         shapes = dict(zip(names, legacy_state_shapes, strict=True)) if self._is_legacy_graph else {}
-        self._legacy_masks_fresh = {name: torch.zeros(shape, dtype=state_dtype) for name, shape in shapes.items()}
-        self._legacy_masks_carry = {name: torch.ones(shape, dtype=state_dtype) for name, shape in shapes.items()}
+        self._legacy_masks_zeros = {name: torch.zeros(shape, dtype=state_dtype) for name, shape in shapes.items()}
+        self._legacy_masks_ones = {name: torch.ones(shape, dtype=state_dtype) for name, shape in shapes.items()}
 
     def _conv_tables(self, state_index, seq_idx, query_len, has_initial_state, tokens: int) -> dict:
         """The conv ring's index tables for one call, as named graph inputs (see CONV_TABLE_INPUTS)."""
@@ -203,7 +204,7 @@ class RBLNQwen3_5RuntimeModel(RBLNRuntimeModel):
             # one mask per cache under its own name instead, and no ring tables.
             has_initial_state = step > 0
             if self._is_legacy_graph:
-                named.update(self._legacy_masks_carry if has_initial_state else self._legacy_masks_fresh)
+                named.update(self._legacy_masks_ones if has_initial_state else self._legacy_masks_zeros)
             else:
                 named["state_mask"] = self._state_mask_ones if has_initial_state else self._state_mask_zeros
                 named.update(
