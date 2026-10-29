@@ -111,7 +111,7 @@ class RBLNLlama4VisionModel(RBLNModel):
     """RBLN Llama 4 vision encoder, including its pixel shuffle adapter.
 
     The original HF Unfold + Linear patch embedding runs on CPU and is saved
-    in torch_artifacts.pth, following the Qwen3-VL vision model convention.
+    in torch_artifacts.pth.
     """
 
     _tp_support = False

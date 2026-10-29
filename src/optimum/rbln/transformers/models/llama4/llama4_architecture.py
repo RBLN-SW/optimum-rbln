@@ -31,7 +31,6 @@ class Llama4VisionWrapper(nn.Module):
 
     def __init__(self, model):
         super().__init__()
-        # Keep only the compiled portion, as in the Qwen3-VL vision wrapper.
         # Patch embedding runs on CPU; the complex rotary table is not part of
         # the exported module, only its real-valued cos/sin lookup tables are.
         self.class_embedding = model.class_embedding
@@ -79,8 +78,6 @@ class Llama4VisionWrapper(nn.Module):
 
 class Llama4Wrapper(DecoderOnlyWrapper):
     def get_rotary_emb(self, max_seq_len):
-        # The shared lookup table stores split-half cos/sin values. Llama 4 uses
-        # the same frequencies, but rotates adjacent pairs of head dimensions.
         config = copy.deepcopy(self.config)
         config.rope_scaling = config.rope_parameters
         return RotaryEmbedding(config=config, max_seq_len_cached=max_seq_len)
@@ -122,6 +119,8 @@ class Llama4Attention(DecoderOnlyAttention):
         if not self.use_rope:
             return query_states, key_states
 
+        # The shared lookup table stores split-half cos/sin values. Llama 4 uses
+        # the same frequencies, but rotates adjacent pairs of head dimensions.
         cos = cos[..., : self.head_dim // 2].repeat_interleave(2, dim=-1)
         sin = sin[..., : self.head_dim // 2].repeat_interleave(2, dim=-1)
 
