@@ -28,6 +28,7 @@ from transformers import (
     BaseImageProcessor,
     FeatureExtractionMixin,
     GenerationConfig,
+    GenerationMixin,
     PretrainedConfig,
     PreTrainedTokenizerBase,
     ProcessorMixin,
@@ -615,7 +616,10 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
         return rbln_config_class
 
     def can_generate(self):
-        return False
+        # A decoder-only config (or a VLM config that delegates to its language model) answers from its phases.
+        if hasattr(type(self.rbln_config), "can_generate"):
+            return self.rbln_config.can_generate  # type: ignore[attr-defined]
+        return isinstance(self, GenerationMixin)
 
     def get_experts_implementation(self):
         # Required by GenerationMixin._optimize_model_for_decode (transformers >=5.9).
