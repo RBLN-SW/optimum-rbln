@@ -31,8 +31,6 @@ class Llama4VisionWrapper(nn.Module):
 
     def __init__(self, model):
         super().__init__()
-        # Patch embedding runs on CPU; the complex rotary table is not part of
-        # the exported module, only its real-valued cos/sin lookup tables are.
         self.class_embedding = model.class_embedding
         self.positional_embedding_vlm = model.positional_embedding_vlm
         self.layernorm_pre = model.layernorm_pre
