@@ -35,25 +35,20 @@ class Llama4VisionWrapper(nn.Module):
         self.class_embedding = model.class_embedding
         self.positional_embedding_vlm = model.positional_embedding_vlm
         self.layernorm_pre = model.layernorm_pre
+        for layer in model.model.layers:
+            layer.self_attn = Llama4VisionAttention(layer.self_attn)
         self.layers = model.model.layers
         self.layernorm_post = model.layernorm_post
         self.vision_adapter = model.vision_adapter
         frequencies = model.rotary_embedding.freqs_ci
         self.register_buffer("cos", frequencies.real.unsqueeze(0), persistent=False)
         self.register_buffer("sin", frequencies.imag.unsqueeze(0), persistent=False)
-        num_pairs = frequencies.shape[-1]
-        indices = torch.arange(2 * num_pairs)
-        self.register_buffer("interleave_indices", indices // 2 + indices % 2 * num_pairs, persistent=False)
-
-    def _rotate(self, states):
-        # Functionally equivalent to HF's vision_apply_rotary_emb complex rotation;
-        # use real-valued ops and cat/index_select to keep it compilable.
-        pairs = states.float().reshape(*states.shape[:-1], -1, 2)
-        real, imag = pairs[..., 0], pairs[..., 1]
-        out_real = real * self.cos - imag * self.sin
-        out_imag = real * self.sin + imag * self.cos
-        rotated = torch.cat((out_real, out_imag), dim=-1).index_select(-1, self.interleave_indices)
-        return rotated.to(states.dtype)
+        head_dim = 2 * frequencies.shape[-1]
+        pair_matrix = torch.zeros(head_dim, head_dim)
+        pair_indices = torch.arange(head_dim // 2)
+        pair_matrix[2 * pair_indices, 2 * pair_indices + 1] = 1
+        pair_matrix[2 * pair_indices + 1, 2 * pair_indices] = -1
+        self.register_buffer("pair_matrix", pair_matrix, persistent=False)
 
     def forward(self, pixel_values):
         hidden_states = self.patch_embedding(pixel_values)
@@ -61,19 +56,40 @@ class Llama4VisionWrapper(nn.Module):
         hidden_states = torch.cat((hidden_states, cls_embedding), dim=1)
         hidden_states = self.layernorm_pre(hidden_states + self.positional_embedding_vlm)
         for layer in self.layers:
-            residual = hidden_states
-            normalized = layer.input_layernorm(hidden_states)
-            attention = layer.self_attn
-            shape = (*normalized.shape[:-1], attention.num_heads, attention.head_dim)
-            query = self._rotate(attention.q_proj(normalized).view(shape)).transpose(1, 2)
-            key = self._rotate(attention.k_proj(normalized).view(shape)).transpose(1, 2)
-            value = attention.v_proj(normalized).view(shape).transpose(1, 2)
-            weights = (query @ key.transpose(-1, -2) * attention.head_dim**-0.5).softmax(dim=-1)
-            attended = (weights @ value).transpose(1, 2).reshape(normalized.shape)
-            hidden_states = residual + attention.o_proj(attended)
-            hidden_states = hidden_states + layer.mlp(layer.post_attention_layernorm(hidden_states))
+            hidden_states = layer(hidden_states, freqs_ci=(self.cos, self.sin, self.pair_matrix))[0]
         hidden_states = self.layernorm_post(hidden_states)[:, :-1]
         return self.vision_adapter(hidden_states)
+
+
+class Llama4VisionAttention(nn.Module):
+    def __init__(self, self_attn):
+        super().__init__()
+        self.num_heads = self_attn.num_heads
+        self.head_dim = self_attn.head_dim
+        self.q_proj = self_attn.q_proj
+        self.k_proj = self_attn.k_proj
+        self.v_proj = self_attn.v_proj
+        self.o_proj = self_attn.o_proj
+
+    def _rotate(self, states, cos, sin, pair_matrix):
+        # Equivalent to HF's complex RoPE; 4D matmul keeps one device context.
+        # The pair matrix maps each [real, imag] pair to [-imag, real].
+        x = states.float()
+        cos = cos.repeat_interleave(2, dim=-1)
+        sin = sin.repeat_interleave(2, dim=-1)
+        return (x * cos + torch.matmul(x, pair_matrix.float()) * sin).to(states.dtype)
+
+    def forward(self, hidden_states, freqs_ci, attention_mask=None):
+        shape = (*hidden_states.shape[:-1], self.num_heads, self.head_dim)
+        query = self._rotate(self.q_proj(hidden_states).view(shape), *freqs_ci).transpose(1, 2)
+        key = self._rotate(self.k_proj(hidden_states).view(shape), *freqs_ci).transpose(1, 2)
+        value = self.v_proj(hidden_states).view(shape).transpose(1, 2)
+        weights = query @ key.transpose(-1, -2) * self.head_dim**-0.5
+        if attention_mask is not None:
+            weights = weights + attention_mask
+        weights = weights.softmax(dim=-1)
+        attended = (weights @ value).transpose(1, 2).reshape(hidden_states.shape)
+        return self.o_proj(attended), weights
 
 
 class Llama4Wrapper(DecoderOnlyWrapper):
