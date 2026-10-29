@@ -14,7 +14,6 @@
 
 import inspect
 from collections.abc import Callable
-from pathlib import Path
 
 import torch
 from transformers import (
@@ -24,9 +23,7 @@ from transformers import (
     PretrainedConfig,
     PreTrainedModel,
 )
-from transformers.initialization import no_init_weights
 from transformers.modeling_outputs import BaseModelOutputWithPooling
-from transformers.models.llama4.modeling_llama4 import Llama4UnfoldConvolution
 
 from ....configuration_utils import RBLNCompileConfig
 from ....modeling import RBLNModel
@@ -108,34 +105,10 @@ class RBLNLlama4ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
 
 
 class RBLNLlama4VisionModel(RBLNModel):
-    """RBLN Llama 4 vision encoder, including its pixel shuffle adapter.
-
-    The original HF Unfold + Linear patch embedding runs on CPU and is saved
-    in torch_artifacts.pth.
-    """
+    """RBLN Llama 4 vision encoder, including patch embedding and the pixel shuffle adapter."""
 
     _tp_support = False
     _output_class = BaseModelOutputWithPooling
-
-    def __post_init__(self, **kwargs):
-        with no_init_weights():
-            self.patch_embedding = Llama4UnfoldConvolution(self.config)
-        artifacts = torch.load(self.model_save_dir / self.subfolder / "torch_artifacts.pth", weights_only=False)
-        self.patch_embedding.load_state_dict(artifacts["patch_embedding"], assign=True)
-        self.patch_embedding.eval()
-        return super().__post_init__(**kwargs)
-
-    @classmethod
-    def save_torch_artifacts(cls, model, save_dir_path: Path, subfolder, rbln_config):
-        torch.save(
-            {"patch_embedding": model.patch_embedding.state_dict()},
-            save_dir_path / subfolder / "torch_artifacts.pth",
-        )
-
-    def forward(self, pixel_values: torch.Tensor, return_dict=None, **kwargs):
-        with torch.no_grad():
-            hidden_states = self.patch_embedding(pixel_values.to(self.patch_embedding.linear.weight.dtype))
-        return super().forward(hidden_states.to(self.dtype), return_dict=return_dict, **kwargs)
 
     @classmethod
     def _wrap_model_if_needed(cls, model, rbln_config):
@@ -148,11 +121,12 @@ class RBLNLlama4VisionModel(RBLNModel):
                 RBLNCompileConfig(
                     input_info=[
                         (
-                            "hidden_states",
+                            "pixel_values",
                             [
                                 rbln_config.batch_size,
-                                (model_config.image_size // model_config.patch_size) ** 2,
-                                model_config.hidden_size,
+                                model_config.num_channels,
+                                model_config.image_size,
+                                model_config.image_size,
                             ],
                             rbln_config.dtype,
                         )

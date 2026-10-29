@@ -31,6 +31,7 @@ class Llama4VisionWrapper(nn.Module):
 
     def __init__(self, model):
         super().__init__()
+        self.patch_embedding = model.patch_embedding
         self.class_embedding = model.class_embedding
         self.positional_embedding_vlm = model.positional_embedding_vlm
         self.layernorm_pre = model.layernorm_pre
@@ -54,7 +55,8 @@ class Llama4VisionWrapper(nn.Module):
         rotated = torch.cat((out_real, out_imag), dim=-1).index_select(-1, self.interleave_indices)
         return rotated.to(states.dtype)
 
-    def forward(self, hidden_states):
+    def forward(self, pixel_values):
+        hidden_states = self.patch_embedding(pixel_values)
         cls_embedding = self.class_embedding.expand(hidden_states.shape[0], 1, -1)
         hidden_states = torch.cat((hidden_states, cls_embedding), dim=1)
         hidden_states = self.layernorm_pre(hidden_states + self.positional_embedding_vlm)
