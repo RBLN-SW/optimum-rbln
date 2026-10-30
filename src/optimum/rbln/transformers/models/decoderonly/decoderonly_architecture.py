@@ -781,7 +781,6 @@ class DecoderOnlyAttention(nn.Module):
                 lora_config=self.lora_config,
                 projection_name=proj_name,
                 layer_idx=self.layer_idx,
-                module_name="self_attn",
             )
             setattr(self, proj_name, lora_linear)
 
