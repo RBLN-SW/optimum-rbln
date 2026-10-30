@@ -18,6 +18,12 @@ from ....configuration_utils import RBLNModelConfig
 from ..decoderonly.configuration_decoderonly import RBLNDecoderOnlyModelForCausalLMConfig
 
 
+def _validate_batch_size(batch_size: int | None) -> int | None:
+    if batch_size is not None and (isinstance(batch_size, bool) or not isinstance(batch_size, int) or batch_size < 1):
+        raise ValueError(f"batch_size must be a positive integer, got {batch_size}")
+    return batch_size
+
+
 class RBLNLlama4ForCausalLMConfig(RBLNDecoderOnlyModelForCausalLMConfig):
     """Configuration class for RBLN Llama 4 causal language models.
 
@@ -30,9 +36,7 @@ class RBLNLlama4VisionModelConfig(RBLNModelConfig):
 
     def __init__(self, batch_size: int = 1, **kwargs: Any):
         super().__init__(**kwargs)
-        if not isinstance(batch_size, int) or batch_size < 1:
-            raise ValueError("batch_size must be a positive integer.")
-        self.batch_size = batch_size
+        self.batch_size = _validate_batch_size(batch_size)
 
 
 class RBLNLlama4ForConditionalGenerationConfig(RBLNModelConfig):
@@ -46,23 +50,31 @@ class RBLNLlama4ForConditionalGenerationConfig(RBLNModelConfig):
 
     def __init__(
         self,
-        batch_size: int = 1,
+        batch_size: int | None = None,
         vision_model: RBLNModelConfig | dict[str, Any] | None = None,
         language_model: RBLNModelConfig | dict[str, Any] | None = None,
         **kwargs: Any,
     ):
         super().__init__(**kwargs)
-        if not isinstance(batch_size, int) or batch_size < 1:
-            raise ValueError("batch_size must be a positive integer.")
-        self.batch_size = batch_size
-        self.vision_model = self.initialize_submodule_config(vision_model, batch_size=1, num_devices=1)
+        self.batch_size = _validate_batch_size(batch_size) or 1
+
+        self.vision_model = self.initialize_submodule_config(submodule_config=vision_model, batch_size=1)
+        if language_model is None or isinstance(language_model, dict):
+            # batch_size is only a default for the language model; an explicit value in the dict wins.
+            language_model = {"batch_size": self.batch_size, **(language_model or {})}
         self.language_model = self.initialize_submodule_config(
-            language_model, batch_size=batch_size, use_inputs_embeds=True
+            submodule_config=language_model,
+            use_inputs_embeds=True,  # Llama4 language model must use inputs_embeds as input
+            force_kwargs=True,
         )
+
+        # force_kwargs only reconciles dict inputs; check instances passed directly.
+        if isinstance(self.language_model, RBLNModelConfig) and not self.language_model.use_inputs_embeds:
+            raise ValueError("Llama 4 conditional generation requires language_model.use_inputs_embeds=True.")
 
     @property
     def use_inputs_embeds(self):
-        return True
+        return self.language_model.use_inputs_embeds
 
 
 __all__ = [

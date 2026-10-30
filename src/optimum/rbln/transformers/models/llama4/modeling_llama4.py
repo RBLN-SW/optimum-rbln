@@ -33,6 +33,17 @@ from ..decoderonly.modeling_decoderonly import RBLNDecoderOnlyModelForCausalLM
 from .llama4_architecture import Llama4ForCausalLMWrapper, Llama4VisionModelWrapper, uses_chunked_attention
 
 
+def _resolve_config(model_id, config, hub_kwargs) -> PretrainedConfig:
+    if isinstance(config, PretrainedConfig):
+        return config
+    config_kwargs = {
+        key: hub_kwargs[key]
+        for key in ("token", "revision", "force_download", "cache_dir", "subfolder", "local_files_only")
+        if key in hub_kwargs
+    }
+    return AutoConfig.from_pretrained(config or model_id, **config_kwargs)
+
+
 class RBLNLlama4ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
     """Compile and run the text decoder of Llama 4 on RBLN devices.
 
@@ -58,34 +69,24 @@ class RBLNLlama4ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
     _decoder_wrapper_cls = Llama4ForCausalLMWrapper
 
     @classmethod
+    def _check_supported_text_config(cls, text_config):
+        if text_config.moe_layers:
+            raise NotImplementedError("Llama 4 MoE models are not supported yet.")
+
+    @classmethod
     def get_pytorch_model(cls, model_id, **kwargs) -> PreTrainedModel:
-        config = kwargs.pop("config", None)
-        if not isinstance(config, PretrainedConfig):
-            config_kwargs = {
-                key: kwargs[key]
-                for key in ("token", "revision", "force_download", "cache_dir", "subfolder", "local_files_only")
-                if key in kwargs
-            }
-            config = AutoConfig.from_pretrained(config or model_id, **config_kwargs)
+        config = _resolve_config(model_id, kwargs.pop("config", None), kwargs)
 
         # Llama4ForCausalLM expects Llama4TextConfig. Its language_model base prefix
         # allows HF to load only the text weights from a multimodal checkpoint.
         text_config = config.get_text_config()
-        if text_config.moe_layers:
-            raise NotImplementedError("Llama 4 MoE models are not supported yet.")
+        cls._check_supported_text_config(text_config)
         return super().get_pytorch_model(model_id, config=text_config, **kwargs)
-
-    @classmethod
-    def from_model(cls, model, config=None, rbln_config=None, **kwargs):
-        if config is not None:
-            config = config.get_text_config()
-        return super().from_model(model, config=config, rbln_config=rbln_config, **kwargs)
 
     @classmethod
     def _update_rbln_config(cls, preprocessors=None, model=None, model_config=None, rbln_config=None):
         text_config = model_config.get_text_config()
-        if text_config.moe_layers:
-            raise NotImplementedError("Llama 4 MoE models are not supported yet.")
+        cls._check_supported_text_config(text_config)
         if rbln_config.max_seq_len is None:
             rbln_config.max_seq_len = text_config.max_position_embeddings
 
@@ -151,6 +152,12 @@ class RBLNLlama4ForConditionalGeneration(RBLNModel, RBLNImageIndexedBatchSortMix
     def can_generate(self):
         return True
 
+    @classmethod
+    def get_pytorch_model(cls, model_id, **kwargs):
+        config = _resolve_config(model_id, kwargs.get("config"), kwargs)
+        RBLNLlama4ForCausalLM._check_supported_text_config(config.get_text_config())
+        return super().get_pytorch_model(model_id, **kwargs)
+
     def __post_init__(self, **kwargs):
         self.vision_model, self.language_model = self.rbln_submodules
         self.multi_modal_projector = self.model[0]
@@ -170,10 +177,6 @@ class RBLNLlama4ForConditionalGeneration(RBLNModel, RBLNImageIndexedBatchSortMix
     def _update_submodule_rbln_config(
         cls, submodule_name, submodule_cls, model, submodule_config, submodule_rbln_config, preprocessors
     ):
-        if model.config.get_text_config().moe_layers:
-            raise NotImplementedError("Llama 4 MoE models are not supported yet.")
-        if submodule_name == "language_model" and not submodule_rbln_config.use_inputs_embeds:
-            raise ValueError("Llama 4 conditional generation requires language_model.use_inputs_embeds=True.")
         if submodule_name == "vision_model" and submodule_rbln_config.batch_size != 1:
             raise ValueError("Llama 4 conditional generation requires vision_model.batch_size=1.")
         return submodule_rbln_config
