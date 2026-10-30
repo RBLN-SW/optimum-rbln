@@ -1,4 +1,5 @@
 import os
+import shutil
 import unittest
 
 import torch
@@ -17,6 +18,7 @@ from optimum.rbln import (
     RBLNCosmos2VideoToWorldPipeline,
     RBLNKandinskyV22CombinedPipeline,
     RBLNKandinskyV22Img2ImgCombinedPipeline,
+    RBLNQwenImage21Pipeline,
     RBLNStableDiffusion3Img2ImgPipeline,
     RBLNStableDiffusion3Pipeline,
     RBLNStableDiffusionControlNetPipeline,
@@ -549,6 +551,124 @@ class TestCogVideoXImageToVideoModel(BaseTest.TestModel):
         image = torch.rand(1, 3, 1, 128, 128) * 2 - 1
         latent = self.model.vae.encode(image).latent_dist.mean
         assert tuple(latent.shape) == (1, 4, 1, 16, 16)
+
+
+def _save_tiny_qwenimage21_pipeline(save_dir: str):
+    # Tiny random Qwen-Image 2.1: the real processor and scheduler, shrunk text encoder, transformer and VAE.
+    from diffusers import (
+        AutoencoderKLQwenImage21,
+        FlowMatchEulerDiscreteScheduler,
+        QwenImage21Pipeline,
+        QwenImage21Transformer2DModel,
+    )
+    from transformers import Qwen3VLConfig, Qwen3VLForConditionalGeneration, Qwen3VLProcessor
+
+    model_id = "Qwen/Qwen-Image-2.1-Turbo"
+    torch.manual_seed(0)
+    real = Qwen3VLConfig.from_pretrained(model_id, subfolder="text_encoder")
+    text_config = real.text_config.to_dict()
+    text_config.update(
+        hidden_size=256, intermediate_size=512, num_hidden_layers=2, num_attention_heads=2, num_key_value_heads=1
+    )
+    vision_config = real.vision_config.to_dict()
+    vision_config.update(
+        depth=2, hidden_size=128, intermediate_size=256, num_heads=1, out_hidden_size=256, deepstack_visual_indexes=[0]
+    )
+    text_encoder = Qwen3VLForConditionalGeneration(
+        Qwen3VLConfig(
+            text_config=text_config,
+            vision_config=vision_config,
+            image_token_id=real.image_token_id,
+            video_token_id=real.video_token_id,
+            vision_start_token_id=real.vision_start_token_id,
+            vision_end_token_id=real.vision_end_token_id,
+        )
+    )
+    # Heads of 128 channels: smaller heads hit a compiler bug in the attention reshape.
+    transformer = QwenImage21Transformer2DModel(
+        num_layers=3,
+        num_attention_heads=4,
+        attention_head_dim=128,
+        axes_dims_rope=(32, 48, 48),
+        context_in_dim=256,
+        in_channels=16,
+        out_channels=16,
+    )
+    with torch.no_grad():
+        for param in transformer.parameters():
+            param.normal_(0, 0.02)  # The default init makes a random transformer diverge in bf16.
+    vae = AutoencoderKLQwenImage21(
+        base_dim=16,
+        decoder_base_dim=16,
+        z_dim=16,
+        dim_mult=[1, 1, 1, 1, 1],
+        num_res_blocks=1,
+        latents_mean=[0.0] * 16,
+        latents_std=[1.0] * 16,
+    )
+    QwenImage21Pipeline(
+        scheduler=FlowMatchEulerDiscreteScheduler.from_pretrained(model_id, subfolder="scheduler"),
+        vae=vae,
+        text_encoder=text_encoder,
+        processor=Qwen3VLProcessor.from_pretrained(model_id, subfolder="processor"),
+        transformer=transformer,
+    ).save_pretrained(save_dir)
+
+
+class TestQwenImage21Model(BaseTest.TestModel):
+    RBLN_CLASS = RBLNQwenImage21Pipeline
+    # tiny-random pipeline mirroring Qwen/Qwen-Image-2.1-Turbo, built at setup by `_save_tiny_qwenimage21_pipeline`
+    HF_MODEL_ID = "tiny-qwen-image-2.1"
+    GENERATION_KWARGS = {
+        "prompt": "dance monkey",
+        "num_inference_steps": 2,
+        "generator": torch.manual_seed(42),
+        "height": 256,
+        "width": 256,
+        "output_type": "np",
+    }
+    EDIT_KWARGS = {
+        "prompt": "dance monkey",
+        "image": Image.new("RGB", (256, 256), color=(120, 40, 200)),
+        "num_inference_steps": 2,
+        "generator": torch.manual_seed(42),
+        "output_resolution": 256,  # The condition image and the output stay at 256x256.
+        "output_type": "np",
+    }
+    RBLN_CLASS_KWARGS = {
+        "export": True,
+        "rbln_config": {
+            "image_size": (256, 256),
+            # Compiled for editing too, as by default. Text-to-image leaves the vision and VAE encoders unused.
+            # The VAE encoder canvas holds both condition images of the edit test.
+            "condition_image_size": (256, 384),
+            "output_resolution": 256,
+            "max_seq_len": 128,
+        },
+    }
+
+    @classmethod
+    def setUpClass(cls):
+        cls._creates_tiny_pipeline = not os.path.isdir(cls.HF_MODEL_ID)
+        if cls._creates_tiny_pipeline:
+            _save_tiny_qwenimage21_pipeline(cls.HF_MODEL_ID)
+        return super().setUpClass()
+
+    @classmethod
+    def tearDownClass(cls):
+        super().tearDownClass()
+        if cls._creates_tiny_pipeline:
+            shutil.rmtree(cls.HF_MODEL_ID, ignore_errors=True)
+
+    def test_generate_edit(self):
+        # The same compiled pipeline edits: the condition image goes through the vision and VAE encoders.
+        image = self.model(**self.EDIT_KWARGS).images[0]
+        assert image.shape[:2] == (256, 256)
+
+        # A 2:1 condition image is resized to 352x192 (W x H) and runs in the 384x256 canvas of the VAE encoder.
+        wide_image = Image.new("RGB", (512, 256), color=(30, 160, 90))
+        image = self.model(**{**self.EDIT_KWARGS, "image": wide_image, "height": 256, "width": 256}).images[0]
+        assert image.shape[:2] == (256, 256)
 
 
 if __name__ == "__main__":

@@ -25,6 +25,7 @@ if TYPE_CHECKING:
     from .controlnet import *
     from .cosmos import *
     from .kandinsky2_2 import *
+    from .qwenimage21 import *
     from .stable_diffusion import *
     from .stable_diffusion_3 import *
     from .stable_diffusion_xl import *
