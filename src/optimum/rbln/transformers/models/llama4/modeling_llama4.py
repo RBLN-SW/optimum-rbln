@@ -30,7 +30,7 @@ from ....modeling import RBLNModel
 from ...modeling_outputs import RBLNDecoderOnlyOutput
 from ...utils.multimodal_batch_sort import RBLNImageIndexedBatchSortMixin, _placeholder_token_counts
 from ..decoderonly.modeling_decoderonly import RBLNDecoderOnlyModelForCausalLM
-from .llama4_architecture import Llama4VisionWrapper, Llama4Wrapper
+from .llama4_architecture import Llama4ForCausalLMWrapper, Llama4VisionModelWrapper, uses_chunked_attention
 
 
 class RBLNLlama4ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
@@ -55,7 +55,7 @@ class RBLNLlama4ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
         ```
     """
 
-    _decoder_wrapper_cls = Llama4Wrapper
+    _decoder_wrapper_cls = Llama4ForCausalLMWrapper
 
     @classmethod
     def get_pytorch_model(cls, model_id, **kwargs) -> PreTrainedModel:
@@ -73,10 +73,6 @@ class RBLNLlama4ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
         text_config = config.get_text_config()
         if text_config.moe_layers:
             raise NotImplementedError("Llama 4 MoE models are not supported yet.")
-        if text_config.attention_chunk_size is None:
-            # Llama Guard 4 disables chunked attention. HF's default layer_types
-            # inference only looks at no_rope_layers, including for older configs.
-            text_config.layer_types = ["full_attention"] * text_config.num_hidden_layers
         return super().get_pytorch_model(model_id, config=text_config, **kwargs)
 
     @classmethod
@@ -90,13 +86,10 @@ class RBLNLlama4ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
         text_config = model_config.get_text_config()
         if text_config.moe_layers:
             raise NotImplementedError("Llama 4 MoE models are not supported yet.")
-        if text_config.attention_chunk_size is None:
-            text_config.layer_types = ["full_attention"] * text_config.num_hidden_layers
         if rbln_config.max_seq_len is None:
             rbln_config.max_seq_len = text_config.max_position_embeddings
 
-        has_chunked_attention = "chunked_attention" in text_config.layer_types
-        if has_chunked_attention and rbln_config.max_seq_len > text_config.attention_chunk_size:
+        if uses_chunked_attention(text_config) and rbln_config.max_seq_len > text_config.attention_chunk_size:
             if rbln_config.use_position_ids:
                 raise ValueError("Llama 4 chunked attention does not support `use_position_ids=True`.")
             rbln_config.use_attention_mask = True
@@ -112,7 +105,7 @@ class RBLNLlama4VisionModel(RBLNModel):
 
     @classmethod
     def _wrap_model_if_needed(cls, model, rbln_config):
-        return Llama4VisionWrapper(model).eval()
+        return Llama4VisionModelWrapper(model).eval()
 
     @classmethod
     def _update_rbln_config(cls, preprocessors=None, model=None, model_config=None, rbln_config=None):

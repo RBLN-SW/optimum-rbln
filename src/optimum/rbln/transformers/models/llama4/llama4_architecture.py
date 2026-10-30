@@ -12,55 +12,25 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import copy
-
 import torch
 from torch import nn
 
 from ..decoderonly.decoderonly_architecture import (
     DecoderOnlyAttention,
     DecoderOnlyLayer,
+    DecoderOnlyModel,
     DecoderOnlyWrapper,
     RotaryEmbedding,
 )
 
 
-class Llama4VisionWrapper(nn.Module):
-    """Vision encoder with real-valued 2D RoPE for compilation."""
-
-    def __init__(self, model):
-        super().__init__()
-        self.patch_embedding = model.patch_embedding
-        self.class_embedding = model.class_embedding
-        self.positional_embedding_vlm = model.positional_embedding_vlm
-        self.layernorm_pre = model.layernorm_pre
-        for layer in model.model.layers:
-            layer.self_attn = Llama4VisionAttention(layer.self_attn)
-        self.layers = model.model.layers
-        self.layernorm_post = model.layernorm_post
-        self.vision_adapter = model.vision_adapter
-        frequencies = model.rotary_embedding.freqs_ci
-        self.register_buffer("cos", frequencies.real.unsqueeze(0), persistent=False)
-        self.register_buffer("sin", frequencies.imag.unsqueeze(0), persistent=False)
-        head_dim = 2 * frequencies.shape[-1]
-        pair_matrix = torch.zeros(head_dim, head_dim)
-        pair_indices = torch.arange(head_dim // 2)
-        pair_matrix[2 * pair_indices, 2 * pair_indices + 1] = 1
-        pair_matrix[2 * pair_indices + 1, 2 * pair_indices] = -1
-        self.register_buffer("pair_matrix", pair_matrix, persistent=False)
-
-    def forward(self, pixel_values):
-        hidden_states = self.patch_embedding(pixel_values)
-        cls_embedding = self.class_embedding.expand(hidden_states.shape[0], 1, -1)
-        hidden_states = torch.cat((hidden_states, cls_embedding), dim=1)
-        hidden_states = self.layernorm_pre(hidden_states + self.positional_embedding_vlm)
-        for layer in self.layers:
-            hidden_states = layer(hidden_states, freqs_ci=(self.cos, self.sin, self.pair_matrix))[0]
-        hidden_states = self.layernorm_post(hidden_states)[:, :-1]
-        return self.vision_adapter(hidden_states)
+def uses_chunked_attention(text_config) -> bool:
+    # attention_chunk_size=None (e.g. Llama Guard 4) means every layer is full attention,
+    # whatever HF's layer_types default says.
+    return text_config.attention_chunk_size is not None and "chunked_attention" in text_config.layer_types
 
 
-class Llama4VisionAttention(nn.Module):
+class Llama4VisionFullAttention(nn.Module):
     def __init__(self, self_attn):
         super().__init__()
         self.num_heads = self_attn.num_heads
@@ -74,28 +44,82 @@ class Llama4VisionAttention(nn.Module):
         # Equivalent to HF's complex RoPE; 4D matmul keeps one device context.
         # The pair matrix maps each [real, imag] pair to [-imag, real].
         x = states.float()
-        cos = cos.repeat_interleave(2, dim=-1)
-        sin = sin.repeat_interleave(2, dim=-1)
+        cos, sin = cos.float(), sin.float()
         return (x * cos + torch.matmul(x, pair_matrix.float()) * sin).to(states.dtype)
 
-    def forward(self, hidden_states, freqs_ci, attention_mask=None):
+    def forward(self, hidden_states, cos, sin, pair_matrix):
         shape = (*hidden_states.shape[:-1], self.num_heads, self.head_dim)
-        query = self._rotate(self.q_proj(hidden_states).view(shape), *freqs_ci).transpose(1, 2)
-        key = self._rotate(self.k_proj(hidden_states).view(shape), *freqs_ci).transpose(1, 2)
+        query = self._rotate(self.q_proj(hidden_states).view(shape), cos, sin, pair_matrix).transpose(1, 2)
+        key = self._rotate(self.k_proj(hidden_states).view(shape), cos, sin, pair_matrix).transpose(1, 2)
         value = self.v_proj(hidden_states).view(shape).transpose(1, 2)
-        weights = query @ key.transpose(-1, -2) * self.head_dim**-0.5
-        if attention_mask is not None:
-            weights = weights + attention_mask
-        weights = weights.softmax(dim=-1)
+        weights = (query @ key.transpose(-1, -2) * self.head_dim**-0.5).softmax(dim=-1)
         attended = (weights @ value).transpose(1, 2).reshape(hidden_states.shape)
-        return self.o_proj(attended), weights
+        return self.o_proj(attended)
 
 
-class Llama4Wrapper(DecoderOnlyWrapper):
+# Mirrors HF Llama4VisionEncoderLayer, sharing its norms and MLP but owning a converted attention.
+class Llama4VisionLayer(nn.Module):
+    def __init__(self, layer):
+        super().__init__()
+        self.input_layernorm = layer.input_layernorm
+        self.self_attn = Llama4VisionFullAttention(layer.self_attn)
+        self.post_attention_layernorm = layer.post_attention_layernorm
+        self.mlp = layer.mlp
+
+    def forward(self, hidden_states, cos, sin, pair_matrix):
+        hidden_states = hidden_states + self.self_attn(self.input_layernorm(hidden_states), cos, sin, pair_matrix)
+        return hidden_states + self.mlp(self.post_attention_layernorm(hidden_states))
+
+
+# Vision encoder with real-valued 2D RoPE for compilation. The HF model is left untouched: the
+# wrapper owns converted layers that share the HF layers' parameters.
+class Llama4VisionModelWrapper(nn.Module):
+    def __init__(self, model):
+        super().__init__()
+        self.patch_embedding = model.patch_embedding
+        self.class_embedding = model.class_embedding
+        self.positional_embedding_vlm = model.positional_embedding_vlm
+        self.layernorm_pre = model.layernorm_pre
+        self.layers = nn.ModuleList(Llama4VisionLayer(layer) for layer in model.model.layers)
+        self.layernorm_post = model.layernorm_post
+        self.vision_adapter = model.vision_adapter
+        # The table is sized from image_size, which is the compiled input shape. HF stores one
+        # complex value per rotated pair; expand it once to the interleaved per-element layout.
+        frequencies = model.rotary_embedding.freqs_ci
+        self.register_buffer("cos", frequencies.real.unsqueeze(0).repeat_interleave(2, dim=-1), persistent=False)
+        self.register_buffer("sin", frequencies.imag.unsqueeze(0).repeat_interleave(2, dim=-1), persistent=False)
+        head_dim = 2 * frequencies.shape[-1]
+        pair_matrix = torch.zeros(head_dim, head_dim)
+        pair_indices = torch.arange(head_dim // 2)
+        pair_matrix[2 * pair_indices, 2 * pair_indices + 1] = 1
+        pair_matrix[2 * pair_indices + 1, 2 * pair_indices] = -1
+        self.register_buffer("pair_matrix", pair_matrix, persistent=False)
+
+    def forward(self, pixel_values):
+        hidden_states = self.patch_embedding(pixel_values)
+        cls_embedding = self.class_embedding.expand(hidden_states.shape[0], 1, -1)
+        hidden_states = torch.cat((hidden_states, cls_embedding), dim=1)
+        positional_embedding = self.positional_embedding_vlm.to(dtype=hidden_states.dtype, device=hidden_states.device)
+        hidden_states = self.layernorm_pre(hidden_states + positional_embedding)
+        for layer in self.layers:
+            hidden_states = layer(hidden_states, self.cos, self.sin, self.pair_matrix)
+        hidden_states = self.layernorm_post(hidden_states)[:, :-1]
+        return self.vision_adapter(hidden_states)
+
+
+class Llama4RotaryEmbedding(RotaryEmbedding):
+    def __init__(self, config, max_seq_len_cached):
+        super().__init__(config=config, max_seq_len_cached=max_seq_len_cached)
+        # The base table stores split-half cos/sin values. Llama 4 uses the same frequencies but
+        # rotates adjacent pairs of head dimensions, so expand to the interleaved layout once here.
+        half = self._cos_cached.shape[-1] // 2
+        self._cos_cached = self._cos_cached[..., :half].repeat_interleave(2, dim=-1)
+        self._sin_cached = self._sin_cached[..., :half].repeat_interleave(2, dim=-1)
+
+
+class Llama4ForCausalLMWrapper(DecoderOnlyWrapper):
     def get_rotary_emb(self, max_seq_len):
-        config = copy.deepcopy(self.config)
-        config.rope_scaling = config.rope_parameters
-        return RotaryEmbedding(config=config, max_seq_len_cached=max_seq_len)
+        return Llama4RotaryEmbedding(config=self.config, max_seq_len_cached=max_seq_len)
 
     def get_rbln_attn_class(self):
         return Llama4Attention
@@ -103,9 +127,39 @@ class Llama4Wrapper(DecoderOnlyWrapper):
     def get_rbln_layer_class(self):
         return Llama4DecoderLayer
 
+    def get_rbln_model_class(self):
+        return Llama4Model
+
 
 class Llama4DecoderLayer(DecoderOnlyLayer):
     _MLP_ATTR = ("feed_forward",)
+
+
+# Builds the chunked-attention mask once per forward and shares it with every chunked layer.
+class Llama4Model(DecoderOnlyModel):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        chunk_size = getattr(self.config, "attention_chunk_size", None)
+        self._chunk_size = (
+            chunk_size if uses_chunked_attention(self.config) and self.max_seq_len > chunk_size else None
+        )
+        self._chunk_mask_holder = [None]
+        for layer in self.layers:
+            layer.self_attn._chunk_mask_holder = self._chunk_mask_holder
+
+    def forward(self, *args, **kwargs):
+        attention_mask = kwargs.get("attention_mask")
+        if self._chunk_size is not None and attention_mask is not None:
+            cache_position = kwargs["cache_position"]
+            positions = cache_position[:, :1] + torch.arange(cache_position.shape[1], device=cache_position.device)
+            key_positions = torch.arange(self.max_seq_len, device=cache_position.device)
+            chunk_mask = positions[:, :, None] // self._chunk_size == key_positions // self._chunk_size
+            chunk_mask = chunk_mask & (key_positions <= positions[:, :, None])
+            self._chunk_mask_holder[0] = chunk_mask[:, None, :, :].to(attention_mask.dtype)
+        try:
+            return super().forward(*args, **kwargs)
+        finally:
+            self._chunk_mask_holder[0] = None
 
 
 class Llama4Attention(DecoderOnlyAttention):
@@ -118,19 +172,17 @@ class Llama4Attention(DecoderOnlyAttention):
         self.attn_scale = self_attn.attn_scale
         self.attention_chunk_size = (
             self.config.attention_chunk_size
-            if self.config.layer_types[self.layer_idx] == "chunked_attention"
+            if uses_chunked_attention(self.config) and self.config.layer_types[self.layer_idx] == "chunked_attention"
             else None
         )
+        # Shared with Llama4Model, which fills it with the chunk mask on every forward.
+        self._chunk_mask_holder = None
 
     def apply_rotary_pos_embed(self, query_states, key_states, cos, sin):
         if not self.use_rope:
             return query_states, key_states
 
-        # The shared lookup table stores split-half cos/sin values. Llama 4 uses
-        # the same frequencies, but rotates adjacent pairs of head dimensions.
-        cos = cos[..., : self.head_dim // 2].repeat_interleave(2, dim=-1)
-        sin = sin[..., : self.head_dim // 2].repeat_interleave(2, dim=-1)
-
+        # cos/sin come from Llama4RotaryEmbedding in the interleaved-pair layout.
         def rotate_pairs(x):
             pairs = x.reshape(*x.shape[:-1], -1, 2)
             return torch.stack((-pairs[..., 1], pairs[..., 0]), dim=-1).flatten(-2)
@@ -171,19 +223,14 @@ class Llama4Attention(DecoderOnlyAttention):
             query_states = self.qk_norm(query_states)
             key_states = self.qk_norm(key_states)
 
-        positions = seq_positions[:, :1] + torch.arange(query_length, device=hidden_states.device)
         if self.attn_temperature_tuning and not self.use_rope:
+            positions = seq_positions[:, :1] + torch.arange(query_length, device=hidden_states.device)
             attn_scales = torch.log1p(torch.floor((positions.float() + 1.0) / self.floor_scale))
             attn_scales = (attn_scales * self.attn_scale + 1.0)[:, None, :, None]
             query_states = (query_states * attn_scales).to(query_states.dtype)
 
-        if self.attention_chunk_size is not None and self.rbln_config.max_seq_len > self.attention_chunk_size:
-            key_positions = torch.arange(self.rbln_config.max_seq_len, device=hidden_states.device)
-            chunk_mask = (
-                positions[:, :, None] // self.attention_chunk_size == key_positions // self.attention_chunk_size
-            )
-            chunk_mask = chunk_mask & (key_positions <= positions[:, :, None])
-            attention_mask = attention_mask * chunk_mask[:, None, :, :].to(attention_mask.dtype)
+        if self.attention_chunk_size is not None and self._chunk_mask_holder[0] is not None:
+            attention_mask = attention_mask * self._chunk_mask_holder[0]
 
         k_scale, v_scale = self.maybe_get_kvcache_scale()
         attn_output = self.get_attention_op()(
