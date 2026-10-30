@@ -120,7 +120,7 @@ class RBLNLlama4ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
 class RBLNLlama4VisionModel(RBLNModel):
     """RBLN Llama 4 vision encoder, including patch embedding and the pixel shuffle adapter."""
 
-    _tp_support = False
+    _tp_support = True
     _output_class = BaseModelOutputWithPooling
 
     @classmethod

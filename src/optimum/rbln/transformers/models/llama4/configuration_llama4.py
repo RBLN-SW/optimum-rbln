@@ -81,6 +81,7 @@ class RBLNLlama4ForConditionalGenerationConfig(RBLNModelConfig):
             batch_size (int | None): The batch size for inference. Defaults to 1.
             vision_model (RBLNModelConfig | dict[str, Any] | None): Configuration for the vision encoder component.
                 Its `batch_size` sets the maximum number of image tiles processed per call.
+                Its `num_devices` sets vision tensor parallelism independently of the language model.
                 If not provided, default settings will be used.
             language_model (RBLNModelConfig | dict[str, Any] | None): Configuration for the language model component.
                 This can include settings specific to the language model, such as `max_seq_len` or `num_devices`.
