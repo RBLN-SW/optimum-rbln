@@ -31,11 +31,12 @@ from transformers.models.qwen3_5.modeling_qwen3_5 import (
 )
 from transformers.vision_utils import get_vision_interpolation_indices_and_weights
 
+from ....__version__ import __version__
 from ....configuration_utils import RBLNCompileConfig
 from ....modeling import RBLNModel
 from ....modeling_rope_utils import build_qwen_mrope_lookup, np_cos, np_sin, qwen_vit_rot_pos_ids
 from ....utils import logging
-from ....utils.deprecation import deprecate_method
+from ....utils.deprecation import _at_or_past_deprecation, deprecate_method
 from ...cache_utils import FullAttentionKVCacheMeta, LinearAttentionCacheMeta
 from ...modeling_outputs import RBLNDecoderOnlyOutput, _validate_output_hidden_states
 from ...utils.multimodal_batch_sort import RBLNQwenVLBatchSortMixin
@@ -43,11 +44,10 @@ from ..decoderonly.decoderonly_runtime_utils import RBLNPageTableManager
 from ..decoderonly.modeling_decoderonly import RBLNDecoderOnlyModel, RBLNDecoderOnlyModelForCausalLM
 from .configuration_qwen3_5 import (
     MAX_GDN_CHUNK_SIZE,
-    RBLNQwen3_5ForConditionalGenerationConfig,  # noqa: F401
-    RBLNQwen3_5ModelConfig,  # noqa: F401
     RBLNQwen3_5VisionModelConfig,
 )
 from .qwen3_5_architecture import (
+    CONV_TABLE_INPUTS,
     Qwen3_5_CausalLMWrapper,
     Qwen3_5_LanguageModelWrapper,
     Qwen3_5VisionModelWrapper,
@@ -56,6 +56,18 @@ from .qwen3_5_runtime_utils import RBLNQwen3_5RuntimeModel
 
 
 logger = logging.get_logger(__name__)
+
+
+def validate_gdn_custom_kernel() -> None:
+    """Reject a rebel-compiler that registers no GatedDeltaNet custom ops."""
+    wanted = ("chunk_gated_delta_rule", "recurrent_gated_delta_rule", "causal_conv1d_ring_tabled")
+    missing = [name for name in wanted if not hasattr(torch.ops.rbln_custom_ops, name)]
+    if missing:
+        raise ValueError(
+            f"This rebel-compiler registers no {missing}. Qwen3.5 runs its GatedDeltaNet core and the "
+            f"short conv in front of it as `rbln_custom_ops::`{list(wanted)}, so it needs a compiler "
+            "that provides them."
+        )
 
 
 def validate_gdn_defaults(rbln_config) -> None:
@@ -91,12 +103,36 @@ def _qwen3_5_build_compile_context(compile_config, example_inputs):
 
 
 def _qwen3_5_linear_state_shapes(text_config, batch_size: int):
+    """The cache layout `rbln_custom_ops::gdn_*` take."""
+    from rebel.ops.torch_custom_ops.gdn import STATE_BLOCKS
+
+    heads = text_config.linear_num_key_heads
+    groups = heads * (2 + text_config.linear_num_value_heads // heads)
+    conv_state_shape = (
+        batch_size,
+        text_config.linear_conv_kernel_dim - 1,
+        groups,
+        text_config.linear_key_head_dim,
+    )
+    recurrent_state_shape = (
+        batch_size,
+        heads,
+        text_config.linear_num_value_heads // heads,
+        *STATE_BLOCKS,
+    )
+    return conv_state_shape, recurrent_state_shape
+
+
+def _qwen3_5_legacy_linear_state_shapes(text_config, batch_size: int):
+    """The cache layouts of an artifact compiled before the custom kernels.
+
+    That graph runs the GatedDeltaNet itself, so it keeps the conv cache channel-last and the
+    recurrent state 3D.
+    """
     conv_dim = 2 * (text_config.linear_num_key_heads * text_config.linear_key_head_dim) + (
         text_config.linear_num_value_heads * text_config.linear_value_head_dim
     )
     conv_state_shape = (batch_size, text_config.linear_conv_kernel_dim - 1, conv_dim)
-    # recurrent state/mask are 3D (B, Hv*Dk, Dv) — see the get_input_info comment: merging Hv into dim1 keeps
-    # the shared static cache laid out identically in the prefill/decode graphs (no channel-pad mismatch).
     recurrent_state_shape = (
         batch_size,
         text_config.linear_num_value_heads * text_config.linear_key_head_dim,
@@ -110,6 +146,28 @@ def _qwen3_5_linear_layer_indices(model_config) -> list[int]:
     if getattr(text_config, "layer_types", None) is None:
         raise ValueError("Qwen3.5 requires `layer_types` in the model config.")
     return [i for i, t in enumerate(text_config.layer_types) if t == "linear_attention"]
+
+
+def uses_custom_kernel(rbln_config) -> bool:
+    """Whether this artifact runs its GatedDeltaNet as the custom kernels rather than in the graph."""
+    for compile_cfg in rbln_config.compile_cfgs:
+        inputs = compile_cfg.input_info or []
+        if compile_cfg.is_multiple_input_info:
+            inputs = [one for info in inputs for one in info]
+        if any(name == "conv_state_mask" for name, *_ in inputs):
+            return False
+    return True
+
+
+def warn_deprecated(what: str, version: str, remedy: str | None = None) -> None:
+    """Custom deprecated function."""
+    removed = _at_or_past_deprecation(__version__, version)
+    message = f"{what} is deprecated and {'was removed in' if removed else 'will be removed in'} version {version}."
+    if remedy:
+        message = f"{message} {remedy}"
+    if removed:
+        raise ValueError(message)
+    logger.warning_once(message)
 
 
 def _qwen3_5_setup_hybrid_runtime(model):
@@ -128,29 +186,38 @@ def _qwen3_5_setup_hybrid_runtime(model):
         "state_dtype": model.dtype,
     }
 
-    # Prefill runs one item at a time (batch=1) and writes its `batch_position` slot, so its state MASKS are
-    # batch=1 sized (they gate the single slot the graph reads); the underlying cache is max-batch (get_input_info).
-    conv_shape, recur_shape = _qwen3_5_linear_state_shapes(text_config, 1)
+    # Backward compatibility, loading only: a pre-kernel artifact gates each cache with a mask of
+    # that cache's own shape, and only the runtime still knows those shapes.
+    # TODO(0.13.0): drop it -- this detector, `_qwen3_5_legacy_linear_state_shapes`, the runtime's branch.
+    is_legacy_graph = not uses_custom_kernel(rbln_config)
+    if is_legacy_graph:
+        warn_deprecated(
+            "This Qwen3.5 artifact was compiled before the GatedDeltaNet custom kernels, so "
+            "optimum-rbln runs its GatedDeltaNet in the graph. That path",
+            version="0.13.0",
+            remedy="Recompile the model.",
+        )
+
+    # Prefill runs one item at a time and writes its `batch_position` slot; the underlying caches are
+    # max-batch (get_input_info). Its masks gate the single slot the graph reads, so they are batch=1.
     model.prefill_decoder = RBLNQwen3_5RuntimeModel(
         runtime=model.model[0],
         phase="prefill",
         batch_size=rbln_config.batch_size,
         logits_last_dim=model.logits_last_dim,
-        conv_state_shape=conv_shape,
-        recurrent_state_shape=recur_shape,
+        legacy_state_shapes=_qwen3_5_legacy_linear_state_shapes(text_config, 1) if is_legacy_graph else None,
         **common_kwargs,
     )
 
     if model.can_generate():
         model.decoders = {}
         for i, batch_size in enumerate(rbln_config.decoder_batch_sizes):
-            conv_shape, recur_shape = _qwen3_5_linear_state_shapes(text_config, batch_size)
+            shapes = _qwen3_5_legacy_linear_state_shapes(text_config, batch_size) if is_legacy_graph else None
             model.decoders[batch_size] = RBLNQwen3_5RuntimeModel(
                 runtime=model.model[i + 1],
                 phase="decode",
                 batch_size=batch_size,
-                conv_state_shape=conv_shape,
-                recurrent_state_shape=recur_shape,
+                legacy_state_shapes=shapes,
                 **common_kwargs,
             )
         model.decoder = model.decoders[rbln_config.batch_size]
@@ -181,6 +248,7 @@ class RBLNQwen3_5TextModel(RBLNDecoderOnlyModel):
     @classmethod
     def _update_rbln_config(cls, preprocessors=None, model=None, model_config=None, rbln_config=None):
         rbln_config.linear_attention_layers = _qwen3_5_linear_layer_indices(model_config)
+        validate_gdn_custom_kernel()
         rbln_config = super()._update_rbln_config(
             preprocessors=preprocessors, model=model, model_config=model_config, rbln_config=rbln_config
         )
@@ -244,7 +312,6 @@ class RBLNQwen3_5TextModel(RBLNDecoderOnlyModel):
             cache_metas = []
             for layer_idx in range(num_hidden_layers):
                 if layer_idx in linear_layers:
-                    # recurrent cache is stored 3D (B, Hv*Dk, Dv); GatedDeltaNet reshapes to 4D internally.
                     conv_shape, recurrent_shape = _qwen3_5_linear_state_shapes(text_config, rbln_config.batch_size)
                     cache_metas.append(
                         LinearAttentionCacheMeta.from_config(
@@ -272,17 +339,21 @@ class RBLNQwen3_5TextModel(RBLNDecoderOnlyModel):
             input_info.extend([(meta.name, meta.compile_shape, meta.dtype) for meta in cache_metas])
             rbln_config.cache_metas.extend(cache_metas)
 
-        # shared 0/1 masks: runtime feeds zeros on prefill window 0 (reset linear state), ones after (carry). See docs.
-        if linear_layers:
-            # masks match the per-call graph batch (batch_size), so reuse the helper with the same shapes.
-            conv_mask_shape, recurrent_mask_shape = _qwen3_5_linear_state_shapes(text_config, batch_size)
-            input_info.append(("conv_state_mask", list(conv_mask_shape), rbln_config.dtype))
-            input_info.append(("recurrent_state_mask", list(recurrent_mask_shape), rbln_config.dtype))
+        if linear_layers and is_prefill:
+            # One 0/1 value per cache row: zeros on window 0 (discard the stale cache), ones after (carry).
+            input_info.append(("state_mask", [batch_size], rbln_config.dtype))
             # per-token validity (1=real, 0=right-padding); host-built, GatedDeltaNet uses it to drop padding.
             input_info.append(("valid_mask", [batch_size, query_length, 1], rbln_config.dtype))
-            # prefill only: which max-batch slot this per-item (batch=1) call reads/writes in the linear caches.
-            if is_prefill:
-                input_info.append(("batch_idx", [], "int16"))
+            # which max-batch slot this per-item (batch=1) call reads/writes in the linear caches.
+            input_info.append(("batch_idx", [], "int16"))
+
+        if linear_layers:
+            # The conv cache's index tables, a row each per sequence.
+            hist_idx = text_config.linear_conv_kernel_dim - 1  # `conv_hist_idx`: the K - 1 taps before the step
+            # TODO: For MTP, holds more than K - 1 slots here.
+            window = text_config.linear_conv_kernel_dim - 1  # The number of saved cache windows
+            rows = (batch_size * hist_idx, batch_size * window, batch_size, 1)
+            input_info.extend((name, [n, 64], "int16") for name, n in zip(CONV_TABLE_INPUTS, rows, strict=True))
 
         return input_info
 
@@ -592,6 +663,7 @@ class RBLNQwen3_5Model(RBLNDecoderOnlyModel):
     @classmethod
     def _update_rbln_config(cls, preprocessors=None, model=None, model_config=None, rbln_config=None):
         rbln_config.linear_attention_layers = _qwen3_5_linear_layer_indices(model_config)
+        validate_gdn_custom_kernel()
         rbln_config = super()._update_rbln_config(
             preprocessors=preprocessors, model=model, model_config=model_config, rbln_config=rbln_config
         )
