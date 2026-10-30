@@ -154,6 +154,12 @@ class DecoderOnlyWrapper(nn.Module):
         self._phase = phase
         self.model.phase = phase
 
+    def uses_query_position(self) -> bool:
+        # query_position usage: prefill & (logits_to_keep == 1 or use_local_attention)
+        return "prefill" in self.phase and (
+            self.rbln_config.logits_to_keep == 1 or self.rbln_config.use_local_attention
+        )
+
     def prepare_forward_args(self, *args):
         args = list(args)
         input_ids = None if self.rbln_config.use_inputs_embeds else args.pop(0)
@@ -161,15 +167,7 @@ class DecoderOnlyWrapper(nn.Module):
         cache_position = args.pop(0)
         global_block_tables = args.pop(0) if self.rbln_config.use_global_attention else None
         local_block_tables = args.pop(0) if self.rbln_config.use_local_attention else None
-        query_position = (
-            args.pop(0)
-            # query_position usage: prefill & (logits_to_keep == 1 or use_local_attention)
-            if (
-                "prefill" in self.phase
-                and (self.rbln_config.logits_to_keep == 1 or self.rbln_config.use_local_attention)
-            )
-            else None
-        )
+        query_position = args.pop(0) if self.uses_query_position() else None
         attention_mask = args.pop(0) if self.rbln_config.use_attention_mask else None
         position_ids = args.pop(0) if self.rbln_config.use_position_ids else None
         lora_int_id = args.pop(0) if self.rbln_config.lora_config else None
