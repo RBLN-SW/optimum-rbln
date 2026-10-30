@@ -32,7 +32,7 @@ logger = get_logger(__name__)
 
 
 # Default number of image tiles the vision model encodes per call. Kept small to bound device memory;
-# larger tile counts are processed over several calls.
+# larger tile counts are processed over several calls. Keep in sync with RBLNLlama4VisionModelConfig's docstring.
 _DEFAULT_VISION_BATCH_SIZE = 4
 
 
@@ -57,6 +57,7 @@ class RBLNLlama4ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
 
         model = RBLNAutoModelForCausalLM.from_pretrained(
             "meta-llama/Llama-Guard-4-12B",
+            export=True,
             rbln_batch_size=1,
             rbln_max_seq_len=8192,
             rbln_num_devices=4,
@@ -166,7 +167,7 @@ class RBLNLlama4ForConditionalGeneration(RBLNModel, RBLNImageIndexedBatchSortMix
 
         rbln_config = RBLNLlama4ForConditionalGenerationConfig(
             vision_model=RBLNLlama4VisionModelConfig(),
-            language_model=RBLNLlama4ForCausalLMConfig(max_seq_len=8192, num_devices=4),
+            language_model=RBLNLlama4ForCausalLMConfig(max_seq_len=8192, num_devices=4, use_inputs_embeds=True),
         )
         model = RBLNLlama4ForConditionalGeneration.from_pretrained(
             "meta-llama/Llama-Guard-4-12B",
