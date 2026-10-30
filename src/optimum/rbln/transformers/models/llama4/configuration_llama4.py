@@ -34,7 +34,7 @@ class RBLNLlama4ForCausalLMConfig(RBLNDecoderOnlyModelForCausalLMConfig):
 class RBLNLlama4VisionModelConfig(RBLNModelConfig):
     """Compilation configuration for the Llama 4 vision encoder."""
 
-    def __init__(self, batch_size: int = 1, **kwargs: Any):
+    def __init__(self, batch_size: int | None = None, **kwargs: Any):
         super().__init__(**kwargs)
         self.batch_size = _validate_batch_size(batch_size)
 
@@ -58,7 +58,7 @@ class RBLNLlama4ForConditionalGenerationConfig(RBLNModelConfig):
         super().__init__(**kwargs)
         self.batch_size = _validate_batch_size(batch_size) or 1
 
-        self.vision_model = self.initialize_submodule_config(submodule_config=vision_model, batch_size=1)
+        self.vision_model = self.initialize_submodule_config(submodule_config=vision_model)
         if language_model is None or isinstance(language_model, dict):
             # batch_size is only a default for the language model; an explicit value in the dict wins.
             language_model = {"batch_size": self.batch_size, **(language_model or {})}

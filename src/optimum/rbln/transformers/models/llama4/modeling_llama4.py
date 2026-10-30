@@ -44,6 +44,11 @@ def _resolve_config(model_id, config, hub_kwargs) -> PretrainedConfig:
     return AutoConfig.from_pretrained(config or model_id, **config_kwargs)
 
 
+# Default number of image tiles the vision model encodes per call. Kept small to bound device memory;
+# larger tile counts are processed over several calls.
+_DEFAULT_VISION_BATCH_SIZE = 4
+
+
 class RBLNLlama4ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
     """Compile and run the text decoder of Llama 4 on RBLN devices.
 
@@ -110,6 +115,8 @@ class RBLNLlama4VisionModel(RBLNModel):
 
     @classmethod
     def _update_rbln_config(cls, preprocessors=None, model=None, model_config=None, rbln_config=None):
+        if rbln_config.batch_size is None:
+            rbln_config.batch_size = 1
         rbln_config.set_compile_cfgs(
             [
                 RBLNCompileConfig(
@@ -177,8 +184,8 @@ class RBLNLlama4ForConditionalGeneration(RBLNModel, RBLNImageIndexedBatchSortMix
     def _update_submodule_rbln_config(
         cls, submodule_name, submodule_cls, model, submodule_config, submodule_rbln_config, preprocessors
     ):
-        if submodule_name == "vision_model" and submodule_rbln_config.batch_size != 1:
-            raise ValueError("Llama 4 conditional generation requires vision_model.batch_size=1.")
+        if submodule_name == "vision_model" and submodule_rbln_config.batch_size is None:
+            submodule_rbln_config.batch_size = _DEFAULT_VISION_BATCH_SIZE
         return submodule_rbln_config
 
     @classmethod
@@ -192,7 +199,13 @@ class RBLNLlama4ForConditionalGeneration(RBLNModel, RBLNImageIndexedBatchSortMix
         rbln_config.set_compile_cfgs(
             [
                 RBLNCompileConfig(
-                    input_info=[("image_features", [1, num_tokens, vision.vision_output_dim], rbln_config.dtype)]
+                    input_info=[
+                        (
+                            "image_features",
+                            [rbln_config.vision_model.batch_size, num_tokens, vision.vision_output_dim],
+                            rbln_config.dtype,
+                        )
+                    ]
                 )
             ]
         )
@@ -208,10 +221,17 @@ class RBLNLlama4ForConditionalGeneration(RBLNModel, RBLNImageIndexedBatchSortMix
             raise ValueError(
                 "pixel_values must have shape (num_tiles, channels, height, width) with at least one tile."
             )
+        # Tiles run in batches of the compiled vision batch size; the last batch is zero-padded
+        # and the padding rows are dropped from the output.
+        compiled_batch = self.rbln_config.vision_model.batch_size
         features = []
-        for tile in pixel_values.split(1):
-            encoded = self.vision_model(tile.to(self.vision_model.dtype), return_dict=False)[0]
-            features.append(self.multi_modal_projector(encoded.to(self.dtype)))
+        for batch in pixel_values.split(compiled_batch):
+            num_pad = compiled_batch - batch.shape[0]
+            if num_pad:
+                batch = torch.cat([batch, batch.new_zeros(num_pad, *batch.shape[1:])])
+            encoded = self.vision_model(batch.to(self.vision_model.dtype), return_dict=False)[0]
+            projected = self.multi_modal_projector(encoded.to(self.dtype))
+            features.append(projected[: compiled_batch - num_pad])
         return BaseModelOutputWithPooling(last_hidden_state=torch.cat(features, dim=0))
 
     def _preprocess_prefill(self, input_ids=None, inputs_embeds=None, pixel_values=None):
