@@ -71,19 +71,21 @@ class RBLNLlama4ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
         text_config = model_config.get_text_config()
         if text_config.moe_layers:
             raise NotImplementedError("Llama 4 MoE models are not supported yet.")
+        return super()._update_rbln_config(preprocessors, model, model_config, rbln_config)
 
+    @classmethod
+    def _update_attention_config(cls, model, model_config, rbln_config):
         # The chunk mask is applied through the attention mask, so it is needed once the compiled
-        # context is longer than one chunk. This runs before super() because use_attention_mask
-        # shapes the compile input info, so resolve max_seq_len here the way the base class does.
-        max_seq_len = rbln_config.max_seq_len or text_config.max_position_embeddings
-        if uses_chunked_attention(text_config) and max_seq_len > text_config.attention_chunk_size:
+        # context is longer than one chunk. The base class calls this after resolving max_seq_len
+        # and before use_attention_mask is read for batch sorting and the compile input info.
+        text_config = model_config.get_text_config()
+        if uses_chunked_attention(text_config) and rbln_config.max_seq_len > text_config.attention_chunk_size:
             if rbln_config.use_position_ids:
                 raise ValueError("Llama 4 chunked attention does not support `use_position_ids=True`.")
             if not rbln_config.use_attention_mask:
                 logger.info("Llama 4 chunked attention requires an attention mask. Setting `use_attention_mask=True`.")
             rbln_config.use_attention_mask = True
-
-        return super()._update_rbln_config(preprocessors, model, text_config, rbln_config)
+        return super()._update_attention_config(model, model_config, rbln_config)
 
 
 class RBLNLlama4VisionModel(RBLNModel):
@@ -204,6 +206,9 @@ class RBLNLlama4ForConditionalGeneration(RBLNModel, RBLNImageIndexedBatchSortMix
     def _update_submodule_rbln_config(
         cls, submodule_name, submodule_cls, model, submodule_config, submodule_rbln_config, preprocessors
     ):
+        # Reject MoE checkpoints before the vision model is compiled; the language model checks again.
+        if model.config.text_config.moe_layers:
+            raise NotImplementedError("Llama 4 MoE models are not supported yet.")
         if submodule_name == "vision_model" and submodule_rbln_config.batch_size is None:
             submodule_rbln_config.batch_size = _DEFAULT_VISION_BATCH_SIZE
         return submodule_rbln_config
