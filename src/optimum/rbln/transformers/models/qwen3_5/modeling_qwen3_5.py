@@ -58,6 +58,22 @@ from .qwen3_5_runtime_utils import RBLNQwen3_5RuntimeModel
 logger = logging.get_logger(__name__)
 
 
+def validate_gdn_defaults(rbln_config) -> None:
+    """Reject a configuration the GatedDeltaNet ops do not serve, once the defaults are filled."""
+    if rbln_config.gdn_chunk_size > MAX_GDN_CHUNK_SIZE:
+        raise ValueError(
+            f"gdn_chunk_size must be <= {MAX_GDN_CHUNK_SIZE}, got {rbln_config.gdn_chunk_size}. "
+            "Larger GatedDeltaNet sub-chunk sizes are not supported yet — "
+            f"set gdn_chunk_size to a value <= {MAX_GDN_CHUNK_SIZE} that divides prefill_chunk_size."
+        )
+    if rbln_config.prefill_chunk_size % rbln_config.gdn_chunk_size != 0:
+        raise ValueError(
+            f"gdn_chunk_size must divide prefill_chunk_size, got gdn_chunk_size="
+            f"{rbln_config.gdn_chunk_size} and prefill_chunk_size={rbln_config.prefill_chunk_size}. "
+            f"Set gdn_chunk_size to a divisor of prefill_chunk_size that is <= {MAX_GDN_CHUNK_SIZE}."
+        )
+
+
 def _qwen3_5_build_compile_context(compile_config, example_inputs):
     def is_static_state(name: str) -> bool:
         if "past_key_values" in name:
@@ -168,18 +184,7 @@ class RBLNQwen3_5TextModel(RBLNDecoderOnlyModel):
         rbln_config = super()._update_rbln_config(
             preprocessors=preprocessors, model=model, model_config=model_config, rbln_config=rbln_config
         )
-        if rbln_config.gdn_chunk_size > MAX_GDN_CHUNK_SIZE:
-            raise ValueError(
-                f"gdn_chunk_size must be <= {MAX_GDN_CHUNK_SIZE}, got {rbln_config.gdn_chunk_size}. "
-                "Larger GatedDeltaNet sub-chunk sizes are not supported yet — "
-                f"set gdn_chunk_size to a value <= {MAX_GDN_CHUNK_SIZE} that divides prefill_chunk_size."
-            )
-        if rbln_config.prefill_chunk_size % rbln_config.gdn_chunk_size != 0:
-            raise ValueError(
-                f"gdn_chunk_size must divide prefill_chunk_size, got gdn_chunk_size="
-                f"{rbln_config.gdn_chunk_size} and prefill_chunk_size={rbln_config.prefill_chunk_size}. "
-                f"Set gdn_chunk_size to a divisor of prefill_chunk_size that is <= {MAX_GDN_CHUNK_SIZE}."
-            )
+        validate_gdn_defaults(rbln_config)
         return rbln_config
 
     @classmethod
@@ -553,12 +558,6 @@ class RBLNQwen3_5Model(RBLNDecoderOnlyModel):
     _get_rope_index_func = Qwen3_5Model.get_rope_index
     get_vision_position_ids = Qwen3_5Model.get_vision_position_ids
 
-    @classmethod
-    def _load_submodules(cls, model_save_dir, rbln_config, model=None, **kwargs):
-        if model is None and not getattr(rbln_config, "_load_visual_runtime", True):
-            return []
-        return super()._load_submodules(model_save_dir, rbln_config, model=model, **kwargs)
-
     def __post_init__(self, **kwargs):
         if hasattr(self.config, "embedding_dim"):
             self.embedding_dim = self.config.embedding_dim
@@ -567,7 +566,7 @@ class RBLNQwen3_5Model(RBLNDecoderOnlyModel):
                 text_config=self.config.text_config, vision_config=self.config.vision_config
             )
         super().__post_init__(**kwargs)
-        self.visual = self.rbln_submodules[0] if self.rbln_submodules else None
+        self.visual = self.rbln_submodules[0]
         self.rotary_emb = build_qwen_mrope_lookup(
             self._rotary_emb_class(self.config.text_config), self.rbln_config.max_seq_len
         )
@@ -596,18 +595,7 @@ class RBLNQwen3_5Model(RBLNDecoderOnlyModel):
         rbln_config = super()._update_rbln_config(
             preprocessors=preprocessors, model=model, model_config=model_config, rbln_config=rbln_config
         )
-        if rbln_config.gdn_chunk_size > MAX_GDN_CHUNK_SIZE:
-            raise ValueError(
-                f"gdn_chunk_size must be <= {MAX_GDN_CHUNK_SIZE}, got {rbln_config.gdn_chunk_size}. "
-                "Larger GatedDeltaNet sub-chunk sizes are not supported yet — "
-                f"set gdn_chunk_size to a value <= {MAX_GDN_CHUNK_SIZE} that divides prefill_chunk_size."
-            )
-        if rbln_config.prefill_chunk_size % rbln_config.gdn_chunk_size != 0:
-            raise ValueError(
-                f"gdn_chunk_size must divide prefill_chunk_size, got gdn_chunk_size="
-                f"{rbln_config.gdn_chunk_size} and prefill_chunk_size={rbln_config.prefill_chunk_size}. "
-                f"Set gdn_chunk_size to a divisor of prefill_chunk_size that is <= {MAX_GDN_CHUNK_SIZE}."
-            )
+        validate_gdn_defaults(rbln_config)
         return rbln_config
 
     @classmethod
@@ -809,8 +797,9 @@ class RBLNQwen3_5ForConditionalGeneration(RBLNQwenVLBatchSortMixin, RBLNQwen3_5M
         super().__post_init__(**kwargs)
         self.rope_deltas = torch.zeros(self.rbln_config.batch_size)
 
-    def can_generate(self):
-        return True
+    @property
+    def logits_last_dim(self):
+        return self.config.get_text_config().vocab_size
 
     @classmethod
     def _get_compile_context(cls, compile_config, example_inputs):

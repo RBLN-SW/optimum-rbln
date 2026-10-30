@@ -324,9 +324,6 @@ class RBLNBlip2ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMixi
             return redirect(val)
         return val
 
-    def can_generate(self):
-        return True
-
     @classmethod
     def save_torch_artifacts(
         cls,
