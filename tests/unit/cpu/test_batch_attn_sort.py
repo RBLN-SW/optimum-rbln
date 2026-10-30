@@ -61,8 +61,12 @@ def test_unsort_model_output_fields():
 
 
 class _FakeCausalLM(RBLNDecoderOnlyGenerationMixin):
-    def __init__(self, requires_batch_sort):
+    def __init__(self, requires_batch_sort, can_generate=True):
         self.rbln_config = type("Cfg", (), {"requires_batch_sort": requires_batch_sort})()
+        self._can_generate = can_generate
+
+    def can_generate(self):
+        return self._can_generate
 
 
 def test_generate_fast_path_sorts_and_unsorts(monkeypatch):
@@ -99,6 +103,13 @@ def test_generate_fast_path_disabled(monkeypatch):
     result = _FakeCausalLM(requires_batch_sort=False).generate(ids)
     assert "inputs_sorted" not in captured["kwargs"]
     assert torch.equal(result, ids)
+
+
+def test_generate_without_decode_phase_raises(monkeypatch):
+    monkeypatch.setattr(GenerationMixin, "generate", lambda self, input_ids, **kwargs: input_ids)
+
+    with pytest.raises(AttributeError, match="no attribute 'generate'"):
+        _FakeCausalLM(requires_batch_sort=False, can_generate=False).generate(torch.tensor([[1, 2]]))
 
 
 def test_generate_config_without_field(monkeypatch):

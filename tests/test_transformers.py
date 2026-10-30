@@ -21,6 +21,7 @@ from optimum.rbln import (
     RBLNDPTForDepthEstimation,
     RBLNGroundingDinoForObjectDetection,
     RBLNModernBertForMaskedLM,
+    RBLNMPNetModel,
     RBLNPegasusModel,
     RBLNResNetForImageClassification,
     RBLNRobertaForMaskedLM,
@@ -357,6 +358,20 @@ class TestXLMRobertaModel(BaseTest.TestModel):
         "num_hidden_layers": 1,
         "vocab_size": 1024,
         "ignore_mismatched_sizes": True,
+    }
+
+
+class TestMPNetModel(BaseTest.TestModel):
+    RBLN_AUTO_CLASS = RBLNAutoModel
+    RBLN_CLASS = RBLNMPNetModel
+    HF_MODEL_ID = "sentence-transformers/all-mpnet-base-v2"
+    RBLN_CLASS_KWARGS = {"rbln_max_seq_len": 128}
+    GENERATION_KWARGS = {
+        "input_ids": torch.randint(low=0, high=50, size=(1, 128), generator=torch.manual_seed(42), dtype=torch.int64),
+        "attention_mask": torch.ones((1, 128), dtype=torch.int64),
+    }
+    HF_CONFIG_KWARGS = {
+        "num_hidden_layers": 1,
     }
 
 
