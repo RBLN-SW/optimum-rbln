@@ -159,11 +159,13 @@ class RBLNMOSSImageTransformer(RBLNModel):
         batch, _, height, width = hidden_states.shape
         image_tokens = height * width
 
-        # Each sample's valid tokens move to the front of the compiled prompt length and the rest is masked, since
-        # the graph has one text length where upstream runs each sample at its own.
+        # The graph has one text length: each sample's valid tokens move to the front and the rest is masked.
         text = encoder_hidden_states.new_zeros(batch, max_sequence_length, self.config.text_dim)
         valid = torch.zeros(batch, max_sequence_length, dtype=torch.bool)
         rotary_emb = torch.empty(batch, image_tokens + max_sequence_length, self.config.dim // self.config.num_heads)
+        # The text tokens take their position, the same for every sample.
+        rope = self.rope(height, width, max_sequence_length, hidden_states.device)
+        rotary_emb[:, image_tokens:] = rope[0, image_tokens:]
         for index in range(batch):
             context = encoder_hidden_states[index][encoder_attention_mask[index].bool()]
             length = context.shape[0]
@@ -176,11 +178,9 @@ class RBLNMOSSImageTransformer(RBLNModel):
                 )
             text[index, :length] = context
             valid[index, :length] = True
-            # The image tokens take the true prompt length as their frame coordinate, the text tokens their position.
+            # The image tokens take the true prompt length as their frame coordinate.
             rope = self.rope(height, width, length, hidden_states.device)
             rotary_emb[index, :image_tokens] = rope[0, :image_tokens]
-            rope = self.rope(height, width, max_sequence_length, hidden_states.device)
-            rotary_emb[index, image_tokens:] = rope[0, image_tokens:]
         attention_mask = torch.zeros(batch, 1, 1, image_tokens + max_sequence_length, dtype=dtype)
         attention_mask[:, 0, 0, image_tokens:].masked_fill_(~valid, torch.finfo(dtype).min)
         layer_keep = torch.ones(self.config.num_layers, dtype=dtype)

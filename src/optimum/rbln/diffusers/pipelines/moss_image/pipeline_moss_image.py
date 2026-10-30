@@ -15,7 +15,6 @@
 from typing import Any
 
 from ...modeling_diffusers import RBLNDiffusionMixin
-from . import pipeline_moss_image_upstream
 from .pipeline_moss_image_upstream import MOSSImagePipeline
 
 
@@ -35,7 +34,7 @@ class RBLNMOSSImagePipeline(RBLNDiffusionMixin, MOSSImagePipeline):
         for name, value in config_dict.items():
             # Load the checkpoint's remote-code module `pipeline_moss_image` from the copy in this package.
             if isinstance(value, list) and value[0] == "pipeline_moss_image":
-                config_dict[name] = [pipeline_moss_image_upstream.__name__, value[1]]
+                config_dict[name] = [MOSSImagePipeline.__module__, value[1]]
         return config
 
     def handle_additional_kwargs(self, **kwargs):

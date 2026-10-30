@@ -28,7 +28,7 @@ class RBLNMOSSImageTransformerConfig(RBLNModelConfig):
     def __init__(
         self,
         batch_size: int | None = None,
-        sample_size: tuple[int, int] | None = None,
+        sample_size: int | tuple[int, int] | None = None,
         max_sequence_length: int | None = None,
         **kwargs: Any,
     ):
@@ -37,7 +37,8 @@ class RBLNMOSSImageTransformerConfig(RBLNModelConfig):
             batch_size (int | None): The number of images one forward pass denoises. The pipeline runs the
                 conditional and the unconditional prompts in separate passes, so this is the number of prompts times
                 `num_images_per_prompt`. Defaults to 1.
-            sample_size (tuple[int, int] | None): The latent (height, width): the image size divided by 16.
+            sample_size (int | tuple[int, int] | None): The latent (height, width), the image size divided by 16. If
+                an integer is provided, it's used for both height and width.
             max_sequence_length (int | None): The number of text tokens the graph reads. A shorter prompt is padded
                 and masked.
             kwargs: Additional arguments passed to the parent RBLNModelConfig.
@@ -50,7 +51,9 @@ class RBLNMOSSImageTransformerConfig(RBLNModelConfig):
         if not isinstance(self.batch_size, int) or self.batch_size < 0:
             raise ValueError(f"batch_size must be a positive integer, got {self.batch_size}")
 
-        self.sample_size = tuple(sample_size) if sample_size is not None else None
+        self.sample_size = sample_size
+        if isinstance(self.sample_size, int):
+            self.sample_size = (self.sample_size, self.sample_size)
         self.max_sequence_length = max_sequence_length
 
 
