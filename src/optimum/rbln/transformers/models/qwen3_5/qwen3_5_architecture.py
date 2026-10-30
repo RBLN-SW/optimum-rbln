@@ -25,6 +25,7 @@ from ..decoderonly.decoderonly_architecture import (
     DecoderOnlyForCausalLM,
     DecoderOnlyModel,
     DecoderOnlyWrapper,
+    NestedCompileRegionMixin,
     RotaryEmbedding,
     apply_rotary_pos_emb_partial,
     rotate_half,
@@ -305,10 +306,13 @@ class Qwen3_5GatedDeltaNet(nn.Module):
         self.in_proj_q = nn.Linear(_hidden, self.key_dim, bias=_has_bias)
         self.in_proj_k = nn.Linear(_hidden, self.key_dim, bias=_has_bias)
         self.in_proj_v = nn.Linear(_hidden, self.value_dim, bias=_has_bias)
+        # A dim-0 split is already contiguous, so contiguous() keeps views of one storage. A nested
+        # region rejects inputs that share storage, so copy them there.
+        _own = torch.clone if rbln_config.nested_compile_region else torch.Tensor.contiguous
         for _lin, _wi, _bi in zip((self.in_proj_q, self.in_proj_k, self.in_proj_v), _w, _b, strict=True):
-            _lin.weight = nn.Parameter(_wi.contiguous())
+            _lin.weight = nn.Parameter(_own(_wi))
             if _has_bias:
-                _lin.bias = nn.Parameter(_bi.contiguous())
+                _lin.bias = nn.Parameter(_own(_bi))
 
         self.prefill_chunk_size = rbln_config.prefill_chunk_size
         self.chunk_size = rbln_config.gdn_chunk_size
@@ -450,17 +454,28 @@ class Qwen3_5LinearDecoderLayer(nn.Module):
         hidden_states: torch.Tensor,
         conv_state: torch.Tensor,
         recurrent_state: torch.Tensor,
+        batch_idx: torch.Tensor | None = None,
         query_position: torch.Tensor | None = None,
         valid_mask: torch.Tensor | None = None,
         conv_state_mask: torch.Tensor | None = None,
         recurrent_state_mask: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        # The state slot read and write-back stay in the layer, so a nested region leaves nothing
+        # between consecutive layer calls.
+        if batch_idx is not None:
+            # PREFILL processes ONE item -> take its slot [batch_idx] from the max-batch cache -> (1, ...).
+            conv_in = conv_state[batch_idx.to(torch.int).unsqueeze(0)]
+            recurrent_in = recurrent_state[batch_idx.to(torch.int).unsqueeze(0)]
+            _pos = batch_idx.to(torch.int16)
+        else:
+            conv_in, recurrent_in = conv_state, recurrent_state
+            _pos = torch.tensor(0, dtype=torch.int16)
         residual = hidden_states
         hidden_states = self.input_layernorm(hidden_states)
         hidden_states, new_conv_state, new_recurrent_state = self.linear_attn(
             hidden_states,
-            conv_state,
-            recurrent_state,
+            conv_in,
+            recurrent_in,
             query_position=query_position,
             valid_mask=valid_mask,
             conv_state_mask=conv_state_mask,
@@ -472,7 +487,16 @@ class Qwen3_5LinearDecoderLayer(nn.Module):
         hidden_states = self.post_attention_layernorm(hidden_states)
         hidden_states = self.mlp(hidden_states)
         hidden_states = residual + hidden_states
-        return hidden_states, new_conv_state, new_recurrent_state
+        _axis0 = torch.tensor(0, dtype=torch.int16)
+        conv_state = torch.ops.rbln_custom_ops.rbln_cache_update(conv_state, new_conv_state, _pos, _axis0)
+        recurrent_state = torch.ops.rbln_custom_ops.rbln_cache_update(
+            recurrent_state, new_recurrent_state, _pos, _axis0
+        )
+        return hidden_states, conv_state, recurrent_state
+
+
+class Qwen3_5LinearDecoderLayerRegion(NestedCompileRegionMixin, Qwen3_5LinearDecoderLayer):
+    """Linear attention decoder layer with a nested compile region around its forward call."""
 
 
 class Qwen3_5Attention(DecoderOnlyAttention):
@@ -620,31 +644,17 @@ class Qwen3_5Model(DecoderOnlyModel):
                 all_hidden_states += (hidden_states,)
             if layer_idx in self.linear_attention_layers:
                 conv_state, recurrent_state = past_states[layer_idx]
-                slotted = batch_idx is not None
-                if slotted:
-                    # PREFILL processes ONE item -> take its slot [batch_idx] from the max-batch cache -> (1, ...).
-                    conv_in = conv_state[batch_idx.to(torch.int).unsqueeze(0)]
-                    recurrent_in = recurrent_state[batch_idx.to(torch.int).unsqueeze(0)]
-                    _pos = batch_idx.to(torch.int16)
-                else:
-                    conv_in, recurrent_in = conv_state, recurrent_state
-                    _pos = torch.tensor(0, dtype=torch.int16)
-                hidden_states, new_conv_state, new_recurrent_state = layer(
+                hidden_states, conv_state, recurrent_state = layer(
                     hidden_states,
-                    conv_in,
-                    recurrent_in,
+                    conv_state,
+                    recurrent_state,
+                    batch_idx,
                     query_position=query_position,
                     valid_mask=valid_mask,
                     conv_state_mask=conv_state_mask,
                     recurrent_state_mask=recurrent_state_mask,
                 )
-                _axis0 = torch.tensor(0, dtype=torch.int16)
-                new_states.append(
-                    torch.ops.rbln_custom_ops.rbln_cache_update(conv_state, new_conv_state, _pos, _axis0)
-                )
-                new_states.append(
-                    torch.ops.rbln_custom_ops.rbln_cache_update(recurrent_state, new_recurrent_state, _pos, _axis0)
-                )
+                new_states += [conv_state, recurrent_state]
             else:
                 hidden_states = layer(
                     hidden_states=hidden_states,
@@ -739,7 +749,12 @@ class Qwen3_5_CausalLMWrapper(DecoderOnlyWrapper):
         for layer_idx, layer in enumerate(self.get_decoder_layers(model)):
             if layer_types[layer_idx] == "linear_attention":
                 rbln_deltanet = Qwen3_5GatedDeltaNet(layer.linear_attn, self.rbln_config, layer_idx)
-                new_layers.append(Qwen3_5LinearDecoderLayer(layer, rbln_deltanet))
+                linear_layer_cls = (
+                    Qwen3_5LinearDecoderLayerRegion
+                    if self.rbln_config.nested_compile_region
+                    else Qwen3_5LinearDecoderLayer
+                )
+                new_layers.append(linear_layer_cls(layer, rbln_deltanet))
             else:
                 new_self_attn = self.get_rbln_attn_class()(layer.self_attn, self.rbln_config, is_sliding=False)
                 new_layers.append(

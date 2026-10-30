@@ -1,4 +1,5 @@
 import json
+import operator
 from types import SimpleNamespace
 
 import pytest
@@ -237,8 +238,17 @@ def test_packed_rotary_decoder_export(enabled, phase, hybrid):
     )
     with torch.inference_mode(), torch._dynamo.config.patch(**dynamo_options):
         exported = torch.export.export(clone_nn_module(wrapped), tuple(inputs), strict=enabled)
-    calls = [n for n in exported.graph.nodes if "invoke_subgraph" in str(n.target)]
-    assert len(calls) == ((1 if hybrid else 3) if enabled else 0)
+    nodes = list(exported.graph.nodes)
+    calls = [n for n in nodes if "invoke_subgraph" in str(n.target)]
+    assert len(calls) == ((4 if hybrid else 3) if enabled else 0)
+    if enabled:
+        # The compiler rolls layer calls into a loop only when nothing runs between them.
+        between = [
+            n
+            for n in nodes[nodes.index(calls[0]) : nodes.index(calls[-1])]
+            if n.op == "call_function" and n not in calls and not (n.target is operator.getitem and n.args[0] in calls)
+        ]
+        assert not between
 
 
 @pytest.mark.parametrize("supports_sort", [False, True])
