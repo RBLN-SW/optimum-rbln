@@ -15,6 +15,8 @@ from transformers import (
     Qwen3_5ForConditionalGeneration,
     Qwen3Config,
     Qwen3ForCausalLM,
+    Qwen3VLConfig,
+    Qwen3VLForConditionalGeneration,
 )
 
 from optimum.rbln import (
@@ -27,6 +29,7 @@ from optimum.rbln import (
     RBLNQwen3_5ModelConfig,
     RBLNQwen3ForCausalLM,
     RBLNQwen3ForCausalLMConfig,
+    RBLNQwen3VLForConditionalGeneration,
     RBLNQwen3VLForConditionalGenerationConfig,
     RBLNQwen3VLModelConfig,
 )
@@ -173,8 +176,9 @@ def test_gpt_oss_experts_have_nonaliased_inputs():
 
 @pytest.mark.parametrize("enabled", [False, True])
 @pytest.mark.parametrize("phase", ["prefill", "decode"])
-@pytest.mark.parametrize("hybrid", [False, True], ids=["qwen2_5_vl", "qwen3_5"])
-def test_packed_rotary_decoder_export(enabled, phase, hybrid):
+@pytest.mark.parametrize("arch", ["qwen2_5_vl", "qwen3_5", "qwen3_vl"])
+def test_packed_rotary_decoder_export(enabled, phase, arch):
+    hybrid = arch == "qwen3_5"
     text = {
         "vocab_size": 128,
         "hidden_size": 128,
@@ -200,13 +204,24 @@ def test_packed_rotary_decoder_export(enabled, phase, hybrid):
         config_cls = RBLNQwen3_5ForConditionalGenerationConfig
         vision_cls = "RBLNQwen3_5VisionModelConfig"
         extra["gdn_chunk_size"] = 128
-    else:
+    elif arch == "qwen2_5_vl":
         text["rope_parameters"] = {"rope_type": "default", "rope_theta": 10000, "mrope_section": [8, 12, 12]}
         vision["fullatt_block_indexes"] = [0]
         hf_config_cls, hf_model_cls = Qwen2_5_VLConfig, Qwen2_5_VLForConditionalGeneration
         model_cls = RBLNQwen2_5_VLForConditionalGeneration
         config_cls = RBLNQwen2_5_VLForConditionalGenerationConfig
         vision_cls = "RBLNQwen2_5_VisionTransformerPretrainedModelConfig"
+    else:
+        # Two deepstack layers, so the third layer injects zeros.
+        text.update(
+            head_dim=64,
+            rope_parameters={"rope_type": "default", "rope_theta": 10000, "mrope_section": [8, 12, 12]},
+        )
+        vision.update(depth=2, num_position_embeddings=64, deepstack_visual_indexes=[0, 1])
+        hf_config_cls, hf_model_cls = Qwen3VLConfig, Qwen3VLForConditionalGeneration
+        model_cls = RBLNQwen3VLForConditionalGeneration
+        config_cls = RBLNQwen3VLForConditionalGenerationConfig
+        vision_cls = "RBLNQwen3VLVisionModelConfig"
     cfg = hf_config_cls(text_config=text, vision_config=vision)
     model = hf_model_cls(cfg).eval()
     config = config_cls(
@@ -242,6 +257,8 @@ def test_packed_rotary_decoder_export(enabled, phase, hybrid):
     calls = [n for n in nodes if "invoke_subgraph" in str(n.target)]
     assert len(calls) == ((4 if hybrid else 3) if enabled else 0)
     if enabled:
+        # Qwen3.5 alternates linear and full attention bodies; the others share one.
+        assert len({call.args[0].target for call in calls}) == (2 if hybrid else 1)
         # The compiler rolls layer calls into a loop only when nothing runs between them.
         between = [
             n
