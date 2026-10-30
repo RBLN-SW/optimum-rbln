@@ -2,7 +2,7 @@ import torch
 from torch import nn
 from transformers import PreTrainedModel
 
-from ..decoderonly.decoderonly_architecture import DecoderOnlyWrapper, rotate_half
+from ..decoderonly.decoderonly_architecture import DecoderOnlyWrapper, NestedCompileRegionMixin, rotate_half
 from .configuration_qwen2_5_vl import RBLNQwen2_5_VisionTransformerPretrainedModelConfig
 
 
@@ -31,10 +31,11 @@ class Qwen2_5_VisionTransformerWrapper(nn.Module):
         window_seq_len: int,
         rbln_config: RBLNQwen2_5_VisionTransformerPretrainedModelConfig,
     ):
+        block_cls = Qwen2_5_VLVisionBlockRegion if rbln_config.nested_compile_region else Qwen2_5_VLVisionBlock
         wrapped_blocks = []
         for i, block in enumerate(blocks):
             is_full_attn = i in self.fullatt_block_indexes
-            wrapped_blocks.append(Qwen2_5_VLVisionBlock(block, is_full_attn, window_seq_len, rbln_config))
+            wrapped_blocks.append(block_cls(block, is_full_attn, window_seq_len, rbln_config))
         return nn.ModuleList(wrapped_blocks)
 
     def forward(
@@ -90,6 +91,10 @@ class Qwen2_5_VLVisionBlock(torch.nn.Module):
         )
         hidden_states = hidden_states + self.mlp(self.norm2(hidden_states))
         return hidden_states
+
+
+class Qwen2_5_VLVisionBlockRegion(NestedCompileRegionMixin, Qwen2_5_VLVisionBlock):
+    """Vision block with a nested compile region around its forward call."""
 
 
 class Qwen2_5_VLVisionFullAttention(nn.Module):

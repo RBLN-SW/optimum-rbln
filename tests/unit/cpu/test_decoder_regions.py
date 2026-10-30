@@ -22,6 +22,7 @@ from transformers import (
 from optimum.rbln import (
     RBLNGemma2ForCausalLM,
     RBLNGemma2ForCausalLMConfig,
+    RBLNQwen2_5_VisionTransformerPretrainedModel,
     RBLNQwen2_5_VLForConditionalGeneration,
     RBLNQwen2_5_VLForConditionalGenerationConfig,
     RBLNQwen3_5ForConditionalGeneration,
@@ -45,6 +46,7 @@ from optimum.rbln.transformers.models.gpt_oss.gpt_oss_architecture import RBLNGp
         (RBLNQwen3VLModelConfig, "RBLNQwen3VLVisionModelConfig"),
         (RBLNQwen3_5ForConditionalGenerationConfig, "RBLNQwen3_5VisionModelConfig"),
         (RBLNQwen3_5ModelConfig, "RBLNQwen3_5VisionModelConfig"),
+        (RBLNQwen2_5_VLForConditionalGenerationConfig, "RBLNQwen2_5_VisionTransformerPretrainedModelConfig"),
     ],
 )
 def test_region_config_not_saved(config_cls, vision_cls_name, enabled, tmp_path):
@@ -56,7 +58,8 @@ def test_region_config_not_saved(config_cls, vision_cls_name, enabled, tmp_path)
     config = config_cls(nested_compile_region=enabled, **kwargs)
     assert config.nested_compile_region is enabled
     config.save(tmp_path)
-    assert "nested_compile_region" not in json.loads((tmp_path / "rbln_config.json").read_text())
+    # Neither the model nor a submodule such as the vision encoder saves the flag.
+    assert "nested_compile_region" not in (tmp_path / "rbln_config.json").read_text()
     assert config_cls.from_pretrained(tmp_path).nested_compile_region is False
     restored = config_cls.from_pretrained(tmp_path, rbln_nested_compile_region=enabled)
     assert restored.nested_compile_region is enabled
@@ -266,6 +269,56 @@ def test_packed_rotary_decoder_export(enabled, phase, arch):
             if n.op == "call_function" and n not in calls and not (n.target is operator.getitem and n.args[0] in calls)
         ]
         assert not between
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+def test_qwen2_5_vl_vision_block_regions(monkeypatch, enabled):
+    # Every fourth block uses full attention, as in the checkpoints; each body is called twice.
+    vision = {
+        "depth": 8,
+        "hidden_size": 32,
+        "intermediate_size": 64,
+        "num_heads": 2,
+        "out_hidden_size": 128,
+        "fullatt_block_indexes": [3, 7],
+    }
+    text = {
+        "vocab_size": 128,
+        "hidden_size": 128,
+        "intermediate_size": 256,
+        "num_hidden_layers": 1,
+        "num_attention_heads": 2,
+        "num_key_value_heads": 2,
+        "rope_parameters": {"rope_type": "default", "rope_theta": 10000, "mrope_section": [8, 12, 12]},
+    }
+    cfg = Qwen2_5_VLConfig(text_config=text, vision_config=vision)
+    visual = Qwen2_5_VLForConditionalGeneration(cfg).eval().model.visual
+    config = RBLNQwen2_5_VLForConditionalGenerationConfig(
+        npu="RBLN-CR13",
+        nested_compile_region=enabled,
+        visual={
+            "cls_name": "RBLNQwen2_5_VisionTransformerPretrainedModelConfig",
+            "max_seq_len": 64,
+            "dtype": "float32",
+        },
+    ).visual
+    assert config.nested_compile_region is enabled
+    model_cls = RBLNQwen2_5_VisionTransformerPretrainedModel
+    config = model_cls._update_rbln_config(
+        preprocessors=None, model=visual, model_config=cfg.vision_config, rbln_config=config
+    )
+
+    def export(model, **kwargs):
+        assert kwargs.get("model_trace_method") == ("export_strict" if enabled else None)
+        inputs = tuple(torch.zeros(shape, dtype=getattr(torch, dtype)) for _, shape, dtype in kwargs["input_info"][0])
+        result = torch.export.export(clone_nn_module(model), inputs, strict=enabled)
+        calls = [n for n in result.graph.nodes if "invoke_subgraph" in str(n.target)]
+        assert len(calls) == (8 if enabled else 0)
+        return result
+
+    monkeypatch.setattr(rebel, "compile_from_torch", export)
+    with torch.inference_mode():
+        model_cls.get_compiled_model(visual, config)
 
 
 @pytest.mark.parametrize("supports_sort", [False, True])
