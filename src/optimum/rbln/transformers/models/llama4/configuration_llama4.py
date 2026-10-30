@@ -114,6 +114,10 @@ class RBLNLlama4ForConditionalGenerationConfig(RBLNModelConfig):
     def use_inputs_embeds(self):
         return self.language_model.use_inputs_embeds
 
+    @property
+    def can_generate(self) -> bool:
+        return self.language_model.can_generate
+
 
 __all__ = [
     "RBLNLlama4ForCausalLMConfig",

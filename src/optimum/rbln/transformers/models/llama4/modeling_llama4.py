@@ -183,9 +183,6 @@ class RBLNLlama4ForConditionalGeneration(RBLNModel, RBLNImageIndexedBatchSortMix
             return lambda *args, **kwargs: value(self, *args, **kwargs)
         return value
 
-    def can_generate(self):
-        return True
-
     def __post_init__(self, **kwargs):
         self.vision_model, self.language_model = self.rbln_submodules
         self.multi_modal_projector = self.model[0]
