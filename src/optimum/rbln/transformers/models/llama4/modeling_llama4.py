@@ -16,13 +16,7 @@ import inspect
 from collections.abc import Callable
 
 import torch
-from transformers import (
-    AutoConfig,
-    AutoModelForImageTextToText,
-    Llama4ForConditionalGeneration,
-    PretrainedConfig,
-    PreTrainedModel,
-)
+from transformers import AutoModelForImageTextToText, Llama4ForConditionalGeneration
 from transformers.modeling_outputs import BaseModelOutputWithPooling
 
 from ....configuration_utils import RBLNCompileConfig
@@ -35,17 +29,6 @@ from .llama4_architecture import Llama4ForCausalLMWrapper, Llama4VisionModelWrap
 
 
 logger = get_logger(__name__)
-
-
-def _resolve_config(model_id, config, hub_kwargs) -> PretrainedConfig:
-    if isinstance(config, PretrainedConfig):
-        return config
-    config_kwargs = {
-        key: hub_kwargs[key]
-        for key in ("token", "revision", "force_download", "cache_dir", "subfolder", "local_files_only")
-        if key in hub_kwargs
-    }
-    return AutoConfig.from_pretrained(config or model_id, **config_kwargs)
 
 
 # Default number of image tiles the vision model encodes per call. Kept small to bound device memory;
@@ -84,24 +67,10 @@ class RBLNLlama4ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
     _decoder_wrapper_cls = Llama4ForCausalLMWrapper
 
     @classmethod
-    def _check_supported_text_config(cls, text_config):
-        if text_config.moe_layers:
-            raise NotImplementedError("Llama 4 MoE models are not supported yet.")
-
-    @classmethod
-    def get_pytorch_model(cls, model_id, **kwargs) -> PreTrainedModel:
-        config = _resolve_config(model_id, kwargs.pop("config", None), kwargs)
-
-        # Llama4ForCausalLM expects Llama4TextConfig. Its language_model base prefix
-        # allows HF to load only the text weights from a multimodal checkpoint.
-        text_config = config.get_text_config()
-        cls._check_supported_text_config(text_config)
-        return super().get_pytorch_model(model_id, config=text_config, **kwargs)
-
-    @classmethod
     def _update_rbln_config(cls, preprocessors=None, model=None, model_config=None, rbln_config=None):
         text_config = model_config.get_text_config()
-        cls._check_supported_text_config(text_config)
+        if text_config.moe_layers:
+            raise NotImplementedError("Llama 4 MoE models are not supported yet.")
 
         # The chunk mask is applied through the attention mask, so it is needed once the compiled
         # context is longer than one chunk. This runs before super() because use_attention_mask
@@ -216,12 +185,6 @@ class RBLNLlama4ForConditionalGeneration(RBLNModel, RBLNImageIndexedBatchSortMix
 
     def can_generate(self):
         return True
-
-    @classmethod
-    def get_pytorch_model(cls, model_id, **kwargs):
-        config = _resolve_config(model_id, kwargs.get("config"), kwargs)
-        RBLNLlama4ForCausalLM._check_supported_text_config(config.get_text_config())
-        return super().get_pytorch_model(model_id, **kwargs)
 
     def __post_init__(self, **kwargs):
         self.vision_model, self.language_model = self.rbln_submodules
