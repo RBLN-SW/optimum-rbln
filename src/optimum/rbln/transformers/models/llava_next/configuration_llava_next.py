@@ -69,6 +69,10 @@ class RBLNLlavaNextForConditionalGenerationConfig(RBLNModelConfig):
             batch_size=batch_size,
         )
 
+    @property
+    def can_generate(self) -> bool:
+        return self.language_model.can_generate
+
 
 __all__ = [
     "RBLNLlavaNextForConditionalGenerationConfig",

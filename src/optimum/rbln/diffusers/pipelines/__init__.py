@@ -21,6 +21,7 @@ from ...utils.import_utils import define_import_structure
 
 if TYPE_CHECKING:
     from .auto_pipeline import *
+    from .cogvideo import *
     from .controlnet import *
     from .cosmos import *
     from .kandinsky2_2 import *

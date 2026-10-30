@@ -52,6 +52,7 @@ if TYPE_CHECKING:
     from .mistral import *
     from .mixtral import *
     from .modernbert import *
+    from .mpnet import *
     from .olmo2 import *
     from .opt import *
     from .paligemma import *

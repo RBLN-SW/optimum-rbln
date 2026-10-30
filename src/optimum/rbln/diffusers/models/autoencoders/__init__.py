@@ -21,6 +21,7 @@ from ....utils.import_utils import define_import_structure
 
 if TYPE_CHECKING:
     from .autoencoder_kl import *
+    from .autoencoder_kl_cogvideox import *
     from .autoencoder_kl_cosmos import *
     from .autoencoder_kl_flux2 import *
     from .autoencoder_kl_temporal_decoder import *

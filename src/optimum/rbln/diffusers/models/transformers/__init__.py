@@ -21,6 +21,7 @@ from ....utils.import_utils import define_import_structure
 
 if TYPE_CHECKING:
     from .prior_transformer import *
+    from .transformer_cogvideox import *
     from .transformer_cosmos import *
     from .transformer_moss_image import *
     from .transformer_sd3 import *

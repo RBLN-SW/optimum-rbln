@@ -179,9 +179,6 @@ class RBLNWhisperForConditionalGeneration(RBLNModel, RBLNWhisperGenerationMixin)
         self.model = WhisperModel(self.config)
         self.pad_token_id = self.config.pad_token_id
 
-    def can_generate(self):
-        return True
-
     def get_encoder(self):
         return self.encoder
 
