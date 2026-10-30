@@ -23,7 +23,6 @@ from ..decoderonly.decoderonly_architecture import (
     DecoderOnlyWrapper,
     RotaryEmbedding,
 )
-from ..decoderonly.lora_architecture import LoRALinear
 
 
 class Llama4VisionWrapper(nn.Module):
@@ -105,16 +104,8 @@ class Llama4Wrapper(DecoderOnlyWrapper):
         return Llama4DecoderLayer
 
 
-class Llama4LoRALinear(LoRALinear):
-    def get_layer_key(self) -> str:
-        return f"base_model.model.model.layers.{self.layer_idx}.feed_forward.{self.projection_name}"
-
-
 class Llama4DecoderLayer(DecoderOnlyLayer):
     _MLP_ATTR = ("feed_forward",)
-
-    def get_lora_linear_class(self):
-        return Llama4LoRALinear
 
 
 class Llama4Attention(DecoderOnlyAttention):
