@@ -110,6 +110,53 @@ def parse_single_value(value_str):
     return value_str
 
 
+# Hub access options have their own parser arguments and are never forwarded as model kwargs.
+HUB_ACCESS_ARGS = {"hf_token", "hf_revision", "hf_cache_dir", "hf_force_download", "hf_local_files_only"}
+
+
+def parse_extra_args(extra_args: list[str]) -> tuple[dict[str, Any], dict[str, Any]]:
+    """
+    Split the arguments the parser did not recognize into rbln_config entries and HuggingFace model kwargs.
+
+    `--name value` and `--name=value` set a value and a bare `--name` is a boolean flag. A dotted name sets a
+    nested rbln_config entry, and an `--hf-` prefixed name becomes a model kwarg without the prefix.
+
+    Args:
+        extra_args: The unknown arguments returned by `parse_known_args`
+
+    Returns:
+        The rbln_config dict and the model kwargs dict
+    """
+    rbln_config: dict[str, Any] = {}
+    model_kwargs: dict[str, Any] = {}
+
+    i = 0
+    while i < len(extra_args):
+        arg = extra_args[i]
+        i += 1
+        if not arg.startswith("--"):
+            continue
+
+        name, has_inline_value, inline_value = arg[2:].partition("=")
+        name = name.replace("-", "_")
+        if has_inline_value:
+            value = parse_value(inline_value)
+        elif i < len(extra_args) and not extra_args[i].startswith("--"):
+            value = parse_value(extra_args[i])
+            i += 1
+        else:
+            value = True
+
+        if name.startswith("hf_") and name not in HUB_ACCESS_ARGS:
+            model_kwargs[name[3:]] = value
+        elif "." in name:
+            set_nested_dict(rbln_config, name, value)
+        else:
+            rbln_config[name] = value
+
+    return rbln_config, model_kwargs
+
+
 # ---- Simple ANSI styling helpers for richer CLI output ----
 ANSI_RESET = "\033[0m"
 ANSI_DIM = "\033[2m"
@@ -736,53 +783,7 @@ def main():
         output_path = Path(args.output_dir)
         output_path.mkdir(parents=True, exist_ok=True)
 
-        # Prepare rbln_config and model_kwargs by parsing all unknown arguments
-        rbln_config: dict[str, Any] = {}
-        model_kwargs: dict[str, Any] = {}  # HuggingFace model args
-
-        # Parse all unknown arguments
-        i = 0
-        while i < len(unknown_args):
-            arg = unknown_args[i]
-            if arg.startswith("--"):
-                arg_name = arg[2:].replace("-", "_")
-
-                # Check if this is a HuggingFace model argument (--hf-* prefix)
-                # Exclude already-defined Hub access args (hf_token, hf_revision, etc.)
-                is_hf_arg = arg_name.startswith("hf_") and arg_name not in {
-                    "hf_token",
-                    "hf_revision",
-                    "hf_cache_dir",
-                    "hf_force_download",
-                    "hf_local_files_only",
-                }
-                if is_hf_arg:
-                    arg_name = arg_name[3:]  # Remove "hf_" prefix
-
-                if i + 1 < len(unknown_args) and not unknown_args[i + 1].startswith("--"):
-                    # Has a value
-                    arg_value = unknown_args[i + 1]
-                    parsed_value = parse_value(arg_value)
-
-                    if is_hf_arg:
-                        model_kwargs[arg_name] = parsed_value
-                    # Check if this is a nested config argument (contains dots)
-                    elif "." in arg_name:
-                        set_nested_dict(rbln_config, arg_name, parsed_value)
-                    else:
-                        rbln_config[arg_name] = parsed_value
-                    i += 2
-                else:
-                    # Boolean flag
-                    if is_hf_arg:
-                        model_kwargs[arg_name] = True
-                    elif "." in arg_name:
-                        set_nested_dict(rbln_config, arg_name, True)
-                    else:
-                        rbln_config[arg_name] = True
-                    i += 1
-            else:
-                i += 1
+        rbln_config, model_kwargs = parse_extra_args(unknown_args)
 
         # Set create_runtimes to False by default for CLI compilation if not specified
         create_runtimes = rbln_config.pop("create_runtimes", False)
