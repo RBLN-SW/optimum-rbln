@@ -599,6 +599,9 @@ class Qwen3_5Model(DecoderOnlyModel):
         if rotary_emb is not None:
             if isinstance(rotary_emb, torch.Tensor):
                 cos, sin = rotary_emb[0], rotary_emb[1]
+                if self.rbln_config.nested_compile_region:
+                    # Clone once outside the decoder regions to separate cos/sin.
+                    cos = cos.clone()
             else:
                 cos, sin = rotary_emb(hidden_states, self.max_seq_len)
                 cos, sin = slice_and_unsqueeze_cos_sin(cos, sin, position_ids)

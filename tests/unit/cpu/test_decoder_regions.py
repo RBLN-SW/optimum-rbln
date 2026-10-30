@@ -5,11 +5,23 @@ import pytest
 import rebel
 import torch
 from rebel.core.compilation._impl import clone_nn_module
-from transformers import Gemma2Config, Gemma2ForCausalLM, Qwen3Config, Qwen3ForCausalLM
+from transformers import (
+    Gemma2Config,
+    Gemma2ForCausalLM,
+    Qwen2_5_VLConfig,
+    Qwen2_5_VLForConditionalGeneration,
+    Qwen3_5Config,
+    Qwen3_5ForConditionalGeneration,
+    Qwen3Config,
+    Qwen3ForCausalLM,
+)
 
 from optimum.rbln import (
     RBLNGemma2ForCausalLM,
     RBLNGemma2ForCausalLMConfig,
+    RBLNQwen2_5_VLForConditionalGeneration,
+    RBLNQwen2_5_VLForConditionalGenerationConfig,
+    RBLNQwen3_5ForConditionalGeneration,
     RBLNQwen3_5ForConditionalGenerationConfig,
     RBLNQwen3_5ModelConfig,
     RBLNQwen3ForCausalLM,
@@ -156,6 +168,77 @@ def test_gpt_oss_experts_have_nonaliased_inputs():
         gate = getattr(experts, f"gate_proj_{suffix}")
         up = getattr(experts, f"up_proj_{suffix}")
         assert gate.untyped_storage().data_ptr() != up.untyped_storage().data_ptr()
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+@pytest.mark.parametrize("phase", ["prefill", "decode"])
+@pytest.mark.parametrize("hybrid", [False, True], ids=["qwen2_5_vl", "qwen3_5"])
+def test_packed_rotary_decoder_export(enabled, phase, hybrid):
+    text = {
+        "vocab_size": 128,
+        "hidden_size": 128,
+        "intermediate_size": 256,
+        "num_hidden_layers": 4 if hybrid else 3,
+        "num_attention_heads": 2,
+        "num_key_value_heads": 2,
+        "max_position_embeddings": 16384,
+    }
+    vision = {"depth": 1, "hidden_size": 32, "intermediate_size": 64, "num_heads": 2, "out_hidden_size": 128}
+    extra = {}
+    if hybrid:
+        text.update(
+            head_dim=64,
+            linear_key_head_dim=64,
+            linear_value_head_dim=64,
+            linear_num_key_heads=2,
+            linear_num_value_heads=2,
+        )
+        vision["num_position_embeddings"] = 64
+        hf_config_cls, hf_model_cls = Qwen3_5Config, Qwen3_5ForConditionalGeneration
+        model_cls = RBLNQwen3_5ForConditionalGeneration
+        config_cls = RBLNQwen3_5ForConditionalGenerationConfig
+        vision_cls = "RBLNQwen3_5VisionModelConfig"
+        extra["gdn_chunk_size"] = 128
+    else:
+        text["rope_parameters"] = {"rope_type": "default", "rope_theta": 10000, "mrope_section": [8, 12, 12]}
+        vision["fullatt_block_indexes"] = [0]
+        hf_config_cls, hf_model_cls = Qwen2_5_VLConfig, Qwen2_5_VLForConditionalGeneration
+        model_cls = RBLNQwen2_5_VLForConditionalGeneration
+        config_cls = RBLNQwen2_5_VLForConditionalGenerationConfig
+        vision_cls = "RBLNQwen2_5_VisionTransformerPretrainedModelConfig"
+    cfg = hf_config_cls(text_config=text, vision_config=vision)
+    model = hf_model_cls(cfg).eval()
+    config = config_cls(
+        batch_size=1,
+        max_seq_len=16384,
+        npu="RBLN-CR13",
+        kvcache_partition_len=8192,
+        prefill_chunk_size=128,
+        kvcache_num_blocks=2,
+        num_devices=1,
+        create_runtimes=False,
+        dtype="float32",
+        nested_compile_region=enabled,
+        visual={"cls_name": vision_cls, "max_seq_len": 64},
+        **extra,
+    )
+    config = model_cls._update_rbln_config(model=model, model_config=cfg, rbln_config=config)
+    wrapped = model_cls._wrap_model_if_needed(model, config)
+    wrapped.phase = phase
+    ccfg = config.compile_cfgs[0 if phase == "prefill" else 1]
+    inputs = ccfg.get_dummy_inputs(
+        fill=0, meta_tensor_names=[n for n, _, _ in ccfg.input_info if "past_key_values" in n]
+    )
+    # Keep Qwen3.5's single full-attention region visible on newer PyTorch.
+    dynamo_options = (
+        {"inline_single_use_invoke_subgraph": False}
+        if hasattr(torch._dynamo.config, "inline_single_use_invoke_subgraph")
+        else {}
+    )
+    with torch.inference_mode(), torch._dynamo.config.patch(**dynamo_options):
+        exported = torch.export.export(clone_nn_module(wrapped), tuple(inputs), strict=enabled)
+    calls = [n for n in exported.graph.nodes if "invoke_subgraph" in str(n.target)]
+    assert len(calls) == ((1 if hybrid else 3) if enabled else 0)
 
 
 @pytest.mark.parametrize("supports_sort", [False, True])
