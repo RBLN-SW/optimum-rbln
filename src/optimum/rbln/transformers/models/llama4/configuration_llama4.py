@@ -25,25 +25,46 @@ def _validate_batch_size(batch_size: int | None) -> int | None:
 
 
 class RBLNLlama4ForCausalLMConfig(RBLNDecoderOnlyModelForCausalLMConfig):
-    """Configuration class for RBLN Llama 4 causal language models.
+    """
+    Configuration class for RBLNLlama4ForCausalLM.
 
-    This class is an alias of RBLNDecoderOnlyModelForCausalLMConfig.
+    This configuration class is a subclass of RBLNDecoderOnlyModelForCausalLMConfig and accepts
+    the same arguments. Refer to RBLNDecoderOnlyModelForCausalLMConfig for the full list of
+    options (for example `batch_size`, `max_seq_len`, `attn_impl`, `kvcache_partition_len`,
+    `num_devices`, and `use_attention_mask`).
     """
 
 
 class RBLNLlama4VisionModelConfig(RBLNModelConfig):
-    """Compilation configuration for the Llama 4 vision encoder."""
+    """
+    Configuration class for RBLNLlama4VisionModel.
+
+    This configuration class stores the configuration parameters specific to
+    RBLN-optimized Llama 4 vision encoders.
+    """
 
     def __init__(self, batch_size: int | None = None, **kwargs: Any):
+        """
+        Args:
+            batch_size (int | None): The number of image tiles encoded in one call. Larger inputs are
+                processed in several calls and smaller inputs are padded. Defaults to 4 when used in
+                RBLNLlama4ForConditionalGeneration and 1 otherwise.
+            kwargs: Additional arguments passed to the parent RBLNModelConfig.
+
+        Raises:
+            ValueError: If `batch_size` is not a positive integer.
+        """
         super().__init__(**kwargs)
         self.batch_size = _validate_batch_size(batch_size)
 
 
 class RBLNLlama4ForConditionalGenerationConfig(RBLNModelConfig):
-    """Configuration for Llama 4 image and text generation.
+    """
+    Configuration class for RBLNLlama4ForConditionalGeneration.
 
-    Decoder compilation options such as max_seq_len and attn_impl belong in
-    language_model. Image tiles are encoded one at a time on one device.
+    This configuration class stores the configuration parameters specific to
+    RBLN-optimized Llama 4 models for multimodal conditional generation tasks
+    that combine vision and language processing capabilities.
     """
 
     submodules = ["vision_model", "language_model"]
@@ -55,6 +76,22 @@ class RBLNLlama4ForConditionalGenerationConfig(RBLNModelConfig):
         language_model: RBLNModelConfig | dict[str, Any] | None = None,
         **kwargs: Any,
     ):
+        """
+        Args:
+            batch_size (int | None): The batch size for inference. Defaults to 1.
+            vision_model (RBLNModelConfig | dict[str, Any] | None): Configuration for the vision encoder component.
+                Its `batch_size` sets the maximum number of image tiles processed per call.
+                If not provided, default settings will be used.
+            language_model (RBLNModelConfig | dict[str, Any] | None): Configuration for the language model component.
+                This can include settings specific to the language model, such as `max_seq_len` or `num_devices`.
+                The language model always uses `inputs_embeds` as input.
+                If not provided, default settings will be used.
+            kwargs: Additional arguments passed to the parent RBLNModelConfig.
+
+        Raises:
+            ValueError: If `batch_size` is not a positive integer, or if `language_model` sets
+                `use_inputs_embeds=False`.
+        """
         super().__init__(**kwargs)
         self.batch_size = _validate_batch_size(batch_size) or 1
 

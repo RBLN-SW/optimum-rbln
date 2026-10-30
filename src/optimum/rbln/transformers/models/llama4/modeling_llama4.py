@@ -27,10 +27,14 @@ from transformers.modeling_outputs import BaseModelOutputWithPooling
 
 from ....configuration_utils import RBLNCompileConfig
 from ....modeling import RBLNModel
+from ....utils.logging import get_logger
 from ...modeling_outputs import RBLNDecoderOnlyOutput
 from ...utils.multimodal_batch_sort import RBLNImageIndexedBatchSortMixin, _placeholder_token_counts
 from ..decoderonly.modeling_decoderonly import RBLNDecoderOnlyModelForCausalLM
 from .llama4_architecture import Llama4ForCausalLMWrapper, Llama4VisionModelWrapper, uses_chunked_attention
+
+
+logger = get_logger(__name__)
 
 
 def _resolve_config(model_id, config, hub_kwargs) -> PretrainedConfig:
@@ -47,6 +51,12 @@ def _resolve_config(model_id, config, hub_kwargs) -> PretrainedConfig:
 # Default number of image tiles the vision model encodes per call. Kept small to bound device memory;
 # larger tile counts are processed over several calls.
 _DEFAULT_VISION_BATCH_SIZE = 4
+
+
+def _tokens_per_tile(vision_config) -> int:
+    # Same arithmetic as HF's pixel_shuffle: the patch grid is shrunk by pixel_shuffle_ratio per side.
+    side = vision_config.image_size // vision_config.patch_size
+    return int(side * vision_config.pixel_shuffle_ratio) * int(side * vision_config.pixel_shuffle_ratio)
 
 
 class RBLNLlama4ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
@@ -92,12 +102,16 @@ class RBLNLlama4ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
     def _update_rbln_config(cls, preprocessors=None, model=None, model_config=None, rbln_config=None):
         text_config = model_config.get_text_config()
         cls._check_supported_text_config(text_config)
-        if rbln_config.max_seq_len is None:
-            rbln_config.max_seq_len = text_config.max_position_embeddings
 
-        if uses_chunked_attention(text_config) and rbln_config.max_seq_len > text_config.attention_chunk_size:
+        # The chunk mask is applied through the attention mask, so it is needed once the compiled
+        # context is longer than one chunk. This runs before super() because use_attention_mask
+        # shapes the compile input info, so resolve max_seq_len here the way the base class does.
+        max_seq_len = rbln_config.max_seq_len or text_config.max_position_embeddings
+        if uses_chunked_attention(text_config) and max_seq_len > text_config.attention_chunk_size:
             if rbln_config.use_position_ids:
                 raise ValueError("Llama 4 chunked attention does not support `use_position_ids=True`.")
+            if not rbln_config.use_attention_mask:
+                logger.info("Llama 4 chunked attention requires an attention mask. Setting `use_attention_mask=True`.")
             rbln_config.use_attention_mask = True
 
         return super()._update_rbln_config(preprocessors, model, text_config, rbln_config)
@@ -139,11 +153,55 @@ class RBLNLlama4VisionModel(RBLNModel):
 
 
 class RBLNLlama4ForConditionalGeneration(RBLNModel, RBLNImageIndexedBatchSortMixin):
-    """Compile and run Llama 4 with image and text inputs.
+    """
+    RBLNLlama4ForConditionalGeneration is a multi-modal model that combines vision and language processing capabilities,
+    optimized for RBLN NPUs. It is designed for conditional generation tasks that involve both image and text inputs.
+    Mixture-of-experts (MoE) checkpoints are not supported.
 
-    Use RBLNAutoModelForImageTextToText for multimodal checkpoints such as
-    meta-llama/Llama-Guard-4-12B. Decoder options are specified in
-    rbln_config={"language_model": {"max_seq_len": 8192, "num_devices": 1}}.
+    This model inherits from [`RBLNModel`]. It implements the methods to convert and run
+    pre-trained transformers based Llama4ForConditionalGeneration model on RBLN devices by:
+
+    - transferring the checkpoint weights of the original into an optimized RBLN graph,
+    - compiling the resulting graph using the RBLN compiler.
+
+    Important Note:
+        This model includes a Large Language Model (LLM) as a submodule. For optimal performance, it is highly recommended to use
+        tensor parallelism for the language model. This can be achieved by using the `rbln_config` parameter in the
+        `from_pretrained` method. Refer to the `from_pretrained` documentation and the RBLNLlama4ForConditionalGeneration class for details.
+
+    Examples:
+        ```python
+        from optimum.rbln import RBLNLlama4ForConditionalGeneration
+
+        model = RBLNLlama4ForConditionalGeneration.from_pretrained(
+            "meta-llama/Llama-Guard-4-12B",
+            export=True,
+            rbln_config={
+                "language_model": {
+                    "max_seq_len": 8192,
+                    "num_devices": 4,
+                },
+            },
+        )
+        model.save_pretrained("compiled-llama-guard-4-12b")
+
+        # Using RBLN config instances (recommended for type checking)
+        from optimum.rbln import (
+            RBLNLlama4ForCausalLMConfig,
+            RBLNLlama4ForConditionalGenerationConfig,
+            RBLNLlama4VisionModelConfig,
+        )
+
+        rbln_config = RBLNLlama4ForConditionalGenerationConfig(
+            vision_model=RBLNLlama4VisionModelConfig(),
+            language_model=RBLNLlama4ForCausalLMConfig(max_seq_len=8192, num_devices=4),
+        )
+        model = RBLNLlama4ForConditionalGeneration.from_pretrained(
+            "meta-llama/Llama-Guard-4-12B",
+            export=True,
+            rbln_config=rbln_config,
+        )
+        ```
     """
 
     auto_model_class = AutoModelForImageTextToText
@@ -168,7 +226,9 @@ class RBLNLlama4ForConditionalGeneration(RBLNModel, RBLNImageIndexedBatchSortMix
     def __post_init__(self, **kwargs):
         self.vision_model, self.language_model = self.rbln_submodules
         self.multi_modal_projector = self.model[0]
-        self.pad_token_id = self.config.text_config.pad_token_id
+        self.pad_token_id = (
+            self.config.text_config.pad_token_id if self.config.text_config.pad_token_id is not None else -1
+        )
         return super().__post_init__(**kwargs)
 
     def get_input_embeddings(self):
@@ -195,14 +255,17 @@ class RBLNLlama4ForConditionalGeneration(RBLNModel, RBLNImageIndexedBatchSortMix
     @classmethod
     def _update_rbln_config(cls, preprocessors=None, model=None, model_config=None, rbln_config=None):
         vision = model_config.vision_config
-        num_tokens = int((vision.image_size // vision.patch_size * vision.pixel_shuffle_ratio) ** 2)
+        # The projector consumes the vision adapter output; read its width from the projector itself.
+        in_features = (
+            model.multi_modal_projector.linear_1.in_features if model is not None else vision.vision_output_dim
+        )
         rbln_config.set_compile_cfgs(
             [
                 RBLNCompileConfig(
                     input_info=[
                         (
                             "image_features",
-                            [rbln_config.vision_model.batch_size, num_tokens, vision.vision_output_dim],
+                            [rbln_config.vision_model.batch_size, _tokens_per_tile(vision), in_features],
                             rbln_config.dtype,
                         )
                     ]
@@ -212,9 +275,7 @@ class RBLNLlama4ForConditionalGeneration(RBLNModel, RBLNImageIndexedBatchSortMix
         return rbln_config
 
     def _images_per_sample(self, input_ids, kwargs):
-        vision = self.config.vision_config
-        tokens_per_tile = int((vision.image_size // vision.patch_size * vision.pixel_shuffle_ratio) ** 2)
-        return _placeholder_token_counts(input_ids, self._image_token_id, tokens_per_tile)
+        return _placeholder_token_counts(input_ids, self._image_token_id, _tokens_per_tile(self.config.vision_config))
 
     def get_image_features(self, pixel_values, **kwargs):
         if pixel_values.ndim != 4 or pixel_values.shape[0] == 0:
@@ -274,6 +335,11 @@ class RBLNLlama4ForConditionalGeneration(RBLNModel, RBLNImageIndexedBatchSortMix
         inputs_sorted=False,
         **kwargs,
     ):
+        if kwargs.get("output_hidden_states") or kwargs.get("output_attentions"):
+            logger.warning_once(
+                "`output_hidden_states` and `output_attentions` are not supported by RBLNLlama4ForConditionalGeneration "
+                "and are ignored."
+            )
         return_dict = return_dict if return_dict is not None else self.config.return_dict
         self._require_sorted_batch_inputs(inputs_embeds if inputs_embeds is not None else input_ids, inputs_sorted)
         if cache_position is None:
