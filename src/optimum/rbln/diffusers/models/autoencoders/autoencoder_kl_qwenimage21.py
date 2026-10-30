@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING
 import rebel
 import torch
 from diffusers.models.autoencoders.autoencoder_kl_qwenimage21 import AutoencoderKLQwenImage21
-from diffusers.models.autoencoders.vae import DecoderOutput, DiagonalGaussianDistribution
+from diffusers.models.autoencoders.vae import DecoderOutput
 from diffusers.models.modeling_outputs import AutoencoderKLOutput
 from rebel.compile_context import CompileContext
 
@@ -27,7 +27,12 @@ from ....modeling import RBLNModel
 from ....modeling_base import Preprocessor
 from ....utils.logging import get_logger
 from ...configurations import RBLNAutoencoderKLQwenImage21Config
-from .vae import _VAEQwenImage21Decoder, _VAEQwenImage21Encoder
+from .vae import (
+    RBLNRuntimeQwenImage21VAEDecoder,
+    RBLNRuntimeQwenImage21VAEEncoder,
+    _VAEQwenImage21Decoder,
+    _VAEQwenImage21Encoder,
+)
 
 
 if TYPE_CHECKING:
@@ -45,12 +50,11 @@ def _get_graph_name(kind: str, height: int, width: int) -> str:
 
 class RBLNAutoencoderKLQwenImage21(RBLNModel):
     """
-    RBLN implementation of AutoencoderKLQwenImage21, the image VAE of Qwen-Image 2.1.
+    RBLN implementation of AutoencoderKLQwenImage21 for diffusion models.
 
-    The decoder compiles one graph for every output size. With `uses_encoder`, the encoder compiles one graph for every
-    canvas in `encoder_sample_size`: an image runs at the top left of the smallest canvas that holds it, with a mask
-    that keeps the result that of the image alone, so one canvas serves many condition-image sizes. Graphs of the
-    same kind share their weights on the device.
+    This model is used to accelerate AutoencoderKLQwenImage21 models from diffusers library on RBLN NPUs.
+    It can be configured to include both encoder and decoder, or just the decoder part for latent-to-image
+    conversion. The decoder compiles one graph for every output size and the encoder one for every canvas size.
 
     This class inherits from [`RBLNModel`]. Check the superclass documentation for the generic methods
     the library implements for all its models.
@@ -65,17 +69,29 @@ class RBLNAutoencoderKLQwenImage21(RBLNModel):
         # Indexed, not zipped: without runtimes, `self.model` is one `UnavailableRuntime` for every index.
         runtimes = {cfg.compiled_model_name: self.model[i] for i, cfg in enumerate(self.rbln_config.compile_cfgs)}
         scale = self.config.scale_factor_spatial
-        self.encoders = {}
+
         if self.rbln_config.uses_encoder:
-            self.encoders = {
+            canvases = {
                 (height, width): runtimes[_get_graph_name("encoder", height, width)]
                 for height, width in self.rbln_config.encoder_sample_size
             }
+            self.encoder = RBLNRuntimeQwenImage21VAEEncoder(
+                runtime=self.model[0],
+                main_input_name="x",
+                canvases=canvases,
+                scale_factor=scale,
+                dtype=self.rbln_config.dtype,
+            )
+
         # Keyed by the latent (height, width) the decoder takes.
-        self.decoders = {
+        decoders = {
             (height // scale, width // scale): runtimes[_get_graph_name("decoder", height, width)]
             for height, width in self.rbln_config.sample_size
         }
+        self.decoder = RBLNRuntimeQwenImage21VAEDecoder(
+            runtime=self.model[-1], main_input_name="z", decoders=decoders, scale_factor=scale
+        )
+        self.image_size = self.rbln_config.image_size
 
     @classmethod
     def _wrap_model_if_needed(
@@ -88,7 +104,6 @@ class RBLNAutoencoderKLQwenImage21(RBLNModel):
         }
 
     @classmethod
-    @torch.inference_mode()
     def get_compiled_model(
         cls, model: "PreTrainedModel", rbln_config: RBLNAutoencoderKLQwenImage21Config
     ) -> dict[str, rebel.RBLNCompiledModel]:
@@ -114,7 +129,6 @@ class RBLNAutoencoderKLQwenImage21(RBLNModel):
     def update_rbln_config_using_pipe(
         cls, pipe: "RBLNDiffusionMixin", rbln_config: "RBLNDiffusionMixinConfig", submodule_name: str
     ) -> "RBLNDiffusionMixinConfig":
-        # The pipeline config already sets the image sizes and sequence lengths.
         return rbln_config
 
     @classmethod
@@ -126,7 +140,10 @@ class RBLNAutoencoderKLQwenImage21(RBLNModel):
         rbln_config: RBLNAutoencoderKLQwenImage21Config,
     ) -> RBLNAutoencoderKLQwenImage21Config:
         if rbln_config.sample_size is None:
-            rbln_config.sample_size = [(1024, 1024)]
+            raise ValueError(
+                "`sample_size` must be specified to compile the Qwen-Image 2.1 VAE. Compiling through a pipeline "
+                "fills it with that pipeline's defaults; a standalone compile must pass it in rbln_config."
+            )
         if rbln_config.uses_encoder is None:
             rbln_config.uses_encoder = False
         if rbln_config.uses_encoder and rbln_config.encoder_sample_size is None:
@@ -183,61 +200,35 @@ class RBLNAutoencoderKLQwenImage21(RBLNModel):
 
     def encode(self, x: torch.Tensor, return_dict: bool = True) -> AutoencoderKLOutput | tuple:
         """
-        Encode a batch of images into latents.
-
-        The images run at the top left of the smallest compiled canvas that holds them.
+        Encode an input image into a latent representation.
 
         Args:
-            x (torch.Tensor): Images shaped (batch_size, channels, 1, height, width).
-            return_dict (bool): Whether to return an `AutoencoderKLOutput` instead of a plain tuple.
+            x: The input image to encode, shaped (batch_size, channels, 1, height, width). It runs at the top left
+                of the smallest compiled canvas that holds it.
+            return_dict:
+                Whether to return output as a dictionary. Defaults to True.
 
         Returns:
-            (`AutoencoderKLOutput` | tuple): The latent distribution.
+            The latent representation or AutoencoderKLOutput if return_dict=True
         """
-        height, width = x.shape[-2:]
-        scale = self.config.scale_factor_spatial
-        if height % scale or width % scale:
-            raise ValueError(f"The VAE encoder takes image sizes in multiples of {scale}, not {(height, width)}.")
-        canvases = [size for size in self.encoders if size[0] >= height and size[1] >= width]
-        if not canvases:
-            raise ValueError(
-                f"The VAE encoder was compiled for canvases {sorted(self.encoders)}, and none holds an image of "
-                f"{(height, width)}. Compile with uses_encoder=True and add a canvas that holds it to "
-                "encoder_sample_size."
-            )
-        canvas_size = min(canvases, key=lambda size: size[0] * size[1])
-        dtype = self.rbln_config.dtype
-        canvas = x.new_zeros(*x.shape[:-2], *canvas_size, dtype=dtype)
-        canvas[..., :height, :width] = x
-        mask = torch.zeros(1, 1, 1, *canvas_size, dtype=dtype)
-        mask[..., :height, :width] = 1
-        moments = self.encoders[canvas_size](canvas, mask)
-        posterior = DiagonalGaussianDistribution(moments[..., : height // scale, : width // scale])
+        posterior = self.encoder.encode(x.to(self.rbln_config.dtype))
         if not return_dict:
             return (posterior,)
         return AutoencoderKLOutput(latent_dist=posterior)
 
     def decode(self, z: torch.Tensor, return_dict: bool = True) -> DecoderOutput | tuple:
         """
-        Decode a batch of latents into images.
+        Decode a latent representation into an image.
 
         Args:
-            z (torch.Tensor): Latents shaped (batch_size, z_dim, 1, latent_height, latent_width).
-            return_dict (bool): Whether to return a `DecoderOutput` instead of a plain tuple.
+            z: The latent representation to decode, shaped (batch_size, z_dim, 1, latent_height, latent_width).
+            return_dict:
+                Whether to return output as a dictionary. Defaults to True.
 
         Returns:
-            (`DecoderOutput` | tuple): The decoded images.
+            The decoded image or DecoderOutput if return_dict=True
         """
-        size = tuple(z.shape[-2:])
-        decoder = self.decoders.get(size)
-        if decoder is None:
-            scale = self.config.scale_factor_spatial
-            compiled = sorted((h * scale, w * scale) for h, w in self.decoders)
-            raise ValueError(
-                f"The VAE decoder was compiled for image sizes {compiled}, not "
-                f"{(size[0] * scale, size[1] * scale)}. Add the size to sample_size."
-            )
-        decoded = decoder(z.to(self.rbln_config.dtype).contiguous())
+        decoded = self.decoder.decode(z.to(self.rbln_config.dtype))
         if not return_dict:
             return (decoded,)
         return DecoderOutput(sample=decoded)

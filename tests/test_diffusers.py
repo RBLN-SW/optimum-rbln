@@ -549,7 +549,8 @@ def _save_tiny_qwenimage21_pipeline(save_dir: str):
 
 class TestQwenImage21Model(BaseTest.TestModel):
     RBLN_CLASS = RBLNQwenImage21Pipeline
-    HF_MODEL_ID = "tiny-qwen-image-2.1"  # Built at setup by `_save_tiny_qwenimage21_pipeline`.
+    # tiny-random pipeline mirroring Qwen/Qwen-Image-2.1-Turbo, built at setup by `_save_tiny_qwenimage21_pipeline`
+    HF_MODEL_ID = "tiny-qwen-image-2.1"
     GENERATION_KWARGS = {
         "prompt": "dance monkey",
         "num_inference_steps": 2,
@@ -580,14 +581,16 @@ class TestQwenImage21Model(BaseTest.TestModel):
 
     @classmethod
     def setUpClass(cls):
-        if not os.path.isdir(cls.HF_MODEL_ID):
+        cls._creates_tiny_pipeline = not os.path.isdir(cls.HF_MODEL_ID)
+        if cls._creates_tiny_pipeline:
             _save_tiny_qwenimage21_pipeline(cls.HF_MODEL_ID)
         return super().setUpClass()
 
     @classmethod
     def tearDownClass(cls):
         super().tearDownClass()
-        shutil.rmtree(cls.HF_MODEL_ID, ignore_errors=True)
+        if cls._creates_tiny_pipeline:
+            shutil.rmtree(cls.HF_MODEL_ID, ignore_errors=True)
 
     def test_generate_edit(self):
         # The same compiled pipeline edits: the condition image goes through the vision and VAE encoders.

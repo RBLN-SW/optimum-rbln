@@ -18,7 +18,7 @@ from collections.abc import Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, NamedTuple, cast
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 import rebel
 import torch
@@ -26,6 +26,7 @@ import torch.nn.functional as F
 from diffusers.models.embeddings import apply_rotary_emb
 from diffusers.models.modeling_outputs import Transformer2DModelOutput
 from diffusers.models.transformers.transformer_qwenimage21 import (
+    _IMG_TOKENS_PER_SLOT,
     QwenImage21KVCache,
     QwenImage21Rope,
     QwenImage21TimestepProjEmbeddings,
@@ -36,7 +37,7 @@ from rebel.compile_context import CompileContext
 from ....configuration_utils import RBLNCompileConfig
 from ....modeling import RBLNModel
 from ....modeling_base import Preprocessor
-from ....transformers.modeling_attention_utils import align, set_default_values, validate_attention_method
+from ....transformers.modeling_attention_utils import set_default_values, validate_attention_method
 from ....utils.logging import get_logger
 from ...configurations import RBLNQwenImage21Transformer2DModelConfig
 
@@ -49,72 +50,32 @@ if TYPE_CHECKING:
 
 logger = get_logger(__name__)
 
-# Each vision-language image slot represents a 2x2 group of latent tokens.
-_IMG_TOKENS_PER_SLOT = 4
-_TEXT_PREFILL = "text_prefill"
-_KV_CACHE_PREFIX = "kv_cache_"
-
-
-def _get_image_chunk_name(num_tokens: int) -> str:
-    return f"image_{num_tokens}"
-
-
-def _get_image_chunk_sizes(rbln_config: RBLNQwenImage21Transformer2DModelConfig) -> list[int]:
-    # An image graph depends only on the token count, as the host computes the RoPE tables.
-    return sorted({math.prod(size) for size in rbln_config.sample_size})
-
-
-def _get_kv_cache_len(rbln_config: RBLNQwenImage21Transformer2DModelConfig) -> int:
-    """KV-cache slots per prompt.
-
-    A chunk writes its whole size from where it starts. The prefix ends by `max_seq_len`, so its last text chunk
-    starts before `max_seq_len` and the target image starts at most there. Flash attention rounds up to whole
-    partitions; its partition-alignment padding can still need more, which the chunk plan reports.
-    """
-    # `_update_rbln_config` sets the chunk size before any cache length is computed.
-    num_tokens = max(*_get_image_chunk_sizes(rbln_config), cast(int, rbln_config.prefill_chunk_size))
-    # `set_default_values` sets a partition length exactly when the attention is flash.
-    partition_len = rbln_config.kvcache_partition_len
-    if partition_len is not None:
-        return max(align(rbln_config.max_seq_len + num_tokens, partition_len), 2 * partition_len)
-    return align(rbln_config.max_seq_len + num_tokens, 64)
-
-
-def _get_kv_block_size(rbln_config: RBLNQwenImage21Transformer2DModelConfig) -> int:
-    # Eager attention keeps one block per prompt; flash attention one block per partition.
-    return rbln_config.kvcache_partition_len or _get_kv_cache_len(rbln_config)
-
 
 class _PagedAttention(torch.nn.Module):
-    """Chunk attention over the paged KV cache.
-
-    The op writes the chunk's keys and values into the cache at `seq`, then attends to the valid cache slots in
-    `mask` up to the end of the chunk: causally inside the chunk, or bidirectionally with `is_bidirectional`.
-    With `partition_len`, flash attention handles the cache one partition (block) at a time.
-
-    One instance serves every graph, so its `scale` is the same parameter in each of them; separate parameters
-    stop the compiler from sharing the model weights between the graphs.
-    """
+    """Chunk attention over the paged KV cache: writes the chunk's keys and values, then attends to the valid slots."""
 
     def __init__(self, head_dim: int, partition_len: int | None):
         super().__init__()
+        # One instance serves every graph: separate `scale` parameters stop the compiler from sharing the weights.
         self.scale = torch.nn.Parameter(torch.tensor(1.0 / math.sqrt(head_dim)), requires_grad=False)
         self.partition_len = partition_len
 
-    def forward(self, query, key, value, key_cache, value_cache, seq, block_table, mask, is_bidirectional: bool):
+    def forward(
+        self, query, key, value, key_cache, value_cache, cache_position, block_tables, attention_mask, is_bidirectional
+    ):
         # (1, T, H, D) -> (1, H, 1, T, D)
         query = query.transpose(1, 2).unsqueeze(2)
         key = key.transpose(1, 2).unsqueeze(2)
         value = value.transpose(1, 2).unsqueeze(2)
-        cache_args = (key_cache.unsqueeze(2), value_cache.unsqueeze(2), seq, self.scale, block_table)
+        cache_args = (key_cache.unsqueeze(2), value_cache.unsqueeze(2), cache_position, self.scale, block_tables)
         block_size = key_cache.shape[2]
         if self.partition_len is None:
             hidden_states = torch.ops.rbln_custom_ops.paged_causal_attn_prefill(
-                query, key, value, *cache_args, block_size, is_bidirectional, mask=mask
+                query, key, value, *cache_args, block_size, is_bidirectional, mask=attention_mask
             )
         else:
             hidden_states = torch.ops.rbln_custom_ops.paged_flash_causal_attn_prefill(
-                query, key, value, *cache_args, block_size, self.partition_len, is_bidirectional, mask=mask
+                query, key, value, *cache_args, block_size, self.partition_len, is_bidirectional, mask=attention_mask
             )
         return hidden_states.squeeze(2).transpose(1, 2).flatten(2, 3)
 
@@ -126,21 +87,33 @@ class _QwenImage21ChunkMixin:
     """
 
     def _project_qkv(self, attn, hidden_states, rope_cos, rope_sin):
-        head_dim = attn.inner_dim // attn.heads
-        query = attn.to_q(hidden_states).unflatten(-1, (-1, head_dim))
-        key = attn.to_k(hidden_states).unflatten(-1, (-1, head_dim))
-        value = attn.to_v(hidden_states).unflatten(-1, (-1, head_dim))
+        query = attn.to_q(hidden_states)
+        key = attn.to_k(hidden_states)
+        value = attn.to_v(hidden_states)
+
+        query = query.unflatten(-1, (attn.heads, -1))
+        key = key.unflatten(-1, (attn.heads, -1))
+        value = value.unflatten(-1, (attn.heads, -1))
+
         query = attn.norm_q(query).to(value.dtype)
         key = attn.norm_k(key).to(value.dtype)
-        # Real form of the upstream complex rotation: `cos`/`sin` repeat each frequency for both channels of a
-        # pair. The helper broadcasts them to (1, seq, 1, head_dim), the rank of `x` that the compiler's rotary
-        # embedding lowering needs.
+        # Real form of the upstream complex rotation, as the compiler has no complex ops; the helper broadcasts
+        # cos/sin to (1, seq, 1, head_dim), the rank the compiler's rotary embedding lowering needs.
         query = apply_rotary_emb(query, (rope_cos, rope_sin), use_real=True, use_real_unbind_dim=-1, sequence_dim=1)
         key = apply_rotary_emb(key, (rope_cos, rope_sin), use_real=True, use_real_unbind_dim=-1, sequence_dim=1)
         return query, key, value
 
     def _run_blocks(
-        self, hidden_states, modulation, rope_cos, rope_sin, seq, block_table, mask, kv_caches, is_bidirectional
+        self,
+        hidden_states,
+        modulation,
+        rope_cos,
+        rope_sin,
+        cache_position,
+        block_tables,
+        attention_mask,
+        past_key_values,
+        is_bidirectional,
     ):
         scale1, gate1, scale2, gate2 = modulation.chunk(4, dim=-1)
         for index, block in enumerate(self.model.transformer_blocks):
@@ -151,11 +124,11 @@ class _QwenImage21ChunkMixin:
                 query,
                 key,
                 value,
-                kv_caches[2 * index],
-                kv_caches[2 * index + 1],
-                seq,
-                block_table,
-                mask,
+                past_key_values[2 * index],
+                past_key_values[2 * index + 1],
+                cache_position,
+                block_tables,
+                attention_mask,
                 is_bidirectional,
             )
             hidden_states = hidden_states + gate1.tanh() * attn.to_out[0](attn_output)
@@ -179,11 +152,29 @@ class QwenImage21TextChunkWrapper(_QwenImage21ChunkMixin, torch.nn.Module):
         self.model = model
         self.attention = attention
 
-    def forward(self, encoder_hidden_states, temb, rope_cos, rope_sin, seq, block_table, mask, *kv_caches):
+    def forward(
+        self,
+        encoder_hidden_states,
+        temb,
+        rope_cos,
+        rope_sin,
+        cache_position,
+        block_tables,
+        attention_mask,
+        *past_key_values,
+    ):
         hidden_states = self.model.txt_in(encoder_hidden_states)
         modulation = self.model.modulation(temb).unsqueeze(1)
         hidden_states = self._run_blocks(
-            hidden_states, modulation, rope_cos, rope_sin, seq, block_table, mask, kv_caches, is_bidirectional=False
+            hidden_states,
+            modulation,
+            rope_cos,
+            rope_sin,
+            cache_position,
+            block_tables,
+            attention_mask,
+            past_key_values,
+            is_bidirectional=False,
         )
         # The chunk's result is the keys and values in the cache; the graph still needs an output.
         return hidden_states[:, :1]
@@ -200,11 +191,21 @@ class QwenImage21ImageChunkWrapper(_QwenImage21ChunkMixin, torch.nn.Module):
         self.model = model
         self.attention = attention
 
-    def forward(self, hidden_states, temb, rope_cos, rope_sin, seq, block_table, mask, *kv_caches):
+    def forward(
+        self, hidden_states, temb, rope_cos, rope_sin, cache_position, block_tables, attention_mask, *past_key_values
+    ):
         hidden_states = self.model.img_in(hidden_states)
         modulation = self.model.modulation(temb).unsqueeze(1)
         hidden_states = self._run_blocks(
-            hidden_states, modulation, rope_cos, rope_sin, seq, block_table, mask, kv_caches, is_bidirectional=True
+            hidden_states,
+            modulation,
+            rope_cos,
+            rope_sin,
+            cache_position,
+            block_tables,
+            attention_mask,
+            past_key_values,
+            is_bidirectional=True,
         )
         hidden_states = self.model.norm_out(hidden_states, temb)
         return self.model.proj_out(hidden_states)
@@ -224,8 +225,7 @@ class _KVPrompt:
 
     owner: "weakref.ref[QwenImage21KVCache] | None"  # the pipeline's `kv_cache`; None after a call without one
     prefix_len: int
-    valid: torch.Tensor  # (1, kv_cache_len) bool: the cache slots that hold the prefix
-    last_used: int = 0
+    valid: torch.Tensor  # (1, kvcache_len) bool: the cache slots that hold the prefix
 
     def is_free(self) -> bool:
         return self.owner is None or self.owner() is None
@@ -233,26 +233,12 @@ class _KVPrompt:
 
 class RBLNQwenImage21Transformer2DModel(RBLNModel):
     """
-    RBLN implementation of QwenImage21Transformer2DModel, the single-stream transformer of Qwen-Image 2.1.
+    RBLN implementation of QwenImage21Transformer2DModel for diffusion models like Qwen-Image 2.1.
 
-    The joint text/image sequence runs as chunks over a KV cache that stays in device memory, the way a decoder
-    prefills a prompt. The graphs share the model weights and the cache:
-
-    - `text_prefill` runs `prefill_chunk_size` prompt tokens with causal attention.
-    - `image_<N>` runs one image block of up to N tokens with bidirectional attention and returns the noise
-      prediction. Condition images and the target image both run through it, each in the smallest graph that
-      holds it; an image block cannot be split into chunks, as its tokens attend to each other.
-
-    Chunks are tight-packed: each one starts right after the valid tokens of the previous one and overwrites its
-    padded tail. With flash attention (`kvcache_partition_len`) a chunk never crosses a partition: one that would
-    starts at the next partition, and the slots it skips stay empty. An attention mask over the cache slots hides
-    every slot that holds no valid token, and RoPE follows the position in the joint sequence, not the cache slot.
-
-    A call with `kv_cache_mode="cached"` runs the target image only. Other calls also prefill the prompt, which
-    gives the same result as the upstream single pass over the joint sequence.
-
-    The KV cache holds `kvcache_num_prompts` prompts. The pipeline's `kv_cache` object identifies the cache of its
-    prompt, so classifier-free guidance keeps the positive and the negative prompt side by side.
+    The joint text/image sequence runs as chunks over a KV cache in device memory, the way a decoder prefills a
+    prompt: `prefill` runs `prefill_chunk_size` prompt tokens with causal attention, and `image_prefill_<N>` runs one
+    image block of up to N tokens with bidirectional attention. A call with `kv_cache_mode="cached"` runs the target
+    image only, over the keys and values its `kv_cache` left in the cache.
 
     This class inherits from [`RBLNModel`]. Check the superclass documentation for the generic methods
     the library implements for all its models.
@@ -260,8 +246,6 @@ class RBLNQwenImage21Transformer2DModel(RBLNModel):
 
     hf_library_name = "diffusers"
     auto_model_class = QwenImage21Transformer2DModel
-    _rbln_config_class = RBLNQwenImage21Transformer2DModelConfig
-    _output_class = Transformer2DModelOutput
 
     def __post_init__(self, **kwargs):
         super().__post_init__(**kwargs)
@@ -275,26 +259,170 @@ class RBLNQwenImage21Transformer2DModel(RBLNModel):
 
         # Indexed, not zipped: without runtimes, `self.model` is one `UnavailableRuntime` for every index.
         runtimes = {cfg.compiled_model_name: self.model[i] for i, cfg in enumerate(self.rbln_config.compile_cfgs)}
-        self.text_prefill = runtimes[_TEXT_PREFILL]
+        self.text_prefill = runtimes["prefill"]
         self.image_chunks = {
-            num_tokens: runtimes[_get_image_chunk_name(num_tokens)]
-            for num_tokens in _get_image_chunk_sizes(self.rbln_config)
+            num_tokens: runtimes[f"image_prefill_{num_tokens}"]
+            for num_tokens in self.rbln_config.image_prefill_chunk_sizes
         }
-        self.kv_cache_len = _get_kv_cache_len(self.rbln_config)
-        self.kv_blocks_per_prompt = self.kv_cache_len // _get_kv_block_size(self.rbln_config)
-        self._kv_prompts: list[_KVPrompt | None] = [None] * self.rbln_config.kvcache_num_prompts
-        self._kv_clock = 0
+        self.clear_kv_prompts()
 
-    @classmethod
-    def save_torch_artifacts(
-        cls,
-        model: "PreTrainedModel",
-        save_dir_path: Path,
-        subfolder: str,
-        rbln_config: RBLNQwenImage21Transformer2DModelConfig,
+    def clear_kv_prompts(self):
+        self._kv_prompts: list[_KVPrompt | None] = [None] * self.rbln_config.kvcache_num_prompts
+
+    @contextmanager
+    def cache_context(self, name: str):
+        yield
+
+    @property
+    def transformer_blocks(self) -> range:
+        return range(self.config.num_layers)
+
+    @staticmethod
+    def _get_rope_cos_sin(rotary_emb: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        # One complex frequency per channel pair -> one real value per channel.
+        cos = torch.stack([rotary_emb.real, rotary_emb.real], dim=-1).flatten(-2)
+        sin = torch.stack([rotary_emb.imag, rotary_emb.imag], dim=-1).flatten(-2)
+        return cos, sin
+
+    def _resolve_image_chunk(self, num_tokens: int) -> int:
+        """The smallest image graph that holds an image block of `num_tokens` latent tokens."""
+        # An image block attends to itself as a whole, so it runs as one chunk; the mask hides the graph's padding.
+        fits = [size for size in self.image_chunks if size >= num_tokens]
+        if not fits:
+            raise ValueError(
+                f"An image block has {num_tokens} latent tokens, more than the largest image graph "
+                f"({max(self.image_chunks)} tokens) holds. An image block runs as one chunk, so add a latent "
+                f"(height, width) of at least {num_tokens} tokens to sample_size."
+            )
+        return min(fits)
+
+    def _plan_chunks(self, image_ids: torch.Tensor, prefix_len: int, num_target_tokens: int) -> list[_Chunk]:
+        """The chunks over the prefix and the target image: causal text chunks and one chunk per image block."""
+        # Image blocks follow the upstream block ids, so two adjacent condition images stay separate.
+        ids = image_ids.tolist()
+        runs = []
+        start = 0
+        while start < prefix_len:
+            image_id = ids[start]
+            end = start
+            if image_id >= 0:
+                while end < prefix_len and ids[end] == image_id:
+                    end += 1
+                chunk_size = self._resolve_image_chunk(end - start)
+            else:
+                chunk_size = self.rbln_config.prefill_chunk_size
+                while end < prefix_len and ids[end] < 0 and end - start < chunk_size:
+                    end += 1
+            runs.append((image_id, start, end - start, chunk_size))
+            start = end
+        runs.append((ids[prefix_len], prefix_len, num_target_tokens, self._resolve_image_chunk(num_target_tokens)))
+
+        # Tight-packed: a chunk starts after the previous one's valid tokens, or at the next partition if it would
+        # cross one, as the decoder-only runtime does.
+        partition_len = self.rbln_config.kvcache_partition_len
+        chunks = []
+        padded = 0
+        for image_id, start, num_valid, chunk_size in runs:
+            cache_start = start + padded
+            if partition_len is not None:
+                offset_in_partition = cache_start % partition_len
+                if offset_in_partition + chunk_size > partition_len:
+                    padded += partition_len - offset_in_partition
+                    cache_start = start + padded
+            if cache_start + chunk_size > self.rbln_config.kvcache_len:
+                raise ValueError(
+                    f"The chunk at position {start} needs KV-cache slots up to {cache_start + chunk_size}, past the "
+                    f"cache length ({self.rbln_config.kvcache_len}); partition-alignment padding takes {padded} of "
+                    "them. Increase max_seq_len."
+                )
+            chunks.append(_Chunk(image_id, start, num_valid, chunk_size, cache_start))
+        return chunks
+
+    def _find_kv_prompt(self, kv_cache: QwenImage21KVCache) -> int | None:
+        for index, prompt in enumerate(self._kv_prompts):
+            if prompt is not None and prompt.owner is not None and prompt.owner() is kv_cache:
+                return index
+        return None
+
+    def _claim_kv_prompt(self, kv_cache: QwenImage21KVCache | None) -> int:
+        """The prompt cache a prefill writes: the one of `kv_cache`, else a free one."""
+        index = self._find_kv_prompt(kv_cache) if kv_cache is not None else None
+        if index is not None:
+            return index
+        free = [i for i, prompt in enumerate(self._kv_prompts) if prompt is None or prompt.is_free()]
+        if not free:
+            raise RuntimeError(
+                f"All {len(self._kv_prompts)} prompt caches of the KV cache hold the keys and values of a kv_cache "
+                "that is still in use, and this prefill would overwrite one. Classifier-free guidance needs "
+                "kvcache_num_prompts=2."
+            )
+        return free[0]
+
+    def _get_block_tables(self, kv_prompt: int) -> torch.Tensor:
+        first = kv_prompt * self.rbln_config.kvcache_blocks_per_prompt
+        return torch.arange(first, first + self.rbln_config.kvcache_blocks_per_prompt, dtype=torch.int16)
+
+    def _run_chunk(self, runtime, inputs, temb, rope_cos, rope_sin, chunk: _Chunk, block_tables, valid):
+        """Runs one chunk at its cache slot, padded to the graph's chunk size."""
+        # Padded tokens get cos 1 and sin 0, the identity rotation.
+        pad = chunk.chunk_size - chunk.num_valid
+        return runtime(
+            F.pad(inputs, (0, 0, 0, pad)).contiguous(),
+            temb.contiguous(),
+            F.pad(rope_cos, (0, 0, 0, pad), value=1.0).contiguous(),
+            F.pad(rope_sin, (0, 0, 0, pad)).contiguous(),
+            torch.tensor([[chunk.cache_start]], dtype=torch.int32),
+            block_tables,
+            valid.to(self.rbln_config.dtype).contiguous(),
+        )
+
+    def _prefill(
+        self,
+        hidden_states,
+        encoder_hidden_states,
+        encoder_hidden_states_mask,
+        vlm_index,
+        image_lengths,
+        chunks,
+        temb,
+        rotary_emb,
+        block_tables,
     ):
-        save_dict = {"time_text_embed": model.time_text_embed.state_dict()}
-        torch.save(save_dict, save_dir_path / subfolder / "torch_artifacts.pth")
+        """Runs the prefix chunks into the prompt's KV cache and returns its valid slots, shaped (1, kvcache_len)."""
+        rope_cos, rope_sin = self._get_rope_cos_sin(rotary_emb)
+        # Right-padded prompt positions are never attended to, as upstream excludes them as keys.
+        prefix_len = rotary_emb.shape[0]
+        text_valid = torch.ones(prefix_len, dtype=torch.bool)
+        if encoder_hidden_states_mask is not None:
+            text_valid = encoder_hidden_states_mask[0].bool()[vlm_index[:prefix_len]]
+        image_offsets = [sum(image_lengths[:index]) for index in range(len(image_lengths))]
+
+        valid = torch.zeros(1, self.rbln_config.kvcache_len, dtype=torch.bool)
+        dtype = self.rbln_config.dtype
+        for chunk in chunks:
+            end = chunk.start + chunk.num_valid
+            slots = slice(chunk.cache_start, chunk.cache_start + chunk.num_valid)
+            if chunk.image_id < 0:
+                valid[0, slots] = text_valid[chunk.start : end]
+                inputs = encoder_hidden_states[:, vlm_index[chunk.start : end]]
+                runtime = self.text_prefill
+            else:
+                # A condition image modulates from t = 0 like the text; its noise prediction is not needed.
+                valid[0, slots] = True
+                offset = image_offsets[chunk.image_id]
+                inputs = hidden_states[:, offset : offset + chunk.num_valid]
+                runtime = self.image_chunks[chunk.chunk_size]
+            self._run_chunk(
+                runtime,
+                inputs.to(dtype),
+                temb,
+                rope_cos[chunk.start : end],
+                rope_sin[chunk.start : end],
+                chunk,
+                block_tables,
+                valid,
+            )
+        return valid
 
     @classmethod
     def _wrap_model_if_needed(
@@ -302,9 +430,9 @@ class RBLNQwenImage21Transformer2DModel(RBLNModel):
     ) -> dict[str, torch.nn.Module]:
         attention = _PagedAttention(model.config.attention_head_dim, rbln_config.kvcache_partition_len)
         image_chunk = QwenImage21ImageChunkWrapper(model, attention).eval()
-        wrapped_models = {_TEXT_PREFILL: QwenImage21TextChunkWrapper(model, attention).eval()}
-        for num_tokens in _get_image_chunk_sizes(rbln_config):
-            wrapped_models[_get_image_chunk_name(num_tokens)] = image_chunk
+        wrapped_models = {"prefill": QwenImage21TextChunkWrapper(model, attention).eval()}
+        for num_tokens in rbln_config.image_prefill_chunk_sizes:
+            wrapped_models[f"image_prefill_{num_tokens}"] = image_chunk
         return wrapped_models
 
     @classmethod
@@ -319,7 +447,7 @@ class RBLNQwenImage21Transformer2DModel(RBLNModel):
         static_tensors = {}
         compiled_models = {}
         for compile_config in rbln_config.compile_cfgs:
-            cache_names = [name for name, _, _ in compile_config.input_info if name.startswith(_KV_CACHE_PREFIX)]
+            cache_names = [name for name, _, _ in compile_config.input_info if "past_key_values" in name]
             example_inputs = compile_config.get_dummy_inputs(
                 fill=0, static_tensors=static_tensors, meta_tensor_names=cache_names
             )
@@ -343,8 +471,18 @@ class RBLNQwenImage21Transformer2DModel(RBLNModel):
     def update_rbln_config_using_pipe(
         cls, pipe: "RBLNDiffusionMixin", rbln_config: "RBLNDiffusionMixinConfig", submodule_name: str
     ) -> "RBLNDiffusionMixinConfig":
-        # The pipeline config already sets the image sizes and sequence lengths.
         return rbln_config
+
+    @classmethod
+    def save_torch_artifacts(
+        cls,
+        model: "PreTrainedModel",
+        save_dir_path: Path,
+        subfolder: str,
+        rbln_config: RBLNQwenImage21Transformer2DModelConfig,
+    ):
+        save_dict = {"time_text_embed": model.time_text_embed.state_dict()}
+        torch.save(save_dict, save_dir_path / subfolder / "torch_artifacts.pth")
 
     @classmethod
     def _update_rbln_config(
@@ -357,14 +495,11 @@ class RBLNQwenImage21Transformer2DModel(RBLNModel):
         if rbln_config.batch_size != 1:
             raise NotImplementedError("RBLNQwenImage21Transformer2DModel supports batch_size=1 only.")
         if not model_config.causal_condition:
-            # The prefix keys and values are computed once and reused at every step, which needs a step-independent
-            # prefix.
+            # The prefix keys and values are reused at every step, which needs a step-independent prefix.
             raise NotImplementedError("RBLNQwenImage21Transformer2DModel supports `causal_condition=True` only.")
-        if rbln_config.sample_size is None:
-            # 1024x1024, the pipeline default, at 16 pixels per latent token.
-            rbln_config.sample_size = [(64, 64)]
-        if rbln_config.max_seq_len is None:
-            rbln_config.max_seq_len = 512
+        missing = [name for name in ("sample_size", "max_seq_len") if getattr(rbln_config, name) is None]
+        if missing:
+            raise ValueError(f"{', '.join(missing)} must be specified to compile RBLNQwenImage21Transformer2DModel. ")
         if rbln_config.kvcache_num_prompts is None:
             rbln_config.kvcache_num_prompts = 1
         rbln_config.attn_impl, rbln_config.kvcache_partition_len, _, rbln_config.prefill_chunk_size = (
@@ -376,14 +511,14 @@ class RBLNQwenImage21Transformer2DModel(RBLNModel):
                 npu=rbln_config.npu,
             )
         )
-        kv_cache_len = _get_kv_cache_len(rbln_config)
-        kv_block_size = _get_kv_block_size(rbln_config)
+        kvcache_len = rbln_config.kvcache_len
+        kvcache_block_size = rbln_config.kvcache_block_size
         # The KV cache's dynamic axis: the per-prompt cache for eager, one partition for flash attention.
         validate_attention_method(
-            rbln_config.attn_impl, rbln_config.kvcache_partition_len, kv_block_size, kv_cache_len, rbln_config.npu
+            rbln_config.attn_impl, rbln_config.kvcache_partition_len, kvcache_block_size, kvcache_len, rbln_config.npu
         )
         if rbln_config.attn_impl == "flash_attn":
-            too_large = [n for n in _get_image_chunk_sizes(rbln_config) if n > rbln_config.kvcache_partition_len]
+            too_large = [n for n in rbln_config.image_prefill_chunk_sizes if n > rbln_config.kvcache_partition_len]
             if too_large:
                 raise ValueError(
                     f"Image blocks of {too_large} tokens do not fit one KV-cache partition "
@@ -397,40 +532,40 @@ class RBLNQwenImage21Transformer2DModel(RBLNModel):
         inner_dim = num_heads * head_dim
         dtype = rbln_config.dtype
         chunk_size = rbln_config.prefill_chunk_size
-        blocks_per_prompt = kv_cache_len // kv_block_size
+        blocks_per_prompt = rbln_config.kvcache_blocks_per_prompt
 
         # (num_blocks, heads, block_size, head_dim); a prompt owns `blocks_per_prompt` consecutive blocks.
         num_blocks = rbln_config.kvcache_num_prompts * blocks_per_prompt
         kv_cache_info = [
-            (f"{_KV_CACHE_PREFIX}{index}", [num_blocks, num_heads, kv_block_size, head_dim], dtype)
+            (f"past_key_values_{index}", [num_blocks, num_heads, kvcache_block_size, head_dim], dtype)
             for index in range(2 * num_layers)
         ]
 
-        def chunk_input_info(input_name: str, num_tokens: int, width: int) -> list:
+        def get_chunk_input_info(input_name: str, num_tokens: int, width: int) -> list:
             # The order of the chunk wrappers' `forward` arguments.
             return [
                 (input_name, [1, num_tokens, width], dtype),
                 ("temb", [1, inner_dim], dtype),
                 ("rope_cos", [num_tokens, head_dim], "float32"),
                 ("rope_sin", [num_tokens, head_dim], "float32"),
-                ("seq", [1, 1], "int32"),
-                ("block_table", [blocks_per_prompt], "int16"),
-                ("mask", [1, kv_cache_len], dtype),
+                ("cache_position", [1, 1], "int32"),
+                ("block_tables", [blocks_per_prompt], "int16"),
+                ("attention_mask", [1, kvcache_len], dtype),
                 *kv_cache_info,
             ]
 
         compile_cfgs = [
             RBLNCompileConfig(
-                compiled_model_name=_TEXT_PREFILL,
-                input_info=chunk_input_info("encoder_hidden_states", chunk_size, model_config.context_in_dim),
+                compiled_model_name="prefill",
+                input_info=get_chunk_input_info("encoder_hidden_states", chunk_size, model_config.context_in_dim),
             )
         ]
         compile_cfgs += [
             RBLNCompileConfig(
-                compiled_model_name=_get_image_chunk_name(num_tokens),
-                input_info=chunk_input_info("hidden_states", num_tokens, model_config.in_channels),
+                compiled_model_name=f"image_prefill_{num_tokens}",
+                input_info=get_chunk_input_info("hidden_states", num_tokens, model_config.in_channels),
             )
-            for num_tokens in _get_image_chunk_sizes(rbln_config)
+            for num_tokens in rbln_config.image_prefill_chunk_sizes
         ]
         rbln_config.set_compile_cfgs(compile_cfgs)
         return rbln_config
@@ -455,116 +590,6 @@ class RBLNQwenImage21Transformer2DModel(RBLNModel):
             )
             for name, compiled_model in zip(names, compiled_models, strict=True)
         ]
-
-    @contextmanager
-    def cache_context(self, name: str):
-        # QwenImage21Pipeline wraps each transformer call in diffusers' CacheMixin.cache_context.
-        # The compiled graphs carry no diffusers cache hooks, so there is nothing to set.
-        yield
-
-    @property
-    def transformer_blocks(self) -> range:
-        # QwenImage21Pipeline sizes its KV cache by `len(transformer.transformer_blocks)`.
-        return range(self.config.num_layers)
-
-    @staticmethod
-    def _get_rope_cos_sin(rotary_emb: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-        # One complex frequency per channel pair -> one real value per channel.
-        cos = torch.stack([rotary_emb.real, rotary_emb.real], dim=-1).flatten(-2)
-        sin = torch.stack([rotary_emb.imag, rotary_emb.imag], dim=-1).flatten(-2)
-        return cos, sin
-
-    def _resolve_image_chunk(self, num_tokens: int) -> int:
-        """The smallest image graph that holds an image block of `num_tokens` latent tokens.
-
-        An image block runs as one bidirectional chunk and cannot be split, so it must fit one graph; the graph's
-        remaining tokens are padding that the attention mask hides.
-        """
-        fits = [size for size in self.image_chunks if size >= num_tokens]
-        if not fits:
-            raise ValueError(
-                f"An image block has {num_tokens} latent tokens, more than the largest image graph "
-                f"({max(self.image_chunks)} tokens) holds. An image block runs as one chunk, so add a latent "
-                f"(height, width) of at least {num_tokens} tokens to sample_size."
-            )
-        return min(fits)
-
-    def _plan_chunks(self, image_ids: torch.Tensor, prefix_len: int, num_target_tokens: int) -> list[_Chunk]:
-        """Tight-packed chunks over the joint sequence: the prefix, then the target image.
-
-        Text runs split into causal chunks of `prefill_chunk_size`; each image block is one bidirectional chunk in
-        the smallest image graph that holds it. Image blocks follow the upstream block ids, so two adjacent condition
-        images stay separate. A chunk starts right after the valid tokens of the previous one and overwrites the
-        padded tail it wrote. With flash attention, a chunk that would cross a partition starts at the next
-        partition instead, as the decoder-only runtime does; the slots in between hold no valid token.
-        """
-        ids = image_ids.tolist()
-        runs = []
-        start = 0
-        while start < prefix_len:
-            image_id = ids[start]
-            end = start
-            if image_id >= 0:
-                while end < prefix_len and ids[end] == image_id:
-                    end += 1
-                chunk_size = self._resolve_image_chunk(end - start)
-            else:
-                chunk_size = self.rbln_config.prefill_chunk_size
-                while end < prefix_len and ids[end] < 0 and end - start < chunk_size:
-                    end += 1
-            runs.append((image_id, start, end - start, chunk_size))
-            start = end
-        runs.append((ids[prefix_len], prefix_len, num_target_tokens, self._resolve_image_chunk(num_target_tokens)))
-
-        partition_len = self.rbln_config.kvcache_partition_len
-        chunks = []
-        padded = 0
-        for image_id, start, num_valid, chunk_size in runs:
-            cache_start = start + padded
-            if partition_len is not None:
-                offset_in_partition = cache_start % partition_len
-                if offset_in_partition + chunk_size > partition_len:
-                    padded += partition_len - offset_in_partition
-                    cache_start = start + padded
-            if cache_start + chunk_size > self.kv_cache_len:
-                raise ValueError(
-                    f"The chunk at position {start} needs KV-cache slots up to {cache_start + chunk_size}, past the "
-                    f"cache length ({self.kv_cache_len}); partition-alignment padding takes {padded} of them. "
-                    "Increase max_seq_len."
-                )
-            chunks.append(_Chunk(image_id, start, num_valid, chunk_size, cache_start))
-        return chunks
-
-    def _find_kv_prompt(self, kv_cache: QwenImage21KVCache) -> int | None:
-        for index, prompt in enumerate(self._kv_prompts):
-            if prompt is not None and prompt.owner is not None and prompt.owner() is kv_cache:
-                return index
-        return None
-
-    def _claim_kv_prompt(self, kv_cache: QwenImage21KVCache | None) -> int:
-        """Picks the prompt cache a prefill writes: the one `kv_cache` already holds, else a free one, else the
-        least recently used one."""
-        index = self._find_kv_prompt(kv_cache) if kv_cache is not None else None
-        if index is not None:
-            return index
-        free = [i for i, prompt in enumerate(self._kv_prompts) if prompt is None or prompt.is_free()]
-        if free:
-            return free[0]
-        return min((prompt.last_used, i) for i, prompt in enumerate(self._kv_prompts) if prompt is not None)[1]
-
-    def _run_chunk(self, runtime, inputs, temb, rope_cos, rope_sin, chunk: _Chunk, block_table, valid):
-        """Runs one chunk at its cache slot, padded to the graph's chunk size. `rope_cos`/`rope_sin` cover the
-        chunk's valid tokens."""
-        pad = chunk.chunk_size - chunk.num_valid
-        return runtime(
-            F.pad(inputs, (0, 0, 0, pad)).contiguous(),
-            temb.contiguous(),
-            F.pad(rope_cos, (0, 0, 0, pad), value=1.0).contiguous(),
-            F.pad(rope_sin, (0, 0, 0, pad)).contiguous(),
-            torch.tensor([[chunk.cache_start]], dtype=torch.int32),
-            block_table,
-            valid.to(self.rbln_config.dtype).contiguous(),
-        )
 
     def forward(
         self,
@@ -622,12 +647,10 @@ class RBLNQwenImage21Transformer2DModel(RBLNModel):
             )
         num_tokens = image_lengths[-1]
 
-        # Joint-sequence layout, as upstream builds it. Each image slot of `img_mask` stands for 2x2 latent tokens:
-        # `vlm_index` maps every joint position to its vision-language position.
-        vlm_index = torch.arange(img_mask.shape[1]).repeat_interleave(
-            torch.where(img_mask[0], _IMG_TOKENS_PER_SLOT, 1)
-        )
-        image_pad_mask = img_mask[0][vlm_index]
+        repeats = torch.where(img_mask, _IMG_TOKENS_PER_SLOT, 1)[0]
+        image_pad_mask = torch.repeat_interleave(img_mask[0], repeats)
+        # Maps every position of the joint sequence to its position in the vision-language sequence.
+        vlm_index = torch.arange(img_mask.shape[1]).repeat_interleave(repeats)
         image_ids, target_token_mask = QwenImage21Transformer2DModel.build_token_metadata(
             image_pad_mask, img_shapes[0]
         )
@@ -640,26 +663,24 @@ class RBLNQwenImage21Transformer2DModel(RBLNModel):
         chunks = self._plan_chunks(image_ids, prefix_len, num_tokens)
         rotary_emb = self.pos_embed(img_shapes[0], image_pad_mask, device=image_pad_mask.device)
 
-        dtype = self.rbln_config.dtype
-        timestep = timestep.to(dtype)
-        # Extra t=0 row: the prefix modulates from it. The second argument only sets the output dtype, as the target
-        # hidden states do upstream.
+        hidden_states = hidden_states.to(self.rbln_config.dtype)
+        timestep = timestep.to(hidden_states.dtype)
+        # Extra t=0 row; text and condition-image tokens modulate from it.
         timestep = torch.cat([timestep, timestep.new_zeros(1)], dim=0)
-        temb = self.time_text_embed(timestep, timestep)
+        temb = self.time_text_embed(timestep, hidden_states)
 
         if kv_cache_mode == "cached":
             kv_prompt = self._find_kv_prompt(kv_cache)
             prompt = self._kv_prompts[kv_prompt] if kv_prompt is not None else None
             if kv_prompt is None or prompt is None or prompt.prefix_len != prefix_len:
                 raise RuntimeError(
-                    "The KV cache in device memory holds no keys and values for this kv_cache: another prompt "
-                    "overwrote them. Each prompt needs its own cache: compile with kvcache_num_prompts=2 for "
-                    "classifier-free guidance."
+                    "The KV cache in device memory holds no keys and values of this prompt for this kv_cache: call "
+                    "the transformer with kv_cache_mode='extract' first."
                 )
-            block_table = self._get_block_table(kv_prompt)
+            block_tables = self._get_block_tables(kv_prompt)
         else:
             kv_prompt = self._claim_kv_prompt(kv_cache)
-            block_table = self._get_block_table(kv_prompt)
+            block_tables = self._get_block_tables(kv_prompt)
             valid = self._prefill(
                 hidden_states,
                 encoder_hidden_states,
@@ -669,12 +690,10 @@ class RBLNQwenImage21Transformer2DModel(RBLNModel):
                 chunks[:-1],
                 temb[-1:],
                 rotary_emb[:prefix_len],
-                block_table,
+                block_tables,
             )
             owner = weakref.ref(kv_cache) if kv_cache is not None else None
             prompt = self._kv_prompts[kv_prompt] = _KVPrompt(owner, prefix_len, valid)
-        self._kv_clock += 1
-        prompt.last_used = self._kv_clock
 
         # The target block starts right after the prefix (or at the next partition) and overwrites the padded tail
         # of the last prefix chunk.
@@ -684,73 +703,18 @@ class RBLNQwenImage21Transformer2DModel(RBLNModel):
         target_cos, target_sin = self._get_rope_cos_sin(rotary_emb[prefix_len:])
         output = self._run_chunk(
             self.image_chunks[target.chunk_size],
-            hidden_states[:, -num_tokens:].to(dtype),
+            hidden_states[:, -num_tokens:],
             temb[:-1],
             target_cos,
             target_sin,
             target,
-            block_table,
+            block_tables,
             valid,
         )[:, :num_tokens]
 
         if not return_dict:
             return (output,)
         return Transformer2DModelOutput(sample=output)
-
-    def _get_block_table(self, kv_prompt: int) -> torch.Tensor:
-        # A prompt owns `kv_blocks_per_prompt` consecutive blocks of the cache.
-        first = kv_prompt * self.kv_blocks_per_prompt
-        return torch.arange(first, first + self.kv_blocks_per_prompt, dtype=torch.int16)
-
-    def _prefill(
-        self,
-        hidden_states,
-        encoder_hidden_states,
-        encoder_hidden_states_mask,
-        vlm_index,
-        image_lengths,
-        chunks,
-        temb,
-        rotary_emb,
-        block_table,
-    ):
-        """Runs the prefix chunks (prompt text and condition images) into the prompt's KV cache and returns its
-        valid cache slots, shaped (1, kv_cache_len). `rotary_emb` covers the prefix."""
-        rope_cos, rope_sin = self._get_rope_cos_sin(rotary_emb)
-        # Right-padded prompt positions are never attended to, as upstream excludes them as keys.
-        prefix_len = rotary_emb.shape[0]
-        text_valid = torch.ones(prefix_len, dtype=torch.bool)
-        if encoder_hidden_states_mask is not None:
-            text_valid = encoder_hidden_states_mask[0].bool()[vlm_index[:prefix_len]]
-        # Where each image block starts in `hidden_states`.
-        image_offsets = [sum(image_lengths[:index]) for index in range(len(image_lengths))]
-
-        valid = torch.zeros(1, self.kv_cache_len, dtype=torch.bool)
-        dtype = self.rbln_config.dtype
-        for chunk in chunks:
-            end = chunk.start + chunk.num_valid
-            slots = slice(chunk.cache_start, chunk.cache_start + chunk.num_valid)
-            if chunk.image_id < 0:
-                valid[0, slots] = text_valid[chunk.start : end]
-                inputs = encoder_hidden_states[:, vlm_index[chunk.start : end]]
-                runtime = self.text_prefill
-            else:
-                # A condition image modulates from t = 0 like the text; its noise prediction is not needed.
-                valid[0, slots] = True
-                offset = image_offsets[chunk.image_id]
-                inputs = hidden_states[:, offset : offset + chunk.num_valid]
-                runtime = self.image_chunks[chunk.chunk_size]
-            self._run_chunk(
-                runtime,
-                inputs.to(dtype),
-                temb,
-                rope_cos[chunk.start : end],
-                rope_sin[chunk.start : end],
-                chunk,
-                block_table,
-                valid,
-            )
-        return valid
 
 
 __all__ = [

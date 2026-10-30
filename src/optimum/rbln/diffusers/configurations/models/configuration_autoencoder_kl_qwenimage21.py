@@ -17,21 +17,8 @@ from typing import Any
 from ....configuration_utils import RBLNModelConfig
 
 
-def _normalize_image_sizes(size: tuple[int, int] | list[tuple[int, int]] | None) -> list[tuple[int, int]] | None:
-    # One (height, width) or a list of them; a saved config holds the list form.
-    if size is None:
-        return None
-    sizes = [size] if isinstance(size[0], int) else size
-    return [(s[0], s[1]) for s in sizes]
-
-
 class RBLNAutoencoderKLQwenImage21Config(RBLNModelConfig):
-    """
-    Configuration class for the RBLN Qwen-Image 2.1 VAE.
-
-    The VAE works on single images. The decoder compiles one graph for every output size. The encoder, used by image
-    editing, compiles one graph for every canvas size and encodes any image that fits a canvas.
-    """
+    """Configuration class for RBLN Qwen-Image 2.1 Variational Autoencoder (VAE) models."""
 
     def __init__(
         self,
@@ -45,12 +32,14 @@ class RBLNAutoencoderKLQwenImage21Config(RBLNModelConfig):
         Args:
             batch_size (int | None): The batch size for inference. Defaults to 1.
             sample_size (tuple[int, int] | list[tuple[int, int]] | None): The (height, width) of the decoded image,
-                in pixels, or a list of them. Defaults to (1024, 1024), the pipeline's default output.
+                in pixels, or a list of them; the decoder compiles one graph for each. Filled by the pipeline config;
+                required for a standalone compile.
             uses_encoder (bool | None): Whether to compile the encoder, which image editing needs to encode the
                 condition images. Defaults to False.
             encoder_sample_size (tuple[int, int] | list[tuple[int, int]] | None): The (height, width) of the
-                encoder canvases, in pixels, or a list of them. An image runs at the top left of the smallest canvas
-                that holds it, so one canvas serves every image size up to its own. Defaults to `sample_size`.
+                encoder canvases, in pixels, or a list of them; the encoder compiles one graph for each. An image runs
+                at the top left of the smallest canvas that holds it, so one canvas serves every image size up to its
+                own. Defaults to `sample_size`.
             kwargs: Additional arguments passed to the parent RBLNModelConfig.
 
         Raises:
@@ -61,9 +50,20 @@ class RBLNAutoencoderKLQwenImage21Config(RBLNModelConfig):
         if not isinstance(self.batch_size, int) or self.batch_size < 0:
             raise ValueError(f"batch_size must be a positive integer, got {self.batch_size}")
 
-        self.sample_size = _normalize_image_sizes(sample_size)
+        if sample_size is not None and isinstance(sample_size[0], int):
+            sample_size = [sample_size]
+        self.sample_size = None if sample_size is None else [(size[0], size[1]) for size in sample_size]
         self.uses_encoder = uses_encoder
-        self.encoder_sample_size = _normalize_image_sizes(encoder_sample_size)
+        if encoder_sample_size is not None and isinstance(encoder_sample_size[0], int):
+            encoder_sample_size = [encoder_sample_size]
+        self.encoder_sample_size = (
+            None if encoder_sample_size is None else [(size[0], size[1]) for size in encoder_sample_size]
+        )
+
+    @property
+    def image_size(self):
+        # The pipeline fills an omitted height and width with it, so it is set only when one size is compiled.
+        return self.sample_size[0] if self.sample_size is not None and len(self.sample_size) == 1 else None
 
 
 __all__ = [

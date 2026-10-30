@@ -32,31 +32,10 @@ if TYPE_CHECKING:
 
 class RBLNQwenImage21Pipeline(RBLNDiffusionMixin, QwenImage21Pipeline):
     """
-    RBLN-accelerated implementation of the Qwen-Image 2.1 pipeline for text-to-image generation and image editing.
+    RBLN-accelerated implementation of Qwen-Image 2.1 pipeline for text-to-image generation and image editing.
 
-    The pipeline compiles the Qwen3-VL text encoder, the block-causal transformer and the VAE for the image sizes in
-    its configuration. It also compiles for image editing, with a 1376x1376 VAE encoder canvas that holds every
-    condition image from 9:16 to 16:9 unless `condition_image_size` lists other canvases, so one compiled pipeline
-    serves both tasks.
-
-    Examples:
-        ```python
-        import torch
-        from optimum.rbln import RBLNQwenImage21Pipeline
-
-        pipe = RBLNQwenImage21Pipeline.from_pretrained(
-            "Qwen/Qwen-Image-2.1-Turbo",
-            export=True,
-            torch_dtype=torch.bfloat16,
-            rbln_config={
-                "image_size": (1024, 1024),
-                "text_encoder": {"num_devices": 4, "device": [0, 1, 2, 3]},
-                "transformer": {"num_devices": 4, "device": [4, 5, 6, 7]},
-                "vae": {"device": 8},
-            },
-        )
-        image = pipe("A boat on a calm lake at sunrise").images[0]
-        ```
+    This pipeline compiles Qwen-Image 2.1 models to run efficiently on RBLN NPUs for the image sizes in its
+    configuration. It also compiles for image editing, so one compiled pipeline serves both tasks.
     """
 
     original_class = QwenImage21Pipeline
@@ -72,8 +51,7 @@ class RBLNQwenImage21Pipeline(RBLNDiffusionMixin, QwenImage21Pipeline):
         rbln_config: RBLNModelConfig,
         prefix: str = "",
     ) -> dict[str, RBLNModel]:
-        # The transformer reads the text encoder's last decoder layer before the final norm. Upstream hooks the norm
-        # out for each call; a compiled graph takes no hooks, so the hook is in place while the text encoder compiles.
+        # A compiled graph takes no forward hooks: compile the text encoder with upstream's final-norm hook in place.
         text_encoder = passed_submodules.get("text_encoder") or model.text_encoder
         handle = None
         if not isinstance(text_encoder, RBLNModel):
@@ -84,6 +62,22 @@ class RBLNQwenImage21Pipeline(RBLNDiffusionMixin, QwenImage21Pipeline):
         finally:
             if handle is not None:
                 handle.remove()
+
+    def handle_additional_kwargs(self, **kwargs):
+        # Each call starts with free prompt caches: only the kv_cache objects of this call can hold one.
+        self.transformer.clear_kv_prompts()
+        # The VAE decodes only the compiled sizes: check the call's size, rounded as upstream does, before denoising.
+        compiled = self.vae.rbln_config.sample_size
+        height, width = kwargs.get("height"), kwargs.get("width")
+        if height is None or width is None:
+            raise ValueError(f"The pipeline was compiled for the image sizes {compiled}: pass height and width.")
+        multiple_of = self.vae_scale_factor * 2
+        size = (height // multiple_of * multiple_of, width // multiple_of * multiple_of)
+        if size not in compiled:
+            raise ValueError(
+                f"The pipeline was compiled for the image sizes {compiled}, not {size}. Add the size to image_size."
+            )
+        return kwargs
 
     def _get_qwen_prompt_embeds(
         self,
@@ -96,6 +90,7 @@ class RBLNQwenImage21Pipeline(RBLNDiffusionMixin, QwenImage21Pipeline):
         # `tie_last_hidden_states=False` (huggingface/transformers#48087).
         device = device or self._execution_device
         prompt = [prompt] if isinstance(prompt, str) else prompt
+        # Qwen has no bos token, so an empty string leaves the encoder with nothing to read.
         prompt = [p if p else " " for p in prompt]
         is_t2i = image is None
 
@@ -113,15 +108,21 @@ class RBLNQwenImage21Pipeline(RBLNDiffusionMixin, QwenImage21Pipeline):
                     "<image1><|vision_start|><|image_pad|><|vision_end|>", replace
                 )
                 prompts.append(template.format(t))
+            # Each prompt's template repeats the `<|image_pad|>` placeholders, so hand the processor one set of
+            # images per prompt, in the order the placeholders appear.
             for _ in prompt:
                 for img in image:
                     pil = img if isinstance(img, PILImage.Image) else PILImage.fromarray(img)
                     if pil.mode == "RGBA":
+                        # The checkpoint was trained with the alpha composited over white for the vision encoder.
+                        # Only this copy is flattened; the VAE still reads all four channels.
                         white = PILImage.new("RGB", pil.size, (255, 255, 255))
                         white.paste(pil, mask=pil.getchannel("A"))
                         pil = white
                     condition_pil_list.append(pil)
 
+        # Left padding, as the checkpoint was trained with. `_extract_masked_hidden` drops the padding either way,
+        # but the side decides the positions the encoder sees for a batch of prompts of different lengths.
         processor_kwargs = {
             "text": prompts,
             "padding": True,

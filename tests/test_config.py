@@ -574,18 +574,18 @@ def test_qwenimage21_pipeline_derives_submodule_sizes():
     """The Qwen-Image 2.1 pipeline config sets the sequence lengths and image sizes of all submodules."""
     config_cls = _import_config("RBLNQwenImage21PipelineConfig")
 
-    # By default it also compiles for editing with a 1376x1376 VAE encoder canvas. The largest condition image the
-    # pipeline resizes to that fits it is 1056x1024 (W x H): 4224 latent tokens, 1056 image tokens.
+    # By default it also compiles for editing with a 1408x1408 VAE encoder canvas. The largest condition images the
+    # pipeline resizes to that fit it, e.g. 1408x768 (W x H), are 4224 latent tokens, 1056 image tokens.
     default = config_cls()
     assert default.text_encoder.max_seq_len == 1600  # 512 + 1056, up to a multiple of 64
     assert default.text_encoder.output_hidden_states is True
     assert default.text_encoder.phases == ["prefill"]
     assert default.text_encoder.visual["max_seq_len"] == [4224]
     assert default.transformer.max_seq_len == 512 + 4224
-    assert default.transformer.sample_size == [(64, 66)]  # The 1024x1024 output runs in this graph, padded.
+    assert default.transformer.sample_size == [(48, 88)]  # The 1024x1024 output runs in this graph, padded.
     assert default.vae.sample_size == [(1024, 1024)]
     assert default.vae.uses_encoder is True
-    assert default.vae.encoder_sample_size == [(1376, 1376)]
+    assert default.vae.encoder_sample_size == [(1408, 1408)]
 
     # A 1728x608 condition image is 4104 latent tokens, and 1026 image tokens in the prompt of the text encoder.
     edit = config_cls(image_size=(1024, 1024), condition_image_size=(608, 1728))

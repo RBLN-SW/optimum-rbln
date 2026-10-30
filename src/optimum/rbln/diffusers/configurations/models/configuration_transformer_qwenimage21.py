@@ -12,19 +12,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any
+import math
+from typing import Any, cast
 
 from ....configuration_utils import RBLNModelConfig
-from .configuration_autoencoder_kl_qwenimage21 import _normalize_image_sizes
+from ....transformers.modeling_attention_utils import align
 
 
 class RBLNQwenImage21Transformer2DModelConfig(RBLNModelConfig):
     """
-    Configuration class for the RBLN Qwen-Image 2.1 transformer.
+    Configuration class for RBLN Qwen-Image 2.1 Transformer models.
 
-    The transformer runs the joint text/image sequence as chunks that share a KV cache in device memory, the way a
-    decoder prefills a prompt. Text runs in causal chunks of `prefill_chunk_size` tokens. Each image block runs as
-    one bidirectional chunk of its own size; the target image is the last block and gives the noise prediction.
+    This class inherits from RBLNModelConfig and provides specific configuration options
+    for the Transformer model of Qwen-Image 2.1.
     """
 
     def __init__(
@@ -45,9 +45,10 @@ class RBLNQwenImage21Transformer2DModelConfig(RBLNModelConfig):
                 block, in tokens, or a list of them: the target image sizes and, for image editing, the condition
                 image sizes. Each distinct token count compiles one image graph; sizes with the same count (e.g. 4:3
                 and 3:4) share it. An image block runs in the smallest graph that holds it, padded, so a size only
-                needs a graph at least as large. Defaults to (64, 64), the 1024x1024 output of the pipeline.
+                needs a graph at least as large. Filled by the pipeline config; required for a standalone compile.
             max_seq_len (int | None): The maximum number of tokens before the target image: the prompt tokens and,
-                for image editing, the condition-image latent tokens. Defaults to 512.
+                for image editing, the condition-image latent tokens. Filled by the pipeline config; required for a
+                standalone compile.
             prefill_chunk_size (int | None): The number of text tokens per causal chunk. Defaults to 128 (512 on
                 RBLN-CR NPUs).
             kvcache_num_prompts (int | None): The number of prompts whose keys and values the KV cache holds at
@@ -69,12 +70,40 @@ class RBLNQwenImage21Transformer2DModelConfig(RBLNModelConfig):
         if not isinstance(self.batch_size, int) or self.batch_size < 0:
             raise ValueError(f"batch_size must be a positive integer, got {self.batch_size}")
 
-        self.sample_size = _normalize_image_sizes(sample_size)
+        if sample_size is not None and isinstance(sample_size[0], int):
+            sample_size = [sample_size]
+        self.sample_size = None if sample_size is None else [(size[0], size[1]) for size in sample_size]
         self.max_seq_len = max_seq_len
         self.prefill_chunk_size = prefill_chunk_size
         self.kvcache_num_prompts = kvcache_num_prompts
         self.attn_impl = attn_impl
         self.kvcache_partition_len = kvcache_partition_len
+
+    @property
+    def image_prefill_chunk_sizes(self) -> list[int]:
+        # An image graph depends only on the token count, as the host computes the RoPE tables.
+        return sorted({math.prod(size) for size in cast(list[tuple[int, int]], self.sample_size)})
+
+    @property
+    def kvcache_len(self) -> int:
+        # KV-cache slots per prompt: the prefix ends by `max_seq_len`, and the chunk after it writes its whole size.
+        # `_update_rbln_config` sets the lengths before any cache length is computed.
+        max_seq_len = cast(int, self.max_seq_len)
+        num_tokens = max(*self.image_prefill_chunk_sizes, cast(int, self.prefill_chunk_size))
+        # `set_default_values` sets a partition length exactly when the attention is flash.
+        partition_len = self.kvcache_partition_len
+        if partition_len is not None:
+            return max(align(max_seq_len + num_tokens, partition_len), 2 * partition_len)
+        return align(max_seq_len + num_tokens, 64)
+
+    @property
+    def kvcache_block_size(self) -> int:
+        # Eager attention keeps one block per prompt; flash attention one block per partition.
+        return self.kvcache_partition_len or self.kvcache_len
+
+    @property
+    def kvcache_blocks_per_prompt(self) -> int:
+        return self.kvcache_len // self.kvcache_block_size
 
 
 __all__ = [
