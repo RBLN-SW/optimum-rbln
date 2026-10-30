@@ -91,6 +91,7 @@ class RBLNLlama4ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
 class RBLNLlama4VisionModel(RBLNModel):
     """RBLN Llama 4 vision encoder, including patch embedding and the pixel shuffle adapter."""
 
+    auto_model_class = None
     _tp_support = True
     _output_class = BaseModelOutputWithPooling
 
@@ -221,9 +222,7 @@ class RBLNLlama4ForConditionalGeneration(RBLNModel, RBLNImageIndexedBatchSortMix
     def _update_rbln_config(cls, preprocessors=None, model=None, model_config=None, rbln_config=None):
         vision = model_config.vision_config
         # The projector consumes the vision adapter output; read its width from the projector itself.
-        in_features = (
-            model.multi_modal_projector.linear_1.in_features if model is not None else vision.vision_output_dim
-        )
+        in_features = model.multi_modal_projector.linear_1.in_features
         rbln_config.set_compile_cfgs(
             [
                 RBLNCompileConfig(
@@ -269,7 +268,7 @@ class RBLNLlama4ForConditionalGeneration(RBLNModel, RBLNImageIndexedBatchSortMix
             inputs_embeds = self.get_input_embeddings()(input_ids)
         if pixel_values is not None:
             features = self.get_image_features(pixel_values).last_hidden_state.to(inputs_embeds)
-            mask = (input_ids == self.config.image_token_id).unsqueeze(-1).expand_as(inputs_embeds)
+            mask = (input_ids == self._image_token_id).unsqueeze(-1).expand_as(inputs_embeds)
             if mask.sum().item() != features.numel():
                 raise ValueError("Image features and image placeholder tokens do not match.")
             inputs_embeds = inputs_embeds.masked_scatter(mask, features)
