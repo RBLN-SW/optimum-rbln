@@ -617,6 +617,7 @@ class DecoderOnlyLayer(nn.Module):
         self.pre_feedforward_layernorm = _get_attr_from_candidates(layer, self._PRE_FF_LAYERNORM_ATTRS)
         self.post_feedforward_layernorm = _get_attr_from_candidates(layer, self._POST_FF_LAYERNORM_ATTRS)
         self.mlp = _get_attr_from_candidates(layer, self._MLP_ATTR)
+        self._mlp_name = next((name for name in self._MLP_ATTR or () if hasattr(layer, name)), None)
         self.self_attn = self_attn
         self._phase = "prefill"
         self.lora_config = lora_config
@@ -633,6 +634,7 @@ class DecoderOnlyLayer(nn.Module):
                             lora_config=self.lora_config,
                             projection_name=proj_name,
                             layer_idx=self.self_attn.layer_idx,
+                            module_name=self._mlp_name,
                         )
                         setattr(mlp, proj_name, lora_linear)
 

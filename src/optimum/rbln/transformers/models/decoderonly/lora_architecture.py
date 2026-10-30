@@ -11,6 +11,14 @@ from .configuration_lora import RBLNLoRAConfig
 
 logger = logging.get_logger()
 
+# PEFT key prefixes of the decoder layers: a text-only model, then the language model inside
+# multimodal models (nested CausalLM as in Llama 4, or a bare decoder as in Llava).
+_LAYER_KEY_PREFIXES = (
+    "base_model.model.model.layers",
+    "base_model.model.language_model.model.layers",
+    "base_model.model.model.language_model.layers",
+)
+
 
 class LoRALinear(nn.Module):
     """
@@ -26,6 +34,7 @@ class LoRALinear(nn.Module):
         lora_config: RBLNLoRAConfig,
         projection_name: str = "",
         layer_idx: int = 0,
+        module_name: str | None = None,
     ):
         """
         Args:
@@ -33,6 +42,8 @@ class LoRALinear(nn.Module):
             lora_config: LoRA configuration containing all adapters
             projection_name: Name of the projection (e.g., "q_proj", "k_proj")
             layer_idx: Layer index for loading the correct LoRA weights
+            module_name: Name of the parent module holding this projection in the layer
+                (e.g., "self_attn", "mlp", "feed_forward"). Inferred from `projection_name` when None.
         """
         super().__init__()
 
@@ -40,6 +51,7 @@ class LoRALinear(nn.Module):
         self.out_features = original_linear.out_features
         self.projection_name = projection_name
         self.layer_idx = layer_idx
+        self.module_name = module_name
         self.lora_config = lora_config
 
         # Store original linear weights and bias directly without cloning
@@ -105,17 +117,27 @@ class LoRALinear(nn.Module):
 
             adapter_weights = self._load_adapter_weights(adapter.local_adapter_path)
 
-            # Determine module type from projection name
+            # Determine module type from projection name unless given explicitly
             attn_projs = {"q_proj", "k_proj", "v_proj", "o_proj"}
             mlp_projs = {"gate_proj", "up_proj", "down_proj"}
-            if self.projection_name in attn_projs:
+            if self.module_name is not None:
+                module_type = self.module_name
+            elif self.projection_name in attn_projs:
                 module_type = "self_attn"
             elif self.projection_name in mlp_projs:
                 module_type = "mlp"
             else:
                 module_type = "self_attn"
 
-            layer_key = f"base_model.model.model.layers.{self.layer_idx}.{module_type}.{self.projection_name}"
+            layer_suffix = f"{self.layer_idx}.{module_type}.{self.projection_name}"
+            layer_key = next(
+                (
+                    f"{prefix}.{layer_suffix}"
+                    for prefix in _LAYER_KEY_PREFIXES
+                    if f"{prefix}.{layer_suffix}.lora_A.weight" in adapter_weights
+                ),
+                f"{_LAYER_KEY_PREFIXES[0]}.{layer_suffix}",
+            )
             lora_a_key = f"{layer_key}.lora_A.weight"
             lora_b_key = f"{layer_key}.lora_B.weight"
 
