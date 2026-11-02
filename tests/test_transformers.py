@@ -177,6 +177,7 @@ class TestModernBertModel(BaseTest.TestModel):
     HF_CONFIG_KWARGS = {
         "revision": "d556a88e332558790b210f7bdbe87da2fa94a8d8",
         "num_hidden_layers": 2,
+        "layer_types": ["full_attention", "sliding_attention"],
     }
 
 
