@@ -20,6 +20,7 @@ from ..decoderonly.decoderonly_architecture import (
     DecoderOnlyLayer,
     DecoderOnlyModel,
     DecoderOnlyWrapper,
+    NestedCompileRegionMixin,
     RotaryEmbedding,
     slice_and_unsqueeze_cos_sin,
 )
@@ -127,7 +128,7 @@ class Llama4ForCausalLMWrapper(DecoderOnlyWrapper):
         return Llama4Attention
 
     def get_rbln_layer_class(self):
-        return Llama4DecoderLayer
+        return Llama4DecoderLayerRegion if self.rbln_config.nested_compile_region else Llama4DecoderLayer
 
     def get_rbln_model_class(self):
         return Llama4Model
@@ -135,6 +136,10 @@ class Llama4ForCausalLMWrapper(DecoderOnlyWrapper):
 
 class Llama4DecoderLayer(DecoderOnlyLayer):
     _MLP_ATTR = ("feed_forward",)
+
+
+class Llama4DecoderLayerRegion(NestedCompileRegionMixin, Llama4DecoderLayer):
+    """Decoder layer with a nested compile region around its forward call."""
 
 
 class Llama4Model(DecoderOnlyModel):
