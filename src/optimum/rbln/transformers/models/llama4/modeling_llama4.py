@@ -29,7 +29,7 @@ from ....configuration_utils import RBLNCompileConfig, RBLNModelConfig
 from ....modeling import RBLNModel
 from ....modeling_base import Preprocessor
 from ....utils.logging import get_logger
-from ...modeling_outputs import RBLNDecoderOnlyOutput
+from ...modeling_outputs import RBLNDecoderOnlyOutput, _validate_output_hidden_states
 from ...utils.multimodal_batch_sort import RBLNImageIndexedBatchSortMixin, _placeholder_token_counts
 from ..decoderonly.modeling_decoderonly import RBLNDecoderOnlyModelForCausalLM
 from .configuration_llama4 import (
@@ -342,34 +342,38 @@ class RBLNLlama4ForConditionalGeneration(RBLNModel, RBLNImageIndexedBatchSortMix
 
     def forward(
         self,
-        input_ids=None,
-        pixel_values=None,
-        attention_mask=None,
-        inputs_embeds=None,
-        return_dict=None,
-        cache_position=None,
-        generate_idx=None,
-        inputs_sorted=False,
-        **kwargs,
-    ):
-        if kwargs.get("output_hidden_states") or kwargs.get("output_attentions"):
-            logger.warning_once(
-                "`output_hidden_states` and `output_attentions` are not supported by RBLNLlama4ForConditionalGeneration "
-                "and are ignored."
-            )
+        input_ids: torch.LongTensor | None = None,
+        pixel_values: torch.FloatTensor | None = None,
+        attention_mask: torch.Tensor | None = None,
+        inputs_embeds: torch.FloatTensor | None = None,
+        return_dict: bool | None = None,
+        cache_position: torch.LongTensor | None = None,
+        generate_idx: torch.Tensor | None = None,
+        position_ids: torch.Tensor | None = None,
+        output_hidden_states: bool | None = None,
+        inputs_sorted: bool = False,
+        **kwargs: dict[str, Any],
+    ) -> tuple | RBLNDecoderOnlyOutput:
         return_dict = return_dict if return_dict is not None else self.config.return_dict
+        output_hidden_states = _validate_output_hidden_states(output_hidden_states, self.rbln_config.language_model)
         self._require_sorted_batch_inputs(inputs_embeds if inputs_embeds is not None else input_ids, inputs_sorted)
+        all_hidden_states = None
         if cache_position is None:
             inputs_embeds = self._preprocess_prefill(input_ids, inputs_embeds, pixel_values)
+            batch_size, seq_len = inputs_embeds.shape[:2]
             if generate_idx is None:
-                lengths = (
-                    attention_mask.sum(-1)
-                    if attention_mask is not None
-                    else torch.full((inputs_embeds.shape[0],), inputs_embeds.shape[1])
-                )
+                lengths = attention_mask.sum(-1) if attention_mask is not None else torch.full((batch_size,), seq_len)
                 generate_idx = lengths[:, None].int()
+            if output_hidden_states:
+                text_config = self.config.get_text_config()
+                all_hidden_states = tuple(
+                    torch.zeros(
+                        batch_size, seq_len, text_config.hidden_size, dtype=self.rbln_config.language_model.dtype
+                    )
+                    for _ in range(text_config.num_hidden_layers + 1)
+                )
             logits = []
-            for batch_idx in range(inputs_embeds.shape[0]):
+            for batch_idx in range(batch_size):
                 positions = torch.arange(generate_idx[batch_idx].item(), dtype=torch.int32)[None, :]
                 output = self.language_model.prefill_decoder(
                     inputs_embeds=inputs_embeds[batch_idx : batch_idx + 1],
@@ -378,14 +382,34 @@ class RBLNLlama4ForConditionalGeneration(RBLNModel, RBLNImageIndexedBatchSortMix
                     batch_idx=batch_idx,
                 )
                 logits.append(output.logits)
+                if output_hidden_states:
+                    # Prefill returns hidden states for unpadded tokens only; scatter them back.
+                    valid = (
+                        torch.nonzero(attention_mask[batch_idx], as_tuple=True)[0]
+                        if attention_mask is not None
+                        else torch.arange(seq_len)
+                    )
+                    for layer_states, layer_output in zip(all_hidden_states, output.hidden_states, strict=True):
+                        layer_states[batch_idx].index_copy_(0, valid, layer_output[0])
             logits = torch.cat(logits, dim=0)
         else:
-            logits = self.language_model.decoder(
-                input_ids=input_ids, inputs_embeds=inputs_embeds, cache_position=cache_position
-            ).logits
+            batch_size = (inputs_embeds if inputs_embeds is not None else input_ids).shape[0]
+            if batch_size not in self.language_model.decoders:
+                raise ValueError(
+                    f"No decoder runtime available for batch size {batch_size}. "
+                    f"Available batch sizes are: {list(self.language_model.decoders.keys())}."
+                )
+            output = self.language_model.decoders[batch_size](
+                input_ids=input_ids,
+                inputs_embeds=inputs_embeds,
+                cache_position=cache_position,
+                position_ids=position_ids if self.rbln_config.language_model.use_position_ids else None,
+            )
+            logits = output.logits
+            all_hidden_states = output.hidden_states
         if not return_dict:
-            return logits, generate_idx
-        return RBLNDecoderOnlyOutput(logits=logits, generate_idx=generate_idx)
+            return (logits, generate_idx, all_hidden_states) if output_hidden_states else (logits, generate_idx)
+        return RBLNDecoderOnlyOutput(logits=logits, generate_idx=generate_idx, hidden_states=all_hidden_states)
 
 
 __all__ = ["RBLNLlama4ForCausalLM", "RBLNLlama4ForConditionalGeneration", "RBLNLlama4VisionModel"]
