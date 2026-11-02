@@ -508,7 +508,8 @@ class DecoderOnlyModel(nn.Module):
         position_ids = position_ids if position_ids is not None else cache_position
         if rotary_emb is not None:
             if isinstance(rotary_emb, torch.Tensor):
-                cos = rotary_emb[0]
+                # cos gets its own storage: nested regions reject inputs that alias one packed tensor.
+                cos = rotary_emb[0].clone()
                 sin = rotary_emb[1]
             else:
                 cos, sin = rotary_emb(hidden_states, self.max_seq_len)  # dtype carrier, max_seq_len
