@@ -43,8 +43,7 @@ from .llama4_architecture import Llama4ForCausalLMWrapper, Llama4VisionModelWrap
 logger = get_logger(__name__)
 
 
-# Default number of image tiles the vision model encodes per call. Kept small to bound device memory;
-# larger tile counts are processed over several calls. Keep in sync with RBLNLlama4VisionModelConfig's docstring.
+# Kept small to bound device memory. Keep in sync with RBLNLlama4VisionModelConfig's docstring.
 _DEFAULT_VISION_BATCH_SIZE = 4
 
 
@@ -96,9 +95,7 @@ class RBLNLlama4ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
     def _update_attention_config(
         cls, model: PreTrainedModel, model_config: PretrainedConfig, rbln_config: RBLNLlama4ForCausalLMConfig
     ):
-        # The chunk mask is applied through the attention mask, so it is needed once the compiled
-        # context is longer than one chunk. The base class calls this after resolving max_seq_len
-        # and before use_attention_mask is read for batch sorting and the compile input info.
+        # Runs after max_seq_len is resolved and before the base class reads use_attention_mask.
         text_config = model_config.get_text_config()
         if uses_chunked_attention(text_config) and rbln_config.max_seq_len > text_config.attention_chunk_size:
             if rbln_config.use_position_ids:
@@ -284,8 +281,6 @@ class RBLNLlama4ForConditionalGeneration(RBLNModel, RBLNImageIndexedBatchSortMix
             raise ValueError(
                 "pixel_values must have shape (num_tiles, channels, height, width) with at least one tile."
             )
-        # Tiles run in batches of the compiled vision batch size; the last batch is zero-padded
-        # and the padding rows are dropped from the output.
         compiled_batch = self.rbln_config.vision_model.batch_size
         features = []
         for batch in pixel_values.split(compiled_batch):

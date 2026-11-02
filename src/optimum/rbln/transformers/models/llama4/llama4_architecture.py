@@ -43,8 +43,7 @@ class Llama4VisionFullAttention(nn.Module):
         self.o_proj = self_attn.o_proj
 
     def _rotate(self, states, cos, sin, pair_matrix):
-        # Mathematically equivalent to HF's complex RoPE but differs in form, so low-precision
-        # results can differ slightly.
+        # Real-valued form of HF's complex RoPE; low-precision results can differ slightly.
         # The pair matrix maps each [real, imag] pair to [-imag, real].
         x = states.float()
         cos, sin = cos.float(), sin.float()
@@ -60,7 +59,6 @@ class Llama4VisionFullAttention(nn.Module):
         return self.o_proj(attended)
 
 
-# Mirrors HF Llama4VisionEncoderLayer, sharing its norms and MLP but owning a converted attention.
 class Llama4VisionLayer(nn.Module):
     def __init__(self, layer):
         super().__init__()
@@ -74,8 +72,6 @@ class Llama4VisionLayer(nn.Module):
         return hidden_states + self.mlp(self.post_attention_layernorm(hidden_states))
 
 
-# Vision encoder with real-valued 2D RoPE for compilation. The HF model is left untouched: the
-# wrapper owns converted layers that share the HF layers' parameters.
 class Llama4VisionModelWrapper(nn.Module):
     def __init__(self, model):
         super().__init__()
@@ -86,8 +82,7 @@ class Llama4VisionModelWrapper(nn.Module):
         self.layers = nn.ModuleList(Llama4VisionLayer(layer) for layer in model.model.layers)
         self.layernorm_post = model.layernorm_post
         self.vision_adapter = model.vision_adapter
-        # The table is sized from image_size, which is the compiled input shape. HF stores one
-        # complex value per rotated pair; expand it once to the interleaved per-element layout.
+        # HF stores one complex value per rotated pair; expand to the interleaved per-element layout.
         frequencies = model.rotary_embedding.freqs_ci
         self.register_buffer("cos", frequencies.real.unsqueeze(0).repeat_interleave(2, dim=-1), persistent=False)
         self.register_buffer("sin", frequencies.imag.unsqueeze(0).repeat_interleave(2, dim=-1), persistent=False)
@@ -232,9 +227,7 @@ class Llama4Attention(DecoderOnlyAttention):
         if not self.use_rope:
             return query_states, key_states
 
-        # cos/sin come from Llama4RotaryEmbedding in the interleaved-pair layout.
-        # Mathematically equivalent to HF's complex RoPE but differs in form, so low-precision
-        # results can differ slightly.
+        # Real-valued form of HF's complex RoPE; low-precision results can differ slightly.
         def rotate_pairs(x):
             pairs = x.reshape(*x.shape[:-1], -1, 2)
             return torch.stack((-pairs[..., 1], pairs[..., 0]), dim=-1).flatten(-2)
