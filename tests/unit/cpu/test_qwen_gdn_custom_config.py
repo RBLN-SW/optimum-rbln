@@ -25,7 +25,15 @@ def test_gdn_custom_kernel_needs_a_compiler_that_registers_the_ops(monkeypatch):
     empty = SimpleNamespace(ops=SimpleNamespace(rbln_custom_ops=object()))
     monkeypatch.setattr(modeling_qwen3_5, "torch", empty)
     with pytest.raises(ValueError, match="chunk_gated_delta_rule"):
-        validate_gdn_custom_kernel()
+        validate_gdn_custom_kernel(Qwen3_5TextConfig())
+
+
+def test_gdn_custom_kernel_needs_the_head_width_the_kernels_have():
+    # The kernels have one head width, so a config with another one is reported here, by the keys
+    # that hold it -- not inside the export, as a fake tensor the core op refuses.
+    text_config = Qwen3_5TextConfig(linear_key_head_dim=64, linear_value_head_dim=64)
+    with pytest.raises(ValueError, match="linear_key_head_dim=64"):
+        validate_gdn_custom_kernel(text_config)
 
 
 def _config_with_graph_inputs(*names):
