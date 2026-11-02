@@ -49,7 +49,6 @@ steps:
   - label: ":shield: security-tooling"
     trigger: "standalone-security-tooling"
     build:
-      branch: "dev"
       env:
         TARGET_REPO: "${BUILDKITE_REPO}"
         TARGET_COMMIT: "${BUILDKITE_COMMIT}"
