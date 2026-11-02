@@ -21,6 +21,7 @@ from optimum.rbln import (
     RBLNDPTForDepthEstimation,
     RBLNGroundingDinoForObjectDetection,
     RBLNModernBertForMaskedLM,
+    RBLNModernBertModel,
     RBLNMPNetModel,
     RBLNPegasusModel,
     RBLNResNetForImageClassification,
@@ -160,6 +161,23 @@ class TestModernBertForMaskedLM(BaseTest.TestModel):
     GENERATION_KWARGS = {
         "input_ids": RANDOM_INPUT_IDS,
         "attention_mask": RANDOM_ATTN_MASK,
+    }
+
+
+class TestModernBertModel(BaseTest.TestModel):
+    RBLN_AUTO_CLASS = RBLNAutoModel
+    RBLN_CLASS = RBLNModernBertModel
+    HF_MODEL_ID = "nomic-ai/modernbert-embed-base"
+    RBLN_CLASS_KWARGS = {"rbln_max_seq_len": 512}
+    GENERATION_KWARGS = {
+        "input_ids": RANDOM_INPUT_IDS,
+        "attention_mask": RANDOM_ATTN_MASK,
+    }
+    # Two layers cover both a global (layer 0) and a sliding-window (layer 1) attention block.
+    HF_CONFIG_KWARGS = {
+        "revision": "d556a88e332558790b210f7bdbe87da2fa94a8d8",
+        "num_hidden_layers": 2,
+        "layer_types": ["full_attention", "sliding_attention"],
     }
 
 

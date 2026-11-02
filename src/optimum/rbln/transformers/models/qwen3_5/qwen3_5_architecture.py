@@ -404,6 +404,7 @@ class Qwen3_5Attention(DecoderOnlyAttention):
             k_scale=k_scale,
             v_scale=v_scale,
             s_aux=getattr(self, "sinks", None),
+            is_bidirectional=self.is_bidirectional_attention(self.phase),
         )
         attn_output = attn_output.reshape(batch_size, query_length, self.num_heads * self.head_dim)
         attn_output = attn_output * torch.sigmoid(gate)
@@ -449,7 +450,8 @@ class Qwen3_5Model(DecoderOnlyModel):
         cos = sin = None
         if rotary_emb is not None:
             if isinstance(rotary_emb, torch.Tensor):
-                cos, sin = rotary_emb[0], rotary_emb[1]
+                # cos gets its own storage: nested regions reject inputs that alias one packed tensor.
+                cos, sin = rotary_emb[0].clone(), rotary_emb[1]
             else:
                 cos, sin = rotary_emb(hidden_states, self.max_seq_len)
                 cos, sin = slice_and_unsqueeze_cos_sin(cos, sin, position_ids)
