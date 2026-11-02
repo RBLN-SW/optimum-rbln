@@ -144,9 +144,6 @@ class RBLNLlavaNextForConditionalGeneration(RBLNModel, RBLNImageIndexedBatchSort
             return redirect(val)
         return val
 
-    def can_generate(self):
-        return True
-
     @classmethod
     def _reconstruct_model_if_needed(cls, model: "PreTrainedModel"):
         with no_init_weights():

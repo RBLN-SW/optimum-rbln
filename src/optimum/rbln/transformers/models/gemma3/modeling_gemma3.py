@@ -396,16 +396,17 @@ class RBLNGemma3ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
         )
 
         self.decoders = {}
-        for i, batch_size in enumerate(self.rbln_config.decoder_batch_sizes):
-            self.decoders[batch_size] = RBLNGemma3RuntimeModel(
-                runtime=self.model[i + self.rbln_config.decoder_runtime_idx],
-                phase="decode",
-                batch_size=batch_size,
-                **common_kwargs,
-            )
+        if self.can_generate():
+            for i, batch_size in enumerate(self.rbln_config.decoder_batch_sizes):
+                self.decoders[batch_size] = RBLNGemma3RuntimeModel(
+                    runtime=self.model[i + self.rbln_config.decoder_runtime_idx],
+                    phase="decode",
+                    batch_size=batch_size,
+                    **common_kwargs,
+                )
 
-        # NOTE(eunji): Use a decoder whose batch size matches the model's main batch size for compatibility.
-        self.decoder = self.decoders[self.rbln_config.batch_size]
+            # NOTE(eunji): Use a decoder whose batch size matches the model's main batch size for compatibility.
+            self.decoder = self.decoders[self.rbln_config.batch_size]
 
     def _create_embedding_layer(self):
         text_config = self.config.get_text_config()

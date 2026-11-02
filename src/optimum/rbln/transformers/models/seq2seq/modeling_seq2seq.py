@@ -353,9 +353,6 @@ class RBLNModelForSeq2SeqLM(RBLNModel, GenerationMixin, ABC):
             ),
         ]
 
-    def can_generate(self):
-        return True
-
     def get_encoder(self):
         return self.encoder
 

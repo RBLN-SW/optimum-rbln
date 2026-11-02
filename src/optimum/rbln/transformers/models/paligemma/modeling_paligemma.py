@@ -104,9 +104,6 @@ class RBLNPaliGemmaForConditionalGeneration(RBLNModel, RBLNImageIndexedBatchSort
             return redirect(val)
         return val
 
-    def can_generate(self):
-        return True
-
     @classmethod
     def _update_submodule_rbln_config(
         cls,
