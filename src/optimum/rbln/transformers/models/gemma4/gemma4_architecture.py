@@ -460,6 +460,7 @@ class Gemma4TextAttention(DecoderOnlyAttention):
             k_scale=k_scale,
             v_scale=v_scale,
             s_aux=getattr(self, "sinks", None),
+            is_bidirectional=self.is_bidirectional_attention(self.phase),
         )
 
         if self.lora_config:

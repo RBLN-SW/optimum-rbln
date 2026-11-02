@@ -762,7 +762,6 @@ class DecoderOnlyAttention(nn.Module):
             self.sinks = self_attn.sinks.data[:, None]
 
         setattr(self, self.get_attention_name(), self.create_attention_op())
-        self.phase = self._phase
         self.__post_init__(self_attn)
 
         # Copy kv cache scales from original attention module if present
@@ -801,9 +800,7 @@ class DecoderOnlyAttention(nn.Module):
     @phase.setter
     def phase(self, phase: str):
         self._phase = phase
-        attention_op = self.get_attention_op()
-        attention_op.phase = phase
-        attention_op.is_bidirectional = self.is_bidirectional_attention(phase)
+        getattr(self, self.get_attention_name()).phase = phase
 
     def is_bidirectional_attention(self, phase: str) -> bool:
         # image_prefill attends bidirectionally over the image block; text prefill only for a Prefix-LM.
@@ -932,6 +929,7 @@ class DecoderOnlyAttention(nn.Module):
             k_scale=k_scale,
             v_scale=v_scale,
             s_aux=getattr(self, "sinks", None),
+            is_bidirectional=self.is_bidirectional_attention(self.phase),
         )
 
         # Check if using LoRALinear (which accepts lora_int_id) or standard linear layers
@@ -954,9 +952,6 @@ class DecoderOnlyFlashAttention(DecoderOnlyAttention):
 
 
 class AttentionOp(nn.Module):
-    # Set by the owning DecoderOnlyAttention per phase (`is_bidirectional_attention`).
-    is_bidirectional = False
-
     def __init__(
         self,
         num_heads: int,
@@ -1008,6 +1003,7 @@ class AttentionOp(nn.Module):
         k_scale: torch.Tensor | None = None,
         v_scale: torch.Tensor | None = None,
         s_aux: torch.Tensor | None = None,
+        is_bidirectional: bool = False,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Compute attention with static shapes and explicit cache management.
 
@@ -1079,7 +1075,7 @@ class AttentionOp(nn.Module):
             raise ValueError(f"Attention operator {attn_op_name} not found.")
 
         if _op_accepts(attn_op_name, "is_bidirectional"):
-            op_args["is_bidirectional"] = self.is_bidirectional
+            op_args["is_bidirectional"] = is_bidirectional
 
         # Tell the compiler the batch arrives length-sorted; older compilers lack the arg.
         if getattr(self.rbln_config, "requires_batch_sort", None) and _op_accepts(attn_op_name, "is_prompt_sorted"):
@@ -1145,6 +1141,7 @@ class FlashAttentionOp(AttentionOp):
         k_scale=None,
         v_scale=None,
         s_aux=None,
+        is_bidirectional: bool = False,
     ):
         # reshape for removing repeat_kv (batch=1 , num_head, 1, q_len=1, head_dim)
         key_state = key_state.unsqueeze(2)
@@ -1197,7 +1194,7 @@ class FlashAttentionOp(AttentionOp):
             raise ValueError(f"Attention operator {attn_op_name} not found.")
 
         if _op_accepts(attn_op_name, "is_bidirectional"):
-            op_args["is_bidirectional"] = self.is_bidirectional
+            op_args["is_bidirectional"] = is_bidirectional
 
         # Tell the compiler the batch arrives length-sorted; older compilers lack the arg.
         if getattr(self.rbln_config, "requires_batch_sort", None) and _op_accepts(attn_op_name, "is_prompt_sorted"):
@@ -1251,6 +1248,7 @@ class SlidingWindowAttentionOp(AttentionOp):
         k_scale: torch.Tensor | None = None,
         v_scale: torch.Tensor | None = None,
         s_aux: torch.Tensor | None = None,
+        is_bidirectional: bool = False,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         assert self.quantization is None, "Sliding window attention does not support quantization"
         assert k_scale is None, "Sliding window attention does not support quantization"
@@ -1306,7 +1304,7 @@ class SlidingWindowAttentionOp(AttentionOp):
             raise ValueError(f"Attention operator {attn_op_name} not found.")
 
         if _op_accepts(attn_op_name, "is_bidirectional"):
-            op_args["is_bidirectional"] = self.is_bidirectional
+            op_args["is_bidirectional"] = is_bidirectional
 
         # Tell the compiler the batch arrives length-sorted; older compilers lack the arg.
         if getattr(self.rbln_config, "requires_batch_sort", None) and _op_accepts(attn_op_name, "is_prompt_sorted"):

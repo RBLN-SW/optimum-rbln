@@ -553,6 +553,7 @@ class Qwen3_5Attention(DecoderOnlyAttention):
             k_scale=k_scale,
             v_scale=v_scale,
             s_aux=getattr(self, "sinks", None),
+            is_bidirectional=self.is_bidirectional_attention(self.phase),
         )
         attn_output = attn_output.reshape(batch_size, query_length, self.num_heads * self.head_dim)
         attn_output = attn_output * torch.sigmoid(gate)
