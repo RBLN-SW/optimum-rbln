@@ -166,19 +166,20 @@ class Qwen3_5GatedDeltaNet(nn.Module):
 
         # Pre-split the fused in_proj_qkv into separate Q/K/V projections: a depthwise conv is per-channel,
         # so the channel-axis split commutes with it.
-        _qkv = linear_attn.in_proj_qkv
-        _hidden = _qkv.weight.shape[1]
-        _has_bias = _qkv.bias is not None
-        _splits = [self.key_dim, self.key_dim, self.value_dim]
-        _w = _qkv.weight.data.split(_splits, dim=0)
-        _b = _qkv.bias.data.split(_splits, dim=0) if _has_bias else (None, None, None)
-        self.in_proj_q = nn.Linear(_hidden, self.key_dim, bias=_has_bias)
-        self.in_proj_k = nn.Linear(_hidden, self.key_dim, bias=_has_bias)
-        self.in_proj_v = nn.Linear(_hidden, self.value_dim, bias=_has_bias)
-        for _lin, _wi, _bi in zip((self.in_proj_q, self.in_proj_k, self.in_proj_v), _w, _b, strict=True):
-            _lin.weight = nn.Parameter(_wi.contiguous())
-            if _has_bias:
-                _lin.bias = nn.Parameter(_bi.contiguous())
+        qkv = linear_attn.in_proj_qkv
+        hidden = qkv.weight.shape[1]
+        has_bias = qkv.bias is not None
+        splits = [self.key_dim, self.key_dim, self.value_dim]
+        weights = qkv.weight.data.split(splits, dim=0)
+        biases = qkv.bias.data.split(splits, dim=0) if has_bias else (None, None, None)
+        self.in_proj_q = nn.Linear(hidden, self.key_dim, bias=has_bias)
+        self.in_proj_k = nn.Linear(hidden, self.key_dim, bias=has_bias)
+        self.in_proj_v = nn.Linear(hidden, self.value_dim, bias=has_bias)
+        projections = (self.in_proj_q, self.in_proj_k, self.in_proj_v)
+        for linear, weight, bias in zip(projections, weights, biases, strict=True):
+            linear.weight = nn.Parameter(weight.contiguous())
+            if has_bias:
+                linear.bias = nn.Parameter(bias.contiguous())
 
     @property
     def phase(self):
