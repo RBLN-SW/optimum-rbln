@@ -26,8 +26,8 @@ class ModernBertModelWrapper(torch.nn.Module):
     would feed the same global mask to the sliding layers and drop the local
     windowing, producing incorrect outputs.
 
-    `return_dict` is forced off so the traced graph exposes a single `logits`
-    tensor; the RBLN runtime rebuilds the `MaskedLMOutput` from it.
+    `return_dict` is forced off so the traced graph exposes a tuple of tensors;
+    the runtime rebuilds the corresponding base-model or masked-LM output.
     """
 
     def __init__(self, model, rbln_config):
