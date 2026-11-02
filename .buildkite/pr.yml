@@ -53,6 +53,7 @@ steps:
       env:
         TARGET_REPO: "${BUILDKITE_REPO}"
         TARGET_COMMIT: "${BUILDKITE_COMMIT}"
+        SCANNERS: sast
         SAST_MODE: diff
         SAST_BASELINE: dev
 
