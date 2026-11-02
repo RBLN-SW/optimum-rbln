@@ -119,6 +119,10 @@ class RBLNBlip2ForConditionalGenerationConfig(RBLNModelConfig):
         self.qformer = self.initialize_submodule_config(submodule_config=qformer, batch_size=1, force_kwargs=True)
         self.language_model = self.initialize_submodule_config(submodule_config=language_model, batch_size=batch_size)
 
+    @property
+    def can_generate(self) -> bool:
+        return self.language_model.can_generate
+
 
 __all__ = [
     "RBLNBlip2ForConditionalGenerationConfig",
