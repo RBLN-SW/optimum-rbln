@@ -529,8 +529,9 @@ class RBLNQwen2VLForConditionalGeneration(RBLNQwenVLBatchSortMixin, RBLNQwen2VLM
         super().__post_init__(**kwargs)
         self.rope_deltas = torch.zeros(self.rbln_config.batch_size)
 
-    def can_generate(self):
-        return True
+    @property
+    def logits_last_dim(self):
+        return self.config.get_text_config().vocab_size
 
     @classmethod
     def _reconstruct_model_if_needed(cls, model: "PreTrainedModel"):
