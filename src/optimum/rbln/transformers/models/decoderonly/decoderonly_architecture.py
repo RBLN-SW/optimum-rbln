@@ -762,6 +762,7 @@ class DecoderOnlyAttention(nn.Module):
             self.sinks = self_attn.sinks.data[:, None]
 
         setattr(self, self.get_attention_name(), self.create_attention_op())
+        self.phase = self._phase
         self.__post_init__(self_attn)
 
         # Copy kv cache scales from original attention module if present
@@ -800,7 +801,15 @@ class DecoderOnlyAttention(nn.Module):
     @phase.setter
     def phase(self, phase: str):
         self._phase = phase
-        getattr(self, self.get_attention_name()).phase = phase
+        attention_op = self.get_attention_op()
+        attention_op.phase = phase
+        attention_op.is_bidirectional = self.is_bidirectional_attention(phase)
+
+    def is_bidirectional_attention(self, phase: str) -> bool:
+        # image_prefill attends bidirectionally over the image block; text prefill only for a Prefix-LM.
+        if phase == "image_prefill":
+            return True
+        return phase == "prefill" and self.rbln_config._is_prefix_lm
 
     def create_attention_op(self):
         if self.is_sliding:
@@ -945,8 +954,8 @@ class DecoderOnlyFlashAttention(DecoderOnlyAttention):
 
 
 class AttentionOp(nn.Module):
-    # Whether image_prefill attends bidirectionally; Gemma4 turns it off on its full-attention layers.
-    bidirectional_image_prefill = True
+    # Set by the owning DecoderOnlyAttention per phase (`is_bidirectional_attention`).
+    is_bidirectional = False
 
     def __init__(
         self,
@@ -1055,16 +1064,6 @@ class AttentionOp(nn.Module):
         if self.use_attention_mask:
             op_args["mask"] = attn_mask
 
-        if self.phase in {"prefill", "image_prefill"}:
-            use_image_prefill = getattr(self.rbln_config, "use_image_prefill", False)
-            if use_image_prefill:
-                op_args["is_bidirectional"] = self.phase == "image_prefill" and self.bidirectional_image_prefill
-            elif not self.use_attention_mask or self.rbln_config.use_position_ids:
-                op_args["is_bidirectional"] = self.rbln_config._is_prefix_lm
-            else:
-                # paged_attn_* (mask without position ids): the custom op has no is_bidirectional argument
-                pass
-
         if self.quantization and self.quantization.kv_caches == "fp8":
             if past_key_state.dtype != torch.float8_e4m3fn:
                 raise ValueError(f"Unsupported KVCaches type: {past_key_state.dtype}")
@@ -1078,6 +1077,9 @@ class AttentionOp(nn.Module):
         attn_op = getattr(torch.ops.rbln_custom_ops, attn_op_name, None)
         if attn_op is None:
             raise ValueError(f"Attention operator {attn_op_name} not found.")
+
+        if _op_accepts(attn_op_name, "is_bidirectional"):
+            op_args["is_bidirectional"] = self.is_bidirectional
 
         # Tell the compiler the batch arrives length-sorted; older compilers lack the arg.
         if getattr(self.rbln_config, "requires_batch_sort", None) and _op_accepts(attn_op_name, "is_prompt_sorted"):
@@ -1180,16 +1182,6 @@ class FlashAttentionOp(AttentionOp):
         if self.use_attention_mask:
             op_args["mask"] = attn_mask
 
-        if self.phase in {"prefill", "image_prefill"}:
-            use_image_prefill = getattr(self.rbln_config, "use_image_prefill", False)
-            if use_image_prefill:
-                op_args["is_bidirectional"] = self.phase == "image_prefill" and self.bidirectional_image_prefill
-            elif not self.use_attention_mask or self.rbln_config.use_position_ids:
-                op_args["is_bidirectional"] = self.rbln_config._is_prefix_lm
-            else:
-                # paged_attn_* (mask without position ids): the custom op has no is_bidirectional argument
-                pass
-
         if self.quantization and self.quantization.kv_caches == "fp8":
             if past_key_state.dtype != torch.float8_e4m3fn:
                 raise ValueError(f"Unsupported KVCaches type: {past_key_state.dtype}")
@@ -1203,6 +1195,9 @@ class FlashAttentionOp(AttentionOp):
         attn_op = getattr(torch.ops.rbln_custom_ops, attn_op_name, None)
         if attn_op is None:
             raise ValueError(f"Attention operator {attn_op_name} not found.")
+
+        if _op_accepts(attn_op_name, "is_bidirectional"):
+            op_args["is_bidirectional"] = self.is_bidirectional
 
         # Tell the compiler the batch arrives length-sorted; older compilers lack the arg.
         if getattr(self.rbln_config, "requires_batch_sort", None) and _op_accepts(attn_op_name, "is_prompt_sorted"):
@@ -1291,13 +1286,6 @@ class SlidingWindowAttentionOp(AttentionOp):
             "block_size": block_size,
         }
 
-        if self.phase in {"prefill", "image_prefill"}:
-            use_image_prefill = getattr(self.rbln_config, "use_image_prefill", False)
-            if use_image_prefill:
-                op_args["is_bidirectional"] = self.phase == "image_prefill"
-            else:
-                op_args["is_bidirectional"] = self.rbln_config._is_prefix_lm
-
         if self.phase == "decode":
             op_args["attn_mask"] = attn_mask
         elif self.phase == "image_prefill" and attn_mask is not None and attn_mask.dim() == 4:
@@ -1316,6 +1304,9 @@ class SlidingWindowAttentionOp(AttentionOp):
         attn_op = getattr(torch.ops.rbln_custom_ops, attn_op_name, None)
         if attn_op is None:
             raise ValueError(f"Attention operator {attn_op_name} not found.")
+
+        if _op_accepts(attn_op_name, "is_bidirectional"):
+            op_args["is_bidirectional"] = self.is_bidirectional
 
         # Tell the compiler the batch arrives length-sorted; older compilers lack the arg.
         if getattr(self.rbln_config, "requires_batch_sort", None) and _op_accepts(attn_op_name, "is_prompt_sorted"):
