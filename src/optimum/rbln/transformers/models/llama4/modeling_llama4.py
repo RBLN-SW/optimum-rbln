@@ -13,18 +13,30 @@
 # limitations under the License.
 
 import inspect
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
+from typing import Any
 
 import torch
-from transformers import AutoModelForImageTextToText, Llama4ForConditionalGeneration
+from transformers import (
+    AutoModelForImageTextToText,
+    Llama4ForConditionalGeneration,
+    PretrainedConfig,
+    PreTrainedModel,
+)
 from transformers.modeling_outputs import BaseModelOutputWithPooling
 
-from ....configuration_utils import RBLNCompileConfig
+from ....configuration_utils import RBLNCompileConfig, RBLNModelConfig
 from ....modeling import RBLNModel
+from ....modeling_base import Preprocessor
 from ....utils.logging import get_logger
 from ...modeling_outputs import RBLNDecoderOnlyOutput
 from ...utils.multimodal_batch_sort import RBLNImageIndexedBatchSortMixin, _placeholder_token_counts
 from ..decoderonly.modeling_decoderonly import RBLNDecoderOnlyModelForCausalLM
+from .configuration_llama4 import (
+    RBLNLlama4ForCausalLMConfig,
+    RBLNLlama4ForConditionalGenerationConfig,
+    RBLNLlama4VisionModelConfig,
+)
 from .llama4_architecture import Llama4ForCausalLMWrapper, Llama4VisionModelWrapper, uses_chunked_attention
 
 
@@ -36,7 +48,7 @@ logger = get_logger(__name__)
 _DEFAULT_VISION_BATCH_SIZE = 4
 
 
-def _tokens_per_tile(vision_config) -> int:
+def _tokens_per_tile(vision_config: PretrainedConfig) -> int:
     # Same arithmetic as HF's pixel_shuffle: the patch grid is shrunk by pixel_shuffle_ratio per side.
     side = vision_config.image_size // vision_config.patch_size
     return int(side * vision_config.pixel_shuffle_ratio) * int(side * vision_config.pixel_shuffle_ratio)
@@ -68,14 +80,22 @@ class RBLNLlama4ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
     _decoder_wrapper_cls = Llama4ForCausalLMWrapper
 
     @classmethod
-    def _update_rbln_config(cls, preprocessors=None, model=None, model_config=None, rbln_config=None):
+    def _update_rbln_config(
+        cls,
+        preprocessors: Sequence[Preprocessor] | None = None,
+        model: PreTrainedModel | None = None,
+        model_config: PretrainedConfig | None = None,
+        rbln_config: RBLNLlama4ForCausalLMConfig | None = None,
+    ) -> RBLNLlama4ForCausalLMConfig:
         text_config = model_config.get_text_config()
         if text_config.moe_layers:
             raise NotImplementedError("Llama 4 MoE models are not supported yet.")
         return super()._update_rbln_config(preprocessors, model, model_config, rbln_config)
 
     @classmethod
-    def _update_attention_config(cls, model, model_config, rbln_config):
+    def _update_attention_config(
+        cls, model: PreTrainedModel, model_config: PretrainedConfig, rbln_config: RBLNLlama4ForCausalLMConfig
+    ):
         # The chunk mask is applied through the attention mask, so it is needed once the compiled
         # context is longer than one chunk. The base class calls this after resolving max_seq_len
         # and before use_attention_mask is read for batch sorting and the compile input info.
@@ -97,11 +117,17 @@ class RBLNLlama4VisionModel(RBLNModel):
     _output_class = BaseModelOutputWithPooling
 
     @classmethod
-    def _wrap_model_if_needed(cls, model, rbln_config):
+    def _wrap_model_if_needed(cls, model: PreTrainedModel, rbln_config: RBLNLlama4VisionModelConfig):
         return Llama4VisionModelWrapper(model).eval()
 
     @classmethod
-    def _update_rbln_config(cls, preprocessors=None, model=None, model_config=None, rbln_config=None):
+    def _update_rbln_config(
+        cls,
+        preprocessors: Sequence[Preprocessor] | None = None,
+        model: PreTrainedModel | None = None,
+        model_config: PretrainedConfig | None = None,
+        rbln_config: RBLNLlama4VisionModelConfig | None = None,
+    ) -> RBLNLlama4VisionModelConfig:
         if rbln_config.batch_size is None:
             rbln_config.batch_size = 1
         rbln_config.set_compile_cfgs(
@@ -181,7 +207,7 @@ class RBLNLlama4ForConditionalGeneration(RBLNModel, RBLNImageIndexedBatchSortMix
     _rbln_submodules = [{"name": "vision_model"}, {"name": "language_model"}]
     _image_indexed_kwargs = ("pixel_values",)
 
-    def __getattr__(self, name):
+    def __getattr__(self, name: str) -> Any:
         value = getattr(Llama4ForConditionalGeneration, name)
         if isinstance(value, Callable) and "self" in inspect.signature(value).parameters:
             return lambda *args, **kwargs: value(self, *args, **kwargs)
@@ -190,37 +216,48 @@ class RBLNLlama4ForConditionalGeneration(RBLNModel, RBLNImageIndexedBatchSortMix
     def __post_init__(self, **kwargs):
         self.vision_model, self.language_model = self.rbln_submodules
         self.multi_modal_projector = self.model[0]
-        self.pad_token_id = (
-            self.config.text_config.pad_token_id if self.config.text_config.pad_token_id is not None else -1
-        )
+        pad_token_id = self.config.get_text_config().pad_token_id
+        self.pad_token_id = pad_token_id if pad_token_id is not None else -1
         return super().__post_init__(**kwargs)
 
     def get_input_embeddings(self):
         return self.language_model.get_input_embeddings()
 
-    def get_attn_impl(self):
+    def get_attn_impl(self) -> str:
         return self.rbln_config.language_model.attn_impl
 
-    def get_kvcache_num_blocks(self):
+    def get_kvcache_num_blocks(self) -> int:
         return self.rbln_config.language_model.kvcache_num_blocks
 
     @classmethod
     def _update_submodule_rbln_config(
-        cls, submodule_name, submodule_cls, model, submodule_config, submodule_rbln_config, preprocessors
-    ):
+        cls,
+        submodule_name: str,
+        submodule_cls: type[RBLNModel],
+        model: PreTrainedModel,
+        submodule_config: PretrainedConfig,
+        submodule_rbln_config: RBLNModelConfig,
+        preprocessors: Sequence[Preprocessor] | None,
+    ) -> RBLNModelConfig:
         # Reject MoE checkpoints before the vision model is compiled; the language model checks again.
-        if model.config.text_config.moe_layers:
+        if model.config.get_text_config().moe_layers:
             raise NotImplementedError("Llama 4 MoE models are not supported yet.")
         if submodule_name == "vision_model" and submodule_rbln_config.batch_size is None:
             submodule_rbln_config.batch_size = _DEFAULT_VISION_BATCH_SIZE
         return submodule_rbln_config
 
     @classmethod
-    def _wrap_model_if_needed(cls, model, rbln_config):
+    def _wrap_model_if_needed(cls, model: PreTrainedModel, rbln_config: RBLNLlama4ForConditionalGenerationConfig):
         return model.multi_modal_projector
 
     @classmethod
-    def _update_rbln_config(cls, preprocessors=None, model=None, model_config=None, rbln_config=None):
+    def _update_rbln_config(
+        cls,
+        preprocessors: Sequence[Preprocessor] | None = None,
+        model: PreTrainedModel | None = None,
+        model_config: PretrainedConfig | None = None,
+        rbln_config: RBLNLlama4ForConditionalGenerationConfig | None = None,
+    ) -> RBLNLlama4ForConditionalGenerationConfig:
         vision = model_config.vision_config
         # The projector consumes the vision adapter output; read its width from the projector itself.
         in_features = model.multi_modal_projector.linear_1.in_features
@@ -239,10 +276,10 @@ class RBLNLlama4ForConditionalGeneration(RBLNModel, RBLNImageIndexedBatchSortMix
         )
         return rbln_config
 
-    def _images_per_sample(self, input_ids, kwargs):
+    def _images_per_sample(self, input_ids: torch.LongTensor | None, kwargs: dict[str, Any]) -> list[int]:
         return _placeholder_token_counts(input_ids, self._image_token_id, _tokens_per_tile(self.config.vision_config))
 
-    def get_image_features(self, pixel_values, **kwargs):
+    def get_image_features(self, pixel_values: torch.FloatTensor, **kwargs) -> BaseModelOutputWithPooling:
         if pixel_values.ndim != 4 or pixel_values.shape[0] == 0:
             raise ValueError(
                 "pixel_values must have shape (num_tiles, channels, height, width) with at least one tile."
@@ -259,7 +296,12 @@ class RBLNLlama4ForConditionalGeneration(RBLNModel, RBLNImageIndexedBatchSortMix
             features.append(projected[: compiled_batch - num_pad])
         return BaseModelOutputWithPooling(last_hidden_state=torch.cat(features, dim=0))
 
-    def _preprocess_prefill(self, input_ids=None, inputs_embeds=None, pixel_values=None):
+    def _preprocess_prefill(
+        self,
+        input_ids: torch.LongTensor | None = None,
+        inputs_embeds: torch.FloatTensor | None = None,
+        pixel_values: torch.FloatTensor | None = None,
+    ) -> torch.FloatTensor:
         if (input_ids is None) == (inputs_embeds is None):
             raise ValueError("You must specify exactly one of input_ids or inputs_embeds.")
         if pixel_values is not None and inputs_embeds is not None:
@@ -275,15 +317,26 @@ class RBLNLlama4ForConditionalGeneration(RBLNModel, RBLNImageIndexedBatchSortMix
         return inputs_embeds
 
     def prepare_inputs_for_generation(
-        self, input_ids, pixel_values=None, inputs_embeds=None, generate_idx=None, **kwargs
-    ):
+        self,
+        input_ids: torch.LongTensor,
+        pixel_values: torch.FloatTensor | None = None,
+        inputs_embeds: torch.FloatTensor | None = None,
+        generate_idx: torch.Tensor | None = None,
+        **kwargs,
+    ) -> dict[str, Any]:
         model_inputs = super().prepare_inputs_for_generation(
             input_ids, inputs_embeds=inputs_embeds, generate_idx=generate_idx, **kwargs
         )
         model_inputs["pixel_values"] = pixel_values if generate_idx is None else None
         return model_inputs
 
-    def _update_model_kwargs_for_generation(self, outputs, model_kwargs, is_encoder_decoder, **kwargs):
+    def _update_model_kwargs_for_generation(
+        self,
+        outputs: RBLNDecoderOnlyOutput,
+        model_kwargs: dict[str, Any],
+        is_encoder_decoder: bool = False,
+        **kwargs,
+    ) -> dict[str, Any]:
         model_kwargs["generate_idx"] = outputs.generate_idx
         return model_kwargs
 
