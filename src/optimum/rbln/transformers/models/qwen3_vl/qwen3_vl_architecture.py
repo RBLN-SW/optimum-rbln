@@ -359,13 +359,20 @@ class Qwen3VLDecoderOnlyForCausalLM(DecoderOnlyForCausalLM):
 
 
 class Qwen3VLDeepstackLayerMixin:
-    """Adds the layer's deepstack visual embeddings to its output, inside a nested region if there is one."""
+    """Adds the layer's deepstack visual embeddings to its output, inside a nested region if there is one.
 
-    def forward(self, *args, deepstack_embeds=None, visual_pos_mask=None, **kwargs):
+    With `deepstack_row`, `deepstack_embeds` stacks the embeddings of every layer and the row selects this layer's.
+    """
+
+    def forward(self, *args, deepstack_embeds=None, deepstack_row=None, visual_pos_mask=None, **kwargs):
         hidden_states = super().forward(*args, **kwargs)
         if deepstack_embeds is not None:
             mask_expanded = visual_pos_mask.unsqueeze(-1).to(hidden_states.dtype)
-            hidden_states = hidden_states + deepstack_embeds.unsqueeze(0) * mask_expanded
+            if deepstack_row is None:
+                deepstack_embeds = deepstack_embeds.unsqueeze(0)
+            else:
+                deepstack_embeds = deepstack_embeds.index_select(0, deepstack_row)
+            hidden_states = hidden_states + deepstack_embeds * mask_expanded
         return hidden_states
 
 
@@ -438,15 +445,20 @@ class Qwen3VLDecoderOnlyModel(DecoderOnlyModel):
             sliding_cache_pos = (cache_seq_len, cache_offset)
 
         layer_deepstack = [None] * len(self.layers)
+        layer_rows = [None] * len(self.layers)
         if deepstack_visual_embeds is not None and visual_pos_mask is not None:
             for layer_idx in range(min(self.num_deepstack_layers, len(self.layers))):
                 layer_deepstack[layer_idx] = deepstack_visual_embeds[layer_idx]
             if self.rbln_config.nested_compile_region:
-                # Give every layer region the same inputs so all calls share one body: zeros past the
-                # deepstack layers, and copies of the embeddings, whose views at different offsets would
-                # trace as separate single-use regions that Dynamo inlines.
-                zeros = torch.zeros_like(deepstack_visual_embeds[0])
-                layer_deepstack = [zeros if embeds is None else embeds.clone() for embeds in layer_deepstack]
+                # Every layer region takes the same stacked embeddings, with a zero row for the layers past
+                # the deepstack layers, and its own row index. The calls then share one body and differ only
+                # in that constant, so the compiler can roll them.
+                stacked = torch.cat([deepstack_visual_embeds, torch.zeros_like(deepstack_visual_embeds[:1])])
+                layer_deepstack = [stacked] * len(self.layers)
+                layer_rows = [
+                    torch.tensor([min(layer_idx, self.num_deepstack_layers)], dtype=torch.int32)
+                    for layer_idx in range(len(self.layers))
+                ]
 
         all_hidden_states = () if output_hidden_states else None
         for layer_idx, layer in enumerate(self.layers):
@@ -465,6 +477,7 @@ class Qwen3VLDecoderOnlyModel(DecoderOnlyModel):
                 block_tables=local_block_tables if is_sliding else global_block_tables,
                 lora_int_id=lora_int_id,
                 deepstack_embeds=layer_deepstack[layer_idx],
+                deepstack_row=layer_rows[layer_idx],
                 visual_pos_mask=visual_pos_mask,
             )
 

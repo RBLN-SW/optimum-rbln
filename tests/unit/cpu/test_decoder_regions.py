@@ -1,3 +1,4 @@
+import collections
 import json
 import operator
 from types import SimpleNamespace
@@ -269,6 +270,28 @@ def test_packed_rotary_decoder_export(enabled, phase, arch):
             if n.op == "call_function" and n not in calls and not (n.target is operator.getitem and n.args[0] in calls)
         ]
         assert not between
+        # It also needs the calls of one body to take the same computed inputs, apart from the previous
+        # layer's output (the first call takes the embeddings instead) and per-layer constants.
+        constants = set(exported.graph_signature.inputs_to_lifted_tensor_constants)
+
+        def constant(node):
+            if node.op == "placeholder":
+                return node.name in constants
+            return node.op == "call_function" and all(constant(i) for i in node.all_input_nodes)
+
+        computed = collections.defaultdict(set)
+        for call in calls[1:]:
+            computed[call.args[0].target].add(
+                frozenset(
+                    a
+                    for a in call.args[2:]
+                    if isinstance(a, torch.fx.Node)
+                    and a.op == "call_function"
+                    and not (a.target is operator.getitem and a.args[0] in calls)
+                    and not constant(a)
+                )
+            )
+        assert all(len(inputs) == 1 for inputs in computed.values())
 
 
 @pytest.mark.parametrize("enabled", [False, True])
