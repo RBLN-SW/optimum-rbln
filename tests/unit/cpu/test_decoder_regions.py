@@ -318,6 +318,7 @@ def test_qwen2_5_vl_vision_block_regions(monkeypatch, enabled):
     visual = Qwen2_5_VLForConditionalGeneration(cfg).eval().model.visual
     config = RBLNQwen2_5_VLForConditionalGenerationConfig(
         npu="RBLN-CR13",
+        create_runtimes=False,
         nested_compile_region=enabled,
         visual={
             "cls_name": "RBLNQwen2_5_VisionTransformerPretrainedModelConfig",
