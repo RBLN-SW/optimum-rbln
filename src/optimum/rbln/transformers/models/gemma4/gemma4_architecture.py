@@ -387,6 +387,12 @@ class Gemma4TextAttention(DecoderOnlyAttention):
         if self.v_proj is None:
             self.v_proj = copy.deepcopy(self.k_proj)
 
+    def is_bidirectional_attention(self, phase: str) -> bool:
+        if phase == "image_prefill":
+            # Unlike Gemma3, image tokens attend bidirectionally only on sliding layers (HF create_masks_for_vision_model).
+            return self.is_sliding
+        return super().is_bidirectional_attention(phase)
+
     def get_attn_scale(self, self_attn):
         return 1.0
 
@@ -454,6 +460,7 @@ class Gemma4TextAttention(DecoderOnlyAttention):
             k_scale=k_scale,
             v_scale=v_scale,
             s_aux=getattr(self, "sinks", None),
+            is_bidirectional=self.is_bidirectional_attention(self.phase),
         )
 
         if self.lora_config:

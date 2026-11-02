@@ -803,6 +803,12 @@ class DecoderOnlyAttention(nn.Module):
         self._phase = phase
         getattr(self, self.get_attention_name()).phase = phase
 
+    def is_bidirectional_attention(self, phase: str) -> bool:
+        # image_prefill attends bidirectionally over the image block; text prefill only for a Prefix-LM.
+        if phase == "image_prefill":
+            return True
+        return phase == "prefill" and self.rbln_config._is_prefix_lm
+
     def create_attention_op(self):
         if self.is_sliding:
             return SlidingWindowAttentionOp(
@@ -924,6 +930,7 @@ class DecoderOnlyAttention(nn.Module):
             k_scale=k_scale,
             v_scale=v_scale,
             s_aux=getattr(self, "sinks", None),
+            is_bidirectional=self.is_bidirectional_attention(self.phase),
         )
 
         # Check if using LoRALinear (which accepts lora_int_id) or standard linear layers
@@ -997,6 +1004,7 @@ class AttentionOp(nn.Module):
         k_scale: torch.Tensor | None = None,
         v_scale: torch.Tensor | None = None,
         s_aux: torch.Tensor | None = None,
+        is_bidirectional: bool = False,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Compute attention with static shapes and explicit cache management.
 
@@ -1053,16 +1061,6 @@ class AttentionOp(nn.Module):
         if self.use_attention_mask:
             op_args["mask"] = attn_mask
 
-        if self.phase in {"prefill", "image_prefill"}:
-            use_image_prefill = getattr(self.rbln_config, "use_image_prefill", False)
-            if use_image_prefill:
-                op_args["is_bidirectional"] = self.phase == "image_prefill"
-            elif not self.use_attention_mask or self.rbln_config.use_position_ids:
-                op_args["is_bidirectional"] = self.rbln_config._is_prefix_lm
-            else:
-                # paged_attn_* (mask without position ids): the custom op has no is_bidirectional argument
-                pass
-
         if self.quantization and self.quantization.kv_caches == "fp8":
             if past_key_state.dtype != torch.float8_e4m3fn:
                 raise ValueError(f"Unsupported KVCaches type: {past_key_state.dtype}")
@@ -1076,6 +1074,9 @@ class AttentionOp(nn.Module):
         attn_op = getattr(torch.ops.rbln_custom_ops, attn_op_name, None)
         if attn_op is None:
             raise ValueError(f"Attention operator {attn_op_name} not found.")
+
+        if _op_accepts(attn_op_name, "is_bidirectional"):
+            op_args["is_bidirectional"] = is_bidirectional
 
         # Tell the compiler the batch arrives length-sorted; older compilers lack the arg.
         if getattr(self.rbln_config, "requires_batch_sort", None) and _op_accepts(attn_op_name, "is_prompt_sorted"):
@@ -1141,6 +1142,7 @@ class FlashAttentionOp(AttentionOp):
         k_scale=None,
         v_scale=None,
         s_aux=None,
+        is_bidirectional: bool = False,
     ):
         # reshape for removing repeat_kv (batch=1 , num_head, 1, q_len=1, head_dim)
         key_state = key_state.unsqueeze(2)
@@ -1178,16 +1180,6 @@ class FlashAttentionOp(AttentionOp):
         if self.use_attention_mask:
             op_args["mask"] = attn_mask
 
-        if self.phase in {"prefill", "image_prefill"}:
-            use_image_prefill = getattr(self.rbln_config, "use_image_prefill", False)
-            if use_image_prefill:
-                op_args["is_bidirectional"] = self.phase == "image_prefill"
-            elif not self.use_attention_mask or self.rbln_config.use_position_ids:
-                op_args["is_bidirectional"] = self.rbln_config._is_prefix_lm
-            else:
-                # paged_attn_* (mask without position ids): the custom op has no is_bidirectional argument
-                pass
-
         if self.quantization and self.quantization.kv_caches == "fp8":
             if past_key_state.dtype != torch.float8_e4m3fn:
                 raise ValueError(f"Unsupported KVCaches type: {past_key_state.dtype}")
@@ -1201,6 +1193,9 @@ class FlashAttentionOp(AttentionOp):
         attn_op = getattr(torch.ops.rbln_custom_ops, attn_op_name, None)
         if attn_op is None:
             raise ValueError(f"Attention operator {attn_op_name} not found.")
+
+        if _op_accepts(attn_op_name, "is_bidirectional"):
+            op_args["is_bidirectional"] = is_bidirectional
 
         # Tell the compiler the batch arrives length-sorted; older compilers lack the arg.
         if getattr(self.rbln_config, "requires_batch_sort", None) and _op_accepts(attn_op_name, "is_prompt_sorted"):
@@ -1254,6 +1249,7 @@ class SlidingWindowAttentionOp(AttentionOp):
         k_scale: torch.Tensor | None = None,
         v_scale: torch.Tensor | None = None,
         s_aux: torch.Tensor | None = None,
+        is_bidirectional: bool = False,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         assert self.quantization is None, "Sliding window attention does not support quantization"
         assert k_scale is None, "Sliding window attention does not support quantization"
@@ -1289,13 +1285,6 @@ class SlidingWindowAttentionOp(AttentionOp):
             "block_size": block_size,
         }
 
-        if self.phase in {"prefill", "image_prefill"}:
-            use_image_prefill = getattr(self.rbln_config, "use_image_prefill", False)
-            if use_image_prefill:
-                op_args["is_bidirectional"] = self.phase == "image_prefill"
-            else:
-                op_args["is_bidirectional"] = self.rbln_config._is_prefix_lm
-
         if self.phase == "decode":
             op_args["attn_mask"] = attn_mask
         elif self.phase == "image_prefill" and attn_mask is not None and attn_mask.dim() == 4:
@@ -1314,6 +1303,9 @@ class SlidingWindowAttentionOp(AttentionOp):
         attn_op = getattr(torch.ops.rbln_custom_ops, attn_op_name, None)
         if attn_op is None:
             raise ValueError(f"Attention operator {attn_op_name} not found.")
+
+        if _op_accepts(attn_op_name, "is_bidirectional"):
+            op_args["is_bidirectional"] = is_bidirectional
 
         # Tell the compiler the batch arrives length-sorted; older compilers lack the arg.
         if getattr(self.rbln_config, "requires_batch_sort", None) and _op_accepts(attn_op_name, "is_prompt_sorted"):
