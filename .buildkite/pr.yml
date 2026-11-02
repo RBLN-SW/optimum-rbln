@@ -46,6 +46,16 @@ steps:
     command:
       - "bash scripts/check-docstrings.sh"
 
+  - label: ":shield: security-tooling"
+    trigger: "standalone-security-tooling"
+    build:
+      branch: "dev"
+      env:
+        TARGET_REPO: "${BUILDKITE_REPO}"
+        TARGET_COMMIT: "${BUILDKITE_COMMIT}"
+        SAST_MODE: diff
+        SAST_BASELINE: dev
+
   # All gates must pass before the NPU pipeline is even uploaded.
   - wait: ~
 
