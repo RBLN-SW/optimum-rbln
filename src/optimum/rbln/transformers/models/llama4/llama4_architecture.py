@@ -21,6 +21,7 @@ from ..decoderonly.decoderonly_architecture import (
     DecoderOnlyModel,
     DecoderOnlyWrapper,
     RotaryEmbedding,
+    slice_and_unsqueeze_cos_sin,
 )
 
 
@@ -136,7 +137,6 @@ class Llama4DecoderLayer(DecoderOnlyLayer):
     _MLP_ATTR = ("feed_forward",)
 
 
-# Builds the chunked-attention mask once per forward and shares it with every chunked layer.
 class Llama4Model(DecoderOnlyModel):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -144,23 +144,74 @@ class Llama4Model(DecoderOnlyModel):
         self._chunk_size = (
             chunk_size if uses_chunked_attention(self.config) and self.max_seq_len > chunk_size else None
         )
-        self._chunk_mask_holder = [None]
-        for layer in self.layers:
-            layer.self_attn._chunk_mask_holder = self._chunk_mask_holder
+        self._chunked_layers = (
+            {idx for idx, layer_type in enumerate(self.config.layer_types) if layer_type == "chunked_attention"}
+            if self._chunk_size is not None
+            else set()
+        )
 
-    def forward(self, *args, **kwargs):
-        attention_mask = kwargs.get("attention_mask")
-        if self._chunk_size is not None and attention_mask is not None:
-            cache_position = kwargs["cache_position"]
-            positions = cache_position[:, :1] + torch.arange(cache_position.shape[1], device=cache_position.device)
-            key_positions = torch.arange(self.max_seq_len, device=cache_position.device)
-            chunk_mask = positions[:, :, None] // self._chunk_size == key_positions // self._chunk_size
-            chunk_mask = chunk_mask & (key_positions <= positions[:, :, None])
-            self._chunk_mask_holder[0] = chunk_mask[:, None, :, :].to(attention_mask.dtype)
-        try:
-            return super().forward(*args, **kwargs)
-        finally:
-            self._chunk_mask_holder[0] = None
+    def get_chunked_attention_mask(self, attention_mask: torch.Tensor, cache_position: torch.Tensor) -> torch.Tensor:
+        positions = cache_position[:, :1] + torch.arange(cache_position.shape[1], device=cache_position.device)
+        key_positions = torch.arange(self.max_seq_len, device=cache_position.device)
+        chunk_mask = positions[:, :, None] // self._chunk_size == key_positions // self._chunk_size
+        chunk_mask = chunk_mask & (key_positions <= positions[:, :, None])
+        return attention_mask * chunk_mask[:, None, :, :].to(attention_mask.dtype)
+
+    def forward(
+        self,
+        input_ids: torch.Tensor | None = None,
+        inputs_embeds: torch.Tensor | None = None,
+        attention_mask: torch.Tensor | None = None,
+        cache_position: torch.Tensor | None = None,
+        position_ids: torch.Tensor | None = None,
+        query_position: torch.Tensor | None = None,
+        past_key_values: tuple[tuple[torch.Tensor]] | None = None,
+        rotary_emb: nn.Module | None = None,
+        global_block_tables: torch.Tensor | None = None,
+        local_block_tables: torch.Tensor | None = None,
+        lora_int_id: torch.Tensor | None = None,
+        output_hidden_states: bool | None = None,
+    ):
+        if (input_ids is None) ^ (inputs_embeds is not None):
+            raise ValueError(
+                "You cannot specify both input_ids and inputs_embeds at the same time, and must specify either one"
+            )
+        if inputs_embeds is None:
+            inputs_embeds = self.get_embedding()(input_ids)
+        hidden_states = inputs_embeds
+
+        position_ids = position_ids if position_ids is not None else cache_position
+        cos, sin = rotary_emb(hidden_states, self.max_seq_len)
+        cos, sin = slice_and_unsqueeze_cos_sin(cos, sin, position_ids)
+
+        if self.attn_impl == "flash_attn":
+            seq_positions = self.convert_sequence_positions_for_flash_attn(cache_position[:, 0], self.max_seq_len)
+        else:
+            seq_positions = cache_position[:, :1]
+
+        chunked_attention_mask = (
+            self.get_chunked_attention_mask(attention_mask, cache_position) if self._chunk_size is not None else None
+        )
+
+        all_hidden_states = () if output_hidden_states else None
+        for layer_idx, layer in enumerate(self.layers):
+            if output_hidden_states:
+                all_hidden_states += (hidden_states,)
+            hidden_states = layer(
+                hidden_states=hidden_states,
+                attention_mask=chunked_attention_mask if layer_idx in self._chunked_layers else attention_mask,
+                seq_positions=seq_positions,
+                past_key_values=past_key_values,
+                cos=cos,
+                sin=sin,
+                block_tables=global_block_tables,
+                lora_int_id=lora_int_id,
+            )
+
+        hidden_states = self.get_last_layernorm()(hidden_states)
+        if output_hidden_states:
+            all_hidden_states += (hidden_states,)
+        return hidden_states, all_hidden_states
 
 
 class Llama4Attention(DecoderOnlyAttention):
@@ -171,13 +222,6 @@ class Llama4Attention(DecoderOnlyAttention):
         self.attn_temperature_tuning = self_attn.attn_temperature_tuning
         self.floor_scale = self_attn.floor_scale
         self.attn_scale = self_attn.attn_scale
-        self.attention_chunk_size = (
-            self.config.attention_chunk_size
-            if uses_chunked_attention(self.config) and self.config.layer_types[self.layer_idx] == "chunked_attention"
-            else None
-        )
-        # Shared with Llama4Model, which fills it with the chunk mask on every forward.
-        self._chunk_mask_holder = None
 
     def apply_rotary_pos_embed(self, query_states, key_states, cos, sin):
         if not self.use_rope:
@@ -231,9 +275,6 @@ class Llama4Attention(DecoderOnlyAttention):
             attn_scales = torch.log1p(torch.floor((positions.float() + 1.0) / self.floor_scale))
             attn_scales = (attn_scales * self.attn_scale + 1.0)[:, None, :, None]
             query_states = (query_states * attn_scales).to(query_states.dtype)
-
-        if self.attention_chunk_size is not None and self._chunk_mask_holder[0] is not None:
-            attention_mask = attention_mask * self._chunk_mask_holder[0]
 
         k_scale, v_scale = self.maybe_get_kvcache_scale()
         attn_output = self.get_attention_op()(
