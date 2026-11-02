@@ -387,6 +387,13 @@ class Gemma4TextAttention(DecoderOnlyAttention):
         if self.v_proj is None:
             self.v_proj = copy.deepcopy(self.k_proj)
 
+    def create_attention_op(self):
+        op = super().create_attention_op()
+        if not self.is_sliding:
+            # Unlike Gemma3, vision tokens attend bidirectionally only on sliding layers (HF create_masks_for_vision_model).
+            op.bidirectional_image_prefill = False
+        return op
+
     def get_attn_scale(self, self_attn):
         return 1.0
 

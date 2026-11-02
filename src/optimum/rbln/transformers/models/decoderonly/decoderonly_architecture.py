@@ -945,6 +945,9 @@ class DecoderOnlyFlashAttention(DecoderOnlyAttention):
 
 
 class AttentionOp(nn.Module):
+    # Whether image_prefill attends bidirectionally; Gemma4 turns it off on its full-attention layers.
+    bidirectional_image_prefill = True
+
     def __init__(
         self,
         num_heads: int,
@@ -1055,7 +1058,7 @@ class AttentionOp(nn.Module):
         if self.phase in {"prefill", "image_prefill"}:
             use_image_prefill = getattr(self.rbln_config, "use_image_prefill", False)
             if use_image_prefill:
-                op_args["is_bidirectional"] = self.phase == "image_prefill"
+                op_args["is_bidirectional"] = self.phase == "image_prefill" and self.bidirectional_image_prefill
             elif not self.use_attention_mask or self.rbln_config.use_position_ids:
                 op_args["is_bidirectional"] = self.rbln_config._is_prefix_lm
             else:
@@ -1180,7 +1183,7 @@ class FlashAttentionOp(AttentionOp):
         if self.phase in {"prefill", "image_prefill"}:
             use_image_prefill = getattr(self.rbln_config, "use_image_prefill", False)
             if use_image_prefill:
-                op_args["is_bidirectional"] = self.phase == "image_prefill"
+                op_args["is_bidirectional"] = self.phase == "image_prefill" and self.bidirectional_image_prefill
             elif not self.use_attention_mask or self.rbln_config.use_position_ids:
                 op_args["is_bidirectional"] = self.rbln_config._is_prefix_lm
             else:
