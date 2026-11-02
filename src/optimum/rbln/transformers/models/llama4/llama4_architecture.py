@@ -41,7 +41,8 @@ class Llama4VisionFullAttention(nn.Module):
         self.o_proj = self_attn.o_proj
 
     def _rotate(self, states, cos, sin, pair_matrix):
-        # Differs in form from HF's complex RoPE but computes identical values.
+        # Mathematically equivalent to HF's complex RoPE but differs in form, so low-precision
+        # results can differ slightly.
         # The pair matrix maps each [real, imag] pair to [-imag, real].
         x = states.float()
         cos, sin = cos.float(), sin.float()
@@ -183,7 +184,8 @@ class Llama4Attention(DecoderOnlyAttention):
             return query_states, key_states
 
         # cos/sin come from Llama4RotaryEmbedding in the interleaved-pair layout.
-        # Differs in form from HF's complex RoPE but computes identical values.
+        # Mathematically equivalent to HF's complex RoPE but differs in form, so low-precision
+        # results can differ slightly.
         def rotate_pairs(x):
             pairs = x.reshape(*x.shape[:-1], -1, 2)
             return torch.stack((-pairs[..., 1], pairs[..., 0]), dim=-1).flatten(-2)

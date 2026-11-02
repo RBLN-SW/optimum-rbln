@@ -121,6 +121,6 @@ class RBLNLlama4ForConditionalGenerationConfig(RBLNModelConfig):
 
 __all__ = [
     "RBLNLlama4ForCausalLMConfig",
-    "RBLNLlama4VisionModelConfig",
     "RBLNLlama4ForConditionalGenerationConfig",
+    "RBLNLlama4VisionModelConfig",
 ]

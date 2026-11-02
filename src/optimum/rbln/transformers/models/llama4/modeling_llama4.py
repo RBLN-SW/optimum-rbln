@@ -253,9 +253,8 @@ class RBLNLlama4ForConditionalGeneration(RBLNModel, RBLNImageIndexedBatchSortMix
         features = []
         for batch in pixel_values.split(compiled_batch):
             num_pad = compiled_batch - batch.shape[0]
-            if num_pad:
-                batch = torch.cat([batch, batch.new_zeros(num_pad, *batch.shape[1:])])
-            encoded = self.vision_model(batch.to(self.vision_model.dtype), return_dict=False)[0]
+            padded = torch.cat([batch, batch.new_zeros(num_pad, *batch.shape[1:])]) if num_pad else batch
+            encoded = self.vision_model(padded.to(self.vision_model.dtype), return_dict=False)[0]
             projected = self.multi_modal_projector(encoded.to(self.dtype))
             features.append(projected[: compiled_batch - num_pad])
         return BaseModelOutputWithPooling(last_hidden_state=torch.cat(features, dim=0))
@@ -336,4 +335,4 @@ class RBLNLlama4ForConditionalGeneration(RBLNModel, RBLNImageIndexedBatchSortMix
         return RBLNDecoderOnlyOutput(logits=logits, generate_idx=generate_idx)
 
 
-__all__ = ["RBLNLlama4ForCausalLM", "RBLNLlama4VisionModel", "RBLNLlama4ForConditionalGeneration"]
+__all__ = ["RBLNLlama4ForCausalLM", "RBLNLlama4ForConditionalGeneration", "RBLNLlama4VisionModel"]
