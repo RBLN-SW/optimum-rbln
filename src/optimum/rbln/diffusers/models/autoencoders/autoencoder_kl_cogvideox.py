@@ -156,10 +156,9 @@ class _VAECogVideoXDecoder(torch.nn.Module):
 
         # Write all new caches at the end of the graph, as in the Wan VAE.
         position = torch.tensor(0, dtype=torch.int16)
-        frame_axis = torch.tensor(2, dtype=torch.int16)
         updates = [
             torch.ops.rbln_custom_ops.rbln_cache_update(
-                buffer, cache.to_cache(cache.get(new_conv_cache)).to(buffer.dtype), position, frame_axis
+                buffer, cache.to_cache(cache.get(new_conv_cache)).to(buffer.dtype), position, 2
             )
             for cache, buffer in zip(self.static_caches, buffers, strict=True)
         ]

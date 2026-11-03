@@ -637,12 +637,9 @@ class Qwen3_5Model(DecoderOnlyModel):
                     conv_state_mask=conv_state_mask,
                     recurrent_state_mask=recurrent_state_mask,
                 )
-                _axis0 = torch.tensor(0, dtype=torch.int16)
+                new_states.append(torch.ops.rbln_custom_ops.rbln_cache_update(conv_state, new_conv_state, _pos, 0))
                 new_states.append(
-                    torch.ops.rbln_custom_ops.rbln_cache_update(conv_state, new_conv_state, _pos, _axis0)
-                )
-                new_states.append(
-                    torch.ops.rbln_custom_ops.rbln_cache_update(recurrent_state, new_recurrent_state, _pos, _axis0)
+                    torch.ops.rbln_custom_ops.rbln_cache_update(recurrent_state, new_recurrent_state, _pos, 0)
                 )
             else:
                 hidden_states = layer(

@@ -111,14 +111,13 @@ class _VAEWanEncoder0(torch.nn.Module):
         out = self.encoder(x, feat_cache=self._enc_feat_map, feat_idx=self._enc_conv_idx)
         out = self.quant_conv(out)
         position = torch.tensor(0, dtype=torch.int16)
-        axis = torch.tensor(_CACHE_FRAME_AXIS, dtype=torch.int16)
         dummy_outs = []
         for cache, feat, cache_dim in zip(
             list(args)[1:], self._enc_feat_map[1 : len(self.cache_dims)], self.cache_dims[1:], strict=False
         ):
             cache_item = torch.nn.functional.pad(feat, (0, 0, 0, 0, 1, 0)) if cache_dim[2] == 2 else feat  # pad D 1->2
             dummy_outs.append(
-                torch.ops.rbln_custom_ops.rbln_cache_update(cache, _to_cache(cache_item), position, axis)
+                torch.ops.rbln_custom_ops.rbln_cache_update(cache, _to_cache(cache_item), position, _CACHE_FRAME_AXIS)
             )
         # idx 0: runtime output
         fc0 = torch.nn.functional.pad(self._enc_feat_map[0], (0, 0, 0, 0, 1, 0)).contiguous()  # pad D 1->2
@@ -154,9 +153,8 @@ class _VAEWanEncoderN(torch.nn.Module):
         out = self.quant_conv(out)
 
         position = torch.tensor(0, dtype=torch.int16)
-        axis = torch.tensor(_CACHE_FRAME_AXIS, dtype=torch.int16)
         dummy_outs = [
-            torch.ops.rbln_custom_ops.rbln_cache_update(cache, _to_cache(item), position, axis)
+            torch.ops.rbln_custom_ops.rbln_cache_update(cache, _to_cache(item), position, _CACHE_FRAME_AXIS)
             for cache, item in zip(list(caches)[1:], feat_cache_reshaped[1:], strict=False)
         ]
         return out, feat_cache_reshaped[0].contiguous(), dummy_outs
@@ -181,7 +179,6 @@ class _VAEWanDecoder0(torch.nn.Module):
         self.clear_cache()
         out = self.decoder(x, feat_cache=self._feat_map, feat_idx=self._conv_idx, first_chunk=True)
         position = torch.tensor(0, dtype=torch.int16)
-        axis = torch.tensor(_CACHE_FRAME_AXIS, dtype=torch.int16)
         dummy_outs = []
         for cache, feat, _cache_dim in zip(
             list(args), self._feat_map[1 : len(self.cache_dims)], self.cache_dims[1:], strict=False
@@ -191,7 +188,9 @@ class _VAEWanDecoder0(torch.nn.Module):
                 cache_item = cache * 0.0
             else:
                 cache_item = _to_cache(torch.nn.functional.pad(feat, (0, 0, 0, 0, 1, 0)))  # pad D 1->2
-            dummy_outs.append(torch.ops.rbln_custom_ops.rbln_cache_update(cache, cache_item, position, axis))
+            dummy_outs.append(
+                torch.ops.rbln_custom_ops.rbln_cache_update(cache, cache_item, position, _CACHE_FRAME_AXIS)
+            )
         # idx 0: runtime output
         fc0 = torch.nn.functional.pad(self._feat_map[0], (0, 0, 0, 0, 1, 0)).contiguous()  # pad D 1->2
         return out, fc0, dummy_outs
@@ -223,9 +222,8 @@ class _VAEWanDecoderN(torch.nn.Module):
         out = self.decoder(x, feat_cache=feat_cache_reshaped, feat_idx=self._conv_idx)
 
         position = torch.tensor(0, dtype=torch.int16)
-        axis = torch.tensor(_CACHE_FRAME_AXIS, dtype=torch.int16)
         dummy_outs = [
-            torch.ops.rbln_custom_ops.rbln_cache_update(cache, _to_cache(item), position, axis)
+            torch.ops.rbln_custom_ops.rbln_cache_update(cache, _to_cache(item), position, _CACHE_FRAME_AXIS)
             for cache, item in zip(list(caches)[1:], feat_cache_reshaped[1:], strict=False)
         ]
         return out, feat_cache_reshaped[0].contiguous(), dummy_outs
