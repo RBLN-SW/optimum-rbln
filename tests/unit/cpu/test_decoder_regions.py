@@ -130,7 +130,7 @@ def test_decoder_export(monkeypatch, enabled, phase, gemma, max_seq_len):
                 for module in result.graph_module.modules()
                 if isinstance(module, torch.fx.GraphModule)
                 for node in module.graph.nodes
-                if "paged" in str(node.target) and "attn" in str(node.target)
+                if str(node.target).startswith(("rbln_custom_ops.gqa.", "rbln_custom_ops.swa_v0."))
             ]
             assert attention_nodes
             for node in attention_nodes:

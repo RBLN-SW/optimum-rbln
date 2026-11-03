@@ -939,8 +939,8 @@ class DecoderOnlyFlashAttention(DecoderOnlyAttention):
 class AttentionOp(nn.Module):
     """Paged attention over a layer's `[num_blocks, 2, num_kv_heads, 1, block_size, head_dim]` cache.
 
-    Normal attention keeps a sequence in one block, which the flash attention ops take as their only
-    partition, so both run the flash attention ops.
+    Both normal and flash attention run `gqa`: normal attention keeps a sequence in one block,
+    which `gqa` takes as its only partition.
     """
 
     def __init__(
@@ -965,15 +965,15 @@ class AttentionOp(nn.Module):
     def use_fp8_kv_cache(self) -> bool:
         return bool(self.quantization and self.quantization.kv_caches == "fp8")
 
-    @property
-    def is_causal(self) -> bool:
-        # A position-id model's mask only marks the valid keys, so its attention stays causal.
-        return not self.use_attention_mask or self.use_position_ids
+    def is_causal(self, is_bidirectional: bool) -> bool:
+        # A mask without position ids spans queries and keys and so sets the direction itself;
+        # a position-id model's mask only marks the valid keys.
+        if self.use_attention_mask and not self.use_position_ids:
+            return False
+        return not is_bidirectional
 
     def get_attn_op_name(self) -> str:
-        phase = "decode" if self.phase == "decode" else "prefill"
-        family = "flash_causal_attention_naive_" if self.is_causal else "flash_attention_naive_"
-        return family + phase
+        return "gqa"
 
     def get_attn_op(self, op_args: dict):
         attn_op_name = self.get_attn_op_name()
@@ -1025,13 +1025,11 @@ class AttentionOp(nn.Module):
         key_state = key_state.unsqueeze(2)  # 1, 32, 1, 128, 128
         value_state = value_state.unsqueeze(2)
 
-        if self.use_attention_mask and not self.use_position_ids:
-            attn_mask = attn_mask.unsqueeze(2)
-
         if self.phase == "decode":
             batch_size = key_state.shape[0]
         else:
             batch_size = 1
+            block_tables = block_tables.unsqueeze(0)
 
         query_state = query_state.view(
             batch_size,
@@ -1049,13 +1047,12 @@ class AttentionOp(nn.Module):
             "scale": scale,
             "seq_idx": seq_position,
             "block_tables": block_tables,
-            "slot_mapping": scale,
             "sinks": s_aux,
+            "is_causal": self.is_causal(is_bidirectional),
         }
         if self.use_attention_mask:
-            op_args["mask"] = attn_mask
-        if self.is_causal and self.phase != "decode":
-            op_args["is_bidirectional"] = is_bidirectional
+            # gqa reads the mask as [batch, 1, 1, query rows, keys]; a key mask has one row.
+            op_args["attn_mask"] = attn_mask[:, None, None, None] if self.use_position_ids else attn_mask.unsqueeze(2)
         if self.use_fp8_kv_cache:
             if kv_cache.dtype != torch.uint8:
                 raise ValueError(f"Unsupported KVCaches type: {kv_cache.dtype}")
@@ -1109,8 +1106,7 @@ class SlidingWindowAttentionOp(AttentionOp):
         self.quantization = None  # Sliding window attention does not support quantization
 
     def get_attn_op_name(self) -> str:
-        phase = "decode" if self.phase == "decode" else "prefill"
-        return "sliding_window_attention_naive_" + phase
+        return "swa_v0"
 
     def forward(
         self,
@@ -1140,6 +1136,7 @@ class SlidingWindowAttentionOp(AttentionOp):
             batch_size = key_state.shape[0]
         else:
             batch_size = 1
+            block_tables = block_tables.unsqueeze(0)
 
         query_state = query_state.view(
             batch_size,
@@ -1158,20 +1155,18 @@ class SlidingWindowAttentionOp(AttentionOp):
             "cache_offset": seq_position[1],
             "scale": scale,
             "block_tables": block_tables,
-            "dummy": scale,
+            "is_causal": not is_bidirectional,
             "sinks": s_aux,
         }
 
         if self.phase == "decode":
             op_args["attn_mask"] = attn_mask
-        else:
-            op_args["is_bidirectional"] = is_bidirectional
-            if self.phase == "image_prefill" and attn_mask is not None and attn_mask.dim() == 4:
-                # Only a model that supplies a 4D sliding-window mask for image_prefill (e.g. Gemma4)
-                # feeds it to the op. Otherwise (e.g. 2D causal mask) the sliding-window prefill
-                # op computes the causal window internally — passing a 2D mask trips the op's 4D mask
-                # assertion at compile time.
-                op_args["attn_mask"] = attn_mask
+        elif self.phase == "image_prefill" and attn_mask is not None and attn_mask.dim() == 4:
+            # Only a model that supplies a 4D sliding-window mask for image_prefill (e.g. Gemma4)
+            # feeds it to the op. Otherwise (e.g. 2D causal mask) the sliding-window prefill
+            # op computes the causal window internally — passing a 2D mask trips the op's 4D mask
+            # assertion at compile time.
+            op_args["attn_mask"] = attn_mask
 
         attn_output = self.get_attn_op(op_args)(**op_args)
         attn_output = attn_output.view(batch_size, self.num_heads, -1, self.head_dim)

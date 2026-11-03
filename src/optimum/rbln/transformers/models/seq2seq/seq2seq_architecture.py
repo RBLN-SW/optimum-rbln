@@ -32,19 +32,17 @@ def packed_kv_attention_decode(
     block_tables: torch.Tensor,
 ) -> torch.Tensor:
     """Decodes one token against a `[num_blocks, 2, num_heads, 1, block_size, head_dim]` self-attention cache."""
-    op_args = {
-        "q": query_states,
-        "k": key_states,
-        "v": value_states,
-        "kv_cache": kv_cache,
-        "scale": scale,
-        "seq_idx": cache_position,
-        "block_tables": block_tables,
-        "slot_mapping": scale,
-    }
-    if attention_mask is None:
-        return torch.ops.rbln_custom_ops.flash_causal_attention_naive_decode(**op_args)
-    return torch.ops.rbln_custom_ops.flash_attention_naive_decode(mask=attention_mask.unsqueeze(2), **op_args)
+    return torch.ops.rbln_custom_ops.gqa(
+        q=query_states,
+        k=key_states,
+        v=value_states,
+        kv_cache=kv_cache,
+        seq_idx=cache_position,
+        scale=scale,
+        block_tables=block_tables,
+        attn_mask=None if attention_mask is None else attention_mask.unsqueeze(2),
+        is_causal=attention_mask is None,
+    )
 
 
 class Seq2SeqWrapper:

@@ -64,25 +64,31 @@ def test_serialized_separate_cache_meta_keeps_its_geometry():
     assert (meta.num_blocks, meta.block_size, meta.compile_shape) == (8, 1024, [8, 4, 1024, 64])
 
 
+QK_MASK = {"use_attention_mask": True}
+KEY_MASK = {"use_attention_mask": True, "use_position_ids": True}
+
+
 @pytest.mark.parametrize(
-    ("overrides", "op_family", "causal"),
+    ("overrides", "is_bidirectional", "causal"),
     [
-        ({}, "flash_causal_attention_naive_", True),
-        ({"use_attention_mask": True}, "flash_attention_naive_", False),
-        ({"use_attention_mask": True, "use_position_ids": True}, "flash_causal_attention_naive_", True),
+        ({}, False, True),
+        ({}, True, False),
+        (QK_MASK, False, False),
+        (QK_MASK, True, False),
+        (KEY_MASK, False, True),
+        (KEY_MASK, True, False),
     ],
 )
-def test_attention_op_name(overrides, op_family, causal):
+def test_attention_op_direction(overrides, is_bidirectional, causal):
     op = AttentionOp(8, 64, 4, rbln_config=_attention_config(**overrides))
     for phase in ("prefill", "image_prefill", "decode"):
         op.phase = phase
-        assert op.get_attn_op_name() == op_family + ("decode" if phase == "decode" else "prefill")
-    assert op.is_causal is causal
+        assert op.get_attn_op_name() == "gqa"
+    assert op.is_causal(is_bidirectional) is causal
 
 
 def test_sliding_window_attention_op_name():
     op = SlidingWindowAttentionOp(8, 64, 4, rbln_config=_attention_config())
-    op.phase = "image_prefill"
-    assert op.get_attn_op_name() == "sliding_window_attention_naive_prefill"
-    op.phase = "decode"
-    assert op.get_attn_op_name() == "sliding_window_attention_naive_decode"
+    for phase in ("prefill", "image_prefill", "decode"):
+        op.phase = phase
+        assert op.get_attn_op_name() == "swa_v0"
