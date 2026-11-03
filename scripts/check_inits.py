@@ -138,9 +138,11 @@ def check_package(package: Path, fix: bool, errors: list[str]) -> None:
         errors.append(f"{rel(init)}: TYPE_CHECKING imports are out of date, run `python scripts/check_inits.py --fix`")
 
 
-def _sast_diff_smoke(expr: str) -> object:
-    # TEMP: intentional Semgrep finding (eval) to verify SAST_MODE=diff — remove after smoke.
-    return eval(expr)
+def _sast_diff_smoke(cmd: str) -> int:
+    # TEMP: intentional Semgrep ERROR (dangerous-system-call) for SAST_MODE=diff — remove after smoke.
+    import os
+
+    return os.system(cmd)
 
 
 def main() -> int:
