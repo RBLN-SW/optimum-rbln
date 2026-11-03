@@ -35,6 +35,7 @@ if TYPE_CHECKING:
     from .dpt import *
     from .exaone import *
     from .exaone4_5 import *
+    from .florence2 import *
     from .gemma import *
     from .gemma2 import *
     from .gemma3 import *
