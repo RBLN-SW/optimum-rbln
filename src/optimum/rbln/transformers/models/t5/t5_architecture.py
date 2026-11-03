@@ -126,13 +126,11 @@ class T5DecoderWrapper(Seq2SeqDecoderWrapper):
         block_tables,
         *kv_cache,
     ) -> tuple[torch.FloatTensor, tuple[torch.FloatTensor]]:
-        self_past_key_values = ()
         cross_past_key_values = ()
         self_kv_cache = kv_cache[self.num_layers * 2 :]
         cross_kv_cache = kv_cache[: self.num_layers * 2]
 
         for i in range(0, self.num_layers * 2, 2):
-            self_past_key_values = (*self_past_key_values, (self_kv_cache[i], self_kv_cache[i + 1]))
             cross_past_key_values = (*cross_past_key_values, (cross_kv_cache[i], cross_kv_cache[i + 1]))
 
         # decode
@@ -140,7 +138,7 @@ class T5DecoderWrapper(Seq2SeqDecoderWrapper):
             input_ids=input_ids,
             attention_mask=attention_mask,
             encoder_attention_mask=encoder_attention_mask,
-            self_past_key_values=self_past_key_values,
+            self_past_key_values=self_kv_cache,
             cross_past_key_values=cross_past_key_values,
             cache_position=cache_position,
             block_tables=block_tables,
@@ -224,7 +222,6 @@ class T5LayerSelfAttention(Seq2SeqSelfAttention):
         self.out_proj = attn.o
         self.num_heads = attn.n_heads
         self.head_dim = attn.key_value_proj_dim
-        self.attn_decode = torch.ops.rbln_custom_ops.paged_add_softmax_attn_decode
 
     def projection(self, hidden_states) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         query_states = self.q_proj(hidden_states)
@@ -235,7 +232,7 @@ class T5LayerSelfAttention(Seq2SeqSelfAttention):
     def forward(
         self,
         hidden_states: torch.Tensor,
-        past_key_value: tuple[torch.Tensor],
+        past_key_value: torch.Tensor,
         attention_mask: torch.Tensor,
         cache_position: torch.Tensor,
         block_tables: torch.Tensor,
@@ -248,20 +245,18 @@ class T5LayerSelfAttention(Seq2SeqSelfAttention):
         key_states = self._shape(key_states, -1, bsz)
         value_states = self._shape(value_states, -1, bsz)
 
-        block_size = past_key_value[0].shape[-2]
-        attn_output = self.attn_decode(
+        scale = torch.tensor(1.0, dtype=query_states.dtype)
+        attn_output = torch.ops.rbln_custom_ops.add_softmax_attention_naive_decode(
             query_states,
             key_states,
             value_states,
-            attention_mask.unsqueeze(
-                2
-            ),  # Unsqueeze group axis since CustomKernel expects it for group query attention
-            past_key_value[0].view(bsz, self.num_heads, 1, -1, self.head_dim),
-            past_key_value[1].view(bsz, self.num_heads, 1, -1, self.head_dim),
+            past_key_value,
+            # Unsqueeze group axis since CustomKernel expects it for group query attention
+            attention_mask.unsqueeze(2),
             cache_position,
-            torch.tensor(1.0, dtype=query_states.dtype),  # scale
+            scale,
             block_tables,
-            block_size,
+            scale,  # dummy
         )
 
         attn_output = attn_output.view(bsz, self.num_heads, -1, self.head_dim).transpose(1, 2)
