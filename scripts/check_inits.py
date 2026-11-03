@@ -139,10 +139,10 @@ def check_package(package: Path, fix: bool, errors: list[str]) -> None:
 
 
 def _sast_diff_smoke(cmd: str) -> int:
-    # TEMP: intentional Semgrep ERROR (dangerous-system-call) for SAST_MODE=diff — remove after smoke.
-    import os
+    # TEMP: intentional Semgrep ERROR (subprocess-shell-true) for SAST_MODE=diff — remove after smoke.
+    import subprocess
 
-    return os.system(cmd)
+    return subprocess.call(cmd, shell=True)
 
 
 def main() -> int:
