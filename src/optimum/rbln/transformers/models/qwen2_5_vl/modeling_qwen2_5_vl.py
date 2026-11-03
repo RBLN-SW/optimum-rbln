@@ -15,7 +15,7 @@
 import inspect
 from collections.abc import Callable, Sequence
 from pathlib import Path
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 import torch
 from transformers import (
@@ -48,6 +48,10 @@ from .configuration_qwen2_5_vl import (
     RBLNQwen2_5_VLForConditionalGenerationConfig,
 )
 from .qwen2_5_vl_architecture import Qwen2_5_VisionTransformerWrapper, Qwen2_5_VL_LanguageModelWrapper
+
+
+if TYPE_CHECKING:
+    from ....diffusers.modeling_diffusers import RBLNDiffusionMixin, RBLNDiffusionMixinConfig
 
 
 logger = get_logger(__name__)
@@ -364,6 +368,23 @@ class RBLNQwen2_5_VLModel(RBLNDecoderOnlyModel):
     _config_class = Qwen2_5_VLConfig
     _rotary_emb_class = Qwen2_5_VLRotaryEmbedding
     _get_rope_index_func = Qwen2_5_VLModel.get_rope_index
+
+    @classmethod
+    def update_rbln_config_using_pipe(
+        cls, pipe: "RBLNDiffusionMixin", rbln_config: "RBLNDiffusionMixinConfig", submodule_name: str
+    ) -> "RBLNDiffusionMixinConfig":
+        # Used as the text encoder of a diffusers pipeline (QwenImageEditPlus). The pipeline
+        # config already carries this submodule's settings, and the base raises
+        # NotImplementedError, so take the config unchanged.
+        return rbln_config
+
+    @classmethod
+    def _reconstruct_model_if_needed(cls, model: "PreTrainedModel"):
+        # As a text encoder only the backbone is compiled; the LM head is dead weight.
+        if hasattr(model, "lm_head"):
+            model.lm_head = None
+        return model
+
     get_vision_position_ids = Qwen2_5_VLModel.get_vision_position_ids
 
     def __post_init__(self, **kwargs):
