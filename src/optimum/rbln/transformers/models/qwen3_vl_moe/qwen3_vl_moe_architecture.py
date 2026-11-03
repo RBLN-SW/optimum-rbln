@@ -28,6 +28,7 @@ from ..qwen3_vl.qwen3_vl_architecture import (
     Qwen3VLAttention,
     Qwen3VLDecoderOnlyForCausalLM,
     Qwen3VLDecoderOnlyModel,
+    Qwen3VLDeepstackLayerMixin,
     Qwen3VLVisionBlock,
     Qwen3VLVisionModelWrapper,
 )
@@ -45,7 +46,7 @@ class Qwen3VLMoeAttention(Qwen3VLAttention):
     pass
 
 
-class Qwen3VLMoeLayer(DecoderOnlyLayer):
+class Qwen3VLMoeLayer(Qwen3VLDeepstackLayerMixin, DecoderOnlyLayer):
     def __init__(self, layer, self_attn: DecoderOnlyAttention, lora_config: RBLNLoRAConfig | None = None):
         super().__init__(layer, self_attn, lora_config)
         self.mlp = (

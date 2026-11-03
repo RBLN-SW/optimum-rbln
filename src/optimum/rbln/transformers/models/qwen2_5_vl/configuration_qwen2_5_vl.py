@@ -53,7 +53,12 @@ class RBLNQwen2_5_VLForConditionalGenerationConfig(RBLNDecoderOnlyModelForCausal
                 "RBLNQwen2_5_VLForConditionalGenerationConfig does not allow `use_inputs_embeds` to be set to False, "
                 "as RBLNQwen2_5_VLForConditionalGeneration accepts only `inputs_embeds` as input."
             )
-        self.visual = self.initialize_submodule_config(submodule_config=visual, batch_size=1, force_kwargs=True)
+        self.visual = self.initialize_submodule_config(
+            submodule_config=visual,
+            batch_size=1,
+            nested_compile_region=self.nested_compile_region,
+            force_kwargs=True,
+        )
 
 
 class RBLNQwen2_5_VLModelConfig(RBLNDecoderOnlyModelConfig):
@@ -65,7 +70,12 @@ class RBLNQwen2_5_VLModelConfig(RBLNDecoderOnlyModelConfig):
 
     def __init__(self, visual: RBLNModelConfig | None = None, **kwargs: Any):
         super().__init__(**kwargs)
-        self.visual = self.initialize_submodule_config(submodule_config=visual, batch_size=1, force_kwargs=True)
+        self.visual = self.initialize_submodule_config(
+            submodule_config=visual,
+            batch_size=1,
+            nested_compile_region=self.nested_compile_region,
+            force_kwargs=True,
+        )
 
 
 class RBLNQwen2_5_VisionTransformerPretrainedModelConfig(RBLNModelConfig):
@@ -77,7 +87,15 @@ class RBLNQwen2_5_VisionTransformerPretrainedModelConfig(RBLNModelConfig):
     mechanisms for processing images and videos.
     """
 
-    def __init__(self, max_seq_len: int | list[int] | None = None, batch_size: int | None = None, **kwargs: Any):
+    subclass_non_save_attributes = ["nested_compile_region"]
+
+    def __init__(
+        self,
+        max_seq_len: int | list[int] | None = None,
+        batch_size: int | None = None,
+        nested_compile_region: bool = False,
+        **kwargs: Any,
+    ):
         """
         Args:
             max_seq_len (int | list[int] | None): Maximum sequence lengths for Vision
@@ -92,6 +110,8 @@ class RBLNQwen2_5_VisionTransformerPretrainedModelConfig(RBLNModelConfig):
                 computation. If not provided, a `ValueError` is raised.
             batch_size (int | None): the vision encoder runs one image at a time (the parent config forces
                 this by default), so only `batch_size=1` is supported. Defaults to 1.
+            nested_compile_region (bool): Preserve vision block boundaries as nested compile regions.
+                The parent config sets it to its own value.
             kwargs: Additional arguments passed to the parent RBLNModelConfig.
 
         Raises:
@@ -128,6 +148,7 @@ class RBLNQwen2_5_VisionTransformerPretrainedModelConfig(RBLNModelConfig):
             raise ValueError("'max_seq_len' must be specified.")
 
         self.max_seq_len = max_seq_len
+        self.nested_compile_region = nested_compile_region
 
 
 __all__ = [
