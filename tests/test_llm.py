@@ -25,6 +25,7 @@ from transformers import (
     Qwen3VLMoeConfig,
     Qwen3VLMoeForConditionalGeneration,
 )
+from transformers.image_utils import load_image
 
 from optimum.rbln import (
     RBLNAutoModel,
@@ -46,6 +47,8 @@ from optimum.rbln import (
     RBLNGraniteForCausalLM,
     RBLNGraniteModel,
     RBLNIdefics3ForConditionalGeneration,
+    RBLNLlama4ForCausalLM,
+    RBLNLlama4ForConditionalGeneration,
     RBLNLlamaForCausalLM,
     RBLNLlamaModel,
     RBLNLlavaForConditionalGeneration,
@@ -662,6 +665,39 @@ class TestLlavaForConditionalGeneration(LLMTest.TestLLM):
             },
             **self.HF_CONFIG_KWARGS,
         )
+
+
+class TestLlama4ForCausalLM(LLMTest.TestLLM):
+    RBLN_CLASS = RBLNLlama4ForCausalLM
+    HF_MODEL_ID = "rbln/tiny-Llama4ForConditionalGeneration"
+
+    def get_tokenizer(self):
+        # The tiny checkpoint ships no tokenizer; use the one of the model it mimics.
+        PreProcessor = AutoProcessor if self.IS_MULTIMODAL else AutoTokenizer
+        if getattr(self, "_tokenizer", None) is None:
+            self._tokenizer = PreProcessor.from_pretrained(
+                "meta-llama/Llama-Guard-4-12B", **self.HF_CONFIG_KWARGS_PREPROCESSOR
+            )
+        return self._tokenizer
+
+
+class TestLlama4ForConditionalGeneration(TestLlama4ForCausalLM):
+    RBLN_AUTO_CLASS = RBLNAutoModelForImageTextToText
+    RBLN_CLASS = RBLNLlama4ForConditionalGeneration
+    PROMPT = (
+        "<|begin_of_text|><|header_start|>user<|header_end|>\n\n<|image|>Describe the image.<|eot|>"
+        "<|header_start|>assistant<|header_end|>\n\n"
+    )
+    IS_MULTIMODAL = True
+
+    def get_inputs(self):
+        tokenizer = self.get_tokenizer()
+        image = load_image("https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/bee.jpg")
+        # Five tiles: two calls of the default vision batch size 4, the second one padded.
+        inputs = tokenizer(images=[image], text=[self.PROMPT], return_tensors="pt", padding=True, max_patches=4)
+        inputs["max_new_tokens"] = 20
+        inputs["do_sample"] = False
+        return inputs
 
 
 class TestPegasusModel(LLMTest.TestLLM):
@@ -1435,6 +1471,32 @@ class TestMultiLora(LLMTest.TestLLM):
 
     def get_inputs(self):
         self.model.set_adapter(["abliterated"])
+        return super().get_inputs()
+
+
+class TestLlama4ForCausalLM_Lora(TestLlama4ForCausalLM):
+    @classmethod
+    def setUpClass(cls):
+        if os.environ.get("REUSE_ARTIFACTS_PATH") is not None:
+            # The saved rbln_config points at an adapter directory that no longer exists.
+            raise unittest.SkipTest("The temporary LoRA adapter is not kept for reused artifacts")
+        cls._lora_dir = tempfile.TemporaryDirectory()
+        save_file({}, os.path.join(cls._lora_dir.name, "adapter_model.safetensors"))
+        with open(os.path.join(cls._lora_dir.name, "adapter_config.json"), "w") as f:
+            projections = ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
+            json.dump({"r": 1, "lora_alpha": 1, "target_modules": projections}, f)
+        adapter = {"lora_int_id": 1, "lora_name": "zero", "lora_path": cls._lora_dir.name}
+        cls.RBLN_CLASS_KWARGS = {"rbln_config": {"lora_config": {"adapters": [adapter]}}}
+        super().setUpClass()
+
+    @classmethod
+    def tearDownClass(cls):
+        super().tearDownClass()
+        if "_lora_dir" in cls.__dict__:
+            cls._lora_dir.cleanup()
+
+    def get_inputs(self):
+        self.model.set_adapter(["zero"])
         return super().get_inputs()
 
 
