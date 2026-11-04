@@ -244,13 +244,12 @@ class Qwen3_5GatedDeltaNet(nn.Module):
         hidden_states: torch.Tensor,
         conv_state: torch.Tensor,
         recurrent_state: torch.Tensor,
+        slot: torch.Tensor,
         valid_mask: torch.Tensor | None = None,
         state_mask: torch.Tensor | None = None,
-        slot: torch.Tensor | None = None,
         conv_tables: tuple[torch.Tensor, ...] = (),
     ) -> torch.Tensor:
         prefill = "prefill" in self._phase and valid_mask is not None
-        slot = torch.tensor(0, dtype=torch.int16) if slot is None else slot
         batch_size, seq_len, _ = hidden_states.shape
         heads, ratio = self.num_k_heads, self.num_v_heads // self.num_k_heads
         dim = self.head_k_dim
@@ -305,9 +304,9 @@ class Qwen3_5LinearDecoderLayer(nn.Module):
         hidden_states: torch.Tensor,
         conv_state: torch.Tensor,
         recurrent_state: torch.Tensor,
+        slot: torch.Tensor,
         valid_mask: torch.Tensor | None = None,
         state_mask: torch.Tensor | None = None,
-        slot: torch.Tensor | None = None,
         conv_tables: tuple[torch.Tensor, ...] = (),
     ) -> torch.Tensor:
         residual = hidden_states
@@ -471,7 +470,7 @@ class Qwen3_5Model(DecoderOnlyModel):
         else:
             seq_positions = cache_position[:, :1]
 
-        slot = batch_idx.to(torch.int16) if batch_idx is not None else torch.tensor(0, dtype=torch.int16)
+        slot = batch_idx if batch_idx is not None else torch.tensor(0, dtype=torch.int16)
 
         all_hidden_states = () if output_hidden_states else None
         for layer_idx, layer in enumerate(self.layers):
