@@ -613,6 +613,32 @@ def test_moss_image_pipeline_derives_submodule_sizes():
         config_cls(height=1000, width=1000)
 
 
+@pytest.mark.parametrize(
+    "text_encoder",
+    [
+        {"visual": {"max_seq_len": 64}},
+        {"visual": {"device": 1}},
+        {"batch_size": 2},
+        {"use_inputs_embeds": False},
+        {"max_seq_len": 128},
+    ],
+)
+def test_moss_image_pipeline_rejects_conflicting_text_encoder_config(text_encoder):
+    config_cls = _import_config("RBLNMOSSImagePipelineConfig")
+    with pytest.raises(ValueError, match="Parameter conflict"):
+        config_cls(text_encoder=text_encoder)
+
+
+def test_moss_image_pipeline_keeps_text_encoder_placement():
+    config_cls = _import_config("RBLNMOSSImagePipelineConfig")
+    config = config_cls(batch_size=2, text_encoder={"num_devices": 4, "device": [0, 1, 2, 3]})
+    assert config.text_encoder.batch_size == 1
+    assert config.text_encoder.num_devices == 4
+    assert config.text_encoder.device == [0, 1, 2, 3]
+    assert config.text_encoder.visual["max_seq_len"] == 64
+    assert config.text_encoder.visual["create_runtimes"] is False
+
+
 def test_cosmos2_5_pipeline_owns_the_visual_tower_config():
     """The Cosmos2.5 pipeline sets the (unused) visual tower's config itself. A submodule dict
     replaces that dict rather than merging into it, so naming `visual` with one key would drop

@@ -33,7 +33,7 @@ class RBLNMOSSImagePipeline(RBLNDiffusionMixin, MOSSImagePipeline):
         config_dict = config[0] if isinstance(config, tuple) else config
         for name, value in config_dict.items():
             # Load the checkpoint's remote-code module `pipeline_moss_image` from the copy in this package.
-            if isinstance(value, list) and value[0] == "pipeline_moss_image":
+            if isinstance(value, list) and len(value) == 2 and value[0] == "pipeline_moss_image":
                 config_dict[name] = [MOSSImagePipeline.__module__, value[1]]
         return config
 

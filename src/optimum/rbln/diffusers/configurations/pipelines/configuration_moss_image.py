@@ -76,6 +76,7 @@ class RBLNMOSSImagePipelineConfig(RBLNModelConfig):
             # The compiler takes the Qwen text and vision sequence lengths in multiples of 64.
             max_seq_len=math.ceil(max_sequence_length / 64) * 64,
             visual={"max_seq_len": 64, "create_runtimes": False},  # The visual tower is never called.
+            force_kwargs=True,
         )
         self.transformer = self.initialize_submodule_config(
             transformer,
