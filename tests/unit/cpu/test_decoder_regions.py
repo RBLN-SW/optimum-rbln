@@ -1,19 +1,37 @@
+import collections
 import json
+import operator
 from types import SimpleNamespace
 
 import pytest
 import rebel
 import torch
 from rebel.core.compilation._impl import clone_nn_module
-from transformers import Gemma2Config, Gemma2ForCausalLM, Qwen3Config, Qwen3ForCausalLM
+from transformers import (
+    Gemma2Config,
+    Gemma2ForCausalLM,
+    Qwen2_5_VLConfig,
+    Qwen2_5_VLForConditionalGeneration,
+    Qwen3_5Config,
+    Qwen3_5ForConditionalGeneration,
+    Qwen3Config,
+    Qwen3ForCausalLM,
+    Qwen3VLConfig,
+    Qwen3VLForConditionalGeneration,
+)
 
 from optimum.rbln import (
     RBLNGemma2ForCausalLM,
     RBLNGemma2ForCausalLMConfig,
+    RBLNQwen2_5_VisionTransformerPretrainedModel,
+    RBLNQwen2_5_VLForConditionalGeneration,
+    RBLNQwen2_5_VLForConditionalGenerationConfig,
+    RBLNQwen3_5ForConditionalGeneration,
     RBLNQwen3_5ForConditionalGenerationConfig,
     RBLNQwen3_5ModelConfig,
     RBLNQwen3ForCausalLM,
     RBLNQwen3ForCausalLMConfig,
+    RBLNQwen3VLForConditionalGeneration,
     RBLNQwen3VLForConditionalGenerationConfig,
     RBLNQwen3VLModelConfig,
 )
@@ -29,6 +47,7 @@ from optimum.rbln.transformers.models.gpt_oss.gpt_oss_architecture import RBLNGp
         (RBLNQwen3VLModelConfig, "RBLNQwen3VLVisionModelConfig"),
         (RBLNQwen3_5ForConditionalGenerationConfig, "RBLNQwen3_5VisionModelConfig"),
         (RBLNQwen3_5ModelConfig, "RBLNQwen3_5VisionModelConfig"),
+        (RBLNQwen2_5_VLForConditionalGenerationConfig, "RBLNQwen2_5_VisionTransformerPretrainedModelConfig"),
     ],
 )
 def test_region_config_not_saved(config_cls, vision_cls_name, enabled, tmp_path):
@@ -40,7 +59,8 @@ def test_region_config_not_saved(config_cls, vision_cls_name, enabled, tmp_path)
     config = config_cls(nested_compile_region=enabled, **kwargs)
     assert config.nested_compile_region is enabled
     config.save(tmp_path)
-    assert "nested_compile_region" not in json.loads((tmp_path / "rbln_config.json").read_text())
+    # Neither the model nor a submodule such as the vision encoder saves the flag.
+    assert "nested_compile_region" not in (tmp_path / "rbln_config.json").read_text()
     assert config_cls.from_pretrained(tmp_path).nested_compile_region is False
     restored = config_cls.from_pretrained(tmp_path, rbln_nested_compile_region=enabled)
     assert restored.nested_compile_region is enabled
@@ -156,6 +176,173 @@ def test_gpt_oss_experts_have_nonaliased_inputs():
         gate = getattr(experts, f"gate_proj_{suffix}")
         up = getattr(experts, f"up_proj_{suffix}")
         assert gate.untyped_storage().data_ptr() != up.untyped_storage().data_ptr()
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+@pytest.mark.parametrize("phase", ["prefill", "decode"])
+@pytest.mark.parametrize("arch", ["qwen2_5_vl", "qwen3_5", "qwen3_vl"])
+def test_packed_rotary_decoder_export(enabled, phase, arch):
+    hybrid = arch == "qwen3_5"
+    text = {
+        "vocab_size": 128,
+        "hidden_size": 128,
+        "intermediate_size": 256,
+        "num_hidden_layers": 4 if hybrid else 3,
+        "num_attention_heads": 2,
+        "num_key_value_heads": 2,
+        "max_position_embeddings": 16384,
+    }
+    vision = {"depth": 1, "hidden_size": 32, "intermediate_size": 64, "num_heads": 2, "out_hidden_size": 128}
+    extra = {}
+    if hybrid:
+        text.update(
+            head_dim=64,
+            linear_key_head_dim=64,
+            linear_value_head_dim=64,
+            linear_num_key_heads=2,
+            linear_num_value_heads=2,
+        )
+        vision["num_position_embeddings"] = 64
+        hf_config_cls, hf_model_cls = Qwen3_5Config, Qwen3_5ForConditionalGeneration
+        model_cls = RBLNQwen3_5ForConditionalGeneration
+        config_cls = RBLNQwen3_5ForConditionalGenerationConfig
+        vision_cls = "RBLNQwen3_5VisionModelConfig"
+        extra["gdn_chunk_size"] = 128
+    elif arch == "qwen2_5_vl":
+        text["rope_parameters"] = {"rope_type": "default", "rope_theta": 10000, "mrope_section": [8, 12, 12]}
+        vision["fullatt_block_indexes"] = [0]
+        hf_config_cls, hf_model_cls = Qwen2_5_VLConfig, Qwen2_5_VLForConditionalGeneration
+        model_cls = RBLNQwen2_5_VLForConditionalGeneration
+        config_cls = RBLNQwen2_5_VLForConditionalGenerationConfig
+        vision_cls = "RBLNQwen2_5_VisionTransformerPretrainedModelConfig"
+    else:
+        # Two deepstack layers, so the third layer injects zeros.
+        text.update(
+            head_dim=64,
+            rope_parameters={"rope_type": "default", "rope_theta": 10000, "mrope_section": [8, 12, 12]},
+        )
+        vision.update(depth=2, num_position_embeddings=64, deepstack_visual_indexes=[0, 1])
+        hf_config_cls, hf_model_cls = Qwen3VLConfig, Qwen3VLForConditionalGeneration
+        model_cls = RBLNQwen3VLForConditionalGeneration
+        config_cls = RBLNQwen3VLForConditionalGenerationConfig
+        vision_cls = "RBLNQwen3VLVisionModelConfig"
+    cfg = hf_config_cls(text_config=text, vision_config=vision)
+    model = hf_model_cls(cfg).eval()
+    config = config_cls(
+        batch_size=1,
+        max_seq_len=16384,
+        npu="RBLN-CR13",
+        kvcache_partition_len=8192,
+        prefill_chunk_size=128,
+        kvcache_num_blocks=2,
+        num_devices=1,
+        create_runtimes=False,
+        dtype="float32",
+        nested_compile_region=enabled,
+        visual={"cls_name": vision_cls, "max_seq_len": 64},
+        **extra,
+    )
+    config = model_cls._update_rbln_config(model=model, model_config=cfg, rbln_config=config)
+    wrapped = model_cls._wrap_model_if_needed(model, config)
+    wrapped.phase = phase
+    ccfg = config.compile_cfgs[0 if phase == "prefill" else 1]
+    inputs = ccfg.get_dummy_inputs(
+        fill=0, meta_tensor_names=[n for n, _, _ in ccfg.input_info if "past_key_values" in n]
+    )
+    # Keep Qwen3.5's single full-attention region visible on newer PyTorch.
+    dynamo_options = (
+        {"inline_single_use_invoke_subgraph": False}
+        if hasattr(torch._dynamo.config, "inline_single_use_invoke_subgraph")
+        else {}
+    )
+    with torch.inference_mode(), torch._dynamo.config.patch(**dynamo_options):
+        exported = torch.export.export(clone_nn_module(wrapped), tuple(inputs), strict=enabled)
+    nodes = list(exported.graph.nodes)
+    calls = [n for n in nodes if "invoke_subgraph" in str(n.target)]
+    assert len(calls) == ((4 if hybrid else 3) if enabled else 0)
+    if enabled:
+        # Qwen3.5 alternates linear and full attention bodies; the others share one.
+        assert len({call.args[0].target for call in calls}) == (2 if hybrid else 1)
+        # The compiler rolls layer calls into a loop only when nothing runs between them.
+        between = [
+            n
+            for n in nodes[nodes.index(calls[0]) : nodes.index(calls[-1])]
+            if n.op == "call_function" and n not in calls and not (n.target is operator.getitem and n.args[0] in calls)
+        ]
+        assert not between
+        # It also needs the calls of one body to take the same computed inputs, apart from the previous
+        # layer's output (the first call takes the embeddings instead) and per-layer constants.
+        constants = set(exported.graph_signature.inputs_to_lifted_tensor_constants)
+
+        def constant(node):
+            if node.op == "placeholder":
+                return node.name in constants
+            return node.op == "call_function" and all(constant(i) for i in node.all_input_nodes)
+
+        computed = collections.defaultdict(set)
+        for call in calls[1:]:
+            computed[call.args[0].target].add(
+                frozenset(
+                    a
+                    for a in call.args[2:]
+                    if isinstance(a, torch.fx.Node)
+                    and a.op == "call_function"
+                    and not (a.target is operator.getitem and a.args[0] in calls)
+                    and not constant(a)
+                )
+            )
+        assert all(len(inputs) == 1 for inputs in computed.values())
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+def test_qwen2_5_vl_vision_block_regions(monkeypatch, enabled):
+    # Every fourth block uses full attention, as in the checkpoints; each body is called twice.
+    vision = {
+        "depth": 8,
+        "hidden_size": 32,
+        "intermediate_size": 64,
+        "num_heads": 2,
+        "out_hidden_size": 128,
+        "fullatt_block_indexes": [3, 7],
+    }
+    text = {
+        "vocab_size": 128,
+        "hidden_size": 128,
+        "intermediate_size": 256,
+        "num_hidden_layers": 1,
+        "num_attention_heads": 2,
+        "num_key_value_heads": 2,
+        "rope_parameters": {"rope_type": "default", "rope_theta": 10000, "mrope_section": [8, 12, 12]},
+    }
+    cfg = Qwen2_5_VLConfig(text_config=text, vision_config=vision)
+    visual = Qwen2_5_VLForConditionalGeneration(cfg).eval().model.visual
+    config = RBLNQwen2_5_VLForConditionalGenerationConfig(
+        npu="RBLN-CR13",
+        create_runtimes=False,
+        nested_compile_region=enabled,
+        visual={
+            "cls_name": "RBLNQwen2_5_VisionTransformerPretrainedModelConfig",
+            "max_seq_len": 64,
+            "dtype": "float32",
+        },
+    ).visual
+    assert config.nested_compile_region is enabled
+    model_cls = RBLNQwen2_5_VisionTransformerPretrainedModel
+    config = model_cls._update_rbln_config(
+        preprocessors=None, model=visual, model_config=cfg.vision_config, rbln_config=config
+    )
+
+    def export(model, **kwargs):
+        assert kwargs.get("model_trace_method") == ("export_strict" if enabled else None)
+        inputs = tuple(torch.zeros(shape, dtype=getattr(torch, dtype)) for _, shape, dtype in kwargs["input_info"][0])
+        result = torch.export.export(clone_nn_module(model), inputs, strict=enabled)
+        calls = [n for n in result.graph.nodes if "invoke_subgraph" in str(n.target)]
+        assert len(calls) == (8 if enabled else 0)
+        return result
+
+    monkeypatch.setattr(rebel, "compile_from_torch", export)
+    with torch.inference_mode():
+        model_cls.get_compiled_model(visual, config)
 
 
 @pytest.mark.parametrize("supports_sort", [False, True])
