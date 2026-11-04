@@ -24,6 +24,7 @@ from ..decoderonly.decoderonly_architecture import (
     DecoderOnlyForCausalLM,
     DecoderOnlyModel,
     DecoderOnlyWrapper,
+    NestedCompileRegionMixin,
     RotaryEmbedding,
     apply_rotary_pos_emb_partial,
     rotate_half,
@@ -175,11 +176,14 @@ class Qwen3_5GatedDeltaNet(nn.Module):
         self.in_proj_q = nn.Linear(hidden, self.key_dim, bias=has_bias)
         self.in_proj_k = nn.Linear(hidden, self.key_dim, bias=has_bias)
         self.in_proj_v = nn.Linear(hidden, self.value_dim, bias=has_bias)
+        # A dim-0 split is already contiguous, so contiguous() keeps views of one storage. A nested
+        # region rejects inputs that share storage, so copy them there.
+        own = torch.clone if rbln_config.nested_compile_region else torch.Tensor.contiguous
         projections = (self.in_proj_q, self.in_proj_k, self.in_proj_v)
         for linear, weight, bias in zip(projections, weights, biases, strict=True):
-            linear.weight = nn.Parameter(weight.contiguous())
+            linear.weight = nn.Parameter(own(weight))
             if has_bias:
-                linear.bias = nn.Parameter(bias.contiguous())
+                linear.bias = nn.Parameter(own(bias))
 
     @property
     def phase(self):
@@ -324,6 +328,10 @@ class Qwen3_5LinearDecoderLayer(nn.Module):
         hidden_states = self.mlp(hidden_states)
         hidden_states = residual + hidden_states
         return hidden_states
+
+
+class Qwen3_5LinearDecoderLayerRegion(NestedCompileRegionMixin, Qwen3_5LinearDecoderLayer):
+    """Linear attention decoder layer with a nested compile region around its forward call."""
 
 
 class Qwen3_5Attention(DecoderOnlyAttention):
@@ -573,7 +581,12 @@ class Qwen3_5_CausalLMWrapper(DecoderOnlyWrapper):
         for layer_idx, layer in enumerate(self.get_decoder_layers(model)):
             if layer_types[layer_idx] == "linear_attention":
                 rbln_deltanet = Qwen3_5GatedDeltaNet(layer.linear_attn, self.rbln_config, layer_idx)
-                new_layers.append(Qwen3_5LinearDecoderLayer(layer, rbln_deltanet))
+                linear_layer_cls = (
+                    Qwen3_5LinearDecoderLayerRegion
+                    if self.rbln_config.nested_compile_region
+                    else Qwen3_5LinearDecoderLayer
+                )
+                new_layers.append(linear_layer_cls(layer, rbln_deltanet))
             else:
                 new_self_attn = self.get_rbln_attn_class()(layer.self_attn, self.rbln_config, is_sliding=False)
                 new_layers.append(
