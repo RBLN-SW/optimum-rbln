@@ -47,7 +47,6 @@ from .configuration_qwen3_5 import (
     RBLNQwen3_5VisionModelConfig,
 )
 from .qwen3_5_architecture import (
-    CONV_TABLE_INPUTS,
     Qwen3_5_CausalLMWrapper,
     Qwen3_5_LanguageModelWrapper,
     Qwen3_5VisionModelWrapper,
@@ -62,7 +61,7 @@ def validate_gdn_custom_kernel(text_config) -> None:
     """Reject a rebel-compiler that registers no GatedDeltaNet custom ops, or a head width they lack."""
     from rebel.ops.torch_custom_ops.gdn import HEAD_DIM
 
-    wanted = ("chunk_gated_delta_rule", "recurrent_gated_delta_rule", "causal_conv1d_ring_tabled")
+    wanted = ("chunk_gated_delta_rule", "recurrent_gated_delta_rule", "causal_conv1d_ring")
     missing = [name for name in wanted if not hasattr(torch.ops.rbln_custom_ops, name)]
     if missing:
         raise ValueError(
@@ -354,14 +353,6 @@ class RBLNQwen3_5TextModel(RBLNDecoderOnlyModel):
             input_info.append(("valid_mask", [batch_size, query_length, 1], rbln_config.dtype))
             # which max-batch slot this per-item (batch=1) call reads/writes in the linear caches.
             input_info.append(("batch_idx", [], "int16"))
-
-        if linear_layers:
-            # The conv cache's index tables, a row each per sequence.
-            hist_idx = text_config.linear_conv_kernel_dim - 1  # `conv_hist_idx`: the K - 1 taps before the step
-            # TODO: For MTP, holds more than K - 1 slots here.
-            window = text_config.linear_conv_kernel_dim - 1  # The number of saved cache windows
-            rows = (batch_size * hist_idx, batch_size * window, batch_size, 1)
-            input_info.extend((name, [n, 64], "int16") for name, n in zip(CONV_TABLE_INPUTS, rows, strict=True))
 
         return input_info
 

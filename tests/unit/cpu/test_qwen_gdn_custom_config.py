@@ -50,7 +50,7 @@ def test_a_pre_kernel_artifact_is_recognized_by_its_own_graph():
     legacy = _config_with_graph_inputs("input_ids", "conv_state_mask", "recurrent_state_mask", "valid_mask")
     assert uses_custom_kernel(legacy) is False
 
-    current = _config_with_graph_inputs("input_ids", "state_mask", "valid_mask", "conv_hist_idx")
+    current = _config_with_graph_inputs("input_ids", "state_mask", "valid_mask", "batch_idx")
     assert uses_custom_kernel(current) is True
 
 

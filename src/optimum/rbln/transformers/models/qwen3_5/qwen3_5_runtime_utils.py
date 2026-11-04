@@ -17,7 +17,6 @@ import torch
 
 from ...modeling_outputs import RBLNDecoderOnlyOutput
 from ..decoderonly.decoderonly_runtime_utils import RBLNRuntimeModel
-from .qwen3_5_architecture import CONV_TABLE_INPUTS
 
 
 class RBLNQwen3_5RuntimeModel(RBLNRuntimeModel):
@@ -64,19 +63,6 @@ class RBLNQwen3_5RuntimeModel(RBLNRuntimeModel):
         shapes = dict(zip(names, legacy_state_shapes, strict=True)) if self._is_legacy_graph else {}
         self._legacy_masks_zeros = {name: torch.zeros(shape, dtype=state_dtype) for name, shape in shapes.items()}
         self._legacy_masks_ones = {name: torch.ones(shape, dtype=state_dtype) for name, shape in shapes.items()}
-
-    def conv_tables(self, state_index, seq_idx, query_len, has_initial_state, tokens: int) -> dict:
-        """The conv ring's index tables for one call, as named graph inputs (see CONV_TABLE_INPUTS)."""
-        from rebel.ops.torch_custom_ops.causal_conv1d_ring import ring_tables
-
-        kernel_size = self.config.get_text_config().linear_conv_kernel_dim
-        # One block a sequence, and the block is a single ring(cache_rows=window): the conv cache is
-        # `(B, K - 1, ...)`, so a block holds the ring's `K - 1` slots and nothing else.
-        window = kernel_size - 1
-        tables = ring_tables(
-            state_index, seq_idx, query_len, has_initial_state, tokens, window, kernel_size, cache_rows=window
-        )
-        return dict(zip(CONV_TABLE_INPUTS, tables, strict=True))
 
     def _run(self, named_inputs: dict):
         """Order inputs by the runtime's own signature and invoke; return (logits, hidden_states).
@@ -206,15 +192,6 @@ class RBLNQwen3_5RuntimeModel(RBLNRuntimeModel):
                 named.update(self._legacy_masks_ones if has_initial_state else self._legacy_masks_zeros)
             else:
                 named["state_mask"] = self._state_mask_ones if has_initial_state else self._state_mask_zeros
-                named.update(
-                    self.conv_tables(
-                        torch.tensor([batch_idx or 0]),
-                        cache_pos_chunk[:, 0],
-                        torch.tensor([valid_count]),
-                        torch.tensor([int(has_initial_state)]),
-                        chunk,
-                    )
-                )
 
             # For logits_to_keep == 1 every window overwrites the single logits row, so the final value
             # is the last window's (the next-token logits). Intermediate windows only advance the states.
@@ -300,12 +277,6 @@ class RBLNQwen3_5RuntimeModel(RBLNRuntimeModel):
             named["attention_mask"] = attention_mask
         if self.rbln_config.use_lora:
             named["lora_int_ids"] = lora_int_ids
-
-        if not self._is_legacy_graph:
-            ones = torch.ones(self.batch_size, dtype=torch.int32)
-            named.update(
-                self.conv_tables(torch.arange(self.batch_size), cache_position[:, 0], ones, ones, inputs.shape[1])
-            )
 
         logits, hidden_states = self._run(named)
         return RBLNDecoderOnlyOutput(logits=logits, hidden_states=hidden_states)
