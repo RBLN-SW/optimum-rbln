@@ -89,14 +89,17 @@ class TestFlorence2Encoder:
         with pytest.raises(ValueError, match="room for text"):
             RBLNFlorence2ForConditionalGeneration.update_rbln_config([], self.model, self.model.config, config)
 
-    def runtime_model(self):
+    def runtime_model(self, batch_size=1):
         observed = {}
 
         def runtime(**kwargs):
             observed.update(kwargs)
+            observed.setdefault("calls", []).append(kwargs)
             return torch.empty(0)
 
-        config = RBLNFlorence2ForConditionalGenerationConfig(image_size=64, enc_max_seq_len=64, dec_max_seq_len=64)
+        config = RBLNFlorence2ForConditionalGenerationConfig(
+            batch_size=batch_size, image_size=64, enc_max_seq_len=64, dec_max_seq_len=64
+        )
         config = RBLNFlorence2ForConditionalGeneration.update_rbln_config([], self.model, self.model.config, config)
         model = object.__new__(RBLNFlorence2ForConditionalGeneration)
         model.config = self.model.config
@@ -127,6 +130,26 @@ class TestFlorence2Encoder:
         with pytest.raises(ValueError, match="image-token prefix"):
             model._prepare_encoder_decoder_kwargs_for_generation(ids, {"pixel_values": torch.randn(1, 3, 64, 64)})
         assert not observed
+
+    def test_batched_encoder_preserves_image_text_mask_and_cache_rows(self):
+        model, observed = self.runtime_model(batch_size=2)
+        text_ids = torch.tensor([[0, 4, 2, 1], [0, 5, 6, 2]])
+        ids = torch.cat((torch.full((2, 5), 31), text_ids), dim=1)
+        mask = torch.tensor([[1, 1, 1, 1, 1, 1, 1, 1, 0], [1, 1, 1, 1, 1, 1, 1, 1, 1]])
+        pixels = torch.arange(2, dtype=torch.float32).view(2, 1, 1, 1).expand(2, 3, 64, 64)
+        result = model._prepare_encoder_decoder_kwargs_for_generation(
+            ids, {"pixel_values": pixels, "attention_mask": mask}
+        )
+
+        assert len(observed["calls"]) == 2
+        expected_mask = torch.nn.functional.pad(mask, (0, 55)).float()
+        torch.testing.assert_close(result["attention_mask"], expected_mask)
+        for index, call in enumerate(observed["calls"]):
+            expected_ids = torch.nn.functional.pad(text_ids[index : index + 1], (0, 55), value=1)
+            torch.testing.assert_close(call["input_ids"], expected_ids)
+            torch.testing.assert_close(call["pixel_values"], pixels[index : index + 1])
+            assert call["block_tables"].tolist() == [index]
+            torch.testing.assert_close(call["attention_mask"], expected_mask[index : index + 1])
 
     def test_extra_images_fail_before_per_image_slicing(self):
         model, observed = self.runtime_model()
