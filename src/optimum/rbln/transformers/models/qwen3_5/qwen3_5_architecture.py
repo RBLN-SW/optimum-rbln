@@ -471,13 +471,16 @@ class Qwen3_5Model(DecoderOnlyModel):
         else:
             seq_positions = cache_position[:, :1]
 
+        # Every linear layer writes the same cache row, and nothing may run between two region
+        # calls -- the compiler rolls them into a loop only then. So the slot is taken once.
+        slot = batch_idx.to(torch.int16) if batch_idx is not None else torch.tensor(0, dtype=torch.int16)
+
         all_hidden_states = () if output_hidden_states else None
         for layer_idx, layer in enumerate(self.layers):
             if output_hidden_states:
                 all_hidden_states += (hidden_states,)
             if layer_idx in self.linear_attention_layers:
                 conv_state, recurrent_state = past_states[layer_idx]
-                slot = batch_idx.to(torch.int16) if batch_idx is not None else torch.tensor(0, dtype=torch.int16)
                 hidden_states = layer(
                     hidden_states,
                     conv_state,
