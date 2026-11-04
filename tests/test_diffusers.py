@@ -649,6 +649,9 @@ class TestQwenImage21Model(BaseTest.TestModel):
 
     @classmethod
     def setUpClass(cls):
+        cls._creates_tiny_pipeline = False
+        if os.environ.get("REUSE_ARTIFACTS_PATH") is not None:
+            return super().setUpClass()
         cls._creates_tiny_pipeline = not os.path.isdir(cls.HF_MODEL_ID)
         if cls._creates_tiny_pipeline:
             _save_tiny_qwenimage21_pipeline(cls.HF_MODEL_ID)

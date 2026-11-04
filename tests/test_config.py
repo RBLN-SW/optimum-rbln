@@ -645,6 +645,30 @@ def test_qwenimage21_pipeline_derives_submodule_sizes():
         config_cls(num_condition_images=0)
 
 
+@pytest.mark.parametrize(
+    ("output_resolution", "canvas", "aspect_ratio"),
+    [
+        (1008, (1024, 1024), 1.0),
+        (496, (512, 512), 1.0),
+        (240, (256, 256), 1.0),
+        (752, (768, 768), 1.0),
+        (720, (512, 1408), 81 / 25),
+        (720, (384, 2304), 9.0),
+    ],
+)
+def test_qwenimage21_condition_sizes_include_rounding_boundaries(output_resolution, canvas, aspect_ratio):
+    from diffusers.pipelines.qwenimage21.pipeline_qwenimage21 import calculate_dimensions
+
+    config_cls = _import_config("RBLNQwenImage21PipelineConfig")
+    width, height, _ = calculate_dimensions(output_resolution**2, aspect_ratio)
+    assert (height, width) in config_cls._get_condition_sizes(output_resolution, *canvas)
+
+    config = config_cls(image_size=(256, 256), condition_image_size=canvas, output_resolution=output_resolution)
+    image_tokens = (height // 16) * (width // 16)
+    assert max(config.text_encoder.visual["max_seq_len"]) >= image_tokens
+    assert config.transformer.max_seq_len >= 512 + image_tokens
+
+
 if __name__ == "__main__":
     pytest.main()
 

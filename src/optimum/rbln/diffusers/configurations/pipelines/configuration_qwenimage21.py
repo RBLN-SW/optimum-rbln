@@ -168,8 +168,8 @@ class RBLNQwenImage21PipelineConfig(RBLNModelConfig):
 
     @staticmethod
     def _get_condition_sizes(output_resolution: int, height: int, width: int) -> list[tuple[int, int]]:
-        # The sizes `calculate_dimensions` gives condition images that fit a (height, width) canvas. A size only
-        # changes where a side crosses a multiple of 32, so one aspect ratio between each pair of boundaries finds all.
+        # The sizes `calculate_dimensions` gives condition images that fit a (height, width) canvas. Sample both
+        # intervals and their boundaries: ties-to-even rounding can give a different size at a boundary.
         from diffusers.pipelines.qwenimage21.pipeline_qwenimage21 import calculate_dimensions
 
         area = output_resolution**2
@@ -180,8 +180,10 @@ class RBLNQwenImage21PipelineConfig(RBLNModelConfig):
         for side in range(_SIZE_MULTIPLE, max(height, width) + 2 * _SIZE_MULTIPLE, _SIZE_MULTIPLE):
             bounds.update(((side - half) ** 2 / area, area / (side - half) ** 2))
         sizes = set()
-        for lower, upper in itertools.pairwise(sorted(bound for bound in bounds if low <= bound <= high)):
-            resized_width, resized_height, _ = calculate_dimensions(area, (lower + upper) / 2)
+        ratios = sorted(bound for bound in bounds if low <= bound <= high)
+        samples = itertools.chain(ratios, ((lower + upper) / 2 for lower, upper in itertools.pairwise(ratios)))
+        for ratio in samples:
+            resized_width, resized_height, _ = calculate_dimensions(area, ratio)
             if 0 < resized_height <= height and 0 < resized_width <= width:
                 sizes.add((resized_height, resized_width))
         return sorted(sizes)
