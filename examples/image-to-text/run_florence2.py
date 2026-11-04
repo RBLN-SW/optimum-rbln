@@ -23,7 +23,7 @@ def main():
     parser.add_argument("--max-new-tokens", type=int, default=32)
     args = parser.parse_args()
 
-    processor = AutoProcessor.from_pretrained(args.model_id, backend="pil")
+    processor = AutoProcessor.from_pretrained(args.model_id)
     if os.path.isdir(args.model_id):
         model = RBLNFlorence2ForConditionalGeneration.from_pretrained(args.model_id)
     else:

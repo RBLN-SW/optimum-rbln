@@ -129,7 +129,7 @@ class Seq2SeqDecoderWrapper(nn.Module):
 
     def __init__(self, model: nn.Module, use_attention_mask: bool = True, **kwargs):
         super().__init__()
-        self.config = model.config
+        self.config = model.config.get_text_config()
         self.use_attention_mask = use_attention_mask
         self.__post_init__(model, **kwargs)
 
@@ -216,7 +216,7 @@ class Seq2SeqForConditionalGeneration(nn.Module):
 
     def __init__(self, model, decoder_model):
         super().__init__()
-        self.config = model.config
+        self.config = model.config.get_text_config()
         self.lm_head = model.lm_head
         self.decoder = decoder_model
         self.__post_init__()

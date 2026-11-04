@@ -57,24 +57,31 @@ def _encoder_layer_forward(self, hidden_states, attention_mask, **kwargs):
     return torch.clamp(hidden_states, min=-bound, max=bound)
 
 
+def patch_encoder_layers(encoder):
+    for layer in encoder.layers:
+        layer.forward = MethodType(_encoder_layer_forward, layer)
+
+
 class BartWrapper:
     def __init__(self, model: nn.Module, enc_max_seq_len: int, use_attention_mask: bool):
-        for layer in model.get_encoder().layers:
-            layer.forward = MethodType(_encoder_layer_forward, layer)
-
+        patch_encoder_layers(model.get_encoder())
         self.encoder = Seq2SeqEncoderWrapper(model, enc_max_seq_len)
         self.decoder = BartDecoderWrapper(model, use_attention_mask=use_attention_mask)
 
 
 class BartDecoderWrapper(Seq2SeqDecoderWrapper):
+    def get_decoder(self, model: nn.Module):
+        return model.get_decoder()
+
     def convert_to_rbln_conditional_generation(self, model: nn.Module):
+        decoder = self.get_decoder(model)
         new_layers = []
-        for layer in model.get_decoder().layers:
+        for layer in decoder.layers:
             self_attn = BartSelfAttention(layer.self_attn, use_attention_mask=self.use_attention_mask)
             cross_attn = BartCrossAttention(layer.encoder_attn)
             new_layers.append(BartDecoderLayer(layer, self_attn, cross_attn))
 
-        decoder_model = BartDecoder(model.get_decoder(), new_layers)
+        decoder_model = BartDecoder(decoder, new_layers)
         new_model = BartForConditionalGeneration(model, decoder_model)
 
         return new_model

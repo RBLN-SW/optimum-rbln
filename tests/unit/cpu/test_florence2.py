@@ -11,7 +11,7 @@ from optimum.rbln import (
     RBLNFlorence2ForConditionalGeneration,
     RBLNFlorence2ForConditionalGenerationConfig,
 )
-from optimum.rbln.transformers.models.florence2.florence2_architecture import Florence2MultimodalEncoder
+from optimum.rbln.transformers.models.florence2.florence2_architecture import Florence2Wrapper
 
 
 class TestFlorence2Encoder:
@@ -43,7 +43,11 @@ class TestFlorence2Encoder:
         config.text_config._attn_implementation = "eager"
         self.model = Florence2ForConditionalGeneration(config).eval()
 
-    def test_fused_encoder_matches_native_image_placeholders(self):
+    def test_fused_encoder_matches_native_image_placeholders(self, monkeypatch):
+        def update_cache(cache, values, index, axis):
+            return cache.index_copy(axis.item(), index.reshape(1).long(), values)
+
+        monkeypatch.setattr(torch.ops.rbln_custom_ops, "rbln_cache_update", update_cache)
         pixels = torch.randn(1, 3, 64, 64)
         text_ids = torch.tensor([[0, 4, 2, 1]])
         text_mask = torch.tensor([[1, 1, 1, 0]])
@@ -55,8 +59,18 @@ class TestFlorence2Encoder:
             embeds = self.model.get_input_embeddings()(input_ids)
             embeds = embeds.masked_scatter((input_ids == self.model.config.image_token_id).unsqueeze(-1), features)
             expected = self.model.get_encoder()(inputs_embeds=embeds, attention_mask=mask)[0]
-            actual = Florence2MultimodalEncoder(self.model)((pixels, text_ids), mask)[0]
-        torch.testing.assert_close(actual, expected, rtol=0, atol=0)
+            decoder = self.model.model.language_model.get_decoder()
+            expected_kv = [
+                projection(expected).view(1, input_ids.shape[1], 4, 8).transpose(1, 2)
+                for layer in decoder.layers
+                for projection in (layer.encoder_attn.k_proj, layer.encoder_attn.v_proj)
+            ]
+            caches = [torch.zeros(2, *values.shape[1:]) for values in expected_kv]
+            wrapper = Florence2Wrapper(self.model, input_ids.shape[1], use_attention_mask=False)
+            actual = wrapper.encoder(text_ids, mask, pixels, torch.tensor([1], dtype=torch.int16), *caches)
+        for values, expected_values in zip(actual, expected_kv, strict=True):
+            torch.testing.assert_close(values[1:2], expected_values, rtol=0, atol=0)
+            torch.testing.assert_close(values[0], torch.zeros_like(values[0]), rtol=0, atol=0)
 
     def test_compile_inputs_include_image_features_in_encoder_length(self):
         config = RBLNFlorence2ForConditionalGenerationConfig(image_size=64, enc_max_seq_len=64, dec_max_seq_len=64)

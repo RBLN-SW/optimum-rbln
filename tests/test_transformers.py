@@ -419,7 +419,7 @@ class TestFlorence2ForConditionalGeneration(BaseTest.TestModel):
     }
 
     def get_inputs(self):
-        processor = AutoProcessor.from_pretrained(self.HF_MODEL_ID, backend="pil")
+        processor = AutoProcessor.from_pretrained(self.HF_MODEL_ID)
         inputs = processor(text="<CAPTION>", images=Image.new("RGB", (768, 768)), return_tensors="pt")
         return {**inputs, "max_new_tokens": 2, "num_beams": 1, "do_sample": False}
 

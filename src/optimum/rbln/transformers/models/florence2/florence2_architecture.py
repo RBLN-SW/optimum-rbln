@@ -6,21 +6,8 @@
 import torch
 from torch import nn
 
-from ..bart.bart_architecture import BartWrapper
-
-
-class Florence2LanguageAdapter(nn.Module):
-    def __init__(self, model):
-        super().__init__()
-        self.config = model.config.text_config
-        self.model = model.model.language_model
-        self.lm_head = model.lm_head
-
-    def get_encoder(self):
-        return self.model.get_encoder()
-
-    def get_decoder(self):
-        return self.model.get_decoder()
+from ..bart.bart_architecture import BartDecoderWrapper, patch_encoder_layers
+from ..seq2seq.seq2seq_architecture import Seq2SeqEncoderWrapper
 
 
 class Florence2ImageEncoder(nn.Module):
@@ -48,20 +35,23 @@ class Florence2MultimodalEncoder(nn.Module):
         return self.encoder(inputs_embeds=inputs_embeds, attention_mask=attention_mask, **kwargs)
 
 
-class Florence2EncoderWrapper(nn.Module):
-    def __init__(self, encoder):
-        super().__init__()
-        self.encoder = encoder
+class Florence2EncoderWrapper(Seq2SeqEncoderWrapper):
+    def __init__(self, model, enc_max_seq_len):
+        super().__init__(model.model.language_model, enc_max_seq_len)
+        self.encoder = Florence2MultimodalEncoder(model)
 
     def forward(self, input_ids, attention_mask, pixel_values, block_tables, *cross_key_values):
-        return self.encoder((pixel_values, input_ids), attention_mask, block_tables, *cross_key_values)
+        # Pack both modalities to reuse the shared encoder's cross-KV update path.
+        return super().forward((pixel_values, input_ids), attention_mask, block_tables, *cross_key_values)
+
+
+class Florence2DecoderWrapper(BartDecoderWrapper):
+    def get_decoder(self, model):
+        return model.model.language_model.get_decoder()
 
 
 class Florence2Wrapper:
     def __init__(self, model, enc_max_seq_len, use_attention_mask):
-        bart = BartWrapper(
-            Florence2LanguageAdapter(model), enc_max_seq_len=enc_max_seq_len, use_attention_mask=use_attention_mask
-        )
-        bart.encoder.encoder = Florence2MultimodalEncoder(model)
-        self.encoder = Florence2EncoderWrapper(bart.encoder).eval()
-        self.decoder = bart.decoder.eval()
+        patch_encoder_layers(model.model.language_model.get_encoder())
+        self.encoder = Florence2EncoderWrapper(model, enc_max_seq_len).eval()
+        self.decoder = Florence2DecoderWrapper(model, use_attention_mask=use_attention_mask).eval()
