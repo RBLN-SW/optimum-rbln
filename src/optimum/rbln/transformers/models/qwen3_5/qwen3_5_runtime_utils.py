@@ -123,6 +123,12 @@ class RBLNQwen3_5RuntimeModel(RBLNRuntimeModel):
         # "logits", so every window must be collected — keeping only the last window would drop
         # all earlier windows of a multi-chunk prompt and return padded chunk width.
         collect_full_logits = self.rbln_config.logits_to_keep == 0
+        # The base condition, or GatedDeltaNet layers, as in `get_input_info` and `Qwen3_5_CausalLMWrapper`.
+        uses_query_position = (
+            self.rbln_config.use_local_attention
+            or self.rbln_config.logits_to_keep > 0
+            or bool(self.rbln_config.linear_attention_layers)
+        )
         all_logits = [] if collect_full_logits else None
         all_hidden_states = [] if self.rbln_config.output_hidden_states else None
 
@@ -145,7 +151,7 @@ class RBLNQwen3_5RuntimeModel(RBLNRuntimeModel):
                 torch.tensor(
                     (query_length - 1) % chunk if step + chunk >= query_length else chunk - 1, dtype=torch.int16
                 )
-                if self.rbln_config.logits_to_keep > 0
+                if uses_query_position
                 else None
             )
 
@@ -155,7 +161,7 @@ class RBLNQwen3_5RuntimeModel(RBLNRuntimeModel):
                 named["block_tables"] = block_tables
             if position_embed_chunk is not None:
                 named["position_emb"] = position_embed_chunk
-            if self.rbln_config.logits_to_keep > 0:
+            if uses_query_position:
                 named["query_position"] = query_position
             if self.rbln_config.use_attention_mask:
                 named["attention_mask"] = chunked_attention_mask

@@ -1,5 +1,7 @@
 import os
+import tempfile
 import unittest
+from unittest.mock import patch
 
 import torch
 from diffusers import ControlNetModel
@@ -17,6 +19,7 @@ from optimum.rbln import (
     RBLNCosmos2VideoToWorldPipeline,
     RBLNKandinskyV22CombinedPipeline,
     RBLNKandinskyV22Img2ImgCombinedPipeline,
+    RBLNMOSSImagePipeline,
     RBLNStableDiffusion3Img2ImgPipeline,
     RBLNStableDiffusion3Pipeline,
     RBLNStableDiffusionControlNetPipeline,
@@ -549,6 +552,109 @@ class TestCogVideoXImageToVideoModel(BaseTest.TestModel):
         image = torch.rand(1, 3, 1, 128, 128) * 2 - 1
         latent = self.model.vae.encode(image).latent_dist.mean
         assert tuple(latent.shape) == (1, 4, 1, 16, 16)
+
+
+class TestMOSSImageModel(BaseTest.TestModel):
+    RBLN_CLASS = RBLNMOSSImagePipeline
+    HF_MODEL_ID = "OpenMOSS-Team/MOSS-Image-Base"
+    GENERATION_KWARGS = {
+        "prompt": "dance monkey",
+        "num_inference_steps": 2,
+        "generator": torch.manual_seed(42),
+        "height": 64,
+        "width": 64,
+        "output_type": "np",
+    }
+    RBLN_CLASS_KWARGS = {
+        "export": True,
+        "torch_dtype": {"default": torch.bfloat16, "vae": torch.float32},
+        "rbln_config": {
+            "height": 64,
+            "width": 64,
+            "max_sequence_length": 128,
+        },
+    }
+
+    @classmethod
+    def setUpClass(cls):
+        if os.environ.get("REUSE_ARTIFACTS_PATH") is not None:
+            return super().setUpClass()
+        checkpoint = tempfile.TemporaryDirectory(prefix="tiny-moss-image-")
+        cls.addClassCleanup(checkpoint.cleanup)
+        text_encoder = cls._save_tiny_pipeline(checkpoint.name)
+        cls.HF_MODEL_ID = checkpoint.name
+        # Keep the generated encoder in memory so mapped source files cannot block NFS cleanup.
+        with patch.dict(cls.RBLN_CLASS_KWARGS, text_encoder=text_encoder):
+            return super().setUpClass()
+
+    @classmethod
+    def _save_tiny_pipeline(cls, path):
+        from diffusers import AutoencoderKLFlux2
+        from transformers import Qwen2Tokenizer, Qwen3_5Config, Qwen3_5Model
+
+        from optimum.rbln.diffusers.pipelines.moss_image.pipeline_moss_image_upstream import (
+            MOSSImagePipeline,
+            MOSSImageScheduler,
+            MOSSImageTransformer,
+        )
+
+        # Build random tiny weights locally; only the real tokenizer is downloaded.
+        tokenizer = Qwen2Tokenizer.from_pretrained(
+            "OpenMOSS-Team/MOSS-Image-Base",
+            subfolder="tokenizer",
+            revision="85975793d8b3d432f1b6e27f352abaa4c2a4c0d3",
+        )
+        config = Qwen3_5Config(
+            text_config={
+                "hidden_size": 64,
+                "intermediate_size": 128,
+                "num_hidden_layers": 4,
+                "num_attention_heads": 4,
+                "num_key_value_heads": 2,
+                "head_dim": 32,
+                "linear_num_key_heads": 2,
+                "linear_num_value_heads": 4,
+                "linear_key_head_dim": 128,
+                "linear_value_head_dim": 128,
+                "max_position_embeddings": 4096,
+                "rope_parameters": {
+                    "rope_type": "default",
+                    "rope_theta": 10000000.0,
+                    "partial_rotary_factor": 0.25,
+                    "mrope_section": [2, 1, 1],
+                    "mrope_interleaved": True,
+                },
+            },
+            vision_config={
+                "depth": 2,
+                "hidden_size": 32,
+                "intermediate_size": 64,
+                "num_heads": 2,
+                "out_hidden_size": 64,
+                "num_position_embeddings": 64,
+            },
+        )
+        with torch.random.fork_rng():
+            torch.manual_seed(42)
+            text_encoder = Qwen3_5Model(config).to(torch.bfloat16).eval()
+            # The default unconditional skip index is 22, so keep at least 23 blocks.
+            transformer = (
+                MOSSImageTransformer(
+                    dim=64, ffn_dim=128, num_heads=4, num_layers=24, text_dim=64, freq_dim=16, latent_channels=16
+                )
+                .to(torch.bfloat16)
+                .eval()
+            )
+            vae = AutoencoderKLFlux2(
+                block_out_channels=(32, 32, 32, 32),
+                layers_per_block=1,
+                latent_channels=4,
+                sample_size=64,
+            ).eval()
+            vae.bn.running_mean.normal_()
+            vae.bn.running_var.uniform_(0.5, 2.0)
+        MOSSImagePipeline(transformer, MOSSImageScheduler(), text_encoder, tokenizer, vae).save_pretrained(path)
+        return text_encoder
 
 
 if __name__ == "__main__":

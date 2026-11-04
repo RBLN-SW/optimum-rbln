@@ -587,6 +587,58 @@ def test_deprecated_load_visual_runtime(parent_cls_name, vision_cls_name):
     assert overrides["visual"]["create_runtimes"] is False
 
 
+def test_moss_image_pipeline_derives_submodule_sizes():
+    """The MOSS-Image pipeline config sets the prompt length and the image size of all submodules."""
+    config_cls = _import_config("RBLNMOSSImagePipelineConfig")
+
+    default = config_cls()
+    assert default.text_encoder.max_seq_len == 512
+    assert default.text_encoder.batch_size == 1  # Upstream encodes one prompt at a time.
+    assert default.text_encoder.phases == ["prefill"]
+    assert default.text_encoder.visual["create_runtimes"] is False  # The vision encoder never runs.
+    assert default.transformer.sample_size == (64, 64)
+    assert default.transformer.max_sequence_length == 512
+    assert default.vae.sample_size == (1024, 1024)
+    assert default.vae.uses_encoder is False
+
+    custom = config_cls(height=768, width=1360, max_sequence_length=300, batch_size=2)
+    assert custom.text_encoder.max_seq_len == 320  # Up to a multiple of 64.
+    assert custom.transformer.sample_size == (48, 85)
+    assert custom.transformer.max_sequence_length == 300
+    assert custom.transformer.batch_size == 2
+    assert custom.vae.sample_size == (768, 1360)
+    assert custom.vae.batch_size == 2
+
+    with pytest.raises(ValueError, match="multiples of 16"):
+        config_cls(height=1000, width=1000)
+
+
+@pytest.mark.parametrize(
+    "text_encoder",
+    [
+        {"visual": {"max_seq_len": 64}},
+        {"visual": {"device": 1}},
+        {"batch_size": 2},
+        {"use_inputs_embeds": False},
+        {"max_seq_len": 128},
+    ],
+)
+def test_moss_image_pipeline_rejects_conflicting_text_encoder_config(text_encoder):
+    config_cls = _import_config("RBLNMOSSImagePipelineConfig")
+    with pytest.raises(ValueError, match="Parameter conflict"):
+        config_cls(text_encoder=text_encoder)
+
+
+def test_moss_image_pipeline_keeps_text_encoder_placement():
+    config_cls = _import_config("RBLNMOSSImagePipelineConfig")
+    config = config_cls(batch_size=2, text_encoder={"num_devices": 4, "device": [0, 1, 2, 3]})
+    assert config.text_encoder.batch_size == 1
+    assert config.text_encoder.num_devices == 4
+    assert config.text_encoder.device == [0, 1, 2, 3]
+    assert config.text_encoder.visual["max_seq_len"] == 64
+    assert config.text_encoder.visual["create_runtimes"] is False
+
+
 def test_cosmos2_5_pipeline_owns_the_visual_tower_config():
     """The Cosmos2.5 pipeline sets the (unused) visual tower's config itself. A submodule dict
     replaces that dict rather than merging into it, so naming `visual` with one key would drop

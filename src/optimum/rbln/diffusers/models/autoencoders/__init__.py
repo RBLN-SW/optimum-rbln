@@ -23,6 +23,7 @@ if TYPE_CHECKING:
     from .autoencoder_kl import *
     from .autoencoder_kl_cogvideox import *
     from .autoencoder_kl_cosmos import *
+    from .autoencoder_kl_flux2 import *
     from .autoencoder_kl_temporal_decoder import *
     from .autoencoder_kl_wan import *
     from .vq_model import *
