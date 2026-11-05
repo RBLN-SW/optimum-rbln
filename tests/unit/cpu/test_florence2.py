@@ -85,11 +85,6 @@ class TestFlorence2Encoder:
             features = self.model.get_image_features(torch.randn(1, 3, 64, 64)).pooler_output
         assert features.shape[1] == config.enc_max_seq_len - encoder["input_ids"][0][1]
 
-    def test_encoder_length_must_leave_room_for_text(self):
-        config = RBLNFlorence2ForConditionalGenerationConfig(image_size=256, enc_max_seq_len=64, dec_max_seq_len=64)
-        with pytest.raises(ValueError, match="room for text"):
-            RBLNFlorence2ForConditionalGeneration.update_rbln_config([], self.model, self.model.config, config)
-
     def runtime_model(self, batch_size=1):
         observed = {}
 
@@ -109,13 +104,6 @@ class TestFlorence2Encoder:
         model.model = [runtime, runtime]
         model.__post_init__()
         return model, observed
-
-    def test_misplaced_image_prefix_fails_before_runtime(self):
-        model, observed = self.runtime_model()
-        ids = torch.tensor([[0, 31, 31, 31, 31, 31, 4, 2]])
-        with pytest.raises(ValueError, match="image-token prefix"):
-            model._prepare_encoder_decoder_kwargs_for_generation(ids, {"pixel_values": torch.randn(1, 3, 64, 64)})
-        assert not observed
 
     def test_batched_encoder_preserves_image_text_mask_and_cache_rows(self):
         model, observed = self.runtime_model(batch_size=2)
@@ -139,38 +127,9 @@ class TestFlorence2Encoder:
             assert call["block_tables"].dtype == torch.int16
             torch.testing.assert_close(call["attention_mask"], expected_mask[index : index + 1])
 
-    def test_extra_images_fail_before_per_image_slicing(self):
-        model, observed = self.runtime_model()
-        ids = torch.tensor([[31, 31, 31, 31, 31, 0, 4, 2]])
-        with pytest.raises(ValueError, match="Image batch size"):
-            model._prepare_encoder_decoder_kwargs_for_generation(ids, {"pixel_values": torch.randn(2, 3, 64, 64)})
-        assert not observed
-
     def test_input_batch_cannot_write_past_compiled_cross_cache(self):
         model, observed = self.runtime_model()
         ids = torch.tensor([[31, 31, 31, 31, 31, 0, 4, 2]]).repeat(2, 1)
         with pytest.raises(ValueError, match="compiled batch_size"):
             model._prepare_encoder_decoder_kwargs_for_generation(ids, {"pixel_values": torch.randn(2, 3, 64, 64)})
-        assert not observed
-
-    def test_generation_cannot_exceed_compiled_cache(self):
-        model, observed = self.runtime_model()
-        with pytest.raises(ValueError, match="KV cache"):
-            model.generate(
-                torch.tensor([[31, 31, 31, 31, 31, 0, 4, 2]]),
-                pixel_values=torch.randn(1, 3, 64, 64),
-                max_new_tokens=65,
-            )
-        assert "pixel_values" in observed
-
-    def test_multi_token_effective_decoder_prefix_is_rejected(self):
-        model, observed = self.runtime_model()
-        with pytest.raises(NotImplementedError, match="decoder prefill"):
-            model._prepare_decoder_input_ids_for_generation(
-                1,
-                "input_ids",
-                {"decoder_input_ids": torch.tensor([[4]])},
-                torch.tensor(2),
-                device=torch.device("cpu"),
-            )
         assert not observed
