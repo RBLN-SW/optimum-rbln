@@ -309,7 +309,7 @@ class RBLNQwen3_5TextModel(RBLNDecoderOnlyModel):
                 kvcache_dtype = "float8_e4m3fn"
 
             # conv/recurrent caches are one shared static tensor, so sized to the max batch (not batch_size=1 for
-            # prefill). Prefill writes its own slot (batch_idx); decode runs the full batch.
+            # prefill). Prefill writes its own row (`state_idx`); decode runs the full batch.
             _state_dtype = RBLNCompileConfig.normalize_dtype(rbln_config.dtype)
             cache_metas = []
             for layer_idx in range(num_hidden_layers):
@@ -346,8 +346,9 @@ class RBLNQwen3_5TextModel(RBLNDecoderOnlyModel):
             input_info.append(("state_mask", [batch_size], rbln_config.dtype))
             # per-token validity (1=real, 0=right-padding); host-built, GatedDeltaNet uses it to drop padding.
             input_info.append(("valid_mask", [batch_size, query_length, 1], rbln_config.dtype))
-            # which max-batch slot this per-item (batch=1) call reads/writes in the linear caches.
-            input_info.append(("batch_idx", [], "int16"))
+        if linear_layers:
+            # The row of each batch row in the linear caches
+            input_info.append(("state_idx", [batch_size], "int16"))
 
         return input_info
 

@@ -133,6 +133,8 @@ class Qwen3_5GatedDeltaNet(nn.Module):
       before this step off the conv cache's ring and writes this step's tokens back into it.
     - the delta rule, ``chunk_gated_delta_rule`` on PREFILL and ``recurrent_gated_delta_rule`` on
       DECODE (seq = 1), over the recurrent cache.
+
+    Both take the same cache rows, ``state_idx`` [B]: the cache row of each batch row.
     """
 
     def __init__(self, linear_attn: nn.Module, rbln_config, layer_idx: int):
@@ -213,7 +215,7 @@ class Qwen3_5GatedDeltaNet(nn.Module):
         self,
         qkv: torch.Tensor,
         conv_state: torch.Tensor,
-        slot: torch.Tensor,
+        state_idx: torch.Tensor,
         seq_idx: torch.Tensor,
         query_len: torch.Tensor,
         has_initial_state: torch.Tensor,
@@ -224,20 +226,13 @@ class Qwen3_5GatedDeltaNet(nn.Module):
         convolves them with this call's tokens, and writes the valid ones back into the ring. The op
         builds the ring's index tables from its per-row operands in the graph.
         """
-        # The delta rule takes its cache rows as one start, `slot` (rows slot .. slot + B - 1); the
-        # conv op takes a cache row for each batch row. Same rows: slot + 0, 1, .... They are a running
-        # sum over an input, not an arange: on decode `slot` is a constant too, so slot + arange folds to
-        # a constant, and the op reads these rows from a const buffer, which the runtime does not load
-        # from a constant.
-        ones = torch.ones_like(seq_idx)
-        conv_batch_idx = slot + torch.cumsum(ones, dim=0, dtype=torch.int32) - ones
         _, _, seq_len, dim = qkv.shape
         heads, ratio = self.num_k_heads, self.num_v_heads // self.num_k_heads
         convolved = torch.ops.rbln_custom_ops.causal_conv1d_ring(
             qkv.transpose(1, 2).contiguous(),
             self.conv_weight,
             conv_state,
-            conv_batch_idx,
+            state_idx,
             seq_idx,
             query_len,
             has_initial_state,
@@ -252,7 +247,7 @@ class Qwen3_5GatedDeltaNet(nn.Module):
         hidden_states: torch.Tensor,
         conv_state: torch.Tensor,
         recurrent_state: torch.Tensor,
-        slot: torch.Tensor,
+        state_idx: torch.Tensor,
         seq_idx: torch.Tensor,
         query_len: torch.Tensor,
         has_initial_state: torch.Tensor,
@@ -268,7 +263,7 @@ class Qwen3_5GatedDeltaNet(nn.Module):
         b = self.in_proj_b(hidden_states)
         a = self.in_proj_a(hidden_states)
         qkv = self.project_qkv(hidden_states)
-        query, key, value = self.rbln_causal_conv1d(qkv, conv_state, slot, seq_idx, query_len, has_initial_state)
+        query, key, value = self.rbln_causal_conv1d(qkv, conv_state, state_idx, seq_idx, query_len, has_initial_state)
 
         beta = b.sigmoid()
         g = -self.A_log.float().exp() * F.softplus(a.float() + self.dt_bias)
@@ -278,7 +273,7 @@ class Qwen3_5GatedDeltaNet(nn.Module):
             beta = beta * valid_mask
         g = g.reshape(batch_size, seq_len, heads, ratio).permute(0, 2, 3, 1).contiguous()
         beta = beta.reshape(batch_size, seq_len, heads, ratio).permute(0, 2, 3, 1).contiguous()
-        operands = (query.contiguous(), key.contiguous(), value.contiguous(), g, beta, recurrent_state, slot)
+        operands = (query.contiguous(), key.contiguous(), value.contiguous(), g, beta, recurrent_state, state_idx)
         if prefill:
             # `state_mask` is one value per cache row: 0 starts that row from a zero state.
             core_attn_out = torch.ops.rbln_custom_ops.chunk_gated_delta_rule(*operands, state_mask)
@@ -314,7 +309,7 @@ class Qwen3_5LinearDecoderLayer(nn.Module):
         hidden_states: torch.Tensor,
         conv_state: torch.Tensor,
         recurrent_state: torch.Tensor,
-        slot: torch.Tensor,
+        state_idx: torch.Tensor,
         seq_idx: torch.Tensor,
         query_len: torch.Tensor,
         has_initial_state: torch.Tensor,
@@ -327,7 +322,7 @@ class Qwen3_5LinearDecoderLayer(nn.Module):
             hidden_states,
             conv_state,
             recurrent_state,
-            slot=slot,
+            state_idx=state_idx,
             seq_idx=seq_idx,
             query_len=query_len,
             has_initial_state=has_initial_state,
@@ -457,7 +452,7 @@ class Qwen3_5Model(DecoderOnlyModel):
         lora_int_id: torch.Tensor | None = None,
         state_mask: torch.Tensor | None = None,
         valid_mask: torch.Tensor | None = None,
-        batch_idx: torch.Tensor | None = None,  # prefill only: which max-batch cache slot this item uses
+        state_idx: torch.Tensor | None = None,  # [B]: the row of each batch row in the linear caches
         output_hidden_states: bool | None = None,
     ):
         if (input_ids is None) ^ (inputs_embeds is not None):
@@ -483,11 +478,6 @@ class Qwen3_5Model(DecoderOnlyModel):
         else:
             seq_positions = cache_position[:, :1]
 
-        # Nothing may run between two region calls -- the compiler rolls them into a loop only then.
-        # So what every linear layer reads is made here, once.
-        slot = batch_idx if batch_idx is not None else torch.tensor(0, dtype=torch.int16)
-
-        # The conv ring's per-row operands, [B] each; the op builds its index tables from them.
         seq_idx = cache_position[:, 0]
         if valid_mask is not None:
             # Prefill: one item.
@@ -512,7 +502,7 @@ class Qwen3_5Model(DecoderOnlyModel):
                     hidden_states,
                     conv_state,
                     recurrent_state,
-                    slot=slot,
+                    state_idx=state_idx,
                     seq_idx=seq_idx,
                     query_len=query_len,
                     has_initial_state=has_initial_state,
@@ -554,7 +544,7 @@ class Qwen3_5ForCausalLM(DecoderOnlyForCausalLM):
         lora_int_id: torch.Tensor | None = None,
         state_mask: torch.Tensor | None = None,
         valid_mask: torch.Tensor | None = None,
-        batch_idx: torch.Tensor | None = None,
+        state_idx: torch.Tensor | None = None,
         output_hidden_states: bool | None = None,
     ):
         hidden_states, all_hidden_states = self.model(
@@ -572,7 +562,7 @@ class Qwen3_5ForCausalLM(DecoderOnlyForCausalLM):
             lora_int_id=lora_int_id,
             state_mask=state_mask,
             valid_mask=valid_mask,
-            batch_idx=batch_idx,
+            state_idx=state_idx,
             output_hidden_states=output_hidden_states,
         )
 
@@ -646,14 +636,14 @@ class Qwen3_5_CausalLMWrapper(DecoderOnlyWrapper):
         """Pop the GatedDeltaNet's own inputs off `args`, in the order `get_input_info` declares them."""
         has_linear = any(t == "linear_attention" for t in self.config.layer_types)
         has_prefill_linear = has_linear and "prefill" in self.phase
-        batch_idx = args.pop() if has_prefill_linear else None
+        state_idx = args.pop() if has_linear else None
         valid_mask = args.pop() if has_prefill_linear else None
         state_mask = args.pop() if has_prefill_linear else None
-        return state_mask, valid_mask, batch_idx
+        return state_mask, valid_mask, state_idx
 
     def prepare_forward_args(self, *args):
         args = list(args)
-        state_mask, valid_mask, batch_idx = self.pop_gdn_inputs(args)
+        state_mask, valid_mask, state_idx = self.pop_gdn_inputs(args)
 
         (
             input_ids,
@@ -686,7 +676,7 @@ class Qwen3_5_CausalLMWrapper(DecoderOnlyWrapper):
             rotary_emb,
             state_mask,
             valid_mask,
-            batch_idx,
+            state_idx,
         )
 
     def forward(self, *args):
@@ -705,7 +695,7 @@ class Qwen3_5_CausalLMWrapper(DecoderOnlyWrapper):
             rotary_emb,
             state_mask,
             valid_mask,
-            batch_idx,
+            state_idx,
         ) = self.prepare_forward_args(*args)
 
         logits, all_hidden_states = self.model(
@@ -723,7 +713,7 @@ class Qwen3_5_CausalLMWrapper(DecoderOnlyWrapper):
             lora_int_id=lora_int_id,
             state_mask=state_mask,
             valid_mask=valid_mask,
-            batch_idx=batch_idx,
+            state_idx=state_idx,
             output_hidden_states=self.rbln_config.output_hidden_states,
         )
 
@@ -751,7 +741,7 @@ class Qwen3_5_LanguageModelWrapper(Qwen3_5_CausalLMWrapper):
 
     def prepare_forward_args(self, *args):
         args = list(args)
-        state_mask, valid_mask, batch_idx = self.pop_gdn_inputs(args)
+        state_mask, valid_mask, state_idx = self.pop_gdn_inputs(args)
         input_ids = None if self.rbln_config.use_inputs_embeds else args.pop(0)
         inputs_embeds = args.pop(0) if self.rbln_config.use_inputs_embeds else None
         cache_position = args.pop(0)
@@ -785,5 +775,5 @@ class Qwen3_5_LanguageModelWrapper(Qwen3_5_CausalLMWrapper):
             position_embeds,  # cos/sin
             state_mask,
             valid_mask,
-            batch_idx,
+            state_idx,
         )

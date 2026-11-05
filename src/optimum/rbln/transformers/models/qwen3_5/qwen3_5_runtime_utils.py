@@ -32,10 +32,11 @@ class RBLNQwen3_5RuntimeModel(RBLNRuntimeModel):
 
         prefill window 0 -> ... -> prefill window N -> decode step 0 -> decode step 1 -> ...
 
-    The runtime's only linear-state job is to inject one 0/1 control mask per call — ``state_mask``, a
-    value per cache row — which gates both caches the GatedDeltaNet reads: ZEROS on prefill window 0
-    (fresh sequence, so the stale static cache is discarded) and ONES afterwards (carry whatever the
-    previous window/step wrote). ``_run`` maps the named inputs onto the runtime's own input order via
+    The runtime's linear-state jobs are two inputs per call. ``state_idx`` names the cache row of each batch
+    row: the item's own on prefill, rows 0 .. B - 1 on decode. On prefill, one 0/1 control mask —
+    ``state_mask``, a value per cache row — gates both caches the GatedDeltaNet reads: ZEROS on prefill
+    window 0 (fresh sequence, so the stale static cache is discarded) and ONES afterwards (carry whatever
+    the previous window/step wrote). ``_run`` maps the named inputs onto the runtime's own input order via
     ``_index_to_input_name``.
     """
 
@@ -53,6 +54,8 @@ class RBLNQwen3_5RuntimeModel(RBLNRuntimeModel):
         # The prefill state mask, one value per each cache row.
         self._state_mask_zeros = torch.zeros(1, dtype=state_dtype)
         self._state_mask_ones = torch.ones(1, dtype=state_dtype)
+        # Decode runs the full batch: batch row b is cache row b.
+        self._decode_state_idx = torch.arange(self.batch_size, dtype=torch.int16)
 
         # An artifact from before the custom kernels gates each cache with a mask of that cache's own
         # shape, under its own name, because its GatedDeltaNet multiplies the mask into the state it
@@ -170,9 +173,11 @@ class RBLNQwen3_5RuntimeModel(RBLNRuntimeModel):
             if self.rbln_config.use_lora:
                 named["lora_int_ids"] = lora_int_ids
 
-            # Which max-batch slot of the linear state caches this per-item (batch=1) prefill reads/writes.
             if batch_idx is not None:
-                named["batch_idx"] = torch.tensor(batch_idx, dtype=torch.int16)
+                if self._is_legacy_graph:
+                    named["batch_idx"] = torch.tensor(batch_idx, dtype=torch.int16)
+                else:
+                    named["state_idx"] = torch.tensor([batch_idx], dtype=torch.int16)
 
             # Per-token validity (1=real, 0=right-padding); the GatedDeltaNet multiplies it into g/beta to drop
             # padding. Full windows reuse the precomputed all-ones; the partial last window is built on demand.
@@ -277,6 +282,9 @@ class RBLNQwen3_5RuntimeModel(RBLNRuntimeModel):
             named["attention_mask"] = attention_mask
         if self.rbln_config.use_lora:
             named["lora_int_ids"] = lora_int_ids
+        # An artifact from before the custom kernels takes no rows on decode.
+        if not self._is_legacy_graph:
+            named["state_idx"] = self._decode_state_idx
 
         logits, hidden_states = self._run(named)
         return RBLNDecoderOnlyOutput(logits=logits, hidden_states=hidden_states)
