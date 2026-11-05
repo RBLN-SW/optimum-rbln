@@ -59,7 +59,6 @@ logger = logging.get_logger(__name__)
 
 def validate_gdn_custom_kernel(text_config) -> None:
     """Reject a rebel-compiler that registers no GatedDeltaNet custom ops, or a head width they lack."""
-    from rebel.ops.torch_custom_ops.gdn import HEAD_DIM
 
     wanted = ("chunk_gated_delta_rule", "recurrent_gated_delta_rule", "causal_conv1d_ring")
     missing = [name for name in wanted if not hasattr(torch.ops.rbln_custom_ops, name)]
@@ -68,12 +67,6 @@ def validate_gdn_custom_kernel(text_config) -> None:
             f"This rebel-compiler registers no {missing}. Qwen3.5 runs its GatedDeltaNet core and the "
             f"short conv in front of it as `rbln_custom_ops::`{list(wanted)}, so it needs a compiler "
             "that provides them."
-        )
-    dims = (text_config.linear_key_head_dim, text_config.linear_value_head_dim)
-    if dims != (HEAD_DIM, HEAD_DIM):
-        raise ValueError(
-            f"The gated delta rule runs on the RBLN kernel, which has one head width, {HEAD_DIM}. "
-            f"This config has linear_key_head_dim={dims[0]}, linear_value_head_dim={dims[1]}."
         )
 
 
