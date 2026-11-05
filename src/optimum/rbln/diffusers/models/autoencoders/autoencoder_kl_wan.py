@@ -118,7 +118,9 @@ class _VAEWanEncoder0(torch.nn.Module):
         ):
             cache_item = torch.nn.functional.pad(feat, (0, 0, 0, 0, 1, 0)) if cache_dim[2] == 2 else feat  # pad D 1->2
             dummy_outs.append(
-                torch.ops.rbln_custom_ops.rbln_cache_update(cache, _to_cache(cache_item), position, axis)
+                torch.ops.rbln_custom_ops.rbln_cache_update(
+                    cache=cache, state=_to_cache(cache_item), position=position, axis=axis
+                )
             )
         # idx 0: runtime output
         fc0 = torch.nn.functional.pad(self._enc_feat_map[0], (0, 0, 0, 0, 1, 0)).contiguous()  # pad D 1->2
@@ -156,7 +158,9 @@ class _VAEWanEncoderN(torch.nn.Module):
         position = torch.tensor(0, dtype=torch.int16)
         axis = torch.tensor(_CACHE_FRAME_AXIS, dtype=torch.int16)
         dummy_outs = [
-            torch.ops.rbln_custom_ops.rbln_cache_update(cache, _to_cache(item), position, axis)
+            torch.ops.rbln_custom_ops.rbln_cache_update(
+                cache=cache, state=_to_cache(item), position=position, axis=axis
+            )
             for cache, item in zip(list(caches)[1:], feat_cache_reshaped[1:], strict=False)
         ]
         return out, feat_cache_reshaped[0].contiguous(), dummy_outs
@@ -191,7 +195,11 @@ class _VAEWanDecoder0(torch.nn.Module):
                 cache_item = cache * 0.0
             else:
                 cache_item = _to_cache(torch.nn.functional.pad(feat, (0, 0, 0, 0, 1, 0)))  # pad D 1->2
-            dummy_outs.append(torch.ops.rbln_custom_ops.rbln_cache_update(cache, cache_item, position, axis))
+            dummy_outs.append(
+                torch.ops.rbln_custom_ops.rbln_cache_update(
+                    cache=cache, state=cache_item, position=position, axis=axis
+                )
+            )
         # idx 0: runtime output
         fc0 = torch.nn.functional.pad(self._feat_map[0], (0, 0, 0, 0, 1, 0)).contiguous()  # pad D 1->2
         return out, fc0, dummy_outs
@@ -225,7 +233,9 @@ class _VAEWanDecoderN(torch.nn.Module):
         position = torch.tensor(0, dtype=torch.int16)
         axis = torch.tensor(_CACHE_FRAME_AXIS, dtype=torch.int16)
         dummy_outs = [
-            torch.ops.rbln_custom_ops.rbln_cache_update(cache, _to_cache(item), position, axis)
+            torch.ops.rbln_custom_ops.rbln_cache_update(
+                cache=cache, state=_to_cache(item), position=position, axis=axis
+            )
             for cache, item in zip(list(caches)[1:], feat_cache_reshaped[1:], strict=False)
         ]
         return out, feat_cache_reshaped[0].contiguous(), dummy_outs

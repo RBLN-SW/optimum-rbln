@@ -159,7 +159,10 @@ class _VAECogVideoXDecoder(torch.nn.Module):
         frame_axis = torch.tensor(2, dtype=torch.int16)
         updates = [
             torch.ops.rbln_custom_ops.rbln_cache_update(
-                buffer, cache.to_cache(cache.get(new_conv_cache)).to(buffer.dtype), position, frame_axis
+                cache=buffer,
+                state=cache.to_cache(cache.get(new_conv_cache)).to(buffer.dtype),
+                position=position,
+                axis=frame_axis,
             )
             for cache, buffer in zip(self.static_caches, buffers, strict=True)
         ]

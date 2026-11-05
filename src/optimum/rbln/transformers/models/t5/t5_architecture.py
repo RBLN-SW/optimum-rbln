@@ -246,17 +246,17 @@ class T5LayerSelfAttention(Seq2SeqSelfAttention):
         value_states = self._shape(value_states, -1, bsz)
 
         scale = torch.tensor(1.0, dtype=query_states.dtype)
-        attn_output = torch.ops.rbln_custom_ops.add_softmax_attention_naive_decode(
-            query_states,
-            key_states,
-            value_states,
-            past_key_value,
+        attn_output = torch.ops.rbln_custom_ops.gqa_bias_decode(
+            q=query_states,
+            k=key_states,
+            v=value_states,
+            kv_cache=past_key_value,
             # Unsqueeze group axis since CustomKernel expects it for group query attention
-            attention_mask.unsqueeze(2),
-            cache_position,
-            scale,
-            block_tables,
-            scale,  # dummy
+            attn_bias=attention_mask.unsqueeze(2),
+            seq_idx=cache_position,
+            scale=scale,
+            block_tables=block_tables,
+            dummy=scale,
         )
 
         attn_output = attn_output.view(bsz, self.num_heads, -1, self.head_dim).transpose(1, 2)

@@ -169,7 +169,7 @@ def rbln_chunk_gated_delta_rule(
     # intra-chunk, batched over the chunk axis
     decay_mask = ((g.unsqueeze(-1) - g.unsqueeze(-2)) * tril_incl).exp() * tril_incl
     attn = -((k_beta @ key.transpose(-1, -2)) * decay_mask) * tril_strict
-    attn = torch.ops.rbln.tri_recur_update(attn)
+    attn = torch.ops.rbln.tri_recur_update(attn=attn)
     eye = tril_incl - tril_strict
     attn = attn + eye
 
@@ -638,10 +638,14 @@ class Qwen3_5Model(DecoderOnlyModel):
                 )
                 _axis0 = torch.tensor(0, dtype=torch.int16)
                 new_states.append(
-                    torch.ops.rbln_custom_ops.rbln_cache_update(conv_state, new_conv_state, _pos, _axis0)
+                    torch.ops.rbln_custom_ops.rbln_cache_update(
+                        cache=conv_state, state=new_conv_state, position=_pos, axis=_axis0
+                    )
                 )
                 new_states.append(
-                    torch.ops.rbln_custom_ops.rbln_cache_update(recurrent_state, new_recurrent_state, _pos, _axis0)
+                    torch.ops.rbln_custom_ops.rbln_cache_update(
+                        cache=recurrent_state, state=new_recurrent_state, position=_pos, axis=_axis0
+                    )
                 )
             else:
                 hidden_states = layer(

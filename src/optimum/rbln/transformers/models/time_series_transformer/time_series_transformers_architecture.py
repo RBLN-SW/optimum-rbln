@@ -84,7 +84,9 @@ class TimeSeriesTransformersEncoderWrapper(torch.nn.Module):
         # 3. update cross_attention's past_key_value to the device-dram for optimization.
         bidx = torch.tensor(0, dtype=torch.int16)
         axis = torch.tensor(1, dtype=torch.int16)
-        enc_output = torch.ops.rbln_custom_ops.rbln_cache_update(cross_key_values, cross_kv, bidx, axis)
+        enc_output = torch.ops.rbln_custom_ops.rbln_cache_update(
+            cache=cross_key_values, state=cross_kv, position=bidx, axis=axis
+        )
 
         return enc_output
 
@@ -281,12 +283,12 @@ class TimeSeriesTransformersSelfAttention(TimeSeriesTransformersAttention):
         value_states = self._shape(self.v_proj(hidden_states), -1, bsz)
 
         scale = torch.tensor(1.0, dtype=query_states.dtype)
-        attn_output = torch.ops.rbln_custom_ops.add_softmax_attention_naive_decode(
+        attn_output = torch.ops.rbln_custom_ops.gqa_bias_decode(
             q=query_states,
             k=key_states,
             v=value_states,
             kv_cache=past_key_value,
-            mask=attention_mask.unsqueeze(2),
+            attn_bias=attention_mask.unsqueeze(2),
             seq_idx=cache_position.expand(bsz, 1),
             scale=scale,
             block_tables=block_tables,
