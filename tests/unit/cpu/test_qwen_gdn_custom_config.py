@@ -25,15 +25,20 @@ def test_gdn_custom_kernel_needs_a_compiler_that_registers_the_ops(monkeypatch):
     empty = SimpleNamespace(ops=SimpleNamespace(rbln_custom_ops=object()))
     monkeypatch.setattr(modeling_qwen3_5, "torch", empty)
     with pytest.raises(ValueError, match="chunk_gated_delta_rule"):
-        validate_gdn_custom_kernel(Qwen3_5TextConfig())
+        validate_gdn_custom_kernel()
 
 
-def test_gdn_custom_kernel_needs_the_head_width_the_kernels_have():
-    # The kernels have one head width, so a config with another one is reported here, by the keys
-    # that hold it -- not inside the export, as a fake tensor the core op refuses.
-    text_config = Qwen3_5TextConfig(linear_key_head_dim=64, linear_value_head_dim=64)
-    with pytest.raises(ValueError, match="linear_key_head_dim=64"):
-        validate_gdn_custom_kernel(text_config)
+def test_gdn_state_cache_takes_the_head_width_of_the_config():
+    # The kernels read the head width off the query, so the recurrent cache follows the config:
+    # [Dv / STATE_LANES, Dk, STATE_LANES] a value head. The kernels take Dk = Dv; the two widths are
+    # different here only to show which axis is which.
+    from rebel.ops.torch_custom_ops.gdn import STATE_LANES
+
+    text_config = Qwen3_5TextConfig(
+        linear_num_key_heads=2, linear_num_value_heads=6, linear_key_head_dim=128, linear_value_head_dim=256
+    )
+    _, recurrent_state_shape = _qwen3_5_linear_state_shapes(text_config, 3)
+    assert recurrent_state_shape == (3, 2, 3, 256 // STATE_LANES, 128, STATE_LANES)
 
 
 def _config_with_graph_inputs(*names):

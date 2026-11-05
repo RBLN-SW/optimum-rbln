@@ -57,8 +57,8 @@ from .qwen3_5_runtime_utils import RBLNQwen3_5RuntimeModel
 logger = logging.get_logger(__name__)
 
 
-def validate_gdn_custom_kernel(text_config) -> None:
-    """Reject a rebel-compiler that registers no GatedDeltaNet custom ops, or a head width they lack."""
+def validate_gdn_custom_kernel() -> None:
+    """Reject a rebel-compiler that registers no GatedDeltaNet custom ops."""
 
     wanted = ("chunk_gated_delta_rule", "recurrent_gated_delta_rule", "causal_conv1d_ring")
     missing = [name for name in wanted if not hasattr(torch.ops.rbln_custom_ops, name)]
@@ -120,7 +120,7 @@ def _qwen3_5_linear_state_shapes(text_config, batch_size: int):
         text_config.linear_num_value_heads // heads,
         text_config.linear_value_head_dim // STATE_LANES,
         text_config.linear_key_head_dim,
-        STATE_LANES
+        STATE_LANES,
     )
     return conv_state_shape, recurrent_state_shape
 
@@ -250,7 +250,7 @@ class RBLNQwen3_5TextModel(RBLNDecoderOnlyModel):
     @classmethod
     def _update_rbln_config(cls, preprocessors=None, model=None, model_config=None, rbln_config=None):
         rbln_config.linear_attention_layers = _qwen3_5_linear_layer_indices(model_config)
-        validate_gdn_custom_kernel(model_config.get_text_config())
+        validate_gdn_custom_kernel()
         rbln_config = super()._update_rbln_config(
             preprocessors=preprocessors, model=model, model_config=model_config, rbln_config=rbln_config
         )
@@ -657,7 +657,7 @@ class RBLNQwen3_5Model(RBLNDecoderOnlyModel):
     @classmethod
     def _update_rbln_config(cls, preprocessors=None, model=None, model_config=None, rbln_config=None):
         rbln_config.linear_attention_layers = _qwen3_5_linear_layer_indices(model_config)
-        validate_gdn_custom_kernel(model_config.get_text_config())
+        validate_gdn_custom_kernel()
         rbln_config = super()._update_rbln_config(
             preprocessors=preprocessors, model=model, model_config=model_config, rbln_config=rbln_config
         )
