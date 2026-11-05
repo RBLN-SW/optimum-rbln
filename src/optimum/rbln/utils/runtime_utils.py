@@ -20,6 +20,7 @@ from typing import Any, ClassVar
 
 import rebel
 import torch
+from rebel.core import compilation
 
 
 @lru_cache(maxsize=1)
@@ -28,10 +29,10 @@ def compiler_num_devices_kwarg() -> str:
 
     Compilers expose this as `num_devices`, but ones predating that name only accept
     `tensor_parallel_size`. `compile_from_torch` forwards `**kwargs` to `compile`, so we probe
-    `rebel.compile`'s signature to pick the name the installed compiler accepts.
+    `rebel.core.compilation.compile`'s signature to pick the name the installed compiler accepts.
     """
     try:
-        params = inspect.signature(rebel.compile).parameters
+        params = inspect.signature(compilation.compile).parameters
     except (ValueError, TypeError):
         return "num_devices"
     return "num_devices" if "num_devices" in params else "tensor_parallel_size"
