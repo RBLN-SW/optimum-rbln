@@ -111,7 +111,7 @@ def _qwen3_5_build_compile_context(compile_config, example_inputs):
 
 def _qwen3_5_linear_state_shapes(text_config, batch_size: int):
     """The cache layout the gated delta rule ops take."""
-    from rebel.ops.torch_custom_ops.gdn import STATE_BLOCKS
+    from rebel.ops.torch_custom_ops.gdn import STATE_LANES
 
     heads = text_config.linear_num_key_heads
     groups = heads * (2 + text_config.linear_num_value_heads // heads)
@@ -125,7 +125,9 @@ def _qwen3_5_linear_state_shapes(text_config, batch_size: int):
         batch_size,
         heads,
         text_config.linear_num_value_heads // heads,
-        *STATE_BLOCKS,
+        text_config.linear_value_head_dim // STATE_LANES,
+        text_config.linear_key_head_dim,
+        STATE_LANES
     )
     return conv_state_shape, recurrent_state_shape
 
