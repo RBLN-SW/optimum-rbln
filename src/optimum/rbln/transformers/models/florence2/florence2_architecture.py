@@ -3,10 +3,20 @@
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
 
+from types import MethodType
+
 import torch
 from torch import nn
 
-from ..bart.bart_architecture import BartDecoderWrapper, patch_encoder_layers
+from ..bart.bart_architecture import (
+    BartCrossAttention,
+    BartDecoder,
+    BartDecoderLayer,
+    BartDecoderWrapper,
+    BartForConditionalGeneration,
+    BartSelfAttention,
+    _encoder_layer_forward,
+)
 from ..seq2seq.seq2seq_architecture import Seq2SeqEncoderWrapper
 
 
@@ -46,12 +56,27 @@ class Florence2EncoderWrapper(Seq2SeqEncoderWrapper):
 
 
 class Florence2DecoderWrapper(BartDecoderWrapper):
-    def get_decoder(self, model):
-        return model.model.language_model.get_decoder()
+    def __post_init__(self, model, **kwargs):
+        self.config = model.config.text_config
+        super().__post_init__(model, **kwargs)
+
+    def convert_to_rbln_conditional_generation(self, model):
+        decoder = model.model.language_model.get_decoder()
+        new_layers = []
+        for layer in decoder.layers:
+            self_attn = BartSelfAttention(layer.self_attn, use_attention_mask=self.use_attention_mask)
+            cross_attn = BartCrossAttention(layer.encoder_attn)
+            new_layers.append(BartDecoderLayer(layer, self_attn, cross_attn))
+
+        decoder_model = BartDecoder(decoder, new_layers)
+        new_model = BartForConditionalGeneration(model, decoder_model)
+        new_model.config = self.config
+        return new_model
 
 
 class Florence2Wrapper:
     def __init__(self, model, enc_max_seq_len, use_attention_mask):
-        patch_encoder_layers(model.model.language_model.get_encoder())
+        for layer in model.model.language_model.get_encoder().layers:
+            layer.forward = MethodType(_encoder_layer_forward, layer)
         self.encoder = Florence2EncoderWrapper(model, enc_max_seq_len).eval()
         self.decoder = Florence2DecoderWrapper(model, use_attention_mask=use_attention_mask).eval()
