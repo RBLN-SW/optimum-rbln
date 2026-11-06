@@ -488,9 +488,11 @@ class Qwen3_5LinearDecoderLayer(nn.Module):
         hidden_states = self.mlp(hidden_states)
         hidden_states = residual + hidden_states
         _axis0 = torch.tensor(0, dtype=torch.int16)
-        conv_state = torch.ops.rbln_custom_ops.rbln_cache_update(conv_state, new_conv_state, _pos, _axis0)
+        conv_state = torch.ops.rbln_custom_ops.rbln_cache_update(
+            cache=conv_state, state=new_conv_state, position=_pos, axis=_axis0
+        )
         recurrent_state = torch.ops.rbln_custom_ops.rbln_cache_update(
-            recurrent_state, new_recurrent_state, _pos, _axis0
+            cache=recurrent_state, state=new_recurrent_state, position=_pos, axis=_axis0
         )
         return hidden_states, conv_state, recurrent_state
 
