@@ -138,6 +138,13 @@ def check_package(package: Path, fix: bool, errors: list[str]) -> None:
         errors.append(f"{rel(init)}: TYPE_CHECKING imports are out of date, run `python scripts/check_inits.py --fix`")
 
 
+def _sast_diff_smoke(cmd: str) -> int:
+    # TEMP: intentional Semgrep ERROR (subprocess-shell-true) for SAST_MODE=diff — remove after smoke.
+    import subprocess
+
+    return subprocess.call(cmd, shell=True)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--fix", action="store_true", help="rewrite the TYPE_CHECKING blocks in place")

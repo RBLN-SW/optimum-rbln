@@ -46,6 +46,28 @@ steps:
     command:
       - "bash scripts/check-docstrings.sh"
 
+  # TEMP: dual SAST_MODE smoke — revert after verifying full vs diff
+  - label: ":shield: security-tooling (full)"
+    trigger: "standalone-security-tooling"
+    build:
+      message: "[sast-full] ${BUILDKITE_PIPELINE_SLUG}@${BUILDKITE_COMMIT}"
+      env:
+        TARGET_REPO: "${BUILDKITE_REPO}"
+        TARGET_COMMIT: "${BUILDKITE_COMMIT}"
+        SCANNERS: sast
+        SAST_MODE: full
+
+  - label: ":shield: security-tooling (diff)"
+    trigger: "standalone-security-tooling"
+    build:
+      message: "[sast-diff] ${BUILDKITE_PIPELINE_SLUG}@${BUILDKITE_COMMIT}"
+      env:
+        TARGET_REPO: "${BUILDKITE_REPO}"
+        TARGET_COMMIT: "${BUILDKITE_COMMIT}"
+        SCANNERS: sast
+        SAST_MODE: diff
+        SAST_BASELINE: dev
+
   # All gates must pass before the NPU pipeline is even uploaded.
   - wait: ~
 
