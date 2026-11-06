@@ -197,8 +197,9 @@ def test_packed_rotary_decoder_export(enabled, phase, arch):
     if hybrid:
         text.update(
             head_dim=64,
-            linear_key_head_dim=64,
-            linear_value_head_dim=64,
+            # The gated delta rule runs on the RBLN kernel, which only has the trained head width.
+            linear_key_head_dim=128,
+            linear_value_head_dim=128,
             linear_num_key_heads=2,
             linear_num_value_heads=2,
         )
