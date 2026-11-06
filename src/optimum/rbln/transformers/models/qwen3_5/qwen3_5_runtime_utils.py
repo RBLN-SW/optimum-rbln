@@ -16,7 +16,7 @@
 import torch
 
 from ...modeling_outputs import RBLNDecoderOnlyOutput
-from ..decoderonly.decoderonly_runtime_utils import RBLNRuntimeModel
+from ..decoderonly.decoderonly_runtime_utils import RBLNRuntimeModel, _require_sorted_cache_position
 
 
 class RBLNQwen3_5RuntimeModel(RBLNRuntimeModel):
@@ -33,7 +33,8 @@ class RBLNQwen3_5RuntimeModel(RBLNRuntimeModel):
         prefill window 0 -> ... -> prefill window N -> decode step 0 -> decode step 1 -> ...
 
     The runtime's linear-state jobs are two inputs per call. ``state_idx`` names the cache row of each batch
-    row: the item's own on prefill, rows 0 .. B - 1 on decode. On prefill, one 0/1 control mask —
+    row: the item's own on prefill; on decode rows 0 .. B - 1, or each row's own when the caller lays the
+    batch out itself (``forward``'s ``state_idx``). On prefill, one 0/1 control mask —
     ``state_mask``, a value per cache row — gates both caches the GatedDeltaNet reads: ZEROS on prefill
     window 0 (fresh sequence, so the stale static cache is discarded) and ONES afterwards (carry whatever
     the previous window/step wrote). ``_run`` maps the named inputs onto the runtime's own input order via
@@ -66,6 +67,64 @@ class RBLNQwen3_5RuntimeModel(RBLNRuntimeModel):
         shapes = dict(zip(names, legacy_state_shapes, strict=True)) if self._is_legacy_graph else {}
         self._legacy_masks_zeros = {name: torch.zeros(shape, dtype=state_dtype) for name, shape in shapes.items()}
         self._legacy_masks_ones = {name: torch.ones(shape, dtype=state_dtype) for name, shape in shapes.items()}
+
+    def forward(
+        self,
+        input_ids: torch.LongTensor | None = None,
+        inputs_embeds: torch.Tensor | None = None,
+        cache_position: torch.Tensor | None = None,
+        attention_mask: torch.Tensor | None = None,
+        batch_idx: int | None = None,
+        block_tables: torch.Tensor | None = None,
+        position_embed: torch.Tensor | None = None,
+        position_ids: torch.Tensor | None = None,
+        token_type_ids: torch.Tensor | None = None,
+        local_block_tables: torch.Tensor | None = None,
+        lora_int_ids: torch.Tensor | None = None,
+        state_idx: torch.Tensor | None = None,
+    ):
+        """The base forward, plus `state_idx` [B] (int16) on decode: the linear caches' row of each batch
+        row, for a caller that lays the decode batch out itself (vLLM). Without it, row b is cache row b.
+        """
+        if state_idx is not None and self.phase != "decode":
+            raise ValueError("`state_idx` is a decode input; a prefill takes its cache row as `batch_idx`.")
+        inputs = self.inputs_embeddings_if_needed(input_ids, inputs_embeds)
+        block_tables, local_block_tables, is_external_block_tables = (
+            self.page_table_manager.get_block_tables_if_needed(
+                self.batch_size,
+                cache_position,
+                batch_idx=batch_idx,
+                phase=self.phase,
+                block_tables=block_tables,
+                local_block_tables=local_block_tables,
+            )
+        )
+
+        if self.phase == "decode":
+            return self.decode_forward(
+                inputs,
+                cache_position,
+                block_tables,
+                is_external_block_tables,
+                attention_mask=attention_mask,
+                position_embed=position_embed,
+                position_ids=position_ids,
+                local_block_tables=local_block_tables,
+                lora_int_ids=lora_int_ids,
+                state_idx=state_idx,
+            )
+        return self.prefill_forward(
+            inputs,
+            cache_position,
+            attention_mask,
+            batch_idx,
+            block_tables,
+            is_external_block_tables=is_external_block_tables,
+            position_embed=position_embed,
+            token_type_ids=token_type_ids,
+            local_block_tables=local_block_tables,
+            lora_int_ids=lora_int_ids,
+        )
 
     def _run(self, named_inputs: dict):
         """Order inputs by the runtime's own signature and invoke; return (logits, hidden_states).
@@ -250,6 +309,7 @@ class RBLNQwen3_5RuntimeModel(RBLNRuntimeModel):
         position_ids: torch.Tensor | None = None,
         local_block_tables: torch.Tensor | None = None,
         lora_int_ids: torch.Tensor | None = None,
+        state_idx: torch.Tensor | None = None,
     ) -> RBLNDecoderOnlyOutput:
         if self.rbln_config.use_lora and lora_int_ids is None:
             if self.lora_int_ids is None:
@@ -260,6 +320,8 @@ class RBLNQwen3_5RuntimeModel(RBLNRuntimeModel):
             lora_int_ids = self.lora_int_ids
         if lora_int_ids is not None and lora_int_ids.shape[0] != self.batch_size:
             raise ValueError(f"lora_int_ids size mismatch: got {lora_int_ids.shape[0]}, expected {self.batch_size}.")
+        if inputs.shape[0] > 1 and self.rbln_config.requires_batch_sort:
+            _require_sorted_cache_position(cache_position)
 
         if self.rbln_config.use_attention_mask and attention_mask is None:
             for b_idx in range(self.batch_size):
@@ -284,7 +346,7 @@ class RBLNQwen3_5RuntimeModel(RBLNRuntimeModel):
             named["lora_int_ids"] = lora_int_ids
         # An artifact from before the custom kernels takes no rows on decode.
         if not self._is_legacy_graph:
-            named["state_idx"] = self._decode_state_idx
+            named["state_idx"] = self._decode_state_idx if state_idx is None else state_idx
 
         logits, hidden_states = self._run(named)
         return RBLNDecoderOnlyOutput(logits=logits, hidden_states=hidden_states)
