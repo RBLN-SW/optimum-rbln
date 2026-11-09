@@ -18,7 +18,7 @@ import shutil
 from collections.abc import Sequence
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import TYPE_CHECKING, Any, ClassVar, cast
+from typing import TYPE_CHECKING, Any, ClassVar, Self, cast
 
 import rebel
 import torch
@@ -34,7 +34,6 @@ from transformers import (
     ProcessorMixin,
 )
 from transformers.utils.hub import PushToHubMixin
-from typing_extensions import Self
 
 from .configuration_utils import RBLNCompileConfig, RBLNModelConfig, get_rbln_config_class
 from .utils.hub import pull_compiled_model_from_hub, validate_files

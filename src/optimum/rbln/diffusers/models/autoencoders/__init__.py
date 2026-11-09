@@ -20,6 +20,7 @@ from ....utils.import_utils import define_import_structure
 
 
 if TYPE_CHECKING:
+    from .autoencoder_kandinsky6_sr import *
     from .autoencoder_kl import *
     from .autoencoder_kl_cogvideox import *
     from .autoencoder_kl_cosmos import *

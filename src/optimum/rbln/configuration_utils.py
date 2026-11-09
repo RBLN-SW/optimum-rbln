@@ -18,12 +18,11 @@ import json
 from collections.abc import Sequence
 from dataclasses import asdict, dataclass, fields
 from pathlib import Path
-from typing import Any, Literal, Protocol, Union, cast, overload, runtime_checkable
+from typing import Any, Literal, Protocol, Self, Union, cast, overload, runtime_checkable
 
 import numpy as np
 import torch
 from packaging.version import Version
-from typing_extensions import Self
 
 from .__version__ import __version__
 from .utils.deprecation import deprecate_kwarg, warn_deprecated_npu

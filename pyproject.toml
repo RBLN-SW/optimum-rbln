@@ -7,7 +7,7 @@ It provides a set of tools enabling easy model loading and inference on single a
 authors = [
     {name = "Rebellions Inc.", email = "support@rebellions.ai"},
 ]
-requires-python = ">=3.10,<3.15"
+requires-python = ">=3.11,<3.15"
 readme = "README.md"
 license = "Apache-2.0"
 license-files = ["LICENSE"]
@@ -20,7 +20,6 @@ classifiers = [
     "Intended Audience :: Science/Research",
     "Operating System :: POSIX :: Linux",
     "Programming Language :: Python :: 3 :: Only",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
@@ -38,7 +37,7 @@ dependencies = [
     "torchcodec==0.16.0+cpu; platform_machine == 'x86_64' and platform_python_implementation == 'CPython'",
     "accelerate>=1.0.1",
     "transformers==5.15.1",
-    "diffusers==0.41.0",
+    "diffusers==0.42.1",
     "packaging>=24.1",
     "typing-extensions>=4.5",
     "tokenizers==0.22.1",
@@ -185,7 +184,7 @@ known-third-party = ["optimum"]
 "tests/**" = ["RUF001"]
 
 [tool.mypy]
-python_version = "3.10"
+python_version = "3.11"
 files = ["src"]
 mypy_path = "src"
 namespace_packages = true

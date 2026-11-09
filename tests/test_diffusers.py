@@ -1,4 +1,5 @@
 import os
+import tempfile
 import unittest
 
 import torch
@@ -15,6 +16,7 @@ from optimum.rbln import (
     RBLNCosmos2_5_TransferPipeline,
     RBLNCosmos2TextToImagePipeline,
     RBLNCosmos2VideoToWorldPipeline,
+    RBLNKandinsky6SRPipeline,
     RBLNKandinskyV22CombinedPipeline,
     RBLNKandinskyV22Img2ImgCombinedPipeline,
     RBLNStableDiffusion3Img2ImgPipeline,
@@ -549,6 +551,83 @@ class TestCogVideoXImageToVideoModel(BaseTest.TestModel):
         image = torch.rand(1, 3, 1, 128, 128) * 2 - 1
         latent = self.model.vae.encode(image).latent_dist.mean
         assert tuple(latent.shape) == (1, 4, 1, 16, 16)
+
+
+def _save_tiny_kandinsky6_sr(path):
+    """A random Kandinsky6SRPipeline with every component shrunk, keeping the K-VAE's 16x16x4 compression."""
+    from diffusers import (
+        Kandinsky6SRLatentUpscalerBank,
+        Kandinsky6SRPipeline,
+        Kandinsky6SRTransformer3DModel,
+        Kandinsky6SRVAE,
+        PiflowScheduler,
+    )
+
+    torch.manual_seed(0)
+    pipe = Kandinsky6SRPipeline(
+        transformer=Kandinsky6SRTransformer3DModel(
+            in_visual_dim=16,
+            out_visual_dim=160,
+            time_dim=64,
+            model_dim=128,
+            ff_dim=256,
+            num_visual_blocks=2,
+            tile_sizes=((128, 128),),
+        ),
+        vae=Kandinsky6SRVAE(
+            latent_channels=16,
+            encoder_block_out_channels=(16, 32, 64, 64, 64),
+            decoder_block_out_channels=(16, 64, 64, 64, 64),
+            layers_per_block=1,
+        ),
+        scheduler=PiflowScheduler(shift=3.5, n_grid=10),
+        latent_upscaler=Kandinsky6SRLatentUpscalerBank(
+            in_channels=16,
+            stage_channels=(64, 32, 32),
+            num_pre_blocks=1,
+            num_mid_blocks=1,
+            num_post_blocks=1,
+            num_x2_adapter_blocks=1,
+        ),
+    )
+    pipe.save_pretrained(path)
+
+
+class TestKandinsky6SRModel(BaseTest.TestModel):
+    RBLN_CLASS = RBLNKandinsky6SRPipeline
+    # A 64x64 input at x2 is one 128x128 tile. 21 frames exercise the first and four later VAE segments.
+    GENERATION_KWARGS = {
+        "video": [Image.new("RGB", (64, 64), color=(12 * i, 120, 255 - 12 * i)) for i in range(21)],
+        "num_inference_steps": 2,
+        "generator": torch.manual_seed(42),
+        "output_type": "pt",
+    }
+    RBLN_CLASS_KWARGS = {
+        "export": True,
+        "rbln_config": {
+            "height": 64,
+            "width": 64,
+            "num_frames": 21,
+            "resolution_scale": 2,
+        },
+    }
+
+    @classmethod
+    def setUpClass(cls):
+        # No tiny Kandinsky 6 SR checkpoint is on the Hub, so the class builds a random one.
+        cls._tiny_model_dir = tempfile.TemporaryDirectory()
+        _save_tiny_kandinsky6_sr(cls._tiny_model_dir.name)
+        cls.HF_MODEL_ID = cls._tiny_model_dir.name
+        super().setUpClass()
+
+    @classmethod
+    def tearDownClass(cls):
+        super().tearDownClass()
+        cls._tiny_model_dir.cleanup()
+
+    def test_generate(self):
+        output = self.model(**self.get_inputs())[0]
+        assert tuple(output.shape) == (1, 21, 3, 128, 128)
 
 
 if __name__ == "__main__":

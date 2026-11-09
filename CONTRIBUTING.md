@@ -16,7 +16,7 @@ Before opening a new issue, search the existing [issues](https://github.com/rbln
 
 ### Prerequisites
 
-- Python 3.10 or newer
+- Python 3.11 or newer
 - [uv](https://docs.astral.sh/uv/getting-started/installation/), version 0.11.25 or newer
 - `rebel-compiler`, which is available to approved users only. Follow the [installation guide](https://docs.rbln.ai/getting_started/installation_guide.html) to install it into the virtual environment created below. Everything except compiling and running on an NPU works without it.
 

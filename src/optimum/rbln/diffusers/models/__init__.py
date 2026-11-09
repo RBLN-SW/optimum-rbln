@@ -22,6 +22,7 @@ from ...utils.import_utils import define_import_structure
 if TYPE_CHECKING:
     from .autoencoders import *
     from .controlnets import *
+    from .latent_upscaler import *
     from .transformers import *
     from .unets import *
 else:

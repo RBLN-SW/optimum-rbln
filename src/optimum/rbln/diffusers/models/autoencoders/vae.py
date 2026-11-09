@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from collections.abc import Callable, Sequence
 from typing import TYPE_CHECKING, Union
 
 import torch
@@ -144,6 +145,92 @@ class RBLNRuntimeCogVideoXVAEDecoder(RBLNPytorchRuntime):
             conv_cache_0 = ret[1]
 
         return torch.cat(dec, dim=2)
+
+
+def _segment_lengths(num_frames: int, segment_length: int) -> list[int]:
+    """
+    How `Kandinsky6SRVAE` splits `num_frames`: the leading frame with the first `segment_length`, then
+    `segment_length` at a time.
+    """
+    lengths = [min(segment_length + 1, num_frames)]
+    remaining = num_frames - lengths[0]
+    while remaining > 0:
+        lengths.append(min(segment_length, remaining))
+        remaining -= segment_length
+    return lengths
+
+
+def _pad_frames(segment: torch.Tensor, num_frames: int) -> torch.Tensor:
+    """Repeat the last frame of `segment` up to `num_frames` frames."""
+    missing = num_frames - segment.shape[2]
+    if missing == 0:
+        return segment
+    return torch.cat([segment, segment[:, :, -1:].expand(-1, -1, missing, -1, -1)], dim=2)
+
+
+def _first_output(output: torch.Tensor | Sequence[torch.Tensor]) -> torch.Tensor:
+    return output if isinstance(output, torch.Tensor) else output[0]
+
+
+class _RBLNRuntimeKandinsky6SRSegments(RBLNPytorchRuntime):
+    """
+    The segment loop of `Kandinsky6SRVAE.encode` / `.decode` over the `_0` graph (the runtime) and the `_n` graph.
+
+    The `_n` graph takes `segment_length` input frames, the `_0` graph also the leading frame. A shorter segment is
+    padded with its last frame, which the causal convs keep out of the outputs of its real frames. A later segment
+    also gets the last `history_frames` input frames before it, the padding of `conv_in`.
+    """
+
+    def _run(self, later, sample: torch.Tensor, num_outputs: Callable[[int, int], int]) -> torch.Tensor:
+        outputs, start = [], 0
+        for index, length in enumerate(_segment_lengths(sample.shape[2], self.segment_length)):
+            segment = sample[:, :, start : start + length]
+            if index == 0:
+                output = self.forward(_pad_frames(segment, self.segment_length + 1).contiguous())
+            else:
+                history = sample[:, :, start - self.history_frames : start].contiguous()
+                output = later(_pad_frames(segment, self.segment_length).contiguous(), history)
+            outputs.append(_first_output(output)[:, :, : num_outputs(index, length)])
+            start += length
+        return torch.cat(outputs, dim=2)
+
+
+class RBLNRuntimeKandinsky6SRVAEEncoder(_RBLNRuntimeKandinsky6SRSegments):
+    mandatory_members = [
+        "main_input_name",
+        "encoder_n",
+        "segment_length",
+        "history_frames",
+        "temporal_compression_ratio",
+        "dtype",
+    ]
+
+    def encode(self, x: torch.Tensor) -> torch.Tensor:
+        ratio = self.temporal_compression_ratio
+
+        def num_latents(index: int, length: int) -> int:
+            return (length - 1) // ratio + 1 if index == 0 else length // ratio
+
+        return self._run(self.encoder_n, x.to(self.dtype), num_latents)
+
+
+class RBLNRuntimeKandinsky6SRVAEDecoder(_RBLNRuntimeKandinsky6SRSegments):
+    mandatory_members = [
+        "main_input_name",
+        "decoder_n",
+        "segment_length",
+        "history_frames",
+        "temporal_compression_ratio",
+        "dtype",
+    ]
+
+    def decode(self, z: torch.Tensor) -> torch.Tensor:
+        ratio = self.temporal_compression_ratio
+
+        def num_frames(index: int, length: int) -> int:
+            return (length - 1) * ratio + 1 if index == 0 else length * ratio
+
+        return self._run(self.decoder_n, z.to(self.dtype), num_frames)
 
 
 class _VAEDecoder(torch.nn.Module):

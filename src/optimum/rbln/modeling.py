@@ -17,14 +17,13 @@ import types
 from collections.abc import Sequence
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import TYPE_CHECKING, Any, ClassVar, Union, get_args, get_origin, get_type_hints
+from typing import TYPE_CHECKING, Any, ClassVar, Self, Union, get_args, get_origin, get_type_hints
 
 import rebel
 import torch
 from huggingface_hub.constants import HUGGINGFACE_HUB_CACHE
 from transformers import PretrainedConfig
 from transformers.modeling_outputs import BaseModelOutput
-from typing_extensions import Self
 
 from .configuration_utils import DEFAULT_COMPILED_MODEL_NAME, RBLNModelConfig
 from .modeling_base import Preprocessor, RBLNBaseModel
