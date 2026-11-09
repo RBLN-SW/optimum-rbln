@@ -173,8 +173,7 @@ def main() -> int:
             if shown >= 100:
                 break
             lines.append(step)
-            for name in names[: 100 - shown]:
-                lines.append(f"  {name}")
+            lines.extend(f"  {name}" for name in names[: 100 - shown])
             shown += min(len(names), 100 - shown)
         if shown < total:
             lines.append(f"... and {total - shown} more")

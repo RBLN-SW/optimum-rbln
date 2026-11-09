@@ -105,6 +105,21 @@ class RBLNQwen2_5_VisionTransformerPretrainedModel(RBLNModel):
     ):
         return Qwen2_5_VisionTransformerWrapper(model, rbln_config).eval()
 
+    @classmethod
+    def get_compiled_model(
+        cls, model: "PreTrainedModel", rbln_config: RBLNQwen2_5_VisionTransformerPretrainedModelConfig
+    ):
+        if not rbln_config.nested_compile_region:
+            return super().get_compiled_model(model, rbln_config)
+        # Only a strict export keeps the block regions; the default trace inlines them.
+        return cls.compile(
+            cls._wrap_model_if_needed(model, rbln_config),
+            rbln_compile_config=rbln_config.compile_cfgs[0],
+            create_runtimes=rbln_config.create_runtimes,
+            device=rbln_config.device,
+            model_trace_method="export_strict",
+        )
+
     def __getattr__(self, __name: str) -> Any:
         def redirect(func):
             return lambda *pargs, **kwargs: func(self, *pargs, **kwargs)
@@ -340,8 +355,8 @@ class RBLNQwen2_5_VisionTransformerPretrainedModel(RBLNModel):
 
             # Depadding
             depadded_output = []
-            for i, valid_len in enumerate(window_valid_lengths):
-                start = i * (window_seq_len // self.spatial_merge_unit)
+            for window_idx, valid_len in enumerate(window_valid_lengths):
+                start = window_idx * (window_seq_len // self.spatial_merge_unit)
                 end = start + (valid_len // self.spatial_merge_unit)
                 depadded_output.append(output[start:end])
             output = torch.cat(depadded_output, dim=0)
@@ -649,8 +664,9 @@ class RBLNQwen2_5_VLForConditionalGeneration(
         super().__post_init__(**kwargs)
         self.rope_deltas = torch.zeros(self.rbln_config.batch_size)
 
-    def can_generate(self):
-        return True
+    @property
+    def logits_last_dim(self):
+        return self.config.get_text_config().vocab_size
 
     @classmethod
     def update_rbln_config_using_pipe(cls, pipe: Any, rbln_config: Any, submodule_name: str) -> Any:

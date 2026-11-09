@@ -345,7 +345,7 @@ class RBLNCosmosTransformer3DModel(RBLNModel):
     ):
         # Normalize to this model's compute dtype.
         encoder_hidden_states = encoder_hidden_states.to(self.rbln_config.dtype)
-        batch_size, num_channels, num_frames, height, width = hidden_states.shape
+        batch_size, _num_channels, num_frames, _height, _width = hidden_states.shape
 
         # 1. Concatenate padding mask if needed & prepare attention mask
         if condition_mask is not None:
@@ -367,7 +367,7 @@ class RBLNCosmosTransformer3DModel(RBLNModel):
         extra_pos_emb = self.learnable_pos_embed(hidden_states) if self.config.extra_pos_embed_type else None
 
         # 3. Patchify input
-        p_t, p_h, p_w = self.config.patch_size
+        p_t, _p_h, _p_w = self.config.patch_size
         post_patch_num_frames = num_frames // p_t
         hidden_states = self.patch_embed(hidden_states)
         hidden_states = hidden_states.flatten(1, 3)  # [B, T, H, W, C] -> [B, THW, C]

@@ -13,7 +13,7 @@
 # limitations under the License.
 
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, Optional
+from typing import Optional
 
 import torch
 from safetensors.torch import load_file
@@ -32,9 +32,6 @@ from ...models.decoderonly import (
 from ...utils.rbln_quantization import load_weight_files
 from .gpt_oss_architecture import RBLNGptOssWrapper
 
-
-if TYPE_CHECKING:
-    from transformers import PreTrainedModel
 
 logger = get_logger(__name__)
 

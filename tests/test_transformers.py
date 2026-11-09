@@ -3,6 +3,7 @@ import os
 import shutil
 import unittest
 
+import pytest
 import torch
 from PIL import Image
 from transformers import AutoConfig, BertConfig, BertModel, T5EncoderModel, XLMRobertaConfig, XLMRobertaModel
@@ -20,6 +21,8 @@ from optimum.rbln import (
     RBLNDPTForDepthEstimation,
     RBLNGroundingDinoForObjectDetection,
     RBLNModernBertForMaskedLM,
+    RBLNModernBertModel,
+    RBLNMPNetModel,
     RBLNPegasusModel,
     RBLNResNetForImageClassification,
     RBLNRobertaForMaskedLM,
@@ -89,9 +92,7 @@ class TestResNetModel(BaseTest.TestModel, BaseHubTest.TestHub):
                 model = HF_CLASS.from_pretrained(
                     self.HF_MODEL_ID,
                     **self.HF_CONFIG_KWARGS,
-                    **{
-                        "torchscript": True,
-                    },
+                    torchscript=True,
                 )
                 _ = self.RBLN_CLASS.from_model(
                     model,
@@ -103,7 +104,7 @@ class TestResNetModel(BaseTest.TestModel, BaseHubTest.TestHub):
     def _inner_test_save_load(self, tmpdir):
         super()._inner_test_save_load(tmpdir)
 
-        with self.assertRaises(RuntimeError):
+        with pytest.raises(RuntimeError):
             _ = self.RBLN_CLASS.from_pretrained(
                 tmpdir,
                 export=False,
@@ -111,7 +112,7 @@ class TestResNetModel(BaseTest.TestModel, BaseHubTest.TestHub):
             )
 
     def test_failed_to_create_runtime(self):
-        with self.assertRaises(ValueError):
+        with pytest.raises(ValueError):  # noqa: PT011
             _ = self.RBLN_CLASS.from_pretrained(
                 self.HF_MODEL_ID,
                 export=True,
@@ -160,6 +161,23 @@ class TestModernBertForMaskedLM(BaseTest.TestModel):
     GENERATION_KWARGS = {
         "input_ids": RANDOM_INPUT_IDS,
         "attention_mask": RANDOM_ATTN_MASK,
+    }
+
+
+class TestModernBertModel(BaseTest.TestModel):
+    RBLN_AUTO_CLASS = RBLNAutoModel
+    RBLN_CLASS = RBLNModernBertModel
+    HF_MODEL_ID = "nomic-ai/modernbert-embed-base"
+    RBLN_CLASS_KWARGS = {"rbln_max_seq_len": 512}
+    GENERATION_KWARGS = {
+        "input_ids": RANDOM_INPUT_IDS,
+        "attention_mask": RANDOM_ATTN_MASK,
+    }
+    # Two layers cover both a global (layer 0) and a sliding-window (layer 1) attention block.
+    HF_CONFIG_KWARGS = {
+        "revision": "d556a88e332558790b210f7bdbe87da2fa94a8d8",
+        "num_hidden_layers": 2,
+        "layer_types": ["full_attention", "sliding_attention"],
     }
 
 
@@ -361,6 +379,20 @@ class TestXLMRobertaModel(BaseTest.TestModel):
     }
 
 
+class TestMPNetModel(BaseTest.TestModel):
+    RBLN_AUTO_CLASS = RBLNAutoModel
+    RBLN_CLASS = RBLNMPNetModel
+    HF_MODEL_ID = "sentence-transformers/all-mpnet-base-v2"
+    RBLN_CLASS_KWARGS = {"rbln_max_seq_len": 128}
+    GENERATION_KWARGS = {
+        "input_ids": torch.randint(low=0, high=50, size=(1, 128), generator=torch.manual_seed(42), dtype=torch.int64),
+        "attention_mask": torch.ones((1, 128), dtype=torch.int64),
+    }
+    HF_CONFIG_KWARGS = {
+        "num_hidden_layers": 1,
+    }
+
+
 class TestEncoderMaxSeqLenBucketing(unittest.TestCase):
     """Sequence-length bucketing for feature-extraction encoders.
 
@@ -390,9 +422,9 @@ class TestEncoderMaxSeqLenBucketing(unittest.TestCase):
                 model_input_shapes=[[1, 64], [1, 64]],
             )
 
-        self.assertTrue(any("model_input_shapes" in msg for msg in logs.output))
-        self.assertEqual(config.max_seq_len, [64, 128])
-        self.assertFalse(hasattr(config, "model_input_shapes"))
+        assert any("model_input_shapes" in msg for msg in logs.output)
+        assert config.max_seq_len == [64, 128]
+        assert not hasattr(config, "model_input_shapes")
 
     def _tiny_models(self):
         config_kwargs = {
@@ -433,16 +465,15 @@ class TestEncoderMaxSeqLenBucketing(unittest.TestCase):
                 )
                 try:
                     # One executor per bucket, all in a single compiled model (shared weights).
-                    self.assertEqual(rbln_model.model[0].get_executor_count(), len(self.BUCKETS))
+                    assert rbln_model.model[0].get_executor_count() == len(self.BUCKETS)
 
                     for seq_len, args in inputs.items():
                         output = rbln_model(**args, return_dict=False)[0]
                         reference = references[seq_len]
-                        self.assertEqual(tuple(output.shape), tuple(reference.shape))
+                        assert tuple(output.shape) == tuple(reference.shape)
                         max_diff = (output - reference).abs().max().item()
-                        self.assertTrue(
-                            torch.allclose(output, reference, atol=2e-2, rtol=1e-2),
-                            msg=f"{name} seq_len={seq_len}: outputs diverged (max abs diff {max_diff:.4g})",
+                        assert torch.allclose(output, reference, atol=0.02, rtol=0.01), (
+                            f"{name} seq_len={seq_len}: outputs diverged (max abs diff {max_diff:.4g})"
                         )
                 finally:
                     if os.path.exists(save_dir):
@@ -500,15 +531,14 @@ class TestColPaliModel(BaseTest.TestModel):
         self._inner_propagate_rbln_config(tmpdir)
 
     def _inner_propagate_rbln_config(self, tmpdir):
-        with ContextRblnConfig(create_runtimes=False):
-            with self.subTest():
-                rbln_config = {"vlm": {"vision_tower": {"device": 1}, "language_model": {"device": 2}}}
-                model = self.RBLN_CLASS.from_pretrained(
-                    tmpdir,
-                    rbln_config=rbln_config,
-                )
-                assert model.rbln_config.vlm.vision_tower.device == 1
-                assert model.rbln_config.vlm.language_model.device == 2
+        with ContextRblnConfig(create_runtimes=False), self.subTest():
+            rbln_config = {"vlm": {"vision_tower": {"device": 1}, "language_model": {"device": 2}}}
+            model = self.RBLN_CLASS.from_pretrained(
+                tmpdir,
+                rbln_config=rbln_config,
+            )
+            assert model.rbln_config.vlm.vision_tower.device == 1
+            assert model.rbln_config.vlm.language_model.device == 2
 
 
 class TestColQwen2Model(BaseTest.TestModel):
@@ -778,6 +808,15 @@ class TestGroundingDinoModel(BaseTest.TestModel):
         )
         cls.HF_CONFIG_KWARGS = {**cls.HF_CONFIG_KWARGS, "config": config, "ignore_mismatched_sizes": True}
         return super().setUpClass()
+
+    def test_return_dict_false(self):
+        inputs = self.get_inputs()
+        tuple_output = self.model(**inputs, return_dict=False)
+        dict_output = self.model(**inputs, return_dict=True)
+
+        assert all(isinstance(output, torch.Tensor) for output in tuple_output)
+        assert tuple_output[0].shape == dict_output.logits.shape
+        assert tuple_output[1].shape == dict_output.pred_boxes.shape
 
 
 if __name__ == "__main__":

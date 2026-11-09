@@ -261,12 +261,6 @@ class RBLNQwen3VLModel(RBLNDecoderOnlyModel):
     _get_rope_index_func = Qwen3VLModel.get_rope_index
     get_vision_position_ids = Qwen3VLModel.get_vision_position_ids
 
-    @classmethod
-    def _load_submodules(cls, model_save_dir, rbln_config, model=None, **kwargs):
-        if model is None and not getattr(rbln_config, "_load_visual_runtime", True):
-            return []
-        return super()._load_submodules(model_save_dir, rbln_config, model=model, **kwargs)
-
     def __post_init__(self, **kwargs):
         if hasattr(self.config, "embedding_dim"):
             self.embedding_dim = self.config.embedding_dim
@@ -279,7 +273,7 @@ class RBLNQwen3VLModel(RBLNDecoderOnlyModel):
         self.num_deepstack_layers = len(self.config.vision_config.deepstack_visual_indexes)
 
         super().__post_init__(**kwargs)
-        self.visual = self.rbln_submodules[0] if self.rbln_submodules else None
+        self.visual = self.rbln_submodules[0]
         self.rotary_emb = build_qwen_mrope_lookup(
             self._rotary_emb_class(self.config.text_config), self.rbln_config.max_seq_len
         )
@@ -418,11 +412,6 @@ class RBLNQwen3VLModel(RBLNDecoderOnlyModel):
 
         # Use pre-computed image_embeds if provided, otherwise run visual encoder
         if image_embeds is None and pixel_values is not None:
-            if self.visual is None:
-                raise RuntimeError(
-                    "Visual encoder runtime is not loaded (_load_visual_runtime=False). "
-                    "Provide pre-computed image_embeds from an encoder node."
-                )
             image_embeds, deepstack_image_embeds = self.visual(pixel_values, grid_thw=image_grid_thw)
 
         if image_embeds is not None:
@@ -442,11 +431,6 @@ class RBLNQwen3VLModel(RBLNDecoderOnlyModel):
 
         # Use pre-computed video_embeds if provided, otherwise run visual encoder
         if video_embeds is None and pixel_values_videos is not None:
-            if self.visual is None:
-                raise RuntimeError(
-                    "Visual encoder runtime is not loaded (_load_visual_runtime=False). "
-                    "Provide pre-computed video_embeds from an encoder node."
-                )
             video_embeds, deepstack_video_embeds = self.visual(pixel_values_videos, grid_thw=video_grid_thw)
 
         if video_embeds is not None:
@@ -727,7 +711,8 @@ class RBLNQwen3VLForConditionalGeneration(RBLNQwenVLBatchSortMixin, RBLNQwen3VLM
         {"name": "visual"},
     ]
     _video_grid_rows_are_chunks = True
-    _vision_sortable_kwargs = RBLNQwenVLBatchSortMixin._vision_sortable_kwargs + (
+    _vision_sortable_kwargs = (
+        *RBLNQwenVLBatchSortMixin._vision_sortable_kwargs,
         "image_embeds",
         "video_embeds",
         "deepstack_image_embeds",
@@ -738,8 +723,9 @@ class RBLNQwen3VLForConditionalGeneration(RBLNQwenVLBatchSortMixin, RBLNQwen3VLM
         super().__post_init__(**kwargs)
         self.rope_deltas = torch.zeros(self.rbln_config.batch_size)
 
-    def can_generate(self):
-        return True
+    @property
+    def logits_last_dim(self):
+        return self.config.text_config.vocab_size
 
     def _sort_vision_kwargs(
         self, kwargs: dict, sort_idx: torch.Tensor, image_rows: list[int], video_rows: list[int]
@@ -778,12 +764,6 @@ class RBLNQwen3VLForConditionalGeneration(RBLNQwenVLBatchSortMixin, RBLNQwen3VLM
         image_grid_thw: torch.LongTensor | None = None,
         video_grid_thw: torch.LongTensor | None = None,
     ) -> dict:
-        if self.visual is None:
-            raise RuntimeError(
-                "Visual encoder runtime is not loaded (_load_visual_runtime=False). "
-                "Use load_visual_encoder() to load the visual encoder on the encoder node, "
-                "or set _load_visual_runtime=True to load both visual and LLM."
-            )
         result = {}
         if pixel_values is not None:
             image_embeds, deepstack_image_embeds = self.visual(pixel_values, grid_thw=image_grid_thw)

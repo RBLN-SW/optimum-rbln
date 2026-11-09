@@ -109,7 +109,7 @@ class RBLNResNetModel(RBLNModel):
 # - batch_size: Batch size for inference
 # - image_size: Input image dimensions (height, width)
 class RBLNResNetModelConfig(RBLNModelConfig):
-    def __init__(self, batch_size: int = None, image_size: tuple[int, int] | None = None, **kwargs):
+    def __init__(self, batch_size: int | None = None, image_size: tuple[int, int] | None = None, **kwargs):
         super().__init__(**kwargs)
         self.batch_size = batch_size or 1
         self.image_size = image_size or (224, 224)

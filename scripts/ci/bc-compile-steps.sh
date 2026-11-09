@@ -34,7 +34,7 @@ for suite in transformers diffusers llm; do
   # RBLN_FORCE_NPU_NAME picks the SoC without hardware: CA22, as every release
   # under BC_BASE_PATH was. The UMD is for a release whose tests predate the
   # conftest fixture and still build runtimes.
-  # .buildkite is the one path not taken from the tag: older releases carry none.
+  # .buildkite and scripts are not taken from the tag: older releases lack the CI files they hold.
   cat <<EOF
   - label: ":floppy_disk: compile $tag $suite${override:+ @ $override}"
     key: "bc-compile-${suite}"
@@ -56,8 +56,8 @@ for suite in transformers diffusers llm; do
       # mkdir -p alone would happily create it on the wrong volume.
       - "test -d $BC_BASE_PATH && mkdir -p $BC_BASE_PATH/$encoded"
       - "git fetch -q origin $tag && git checkout -q --detach FETCH_HEAD"
-      - "git checkout -q \$\$BUILDKITE_COMMIT -- .buildkite"
-      - "bash .buildkite/scripts/sync.sh"
-      - "bash .buildkite/scripts/run-suite.sh $suite"
+      - "git checkout -q \$\$BUILDKITE_COMMIT -- .buildkite scripts"
+      - "bash scripts/ci/sync.sh"
+      - "bash scripts/ci/run-suite.sh $suite"
 EOF
 done

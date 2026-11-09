@@ -14,7 +14,7 @@
 
 import inspect
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from transformers import PegasusForConditionalGeneration, PreTrainedModel
 
@@ -26,10 +26,6 @@ from .pegasus_architecture import PegasusWrapper
 
 
 logger = get_logger()
-
-
-if TYPE_CHECKING:
-    from transformers import PreTrainedModel
 
 
 class RBLNPegasusModel(RBLNTransformerEncoderForFeatureExtraction):

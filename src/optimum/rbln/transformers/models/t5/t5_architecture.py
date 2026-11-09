@@ -70,7 +70,7 @@ def _encoder_block_forward(
     )
     hidden_states = _clamp_finite(self_attention_outputs[0])
     hidden_states = _clamp_finite(self.layer[-1](hidden_states))
-    return (hidden_states,) + self_attention_outputs[1:]
+    return (hidden_states, *self_attention_outputs[1:])
 
 
 def patch_encoder_blocks(encoder: nn.Module) -> None:
@@ -110,8 +110,7 @@ class T5DecoderWrapper(Seq2SeqDecoderWrapper):
         new_blocks = []
         for block in model.get_decoder().block:
             self_attn = T5LayerSelfAttention(block.layer[0].SelfAttention)
-            block = T5Block(block, self_attn)
-            new_blocks.append(block)
+            new_blocks.append(T5Block(block, self_attn))
 
         decoder_model = T5Decoder(model.get_decoder(), new_blocks, dec_max_seq_len=dec_max_seq_len)
         new_model = T5ForConditionalGeneration(model, decoder_model)
@@ -133,8 +132,8 @@ class T5DecoderWrapper(Seq2SeqDecoderWrapper):
         cross_kv_cache = kv_cache[: self.num_layers * 2]
 
         for i in range(0, self.num_layers * 2, 2):
-            self_past_key_values = self_past_key_values + ((self_kv_cache[i], self_kv_cache[i + 1]),)
-            cross_past_key_values = cross_past_key_values + ((cross_kv_cache[i], cross_kv_cache[i + 1]),)
+            self_past_key_values = (*self_past_key_values, (self_kv_cache[i], self_kv_cache[i + 1]))
+            cross_past_key_values = (*cross_past_key_values, (cross_kv_cache[i], cross_kv_cache[i + 1]))
 
         # decode
         lm_logits = self.conditional_generation(

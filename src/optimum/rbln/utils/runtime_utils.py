@@ -12,29 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import inspect
 import re
 import threading
-from functools import lru_cache
 from typing import Any, ClassVar
 
 import rebel
 import torch
-
-
-@lru_cache(maxsize=1)
-def compiler_num_devices_kwarg() -> str:
-    """Return the kwarg name the installed rebel-compiler expects for the device count.
-
-    Compilers expose this as `num_devices`, but ones predating that name only accept
-    `tensor_parallel_size`. `compile_from_torch` forwards `**kwargs` to `compile`, so we probe
-    `rebel.compile`'s signature to pick the name the installed compiler accepts.
-    """
-    try:
-        params = inspect.signature(rebel.compile).parameters
-    except (ValueError, TypeError):
-        return "num_devices"
-    return "num_devices" if "num_devices" in params else "tensor_parallel_size"
 
 
 def _resolve_npu(npu: str | None = None) -> str:
@@ -213,12 +196,15 @@ class UnavailableRuntime:
 
     This class is returned by RBLNBaseModel._from_compiled_models when rbln_config.create_runtimes=False.
     It provides proper error messages when users attempt to use a model that was loaded without
-    runtime creation.
+    runtime creation. A model loaded this way also leaves its compiled models on disk until
+    `compiled_models` is accessed.
 
     Usage:
         1. When compiling models on machines without NPU hardware
         2. When preparing models for later deployment
         3. When only model compilation is needed, not inference
+        4. When a node needs only some submodules of a composite model, e.g. a decoder node in a
+           disaggregated encoder setup loading the vision encoder with `create_runtimes=False`
 
     To use a model with runtimes, either:
         - Load the model with from_pretrained(..., rbln_create_runtimes=True)

@@ -21,12 +21,13 @@ from ..decoderonly.decoderonly_architecture import (
     DecoderOnlyAttention,
     DecoderOnlyLayer,
     DecoderOnlyWrapper,
+    NestedCompileRegionMixin,
     apply_rotary_pos_emb_partial,
 )
 
 
 if TYPE_CHECKING:
-    from transformers import PhiForCausalLM, PhiModel
+    from transformers import PhiModel
 
 
 class PhiWrapper(DecoderOnlyWrapper):
@@ -34,7 +35,7 @@ class PhiWrapper(DecoderOnlyWrapper):
         return PhiAttention
 
     def get_rbln_layer_class(self):
-        return PhiLayer
+        return PhiLayerRegion if self.rbln_config.nested_compile_region else PhiLayer
 
     def get_model_layer(self, model: Union["PhiForCausalLM", "PhiModel"]):
         return model.model if self.is_causal_lm else model
@@ -105,3 +106,7 @@ class PhiLayer(DecoderOnlyLayer):
         hidden_states = attn_output + feed_forward_hidden_states + residual
 
         return hidden_states
+
+
+class PhiLayerRegion(NestedCompileRegionMixin, PhiLayer):
+    """Decoder layer with a nested compile region around its forward call."""

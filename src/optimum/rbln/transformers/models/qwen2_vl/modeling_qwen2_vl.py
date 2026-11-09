@@ -15,7 +15,7 @@
 import inspect
 from collections.abc import Callable, Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Optional
+from typing import Any, Optional
 
 import torch
 from transformers import (
@@ -54,11 +54,6 @@ from .qwen2_vl_architecture import Qwen2VisionTransformerWrapper, Qwen2VL_Langua
 
 
 logger = get_logger(__name__)
-
-if TYPE_CHECKING:
-    from transformers import (
-        PretrainedConfig,
-    )
 
 
 class RBLNQwen2VisionTransformerPretrainedModel(RBLNModel):
@@ -534,8 +529,9 @@ class RBLNQwen2VLForConditionalGeneration(RBLNQwenVLBatchSortMixin, RBLNQwen2VLM
         super().__post_init__(**kwargs)
         self.rope_deltas = torch.zeros(self.rbln_config.batch_size)
 
-    def can_generate(self):
-        return True
+    @property
+    def logits_last_dim(self):
+        return self.config.get_text_config().vocab_size
 
     @classmethod
     def _reconstruct_model_if_needed(cls, model: "PreTrainedModel"):

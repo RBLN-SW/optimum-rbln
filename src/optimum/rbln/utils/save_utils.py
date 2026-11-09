@@ -30,6 +30,7 @@
 Refer to huggingface/optimum/blob/4fdeea77d71e79451ba53e0c1f9d8f37e9704268/optimum/utils/save_utils.py
 """
 
+import contextlib
 from pathlib import Path
 
 from transformers import AutoFeatureExtractor, AutoProcessor, AutoTokenizer
@@ -44,28 +45,22 @@ def maybe_load_preprocessors(
     src_name_or_path: str | Path, subfolder: str = "", trust_remote_code: bool = False
 ) -> list:
     preprocessors = []
-    try:
+    with contextlib.suppress(Exception):
         preprocessors.append(
             AutoTokenizer.from_pretrained(src_name_or_path, subfolder=subfolder, trust_remote_code=trust_remote_code)
         )
-    except Exception:
-        pass
 
-    try:
+    with contextlib.suppress(Exception):
         preprocessors.append(
             AutoProcessor.from_pretrained(src_name_or_path, subfolder=subfolder, trust_remote_code=trust_remote_code)
         )
-    except Exception:
-        pass
 
-    try:
+    with contextlib.suppress(Exception):
         preprocessors.append(
             AutoFeatureExtractor.from_pretrained(
                 src_name_or_path, subfolder=subfolder, trust_remote_code=trust_remote_code
             )
         )
-    except Exception:
-        pass
     return preprocessors
 
 

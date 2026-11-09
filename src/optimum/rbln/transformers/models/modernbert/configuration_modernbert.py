@@ -12,7 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from ...configuration_generic import RBLNModelForMaskedLMConfig
+from ...configuration_generic import (
+    RBLNModelForMaskedLMConfig,
+    RBLNTransformerEncoderForFeatureExtractionConfig,
+)
+
+
+class RBLNModernBertModelConfig(RBLNTransformerEncoderForFeatureExtractionConfig):
+    """Configuration for the ModernBERT base model on RBLN devices."""
 
 
 class RBLNModernBertForMaskedLMConfig(RBLNModelForMaskedLMConfig):
@@ -26,4 +33,5 @@ class RBLNModernBertForMaskedLMConfig(RBLNModelForMaskedLMConfig):
 
 __all__ = [
     "RBLNModernBertForMaskedLMConfig",
+    "RBLNModernBertModelConfig",
 ]

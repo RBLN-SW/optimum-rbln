@@ -23,12 +23,13 @@ from ..decoderonly.decoderonly_architecture import (
     DecoderOnlyAttention,
     DecoderOnlyLayer,
     DecoderOnlyWrapper,
+    NestedCompileRegionMixin,
 )
 
 
 class RBLNGptOssWrapper(DecoderOnlyWrapper):
     def get_rbln_layer_class(self):
-        return RBLNGptOssLayer
+        return RBLNGptOssLayerRegion if self.rbln_config.nested_compile_region else RBLNGptOssLayer
 
 
 class RBLNGptOssLayer(DecoderOnlyLayer):
@@ -38,6 +39,10 @@ class RBLNGptOssLayer(DecoderOnlyLayer):
 
     def get_mlp(self) -> nn.Module:
         return self.mlp
+
+
+class RBLNGptOssLayerRegion(NestedCompileRegionMixin, RBLNGptOssLayer):
+    """Decoder layer with a nested compile region around its forward call."""
 
 
 class RBLNGptOssTopKRouter(nn.Module):

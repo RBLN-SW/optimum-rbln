@@ -8,12 +8,13 @@ env:
   UV_LINK_MODE: "symlink"
   UV_INDEX_STRATEGY: "unsafe-best-match"
 
-# Both upload jobs read only .buildkite; the suites they emit check out in full.
+# Both upload jobs read only .buildkite and scripts; the suites they emit check out in full.
 _upload: &upload
   checkout:
     sparse:
       paths:
         - .buildkite
+        - scripts
 
 steps:
   - label: ":closed_lock_with_key: team-member gate"
@@ -21,7 +22,7 @@ steps:
     secrets:
       - GIT_PAT
     command:
-      - "bash .buildkite/scripts/gate-team-member.sh"
+      - "bash scripts/ci/gate-team-member.sh"
 
   - label: ":mag: code quality"
     notify:
@@ -34,15 +35,16 @@ steps:
       - "uv run --no-sync ruff check ."
       - "uv run --no-sync mypy"
       - "uv run --no-sync python scripts/check_inits.py"
+      # ruff and uv.lock are already checked above; this runs the remaining file hygiene hooks.
+      - "SKIP=ruff-check,ruff-format,uv-lock uv run --no-sync pre-commit run --all-files --show-diff-on-failure"
 
-  # Same check as .github/workflows/test-docstrings.yml.
   - label: ":page_facing_up: docstrings"
     notify:
       - github_commit_status:
           context: "[OB] docstrings"
     image: "${DEVTOOLS_DOCKER_IMAGE}"
     command:
-      - "bash .buildkite/scripts/check-docstrings.sh"
+      - "bash scripts/check-docstrings.sh"
 
   # All gates must pass before the NPU pipeline is even uploaded.
   - wait: ~
@@ -65,7 +67,7 @@ steps:
   - label: ":sparkles: upload BC"
     <<: *upload
     command: |
-      bash .buildkite/scripts/bc-steps.sh --latest | buildkite-agent pipeline upload
+      bash scripts/ci/bc-steps.sh --latest | buildkite-agent pipeline upload
 
   - wait: ~
     continue_on_failure: true
@@ -81,4 +83,4 @@ steps:
       OBEDIENTS_API_TOKEN: BUILDKITE_API_TOKEN
       SLACK_BOT_TOKEN: SLACK_OAUTH_TOKEN
     command:
-      - "python3 .buildkite/scripts/slack-report.py"
+      - "python3 scripts/ci/slack-report.py"

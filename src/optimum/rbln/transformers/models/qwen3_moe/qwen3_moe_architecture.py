@@ -18,12 +18,17 @@ from torch import nn
 
 from ...utils.moe import compute_masked_routing_weight_softmax_first, split_fused_experts
 from ..decoderonly.configuration_decoderonly import RBLNLoRAConfig
-from ..decoderonly.decoderonly_architecture import DecoderOnlyAttention, DecoderOnlyLayer, DecoderOnlyWrapper
+from ..decoderonly.decoderonly_architecture import (
+    DecoderOnlyAttention,
+    DecoderOnlyLayer,
+    DecoderOnlyWrapper,
+    NestedCompileRegionMixin,
+)
 
 
 class Qwen3MoeWrapper(DecoderOnlyWrapper):
     def get_rbln_layer_class(self):
-        return Qwen3MoeLayer
+        return Qwen3MoeLayerRegion if self.rbln_config.nested_compile_region else Qwen3MoeLayer
 
     def get_rbln_attn_class(self):
         return Qwen3MoeAttention
@@ -50,6 +55,10 @@ class Qwen3MoeLayer(DecoderOnlyLayer):
 
     def get_mlp(self) -> nn.Module:
         return self.mlp
+
+
+class Qwen3MoeLayerRegion(NestedCompileRegionMixin, Qwen3MoeLayer):
+    """Decoder layer with a nested compile region around its forward call."""
 
 
 class Qwen3MoeSparseMoeBlock(nn.Module):

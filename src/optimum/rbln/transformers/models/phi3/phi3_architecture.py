@@ -19,6 +19,7 @@ from ..decoderonly.decoderonly_architecture import (
     DecoderOnlyAttention,
     DecoderOnlyLayer,
     DecoderOnlyWrapper,
+    NestedCompileRegionMixin,
     apply_rotary_pos_emb_partial,
 )
 
@@ -28,7 +29,7 @@ class Phi3Wrapper(DecoderOnlyWrapper):
         return Phi3Attention
 
     def get_rbln_layer_class(self):
-        return Phi3Layer
+        return Phi3LayerRegion if self.rbln_config.nested_compile_region else Phi3Layer
 
 
 def _split_rows(linear: nn.Linear, sizes: list[int]) -> list[nn.Linear]:
@@ -74,3 +75,7 @@ class Phi3Layer(DecoderOnlyLayer):
     def __init__(self, layer, self_attn, lora_config=None):
         layer.mlp = Phi3SplitMLP(layer.mlp)
         super().__init__(layer, self_attn, lora_config=lora_config)
+
+
+class Phi3LayerRegion(NestedCompileRegionMixin, Phi3Layer):
+    """Decoder layer with a nested compile region around its forward call."""

@@ -30,7 +30,7 @@ from .configuration_clip import RBLNCLIPTextModelConfig, RBLNCLIPVisionModelConf
 logger = get_logger(__name__)
 
 if TYPE_CHECKING:
-    from transformers import CLIPTextModel, PreTrainedModel
+    from transformers import PreTrainedModel
 
     from ....diffusers.modeling_diffusers import RBLNDiffusionMixin, RBLNDiffusionMixinConfig
 

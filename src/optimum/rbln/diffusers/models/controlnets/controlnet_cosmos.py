@@ -218,7 +218,7 @@ class RBLNCosmosControlNetModel(RBLNModel):
         image_rotary_emb = self.rope(control_hidden_states, fps=fps)
 
         # 4. Patchify both streams.
-        p_t, p_h, p_w = self.config.patch_size
+        p_t, _p_h, _p_w = self.config.patch_size
         post_patch_num_frames = T // p_t
         control_hidden_states = self.patch_embed(control_hidden_states).flatten(1, 3)
         base_hidden_states = self.patch_embed_base(base_hidden_states).flatten(1, 3)

@@ -46,12 +46,14 @@ if TYPE_CHECKING:
     from .grounding_dino import *
     from .idefics3 import *
     from .llama import *
+    from .llama4 import *
     from .llava import *
     from .llava_next import *
     from .midm import *
     from .mistral import *
     from .mixtral import *
     from .modernbert import *
+    from .mpnet import *
     from .olmo2 import *
     from .opt import *
     from .paligemma import *

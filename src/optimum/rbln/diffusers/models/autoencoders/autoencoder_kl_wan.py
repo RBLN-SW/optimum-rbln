@@ -23,7 +23,6 @@ from diffusers.models.autoencoders.autoencoder_kl_wan import (
 from diffusers.models.autoencoders.vae import DecoderOutput, DiagonalGaussianDistribution
 from diffusers.models.modeling_outputs import AutoencoderKLOutput
 from rebel.compile_context import CompileContext
-from transformers import PretrainedConfig
 
 from ....configuration_utils import RBLNCompileConfig
 from ....modeling import RBLNModel
@@ -33,8 +32,6 @@ from .vae import RBLNRuntimeWanVAEDecoder, RBLNRuntimeWanVAEEncoder
 
 
 if TYPE_CHECKING:
-    import torch
-    from diffusers.models.autoencoders.vae import DiagonalGaussianDistribution
     from transformers import AutoFeatureExtractor, AutoProcessor, AutoTokenizer, PretrainedConfig, PreTrainedModel
 
     from ...modeling_diffusers import RBLNDiffusionMixin, RBLNDiffusionMixinConfig
@@ -116,13 +113,13 @@ class _VAEWanEncoder0(torch.nn.Module):
         position = torch.tensor(0, dtype=torch.int16)
         axis = torch.tensor(_CACHE_FRAME_AXIS, dtype=torch.int16)
         dummy_outs = []
-        for cache, cache_item, cache_dim in zip(
+        for cache, feat, cache_dim in zip(
             list(args)[1:], self._enc_feat_map[1 : len(self.cache_dims)], self.cache_dims[1:], strict=False
         ):
-            if cache_dim[2] == 2:
-                cache_item = torch.nn.functional.pad(cache_item, (0, 0, 0, 0, 1, 0))  # pad D 1->2
-            cache_item = _to_cache(cache_item)
-            dummy_outs.append(torch.ops.rbln_custom_ops.rbln_cache_update(cache, cache_item, position, axis))
+            cache_item = torch.nn.functional.pad(feat, (0, 0, 0, 0, 1, 0)) if cache_dim[2] == 2 else feat  # pad D 1->2
+            dummy_outs.append(
+                torch.ops.rbln_custom_ops.rbln_cache_update(cache, _to_cache(cache_item), position, axis)
+            )
         # idx 0: runtime output
         fc0 = torch.nn.functional.pad(self._enc_feat_map[0], (0, 0, 0, 0, 1, 0)).contiguous()  # pad D 1->2
         return out, fc0, dummy_outs
@@ -158,10 +155,10 @@ class _VAEWanEncoderN(torch.nn.Module):
 
         position = torch.tensor(0, dtype=torch.int16)
         axis = torch.tensor(_CACHE_FRAME_AXIS, dtype=torch.int16)
-        dummy_outs = []
-        for cache, item in zip(list(caches)[1:], feat_cache_reshaped[1:], strict=False):
-            item = _to_cache(item)
-            dummy_outs.append(torch.ops.rbln_custom_ops.rbln_cache_update(cache, item, position, axis))
+        dummy_outs = [
+            torch.ops.rbln_custom_ops.rbln_cache_update(cache, _to_cache(item), position, axis)
+            for cache, item in zip(list(caches)[1:], feat_cache_reshaped[1:], strict=False)
+        ]
         return out, feat_cache_reshaped[0].contiguous(), dummy_outs
 
 
@@ -186,15 +183,14 @@ class _VAEWanDecoder0(torch.nn.Module):
         position = torch.tensor(0, dtype=torch.int16)
         axis = torch.tensor(_CACHE_FRAME_AXIS, dtype=torch.int16)
         dummy_outs = []
-        for cache, cache_item, _cache_dim in zip(
+        for cache, feat, _cache_dim in zip(
             list(args), self._feat_map[1 : len(self.cache_dims)], self.cache_dims[1:], strict=False
         ):
-            if isinstance(cache_item, str):
+            if isinstance(feat, str):
                 # diffusers upsample3d stores a "Rep" string on the first chunk (no real cache).
                 cache_item = cache * 0.0
             else:
-                cache_item = torch.nn.functional.pad(cache_item, (0, 0, 0, 0, 1, 0))  # pad D 1->2
-                cache_item = _to_cache(cache_item)
+                cache_item = _to_cache(torch.nn.functional.pad(feat, (0, 0, 0, 0, 1, 0)))  # pad D 1->2
             dummy_outs.append(torch.ops.rbln_custom_ops.rbln_cache_update(cache, cache_item, position, axis))
         # idx 0: runtime output
         fc0 = torch.nn.functional.pad(self._feat_map[0], (0, 0, 0, 0, 1, 0)).contiguous()  # pad D 1->2
@@ -228,10 +224,10 @@ class _VAEWanDecoderN(torch.nn.Module):
 
         position = torch.tensor(0, dtype=torch.int16)
         axis = torch.tensor(_CACHE_FRAME_AXIS, dtype=torch.int16)
-        dummy_outs = []
-        for cache, item in zip(list(caches)[1:], feat_cache_reshaped[1:], strict=False):
-            item = _to_cache(item)
-            dummy_outs.append(torch.ops.rbln_custom_ops.rbln_cache_update(cache, item, position, axis))
+        dummy_outs = [
+            torch.ops.rbln_custom_ops.rbln_cache_update(cache, _to_cache(item), position, axis)
+            for cache, item in zip(list(caches)[1:], feat_cache_reshaped[1:], strict=False)
+        ]
         return out, feat_cache_reshaped[0].contiguous(), dummy_outs
 
 

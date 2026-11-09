@@ -3,7 +3,7 @@
 > **⚠️ Important: Branch Target**
 > - **New features, enhancements, and non-critical fixes**: Merge to `dev` branch
 > - **Critical hotfixes only**: Merge to `main` branch (must also merge to `dev`)
-> 
+>
 > Please ensure you've selected the correct base branch before submitting!
 
 ## Type of Change
@@ -39,7 +39,7 @@ type(optional scope): description
 # Type candidate
   - Model Updates
     - `model`: Adding New models or Bugfix for existing models
-      - ex) Add LlavaNext 
+      - ex) Add LlavaNext
       - ex) Bugfix Whisper
   - Enhancements
     - `performance`: Optimizing some models or this library itself

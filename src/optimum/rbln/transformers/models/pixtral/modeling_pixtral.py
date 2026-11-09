@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING, Any, Optional
 
 import rebel
 import torch
-import torch.nn as nn
+from torch import nn
 from transformers import PixtralVisionConfig, PixtralVisionModel
 from transformers.initialization import no_init_weights
 from transformers.modeling_outputs import BaseModelOutput
@@ -192,7 +192,7 @@ class _PixtralVisionModel(torch.nn.Module):
             )
             if self.output_hidden_states:
                 all_hidden_states.append(hidden_states)
-        return tuple([hidden_states] + all_hidden_states)
+        return (hidden_states, *all_hidden_states)
 
 
 class RBLNPixtralVisionModel(RBLNModel):

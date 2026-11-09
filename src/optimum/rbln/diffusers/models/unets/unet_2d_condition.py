@@ -241,7 +241,7 @@ class RBLNUNet2DConditionModel(RBLNModel):
         rbln_config.unet.sample_size = cls.get_unet_sample_size(
             pipe, rbln_config.unet, image_size=rbln_config.image_size
         )
-        rbln_config.unet.use_additional_residuals = "controlnet" in pipe.config.keys()
+        rbln_config.unet.use_additional_residuals = "controlnet" in pipe.config
 
         return rbln_config
 

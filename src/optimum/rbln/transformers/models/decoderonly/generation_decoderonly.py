@@ -155,12 +155,21 @@ class RBLNDecoderOnlyGenerationMixin(GenerationMixin):
             attention_mask (torch.LongTensor, optional): The attention mask to the model.
             generation_config (GenerationConfig, optional): The generation configuration to be used as base parametrization for the generation call. **kwargs passed to generate matching the attributes of generation_config will override them.
                 If generation_config is not provided, the default will be used, which had the following loading priority: 1) from the generation_config.json model file, if it exists; 2) from the model configuration.
-                Please note that unspecified parameters will inherit [GenerationConfig](https://huggingface.co/docs/transformers/v4.57.1/en/main_classes/text_generation#transformers.GenerationConfig)’s default values.
+                Please note that unspecified parameters will inherit [GenerationConfig](https://huggingface.co/docs/transformers/v4.57.1/en/main_classes/text_generation#transformers.GenerationConfig)'s default values.
             kwargs (dict[str, Any], optional): Additional arguments passed to the generate function. See the HuggingFace transformers documentation for more details.
 
         Returns:
             A ModelOutput (if return_dict_in_generate=True or when config.return_dict_in_generate=True) or a torch.LongTensor.
         """
+        if not self.can_generate():
+            # Same error kind as transformers: a model without generation support has no `generate`.
+            # A wrapper model (e.g. LLaVA) keeps the phases in its language model's config.
+            phases = getattr(self.rbln_config, "phases", None)
+            raise AttributeError(
+                f"'{type(self).__name__}' object has no attribute 'generate': it was compiled without the 'decode' "
+                f"phase{f' (phases={phases})' if phases is not None else ''}, so it only runs forward(). "
+                "Compile it with phases=['prefill', 'decode'] to generate."
+            )
         if generation_config is not None:
             kwargs["generation_config"] = generation_config
         if attention_mask is not None:

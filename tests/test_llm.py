@@ -5,6 +5,7 @@ import os
 import tempfile
 import unittest
 import warnings
+from unittest.mock import patch
 
 import pytest
 import torch
@@ -25,6 +26,7 @@ from transformers import (
     Qwen3VLMoeConfig,
     Qwen3VLMoeForConditionalGeneration,
 )
+from transformers.image_utils import load_image
 
 from optimum.rbln import (
     RBLNAutoModel,
@@ -46,6 +48,8 @@ from optimum.rbln import (
     RBLNGraniteForCausalLM,
     RBLNGraniteModel,
     RBLNIdefics3ForConditionalGeneration,
+    RBLNLlama4ForCausalLM,
+    RBLNLlama4ForConditionalGeneration,
     RBLNLlamaForCausalLM,
     RBLNLlamaModel,
     RBLNLlavaForConditionalGeneration,
@@ -85,6 +89,8 @@ from optimum.rbln import (
     RBLNStarcoder2Model,
     RBLNT5ForConditionalGeneration,
 )
+from optimum.rbln.configuration_utils import ContextRblnConfig
+from optimum.rbln.transformers.models.decoderonly import lora_architecture
 
 from .test_base import BaseTest, DisallowedTestBase, TestLevel
 
@@ -103,6 +109,7 @@ class LLMTest:
         PROMPT = "Who are you?"
         IS_MULTIMODAL = False
         HF_CONFIG_KWARGS_PREPROCESSOR = {"padding_side": "left"}
+        TEST_PREFILL_ONLY = False  # also compile the model with phases=["prefill"] and check it runs forward only
 
         def get_tokenizer(self):
             PreProcessor = AutoProcessor if self.IS_MULTIMODAL else AutoTokenizer
@@ -134,6 +141,36 @@ class LLMTest:
 
             return generated_texts
 
+        def test_prefill_only(self):
+            if not self.TEST_PREFILL_ONLY:
+                self.skipTest("prefill-only check is not enabled for this model")
+            if os.environ.get("REUSE_ARTIFACTS_PATH") is not None:
+                self.skipTest("BC job reuses prebuilt artifacts")
+
+            rbln_config = {**self.RBLN_CLASS_KWARGS.get("rbln_config", {}), "phases": ["prefill"]}
+            with tempfile.TemporaryDirectory() as tmpdir, ContextRblnConfig(device=self.DEVICE):
+                model = self.RBLN_CLASS.from_pretrained(
+                    self.HF_MODEL_ID,
+                    model_save_dir=tmpdir,
+                    **{**self.RBLN_CLASS_KWARGS, "rbln_config": rbln_config},
+                    **self.HF_CONFIG_KWARGS,
+                )
+                assert not model.can_generate()
+                assert not model.__dict__.get("decoders")
+                assert "decoder" not in model.__dict__
+                assert [cfg.compiled_model_name for cfg in model.rbln_config.compile_cfgs] == ["prefill"]
+
+                # The multimodal get_inputs() add generation kwargs unconditionally; forward() ignores them.
+                inputs = {k: v for k, v in self.get_inputs().items() if k not in ("max_new_tokens", "do_sample")}
+                logits = model(**inputs).logits
+                vocab_size = model.config.get_text_config().vocab_size
+                assert tuple(logits.shape) == (inputs["input_ids"].shape[0], 1, vocab_size)
+
+                with pytest.raises(AttributeError, match="no attribute 'generate'"):
+                    model.generate(**inputs, max_new_tokens=2)
+                del model
+                gc.collect()
+
         def _test_output_hidden_states_generation(self):
             REUSE_ARTIFACTS_PATH = os.environ.get("REUSE_ARTIFACTS_PATH", None)
 
@@ -148,15 +185,15 @@ class LLMTest:
                     return
 
                 # Check hidden states Shape and Type
-                self.assertTrue(len(output.hidden_states) == inputs["max_new_tokens"])
-                self.assertTrue(isinstance(output.hidden_states, tuple))
+                assert len(output.hidden_states) == inputs["max_new_tokens"]
+                assert isinstance(output.hidden_states, tuple)
                 num_hidden_layers = (
                     self.HF_CONFIG_KWARGS["num_hidden_layers"]
                     if "num_hidden_layers" in self.HF_CONFIG_KWARGS
                     else self.HF_CONFIG_KWARGS["text_config"]["num_hidden_layers"]
                 )
-                self.assertTrue(len(output.hidden_states[0]) == (num_hidden_layers + 1))
-                self.assertTrue(isinstance(output.hidden_states[0], tuple))
+                assert len(output.hidden_states[0]) == num_hidden_layers + 1
+                assert isinstance(output.hidden_states[0], tuple)
                 test_hidden_states = output.hidden_states[0][1]
             else:
                 inputs["output_hidden_states"] = True
@@ -164,12 +201,12 @@ class LLMTest:
                 if REUSE_ARTIFACTS_PATH is not None:
                     return
                 # Check hidden states Shape and Type
-                self.assertTrue(len(output.hidden_states) == (self.HF_CONFIG_KWARGS["num_hidden_layers"] + 1))
-                self.assertTrue(isinstance(output.hidden_states, tuple))
+                assert len(output.hidden_states) == self.HF_CONFIG_KWARGS["num_hidden_layers"] + 1
+                assert isinstance(output.hidden_states, tuple)
                 test_hidden_states = output.hidden_states[1]
 
                 # Check last hidden state corresponds to the last hidden state of the prefill stage
-                self.assertTrue(torch.allclose(output.last_hidden_state, output.hidden_states[-1]))
+                assert torch.allclose(output.last_hidden_state, output.hidden_states[-1])
 
             # Check well-masked hidden states corresponds to attention mask
             for b_idx, bmask in enumerate(inputs.attention_mask):
@@ -178,12 +215,12 @@ class LLMTest:
                 hs_dtype = test_hidden_states.dtype
                 masked = torch.allclose(test_hidden_states[b_idx][masked_indices], torch.zeros([1], dtype=hs_dtype))
                 # 1. all masked hidden states are zero
-                self.assertTrue(masked)
+                assert masked
                 unmasked_tensor = test_hidden_states[b_idx][unmasked_indices]
                 avg_unmasked_tensor = torch.mean(unmasked_tensor.float(), dim=-1)
                 approx_zero = torch.isclose(avg_unmasked_tensor, torch.zeros([1]), atol=1e-5)
                 # 2. check if unmasked hidden states are not masked
-                self.assertFalse(torch.any(approx_zero).item())
+                assert not torch.any(approx_zero).item()
 
     class TestLLMWithoutLMHead(TestLLM):
         RBLN_AUTO_CLASS = RBLNAutoModel
@@ -203,10 +240,10 @@ class LLMTest:
                 with self.subTest(length=length):
                     input_ids = torch.ones((batch_size, length), dtype=torch.int64)
                     output = self.model(input_ids=input_ids, attention_mask=torch.ones_like(input_ids))
-                    self.assertEqual(output.last_hidden_state.shape, (batch_size, length, hidden_size))
+                    assert output.last_hidden_state.shape == (batch_size, length, hidden_size)
                     if self.model.rbln_config.output_hidden_states:
                         for hidden_state in output.hidden_states:
-                            self.assertEqual(hidden_state.shape, (batch_size, length, hidden_size))
+                            assert hidden_state.shape == (batch_size, length, hidden_size)
 
 
 class TestMistralForCausalLM(LLMTest.TestLLM):
@@ -558,39 +595,39 @@ class TestBartModel(LLMTest.TestLLM):
     def test_automap(self):
         # BartForConditionalGeneration -> RBLNBartForConditionalGeneration compile case
         with self.subTest():
-            assert self.RBLN_CLASS == self.RBLN_AUTO_CLASS.get_rbln_cls(
-                self.HF_MODEL_ID,
-                **self.RBLN_CLASS_KWARGS,
-                **self.HF_CONFIG_KWARGS,
+            assert (
+                self.RBLN_AUTO_CLASS.get_rbln_cls(
+                    self.HF_MODEL_ID,
+                    **self.RBLN_CLASS_KWARGS,
+                    **self.HF_CONFIG_KWARGS,
+                )
+                == self.RBLN_CLASS
             )
 
         # BartForConditionalGeneration -> RBLNBartModel compile case
         # Invoked rbln_class is different from config's architecture
-        with self.subTest():
-            with warnings.catch_warnings(record=True) as w:
-                warnings.simplefilter("always")
+        with self.subTest(), warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
 
-                RBLNAutoModel.get_rbln_cls(self.HF_MODEL_ID)
+            RBLNAutoModel.get_rbln_cls(self.HF_MODEL_ID)
 
-                self.assertEqual(len(w), 1)
-                self.assertTrue(issubclass(w[-1].category, UserWarning))
-                self.assertIn("This mismatch could cause some operations", str(w[-1].message))
+            assert len(w) == 1
+            assert issubclass(w[-1].category, UserWarning)
+            assert "This mismatch could cause some operations" in str(w[-1].message)
 
         # BartForConditionalGeneration -> RBLNBartForCausalLM compile case
         # RBLNBartForCausalLM is not yet supported in optimum.rbln
-        with self.subTest():
-            with pytest.raises(AttributeError):
-                RBLNAutoModelForCausalLM.get_rbln_cls(self.HF_MODEL_ID)
+        with self.subTest(), pytest.raises(AttributeError):
+            RBLNAutoModelForCausalLM.get_rbln_cls(self.HF_MODEL_ID)
 
         # RBLNBartForSeq2SeqLM -> RBLNBartForCausalLM load case
-        with self.subTest():
-            with pytest.raises(ValueError):
-                _ = RBLNAutoModelForCausalLM.from_pretrained(
-                    self.get_rbln_local_dir(),
-                    export=False,
-                    rbln_create_runtimes=False,
-                    **self.HF_CONFIG_KWARGS,
-                )
+        with self.subTest(), pytest.raises(ValueError):  # noqa: PT011
+            _ = RBLNAutoModelForCausalLM.from_pretrained(
+                self.get_rbln_local_dir(),
+                export=False,
+                rbln_create_runtimes=False,
+                **self.HF_CONFIG_KWARGS,
+            )
 
 
 class TestLlavaForConditionalGeneration(LLMTest.TestLLM):
@@ -630,6 +667,39 @@ class TestLlavaForConditionalGeneration(LLMTest.TestLLM):
             },
             **self.HF_CONFIG_KWARGS,
         )
+
+
+class TestLlama4ForCausalLM(LLMTest.TestLLM):
+    RBLN_CLASS = RBLNLlama4ForCausalLM
+    HF_MODEL_ID = "rbln/tiny-Llama4ForConditionalGeneration"
+
+    def get_tokenizer(self):
+        # The tiny checkpoint ships no tokenizer; use the one of the model it mimics.
+        PreProcessor = AutoProcessor if self.IS_MULTIMODAL else AutoTokenizer
+        if getattr(self, "_tokenizer", None) is None:
+            self._tokenizer = PreProcessor.from_pretrained(
+                "meta-llama/Llama-Guard-4-12B", **self.HF_CONFIG_KWARGS_PREPROCESSOR
+            )
+        return self._tokenizer
+
+
+class TestLlama4ForConditionalGeneration(TestLlama4ForCausalLM):
+    RBLN_AUTO_CLASS = RBLNAutoModelForImageTextToText
+    RBLN_CLASS = RBLNLlama4ForConditionalGeneration
+    PROMPT = (
+        "<|begin_of_text|><|header_start|>user<|header_end|>\n\n<|image|>Describe the image.<|eot|>"
+        "<|header_start|>assistant<|header_end|>\n\n"
+    )
+    IS_MULTIMODAL = True
+
+    def get_inputs(self):
+        tokenizer = self.get_tokenizer()
+        image = load_image("https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/bee.jpg")
+        # Five tiles: two calls of the default vision batch size 4, the second one padded.
+        inputs = tokenizer(images=[image], text=[self.PROMPT], return_tensors="pt", padding=True, max_patches=4)
+        inputs["max_new_tokens"] = 20
+        inputs["do_sample"] = False
+        return inputs
 
 
 class TestPegasusModel(LLMTest.TestLLM):
@@ -855,7 +925,7 @@ class TestQwenRotaryLookup(unittest.TestCase):
                 hf = Qwen2VisionTransformerPretrainedModel.rot_pos_emb(mock, grid)
                 table = rot(torch.arange(int(grid[:, 1:].max())))
                 ours = table[qwen_vit_rot_pos_ids(grid, merge)].flatten(1)
-                self.assertTrue(torch.equal(ours, hf))
+                assert torch.equal(ours, hf)
 
     def test_qwen_mrope_lookup_matches_hf_module(self):
         from transformers.models.qwen2_vl.configuration_qwen2_vl import Qwen2VLTextConfig
@@ -882,20 +952,21 @@ class TestQwenRotaryLookup(unittest.TestCase):
         x = torch.zeros(1)
         for rot in (standard, interleaved):
             lut = build_qwen_mrope_lookup(rot, max_pos)
-            self.assertIsInstance(lut, QwenMRopeLookupTable)
+            assert isinstance(lut, QwenMRopeLookupTable)
             oob = torch.randint(0, max_pos, (3, 1, 8))
             oob[0, 0, 0] = max_pos + 3  # falls back to the dynamic path
             for pos in (torch.randint(0, max_pos, (3, 2, 64)), torch.randint(0, max_pos, (3, 1, 1)), oob):
                 hf_cos, hf_sin = rot(x, pos)
                 lut_cos, lut_sin = lut(x, pos)
-                self.assertEqual(hf_cos.shape, lut_cos.shape)
-                self.assertLess((hf_cos.float() - lut_cos).abs().max().item(), 2e-7)
-                self.assertLess((hf_sin.float() - lut_sin).abs().max().item(), 2e-7)
+                assert hf_cos.shape == lut_cos.shape
+                assert (hf_cos.float() - lut_cos).abs().max().item() < 2e-07
+                assert (hf_sin.float() - lut_sin).abs().max().item() < 2e-07
 
 
 class TestQwen2VLForConditionalGeneration(LLMTest.TestLLM):
     RBLN_AUTO_CLASS = RBLNAutoModelForImageTextToText
     RBLN_CLASS = RBLNQwen2VLForConditionalGeneration
+    TEST_PREFILL_ONLY = True
     HF_MODEL_ID = "hf-internal-testing/tiny-random-Qwen2VLForConditionalGeneration"
     PROMPT = "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\n<|vision_start|><|image_pad|><|vision_end|>Describe this image.<|im_end|>\n<|im_start|>assistant\n"
     RBLN_CLASS_KWARGS = {
@@ -950,6 +1021,7 @@ class TestQwen2VLForConditionalGeneration(LLMTest.TestLLM):
 class TestQwen2_5_VLForConditionalGeneration(LLMTest.TestLLM):
     RBLN_AUTO_CLASS = RBLNAutoModelForImageTextToText
     RBLN_CLASS = RBLNQwen2_5_VLForConditionalGeneration
+    TEST_PREFILL_ONLY = True
     HF_MODEL_ID = "Qwen/Qwen2.5-VL-3B-Instruct"  # No tiny model yet.
     PROMPT = "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\n<|vision_start|><|image_pad|><|vision_end|>Describe this image.<|im_end|>\n<|im_start|>assistant\n"
     RBLN_CLASS_KWARGS = {
@@ -999,6 +1071,7 @@ class TestQwen2_5_VLForConditionalGeneration(LLMTest.TestLLM):
 
 
 class TestQwen2_5_VLForConditionalGeneration_OutputHiddenStates(TestQwen2_5_VLForConditionalGeneration):
+    TEST_PREFILL_ONLY = False
     # Two prompts of different lengths: the shorter one is left-padded, exercising the
     # padded-batch prefill output aggregation (hidden states must come back at full mask width
     # and left-padded rows must not leak into the valid region).
@@ -1038,6 +1111,7 @@ class TestQwen2_5_VLForConditionalGeneration_OutputHiddenStates(TestQwen2_5_VLFo
 class TestQwen3VLForConditionalGeneration(LLMTest.TestLLM):
     RBLN_AUTO_CLASS = RBLNAutoModelForImageTextToText
     RBLN_CLASS = RBLNQwen3VLForConditionalGeneration
+    TEST_PREFILL_ONLY = True
     HF_MODEL_ID = "Qwen/Qwen3-VL-2B-Instruct"
     PROMPT = "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\n<|vision_start|><|image_pad|><|vision_end|>Describe this image.<|im_end|>\n<|im_start|>assistant\n"
     RBLN_CLASS_KWARGS = {
@@ -1083,6 +1157,7 @@ class TestQwen3VLForConditionalGeneration(LLMTest.TestLLM):
 
 
 class TestQwen3VLForConditionalGeneration_OutputHiddenStates(TestQwen3VLForConditionalGeneration):
+    TEST_PREFILL_ONLY = False
     # Two prompts of different lengths: the shorter one is left-padded, exercising the
     # padded-batch prefill output aggregation (hidden states must come back at full mask width
     # and left-padded rows must not leak into the valid region).
@@ -1165,6 +1240,7 @@ class TestQwen3VLMoeForConditionalGeneration(LLMTest.TestLLM):
 class TestQwen3_5ForConditionalGeneration(LLMTest.TestLLM):
     RBLN_AUTO_CLASS = RBLNAutoModelForImageTextToText
     RBLN_CLASS = RBLNQwen3_5ForConditionalGeneration
+    TEST_PREFILL_ONLY = True
     HF_MODEL_ID = "Qwen/Qwen3.5-0.8B"
     PROMPT = "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\n<|vision_start|><|image_pad|><|vision_end|>Describe this image.<|im_end|>\n<|im_start|>assistant\n"
     RBLN_CLASS_KWARGS = {
@@ -1201,6 +1277,7 @@ class TestQwen3_5ForConditionalGeneration(LLMTest.TestLLM):
 
 
 class TestQwen3_5ForConditionalGeneration_OutputHiddenStates(TestQwen3_5ForConditionalGeneration):
+    TEST_PREFILL_ONLY = False
     # Left-padded input (padding_side="left", padding="max_length") so the output_hidden_states
     # aggregation runs with a non-zero start (start > 0). This exercises the scatter-back offset and
     # the full-width copy_ from the #658 bug family, which a non-padded prompt (start == 0) never hits.
@@ -1321,6 +1398,7 @@ class TestGemma3ForConditionalGeneration_OutputHiddenStates(TestGemma3ForConditi
 
 class TestGemma3ForCausalLM(LLMTest.TestLLM):
     RBLN_CLASS = RBLNGemma3ForCausalLM
+    TEST_PREFILL_ONLY = True
     HF_MODEL_ID = "google/gemma-3-1b-it"
     HF_CONFIG_KWARGS = {
         "trust_remote_code": True,
@@ -1395,6 +1473,61 @@ class TestMultiLora(LLMTest.TestLLM):
 
     def get_inputs(self):
         self.model.set_adapter(["abliterated"])
+        return super().get_inputs()
+
+
+class TestLlama4ForCausalLM_Lora(TestLlama4ForCausalLM):
+    @classmethod
+    def setUpClass(cls):
+        if os.environ.get("REUSE_ARTIFACTS_PATH") is not None:
+            # BC reuse loads the artifact and generates: the Llama 4 part is covered by TestLlama4ForCausalLM and
+            # the LoRA part (config reload, adapter selection) by TestMultiLora. The temporary adapter is gone by then.
+            raise unittest.SkipTest("Covered by TestLlama4ForCausalLM and TestMultiLora on artifact reuse")
+        # Zero LoRA weights under the keys PEFT writes for Llama4ForConditionalGeneration: the nested
+        # language model prefix and the feed_forward MLP. The loader only warns on a missing key.
+        text = AutoConfig.from_pretrained(cls.HF_MODEL_ID).get_text_config()
+        hidden, mlp = text.hidden_size, text.intermediate_size_mlp
+        q, kv = text.num_attention_heads * text.head_dim, text.num_key_value_heads * text.head_dim
+        shapes = {
+            "self_attn.q_proj": (hidden, q),
+            "self_attn.k_proj": (hidden, kv),
+            "self_attn.v_proj": (hidden, kv),
+            "self_attn.o_proj": (q, hidden),
+            "feed_forward.gate_proj": (hidden, mlp),
+            "feed_forward.up_proj": (hidden, mlp),
+            "feed_forward.down_proj": (mlp, hidden),
+        }
+        weights = {}
+        for layer_idx in range(text.num_hidden_layers):
+            for name, (in_features, out_features) in shapes.items():
+                key = f"base_model.model.language_model.model.layers.{layer_idx}.{name}"
+                weights[f"{key}.lora_A.weight"] = torch.zeros(1, in_features)
+                weights[f"{key}.lora_B.weight"] = torch.zeros(out_features, 1)
+        cls._lora_dir = tempfile.TemporaryDirectory()
+        save_file(weights, os.path.join(cls._lora_dir.name, "adapter_model.safetensors"))
+        with open(os.path.join(cls._lora_dir.name, "adapter_config.json"), "w") as f:
+            json.dump({"r": 1, "lora_alpha": 1, "target_modules": [name.split(".")[1] for name in shapes]}, f)
+        adapter = {"lora_int_id": 1, "lora_name": "zero", "lora_path": cls._lora_dir.name}
+        cls.RBLN_CLASS_KWARGS = {"rbln_config": {"lora_config": {"adapters": [adapter]}}}
+
+        logger = lora_architecture.logger
+        with patch.object(logger, "warning", wraps=logger.warning) as warning:
+            super().setUpClass()
+        cls.missing_lora_keys = [
+            call.args[0] for call in warning.call_args_list if call.args[0].startswith("No LoRA weights found")
+        ]
+
+    @classmethod
+    def tearDownClass(cls):
+        super().tearDownClass()
+        if "_lora_dir" in cls.__dict__:
+            cls._lora_dir.cleanup()
+
+    def test_lora_keys_found(self):
+        assert not self.missing_lora_keys, self.missing_lora_keys[:4]
+
+    def get_inputs(self):
+        self.model.set_adapter(["zero"])
         return super().get_inputs()
 
 
@@ -1488,7 +1621,7 @@ class TestMoeHostMemory(unittest.TestCase):
         before = self._rss()
         model = rbln_cls.get_pytorch_model(tmp, dtype=torch.bfloat16)
         for name, p in model.named_parameters():
-            self.assertTrue(torch.equal(p, src_state_dict[name]), name)
+            assert torch.equal(p, src_state_dict[name]), name
         if config_cls is not None:
             rbln_config = config_cls(max_seq_len=256, batch_size=1, create_runtimes=False)
             rbln_config = rbln_cls.update_rbln_config(
@@ -1497,7 +1630,7 @@ class TestMoeHostMemory(unittest.TestCase):
             wrapped = rbln_cls._wrap_model_if_needed(model, rbln_config)  # noqa: F841
         gc.collect()
         ratio = (self._rss() - before) / checkpoint_bytes
-        self.assertLessEqual(ratio, self.MAX_RSS_RATIO, f"RSS grew {ratio:.2f}x the checkpoint size")
+        assert ratio <= self.MAX_RSS_RATIO, f"RSS grew {ratio:.2f}x the checkpoint size"
 
     def test_per_expert_checkpoints(self):
         moe = {"moe_intermediate_size": 512, "num_experts": 64, "num_experts_per_tok": 4, "decoder_sparse_step": 1}

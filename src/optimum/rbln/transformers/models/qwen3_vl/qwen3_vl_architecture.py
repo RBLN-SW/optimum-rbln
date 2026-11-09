@@ -15,14 +15,16 @@
 from typing import TYPE_CHECKING
 
 import torch
-import torch.nn as nn
+from torch import nn
 from transformers import PreTrainedModel
 
 from ..decoderonly.decoderonly_architecture import (
     DecoderOnlyAttention,
     DecoderOnlyForCausalLM,
+    DecoderOnlyLayer,
     DecoderOnlyModel,
     DecoderOnlyWrapper,
+    NestedCompileRegionMixin,
     rotate_half,
     slice_and_unsqueeze_cos_sin,
 )
@@ -57,10 +59,7 @@ class Qwen3VLVisionModelWrapper(nn.Module):
         blocks: torch.nn.ModuleList,
         rbln_config: RBLNQwen3VLVisionModelConfig,
     ):
-        wrapped_blocks = []
-        for block in blocks:
-            wrapped_blocks.append(Qwen3VLVisionBlock(block, rbln_config))
-        return nn.ModuleList(wrapped_blocks)
+        return nn.ModuleList([Qwen3VLVisionBlock(block, rbln_config) for block in blocks])
 
     def forward(
         self,
@@ -185,6 +184,9 @@ class Qwen3VL_LanguageModelWrapper(DecoderOnlyWrapper):
 
     def get_rbln_attn_class(self):
         return Qwen3VLAttention
+
+    def get_rbln_layer_class(self):
+        return Qwen3VLLayerRegion if self.rbln_config.nested_compile_region else Qwen3VLLayer
 
     def get_rbln_model_class(self):
         return Qwen3VLDecoderOnlyModel
@@ -356,20 +358,36 @@ class Qwen3VLDecoderOnlyForCausalLM(DecoderOnlyForCausalLM):
         return logits, all_hidden_states
 
 
+class Qwen3VLDeepstackLayerMixin:
+    """Adds the layer's deepstack visual embeddings to its output, inside a nested region if there is one.
+
+    With `deepstack_row`, `deepstack_embeds` stacks the embeddings of every layer and the row selects this layer's.
+    """
+
+    def forward(self, *args, deepstack_embeds=None, deepstack_row=None, visual_pos_mask=None, **kwargs):
+        hidden_states = super().forward(*args, **kwargs)
+        if deepstack_embeds is not None:
+            mask_expanded = visual_pos_mask.unsqueeze(-1).to(hidden_states.dtype)
+            if deepstack_row is None:
+                deepstack_embeds = deepstack_embeds.unsqueeze(0)
+            else:
+                deepstack_embeds = deepstack_embeds.index_select(0, deepstack_row)
+            hidden_states = hidden_states + deepstack_embeds * mask_expanded
+        return hidden_states
+
+
+class Qwen3VLLayer(Qwen3VLDeepstackLayerMixin, DecoderOnlyLayer):
+    """Qwen3-VL decoder layer, which applies its own deepstack injection."""
+
+
+class Qwen3VLLayerRegion(NestedCompileRegionMixin, Qwen3VLLayer):
+    """Decoder layer with a nested compile region around its forward call."""
+
+
 class Qwen3VLDecoderOnlyModel(DecoderOnlyModel):
     def __init__(self, model, layers, rbln_config, num_deepstack_layers: int = 3, **kwargs):
         super().__init__(model, layers, rbln_config, **kwargs)
         self.num_deepstack_layers = num_deepstack_layers
-
-    def _deepstack_process(
-        self,
-        hidden_states: torch.Tensor,
-        visual_pos_mask: torch.Tensor,
-        visual_embeds: torch.Tensor,
-    ) -> torch.Tensor:
-        mask_expanded = visual_pos_mask.unsqueeze(-1).to(hidden_states.dtype)
-        hidden_states = hidden_states + visual_embeds.unsqueeze(0) * mask_expanded
-        return hidden_states
 
     def forward(
         self,
@@ -401,7 +419,8 @@ class Qwen3VLDecoderOnlyModel(DecoderOnlyModel):
         position_ids = position_ids if position_ids is not None else cache_position
         if rotary_emb is not None:
             if isinstance(rotary_emb, torch.Tensor):
-                cos = rotary_emb[0]
+                # cos gets its own storage: nested regions reject inputs that alias one packed tensor.
+                cos = rotary_emb[0].clone()
                 sin = rotary_emb[1]
             else:
                 cos, sin = rotary_emb(hidden_states, self.max_seq_len)
@@ -423,14 +442,28 @@ class Qwen3VLDecoderOnlyModel(DecoderOnlyModel):
             cache_seq_len, cache_offset, swa_attn_mask = self.get_swa_custom_op_args(position_ids, query_position)
             sliding_cache_pos = (cache_seq_len, cache_offset)
 
-        apply_deepstack = deepstack_visual_embeds is not None and visual_pos_mask is not None
+        layer_deepstack = [None] * len(self.layers)
+        layer_rows = [None] * len(self.layers)
+        if deepstack_visual_embeds is not None and visual_pos_mask is not None:
+            for layer_idx in range(min(self.num_deepstack_layers, len(self.layers))):
+                layer_deepstack[layer_idx] = deepstack_visual_embeds[layer_idx]
+            if self.rbln_config.nested_compile_region:
+                # Every layer region takes the same stacked embeddings, with a zero row for the layers past
+                # the deepstack layers, and its own row index. The calls then share one body and differ only
+                # in that constant, so the compiler can roll them.
+                stacked = torch.cat([deepstack_visual_embeds, torch.zeros_like(deepstack_visual_embeds[:1])])
+                layer_deepstack = [stacked] * len(self.layers)
+                layer_rows = [
+                    torch.tensor([min(layer_idx, self.num_deepstack_layers)], dtype=torch.int32)
+                    for layer_idx in range(len(self.layers))
+                ]
 
         all_hidden_states = () if output_hidden_states else None
         for layer_idx, layer in enumerate(self.layers):
             if output_hidden_states:
                 all_hidden_states += (hidden_states,)
 
-            is_sliding = True if layer_idx in self.sliding_window_layers else False
+            is_sliding = layer_idx in self.sliding_window_layers
             is_sliding_decode = is_sliding and self.phase == "decode"
             hidden_states = layer(
                 hidden_states=hidden_states,
@@ -441,12 +474,10 @@ class Qwen3VLDecoderOnlyModel(DecoderOnlyModel):
                 sin=sin,
                 block_tables=local_block_tables if is_sliding else global_block_tables,
                 lora_int_id=lora_int_id,
+                deepstack_embeds=layer_deepstack[layer_idx],
+                deepstack_row=layer_rows[layer_idx],
+                visual_pos_mask=visual_pos_mask,
             )
-
-            if apply_deepstack and layer_idx < self.num_deepstack_layers:
-                hidden_states = self._deepstack_process(
-                    hidden_states, visual_pos_mask, deepstack_visual_embeds[layer_idx]
-                )
 
         hidden_states = self.get_last_layernorm()(hidden_states)
         if output_hidden_states:

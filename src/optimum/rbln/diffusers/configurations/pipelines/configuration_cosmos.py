@@ -377,10 +377,10 @@ class RBLNCosmos2_5_TransferPipelineConfig(RBLNCosmos2_5_PredictBasePipelineConf
 
 
 __all__ = [
-    "RBLNCosmosTextToWorldPipelineConfig",
-    "RBLNCosmosVideoToWorldPipelineConfig",
     "RBLNCosmos2TextToImagePipelineConfig",
     "RBLNCosmos2VideoToWorldPipelineConfig",
     "RBLNCosmos2_5_PredictBasePipelineConfig",
     "RBLNCosmos2_5_TransferPipelineConfig",
+    "RBLNCosmosTextToWorldPipelineConfig",
+    "RBLNCosmosVideoToWorldPipelineConfig",
 ]

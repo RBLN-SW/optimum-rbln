@@ -19,6 +19,7 @@ from ..decoderonly.decoderonly_architecture import (
     DecoderOnlyAttention,
     DecoderOnlyLayer,
     DecoderOnlyWrapper,
+    NestedCompileRegionMixin,
     apply_rotary_pos_emb_partial,
 )
 
@@ -42,7 +43,7 @@ class Glm4Wrapper(DecoderOnlyWrapper):
         return Glm4Attention
 
     def get_rbln_layer_class(self):
-        return Glm4DecoderLayer
+        return Glm4DecoderLayerRegion if self.rbln_config.nested_compile_region else Glm4DecoderLayer
 
 
 class Glm4Attention(DecoderOnlyAttention):
@@ -120,3 +121,7 @@ class Glm4DecoderLayer(DecoderOnlyLayer):
         hidden_states = residual + hidden_states
 
         return hidden_states
+
+
+class Glm4DecoderLayerRegion(NestedCompileRegionMixin, Glm4DecoderLayer):
+    """Decoder layer with a nested compile region around its forward call."""

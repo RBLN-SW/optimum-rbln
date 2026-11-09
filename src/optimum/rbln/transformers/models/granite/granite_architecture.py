@@ -20,6 +20,7 @@ from ..decoderonly.decoderonly_architecture import (
     DecoderOnlyLayer,
     DecoderOnlyModel,
     DecoderOnlyWrapper,
+    NestedCompileRegionMixin,
 )
 
 
@@ -28,7 +29,7 @@ class GraniteWrapper(DecoderOnlyWrapper):
         return GraniteAttention
 
     def get_rbln_layer_class(self):
-        return GraniteDecoderLayer
+        return GraniteDecoderLayerRegion if self.rbln_config.nested_compile_region else GraniteDecoderLayer
 
     def get_rbln_model_class(self):
         return GraniteModel
@@ -79,6 +80,10 @@ class GraniteDecoderLayer(DecoderOnlyLayer):
         hidden_states = residual + hidden_states * self.residual_multiplier
 
         return hidden_states
+
+
+class GraniteDecoderLayerRegion(NestedCompileRegionMixin, GraniteDecoderLayer):
+    """Decoder layer with a nested compile region around its forward call."""
 
 
 class GraniteModel(DecoderOnlyModel):
