@@ -23,6 +23,7 @@ if TYPE_CHECKING:
     from .prior_transformer import *
     from .transformer_cogvideox import *
     from .transformer_cosmos import *
+    from .transformer_qwenimage21 import *
     from .transformer_sd3 import *
 else:
     import sys
