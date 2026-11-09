@@ -12,29 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import inspect
 import re
 import threading
-from functools import lru_cache
 from typing import Any, ClassVar
 
 import rebel
 import torch
-
-
-@lru_cache(maxsize=1)
-def compiler_num_devices_kwarg() -> str:
-    """Return the kwarg name the installed rebel-compiler expects for the device count.
-
-    Compilers expose this as `num_devices`, but ones predating that name only accept
-    `tensor_parallel_size`. `compile_from_torch` forwards `**kwargs` to `compile`, so we probe
-    `rebel.compile`'s signature to pick the name the installed compiler accepts.
-    """
-    try:
-        params = inspect.signature(rebel.compile).parameters
-    except (ValueError, TypeError):
-        return "num_devices"
-    return "num_devices" if "num_devices" in params else "tensor_parallel_size"
 
 
 def _resolve_npu(npu: str | None = None) -> str:
