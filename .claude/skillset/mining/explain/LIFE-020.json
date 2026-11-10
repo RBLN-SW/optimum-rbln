@@ -1,0 +1,19 @@
+{
+ "id": "LIFE-020",
+ "summary": [
+  "베이스 클래스가 정한 메서드(예: _update_rbln_config, get_input_info)를 모델 클래스에서 오버라이드할 때, 인자 목록을 베이스와 똑같이 두라는 룰입니다.",
+  "모델마다 필요한 값(batch_size, max_seq_len 등)이 달라도 그것을 개별 인자로 따로 받지 않고, 베이스가 넘겨주는 설정 객체 두 개(HF의 model_config, RBLN의 rbln_config)에서 꺼내 씁니다. 그래야 공통 코드가 어느 모델이든 같은 방식으로 호출할 수 있습니다.",
+  "물어보는 것: 오버라이드의 인자 목록은 베이스와 같게 유지한다를 팀 룰로 삼을까요?"
+ ],
+ "examples": [
+  {"label": "베이스가 정한 형태 — modeling_base.py:423", "lang": "python", "code": "@classmethod\ndef _update_rbln_config(cls, preprocessors, model, model_config, rbln_config):\n    raise NotImplementedError"},
+  {"label": "룰대로 — 같은 인자를 받고, 필요한 값은 설정 객체에서 꺼냄", "lang": "python", "code": "@classmethod\ndef _update_rbln_config(cls, preprocessors, model, model_config, rbln_config):\n    hidden = model_config.hidden_size        # HF 설정에서\n    batch = rbln_config.batch_size           # RBLN 설정에서\n    ...\n    return rbln_config"},
+  {"label": "어기는 예 — 필요한 값만 개별 인자로 받음", "lang": "python", "code": "@classmethod\ndef _update_rbln_config(cls, batch_size, max_seq_len):   # 시그니처가 다름\n    ...\n# 공통 코드는 (preprocessors, model, model_config, rbln_config)로 부르므로\n# 이 모델만 TypeError가 나거나, 호출하는 쪽에 모델별 분기가 생긴다"},
+  {"label": "dev에 남은 위반 1건 — multicontrolnet.py:81", "lang": "python", "code": "@classmethod\ndef _update_rbln_config(cls, **rbln_config_kwargs):\n    pass"}
+ ],
+ "evidence": [
+  {"pr": 160, "state": "merged", "date": "2025-06-13", "user": "thkim", "what": "DecoderOnly의 get_input_info가 batch_size 등 개별 값을 받던 것을 model_config·rbln_config를 받도록 바꿨다.", "quote": "Modified the get_input_info method to accept model_config and rbln_config as parameters instead of individual variables."},
+  {"pr": 766, "state": "closed", "date": null, "user": "thkim", "what": "get_compiled_model에 새 인자를 더하면서 모든 오버라이드에 같은 인자를 넣자고 했다. 머지되지 않고 닫혔다.", "quote": "All `get_compiled_model` overrides accept the new keyword (unused where irrelevant) so the contract is uniform."}
+ ],
+ "verified": "dev 74e97fa4 코드 대조(2026-10-22): 오버라이드 119곳 중 118곳 준수, 위반은 multicontrolnet.py:81 한 곳."
+}

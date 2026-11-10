@@ -1,0 +1,947 @@
+[
+ {
+  "id": "API-002",
+  "rule_en": "A deprecated API MUST raise an error for one release at its deprecation version and MUST be removed in the next release. The cutoff MUST compare the base version `X.Y.Z`, ignoring pre-/post-release suffixes, as `_at_or_past_deprecation` does.",
+  "options_en": null
+ },
+ {
+  "id": "API-003",
+  "rule_en": "A PR that removes, replaces or changes a public API, config structure, shared runtime interface or model output type MUST update in the same change every internal call site, subclass and multimodal wrapper, consumer code (`vllm-rbln`), README and docs examples, and model-zoo examples, and check compatibility.",
+  "options_en": null
+ },
+ {
+  "id": "API-006",
+  "rule_en": "Functions under `src/optimum/rbln/` MUST take explicit named parameters, not `*args`/`**kwargs` or positional indexing, and call sites MUST pass arguments as `key=value`.",
+  "options_en": null
+ },
+ {
+  "id": "API-007",
+  "rule_en": "Names of functions, methods and attributes under `src/optimum/rbln/` MUST state their actual behavior; ambiguous abbreviations and names that conflict with Hugging Face terminology MUST be renamed. A method MUST NOT combine several roles; split it per role.",
+  "options_en": null
+ },
+ {
+  "id": "API-008",
+  "rule_en": "Model class names, operation order, method order, and the method names and signatures of RBLN wrapper classes MUST follow the upstream source they wrap (`transformers`, `diffusers`, `vllm`).",
+  "options_en": null
+ },
+ {
+  "id": "API-009",
+  "rule_en": "Every `RBLNModelConfig` subclass MUST name fields and structure inheritance to match its shared base config class (for example `image_size`), and submodule configs passed as a dict MUST use keys equal to the config attribute names.",
+  "options_en": null
+ },
+ {
+  "id": "API-011",
+  "rule_en": "New model classes and diffusers component classes used by pipelines MUST be named and exported with the existing `RBLN` prefix pattern (`RBLN<Model>For<Task>`).",
+  "options_en": null
+ },
+ {
+  "id": "API-014",
+  "rule_en": "Each public object MUST be listed in the `__all__` of the module that defines it, package `__init__.py` files MUST follow the fixed template, and a new model MUST be registered both in the top-level package exports and in the model registry.",
+  "options_en": null
+ },
+ {
+  "id": "API-015",
+  "rule_en": "A PR that moves an internal module or places a model class MUST NOT leave a compatibility shim module or separate alias file; only the public API re-exports MUST be kept.",
+  "options_en": null
+ },
+ {
+  "id": "ATT-003",
+  "rule_en": null,
+  "options_en": [
+   "Rotary cos/sin values fed to a compiled graph as inputs or constants MUST be computed with numpy, for run-to-run reproducibility, in every model.",
+   "Rotary cos/sin values fed to a compiled graph as inputs or constants MUST be computed with torch, matching the HF reference, in every model."
+  ]
+ },
+ {
+  "id": "ATT-004",
+  "rule_en": "Rope cos/sin tables MUST be built once at load time and reused, not recomputed per inference; they MUST be used only for rope types with static `inv_freq`, and positions outside the table MUST fall back to a dynamic path that gives identical results.",
+  "options_en": null
+ },
+ {
+  "id": "ATT-022",
+  "rule_en": "A change to a custom attention kernel MUST update the model-side call sites in the same PR, and models MUST call the batch-level kernel, not loop over per-sample calls.",
+  "options_en": null
+ },
+ {
+  "id": "CFG-001",
+  "rule_en": "Every subclass of `RBLNModelConfig` MUST raise an explicit exception for an unsupported config value, not warn or substitute another value. Only an omitted (`None`) value MAY be filled with a default after a warning; a falsy value such as `0` MUST NOT be replaced.",
+  "options_en": null
+ },
+ {
+  "id": "CFG-002",
+  "rule_en": "A config that uses an unsupported compiler feature or checkpoint structure, or cannot create runtimes on the current machine, MUST be rejected before compilation starts, in one place (the constructor or one validation function) with one error message.",
+  "options_en": null
+ },
+ {
+  "id": "CFG-004",
+  "rule_en": null,
+  "options_en": [
+   "Every subclass of `RBLNModelConfig` MUST expose only options that change behavior, and an option the model requires at one value MUST be fixed internally to that value with no user-facing argument; an ignored option MUST be removed or rejected.",
+   "Every subclass of `RBLNModelConfig` MUST expose only options that change behavior; an option the model requires at one value MAY stay user-settable, but any other value MUST raise an exception rather than be ignored."
+  ]
+ },
+ {
+  "id": "CFG-005",
+  "rule_en": null,
+  "options_en": [
+   "Compile-time values MUST be read from the artifact's `rbln_config.json`; runtime-only options that do not change the graph (such as `device`) MUST be carried on the `rbln_config` object as `_runtime_options` (keys in `RUNTIME_KEYWORDS`), separate from compile-time fields.",
+   "Compile-time values MUST be read from the artifact's `rbln_config.json`; runtime-only options that do not change the graph (such as `device`) MUST be accepted only as `from_pretrained` arguments, not stored on the `rbln_config` object."
+  ]
+ },
+ {
+  "id": "CFG-007",
+  "rule_en": "Defaults in every subclass of `RBLNModelConfig` MUST be derived from the model config or preprocessor, not hard-coded. Exception: a default MUST NOT be derived from a device-dependent setting such as `prefill_chunk_size`; use a device-independent constant such as `MAX_GDN_CHUNK_SIZE` instead.",
+  "options_en": null
+ },
+ {
+  "id": "CFG-008",
+  "rule_en": "Validation functions on `RBLNModelConfig` subclasses MUST only validate; defaults and mutations such as padding MUST be applied in one place (`set_default_values` or construction) and MUST NOT be redefined in per-model config builders or consumers.",
+  "options_en": null
+ },
+ {
+  "id": "CFG-009",
+  "rule_en": "A change to config format, options, dtype or artifact layout MUST keep previously compiled artifacts loading and behaving as before, decided by the input definitions the artifact recorded, not new config fields. Legacy paths MUST be an isolated block marked DEPRECATED with a removal version and log a warning when used.",
+  "options_en": null
+ },
+ {
+  "id": "CFG-010",
+  "rule_en": "Renaming or removing a key of an `RBLNModelConfig` subclass MUST warn and remap the old key to the new key, through `deprecate_kwarg` for constructor arguments and a property setter for attribute assignment (`cfg.old = v`). Removing the old key MUST be a later, separate breaking change.",
+  "options_en": null
+ },
+ {
+  "id": "CFG-012",
+  "rule_en": "A change to an argument of one config or model class MUST be applied in the same PR to every sibling config and model class that accepts the same argument.",
+  "options_en": null
+ },
+ {
+  "id": "CFG-013",
+  "rule_en": "For connected pipelines, config MUST be layered as global, pipeline-level, and submodule-level, and a same-named value MUST resolve as caller argument over submodule config over pipeline config, with one precedence policy for every argument in a pipeline.",
+  "options_en": null
+ },
+ {
+  "id": "CFG-014",
+  "rule_en": null,
+  "options_en": [
+   "Shape arguments such as `batch_size` and `max_seq_len` that a parent pipeline passes down MUST let an explicit submodule value override the parent value, and a parent default MUST NOT conflict with a submodule value when the caller sets only the submodule.",
+   "Shape arguments such as `batch_size` and `max_seq_len` that a parent pipeline passes down MUST be set only in the parent config and setting them in a submodule config MUST raise an exception; a parent default MUST NOT conflict with a submodule-only call."
+  ]
+ },
+ {
+  "id": "CFG-015",
+  "rule_en": "A constraint a submodule requires (such as `batch_size=1` for a vision submodule) MUST be enforced via `force_kwargs` so a user value is not silently ignored; a parent's resolved value or a value that may be `None` MUST be passed as a default, not via `force_kwargs`.",
+  "options_en": null
+ },
+ {
+  "id": "CFG-018",
+  "rule_en": "Runtime-only values (such as callbacks) and compile-time-only estimate inputs MUST be listed in `subclass_non_save_attributes` so they are not serialized to `rbln_config.json`, and a subclass that redefines this list MUST include its parent's entries.",
+  "options_en": null
+ },
+ {
+  "id": "CFG-022",
+  "rule_en": null,
+  "options_en": [
+   "When the same key is given in `rbln_config` and as an `rbln_`-prefixed argument, the `rbln_` argument MUST win on every load and compile path, including loading a compiled model with a dict `rbln_config`.",
+   "When the same key is given in `rbln_config` and as an `rbln_`-prefixed argument, the `rbln_config` value MUST win on every load and compile path.",
+   "When the same key is given in `rbln_config` and as an `rbln_`-prefixed argument, every load and compile path MUST raise `ValueError`."
+  ]
+ },
+ {
+  "id": "CFG-026",
+  "rule_en": "Output options stored in `rbln_config` (`output_attentions`, `output_hidden_states`) MUST be saved as in HF and followed at inference; a `forward` argument that differs from the config value MUST raise `ValueError`.",
+  "options_en": null
+ },
+ {
+  "id": "CFG-027",
+  "rule_en": "Hardware constraint values MUST be defined per NPU family as a limits object (such as `AttentionLimits` via `get_attention_limits`), not one global constant, and a named but unknown NPU MUST raise `ValueError`, not inherit another family's limits.",
+  "options_en": null
+ },
+ {
+  "id": "CFG-031",
+  "rule_en": "A new compile or kernel path MUST produce results identical to the existing path when it is off, and MUST be enabled only by a user option defaulting to `False`, by input shape, or by automatic selection on a verified target. It MUST NOT change code or results for other targets.",
+  "options_en": null
+ },
+ {
+  "id": "DBT-001",
+  "rule_en": null,
+  "options_en": [
+   "When a key enforced via `force_kwargs` conflicts with a user value, config construction MUST always raise an exception.",
+   "When a config key conflicts with a user value, construction MUST raise an exception only for keys in `force_kwargs` and MUST apply the user value without warning for all other keys."
+  ]
+ },
+ {
+  "id": "DBT-002",
+  "rule_en": null,
+  "options_en": [
+   "Every subclass of `RBLNModelConfig` MUST check each field for invalid values (such as values `<= 0`) and raise an exception per field.",
+   "Every subclass of `RBLNModelConfig` MUST validate a field the same way its other fields are validated and MUST NOT add separate per-field invalid-value checks."
+  ]
+ },
+ {
+  "id": "DBT-003",
+  "rule_en": null,
+  "options_en": [
+   "Config inputs such as dtype on `RBLNModelConfig` subclasses MUST be defensively normalized, because their types cannot be guaranteed.",
+   "Config inputs such as dtype on `RBLNModelConfig` subclasses MUST be stored by plain assignment, without added normalization layers."
+  ]
+ },
+ {
+  "id": "DBT-004",
+  "rule_en": null,
+  "options_en": [
+   "Options such as `output_hidden_states` MUST be hard-coded inside the module and managed per pipeline when needed.",
+   "Options such as `output_hidden_states` MUST follow the compile-time `rbln_config` value when the user passes `None`.",
+   "Unsupported values of options such as `output_hidden_states` MUST be rejected at config construction with `NotImplementedError`."
+  ]
+ },
+ {
+  "id": "DBT-005",
+  "rule_en": null,
+  "options_en": [
+   "Every RBLN model MUST validate input shapes against the compiled shapes before inference and raise `ValueError` on mismatch.",
+   "RBLN models MUST leave input shape validation to the runtime execution point and MUST NOT add a separate pre-inference shape check."
+  ]
+ },
+ {
+  "id": "DBT-006",
+  "rule_en": null,
+  "options_en": [
+   "When a submodule's device count shrinks, config construction MUST reject it with an error naming the submodule.",
+   "When a submodule's device count shrinks, the batch information MUST be reduced conservatively without an error."
+  ]
+ },
+ {
+  "id": "DBT-007",
+  "rule_en": null,
+  "options_en": [
+   "A compiler feature MUST be enabled only through an opt-in config option defaulting to `False`.",
+   "A compiler feature MUST always be used without an option, and an unsupporting compiler version MUST be rejected with an error."
+  ]
+ },
+ {
+  "id": "DBT-008",
+  "rule_en": null,
+  "options_en": [
+   "For models whose `can_generate` is false, `batch_size` MUST keep the decoder's maximum-batch meaning.",
+   "For models whose `can_generate` is false, the batch meaning MUST use a separately defined meaning or name, not reuse the decoder's maximum-batch `batch_size`."
+  ]
+ },
+ {
+  "id": "DBT-009",
+  "rule_en": null,
+  "options_en": [
+   "An unsupported config value such as an unsupported dtype MUST raise `ValueError`.",
+   "An unsupported config value such as an unsupported dtype MUST log a warning and fall back to a default such as fp32."
+  ]
+ },
+ {
+  "id": "DBT-010",
+  "rule_en": null,
+  "options_en": [
+   "The Qwen3.5 and Qwen3-VL implementations MUST share code by inheritance or a common base class.",
+   "The Qwen3.5 and Qwen3-VL implementations MUST stay separate, without inheritance, so a change to one does not affect the other."
+  ]
+ },
+ {
+  "id": "DBT-011",
+  "rule_en": null,
+  "options_en": [
+   "The Cosmos safety checker MUST keep the original pipeline structure and be replaced inside the pipeline.",
+   "The Cosmos pipeline MUST be initialized without the original safety checker and attach its own checker.",
+   "The Cosmos safety checker MUST be moved to `_submodules` and managed as a submodule."
+  ]
+ },
+ {
+  "id": "DBT-012",
+  "rule_en": null,
+  "options_en": [
+   "Every RBLN model that saves a `generation_config` MUST record the `transformers` version in it.",
+   "Only models with a known validation issue (Whisper) MUST record the `transformers` version in `generation_config`; other models MUST NOT."
+  ]
+ },
+ {
+  "id": "DBT-013",
+  "rule_en": null,
+  "options_en": [
+   "CPU unit tests MUST be added to the existing `tests/test_llm.py`, not to a separate directory.",
+   "CPU unit tests MUST be placed under `tests/unit/cpu/`, not in `tests/test_llm.py`."
+  ]
+ },
+ {
+  "id": "DBT-014",
+  "rule_en": null,
+  "options_en": [
+   "Every Hugging Face Hub call in tests and CI MUST go through a cache-first helper that reads the local cache before contacting the Hub.",
+   "CI MUST pre-fill the Hugging Face cache before tests and run tests with `HF_HUB_OFFLINE=1`.",
+   "Whether each test runs offline MUST be decided in a single hook in `tests/conftest.py`, not per call site."
+  ]
+ },
+ {
+  "id": "DBT-015",
+  "rule_en": null,
+  "options_en": [
+   "A back-merge PR from `dev` into the default branch MUST be merged with a merge commit and MUST NOT be squashed.",
+   "A back-merge PR from `dev` into the default branch MUST be squash-merged, as the repository settings configure."
+  ]
+ },
+ {
+  "id": "DBT-016",
+  "rule_en": null,
+  "options_en": [
+   "Validation shared by diffusers pipelines MUST live in a mixin class that the pipelines inherit.",
+   "Validation shared by diffusers pipelines MUST live in a utils module under `src/optimum/rbln/diffusers/pipelines/`."
+  ]
+ },
+ {
+  "id": "DBT-017",
+  "rule_en": null,
+  "options_en": [
+   "Docstrings MUST omit arguments the function does not use, including `kwargs`.",
+   "Docstrings MUST always document `kwargs` and where its keys are forwarded, even when the function does not use it."
+  ]
+ },
+ {
+  "id": "DBT-018",
+  "rule_en": null,
+  "options_en": [
+   "A function in `src/` whose name can be confused with another function MUST be renamed.",
+   "A function in `src/` MUST NOT be renamed for clarity unless another function exists that its name can actually be confused with."
+  ]
+ },
+ {
+  "id": "DBT-019",
+  "rule_en": null,
+  "options_en": [
+   "KV cache tensors MUST have a distinct name for each key and each value tensor.",
+   "KV cache tensors MUST be named via `mark_static_address(tensor, name)`, with vLLM passing the name.",
+   "KV cache tensor naming MUST stay unchanged in the current PR, and any naming-scheme change MUST be made in a follow-up PR."
+  ]
+ },
+ {
+  "id": "DBT-020",
+  "rule_en": null,
+  "options_en": [
+   "Every RBLN model MUST keep `model_input_names` in a fixed order that matches the compiled config's inputs and the `forward` arguments.",
+   "RBLN models MUST map inputs by name through `model_input_names` only and MUST NOT enforce its order; an order mismatch is treated as user error."
+  ]
+ },
+ {
+  "id": "DBT-021",
+  "rule_en": null,
+  "options_en": [
+   "Code in `src/` MUST read HF config attributes explicitly (`config.head_dim`), not via `getattr` with a default.",
+   "Code in `src/` that reads an HF config attribute that may be None or absent (such as `head_dim`) SHOULD use `getattr` with a fallback default; attributes always present MUST be read explicitly."
+  ]
+ },
+ {
+  "id": "DBT-022",
+  "rule_en": null,
+  "options_en": [
+   "Each decoder-only model MUST provide separate `RBLN<Model>Model` and `RBLN<Model>ForCausalLM` wrapper classes, not a shared wrapper switched by `is_causal_lm`.",
+   "Decoder-only wrappers MUST keep the `is_causal_lm` flag to switch between base-model and causal-LM behavior until a dedicated refactor splits them."
+  ]
+ },
+ {
+  "id": "DBT-023",
+  "rule_en": null,
+  "options_en": [
+   "An unset `attn_impl` whose size exceeds the eager limit MUST be promoted to `flash_attn` automatically, and only an explicit `eager` MUST be rejected.",
+   "An unset `attn_impl` MUST be validated against the per-family limits record from `get_attention_limits`, and automatic promotion MUST be deferred to a follow-up PR."
+  ]
+ },
+ {
+  "id": "DBT-024",
+  "rule_en": null,
+  "options_en": [
+   "Vision cos/sin graph inputs MUST be fp32, as in HF.",
+   "Vision cos/sin graph inputs MUST keep the activation dtype, for compatibility with host code and previously compiled artifacts."
+  ]
+ },
+ {
+  "id": "DBT-025",
+  "rule_en": null,
+  "options_en": [
+   "Rotary cos/sin values MUST be computed with numpy, for reproducibility.",
+   "Rotary cos/sin values MUST be computed with torch, matching HF."
+  ]
+ },
+ {
+  "id": "DBT-026",
+  "rule_en": null,
+  "options_en": [
+   "A custom op that regresses slightly in some configurations MUST be used in every configuration.",
+   "A custom op that regresses slightly in some configurations MUST be used only in configurations where it gives a measured gain."
+  ]
+ },
+ {
+  "id": "DBT-027",
+  "rule_en": null,
+  "options_en": [
+   "The DRAM buffer estimate for KV cache block counting MUST stay at the existing 1GB total.",
+   "The DRAM buffer estimate for KV cache block counting MUST be raised to 500MB per tensor-parallel rank, with a precise estimate introduced."
+  ]
+ },
+ {
+  "id": "DEC-005",
+  "rule_en": "A checkpoint whose structure differs from the shared path (fused projections, different rotary embedding layout) MUST be adapted by splitting weights or permuting rows at load time, not by runtime ops or a separate wrapper, so the shared hooks apply unchanged.",
+  "options_en": null
+ },
+ {
+  "id": "DEC-009",
+  "rule_en": "Every model supporting `output_hidden_states` MUST return `last_hidden_state` equal to `hidden_states[-1]`, and prefill outputs (logits, hidden states) MUST be returned at the attention mask width, not the valid token length.",
+  "options_en": null
+ },
+ {
+  "id": "DEP-001",
+  "rule_en": "Deprecated arguments and APIs MUST be marked with `deprecate_kwarg` or `deprecate_method` naming the removal version, and MUST be removed when that version is reached; features specific to a previous major version MUST be deprecated the same way.",
+  "options_en": null
+ },
+ {
+  "id": "DEP-002",
+  "rule_en": "Behavior under `src/optimum/rbln/` that differs by dependency version MUST state the verified version, and a known difference MUST be recorded as a version branch or a comment.",
+  "options_en": null
+ },
+ {
+  "id": "DEP-007",
+  "rule_en": "A dependency version bump in `pyproject.toml` MUST come after model-zoo validation and a check that core dependencies publish wheels for each supported Python version; upper bounds MUST follow the latest release and unused dependencies MUST be removed.",
+  "options_en": null
+ },
+ {
+  "id": "DEP-008",
+  "rule_en": "A new external dependency needed by a model implementation MUST be declared in `pyproject.toml`, and a package not needed by core functionality MUST NOT be added to the default dependencies.",
+  "options_en": null
+ },
+ {
+  "id": "DEP-011",
+  "rule_en": "Every `torch.load` call MUST pass `weights_only` explicitly.",
+  "options_en": null
+ },
+ {
+  "id": "DEP-012",
+  "rule_en": "The compiler version used by PR CI MUST be pinned only in `rebel_compiler_version` of `.github/version.yaml`, every CI workflow MUST read it from there, and a compiler update MUST edit that file and match the released compiler version used by pytest.",
+  "options_en": null
+ },
+ {
+  "id": "DEP-015",
+  "rule_en": "Code under `src/optimum/rbln/` MUST replace attributes, call patterns and import paths that an external library marks deprecated with the replacement that library recommends.",
+  "options_en": null
+ },
+ {
+  "id": "DEP-016",
+  "rule_en": "A PR that bumps the `torch` version MUST check mixed-dtype matmul operands in model implementations and cast them explicitly to the same dtype.",
+  "options_en": null
+ },
+ {
+  "id": "DEP-017",
+  "rule_en": "A PR that bumps `torch` MUST land with or after a compiler build verified on that `torch` version, and MUST align the `torch`-dependent packages (`vllm-rbln`, `torch-rbln`) in the same PR.",
+  "options_en": null
+ },
+ {
+  "id": "DEP-018",
+  "rule_en": "A PR that depends on a specific compiler version, branch, hash or a compiler-side fix MUST name that version, branch, hash or dependent PR in its body and MUST mark the scope not yet verified.",
+  "options_en": null
+ },
+ {
+  "id": "DEP-019",
+  "rule_en": "Code under `src/optimum/rbln/` MUST detect compiler (`rebel`) features by checking that the API exists, not by comparing version strings.",
+  "options_en": null
+ },
+ {
+  "id": "DEP-033",
+  "rule_en": "Dependency-update PRs opened by a bot (Renovate) MUST NOT be auto-merged; a human MUST review and merge them.",
+  "options_en": null
+ },
+ {
+  "id": "DIF-001",
+  "rule_en": "Modules under `src/optimum/rbln/diffusers/` MUST follow upstream diffusers file layout, subpackage placement, config file names and current naming, including the optional-submodule list name, and modules of one category MUST share one subpackage.",
+  "options_en": null
+ },
+ {
+  "id": "DIF-002",
+  "rule_en": "Pipeline call wrappers under `src/optimum/rbln/diffusers/` MUST NOT overwrite or pop shape arguments the caller passed, MUST fill them from the compiled shape only when omitted, and MUST raise an explicit error when a runtime argument mismatches the compiled batch size.",
+  "options_en": null
+ },
+ {
+  "id": "DIF-004",
+  "rule_en": null,
+  "options_en": [
+   "Compile-time options of diffusers pipelines MUST be values that set the graph shape directly (such as submodule batch size), not values that change it indirectly (such as guidance scale); a runtime value that conflicts with the compiled shape MUST raise an error.",
+   "Compile-time options of diffusers pipelines MUST be values that set the graph shape directly (such as submodule batch size), not values that change it indirectly (such as guidance scale); an indirect value given at runtime MUST be accepted and used."
+  ]
+ },
+ {
+  "id": "DIF-007",
+  "rule_en": "Every diffusers model and pipeline MUST have an `rbln_config` config class (a `RBLNModelConfig` subclass) whose API format matches the config classes of other models.",
+  "options_en": null
+ },
+ {
+  "id": "DIF-010",
+  "rule_en": "Adding a variant MUST keep existing models' compiled graphs and input order byte-identical; the variant branch MUST be chosen internally from config values, not a user option, and a variant needing a different graph MUST use a separate wrapper class, not modify the existing one.",
+  "options_en": null
+ },
+ {
+  "id": "DIF-023",
+  "rule_en": "Multi-component diffusers pipelines MUST support compiling and loading at the pipeline level, and connected pipelines MUST reuse the existing single-pipeline implementations, not new ones.",
+  "options_en": null
+ },
+ {
+  "id": "DOC-001",
+  "rule_en": "Every new model, config and pipeline class and function, and every overridden classmethod (`from_pretrained`), MUST have a docstring stating purpose, why it was added and caveats. It SHOULD include a usage example, except where the class has no standalone usage.",
+  "options_en": null
+ },
+ {
+  "id": "DOC-002",
+  "rule_en": "Comments under `src/optimum/rbln/` MUST state only a short reason the code cannot express, MUST NOT restate the code or record PR history, migration context or dev notes, and internal implementation notes MUST be `#` comments, not docstrings.",
+  "options_en": null
+ },
+ {
+  "id": "DOC-003",
+  "rule_en": "Docstrings under `src/optimum/rbln/` MUST match the code for argument lists, defaults, tensor shapes, numeric definitions and example class names.",
+  "options_en": null
+ },
+ {
+  "id": "DOC-004",
+  "rule_en": null,
+  "options_en": [
+   "Docstrings MUST write variadic keyword arguments as `kwargs`, not `**kwargs`, and MUST omit arguments the function does not use.",
+   "Docstrings MUST always document `kwargs` (written as `kwargs`, not `**kwargs`), stating that `rbln_`-prefixed keys go to `rbln_config` and the rest go to the Hugging Face library."
+  ]
+ },
+ {
+  "id": "DOC-011",
+  "rule_en": "Google-style docstrings MUST put each parameter declaration (name plus parenthesized type) and the Returns description on one line each, end the parameter name before the first `:`, and state defaults as \"Defaults to\".",
+  "options_en": null
+ },
+ {
+  "id": "DOC-012",
+  "rule_en": "Documentation links in docstrings MUST be absolute URLs, not relative paths, and MUST point only to pages that exist in the built SDK documentation.",
+  "options_en": null
+ },
+ {
+  "id": "LIFE-001",
+  "rule_en": null,
+  "options_en": [
+   "Every RBLN model `forward` MUST always return the `ModelOutput` dataclass, ignoring a `return_dict` value of `None`; multiple outputs MUST go in separate fields, and a return-format change MUST first audit internal callers.",
+   "Every RBLN model `forward` MUST resolve `return_dict=None` to the model config's `return_dict`, per Hugging Face; multiple outputs MUST go in separate fields, and a return-format change MUST first audit internal callers."
+  ]
+ },
+ {
+  "id": "LIFE-002",
+  "rule_en": null,
+  "options_en": [
+   "Every RBLN model `forward` MUST match the HF model's inputs (including `token_type_ids`) and return type, with compiled-graph input order matching HF; positional order of the user-facing `forward` need not. Unknown input names MUST raise.",
+   "Every RBLN model `forward` MUST match the HF model's inputs (including `token_type_ids`), return type, and positional argument order of the user-facing `forward` signature. Input names absent from the signature MUST raise an error."
+  ]
+ },
+ {
+  "id": "LIFE-003",
+  "rule_en": "Every class under `src/optimum/rbln/` MUST inherit an implementation its parent already provides, not override or copy it. Behavior shared by several model classes MUST live in a mixin (`RBLN*Mixin`), not in per-class method wrappers.",
+  "options_en": null
+ },
+ {
+  "id": "LIFE-004",
+  "rule_en": "In `RBLNBaseModel` subclasses shared behavior MUST be implemented in the base class and per-class traits (support flags such as `_supports_non_fp32`) MUST be declared as class or `RBLNModelConfig` attributes, not call arguments. A feature requested on a class lacking that support MUST be rejected before compilation.",
+  "options_en": null
+ },
+ {
+  "id": "LIFE-006",
+  "rule_en": "Classes under `src/optimum/rbln/` MUST compute derivable values with a `property` (cached when costly), not store them as duplicate member variables, and MUST update each piece of state in one place only.",
+  "options_en": null
+ },
+ {
+  "id": "LIFE-007",
+  "rule_en": "Code under `src/optimum/rbln/` that monkey-patches a global function or method MUST restore the original afterwards inside a `try`/`finally` block, so the restore runs even when compilation fails.",
+  "options_en": null
+ },
+ {
+  "id": "LIFE-008",
+  "rule_en": "In `RBLNBaseModel` load and compile paths, unsupported inputs, inputs above the compiled limit, and runtime-creation failures MUST raise an explicit exception immediately, never truncated or deferred. The message MUST state the cause (input length, limit) and point to `create_runtimes=False` for compile-only use.",
+  "options_en": null
+ },
+ {
+  "id": "LIFE-009",
+  "rule_en": "Every `RBLN`-prefixed model class MUST be usable as a drop-in replacement for the Hugging Face class it wraps (for example, it provides `parameters()`). Wrapper classes MUST be saved and loaded through the pipeline's `save_pretrained` and `from_pretrained`, not through separate save/load functions.",
+  "options_en": null
+ },
+ {
+  "id": "LIFE-010",
+  "rule_en": null,
+  "options_en": [
+   "RBLN model classes MUST NOT preload original weights on CPU/GPU or build unused weights and `nn.Linear` shells; wrapper modules MUST share views of original tensors while being built, and parameters MUST be cloned after load so no checkpoint mmap view remains.",
+   "RBLN model classes MUST NOT preload original weights on CPU/GPU or build unused weights and `nn.Linear` shells; wrapper modules MUST clone original tensors from the start, never sharing checkpoint mmap views."
+  ]
+ },
+ {
+  "id": "LIFE-011",
+  "rule_en": "Code under `src/optimum/rbln/` that reuses a Hugging Face module unchanged MUST NOT add dtype casts to that module's computation.",
+  "options_en": null
+ },
+ {
+  "id": "LIFE-012",
+  "rule_en": "Every RBLN model load path MUST default the load dtype to `\"auto\"` (the checkpoint dtype) and MUST use the user-supplied `dtype`/`torch_dtype` when one is given.",
+  "options_en": null
+ },
+ {
+  "id": "LIFE-015",
+  "rule_en": null,
+  "options_en": [
+   "`save_pretrained` MUST write config files from the HF config object, keep save and load layouts symmetric, and replace an existing save directory by building it in a temporary directory and renaming it into place, not by deleting the directory first.",
+   "`save_pretrained` MUST write config files from the HF config object, keep save and load layouts symmetric, and overwrite only its target files inside an existing save directory, never deleting the directory."
+  ]
+ },
+ {
+  "id": "LIFE-019",
+  "rule_en": "Every weight and file loading path under `src/optimum/rbln/` MUST work for both a local directory and a Hugging Face Hub repo id. It MUST resolve only the files it needs through the cache-validating download path, not list the whole repository on every load.",
+  "options_en": null
+ },
+ {
+  "id": "LIFE-020",
+  "rule_en": "A method in `src/optimum/rbln/` that overrides a base-class method MUST keep the base method's parameter list unchanged.",
+  "options_en": null
+ },
+ {
+  "id": "LIFE-021",
+  "rule_en": "A new model MUST be added as `configuration_<model>.py`, `modeling_<model>.py` and `<model>_architecture.py` under `src/optimum/rbln/transformers/models/<model>/`, registered in the parent `__init__.py` lists, and implement `get_pytorch_model`, `_update_rbln_config` and `_create_runtimes` as existing RBLN models do.",
+  "options_en": null
+ },
+ {
+  "id": "LIFE-024",
+  "rule_en": "Code traced during export (files under `src/optimum/rbln/**/*_architecture.py`) MUST rewrite data-dependent checks that cannot be traced into a traceable form, not leave them as Python control flow on tensor values.",
+  "options_en": null
+ },
+ {
+  "id": "PRC-001",
+  "rule_en": "Every PR title MUST follow `type(optional scope): description`, checked by `.github/workflows/pr-title-check.yaml`, with type one of `model`, `performance`, `refactor`, `doc`, `dependency`, `release`, `other`. Model bug fixes MUST use `model`; cherry-picks to a release branch MUST reuse the original type.",
+  "options_en": null
+ },
+ {
+  "id": "PRC-003",
+  "rule_en": "Every PR body MUST keep the sections of `.github/pull_request_template.md` and check exactly one Type of Change, describing it when Other is checked. The Motivation section MUST state why the chosen approach is needed: the cause of the problem or the expected effect.",
+  "options_en": null
+ },
+ {
+  "id": "PRC-004",
+  "rule_en": "A PR that breaks existing behavior, including removing a public API (also when a deprecation window expires), renaming a public argument or changing a default behavior, MUST check Breaking change under Type of Change.",
+  "options_en": null
+ },
+ {
+  "id": "PRC-008",
+  "rule_en": "A PR that depends on an earlier PR or a PR in another repository MUST use the earlier PR's branch as its base, and its body MUST list the prerequisite and related PR numbers with links and the merge order. A PR entering a release branch out of band MUST also state what to do if the order breaks.",
+  "options_en": null
+ },
+ {
+  "id": "PRC-010",
+  "rule_en": "A PR branch that has diverged from `dev` MUST be synchronized with `dev` before review is requested.",
+  "options_en": null
+ },
+ {
+  "id": "PRC-012",
+  "rule_en": "Each PR MUST be limited to one model family or one feature scope; an independent feature or a host-side compatibility change tangled into it MUST be split into a separate PR.",
+  "options_en": null
+ },
+ {
+  "id": "PRC-014",
+  "rule_en": "Every PR body MUST state the limits of supported scope (such as unsupported batch sizes) and the models or code paths that were not verified, each with its reason.",
+  "options_en": null
+ },
+ {
+  "id": "PRC-015",
+  "rule_en": "Every behavior-changing PR MUST record the change in a dedicated section of its body, state the compatibility impact on existing inputs and on affected subclasses and integration paths, and split commits so each change can be reverted independently.",
+  "options_en": null
+ },
+ {
+  "id": "PRC-019",
+  "rule_en": "Every PR adding a new model or pipeline MUST give, in its body, the referenced Hugging Face model URL and class name (or the upstream PR instead of the class name) and a runnable example command that reproduces it.",
+  "options_en": null
+ },
+ {
+  "id": "PRC-024",
+  "rule_en": "A fix moved between branches MUST be merged into `dev` first and then applied to the `release-vX.Y.Z` branch with `git cherry-pick -x` so the commit records its origin.",
+  "options_en": null
+ },
+ {
+  "id": "PRC-026",
+  "rule_en": "A fix for a release line MUST be built on top of that release tag so it is a child commit of the release line. After the fix lands in `dev`, the `release-vX.Y.Z` branch MUST be merged back into `dev` to keep ancestry aligned.",
+  "options_en": null
+ },
+ {
+  "id": "PRC-031",
+  "rule_en": "The BC compile (`.buildkite/bc-compile.yml`) MUST run only on stable release tags, and `scripts/ci/bc-compile-steps.sh` MUST re-check the tag inside the step. Pre-release tags (`aN`, `rcN`, `.devN`) MUST NOT produce BC artifacts.",
+  "options_en": null
+ },
+ {
+  "id": "PRC-032",
+  "rule_en": "Every `v*` tag, pre-releases included, MUST trigger PyPI deployment and the vllm-rbln update via `.github/workflows/deploy-on-tag.yaml`; only the BC compile is restricted to stable tags.",
+  "options_en": null
+ },
+ {
+  "id": "PRC-033",
+  "rule_en": "A CI test matrix or install procedure (such as `uv sync`) MUST be defined in one script under `scripts/ci/` (`run-suite.sh`, `sync.sh`), not duplicated per runner or pipeline.",
+  "options_en": null
+ },
+ {
+  "id": "PRC-034",
+  "rule_en": "Whether a test suite runs MUST be decided at pipeline-upload time, before an NPU is acquired, via step `if:` conditions; a job that already holds an NPU MUST NOT skip its suite internally.",
+  "options_en": null
+ },
+ {
+  "id": "PRC-035",
+  "rule_en": "PR builds MUST run every test suite, not skip any via path-based conditions or inferred code dependencies. A long run MUST be shortened only by an explicit commit-message marker: `[skip-transformers]`, `[skip-diffusers]`, `[skip-llms]` or `[skip-cli]`.",
+  "options_en": null
+ },
+ {
+  "id": "PRC-037",
+  "rule_en": "Optional report and notification steps MUST set `soft_fail: true` and MUST NOT report a commit status, so that a reporting failure never changes the result of required checks or nightly builds.",
+  "options_en": null
+ },
+ {
+  "id": "PRC-040",
+  "rule_en": "A CI test failure MUST be investigated for its cause and MUST NOT be hidden by automatic retries.",
+  "options_en": null
+ },
+ {
+  "id": "PRC-042",
+  "rule_en": "Scheduled CI workflow triggers MUST be thin files on the GitHub default branch that call a reusable workflow (`workflow_call`) maintained on `dev`. The scheduled workflow logic MUST NOT be edited directly on the default branch.",
+  "options_en": null
+ },
+ {
+  "id": "STY-001",
+  "rule_en": "Every addition, removal, reordering or dtype change whose intent is not evident from the code MUST have its reason stated in a code comment or in the PR description.",
+  "options_en": null
+ },
+ {
+  "id": "STY-002",
+  "rule_en": "A PR MUST NOT leave development traces: debugging code, development-time logs or comments, or internal verification code inside example scripts.",
+  "options_en": null
+ },
+ {
+  "id": "STY-003",
+  "rule_en": null,
+  "options_en": [
+   "Each piece of logic, constant or decision point MUST exist in one place. Validation shared by diffusers pipelines MUST live in a mixin class that the pipelines inherit, not be copied into each pipeline.",
+   "Each piece of logic, constant or decision point MUST exist in one place. Validation shared by diffusers pipelines MUST live in a utils module under `src/optimum/rbln/diffusers/pipelines/`, not be copied into each pipeline."
+  ]
+ },
+ {
+  "id": "STY-004",
+  "rule_en": "Unused code (unused variables, imports, methods, classes, overrides identical to the parent, legacy code, ineffective compile options, stale or duplicate CI workflows) MUST be removed. A pass-through override that only adds a docstring is allowed.",
+  "options_en": null
+ },
+ {
+  "id": "STY-005",
+  "rule_en": "Every new source file under `src/` MUST start with the Rebellions copyright header in the same format as existing files, with the current year. Files ported from HF code MUST keep their original header; files under `tests/` carry no header.",
+  "options_en": null
+ },
+ {
+  "id": "STY-007",
+  "rule_en": "Error messages raised in `src/` MUST state what is wrong, under which condition, and what the user must do (required vs available amount, the config name to adjust per cause). They MUST NOT describe behavior that does not happen and MUST follow the format of existing guards with the same purpose.",
+  "options_en": null
+ },
+ {
+  "id": "STY-008",
+  "rule_en": "Inference paths such as decode MUST NOT allocate new tensors, synchronize with the host, or copy unnecessarily on each step; masks MUST be built once and reused, and broadcast operations MUST be used instead of materialized tensors.",
+  "options_en": null
+ },
+ {
+  "id": "STY-009",
+  "rule_en": "Imports in `src/` MUST be at module top level. A function-local import MUST only be used with a stated reason: avoiding a circular import (such as submodule config classes) or reducing import time.",
+  "options_en": null
+ },
+ {
+  "id": "STY-010",
+  "rule_en": "An import MUST move into a `TYPE_CHECKING` block, with string annotations, only when the symbol is used solely in annotations and causes a circular import or is an external-package type. A name MUST NOT be imported both at runtime and under `TYPE_CHECKING`; TC001-TC003 MUST NOT be enabled.",
+  "options_en": null
+ },
+ {
+  "id": "STY-011",
+  "rule_en": "Function signatures in `src/` MUST carry type hints matching the objects actually passed, using native syntax (`X | None`, `list`), not `Optional`/`List` and never implicit Optional. `from __future__ import annotations` MUST NOT be bulk-added for this.",
+  "options_en": null
+ },
+ {
+  "id": "STY-012",
+  "rule_en": "Enumerations such as `__init__` import lists, `__all__`/export lists and key lists MUST stay sorted. Constant tables whose order carries meaning (log levels, units, version-compatibility tables) are exempt.",
+  "options_en": null
+ },
+ {
+  "id": "STY-013",
+  "rule_en": "Code in `src/` MUST log and warn through `optimum.rbln.utils.logging` (`get_logger`, then `logger.warning`/`warning_once`), not the built-in `logging` or `warnings` modules; referencing built-in level constants is allowed.",
+  "options_en": null
+ },
+ {
+  "id": "STY-014",
+  "rule_en": "Code MUST NOT re-add a check or default handling that a caller or base class already performs, and MUST NOT add defensive code for conditions the calling layer already excludes.",
+  "options_en": null
+ },
+ {
+  "id": "STY-015",
+  "rule_en": "CI workflows MUST pass secrets via the `secrets` context and inject internal endpoints, cluster-specific paths and images as CI variables, not plaintext in the repo. Each required variable MUST be guarded with `${VAR:?not set}` so the upload step fails instead of proceeding empty.",
+  "options_en": null
+ },
+ {
+  "id": "STY-018",
+  "rule_en": "Before merge, all changed code in a PR MUST pass `ruff format`, `ruff check`, type checking and docstring checking. If the base changed (especially after a lint-rule PR), CI MUST be re-run on the latest base before merging.",
+  "options_en": null
+ },
+ {
+  "id": "STY-027",
+  "rule_en": "A change that adds a custom op under `torch.ops.rbln_custom_ops` to a `torch.export` path MUST also provide that op's fake (meta) implementation and dynamic-value constraints for its index values.",
+  "options_en": null
+ },
+ {
+  "id": "SUB-001",
+  "rule_en": null,
+  "options_en": [
+   "A submodule config value set explicitly by the user MUST override the value inherited from the parent config, parent values (such as `batch_size` or runtime options) MUST be inherited only when unset, and this precedence MUST be defined in one place.",
+   "Shape values such as `batch_size` MUST be set only in the parent config and inherited by submodules; setting them in a submodule config MUST raise an exception, and this rule MUST be defined in one place."
+  ]
+ },
+ {
+  "id": "SUB-002",
+  "rule_en": "Submodule config adjustment MUST override the shared hooks, not add per-model functions: `_update_submodule_rbln_config` (parent to child), `_update_submodule_config` (child itself), and `update_rbln_config_using_pipe` (inside a pipeline).",
+  "options_en": null
+ },
+ {
+  "id": "SUB-003",
+  "rule_en": "A checkpoint already supported by an existing model class, or a new model with the same architecture, MUST reuse that class and add only tests; new code MUST be written only for the components that differ.",
+  "options_en": null
+ },
+ {
+  "id": "SUB-004",
+  "rule_en": "A vision model inside a pipeline or multimodal model MUST be wrapped in its own RBLN model class and compiled as a submodule, and the `rbln_config` of a submodule shared by several parent models MUST NOT be tied to one parent model's name.",
+  "options_en": null
+ },
+ {
+  "id": "SUB-005",
+  "rule_en": "To skip creating a submodule's NPU runtime, code MUST set that submodule's `create_runtimes=False`, not a model-specific flag; the submodule MUST still be compiled and saved, keep its position and attribute, and be an `UnavailableRuntime` that raises when called.",
+  "options_en": null
+ },
+ {
+  "id": "SUB-008",
+  "rule_en": "Model code under `src/optimum/rbln/transformers/models/` MUST follow HF dtype behavior by explicit declaration or cast, not by rounding or implicit promotion: families HF keeps in fp32 (Qwen-VL, EXAONE-4.5) MUST use fp32, and only families HF casts to `x.dtype` (Gemma4) MUST use `rbln_config.dtype`.",
+  "options_en": null
+ },
+ {
+  "id": "SUB-010",
+  "rule_en": "VLM implementations MUST match config access and preprocessing to the already-verified implementation of the same family, and a composite VLM MUST read text dimensions (hidden size, layer count) through the text config, not the top-level config.",
+  "options_en": null
+ },
+ {
+  "id": "SUB-015",
+  "rule_en": "Submodule artifacts MUST be saved nested in the parent's subfolder, and a submodule's load path and generation config lookup MUST be resolved from its parent's own directory and its own subfolder, not the root or an ancestor model.",
+  "options_en": null
+ },
+ {
+  "id": "TEST-001",
+  "rule_en": "Tests MUST live in files the CI pipeline actually executes (`scripts/ci/run-suite.sh`) and assert expectations against real model output. Tests MUST NOT keep workaround lines that mask a failure, and duplicate tests of the same feature MUST be merged into one.",
+  "options_en": null
+ },
+ {
+  "id": "TEST-002",
+  "rule_en": "A test that needs no NPU, including host-side preparation logic, MUST be a CPU unit test under `tests/unit/cpu/` that requests no NPU resource. A test that needs a device MUST NOT be placed under `tests/unit/cpu/`.",
+  "options_en": null
+ },
+ {
+  "id": "TEST-004",
+  "rule_en": "A commit whose change needs the full pytest run MUST contain the literal marker `[pytest-full]` in its commit message, which CI reads from `BUILDKITE_MESSAGE`. A commit message MUST NOT quote `[pytest-full]` for any other reason, because any occurrence widens the run.",
+  "options_en": null
+ },
+ {
+  "id": "TEST-005",
+  "rule_en": "Backward-compatibility checks and configuration combinations known to be boundary cases MUST be pinned as CI cases that run on every PR via `.buildkite/pr.yml`.",
+  "options_en": null
+ },
+ {
+  "id": "TEST-006",
+  "rule_en": "Heavy inference tests and Hub push verification MUST run only in the scheduled CI pipeline (`.buildkite/nightly.yml`), not in the default PR test run of `.buildkite/pr.yml`.",
+  "options_en": null
+ },
+ {
+  "id": "TEST-007",
+  "rule_en": "Every pytest invocation in CI MUST report per-test duration (`-vv --durations 0`). Scheduled runs MUST NOT stop at the first failure: no `cancel_on_build_failing`, no `-x`/`--maxfail`, and report steps MUST follow a `wait` with `continue_on_failure: true`.",
+  "options_en": null
+ },
+ {
+  "id": "TEST-008",
+  "rule_en": "Every PR that adds or changes a model class or pipeline MUST register it in exactly one of `tests/test_transformers.py`, `tests/test_diffusers.py` or `tests/test_llm.py`. A test class for a model with image or audio input MUST declare `IS_MULTIMODAL = True`.",
+  "options_en": null
+ },
+ {
+  "id": "TEST-009",
+  "rule_en": "Every PR that adds support for a new model MUST add a pytest case dedicated to that model in the same PR, written on the basis of the upstream library's (transformers or diffusers) test for that model.",
+  "options_en": null
+ },
+ {
+  "id": "TEST-010",
+  "rule_en": "Tests under `tests/` MUST use a tiny model or a model with the layer count reduced to the minimum, not a full-size checkpoint. Pipeline tests MUST use a tiny-random configuration that mirrors the real architecture and verify export, generation and reload.",
+  "options_en": null
+ },
+ {
+  "id": "TEST-011",
+  "rule_en": "Every bug-fix PR MUST add a regression test that fails when the fix is reverted, covering the input conditions the existing tests missed (chunk-multiple lengths, padding side, batch) and the same-family models that lacked coverage.",
+  "options_en": null
+ },
+ {
+  "id": "TEST-012",
+  "rule_en": "Every PR that adds a feature or changes behavior MUST add a test proving the effect, including config save/reload round-trips, alias mapping, submodule config propagation and generation-code synchronization when the PR touches them.",
+  "options_en": null
+ },
+ {
+  "id": "TEST-013",
+  "rule_en": "Every change to model code, graphs or kernels MUST be verified against a reference implementation (HF on CPU or the previous implementation) on identical inputs by generated-token match, logits correlation or bitwise match. The PR description MUST record the results and justify each mismatch, such as a near-tie.",
+  "options_en": null
+ },
+ {
+  "id": "TEST-015",
+  "rule_en": "Every change to model code or a custom op MUST pass a compile smoke test over representative configurations, including multiple tensor-parallel sizes and at least one attention variant and one MoE model, to confirm the compiler sees the patterns it expects.",
+  "options_en": null
+ },
+ {
+  "id": "TEST-016",
+  "rule_en": "Every PR description MUST list the test commands run, their results, the environment (CPU-only or NPU host) and the test count. Failures that already existed before the PR MUST be marked as pre-existing with their cause.",
+  "options_en": null
+ },
+ {
+  "id": "TEST-017",
+  "rule_en": "A change that CI does not cover MUST be compiled and run for inference on a real NPU before merge. If that was not done, the PR description MUST state the unverified scope and the PR MUST stay in draft.",
+  "options_en": null
+ },
+ {
+  "id": "TEST-018",
+  "rule_en": "Memory-related changes and model tests MUST measure host RSS growth, which MUST stay below 0.5x the checkpoint size for dense models and 1.5x for MoE models. Every memory-optimization PR MUST present per-stage RSS in a table.",
+  "options_en": null
+ },
+ {
+  "id": "TEST-019",
+  "rule_en": "Test classes MUST NOT mutate in place a dict owned by a base class or shared across tests; a test method MUST use a copy and an inherited dict MUST be rebound as `cls.X = {**cls.X, ...}`. Every direct `from_pretrained` call in a test MUST pass `**cls.HF_CONFIG_KWARGS`.",
+  "options_en": null
+ },
+ {
+  "id": "TEST-020",
+  "rule_en": "Every test MUST pass when run in the same process as other tests, and every test class MUST release the model objects it created in `tearDownClass`.",
+  "options_en": null
+ },
+ {
+  "id": "TEST-022",
+  "rule_en": "Ordering dependencies between tests MUST be expressed by alphabetical test names. Sharding (`--shard`) MUST split by test class so that no model compiles in two jobs at once, and MUST preserve collection order after the split.",
+  "options_en": null
+ },
+ {
+  "id": "TEST-028",
+  "rule_en": "A test that semantically needs no runtime, such as a run that only saves artifacts, MUST NOT create a runtime, so it holds no NPU.",
+  "options_en": null
+ },
+ {
+  "id": "TEST-029",
+  "rule_en": "A test disabled because of an external compiler issue MUST be re-enabled once that issue is fixed, and a test-level gate that no longer skips anything MUST be removed.",
+  "options_en": null
+ },
+ {
+  "id": "TEST-032",
+  "rule_en": "Tests MUST block Hub access by default and allow network access only for tests explicitly marked as online. A test that pushes to the Hub MUST read back the pushed value at the commit sha the push created, not at `main`.",
+  "options_en": null
+ },
+ {
+  "id": "TEST-038",
+  "rule_en": "Test expectations and boundary inputs MUST match the model's default behavior (such as its default attention implementation) and its supported-range constants. A PR that changes such a default or constant MUST update or remove the existing tests that depend on it.",
+  "options_en": null
+ }
+]

@@ -1,0 +1,3 @@
+# raw corpus data (PR bodies, review comments) is re-fetched with the commands in PLAN.md §3.1; only scripts are tracked
+*.jsonl
+*.txt

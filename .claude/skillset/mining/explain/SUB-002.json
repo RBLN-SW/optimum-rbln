@@ -1,0 +1,18 @@
+{
+ "id": "SUB-002",
+ "summary": [
+  "서브모듈의 설정(rbln_config)을 부모 모델이나 파이프라인에 맞춰 조정할 때, 모델마다 새 함수를 만들지 말고 이미 정해진 공통 훅을 오버라이드하라는 룰입니다.",
+  "원래 문장이 애매했던 이유는 역할이 다른 세 훅을 한 문장에 섞었기 때문입니다. dev 코드에서는 누가 누구의 설정을 고치는지에 따라 훅이 나뉘어 있습니다.",
+  "물어보는 것: 서브모듈 설정 조정은 아래 세 훅 중 하나로만 한다를 팀 룰로 삼을까요?"
+ ],
+ "examples": [
+  {"label": "세 훅의 역할 — dev 코드 기준", "lang": "text", "code": "누가 고치나          훅 (오버라이드할 클래스메서드)       호출 위치\n부모가 자식을        _update_submodule_rbln_config        utils/submodule.py:121 (부모 클래스에서 호출)\n자식이 스스로        _update_submodule_config             utils/submodule.py:130 (서브모듈 클래스에서 호출)\n파이프라인 안에서    update_rbln_config_using_pipe        diffusers/modeling_diffusers.py:377\n                     (기본 구현은 NotImplementedError: 파이프라인 서브모듈로 쓰이는 모델은 반드시 구현)"},
+  {"label": "룰대로 — 정해진 훅을 오버라이드 (예: gemma3)", "lang": "python", "code": "class RBLNGemma3ForConditionalGeneration(...):\n    @classmethod\n    def _update_submodule_config(cls, model, rbln_config, preprocessors):\n        # 서브모듈 설정 조정은 여기서만\n        ...\n        return rbln_config"},
+  {"label": "어기는 예 — 모델마다 이름이 다른 새 함수 (#135 리뷰가 막은 것)", "lang": "python", "code": "class RBLNBlip2ForConditionalGeneration(...):\n    def update_using_parent_vision_config(self, parent_cfg):  # 새 함수\n        ...\n# 공통 흐름(utils/submodule.py)이 이 함수를 모르므로 호출되지 않거나\n# 모델마다 따로 불러 줘야 한다"}
+ ],
+ "evidence": [
+  {"pr": 135, "state": "merged", "date": "2025-05-23", "user": "jongho", "what": "BLIP-2 지원 PR 리뷰. 서브모듈마다 갱신 함수를 따로 만들지 말고 공통 클래스메서드를 오버라이드하자고 했다.", "quote": "Instead of implementing update_using_parent_ something in each submodule,"},
+  {"pr": 816, "state": "open", "date": null, "user": "seinpark", "what": "Qwen-Image 2.1 파이프라인 추가. 파이프라인 서브모듈이 되려고 update_rbln_config_using_pipe를 구현했다. 아직 머지되지 않았다.", "quote": "Adds `update_rbln_config_using_pipe` so that it can be a pipeline submodule."}
+ ],
+ "verified": "dev 74e97fa4 코드 확인(2026-10-23): update_rbln_config_using_pipe 구현 16곳, _update_submodule_config 7곳, _update_submodule_rbln_config 5곳. 모델 전용 갱신 함수는 찾지 못했다."
+}

@@ -1,0 +1,528 @@
+{
+ "rules": {
+  "CFG-004": {
+   "question": "모델이 필수로 요구하는 옵션은 어떻게 다루는가?",
+   "options": [
+    "기본값을 고정하고 사용자 선택을 막는다",
+    "사용자 선택을 허용하고 잘못된 값은 예외로 막는다"
+   ],
+   "pair": null
+  },
+  "CFG-005": {
+   "question": "device 같은 런타임 전용 옵션은 로드할 때 어디로 넘기는가?",
+   "options": [
+    "`rbln_config`(dict·객체) 안에 함께 넣어 받는다",
+    "`rbln_` 접두사 인자(`rbln_device` 등)로만 받는다"
+   ],
+   "pair": null
+  },
+  "CFG-014": {
+   "question": "배치 크기 같은 형상 인자는 서브모듈에서 지정할 수 있는가?",
+   "options": [
+    "서브모듈 명시값이 상위값보다 우선한다",
+    "상위 설정에서만 지정하고 서브모듈 지정은 금지한다"
+   ],
+   "pair": "SUB-001"
+  },
+  "SUB-001": {
+   "question": "배치 크기 같은 형상 인자는 서브모듈에서 지정할 수 있는가?",
+   "options": [
+    "서브모듈 명시값이 상위값보다 우선한다",
+    "상위 설정에서만 지정하고 서브모듈 지정은 금지한다"
+   ],
+   "pair": "CFG-014"
+  },
+  "LIFE-001": {
+   "question": "forward의 `return_dict` 처리는 어떻게 하는가?",
+   "options": [
+    "항상 `True`로 고정해 반환한다",
+    "`None`이면 config의 `use_return_dict`를 따른다"
+   ],
+   "pair": null
+  },
+  "LIFE-015": {
+   "question": "`save_pretrained`가 기존 저장 경로를 교체하는 방식은?",
+   "options": [
+    "임시 디렉터리에 완성 후 rename으로 교체한다",
+    "대상 파일만 덮어써 기존 디렉터리를 보존한다"
+   ],
+   "pair": null
+  },
+  "LIFE-010": {
+   "question": "원본 가중치 텐서 뷰를 언제 공유하고 언제 복제하는가?",
+   "options": [
+    "래퍼 구성 중에는 공유하고 로드 후에는 복제한다",
+    "처음부터 복제해 mmap 뷰를 남기지 않는다"
+   ],
+   "pair": null
+  },
+  "LIFE-002": {
+   "question": "'HF와 순서 일치'는 어디까지를 뜻하는가?",
+   "options": [
+    "컴파일 그래프 입력 순서만 맞춘다",
+    "사용자 forward의 위치 인자 순서까지 맞춘다"
+   ],
+   "pair": null
+  },
+  "ATT-003": {
+   "question": "rotary cos/sin은 어떤 방식으로 계산하는가?",
+   "options": [
+    "재현성을 위해 numpy로 계산한다",
+    "HF와 같이 torch로 계산한다"
+   ],
+   "pair": null
+  },
+  "DIF-004": {
+   "question": "컴파일 때 지정한 guidance scale과 런타임 값이 다르면?",
+   "options": [
+    "에러로 막는다",
+    "허용하고 런타임 값을 사용한다"
+   ],
+   "pair": null
+  },
+  "DOC-004": {
+   "question": "docstring에서 사용하지 않는 인자(`kwargs` 등)를 적는가?",
+   "options": [
+    "미사용 인자는 생략한다",
+    "일관성을 위해 `kwargs`와 전달 대상을 항상 적는다"
+   ],
+   "pair": null
+  },
+  "PRC-031": {
+   "question": "pre-release 태그도 vLLM 모델 컴파일을 트리거하는가?",
+   "options": [
+    "pre-release 태그도 트리거한다",
+    "정식 릴리스 태그 정규식에서만 트리거한다"
+   ],
+   "pair": "PRC-032"
+  },
+  "PRC-032": {
+   "question": "pre-release 태그도 vLLM 모델 컴파일을 트리거하는가?",
+   "options": [
+    "pre-release 태그도 트리거한다",
+    "정식 릴리스 태그 정규식에서만 트리거한다"
+   ],
+   "pair": "PRC-031"
+  },
+  "STY-003": {
+   "question": "파이프라인 공통 검증 코드는 어디에 두는가?",
+   "options": [
+    "mixin 클래스에 둔다",
+    "pipelines 하위 utils 모듈에 둔다"
+   ],
+   "pair": null
+  },
+  "CFG-022": {
+   "question": "같은 키를 rbln_config와 rbln_ 인자에 함께 주면 어느 쪽이 이겨야 하는가?",
+   "options": [
+    "rbln_ 접두사 인자가 이긴다 (지금 docstring·테스트의 계약)",
+    "rbln_config 값이 이긴다",
+    "둘 다 주면 ValueError로 막는다 (#445 제안)"
+   ],
+   "pair": null
+  }
+ },
+ "debates": [
+  {
+   "id": "DBT-001",
+   "area": "rbln_config",
+   "topic": "강제 키와 사용자 값 충돌",
+   "question": "강제되는 키와 사용자 값이 충돌하면 어떻게 처리하는가?",
+   "options": [
+    "충돌 시 항상 예외를 낸다",
+    "강제 키만 예외, 나머지는 경고 없이 사용자 값 적용"
+   ],
+   "prs": [
+    267
+   ],
+   "rule_ids": []
+  },
+  {
+   "id": "DBT-002",
+   "area": "rbln_config",
+   "topic": "잘못된 config 값 검사",
+   "question": "0 이하 같은 잘못된 config 값을 어디서 검사하는가?",
+   "options": [
+    "값 오류마다 필드별로 검사해 예외를 낸다",
+    "다른 필드와 맞추고 별도 검사는 두지 않는다"
+   ],
+   "prs": [
+    437
+   ],
+   "rule_ids": []
+  },
+  {
+   "id": "DBT-003",
+   "area": "rbln_config",
+   "topic": "config 입력 정규화 수준",
+   "question": "dtype 등 config 입력 정규화는 어느 수준으로 하는가?",
+   "options": [
+    "타입을 보장할 수 없으므로 방어적으로 normalize한다",
+    "단순 대입으로 충분하며 과한 설계는 피한다"
+   ],
+   "prs": [
+    389
+   ],
+   "rule_ids": []
+  },
+  {
+   "id": "DBT-004",
+   "area": "rbln_config",
+   "topic": "`output_hidden_states` 결정 위치",
+   "question": "`output_hidden_states` 같은 옵션은 어디서 결정하는가?",
+   "options": [
+    "모듈 내부에 하드코딩하고 필요 시 파이프라인별로 관리",
+    "사용자 `None`이면 컴파일 시점 `rbln_config` 값을 따른다",
+    "미지원 옵션은 config 단계에서 `NotImplementedError`로 거부"
+   ],
+   "prs": [
+    38,
+    174,
+    631
+   ],
+   "rule_ids": []
+  },
+  {
+   "id": "DBT-005",
+   "area": "modeling_base/lifecycle",
+   "topic": "입력 모양 불일치 검사 위치",
+   "question": "입력 모양 불일치는 어디서 검사하는가?",
+   "options": [
+    "추론 전에 `ValueError`로 조기 검증한다",
+    "런타임 실행 지점에서만 검증한다"
+   ],
+   "prs": [
+    770
+   ],
+   "rule_ids": []
+  },
+  {
+   "id": "DBT-006",
+   "area": "multimodal/submodule",
+   "topic": "서브모듈 디바이스 수 축소",
+   "question": "서브모듈 디바이스 수가 줄어들면 어떻게 처리하는가?",
+   "options": [
+    "구성 시점에 서브모듈을 명시해 거부한다",
+    "배치 정보를 조용히 축소해 보수적으로 처리한다"
+   ],
+   "prs": [
+    776
+   ],
+   "rule_ids": []
+  },
+  {
+   "id": "DBT-007",
+   "area": "rbln_config",
+   "topic": "compiler 기능 사용 경로",
+   "question": "compiler 기능은 어떤 경로로 사용하는가?",
+   "options": [
+    "기본 False인 옵트인 설정으로 켠다",
+    "옵션 없이 항상 사용하고 미지원 컴파일러는 거부한다"
+   ],
+   "prs": [
+    803,
+    815
+   ],
+   "rule_ids": []
+  },
+  {
+   "id": "DBT-008",
+   "area": "rbln_config",
+   "topic": "`can_generate` false 모델의 `batch_size`",
+   "question": "`can_generate`가 false인 모델의 `batch_size`는 무엇을 뜻하는가?",
+   "options": [
+    "디코더 최대 배치 의미를 그대로 유지한다",
+    "별도 의미나 이름을 새로 도입한다"
+   ],
+   "prs": [
+    245
+   ],
+   "rule_ids": []
+  },
+  {
+   "id": "DBT-009",
+   "area": "rbln_config",
+   "topic": "미지원 dtype 입력 처리",
+   "question": "미지원 dtype 같은 설정 입력은 어떻게 처리하는가?",
+   "options": [
+    "미지원 값은 ValueError로 막는다",
+    "경고 후 fp32 등 기본값으로 승격·폴백한다"
+   ],
+   "prs": [
+    673
+   ],
+   "rule_ids": [
+    "CFG-001"
+   ]
+  },
+  {
+   "id": "DBT-010",
+   "area": "multimodal/submodule",
+   "topic": "Qwen3.5와 Qwen3-VL 구현 관계",
+   "question": "Qwen3.5와 Qwen3-VL 구현은 어떤 관계로 두는가?",
+   "options": [
+    "상속하거나 공통 base로 묶는다",
+    "변경 영향 차단을 위해 의도적으로 분리 유지한다"
+   ],
+   "prs": [
+    631
+   ],
+   "rule_ids": []
+  },
+  {
+   "id": "DBT-011",
+   "area": "multimodal/submodule",
+   "topic": "Cosmos 안전 검사기 처리",
+   "question": "Cosmos 안전 검사기는 어떻게 다루는가?",
+   "options": [
+    "원본 pipeline 구조대로 두고 pipeline 안에서 대체",
+    "원본 checker 없이 초기화하고 자체 checker를 붙인다",
+    "`_submodules`로 옮겨 서브모듈로 관리한다"
+   ],
+   "prs": [
+    118,
+    168,
+    191
+   ],
+   "rule_ids": []
+  },
+  {
+   "id": "DBT-012",
+   "area": "modeling_base/lifecycle",
+   "topic": "generation_config 버전 정보 범위",
+   "question": "`generation_config`에 transformers 버전 정보를 저장하는 범위는?",
+   "options": [
+    "모든 모델에 적용한다",
+    "검증 이슈가 있는 모델(Whisper)에만 적용한다"
+   ],
+   "prs": [
+    97
+   ],
+   "rule_ids": []
+  },
+  {
+   "id": "DBT-013",
+   "area": "testing",
+   "topic": "CPU 단위 테스트 위치",
+   "question": "CPU 단위 테스트는 어디에 두는가?",
+   "options": [
+    "기존 `test_llm.py`에 포함한다",
+    "`tests/unit/cpu/`에 별도로 둔다"
+   ],
+   "prs": [
+    746
+   ],
+   "rule_ids": []
+  },
+  {
+   "id": "DBT-014",
+   "area": "testing",
+   "topic": "HF Hub rate limit 대응",
+   "question": "HF Hub rate limit 대응은 어디에 두는가?",
+   "options": [
+    "호출부를 cache-first helper로 감싼다",
+    "CI에서 캐시를 선채움하고 `HF_HUB_OFFLINE=1` 사용",
+    "conftest 훅 한 곳에서 테스트별 오프라인을 결정한다"
+   ],
+   "prs": [
+    685,
+    686,
+    688
+   ],
+   "rule_ids": []
+  },
+  {
+   "id": "DBT-015",
+   "area": "pr_process",
+   "topic": "dev→main 백머지 병합 방식",
+   "question": "dev→main 백머지 PR의 병합 방식은?",
+   "options": [
+    "merge commit만 사용한다",
+    "저장소 설정대로 squash한다"
+   ],
+   "prs": [
+    695
+   ],
+   "rule_ids": []
+  },
+  {
+   "id": "DBT-016",
+   "area": "style/other",
+   "topic": "파이프라인 공통 검증 코드 위치",
+   "question": "파이프라인 공통 검증 코드는 어디에 두는가?",
+   "options": [
+    "mixin 클래스에 둔다",
+    "pipelines 하위 utils 모듈에 둔다"
+   ],
+   "prs": [
+    54
+   ],
+   "rule_ids": [
+    "STY-003"
+   ]
+  },
+  {
+   "id": "DBT-017",
+   "area": "docstring/docs",
+   "topic": "docstring 미사용 인자 기재",
+   "question": "docstring에서 사용하지 않는 인자(`kwargs` 등)를 적는가?",
+   "options": [
+    "미사용 인자는 생략한다",
+    "일관성을 위해 `kwargs`와 전달 대상을 항상 적는다"
+   ],
+   "prs": [
+    367
+   ],
+   "rule_ids": [
+    "DOC-004"
+   ]
+  },
+  {
+   "id": "DBT-018",
+   "area": "style/other",
+   "topic": "혼동되는 함수 이름 처리",
+   "question": "혼동 가능성이 있는 함수 이름은 어떻게 하는가?",
+   "options": [
+    "혼동되면 이름을 바꾼다",
+    "혼동될 함수가 없으면 변경하지 않는다"
+   ],
+   "prs": [
+    433
+   ],
+   "rule_ids": []
+  },
+  {
+   "id": "DBT-019",
+   "area": "attention/kvcache",
+   "topic": "KV 캐시 텐서 이름",
+   "question": "KV 캐시 텐서 이름은 어떻게 정하는가?",
+   "options": [
+    "key와 value 각각 고유 이름을 둔다",
+    "`mark_static_address(tensor, name)` 유지, vLLM이 이름을 전달",
+    "이름 체계 변경은 다음 PR로 미룬다"
+   ],
+   "prs": [
+    437
+   ],
+   "rule_ids": []
+  },
+  {
+   "id": "DBT-020",
+   "area": "modeling_base/lifecycle",
+   "topic": "`model_input_names` 순서",
+   "question": "`model_input_names` 순서는 어떻게 다루는가?",
+   "options": [
+    "컴파일 설정과 forward 인자 불일치를 막도록 순서를 고정",
+    "key-value 매핑만 쓰고 불일치는 사용자 실수로 본다"
+   ],
+   "prs": [
+    383
+   ],
+   "rule_ids": []
+  },
+  {
+   "id": "DBT-021",
+   "area": "style/other",
+   "topic": "config 속성 읽기 방식",
+   "question": "config 속성은 어떻게 읽는가?",
+   "options": [
+    "명시적으로 읽는다",
+    "`getattr` 기본값으로 fallback한다(`head_dim`이 None인 경우)"
+   ],
+   "prs": [
+    162
+   ],
+   "rule_ids": []
+  },
+  {
+   "id": "DBT-022",
+   "area": "modeling_base/lifecycle",
+   "topic": "decoder-only 래퍼 구조",
+   "question": "decoder-only 래퍼는 어떻게 구성하는가?",
+   "options": [
+    "Model과 CausalLM 클래스로 분리한다",
+    "`is_causal_lm` 플래그를 유지하고 나중에 리팩터링한다"
+   ],
+   "prs": [
+    219
+   ],
+   "rule_ids": []
+  },
+  {
+   "id": "DBT-023",
+   "area": "attention/kvcache",
+   "topic": "eager 상한 초과 `attn_impl`",
+   "question": "eager 상한을 넘는 미지정 `attn_impl`은 어떻게 처리하는가?",
+   "options": [
+    "`flash_attn`으로 자동 승격하고 명시적 eager만 거부",
+    "패밀리별 한계 레코드로 검증하고 자동 승격은 후속 PR"
+   ],
+   "prs": [
+    721,
+    729
+   ],
+   "rule_ids": []
+  },
+  {
+   "id": "DBT-024",
+   "area": "multimodal/submodule",
+   "topic": "비전 cos/sin 입력 dtype",
+   "question": "비전 cos/sin 그래프 입력 dtype은 무엇으로 하는가?",
+   "options": [
+    "HF처럼 fp32로 둔다",
+    "활성 dtype을 유지해 호스트·이전 아티팩트와 호환한다"
+   ],
+   "prs": [
+    259,
+    710,
+    711
+   ],
+   "rule_ids": []
+  },
+  {
+   "id": "DBT-025",
+   "area": "attention/kvcache",
+   "topic": "decoder-only rotary cos/sin 계산",
+   "question": "rotary cos/sin은 어떤 방식으로 계산하는가?",
+   "options": [
+    "재현성을 위해 numpy로 계산한다",
+    "HF와 같이 torch로 계산한다"
+   ],
+   "prs": [
+    672,
+    680
+   ],
+   "rule_ids": [
+    "ATT-003"
+   ]
+  },
+  {
+   "id": "DBT-026",
+   "area": "attention/kvcache",
+   "topic": "소폭 회귀 커스텀 op 적용",
+   "question": "일부 구성에서 소폭 회귀가 있는 커스텀 op는 어디에 쓰는가?",
+   "options": [
+    "모든 구성에서 사용한다",
+    "이득이 나는 구성에서만 사용한다"
+   ],
+   "prs": [
+    768
+   ],
+   "rule_ids": []
+  },
+  {
+   "id": "DBT-027",
+   "area": "attention/kvcache",
+   "topic": "KV 블록 산정 DRAM 버퍼",
+   "question": "KV 캐시 블록 산정의 DRAM 버퍼 추정은 어떻게 하는가?",
+   "options": [
+    "기존 총 1GB 추정을 유지한다",
+    "tp당 500MB로 상향하고 정밀 추정을 도입한다"
+   ],
+   "prs": [
+    84
+   ],
+   "rule_ids": []
+  }
+ ]
+}

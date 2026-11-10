@@ -1,0 +1,21 @@
+{
+ "id": "LIFE-024",
+ "summary": [
+  "optimum-rbln은 모델을 NPU용으로 컴파일하기 전에 torch.export로 연산 그래프를 뽑습니다. 이때 텐서는 실제 값 없이 모양(shape)과 dtype만 가진 채 지나가서, '값이 얼마냐'에 따라 갈리는 파이썬 if는 그래프로 옮길 수 없습니다.",
+  "그래서 *_architecture.py처럼 export로 추적되는 코드에서는 값에 따라 갈리는 분기를 두 가지 방법으로 바꿉니다. ① .item()으로 꺼낸 값이 어떤 범위라고 가정할 때는 torch._check로 그 가정을 알려 줍니다. ② 값에 따라 계산이 달라지는 부분(예: fp16 넘침 막기)은 dtype처럼 값을 보지 않아도 정해지는 조건으로 바꿉니다.",
+  "STY-027(커스텀 op의 fake 함수와 인덱스 값 제약)을 이 룰에 합쳤습니다. 인덱스 값 제약은 ①과 같은 내용이고, fake 함수 부분은 커스텀 op 등록이 rebel-compiler로 옮겨가(커밋 ff8c3f6f, 2026-06-29) 이 레포에는 더 이상 대상이 없습니다.",
+  "물어보는 것: export로 추적되는 코드에서는 값에 따라 갈리는 파이썬 분기를 쓰지 않는다를 팀 룰로 삼을까요?"
+ ],
+ "examples": [
+  {"label": "① .item() 값의 범위를 torch._check로 알림 — t5_architecture.py:177", "lang": "python", "code": "if torch.compiler.is_exporting():\n    cache_pos = cache_position[i][0].item()   # export 중엔 값이 아니라 '기호'\n    torch._check_is_size(cache_pos)\n    torch._check(cache_pos >= 0)\n    torch._check(cache_pos < self._dec_position_bias.shape[2])\nelse:\n    cache_pos = cache_position[i][0]\nbias = torch.select(self._dec_position_bias, dim=2, index=cache_pos)"},
+  {"label": "② 값에 따른 분기를 dtype 조건으로 바꿈 — t5_architecture.py:33", "lang": "python", "code": "# HF 원본: 값에 따라 분기 -> export가 추적하지 못함\n#   if torch.isinf(hidden_states).any(): hidden_states = clamp(...)\n\n# optimum-rbln: dtype은 값 없이도 정해지므로 추적 가능\ndef _clamp_finite(hidden_states):\n    if hidden_states.dtype != torch.float16:\n        return hidden_states\n    bound = torch.finfo(hidden_states.dtype).max\n    return torch.clamp(hidden_states, min=-bound, max=bound)"},
+  {"label": "어기는 예 — 텐서 값을 보고 파이썬 if", "lang": "python", "code": "if attention_mask.sum() == 0:        # 값에 따라 갈림\n    return hidden_states\n# export 중엔 sum()의 값을 모르므로 에러가 나거나,\n# 추적할 때 우연히 탄 한쪽 분기만 그래프에 고정된다"}
+ ],
+ "evidence": [
+  {"pr": 269, "state": "merged", "date": "2025-09-11", "user": "joonsoo", "what": "export 호환 작업. export 중일 때 조건 검사를 torch._check로 바꿨다.", "quote": "Added some guards and replaced condition checks to use torch._check if exporting."},
+  {"pr": 250, "state": "merged", "date": "2025-08-12", "user": "joonsoo", "what": "T5를 torch.export로 컴파일하도록 바꾸면서 디코더 인덱스 값에 제약을 걸었다(예시 ①). STY-027의 근거.", "quote": "It adds dynamic value constraints on the index values in T5 decoders."},
+  {"pr": 711, "state": "merged", "date": "2026-10-13", "user": "thkim", "what": "HF의 fp16 넘침 방지가 값에 따른 분기라 추적되지 않아 dtype 조건으로 바꿨다(예시 ②).", "quote": "HF clamps fp16 activations with a data-dependent `isinf(...).any()` guard that cannot be traced."},
+  {"pr": 221, "state": "merged", "date": "2025-07-22", "user": "joonsoo", "what": "커스텀 op에 fake 함수를 추가했다. 이후 커스텀 op 등록이 rebel-compiler로 옮겨가 지금 이 레포에는 대상이 없다. STY-027의 근거.", "quote": "fake functions are needed in order to convert `nn.Module`s to `Export IR` using `torch.export.export`"}
+ ],
+ "verified": "dev 74e97fa4 확인(2026-10-23): .item() 인덱스 3곳(t5 cache_pos, time_series embed_idx, grounding_dino spatial_shapes)이 모두 is_exporting() 분기에서 torch._check를 건다. src/optimum/rbln/ops 디렉터리는 없다."
+}

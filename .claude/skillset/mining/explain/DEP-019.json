@@ -1,0 +1,20 @@
+{
+ "id": "DEP-019",
+ "summary": [
+  "optimum-rbln은 여러 버전의 rebel-compiler와 함께 쓰입니다. 새 컴파일러에만 있는 기능을 쓸 때, 설치된 컴파일러가 그 기능을 갖고 있는지 확인하는 방법에 대한 룰입니다.",
+  "버전 번호를 비교하지 않고(if rebel.__version__ >= '0.9.2'), 그 함수나 인자가 실제로 있는지를 봅니다. 버전 번호는 dev 빌드나 백포트에서 기능 유무와 어긋나기 쉽지만, 함수가 있는지는 거짓말을 하지 않습니다.",
+  "기능이 없을 때의 처리는 두 가지입니다. 옛 컴파일러에서도 같은 결과를 내는 방법이 있으면 그걸로 대신하고, 없으면 RuntimeError로 업그레이드를 안내합니다.",
+  "물어보는 것: 컴파일러 기능 확인은 버전 비교 대신 실제 존재 여부로 한다를 팀 룰로 삼을까요?"
+ ],
+ "examples": [
+  {"label": "대신할 방법이 있을 때 — 인자 이름을 보고 고름 (runtime_utils.py:25)", "lang": "python", "code": "def compiler_num_devices_kwarg() -> str:\n    # 새 컴파일러는 num_devices, 옛 컴파일러는 tensor_parallel_size만 받는다\n    params = inspect.signature(rebel.compile).parameters\n    return \"num_devices\" if \"num_devices\" in params else \"tensor_parallel_size\""},
+  {"label": "대신할 방법이 없을 때 — RuntimeError로 안내 (modeling_attention_utils.py:482)", "lang": "python", "code": "if not hasattr(compiled_model, \"exp_rescale_buffer_size\"):\n    raise RuntimeError(\n        \"The installed rebel-compiler does not support post-compilation kv-cache \"\n        \"resizing (`exp_rescale_buffer_size`). Please upgrade rebel-compiler.\")"},
+  {"label": "어기는 예 — 버전 번호로 판단", "lang": "python", "code": "from packaging.version import Version\nif Version(rebel.__version__) >= Version(\"0.9.2\"):\n    kwargs[\"num_devices\"] = n\nelse:\n    kwargs[\"tensor_parallel_size\"] = n\n# 0.9.2.dev 빌드나 백포트된 0.9.1.post1 에서 기능 유무와 판단이 어긋난다"}
+ ],
+ "evidence": [
+  {"pr": 597, "state": "merged", "date": "2026-06-22", "user": "jongho", "what": "tensor_parallel_size를 num_devices로 바꾸면서, 컴파일러가 어느 인자를 받는지 시그니처를 보고 고르게 했다(첫 번째 예시).", "quote": "This avoids version-string comparison, so it works against both new and pre-rename compilers"},
+  {"pr": 638, "state": "merged", "date": "2026-09-09", "user": "jongho", "what": "컴파일 후 KV 캐시 블록 수를 바꾸는 CLI. 옛 컴파일러에 해당 API가 없으면 RuntimeError를 낸다(두 번째 예시).", "quote": "older rebel-compiler without `exp_rescale_buffer_size` → clear `RuntimeError`."},
+  {"pr": 708, "state": "closed", "date": null, "user": "jongho", "what": "getattr로 API를 찾고 없으면 기존 계산으로 대신하는 제안. 머지되지 않았다.", "quote": "The helpers look the API up with `getattr` and, when it is absent, take a per-model sum that is byte-for-byte what the code does today."}
+ ],
+ "verified": "dev 74e97fa4 확인(2026-10-23): 컴파일러 기능 확인 2곳 모두 존재 여부로 판단하고, rebel 버전 문자열 비교는 src에서 찾지 못했다."
+}

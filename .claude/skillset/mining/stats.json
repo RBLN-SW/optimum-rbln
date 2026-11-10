@@ -1,0 +1,101 @@
+{
+ "rules": 273,
+ "dropped_not_a_rule": 31,
+ "folded": 44,
+ "by_status": {
+  "interview": 42,
+  "supported": 116,
+  "candidate": 115
+ },
+ "by_confidence": {
+  "high": 78,
+  "medium": 78,
+  "low": 117
+ },
+ "by_kind": {
+  "mechanical": 84,
+  "judgment": 189
+ },
+ "by_area": {
+  "pr_process": 41,
+  "testing": 32,
+  "rbln_config": 31,
+  "modeling_base/lifecycle": 29,
+  "dependency/version": 28,
+  "diffusers": 20,
+  "style/other": 20,
+  "attention/kvcache": 19,
+  "api/naming": 16,
+  "multimodal/submodule": 14,
+  "docstring/docs": 14,
+  "decoderonly": 9
+ },
+ "area_x_status": {
+  "rbln_config": {
+   "interview": 8,
+   "supported": 12,
+   "candidate": 11
+  },
+  "multimodal/submodule": {
+   "interview": 2,
+   "supported": 8,
+   "candidate": 4
+  },
+  "modeling_base/lifecycle": {
+   "interview": 10,
+   "supported": 9,
+   "candidate": 10
+  },
+  "decoderonly": {
+   "supported": 3,
+   "candidate": 6
+  },
+  "attention/kvcache": {
+   "interview": 2,
+   "supported": 4,
+   "candidate": 13
+  },
+  "diffusers": {
+   "interview": 1,
+   "supported": 5,
+   "candidate": 14
+  },
+  "api/naming": {
+   "interview": 2,
+   "supported": 9,
+   "candidate": 5
+  },
+  "testing": {
+   "interview": 2,
+   "supported": 21,
+   "candidate": 9
+  },
+  "docstring/docs": {
+   "interview": 1,
+   "supported": 5,
+   "candidate": 8
+  },
+  "dependency/version": {
+   "interview": 5,
+   "supported": 10,
+   "candidate": 13
+  },
+  "pr_process": {
+   "interview": 6,
+   "supported": 20,
+   "candidate": 15
+  },
+  "style/other": {
+   "interview": 3,
+   "supported": 10,
+   "candidate": 7
+  }
+ },
+ "new_at_source": {
+  "review_comments": 42,
+  "conversation_comments": 10,
+  "pr_bodies": 221
+ },
+ "supported_or_interview": 158,
+ "mechanical_supported": 41
+}

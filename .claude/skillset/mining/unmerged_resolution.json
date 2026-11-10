@@ -1,0 +1,12 @@
+{
+ "note": "2026-10-23. 리뷰 대상 룰 중 근거 PR이 모두 머지되지 않은 룰을 폐기 제안으로 돌림(사용자 지시). 판정 데이터: prs.jsonl의 mergedAt.",
+ "reject": [
+  {"id": "LIFE-005", "why": "근거 PR 804, 815가 모두 머지되지 않았다.", "refined": null},
+  {"id": "ATT-005", "why": "근거 PR 767, 768, 803이 모두 머지되지 않았다.", "refined": null},
+  {"id": "ATT-006", "why": "근거 PR 804, 816이 모두 머지되지 않았다.", "refined": null},
+  {"id": "DEP-005", "why": "근거 PR 301, 564가 모두 머지되지 않았다. 참고: 현재 pyproject.toml은 transformers를 ==로 고정한다.", "refined": null}
+ ],
+ "unpair": [
+  {"ids": ["LIFE-004"], "why": "짝이던 LIFE-005가 미머지 근거로 폐기됨."}
+ ]
+}

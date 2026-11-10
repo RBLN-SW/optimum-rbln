@@ -1,0 +1,3 @@
+# .claude/ holds Claude Code tooling (rule-mining scripts for the skillset), not the optimum-rbln package.
+# These one-off scripts are not held to the package lint rules, so ruff skips this directory.
+exclude = ["*"]

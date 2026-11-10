@@ -1,0 +1,1 @@
+{"merge":[{"keep":"LIFE-024","fold":["STY-027"],"short":"torch.export로 추적되는 코드에서는 텐서 값에 따라 갈리는 파이썬 분기를 쓰지 않는다.","detail":".item() 값의 범위 가정은 torch._check로 알리고, 값에 따른 계산 분기(예: fp16 넘침 막기)는 dtype 같은 정적 조건으로 바꾼다.","why":"STY-027의 인덱스 값 제약은 LIFE-024의 torch._check와 같고, fake 함수 부분은 커스텀 op 등록이 rebel-compiler로 옮겨가(ff8c3f6f) 대상이 없다."}]}

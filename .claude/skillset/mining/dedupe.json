@@ -1,0 +1,570 @@
+{
+ "merges": [
+  {
+   "keep": "DEP-001",
+   "fold": [
+    "API-001"
+   ],
+   "why": "deprecation decorator with removal version, same rule"
+  },
+  {
+   "keep": "CFG-010",
+   "fold": [
+    "API-004"
+   ],
+   "why": "rename keeps old name as deprecated alias"
+  },
+  {
+   "keep": "CFG-009",
+   "fold": [
+    "LIFE-013",
+    "LIFE-014"
+   ],
+   "why": "old-artifact compatibility and legacy fallback handling",
+   "statement": "설정 포맷·옵션·dtype·산출물 구조를 바꿀 때는 이전에 컴파일된 아티팩트가 기존 방식 그대로 로드·동작하게 하며, 로드 시 동작은 설정 객체의 새 필드가 아니라 아티팩트가 기록한 입력 정의를 기준으로 정한다. 호환용 레거시 경로는 DEPRECATED 표지에 제거 예정 버전을 명시하고 독립된 블록으로 두며 레거시 위치에서 로드할 때 경고 로그를 남긴다. 로드가 불가능하거나 재컴파일이 필요하면 원인과 조치를 명확한 오류 메시지와 PR 설명에 적는다."
+  },
+  {
+   "keep": "LIFE-008",
+   "fold": [
+    "STY-022"
+   ],
+   "why": "explicit exception instead of silent/leaky failure"
+  },
+  {
+   "keep": "CFG-031",
+   "fold": [
+    "TEST-014",
+    "ATT-008",
+    "DEC-010"
+   ],
+   "why": "new path opt-in; old path unchanged when off",
+   "statement": "새 컴파일 경로, 커널 경로, 출력 옵션, 동작 게이트는 기본값 False인 옵트인으로 추가하고 검증된 타깃·구성에서만 쓰며, 게이트가 꺼진 기본 상태에서는 기존 경로의 코드·반환 형식·결과가 바이트 단위로 동일한 no-op이어야 하고 기존 결과와 비교해 확인한다."
+  },
+  {
+   "keep": "LIFE-003",
+   "fold": [
+    "DEC-002"
+   ],
+   "why": "inherit parent implementation, no redundant override"
+  },
+  {
+   "keep": "LIFE-004",
+   "fold": [
+    "DEC-003"
+   ],
+   "why": "common logic in base class, per-class traits as attributes"
+  },
+  {
+   "keep": "LIFE-011",
+   "fold": [
+    "CFG-032",
+    "STY-020"
+   ],
+   "why": "follow HF dtype handling at same points"
+  },
+  {
+   "keep": "LIFE-002",
+   "fold": [
+    "SUB-012"
+   ],
+   "why": "forward inputs/signature match HF implementation"
+  },
+  {
+   "keep": "API-015",
+   "fold": [
+    "STY-030"
+   ],
+   "why": "single implementation location, no alias/shim files"
+  },
+  {
+   "keep": "API-003",
+   "fold": [
+    "DOC-009",
+    "CFG-011",
+    "API-020",
+    "DEC-013"
+   ],
+   "why": "API change updates all callers/examples/consumers in same PR",
+   "statement": "API·설정 구조·공통 런타임 인터페이스·모델 출력 타입을 제거·교체·변경할 때는 라이브러리 내부 호출부, 하위 클래스와 멀티모달 래퍼, vLLM 등 소비 측 코드, README·문서 예제, model-zoo 예제를 같은 변경에서 함께 고치고 비호환이 없는지 확인한다."
+  },
+  {
+   "keep": "DOC-003",
+   "fold": [
+    "STY-019"
+   ],
+   "why": "docstrings/comments must match current code after change"
+  },
+  {
+   "keep": "PRC-003",
+   "fold": [
+    "PRC-006",
+    "PRC-007"
+   ],
+   "why": "PR body follows template sections",
+   "statement": "PR 본문은 템플릿의 절(변경 유형, 변경 개요, Motivation, Verification, 관련 이슈)을 갖추고, Type of Change에서 해당 유형을 하나 체크하며(Other는 내용을 구체적으로 적음), Motivation에는 채택한 방식이 필요한 이유(문제의 원인이나 기대 효과)를 적는다."
+  },
+  {
+   "keep": "PRC-008",
+   "fold": [
+    "PRC-009",
+    "PRC-020"
+   ],
+   "why": "PR dependencies/order/related PRs stated in body",
+   "statement": "선행 PR이나 다른 저장소의 PR에 의존하는 PR은 base 브랜치를 선행 PR 브랜치로 두고, 본문에 선행·관련 PR 번호와 링크, 머지 순서, 순서가 어긋났을 때의 대응(닫기 등)을 명시한다."
+  },
+  {
+   "keep": "PRC-012",
+   "fold": [
+    "STY-006",
+    "DOC-016"
+   ],
+   "why": "keep PR scoped; split unrelated/docstring-only changes"
+  },
+  {
+   "keep": "PRC-016",
+   "fold": [
+    "TEST-037"
+   ],
+   "why": "bulk edit: document selection method and re-scan",
+   "statement": "대량 수정은 대상 선정 방법(예: AST 스캔)과 위양성으로 제외한 항목을 PR 본문에 명시하고, 수정 후 같은 스캔을 다시 실행해 잔여 대상이 0인지 확인한다."
+  },
+  {
+   "keep": "STY-015",
+   "fold": [
+    "PRC-038"
+   ],
+   "why": "secrets/cluster-specific values injected via CI vars",
+   "statement": "CI 워크플로우에서 시크릿은 `secrets` 컨텍스트로 전달하고, 내부 엔드포인트·클러스터 고유 경로나 주소는 저장소에 평문으로 적지 않고 CI 변수로 주입하며, 필수 변수가 비어 있으면 빈 값으로 진행하지 않고 업로드 단계에서 실패시킨다."
+  },
+  {
+   "keep": "TEST-017",
+   "fold": [
+    "PRC-018"
+   ],
+   "why": "verify on real NPU; state unverified scope"
+  },
+  {
+   "keep": "STY-007",
+   "fold": [
+    "CFG-003",
+    "DEC-014",
+    "SUB-018"
+   ],
+   "why": "error messages state cause and remedy",
+   "statement": "오류 메시지는 무엇이 잘못됐는지, 어떤 조건인지, 사용자가 무엇을 해야 하는지(필요량 대비 확보량, 조정할 설정 이름과 원인별 조치, 같은 NPU 사용 확인 등)를 구체적으로 적고, 실제로 일어나지 않는 동작을 설명하지 않으며, 같은 목적의 기존 가드 메시지 양식을 따른다."
+  },
+  {
+   "keep": "CFG-027",
+   "fold": [
+    "ATT-009"
+   ],
+   "why": "per-family limits object; unknown device must not inherit"
+  },
+  {
+   "keep": "ATT-002",
+   "fold": [
+    "DEC-008"
+   ],
+   "why": "fp32 upcast for overflow-prone ops"
+  },
+  {
+   "keep": "SUB-005",
+   "fold": [
+    "SUB-006"
+   ],
+   "why": "skip submodule via create_runtimes; no runtime"
+  },
+  {
+   "keep": "CFG-015",
+   "fold": [
+    "SUB-016",
+    "SUB-017"
+   ],
+   "why": "fixed submodule constraints enforced via force_kwargs"
+  },
+  {
+   "keep": "SUB-008",
+   "fold": [
+    "SUB-009"
+   ],
+   "why": "vision rotary/dtype behavior copied from HF"
+  },
+  {
+   "keep": "DEP-002",
+   "fold": [
+    "DEP-003"
+   ],
+   "why": "version-dependent behavior must be explicit/guarded"
+  },
+  {
+   "keep": "DEP-021",
+   "fold": [
+    "DEP-032"
+   ],
+   "why": "remove temporary compat/patch code once no longer needed"
+  },
+  {
+   "keep": "DEP-033",
+   "fold": [
+    "DEP-034"
+   ],
+   "why": "bot dependency PRs: human review and full test before merge"
+  },
+  {
+   "keep": "STY-001",
+   "fold": [
+    "DOC-005"
+   ],
+   "why": "record rationale for non-obvious changes and constants"
+  },
+  {
+   "keep": "STY-018",
+   "fold": [
+    "DOC-014"
+   ],
+   "why": "ruff/type/docstring checks pass before merge"
+  },
+  {
+   "keep": "LIFE-021",
+   "fold": [
+    "DEC-004"
+   ],
+   "why": "new model file layout and registration"
+  },
+  {
+   "keep": "API-014",
+   "fold": [
+    "API-016"
+   ],
+   "why": "register public objects in __all__/registries"
+  }
+ ],
+ "reassign": [
+  {
+   "id": "DEP-018",
+   "area": "pr_process",
+   "why": "PR body disclosure rule"
+  },
+  {
+   "id": "STY-015",
+   "area": "pr_process",
+   "why": "CI workflow rule"
+  },
+  {
+   "id": "STY-025",
+   "area": "pr_process",
+   "why": "CI workflow rule"
+  },
+  {
+   "id": "CFG-035",
+   "area": "pr_process",
+   "why": "PR body content"
+  },
+  {
+   "id": "ATT-023",
+   "area": "api/naming",
+   "why": "public getter exposure"
+  },
+  {
+   "id": "ATT-029",
+   "area": "rbln_config",
+   "why": "compile-config field"
+  },
+  {
+   "id": "LIFE-029",
+   "area": "pr_process",
+   "why": "verification step on bug-fix PR"
+  },
+  {
+   "id": "DIF-022",
+   "area": "pr_process",
+   "why": "PR verification evidence"
+  },
+  {
+   "id": "DIF-021",
+   "area": "docstring/docs",
+   "why": "examples requirement"
+  },
+  {
+   "id": "DEC-006",
+   "area": "pr_process",
+   "why": "rationale recorded in PR"
+  },
+  {
+   "id": "STY-027",
+   "area": "modeling_base/lifecycle",
+   "why": "torch.export support"
+  },
+  {
+   "id": "STY-024",
+   "area": "modeling_base/lifecycle",
+   "why": "tracing/export concern"
+  },
+  {
+   "id": "DIF-019",
+   "area": "modeling_base/lifecycle",
+   "why": "model loading option"
+  },
+  {
+   "id": "STY-008",
+   "area": "decoderonly",
+   "why": "inference-path performance"
+  },
+  {
+   "id": "ATT-028",
+   "area": "multimodal/submodule",
+   "why": "vision module attention"
+  },
+  {
+   "id": "DEC-015",
+   "area": "modeling_base/lifecycle",
+   "why": "wrapper module registration"
+  },
+  {
+   "id": "SUB-007",
+   "area": "attention/kvcache",
+   "why": "KV cache block estimation"
+  }
+ ],
+ "not_a_rule": [
+  {
+   "id": "PRC-022",
+   "why": "one-off merge decision"
+  },
+  {
+   "id": "PRC-029",
+   "why": "one-off announcement policy"
+  },
+  {
+   "id": "PRC-044",
+   "why": "one-off CI pitfall"
+  },
+  {
+   "id": "PRC-039",
+   "why": "notification formatting detail"
+  },
+  {
+   "id": "PRC-045",
+   "why": "one-off bot config step"
+  },
+  {
+   "id": "DEP-023",
+   "why": "specific tool version number"
+  },
+  {
+   "id": "DEP-035",
+   "why": "one-off bot setting"
+  },
+  {
+   "id": "DEP-010",
+   "why": "branch-specific one-off"
+  },
+  {
+   "id": "DEP-025",
+   "why": "CI install detail"
+  },
+  {
+   "id": "DEP-027",
+   "why": "one-off compiler build bug"
+  },
+  {
+   "id": "DEP-026",
+   "why": "build-backend specific one-off"
+  },
+  {
+   "id": "DEP-038",
+   "why": "one-off metadata change"
+  },
+  {
+   "id": "API-017",
+   "why": "description of repo fact"
+  },
+  {
+   "id": "ATT-010",
+   "why": "estimator formula, model-specific"
+  },
+  {
+   "id": "ATT-011",
+   "why": "estimator detail, one-off"
+  },
+  {
+   "id": "ATT-013",
+   "why": "estimator formula detail"
+  },
+  {
+   "id": "ATT-019",
+   "why": "one-off cleanup caveat"
+  },
+  {
+   "id": "ATT-021",
+   "why": "kernel-specific shape fact"
+  },
+  {
+   "id": "ATT-024",
+   "why": "hardware-specific model fact"
+  },
+  {
+   "id": "CFG-017",
+   "why": "one-off dummy-device case"
+  },
+  {
+   "id": "DIF-018",
+   "why": "capability statement, not convention"
+  },
+  {
+   "id": "DOC-018",
+   "why": "aspiration, not enforceable"
+  },
+  {
+   "id": "DOC-017",
+   "why": "one-off rollout process"
+  },
+  {
+   "id": "LIFE-025",
+   "why": "one-off bug fix"
+  },
+  {
+   "id": "LIFE-026",
+   "why": "single compat decision"
+  },
+  {
+   "id": "TEST-024",
+   "why": "CI image optimization detail"
+  },
+  {
+   "id": "TEST-025",
+   "why": "CI job detection detail"
+  },
+  {
+   "id": "TEST-026",
+   "why": "CI status detail"
+  },
+  {
+   "id": "TEST-034",
+   "why": "dummy-device test workaround"
+  },
+  {
+   "id": "TEST-036",
+   "why": "one-off AST test"
+  },
+  {
+   "id": "TEST-039",
+   "why": "one-off parallelization note"
+  }
+ ],
+ "contradictions": [
+  {
+   "ids": [
+    "API-005",
+    "LIFE-012"
+   ],
+   "question": "dtype 인자를 dtype으로 통일하고 torch_dtype을 제거할지, 사용자가 torch_dtype을 지정해도 계속 받아 우선 적용할지 어느 쪽인가요?"
+  },
+  {
+   "ids": [
+    "CFG-001",
+    "CFG-030"
+   ],
+   "question": "잘못되거나 생략된 설정은 항상 예외로 실패시킬지, None이면 경고 후 기본값으로 폴백할지 경계를 어디에 두나요?"
+  },
+  {
+   "ids": [
+    "STY-014",
+    "LIFE-008"
+   ],
+   "question": "과한 방어 코드를 피하는 것과 잘못된 입력을 즉시 명시적 예외로 알리는 것 중 어디까지 검사를 추가해야 하나요?"
+  },
+  {
+   "ids": [
+    "LIFE-005",
+    "LIFE-004"
+   ],
+   "question": "기능 추가 시 공유 베이스를 수정하지 않고 서브클래스로 확장할지, 공통 로직을 베이스에 모을지 어느 쪽이 우선인가요?"
+  },
+  {
+   "ids": [
+    "SUB-001",
+    "CFG-014"
+   ],
+   "question": "서브모듈이 직접 명시한 값을 상위 값보다 우선할지, 배치 크기 같은 형상 인자는 서브모듈에서 지정하지 않게 할지 어떻게 정리하나요?"
+  },
+  {
+   "ids": [
+    "API-019",
+    "CFG-013"
+   ],
+   "question": "설정 입력 경로 사이에 암묵적 우선순위를 두지 않는다는 규칙과 호출자 인자, 서브모듈, 파이프라인 순의 명시적 우선순위 규칙은 어떻게 양립하나요?"
+  },
+  {
+   "ids": [
+    "CFG-007",
+    "CFG-028"
+   ],
+   "question": "기본값을 모델 config 등에서 유도할지, 기기와 무관한 고정 상수로 둘지 어느 쪽을 기본으로 삼나요?"
+  },
+  {
+   "ids": [
+    "DEP-019",
+    "DEP-020"
+   ],
+   "question": "구버전 컴파일러에서는 이전 계산 방식으로 폴백할지, RuntimeError로 명확히 실패시킬지 어떤 기준으로 고르나요?"
+  },
+  {
+   "ids": [
+    "DEP-004",
+    "DEP-019"
+   ],
+   "question": "외부 의존성 차이를 공용 버전 비교 헬퍼로 분기할지, 기능 존재 여부(getattr 등)로 감지할지 어느 쪽을 쓰나요?"
+  },
+  {
+   "ids": [
+    "DEP-009",
+    "SUB-019",
+    "STY-009"
+   ],
+   "question": "import는 항상 파일 상단에 둘지, 서브모듈 설정 클래스나 무거운 의존성은 지연 import를 허용할지 기준이 무엇인가요?"
+  },
+  {
+   "ids": [
+    "LIFE-024",
+    "STY-024"
+   ],
+   "question": "데이터 의존 조건 검사는 export 중 torch._check로 대체할지, dtype 조건부의 추적 가능한 고정 연산으로 대체할지 어느 쪽인가요?"
+  },
+  {
+   "ids": [
+    "PRC-025",
+    "PRC-024"
+   ],
+   "question": "수정은 dev에 먼저 반영하는 것이 원칙인데, 긴급 hotfix를 main에 직접 반영하는 예외는 어떤 경우에 허용하나요?"
+  },
+  {
+   "ids": [
+    "PRC-031",
+    "PRC-032"
+   ],
+   "question": "릴리스 태그 정규식으로 배포를 게이트할 때 pre-release 태그는 vLLM 모델 컴파일을 트리거해야 하나요?"
+  },
+  {
+   "ids": [
+    "TEST-004",
+    "PRC-036"
+   ],
+   "question": "[pytest-full] 마커는 PR 제목에만 쓰고 커밋 메시지에는 인용하지 않는 것이 맞나요, 아니면 커밋 메시지 마커도 허용하나요?"
+  },
+  {
+   "ids": [
+    "PRC-035",
+    "TEST-006"
+   ],
+   "question": "PR 빌드는 모든 테스트 스위트를 실행해야 하는데, 무거운 테스트는 스케줄 CI에서만 돌린다는 기준은 어떻게 구분하나요?"
+  },
+  {
+   "ids": [
+    "LIFE-011",
+    "ATT-002"
+   ],
+   "question": "HF 원본 dtype 처리를 그대로 따르고 별도 변환을 추가하지 않는다는 규칙과 fp16 오버플로 방지를 위한 명시적 fp32 승격은 어떻게 양립하나요?"
+  }
+ ]
+}

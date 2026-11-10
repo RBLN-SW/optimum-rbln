@@ -1,0 +1,581 @@
+<title>optimum-rbln 룰 리뷰</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a fixed-width area rail on the left, one scrolling column of rule cards on the right; summary is a plain table view. */
+:root{
+  --bg:#f6f7f9; --panel:#ffffff; --ink:#1d2430; --ink-2:#55607a; --ink-3:#8a93a8; --line:#dde2ea; --line-2:#eef1f5;
+  --accent:#2b5fd9; --accent-ink:#ffffff; --accent-soft:#e8eefc;
+  --ok:#1f7a4d; --ok-soft:#e3f3ea; --warn:#9a6700; --warn-soft:#fff3d6; --bad:#b4432f; --bad-soft:#fbe7e2; --mute-soft:#eceff4;
+  --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace; --sans:"IBM Plex Sans KR","Apple SD Gothic Neo","Noto Sans KR",system-ui,sans-serif;
+  --r:6px; --rail:248px;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#141922; --panel:#1b212c; --ink:#e6e9ef; --ink-2:#aab2c3; --ink-3:#737d93; --line:#2b3340; --line-2:#232a36;
+  --accent:#7fa3ff; --accent-ink:#0f1522; --accent-soft:#1f2b45;
+  --ok:#6fcf97; --ok-soft:#163324; --warn:#e8b84a; --warn-soft:#3a2f12; --bad:#ef8a73; --bad-soft:#3d1f19; --mute-soft:#262d3a; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#141922; --panel:#1b212c; --ink:#e6e9ef; --ink-2:#aab2c3; --ink-3:#737d93; --line:#2b3340; --line-2:#232a36;
+  --accent:#7fa3ff; --accent-ink:#0f1522; --accent-soft:#1f2b45;
+  --ok:#6fcf97; --ok-soft:#163324; --warn:#e8b84a; --warn-soft:#3a2f12; --bad:#ef8a73; --bad-soft:#3d1f19; --mute-soft:#262d3a; color-scheme:dark}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.6 var(--sans);-webkit-font-smoothing:antialiased}
+a{color:var(--accent)}
+button,input,textarea,select{font:inherit;color:inherit}
+button{cursor:pointer}
+button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible,a:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.app{display:grid;grid-template-columns:var(--rail) minmax(0,1fr);min-height:100%}
+.rail{border-right:1px solid var(--line);background:var(--panel);padding-block:18px 24px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:12px;position:sticky;top:0;height:100vh;overflow:auto}
+.brand{font-weight:600;font-size:15px;letter-spacing:-.01em;margin:0 0 2px}
+.brand small{display:block;font-weight:400;color:var(--ink-3);font-size:12px;letter-spacing:0}
+.me{display:flex;align-items:center;gap:8px;margin:14px 0 16px;padding:8px 10px;border:1px solid var(--line);border-radius:var(--r);font-size:13px;color:var(--ink-2)}
+.me img{width:22px;height:22px;border-radius:50%;flex:none}
+.me b{color:var(--ink);font-weight:500}
+.nav{display:flex;flex-direction:column;gap:2px;margin:0;padding:0;list-style:none}
+.nav button{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;text-align:left;border:0;background:transparent;border-radius:var(--r);padding:7px 10px;font-size:14px;color:var(--ink-2)}
+.nav button:hover{background:var(--line-2);color:var(--ink)}
+.nav button[aria-current="true"]{background:var(--accent-soft);color:var(--ink);font-weight:500}
+.nav .n{font-family:var(--mono);font-size:12px;color:var(--ink-3);font-variant-numeric:tabular-nums}
+.nav .n b{color:var(--accent);font-weight:500}
+.nav .sep{height:1px;background:var(--line);margin:8px 2px}
+.main{min-width:0;padding-block:20px 80px;padding-left:max(24px,env(safe-area-inset-left,0px));padding-right:max(24px,env(safe-area-inset-right,0px))}
+.col{max-width:860px;margin:0 auto}
+.areaselect{display:none;margin-bottom:12px}
+.areaselect select{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:var(--r);background:var(--panel)}
+h1{font-size:22px;font-weight:600;letter-spacing:-.015em;margin:0 0 4px;text-wrap:balance}
+.lede{color:var(--ink-2);margin:0 0 18px;font-size:14px}
+.lede b{color:var(--ink);font-weight:500}
+.notice{border:1px solid var(--line);background:var(--panel);border-radius:var(--r);padding:10px 14px;margin:0 0 18px;font-size:13.5px;color:var(--ink-2)}
+.notice.warn{border-color:var(--warn);background:var(--warn-soft);color:var(--ink)}
+.group{margin:26px 0 10px;display:flex;align-items:baseline;gap:10px}
+.group h2{font-size:13px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--ink-3);margin:0}
+.group small{color:var(--ink-3);font-size:12px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:16px 18px 14px;margin:0 0 12px;display:grid;gap:10px}
+.card.done{border-color:color-mix(in srgb,var(--ok) 45%,var(--line))}
+.head{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.id{font-family:var(--mono);font-size:12.5px;color:var(--ink-2);font-weight:500}
+.chip{font-size:11.5px;font-weight:500;padding:2px 8px;border-radius:999px;background:var(--mute-soft);color:var(--ink-2);white-space:nowrap}
+.chip.interview,.chip.debate{background:var(--warn-soft);color:var(--warn)}
+.chip.verified{background:var(--ok-soft);color:var(--ok)}
+.chip.aspirational{background:var(--bad-soft);color:var(--bad)}
+.chip.rejected{background:var(--mute-soft);color:var(--ink-3);text-decoration:line-through}
+.chip.mine{margin-left:auto;background:var(--ok-soft);color:var(--ok)}
+.rule{font-size:16px;font-weight:500;line-height:1.5;margin:0;letter-spacing:-.005em}
+.rule.struck{text-decoration:line-through;color:var(--ink-2)}
+.detail{margin:0;color:var(--ink-2);font-size:14px}
+.en{margin:0;padding:8px 12px;border-left:3px solid var(--accent);background:var(--accent-soft);border-radius:0 var(--r) var(--r) 0;font:13.5px/1.55 var(--mono);color:var(--ink)}
+.en b{font-family:var(--sans);font-size:11px;font-weight:600;letter-spacing:.05em;color:var(--accent);display:block;margin-bottom:2px}
+.en ol{margin:4px 0 0;padding-left:18px}
+.en li[data-sel="true"]{font-weight:600}
+.kv{display:grid;grid-template-columns:52px minmax(0,1fr);gap:4px 10px;font-size:13.5px}
+.kv dt{color:var(--ink-3);font-size:12px;font-weight:500;letter-spacing:.03em;padding-top:2px}
+.kv dd{margin:0;min-width:0}
+.q{margin:0;font-size:13.5px;color:var(--ink-2)}
+.q a{text-decoration:none;font-family:var(--mono);font-size:12.5px}
+.q .who{color:var(--ink-3)}
+.code{font-size:13.5px}
+.code .v{font-weight:500}
+.code .v.verified{color:var(--ok)}.code .v.aspirational{color:var(--bad)}.code .v.interview{color:var(--warn)}
+.code details{margin-top:2px}
+.code summary{cursor:pointer;color:var(--ink-3);font-size:12.5px}
+.code .reason{color:var(--ink-2);margin:4px 0 0;font-size:13px}
+.code ul{margin:4px 0 0;padding-left:18px;font-family:var(--mono);font-size:12px;color:var(--ink-2)}
+.question{margin:2px 0 0;padding:10px 12px;border-left:3px solid var(--warn);background:var(--warn-soft);border-radius:0 var(--r) var(--r) 0;font-size:14px}
+.question b{font-weight:600}
+.ex{display:grid;gap:6px}
+.ex .intro{margin:0;font-size:13px;color:var(--ink-2)}
+.exgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,280px),1fr));gap:8px}
+.exblk{border:1px solid var(--line);border-radius:6px;overflow:hidden;min-width:0;background:var(--bg)}
+.exblk h4{margin:0;padding:4px 10px;font-size:12px;font-weight:500;background:var(--line-2);color:var(--ink-2);display:flex;gap:6px;align-items:baseline}
+.exblk h4 .k{font-family:var(--mono);color:var(--accent)}
+.exblk pre{margin:0;padding:8px 10px;font:12.5px/1.5 var(--mono);overflow-x:auto;white-space:pre;color:var(--ink)}
+.exblk[data-sel="true"]{border-color:var(--accent)}
+.explain{border:1px solid var(--line);border-radius:6px;background:var(--bg);padding:12px 14px;display:grid;gap:10px}
+.explain h3{margin:0;font-size:12px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--ink-3)}
+.explain p{margin:0;font-size:14px;line-height:1.6}
+.explain p.ask{font-weight:500}
+.explain .exgrid{grid-template-columns:1fr}
+.evlist{display:grid;gap:8px;margin:0;padding:0;list-style:none}
+.evlist li{display:grid;grid-template-columns:auto minmax(0,1fr);gap:2px 10px;font-size:13.5px}
+.evlist .pr{font-family:var(--mono);font-size:12.5px;white-space:nowrap}
+.evlist .st{font-size:11px;font-weight:500;padding:1px 6px;border-radius:999px;margin-left:4px;background:var(--mute-soft);color:var(--ink-2)}
+.evlist .st.merged{background:var(--ok-soft);color:var(--ok)}
+.evlist .st.open{background:var(--warn-soft);color:var(--warn)}
+.evlist .qt{grid-column:2;color:var(--ink-3);font-size:12.5px}
+.explain .ver{font-size:12.5px;color:var(--ink-3)}
+.opts{display:flex;flex-wrap:wrap;gap:6px}
+.opt{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:var(--panel);border-radius:999px;padding:5px 12px;font-size:13.5px;color:var(--ink-2);transition:border-color .12s,background .12s}
+.opt:hover:not(:disabled){border-color:var(--accent);color:var(--ink)}
+.opt[aria-pressed="true"]{border-color:var(--accent);background:var(--accent-soft);color:var(--ink);font-weight:500}
+.opt:disabled{opacity:.55;cursor:default}
+.opt .k{font-family:var(--mono);font-size:11px;color:var(--ink-3)}
+.opt[aria-pressed="true"] .k{color:var(--accent)}
+.tally{display:grid;gap:4px;font-size:12.5px;color:var(--ink-2)}
+.bar{display:flex;height:6px;border-radius:3px;overflow:hidden;background:var(--line-2)}
+.bar span{display:block;height:100%}
+.legend{display:flex;flex-wrap:wrap;gap:4px 14px}
+.legend i{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:5px;vertical-align:middle}
+.legend .names{color:var(--ink-3)}
+.memo{display:flex;gap:6px;align-items:flex-start}
+.memo textarea{flex:1;min-width:0;resize:vertical;min-height:34px;padding:6px 10px;border:1px solid var(--line);border-radius:var(--r);background:var(--bg);font-size:13.5px;line-height:1.45}
+.btn{border:1px solid var(--line);background:var(--panel);border-radius:var(--r);padding:6px 12px;font-size:13px;color:var(--ink-2)}
+.btn:hover:not(:disabled){border-color:var(--accent);color:var(--ink)}
+.btn:disabled{opacity:.5;cursor:default}
+.btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.thread{border-top:1px dashed var(--line);padding-top:8px;display:grid;gap:6px}
+.thread summary{cursor:pointer;color:var(--ink-3);font-size:12.5px;list-style:none}
+.thread summary::-webkit-details-marker{display:none}
+.post{display:grid;grid-template-columns:22px minmax(0,1fr) auto;gap:8px;align-items:start;font-size:13.5px}
+.post img{width:22px;height:22px;border-radius:50%}
+.post .meta{color:var(--ink-3);font-size:12px}
+.post .txt{white-space:pre-wrap;word-break:break-word}
+.post .del{border:0;background:none;color:var(--ink-3);font-size:12px;padding:0 4px}
+.post .del:hover{color:var(--bad)}
+.compose{display:flex;gap:6px}
+.compose input{flex:1;min-width:0;padding:6px 10px;border:1px solid var(--line);border-radius:var(--r);background:var(--bg);font-size:13.5px}
+.pform{background:var(--panel);border:1px solid var(--accent);border-radius:8px;padding:16px 18px;margin:0 0 18px;display:grid;gap:10px}
+.pform h2{margin:0;font-size:15px;font-weight:600}
+.pform p{margin:0;font-size:13px;color:var(--ink-2)}
+.pform label{display:grid;gap:4px;font-size:12.5px;color:var(--ink-2);font-weight:500}
+.pform input,.pform textarea,.pform select{padding:7px 10px;border:1px solid var(--line);border-radius:var(--r);background:var(--bg);font-size:14px;color:var(--ink);font-weight:400}
+.pform textarea{min-height:64px;resize:vertical;line-height:1.5}
+.pform .row{display:grid;grid-template-columns:minmax(0,200px) minmax(0,1fr);gap:10px}
+.pform .act{display:flex;gap:8px;align-items:center}
+.chip.proposal{background:var(--accent-soft);color:var(--accent)}
+.refs{margin:0;font-size:13px;color:var(--ink-2)}
+@media (max-width:860px){.pform .row{grid-template-columns:1fr}}
+.saved{font-size:12px;color:var(--ok);align-self:center;min-width:3em}
+.sum{width:100%;border-collapse:collapse;font-size:13.5px;background:var(--panel);border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.sum th,.sum td{padding:8px 10px;border-bottom:1px solid var(--line-2);text-align:left;vertical-align:top}
+.sum th{font-size:12px;color:var(--ink-3);font-weight:500;letter-spacing:.03em;background:var(--line-2)}
+.sum td.n,.sum th.n{text-align:right;font-variant-numeric:tabular-nums;font-family:var(--mono);font-size:12.5px}
+.sum tr:last-child td{border-bottom:0}
+.sum .split{color:var(--bad);font-weight:500}
+.sum .agree{color:var(--ok);font-weight:500}
+.tablewrap{overflow-x:auto}
+.empty{color:var(--ink-3);font-size:13.5px}
+.toast{position:fixed;left:50%;bottom:calc(18px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:8px 14px;border-radius:999px;font-size:13px;opacity:0;pointer-events:none;transition:opacity .2s}
+.toast.show{opacity:1}
+@media (max-width:860px){
+  .app{grid-template-columns:1fr}
+  .rail{display:none}
+  .areaselect{display:block}
+  .main{padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+  .kv{grid-template-columns:1fr}
+  .kv dt{padding-top:0}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<div class="app">
+  <nav class="rail" aria-label="영역">
+    <p class="brand">optimum-rbln 룰 리뷰<small id="brand-sub">채굴 2026-10-21 · 코드 대조 dev tip</small></p>
+    <div class="me" id="me" hidden><img alt="" id="me-img"><span><b id="me-name">…</b><span id="me-role"></span></span></div>
+    <ul class="nav" id="nav"></ul>
+  </nav>
+  <main class="main">
+    <div class="col">
+      <div class="areaselect"><label for="area-sel" hidden>영역</label><select id="area-sel"></select></div>
+      <div id="view"><p class="empty">룰을 불러오는 중…</p></div>
+    </div>
+  </main>
+</div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+(() => {
+"use strict";
+const $ = (s, r = document) => r.querySelector(s);
+const el = (tag, attrs = {}, ...kids) => {
+  const n = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (v == null || v === false) continue;
+    if (k === "class") n.className = v; else if (k === "html") n.innerHTML = v; else if (k.startsWith("on")) n.addEventListener(k.slice(2), v);
+    else if (k === "text") n.textContent = v; else n.setAttribute(k, v === true ? "" : v);
+  }
+  for (const k of kids.flat()) if (k != null) n.append(k.nodeType ? k : document.createTextNode(String(k)));
+  return n;
+};
+const CONFIRM = [["agree", "맞다"], ["disagree", "틀리다"], ["conditional", "조건부로 맞다"], ["unneeded", "필요 없는 룰이다"], ["unknown", "모른다"], ["forgot", "기억나지 않는다"]];
+const TAIL = [["unneeded", "필요 없는 룰이다"], ["unknown", "모른다"], ["forgot", "기억나지 않는다"]];
+const STATUS_KO = { interview: "결정 필요", verified: "코드 일치", aspirational: "코드 불일치", supported: "판단형", rejected: "폐기 제안", debate: "미해결 논쟁", proposal: "팀원 제안" };
+const GROUP_ORDER = ["proposal", "interview", "debate", "aspirational", "verified", "supported", "rejected"];
+const GROUP_NOTE = { proposal: "팀원이 직접 제안한 룰입니다. 동의 여부를 고르고 댓글로 다듬어 주세요.", interview: "근거가 서로 반대이거나 코드에 두 방식이 공존합니다. 어느 쪽인지 골라 주세요.", debate: "PR 토론에서 결론이 나지 않은 질문입니다.", aspirational: "팀 의도는 분명하지만 현재 코드가 따르지 않는 룰입니다. 채택하면 고칠 코드가 생깁니다.", verified: "현재 코드가 따르는 룰입니다.", supported: "코드로 검사할 수 없는 판단형 룰입니다.", rejected: "코드가 일관되게 다르게 하거나 룰의 대상이 사라져 폐기를 제안합니다. 폐기에 동의하면 '맞다'를 고르세요." };
+const PALETTE = ["#2b5fd9", "#b4432f", "#9a6700", "#1f7a4d", "#7a4fc9", "#5b6b85"];
+const PR = "https://github.com/rebellions-sw/optimum-rbln/pull/";
+const S = { data: null, areaKey: null, db: null, user: null, uid: null, canWrite: null, answers: new Map(), notes: new Map(), proposals: [], pdraft: {}, unsub: [], profiles: {}, writes: new Map(), summary: null };
+
+const esc = s => String(s ?? "");
+const tok = key => key.replace(/\//g, "-");
+const safeId = s => String(s).replace(/[^A-Za-z0-9_\-.~:@+]/g, "-");
+const toast = msg => { const t = $("#toast"); t.textContent = msg; t.classList.add("show"); clearTimeout(toast.h); toast.h = setTimeout(() => t.classList.remove("show"), 1800); };
+
+function areas() {
+  const base = S.data.areas.map(a => ({ key: a.key, label: a.label, items: S.data.items.filter(i => i.area === a.key) })).filter(a => a.items.length);
+  if (S.data.debates.length) base.push({ key: "debates", label: "미해결 논쟁", items: S.data.debates });
+  base.push({ key: "proposals", label: "룰 제안", items: S.proposals });
+  return base;
+}
+function itemsOf(key) { const a = areas().find(a => a.key === key); return a ? a.items : []; }
+function optionsOf(item) {
+  if (item.kind === "choice" && item.options && item.options.length) {
+    const letters = "ABC";
+    return [...item.options.map((o, i) => [letters[i], o, letters[i]]), ...TAIL.map(([k, v]) => [k, v, null])];
+  }
+  return CONFIRM.map(([k, v]) => [k, v, null]);
+}
+function myAnswer(id) { return S.uid ? S.answers.get(id + "__" + safeId(S.uid)) : null; }
+
+/* ---------- rendering ---------- */
+function renderNav() {
+  const nav = $("#nav"); nav.replaceChildren();
+  const sel = $("#area-sel"); sel.replaceChildren();
+  const li = (key, label, n, mine) => {
+    const b = el("button", { type: "button", onclick: () => go(key), "aria-current": String(S.areaKey === key) }, el("span", { text: label }),
+      n != null ? el("span", { class: "n", html: (mine != null ? `<b>${mine}</b>/` : "") + n }) : null);
+    nav.append(el("li", {}, b));
+    sel.append(el("option", { value: key, text: label + (n != null ? ` (${n})` : ""), selected: S.areaKey === key }));
+  };
+  li("summary", "집계", null);
+  nav.append(el("li", { class: "sep" }));
+  for (const a of areas()) li(a.key, a.label, a.items.length, S.uid ? a.items.filter(i => myAnswer(i.id)?.answer).length : null);
+  sel.onchange = () => go(sel.value);
+}
+function go(key) {
+  if (!areas().some(a => a.key === key) && key !== "summary") key = areas()[0].key;
+  S.areaKey = key;
+  try { location.hash = tok(key); } catch (e) {}
+  for (const u of S.unsub) u(); S.unsub = []; S.answers.clear(); S.notes.clear();
+  renderNav();
+  if (key === "summary") { renderSummary(); return; }
+  renderArea();
+  subscribe(key);
+  window.scrollTo({ top: 0, behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+}
+function renderArea() {
+  const a = areas().find(a => a.key === S.areaKey); const v = $("#view");
+  const focusId = document.activeElement && document.activeElement.id; v.replaceChildren();
+  if (a.key === "proposals") v.append(el("h1", { text: a.label }), el("p", { class: "lede", html: `목록에 없는데 우리 팀이 지키는 룰이 떠오르면 여기에 남겨 주세요. 지금까지 <b>${a.items.length}</b>개가 제안됐습니다. 제안마다 다른 사람이 동의 여부를 고르고 댓글을 달 수 있습니다.` }));
+  else v.append(el("h1", { text: a.label }), el("p", { class: "lede", html: `룰 <b>${a.items.length}</b>개. 각 룰에서 하나를 고르고, 틀리거나 조건부면 메모에 한 줄 적어 주세요. 다른 사람의 응답은 선택 아래 막대에 바로 보입니다.` }));
+  if (S.db && S.uid == null) v.append(el("p", { class: "notice warn", text: "로그인 정보를 확인할 수 없어 응답을 저장할 수 없습니다. claude.ai에 회사 계정으로 로그인한 뒤 다시 열어 주세요. 읽기는 됩니다." }));
+  else if (S.canWrite === false) v.append(el("p", { class: "notice warn", text: "이 페이지에 보기 권한만 있어 응답을 저장할 수 없습니다. 페이지 소유자에게 Contributor(참여자) 이상 권한을 요청해 주세요. 읽기는 됩니다." }));
+  else if (!S.db && S.dbResolved) v.append(el("p", { class: "notice warn", text: "공유 저장소에 연결하지 못했습니다. 응답이 저장되지 않습니다." }));
+  if (a.key === "proposals") { v.append(proposalForm()); if (!a.items.length) v.append(el("p", { class: "empty", text: "아직 제안된 룰이 없습니다. 위 양식으로 첫 번째 룰을 남겨 주세요." })); }
+  const groups = new Map();
+  for (const it of a.items) { const g = it.status; if (!groups.has(g)) groups.set(g, []); groups.get(g).push(it); }
+  for (const g of GROUP_ORDER) {
+    if (!groups.has(g)) continue;
+    const list = groups.get(g);
+    v.append(el("div", { class: "group" }, el("h2", { text: STATUS_KO[g] }), el("small", { text: `${list.length}개 · ${GROUP_NOTE[g]}` })));
+    for (const it of list) v.append(card(it));
+  }
+  if (focusId) { const f = document.getElementById(focusId); if (f) f.focus(); }
+}
+function proposalForm() {
+  const d = S.pdraft; const dis = !canAnswer();
+  const save = k => e => { d[k] = e.target.value; };
+  const area = el("select", { id: "p-area", disabled: dis, onchange: save("area") },
+    ...S.data.areas.map(x => el("option", { value: x.key, text: x.label, selected: d.area === x.key })), el("option", { value: "other", text: "기타", selected: d.area === "other" }));
+  if (!d.area) d.area = S.data.areas[0].key;
+  const rule = el("input", { id: "p-rule", type: "text", maxlength: "200", placeholder: "예: 새 모델 PR에는 test_transformers.py에 테스트 클래스를 함께 추가한다", disabled: dis, oninput: save("rule") }); rule.value = d.rule || "";
+  const why = el("textarea", { id: "p-why", maxlength: "1000", placeholder: "왜 필요한지, 어떤 상황에서 지키는지, 예외가 있다면 무엇인지", disabled: dis, oninput: save("why") }); why.value = d.why || "";
+  const refs = el("input", { id: "p-refs", type: "text", maxlength: "300", placeholder: "관련 PR 번호나 파일 (선택) 예: #597, configuration_utils.py", disabled: dis, oninput: save("refs") }); refs.value = d.refs || "";
+  const btn = el("button", { type: "button", class: "btn primary", text: "제안 남기기", disabled: dis, onclick: () => submitProposal(btn) });
+  return el("section", { class: "pform", "aria-label": "룰 제안 양식" }, el("h2", { text: "새 룰 제안" }),
+    el("p", { text: "한 제안에 룰 하나만 적어 주세요. 문장은 '…한다 / …하지 않는다'로 끝나면 리뷰하기 쉽습니다." }),
+    el("div", { class: "row" }, el("label", {}, "영역", area), el("label", {}, "룰 (필수)", rule)),
+    el("label", {}, "이유 · 예시", why), el("label", {}, "근거", refs),
+    el("div", { class: "act" }, btn, dis ? el("span", { class: "saved", text: "응답 권한이 있어야 제안할 수 있습니다." }) : null));
+}
+async function submitProposal(btn) {
+  const d = S.pdraft; const rule = (d.rule || "").trim();
+  if (!rule) { toast("룰 문장을 적어 주세요."); document.getElementById("p-rule")?.focus(); return; }
+  btn.disabled = true;
+  try {
+    await S.db.collection("proposals").add({ uid: S.uid, area: d.area || "other", rule, why: (d.why || "").trim(), refs: (d.refs || "").trim(), at: new Date().toISOString() });
+    S.pdraft = { area: d.area }; toast("제안을 남겼습니다.");
+  } catch (e) { handleWriteError(e); }
+  btn.disabled = false;
+}
+async function deleteProposal(it) {
+  try { await S.db.doc("proposals/" + it._doc).delete(); toast("제안을 삭제했습니다."); } catch (e) { handleWriteError(e); }
+}
+function subscribeProposals() {
+  if (!S.db || S.punsub) return;
+  const label = k => (S.data.areas.find(x => x.key === k) || { label: "기타" }).label;
+  S.punsub = S.db.collection("proposals").onSnapshot(snap => {
+    S.proposals = snap.docs.map(doc => { const x = doc.data();
+      return { id: "NEW-" + doc.id, _doc: doc.id, area: "proposals", kind: "confirm", status: "proposal", rule: x.rule, detail: x.why || null,
+               refs: x.refs || "", author: x.uid, at: x.at, topic_label: label(x.area), evidence: [] }; })
+      .sort((p, q) => String(q.at).localeCompare(String(p.at)));
+    renderNav();
+    if (S.areaKey === "proposals") renderArea();
+  }, e => {});
+}
+function card(it) {
+  const mine = myAnswer(it.id);
+  const c = el("article", { class: "card" + (mine?.answer ? " done" : ""), id: "card-" + it.id, "data-item": it.id });
+  const head = el("div", { class: "head" }, el("span", { class: "id", text: it.id }), el("span", { class: "chip " + it.status, text: STATUS_KO[it.status] }));
+  if (it.n_prs) head.append(el("span", { class: "chip", text: `PR ${it.n_prs}건` + (it.n_users > 1 ? ` · 리뷰어 ${it.n_users}명` : "") }));
+  if (it.status === "proposal") {
+    head.append(el("span", { class: "chip", text: it.topic_label }));
+    const who = el("span", { class: "chip", text: `제안 · ${fmt(it.at)}` }); head.append(who);
+    if (S.user) S.user.profiles([it.author]).then(ps => { who.textContent = `${(ps[it.author] && ps[it.author].name) || (it.author === S.uid ? "나" : "팀원")} 제안 · ${fmt(it.at)}`; }).catch(() => {});
+    if (it.author === S.uid) head.append(el("button", { type: "button", class: "btn", text: "제안 삭제", onclick: () => deleteProposal(it) }));
+  }
+  if (it.group && it.group.length > 1) head.append(el("span", { class: "chip", text: "같은 질문: " + it.group.filter(g => g.id !== it.id).map(g => g.id).join(", "), title: "같은 질문을 공유하는 룰. 한 번 답하면 함께 기록됩니다." }));
+  if (mine?.answer) head.append(el("span", { class: "chip mine", text: "응답함" }));
+  c.append(head);
+  c.append(el("p", { class: "rule" + (it.status === "rejected" ? " struck" : ""), text: it.rule }));
+  if (it.detail) c.append(el("p", { class: "detail", text: it.detail }));
+  if (it.refs) c.append(el("p", { class: "refs", text: "근거: " + it.refs }));
+  if (it.rule_en) c.append(el("div", { class: "en" }, el("b", { text: "CLAUDE.md RULE (EN)" }), it.rule_en));
+  else if (it.options_en?.length) c.append(el("div", { class: "en" }, el("b", { text: "CLAUDE.md RULE (EN) — 고른 선택지에 따라" }),
+    el("ol", { type: "A" }, ...it.options_en.map((t, i) => el("li", { "data-opt": "ABC"[i], "data-sel": String(mine?.answer === "ABC"[i]), text: t })))));
+  if (it.status === "rejected" && it.refined) c.append(el("p", { class: "detail", html: "<b>현행:</b> " }, it.refined));
+  if (it.explain) {
+    const x = it.explain, box = el("section", { class: "explain", "aria-label": "이 룰이 뜻하는 것" }, el("h3", { text: "이 룰이 뜻하는 것" }));
+    (x.summary || []).forEach((t, i, a) => box.append(el("p", { class: i === a.length - 1 && /물어보는 것/.test(t) ? "ask" : "", text: t })));
+    if (x.examples?.length) {
+      const grid = el("div", { class: "exgrid" });
+      for (const e of x.examples) grid.append(el("div", { class: "exblk" }, el("h4", {}, el("span", { text: e.label })), el("pre", {}, el("code", { text: e.code }))));
+      box.append(grid);
+    }
+    if (x.evidence?.length) {
+      box.append(el("h3", { text: "근거 PR" }));
+      const ul = el("ul", { class: "evlist" });
+      for (const e of x.evidence) {
+        const st = { merged: "머지됨", open: "열려 있음", closed: "닫힘(미머지)" }[e.state] || e.state;
+        ul.append(el("li", {}, el("span", { class: "pr" }, el("a", { href: PR + e.pr, target: "_blank", rel: "noopener", text: "#" + e.pr }), el("span", { class: "st " + e.state, text: st })),
+          el("span", { text: `${e.what}${e.user ? " (" + e.user + (e.date ? ", " + e.date : "") + ")" : ""}` }),
+          e.quote ? el("span", { class: "qt", text: "“" + e.quote + "”" }) : null));
+      }
+      box.append(ul);
+    }
+    if (x.verified) box.append(el("p", { class: "ver", text: x.verified }));
+    c.append(box);
+  }
+  const kv = el("dl", { class: "kv" });
+  if (it.evidence && it.evidence.length) {
+    kv.append(el("dt", { text: "근거" }));
+    const dd = el("dd");
+    for (const e of it.evidence) {
+      const p = el("p", { class: "q" }, el("a", { href: PR + e.pr, target: "_blank", rel: "noopener", text: "#" + e.pr }));
+      if (e.user) p.append(" ", el("span", { class: "who", text: "(" + e.user + ")" }));
+      if (e.quote) p.append(": “" + e.quote + "”");
+      dd.append(p);
+    }
+    if (it.rule_ids && it.rule_ids.length) dd.append(el("p", { class: "q" }, el("span", { class: "who", text: "관련 룰: " + it.rule_ids.join(", ") })));
+    kv.append(dd);
+  }
+  if (it.code) {
+    kv.append(el("dt", { text: "코드" }));
+    const d = el("div", { class: "code" }, el("span", { class: "v " + it.code.verdict, text: it.code.verdict_ko }), ` — 준수 ${it.code.compliant ?? "?"} / 위반 ${it.code.violations ?? "?"}`);
+    if (it.code.reason || (it.code.violations_known && it.code.violations_known.length)) {
+      const det = el("details", {}, el("summary", { text: "근거 보기" }));
+      if (it.code.reason) det.append(el("p", { class: "reason", text: it.code.reason }));
+      if (it.code.violations_known?.length) det.append(el("ul", {}, ...it.code.violations_known.map(v => el("li", { text: v }))));
+      d.append(det);
+    }
+    kv.append(el("dd", {}, d));
+  }
+  c.append(kv);
+  if (it.kind === "choice" && it.question) c.append(el("p", { class: "question" }, el("b", { text: "질문 " }), it.question));
+  if (it.kind === "choice" && it.example && it.example.examples?.length) {
+    const ex = el("div", { class: "ex" });
+    if (it.example.intro) ex.append(el("p", { class: "intro", text: it.example.intro }));
+    const grid = el("div", { class: "exgrid" });
+    it.example.examples.forEach((code, i) => {
+      const letter = "ABC"[i]; const label = (it.options || [])[i] || "";
+      grid.append(el("div", { class: "exblk", "data-opt": letter, "data-sel": String(mine?.answer === letter) },
+        el("h4", {}, el("span", { class: "k", text: letter }), el("span", { text: label })), el("pre", {}, el("code", { text: code }))));
+    });
+    ex.append(grid); c.append(ex);
+  }
+  const opts = el("div", { class: "opts", role: "group", "aria-label": "응답" });
+  for (const [k, label, letter] of optionsOf(it)) {
+    const b = el("button", { type: "button", class: "opt", "data-k": k, "aria-pressed": String(mine?.answer === k), disabled: !canAnswer(), onclick: () => answer(it, k) });
+    if (letter) b.append(el("span", { class: "k", text: letter }));
+    b.append(label); opts.append(b);
+  }
+  c.append(opts);
+  c.append(el("div", { class: "tally", "data-tally": it.id }));
+  const ta = el("textarea", { id: "memo-" + it.id, placeholder: "메모 (틀리거나 조건부일 때 이유, 또는 이 룰을 어기는 파일)", disabled: !canAnswer() });
+  ta.value = mine?.memo || "";
+  const saved = el("span", { class: "saved" });
+  const save = el("button", { type: "button", class: "btn", text: "메모 저장", disabled: !canAnswer(), onclick: () => saveMemo(it, ta.value, saved) });
+  c.append(el("div", { class: "memo" }, ta, save, saved));
+  const thread = el("details", { class: "thread", "data-thread": it.id }, el("summary", { text: "댓글" }));
+  c.append(thread);
+  requestAnimationFrame(() => { paintTally(it); paintThread(it); });
+  return c;
+}
+function canAnswer() { return !!(S.db && S.uid && S.canWrite !== false); }
+
+/* ---------- tallies & threads ---------- */
+function answersFor(id) { const out = []; for (const a of S.answers.values()) if (a.item === id && a.answer) out.push(a); return out; }
+async function paintTally(it) {
+  const host = document.querySelector(`[data-tally="${CSS.escape(it.id)}"]`); if (!host) return;
+  const seq = (host._seq = (host._seq || 0) + 1);
+  const rows = answersFor(it.id);
+  if (!rows.length) { host.replaceChildren(el("span", { text: "아직 응답이 없습니다." })); return; }
+  const opts = optionsOf(it); const counts = new Map(opts.map(o => [o[0], []]));
+  for (const r of rows) (counts.get(r.answer) || counts.set(r.answer, []).get(r.answer)).push(r.uid);
+  const ids = [...new Set(rows.map(r => r.uid))];
+  let names = {}; if (S.user) try { names = await S.user.profiles(ids); } catch (e) {}
+  if (host._seq !== seq || !host.isConnected) return;  // a newer paint superseded this one
+  const bar = el("div", { class: "bar" }), legend = el("div", { class: "legend" });
+  opts.forEach(([k, label], i) => {
+    const who = counts.get(k) || []; if (!who.length) return;
+    const color = PALETTE[i % PALETTE.length];
+    bar.append(el("span", { style: `width:${(who.length / rows.length) * 100}%;background:${color}` }));
+    const n = who.map(u => (names[u]?.name) || (u === S.uid ? "나" : "익명")).join(", ");
+    legend.append(el("span", {}, el("i", { style: `background:${color}` }), `${label} ${who.length} `, el("span", { class: "names", text: n })));
+  });
+  host.replaceChildren(bar, legend, el("span", { text: `응답 ${rows.length}명` }));
+}
+async function paintThread(it) {
+  const host = document.querySelector(`[data-thread="${CSS.escape(it.id)}"]`); if (!host) return;
+  const posts = [...S.notes.values()].filter(n => n.item === it.id).sort((a, b) => String(a.at).localeCompare(String(b.at)));
+  const seq = (host._seq = (host._seq || 0) + 1);
+  let names = {}; if (S.user && posts.length) try { names = await S.user.profiles([...new Set(posts.map(p => p.uid))]); } catch (e) {}
+  if (host._seq !== seq || !host.isConnected) return;  // a newer paint superseded this one
+  const prevInp = host.querySelector("input"); const draft = prevInp ? prevInp.value : ""; const hadFocus = prevInp && document.activeElement === prevInp;
+  const wasOpen = host.open; host.replaceChildren(el("summary", { text: posts.length ? `댓글 ${posts.length}` : "댓글 달기" }));
+  if (posts.length) host.open = true; else host.open = wasOpen;
+  for (const p of posts) {
+    const prof = names[p.uid] || {};
+    const row = el("div", { class: "post" }, el("img", { alt: "", src: prof.avatarUrl || "" }),
+      el("div", {}, el("div", { class: "meta", text: `${prof.name || (p.uid === S.uid ? "나" : "익명")} · ${fmt(p.at)}` }), el("div", { class: "txt", text: p.text })),
+      p.uid === S.uid ? el("button", { type: "button", class: "del", text: "삭제", onclick: () => delNote(p) }) : el("span"));
+    host.append(row);
+  }
+  if (canAnswer()) {
+    const inp = el("input", { type: "text", id: "note-" + it.id, placeholder: "이 룰에 대한 의견이나 질문" });
+    const b = el("button", { type: "button", class: "btn", text: "남기기", onclick: () => addNote(it, inp) });
+    inp.addEventListener("keydown", e => { if (e.key === "Enter" && !e.isComposing) { e.preventDefault(); addNote(it, inp); } });
+    host.append(el("div", { class: "compose" }, inp, b));
+    if (draft) inp.value = draft;
+    if (hadFocus) inp.focus();
+  }
+}
+const fmt = iso => { try { const d = new Date(iso); return d.toLocaleDateString("ko-KR", { month: "numeric", day: "numeric" }) + " " + d.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" }); } catch (e) { return ""; } };
+
+/* ---------- writes (one at a time per doc) ---------- */
+function chain(key, fn) { const prev = S.writes.get(key) || Promise.resolve(); const p = prev.catch(() => {}).then(fn); S.writes.set(key, p); return p; }
+async function answer(it, k) {
+  if (!canAnswer()) return;
+  const targets = it.group && it.group.length ? it.group : [{ id: it.id, area: it.area || S.areaKey }];
+  for (const t of targets) {
+    const docId = t.id + "__" + safeId(S.uid); const cur = S.answers.get(docId) || {};
+    const body = { item: t.id, area: t.area || S.areaKey, uid: S.uid, answer: k, memo: cur.memo || "", at: new Date().toISOString() };
+    if (t.area === S.areaKey || t.id === it.id) { S.answers.set(docId, body); const tgt = itemsOf(S.areaKey).find(x => x.id === t.id); if (tgt) paintCard(tgt); }
+    try { await chain(docId, () => S.db.doc("answers/" + docId).set(body)); }
+    catch (e) { handleWriteError(e); S.answers.delete(docId); paintCard(it); return; }
+  }
+  if (targets.length > 1) toast(`같은 질문의 ${targets.length}개 룰에 함께 기록했습니다.`);
+}
+async function saveMemo(it, text, savedEl) {
+  if (!canAnswer()) return;
+  const docId = it.id + "__" + safeId(S.uid); const cur = S.answers.get(docId) || { item: it.id, area: S.areaKey, uid: S.uid, answer: "" };
+  if ((cur.memo || "") === text.trim()) { savedEl.textContent = "저장됨"; return; }
+  const body = { ...cur, memo: text.trim(), at: new Date().toISOString() };
+  S.answers.set(docId, body);
+  try { await chain(docId, () => S.db.doc("answers/" + docId).set(body)); savedEl.textContent = "저장됨"; setTimeout(() => savedEl.textContent = "", 1500); }
+  catch (e) { handleWriteError(e); savedEl.textContent = "실패"; }
+}
+async function addNote(it, inp) {
+  const text = inp.value.trim(); if (!text || !canAnswer()) return;
+  inp.value = ""; inp.disabled = true;
+  try { await S.db.collection("notes").add({ item: it.id, area: S.areaKey, uid: S.uid, text, at: new Date().toISOString() }); }
+  catch (e) { handleWriteError(e); inp.value = text; }
+  inp.disabled = false; inp.focus();
+}
+async function delNote(p) { try { await S.db.doc("notes/" + p._id).delete(); } catch (e) { handleWriteError(e); } }
+function handleWriteError(e) {
+  const code = e && e.code;
+  if (code === "invalid_argument") { S.canWrite = false; toast("이 계정은 쓰기 권한이 없어 읽기 전용으로 전환합니다."); renderArea(); }
+  else if (code === "quota_exceeded") toast("저장 용량이 가득 찼습니다. 관리자에게 알려 주세요.");
+  else toast("저장에 실패했습니다. 잠시 후 다시 시도해 주세요.");
+}
+function paintCard(it) { const old = document.getElementById("card-" + it.id); if (old) old.replaceWith(card(it)); renderNav(); }
+
+/* ---------- subscriptions ---------- */
+function subscribe(key) {
+  if (!S.db) return;
+  const items = itemsOf(key);
+  const u1 = S.db.collection("answers").where("area", "==", key).onSnapshot(snap => {
+    S.answers.clear(); for (const d of snap.docs) S.answers.set(d.id, d.data());
+    for (const it of items) { const c = document.getElementById("card-" + it.id); if (!c) continue; const mine = myAnswer(it.id);
+      c.classList.toggle("done", !!mine?.answer);
+      c.querySelectorAll(".opt").forEach(b => b.setAttribute("aria-pressed", String(mine?.answer === b.dataset.k)));
+      c.querySelectorAll(".exblk").forEach(b => b.setAttribute("data-sel", String(mine?.answer === b.dataset.opt)));
+      c.querySelectorAll(".en li").forEach(b => b.setAttribute("data-sel", String(mine?.answer === b.dataset.opt)));
+      const chip = c.querySelector(".chip.mine"); if (mine?.answer && !chip) c.querySelector(".head").append(el("span", { class: "chip mine", text: "응답함" })); if (!mine?.answer && chip) chip.remove();
+      const ta = document.getElementById("memo-" + it.id); if (ta && document.activeElement !== ta && (mine?.memo || "") !== ta.value) ta.value = mine?.memo || "";
+      paintTally(it); }
+    renderNav();
+  }, e => toast("응답 동기화가 끊겼습니다. 새로고침해 주세요."));
+  const u2 = S.db.collection("notes").where("area", "==", key).onSnapshot(snap => {
+    S.notes.clear(); for (const d of snap.docs) S.notes.set(d.id, { ...d.data(), _id: d.id });
+    for (const it of items) paintThread(it);
+  }, e => {});
+  S.unsub.push(u1, u2);
+}
+
+/* ---------- summary ---------- */
+async function renderSummary() {
+  const v = $("#view"); v.replaceChildren(el("h1", { text: "집계" }), el("p", { class: "lede", text: "영역별 응답 현황. 합의는 '모른다·기억나지 않는다'를 뺀 응답자의 80% 이상이 같은 답을 고른 룰, 갈림은 서로 다른 답이 각각 2명 이상인 룰입니다." }));
+  if (!S.db) { v.append(el("p", { class: "empty", text: "공유 저장소에 연결되지 않아 집계를 볼 수 없습니다." })); return; }
+  const table = el("table", { class: "sum" }, el("thead", {}, el("tr", {}, ...["영역", "룰", "응답자", "응답률", "합의", "갈림", "미응답 룰"].map((h, i) => el("th", { class: i ? "n" : "", text: h })))));
+  const tb = el("tbody"); table.append(tb); v.append(el("div", { class: "tablewrap" }, table));
+  const splitList = el("div");
+  v.append(el("div", { class: "group" }, el("h2", { text: "갈린 룰" })), splitList);
+  let totalSplit = 0;
+  for (const a of areas()) {
+    let docs = [];
+    try { docs = (await S.db.collection("answers").where("area", "==", a.key).get()).docs.map(d => d.data()).filter(d => d.answer); } catch (e) {}
+    const users = new Set(docs.map(d => d.uid));
+    let agree = 0, split = 0, unanswered = 0;
+    for (const it of a.items) {
+      const rows = docs.filter(d => d.item === it.id); if (!rows.length) { unanswered++; continue; }
+      const real = rows.filter(r => !["unknown", "forgot"].includes(r.answer));
+      const counts = {}; for (const r of real) counts[r.answer] = (counts[r.answer] || 0) + 1;
+      const vals = Object.values(counts).sort((x, y) => y - x);
+      if (real.length && vals[0] / real.length >= .8) agree++;
+      if (vals.length > 1 && vals[1] >= 2) { split++; totalSplit++;
+        const names = {}; splitList.append(el("p", { class: "q" }, el("span", { class: "id", text: it.id }), " ", it.rule, " ", el("span", { class: "who", text: Object.entries(counts).map(([k, n]) => `${labelOf(it, k)} ${n}`).join(" · ") }))); }
+    }
+    const rate = users.size ? Math.round(100 * docs.length / (a.items.length * users.size)) : 0;
+    tb.append(el("tr", {}, el("td", {}, el("a", { href: "#" + tok(a.key), text: a.label, onclick: e => { e.preventDefault(); go(a.key); } })),
+      el("td", { class: "n", text: a.items.length }), el("td", { class: "n", text: users.size }), el("td", { class: "n", text: rate + "%" }),
+      el("td", { class: "n agree", text: agree }), el("td", { class: "n" + (split ? " split" : ""), text: split }), el("td", { class: "n", text: unanswered })));
+  }
+  if (!totalSplit) splitList.append(el("p", { class: "empty", text: "아직 갈린 룰이 없습니다." }));
+}
+function labelOf(it, k) { const o = optionsOf(it).find(o => o[0] === k); return o ? o[1] : k; }
+
+/* ---------- boot ---------- */
+async function boot() {
+  try { S.data = await (await fetch("review_data.json", { cache: "no-store" })).json(); }
+  catch (e) { $("#view").replaceChildren(el("p", { class: "notice warn", text: "룰 데이터를 불러오지 못했습니다. 새로고침해 주세요." })); return; }
+  const want = (location.hash || "").slice(1);
+  const found = want === "summary" ? "summary" : areas().find(a => tok(a.key) === want)?.key;
+  S.areaKey = found || areas()[0].key;
+  renderNav(); if (S.areaKey === "summary") renderSummary(); else renderArea();
+  const use = n => (window.claude && typeof window.claude.use === "function") ? window.claude.use(n).catch(() => null) : Promise.resolve(null);
+  const [user, db] = await Promise.all([use("user"), use("db")]);
+  S.user = user; S.db = db; S.dbResolved = true;
+  if (user) {
+    try { const me = await user.me(); S.uid = me.id; S.canWrite = await user.can("data.write");
+      const box = $("#me"); box.hidden = false; $("#me-img").src = me.avatarUrl; $("#me-name").textContent = me.name || "나"; $("#me-role").textContent = S.uid ? (S.canWrite === false ? " · 읽기 전용" : "") : " · 로그인 필요"; } catch (e) {}
+  }
+  if (S.areaKey === "summary") renderSummary(); else { renderArea(); subscribe(S.areaKey); }
+  subscribeProposals();
+  renderNav();
+}
+window.addEventListener("hashchange", () => { const h = location.hash.slice(1); const k = h === "summary" ? "summary" : areas().find(a => tok(a.key) === h)?.key; if (k && k !== S.areaKey) go(k); });
+boot();
+})();
+</script>

@@ -1,0 +1,20 @@
+{
+ "id": "CFG-010",
+ "summary": [
+  "설정 키 이름을 바꿀 때(예: tensor_parallel_size → num_devices) 옛 이름을 쓰던 사용자 코드와 이미 저장된 rbln_config.json이 계속 동작해야 한다는 룰입니다.",
+  "옛 키는 두 경로로 들어옵니다. 생성자 인자로 들어오는 경로는 지금 deprecate_kwarg가 처리하지만, 이미 만든 설정 객체에 속성으로 대입하는 경로는 처리되지 않아 값이 조용히 사라집니다.",
+  "물어보는 것: 두 경로 모두에서 '경고 후 새 키로 옮기기'를 팀 룰로 삼을까요?"
+ ],
+ "examples": [
+  {"label": "① 생성자 경로 — 지금 동작함", "lang": "python", "code": "cfg = RBLNLlamaForCausalLMConfig(tensor_parallel_size=4)\n# 경고: `tensor_parallel_size` is deprecated ... Use `num_devices`\ncfg.num_devices   # 4\n# rbln_config.json에는 num_devices만 저장된다\n\n# from_pretrained(rbln_tensor_parallel_size=4) 와\n# from_pretrained(rbln_config={\"tensor_parallel_size\": 4}) 도 이 경로"},
+  {"label": "② 속성 대입 경로 — 지금 값이 사라짐", "lang": "python", "code": "cfg = RBLNLlamaForCausalLMConfig()\ncfg.tensor_parallel_size = 4   # 경고 없음\ncfg.num_devices                # None  <- 4가 반영되지 않음\n# rbln_config.json에 옛 키 tensor_parallel_size가 저장된다\n\n# from_pretrained(rbln_config=cfg, rbln_tensor_parallel_size=4)\n# 도 내부에서 setattr을 쓰므로 같은 결과"},
+  {"label": "③ 룰대로라면 — torch_dtype처럼 property로 덮기", "lang": "python", "code": "# configuration_utils.py:812 의 torch_dtype 이 이미 이 방식\n@property\ndef tensor_parallel_size(self):\n    return self.num_devices\n\n@tensor_parallel_size.setter\ndef tensor_parallel_size(self, value):\n    logger.warning_once(\"`tensor_parallel_size` is deprecated. Use `num_devices`.\")\n    self.num_devices = value   # 경고 후 새 키로 옮김"}
+ ],
+ "evidence": [
+  {"pr": 597, "state": "merged", "date": "2026-06-22", "user": "jongho", "what": "tensor_parallel_size를 num_devices로 개명. 옛 이름은 deprecate_kwarg로 계속 받아, 기존 코드와 예전에 컴파일된 모델이 그대로 로드되게 했다.", "quote": "The old name is kept as a deprecated alias via `deprecate_kwarg`, so both"},
+  {"pr": 666, "state": "merged", "date": "2026-08-13", "user": "seinpark", "what": "kvcache_metas를 cache_metas로 개명. 같은 방식으로 생성자에 @deprecate_kwarg를 달아 옛 키를 새 키로 옮긴다.", "quote": "is renamed to **`cache_metas`** (the list now holds non-KV"},
+  {"pr": 225, "state": "merged", "date": "2025-07-22", "user": "dkhong", "what": "장치 지원(RBLN-CA02) 폐지도 바로 지우지 않고 경고부터 냈다(#228과 함께).", "quote": "deprecate ca02"},
+  {"pr": 760, "state": "open", "date": null, "user": "jongho", "what": "생성자 데코레이터만으로는 부족하다는 지적. from_pretrained(rbln_config={...})가 생성 뒤 setattr로 키를 넣는 경로는 __init__의 데코레이터가 보지 못하므로 property setter로 덮는다. 이 PR은 아직 머지되지 않았다.", "quote": "a decorator on `__init__` alone would never see it"}
+ ],
+ "verified": "dev 74e97fa4에서 재현(2026-10-23): ① num_devices=4·옛 키 미저장, ② num_devices=None·옛 키 저장·경고 없음. 스크립트: mining/explain/cfg010_demo.py, cfg010_paths.py"
+}

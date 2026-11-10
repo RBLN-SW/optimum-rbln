@@ -1,0 +1,20 @@
+{
+ "id": "SUB-005",
+ "summary": [
+  "멀티모달 모델에서 일부 서브모듈(예: 비전 인코더)의 NPU 런타임은 띄우지 않고 나머지만 쓰고 싶을 때의 방법에 대한 룰입니다. 예를 들어 vLLM의 분리형 인코더 구성에서 언어 모델 노드에는 비전 인코더가 필요 없습니다.",
+  "여기서 '생략'은 컴파일을 건너뛴다는 뜻이 아닙니다. 서브모듈은 그대로 컴파일·저장되고, 로드할 때 NPU 런타임만 만들지 않습니다.",
+  "지금 dev에는 방법이 두 가지 공존하고 결과도 다릅니다. 모든 모델에 통하는 공통 방법(서브모듈 설정의 create_runtimes=False)은 서브모듈 자리를 남기고, Qwen3-VL·Qwen3.5에만 있는 전용 플래그(_load_visual_runtime=False)는 서브모듈을 목록에서 아예 뺍니다.",
+  "물어보는 것: 공통 방법 하나로 통일하고 전용 플래그는 deprecate하는 것을 팀 룰로 삼을까요? PR #760이 이 방향이지만 아직 열려 있습니다."
+ ],
+ "examples": [
+  {"label": "① 공통 방법 — 서브모듈의 create_runtimes=False (dev에 있음)", "lang": "python", "code": "model = RBLNQwen2_5_VLForConditionalGeneration.from_pretrained(\n    compiled_dir, rbln_config={\"visual\": {\"create_runtimes\": False}})\nmodel.visual           # 있음: rbln_submodules[0] 자리가 그대로\nmodel.visual.model     # UnavailableRuntime\n# 이미지를 넣어 호출하면 create_runtimes=False 안내 에러\n# 단 dev에서는 visual의 .rbln 파일을 여전히 메모리로 읽는다(#760이 해결)"},
+  {"label": "② 모델 전용 플래그 — Qwen3-VL·Qwen3.5만 (dev에 있음)", "lang": "python", "code": "model = RBLNQwen3VLForConditionalGeneration.from_pretrained(\n    compiled_dir, rbln_config={\"_load_visual_runtime\": False})\nmodel.rbln_submodules  # []  <- 비전 서브모듈이 목록에서 빠짐\nmodel.visual           # None\n# 다른 모델에는 없는 플래그라 모델마다 방법이 다르다"},
+  {"label": "③ 룰대로라면 — 모든 복합 모델이 같은 방법 (#760 방향)", "lang": "python", "code": "rbln_config={\"visual\": {\"create_runtimes\": False}}   # 유일한 방법\n\n# 옛 플래그는 경고 후 위 설정으로 옮긴다\nrbln_config={\"_load_visual_runtime\": False}\n# -> 경고, visual.create_runtimes=False 로 처리\n#    model.visual 은 남고 그 자리는 UnavailableRuntime"}
+ ],
+ "evidence": [
+  {"pr": 538, "state": "merged", "date": "2026-06-29", "user": "seinpark", "what": "상위 rbln_config가 서브모듈까지 전파되는지 테스트하면서, 서브모듈 설정의 create_runtimes가 꺼지는지 검사했다.", "quote": "assert not model.rbln_config.visual.create_runtimes"},
+  {"pr": 777, "state": "merged", "date": "2026-10-12", "user": "seinpark", "what": "Cosmos2.5에서 쓰지 않는 필수 서브모듈도 가장 작은 그래프로 컴파일은 하고, 런타임만 만들지 않는다.", "quote": "It is a mandatory submodule all the same, so the pipeline compiles the smallest legal graph for it and creates no runtime"},
+  {"pr": 760, "state": "open", "date": null, "user": "jongho", "what": "전용 플래그 _load_visual_runtime을 deprecate하고 create_runtimes로 통일하자는 제안. 목록 위치와 self.visual을 유지하고, 런타임을 안 만들 서브모듈은 .rbln 파일도 읽지 않게 한다. 아직 머지되지 않았다.", "quote": "this gives every composite model a uniform way to skip a submodule"}
+ ],
+ "verified": "dev 74e97fa4 코드 확인(2026-10-23): 공통 경로 modeling_base.py:352-358, 전용 플래그 qwen3_vl/modeling_qwen3_vl.py:265-268·282, qwen3_5/modeling_qwen3_5.py:557-559."
+}

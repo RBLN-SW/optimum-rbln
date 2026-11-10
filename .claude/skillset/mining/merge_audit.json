@@ -1,0 +1,4437 @@
+[
+ {
+  "id": "CFG-001",
+  "status": "supported",
+  "area": "rbln_config",
+  "prs": [
+   2,
+   114,
+   646,
+   698,
+   702,
+   729
+  ],
+  "merged": [
+   2,
+   114,
+   646,
+   698,
+   702,
+   729
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "지원하지 않는 설정 값은 경고나 대체 없이 명시적 예외로 실패시킨다."
+ },
+ {
+  "id": "CFG-004",
+  "status": "interview",
+  "area": "rbln_config",
+  "prs": [
+   114,
+   345,
+   694,
+   735
+  ],
+  "merged": [
+   114,
+   345,
+   694,
+   735
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "설정 클래스에는 실제 동작에 반영되는 옵션만 노출하고, 무시되거나 사용하지 않는 옵션은 제거하거나 명시적으로 거부하며 지원 중단 인자는 공통 deprecate 데코레이터로 처리한다."
+ },
+ {
+  "id": "CFG-005",
+  "status": "interview",
+  "area": "rbln_config",
+  "prs": [
+   67,
+   88,
+   209,
+   475
+  ],
+  "merged": [
+   67,
+   88,
+   209,
+   475
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "컴파일 시점 값의 원천은 산출물의 rbln_config.json으로 두고, 컴파일 그래프를 바꾸지 않는 런타임 전용 옵션은 컴파일 값과 섞이지 않도록 분리해 정해진 경로(runtime kwargs 등)로 노출한다."
+ },
+ {
+  "id": "CFG-007",
+  "status": "supported",
+  "area": "rbln_config",
+  "prs": [
+   478,
+   549,
+   560,
+   718,
+   719
+  ],
+  "merged": [
+   478,
+   549,
+   560,
+   719
+  ],
+  "unmerged": [
+   718
+  ],
+  "unknown": [],
+  "stmt": "기본값은 하드코딩하지 않고 모델 config나 전처리기에서 유도한다."
+ },
+ {
+  "id": "CFG-013",
+  "status": "supported",
+  "area": "rbln_config",
+  "prs": [
+   39,
+   770
+  ],
+  "merged": [
+   39,
+   770
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "연결된 파이프라인의 설정은 전역, 파이프라인 단위, 서브모듈 단위 계층으로 정의하고, 같은 이름의 값은 호출자가 넘긴 인자, 서브모듈 개별 설정, 파이프라인 단위 설정 순으로 우선하며 같은 파이프라인 안에서는 같은 우선순위 정책을 따른다."
+ },
+ {
+  "id": "CFG-014",
+  "status": "interview",
+  "area": "rbln_config",
+  "prs": [
+   650,
+   777
+  ],
+  "merged": [
+   650,
+   777
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "배치 크기나 최대 시퀀스 길이처럼 상위 파이프라인이 이미 넘기는 형상 인자는 서브모듈 설정에서 따로 지정하지 않고 상위 설정에서 지정하며, 서브모듈 설정만 지정한 호출에서도 부모 기본값이 서브모듈 값과 충돌하지 않게 한다."
+ },
+ {
+  "id": "CFG-009",
+  "status": "supported",
+  "area": "rbln_config",
+  "prs": [
+   88,
+   258,
+   682,
+   694,
+   796,
+   803
+  ],
+  "merged": [
+   88,
+   258,
+   682,
+   694,
+   796
+  ],
+  "unmerged": [
+   803
+  ],
+  "unknown": [],
+  "stmt": "설정 포맷·옵션·dtype·산출물 구조를 바꿀 때는 이전에 컴파일된 아티팩트가 기존 방식 그대로 로드·동작하게 하며, 로드 시 동작은 설정 객체의 새 필드가 아니라 아티팩트가 기록한 입력 정의를 기준으로 정한다. 호환용 레거시 경로는 DEPRECATED 표지에 제거 예정 버전을 명시하고 독립된 블록으로 두며 레거시 위치에서 로드할 때 경고 로그를 남긴다. 로드가 불가능하거나 재컴파일이 필요하면 원인과 조치를 명확한 오류 메시지와 PR 설명에 적는다."
+ },
+ {
+  "id": "CFG-010",
+  "status": "aspirational",
+  "area": "rbln_config",
+  "prs": [
+   225,
+   228,
+   597,
+   666,
+   760
+  ],
+  "merged": [
+   225,
+   228,
+   597,
+   666
+  ],
+  "unmerged": [
+   760
+  ],
+  "unknown": [],
+  "stmt": "설정 키나 장치 지원을 폐지하거나 이름을 바꿀 때는 deprecate 데코레이터로 경고 후 옛 키를 새 키에 재매핑해 기존 동작을 유지하고(생성자 인자와 setattr 경로 포함), 구현 제거는 이후 별도의 breaking change로 한다."
+ },
+ {
+  "id": "CFG-031",
+  "status": "supported",
+  "area": "rbln_config",
+  "prs": [
+   599,
+   629,
+   706,
+   767,
+   815
+  ],
+  "merged": [
+   599
+  ],
+  "unmerged": [
+   629,
+   706,
+   767,
+   815
+  ],
+  "unknown": [],
+  "stmt": "새 컴파일·커널 경로는 꺼진 상태에서 기존 경로와 결과가 똑같도록 추가한다."
+ },
+ {
+  "id": "CFG-008",
+  "status": "supported",
+  "area": "rbln_config",
+  "prs": [
+   66,
+   81,
+   634,
+   717
+  ],
+  "merged": [
+   66,
+   81,
+   634
+  ],
+  "unmerged": [],
+  "unknown": [
+   717
+  ],
+  "stmt": "검증 함수는 검증만 수행하고, 기본값 설정과 패딩 같은 변경은 지정된 훅(set_default_values)이나 생성 시점의 한 곳에서만 하며, 모델별 설정 생성 경로나 소비처에 같은 기본값을 중복 정의하지 않는다."
+ },
+ {
+  "id": "CFG-015",
+  "status": "supported",
+  "area": "rbln_config",
+  "prs": [
+   495,
+   681,
+   682,
+   777
+  ],
+  "merged": [
+   681,
+   682,
+   777
+  ],
+  "unmerged": [
+   495
+  ],
+  "unknown": [],
+  "stmt": "서브모듈에 고정되어야 하는 제약(예: 비전 서브모듈의 batch_size=1)은 force_kwargs로 명시적으로 강제해 사용자 값이 조용히 무시되지 않게 하고, 부모의 해석된 값이나 None일 수 있는 값은 force_kwargs가 아닌 기본값으로 전달한다."
+ },
+ {
+  "id": "CFG-018",
+  "status": "verified",
+  "area": "rbln_config",
+  "prs": [
+   623,
+   639,
+   750
+  ],
+  "merged": [
+   639
+  ],
+  "unmerged": [
+   623,
+   750
+  ],
+  "unknown": [],
+  "stmt": "런타임 전용 값(콜백 등)과 컴파일 시점에만 쓰는 추정 입력은 subclass_non_save_attributes에 등록해 rbln_config.json에 직렬화되지 않게 하고, 하위 클래스가 이 목록을 재정의하면 상위 항목을 함께 포함한다."
+ },
+ {
+  "id": "CFG-002",
+  "status": "supported",
+  "area": "rbln_config",
+  "prs": [
+   195,
+   803
+  ],
+  "merged": [
+   195
+  ],
+  "unmerged": [
+   803
+  ],
+  "unknown": [],
+  "stmt": "컴파일러가 지원하지 않는 기능이나 체크포인트 구조, 현재 장비에서 런타임을 만들 수 없는 설정은 컴파일을 시작하기 전에 생성자나 검증 함수 한 곳에서 한 메시지로 거부한다."
+ },
+ {
+  "id": "CFG-012",
+  "status": "supported",
+  "area": "rbln_config",
+  "prs": [
+   383,
+   682
+  ],
+  "merged": [
+   383,
+   682
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "같은 인자를 받는 형제 설정 클래스와 모델 클래스는 함께 점검해 일관되게 변경한다."
+ },
+ {
+  "id": "CFG-019",
+  "status": "rejected",
+  "area": "rbln_config",
+  "prs": [
+   473,
+   495
+  ],
+  "merged": [
+   473
+  ],
+  "unmerged": [
+   495
+  ],
+  "unknown": [],
+  "stmt": "서브모듈을 가진 설정 클래스는 서브모듈 목록과 설정 클래스 매핑(submodule_config_classes)을 선언하고 타입 주석을 `RBLNModelConfig | None`으로 쓰며, dict에서 설정 객체로의 변환은 각 클래스에서 수동으로 하지 않고 공통 검증 훅에서 자동 처리한다."
+ },
+ {
+  "id": "CFG-022",
+  "status": "interview",
+  "area": "rbln_config",
+  "prs": [
+   2,
+   445
+  ],
+  "merged": [
+   2
+  ],
+  "unmerged": [
+   445
+  ],
+  "unknown": [],
+  "stmt": "같은 설정 키를 rbln_config와 rbln_ 인자로 함께 주면 모든 경로에서 같은 쪽이 이긴다."
+ },
+ {
+  "id": "CFG-026",
+  "status": "supported",
+  "area": "rbln_config",
+  "prs": [
+   166,
+   174
+  ],
+  "merged": [
+   166,
+   174
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "rbln_config에 저장되는 출력 옵션(output_attentions, output_hidden_states 등)은 HF와 같은 방식으로 다루고 추론 시에도 따르며, forward 인자가 설정 값과 다르면 ValueError를 발생시킨다."
+ },
+ {
+  "id": "CFG-027",
+  "status": "supported",
+  "area": "rbln_config",
+  "prs": [
+   721,
+   729
+  ],
+  "merged": [
+   729
+  ],
+  "unmerged": [
+   721
+  ],
+  "unknown": [],
+  "stmt": "하드웨어 계열별 제약값은 전역 상수 하나가 아니라 계열 단위의 limits 객체로 정의하고, 알 수 없는 장치가 다른 계열의 한계를 조용히 물려받지 않게 한다."
+ },
+ {
+  "id": "CFG-025",
+  "status": "candidate",
+  "area": "rbln_config",
+  "prs": [
+   89,
+   146
+  ],
+  "merged": [
+   89,
+   146
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "모델 및 파이프라인 설정 객체의 인자는 HF 원본이 받는 인자와 컴파일러가 지원하는 입력 구조(예: 여러 input_info)를 그대로 반영한다."
+ },
+ {
+  "id": "ATT-029",
+  "status": "candidate",
+  "area": "rbln_config",
+  "prs": [
+   162
+  ],
+  "merged": [
+   162
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "슬라이딩 윈도우 등 어텐션 구성은 모델마다 따로 정의하지 않고 컴파일 설정 객체의 공통 필드로 표현한다."
+ },
+ {
+  "id": "CFG-006",
+  "status": "candidate",
+  "area": "rbln_config",
+  "prs": [
+   702
+  ],
+  "merged": [
+   702
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "로드 시 rbln_config 객체 계약은 엄격하게 유지하고, 부분 설정 객체는 호출 지점에서 dict로 변환해 검증된 병합 경로로 넘기며, 직렬화되지 않는 로드 동작 플래그는 호출하는 쪽이 함께 전달한다."
+ },
+ {
+  "id": "CFG-016",
+  "status": "candidate",
+  "area": "rbln_config",
+  "prs": [
+   776
+  ],
+  "merged": [],
+  "unmerged": [
+   776
+  ],
+  "unknown": [],
+  "stmt": "서브모듈의 디바이스 수가 1로 줄어드는 경우 디바이스 목록과 device_map 등 모든 배치 정보를 함께 축소하며, 이미 지정된 디바이스를 기본값(0번)으로 바꾸지 않는다."
+ },
+ {
+  "id": "CFG-020",
+  "status": "candidate",
+  "area": "rbln_config",
+  "prs": [
+   495
+  ],
+  "merged": [],
+  "unmerged": [
+   495
+  ],
+  "unknown": [],
+  "stmt": "서브클래스 인스턴스를 포함하는 중첩 설정 객체는 serialize_as_any=True로 직렬화하고, 직렬화 후 역직렬화해도 같은 값으로 복원되게 한다."
+ },
+ {
+  "id": "CFG-021",
+  "status": "candidate",
+  "area": "rbln_config",
+  "prs": [
+   473
+  ],
+  "merged": [
+   473
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "중첩된 설정 dict를 갱신할 때는 dict.update() 대신 내부 값을 보존하는 중첩 병합 유틸리티(nested_update)를 쓴다."
+ },
+ {
+  "id": "CFG-023",
+  "status": "candidate",
+  "area": "rbln_config",
+  "prs": [
+   67
+  ],
+  "merged": [
+   67
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "컴파일 설정 객체는 dict가 아닌 클래스 인스턴스로 표현해 모델별 속성을 명확히 하고 모델과 무관한 속성이 설정되지 않게 한다."
+ },
+ {
+  "id": "CFG-024",
+  "status": "candidate",
+  "area": "rbln_config",
+  "prs": [
+   130
+  ],
+  "merged": [
+   130
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "양자화 설정은 여러 양자화 방식을 수용할 수 있도록 코드에서 해석 가능한 설정 클래스로 표현한다."
+ },
+ {
+  "id": "CFG-029",
+  "status": "candidate",
+  "area": "rbln_config",
+  "prs": [
+   634
+  ],
+  "merged": [
+   634
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "하드웨어 종류를 조회해 기본값을 정하는 코드는 장치가 연결되지 않은 호스트에서도 예외 없이 기본값으로 폴백한다."
+ },
+ {
+  "id": "CFG-033",
+  "status": "candidate",
+  "area": "rbln_config",
+  "prs": [
+   642
+  ],
+  "merged": [
+   642
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "설정 검증을 우회하는 환경 변수 스위치를 두지 않고 한계 값 자체를 근거에 맞게 조정한다."
+ },
+ {
+  "id": "CFG-034",
+  "status": "candidate",
+  "area": "rbln_config",
+  "prs": [
+   637
+  ],
+  "merged": [
+   637
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "메모리 예산 같은 비율 인자는 외부 프레임워크(vLLM)의 관례에 맞춰 0 초과 1 이하의 실수 비율을 기본 표현으로 삼고 문자열 단위 표기는 CLI 편의용으로만 허용한다."
+ },
+ {
+  "id": "SUB-001",
+  "status": "interview",
+  "area": "multimodal/submodule",
+  "prs": [
+   267,
+   433,
+   445,
+   601
+  ],
+  "merged": [
+   267,
+   601
+  ],
+  "unmerged": [
+   433,
+   445
+  ],
+  "unknown": [],
+  "stmt": "서브모듈 설정은 서브모듈이 직접 명시한 값을 상위(전역) 설정에서 상속한 값보다 우선하고, 명시하지 않은 경우에만 상위 값(예: 최상위 batch_size, 런타임 옵션)을 기본값으로 상속하며, 이 우선순위는 한 곳에서 정의한다."
+ },
+ {
+  "id": "SUB-004",
+  "status": "supported",
+  "area": "multimodal/submodule",
+  "prs": [
+   134,
+   167,
+   213
+  ],
+  "merged": [
+   134,
+   167,
+   213
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "파이프라인이나 멀티모달 모델 내부의 비전 모델은 별도 RBLN 모델 클래스로 감싸 서브모듈로 컴파일하고, 여러 상위 모델이 공유하는 서브모듈의 rbln_config는 특정 모델 이름에 묶지 않고 일반화한다."
+ },
+ {
+  "id": "SUB-005",
+  "status": "aspirational",
+  "area": "multimodal/submodule",
+  "prs": [
+   538,
+   760,
+   777
+  ],
+  "merged": [
+   538,
+   777
+  ],
+  "unmerged": [
+   760
+  ],
+  "unknown": [],
+  "stmt": "서브모듈의 NPU 런타임을 띄우지 않을 때는 모델별 플래그 대신 그 서브모듈의 create_runtimes=False를 쓴다."
+ },
+ {
+  "id": "SUB-002",
+  "status": "verified",
+  "area": "multimodal/submodule",
+  "prs": [
+   135,
+   816
+  ],
+  "merged": [
+   135
+  ],
+  "unmerged": [
+   816
+  ],
+  "unknown": [],
+  "stmt": "서브모듈 설정 조정은 모델마다 새 함수를 만들지 않고 정해진 공통 훅을 오버라이드한다."
+ },
+ {
+  "id": "SUB-003",
+  "status": "supported",
+  "area": "multimodal/submodule",
+  "prs": [
+   735,
+   817
+  ],
+  "merged": [
+   735
+  ],
+  "unmerged": [
+   817
+  ],
+  "unknown": [],
+  "stmt": "이미 기존 모델 클래스가 지원하는 체크포인트나 같은 아키텍처의 신규 모델에는 새 모델 코드를 만들지 않고 기존 클래스를 재사용하며, 구성 요소가 다른 경우에만 해당 부분을 새로 구현하고 나머지는 테스트만 추가한다."
+ },
+ {
+  "id": "SUB-008",
+  "status": "aspirational",
+  "area": "multimodal/submodule",
+  "prs": [
+   711,
+   764
+  ],
+  "merged": [
+   711
+  ],
+  "unmerged": [
+   764
+  ],
+  "unknown": [],
+  "stmt": "HF가 사용하는 dtype 동작(예: fp32로 계산하는 비전 회전 위치 임베딩 테이블, 모듈 입력 dtype)을 그대로 따르며, 활성 dtype으로 반올림하거나 암묵적 승격에 맡기지 않고 명시적으로 선언·캐스트한다."
+ },
+ {
+  "id": "SUB-010",
+  "status": "supported",
+  "area": "multimodal/submodule",
+  "prs": [
+   651,
+   701
+  ],
+  "merged": [
+   651,
+   701
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "VLM 구현은 설정 접근과 전처리를 이미 검증된 같은 계열 모델 구현에 맞추고, composite VLM 설정의 텍스트 차원(hidden size, 레이어 수)은 최상위 설정이 아니라 텍스트 설정을 통해 읽는다."
+ },
+ {
+  "id": "SUB-011",
+  "status": "rejected",
+  "area": "multimodal/submodule",
+  "prs": [
+   678,
+   705
+  ],
+  "merged": [],
+  "unmerged": [
+   678,
+   705
+  ],
+  "unknown": [],
+  "stmt": "생산 측과 소비 측이 공유하는 값(예: 이미지 토큰 수)은 같은 계산 경로에서 다시 유도한다."
+ },
+ {
+  "id": "SUB-015",
+  "status": "supported",
+  "area": "multimodal/submodule",
+  "prs": [
+   93,
+   703
+  ],
+  "merged": [
+   703
+  ],
+  "unmerged": [
+   93
+  ],
+  "unknown": [],
+  "stmt": "서브모듈 아티팩트는 부모 모델의 서브폴더 안에 중첩해 저장하고, 서브모듈의 로드 경로와 generation config 탐색은 루트나 상위 모델이 아니라 부모 자신의 디렉터리와 서브모듈 자신의 서브폴더를 기준으로 한다."
+ },
+ {
+  "id": "ATT-028",
+  "status": "candidate",
+  "area": "multimodal/submodule",
+  "prs": [
+   548
+  ],
+  "merged": [],
+  "unmerged": [
+   548
+  ],
+  "unknown": [],
+  "stmt": "ViT 계열 비전 모듈의 attention은 수동 matmul-softmax-matmul 대신 F.scaled_dot_product_attention을 사용해 컴파일러 SDPA 경로를 타게 하되, 각 모델의 원래 Q/K/V rank는 유지하고 dual-softmax나 grid_sample 같은 비표준 attention은 전환 대상에서 제외한다."
+ },
+ {
+  "id": "SUB-013",
+  "status": "candidate",
+  "area": "multimodal/submodule",
+  "prs": [
+   707
+  ],
+  "merged": [
+   707
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "배치 정렬이 필요한 멀티모달 forward는 샘플 소유 관계에 따라 이미지 입력을 재배열하고(배치 차원 index_select 금지), 정렬되지 않은 다중 배치 직접 호출은 KV 캐시를 어긋나게 한 채 처리하지 않고 에러로 거부한다."
+ },
+ {
+  "id": "SUB-014",
+  "status": "candidate",
+  "area": "multimodal/submodule",
+  "prs": [
+   370
+  ],
+  "merged": [
+   370
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "한 프롬프트에 포함된 여러 이미지를 이미지 수만큼의 batch_size로 처리하지 않는다."
+ },
+ {
+  "id": "SUB-020",
+  "status": "candidate",
+  "area": "multimodal/submodule",
+  "prs": [
+   181
+  ],
+  "merged": [
+   181
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "CLI와 설정 인자에서 서브모듈 설정은 점 표기(dot-notation)로 지정한다."
+ },
+ {
+  "id": "LIFE-004",
+  "status": "interview",
+  "area": "modeling_base/lifecycle",
+  "prs": [
+   107,
+   219,
+   267,
+   356,
+   359,
+   643
+  ],
+  "merged": [
+   107,
+   219,
+   267,
+   356,
+   359
+  ],
+  "unmerged": [
+   643
+  ],
+  "unknown": [],
+  "stmt": "공통 기능의 구현은 베이스 클래스에 두고, 클래스 고유 특성(지원 여부, 플래그 등)은 호출 인자가 아니라 클래스 속성 또는 config 속성으로 선언하며, 서브클래스가 채울 계약은 베이스 클래스에 선언하고, 지원을 선언하지 않은 클래스에 기능이 요청되면 컴파일 전에 거부한다."
+ },
+ {
+  "id": "LIFE-008",
+  "status": "supported",
+  "area": "modeling_base/lifecycle",
+  "prs": [
+   108,
+   315,
+   338,
+   606,
+   706,
+   736
+  ],
+  "merged": [
+   108,
+   315,
+   338,
+   606,
+   736
+  ],
+  "unmerged": [
+   706
+  ],
+  "unknown": [],
+  "stmt": "지원하지 않는 입력이나 컴파일된 상한을 넘는 입력, 런타임 생성 실패는 조용히 자르거나 추론 시점까지 미루지 않고 즉시 명시적 예외로 알리며, 예외 메시지에는 입력 길이·상한 같은 원인 정보와 컴파일만 하려면 create_runtimes=False를 쓰라는 우회 안내를 담는다."
+ },
+ {
+  "id": "LIFE-001",
+  "status": "interview",
+  "area": "modeling_base/lifecycle",
+  "prs": [
+   38,
+   114,
+   631,
+   715
+  ],
+  "merged": [
+   38,
+   114,
+   631,
+   715
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "모델 forward의 반환은 HF 규약을 따른다: return_dict가 None이면 config의 use_return_dict를 따르고, 다중 출력은 출력마다 별도 필드에 담으며, 반환 형식을 바꾸는 변경은 형식에 의존하는 내부 호출자를 먼저 감사한다."
+ },
+ {
+  "id": "LIFE-015",
+  "status": "interview",
+  "area": "modeling_base/lifecycle",
+  "prs": [
+   14,
+   215,
+   246,
+   703
+  ],
+  "merged": [
+   14,
+   215,
+   246,
+   703
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "save_pretrained는 HF config 객체를 기준으로 설정 파일을 저장하고, 저장 경로를 바꿀 때 로드 경로도 함께 바꿔 저장·로드 레이아웃의 대칭을 유지하며, 기존 저장 디렉터리를 통째로 삭제하지 않고 실패 시 기존 파일이 보존되는 안전한 저장 방식을 속도보다 우선한다."
+ },
+ {
+  "id": "LIFE-010",
+  "status": "interview",
+  "area": "modeling_base/lifecycle",
+  "prs": [
+   168,
+   714,
+   722
+  ],
+  "merged": [
+   168,
+   714,
+   722
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "RBLN 모델 클래스는 원본 모델 가중치를 CPU/GPU에 미리 적재하지 않고, 래퍼 모듈은 원본 텐서의 뷰를 공유하며 쓰이지 않는 원본 가중치와 nn.Linear 껍데기를 만들지 않고, 로드 후에는 체크포인트 mmap 뷰가 프로세스에 남지 않도록 파라미터를 복제한다."
+ },
+ {
+  "id": "LIFE-011",
+  "status": "supported",
+  "area": "modeling_base/lifecycle",
+  "prs": [
+   673,
+   710,
+   711,
+   774
+  ],
+  "merged": [
+   673,
+   710,
+   711,
+   774
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "HF 모듈을 그대로 쓰는 부분에는 dtype 변환을 더하지 않는다."
+ },
+ {
+  "id": "LIFE-005",
+  "status": "interview",
+  "area": "modeling_base/lifecycle",
+  "prs": [
+   804,
+   815
+  ],
+  "merged": [],
+  "unmerged": [
+   804,
+   815
+  ],
+  "unknown": [],
+  "stmt": "기능을 추가할 때 공유 레이어와 베이스 클래스는 수정하지 않고 모델별 서브클래스나 신규 클래스로 확장한다."
+ },
+ {
+  "id": "LIFE-012",
+  "status": "supported",
+  "area": "modeling_base/lifecycle",
+  "prs": [
+   259,
+   389,
+   567
+  ],
+  "merged": [
+   259,
+   389
+  ],
+  "unmerged": [
+   567
+  ],
+  "unknown": [],
+  "stmt": "모델 로드 dtype의 기본값은 auto(체크포인트 dtype)이고 사용자가 준 값을 우선한다."
+ },
+ {
+  "id": "LIFE-024",
+  "status": "supported",
+  "area": "modeling_base/lifecycle",
+  "prs": [
+   269,
+   303,
+   711
+  ],
+  "merged": [
+   269,
+   711
+  ],
+  "unmerged": [
+   303
+  ],
+  "unknown": [],
+  "stmt": "export 중 추적할 수 없는 데이터 의존 검사는 추적 가능한 형태로 바꾼다."
+ },
+ {
+  "id": "LIFE-002",
+  "status": "interview",
+  "area": "modeling_base/lifecycle",
+  "prs": [
+   11,
+   51,
+   375,
+   383,
+   596,
+   699
+  ],
+  "merged": [
+   11,
+   51,
+   375,
+   383,
+   596,
+   699
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "모델 forward의 입력 인자·순서·반환 타입은 원본 HF 모델 구현과 일치시키고(예: token_type_ids 누락 금지), 사용자가 지정한 입력 이름이 forward 시그니처에 없으면 에러를 raise하며, 입력에 token_type_ids가 있는 경우와 없는 경우를 모두 검증한다."
+ },
+ {
+  "id": "LIFE-003",
+  "status": "supported",
+  "area": "modeling_base/lifecycle",
+  "prs": [
+   112,
+   118,
+   253,
+   444,
+   722,
+   800
+  ],
+  "merged": [
+   112,
+   253,
+   444,
+   722,
+   800
+  ],
+  "unmerged": [
+   118
+  ],
+  "unknown": [],
+  "stmt": "부모 클래스가 이미 제공하는 구현은 override하거나 복제하지 않고 상속하며, 여러 클래스에 공통인 동작은 클래스마다 메서드를 감싸지 않고 mixin으로 공유한다."
+ },
+ {
+  "id": "LIFE-021",
+  "status": "supported",
+  "area": "modeling_base/lifecycle",
+  "prs": [
+   76,
+   158,
+   533,
+   563,
+   574,
+   800
+  ],
+  "merged": [
+   563,
+   800
+  ],
+  "unmerged": [
+   76,
+   158,
+   533,
+   574
+  ],
+  "unknown": [],
+  "stmt": "새 모델은 models/<모델>/ 아래 configuration, modeling, architecture 파일 세트로 추가해 상위 __init__ 목록에 등록하고, get_pytorch_model·_update_rbln_config·_create_runtimes를 기존 RBLN 모델 관례대로 구현하며, transformers에 없는 모델 클래스는 커스텀 클래스로 등록해 지원한다."
+ },
+ {
+  "id": "LIFE-006",
+  "status": "supported",
+  "area": "modeling_base/lifecycle",
+  "prs": [
+   81,
+   219,
+   735
+  ],
+  "merged": [
+   81,
+   219,
+   735
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "파생 가능한 값은 멤버 변수로 중복 저장하지 않고 property(필요 시 캐시)로 계산하며, 같은 상태를 여러 곳에서 갱신하지 않는다."
+ },
+ {
+  "id": "LIFE-007",
+  "status": "verified",
+  "area": "modeling_base/lifecycle",
+  "prs": [
+   114,
+   118,
+   168
+  ],
+  "merged": [
+   114,
+   168
+  ],
+  "unmerged": [
+   118
+  ],
+  "unknown": [],
+  "stmt": "monkey patch로 전역 함수나 메서드를 바꾼 경우 실행 뒤 원래대로 복원하며, 컴파일이 실패해도 복원되도록 try/finally로 감싼다."
+ },
+ {
+  "id": "LIFE-009",
+  "status": "supported",
+  "area": "modeling_base/lifecycle",
+  "prs": [
+   100,
+   106,
+   168
+  ],
+  "merged": [
+   100,
+   106,
+   168
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "RBLN 접두사 모델 클래스는 기존 Hugging Face 코드의 클래스를 교체할 수 있는 인스턴스로 설계하고(예: parameters() 제공), 래퍼 클래스의 저장과 로드는 별도 함수를 만들지 않고 파이프라인의 save_pretrained와 from_pretrained에 함께 포함시킨다."
+ },
+ {
+  "id": "LIFE-019",
+  "status": "supported",
+  "area": "modeling_base/lifecycle",
+  "prs": [
+   130,
+   683
+  ],
+  "merged": [
+   130
+  ],
+  "unmerged": [
+   683
+  ],
+  "unknown": [],
+  "stmt": "가중치·파일 로드 경로는 로컬 디렉터리뿐 아니라 Hugging Face Hub에서도 동작해야 하며, 매 로드마다 저장소 전체 목록을 조회하지 않고 필요한 파일만 해석해 캐시를 검증하는 요청 경로를 쓴다."
+ },
+ {
+  "id": "LIFE-020",
+  "status": "verified",
+  "area": "modeling_base/lifecycle",
+  "prs": [
+   160,
+   766
+  ],
+  "merged": [
+   160
+  ],
+  "unmerged": [
+   766
+  ],
+  "unknown": [],
+  "stmt": "오버라이드되는 메서드(get_compiled_model, get_input_info 등)는 공통 계약을 유지하여, 개별 값을 여러 인자로 받지 않고 모델 설정 객체와 컴파일 설정 객체를 받으며 쓰지 않는 키워드 인자도 받아서 무시한다."
+ },
+ {
+  "id": "STY-027",
+  "status": "verified",
+  "area": "modeling_base/lifecycle",
+  "prs": [
+   221,
+   250
+  ],
+  "merged": [
+   221,
+   250
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "torch.export 경로를 지원할 때는 새 커스텀 op의 fake 함수와 인덱스 값의 동적 값 제약을 함께 제공한다."
+ },
+ {
+  "id": "DIF-019",
+  "status": "candidate",
+  "area": "modeling_base/lifecycle",
+  "prs": [
+   204,
+   206
+  ],
+  "merged": [
+   204,
+   206
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "컴파일된 서브모델을 로드할 때는 호스트 메모리 최적화 옵션(optimize_host_memory)을 사용한다."
+ },
+ {
+  "id": "DEC-015",
+  "status": "candidate",
+  "area": "modeling_base/lifecycle",
+  "prs": [
+   444
+  ],
+  "merged": [
+   444
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "래퍼는 원본 Hugging Face 모듈 전체를 보관하거나 _original_mod를 참조하지 않고, 필요한 하위 모듈과 속성만 __init__에서 명시적으로 등록하여 nn.Module 트리와 state_dict에 포함한다."
+ },
+ {
+  "id": "LIFE-016",
+  "status": "candidate",
+  "area": "modeling_base/lifecycle",
+  "prs": [
+   600
+  ],
+  "merged": [
+   600
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "컴파일 전에 공통으로 수행하는 전처리(예: 비연속 텐서의 contiguous 정규화)는 모든 표준 컴파일 경로가 거치는 단일 진입점에 두고, compile_from_torch를 직접 호출하는 곳에서도 정규화한 뒤 호출한다."
+ },
+ {
+  "id": "LIFE-017",
+  "status": "candidate",
+  "area": "modeling_base/lifecycle",
+  "prs": [
+   813
+  ],
+  "merged": [
+   813
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "Auto 클래스의 해석은 호출자가 넘긴 원격 코드 신뢰 옵션 값을 따르고, 기본 동작에서는 베이스 라이브러리가 구현한 모델 타입을 내장 클래스로 해석한다."
+ },
+ {
+  "id": "LIFE-018",
+  "status": "candidate",
+  "area": "modeling_base/lifecycle",
+  "prs": [
+   679
+  ],
+  "merged": [
+   679
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "설정 클래스를 식별할 때는 model_type 대신 architectures 값을 기준으로 삼는다."
+ },
+ {
+  "id": "LIFE-022",
+  "status": "candidate",
+  "area": "modeling_base/lifecycle",
+  "prs": [
+   533
+  ],
+  "merged": [],
+  "unmerged": [
+   533
+  ],
+  "unknown": [],
+  "stmt": "컴파일되어 NPU에서 실행되는 모델의 forward 메서드에는 @torch.no_grad 데코레이터를 붙이지 않는다."
+ },
+ {
+  "id": "LIFE-023",
+  "status": "candidate",
+  "area": "modeling_base/lifecycle",
+  "prs": [
+   533
+  ],
+  "merged": [],
+  "unmerged": [
+   533
+  ],
+  "unknown": [],
+  "stmt": "NPU에서 실행하기 어려운 후처리(예: 메시 추출)는 CPU 대체 경로로 구현하고 나머지 연산만 NPU에서 실행한다."
+ },
+ {
+  "id": "LIFE-027",
+  "status": "candidate",
+  "area": "modeling_base/lifecycle",
+  "prs": [
+   257
+  ],
+  "merged": [
+   257
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "양자화 체크포인트 로딩 시 레이어 파라미터는 고정 키를 쓰고 체크포인트 키는 공통 패턴으로 정규화한 뒤 가중치를 로드한다."
+ },
+ {
+  "id": "LIFE-028",
+  "status": "candidate",
+  "area": "modeling_base/lifecycle",
+  "prs": [
+   140
+  ],
+  "merged": [
+   140
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "모델 경로에 있는 컴파일 산출물은 컴파일 설정 객체에 명시된 것만 로드한다."
+ },
+ {
+  "id": "LIFE-030",
+  "status": "candidate",
+  "area": "modeling_base/lifecycle",
+  "prs": [
+   337
+  ],
+  "merged": [
+   337
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "원본 모델을 수정해 컴파일하는 방식(예: VLM)으로 지원되는 모델은 `from_pretrained`뿐 아니라 `from_model`도 함께 지원한다."
+ },
+ {
+  "id": "STY-008",
+  "status": "supported",
+  "area": "decoderonly",
+  "prs": [
+   563,
+   604,
+   631
+  ],
+  "merged": [
+   563,
+   604,
+   631
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "decode 등 추론 경로에서는 매 스텝 텐서를 새로 할당하거나 host와 동기화하거나 불필요하게 복사하지 않고, 마스크는 미리 만들어 재사용하며 broadcast 연산을 쓴다."
+ },
+ {
+  "id": "DEC-005",
+  "status": "supported",
+  "area": "decoderonly",
+  "prs": [
+   798,
+   801
+  ],
+  "merged": [
+   798,
+   801
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "체크포인트 구조가 공통 경로와 다른 경우(융합 projection, 다른 회전 위치 임베딩 배치)는 런타임 연산이나 별도 래퍼를 추가하지 않고 로드 시점의 가중치 분리·행 재배열로 맞춰 공통 훅이 그대로 적용되게 한다."
+ },
+ {
+  "id": "DEC-009",
+  "status": "supported",
+  "area": "decoderonly",
+  "prs": [
+   659,
+   668
+  ],
+  "merged": [
+   659,
+   668
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "output_hidden_states를 지원하는 모델은 last_hidden_state가 hidden_states[-1]과 같다는 기반 계약을 지키고, prefill 출력(logits, hidden states)은 유효 토큰 길이가 아니라 attention mask 폭으로 맞춰 반환한다."
+ },
+ {
+  "id": "DEC-001",
+  "status": "candidate",
+  "area": "decoderonly",
+  "prs": [
+   674
+  ],
+  "merged": [
+   674
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "임베딩 레이어의 dtype 처리는 호출부마다 캐스팅하지 않고 생성 함수 안에서 한 번 적용하여, 레이어가 어디서 만들어져도 컴파일 dtype이 유지되게 한다."
+ },
+ {
+  "id": "DEC-007",
+  "status": "candidate",
+  "area": "decoderonly",
+  "prs": [
+   818
+  ],
+  "merged": [],
+  "unmerged": [
+   818
+  ],
+  "unknown": [],
+  "stmt": "생성 가능 여부는 클래스에 고정하지 않고 컴파일된 phase(예: decode 포함 여부)에 따라 정한다."
+ },
+ {
+  "id": "DEC-011",
+  "status": "candidate",
+  "area": "decoderonly",
+  "prs": [
+   646
+  ],
+  "merged": [
+   646
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "모델의 어텐션 의미(인과/양방향)는 모델 클래스가 아니라 부모가 주입한 설정 플래그 조합으로 판정하며, 그 판정식은 한 곳에만 정의한다."
+ },
+ {
+  "id": "DEC-012",
+  "status": "candidate",
+  "area": "decoderonly",
+  "prs": [
+   657
+  ],
+  "merged": [
+   657
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "패딩 길이가 0일 수 있는 자리에서 음수 슬라이스 끝을 쓰지 않고 None으로 가드한다."
+ },
+ {
+  "id": "DEC-016",
+  "status": "candidate",
+  "area": "decoderonly",
+  "prs": [
+   133
+  ],
+  "merged": [
+   133
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "decoder-only 모델 구현에서는 cache_position과 position_ids가 항상 같다고 가정하지 않는다."
+ },
+ {
+  "id": "DEC-017",
+  "status": "candidate",
+  "area": "decoderonly",
+  "prs": [
+   12
+  ],
+  "merged": [
+   12
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "언어 모델의 forward 처리 중 최적화 관련 로직은 RBLN* 모델 클래스가 아니라 RBLN*Runtime 클래스에 둔다."
+ },
+ {
+  "id": "ATT-003",
+  "status": "interview",
+  "area": "attention/kvcache",
+  "prs": [
+   672,
+   680
+  ],
+  "merged": [
+   672
+  ],
+  "unmerged": [
+   680
+  ],
+  "unknown": [],
+  "stmt": "컴파일 그래프에 입력이나 상수로 들어가는 rotary cos/sin의 계산 방식(numpy 또는 torch)은 재현성과 HF 레퍼런스 일치 중 하나를 기준으로 하나로 정해 적용한다."
+ },
+ {
+  "id": "ATT-004",
+  "status": "supported",
+  "area": "attention/kvcache",
+  "prs": [
+   653,
+   655,
+   663
+  ],
+  "merged": [
+   653,
+   655,
+   663
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "rope cos/sin 테이블은 추론마다 다시 계산하지 않고 로드 시점에 한 번 만들어 재사용하며, 정적 inv_freq를 가진 rope 타입에만 쓰고 테이블 범위 밖 위치는 동일 결과를 내는 동적 경로로 폴백한다."
+ },
+ {
+  "id": "ATT-005",
+  "status": "supported",
+  "area": "attention/kvcache",
+  "prs": [
+   767,
+   768,
+   803
+  ],
+  "merged": [],
+  "unmerged": [
+   767,
+   768,
+   803
+  ],
+  "unknown": [],
+  "stmt": "텐서 병렬 샤딩 대상 축(Q/K head 등)은 텐서 레이아웃의 가장 바깥 축에 두어 샤딩 절단선이 head 경계에 놓이게 하고, 정적 캐시는 prefill과 decode 그래프에서 같은 방식으로 분할되게 한다."
+ },
+ {
+  "id": "ATT-006",
+  "status": "interview",
+  "area": "attention/kvcache",
+  "prs": [
+   804,
+   816
+  ],
+  "merged": [],
+  "unmerged": [
+   804,
+   816
+  ],
+  "unknown": [],
+  "stmt": "정적 캐시의 마지막 축과 인코더 시퀀스 길이는 디바이스·컴파일러가 요구하는 단위(예: 64의 배수)에 맞춰 설계하거나 올림한다."
+ },
+ {
+  "id": "ATT-022",
+  "status": "supported",
+  "area": "attention/kvcache",
+  "prs": [
+   20,
+   24
+  ],
+  "merged": [
+   20,
+   24
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "커스텀 attention 커널이 변경되면 모델 쪽 호출부도 함께 동기화하고, 모델은 배치 단위 커널을 호출해 모델 코드를 단순하게 유지한다."
+ },
+ {
+  "id": "ATT-018",
+  "status": "candidate",
+  "area": "attention/kvcache",
+  "prs": [
+   562,
+   566
+  ],
+  "merged": [
+   562
+  ],
+  "unmerged": [
+   566
+  ],
+  "unknown": [],
+  "stmt": "커스텀 op 시그니처는 vllm-rbln 쪽 인터페이스와 맞추고, 호출은 위치 인자 대신 키워드 인자로 쓰며 해당 없는 인자는 None으로 명시한다."
+ },
+ {
+  "id": "ATT-001",
+  "status": "candidate",
+  "area": "attention/kvcache",
+  "prs": [
+   711
+  ],
+  "merged": [
+   711
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "HF 레퍼런스와 같은 수치 동작을 따른다: rotary cos/sin은 활성 dtype으로 캐스트하고, softmax는 fp32로 계산한 뒤 query dtype으로 되돌리며, 스케일 상수는 HF와 같은 표현으로 쓰고, 마스크 최솟값은 실제 활성 dtype에서 유도한다."
+ },
+ {
+  "id": "ATT-007",
+  "status": "candidate",
+  "area": "attention/kvcache",
+  "prs": [
+   796
+  ],
+  "merged": [
+   796
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "마스크는 결과에 영향이 없는 축을 뺀 형태로 보낸다(예: 패딩된 쿼리 행의 출력이 버려지면 키 패딩 마스크만 전송한다)."
+ },
+ {
+  "id": "ATT-012",
+  "status": "candidate",
+  "area": "attention/kvcache",
+  "prs": [
+   354
+  ],
+  "merged": [
+   354
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "KV 캐시 블록 수 추정은 NPU별 DRAM 크기, 양자화 모델의 파라미터 크기, 슬라이딩 윈도우 어텐션의 KV 캐시 크기 변화를 모두 고려한다."
+ },
+ {
+  "id": "ATT-014",
+  "status": "candidate",
+  "area": "attention/kvcache",
+  "prs": [
+   584
+  ],
+  "merged": [
+   584
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "KV 캐시 추정에서 칩 종류별 전용 분기나 별도의 추정 알고리즘을 추가하지 않고, 하나의 추정 경로 안에서 처리한다."
+ },
+ {
+  "id": "ATT-015",
+  "status": "candidate",
+  "area": "attention/kvcache",
+  "prs": [
+   560
+  ],
+  "merged": [
+   560
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "vLLM 연동처럼 특정 모델에만 필요한 블록 할당 예외는 그 모델의 설정에만 적용하고, 다른 모델의 할당 로직은 바꾸지 않는다."
+ },
+ {
+  "id": "ATT-016",
+  "status": "candidate",
+  "area": "attention/kvcache",
+  "prs": [
+   74
+  ],
+  "merged": [
+   74
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "커스텀 attention op는 최신 PyTorch custom op 규격에 맞춰 스키마를 정의하고, 출력 텐서는 입력과 저장 공간을 공유하지 않도록 새로 할당한다."
+ },
+ {
+  "id": "ATT-017",
+  "status": "candidate",
+  "area": "attention/kvcache",
+  "prs": [
+   62
+  ],
+  "merged": [],
+  "unmerged": [
+   62
+  ],
+  "unknown": [],
+  "stmt": "커스텀 op의 이름은 Python 측 함수 이름과 일치시키고, op의 docstring은 실제 op 명세와 맞춘다."
+ },
+ {
+  "id": "ATT-020",
+  "status": "candidate",
+  "area": "attention/kvcache",
+  "prs": [
+   807
+  ],
+  "merged": [
+   807
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "컴파일러 연산에 새 인자를 넘길 때는 연산 스키마를 먼저 확인해 지원하는 경우에만 전달한다."
+ },
+ {
+  "id": "ATT-025",
+  "status": "candidate",
+  "area": "attention/kvcache",
+  "prs": [
+   677
+  ],
+  "merged": [
+   677
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "static 주소로 표시하는 텐서는 항상 이름 인자를 함께 넘겨 식별 가능하게 한다."
+ },
+ {
+  "id": "ATT-026",
+  "status": "candidate",
+  "area": "attention/kvcache",
+  "prs": [
+   666
+  ],
+  "merged": [
+   666
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "종류가 다른 캐시 메타는 문자열 태그가 아니라 타입(서브클래스)으로 구분하고, 분기에 쓰는 속성은 서브클래스가 정의한다."
+ },
+ {
+  "id": "ATT-027",
+  "status": "candidate",
+  "area": "attention/kvcache",
+  "prs": [
+   625
+  ],
+  "merged": [
+   625
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "호스트 환경에 따라 달라지는 어텐션 구현체는 로드 시점에 고정해 컴파일 결과가 환경에 좌우되지 않게 한다."
+ },
+ {
+  "id": "SUB-007",
+  "status": "candidate",
+  "area": "attention/kvcache",
+  "prs": [
+   766
+  ],
+  "merged": [],
+  "unmerged": [
+   766
+  ],
+  "unknown": [],
+  "stmt": "자동 KV 캐시 블록 수 산정은 같은 디바이스를 공유하는 다른 서브모듈이 쓰는 메모리를 예약하고, 디바이스 목록이 겹치지 않으면 아무것도 예약하지 않는다."
+ },
+ {
+  "id": "DIF-004",
+  "status": "interview",
+  "area": "diffusers",
+  "prs": [
+   15,
+   104
+  ],
+  "merged": [
+   15,
+   104
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "컴파일 시점 옵션은 그래프를 간접적으로 바꾸는 값(예: guidance scale)이 아니라 그래프 형상을 직접 정하는 값(예: 서브모듈 batch size)으로 명시한다."
+ },
+ {
+  "id": "DIF-001",
+  "status": "supported",
+  "area": "diffusers",
+  "prs": [
+   187,
+   198,
+   199,
+   726
+  ],
+  "merged": [
+   187,
+   198,
+   199,
+   726
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "diffusers 모듈의 파일 구성, 하위 패키지 배치, 설정 파일 이름, 선택 서브모듈 목록 속성 이름은 upstream diffusers의 구조와 현재 네이밍을 따르고, 같은 범주의 모듈은 같은 하위 패키지에 둔다."
+ },
+ {
+  "id": "DIF-002",
+  "status": "supported",
+  "area": "diffusers",
+  "prs": [
+   54,
+   58,
+   770
+  ],
+  "merged": [
+   54,
+   770
+  ],
+  "unmerged": [
+   58
+  ],
+  "unknown": [],
+  "stmt": "파이프라인 호출 래퍼는 호출자가 준 형상 인자를 덮어쓰거나 pop으로 지우지 않고 생략된 경우에만 컴파일된 형상으로 채우며, 컴파일된 batch size와 런타임 인자가 맞지 않으면 명시적인 에러를 발생시킨다."
+ },
+ {
+  "id": "DIF-007",
+  "status": "supported",
+  "area": "diffusers",
+  "prs": [
+   129,
+   202
+  ],
+  "merged": [
+   129,
+   202
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "모든 diffusers 모델과 파이프라인은 rbln_config 설정 클래스를 갖도록 구성하고, 그 API 형식은 다른 모델의 설정 객체와 동일하게 맞춘다."
+ },
+ {
+  "id": "DIF-010",
+  "status": "supported",
+  "area": "diffusers",
+  "prs": [
+   694,
+   725
+  ],
+  "merged": [
+   694,
+   725
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "기존 모델의 컴파일 그래프와 입력 순서는 새 변종을 추가해도 바이트 단위로 동일하게 유지하고, 변종 분기는 사용자 옵션이 아니라 설정 값으로 내부에서 결정하며, 그래프를 달리해야 하면 기존 래퍼를 고치지 않고 별도 래퍼 클래스로 분리한다."
+ },
+ {
+  "id": "DIF-023",
+  "status": "supported",
+  "area": "diffusers",
+  "prs": [
+   15,
+   39
+  ],
+  "merged": [
+   15,
+   39
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "여러 구성요소로 이루어진 diffusers 파이프라인은 컴파일과 로딩을 파이프라인 단위로 지원하며, 연결된(connected) 파이프라인은 새 구현을 만들지 않고 단일 파이프라인용 기존 구현을 재사용한다."
+ },
+ {
+  "id": "DIF-003",
+  "status": "candidate",
+  "area": "diffusers",
+  "prs": [
+   58
+  ],
+  "merged": [],
+  "unmerged": [
+   58
+  ],
+  "unknown": [],
+  "stmt": "배치 정합성 검사 로직은 파이프라인별 동작에 맞는 개별 함수로 구현하고, 새 파이프라인을 추가하거나 diffusers 버전이 바뀌면 해당 로직을 점검한다."
+ },
+ {
+  "id": "DIF-005",
+  "status": "candidate",
+  "area": "diffusers",
+  "prs": [
+   104
+  ],
+  "merged": [
+   104
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "배치 크기가 지정되지 않은 diffusers 서브모듈은 Hugging Face 라이브러리의 기본값을 참조해 컴파일한다."
+ },
+ {
+  "id": "DIF-006",
+  "status": "candidate",
+  "area": "diffusers",
+  "prs": [
+   102
+  ],
+  "merged": [
+   102
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "파이프라인이 쓰지 않는 서브모듈은 컴파일하지 않으며, 예를 들어 VQ 인코더는 파이프라인이 이미지 입력을 필요로 할 때만 컴파일한다."
+ },
+ {
+  "id": "DIF-008",
+  "status": "candidate",
+  "area": "diffusers",
+  "prs": [
+   110
+  ],
+  "merged": [
+   110
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "파이프라인 클래스는 자신의 설정 클래스를 클래스 멤버로 노출해 IDE에서 설정 항목을 탐색할 수 있게 한다."
+ },
+ {
+  "id": "DIF-009",
+  "status": "candidate",
+  "area": "diffusers",
+  "prs": [
+   164
+  ],
+  "merged": [
+   164
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "파이프라인 컴파일 설정의 하위 모듈 설정에도 NPU 종류와 텐서 병렬 크기를 전달한다."
+ },
+ {
+  "id": "DIF-011",
+  "status": "candidate",
+  "area": "diffusers",
+  "prs": [
+   725
+  ],
+  "merged": [
+   725
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "런타임에 값이 바뀔 수 있는 스케일 계수는 컴파일 상수로 굳히지 않고 입력 텐서로 전달해 재컴파일 없이 조정하게 한다."
+ },
+ {
+  "id": "DIF-012",
+  "status": "candidate",
+  "area": "diffusers",
+  "prs": [
+   694
+  ],
+  "merged": [
+   694
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "정밀도에 민감한 작은 연산(patch embedding, RoPE 테이블, timestep embedding)은 호스트에서 fp32로 수행한다."
+ },
+ {
+  "id": "DIF-013",
+  "status": "candidate",
+  "area": "diffusers",
+  "prs": [
+   694
+  ],
+  "merged": [
+   694
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "호스트와 디바이스 사이로 넘기는 텐서는 작은 형태로 보내고, 공간 방향 브로드캐스트는 그래프 안에서 수행한다."
+ },
+ {
+  "id": "DIF-014",
+  "status": "candidate",
+  "area": "diffusers",
+  "prs": [
+   694
+  ],
+  "merged": [
+   694
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "정적 그래프는 batch 1로 컴파일하고, 더 큰 파이프라인 배치는 샘플 단위로 나눠 실행한다."
+ },
+ {
+  "id": "DIF-015",
+  "status": "candidate",
+  "area": "diffusers",
+  "prs": [
+   775
+  ],
+  "merged": [],
+  "unmerged": [
+   775
+  ],
+  "unknown": [],
+  "stmt": "정확도 손실이 있는 최적화는 기본값에서 제외하고 옵트인으로 두며, 측정한 오차를 함께 기록한다."
+ },
+ {
+  "id": "DIF-016",
+  "status": "candidate",
+  "area": "diffusers",
+  "prs": [
+   780
+  ],
+  "merged": [],
+  "unmerged": [
+   780
+  ],
+  "unknown": [],
+  "stmt": "체크포인트 템플릿에 따라 달라지는 값(예: 템플릿이 감싸는 토큰 수)은 상수로 적지 않고 export 시 토크나이저에서 읽는다."
+ },
+ {
+  "id": "DIF-017",
+  "status": "candidate",
+  "area": "diffusers",
+  "prs": [
+   715
+  ],
+  "merged": [
+   715
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "diffusers 쪽 forward에는 transformers 규약의 return_dict 폴백을 적용하지 않고, diffusers 고유의 return_dict 기본값 관례를 따른다."
+ },
+ {
+  "id": "DIF-020",
+  "status": "candidate",
+  "area": "diffusers",
+  "prs": [
+   106
+  ],
+  "merged": [
+   106
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "표준 PreTrainedModel을 상속하지 않는 컴포넌트(예: 가드레일 모델)는 파이프라인의 선택 컴포넌트 목록으로 등록해 파이프라인 kwargs로 전달한다."
+ },
+ {
+  "id": "DIF-024",
+  "status": "candidate",
+  "area": "diffusers",
+  "prs": [
+   694
+  ],
+  "merged": [
+   694
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "diffusers 파이프라인은 공식 Hub 레이아웃(리비전, 별도 가중치, 가드레일 포함)을 그대로 따라 지원한다."
+ },
+ {
+  "id": "API-019",
+  "status": "rejected",
+  "area": "api/naming",
+  "prs": [
+   445
+  ],
+  "merged": [],
+  "unmerged": [
+   445
+  ],
+  "unknown": [],
+  "stmt": "설정 입력 경로 사이에 암묵적 우선순위를 두어 한쪽이 다른 쪽을 덮어쓰게 하지 않는다."
+ },
+ {
+  "id": "API-003",
+  "status": "verified",
+  "area": "api/naming",
+  "prs": [
+   67,
+   103,
+   104,
+   612,
+   614,
+   770
+  ],
+  "merged": [
+   67,
+   104,
+   612,
+   614,
+   770
+  ],
+  "unmerged": [
+   103
+  ],
+  "unknown": [],
+  "stmt": "API·설정 구조·공통 런타임 인터페이스·모델 출력 타입을 제거·교체·변경할 때는 라이브러리 내부 호출부, 하위 클래스와 멀티모달 래퍼, vLLM 등 소비 측 코드, README·문서 예제, model-zoo 예제를 같은 변경에서 함께 고치고 비호환이 없는지 확인한다."
+ },
+ {
+  "id": "API-007",
+  "status": "supported",
+  "area": "api/naming",
+  "prs": [
+   162,
+   248,
+   433,
+   803
+  ],
+  "merged": [
+   162,
+   248
+  ],
+  "unmerged": [
+   433,
+   803
+  ],
+  "unknown": [],
+  "stmt": "함수·메서드·속성 이름은 실제 동작과 역할을 정확히 나타내야 하며, 모호한 약어나 HF 용어와 의미가 어긋나는 이름은 바꾸고, 여러 역할을 한 메서드에 묶지 않고 역할별로 나눈다."
+ },
+ {
+  "id": "API-008",
+  "status": "supported",
+  "area": "api/naming",
+  "prs": [
+   162,
+   168,
+   797,
+   802
+  ],
+  "merged": [
+   162,
+   168,
+   797,
+   802
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "모델 클래스 이름, 연산 순서, 메서드 구현 순서와 RBLN 래퍼 클래스의 메서드 이름·시그니처는 upstream(transformers, vLLM 등) 원본의 것을 따른다."
+ },
+ {
+  "id": "API-006",
+  "status": "supported",
+  "area": "api/naming",
+  "prs": [
+   226,
+   256,
+   557
+  ],
+  "merged": [
+   226,
+   256,
+   557
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "함수 인자는 *args/**kwargs나 위치 인덱싱에 기대지 않고 명시적 인자로 받으며, 호출은 key=value 형식으로 쓴다."
+ },
+ {
+  "id": "API-009",
+  "status": "supported",
+  "area": "api/naming",
+  "prs": [
+   98,
+   260,
+   478
+  ],
+  "merged": [
+   98,
+   260,
+   478
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "설정 필드 이름과 상속 구조는 공통 기반 설정 클래스의 이름(예: image_size)과 맞추고, dict로 전달되는 하위 모듈 설정 이름은 config 속성 이름과 일치시킨다."
+ },
+ {
+  "id": "API-014",
+  "status": "verified",
+  "area": "api/naming",
+  "prs": [
+   124,
+   533,
+   734
+  ],
+  "merged": [
+   124,
+   734
+  ],
+  "unmerged": [
+   533
+  ],
+  "unknown": [],
+  "stmt": "공개 객체는 정의한 모듈의 `__all__`에 등록하고 패키지 `__init__.py`는 고정 템플릿으로 두며, 새 모델은 패키지 최상위 export와 모델 레지스트리에 함께 등록한다."
+ },
+ {
+  "id": "API-015",
+  "status": "verified",
+  "area": "api/naming",
+  "prs": [
+   17,
+   157,
+   726
+  ],
+  "merged": [
+   17,
+   157,
+   726
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "내부 모듈 경로를 옮기거나 모델 클래스를 배치할 때 호환용 shim 모듈이나 별도 alias 파일을 남기지 않고, 공개 API의 재export만 유지한다."
+ },
+ {
+  "id": "API-002",
+  "status": "supported",
+  "area": "api/naming",
+  "prs": [
+   614,
+   645
+  ],
+  "merged": [
+   614,
+   645
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "폐기된 API는 폐기 버전에서 한 릴리스 동안 오류를 내게 한 뒤 다음 릴리스에서 제거하며, 차단 시점은 프리릴리스·포스트릴리스 접미사와 무관하게 기본 버전(X.Y.Z)으로 비교해 판단한다."
+ },
+ {
+  "id": "API-011",
+  "status": "verified",
+  "area": "api/naming",
+  "prs": [
+   15,
+   533
+  ],
+  "merged": [
+   15
+  ],
+  "unmerged": [
+   533
+  ],
+  "unknown": [],
+  "stmt": "새 모델 클래스와 파이프라인용 diffusers 구성요소 클래스는 기존 RBLN 접두사 패턴(RBLN*For* 등)을 따라 이름 짓고 노출한다."
+ },
+ {
+  "id": "API-010",
+  "status": "candidate",
+  "area": "api/naming",
+  "prs": [
+   682
+  ],
+  "merged": [
+   682
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "설정 클래스의 정수형 인자는 기본값을 None으로 두고 내부에서 기본값(예: 1)으로 해석하는 저장소 관례를 따른다."
+ },
+ {
+  "id": "API-012",
+  "status": "candidate",
+  "area": "api/naming",
+  "prs": [
+   337
+  ],
+  "merged": [
+   337
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "사용자에게 노출하지 않는 메서드는 `_` 접두사를 붙인다."
+ },
+ {
+  "id": "API-013",
+  "status": "candidate",
+  "area": "api/naming",
+  "prs": [
+   234
+  ],
+  "merged": [
+   234
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "**kwargs 타입 주석에는 값의 타입만 쓰고 Dict로 감싸지 않는다."
+ },
+ {
+  "id": "API-018",
+  "status": "candidate",
+  "area": "api/naming",
+  "prs": [
+   426
+  ],
+  "merged": [
+   426
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "CLI에서 Hugging Face 모델 로더 인자는 --hf-* 접두사로 전달하고, 나머지 인자는 컴파일 설정 객체로 보낸다."
+ },
+ {
+  "id": "ATT-023",
+  "status": "candidate",
+  "area": "api/naming",
+  "prs": [
+   112
+  ],
+  "merged": [
+   112
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "외부 통합(예: vLLM)이 사용하는 어텐션 구현 방식과 KV 블록 수는 getter 메서드로 노출한다."
+ },
+ {
+  "id": "TEST-004",
+  "status": "supported",
+  "area": "testing",
+  "prs": [
+   355,
+   372,
+   737,
+   740
+  ],
+  "merged": [
+   355,
+   737
+  ],
+  "unmerged": [
+   372,
+   740
+  ],
+  "unknown": [],
+  "stmt": "전체 pytest가 필요한 변경은 커밋 메시지에 [pytest-full]을 넣는다."
+ },
+ {
+  "id": "TEST-006",
+  "status": "supported",
+  "area": "testing",
+  "prs": [
+   203,
+   215
+  ],
+  "merged": [
+   203,
+   215
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "무거운 추론 테스트와 Hub push 검증처럼 비용이 큰 테스트는 기본 PR 테스트가 아닌 스케줄 CI에서만 실행한다."
+ },
+ {
+  "id": "TEST-009",
+  "status": "supported",
+  "area": "testing",
+  "prs": [
+   18,
+   226,
+   253,
+   735
+  ],
+  "merged": [
+   18,
+   226,
+   253,
+   735
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "새 모델을 지원하는 PR에는 모델 전용 pytest를 함께 추가하고, upstream 라이브러리의 테스트를 기반으로 작성한다."
+ },
+ {
+  "id": "TEST-010",
+  "status": "supported",
+  "area": "testing",
+  "prs": [
+   15,
+   203,
+   694,
+   816
+  ],
+  "merged": [
+   15,
+   203,
+   694
+  ],
+  "unmerged": [
+   816
+  ],
+  "unknown": [],
+  "stmt": "테스트는 전체 크기 모델 대신 tiny 모델이나 레이어 수를 최소로 줄인 모델을 사용하며, 파이프라인 테스트는 실제 아키텍처를 본뜬 tiny-random 구성으로 export, generation, reload를 검증한다."
+ },
+ {
+  "id": "TEST-011",
+  "status": "supported",
+  "area": "testing",
+  "prs": [
+   657,
+   659,
+   701,
+   759
+  ],
+  "merged": [
+   657,
+   659,
+   701
+  ],
+  "unmerged": [
+   759
+  ],
+  "unknown": [],
+  "stmt": "버그 수정에는 수정을 되돌리면 실패하는 회귀 테스트를 함께 넣고, 기존 테스트가 놓친 입력 조건(청크 배수 길이, 패딩 방향, 배치 등)과 같은 계열 모델의 누락된 커버리지를 채운다."
+ },
+ {
+  "id": "TEST-012",
+  "status": "supported",
+  "area": "testing",
+  "prs": [
+   27,
+   196,
+   538,
+   698
+  ],
+  "merged": [
+   27,
+   196,
+   538,
+   698
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "기능 추가나 동작 변경(설정 저장·재로드 왕복, 별칭 매핑, 서브모듈 설정 전파, generation 코드 동기화 등)에는 그 효과를 증명하는 테스트를 함께 추가한다."
+ },
+ {
+  "id": "TEST-013",
+  "status": "supported",
+  "area": "testing",
+  "prs": [
+   625,
+   711,
+   802,
+   817
+  ],
+  "merged": [
+   625,
+   711,
+   802
+  ],
+  "unmerged": [
+   817
+  ],
+  "unknown": [],
+  "stmt": "모델·그래프·커널 변경은 참조 구현(HF CPU 또는 이전 구현)과 같은 입력에서 생성 토큰 일치, logits 상관계수, 비트 단위 일치 등으로 비교 검증하고, 불일치는 near-tie 여부 등 근거와 함께 결과를 PR 설명에 기록한다."
+ },
+ {
+  "id": "TEST-017",
+  "status": "supported",
+  "area": "testing",
+  "prs": [
+   589,
+   635,
+   705,
+   766
+  ],
+  "merged": [
+   635
+  ],
+  "unmerged": [
+   589,
+   705,
+   766
+  ],
+  "unknown": [],
+  "stmt": "CI가 다루지 않는 변경은 병합 전에 실제 NPU에서 컴파일과 추론까지 확인하고, 확인하지 못했으면 PR 설명에 미검증 범위를 명시하며 draft로 둔다."
+ },
+ {
+  "id": "TEST-001",
+  "status": "supported",
+  "area": "testing",
+  "prs": [
+   180,
+   475,
+   722
+  ],
+  "merged": [
+   180,
+   475,
+   722
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "테스트는 CI 워크플로우가 실제로 실행하는 파일에 두고, 기대값은 실제 모델 출력으로 검증하며, 실패를 가리는 우회 줄을 남기지 않고, 같은 기능을 검증하는 중복 테스트는 하나로 합친다."
+ },
+ {
+  "id": "TEST-002",
+  "status": "supported",
+  "area": "testing",
+  "prs": [
+   746,
+   759,
+   784
+  ],
+  "merged": [
+   746
+  ],
+  "unmerged": [
+   759,
+   784
+  ],
+  "unknown": [],
+  "stmt": "NPU가 필요 없는 테스트(호스트 측 준비 로직 포함)는 NPU 리소스를 요청하지 않는 CPU 단위 테스트로 작성해 tests/unit/cpu/에 두고, 디바이스가 필요한 단위 테스트는 tests/unit/npu/에 둔다."
+ },
+ {
+  "id": "TEST-008",
+  "status": "aspirational",
+  "area": "testing",
+  "prs": [
+   15,
+   252,
+   320
+  ],
+  "merged": [
+   15,
+   252,
+   320
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "새 모델 클래스나 파이프라인을 추가하거나 변경할 때는 해당 테스트 목록(test_transformers, test_diffusers, pytest 스케줄 등)에도 등록하며, 멀티모달 모델은 멀티모달 플래그를 설정한다."
+ },
+ {
+  "id": "TEST-019",
+  "status": "verified",
+  "area": "testing",
+  "prs": [
+   531,
+   741,
+   745
+  ],
+  "merged": [
+   531,
+   741,
+   745
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "테스트 클래스는 기반 클래스나 클래스가 소유한 공유 설정 dict를 in-place로 수정하지 않고 새 dict를 만들거나 자기 속성으로 재바인딩하며, from_pretrained를 직접 호출할 때는 클래스의 HF_CONFIG_KWARGS를 함께 넘긴다."
+ },
+ {
+  "id": "TEST-038",
+  "status": "supported",
+  "area": "testing",
+  "prs": [
+   325,
+   571,
+   572
+  ],
+  "merged": [
+   325,
+   571
+  ],
+  "unmerged": [
+   572
+  ],
+  "unknown": [],
+  "stmt": "테스트 기대값과 경계 입력은 모델의 기본 동작(기본 어텐션 구현 등)과 지원 범위 상수에 맞춰 작성하고, 이들이 바뀌면 기존 테스트를 함께 갱신하거나 정리한다."
+ },
+ {
+  "id": "TEST-005",
+  "status": "supported",
+  "area": "testing",
+  "prs": [
+   345,
+   720
+  ],
+  "merged": [
+   345
+  ],
+  "unmerged": [],
+  "unknown": [
+   720
+  ],
+  "stmt": "하위 호환(BC) 검증과 경계값으로 알려진 설정 조합은 PR마다 실행되는 CI 케이스로 고정해 커버한다."
+ },
+ {
+  "id": "TEST-007",
+  "status": "verified",
+  "area": "testing",
+  "prs": [
+   203,
+   241
+  ],
+  "merged": [
+   203,
+   241
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "pytest는 각 테스트 케이스의 실행 시간을 보고하도록 verbosity를 설정하고, 스케줄 실행은 첫 실패에서 중단하지 않는다."
+ },
+ {
+  "id": "TEST-015",
+  "status": "supported",
+  "area": "testing",
+  "prs": [
+   566,
+   800
+  ],
+  "merged": [
+   800
+  ],
+  "unmerged": [
+   566
+  ],
+  "unknown": [],
+  "stmt": "모델·custom op 변경은 대표 구성(여러 텐서 병렬 크기, attention 변형과 MoE 모델 각 하나 이상)으로 컴파일 스모크 테스트를 돌려 컴파일러가 기대하는 패턴과 맞는지 확인한다."
+ },
+ {
+  "id": "TEST-016",
+  "status": "supported",
+  "area": "testing",
+  "prs": [
+   495,
+   808
+  ],
+  "merged": [
+   808
+  ],
+  "unmerged": [
+   495
+  ],
+  "unknown": [],
+  "stmt": "PR 설명에는 실행한 테스트 명령, 결과, 실행 환경(CPU 전용인지 NPU 호스트인지)과 테스트 수를 적고, 기존에 있던 실패는 원인과 함께 표시한다."
+ },
+ {
+  "id": "TEST-018",
+  "status": "supported",
+  "area": "testing",
+  "prs": [
+   714,
+   730
+  ],
+  "merged": [
+   714
+  ],
+  "unmerged": [
+   730
+  ],
+  "unknown": [],
+  "stmt": "메모리 관련 변경과 모델 테스트는 호스트 RSS 증가를 측정하며(dense 모델은 체크포인트 크기의 0.5배 미만, MoE 모델은 1.5배 미만), 최적화 PR은 단계별 RSS를 표로 제시한다."
+ },
+ {
+  "id": "TEST-020",
+  "status": "supported",
+  "area": "testing",
+  "prs": [
+   722,
+   810
+  ],
+  "merged": [
+   722,
+   810
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "테스트는 같은 프로세스에서 다른 테스트와 함께 돌아도 통과해야 하며, 테스트 클래스는 tearDownClass에서 만든 모델 객체를 해제한다."
+ },
+ {
+  "id": "TEST-022",
+  "status": "supported",
+  "area": "testing",
+  "prs": [
+   462,
+   744
+  ],
+  "merged": [
+   462,
+   744
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "테스트 간 실행 순서 의존성은 이름의 알파벳 순서로 보장하고, 테스트를 샤딩할 때는 클래스 단위로 나누어 한 모델이 두 작업에서 동시에 컴파일되지 않게 하며 분할 후에도 수집 순서를 유지한다."
+ },
+ {
+  "id": "TEST-028",
+  "status": "supported",
+  "area": "testing",
+  "prs": [
+   120,
+   753
+  ],
+  "merged": [
+   120,
+   753
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "의미상 런타임이 필요하지 않은 테스트(아티팩트 저장만 하는 실행 등)는 런타임을 생성하지 않아 하드웨어를 점유하는 단계를 뺀다."
+ },
+ {
+  "id": "TEST-029",
+  "status": "supported",
+  "area": "testing",
+  "prs": [
+   387,
+   747
+  ],
+  "merged": [
+   387,
+   747
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "외부 컴파일러 문제로 비활성화한 테스트는 원인이 해결되면 다시 활성화하고, 더 이상 건너뛰는 일이 없는 테스트 레벨 게이트는 제거한다."
+ },
+ {
+  "id": "TEST-032",
+  "status": "supported",
+  "area": "testing",
+  "prs": [
+   688,
+   743
+  ],
+  "merged": [
+   743
+  ],
+  "unmerged": [
+   688
+  ],
+  "unknown": [],
+  "stmt": "테스트에서 Hub 접근은 기본적으로 차단하고 명시적으로 표시된 테스트만 온라인으로 허용하며, push한 값은 main이 아니라 push가 만든 커밋 sha로 읽어 검증한다."
+ },
+ {
+  "id": "TEST-003",
+  "status": "candidate",
+  "area": "testing",
+  "prs": [
+   731
+  ],
+  "merged": [
+   731
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "공통 테스트 베이스(tests/test_base.py)를 바꾸는 변경은 모든 테스트 스위트에 영향을 주는 것으로 취급해 전체를 실행한다."
+ },
+ {
+  "id": "TEST-021",
+  "status": "candidate",
+  "area": "testing",
+  "prs": [
+   410
+  ],
+  "merged": [
+   410
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "같은 컴파일 모델을 같은 장치에서 동시에 로드하는 테스트를 작성하지 않는다."
+ },
+ {
+  "id": "TEST-023",
+  "status": "candidate",
+  "area": "testing",
+  "prs": [
+   772
+  ],
+  "merged": [],
+  "unmerged": [
+   772
+  ],
+  "unknown": [],
+  "stmt": "아티팩트 저장과 로드를 검증하는 테스트(BC 테스트, requires_compile 클래스)는 가짜 컴파일 환경 변수와 무관하게 실제 컴파일을 사용한다."
+ },
+ {
+  "id": "TEST-027",
+  "status": "candidate",
+  "area": "testing",
+  "prs": [
+   753
+  ],
+  "merged": [
+   753
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "NPU 없이 컴파일할 때는 대상 SoC를 환경 변수로 명시해, 호스트나 스케줄러가 넘긴 값을 상속하지 않게 한다."
+ },
+ {
+  "id": "TEST-030",
+  "status": "candidate",
+  "area": "testing",
+  "prs": [
+   152
+  ],
+  "merged": [
+   152
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "특정 NPU에서 지원되지 않는 모델은 해당 장치의 CI/CD 대상에서 임시로 제외한다."
+ },
+ {
+  "id": "TEST-031",
+  "status": "candidate",
+  "area": "testing",
+  "prs": [
+   327
+  ],
+  "merged": [
+   327
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "서빙 엔진(vLLM)의 기능은 optimum-rbln 테스트가 아니라 해당 엔진의 CI에서 검증한다."
+ },
+ {
+  "id": "TEST-033",
+  "status": "candidate",
+  "area": "testing",
+  "prs": [
+   404
+  ],
+  "merged": [
+   404
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "테스트는 컴파일 산출물을 저장하고 재사용한다."
+ },
+ {
+  "id": "TEST-035",
+  "status": "candidate",
+  "area": "testing",
+  "prs": [
+   729
+  ],
+  "merged": [
+   729
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "계약 조항(해석, 상한, 기본값, 일관성 등)마다 검증 테스트 함수를 하나씩 두어 실패 지점이 어느 조항인지 드러나게 한다."
+ },
+ {
+  "id": "TEST-040",
+  "status": "candidate",
+  "area": "testing",
+  "prs": [
+   600
+  ],
+  "merged": [
+   600
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "가중치를 제자리에서 바꾸는 전처리 헬퍼는 값 보존, 가중치 공유 유지, 멱등성을 단위 테스트로 검증한다."
+ },
+ {
+  "id": "DOC-004",
+  "status": "interview",
+  "area": "docstring/docs",
+  "prs": [
+   270,
+   277,
+   367
+  ],
+  "merged": [
+   270,
+   277,
+   367
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "docstring의 가변 키워드 인자는 `**kwargs`가 아니라 `kwargs`로 표기하고, `rbln_` 접두사 인자가 rbln_config로, 나머지가 HuggingFace 라이브러리로 전달된다는 점을 적는다."
+ },
+ {
+  "id": "DOC-003",
+  "status": "supported",
+  "area": "docstring/docs",
+  "prs": [
+   38,
+   308,
+   363,
+   787,
+   803
+  ],
+  "merged": [
+   38,
+   308,
+   363,
+   787
+  ],
+  "unmerged": [
+   803
+  ],
+  "unknown": [],
+  "stmt": "docstring의 인자 목록, 기본값, 텐서 shape, 수치 정의, 예시 클래스 이름은 실제 시그니처와 코드가 비교하는 값에 맞춘다."
+ },
+ {
+  "id": "DOC-001",
+  "status": "supported",
+  "area": "docstring/docs",
+  "prs": [
+   177,
+   218,
+   308,
+   363
+  ],
+  "merged": [
+   177,
+   218,
+   308,
+   363
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "새로 추가하는 모델·설정·파이프라인 클래스와 함수, 오버라이드한 classmethod(예: from_pretrained)에는 docstring을 두고, 용도와 추가 이유·주의사항을 적으며 가능하면 사용 예시를 포함한다."
+ },
+ {
+  "id": "DOC-011",
+  "status": "verified",
+  "area": "docstring/docs",
+  "prs": [
+   181,
+   779,
+   781,
+   783
+  ],
+  "merged": [
+   181,
+   783
+  ],
+  "unmerged": [
+   779,
+   781
+  ],
+  "unknown": [],
+  "stmt": "Google 스타일 docstring에서 파라미터 선언(이름과 괄호 속 타입)과 Returns 설명은 각각 한 줄에 쓰고, 파라미터 이름은 첫 `:` 앞에서 끝나게 하며, 기본값은 \"Defaults to\"로 명시한다."
+ },
+ {
+  "id": "DOC-002",
+  "status": "supported",
+  "area": "docstring/docs",
+  "prs": [
+   630,
+   631,
+   735
+  ],
+  "merged": [
+   631,
+   735
+  ],
+  "unmerged": [
+   630
+  ],
+  "unknown": [],
+  "stmt": "주석은 코드가 말하지 않는 이유만 짧게 적고, 코드를 그대로 풀어 설명하거나 PR 이력·마이그레이션 맥락·개발 중 메모를 남기지 않으며, 내부 구현 설명은 docstring 대신 # 주석으로 쓴다."
+ },
+ {
+  "id": "DOC-012",
+  "status": "verified",
+  "area": "docstring/docs",
+  "prs": [
+   550,
+   732
+  ],
+  "merged": [
+   550
+  ],
+  "unmerged": [
+   732
+  ],
+  "unknown": [],
+  "stmt": "docstring의 문서 링크는 상대 경로가 아니라 절대 URL로 쓰고, SDK 문서 빌드 결과에 실제로 존재하는 경로만 가리킨다."
+ },
+ {
+  "id": "DIF-021",
+  "status": "candidate",
+  "area": "docstring/docs",
+  "prs": [
+   54
+  ],
+  "merged": [
+   54
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "새 diffusers 파이프라인을 추가할 때는 예제(examples)도 함께 추가하고 갱신한다."
+ },
+ {
+  "id": "DOC-006",
+  "status": "candidate",
+  "area": "docstring/docs",
+  "prs": [
+   168
+  ],
+  "merged": [
+   168
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "예제 코드는 NVIDIA나 diffusers의 예제와 크게 다르지 않은 형태로 작성하고, 컴파일은 from_pretrained 호출 안에서 처리한다."
+ },
+ {
+  "id": "DOC-007",
+  "status": "candidate",
+  "area": "docstring/docs",
+  "prs": [
+   788
+  ],
+  "merged": [
+   788
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "docstring 예제는 실제로 실행해 통과를 확인하고, 예제의 컴파일 설정은 모델 예제 저장소의 컴파일 스크립트 설정과 같게 맞춘다."
+ },
+ {
+  "id": "DOC-008",
+  "status": "candidate",
+  "area": "docstring/docs",
+  "prs": [
+   635
+  ],
+  "merged": [
+   635
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "예제 스크립트는 컴파일 여부를 인자로 받지 않고 모델 id인지 컴파일 산출물 디렉터리인지로 자동 판별하며, 헤더에 동등한 CLI 명령을 함께 적는다."
+ },
+ {
+  "id": "DOC-010",
+  "status": "candidate",
+  "area": "docstring/docs",
+  "prs": [
+   533
+  ],
+  "merged": [],
+  "unmerged": [
+   533
+  ],
+  "unknown": [],
+  "stmt": "모델 디렉터리마다 파이프라인 사용법과 의존성 표를 담은 README 문서를 함께 둔다."
+ },
+ {
+  "id": "DOC-013",
+  "status": "candidate",
+  "area": "docstring/docs",
+  "prs": [
+   731
+  ],
+  "merged": [
+   731
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "docstring 검사의 예외 목록에서 파일이 검사를 통과하게 되면 해당 예외를 즉시 제거한다."
+ },
+ {
+  "id": "DOC-015",
+  "status": "candidate",
+  "area": "docstring/docs",
+  "prs": [
+   625
+  ],
+  "merged": [
+   625
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "이름이 같은 서로 다른 개념(예: 외부 라이브러리의 설정값과 RBLN 고유 옵션)은 문서에서 어느 쪽을 가리키는지 명시해 구분한다."
+ },
+ {
+  "id": "DOC-019",
+  "status": "candidate",
+  "area": "docstring/docs",
+  "prs": [
+   113
+  ],
+  "merged": [
+   113
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "문서와 docstring에서 Hugging Face 표기는 HuggingFace로 통일한다."
+ },
+ {
+  "id": "DEP-005",
+  "status": "interview",
+  "area": "dependency/version",
+  "prs": [
+   301,
+   564
+  ],
+  "merged": [],
+  "unmerged": [
+   301,
+   564
+  ],
+  "unknown": [],
+  "stmt": "지원하는 transformers 버전은 지원 범위로 선언할지 단일 정확 버전(`==`)으로 고정할지 하나의 방식으로 통일한다."
+ },
+ {
+  "id": "DEP-019",
+  "status": "supported",
+  "area": "dependency/version",
+  "prs": [
+   597,
+   638,
+   708
+  ],
+  "merged": [
+   597,
+   638
+  ],
+  "unmerged": [
+   708
+  ],
+  "unknown": [],
+  "stmt": "컴파일러 기능 유무는 버전 문자열 비교가 아니라 API 존재 여부로 감지한다."
+ },
+ {
+  "id": "DEP-004",
+  "status": "candidate",
+  "area": "dependency/version",
+  "prs": [
+   564
+  ],
+  "merged": [],
+  "unmerged": [
+   564
+  ],
+  "unknown": [],
+  "stmt": "버전에 따라 경로나 이름이 달라지는 외부 API는 호환 모듈 한 곳에 모으고 나머지 코드는 정식 이름 하나만 import한다. 버전 조건 분기는 ad-hoc 비교 대신 공용 버전 비교 헬퍼를 쓰고, shim은 실제로 바뀐 것이 확인된 심볼에만 적용하며, 패턴은 HF 생태계의 관례와 맞춘다."
+ },
+ {
+  "id": "DEP-009",
+  "status": "rejected",
+  "area": "dependency/version",
+  "prs": [
+   533
+  ],
+  "merged": [],
+  "unmerged": [
+   533
+  ],
+  "unknown": [],
+  "stmt": "모델 구현의 무거운 선택적 의존성은 함수 안이 아니라 모듈 최상단에서 import한다."
+ },
+ {
+  "id": "DEP-001",
+  "status": "aspirational",
+  "area": "dependency/version",
+  "prs": [
+   473,
+   481,
+   495,
+   549,
+   631,
+   682
+  ],
+  "merged": [
+   473,
+   481,
+   549,
+   631,
+   682
+  ],
+  "unmerged": [
+   495
+  ],
+  "unknown": [],
+  "stmt": "deprecated 인자·API는 deprecate 데코레이터로 표시하고 제거 예정 버전을 명시하며, 해당 버전에 도달하면 제거한다. 이전 메이저 버전 전용 기능도 같은 방식으로 deprecate 처리한다."
+ },
+ {
+  "id": "DEP-002",
+  "status": "supported",
+  "area": "dependency/version",
+  "prs": [
+   97,
+   134,
+   162,
+   317
+  ],
+  "merged": [
+   97,
+   134,
+   162,
+   317
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "의존 라이브러리 버전에 따라 달라지는 동작은 검증한 버전을 명시하고, 차이가 나면 버전 분기나 주석으로 남긴다."
+ },
+ {
+  "id": "DEP-012",
+  "status": "verified",
+  "area": "dependency/version",
+  "prs": [
+   54,
+   310,
+   728,
+   807
+  ],
+  "merged": [
+   54,
+   310,
+   728,
+   807
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "PR CI가 쓰는 컴파일러 버전은 .github/version.yaml 한 곳에서 고정하고 모든 CI가 그 값을 읽게 하며, 컴파일러 업데이트가 필요하면 그 파일에 반영하고 pytest에서 쓰는 배포 컴파일러 버전과 일치하는지 확인한다."
+ },
+ {
+  "id": "DEP-033",
+  "status": "verified",
+  "area": "dependency/version",
+  "prs": [
+   306,
+   340,
+   341,
+   372
+  ],
+  "merged": [
+   340
+  ],
+  "unmerged": [
+   306,
+   341,
+   372
+  ],
+  "unknown": [],
+  "stmt": "의존성 봇이 만든 업데이트 PR은 자동 병합하지 않고 검토 후 사람이 직접 병합한다."
+ },
+ {
+  "id": "DEP-007",
+  "status": "supported",
+  "area": "dependency/version",
+  "prs": [
+   8,
+   79,
+   671
+  ],
+  "merged": [
+   8,
+   79,
+   671
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "의존성 버전은 model-zoo 등으로 검증한 뒤에 상향하며, 상향 전에 기능 점검과 핵심 의존성의 해당 Python 버전 wheel 가용성을 인덱스에서 확인하고, 최대 버전 상한은 최신 버전 출시에 맞춰 갱신하고 불필요해진 의존성은 제거한다."
+ },
+ {
+  "id": "DEP-015",
+  "status": "verified",
+  "area": "dependency/version",
+  "prs": [
+   186,
+   346,
+   808
+  ],
+  "merged": [
+   186,
+   346,
+   808
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "외부 라이브러리가 deprecated로 표시한 속성, 호출 방식, import 경로는 권장 대체 방식으로 옮긴다."
+ },
+ {
+  "id": "DEP-008",
+  "status": "verified",
+  "area": "dependency/version",
+  "prs": [
+   168,
+   533
+  ],
+  "merged": [
+   168
+  ],
+  "unmerged": [
+   533
+  ],
+  "unknown": [],
+  "stmt": "모델 구현에 필요한 새 외부 의존성은 pyproject.toml에 명시하되, 필수 기능이 아닌 패키지는 기본 의존성에 넣지 않는다."
+ },
+ {
+  "id": "DEP-011",
+  "status": "verified",
+  "area": "dependency/version",
+  "prs": [
+   15,
+   106
+  ],
+  "merged": [
+   15,
+   106
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "torch.load는 weights_only를 명시적으로 지정한다."
+ },
+ {
+  "id": "DEP-016",
+  "status": "supported",
+  "area": "dependency/version",
+  "prs": [
+   773,
+   774
+  ],
+  "merged": [
+   773,
+   774
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "torch 버전을 올릴 때는 모델 구현의 혼합 dtype 행렬곱 피연산자를 점검하여 명시적으로 같은 dtype에 맞춘다."
+ },
+ {
+  "id": "DEP-017",
+  "status": "supported",
+  "area": "dependency/version",
+  "prs": [
+   525,
+   769
+  ],
+  "merged": [
+   525,
+   769
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "torch 버전을 올리는 변경은 같은 torch 버전을 검증한 컴파일러 빌드와 함께 또는 그보다 먼저 반영하고, torch에 의존하는 패키지(vllm-rbln, torch-rbln)도 같은 PR에서 함께 맞춘다."
+ },
+ {
+  "id": "DEP-013",
+  "status": "candidate",
+  "area": "dependency/version",
+  "prs": [
+   311,
+   312,
+   529
+  ],
+  "merged": [
+   311,
+   312,
+   529
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "테스트 의존 패키지(pytest, torchcodec)는 버전을 고정하고 컴파일러 버전에 맞춰 함께 관리한다."
+ },
+ {
+  "id": "DEP-031",
+  "status": "candidate",
+  "area": "dependency/version",
+  "prs": [
+   13,
+   282,
+   310
+  ],
+  "merged": [
+   13,
+   282,
+   310
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "transformers 버전을 올릴 때는 새 버전과 호환되지 않는 모델 구현(VLM 계열, 디코더 전용, T5 아키텍처)을 함께 수정하고 vLLM 및 모델별 최신 지원 여부를 점검한다."
+ },
+ {
+  "id": "DEP-021",
+  "status": "candidate",
+  "area": "dependency/version",
+  "prs": [
+   330,
+   626
+  ],
+  "merged": [
+   330,
+   626
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "최소 지원 컴파일러 버전이 어떤 기능을 항상 제공하게 되면 그 기능의 존재를 확인하는 호환 분기와 폴백 코드는 제거한다."
+ },
+ {
+  "id": "DEP-006",
+  "status": "candidate",
+  "area": "dependency/version",
+  "prs": [
+   564
+  ],
+  "merged": [],
+  "unmerged": [
+   564
+  ],
+  "unknown": [],
+  "stmt": "지원 범위 안의 외부 라이브러리 메이저 버전마다 PR CI 매트릭스에서 각각 테스트한다."
+ },
+ {
+  "id": "DEP-014",
+  "status": "candidate",
+  "area": "dependency/version",
+  "prs": [
+   109
+  ],
+  "merged": [
+   109
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "컴파일러와 optimum-rbln 사이의 버전 호환 검사는 post-release 접미사를 제외한 기본 버전만 비교하며, 버전 호환성 목록은 코드에 하드코딩하지 않는다."
+ },
+ {
+  "id": "DEP-022",
+  "status": "candidate",
+  "area": "dependency/version",
+  "prs": [
+   733
+  ],
+  "merged": [
+   733
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "ruff 버전은 pre-commit 훅, uv.lock, quality 의존성 그룹에서 같은 값으로 고정한다."
+ },
+ {
+  "id": "DEP-024",
+  "status": "candidate",
+  "area": "dependency/version",
+  "prs": [
+   415
+  ],
+  "merged": [
+   415
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "의존성 잠금 파일이나 프로젝트 메타데이터가 바뀌면 CI 실행 환경 이미지를 재빌드하여 푸시한다."
+ },
+ {
+  "id": "DEP-028",
+  "status": "candidate",
+  "area": "dependency/version",
+  "prs": [
+   621
+  ],
+  "merged": [
+   621
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "컴파일러가 이미 등록하는 커스텀 op 정의는 이 라이브러리에서 중복 등록하지 않고 컴파일러를 단일 원천으로 둔다."
+ },
+ {
+  "id": "DEP-029",
+  "status": "candidate",
+  "area": "dependency/version",
+  "prs": [
+   564
+  ],
+  "merged": [],
+  "unmerged": [
+   564
+  ],
+  "unknown": [],
+  "stmt": "특정 (모델 × 메이저 버전) 조합에 알려진 호환 문제가 있으면 컴파일 깊은 곳에서 실패하기 전에 런타임 에러로 막는 허용목록을 둔다."
+ },
+ {
+  "id": "DEP-030",
+  "status": "candidate",
+  "area": "dependency/version",
+  "prs": [
+   479
+  ],
+  "merged": [],
+  "unmerged": [
+   479
+  ],
+  "unknown": [],
+  "stmt": "transformers 메이저 릴리스 대응은 `transformers/vX` 형태의 전용 브랜치를 base로 하는 별도 준비 PR로 진행한다."
+ },
+ {
+  "id": "DEP-036",
+  "status": "candidate",
+  "area": "dependency/version",
+  "prs": [
+   384
+  ],
+  "merged": [],
+  "unmerged": [
+   384
+  ],
+  "unknown": [],
+  "stmt": "정식 릴리스 이후의 수정만 담은 패치 릴리스는 버전에 .postN 접미사를 붙여 표기한다."
+ },
+ {
+  "id": "DEP-037",
+  "status": "candidate",
+  "area": "dependency/version",
+  "prs": [
+   233
+  ],
+  "merged": [],
+  "unmerged": [
+   233
+  ],
+  "unknown": [],
+  "stmt": "CI와 pyproject.toml의 지원 Python 버전은 함께 갱신한다."
+ },
+ {
+  "id": "DEP-039",
+  "status": "candidate",
+  "area": "dependency/version",
+  "prs": [
+   40
+  ],
+  "merged": [
+   40
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "Python 클래스 레벨 property 패턴은 사용하지 않는다."
+ },
+ {
+  "id": "PRC-025",
+  "status": "rejected",
+  "area": "pr_process",
+  "prs": [
+   450,
+   451,
+   492,
+   692
+  ],
+  "merged": [
+   451,
+   492,
+   692
+  ],
+  "unmerged": [
+   450
+  ],
+  "unknown": [],
+  "stmt": "main은 원칙적으로 dev에서 넘어오는 동기화 병합으로만 전진시키고, 긴급 hotfix로 main에 직접 반영한 변경은 base를 main으로 두고 제목에 (hotfix)를 표기하며 dev에도 백머지 PR로 반영한다."
+ },
+ {
+  "id": "PRC-035",
+  "status": "supported",
+  "area": "pr_process",
+  "prs": [
+   46,
+   63,
+   748
+  ],
+  "merged": [
+   46,
+   63,
+   748
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "PR 빌드의 테스트 스위트는 경로 기반 조건이나 코드 내부 의존 관계 추론으로 생략하지 않고 모두 실행하며, 실행 시간이 길 때는 커밋 메시지의 영역별·전체 skip 마커로 명시적으로 건너뛴다."
+ },
+ {
+  "id": "PRC-024",
+  "status": "supported",
+  "area": "pr_process",
+  "prs": [
+   693,
+   805
+  ],
+  "merged": [
+   693,
+   805
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "브랜치 사이로 수정을 옮길 때는 dev에 먼저 머지하고 cherry-pick -x로 출처를 남긴다."
+ },
+ {
+  "id": "PRC-031",
+  "status": "verified",
+  "area": "pr_process",
+  "prs": [
+   404,
+   753
+  ],
+  "merged": [
+   404,
+   753
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "BC 컴파일은 안정 릴리스 태그에서만 돌고, 스텝 안에서 태그를 다시 검사한다."
+ },
+ {
+  "id": "PRC-032",
+  "status": "verified",
+  "area": "pr_process",
+  "prs": [
+   29
+  ],
+  "merged": [
+   29
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "모든 v* 태그는 프리릴리스를 포함해 PyPI 배포와 vllm-rbln 갱신을 트리거한다."
+ },
+ {
+  "id": "PRC-008",
+  "status": "aspirational",
+  "area": "pr_process",
+  "prs": [
+   122,
+   360,
+   563,
+   638,
+   692,
+   795
+  ],
+  "merged": [
+   122,
+   360,
+   563,
+   638,
+   692
+  ],
+  "unmerged": [
+   795
+  ],
+  "unknown": [],
+  "stmt": "선행 PR이나 다른 저장소의 PR에 의존하는 PR은 base 브랜치를 선행 PR 브랜치로 두고, 본문에 선행·관련 PR 번호와 링크, 머지 순서, 순서가 어긋났을 때의 대응(닫기 등)을 명시한다."
+ },
+ {
+  "id": "PRC-012",
+  "status": "supported",
+  "area": "pr_process",
+  "prs": [
+   162,
+   211,
+   629,
+   673,
+   711,
+   791
+  ],
+  "merged": [
+   162,
+   211,
+   673,
+   711
+  ],
+  "unmerged": [
+   629,
+   791
+  ],
+  "unknown": [],
+  "stmt": "한 PR은 특정 모델 계열이나 기능 범위로 제한하고, 독립적인 기능이나 호스트 측 호환성 변경처럼 얽힌 항목은 별도 PR로 분리한다."
+ },
+ {
+  "id": "PRC-003",
+  "status": "aspirational",
+  "area": "pr_process",
+  "prs": [
+   556,
+   564,
+   567,
+   570,
+   714
+  ],
+  "merged": [
+   556,
+   570,
+   714
+  ],
+  "unmerged": [
+   564,
+   567
+  ],
+  "unknown": [],
+  "stmt": "PR 본문은 템플릿의 절(변경 유형, 변경 개요, Motivation, Verification, 관련 이슈)을 갖추고, Type of Change에서 해당 유형을 하나 체크하며(Other는 내용을 구체적으로 적음), Motivation에는 채택한 방식이 필요한 이유(문제의 원인이나 기대 효과)를 적는다."
+ },
+ {
+  "id": "DEP-018",
+  "status": "supported",
+  "area": "pr_process",
+  "prs": [
+   259,
+   453,
+   480,
+   584
+  ],
+  "merged": [
+   259,
+   584
+  ],
+  "unmerged": [
+   453,
+   480
+  ],
+  "unknown": [],
+  "stmt": "컴파일러 버전, 브랜치, 해시나 컴파일러 쪽 수정에 의존하는 PR은 본문에 필요한 컴파일러 버전·브랜치·해시 또는 의존 PR을 명시하고 아직 검증되지 않은 범위를 표기한다."
+ },
+ {
+  "id": "PRC-001",
+  "status": "verified",
+  "area": "pr_process",
+  "prs": [
+   41,
+   446,
+   729,
+   735
+  ],
+  "merged": [
+   41,
+   729,
+   735
+  ],
+  "unmerged": [
+   446
+  ],
+  "unknown": [],
+  "stmt": "PR 제목은 `type(optional scope): description` 형식의 conventional commit을 따르고, type은 PR 템플릿이 정의한 목록(model, performance, refactor, doc, dependency, release, other)에서 변경 성격에 맞게 고르며 모델 버그 수정도 model로 분류한다."
+ },
+ {
+  "id": "PRC-005",
+  "status": "rejected",
+  "area": "pr_process",
+  "prs": [
+   482,
+   484,
+   541,
+   578
+  ],
+  "merged": [
+   484,
+   541,
+   578
+  ],
+  "unmerged": [
+   482
+  ],
+  "unknown": [],
+  "stmt": "릴리스 PR은 dev를 main으로 병합하는 PR로 만들고, base를 main으로 두며, 제목을 `release: vX.Y.Z` 형식으로 쓰고 Type of Change에서 Release를 체크한다."
+ },
+ {
+  "id": "PRC-002",
+  "status": "rejected",
+  "area": "pr_process",
+  "prs": [
+   391,
+   490,
+   496
+  ],
+  "merged": [],
+  "unmerged": [
+   391,
+   490,
+   496
+  ],
+  "unknown": [],
+  "stmt": "작업 중인 PR은 제목에 (WIP)를 붙인다."
+ },
+ {
+  "id": "PRC-014",
+  "status": "supported",
+  "area": "pr_process",
+  "prs": [
+   711,
+   714,
+   816
+  ],
+  "merged": [
+   711,
+   714
+  ],
+  "unmerged": [
+   816
+  ],
+  "unknown": [],
+  "stmt": "PR 본문에 지원 범위의 한계(미지원 배치 크기 등)와 검증하지 못한 모델·경로를 사유와 함께 명시한다."
+ },
+ {
+  "id": "PRC-015",
+  "status": "supported",
+  "area": "pr_process",
+  "prs": [
+   567,
+   606,
+   714
+  ],
+  "merged": [
+   606,
+   714
+  ],
+  "unmerged": [
+   567
+  ],
+  "unknown": [],
+  "stmt": "동작을 바꾸는 PR은 본문에 동작 변경을 별도 절로 기록하고, 기존 입력과 영향받는 하위 클래스·통합 경로에 대한 호환성 영향 범위를 명시하며, 독립적으로 되돌릴 수 있도록 커밋 단위를 나눈다."
+ },
+ {
+  "id": "PRC-019",
+  "status": "supported",
+  "area": "pr_process",
+  "prs": [
+   83,
+   94,
+   114
+  ],
+  "merged": [
+   114
+  ],
+  "unmerged": [
+   83,
+   94
+  ],
+  "unknown": [],
+  "stmt": "신규 모델 또는 파이프라인 PR 본문에는 참조한 Hugging Face 모델 주소와 클래스명(또는 upstream PR), 그리고 재현 가능한 예제 실행 명령을 적는다."
+ },
+ {
+  "id": "PRC-023",
+  "status": "rejected",
+  "area": "pr_process",
+  "prs": [
+   615,
+   616,
+   695
+  ],
+  "merged": [],
+  "unmerged": [
+   615,
+   616,
+   695
+  ],
+  "unknown": [],
+  "stmt": "dev에서 main으로 가는 동기화·백머지와 그래프 토폴로지를 유지해야 하는 릴리스 계열 PR은 squash나 rebase가 아닌 merge commit으로 병합한다."
+ },
+ {
+  "id": "PRC-026",
+  "status": "supported",
+  "area": "pr_process",
+  "prs": [
+   615,
+   616,
+   617
+  ],
+  "merged": [
+   617
+  ],
+  "unmerged": [
+   615,
+   616
+  ],
+  "unknown": [],
+  "stmt": "릴리스 라인 수정은 해당 릴리스 태그 위에서 만들어 릴리스 라인의 자식 커밋이 되게 하고, dev에 반영된 뒤에는 릴리스 브랜치를 dev에 역병합해 조상 관계를 맞춘다."
+ },
+ {
+  "id": "STY-015",
+  "status": "verified",
+  "area": "pr_process",
+  "prs": [
+   46,
+   630,
+   758
+  ],
+  "merged": [
+   46,
+   758
+  ],
+  "unmerged": [
+   630
+  ],
+  "unknown": [],
+  "stmt": "CI 워크플로우에서 시크릿은 `secrets` 컨텍스트로 전달하고, 내부 엔드포인트·클러스터 고유 경로나 주소는 저장소에 평문으로 적지 않고 CI 변수로 주입하며, 필수 변수가 비어 있으면 빈 값으로 진행하지 않고 업로드 단계에서 실패시킨다."
+ },
+ {
+  "id": "PRC-004",
+  "status": "aspirational",
+  "area": "pr_process",
+  "prs": [
+   108,
+   559
+  ],
+  "merged": [
+   108,
+   559
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "기존 동작의 호환성을 깨는 변경은 PR 본문의 Type of Change에서 Breaking change로 표시한다."
+ },
+ {
+  "id": "PRC-010",
+  "status": "supported",
+  "area": "pr_process",
+  "prs": [
+   111,
+   561
+  ],
+  "merged": [
+   111,
+   561
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "리뷰 대상 브랜치가 통합 브랜치와 어긋나 있으면 리뷰 전에 통합 브랜치와 동기화한다."
+ },
+ {
+  "id": "PRC-033",
+  "status": "supported",
+  "area": "pr_process",
+  "prs": [
+   738,
+   753
+  ],
+  "merged": [
+   738,
+   753
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "같은 CI 테스트 매트릭스나 설치 절차(uv sync 등)는 실행기·파이프라인마다 따로 두지 않고 한 곳(스크립트 하나)에서 관리한다."
+ },
+ {
+  "id": "PRC-034",
+  "status": "supported",
+  "area": "pr_process",
+  "prs": [
+   737,
+   755
+  ],
+  "merged": [
+   737,
+   755
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "테스트 스위트를 실행할지 여부는 NPU를 점유하기 전에 파이프라인 업로드 시점에 결정하고, 점유한 job 안에서 건너뛰지 않는다."
+ },
+ {
+  "id": "PRC-037",
+  "status": "supported",
+  "area": "pr_process",
+  "prs": [
+   739,
+   752
+  ],
+  "merged": [
+   739,
+   752
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "선택적으로 붙는 리포트·알림 스텝은 soft_fail로 두고 커밋 상태를 보고하지 않게 하여, 보고가 실패해도 필수 체크와 야간 빌드의 성공·실패 결과를 바꾸지 않는다."
+ },
+ {
+  "id": "PRC-040",
+  "status": "supported",
+  "area": "pr_process",
+  "prs": [
+   755,
+   756
+  ],
+  "merged": [
+   755,
+   756
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "CI 테스트 실패를 자동 재시도로 가리지 않고 원인을 확인한다."
+ },
+ {
+  "id": "PRC-042",
+  "status": "supported",
+  "area": "pr_process",
+  "prs": [
+   362,
+   440
+  ],
+  "merged": [
+   362,
+   440
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "스케줄 CI 워크플로의 트리거는 main에 얇게 두고 실행 로직은 재사용 워크플로로 분리해 dev에서 관리하며, main에서 스케줄 워크플로를 직접 수정하지 않는다."
+ },
+ {
+  "id": "CFG-035",
+  "status": "candidate",
+  "area": "pr_process",
+  "prs": [
+   560
+  ],
+  "merged": [
+   560
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "컴파일 설정 객체의 필드 변경이 rbln_config.json 저장 포맷에 영향을 주면 PR 본문에 변경 후 직렬화 결과 예시를 보여준다."
+ },
+ {
+  "id": "DEC-006",
+  "status": "candidate",
+  "area": "pr_process",
+  "prs": [
+   802
+  ],
+  "merged": [
+   802
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "기본 집합 통신 레이아웃에서 벗어나는 최적화는 해당 구조에만 적용하고, 일반 패턴으로 확장하지 않는다는 근거를 PR에 적는다."
+ },
+ {
+  "id": "DIF-022",
+  "status": "candidate",
+  "area": "pr_process",
+  "prs": [
+   38
+  ],
+  "merged": [
+   38
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "생성형 diffusers 파이프라인 PR에서는 실제 생성 결과물을 공유해 동작을 검증한다."
+ },
+ {
+  "id": "LIFE-029",
+  "status": "candidate",
+  "area": "pr_process",
+  "prs": [
+   16
+  ],
+  "merged": [
+   16
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "모델 동작을 수정하는 버그 수정은 vLLM 연동 쪽에 문제가 없는지 확인한다."
+ },
+ {
+  "id": "PRC-011",
+  "status": "candidate",
+  "area": "pr_process",
+  "prs": [
+   83
+  ],
+  "merged": [],
+  "unmerged": [
+   83
+  ],
+  "unknown": [],
+  "stmt": "오래된 PR은 닫고, 구현을 다시 진행할 때는 최신 main에서 새 브랜치를 만든다."
+ },
+ {
+  "id": "PRC-013",
+  "status": "candidate",
+  "area": "pr_process",
+  "prs": [
+   711
+  ],
+  "merged": [
+   711
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "PR 본문 첫머리에 변경 범위(변경한 파일 종류와 제외한 영역)를 명시한다."
+ },
+ {
+  "id": "PRC-016",
+  "status": "candidate",
+  "area": "pr_process",
+  "prs": [
+   715
+  ],
+  "merged": [
+   715
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "대량 수정은 대상 선정 방법(예: AST 스캔)과 위양성으로 제외한 항목을 PR 본문에 명시하고, 수정 후 같은 스캔을 다시 실행해 잔여 대상이 0인지 확인한다."
+ },
+ {
+  "id": "PRC-017",
+  "status": "candidate",
+  "area": "pr_process",
+  "prs": [
+   678
+  ],
+  "merged": [],
+  "unmerged": [
+   678
+  ],
+  "unknown": [],
+  "stmt": "원인 가설은 추론만으로 확정하지 않고 계측이나 실험으로 확인하며, 가설별 결과를 PR에 남긴다."
+ },
+ {
+  "id": "PRC-021",
+  "status": "candidate",
+  "area": "pr_process",
+  "prs": [
+   7
+  ],
+  "merged": [
+   7
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "버그 수정 PR 본문에는 해결하는 이슈의 링크를 Fixes 형식으로 적는다."
+ },
+ {
+  "id": "PRC-027",
+  "status": "candidate",
+  "area": "pr_process",
+  "prs": [
+   618
+  ],
+  "merged": [
+   618
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "잘못 들어간 커밋은 히스토리를 고쳐 쓰지 않고 revert 커밋으로 남긴다."
+ },
+ {
+  "id": "PRC-028",
+  "status": "candidate",
+  "area": "pr_process",
+  "prs": [
+   307
+  ],
+  "merged": [
+   307
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "릴리스에 포함하지 않을 대규모 리팩터링은 릴리스 태그 이후에 머지한다."
+ },
+ {
+  "id": "PRC-030",
+  "status": "candidate",
+  "area": "pr_process",
+  "prs": [
+   821
+  ],
+  "merged": [
+   821
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "기존 CI 실행 이후 병합된 PR들의 결합 결과는 검증되지 않았을 수 있으므로, 병합 후 기본 브랜치의 lint와 빌드를 다시 확인한다."
+ },
+ {
+  "id": "PRC-041",
+  "status": "candidate",
+  "area": "pr_process",
+  "prs": [
+   733
+  ],
+  "merged": [
+   733
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "개발자용 도구는 scripts/ 최상위에 두고, Buildkite 작업 안에서만 의미가 있는 헬퍼는 scripts/ci/에 둔다."
+ },
+ {
+  "id": "PRC-043",
+  "status": "candidate",
+  "area": "pr_process",
+  "prs": [
+   361
+  ],
+  "merged": [
+   361
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "CI 스크립트에서 따옴표가 포함된 값은 셸 명령에 직접 넣지 않고 환경 변수로 전달한다."
+ },
+ {
+  "id": "STY-025",
+  "status": "candidate",
+  "area": "pr_process",
+  "prs": [
+   696
+  ],
+  "merged": [],
+  "unmerged": [
+   696
+  ],
+  "unknown": [],
+  "stmt": "수동 실행(workflow_dispatch)에서도 대상 브랜치가 바뀌지 않도록 워크플로우의 ref와 base를 고정 값으로 명시한다."
+ },
+ {
+  "id": "STY-009",
+  "status": "supported",
+  "area": "style/other",
+  "prs": [
+   15,
+   267,
+   445,
+   653,
+   733
+  ],
+  "merged": [
+   15,
+   267,
+   653,
+   733
+  ],
+  "unmerged": [
+   445
+  ],
+  "unknown": [],
+  "stmt": "import는 파일 상단에 두고, 지연 import는 이유가 있을 때만 쓴다."
+ },
+ {
+  "id": "STY-003",
+  "status": "interview",
+  "area": "style/other",
+  "prs": [
+   54,
+   228,
+   673
+  ],
+  "merged": [
+   54,
+   228,
+   673
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "같은 로직·상수·결정 지점은 한 곳에만 두고, 여러 곳에 복제된 함수나 값은 공용 헬퍼나 단일 상수로 모아 값의 결정을 한 번만 수행한다."
+ },
+ {
+  "id": "STY-014",
+  "status": "supported",
+  "area": "style/other",
+  "prs": [
+   356,
+   376,
+   389
+  ],
+  "merged": [
+   356,
+   376,
+   389
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "상위 계층에서 이미 처리하는 검사나 기본값 처리를 중복해서 추가하지 않으며 과한 방어 코드를 피한다."
+ },
+ {
+  "id": "STY-001",
+  "status": "supported",
+  "area": "style/other",
+  "prs": [
+   50,
+   53,
+   84,
+   96,
+   135,
+   383
+  ],
+  "merged": [
+   50,
+   53,
+   84,
+   96,
+   135,
+   383
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "의도가 바로 드러나지 않는 추가·삭제·순서 변경·dtype 변경에는 그 이유를 주석이나 PR 설명에 남긴다."
+ },
+ {
+  "id": "STY-018",
+  "status": "verified",
+  "area": "style/other",
+  "prs": [
+   459,
+   481,
+   715,
+   806,
+   808,
+   821
+  ],
+  "merged": [
+   481,
+   715,
+   808,
+   821
+  ],
+  "unmerged": [
+   459,
+   806
+  ],
+  "unknown": [],
+  "stmt": "머지 전에 PR 변경 코드 전체에 `ruff format`과 `ruff check`를 통과시키고 타입 검사와 독스트링 검사도 통과시킨다."
+ },
+ {
+  "id": "STY-007",
+  "status": "supported",
+  "area": "style/other",
+  "prs": [
+   256,
+   345,
+   648,
+   652,
+   809
+  ],
+  "merged": [
+   256,
+   345,
+   648,
+   652,
+   809
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "오류 메시지는 무엇이 잘못됐는지, 어떤 조건인지, 사용자가 무엇을 해야 하는지(필요량 대비 확보량, 조정할 설정 이름과 원인별 조치, 같은 NPU 사용 확인 등)를 구체적으로 적고, 실제로 일어나지 않는 동작을 설명하지 않으며, 같은 목적의 기존 가드 메시지 양식을 따른다."
+ },
+ {
+  "id": "STY-004",
+  "status": "verified",
+  "area": "style/other",
+  "prs": [
+   96,
+   177,
+   271,
+   761
+  ],
+  "merged": [
+   96,
+   177,
+   271,
+   761
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "사용하지 않는 코드(미사용 변수·import·메서드·클래스, 부모와 동일한 override, 레거시 코드, 효과 없는 컴파일 옵션, 오래되었거나 중복된 CI 워크플로)는 남기지 않고 제거한다."
+ },
+ {
+  "id": "STY-011",
+  "status": "verified",
+  "area": "style/other",
+  "prs": [
+   118,
+   267,
+   735,
+   736
+  ],
+  "merged": [
+   267,
+   735,
+   736
+  ],
+  "unmerged": [
+   118
+  ],
+  "unknown": [],
+  "stmt": "함수 시그니처에는 실제로 전달되는 객체와 일치하는 타입 힌트를 명시하고, Python 3.10 이상의 네이티브 문법(`X | None`, `list`)을 쓰며 typing의 Optional·List 별칭과 암묵적 Optional은 쓰지 않고, 이를 위해 `from __future__ import annotations`를 일괄 추가하지 않는다."
+ },
+ {
+  "id": "STY-013",
+  "status": "verified",
+  "area": "style/other",
+  "prs": [
+   2,
+   15,
+   25,
+   38
+  ],
+  "merged": [
+   2,
+   15,
+   25,
+   38
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "로그와 경고는 built-in logging/warnings 대신 optimum-rbln의 `utils.logging`을 사용한다."
+ },
+ {
+  "id": "STY-002",
+  "status": "supported",
+  "area": "style/other",
+  "prs": [
+   136,
+   249,
+   260
+  ],
+  "merged": [
+   136,
+   249,
+   260
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "디버깅용 코드, 개발 중 로그와 주석, 예제 스크립트 속 내부 검증 코드 같은 개발 흔적은 PR에 남기지 않는다."
+ },
+ {
+  "id": "STY-005",
+  "status": "aspirational",
+  "area": "style/other",
+  "prs": [
+   38,
+   471,
+   798
+  ],
+  "merged": [
+   38,
+   471,
+   798
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "새로 추가하는 소스 파일에는 기존 파일과 같은 형식의 Rebellions 저작권 헤더를 현재 연도로 붙인다."
+ },
+ {
+  "id": "STY-010",
+  "status": "verified",
+  "area": "style/other",
+  "prs": [
+   556,
+   656,
+   733
+  ],
+  "merged": [
+   556,
+   733
+  ],
+  "unmerged": [
+   656
+  ],
+  "unknown": [],
+  "stmt": "타입 annotation에만 쓰이는 심볼이 순환 참조를 만들거나 외부 패키지 타입일 때만 import를 `TYPE_CHECKING` 블록으로 옮기고 annotation은 문자열로 감싸며, 같은 이름을 런타임 import와 `TYPE_CHECKING` 블록에 중복 import하지 않고 TC001~TC003 규칙으로 일괄 이동하지 않는다."
+ },
+ {
+  "id": "STY-012",
+  "status": "verified",
+  "area": "style/other",
+  "prs": [
+   50,
+   256,
+   631
+  ],
+  "merged": [
+   50,
+   256,
+   631
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "`__init__` 목록, export 목록, 키 목록 같은 나열형 목록은 정렬된 순서를 유지한다."
+ },
+ {
+  "id": "STY-016",
+  "status": "candidate",
+  "area": "style/other",
+  "prs": [
+   760
+  ],
+  "merged": [],
+  "unmerged": [
+   760
+  ],
+  "unknown": [],
+  "stmt": "범용 유틸리티는 `utils/`에 두고, 특정 모델 전용 로직은 해당 모델 디렉터리에 둔다."
+ },
+ {
+  "id": "STY-017",
+  "status": "candidate",
+  "area": "style/other",
+  "prs": [
+   678
+  ],
+  "merged": [],
+  "unmerged": [
+   678
+  ],
+  "unknown": [],
+  "stmt": "호스트 코드의 분기는 디바이스 출력 값을 읽어 결정하지 않고, 호스트가 이미 아는 값은 직접 계산한다."
+ },
+ {
+  "id": "STY-021",
+  "status": "candidate",
+  "area": "style/other",
+  "prs": [
+   736
+  ],
+  "merged": [
+   736
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "`# type: ignore` 주석에는 반드시 에러 코드를 명시한다."
+ },
+ {
+  "id": "STY-023",
+  "status": "candidate",
+  "area": "style/other",
+  "prs": [
+   733
+  ],
+  "merged": [
+   733
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "린트 자동 수정 결과는 일괄 적용하지 않고 diff에서 검토한 뒤 반영하며, 동작이 바뀌는 수정은 되돌린다."
+ },
+ {
+  "id": "STY-026",
+  "status": "candidate",
+  "area": "style/other",
+  "prs": [
+   376
+  ],
+  "merged": [
+   376
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "함수나 메서드의 기본 인자로 가변 객체(list, dict 등)를 쓰지 않으며 린터(bugbear 규칙)로 검출한다."
+ },
+ {
+  "id": "STY-028",
+  "status": "candidate",
+  "area": "style/other",
+  "prs": [
+   248
+  ],
+  "merged": [
+   248
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "실험적 기능은 실험적이라고 명시하고 지원 범위를 함께 적는다."
+ },
+ {
+  "id": "STY-029",
+  "status": "candidate",
+  "area": "style/other",
+  "prs": [
+   21
+  ],
+  "merged": [
+   21
+  ],
+  "unmerged": [],
+  "unknown": [],
+  "stmt": "컴파일 시간처럼 원인 추적이 어려운 경로에는 문제 추적용 로그를 추가한다."
+ }
+]

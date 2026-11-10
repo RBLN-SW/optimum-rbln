@@ -1,0 +1,22 @@
+{
+ "id": "CFG-031",
+ "summary": [
+  "새 컴파일 경로나 커널 경로를 추가할 때, 그 경로가 꺼진 상태에서는 기존 모델의 동작과 결과가 조금도 바뀌지 않아야 한다는 룰입니다.",
+  "새 경로를 켜는 방식은 지금 dev에 세 가지가 있습니다. 사용자가 옵션으로 켜는 방식(기본값 False), 입력 모양으로 켜는 방식, 검증된 타깃에서 자동으로 켜는 방식입니다. 원래 룰 문장은 첫째만 말해서 헷갈릴 수 있어 문장을 고쳤습니다.",
+  "물어보는 것: '꺼진 상태나 검증 안 된 타깃에서는 기존 결과와 똑같다'를 팀 룰로 삼을까요? 타깃에서 자동으로 켜는 방식도 괜찮은지는 메모로 알려 주세요."
+ ],
+ "examples": [
+  {"label": "① 사용자 옵션으로 켜기 — output_hidden_states (#366, 머지됨)", "lang": "python", "code": "# 기본값 False: 옵션을 안 주면 반환 형식이 예전과 같다\nmodel = RBLNLlamaForCausalLM.from_pretrained(model_id, export=True)\n\n# 사용자가 켤 때만 hidden_states가 함께 나온다\nmodel = RBLNLlamaForCausalLM.from_pretrained(\n    model_id, export=True, rbln_output_hidden_states=True)"},
+  {"label": "② 입력 모양으로 켜기 — max_seq_len 버킷팅 (#599, 머지됨)", "lang": "python", "code": "# 값 하나: 예전 단일 그래프 경로 그대로 (바이트 단위 동일)\nRBLNBertModel.from_pretrained(model_id, export=True, rbln_max_seq_len=512)\n\n# 리스트를 줄 때만 새 경로(버킷 라우팅)가 켜진다\nRBLNBertModel.from_pretrained(\n    model_id, export=True, rbln_max_seq_len=[512, 1024, 2048])"},
+  {"label": "③ 타깃에서 자동으로 켜기 — 배치 정렬 커널 (#559, 머지됨)", "lang": "python", "code": "# 사용자 옵션이 없다. 컴파일할 때 타깃을 보고 정한다\n# (modeling_decoderonly.py:573)\ncfg._requires_batch_sort = (\n    cfg.can_generate and npu_is_cr13_or_later(cfg.npu)\n    and cfg.attn_impl == \"flash_attn\" and not cfg.use_attention_mask)\n# ATOM(RBLN-CA2x): False -> 기존 경로 그대로\n# RBLN-CR13 + flash_attn: True -> 배치를 길이 내림차순으로 정렬해야 함"},
+  {"label": "④ 어기는 예 — 꺼진 상태인데 기본 결과가 바뀜", "lang": "python", "code": "def forward(self, input_ids, use_new_kernel=False):\n    out = self._run(input_ids, use_new_kernel)\n    # 새 옵션을 더하면서 기본 경로의 반환까지 바꿈\n    return out.logits, out.hidden_states   # 예전엔 logits만"}
+ ],
+ "evidence": [
+  {"pr": 599, "state": "merged", "date": "2026-06-22", "user": "thkim", "what": "max_seq_len에 리스트를 줄 때만 버킷 경로가 켜지고, 값이 하나면 기존 경로가 바이트 단위로 그대로다.", "quote": "so single-length models are byte-for-byte unchanged."},
+  {"pr": 366, "state": "merged", "date": "2025-12-05", "user": "", "what": "output_hidden_states를 추가하면서 기본값을 False로 두었다(코드 docstring).", "quote": "Whether to output the hidden states of the decoder. Defaults to False."},
+  {"pr": 559, "state": "merged", "date": "2026-09-07", "user": "thkim", "what": "배치 정렬 커널은 사용자 옵션 없이 CR13 이상·flash_attn 타깃에서 자동으로 켜진다. PR은 Breaking change로 표시돼 있다(코드 주석 인용).", "quote": "Resolved at compile time from the target NPU/attention config — never set by the user."},
+  {"pr": 815, "state": "open", "date": null, "user": "yskim", "what": "nested_compile_region을 기본값 False 옵션으로 추가하는 제안. 아직 머지되지 않았다.", "quote": "The option defaults to `False`, preserving the existing compilation path."},
+  {"pr": 767, "state": "open", "date": null, "user": "jaehunryu", "what": "사용자 옵션 없이 ATOM 타깃과 조건이 맞을 때만 새 커스텀 op를 쓰고 나머지는 기존 경로를 유지하는 제안. 아직 머지되지 않았다.", "quote": "the existing native core stays for every other configuration."}
+ ],
+ "verified": "dev 74e97fa4 기준으로 확인(2026-10-23). 원래 근거 5건 중 머지된 것은 #599뿐이고 #706·#629는 머지되지 않고 닫혀서, 머지된 #366·#559를 근거에 더했다."
+}

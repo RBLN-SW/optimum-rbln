@@ -1,0 +1,20 @@
+{
+ "id": "CFG-022",
+ "summary": [
+  "같은 설정 키를 rbln_config와 rbln_ 접두사 인자로 동시에 넘겼을 때 어느 값을 쓸지에 대한 질문입니다.",
+  "원래 채굴된 룰은 '둘 다 주면 ValueError'였는데, 그 근거인 PR #445는 머지되지 않고 닫혔습니다. 지금 코드는 대부분 rbln_ 인자를 우선하지만, 컴파일된 모델을 dict rbln_config로 로드하는 경로 하나만 반대로 rbln_config가 이깁니다.",
+  "참고로 컴파일된 모델을 로드할 때 batch_size 같은 컴파일 시점 키를 저장된 값과 다르게 주면, 어느 경로로 주든 ValueError가 납니다. 이 질문은 device 같은 런타임 키에 해당합니다.",
+  "물어보는 것: 둘 다 줬을 때 어느 쪽이 이겨야 하나요? 고른 쪽으로 네 경로를 맞추게 됩니다."
+ ],
+ "examples": [
+  {"label": "지금 dev에서 돌려 본 결과 — rbln_config는 device=0, rbln_device=1", "lang": "text", "code": "컴파일 (export=True)\n  rbln_config={\"device\": 0},       rbln_device=1   -> device 1\n  rbln_config=Config(device=0),    rbln_device=1   -> device 1\n\n컴파일된 모델 로드\n  rbln_config={\"device\": 0},       rbln_device=1   -> device 0   <- 여기만 반대\n  rbln_config=Config(device=0),    rbln_device=1   -> device 1"},
+  {"label": "반대로 동작하는 이유 — modeling_base.py:245 (로드 경로)", "lang": "python", "code": "if isinstance(rbln_config, dict):\n    rbln_config_as_kwargs = {f\"rbln_{key}\": value for key, value in rbln_config.items()}\n    kwargs.update(rbln_config_as_kwargs)\n    # dict 값이 사용자가 준 rbln_device=1 을 덮어쓴다"},
+  {"label": "문서와 테스트가 말하는 계약 — configuration_utils.py:407", "lang": "python", "code": "# Method 4: Combining a config object with override parameters\n# (rbln_ prefixed parameters take precedence over rbln_config values)\n\n# tests/test_config.py::test_config_priority 도 이 동작을 검사하지만\n# 설정 객체 경로만 검사해서 dict 로드 경로의 차이를 잡지 못한다"}
+ ],
+ "evidence": [
+  {"pr": 2, "state": "merged", "date": "2025-02-13", "user": "thkim", "what": "설정 키를 rbln_config와 rbln_ 인자 두 경로로 줄 수 있게 처음 만든 PR.", "quote": "Users can now specify the prefill_chunk_size by passing either `prefill_chunk_size` in rbln_config or `rbln_prefill_chunk_size`"},
+  {"pr": 702, "state": "merged", "date": "2026-09-16", "user": "seinpark", "what": "설정 객체로 로드하는 경로를 rbln_ 인자 우선으로 맞췄다. dict로 로드하는 경로는 바꾸지 않았다.", "quote": "The load-time contract for `rbln_config` objects is kept strict"},
+  {"pr": 445, "state": "closed", "date": null, "user": "seinpark", "what": "둘 다 주면 ValueError를 내자는 제안. 머지되지 않고 닫혔다. 원래 채굴된 룰은 이 PR에서 나왔다.", "quote": "makes `rbln_config` and `rbln_` prefixed arguments mutually exclusive by raising a ValueError when both are provided simultaneously."}
+ ],
+ "verified": "dev 74e97fa4에서 재현(2026-10-23). 스크립트: mining/explain/cfg022_paths.py"
+}

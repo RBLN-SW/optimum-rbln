@@ -1,0 +1,19 @@
+{
+ "id": "API-015",
+ "summary": [
+  "코드 위치에 관한 두 가지 룰을 묶은 것입니다. 둘 다 '사용자는 from optimum.rbln import RBLNXxx 로만 쓴다'는 전제에서 나옵니다. 그러니 내부 파일 경로는 자유롭게 바꿔도 되고, 지켜야 할 것은 패키지 최상위 export뿐입니다.",
+  "① 내부 모듈을 옮길 때 옛 경로에 '새 위치에서 다시 import만 하는 호환용 파일(shim)'을 남기지 않습니다. ② 모델 클래스는 transformers처럼 그 모델의 디렉터리(models/<모델>/)에 두고, 여러 모델 클래스를 한 파일에 모아 두는 공용 alias 파일을 만들지 않습니다.",
+  "물어보는 것: 내부 경로를 옮길 때 shim을 남기지 않고, 모델 클래스는 모델별 디렉터리에만 둔다를 팀 룰로 삼을까요?"
+ ],
+ "examples": [
+  {"label": "① 모듈 이동 — shim을 남기지 않음 (#726, ControlNet 이동)", "lang": "text", "code": "git mv diffusers/models/controlnet.py  diffusers/models/controlnets/controlnet.py\n\n# 남기지 않는 것: 옛 경로의 호환용 파일\n#   diffusers/models/controlnet.py\n#     from .controlnets.controlnet import *   # <- shim\n\n# 유지하는 것: 공개 API\nfrom optimum.rbln import RBLNControlNetModel   # 그대로 동작"},
+  {"label": "② 모델 클래스 위치 — 예전 공용 alias 파일 (#157에서 삭제)", "lang": "python", "code": "# transformers/modeling_alias.py  (모델 여러 개를 한 파일에)\nclass RBLNASTForAudioClassification(RBLNModelForAudioClassification):\n    pass\nclass RBLNResNetForImageClassification(RBLNModelForImageClassification):\n    pass\nclass RBLNRobertaForSequenceClassification(RBLNModelForSequenceClassification):\n    rbln_model_input_names = [\"input_ids\", \"attention_mask\"]"},
+  {"label": "② 지금 — 모델마다 자기 디렉터리에 (transformers와 같은 구조)", "lang": "text", "code": "transformers/models/roberta/modeling_roberta.py:47\n    class RBLNRobertaForSequenceClassification(RBLNModelForSequenceClassification)\ntransformers/models/resnet/modeling_resnet.py\n    class RBLNResNetForImageClassification(...)"}
+ ],
+ "evidence": [
+  {"pr": 726, "state": "merged", "date": "2026-09-09", "user": "seinpark", "what": "SD ControlNet을 models/controlnets/로 옮기면서 옛 내부 경로는 shim 없이 없앴다. 공개 export(RBLNControlNetModel)는 그대로 두었다.", "quote": "goes away (no shim)"},
+  {"pr": 157, "state": "merged", "date": "2025-06-13", "user": "jongho", "what": "공용 alias 파일을 지우고 모델별 디렉터리에 클래스를 두라는 리뷰.", "quote": "create a directory structure for each model and put the alias class in there (delete the alias file)"},
+  {"pr": 17, "state": "merged", "date": "2025-02-11", "user": "seinpark", "what": "alias를 모델별로 옮긴 리팩터링. 이유는 transformers 구조와의 통일, 그리고 같은 클래스를 둘 곳이 두 군데라 생기는 혼동.", "quote": "클래스를 구현할 수 있는 위치가 중복되어 오히려 구현에 혼동을 줄 수 있음"}
+ ],
+ "verified": "dev 74e97fa4 코드 대조(2026-10-22): shim 모듈 0개, 공용 alias 파일 없음. 위치 예외는 pipelines/controlnet에 남은 RBLNMultiControlNetModel 하나."
+}

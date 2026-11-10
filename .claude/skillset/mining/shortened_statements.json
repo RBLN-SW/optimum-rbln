@@ -1,0 +1,896 @@
+[
+ {
+  "id": "CFG-001",
+  "short": "지원하지 않는 설정 값은 경고나 대체 없이 명시적 예외로 실패시킨다.",
+  "detail": "값을 생략(None)한 경우만 경고 후 기본값으로 채우고, 0 같은 falsy 값은 바꾸지 않는다. 미지원 dtype의 fp32 승격 여부는 DBT-009에서 따로 묻는다.",
+  "question": null
+ },
+ {
+  "id": "CFG-004",
+  "short": "설정 클래스에는 실제 동작에 반영되는 옵션만 노출한다.",
+  "detail": "무시되는 옵션은 제거하거나 명시적으로 거부한다. 폐지 절차는 DEP-001·CFG-010을 따른다.",
+  "question": "필수 옵션은 기본값을 고정하는가, 사용자 선택을 허용하고 잘못된 값에 예외를 내는가?"
+ },
+ {
+  "id": "CFG-005",
+  "short": "컴파일 시점 값의 원천은 산출물의 `rbln_config.json`으로 둔다.",
+  "detail": "그래프를 바꾸지 않는 런타임 전용 옵션은 컴파일 값과 분리해 정해진 경로(runtime kwargs 등)로 노출한다.",
+  "question": "런타임 전용 옵션은 `rbln_config`에 담는가, `from_pretrained` 인자로만 받는가?"
+ },
+ {
+  "id": "CFG-007",
+  "short": "기본값은 하드코딩하지 않고 모델 config나 전처리기에서 유도한다.",
+  "detail": "단 기기마다 달라지는 설정(예: prefill_chunk_size)에서는 유도하지 않고, 그런 값은 기기와 무관한 고정 상수(예: MAX_GDN_CHUNK_SIZE)로 둔다.",
+  "question": null
+ },
+ {
+  "id": "CFG-013",
+  "short": "연결된 파이프라인의 설정은 전역, 파이프라인, 서브모듈 계층으로 정의하고 명시적 우선순위를 따른다.",
+  "detail": "같은 이름의 값은 호출자 인자, 서브모듈 설정, 파이프라인 설정 순으로 우선한다.",
+  "question": null
+ },
+ {
+  "id": "CFG-014",
+  "short": "배치 크기, 최대 시퀀스 길이 같은 형상 인자는 서브모듈이 아닌 상위 설정에서 지정한다.",
+  "detail": "서브모듈 설정만 지정한 호출에서도 부모 기본값이 서브모듈 값과 충돌하지 않아야 한다.",
+  "question": "서브모듈의 명시값이 상위값보다 우선하는가, 형상 인자는 서브모듈에서 지정을 금지하는가?"
+ },
+ {
+  "id": "CFG-009",
+  "short": "설정 포맷, 옵션, dtype, 산출물 구조를 바꿔도 이전에 컴파일된 아티팩트가 그대로 로드되게 한다.",
+  "detail": "로드 동작은 아티팩트가 기록한 입력 정의를 따르며, 레거시 경로는 DEPRECATED 표지와 제거 예정 버전을 명시한다.",
+  "question": null
+ },
+ {
+  "id": "CFG-010",
+  "short": "설정 키를 폐지하거나 개명할 때는 즉시 제거하지 않고 경고 후 새 키로 재매핑한다.",
+  "detail": "생성자로 넘긴 옛 키뿐 아니라, 이미 만든 설정 객체에 대입한 옛 키(cfg.옛키 = 값)도 경고 후 새 키로 옮긴다.",
+  "question": null
+ },
+ {
+  "id": "CFG-031",
+  "short": "새 컴파일·커널 경로는 꺼진 상태에서 기존 경로와 결과가 똑같도록 추가한다.",
+  "detail": "켜는 방식은 사용자 옵션(기본값 False), 입력 모양, 검증된 타깃에서의 자동 선택 중 하나다. 꺼진 상태나 다른 타깃의 코드와 결과는 바꾸지 않는다.",
+  "question": null
+ },
+ {
+  "id": "CFG-008",
+  "short": "검증 함수는 검증만 하고, 기본값 설정과 패딩은 `set_default_values` 훅 한 곳에서만 한다.",
+  "detail": "모델별 설정 생성 경로나 소비처에 같은 기본값을 중복 정의하지 않는다.",
+  "question": null
+ },
+ {
+  "id": "CFG-015",
+  "short": "서브모듈에 고정해야 하는 제약은 `force_kwargs`로 명시적으로 강제한다.",
+  "detail": "부모의 해석된 값이나 `None`일 수 있는 값은 `force_kwargs`가 아닌 기본값으로 전달한다.",
+  "question": null
+ },
+ {
+  "id": "CFG-018",
+  "short": "런타임 전용 값과 컴파일 시점 전용 추정 입력은 `subclass_non_save_attributes`에 등록한다.",
+  "detail": "`rbln_config.json`에 직렬화되지 않게 하며, 하위 클래스가 재정의하면 상위 항목을 포함한다.",
+  "question": null
+ },
+ {
+  "id": "CFG-002",
+  "short": "컴파일러가 지원하지 않는 기능과 런타임 생성 불가 설정은 컴파일 시작 전에 한 곳에서 거부한다.",
+  "detail": "생성자나 검증 함수에서 한 메시지로 거부한다.",
+  "question": null
+ },
+ {
+  "id": "CFG-012",
+  "short": "같은 인자를 받는 형제 설정 클래스와 모델 클래스는 함께 점검해 일관되게 변경한다.",
+  "detail": null,
+  "question": null
+ },
+ {
+  "id": "CFG-019",
+  "short": "서브모듈을 가진 설정 클래스는 `submodules`를 선언하고 공통 헬퍼로 서브모듈을 초기화한다.",
+  "detail": "부모의 런타임 옵션을 `initialize_submodule_config`로 전파하며, 클래스를 모르는 dict는 dict로 남겨 모델 클래스가 나중에 해석한다.",
+  "question": null
+ },
+ {
+  "id": "CFG-022",
+  "short": "같은 설정 키를 rbln_config와 rbln_ 인자로 함께 주면 모든 경로에서 같은 쪽이 이긴다.",
+  "detail": "지금은 네 조합 중 '컴파일된 모델 로드 + dict rbln_config' 하나만 rbln_config가 이기고 나머지는 rbln_ 인자가 이긴다.",
+  "question": "같은 키를 rbln_config와 rbln_ 인자에 함께 주면 어느 쪽이 이겨야 하는가?"
+ },
+ {
+  "id": "CFG-026",
+  "short": "`rbln_config`에 저장된 출력 옵션은 HF와 같게 다루고 forward 인자와 다르면 ValueError를 낸다.",
+  "detail": "추론 시에도 설정 값을 따른다.",
+  "question": null
+ },
+ {
+  "id": "CFG-027",
+  "short": "하드웨어 계열별 제약값은 전역 상수가 아니라 계열 단위 limits 객체로 정의한다.",
+  "detail": "알 수 없는 장치가 다른 계열의 한계를 조용히 물려받지 않게 한다.",
+  "question": null
+ },
+ {
+  "id": "SUB-001",
+  "short": "서브모듈이 명시한 설정값은 상위 설정에서 상속한 값보다 우선하며 이 우선순위는 한 곳에서 정의한다.",
+  "detail": "명시하지 않은 경우에만 상위 값(batch_size, 런타임 옵션 등)을 기본값으로 상속한다.",
+  "question": "컴파일 옵션 중 서브모듈로 전파할 키(예: 최상위 `batch_size`)는 무엇인가?"
+ },
+ {
+  "id": "SUB-004",
+  "short": "파이프라인과 멀티모달 모델 내부의 비전 모델은 별도 RBLN 모델 클래스로 감싸 서브모듈로 컴파일한다.",
+  "detail": "여러 상위 모델이 공유하는 서브모듈의 `rbln_config`는 특정 모델 이름에 묶지 않고 일반화한다.",
+  "question": null
+ },
+ {
+  "id": "SUB-005",
+  "short": "서브모듈의 NPU 런타임을 띄우지 않을 때는 모델별 플래그 대신 그 서브모듈의 create_runtimes=False를 쓴다.",
+  "detail": "서브모듈은 그대로 컴파일·저장되고 목록 순서와 속성(예: self.visual)도 남는다. 그 자리는 호출하면 에러를 내는 UnavailableRuntime이 된다.",
+  "question": null
+ },
+ {
+  "id": "SUB-002",
+  "short": "서브모듈 설정 조정은 모델마다 새 함수를 만들지 않고 정해진 공통 훅을 오버라이드한다.",
+  "detail": "부모가 자식을: _update_submodule_rbln_config, 자식이 스스로: _update_submodule_config, 파이프라인 안: update_rbln_config_using_pipe.",
+  "question": null
+ },
+ {
+  "id": "SUB-003",
+  "short": "이미 지원하는 체크포인트나 같은 아키텍처의 신규 모델은 기존 클래스를 재사용한다.",
+  "detail": "구성 요소가 다른 부분만 새로 구현하고 나머지는 테스트만 추가한다.",
+  "question": null
+ },
+ {
+  "id": "SUB-008",
+  "short": "dtype 경계는 HF 원본을 따라 fp32 또는 `rbln_config.dtype` 중 HF가 쓰는 쪽을 쓴다.",
+  "detail": "HF가 fp32로 두는 계열(Qwen-VL, EXAONE-4.5)은 fp32, `x.dtype`으로 캐스트하는 계열(Gemma4)만 `rbln_config.dtype`을 쓴다.",
+  "question": null
+ },
+ {
+  "id": "SUB-010",
+  "short": "VLM 구현은 설정 접근과 전처리를 검증된 같은 계열 모델에 맞춘다.",
+  "detail": "composite VLM의 텍스트 차원(hidden size, 레이어 수)은 텍스트 설정을 통해 읽는다.",
+  "question": null
+ },
+ {
+  "id": "SUB-011",
+  "short": "생산 측과 소비 측이 공유하는 값(예: 이미지 토큰 수)은 같은 계산 경로에서 다시 유도한다.",
+  "detail": "근거 PR 2건이 모두 머지되지 않아 폐기를 제안한다.",
+  "question": null
+ },
+ {
+  "id": "SUB-015",
+  "short": "서브모듈 아티팩트는 부모 모델의 서브폴더 안에 중첩해 저장한다.",
+  "detail": "서브모듈의 로드 경로와 generation config 탐색은 부모 디렉터리와 서브모듈 서브폴더를 기준으로 한다.",
+  "question": null
+ },
+ {
+  "id": "LIFE-004",
+  "short": "공통 기능 구현은 베이스 클래스에 두고 클래스 고유 특성은 클래스 또는 config 속성으로 선언한다.",
+  "detail": "지원을 선언하지 않은 클래스에 기능이 요청되면 컴파일 전에 거부한다.",
+  "question": null
+ },
+ {
+  "id": "LIFE-008",
+  "short": "미지원 입력, 컴파일 상한 초과, 런타임 생성 실패는 즉시 명시적 예외로 알린다.",
+  "detail": "메시지에는 입력 길이와 상한 같은 원인과 컴파일만 하려면 `create_runtimes=False`를 쓰라는 안내를 담는다.",
+  "question": null
+ },
+ {
+  "id": "LIFE-001",
+  "short": "모델 forward의 반환은 HF 규약을 따른다.",
+  "detail": "`return_dict`가 `None`이면 config의 `use_return_dict`를 따르고, 반환 형식을 바꾸기 전에 내부 호출자를 감사한다.",
+  "question": "`return_dict`를 항상 `True`로 고정하는 구현이 HF 동작에 맞는 기준인가?"
+ },
+ {
+  "id": "LIFE-015",
+  "short": "`save_pretrained`는 저장 경로를 바꾸면 로드 경로도 바꿔 저장·로드 레이아웃의 대칭을 유지한다.",
+  "detail": "기존 저장 디렉터리를 통째로 삭제하지 않고 실패 시 기존 파일이 보존되는 방식을 속도보다 우선한다.",
+  "question": "저장은 임시 디렉터리 완성 후 rename으로 교체하는가, 대상 파일만 덮어쓰는가?"
+ },
+ {
+  "id": "LIFE-010",
+  "short": "RBLN 모델 클래스는 원본 가중치를 CPU/GPU에 미리 적재하지 않는다.",
+  "detail": "래퍼는 원본 텐서 뷰를 공유하고, 로드 후에는 체크포인트 mmap 뷰가 남지 않도록 파라미터를 복제한다.",
+  "question": "원본 텐서 뷰 공유 규칙과 mmap 뷰 방지용 파라미터 복제 규칙은 언제 각각 적용하는가?"
+ },
+ {
+  "id": "LIFE-011",
+  "short": "HF 모듈을 그대로 쓰는 부분에는 dtype 변환을 더하지 않는다.",
+  "detail": "RBLN이 직접 쓴 커널에서 fp16 오버플로가 나는 항(예: A_log.exp())만 fp32로 계산하고 커널 경계에서 그래프 dtype으로 되돌린다.",
+  "question": null
+ },
+ {
+  "id": "LIFE-005",
+  "short": "기능을 추가할 때 공유 레이어와 베이스 클래스는 수정하지 않고 모델별 서브클래스나 신규 클래스로 확장한다.",
+  "detail": null,
+  "question": null
+ },
+ {
+  "id": "LIFE-012",
+  "short": "모델 로드 dtype의 기본값은 auto(체크포인트 dtype)이고 사용자가 준 값을 우선한다.",
+  "detail": "인자 이름은 dtype이 정식이고, torch_dtype은 경고를 내는 deprecated alias로만 받는다(configuration_utils.py).",
+  "question": null
+ },
+ {
+  "id": "LIFE-024",
+  "short": "torch.export로 추적되는 코드에서는 텐서 값에 따라 갈리는 파이썬 분기를 쓰지 않는다.",
+  "detail": ".item() 값의 범위 가정은 torch._check로 알리고, 값에 따른 계산 분기(예: fp16 넘침 막기)는 dtype 같은 정적 조건으로 바꾼다.",
+  "question": null
+ },
+ {
+  "id": "LIFE-002",
+  "short": "컴파일 입력 순서는 HF forward 시그니처 순서로 정렬하고 시그니처에 없는 입력 이름은 ValueError로 거부한다.",
+  "detail": "RBLN forward는 HF forward의 데이터 입력을 모두 받거나 `**kwargs`로 흡수한다.",
+  "question": "'HF와 순서 일치'는 컴파일 그래프 입력 순서만인가, 사용자 forward의 위치 인자 순서까지인가?"
+ },
+ {
+  "id": "LIFE-003",
+  "short": "부모 클래스가 제공하는 구현은 override나 복제 없이 상속하고 공통 동작은 mixin으로 공유한다.",
+  "detail": "클래스마다 메서드를 감싸지 않는다.",
+  "question": null
+ },
+ {
+  "id": "LIFE-021",
+  "short": "새 모델은 `models/<모델>/` 아래 configuration, modeling, architecture로 추가한다.",
+  "detail": "상위 `__init__`에 등록하고 `get_pytorch_model`, `_update_rbln_config`, `_create_runtimes`를 기존 관례대로 구현한다.",
+  "question": null
+ },
+ {
+  "id": "LIFE-006",
+  "short": "파생 가능한 값은 멤버 변수로 중복 저장하지 않고 property로 계산한다.",
+  "detail": "같은 상태를 여러 곳에서 갱신하지 않으며, 필요하면 캐시한다.",
+  "question": null
+ },
+ {
+  "id": "LIFE-007",
+  "short": "전역 상태(모듈 함수, import한 클래스 메서드)를 바꿀 때는 try/finally로 감싸 컴파일 실패 시에도 원복한다.",
+  "detail": "원본은 try 이전에 캡처하며, 컴파일 대상 인스턴스의 서브모듈 forward 교체(MethodType)는 대상이 아니다.",
+  "question": null
+ },
+ {
+  "id": "LIFE-009",
+  "short": "RBLN 접두사 모델 클래스는 기존 HF 클래스를 교체할 수 있는 인스턴스로 설계한다.",
+  "detail": "래퍼 클래스의 저장과 로드는 별도 함수 없이 파이프라인의 `save_pretrained`/`from_pretrained`에 포함한다.",
+  "question": null
+ },
+ {
+  "id": "LIFE-019",
+  "short": "가중치와 파일 로드 경로는 로컬 디렉터리뿐 아니라 Hugging Face Hub에서도 동작해야 한다.",
+  "detail": "매 로드마다 저장소 전체 목록을 조회하지 않고 필요한 파일만 해석해 캐시를 검증한다.",
+  "question": null
+ },
+ {
+  "id": "LIFE-020",
+  "short": "베이스 메서드를 오버라이드할 때는 인자 목록을 베이스와 똑같이 둔다.",
+  "detail": "모델마다 필요한 값은 개별 인자로 받지 않고 model_config·rbln_config에서 꺼낸다. 베이스에 인자를 더하면 모든 오버라이드에 함께 더한다.",
+  "question": null
+ },
+ {
+  "id": "STY-008",
+  "short": "추론 경로에서는 매 스텝 텐서를 새로 할당하거나 host와 동기화하거나 불필요하게 복사하지 않는다.",
+  "detail": "마스크는 미리 만들어 재사용하고 broadcast 연산을 쓴다.",
+  "question": null
+ },
+ {
+  "id": "DEC-005",
+  "short": "체크포인트 구조가 공통 경로와 다르면 컴파일 전에 가중치를 바꿔 맞추고, 추론 연산이나 전용 클래스를 더하지 않는다.",
+  "detail": "예: 합쳐진 qkv_proj는 q/k/v로 잘라 두고(Phi-3), RoPE 짝 순서가 다르면 q/k 행을 재배열해 둔다(GLM-4).",
+  "question": null
+ },
+ {
+  "id": "DEC-009",
+  "short": "모델 출력(logits, hidden_states 등)은 같은 입력에서 HF 원본 모델과 모양과 뜻이 같아야 한다.",
+  "detail": "예: last_hidden_state는 hidden_states[-1]과 같고, 패딩된 배치의 prefill 출력은 유효 토큰 길이가 아니라 mask 폭으로 돌려준다.",
+  "question": null
+ },
+ {
+  "id": "ATT-003",
+  "short": "컴파일 그래프에 들어가는 rotary cos/sin의 계산 방식(numpy 또는 torch)은 하나로 정해 적용한다.",
+  "detail": "기준은 재현성과 HF 레퍼런스 일치 중 하나여야 한다.",
+  "question": "cos/sin은 재현성을 위해 numpy로 계산하는가, HF와 같은 torch로 계산하는가?"
+ },
+ {
+  "id": "ATT-004",
+  "short": "rope cos/sin 테이블은 로드 시점에 한 번 만들어 재사용한다.",
+  "detail": "정적 inv_freq를 가진 rope 타입에만 쓰고 테이블 범위 밖 위치는 동일 결과의 동적 경로로 폴백한다.",
+  "question": null
+ },
+ {
+  "id": "ATT-005",
+  "short": "텐서 병렬 샤딩 대상 축(Q/K head 등)은 텐서 레이아웃의 가장 바깥 축에 둔다.",
+  "detail": "샤딩 절단선이 head 경계에 놓이게 하고, 정적 캐시는 prefill과 decode 그래프에서 같은 방식으로 분할한다.",
+  "question": null
+ },
+ {
+  "id": "ATT-006",
+  "short": "직접 설계하는 디바이스 상주 정적 상태 캐시는 64의 배수인 축을 가장 안쪽 축에 둔다.",
+  "detail": "기본값으로 정하는 시퀀스 길이와 청크 크기는 64의 배수로 올림하거나 검증한다.",
+  "question": null
+ },
+ {
+  "id": "ATT-022",
+  "short": "커스텀 attention 커널이 변경되면 모델 쪽 호출부도 함께 동기화한다.",
+  "detail": "모델은 배치 단위 커널을 호출해 모델 코드를 단순하게 유지한다.",
+  "question": null
+ },
+ {
+  "id": "DIF-004",
+  "short": "컴파일 시점 옵션은 그래프 형상을 직접 정하는 값(서브모듈 batch size 등)으로 명시한다.",
+  "detail": "guidance scale처럼 그래프를 간접적으로 바꾸는 값은 컴파일 옵션으로 쓰지 않는다.",
+  "question": "컴파일 때 지정한 guidance scale과 runtime 값이 다르면 에러인가, 허용하는가?"
+ },
+ {
+  "id": "DIF-001",
+  "short": "diffusers 모듈의 파일 구성, 하위 패키지 배치, 설정 파일 이름은 upstream diffusers 구조를 따른다.",
+  "detail": "선택 서브모듈 목록 속성 이름도 upstream 네이밍을 따르고 같은 범주 모듈은 같은 하위 패키지에 둔다.",
+  "question": null
+ },
+ {
+  "id": "DIF-002",
+  "short": "파이프라인 호출 래퍼는 호출자가 준 형상 인자를 덮어쓰지 않고 생략된 경우에만 컴파일된 형상으로 채운다.",
+  "detail": "컴파일된 batch size와 런타임 인자가 맞지 않으면 명시적 에러를 낸다.",
+  "question": null
+ },
+ {
+  "id": "DIF-007",
+  "short": "모든 diffusers 모델과 파이프라인은 `rbln_config` 설정 클래스를 갖도록 구성한다.",
+  "detail": "API 형식은 다른 모델의 설정 객체와 동일하게 맞춘다.",
+  "question": null
+ },
+ {
+  "id": "DIF-010",
+  "short": "새 변종을 추가해도 기존 모델의 컴파일 그래프와 입력 순서는 바이트 단위로 동일하게 유지한다.",
+  "detail": "변종 분기는 사용자 옵션이 아닌 설정 값으로 내부 결정하며, 그래프가 다르면 별도 래퍼 클래스로 분리한다.",
+  "question": null
+ },
+ {
+  "id": "DIF-023",
+  "short": "여러 구성요소로 된 diffusers 파이프라인은 컴파일과 로딩을 파이프라인 단위로 지원한다.",
+  "detail": "연결된 파이프라인은 새 구현 없이 단일 파이프라인용 기존 구현을 재사용한다.",
+  "question": null
+ },
+ {
+  "id": "API-019",
+  "short": "설정 입력 경로 사이에 암묵적 우선순위를 두어 한쪽이 다른 쪽을 덮어쓰게 하지 않는다.",
+  "detail": null,
+  "question": null
+ },
+ {
+  "id": "API-003",
+  "short": "공개 API, 설정 키, 출력 타입을 제거·변경하는 PR은 같은 PR에서 내부 호출부와 문서를 고친다.",
+  "detail": "하위 클래스, README, examples에서 제거된 이름 참조를 0으로 만들고 vLLM·model-zoo 영향은 PR 본문에 명시한다.",
+  "question": null
+ },
+ {
+  "id": "API-007",
+  "short": "함수, 메서드, 속성 이름은 실제 동작과 역할을 정확히 나타내야 한다.",
+  "detail": "모호한 약어나 HF 용어와 어긋나는 이름은 바꾸고 여러 역할을 한 메서드에 묶지 않는다.",
+  "question": null
+ },
+ {
+  "id": "API-008",
+  "short": "모델 클래스 이름, 연산 순서, 메서드 구현 순서와 래퍼 메서드 시그니처는 upstream 원본을 따른다.",
+  "detail": "upstream은 transformers, vLLM 등이다.",
+  "question": null
+ },
+ {
+  "id": "API-006",
+  "short": "함수 인자는 `*args`/`**kwargs`나 위치 인덱싱에 기대지 않고 명시적 인자로 받는다.",
+  "detail": "호출은 key=value 형식으로 쓴다.",
+  "question": null
+ },
+ {
+  "id": "API-009",
+  "short": "설정 필드 이름과 상속 구조는 공통 기반 설정 클래스의 이름과 맞춘다.",
+  "detail": "dict로 전달되는 하위 모듈 설정 이름은 config 속성 이름과 일치시킨다.",
+  "question": null
+ },
+ {
+  "id": "API-014",
+  "short": "공개 객체는 정의 모듈의 `__all__`에만 등록하고 패키지 `__init__.py`는 lazy 템플릿으로 둔다.",
+  "detail": "`scripts/check_inits.py --fix`로 TYPE_CHECKING 블록을 맞추며, 사용자 정의 클래스만 `register`를 쓴다.",
+  "question": null
+ },
+ {
+  "id": "API-015",
+  "short": "내부 모듈을 옮길 때 옛 경로에 호환용 파일(shim)을 남기지 않고, 모델 클래스는 그 모델의 디렉터리에만 둔다.",
+  "detail": "사용자는 from optimum.rbln import로만 쓰므로 최상위 export만 유지한다. 여러 모델 클래스를 모은 공용 alias 파일은 만들지 않는다.",
+  "question": null
+ },
+ {
+  "id": "API-002",
+  "short": "폐기된 API는 폐기 버전에서 한 릴리스 동안 오류를 낸 뒤 다음 릴리스에서 제거한다.",
+  "detail": "차단 시점은 프리릴리스·포스트릴리스 접미사와 무관하게 기본 버전 X.Y.Z로 비교한다.",
+  "question": null
+ },
+ {
+  "id": "API-011",
+  "short": "공개 모델 클래스는 `RBLN` + 대응 HF 클래스명으로, 설정은 그 뒤에 `Config`를 붙여 짓는다.",
+  "detail": "자동 클래스가 이 이름으로 클래스를 찾으므로 이름 규칙이 곧 로딩 계약이다.",
+  "question": null
+ },
+ {
+  "id": "TEST-004",
+  "short": "전체 pytest가 필요한 변경은 커밋 메시지에 [pytest-full]을 넣는다.",
+  "detail": "CI는 커밋 메시지(BUILDKITE_MESSAGE)에서 이 마커를 읽고 pytest 범위만 넓힌다. 설명하려고 인용해도 전체 빌드가 되므로 인용하지 않는다.",
+  "question": null
+ },
+ {
+  "id": "TEST-006",
+  "short": "무거운 추론 테스트와 Hub push 검증은 기본 PR 테스트가 아닌 스케줄 CI에서만 실행한다.",
+  "detail": null,
+  "question": null
+ },
+ {
+  "id": "TEST-009",
+  "short": "새 모델을 지원하는 PR에는 모델 전용 pytest를 함께 추가한다.",
+  "detail": "테스트는 upstream 라이브러리의 테스트를 기반으로 작성한다.",
+  "question": null
+ },
+ {
+  "id": "TEST-010",
+  "short": "테스트는 전체 크기 모델 대신 tiny 모델이나 레이어 수를 줄인 모델을 사용한다.",
+  "detail": "파이프라인 테스트는 tiny-random 구성으로 export, generation, reload를 검증한다.",
+  "question": null
+ },
+ {
+  "id": "TEST-011",
+  "short": "버그 수정에는 수정을 되돌리면 실패하는 회귀 테스트를 함께 넣는다.",
+  "detail": "기존 테스트가 놓친 입력 조건과 같은 계열 모델의 누락된 커버리지를 채운다.",
+  "question": null
+ },
+ {
+  "id": "TEST-012",
+  "short": "기능 추가나 동작 변경에는 그 효과를 증명하는 테스트를 함께 추가한다.",
+  "detail": "설정 저장·재로드 왕복, 별칭 매핑, 서브모듈 설정 전파 등이 해당한다.",
+  "question": null
+ },
+ {
+  "id": "TEST-013",
+  "short": "모델, 그래프, 커널 변경은 참조 구현과 같은 입력에서 출력을 비교 검증한다.",
+  "detail": "생성 토큰 일치, logits 상관계수, 비트 일치 등을 쓰고 불일치는 근거와 함께 PR 설명에 기록한다.",
+  "question": null
+ },
+ {
+  "id": "TEST-017",
+  "short": "CI가 다루지 않는 변경은 병합 전에 실제 NPU에서 컴파일과 추론까지 확인한다.",
+  "detail": "확인하지 못했으면 PR 설명에 미검증 범위를 명시하고 draft로 둔다.",
+  "question": null
+ },
+ {
+  "id": "TEST-001",
+  "short": "테스트는 CI 워크플로우가 실제로 실행하는 파일에 두고 기대값은 실제 모델 출력으로 검증한다.",
+  "detail": "실패를 가리는 우회 줄을 남기지 않고 같은 기능의 중복 테스트는 합친다.",
+  "question": null
+ },
+ {
+  "id": "TEST-002",
+  "short": "NPU가 필요 없는 테스트는 NPU를 요청하지 않는 CPU 단위 테스트로 `tests/unit/cpu/`에 둔다.",
+  "detail": "디바이스가 필요한 단위 테스트는 `tests/unit/npu/`에 둔다.",
+  "question": null
+ },
+ {
+  "id": "TEST-008",
+  "short": "export된 사용자용 모델·파이프라인 클래스는 `RBLN_CLASS`로 등록된 테스트 클래스를 가진다.",
+  "detail": "등록 위치는 `tests/test_{transformers,diffusers,llm}.py` 중 한 곳이고 이미지·오디오 입력 모델은 `IS_MULTIMODAL=True`를 선언한다.",
+  "question": null
+ },
+ {
+  "id": "TEST-019",
+  "short": "공유 설정 dict를 in-place로 고치려면 자기 클래스 본문에서 선언하고 `setUpClass`에서만 고친다.",
+  "detail": "테스트 메서드에서는 복사본을 쓰고, 상속받은 dict는 `cls.X = {**cls.X, ...}`로 재바인딩한다.",
+  "question": null
+ },
+ {
+  "id": "TEST-038",
+  "short": "테스트 기대값과 경계 입력은 모델의 기본 동작과 지원 범위 상수에 맞춰 작성한다.",
+  "detail": "이들이 바뀌면 기존 테스트를 함께 갱신하거나 정리한다.",
+  "question": null
+ },
+ {
+  "id": "TEST-005",
+  "short": "하위 호환(BC) 검증과 경계값 설정 조합은 PR마다 실행되는 CI 케이스로 고정한다.",
+  "detail": null,
+  "question": null
+ },
+ {
+  "id": "TEST-007",
+  "short": "CI의 모든 pytest 호출은 `-vv --durations 0`을 붙이고 정기 실행은 취소 없이 끝까지 돈다.",
+  "detail": "`cancel_on_build_failing`과 `-x`/`--maxfail`을 쓰지 않고 보고 단계는 `continue_on_failure: true`인 wait 뒤에 둔다.",
+  "question": null
+ },
+ {
+  "id": "TEST-015",
+  "short": "모델·custom op 변경은 대표 구성으로 컴파일 스모크 테스트를 돌려 컴파일러 패턴과 맞는지 확인한다.",
+  "detail": "여러 텐서 병렬 크기, attention 변형과 MoE 모델을 각 하나 이상 포함한다.",
+  "question": null
+ },
+ {
+  "id": "TEST-016",
+  "short": "PR 설명에는 실행한 테스트 명령, 결과, 실행 환경, 테스트 수를 적는다.",
+  "detail": "기존에 있던 실패는 원인과 함께 표시한다.",
+  "question": null
+ },
+ {
+  "id": "TEST-018",
+  "short": "메모리 관련 변경과 모델 테스트는 호스트 RSS 증가를 측정한다.",
+  "detail": "dense 모델은 체크포인트 크기의 0.5배 미만, MoE 모델은 1.5배 미만이며 최적화 PR은 단계별 RSS를 표로 제시한다.",
+  "question": null
+ },
+ {
+  "id": "TEST-020",
+  "short": "테스트는 같은 프로세스에서 다른 테스트와 함께 돌아도 통과해야 한다.",
+  "detail": "테스트 클래스는 `tearDownClass`에서 만든 모델 객체를 해제한다.",
+  "question": null
+ },
+ {
+  "id": "TEST-022",
+  "short": "테스트 간 실행 순서 의존성은 이름의 알파벳 순서로 보장한다.",
+  "detail": "샤딩은 클래스 단위로 나눠 한 모델이 두 작업에서 동시에 컴파일되지 않게 하고 분할 후에도 수집 순서를 유지한다.",
+  "question": null
+ },
+ {
+  "id": "TEST-028",
+  "short": "런타임이 필요하지 않은 테스트는 런타임을 생성하지 않는다.",
+  "detail": "아티팩트 저장만 하는 실행 등 하드웨어를 점유하는 단계를 뺀다.",
+  "question": null
+ },
+ {
+  "id": "TEST-029",
+  "short": "외부 컴파일러 문제로 비활성화한 테스트는 원인이 해결되면 다시 활성화한다.",
+  "detail": "더 이상 건너뛰지 않는 테스트 레벨 게이트는 제거한다.",
+  "question": null
+ },
+ {
+  "id": "TEST-032",
+  "short": "테스트에서 Hub 접근은 기본 차단하고 명시적으로 표시된 테스트만 온라인을 허용한다.",
+  "detail": "push한 값은 main이 아니라 push가 만든 커밋 sha로 읽어 검증한다.",
+  "question": null
+ },
+ {
+  "id": "DOC-004",
+  "short": "docstring의 가변 키워드 인자는 `kwargs`로 표기하고 전달 대상을 적는다.",
+  "detail": "`rbln_` 접두사 인자는 `rbln_config`로, 나머지는 HuggingFace 라이브러리로 전달된다고 적는다.",
+  "question": "사용되지 않는 인자(`kwargs` 등)를 docstring에 적는가, 생략하는가?"
+ },
+ {
+  "id": "DOC-003",
+  "short": "docstring의 인자 목록, 기본값, 텐서 shape, 수치 정의, 예시 클래스 이름은 실제 코드에 맞춘다.",
+  "detail": null,
+  "question": null
+ },
+ {
+  "id": "DOC-001",
+  "short": "새로 추가하는 모델, 설정, 파이프라인 클래스와 함수, 오버라이드한 classmethod에는 docstring을 둔다.",
+  "detail": "용도와 추가 이유, 주의사항을 적고 가능하면 사용 예시를 포함한다.",
+  "question": null
+ },
+ {
+  "id": "DOC-011",
+  "short": "공개 API docstring은 Google 스타일만 쓰고 numpy 스타일 `name : type`은 금지한다.",
+  "detail": "`name (type): 설명`은 한 줄에 쓰고 Returns는 `type: 설명` 한 행으로 쓰며 기본값은 'Defaults to X.'로 쓴다.",
+  "question": null
+ },
+ {
+  "id": "DOC-002",
+  "short": "주석은 코드가 말하지 않는 이유만 짧게 적는다.",
+  "detail": "코드 풀이, PR 이력, 마이그레이션 맥락, 개발 메모는 남기지 않고 내부 구현 설명은 docstring 대신 `#` 주석으로 쓴다.",
+  "question": null
+ },
+ {
+  "id": "DOC-012",
+  "short": "docstring과 사용자 노출 메시지의 SDK 문서 링크는 `https://docs.rbln.ai/` 절대 URL로 쓴다.",
+  "detail": "대상 경로는 문서 빌드에 존재해야 하며 상대 경로는 `scripts/validate_docstrings.py`에서 깨지므로 금지한다.",
+  "question": null
+ },
+ {
+  "id": "DEP-005",
+  "short": "지원하는 transformers 버전은 범위 선언과 단일 정확 버전(`==`) 중 하나의 방식으로 통일한다.",
+  "detail": null,
+  "question": null
+ },
+ {
+  "id": "DEP-019",
+  "short": "컴파일러 기능이 있는지는 버전 번호가 아니라 그 함수·인자가 실제로 있는지로 확인한다.",
+  "detail": "옛 컴파일러에도 같은 결과를 내는 방법이 있으면 그걸로 대신하고, 없으면 RuntimeError로 업그레이드를 안내한다.",
+  "question": null
+ },
+ {
+  "id": "DEP-004",
+  "short": "버전에 따라 경로나 이름이 달라지는 외부 API는 호환 모듈 한 곳에 모은다.",
+  "detail": "나머지 코드는 정식 이름만 import하고 버전 분기는 공용 비교 헬퍼를 쓰며 shim은 실제 바뀐 심볼에만 적용한다.",
+  "question": null
+ },
+ {
+  "id": "DEP-009",
+  "short": "모델 구현의 무거운 선택적 의존성은 함수 안이 아니라 모듈 최상단에서 import한다.",
+  "detail": null,
+  "question": null
+ },
+ {
+  "id": "DEP-001",
+  "short": "공개 kwarg와 메서드의 deprecation은 데코레이터와 version으로 표시한다.",
+  "detail": "`deprecate_kwarg`/`deprecate_method`를 쓰고, 불가하면 경고에 제거 예정 버전을 명시하며 도달 시 릴리스 전에 제거하거나 별도 PR로 연기한다.",
+  "question": null
+ },
+ {
+  "id": "DEP-002",
+  "short": "의존 라이브러리 버전에 따라 달라지는 동작은 검증한 버전을 명시한다.",
+  "detail": "차이가 나면 버전 분기나 주석으로 남긴다.",
+  "question": null
+ },
+ {
+  "id": "DEP-012",
+  "short": "CI가 설치하는 rebel-compiler 버전은 `.github/version.yaml` 한 곳에서만 정한다.",
+  "detail": "CI 스크립트는 이 값을 읽거나 `REBEL_COMPILER_VERSION`으로만 바꾸고 갱신은 봇 PR이나 이 파일 수정으로만 한다.",
+  "question": null
+ },
+ {
+  "id": "DEP-033",
+  "short": "의존성 갱신 봇이 만든 `dependency:` PR은 auto-merge를 켜지 않는다.",
+  "detail": "`[pytest-full]` 결과를 확인한 팀원이 직접 병합한다.",
+  "question": null
+ },
+ {
+  "id": "DEP-007",
+  "short": "의존성 버전은 model-zoo 등으로 검증한 뒤에 상향한다.",
+  "detail": "상향 전 기능 점검과 wheel 가용성 확인을 하고 상한은 최신 출시에 맞춰 갱신하며 불필요해진 의존성은 제거한다.",
+  "question": null
+ },
+ {
+  "id": "DEP-015",
+  "short": "외부 라이브러리가 deprecated로 표시한 속성, 호출 방식, import 경로는 권장 대체 방식으로 옮긴다.",
+  "detail": null,
+  "question": null
+ },
+ {
+  "id": "DEP-008",
+  "short": "모델 구현에 필수인 외부 패키지는 `pyproject.toml` 기본 dependencies에 버전과 함께 선언한다.",
+  "detail": "특정 파이프라인 전용 비필수 패키지는 `is_*_available()` 가드 아래에서 import하고 미설치 시 대체 클래스로 실패를 늦춘다.",
+  "question": null
+ },
+ {
+  "id": "DEP-011",
+  "short": "`torch.load`는 항상 `weights_only`를 명시한다.",
+  "detail": "라이브러리가 직접 저장한 파일은 `False`, 사용자·외부 체크포인트(LoRA 등)는 `True`다.",
+  "question": null
+ },
+ {
+  "id": "DEP-016",
+  "short": "torch 메이저/마이너 bump PR은 `[pytest-full]`로 전체 컴파일 테스트를 돌린다.",
+  "detail": "혼합 dtype 행렬곱 실패는 attention 확률·마스크 등을 query/value dtype으로 명시 `.to(dtype)` 캐스팅해 고친다.",
+  "question": null
+ },
+ {
+  "id": "DEP-017",
+  "short": "torch 버전 상향은 같은 torch를 검증한 컴파일러 빌드와 함께 또는 먼저 반영한다.",
+  "detail": "torch에 의존하는 패키지(vllm-rbln, torch-rbln)도 같은 PR에서 맞춘다.",
+  "question": null
+ },
+ {
+  "id": "PRC-025",
+  "short": "main은 dev에서 넘어오는 동기화 병합으로만 전진시키고 hotfix 직접 반영은 예외로 한다.",
+  "detail": "hotfix는 base를 main으로 두고 제목에 `(hotfix)`를 표기하며 dev에 백머지 PR로 반영한다.",
+  "question": null
+ },
+ {
+  "id": "PRC-035",
+  "short": "PR 빌드의 테스트 스위트는 경로 기반 조건이나 의존 관계 추론으로 생략하지 않고 모두 실행한다.",
+  "detail": "시간이 길면 커밋 메시지의 영역별·전체 skip 마커로 명시적으로 건너뛴다.",
+  "question": null
+ },
+ {
+  "id": "PRC-024",
+  "short": "브랜치 사이로 수정을 옮길 때는 dev에 먼저 머지하고 cherry-pick -x로 출처를 남긴다.",
+  "detail": "현재 옮기는 대상은 release-vX.Y.Z 브랜치다(main은 PR 727에서 삭제).",
+  "question": null
+ },
+ {
+  "id": "PRC-031",
+  "short": "BC 컴파일은 안정 릴리스 태그에서만 돌고, 스텝 안에서 태그를 다시 검사한다.",
+  "detail": "aN·rcN·.devN 같은 프리릴리스 태그는 BC 아티팩트를 만들지 않는다(scripts/ci/bc-compile-steps.sh:15).",
+  "question": null
+ },
+ {
+  "id": "PRC-032",
+  "short": "모든 v* 태그는 프리릴리스를 포함해 PyPI 배포와 vllm-rbln 갱신을 트리거한다.",
+  "detail": ".github/workflows/deploy-on-tag.yaml 기준. BC 컴파일만 안정 태그로 제한된다(PRC-031).",
+  "question": null
+ },
+ {
+  "id": "PRC-008",
+  "short": "미머지 PR 위에 쌓는 PR은 base를 선행 PR 브랜치로 두고 본문 첫 줄에 `Stacked on #N`을 적는다.",
+  "detail": "머지 순서가 어긋났을 때의 대응은 main/release 브랜치로 out-of-band 들어가는 PR에만 요구한다.",
+  "question": null
+ },
+ {
+  "id": "PRC-012",
+  "short": "한 PR은 특정 모델 계열이나 기능 범위로 제한한다.",
+  "detail": "독립적인 기능이나 호스트 측 호환성 변경처럼 얽힌 항목은 별도 PR로 분리한다.",
+  "question": null
+ },
+ {
+  "id": "PRC-003",
+  "short": "PR 본문에는 무엇을 바꿨는지와 왜 그렇게 했는지를 적는다.",
+  "detail": "템플릿 사용 시 Type of Change는 하나만 체크하고 Other를 체크하면 내용을 적는다.",
+  "question": null
+ },
+ {
+  "id": "DEP-018",
+  "short": "컴파일러 버전, 브랜치, 해시, 컴파일러 수정에 의존하는 PR은 본문에 필요한 의존 대상을 명시한다.",
+  "detail": "의존 PR도 적고 아직 검증되지 않은 범위를 표기한다.",
+  "question": null
+ },
+ {
+  "id": "PRC-001",
+  "short": "PR 제목은 `type(scope): description` 형식을 따른다.",
+  "detail": "type은 release/model/performance/refactor/doc/dependency/other이며 release 브랜치 cherry-pick PR도 원래 변경의 type을 쓴다.",
+  "question": null
+ },
+ {
+  "id": "PRC-005",
+  "short": "릴리스는 PR이 아니라 태그로 낸다.",
+  "detail": "프리릴리스는 dev에 직접 태그하고, 정식 릴리스는 `release-vX.Y.Z` 브랜치를 잘라 cherry-pick PR 후 태그를 단다.",
+  "question": null
+ },
+ {
+  "id": "PRC-002",
+  "short": "작업 중인 PR은 제목에 표식을 달지 않고 GitHub Draft로 연다.",
+  "detail": "제목은 conventional commit 형식을 유지한다.",
+  "question": null
+ },
+ {
+  "id": "PRC-014",
+  "short": "PR 본문에 지원 범위의 한계와 검증하지 못한 모델·경로를 사유와 함께 명시한다.",
+  "detail": "미지원 배치 크기 등이 해당한다.",
+  "question": null
+ },
+ {
+  "id": "PRC-015",
+  "short": "동작을 바꾸는 PR은 본문에 동작 변경을 별도 절로 기록하고 호환성 영향 범위를 명시한다.",
+  "detail": "독립적으로 되돌릴 수 있도록 커밋 단위를 나눈다.",
+  "question": null
+ },
+ {
+  "id": "PRC-019",
+  "short": "신규 모델·파이프라인 PR 본문에는 참조한 HF 모델 주소와 클래스명, 재현 가능한 예제 실행 명령을 적는다.",
+  "detail": "upstream PR이 있으면 클래스명 대신 적을 수 있다.",
+  "question": null
+ },
+ {
+  "id": "PRC-023",
+  "short": "수정은 dev에 먼저 머지한 뒤 `release-vX.Y.Z` 대상 cherry-pick PR로 squash 머지한다.",
+  "detail": "저장소 설정상 merge commit은 쓸 수 없고, 조상 관계 보존 병합 규칙은 폐기 대상이다.",
+  "question": null
+ },
+ {
+  "id": "PRC-026",
+  "short": "릴리스 라인 수정은 해당 릴리스 태그 위에서 만들어 릴리스 라인의 자식 커밋이 되게 한다.",
+  "detail": "dev에 반영된 뒤에는 릴리스 브랜치를 dev에 역병합해 조상 관계를 맞춘다.",
+  "question": null
+ },
+ {
+  "id": "STY-015",
+  "short": "CI 자격증명은 GHA secrets나 Buildkite secrets 매핑으로만 받고 로그에도 평문으로 적지 않는다.",
+  "detail": "내부 엔드포인트, 클러스터 경로, 이미지는 CI 변수로 주입하고 필수 변수는 `${VAR:?not set}`로 가드한다.",
+  "question": null
+ },
+ {
+  "id": "PRC-004",
+  "short": "기존 사용자 코드가 그대로 동작하지 않는 PR은 Type of Change에서 Breaking change를 체크한다.",
+  "detail": "공개 API 제거(deprecation 창 만료 포함), 공개 인자 이름 변경, 기본 동작 변경이 해당한다.",
+  "question": null
+ },
+ {
+  "id": "PRC-010",
+  "short": "리뷰 대상 브랜치가 통합 브랜치와 어긋나 있으면 리뷰 전에 통합 브랜치와 동기화한다.",
+  "detail": null,
+  "question": null
+ },
+ {
+  "id": "PRC-033",
+  "short": "같은 CI 테스트 매트릭스나 설치 절차는 실행기·파이프라인마다 따로 두지 않고 스크립트 한 곳에서 관리한다.",
+  "detail": null,
+  "question": null
+ },
+ {
+  "id": "PRC-034",
+  "short": "테스트 스위트 실행 여부는 NPU를 점유하기 전에 파이프라인 업로드 시점에 결정한다.",
+  "detail": "점유한 job 안에서 건너뛰지 않는다.",
+  "question": null
+ },
+ {
+  "id": "PRC-037",
+  "short": "선택적 리포트·알림 스텝은 `soft_fail`로 두고 커밋 상태를 보고하지 않게 한다.",
+  "detail": "보고 실패가 필수 체크와 야간 빌드의 성공·실패 결과를 바꾸지 않아야 한다.",
+  "question": null
+ },
+ {
+  "id": "PRC-040",
+  "short": "CI 테스트 실패를 자동 재시도로 가리지 않고 원인을 확인한다.",
+  "detail": null,
+  "question": null
+ },
+ {
+  "id": "PRC-042",
+  "short": "스케줄 CI 워크플로의 트리거는 main에 얇게 두고 실행 로직은 dev의 재사용 워크플로로 분리한다.",
+  "detail": "main에서 스케줄 워크플로를 직접 수정하지 않는다.",
+  "question": null
+ },
+ {
+  "id": "STY-009",
+  "short": "import는 파일 맨 위에 둔다. 함수 안 import는 순환 import를 피하거나 무거운 선택 의존성을 미룰 때만 쓴다.",
+  "detail": "ruff의 함수 안 import 금지 규칙(PLC0415)은 이 예외 때문에 꺼 두었으므로 리뷰에서 이유를 확인한다.",
+  "question": null
+ },
+ {
+  "id": "STY-003",
+  "short": "같은 로직, 상수, 결정 지점은 한 곳에만 두고 복제된 것은 공용 헬퍼나 단일 상수로 모은다.",
+  "detail": null,
+  "question": "파이프라인 공통 검증 코드는 mixin에 두는가, utils 모듈에 두는가?"
+ },
+ {
+  "id": "STY-014",
+  "short": "상위 계층에서 이미 처리하는 검사나 기본값 처리를 중복해서 추가하지 않는다.",
+  "detail": "과한 방어 코드를 피한다.",
+  "question": null
+ },
+ {
+  "id": "STY-001",
+  "short": "의도가 바로 드러나지 않는 추가, 삭제, 순서 변경, dtype 변경에는 그 이유를 주석이나 PR 설명에 남긴다.",
+  "detail": null,
+  "question": null
+ },
+ {
+  "id": "STY-018",
+  "short": "머지 전에 CI 품질 게이트(ruff, mypy, `check_inits.py`, docstring 검사)를 통과시킨다.",
+  "detail": "base가 바뀌었으면(특히 lint 규칙 변경 PR 직후) 최신 base에서 CI를 다시 돌린 뒤 머지한다.",
+  "question": null
+ },
+ {
+  "id": "STY-007",
+  "short": "오류 메시지는 무엇이 잘못됐는지, 어떤 조건인지, 사용자가 무엇을 해야 하는지를 구체적으로 적는다.",
+  "detail": "실제로 일어나지 않는 동작은 설명하지 않고 같은 목적의 기존 가드 메시지 양식을 따른다.",
+  "question": null
+ },
+ {
+  "id": "STY-004",
+  "short": "미사용 import와 변수는 ruff가, 부모와 동일한 override와 미참조 private 헬퍼는 리뷰가 잡는다.",
+  "detail": "docstring만 덧붙이는 pass-through override는 문서화 목적이므로 허용한다.",
+  "question": null
+ },
+ {
+  "id": "STY-011",
+  "short": "annotation은 `X | None`, `list[...]` 등 3.10+ 문법으로 쓴다.",
+  "detail": "`None` 기본값은 `| None`을 명시하며, 문자열 forward-ref 인자는 예외로 통일 방식이 미정이다.",
+  "question": null
+ },
+ {
+  "id": "STY-013",
+  "short": "로거는 항상 `utils.logging`의 `get_logger`로 만들고 `logging.getLogger`를 쓰지 않는다.",
+  "detail": "레벨 상수 참조는 허용하며 사용자 경고도 `logger.warning`/`warning_once`로 낸다.",
+  "question": null
+ },
+ {
+  "id": "STY-002",
+  "short": "디버깅 코드, 개발 중 로그와 주석, 예제 속 내부 검증 코드 같은 개발 흔적은 PR에 남기지 않는다.",
+  "detail": null,
+  "question": null
+ },
+ {
+  "id": "STY-005",
+  "short": "`src/optimum/rbln` 아래 새 파일은 Rebellions 저작권 한 줄과 Apache-2.0 블록을 붙인다.",
+  "detail": "HF 코드를 옮긴 파일은 원 저작권 헤더를 유지하고 tests/는 헤더를 붙이지 않는 것이 관행이다.",
+  "question": null
+ },
+ {
+  "id": "STY-010",
+  "short": "annotation 전용 import를 `TYPE_CHECKING`으로 옮길 때는 annotation을 문자열로 감싼다.",
+  "detail": "같은 이름을 모듈 수준 런타임 import와 중복하지 않으며 ruff는 TC004/TC005만 켠다.",
+  "question": null
+ },
+ {
+  "id": "STY-012",
+  "short": "export·등록 목록(`__all__`, re-export, 모델/설정 등록 목록)은 정렬 순서를 유지한다.",
+  "detail": "로그 레벨, 단위, 버전 호환표처럼 순서가 의미인 상수 표는 예외다.",
+  "question": null
+ }
+]

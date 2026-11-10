@@ -1,0 +1,121 @@
+[
+ {
+  "id": "TEST-004",
+  "lang": "bash",
+  "intro": "transformers 상향처럼 전체 pytest가 필요한 PR을 올리는 경우",
+  "examples": [
+   "gh pr create --base dev \\\n  --title \"[pytest-full] dependency: Update transformers to v5.16.0\"\ngit commit -m \"bump transformers\"\n# -> 제목에만 마커: 이 PR의 빌드는 OPTIMUM_RBLN_TEST_LEVEL=full",
+   "gh pr create --base dev \\\n  --title \"dependency: Update transformers to v5.16.0\"\ngit commit -m \"[pytest-full] bump transformers\"\n# -> 커밋 메시지 마커: 이 커밋의 빌드만 OPTIMUM_RBLN_TEST_LEVEL=full"
+  ]
+ },
+ {
+  "id": "TEST-006",
+  "lang": "yaml",
+  "intro": "SDXL 추론·test_push_to_hub 같은 무거운 테스트를 돌리는 위치",
+  "examples": [
+   "# .buildkite/pr.yml\n- label: \":sparkles: upload pytest\"\n  command: |\n    export OPTIMUM_RBLN_TEST_LEVEL=full\n    export HF_USER_ID=Rebellions\n    buildkite-agent pipeline upload .buildkite/pipelines/pytest/pipeline.yml\n# -> 모든 PR에서 TestLevel.FULL 클래스와 test_push_to_hub 실행",
+   "# .buildkite/pr.yml\n- label: \":sparkles: upload pytest\"\n  command: |\n    # 레벨 default, HF_USER_ID 미설정 (nightly.yml만 full로 export)\n    buildkite-agent pipeline upload .buildkite/pipelines/pytest/pipeline.yml\n# -> PR에서는 FULL 클래스와 test_push_to_hub가 skip, nightly에서만 실행"
+  ]
+ },
+ {
+  "id": "DOC-004",
+  "lang": "python",
+  "intro": null,
+  "examples": [
+   "def from_pretrained(cls, model_id, rbln_config=None, **kwargs):\n    \"\"\"\n    Args:\n        model_id (str | Path): The model id of the pre-trained model.\n        rbln_config (dict | RBLNModelConfig | None): Compile/runtime config.\n    \"\"\"",
+   "def from_pretrained(cls, model_id, rbln_config=None, **kwargs):\n    \"\"\"\n    Args:\n        model_id (str | Path): The model id of the pre-trained model.\n        rbln_config (dict | RBLNModelConfig | None): Compile/runtime config.\n        kwargs: Arguments with the prefix `rbln_` are passed to rbln_config,\n            the rest are passed to the HuggingFace library.\n    \"\"\""
+  ]
+ },
+ {
+  "id": "DEP-005",
+  "lang": "text",
+  "intro": "pyproject.toml의 transformers 의존성 선언",
+  "examples": [
+   "[project]\ndependencies = [\n    \"transformers>=4.57.3,<6\",  # v4·v5 둘 다에서 동작해야 함\n    \"diffusers==0.41.0\",\n]",
+   "[project]\ndependencies = [\n    \"transformers==5.15.1\",  # 상향은 매번 `dependency:` PR로\n    \"diffusers==0.41.0\",\n]"
+  ]
+ },
+ {
+  "id": "DEP-019",
+  "lang": "python",
+  "intro": "구버전 rebel-compiler가 tensor_parallel_size만 받는 경우",
+  "examples": [
+   "def compiler_num_devices_kwarg() -> str:\n    # 공용 헬퍼 한 곳에서 rebel.__version__ 비교\n    if compiler_version_at_least(\"0.9.2\"):\n        return \"num_devices\"\n    return \"tensor_parallel_size\"",
+   "def compiler_num_devices_kwarg() -> str:\n    params = inspect.signature(rebel.compile).parameters\n    if \"num_devices\" in params:\n        return \"num_devices\"\n    return \"tensor_parallel_size\"  # -> 구버전은 이전 이름으로 그대로 컴파일",
+   "def compiler_num_devices_kwarg() -> str:\n    params = inspect.signature(rebel.compile).parameters\n    if \"num_devices\" in params:\n        return \"num_devices\"\n    raise RuntimeError(\"rebel-compiler is too old; please upgrade it.\")"
+  ]
+ },
+ {
+  "id": "PRC-025",
+  "lang": "bash",
+  "intro": "배포된 v0.11.0에 긴급 수정이 필요한 경우(옛 main = release-v0.11.0)",
+  "examples": [
+   "gh pr create --base dev \\\n  --title \"model: fix gpt-oss bug\"\n# release-v0.11.0 에는 직접 반영하지 않음\n# -> 수정은 dev에서 새로 자른 다음 release 브랜치로만 배포",
+   "gh pr create --base release-v0.11.0 \\\n  --title \"model: fix gpt-oss bug (hotfix)\"\ngit checkout dev && git cherry-pick -x <HOTFIX_SHA>\n# -> v0.11.0.post1 태그, dev 커밋에 \"(cherry picked from ...)\" 기록"
+  ]
+ },
+ {
+  "id": "PRC-031",
+  "lang": "bash",
+  "intro": "v0.11.0rc1 같은 pre-release 태그가 푸시된 경우",
+  "examples": [
+   "tag=\"${BUILDKITE_TAG}\"\nversion=\"${tag#v}\"\n# 정규식 검사 없음: UI 필터(v*)를 통과한 모든 태그\n# -> v0.11.0rc1 도 BC 컴파일 실행\nemit_bc_compile_steps \"$tag\" | buildkite-agent pipeline upload",
+   "tag=\"${BUILDKITE_TAG}\"\nversion=\"${tag#v}\"\nif ! [[ \"$version\" =~ ^[0-9]+(\\.[0-9]+)*(\\.post[0-9]+|post[0-9]+)?$ ]]; then\n  echo \"$tag is not a stable release\" >&2; exit 0  # -> rc/a 태그는 종료\nfi\nemit_bc_compile_steps \"$tag\" | buildkite-agent pipeline upload"
+  ]
+ },
+ {
+  "id": "STY-003",
+  "lang": "python",
+  "intro": "여러 ControlNet 파이프라인의 check_inputs가 같은 검사를 반복하는 경우",
+  "examples": [
+   "# diffusers/modeling_diffusers.py\nclass RBLNDiffusionMixin:\n    def _check_callback_steps(self, callback_steps):\n        if callback_steps is not None and callback_steps <= 0:\n            raise ValueError(\"`callback_steps` has to be a positive integer\")\n# 각 pipeline.check_inputs: self._check_callback_steps(callback_steps)",
+   "# diffusers/pipelines/utils.py\ndef check_callback_steps(callback_steps):\n    if callback_steps is not None and callback_steps <= 0:\n        raise ValueError(\"`callback_steps` has to be a positive integer\")\n# 각 pipeline.check_inputs: check_callback_steps(callback_steps)"
+  ]
+ },
+ {
+  "id": "DBT-013",
+  "lang": "python",
+  "intro": "NPU 없이 도는 batch-sort 헬퍼 테스트를 추가하는 경우",
+  "examples": [
+   "# tests/test_llm.py\ndef test_expand_batch_perm_idx():\n    perm = torch.tensor([2, 0, 1])\n    assert _expand_batch_perm_idx(perm, 6).tolist() == [4, 5, 0, 1, 2, 3]\n# -> run-suite.sh llm: NPU 샤드에서 LLM 테스트와 함께 실행",
+   "# tests/unit/cpu/test_batch_attn_sort.py\ndef test_expand_batch_perm_idx():\n    perm = torch.tensor([2, 0, 1])\n    assert _expand_batch_perm_idx(perm, 6).tolist() == [4, 5, 0, 1, 2, 3]\n# -> run-suite.sh unit-cpu: NPU 없는 스텝에서 실행"
+  ]
+ },
+ {
+  "id": "DBT-014",
+  "lang": "python",
+  "intro": "테스트가 같은 HF_MODEL_ID를 반복 로드해 Hub 429가 나는 경우",
+  "examples": [
+   "# tests/test_base.py\ndef cached_from_pretrained(cls, model_id, **kwargs):\n    try:  # 캐시 먼저, 없을 때만 Hub 호출\n        return cls.from_pretrained(model_id, local_files_only=True, **kwargs)\n    except OSError:\n        return cls.from_pretrained(model_id, **kwargs)\nconfig = cached_from_pretrained(AutoConfig, HF_MODEL_ID)",
+   "# CI 스텝: pytest 전에 캐시를 한 번 채우고 오프라인 고정\nfor model_id in ALL_HF_MODEL_IDS:\n    snapshot_download(model_id)\nos.environ[\"HF_HUB_OFFLINE\"] = \"1\"\nconfig = AutoConfig.from_pretrained(HF_MODEL_ID)  # -> Hub 호출 0회",
+   "# tests/conftest.py\ndef pytest_runtest_setup(item):\n    online = item.get_closest_marker(\"hf_online\") is not None\n    os.environ[\"HF_HUB_OFFLINE\"] = \"0\" if online else \"1\"\nconfig = AutoConfig.from_pretrained(HF_MODEL_ID)  # -> 테스트별로 결정"
+  ]
+ },
+ {
+  "id": "DBT-015",
+  "lang": "bash",
+  "intro": "dev를 릴리스 브랜치(옛 main)로 동기화하는 PR #695를 병합하는 경우",
+  "examples": [
+   "gh pr merge 695 --merge\n# -> \"Merge pull request #695 from RBLN-SW/dev\"\n#    dev 커밋 SHA가 그대로 남아 두 브랜치 히스토리가 일치",
+   "gh pr merge 695 --squash\n# -> \"other: backmerge main into dev after #692 (#695)\" 커밋 1개\n#    dev 커밋은 새 SHA로 합쳐져 다음 동기화에서 같은 diff가 다시 보임"
+  ]
+ },
+ {
+  "id": "DBT-018",
+  "lang": "python",
+  "intro": "BLIP-2에 _update_submodule_rbln_config와 비슷한 이름의 훅이 있는 경우",
+  "examples": [
+   "class RBLNBlip2ForConditionalGeneration(RBLNModel):\n    @classmethod\n    def _update_submodule_rbln_config_from_model(\n        cls, model, rbln_config, preprocessors\n    ):  # 이름이 비슷해 헷갈리므로 바꾼다\n        return rbln_config",
+   "class RBLNBlip2ForConditionalGeneration(RBLNModel):\n    @classmethod\n    def _update_submodule_config(\n        cls, model, rbln_config, preprocessors\n    ):  # 실제로 혼동되는 함수가 없으므로 그대로 둔다\n        return rbln_config"
+  ]
+ },
+ {
+  "id": "DBT-021",
+  "lang": "python",
+  "intro": "transformers 4.51+에서 config.head_dim 키가 None으로 존재하는 경우",
+  "examples": [
+   "head_dim = getattr(config, \"head_dim\", None)\nif head_dim is None:\n    head_dim = config.hidden_size // config.num_attention_heads",
+   "head_dim = getattr(config, \"head_dim\", None) or (\n    config.hidden_size // config.num_attention_heads\n)"
+  ]
+ }
+]

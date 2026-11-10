@@ -1,0 +1,7 @@
+[
+ {"id": "CFG-022", "lang": "python", "intro": "컴파일된 모델을 로드하며 같은 키를 두 곳에 준 경우", "examples": [
+  "model = RBLNLlamaForCausalLM.from_pretrained(\n    compiled_dir, rbln_config={\"device\": 0}, rbln_device=1)\nmodel.rbln_config.device   # 1  (명시한 rbln_ 인자가 이김)",
+  "model = RBLNLlamaForCausalLM.from_pretrained(\n    compiled_dir, rbln_config={\"device\": 0}, rbln_device=1)\nmodel.rbln_config.device   # 0  (rbln_config가 이김)",
+  "model = RBLNLlamaForCausalLM.from_pretrained(\n    compiled_dir, rbln_config={\"device\": 0}, rbln_device=1)\n# -> ValueError: device가 rbln_config와 rbln_device에 모두 있음"
+ ]}
+]

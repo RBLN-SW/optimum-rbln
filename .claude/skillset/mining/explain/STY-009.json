@@ -1,0 +1,61 @@
+{
+ "id": "STY-009",
+ "summary": [
+  "import 문을 어디에 두느냐에 대한 룰입니다. 기본은 파일 맨 위입니다. 그래야 파일이 무엇에 의존하는지 한눈에 보이고, import 오류도 파일을 불러오는 순간 바로 드러납니다.",
+  "함수 안에 import를 두는 것(지연 import)은 두 가지 이유가 있을 때만 씁니다. ① 서로를 import하는 두 모듈 사이의 순환 import를 피할 때. ② diffusers처럼 무겁거나 선택적인 의존성을 실제로 쓸 때까지 미뤄서, import optimum.rbln을 가볍게 유지할 때.",
+  "ruff에는 함수 안 import를 막는 규칙(PLC0415)이 있지만, ②를 위해 PR #733에서 일부러 꺼 두었습니다. 그래서 이 룰은 도구가 잡지 못하고 리뷰에서 '왜 여기서 import하나요?'로 확인합니다.",
+  "물어보는 것: import는 맨 위에 두고, 함수 안 import는 ①②의 이유가 있을 때만 쓴다를 팀 룰로 삼을까요?"
+ ],
+ "examples": [
+  {
+   "label": "이유 ② — 선택 의존성을 미룸 (modeling_base.py:286)",
+   "lang": "python",
+   "code": "if cls.hf_library_name == \"diffusers\":\n    # import here to prevent diffusers dependency\n    from diffusers.configuration_utils import ConfigMixin\n# transformers 모델만 쓰는 사용자는 diffusers가 없어도 된다"
+  },
+  {
+   "label": "이유 ① — 순환 import를 피함 (modeling_diffusers.py:416)",
+   "lang": "python",
+   "code": "def _compile_multicontrolnet(cls, *args, **kwargs):\n    # 맨 위에 두면 순환 import가 되는 모듈을 쓰는 곳에서 불러온다\n    from .models.controlnets.controlnet import RBLNControlNetModel\n    from .models.controlnets.multicontrolnet import RBLNMultiControlNetModel"
+  },
+  {
+   "label": "어기는 예 — 이유 없는 함수 안 import (modeling.py:160)",
+   "lang": "python",
+   "code": "if hasattr(model, \"can_generate\") and model.can_generate():\n    import json   # 표준 라이브러리, 순환도 없고 가볍다 -> 맨 위로 올려야 한다\n\n    generation_config = model.generation_config"
+  }
+ ],
+ "evidence": [
+  {
+   "pr": 445,
+   "state": "closed",
+   "date": null,
+   "user": "jongho",
+   "what": "리뷰에서 함수 안 import를 맨 위로 옮기라고 요청했다.",
+   "quote": "could you move this `import` to the top"
+  },
+  {
+   "pr": 653,
+   "state": "merged",
+   "date": "2026-07-30",
+   "user": "jongho",
+   "what": "리뷰에서 지연 import를 쓴 이유를 물었다.",
+   "quote": "why lazy import"
+  },
+  {
+   "pr": 267,
+   "state": "merged",
+   "date": "2025-09-23",
+   "user": "kblee",
+   "what": "멀티모달 리팩터링에서 서브모듈 설정 클래스를 지연 import로 불러오게 했다(이유 ①).",
+   "quote": "architecting -> lazy import for submodule config"
+  },
+  {
+   "pr": 733,
+   "state": "merged",
+   "date": "2026-10-21",
+   "user": "jongho",
+   "what": "ruff 규칙을 늘리면서 PLC0415(함수 안 import 금지)는 import optimum.rbln을 가볍게 유지하는 지연 import 때문에 일부러 껐다(이유 ②).",
+   "quote": "would forbid the lazy imports that keep `import optimum.rbln` light."
+  }
+ ],
+ "verified": "dev 74e97fa4 확인(2026-10-23): src의 함수 안 import 17곳(10개 파일). pyproject.toml의 ruff ignore에 PLC0415가 있다."
+}

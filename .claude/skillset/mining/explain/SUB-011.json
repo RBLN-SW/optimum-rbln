@@ -1,0 +1,14 @@
+{
+ "id": "SUB-011",
+ "summary": [
+  "멀티모달 모델에서 이미지 토큰 개수처럼 '만드는 쪽'과 '쓰는 쪽'이 같은 값을 따로 계산하면 서로 어긋날 수 있으니, 같은 계산 경로에서 다시 유도하라는 룰이었습니다.",
+  "근거 PR 2건(#678, #705)이 모두 머지되지 않고 닫혔습니다. 팀이 받아들인 적이 없는 제안이라 룰로 올리지 않고 폐기를 제안합니다.",
+  "물어보는 것: 폐기에 동의하면 '맞다'를 고르세요. 그래도 팀 룰로 삼고 싶다면 '틀리다'와 함께 메모를 남겨 주세요."
+ ],
+ "examples": [],
+ "evidence": [
+  {"pr": 678, "state": "closed", "date": null, "user": "junamsong", "what": "Gemma4 이미지 패딩을 반환 마스크가 아니라 position id로 제거하자는 제안. 머지되지 않았다.", "quote": "so producer and consumer agree **by construction** rather than by assumption."},
+  {"pr": 705, "state": "closed", "date": null, "user": "thkim", "what": "flatten-patch VLM의 배치 정렬 제안. 토큰 수를 각 모델의 _preprocess_prefill 방식 그대로 세자고 했다. 머지되지 않았다.", "quote": "counting reuses each family's `_preprocess_prefill` mechanism verbatim, so producer and consumer can never disagree"}
+ ],
+ "verified": "근거 PR 상태를 gh로 확인(2026-10-23)."
+}

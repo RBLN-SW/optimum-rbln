@@ -1,0 +1,31 @@
+{
+ "note": "2026-10-23. 교차 병합(C-2)이 '모순'으로 묶은 16쌍을 근거 인용과 dev 코드로 재판정. 대부분은 적용 범위가 다른 보완 관계였다. 원인: C-2 프롬프트가 모순을 5~15개 찾으라고 개수를 제시해 보완 관계를 모순으로 몰았다.",
+ "merge": [
+  {"keep": "CFG-007", "fold": ["CFG-028"], "short": "기본값은 하드코딩하지 않고 모델 config나 전처리기에서 유도한다.", "detail": "단 기기마다 달라지는 설정(예: prefill_chunk_size)에서는 유도하지 않고, 그런 값은 기기와 무관한 고정 상수(예: MAX_GDN_CHUNK_SIZE)로 둔다.", "why": "CFG-028(PR 718·719)은 CFG-007의 예외 조건이다. '모델에서 유도'와 '기기 의존값에서 유도 금지'는 함께 성립한다."},
+  {"keep": "CFG-001", "fold": ["CFG-030"], "short": "지원하지 않는 설정 값은 경고나 대체 없이 명시적 예외로 실패시킨다.", "detail": "값을 생략(None)한 경우만 경고 후 기본값으로 채우고, 0 같은 falsy 값은 바꾸지 않는다. 미지원 dtype의 fp32 승격 여부는 DBT-009에서 따로 묻는다.", "why": "CFG-030의 폴백은 '생략'에, CFG-001의 예외는 '잘못된 값'에 적용된다. 경계가 근거에 이미 적혀 있다(PR 698)."},
+  {"keep": "DEP-019", "fold": ["DEP-020"], "short": "컴파일러 기능 유무는 버전 문자열 비교가 아니라 API 존재 여부로 감지한다.", "detail": "API가 없을 때 결과가 같은 이전 계산 방식이 있으면 그것으로 폴백하고(PR 708), 없으면 RuntimeError로 실패한다(PR 638).", "why": "폴백과 RuntimeError는 '이전 방식이 있는가'로 갈리는 두 경우다. 같은 작성자의 일관된 패턴."},
+  {"keep": "STY-009", "fold": ["SUB-019"], "short": "import는 파일 상단에 두고, 지연 import는 이유가 있을 때만 쓴다.", "detail": "이유의 예: 순환 참조를 피해야 하는 서브모듈 설정 클래스(PR 267), import 시간 절감.", "why": "SUB-019의 지연 import는 STY-009가 허용하는 '명시적 이유'의 한 사례다."},
+  {"keep": "LIFE-024", "fold": ["STY-024"], "short": "export 중 추적할 수 없는 데이터 의존 검사는 추적 가능한 형태로 바꾼다.", "detail": "입력 검증은 torch._check로, 텐서 값에 따른 분기(예: fp16 isinf 클램프)는 dtype 조건부의 고정 연산으로 바꾼다.", "why": "torch._check는 검증, 고정 연산은 계산 분기에 쓰는 도구라 상황이 다르다."},
+  {"keep": "LIFE-011", "fold": ["ATT-002"], "short": "HF 모듈을 그대로 쓰는 부분에는 dtype 변환을 더하지 않는다.", "detail": "RBLN이 직접 쓴 커널에서 fp16 오버플로가 나는 항(예: A_log.exp())만 fp32로 계산하고 커널 경계에서 그래프 dtype으로 되돌린다.", "why": "PR 711 본문이 경계를 명시한다: HF nn.Module은 HF 캐스트를 이미 갖고, 새로 쓴 커널은 그렇지 않다."},
+  {"keep": "TEST-004", "fold": ["PRC-036"], "short": "전체 pytest가 필요한 변경은 커밋 메시지에 [pytest-full]을 넣는다.", "detail": "CI는 커밋 메시지(BUILDKITE_MESSAGE)에서 이 마커를 읽고 pytest 범위만 넓힌다. 설명하려고 인용해도 전체 빌드가 되므로 인용하지 않는다.", "why": "dev CI(.buildkite/pr.yml:60)가 커밋 메시지를 읽는다. 'PR 제목' 표현은 GitHub Actions 시절 것이다.", "code": "origin/dev .buildkite/pr.yml:60"},
+  {"keep": "LIFE-012", "fold": ["API-005"], "short": "모델 로드 dtype의 기본값은 auto(체크포인트 dtype)이고 사용자가 준 값을 우선한다.", "detail": "인자 이름은 dtype이 정식이고, torch_dtype은 경고를 내는 deprecated alias로만 받는다(configuration_utils.py).", "why": "PR 389 제목의 'remove torch_dtype'은 코드에서 deprecated alias 유지로 구현됐다. 두 룰은 충돌하지 않는다.", "code": "origin/dev configuration_utils.py:813-820"}
+ ],
+ "unpair": [
+  {"ids": ["STY-014", "LIFE-008"], "why": "중복 검사를 더하지 말라는 룰과 잘못된 입력은 즉시 예외로 알리라는 룰은 대상이 다르다."},
+  {"ids": ["PRC-035", "TEST-006"], "why": "PR 빌드는 스위트를 경로로 건너뛰지 않는다는 룰과, 특정 무거운 테스트는 스케줄 CI에 둔다는 룰은 층위가 다르다."},
+  {"ids": ["DEP-004", "DEP-019"], "why": "DEP-004는 HF 라이브러리의 import 경로 차이, DEP-019는 컴파일러 기능 감지다."},
+  {"ids": ["CFG-013"], "why": "짝이던 API-019가 미머지 PR 근거라 폐기됨."},
+  {"ids": ["PRC-024"], "why": "짝이던 PRC-025가 main 삭제로 대상이 사라짐."}
+ ],
+ "reject": [
+  {"id": "API-019", "why": "유일한 근거 PR 445가 머지되지 않고 닫혔다.", "refined": null},
+  {"id": "DEP-009", "why": "유일한 근거 PR 533이 머지되지 않고 닫혔다.", "refined": null},
+  {"id": "PRC-025", "why": "main 브랜치가 PR 727에서 삭제되어 룰의 대상이 없다.", "refined": "수정은 dev에 먼저 머지하고, 릴리스 브랜치(release-vX.Y.Z)에는 base를 그 브랜치로 둔 cherry-pick PR로 옮긴다."}
+ ],
+ "restate": [
+  {"id": "PRC-024", "short": "브랜치 사이로 수정을 옮길 때는 dev에 먼저 머지하고 cherry-pick -x로 출처를 남긴다.", "detail": "현재 옮기는 대상은 release-vX.Y.Z 브랜치다(main은 PR 727에서 삭제)."},
+  {"id": "PRC-031", "short": "BC 컴파일은 안정 릴리스 태그에서만 돌고, 스텝 안에서 태그를 다시 검사한다.", "detail": "aN·rcN·.devN 같은 프리릴리스 태그는 BC 아티팩트를 만들지 않는다(scripts/ci/bc-compile-steps.sh:15).", "verified": "origin/dev scripts/ci/bc-compile-steps.sh:15"},
+  {"id": "PRC-032", "short": "모든 v* 태그는 프리릴리스를 포함해 PyPI 배포와 vllm-rbln 갱신을 트리거한다.", "detail": ".github/workflows/deploy-on-tag.yaml 기준. BC 컴파일만 안정 태그로 제한된다(PRC-031).", "verified": "origin/dev .github/workflows/deploy-on-tag.yaml:4-6,16"}
+ ],
+ "keep_pair": [["LIFE-004", "LIFE-005"], ["SUB-001", "CFG-014"]]
+}

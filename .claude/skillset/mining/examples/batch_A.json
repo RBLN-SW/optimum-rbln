@@ -1,0 +1,166 @@
+[
+ {
+  "id": "CFG-001",
+  "lang": "python",
+  "intro": "사용자가 bf16을 지원하지 않는 모델에 dtype=bf16을 넘긴 경우",
+  "examples": [
+   "if dtype not in SUPPORTED_DTYPES:\n    raise ValueError(f\"Unsupported dtype for this model: {dtype}\")\nself.dtype = dtype\n# rbln_config={\"dtype\": \"bfloat16\"} -> ValueError",
+   "if dtype not in SUPPORTED_DTYPES:\n    logger.warning(f\"{dtype} is not supported, falling back to float32\")\n    dtype = \"float32\"\nself.dtype = dtype\n# rbln_config={\"dtype\": \"bfloat16\"} -> 경고 후 fp32로 컴파일"
+  ]
+ },
+ {
+  "id": "CFG-004",
+  "lang": "python",
+  "intro": "Qwen2.5-VL은 use_inputs_embeds=True가 반드시 필요한 경우",
+  "examples": [
+   "def __init__(self, visual=None, **kwargs):\n    super().__init__(use_inputs_embeds=True, **kwargs)\n    # 인자로 노출하지 않음: 항상 True\n# rbln_config={\"use_inputs_embeds\": False} -> TypeError(중복 인자)",
+   "def __init__(self, use_inputs_embeds=True, visual=None, **kwargs):\n    super().__init__(use_inputs_embeds=use_inputs_embeds, **kwargs)\n    if not self.use_inputs_embeds:\n        raise ValueError(\"use_inputs_embeds=False is not supported\")\n# rbln_config={\"use_inputs_embeds\": False} -> ValueError"
+  ]
+ },
+ {
+  "id": "CFG-005",
+  "lang": "python",
+  "intro": "컴파일된 모델을 로드하며 NPU 번호만 고르는 경우. 런타임 옵션은 어느 쪽이든 rbln_config.json에 저장되지 않는다(non_save_attributes).",
+  "examples": [
+   "model = RBLNLlamaForCausalLM.from_pretrained(\n    \"rbln-llama-compiled\",\n    rbln_config={\"device\": 2},   # 런타임 옵션을 rbln_config 안에\n)\n# batch_size 같은 컴파일 시점 값은 저장된 rbln_config.json을 따른다",
+   "model = RBLNLlamaForCausalLM.from_pretrained(\n    \"rbln-llama-compiled\",\n    rbln_device=2,               # 런타임 옵션은 접두사 인자로만\n)\n# rbln_config={\"device\": 2} 로 넘기면 에러로 막는다"
+  ]
+ },
+ {
+  "id": "CFG-007",
+  "lang": "python",
+  "intro": null,
+  "examples": [
+   "if self.max_seq_len is None:\n    self.max_seq_len = model_config.max_position_embeddings\nif self.image_size is None:\n    self.image_size = preprocessor.size[\"height\"]",
+   "if self.max_seq_len is None:\n    self.max_seq_len = 4096\nif self.image_size is None:\n    self.image_size = 224"
+  ]
+ },
+ {
+  "id": "CFG-013",
+  "lang": "python",
+  "intro": "파이프라인 전체 값과 서브모듈 값이 같은 키에서 겹친 경우",
+  "examples": [
+   "pipe = RBLNStableDiffusionPipeline.from_pretrained(\n    model_id, export=True,\n    rbln_config={\"batch_size\": 2, \"vae\": {\"batch_size\": 1}},\n)\n# -> vae.batch_size == 1 (서브모듈 값이 파이프라인 값보다 우선)",
+   "pipe = RBLNStableDiffusionPipeline.from_pretrained(\n    model_id, export=True,\n    rbln_config={\"batch_size\": 2, \"vae\": {\"batch_size\": 1}},\n)\n# -> ValueError: batch_size가 파이프라인과 vae에 모두 지정됨"
+  ]
+ },
+ {
+  "id": "CFG-014",
+  "lang": "python",
+  "intro": "호출자가 서브모듈 설정만 넘기고 상위 batch_size는 비운 경우",
+  "examples": [
+   "pipe = RBLNStableDiffusionPipeline.from_pretrained(\n    model_id, export=True,\n    rbln_config={\"text_encoder\": {\"batch_size\": 4}},\n)\n# -> 부모 batch_size도 4를 따름(서브모듈 명시값 우선)",
+   "pipe = RBLNStableDiffusionPipeline.from_pretrained(\n    model_id, export=True,\n    rbln_config={\"batch_size\": 4},\n)\n# {\"text_encoder\": {\"batch_size\": 4}} -> ValueError(상위에서 지정)"
+  ]
+ },
+ {
+  "id": "SUB-019",
+  "lang": "python",
+  "intro": null,
+  "examples": [
+   "from ..siglip import RBLNSiglipVisionModelConfig\n\n\nclass RBLNGemma3ForConditionalGenerationConfig(RBLNModelConfig):\n    def __init__(self, vision_tower=None, **kwargs):\n        super().__init__(**kwargs)\n        self.vision_tower = vision_tower or RBLNSiglipVisionModelConfig()",
+   "class RBLNGemma3ForConditionalGenerationConfig(RBLNModelConfig):\n    def __init__(self, vision_tower=None, **kwargs):\n        super().__init__(**kwargs)\n        from ..siglip import RBLNSiglipVisionModelConfig\n\n        self.vision_tower = vision_tower or RBLNSiglipVisionModelConfig()"
+  ]
+ },
+ {
+  "id": "DIF-004",
+  "lang": "python",
+  "intro": "guidance_scale=7.5로 컴파일한 뒤 1.0으로 실행하는 경우",
+  "examples": [
+   "pipe = RBLNStableDiffusionPipeline.from_pretrained(\n    model_id, export=True, rbln_config={\"guidance_scale\": 7.5}\n)\nimage = pipe(prompt, guidance_scale=1.0).images[0]\n# -> ValueError: 컴파일 시 guidance_scale(7.5)과 다름",
+   "pipe = RBLNStableDiffusionPipeline.from_pretrained(\n    model_id, export=True, rbln_config={\"guidance_scale\": 7.5}\n)\nimage = pipe(prompt, guidance_scale=1.0).images[0]\n# -> 허용: 1.0으로 실행(unet은 batch 2로 컴파일된 그대로)"
+  ]
+ },
+ {
+  "id": "DBT-001",
+  "lang": "python",
+  "intro": "visual.batch_size는 부모가 1로 강제(force_kwargs)하는 키인 경우",
+  "examples": [
+   "rbln_config = {\"device\": 0, \"visual\": {\"device\": 1, \"batch_size\": 2}}\n# visual.batch_size=2 (강제값 1과 충돌) -> ValueError\n# visual.device=1 (부모 0과 다름) -> ValueError",
+   "rbln_config = {\"device\": 0, \"visual\": {\"device\": 1, \"batch_size\": 2}}\n# visual.batch_size=2 (강제값 1과 충돌) -> ValueError\n# visual.device=1 (부모 0과 다름) -> 경고 없이 1 사용"
+  ]
+ },
+ {
+  "id": "DBT-002",
+  "lang": "python",
+  "intro": "사용자가 kvcache_num_blocks=0을 넘긴 경우",
+  "examples": [
+   "self.kvcache_num_blocks = kvcache_num_blocks\nif kvcache_num_blocks is not None and kvcache_num_blocks <= 0:\n    raise ValueError(f\"kvcache_num_blocks must be > 0: {kvcache_num_blocks}\")\n# -> 설정 생성 시점에 ValueError",
+   "self.kvcache_num_blocks = kvcache_num_blocks\n# 다른 필드처럼 값 검사 없이 대입\n# -> 이후 컴파일/런타임 단계에서 실패"
+  ]
+ },
+ {
+  "id": "DBT-003",
+  "lang": "python",
+  "intro": "dtype이 \"bfloat16\", torch.bfloat16 등 여러 형태로 들어오는 경우",
+  "examples": [
+   "if isinstance(dtype, str):\n    dtype = getattr(torch, dtype.removeprefix(\"torch.\"))\nif dtype is not None and not isinstance(dtype, torch.dtype):\n    raise TypeError(f\"Invalid dtype: {dtype!r}\")\nself.dtype = dtype",
+   "self.dtype = dtype\n# 들어온 값을 그대로 저장, 변환은 사용하는 쪽에서"
+  ]
+ },
+ {
+  "id": "DBT-004",
+  "lang": "python",
+  "intro": null,
+  "examples": [
+   "def forward(self, inputs_embeds, output_hidden_states=None):\n    # 모듈 내부 고정값, 필요하면 파이프라인별로 따로 관리\n    output_hidden_states = True\n    return self.language_model(inputs_embeds, output_hidden_states)",
+   "def forward(self, inputs_embeds, output_hidden_states=None):\n    if output_hidden_states is None:\n        output_hidden_states = self.rbln_config.output_hidden_states\n    return self.language_model(inputs_embeds, output_hidden_states)",
+   "def __init__(self, output_hidden_states=None, **kwargs):\n    super().__init__(**kwargs)\n    if output_hidden_states:\n        raise NotImplementedError(\"output_hidden_states is not supported\")"
+  ]
+ },
+ {
+  "id": "DBT-006",
+  "lang": "python",
+  "intro": "TP 미지원 visual이 부모의 4-디바이스 배치(device 목록)를 물려받는 경우",
+  "examples": [
+   "cfg = RBLNQwen2_5_VLForConditionalGenerationConfig(\n    device=[0, 1, 2, 3], num_devices=4\n)\n# -> ValueError: 'visual' cannot be placed on 4 devices",
+   "cfg = RBLNQwen2_5_VLForConditionalGenerationConfig(\n    device=[0, 1, 2, 3], num_devices=4\n)\ncfg.visual.device  # -> 0 (device 목록을 조용히 첫 장치로 축소)"
+  ]
+ },
+ {
+  "id": "DBT-007",
+  "lang": "python",
+  "intro": "decoder 레이어에 nested_compile_region 컴파일러 기능을 쓰는 경우",
+  "examples": [
+   "model = RBLNLlamaForCausalLM.from_pretrained(\n    model_id, export=True,\n    rbln_config={\"nested_compile_region\": True},  # 기본값 False\n)",
+   "model = RBLNLlamaForCausalLM.from_pretrained(\n    model_id, export=True,\n)\n# 항상 nested_compile_region 사용, 미지원 컴파일러면 -> 에러"
+  ]
+ },
+ {
+  "id": "DBT-008",
+  "lang": "python",
+  "intro": "can_generate가 false인 RBLNLlamaModel을 컴파일하는 경우",
+  "examples": [
+   "model = RBLNLlamaModel.from_pretrained(\n    model_id, export=True,\n    rbln_batch_size=4,  # CausalLM과 같은 뜻: 디코더 최대 배치\n)",
+   "model = RBLNLlamaModel.from_pretrained(\n    model_id, export=True,\n    rbln_prefill_batch_size=4,  # 생성 없는 모델 전용 새 이름\n)"
+  ]
+ },
+ {
+  "id": "DBT-010",
+  "lang": "python",
+  "intro": null,
+  "examples": [
+   "class RBLNQwen3_5ForConditionalGeneration(\n    RBLNQwen3VLForConditionalGeneration\n):\n    # 비전·배치 로직은 Qwen3-VL 구현을 상속해 공유\n    ...",
+   "class RBLNQwen3_5ForConditionalGeneration(\n    RBLNQwenVLBatchSortMixin, RBLNQwen3_5Model, RBLNDecoderOnlyModelForCausalLM\n):\n    # Qwen3-VL과 겹쳐도 별도 구현, 한쪽 변경이 다른 쪽에 안 번짐\n    ..."
+  ]
+ },
+ {
+  "id": "DBT-011",
+  "lang": "python",
+  "intro": null,
+  "examples": [
+   "def __init__(self, text_encoder, tokenizer, transformer, vae,\n             scheduler, safety_checker=None):\n    super().__init__(text_encoder, tokenizer, transformer, vae,\n                     scheduler, safety_checker)  # 원본이 checker 생성\n    self.safety_checker = RBLNCosmosSafetyChecker()  # 안에서 교체",
+   "def __init__(self, text_encoder, tokenizer, transformer, vae,\n             scheduler, safety_checker=None):\n    if safety_checker is None:\n        safety_checker = RBLNCosmosSafetyChecker()  # 원본 checker 생략\n    super().__init__(text_encoder, tokenizer, transformer, vae,\n                     scheduler, safety_checker)",
+   "_submodules = [\"text_encoder\", \"transformer\", \"vae\", \"safety_checker\"]\n# safety_checker도 다른 서브모듈처럼 컴파일·저장·로드\n# rbln_config={\"safety_checker\": {...}}로 설정"
+  ]
+ },
+ {
+  "id": "DBT-024",
+  "lang": "python",
+  "intro": null,
+  "examples": [
+   "cos = emb.cos().to(torch.float32)\nsin = emb.sin().to(torch.float32)\n# 그래프 입력 cos/sin: fp32 (HF와 동일)",
+   "cos = emb.cos().to(self.rbln_config.dtype)\nsin = emb.sin().to(self.rbln_config.dtype)\n# 그래프 입력 cos/sin: 활성 dtype (호스트·기존 아티팩트와 호환)"
+  ]
+ }
+]

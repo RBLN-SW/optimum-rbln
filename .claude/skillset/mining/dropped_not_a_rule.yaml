@@ -1,0 +1,666 @@
+- id: PRC-022
+  statement: 구현 없이 개념만 설명하는 PR은 머지하지 않으며, PR 본문에 머지 불가 사유를 명시한다.
+  rationale: null
+  area: pr_process
+  kind: judgment
+  status: candidate
+  confidence: low
+  n_prs: 1
+  n_users: 1
+  sources:
+  - pr_bodies
+  evidence:
+  - source: pr_bodies
+    pr: 127
+    user: rebel-jueonpark
+    quote: '**thus should not be merged.**'
+  open_question: null
+  check: null
+  merged_from: 1
+  dropped_why: one-off merge decision
+- id: PRC-029
+  statement: 개발 중인 모델은 최적화 등 개발이 끝날 때까지 공개 안내하지 않고, 완료 후 model zoo로 공지한다.
+  rationale: null
+  area: pr_process
+  kind: judgment
+  status: candidate
+  confidence: low
+  n_prs: 1
+  n_users: 1
+  sources:
+  - pr_bodies
+  evidence:
+  - source: pr_bodies
+    pr: 369
+    user: rebel-thkim
+    quote: we plan to announce it via rbln-model-zoo
+  open_question: null
+  check: null
+  merged_from: 1
+  dropped_why: one-off announcement policy
+- id: PRC-044
+  statement: 워크플로 조건에 GitHub 웹훅 페이로드에 존재하지 않는 필드를 쓰지 않는다.
+  rationale: null
+  area: pr_process
+  kind: mechanical
+  status: candidate
+  confidence: low
+  n_prs: 1
+  n_users: 1
+  sources:
+  - pr_bodies
+  evidence:
+  - source: pr_bodies
+    pr: 362
+    user: rebel-thkim
+    quote: '`github.event.pull_request.head.commit.message` is a non-existent webhook.'
+  open_question: null
+  check: null
+  merged_from: 1
+  dropped_why: one-off CI pitfall
+- id: PRC-039
+  statement: 알림 카드는 요약만 담고, 실패한 테스트 이름처럼 긴 상세는 카드의 스레드 답글로 보낸다.
+  rationale: null
+  area: pr_process
+  kind: judgment
+  status: candidate
+  confidence: low
+  n_prs: 1
+  n_users: 1
+  sources:
+  - pr_bodies
+  evidence:
+  - source: pr_bodies
+    pr: 755
+    user: rebel-thkim
+    quote: The names go to a reply on the card's thread rather than into the card.
+  open_question: null
+  check: null
+  merged_from: 1
+  dropped_why: notification formatting detail
+- id: PRC-045
+  statement: 의존성 봇의 설정을 바꿀 때는 포크 저장소에서 먼저 추적 대상이 제대로 잡히는지 검증한다.
+  rationale: null
+  area: pr_process
+  kind: judgment
+  status: candidate
+  confidence: low
+  n_prs: 1
+  n_users: 1
+  sources:
+  - pr_bodies
+  evidence:
+  - source: pr_bodies
+    pr: 298
+    user: rebel-thkim
+    quote: When I tested on my forked repo, that config seems to be enough to track
+      the dependency of diffusers and transformers.
+  open_question: null
+  check: null
+  merged_from: 1
+  dropped_why: one-off bot config step
+- id: DEP-023
+  statement: 모든 uv 호출은 pyproject의 최소 버전 게이트(`>=0.11.25`)를 통과해야 하며 CI 이미지의 uv 버전도 이를
+    만족해야 한다.
+  rationale: uv.lock diff를 깨끗하고 일관되게 유지하기 위해서이다.
+  area: dependency/version
+  kind: mechanical
+  status: candidate
+  confidence: low
+  n_prs: 1
+  n_users: 1
+  sources:
+  - pr_bodies
+  evidence:
+  - source: pr_bodies
+    pr: 724
+    user: rebel-seinpark
+    quote: Gating every uv invocation on `>=0.11.25` keeps `uv.lock` diffs clean and
+      consistent
+  - source: pr_bodies
+    pr: 724
+    user: rebel-seinpark
+    quote: the CI image must satisfy it
+  open_question: null
+  check: null
+  merged_from: 1
+  dropped_why: specific tool version number
+- id: DEP-035
+  statement: 보안 취약점이 발견된 의존성은 자동 업데이트 전략을 최신 버전(latest)으로 설정한다.
+  rationale: 취약 패키지가 lowest로 설정되면 의도와 맞지 않기 때문이다.
+  area: dependency/version
+  kind: mechanical
+  status: candidate
+  confidence: low
+  n_prs: 1
+  n_users: 1
+  sources:
+  - pr_bodies
+  evidence:
+  - source: pr_bodies
+    pr: 302
+    user: rebel-thkim
+    quote: When we find a package with a security vulnerability, it is set to lowest,
+      which doesn't match our intent. Fix it to latest.
+  open_question: null
+  check: null
+  merged_from: 1
+  dropped_why: one-off bot setting
+- id: DEP-010
+  statement: 릴리스 브랜치의 컴파일러 버전 의존성과 설정은 테스트용 값이 아니라 프로덕션 값으로 맞춘다.
+  rationale: null
+  area: dependency/version
+  kind: judgment
+  status: candidate
+  confidence: low
+  n_prs: 1
+  n_users: 2
+  sources:
+  - pr_bodies
+  - review_comments
+  evidence:
+  - source: review_comments
+    pr: 549
+    user: rebel-junamsong
+    quote: Could you please update the compiler configuration to production?
+  - source: pr_bodies
+    pr: 549
+    user: rebel-kblee
+    quote: make compiler version to prod (now is testing version)
+  open_question: null
+  check: null
+  merged_from: 2
+  dropped_why: branch-specific one-off
+- id: DEP-025
+  statement: CI에서 rebel-compiler 설치는 uv pip으로 통일한다.
+  rationale: null
+  area: dependency/version
+  kind: mechanical
+  status: candidate
+  confidence: low
+  n_prs: 1
+  n_users: 1
+  sources:
+  - pr_bodies
+  evidence:
+  - source: pr_bodies
+    pr: 415
+    user: rebel-thkim
+    quote: Switched rebel-compiler installation to use uv pip in CI workflows for
+      consistency.
+  open_question: null
+  check: null
+  merged_from: 1
+  dropped_why: CI install detail
+- id: DEP-027
+  statement: 컴파일러 최신 빌드를 판단할 때 버전 문자열을 PEP 440 순서로 정렬하지 않는다.
+  rationale: 빌드 번호가 브랜치마다 리셋되어 시간상 더 새로운 빌드가 더 작은 번호를 가질 수 있기 때문이다.
+  area: dependency/version
+  kind: judgment
+  status: candidate
+  confidence: low
+  n_prs: 1
+  n_users: 1
+  sources:
+  - pr_bodies
+  evidence:
+  - source: pr_bodies
+    pr: 632
+    user: rebel-thkim
+    quote: That count resets across branches, so a chronologically newer build can
+      have a *smaller* N.
+  open_question: null
+  check: null
+  merged_from: 1
+  dropped_why: one-off compiler build bug
+- id: DEP-026
+  statement: 빌드 백엔드는 lock 파일 밖에서 해석되므로 배포 도구가 읽을 수 있는 메타데이터 버전 범위로 상한을 두어 빌드와 배포 도구의
+    버전을 맞춘다.
+  rationale: hatchling은 올라가는데 twine은 lock에 고정되어 어긋날 수 있기 때문이다.
+  area: dependency/version
+  kind: judgment
+  status: candidate
+  confidence: low
+  n_prs: 1
+  n_users: 1
+  sources:
+  - pr_bodies
+  evidence:
+  - source: pr_bodies
+    pr: 669
+    user: rebel-seinpark
+    quote: So hatchling moved forward while twine stayed pinned in the lock — a mismatch.
+  open_question: null
+  check: null
+  merged_from: 1
+  dropped_why: build-backend specific one-off
+- id: DEP-038
+  statement: 패키지 메타데이터의 license 필드는 PEP 639의 SPDX 라이선스 표현식으로 작성한다.
+  rationale: null
+  area: dependency/version
+  kind: mechanical
+  status: candidate
+  confidence: low
+  n_prs: 1
+  n_users: 1
+  sources:
+  - pr_bodies
+  evidence:
+  - source: pr_bodies
+    pr: 10
+    user: rebel-hjkim
+    quote: This PR fixes `license` metadata to comply with [PEP639](https://peps.python.org/pep-0639/),
+      which guides to use valid SPDX License expression syntax.
+  open_question: null
+  check: null
+  merged_from: 1
+  dropped_why: one-off metadata change
+- id: API-017
+  statement: 라이브러리 버전은 패키지 최상위의 __version__ 속성으로 노출한다.
+  rationale: null
+  area: api/naming
+  kind: mechanical
+  status: candidate
+  confidence: low
+  n_prs: 1
+  n_users: 1
+  sources:
+  - pr_bodies
+  evidence:
+  - source: pr_bodies
+    pr: 125
+    user: rebel-jongho
+    quote: Now users can access library's version via `optimum.rbln.__version__`
+  open_question: null
+  check: null
+  merged_from: 1
+  dropped_why: description of repo fact
+- id: ATT-010
+  statement: KV 캐시 메모리 크기는 블록당 크기에 블록 수를 곱해 구하지 않고, 캐시 전체 크기를 2MB 단위로 정렬하는 조건을 반영한
+    부등식으로 최대 블록 수를 산정하며, 이때 쓰는 DRAM 버퍼 크기 추정치는 정밀하게 계산한다.
+  rationale: 2MB 정렬이 블록 단위가 아니라 캐시 객체 전체 단위로 적용되기 때문이다.
+  area: attention/kvcache
+  kind: judgment
+  status: candidate
+  confidence: low
+  n_prs: 1
+  n_users: 1
+  sources:
+  - conversation_comments
+  - pr_bodies
+  evidence:
+  - source: conversation_comments
+    pr: 84
+    user: rebel-jongho
+    quote: '`align_2MB(num_blocks * kvcache per block)` 로 kvcache 메모리 크기를 결정'
+  - source: pr_bodies
+    pr: 84
+    user: rebel-jongho
+    quote: We cannot calculate kvcache memory by calculating kvcache per block and
+      then multiplying by the number of blocks, we need to solve an inequality equation
+  - source: pr_bodies
+    pr: 84
+    user: rebel-jongho
+    quote: so it seems we need to estimate the buffer size more precisely
+  open_question: null
+  check: null
+  merged_from: 3
+  dropped_why: estimator formula, model-specific
+- id: ATT-011
+  statement: KV 캐시 크기를 정할 디바이스 메모리는 아티팩트별 합산이 아니라 같은 컴파일 컨텍스트의 아티팩트 집합 전체로 계산하고, 서로
+    다른 컴파일 컨텍스트의 아티팩트는 버퍼 ID 기준 중복 제거 대상으로 합치지 않는다.
+  rationale: 같은 할당이 단계마다 중복 계산되고, 버퍼 ID는 발급한 컴파일 세션 안에서만 유효하기 때문이다.
+  area: attention/kvcache
+  kind: judgment
+  status: candidate
+  confidence: low
+  n_prs: 1
+  n_users: 1
+  sources:
+  - pr_bodies
+  evidence:
+  - source: pr_bodies
+    pr: 708
+    user: rebel-jongho
+    quote: 'It goes wrong the moment the phases are added together: one device allocation
+      is charged once per phase that names it.'
+  - source: pr_bodies
+    pr: 708
+    user: rebel-jongho
+    quote: a raw buffer id names a buffer only within the compile session that minted
+      it
+  open_question: null
+  check: null
+  merged_from: 2
+  dropped_why: estimator detail, one-off
+- id: ATT-013
+  statement: KV 캐시 최소 블록 수는 풀이 전체 길이 시퀀스 하나 또는 배치 행당 블록 하나에 여분 블록을 더한 크기를 담도록 배치 크기를
+    하한에 포함한다.
+  rationale: 배치의 모든 행이 최소 한 블록을 확보해야 하기 때문이다.
+  area: attention/kvcache
+  kind: judgment
+  status: candidate
+  confidence: low
+  n_prs: 1
+  n_users: 1
+  sources:
+  - pr_bodies
+  evidence:
+  - source: pr_bodies
+    pr: 648
+    user: rebel-jongho
+    quote: The pool must hold either one full-length sequence or one block per batch
+      row, plus the spare block
+  open_question: null
+  check: null
+  merged_from: 1
+  dropped_why: estimator formula detail
+- id: ATT-019
+  statement: 시그니처 정리 작업에서 컴파일러 패턴 매칭과 묶인 custom op 이름은 바꾸지 않는다.
+  rationale: op 이름이 RBLN 컴파일러 패턴 매칭에 연결되어 있기 때문이다.
+  area: attention/kvcache
+  kind: judgment
+  status: candidate
+  confidence: low
+  n_prs: 1
+  n_users: 1
+  sources:
+  - pr_bodies
+  evidence:
+  - source: pr_bodies
+    pr: 566
+    user: rebel-thkim
+    quote: Op renames (e.g., `paged_attn_decode` -> `attention_naive_decode`) — tied
+      to RBLN compiler pattern matching.
+  open_question: null
+  check: null
+  merged_from: 1
+  dropped_why: one-off cleanup caveat
+- id: ATT-021
+  statement: '커널에 전달하는 텐서의 shape은 컴파일러 attention 커널이 기대하는 규격(예: seq_idx는 2차원 텐서)에
+    맞춘다.'
+  rationale: null
+  area: attention/kvcache
+  kind: mechanical
+  status: candidate
+  confidence: low
+  n_prs: 1
+  n_users: 1
+  sources:
+  - pr_bodies
+  evidence:
+  - source: pr_bodies
+    pr: 26
+    user: rebel-myeongbo
+    quote: rbln_compiler's attention kernel expects `seq_idx` to be 2d-shaped tensor.
+  open_question: null
+  check: null
+  merged_from: 1
+  dropped_why: kernel-specific shape fact
+- id: ATT-024
+  statement: 디코더 전용 어텐션 경로를 쓰는 모든 모델(VLM 포함)은 CR13 이상에서 배치 정렬을 필수로 적용한다.
+  rationale: null
+  area: attention/kvcache
+  kind: judgment
+  status: candidate
+  confidence: low
+  n_prs: 1
+  n_users: 1
+  sources:
+  - pr_bodies
+  evidence:
+  - source: pr_bodies
+    pr: 704
+    user: rebel-thkim
+    quote: so batch sorting is mandatory for every model built on the decoderonly
+      attention path
+  open_question: null
+  check: null
+  merged_from: 1
+  dropped_why: hardware-specific model fact
+- id: CFG-017
+  statement: 음수 device 값으로 더미 장치를 사용할 때는 device_count 검증을 적용하지 않는다.
+  rationale: 더미 장치는 실제 장치 개수와 무관하다.
+  area: rbln_config
+  kind: judgment
+  status: candidate
+  confidence: low
+  n_prs: 1
+  n_users: 1
+  sources:
+  - pr_bodies
+  evidence:
+  - source: pr_bodies
+    pr: 396
+    user: rebel-jongho
+    quote: Therefore, when using a dummy device, we should not consider `device_count()`.
+  open_question: null
+  check: null
+  merged_from: 1
+  dropped_why: one-off dummy-device case
+- id: DIF-018
+  statement: diffusers 모델 클래스는 fp32 외의 dtype을 지원한다.
+  rationale: null
+  area: diffusers
+  kind: judgment
+  status: candidate
+  confidence: low
+  n_prs: 1
+  n_users: 1
+  sources:
+  - pr_bodies
+  evidence:
+  - source: pr_bodies
+    pr: 673
+    user: rebel-dkhong
+    quote: support non-fp32 for all other classes
+  open_question: null
+  check: null
+  merged_from: 1
+  dropped_why: capability statement, not convention
+- id: DOC-018
+  statement: 모델 클래스 docstring은 공식 문서와 동기화하며, 공식 문서는 장기적으로 코드베이스에서 생성하는 것을 목표로 한다.
+  rationale: null
+  area: docstring/docs
+  kind: judgment
+  status: candidate
+  confidence: low
+  n_prs: 1
+  n_users: 1
+  sources:
+  - pr_bodies
+  evidence:
+  - source: pr_bodies
+    pr: 157
+    user: rebel-jongho
+    quote: synchronization of docstring between official documentation and code (in
+      the future we aim for official documentation to be built on top of the codebase)
+  open_question: null
+  check: null
+  merged_from: 1
+  dropped_why: aspiration, not enforceable
+- id: DOC-017
+  statement: 대규모 docstring 갱신은 모델 계열 단위로 나눠 진행하고, 앞 단계가 리뷰된 뒤 다음 단계를 진행한다.
+  rationale: null
+  area: docstring/docs
+  kind: judgment
+  status: candidate
+  confidence: low
+  n_prs: 1
+  n_users: 1
+  sources:
+  - pr_bodies
+  evidence:
+  - source: pr_bodies
+    pr: 367
+    user: rebel-dkhong
+    quote: docstrings for diffusers pipelines will be updated after current update
+      is reviewed.
+  open_question: null
+  check: null
+  merged_from: 1
+  dropped_why: one-off rollout process
+- id: LIFE-025
+  statement: 지연 로딩 등에서 여러 클래스가 공유하는 인스턴스를 다른 클래스의 인스턴스로 덮어쓰지 않는다.
+  rationale: 공유 인스턴스가 의도치 않은 상황에서 바뀐다.
+  area: modeling_base/lifecycle
+  kind: judgment
+  status: candidate
+  confidence: low
+  n_prs: 1
+  n_users: 1
+  sources:
+  - pr_bodies
+  evidence:
+  - source: pr_bodies
+    pr: 217
+    user: rebel-jongho
+    quote: Since some class instances are shared across the classes, it is changed
+      in unintended situation.
+  open_question: null
+  check: null
+  merged_from: 1
+  dropped_why: one-off bug fix
+- id: LIFE-026
+  statement: 컴파일 시점과 런타임의 NPU 호환성 비교에서 form factor는 판단 기준으로 쓰지 않는다.
+  rationale: null
+  area: modeling_base/lifecycle
+  kind: mechanical
+  status: candidate
+  confidence: low
+  n_prs: 1
+  n_users: 1
+  sources:
+  - pr_bodies
+  evidence:
+  - source: pr_bodies
+    pr: 212
+    user: rebel-jongho
+    quote: This PR ensures that the npu is compared ignoring formfactor.
+  open_question: null
+  check: null
+  merged_from: 1
+  dropped_why: single compat decision
+- id: TEST-024
+  statement: CI 이미지에 구워 둔 uv.lock 해시가 체크아웃한 uv.lock과 같으면 동기화 단계를 건너뛰고 로컬 체크아웃만 설치하며,
+    다르면 frozen 동기화로 되돌린다.
+  rationale: null
+  area: testing
+  kind: mechanical
+  status: candidate
+  confidence: low
+  n_prs: 1
+  n_users: 1
+  sources:
+  - pr_bodies
+  evidence:
+  - source: pr_bodies
+    pr: 497
+    user: rebel-thkim
+    quote: If uv.lock differs, we fall back to uv sync --frozen --group tests.
+  open_question: null
+  check: null
+  merged_from: 1
+  dropped_why: CI image optimization detail
+- id: TEST-025
+  statement: 재사용 워크플로로 실행되는 Pytest 작업은 접두사 시작 매칭 대신 부분 문자열 매칭으로 탐지한다.
+  rationale: 재사용 워크플로는 작업 이름에 접두사를 붙인다.
+  area: testing
+  kind: mechanical
+  status: candidate
+  confidence: low
+  n_prs: 1
+  n_users: 1
+  sources:
+  - pr_bodies
+  evidence:
+  - source: pr_bodies
+    pr: 439
+    user: rebel-thkim
+    quote: instead of startswith, to handle prefixed job names from reusable workflows.
+  open_question: null
+  check: null
+  merged_from: 1
+  dropped_why: CI job detection detail
+- id: TEST-026
+  statement: CI에서 설치한 컴파일러 버전은 테스트가 쓰는 인터프리터에서 다시 읽어 확인하고, 확인 결과를 기준으로 상태를 표시한다.
+  rationale: null
+  area: testing
+  kind: judgment
+  status: candidate
+  confidence: low
+  n_prs: 1
+  n_users: 1
+  sources:
+  - conversation_comments
+  evidence:
+  - source: conversation_comments
+    pr: 742
+    user: rebel-junamsong
+    quote: The version is now read back through `uv run`, the same interpreter the
+      suites use
+  open_question: null
+  check: null
+  merged_from: 1
+  dropped_why: CI status detail
+- id: TEST-034
+  statement: 출력 버퍼의 값을 쓰지 않는 더미 디바이스 테스트는 출력 값에 의존하지 않도록 입력 값을 정제한다.
+  rationale: null
+  area: testing
+  kind: judgment
+  status: candidate
+  confidence: low
+  n_prs: 1
+  n_users: 1
+  sources:
+  - pr_bodies
+  evidence:
+  - source: pr_bodies
+    pr: 812
+    user: rebel-thkim
+    quote: The BC reload runs on the dummy device, which never writes its outputs
+  open_question: null
+  check: null
+  merged_from: 1
+  dropped_why: dummy-device test workaround
+- id: TEST-036
+  statement: 필수로 전달돼야 하는 인자는 기본값 없이 선언하고, 모든 호출부가 전달하는지 AST 기반 테스트로 검사한다.
+  rationale: null
+  area: testing
+  kind: mechanical
+  status: candidate
+  confidence: low
+  n_prs: 1
+  n_users: 1
+  sources:
+  - pr_bodies
+  evidence:
+  - source: pr_bodies
+    pr: 643
+    user: rebel-jongho
+    quote: '`compile()` takes `weight_free` as an explicit parameter with no default,
+      so every call site must forward it from the config.'
+  open_question: null
+  check: null
+  merged_from: 1
+  dropped_why: one-off AST test
+- id: TEST-039
+  statement: 테스트를 병렬 실행하도록 바꿀 때는 병렬 실행 시 충돌이 없는지와 worker 서버에 충분한 CPU 자원이 있는지를 먼저 확인한다.
+  rationale: null
+  area: testing
+  kind: judgment
+  status: candidate
+  confidence: low
+  n_prs: 1
+  n_users: 1
+  sources:
+  - pr_bodies
+  evidence:
+  - source: pr_bodies
+    pr: 33
+    user: rebel-jongho
+    quote: 1. 병렬 실행시 충돌하는게 없는지
+  open_question: null
+  check: null
+  merged_from: 1
+  dropped_why: one-off parallelization note

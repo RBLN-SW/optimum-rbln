@@ -1,0 +1,2141 @@
+{
+  "clusters": [
+    {
+      "id": "C01",
+      "rule": "지원하지 않는 설정이나 잘못된 입력은 경고만 남기고 다른 값으로 대체하거나 조용히 무시하지 않고, 명시적 예외(ValueError/NotImplementedError 등)로 실패시킨다.",
+      "area": "rbln_config",
+      "kind": "judgment",
+      "confidence": "high",
+      "evidence": [
+        {
+          "pr": 114,
+          "user": "rebel-jongho",
+          "quote": "No implicit change, Raise error instead.",
+          "row": 238
+        },
+        {
+          "pr": 729,
+          "user": "rebel-junamsong",
+          "quote": "An unrecognised `npu` silently gets ATOM's wider limits.",
+          "row": 934
+        },
+        {
+          "pr": 118,
+          "user": "rebel-jongho",
+          "quote": "exception should be raised(`main`) instead of skipping (`this branch`).",
+          "row": 264
+        }
+      ],
+      "open_question": "dtype 등 미지원 입력을 예외 대신 fp32로 자동 승격(fallback)해도 되는지, 아니면 예외로 막아야 하는지 기준이 필요한가?",
+      "order": 1,
+      "pr_count": 11,
+      "prs": [
+        88,
+        96,
+        114,
+        118,
+        136,
+        177,
+        259,
+        267,
+        631,
+        673,
+        729
+      ],
+      "reviewers": [
+        "rebel-jonghewk",
+        "rebel-jongho",
+        "rebel-junamsong",
+        "rebel-kblee",
+        "rebel-seinpark",
+        "rebel-thkim"
+      ],
+      "supporting_comment_count": 13
+    },
+    {
+      "id": "C23",
+      "rule": "의도가 바로 드러나지 않는 추가·삭제·순서 변경·dtype 변경 같은 수정에는 이유를 주석이나 PR 설명에 남긴다.",
+      "area": "style/other",
+      "kind": "judgment",
+      "confidence": "high",
+      "evidence": [
+        {
+          "pr": 135,
+          "user": "rebel-jongho",
+          "quote": "Could you add a comment that describes why we remove inputs_embeds",
+          "row": 296
+        },
+        {
+          "pr": 50,
+          "user": "rebel-jongho",
+          "quote": "이건 왜 변경되나요?",
+          "row": 122
+        },
+        {
+          "pr": 383,
+          "user": "rebel-jongho",
+          "quote": "Why re-ordering is needed?",
+          "row": 644
+        }
+      ],
+      "open_question": null,
+      "order": 2,
+      "pr_count": 10,
+      "prs": [
+        12,
+        15,
+        50,
+        98,
+        135,
+        194,
+        383,
+        436,
+        631,
+        673
+      ],
+      "reviewers": [
+        "rebel-jongho",
+        "rebel-seinpark",
+        "rebel-thkim"
+      ],
+      "supporting_comment_count": 10
+    },
+    {
+      "id": "C12",
+      "rule": "디버깅용 코드, 개발 중 로그와 주석, 예제 스크립트 속 내부 검증 코드 같은 개발 흔적은 PR에 남기지 않는다.",
+      "area": "style/other",
+      "kind": "judgment",
+      "confidence": "high",
+      "evidence": [
+        {
+          "pr": 249,
+          "user": "rebel-jongho",
+          "quote": "No debugging code for examples",
+          "row": 456
+        },
+        {
+          "pr": 260,
+          "user": "rebel-thkim",
+          "quote": "delete debugging scripts.",
+          "row": 473
+        },
+        {
+          "pr": 136,
+          "user": "rebel-jongho",
+          "quote": "Example script should not include internal validation code.",
+          "row": 312
+        }
+      ],
+      "open_question": null,
+      "order": 3,
+      "pr_count": 9,
+      "prs": [
+        15,
+        75,
+        109,
+        136,
+        162,
+        249,
+        260,
+        356,
+        416
+      ],
+      "reviewers": [
+        "rebel-jongho",
+        "rebel-kblee",
+        "rebel-thkim"
+      ],
+      "supporting_comment_count": 10
+    },
+    {
+      "id": "C15",
+      "rule": "새로 추가하는 모델·설정·파이프라인 클래스에는 클래스 docstring을 둔다(무엇을 위한 클래스인지, 가능하면 사용 예시 포함).",
+      "area": "docstring/docs",
+      "kind": "mechanical",
+      "confidence": "high",
+      "evidence": [
+        {
+          "pr": 218,
+          "user": "rebel-jongho",
+          "quote": "Please add class docstring",
+          "row": 413
+        },
+        {
+          "pr": 177,
+          "user": "rebel-jongho",
+          "quote": "Add class docstring. if available, please add example code, too.",
+          "row": 366
+        },
+        {
+          "pr": 363,
+          "user": "rebel-jongho",
+          "quote": "No docstring for this config?",
+          "row": 597
+        }
+      ],
+      "open_question": null,
+      "order": 4,
+      "pr_count": 8,
+      "prs": [
+        98,
+        106,
+        168,
+        177,
+        218,
+        249,
+        363,
+        495
+      ],
+      "reviewers": [
+        "rebel-jongho"
+      ],
+      "supporting_comment_count": 10
+    },
+    {
+      "id": "C25",
+      "rule": "deprecated 인자·API는 deprecate 데코레이터로 표시하고, 제거 예정 버전을 명시하며, 경고는 한 번만 출력하고, 해당 버전이 되면 제거한다.",
+      "area": "dependency/version",
+      "kind": "mechanical",
+      "confidence": "high",
+      "evidence": [
+        {
+          "pr": 481,
+          "user": "rebel-dkhong",
+          "quote": "Don't we have to guide the last version where this method will be supported?",
+          "row": 744
+        },
+        {
+          "pr": 682,
+          "user": "rebel-thkim",
+          "quote": "I think we'll need to add the `deprecate_kwargs` decorator.",
+          "row": 911
+        },
+        {
+          "pr": 631,
+          "user": "rebel-jongho",
+          "quote": "already exceeded version 0.11",
+          "row": 823
+        }
+      ],
+      "open_question": null,
+      "order": 5,
+      "pr_count": 8,
+      "prs": [
+        228,
+        389,
+        473,
+        481,
+        599,
+        631,
+        682,
+        796
+      ],
+      "reviewers": [
+        "rebel-dkhong",
+        "rebel-jongho",
+        "rebel-kblee",
+        "rebel-seinpark",
+        "rebel-thkim"
+      ],
+      "supporting_comment_count": 9
+    },
+    {
+      "id": "C18",
+      "rule": "주석은 코드가 말하지 않는 이유만 짧게 적고, 코드를 그대로 풀어 설명하거나 PR 이력·마이그레이션 맥락을 적지 않는다. 내부 구현 설명은 docstring(\"\"\") 대신 # 주석을 쓴다.",
+      "area": "docstring/docs",
+      "kind": "judgment",
+      "confidence": "high",
+      "evidence": [
+        {
+          "pr": 631,
+          "user": "rebel-thkim",
+          "quote": "Some of the comments seem unnecessarily long.",
+          "row": 829
+        },
+        {
+          "pr": 735,
+          "user": "rebel-seinpark",
+          "quote": "Please minimize unnecessary comments that arise during the development.",
+          "row": 946
+        },
+        {
+          "pr": 630,
+          "user": "rebel-jongho",
+          "quote": "it explains the PR's migration context, not",
+          "row": 810
+        }
+      ],
+      "open_question": null,
+      "order": 6,
+      "pr_count": 8,
+      "prs": [
+        160,
+        563,
+        630,
+        631,
+        673,
+        729,
+        735,
+        743
+      ],
+      "reviewers": [
+        "rebel-jongho",
+        "rebel-junamsong",
+        "rebel-seinpark",
+        "rebel-thkim"
+      ],
+      "supporting_comment_count": 8
+    },
+    {
+      "id": "C30",
+      "rule": "forward는 HF 규약에 맞춰 return_dict 인자를 받아 처리하고, dict/tuple 반환 형식은 transformers와 같은 방식을 따른다.",
+      "area": "modeling_base/lifecycle",
+      "kind": "judgment",
+      "confidence": "high",
+      "evidence": [
+        {
+          "pr": 38,
+          "user": "rebel-jongho",
+          "quote": "Please implement `return_dict`",
+          "row": 405
+        },
+        {
+          "pr": 114,
+          "user": "rebel-jongho",
+          "quote": "Please handle `return_dict`",
+          "row": 242
+        },
+        {
+          "pr": 631,
+          "user": "rebel-thkim",
+          "quote": "Is the fact that `return_dict=True` is hardcoded consistent with how Transformers work?",
+          "row": 826
+        }
+      ],
+      "open_question": "return_dict를 항상 True로 고정하는 구현이 HF 동작과 맞는지 기준을 확인해야 하는가?",
+      "order": 7,
+      "pr_count": 8,
+      "prs": [
+        38,
+        98,
+        114,
+        133,
+        134,
+        219,
+        226,
+        631
+      ],
+      "reviewers": [
+        "rebel-jongho",
+        "rebel-seinpark",
+        "rebel-thkim"
+      ],
+      "supporting_comment_count": 8
+    },
+    {
+      "id": "C14",
+      "rule": "부모 클래스가 이미 제공하는 구현은 override하거나 복제하지 않고 상속해서 쓰며, 실제로 다른 부분만 바꾼다.",
+      "area": "modeling_base/lifecycle",
+      "kind": "judgment",
+      "confidence": "high",
+      "evidence": [
+        {
+          "pr": 112,
+          "user": "rebel-jongho",
+          "quote": "I think this is not necessary since this class already inherits DecoderOnlyModel",
+          "row": 230
+        },
+        {
+          "pr": 253,
+          "user": "rebel-thkim",
+          "quote": "How about fix the `RBLNTransformerEncoder`'s method instead of overriding it?",
+          "row": 461
+        },
+        {
+          "pr": 118,
+          "user": "rebel-jongho",
+          "quote": "Llama is already implemented in optimum-rbln, what is the purpose of this class?",
+          "row": 263
+        }
+      ],
+      "open_question": null,
+      "order": 8,
+      "pr_count": 7,
+      "prs": [
+        112,
+        118,
+        158,
+        219,
+        253,
+        326,
+        631
+      ],
+      "reviewers": [
+        "rebel-jongho",
+        "rebel-thkim"
+      ],
+      "supporting_comment_count": 10
+    },
+    {
+      "id": "C02",
+      "rule": "같은 로직·상수·결정 지점은 한 곳에만 둔다. 여러 곳에 복제된 함수나 값(NPU 판별, 어텐션 한도, 파이프라인 공통 검증 등)은 공용 헬퍼나 한 곳의 상수로 모으고, 값의 결정은 한 번만 수행한다.",
+      "area": "style/other",
+      "kind": "judgment",
+      "confidence": "high",
+      "evidence": [
+        {
+          "pr": 673,
+          "user": "rebel-jongho",
+          "quote": "the same function is on multiple sites.",
+          "row": 903
+        },
+        {
+          "pr": 228,
+          "user": "rebel-jongho",
+          "quote": "set_compile_cfgs is the one and only point of determining npu.",
+          "row": 437
+        },
+        {
+          "pr": 54,
+          "user": "rebel-jongho",
+          "quote": "비슷한 코드가 곳곳에 있는 것 같은데 합칠 수 있나요?",
+          "row": 128
+        }
+      ],
+      "open_question": "파이프라인 간 공통 검증 코드를 mixin으로 둘지 utils 모듈로 둘지 위치를 정해야 하는가?",
+      "order": 9,
+      "pr_count": 7,
+      "prs": [
+        41,
+        54,
+        64,
+        133,
+        228,
+        673,
+        729
+      ],
+      "reviewers": [
+        "rebel-jongho",
+        "rebel-junamsong"
+      ],
+      "supporting_comment_count": 8
+    },
+    {
+      "id": "C13",
+      "rule": "사용하지 않는 코드(미사용 변수·import·메서드·클래스, 부모와 동일한 override)는 제거한다.",
+      "area": "style/other",
+      "kind": "mechanical",
+      "confidence": "high",
+      "evidence": [
+        {
+          "pr": 96,
+          "user": "rebel-jongho",
+          "quote": "nit: unused codes",
+          "row": 211
+        },
+        {
+          "pr": 177,
+          "user": "rebel-jongho",
+          "quote": "can be deleted.",
+          "row": 375
+        },
+        {
+          "pr": 761,
+          "user": "rebel-jongho",
+          "quote": "was it just dead code?",
+          "row": 974
+        }
+      ],
+      "open_question": null,
+      "order": 10,
+      "pr_count": 7,
+      "prs": [
+        80,
+        96,
+        158,
+        177,
+        631,
+        760,
+        761
+      ],
+      "reviewers": [
+        "rebel-jongho",
+        "rebel-kblee",
+        "rebel-thkim"
+      ],
+      "supporting_comment_count": 8
+    },
+    {
+      "id": "C27",
+      "rule": "새로 추가하는 소스 파일에는 기존 파일과 같은 형식의 Rebellions 저작권 헤더를 현재 연도로 붙인다.",
+      "area": "style/other",
+      "kind": "mechanical",
+      "confidence": "high",
+      "evidence": [
+        {
+          "pr": 38,
+          "user": "rebel-jongho",
+          "quote": "다른 파일들 라이센스 주석 참고해서 똑같이 맞춰주세요",
+          "row": 67
+        },
+        {
+          "pr": 471,
+          "user": "rebel-jongho",
+          "quote": "# Copyright 2026 Rebellions Inc. All rights reserved.",
+          "row": 720
+        },
+        {
+          "pr": 798,
+          "user": "rebel-seinpark",
+          "quote": "# Copyright 2026 Rebellions Inc. All rights reserved.",
+          "row": 998
+        }
+      ],
+      "open_question": null,
+      "order": 11,
+      "pr_count": 6,
+      "prs": [
+        38,
+        471,
+        500,
+        631,
+        734,
+        798
+      ],
+      "reviewers": [
+        "rebel-jongho",
+        "rebel-seinpark",
+        "rebel-thkim"
+      ],
+      "supporting_comment_count": 8
+    },
+    {
+      "id": "C09",
+      "rule": "함수 인자는 *args/**kwargs나 위치 인덱싱에 기대지 않고 명시적 인자로 받으며, 호출은 key=value 형식으로 쓴다.",
+      "area": "api/naming",
+      "kind": "judgment",
+      "confidence": "high",
+      "evidence": [
+        {
+          "pr": 226,
+          "user": "rebel-thkim",
+          "quote": "How about use explicit arg rather than implicit args & kwargs?",
+          "row": 447
+        },
+        {
+          "pr": 557,
+          "user": "rebel-jongho",
+          "quote": "How about using `key=value` scheme for overall code?",
+          "row": 768
+        },
+        {
+          "pr": 256,
+          "user": "rebel-jongho",
+          "quote": "Use explicit keywords",
+          "row": 468
+        }
+      ],
+      "open_question": null,
+      "order": 12,
+      "pr_count": 6,
+      "prs": [
+        133,
+        209,
+        219,
+        226,
+        256,
+        557
+      ],
+      "reviewers": [
+        "rebel-jongho",
+        "rebel-thkim"
+      ],
+      "supporting_comment_count": 7
+    },
+    {
+      "id": "C17",
+      "rule": "PR의 목적과 무관한 수정(다른 모델의 정리, 공통 로직 리팩터링 등)은 별도 PR로 나눈다.",
+      "area": "style/other",
+      "kind": "judgment",
+      "confidence": "high",
+      "evidence": [
+        {
+          "pr": 162,
+          "user": "rebel-thkim",
+          "quote": "This is not relevant to this PR and I think it's better to create a separate PR for it.",
+          "row": 335
+        },
+        {
+          "pr": 673,
+          "user": "rebel-thkim",
+          "quote": "Isn't this also unrelated to FP32? If necessary, it seems better to create a separate PR.",
+          "row": 884
+        },
+        {
+          "pr": 38,
+          "user": "rebel-seinpark",
+          "quote": "I will create a new PR for handing this.",
+          "row": 410
+        }
+      ],
+      "open_question": null,
+      "order": 13,
+      "pr_count": 6,
+      "prs": [
+        15,
+        38,
+        133,
+        162,
+        444,
+        673
+      ],
+      "reviewers": [
+        "rebel-dkhong",
+        "rebel-seinpark",
+        "rebel-thkim"
+      ],
+      "supporting_comment_count": 6
+    },
+    {
+      "id": "C24",
+      "rule": "오류 메시지는 무엇이 잘못됐는지, 어떤 조건인지, 사용자가 무엇을 해야 하는지(재컴파일, 다른 패키지 사용 등)를 구체적으로 적는다.",
+      "area": "style/other",
+      "kind": "judgment",
+      "confidence": "high",
+      "evidence": [
+        {
+          "pr": 345,
+          "user": "rebel-jongho",
+          "quote": "Error message should be more concrete.",
+          "row": 543
+        },
+        {
+          "pr": 256,
+          "user": "rebel-jongho",
+          "quote": "Add an kind error message that handles if there is no key `_class_name`",
+          "row": 467
+        },
+        {
+          "pr": 648,
+          "user": "rebel-eunji",
+          "quote": "sounds a bit awkward. How about we take this opportunity to rephrase it?",
+          "row": 865
+        }
+      ],
+      "open_question": null,
+      "order": 14,
+      "pr_count": 6,
+      "prs": [
+        56,
+        88,
+        256,
+        259,
+        345,
+        648
+      ],
+      "reviewers": [
+        "rebel-eunji",
+        "rebel-jongho",
+        "rebel-shshin"
+      ],
+      "supporting_comment_count": 6
+    },
+    {
+      "id": "C21",
+      "rule": "함수·속성 이름은 실제 동작을 정확히 나타내야 하며, 모호한 약어(mod 등)나 HF 용어(model_type 등)와 의미가 어긋나면 이름을 바꾼다.",
+      "area": "api/naming",
+      "kind": "judgment",
+      "confidence": "high",
+      "evidence": [
+        {
+          "pr": 433,
+          "user": "rebel-seinpark",
+          "quote": "I think `_update_submodule_rbln_config` and `_update_submodule_config` is too confusing to understand.",
+          "row": 710
+        },
+        {
+          "pr": 162,
+          "user": "rebel-junamsong",
+          "quote": "The abbreviation mod is ambiguous and could be misinterpreted",
+          "row": 333
+        },
+        {
+          "pr": 248,
+          "user": "rebel-junamsong",
+          "quote": "rather than the hardware vendor itself.",
+          "row": 459
+        }
+      ],
+      "open_question": null,
+      "order": 15,
+      "pr_count": 5,
+      "prs": [
+        162,
+        248,
+        433,
+        437,
+        444
+      ],
+      "reviewers": [
+        "rebel-jongho",
+        "rebel-junamsong",
+        "rebel-seinpark"
+      ],
+      "supporting_comment_count": 7
+    },
+    {
+      "id": "C20",
+      "rule": "모델 클래스 이름, 연산 순서, 메서드 구현 순서는 upstream(transformers, vLLM 등)의 명명과 순서를 따른다.",
+      "area": "api/naming",
+      "kind": "judgment",
+      "confidence": "high",
+      "evidence": [
+        {
+          "pr": 802,
+          "user": "rebel-seinpark",
+          "quote": "Please follow the upstream order",
+          "row": 1025
+        },
+        {
+          "pr": 797,
+          "user": "rebel-seinpark",
+          "quote": "class GraniteDecoderLayer(DecoderOnlyLayer):",
+          "row": 1030
+        },
+        {
+          "pr": 162,
+          "user": "rebel-jongho",
+          "quote": "I think `cache_implementation` would be good enough.",
+          "row": 342
+        }
+      ],
+      "open_question": null,
+      "order": 16,
+      "pr_count": 5,
+      "prs": [
+        162,
+        629,
+        797,
+        801,
+        802
+      ],
+      "reviewers": [
+        "rebel-eunji",
+        "rebel-jongho",
+        "rebel-seinpark"
+      ],
+      "supporting_comment_count": 6
+    },
+    {
+      "id": "C26",
+      "rule": "테스트는 CI 워크플로우가 실제로 실행하는 파일에 두고, 기대값은 실제 모델 출력으로 검증하며, 실패를 가리는 우회 줄을 남기지 않는다. 중복 테스트는 하나로 합친다.",
+      "area": "testing",
+      "kind": "judgment",
+      "confidence": "high",
+      "evidence": [
+        {
+          "pr": 722,
+          "user": "rebel-jongho",
+          "quote": "please remove this line so that we can recognize if this test goes wrong",
+          "row": 933
+        },
+        {
+          "pr": 475,
+          "user": "rebel-jongho",
+          "quote": "the tests added to test_transformers and test_llm seem to perform the same function.",
+          "row": 725
+        },
+        {
+          "pr": 180,
+          "user": "rebel-jongho",
+          "quote": "are outputs of pytest, not llm's outputs.",
+          "row": 370
+        }
+      ],
+      "open_question": null,
+      "order": 17,
+      "pr_count": 5,
+      "prs": [
+        98,
+        117,
+        180,
+        475,
+        722
+      ],
+      "reviewers": [
+        "rebel-jongho",
+        "rebel-kblee",
+        "rebel-thkim"
+      ],
+      "supporting_comment_count": 6
+    },
+    {
+      "id": "C35",
+      "rule": "decode 등 추론 경로에서는 매 스텝 텐서를 새로 할당하거나 host와 동기화하거나 불필요하게 복사하지 않는다. 마스크는 미리 만들어 재사용하고 broadcast 연산을 쓴다.",
+      "area": "style/other",
+      "kind": "judgment",
+      "confidence": "high",
+      "evidence": [
+        {
+          "pr": 631,
+          "user": "rebel-jongho",
+          "quote": "or build them once in `__init__` and reuse them",
+          "row": 836
+        },
+        {
+          "pr": 563,
+          "user": "rebel-thkim",
+          "quote": "attn_mask 4d is too slow. You must use 2d attn_mask as input and use brocating ops",
+          "row": 778
+        },
+        {
+          "pr": 604,
+          "user": "rebel-eunji",
+          "quote": "tensor.sum().item()보다는 이게 저비용이지 않을까요?",
+          "row": 805
+        }
+      ],
+      "open_question": null,
+      "order": 18,
+      "pr_count": 5,
+      "prs": [
+        563,
+        604,
+        631,
+        673,
+        714
+      ],
+      "reviewers": [
+        "rebel-eunji",
+        "rebel-jongho",
+        "rebel-seinpark",
+        "rebel-thkim"
+      ],
+      "supporting_comment_count": 6
+    },
+    {
+      "id": "C11",
+      "rule": "import는 파일 상단에 두고 지연 import를 쓰지 않으며, 불필요한 import와 그에 대한 lint 억제 주석(noqa)은 제거한다.",
+      "area": "style/other",
+      "kind": "mechanical",
+      "confidence": "high",
+      "evidence": [
+        {
+          "pr": 445,
+          "user": "rebel-jongho",
+          "quote": "could you move this `import` to the top",
+          "row": 711
+        },
+        {
+          "pr": 653,
+          "user": "rebel-jongho",
+          "quote": "why lazy import",
+          "row": 867
+        },
+        {
+          "pr": 15,
+          "user": "rebel-jongho",
+          "quote": "relative import로 수정해주세요",
+          "row": 39
+        }
+      ],
+      "open_question": null,
+      "order": 19,
+      "pr_count": 4,
+      "prs": [
+        15,
+        38,
+        445,
+        653
+      ],
+      "reviewers": [
+        "rebel-jongho",
+        "rebel-kblee"
+      ],
+      "supporting_comment_count": 7
+    },
+    {
+      "id": "C07",
+      "rule": "submodule 설정의 우선순위(사용자가 submodule에 명시한 값 > 상위(전역) 설정 > 기본값)를 한 곳에서 정의하고, 충돌은 강제되는 키에 한해 예외로 처리한다.",
+      "area": "multimodal/submodule",
+      "kind": "judgment",
+      "confidence": "high",
+      "evidence": [
+        {
+          "pr": 267,
+          "user": "rebel-thkim",
+          "quote": "Shouldn't the submodule_config specified by the user take precedence over the default given by the parent?",
+          "row": 490
+        },
+        {
+          "pr": 433,
+          "user": "rebel-jongho",
+          "quote": "Can you explain those priority order",
+          "row": 708
+        },
+        {
+          "pr": 445,
+          "user": "rebel-jongho",
+          "quote": "since we don't propagate compile options to its submodule.",
+          "row": 714
+        }
+      ],
+      "open_question": "top-level 컴파일 옵션(예: batch_size)을 submodule로 전파할지 정책을 확정해야 하는가?",
+      "order": 20,
+      "pr_count": 4,
+      "prs": [
+        15,
+        267,
+        433,
+        445
+      ],
+      "reviewers": [
+        "rebel-dkhong",
+        "rebel-jongho",
+        "rebel-thkim"
+      ],
+      "supporting_comment_count": 6
+    },
+    {
+      "id": "C31",
+      "rule": "함수 시그니처에는 타입 힌트를 명시하고, 힌트는 실제로 전달되는 객체와 일치시키며, Optional 표기는 파일 안에서 하나로 통일한다.",
+      "area": "style/other",
+      "kind": "mechanical",
+      "confidence": "high",
+      "evidence": [
+        {
+          "pr": 118,
+          "user": "rebel-jongho",
+          "quote": "Could you add type hints?",
+          "row": 262
+        },
+        {
+          "pr": 735,
+          "user": "rebel-jongho",
+          "quote": "please use type hint in consistently ( No `Optional` )",
+          "row": 964
+        },
+        {
+          "pr": 267,
+          "user": "rebel-thkim",
+          "quote": "Type `language_projection` is `REBEL.runtime` rather than `RBLNModel`.",
+          "row": 499
+        }
+      ],
+      "open_question": null,
+      "order": 21,
+      "pr_count": 4,
+      "prs": [
+        118,
+        162,
+        267,
+        735
+      ],
+      "reviewers": [
+        "rebel-jongho",
+        "rebel-thkim"
+      ],
+      "supporting_comment_count": 6
+    },
+    {
+      "id": "C06",
+      "rule": "rbln_config에는 컴파일 그래프를 바꾸는 값만 두고, device처럼 런타임에서만 의미가 있는 값은 runtime 옵션으로 분리한다. 설정을 dict로 넘기든 설정 객체로 넘기든 두 종류가 섞이지 않아야 한다.",
+      "area": "rbln_config",
+      "kind": "judgment",
+      "confidence": "high",
+      "evidence": [
+        {
+          "pr": 67,
+          "user": "rebel-seinpark",
+          "quote": "`passed_rbln_config._runtime_options` in `RBLNAutoConfig` will raise the error.",
+          "row": 235
+        },
+        {
+          "pr": 475,
+          "user": "rebel-seinpark",
+          "quote": "we cannot guarantee all the rbln_config is converted to rbln_ prefix.",
+          "row": 727
+        },
+        {
+          "pr": 702,
+          "user": "rebel-seinpark",
+          "quote": "a passed config object is a carrier of runtime overrides",
+          "row": 914
+        }
+      ],
+      "open_question": "runtime 전용 옵션(device 등)을 rbln_config 객체에 담을지, from_pretrained 인자로만 받을지 정책을 확정해야 하는가?",
+      "order": 22,
+      "pr_count": 4,
+      "prs": [
+        67,
+        475,
+        495,
+        702
+      ],
+      "reviewers": [
+        "rebel-seinpark"
+      ],
+      "supporting_comment_count": 5
+    },
+    {
+      "id": "C16",
+      "rule": "__init__ 목록, export 목록, 키 목록 같은 나열형 목록은 정렬된 순서를 유지한다.",
+      "area": "style/other",
+      "kind": "mechanical",
+      "confidence": "high",
+      "evidence": [
+        {
+          "pr": 50,
+          "user": "rebel-kblee",
+          "quote": "사소한거지만 e,f,g 순서...?",
+          "row": 117
+        },
+        {
+          "pr": 256,
+          "user": "rebel-jongho",
+          "quote": "nit: sort",
+          "row": 466
+        },
+        {
+          "pr": 631,
+          "user": "rebel-jongho",
+          "quote": "please keep the list sorted",
+          "row": 828
+        }
+      ],
+      "open_question": null,
+      "order": 23,
+      "pr_count": 4,
+      "prs": [
+        38,
+        50,
+        256,
+        631
+      ],
+      "reviewers": [
+        "rebel-jongho",
+        "rebel-kblee"
+      ],
+      "supporting_comment_count": 5
+    },
+    {
+      "id": "C19",
+      "rule": "docstring의 인자 목록, 기본값, 텐서 shape, 예시 클래스 이름은 실제 시그니처와 구현에 맞춘다.",
+      "area": "docstring/docs",
+      "kind": "judgment",
+      "confidence": "high",
+      "evidence": [
+        {
+          "pr": 38,
+          "user": "rebel-dkhong",
+          "quote": "These 2 variables are not in the arguments.",
+          "row": 626
+        },
+        {
+          "pr": 363,
+          "user": "rebel-dkhong",
+          "quote": "pixel_values (`torch.FloatTensor` of shape `(batch_size, channels, height, width)`):",
+          "row": 598
+        },
+        {
+          "pr": 308,
+          "user": "rebel-junamsong",
+          "quote": "(e.g., `RBLNMidmLMHeadModelConfig` for Mi:dm models)",
+          "row": 511
+        }
+      ],
+      "open_question": null,
+      "order": 24,
+      "pr_count": 4,
+      "prs": [
+        38,
+        308,
+        360,
+        363
+      ],
+      "reviewers": [
+        "rebel-dkhong",
+        "rebel-jongho",
+        "rebel-junamsong",
+        "rebel-thkim"
+      ],
+      "supporting_comment_count": 5
+    },
+    {
+      "id": "C28",
+      "rule": "로그와 경고는 built-in logging/warnings 대신 optimum-rbln의 utils.logging을 사용한다.",
+      "area": "style/other",
+      "kind": "mechanical",
+      "confidence": "high",
+      "evidence": [
+        {
+          "pr": 2,
+          "user": "rebel-jongho",
+          "quote": "built-in warning 대신 utils.logging.py 를 사용해야 합니다.",
+          "row": 3
+        },
+        {
+          "pr": 15,
+          "user": "rebel-jongho",
+          "quote": "built-in logging 대신 optimum-rbln 의 logging을 사용해야 합니다.",
+          "row": 13
+        },
+        {
+          "pr": 38,
+          "user": "rebel-jongho",
+          "quote": "native logging 대신 library에 있는 utils.logging 사용해주세요",
+          "row": 68
+        }
+      ],
+      "open_question": null,
+      "order": 25,
+      "pr_count": 4,
+      "prs": [
+        2,
+        15,
+        38,
+        96
+      ],
+      "reviewers": [
+        "rebel-jongho"
+      ],
+      "supporting_comment_count": 5
+    },
+    {
+      "id": "C38",
+      "rule": "파생 가능한 값은 멤버 변수로 중복 저장하지 않고 property로 계산하며, 같은 상태를 여러 곳에서 갱신하지 않는다.",
+      "area": "modeling_base/lifecycle",
+      "kind": "judgment",
+      "confidence": "high",
+      "evidence": [
+        {
+          "pr": 219,
+          "user": "rebel-jongho",
+          "quote": "how about using `@property` instead of multiple assigning??",
+          "row": 434
+        },
+        {
+          "pr": 735,
+          "user": "rebel-jongho",
+          "quote": "please use property + cache(if needed) instead to prevent inconsist values",
+          "row": 958
+        },
+        {
+          "pr": 81,
+          "user": "rebel-jongho",
+          "quote": "멤버 변수로 가질 필요 없지 않을까요?",
+          "row": 160
+        }
+      ],
+      "open_question": null,
+      "order": 26,
+      "pr_count": 4,
+      "prs": [
+        75,
+        81,
+        219,
+        735
+      ],
+      "reviewers": [
+        "rebel-jongho",
+        "rebel-thkim"
+      ],
+      "supporting_comment_count": 5
+    },
+    {
+      "id": "C32",
+      "rule": "상위 계층에서 이미 처리하는 검사나 기본값 처리를 중복해서 추가하지 않으며, 과한 방어 코드(over-engineering)를 피한다.",
+      "area": "style/other",
+      "kind": "judgment",
+      "confidence": "high",
+      "evidence": [
+        {
+          "pr": 389,
+          "user": "rebel-jongho",
+          "quote": "I think it's over-engineering.",
+          "row": 673
+        },
+        {
+          "pr": 376,
+          "user": "rebel-thkim",
+          "quote": "So adding a rbln_config = {} if rbln_config is None else rbln_config would be redundant.",
+          "row": 637
+        },
+        {
+          "pr": 356,
+          "user": "rebel-jongho",
+          "quote": "return empty dict when no compile_cfgs, so that we do not need any code changes here",
+          "row": 572
+        }
+      ],
+      "open_question": "입력 정규화(dtype 등)를 방어적으로 둘지 최소한으로 둘지 기준이 필요한가?",
+      "order": 27,
+      "pr_count": 4,
+      "prs": [
+        356,
+        376,
+        389,
+        437
+      ],
+      "reviewers": [
+        "rebel-jongho",
+        "rebel-thkim"
+      ],
+      "supporting_comment_count": 4
+    },
+    {
+      "id": "C33",
+      "rule": "transformers 등 의존 라이브러리 버전에 따라 달라지는 동작은 검증한 버전을 명시하고, 차이가 나면 분기나 주석으로 남긴다.",
+      "area": "dependency/version",
+      "kind": "judgment",
+      "confidence": "high",
+      "evidence": [
+        {
+          "pr": 134,
+          "user": "rebel-seinpark",
+          "quote": "From `transformers==4.51.0`, they don't use `return_dict=False` to input argument.",
+          "row": 310
+        },
+        {
+          "pr": 162,
+          "user": "rebel-thkim",
+          "quote": "From transformers 4.51.0 onwards, the previous method gets an error",
+          "row": 334
+        },
+        {
+          "pr": 97,
+          "user": "rebel-junamsong",
+          "quote": "we've already verified that models other than Whisper are functioning correctly in transformers 4.50.3.",
+          "row": 173
+        }
+      ],
+      "open_question": null,
+      "order": 28,
+      "pr_count": 4,
+      "prs": [
+        97,
+        134,
+        162,
+        389
+      ],
+      "reviewers": [
+        "rebel-junamsong",
+        "rebel-seinpark",
+        "rebel-thkim"
+      ],
+      "supporting_comment_count": 4
+    },
+    {
+      "id": "C34",
+      "rule": "의존성 버전은 검증된 값으로 고정하고(검증 후 상향), 필수 기능이 아닌 패키지는 기본 의존성에 넣지 않으며, 릴리스 설정 파일은 production 값으로 맞춘다.",
+      "area": "dependency/version",
+      "kind": "judgment",
+      "confidence": "high",
+      "evidence": [
+        {
+          "pr": 8,
+          "user": "rebel-jongho",
+          "quote": "it would be nice to go with model-zoo validation. I'll revert torch version",
+          "row": 5
+        },
+        {
+          "pr": 168,
+          "user": "rebel-jongho",
+          "quote": "cosmos guardrail is not a necessary dependency",
+          "row": 392
+        },
+        {
+          "pr": 549,
+          "user": "rebel-junamsong",
+          "quote": "Could you please update the compiler configuration to production?",
+          "row": 786
+        }
+      ],
+      "open_question": null,
+      "order": 29,
+      "pr_count": 4,
+      "prs": [
+        8,
+        38,
+        168,
+        549
+      ],
+      "reviewers": [
+        "rebel-jongho",
+        "rebel-junamsong",
+        "rebel-seinpark"
+      ],
+      "supporting_comment_count": 4
+    },
+    {
+      "id": "C36",
+      "rule": "docstring과 Args 항목에서 **kwargs는 kwargs:로 표기하고, rbln_ 접두사 인자가 어디로 전달되는지 적는다.",
+      "area": "docstring/docs",
+      "kind": "judgment",
+      "confidence": "high",
+      "evidence": [
+        {
+          "pr": 270,
+          "user": "rebel-seinpark",
+          "quote": "**kwargs -> kwargs",
+          "row": 504
+        },
+        {
+          "pr": 367,
+          "user": "rebel-seinpark",
+          "quote": "Is it okay if there is no mention of `kwargs`?",
+          "row": 609
+        },
+        {
+          "pr": 277,
+          "user": "rebel-seinpark",
+          "quote": "Arguments with the prefix `rbln_` are passed to rbln_config, while the remaining arguments are passed to the HuggingFace library.",
+          "row": 501
+        }
+      ],
+      "open_question": "사용되지 않는 인자(kwargs 등)를 docstring에 적을지 생략할지 정책을 정해야 하는가?",
+      "order": 30,
+      "pr_count": 3,
+      "prs": [
+        270,
+        277,
+        367
+      ],
+      "reviewers": [
+        "rebel-dkhong",
+        "rebel-seinpark"
+      ],
+      "supporting_comment_count": 7
+    },
+    {
+      "id": "C37",
+      "rule": "설정 클래스에는 실제 동작에 반영되는 옵션만 노출하고, 무시되거나 지원하지 않는 옵션은 제거하거나 명시적으로 거부한다.",
+      "area": "rbln_config",
+      "kind": "judgment",
+      "confidence": "high",
+      "evidence": [
+        {
+          "pr": 694,
+          "user": "rebel-dkhong",
+          "quote": "users can set `use_slicing`, but it never takes effect.",
+          "row": 955
+        },
+        {
+          "pr": 114,
+          "user": "rebel-kblee",
+          "quote": "Are these configurable parameters?",
+          "row": 245
+        },
+        {
+          "pr": 735,
+          "user": "rebel-dkhong",
+          "quote": "users may don't know why it works when they set `use_inputs_embeds=False` explicitly.",
+          "row": 954
+        }
+      ],
+      "open_question": "모델이 반드시 필요로 하는 옵션은 기본값을 고정할지, 사용자 선택을 허용하고 잘못된 값에 예외를 낼지 정해야 하는가?",
+      "order": 31,
+      "pr_count": 3,
+      "prs": [
+        114,
+        694,
+        735
+      ],
+      "reviewers": [
+        "rebel-dkhong",
+        "rebel-kblee",
+        "rebel-seinpark"
+      ],
+      "supporting_comment_count": 5
+    },
+    {
+      "id": "C39",
+      "rule": "클래스 고유 특성(지원 여부, attention 종류, 플래그 등)은 호출 인자로 흘리지 않고 클래스 속성이나 config 속성으로 선언한다.",
+      "area": "modeling_base/lifecycle",
+      "kind": "judgment",
+      "confidence": "high",
+      "evidence": [
+        {
+          "pr": 356,
+          "user": "rebel-jongho",
+          "quote": "How about making `allow-no-compile-cfgs` as a class instance? Because it depends on the characteristics of Class itself.",
+          "row": 555
+        },
+        {
+          "pr": 359,
+          "user": "rebel-thkim",
+          "quote": "Passing rbln_config should allow removing the following three parameters",
+          "row": 583
+        },
+        {
+          "pr": 267,
+          "user": "rebel-thkim",
+          "quote": "is there a downside to defining _tp_support in config?",
+          "row": 493
+        }
+      ],
+      "open_question": null,
+      "order": 32,
+      "pr_count": 3,
+      "prs": [
+        267,
+        356,
+        359
+      ],
+      "reviewers": [
+        "rebel-jongho",
+        "rebel-thkim"
+      ],
+      "supporting_comment_count": 5
+    },
+    {
+      "id": "C03",
+      "rule": "기본값과 크기 같은 값은 코드에 직접 하드코딩하지 않고 모델 config, 전처리기, 기존 rbln_config 속성에서 유도한다.",
+      "area": "rbln_config",
+      "kind": "judgment",
+      "confidence": "high",
+      "evidence": [
+        {
+          "pr": 478,
+          "user": "rebel-jongho",
+          "quote": "we can derive default value from preprocessors. no hard-code if possible.",
+          "row": 735
+        },
+        {
+          "pr": 549,
+          "user": "rebel-junamsong",
+          "quote": "Is hardcoding `cls_name == \"BertModel\"` the only way here?",
+          "row": 785
+        },
+        {
+          "pr": 560,
+          "user": "rebel-thkim",
+          "quote": "Instead of hard-coding it as `batch_size + 1`, why not use this attribute?",
+          "row": 770
+        }
+      ],
+      "open_question": null,
+      "order": 33,
+      "pr_count": 3,
+      "prs": [
+        478,
+        549,
+        560
+      ],
+      "reviewers": [
+        "rebel-jongho",
+        "rebel-junamsong",
+        "rebel-thkim"
+      ],
+      "supporting_comment_count": 4
+    },
+    {
+      "id": "C04",
+      "rule": "근거가 바로 보이지 않는 상수나 버퍼 값은 산출 근거(계산식, 경험적 값, 보수적 여유분 등)를 코드 주석이나 PR 설명에 남긴다.",
+      "area": "docstring/docs",
+      "kind": "judgment",
+      "confidence": "high",
+      "evidence": [
+        {
+          "pr": 84,
+          "user": "rebel-kblee",
+          "quote": "How was this number determined?",
+          "row": 167
+        },
+        {
+          "pr": 96,
+          "user": "rebel-jongho",
+          "quote": "How were these values determined?",
+          "row": 197
+        },
+        {
+          "pr": 53,
+          "user": "rebel-jongho",
+          "quote": "보수적인 계산을 위한 버퍼",
+          "row": 132
+        }
+      ],
+      "open_question": null,
+      "order": 34,
+      "pr_count": 3,
+      "prs": [
+        53,
+        84,
+        96
+      ],
+      "reviewers": [
+        "rebel-jongho",
+        "rebel-kblee"
+      ],
+      "supporting_comment_count": 4
+    },
+    {
+      "id": "C22",
+      "rule": "설정 필드 이름과 상속 구조는 공통 기반 설정 클래스(예: 이미지 설정의 image_size)와 맞춘다.",
+      "area": "api/naming",
+      "kind": "judgment",
+      "confidence": "high",
+      "evidence": [
+        {
+          "pr": 260,
+          "user": "rebel-thkim",
+          "quote": "How about using image_size instead of max_image_size?",
+          "row": 475
+        },
+        {
+          "pr": 478,
+          "user": "rebel-jongho",
+          "quote": "why do we use `max` image size as its name?",
+          "row": 732
+        },
+        {
+          "pr": 98,
+          "user": "rebel-jongho",
+          "quote": "I'm concerned that the name of the submodule config passed as a dict (model.text_model) is different from the name of the attribute in config (text_model).",
+          "row": 185
+        }
+      ],
+      "open_question": null,
+      "order": 35,
+      "pr_count": 3,
+      "prs": [
+        98,
+        260,
+        478
+      ],
+      "reviewers": [
+        "rebel-jongho",
+        "rebel-thkim"
+      ],
+      "supporting_comment_count": 4
+    },
+    {
+      "id": "C05",
+      "rule": "검증 함수는 검증만 수행하고, 기본값 설정·패딩·config 변경은 지정된 훅(예: set_default_values)이나 생성 시점에서 한다.",
+      "area": "rbln_config",
+      "kind": "judgment",
+      "confidence": "high",
+      "evidence": [
+        {
+          "pr": 66,
+          "user": "rebel-jongho",
+          "quote": "이 함수가 default value도 정하고, validation check도 하고 해서 좀 역할이 큰 느낌이네요",
+          "row": 142
+        },
+        {
+          "pr": 81,
+          "user": "rebel-jongho",
+          "quote": "validate 함수에서는 validation만 하고, padding은 안하는게 좋을 것 같습니다.",
+          "row": 159
+        },
+        {
+          "pr": 654,
+          "user": "rebel-jongho",
+          "quote": "setting default values -> `set_default_values` (already exist)",
+          "row": 869
+        }
+      ],
+      "open_question": null,
+      "order": 36,
+      "pr_count": 3,
+      "prs": [
+        66,
+        81,
+        654
+      ],
+      "reviewers": [
+        "rebel-jongho"
+      ],
+      "supporting_comment_count": 3
+    },
+    {
+      "id": "C10",
+      "rule": "monkey patch로 전역 함수나 메서드를 바꿔 쓴 경우 실행 뒤 원래대로 복원하며, 컴파일이 실패해도 복원되도록 try/finally로 감싼다.",
+      "area": "modeling_base/lifecycle",
+      "kind": "mechanical",
+      "confidence": "high",
+      "evidence": [
+        {
+          "pr": 114,
+          "user": "rebel-jongho",
+          "quote": "for all monkey patching(s), Please revert patches after the execution.",
+          "row": 240
+        },
+        {
+          "pr": 118,
+          "user": "rebel-jongho",
+          "quote": "If monkey patching is used, you must revert the original method after you're done using it.",
+          "row": 275
+        },
+        {
+          "pr": 168,
+          "user": "rebel-jongho",
+          "quote": "recover logic should be work even if a compilation is failed.",
+          "row": 372
+        }
+      ],
+      "open_question": null,
+      "order": 37,
+      "pr_count": 3,
+      "prs": [
+        114,
+        118,
+        168
+      ],
+      "reviewers": [
+        "rebel-jongho"
+      ],
+      "supporting_comment_count": 3
+    },
+    {
+      "id": "C08",
+      "rule": "컴파일 시점 옵션은 그래프를 간접적으로 바꾸는 값(예: guidance scale)이 아니라 그래프 형상을 직접 정하는 값(예: submodule batch size)으로 명시한다.",
+      "area": "diffusers",
+      "kind": "judgment",
+      "confidence": "medium",
+      "evidence": [
+        {
+          "pr": 15,
+          "user": "rebel-jongho",
+          "quote": "guidance scale 대신 명시적으로 submodule의 batch size를 지정하도록 바꿔주시면 좋겠습니다~",
+          "row": 20
+        },
+        {
+          "pr": 104,
+          "user": "rebel-seinpark",
+          "quote": "How do we handle the cases where the `guidance scale` has different values",
+          "row": 267
+        },
+        {
+          "pr": 104,
+          "user": "rebel-jongho",
+          "quote": "So runtime raises error.",
+          "row": 269
+        }
+      ],
+      "open_question": "컴파일 때 지정한 guidance scale과 runtime 값이 다를 때 어떻게 처리할지(에러 or 허용) 정해야 하는가?",
+      "order": 38,
+      "pr_count": 2,
+      "prs": [
+        15,
+        104
+      ],
+      "reviewers": [
+        "rebel-jongho",
+        "rebel-seinpark"
+      ],
+      "supporting_comment_count": 3
+    },
+    {
+      "id": "C29",
+      "rule": "torch.load는 weights_only를 명시적으로 지정한다(PyTorch 2.6부터 기본값이 바뀌었다).",
+      "area": "dependency/version",
+      "kind": "mechanical",
+      "confidence": "medium",
+      "evidence": [
+        {
+          "pr": 15,
+          "user": "rebel-jongho",
+          "quote": "pytorch 2.6부터 torch.load의 default behavior가 바뀌어서 아마 에러가 날 거 같습니다",
+          "row": 44
+        },
+        {
+          "pr": 106,
+          "user": "rebel-junamsong",
+          "quote": "partial(torch.load, weights_only=True, map_location=torch.device(\"cpu\"))",
+          "row": 222
+        }
+      ],
+      "open_question": null,
+      "order": 39,
+      "pr_count": 2,
+      "prs": [
+        15,
+        106
+      ],
+      "reviewers": [
+        "rebel-jongho",
+        "rebel-junamsong"
+      ],
+      "supporting_comment_count": 3
+    },
+    {
+      "id": "C40",
+      "rule": "설정 포맷이나 산출물 구조가 바뀌면 기존 산출물 로드 실패를 명확한 메시지로 알리고, 하위호환 영향을 확인한다.",
+      "area": "rbln_config",
+      "kind": "judgment",
+      "confidence": "medium",
+      "evidence": [
+        {
+          "pr": 88,
+          "user": "rebel-jonghewk",
+          "quote": "Just to confirm—after this PR, will existing compiled models fail with an error?",
+          "row": 205
+        },
+        {
+          "pr": 694,
+          "user": "rebel-dkhong",
+          "quote": "Please check whether removing `fps` from `RBLNCosmosTransformer3DModelConfig` breaks backward compatibility.",
+          "row": 981
+        },
+        {
+          "pr": 88,
+          "user": "rebel-jongho",
+          "quote": "please recompile the model using the latest optimum-rbln",
+          "row": 208
+        }
+      ],
+      "open_question": null,
+      "order": 40,
+      "pr_count": 2,
+      "prs": [
+        88,
+        694
+      ],
+      "reviewers": [
+        "rebel-dkhong",
+        "rebel-jonghewk",
+        "rebel-jongho"
+      ],
+      "supporting_comment_count": 3
+    },
+    {
+      "id": "C41",
+      "rule": "CI 워크플로우에서 시크릿은 secrets 컨텍스트로 전달하고, 내부 엔드포인트를 평문으로 적지 않는다.",
+      "area": "style/other",
+      "kind": "mechanical",
+      "confidence": "medium",
+      "evidence": [
+        {
+          "pr": 46,
+          "user": "rebel-jswoo",
+          "quote": "이렇게 넘겨주면 한번에 secret variable들이 넘어갑니다",
+          "row": 112
+        },
+        {
+          "pr": 630,
+          "user": "rebel-jongho",
+          "quote": "please hide the internal endpoint. no plain text.",
+          "row": 809
+        },
+        {
+          "pr": 46,
+          "user": "rebel-jswoo",
+          "quote": "이부분 없애도 아래에서 secrets.XXXX로 받아올수 있을것 같습니다.",
+          "row": 116
+        }
+      ],
+      "open_question": null,
+      "order": 41,
+      "pr_count": 2,
+      "prs": [
+        46,
+        630
+      ],
+      "reviewers": [
+        "rebel-jongho",
+        "rebel-jswoo"
+      ],
+      "supporting_comment_count": 3
+    },
+    {
+      "id": "C42",
+      "rule": "범용 유틸리티는 utils/에 두고, 특정 모델 전용 로직은 해당 모델 디렉터리에 둔다.",
+      "area": "style/other",
+      "kind": "judgment",
+      "confidence": "low",
+      "evidence": [
+        {
+          "pr": 760,
+          "user": "rebel-jongho",
+          "quote": "`rbln/utils/` refers to general-purpose tools.",
+          "row": 973
+        },
+        {
+          "pr": 760,
+          "user": "rebel-seinpark",
+          "quote": "How about move into `optimum-rbln/src/optimum/rbln/utils/deprecation.py`?",
+          "row": 972
+        }
+      ],
+      "open_question": null,
+      "order": 42,
+      "pr_count": 1,
+      "prs": [
+        760
+      ],
+      "reviewers": [
+        "rebel-jongho",
+        "rebel-seinpark"
+      ],
+      "supporting_comment_count": 2
+    }
+  ],
+  "unresolved_debates": [
+    {
+      "id": "D01",
+      "prs": [
+        114,
+        118,
+        133
+      ],
+      "topic": "리뷰 지적을 같은 PR에서 고칠지, 후속 PR로 미룰지",
+      "positions": [
+        "PR 114 작성자: 여러 리뷰 지적을 '다음 PR에서 반영'하겠다고 답변",
+        "PR 118 리뷰어: 그런 패턴은 권장되지 않으니 릴리스 전까지 이번 PR에서 고치자고 요구",
+        "PR 133 작성자: 처음에는 별도 PR로 미루려 했으나 다른 코드를 확인한 뒤 이번 PR에서 반영"
+      ],
+      "rows": [
+        251,
+        265,
+        297,
+        304
+      ]
+    },
+    {
+      "id": "D02",
+      "prs": [
+        38
+      ],
+      "topic": "CI 테스트에 공식 체크포인트를 쓸지, tiny 모델을 쓸지",
+      "positions": [
+        "리뷰어(jongho): tiny 모델이 안 되면 TEST_LEVEL=FULL로 PR CI에서 제외하거나, 가중치를 업로드하는 방안 제시",
+        "작성자(seinpark): diffusers 테스트용 tiny 모델을 찾아 추가(PR 52)하는 방향으로 해결"
+      ],
+      "rows": [
+        90,
+        95,
+        108,
+        425,
+        96,
+        113
+      ]
+    },
+    {
+      "id": "D03",
+      "prs": [
+        38,
+        174,
+        631
+      ],
+      "topic": "output_hidden_states / output_attentions 옵션을 어디서 결정할지(하드코딩 vs 파이프라인별 설정)",
+      "positions": [
+        "PR 38 작성자: 당분간 _VisionEncoder에서 output_hidden_states=True를 유지하고, 필요해지면 파이프라인별 관리로 전환",
+        "PR 174 작성자: 사용자가 None을 넘기면 컴파일 시점 rbln_config 값을 따르는 것이 의도라고 설명",
+        "PR 631: 미지원 옵션은 config 단계에서 NotImplementedError로 거부하고 실제 지원은 후속 작업으로 분리"
+      ],
+      "rows": [
+        99,
+        100,
+        352,
+        845
+      ]
+    },
+    {
+      "id": "D04",
+      "prs": [
+        15,
+        445
+      ],
+      "topic": "top-level 컴파일 옵션(batch_size 등)을 submodule로 전파할지",
+      "positions": [
+        "PR 445 작성자: batch_size가 language_model에 전달되지 않는 것은 버그로 보고 수정",
+        "PR 445 리뷰어: submodule로 컴파일 옵션을 전파하지 않는 것이 의도된 동작이며 전파 정책은 transformers 쪽에서 논의 필요",
+        "PR 15 리뷰어: 전역 설정이 connected pipeline으로 넘어가는지 확인 요청"
+      ],
+      "rows": [
+        41,
+        713,
+        714,
+        716
+      ]
+    },
+    {
+      "id": "D05",
+      "prs": [
+        267
+      ],
+      "topic": "충돌하는 설정 값을 예외로 막을지, 경고 후 사용자 값을 쓸지",
+      "positions": [
+        "PR 267 작성자: 강제되는 키만 예외, 나머지는 경고 없이 사용자 값을 적용하는 혼합안 제시",
+        "PR 267 리뷰어(kblee): 예외 처리가 낫다는 입장"
+      ],
+      "rows": [
+        491,
+        503
+      ]
+    },
+    {
+      "id": "D06",
+      "prs": [
+        673
+      ],
+      "topic": "미지원 dtype 입력을 예외로 막을지, fp32로 자동 승격할지",
+      "positions": [
+        "리뷰어(jongho): 기존에는 non-fp32에서 실패했는데 새 코드는 조용히 fallback하므로 의도인지 질문",
+        "작성자(dkhong): 미지원 클래스는 예외 대신 fp32로 지원하는 편이 낫다고 판단(VAE force_upcast 등 파이프라인 혼합 dtype 고려)"
+      ],
+      "rows": [
+        902,
+        897,
+        898
+      ]
+    },
+    {
+      "id": "D07",
+      "prs": [
+        437
+      ],
+      "topic": "config 값 검증 범위: 잘못된 값도 필드별로 검사할지",
+      "positions": [
+        "리뷰어(kblee): 0 이하 같은 잘못된 값에 예외를 추가하자고 제안",
+        "리뷰어(jongho): 다른 필드도 잘못된 값을 검사하지 않으므로 이 필드만 추가할 필요가 없다는 입장"
+      ],
+      "rows": [
+        681,
+        682
+      ]
+    },
+    {
+      "id": "D08",
+      "prs": [
+        389
+      ],
+      "topic": "입력 정규화(dtype 등)를 방어적으로 둘지 최소화할지",
+      "positions": [
+        "작성자(kblee): _dtype이 항상 str이라는 보장이 없어 방어적 normalize 유지",
+        "리뷰어(jongho): 과한 설계(over-engineering)이며 단순 대입으로 충분하다는 입장"
+      ],
+      "rows": [
+        669,
+        670,
+        673
+      ]
+    },
+    {
+      "id": "D09",
+      "prs": [
+        54
+      ],
+      "topic": "파이프라인 간 공통 검증 코드를 어디에 둘지(mixin vs utils)",
+      "positions": [
+        "리뷰어(jongho): 비슷한 코드가 여러 곳에 있으니 합칠 수 있는지 질문",
+        "작성자(dkhong): mixin 또는 pipelines 하위 utils 파일 중 어디에 둘지 리뷰어 의견 요청"
+      ],
+      "rows": [
+        128,
+        129
+      ]
+    },
+    {
+      "id": "D10",
+      "prs": [
+        367
+      ],
+      "topic": "사용하지 않는 인자를 docstring에 적을지 생략할지",
+      "positions": [
+        "작성자(dkhong): UNet과 같이 미사용 인자는 생략해 사용자 혼란을 줄이는 방향을 택함",
+        "대안(작성자): 일관성을 위해 kwargs 전체를 항상 기재하는 방법도 가능하며 정책 결정이 필요"
+      ],
+      "rows": [
+        609,
+        614
+      ]
+    },
+    {
+      "id": "D11",
+      "prs": [
+        433
+      ],
+      "topic": "혼동되는 함수 이름을 바꿔야 하는지",
+      "positions": [
+        "리뷰어(jongho): 혼동될 만한 함수가 없으니 이름 변경은 불필요",
+        "작성자(seinpark): 두 이름이 혼동되어 _update_submodule_config_from_model로 변경"
+      ],
+      "rows": [
+        707,
+        710
+      ]
+    },
+    {
+      "id": "D12",
+      "prs": [
+        97
+      ],
+      "topic": "generation_config에 transformers 버전 정보를 모든 모델에 저장할지",
+      "positions": [
+        "리뷰어(kblee): 모델 전반에 적용하는 것이 맞다는 입장",
+        "작성자(junamsong): Whisper 외 모델은 transformers 4.50.3에서 검증되었고, 일반화는 불필요한 오버헤드를 준다는 입장"
+      ],
+      "rows": [
+        172,
+        173,
+        174
+      ]
+    },
+    {
+      "id": "D13",
+      "prs": [
+        631
+      ],
+      "topic": "Qwen3.5 구현을 Qwen3-VL 클래스 상속으로 묶을지, 의도적으로 분리 유지할지",
+      "positions": [
+        "리뷰어(jongho): 메서드 복사가 많아 상속이나 공통 base를 쓰도록 제안하고, 분리가 의도라면 명시 요청",
+        "작성자(seinpark): 두 tower는 qwen3_vl 변경 영향을 막기 위해 의도적으로 분리했다는 입장"
+      ],
+      "rows": [
+        837,
+        838,
+        839,
+        846,
+        847
+      ]
+    },
+    {
+      "id": "D14",
+      "prs": [
+        437
+      ],
+      "topic": "KV 캐시 텐서 이름을 고유하게 할지, 이름을 외부(vLLM)에서 넘길지",
+      "positions": [
+        "리뷰어(eunji): key와 value 텐서 이름이 중복이므로 고유 이름을 쓰자는 입장",
+        "리뷰어(yskim): mark_static_address(tensor, name)을 유지하고 vLLM이 이름을 명시적으로 넘기는 방식 제안",
+        "리뷰어(jongho): kv 튜플 가정이 많아 이름 체계 변경은 다음 PR로 미루자는 입장"
+      ],
+      "rows": [
+        683,
+        686,
+        687,
+        697
+      ]
+    },
+    {
+      "id": "D15",
+      "prs": [
+        383
+      ],
+      "topic": "입력 이름(model_input_names) 순서를 고정할지",
+      "positions": [
+        "리뷰어(jongho): key-value 매핑만으로 충분하지 않은지 질문",
+        "작성자(kblee): 컴파일 설정과 forward 인자 불일치를 막기 위해 순서를 고정하자는 입장",
+        "리뷰어(jongho): 그 불일치는 사용자 실수이므로 그 경우까지 지원할 필요 없다는 입장"
+      ],
+      "rows": [
+        644,
+        645,
+        646
+      ]
+    },
+    {
+      "id": "D16",
+      "prs": [
+        162
+      ],
+      "topic": "getattr 기본값으로 fallback할지, 명시적으로 속성을 읽을지",
+      "positions": [
+        "리뷰어(junamsong): 기존의 명시적 방식이 더 안전하고 의도가 분명하다는 입장",
+        "작성자(thkim): transformers 4.51 이후 config의 head_dim이 None으로 들어와 기존 방식이 실패한다는 근거 제시"
+      ],
+      "rows": [
+        332,
+        334
+      ]
+    },
+    {
+      "id": "D17",
+      "prs": [
+        245
+      ],
+      "topic": "비생성(non-generation) 모델에서 batch_size 속성의 의미",
+      "positions": [
+        "작성자(thkim): 생성 모델에서는 디코더 최대 배치를 뜻하지만, can_generate가 false이면 의미가 모호하며 대안은 아직 없음"
+      ],
+      "rows": [
+        464
+      ]
+    },
+    {
+      "id": "D18",
+      "prs": [
+        118,
+        168,
+        191
+      ],
+      "topic": "Cosmos 안전 검사기(safety checker)를 원본 파이프라인 구조대로 둘지, submodule로 옮길지",
+      "positions": [
+        "리뷰어(jongho): 원본 checker 없이 파이프라인을 초기화하고 자체 checker를 붙이는 방식을 제안",
+        "작성자(seinpark): 그 방식도 가능하나 rbln_config를 checker에 전달하는 경로가 필요하다는 입장",
+        "작성자(seinpark, PR 191): 원본 파이프라인과 달리 _submodules에 넣는 것이 괜찮은지 질문"
+      ],
+      "rows": [
+        385,
+        386,
+        389
+      ]
+    },
+    {
+      "id": "D19",
+      "prs": [
+        67,
+        475,
+        495
+      ],
+      "topic": "dict로 넘긴 rbln_config(runtime 옵션 포함) 처리 범위",
+      "positions": [
+        "리뷰어(jongho): dict 형태 rbln_config가 들어오는 경우를 지원하는지 질문",
+        "작성자(seinpark): dict는 rbln_ 접두사로 바꿔 from_pretrained에 넘기며, 설정 객체를 load로 읽는 경로는 접두사 변환을 보장하지 못해 후속 수정 필요"
+      ],
+      "rows": [
+        235,
+        727,
+        728,
+        751
+      ]
+    }
+  ],
+  "stats": {
+    "total_clusters": 42,
+    "by_confidence": {
+      "high": 37,
+      "medium": 4,
+      "low": 1
+    },
+    "by_area": {
+      "rbln_config": 6,
+      "style/other": 15,
+      "docstring/docs": 5,
+      "multimodal/submodule": 1,
+      "diffusers": 1,
+      "api/naming": 4,
+      "modeling_base/lifecycle": 5,
+      "dependency/version": 4,
+      "testing": 1
+    },
+    "top_reviewers_by_rules_evidenced": [
+      {
+        "user": "rebel-jongho",
+        "clusters": 35
+      },
+      {
+        "user": "rebel-thkim",
+        "clusters": 15
+      },
+      {
+        "user": "rebel-seinpark",
+        "clusters": 10
+      },
+      {
+        "user": "rebel-junamsong",
+        "clusters": 7
+      },
+      {
+        "user": "rebel-dkhong",
+        "clusters": 4
+      }
+    ],
+    "unresolved_debates": 19,
+    "corpus_rows": 1037,
+    "attribution_note": "reviewer ranking counts clusters in which the reviewer is quoted as evidence (max 3 quotes per cluster)",
+    "note": "Copilot bot comments were not used as evidence; bot suggestions only counted if a human reviewer echoed them."
+  }
+}

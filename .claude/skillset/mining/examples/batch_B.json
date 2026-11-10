@@ -1,0 +1,174 @@
+[
+ {
+  "id": "LIFE-004",
+  "lang": "python",
+  "intro": "fp32만 지원하는 모델에 bf16 컴파일이 요청된 경우",
+  "examples": [
+   "class RBLNBaseModel:\n    _supports_non_fp32 = True\n    def update_rbln_config(cls, rbln_config):\n        if not cls._supports_non_fp32 and rbln_config.dtype != torch.float32:\n            raise ValueError(f\"{cls.__name__} supports fp32 only\")\nclass RBLNWhisperForConditionalGeneration(RBLNModel):\n    _supports_non_fp32 = False",
+   "class RBLNBaseModel:\n    def update_rbln_config(cls, rbln_config): ...\nclass RBLNWhisperForConditionalGeneration(RBLNModel):\n    def update_rbln_config(cls, rbln_config):\n        if rbln_config.dtype != torch.float32:\n            raise ValueError(f\"{cls.__name__} supports fp32 only\")\n        return super().update_rbln_config(rbln_config)"
+  ]
+ },
+ {
+  "id": "LIFE-008",
+  "lang": "python",
+  "intro": "컴파일된 max_seq_len보다 긴 입력이 forward에 들어온 경우",
+  "examples": [
+   "def forward(self, input_ids, **kwargs):\n    seq_len = input_ids.shape[-1]\n    if seq_len > self.rbln_config.max_seq_len:\n        raise ValueError(\n            f\"input length {seq_len} > max_seq_len \"\n            f\"{self.rbln_config.max_seq_len}\")\n    return self.model[0](input_ids, **kwargs)",
+   "def forward(self, input_ids, **kwargs):\n    # 길이 검사는 상위 generate()에서 이미 수행 -> 여기선 생략\n    return self.model[0](input_ids, **kwargs)"
+  ]
+ },
+ {
+  "id": "LIFE-001",
+  "lang": "python",
+  "intro": "사용자가 return_dict 없이 model(**inputs)를 호출한 경우",
+  "examples": [
+   "def forward(self, *args, return_dict=None, **kwargs):\n    return_dict = True  # 인자·config 무시\n    output = self.model[0](*args, **kwargs)\n    return self._prepare_output(output, return_dict)",
+   "def forward(self, *args, return_dict=None, **kwargs):\n    if return_dict is None:\n        return_dict = self.config.use_return_dict\n    output = self.model[0](*args, **kwargs)\n    return self._prepare_output(output, return_dict)"
+  ]
+ },
+ {
+  "id": "LIFE-015",
+  "lang": "python",
+  "intro": "이미 존재하는 save_directory에 다시 저장하는 경우",
+  "examples": [
+   "tmp_dir = str(save_directory_path) + \".tmp\"\nshutil.copytree(real_save_dir, tmp_dir)\nos.rename(save_directory_path, str(save_directory_path) + \".old\")\nos.rename(tmp_dir, save_directory_path)\nshutil.rmtree(str(save_directory_path) + \".old\")\n# -> 교체는 원자적, 대상 폴더의 다른 파일은 사라짐",
+   "tmp_dir = str(save_directory_path) + \".tmp\"\nshutil.copytree(real_save_dir, tmp_dir)\nfor name in os.listdir(tmp_dir):\n    os.replace(os.path.join(tmp_dir, name),\n               os.path.join(save_directory_path, name))\nshutil.rmtree(tmp_dir)\n# -> 대상 폴더의 다른 파일은 그대로 남음"
+  ]
+ },
+ {
+  "id": "LIFE-010",
+  "lang": "python",
+  "intro": null,
+  "examples": [
+   "model = cls.get_pytorch_model(model_id, rbln_config=rbln_config)\nwrapped = cls._wrap_model_if_needed(model, rbln_config)  # 뷰 공유\nfor p in wrapped.parameters():\n    p.data = p.data.clone()  # 로드 후 mmap 뷰 해제",
+   "model = cls.get_pytorch_model(model_id, rbln_config=rbln_config)\nfor p in model.parameters():\n    p.data = p.data.clone()  # 처음부터 복제\nwrapped = cls._wrap_model_if_needed(model, rbln_config)"
+  ]
+ },
+ {
+  "id": "LIFE-011",
+  "lang": "python",
+  "intro": "fp16 모델의 attention logit이 커질 수 있는 경우",
+  "examples": [
+   "attn_weights = torch.matmul(query, key.transpose(2, 3))\nattn_weights = (attn_weights * self.scaling).softmax(dim=-1)\n# -> HF와 동일, fp16에서 inf 가능",
+   "attn_weights = torch.matmul(query.float(), key.float().transpose(2, 3))\nattn_weights = (attn_weights * self.scaling).softmax(dim=-1)\nattn_weights = attn_weights.to(query.dtype)"
+  ]
+ },
+ {
+  "id": "LIFE-012",
+  "lang": "python",
+  "intro": "사용자가 from_pretrained에 torch_dtype=bf16을 넘긴 경우",
+  "examples": [
+   "kwargs.setdefault(\"dtype\", \"auto\")\nif \"torch_dtype\" in kwargs:\n    raise ValueError(\"`torch_dtype` is removed; use `dtype`\")",
+   "kwargs.setdefault(\"dtype\", \"auto\")\nif \"torch_dtype\" in kwargs:\n    kwargs[\"dtype\"] = kwargs.pop(\"torch_dtype\")  # 명시값 우선"
+  ]
+ },
+ {
+  "id": "LIFE-024",
+  "lang": "python",
+  "intro": "fp16 hidden_states의 inf 여부를 보고 clamp하는 HF 코드를 export할 때",
+  "examples": [
+   "clamp_value = torch.finfo(hidden_states.dtype).max - 1000\nif torch.compiler.is_exporting():\n    torch._check(hidden_states.abs().max() < clamp_value)\nelif torch.isinf(hidden_states).any():\n    hidden_states = hidden_states.clamp(-clamp_value, clamp_value)",
+   "clamp_value = torch.finfo(hidden_states.dtype).max - 1000\nif hidden_states.dtype == torch.float16:\n    # 데이터 검사 없이 항상 clamp -> 그대로 추적됨\n    hidden_states = hidden_states.clamp(-clamp_value, clamp_value)"
+  ]
+ },
+ {
+  "id": "LIFE-002",
+  "lang": "python",
+  "intro": "사용자가 model(input_ids, attention_mask)처럼 위치 인자로 호출한 경우",
+  "examples": [
+   "rbln_config.model_input_names = [\n    n for n in signature_params if n in rbln_config.model_input_names\n]\ndef forward(self, input_ids, **kwargs): ...\n# -> 두 번째 위치 인자에서 TypeError",
+   "rbln_config.model_input_names = [\n    n for n in signature_params if n in rbln_config.model_input_names\n]\ndef forward(self, input_ids, attention_mask=None, token_type_ids=None,\n            **kwargs): ...\n# -> HF와 같이 위치 인자로 동작"
+  ]
+ },
+ {
+  "id": "ATT-003",
+  "lang": "python",
+  "intro": null,
+  "examples": [
+   "emb = torch.cat((freqs, freqs), dim=-1)\ncos = np_cos(emb) * attention_scaling  # 실행마다 비트 동일\nsin = np_sin(emb) * attention_scaling",
+   "emb = torch.cat((freqs, freqs), dim=-1)\ncos = emb.cos() * attention_scaling  # HF 레퍼런스와 비트 일치\nsin = emb.sin() * attention_scaling"
+  ]
+ },
+ {
+  "id": "ATT-006",
+  "lang": "python",
+  "intro": null,
+  "examples": [
+   "# KV 캐시를 포함한 모든 정적 캐시\nfor shape in (kv_cache_shape, conv_cache_shape, ssm_state_shape):\n    if shape[-1] % 64 != 0:\n        raise ValueError(f\"last axis {shape[-1]} must be a multiple of 64\")",
+   "# 직접 레이아웃을 설계한 상태 캐시만 (KV 캐시 제외)\nfor shape in (conv_cache_shape, ssm_state_shape):\n    if shape[-1] % 64 != 0:\n        raise ValueError(f\"last axis {shape[-1]} must be a multiple of 64\")"
+  ]
+ },
+ {
+  "id": "DBT-005",
+  "lang": "python",
+  "intro": "컴파일된 batch_size와 다른 모양의 input_ids가 들어온 경우",
+  "examples": [
+   "def forward(self, input_ids, **kwargs):\n    expected = (self.rbln_config.batch_size, self.rbln_config.max_seq_len)\n    if tuple(input_ids.shape) != expected:\n        raise ValueError(f\"input_ids {tuple(input_ids.shape)} != {expected}\")\n    return self.model[0](input_ids, **kwargs)",
+   "def forward(self, input_ids, **kwargs):\n    # 모양 불일치는 런타임 실행 시점의 에러로 드러남\n    return self.model[0](input_ids, **kwargs)"
+  ]
+ },
+ {
+  "id": "DBT-012",
+  "lang": "python",
+  "intro": null,
+  "examples": [
+   "if hasattr(model, \"can_generate\") and model.can_generate():\n    local_config[\"transformers_version\"] = (\n        generation_config.transformers_version\n    )",
+   "if isinstance(model, WhisperForConditionalGeneration):\n    local_config[\"transformers_version\"] = (\n        generation_config.transformers_version\n    )"
+  ]
+ },
+ {
+  "id": "DBT-019",
+  "lang": "python",
+  "intro": null,
+  "examples": [
+   "names = [\n    f\"past_{kv}_{i}\"\n    for i in range(num_hidden_layers)\n    for kv in (\"key\", \"value\")\n]\nfor name, tensor in zip(names, kv_cache):\n    context.mark_static_address(tensor, name)",
+   "names = kv_cache_names or [  # vLLM이 넘긴 이름 우선\n    f\"past_key_values_{i}\"\n    for i in range(num_hidden_layers * 2)\n]\nfor name, tensor in zip(names, kv_cache):\n    context.mark_static_address(tensor, name)",
+   "names = [  # 현행 이름 유지, 변경은 후속 PR\n    f\"past_key_values_{i}\"\n    for i in range(num_hidden_layers * 2)\n]\nfor name, tensor in zip(names, kv_cache):\n    context.mark_static_address(tensor, name)"
+  ]
+ },
+ {
+  "id": "DBT-020",
+  "lang": "python",
+  "intro": "rbln_model_input_names 순서가 forward 인자 순서와 다른 경우",
+  "examples": [
+   "rbln_config.model_input_names = [\n    n for n in signature_params if n in rbln_config.model_input_names\n]  # forward 시그니처 순서로 고정\ninputs = [kwargs[n] for n in rbln_config.model_input_names]\noutput = self.model[0](*inputs)",
+   "# 사용자가 준 순서 그대로, 불일치는 사용자 책임\ninputs = [kwargs[n] for n in rbln_config.model_input_names]\noutput = self.model[0](*inputs)"
+  ]
+ },
+ {
+  "id": "DBT-022",
+  "lang": "python",
+  "intro": null,
+  "examples": [
+   "class DecoderOnlyWrapper(nn.Module):\n    def get_decoder_layers(self, model):\n        return model.layers\nclass DecoderOnlyForCausalLMWrapper(DecoderOnlyWrapper):\n    def get_decoder_layers(self, model):\n        return model.model.layers",
+   "class DecoderOnlyWrapper(nn.Module):\n    def __init__(self, model, rbln_config):\n        self.is_causal_lm = getattr(model, \"lm_head\", None) is not None\n    def get_decoder_layers(self, model):\n        return model.model.layers if self.is_causal_lm else model.layers"
+  ]
+ },
+ {
+  "id": "DBT-023",
+  "lang": "python",
+  "intro": "attn_impl 미지정, max_seq_len이 eager 상한을 넘는 경우",
+  "examples": [
+   "limits = get_attention_limits(npu)\nif attn_impl is None:\n    over = max_seq_len > limits.max_eager_seq_len\n    attn_impl = \"flash_attn\" if over else \"eager\"  # 자동 승격\nelif attn_impl == \"eager\" and max_seq_len > limits.max_eager_seq_len:\n    raise ValueError(\"... switch `attn_impl` to 'flash_attn'\")",
+   "limits = get_attention_limits(npu)  # 패밀리별 한계 레코드\nif attn_impl is None:\n    attn_impl = \"eager\"  # 자동 승격은 후속 PR\nif attn_impl == \"eager\" and max_seq_len > limits.max_eager_seq_len:\n    raise ValueError(\"... switch `attn_impl` to 'flash_attn'\")"
+  ]
+ },
+ {
+  "id": "DBT-026",
+  "lang": "python",
+  "intro": null,
+  "examples": [
+   "def forward(self, x):\n    return torch.ops.rbln_custom_ops.custom_moe_glu(x, *self.weights)",
+   "def forward(self, x):\n    if self.use_custom_op:  # 측정상 이득인 구성에서만 True\n        return torch.ops.rbln_custom_ops.custom_moe_glu(x, *self.weights)\n    return self._eager_moe(x)"
+  ]
+ },
+ {
+  "id": "DBT-027",
+  "lang": "python",
+  "intro": null,
+  "examples": [
+   "buffer = 1 * 2**30  # 전체 1GB 고정 추정\navailable = total_dram - alloc_without_dram - buffer\nnum_blocks = available // kvcache_block_bytes",
+   "buffer = 500 * 2**20 * rbln_config.tensor_parallel_size  # tp당 500MB\nbuffer += estimate_runtime_buffer(compiled_models)  # 정밀 추정\navailable = total_dram - alloc_without_dram - buffer\nnum_blocks = available // kvcache_block_bytes"
+  ]
+ }
+]

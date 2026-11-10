@@ -1,0 +1,19 @@
+{
+ "id": "DEC-005",
+ "summary": [
+  "decoder-only 모델은 대부분 Llama와 같은 공통 경로(decoderonly)로 컴파일됩니다. 공통 경로는 q_proj·k_proj·v_proj, gate_proj·up_proj가 따로 있고 회전 위치 임베딩(RoPE)이 정해진 순서라고 가정하며, 텐서 병렬 샤딩 같은 공통 처리도 이 가정 위에서 돕니다.",
+  "그런데 어떤 체크포인트는 구조가 다릅니다. Phi-3는 q·k·v가 qkv_proj 하나로 합쳐져 있고, GLM-4는 RoPE를 짝수·홀수 차원 쌍으로 돌립니다.",
+  "이 룰은 그 차이를 추론 그래프에 연산을 더하거나 모델 전용 어텐션 클래스를 새로 만들어 맞추지 말라는 것입니다. 컴파일 전 래퍼를 만들 때 가중치를 한 번 잘라 두거나 행 순서를 바꿔 두면, 공통 경로가 그대로 적용되고 추론 비용도 늘지 않습니다.",
+  "물어보는 것: 체크포인트 구조 차이는 컴파일 전 가중치 변환으로 맞춘다를 팀 룰로 삼을까요?"
+ ],
+ "examples": [
+  {"label": "Phi-3 — 합쳐진 qkv_proj를 컴파일 전에 세 개로 자름 (phi3_architecture.py:47)", "lang": "python", "code": "# 체크포인트: qkv_proj 하나 (q, k, v가 행 방향으로 붙어 있음)\nself.q_proj, self.k_proj, self.v_proj = _split_rows(\n    self_attn.qkv_proj, [q_size, kv_size, kv_size])\n# 이후로는 Llama와 똑같은 q/k/v 경로와 head 샤딩이 그대로 적용된다"},
+  {"label": "GLM-4 — RoPE 짝 순서를 맞추려고 q/k 행 순서를 바꿔 둠 (glm4_architecture.py:56)", "lang": "python", "code": "# GLM은 (짝수, 홀수) 차원 쌍을 돌린다. 공통 경로는 앞/뒤 절반을 돌린다.\n# 짝수 차원을 앞으로, 홀수 차원을 뒤로 모으도록 가중치 행을 한 번 재배열하면\n# 공통 RoPE 연산이 GLM과 같은 결과를 낸다\nself.q_proj = _deinterleave_heads(self.q_proj, self.num_heads, self.head_dim, self.rotary_ndims)\nself.k_proj = _deinterleave_heads(self.k_proj, self.num_key_value_heads, self.head_dim, self.rotary_ndims)"},
+  {"label": "어기는 예 — 추론할 때마다 자르거나 모델 전용 어텐션을 새로 씀", "lang": "python", "code": "def forward(self, hidden_states):\n    qkv = self.qkv_proj(hidden_states)\n    q, k, v = qkv.split([q_size, kv_size, kv_size], dim=-1)  # 매 추론마다 연산 추가\n    ...\n# 또는 class Phi3Attention(nn.Module): ... 처럼 공통 어텐션을 복제해\n# head 샤딩 같은 공통 처리가 이 모델에만 빠진다"}
+ ],
+ "evidence": [
+  {"pr": 798, "state": "merged", "date": "2026-10-14", "user": "jaehunryu", "what": "Phi-3/Phi-4 추가. 합쳐진 qkv_proj와 gate_up_proj를 잘라서 공통 q/k/v·gate/up 처리와 head 샤딩이 그대로 적용되게 했다.", "quote": "So the shared q/k/v and gate/up hooks (and their head sharding) apply unchanged."},
+  {"pr": 801, "state": "merged", "date": "2026-10-19", "user": "jaehunryu", "what": "GLM-4 추가. q/k 행을 짝수 차원 먼저, 홀수 차원 나중 순서로 재배열했다.", "quote": "The q/k projection rows are permuted at load time: even rotary dims first, then odd."}
+ ],
+ "verified": "dev 74e97fa4 코드 확인(2026-10-23): phi3_architecture.py:34-75, glm4_architecture.py:26-57."
+}

@@ -1,0 +1,17 @@
+{
+ "id": "DEC-009",
+ "summary": [
+  "RBLN 모델은 HF 모델을 바꿔 끼워 쓰는 것이므로, 같은 입력을 넣으면 HF 원본과 같은 모양·같은 뜻의 출력을 돌려줘야 한다는 룰입니다. 사용자 코드가 HF 기준으로 출력을 읽기 때문입니다.",
+  "원래 문장은 이 원칙이 깨졌던 두 사례를 그대로 적어서 무슨 말인지 알기 어려웠습니다. 사례는 아래 예시로 옮겼습니다.",
+  "물어보는 것: 모델 출력은 같은 입력에서 HF 원본과 모양과 뜻이 같아야 한다를 팀 룰로 삼을까요?"
+ ],
+ "examples": [
+  {"label": "사례 1 — last_hidden_state와 hidden_states[-1] (#668)", "lang": "python", "code": "out = model(input_ids, output_hidden_states=True)\n\n# HF: 마지막 층 출력(최종 norm 적용 후)이 두 곳에 똑같이 들어 있다\nassert torch.equal(out.last_hidden_state, out.hidden_states[-1])\n# 이 PR 전 RBLN Qwen3.5: 두 값이 달라 HF와 어긋났다"},
+  {"label": "사례 2 — 패딩된 배치의 prefill 출력 길이 (#659)", "lang": "python", "code": "# 배치 2개, attention mask 폭 8, 실제 토큰은 [8, 5]개\nout = model(input_ids, attention_mask=mask, output_hidden_states=True)\n\n# HF: 입력 길이(mask 폭)대로 [2, 8, hidden]\nout.hidden_states[-1].shape   # (2, 8, hidden)\n# 이 PR 전 RBLN Qwen3-VL: 유효 길이로 잘려 두 번째 행이 5로 돌아왔다"}
+ ],
+ "evidence": [
+  {"pr": 668, "state": "merged", "date": "2026-08-21", "user": "thkim", "what": "Qwen3.5 텍스트 모델이 last_hidden_state와 hidden_states[-1]을 다르게 돌려주던 것을 HF처럼 맞췄다.", "quote": "violates the base contract that `last_hidden_state == hidden_states[-1]`"},
+  {"pr": 659, "state": "merged", "date": "2026-08-21", "user": "thkim", "what": "Qwen3-VL이 패딩된 배치에서 hidden states를 유효 길이로 잘라 돌려주던 것을 mask 폭으로 맞췄다.", "quote": "Hidden states came back at valid length instead of mask width."}
+ ],
+ "verified": "근거 PR 2건 모두 머지됨(2026-08-21)."
+}
