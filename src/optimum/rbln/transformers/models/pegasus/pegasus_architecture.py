@@ -44,7 +44,7 @@ class PegasusDecoderWrapper(Seq2SeqDecoderWrapper):
     def convert_to_rbln_conditional_generation(self, model: nn.Module):
         new_layers = []
         for layer in model.get_decoder().layers:
-            self_attn = PegasusSelfAttention(layer.self_attn, use_attention_mask=self.use_attention_mask)
+            self_attn = PegasusSelfAttention(layer.self_attn)
             cross_attn = PegasusCrossAttention(layer.encoder_attn)
             new_layers.append(PegasusDecoderLayer(layer, self_attn, cross_attn))
 
@@ -147,7 +147,7 @@ class PegasusDecoderLayer(Seq2SeqDecoderLayer):
 
 
 class PegasusSelfAttention(Seq2SeqSelfAttention):
-    def __post_init__(self, attn: nn.Module, use_attention_mask: bool = True):
+    def __post_init__(self, attn: nn.Module):
         self.q_proj = attn.q_proj
         self.k_proj = attn.k_proj
         self.v_proj = attn.v_proj
@@ -155,10 +155,6 @@ class PegasusSelfAttention(Seq2SeqSelfAttention):
         self.num_heads = attn.num_heads
         self.head_dim = attn.embed_dim // attn.num_heads
         self.scaling = self.head_dim**-0.5
-        if use_attention_mask:
-            self.attn_decode = torch.ops.rbln_custom_ops.paged_attn_decode
-        else:
-            self.attn_decode = torch.ops.rbln_custom_ops.paged_causal_attn_decode
 
     def projection(self, hidden_states) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         query_states = self.q_proj(hidden_states) * self.scaling
