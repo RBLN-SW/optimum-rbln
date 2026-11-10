@@ -85,6 +85,29 @@ optimum-rbln-cli --class RBLNQwen3ForCausalLM --show-rbln-config  # show accepte
 optimum-rbln-cli --examples                          # show more usage examples
 ```
 
+## Nested compile regions for diffusion components
+
+SD/SDXL UNet, ControlNet and VAE, SVD UNet and temporal VAE, and Cosmos transformer
+configs accept `nested_compile_region=True`. This experimental option defaults to
+`False` and selects strict export while preserving repeated block boundaries.
+The compiler decides which repeated regions can form loops; skip connections and
+per-iteration outputs can prevent rolling.
+
+For a component, pass `rbln_nested_compile_region=True` to `from_pretrained(...,
+export=True)`. In a pipeline, select components through their own configs:
+
+```python
+pipe = RBLNStableDiffusionXLPipeline.from_pretrained(
+    "stabilityai/stable-diffusion-xl-base-1.0",
+    export=True,
+    rbln_config={"unet": {"nested_compile_region": True}},
+)
+```
+
+The VAE remains at its default in this example. The option requires compiler
+support for nested regions and is not saved in `rbln_config.json`; loading an
+already compiled artifact does not need the option.
+
 ## Documentation
 
 Check out [the documentation of Optimum RBLN](https://docs.rbln.ai/latest/software/optimum/index.html) for more advanced usage.

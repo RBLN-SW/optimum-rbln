@@ -25,6 +25,8 @@ class RBLNAutoencoderKLConfig(RBLNModelConfig):
     for VAE models used in diffusion-based image generation.
     """
 
+    subclass_non_save_attributes = ["nested_compile_region"]
+
     def __init__(
         self,
         batch_size: int | None = None,
@@ -33,6 +35,7 @@ class RBLNAutoencoderKLConfig(RBLNModelConfig):
         vae_scale_factor: float | None = None,  # TODO: rename to scaling_factor
         in_channels: int | None = None,
         latent_channels: int | None = None,
+        nested_compile_region: bool = False,
         **kwargs: Any,
     ):
         """
@@ -46,12 +49,16 @@ class RBLNAutoencoderKLConfig(RBLNModelConfig):
                 Determines how much smaller the latent representations are compared to the original images.
             in_channels (int | None): Number of input channels for the model.
             latent_channels (int | None): Number of channels in the latent space.
+            nested_compile_region (bool): Preserve repeated blocks as nested compile regions using strict export.
+                Defaults to False. This compile-time option is not saved in `rbln_config.json`
+                and does not guarantee that the compiler forms a loop.
             kwargs: Additional arguments passed to the parent RBLNModelConfig.
 
         Raises:
             ValueError: If batch_size is not a positive integer.
         """
         super().__init__(**kwargs)
+        self.nested_compile_region = nested_compile_region
         self.batch_size = batch_size or 1
         if not isinstance(self.batch_size, int) or self.batch_size < 0:
             raise ValueError(f"batch_size must be a positive integer, got {self.batch_size}")

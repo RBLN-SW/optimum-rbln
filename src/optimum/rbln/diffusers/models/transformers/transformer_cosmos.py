@@ -27,6 +27,7 @@ from diffusers.models.transformers.transformer_cosmos import (
     CosmosLearnablePositionalEmbed,
     CosmosPatchEmbed,
     CosmosRotaryPosEmbed,
+    CosmosTransformerBlock,
 )
 from torchvision import transforms
 
@@ -150,6 +151,30 @@ class CosmosPerFrameAdaLNMixin:
         return hidden_states
 
 
+class CosmosBlockRegion(CosmosPerFrameAdaLNMixin, CosmosTransformerBlock):
+    @torch.compiler.nested_compile_region
+    def forward_region(
+        self,
+        hidden_states,
+        context,
+        embedded_timestep,
+        temb,
+        image_rotary_emb,
+        extra_pos_emb=None,
+        attention_mask=None,
+    ):
+        return self._block_forward(
+            self,
+            hidden_states,
+            context,
+            embedded_timestep,
+            temb,
+            image_rotary_emb,
+            extra_pos_emb=extra_pos_emb,
+            attention_mask=attention_mask,
+        )
+
+
 class CosmosTransformer3DModelWrapper(CosmosPerFrameAdaLNMixin, torch.nn.Module):
     def __init__(
         self,
@@ -157,6 +182,7 @@ class CosmosTransformer3DModelWrapper(CosmosPerFrameAdaLNMixin, torch.nn.Module)
         num_latent_frames: int = 16,
         latent_height: int = 88,
         latent_width: int = 160,
+        nested_compile_region: bool = False,
     ) -> None:
         super().__init__()
         self.model = model
@@ -164,6 +190,15 @@ class CosmosTransformer3DModelWrapper(CosmosPerFrameAdaLNMixin, torch.nn.Module)
         self.latent_height = latent_height
         self.latent_width = latent_width
         self.p_t, self.p_h, self.p_w = model.config.patch_size
+        self.nested_compile_region = nested_compile_region
+        for block in model.transformer_blocks:
+            if type(block) in (CosmosTransformerBlock, CosmosBlockRegion):
+                block.__class__ = CosmosBlockRegion if nested_compile_region else CosmosTransformerBlock
+
+    def _run_block(self, block, *args, **kwargs):
+        if self.nested_compile_region:
+            return block.forward_region(*args, **kwargs)
+        return self._block_forward(block, *args, **kwargs)
 
     def forward(
         self,
@@ -180,7 +215,7 @@ class CosmosTransformer3DModelWrapper(CosmosPerFrameAdaLNMixin, torch.nn.Module)
         image_rotary_emb = [image_rotary_emb_0, image_rotary_emb_1]
         embedded_timestep, temb = self._as_per_frame(embedded_timestep, temb)
         for block in self.model.transformer_blocks:
-            hidden_states = self._block_forward(
+            hidden_states = self._run_block(
                 block,
                 hidden_states,
                 encoder_hidden_states,
@@ -216,8 +251,9 @@ class CosmosTransferTransformerWrapper(CosmosTransformer3DModelWrapper):
         num_latent_frames: int = 16,
         latent_height: int = 88,
         latent_width: int = 160,
+        nested_compile_region: bool = False,
     ) -> None:
-        super().__init__(model, num_latent_frames, latent_height, latent_width)
+        super().__init__(model, num_latent_frames, latent_height, latent_width, nested_compile_region)
         self.controlnet_block_every_n = model.config.controlnet_block_every_n
         self.uses_img_context = model.config.img_context_dim_in is not None and model.config.img_context_dim_in > 0
 
@@ -240,7 +276,7 @@ class CosmosTransferTransformerWrapper(CosmosTransformer3DModelWrapper):
         context = (encoder_hidden_states, img_context) if self.uses_img_context else encoder_hidden_states
 
         for block_idx, block in enumerate(self.model.transformer_blocks):
-            hidden_states = self._block_forward(
+            hidden_states = self._run_block(
                 block,
                 hidden_states,
                 context,
@@ -420,6 +456,7 @@ class RBLNCosmosTransformer3DModel(RBLNModel):
             num_latent_frames=num_latent_frames,
             latent_height=latent_height,
             latent_width=latent_width,
+            nested_compile_region=rbln_config.nested_compile_region,
         ).eval()
 
     @classmethod

@@ -85,6 +85,7 @@ class RBLNAutoencoderKLTemporalDecoder(RBLNModel):
                 rbln_compile_config=rbln_config.compile_cfgs[0],
                 create_runtimes=rbln_config.create_runtimes,
                 device=rbln_config.device_map["encoder"],
+                nested_compile_region=rbln_config.nested_compile_region,
             )
             compiled_models["encoder"] = enc_compiled_model
         else:
@@ -94,6 +95,7 @@ class RBLNAutoencoderKLTemporalDecoder(RBLNModel):
             rbln_compile_config=rbln_config.compile_cfgs[-1],
             create_runtimes=rbln_config.create_runtimes,
             device=rbln_config.device_map["decoder"],
+            nested_compile_region=rbln_config.nested_compile_region,
         )
         compiled_models["decoder"] = dec_compiled_model
 

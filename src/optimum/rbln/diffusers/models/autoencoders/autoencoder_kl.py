@@ -109,6 +109,7 @@ class RBLNAutoencoderKL(RBLNModel):
                 rbln_compile_config=rbln_config.compile_cfgs[i],
                 create_runtimes=rbln_config.create_runtimes,
                 device=rbln_config.device_map[model_name],
+                nested_compile_region=rbln_config.nested_compile_region,
             )
 
         return compiled_models
