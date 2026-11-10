@@ -38,6 +38,7 @@ from ....configuration_utils import RBLNCompileConfig, RBLNModelConfig
 from ....modeling import RBLNModel
 from ....modeling_base import Preprocessor
 from ....utils.logging import get_logger
+from ....utils.save_utils import load_tensors, save_tensors
 from ...utils.multimodal_batch_sort import RBLNImageIndexedBatchSortMixin, _placeholder_run_counts
 from ...utils.rbln_runtime_wrapper import LoopProcessor
 from ..decoderonly.modeling_decoderonly import RBLNDecoderOnlyOutput
@@ -171,14 +172,14 @@ class RBLNLlavaNextForConditionalGeneration(RBLNModel, RBLNImageIndexedBatchSort
         # store the torch tensor, weight, etc. in this function.
         save_dict = {}
         save_dict["image_newline"] = model.model.image_newline
-        torch.save(save_dict, save_dir_path / subfolder / "torch_artifacts.pth")
+        save_tensors(save_dict, save_dir_path / subfolder / "torch_artifacts.pth")
 
     def __post_init__(self, **kwargs):
         self.vision_tower = LoopVisionTower(self.rbln_submodules[0])
         self.language_model = self.rbln_submodules[1]
         self.multi_modal_projector = LoopProjector(self.model[0])
 
-        artifacts = torch.load(self.model_save_dir / self.subfolder / "torch_artifacts.pth", weights_only=False)
+        artifacts = load_tensors(self.model_save_dir / self.subfolder / "torch_artifacts.pth")
         self.image_newline = artifacts["image_newline"]
 
         text_config = self.config.text_config

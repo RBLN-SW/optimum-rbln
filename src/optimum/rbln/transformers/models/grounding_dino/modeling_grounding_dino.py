@@ -38,6 +38,7 @@ from ....configuration_utils import RBLNCompileConfig, RBLNModelConfig
 from ....modeling import RBLNModel
 from ....modeling_base import Preprocessor
 from ....utils.runtime_utils import RBLNPytorchRuntime
+from ....utils.save_utils import load_tensors, save_tensors
 from ..bert.modeling_bert import RBLNBertModel
 from .configuration_grounding_dino import (
     RBLNGroundingDinoDecoderConfig,
@@ -127,7 +128,7 @@ class RBLNGroundingDinoForObjectDetection(RBLNModel):
         self.decoder = self.rbln_submodules[3]
 
     def _setup_cpu_instances(self):
-        stacte_dict = torch.load(self.model_save_dir / self.subfolder / "torch_artifacts.pth", weights_only=False)
+        stacte_dict = load_tensors(self.model_save_dir / self.subfolder / "torch_artifacts.pth")
         with no_init_weights():
             config = self.config
             _class_embed = GroundingDinoContrastiveEmbedding(config)
@@ -246,7 +247,7 @@ class RBLNGroundingDinoForObjectDetection(RBLNModel):
         save_dict["class_embed"] = model.class_embed.state_dict()
         save_dict["bbox_embed"] = model.bbox_embed.state_dict()
 
-        torch.save(save_dict, save_dir_path / subfolder / "torch_artifacts.pth")
+        save_tensors(save_dict, save_dir_path / subfolder / "torch_artifacts.pth")
 
     @classmethod
     def _reconstruct_model_if_needed(cls, model: "PreTrainedModel"):

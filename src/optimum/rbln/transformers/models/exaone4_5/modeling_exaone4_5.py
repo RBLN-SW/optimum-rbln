@@ -33,6 +33,7 @@ from ....modeling import RBLNModel
 from ....modeling_base import Preprocessor
 from ....modeling_rope_utils import np_cos, np_sin, qwen_vit_rot_pos_ids
 from ....utils.logging import get_logger
+from ....utils.save_utils import load_tensors, save_tensors
 from ...modeling_outputs import RBLNDecoderOnlyOutput, _validate_output_hidden_states
 from ...utils.multimodal_batch_sort import RBLNQwenVLBatchSortMixin, _matched_token_counts
 from ..decoderonly.modeling_decoderonly import RBLNDecoderOnlyModel, RBLNDecoderOnlyModelForCausalLM
@@ -101,7 +102,7 @@ class RBLNExaone4_5_VisionModel(RBLNModel):
                 in_channels=config.in_channels,
                 embed_dim=config.hidden_size,
             )
-        artifacts = torch.load(self.model_save_dir / self.subfolder / "torch_artifacts.pth", weights_only=False)
+        artifacts = load_tensors(self.model_save_dir / self.subfolder / "torch_artifacts.pth")
         self.patch_embed.load_state_dict(artifacts["patch_embed"])
 
     @classmethod
@@ -113,7 +114,7 @@ class RBLNExaone4_5_VisionModel(RBLNModel):
         rbln_config: RBLNExaone4_5_VisionModelConfig,
     ):
         save_dict = {"patch_embed": model.patch_embed.state_dict()}
-        torch.save(save_dict, save_dir_path / subfolder / "torch_artifacts.pth")
+        save_tensors(save_dict, save_dir_path / subfolder / "torch_artifacts.pth")
 
     @classmethod
     def _wrap_model_if_needed(cls, model: "PreTrainedModel", rbln_config: RBLNExaone4_5_VisionModelConfig):

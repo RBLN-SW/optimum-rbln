@@ -21,6 +21,7 @@ from transformers.models.colpali.modeling_colpali import ColPaliForRetrieval, Co
 
 from ....configuration_utils import RBLNModelConfig
 from ....modeling import RBLNModel
+from ....utils.save_utils import load_tensors, save_tensors
 from ...utils.rbln_runtime_wrapper import LoopProcessor
 
 
@@ -115,7 +116,7 @@ class RBLNColPaliForRetrieval(RBLNModel):
 
     def __post_init__(self, **kwargs):
         self.vlm_model = self.rbln_submodules[0]
-        artifacts = torch.load(self.model_save_dir / self.subfolder / "torch_artifacts.pth", weights_only=False)
+        artifacts = load_tensors(self.model_save_dir / self.subfolder / "torch_artifacts.pth")
         self.embedding_proj_layer = self._create_embedding_proj_layer()
         self.embedding_proj_layer.load_state_dict(artifacts["embedding_proj_layer"])
         return super().__post_init__(**kwargs)
@@ -137,7 +138,7 @@ class RBLNColPaliForRetrieval(RBLNModel):
     ):
         save_dict = {}
         save_dict["embedding_proj_layer"] = model.embedding_proj_layer.state_dict()
-        torch.save(save_dict, save_dir_path / subfolder / "torch_artifacts.pth")
+        save_tensors(save_dict, save_dir_path / subfolder / "torch_artifacts.pth")
 
     def forward(
         self,

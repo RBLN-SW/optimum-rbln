@@ -36,6 +36,7 @@ from ....modeling import RBLNModel
 from ....modeling_rope_utils import build_qwen_mrope_lookup, np_cos, np_sin, qwen_vit_rot_pos_ids
 from ....utils import logging
 from ....utils.deprecation import deprecate_method
+from ....utils.save_utils import load_tensors, save_tensors
 from ...cache_utils import FullAttentionKVCacheMeta, LinearAttentionCacheMeta
 from ...modeling_outputs import RBLNDecoderOnlyOutput, _validate_output_hidden_states
 from ...utils.multimodal_batch_sort import RBLNQwenVLBatchSortMixin
@@ -351,7 +352,7 @@ class RBLNQwen3_5VisionModel(RBLNModel):
 
         self.num_grid_per_side = int(config.num_position_embeddings**0.5)
 
-        artifacts = torch.load(self.model_save_dir / self.subfolder / "torch_artifacts.pth", weights_only=False)
+        artifacts = load_tensors(self.model_save_dir / self.subfolder / "torch_artifacts.pth")
         self.patch_embed.load_state_dict(artifacts["patch_embed"])
         self.pos_embed.load_state_dict(artifacts["pos_embed"])
 
@@ -366,7 +367,7 @@ class RBLNQwen3_5VisionModel(RBLNModel):
         save_dict = {}
         save_dict["patch_embed"] = model.patch_embed.state_dict()
         save_dict["pos_embed"] = model.pos_embed.state_dict()
-        torch.save(save_dict, save_dir_path / subfolder / "torch_artifacts.pth")
+        save_tensors(save_dict, save_dir_path / subfolder / "torch_artifacts.pth")
 
     @classmethod
     def _wrap_model_if_needed(cls, model: "PreTrainedModel", rbln_config: RBLNQwen3_5VisionModelConfig):

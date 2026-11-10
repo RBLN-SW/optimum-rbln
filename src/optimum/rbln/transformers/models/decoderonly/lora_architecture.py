@@ -6,6 +6,7 @@ import torch
 from torch import nn
 
 from ....utils import logging
+from ....utils.save_utils import load_tensors
 from .configuration_lora import RBLNLoRAConfig
 
 
@@ -88,8 +89,8 @@ class LoRALinear(nn.Module):
         # Try to load weights in order of preference
         weight_files = [
             ("adapter_model.safetensors", safetensors.torch.load_file),
-            ("adapter_model.bin", lambda p: torch.load(p, map_location="cpu")),
-            ("pytorch_model.bin", lambda p: torch.load(p, map_location="cpu")),
+            ("adapter_model.bin", lambda p: load_tensors(p, map_location="cpu")),
+            ("pytorch_model.bin", lambda p: load_tensors(p, map_location="cpu")),
         ]
 
         for filename, load_fn in weight_files:
