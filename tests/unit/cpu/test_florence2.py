@@ -85,7 +85,8 @@ class TestFlorence2Encoder:
             features = self.model.get_image_features(torch.randn(1, 3, 64, 64)).pooler_output
         assert features.shape[1] == config.enc_max_seq_len - encoder["input_ids"][0][1]
 
-    def runtime_model(self, batch_size=1):
+    def runtime_model(self, batch_size=1, dtype=torch.float32):
+        self.model.to(dtype)
         observed = {}
 
         def runtime(**kwargs):
@@ -105,8 +106,9 @@ class TestFlorence2Encoder:
         model.__post_init__()
         return model, observed
 
-    def test_batched_encoder_preserves_image_text_mask_and_cache_rows(self):
-        model, observed = self.runtime_model(batch_size=2)
+    @pytest.mark.parametrize("dtype", [torch.float32, torch.float16, torch.bfloat16])
+    def test_batched_encoder_preserves_image_text_mask_and_cache_rows(self, dtype):
+        model, observed = self.runtime_model(batch_size=2, dtype=dtype)
         text_ids = torch.tensor([[0, 4, 2, 1], [0, 5, 6, 2]])
         ids = torch.cat((torch.full((2, 5), 31), text_ids), dim=1)
         mask = torch.tensor([[1, 1, 1, 1, 1, 1, 1, 1, 0], [1, 1, 1, 1, 1, 1, 1, 1, 1]])
@@ -117,12 +119,12 @@ class TestFlorence2Encoder:
 
         assert len(observed["calls"]) == 2
         assert "pixel_values" not in result
-        expected_mask = torch.nn.functional.pad(mask, (0, 55)).float()
+        expected_mask = torch.nn.functional.pad(mask, (0, 55)).to(dtype)
         torch.testing.assert_close(result["attention_mask"], expected_mask)
         for index, call in enumerate(observed["calls"]):
             expected_ids = torch.nn.functional.pad(text_ids[index : index + 1], (0, 55), value=1)
             torch.testing.assert_close(call["input_ids"], expected_ids)
-            torch.testing.assert_close(call["pixel_values"], pixels[index : index + 1])
+            torch.testing.assert_close(call["pixel_values"], pixels[index : index + 1].to(dtype))
             assert call["block_tables"].tolist() == [index]
             assert call["block_tables"].dtype == torch.int16
             torch.testing.assert_close(call["attention_mask"], expected_mask[index : index + 1])

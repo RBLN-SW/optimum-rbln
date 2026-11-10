@@ -1,7 +1,16 @@
 # Copyright 2026 Rebellions Inc. All rights reserved.
+
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
+# You may obtain a copy of the License at:
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 
 import torch
 from transformers import AutoModelForImageTextToText
@@ -36,7 +45,6 @@ class RBLNFlorence2ForConditionalGeneration(RBLNModelForSeq2SeqLM):
     auto_model_class = AutoModelForImageTextToText
     base_model_prefix = "model"
     support_causal_attn = True
-    _supports_non_fp32 = False
     _supported_generation_modes = (GenerationMode.GREEDY_SEARCH, GenerationMode.SAMPLE)
 
     @classmethod
@@ -79,10 +87,18 @@ class RBLNFlorence2ForConditionalGeneration(RBLNModelForSeq2SeqLM):
         text_seq_len = self.rbln_config.compile_cfgs[0].input_info[0][1][1]
         self.image_seq_len = self.rbln_config.enc_max_seq_len - text_seq_len
 
+    def _validate_generation_mode(self, generation_mode, generation_config, generation_mode_kwargs):
+        if generation_config.num_beams > 1:
+            raise ValueError(
+                "Beam search is not supported for RBLNFlorence2ForConditionalGeneration "
+                f"(num_beams={generation_config.num_beams}). Set `num_beams=1` for greedy generation or sampling."
+            )
+        super()._validate_generation_mode(generation_mode, generation_config, generation_mode_kwargs)
+
     def _prepare_encoder_decoder_kwargs_for_generation(
         self, inputs_tensor, model_kwargs, model_input_name=None, generation_config=None
     ):
-        pixels = model_kwargs.pop("pixel_values")
+        pixels = model_kwargs.pop("pixel_values").to(self.rbln_config.dtype)
         batch_size = inputs_tensor.shape[0]
         if batch_size != self.rbln_config.batch_size:
             raise ValueError("Input batch size does not match the compiled batch_size.")

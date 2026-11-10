@@ -78,18 +78,10 @@ class Seq2SeqEncoderWrapper(nn.Module):
             nn.ModuleList(decoder_layers[i].encoder_attn.v_proj for i in range(self.n_layer)),
         )
 
-    def forward(
-        self,
-        input_ids: torch.Tensor,
-        attention_mask: torch.Tensor,
-        b_idx: torch.Tensor,
-        *cross_key_values: tuple[torch.Tensor],
-    ) -> tuple[torch.Tensor]:
-        # 1. get encoder last_hidden_states
-        encoder_outputs = self.encoder(input_ids=input_ids, attention_mask=attention_mask)
-        last_hidden_states = encoder_outputs[0]
-
-        # 2. pre-compute cross_attention's past_key_value which used in decoder phase.
+    def _update_cross_key_values(
+        self, last_hidden_states: torch.Tensor, b_idx: torch.Tensor, *cross_key_values: torch.Tensor
+    ) -> list[torch.Tensor]:
+        """Project encoder hidden states into decoder cross-attention K/V and update the caches."""
         cross_kv = []
         for k_proj, v_proj in zip(self.cross_k_projects, self.cross_v_projects, strict=False):
             past_k = (
@@ -102,7 +94,7 @@ class Seq2SeqEncoderWrapper(nn.Module):
             cross_kv.append(past_k)
             cross_kv.append(past_v)
 
-        # 3. update the cross_attention's past_key_value direct to the device-dram for optimization.
+        # Update the cross-attention caches directly in device memory.
         batch_axis = torch.tensor(0, dtype=torch.int16)
         cross_key_values = list(cross_key_values)
         for i in range(self.n_layer * 2):
@@ -111,6 +103,17 @@ class Seq2SeqEncoderWrapper(nn.Module):
             )
 
         return cross_key_values
+
+    def forward(
+        self,
+        input_ids: torch.Tensor,
+        attention_mask: torch.Tensor,
+        b_idx: torch.Tensor,
+        *cross_key_values: tuple[torch.Tensor],
+    ) -> tuple[torch.Tensor]:
+        encoder_outputs = self.encoder(input_ids=input_ids, attention_mask=attention_mask)
+        last_hidden_states = encoder_outputs[0]
+        return self._update_cross_key_values(last_hidden_states, b_idx, *cross_key_values)
 
 
 class Seq2SeqDecoderWrapper(nn.Module):

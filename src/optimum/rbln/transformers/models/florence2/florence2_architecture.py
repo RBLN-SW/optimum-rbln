@@ -1,7 +1,16 @@
 # Copyright 2026 Rebellions Inc. All rights reserved.
+
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
+# You may obtain a copy of the License at:
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 
 from types import MethodType
 
@@ -31,28 +40,17 @@ class Florence2ImageEncoder(nn.Module):
         return self.projector(vision_hidden_states)
 
 
-class Florence2MultimodalEncoder(nn.Module):
-    def __init__(self, model):
-        super().__init__()
-        self.image_encoder = Florence2ImageEncoder(model)
-        self.encoder = model.model.language_model.encoder
-
-    def forward(self, input_ids, attention_mask, **kwargs):
-        pixel_values, text_ids = input_ids
-        image_features = self.image_encoder(pixel_values)
-        text_features = self.encoder.embed_tokens(text_ids)
-        inputs_embeds = torch.cat((image_features, text_features), dim=1)
-        return self.encoder(inputs_embeds=inputs_embeds, attention_mask=attention_mask, **kwargs)
-
-
 class Florence2EncoderWrapper(Seq2SeqEncoderWrapper):
     def __init__(self, model, enc_max_seq_len):
         super().__init__(model.model.language_model, enc_max_seq_len)
-        self.encoder = Florence2MultimodalEncoder(model)
+        self.image_encoder = Florence2ImageEncoder(model)
 
     def forward(self, input_ids, attention_mask, pixel_values, block_tables, *cross_key_values):
-        # Pack both modalities to reuse the shared encoder's cross-KV update path.
-        return super().forward((pixel_values, input_ids), attention_mask, block_tables, *cross_key_values)
+        image_features = self.image_encoder(pixel_values)
+        text_features = self.encoder.embed_tokens(input_ids)
+        inputs_embeds = torch.cat((image_features, text_features), dim=1)
+        last_hidden_states = self.encoder(inputs_embeds=inputs_embeds, attention_mask=attention_mask)[0]
+        return self._update_cross_key_values(last_hidden_states, block_tables, *cross_key_values)
 
 
 class Florence2DecoderWrapper(BartDecoderWrapper):
@@ -76,7 +74,7 @@ class Florence2DecoderWrapper(BartDecoderWrapper):
 
 class Florence2Wrapper:
     def __init__(self, model, enc_max_seq_len, use_attention_mask):
-        for layer in model.model.language_model.get_encoder().layers:
+        for layer in model.model.get_encoder().layers:
             layer.forward = MethodType(_encoder_layer_forward, layer)
         self.encoder = Florence2EncoderWrapper(model, enc_max_seq_len).eval()
         self.decoder = Florence2DecoderWrapper(model, use_attention_mask=use_attention_mask).eval()
