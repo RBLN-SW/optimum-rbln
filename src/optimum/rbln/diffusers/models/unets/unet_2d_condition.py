@@ -26,6 +26,7 @@ from ....modeling_base import Preprocessor
 from ....utils.logging import get_logger
 from ...configurations import RBLNUNet2DConditionModelConfig
 from ...modeling_diffusers import RBLNDiffusionMixin, RBLNDiffusionMixinConfig
+from ..nested_region import DIFFUSERS_REGION_CLASSES, wrap_diffusers_modules
 
 
 if TYPE_CHECKING:
@@ -179,12 +180,26 @@ class RBLNUNet2DConditionModel(RBLNModel):
     def _wrap_model_if_needed(
         cls, model: torch.nn.Module, rbln_config: RBLNUNet2DConditionModelConfig
     ) -> torch.nn.Module:
+        if rbln_config.nested_compile_region:
+            model = wrap_diffusers_modules(model, DIFFUSERS_REGION_CLASSES)
         if model.config.addition_embed_type == "text_time":
             return _UNet_SDXL(model).eval()
         elif model.config.addition_embed_type == "image":
             return _UNet_Kandinsky(model).eval()
         else:
             return _UNet_SD(model).eval()
+
+    @classmethod
+    def get_compiled_model(cls, model: torch.nn.Module, rbln_config: RBLNUNet2DConditionModelConfig):
+        if not rbln_config.nested_compile_region:
+            return super().get_compiled_model(model, rbln_config)
+        return cls.compile(
+            cls._wrap_model_if_needed(model, rbln_config),
+            rbln_compile_config=rbln_config.compile_cfgs[0],
+            create_runtimes=rbln_config.create_runtimes,
+            device=rbln_config.device,
+            model_trace_method="export_strict",
+        )
 
     @classmethod
     def get_unet_sample_size(

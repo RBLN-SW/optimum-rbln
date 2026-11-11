@@ -78,7 +78,6 @@ class RBLNModel(RBLNBaseModel):
             rbln_compile_config=rbln_compile_config,
             create_runtimes=rbln_config.create_runtimes,
             device=rbln_config.device,
-            nested_compile_region=getattr(rbln_config, "nested_compile_region", False),
         )
         return compiled_model
 

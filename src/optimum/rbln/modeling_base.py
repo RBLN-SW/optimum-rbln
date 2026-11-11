@@ -546,7 +546,6 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
         rbln_compile_config: RBLNCompileConfig,
         create_runtimes: bool,
         device: int | list[int] | None,
-        nested_compile_region: bool = False,
         **kwargs,
     ) -> rebel.RBLNCompiledModel:
         if create_runtimes:
@@ -559,13 +558,6 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
                 raise ValueError(runtime_cannot_be_created)
 
         normalize_contiguous_(model)
-
-        if cls.hf_library_name == "diffusers":
-            from .diffusers.models.nested_region import set_nested_compile_regions
-
-            set_nested_compile_regions(model, nested_compile_region)
-            if nested_compile_region:
-                kwargs["model_trace_method"] = "export_strict"
 
         compiled_model = rebel.compile_from_torch(
             model,

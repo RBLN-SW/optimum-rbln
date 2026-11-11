@@ -28,6 +28,7 @@ from ....modeling_base import Preprocessor
 from ....utils.logging import get_logger
 from ...configurations import RBLNAutoencoderKLTemporalDecoderConfig
 from ...modeling_diffusers import RBLNDiffusionMixin
+from ..nested_region import DIFFUSERS_REGION_CLASSES, wrap_diffusers_modules
 from .vae import (
     DiagonalGaussianDistribution,
     RBLNRuntimeVAEDecoder,
@@ -62,6 +63,8 @@ class RBLNAutoencoderKLTemporalDecoder(RBLNModel):
     def _wrap_model_if_needed(
         cls, model: torch.nn.Module, rbln_config: RBLNAutoencoderKLTemporalDecoderConfig
     ) -> torch.nn.Module:
+        if rbln_config.nested_compile_region:
+            model = wrap_diffusers_modules(model, DIFFUSERS_REGION_CLASSES)
         decoder_model = _VAETemporalDecoder(model)
         decoder_model.num_frames = rbln_config.decode_chunk_size
         decoder_model.eval()
@@ -85,7 +88,7 @@ class RBLNAutoencoderKLTemporalDecoder(RBLNModel):
                 rbln_compile_config=rbln_config.compile_cfgs[0],
                 create_runtimes=rbln_config.create_runtimes,
                 device=rbln_config.device_map["encoder"],
-                nested_compile_region=rbln_config.nested_compile_region,
+                **({"model_trace_method": "export_strict"} if rbln_config.nested_compile_region else {}),
             )
             compiled_models["encoder"] = enc_compiled_model
         else:
@@ -95,7 +98,7 @@ class RBLNAutoencoderKLTemporalDecoder(RBLNModel):
             rbln_compile_config=rbln_config.compile_cfgs[-1],
             create_runtimes=rbln_config.create_runtimes,
             device=rbln_config.device_map["decoder"],
-            nested_compile_region=rbln_config.nested_compile_region,
+            **({"model_trace_method": "export_strict"} if rbln_config.nested_compile_region else {}),
         )
         compiled_models["decoder"] = dec_compiled_model
 

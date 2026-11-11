@@ -32,7 +32,8 @@ from optimum.rbln import (
     RBLNUNetSpatioTemporalConditionModel,
     RBLNUNetSpatioTemporalConditionModelConfig,
 )
-from optimum.rbln.diffusers.models.nested_region import set_nested_compile_regions
+from optimum.rbln.diffusers.models.nested_region import DIFFUSERS_REGION_CLASSES, wrap_diffusers_modules
+from optimum.rbln.utils.nested_compile_region import NestedCompileRegionMixin
 
 
 @pytest.mark.parametrize(
@@ -98,35 +99,51 @@ def test_block_regions_preserve_weights_copies_and_export(kind):
     parameters = dict(model.named_parameters())
     with torch.no_grad():
         expected = model(*inputs)
-        set_nested_compile_regions(model, True)
-        set_nested_compile_regions(model, True)
-        assert dict(model.named_parameters()).keys() == parameters.keys()
-        assert all(parameter is parameters[name] for name, parameter in model.named_parameters())
-        for restored in (copy.deepcopy(model), pickle.loads(pickle.dumps(model)), clone_nn_module(model)):
+        wrapped = wrap_diffusers_modules(model, DIFFUSERS_REGION_CLASSES)
+        assert [type(module) for module in model.modules()] == original_classes
+        assert not set(wrapped.modules()) & set(model.modules())
+        assert dict(wrapped.named_parameters()).keys() == parameters.keys()
+        assert all(parameter is parameters[name] for name, parameter in wrapped.named_parameters())
+        for restored in (copy.deepcopy(wrapped), pickle.loads(pickle.dumps(wrapped)), clone_nn_module(wrapped)):
             assert restored.state_dict().keys() == model.state_dict().keys()
             torch.testing.assert_close(restored(*inputs), expected)
-        exported = torch.export.export(clone_nn_module(model), inputs, strict=True)
+        exported = torch.export.export(clone_nn_module(wrapped), inputs, strict=True)
         calls = [node for node in exported.graph.nodes if "invoke_subgraph" in str(node.target)]
         # Temporal attention changes strides on its first call; that one-off body is inlined by PyTorch.
         assert len(calls) == (2 if kind == "temporal_transformer" else 3)
         assert len({call.args[1] for call in calls}) == 1
         torch.testing.assert_close(exported.module()(*inputs), expected)
-        set_nested_compile_regions(model, False)
         assert [type(module) for module in model.modules()] == original_classes
         flat = torch.export.export(model, inputs, strict=True)
         assert not any("invoke_subgraph" in str(node.target) for node in flat.graph.nodes)
         torch.testing.assert_close(flat.module()(*inputs), expected)
 
 
-def _check_compile_export(monkeypatch, model_cls, model, config, enabled, reference=None):
+def _check_compile_export(monkeypatch, model_cls, model, config, enabled):
     config = model_cls._update_rbln_config(None, model, model.config, config)
+    original_modules = dict(model.named_modules())
+    original_classes = {name: type(module) for name, module in original_modules.items()}
+    references = []
+    flat_config = copy.deepcopy(config)
+    flat_config.nested_compile_region = False
+    monkeypatch.setattr(rebel, "compile_from_torch", lambda wrapped, **kwargs: references.append(wrapped))
+    model_cls.get_compiled_model(model, flat_config)
     exports = []
+    compiled_wrappers = []
 
     def export(wrapped, **kwargs):
         assert kwargs.get("model_trace_method") == ("export_strict" if enabled else None)
+        assert dict(model.named_modules()) == original_modules
+        assert {name: type(module) for name, module in model.named_modules()} == original_classes
+        reference = references[len(exports)]
+        reference_parameters = dict(reference.named_parameters())
+        assert wrapped.state_dict().keys() == reference.state_dict().keys()
+        assert all(parameter is reference_parameters[name] for name, parameter in wrapped.named_parameters())
+        if enabled:
+            assert not set(wrapped.modules()) & set(model.modules())
         inputs = tuple(torch.randn(shape) for _, shape, _ in kwargs["input_info"])
         with torch.no_grad():
-            expected = (reference if reference is not None else wrapped)(*inputs)
+            expected = reference(*inputs)
             torch.testing.assert_close(wrapped(*inputs), expected)
             exported = torch.export.export(clone_nn_module(wrapped), inputs, strict=True)
             calls = [node for node in exported.graph.nodes if "invoke_subgraph" in str(node.target)]
@@ -136,10 +153,18 @@ def _check_compile_export(monkeypatch, model_cls, model, config, enabled, refere
             )
             torch.testing.assert_close(exported.module()(*inputs), expected)
         exports.append(exported)
+        compiled_wrappers.append(wrapped)
         return exported
 
     monkeypatch.setattr(rebel, "compile_from_torch", export)
     model_cls.get_compiled_model(model, config)
+    assert dict(model.named_modules()) == original_modules
+    assert {name: type(module) for name, module in model.named_modules()} == original_classes
+    # A later flat compile must not strip regions from a previously constructed wrapper.
+    wrapper_classes = [[type(module) for module in wrapped.modules()] for wrapped in compiled_wrappers]
+    monkeypatch.setattr(rebel, "compile_from_torch", lambda wrapped, **kwargs: None)
+    model_cls.get_compiled_model(model, flat_config)
+    assert [[type(module) for module in wrapped.modules()] for wrapped in compiled_wrappers] == wrapper_classes
     return exports
 
 
@@ -265,10 +290,19 @@ def test_cosmos_compile_exports_regions(monkeypatch, enabled, family):
         nested_compile_region=enabled,
         create_runtimes=False,
     )
-    flat_config = copy.deepcopy(config)
-    flat_config.nested_compile_region = False
-    reference = RBLNCosmosTransformer3DModel._wrap_model_if_needed(copy.deepcopy(model), flat_config)
-    exports = _check_compile_export(monkeypatch, RBLNCosmosTransformer3DModel, model, config, enabled, reference)
+    exports = _check_compile_export(monkeypatch, RBLNCosmosTransformer3DModel, model, config, enabled)
     assert model.transformer_blocks[0].forward.__func__ is CosmosTransformerBlock.forward
     calls = [node for node in exports[0].graph.nodes if "invoke_subgraph" in str(node.target)]
     assert len(calls) == (3 if enabled else 0)
+
+
+def test_module_wrappers_preserve_aliases_and_isolate_training_state():
+    block = BasicTransformerBlock(dim=32, num_attention_heads=4, attention_head_dim=8)
+    model = torch.nn.ModuleList([block, block])
+    wrapped = wrap_diffusers_modules(model, DIFFUSERS_REGION_CLASSES).eval()
+    assert wrapped[0] is wrapped[1]
+    assert isinstance(wrapped[0], NestedCompileRegionMixin)
+    assert type(model[0]) is BasicTransformerBlock
+    assert all(module.training for module in model.modules())
+    assert all(not module.training for module in wrapped.modules())
+    assert all(a is b for a, b in zip(model.parameters(), wrapped.parameters(), strict=True))

@@ -28,6 +28,7 @@ from ....modeling import RBLNModel
 from ....modeling_base import Preprocessor
 from ....utils.logging import get_logger
 from ...configurations import RBLNAutoencoderKLConfig
+from ..nested_region import DIFFUSERS_REGION_CLASSES, wrap_diffusers_modules
 from .vae import RBLNRuntimeVAEDecoder, RBLNRuntimeVAEEncoder, _VAEDecoder, _VAEEncoder
 
 
@@ -90,6 +91,8 @@ class RBLNAutoencoderKL(RBLNModel):
 
     @classmethod
     def get_compiled_model(cls, model, rbln_config: RBLNAutoencoderKLConfig) -> dict[str, rebel.RBLNCompiledModel]:
+        if rbln_config.nested_compile_region:
+            model = wrap_diffusers_modules(model, DIFFUSERS_REGION_CLASSES)
         if rbln_config.uses_encoder:
             expected_models = ["encoder", "decoder"]
         else:
@@ -109,7 +112,7 @@ class RBLNAutoencoderKL(RBLNModel):
                 rbln_compile_config=rbln_config.compile_cfgs[i],
                 create_runtimes=rbln_config.create_runtimes,
                 device=rbln_config.device_map[model_name],
-                nested_compile_region=rbln_config.nested_compile_region,
+                **({"model_trace_method": "export_strict"} if rbln_config.nested_compile_region else {}),
             )
 
         return compiled_models

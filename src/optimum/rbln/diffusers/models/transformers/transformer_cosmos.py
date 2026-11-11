@@ -37,6 +37,7 @@ from ....modeling_base import Preprocessor
 from ....modeling_rope_utils import np_cos, np_sin
 from ....utils.logging import get_logger
 from ...configurations import RBLNCosmosTransformer3DModelConfig
+from ..nested_region import DiffusersModuleWrapper, wrap_diffusers_modules
 
 
 if TYPE_CHECKING:
@@ -151,7 +152,7 @@ class CosmosPerFrameAdaLNMixin:
         return hidden_states
 
 
-class CosmosBlockRegion(CosmosPerFrameAdaLNMixin, CosmosTransformerBlock):
+class CosmosBlockRegion(DiffusersModuleWrapper, CosmosPerFrameAdaLNMixin, CosmosTransformerBlock):
     @torch.compiler.nested_compile_region
     def forward_region(
         self,
@@ -185,15 +186,16 @@ class CosmosTransformer3DModelWrapper(CosmosPerFrameAdaLNMixin, torch.nn.Module)
         nested_compile_region: bool = False,
     ) -> None:
         super().__init__()
-        self.model = model
+        self.model = (
+            wrap_diffusers_modules(model, {CosmosTransformerBlock: CosmosBlockRegion})
+            if nested_compile_region
+            else model
+        )
         self.num_latent_frames = num_latent_frames
         self.latent_height = latent_height
         self.latent_width = latent_width
         self.p_t, self.p_h, self.p_w = model.config.patch_size
         self.nested_compile_region = nested_compile_region
-        for block in model.transformer_blocks:
-            if type(block) in (CosmosTransformerBlock, CosmosBlockRegion):
-                block.__class__ = CosmosBlockRegion if nested_compile_region else CosmosTransformerBlock
 
     def _run_block(self, block, *args, **kwargs):
         if self.nested_compile_region:
@@ -458,6 +460,18 @@ class RBLNCosmosTransformer3DModel(RBLNModel):
             latent_width=latent_width,
             nested_compile_region=rbln_config.nested_compile_region,
         ).eval()
+
+    @classmethod
+    def get_compiled_model(cls, model: torch.nn.Module, rbln_config: RBLNModelConfig):
+        if not rbln_config.nested_compile_region:
+            return super().get_compiled_model(model, rbln_config)
+        return cls.compile(
+            cls._wrap_model_if_needed(model, rbln_config),
+            rbln_compile_config=rbln_config.compile_cfgs[0],
+            create_runtimes=rbln_config.create_runtimes,
+            device=rbln_config.device,
+            model_trace_method="export_strict",
+        )
 
     @classmethod
     def update_rbln_config_using_pipe(
