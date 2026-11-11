@@ -12,29 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import inspect
 import re
 import threading
-from functools import lru_cache
-from typing import Any
+from typing import Any, ClassVar
 
 import rebel
 import torch
-
-
-@lru_cache(maxsize=1)
-def compiler_num_devices_kwarg() -> str:
-    """Return the kwarg name the installed rebel-compiler expects for the device count.
-
-    Compilers expose this as `num_devices`, but ones predating that name only accept
-    `tensor_parallel_size`. `compile_from_torch` forwards `**kwargs` to `compile`, so we probe
-    `rebel.compile`'s signature to pick the name the installed compiler accepts.
-    """
-    try:
-        params = inspect.signature(rebel.compile).parameters
-    except (ValueError, TypeError):
-        return "num_devices"
-    return "num_devices" if "num_devices" in params else "tensor_parallel_size"
 
 
 def _resolve_npu(npu: str | None = None) -> str:
@@ -103,6 +86,26 @@ def parse_byte_size(value: int | str) -> int:
     return nbytes
 
 
+def resolve_npu_or_none(npu: str | None = None) -> str | None:
+    """The target NPU: the name pinned on the config, else the attached device's, else None.
+
+    Unlike `_resolve_npu` this does not raise — callers that only pick defaults or bounds must
+    keep working on a host with no NPU attached.
+    """
+    if npu is not None:
+        return npu
+    return rebel.get_npu_name(0) if rebel.npu_is_available(0) else None
+
+
+def npu_is_cr13_or_later(npu: str | None = None) -> bool:
+    """Whether the NPU is RBLN-CR13 or later — every CR except CR03 (rebel-compiler's `_is_evt1`)."""
+    npu = resolve_npu_or_none(npu)
+    if not npu:
+        return False
+    normalized = normalize_npu(npu)
+    return normalized.startswith("RBLN-CR") and normalized != "RBLN-CR0"
+
+
 def normalize_npu(npu: str) -> str:
     """Normalize the NPU string by removing the form factor."""
     match = re.match(r"(RBLN-CA|RBLN-CR)(\d+)", npu)
@@ -159,7 +162,7 @@ def tp_and_devices_are_ok(
 
 
 class RBLNPytorchRuntime:
-    mandatory_members = []
+    mandatory_members: ClassVar[list[str]] = []
 
     def __init__(self, runtime: rebel.Runtime, **kwargs) -> None:
         self.runtime = runtime
@@ -172,12 +175,13 @@ class RBLNPytorchRuntime:
     def __call__(self, *args: Any, **kwds: Any) -> Any:
         return self.forward(*args, **kwds)
 
-    def forward(self, *args: list["torch.Tensor"], **kwargs: "torch.Tensor"):
+    def forward(self, *args: Any, **kwargs: Any) -> Any:
         # filtering useless args or kwarg such as None.
-        args = list(filter(lambda arg: isinstance(arg, torch.Tensor), args))
-        kwargs = dict(filter(lambda kwarg: isinstance(kwarg[1], torch.Tensor) or kwarg[0] == "out", kwargs.items()))
-        output = self.runtime(*args, **kwargs)
-        return output
+        tensor_args = [arg for arg in args if isinstance(arg, torch.Tensor)]
+        tensor_kwargs = {
+            key: value for key, value in kwargs.items() if isinstance(value, torch.Tensor) or key == "out"
+        }
+        return self.runtime(*tensor_args, **tensor_kwargs)
 
     def __repr__(self) -> str:
         return repr(self.runtime)
@@ -192,12 +196,15 @@ class UnavailableRuntime:
 
     This class is returned by RBLNBaseModel._from_compiled_models when rbln_config.create_runtimes=False.
     It provides proper error messages when users attempt to use a model that was loaded without
-    runtime creation.
+    runtime creation. A model loaded this way also leaves its compiled models on disk until
+    `compiled_models` is accessed.
 
     Usage:
         1. When compiling models on machines without NPU hardware
         2. When preparing models for later deployment
         3. When only model compilation is needed, not inference
+        4. When a node needs only some submodules of a composite model, e.g. a decoder node in a
+           disaggregated encoder setup loading the vision encoder with `create_runtimes=False`
 
     To use a model with runtimes, either:
         - Load the model with from_pretrained(..., rbln_create_runtimes=True)

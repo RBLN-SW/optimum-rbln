@@ -76,7 +76,11 @@ class RBLNPageTableManager:
             raise RuntimeError(self.NO_BLOCKS_ERROR)
 
     def get_block_tables(
-        self, cache_position: torch.Tensor, batch_idx: int = None, batch_size: int = None, phase: str = "prefill"
+        self,
+        cache_position: torch.Tensor,
+        batch_idx: int | None = None,
+        batch_size: int | None = None,
+        phase: str = "prefill",
     ) -> torch.Tensor:
         """
         Manages and returns the KV cache block tables.
@@ -132,9 +136,9 @@ class RBLNPageTableManager:
 
     # Whether block_tables and local_block_tables are provided by the user
     def is_external_block_tables(self, block_tables: torch.Tensor | None, local_block_tables: torch.Tensor | None):
-        if self.rbln_config.cache_impl == "static" and block_tables is None:
-            return False
-        elif self.rbln_config.cache_impl == "sliding_window" and local_block_tables is None:
+        if (self.rbln_config.cache_impl == "static" and block_tables is None) or (
+            self.rbln_config.cache_impl == "sliding_window" and local_block_tables is None
+        ):
             return False
         elif self.rbln_config.cache_impl == "hybrid":
             if (block_tables is not None) != (local_block_tables is not None):
@@ -150,7 +154,7 @@ class RBLNPageTableManager:
         self,
         batch_size,
         cache_position: torch.Tensor,
-        batch_idx: int = None,
+        batch_idx: int | None = None,
         phase: str = "prefill",
         block_tables: torch.Tensor | None = None,
         local_block_tables: torch.Tensor | None = None,
@@ -162,6 +166,17 @@ class RBLNPageTableManager:
             )
 
         return block_tables, local_block_tables, is_external_block_tables
+
+
+def _require_sorted_cache_position(cache_position: torch.Tensor) -> None:
+    # last line of defense before the in-memory kernel: catches callers that bypass
+    # generate()/forward() (e.g. serving stacks driving the runtime directly)
+    lengths = cache_position.reshape(-1)
+    if not torch.all(lengths[:-1] >= lengths[1:]):
+        raise ValueError(
+            "This model was compiled with `requires_batch_sort`: decode batches must be sorted by "
+            f"sequence length (descending), but got cache_position {lengths.tolist()}."
+        )
 
 
 class RBLNRuntimeModel(RBLNPytorchRuntime):
@@ -213,7 +228,7 @@ class RBLNRuntimeModel(RBLNPytorchRuntime):
         self,
         input_ids: torch.LongTensor | None = None,
         inputs_embeds: torch.Tensor | None = None,
-        cache_position: torch.Tensor = None,
+        cache_position: torch.Tensor | None = None,
         attention_mask: torch.Tensor | None = None,
         batch_idx: int | None = None,
         block_tables: torch.Tensor | None = None,
@@ -264,9 +279,9 @@ class RBLNRuntimeModel(RBLNPytorchRuntime):
     def decode_forward(
         self,
         inputs: torch.Tensor,
-        cache_position: torch.Tensor = None,
-        block_tables: torch.Tensor = None,
-        is_external_block_tables: bool = None,
+        cache_position: torch.Tensor | None = None,
+        block_tables: torch.Tensor | None = None,
+        is_external_block_tables: bool | None = None,
         attention_mask: torch.Tensor | None = None,
         position_embed: torch.Tensor | None = None,
         position_ids: torch.Tensor | None = None,
@@ -294,6 +309,9 @@ class RBLNRuntimeModel(RBLNPytorchRuntime):
         if batch_size != cache_position.shape[0]:
             raise RuntimeError(f"Cache position size mismatch: got {cache_position.shape[0]}, expected {batch_size}.")
 
+        if batch_size > 1 and self.rbln_config.requires_batch_sort:
+            _require_sorted_cache_position(cache_position)
+
         if self.rbln_config.use_local_attention:
             local_block_tables = (
                 local_block_tables
@@ -317,12 +335,11 @@ class RBLNRuntimeModel(RBLNPytorchRuntime):
 
                     if self.dec_attn_mask is not None and self.batch_size < self.dec_attn_mask.shape[0]:
                         self.dec_attn_mask = self.dec_attn_mask[: self.batch_size]
+                elif is_external_block_tables:
+                    self.dec_attn_mask[b_idx].fill_(0)
+                    self.dec_attn_mask[b_idx, :, :, : decoding_step + 1] = 1
                 else:
-                    if is_external_block_tables:
-                        self.dec_attn_mask[b_idx].fill_(0)
-                        self.dec_attn_mask[b_idx, :, :, : decoding_step + 1] = 1
-                    else:
-                        self.dec_attn_mask[b_idx, :, :, decoding_step] = 1
+                    self.dec_attn_mask[b_idx, :, :, decoding_step] = 1
 
             attention_mask = self.dec_attn_mask
 
@@ -419,8 +436,6 @@ class RBLNRuntimeModel(RBLNPytorchRuntime):
         # Overwrite position_ids and padded_cache_lengths
         if self.rbln_config.use_position_ids and position_ids is None:
             position_ids = cache_position.clone()
-        else:
-            position_ids = position_ids
 
         padded_cache_lengths = 0
 
@@ -542,7 +557,7 @@ class RBLNRuntimeModel(RBLNPytorchRuntime):
             inputs, cache_position, attention_mask, position_ids, position_embed, token_type_ids=token_type_ids
         )
 
-        if query_length > self.rbln_config.prefill_chunk_size and self.rbln_config.use_bidirectional_prefill:
+        if query_length > self.rbln_config.prefill_chunk_size and self.rbln_config._is_prefix_lm:
             raise ValueError(
                 f"Input length ({query_length}) exceeds `prefill_chunk_size` "
                 f"({self.rbln_config.prefill_chunk_size}). This model prefills with bidirectional "
@@ -627,11 +642,9 @@ class RBLNRuntimeModel(RBLNPytorchRuntime):
         padding_size = (self.rbln_config.prefill_chunk_size - query_length) % self.rbln_config.prefill_chunk_size
         # `-padding_size` as a slice end drops the whole sequence when padding_size == 0 ([:, :-0] == [:, :0])
         trim_end = -padding_size if padding_size > 0 else None
-        if self.rbln_config.logits_to_keep == 1:
-            output_logits = output_logits
-        elif self.rbln_config.logits_to_keep > 1:
+        if self.rbln_config.logits_to_keep > 1:
             output_logits = output_logits[:, -padding_size - self.rbln_config.logits_to_keep : trim_end, :]
-        else:
+        elif self.rbln_config.logits_to_keep != 1:
             output_logits = output_logits[:, :trim_end, :]
 
         all_hidden_states = None
@@ -875,7 +888,7 @@ class RBLNDecoderOnlyChunkedMultimodalPrefillMixin:
         self,
         input_ids: torch.LongTensor | None = None,
         inputs_embeds: torch.Tensor | None = None,
-        cache_position: torch.Tensor = None,
+        cache_position: torch.Tensor | None = None,
         attention_mask: torch.Tensor | None = None,
         batch_idx: int | None = None,
         block_tables: torch.Tensor | None = None,
@@ -931,11 +944,11 @@ class RBLNDecoderOnlyChunkedMultimodalPrefillMixin:
     def prefill_forward(
         self,
         inputs: torch.Tensor,
-        cache_position: torch.Tensor = None,
+        cache_position: torch.Tensor | None = None,
         attention_mask: torch.Tensor | None = None,
-        batch_idx: int = None,
-        block_tables: torch.Tensor = None,
-        is_external_block_tables: bool = None,
+        batch_idx: int | None = None,
+        block_tables: torch.Tensor | None = None,
+        is_external_block_tables: bool | None = None,
         position_ids: torch.Tensor | None = None,
         position_embed: torch.Tensor | None = None,
         token_type_ids: torch.Tensor | None = None,

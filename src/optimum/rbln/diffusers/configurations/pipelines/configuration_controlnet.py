@@ -314,3 +314,11 @@ class RBLNStableDiffusionXLControlNetImg2ImgPipelineConfig(RBLNStableDiffusionXL
     """
 
     _vae_uses_encoder = True
+
+
+__all__ = [
+    "RBLNStableDiffusionControlNetImg2ImgPipelineConfig",
+    "RBLNStableDiffusionControlNetPipelineConfig",
+    "RBLNStableDiffusionXLControlNetImg2ImgPipelineConfig",
+    "RBLNStableDiffusionXLControlNetPipelineConfig",
+]

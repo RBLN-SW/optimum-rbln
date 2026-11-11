@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import contextlib
 import json
 from pathlib import Path
 
@@ -22,7 +23,7 @@ from huggingface_hub.errors import LocalEntryNotFoundError
 def pull_compiled_model_from_hub(
     model_id: str | Path,
     subfolder: str,
-    token: bool | str,
+    token: bool | str | None,
     revision: str | None,
     cache_dir: str | None,
     force_download: bool,
@@ -60,7 +61,7 @@ def pull_compiled_model_from_hub(
             # If local_files_only is False, ensure all files are downloaded
             # Download config file (will use cache if available, download if missing)
             rbln_config_cache_path = hf_hub_download(
-                repo_id=model_id,
+                repo_id=str(model_id),
                 filename=config_filename,
                 token=token,
                 revision=revision,
@@ -73,9 +74,10 @@ def pull_compiled_model_from_hub(
             # Download all .rbln files found in cache (hf_hub_download will use cache if available)
             for rbln_file in rbln_files:
                 filename = rbln_file.name if subfolder == "" else f"{subfolder}/{rbln_file.name}"
-                try:
+                # File might not exist in repo, skip it
+                with contextlib.suppress(LocalEntryNotFoundError):
                     hf_hub_download(
-                        repo_id=model_id,
+                        repo_id=str(model_id),
                         filename=filename,
                         token=token,
                         revision=revision,
@@ -83,9 +85,6 @@ def pull_compiled_model_from_hub(
                         force_download=force_download,
                         local_files_only=False,
                     )
-                except LocalEntryNotFoundError:
-                    # File might not exist in repo, skip it
-                    pass
 
             # Note: We skip the API call here since we're using cached files
             # If there are additional files in the repo that aren't cached,
@@ -97,7 +96,7 @@ def pull_compiled_model_from_hub(
     if local_files_only:
         try:
             rbln_config_cache_path = hf_hub_download(
-                repo_id=model_id,
+                repo_id=str(model_id),
                 filename=config_filename,
                 token=token,
                 revision=revision,
@@ -124,7 +123,7 @@ def pull_compiled_model_from_hub(
     repo_files = list(
         map(
             Path,
-            HfApi().list_repo_files(model_id, revision=revision, token=huggingface_token),
+            HfApi().list_repo_files(str(model_id), revision=revision, token=huggingface_token),
         )
     )
 
@@ -140,7 +139,7 @@ def pull_compiled_model_from_hub(
 
     for filename in filenames:
         rbln_config_cache_path = hf_hub_download(
-            repo_id=model_id,
+            repo_id=str(model_id),
             filename=filename,
             token=token,
             revision=revision,
@@ -178,7 +177,7 @@ def validate_files(
         raise FileNotFoundError(f"Could not find any rbln model file in {location}")
 
 
-def _get_huggingface_token(token: bool | str) -> str:
+def _get_huggingface_token(token: bool | str | None) -> str | None:
     if isinstance(token, str):
         return token
     return get_token()

@@ -1,11 +1,19 @@
-import math
-
 import torch
-import torch.nn as nn
+from torch import nn
 from transformers import PreTrainedModel
 
-from ..decoderonly.decoderonly_architecture import DecoderOnlyWrapper, apply_rotary_pos_emb
+from ..decoderonly.decoderonly_architecture import DecoderOnlyWrapper, NestedCompileRegionMixin, rotate_half
 from .configuration_qwen2_5_vl import RBLNQwen2_5_VisionTransformerPretrainedModelConfig
+
+
+def apply_rotary_pos_emb_vision(q, k, cos, sin):
+    # Mirrors HF `apply_rotary_pos_emb_vision`: rotate in fp32 and round once.
+    orig_q_dtype, orig_k_dtype = q.dtype, k.dtype
+    q, k = q.float(), k.float()
+    cos, sin = cos.float(), sin.float()
+    q_embed = (q * cos) + (rotate_half(q) * sin)
+    k_embed = (k * cos) + (rotate_half(k) * sin)
+    return q_embed.to(orig_q_dtype), k_embed.to(orig_k_dtype)
 
 
 class Qwen2_5_VisionTransformerWrapper(nn.Module):
@@ -23,10 +31,11 @@ class Qwen2_5_VisionTransformerWrapper(nn.Module):
         window_seq_len: int,
         rbln_config: RBLNQwen2_5_VisionTransformerPretrainedModelConfig,
     ):
+        block_cls = Qwen2_5_VLVisionBlockRegion if rbln_config.nested_compile_region else Qwen2_5_VLVisionBlock
         wrapped_blocks = []
         for i, block in enumerate(blocks):
-            is_full_attn = True if i in self.fullatt_block_indexes else False
-            wrapped_blocks.append(Qwen2_5_VLVisionBlock(block, is_full_attn, window_seq_len, rbln_config))
+            is_full_attn = i in self.fullatt_block_indexes
+            wrapped_blocks.append(block_cls(block, is_full_attn, window_seq_len, rbln_config))
         return nn.ModuleList(wrapped_blocks)
 
     def forward(
@@ -84,6 +93,10 @@ class Qwen2_5_VLVisionBlock(torch.nn.Module):
         return hidden_states
 
 
+class Qwen2_5_VLVisionBlockRegion(NestedCompileRegionMixin, Qwen2_5_VLVisionBlock):
+    """Vision block with a nested compile region around its forward call."""
+
+
 class Qwen2_5_VLVisionFullAttention(nn.Module):
     def __init__(self, model: nn.Module, rbln_config: RBLNQwen2_5_VisionTransformerPretrainedModelConfig) -> None:
         super().__init__()
@@ -93,7 +106,7 @@ class Qwen2_5_VLVisionFullAttention(nn.Module):
         self.head_dim = getattr(model, "head_dim", model.proj.in_features // model.num_heads)
         self.qkv = model.qkv
         self.proj = model.proj
-        self.scale = torch.tensor(1 / math.sqrt(self.head_dim), dtype=rbln_config.dtype)
+        self.scale = self.head_dim**-0.5
 
     def forward(
         self,
@@ -108,11 +121,12 @@ class Qwen2_5_VLVisionFullAttention(nn.Module):
         )
 
         cos, sin = position_embeddings
-        q, k = apply_rotary_pos_emb(q, k, cos, sin)
+        q, k = apply_rotary_pos_emb_vision(q, k, cos, sin)
 
         attn_weights = torch.matmul(q, k.transpose(2, 3)) * self.scale
         attn_weights = attn_weights + attn_masks
-        attn_weights = nn.functional.softmax(attn_weights, dim=-1, dtype=hidden_states.dtype)
+        # HF eager attention: softmax in fp32, probabilities back in the query dtype.
+        attn_weights = nn.functional.softmax(attn_weights, dim=-1, dtype=torch.float32).to(q.dtype)
         attn_output = torch.matmul(attn_weights, v)
         attn_output = attn_output.transpose(1, 2)
         attn_output = attn_output.reshape(1, seq_length, -1)
@@ -133,7 +147,7 @@ class Qwen2_5_VLVisionWindowAttention(nn.Module):
         self.qkv = model.qkv
         self.proj = model.proj
         self.window_seq_len = window_seq_len
-        self.scale = torch.tensor(1 / math.sqrt(self.head_dim), dtype=rbln_config.dtype)
+        self.scale = self.head_dim**-0.5
 
     def forward(
         self,
@@ -144,9 +158,9 @@ class Qwen2_5_VLVisionWindowAttention(nn.Module):
         seq_length = hidden_states.shape[0]
         num_windows = seq_length // self.window_seq_len
 
-        window_hidden_states = []
-        for i in range(0, seq_length, self.window_seq_len):
-            window_hidden_states.append(hidden_states[i : i + self.window_seq_len])
+        window_hidden_states = [
+            hidden_states[i : i + self.window_seq_len] for i in range(0, seq_length, self.window_seq_len)
+        ]
         hidden_states = torch.stack(window_hidden_states)
 
         q, k, v = (
@@ -158,12 +172,13 @@ class Qwen2_5_VLVisionWindowAttention(nn.Module):
         cos, sin = position_embeddings
         cos = cos.reshape(num_windows, 1, seq_length // num_windows, -1)
         sin = sin.reshape(num_windows, 1, seq_length // num_windows, -1)
-        q, k = apply_rotary_pos_emb(q, k, cos, sin)
+        q, k = apply_rotary_pos_emb_vision(q, k, cos, sin)
 
         attn_weights = torch.matmul(q, k.transpose(2, 3)) * self.scale
 
         attn_weights = attn_weights + attn_masks
-        attn_weights = nn.functional.softmax(attn_weights, dim=-1)
+        # HF eager attention: softmax in fp32, probabilities back in the query dtype.
+        attn_weights = nn.functional.softmax(attn_weights, dim=-1, dtype=torch.float32).to(q.dtype)
         attn_output = torch.matmul(attn_weights, v)
         attn_output = attn_output.transpose(1, 2)
         attn_output = attn_output.reshape(1, seq_length, -1)
@@ -192,21 +207,6 @@ class Qwen2_5_VL_LanguageModelWrapper(DecoderOnlyWrapper):
         attention_mask = args.pop(0) if self.rbln_config.use_attention_mask else None
         lora_int_id = args.pop(0) if self.rbln_config.lora_config else None
         past_key_values = args
-
-        if len(past_key_values) != 2 * self.num_hidden_layers:
-            raise ValueError(
-                f"Different past_key_values to model's config. {len(past_key_values)} != {2 * self.num_hidden_layers}"
-            )
-
-        # [key, value] * n_layer -> ( (key, value) ) * n_layer
-        # cache shape : batch, n_heads, 1, max_seq_len, head_dim
-        _past_key_values = []
-        for i in range(self.num_hidden_layers):
-            key_states = past_key_values[i * 2]
-            value_states = past_key_values[i * 2 + 1]
-            past_key_value = [key_states, value_states]
-            _past_key_values.append(past_key_value)
-        past_key_values = _past_key_values
 
         return (
             input_ids,

@@ -14,9 +14,9 @@
 
 import importlib
 import inspect
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Union
+from typing import Any
 
 import torch
 from transformers import (
@@ -32,16 +32,14 @@ from transformers.models.paligemma.modeling_paligemma import PaligemmaModelOutpu
 
 from ....configuration_utils import RBLNModelConfig
 from ....modeling import RBLNModel
+from ....modeling_base import Preprocessor
 from ....utils.logging import get_logger
+from ...utils.multimodal_batch_sort import RBLNImageIndexedBatchSortMixin
 from ...utils.rbln_runtime_wrapper import LoopProcessor
-from ..decoderonly.generation_decoderonly import RBLNDecoderOnlyGenerationMixin
 from ..decoderonly.modeling_decoderonly import RBLNDecoderOnlyOutput
 
 
 logger = get_logger(__name__)
-
-if TYPE_CHECKING:
-    from transformers import AutoFeatureExtractor, AutoProcessor, AutoTokenizer, PretrainedConfig
 
 
 class LoopVisionTower(LoopProcessor):
@@ -62,7 +60,7 @@ class LoopVisionTower(LoopProcessor):
         )
 
 
-class RBLNPaliGemmaForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMixin):
+class RBLNPaliGemmaForConditionalGeneration(RBLNModel, RBLNImageIndexedBatchSortMixin):
     """
     RBLNPaliGemmaForConditionalGeneration is a multi-modal model that integrates vision and language processing capabilities,
     optimized for RBLN NPUs. It is designed for conditional generation tasks that involve both image and text inputs.
@@ -93,6 +91,8 @@ class RBLNPaliGemmaForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGeneration
         {"name": "vision_tower"},
         {"name": "language_model"},
     ]
+    # one image per sample: pixel_values is batch-first (batch_size, C, H, W)
+    _batch_sortable_kwargs = (*RBLNImageIndexedBatchSortMixin._batch_sortable_kwargs, "pixel_values")
 
     def __getattr__(self, __name: str) -> Any:
         def redirect(func):
@@ -104,9 +104,6 @@ class RBLNPaliGemmaForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGeneration
             return redirect(val)
         return val
 
-    def can_generate(self):
-        return True
-
     @classmethod
     def _update_submodule_rbln_config(
         cls,
@@ -115,12 +112,16 @@ class RBLNPaliGemmaForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGeneration
         model: "PreTrainedModel",
         submodule_config: PretrainedConfig,
         submodule_rbln_config: RBLNModelConfig,
-        preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"] | None,
+        preprocessors: Sequence[Preprocessor] | None,
     ):
         if submodule_name == "language_model":
             submodule_config.use_sliding_window = False
-        else:
-            return submodule_rbln_config
+            if not (submodule_rbln_config.use_attention_mask and submodule_rbln_config.use_position_ids):
+                raise ValueError(
+                    "PaliGemma's language model prefills bidirectionally over the prompt, which requires "
+                    "use_attention_mask=True and use_position_ids=True."
+                )
+            submodule_rbln_config._is_prefix_lm = True
 
         return submodule_rbln_config
 
@@ -311,17 +312,20 @@ class RBLNPaliGemmaForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGeneration
 
     def forward(
         self,
-        input_ids: torch.LongTensor = None,
-        pixel_values: torch.FloatTensor = None,
-        attention_mask: torch.LongTensor = None,
-        position_ids: torch.LongTensor = None,
-        token_type_ids: torch.LongTensor = None,
+        input_ids: torch.LongTensor | None = None,
+        pixel_values: torch.FloatTensor | None = None,
+        attention_mask: torch.LongTensor | None = None,
+        position_ids: torch.LongTensor | None = None,
+        token_type_ids: torch.LongTensor | None = None,
         inputs_embeds: torch.FloatTensor | None = None,
-        cache_position: torch.Tensor = None,
+        cache_position: torch.Tensor | None = None,
         generate_idx: torch.Tensor | None = None,
         return_dict: bool | None = None,
+        inputs_sorted: bool = False,
         **kwargs,
     ) -> tuple | RBLNDecoderOnlyOutput:
+        return_dict = return_dict if return_dict is not None else self.config.return_dict
+        self._require_sorted_batch_inputs(inputs_embeds if inputs_embeds is not None else input_ids, inputs_sorted)
         # Prefill
         if cache_position is None:
             inputs_embeds = self._preprocess_prefill(
@@ -429,12 +433,16 @@ class RBLNPaliGemmaModel(RBLNModel):
         model: "PreTrainedModel",
         submodule_config: PretrainedConfig,
         submodule_rbln_config: RBLNModelConfig,
-        preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"] | None,
+        preprocessors: Sequence[Preprocessor] | None,
     ):
         if submodule_name == "language_model":
             submodule_config.use_sliding_window = False
-        else:
-            return submodule_rbln_config
+            if not (submodule_rbln_config.use_attention_mask and submodule_rbln_config.use_position_ids):
+                raise ValueError(
+                    "PaliGemma's language model prefills bidirectionally over the prompt, which requires "
+                    "use_attention_mask=True and use_position_ids=True."
+                )
+            submodule_rbln_config._is_prefix_lm = True
 
         return submodule_rbln_config
 
@@ -556,7 +564,7 @@ class RBLNPaliGemmaModel(RBLNModel):
         Returns:
             PaligemmaModelOutputWithPast or tuple(torch.FloatTensor)
         """
-        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+        return_dict = return_dict if return_dict is not None else self.config.return_dict
         output_hidden_states = (
             output_hidden_states if output_hidden_states is not None else self.rbln_config.output_hidden_states
         )
@@ -582,3 +590,9 @@ class RBLNPaliGemmaModel(RBLNModel):
             image_hidden_states=image_features if pixel_values is not None else None,
             hidden_states=outputs.hidden_states if output_hidden_states else None,
         )
+
+
+__all__ = [
+    "RBLNPaliGemmaForConditionalGeneration",
+    "RBLNPaliGemmaModel",
+]

@@ -16,14 +16,19 @@
 import torch
 from torch import nn
 
-from ...utils.moe import compute_masked_routing_weight_softmax_first
+from ...utils.moe import compute_masked_routing_weight_softmax_first, split_fused_experts
 from ..decoderonly.configuration_decoderonly import RBLNLoRAConfig
-from ..decoderonly.decoderonly_architecture import DecoderOnlyAttention, DecoderOnlyLayer, DecoderOnlyWrapper
+from ..decoderonly.decoderonly_architecture import (
+    DecoderOnlyAttention,
+    DecoderOnlyLayer,
+    DecoderOnlyWrapper,
+    NestedCompileRegionMixin,
+)
 
 
 class MixtralWrapper(DecoderOnlyWrapper):
     def get_rbln_layer_class(self):
-        return MixtralLayer
+        return MixtralLayerRegion if self.rbln_config.nested_compile_region else MixtralLayer
 
 
 class MixtralLayer(DecoderOnlyLayer):
@@ -34,13 +39,17 @@ class MixtralLayer(DecoderOnlyLayer):
         self.mlp = MixtralSparseMoeBlock(layer.mlp)
 
 
+class MixtralLayerRegion(NestedCompileRegionMixin, MixtralLayer):
+    """Decoder layer with a nested compile region around its forward call."""
+
+
 class MixtralSparseMoeBlock(nn.Module):
     def __init__(self, model: nn.Module):
         super().__init__()
         self.top_k = model.top_k
         gate_weight = model.gate.weight
         gate = nn.Linear(gate_weight.shape[1], gate_weight.shape[0], bias=False)
-        gate.weight = nn.Parameter(gate_weight.detach().clone())
+        gate.weight = model.gate.weight
         self.gate = gate
         self.experts = MixtralBlockSparseTop2MLP(model.experts, self.top_k)
 
@@ -60,11 +69,10 @@ class MixtralBlockSparseTop2MLP(nn.Module):
         self.top_k = top_k
 
         # Fused MixtralExperts: gate_up_proj [E, 2I, H], down_proj [E, H, I].
-        gate_up = experts.gate_up_proj.detach().clone()
-        intermediate_size = gate_up.shape[1] // 2
-        self.w1_weight = nn.Parameter(gate_up[:, :intermediate_size, :].contiguous())
-        self.w3_weight = nn.Parameter(gate_up[:, intermediate_size:, :].contiguous())
-        self.w2_weight = nn.Parameter(experts.down_proj.detach().clone().contiguous())
+        gate, up, down = split_fused_experts(experts)
+        self.w1_weight = nn.Parameter(gate)
+        self.w3_weight = nn.Parameter(up)
+        self.w2_weight = nn.Parameter(down)
 
     def forward(self, x, router_logits):
         masked_routing_weight = compute_masked_routing_weight_softmax_first(

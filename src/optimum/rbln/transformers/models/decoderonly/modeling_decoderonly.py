@@ -13,9 +13,9 @@
 # limitations under the License.
 
 import inspect
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Union
+from typing import Any
 
 import rebel
 import torch
@@ -26,7 +26,9 @@ from transformers.modeling_outputs import BaseModelOutputWithPast
 
 from ....configuration_utils import RBLNCompileConfig
 from ....modeling import RBLNModel
+from ....modeling_base import Preprocessor
 from ....utils.logging import get_logger
+from ....utils.runtime_utils import npu_is_cr13_or_later
 from ...cache_utils import FullAttentionKVCacheMeta, SlidingWindowAttentionKVCacheMeta
 from ...modeling_attention_utils import (
     RBLNDecoderOnlyFlashAttentionMixin,
@@ -39,13 +41,10 @@ from ...utils.rbln_quantization import get_quantized_model
 from .configuration_decoderonly import RBLNDecoderOnlyModelConfig, RBLNDecoderOnlyModelForCausalLMConfig
 from .decoderonly_architecture import DecoderOnlyWrapper
 from .decoderonly_runtime_utils import RBLNPageTableManager, RBLNRuntimeModel
-from .generation_decoderonly import RBLNDecoderOnlyGenerationMixin, _is_batch_attn_opt_enabled
+from .generation_decoderonly import RBLNDecoderOnlyGenerationMixin
 
 
 logger = get_logger()
-
-if TYPE_CHECKING:
-    from transformers import AutoFeatureExtractor, AutoProcessor, AutoTokenizer
 
 
 class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
@@ -131,7 +130,7 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
 
     @property
     def logits_last_dim(self):
-        return self.config.hidden_size
+        return self.config.get_text_config().hidden_size
 
     @classmethod
     def get_quantized_model(
@@ -197,11 +196,12 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
             torch.save(save_dict, save_dir_path / subfolder / "torch_artifacts.pth")
 
     def _create_embedding_layer(self):
+        text_config = self.config.get_text_config()
         with no_init_weights():
             embed_tokens = torch.nn.Embedding(
-                self.config.vocab_size,
-                self.config.hidden_size,
-                self.config.pad_token_id,
+                text_config.vocab_size,
+                text_config.hidden_size,
+                text_config.pad_token_id,
                 dtype=self.rbln_config.dtype,
             )
         return embed_tokens
@@ -210,9 +210,6 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
         if not self.can_generate():
             raise ValueError("Decode stage is not supported in this model.")
         return self.decoder
-
-    def can_generate(self):
-        return self.rbln_config.can_generate
 
     def get_input_embeddings(self):
         return self.embed_tokens
@@ -244,6 +241,7 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
                 quantization.maybe_set_quantization_env()
             original_linear = torch.nn.functional.linear
             torch.nn.functional.linear = torch.ops.rbln_custom_ops.linear
+            trace_options = {"model_trace_method": "export_strict"} if rbln_config.nested_compile_region else {}
             compiled_model = cls.compile(
                 wrapped_model,
                 compile_config,
@@ -251,6 +249,7 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
                 device=rbln_config.device,
                 example_inputs=example_inputs,
                 compile_context=compile_context,
+                **trace_options,
             )
             return compiled_model
         finally:
@@ -345,7 +344,7 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
         return model
 
     @classmethod
-    def use_query_position(cls, use_local_attention: bool, is_prefill: bool = True, logits_to_keep: int = None):
+    def use_query_position(cls, use_local_attention: bool, is_prefill: bool = True, logits_to_keep: int | None = None):
         return is_prefill and (use_local_attention or logits_to_keep == 1)
 
     @classmethod
@@ -358,10 +357,8 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
     ):
         model_config = model_config.get_text_config()
         num_attention_heads = getattr(model_config, "n_head", None) or model_config.num_attention_heads
-        num_key_value_heads = getattr(model_config, "num_key_value_heads", None) or num_attention_heads
         num_hidden_layers = getattr(model_config, "n_layer", None) or model_config.num_hidden_layers
         hidden_size = getattr(model_config, "n_embd", None) or model_config.hidden_size
-        head_dim = getattr(model_config, "head_dim", None) or hidden_size // num_attention_heads
         is_prefill = query_length > 1
 
         input_info = []
@@ -407,26 +404,36 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
             )
 
         else:
+            # Heterogeneous configs (e.g. Gemma4 on transformers>=5.15) raise on these global reads;
+            # they pre-populate cache_metas and never reach this branch.
+            num_key_value_heads = getattr(model_config, "num_key_value_heads", None) or num_attention_heads
+            head_dim = getattr(model_config, "head_dim", None) or hidden_size // num_attention_heads
             kvcache_dtype = rbln_config.dtype
             if rbln_config.quantization and rbln_config.quantization.kv_caches == "fp8":
-                kvcache_dtype = "float8_e4m3fn"
+                # fp8 KV caches are uint8 containers; the attention op is told their fp8 type.
+                kvcache_dtype = "uint8"
 
             kvcache_dtype = RBLNCompileConfig.normalize_dtype(kvcache_dtype)
             cache_metas = []
-            for i in range(num_hidden_layers * 2):
-                layer_idx = i // 2
-                name = f"past_key_values_{i}"
+            for layer_idx in range(num_hidden_layers):
                 if rbln_config.sliding_window is not None and layer_idx in rbln_config.sliding_window_layers:
-                    cache_meta = SlidingWindowAttentionKVCacheMeta.from_config(
-                        name, layer_idx, num_key_value_heads, head_dim, kvcache_dtype, rbln_config
-                    )
+                    meta_cls = SlidingWindowAttentionKVCacheMeta
                 else:
-                    cache_meta = FullAttentionKVCacheMeta.from_config(
-                        name, layer_idx, num_key_value_heads, head_dim, kvcache_dtype, rbln_config
+                    meta_cls = FullAttentionKVCacheMeta
+                cache_metas.append(
+                    meta_cls.from_config(
+                        f"past_key_values_{layer_idx}",
+                        layer_idx,
+                        num_key_value_heads,
+                        head_dim,
+                        kvcache_dtype,
+                        rbln_config,
                     )
-                cache_metas.append(cache_meta)
-                input_info.append((name, cache_meta.compile_shape, cache_meta.dtype))
+                )
 
+            input_info.extend(
+                (cache_meta.name, cache_meta.compile_shape, cache_meta.dtype) for cache_meta in cache_metas
+            )
             rbln_config.cache_metas.extend(cache_metas)
 
         return input_info
@@ -489,7 +496,7 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
         # Bidirectional prefill attends across the whole prompt, so the prompt must fit in a
         # single prefill chunk — default the chunk size to max_seq_len instead of the generic
         # NPU default, which would silently truncate the bidirectional context.
-        if rbln_config.prefill_chunk_size is None and rbln_config.use_bidirectional_prefill:
+        if rbln_config.prefill_chunk_size is None and rbln_config._is_prefix_lm:
             rbln_config.prefill_chunk_size = rbln_config.max_seq_len
 
         (
@@ -511,6 +518,7 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
             kvcache_partition_len=rbln_config.kvcache_partition_len,
             kvcache_block_size=rbln_config.kvcache_block_size,
             max_seq_len=rbln_config.max_seq_len,
+            npu=rbln_config.npu,
         )
 
         # Validate kvcache_num_blocks against `num_min_blocks` / `num_full_blocks`.
@@ -519,42 +527,43 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
                 # Do nothing
                 pass
 
-            else:
-                if rbln_config.kvcache_num_blocks > rbln_config.num_full_blocks:
-                    logger.warning(
-                        f"The set `kvcache_num_blocks` ({rbln_config.kvcache_num_blocks}) is greater"
-                        f" than the required number of blocks ({rbln_config.num_full_blocks})."
-                        "This can cause a failure during model compilation."
-                    )
-                elif rbln_config.kvcache_num_blocks < rbln_config.num_min_blocks:
-                    raise ValueError(
-                        f"The set `kvcache_num_blocks` ({rbln_config.kvcache_num_blocks}) is less"
-                        f" than the minimum number of blocks ({rbln_config.num_min_blocks})."
-                    )
-        else:
-            if rbln_config.is_auto_num_blocks:
-                # Eager attention should use fixed number of blocks.
-                rbln_config.kvcache_num_blocks = rbln_config.num_full_blocks
             elif rbln_config.kvcache_num_blocks > rbln_config.num_full_blocks:
                 logger.warning(
                     f"The set `kvcache_num_blocks` ({rbln_config.kvcache_num_blocks}) is greater"
                     f" than the required number of blocks ({rbln_config.num_full_blocks})."
                     "This can cause a failure during model compilation."
                 )
+            elif rbln_config.kvcache_num_blocks < rbln_config.num_min_blocks:
+                raise ValueError(
+                    f"The set `kvcache_num_blocks` ({rbln_config.kvcache_num_blocks}) is less"
+                    f" than the minimum number of blocks ({rbln_config.num_min_blocks})."
+                )
+        elif rbln_config.is_auto_num_blocks:
+            # Eager attention should use fixed number of blocks.
+            rbln_config.kvcache_num_blocks = rbln_config.num_full_blocks
+        elif rbln_config.kvcache_num_blocks > rbln_config.num_full_blocks:
+            logger.warning(
+                f"The set `kvcache_num_blocks` ({rbln_config.kvcache_num_blocks}) is greater"
+                f" than the required number of blocks ({rbln_config.num_full_blocks})."
+                "This can cause a failure during model compilation."
+            )
 
         return rbln_config
 
     @classmethod
     def _update_rbln_config(
         cls,
-        preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"] | None = None,
+        preprocessors: Sequence[Preprocessor] | None = None,
         model: PreTrainedModel | None = None,
         model_config: PretrainedConfig | None = None,
         rbln_config: RBLNDecoderOnlyModelForCausalLMConfig | None = None,
     ) -> RBLNDecoderOnlyModelForCausalLMConfig:
+        # downstream hooks get the raw model_config: some need sibling sections (e.g. vision_config)
+        text_config = model_config.get_text_config()
+
         if rbln_config.max_seq_len is None:
-            rbln_config.max_seq_len = getattr(model_config, "max_position_embeddings", None) or getattr(
-                model_config, "n_positions", None
+            rbln_config.max_seq_len = getattr(text_config, "max_position_embeddings", None) or getattr(
+                text_config, "n_positions", None
             )
         if rbln_config.max_seq_len is None:
             raise ValueError("`max_seq_len` should be specified.")
@@ -563,12 +572,23 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
         # `validate_sliding_window` below depends on.
         rbln_config = cls._update_attention_config(model, model_config, rbln_config)
 
-        layer_types = getattr(model_config, "layer_types", None)
+        # mirror the compiler's in-memory kernel routing (rebel_compiler#13163);
+        # serialized so a loaded model knows to sort. Sorting is a batched-DECODE
+        # contract — prefill-only models run the kernel one row at a time.
+        if rbln_config.requires_batch_sort is None:
+            rbln_config._requires_batch_sort = (
+                rbln_config.can_generate
+                and npu_is_cr13_or_later(rbln_config.npu)
+                and rbln_config.attn_impl == "flash_attn"
+                and not rbln_config.use_attention_mask
+            )
+
+        layer_types = getattr(text_config, "layer_types", None)
         all_full_attention = layer_types is not None and all(t == "full_attention" for t in layer_types)
 
         if (
-            getattr(model_config, "sliding_window", None) is not None
-            and getattr(model_config, "use_sliding_window", True)
+            getattr(text_config, "sliding_window", None) is not None
+            and getattr(text_config, "use_sliding_window", True)
             and not all_full_attention
         ):
             rbln_config = cls._update_sliding_window_config(model_config, rbln_config)
@@ -673,7 +693,7 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
         """
         inputs = inputs_embeds if inputs_embeds is not None else input_ids
         batch_size = inputs.shape[0]
-        position_embed = kwargs.get("position_embed", None)
+        position_embed = kwargs.get("position_embed")
 
         if batch_size != self.rbln_config.batch_size:
             raise ValueError(
@@ -681,16 +701,18 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
             )
         output_hidden_states = _validate_output_hidden_states(output_hidden_states, self.rbln_config)
 
+        text_config = self.config.get_text_config()
+
         all_last_hidden_states = []
         all_hidden_states = (
             tuple(
                 torch.zeros(
                     self.rbln_config.batch_size,
                     inputs.shape[1],
-                    self.config.hidden_size,
+                    text_config.hidden_size,
                     dtype=self.rbln_config.dtype,
                 )
-                for _ in range(self.config.num_hidden_layers + 1)
+                for _ in range(text_config.num_hidden_layers + 1)
             )
             if output_hidden_states
             else None
@@ -711,7 +733,7 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
             )
             all_last_hidden_states.append(outputs.logits)
             if self.rbln_config.output_hidden_states:
-                for l_idx in range(self.config.num_hidden_layers + 1):
+                for l_idx in range(text_config.num_hidden_layers + 1):
                     all_hidden_states[l_idx][b_idx].copy_(outputs.hidden_states[l_idx][0])
 
         last_hidden_states = torch.concat(all_last_hidden_states, dim=0)
@@ -743,7 +765,7 @@ class RBLNDecoderOnlyModelForCausalLM(RBLNDecoderOnlyModel, RBLNDecoderOnlyGener
 
     @property
     def logits_last_dim(self):
-        return self.config.vocab_size
+        return self.config.get_text_config().vocab_size
 
     def set_lora_int_ids(self, lora_int_ids: torch.Tensor | None):
         if isinstance(lora_int_ids, int):
@@ -792,30 +814,15 @@ class RBLNDecoderOnlyModelForCausalLM(RBLNDecoderOnlyModel, RBLNDecoderOnlyGener
         lora_int_ids = [available_adapters[name] for name in adapter_names]
         self.set_lora_int_ids(torch.tensor(lora_int_ids, dtype=torch.int32))
 
-    def _maybe_sort_inputs_for_batch_attn_opt(self, model_inputs: dict) -> torch.Tensor | None:
-        """Sort batch-indexed inputs in-place for the VLLM_RBLN_BATCH_ATTN_OPT path.
-
-        The batched dynamic decode kernel expects per-batch sequences sorted by length
-        (descending) so its per-partition early-exit contract is honored. The KV cache
-        on device is laid out in that sorted order starting from the prefill call
-        (`cache_position is None`) and the same permutation must be reused for every
-        subsequent decode call. The inverse is then applied to the outputs in
-        `_maybe_unsort_outputs_for_batch_attn_opt` so external callers never see
-        the sorted device-side state.
-
-        Args:
-            model_inputs: dict of {name: Tensor or None} batch-indexed inputs. Mutated
-                in place to contain sorted tensors when sorting is applied.
-
-        Returns:
-            unsort_idx, or None when no sorting was applied (single-batch / opt disabled).
-        """
+    def _maybe_sort_batch_inputs(self, model_inputs: dict, inputs_sorted: bool = False) -> torch.Tensor | None:
+        # The in-memory batched attention kernel needs batches sorted by length (descending).
+        # The permutation is fixed at prefill (device KV layout) and reapplied every decode;
+        # returns unsort_idx, or None when nothing was sorted (incl. inputs_sorted=True).
         shape_src = model_inputs.get("inputs_embeds")
         if shape_src is None:
             shape_src = model_inputs.get("input_ids")
-        if shape_src is None or shape_src.shape[0] <= 1 or not _is_batch_attn_opt_enabled():
-            # Clear any cached permutation from a prior generation so a stale index can't
-            # leak into a subsequent decode call with a different (single-batch / opt-off) shape.
+        if inputs_sorted or shape_src is None or shape_src.shape[0] <= 1 or not self.rbln_config.requires_batch_sort:
+            # clear cached permutation so a stale index can't leak into a later decode
             self._rbln_sort_idx = None
             self._rbln_unsort_idx = None
             return None
@@ -823,35 +830,38 @@ class RBLNDecoderOnlyModelForCausalLM(RBLNDecoderOnlyModel, RBLNDecoderOnlyGener
         is_prefill = model_inputs.get("cache_position") is None
         if is_prefill:
             lengths = model_inputs["generate_idx"].squeeze(-1).to(torch.int32)
-            sort_idx = torch.argsort(lengths, descending=True)
+            sort_idx = torch.argsort(lengths, descending=True, stable=True)
             unsort_idx = torch.argsort(sort_idx)
             self._rbln_sort_idx = sort_idx
             self._rbln_unsort_idx = unsort_idx
         else:
             sort_idx = getattr(self, "_rbln_sort_idx", None)
             unsort_idx = getattr(self, "_rbln_unsort_idx", None)
-            # Defensive: if decode batch size diverges from the prefill-time sort, the cached
-            # permutation can't apply. Skip sorting rather than silently corrupting outputs.
-            if sort_idx is not None and sort_idx.shape[0] != shape_src.shape[0]:
-                sort_idx = None
-                unsort_idx = None
-
-        if sort_idx is None:
-            return None
+            # a decode with an unknown permutation would silently read the KV cache wrong
+            if sort_idx is None:
+                raise RuntimeError(
+                    "Batched decode requires the batch permutation established at prefill. Run the "
+                    "prefill step through forward() first, or pass `inputs_sorted=True` with inputs "
+                    "already sorted by sequence length (descending, matching the KV cache layout)."
+                )
+            if sort_idx.shape[0] != shape_src.shape[0]:
+                raise RuntimeError(
+                    f"Decode batch size ({shape_src.shape[0]}) does not match the batch size "
+                    f"sorted at prefill ({sort_idx.shape[0]}); the cached permutation cannot apply."
+                )
 
         for k, v in model_inputs.items():
+            # attention_mask is unused by the decode runtime; skip its per-step copy.
+            if not is_prefill and k == "attention_mask":
+                continue
             if isinstance(v, torch.Tensor) and v.dim() >= 1:
                 model_inputs[k] = v.index_select(0, sort_idx)
 
         return unsort_idx
 
     @staticmethod
-    def _maybe_unsort_outputs_for_batch_attn_opt(unsort_idx: torch.Tensor | None, outputs: dict) -> None:
-        """Apply the inverse of the batched-decode sort to outputs, mutating in place.
-
-        Tensors are unsorted on dim 0; tuples (e.g. `hidden_states`) are unsorted
-        element-wise. No-op when `unsort_idx` is None.
-        """
+    def _maybe_unsort_batch_outputs(unsort_idx: torch.Tensor | None, outputs: dict) -> None:
+        # undo the sort on outputs in place; tuples element-wise
         if unsort_idx is None:
             return
 
@@ -879,14 +889,12 @@ class RBLNDecoderOnlyModelForCausalLM(RBLNDecoderOnlyModel, RBLNDecoderOnlyGener
         position_ids: torch.Tensor | None = None,
         token_type_ids: torch.Tensor | None = None,
         lora_int_ids: torch.Tensor | None = None,
-        return_dict: torch.Tensor | None = None,
+        return_dict: bool | None = None,
         output_hidden_states: bool | None = None,
+        inputs_sorted: bool = False,
         **kwargs,
     ) -> tuple[torch.FloatTensor]:
-        # Forward method for the RBLN-optimized model, designed for integration with the HuggingFace generate API.
-        # For continuous batching, the prefill stage processes one batch at a time and updates the KV cache using batch_idx.
-        # A for-loop ensures synchronization with the HuggingFace generate API.
-        # The decoder stage operates as usual, processing inputs in batch mode.
+        return_dict = return_dict if return_dict is not None else self.config.return_dict
         if self.rbln_config.use_lora and lora_int_ids is None:
             if self.lora_int_ids is None:
                 raise ValueError(
@@ -917,17 +925,34 @@ class RBLNDecoderOnlyModelForCausalLM(RBLNDecoderOnlyModel, RBLNDecoderOnlyGener
             "token_type_ids": token_type_ids,
             "lora_int_ids": lora_int_ids,
         }
-        unsort_idx = self._maybe_sort_inputs_for_batch_attn_opt(batch_inputs)
-        input_ids = batch_inputs["input_ids"]
-        inputs_embeds = batch_inputs["inputs_embeds"]
-        cache_position = batch_inputs["cache_position"]
-        attention_mask = batch_inputs["attention_mask"]
-        generate_idx = batch_inputs["generate_idx"]
-        padded_cache_lengths = batch_inputs["padded_cache_lengths"]
-        position_ids = batch_inputs["position_ids"]
-        token_type_ids = batch_inputs["token_type_ids"]
-        lora_int_ids = batch_inputs["lora_int_ids"]
+        unsort_idx = self._maybe_sort_batch_inputs(batch_inputs, inputs_sorted=inputs_sorted)
+        batch_outputs = self._forward_prefill_or_decode(**batch_inputs)
+        self._maybe_unsort_batch_outputs(unsort_idx, batch_outputs)
 
+        if not return_dict:
+            return (
+                batch_outputs["logits"],
+                batch_outputs["generate_idx"],
+                batch_outputs["padded_cache_lengths"],
+                batch_outputs["hidden_states"],
+            )
+        else:
+            return RBLNDecoderOnlyOutput(**batch_outputs)
+
+    def _forward_prefill_or_decode(
+        self,
+        input_ids: torch.LongTensor | None,
+        inputs_embeds: torch.Tensor | None,
+        cache_position: torch.Tensor | None,
+        attention_mask: torch.LongTensor | None,
+        generate_idx: torch.Tensor | None,
+        padded_cache_lengths: torch.Tensor | None,
+        position_ids: torch.Tensor | None,
+        token_type_ids: torch.Tensor | None,
+        lora_int_ids: torch.Tensor | None,
+    ) -> dict:
+        # For continuous batching, the prefill stage processes one batch at a time and updates
+        # the KV cache using batch_idx; the decoder stage runs in batch mode.
         # Prefill
         if cache_position is None:
             logits = []
@@ -943,10 +968,11 @@ class RBLNDecoderOnlyModelForCausalLM(RBLNDecoderOnlyModel, RBLNDecoderOnlyGener
                     f"Input's length({input_len}) exceeds compiled max_seq_len({self.rbln_config.max_seq_len})."
                 )
 
+            text_config = self.config.get_text_config()
             all_hidden_states = (
                 tuple(
-                    torch.zeros(batch_size, input_len, self.config.hidden_size, dtype=self.rbln_config.dtype)
-                    for _ in range(self.config.num_hidden_layers + 1)
+                    torch.zeros(batch_size, input_len, text_config.hidden_size, dtype=self.rbln_config.dtype)
+                    for _ in range(text_config.num_hidden_layers + 1)
                 )
                 if self.rbln_config.output_hidden_states
                 else None
@@ -966,7 +992,7 @@ class RBLNDecoderOnlyModelForCausalLM(RBLNDecoderOnlyModel, RBLNDecoderOnlyGener
                 padded_cache_lengths[b_idx] += outputs.padded_cache_lengths
                 logits.append(outputs.logits)
                 if self.rbln_config.output_hidden_states:
-                    for l_idx in range(self.config.num_hidden_layers + 1):
+                    for l_idx in range(text_config.num_hidden_layers + 1):
                         all_hidden_states[l_idx][b_idx].copy_(outputs.hidden_states[l_idx][0])
             logits = torch.cat(logits, dim=0)
         # Decoder
@@ -998,24 +1024,15 @@ class RBLNDecoderOnlyModelForCausalLM(RBLNDecoderOnlyModel, RBLNDecoderOnlyGener
             logits = outputs.logits
             all_hidden_states = outputs.hidden_states
 
-        batch_outputs = {
+        return {
             "logits": logits,
             "generate_idx": generate_idx,
             "padded_cache_lengths": padded_cache_lengths,
             "hidden_states": all_hidden_states,
         }
-        self._maybe_unsort_outputs_for_batch_attn_opt(unsort_idx, batch_outputs)
-        logits = batch_outputs["logits"]
-        generate_idx = batch_outputs["generate_idx"]
-        padded_cache_lengths = batch_outputs["padded_cache_lengths"]
-        all_hidden_states = batch_outputs["hidden_states"]
 
-        if not return_dict:
-            return logits, generate_idx, padded_cache_lengths, all_hidden_states
-        else:
-            return RBLNDecoderOnlyOutput(
-                logits=logits,
-                generate_idx=generate_idx,
-                padded_cache_lengths=padded_cache_lengths,
-                hidden_states=all_hidden_states,
-            )
+
+__all__ = [
+    "RBLNDecoderOnlyModel",
+    "RBLNDecoderOnlyModelForCausalLM",
+]

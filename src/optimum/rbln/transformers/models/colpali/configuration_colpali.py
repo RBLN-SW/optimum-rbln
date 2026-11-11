@@ -74,3 +74,8 @@ class RBLNColPaliForRetrievalConfig(RBLNModelConfig):
         self.vlm = self.initialize_submodule_config(
             submodule_config=vlm, batch_size=batch_size, output_hidden_states=output_hidden_states
         )
+
+
+__all__ = [
+    "RBLNColPaliForRetrievalConfig",
+]

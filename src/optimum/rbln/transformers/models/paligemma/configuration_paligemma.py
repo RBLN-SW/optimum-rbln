@@ -77,6 +77,10 @@ class RBLNPaliGemmaForConditionalGenerationConfig(RBLNModelConfig):
             use_inputs_embeds=True,
         )
 
+    @property
+    def can_generate(self) -> bool:
+        return self.language_model.can_generate
+
 
 class RBLNPaliGemmaModelConfig(RBLNModelConfig):
     submodules = ["vision_tower", "language_model"]
@@ -127,3 +131,9 @@ class RBLNPaliGemmaModelConfig(RBLNModelConfig):
             use_inputs_embeds=True,
             output_hidden_states=output_hidden_states,
         )
+
+
+__all__ = [
+    "RBLNPaliGemmaForConditionalGenerationConfig",
+    "RBLNPaliGemmaModelConfig",
+]

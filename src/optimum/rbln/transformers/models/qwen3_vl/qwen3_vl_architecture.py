@@ -12,19 +12,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import math
 from typing import TYPE_CHECKING
 
 import torch
-import torch.nn as nn
+from torch import nn
 from transformers import PreTrainedModel
 
 from ..decoderonly.decoderonly_architecture import (
     DecoderOnlyAttention,
     DecoderOnlyForCausalLM,
+    DecoderOnlyLayer,
     DecoderOnlyModel,
     DecoderOnlyWrapper,
-    apply_rotary_pos_emb,
+    NestedCompileRegionMixin,
+    rotate_half,
     slice_and_unsqueeze_cos_sin,
 )
 from .configuration_qwen3_vl import RBLNQwen3VLVisionModelConfig
@@ -32,6 +33,16 @@ from .configuration_qwen3_vl import RBLNQwen3VLVisionModelConfig
 
 if TYPE_CHECKING:
     from .configuration_qwen3_vl import RBLNQwen3VLForConditionalGenerationConfig
+
+
+def apply_rotary_pos_emb_vision(q, k, cos, sin):
+    # Mirrors HF `apply_rotary_pos_emb_vision`: rotate in fp32 and round once.
+    orig_q_dtype, orig_k_dtype = q.dtype, k.dtype
+    q, k = q.float(), k.float()
+    cos, sin = cos.float(), sin.float()
+    q_embed = (q * cos) + (rotate_half(q) * sin)
+    k_embed = (k * cos) + (rotate_half(k) * sin)
+    return q_embed.to(orig_q_dtype), k_embed.to(orig_k_dtype)
 
 
 class Qwen3VLVisionModelWrapper(nn.Module):
@@ -48,10 +59,7 @@ class Qwen3VLVisionModelWrapper(nn.Module):
         blocks: torch.nn.ModuleList,
         rbln_config: RBLNQwen3VLVisionModelConfig,
     ):
-        wrapped_blocks = []
-        for block in blocks:
-            wrapped_blocks.append(Qwen3VLVisionBlock(block, rbln_config))
-        return nn.ModuleList(wrapped_blocks)
+        return nn.ModuleList([Qwen3VLVisionBlock(block, rbln_config) for block in blocks])
 
     def forward(
         self,
@@ -112,7 +120,7 @@ class Qwen3VLVisionAttention(nn.Module):
         self.head_dim = getattr(model, "head_dim", model.proj.in_features // model.num_heads)
         self.qkv = model.qkv
         self.proj = model.proj
-        self.scale = torch.tensor(1 / math.sqrt(self.head_dim), dtype=rbln_config.dtype)
+        self.scale = self.head_dim**-0.5
 
     def forward(
         self,
@@ -126,7 +134,7 @@ class Qwen3VLVisionAttention(nn.Module):
             self.qkv(hidden_states).reshape(1, seq_length, 3, self.num_heads, -1).permute(2, 0, 3, 1, 4).unbind(0)
         )
         cos, sin = position_embeddings
-        q, k = apply_rotary_pos_emb(q, k, cos, sin)
+        q, k = apply_rotary_pos_emb_vision(q, k, cos, sin)
         attn_output = nn.functional.scaled_dot_product_attention(
             q,
             k,
@@ -134,7 +142,7 @@ class Qwen3VLVisionAttention(nn.Module):
             attn_mask=attn_mask,
             dropout_p=0.0,
             is_causal=False,
-            scale=self.scale.item(),
+            scale=self.scale,
         )
         attn_output = attn_output.transpose(1, 2)
         attn_output = attn_output.reshape(1, seq_length, -1)
@@ -176,6 +184,9 @@ class Qwen3VL_LanguageModelWrapper(DecoderOnlyWrapper):
 
     def get_rbln_attn_class(self):
         return Qwen3VLAttention
+
+    def get_rbln_layer_class(self):
+        return Qwen3VLLayerRegion if self.rbln_config.nested_compile_region else Qwen3VLLayer
 
     def get_rbln_model_class(self):
         return Qwen3VLDecoderOnlyModel
@@ -229,19 +240,6 @@ class Qwen3VL_LanguageModelWrapper(DecoderOnlyWrapper):
             deepstack_visual_embeds = None
 
         past_key_values = args
-
-        if len(past_key_values) != 2 * self.num_hidden_layers:
-            raise ValueError(
-                f"Different past_key_values to model's config. {len(past_key_values)} != {2 * self.num_hidden_layers}"
-            )
-
-        _past_key_values = []
-        for i in range(self.config.num_hidden_layers):
-            key_states = past_key_values[i * 2]
-            value_states = past_key_values[i * 2 + 1]
-            past_key_value = [key_states, value_states]
-            _past_key_values.append(past_key_value)
-        past_key_values = _past_key_values
 
         return (
             input_ids,
@@ -302,14 +300,14 @@ class Qwen3VL_LanguageModelWrapper(DecoderOnlyWrapper):
 class Qwen3VLDecoderOnlyForCausalLM(DecoderOnlyForCausalLM):
     def forward(
         self,
-        input_ids: torch.Tensor = None,
-        inputs_embeds: torch.Tensor = None,
-        attention_mask: torch.Tensor = None,
-        cache_position: torch.Tensor = None,
-        position_ids: torch.Tensor = None,
-        query_position: torch.Tensor = None,
-        past_key_values: tuple[tuple[torch.Tensor]] = None,
-        rotary_emb: nn.Module = None,
+        input_ids: torch.Tensor | None = None,
+        inputs_embeds: torch.Tensor | None = None,
+        attention_mask: torch.Tensor | None = None,
+        cache_position: torch.Tensor | None = None,
+        position_ids: torch.Tensor | None = None,
+        query_position: torch.Tensor | None = None,
+        past_key_values: tuple[tuple[torch.Tensor]] | None = None,
+        rotary_emb: nn.Module | None = None,
         global_block_tables: torch.Tensor | None = None,
         local_block_tables: torch.Tensor | None = None,
         lora_int_id: torch.Tensor | None = None,
@@ -347,30 +345,46 @@ class Qwen3VLDecoderOnlyForCausalLM(DecoderOnlyForCausalLM):
         return logits, all_hidden_states
 
 
+class Qwen3VLDeepstackLayerMixin:
+    """Adds the layer's deepstack visual embeddings to its output, inside a nested region if there is one.
+
+    With `deepstack_row`, `deepstack_embeds` stacks the embeddings of every layer and the row selects this layer's.
+    """
+
+    def forward(self, *args, deepstack_embeds=None, deepstack_row=None, visual_pos_mask=None, **kwargs):
+        hidden_states = super().forward(*args, **kwargs)
+        if deepstack_embeds is not None:
+            mask_expanded = visual_pos_mask.unsqueeze(-1).to(hidden_states.dtype)
+            if deepstack_row is None:
+                deepstack_embeds = deepstack_embeds.unsqueeze(0)
+            else:
+                deepstack_embeds = deepstack_embeds.index_select(0, deepstack_row)
+            hidden_states = hidden_states + deepstack_embeds * mask_expanded
+        return hidden_states
+
+
+class Qwen3VLLayer(Qwen3VLDeepstackLayerMixin, DecoderOnlyLayer):
+    """Qwen3-VL decoder layer, which applies its own deepstack injection."""
+
+
+class Qwen3VLLayerRegion(NestedCompileRegionMixin, Qwen3VLLayer):
+    """Decoder layer with a nested compile region around its forward call."""
+
+
 class Qwen3VLDecoderOnlyModel(DecoderOnlyModel):
     def __init__(self, model, layers, rbln_config, num_deepstack_layers: int = 3, **kwargs):
         super().__init__(model, layers, rbln_config, **kwargs)
         self.num_deepstack_layers = num_deepstack_layers
 
-    def _deepstack_process(
-        self,
-        hidden_states: torch.Tensor,
-        visual_pos_mask: torch.Tensor,
-        visual_embeds: torch.Tensor,
-    ) -> torch.Tensor:
-        mask_expanded = visual_pos_mask.unsqueeze(-1).to(hidden_states.dtype)
-        hidden_states = hidden_states + visual_embeds.unsqueeze(0) * mask_expanded
-        return hidden_states
-
     def forward(
         self,
-        input_ids: torch.Tensor = None,
+        input_ids: torch.Tensor | None = None,
         inputs_embeds: torch.Tensor | None = None,
-        attention_mask: torch.Tensor = None,
-        cache_position: torch.Tensor = None,
-        position_ids: torch.Tensor = None,
-        query_position: torch.Tensor = None,
-        past_key_values: tuple[tuple[torch.Tensor]] = None,
+        attention_mask: torch.Tensor | None = None,
+        cache_position: torch.Tensor | None = None,
+        position_ids: torch.Tensor | None = None,
+        query_position: torch.Tensor | None = None,
+        past_key_values: tuple[tuple[torch.Tensor]] | None = None,
         rotary_emb: nn.Module | torch.Tensor | None = None,
         global_block_tables: torch.Tensor | None = None,
         local_block_tables: torch.Tensor | None = None,
@@ -392,7 +406,8 @@ class Qwen3VLDecoderOnlyModel(DecoderOnlyModel):
         position_ids = position_ids if position_ids is not None else cache_position
         if rotary_emb is not None:
             if isinstance(rotary_emb, torch.Tensor):
-                cos = rotary_emb[0]
+                # cos gets its own storage: nested regions reject inputs that alias one packed tensor.
+                cos = rotary_emb[0].clone()
                 sin = rotary_emb[1]
             else:
                 cos, sin = rotary_emb(hidden_states, self.max_seq_len)
@@ -414,14 +429,28 @@ class Qwen3VLDecoderOnlyModel(DecoderOnlyModel):
             cache_seq_len, cache_offset, swa_attn_mask = self.get_swa_custom_op_args(position_ids, query_position)
             sliding_cache_pos = (cache_seq_len, cache_offset)
 
-        apply_deepstack = deepstack_visual_embeds is not None and visual_pos_mask is not None
+        layer_deepstack = [None] * len(self.layers)
+        layer_rows = [None] * len(self.layers)
+        if deepstack_visual_embeds is not None and visual_pos_mask is not None:
+            for layer_idx in range(min(self.num_deepstack_layers, len(self.layers))):
+                layer_deepstack[layer_idx] = deepstack_visual_embeds[layer_idx]
+            if self.rbln_config.nested_compile_region:
+                # Every layer region takes the same stacked embeddings, with a zero row for the layers past
+                # the deepstack layers, and its own row index. The calls then share one body and differ only
+                # in that constant, so the compiler can roll them.
+                stacked = torch.cat([deepstack_visual_embeds, torch.zeros_like(deepstack_visual_embeds[:1])])
+                layer_deepstack = [stacked] * len(self.layers)
+                layer_rows = [
+                    torch.tensor([min(layer_idx, self.num_deepstack_layers)], dtype=torch.int32)
+                    for layer_idx in range(len(self.layers))
+                ]
 
         all_hidden_states = () if output_hidden_states else None
         for layer_idx, layer in enumerate(self.layers):
             if output_hidden_states:
                 all_hidden_states += (hidden_states,)
 
-            is_sliding = True if layer_idx in self.sliding_window_layers else False
+            is_sliding = layer_idx in self.sliding_window_layers
             is_sliding_decode = is_sliding and self.phase == "decode"
             hidden_states = layer(
                 hidden_states=hidden_states,
@@ -432,12 +461,10 @@ class Qwen3VLDecoderOnlyModel(DecoderOnlyModel):
                 sin=sin,
                 block_tables=local_block_tables if is_sliding else global_block_tables,
                 lora_int_id=lora_int_id,
+                deepstack_embeds=layer_deepstack[layer_idx],
+                deepstack_row=layer_rows[layer_idx],
+                visual_pos_mask=visual_pos_mask,
             )
-
-            if apply_deepstack and layer_idx < self.num_deepstack_layers:
-                hidden_states = self._deepstack_process(
-                    hidden_states, visual_pos_mask, deepstack_visual_embeds[layer_idx]
-                )
 
         hidden_states = self.get_last_layernorm()(hidden_states)
         if output_hidden_states:

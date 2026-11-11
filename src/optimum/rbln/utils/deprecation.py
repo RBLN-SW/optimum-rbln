@@ -111,7 +111,7 @@ def deprecate_kwarg(
         value_replacer (`Callable`, *optional*):
             A function that takes the old (deprecated type) value and returns a new value (Scenario 'b').
             Used in conjunction with `deprecated_type`. If provided, the value will be automatically converted.
-        raise_if_greater_or_equal_version (`bool`, *optional*, defaults to `False`):
+        raise_if_greater_or_equal_version (`bool`, *optional*, defaults to `True`):
             Whether to raise `ValueError` if current `optimum.rbln.` version is greater or equal to the deprecated version.
         raise_if_both_names (`bool`, *optional*, defaults to `False`):
             Whether to raise `ValueError` if both deprecated and new keyword arguments are set (only for Scenario 'a').
@@ -243,7 +243,7 @@ def deprecate_method(
             A wrapped function that handles the deprecation warning or error.
     Examples:
         >>> class MyClass:
-        ...     @deprecate_method(version="0.12.0", new_method="from_pretrained")
+        ...     @deprecate_method(version="0.13.0", new_method="from_pretrained")
         ...     def load(self, path):
         ...         return self.from_pretrained(path)
     """

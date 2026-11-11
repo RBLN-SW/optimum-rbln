@@ -13,7 +13,8 @@
 # limitations under the License.
 
 from abc import abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
+from inspect import isabstract
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from ..configuration_utils import RBLNSerializableConfigProtocol
@@ -30,7 +31,7 @@ class CacheMeta(RBLNSerializableConfigProtocol):
     polymorphic hierarchy. Concrete subclasses distinguish the cache algorithm:
 
         CacheMeta
-        ├─ KVCacheMeta                # paged KV: [num_blocks, num_heads, block_size, head_dim]
+        ├─ KVCacheMeta                # paged KV: [num_blocks, 2, num_heads, 1, block_size, head_dim]
         │   ├─ FullAttentionKVCacheMeta      # resizable when is_auto (grown after compile)
         │   └─ SlidingWindowAttentionKVCacheMeta      # fixed-size window
         └─ LinearAttentionCacheMeta   # conv/recurrent state; raw model-computed shape, never resized
@@ -80,10 +81,43 @@ class CacheMeta(RBLNSerializableConfigProtocol):
         # shape.
         ...
 
+    @classmethod
+    def from_serialized(cls, serialized: dict[str, Any]) -> "CacheMeta":
+        """Rebuild a meta from its serialized form, the inverse of ``_prepare_for_serialization``.
+
+        The ``layer_type`` tag selects the concrete subclass, and keys that are not fields of
+        that subclass are dropped: the tag itself is a ``ClassVar``, and ``is_auto`` is always
+        emitted but is only a field of the resizable full-attention cache.
+        """
+        layer_type = serialized.get("layer_type")
+        subclass = cls._concrete_subclasses().get(layer_type) if isinstance(layer_type, str) else None
+        if subclass is None:
+            raise ValueError(
+                f"Unknown cache `layer_type` {layer_type!r}. This artifact was likely compiled with a "
+                f"newer optimum-rbln; known types are {sorted(cls._concrete_subclasses())}."
+            )
+        field_names = {field.name for field in fields(subclass)}
+        return subclass(**{key: value for key, value in serialized.items() if key in field_names})
+
+    @classmethod
+    def _concrete_subclasses(cls) -> dict[str, type["CacheMeta"]]:
+        # Instantiable metas below `cls`, keyed by their `layer_type` tag.
+        found: dict[str, type["CacheMeta"]] = {}
+        for subclass in cls.__subclasses__():
+            found.update(subclass._concrete_subclasses())
+            if not isabstract(subclass):
+                found[subclass.layer_type] = subclass
+        return found
+
 
 @dataclass
 class KVCacheMeta(CacheMeta):
-    """Paged KV cache: ``shape == [num_blocks, num_heads, block_size, head_dim]``."""
+    """Paged KV cache holding a layer's key and value in one tensor,
+    ``shape == [num_blocks, 2, num_heads, 1, block_size, head_dim]``.
+
+    Artifacts compiled before the two were merged carry one meta per key and per value cache,
+    ``shape == [num_blocks, num_heads, block_size, head_dim]``; the block axes read the same.
+    """
 
     @property
     def num_blocks(self) -> int:
@@ -91,12 +125,13 @@ class KVCacheMeta(CacheMeta):
 
     @property
     def block_size(self) -> int:
-        return self.shape[2]
+        return self.shape[-2]
 
     @staticmethod
-    def _validate_num_blocks(num_blocks: int) -> None:
-        if num_blocks <= 0:
+    def _validate_num_blocks(num_blocks: int | None) -> int:
+        if num_blocks is None or num_blocks <= 0:
             raise ValueError("`num_blocks` must be greater than 0 when using KV cache.")
+        return num_blocks
 
 
 @dataclass
@@ -113,7 +148,7 @@ class FullAttentionKVCacheMeta(KVCacheMeta):
 
     @property
     def compile_shape(self) -> list[int]:
-        return [1, self.shape[1], self.shape[2], self.shape[3]] if self.is_auto else self.shape
+        return [1, *self.shape[1:]] if self.is_auto else self.shape
 
     @classmethod
     def from_config(
@@ -126,18 +161,15 @@ class FullAttentionKVCacheMeta(KVCacheMeta):
         rbln_config: "RBLNDecoderOnlyModelForCausalLMConfig",
     ) -> "FullAttentionKVCacheMeta":
         block_size = rbln_config.kvcache_block_size
+        if block_size is None:
+            raise ValueError("`kvcache_block_size` must be set to build the KV cache.")
         if rbln_config.is_auto_num_blocks:
             num_blocks, is_auto = rbln_config.num_full_blocks, True
         else:
             num_blocks, is_auto = rbln_config.kvcache_num_blocks, False
-        cls._validate_num_blocks(num_blocks)
-        return cls(
-            name=name,
-            layer_index=layer_index,
-            shape=[num_blocks, num_key_value_heads, block_size, head_dim],
-            dtype=dtype,
-            is_auto=is_auto,
-        )
+        validated_num_blocks = cls._validate_num_blocks(num_blocks)
+        shape = [validated_num_blocks, 2, num_key_value_heads, 1, block_size, head_dim]
+        return cls(name=name, layer_index=layer_index, shape=shape, dtype=dtype, is_auto=is_auto)
 
 
 @dataclass
@@ -157,12 +189,14 @@ class SlidingWindowAttentionKVCacheMeta(KVCacheMeta):
         rbln_config: "RBLNDecoderOnlyModelForCausalLMConfig",
     ) -> "SlidingWindowAttentionKVCacheMeta":
         block_size = rbln_config.sliding_window
+        if block_size is None:
+            raise ValueError("`sliding_window` must be set to build the sliding window KV cache.")
         num_blocks = rbln_config.batch_size
-        cls._validate_num_blocks(num_blocks)
+        validated_num_blocks = cls._validate_num_blocks(num_blocks)
         return cls(
             name=name,
             layer_index=layer_index,
-            shape=[num_blocks, num_key_value_heads, block_size, head_dim],
+            shape=[validated_num_blocks, 2, num_key_value_heads, 1, block_size, head_dim],
             dtype=dtype,
         )
 

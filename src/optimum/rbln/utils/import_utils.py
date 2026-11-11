@@ -14,10 +14,12 @@
 
 import importlib.metadata
 import importlib.util
+import os
 import warnings
 from dataclasses import dataclass
 
 from packaging.version import Version
+from transformers.utils.import_utils import create_import_structure_from_path
 
 
 @dataclass
@@ -142,7 +144,7 @@ def check_version_compats() -> None:
         # Common dev case: running from source (e.g. PYTHONPATH=src) without installing the package.
         # package metadata doesn't exist, so fall back to the in-repo version file.
         try:
-            from optimum.rbln.__version__ import __version__ as my_version  # type: ignore
+            from optimum.rbln.__version__ import __version__ as my_version
         except Exception:
             warnings.warn(
                 "Could not determine optimum-rbln version (package metadata missing). "
@@ -152,7 +154,7 @@ def check_version_compats() -> None:
             )
             return
 
-    target_version = list(filter(lambda v: Version(my_version) >= Version(v), RBLN_VERSION_COMPATS.keys()))[0]
+    target_version = next(filter(lambda v: Version(my_version) >= Version(v), RBLN_VERSION_COMPATS.keys()))
     for compat in RBLN_VERSION_COMPATS[target_version]:
         try:
             dep_version = importlib.metadata.version(compat.package_name)
@@ -181,11 +183,33 @@ def check_version_compats() -> None:
                     ImportWarning,
                     stacklevel=2,
                 )
-        else:
-            if not Version(compat.min_version) <= Version(dep_version) < Version(compat.max_version):
-                warnings.warn(
-                    f"optimum-rbln v{my_version} is compatible to {compat.package_name} v{compat.min_version} to v{compat.max_version}. (you are currently using v{dep_version})\n"
-                    "Please refer to our SDK release notes at https://docs.rbln.ai/about_atom/release_note.html",
-                    ImportWarning,
-                    stacklevel=2,
-                )
+        elif not Version(compat.min_version) <= Version(dep_version) < Version(compat.max_version):
+            warnings.warn(
+                f"optimum-rbln v{my_version} is compatible to {compat.package_name} v{compat.min_version} to v{compat.max_version}. (you are currently using v{dep_version})\n"
+                "Please refer to our SDK release notes at https://docs.rbln.ai/about_atom/release_note.html",
+                ImportWarning,
+                stacklevel=2,
+            )
+
+
+def define_import_structure(module_file: str) -> dict[frozenset[str], dict[str, set[str]]]:
+    """
+    Build the `{backends: {dotted_module: objects}}` structure `_LazyModule` consumes for the
+    package that owns `module_file`, exporting every object listed in a module's `__all__`.
+
+    transformers' `spread_import_structure` drops entries when a package holds both modules
+    and subpackages at the same level, so the nested structure is flattened here instead.
+    """
+    structure: dict[frozenset[str], dict[str, set[str]]] = {}
+
+    def flatten(nested: dict, prefix: str) -> None:
+        for key, value in nested.items():
+            if isinstance(key, frozenset):
+                bucket = structure.setdefault(key, {})
+                for module, objects in value.items():
+                    bucket.setdefault(f"{prefix}{module}", set()).update(objects)
+            else:
+                flatten(value, f"{prefix}{key}.")
+
+    flatten(create_import_structure_from_path(os.path.dirname(os.path.abspath(module_file))), "")
+    return structure

@@ -174,3 +174,10 @@ class RBLNStableDiffusion3InpaintPipelineConfig(RBLNStableDiffusion3PipelineBase
     """Config for SD3 Inpainting Pipeline"""
 
     _vae_uses_encoder = True
+
+
+__all__ = [
+    "RBLNStableDiffusion3Img2ImgPipelineConfig",
+    "RBLNStableDiffusion3InpaintPipelineConfig",
+    "RBLNStableDiffusion3PipelineConfig",
+]

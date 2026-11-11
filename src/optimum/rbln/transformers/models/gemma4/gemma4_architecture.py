@@ -16,11 +16,11 @@ import copy
 from typing import Any
 
 import torch
-import torch.nn as nn
+from torch import nn
 from transformers import PreTrainedModel
 from transformers.activations import ACT2FN
 
-from ...utils.moe import compute_masked_routing_weight_softmax_first
+from ...utils.moe import compute_masked_routing_weight_softmax_first, split_fused_experts
 from ..decoderonly.configuration_decoderonly import RBLNLoRAConfig
 from ..decoderonly.decoderonly_architecture import (
     DecoderOnlyAttention,
@@ -28,6 +28,7 @@ from ..decoderonly.decoderonly_architecture import (
     DecoderOnlyLayer,
     DecoderOnlyModel,
     DecoderOnlyWrapper,
+    NestedCompileRegionMixin,
     RotaryEmbedding,
     build_image_prefill_swa_custom_op_args,
     slice_and_unsqueeze_cos_sin,
@@ -36,24 +37,21 @@ from ..decoderonly.decoderonly_architecture import (
 
 class Gemma4ForCausalLMWrapper(DecoderOnlyWrapper):
     # Extends DecoderOnlyWrapper with two Gemma4-specific behaviors:
-    # 1. Two RoPE caches: one for full-attention layers (global_head_dim, proportional rope_type)
-    #    and one for sliding-attention layers (head_dim, default rope_type). Mirrors Gemma3 wrapper.
+    # 1. Two RoPE caches: one for full-attention layers (per_layer_config head_dim, proportional
+    #    rope_type) and one for sliding-attention layers (default rope_type). Mirrors Gemma3 wrapper.
     # 2. A per_layer_inputs positional argument is extracted from wrapper inputs and forwarded
     #    to Gemma4TextModel.
 
     def get_rotary_emb(self, max_seq_len):
-        # full_attention layers use `global_head_dim`, sliding_attention layers use `head_dim`.
-        head_dims = {
-            "full_attention": getattr(self.config, "global_head_dim", None) or self.config.head_dim,
-            "sliding_attention": self.config.head_dim,
-        }
+        per_layer_config = self.config.per_layer_config
         rotary_embs = []
         for layer_type in ("full_attention", "sliding_attention"):
             params = dict(self.config.rope_parameters[layer_type])
             config = copy.deepcopy(self.config)
+            config.per_layer_config = None
             config.rope_scaling = params
             config.rope_parameters = params
-            config.head_dim = head_dims[layer_type]
+            config.head_dim = per_layer_config[layer_type].head_dim
             rotary_embs.append(RotaryEmbedding(config=config, max_seq_len_cached=max_seq_len))
         return tuple(rotary_embs)
 
@@ -61,7 +59,7 @@ class Gemma4ForCausalLMWrapper(DecoderOnlyWrapper):
         return Gemma4TextAttention
 
     def get_rbln_layer_class(self):
-        return Gemma4DecoderLayer
+        return Gemma4DecoderLayerRegion if self.rbln_config.nested_compile_region else Gemma4DecoderLayer
 
     def get_rbln_model_class(self):
         return Gemma4TextModel
@@ -90,18 +88,6 @@ class Gemma4ForCausalLMWrapper(DecoderOnlyWrapper):
         position_ids = args.pop(0) if self.rbln_config.use_position_ids else None
         lora_int_id = args.pop(0) if self.rbln_config.lora_config else None
         past_key_values = args
-
-        if len(past_key_values) != 2 * self.num_hidden_layers:
-            raise ValueError(
-                f"Different past_key_values to model's config. {len(past_key_values)} != {2 * self.num_hidden_layers}"
-            )
-
-        _past_key_values = []
-        for i in range(self.config.num_hidden_layers):
-            key_states = past_key_values[i * 2]
-            value_states = past_key_values[i * 2 + 1]
-            _past_key_values.append([key_states, value_states])
-        past_key_values = _past_key_values
 
         rotary_emb = (self.rotary_emb_global, self.rotary_emb_local)
 
@@ -203,15 +189,15 @@ class Gemma4TextModel(DecoderOnlyModel):
 
     def forward(
         self,
-        input_ids: torch.Tensor = None,
-        inputs_embeds: torch.Tensor = None,
+        input_ids: torch.Tensor | None = None,
+        inputs_embeds: torch.Tensor | None = None,
         per_layer_inputs: torch.Tensor | None = None,
-        attention_mask: torch.Tensor = None,
-        cache_position: torch.Tensor = None,
-        position_ids: torch.Tensor = None,
-        query_position: torch.Tensor = None,
-        past_key_values: tuple[tuple[torch.Tensor]] = None,
-        rotary_emb: torch.nn.Module = None,
+        attention_mask: torch.Tensor | None = None,
+        cache_position: torch.Tensor | None = None,
+        position_ids: torch.Tensor | None = None,
+        query_position: torch.Tensor | None = None,
+        past_key_values: list[torch.Tensor] | None = None,
+        rotary_emb: torch.nn.Module | None = None,
         global_block_tables: torch.Tensor | None = None,
         local_block_tables: torch.Tensor | None = None,
         lora_int_id: torch.Tensor | None = None,
@@ -306,7 +292,7 @@ class Gemma4DecoderLayer(DecoderOnlyLayer):
         hidden_states: torch.Tensor,
         attention_mask: torch.Tensor,
         seq_positions: torch.LongTensor | tuple[torch.LongTensor],
-        past_key_values: tuple[tuple[torch.Tensor]],
+        past_key_values: list[torch.Tensor],
         cos: torch.Tensor | None = None,
         sin: torch.Tensor | None = None,
         block_tables: torch.Tensor | None = None,
@@ -361,14 +347,18 @@ class Gemma4DecoderLayer(DecoderOnlyLayer):
         return hidden_states
 
 
+class Gemma4DecoderLayerRegion(NestedCompileRegionMixin, Gemma4DecoderLayer):
+    """Decoder layer with a nested compile region around its forward call."""
+
+
 class Gemma4TextAttention(DecoderOnlyAttention):
     # Extends DecoderOnlyAttention with Gemma4-specific behaviors:
     # - q_norm, k_norm, v_norm applied per-head pre-RoPE/pre-attention; v_norm uses
     #   Gemma4RMSNorm(with_scale=False), which the base forward does not apply — overridden below.
-    # - head_dim differs between sliding (config.head_dim) and full (config.global_head_dim) layers;
+    # - head_dim differs between sliding and full layers (config.per_layer_config);
     #   self_attn.head_dim already encodes this.
-    # - num_key_value_heads is recomputed from the projection shape to handle num_global_key_value_heads
-    #   and attention_k_eq_v knobs not exposed as standard attributes.
+    # - num_key_value_heads is recomputed from the projection shape to handle the per-layer
+    #   num_key_value_heads / attention_k_eq_v overrides without touching config attributes.
     # - Attention scaling is hardcoded to 1.0 (HF Gemma4TextAttention.scaling); q_norm/k_norm RMSNorm
     #   supplies magnitude normalization in place of the 1/sqrt(d_k) factor.
 
@@ -384,6 +374,12 @@ class Gemma4TextAttention(DecoderOnlyAttention):
 
         if self.v_proj is None:
             self.v_proj = copy.deepcopy(self.k_proj)
+
+    def is_bidirectional_attention(self, phase: str) -> bool:
+        if phase == "image_prefill":
+            # Unlike Gemma3, image tokens attend bidirectionally only on sliding layers (HF create_masks_for_vision_model).
+            return self.is_sliding
+        return super().is_bidirectional_attention(phase)
 
     def get_attn_scale(self, self_attn):
         return 1.0
@@ -407,7 +403,7 @@ class Gemma4TextAttention(DecoderOnlyAttention):
         hidden_states: torch.Tensor,
         attention_mask: torch.Tensor,
         seq_positions: torch.LongTensor,
-        past_key_values: tuple[tuple[torch.Tensor]],
+        past_key_values: list[torch.Tensor],
         cos: torch.Tensor | None = None,
         sin: torch.Tensor | None = None,
         block_tables: torch.Tensor | None = None,
@@ -443,8 +439,7 @@ class Gemma4TextAttention(DecoderOnlyAttention):
             key_states,
             value_states,
             attention_mask,
-            past_key_state=past_key_values[self.layer_idx][0],
-            past_value_state=past_key_values[self.layer_idx][1],
+            kv_cache=past_key_values[self.layer_idx],
             seq_position=seq_positions,
             scale=self.scale,
             block_tables=block_tables,
@@ -452,6 +447,7 @@ class Gemma4TextAttention(DecoderOnlyAttention):
             k_scale=k_scale,
             v_scale=v_scale,
             s_aux=getattr(self, "sinks", None),
+            is_bidirectional=self.is_bidirectional_attention(self.phase),
         )
 
         if self.lora_config:
@@ -465,15 +461,15 @@ class Gemma4TextAttention(DecoderOnlyAttention):
 class Gemma4ForCausalLM(DecoderOnlyForCausalLM):
     def forward(
         self,
-        input_ids: torch.Tensor = None,
-        inputs_embeds: torch.Tensor = None,
-        per_layer_inputs: torch.Tensor = None,
-        attention_mask: torch.Tensor = None,
-        cache_position: torch.Tensor = None,
-        position_ids: torch.Tensor = None,
-        query_position: torch.Tensor = None,
-        past_key_values: tuple[tuple[torch.Tensor]] = None,
-        rotary_emb: nn.Module = None,
+        input_ids: torch.Tensor | None = None,
+        inputs_embeds: torch.Tensor | None = None,
+        per_layer_inputs: torch.Tensor | None = None,
+        attention_mask: torch.Tensor | None = None,
+        cache_position: torch.Tensor | None = None,
+        position_ids: torch.Tensor | None = None,
+        query_position: torch.Tensor | None = None,
+        past_key_values: list[torch.Tensor] | None = None,
+        rotary_emb: nn.Module | None = None,
         global_block_tables: torch.Tensor | None = None,
         local_block_tables: torch.Tensor | None = None,
         lora_int_id: torch.Tensor | None = None,
@@ -543,23 +539,12 @@ class Gemma4Experts(nn.Module):
         self.top_k = int(router.config.top_k_experts)
         self.norm_topk_prob = True
 
-        gate_up = experts.gate_up_proj
-        gate_w = gate_up[:, : self.intermediate_size, :]
-        up_w = gate_up[:, self.intermediate_size :, :]
-        down_w = experts.down_proj
-
         self.per_expert_scale = router.per_expert_scale.detach().clone().unsqueeze(1)
 
-        gate_w_op = gate_w.contiguous()
-        up_w_op = up_w.contiguous()
-        down_w_op = down_w.contiguous().clone()
-
-        self.gate_proj = nn.Linear(self.hidden_size, self.num_experts * self.intermediate_size, bias=False)
-        self.up_proj = nn.Linear(self.hidden_size, self.num_experts * self.intermediate_size, bias=False)
-        self.down_proj = nn.Linear(self.num_experts * self.intermediate_size, self.hidden_size, bias=False)
-        self.gate_proj.weight.data = gate_w_op
-        self.up_proj.weight.data = up_w_op
-        self.down_proj.weight.data = down_w_op
+        gate, up, down = split_fused_experts(experts)
+        self.register_buffer("gate_proj_weight", gate)
+        self.register_buffer("up_proj_weight", up)
+        self.register_buffer("down_proj_weight", down)
 
     def forward(self, hidden_states: torch.Tensor, router_logits: torch.Tensor) -> torch.Tensor:
         masked_routing_weight = compute_masked_routing_weight_softmax_first(
@@ -569,9 +554,9 @@ class Gemma4Experts(nn.Module):
 
         return torch.ops.rbln_custom_ops.custom_moe_glu(
             hidden_states=hidden_states,
-            gate_proj_weight=self.gate_proj.weight,
-            up_proj_weight=self.up_proj.weight,
-            down_proj_weight=self.down_proj.weight,
+            gate_proj_weight=self.gate_proj_weight,
+            up_proj_weight=self.up_proj_weight,
+            down_proj_weight=self.down_proj_weight,
             masked_routing_weight=masked_routing_weight,
             hidden_act="gelu",
         )
@@ -602,7 +587,7 @@ class Gemma4VisionAttention(nn.Module):
     def forward(
         self,
         hidden_states: torch.Tensor,
-        position_embeddings: tuple[torch.Tensor, torch.Tensor] = None,
+        position_embeddings: tuple[torch.Tensor, torch.Tensor] | None = None,
         attention_mask: torch.Tensor | None = None,
         position_ids: torch.Tensor | None = None,
         **kwargs,
@@ -717,7 +702,10 @@ class Gemma4VisionModelWrapper(nn.Module):
             output_length=output_length,
         )
 
+        # The transformers >=5.9 pooler returns float32-scaled features; standardize in
+        # float32 and cast back to the working dtype (mirrors Gemma4VisionModel.forward).
         if self.standardize:
-            hidden_states = (hidden_states - self.std_bias) * self.std_scale
+            hidden_states = (hidden_states - self.std_bias.float()) * self.std_scale.float()
+        hidden_states = hidden_states.to(inputs_embeds.dtype)
 
         return hidden_states, pooler_mask

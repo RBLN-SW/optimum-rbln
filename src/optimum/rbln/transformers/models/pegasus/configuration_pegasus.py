@@ -36,3 +36,9 @@ class RBLNPegasusForConditionalGenerationConfig(RBLNModelForSeq2SeqLMConfig):
     """
 
     support_paged_attention = True
+
+
+__all__ = [
+    "RBLNPegasusForConditionalGenerationConfig",
+    "RBLNPegasusModelConfig",
+]

@@ -15,13 +15,18 @@
 
 import torch
 
-from ...models.decoderonly.decoderonly_architecture import DecoderOnlyAttention, DecoderOnlyLayer, DecoderOnlyModel
+from ...models.decoderonly.decoderonly_architecture import (
+    DecoderOnlyAttention,
+    DecoderOnlyLayer,
+    DecoderOnlyModel,
+    NestedCompileRegionMixin,
+)
 from ..decoderonly.decoderonly_architecture import DecoderOnlyWrapper
 
 
 class Gemma2Wrapper(DecoderOnlyWrapper):
     def get_rbln_layer_class(self):
-        return Gemma2DecoderLayer
+        return Gemma2DecoderLayerRegion if self.rbln_config.nested_compile_region else Gemma2DecoderLayer
 
     def get_rbln_attn_class(self):
         return Gemma2Attention
@@ -69,6 +74,10 @@ class Gemma2DecoderLayer(DecoderOnlyLayer):
         hidden_states = residual + hidden_states
 
         return hidden_states
+
+
+class Gemma2DecoderLayerRegion(NestedCompileRegionMixin, Gemma2DecoderLayer):
+    """Decoder layer with a nested compile region around its forward call."""
 
 
 class Gemma2Attention(DecoderOnlyAttention):

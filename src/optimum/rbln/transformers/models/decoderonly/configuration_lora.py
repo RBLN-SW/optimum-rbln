@@ -407,3 +407,9 @@ class RBLNLoRAConfig(RBLNSerializableConfigProtocol):
             "max_lora_rank": self.max_lora_rank,
         }
         return serializable_map
+
+
+__all__ = [
+    "RBLNLoRAAdapterConfig",
+    "RBLNLoRAConfig",
+]

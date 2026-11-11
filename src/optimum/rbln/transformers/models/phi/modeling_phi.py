@@ -90,3 +90,9 @@ class RBLNPhiModel(RBLNDecoderOnlyModel):
     """
 
     _decoder_wrapper_cls = PhiWrapper
+
+
+__all__ = [
+    "RBLNPhiForCausalLM",
+    "RBLNPhiModel",
+]

@@ -13,9 +13,9 @@
 # limitations under the License.
 
 import inspect
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Optional, Union
+from typing import Any, Optional
 
 import torch
 from transformers import (
@@ -32,12 +32,15 @@ from transformers.models.qwen3_vl.modeling_qwen3_vl import (
     Qwen3VLVisionPatchEmbed,
     Qwen3VLVisionRotaryEmbedding,
 )
+from transformers.vision_utils import get_vision_interpolation_indices_and_weights
 
 from ....configuration_utils import RBLNCompileConfig
 from ....modeling import RBLNModel
+from ....modeling_base import Preprocessor
 from ....modeling_rope_utils import build_qwen_mrope_lookup, np_cos, np_sin, qwen_vit_rot_pos_ids
 from ....utils.logging import get_logger
 from ...modeling_outputs import RBLNDecoderOnlyOutput, _validate_output_hidden_states
+from ...utils.multimodal_batch_sort import RBLNQwenVLBatchSortMixin, _per_sample_patch_lens, _permute_flat_segments
 from ..decoderonly.decoderonly_runtime_utils import RBLNPageTableManager, RBLNRuntimeModel
 from ..decoderonly.modeling_decoderonly import RBLNDecoderOnlyModel, RBLNDecoderOnlyModelForCausalLM
 from .configuration_qwen3_vl import (
@@ -49,9 +52,6 @@ from .qwen3_vl_runtime_utils import RBLNQwen3VLRuntimeModel
 
 
 logger = get_logger(__name__)
-
-if TYPE_CHECKING:
-    from transformers import AutoFeatureExtractor, AutoProcessor, AutoTokenizer
 
 
 class RBLNQwen3VLVisionModel(RBLNModel):
@@ -74,7 +74,7 @@ class RBLNQwen3VLVisionModel(RBLNModel):
         self.spatial_merge_unit = config.spatial_merge_size * config.spatial_merge_size
 
         head_dim = config.hidden_size // config.num_heads
-        freq_table = Qwen3VLVisionRotaryEmbedding(head_dim // 2)(int(self.max_seq_len.max()))
+        freq_table = Qwen3VLVisionRotaryEmbedding(head_dim // 2)(torch.arange(int(self.max_seq_len.max())))
         self.rotary_cos_table = np_cos(freq_table)
         self.rotary_sin_table = np_sin(freq_table)
         self.deepstack_visual_indexes = config.deepstack_visual_indexes
@@ -119,9 +119,9 @@ class RBLNQwen3VLVisionModel(RBLNModel):
     @classmethod
     def _update_rbln_config(
         cls,
-        preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"],
+        preprocessors: Sequence[Preprocessor],
         model: Optional["PreTrainedModel"] = None,
-        model_config: "PretrainedConfig" = None,
+        model_config: "PretrainedConfig | None" = None,
         rbln_config: RBLNQwen3VLVisionModelConfig | None = None,
     ) -> RBLNQwen3VLVisionModelConfig:
         hidden_size = model_config.hidden_size
@@ -145,65 +145,14 @@ class RBLNQwen3VLVisionModel(RBLNModel):
         return rbln_config
 
     def fast_pos_embed_interpolate(self, grid_thw: torch.Tensor) -> torch.Tensor:
-        grid_ts, grid_hs, grid_ws = grid_thw[:, 0], grid_thw[:, 1], grid_thw[:, 2]
-
-        idx_list = [[] for _ in range(4)]
-        weight_list = [[] for _ in range(4)]
-
-        for t, h, w in zip(grid_ts, grid_hs, grid_ws, strict=False):  # noqa: B007
-            h_idxs = torch.linspace(0, self.num_grid_per_side - 1, h)
-            w_idxs = torch.linspace(0, self.num_grid_per_side - 1, w)
-
-            h_idxs_floor = h_idxs.int()
-            w_idxs_floor = w_idxs.int()
-            h_idxs_ceil = (h_idxs.int() + 1).clip(max=self.num_grid_per_side - 1)
-            w_idxs_ceil = (w_idxs.int() + 1).clip(max=self.num_grid_per_side - 1)
-
-            dh = h_idxs - h_idxs_floor
-            dw = w_idxs - w_idxs_floor
-
-            base_h = h_idxs_floor * self.num_grid_per_side
-            base_h_ceil = h_idxs_ceil * self.num_grid_per_side
-
-            indices = [
-                (base_h[None].T + w_idxs_floor[None]).flatten(),
-                (base_h[None].T + w_idxs_ceil[None]).flatten(),
-                (base_h_ceil[None].T + w_idxs_floor[None]).flatten(),
-                (base_h_ceil[None].T + w_idxs_ceil[None]).flatten(),
-            ]
-
-            weights = [
-                ((1 - dh)[None].T * (1 - dw)[None]).flatten(),
-                ((1 - dh)[None].T * dw[None]).flatten(),
-                (dh[None].T * (1 - dw)[None]).flatten(),
-                (dh[None].T * dw[None]).flatten(),
-            ]
-
-            for i in range(4):
-                idx_list[i].extend(indices[i].tolist())
-                weight_list[i].extend(weights[i].tolist())
-
-        idx_tensor = torch.tensor(idx_list, dtype=torch.long, device=self.pos_embed.weight.device)
-        weight_tensor = torch.tensor(
-            weight_list, dtype=self.pos_embed.weight.dtype, device=self.pos_embed.weight.device
+        interp_indices, interp_weights = get_vision_interpolation_indices_and_weights(
+            grid_thw,
+            num_grid_per_side=self.num_grid_per_side,
+            mode="bilinear",
+            align_corners=True,
+            spatial_merge_size=self.spatial_merge_size,
         )
-        pos_embeds = self.pos_embed(idx_tensor) * weight_tensor[:, :, None]
-        patch_pos_embeds = pos_embeds[0] + pos_embeds[1] + pos_embeds[2] + pos_embeds[3]
-
-        patch_pos_embeds = patch_pos_embeds.split([h * w for h, w in zip(grid_hs, grid_ws, strict=False)])
-
-        patch_pos_embeds_permute = []
-        merge_size = self.spatial_merge_size
-        for pos_embed, t, h, w in zip(patch_pos_embeds, grid_ts, grid_hs, grid_ws, strict=False):
-            pos_embed = pos_embed.repeat(t, 1)
-            pos_embed = (
-                pos_embed.view(t, h // merge_size, merge_size, w // merge_size, merge_size, -1)
-                .permute(0, 1, 3, 2, 4, 5)
-                .flatten(0, 4)
-            )
-            patch_pos_embeds_permute.append(pos_embed)
-        patch_pos_embeds = torch.cat(patch_pos_embeds_permute)
-        return patch_pos_embeds
+        return (self.pos_embed(interp_indices) * interp_weights[:, :, None]).sum(1)
 
     @staticmethod
     def _pad_hidden_states(
@@ -269,6 +218,9 @@ class RBLNQwen3VLVisionModel(RBLNModel):
             except Exception as e:
                 raise ValueError(
                     f"Required seq_len({image_seq_len}) is larger than available max_seq_len({self.max_seq_len.tolist()})."
+                    " max_seq_len counts vision patches before spatial merging."
+                    " Reduce the processed image/video resolution or recompile the vision encoder"
+                    " with a larger max_seq_len."
                 ) from e
 
             image_hidden, (image_cos, image_sin), attn_mask, valid_len = self._pad_hidden_states(
@@ -309,12 +261,6 @@ class RBLNQwen3VLModel(RBLNDecoderOnlyModel):
     _get_rope_index_func = Qwen3VLModel.get_rope_index
     get_vision_position_ids = Qwen3VLModel.get_vision_position_ids
 
-    @classmethod
-    def _load_submodules(cls, model_save_dir, rbln_config, model=None, **kwargs):
-        if model is None and not getattr(rbln_config, "_load_visual_runtime", True):
-            return []
-        return super()._load_submodules(model_save_dir, rbln_config, model=model, **kwargs)
-
     def __post_init__(self, **kwargs):
         if hasattr(self.config, "embedding_dim"):
             self.embedding_dim = self.config.embedding_dim
@@ -327,7 +273,7 @@ class RBLNQwen3VLModel(RBLNDecoderOnlyModel):
         self.num_deepstack_layers = len(self.config.vision_config.deepstack_visual_indexes)
 
         super().__post_init__(**kwargs)
-        self.visual = self.rbln_submodules[0] if self.rbln_submodules else None
+        self.visual = self.rbln_submodules[0]
         self.rotary_emb = build_qwen_mrope_lookup(
             self._rotary_emb_class(self.config.text_config), self.rbln_config.max_seq_len
         )
@@ -379,16 +325,6 @@ class RBLNQwen3VLModel(RBLNDecoderOnlyModel):
             return self.config.text_config.vocab_size
         else:
             return self.embedding_dim if hasattr(self, "embedding_dim") else self.config.text_config.hidden_size
-
-    def _create_embedding_layer(self):
-        with no_init_weights():
-            embed_tokens = torch.nn.Embedding(
-                self.config.text_config.vocab_size,
-                self.config.text_config.hidden_size,
-                getattr(self.config.text_config, "pad_token_id", None),
-                dtype=self.rbln_config.dtype,
-            )
-        return embed_tokens
 
     @classmethod
     def get_input_info(
@@ -456,12 +392,12 @@ class RBLNQwen3VLModel(RBLNDecoderOnlyModel):
 
     def _preprocess_prefill(
         self,
-        input_ids: torch.LongTensor = None,
-        attention_mask: torch.Tensor = None,
-        pixel_values: torch.Tensor = None,
-        pixel_values_videos: torch.FloatTensor = None,
-        image_grid_thw: torch.LongTensor = None,
-        video_grid_thw: torch.LongTensor = None,
+        input_ids: torch.LongTensor | None = None,
+        attention_mask: torch.Tensor | None = None,
+        pixel_values: torch.Tensor | None = None,
+        pixel_values_videos: torch.FloatTensor | None = None,
+        image_grid_thw: torch.LongTensor | None = None,
+        video_grid_thw: torch.LongTensor | None = None,
         image_embeds: torch.Tensor | None = None,
         video_embeds: torch.Tensor | None = None,
         deepstack_image_embeds: list[torch.Tensor] | None = None,
@@ -476,11 +412,6 @@ class RBLNQwen3VLModel(RBLNDecoderOnlyModel):
 
         # Use pre-computed image_embeds if provided, otherwise run visual encoder
         if image_embeds is None and pixel_values is not None:
-            if self.visual is None:
-                raise RuntimeError(
-                    "Visual encoder runtime is not loaded (_load_visual_runtime=False). "
-                    "Provide pre-computed image_embeds from an encoder node."
-                )
             image_embeds, deepstack_image_embeds = self.visual(pixel_values, grid_thw=image_grid_thw)
 
         if image_embeds is not None:
@@ -500,11 +431,6 @@ class RBLNQwen3VLModel(RBLNDecoderOnlyModel):
 
         # Use pre-computed video_embeds if provided, otherwise run visual encoder
         if video_embeds is None and pixel_values_videos is not None:
-            if self.visual is None:
-                raise RuntimeError(
-                    "Visual encoder runtime is not loaded (_load_visual_runtime=False). "
-                    "Provide pre-computed video_embeds from an encoder node."
-                )
             video_embeds, deepstack_video_embeds = self.visual(pixel_values_videos, grid_thw=video_grid_thw)
 
         if video_embeds is not None:
@@ -673,6 +599,7 @@ class RBLNQwen3VLModel(RBLNDecoderOnlyModel):
         mm_token_type_ids: torch.IntTensor | None = None,
         **kwargs,
     ) -> RBLNDecoderOnlyOutput:
+        return_dict = return_dict if return_dict is not None else self.config.return_dict
         if attention_mask is None:
             attention_mask = torch.ones_like(input_ids)
         inputs_embeds, position_embed, rope_deltas, visual_pos_mask, deepstack_visual_embeds = (
@@ -742,7 +669,7 @@ class RBLNQwen3VLModel(RBLNDecoderOnlyModel):
             )
 
 
-class RBLNQwen3VLForConditionalGeneration(RBLNQwen3VLModel, RBLNDecoderOnlyModelForCausalLM):
+class RBLNQwen3VLForConditionalGeneration(RBLNQwenVLBatchSortMixin, RBLNQwen3VLModel, RBLNDecoderOnlyModelForCausalLM):
     """
     RBLNQwen3VLForConditionalGeneration is a multi-modal model that integrates vision and language processing capabilities,
     optimized for RBLN NPUs. It is designed for conditional generation tasks that involve both image and text inputs.
@@ -783,13 +710,43 @@ class RBLNQwen3VLForConditionalGeneration(RBLNQwen3VLModel, RBLNDecoderOnlyModel
     _rbln_submodules = [
         {"name": "visual"},
     ]
+    _video_grid_rows_are_chunks = True
+    _vision_sortable_kwargs = (
+        *RBLNQwenVLBatchSortMixin._vision_sortable_kwargs,
+        "image_embeds",
+        "video_embeds",
+        "deepstack_image_embeds",
+        "deepstack_video_embeds",
+    )
 
     def __post_init__(self, **kwargs):
         super().__post_init__(**kwargs)
         self.rope_deltas = torch.zeros(self.rbln_config.batch_size)
 
-    def can_generate(self):
-        return True
+    @property
+    def logits_last_dim(self):
+        return self.config.text_config.vocab_size
+
+    def _sort_vision_kwargs(
+        self, kwargs: dict, sort_idx: torch.Tensor, image_rows: list[int], video_rows: list[int]
+    ) -> None:
+        # encoder-node embeds are flattened in merged tokens; take lengths before super() permutes the grids
+        merge_unit = self.config.vision_config.spatial_merge_size**2
+        for grid_key, embed_key, deepstack_key, seg_rows in (
+            ("image_grid_thw", "image_embeds", "deepstack_image_embeds", image_rows),
+            ("video_grid_thw", "video_embeds", "deepstack_video_embeds", video_rows),
+        ):
+            grid = kwargs.get(grid_key)
+            embeds = kwargs.get(embed_key)
+            deepstack_embeds = kwargs.get(deepstack_key)
+            if grid is None or (embeds is None and deepstack_embeds is None):
+                continue
+            token_lens = [n // merge_unit for n in _per_sample_patch_lens(grid, seg_rows)]
+            if embeds is not None:
+                kwargs[embed_key] = _permute_flat_segments(embeds, token_lens, sort_idx)
+            if deepstack_embeds is not None:
+                kwargs[deepstack_key] = [_permute_flat_segments(t, token_lens, sort_idx) for t in deepstack_embeds]
+        super()._sort_vision_kwargs(kwargs, sort_idx, image_rows, video_rows)
 
     @classmethod
     def _reconstruct_model_if_needed(cls, model: "PreTrainedModel"):
@@ -807,12 +764,6 @@ class RBLNQwen3VLForConditionalGeneration(RBLNQwen3VLModel, RBLNDecoderOnlyModel
         image_grid_thw: torch.LongTensor | None = None,
         video_grid_thw: torch.LongTensor | None = None,
     ) -> dict:
-        if self.visual is None:
-            raise RuntimeError(
-                "Visual encoder runtime is not loaded (_load_visual_runtime=False). "
-                "Use load_visual_encoder() to load the visual encoder on the encoder node, "
-                "or set _load_visual_runtime=True to load both visual and LLM."
-            )
         result = {}
         if pixel_values is not None:
             image_embeds, deepstack_image_embeds = self.visual(pixel_values, grid_thw=image_grid_thw)
@@ -839,6 +790,7 @@ class RBLNQwen3VLForConditionalGeneration(RBLNQwen3VLModel, RBLNDecoderOnlyModel
         deepstack_image_embeds=None,
         deepstack_video_embeds=None,
         mm_token_type_ids=None,
+        inputs_sorted: bool = False,
         **kwargs,
     ):
         model_inputs = {}
@@ -881,6 +833,7 @@ class RBLNQwen3VLForConditionalGeneration(RBLNQwen3VLModel, RBLNDecoderOnlyModel
                 "deepstack_image_embeds": deepstack_image_embeds,
                 "deepstack_video_embeds": deepstack_video_embeds,
                 "mm_token_type_ids": mm_token_type_ids,
+                "inputs_sorted": inputs_sorted,
             }
         )
 
@@ -888,8 +841,8 @@ class RBLNQwen3VLForConditionalGeneration(RBLNQwen3VLModel, RBLNDecoderOnlyModel
 
     def _preprocess_decoder(
         self,
-        input_ids: torch.LongTensor = None,
-        cache_position: torch.LongTensor = None,
+        input_ids: torch.LongTensor | None = None,
+        cache_position: torch.LongTensor | None = None,
     ):
         if self.rbln_config.batch_size != cache_position.shape[0]:
             raise RuntimeError(
@@ -928,8 +881,11 @@ class RBLNQwen3VLForConditionalGeneration(RBLNQwen3VLModel, RBLNDecoderOnlyModel
         return_dict: bool | None = None,
         output_hidden_states: bool | None = None,
         mm_token_type_ids: torch.IntTensor | None = None,
+        inputs_sorted: bool = False,
         **kwargs,
     ) -> RBLNDecoderOnlyOutput:
+        return_dict = return_dict if return_dict is not None else self.config.return_dict
+        self._require_sorted_batch_inputs(input_ids if input_ids is not None else inputs_embeds, inputs_sorted)
         output_hidden_states = _validate_output_hidden_states(output_hidden_states, self.rbln_config)
         # Prefill
         if cache_position is None:
@@ -1010,3 +966,10 @@ class RBLNQwen3VLForConditionalGeneration(RBLNQwen3VLModel, RBLNDecoderOnlyModel
                 generate_idx=generate_idx,
                 hidden_states=all_hidden_states,
             )
+
+
+__all__ = [
+    "RBLNQwen3VLForConditionalGeneration",
+    "RBLNQwen3VLModel",
+    "RBLNQwen3VLVisionModel",
+]

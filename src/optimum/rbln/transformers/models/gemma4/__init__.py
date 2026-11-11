@@ -12,13 +12,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .configuration_gemma4 import (
-    RBLNGemma4ForCausalLMConfig,
-    RBLNGemma4ForConditionalGenerationConfig,
-    RBLNGemma4VisionModelConfig,
-)
-from .modeling_gemma4 import (
-    RBLNGemma4ForCausalLM,
-    RBLNGemma4ForConditionalGeneration,
-    RBLNGemma4VisionModel,
-)
+from typing import TYPE_CHECKING
+
+from transformers.utils import _LazyModule
+
+from ....utils.import_utils import define_import_structure
+
+
+if TYPE_CHECKING:
+    from .configuration_gemma4 import *
+    from .modeling_gemma4 import *
+else:
+    import sys
+
+    _file = globals()["__file__"]
+    sys.modules[__name__] = _LazyModule(__name__, _file, define_import_structure(_file), module_spec=__spec__)

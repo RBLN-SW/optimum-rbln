@@ -15,10 +15,45 @@
 from typing import Any
 
 from ....configuration_utils import RBLNModelConfig
+from ....utils.deprecation import deprecate_method
 from ..decoderonly.configuration_decoderonly import RBLNDecoderOnlyModelConfig, RBLNDecoderOnlyModelForCausalLMConfig
 
 
-class RBLNQwen3VLForConditionalGenerationConfig(RBLNDecoderOnlyModelForCausalLMConfig):
+class DeprecatedLoadVisualRuntimeMixin:
+    """Keeps the removed `_load_visual_runtime` knob writable by forwarding it to `visual.create_runtimes`."""
+
+    visual: RBLNModelConfig | dict[str, Any]
+
+    @property
+    def _load_visual_runtime(self) -> bool | None:
+        if isinstance(self.visual, dict):
+            return self.visual.get("create_runtimes")
+        return self.visual.create_runtimes
+
+    @_load_visual_runtime.setter
+    @deprecate_method(
+        version="0.13.0", new_method='visual={"create_runtimes": ...}', raise_if_greater_or_equal_version=False
+    )
+    def _load_visual_runtime(self, load_visual_runtime: bool) -> None:
+        if isinstance(self.visual, dict):
+            self.visual["create_runtimes"] = load_visual_runtime
+        else:
+            self.visual.create_runtimes = load_visual_runtime
+
+    def get_load_overrides(self) -> dict[str, Any]:
+        """Leaves out the `_load_visual_runtime` alias, whose value `visual` already carries as `create_runtimes`.
+
+        Returns:
+            Dictionary of load overrides, keyed like the ``rbln_config`` dict accepted by ``from_pretrained``.
+        """
+        overrides = super().get_load_overrides()
+        overrides.pop("_load_visual_runtime", None)
+        return overrides
+
+
+class RBLNQwen3VLForConditionalGenerationConfig(
+    DeprecatedLoadVisualRuntimeMixin, RBLNDecoderOnlyModelForCausalLMConfig
+):
     """
     Configuration class for RBLNQwen3VLForConditionalGeneration.
 
@@ -28,24 +63,23 @@ class RBLNQwen3VLForConditionalGenerationConfig(RBLNDecoderOnlyModelForCausalLMC
     """
 
     submodules = ["visual"]
-    subclass_non_save_attributes = ["_load_visual_runtime", "memory_budget"]
+    subclass_non_save_attributes = [
+        *RBLNDecoderOnlyModelForCausalLMConfig.subclass_non_save_attributes,
+        "_load_visual_runtime",
+    ]
 
     def __init__(
         self,
         use_inputs_embeds: bool = True,
         visual: RBLNModelConfig | None = None,
-        _load_visual_runtime: bool = True,
+        _load_visual_runtime: bool | None = None,
         **kwargs: Any,
     ):
         """
         Args:
             use_inputs_embeds (bool): Whether or not to use `inputs_embeds` as input. Defaults to `True`.
             visual (RBLNModelConfig | None): Configuration for the vision encoder component.
-            _load_visual_runtime (bool): Whether to create runtime for the visual encoder submodule.
-                Set to ``False`` on decoder-only nodes in a disaggregated encoder setup to skip
-                loading the visual encoder's compiled model (.rbln) and torch artifacts entirely.
-                When ``False``, pre-computed ``image_embeds`` / ``video_embeds`` must be provided
-                to forward(). Defaults to ``True``.
+            _load_visual_runtime (bool | None): Deprecated. Use `visual={"create_runtimes": ...}` instead.
             kwargs: Additional arguments passed to the parent `RBLNDecoderOnlyModelForCausalLMConfig`.
 
         Raises:
@@ -56,28 +90,31 @@ class RBLNQwen3VLForConditionalGenerationConfig(RBLNDecoderOnlyModelForCausalLMC
             raise ValueError(
                 "RBLNQwen3VLForConditionalGenerationConfig requires use_inputs_embeds=True. "
                 "The visual encoder output must be injected into inputs_embeds, whether the "
-                "visual encoder runs locally (_load_visual_runtime=True) or embeddings are "
-                "received from an encoder node (_load_visual_runtime=False)."
+                "visual encoder runs locally or embeddings are received from an encoder node."
             )
         self.visual = self.initialize_submodule_config(submodule_config=visual, batch_size=1, force_kwargs=True)
-        self._load_visual_runtime = _load_visual_runtime
+        if _load_visual_runtime is not None:
+            self._load_visual_runtime = _load_visual_runtime
 
 
-class RBLNQwen3VLModelConfig(RBLNDecoderOnlyModelConfig):
+class RBLNQwen3VLModelConfig(DeprecatedLoadVisualRuntimeMixin, RBLNDecoderOnlyModelConfig):
     submodules = ["visual"]
-    subclass_non_save_attributes = ["_load_visual_runtime", "memory_budget"]
+    subclass_non_save_attributes = [
+        *RBLNDecoderOnlyModelConfig.subclass_non_save_attributes,
+        "_load_visual_runtime",
+    ]
 
-    def __init__(self, visual: RBLNModelConfig | None = None, _load_visual_runtime: bool = True, **kwargs: Any):
+    def __init__(self, visual: RBLNModelConfig | None = None, _load_visual_runtime: bool | None = None, **kwargs: Any):
         super().__init__(**kwargs)
         if not getattr(self, "use_inputs_embeds", True):
             raise ValueError(
                 "RBLNQwen3VLModelConfig requires use_inputs_embeds=True. "
                 "The visual encoder output must be injected into inputs_embeds, whether the "
-                "visual encoder runs locally (_load_visual_runtime=True) or embeddings are "
-                "received from an encoder node (_load_visual_runtime=False)."
+                "visual encoder runs locally or embeddings are received from an encoder node."
             )
         self.visual = self.initialize_submodule_config(submodule_config=visual, batch_size=1, force_kwargs=True)
-        self._load_visual_runtime = _load_visual_runtime
+        if _load_visual_runtime is not None:
+            self._load_visual_runtime = _load_visual_runtime
 
 
 class RBLNQwen3VLVisionModelConfig(RBLNModelConfig):
@@ -88,16 +125,17 @@ class RBLNQwen3VLVisionModelConfig(RBLNModelConfig):
     RBLN-optimized Qwen3-VL vision transformer models for processing images and videos.
     """
 
-    def __init__(self, max_seq_len: int | list[int] = None, batch_size: int | None = None, **kwargs: Any):
+    def __init__(self, max_seq_len: int | list[int] | None = None, batch_size: int | None = None, **kwargs: Any):
         """
         Args:
             max_seq_len (int | list[int] | None): Maximum sequence lengths for Vision
                 Transformer attention. Can be an integer or list of integers, each indicating
                 the number of patches in a sequence for an image or video. For example, an image
-                of 224x224 pixels with patch size 16 and spatial_merge_size 2 yields
-                (224/16/2) * (224/16/2) = 49 merged patches. RBLN optimization runs inference
-                per image or video frame, so set `max_seq_len` to match the maximum expected
-                resolution to reduce computation. If not provided, a `ValueError` is raised.
+                of 512x512 pixels with patch size 16 yields (512/16) * (512/16) = 1024 patches;
+                the ViT counts them before the 2x2 spatial merge, on the size after the processor's
+                resize. RBLN optimization runs inference per image, or per temporal patch (2 frames)
+                of a video, so set `max_seq_len` to match the maximum expected resolution to reduce
+                computation. If not provided, a `ValueError` is raised.
             batch_size (int | None): the vision encoder runs one image at a time (the parent config forces
                 this by default), so only `batch_size=1` is supported. Defaults to 1.
             kwargs: Additional arguments passed to the parent RBLNModelConfig.
@@ -122,3 +160,10 @@ class RBLNQwen3VLVisionModelConfig(RBLNModelConfig):
             raise ValueError("'max_seq_len' must be specified.")
 
         self.max_seq_len = max_seq_len
+
+
+__all__ = [
+    "RBLNQwen3VLForConditionalGenerationConfig",
+    "RBLNQwen3VLModelConfig",
+    "RBLNQwen3VLVisionModelConfig",
+]

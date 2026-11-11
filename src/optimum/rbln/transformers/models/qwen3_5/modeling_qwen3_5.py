@@ -29,19 +29,23 @@ from transformers.models.qwen3_5.modeling_qwen3_5 import (
     Qwen3_5VisionPatchEmbed,
     Qwen3_5VisionRotaryEmbedding,
 )
+from transformers.vision_utils import get_vision_interpolation_indices_and_weights
 
 from ....configuration_utils import RBLNCompileConfig
 from ....modeling import RBLNModel
 from ....modeling_rope_utils import build_qwen_mrope_lookup, np_cos, np_sin, qwen_vit_rot_pos_ids
 from ....utils import logging
+from ....utils.deprecation import deprecate_method
 from ...cache_utils import FullAttentionKVCacheMeta, LinearAttentionCacheMeta
 from ...modeling_outputs import RBLNDecoderOnlyOutput, _validate_output_hidden_states
+from ...utils.multimodal_batch_sort import RBLNQwenVLBatchSortMixin
 from ..decoderonly.decoderonly_runtime_utils import RBLNPageTableManager
 from ..decoderonly.modeling_decoderonly import RBLNDecoderOnlyModel, RBLNDecoderOnlyModelForCausalLM
 from .configuration_qwen3_5 import (
+    MAX_GDN_CHUNK_SIZE,
     RBLNQwen3_5ForConditionalGenerationConfig,  # noqa: F401
     RBLNQwen3_5ModelConfig,  # noqa: F401
-    RBLNQwen3_5VisionModelConfig,  # noqa: F401
+    RBLNQwen3_5VisionModelConfig,
 )
 from .qwen3_5_architecture import (
     Qwen3_5_CausalLMWrapper,
@@ -52,6 +56,22 @@ from .qwen3_5_runtime_utils import RBLNQwen3_5RuntimeModel
 
 
 logger = logging.get_logger(__name__)
+
+
+def validate_gdn_defaults(rbln_config) -> None:
+    """Reject a configuration the GatedDeltaNet ops do not serve, once the defaults are filled."""
+    if rbln_config.gdn_chunk_size > MAX_GDN_CHUNK_SIZE:
+        raise ValueError(
+            f"gdn_chunk_size must be <= {MAX_GDN_CHUNK_SIZE}, got {rbln_config.gdn_chunk_size}. "
+            "Larger GatedDeltaNet sub-chunk sizes are not supported yet — "
+            f"set gdn_chunk_size to a value <= {MAX_GDN_CHUNK_SIZE} that divides prefill_chunk_size."
+        )
+    if rbln_config.prefill_chunk_size % rbln_config.gdn_chunk_size != 0:
+        raise ValueError(
+            f"gdn_chunk_size must divide prefill_chunk_size, got gdn_chunk_size="
+            f"{rbln_config.gdn_chunk_size} and prefill_chunk_size={rbln_config.prefill_chunk_size}. "
+            f"Set gdn_chunk_size to a divisor of prefill_chunk_size that is <= {MAX_GDN_CHUNK_SIZE}."
+        )
 
 
 def _qwen3_5_build_compile_context(compile_config, example_inputs):
@@ -164,14 +184,7 @@ class RBLNQwen3_5TextModel(RBLNDecoderOnlyModel):
         rbln_config = super()._update_rbln_config(
             preprocessors=preprocessors, model=model, model_config=model_config, rbln_config=rbln_config
         )
-        if rbln_config.gdn_chunk_size is None:
-            rbln_config.gdn_chunk_size = rbln_config.prefill_chunk_size
-        if rbln_config.gdn_chunk_size > 128:
-            raise ValueError(
-                f"gdn_chunk_size must be <= 128, got {rbln_config.gdn_chunk_size}. "
-                "Larger GatedDeltaNet sub-chunk sizes are not supported yet — "
-                "set gdn_chunk_size to a value <= 128 that divides prefill_chunk_size."
-            )
+        validate_gdn_defaults(rbln_config)
         return rbln_config
 
     @classmethod
@@ -223,7 +236,8 @@ class RBLNQwen3_5TextModel(RBLNDecoderOnlyModel):
         else:
             kvcache_dtype = rbln_config.dtype
             if rbln_config.quantization and rbln_config.quantization.kv_caches == "fp8":
-                kvcache_dtype = "float8_e4m3fn"
+                # fp8 KV caches are uint8 containers; the attention op is told their fp8 type.
+                kvcache_dtype = "uint8"
 
             # conv/recurrent caches are one shared static tensor, so sized to the max batch (not batch_size=1 for
             # prefill). Prefill writes its own slot (batch_idx); decode runs the full batch.
@@ -244,18 +258,16 @@ class RBLNQwen3_5TextModel(RBLNDecoderOnlyModel):
                         )
                     )
                 else:
-                    for slot in range(2):
-                        name = f"past_key_values_{layer_idx * 2 + slot}"
-                        cache_metas.append(
-                            FullAttentionKVCacheMeta.from_config(
-                                name,
-                                layer_idx,
-                                num_key_value_heads,
-                                head_dim,
-                                RBLNCompileConfig.normalize_dtype(kvcache_dtype),
-                                rbln_config,
-                            )
+                    cache_metas.append(
+                        FullAttentionKVCacheMeta.from_config(
+                            f"past_key_values_{layer_idx}",
+                            layer_idx,
+                            num_key_value_heads,
+                            head_dim,
+                            RBLNCompileConfig.normalize_dtype(kvcache_dtype),
+                            rbln_config,
                         )
+                    )
             input_info.extend([(meta.name, meta.compile_shape, meta.dtype) for meta in cache_metas])
             rbln_config.cache_metas.extend(cache_metas)
 
@@ -328,7 +340,7 @@ class RBLNQwen3_5VisionModel(RBLNModel):
 
         head_dim = config.hidden_size // config.num_heads
         # Precompute the rotary cos/sin tables up to the largest ViT bucket
-        _freq_table = Qwen3_5VisionRotaryEmbedding(head_dim // 2)(int(self.max_seq_len.max().item()))
+        _freq_table = Qwen3_5VisionRotaryEmbedding(head_dim // 2)(torch.arange(int(self.max_seq_len.max().item())))
         self.rotary_cos_table = np_cos(_freq_table)
         self.rotary_sin_table = np_sin(_freq_table)
 
@@ -373,7 +385,7 @@ class RBLNQwen3_5VisionModel(RBLNModel):
         cls,
         preprocessors=None,
         model: Optional["PreTrainedModel"] = None,
-        model_config: "PretrainedConfig" = None,
+        model_config: "PretrainedConfig | None" = None,
         rbln_config: RBLNQwen3_5VisionModelConfig | None = None,
     ) -> RBLNQwen3_5VisionModelConfig:
         hidden_size = model_config.hidden_size
@@ -385,7 +397,7 @@ class RBLNQwen3_5VisionModel(RBLNModel):
         for max_seq_len in rbln_config.max_seq_len:
             input_info = [
                 ("hidden_states", [max_seq_len, hidden_size], rbln_config.dtype),
-                ("attn_mask", [batch_size, 1, max_seq_len, max_seq_len], rbln_config.dtype),
+                ("attn_mask", [batch_size, 1, 1, max_seq_len], rbln_config.dtype),
                 # cos/sin enter the device at fp32 and are cast to the device dtype inside the vision model
                 ("cos", [batch_size, 1, max_seq_len, head_dim], torch.float32),
                 ("sin", [batch_size, 1, max_seq_len, head_dim], torch.float32),
@@ -404,68 +416,33 @@ class RBLNQwen3_5VisionModel(RBLNModel):
         return cos, sin
 
     def fast_pos_embed_interpolate(self, grid_thw: torch.Tensor) -> torch.Tensor:
-        grid_ts, grid_hs, grid_ws = grid_thw[:, 0], grid_thw[:, 1], grid_thw[:, 2]
-
-        idx_list = [[] for _ in range(4)]
-        weight_list = [[] for _ in range(4)]
-
-        for t, h, w in zip(grid_ts, grid_hs, grid_ws, strict=False):  # noqa: B007
-            h_idxs = torch.linspace(0, self.num_grid_per_side - 1, h)
-            w_idxs = torch.linspace(0, self.num_grid_per_side - 1, w)
-
-            h_idxs_floor = h_idxs.int()
-            w_idxs_floor = w_idxs.int()
-            h_idxs_ceil = (h_idxs.int() + 1).clip(max=self.num_grid_per_side - 1)
-            w_idxs_ceil = (w_idxs.int() + 1).clip(max=self.num_grid_per_side - 1)
-
-            dh = h_idxs - h_idxs_floor
-            dw = w_idxs - w_idxs_floor
-
-            base_h = h_idxs_floor * self.num_grid_per_side
-            base_h_ceil = h_idxs_ceil * self.num_grid_per_side
-
-            indices = [
-                (base_h[None].T + w_idxs_floor[None]).flatten(),
-                (base_h[None].T + w_idxs_ceil[None]).flatten(),
-                (base_h_ceil[None].T + w_idxs_floor[None]).flatten(),
-                (base_h_ceil[None].T + w_idxs_ceil[None]).flatten(),
-            ]
-
-            weights = [
-                ((1 - dh)[None].T * (1 - dw)[None]).flatten(),
-                ((1 - dh)[None].T * dw[None]).flatten(),
-                (dh[None].T * (1 - dw)[None]).flatten(),
-                (dh[None].T * dw[None]).flatten(),
-            ]
-
-            for i in range(4):
-                idx_list[i].extend(indices[i].tolist())
-                weight_list[i].extend(weights[i].tolist())
-
-        idx_tensor = torch.tensor(idx_list, dtype=torch.long, device=self.pos_embed.weight.device)
-        weight_tensor = torch.tensor(
-            weight_list, dtype=self.pos_embed.weight.dtype, device=self.pos_embed.weight.device
+        interp_indices, interp_weights = get_vision_interpolation_indices_and_weights(
+            grid_thw,
+            num_grid_per_side=self.num_grid_per_side,
+            mode="bilinear",
+            align_corners=True,
+            spatial_merge_size=self.spatial_merge_size,
         )
-        pos_embeds = self.pos_embed(idx_tensor) * weight_tensor[:, :, None]
-        patch_pos_embeds = pos_embeds[0] + pos_embeds[1] + pos_embeds[2] + pos_embeds[3]
+        return (self.pos_embed(interp_indices) * interp_weights[:, :, None]).sum(1)
 
-        patch_pos_embeds = patch_pos_embeds.split([h * w for h, w in zip(grid_hs, grid_ws, strict=False)])
+    # TODO(0.13.0): remove this method with the legacy mask. Every artifact then declares one query row.
+    def _declared_mask_rows(self, max_seq_len: int) -> int:
+        """How many query rows the `max_seq_len` bucket declares: one from the key-padding mask onward,
+        `max_seq_len` for an artifact compiled before it.
 
-        patch_pos_embeds_permute = []
-        merge_size = self.spatial_merge_size
-        for pos_embed, t, h, w in zip(patch_pos_embeds, grid_ts, grid_hs, grid_ws, strict=False):
-            pos_embed = pos_embed.repeat(t, 1)
-            pos_embed = (
-                pos_embed.view(t, h // merge_size, merge_size, w // merge_size, merge_size, -1)
-                .permute(0, 1, 3, 2, 4, 5)
-                .flatten(0, 4)
-            )
-            patch_pos_embeds_permute.append(pos_embed)
-        patch_pos_embeds = torch.cat(patch_pos_embeds_permute)
-        return patch_pos_embeds
+        Matched by bucket size, not position: the config sorts `max_seq_len` descending while `forward`
+        searches it ascending.
+        """
+        compile_cfg = self.rbln_config.compile_cfgs[0]
+        buckets = compile_cfg.input_info if compile_cfg.is_multiple_input_info else [compile_cfg.input_info]
+        for input_info in buckets:
+            for name, shape, _ in input_info:
+                if name == "attn_mask" and shape[-1] == max_seq_len:
+                    return shape[-2]
+        raise ValueError(f"No compiled vision bucket takes max_seq_len {max_seq_len}.")
 
-    @staticmethod
     def _pad_hidden_states(
+        self,
         hidden_states: torch.Tensor,
         position_embeddings: tuple[torch.Tensor, torch.Tensor],
         max_seq_len: int,
@@ -484,12 +461,38 @@ class RBLNQwen3_5VisionModel(RBLNModel):
             sin = torch.cat([sin, pos_padding], dim=0)
             position_embeddings = (cos, sin)
 
-        attn_mask = torch.ones(1, 1, max_seq_len, max_seq_len, dtype=hidden_states.dtype)
+        # TODO(0.13.0): `mask_rows` is always 1 once the legacy mask is gone. Remove the lookup and the
+        # branch, and keep `torch.ones(1, 1, 1, max_seq_len)` with the key-padding fill.
+        mask_rows = self._declared_mask_rows(max_seq_len)
+        attn_mask = torch.ones(1, 1, mask_rows, max_seq_len, dtype=hidden_states.dtype)
         if valid_len < max_seq_len:
-            attn_mask[:, :, valid_len:, :] = 0
-            attn_mask[:, :, :, valid_len:] = 0
+            if mask_rows > 1:
+                self._mask_padded_keys_and_queries(attn_mask, valid_len)
+            else:
+                self._mask_padded_keys(attn_mask, valid_len)
 
         return hidden_states, position_embeddings, attn_mask, valid_len
+
+    # TODO(0.13.0): this is the only fill left once the legacy mask is gone, so it can move back into
+    # `_pad_hidden_states`.
+    @staticmethod
+    def _mask_padded_keys(attn_mask: torch.Tensor, valid_len: int) -> None:
+        """Mask the padded keys, in place. Every query row then attends to the valid keys only."""
+        attn_mask[:, :, :, valid_len:] = 0
+
+    @staticmethod
+    @deprecate_method(
+        version="0.13.0",
+        additional_message=(
+            "It fills the [S, S] attention mask of a vision encoder compiled before the key-padding mask. "
+            "That artifact keeps working; recompile it to stop using this path."
+        ),
+    )
+    def _mask_padded_keys_and_queries(attn_mask: torch.Tensor, valid_len: int) -> None:
+        """Mask the padded keys and the padded query rows, in place, as an artifact compiled before the
+        key-padding mask expects."""
+        attn_mask[:, :, :, valid_len:] = 0
+        attn_mask[:, :, valid_len:, :] = 0
 
     def forward(self, hidden_states: torch.Tensor, grid_thw: torch.Tensor) -> torch.Tensor:
         hidden_states = self.patch_embed(hidden_states).to(self.rbln_config.dtype)
@@ -554,12 +557,6 @@ class RBLNQwen3_5Model(RBLNDecoderOnlyModel):
     _get_rope_index_func = Qwen3_5Model.get_rope_index
     get_vision_position_ids = Qwen3_5Model.get_vision_position_ids
 
-    @classmethod
-    def _load_submodules(cls, model_save_dir, rbln_config, model=None, **kwargs):
-        if model is None and not getattr(rbln_config, "_load_visual_runtime", True):
-            return []
-        return super()._load_submodules(model_save_dir, rbln_config, model=model, **kwargs)
-
     def __post_init__(self, **kwargs):
         if hasattr(self.config, "embedding_dim"):
             self.embedding_dim = self.config.embedding_dim
@@ -568,7 +565,7 @@ class RBLNQwen3_5Model(RBLNDecoderOnlyModel):
                 text_config=self.config.text_config, vision_config=self.config.vision_config
             )
         super().__post_init__(**kwargs)
-        self.visual = self.rbln_submodules[0] if self.rbln_submodules else None
+        self.visual = self.rbln_submodules[0]
         self.rotary_emb = build_qwen_mrope_lookup(
             self._rotary_emb_class(self.config.text_config), self.rbln_config.max_seq_len
         )
@@ -581,16 +578,6 @@ class RBLNQwen3_5Model(RBLNDecoderOnlyModel):
             return self.config.text_config.vocab_size
         else:
             return self.embedding_dim if hasattr(self, "embedding_dim") else self.config.text_config.hidden_size
-
-    def _create_embedding_layer(self):
-        with no_init_weights():
-            embed_tokens = torch.nn.Embedding(
-                self.config.text_config.vocab_size,
-                self.config.text_config.hidden_size,
-                getattr(self.config.text_config, "pad_token_id", None),
-                dtype=self.rbln_config.dtype,
-            )
-        return embed_tokens
 
     def _get_position_embeddings(self, hidden_states, position_ids):
         cos, sin = self.rotary_emb(hidden_states, position_ids)
@@ -607,14 +594,7 @@ class RBLNQwen3_5Model(RBLNDecoderOnlyModel):
         rbln_config = super()._update_rbln_config(
             preprocessors=preprocessors, model=model, model_config=model_config, rbln_config=rbln_config
         )
-        if rbln_config.gdn_chunk_size is None:
-            rbln_config.gdn_chunk_size = rbln_config.prefill_chunk_size
-        if rbln_config.gdn_chunk_size > 128:
-            raise ValueError(
-                f"gdn_chunk_size must be <= 128, got {rbln_config.gdn_chunk_size}. "
-                "Larger GatedDeltaNet sub-chunk sizes are not supported yet — "
-                "set gdn_chunk_size to a value <= 128 that divides prefill_chunk_size."
-            )
+        validate_gdn_defaults(rbln_config)
         return rbln_config
 
     @classmethod
@@ -724,6 +704,7 @@ class RBLNQwen3_5Model(RBLNDecoderOnlyModel):
         output_hidden_states: bool | None = None,
         **kwargs,
     ) -> RBLNDecoderOnlyOutput:
+        return_dict = return_dict if return_dict is not None else self.config.return_dict
         output_hidden_states = _validate_output_hidden_states(output_hidden_states, self.rbln_config)
         if attention_mask is None:
             attention_mask = torch.ones_like(input_ids)
@@ -771,7 +752,7 @@ class RBLNQwen3_5Model(RBLNDecoderOnlyModel):
         return RBLNDecoderOnlyOutput(logits=logits, hidden_states=all_hidden_states)
 
 
-class RBLNQwen3_5ForConditionalGeneration(RBLNQwen3_5Model, RBLNDecoderOnlyModelForCausalLM):
+class RBLNQwen3_5ForConditionalGeneration(RBLNQwenVLBatchSortMixin, RBLNQwen3_5Model, RBLNDecoderOnlyModelForCausalLM):
     """
     RBLNQwen3_5ForConditionalGeneration is a multi-modal model that integrates vision and language processing capabilities,
     optimized for RBLN NPUs. It is designed for conditional generation tasks that involve both image and text inputs.
@@ -809,12 +790,15 @@ class RBLNQwen3_5ForConditionalGeneration(RBLNQwen3_5Model, RBLNDecoderOnlyModel
         ```
     """
 
+    _video_grid_rows_are_chunks = True
+
     def __post_init__(self, **kwargs):
         super().__post_init__(**kwargs)
         self.rope_deltas = torch.zeros(self.rbln_config.batch_size)
 
-    def can_generate(self):
-        return True
+    @property
+    def logits_last_dim(self):
+        return self.config.get_text_config().vocab_size
 
     @classmethod
     def _get_compile_context(cls, compile_config, example_inputs):
@@ -836,6 +820,7 @@ class RBLNQwen3_5ForConditionalGeneration(RBLNQwen3_5Model, RBLNDecoderOnlyModel
         image_grid_thw=None,
         video_grid_thw=None,
         mm_token_type_ids=None,
+        inputs_sorted: bool = False,
         **kwargs,
     ):
         model_inputs = {}
@@ -863,14 +848,15 @@ class RBLNQwen3_5ForConditionalGeneration(RBLNQwen3_5Model, RBLNDecoderOnlyModel
                 "image_grid_thw": image_grid_thw,
                 "video_grid_thw": video_grid_thw,
                 "mm_token_type_ids": mm_token_type_ids,
+                "inputs_sorted": inputs_sorted,
             }
         )
         return model_inputs
 
     def _preprocess_decoder(
         self,
-        input_ids: torch.LongTensor = None,
-        cache_position: torch.LongTensor = None,
+        input_ids: torch.LongTensor | None = None,
+        cache_position: torch.LongTensor | None = None,
     ):
         if self.rbln_config.batch_size != cache_position.shape[0]:
             raise RuntimeError(
@@ -904,8 +890,11 @@ class RBLNQwen3_5ForConditionalGeneration(RBLNQwen3_5Model, RBLNDecoderOnlyModel
         return_dict: bool | None = None,
         mm_token_type_ids: torch.IntTensor | None = None,
         output_hidden_states: bool | None = None,
+        inputs_sorted: bool = False,
         **kwargs,
     ) -> RBLNDecoderOnlyOutput:
+        return_dict = return_dict if return_dict is not None else self.config.return_dict
+        self._require_sorted_batch_inputs(input_ids if input_ids is not None else inputs_embeds, inputs_sorted)
         output_hidden_states = _validate_output_hidden_states(output_hidden_states, self.rbln_config)
         text_config = self.config.get_text_config()
         if cache_position is None:  # prefill
@@ -961,3 +950,12 @@ class RBLNQwen3_5ForConditionalGeneration(RBLNQwen3_5Model, RBLNDecoderOnlyModel
         if not return_dict:
             return logits, generate_idx
         return RBLNDecoderOnlyOutput(logits=logits, generate_idx=generate_idx, hidden_states=all_hidden_states)
+
+
+__all__ = [
+    "RBLNQwen3_5ForCausalLM",
+    "RBLNQwen3_5ForConditionalGeneration",
+    "RBLNQwen3_5Model",
+    "RBLNQwen3_5TextModel",
+    "RBLNQwen3_5VisionModel",
+]

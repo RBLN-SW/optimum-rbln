@@ -13,7 +13,8 @@
 # limitations under the License.
 
 
-from typing import TYPE_CHECKING, Optional, Union
+from collections.abc import Sequence
+from typing import TYPE_CHECKING, Optional
 
 import torch
 from transformers import AutoModelForObjectDetection
@@ -21,11 +22,12 @@ from transformers.models.detr.modeling_detr import DetrConfig, DetrObjectDetecti
 
 from ....configuration_utils import RBLNCompileConfig
 from ....modeling import RBLNModel
+from ....modeling_base import Preprocessor
 from .configuration_detr import RBLNDetrForObjectDetectionConfig
 
 
 if TYPE_CHECKING:
-    from transformers import AutoFeatureExtractor, AutoProcessor, AutoTokenizer, PreTrainedModel
+    from transformers import PreTrainedModel
 
 
 class RBLNDetrForObjectDetection(RBLNModel):
@@ -42,27 +44,26 @@ class RBLNDetrForObjectDetection(RBLNModel):
     @classmethod
     def _update_rbln_config(
         cls,
-        preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"],
+        preprocessors: Sequence[Preprocessor],
         model: Optional["PreTrainedModel"] = None,
-        model_config: "DetrConfig" = None,
+        model_config: "DetrConfig | None" = None,
         rbln_config: RBLNDetrForObjectDetectionConfig | None = None,
     ) -> RBLNDetrForObjectDetectionConfig:
         if rbln_config.image_size is None:
             for processor in preprocessors:
                 if hasattr(processor, "size"):
-                    if all(required_key in processor.size.keys() for required_key in ["height", "width"]):
+                    if all(required_key in processor.size for required_key in ["height", "width"]):
                         height, width = processor.size["height"], processor.size["width"]
-                    elif "longest_edge" in processor.size.keys():
+                    elif "longest_edge" in processor.size:
                         height, width = processor.size["longest_edge"], processor.size["longest_edge"]
                     break
 
             if rbln_config.image_size is None:
                 raise ValueError("`image_size` should be specified!")
+        elif isinstance(rbln_config.image_size, int):
+            height, width = rbln_config.image_size, rbln_config.image_size
         else:
-            if isinstance(rbln_config.image_size, int):
-                height, width = rbln_config.image_size, rbln_config.image_size
-            else:
-                height, width = rbln_config.image_size
+            height, width = rbln_config.image_size
 
         rbln_compile_config = RBLNCompileConfig(
             input_info=[
@@ -87,7 +88,7 @@ class RBLNDetrForObjectDetection(RBLNModel):
         self,
         pixel_values: torch.Tensor,
         pixel_mask: torch.Tensor | None = None,
-        return_dict: bool = None,
+        return_dict: bool | None = None,
         **kwargs,
     ) -> tuple | DetrObjectDetectionOutput:
         """
@@ -118,7 +119,7 @@ class RBLNDetrForObjectDetection(RBLNModel):
 
         output = self.model[0](pixel_values=pixel_values, pixel_mask=pixel_mask, **kwargs)
 
-        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+        return_dict = return_dict if return_dict is not None else self.config.return_dict
         if not return_dict:
             return output
 
@@ -128,3 +129,8 @@ class RBLNDetrForObjectDetection(RBLNModel):
             last_hidden_state=output[2],
             encoder_last_hidden_state=output[3],
         )
+
+
+__all__ = [
+    "RBLNDetrForObjectDetection",
+]

@@ -15,6 +15,8 @@
 from typing import TYPE_CHECKING, Union
 
 import torch
+from diffusers.models.autoencoders.autoencoder_kl_wan import patchify as wan_patchify
+from diffusers.models.autoencoders.autoencoder_kl_wan import unpatchify as wan_unpatchify
 from diffusers.models.autoencoders.vae import DiagonalGaussianDistribution, IdentityDistribution
 
 from ....utils.runtime_utils import RBLNPytorchRuntime
@@ -55,6 +57,93 @@ class RBLNRuntimeCosmosVAEDecoder(RBLNPytorchRuntime):
         else:
             decoded = self.forward(z)
         return decoded
+
+
+class RBLNRuntimeWanVAEEncoder(RBLNPytorchRuntime):
+    mandatory_members = ["main_input_name", "encoder_n", "patch_size", "dtype"]
+
+    def encode(self, x: torch.Tensor) -> torch.Tensor:
+        x = x.to(self.dtype)
+        if self.patch_size is not None:
+            x = wan_patchify(x, patch_size=self.patch_size)
+
+        _, _, num_frame, _, _ = x.shape
+        outs = []
+        feat_cache_0 = None
+        for i in range(1 + (num_frame - 1) // 4):
+            if i == 0:
+                ret = self.forward(x[:, :, :1, :, :])
+            else:
+                ret = self.encoder_n(x[:, :, 1 + 4 * (i - 1) : 1 + 4 * i, :, :], feat_cache_0)
+            out_i, feat_cache_0 = ret[0], ret[1]
+            outs.append(out_i)
+
+        return torch.cat(outs, dim=2) if len(outs) > 1 else outs[0]
+
+
+class RBLNRuntimeWanVAEDecoder(RBLNPytorchRuntime):
+    mandatory_members = ["main_input_name", "decoder_n", "patch_size", "dtype", "post_quant_conv"]
+
+    def decode(self, z: torch.Tensor) -> torch.Tensor:
+        z = z.to(self.dtype)
+        if self.post_quant_conv is not None:
+            z = self.post_quant_conv.to(z.dtype)(z)
+
+        _, _, num_frame, _, _ = z.shape
+        outs = []
+        feat_cache_0 = None
+        for i in range(num_frame):
+            if i == 0:
+                ret = self.forward(z[:, :, :1, :, :])
+            else:
+                ret = self.decoder_n(z[:, :, i : i + 1, :, :], feat_cache_0)
+            out_i, feat_cache_0 = ret[0], ret[1]
+            outs.append(out_i)
+
+        out = torch.cat(outs, dim=2) if len(outs) > 1 else outs[0]
+        if self.patch_size is not None:
+            out = wan_unpatchify(out, patch_size=self.patch_size)
+        return torch.clamp(out, min=-1.0, max=1.0)
+
+
+class RBLNRuntimeCogVideoXVAEEncoder(RBLNPytorchRuntime):
+    mandatory_members = ["main_input_name", "dtype"]
+
+    def encode(self, x: torch.Tensor) -> torch.Tensor:
+        if x.shape[2] != 1:
+            raise ValueError(
+                f"The CogVideoX VAE encoder is compiled for 1-frame images (image-to-video), got {x.shape[2]} frames."
+            )
+        return self.forward(x.to(self.dtype).contiguous())
+
+
+class RBLNRuntimeCogVideoXVAEDecoder(RBLNPytorchRuntime):
+    mandatory_members = ["main_input_name", "decoder_n", "num_latent_frames_batch_size", "dtype"]
+
+    def decode(self, z: torch.Tensor) -> torch.Tensor:
+        # Same chunks as AutoencoderKLCogVideoX._decode: decoder_0 decodes the first chunk, decoder_n each later one.
+        z = z.to(self.dtype)
+        num_frames = z.shape[2]
+        frame_batch_size = self.num_latent_frames_batch_size
+        num_batches = max(num_frames // frame_batch_size, 1)
+        if num_batches > 1 and self.decoder_n is None:
+            raise ValueError(f"Cannot decode {num_frames} latent frames: the VAE is compiled for one chunk only.")
+
+        conv_cache_0 = None
+        dec = []
+        for i in range(num_batches):
+            remaining_frames = num_frames % frame_batch_size
+            start_frame = frame_batch_size * i + (0 if i == 0 else remaining_frames)
+            end_frame = frame_batch_size * (i + 1) + remaining_frames
+            z_intermediate = z[:, :, start_frame:end_frame].contiguous()
+            if i == 0:
+                ret = self.forward(z_intermediate)
+            else:
+                ret = self.decoder_n(z_intermediate, conv_cache_0)
+            dec.append(ret[0])
+            conv_cache_0 = ret[1]
+
+        return torch.cat(dec, dim=2)
 
 
 class _VAEDecoder(torch.nn.Module):

@@ -1,6 +1,6 @@
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
+from torch import nn
 
 
 class QLinear(nn.Module):
@@ -14,14 +14,16 @@ class QLinear(nn.Module):
     ):
         super().__init__()
 
+        if weight is None:
+            raise ValueError("weight is required")
+        if weight_scale is None:
+            raise ValueError("weight_scale is required")
+
         self.weight = weight
         self.bias = bias
         self.weight_scale = weight_scale
         self.input_scale = input_scale
         self.dynamic = dynamic
-
-        if weight_scale is None:
-            raise ValueError("weight_scale is required")
 
     def dtype(self) -> torch.dtype:
         return self.weight.dtype
@@ -42,9 +44,8 @@ class QIntLinear(QLinear):
             x_scale = torch.clamp(x_scale, min=finfo.eps)
 
             x = (x / x_scale).clamp(min=iinfo.min, max=iinfo.max)
-        else:
-            if self.input_scale is not None:
-                x = (x / self.input_scale).clamp(min=iinfo.min, max=iinfo.max)
+        elif self.input_scale is not None:
+            x = (x / self.input_scale).clamp(min=iinfo.min, max=iinfo.max)
 
         weight = self.weight * self.weight_scale
         qact = F.linear(x, weight, self.bias)

@@ -22,7 +22,7 @@ from ..configuration_utils import RBLNModelConfig
 class RBLNTransformerEncoderConfig(RBLNModelConfig):
     rbln_model_input_names: list[str] | None = None
 
-    @deprecate_kwarg(old_name="model_input_shapes", version="0.12.0")
+    @deprecate_kwarg(old_name="model_input_shapes", version="0.13.0")
     def __init__(
         self,
         max_seq_len: int | list[int] | None = None,
@@ -83,8 +83,9 @@ class RBLNImageModelConfig(RBLNModelConfig):
             return self.image_size
         elif isinstance(self.image_size, (list, tuple)):
             return self.image_size[1]
-        else:
+        elif isinstance(self.image_size, dict):
             return self.image_size["width"]
+        raise ValueError("`image_size` is not set.")
 
     @property
     def image_height(self):
@@ -92,8 +93,9 @@ class RBLNImageModelConfig(RBLNModelConfig):
             return self.image_size
         elif isinstance(self.image_size, (list, tuple)):
             return self.image_size[0]
-        else:
+        elif isinstance(self.image_size, dict):
             return self.image_size["height"]
+        raise ValueError("`image_size` is not set.")
 
 
 class RBLNModelForQuestionAnsweringConfig(RBLNTransformerEncoderConfig):

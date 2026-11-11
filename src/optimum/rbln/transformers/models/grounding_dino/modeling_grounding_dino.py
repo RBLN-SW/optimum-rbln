@@ -12,8 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from collections.abc import Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional, Union
+from typing import TYPE_CHECKING, Optional
 
 import torch
 from torch import Tensor, nn
@@ -35,6 +36,7 @@ from transformers.pytorch_utils import meshgrid
 
 from ....configuration_utils import RBLNCompileConfig, RBLNModelConfig
 from ....modeling import RBLNModel
+from ....modeling_base import Preprocessor
 from ....utils.runtime_utils import RBLNPytorchRuntime
 from ..bert.modeling_bert import RBLNBertModel
 from .configuration_grounding_dino import (
@@ -51,9 +53,6 @@ from .grounding_dino_architecture import (
 
 if TYPE_CHECKING:
     from transformers import (
-        AutoFeatureExtractor,
-        AutoProcessor,
-        AutoTokenizer,
         PretrainedConfig,
         PreTrainedModel,
     )
@@ -268,9 +267,9 @@ class RBLNGroundingDinoForObjectDetection(RBLNModel):
     @classmethod
     def _update_rbln_config(
         cls,
-        preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"],
+        preprocessors: Sequence[Preprocessor],
         model: Optional["PreTrainedModel"] = None,
-        model_config: RBLNGroundingDinoForObjectDetectionConfig = None,
+        model_config: RBLNGroundingDinoForObjectDetectionConfig | None = None,
         rbln_config: RBLNGroundingDinoForObjectDetectionConfig | None = None,
     ) -> RBLNGroundingDinoForObjectDetectionConfig:
         input_info = [
@@ -307,7 +306,7 @@ class RBLNGroundingDinoForObjectDetection(RBLNModel):
         output_hidden_states = (
             output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
         )
-        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+        return_dict = return_dict if return_dict is not None else self.config.return_dict
 
         text_self_attention_masks, position_ids = generate_masks_with_special_tokens_and_transfer_map(input_ids)
 
@@ -340,7 +339,7 @@ class RBLNGroundingDinoForObjectDetection(RBLNModel):
         text_features = text_outputs.last_hidden_state if return_dict else text_outputs[0]
         text_features = self.text_projection(text_features)
 
-        batch_size, num_channels, height, width = pixel_values.shape
+        batch_size, _, height, width = pixel_values.shape
         device = pixel_values.device
 
         if pixel_mask is None:
@@ -395,16 +394,16 @@ class RBLNGroundingDinoForObjectDetection(RBLNModel):
         for level, (source, mask, pos_embed) in enumerate(
             zip(feature_maps, masks, position_embeddings_list, strict=False)
         ):
-            batch_size, num_channels, height, width = source.shape
+            batch_size, _num_channels, height, width = source.shape
             spatial_shape = (height, width)
             spatial_shapes_list.append(spatial_shape)
-            source = source.flatten(2).transpose(1, 2)
-            mask = mask.flatten(1)
-            pos_embed = pos_embed.flatten(2).transpose(1, 2)
-            lvl_pos_embed = pos_embed + self.level_embed[level].view(1, 1, -1)
+            flat_source = source.flatten(2).transpose(1, 2)
+            flat_mask = mask.flatten(1)
+            flat_pos_embed = pos_embed.flatten(2).transpose(1, 2)
+            lvl_pos_embed = flat_pos_embed + self.level_embed[level].view(1, 1, -1)
             lvl_pos_embed_flatten.append(lvl_pos_embed)
-            source_flatten.append(source)
-            mask_flatten.append(mask)
+            source_flatten.append(flat_source)
+            mask_flatten.append(flat_mask)
         source_flatten = torch.cat(source_flatten, 1)
         mask_flatten = torch.cat(mask_flatten, 1)
         lvl_pos_embed_flatten = torch.cat(lvl_pos_embed_flatten, 1)
@@ -432,6 +431,15 @@ class RBLNGroundingDinoForObjectDetection(RBLNModel):
                 output_attentions=output_attentions,
                 output_hidden_states=output_hidden_states,
                 return_dict=True,
+            )
+        # A tuple passed as encoder_outputs is wrapped so that both return paths below can read it the same way
+        elif not isinstance(encoder_outputs, GroundingDinoEncoderOutput):
+            encoder_outputs = GroundingDinoEncoderOutput(
+                last_hidden_state_vision=encoder_outputs[0],
+                last_hidden_state_text=encoder_outputs[1],
+                vision_hidden_states=encoder_outputs[2] if output_hidden_states else None,
+                text_hidden_states=encoder_outputs[3] if output_hidden_states else None,
+                attentions=encoder_outputs[-1] if output_attentions else None,
             )
 
         # Fifth, prepare decoder inputs
@@ -512,7 +520,11 @@ class RBLNGroundingDinoForObjectDetection(RBLNModel):
                 if value is not None
             )
             tuple_outputs = (
-                (decoder_outputs[0], init_reference_points) + decoder_outputs[1:] + encoder_outputs + enc_outputs
+                decoder_outputs[0],
+                init_reference_points,
+                *decoder_outputs[1:],
+                *encoder_outputs.to_tuple(),
+                *enc_outputs,
             )
 
             return tuple_outputs
@@ -564,7 +576,7 @@ class RBLNGroundingDinoForObjectDetection(RBLNModel):
         token_type_ids: torch.LongTensor | None = None,
         attention_mask: torch.LongTensor | None = None,
     ):
-        batch_size, seq_len = input_ids.shape
+        _batch_size, seq_len = input_ids.shape
         max_text_len = self.config.max_text_len
         token_type_ids = token_type_ids if token_type_ids is not None else torch.zeros_like(input_ids)
         attention_mask = attention_mask if attention_mask is not None else torch.ones_like(input_ids)
@@ -606,7 +618,7 @@ class RBLNGroundingDinoForObjectDetection(RBLNModel):
             The model outputs. If return_dict=False is passed, returns a tuple of tensors. Otherwise, returns a GroundingDinoObjectDetectionOutput object.
         """
 
-        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+        return_dict = return_dict if return_dict is not None else self.config.return_dict
 
         # Pad image to rbln_config.image_height and rbln_config.image_width
         pixel_values, pixel_mask = self.pad_image_to_rbln_config(pixel_values, pixel_mask)
@@ -710,14 +722,13 @@ def _update_spatial_shapes(model_config, rbln_config):
         return (image_size + patch_size - 1) // patch_size
 
     # update spatial_shapes
-    spatial_shapes = []
     backbone_config = model_config.backbone_config
     num_patched_h = num_patches(rbln_config.image_height, backbone_config.patch_size)
     num_patched_w = num_patches(rbln_config.image_height, backbone_config.patch_size)
-    for out_layer in backbone_config.out_indices:
-        spatial_shapes.append(
-            [down_sampled_size(num_patched_h, out_layer - 1), down_sampled_size(num_patched_w, out_layer - 1)]
-        )
+    spatial_shapes = [
+        [down_sampled_size(num_patched_h, out_layer - 1), down_sampled_size(num_patched_w, out_layer - 1)]
+        for out_layer in backbone_config.out_indices
+    ]
 
     # Lowest resolution feature maps are obtained via 3x3 stride 2 convolutions on the final stage
     if model_config.num_feature_levels > len(spatial_shapes):
@@ -747,7 +758,7 @@ class RBLNGroundingDinoEncoder(RBLNModel):
         cls,
         model: "PreTrainedModel",
         rbln_config: RBLNModelConfig,
-        preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"] | None,
+        preprocessors: Sequence[Preprocessor] | None,
     ):
         for processor in preprocessors:
             if rbln_config.image_size is None and hasattr(processor, "image_processor"):
@@ -770,9 +781,9 @@ class RBLNGroundingDinoEncoder(RBLNModel):
     @classmethod
     def _update_rbln_config(
         cls,
-        preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"],
+        preprocessors: Sequence[Preprocessor],
         model: Optional["PreTrainedModel"] = None,
-        model_config: RBLNGroundingDinoEncoderConfig = None,
+        model_config: RBLNGroundingDinoEncoderConfig | None = None,
         rbln_config: RBLNGroundingDinoEncoderConfig | None = None,
     ) -> RBLNGroundingDinoEncoderConfig:
         if rbln_config.image_size is None:
@@ -888,7 +899,7 @@ class RBLNGroundingDinoEncoder(RBLNModel):
         )
         self.validate_output_config(output_attentions, output_hidden_states)
 
-        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+        return_dict = return_dict if return_dict is not None else self.config.return_dict
         reference_points = self.get_reference_points(spatial_shapes, valid_ratios, device="cpu").to(
             self.rbln_config.dtype
         )
@@ -950,7 +961,7 @@ class RBLNGroundingDinoDecoder(RBLNModel):
         cls,
         model: "PreTrainedModel",
         rbln_config: RBLNModelConfig,
-        preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"] | None,
+        preprocessors: Sequence[Preprocessor] | None,
     ):
         for processor in preprocessors:
             if rbln_config.image_size is None and hasattr(processor, "image_processor"):
@@ -974,9 +985,9 @@ class RBLNGroundingDinoDecoder(RBLNModel):
     @classmethod
     def _update_rbln_config(
         cls,
-        preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"],
+        preprocessors: Sequence[Preprocessor],
         model: Optional["PreTrainedModel"] = None,
-        model_config: RBLNGroundingDinoDecoderConfig = None,
+        model_config: RBLNGroundingDinoDecoderConfig | None = None,
         rbln_config: RBLNGroundingDinoEncoderConfig | None = None,
     ) -> RBLNGroundingDinoEncoderConfig:
         if rbln_config.image_size is None:
@@ -1071,7 +1082,7 @@ class RBLNGroundingDinoDecoder(RBLNModel):
             output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
         )
         self.validate_output_config(output_attentions, output_hidden_states)
-        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+        return_dict = return_dict if return_dict is not None else self.config.return_dict
 
         reshaped_vision_encoder_attention_mask = (
             vision_encoder_attention_mask[:, :, None].repeat(1, 1, self.config.d_model).to(self.rbln_config.dtype)
@@ -1111,3 +1122,11 @@ class RBLNGroundingDinoDecoder(RBLNModel):
             hidden_states=hidden_states,
             attentions=attentions,
         )
+
+
+__all__ = [
+    "RBLNGroundingDinoDecoder",
+    "RBLNGroundingDinoEncoder",
+    "RBLNGroundingDinoForObjectDetection",
+    "RBLNGroundingDinoTextModel",
+]

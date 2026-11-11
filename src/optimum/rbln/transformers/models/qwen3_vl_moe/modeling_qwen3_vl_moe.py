@@ -14,7 +14,7 @@
 
 import inspect
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import torch
 from transformers import AutoModelForImageTextToText, PreTrainedModel, Qwen3VLMoeConfig
@@ -28,6 +28,7 @@ from transformers.models.qwen3_vl_moe.modeling_qwen3_vl_moe import (
 )
 
 from ....modeling_rope_utils import np_cos, np_sin
+from ...utils.moe import RBLNMoeLoadMixin
 from ..decoderonly.decoderonly_runtime_utils import RBLNPageTableManager, RBLNRuntimeModel
 from ..qwen3_vl.modeling_qwen3_vl import (
     RBLNQwen3VLForConditionalGeneration,
@@ -37,10 +38,6 @@ from ..qwen3_vl.modeling_qwen3_vl import (
 from .configuration_qwen3_vl_moe import RBLNQwen3VLMoeVisionModelConfig
 from .qwen3_vl_moe_architecture import Qwen3VLMoe_LanguageModelWrapper, Qwen3VLMoeVisionModelWrapper
 from .qwen3_vl_moe_runtime_utils import RBLNQwen3VLMoeRuntimeModel
-
-
-if TYPE_CHECKING:
-    pass
 
 
 class RBLNQwen3VLMoeVisionModel(RBLNQwen3VLVisionModel):
@@ -53,7 +50,7 @@ class RBLNQwen3VLMoeVisionModel(RBLNQwen3VLVisionModel):
         self.spatial_merge_unit = config.spatial_merge_size * config.spatial_merge_size
 
         head_dim = config.hidden_size // config.num_heads
-        freq_table = Qwen3VLMoeVisionRotaryEmbedding(head_dim // 2)(int(self.max_seq_len.max()))
+        freq_table = Qwen3VLMoeVisionRotaryEmbedding(head_dim // 2)(torch.arange(int(self.max_seq_len.max())))
         self.rotary_cos_table = np_cos(freq_table)
         self.rotary_sin_table = np_sin(freq_table)
         self.deepstack_visual_indexes = config.deepstack_visual_indexes
@@ -82,7 +79,7 @@ class RBLNQwen3VLMoeVisionModel(RBLNQwen3VLVisionModel):
         return val
 
 
-class RBLNQwen3VLMoeModel(RBLNQwen3VLModel):
+class RBLNQwen3VLMoeModel(RBLNMoeLoadMixin, RBLNQwen3VLModel):
     auto_model_class = AutoModelForImageTextToText
     _decoder_wrapper_cls = Qwen3VLMoe_LanguageModelWrapper
     _use_rotary_emb = False
@@ -130,8 +127,15 @@ class RBLNQwen3VLMoeModel(RBLNQwen3VLModel):
             self.decoder = self.decoders[self.rbln_config.batch_size]
 
 
-class RBLNQwen3VLMoeForConditionalGeneration(RBLNQwen3VLForConditionalGeneration):
+class RBLNQwen3VLMoeForConditionalGeneration(RBLNMoeLoadMixin, RBLNQwen3VLForConditionalGeneration):
     auto_model_class = AutoModelForImageTextToText
     _decoder_wrapper_cls = Qwen3VLMoe_LanguageModelWrapper
     _use_rotary_emb = False
     _rbln_submodules = [{"name": "visual"}]
+
+
+__all__ = [
+    "RBLNQwen3VLMoeForConditionalGeneration",
+    "RBLNQwen3VLMoeModel",
+    "RBLNQwen3VLMoeVisionModel",
+]

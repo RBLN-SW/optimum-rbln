@@ -13,8 +13,8 @@
 # limitations under the License.
 import importlib
 import inspect
-from collections.abc import Callable
-from typing import TYPE_CHECKING, Any, Optional, Union
+from collections.abc import Callable, Sequence
+from typing import Any, Optional
 
 import torch
 from transformers import AutoModelForImageTextToText, Gemma3ForConditionalGeneration, PretrainedConfig, PreTrainedModel
@@ -24,17 +24,14 @@ from transformers.models.gemma3.modeling_gemma3 import Gemma3TextScaledWordEmbed
 
 from ....configuration_utils import RBLNCompileConfig, RBLNModelConfig
 from ....modeling import RBLNModel
+from ....modeling_base import Preprocessor
 from ...modeling_outputs import RBLNDecoderOnlyOutput
+from ...utils.multimodal_batch_sort import RBLNImageIndexedBatchSortMixin, _placeholder_token_counts
 from ...utils.rbln_runtime_wrapper import LoopProcessor
 from ..decoderonly.decoderonly_runtime_utils import RBLNPageTableManager
-from ..decoderonly.generation_decoderonly import RBLNDecoderOnlyGenerationMixin
 from ..decoderonly.modeling_decoderonly import RBLNDecoderOnlyModelForCausalLM
 from .gemma3_architecture import Gemma3ForCausalLMWrapper
 from .gemma3_runtime_utils import RBLNGemma3RuntimeModel
-
-
-if TYPE_CHECKING:
-    from transformers import AutoFeatureExtractor, AutoProcessor, AutoTokenizer, Gemma3ForConditionalGeneration
 
 
 class LoopVisionTower(LoopProcessor):
@@ -74,12 +71,16 @@ class LoopProjector(LoopProcessor):
         return output[0]
 
 
-class RBLNGemma3ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMixin):
+class RBLNGemma3ForConditionalGeneration(RBLNModel, RBLNImageIndexedBatchSortMixin):
     auto_model_class = AutoModelForImageTextToText
     _rbln_submodules = [
         {"name": "vision_tower"},
         {"name": "language_model"},
     ]
+    _image_indexed_kwargs = ("pixel_values",)
+
+    def _images_per_sample(self, input_ids: torch.LongTensor | None, kwargs: dict) -> list[int]:
+        return _placeholder_token_counts(input_ids, self._image_token_id, self.config.mm_tokens_per_image)
 
     def __getattr__(self, __name: str) -> Any:
         def redirect(func):
@@ -134,7 +135,7 @@ class RBLNGemma3ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMix
     @classmethod
     def _update_rbln_config(
         cls,
-        preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"] | None,
+        preprocessors: Sequence[Preprocessor] | None,
         model: Optional["PreTrainedModel"] = None,
         model_config: Optional["PretrainedConfig"] = None,
         rbln_config: RBLNModelConfig | None = None,
@@ -263,18 +264,20 @@ class RBLNGemma3ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMix
 
     def forward(
         self,
-        input_ids: torch.LongTensor = None,
-        attention_mask: torch.Tensor = None,
-        token_type_ids: torch.Tensor = None,
-        pixel_values: torch.FloatTensor = None,
+        input_ids: torch.LongTensor | None = None,
+        attention_mask: torch.Tensor | None = None,
+        token_type_ids: torch.Tensor | None = None,
+        pixel_values: torch.FloatTensor | None = None,
         cache_position: torch.LongTensor | None = None,
         inputs_embeds: torch.FloatTensor | None = None,
         generate_idx: torch.Tensor | None = None,
         padded_cache_lengths: torch.Tensor | None = None,
         position_ids: torch.Tensor | None = None,
         output_hidden_states: bool | None = None,
+        inputs_sorted: bool = False,
         **lm_kwargs: dict[str, Any],
     ) -> tuple | RBLNDecoderOnlyOutput:
+        self._require_sorted_batch_inputs(inputs_embeds if inputs_embeds is not None else input_ids, inputs_sorted)
         output_hidden_states = (
             output_hidden_states
             if output_hidden_states is not None
@@ -393,24 +396,26 @@ class RBLNGemma3ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
         )
 
         self.decoders = {}
-        for i, batch_size in enumerate(self.rbln_config.decoder_batch_sizes):
-            self.decoders[batch_size] = RBLNGemma3RuntimeModel(
-                runtime=self.model[i + self.rbln_config.decoder_runtime_idx],
-                phase="decode",
-                batch_size=batch_size,
-                **common_kwargs,
-            )
+        if self.can_generate():
+            for i, batch_size in enumerate(self.rbln_config.decoder_batch_sizes):
+                self.decoders[batch_size] = RBLNGemma3RuntimeModel(
+                    runtime=self.model[i + self.rbln_config.decoder_runtime_idx],
+                    phase="decode",
+                    batch_size=batch_size,
+                    **common_kwargs,
+                )
 
-        # NOTE(eunji): Use a decoder whose batch size matches the model's main batch size for compatibility.
-        self.decoder = self.decoders[self.rbln_config.batch_size]
+            # NOTE(eunji): Use a decoder whose batch size matches the model's main batch size for compatibility.
+            self.decoder = self.decoders[self.rbln_config.batch_size]
 
     def _create_embedding_layer(self):
+        text_config = self.config.get_text_config()
         with no_init_weights():
             embed_tokens = Gemma3TextScaledWordEmbedding(
-                self.config.vocab_size,
-                self.config.hidden_size,
-                self.config.pad_token_id,
-                embed_scale=self.config.hidden_size**0.5,
+                text_config.vocab_size,
+                text_config.hidden_size,
+                text_config.pad_token_id,
+                embed_scale=text_config.hidden_size**0.5,
             )
         # Gemma3TextScaledWordEmbedding does not forward a dtype kwarg to
         # nn.Embedding, so cast the module instead.
@@ -421,7 +426,7 @@ class RBLNGemma3ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
         cls,
         model: "PreTrainedModel",
         rbln_config: RBLNModelConfig,
-        preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"] | None,
+        preprocessors: Sequence[Preprocessor] | None,
     ):
         if rbln_config.image_prefill_chunk_size is None:
             rbln_config.image_prefill_chunk_size = model.config.mm_tokens_per_image
@@ -435,3 +440,9 @@ class RBLNGemma3ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
             rbln_config.phases = ["prefill", "image_prefill", "decode"]
 
         return rbln_config
+
+
+__all__ = [
+    "RBLNGemma3ForCausalLM",
+    "RBLNGemma3ForConditionalGeneration",
+]

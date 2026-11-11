@@ -29,3 +29,8 @@ class RBLNStableDiffusion3InpaintPipeline(RBLNDiffusionMixin, StableDiffusion3In
     original_class = StableDiffusion3InpaintPipeline
     _rbln_config_class = RBLNStableDiffusion3InpaintPipelineConfig
     _submodules = ["transformer", "text_encoder_3", "text_encoder", "text_encoder_2", "vae"]
+
+
+__all__ = [
+    "RBLNStableDiffusion3InpaintPipeline",
+]

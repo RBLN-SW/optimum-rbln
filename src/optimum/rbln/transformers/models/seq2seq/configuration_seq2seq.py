@@ -62,8 +62,7 @@ class RBLNModelForSeq2SeqLMConfig(RBLNModelConfig):
         if self.support_paged_attention:
             self.kvcache_num_blocks = kvcache_num_blocks
             self.kvcache_block_size = kvcache_block_size
-        else:
-            if kvcache_num_blocks is not None or kvcache_block_size is not None:
-                raise ValueError(
-                    "You cannot set kvcache_num_blocks or kvcache_block_size as paged attention is not supported for the model."
-                )
+        elif kvcache_num_blocks is not None or kvcache_block_size is not None:
+            raise ValueError(
+                "You cannot set kvcache_num_blocks or kvcache_block_size as paged attention is not supported for the model."
+            )

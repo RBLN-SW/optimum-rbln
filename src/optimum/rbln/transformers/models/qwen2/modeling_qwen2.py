@@ -93,3 +93,9 @@ class RBLNQwen2Model(RBLNDecoderOnlyModel):
     """
 
     _decoder_wrapper_cls = QWEN2Wrapper
+
+
+__all__ = [
+    "RBLNQwen2ForCausalLM",
+    "RBLNQwen2Model",
+]

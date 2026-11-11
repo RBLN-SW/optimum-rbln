@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import torch.nn as nn
+from torch import nn
 from transformers import PreTrainedModel
 
 from ....utils import logging
@@ -100,3 +100,9 @@ class RBLNOPTModel(RBLNDecoderOnlyModel):
             model.decoder.layers[i] = cls.modify_opt_decoder_layer(model.decoder.layers[i])
 
         return cls._decoder_wrapper_cls(model, rbln_config=rbln_config, use_rotary_emb=cls._use_rotary_emb).eval()
+
+
+__all__ = [
+    "RBLNOPTForCausalLM",
+    "RBLNOPTModel",
+]

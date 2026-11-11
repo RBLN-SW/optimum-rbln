@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import math
-import os
 from typing import TYPE_CHECKING, Optional
 
 import torch
@@ -33,15 +32,18 @@ if TYPE_CHECKING:
 logger = logging.get_logger(__name__)
 
 
-def _is_batch_attn_opt_enabled() -> bool:
-    """Check whether VLLM_RBLN_BATCH_ATTN_OPT env var is set to enable batched dynamic decode."""
-    return os.environ.get("VLLM_RBLN_BATCH_ATTN_OPT", "0") == "1"
-
-
 @torch.compiler.assume_constant_result
 def _op_accepts(op_name: str, arg_name: str) -> bool:
     op = getattr(torch.ops.rbln_custom_ops, op_name)
     return any(arg.name == arg_name for arg in op.default._schema.arguments)
+
+
+class NestedCompileRegionMixin:
+    """Preserve a decoder forward as a nested region through module cloning and export."""
+
+    @torch.compiler.nested_compile_region
+    def forward(self, *args, **kwargs):
+        return super().forward(*args, **kwargs)
 
 
 class DecoderOnlyWrapper(nn.Module):
@@ -88,6 +90,10 @@ class DecoderOnlyWrapper(nn.Module):
             )
 
         self.model = self.convert_to_rbln_class(model, rbln_config.max_seq_len, use_rotary_emb)
+        if rbln_config.nested_compile_region and not any(
+            isinstance(layer, NestedCompileRegionMixin) for layer in self.model.modules()
+        ):
+            raise ValueError("nested_compile_region requires NestedCompileRegionMixin instances.")
         self.num_hidden_layers = getattr(self.config, "num_hidden_layers", None) or self.config.n_layer
         self._phase = "prefill"
 
@@ -107,7 +113,7 @@ class DecoderOnlyWrapper(nn.Module):
         return DecoderOnlyAttention
 
     def get_rbln_layer_class(self):
-        return DecoderOnlyLayer
+        return DecoderOnlyLayerRegion if self.rbln_config.nested_compile_region else DecoderOnlyLayer
 
     def get_rbln_model_class(self):
         return DecoderOnlyModel
@@ -168,21 +174,6 @@ class DecoderOnlyWrapper(nn.Module):
         position_ids = args.pop(0) if self.rbln_config.use_position_ids else None
         lora_int_id = args.pop(0) if self.rbln_config.lora_config else None
         past_key_values = args
-
-        if len(past_key_values) != 2 * self.num_hidden_layers:
-            raise ValueError(
-                f"Different past_key_values to model's config. {len(past_key_values)} != {2 * self.num_hidden_layers}"
-            )
-
-        # [key, value] * n_layer -> ( (key, value) ) * n_layer
-        # cache shape : batch, n_heads, 1, max_seq_len, head_dim
-        _past_key_values = []
-        for i in range(self.num_hidden_layers):
-            key_states = past_key_values[i * 2]
-            value_states = past_key_values[i * 2 + 1]
-            past_key_value = [key_states, value_states]
-            _past_key_values.append(past_key_value)
-        past_key_values = _past_key_values
 
         if hasattr(self, "rotary_emb_global") and hasattr(self, "rotary_emb_local"):
             rotary_emb = (self.rotary_emb_global, self.rotary_emb_local)
@@ -262,7 +253,7 @@ class DecoderOnlyForCausalLM(nn.Module):
 
     def __init__(self, causal_lm: PreTrainedModel, model: nn.Module):
         super().__init__()
-        self.config = causal_lm.config
+        self.config = causal_lm.config.get_text_config()
         self.model = model
         self._phase = "prefill"
         self.lm_head = causal_lm.lm_head
@@ -278,14 +269,14 @@ class DecoderOnlyForCausalLM(nn.Module):
 
     def forward(
         self,
-        input_ids: torch.Tensor = None,
-        inputs_embeds: torch.Tensor = None,
-        attention_mask: torch.Tensor = None,
-        cache_position: torch.Tensor = None,
-        position_ids: torch.Tensor = None,
-        query_position: torch.Tensor = None,
-        past_key_values: tuple[tuple[torch.Tensor]] = None,
-        rotary_emb: nn.Module = None,
+        input_ids: torch.Tensor | None = None,
+        inputs_embeds: torch.Tensor | None = None,
+        attention_mask: torch.Tensor | None = None,
+        cache_position: torch.Tensor | None = None,
+        position_ids: torch.Tensor | None = None,
+        query_position: torch.Tensor | None = None,
+        past_key_values: list[torch.Tensor] | None = None,
+        rotary_emb: nn.Module | None = None,
         global_block_tables: torch.Tensor | None = None,
         local_block_tables: torch.Tensor | None = None,
         lora_int_id: torch.Tensor | None = None,
@@ -364,7 +355,9 @@ def build_image_prefill_swa_custom_op_args(model, position_ids, query_position):
         valid_q = q_idx < valid_input_len
         valid_kv = torch.logical_or(in_past, in_chunk)
         if model.phase == "image_prefill":
-            attn = valid_q & valid_kv & torch.logical_or(swa, in_chunk)
+            # transformers >=5.13 (#46850) clips the bidirectional image grant by the sliding window:
+            # sliding mask = AND(kv > q - window, OR(causal, blockwise bidirectional)).
+            attn = valid_q & valid_kv & torch.logical_or(swa, in_chunk & (gap < max_cache_len))
         else:
             attn = valid_q & valid_kv & swa
         attn_mask = torch.where(attn, 1.0, 0.0).to(model.rbln_config.dtype)
@@ -468,13 +461,13 @@ class DecoderOnlyModel(nn.Module):
 
     def forward(
         self,
-        input_ids: torch.Tensor = None,
+        input_ids: torch.Tensor | None = None,
         inputs_embeds: torch.Tensor | None = None,
-        attention_mask: torch.Tensor = None,
-        cache_position: torch.Tensor = None,
-        position_ids: torch.Tensor = None,
-        query_position: torch.Tensor = None,
-        past_key_values: tuple[tuple[torch.Tensor]] = None,
+        attention_mask: torch.Tensor | None = None,
+        cache_position: torch.Tensor | None = None,
+        position_ids: torch.Tensor | None = None,
+        query_position: torch.Tensor | None = None,
+        past_key_values: list[torch.Tensor] | None = None,
         rotary_emb: nn.Module | torch.Tensor | None = None,
         global_block_tables: torch.Tensor | None = None,
         local_block_tables: torch.Tensor | None = None,
@@ -491,13 +484,17 @@ class DecoderOnlyModel(nn.Module):
         if inputs_embeds is None:
             inputs_embeds = self.get_embedding()(input_ids)
 
-        hidden_states = inputs_embeds * self.hidden_multiplier
+        hidden_states = inputs_embeds
+        if self.hidden_multiplier != 1:
+            # HF rounds the scale to the embedding dtype before multiplying (e.g. sqrt(3072) -> 55.5 in bf16).
+            hidden_states = hidden_states * torch.tensor(self.hidden_multiplier, dtype=hidden_states.dtype)
 
         # get cos,sin vector if needed
         position_ids = position_ids if position_ids is not None else cache_position
         if rotary_emb is not None:
             if isinstance(rotary_emb, torch.Tensor):
-                cos = rotary_emb[0]
+                # cos gets its own storage: nested regions reject inputs that alias one packed tensor.
+                cos = rotary_emb[0].clone()
                 sin = rotary_emb[1]
             else:
                 cos, sin = rotary_emb(hidden_states, self.max_seq_len)  # dtype carrier, max_seq_len
@@ -529,28 +526,12 @@ class DecoderOnlyModel(nn.Module):
             hidden_states = hidden_states + position_embeds
             cos, sin = None, None
 
-        # Decide whether to take the batched dynamic decode path (VLLM_RBLN_BATCH_ATTN_OPT).
-        # When the env var is set, rebel-compiler is also configured (via Config.cpp reading
-        # the same env var) to dispatch `apply_batch_decode_transform` for batch_size > 1
-        # decode ops — that transform asserts `seq` is [B, 1] and generates the attn_mask /
-        # valid_batch / blk_offset internally, so we must pass [B, 1] seq AND no mask here.
-        # Outside this mode we keep the partition-unrolled `seq` shape ([B, P]).
-        batch_size = inputs_embeds.shape[0]
-        is_batch_attn_opt_decode = _is_batch_attn_opt_enabled() and self.phase == "decode" and batch_size > 1
-
-        # Get sequence positions for flash attention.
-        # The compiler uses `seq` as the cache position to compute block index and offset
-        # (see rebel_compiler `compute_batch_decode_params`), so we must pass cache_position
-        # — not position_ids, which can diverge from cache_position by padded_cache_lengths
-        # when `use_position_ids=True`.
+        # Get sequence positions for flash attention
         if self.attn_impl == "flash_attn":
-            if is_batch_attn_opt_decode:
-                seq_positions = cache_position[:, :1].to(torch.int32)
-            else:
-                seq_positions = cache_position[:, 0]
-                seq_positions = self.convert_sequence_positions_for_flash_attn(
-                    seq_positions=seq_positions, max_seq_len=self.max_seq_len
-                )
+            seq_positions = cache_position[:, 0]
+            seq_positions = self.convert_sequence_positions_for_flash_attn(
+                seq_positions=seq_positions, max_seq_len=self.max_seq_len
+            )
         else:
             seq_positions = cache_position[:, :1]
 
@@ -560,37 +541,21 @@ class DecoderOnlyModel(nn.Module):
             sliding_cache_pos = (cache_seq_len, cache_offset)
 
         all_hidden_states = () if output_hidden_states else None
-
         for layer_idx, layer in enumerate(self.layers):
             if output_hidden_states:
                 all_hidden_states += (hidden_states,)
 
-            is_sliding = True if layer_idx in self.sliding_window_layers else False
+            is_sliding = layer_idx in self.sliding_window_layers
             is_sliding_decode = is_sliding and self.phase == "decode"
-            # Sliding window layers keep their own batching path (per-batch mask already in swa_attn_mask)
-            layer_is_batch_attn_opt = is_batch_attn_opt_decode and not is_sliding
-            if is_sliding_decode:
-                attn_mask = swa_attn_mask
-                layer_seq_idx = sliding_cache_pos
-            elif is_sliding:
-                attn_mask = attention_mask
-                layer_seq_idx = sliding_cache_pos
-            else:
-                # For both standard and batch_attn_opt paths we forward `attention_mask` here;
-                # the AttentionOp will drop it before the custom op call in batch_attn_opt mode.
-                attn_mask = attention_mask
-                layer_seq_idx = seq_positions
-
             hidden_states = layer(
                 hidden_states=hidden_states,
-                attention_mask=attn_mask,
-                seq_positions=layer_seq_idx,
+                attention_mask=swa_attn_mask if is_sliding_decode else attention_mask,
+                seq_positions=sliding_cache_pos if is_sliding else seq_positions,
                 past_key_values=past_key_values,
                 cos=cos,
                 sin=sin,
                 block_tables=local_block_tables if is_sliding else global_block_tables,
                 lora_int_id=lora_int_id,
-                is_batch_attn_opt_decode=layer_is_batch_attn_opt,
             )
 
         hidden_states = self.get_last_layernorm()(hidden_states)
@@ -638,6 +603,7 @@ class DecoderOnlyLayer(nn.Module):
         self.pre_feedforward_layernorm = _get_attr_from_candidates(layer, self._PRE_FF_LAYERNORM_ATTRS)
         self.post_feedforward_layernorm = _get_attr_from_candidates(layer, self._POST_FF_LAYERNORM_ATTRS)
         self.mlp = _get_attr_from_candidates(layer, self._MLP_ATTR)
+        self._mlp_name = next((name for name in self._MLP_ATTR or () if hasattr(layer, name)), None)
         self.self_attn = self_attn
         self._phase = "prefill"
         self.lora_config = lora_config
@@ -654,6 +620,7 @@ class DecoderOnlyLayer(nn.Module):
                             lora_config=self.lora_config,
                             projection_name=proj_name,
                             layer_idx=self.self_attn.layer_idx,
+                            module_name=self._mlp_name,
                         )
                         setattr(mlp, proj_name, lora_linear)
 
@@ -702,12 +669,11 @@ class DecoderOnlyLayer(nn.Module):
         hidden_states: torch.Tensor,
         attention_mask: torch.Tensor,
         seq_positions: torch.LongTensor,
-        past_key_values: tuple[tuple[torch.Tensor]],
+        past_key_values: list[torch.Tensor],
         cos: torch.Tensor | None = None,
         sin: torch.Tensor | None = None,
         block_tables: torch.Tensor | None = None,
         lora_int_id: torch.Tensor | None = None,
-        is_batch_attn_opt_decode: bool = False,
     ):
         residual = hidden_states
         hidden_states = self.get_pre_attention_layernorm()(hidden_states)
@@ -721,7 +687,6 @@ class DecoderOnlyLayer(nn.Module):
             sin=sin,
             block_tables=block_tables,
             lora_int_id=lora_int_id,
-            is_batch_attn_opt_decode=is_batch_attn_opt_decode,
         )
         hidden_states = residual + hidden_states
 
@@ -732,6 +697,10 @@ class DecoderOnlyLayer(nn.Module):
         hidden_states = residual + hidden_states
 
         return hidden_states
+
+
+class DecoderOnlyLayerRegion(NestedCompileRegionMixin, DecoderOnlyLayer):
+    """Decoder layer with a nested compile region around its forward call."""
 
 
 class DecoderOnlyAttention(nn.Module):
@@ -821,6 +790,12 @@ class DecoderOnlyAttention(nn.Module):
         self._phase = phase
         getattr(self, self.get_attention_name()).phase = phase
 
+    def is_bidirectional_attention(self, phase: str) -> bool:
+        # image_prefill attends bidirectionally over the image block; text prefill only for a Prefix-LM.
+        if phase == "image_prefill":
+            return True
+        return phase == "prefill" and self.rbln_config._is_prefix_lm
+
     def create_attention_op(self):
         if self.is_sliding:
             return SlidingWindowAttentionOp(
@@ -901,12 +876,11 @@ class DecoderOnlyAttention(nn.Module):
         hidden_states: torch.Tensor,
         attention_mask: torch.Tensor,
         seq_positions: torch.LongTensor,
-        past_key_values: tuple[tuple[torch.Tensor]],
+        past_key_values: list[torch.Tensor],
         cos: torch.Tensor | None = None,
         sin: torch.Tensor | None = None,
         block_tables: torch.Tensor | None = None,
         lora_int_id: torch.Tensor | None = None,
-        is_batch_attn_opt_decode: bool = False,
     ):
         batch_size, query_length, _ = hidden_states.size()
 
@@ -934,16 +908,15 @@ class DecoderOnlyAttention(nn.Module):
             key_states,
             value_states,
             attention_mask,
-            past_key_state=past_key_values[self.layer_idx][0],
-            past_value_state=past_key_values[self.layer_idx][1],
+            kv_cache=past_key_values[self.layer_idx],
             seq_position=seq_positions,
             scale=self.scale,
             block_tables=block_tables,
             block_size=self.kvcache_block_size,
             k_scale=k_scale,
             v_scale=v_scale,
-            is_batch_attn_opt_decode=is_batch_attn_opt_decode,
             s_aux=getattr(self, "sinks", None),
+            is_bidirectional=self.is_bidirectional_attention(self.phase),
         )
 
         # Check if using LoRALinear (which accepts lora_int_id) or standard linear layers
@@ -966,6 +939,12 @@ class DecoderOnlyFlashAttention(DecoderOnlyAttention):
 
 
 class AttentionOp(nn.Module):
+    """Paged attention over a layer's `[num_blocks, 2, num_kv_heads, 1, block_size, head_dim]` cache.
+
+    Both normal and flash attention run `gqa`: normal attention keeps a sequence in one block,
+    which `gqa` takes as its only partition.
+    """
+
     def __init__(
         self,
         num_heads: int,
@@ -984,23 +963,30 @@ class AttentionOp(nn.Module):
         self.use_position_ids = rbln_config.use_position_ids
         self.quantization = rbln_config.quantization
 
-    def get_attn_op_name(self):
-        phase = "decode" if self.phase == "decode" else "prefill"
+    @property
+    def use_fp8_kv_cache(self) -> bool:
+        return bool(self.quantization and self.quantization.kv_caches == "fp8")
 
-        if self.use_attention_mask:
-            if self.rbln_config.use_position_ids:
-                attn_op_name = "paged_causal_attn_"
-            else:
-                attn_op_name = "paged_attn_"
-        else:
-            attn_op_name = "paged_causal_attn_"
+    def is_causal(self, is_bidirectional: bool) -> bool:
+        # A mask without position ids spans queries and keys and so sets the direction itself;
+        # a position-id model's mask only marks the valid keys.
+        if self.use_attention_mask and not self.use_position_ids:
+            return False
+        return not is_bidirectional
 
-        attn_op_name += phase
+    def get_attn_op_name(self) -> str:
+        return "gqa"
 
-        if self.quantization and self.quantization.kv_caches == "fp8":
-            attn_op_name += "_kv_fp8"
+    def get_attn_op(self, op_args: dict):
+        attn_op_name = self.get_attn_op_name()
+        attn_op = getattr(torch.ops.rbln_custom_ops, attn_op_name, None)
+        if attn_op is None:
+            raise ValueError(f"Attention operator {attn_op_name} not found.")
 
-        return attn_op_name
+        # Tell the compiler the batch arrives length-sorted; older compilers lack the arg.
+        if getattr(self.rbln_config, "requires_batch_sort", None) and _op_accepts(attn_op_name, "is_prompt_sorted"):
+            op_args["is_prompt_sorted"] = True
+        return attn_op
 
     def forward(
         self,
@@ -1008,17 +994,16 @@ class AttentionOp(nn.Module):
         key_state: torch.Tensor,
         value_state: torch.Tensor,
         attn_mask: torch.Tensor,
-        past_key_state: torch.Tensor,
-        past_value_state: torch.Tensor,
+        kv_cache: torch.Tensor,
         seq_position: torch.Tensor,
         scale: torch.Tensor,
         block_tables: torch.Tensor,
         block_size: int,
         k_scale: torch.Tensor | None = None,
         v_scale: torch.Tensor | None = None,
-        is_batch_attn_opt_decode: bool = False,
         s_aux: torch.Tensor | None = None,
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        is_bidirectional: bool = False,
+    ) -> torch.Tensor:
         """Compute attention with static shapes and explicit cache management.
 
         Args:
@@ -1026,18 +1011,13 @@ class AttentionOp(nn.Module):
             key_state: Key tensor [1, num_heads, seq_len, head_dim]
             value_state: Value tensor [1, num_heads, seq_len, head_dim]
             attn_mask: Attention mask tensor ∈ {0, 1}
-            past_key_state: Previous key cache states
-            past_value_state: Previous value cache states
+            kv_cache: The layer's cache holding both key and value
             seq_position: Current position in sequence
             scale: Scale applied to attn weights
             block_tables: Block tables for paged attention
             block_size: Block size for paged attention
             k_scale: Scale applied to key
             v_scale: Scale applied to value
-            is_batch_attn_opt_decode: If True, dispatch the batched dynamic decode path
-                (VLLM_RBLN_BATCH_ATTN_OPT). `seq_position` is then [B, 1] (raw cache
-                position per batch) and a 2D mask is force-attached so the kernel can
-                handle per-batch attention without graph-level partition unrolling.
             s_aux: Auxiliary states for attention sinks
 
         Returns:
@@ -1047,16 +1027,11 @@ class AttentionOp(nn.Module):
         key_state = key_state.unsqueeze(2)  # 1, 32, 1, 128, 128
         value_state = value_state.unsqueeze(2)
 
-        # In batch_attn_opt decode the rebel compiler computes the mask itself
-        # (see `apply_batch_decode_transform`), so we must NOT forward a mask of our own
-        # — passing one results in the mask being appended twice in the lowered op.
-        if self.use_attention_mask and not self.rbln_config.use_position_ids and not is_batch_attn_opt_decode:
-            attn_mask = attn_mask.unsqueeze(2)
-
         if self.phase == "decode":
             batch_size = key_state.shape[0]
         else:
             batch_size = 1
+            block_tables = block_tables.unsqueeze(0)
 
         query_state = query_state.view(
             batch_size,
@@ -1070,47 +1045,24 @@ class AttentionOp(nn.Module):
             "q": query_state,
             "k": key_state,
             "v": value_state,
-            "kcache": past_key_state.unsqueeze(2),
-            "vcache": past_value_state.unsqueeze(2),
-            "seq": seq_position,
+            "kv_cache": kv_cache,
             "scale": scale,
-            "block_table": block_tables,
-            "block_size": block_size,
+            "seq_idx": seq_position,
+            "block_tables": block_tables,
+            "sinks": s_aux,
+            "is_causal": self.is_causal(is_bidirectional),
         }
+        if self.use_attention_mask:
+            # gqa reads the mask as [batch, 1, 1, query rows, keys]; a key mask has one row.
+            op_args["attn_mask"] = attn_mask[:, None, None, None] if self.use_position_ids else attn_mask.unsqueeze(2)
+        if self.use_fp8_kv_cache:
+            if kv_cache.dtype != torch.uint8:
+                raise ValueError(f"Unsupported KVCaches type: {kv_cache.dtype}")
+            op_args["k_quantize_scale"] = k_scale
+            op_args["v_quantize_scale"] = v_scale
+            op_args["cache_dtype"] = torch.float8_e4m3fn
 
-        if self.use_attention_mask and not is_batch_attn_opt_decode:
-            op_args["mask"] = attn_mask
-
-        if self.phase == "prefill" or self.phase == "image_prefill":
-            use_image_prefill = getattr(self.rbln_config, "use_image_prefill", False)
-            if use_image_prefill:
-                op_args["is_bidirectional"] = self.phase == "image_prefill"
-            else:
-                if not self.use_attention_mask:
-                    op_args["is_bidirectional"] = False
-                elif self.use_attention_mask and self.rbln_config.use_position_ids:
-                    op_args["is_bidirectional"] = True
-
-        if self.quantization and self.quantization.kv_caches == "fp8":
-            if past_key_state.dtype != torch.float8_e4m3fn:
-                raise ValueError(f"Unsupported KVCaches type: {past_key_state.dtype}")
-            op_args["k_scale"] = k_scale
-            op_args["v_scale"] = v_scale
-
-        if s_aux is not None:
-            op_args["s_aux"] = s_aux
-
-        attn_op_name = self.get_attn_op_name()
-        attn_op = getattr(torch.ops.rbln_custom_ops, attn_op_name, None)
-        if attn_op is None:
-            raise ValueError(f"Attention operator {attn_op_name} not found.")
-
-        # rebel_compiler#14574 selects the batch_decode kernel from this flag instead of
-        # VLLM_RBLN_BATCH_ATTN_OPT; the batch is already sorted by length in forward().
-        if is_batch_attn_opt_decode and _op_accepts(attn_op_name, "is_prompt_sorted"):
-            op_args["is_prompt_sorted"] = True
-
-        attn_output = attn_op(**op_args)
+        attn_output = self.get_attn_op(op_args)(**op_args)
         attn_output = attn_output.view(batch_size, self.num_heads, -1, self.head_dim)
         attn_output = attn_output.transpose(1, 2).contiguous()
         attn_output = attn_output.reshape(batch_size, -1, self.num_heads * self.head_dim)
@@ -1137,116 +1089,6 @@ class FlashAttentionOp(AttentionOp):
         )
         self.kvcache_partition_size = kvcache_partition_len
 
-    def get_attn_op_name(self):
-        phase = "decode" if self.phase == "decode" else "prefill"
-
-        if self.use_attention_mask:
-            if self.rbln_config.use_position_ids:
-                attn_op_name = "paged_flash_causal_attn_"
-            else:
-                attn_op_name = "paged_flash_attn_"
-        else:
-            attn_op_name = "paged_flash_causal_attn_"
-
-        attn_op_name += phase
-
-        if self.quantization and self.quantization.kv_caches == "fp8":
-            attn_op_name += "_kv_fp8"
-
-        return attn_op_name
-
-    def forward(
-        self,
-        query_state,
-        key_state,
-        value_state,
-        attn_mask,
-        past_key_state,
-        past_value_state,
-        seq_position,
-        scale,
-        block_tables,
-        block_size,
-        k_scale=None,
-        v_scale=None,
-        s_aux=None,
-        is_batch_attn_opt_decode: bool = False,
-    ):
-        # reshape for removing repeat_kv (batch=1 , num_head, 1, q_len=1, head_dim)
-        key_state = key_state.unsqueeze(2)
-        value_state = value_state.unsqueeze(2)
-
-        # In batch_attn_opt decode the rebel compiler computes the mask itself
-        # (see `apply_batch_decode_transform`), so we must NOT forward a mask of our own
-        # — passing one results in the mask being appended twice in the lowered op.
-        if self.use_attention_mask and not self.rbln_config.use_position_ids and not is_batch_attn_opt_decode:
-            attn_mask = attn_mask.unsqueeze(2)
-
-        if self.phase == "decode":
-            batch_size = key_state.shape[0]
-        else:
-            batch_size = 1
-
-        query_state = query_state.view(
-            batch_size,
-            self.num_key_value_heads,
-            self.num_heads // self.num_key_value_heads,
-            -1,  # seq len
-            self.head_dim,
-        )
-
-        op_args = {
-            "q": query_state,
-            "k": key_state,
-            "v": value_state,
-            "kcache": past_key_state.unsqueeze(2),
-            "vcache": past_value_state.unsqueeze(2),
-            "seq": seq_position,
-            "scale": scale,
-            "block_table": block_tables,
-            "block_size": block_size,
-            "partition": self.kvcache_partition_size,
-        }
-
-        if self.use_attention_mask and not is_batch_attn_opt_decode:
-            op_args["mask"] = attn_mask
-
-        if self.phase == "prefill" or self.phase == "image_prefill":
-            use_image_prefill = getattr(self.rbln_config, "use_image_prefill", False)
-            if use_image_prefill:
-                op_args["is_bidirectional"] = self.phase == "image_prefill"
-            else:
-                if not self.use_attention_mask:
-                    op_args["is_bidirectional"] = False
-                elif self.use_attention_mask and self.rbln_config.use_position_ids:
-                    op_args["is_bidirectional"] = True
-
-        if self.quantization and self.quantization.kv_caches == "fp8":
-            if past_key_state.dtype != torch.float8_e4m3fn:
-                raise ValueError(f"Unsupported KVCaches type: {past_key_state.dtype}")
-            op_args["k_scale"] = k_scale
-            op_args["v_scale"] = v_scale
-
-        if s_aux is not None:
-            op_args["s_aux"] = s_aux
-
-        attn_op_name = self.get_attn_op_name()
-        attn_op = getattr(torch.ops.rbln_custom_ops, attn_op_name, None)
-        if attn_op is None:
-            raise ValueError(f"Attention operator {attn_op_name} not found.")
-
-        # rebel_compiler#14574 selects the batch_decode kernel from this flag instead of
-        # VLLM_RBLN_BATCH_ATTN_OPT; the batch is already sorted by length in forward().
-        if is_batch_attn_opt_decode and _op_accepts(attn_op_name, "is_prompt_sorted"):
-            op_args["is_prompt_sorted"] = True
-
-        attn_output = attn_op(**op_args)
-        attn_output = attn_output.view(batch_size, self.num_heads, -1, self.head_dim)
-        attn_output = attn_output.transpose(1, 2).contiguous()
-        attn_output = attn_output.reshape(batch_size, -1, self.num_heads * self.head_dim)
-
-        return attn_output
-
 
 class SlidingWindowAttentionOp(AttentionOp):
     def __init__(
@@ -1265,13 +1107,8 @@ class SlidingWindowAttentionOp(AttentionOp):
         )
         self.quantization = None  # Sliding window attention does not support quantization
 
-    def get_attn_op_name(self):
-        phase = "decode" if self.phase == "decode" else "prefill"
-        if not self.use_attention_mask:
-            raise NotImplementedError("Attention mask is needed for sliding window attention.")
-
-        attn_op_name = "paged_sliding_window_attn_" + phase
-        return attn_op_name
+    def get_attn_op_name(self) -> str:
+        return "swa_v0"
 
     def forward(
         self,
@@ -1279,23 +1116,19 @@ class SlidingWindowAttentionOp(AttentionOp):
         key_state: torch.Tensor,
         value_state: torch.Tensor,
         attn_mask: torch.Tensor | None,
-        past_key_state: torch.Tensor,
-        past_value_state: torch.Tensor,
+        kv_cache: torch.Tensor,
         seq_position: tuple[torch.Tensor],
         scale: torch.Tensor,
         block_tables: torch.Tensor,
         block_size: int,
         k_scale: torch.Tensor | None = None,
         v_scale: torch.Tensor | None = None,
-        is_batch_attn_opt_decode: bool = False,
         s_aux: torch.Tensor | None = None,
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        is_bidirectional: bool = False,
+    ) -> torch.Tensor:
         assert self.quantization is None, "Sliding window attention does not support quantization"
-        assert k_scale is None and v_scale is None, "Sliding window attention does not support quantization"
-        # SWA already supports batching through its own per-batch attn_mask path; the
-        # batched dynamic decode optimization is not routed here (filtered out in the model
-        # loop), so this should always be False when reaching SWA.
-        assert not is_batch_attn_opt_decode, "Sliding window attention does not support batch_attn_opt path"
+        assert k_scale is None, "Sliding window attention does not support quantization"
+        assert v_scale is None, "Sliding window attention does not support quantization"
 
         # reshape for removing repeat_kv (batch=1 , num_head, 1, q_len=1, head_dim)
         key_state = key_state.unsqueeze(2)
@@ -1305,6 +1138,7 @@ class SlidingWindowAttentionOp(AttentionOp):
             batch_size = key_state.shape[0]
         else:
             batch_size = 1
+            block_tables = block_tables.unsqueeze(0)
 
         query_state = query_state.view(
             batch_size,
@@ -1318,24 +1152,14 @@ class SlidingWindowAttentionOp(AttentionOp):
             "q": query_state,
             "k": key_state,
             "v": value_state,
-            "kcache": past_key_state.unsqueeze(2),
-            "vcache": past_value_state.unsqueeze(2),
+            "kv_cache": kv_cache,
             "cache_seq_len": seq_position[0],
             "cache_offset": seq_position[1],
             "scale": scale,
-            "block_table": block_tables,
-            "block_size": block_size,
+            "block_tables": block_tables,
+            "is_causal": not is_bidirectional,
+            "sinks": s_aux,
         }
-
-        if self.phase == "prefill" or self.phase == "image_prefill":
-            use_image_prefill = getattr(self.rbln_config, "use_image_prefill", False)
-            if use_image_prefill:
-                op_args["is_bidirectional"] = self.phase == "image_prefill"
-            else:
-                if self.use_attention_mask and self.rbln_config.use_position_ids:
-                    op_args["is_bidirectional"] = True
-                else:
-                    op_args["is_bidirectional"] = False
 
         if self.phase == "decode":
             op_args["attn_mask"] = attn_mask
@@ -1345,18 +1169,8 @@ class SlidingWindowAttentionOp(AttentionOp):
             # op computes the causal window internally — passing a 2D mask trips the op's 4D mask
             # assertion at compile time.
             op_args["attn_mask"] = attn_mask
-        else:
-            op_args["attn_mask"] = None
 
-        if s_aux is not None:
-            op_args["s_aux"] = s_aux
-
-        attn_op_name = self.get_attn_op_name()
-        attn_op = getattr(torch.ops.rbln_custom_ops, attn_op_name, None)
-        if attn_op is None:
-            raise ValueError(f"Attention operator {attn_op_name} not found.")
-
-        attn_output = attn_op(**op_args)
+        attn_output = self.get_attn_op(op_args)(**op_args)
         attn_output = attn_output.view(batch_size, self.num_heads, -1, self.head_dim)
         attn_output = attn_output.transpose(1, 2).contiguous()
         attn_output = attn_output.reshape(batch_size, -1, self.num_heads * self.head_dim)
@@ -1399,8 +1213,8 @@ class RotaryEmbedding(nn.Module):
 
     def forward(self, x, seq_len):
         return (
-            self._cos_cached[:seq_len].to(dtype=torch.float32),
-            self._sin_cached[:seq_len].to(dtype=torch.float32),
+            self._cos_cached[:seq_len].to(dtype=x.dtype),
+            self._sin_cached[:seq_len].to(dtype=x.dtype),
         )
 
 
@@ -1430,11 +1244,8 @@ def rotate_half(x):
 
 def apply_rotary_pos_emb(q, k, cos, sin):
     """Applies Rotary Position Embedding to the query and key tensors."""
-    dtype = q.dtype
     q_embed = (q * cos) + (rotate_half(q) * sin)
     k_embed = (k * cos) + (rotate_half(k) * sin)
-    q_embed = q_embed.to(dtype)
-    k_embed = k_embed.to(dtype)
     return q_embed, k_embed
 
 

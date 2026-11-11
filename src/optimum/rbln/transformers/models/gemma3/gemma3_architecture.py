@@ -21,6 +21,7 @@ from ..decoderonly.decoderonly_architecture import (
     DecoderOnlyLayer,
     DecoderOnlyModel,
     DecoderOnlyWrapper,
+    NestedCompileRegionMixin,
     RotaryEmbedding,
     build_image_prefill_swa_custom_op_args,
     slice_and_unsqueeze_cos_sin,
@@ -42,7 +43,7 @@ class Gemma3ForCausalLMWrapper(DecoderOnlyWrapper):
         return Gemma3Attention
 
     def get_rbln_layer_class(self):
-        return Gemma3DecoderLayer
+        return Gemma3DecoderLayerRegion if self.rbln_config.nested_compile_region else Gemma3DecoderLayer
 
     def get_rbln_model_class(self):
         return Gemma3TextModel
@@ -55,14 +56,14 @@ class Gemma3TextModel(DecoderOnlyModel):
 
     def forward(
         self,
-        input_ids: torch.Tensor = None,
-        inputs_embeds: torch.Tensor = None,
-        attention_mask: torch.Tensor = None,
-        cache_position: torch.Tensor = None,
-        position_ids: torch.Tensor = None,
-        query_position: torch.Tensor = None,
-        past_key_values: tuple[tuple[torch.Tensor]] = None,
-        rotary_emb: torch.nn.Module = None,
+        input_ids: torch.Tensor | None = None,
+        inputs_embeds: torch.Tensor | None = None,
+        attention_mask: torch.Tensor | None = None,
+        cache_position: torch.Tensor | None = None,
+        position_ids: torch.Tensor | None = None,
+        query_position: torch.Tensor | None = None,
+        past_key_values: tuple[tuple[torch.Tensor]] | None = None,
+        rotary_emb: torch.nn.Module | None = None,
         global_block_tables: torch.Tensor | None = None,
         local_block_tables: torch.Tensor | None = None,
         lora_int_id: torch.Tensor | None = None,
@@ -104,7 +105,7 @@ class Gemma3TextModel(DecoderOnlyModel):
         for layer_idx, layer in enumerate(self.layers):
             if output_hidden_states:
                 all_hidden_states += (hidden_states,)
-            is_sliding = True if layer_idx in self.sliding_window_layers else False
+            is_sliding = layer_idx in self.sliding_window_layers
             use_swa_mask = is_sliding and self.phase in ("decode", "image_prefill")
             hidden_states = layer(
                 hidden_states=hidden_states,
@@ -162,6 +163,10 @@ class Gemma3DecoderLayer(DecoderOnlyLayer):
         hidden_states = residual + hidden_states
 
         return hidden_states
+
+
+class Gemma3DecoderLayerRegion(NestedCompileRegionMixin, Gemma3DecoderLayer):
+    """Decoder layer with a nested compile region around its forward call."""
 
 
 class Gemma3Attention(DecoderOnlyAttention):

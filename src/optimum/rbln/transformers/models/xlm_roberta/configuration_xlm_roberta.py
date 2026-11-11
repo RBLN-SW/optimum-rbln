@@ -30,3 +30,9 @@ class RBLNXLMRobertaForSequenceClassificationConfig(RBLNModelForSequenceClassifi
     Configuration class for XLM-RoBERTa sequence classification model.
     Inherits from RBLNModelForSequenceClassificationConfig with no additional parameters.
     """
+
+
+__all__ = [
+    "RBLNXLMRobertaForSequenceClassificationConfig",
+    "RBLNXLMRobertaModelConfig",
+]

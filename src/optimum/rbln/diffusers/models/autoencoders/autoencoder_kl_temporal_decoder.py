@@ -12,10 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import TYPE_CHECKING, Union
+from collections.abc import Sequence
+from typing import TYPE_CHECKING
 
 import rebel
-import torch  # noqa: I001
+import torch
 from diffusers import AutoencoderKLTemporalDecoder
 from diffusers.models.autoencoders.vae import DecoderOutput
 from diffusers.models.modeling_outputs import AutoencoderKLOutput
@@ -23,6 +24,7 @@ from transformers import PretrainedConfig
 
 from ....configuration_utils import RBLNCompileConfig
 from ....modeling import RBLNModel
+from ....modeling_base import Preprocessor
 from ....utils.logging import get_logger
 from ...configurations import RBLNAutoencoderKLTemporalDecoderConfig
 from ...modeling_diffusers import RBLNDiffusionMixin
@@ -36,9 +38,9 @@ from .vae import (
 
 
 if TYPE_CHECKING:
-    from transformers import AutoFeatureExtractor, AutoProcessor, AutoTokenizer, PretrainedConfig, PreTrainedModel
+    from transformers import PreTrainedModel
 
-    from ...modeling_diffusers import RBLNDiffusionMixin, RBLNDiffusionMixinConfig
+    from ...modeling_diffusers import RBLNDiffusionMixinConfig
 
 logger = get_logger(__name__)
 
@@ -107,11 +109,10 @@ class RBLNAutoencoderKLTemporalDecoder(RBLNModel):
         sample_size = rbln_config.sample_size
         if hasattr(pipe, "vae_scale_factor"):
             vae_scale_factor = pipe.vae_scale_factor
+        elif hasattr(pipe.vae.config, "block_out_channels"):
+            vae_scale_factor = 2 ** (len(pipe.vae.config.block_out_channels) - 1)
         else:
-            if hasattr(pipe.vae.config, "block_out_channels"):
-                vae_scale_factor = 2 ** (len(pipe.vae.config.block_out_channels) - 1)
-            else:
-                vae_scale_factor = 8  # vae image processor default value 8 (int)
+            vae_scale_factor = 8  # vae image processor default value 8 (int)
 
         if sample_size is None:
             sample_size = pipe.unet.config.sample_size
@@ -158,7 +159,7 @@ class RBLNAutoencoderKLTemporalDecoder(RBLNModel):
     @classmethod
     def _update_rbln_config(
         cls,
-        preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"],
+        preprocessors: Sequence[Preprocessor],
         model: "PreTrainedModel",
         model_config: "PretrainedConfig",
         rbln_config: RBLNAutoencoderKLTemporalDecoderConfig,
@@ -273,3 +274,8 @@ class RBLNAutoencoderKLTemporalDecoder(RBLNModel):
             return (decoded,)
 
         return DecoderOutput(sample=decoded)
+
+
+__all__ = [
+    "RBLNAutoencoderKLTemporalDecoder",
+]

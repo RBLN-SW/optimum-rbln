@@ -48,3 +48,9 @@ class RBLNLlamaModelConfig(RBLNDecoderOnlyModelConfig):
 
     This class is an alias of RBLNDecoderOnlyModelConfig.
     """
+
+
+__all__ = [
+    "RBLNLlamaForCausalLMConfig",
+    "RBLNLlamaModelConfig",
+]

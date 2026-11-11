@@ -29,3 +29,8 @@ class RBLNKandinskyV22PriorPipeline(RBLNDiffusionMixin, KandinskyV22PriorPipelin
     original_class = KandinskyV22PriorPipeline
     _rbln_config_class = RBLNKandinskyV22PriorPipelineConfig
     _submodules = ["text_encoder", "image_encoder", "prior"]
+
+
+__all__ = [
+    "RBLNKandinskyV22PriorPipeline",
+]

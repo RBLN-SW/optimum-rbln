@@ -23,9 +23,9 @@
 
 import inspect
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Optional, Union
+from typing import TYPE_CHECKING, Any, Optional
 
 import rebel
 import torch
@@ -36,6 +36,7 @@ from transformers.modeling_outputs import SampleTSPredictionOutput, Seq2SeqTSMod
 
 from ....configuration_utils import RBLNCompileConfig
 from ....modeling import RBLNModel
+from ....modeling_base import Preprocessor
 from ....utils.runtime_utils import RBLNPytorchRuntime
 from ...modeling_outputs import RBLNSeq2SeqTSDecoderOutput
 from .configuration_time_series_transformer import RBLNTimeSeriesTransformerForPredictionConfig
@@ -45,7 +46,7 @@ from .time_series_transformers_architecture import TimeSeriesTransformersWrapper
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
-    from transformers import AutoFeatureExtractor, AutoProcessor, AutoTokenizer, PretrainedConfig, PreTrainedModel
+    from transformers import PreTrainedModel
 
 
 class RBLNRuntimeEncoder(RBLNPytorchRuntime):
@@ -97,9 +98,9 @@ class RBLNRuntimeDecoder(RBLNPytorchRuntime):
 
     def forward(
         self,
-        inputs_embeds: torch.Tensor = None,
-        attention_mask: torch.Tensor = None,
-        cache_position: torch.Tensor = None,
+        inputs_embeds: torch.Tensor | None = None,
+        attention_mask: torch.Tensor | None = None,
+        cache_position: torch.Tensor | None = None,
     ):
         block_tables = torch.zeros(1, 1, dtype=torch.int16)
         outputs = super().forward(inputs_embeds, attention_mask, cache_position, block_tables)
@@ -223,7 +224,7 @@ class RBLNTimeSeriesTransformerForPrediction(RBLNModel):
     @classmethod
     def _update_rbln_config(
         cls,
-        preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"] | None = None,
+        preprocessors: Sequence[Preprocessor] | None = None,
         model: Optional["PreTrainedModel"] = None,
         model_config: Optional["PretrainedConfig"] = None,
         rbln_config: RBLNTimeSeriesTransformerForPredictionConfig | None = None,
@@ -291,15 +292,17 @@ class RBLNTimeSeriesTransformerForPrediction(RBLNModel):
                     f"self_key_value_states_{i}",
                     [
                         1,
+                        2,
                         model_config.decoder_attention_heads
                         * rbln_config.num_parallel_samples
                         * rbln_config.batch_size,
+                        1,
                         rbln_config.dec_max_seq_len,
                         model_config.d_model // model_config.encoder_attention_heads,
                     ],
                     rbln_config.dtype,
                 )
-                for i in range(model_config.decoder_layers * 2)
+                for i in range(model_config.decoder_layers)
             ]
         )
         enc_compile_config = RBLNCompileConfig(compiled_model_name="encoder", input_info=enc_input_info)
@@ -432,6 +435,11 @@ class RBLNTimeSeriesTransformerForPrediction(RBLNModel):
 
         return SampleTSPredictionOutput(
             sequences=concat_future_samples.reshape(
-                (-1, num_parallel_samples, self.config.prediction_length) + self._origin_model.target_shape,
+                (-1, num_parallel_samples, self.config.prediction_length, *self._origin_model.target_shape),
             )
         )
+
+
+__all__ = [
+    "RBLNTimeSeriesTransformerForPrediction",
+]

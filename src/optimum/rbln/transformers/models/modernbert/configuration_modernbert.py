@@ -12,7 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from ...configuration_generic import RBLNModelForMaskedLMConfig
+from ...configuration_generic import (
+    RBLNModelForMaskedLMConfig,
+    RBLNTransformerEncoderForFeatureExtractionConfig,
+)
+
+
+class RBLNModernBertModelConfig(RBLNTransformerEncoderForFeatureExtractionConfig):
+    """Configuration for the ModernBERT base model on RBLN devices."""
 
 
 class RBLNModernBertForMaskedLMConfig(RBLNModelForMaskedLMConfig):
@@ -22,3 +29,9 @@ class RBLNModernBertForMaskedLMConfig(RBLNModelForMaskedLMConfig):
     This configuration class stores the configuration parameters specific to
     RBLN-optimized ModernBERT models for masked language modeling tasks.
     """
+
+
+__all__ = [
+    "RBLNModernBertForMaskedLMConfig",
+    "RBLNModernBertModelConfig",
+]

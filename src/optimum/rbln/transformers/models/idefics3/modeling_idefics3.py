@@ -14,9 +14,9 @@
 
 import importlib
 import inspect
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Optional, Union
+from typing import Any, Optional
 
 import rebel
 import torch
@@ -34,13 +34,10 @@ from transformers.models.idefics3.modeling_idefics3 import Idefics3CausalLMOutpu
 
 from ....configuration_utils import RBLNCompileConfig, RBLNModelConfig
 from ....modeling import RBLNModel
+from ....modeling_base import Preprocessor
 from ....utils.runtime_utils import RBLNPytorchRuntime
 from ...modeling_outputs import RBLNDecoderOnlyOutput
-from ..decoderonly.generation_decoderonly import RBLNDecoderOnlyGenerationMixin
-
-
-if TYPE_CHECKING:
-    from transformers import AutoFeatureExtractor, AutoProcessor, AutoTokenizer
+from ...utils.multimodal_batch_sort import RBLNImageIndexedBatchSortMixin, _placeholder_token_counts
 
 
 class RBLNRuntimeVisionModel(RBLNPytorchRuntime):
@@ -133,7 +130,7 @@ class RBLNIdefics3VisionTransformer(RBLNModel):
     @classmethod
     def _update_rbln_config(
         cls,
-        preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"] | None,
+        preprocessors: Sequence[Preprocessor] | None,
         model: Optional["PreTrainedModel"] = None,
         model_config: Optional["PretrainedConfig"] = None,
         rbln_config: RBLNModelConfig | None = None,
@@ -161,6 +158,7 @@ class RBLNIdefics3VisionTransformer(RBLNModel):
         return_dict: bool | None = None,
         **kwargs,
     ) -> tuple | BaseModelOutput:
+        return_dict = return_dict if return_dict is not None else self.config.return_dict
         last_hidden_state_size = [
             pixel_values.shape[0],
             (self.config.image_size // self.config.patch_size) ** 2,
@@ -185,7 +183,7 @@ class RBLNIdefics3VisionTransformer(RBLNModel):
             return BaseModelOutput(last_hidden_state=last_hidden_state)
 
 
-class RBLNIdefics3ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMixin):
+class RBLNIdefics3ForConditionalGeneration(RBLNModel, RBLNImageIndexedBatchSortMixin):
     """
     RBLNIdefics3ForConditionalGeneration is a multi-modal model that integrates vision and language processing capabilities,
     optimized for RBLN NPUs. It is designed for conditional generation tasks that involve both image and text inputs.
@@ -202,7 +200,7 @@ class RBLNIdefics3ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationM
         from optimum.rbln import RBLNIdefics3ForConditionalGeneration
 
         model = RBLNIdefics3ForConditionalGeneration.from_pretrained(
-            "HuggingFaceM4/idefics3-8b",
+            "HuggingFaceM4/Idefics3-8B-Llama3",
             export=True,
             rbln_config={
                 "vision_model": {
@@ -220,13 +218,28 @@ class RBLNIdefics3ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationM
             },
         )
 
-        model.save_pretrained("compiled-idefics3-8b")
+        model.save_pretrained("compiled-Idefics3-8B-Llama3")
         ```
     """
 
     auto_model_class = AutoModelForImageTextToText
     _rbln_submodules = [{"name": "vision_model"}, {"name": "text_model"}]
     _rbln_submodule_prefix = "model"
+    _lm_attr_name = "text_model"
+    # pixel_values (B, num_images, C, H, W) and pixel_attention_mask (B, num_images, H, W) are batch-first
+    _batch_sortable_kwargs = (
+        *RBLNImageIndexedBatchSortMixin._batch_sortable_kwargs,
+        "pixel_values",
+        "pixel_attention_mask",
+    )
+    # image_hidden_states is (num_images, seq, dim); each patch image owns a fixed-size placeholder block
+    _image_indexed_kwargs = ("image_hidden_states",)
+
+    def _images_per_sample(self, input_ids: torch.LongTensor | None, kwargs: dict) -> list[int]:
+        # placeholder tokens per patch image mirror the connector output length
+        vision_config = self.config.vision_config
+        tokens_per_patch = (vision_config.image_size // vision_config.patch_size) ** 2 // self.config.scale_factor**2
+        return _placeholder_token_counts(input_ids, self._image_token_id, tokens_per_patch)
 
     def __getattr__(self, __name: str) -> Any:
         def redirect(func):
@@ -237,9 +250,6 @@ class RBLNIdefics3ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationM
         if isinstance(val, Callable) and "self" in set(inspect.signature(val).parameters):
             return redirect(val)
         return val
-
-    def can_generate(self):
-        return True
 
     @classmethod
     def _reconstruct_model_if_needed(cls, model: "PreTrainedModel"):
@@ -277,7 +287,7 @@ class RBLNIdefics3ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationM
     @classmethod
     def _update_rbln_config(
         cls,
-        preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"] | None,
+        preprocessors: Sequence[Preprocessor] | None,
         model: Optional["PreTrainedModel"] = None,
         model_config: Optional["PretrainedConfig"] = None,
         rbln_config: RBLNModelConfig | None = None,
@@ -309,6 +319,7 @@ class RBLNIdefics3ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationM
         pixel_attention_mask=None,
         image_hidden_states=None,
         generate_idx=None,
+        inputs_sorted=False,
         **kwargs,
     ):
         is_prefill_phase = generate_idx is None
@@ -317,8 +328,6 @@ class RBLNIdefics3ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationM
         if is_prefill_phase:
             generate_idx = attention_mask.sum(dim=-1, keepdim=True).int()
             cache_position = None
-            pixel_values = pixel_values
-            pixel_attention_mask = pixel_attention_mask
         else:
             if inputs_embeds is not None:
                 raise NotImplementedError("Specifying inputs_embeds in decoder phase is not supported.")
@@ -348,6 +357,7 @@ class RBLNIdefics3ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationM
                 "image_hidden_states": image_hidden_states,
                 "cache_position": cache_position,
                 "generate_idx": generate_idx,
+                "inputs_sorted": inputs_sorted,
             }
         )
         return model_inputs
@@ -362,7 +372,7 @@ class RBLNIdefics3ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationM
         inputs_embeds: torch.Tensor | None,
         image_hidden_states: torch.Tensor | None,
     ):
-        num_images, _, vision_hidden_size = image_hidden_states.shape
+        _num_images, _, vision_hidden_size = image_hidden_states.shape
         special_image_token_mask = input_ids == self.config.image_token_id
         new_inputs_embeds = inputs_embeds.clone()
         reshaped_image_hidden_states = image_hidden_states.view(-1, vision_hidden_size)
@@ -376,7 +386,7 @@ class RBLNIdefics3ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationM
         pixel_attention_mask: torch.BoolTensor | None = None,
         **kwargs,
     ) -> torch.Tensor:
-        batch_size, num_images, num_channels, height, width = pixel_values.shape
+        batch_size, num_images, _num_channels, _height, _width = pixel_values.shape
         pixel_values = pixel_values.to(dtype=self.dtype)  # fp16 compatibility
         pixel_values = pixel_values.view(batch_size * num_images, *pixel_values.shape[2:])
 
@@ -416,18 +426,14 @@ class RBLNIdefics3ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationM
 
     def _preprocess_prefill(
         self,
-        input_ids: torch.LongTensor = None,
+        input_ids: torch.LongTensor | None = None,
         inputs_embeds: torch.FloatTensor | None = None,
         pixel_values: torch.FloatTensor | None = None,
         pixel_attention_mask: torch.BoolTensor | None = None,
         image_hidden_states: torch.FloatTensor | None = None,
         **kwargs,
     ):
-        if input_ids is not None:
-            batch_size, _ = input_ids.shape
-        elif inputs_embeds is not None:
-            batch_size, _, _ = inputs_embeds.shape
-        else:
+        if input_ids is None and inputs_embeds is None:
             raise ValueError("You have to specify either input_ids or inputs_embeds")
 
         if inputs_embeds is not None and input_ids is None:
@@ -456,17 +462,20 @@ class RBLNIdefics3ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationM
 
     def forward(
         self,
-        input_ids: torch.LongTensor = None,
+        input_ids: torch.LongTensor | None = None,
         attention_mask: torch.Tensor | None = None,
         inputs_embeds: torch.FloatTensor | None = None,
         pixel_values: torch.FloatTensor | None = None,
         pixel_attention_mask: torch.BoolTensor | None = None,
         image_hidden_states: torch.FloatTensor | None = None,
-        cache_position: torch.Tensor = None,
+        cache_position: torch.Tensor | None = None,
         generate_idx: torch.Tensor | None = None,
         return_dict: bool | None = None,
+        inputs_sorted: bool = False,
         **kwargs,
     ) -> tuple | Idefics3CausalLMOutputWithPast:
+        return_dict = return_dict if return_dict is not None else self.config.return_dict
+        self._require_sorted_batch_inputs(inputs_embeds if inputs_embeds is not None else input_ids, inputs_sorted)
         # Prefill
         if cache_position is None:
             inputs_embeds = self._preprocess_prefill(
@@ -504,3 +513,9 @@ class RBLNIdefics3ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationM
                 logits=logits,
                 generate_idx=generate_idx,
             )
+
+
+__all__ = [
+    "RBLNIdefics3ForConditionalGeneration",
+    "RBLNIdefics3VisionTransformer",
+]

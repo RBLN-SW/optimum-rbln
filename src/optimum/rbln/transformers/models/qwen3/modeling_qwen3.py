@@ -40,18 +40,21 @@ class RBLNQwen3ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
         ```python
         from optimum.rbln import RBLNQwen3ForCausalLM
         # Simple usage using rbln_* arguments
-        # `max_seq_len` is automatically inferred from the model config
         model = RBLNQwen3ForCausalLM.from_pretrained(
             "Qwen/Qwen3-4B",
             export=True,
             rbln_batch_size=1,
+            rbln_max_seq_len=40_960,  # default "max_position_embeddings"
             rbln_num_devices=4,
+            rbln_attn_impl="flash_attn",
+            rbln_kvcache_partition_len=8192,  # Length of KV cache partitions for flash attention
         )
         # Using a config dictionary
         rbln_config = {
             "batch_size": 1,
             "max_seq_len": 40_960,
             "num_devices": 4,
+            "attn_impl": "flash_attn",
             "kvcache_partition_len": 8192,
         }
         model = RBLNQwen3ForCausalLM.from_pretrained(
@@ -65,6 +68,7 @@ class RBLNQwen3ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
             batch_size=1,
             max_seq_len=40_960,
             num_devices=4,
+            attn_impl="flash_attn",
             kvcache_partition_len=8192,
         )
         model = RBLNQwen3ForCausalLM.from_pretrained(
@@ -98,16 +102,23 @@ class RBLNQwen3Model(RBLNDecoderOnlyModel):
         ```python
         from optimum.rbln import RBLNQwen3Model
         # Simple usage using rbln_* arguments
-        # `max_seq_len` is automatically inferred from the model config
         model = RBLNQwen3Model.from_pretrained(
             "Qwen/Qwen3-Embedding-4B",
             export=True,
             rbln_batch_size=1,
             rbln_max_seq_len=40_960,
             rbln_num_devices=4,
+            rbln_attn_impl="flash_attn",
             rbln_kvcache_partition_len=8192,
         )
+        ```
     """
 
     _decoder_wrapper_cls = Qwen3Wrapper
     _use_rotary_emb = True
+
+
+__all__ = [
+    "RBLNQwen3ForCausalLM",
+    "RBLNQwen3Model",
+]

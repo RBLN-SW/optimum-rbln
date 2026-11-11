@@ -224,9 +224,9 @@ class RBLNQwen3_5RuntimeModel(RBLNRuntimeModel):
     def decode_forward(
         self,
         inputs: torch.Tensor,
-        cache_position: torch.Tensor = None,
-        block_tables: torch.Tensor = None,
-        is_external_block_tables: bool = None,
+        cache_position: torch.Tensor | None = None,
+        block_tables: torch.Tensor | None = None,
+        is_external_block_tables: bool | None = None,
         attention_mask: torch.Tensor | None = None,
         position_embed: torch.Tensor | None = None,
         position_ids: torch.Tensor | None = None,

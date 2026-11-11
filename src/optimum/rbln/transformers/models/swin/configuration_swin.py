@@ -35,3 +35,8 @@ class RBLNSwinBackboneConfig(RBLNModelForImageClassificationConfig):
         super().__init__(batch_size=batch_size, image_size=image_size, **kwargs)
         self.output_hidden_states = output_hidden_states
         self.output_attentions = output_attentions
+
+
+__all__ = [
+    "RBLNSwinBackboneConfig",
+]

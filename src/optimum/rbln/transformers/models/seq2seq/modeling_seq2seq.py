@@ -14,7 +14,8 @@
 
 import inspect
 from abc import ABC
-from typing import TYPE_CHECKING, Any, Optional, Union
+from collections.abc import Sequence
+from typing import Any, Optional
 
 import rebel
 import torch
@@ -26,15 +27,13 @@ from transformers.modeling_outputs import BaseModelOutput, ModelOutput, Seq2SeqL
 
 from ....configuration_utils import RBLNCompileConfig
 from ....modeling import RBLNModel
+from ....modeling_base import Preprocessor
 from ....utils.logging import get_logger
 from ....utils.runtime_utils import RBLNPytorchRuntime
 from .configuration_seq2seq import RBLNModelForSeq2SeqLMConfig
 
 
 logger = get_logger(__name__)
-
-if TYPE_CHECKING:
-    from transformers import AutoFeatureExtractor, AutoProcessor, AutoTokenizer, PretrainedConfig
 
 
 class RBLNRuntimeEncoder(RBLNPytorchRuntime):
@@ -202,7 +201,7 @@ class RBLNModelForSeq2SeqLM(RBLNModel, GenerationMixin, ABC):
     @classmethod
     def _update_rbln_config(
         cls,
-        preprocessors: Union["AutoFeatureExtractor", "AutoProcessor", "AutoTokenizer"],
+        preprocessors: Sequence[Preprocessor],
         model: Optional["PreTrainedModel"] = None,
         model_config: Optional["PretrainedConfig"] = None,
         rbln_config: RBLNModelForSeq2SeqLMConfig | None = None,
@@ -300,20 +299,9 @@ class RBLNModelForSeq2SeqLM(RBLNModel, GenerationMixin, ABC):
                 for i in range(n_layer * 2)
             ]
         )
+        self_kv_cache_shape = [rbln_config.batch_size, 2, n_head, 1, rbln_config.dec_max_seq_len, d_kv]
         dec_input_info.extend(
-            [
-                (
-                    f"self_key_value_states_{i}",
-                    [
-                        rbln_config.batch_size,
-                        n_head,
-                        rbln_config.dec_max_seq_len,
-                        d_kv,
-                    ],
-                    rbln_config.dtype,
-                )
-                for i in range(n_layer * 2)
-            ]
+            [(f"self_key_value_states_{i}", self_kv_cache_shape, rbln_config.dtype) for i in range(n_layer)]
         )
 
         if rbln_config.use_attention_mask:
@@ -354,9 +342,6 @@ class RBLNModelForSeq2SeqLM(RBLNModel, GenerationMixin, ABC):
             ),
         ]
 
-    def can_generate(self):
-        return True
-
     def get_encoder(self):
         return self.encoder
 
@@ -387,8 +372,8 @@ class RBLNModelForSeq2SeqLM(RBLNModel, GenerationMixin, ABC):
 
     def forward(
         self,
-        decoder_input_ids: torch.LongTensor = None,
-        cache_position: list[torch.Tensor] | torch.Tensor = None,
+        decoder_input_ids: torch.LongTensor | None = None,
+        cache_position: list[torch.Tensor] | torch.Tensor | None = None,
         **kwargs,
     ) -> tuple[torch.FloatTensor]:
         # common decoder
@@ -470,7 +455,7 @@ class RBLNModelForSeq2SeqLM(RBLNModel, GenerationMixin, ABC):
             attention_mask (torch.LongTensor, optional): The attention mask to the model.
             generation_config (GenerationConfig, optional): The generation configuration to be used as base parametrization for the generation call. **kwargs passed to generate matching the attributes of generation_config will override them.
                 If generation_config is not provided, the default will be used, which had the following loading priority: 1) from the generation_config.json model file, if it exists; 2) from the model configuration.
-                Please note that unspecified parameters will inherit [GenerationConfig](https://huggingface.co/docs/transformers/v4.57.1/en/main_classes/text_generation#transformers.GenerationConfig)’s default values.
+                Please note that unspecified parameters will inherit [GenerationConfig](https://huggingface.co/docs/transformers/v4.57.1/en/main_classes/text_generation#transformers.GenerationConfig)'s default values.
             kwargs (dict[str, Any], optional): Additional arguments passed to the generate function. See the HuggingFace transformers documentation for more details.
 
         Returns:
