@@ -39,6 +39,7 @@ from ....modeling import RBLNModel
 from ....modeling_base import Preprocessor
 from ....modeling_rope_utils import build_qwen_mrope_lookup, np_cos, np_sin, qwen_vit_rot_pos_ids
 from ....utils.logging import get_logger
+from ....utils.save_utils import load_tensors, save_tensors
 from ...modeling_outputs import _validate_output_hidden_states
 from ...utils.multimodal_batch_sort import RBLNQwenVLBatchSortMixin
 from ..decoderonly.modeling_decoderonly import (
@@ -79,7 +80,7 @@ class RBLNQwen2VisionTransformerPretrainedModel(RBLNModel):
                 in_channels=config.in_channels,
                 embed_dim=config.embed_dim,
             ).eval()
-        artifacts = torch.load(self.model_save_dir / self.subfolder / "torch_artifacts.pth", weights_only=False)
+        artifacts = load_tensors(self.model_save_dir / self.subfolder / "torch_artifacts.pth")
         self.patch_embed.load_state_dict(artifacts["patch_embed"])
 
     @classmethod
@@ -92,7 +93,7 @@ class RBLNQwen2VisionTransformerPretrainedModel(RBLNModel):
     ):
         save_dict = {}
         save_dict["patch_embed"] = model.patch_embed.state_dict()
-        torch.save(save_dict, save_dir_path / subfolder / "torch_artifacts.pth")
+        save_tensors(save_dict, save_dir_path / subfolder / "torch_artifacts.pth")
 
     @classmethod
     def _wrap_model_if_needed(

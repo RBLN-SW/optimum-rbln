@@ -33,12 +33,23 @@ Refer to huggingface/optimum/blob/4fdeea77d71e79451ba53e0c1f9d8f37e9704268/optim
 import contextlib
 from pathlib import Path
 
+import torch
 from transformers import AutoFeatureExtractor, AutoProcessor, AutoTokenizer
 
 from .logging import get_logger
 
 
 logger = get_logger(__name__)
+
+
+def save_tensors(obj, path: str | Path) -> None:
+    # nosemgrep: trailofbits.python.pickles-in-pytorch.pickles-in-pytorch -- read back only by load_tensors
+    torch.save(obj, path)
+
+
+def load_tensors(path: str | Path, map_location=None):
+    # nosemgrep: trailofbits.python.pickles-in-pytorch.pickles-in-pytorch -- weights_only=True
+    return torch.load(path, map_location=map_location, weights_only=True)
 
 
 def maybe_load_preprocessors(

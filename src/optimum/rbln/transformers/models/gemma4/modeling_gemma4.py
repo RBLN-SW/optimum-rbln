@@ -35,6 +35,7 @@ from ....modeling import RBLNModel
 from ....modeling_base import Preprocessor
 from ....modeling_rope_utils import np_cos, np_sin
 from ....utils.logging import get_logger
+from ....utils.save_utils import load_tensors, save_tensors
 from ...cache_utils import FullAttentionKVCacheMeta, SlidingWindowAttentionKVCacheMeta
 from ...modeling_attention_utils import validate_sliding_window
 from ...modeling_outputs import RBLNDecoderOnlyOutput
@@ -163,7 +164,7 @@ class RBLNGemma4VisionModel(RBLNModel):
         subfolder: str,
         rbln_config: RBLNGemma4VisionModelConfig,
     ):
-        torch.save(
+        save_tensors(
             {"patch_embedder": model.patch_embedder.state_dict()},
             save_dir_path / subfolder / "torch_artifacts.pth",
         )
@@ -177,7 +178,7 @@ class RBLNGemma4VisionModel(RBLNModel):
 
     def __post_init__(self, **kwargs):
         artifacts_path = self.model_save_dir / self.subfolder / "torch_artifacts.pth"
-        artifacts = torch.load(artifacts_path, weights_only=False) if artifacts_path.exists() else {}
+        artifacts = load_tensors(artifacts_path) if artifacts_path.exists() else {}
         if "patch_embedder" in artifacts:
             self.patch_embedder = self._create_patch_embedder()
             self.patch_embedder.load_state_dict(artifacts["patch_embedder"])
@@ -428,7 +429,7 @@ class RBLNGemma4ForCausalLM(RBLNMoeLoadMixin, RBLNDecoderOnlyModelForCausalLM):
             if embed_per_layer is not None:
                 save_dict["embed_tokens_per_layer"] = embed_per_layer.state_dict()
         if save_dict:
-            torch.save(save_dict, save_dir_path / subfolder / "torch_artifacts.pth")
+            save_tensors(save_dict, save_dir_path / subfolder / "torch_artifacts.pth")
 
     def _create_per_layer_embedding_layer(self):
         from transformers.models.gemma4.modeling_gemma4 import Gemma4TextScaledWordEmbedding
@@ -447,7 +448,7 @@ class RBLNGemma4ForCausalLM(RBLNMoeLoadMixin, RBLNDecoderOnlyModelForCausalLM):
 
     def __post_init__(self, **kwargs):
         artifacts_path = self.model_save_dir / self.subfolder / "torch_artifacts.pth"
-        artifacts = torch.load(artifacts_path, weights_only=False) if artifacts_path.exists() else {}
+        artifacts = load_tensors(artifacts_path) if artifacts_path.exists() else {}
 
         if self.rbln_config.use_inputs_embeds and "embed_tokens" in artifacts:
             self.embed_tokens = self._create_embedding_layer()

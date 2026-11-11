@@ -27,6 +27,7 @@ from rebel.compile_context import CompileContext
 from ....configuration_utils import RBLNCompileConfig
 from ....modeling import RBLNModel
 from ....utils.logging import get_logger
+from ....utils.save_utils import load_tensors, save_tensors
 from ...configurations import RBLNAutoencoderKLWanConfig
 from .vae import RBLNRuntimeWanVAEDecoder, RBLNRuntimeWanVAEEncoder
 
@@ -297,7 +298,7 @@ class RBLNAutoencoderKLWan(RBLNModel):
         self.use_slicing = self.rbln_config.use_slicing
         self.use_tiling = False
 
-        artifacts = torch.load(self.model_save_dir / self.subfolder / "torch_artifacts.pth", weights_only=False)
+        artifacts = load_tensors(self.model_save_dir / self.subfolder / "torch_artifacts.pth")
         pqc_state = artifacts.get("post_quant_conv")
         if pqc_state is not None:
             self.post_quant_conv = WanCausalConv3d(self.config.z_dim, self.config.z_dim, 1)
@@ -325,7 +326,7 @@ class RBLNAutoencoderKLWan(RBLNModel):
     @classmethod
     def save_torch_artifacts(cls, model, save_dir_path, subfolder, rbln_config):
         save_dict = {"post_quant_conv": model.post_quant_conv.state_dict()}
-        torch.save(save_dict, save_dir_path / subfolder / "torch_artifacts.pth")
+        save_tensors(save_dict, save_dir_path / subfolder / "torch_artifacts.pth")
 
     @classmethod
     def _wrap_model_if_needed(cls, model: torch.nn.Module, rbln_config: RBLNAutoencoderKLWanConfig) -> torch.nn.Module:

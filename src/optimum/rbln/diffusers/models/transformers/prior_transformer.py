@@ -23,6 +23,7 @@ from ....configuration_utils import RBLNCompileConfig, RBLNModelConfig
 from ....modeling import RBLNModel
 from ....modeling_base import Preprocessor
 from ....utils.logging import get_logger
+from ....utils.save_utils import load_tensors, save_tensors
 from ...configurations.models import RBLNPriorTransformerConfig
 from ...modeling_diffusers import RBLNDiffusionMixin, RBLNDiffusionMixinConfig
 
@@ -74,7 +75,7 @@ class RBLNPriorTransformer(RBLNModel):
 
     def __post_init__(self, **kwargs):
         super().__post_init__(**kwargs)
-        artifacts = torch.load(self.model_save_dir / self.subfolder / "torch_artifacts.pth", weights_only=False)
+        artifacts = load_tensors(self.model_save_dir / self.subfolder / "torch_artifacts.pth")
         self.clip_mean = artifacts["clip_mean"]
         self.clip_std = artifacts["clip_std"]
 
@@ -95,7 +96,7 @@ class RBLNPriorTransformer(RBLNModel):
         save_dict = {}
         save_dict["clip_mean"] = model.clip_mean
         save_dict["clip_std"] = model.clip_std
-        torch.save(save_dict, save_dir_path / subfolder / "torch_artifacts.pth")
+        save_tensors(save_dict, save_dir_path / subfolder / "torch_artifacts.pth")
 
     @classmethod
     def _update_rbln_config(

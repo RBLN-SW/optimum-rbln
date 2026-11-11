@@ -29,6 +29,7 @@ from ....modeling import RBLNModel
 from ....modeling_base import Preprocessor
 from ....utils.logging import get_logger
 from ....utils.runtime_utils import RBLNPytorchRuntime
+from ....utils.save_utils import load_tensors, save_tensors
 from .configuration_pixtral import RBLNPixtralVisionModelConfig
 from .pixtral_architecture import PixtralAttention
 
@@ -204,7 +205,7 @@ class RBLNPixtralVisionModel(RBLNModel):
     """
 
     def __post_init__(self, **kwargs):
-        artifacts = torch.load(self.model_save_dir / self.subfolder / "torch_artifacts.pth", weights_only=False)
+        artifacts = load_tensors(self.model_save_dir / self.subfolder / "torch_artifacts.pth")
         with no_init_weights():
             self.patch_conv = nn.Conv2d(
                 in_channels=self.config.num_channels,
@@ -236,7 +237,7 @@ class RBLNPixtralVisionModel(RBLNModel):
         save_dict = {}
         save_dict["patch_conv"] = model.get_input_embeddings().state_dict()
         save_dict["ln_pre"] = model.ln_pre.state_dict()
-        torch.save(save_dict, save_dir_path / subfolder / "torch_artifacts.pth")
+        save_tensors(save_dict, save_dir_path / subfolder / "torch_artifacts.pth")
 
     @classmethod
     def _wrap_model_if_needed(

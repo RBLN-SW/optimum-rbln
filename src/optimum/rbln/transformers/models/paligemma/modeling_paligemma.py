@@ -34,6 +34,7 @@ from ....configuration_utils import RBLNModelConfig
 from ....modeling import RBLNModel
 from ....modeling_base import Preprocessor
 from ....utils.logging import get_logger
+from ....utils.save_utils import load_tensors, save_tensors
 from ...utils.multimodal_batch_sort import RBLNImageIndexedBatchSortMixin
 from ...utils.rbln_runtime_wrapper import LoopProcessor
 from ..decoderonly.modeling_decoderonly import RBLNDecoderOnlyOutput
@@ -160,7 +161,7 @@ class RBLNPaliGemmaForConditionalGeneration(RBLNModel, RBLNImageIndexedBatchSort
         self.vision_tower = LoopVisionTower(self.rbln_submodules[0])
         self.language_model = self.rbln_submodules[1]
 
-        artifacts = torch.load(self.model_save_dir / self.subfolder / "torch_artifacts.pth", weights_only=False)
+        artifacts = load_tensors(self.model_save_dir / self.subfolder / "torch_artifacts.pth")
         self.embed_tokens = self._create_embedding_layer()
         self.embed_tokens.load_state_dict(artifacts["embed_tokens"], assign=True)
         self.multi_modal_projector = self._create_multi_modal_projector()
@@ -179,7 +180,7 @@ class RBLNPaliGemmaForConditionalGeneration(RBLNModel, RBLNImageIndexedBatchSort
         save_dict = {}
         save_dict["embed_tokens"] = model.get_input_embeddings().state_dict()
         save_dict["multi_modal_projector"] = model.model.multi_modal_projector.state_dict()
-        torch.save(save_dict, save_dir_path / subfolder / "torch_artifacts.pth")
+        save_tensors(save_dict, save_dir_path / subfolder / "torch_artifacts.pth")
 
     def get_attn_impl(self) -> str:
         return self.rbln_config.language_model.attn_impl
@@ -414,7 +415,7 @@ class RBLNPaliGemmaModel(RBLNModel):
                 **cfg,
             )
 
-        artifacts = torch.load(self.model_save_dir / self.subfolder / "torch_artifacts.pth", weights_only=False)
+        artifacts = load_tensors(self.model_save_dir / self.subfolder / "torch_artifacts.pth")
         self.embed_tokens = self._create_embedding_layer()
         self.embed_tokens.load_state_dict(artifacts["embed_tokens"], assign=True)
         self.multi_modal_projector = self._create_multi_modal_projector()
@@ -457,7 +458,7 @@ class RBLNPaliGemmaModel(RBLNModel):
         save_dict = {}
         save_dict["embed_tokens"] = model.get_input_embeddings().state_dict()
         save_dict["multi_modal_projector"] = model.multi_modal_projector.state_dict()
-        torch.save(save_dict, save_dir_path / subfolder / "torch_artifacts.pth")
+        save_tensors(save_dict, save_dir_path / subfolder / "torch_artifacts.pth")
 
     def _create_embedding_layer(self):
         with no_init_weights():

@@ -35,6 +35,7 @@ from ....modeling import RBLNModel
 from ....modeling_base import Preprocessor
 from ....modeling_rope_utils import np_cos, np_sin
 from ....utils.logging import get_logger
+from ....utils.save_utils import load_tensors, save_tensors
 from ...configurations import RBLNCosmosTransformer3DModelConfig
 
 
@@ -279,7 +280,7 @@ class RBLNCosmosTransformer3DModel(RBLNModel):
 
     def __post_init__(self, **kwargs):
         super().__post_init__(**kwargs)
-        artifacts = torch.load(self.model_save_dir / self.subfolder / "torch_artifacts.pth", weights_only=False)
+        artifacts = load_tensors(self.model_save_dir / self.subfolder / "torch_artifacts.pth")
 
         hidden_size = self.config.num_attention_heads * self.config.attention_head_dim
         patch_embed_in_channels = (
@@ -486,7 +487,7 @@ class RBLNCosmosTransformer3DModel(RBLNModel):
             save_dict["crossattn_proj"] = model.crossattn_proj.state_dict()
         if getattr(model, "img_context_proj", None) is not None:
             save_dict["img_context_proj"] = model.img_context_proj.state_dict()
-        torch.save(save_dict, save_dir_path / subfolder / "torch_artifacts.pth")
+        save_tensors(save_dict, save_dir_path / subfolder / "torch_artifacts.pth")
 
     @classmethod
     def _update_rbln_config(

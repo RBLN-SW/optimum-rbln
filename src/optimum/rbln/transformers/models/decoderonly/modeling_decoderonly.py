@@ -29,6 +29,7 @@ from ....modeling import RBLNModel
 from ....modeling_base import Preprocessor
 from ....utils.logging import get_logger
 from ....utils.runtime_utils import npu_is_cr13_or_later
+from ....utils.save_utils import load_tensors, save_tensors
 from ...cache_utils import FullAttentionKVCacheMeta, SlidingWindowAttentionKVCacheMeta
 from ...modeling_attention_utils import (
     RBLNDecoderOnlyFlashAttentionMixin,
@@ -77,7 +78,7 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
 
     def __post_init__(self, **kwargs):
         if self.rbln_config.use_inputs_embeds:
-            artifacts = torch.load(self.model_save_dir / self.subfolder / "torch_artifacts.pth", weights_only=False)
+            artifacts = load_tensors(self.model_save_dir / self.subfolder / "torch_artifacts.pth")
             self.embed_tokens = self._create_embedding_layer()
             self.embed_tokens.load_state_dict(artifacts["embed_tokens"], assign=True)
         else:
@@ -193,7 +194,7 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
         if rbln_config.use_inputs_embeds:
             save_dict = {}
             save_dict["embed_tokens"] = model.get_input_embeddings().state_dict()
-            torch.save(save_dict, save_dir_path / subfolder / "torch_artifacts.pth")
+            save_tensors(save_dict, save_dir_path / subfolder / "torch_artifacts.pth")
 
     def _create_embedding_layer(self):
         text_config = self.config.get_text_config()

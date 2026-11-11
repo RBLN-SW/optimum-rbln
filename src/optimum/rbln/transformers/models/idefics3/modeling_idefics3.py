@@ -36,6 +36,7 @@ from ....configuration_utils import RBLNCompileConfig, RBLNModelConfig
 from ....modeling import RBLNModel
 from ....modeling_base import Preprocessor
 from ....utils.runtime_utils import RBLNPytorchRuntime
+from ....utils.save_utils import load_tensors, save_tensors
 from ...modeling_outputs import RBLNDecoderOnlyOutput
 from ...utils.multimodal_batch_sort import RBLNImageIndexedBatchSortMixin, _placeholder_token_counts
 
@@ -82,7 +83,7 @@ class RBLNIdefics3VisionTransformer(RBLNModel):
     _tp_support = False
 
     def __post_init__(self, **kwargs):
-        artifacts = torch.load(self.model_save_dir / self.subfolder / "torch_artifacts.pth", weights_only=False)
+        artifacts = load_tensors(self.model_save_dir / self.subfolder / "torch_artifacts.pth")
         with no_init_weights():
             self.embeddings = Idefics3VisionEmbeddings(self.config)
         self.embeddings.load_state_dict(artifacts["embeddings"], assign=True)
@@ -103,7 +104,7 @@ class RBLNIdefics3VisionTransformer(RBLNModel):
 
         save_dict = {}
         save_dict["embeddings"] = model.get_input_embeddings().state_dict()
-        torch.save(save_dict, save_dir_path / subfolder / "torch_artifacts.pth")
+        save_tensors(save_dict, save_dir_path / subfolder / "torch_artifacts.pth")
 
     def get_input_embeddings(self):
         return self.embeddings
