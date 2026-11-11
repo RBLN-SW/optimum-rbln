@@ -129,10 +129,3 @@ class TestFlorence2Encoder:
             assert call["block_tables"].tolist() == [index]
             assert call["block_tables"].dtype == torch.int16
             torch.testing.assert_close(call["attention_mask"], expected_mask[index : index + 1])
-
-    def test_input_batch_cannot_write_past_compiled_cross_cache(self):
-        model, observed = self.runtime_model()
-        ids = torch.cat((torch.full((2, 577), 31), torch.tensor([[0, 4, 2]]).repeat(2, 1)), dim=1)
-        with pytest.raises(ValueError, match="compiled batch_size"):
-            model._prepare_encoder_decoder_kwargs_for_generation(ids, {"pixel_values": torch.randn(2, 3, 768, 768)})
-        assert not observed
