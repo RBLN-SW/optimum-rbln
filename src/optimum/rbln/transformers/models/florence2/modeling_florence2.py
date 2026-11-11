@@ -14,7 +14,6 @@
 
 import torch
 from transformers import AutoModelForImageTextToText
-from transformers.generation.configuration_utils import GenerationMode
 
 from ....configuration_utils import RBLNCompileConfig
 from ..seq2seq import RBLNModelForSeq2SeqLM
@@ -45,7 +44,6 @@ class RBLNFlorence2ForConditionalGeneration(RBLNModelForSeq2SeqLM):
     auto_model_class = AutoModelForImageTextToText
     base_model_prefix = "model"
     support_causal_attn = True
-    _supported_generation_modes = (GenerationMode.GREEDY_SEARCH, GenerationMode.SAMPLE)
 
     @classmethod
     def _wrap_model_if_needed(cls, model, rbln_config: RBLNFlorence2ForConditionalGenerationConfig):
