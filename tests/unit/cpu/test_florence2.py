@@ -35,7 +35,7 @@ class TestFlorence2Encoder:
             encoder_ffn_dim=64,
             decoder_ffn_dim=64,
             vocab_size=32,
-            max_position_embeddings=64,
+            max_position_embeddings=640,
         )
         config = Florence2Config(vision_config=vision, text_config=text, image_token_id=31)
         config.architectures = ["Florence2ForConditionalGeneration"]
@@ -73,16 +73,16 @@ class TestFlorence2Encoder:
             torch.testing.assert_close(values[0], torch.zeros_like(values[0]), rtol=0, atol=0)
 
     def test_compile_inputs_include_image_features_in_encoder_length(self):
-        config = RBLNFlorence2ForConditionalGenerationConfig(image_size=64, enc_max_seq_len=64, dec_max_seq_len=64)
+        config = RBLNFlorence2ForConditionalGenerationConfig(enc_max_seq_len=640, dec_max_seq_len=64)
         config = RBLNFlorence2ForConditionalGeneration.update_rbln_config([], self.model, self.model.config, config)
         encoder = {name: (shape, dtype) for name, shape, dtype in config.compile_cfgs[0].input_info}
         decoder = {name: (shape, dtype) for name, shape, dtype in config.compile_cfgs[1].input_info}
-        assert encoder["input_ids"] == ([1, 59], "int64")
-        assert encoder["pixel_values"] == ([1, 3, 64, 64], "float32")
-        assert encoder["attention_mask"] == ([1, 64], "float32")
-        assert decoder["cross_key_value_states_0"][0] == [1, 4, 64, 8]
+        assert encoder["input_ids"] == ([1, 63], "int64")
+        assert encoder["pixel_values"] == ([1, 3, 768, 768], "float32")
+        assert encoder["attention_mask"] == ([1, 640], "float32")
+        assert decoder["cross_key_value_states_0"][0] == [1, 4, 640, 8]
         with torch.inference_mode():
-            features = self.model.get_image_features(torch.randn(1, 3, 64, 64)).pooler_output
+            features = self.model.get_image_features(torch.randn(1, 3, 768, 768)).pooler_output
         assert features.shape[1] == config.enc_max_seq_len - encoder["input_ids"][0][1]
 
     def runtime_model(self, batch_size=1, dtype=torch.float32):
@@ -95,7 +95,7 @@ class TestFlorence2Encoder:
             return torch.empty(0)
 
         config = RBLNFlorence2ForConditionalGenerationConfig(
-            batch_size=batch_size, image_size=64, enc_max_seq_len=64, dec_max_seq_len=64
+            batch_size=batch_size, enc_max_seq_len=640, dec_max_seq_len=64
         )
         config = RBLNFlorence2ForConditionalGeneration.update_rbln_config([], self.model, self.model.config, config)
         model = object.__new__(RBLNFlorence2ForConditionalGeneration)
@@ -110,19 +110,20 @@ class TestFlorence2Encoder:
     def test_batched_encoder_preserves_image_text_mask_and_cache_rows(self, dtype):
         model, observed = self.runtime_model(batch_size=2, dtype=dtype)
         text_ids = torch.tensor([[0, 4, 2, 1], [0, 5, 6, 2]])
-        ids = torch.cat((torch.full((2, 5), 31), text_ids), dim=1)
-        mask = torch.tensor([[1, 1, 1, 1, 1, 1, 1, 1, 0], [1, 1, 1, 1, 1, 1, 1, 1, 1]])
-        pixels = torch.arange(2, dtype=torch.float32).view(2, 1, 1, 1).expand(2, 3, 64, 64)
+        image_ids = torch.full((2, 577), 31)
+        ids = torch.cat((image_ids, text_ids), dim=1)
+        mask = torch.cat((torch.ones_like(image_ids), torch.tensor([[1, 1, 1, 0], [1, 1, 1, 1]])), dim=1)
+        pixels = torch.arange(2, dtype=torch.float32).view(2, 1, 1, 1).expand(2, 3, 768, 768)
         kwargs = {"pixel_values": pixels, "attention_mask": mask}
         model._validate_model_kwargs(dict(kwargs))
         result = model._prepare_encoder_decoder_kwargs_for_generation(ids, kwargs)
 
         assert len(observed["calls"]) == 2
         assert "pixel_values" not in result
-        expected_mask = torch.nn.functional.pad(mask, (0, 55)).to(dtype)
+        expected_mask = torch.nn.functional.pad(mask, (0, 59)).to(dtype)
         torch.testing.assert_close(result["attention_mask"], expected_mask)
         for index, call in enumerate(observed["calls"]):
-            expected_ids = torch.nn.functional.pad(text_ids[index : index + 1], (0, 55), value=1)
+            expected_ids = torch.nn.functional.pad(text_ids[index : index + 1], (0, 59), value=1)
             torch.testing.assert_close(call["input_ids"], expected_ids)
             torch.testing.assert_close(call["pixel_values"], pixels[index : index + 1].to(dtype))
             assert call["block_tables"].tolist() == [index]
@@ -131,7 +132,7 @@ class TestFlorence2Encoder:
 
     def test_input_batch_cannot_write_past_compiled_cross_cache(self):
         model, observed = self.runtime_model()
-        ids = torch.tensor([[31, 31, 31, 31, 31, 0, 4, 2]]).repeat(2, 1)
+        ids = torch.cat((torch.full((2, 577), 31), torch.tensor([[0, 4, 2]]).repeat(2, 1)), dim=1)
         with pytest.raises(ValueError, match="compiled batch_size"):
-            model._prepare_encoder_decoder_kwargs_for_generation(ids, {"pixel_values": torch.randn(2, 3, 64, 64)})
+            model._prepare_encoder_decoder_kwargs_for_generation(ids, {"pixel_values": torch.randn(2, 3, 768, 768)})
         assert not observed

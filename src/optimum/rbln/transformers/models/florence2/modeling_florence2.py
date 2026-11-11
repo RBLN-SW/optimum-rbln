@@ -53,18 +53,10 @@ class RBLNFlorence2ForConditionalGeneration(RBLNModelForSeq2SeqLM):
 
     @classmethod
     def _update_rbln_config(cls, preprocessors, model, model_config, rbln_config):
-        if rbln_config.image_size is None:
-            for processor in preprocessors or []:
-                image_processor = getattr(processor, "image_processor", processor)
-                size = getattr(image_processor, "size", {})
-                if "height" in size and size.get("height") == size.get("width"):
-                    rbln_config.image_size = size["height"]
-                    break
-            if rbln_config.image_size is None:
-                raise ValueError("Specify `image_size` or provide a processor with a square image size.")
-
+        # Only the released checkpoints' 768x768 input resolution is supported.
+        image_size = 768
         vision = model_config.vision_config
-        feature_size = rbln_config.image_size
+        feature_size = image_size
         for kernel, stride, padding in zip(vision.patch_size, vision.patch_stride, vision.patch_padding, strict=True):
             feature_size = (feature_size + 2 * padding - kernel) // stride + 1
         image_seq_len = feature_size**2 + 1
@@ -74,9 +66,7 @@ class RBLNFlorence2ForConditionalGeneration(RBLNModelForSeq2SeqLM):
             raise ValueError("`enc_max_seq_len` must leave room for text tokens after the image features.")
         enc_input_info = list(rbln_config.compile_cfgs[0].input_info)
         enc_input_info[0] = ("input_ids", [1, text_seq_len], "int64")
-        enc_input_info.insert(
-            2, ("pixel_values", [1, 3, rbln_config.image_size, rbln_config.image_size], rbln_config.dtype)
-        )
+        enc_input_info.insert(2, ("pixel_values", [1, 3, image_size, image_size], rbln_config.dtype))
         encoder_config = RBLNCompileConfig(compiled_model_name="encoder", input_info=enc_input_info)
         rbln_config.set_compile_cfgs([encoder_config, rbln_config.compile_cfgs[1]])
         return rbln_config
