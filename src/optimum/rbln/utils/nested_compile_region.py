@@ -15,7 +15,7 @@
 import torch
 
 
-class NestedCompileRegionMixin:
+class NestedCompileRegionMixin(torch.nn.Module):
     """Preserve a forward call as a nested region through module cloning and export."""
 
     @torch.compiler.nested_compile_region
