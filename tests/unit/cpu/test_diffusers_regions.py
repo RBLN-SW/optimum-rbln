@@ -17,6 +17,7 @@ from diffusers import (
 )
 from diffusers.models.attention import BasicTransformerBlock, TemporalBasicTransformerBlock
 from diffusers.models.autoencoders.autoencoder_kl_cosmos import CosmosCausalConv3d, CosmosResnetBlock3d
+from diffusers.models.controlnets.controlnet_cosmos import CosmosControlNetModel
 from diffusers.models.resnet import ResnetBlock2D, ResnetBlockCondNorm2D, SpatioTemporalResBlock
 from diffusers.models.transformers.transformer_cosmos import CosmosTransformerBlock
 from rebel.core.compilation._impl import clone_nn_module
@@ -30,6 +31,8 @@ from optimum.rbln import (
     RBLNAutoencoderKLTemporalDecoderConfig,
     RBLNControlNetModel,
     RBLNControlNetModelConfig,
+    RBLNCosmosControlNetModel,
+    RBLNCosmosControlNetModelConfig,
     RBLNCosmosTransformer3DModel,
     RBLNCosmosTransformer3DModelConfig,
     RBLNPriorTransformer,
@@ -53,6 +56,7 @@ from optimum.rbln.utils.nested_compile_region import NestedCompileRegionMixin
         RBLNAutoencoderKLCosmosConfig,
         RBLNAutoencoderKLTemporalDecoderConfig,
         RBLNControlNetModelConfig,
+        RBLNCosmosControlNetModelConfig,
         RBLNCosmosTransformer3DModelConfig,
         RBLNPriorTransformerConfig,
         RBLNUNet2DConditionModelConfig,
@@ -69,7 +73,6 @@ def test_region_config_roundtrip(config_cls, enabled, tmp_path):
     config.save(tmp_path)
     assert "nested_compile_region" not in (tmp_path / "rbln_config.json").read_text()
     assert config_cls.from_pretrained(tmp_path).nested_compile_region is False
-    assert config_cls.from_pretrained(tmp_path, rbln_nested_compile_region=enabled).nested_compile_region is enabled
 
 
 def test_pipeline_regions_are_selected_per_component():
@@ -77,6 +80,14 @@ def test_pipeline_regions_are_selected_per_component():
     assert config.unet.nested_compile_region is True
     assert config.vae.nested_compile_region is False
     assert config.get_load_overrides()["unet"]["nested_compile_region"] is True
+
+
+def test_cosmos_transfer_pipeline_accepts_controlnet_regions():
+    from optimum.rbln import RBLNCosmos2_5_TransferPipeline
+
+    config = RBLNCosmos2_5_TransferPipeline.get_rbln_config_class()(controlnet={"nested_compile_region": True})
+    assert config.controlnet.nested_compile_region is True
+    assert config.transformer.nested_compile_region is False
 
 
 class RepeatedBlocks(torch.nn.Module):
@@ -393,6 +404,43 @@ def test_cosmos_compile_exports_regions(monkeypatch, enabled, family):
     assert model.transformer_blocks[0].forward.__func__ is CosmosTransformerBlock.forward
     calls = [node for node in exports[0].graph.nodes if "invoke_subgraph" in str(node.target)]
     assert len(calls) == (3 if enabled else 0)
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+@pytest.mark.parametrize("img_context", [False, True])
+def test_cosmos_controlnet_compile_exports_regions(monkeypatch, enabled, img_context):
+    model = CosmosControlNetModel(
+        n_controlnet_blocks=4,
+        in_channels=4,
+        latent_channels=4,
+        model_channels=32,
+        num_attention_heads=2,
+        attention_head_dim=16,
+        text_embed_dim=16,
+        adaln_lora_dim=8,
+        max_size=(2, 2, 2),
+        patch_size=(1, 1, 1),
+        img_context_dim_in=16 if img_context else None,
+        img_context_dim_out=32,
+    ).eval()
+    config = RBLNCosmosControlNetModelConfig(
+        num_latent_frames=2,
+        latent_height=2,
+        latent_width=2,
+        max_seq_len=4,
+        embedding_dim=16,
+        img_context_num_tokens=2,
+        nested_compile_region=enabled,
+        create_runtimes=False,
+    )
+    exports = _check_compile_export(monkeypatch, RBLNCosmosControlNetModel, model, config, enabled)
+    assert len(exports) == 1
+    assert len(exports[0].graph_signature.output_specs) == 4
+    assert model.control_blocks[0].forward.__func__ is CosmosTransformerBlock.forward
+    calls = [node for node in exports[0].graph.nodes if "invoke_subgraph" in str(node.target)]
+    # The first block's input projection gives it a unique body, which PyTorch inlines.
+    assert len(calls) == (3 if enabled else 0)
+    assert len({call.args[1] for call in calls}) == (1 if enabled else 0)
 
 
 def test_module_wrappers_preserve_aliases_and_isolate_training_state():

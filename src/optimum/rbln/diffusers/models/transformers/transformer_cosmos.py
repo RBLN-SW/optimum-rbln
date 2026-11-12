@@ -163,7 +163,8 @@ class CosmosBlockRegion(DiffusersModuleWrapper, CosmosPerFrameAdaLNMixin, Cosmos
         image_rotary_emb,
         extra_pos_emb=None,
         attention_mask=None,
-    ):
+        latents=None,
+    ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
         return self._block_forward(
             self,
             hidden_states,
@@ -173,6 +174,7 @@ class CosmosBlockRegion(DiffusersModuleWrapper, CosmosPerFrameAdaLNMixin, Cosmos
             image_rotary_emb,
             extra_pos_emb=extra_pos_emb,
             attention_mask=attention_mask,
+            latents=latents,
         )
 
 
@@ -197,7 +199,9 @@ class CosmosTransformer3DModelWrapper(CosmosPerFrameAdaLNMixin, torch.nn.Module)
         self.p_t, self.p_h, self.p_w = model.config.patch_size
         self.nested_compile_region = nested_compile_region
 
-    def _run_block(self, block, *args, **kwargs):
+    def _run_block(
+        self, block: CosmosTransformerBlock, *args, **kwargs
+    ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
         if self.nested_compile_region:
             return block.forward_region(*args, **kwargs)
         return self._block_forward(block, *args, **kwargs)
@@ -255,7 +259,9 @@ class CosmosTransferTransformerWrapper(CosmosTransformer3DModelWrapper):
         latent_width: int = 160,
         nested_compile_region: bool = False,
     ) -> None:
-        super().__init__(model, num_latent_frames, latent_height, latent_width, nested_compile_region)
+        super().__init__(
+            model, num_latent_frames, latent_height, latent_width, nested_compile_region=nested_compile_region
+        )
         self.controlnet_block_every_n = model.config.controlnet_block_every_n
         self.uses_img_context = model.config.img_context_dim_in is not None and model.config.img_context_dim_in > 0
 
@@ -462,7 +468,7 @@ class RBLNCosmosTransformer3DModel(RBLNModel):
         ).eval()
 
     @classmethod
-    def get_compiled_model(cls, model: torch.nn.Module, rbln_config: RBLNModelConfig):
+    def get_compiled_model(cls, model: torch.nn.Module, rbln_config: RBLNCosmosTransformer3DModelConfig):
         if not rbln_config.nested_compile_region:
             return super().get_compiled_model(model, rbln_config)
         return cls.compile(

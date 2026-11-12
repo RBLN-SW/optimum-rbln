@@ -17,13 +17,15 @@ from typing import TYPE_CHECKING, Union
 
 import torch
 from diffusers.models.controlnets.controlnet_cosmos import CosmosControlNetModel, CosmosControlNetOutput
-from diffusers.models.transformers.transformer_cosmos import CosmosEmbedding, CosmosPatchEmbed
+from diffusers.models.transformers.transformer_cosmos import CosmosEmbedding, CosmosPatchEmbed, CosmosTransformerBlock
 from torchvision import transforms
 
 from ....configuration_utils import RBLNCompileConfig, RBLNModelConfig
 from ....modeling import RBLNModel
 from ...configurations import RBLNCosmosControlNetModelConfig
+from ..nested_region import wrap_diffusers_modules
 from ..transformers.transformer_cosmos import (
+    CosmosBlockRegion,
     CosmosPerFrameAdaLNMixin,
     RBLNCosmosRotaryPosEmbed,
     RBLNTimesteps,
@@ -39,10 +41,22 @@ if TYPE_CHECKING:
 class CosmosControlNetWrapper(CosmosPerFrameAdaLNMixin, torch.nn.Module):
     """Compile graph: the ControlNet block stack. Embeddings are computed on the host."""
 
-    def __init__(self, model: CosmosControlNetModel):
+    def __init__(self, model: CosmosControlNetModel, nested_compile_region: bool = False):
         super().__init__()
-        self.control_blocks = model.control_blocks
+        self.control_blocks = (
+            wrap_diffusers_modules(model.control_blocks, {CosmosTransformerBlock: CosmosBlockRegion})
+            if nested_compile_region
+            else model.control_blocks
+        )
+        self.nested_compile_region = nested_compile_region
         self.uses_img_context = model.config.img_context_dim_in is not None and model.config.img_context_dim_in > 0
+
+    def _run_block(
+        self, block: CosmosTransformerBlock, *args, **kwargs
+    ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
+        if self.nested_compile_region:
+            return block.forward_region(*args, **kwargs)
+        return self._block_forward(block, *args, **kwargs)
 
     def forward(
         self,
@@ -64,7 +78,7 @@ class CosmosControlNetWrapper(CosmosPerFrameAdaLNMixin, torch.nn.Module):
         outputs = []
         hidden_states = control_hidden_states
         for block_idx, block in enumerate(self.control_blocks):
-            hidden_states, control_proj = self._block_forward(
+            hidden_states, control_proj = self._run_block(
                 block,
                 hidden_states,
                 context,
@@ -164,8 +178,22 @@ class RBLNCosmosControlNetModel(RBLNModel):
         torch.save(save_dict, save_dir_path / subfolder / "torch_artifacts.pth")
 
     @classmethod
-    def _wrap_model_if_needed(cls, model: torch.nn.Module, rbln_config: RBLNModelConfig) -> torch.nn.Module:
-        return CosmosControlNetWrapper(model=model).eval()
+    def _wrap_model_if_needed(
+        cls, model: torch.nn.Module, rbln_config: RBLNCosmosControlNetModelConfig
+    ) -> torch.nn.Module:
+        return CosmosControlNetWrapper(model=model, nested_compile_region=rbln_config.nested_compile_region).eval()
+
+    @classmethod
+    def get_compiled_model(cls, model: torch.nn.Module, rbln_config: RBLNCosmosControlNetModelConfig):
+        if not rbln_config.nested_compile_region:
+            return super().get_compiled_model(model, rbln_config)
+        return cls.compile(
+            cls._wrap_model_if_needed(model, rbln_config),
+            rbln_compile_config=rbln_config.compile_cfgs[0],
+            create_runtimes=rbln_config.create_runtimes,
+            device=rbln_config.device,
+            model_trace_method="export_strict",
+        )
 
     def compute_embedding(
         self,
