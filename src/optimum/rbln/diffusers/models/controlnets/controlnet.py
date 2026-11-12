@@ -135,7 +135,7 @@ class RBLNControlNetModel(RBLNModel):
             return _ControlNetModel(model).eval()
 
     @classmethod
-    def get_compiled_model(cls, model: torch.nn.Module, rbln_config: RBLNModelConfig):
+    def get_compiled_model(cls, model: torch.nn.Module, rbln_config: RBLNControlNetModelConfig):
         if not rbln_config.nested_compile_region:
             return super().get_compiled_model(model, rbln_config)
         return cls.compile(
