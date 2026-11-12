@@ -163,7 +163,8 @@ class CosmosBlockRegion(DiffusersModuleWrapper, CosmosPerFrameAdaLNMixin, Cosmos
         image_rotary_emb,
         extra_pos_emb=None,
         attention_mask=None,
-    ):
+        latents=None,
+    ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
         return self._block_forward(
             self,
             hidden_states,
@@ -173,6 +174,7 @@ class CosmosBlockRegion(DiffusersModuleWrapper, CosmosPerFrameAdaLNMixin, Cosmos
             image_rotary_emb,
             extra_pos_emb=extra_pos_emb,
             attention_mask=attention_mask,
+            latents=latents,
         )
 
 
