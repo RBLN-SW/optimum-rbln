@@ -64,7 +64,7 @@ def wrap_diffusers_modules(
     """
     wrapped_modules = {}
 
-    def wrap(module):
+    def wrap(module: torch.nn.Module) -> torch.nn.Module:
         if module in wrapped_modules:
             return wrapped_modules[module]
         wrapper_cls = region_classes.get(type(module))
