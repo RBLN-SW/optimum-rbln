@@ -9,6 +9,7 @@ from diffusers import (
     AutoencoderKLTemporalDecoder,
     ControlNetModel,
     CosmosTransformer3DModel,
+    PriorTransformer,
     UNet2DConditionModel,
     UNetSpatioTemporalConditionModel,
 )
@@ -26,6 +27,8 @@ from optimum.rbln import (
     RBLNControlNetModelConfig,
     RBLNCosmosTransformer3DModel,
     RBLNCosmosTransformer3DModelConfig,
+    RBLNPriorTransformer,
+    RBLNPriorTransformerConfig,
     RBLNStableDiffusionXLPipelineConfig,
     RBLNUNet2DConditionModel,
     RBLNUNet2DConditionModelConfig,
@@ -43,6 +46,7 @@ from optimum.rbln.utils.nested_compile_region import NestedCompileRegionMixin
         RBLNAutoencoderKLTemporalDecoderConfig,
         RBLNControlNetModelConfig,
         RBLNCosmosTransformer3DModelConfig,
+        RBLNPriorTransformerConfig,
         RBLNUNet2DConditionModelConfig,
         RBLNUNetSpatioTemporalConditionModelConfig,
     ],
@@ -258,6 +262,24 @@ def test_vae_encoder_and_decoder_export_regions(monkeypatch, enabled, temporal):
             sample_size=(4, 4), uses_encoder=True, nested_compile_region=enabled, create_runtimes=False
         )
     assert len(_check_compile_export(monkeypatch, model_cls, model, config, enabled)) == 2
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+def test_prior_compile_exports_regions(monkeypatch, enabled):
+    num_layers = 3
+    model = PriorTransformer(
+        num_attention_heads=2,
+        attention_head_dim=8,
+        num_layers=num_layers,
+        embedding_dim=16,
+        num_embeddings=4,
+        additional_embeddings=4,
+    ).eval()
+    config = RBLNPriorTransformerConfig(nested_compile_region=enabled, create_runtimes=False)
+    exports = _check_compile_export(monkeypatch, RBLNPriorTransformer, model, config, enabled)
+    assert len(exports) == 1
+    calls = [node for node in exports[0].graph.nodes if "invoke_subgraph" in str(node.target)]
+    assert len(calls) == (num_layers if enabled else 0)
 
 
 @pytest.mark.parametrize("enabled", [False, True])
