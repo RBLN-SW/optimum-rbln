@@ -6,21 +6,27 @@ import rebel
 import torch
 from diffusers import (
     AutoencoderKL,
+    AutoencoderKLCosmos,
     AutoencoderKLTemporalDecoder,
     ControlNetModel,
     CosmosTransformer3DModel,
+    PriorTransformer,
     UNet2DConditionModel,
     UNetSpatioTemporalConditionModel,
+    VQModel,
 )
 from diffusers.models.attention import BasicTransformerBlock, TemporalBasicTransformerBlock
+from diffusers.models.autoencoders.autoencoder_kl_cosmos import CosmosCausalConv3d, CosmosResnetBlock3d
 from diffusers.models.controlnets.controlnet_cosmos import CosmosControlNetModel
-from diffusers.models.resnet import ResnetBlock2D, SpatioTemporalResBlock
+from diffusers.models.resnet import ResnetBlock2D, ResnetBlockCondNorm2D, SpatioTemporalResBlock
 from diffusers.models.transformers.transformer_cosmos import CosmosTransformerBlock
 from rebel.core.compilation._impl import clone_nn_module
 
 from optimum.rbln import (
     RBLNAutoencoderKL,
     RBLNAutoencoderKLConfig,
+    RBLNAutoencoderKLCosmos,
+    RBLNAutoencoderKLCosmosConfig,
     RBLNAutoencoderKLTemporalDecoder,
     RBLNAutoencoderKLTemporalDecoderConfig,
     RBLNControlNetModel,
@@ -29,11 +35,15 @@ from optimum.rbln import (
     RBLNCosmosControlNetModelConfig,
     RBLNCosmosTransformer3DModel,
     RBLNCosmosTransformer3DModelConfig,
+    RBLNPriorTransformer,
+    RBLNPriorTransformerConfig,
     RBLNStableDiffusionXLPipelineConfig,
     RBLNUNet2DConditionModel,
     RBLNUNet2DConditionModelConfig,
     RBLNUNetSpatioTemporalConditionModel,
     RBLNUNetSpatioTemporalConditionModelConfig,
+    RBLNVQModel,
+    RBLNVQModelConfig,
 )
 from optimum.rbln.diffusers.models.nested_region import DIFFUSERS_REGION_CLASSES, wrap_diffusers_modules
 from optimum.rbln.utils.nested_compile_region import NestedCompileRegionMixin
@@ -43,12 +53,15 @@ from optimum.rbln.utils.nested_compile_region import NestedCompileRegionMixin
     "config_cls",
     [
         RBLNAutoencoderKLConfig,
+        RBLNAutoencoderKLCosmosConfig,
         RBLNAutoencoderKLTemporalDecoderConfig,
         RBLNControlNetModelConfig,
         RBLNCosmosControlNetModelConfig,
         RBLNCosmosTransformer3DModelConfig,
+        RBLNPriorTransformerConfig,
         RBLNUNet2DConditionModelConfig,
         RBLNUNetSpatioTemporalConditionModelConfig,
+        RBLNVQModelConfig,
     ],
 )
 @pytest.mark.parametrize("enabled", [False, True])
@@ -269,6 +282,92 @@ def test_vae_encoder_and_decoder_export_regions(monkeypatch, enabled, temporal):
             sample_size=(4, 4), uses_encoder=True, nested_compile_region=enabled, create_runtimes=False
         )
     assert len(_check_compile_export(monkeypatch, model_cls, model, config, enabled)) == 2
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+def test_prior_compile_exports_regions(monkeypatch, enabled):
+    num_layers = 3
+    model = PriorTransformer(
+        num_attention_heads=2,
+        attention_head_dim=8,
+        num_layers=num_layers,
+        embedding_dim=16,
+        num_embeddings=4,
+        additional_embeddings=4,
+    ).eval()
+    config = RBLNPriorTransformerConfig(nested_compile_region=enabled, create_runtimes=False)
+    exports = _check_compile_export(monkeypatch, RBLNPriorTransformer, model, config, enabled)
+    assert len(exports) == 1
+    calls = [node for node in exports[0].graph.nodes if "invoke_subgraph" in str(node.target)]
+    assert len(calls) == (num_layers if enabled else 0)
+
+
+def _count_calls(exported):
+    return len([node for node in exported.graph.nodes if "invoke_subgraph" in str(node.target)])
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+def test_vqmodel_compile_exports_regions(monkeypatch, enabled):
+    # norm_type="spatial" makes the decoder use ResnetBlockCondNorm2D (the Kandinsky movq layout).
+    model = VQModel(
+        in_channels=3,
+        out_channels=3,
+        down_block_types=("DownEncoderBlock2D", "DownEncoderBlock2D"),
+        up_block_types=("UpDecoderBlock2D", "UpDecoderBlock2D"),
+        block_out_channels=(32, 64),  # SpatialNorm hardcodes 32 groups
+        layers_per_block=2,
+        latent_channels=4,
+        norm_num_groups=8,
+        num_vq_embeddings=16,
+        vq_embed_dim=4,
+        norm_type="spatial",
+    ).eval()
+    encoder_blocks = sum(type(m) is ResnetBlock2D for m in model.encoder.modules())
+    decoder_blocks = sum(type(m) is ResnetBlockCondNorm2D for m in model.decoder.modules())
+    assert encoder_blocks > 0 and decoder_blocks > 0
+    assert not any(type(m) is ResnetBlock2D for m in model.decoder.modules())
+    config = RBLNVQModelConfig(
+        sample_size=(8, 8), uses_encoder=True, nested_compile_region=enabled, create_runtimes=False
+    )
+    exports = _check_compile_export(monkeypatch, RBLNVQModel, model, config, enabled)
+    assert [_count_calls(e) for e in exports] == ([encoder_blocks, decoder_blocks] if enabled else [0, 0])
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+def test_cosmos_vae_compile_exports_regions(monkeypatch, enabled):
+    model = AutoencoderKLCosmos(
+        in_channels=3,
+        out_channels=3,
+        latent_channels=4,
+        encoder_block_out_channels=(8, 8, 8),
+        decode_block_out_channels=(8, 8, 8),
+        attention_resolutions=(),
+        resolution=8,
+        num_layers=2,
+        patch_size=1,
+        patch_type="rearrange",
+        spatial_compression_ratio=2,
+        temporal_compression_ratio=2,
+    ).eval()
+    encoder_blocks = sum(type(m) is CosmosResnetBlock3d for m in model.encoder.modules())
+    decoder_blocks = sum(type(m) is CosmosResnetBlock3d for m in model.decoder.modules())
+    assert encoder_blocks > 0 and decoder_blocks > 0
+    conv_forward = CosmosCausalConv3d.forward
+    config = RBLNAutoencoderKLCosmosConfig(
+        num_frames=3,
+        height=8,
+        width=8,
+        num_channels_latents=4,
+        vae_scale_factor_temporal=2,
+        vae_scale_factor_spatial=2,
+        uses_encoder=True,
+        nested_compile_region=enabled,
+        create_runtimes=False,
+    )
+    exports = _check_compile_export(monkeypatch, RBLNAutoencoderKLCosmos, model, config, enabled)
+    # The compile-time CausalConv3d forward swap must be undone.
+    assert CosmosCausalConv3d.forward is conv_forward
+    assert [_count_calls(e) for e in exports] == ([encoder_blocks, decoder_blocks] if enabled else [0, 0])
 
 
 @pytest.mark.parametrize("enabled", [False, True])
