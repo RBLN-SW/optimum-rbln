@@ -257,7 +257,9 @@ class CosmosTransferTransformerWrapper(CosmosTransformer3DModelWrapper):
         latent_width: int = 160,
         nested_compile_region: bool = False,
     ) -> None:
-        super().__init__(model, num_latent_frames, latent_height, latent_width, nested_compile_region)
+        super().__init__(
+            model, num_latent_frames, latent_height, latent_width, nested_compile_region=nested_compile_region
+        )
         self.controlnet_block_every_n = model.config.controlnet_block_every_n
         self.uses_img_context = model.config.img_context_dim_in is not None and model.config.img_context_dim_in > 0
 
