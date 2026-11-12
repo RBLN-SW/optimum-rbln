@@ -462,7 +462,7 @@ class RBLNCosmosTransformer3DModel(RBLNModel):
         ).eval()
 
     @classmethod
-    def get_compiled_model(cls, model: torch.nn.Module, rbln_config: RBLNModelConfig):
+    def get_compiled_model(cls, model: torch.nn.Module, rbln_config: RBLNCosmosTransformer3DModelConfig):
         if not rbln_config.nested_compile_region:
             return super().get_compiled_model(model, rbln_config)
         return cls.compile(
