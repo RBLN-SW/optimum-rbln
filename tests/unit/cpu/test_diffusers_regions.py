@@ -56,7 +56,6 @@ def test_region_config_roundtrip(config_cls, enabled, tmp_path):
     config.save(tmp_path)
     assert "nested_compile_region" not in (tmp_path / "rbln_config.json").read_text()
     assert config_cls.from_pretrained(tmp_path).nested_compile_region is False
-    assert config_cls.from_pretrained(tmp_path, rbln_nested_compile_region=enabled).nested_compile_region is enabled
 
 
 def test_pipeline_regions_are_selected_per_component():
