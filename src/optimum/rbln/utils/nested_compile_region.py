@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from typing import Any
+
 import torch
 
 
@@ -19,5 +21,5 @@ class NestedCompileRegionMixin(torch.nn.Module):
     """Preserve a forward call as a nested region through module cloning and export."""
 
     @torch.compiler.nested_compile_region
-    def forward(self, *args, **kwargs):
+    def forward(self, *args: Any, **kwargs: Any) -> Any:
         return super().forward(*args, **kwargs)
