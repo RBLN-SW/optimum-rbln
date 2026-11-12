@@ -197,7 +197,9 @@ class CosmosTransformer3DModelWrapper(CosmosPerFrameAdaLNMixin, torch.nn.Module)
         self.p_t, self.p_h, self.p_w = model.config.patch_size
         self.nested_compile_region = nested_compile_region
 
-    def _run_block(self, block, *args, **kwargs):
+    def _run_block(
+        self, block: CosmosTransformerBlock, *args, **kwargs
+    ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
         if self.nested_compile_region:
             return block.forward_region(*args, **kwargs)
         return self._block_forward(block, *args, **kwargs)
