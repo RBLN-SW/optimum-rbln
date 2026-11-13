@@ -378,15 +378,20 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
 
     @property
     def num_full_blocks(self) -> int:
-        num_data_blocks = (self.max_seq_len // self.kvcache_block_size) * self.batch_size
-        return num_data_blocks + (self.kvcache_null_block_id is not None)
+        return (self.max_seq_len // self.kvcache_block_size) * self.batch_size
+
+    @property
+    def num_max_blocks(self) -> int:
+        return self.num_full_blocks + (self.kvcache_null_block_id is not None)
 
     @property
     def num_min_blocks(self) -> int:
+        blocks_in_use = max(self.max_seq_len // self.kvcache_block_size, self.batch_size)
+        if self.kvcache_null_block_id is not None:
+            return blocks_in_use + 1
         if self.attn_impl == "flash_attn":
-            blocks_in_use = max(self.max_seq_len // self.kvcache_block_size, self.batch_size)
             return min(blocks_in_use + 1, self.num_full_blocks)
-        return self.batch_size + (self.kvcache_null_block_id is not None)
+        return self.batch_size
 
 
 class RBLNDecoderOnlyModelForCausalLMConfig(RBLNDecoderOnlyModelConfig):
