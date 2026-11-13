@@ -18,13 +18,14 @@ from typing import TYPE_CHECKING, Any
 
 import torch
 from diffusers.models.modeling_outputs import Transformer2DModelOutput
-from diffusers.models.transformers.cogvideox_transformer_3d import CogVideoXTransformer3DModel
+from diffusers.models.transformers.cogvideox_transformer_3d import CogVideoXBlock, CogVideoXTransformer3DModel
 
 from ....configuration_utils import RBLNCompileConfig
 from ....modeling import RBLNModel
 from ....modeling_base import Preprocessor
 from ....utils.logging import get_logger
 from ...configurations import RBLNCogVideoXTransformer3DModelConfig
+from ..nested_region import DiffusersModuleWrapper, wrap_diffusers_modules
 
 
 if TYPE_CHECKING:
@@ -33,6 +34,18 @@ if TYPE_CHECKING:
     from ...modeling_diffusers import RBLNDiffusionMixin, RBLNDiffusionMixinConfig
 
 logger = get_logger(__name__)
+
+
+class CogVideoXBlockRegion(DiffusersModuleWrapper, CogVideoXBlock):
+    @torch.compiler.nested_compile_region
+    def forward_region(self, hidden_states, encoder_hidden_states, temb, image_rotary_emb, attention_kwargs):
+        return CogVideoXBlock.forward(
+            self, hidden_states, encoder_hidden_states, temb, image_rotary_emb, attention_kwargs
+        )
+
+    def forward(self, hidden_states, encoder_hidden_states, temb, image_rotary_emb=None, attention_kwargs=None):
+        # The first block gets both streams as views of one tensor, which regions reject as input aliasing.
+        return self.forward_region(hidden_states, encoder_hidden_states.clone(), temb, image_rotary_emb, attention_kwargs)
 
 
 class CogVideoXTransformer3DModelWrapper(torch.nn.Module):
@@ -82,7 +95,21 @@ class RBLNCogVideoXTransformer3DModel(RBLNModel):
                 "RBLNCogVideoXTransformer3DModel supports CogVideoX 1.0 models (CogVideoX-2b, CogVideoX-5b-I2V); "
                 "the ofs embedding and temporal patches of CogVideoX 1.5 are not supported."
             )
+        if rbln_config.nested_compile_region:
+            model = wrap_diffusers_modules(model, {CogVideoXBlock: CogVideoXBlockRegion})
         return CogVideoXTransformer3DModelWrapper(model).eval()
+
+    @classmethod
+    def get_compiled_model(cls, model: torch.nn.Module, rbln_config: RBLNCogVideoXTransformer3DModelConfig):
+        if not rbln_config.nested_compile_region:
+            return super().get_compiled_model(model, rbln_config)
+        return cls.compile(
+            cls._wrap_model_if_needed(model, rbln_config),
+            rbln_compile_config=rbln_config.compile_cfgs[0],
+            create_runtimes=rbln_config.create_runtimes,
+            device=rbln_config.device,
+            model_trace_method="export_strict",
+        )
 
     @classmethod
     def update_rbln_config_using_pipe(
