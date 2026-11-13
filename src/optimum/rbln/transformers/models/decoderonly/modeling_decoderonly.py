@@ -547,6 +547,11 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
                 f" than the required number of blocks ({rbln_config.num_full_blocks})."
                 "This can cause a failure during model compilation."
             )
+        elif rbln_config.kvcache_num_blocks < rbln_config.num_min_blocks:
+            raise ValueError(
+                f"The set `kvcache_num_blocks` ({rbln_config.kvcache_num_blocks}) is less"
+                f" than the minimum number of blocks ({rbln_config.num_min_blocks})."
+            )
 
         return rbln_config
 

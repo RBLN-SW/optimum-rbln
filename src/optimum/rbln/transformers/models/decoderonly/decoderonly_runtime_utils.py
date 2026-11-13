@@ -44,7 +44,8 @@ class RBLNPageTableManager:
             self.rbln_config.max_seq_len // self.rbln_config.kvcache_block_size,
             dtype=torch.int16,
         ).fill_(self.EMPTY_BLOCK)
-        self.free_block_pool = deque(x for x in range(self.rbln_config.kvcache_num_blocks))
+        self.null_block_id = self.rbln_config.kvcache_null_block_id
+        self.free_block_pool = deque(x for x in range(self.rbln_config.kvcache_num_blocks) if x != self.null_block_id)
 
     def update_block(self, batch_idx: int, block_idx: int):
         """
@@ -65,10 +66,13 @@ class RBLNPageTableManager:
 
     def replace_empty_block(self, block_tables: torch.Tensor):
         """
-        Replaces all occurrences of `self.empty_block` in `block_tables` with a dummy block from `self.free_block_pool`.
+        Replaces all occurrences of `self.empty_block` in `block_tables` with the null block, or with a dummy
+        block from `self.free_block_pool` when the artifact reserves none.
         """
         if not torch.any(block_tables == self.EMPTY_BLOCK):
             return block_tables.clone()
+        elif self.null_block_id is not None:
+            return torch.where(block_tables == self.EMPTY_BLOCK, self.null_block_id, block_tables)
         elif self.free_block_pool:
             _free_block = self.free_block_pool[0]
             return torch.where(block_tables == self.EMPTY_BLOCK, _free_block, block_tables)

@@ -341,7 +341,10 @@ class RBLNExaone4_5_Model(RBLNDecoderOnlyModel):
         super().__post_init__(**kwargs)
         self.visual = self.rbln_submodules[0]
         if not self.can_generate():
-            self.block_tables = torch.arange(self.rbln_config.kvcache_num_blocks, dtype=torch.int16)
+            self.block_tables = torch.tensor(
+                [x for x in range(self.rbln_config.kvcache_num_blocks) if x != self.rbln_config.kvcache_null_block_id],
+                dtype=torch.int16,
+            )
 
     @property
     def logits_last_dim(self):

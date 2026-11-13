@@ -986,6 +986,9 @@ class AttentionOp(nn.Module):
         # Tell the compiler the batch arrives length-sorted; older compilers lack the arg.
         if getattr(self.rbln_config, "requires_batch_sort", None) and _op_accepts(attn_op_name, "is_prompt_sorted"):
             op_args["is_prompt_sorted"] = True
+        null_block_id = getattr(self.rbln_config, "kvcache_null_block_id", None)
+        if null_block_id is not None and _op_accepts(attn_op_name, "null_block_id"):
+            op_args["null_block_id"] = null_block_id
         return attn_op
 
     def forward(

@@ -19,6 +19,7 @@ def _cache_config(**overrides):
         "is_auto_num_blocks": True,
         "num_full_blocks": 8,
         "kvcache_num_blocks": 0,
+        "kvcache_null_block_id": None,
         "sliding_window": 512,
         "batch_size": 2,
     }
