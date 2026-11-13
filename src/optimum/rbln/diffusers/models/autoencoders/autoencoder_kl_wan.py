@@ -44,8 +44,6 @@ logger = get_logger(__name__)
 
 
 class WanResidualBlockRegion(DiffusersModuleWrapper, WanResidualBlock):
-    """Resnet block whose two causal-conv caches (conv1, conv2) pass through the region as tensors."""
-
     @torch.compiler.nested_compile_region
     def forward_region(self, x, c1, c2):
         feat_cache = [c1, c2]
@@ -72,14 +70,9 @@ class WanResidualBlockRegion(DiffusersModuleWrapper, WanResidualBlock):
         return out
 
 
+# Strict export cannot trace upstream's `feat_cache[idx] == "Rep"` (Tensor == str), so the upsample3d
+# path with a tensor cache is rewritten without it; everything else goes to the upstream forward.
 class WanResampleStrictExport(DiffusersModuleWrapper, WanResample):
-    """Upsample3d with a tensor cache, without the upstream `feat_cache[idx] == "Rep"` comparison.
-
-    Strict export cannot trace `Tensor == str`. Only the steady-state path (cache is a tensor) is
-    rewritten here; the time_conv step is the upstream one and the remaining spatial resample is
-    delegated to the upstream forward with feat_cache=None.
-    """
-
     def forward(self, x, feat_cache=None, feat_idx=[0]):
         if feat_cache is None or self.mode != "upsample3d" or feat_cache[feat_idx[0]] is None:
             return WanResample.forward(self, x, feat_cache, feat_idx)
@@ -388,7 +381,6 @@ class RBLNAutoencoderKLWan(RBLNModel):
     @classmethod
     def _wrap_model_if_needed(cls, model: torch.nn.Module, rbln_config: RBLNAutoencoderKLWanConfig) -> torch.nn.Module:
         if rbln_config.nested_compile_region:
-            # Wrapped once so every graph shares the same wrapped tree and its weights.
             model = wrap_diffusers_modules(model, {WanResidualBlock: WanResidualBlockRegion, WanResample: WanResampleStrictExport})
         h, w = rbln_config.height, rbln_config.width
         decoder_model_0 = _VAEWanDecoder0(model, height=h, width=w)
