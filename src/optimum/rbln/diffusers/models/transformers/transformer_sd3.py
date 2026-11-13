@@ -25,9 +25,8 @@ from ....configuration_utils import RBLNCompileConfig
 from ....modeling import RBLNModel
 from ....modeling_base import Preprocessor
 from ....utils.logging import get_logger
-from ....utils.nested_compile_region import NestedCompileRegionMixin
 from ...configurations import RBLNSD3Transformer2DModelConfig
-from ..nested_region import DiffusersModuleWrapper, wrap_diffusers_modules
+from ..nested_region import JointTransformerBlockRegion, wrap_diffusers_modules
 
 
 if TYPE_CHECKING:
@@ -36,10 +35,6 @@ if TYPE_CHECKING:
     from ...modeling_diffusers import RBLNDiffusionMixin, RBLNDiffusionMixinConfig
 
 logger = get_logger(__name__)
-
-
-class JointTransformerBlockRegion(NestedCompileRegionMixin, DiffusersModuleWrapper, JointTransformerBlock):
-    pass
 
 
 class SD3Transformer2DModelWrapper(torch.nn.Module):

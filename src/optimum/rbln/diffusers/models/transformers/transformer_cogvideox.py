@@ -37,15 +37,34 @@ logger = get_logger(__name__)
 
 
 class CogVideoXBlockRegion(DiffusersModuleWrapper, CogVideoXBlock):
+    # Set on the first block only: upstream passes it both streams as views of one tensor,
+    # which regions reject as input aliasing. Later blocks receive separate tensors.
+    clone_encoder_hidden_states = False
+
     @torch.compiler.nested_compile_region
-    def forward_region(self, hidden_states, encoder_hidden_states, temb, image_rotary_emb, attention_kwargs):
+    def forward_region(
+        self,
+        hidden_states: torch.Tensor,
+        encoder_hidden_states: torch.Tensor,
+        temb: torch.Tensor,
+        image_rotary_emb: tuple[torch.Tensor, torch.Tensor] | None = None,
+        attention_kwargs: dict[str, Any] | None = None,
+    ):
         return CogVideoXBlock.forward(
             self, hidden_states, encoder_hidden_states, temb, image_rotary_emb, attention_kwargs
         )
 
-    def forward(self, hidden_states, encoder_hidden_states, temb, image_rotary_emb=None, attention_kwargs=None):
-        # The first block gets both streams as views of one tensor, which regions reject as input aliasing.
-        return self.forward_region(hidden_states, encoder_hidden_states.clone(), temb, image_rotary_emb, attention_kwargs)
+    def forward(
+        self,
+        hidden_states: torch.Tensor,
+        encoder_hidden_states: torch.Tensor,
+        temb: torch.Tensor,
+        image_rotary_emb: tuple[torch.Tensor, torch.Tensor] | None = None,
+        attention_kwargs: dict[str, Any] | None = None,
+    ):
+        if self.clone_encoder_hidden_states:
+            encoder_hidden_states = encoder_hidden_states.clone()
+        return self.forward_region(hidden_states, encoder_hidden_states, temb, image_rotary_emb, attention_kwargs)
 
 
 class CogVideoXTransformer3DModelWrapper(torch.nn.Module):
@@ -97,6 +116,7 @@ class RBLNCogVideoXTransformer3DModel(RBLNModel):
             )
         if rbln_config.nested_compile_region:
             model = wrap_diffusers_modules(model, {CogVideoXBlock: CogVideoXBlockRegion})
+            model.transformer_blocks[0].clone_encoder_hidden_states = True
         return CogVideoXTransformer3DModelWrapper(model).eval()
 
     @classmethod

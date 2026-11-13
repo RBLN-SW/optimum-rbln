@@ -262,6 +262,9 @@ class RBLNAutoencoderKLCogVideoX(RBLNModel):
         cls, model: torch.nn.Module, rbln_config: RBLNAutoencoderKLCogVideoXConfig
     ) -> tuple[torch.nn.Module, ...]:
         """One graph per compile config, in the same order."""
+        if rbln_config.nested_compile_region:
+            # Wrapped once here so every graph shares the same wrapped tree and its weights.
+            model = wrap_diffusers_modules(model, {CogVideoXResnetBlock3D: CogVideoXResnetBlock3DRegion})
         latent_height, latent_width = cls._latent_size(model, rbln_config)
         compiled_model_names = [cfg.compiled_model_name for cfg in rbln_config.compile_cfgs]
         graphs = [_VAECogVideoXDecoder0(model, latent_height, latent_width)]
@@ -275,8 +278,6 @@ class RBLNAutoencoderKLCogVideoX(RBLNModel):
     def get_compiled_model(
         cls, model, rbln_config: RBLNAutoencoderKLCogVideoXConfig
     ) -> dict[str, rebel.RBLNCompiledModel]:
-        if rbln_config.nested_compile_region:
-            model = wrap_diffusers_modules(model, {CogVideoXResnetBlock3D: CogVideoXResnetBlock3DRegion})
         cfgs = {cfg.compiled_model_name: cfg for cfg in rbln_config.compile_cfgs}
         graphs = dict(zip(cfgs, cls._wrap_model_if_needed(model, rbln_config), strict=True))
 
