@@ -20,6 +20,8 @@ from ....configuration_utils import RBLNModelConfig
 class RBLNAutoencoderKLCogVideoXConfig(RBLNModelConfig):
     """Configuration class for RBLN CogVideoX Variational Autoencoder (VAE) models."""
 
+    subclass_non_save_attributes = ["nested_compile_region"]
+
     def __init__(
         self,
         batch_size: int | None = None,
@@ -29,6 +31,7 @@ class RBLNAutoencoderKLCogVideoXConfig(RBLNModelConfig):
         width: int | None = None,
         num_latent_frames_batch_size: int | None = None,
         use_slicing: bool = True,
+        nested_compile_region: bool = False,
         **kwargs: Any,
     ):
         """
@@ -48,12 +51,16 @@ class RBLNAutoencoderKLCogVideoXConfig(RBLNModelConfig):
                 the remainder frames. Defaults to the value of the loaded model.
             use_slicing (bool): Run a batched request one sample at a time, as diffusers `use_slicing`
                 (it splits the batch axis only). Defaults to True.
+            nested_compile_region (bool): Preserve repeated blocks as nested compile regions using strict export.
+                Defaults to False. This compile-time option is not saved in `rbln_config.json`
+                and does not guarantee that the compiler forms a loop.
             kwargs: Additional arguments passed to the parent RBLNModelConfig.
 
         Raises:
             ValueError: If batch_size is not a positive integer.
         """
         super().__init__(**kwargs)
+        self.nested_compile_region = nested_compile_region
         self.use_slicing = use_slicing
         self.batch_size = batch_size or 1
         if not isinstance(self.batch_size, int) or self.batch_size < 0:

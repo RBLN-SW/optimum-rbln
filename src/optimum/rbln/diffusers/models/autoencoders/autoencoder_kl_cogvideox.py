@@ -22,6 +22,7 @@ from diffusers.models.autoencoders.autoencoder_kl_cogvideox import (
     AutoencoderKLCogVideoX,
     CogVideoXCausalConv3d,
     CogVideoXDecoder3D,
+    CogVideoXResnetBlock3D,
 )
 from diffusers.models.autoencoders.vae import DecoderOutput, DiagonalGaussianDistribution
 from diffusers.models.modeling_outputs import AutoencoderKLOutput
@@ -30,7 +31,9 @@ from rebel.compile_context import CompileContext
 from ....configuration_utils import RBLNCompileConfig
 from ....modeling import RBLNModel
 from ....modeling_base import Preprocessor
+from ....utils.nested_compile_region import NestedCompileRegionMixin
 from ...configurations import RBLNAutoencoderKLCogVideoXConfig
+from ..nested_region import DiffusersModuleWrapper, wrap_diffusers_modules
 from .vae import RBLNRuntimeCogVideoXVAEDecoder, RBLNRuntimeCogVideoXVAEEncoder
 
 
@@ -38,6 +41,10 @@ if TYPE_CHECKING:
     from transformers import PretrainedConfig, PreTrainedModel
 
     from ...modeling_diffusers import RBLNDiffusionMixin, RBLNDiffusionMixinConfig
+
+
+class CogVideoXResnetBlock3DRegion(NestedCompileRegionMixin, DiffusersModuleWrapper, CogVideoXResnetBlock3D):
+    pass
 
 
 _CHANNELS_LAST_BLOCKS = ("mid_block", "up_block_0", "up_block_1")
@@ -255,6 +262,8 @@ class RBLNAutoencoderKLCogVideoX(RBLNModel):
         cls, model: torch.nn.Module, rbln_config: RBLNAutoencoderKLCogVideoXConfig
     ) -> tuple[torch.nn.Module, ...]:
         """One graph per compile config, in the same order."""
+        if rbln_config.nested_compile_region:
+            model = wrap_diffusers_modules(model, {CogVideoXResnetBlock3D: CogVideoXResnetBlock3DRegion})
         latent_height, latent_width = cls._latent_size(model, rbln_config)
         compiled_model_names = [cfg.compiled_model_name for cfg in rbln_config.compile_cfgs]
         graphs = [_VAECogVideoXDecoder0(model, latent_height, latent_width)]
@@ -295,6 +304,7 @@ class RBLNAutoencoderKLCogVideoX(RBLNModel):
                 device=rbln_config.device_map[name],
                 example_inputs=example_inputs[name],
                 compile_context=context,
+                **({"model_trace_method": "export_strict"} if rbln_config.nested_compile_region else {}),
             )
         return {name: compiled[name] for name in cfgs}
 

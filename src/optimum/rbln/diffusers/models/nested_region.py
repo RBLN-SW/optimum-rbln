@@ -15,7 +15,7 @@
 import copy
 
 import torch
-from diffusers.models.attention import BasicTransformerBlock, TemporalBasicTransformerBlock
+from diffusers.models.attention import BasicTransformerBlock, JointTransformerBlock, TemporalBasicTransformerBlock
 from diffusers.models.resnet import ResnetBlock2D, ResnetBlockCondNorm2D, SpatioTemporalResBlock
 
 from ...utils.nested_compile_region import NestedCompileRegionMixin
@@ -29,6 +29,10 @@ class DiffusersModuleWrapper:
 
 
 class BasicTransformerBlockRegion(NestedCompileRegionMixin, DiffusersModuleWrapper, BasicTransformerBlock):
+    pass
+
+
+class JointTransformerBlockRegion(NestedCompileRegionMixin, DiffusersModuleWrapper, JointTransformerBlock):
     pass
 
 

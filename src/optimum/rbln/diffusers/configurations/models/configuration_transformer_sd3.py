@@ -25,13 +25,14 @@ class RBLNSD3Transformer2DModelConfig(RBLNModelConfig):
     for Transformer models used in diffusion models like Stable Diffusion 3.
     """
 
-    subclass_non_save_attributes = ["_batch_size_is_specified"]
+    subclass_non_save_attributes = ["_batch_size_is_specified", "nested_compile_region"]
 
     def __init__(
         self,
         batch_size: int | None = None,
         sample_size: int | tuple[int, int] | None = None,
         prompt_embed_length: int | None = None,
+        nested_compile_region: bool = False,
         **kwargs: Any,
     ):
         """
@@ -41,12 +42,16 @@ class RBLNSD3Transformer2DModelConfig(RBLNModelConfig):
                 of the generated samples. If an integer is provided, it's used for both height and width.
             prompt_embed_length (int | None): The length of the embedded prompt vectors that
                 will be used to condition the transformer model.
+            nested_compile_region (bool): Preserve repeated blocks as nested compile regions using strict export.
+                Defaults to False. This compile-time option is not saved in `rbln_config.json`
+                and does not guarantee that the compiler forms a loop.
             kwargs: Additional arguments passed to the parent RBLNModelConfig.
 
         Raises:
             ValueError: If batch_size is not a positive integer.
         """
         super().__init__(**kwargs)
+        self.nested_compile_region = nested_compile_region
         self._batch_size_is_specified = batch_size is not None
 
         self.batch_size = batch_size or 1
