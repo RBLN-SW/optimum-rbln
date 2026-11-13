@@ -18,7 +18,10 @@ import rebel
 import torch
 from diffusers.models.autoencoders.autoencoder_kl_wan import (
     AutoencoderKLWan,
+    CACHE_T,
     WanCausalConv3d,
+    WanResample,
+    WanResidualBlock,
 )
 from diffusers.models.autoencoders.vae import DecoderOutput, DiagonalGaussianDistribution
 from diffusers.models.modeling_outputs import AutoencoderKLOutput
@@ -28,6 +31,7 @@ from ....configuration_utils import RBLNCompileConfig
 from ....modeling import RBLNModel
 from ....utils.logging import get_logger
 from ...configurations import RBLNAutoencoderKLWanConfig
+from ..nested_region import DiffusersModuleWrapper, wrap_diffusers_modules
 from .vae import RBLNRuntimeWanVAEDecoder, RBLNRuntimeWanVAEEncoder
 
 
@@ -37,6 +41,60 @@ if TYPE_CHECKING:
     from ...modeling_diffusers import RBLNDiffusionMixin, RBLNDiffusionMixinConfig
 
 logger = get_logger(__name__)
+
+
+class WanResidualBlockRegion(DiffusersModuleWrapper, WanResidualBlock):
+    """Resnet block whose two causal-conv caches (conv1, conv2) pass through the region as tensors."""
+
+    @torch.compiler.nested_compile_region
+    def forward_region(self, x, c1, c2):
+        feat_cache = [c1, c2]
+        out = WanResidualBlock.forward(self, x, feat_cache, [0])
+        return out, *feat_cache
+
+    @torch.compiler.nested_compile_region
+    def forward_region_first(self, x):
+        # First chunk: both cache slots are still None, which cannot be a region input.
+        feat_cache = [None, None]
+        out = WanResidualBlock.forward(self, x, feat_cache, [0])
+        return out, *feat_cache
+
+    def forward(self, x, feat_cache=None, feat_idx=[0]):
+        if feat_cache is None:
+            return WanResidualBlock.forward(self, x)
+        idx = feat_idx[0]
+        if feat_cache[idx] is None:
+            out, *new_cache = self.forward_region_first(x)
+        else:
+            out, *new_cache = self.forward_region(x, feat_cache[idx], feat_cache[idx + 1])
+        feat_cache[idx : idx + 2] = new_cache
+        feat_idx[0] += 2
+        return out
+
+
+class WanResampleStrictExport(DiffusersModuleWrapper, WanResample):
+    """Upsample3d with a tensor cache, without the upstream `feat_cache[idx] == "Rep"` comparison.
+
+    Strict export cannot trace `Tensor == str`. Only the steady-state path (cache is a tensor) is
+    rewritten here; the time_conv step is the upstream one and the remaining spatial resample is
+    delegated to the upstream forward with feat_cache=None.
+    """
+
+    def forward(self, x, feat_cache=None, feat_idx=[0]):
+        if feat_cache is None or self.mode != "upsample3d" or feat_cache[feat_idx[0]] is None:
+            return WanResample.forward(self, x, feat_cache, feat_idx)
+        b, c, t, h, w = x.size()
+        idx = feat_idx[0]
+        cache_x = x[:, :, -CACHE_T:, :, :].clone()
+        if cache_x.shape[2] < 2:
+            cache_x = torch.cat([feat_cache[idx][:, :, -1, :, :].unsqueeze(2).to(cache_x.device), cache_x], dim=2)
+        x = self.time_conv(x, feat_cache[idx])
+        feat_cache[idx] = cache_x
+        feat_idx[0] += 1
+        x = x.reshape(b, 2, c, t, h, w)
+        x = torch.stack((x[:, 0, :, :, :, :], x[:, 1, :, :, :, :]), 3)
+        x = x.reshape(b, c, t * 2, h, w)
+        return WanResample.forward(self, x)
 
 
 _CACHE_SPECS = {
@@ -329,6 +387,9 @@ class RBLNAutoencoderKLWan(RBLNModel):
 
     @classmethod
     def _wrap_model_if_needed(cls, model: torch.nn.Module, rbln_config: RBLNAutoencoderKLWanConfig) -> torch.nn.Module:
+        if rbln_config.nested_compile_region:
+            # Wrapped once so every graph shares the same wrapped tree and its weights.
+            model = wrap_diffusers_modules(model, {WanResidualBlock: WanResidualBlockRegion, WanResample: WanResampleStrictExport})
         h, w = rbln_config.height, rbln_config.width
         decoder_model_0 = _VAEWanDecoder0(model, height=h, width=w)
         decoder_model_0.eval()
@@ -350,6 +411,7 @@ class RBLNAutoencoderKLWan(RBLNModel):
     @classmethod
     def get_compiled_model(cls, model, rbln_config: RBLNAutoencoderKLWanConfig) -> dict[str, rebel.RBLNCompiledModel]:
         compiled_models = {}
+        trace_kwargs = {"model_trace_method": "export_strict"} if rbln_config.nested_compile_region else {}
         # E0 and EN wrap the SAME vae.encoder -> share its weights on device (use_weight_sharing).
         context = CompileContext(use_weight_sharing=True)
         if rbln_config.uses_encoder:
@@ -362,6 +424,7 @@ class RBLNAutoencoderKLWan(RBLNModel):
                 device=cls._device_for(rbln_config, "encoder_0"),
                 example_inputs=enc0_example_inputs,
                 compile_context=context,
+                **trace_kwargs,
             )
             compiled_models["encoder_0"] = enc_compiled_model_0
             enc_compiled_model_n = cls.compile(
@@ -371,6 +434,7 @@ class RBLNAutoencoderKLWan(RBLNModel):
                 device=cls._device_for(rbln_config, "encoder_n"),
                 example_inputs=encn_example_inputs,
                 compile_context=context,
+                **trace_kwargs,
             )
             compiled_models["encoder_n"] = enc_compiled_model_n
             dec_models = decoder_models
@@ -387,6 +451,7 @@ class RBLNAutoencoderKLWan(RBLNModel):
             device=cls._device_for(rbln_config, "decoder_0"),
             example_inputs=dec0_example_inputs,
             compile_context=context,
+            **trace_kwargs,
         )
         compiled_models["decoder_0"] = dec_compiled_model_0
 
@@ -397,6 +462,7 @@ class RBLNAutoencoderKLWan(RBLNModel):
             device=cls._device_for(rbln_config, "decoder_n"),
             example_inputs=decn_example_inputs,
             compile_context=context,
+            **trace_kwargs,
         )
         compiled_models["decoder_n"] = dec_compiled_model_n
         return compiled_models
