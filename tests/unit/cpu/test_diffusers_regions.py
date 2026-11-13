@@ -324,13 +324,16 @@ def test_vqmodel_compile_exports_regions(monkeypatch, enabled):
     ).eval()
     encoder_blocks = sum(type(m) is ResnetBlock2D for m in model.encoder.modules())
     decoder_blocks = sum(type(m) is ResnetBlockCondNorm2D for m in model.decoder.modules())
-    assert encoder_blocks > 0 and decoder_blocks > 0
+    assert encoder_blocks > 0
+    assert decoder_blocks > 0
     assert not any(type(m) is ResnetBlock2D for m in model.decoder.modules())
     config = RBLNVQModelConfig(
         sample_size=(8, 8), uses_encoder=True, nested_compile_region=enabled, create_runtimes=False
     )
     exports = _check_compile_export(monkeypatch, RBLNVQModel, model, config, enabled)
-    assert [_count_calls(e) for e in exports] == ([encoder_blocks, decoder_blocks] if enabled else [0, 0])
+    # Strict export inlines the channel-changing block and one mid-block in each component.
+    expected_calls = [encoder_blocks - 2, decoder_blocks - 2] if enabled else [0, 0]
+    assert [_count_calls(e) for e in exports] == expected_calls
 
 
 @pytest.mark.parametrize("enabled", [False, True])
@@ -351,7 +354,8 @@ def test_cosmos_vae_compile_exports_regions(monkeypatch, enabled):
     ).eval()
     encoder_blocks = sum(type(m) is CosmosResnetBlock3d for m in model.encoder.modules())
     decoder_blocks = sum(type(m) is CosmosResnetBlock3d for m in model.decoder.modules())
-    assert encoder_blocks > 0 and decoder_blocks > 0
+    assert encoder_blocks > 0
+    assert decoder_blocks > 0
     conv_forward = CosmosCausalConv3d.forward
     config = RBLNAutoencoderKLCosmosConfig(
         num_frames=3,
