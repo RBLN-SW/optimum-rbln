@@ -292,15 +292,17 @@ class RBLNTimeSeriesTransformerForPrediction(RBLNModel):
                     f"self_key_value_states_{i}",
                     [
                         1,
+                        2,
                         model_config.decoder_attention_heads
                         * rbln_config.num_parallel_samples
                         * rbln_config.batch_size,
+                        1,
                         rbln_config.dec_max_seq_len,
                         model_config.d_model // model_config.encoder_attention_heads,
                     ],
                     rbln_config.dtype,
                 )
-                for i in range(model_config.decoder_layers * 2)
+                for i in range(model_config.decoder_layers)
             ]
         )
         enc_compile_config = RBLNCompileConfig(compiled_model_name="encoder", input_info=enc_input_info)

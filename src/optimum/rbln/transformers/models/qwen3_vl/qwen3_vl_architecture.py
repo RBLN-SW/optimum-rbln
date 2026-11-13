@@ -241,19 +241,6 @@ class Qwen3VL_LanguageModelWrapper(DecoderOnlyWrapper):
 
         past_key_values = args
 
-        if len(past_key_values) != 2 * self.num_hidden_layers:
-            raise ValueError(
-                f"Different past_key_values to model's config. {len(past_key_values)} != {2 * self.num_hidden_layers}"
-            )
-
-        _past_key_values = []
-        for i in range(self.config.num_hidden_layers):
-            key_states = past_key_values[i * 2]
-            value_states = past_key_values[i * 2 + 1]
-            past_key_value = [key_states, value_states]
-            _past_key_values.append(past_key_value)
-        past_key_values = _past_key_values
-
         return (
             input_ids,
             inputs_embeds,

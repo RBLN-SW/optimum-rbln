@@ -373,7 +373,7 @@ class Qwen3_5Attention(DecoderOnlyAttention):
         hidden_states: torch.Tensor,
         attention_mask: torch.Tensor,
         seq_positions: torch.LongTensor,
-        past_key_values: tuple[tuple[torch.Tensor]],
+        past_key_values: list[torch.Tensor | None],
         cos: torch.Tensor | None = None,
         sin: torch.Tensor | None = None,
         block_tables: torch.Tensor | None = None,
@@ -411,8 +411,7 @@ class Qwen3_5Attention(DecoderOnlyAttention):
             key_states,
             value_states,
             attention_mask,
-            past_key_state=past_key_values[self.layer_idx][0],
-            past_value_state=past_key_values[self.layer_idx][1],
+            kv_cache=past_key_values[self.layer_idx],
             seq_position=seq_positions,
             scale=self.scale,
             block_tables=block_tables,
@@ -444,7 +443,7 @@ class Qwen3_5Model(DecoderOnlyModel):
         cache_position: torch.Tensor | None = None,
         position_ids: torch.Tensor | None = None,
         query_position: torch.Tensor | None = None,
-        past_key_values: tuple[tuple[torch.Tensor]] | None = None,
+        past_key_values: list[torch.Tensor | None] | None = None,
         past_states: tuple[tuple[torch.Tensor]] | None = None,
         rotary_emb: nn.Module | None = None,
         global_block_tables: torch.Tensor | None = None,
@@ -536,7 +535,7 @@ class Qwen3_5ForCausalLM(DecoderOnlyForCausalLM):
         cache_position: torch.Tensor | None = None,
         position_ids: torch.Tensor | None = None,
         query_position: torch.Tensor | None = None,
-        past_key_values: tuple[tuple[torch.Tensor]] | None = None,
+        past_key_values: list[torch.Tensor | None] | None = None,
         past_states: tuple[tuple[torch.Tensor]] | None = None,
         rotary_emb: nn.Module | None = None,
         global_block_tables: torch.Tensor | None = None,
@@ -655,7 +654,7 @@ class Qwen3_5_CausalLMWrapper(DecoderOnlyWrapper):
             attention_mask,
             position_ids,
             lora_int_id,
-            pairs,  # base groups the trailing flat per-layer states into (a, b) pairs
+            states,  # base passes the trailing flat states through ungrouped
             rotary_emb,
         ) = super().prepare_forward_args(*args)
 
