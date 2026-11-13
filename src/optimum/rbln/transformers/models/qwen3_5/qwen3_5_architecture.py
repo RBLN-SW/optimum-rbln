@@ -754,10 +754,9 @@ class Qwen3_5_LanguageModelWrapper(Qwen3_5_CausalLMWrapper):
         lora_int_id = args.pop(0) if self.rbln_config.lora_config else None
 
         # full_attention -> past_key_values (key, value); linear_attention -> past_states (conv, recurrent).
-        state_args = args
-        if len(state_args) != 2 * self.num_hidden_layers:
-            raise ValueError(f"Different states to model's config. {len(state_args)} != {2 * self.num_hidden_layers}")
-        pairs = [[state_args[i * 2], state_args[i * 2 + 1]] for i in range(self.num_hidden_layers)]
+        if len(args) != 2 * self.num_hidden_layers:
+            raise ValueError(f"Different states to model's config. {len(args)} != {2 * self.num_hidden_layers}")
+        pairs = [[args[i * 2], args[i * 2 + 1]] for i in range(self.num_hidden_layers)]
         past_key_values, past_states = self.split_layer_states(pairs)
 
         return (
