@@ -12,20 +12,20 @@ from optimum.rbln.transformers.models.qwen3_5.configuration_qwen3_5 import (
 from optimum.rbln.transformers.models.qwen3_5.modeling_qwen3_5 import (
     _qwen3_5_legacy_linear_state_shapes,
     _qwen3_5_linear_state_shapes,
-    uses_custom_kernel,
-    validate_gdn_custom_kernel,
+    use_custom_ops,
+    validate_gdn_ops,
     warn_deprecated,
 )
 
 
-def test_gdn_custom_kernel_needs_a_compiler_that_registers_the_ops(monkeypatch):
+def test_gdn_ops_need_a_compiler_that_registers_them(monkeypatch):
     # The core always runs as the ops, so a compiler without them is reported while the config is
     # built, by the names it misses -- not at compile time, as a lookup that finds nothing. The
     # compiler this suite runs on is not asked: which ops it registers is its own business.
     empty = SimpleNamespace(ops=SimpleNamespace(rbln_custom_ops=object()))
     monkeypatch.setattr(modeling_qwen3_5, "torch", empty)
     with pytest.raises(ValueError, match="chunk_gated_delta_rule"):
-        validate_gdn_custom_kernel()
+        validate_gdn_ops()
 
 
 def test_gdn_state_cache_takes_the_head_width_of_the_config():
@@ -53,10 +53,10 @@ def test_a_pre_kernel_artifact_is_recognized_by_its_own_graph():
     # Nothing in the config marks one: a config written before the kernels could not have written
     # anything about them. The graph's inputs are what answers, and they differ either way.
     legacy = _config_with_graph_inputs("input_ids", "conv_state_mask", "recurrent_state_mask", "valid_mask")
-    assert uses_custom_kernel(legacy) is False
+    assert use_custom_ops(legacy) is False
 
     current = _config_with_graph_inputs("input_ids", "state_mask", "valid_mask", "state_idx")
-    assert uses_custom_kernel(current) is True
+    assert use_custom_ops(current) is True
 
 
 def test_the_graph_path_keeps_its_own_cache_layouts():

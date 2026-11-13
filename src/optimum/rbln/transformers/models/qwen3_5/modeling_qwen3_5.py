@@ -57,17 +57,12 @@ from .qwen3_5_runtime_utils import RBLNQwen3_5RuntimeModel
 logger = logging.get_logger(__name__)
 
 
-def validate_gdn_custom_kernel() -> None:
+def validate_gdn_ops() -> None:
     """Reject a rebel-compiler that registers no GatedDeltaNet custom ops."""
-
     wanted = ("chunk_gated_delta_rule", "recurrent_gated_delta_rule", "causal_conv1d_ring")
     missing = [name for name in wanted if not hasattr(torch.ops.rbln_custom_ops, name)]
     if missing:
-        raise ValueError(
-            f"This rebel-compiler registers no {missing}. Qwen3.5 runs its GatedDeltaNet core and the "
-            f"short conv in front of it as `rbln_custom_ops::`{list(wanted)}, so it needs a compiler "
-            "that provides them."
-        )
+        raise ValueError(f"GatedDeltaNet operators {missing} not found.")
 
 
 def validate_gdn_defaults(rbln_config) -> None:
@@ -150,8 +145,8 @@ def _qwen3_5_linear_layer_indices(model_config) -> list[int]:
     return [i for i, t in enumerate(text_config.layer_types) if t == "linear_attention"]
 
 
-def uses_custom_kernel(rbln_config) -> bool:
-    """Whether this artifact runs its GatedDeltaNet as the custom kernels rather than in the graph."""
+def use_custom_ops(rbln_config) -> bool:
+    """Whether this artifact runs its GatedDeltaNet as the custom ops rather than in the graph."""
     for compile_cfg in rbln_config.compile_cfgs:
         inputs = compile_cfg.input_info or []
         if compile_cfg.is_multiple_input_info:
@@ -191,7 +186,7 @@ def _qwen3_5_setup_hybrid_runtime(model):
     # Backward compatibility, loading only: a pre-kernel artifact gates each cache with a mask of
     # that cache's own shape, and only the runtime still knows those shapes.
     # TODO(0.13.0): drop it -- this detector, `_qwen3_5_legacy_linear_state_shapes`, the runtime's branch.
-    is_legacy_graph = not uses_custom_kernel(rbln_config)
+    is_legacy_graph = not use_custom_ops(rbln_config)
     if is_legacy_graph:
         warn_deprecated(
             "This Qwen3.5 artifact was compiled before the GatedDeltaNet custom kernels, so "
@@ -250,7 +245,7 @@ class RBLNQwen3_5TextModel(RBLNDecoderOnlyModel):
     @classmethod
     def _update_rbln_config(cls, preprocessors=None, model=None, model_config=None, rbln_config=None):
         rbln_config.linear_attention_layers = _qwen3_5_linear_layer_indices(model_config)
-        validate_gdn_custom_kernel()
+        validate_gdn_ops()
         rbln_config = super()._update_rbln_config(
             preprocessors=preprocessors, model=model, model_config=model_config, rbln_config=rbln_config
         )
@@ -658,7 +653,7 @@ class RBLNQwen3_5Model(RBLNDecoderOnlyModel):
     @classmethod
     def _update_rbln_config(cls, preprocessors=None, model=None, model_config=None, rbln_config=None):
         rbln_config.linear_attention_layers = _qwen3_5_linear_layer_indices(model_config)
-        validate_gdn_custom_kernel()
+        validate_gdn_ops()
         rbln_config = super()._update_rbln_config(
             preprocessors=preprocessors, model=model, model_config=model_config, rbln_config=rbln_config
         )
