@@ -50,9 +50,9 @@ class CogVideoXBlockRegion(DiffusersModuleWrapper, CogVideoXBlock):
         image_rotary_emb: tuple[torch.Tensor, torch.Tensor] | None = None,
         attention_kwargs: dict[str, Any] | None = None,
     ):
-        return CogVideoXBlock.forward(
-            self, hidden_states, encoder_hidden_states, temb, image_rotary_emb, attention_kwargs
-        )
+        # super(), not CogVideoXBlock.forward: upstream marks CogVideoXBlock allow_in_graph,
+        # so Dynamo cannot trace a method looked up on the class inside the region.
+        return super().forward(hidden_states, encoder_hidden_states, temb, image_rotary_emb, attention_kwargs)
 
     def forward(
         self,
