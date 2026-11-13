@@ -17,14 +17,16 @@ from typing import TYPE_CHECKING, Any
 
 import torch
 from diffusers.models.modeling_outputs import Transformer2DModelOutput
+from diffusers.models.attention import JointTransformerBlock
 from diffusers.models.transformers.transformer_sd3 import SD3Transformer2DModel
 from transformers import PretrainedConfig
 
-from ....configuration_utils import RBLNCompileConfig, RBLNModelConfig
+from ....configuration_utils import RBLNCompileConfig
 from ....modeling import RBLNModel
 from ....modeling_base import Preprocessor
 from ....utils.logging import get_logger
 from ...configurations import RBLNSD3Transformer2DModelConfig
+from ..nested_region import JointTransformerBlockRegion, wrap_diffusers_modules
 
 
 if TYPE_CHECKING:
@@ -79,8 +81,24 @@ class RBLNSD3Transformer2DModel(RBLNModel):
         super().__post_init__(**kwargs)
 
     @classmethod
-    def _wrap_model_if_needed(cls, model: torch.nn.Module, rbln_config: RBLNModelConfig) -> torch.nn.Module:
+    def _wrap_model_if_needed(
+        cls, model: torch.nn.Module, rbln_config: RBLNSD3Transformer2DModelConfig
+    ) -> torch.nn.Module:
+        if rbln_config.nested_compile_region:
+            model = wrap_diffusers_modules(model, {JointTransformerBlock: JointTransformerBlockRegion})
         return SD3Transformer2DModelWrapper(model).eval()
+
+    @classmethod
+    def get_compiled_model(cls, model: torch.nn.Module, rbln_config: RBLNSD3Transformer2DModelConfig):
+        if not rbln_config.nested_compile_region:
+            return super().get_compiled_model(model, rbln_config)
+        return cls.compile(
+            cls._wrap_model_if_needed(model, rbln_config),
+            rbln_compile_config=rbln_config.compile_cfgs[0],
+            create_runtimes=rbln_config.create_runtimes,
+            device=rbln_config.device,
+            model_trace_method="export_strict",
+        )
 
     @classmethod
     def update_rbln_config_using_pipe(

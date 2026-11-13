@@ -18,6 +18,8 @@ from ....configuration_utils import RBLNModelConfig
 
 
 class RBLNAutoencoderKLTemporalDecoderConfig(RBLNModelConfig):
+    subclass_non_save_attributes = ["nested_compile_region"]
+
     def __init__(
         self,
         batch_size: int | None = None,
@@ -26,6 +28,7 @@ class RBLNAutoencoderKLTemporalDecoderConfig(RBLNModelConfig):
         num_frames: int | None = None,
         decode_chunk_size: int | None = None,
         vae_scale_factor: float | None = None,
+        nested_compile_region: bool = False,
         **kwargs: Any,
     ):
         """
@@ -40,12 +43,16 @@ class RBLNAutoencoderKLTemporalDecoderConfig(RBLNModelConfig):
                 Useful for managing memory usage during video generation.
             vae_scale_factor (float | None): The scaling factor between pixel space and latent space.
                 Determines how much smaller the latent representations are compared to the original images.
+            nested_compile_region (bool): Preserve repeated blocks as nested compile regions using strict export.
+                Defaults to False. This compile-time option is not saved in `rbln_config.json`
+                and does not guarantee that the compiler forms a loop.
             kwargs: Additional arguments passed to the parent RBLNModelConfig.
 
         Raises:
             ValueError: If batch_size is not a positive integer.
         """
         super().__init__(**kwargs)
+        self.nested_compile_region = nested_compile_region
         self.batch_size = batch_size or 1
         if not isinstance(self.batch_size, int) or self.batch_size < 0:
             raise ValueError(f"batch_size must be a positive integer, got {self.batch_size}")

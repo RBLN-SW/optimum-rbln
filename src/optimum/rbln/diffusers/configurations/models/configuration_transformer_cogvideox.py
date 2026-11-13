@@ -25,7 +25,7 @@ class RBLNCogVideoXTransformer3DModelConfig(RBLNModelConfig):
     for the CogVideoX 3D transformer used in text-to-video generation.
     """
 
-    subclass_non_save_attributes = ["_batch_size_is_specified"]
+    subclass_non_save_attributes = ["_batch_size_is_specified", "nested_compile_region"]
 
     def __init__(
         self,
@@ -33,6 +33,7 @@ class RBLNCogVideoXTransformer3DModelConfig(RBLNModelConfig):
         num_frames: int | None = None,
         sample_size: tuple[int, int] | None = None,
         max_text_seq_length: int | None = None,
+        nested_compile_region: bool = False,
         **kwargs: Any,
     ):
         """
@@ -46,12 +47,16 @@ class RBLNCogVideoXTransformer3DModelConfig(RBLNModelConfig):
             max_text_seq_length (int | None): The length of the text embeddings. Defaults to the
                 transformer config `max_text_seq_length`; a pipeline sets it from `max_sequence_length`.
                 Models with positional embeddings (CogVideoX-2b, CogVideoX-5b-I2V) need the config value.
+            nested_compile_region (bool): Preserve repeated blocks as nested compile regions using strict export.
+                Defaults to False. This compile-time option is not saved in `rbln_config.json`
+                and does not guarantee that the compiler forms a loop.
             kwargs: Additional arguments passed to the parent RBLNModelConfig.
 
         Raises:
             ValueError: If batch_size is not a positive integer.
         """
         super().__init__(**kwargs)
+        self.nested_compile_region = nested_compile_region
         self._batch_size_is_specified = batch_size is not None
 
         self.batch_size = batch_size or 1

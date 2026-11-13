@@ -21,6 +21,7 @@ from transformers import PretrainedConfig, PreTrainedModel
 
 from ....modeling_rope_utils import ROPE_INIT_FUNCTIONS, np_cos, np_sin
 from ....utils import logging
+from ....utils.nested_compile_region import NestedCompileRegionMixin
 from .configuration_lora import RBLNLoRAConfig
 from .lora_architecture import LoRALinear
 
@@ -36,14 +37,6 @@ logger = logging.get_logger(__name__)
 def _op_accepts(op_name: str, arg_name: str) -> bool:
     op = getattr(torch.ops.rbln_custom_ops, op_name)
     return any(arg.name == arg_name for arg in op.default._schema.arguments)
-
-
-class NestedCompileRegionMixin:
-    """Preserve a decoder forward as a nested region through module cloning and export."""
-
-    @torch.compiler.nested_compile_region
-    def forward(self, *args, **kwargs):
-        return super().forward(*args, **kwargs)
 
 
 class DecoderOnlyWrapper(nn.Module):
