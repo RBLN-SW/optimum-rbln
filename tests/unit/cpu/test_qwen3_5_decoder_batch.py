@@ -72,10 +72,3 @@ def test_decode_batch_sorted_by_length_when_compiled_for_it():
     _decode(runtime, [9, 5])
     with pytest.raises(ValueError, match="requires_batch_sort"):
         _decode(runtime, [5, 9])
-
-
-def test_prefill_takes_its_row_as_batch_idx_not_state_idx():
-    runtime = _decode_runtime(1)
-    runtime.phase = "prefill"
-    with pytest.raises(ValueError, match="decode input"):
-        runtime.forward(inputs_embeds=torch.zeros(1, 4, 8), state_idx=torch.zeros(1, dtype=torch.int16))

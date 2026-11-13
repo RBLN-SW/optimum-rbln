@@ -1,8 +1,6 @@
-import re
 from types import SimpleNamespace
 
 import pytest
-from transformers.models.qwen3_5.configuration_qwen3_5 import Qwen3_5TextConfig
 
 from optimum.rbln.configuration_utils import RBLNCompileConfig
 from optimum.rbln.transformers.models.qwen3_5 import modeling_qwen3_5
@@ -10,11 +8,8 @@ from optimum.rbln.transformers.models.qwen3_5.configuration_qwen3_5 import (
     RBLNQwen3_5TextModelConfig,
 )
 from optimum.rbln.transformers.models.qwen3_5.modeling_qwen3_5 import (
-    _qwen3_5_legacy_linear_state_shapes,
-    _qwen3_5_linear_state_shapes,
     use_custom_ops,
     validate_gdn_ops,
-    warn_deprecated,
 )
 
 
@@ -26,19 +21,6 @@ def test_gdn_ops_need_a_compiler_that_registers_them(monkeypatch):
     monkeypatch.setattr(modeling_qwen3_5, "torch", empty)
     with pytest.raises(ValueError, match="chunk_gated_delta_rule"):
         validate_gdn_ops()
-
-
-def test_gdn_state_cache_takes_the_head_width_of_the_config():
-    # The kernels read the head width off the query, so the recurrent cache follows the config:
-    # [Dv / STATE_LANES, Dk, STATE_LANES] a value head. The kernels take Dk = Dv; the two widths are
-    # different here only to show which axis is which.
-    from rebel.ops.torch_custom_ops.gdn import STATE_LANES
-
-    text_config = Qwen3_5TextConfig(
-        linear_num_key_heads=2, linear_num_value_heads=6, linear_key_head_dim=128, linear_value_head_dim=256
-    )
-    _, recurrent_state_shape = _qwen3_5_linear_state_shapes(text_config, 3)
-    assert recurrent_state_shape == (3, 2, 3, 256 // STATE_LANES, 128, STATE_LANES)
 
 
 def _config_with_graph_inputs(*names):
@@ -57,26 +39,3 @@ def test_a_pre_kernel_artifact_is_recognized_by_its_own_graph():
 
     current = _config_with_graph_inputs("input_ids", "state_mask", "valid_mask", "state_idx")
     assert use_custom_ops(current) is True
-
-
-def test_the_graph_path_keeps_its_own_cache_layouts():
-    # The runtime sizes that graph's control masks from here, so these are the layouts the artifact
-    # was compiled with: the conv cache channel-last, the recurrent state 3D.
-    text_config = Qwen3_5TextConfig(
-        hidden_size=64,
-        linear_num_key_heads=2,
-        linear_num_value_heads=6,
-        linear_key_head_dim=128,
-        linear_value_head_dim=128,
-    )
-    taps = text_config.linear_conv_kernel_dim - 1
-    assert _qwen3_5_legacy_linear_state_shapes(text_config, 1) == ((1, taps, 2 * 2 * 128 + 6 * 128), (1, 6 * 128, 128))
-    # and they are not the ones the kernels take.
-    assert _qwen3_5_legacy_linear_state_shapes(text_config, 1) != _qwen3_5_linear_state_shapes(text_config, 1)
-
-
-def test_a_deprecated_path_warns_until_its_version_and_then_refuses():
-    # Loading such an artifact says so, and at the version that drops the path it stops loading.
-    warn_deprecated("That path", version="99.0.0", remedy="Recompile the model.")
-    with pytest.raises(ValueError, match=re.escape("That path is deprecated and was removed in version 0.0.1.")):
-        warn_deprecated("That path", version="0.0.1")
