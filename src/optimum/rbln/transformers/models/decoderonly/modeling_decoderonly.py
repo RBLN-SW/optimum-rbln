@@ -521,16 +521,16 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
             npu=rbln_config.npu,
         )
 
-        # Validate kvcache_num_blocks against `num_min_blocks` / `num_full_blocks`.
+        # Validate kvcache_num_blocks against `num_min_blocks` / `num_max_blocks`.
         if rbln_config.attn_impl == "flash_attn":
             if rbln_config.is_auto_num_blocks:
                 # Do nothing
                 pass
 
-            elif rbln_config.kvcache_num_blocks > rbln_config.num_full_blocks:
+            elif rbln_config.kvcache_num_blocks > rbln_config.num_max_blocks:
                 logger.warning(
                     f"The set `kvcache_num_blocks` ({rbln_config.kvcache_num_blocks}) is greater"
-                    f" than the required number of blocks ({rbln_config.num_full_blocks})."
+                    f" than the required number of blocks ({rbln_config.num_max_blocks})."
                     "This can cause a failure during model compilation."
                 )
             elif rbln_config.kvcache_num_blocks < rbln_config.num_min_blocks:
@@ -540,12 +540,17 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
                 )
         elif rbln_config.is_auto_num_blocks:
             # Eager attention should use fixed number of blocks.
-            rbln_config.kvcache_num_blocks = rbln_config.num_full_blocks
-        elif rbln_config.kvcache_num_blocks > rbln_config.num_full_blocks:
+            rbln_config.kvcache_num_blocks = rbln_config.num_max_blocks
+        elif rbln_config.kvcache_num_blocks > rbln_config.num_max_blocks:
             logger.warning(
                 f"The set `kvcache_num_blocks` ({rbln_config.kvcache_num_blocks}) is greater"
-                f" than the required number of blocks ({rbln_config.num_full_blocks})."
+                f" than the required number of blocks ({rbln_config.num_max_blocks})."
                 "This can cause a failure during model compilation."
+            )
+        elif rbln_config.kvcache_num_blocks < rbln_config.num_min_blocks:
+            raise ValueError(
+                f"The set `kvcache_num_blocks` ({rbln_config.kvcache_num_blocks}) is less"
+                f" than the minimum number of blocks ({rbln_config.num_min_blocks})."
             )
 
         return rbln_config
