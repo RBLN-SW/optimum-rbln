@@ -17,6 +17,7 @@ from diffusers import (
 )
 from diffusers.models.attention import BasicTransformerBlock, TemporalBasicTransformerBlock
 from diffusers.models.autoencoders.autoencoder_kl_cosmos import CosmosCausalConv3d, CosmosResnetBlock3d
+from diffusers.models.autoencoders.autoencoder_kl_wan import WanResample, WanResidualBlock
 from diffusers.models.controlnets.controlnet_cosmos import CosmosControlNetModel
 from diffusers.models.resnet import ResnetBlock2D, ResnetBlockCondNorm2D, SpatioTemporalResBlock
 from diffusers.models.transformers.transformer_cosmos import CosmosTransformerBlock
@@ -44,6 +45,10 @@ from optimum.rbln import (
     RBLNUNetSpatioTemporalConditionModelConfig,
     RBLNVQModel,
     RBLNVQModelConfig,
+)
+from optimum.rbln.diffusers.models.autoencoders.autoencoder_kl_wan import (
+    WanResampleStrictExport,
+    WanResidualBlockRegion,
 )
 from optimum.rbln.diffusers.models.nested_region import DIFFUSERS_REGION_CLASSES, wrap_diffusers_modules
 from optimum.rbln.utils.nested_compile_region import NestedCompileRegionMixin
@@ -457,3 +462,33 @@ def test_module_wrappers_preserve_aliases_and_isolate_training_state():
     assert all(module.training for module in model.modules())
     assert all(not module.training for module in wrapped.modules())
     assert all(a is b for a, b in zip(model.parameters(), wrapped.parameters(), strict=True))
+
+
+@pytest.mark.parametrize("kind", ["residual", "resample"])
+@pytest.mark.parametrize("explicit_index", [False, True])
+def test_wan_regions_do_not_share_default_cache_index(kind, explicit_index):
+    if kind == "residual":
+        block = WanResidualBlock(8, 8).eval()
+        wrapper_cls = WanResidualBlockRegion
+        cache_count = 2
+    else:
+        block = WanResample(8, mode="upsample3d").eval()
+        wrapper_cls = WanResampleStrictExport
+        cache_count = 1
+    wrapped = wrap_diffusers_modules(block, {type(block): wrapper_cls})
+    x = torch.randn(1, 8, 1, 4, 4)
+    start = 1 if explicit_index else 0
+    with torch.no_grad():
+        for _ in range(2):
+            caches = [None] * start + [torch.randn(1, 8, 2, 4, 4) for _ in range(cache_count)]
+            reference_caches = copy.deepcopy(caches)
+            expected = block(x, reference_caches, [start])
+            if explicit_index:
+                index = [start]
+                actual = wrapped(x, caches, index)
+                assert index == [start + cache_count]
+                assert caches[0] is None
+            else:
+                actual = wrapped(x, caches)
+            torch.testing.assert_close(actual, expected)
+            torch.testing.assert_close(caches[start:], reference_caches[start:])

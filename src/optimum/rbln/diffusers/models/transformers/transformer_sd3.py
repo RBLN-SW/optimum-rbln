@@ -16,8 +16,8 @@ from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
 import torch
-from diffusers.models.modeling_outputs import Transformer2DModelOutput
 from diffusers.models.attention import JointTransformerBlock
+from diffusers.models.modeling_outputs import Transformer2DModelOutput
 from diffusers.models.transformers.transformer_sd3 import SD3Transformer2DModel
 from transformers import PretrainedConfig
 

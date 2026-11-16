@@ -17,8 +17,8 @@ from typing import TYPE_CHECKING, Literal, Union
 import rebel
 import torch
 from diffusers.models.autoencoders.autoencoder_kl_wan import (
-    AutoencoderKLWan,
     CACHE_T,
+    AutoencoderKLWan,
     WanCausalConv3d,
     WanResample,
     WanResidualBlock,
@@ -57,9 +57,11 @@ class WanResidualBlockRegion(DiffusersModuleWrapper, WanResidualBlock):
         out = WanResidualBlock.forward(self, x, feat_cache, [0])
         return out, *feat_cache
 
-    def forward(self, x, feat_cache=None, feat_idx=[0]):
+    def forward(self, x, feat_cache=None, feat_idx=None):
         if feat_cache is None:
             return WanResidualBlock.forward(self, x)
+        if feat_idx is None:
+            feat_idx = [0]
         idx = feat_idx[0]
         if feat_cache[idx] is None:
             out, *new_cache = self.forward_region_first(x)
@@ -73,7 +75,9 @@ class WanResidualBlockRegion(DiffusersModuleWrapper, WanResidualBlock):
 # Strict export cannot trace upstream's `feat_cache[idx] == "Rep"` (Tensor == str), so the upsample3d
 # path with a tensor cache is rewritten without it; everything else goes to the upstream forward.
 class WanResampleStrictExport(DiffusersModuleWrapper, WanResample):
-    def forward(self, x, feat_cache=None, feat_idx=[0]):
+    def forward(self, x, feat_cache=None, feat_idx=None):
+        if feat_idx is None:
+            feat_idx = [0]
         if feat_cache is None or self.mode != "upsample3d" or feat_cache[feat_idx[0]] is None:
             return WanResample.forward(self, x, feat_cache, feat_idx)
         b, c, t, h, w = x.size()
@@ -381,7 +385,9 @@ class RBLNAutoencoderKLWan(RBLNModel):
     @classmethod
     def _wrap_model_if_needed(cls, model: torch.nn.Module, rbln_config: RBLNAutoencoderKLWanConfig) -> torch.nn.Module:
         if rbln_config.nested_compile_region:
-            model = wrap_diffusers_modules(model, {WanResidualBlock: WanResidualBlockRegion, WanResample: WanResampleStrictExport})
+            model = wrap_diffusers_modules(
+                model, {WanResidualBlock: WanResidualBlockRegion, WanResample: WanResampleStrictExport}
+            )
         h, w = rbln_config.height, rbln_config.width
         decoder_model_0 = _VAEWanDecoder0(model, height=h, width=w)
         decoder_model_0.eval()
