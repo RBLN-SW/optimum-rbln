@@ -32,7 +32,9 @@ Refer to huggingface/optimum/blob/4fdeea77d71e79451ba53e0c1f9d8f37e9704268/optim
 
 import contextlib
 from pathlib import Path
+from typing import Any
 
+import torch
 from transformers import AutoFeatureExtractor, AutoProcessor, AutoTokenizer
 
 from .logging import get_logger
@@ -94,3 +96,17 @@ def maybe_save_preprocessors(
     for preprocessor in preprocessors:
         preprocessor.save_pretrained(dest_dir)
     return preprocessors
+
+
+def save_torch_weights(obj: Any, path: str | Path) -> None:
+    """Write tensors / state dicts in the `.pth` format that `load_torch_weights` reads back."""
+    # Tensor-only payload; every reader goes through load_torch_weights (weights_only=True).
+    # nosemgrep: trailofbits.python.pickles-in-pytorch.pickles-in-pytorch
+    torch.save(obj, path)
+
+
+def load_torch_weights(path: str | Path, map_location: Any = None) -> Any:
+    """Load a `.pth`/`.bin` file restricted to tensors and plain containers (no arbitrary unpickling)."""
+    # weights_only=True: the unpickler only rebuilds tensors and plain containers.
+    # nosemgrep: trailofbits.python.pickles-in-pytorch.pickles-in-pytorch
+    return torch.load(path, map_location=map_location, weights_only=True)
