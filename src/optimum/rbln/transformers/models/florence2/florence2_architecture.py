@@ -21,11 +21,14 @@ from ..bart.bart_architecture import (
     BartCrossAttention,
     BartDecoder,
     BartDecoderLayer,
-    BartForConditionalGeneration,
     BartSelfAttention,
     _encoder_layer_forward,
 )
-from ..seq2seq.seq2seq_architecture import Seq2SeqDecoderWrapper, Seq2SeqEncoderWrapper
+from ..seq2seq.seq2seq_architecture import (
+    Seq2SeqDecoderWrapper,
+    Seq2SeqEncoderWrapper,
+    Seq2SeqForConditionalGeneration,
+)
 
 
 class Florence2ImageEncoder(nn.Module):
@@ -66,7 +69,7 @@ class Florence2DecoderWrapper(Seq2SeqDecoderWrapper):
             new_layers.append(BartDecoderLayer(layer, self_attn, cross_attn))
 
         decoder_model = BartDecoder(decoder, new_layers)
-        new_model = BartForConditionalGeneration(model, decoder_model)
+        new_model = Seq2SeqForConditionalGeneration(model, decoder_model)
         new_model.config = self.config
         return new_model
 
