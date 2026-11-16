@@ -1,3 +1,5 @@
+from types import SimpleNamespace
+
 import pytest
 import torch
 from transformers import (
@@ -73,16 +75,19 @@ class TestFlorence2Encoder:
             torch.testing.assert_close(values[0], torch.zeros_like(values[0]), rtol=0, atol=0)
 
     def test_compile_inputs_include_image_features_in_encoder_length(self):
-        config = RBLNFlorence2ForConditionalGenerationConfig(enc_max_seq_len=640, dec_max_seq_len=64)
-        config = RBLNFlorence2ForConditionalGeneration.update_rbln_config([], self.model, self.model.config, config)
+        processor = SimpleNamespace(image_processor=SimpleNamespace(size={"height": 64, "width": 64}))
+        config = RBLNFlorence2ForConditionalGenerationConfig(enc_max_seq_len=64, dec_max_seq_len=64)
+        config = RBLNFlorence2ForConditionalGeneration.update_rbln_config(
+            [processor], self.model, self.model.config, config
+        )
         encoder = {name: (shape, dtype) for name, shape, dtype in config.compile_cfgs[0].input_info}
         decoder = {name: (shape, dtype) for name, shape, dtype in config.compile_cfgs[1].input_info}
-        assert encoder["input_ids"] == ([1, 63], "int64")
-        assert encoder["pixel_values"] == ([1, 3, 768, 768], "float32")
-        assert encoder["attention_mask"] == ([1, 640], "float32")
-        assert decoder["cross_key_value_states_0"][0] == [1, 4, 640, 8]
+        assert encoder["input_ids"] == ([1, 59], "int64")
+        assert encoder["pixel_values"] == ([1, 3, 64, 64], "float32")
+        assert encoder["attention_mask"] == ([1, 64], "float32")
+        assert decoder["cross_key_value_states_0"][0] == [1, 4, 64, 8]
         with torch.inference_mode():
-            features = self.model.get_image_features(torch.randn(1, 3, 768, 768)).pooler_output
+            features = self.model.get_image_features(torch.randn(1, 3, 64, 64)).pooler_output
         assert features.shape[1] == config.enc_max_seq_len - encoder["input_ids"][0][1]
 
     def runtime_model(self, batch_size=1, dtype=torch.float32):
@@ -95,7 +100,7 @@ class TestFlorence2Encoder:
             return torch.empty(0)
 
         config = RBLNFlorence2ForConditionalGenerationConfig(
-            batch_size=batch_size, enc_max_seq_len=640, dec_max_seq_len=64
+            image_size=768, batch_size=batch_size, enc_max_seq_len=640, dec_max_seq_len=64
         )
         config = RBLNFlorence2ForConditionalGeneration.update_rbln_config([], self.model, self.model.config, config)
         model = object.__new__(RBLNFlorence2ForConditionalGeneration)

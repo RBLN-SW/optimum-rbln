@@ -12,18 +12,31 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from typing import Any
+
 from ..seq2seq import RBLNModelForSeq2SeqLMConfig
 
 
 class RBLNFlorence2ForConditionalGenerationConfig(RBLNModelForSeq2SeqLMConfig):
     """Compilation settings for Florence-2 image-conditioned text generation.
 
-    Model inputs use the released checkpoints' 768x768 image resolution.
-    ``enc_max_seq_len`` includes both image features and text tokens. Cache layouts
+    ``enc_max_seq_len`` includes both image features and text tokens. Image size
+    is inferred from the processor unless explicitly supplied. Cache layouts
     follow the common Seq2Seq compilation and paged-attention paths.
     """
 
     support_paged_attention = True
+
+    def __init__(self, image_size: int | None = None, **kwargs: Any):
+        """
+        Args:
+            image_size (int | None): Square input image size in pixels. Inferred from
+                the image processor when omitted. An explicit size must match the
+                processor used for inference.
+            kwargs: Common Seq2Seq compilation and runtime settings.
+        """
+        super().__init__(**kwargs)
+        self.image_size = image_size
 
 
 __all__ = ["RBLNFlorence2ForConditionalGenerationConfig"]

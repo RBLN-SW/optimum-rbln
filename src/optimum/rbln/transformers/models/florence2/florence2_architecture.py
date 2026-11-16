@@ -21,12 +21,11 @@ from ..bart.bart_architecture import (
     BartCrossAttention,
     BartDecoder,
     BartDecoderLayer,
-    BartDecoderWrapper,
     BartForConditionalGeneration,
     BartSelfAttention,
     _encoder_layer_forward,
 )
-from ..seq2seq.seq2seq_architecture import Seq2SeqEncoderWrapper
+from ..seq2seq.seq2seq_architecture import Seq2SeqDecoderWrapper, Seq2SeqEncoderWrapper
 
 
 class Florence2ImageEncoder(nn.Module):
@@ -53,7 +52,7 @@ class Florence2EncoderWrapper(Seq2SeqEncoderWrapper):
         return self._update_cross_key_values(last_hidden_states, block_tables, *cross_key_values)
 
 
-class Florence2DecoderWrapper(BartDecoderWrapper):
+class Florence2DecoderWrapper(Seq2SeqDecoderWrapper):
     def __post_init__(self, model, **kwargs):
         self.config = model.config.text_config
         super().__post_init__(model, **kwargs)
