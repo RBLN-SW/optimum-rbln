@@ -38,7 +38,6 @@ def main():
     dataset = hf_hub_download(
         repo_id="hf-internal-testing/tourism-monthly-batch", filename="val-batch.pt", repo_type="dataset"
     )
-    # weights_only=True: the unpickler only rebuilds tensors and plain containers.
     # nosemgrep: trailofbits.python.pickles-in-pytorch.pickles-in-pytorch
     data = torch.load(dataset, weights_only=True)
 

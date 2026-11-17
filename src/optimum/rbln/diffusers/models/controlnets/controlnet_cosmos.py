@@ -22,7 +22,6 @@ from torchvision import transforms
 
 from ....configuration_utils import RBLNCompileConfig, RBLNModelConfig
 from ....modeling import RBLNModel
-from ....utils.save_utils import load_torch_weights, save_torch_weights
 from ...configurations import RBLNCosmosControlNetModelConfig
 from ..transformers.transformer_cosmos import (
     CosmosPerFrameAdaLNMixin,
@@ -94,7 +93,8 @@ class RBLNCosmosControlNetModel(RBLNModel):
 
     def __post_init__(self, **kwargs):
         super().__post_init__(**kwargs)
-        artifacts = load_torch_weights(self.model_save_dir / self.subfolder / "torch_artifacts.pth")
+        # nosemgrep: trailofbits.python.pickles-in-pytorch.pickles-in-pytorch
+        artifacts = torch.load(self.model_save_dir / self.subfolder / "torch_artifacts.pth", weights_only=True)
 
         hidden_size = self.config.model_channels
         self.rope = RBLNCosmosRotaryPosEmbed(
@@ -162,7 +162,8 @@ class RBLNCosmosControlNetModel(RBLNModel):
             save_dict["crossattn_proj"] = model.crossattn_proj.state_dict()
         if model.img_context_proj is not None:
             save_dict["img_context_proj"] = model.img_context_proj.state_dict()
-        save_torch_weights(save_dict, save_dir_path / subfolder / "torch_artifacts.pth")
+        # nosemgrep: trailofbits.python.pickles-in-pytorch.pickles-in-pytorch
+        torch.save(save_dict, save_dir_path / subfolder / "torch_artifacts.pth")
 
     @classmethod
     def _wrap_model_if_needed(cls, model: torch.nn.Module, rbln_config: RBLNModelConfig) -> torch.nn.Module:

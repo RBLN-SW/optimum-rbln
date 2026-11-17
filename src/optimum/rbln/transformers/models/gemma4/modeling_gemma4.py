@@ -35,7 +35,6 @@ from ....modeling import RBLNModel
 from ....modeling_base import Preprocessor
 from ....modeling_rope_utils import np_cos, np_sin
 from ....utils.logging import get_logger
-from ....utils.save_utils import load_torch_weights, save_torch_weights
 from ...cache_utils import FullAttentionKVCacheMeta, SlidingWindowAttentionKVCacheMeta
 from ...modeling_attention_utils import validate_sliding_window
 from ...modeling_outputs import RBLNDecoderOnlyOutput
@@ -164,7 +163,8 @@ class RBLNGemma4VisionModel(RBLNModel):
         subfolder: str,
         rbln_config: RBLNGemma4VisionModelConfig,
     ):
-        save_torch_weights(
+        # nosemgrep: trailofbits.python.pickles-in-pytorch.pickles-in-pytorch
+        torch.save(
             {"patch_embedder": model.patch_embedder.state_dict()},
             save_dir_path / subfolder / "torch_artifacts.pth",
         )
@@ -178,7 +178,8 @@ class RBLNGemma4VisionModel(RBLNModel):
 
     def __post_init__(self, **kwargs):
         artifacts_path = self.model_save_dir / self.subfolder / "torch_artifacts.pth"
-        artifacts = load_torch_weights(artifacts_path) if artifacts_path.exists() else {}
+        # nosemgrep: trailofbits.python.pickles-in-pytorch.pickles-in-pytorch
+        artifacts = torch.load(artifacts_path, weights_only=True) if artifacts_path.exists() else {}
         if "patch_embedder" in artifacts:
             self.patch_embedder = self._create_patch_embedder()
             self.patch_embedder.load_state_dict(artifacts["patch_embedder"])
@@ -429,7 +430,8 @@ class RBLNGemma4ForCausalLM(RBLNMoeLoadMixin, RBLNDecoderOnlyModelForCausalLM):
             if embed_per_layer is not None:
                 save_dict["embed_tokens_per_layer"] = embed_per_layer.state_dict()
         if save_dict:
-            save_torch_weights(save_dict, save_dir_path / subfolder / "torch_artifacts.pth")
+            # nosemgrep: trailofbits.python.pickles-in-pytorch.pickles-in-pytorch
+            torch.save(save_dict, save_dir_path / subfolder / "torch_artifacts.pth")
 
     def _create_per_layer_embedding_layer(self):
         from transformers.models.gemma4.modeling_gemma4 import Gemma4TextScaledWordEmbedding
@@ -448,7 +450,8 @@ class RBLNGemma4ForCausalLM(RBLNMoeLoadMixin, RBLNDecoderOnlyModelForCausalLM):
 
     def __post_init__(self, **kwargs):
         artifacts_path = self.model_save_dir / self.subfolder / "torch_artifacts.pth"
-        artifacts = load_torch_weights(artifacts_path) if artifacts_path.exists() else {}
+        # nosemgrep: trailofbits.python.pickles-in-pytorch.pickles-in-pytorch
+        artifacts = torch.load(artifacts_path, weights_only=True) if artifacts_path.exists() else {}
 
         if self.rbln_config.use_inputs_embeds and "embed_tokens" in artifacts:
             self.embed_tokens = self._create_embedding_layer()

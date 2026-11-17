@@ -40,7 +40,6 @@ from ....modeling import RBLNModel
 from ....modeling_base import Preprocessor
 from ....modeling_rope_utils import build_qwen_mrope_lookup, np_cos, np_sin, qwen_vit_rot_pos_ids
 from ....utils.logging import get_logger
-from ....utils.save_utils import load_torch_weights, save_torch_weights
 from ...modeling_outputs import RBLNDecoderOnlyOutput, _validate_output_hidden_states
 from ...utils.multimodal_batch_sort import RBLNQwenVLBatchSortMixin
 from ..decoderonly.modeling_decoderonly import RBLNDecoderOnlyModel, RBLNDecoderOnlyModelForCausalLM
@@ -85,7 +84,8 @@ class RBLNQwen2_5_VisionTransformerPretrainedModel(RBLNModel):
                 in_channels=config.in_channels,
                 embed_dim=config.hidden_size,
             )
-        artifacts = load_torch_weights(self.model_save_dir / self.subfolder / "torch_artifacts.pth")
+        # nosemgrep: trailofbits.python.pickles-in-pytorch.pickles-in-pytorch
+        artifacts = torch.load(self.model_save_dir / self.subfolder / "torch_artifacts.pth", weights_only=True)
         self.patch_embed.load_state_dict(artifacts["patch_embed"])
 
     @classmethod
@@ -98,7 +98,8 @@ class RBLNQwen2_5_VisionTransformerPretrainedModel(RBLNModel):
     ):
         save_dict = {}
         save_dict["patch_embed"] = model.patch_embed.state_dict()
-        save_torch_weights(save_dict, save_dir_path / subfolder / "torch_artifacts.pth")
+        # nosemgrep: trailofbits.python.pickles-in-pytorch.pickles-in-pytorch
+        torch.save(save_dict, save_dir_path / subfolder / "torch_artifacts.pth")
 
     @classmethod
     def _wrap_model_if_needed(

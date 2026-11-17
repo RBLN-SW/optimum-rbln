@@ -56,8 +56,6 @@ def failed_tests() -> dict[str, list[str]]:
         groups: dict[str, set[str]] = {}
         for path in Path(tmp).rglob("junit-*.xml"):
             try:
-                # Trusted input: this build's own junit artifacts; ElementTree never fetches external
-                # entities and the bundled expat (>= 2.4.1) caps entity expansion. Runs on bare python3.
                 # nosemgrep: python.lang.security.use-defused-xml-parse.use-defused-xml-parse
                 root = ET.parse(path).getroot()
             except ET.ParseError:

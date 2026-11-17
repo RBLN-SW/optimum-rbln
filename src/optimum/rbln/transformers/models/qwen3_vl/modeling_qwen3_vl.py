@@ -39,7 +39,6 @@ from ....modeling import RBLNModel
 from ....modeling_base import Preprocessor
 from ....modeling_rope_utils import build_qwen_mrope_lookup, np_cos, np_sin, qwen_vit_rot_pos_ids
 from ....utils.logging import get_logger
-from ....utils.save_utils import load_torch_weights, save_torch_weights
 from ...modeling_outputs import RBLNDecoderOnlyOutput, _validate_output_hidden_states
 from ...utils.multimodal_batch_sort import RBLNQwenVLBatchSortMixin, _per_sample_patch_lens, _permute_flat_segments
 from ..decoderonly.decoderonly_runtime_utils import RBLNPageTableManager, RBLNRuntimeModel
@@ -86,7 +85,8 @@ class RBLNQwen3VLVisionModel(RBLNModel):
 
         self.num_grid_per_side = int(config.num_position_embeddings**0.5)
 
-        artifacts = load_torch_weights(self.model_save_dir / self.subfolder / "torch_artifacts.pth")
+        # nosemgrep: trailofbits.python.pickles-in-pytorch.pickles-in-pytorch
+        artifacts = torch.load(self.model_save_dir / self.subfolder / "torch_artifacts.pth", weights_only=True)
         self.patch_embed.load_state_dict(artifacts["patch_embed"])
         self.pos_embed.load_state_dict(artifacts["pos_embed"])
 
@@ -101,7 +101,8 @@ class RBLNQwen3VLVisionModel(RBLNModel):
         save_dict = {}
         save_dict["patch_embed"] = model.patch_embed.state_dict()
         save_dict["pos_embed"] = model.pos_embed.state_dict()
-        save_torch_weights(save_dict, save_dir_path / subfolder / "torch_artifacts.pth")
+        # nosemgrep: trailofbits.python.pickles-in-pytorch.pickles-in-pytorch
+        torch.save(save_dict, save_dir_path / subfolder / "torch_artifacts.pth")
 
     @classmethod
     def _wrap_model_if_needed(cls, model: "PreTrainedModel", rbln_config: RBLNQwen3VLVisionModelConfig):

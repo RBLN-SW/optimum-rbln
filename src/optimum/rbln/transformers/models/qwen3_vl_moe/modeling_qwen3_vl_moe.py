@@ -28,7 +28,6 @@ from transformers.models.qwen3_vl_moe.modeling_qwen3_vl_moe import (
 )
 
 from ....modeling_rope_utils import np_cos, np_sin
-from ....utils.save_utils import load_torch_weights
 from ...utils.moe import RBLNMoeLoadMixin
 from ..decoderonly.decoderonly_runtime_utils import RBLNPageTableManager, RBLNRuntimeModel
 from ..qwen3_vl.modeling_qwen3_vl import (
@@ -62,7 +61,8 @@ class RBLNQwen3VLMoeVisionModel(RBLNQwen3VLVisionModel):
 
         self.num_grid_per_side = int(config.num_position_embeddings**0.5)
 
-        artifacts = load_torch_weights(self.model_save_dir / self.subfolder / "torch_artifacts.pth")
+        # nosemgrep: trailofbits.python.pickles-in-pytorch.pickles-in-pytorch
+        artifacts = torch.load(self.model_save_dir / self.subfolder / "torch_artifacts.pth", weights_only=True)
         self.patch_embed.load_state_dict(artifacts["patch_embed"])
         self.pos_embed.load_state_dict(artifacts["pos_embed"])
 
