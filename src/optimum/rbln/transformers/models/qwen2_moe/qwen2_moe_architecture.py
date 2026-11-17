@@ -95,7 +95,7 @@ class Qwen2MoeMLP(nn.Module):
         masked_routing_weight = compute_masked_routing_weight_softmax_first(
             router_logits, top_k=self.top_k, renormalize=self.norm_topk_prob
         )
-        return torch.ops.rbln_custom_ops.custom_moe_glu(
+        return torch.ops.rbln_custom_ops.custom_moe(
             hidden_states=x,
             gate_proj_weight=self.gate_proj_weight,
             up_proj_weight=self.up_proj_weight,
