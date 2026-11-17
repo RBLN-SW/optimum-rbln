@@ -26,6 +26,8 @@ class RBLNCosmosTransformer3DModelConfig(RBLNModelConfig):
     for Transformer models used in diffusion models like Cosmos.
     """
 
+    subclass_non_save_attributes = ["nested_compile_region"]
+
     # `fps` was saved into `rbln_config.json` up to 0.11.3, so artifacts compiled by those
     # versions still carry it. Absorb it on load instead of rejecting the whole config.
     @deprecate_kwarg(
@@ -48,6 +50,7 @@ class RBLNCosmosTransformer3DModelConfig(RBLNModelConfig):
         latent_height: int | None = None,
         latent_width: int | None = None,
         uses_per_frame_timestep: bool | None = None,
+        nested_compile_region: bool = False,
         **kwargs: Any,
     ):
         """
@@ -63,6 +66,9 @@ class RBLNCosmosTransformer3DModelConfig(RBLNModelConfig):
             latent_width (int | None): The width in pixels in latent space.
             uses_per_frame_timestep (bool | None): Whether the pipeline feeds a per-frame timestep
                 tensor ([B, 1, T, 1, 1]; conditioning frames at t=0) instead of a per-batch scalar.
+            nested_compile_region (bool): Preserve repeated blocks as nested compile regions using strict export.
+                Defaults to False. This compile-time option is not saved in `rbln_config.json`
+                and does not guarantee that the compiler forms a loop.
             kwargs: Additional arguments passed to the parent RBLNModelConfig.
 
         Raises:
@@ -72,6 +78,7 @@ class RBLNCosmosTransformer3DModelConfig(RBLNModelConfig):
             kwargs["timeout"] = 90
 
         super().__init__(**kwargs)
+        self.nested_compile_region = nested_compile_region
         self.batch_size = batch_size or 1
         self.num_frames = num_frames
         self.height = height

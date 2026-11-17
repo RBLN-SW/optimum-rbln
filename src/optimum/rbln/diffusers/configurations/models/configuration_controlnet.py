@@ -20,7 +20,7 @@ from ....configuration_utils import RBLNModelConfig
 class RBLNControlNetModelConfig(RBLNModelConfig):
     """Configuration class for RBLN ControlNet models."""
 
-    subclass_non_save_attributes = ["_batch_size_is_specified"]
+    subclass_non_save_attributes = ["_batch_size_is_specified", "nested_compile_region"]
 
     def __init__(
         self,
@@ -29,6 +29,7 @@ class RBLNControlNetModelConfig(RBLNModelConfig):
         unet_sample_size: tuple[int, int] | None = None,
         vae_sample_size: tuple[int, int] | None = None,
         text_model_hidden_size: int | None = None,
+        nested_compile_region: bool = False,
         **kwargs: Any,
     ):
         """
@@ -42,12 +43,16 @@ class RBLNControlNetModelConfig(RBLNModelConfig):
                 of the VAE input/output images.
             text_model_hidden_size (int | None): Hidden size of the text encoder model used
                 for conditioning.
+            nested_compile_region (bool): Preserve repeated blocks as nested compile regions using strict export.
+                Defaults to False. This compile-time option is not saved in `rbln_config.json`
+                and does not guarantee that the compiler forms a loop.
             kwargs: Additional arguments passed to the parent RBLNModelConfig.
 
         Raises:
             ValueError: If batch_size is not a positive integer.
         """
         super().__init__(**kwargs)
+        self.nested_compile_region = nested_compile_region
         self._batch_size_is_specified = batch_size is not None
 
         self.batch_size = batch_size or 1
