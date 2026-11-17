@@ -93,7 +93,8 @@ class RBLNCosmosControlNetModel(RBLNModel):
 
     def __post_init__(self, **kwargs):
         super().__post_init__(**kwargs)
-        artifacts = torch.load(self.model_save_dir / self.subfolder / "torch_artifacts.pth", weights_only=False)
+        # nosemgrep: trailofbits.python.pickles-in-pytorch.pickles-in-pytorch
+        artifacts = torch.load(self.model_save_dir / self.subfolder / "torch_artifacts.pth", weights_only=True)
 
         hidden_size = self.config.model_channels
         self.rope = RBLNCosmosRotaryPosEmbed(
@@ -161,6 +162,7 @@ class RBLNCosmosControlNetModel(RBLNModel):
             save_dict["crossattn_proj"] = model.crossattn_proj.state_dict()
         if model.img_context_proj is not None:
             save_dict["img_context_proj"] = model.img_context_proj.state_dict()
+        # nosemgrep: trailofbits.python.pickles-in-pytorch.pickles-in-pytorch
         torch.save(save_dict, save_dir_path / subfolder / "torch_artifacts.pth")
 
     @classmethod

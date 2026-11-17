@@ -61,7 +61,8 @@ class RBLNQwen3VLMoeVisionModel(RBLNQwen3VLVisionModel):
 
         self.num_grid_per_side = int(config.num_position_embeddings**0.5)
 
-        artifacts = torch.load(self.model_save_dir / self.subfolder / "torch_artifacts.pth", weights_only=False)
+        # nosemgrep: trailofbits.python.pickles-in-pytorch.pickles-in-pytorch
+        artifacts = torch.load(self.model_save_dir / self.subfolder / "torch_artifacts.pth", weights_only=True)
         self.patch_embed.load_state_dict(artifacts["patch_embed"])
         self.pos_embed.load_state_dict(artifacts["pos_embed"])
 
