@@ -46,7 +46,7 @@ def compute_masked_routing_weight_topk_first(router_logits: Tensor, top_k: int) 
 
 
 def split_fused_experts(experts: nn.Module) -> tuple[Tensor, Tensor, Tensor]:
-    # HF packs gate|up along dim 1 of gate_up_proj [E, 2I, H]; custom_moe_glu takes them separately, so the
+    # HF packs gate|up along dim 1 of gate_up_proj [E, 2I, H]; custom_moe takes them separately, so the
     # halves are copied to be contiguous while down_proj [E, H, I] is shared. The fused tensor is released
     # afterwards: the HF experts module is not run once wrapped, and keeping it would double host memory.
     gate_up = experts.get_parameter("gate_up_proj").detach()
