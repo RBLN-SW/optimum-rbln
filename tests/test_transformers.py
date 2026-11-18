@@ -142,6 +142,15 @@ class TestBertForQuestionAnswering(BaseTest.TestModel):
     }
 
 
+class TestBertForQuestionAnsweringSingleTokenType(TestBertForQuestionAnswering):
+    # A single token type drops `token_type_ids` from the compiled graph, so the model must stop
+    # passing it while still accepting it from the caller.
+    HF_CONFIG_KWARGS = {
+        "type_vocab_size": 1,
+        "ignore_mismatched_sizes": True,
+    }
+
+
 class TestBertForMaskedLM(BaseTest.TestModel):
     RBLN_AUTO_CLASS = RBLNAutoModelForMaskedLM
     RBLN_CLASS = RBLNBertForMaskedLM
@@ -481,6 +490,8 @@ class TestEncoderMaxSeqLenBucketing(unittest.TestCase):
 
 
 class TestXLMRobertaModelWithTokenTypeIds(TestXLMRobertaModel):
+    # `bge-m3` has `type_vocab_size == 1`, so `token_type_ids` is dropped at compile time: this
+    # guards that passing it anyway still works rather than over-filling the runtime.
     RBLN_CLASS_KWARGS = {
         "rbln_max_seq_len": 128,
         "rbln_model_input_names": ["input_ids", "attention_mask", "token_type_ids"],

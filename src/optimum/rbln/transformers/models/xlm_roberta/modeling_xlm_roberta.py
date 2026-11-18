@@ -43,6 +43,7 @@ class RBLNXLMRobertaModel(RBLNTransformerEncoderForFeatureExtraction):
             The model outputs. If return_dict=False is passed, returns a tuple of tensors. Otherwise, returns a BaseModelOutputWithPoolingAndCrossAttentions object.
         """
 
+        token_type_ids = self._resolve_token_type_ids(token_type_ids)
         if token_type_ids is not None:
             kwargs.setdefault("token_type_ids", token_type_ids)
 
@@ -75,6 +76,7 @@ class RBLNXLMRobertaForSequenceClassification(RBLNModelForSequenceClassification
             The model outputs. If return_dict=False is passed, returns a tuple of tensors. Otherwise, returns a SequenceClassifierOutput object.
         """
 
+        token_type_ids = self._resolve_token_type_ids(token_type_ids)
         if token_type_ids is not None:
             kwargs.setdefault("token_type_ids", token_type_ids)
 
