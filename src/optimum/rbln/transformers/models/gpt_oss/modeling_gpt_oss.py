@@ -132,7 +132,7 @@ class RBLNGptOssForCausalLM(RBLNDecoderOnlyModelForCausalLM):
 
         if config is None:
             config, kwargs = AutoConfig.from_pretrained(
-                model_id, revision=revision, token=token, return_unused_kwargs=True
+                model_id, revision=revision, token=token, return_unused_kwargs=True, **kwargs
             )
 
         config_dtype = config.dtype

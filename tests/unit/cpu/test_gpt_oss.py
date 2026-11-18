@@ -21,19 +21,25 @@ from transformers import GptOssConfig
 from optimum.rbln.transformers.models.gpt_oss import modeling_gpt_oss
 
 
-@pytest.mark.parametrize("provide_config", [False, True])
-def test_gpt_oss_loads_weights_at_requested_revision(monkeypatch, provide_config):
-    repo_id = "org/gpt-oss"
-    revision = "a" * 40
-    config = GptOssConfig()
+@pytest.fixture
+def mock_checkpoint_loading(monkeypatch):
     load_weights = Mock(return_value=["model.safetensors"])
-    load_config = Mock(return_value=(config, {}))
     create_model = Mock(return_value=torch.nn.Module())
     monkeypatch.setattr(modeling_gpt_oss, "load_weight_files", load_weights)
     monkeypatch.setattr(modeling_gpt_oss, "load_file", Mock(return_value={}))
     monkeypatch.setattr(modeling_gpt_oss, "_replace_with_mxfp4_linear", Mock())
-    monkeypatch.setattr(modeling_gpt_oss.AutoConfig, "from_pretrained", load_config)
     monkeypatch.setattr(modeling_gpt_oss.AutoModelForCausalLM, "from_config", create_model)
+    return load_weights, create_model
+
+
+@pytest.mark.parametrize("provide_config", [False, True])
+def test_gpt_oss_loads_weights_at_requested_revision(monkeypatch, mock_checkpoint_loading, provide_config):
+    repo_id = "org/gpt-oss"
+    revision = "a" * 40
+    config = GptOssConfig()
+    load_weights, create_model = mock_checkpoint_loading
+    load_config = Mock(return_value=(config, {}))
+    monkeypatch.setattr(modeling_gpt_oss.AutoConfig, "from_pretrained", load_config)
 
     modeling_gpt_oss.RBLNGptOssForCausalLM.get_pytorch_model(
         repo_id, revision=revision, token=True, config=config if provide_config else None
@@ -45,3 +51,18 @@ def test_gpt_oss_loads_weights_at_requested_revision(monkeypatch, provide_config
     else:
         load_config.assert_not_called()
     create_model.assert_called_once_with(config, dtype=torch.bfloat16)
+
+
+def test_gpt_oss_applies_overrides_to_loaded_config(tmp_path, mock_checkpoint_loading):
+    GptOssConfig(num_hidden_layers=4).save_pretrained(tmp_path)
+    _, create_model = mock_checkpoint_loading
+    layer_types = ["full_attention", "sliding_attention"]
+
+    modeling_gpt_oss.RBLNGptOssForCausalLM.get_pytorch_model(
+        str(tmp_path), num_hidden_layers=2, layer_types=layer_types
+    )
+
+    config = create_model.call_args.args[0]
+    assert config.num_hidden_layers == 2
+    assert config.layer_types == layer_types
+    assert create_model.call_args.kwargs == {"dtype": torch.bfloat16}
