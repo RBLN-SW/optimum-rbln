@@ -24,6 +24,8 @@ logger = get_logger(__name__)
 class RBLNAutoencoderKLCosmosConfig(RBLNModelConfig):
     """Configuration class for RBLN Cosmos Variational Autoencoder (VAE) models."""
 
+    subclass_non_save_attributes = ["nested_compile_region"]
+
     def __init__(
         self,
         batch_size: int | None = None,
@@ -35,6 +37,7 @@ class RBLNAutoencoderKLCosmosConfig(RBLNModelConfig):
         vae_scale_factor_temporal: int | None = None,
         vae_scale_factor_spatial: int | None = None,
         use_slicing: bool | None = None,
+        nested_compile_region: bool = False,
         **kwargs: dict[str, Any],
     ):
         """
@@ -52,12 +55,16 @@ class RBLNAutoencoderKLCosmosConfig(RBLNModelConfig):
                 Determines how much smaller the latent representations are compared to the original videos.
             use_slicing (bool | None): Enable sliced VAE encoding and decoding.
                 If True, the VAE will split the input tensor in slices to compute encoding or decoding in several steps.
+            nested_compile_region (bool): Preserve repeated blocks as nested compile regions using strict export.
+                Defaults to False. This compile-time option is not saved in `rbln_config.json`
+                and does not guarantee that the compiler forms a loop.
             kwargs: Additional arguments passed to the parent RBLNModelConfig.
 
         Raises:
             ValueError: If batch_size is not a positive integer.
         """
         super().__init__(**kwargs)
+        self.nested_compile_region = nested_compile_region
         # Since the Cosmos VAE Decoder already requires approximately 7.9 GiB of memory,
         # Optimum-rbln cannot execute this model on RBLN-CA12 when the batch size > 1.
         # However, the Cosmos VAE Decoder propose batch slicing when the batch size is greater than 1,

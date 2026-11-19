@@ -163,6 +163,7 @@ class RBLNGemma4VisionModel(RBLNModel):
         subfolder: str,
         rbln_config: RBLNGemma4VisionModelConfig,
     ):
+        # nosemgrep: trailofbits.python.pickles-in-pytorch.pickles-in-pytorch
         torch.save(
             {"patch_embedder": model.patch_embedder.state_dict()},
             save_dir_path / subfolder / "torch_artifacts.pth",
@@ -177,7 +178,8 @@ class RBLNGemma4VisionModel(RBLNModel):
 
     def __post_init__(self, **kwargs):
         artifacts_path = self.model_save_dir / self.subfolder / "torch_artifacts.pth"
-        artifacts = torch.load(artifacts_path, weights_only=False) if artifacts_path.exists() else {}
+        # nosemgrep: trailofbits.python.pickles-in-pytorch.pickles-in-pytorch
+        artifacts = torch.load(artifacts_path, weights_only=True) if artifacts_path.exists() else {}
         if "patch_embedder" in artifacts:
             self.patch_embedder = self._create_patch_embedder()
             self.patch_embedder.load_state_dict(artifacts["patch_embedder"])
@@ -428,6 +430,7 @@ class RBLNGemma4ForCausalLM(RBLNMoeLoadMixin, RBLNDecoderOnlyModelForCausalLM):
             if embed_per_layer is not None:
                 save_dict["embed_tokens_per_layer"] = embed_per_layer.state_dict()
         if save_dict:
+            # nosemgrep: trailofbits.python.pickles-in-pytorch.pickles-in-pytorch
             torch.save(save_dict, save_dir_path / subfolder / "torch_artifacts.pth")
 
     def _create_per_layer_embedding_layer(self):
@@ -447,7 +450,8 @@ class RBLNGemma4ForCausalLM(RBLNMoeLoadMixin, RBLNDecoderOnlyModelForCausalLM):
 
     def __post_init__(self, **kwargs):
         artifacts_path = self.model_save_dir / self.subfolder / "torch_artifacts.pth"
-        artifacts = torch.load(artifacts_path, weights_only=False) if artifacts_path.exists() else {}
+        # nosemgrep: trailofbits.python.pickles-in-pytorch.pickles-in-pytorch
+        artifacts = torch.load(artifacts_path, weights_only=True) if artifacts_path.exists() else {}
 
         if self.rbln_config.use_inputs_embeds and "embed_tokens" in artifacts:
             self.embed_tokens = self._create_embedding_layer()

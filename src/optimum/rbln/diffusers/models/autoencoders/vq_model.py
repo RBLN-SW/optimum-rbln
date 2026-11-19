@@ -20,13 +20,15 @@ import torch
 from diffusers import VQModel
 from diffusers.models.autoencoders.vae import DecoderOutput
 from diffusers.models.autoencoders.vq_model import VQEncoderOutput
+from diffusers.models.resnet import ResnetBlockCondNorm2D
 
-from ....configuration_utils import RBLNCompileConfig, RBLNModelConfig
+from ....configuration_utils import RBLNCompileConfig
 from ....modeling import RBLNModel
 from ....modeling_base import Preprocessor
 from ....utils.logging import get_logger
 from ...configurations.models.configuration_vq_model import RBLNVQModelConfig
 from ...modeling_diffusers import RBLNDiffusionMixin, RBLNDiffusionMixinConfig
+from ..nested_region import DIFFUSERS_REGION_CLASSES, ResnetBlockCondNorm2DRegion, wrap_diffusers_modules
 from .vae import RBLNRuntimeVQDecoder, RBLNRuntimeVQEncoder, _VQDecoder, _VQEncoder
 
 
@@ -34,6 +36,9 @@ if TYPE_CHECKING:
     from transformers import PretrainedConfig, PreTrainedModel
 
 logger = get_logger(__name__)
+
+# movq decoder uses ResnetBlockCondNorm2D (norm_type="spatial"), kept out of the shared mapping.
+VQ_REGION_CLASSES = {**DIFFUSERS_REGION_CLASSES, ResnetBlockCondNorm2D: ResnetBlockCondNorm2DRegion}
 
 
 class RBLNVQModel(RBLNModel):
@@ -65,7 +70,9 @@ class RBLNVQModel(RBLNModel):
         self.image_size = self.rbln_config.image_size
 
     @classmethod
-    def get_compiled_model(cls, model, rbln_config: RBLNModelConfig):
+    def get_compiled_model(cls, model, rbln_config: RBLNVQModelConfig):
+        if rbln_config.nested_compile_region:
+            model = wrap_diffusers_modules(model, VQ_REGION_CLASSES)
         if rbln_config.uses_encoder:
             expected_models = ["encoder", "decoder"]
         else:
@@ -85,6 +92,7 @@ class RBLNVQModel(RBLNModel):
                 rbln_compile_config=rbln_config.compile_cfgs[i],
                 create_runtimes=rbln_config.create_runtimes,
                 device=rbln_config.device_map[model_name],
+                **({"model_trace_method": "export_strict"} if rbln_config.nested_compile_region else {}),
             )
 
         return compiled_models

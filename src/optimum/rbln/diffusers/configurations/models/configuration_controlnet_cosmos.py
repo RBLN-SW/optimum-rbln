@@ -25,6 +25,8 @@ class RBLNCosmosControlNetModelConfig(RBLNModelConfig):
     fields mirror RBLNCosmosTransformer3DModelConfig and are filled by the pipeline config.
     """
 
+    subclass_non_save_attributes = ["nested_compile_region"]
+
     def __init__(
         self,
         batch_size: int | None = None,
@@ -37,6 +39,7 @@ class RBLNCosmosControlNetModelConfig(RBLNModelConfig):
         latent_height: int | None = None,
         latent_width: int | None = None,
         img_context_num_tokens: int | None = None,
+        nested_compile_region: bool = False,
         **kwargs: Any,
     ):
         """
@@ -54,12 +57,16 @@ class RBLNCosmosControlNetModelConfig(RBLNModelConfig):
             img_context_num_tokens (int | None): Number of image-context tokens the graph was
                 compiled with; filled from the model config (Transfer2.5 feeds a zero image
                 context of this size when none is given).
+            nested_compile_region (bool): Preserve repeated blocks as nested compile regions using strict export.
+                Defaults to False. This compile-time option is not saved in `rbln_config.json`
+                and does not guarantee that the compiler forms a loop.
             kwargs: Additional arguments passed to the parent RBLNModelConfig.
 
         Raises:
             ValueError: If batch_size is not a positive integer.
         """
         super().__init__(**kwargs)
+        self.nested_compile_region = nested_compile_region
         self.batch_size = batch_size or 1
         self.num_frames = num_frames
         self.height = height

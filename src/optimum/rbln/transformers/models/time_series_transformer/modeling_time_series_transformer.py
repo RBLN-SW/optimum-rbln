@@ -134,7 +134,8 @@ class RBLNTimeSeriesTransformerForPrediction(RBLNModel):
 
         with no_init_weights():
             self._origin_model = TimeSeriesTransformerForPrediction._from_config(self.config)
-        artifacts = torch.load(self.model_save_dir / self.subfolder / "torch_artifacts.pth", weights_only=False)
+        # nosemgrep: trailofbits.python.pickles-in-pytorch.pickles-in-pytorch
+        artifacts = torch.load(self.model_save_dir / self.subfolder / "torch_artifacts.pth", weights_only=True)
         self._origin_model.model.embedder.load_state_dict(artifacts["embedder"], assign=True)
         self.encoder = RBLNRuntimeEncoder(
             runtime=self.model[0],
@@ -219,6 +220,7 @@ class RBLNTimeSeriesTransformerForPrediction(RBLNModel):
 
         save_dict = {}
         save_dict["embedder"] = model.model.embedder.state_dict()
+        # nosemgrep: trailofbits.python.pickles-in-pytorch.pickles-in-pytorch
         torch.save(save_dict, save_dir_path / subfolder / "torch_artifacts.pth")
 
     @classmethod

@@ -88,7 +88,9 @@ class LoRALinear(nn.Module):
         # Try to load weights in order of preference
         weight_files = [
             ("adapter_model.safetensors", safetensors.torch.load_file),
+            # nosemgrep: trailofbits.python.pickles-in-pytorch.pickles-in-pytorch
             ("adapter_model.bin", lambda p: torch.load(p, map_location="cpu")),
+            # nosemgrep: trailofbits.python.pickles-in-pytorch.pickles-in-pytorch
             ("pytorch_model.bin", lambda p: torch.load(p, map_location="cpu")),
         ]
 

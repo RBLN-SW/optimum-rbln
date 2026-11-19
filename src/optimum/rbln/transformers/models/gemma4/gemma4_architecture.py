@@ -508,7 +508,7 @@ class Gemma4ForCausalLM(DecoderOnlyForCausalLM):
 class Gemma4Router(nn.Module):
     # Replicates Gemma4TextRouter's logit computation: RMSNorm (no-scale) -> per-token scale -> linear.
     # Emits raw logits only; routing (top-k, renormalize) and per_expert_scale are applied in
-    # Gemma4Experts before dispatch to custom_moe_glu.
+    # Gemma4Experts before dispatch to custom_moe.
 
     def __init__(self, router: nn.Module):
         super().__init__()
@@ -524,9 +524,9 @@ class Gemma4Router(nn.Module):
 
 
 class Gemma4Experts(nn.Module):
-    # Fused MoE expert block dispatching to rbln_custom_ops.custom_moe_glu.
+    # Fused MoE expert block dispatching to rbln_custom_ops.custom_moe.
     # HF Gemma4TextExperts stores packed weight tensors gate_up_proj (E, 2*I, H) and
-    # down_proj (E, H, I). Splits and transposes them at construction to match custom_moe_glu's
+    # down_proj (E, H, I). Splits and transposes them at construction to match custom_moe's
     # shape contract: gate_proj_weight (E, H, I), up_proj_weight (E, H, I), down_proj_weight (E, I, H).
     # Routing mirrors HF Gemma4TextRouter: top-k on logits, softmax over top-k (renormalize),
     # then multiply the scattered [E, T] mask by per_expert_scale from the router.
@@ -552,7 +552,7 @@ class Gemma4Experts(nn.Module):
         )
         masked_routing_weight = masked_routing_weight * self.per_expert_scale
 
-        return torch.ops.rbln_custom_ops.custom_moe_glu(
+        return torch.ops.rbln_custom_ops.custom_moe(
             hidden_states=hidden_states,
             gate_proj_weight=self.gate_proj_weight,
             up_proj_weight=self.up_proj_weight,

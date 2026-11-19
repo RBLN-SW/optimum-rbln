@@ -171,6 +171,7 @@ class RBLNLlavaNextForConditionalGeneration(RBLNModel, RBLNImageIndexedBatchSort
         # store the torch tensor, weight, etc. in this function.
         save_dict = {}
         save_dict["image_newline"] = model.model.image_newline
+        # nosemgrep: trailofbits.python.pickles-in-pytorch.pickles-in-pytorch
         torch.save(save_dict, save_dir_path / subfolder / "torch_artifacts.pth")
 
     def __post_init__(self, **kwargs):
@@ -178,7 +179,8 @@ class RBLNLlavaNextForConditionalGeneration(RBLNModel, RBLNImageIndexedBatchSort
         self.language_model = self.rbln_submodules[1]
         self.multi_modal_projector = LoopProjector(self.model[0])
 
-        artifacts = torch.load(self.model_save_dir / self.subfolder / "torch_artifacts.pth", weights_only=False)
+        # nosemgrep: trailofbits.python.pickles-in-pytorch.pickles-in-pytorch
+        artifacts = torch.load(self.model_save_dir / self.subfolder / "torch_artifacts.pth", weights_only=True)
         self.image_newline = artifacts["image_newline"]
 
         text_config = self.config.text_config

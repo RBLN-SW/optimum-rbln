@@ -84,7 +84,8 @@ class RBLNQwen2_5_VisionTransformerPretrainedModel(RBLNModel):
                 in_channels=config.in_channels,
                 embed_dim=config.hidden_size,
             )
-        artifacts = torch.load(self.model_save_dir / self.subfolder / "torch_artifacts.pth", weights_only=False)
+        # nosemgrep: trailofbits.python.pickles-in-pytorch.pickles-in-pytorch
+        artifacts = torch.load(self.model_save_dir / self.subfolder / "torch_artifacts.pth", weights_only=True)
         self.patch_embed.load_state_dict(artifacts["patch_embed"])
 
     @classmethod
@@ -97,6 +98,7 @@ class RBLNQwen2_5_VisionTransformerPretrainedModel(RBLNModel):
     ):
         save_dict = {}
         save_dict["patch_embed"] = model.patch_embed.state_dict()
+        # nosemgrep: trailofbits.python.pickles-in-pytorch.pickles-in-pytorch
         torch.save(save_dict, save_dir_path / subfolder / "torch_artifacts.pth")
 
     @classmethod

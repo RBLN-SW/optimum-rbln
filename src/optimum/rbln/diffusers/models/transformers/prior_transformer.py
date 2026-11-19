@@ -25,6 +25,7 @@ from ....modeling_base import Preprocessor
 from ....utils.logging import get_logger
 from ...configurations.models import RBLNPriorTransformerConfig
 from ...modeling_diffusers import RBLNDiffusionMixin, RBLNDiffusionMixinConfig
+from ..nested_region import DIFFUSERS_REGION_CLASSES, wrap_diffusers_modules
 
 
 if TYPE_CHECKING:
@@ -74,13 +75,28 @@ class RBLNPriorTransformer(RBLNModel):
 
     def __post_init__(self, **kwargs):
         super().__post_init__(**kwargs)
-        artifacts = torch.load(self.model_save_dir / self.subfolder / "torch_artifacts.pth", weights_only=False)
+        # nosemgrep: trailofbits.python.pickles-in-pytorch.pickles-in-pytorch
+        artifacts = torch.load(self.model_save_dir / self.subfolder / "torch_artifacts.pth", weights_only=True)
         self.clip_mean = artifacts["clip_mean"]
         self.clip_std = artifacts["clip_std"]
 
     @classmethod
-    def _wrap_model_if_needed(cls, model: torch.nn.Module, rbln_config: RBLNModelConfig) -> torch.nn.Module:
+    def _wrap_model_if_needed(cls, model: torch.nn.Module, rbln_config: RBLNPriorTransformerConfig) -> torch.nn.Module:
+        if rbln_config.nested_compile_region:
+            model = wrap_diffusers_modules(model, DIFFUSERS_REGION_CLASSES)
         return _PriorTransformer(model).eval()
+
+    @classmethod
+    def get_compiled_model(cls, model: torch.nn.Module, rbln_config: RBLNPriorTransformerConfig):
+        if not rbln_config.nested_compile_region:
+            return super().get_compiled_model(model, rbln_config)
+        return cls.compile(
+            cls._wrap_model_if_needed(model, rbln_config),
+            rbln_compile_config=rbln_config.compile_cfgs[0],
+            create_runtimes=rbln_config.create_runtimes,
+            device=rbln_config.device,
+            model_trace_method="export_strict",
+        )
 
     @classmethod
     def update_rbln_config_using_pipe(
@@ -95,6 +111,7 @@ class RBLNPriorTransformer(RBLNModel):
         save_dict = {}
         save_dict["clip_mean"] = model.clip_mean
         save_dict["clip_std"] = model.clip_std
+        # nosemgrep: trailofbits.python.pickles-in-pytorch.pickles-in-pytorch
         torch.save(save_dict, save_dir_path / subfolder / "torch_artifacts.pth")
 
     @classmethod
