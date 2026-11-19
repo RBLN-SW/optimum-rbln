@@ -1,7 +1,6 @@
 import json
 import os
 import shutil
-import tempfile
 import unittest
 
 import pytest
@@ -12,7 +11,6 @@ from transformers import (
     AutoProcessor,
     BertConfig,
     BertModel,
-    Florence2ForConditionalGeneration,
     T5EncoderModel,
     XLMRobertaConfig,
     XLMRobertaModel,
@@ -394,47 +392,31 @@ class TestXLMRobertaModel(BaseTest.TestModel):
 class TestFlorence2ForConditionalGeneration(BaseTest.TestModel):
     RBLN_AUTO_CLASS = RBLNAutoModelForImageTextToText
     RBLN_CLASS = RBLNFlorence2ForConditionalGeneration
-    HF_MODEL_ID = "hf-internal-testing/tiny-processor-florence2"
+    HF_MODEL_ID = "florence-community/Florence-2-base"
     RBLN_CLASS_KWARGS = {"rbln_config": {"enc_max_seq_len": 640, "dec_max_seq_len": 64}}
-
-    @classmethod
-    def setUpClass(cls):
-        processor = AutoProcessor.from_pretrained(cls.HF_MODEL_ID)
-        config = AutoConfig.from_pretrained(
-            cls.HF_MODEL_ID,
-            vision_config={
-                "depths": [1, 1, 1, 1],
-                "embed_dim": [8, 16, 32, 64],
-                "num_heads": [1, 2, 4, 8],
-                "num_groups": [1, 2, 4, 8],
-                "window_size": 2,
-                "projection_dim": 32,
-            },
-            text_config={
-                "model_type": "bart",
-                "d_model": 32,
-                "encoder_layers": 1,
-                "decoder_layers": 1,
-                "encoder_attention_heads": 4,
-                "decoder_attention_heads": 4,
-                "encoder_ffn_dim": 64,
-                "decoder_ffn_dim": 64,
-                "vocab_size": len(processor.tokenizer),
-                "max_position_embeddings": 640,
-            },
-            image_token_id=processor.image_token_id,
-        )
-        torch.manual_seed(42)
-        model = Florence2ForConditionalGeneration(config).to(config.dtype).eval()
-
-        # The tiny repository has no weights; create a checkpoint for the shared loading tests.
-        checkpoint = tempfile.TemporaryDirectory()
-        cls.addClassCleanup(checkpoint.cleanup)
-        model.save_pretrained(checkpoint.name)
-        processor.save_pretrained(checkpoint.name)
-        cls.addClassCleanup(setattr, cls, "HF_MODEL_ID", cls.HF_MODEL_ID)
-        cls.HF_MODEL_ID = checkpoint.name
-        super().setUpClass()
+    HF_CONFIG_KWARGS = {
+        "vision_config": {
+            "depths": [1, 1, 1, 1],
+            "embed_dim": [8, 16, 32, 64],
+            "num_heads": [1, 2, 4, 8],
+            "num_groups": [1, 2, 4, 8],
+            "window_size": 2,
+            "projection_dim": 32,
+        },
+        "text_config": {
+            "model_type": "bart",
+            "d_model": 32,
+            "encoder_layers": 1,
+            "decoder_layers": 1,
+            "encoder_attention_heads": 4,
+            "decoder_attention_heads": 4,
+            "encoder_ffn_dim": 64,
+            "decoder_ffn_dim": 64,
+            "vocab_size": 51328,
+            "max_position_embeddings": 640,
+        },
+        "ignore_mismatched_sizes": True,
+    }
 
     def get_inputs(self):
         processor = AutoProcessor.from_pretrained(self.HF_MODEL_ID)
