@@ -39,7 +39,7 @@ from typing_extensions import Self
 from .configuration_utils import RBLNCompileConfig, RBLNModelConfig, get_rbln_config_class
 from .utils.hub import pull_compiled_model_from_hub, validate_files
 from .utils.logging import get_logger
-from .utils.runtime_utils import UnavailableRuntime, compiler_num_devices_kwarg, tp_and_devices_are_ok
+from .utils.runtime_utils import UnavailableRuntime, tp_and_devices_are_ok
 from .utils.save_utils import maybe_load_preprocessors
 from .utils.submodule import SubModulesMixin
 
@@ -563,7 +563,7 @@ class RBLNBaseModel(SubModulesMixin, PushToHubMixin, PreTrainedModel):
             model,
             input_info=rbln_compile_config.input_info,
             npu=rbln_compile_config.npu,
-            **{compiler_num_devices_kwarg(): rbln_compile_config.num_devices},
+            num_devices=rbln_compile_config.num_devices,
             **kwargs,
         )
         return compiled_model

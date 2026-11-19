@@ -204,7 +204,8 @@ class RBLNPixtralVisionModel(RBLNModel):
     """
 
     def __post_init__(self, **kwargs):
-        artifacts = torch.load(self.model_save_dir / self.subfolder / "torch_artifacts.pth", weights_only=False)
+        # nosemgrep: trailofbits.python.pickles-in-pytorch.pickles-in-pytorch
+        artifacts = torch.load(self.model_save_dir / self.subfolder / "torch_artifacts.pth", weights_only=True)
         with no_init_weights():
             self.patch_conv = nn.Conv2d(
                 in_channels=self.config.num_channels,
@@ -236,6 +237,7 @@ class RBLNPixtralVisionModel(RBLNModel):
         save_dict = {}
         save_dict["patch_conv"] = model.get_input_embeddings().state_dict()
         save_dict["ln_pre"] = model.ln_pre.state_dict()
+        # nosemgrep: trailofbits.python.pickles-in-pytorch.pickles-in-pytorch
         torch.save(save_dict, save_dir_path / subfolder / "torch_artifacts.pth")
 
     @classmethod

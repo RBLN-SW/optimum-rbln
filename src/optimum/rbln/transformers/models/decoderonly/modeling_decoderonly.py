@@ -77,7 +77,8 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
 
     def __post_init__(self, **kwargs):
         if self.rbln_config.use_inputs_embeds:
-            artifacts = torch.load(self.model_save_dir / self.subfolder / "torch_artifacts.pth", weights_only=False)
+            # nosemgrep: trailofbits.python.pickles-in-pytorch.pickles-in-pytorch
+            artifacts = torch.load(self.model_save_dir / self.subfolder / "torch_artifacts.pth", weights_only=True)
             self.embed_tokens = self._create_embedding_layer()
             self.embed_tokens.load_state_dict(artifacts["embed_tokens"], assign=True)
         else:
@@ -193,6 +194,7 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
         if rbln_config.use_inputs_embeds:
             save_dict = {}
             save_dict["embed_tokens"] = model.get_input_embeddings().state_dict()
+            # nosemgrep: trailofbits.python.pickles-in-pytorch.pickles-in-pytorch
             torch.save(save_dict, save_dir_path / subfolder / "torch_artifacts.pth")
 
     def _create_embedding_layer(self):
@@ -410,24 +412,30 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
             head_dim = getattr(model_config, "head_dim", None) or hidden_size // num_attention_heads
             kvcache_dtype = rbln_config.dtype
             if rbln_config.quantization and rbln_config.quantization.kv_caches == "fp8":
-                kvcache_dtype = "float8_e4m3fn"
+                # fp8 KV caches are uint8 containers; the attention op is told their fp8 type.
+                kvcache_dtype = "uint8"
 
             kvcache_dtype = RBLNCompileConfig.normalize_dtype(kvcache_dtype)
             cache_metas = []
-            for i in range(num_hidden_layers * 2):
-                layer_idx = i // 2
-                name = f"past_key_values_{i}"
+            for layer_idx in range(num_hidden_layers):
                 if rbln_config.sliding_window is not None and layer_idx in rbln_config.sliding_window_layers:
-                    cache_meta = SlidingWindowAttentionKVCacheMeta.from_config(
-                        name, layer_idx, num_key_value_heads, head_dim, kvcache_dtype, rbln_config
-                    )
+                    meta_cls = SlidingWindowAttentionKVCacheMeta
                 else:
-                    cache_meta = FullAttentionKVCacheMeta.from_config(
-                        name, layer_idx, num_key_value_heads, head_dim, kvcache_dtype, rbln_config
+                    meta_cls = FullAttentionKVCacheMeta
+                cache_metas.append(
+                    meta_cls.from_config(
+                        f"past_key_values_{layer_idx}",
+                        layer_idx,
+                        num_key_value_heads,
+                        head_dim,
+                        kvcache_dtype,
+                        rbln_config,
                     )
-                cache_metas.append(cache_meta)
-                input_info.append((name, cache_meta.compile_shape, cache_meta.dtype))
+                )
 
+            input_info.extend(
+                (cache_meta.name, cache_meta.compile_shape, cache_meta.dtype) for cache_meta in cache_metas
+            )
             rbln_config.cache_metas.extend(cache_metas)
 
         return input_info

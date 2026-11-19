@@ -134,7 +134,8 @@ class RBLNTimeSeriesTransformerForPrediction(RBLNModel):
 
         with no_init_weights():
             self._origin_model = TimeSeriesTransformerForPrediction._from_config(self.config)
-        artifacts = torch.load(self.model_save_dir / self.subfolder / "torch_artifacts.pth", weights_only=False)
+        # nosemgrep: trailofbits.python.pickles-in-pytorch.pickles-in-pytorch
+        artifacts = torch.load(self.model_save_dir / self.subfolder / "torch_artifacts.pth", weights_only=True)
         self._origin_model.model.embedder.load_state_dict(artifacts["embedder"], assign=True)
         self.encoder = RBLNRuntimeEncoder(
             runtime=self.model[0],
@@ -219,6 +220,7 @@ class RBLNTimeSeriesTransformerForPrediction(RBLNModel):
 
         save_dict = {}
         save_dict["embedder"] = model.model.embedder.state_dict()
+        # nosemgrep: trailofbits.python.pickles-in-pytorch.pickles-in-pytorch
         torch.save(save_dict, save_dir_path / subfolder / "torch_artifacts.pth")
 
     @classmethod
@@ -292,15 +294,17 @@ class RBLNTimeSeriesTransformerForPrediction(RBLNModel):
                     f"self_key_value_states_{i}",
                     [
                         1,
+                        2,
                         model_config.decoder_attention_heads
                         * rbln_config.num_parallel_samples
                         * rbln_config.batch_size,
+                        1,
                         rbln_config.dec_max_seq_len,
                         model_config.d_model // model_config.encoder_attention_heads,
                     ],
                     rbln_config.dtype,
                 )
-                for i in range(model_config.decoder_layers * 2)
+                for i in range(model_config.decoder_layers)
             ]
         )
         enc_compile_config = RBLNCompileConfig(compiled_model_name="encoder", input_info=enc_input_info)

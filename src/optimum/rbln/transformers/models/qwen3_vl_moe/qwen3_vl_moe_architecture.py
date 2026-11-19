@@ -28,6 +28,7 @@ from ..qwen3_vl.qwen3_vl_architecture import (
     Qwen3VLAttention,
     Qwen3VLDecoderOnlyForCausalLM,
     Qwen3VLDecoderOnlyModel,
+    Qwen3VLDeepstackLayerMixin,
     Qwen3VLVisionBlock,
     Qwen3VLVisionModelWrapper,
 )
@@ -45,7 +46,7 @@ class Qwen3VLMoeAttention(Qwen3VLAttention):
     pass
 
 
-class Qwen3VLMoeLayer(DecoderOnlyLayer):
+class Qwen3VLMoeLayer(Qwen3VLDeepstackLayerMixin, DecoderOnlyLayer):
     def __init__(self, layer, self_attn: DecoderOnlyAttention, lora_config: RBLNLoRAConfig | None = None):
         super().__init__(layer, self_attn, lora_config)
         self.mlp = (
@@ -101,7 +102,7 @@ class Qwen3VLMoeMLP(nn.Module):
         masked_routing_weight = compute_masked_routing_weight_softmax_first(
             router_logits, top_k=self.top_k, renormalize=self.norm_topk_prob
         )
-        return torch.ops.rbln_custom_ops.custom_moe_glu(
+        return torch.ops.rbln_custom_ops.custom_moe(
             hidden_states=x,
             gate_proj_weight=self.gate_proj_weight,
             up_proj_weight=self.up_proj_weight,

@@ -27,6 +27,7 @@ from ....utils.logging import get_logger
 from ....utils.model_utils import get_rbln_model_cls
 from ...configurations import RBLNControlNetModelConfig
 from ...modeling_diffusers import RBLNDiffusionMixin, RBLNDiffusionMixinConfig
+from ..nested_region import DIFFUSERS_REGION_CLASSES, wrap_diffusers_modules
 
 
 if TYPE_CHECKING:
@@ -121,6 +122,8 @@ class RBLNControlNetModel(RBLNModel):
 
     @classmethod
     def _wrap_model_if_needed(cls, model: torch.nn.Module, rbln_config: RBLNModelConfig) -> torch.nn.Module:
+        if rbln_config.nested_compile_region:
+            model = wrap_diffusers_modules(model, DIFFUSERS_REGION_CLASSES)
         use_encoder_hidden_states = False
         for down_block in model.down_blocks:
             if use_encoder_hidden_states := getattr(down_block, "has_cross_attention", False):
@@ -130,6 +133,18 @@ class RBLNControlNetModel(RBLNModel):
             return _ControlNetModel_Cross_Attention(model).eval()
         else:
             return _ControlNetModel(model).eval()
+
+    @classmethod
+    def get_compiled_model(cls, model: torch.nn.Module, rbln_config: RBLNControlNetModelConfig):
+        if not rbln_config.nested_compile_region:
+            return super().get_compiled_model(model, rbln_config)
+        return cls.compile(
+            cls._wrap_model_if_needed(model, rbln_config),
+            rbln_compile_config=rbln_config.compile_cfgs[0],
+            create_runtimes=rbln_config.create_runtimes,
+            device=rbln_config.device,
+            model_trace_method="export_strict",
+        )
 
     @classmethod
     def update_rbln_config_using_pipe(

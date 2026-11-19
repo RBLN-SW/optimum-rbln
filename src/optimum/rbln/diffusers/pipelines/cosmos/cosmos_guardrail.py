@@ -245,6 +245,7 @@ class RBLNVideoSafetyModel(VideoSafetyModel):
             checkpoint_dir = (pathlib.Path(checkpoint_dir) / "video_content_safety_filter").as_posix()
 
             safety_filter_local_path = os.path.join(checkpoint_dir, "safety_filter.pt")
+            # nosemgrep: trailofbits.python.pickles-in-pytorch.pickles-in-pytorch
             checkpoint = torch.load(safety_filter_local_path, weights_only=True)
             network.load_state_dict({k.replace("network.", ""): v for k, v in checkpoint["model"].items()})
             normalize_contiguous_(network)

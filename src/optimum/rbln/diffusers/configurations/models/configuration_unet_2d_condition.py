@@ -25,7 +25,7 @@ class RBLNUNet2DConditionModelConfig(RBLNModelConfig):
     for UNet2DCondition models used in diffusion-based image generation.
     """
 
-    subclass_non_save_attributes = ["_batch_size_is_specified"]
+    subclass_non_save_attributes = ["_batch_size_is_specified", "nested_compile_region"]
 
     def __init__(
         self,
@@ -38,6 +38,7 @@ class RBLNUNet2DConditionModelConfig(RBLNModelConfig):
         in_features: int | None = None,
         text_model_hidden_size: int | None = None,
         image_model_hidden_size: int | None = None,
+        nested_compile_region: bool = False,
         **kwargs: Any,
     ):
         """
@@ -52,12 +53,16 @@ class RBLNUNet2DConditionModelConfig(RBLNModelConfig):
             in_features (int | None): Number of input features for the model.
             text_model_hidden_size (int | None): Hidden size of the text encoder model.
             image_model_hidden_size (int | None): Hidden size of the image encoder model.
+            nested_compile_region (bool): Preserve repeated blocks as nested compile regions using strict export.
+                Defaults to False. This compile-time option is not saved in `rbln_config.json`
+                and does not guarantee that the compiler forms a loop.
             kwargs: Additional arguments passed to the parent RBLNModelConfig.
 
         Raises:
             ValueError: If batch_size is not a positive integer.
         """
         super().__init__(**kwargs)
+        self.nested_compile_region = nested_compile_region
         self._batch_size_is_specified = batch_size is not None
 
         self.batch_size = batch_size or 1

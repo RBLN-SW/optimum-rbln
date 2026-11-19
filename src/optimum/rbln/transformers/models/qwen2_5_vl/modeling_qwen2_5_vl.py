@@ -84,7 +84,8 @@ class RBLNQwen2_5_VisionTransformerPretrainedModel(RBLNModel):
                 in_channels=config.in_channels,
                 embed_dim=config.hidden_size,
             )
-        artifacts = torch.load(self.model_save_dir / self.subfolder / "torch_artifacts.pth", weights_only=False)
+        # nosemgrep: trailofbits.python.pickles-in-pytorch.pickles-in-pytorch
+        artifacts = torch.load(self.model_save_dir / self.subfolder / "torch_artifacts.pth", weights_only=True)
         self.patch_embed.load_state_dict(artifacts["patch_embed"])
 
     @classmethod
@@ -97,6 +98,7 @@ class RBLNQwen2_5_VisionTransformerPretrainedModel(RBLNModel):
     ):
         save_dict = {}
         save_dict["patch_embed"] = model.patch_embed.state_dict()
+        # nosemgrep: trailofbits.python.pickles-in-pytorch.pickles-in-pytorch
         torch.save(save_dict, save_dir_path / subfolder / "torch_artifacts.pth")
 
     @classmethod
@@ -104,6 +106,21 @@ class RBLNQwen2_5_VisionTransformerPretrainedModel(RBLNModel):
         cls, model: "PreTrainedModel", rbln_config: RBLNQwen2_5_VisionTransformerPretrainedModelConfig
     ):
         return Qwen2_5_VisionTransformerWrapper(model, rbln_config).eval()
+
+    @classmethod
+    def get_compiled_model(
+        cls, model: "PreTrainedModel", rbln_config: RBLNQwen2_5_VisionTransformerPretrainedModelConfig
+    ):
+        if not rbln_config.nested_compile_region:
+            return super().get_compiled_model(model, rbln_config)
+        # Only a strict export keeps the block regions; the default trace inlines them.
+        return cls.compile(
+            cls._wrap_model_if_needed(model, rbln_config),
+            rbln_compile_config=rbln_config.compile_cfgs[0],
+            create_runtimes=rbln_config.create_runtimes,
+            device=rbln_config.device,
+            model_trace_method="export_strict",
+        )
 
     def __getattr__(self, __name: str) -> Any:
         def redirect(func):

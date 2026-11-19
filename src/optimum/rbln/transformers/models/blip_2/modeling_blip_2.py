@@ -337,6 +337,7 @@ class RBLNBlip2ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMixi
 
         save_dict = {}
         save_dict["query_tokens"] = model.query_tokens
+        # nosemgrep: trailofbits.python.pickles-in-pytorch.pickles-in-pytorch
         torch.save(save_dict, save_dir_path / subfolder / "query_tokens.pth")
 
     def __post_init__(self, **kwargs):
@@ -345,7 +346,8 @@ class RBLNBlip2ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMixi
         self.qformer = self.rbln_submodules[1]
         self.language_projection = LoopProjector(self.model[0])
 
-        artifacts = torch.load(self.model_save_dir / self.subfolder / "query_tokens.pth", weights_only=False)
+        # nosemgrep: trailofbits.python.pickles-in-pytorch.pickles-in-pytorch
+        artifacts = torch.load(self.model_save_dir / self.subfolder / "query_tokens.pth", weights_only=True)
         self.query_tokens = artifacts["query_tokens"]
 
     def get_attn_impl(self) -> str:

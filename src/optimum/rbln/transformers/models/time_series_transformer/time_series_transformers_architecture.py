@@ -84,7 +84,9 @@ class TimeSeriesTransformersEncoderWrapper(torch.nn.Module):
         # 3. update cross_attention's past_key_value to the device-dram for optimization.
         bidx = torch.tensor(0, dtype=torch.int16)
         axis = torch.tensor(1, dtype=torch.int16)
-        enc_output = torch.ops.rbln_custom_ops.rbln_cache_update(cross_key_values, cross_kv, bidx, axis)
+        enc_output = torch.ops.rbln_custom_ops.rbln_cache_update(
+            cache=cross_key_values, state=cross_kv, position=bidx, axis=axis
+        )
 
         return enc_output
 
@@ -115,13 +117,11 @@ class TimeSeriesTransformersDecoderWrapper(torch.nn.Module):
         cache_position: torch.Tensor,
         block_tables: torch.Tensor,
         cross_kv_cache: torch.Tensor,  # batch_size, num_heads, context_length, d_kv
-        *self_kv_cache: torch.Tensor,  # batch_size * num_parallel_samples, num_heads, prediction_length, d_kv
+        *self_kv_cache: torch.Tensor,  # 1, 2, batch_size * num_parallel_samples * num_heads, 1, prediction_length, d_kv
     ) -> tuple[torch.FloatTensor] | Seq2SeqLMOutput:
         # prepare past_key_values
-        self_past_key_values = ()
         cross_past_key_values = ()
         for i in range(0, self.num_layers * 2, 2):
-            self_past_key_values = (*self_past_key_values, (self_kv_cache[i], self_kv_cache[i + 1]))
             cross_past_key_values = (*cross_past_key_values, (cross_kv_cache[i], cross_kv_cache[i + 1]))
 
         # Decode
@@ -130,7 +130,7 @@ class TimeSeriesTransformersDecoderWrapper(torch.nn.Module):
             attention_mask=decoder_attention_mask,
             cache_position=cache_position,
             block_tables=block_tables,
-            self_past_key_values=self_past_key_values,
+            self_past_key_values=self_kv_cache,
             cross_past_key_values=cross_past_key_values,
         )
 
@@ -209,7 +209,7 @@ class TimeSeriesTransformersDecoderLayer(nn.Module):
         self,
         hidden_states: torch.Tensor,
         attention_mask: torch.Tensor | None = None,
-        self_past_key_value: tuple[torch.Tensor] | None = None,
+        self_past_key_value: torch.Tensor | None = None,
         cross_past_key_value: tuple[torch.Tensor] | None = None,
         cache_position: torch.Tensor | None = None,
         block_tables: torch.Tensor | None = None,
@@ -270,7 +270,7 @@ class TimeSeriesTransformersSelfAttention(TimeSeriesTransformersAttention):
     def forward(
         self,
         hidden_states: torch.Tensor,
-        past_key_value: tuple[torch.Tensor] | None = None,
+        past_key_value: torch.Tensor | None = None,
         attention_mask: torch.Tensor | None = None,
         cache_position: torch.Tensor | None = None,
         block_tables: torch.Tensor | None = None,
@@ -282,18 +282,17 @@ class TimeSeriesTransformersSelfAttention(TimeSeriesTransformersAttention):
         key_states = self._shape(self.k_proj(hidden_states), -1, bsz)
         value_states = self._shape(self.v_proj(hidden_states), -1, bsz)
 
-        block_size = past_key_value[0].shape[-2]
-        attn_output = torch.ops.rbln_custom_ops.paged_add_softmax_attn_decode(
+        scale = torch.tensor(1.0, dtype=query_states.dtype)
+        attn_output = torch.ops.rbln_custom_ops.gqa_bias_decode(
             q=query_states,
             k=key_states,
             v=value_states,
-            mask=attention_mask.unsqueeze(2),
-            kcache=past_key_value[0].view(1, bsz * self.num_heads, 1, -1, self.head_dim),
-            vcache=past_key_value[1].view(1, bsz * self.num_heads, 1, -1, self.head_dim),
-            seq=cache_position.expand(bsz, 1),
-            scale=torch.tensor(1.0, dtype=query_states.dtype),  # scale
-            block_table=block_tables,
-            block_size=block_size,
+            kv_cache=past_key_value,
+            attn_bias=attention_mask.unsqueeze(2),
+            seq_idx=cache_position.expand(bsz, 1),
+            scale=scale,
+            block_tables=block_tables,
+            dummy=scale,
         )
 
         attn_output = attn_output.view(bsz, self.num_heads, tgt_len, self.head_dim)

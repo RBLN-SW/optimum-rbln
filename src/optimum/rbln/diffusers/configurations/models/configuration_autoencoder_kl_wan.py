@@ -24,6 +24,8 @@ logger = get_logger(__name__)
 class RBLNAutoencoderKLWanConfig(RBLNModelConfig):
     """Configuration class for RBLN Wan Variational Autoencoder (VAE) models."""
 
+    subclass_non_save_attributes = ["nested_compile_region"]
+
     def __init__(
         self,
         batch_size: int | None = None,
@@ -35,6 +37,7 @@ class RBLNAutoencoderKLWanConfig(RBLNModelConfig):
         vae_scale_factor_temporal: int | None = None,
         vae_scale_factor_spatial: int | None = None,
         use_slicing: bool = True,
+        nested_compile_region: bool = False,
         **kwargs: Any,
     ):
         """
@@ -57,12 +60,16 @@ class RBLNAutoencoderKLWanConfig(RBLNModelConfig):
                 Determines how much smaller the latent representations are compared to the original videos.
             use_slicing (bool): Run batched requests one sample at a time on the batch-1 compiled graphs.
                 Defaults to True; a batch_size > 1 request is normalized to 1 with a warning.
+            nested_compile_region (bool): Preserve repeated blocks as nested compile regions using strict export.
+                Defaults to False. This compile-time option is not saved in `rbln_config.json`
+                and does not guarantee that the compiler forms a loop.
             kwargs: Additional arguments passed to the parent RBLNModelConfig.
 
         Raises:
             ValueError: If batch_size is not a positive integer.
         """
         super().__init__(**kwargs)
+        self.nested_compile_region = nested_compile_region
         self.use_slicing = use_slicing
         # The Wan VAE decoder's working set is already near the device limit at full
         # resolution, so the graphs are always compiled at batch_size=1 and batched

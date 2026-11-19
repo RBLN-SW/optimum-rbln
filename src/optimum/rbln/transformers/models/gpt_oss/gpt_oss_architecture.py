@@ -27,6 +27,11 @@ from ..decoderonly.decoderonly_architecture import (
 )
 
 
+# custom_moe's weight_dtype for fp4 weights packed two values a byte in a uint8 container;
+# the E8M0 (uint8) scales make it MXFP4.
+_MXFP4_WEIGHT_DTYPE = "float4_e2m1fn"
+
+
 class RBLNGptOssWrapper(DecoderOnlyWrapper):
     def get_rbln_layer_class(self):
         return RBLNGptOssLayerRegion if self.rbln_config.nested_compile_region else RBLNGptOssLayer
@@ -56,7 +61,7 @@ class RBLNGptOssTopKRouter(nn.Module):
 
 
 def split_interleaved_experts(model: nn.Module, gate_up_blocks: torch.Tensor, gate_up_scales: torch.Tensor):
-    # mxfp4 GPT-OSS interleaves gate|up along dim 1 (even rows gate, odd rows up); custom_moe_glu_mxfp4 takes
+    # mxfp4 GPT-OSS interleaves gate|up along dim 1 (even rows gate, odd rows up); custom_moe takes
     # them separately, so the strided halves are copied to be contiguous. The fused source is released
     # afterwards: the HF experts module is not run once wrapped, and keeping it would double host memory.
     num_experts, intermediate_size = model.num_experts, model.intermediate_size
@@ -123,26 +128,28 @@ class RBLNGptOssExperts(nn.Module):
         self.register_buffer("down_proj_scales", down_scales)
         self.register_buffer("down_proj_bias", model.down_proj_bias.data)
 
-        self.alpha = model.alpha  # 1.702
-        self.limit = model.limit  # 7.0
+        self.alpha = float(model.alpha)  # 1.702
+        self.limit = float(model.limit)  # 7.0
         self.top_k = top_k
 
     def forward(self, hidden_states: torch.Tensor, router_logits: torch.Tensor) -> torch.Tensor:
         masked_routing_weight = compute_masked_routing_weight_topk_first(router_logits, top_k=self.top_k)
-        return torch.ops.rbln_custom_ops.custom_moe_glu_mxfp4(
+        return torch.ops.rbln_custom_ops.custom_moe(
             hidden_states=hidden_states,
-            gate_proj_blocks=self.gate_proj_blocks,
-            gate_proj_scales=self.gate_proj_scales,
-            gate_proj_bias=self.gate_proj_bias,
-            up_proj_blocks=self.up_proj_blocks,
-            up_proj_scales=self.up_proj_scales,
-            up_proj_bias=self.up_proj_bias,
-            down_proj_blocks=self.down_proj_blocks,
-            down_proj_scales=self.down_proj_scales,
-            down_proj_bias=self.down_proj_bias,
+            gate_proj_weight=self.gate_proj_blocks,
+            up_proj_weight=self.up_proj_blocks,
+            down_proj_weight=self.down_proj_blocks,
             masked_routing_weight=masked_routing_weight,
-            alpha=torch.tensor(self.alpha, dtype=hidden_states.dtype),
-            limit=torch.tensor(self.limit, dtype=hidden_states.dtype),
+            hidden_act="swigluoai",
+            gate_proj_scale=self.gate_proj_scales,
+            up_proj_scale=self.up_proj_scales,
+            down_proj_scale=self.down_proj_scales,
+            weight_dtype=_MXFP4_WEIGHT_DTYPE,
+            gate_proj_bias=self.gate_proj_bias,
+            up_proj_bias=self.up_proj_bias,
+            down_proj_bias=self.down_proj_bias,
+            swiglu_alpha=self.alpha,
+            swiglu_limit=self.limit,
         )
 
 

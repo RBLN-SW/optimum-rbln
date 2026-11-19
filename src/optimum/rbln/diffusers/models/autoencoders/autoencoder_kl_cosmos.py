@@ -17,7 +17,11 @@ from typing import TYPE_CHECKING, Any
 
 import rebel
 import torch
-from diffusers.models.autoencoders.autoencoder_kl_cosmos import AutoencoderKLCosmos, CosmosCausalConv3d
+from diffusers.models.autoencoders.autoencoder_kl_cosmos import (
+    AutoencoderKLCosmos,
+    CosmosCausalConv3d,
+    CosmosResnetBlock3d,
+)
 from diffusers.models.autoencoders.vae import DecoderOutput
 from diffusers.models.modeling_outputs import AutoencoderKLOutput
 from torch.nn import functional as F
@@ -26,7 +30,9 @@ from ....configuration_utils import RBLNCompileConfig
 from ....modeling import RBLNModel
 from ....modeling_base import Preprocessor
 from ....utils.logging import get_logger
+from ....utils.nested_compile_region import NestedCompileRegionMixin
 from ...configurations import RBLNAutoencoderKLCosmosConfig
+from ..nested_region import DiffusersModuleWrapper, wrap_diffusers_modules
 from .vae import RBLNRuntimeCosmosVAEDecoder, RBLNRuntimeCosmosVAEEncoder, _VAECosmosDecoder, _VAECosmosEncoder
 
 
@@ -36,6 +42,10 @@ if TYPE_CHECKING:
     from ...modeling_diffusers import RBLNDiffusionMixin, RBLNDiffusionMixinConfig
 
 logger = get_logger(__name__)
+
+
+class CosmosResnetBlock3dRegion(NestedCompileRegionMixin, DiffusersModuleWrapper, CosmosResnetBlock3d):
+    pass
 
 
 class RBLNAutoencoderKLCosmos(RBLNModel):
@@ -85,6 +95,9 @@ class RBLNAutoencoderKLCosmos(RBLNModel):
     def get_compiled_model(
         cls, model, rbln_config: RBLNAutoencoderKLCosmosConfig
     ) -> dict[str, rebel.RBLNCompiledModel]:
+        if rbln_config.nested_compile_region:
+            model = wrap_diffusers_modules(model, {CosmosResnetBlock3d: CosmosResnetBlock3dRegion})
+
         def replaced_forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
             if self.temporal_pad != 0:
                 hidden_states_prev = hidden_states[:, :, :1, ...].repeat(1, 1, self.temporal_pad, 1, 1)
@@ -104,6 +117,7 @@ class RBLNAutoencoderKLCosmos(RBLNModel):
                     rbln_compile_config=rbln_config.compile_cfgs[0],
                     create_runtimes=rbln_config.create_runtimes,
                     device=rbln_config.device_map["encoder"],
+                    **({"model_trace_method": "export_strict"} if rbln_config.nested_compile_region else {}),
                 )
                 compiled_models["encoder"] = enc_compiled_model
             else:
@@ -113,6 +127,7 @@ class RBLNAutoencoderKLCosmos(RBLNModel):
                 rbln_compile_config=rbln_config.compile_cfgs[-1],
                 create_runtimes=rbln_config.create_runtimes,
                 device=rbln_config.device_map["decoder"],
+                **({"model_trace_method": "export_strict"} if rbln_config.nested_compile_region else {}),
             )
             compiled_models["decoder"] = dec_compiled_model
 
