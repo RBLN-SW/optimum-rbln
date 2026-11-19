@@ -6,7 +6,15 @@ import unittest
 import pytest
 import torch
 from PIL import Image
-from transformers import AutoConfig, BertConfig, BertModel, T5EncoderModel, XLMRobertaConfig, XLMRobertaModel
+from transformers import (
+    AutoConfig,
+    AutoProcessor,
+    BertConfig,
+    BertModel,
+    T5EncoderModel,
+    XLMRobertaConfig,
+    XLMRobertaModel,
+)
 
 from optimum.rbln import (
     RBLNASTForAudioClassification,
@@ -19,6 +27,7 @@ from optimum.rbln import (
     RBLNColQwen2ForRetrieval,
     RBLNDistilBertForQuestionAnswering,
     RBLNDPTForDepthEstimation,
+    RBLNFlorence2ForConditionalGeneration,
     RBLNGroundingDinoForObjectDetection,
     RBLNModernBertForMaskedLM,
     RBLNModernBertModel,
@@ -41,6 +50,7 @@ from optimum.rbln.transformers.models.auto.modeling_auto import (
     RBLNAutoModelForCTC,
     RBLNAutoModelForDepthEstimation,
     RBLNAutoModelForImageClassification,
+    RBLNAutoModelForImageTextToText,
     RBLNAutoModelForMaskedLM,
     RBLNAutoModelForQuestionAnswering,
     RBLNAutoModelForSequenceClassification,
@@ -377,6 +387,41 @@ class TestXLMRobertaModel(BaseTest.TestModel):
         "vocab_size": 1024,
         "ignore_mismatched_sizes": True,
     }
+
+
+class TestFlorence2ForConditionalGeneration(BaseTest.TestModel):
+    RBLN_AUTO_CLASS = RBLNAutoModelForImageTextToText
+    RBLN_CLASS = RBLNFlorence2ForConditionalGeneration
+    HF_MODEL_ID = "florence-community/Florence-2-base"
+    RBLN_CLASS_KWARGS = {"rbln_config": {"enc_max_seq_len": 640, "dec_max_seq_len": 64}}
+    HF_CONFIG_KWARGS = {
+        "vision_config": {
+            "depths": [1, 1, 1, 1],
+            "embed_dim": [8, 16, 32, 64],
+            "num_heads": [1, 2, 4, 8],
+            "num_groups": [1, 2, 4, 8],
+            "window_size": 2,
+            "projection_dim": 32,
+        },
+        "text_config": {
+            "model_type": "bart",
+            "d_model": 32,
+            "encoder_layers": 1,
+            "decoder_layers": 1,
+            "encoder_attention_heads": 4,
+            "decoder_attention_heads": 4,
+            "encoder_ffn_dim": 64,
+            "decoder_ffn_dim": 64,
+            "vocab_size": 51328,
+            "max_position_embeddings": 640,
+        },
+        "ignore_mismatched_sizes": True,
+    }
+
+    def get_inputs(self):
+        processor = AutoProcessor.from_pretrained(self.HF_MODEL_ID)
+        inputs = processor(text="<CAPTION>", images=Image.new("RGB", (768, 768)), return_tensors="pt")
+        return {**inputs, "max_new_tokens": 2, "num_beams": 1, "do_sample": False}
 
 
 class TestMPNetModel(BaseTest.TestModel):
