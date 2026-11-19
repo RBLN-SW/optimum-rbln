@@ -82,7 +82,8 @@ class RBLNIdefics3VisionTransformer(RBLNModel):
     _tp_support = False
 
     def __post_init__(self, **kwargs):
-        artifacts = torch.load(self.model_save_dir / self.subfolder / "torch_artifacts.pth", weights_only=False)
+        # nosemgrep: trailofbits.python.pickles-in-pytorch.pickles-in-pytorch
+        artifacts = torch.load(self.model_save_dir / self.subfolder / "torch_artifacts.pth", weights_only=True)
         with no_init_weights():
             self.embeddings = Idefics3VisionEmbeddings(self.config)
         self.embeddings.load_state_dict(artifacts["embeddings"], assign=True)
@@ -103,6 +104,7 @@ class RBLNIdefics3VisionTransformer(RBLNModel):
 
         save_dict = {}
         save_dict["embeddings"] = model.get_input_embeddings().state_dict()
+        # nosemgrep: trailofbits.python.pickles-in-pytorch.pickles-in-pytorch
         torch.save(save_dict, save_dir_path / subfolder / "torch_artifacts.pth")
 
     def get_input_embeddings(self):

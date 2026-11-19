@@ -5,6 +5,7 @@ import os
 import tempfile
 import unittest
 import warnings
+from unittest.mock import patch
 
 import pytest
 import torch
@@ -25,6 +26,7 @@ from transformers import (
     Qwen3VLMoeConfig,
     Qwen3VLMoeForConditionalGeneration,
 )
+from transformers.image_utils import load_image
 
 from optimum.rbln import (
     RBLNAutoModel,
@@ -46,6 +48,8 @@ from optimum.rbln import (
     RBLNGraniteForCausalLM,
     RBLNGraniteModel,
     RBLNIdefics3ForConditionalGeneration,
+    RBLNLlama4ForCausalLM,
+    RBLNLlama4ForConditionalGeneration,
     RBLNLlamaForCausalLM,
     RBLNLlamaModel,
     RBLNLlavaForConditionalGeneration,
@@ -86,6 +90,7 @@ from optimum.rbln import (
     RBLNT5ForConditionalGeneration,
 )
 from optimum.rbln.configuration_utils import ContextRblnConfig
+from optimum.rbln.transformers.models.decoderonly import lora_architecture
 
 from .test_base import BaseTest, DisallowedTestBase, TestLevel
 
@@ -662,6 +667,39 @@ class TestLlavaForConditionalGeneration(LLMTest.TestLLM):
             },
             **self.HF_CONFIG_KWARGS,
         )
+
+
+class TestLlama4ForCausalLM(LLMTest.TestLLM):
+    RBLN_CLASS = RBLNLlama4ForCausalLM
+    HF_MODEL_ID = "rbln/tiny-Llama4ForConditionalGeneration"
+
+    def get_tokenizer(self):
+        # The tiny checkpoint ships no tokenizer; use the one of the model it mimics.
+        PreProcessor = AutoProcessor if self.IS_MULTIMODAL else AutoTokenizer
+        if getattr(self, "_tokenizer", None) is None:
+            self._tokenizer = PreProcessor.from_pretrained(
+                "meta-llama/Llama-Guard-4-12B", **self.HF_CONFIG_KWARGS_PREPROCESSOR
+            )
+        return self._tokenizer
+
+
+class TestLlama4ForConditionalGeneration(TestLlama4ForCausalLM):
+    RBLN_AUTO_CLASS = RBLNAutoModelForImageTextToText
+    RBLN_CLASS = RBLNLlama4ForConditionalGeneration
+    PROMPT = (
+        "<|begin_of_text|><|header_start|>user<|header_end|>\n\n<|image|>Describe the image.<|eot|>"
+        "<|header_start|>assistant<|header_end|>\n\n"
+    )
+    IS_MULTIMODAL = True
+
+    def get_inputs(self):
+        tokenizer = self.get_tokenizer()
+        image = load_image("https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/bee.jpg")
+        # Five tiles: two calls of the default vision batch size 4, the second one padded.
+        inputs = tokenizer(images=[image], text=[self.PROMPT], return_tensors="pt", padding=True, max_patches=4)
+        inputs["max_new_tokens"] = 20
+        inputs["do_sample"] = False
+        return inputs
 
 
 class TestPegasusModel(LLMTest.TestLLM):
@@ -1435,6 +1473,61 @@ class TestMultiLora(LLMTest.TestLLM):
 
     def get_inputs(self):
         self.model.set_adapter(["abliterated"])
+        return super().get_inputs()
+
+
+class TestLlama4ForCausalLM_Lora(TestLlama4ForCausalLM):
+    @classmethod
+    def setUpClass(cls):
+        if os.environ.get("REUSE_ARTIFACTS_PATH") is not None:
+            # BC reuse loads the artifact and generates: the Llama 4 part is covered by TestLlama4ForCausalLM and
+            # the LoRA part (config reload, adapter selection) by TestMultiLora. The temporary adapter is gone by then.
+            raise unittest.SkipTest("Covered by TestLlama4ForCausalLM and TestMultiLora on artifact reuse")
+        # Zero LoRA weights under the keys PEFT writes for Llama4ForConditionalGeneration: the nested
+        # language model prefix and the feed_forward MLP. The loader only warns on a missing key.
+        text = AutoConfig.from_pretrained(cls.HF_MODEL_ID).get_text_config()
+        hidden, mlp = text.hidden_size, text.intermediate_size_mlp
+        q, kv = text.num_attention_heads * text.head_dim, text.num_key_value_heads * text.head_dim
+        shapes = {
+            "self_attn.q_proj": (hidden, q),
+            "self_attn.k_proj": (hidden, kv),
+            "self_attn.v_proj": (hidden, kv),
+            "self_attn.o_proj": (q, hidden),
+            "feed_forward.gate_proj": (hidden, mlp),
+            "feed_forward.up_proj": (hidden, mlp),
+            "feed_forward.down_proj": (mlp, hidden),
+        }
+        weights = {}
+        for layer_idx in range(text.num_hidden_layers):
+            for name, (in_features, out_features) in shapes.items():
+                key = f"base_model.model.language_model.model.layers.{layer_idx}.{name}"
+                weights[f"{key}.lora_A.weight"] = torch.zeros(1, in_features)
+                weights[f"{key}.lora_B.weight"] = torch.zeros(out_features, 1)
+        cls._lora_dir = tempfile.TemporaryDirectory()
+        save_file(weights, os.path.join(cls._lora_dir.name, "adapter_model.safetensors"))
+        with open(os.path.join(cls._lora_dir.name, "adapter_config.json"), "w") as f:
+            json.dump({"r": 1, "lora_alpha": 1, "target_modules": [name.split(".")[1] for name in shapes]}, f)
+        adapter = {"lora_int_id": 1, "lora_name": "zero", "lora_path": cls._lora_dir.name}
+        cls.RBLN_CLASS_KWARGS = {"rbln_config": {"lora_config": {"adapters": [adapter]}}}
+
+        logger = lora_architecture.logger
+        with patch.object(logger, "warning", wraps=logger.warning) as warning:
+            super().setUpClass()
+        cls.missing_lora_keys = [
+            call.args[0] for call in warning.call_args_list if call.args[0].startswith("No LoRA weights found")
+        ]
+
+    @classmethod
+    def tearDownClass(cls):
+        super().tearDownClass()
+        if "_lora_dir" in cls.__dict__:
+            cls._lora_dir.cleanup()
+
+    def test_lora_keys_found(self):
+        assert not self.missing_lora_keys, self.missing_lora_keys[:4]
+
+    def get_inputs(self):
+        self.model.set_adapter(["zero"])
         return super().get_inputs()
 
 

@@ -127,7 +127,8 @@ class RBLNGroundingDinoForObjectDetection(RBLNModel):
         self.decoder = self.rbln_submodules[3]
 
     def _setup_cpu_instances(self):
-        stacte_dict = torch.load(self.model_save_dir / self.subfolder / "torch_artifacts.pth", weights_only=False)
+        # nosemgrep: trailofbits.python.pickles-in-pytorch.pickles-in-pytorch
+        stacte_dict = torch.load(self.model_save_dir / self.subfolder / "torch_artifacts.pth", weights_only=True)
         with no_init_weights():
             config = self.config
             _class_embed = GroundingDinoContrastiveEmbedding(config)
@@ -246,6 +247,7 @@ class RBLNGroundingDinoForObjectDetection(RBLNModel):
         save_dict["class_embed"] = model.class_embed.state_dict()
         save_dict["bbox_embed"] = model.bbox_embed.state_dict()
 
+        # nosemgrep: trailofbits.python.pickles-in-pytorch.pickles-in-pytorch
         torch.save(save_dict, save_dir_path / subfolder / "torch_artifacts.pth")
 
     @classmethod

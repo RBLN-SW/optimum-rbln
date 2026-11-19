@@ -78,7 +78,7 @@ class MixtralBlockSparseTop2MLP(nn.Module):
         masked_routing_weight = compute_masked_routing_weight_softmax_first(
             router_logits, top_k=self.top_k, renormalize=True
         )
-        return torch.ops.rbln_custom_ops.custom_moe_glu(
+        return torch.ops.rbln_custom_ops.custom_moe(
             hidden_states=x,
             gate_proj_weight=self.w1_weight,
             up_proj_weight=self.w3_weight,

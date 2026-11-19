@@ -138,7 +138,7 @@ def test_decoder_export(monkeypatch, enabled, phase, gemma, max_seq_len):
                 for module in result.graph_module.modules()
                 if isinstance(module, torch.fx.GraphModule)
                 for node in module.graph.nodes
-                if "paged" in str(node.target) and "attn" in str(node.target)
+                if str(node.target).startswith(("rbln_custom_ops.gqa.", "rbln_custom_ops.swa_v0."))
             ]
             assert attention_nodes
             for node in attention_nodes:
@@ -197,8 +197,9 @@ def test_packed_rotary_decoder_export(enabled, phase, arch):
     if hybrid:
         text.update(
             head_dim=64,
-            linear_key_head_dim=64,
-            linear_value_head_dim=64,
+            # The gated delta rule runs on the RBLN kernel, which only has the trained head width.
+            linear_key_head_dim=128,
+            linear_value_head_dim=128,
             linear_num_key_heads=2,
             linear_num_value_heads=2,
         )
