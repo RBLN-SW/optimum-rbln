@@ -46,8 +46,8 @@ class TestFlorence2Encoder:
         self.model = Florence2ForConditionalGeneration(config).eval()
 
     def test_fused_encoder_matches_native_image_placeholders(self, monkeypatch):
-        def update_cache(cache, values, index, axis):
-            return cache.index_copy(axis.item(), index.reshape(1).long(), values)
+        def update_cache(cache, state, position, axis):
+            return cache.index_copy(axis.item(), position.reshape(1).long(), state)
 
         monkeypatch.setattr(torch.ops.rbln_custom_ops, "rbln_cache_update", update_cache)
         pixels = torch.randn(1, 3, 64, 64)

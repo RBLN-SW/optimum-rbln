@@ -64,7 +64,7 @@ class Florence2DecoderWrapper(Seq2SeqDecoderWrapper):
         decoder = model.model.language_model.get_decoder()
         new_layers = []
         for layer in decoder.layers:
-            self_attn = BartSelfAttention(layer.self_attn, use_attention_mask=self.use_attention_mask)
+            self_attn = BartSelfAttention(layer.self_attn)
             cross_attn = BartCrossAttention(layer.encoder_attn)
             new_layers.append(BartDecoderLayer(layer, self_attn, cross_attn))
 
