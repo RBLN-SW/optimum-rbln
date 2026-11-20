@@ -81,12 +81,15 @@ class RBLNGroundingDinoTextModel(RBLNBertModel):
 
         batch_size = rbln_config.batch_size
         max_text_len = rbln_config.max_text_len
-        input_info = [
-            ("input_ids", [batch_size, max_text_len], "int64"),
-            ("attention_mask", [batch_size, 1, max_text_len, max_text_len], rbln_config.dtype),
-            ("token_type_ids", [batch_size, max_text_len], "int64"),
-            ("position_ids", [batch_size, max_text_len], "int64"),
-        ]
+        rbln_config.model_input_names = list(cls.rbln_model_input_names)
+        cls._drop_unused_token_type_ids(model_config, rbln_config)
+        all_input_info = {
+            "input_ids": ("input_ids", [batch_size, max_text_len], "int64"),
+            "attention_mask": ("attention_mask", [batch_size, 1, max_text_len, max_text_len], rbln_config.dtype),
+            "token_type_ids": ("token_type_ids", [batch_size, max_text_len], "int64"),
+            "position_ids": ("position_ids", [batch_size, max_text_len], "int64"),
+        }
+        input_info = [all_input_info[name] for name in rbln_config.model_input_names]
         rbln_config.set_compile_cfgs([RBLNCompileConfig(input_info=input_info)])
         return rbln_config
 
@@ -336,7 +339,11 @@ class RBLNGroundingDinoForObjectDetection(RBLNModel):
 
         # Extract text features from text backbone
         text_outputs = self.text_backbone(
-            input_ids, text_backbone_attention_mask, token_type_ids, position_ids, return_dict=return_dict
+            input_ids=input_ids,
+            attention_mask=text_backbone_attention_mask,
+            token_type_ids=token_type_ids,
+            position_ids=position_ids,
+            return_dict=return_dict,
         )
         text_features = text_outputs.last_hidden_state if return_dict else text_outputs[0]
         text_features = self.text_projection(text_features)

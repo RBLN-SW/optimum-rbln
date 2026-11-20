@@ -849,6 +849,8 @@ class TestGroundingDinoModel(BaseTest.TestModel):
         }
     }
 
+    TEXT_CONFIG_KWARGS = {}
+
     @classmethod
     def setUpClass(cls):
         from transformers import GroundingDinoConfig
@@ -866,6 +868,7 @@ class TestGroundingDinoModel(BaseTest.TestModel):
                 "num_attention_heads": 2,
                 "num_hidden_layers": 1,
                 "hidden_size": 32,
+                **cls.TEXT_CONFIG_KWARGS,
             },
             backbone_config={
                 "attention_probs_dropout_prob": 0.0,
@@ -901,6 +904,22 @@ class TestGroundingDinoModel(BaseTest.TestModel):
         assert all(isinstance(output, torch.Tensor) for output in tuple_output)
         assert tuple_output[0].shape == dict_output.logits.shape
         assert tuple_output[1].shape == dict_output.pred_boxes.shape
+
+
+class TestGroundingDinoModelTokenTypeIds(TestGroundingDinoModel):
+    # The BERT text backbone has `type_vocab_size == 2`, so all 4 text inputs are compiled
+    # and `token_type_ids` is actually passed.
+    TEXT_CONFIG_KWARGS = {"type_vocab_size": 2}
+    GENERATION_KWARGS = {
+        **TestGroundingDinoModel.GENERATION_KWARGS,
+        "token_type_ids": torch.zeros(1, 256, dtype=torch.int64),
+    }
+
+
+class TestGroundingDinoModelSingleTokenType(TestGroundingDinoModelTokenTypeIds):
+    # A single token type drops `token_type_ids` from the compiled text backbone; a passed
+    # `token_type_ids` must be dropped in forward (omitting it is covered by `TestGroundingDinoModel`).
+    TEXT_CONFIG_KWARGS = {"type_vocab_size": 1}
 
 
 if __name__ == "__main__":

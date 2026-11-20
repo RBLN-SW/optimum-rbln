@@ -113,6 +113,26 @@ class RBLNTransformerEncoder(RBLNModel):
             )
         return None
 
+    @staticmethod
+    def _drop_unused_token_type_ids(model_config: "PretrainedConfig", rbln_config: RBLNTransformerEncoderConfig) -> None:
+        # With a single token type the lookup folds to the table's only row, so the compiler drops
+        # `token_type_ids` from the graph. Match it here, or the runtime gets one input too many.
+        type_vocab_size = getattr(model_config, "type_vocab_size", None)
+        if (
+            rbln_config.model_input_names
+            and "token_type_ids" in rbln_config.model_input_names
+            and type_vocab_size is not None
+            and type_vocab_size <= 1
+        ):
+            rbln_config.model_input_names = [
+                name for name in rbln_config.model_input_names if name != "token_type_ids"
+            ]
+            logger.warning(
+                f"Dropping `token_type_ids` from `model_input_names` because `type_vocab_size` is "
+                f"{type_vocab_size}: the model has a single token type, so `token_type_ids` cannot "
+                f"change the output. The compiled model takes {rbln_config.model_input_names}."
+            )
+
     @classmethod
     def _update_rbln_config(
         cls,
@@ -185,23 +205,7 @@ class RBLNTransformerEncoder(RBLNModel):
                 name for name in signature_params if name in rbln_config.model_input_names
             ]
 
-        # With a single token type the lookup folds to the table's only row, so the compiler drops
-        # `token_type_ids` from the graph. Match it here, or the runtime gets one input too many.
-        type_vocab_size = getattr(model_config, "type_vocab_size", None)
-        if (
-            rbln_config.model_input_names
-            and "token_type_ids" in rbln_config.model_input_names
-            and type_vocab_size is not None
-            and type_vocab_size <= 1
-        ):
-            rbln_config.model_input_names = [
-                name for name in rbln_config.model_input_names if name != "token_type_ids"
-            ]
-            logger.warning(
-                f"Dropping `token_type_ids` from `model_input_names` because `type_vocab_size` is "
-                f"{type_vocab_size}: the model has a single token type, so `token_type_ids` cannot "
-                f"change the output. The compiled model takes {rbln_config.model_input_names}."
-            )
+        cls._drop_unused_token_type_ids(model_config, rbln_config)
 
         if rbln_config.model_input_names is None or len(rbln_config.model_input_names) == 0:
             raise ValueError(
