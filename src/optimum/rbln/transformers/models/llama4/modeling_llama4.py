@@ -53,6 +53,16 @@ def _tokens_per_tile(vision_config: PretrainedConfig) -> int:
     return int(side * vision_config.pixel_shuffle_ratio) * int(side * vision_config.pixel_shuffle_ratio)
 
 
+def _normalize_layer_types(config: PretrainedConfig) -> None:
+    # Works around a transformers issue: `layer_types` is derived as `chunked_attention` for every RoPE layer even
+    # when `attention_chunk_size` is None (e.g. Llama Guard 4), which breaks cache creation. With no chunk size those
+    # layers attend fully, so mark them `full_attention`.
+    text_config = config.get_text_config()
+    layer_types = getattr(text_config, "layer_types", None)
+    if getattr(text_config, "attention_chunk_size", None) is None and layer_types:
+        text_config.layer_types = ["full_attention" if t == "chunked_attention" else t for t in layer_types]
+
+
 class RBLNLlama4ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
     """Compile and run the text decoder of Llama 4 on RBLN devices.
 
@@ -78,6 +88,10 @@ class RBLNLlama4ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
 
     _decoder_wrapper_cls = Llama4ForCausalLMWrapper
 
+    def __post_init__(self, **kwargs):
+        _normalize_layer_types(self.config)
+        return super().__post_init__(**kwargs)
+
     @classmethod
     def _update_rbln_config(
         cls,
@@ -86,6 +100,7 @@ class RBLNLlama4ForCausalLM(RBLNDecoderOnlyModelForCausalLM):
         model_config: PretrainedConfig | None = None,
         rbln_config: RBLNLlama4ForCausalLMConfig | None = None,
     ) -> RBLNLlama4ForCausalLMConfig:
+        _normalize_layer_types(model_config)
         text_config = model_config.get_text_config()
         if text_config.moe_layers:
             raise NotImplementedError("Llama 4 MoE models are not supported yet.")
@@ -211,6 +226,7 @@ class RBLNLlama4ForConditionalGeneration(RBLNModel, RBLNImageIndexedBatchSortMix
         return value
 
     def __post_init__(self, **kwargs):
+        _normalize_layer_types(self.config)
         self.vision_model, self.language_model = self.rbln_submodules
         self.multi_modal_projector = self.model[0]
         pad_token_id = self.config.get_text_config().pad_token_id
@@ -255,6 +271,7 @@ class RBLNLlama4ForConditionalGeneration(RBLNModel, RBLNImageIndexedBatchSortMix
         model_config: PretrainedConfig | None = None,
         rbln_config: RBLNLlama4ForConditionalGenerationConfig | None = None,
     ) -> RBLNLlama4ForConditionalGenerationConfig:
+        _normalize_layer_types(model_config)
         vision = model_config.vision_config
         # The projector consumes the vision adapter output; read its width from the projector itself.
         in_features = model.multi_modal_projector.linear_1.in_features
