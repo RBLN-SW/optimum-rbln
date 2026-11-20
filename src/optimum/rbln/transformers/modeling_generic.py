@@ -114,7 +114,9 @@ class RBLNTransformerEncoder(RBLNModel):
         return None
 
     @staticmethod
-    def _drop_unused_token_type_ids(model_config: "PretrainedConfig", rbln_config: RBLNTransformerEncoderConfig) -> None:
+    def _drop_unused_token_type_ids(
+        model_config: "PretrainedConfig", rbln_config: RBLNTransformerEncoderConfig
+    ) -> None:
         # With a single token type the lookup folds to the table's only row, so the compiler drops
         # `token_type_ids` from the graph. Match it here, or the runtime gets one input too many.
         type_vocab_size = getattr(model_config, "type_vocab_size", None)
