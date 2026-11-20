@@ -62,6 +62,7 @@ class CacheMeta(RBLNSerializableConfigProtocol):
             "shape": self.shape,
             "layer_type": self.layer_type,
             "is_auto": getattr(self, "is_auto", False),
+            "null_block_id": getattr(self, "null_block_id", None),
             "dtype": self.dtype,
         }
 
@@ -140,6 +141,7 @@ class FullAttentionKVCacheMeta(KVCacheMeta):
     single block and is grown to the estimated block count after compilation."""
 
     is_auto: bool
+    null_block_id: int | None = None
     layer_type: ClassVar[str] = "full_attention"
 
     @property
@@ -169,7 +171,14 @@ class FullAttentionKVCacheMeta(KVCacheMeta):
             num_blocks, is_auto = rbln_config.kvcache_num_blocks, False
         validated_num_blocks = cls._validate_num_blocks(num_blocks)
         shape = [validated_num_blocks, 2, num_key_value_heads, 1, block_size, head_dim]
-        return cls(name=name, layer_index=layer_index, shape=shape, dtype=dtype, is_auto=is_auto)
+        return cls(
+            name=name,
+            layer_index=layer_index,
+            shape=shape,
+            dtype=dtype,
+            is_auto=is_auto,
+            null_block_id=rbln_config.kvcache_null_block_id,
+        )
 
 
 @dataclass

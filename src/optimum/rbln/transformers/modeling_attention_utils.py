@@ -366,17 +366,16 @@ class RBLNDecoderOnlyFlashAttentionMixin:
             return fits, kvcache_sizes
 
         # Fast path: try maximum blocks first (most common case)
-        fits, _ = check_memory_fits(rbln_config.num_full_blocks)
+        fits, _ = check_memory_fits(rbln_config.num_max_blocks)
         if fits:
-            return rbln_config.num_full_blocks
+            return rbln_config.num_max_blocks
 
         # Slow path: binary search for optimal multiplier
         logger.debug(
-            f"[KVCache] Not enough memory for {rbln_config.num_full_blocks} blocks. "
-            f"Searching for optimal multiplier..."
+            f"[KVCache] Not enough memory for {rbln_config.num_max_blocks} blocks. Searching for optimal multiplier..."
         )
 
-        left, right = 1, rbln_config.num_full_blocks - 1
+        left, right = 1, rbln_config.num_max_blocks - 1
         multiplier = 1  # Default to minimum if no valid multiplier found
 
         while left <= right:
@@ -491,10 +490,10 @@ class RBLNDecoderOnlyFlashAttentionMixin:
                 f"({current}), which was sized to fit device DRAM; the model may fail to allocate at "
                 "runtime. Proceeding without a device-fit check."
             )
-        if target > rbln_config.num_full_blocks:
+        if target > rbln_config.num_max_blocks:
             logger.warning(
-                f"Requested kvcache_num_blocks={target} exceeds num_full_blocks "
-                f"({rbln_config.num_full_blocks}), the blocks needed to cover the full batch at "
+                f"Requested kvcache_num_blocks={target} exceeds num_max_blocks "
+                f"({rbln_config.num_max_blocks}), the blocks needed to cover the full batch at "
                 "max_seq_len; the excess blocks are never used."
             )
         for compiled_model in compiled_models.values():

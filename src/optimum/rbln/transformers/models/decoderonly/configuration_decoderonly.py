@@ -17,7 +17,8 @@ from typing import Any, Literal, get_args
 from ....configuration_utils import RBLNModelConfig
 from ....utils.deprecation import deprecate_kwarg
 from ....utils.logging import get_logger
-from ...cache_utils import CacheMeta
+from ....utils.runtime_utils import npu_is_cr13_or_later
+from ...cache_utils import CacheMeta, FullAttentionKVCacheMeta
 from ...utils.rbln_quantization import RBLNQuantizationConfig
 from .configuration_lora import RBLNLoRAConfig
 
@@ -367,13 +368,28 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
         return self.kvcache_num_blocks == 0
 
     @property
+    def kvcache_null_block_id(self) -> int | None:
+        # The CR13 sequence-CP cache store writes the rows a node does not own to this block.
+        # A compiled artifact answers for itself; None is one compiled before the block was reserved.
+        for meta in self.cache_metas:
+            if isinstance(meta, FullAttentionKVCacheMeta):
+                return meta.null_block_id
+        return 0 if npu_is_cr13_or_later(self.npu) else None
+
+    @property
     def num_full_blocks(self) -> int:
         return (self.max_seq_len // self.kvcache_block_size) * self.batch_size
 
     @property
+    def num_max_blocks(self) -> int:
+        return self.num_full_blocks + (self.kvcache_null_block_id is not None)
+
+    @property
     def num_min_blocks(self) -> int:
+        blocks_in_use = max(self.max_seq_len // self.kvcache_block_size, self.batch_size)
+        if self.kvcache_null_block_id is not None:
+            return blocks_in_use + 1
         if self.attn_impl == "flash_attn":
-            blocks_in_use = max(self.max_seq_len // self.kvcache_block_size, self.batch_size)
             return min(blocks_in_use + 1, self.num_full_blocks)
         return self.batch_size
 
