@@ -28,7 +28,6 @@ from ....configuration_utils import RBLNCompileConfig
 from ....modeling import RBLNModel
 from ....modeling_base import Preprocessor
 from ....utils.logging import get_logger
-from ....utils.runtime_utils import npu_is_cr13_or_later
 from ...cache_utils import FullAttentionKVCacheMeta, SlidingWindowAttentionKVCacheMeta
 from ...modeling_attention_utils import (
     RBLNDecoderOnlyFlashAttentionMixin,
@@ -574,13 +573,13 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
         # `validate_sliding_window` below depends on.
         rbln_config = cls._update_attention_config(model, model_config, rbln_config)
 
-        # mirror the compiler's in-memory kernel routing (rebel_compiler#13163);
-        # serialized so a loaded model knows to sort. Sorting is a batched-DECODE
+        # the compiler takes a sorted-batch decode kernel on every NPU (the in-memory one on
+        # CR13+, rebel_compiler#13163; batch_decode otherwise); serialized so a loaded model
+        # knows to sort. Sorting is a batched-DECODE
         # contract — prefill-only models run the kernel one row at a time.
         if rbln_config.requires_batch_sort is None:
             rbln_config._requires_batch_sort = (
                 rbln_config.can_generate
-                and npu_is_cr13_or_later(rbln_config.npu)
                 and rbln_config.attn_impl == "flash_attn"
                 and not rbln_config.use_attention_mask
             )
