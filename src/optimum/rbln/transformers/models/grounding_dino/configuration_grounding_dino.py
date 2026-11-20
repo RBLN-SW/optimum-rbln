@@ -22,6 +22,7 @@ class RBLNGroundingDinoTextModelConfig(RBLNModelConfig):
         self,
         batch_size: int | None = None,
         max_text_len: int | None = None,
+        model_input_names: list[str] | None = None,
         **kwargs: Any,
     ):
         """
@@ -29,6 +30,9 @@ class RBLNGroundingDinoTextModelConfig(RBLNModelConfig):
             batch_size (int | None): The batch size for text processing. Defaults to 1.
             max_text_len (int | None): Maximum text sequence length. Defaults to the
                 parent GroundingDino config's `max_text_len`.
+            model_input_names (list[str] | None): Names of the input tensors of the compiled text backbone,
+                in the order it takes them. Set at compile time; `token_type_ids` is omitted when the text
+                backbone has a single token type.
             kwargs: Additional arguments passed to the parent RBLNModelConfig.
         """
         super().__init__(**kwargs)
@@ -36,6 +40,7 @@ class RBLNGroundingDinoTextModelConfig(RBLNModelConfig):
         if not isinstance(self.batch_size, int) or self.batch_size < 0:
             raise ValueError(f"batch_size must be a positive integer, got {self.batch_size}")
         self.max_text_len = max_text_len
+        self.model_input_names = model_input_names
 
 
 class RBLNGroundingDinoForObjectDetectionConfig(RBLNImageModelConfig):

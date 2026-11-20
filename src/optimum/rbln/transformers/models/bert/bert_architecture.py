@@ -8,6 +8,11 @@ class BertModelWrapper(torch.nn.Module):
         self.rbln_config = rbln_config
 
     def forward(self, *args, **kwargs):
+        # Bind graph inputs by name: a dropped input (e.g. `token_type_ids`) must not shift the rest.
+        input_names = getattr(self.rbln_config, "model_input_names", None)
+        if input_names and len(args) == len(input_names):
+            kwargs.update(zip(input_names, args, strict=True))
+            args = ()
         output = self.model(*args, **kwargs)
         if isinstance(output, torch.Tensor):
             return output

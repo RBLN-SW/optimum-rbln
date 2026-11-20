@@ -83,6 +83,58 @@ class RBLNTransformerEncoder(RBLNModel):
 
         return TransformerEncoderWrapper(model, rbln_config).eval()
 
+    @property
+    def _compiled_input_names(self) -> list[str]:
+        # The inputs the model was compiled with, in the order the compiled graph takes them.
+        return getattr(self.rbln_config, "model_input_names", None) or self.rbln_model_input_names or []
+
+    def _takes_model_input(self, name: str) -> bool:
+        return name in self._compiled_input_names
+
+    def _order_model_inputs(self, **candidates: Any) -> list[Any]:
+        # Drop the candidates the compiled graph does not take, and order the rest as it takes them.
+        return [candidates[name] for name in self._compiled_input_names if name in candidates]
+
+    def _resolve_token_type_ids(self, token_type_ids: Any) -> Any:
+        # `token_type_ids` as the compiled graph takes it, or None when it is not a compiled input.
+        # Dropping it is lossless only when it selects the row the model would use anyway: a single
+        # token type, or all-zero ids. Anything else would silently change the output, so raise.
+        if token_type_ids is None or self._takes_model_input("token_type_ids"):
+            return token_type_ids
+
+        type_vocab_size = getattr(self.config, "type_vocab_size", None)
+        if type_vocab_size is not None and type_vocab_size > 1 and bool((token_type_ids != 0).any()):
+            raise ValueError(
+                f"`token_type_ids` was passed, but this model was compiled without it (its inputs are "
+                f"{self._compiled_input_names}). `type_vocab_size` is {type_vocab_size} and the ids "
+                f"are not all zero, so ignoring them would change the output. Recompile with "
+                f"`rbln_model_input_names={[*self._compiled_input_names, 'token_type_ids']}`, or stop "
+                f"passing `token_type_ids`."
+            )
+        return None
+
+    @staticmethod
+    def _drop_unused_token_type_ids(
+        model_config: "PretrainedConfig", rbln_config: RBLNTransformerEncoderConfig
+    ) -> None:
+        # With a single token type the lookup folds to the table's only row, so the compiler drops
+        # `token_type_ids` from the graph. Match it here, or the runtime gets one input too many.
+        type_vocab_size = getattr(model_config, "type_vocab_size", None)
+        if (
+            rbln_config.model_input_names
+            and "token_type_ids" in rbln_config.model_input_names
+            and type_vocab_size is not None
+            and type_vocab_size <= 1
+        ):
+            rbln_config.model_input_names = [
+                name for name in rbln_config.model_input_names if name != "token_type_ids"
+            ]
+            logger.warning(
+                f"Dropping `token_type_ids` from `model_input_names` because `type_vocab_size` is "
+                f"{type_vocab_size}: the model has a single token type, so `token_type_ids` cannot "
+                f"change the output. The compiled model takes {rbln_config.model_input_names}."
+            )
+
     @classmethod
     def _update_rbln_config(
         cls,
@@ -154,6 +206,8 @@ class RBLNTransformerEncoder(RBLNModel):
             rbln_config.model_input_names = [
                 name for name in signature_params if name in rbln_config.model_input_names
             ]
+
+        cls._drop_unused_token_type_ids(model_config, rbln_config)
 
         if rbln_config.model_input_names is None or len(rbln_config.model_input_names) == 0:
             raise ValueError(
