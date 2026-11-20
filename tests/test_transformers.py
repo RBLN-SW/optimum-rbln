@@ -782,6 +782,20 @@ class TestRobertaForMaskedLM(BaseTest.TestModel):
     }
 
 
+class TestRobertaForMaskedLMSingleTokenType(TestRobertaForMaskedLM):
+    # `type_vocab_size == 1` drops `token_type_ids` from the compiled graph; passing it at inference
+    # must still work (it used to fail with "Number of inputs (3) exceeds the expected number (2)").
+    GENERATION_KWARGS = {
+        **TestRobertaForMaskedLM.GENERATION_KWARGS,
+        "token_type_ids": torch.zeros_like(RANDOM_INPUT_IDS[:, :256]),
+    }
+    HF_CONFIG_KWARGS = {
+        "num_hidden_layers": 1,
+        "type_vocab_size": 1,
+        "ignore_mismatched_sizes": True,
+    }
+
+
 class TestRobertaForSequenceClassification(BaseTest.TestModel):
     RBLN_AUTO_CLASS = RBLNAutoModelForSequenceClassification
     RBLN_CLASS = RBLNRobertaForSequenceClassification
@@ -793,6 +807,20 @@ class TestRobertaForSequenceClassification(BaseTest.TestModel):
     RBLN_CLASS_KWARGS = {"rbln_max_seq_len": 256, "rbln_batch_size": 1}
     HF_CONFIG_KWARGS = {
         "num_hidden_layers": 1,
+    }
+
+
+class TestRobertaForSequenceClassificationSingleTokenType(TestRobertaForSequenceClassification):
+    # `type_vocab_size == 1` drops `token_type_ids` from the compiled graph; passing it at inference
+    # must still work (it used to fail with "Number of inputs (3) exceeds the expected number (2)").
+    GENERATION_KWARGS = {
+        **TestRobertaForSequenceClassification.GENERATION_KWARGS,
+        "token_type_ids": torch.zeros_like(RANDOM_INPUT_IDS[:, :256]),
+    }
+    HF_CONFIG_KWARGS = {
+        "num_hidden_layers": 1,
+        "type_vocab_size": 1,
+        "ignore_mismatched_sizes": True,
     }
 
 
