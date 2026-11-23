@@ -1069,10 +1069,10 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
             config_file[submodule] = RBLNAutoConfig.load_from_dict(submodule_config)
 
         if isinstance(rbln_config, RBLNModelConfig):
-            for key, value in rbln_config.get_load_overrides().items():
-                if key not in RUNTIME_KEYWORDS and key not in cls.submodules:
-                    rbln_kwargs.setdefault(key, value)
             config_file.update(rbln_config._runtime_options)
+            for key, value in rbln_config.get_load_overrides().items():
+                if key in cls.subclass_non_save_attributes:
+                    rbln_kwargs.setdefault(key, value)
 
             # update submodule runtime
             for submodule in rbln_config.submodules:
@@ -1083,18 +1083,17 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
                 config_file[submodule] = getattr(rbln_config, submodule)
 
         config_file.update(rbln_runtime_kwargs)
-        for key in cls.subclass_non_save_attributes:
-            if key in rbln_kwargs:
-                config_file[key] = rbln_kwargs.pop(key)
         config = cls(**config_file)
-        for key, value in rbln_kwargs.items():
-            if not hasattr(config, key):
-                raise ValueError(f"Unknown configuration option: {key!r}")
-            if getattr(config, key) != value:
-                raise ValueError(
-                    f"Cannot set the following arguments: {list(rbln_kwargs.keys())} "
-                    f"Since the value is already set to {getattr(config, key)}"
-                )
+        if len(rbln_kwargs) > 0:
+            non_save_attrs = set(cls.subclass_non_save_attributes)
+            for key, value in rbln_kwargs.items():
+                if key in non_save_attrs:
+                    setattr(config, key, value)
+                elif getattr(config, key) != value:
+                    raise ValueError(
+                        f"Cannot set the following arguments: {list(rbln_kwargs.keys())} "
+                        f"Since the value is already set to {getattr(config, key)}"
+                    )
         if return_unused_kwargs:
             return config, kwargs
         else:

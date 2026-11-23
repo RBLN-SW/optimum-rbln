@@ -630,7 +630,7 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
         if any(model_name not in rbln_config.device_map for model_name in expected_model_names):
             cls._raise_missing_compiled_file_error(expected_model_names)
 
-        return [
+        ret_val = [
             rebel.Runtime(
                 compiled_models[i],
                 tensor_type="pt",
@@ -640,6 +640,7 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
             )
             for i, model_name in enumerate(expected_model_names)
         ]
+        return ret_val
 
     def _device_kv_cache(self) -> DeviceKVCache:
         if self._kv_cache is None:

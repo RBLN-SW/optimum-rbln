@@ -114,10 +114,7 @@ class DecoderCacheRuntime:
         if len(args) > len(self._index_to_input_name):
             raise TypeError("Too many positional inputs for the decoder runtime.")
         inputs = {self._index_to_input_name[i]: arg for i, arg in enumerate(args)}
-        if kwargs.keys() & (inputs.keys() | self.cache.specs.keys()):
-            raise TypeError("A runtime input was supplied more than once.")
-        inputs.update(kwargs)
-        return self.runtime.run(**inputs, **self.cache.tensors)
+        return self.runtime.run(**inputs, **kwargs, **self.cache.tensors)
 
     __call__ = run
 
@@ -228,10 +225,6 @@ def fit_cache_blocks(shards, config, room: dict[tuple[int, int], int]) -> int:
     base = {unit: sum(reqs) for unit, reqs in fixed.items()}
     lower = config.num_min_blocks if any(meta.can_resize for meta in config.cache_metas) else config.num_full_blocks
     upper = config.num_full_blocks
-    if missing := base.keys() - room.keys():
-        raise ValueError(f"Missing device memory information for cache chiplets {sorted(missing)}.")
-    if any(available < 0 for available in room.values()):
-        raise ValueError(f"Insufficient memory for the loaded model before allocating {lower} KV blocks.")
     for unit, requests in cache_requests(shards, config, 1).items():
         slope = sum(requests) - base[unit]
         if slope:
