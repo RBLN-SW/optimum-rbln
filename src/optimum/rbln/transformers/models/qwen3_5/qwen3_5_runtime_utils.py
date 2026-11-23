@@ -38,7 +38,6 @@ class RBLNQwen3_5RuntimeModel(RBLNRuntimeModel):
         self,
         *args,
         state_dtype: torch.dtype = torch.float32,
-        legacy_state_shapes: tuple[tuple[int, ...], tuple[int, ...]] | None = None,
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
@@ -50,16 +49,6 @@ class RBLNQwen3_5RuntimeModel(RBLNRuntimeModel):
         self._state_mask_ones = torch.ones(1, dtype=state_dtype)
         # Decode runs the full batch: batch row b is cache row b.
         self._decode_state_idx = torch.arange(self.batch_size, dtype=torch.int16)
-
-        # An artifact from before the custom kernels gates each cache with a mask of that cache's own
-        # shape, under its own name, because its GatedDeltaNet multiplies the mask into the state it
-        # reads.
-        # TODO(0.13.0): drop `legacy_state_shapes` and everything it feeds, down to `prefill_forward`.
-        self._is_legacy_graph = legacy_state_shapes is not None
-        names = ("conv_state_mask", "recurrent_state_mask")
-        shapes = dict(zip(names, legacy_state_shapes, strict=True)) if self._is_legacy_graph else {}
-        self._legacy_masks_zeros = {name: torch.zeros(shape, dtype=state_dtype) for name, shape in shapes.items()}
-        self._legacy_masks_ones = {name: torch.ones(shape, dtype=state_dtype) for name, shape in shapes.items()}
 
     def forward(
         self,
@@ -226,10 +215,7 @@ class RBLNQwen3_5RuntimeModel(RBLNRuntimeModel):
                 named["lora_int_ids"] = lora_int_ids
 
             if batch_idx is not None:
-                if self._is_legacy_graph:
-                    named["batch_idx"] = torch.tensor(batch_idx, dtype=torch.int16)
-                else:
-                    named["state_idx"] = torch.tensor([batch_idx], dtype=torch.int16)
+                named["state_idx"] = torch.tensor([batch_idx], dtype=torch.int16)
 
             # Per-token validity (1=real, 0=right-padding); the GatedDeltaNet multiplies it into g/beta to drop
             # padding. Full windows reuse the precomputed all-ones; the partial last window is built on demand.
@@ -241,14 +227,7 @@ class RBLNQwen3_5RuntimeModel(RBLNRuntimeModel):
                 valid_mask[:, :valid_count] = 1.0
             named["valid_mask"] = valid_mask
 
-            # The state gate, under the name the ops give it: the first prefill window of a sequence
-            # carries nothing, so it reads no state and starts from an empty ring. An artifact from
-            # before the custom kernels takes one mask per cache under its own name instead
-            has_initial_state = step > 0
-            if self._is_legacy_graph:
-                named.update(self._legacy_masks_ones if has_initial_state else self._legacy_masks_zeros)
-            else:
-                named["state_mask"] = self._state_mask_ones if has_initial_state else self._state_mask_zeros
+            named["state_mask"] = self._state_mask_ones if step > 0 else self._state_mask_zeros
 
             # For logits_to_keep == 1 every window overwrites the single logits row, so the final value
             # is the last window's (the next-token logits). Intermediate windows only advance the states.
@@ -337,9 +316,7 @@ class RBLNQwen3_5RuntimeModel(RBLNRuntimeModel):
             named["attention_mask"] = attention_mask
         if self.rbln_config.use_lora:
             named["lora_int_ids"] = lora_int_ids
-        # An artifact from before the custom kernels takes no rows on decode.
-        if not self._is_legacy_graph:
-            named["state_idx"] = self._decode_state_idx if state_idx is None else state_idx
+        named["state_idx"] = self._decode_state_idx if state_idx is None else state_idx
 
         logits, hidden_states = self._run(named)
         return RBLNDecoderOnlyOutput(logits=logits, hidden_states=hidden_states)

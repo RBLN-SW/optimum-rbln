@@ -42,7 +42,6 @@ def _decode_runtime(batch_size, *, requires_batch_sort=False):
     )
     runtime.batch_size = batch_size
     runtime.phase = "decode"
-    runtime._is_legacy_graph = False
     runtime._decode_state_idx = torch.arange(batch_size, dtype=torch.int16)
     runtime.graph_inputs = {}
     runtime._run = lambda named: (runtime.graph_inputs.update(named), (torch.zeros(batch_size, 1, 8), None))[1]

@@ -114,9 +114,6 @@ class CacheMeta(RBLNSerializableConfigProtocol):
 class KVCacheMeta(CacheMeta):
     """Paged KV cache holding a layer's key and value in one tensor,
     ``shape == [num_blocks, 2, num_heads, 1, block_size, head_dim]``.
-
-    Artifacts compiled before the two were merged carry one meta per key and per value cache,
-    ``shape == [num_blocks, num_heads, block_size, head_dim]``; the block axes read the same.
     """
 
     @property

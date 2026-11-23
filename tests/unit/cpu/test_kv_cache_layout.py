@@ -49,19 +49,19 @@ def test_sliding_window_meta_holds_key_and_value():
     assert (meta.num_blocks, meta.block_size, meta.can_resize) == (2, 512, False)
 
 
-def test_serialized_separate_cache_meta_keeps_its_geometry():
+def test_serialized_full_attention_cache_meta_keeps_its_geometry():
     meta = CacheMeta.from_serialized(
         {
             "name": "past_key_values_1",
             "layer_index": 0,
-            "shape": [8, 4, 1024, 64],
+            "shape": [8, 2, 4, 1, 1024, 64],
             "layer_type": "full_attention",
             "is_auto": False,
             "dtype": "float16",
         }
     )
     assert isinstance(meta, FullAttentionKVCacheMeta)
-    assert (meta.num_blocks, meta.block_size, meta.compile_shape) == (8, 1024, [8, 4, 1024, 64])
+    assert (meta.num_blocks, meta.block_size, meta.compile_shape) == (8, 1024, [8, 2, 4, 1, 1024, 64])
 
 
 QK_MASK = {"use_attention_mask": True}

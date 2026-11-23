@@ -30,12 +30,11 @@ from transformers.models.qwen3_5.modeling_qwen3_5 import (
 )
 from transformers.vision_utils import get_vision_interpolation_indices_and_weights
 
-from ....__version__ import __version__
 from ....configuration_utils import RBLNCompileConfig
 from ....modeling import RBLNModel
 from ....modeling_rope_utils import build_qwen_mrope_lookup, np_cos, np_sin, qwen_vit_rot_pos_ids
 from ....utils import logging
-from ....utils.deprecation import _at_or_past_deprecation, deprecate_method
+from ....utils.deprecation import deprecate_method
 from ...cache_utils import FullAttentionKVCacheMeta, LinearAttentionCacheMeta
 from ...modeling_outputs import RBLNDecoderOnlyOutput, _validate_output_hidden_states
 from ...utils.multimodal_batch_sort import RBLNQwenVLBatchSortMixin
@@ -103,51 +102,11 @@ def _qwen3_5_linear_state_shapes(text_config, batch_size: int):
     return conv_state_shape, recurrent_state_shape
 
 
-def _qwen3_5_legacy_linear_state_shapes(text_config, batch_size: int):
-    """The cache layouts of an artifact compiled before the custom kernels.
-
-    That graph runs the GatedDeltaNet itself, so it keeps the conv cache channel-last and the
-    recurrent state 3D.
-    """
-    conv_dim = 2 * (text_config.linear_num_key_heads * text_config.linear_key_head_dim) + (
-        text_config.linear_num_value_heads * text_config.linear_value_head_dim
-    )
-    conv_state_shape = (batch_size, text_config.linear_conv_kernel_dim - 1, conv_dim)
-    recurrent_state_shape = (
-        batch_size,
-        text_config.linear_num_value_heads * text_config.linear_key_head_dim,
-        text_config.linear_value_head_dim,
-    )
-    return conv_state_shape, recurrent_state_shape
-
-
 def _qwen3_5_linear_layer_indices(model_config) -> list[int]:
     text_config = model_config.get_text_config()
     if getattr(text_config, "layer_types", None) is None:
         raise ValueError("Qwen3.5 requires `layer_types` in the model config.")
     return [i for i, t in enumerate(text_config.layer_types) if t == "linear_attention"]
-
-
-def use_custom_ops(rbln_config) -> bool:
-    """Whether this artifact runs its GatedDeltaNet as the custom ops rather than in the graph."""
-    for compile_cfg in rbln_config.compile_cfgs:
-        inputs = compile_cfg.input_info or []
-        if compile_cfg.is_multiple_input_info:
-            inputs = [one for info in inputs for one in info]
-        if any(name == "conv_state_mask" for name, *_ in inputs):
-            return False
-    return True
-
-
-def warn_deprecated(what: str, version: str, remedy: str | None = None) -> None:
-    """Custom deprecated function."""
-    removed = _at_or_past_deprecation(__version__, version)
-    message = f"{what} is deprecated and {'was removed in' if removed else 'will be removed in'} version {version}."
-    if remedy:
-        message = f"{message} {remedy}"
-    if removed:
-        raise ValueError(message)
-    logger.warning_once(message)
 
 
 def _qwen3_5_setup_hybrid_runtime(model):
@@ -166,18 +125,6 @@ def _qwen3_5_setup_hybrid_runtime(model):
         "state_dtype": model.dtype,
     }
 
-    # Backward compatibility, loading only: a pre-kernel artifact gates each cache with a mask of
-    # that cache's own shape, and only the runtime still knows those shapes.
-    # TODO(0.13.0): drop it -- this detector, `_qwen3_5_legacy_linear_state_shapes`, the runtime's branch.
-    is_legacy_graph = not use_custom_ops(rbln_config)
-    if is_legacy_graph:
-        warn_deprecated(
-            "This Qwen3.5 artifact was compiled before the GatedDeltaNet custom kernels, so "
-            "optimum-rbln runs its GatedDeltaNet in the graph. That path",
-            version="0.13.0",
-            remedy="Recompile the model.",
-        )
-
     # Prefill runs one item at a time and writes its `batch_position` slot; the underlying caches are
     # max-batch (get_input_info). Its masks gate the single slot the graph reads, so they are batch=1.
     model.prefill_decoder = RBLNQwen3_5RuntimeModel(
@@ -185,19 +132,16 @@ def _qwen3_5_setup_hybrid_runtime(model):
         phase="prefill",
         batch_size=rbln_config.batch_size,
         logits_last_dim=model.logits_last_dim,
-        legacy_state_shapes=_qwen3_5_legacy_linear_state_shapes(text_config, 1) if is_legacy_graph else None,
         **common_kwargs,
     )
 
     if model.can_generate():
         model.decoders = {}
         for i, batch_size in enumerate(rbln_config.decoder_batch_sizes):
-            shapes = _qwen3_5_legacy_linear_state_shapes(text_config, batch_size) if is_legacy_graph else None
             model.decoders[batch_size] = RBLNQwen3_5RuntimeModel(
                 runtime=model.model[i + 1],
                 phase="decode",
                 batch_size=batch_size,
-                legacy_state_shapes=shapes,
                 **common_kwargs,
             )
         model.decoder = model.decoders[rbln_config.batch_size]

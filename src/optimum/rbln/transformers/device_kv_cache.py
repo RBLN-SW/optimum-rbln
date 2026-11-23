@@ -30,14 +30,6 @@ if TYPE_CHECKING:
     from .models.decoderonly.configuration_decoderonly import RBLNDecoderOnlyModelConfig
 
 
-def has_device_cache_inputs(compiled_model, config: RBLNDecoderOnlyModelConfig) -> bool:
-    """Older artifacts own their KV buffers and omit them from the executor's input signature."""
-    names = {meta.name for meta in config.cache_metas}
-    executor = compiled_model.select_executor()
-    profiles = (executor.get_input_profile(i) for i in range(executor.num_inputs))
-    return any(profile.name in names and profile.device == "rbln" for profile in profiles)
-
-
 def cache_shape_override(config: RBLNDecoderOnlyModelConfig, compile_config: RBLNCompileConfig):
     from rebel.input_info import SymbolInfo
 
@@ -114,7 +106,6 @@ class DecoderCacheRuntime:
         self.runtime = runtime
         self.cache = cache
         names = [runtime._index_to_input_name[i] for i in sorted(runtime._index_to_input_name)]
-        self.cache_names = [name for name in names if name in cache.specs]
         self._index_to_input_name = dict(enumerate(name for name in names if name not in cache.specs))
 
     def __getattr__(self, name):
@@ -124,11 +115,10 @@ class DecoderCacheRuntime:
         if len(args) > len(self._index_to_input_name):
             raise TypeError("Too many positional inputs for the decoder runtime.")
         inputs = {self._index_to_input_name[i]: arg for i, arg in enumerate(args)}
-        if kwargs.keys() & (inputs.keys() | set(self.cache_names)):
+        if kwargs.keys() & (inputs.keys() | self.cache.specs.keys()):
             raise TypeError("A runtime input was supplied more than once.")
         inputs.update(kwargs)
-        tensors = self.cache.tensors
-        return self.runtime.run(**inputs, **{name: tensors[name] for name in self.cache_names})
+        return self.runtime.run(**inputs, **self.cache.tensors)
 
     __call__ = run
 

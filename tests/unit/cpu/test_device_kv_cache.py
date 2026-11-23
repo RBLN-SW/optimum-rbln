@@ -10,7 +10,6 @@ from optimum.rbln.transformers.device_kv_cache import (
     allocator_reserved,
     cache_shape_override,
     fit_cache_blocks,
-    has_device_cache_inputs,
 )
 
 
@@ -23,18 +22,6 @@ def meta(name, dynamic=True):
 
 def config(*metas):
     return SimpleNamespace(cache_metas=metas, kvcache_num_blocks=5, num_min_blocks=4, num_full_blocks=32)
-
-
-@pytest.mark.parametrize(("cache_device", "expected"), [(None, False), ("cpu", False), ("rbln", True)])
-def test_detects_cache_inputs_from_saved_executor(cache_device, expected):
-    profiles = [SimpleNamespace(name="input_ids", device="cpu"), SimpleNamespace(name="hidden", device="rbln")]
-    if cache_device:
-        profiles.append(SimpleNamespace(name="kv", device=cache_device))
-    model = Mock()
-    model.select_executor.return_value = SimpleNamespace(
-        num_inputs=len(profiles), get_input_profile=profiles.__getitem__
-    )
-    assert has_device_cache_inputs(model, config(meta("kv"))) is expected
 
 
 def test_shared_symbol_only_on_resizable_cache_inputs():

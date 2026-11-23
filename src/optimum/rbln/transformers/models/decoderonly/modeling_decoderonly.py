@@ -34,7 +34,6 @@ from ...device_kv_cache import (
     DecoderCacheRuntime,
     DeviceKVCache,
     cache_shape_override,
-    has_device_cache_inputs,
     runtime_cache_device,
 )
 from ...modeling_attention_utils import (
@@ -651,7 +650,7 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
         cls,
         compiled_models: list[rebel.RBLNCompiledModel],
         rbln_config: RBLNDecoderOnlyModelForCausalLMConfig,
-    ) -> list[rebel.Runtime | DecoderCacheRuntime]:
+    ) -> list[DecoderCacheRuntime]:
         expected_model_names = rbln_config.expected_compiled_model_names
 
         if any(model_name not in rbln_config.device_map for model_name in expected_model_names):
@@ -667,11 +666,6 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
             )
             for i, model_name in enumerate(expected_model_names)
         ]
-        if not has_device_cache_inputs(compiled_models[0], rbln_config):
-            if rbln_config.runtime_memory_budget is not None:
-                raise ValueError("runtime_memory_budget requires an artifact with device cache inputs.")
-            return ret_val
-
         device = runtime_cache_device(ret_val)
         if rbln_config.runtime_memory_budget is not None:
             models = dict(zip(expected_model_names, compiled_models, strict=True))

@@ -437,9 +437,7 @@ def _handle_kvcache_num_blocks(
     `set_value` (an absolute block count) or `set_memory_budget` (a float/`"80%"`/bytes
     budget, from which the largest fitting block count is computed). Caller-owned caches store
     the resolved count in the config.
-    Runtime-owned caches also require rescaling the buffers in the compiled binaries.
     """
-    from .transformers.device_kv_cache import has_device_cache_inputs
     from .transformers.modeling_attention_utils import RBLNDecoderOnlyFlashAttentionMixin
     from .transformers.models.decoderonly.configuration_decoderonly import RBLNDecoderOnlyModelConfig
 
@@ -466,38 +464,33 @@ def _handle_kvcache_num_blocks(
     if not paths:
         raise FileNotFoundError(f"No .rbln compiled models found in '{model_id}'.")
 
-    compiled_models = {"prefill": rebel.RBLNCompiledModel(src_dir / "prefill.rbln")}
-    device_inputs = has_device_cache_inputs(compiled_models["prefill"], rbln_config)
-    if set_value is None or not device_inputs:
-        compiled_models.update({p.stem: rebel.RBLNCompiledModel(p) for p in paths if p.stem != "prefill"})
-
     if set_value is not None:
         target = set_value
     else:
-        current = rbln_config.kvcache_num_blocks or 1
+        compiled_models = {p.stem: rebel.RBLNCompiledModel(p) for p in paths}
         rbln_config.memory_budget = parse_value(set_memory_budget)
-        target = RBLNDecoderOnlyFlashAttentionMixin.estimate_num_kvcache_blocks(
-            compiled_models=compiled_models, rbln_config=rbln_config, current_blocks=current
-        )
+        target = RBLNDecoderOnlyFlashAttentionMixin.estimate_num_kvcache_blocks(compiled_models, rbln_config)
         print(f"memory_budget {set_memory_budget} fits kvcache_num_blocks={target}")
 
-    RBLNDecoderOnlyFlashAttentionMixin.rescale_kvcache_num_blocks(
-        compiled_models=compiled_models, rbln_config=rbln_config, target=target
-    )
+    if target < rbln_config.num_min_blocks:
+        raise ValueError(f"kvcache_num_blocks={target} is below the minimum {rbln_config.num_min_blocks}.")
+    if target != rbln_config.kvcache_num_blocks:
+        if not any(meta.can_resize for meta in rbln_config.cache_metas):
+            raise ValueError("The compiled cache has a fixed block count.")
+        if target > rbln_config.num_full_blocks:
+            raise ValueError(f"The compiled block dimension supports at most {rbln_config.num_full_blocks} blocks.")
+
     dst_dir = src_dir if output_dir is None else Path(output_dir)
     if dst_dir.resolve() != src_dir.resolve():
         dst_dir.mkdir(parents=True, exist_ok=True)
         for item in src_dir.iterdir():
-            if (item.suffix == ".rbln" and not device_inputs) or item.name == "rbln_config.json":
+            if item.name == "rbln_config.json":
                 continue
             if item.is_dir():
                 shutil.copytree(item, dst_dir / item.name, dirs_exist_ok=True)
             else:
                 shutil.copy2(item, dst_dir / item.name)
 
-    if not device_inputs:
-        for name, compiled_model in compiled_models.items():
-            compiled_model.save(dst_dir / f"{name}.rbln")
     rbln_config.kvcache_num_blocks = target
     rbln_config.save(str(dst_dir))
     print(f"Set kvcache_num_blocks to {target} for artifact at {dst_dir.absolute()}")

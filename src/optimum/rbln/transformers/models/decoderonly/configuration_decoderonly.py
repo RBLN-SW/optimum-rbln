@@ -15,7 +15,6 @@
 from typing import Any, Literal, get_args
 
 from ....configuration_utils import RBLNModelConfig
-from ....utils.deprecation import deprecate_kwarg
 from ....utils.logging import get_logger
 from ...cache_utils import CacheMeta
 from ...utils.rbln_quantization import RBLNQuantizationConfig
@@ -41,7 +40,6 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
     _default_logits_to_keep = 0
     subclass_non_save_attributes = ["memory_budget", "runtime_memory_budget", "nested_compile_region"]
 
-    @deprecate_kwarg(old_name="kvcache_metas", new_name="cache_metas", version="0.13.0")
     def __init__(
         self,
         batch_size: int | None = None,
@@ -203,8 +201,6 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
             that adapts to the available DRAM on the NPU at compile time.
         """
 
-        if "_compile_cfgs" in kwargs:
-            kwargs.pop("use_device_kv_cache", None)  # Accepted in previously exported configs.
         super().__init__(**kwargs)
         self.batch_size = batch_size or 1
         if not isinstance(self.batch_size, int) or self.batch_size < 0:

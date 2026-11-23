@@ -1,4 +1,5 @@
 import hashlib
+import json
 import os
 
 import pytest
@@ -59,6 +60,13 @@ def test_decoder_with_caller_owned_cache(tmp_path):
     binaries = {p: hashlib.sha256(p.read_bytes()).digest() for p in directory.glob("*.rbln")}
     _handle_kvcache_num_blocks(str(directory), get=False, set_value=6)
     assert all(hashlib.sha256(p.read_bytes()).digest() == digest for p, digest in binaries.items())
+
+    copy = tmp_path / "sized"
+    _handle_kvcache_num_blocks(
+        str(directory), get=False, set_value=None, output_dir=str(copy), set_memory_budget="90%"
+    )
+    assert json.loads((copy / "rbln_config.json").read_text())["kvcache_num_blocks"] == 8
+    assert all(hashlib.sha256((copy / p.name).read_bytes()).digest() == digest for p, digest in binaries.items())
 
     model = RBLNLlamaForCausalLM.from_pretrained(directory, rbln_device=devices)
     initial = model.get_kv_cache()
