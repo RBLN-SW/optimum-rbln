@@ -85,7 +85,9 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
         if models:
             device = runtime_cache_device(models)
             blocks = rbln_config.kvcache_num_blocks
-            if not blocks and any(meta.can_resize for meta in rbln_config.cache_metas):
+            if not blocks and (
+                rbln_config.memory_budget is not None or any(meta.can_resize for meta in rbln_config.cache_metas)
+            ):
                 blocks = self.estimate_num_kvcache_blocks(kwargs["rbln_compiled_models"], rbln_config, device=device)
             self._kv_cache = DeviceKVCache(rbln_config, device, blocks or rbln_config.num_full_blocks)
             models = [DecoderCacheRuntime(runtime, self._kv_cache) for runtime in models]

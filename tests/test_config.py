@@ -234,6 +234,23 @@ def test_decoder_block_count_is_load_only(tmp_path):
     assert json.loads(path.read_text()) == saved
 
 
+def test_decoder_memory_budget_is_load_only_and_excludes_explicit_blocks(tmp_path):
+    path = tmp_path / "rbln_config.json"
+    RBLNLlamaForCausalLMConfig().save(path)
+    config = RBLNLlamaForCausalLMConfig.from_pretrained(path, rbln_memory_budget="80%", rbln_kvcache_num_blocks=0)
+    assert config.memory_budget == "80%"
+    config.save(path)
+    assert "memory_budget" not in json.loads(path.read_text())
+    assert RBLNLlamaForCausalLMConfig.from_pretrained(path).memory_budget is None
+    with pytest.raises(ValueError, match="mutually exclusive"):
+        RBLNLlamaForCausalLMConfig(memory_budget="80%", kvcache_num_blocks=6)
+    with pytest.raises(ValueError, match="mutually exclusive"):
+        RBLNLlamaForCausalLMConfig.from_pretrained(path, rbln_config=config, rbln_kvcache_num_blocks=6)
+    with pytest.raises(ValueError, match="mutually exclusive"):
+        RBLNLlamaForCausalLMConfig.initialize_from_kwargs(config, rbln_kvcache_num_blocks=6)
+    assert config.kvcache_num_blocks == 0
+
+
 def test_logits_to_keep_zero_survives_construction_and_reload(tmp_path):
     cfg = RBLNLlamaForCausalLMConfig(logits_to_keep=0)
     assert cfg.logits_to_keep == 0

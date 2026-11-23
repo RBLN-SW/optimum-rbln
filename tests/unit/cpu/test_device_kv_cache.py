@@ -92,15 +92,28 @@ def test_cache_pool_segments_can_shrink_as_block_count_grows():
         fit_cache_blocks(shards, cfg, {**room, (1, 0): MIB})
 
 
-def test_auto_cache_capacity_uses_free_memory_on_each_chiplet(monkeypatch):
+@pytest.mark.parametrize(
+    ("budget", "expected"), [(None, 16), (0.875, 12), ("87.5%", 12), ("56MB", 12), (56 * MIB, 12)]
+)
+def test_auto_cache_capacity_uses_free_memory_on_each_chiplet(monkeypatch, budget, expected):
     shards = {"kv": [(0, 0, MIB), (0, 1, MIB)]}
     monkeypatch.setattr(modeling_attention_utils, "cache_shards", Mock(return_value=shards))
-    stats = {"npu.0.chiplet.0.free": 32 * MIB, "npu.0.chiplet.1.free": 16 * MIB}
+    stats = {
+        "npu.0.total": 64 * MIB,
+        "npu.0.chiplet.0.total": 32 * MIB,
+        "npu.0.chiplet.0.used": 0,
+        "npu.0.chiplet.0.free": 32 * MIB,
+        "npu.0.chiplet.1.total": 32 * MIB,
+        "npu.0.chiplet.1.used": 16 * MIB,
+        "npu.0.chiplet.1.free": 16 * MIB,
+    }
     monkeypatch.setattr(torch.rbln, "mem_get_info_per_chiplet", Mock(return_value=stats))
+    cfg = config(meta("kv"))
+    cfg.memory_budget = budget
     blocks = modeling_attention_utils.RBLNDecoderOnlyFlashAttentionMixin.estimate_num_kvcache_blocks(
-        [], config(meta("kv")), torch.device("rbln:0")
+        [], cfg, torch.device("rbln:0")
     )
-    assert blocks == 16
+    assert blocks == expected
 
 
 def test_fixed_cache_uses_full_block_count():

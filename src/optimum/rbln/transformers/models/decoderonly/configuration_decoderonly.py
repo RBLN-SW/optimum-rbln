@@ -54,6 +54,7 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
         lora_config: dict[str, Any] | RBLNLoRAConfig | None = None,
         prefill_chunk_size: int | None = None,
         kvcache_num_blocks: int | None = None,
+        memory_budget: int | float | str | None = None,
         decoder_batch_sizes: list[int] | None = None,
         cache_impl: CacheImplType | None = None,
         sliding_window: int | None = None,
@@ -106,6 +107,8 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
             kvcache_num_blocks (int | None): The total number of blocks to allocate for the
                 PagedAttention KV cache. With flash attention, 0 selects the capacity at load time.
                 See the "KV Cache Number of Blocks (`kvcache_num_blocks`)" section below for details.
+            memory_budget (int | float | str | None): Per-NPU DRAM limit for automatic KV cache sizing at load.
+                Accepts a fraction such as 0.8 or "80%", or a byte size such as "10GB". Includes memory already in use.
             decoder_batch_sizes (list[int] | None): A list of batch sizes for which separate decoder models will be compiled.
                 This allows the model to handle varying batch sizes efficiently during generation. If not specified,
                 defaults to a list containing only the model's main batch size. When specifying multiple batch sizes:
@@ -226,6 +229,8 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
         self.kvcache_block_size = kvcache_block_size
         self.prefill_chunk_size = prefill_chunk_size
         self.kvcache_num_blocks = kvcache_num_blocks or None
+        self.memory_budget = memory_budget
+        self._validate_load_options()
         self.cache_impl = cache_impl or "static"
         self.sliding_window = sliding_window
         self.sliding_window_layers = sliding_window_layers or []
@@ -271,6 +276,12 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
         self.cache_metas: list[CacheMeta] = [
             CacheMeta.from_serialized(meta) if isinstance(meta, dict) else meta for meta in cache_metas or []
         ]
+
+    def _validate_load_options(self, **overrides: Any) -> None:
+        budget = overrides.get("memory_budget", self.memory_budget)
+        blocks = overrides.get("kvcache_num_blocks", self.kvcache_num_blocks)
+        if budget is not None and blocks is not None and blocks > 0:
+            raise ValueError("`memory_budget` and an explicit `kvcache_num_blocks` are mutually exclusive.")
 
     @staticmethod
     def validate_phases_type(phases: list[PhaseType]):

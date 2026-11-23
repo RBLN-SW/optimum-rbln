@@ -71,6 +71,14 @@ def test_decoder_with_caller_owned_cache(tmp_path):
         assert compiled_model.exp_get_dram_tensor_sizes() == {}
     del default
 
+    with pytest.raises(ValueError, match="mutually exclusive"):
+        RBLNLlamaForCausalLM.from_pretrained(directory, rbln_memory_budget="90%", rbln_kvcache_num_blocks=6)
+    with pytest.raises(ValueError, match="Insufficient memory"):
+        RBLNLlamaForCausalLM.from_pretrained(directory, rbln_device=devices, rbln_memory_budget=1)
+    budgeted = RBLNLlamaForCausalLM.from_pretrained(directory, rbln_device=devices, rbln_memory_budget="90%")
+    assert torch.equal(generate(budgeted), expected)
+    del budgeted
+
     model = RBLNLlamaForCausalLM.from_pretrained(directory, rbln_device=devices, rbln_kvcache_num_blocks=6)
     assert model.get_kvcache_num_blocks() == 6
     assert len(model.prefill_decoder.page_table_manager.free_block_pool) == 6

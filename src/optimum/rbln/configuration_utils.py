@@ -865,6 +865,9 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
 
         return serializable_map
 
+    def _validate_load_options(self, **overrides: Any) -> None:
+        """Check options that can be supplied together when loading a config."""
+
     def get_load_overrides(self) -> dict[str, Any]:
         """
         Extract the options that must cross the load boundary, for passing to from_pretrained.
@@ -1085,6 +1088,7 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
         config_file.update(rbln_runtime_kwargs)
         config = cls(**config_file)
         if len(rbln_kwargs) > 0:
+            config._validate_load_options(**rbln_kwargs)
             non_save_attrs = set(cls.subclass_non_save_attributes)
             for key, value in rbln_kwargs.items():
                 if key in non_save_attrs:
@@ -1116,6 +1120,7 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
         elif rbln_config is None:
             config = cls(**rbln_kwargs)
         else:
+            rbln_config._validate_load_options(**rbln_kwargs)
             for key, value in rbln_kwargs.items():
                 setattr(rbln_config, key, value)
             config = rbln_config
