@@ -30,16 +30,12 @@ if TYPE_CHECKING:
     from .models.decoderonly.configuration_decoderonly import RBLNDecoderOnlyModelConfig
 
 
-def require_torch_rbln():
-    try:
-        import torch_rbln
-    except ModuleNotFoundError as exc:
-        if exc.name != "torch_rbln":
-            raise
-        raise ImportError(
-            "Device KV caches require optimum-rbln[device-tensor] and a compatible torch-rbln wheel."
-        ) from exc
-    return torch_rbln
+def has_device_cache_inputs(compiled_model, config: RBLNDecoderOnlyModelConfig) -> bool:
+    """Older artifacts own their KV buffers and omit them from the executor's input signature."""
+    names = {meta.name for meta in config.cache_metas}
+    executor = compiled_model.select_executor()
+    profiles = (executor.get_input_profile(i) for i in range(executor.num_inputs))
+    return any(profile.name in names and profile.device == "rbln" for profile in profiles)
 
 
 def cache_shape_override(config: RBLNDecoderOnlyModelConfig, compile_config: RBLNCompileConfig):
@@ -59,7 +55,6 @@ def cache_shape_override(config: RBLNDecoderOnlyModelConfig, compile_config: RBL
 
 
 def runtime_cache_device(runtimes) -> torch.device:
-    require_torch_rbln()
     from torch_rbln._internal.rsd_utils import get_physical_device_ids
 
     groups = {

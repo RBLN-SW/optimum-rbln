@@ -1206,16 +1206,12 @@ dependencies = [
     { name = "packaging" },
     { name = "tokenizers" },
     { name = "torch" },
+    { name = "torch-rbln", marker = "platform_machine == 'x86_64'" },
     { name = "torchaudio" },
     { name = "torchcodec" },
     { name = "torchvision" },
     { name = "transformers" },
     { name = "typing-extensions" },
-]
-
-[package.optional-dependencies]
-device-tensor = [
-    { name = "torch-rbln", marker = "platform_machine == 'x86_64'" },
 ]
 
 [package.dev-dependencies]
@@ -1251,7 +1247,7 @@ requires-dist = [
     { name = "packaging", specifier = ">=24.1" },
     { name = "tokenizers", specifier = "==0.22.1" },
     { name = "torch", specifier = "==2.13.0+cpu", index = "https://download.pytorch.org/whl/cpu" },
-    { name = "torch-rbln", marker = "platform_machine == 'x86_64' and extra == 'device-tensor'", specifier = "==0.12.1a1", index = "https://pypi.rebellions.in/simple/" },
+    { name = "torch-rbln", marker = "platform_machine == 'x86_64'", specifier = "==0.12.1a1", index = "https://pypi.rebellions.in/simple/" },
     { name = "torchaudio", marker = "platform_machine == 'aarch64' and platform_python_implementation == 'CPython'", specifier = "==2.11.0", index = "https://download.pytorch.org/whl/cpu" },
     { name = "torchaudio", marker = "platform_machine == 'x86_64' and platform_python_implementation == 'CPython'", specifier = "==2.11.0+cpu", index = "https://download.pytorch.org/whl/cpu" },
     { name = "torchcodec", marker = "platform_machine == 'aarch64' and platform_python_implementation == 'CPython'", specifier = "==0.16.0", index = "https://download.pytorch.org/whl/cpu" },
@@ -1261,7 +1257,6 @@ requires-dist = [
     { name = "transformers", specifier = "==5.15.1" },
     { name = "typing-extensions", specifier = ">=4.5" },
 ]
-provides-extras = ["device-tensor"]
 
 [package.metadata.requires-dev]
 deploy = [{ name = "twine", specifier = ">=6.0.1" }]

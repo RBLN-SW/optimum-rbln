@@ -32,7 +32,7 @@ class CacheMeta(RBLNSerializableConfigProtocol):
 
         CacheMeta
         ├─ KVCacheMeta                # paged KV: [num_blocks, 2, num_heads, 1, block_size, head_dim]
-        │   ├─ FullAttentionKVCacheMeta      # resizable when is_auto (grown after compile)
+        │   ├─ FullAttentionKVCacheMeta      # dynamic block count when is_auto
         │   └─ SlidingWindowAttentionKVCacheMeta      # fixed-size window
         └─ LinearAttentionCacheMeta   # conv/recurrent state; raw model-computed shape, never resized
 
@@ -136,8 +136,8 @@ class KVCacheMeta(CacheMeta):
 
 @dataclass
 class FullAttentionKVCacheMeta(KVCacheMeta):
-    """Full-attention paged KV cache. The only resizable cache: when ``is_auto`` it compiles with a
-    single block and is grown to the estimated block count after compilation."""
+    """Full-attention paged KV cache. The only resizable cache: when ``is_auto``, one block is used
+    for export and the runtime tensor uses the resolved block count."""
 
     is_auto: bool
     layer_type: ClassVar[str] = "full_attention"

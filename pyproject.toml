@@ -30,6 +30,7 @@ classifiers = [
 keywords = ["transformers", "diffusers", "inference", "rbln", "atom", "rebel"]
 dependencies = [
     "torch==2.13.0+cpu",
+    "torch-rbln==0.12.1a1; platform_machine == 'x86_64'",
     "torchaudio==2.11.0; platform_machine == 'aarch64' and platform_python_implementation == 'CPython'",
     "torchaudio==2.11.0+cpu; platform_machine == 'x86_64' and platform_python_implementation == 'CPython'",
     "torchvision==0.28.0; platform_machine == 'aarch64' and platform_python_implementation == 'CPython'",
@@ -43,9 +44,6 @@ dependencies = [
     "typing-extensions>=4.5",
     "tokenizers==0.22.1",
 ]
-
-[project.optional-dependencies]
-device-tensor = ["torch-rbln==0.12.1a1; platform_machine == 'x86_64'"]
 
 [project.urls]
 Homepage = "https://rebellions.ai"

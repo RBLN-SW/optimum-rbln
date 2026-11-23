@@ -15,7 +15,6 @@ from optimum.rbln.cli import _handle_kvcache_num_blocks
     reason="Set RBLN_DEVICE_MAP to a physical CA25 test device.",
 )
 def test_decoder_with_caller_owned_cache(tmp_path):
-    pytest.importorskip("torch_rbln")
     from torch_rbln._internal.rsd_utils import get_physical_device_ids
 
     devices = get_physical_device_ids(0)
@@ -54,13 +53,9 @@ def test_decoder_with_caller_owned_cache(tmp_path):
     def generate(model):
         return model.generate(ids, attention_mask=torch.ones_like(ids), max_new_tokens=5, do_sample=False)
 
-    legacy = tmp_path / "legacy"
-    RBLNLlamaForCausalLM.from_model(hf_model, model_save_dir=legacy, rbln_config=opts)
-    expected = generate(RBLNLlamaForCausalLM.from_pretrained(legacy, rbln_device=devices))
     directory = tmp_path / "device"
-    RBLNLlamaForCausalLM.from_model(
-        hf_model, model_save_dir=directory, rbln_config={**opts, "use_device_kv_cache": True}
-    )
+    RBLNLlamaForCausalLM.from_model(hf_model, model_save_dir=directory, rbln_config=opts)
+    expected = generate(RBLNLlamaForCausalLM.from_pretrained(directory, rbln_device=devices))
     binaries = {p: hashlib.sha256(p.read_bytes()).digest() for p in directory.glob("*.rbln")}
     _handle_kvcache_num_blocks(str(directory), get=False, set_value=6)
     assert all(hashlib.sha256(p.read_bytes()).digest() == digest for p, digest in binaries.items())

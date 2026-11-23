@@ -125,7 +125,7 @@ class Qwen3_5VisionModelWrapper(nn.Module):
 
 
 class Qwen3_5GatedDeltaNet(nn.Module):
-    """GatedDeltaNet token mixer for RBLN (conv_state + recurrent_state are on-device static caches).
+    """GatedDeltaNet token mixer for RBLN (conv_state + recurrent_state are device cache tensors).
 
     Two ``rbln_custom_ops`` kernels do the work, and each writes its own cache rows in place:
 
@@ -285,7 +285,7 @@ class Qwen3_5GatedDeltaNet(nn.Module):
 
 
 class Qwen3_5LinearDecoderLayer(nn.Module):
-    """A ``linear_attention`` decoder layer: GatedDeltaNet token mixer + MLP (on-device static states)."""
+    """A ``linear_attention`` decoder layer: GatedDeltaNet token mixer + MLP (shared device state)."""
 
     def __init__(self, layer: nn.Module, linear_attn: Qwen3_5GatedDeltaNet):
         super().__init__()

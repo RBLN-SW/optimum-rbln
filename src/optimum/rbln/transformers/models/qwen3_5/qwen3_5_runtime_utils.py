@@ -22,21 +22,14 @@ from ..decoderonly.decoderonly_runtime_utils import RBLNRuntimeModel, _require_s
 class RBLNQwen3_5RuntimeModel(RBLNRuntimeModel):
     """Runtime for the hybrid Qwen3.5 text backbone (batch_size == 1 for now).
 
-    ``full_attention`` layers use the on-device paged KV cache (handled by the base runtime, whose
-    buffers are static and never passed at call time). The ``linear_attention`` (GatedDeltaNet) layers
-    carry two extra states per layer — ``conv_state`` and ``recurrent_state`` — which are ALSO on-device
-    STATIC caches: they are marked static (``mark_static_address``) in the Qwen3.5 compile context
-    (``_qwen3_5_build_compile_context``) and read + written entirely in-graph via ``rbln_cache_update``.
-    So, like the KV cache, they live in device DRAM and are NEVER passed at call time — this runtime does
-    NOT hold state values on the host:
-
-        prefill window 0 -> ... -> prefill window N -> decode step 0 -> decode step 1 -> ...
+    Prefill and decode share the paged KV cache and each linear attention layer's
+    ``conv_state`` and ``recurrent_state`` device tensors. The compiled graph updates these in place.
 
     The runtime's linear-state jobs are two inputs per call. ``state_idx`` names the cache row of each batch
     row: the item's own on prefill; on decode rows 0 .. B - 1, or each row's own when the caller lays the
     batch out itself (``forward``'s ``state_idx``). On prefill, one 0/1 control mask —
     ``state_mask``, a value per cache row — gates both caches the GatedDeltaNet reads: ZEROS on prefill
-    window 0 (fresh sequence, so the stale static cache is discarded) and ONES afterwards (carry whatever
+    window 0 (fresh sequence, so the previous sequence's state is discarded) and ONES afterwards (carry whatever
     the previous window/step wrote). ``_run`` maps the named inputs onto the runtime's own input order via
     ``_index_to_input_name``.
     """

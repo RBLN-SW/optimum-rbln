@@ -358,7 +358,7 @@ class RBLNGemma4ForCausalLM(RBLNMoeLoadMixin, RBLNDecoderOnlyModelForCausalLM):
         wrapped_model = cls._wrap_model_if_needed(model, rbln_config)
         prefill_compile_config = rbln_config.compile_cfgs[0]
 
-        prefill_example_inputs, context, static_tensors = cls._prefill_compile_inputs(
+        prefill_example_inputs, context, cache_tensors = cls._prefill_compile_inputs(
             prefill_compile_config, rbln_config
         )
 
@@ -380,7 +380,7 @@ class RBLNGemma4ForCausalLM(RBLNMoeLoadMixin, RBLNDecoderOnlyModelForCausalLM):
             for chunk_size, ip_compile_config in zip(
                 rbln_config.image_prefill_chunk_size, ip_compile_configs, strict=True
             ):
-                ip_example_inputs = ip_compile_config.get_dummy_inputs(fill=0, static_tensors=static_tensors)
+                ip_example_inputs = ip_compile_config.get_dummy_inputs(fill=0, static_tensors=cache_tensors)
                 compiled_models[f"image_prefill_{chunk_size}"] = cls._compile_model(
                     wrapped_model,
                     ip_compile_config,
@@ -398,7 +398,7 @@ class RBLNGemma4ForCausalLM(RBLNMoeLoadMixin, RBLNDecoderOnlyModelForCausalLM):
                 rbln_config.compile_cfgs[rbln_config.decoder_runtime_idx :],
                 strict=False,
             ):
-                dec_example_inputs = dec_compile_config.get_dummy_inputs(fill=0, static_tensors=static_tensors)
+                dec_example_inputs = dec_compile_config.get_dummy_inputs(fill=0, static_tensors=cache_tensors)
                 compiled_models[f"decoder_batch_{batch_size}"] = cls._compile_model(
                     wrapped_model,
                     dec_compile_config,

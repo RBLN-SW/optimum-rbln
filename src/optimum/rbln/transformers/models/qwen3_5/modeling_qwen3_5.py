@@ -18,7 +18,6 @@ from pathlib import Path
 from typing import Any, Optional
 
 import torch
-from rebel.compile_context import CompileContext
 from transformers import AutoModelForCausalLM, AutoModelForImageTextToText, PretrainedConfig, PreTrainedModel
 from transformers.initialization import no_init_weights
 from transformers.models.qwen3_5.configuration_qwen3_5 import Qwen3_5Config
@@ -79,22 +78,6 @@ def validate_gdn_defaults(rbln_config) -> None:
             f"{rbln_config.gdn_chunk_size} and prefill_chunk_size={rbln_config.prefill_chunk_size}. "
             f"Set gdn_chunk_size to a divisor of prefill_chunk_size that is <= {MAX_GDN_CHUNK_SIZE}."
         )
-
-
-def _qwen3_5_build_compile_context(compile_config, example_inputs):
-    def is_static_state(name: str) -> bool:
-        if "past_key_values" in name:
-            return True
-        return ("conv_state" in name or "recurrent_state" in name) and not name.endswith("_mask")
-
-    context = CompileContext(use_weight_sharing=True)
-    static_tensors = {}
-    for (name, _, _), tensor in zip(compile_config.input_info, example_inputs, strict=False):
-        if not is_static_state(name):
-            continue
-        static_tensors[name] = tensor
-        context.mark_static_address(tensor, name)
-    return context, static_tensors
 
 
 def _qwen3_5_linear_state_shapes(text_config, batch_size: int):
@@ -227,7 +210,7 @@ class RBLNQwen3_5TextModel(RBLNDecoderOnlyModel):
     `linear_attention` (GatedDeltaNet) layers carry a `conv_state` + `recurrent_state` instead. The two
     state tensors reuse the layer's two `past_key_values` slots positionally. This class owns the hybrid
     wiring — `get_input_info` (per-layer tensor specs), `setup_runtime` (the mask-injecting
-    `RBLNQwen3_5RuntimeModel`), `_get_compile_context` (mark conv/recurrent static) and `_update_rbln_config`
+    `RBLNQwen3_5RuntimeModel`), and `_update_rbln_config`
     (validate `layer_types`). `RBLNQwen3_5ForCausalLM` adds the LM head on top, mirroring how
     `RBLNDecoderOnlyModelForCausalLM` extends `RBLNDecoderOnlyModel`.
     """
@@ -237,10 +220,6 @@ class RBLNQwen3_5TextModel(RBLNDecoderOnlyModel):
 
     def setup_runtime(self):
         _qwen3_5_setup_hybrid_runtime(self)
-
-    @classmethod
-    def _get_compile_context(cls, compile_config, example_inputs):
-        return _qwen3_5_build_compile_context(compile_config, example_inputs)
 
     @classmethod
     def _update_rbln_config(cls, preprocessors=None, model=None, model_config=None, rbln_config=None):
@@ -304,8 +283,7 @@ class RBLNQwen3_5TextModel(RBLNDecoderOnlyModel):
                 # fp8 KV caches are uint8 containers; the attention op is told their fp8 type.
                 kvcache_dtype = "uint8"
 
-            # conv/recurrent caches are one shared static tensor, so sized to the max batch (not batch_size=1 for
-            # prefill). Prefill writes its own row (`state_idx`); decode runs the full batch.
+            # Prefill and decode share the conv and recurrent state tensors, each sized for the full batch.
             _state_dtype = RBLNCompileConfig.normalize_dtype(rbln_config.dtype)
             cache_metas = []
             for layer_idx in range(num_hidden_layers):
@@ -863,10 +841,6 @@ class RBLNQwen3_5ForConditionalGeneration(RBLNQwenVLBatchSortMixin, RBLNQwen3_5M
     @property
     def logits_last_dim(self):
         return self.config.get_text_config().vocab_size
-
-    @classmethod
-    def _get_compile_context(cls, compile_config, example_inputs):
-        return _qwen3_5_build_compile_context(compile_config, example_inputs)
 
     @classmethod
     def _reconstruct_model_if_needed(cls, model: "PreTrainedModel"):

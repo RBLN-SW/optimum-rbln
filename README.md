@@ -87,7 +87,7 @@ optimum-rbln-cli --examples                          # show more usage examples
 
 ## Caller-owned decoder KV cache
 
-On x86-64, install the optional backend with `uv sync --extra device-tensor` and the matching rebel-compiler. Set `RBLN_DEVICE_MAP` before starting Python. For example, `RBLN_DEVICE_MAP='[8]'` makes physical NPU 8 available to torch as `rbln:0`. For tensor parallelism, map the whole group, for example `[12,13]`, and pass `rbln_device=[12, 13]` at load.
+Decoder exports use torch-rbln device tensors for their caches. On x86-64, `uv sync` installs torch-rbln. The pinned torch-rbln release provides x86-64 wheels. Decoder export on AArch64 requires a compatible torch-rbln build. Install the matching rebel-compiler separately. Set `RBLN_DEVICE_MAP` before starting Python. For example, `RBLN_DEVICE_MAP='[8]'` makes physical NPU 8 available to torch as `rbln:0`. For tensor parallelism, map the whole group, for example `[12,13]`, and pass `rbln_device=[12, 13]` at load.
 
 ```python
 import torch
@@ -99,7 +99,6 @@ RBLNLlamaForCausalLM.from_model(
     rbln_config={
         "npu": "RBLN-CA25",
         "create_runtimes": False,
-        "use_device_kv_cache": True,
         "attn_impl": "flash_attn",
         "max_seq_len": 4096,
         "kvcache_partition_len": 1024,
@@ -112,7 +111,7 @@ replacement = {name: torch.zeros_like(tensor) for name, tensor in cache.items()}
 model.set_kv_cache(replacement)
 ```
 
-The optional backend was tested with torch-rbln 0.12.1a1 and rebel-compiler 0.12.1.dev816+g24590902.prod. For offline CA25 export, start the compile process with `RBLN_DUMMY_DEVICE=1 RBLN_FORCE_NPU_NAME=RBLN-CA25` and use a separate process for inference.
+This path was tested with torch-rbln 0.12.1a1 and rebel-compiler 0.12.1.dev816+g24590902.prod. For offline CA25 export, start the compile process with `RBLN_DUMMY_DEVICE=1 RBLN_FORCE_NPU_NAME=RBLN-CA25` and use a separate process for inference.
 
 Prefill and every decode batch size share the bound tensors. Each cache input requires a distinct contiguous allocation. Bind the tensors between requests, after any outstanding execution finishes. Page tables and sequence positions belong to the request and must agree with the cache contents. A caller can bind its tensors before the first forward or call to `get_kv_cache()`.
 

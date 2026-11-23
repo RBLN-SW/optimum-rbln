@@ -34,7 +34,7 @@ from ...device_kv_cache import (
     DecoderCacheRuntime,
     DeviceKVCache,
     cache_shape_override,
-    require_torch_rbln,
+    has_device_cache_inputs,
     runtime_cache_device,
 )
 from ...modeling_attention_utils import (
@@ -251,10 +251,9 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
             original_linear = torch.nn.functional.linear
             torch.nn.functional.linear = torch.ops.rbln_custom_ops.linear
             trace_options = {"model_trace_method": "export_strict"} if rbln_config.nested_compile_region else {}
-            if rbln_config.use_device_kv_cache:
-                override = cache_shape_override(rbln_config, compile_config)
-                if override is not None:
-                    trace_options["dynamic_shape_override"] = override
+            override = cache_shape_override(rbln_config, compile_config)
+            if override is not None:
+                trace_options["dynamic_shape_override"] = override
             compiled_model = cls.compile(
                 wrapped_model,
                 compile_config,
@@ -270,33 +269,17 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
             if quantization:
                 quantization.maybe_reset_quantization_env()
 
-    @classmethod
-    def _get_compile_context(cls, compile_config: RBLNCompileConfig, example_inputs: list[torch.Tensor]):
-        context = CompileContext(use_weight_sharing=True)
+    @staticmethod
+    def _prefill_compile_inputs(compile_config: RBLNCompileConfig, config: RBLNDecoderOnlyModelConfig):
+        from torch_rbln.device import current_device
 
-        # Mark static tensors (self kv states)
-        static_tensors = {}
-        for (name, _, _), tensor in zip(compile_config.input_info, example_inputs, strict=False):
-            if "past_key_values" in name:
-                static_tensors[name] = tensor
-                context.mark_static_address(tensor, name)
-
-        return context, static_tensors
-
-    @classmethod
-    def _prefill_compile_inputs(cls, compile_config: RBLNCompileConfig, config: RBLNDecoderOnlyModelConfig):
-        if config.use_device_kv_cache:
-            require_torch_rbln()
-            tensors = {
-                meta.name: torch.empty(meta.compile_shape, dtype=getattr(torch, meta.dtype), device="rbln")
-                for meta in config.cache_metas
-            }
-            inputs = compile_config.get_dummy_inputs(fill=0, static_tensors=tensors)
-            return inputs, CompileContext(use_weight_sharing=True), tensors
-        names = [name for name, _, _ in compile_config.input_info if "past_key_values" in name]
-        inputs = compile_config.get_dummy_inputs(fill=0, meta_tensor_names=names)
-        context, tensors = cls._get_compile_context(compile_config, inputs)
-        return inputs, context, tensors
+        device = torch.device("rbln", current_device())
+        cache_tensors = {
+            meta.name: torch.empty(meta.compile_shape, dtype=getattr(torch, meta.dtype), device=device)
+            for meta in config.cache_metas
+        }
+        inputs = compile_config.get_dummy_inputs(fill=0, static_tensors=cache_tensors)
+        return inputs, CompileContext(use_weight_sharing=True), cache_tensors
 
     @classmethod
     @torch.inference_mode()
@@ -304,7 +287,7 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
         wrapped_model = cls._wrap_model_if_needed(model, rbln_config)
         prefill_compile_config = rbln_config.compile_cfgs[0]
 
-        prefill_example_inputs, context, static_tensors = cls._prefill_compile_inputs(
+        prefill_example_inputs, context, cache_tensors = cls._prefill_compile_inputs(
             prefill_compile_config, rbln_config
         )
 
@@ -322,7 +305,7 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
         if rbln_config.use_image_prefill:
             image_prefill_compile_config = rbln_config.compile_cfgs[rbln_config.image_prefill_runtime_idx]
             image_prefill_example_inputs = image_prefill_compile_config.get_dummy_inputs(
-                fill=0, static_tensors=static_tensors
+                fill=0, static_tensors=cache_tensors
             )
             compiled_image_prefill = cls._compile_model(
                 wrapped_model,
@@ -342,7 +325,7 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
                 rbln_config.compile_cfgs[rbln_config.decoder_runtime_idx :],
                 strict=False,
             ):
-                dec_example_inputs = dec_compile_config.get_dummy_inputs(fill=0, static_tensors=static_tensors)
+                dec_example_inputs = dec_compile_config.get_dummy_inputs(fill=0, static_tensors=cache_tensors)
                 compiled_decoder = cls._compile_model(
                     wrapped_model,
                     dec_compile_config,
@@ -674,9 +657,6 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
         if any(model_name not in rbln_config.device_map for model_name in expected_model_names):
             cls._raise_missing_compiled_file_error(expected_model_names)
 
-        if rbln_config.runtime_memory_budget is not None and not rbln_config.use_device_kv_cache:
-            raise ValueError("runtime_memory_budget requires an artifact compiled with use_device_kv_cache=True.")
-
         ret_val = [
             rebel.Runtime(
                 compiled_models[i],
@@ -687,18 +667,21 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
             )
             for i, model_name in enumerate(expected_model_names)
         ]
-        if rbln_config.use_device_kv_cache:
-            device = runtime_cache_device(ret_val)
+        if not has_device_cache_inputs(compiled_models[0], rbln_config):
             if rbln_config.runtime_memory_budget is not None:
-                models = dict(zip(expected_model_names, compiled_models, strict=True))
-                rbln_config.kvcache_num_blocks = cls.estimate_live_cache_blocks(models, rbln_config, device)
-            cache = DeviceKVCache(rbln_config, device)
-            return [DecoderCacheRuntime(runtime, cache) for runtime in ret_val]
-        return ret_val
+                raise ValueError("runtime_memory_budget requires an artifact with device cache inputs.")
+            return ret_val
+
+        device = runtime_cache_device(ret_val)
+        if rbln_config.runtime_memory_budget is not None:
+            models = dict(zip(expected_model_names, compiled_models, strict=True))
+            rbln_config.kvcache_num_blocks = cls.estimate_live_cache_blocks(models, rbln_config, device)
+        cache = DeviceKVCache(rbln_config, device)
+        return [DecoderCacheRuntime(runtime, cache) for runtime in ret_val]
 
     def _device_kv_cache(self):
-        if not self.rbln_config.use_device_kv_cache or not isinstance(self.model[0], DecoderCacheRuntime):
-            raise ValueError("This operation requires a loaded decoder compiled with use_device_kv_cache=True.")
+        if not isinstance(self.model[0], DecoderCacheRuntime):
+            raise ValueError("This operation requires a loaded decoder with device cache inputs.")
         return self.model[0].cache
 
     def get_kv_cache(self) -> dict[str, torch.Tensor]:

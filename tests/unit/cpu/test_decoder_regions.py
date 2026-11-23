@@ -117,7 +117,6 @@ def test_decoder_export(monkeypatch, enabled, phase, gemma, max_seq_len):
     inputs = ccfg.get_dummy_inputs(
         fill=0, meta_tensor_names=[n for n, _, _ in ccfg.input_info if "past_key_values" in n]
     )
-    context, _ = model_cls._get_compile_context(ccfg, inputs)
 
     def export(model, **kwargs):
         assert kwargs.get("model_trace_method") == ("export_strict" if enabled else None)
@@ -154,7 +153,7 @@ def test_decoder_export(monkeypatch, enabled, phase, gemma, max_seq_len):
 
     monkeypatch.setattr(rebel, "compile_from_torch", export)
     with torch.inference_mode():
-        model_cls._compile_model(wrapped, ccfg, inputs, context, config, phase=phase)
+        model_cls._compile_model(wrapped, ccfg, inputs, None, config, phase=phase)
 
 
 def test_gpt_oss_experts_have_nonaliased_inputs():
