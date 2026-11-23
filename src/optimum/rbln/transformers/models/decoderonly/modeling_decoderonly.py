@@ -641,19 +641,6 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
         ]
         return ret_val
 
-    def _device_kv_cache(self) -> DeviceKVCache:
-        if self._kv_cache is None:
-            raise ValueError("Load the decoder with create_runtimes=True to use its KV cache.")
-        return self._kv_cache
-
-    def get_kv_cache(self) -> dict[str, torch.Tensor]:
-        """Return the device tensors shared by the decoder runtimes."""
-        return dict(self._device_kv_cache().tensors)
-
-    def set_kv_cache(self, tensors: dict[str, torch.Tensor]) -> None:
-        """Replace the tensors in the active cache with allocations of the same shape."""
-        self._device_kv_cache().bind(tensors)
-
     @classmethod
     def _get_class_specific_oom_help_msg(cls) -> str:
         help_msg = super()._get_class_specific_oom_help_msg()

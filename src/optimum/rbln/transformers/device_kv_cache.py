@@ -19,7 +19,7 @@ import math
 import re
 from bisect import bisect_left, insort
 from collections import defaultdict
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable
 from typing import TYPE_CHECKING
 
 import torch
@@ -66,36 +66,20 @@ def runtime_cache_device(runtimes) -> torch.device:
 
 class DeviceKVCache:
     def __init__(self, config: RBLNDecoderOnlyModelConfig, device: torch.device, num_blocks: int):
-        self.device = device
         lower = (
             config.num_min_blocks if any(meta.can_resize for meta in config.cache_metas) else config.num_full_blocks
         )
         if not lower <= num_blocks <= config.num_full_blocks:
             raise ValueError(f"Expected {lower} to {config.num_full_blocks} KV blocks, got {num_blocks}.")
         self.num_blocks = num_blocks
-        self.specs = {
-            meta.name: (
-                tuple([self.num_blocks, *meta.shape[1:]] if meta.can_resize else meta.shape),
-                getattr(torch, meta.dtype),
+        self.tensors = {
+            meta.name: torch.zeros(
+                (num_blocks, *meta.shape[1:]) if meta.can_resize else meta.shape,
+                dtype=getattr(torch, meta.dtype),
+                device=device,
             )
             for meta in config.cache_metas
         }
-        self.tensors = {
-            name: torch.zeros(shape, dtype=dtype, device=device) for name, (shape, dtype) in self.specs.items()
-        }
-
-    def bind(self, tensors: Mapping[str, torch.Tensor]) -> None:
-        if tensors.keys() != self.specs.keys():
-            raise ValueError(f"Expected cache tensors {list(self.specs)}, got {list(tensors)}.")
-        for name, (shape, dtype) in self.specs.items():
-            t = tensors[name]
-            if not isinstance(t, torch.Tensor) or t.device != self.device or t.shape != shape or t.dtype != dtype:
-                raise ValueError(f"{name} requires a tensor with shape {shape} and dtype {dtype} on {self.device}.")
-            if not t.is_contiguous() or t.storage_offset() or t.nbytes != t.untyped_storage().nbytes():
-                raise ValueError(f"{name} requires a contiguous whole allocation.")
-        if len({t.data_ptr() for t in tensors.values()}) != len(tensors):
-            raise ValueError("Different cache inputs must have distinct allocations.")
-        self.tensors = dict(tensors)
 
 
 class DecoderCacheRuntime:
@@ -105,7 +89,7 @@ class DecoderCacheRuntime:
         self.runtime = runtime
         self.cache = cache
         names = [runtime._index_to_input_name[i] for i in sorted(runtime._index_to_input_name)]
-        self._index_to_input_name = dict(enumerate(name for name in names if name not in cache.specs))
+        self._index_to_input_name = dict(enumerate(name for name in names if name not in cache.tensors))
 
     def __getattr__(self, name):
         return getattr(self.runtime, name)

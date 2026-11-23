@@ -42,42 +42,19 @@ def test_shared_symbol_only_on_resizable_cache_inputs():
     assert dims[2] == [("const", 3), ("const", 2)]
 
 
-def test_rebind_shared_cache_with_inputs_after_cache():
+def test_prefill_and_decode_share_cache_with_inputs_after_cache():
     cache = DeviceKVCache(config(meta("kv"), meta("conv", False)), torch.device("cpu"), 5)
     runtime = Mock(_index_to_input_name={0: "tokens", 1: "kv", 2: "conv", 3: "mask"})
     prefill, decode = DecoderCacheRuntime(runtime, cache), DecoderCacheRuntime(runtime, cache)
     mask = torch.ones(1)
-    cache.bind(
-        replacement := {"kv": torch.zeros(5, 2, dtype=torch.float16), "conv": torch.ones(3, 2, dtype=torch.float16)}
-    )
     prefill(mask, mask)
     decode(mask, mask=mask)
     assert runtime.run.call_count == 2
     for call in runtime.run.call_args_list:
         assert call.kwargs.keys() == {"tokens", "mask", "kv", "conv"}
-        assert call.kwargs["kv"] is replacement["kv"]
-        assert call.kwargs["conv"] is replacement["conv"]
+        assert call.kwargs["kv"] is cache.tensors["kv"]
+        assert call.kwargs["conv"] is cache.tensors["conv"]
         assert call.kwargs["mask"] is mask
-
-
-@pytest.mark.parametrize("bad", ["alias", "offset", "shape", "dtype", "missing"])
-def test_invalid_replacement_preserves_bound_cache(bad):
-    cache = DeviceKVCache(config(meta("k"), meta("v")), torch.device("cpu"), 5)
-    original = cache.tensors
-    tensors = dict(original)
-    if bad == "alias":
-        tensors["v"] = tensors["k"]
-    elif bad == "offset":
-        tensors["v"] = torch.zeros(6, 2, dtype=torch.float16)[1:]
-    elif bad == "shape":
-        tensors["v"] = tensors["v"][:1]
-    elif bad == "dtype":
-        tensors["v"] = tensors["v"].float()
-    else:
-        tensors.pop("k")
-    with pytest.raises(ValueError, match=r"requires|Expected cache tensors|distinct allocations"):
-        cache.bind(tensors)
-    assert cache.tensors is original
 
 
 def test_cache_pool_segments_can_shrink_as_block_count_grows():

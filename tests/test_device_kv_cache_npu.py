@@ -83,11 +83,8 @@ def test_decoder_with_caller_owned_cache(tmp_path, model_device):
     assert len(model.prefill_decoder.page_table_manager.free_block_pool) == 6
     assert "kvcache_num_blocks" not in model.rbln_config._prepare_for_serialization()
     assert config_path.read_bytes() == saved
-    initial = model.get_kv_cache()
-    assert all(t.device == torch.device("rbln", model_device) for t in initial.values())
-    assert initial["past_key_values_0"].shape[0] == 6
-    replacement = {name: torch.zeros_like(t) for name, t in initial.items()}
-    model.set_kv_cache(replacement)
+    tensors = model._kv_cache.tensors
+    assert all(t.device == torch.device("rbln", model_device) for t in tensors.values())
+    assert tensors["past_key_values_0"].shape[0] == 6
     assert torch.equal(generate(model), expected)
-    assert all(t.cpu().count_nonzero() > 0 for t in replacement.values())
-    assert all(t.cpu().count_nonzero() == 0 for t in initial.values())
+    assert all(t.cpu().count_nonzero() > 0 for t in tensors.values())
