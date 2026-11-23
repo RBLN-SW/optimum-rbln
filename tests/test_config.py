@@ -669,6 +669,22 @@ def test_get_load_overrides():
     assert "max_seq_len" not in partial.get_load_overrides()
 
 
+def test_decoder_config_rejects_conflicting_cache_options(tmp_path):
+    RBLNLlamaForCausalLMConfig().save(tmp_path)
+    budget = RBLNLlamaForCausalLMConfig(memory_budget=0.8)
+    original_blocks = budget.kvcache_num_blocks
+    assert RBLNLlamaForCausalLMConfig.from_pretrained(tmp_path, rbln_config=budget).memory_budget == 0.8
+
+    with pytest.raises(ValueError, match="mutually exclusive"):
+        RBLNLlamaForCausalLMConfig(memory_budget=0.8, kvcache_num_blocks=6)
+    RBLNLlamaForCausalLMConfig(kvcache_num_blocks=6).save(tmp_path)
+    with pytest.raises(ValueError, match="mutually exclusive"):
+        RBLNLlamaForCausalLMConfig.from_pretrained(tmp_path, rbln_config=budget, rbln_kvcache_num_blocks=6)
+    with pytest.raises(ValueError, match="mutually exclusive"):
+        RBLNLlamaForCausalLMConfig.initialize_from_kwargs(budget, rbln_kvcache_num_blocks=6)
+    assert budget.kvcache_num_blocks == original_blocks
+
+
 def test_get_load_overrides_includes_non_save_flags():
     """Non-save attributes (subclass_non_save_attributes) must cross the load boundary:
     they are never serialized, so they can only travel with the caller."""

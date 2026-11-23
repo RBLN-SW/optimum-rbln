@@ -244,12 +244,7 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
         self.prefill_chunk_size = prefill_chunk_size
         self.kvcache_num_blocks = kvcache_num_blocks if kvcache_num_blocks is not None else 0
         self.memory_budget = memory_budget
-        if self.memory_budget is not None and self.kvcache_num_blocks > 0:
-            raise ValueError(
-                "`memory_budget` and an explicit `kvcache_num_blocks` are mutually exclusive. "
-                "`memory_budget` only guides automatic block estimation, which runs when "
-                "`kvcache_num_blocks` is unset."
-            )
+        self._validate_load_options()
         self.cache_impl = cache_impl or "static"
         self.sliding_window = sliding_window
         self.sliding_window_layers = sliding_window_layers or []
@@ -295,6 +290,16 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
         self.cache_metas: list[CacheMeta] = [
             CacheMeta.from_serialized(meta) if isinstance(meta, dict) else meta for meta in cache_metas or []
         ]
+
+    def _validate_load_options(self, **overrides: Any) -> None:
+        budget = overrides.get("memory_budget", self.memory_budget)
+        blocks = overrides.get("kvcache_num_blocks", self.kvcache_num_blocks)
+        if budget is not None and blocks is not None and blocks > 0:
+            raise ValueError(
+                "`memory_budget` and an explicit `kvcache_num_blocks` are mutually exclusive. "
+                "`memory_budget` only guides automatic block estimation, which runs when "
+                "`kvcache_num_blocks` is unset."
+            )
 
     @staticmethod
     def validate_phases_type(phases: list[PhaseType]):
