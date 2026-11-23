@@ -214,17 +214,8 @@ def load_config(path: str | Path) -> tuple[type["RBLNModelConfig"], dict[str, An
                 f"`{config_path}` is an old version. Please recompile the model to get the latest config file."
             )
 
-    def read_saved_attributes(config: dict[str, Any]) -> type["RBLNModelConfig"]:
-        config_cls = get_rbln_config_class(config["cls_name"])
-        for name in config_cls.subclass_non_save_attributes:
-            config.pop(name, None)
-        for name in config_cls.submodules:
-            subconfig = config.get(name)
-            if isinstance(subconfig, dict) and "cls_name" in subconfig:
-                read_saved_attributes(subconfig)
-        return config_cls
-
-    cls = read_saved_attributes(config_file)
+    cls_name = config_file["cls_name"]
+    cls = get_rbln_config_class(cls_name)
     return cls, config_file
 
 

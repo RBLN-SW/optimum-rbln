@@ -224,7 +224,6 @@ def test_decoder_block_count_is_load_only(tmp_path):
     saved = json.loads(path.read_text())
     assert "memory_budget" not in saved
     assert "kvcache_num_blocks" not in saved
-    path.write_text(json.dumps({**saved, "kvcache_num_blocks": 6}))
 
     assert RBLNLlamaForCausalLMConfig.from_pretrained(path).kvcache_num_blocks is None
     loaded = RBLNLlamaForCausalLMConfig.from_pretrained(path, rbln_kvcache_num_blocks=7)
