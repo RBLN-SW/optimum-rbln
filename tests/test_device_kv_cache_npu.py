@@ -13,10 +13,11 @@ from optimum.rbln import RBLNLlamaForCausalLM
     not os.getenv("RBLN_DEVICE_MAP") or os.getenv("RBLN_DUMMY_DEVICE") == "1",
     reason="Set RBLN_DEVICE_MAP to a physical CA25 test device.",
 )
-def test_decoder_with_caller_owned_cache(tmp_path):
+@pytest.mark.parametrize("model_device", [0, 1])
+def test_decoder_with_caller_owned_cache(tmp_path, model_device):
     from torch_rbln._internal.rsd_utils import get_physical_device_ids
 
-    devices = get_physical_device_ids(0)
+    devices = get_physical_device_ids(model_device)
     if not devices or len(devices) > 2 or rebel.get_npu_name(devices[0]) != "RBLN-CA25":
         pytest.skip("This flash attention configuration targets one or two CA25 devices.")
 
@@ -85,6 +86,7 @@ def test_decoder_with_caller_owned_cache(tmp_path):
     assert "kvcache_num_blocks" not in model.rbln_config._prepare_for_serialization()
     assert config_path.read_bytes() == saved
     initial = model.get_kv_cache()
+    assert all(t.device == torch.device("rbln", model_device) for t in initial.values())
     assert initial["past_key_values_0"].shape[0] == 6
     replacement = {name: torch.zeros_like(t) for name, t in initial.items()}
     model.set_kv_cache(replacement)
