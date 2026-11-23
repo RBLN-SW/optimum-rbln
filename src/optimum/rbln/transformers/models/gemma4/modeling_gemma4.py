@@ -425,10 +425,10 @@ class RBLNGemma4ForCausalLM(RBLNMoeLoadMixin, RBLNDecoderOnlyModelForCausalLM):
         save_dict = {}
         if rbln_config.use_inputs_embeds:
             save_dict["embed_tokens"] = model.get_input_embeddings().state_dict()
-        inner = getattr(model, "model", None)
-        embed_per_layer = getattr(inner, "embed_tokens_per_layer", None) if inner is not None else None
-        if embed_per_layer is not None:
-            save_dict["embed_tokens_per_layer"] = embed_per_layer.state_dict()
+            inner = getattr(model, "model", None)
+            embed_per_layer = getattr(inner, "embed_tokens_per_layer", None) if inner is not None else None
+            if embed_per_layer is not None:
+                save_dict["embed_tokens_per_layer"] = embed_per_layer.state_dict()
         if save_dict:
             # nosemgrep: trailofbits.python.pickles-in-pytorch.pickles-in-pytorch
             torch.save(save_dict, save_dir_path / subfolder / "torch_artifacts.pth")
