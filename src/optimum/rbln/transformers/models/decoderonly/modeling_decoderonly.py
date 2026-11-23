@@ -19,7 +19,6 @@ from typing import Any
 
 import rebel
 import torch
-from rebel.compile_context import CompileContext
 from transformers import AutoModel, AutoModelForCausalLM, PretrainedConfig, PreTrainedModel
 from transformers.initialization import no_init_weights
 from transformers.modeling_outputs import BaseModelOutputWithPast
@@ -80,6 +79,13 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
     auto_model_class = AutoModel
     _decoder_wrapper_cls = DecoderOnlyWrapper
     _use_rotary_emb = True
+
+    def __init__(self, models, config, rbln_config, *args, **kwargs):
+        self._kv_cache = None
+        if models:
+            self._kv_cache = DeviceKVCache(rbln_config, runtime_cache_device(models))
+            models = [DecoderCacheRuntime(runtime, self._kv_cache) for runtime in models]
+        super().__init__(models, config, rbln_config, *args, **kwargs)
 
     def __post_init__(self, **kwargs):
         if self.rbln_config.use_inputs_embeds:
@@ -238,7 +244,6 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
         wrapped_model,
         compile_config,
         example_inputs,
-        compile_context,
         rbln_config: RBLNDecoderOnlyModelForCausalLMConfig,
         quantization=None,
         phase: str = "prefill",
@@ -259,7 +264,7 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
                 create_runtimes=rbln_config.create_runtimes,
                 device=rbln_config.device,
                 example_inputs=example_inputs,
-                compile_context=compile_context,
+                use_weight_sharing=True,
                 **trace_options,
             )
             return compiled_model
@@ -278,7 +283,7 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
             for meta in config.cache_metas
         }
         inputs = compile_config.get_dummy_inputs(fill=0, static_tensors=cache_tensors)
-        return inputs, CompileContext(use_weight_sharing=True), cache_tensors
+        return inputs, cache_tensors
 
     @classmethod
     @torch.inference_mode()
@@ -286,16 +291,13 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
         wrapped_model = cls._wrap_model_if_needed(model, rbln_config)
         prefill_compile_config = rbln_config.compile_cfgs[0]
 
-        prefill_example_inputs, context, cache_tensors = cls._prefill_compile_inputs(
-            prefill_compile_config, rbln_config
-        )
+        prefill_example_inputs, cache_tensors = cls._prefill_compile_inputs(prefill_compile_config, rbln_config)
 
         compiled_models: dict[str, rebel.RBLNCompiledModel] = {}
         compiled_models["prefill"] = cls._compile_model(
             wrapped_model,
             prefill_compile_config,
             prefill_example_inputs,
-            context,
             rbln_config,
             rbln_config.quantization,
             phase="prefill",
@@ -310,7 +312,6 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
                 wrapped_model,
                 image_prefill_compile_config,
                 image_prefill_example_inputs,
-                context,
                 rbln_config,
                 rbln_config.quantization,
                 phase="image_prefill",
@@ -329,7 +330,6 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
                     wrapped_model,
                     dec_compile_config,
                     dec_example_inputs,
-                    context,
                     rbln_config,
                     rbln_config.quantization,
                     phase="decode",
@@ -650,13 +650,13 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
         cls,
         compiled_models: list[rebel.RBLNCompiledModel],
         rbln_config: RBLNDecoderOnlyModelForCausalLMConfig,
-    ) -> list[DecoderCacheRuntime]:
+    ) -> list[rebel.Runtime]:
         expected_model_names = rbln_config.expected_compiled_model_names
 
         if any(model_name not in rbln_config.device_map for model_name in expected_model_names):
             cls._raise_missing_compiled_file_error(expected_model_names)
 
-        ret_val = [
+        return [
             rebel.Runtime(
                 compiled_models[i],
                 tensor_type="pt",
@@ -666,17 +666,11 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
             )
             for i, model_name in enumerate(expected_model_names)
         ]
-        device = runtime_cache_device(ret_val)
-        if rbln_config.runtime_memory_budget is not None:
-            models = dict(zip(expected_model_names, compiled_models, strict=True))
-            rbln_config.kvcache_num_blocks = cls.estimate_live_cache_blocks(models, rbln_config, device)
-        cache = DeviceKVCache(rbln_config, device)
-        return [DecoderCacheRuntime(runtime, cache) for runtime in ret_val]
 
-    def _device_kv_cache(self):
-        if not isinstance(self.model[0], DecoderCacheRuntime):
-            raise ValueError("This operation requires a loaded decoder with device cache inputs.")
-        return self.model[0].cache
+    def _device_kv_cache(self) -> DeviceKVCache:
+        if self._kv_cache is None:
+            raise ValueError("Load the decoder with create_runtimes=True to use its KV cache.")
+        return self._kv_cache
 
     def get_kv_cache(self) -> dict[str, torch.Tensor]:
         """Return the device tensors shared by the decoder runtimes."""

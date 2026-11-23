@@ -3,7 +3,6 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import rebel
-import torch
 
 from ..utils.logging import get_logger
 from ..utils.runtime_utils import get_available_dram_per_chiplet, parse_byte_size, resolve_npu_or_none
@@ -260,21 +259,3 @@ class RBLNDecoderOnlyFlashAttentionMixin:
         available = get_available_dram_per_chiplet(num_chiplets, rbln_config.npu) * num_chiplets
         budget = _resolve_memory_budget(rbln_config.memory_budget, available) // num_chiplets
         return fit_cache_blocks(shards, rbln_config, {unit: budget - used[unit] for unit in units})
-
-    @classmethod
-    def estimate_live_cache_blocks(cls, compiled_models, config, device):
-        stats = torch.rbln.mem_get_info_per_chiplet(device)
-        totals = {}
-        for key, value in stats.items():
-            parts = key.split(".")
-            if len(parts) == 5 and parts[2] == "chiplet" and parts[-1] == "total":
-                totals[int(parts[1]), int(parts[3])] = value
-        if not totals:
-            raise ValueError("The driver did not report per-chiplet DRAM for runtime_memory_budget.")
-        room = {}
-        for (node, chiplet), total in totals.items():
-            node_total = sum(size for (n, _), size in totals.items() if n == node)
-            budget = _resolve_memory_budget(config.runtime_memory_budget, node_total)
-            used = stats[f"npu.{node}.chiplet.{chiplet}.used"]
-            room[node, chiplet] = budget * total // node_total - used
-        return fit_cache_blocks(cache_shards(compiled_models, config), config, room)

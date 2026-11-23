@@ -358,16 +358,13 @@ class RBLNGemma4ForCausalLM(RBLNMoeLoadMixin, RBLNDecoderOnlyModelForCausalLM):
         wrapped_model = cls._wrap_model_if_needed(model, rbln_config)
         prefill_compile_config = rbln_config.compile_cfgs[0]
 
-        prefill_example_inputs, context, cache_tensors = cls._prefill_compile_inputs(
-            prefill_compile_config, rbln_config
-        )
+        prefill_example_inputs, cache_tensors = cls._prefill_compile_inputs(prefill_compile_config, rbln_config)
 
         compiled_models = {}
         compiled_models["prefill"] = cls._compile_model(
             wrapped_model,
             prefill_compile_config,
             prefill_example_inputs,
-            context,
             rbln_config,
             rbln_config.quantization,
             phase="prefill",
@@ -385,7 +382,6 @@ class RBLNGemma4ForCausalLM(RBLNMoeLoadMixin, RBLNDecoderOnlyModelForCausalLM):
                     wrapped_model,
                     ip_compile_config,
                     ip_example_inputs,
-                    context,
                     rbln_config,
                     rbln_config.quantization,
                     phase="image_prefill",
@@ -403,7 +399,6 @@ class RBLNGemma4ForCausalLM(RBLNMoeLoadMixin, RBLNDecoderOnlyModelForCausalLM):
                     wrapped_model,
                     dec_compile_config,
                     dec_example_inputs,
-                    context,
                     rbln_config,
                     rbln_config.quantization,
                     phase="decode",

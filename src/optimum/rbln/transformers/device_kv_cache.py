@@ -74,16 +74,9 @@ class DeviceKVCache:
             )
             for meta in config.cache_metas
         }
-        self._tensors: dict[str, torch.Tensor] | None = None
-
-    @property
-    def tensors(self) -> dict[str, torch.Tensor]:
-        if self._tensors is None:
-            self._tensors = {
-                name: torch.zeros(shape, dtype=dtype, device=self.device)
-                for name, (shape, dtype) in self.specs.items()
-            }
-        return self._tensors
+        self.tensors = {
+            name: torch.zeros(shape, dtype=dtype, device=device) for name, (shape, dtype) in self.specs.items()
+        }
 
     def bind(self, tensors: Mapping[str, torch.Tensor]) -> None:
         if tensors.keys() != self.specs.keys():
@@ -96,7 +89,7 @@ class DeviceKVCache:
                 raise ValueError(f"{name} requires a contiguous whole allocation.")
         if len({t.data_ptr() for t in tensors.values()}) != len(tensors):
             raise ValueError("Different cache inputs must have distinct allocations.")
-        self._tensors = dict(tensors)
+        self.tensors = dict(tensors)
 
 
 class DecoderCacheRuntime:

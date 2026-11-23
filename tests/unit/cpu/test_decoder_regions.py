@@ -119,6 +119,8 @@ def test_decoder_export(monkeypatch, enabled, phase, gemma, max_seq_len):
     )
 
     def export(model, **kwargs):
+        assert "compile_context" not in kwargs
+        assert kwargs["use_weight_sharing"] is True
         assert kwargs.get("model_trace_method") == ("export_strict" if enabled else None)
         result = torch.export.export(clone_nn_module(model), tuple(kwargs["example_inputs"]), strict=enabled)
         assert set(result.graph_signature.inputs_to_parameters.values()) <= set(
@@ -153,7 +155,7 @@ def test_decoder_export(monkeypatch, enabled, phase, gemma, max_seq_len):
 
     monkeypatch.setattr(rebel, "compile_from_torch", export)
     with torch.inference_mode():
-        model_cls._compile_model(wrapped, ccfg, inputs, None, config, phase=phase)
+        model_cls._compile_model(wrapped, ccfg, inputs, config, phase=phase)
 
 
 def test_gpt_oss_experts_have_nonaliased_inputs():
