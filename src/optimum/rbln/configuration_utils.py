@@ -874,12 +874,6 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
 
         return serializable_map
 
-    @classmethod
-    def _apply_load_overrides(cls, saved_config: dict[str, Any], options: dict[str, Any]) -> None:
-        for name in cls.subclass_non_save_attributes:
-            if name in options:
-                saved_config[name] = options.pop(name)
-
     def get_load_overrides(self) -> dict[str, Any]:
         """
         Extract the options that must cross the load boundary, for passing to from_pretrained.
@@ -1080,10 +1074,6 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
 
             update_dict = rbln_submodule_kwargs.pop(submodule, {})
             if update_dict:
-                update_dict = dict(update_dict)
-                get_rbln_config_class(submodule_config["cls_name"])._apply_load_overrides(
-                    submodule_config, update_dict
-                )
                 nested_update(submodule_config, update_dict)
             config_file[submodule] = RBLNAutoConfig.load_from_dict(submodule_config)
 
@@ -1102,9 +1092,13 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
                 config_file[submodule] = getattr(rbln_config, submodule)
 
         config_file.update(rbln_runtime_kwargs)
-        cls._apply_load_overrides(config_file, rbln_kwargs)
+        for key in cls.subclass_non_save_attributes:
+            if key in rbln_kwargs:
+                config_file[key] = rbln_kwargs.pop(key)
         config = cls(**config_file)
         for key, value in rbln_kwargs.items():
+            if not hasattr(config, key):
+                raise ValueError(f"Unknown configuration option: {key!r}")
             if getattr(config, key) != value:
                 raise ValueError(
                     f"Cannot set the following arguments: {list(rbln_kwargs.keys())} "

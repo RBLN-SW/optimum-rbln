@@ -54,7 +54,6 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
         lora_config: dict[str, Any] | RBLNLoRAConfig | None = None,
         prefill_chunk_size: int | None = None,
         kvcache_num_blocks: int | None = None,
-        memory_budget: int | float | str | None = None,
         decoder_batch_sizes: list[int] | None = None,
         cache_impl: CacheImplType | None = None,
         sliding_window: int | None = None,
@@ -107,12 +106,6 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
             kvcache_num_blocks (int | None): The total number of blocks to allocate for the
                 PagedAttention KV cache. With flash attention, 0 selects the capacity at load time.
                 See the "KV Cache Number of Blocks (`kvcache_num_blocks`)" section below for details.
-            memory_budget (int | float | str | None): Usable DRAM budget (system reserve
-                excluded) used when auto-estimating `kvcache_num_blocks`. Prefer a float in (0, 1]
-                as a fraction of the NPU available DRAM (e.g. 0.8 for 80%). A "80%" string is also
-                accepted (convenient for passing through the compile CLI), as are bytes given as an
-                int or string ("10GB", "512MB"). Defaults to None (the full NPU available DRAM).
-                Must not exceed the target NPU's available DRAM.
             decoder_batch_sizes (list[int] | None): A list of batch sizes for which separate decoder models will be compiled.
                 This allows the model to handle varying batch sizes efficiently during generation. If not specified,
                 defaults to a list containing only the model's main batch size. When specifying multiple batch sizes:
@@ -233,13 +226,6 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
         self.kvcache_block_size = kvcache_block_size
         self.prefill_chunk_size = prefill_chunk_size
         self.kvcache_num_blocks = kvcache_num_blocks or None
-        self.memory_budget = memory_budget
-        if self.memory_budget is not None and self.kvcache_num_blocks is not None:
-            raise ValueError(
-                "`memory_budget` and an explicit `kvcache_num_blocks` are mutually exclusive. "
-                "`memory_budget` only guides automatic block estimation, which runs when "
-                "`kvcache_num_blocks` is unset."
-            )
         self.cache_impl = cache_impl or "static"
         self.sliding_window = sliding_window
         self.sliding_window_layers = sliding_window_layers or []
@@ -350,18 +336,6 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
         if self.quantization:
             return self.quantization.nbits_per_param
         return 16
-
-    @classmethod
-    def _apply_load_overrides(cls, saved_config: dict[str, Any], options: dict[str, Any]) -> None:
-        if "memory_budget" in options or options.get("kvcache_num_blocks"):
-            saved_config["memory_budget"] = options.pop("memory_budget", None)
-        super()._apply_load_overrides(saved_config, options)
-
-    def get_load_overrides(self) -> dict[str, Any]:
-        options = super().get_load_overrides()
-        if self.memory_budget is not None:
-            options["memory_budget"] = self.memory_budget
-        return options
 
     @property
     def num_full_blocks(self) -> int:

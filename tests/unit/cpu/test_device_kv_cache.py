@@ -4,6 +4,7 @@ from unittest.mock import Mock
 import pytest
 import torch
 
+from optimum.rbln.transformers import modeling_attention_utils
 from optimum.rbln.transformers.device_kv_cache import (
     DecoderCacheRuntime,
     DeviceKVCache,
@@ -89,6 +90,17 @@ def test_cache_pool_segments_can_shrink_as_block_count_grows():
     assert fit_cache_blocks(shards, cfg, room) == 24
     with pytest.raises(ValueError, match="Insufficient memory"):
         fit_cache_blocks(shards, cfg, {**room, (1, 0): MIB})
+
+
+def test_auto_cache_capacity_uses_free_memory_on_each_chiplet(monkeypatch):
+    shards = {"kv": [(0, 0, MIB), (0, 1, MIB)]}
+    monkeypatch.setattr(modeling_attention_utils, "cache_shards", Mock(return_value=shards))
+    stats = {"npu.0.chiplet.0.free": 32 * MIB, "npu.0.chiplet.1.free": 16 * MIB}
+    monkeypatch.setattr(torch.rbln, "mem_get_info_per_chiplet", Mock(return_value=stats))
+    blocks = modeling_attention_utils.RBLNDecoderOnlyFlashAttentionMixin.estimate_num_kvcache_blocks(
+        [], config(meta("kv")), torch.device("rbln:0")
+    )
+    assert blocks == 16
 
 
 def test_fixed_cache_uses_full_block_count():

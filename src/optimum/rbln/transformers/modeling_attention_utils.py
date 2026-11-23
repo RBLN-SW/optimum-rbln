@@ -5,7 +5,7 @@ import rebel
 import torch
 
 from ..utils.logging import get_logger
-from ..utils.runtime_utils import parse_byte_size, resolve_npu_or_none
+from ..utils.runtime_utils import resolve_npu_or_none
 from .device_kv_cache import (
     cache_requests,
     cache_shards,
@@ -187,29 +187,6 @@ def validate_sliding_window(rbln_config: "RBLNDecoderOnlyModelConfig") -> None:
         raise ValueError("`use_attention_mask` must be set to False when `cache_impl` is set to 'sliding_window'.")
 
 
-def parse_memory_budget(value: int | float | str) -> int | float:
-    if isinstance(value, str) and value.strip().endswith("%"):
-        value = float(value.strip()[:-1]) / 100
-    if isinstance(value, float):
-        if not 0.0 < value <= 1.0:
-            raise ValueError(f"memory_budget fraction must be in (0, 1], got {value!r}.")
-        return value
-    return parse_byte_size(value)
-
-
-def _resolve_memory_budget(memory_budget: int | float | str | None, available_total: int) -> int:
-    if memory_budget is None:
-        return available_total
-    budget = parse_memory_budget(memory_budget)
-    if isinstance(budget, float):
-        return int(available_total * budget)
-    if budget > available_total:
-        raise ValueError(
-            f"memory_budget ({budget} bytes) exceeds the target NPU's available DRAM ({available_total} bytes)."
-        )
-    return budget
-
-
 class RBLNDecoderOnlyFlashAttentionMixin:
     @classmethod
     def estimate_num_kvcache_blocks(
@@ -220,10 +197,8 @@ class RBLNDecoderOnlyFlashAttentionMixin:
     ) -> int:
         shards = cache_shards(compiled_models, rbln_config)
         stats = torch.rbln.mem_get_info_per_chiplet(device)
-        room = {}
-        for node, chiplet in cache_requests(shards, rbln_config, 1):
-            node_total = stats[f"npu.{node}.total"]
-            prefix = f"npu.{node}.chiplet.{chiplet}"
-            budget = _resolve_memory_budget(rbln_config.memory_budget, node_total)
-            room[node, chiplet] = budget * stats[f"{prefix}.total"] // node_total - stats[f"{prefix}.used"]
+        room = {
+            (node, chiplet): stats[f"npu.{node}.chiplet.{chiplet}.free"]
+            for node, chiplet in cache_requests(shards, rbln_config, 1)
+        }
         return fit_cache_blocks(shards, rbln_config, room)

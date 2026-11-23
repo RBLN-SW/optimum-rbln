@@ -16,7 +16,6 @@
 import argparse
 import inspect
 import json
-import shutil
 import sys
 from pathlib import Path
 from typing import Any
@@ -24,7 +23,7 @@ from typing import Any
 from huggingface_hub import hf_hub_download
 
 from .__version__ import __version__
-from .configuration_utils import RBLNModelConfig, load_config
+from .configuration_utils import RBLNModelConfig
 from .utils.model_utils import get_rbln_model_cls
 from .utils.runtime_utils import ContextRblnConfig
 
@@ -423,28 +422,6 @@ def _infer_rbln_class_from_model_id(
     return None
 
 
-def _set_memory_budget(model_id: str, budget: str, output_dir: str | None = None) -> None:
-    from .transformers.modeling_attention_utils import parse_memory_budget
-    from .transformers.models.decoderonly.configuration_decoderonly import RBLNDecoderOnlyModelConfig
-
-    src_dir = Path(model_id).resolve()
-    if not src_dir.is_dir() or not any(src_dir.glob("*.rbln")):
-        raise ValueError("--model-id must be a local compiled-artifact directory.")
-    config_cls, _ = load_config(src_dir)
-    if not issubclass(config_cls, RBLNDecoderOnlyModelConfig):
-        raise ValueError("--set-memory-budget requires a decoder-only artifact.")
-    rbln_config = config_cls.from_pretrained(src_dir, rbln_memory_budget=parse_memory_budget(parse_value(budget)))
-    dst_dir = src_dir if output_dir is None else Path(output_dir).resolve()
-    if dst_dir != src_dir:
-
-        def exclude_destination(directory, names):
-            return [dst_dir.name] if Path(directory) == dst_dir.parent else []
-
-        shutil.copytree(src_dir, dst_dir, dirs_exist_ok=True, ignore=exclude_destination)
-    rbln_config.save(str(dst_dir))
-    print(f"Set memory_budget to {budget} for artifact at {dst_dir.absolute()}")
-
-
 def main():
     """
     Main CLI function for optimum-rbln model compilation.
@@ -544,16 +521,6 @@ def main():
         help="Show rbln_config keys for the resolved RBLN class (via --class or inferred from --model-id) and exit",
     )
 
-    parser.add_argument(
-        "--set-memory-budget",
-        dest="set_memory_budget",
-        type=str,
-        default=None,
-        metavar="BUDGET",
-        help="Set the DRAM budget used to size the KV cache when loading --model-id. "
-        "Accepts a fraction, percentage, or byte size.",
-    )
-
     # Standard --version that integrates with argparse (works after full parse)
     parser.add_argument(
         "--version",
@@ -606,15 +573,6 @@ def main():
 
     # Parse known args to allow for additional rbln_* arguments
     args, unknown_args = parser.parse_known_args()
-
-    if args.set_memory_budget is not None:
-        output_dir = args.output_dir if "--output-dir" in sys.argv or "-o" in sys.argv else None
-        try:
-            _set_memory_budget(args.model_id, args.set_memory_budget, output_dir)
-        except Exception as e:
-            print(f"❌ Error: {e}", file=sys.stderr)
-            sys.exit(1)
-        return
 
     try:
         # Resolve or infer model class for compilation

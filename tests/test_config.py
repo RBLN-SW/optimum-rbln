@@ -222,12 +222,15 @@ def test_decoder_block_count_is_load_only(tmp_path):
     path = tmp_path / "rbln_config.json"
     RBLNLlamaForCausalLMConfig(attn_impl="flash_attn", kvcache_num_blocks=6).save(path)
     saved = json.loads(path.read_text())
+    assert "memory_budget" not in saved
     assert "kvcache_num_blocks" not in saved
     path.write_text(json.dumps({**saved, "kvcache_num_blocks": 6}))
 
     assert RBLNLlamaForCausalLMConfig.from_pretrained(path).kvcache_num_blocks is None
     loaded = RBLNLlamaForCausalLMConfig.from_pretrained(path, rbln_kvcache_num_blocks=7)
     assert loaded.kvcache_num_blocks == 7
+    with pytest.raises(ValueError, match="Unknown configuration option: 'memory_budget'"):
+        RBLNLlamaForCausalLMConfig.from_pretrained(path, rbln_memory_budget=0.8)
     loaded.save(path)
     assert json.loads(path.read_text()) == saved
 
@@ -689,9 +692,9 @@ def test_get_load_overrides_includes_non_save_flags():
     they are never serialized, so they can only travel with the caller."""
     from optimum.rbln import RBLNQwen2_5_VLForConditionalGenerationConfig, RBLNQwen3VLForConditionalGenerationConfig
 
-    cfg = RBLNQwen3VLForConditionalGenerationConfig(device=0, memory_budget=0.8)
+    cfg = RBLNQwen3VLForConditionalGenerationConfig(device=0, kvcache_num_blocks=8)
     overrides = cfg.get_load_overrides()
-    assert overrides["memory_budget"] == 0.8
+    assert overrides["kvcache_num_blocks"] == 8
     assert overrides["device"] == 0
 
     # A submodule left as a plain dict keeps runtime options only: its config class is

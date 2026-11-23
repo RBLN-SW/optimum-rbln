@@ -7,7 +7,6 @@ import torch
 from transformers import LlamaConfig, LlamaForCausalLM
 
 from optimum.rbln import RBLNLlamaForCausalLM
-from optimum.rbln.cli import _set_memory_budget
 
 
 @pytest.mark.skipif(
@@ -74,15 +73,7 @@ def test_decoder_with_caller_owned_cache(tmp_path):
     with pytest.raises(TypeError, match="unexpected keyword argument 'kv_cache'"):
         RBLNLlamaForCausalLM.from_pretrained(directory, rbln_create_runtimes=False, kv_cache={})
 
-    copy = tmp_path / "with-budget"
-    _set_memory_budget(str(directory), "90%", str(copy))
-    budget_config = json.loads((copy / "rbln_config.json").read_bytes())
-    assert budget_config["memory_budget"] == 0.9
-    assert "kvcache_num_blocks" not in budget_config
-    with pytest.raises(ValueError, match="Insufficient memory"):
-        RBLNLlamaForCausalLM.from_pretrained(copy, rbln_device=devices, rbln_memory_budget=1)
-
-    model = RBLNLlamaForCausalLM.from_pretrained(copy, rbln_device=devices, rbln_kvcache_num_blocks=6)
+    model = RBLNLlamaForCausalLM.from_pretrained(directory, rbln_device=devices, rbln_kvcache_num_blocks=6)
     assert model.get_kvcache_num_blocks() == 6
     assert len(model.prefill_decoder.page_table_manager.free_block_pool) == 6
     assert "kvcache_num_blocks" not in model.rbln_config._prepare_for_serialization()
