@@ -38,7 +38,7 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
 
     _default_phases = ["prefill"]
     _default_logits_to_keep = 0
-    subclass_non_save_attributes = ["nested_compile_region", "kvcache_num_blocks"]
+    subclass_non_save_attributes = ["memory_budget", "nested_compile_region", "kvcache_num_blocks"]
 
     def __init__(
         self,

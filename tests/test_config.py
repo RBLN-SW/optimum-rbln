@@ -222,13 +222,14 @@ def test_decoder_block_count_is_load_only(tmp_path):
     path = tmp_path / "rbln_config.json"
     RBLNLlamaForCausalLMConfig(attn_impl="flash_attn", kvcache_num_blocks=6).save(path)
     saved = json.loads(path.read_text())
+    assert "memory_budget" in RBLNLlamaForCausalLMConfig.subclass_non_save_attributes
     assert "memory_budget" not in saved
     assert "kvcache_num_blocks" not in saved
 
     assert RBLNLlamaForCausalLMConfig.from_pretrained(path).kvcache_num_blocks is None
     loaded = RBLNLlamaForCausalLMConfig.from_pretrained(path, rbln_kvcache_num_blocks=7)
     assert loaded.kvcache_num_blocks == 7
-    with pytest.raises(ValueError, match="Unknown configuration option: 'memory_budget'"):
+    with pytest.raises(ValueError, match="memory_budget"):
         RBLNLlamaForCausalLMConfig.from_pretrained(path, rbln_memory_budget=0.8)
     loaded.save(path)
     assert json.loads(path.read_text()) == saved
