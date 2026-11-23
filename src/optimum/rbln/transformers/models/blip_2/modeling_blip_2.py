@@ -354,7 +354,7 @@ class RBLNBlip2ForConditionalGeneration(RBLNModel, RBLNDecoderOnlyGenerationMixi
         return self.rbln_config.language_model.attn_impl
 
     def get_kvcache_num_blocks(self) -> int:
-        return self.rbln_config.language_model.kvcache_num_blocks
+        return self.language_model.get_kvcache_num_blocks()
 
     def get_input_embeddings(self):
         return self.language_model.get_input_embeddings()

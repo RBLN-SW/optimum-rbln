@@ -33,15 +33,15 @@ if TYPE_CHECKING:
 def cache_shape_override(config: RBLNDecoderOnlyModelConfig, compile_config: RBLNCompileConfig):
     from rebel.input_info import SymbolInfo
 
-    dynamic_names = {meta.name for meta in config.cache_metas if meta.can_resize}
+    block_limits = {meta.name: meta.shape[0] for meta in config.cache_metas if meta.can_resize}
     symbols = {}
     shapes = []
     for idx, (name, shape, _) in enumerate(compile_config.input_info):
         dims = [("const", dim) for dim in shape]
-        if name in dynamic_names:
+        if name in block_limits:
             dims[0] = ("symbol", "num_blocks")
             if not symbols:
-                symbols["num_blocks"] = SymbolInfo("num_blocks", idx, 0, 1, config.num_full_blocks, shape[0])
+                symbols["num_blocks"] = SymbolInfo("num_blocks", idx, 0, 1, block_limits[name], shape[0])
         shapes.append(dims)
     return (symbols, shapes) if symbols else None
 
@@ -65,18 +65,39 @@ def runtime_cache_device(runtimes) -> torch.device:
 
 
 class DeviceKVCache:
-    def __init__(self, config: RBLNDecoderOnlyModelConfig, device: torch.device):
+    def __init__(
+        self,
+        config: RBLNDecoderOnlyModelConfig,
+        device: torch.device,
+        num_blocks: int,
+        tensors: Mapping[str, torch.Tensor] | None = None,
+    ):
         self.device = device
+        dynamic_meta = next((meta for meta in config.cache_metas if meta.can_resize), None)
+        if dynamic_meta is not None:
+            if tensors is not None:
+                tensor = tensors.get(dynamic_meta.name)
+                if not isinstance(tensor, torch.Tensor) or not tensor.ndim:
+                    raise ValueError(f"{dynamic_meta.name} requires a cache tensor with a block dimension.")
+                num_blocks = tensor.shape[0]
+            if not config.num_min_blocks <= num_blocks <= dynamic_meta.shape[0]:
+                raise ValueError(
+                    f"Expected {config.num_min_blocks} to {dynamic_meta.shape[0]} KV blocks, got {num_blocks}."
+                )
+        self.num_blocks = num_blocks or config.num_full_blocks
         self.specs = {
             meta.name: (
-                tuple([config.kvcache_num_blocks, *meta.shape[1:]] if meta.can_resize else meta.shape),
+                tuple([self.num_blocks, *meta.shape[1:]] if meta.can_resize else meta.shape),
                 getattr(torch, meta.dtype),
             )
             for meta in config.cache_metas
         }
-        self.tensors = {
-            name: torch.zeros(shape, dtype=dtype, device=device) for name, (shape, dtype) in self.specs.items()
-        }
+        if tensors is None:
+            self.tensors = {
+                name: torch.zeros(shape, dtype=dtype, device=device) for name, (shape, dtype) in self.specs.items()
+            }
+        else:
+            self.bind(tensors)
 
     def bind(self, tensors: Mapping[str, torch.Tensor]) -> None:
         if tensors.keys() != self.specs.keys():
@@ -158,7 +179,7 @@ def cache_shards(compiled_models, config):
     metas = {meta.name: meta for meta in config.cache_metas}
     layouts = {}
     shards = {}
-    for model in compiled_models.values():
+    for model in compiled_models:
         executor = model.select_executor()
         for idx in range(executor.num_inputs):
             profile = executor.get_input_profile(idx)
@@ -221,8 +242,9 @@ def fit_cache_blocks(shards, config, room: dict[tuple[int, int], int]) -> int:
     fixed = cache_requests(shards, config, 0)
     base = {unit: sum(reqs) for unit, reqs in fixed.items()}
     dynamic = any(meta.can_resize for meta in config.cache_metas)
-    lower = config.num_min_blocks if dynamic else config.kvcache_num_blocks
-    upper = config.num_full_blocks if dynamic else config.kvcache_num_blocks
+    fixed_blocks = config.kvcache_num_blocks or config.num_full_blocks
+    lower = config.num_min_blocks if dynamic else fixed_blocks
+    upper = config.num_full_blocks if dynamic else fixed_blocks
     if missing := base.keys() - room.keys():
         raise ValueError(f"Missing device memory information for cache chiplets {sorted(missing)}.")
     if any(available < 0 for available in room.values()):

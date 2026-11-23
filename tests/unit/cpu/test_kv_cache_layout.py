@@ -16,7 +16,7 @@ from optimum.rbln.transformers.models.decoderonly.decoderonly_architecture impor
 def _cache_config(**overrides):
     config = {
         "kvcache_block_size": 1024,
-        "is_auto_num_blocks": True,
+        "attn_impl": "flash_attn",
         "num_full_blocks": 8,
         "kvcache_num_blocks": 0,
         "sliding_window": 512,
@@ -41,6 +41,16 @@ def test_full_attention_meta_holds_key_and_value():
     assert meta.shape == [8, 2, 4, 1, 1024, 64]
     assert meta.compile_shape == [1, 2, 4, 1, 1024, 64]
     assert (meta.num_blocks, meta.block_size) == (8, 1024)
+
+
+@pytest.mark.parametrize(
+    ("attention", "count", "compile_blocks"), [("flash_attn", 6, 1), ("eager", 0, 8), ("eager", 6, 6)]
+)
+def test_compile_shape_for_block_count(attention, count, compile_blocks):
+    cfg = _cache_config(attn_impl=attention, kvcache_num_blocks=count)
+    meta = FullAttentionKVCacheMeta.from_config("kv", 0, 4, 64, "float16", cfg)
+    assert meta.compile_shape[0] == compile_blocks
+    assert meta.can_resize == (attention == "flash_attn")
 
 
 def test_sliding_window_meta_holds_key_and_value():

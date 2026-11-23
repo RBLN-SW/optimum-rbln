@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import rebel
+import torch
 
 from ..utils.logging import get_logger
 from ..utils.runtime_utils import get_available_dram_per_chiplet, parse_byte_size, resolve_npu_or_none
@@ -220,35 +221,27 @@ def _resolve_memory_budget(memory_budget: object | None, available_total: int) -
 
 class RBLNDecoderOnlyFlashAttentionMixin:
     @classmethod
-    def set_kvcache_num_blocks_after_compilation(
-        cls, compiled_models: dict[str, rebel.RBLNCompiledModel], rbln_config: "RBLNDecoderOnlyModelConfig"
-    ):
-        rbln_config.kvcache_num_blocks = cls.estimate_num_kvcache_blocks(
-            compiled_models=compiled_models, rbln_config=rbln_config
-        )
-        if rbln_config.kvcache_num_blocks < rbln_config.num_min_blocks:
-            raise ValueError(
-                f"Insufficient memory for the required KV cache: only {rbln_config.kvcache_num_blocks} blocks "
-                f"can be allocated, but at least {rbln_config.num_min_blocks} blocks are required. Consider "
-                f"reducing `max_seq_len` or `batch_size` (currently {rbln_config.batch_size}) to lower the "
-                f"memory requirement."
-            )
-
-    @classmethod
     def estimate_num_kvcache_blocks(
         cls,
-        compiled_models: dict[str, rebel.RBLNCompiledModel],
+        compiled_models: dict[str, rebel.RBLNCompiledModel] | list[rebel.RBLNCompiledModel],
         rbln_config: "RBLNDecoderOnlyModelConfig",
+        device: torch.device | None = None,
     ) -> int:
-        if "prefill" not in rbln_config.phases:
-            logger.warning(
-                "Not estimating number of KV cache blocks since `prefill` phase is not in the `phases` list."
-            )
-            return 1
-
+        if isinstance(compiled_models, dict):
+            compiled_models = list(compiled_models.values())
         shards = cache_shards(compiled_models, rbln_config)
+        if device is not None:
+            stats = torch.rbln.mem_get_info_per_chiplet(device)
+            room = {}
+            for node, chiplet in cache_requests(shards, rbln_config, 1):
+                node_total = stats[f"npu.{node}.total"]
+                prefix = f"npu.{node}.chiplet.{chiplet}"
+                budget = _resolve_memory_budget(rbln_config.memory_budget, node_total)
+                room[node, chiplet] = budget * stats[f"{prefix}.total"] // node_total - stats[f"{prefix}.used"]
+            return fit_cache_blocks(shards, rbln_config, room)
+
         used: dict[tuple[int, int], int] = defaultdict(int)
-        for model in compiled_models.values():
+        for model in compiled_models:
             for allocation in model.get_alloc_per_chiplet_by_key().values():
                 for node, chiplets in enumerate(allocation):
                     for chiplet, size in enumerate(chiplets):

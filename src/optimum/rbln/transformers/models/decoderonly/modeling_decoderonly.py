@@ -80,11 +80,17 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
     _decoder_wrapper_cls = DecoderOnlyWrapper
     _use_rotary_emb = True
 
-    def __init__(self, models, config, rbln_config, *args, **kwargs):
+    def __init__(self, models, config, rbln_config, *args, kv_cache=None, **kwargs):
         self._kv_cache = None
         if models:
-            self._kv_cache = DeviceKVCache(rbln_config, runtime_cache_device(models))
+            device = runtime_cache_device(models)
+            blocks = rbln_config.kvcache_num_blocks
+            if kv_cache is None and not blocks and any(meta.can_resize for meta in rbln_config.cache_metas):
+                blocks = self.estimate_num_kvcache_blocks(kwargs["rbln_compiled_models"], rbln_config, device=device)
+            self._kv_cache = DeviceKVCache(rbln_config, device, blocks, kv_cache)
             models = [DecoderCacheRuntime(runtime, self._kv_cache) for runtime in models]
+        elif kv_cache is not None:
+            raise ValueError("Passing kv_cache requires create_runtimes=True.")
         super().__init__(models, config, rbln_config, *args, **kwargs)
 
     def __post_init__(self, **kwargs):
@@ -100,7 +106,7 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
 
     def setup_runtime(self):
         # Initialize resources to be used across Runtime instances (prefill and decode phases)
-        page_table_manager = RBLNPageTableManager(self.rbln_config)
+        page_table_manager = RBLNPageTableManager(self.rbln_config, self.get_kvcache_num_blocks())
         if self.rbln_config.use_position_ids:
             dec_attn_mask = torch.zeros(self.rbln_config.batch_size, self.rbln_config.max_seq_len, dtype=self.dtype)
         else:
@@ -232,7 +238,7 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
         return self.rbln_config.attn_impl
 
     def get_kvcache_num_blocks(self) -> int:
-        return self.rbln_config.kvcache_num_blocks
+        return self._kv_cache.num_blocks if self._kv_cache is not None else self.rbln_config.kvcache_num_blocks
 
     @classmethod
     def _wrap_model_if_needed(cls, model: PreTrainedModel, rbln_config: "RBLNDecoderOnlyModelConfig"):
@@ -335,9 +341,6 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
                     phase="decode",
                 )
                 compiled_models[f"decoder_batch_{batch_size}"] = compiled_decoder
-
-        if rbln_config.is_auto_num_blocks:
-            cls.set_kvcache_num_blocks_after_compilation(compiled_models, rbln_config)
 
         return compiled_models
 
@@ -530,32 +533,18 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
             npu=rbln_config.npu,
         )
 
-        # Validate kvcache_num_blocks against `num_min_blocks` / `num_full_blocks`.
-        if rbln_config.attn_impl == "flash_attn":
-            if rbln_config.is_auto_num_blocks:
-                # Do nothing
-                pass
-
-            elif rbln_config.kvcache_num_blocks > rbln_config.num_full_blocks:
-                logger.warning(
-                    f"The set `kvcache_num_blocks` ({rbln_config.kvcache_num_blocks}) is greater"
-                    f" than the required number of blocks ({rbln_config.num_full_blocks})."
-                    "This can cause a failure during model compilation."
-                )
-            elif rbln_config.kvcache_num_blocks < rbln_config.num_min_blocks:
+        blocks = rbln_config.kvcache_num_blocks
+        if blocks > rbln_config.num_full_blocks:
+            logger.warning(
+                f"The set `kvcache_num_blocks` ({blocks}) exceeds the number of blocks needed "
+                f"for the configured batch and sequence length ({rbln_config.num_full_blocks})."
+            )
+        elif rbln_config.attn_impl == "flash_attn" and not rbln_config.is_auto_num_blocks:
+            if blocks < rbln_config.num_min_blocks:
                 raise ValueError(
-                    f"The set `kvcache_num_blocks` ({rbln_config.kvcache_num_blocks}) is less"
+                    f"The set `kvcache_num_blocks` ({blocks}) is less"
                     f" than the minimum number of blocks ({rbln_config.num_min_blocks})."
                 )
-        elif rbln_config.is_auto_num_blocks:
-            # Eager attention should use fixed number of blocks.
-            rbln_config.kvcache_num_blocks = rbln_config.num_full_blocks
-        elif rbln_config.kvcache_num_blocks > rbln_config.num_full_blocks:
-            logger.warning(
-                f"The set `kvcache_num_blocks` ({rbln_config.kvcache_num_blocks}) is greater"
-                f" than the required number of blocks ({rbln_config.num_full_blocks})."
-                "This can cause a failure during model compilation."
-            )
 
         return rbln_config
 
@@ -677,7 +666,7 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
         return dict(self._device_kv_cache().tensors)
 
     def set_kv_cache(self, tensors: dict[str, torch.Tensor]) -> None:
-        """Bind caller-owned cache tensors to all decoder runtimes before the next forward."""
+        """Replace the tensors in the active cache with allocations of the same shape."""
         self._device_kv_cache().bind(tensors)
 
     @classmethod

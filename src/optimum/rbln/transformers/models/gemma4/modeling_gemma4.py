@@ -404,9 +404,6 @@ class RBLNGemma4ForCausalLM(RBLNMoeLoadMixin, RBLNDecoderOnlyModelForCausalLM):
                     phase="decode",
                 )
 
-        if rbln_config.is_auto_num_blocks:
-            cls.set_kvcache_num_blocks_after_compilation(compiled_models, rbln_config)
-
         return compiled_models
 
     @classmethod
@@ -464,7 +461,7 @@ class RBLNGemma4ForCausalLM(RBLNMoeLoadMixin, RBLNDecoderOnlyModelForCausalLM):
 
     def setup_runtime(self):
         dec_attn_mask = torch.zeros(self.rbln_config.batch_size, self.rbln_config.max_seq_len, dtype=self.dtype)
-        page_table_manager = RBLNPageTableManager(self.rbln_config)
+        page_table_manager = RBLNPageTableManager(self.rbln_config, self.get_kvcache_num_blocks())
 
         common_kwargs = {
             "main_input_name": "inputs_embeds" if self.rbln_config.use_inputs_embeds else "input_ids",
@@ -719,7 +716,7 @@ class RBLNGemma4ForConditionalGeneration(RBLNMoeLoadMixin, RBLNModel, RBLNImageI
         return self.rbln_config.language_model.attn_impl
 
     def get_kvcache_num_blocks(self) -> int:
-        return self.rbln_config.language_model.kvcache_num_blocks
+        return self.language_model.get_kvcache_num_blocks()
 
     def get_input_embeddings(self):
         return self.language_model.get_input_embeddings()

@@ -240,7 +240,7 @@ class RBLNLlama4ForConditionalGeneration(RBLNModel, RBLNImageIndexedBatchSortMix
         return self.rbln_config.language_model.attn_impl
 
     def get_kvcache_num_blocks(self) -> int:
-        return self.rbln_config.language_model.kvcache_num_blocks
+        return self.language_model.get_kvcache_num_blocks()
 
     @classmethod
     def _update_submodule_rbln_config(

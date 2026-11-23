@@ -37,14 +37,14 @@ class RBLNPageTableManager:
         "Using vllm-rbln should fix this issue and enhance inference performance."
     )
 
-    def __init__(self, rbln_config: RBLNDecoderOnlyModelForCausalLMConfig):
+    def __init__(self, rbln_config: RBLNDecoderOnlyModelForCausalLMConfig, num_blocks: int):
         self.rbln_config = rbln_config
         self.block_tables = torch.zeros(
             self.rbln_config.batch_size,
             self.rbln_config.max_seq_len // self.rbln_config.kvcache_block_size,
             dtype=torch.int16,
         ).fill_(self.EMPTY_BLOCK)
-        self.free_block_pool = deque(x for x in range(self.rbln_config.kvcache_num_blocks))
+        self.free_block_pool = deque(range(num_blocks))
 
     def update_block(self, batch_idx: int, block_idx: int):
         """

@@ -398,7 +398,7 @@ class RBLNQwen2_5_VLModel(RBLNDecoderOnlyModel):
             self._rotary_emb_class(self.config.text_config), self.rbln_config.max_seq_len
         )
         if not self.can_generate():
-            self.block_tables = torch.arange(self.rbln_config.kvcache_num_blocks, dtype=torch.int16)
+            self.block_tables = torch.arange(self.get_kvcache_num_blocks(), dtype=torch.int16)
 
     @property
     def logits_last_dim(self):

@@ -112,7 +112,7 @@ def _qwen3_5_linear_layer_indices(model_config) -> list[int]:
 def _qwen3_5_setup_hybrid_runtime(model):
     rbln_config = model.rbln_config
     text_config = model.config.get_text_config()
-    page_table_manager = RBLNPageTableManager(rbln_config)
+    page_table_manager = RBLNPageTableManager(rbln_config, model.get_kvcache_num_blocks())
     dec_attn_mask = torch.zeros(rbln_config.batch_size, 1, 1, rbln_config.max_seq_len, dtype=model.dtype)
 
     common_kwargs = {
@@ -555,7 +555,7 @@ class RBLNQwen3_5Model(RBLNDecoderOnlyModel):
             self._rotary_emb_class(self.config.text_config), self.rbln_config.max_seq_len
         )
         if not self.can_generate():
-            self.block_tables = torch.arange(self.rbln_config.kvcache_num_blocks, dtype=torch.int16)
+            self.block_tables = torch.arange(self.get_kvcache_num_blocks(), dtype=torch.int16)
 
     @property
     def logits_last_dim(self):

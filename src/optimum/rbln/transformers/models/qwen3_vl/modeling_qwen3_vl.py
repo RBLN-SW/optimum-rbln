@@ -280,10 +280,10 @@ class RBLNQwen3VLModel(RBLNDecoderOnlyModel):
             self._rotary_emb_class(self.config.text_config), self.rbln_config.max_seq_len
         )
         if not self.can_generate():
-            self.block_tables = torch.arange(self.rbln_config.kvcache_num_blocks, dtype=torch.int16)
+            self.block_tables = torch.arange(self.get_kvcache_num_blocks(), dtype=torch.int16)
 
     def setup_runtime(self):
-        page_table_manager = RBLNPageTableManager(self.rbln_config)
+        page_table_manager = RBLNPageTableManager(self.rbln_config, self.get_kvcache_num_blocks())
         if self.rbln_config.use_position_ids:
             dec_attn_mask = torch.zeros(self.rbln_config.batch_size, self.rbln_config.max_seq_len, dtype=self.dtype)
         else:

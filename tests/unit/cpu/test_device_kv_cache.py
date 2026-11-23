@@ -17,7 +17,7 @@ MIB = 1 << 20
 
 
 def meta(name, dynamic=True):
-    return SimpleNamespace(name=name, can_resize=dynamic, shape=[3, 2], dtype="float16")
+    return SimpleNamespace(name=name, can_resize=dynamic, shape=[32 if dynamic else 3, 2], dtype="float16")
 
 
 def config(*metas):
@@ -42,7 +42,7 @@ def test_shared_symbol_only_on_resizable_cache_inputs():
 
 
 def test_rebind_shared_cache_with_inputs_after_cache():
-    cache = DeviceKVCache(config(meta("kv"), meta("conv", False)), torch.device("cpu"))
+    cache = DeviceKVCache(config(meta("kv"), meta("conv", False)), torch.device("cpu"), 5)
     runtime = Mock(_index_to_input_name={0: "tokens", 1: "kv", 2: "conv", 3: "mask"})
     prefill, decode = DecoderCacheRuntime(runtime, cache), DecoderCacheRuntime(runtime, cache)
     mask = torch.ones(1)
@@ -61,7 +61,7 @@ def test_rebind_shared_cache_with_inputs_after_cache():
 
 @pytest.mark.parametrize("bad", ["alias", "offset", "shape", "dtype", "missing"])
 def test_invalid_replacement_preserves_bound_cache(bad):
-    cache = DeviceKVCache(config(meta("k"), meta("v")), torch.device("cpu"))
+    cache = DeviceKVCache(config(meta("k"), meta("v")), torch.device("cpu"), 5)
     original = cache.tensors
     tensors = dict(original)
     if bad == "alias":

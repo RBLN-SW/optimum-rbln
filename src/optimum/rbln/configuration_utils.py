@@ -865,6 +865,12 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
 
         return serializable_map
 
+    @classmethod
+    def _apply_load_overrides(cls, saved_config: dict[str, Any], options: dict[str, Any]) -> None:
+        for name in cls.subclass_non_save_attributes:
+            if name in options:
+                saved_config[name] = options.pop(name)
+
     def get_load_overrides(self) -> dict[str, Any]:
         """
         Extract the options that must cross the load boundary, for passing to from_pretrained.
@@ -1065,10 +1071,17 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
 
             update_dict = rbln_submodule_kwargs.pop(submodule, {})
             if update_dict:
+                update_dict = dict(update_dict)
+                get_rbln_config_class(submodule_config["cls_name"])._apply_load_overrides(
+                    submodule_config, update_dict
+                )
                 nested_update(submodule_config, update_dict)
             config_file[submodule] = RBLNAutoConfig.load_from_dict(submodule_config)
 
         if isinstance(rbln_config, RBLNModelConfig):
+            for key, value in rbln_config.get_load_overrides().items():
+                if key not in RUNTIME_KEYWORDS and key not in cls.submodules:
+                    rbln_kwargs.setdefault(key, value)
             config_file.update(rbln_config._runtime_options)
 
             # update submodule runtime
@@ -1080,17 +1093,14 @@ class RBLNModelConfig(RBLNSerializableConfigProtocol):
                 config_file[submodule] = getattr(rbln_config, submodule)
 
         config_file.update(rbln_runtime_kwargs)
+        cls._apply_load_overrides(config_file, rbln_kwargs)
         config = cls(**config_file)
-        if len(rbln_kwargs) > 0:
-            non_save_attrs = set(cls.subclass_non_save_attributes)
-            for key, value in rbln_kwargs.items():
-                if key in non_save_attrs:
-                    setattr(config, key, value)
-                elif getattr(config, key) != value:
-                    raise ValueError(
-                        f"Cannot set the following arguments: {list(rbln_kwargs.keys())} "
-                        f"Since the value is already set to {getattr(config, key)}"
-                    )
+        for key, value in rbln_kwargs.items():
+            if getattr(config, key) != value:
+                raise ValueError(
+                    f"Cannot set the following arguments: {list(rbln_kwargs.keys())} "
+                    f"Since the value is already set to {getattr(config, key)}"
+                )
         if return_unused_kwargs:
             return config, kwargs
         else:

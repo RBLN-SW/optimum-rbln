@@ -435,8 +435,7 @@ def _handle_kvcache_num_blocks(
 
     `get` prints the current block count from rbln_config.json. To set, give either
     `set_value` (an absolute block count) or `set_memory_budget` (a float/`"80%"`/bytes
-    budget, from which the largest fitting block count is computed). Caller-owned caches store
-    the resolved count in the config.
+    budget, from which the largest fitting block count is estimated offline). Both set a default for loading.
     """
     from .transformers.modeling_attention_utils import RBLNDecoderOnlyFlashAttentionMixin
     from .transformers.models.decoderonly.configuration_decoderonly import RBLNDecoderOnlyModelConfig
@@ -467,14 +466,14 @@ def _handle_kvcache_num_blocks(
     if set_value is not None:
         target = set_value
     else:
-        compiled_models = {p.stem: rebel.RBLNCompiledModel(p) for p in paths}
+        compiled_models = [rebel.RBLNCompiledModel(p) for p in paths]
         rbln_config.memory_budget = parse_value(set_memory_budget)
         target = RBLNDecoderOnlyFlashAttentionMixin.estimate_num_kvcache_blocks(compiled_models, rbln_config)
         print(f"memory_budget {set_memory_budget} fits kvcache_num_blocks={target}")
 
     if target < rbln_config.num_min_blocks:
         raise ValueError(f"kvcache_num_blocks={target} is below the minimum {rbln_config.num_min_blocks}.")
-    if target != rbln_config.kvcache_num_blocks:
+    if target != (rbln_config.kvcache_num_blocks or rbln_config.num_full_blocks):
         if not any(meta.can_resize for meta in rbln_config.cache_metas):
             raise ValueError("The compiled cache has a fixed block count.")
         if target > rbln_config.num_full_blocks:
@@ -491,6 +490,7 @@ def _handle_kvcache_num_blocks(
             else:
                 shutil.copy2(item, dst_dir / item.name)
 
+    rbln_config.memory_budget = None
     rbln_config.kvcache_num_blocks = target
     rbln_config.save(str(dst_dir))
     print(f"Set kvcache_num_blocks to {target} for artifact at {dst_dir.absolute()}")
@@ -600,7 +600,7 @@ def main():
         "--get-kvcache-num-blocks",
         dest="get_kvcache_num_blocks",
         action="store_true",
-        help="Print kvcache_num_blocks of the compiled artifact at --model-id and exit (no compilation)",
+        help="Print the configured KV block count (0 for automatic sizing at load time).",
     )
     parser.add_argument(
         "--set-kvcache-num-blocks",
@@ -608,8 +608,7 @@ def main():
         type=int,
         default=None,
         metavar="N",
-        help="Resize the kv-cache of the compiled artifact at --model-id to N blocks and exit (no compilation). "
-        "Edits in place unless --output-dir is given, in which case a resized copy is written there.",
+        help="Set the default KV cache capacity to N blocks. Edits --model-id in place unless --output-dir is given.",
     )
     parser.add_argument(
         "--set-memory-budget",
@@ -617,8 +616,8 @@ def main():
         type=str,
         default=None,
         metavar="BUDGET",
-        help="Resize the kv-cache of the compiled artifact at --model-id to the largest block count that fits "
-        "BUDGET, then exit (no compilation). BUDGET is a float fraction of the NPU available DRAM (e.g. 0.8), a "
+        help="Estimate the KV block count offline and save it as the default for loading. "
+        "BUDGET is a float fraction of the NPU available DRAM (e.g. 0.8), a "
         "'80%%' string, or bytes ('10GB'). Mutually exclusive with --set-kvcache-num-blocks.",
     )
 

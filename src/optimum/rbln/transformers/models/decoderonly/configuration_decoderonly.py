@@ -38,7 +38,7 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
 
     _default_phases = ["prefill"]
     _default_logits_to_keep = 0
-    subclass_non_save_attributes = ["memory_budget", "nested_compile_region"]
+    subclass_non_save_attributes = ["nested_compile_region"]
 
     def __init__(
         self,
@@ -105,7 +105,7 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
                 RBLN-CR NPUs and 128 otherwise. Must be a positive integer divisible by 64.
                 Affects prefill performance and memory usage.
             kvcache_num_blocks (int | None): The total number of blocks to allocate for the
-                PagedAttention KV cache at compile time. Defaults to 0 (automatically determined).
+                PagedAttention KV cache. With flash attention, 0 selects the capacity at load time.
                 See the "KV Cache Number of Blocks (`kvcache_num_blocks`)" section below for details.
             memory_budget (int | float | str | None): Usable DRAM budget (system reserve
                 excluded) used when auto-estimating `kvcache_num_blocks`. Prefer a float in (0, 1]
@@ -175,16 +175,12 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
 
         KV Cache Number of Blocks:
             `kvcache_num_blocks` controls the total number of memory blocks allocated for the PagedAttention KV cache
-            at compile time. Each block holds `kvcache_block_size` tokens of Key and Value states.
+            used by the model. Each block holds `kvcache_block_size` tokens of Key and Value states.
 
-            - **Automatic Determination (Default)**: If `kvcache_num_blocks` is `0` (default), the number of blocks
-                is automatically determined during compilation to fit within the available DRAM on the NPU. This allows
-                the model to utilize the remaining memory after compilation without manual tuning, providing optimal
-                cache capacity for better performance with long sequences or larger batches.
-            - **Manual Setting**: You can explicitly set the number of blocks to a positive integer. This provides
-                finer control but requires careful consideration of memory limits. Setting it too high may lead to
-                compilation errors if it exceeds available memory. The system will issue warnings if your
-                setting exceeds the estimated maximum.
+            - For flash attention, zero selects the capacity from available device memory after loading the
+                model. Set `rbln_kvcache_num_blocks` when loading to select a specific capacity, or pass a
+                dictionary of device tensors as `kv_cache` to use their capacity directly.
+            - Eager attention uses the block dimension recorded in the compiled input shape.
             - **Performance Impact**: A larger number of blocks reduces the likelihood of cache eviction,
                 which is beneficial for tasks involving many long sequences or large batch sizes, enabling
                 higher throughput. However, allocating more blocks consumes more memory.
@@ -194,9 +190,6 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
                 available for every item in the batch. The system will log warnings or raise errors if
                 these constraints are violated (e.g., if `kvcache_num_blocks` is less than `batch_size`).
 
-            The optimal value depends on the specific model, task, hardware, and desired trade-off
-            between performance and memory usage. Automatic determination (default) provides a robust starting point
-            that adapts to the available DRAM on the NPU at compile time.
         """
 
         super().__init__(**kwargs)
@@ -361,8 +354,25 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
 
     @property
     def is_auto_num_blocks(self) -> bool:
-        """Returns True if kvcache_num_blocks will be automatically determined during compilation to fit within the available DRAM on the NPU."""
+        """Whether the block count should be selected automatically."""
         return self.kvcache_num_blocks == 0
+
+    @classmethod
+    def _apply_load_overrides(cls, saved_config: dict[str, Any], options: dict[str, Any]) -> None:
+        if saved_config["attn_impl"] == "flash_attn" and (
+            "kvcache_num_blocks" in options or "memory_budget" in options
+        ):
+            saved_config["kvcache_num_blocks"] = options.pop("kvcache_num_blocks", 0)
+            saved_config["memory_budget"] = options.pop("memory_budget", None)
+        super()._apply_load_overrides(saved_config, options)
+
+    def get_load_overrides(self) -> dict[str, Any]:
+        options = super().get_load_overrides()
+        if self.memory_budget is not None:
+            options["memory_budget"] = self.memory_budget
+        elif self.kvcache_num_blocks:
+            options["kvcache_num_blocks"] = self.kvcache_num_blocks
+        return options
 
     @property
     def num_full_blocks(self) -> int:
