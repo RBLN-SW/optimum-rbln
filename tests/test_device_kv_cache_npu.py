@@ -70,8 +70,6 @@ def test_decoder_with_caller_owned_cache(tmp_path):
         assert profile.variable_shape_dims == {0}
         assert compiled_model.exp_get_dram_tensor_sizes() == {}
     del default
-    with pytest.raises(TypeError, match="unexpected keyword argument 'kv_cache'"):
-        RBLNLlamaForCausalLM.from_pretrained(directory, rbln_create_runtimes=False, kv_cache={})
 
     model = RBLNLlamaForCausalLM.from_pretrained(directory, rbln_device=devices, rbln_kvcache_num_blocks=6)
     assert model.get_kvcache_num_blocks() == 6

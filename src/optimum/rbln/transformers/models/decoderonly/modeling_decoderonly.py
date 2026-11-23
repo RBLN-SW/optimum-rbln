@@ -81,8 +81,6 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
     _use_rotary_emb = True
 
     def __init__(self, models, config, rbln_config, *args, **kwargs):
-        if "kv_cache" in kwargs:
-            raise TypeError("from_pretrained() got an unexpected keyword argument 'kv_cache'")
         self._kv_cache = None
         if models:
             device = runtime_cache_device(models)
