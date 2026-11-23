@@ -281,11 +281,8 @@ class RBLNDecoderOnlyModel(RBLNModel, RBLNDecoderOnlyFlashAttentionMixin):
 
     @staticmethod
     def _prefill_compile_inputs(compile_config: RBLNCompileConfig, config: RBLNDecoderOnlyModelConfig):
-        from torch_rbln.device import current_device
-
-        device = torch.device("rbln", current_device())
         cache_tensors = {
-            meta.name: torch.empty(meta.compile_shape, dtype=getattr(torch, meta.dtype), device=device)
+            meta.name: torch.empty(meta.compile_shape, dtype=getattr(torch, meta.dtype), device="rbln")
             for meta in config.cache_metas
         }
         inputs = compile_config.get_dummy_inputs(fill=0, static_tensors=cache_tensors)
