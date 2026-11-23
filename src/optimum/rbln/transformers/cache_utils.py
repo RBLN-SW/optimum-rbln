@@ -160,11 +160,8 @@ class FullAttentionKVCacheMeta(KVCacheMeta):
         block_size = rbln_config.kvcache_block_size
         if block_size is None:
             raise ValueError("`kvcache_block_size` must be set to build the KV cache.")
-        if rbln_config.attn_impl == "flash_attn":
-            num_blocks, is_auto = max(rbln_config.num_full_blocks, rbln_config.kvcache_num_blocks), True
-        else:
-            num_blocks, is_auto = rbln_config.kvcache_num_blocks or rbln_config.num_full_blocks, False
-        validated_num_blocks = cls._validate_num_blocks(num_blocks)
+        is_auto = rbln_config.attn_impl == "flash_attn"
+        validated_num_blocks = cls._validate_num_blocks(rbln_config.num_full_blocks)
         shape = [validated_num_blocks, 2, num_key_value_heads, 1, block_size, head_dim]
         return cls(name=name, layer_index=layer_index, shape=shape, dtype=dtype, is_auto=is_auto)
 

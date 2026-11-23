@@ -21,7 +21,7 @@ def meta(name, dynamic=True):
 
 
 def config(*metas):
-    return SimpleNamespace(cache_metas=metas, kvcache_num_blocks=5, num_min_blocks=4, num_full_blocks=32)
+    return SimpleNamespace(cache_metas=metas, num_min_blocks=4, num_full_blocks=32)
 
 
 def test_shared_symbol_only_on_resizable_cache_inputs():
@@ -91,6 +91,6 @@ def test_cache_pool_segments_can_shrink_as_block_count_grows():
         fit_cache_blocks(shards, cfg, {**room, (1, 0): MIB})
 
 
-def test_fixed_cache_keeps_compiled_count():
+def test_fixed_cache_uses_full_block_count():
     cfg = config(meta("kv", False))
-    assert fit_cache_blocks({"kv": [(0, 0, MIB)]}, cfg, {(0, 0): 4 * MIB}) == 5
+    assert fit_cache_blocks({"kv": [(0, 0, MIB)]}, cfg, {(0, 0): 4 * MIB}) == cfg.num_full_blocks

@@ -1,3 +1,4 @@
+import json
 import os
 import re
 import shutil
@@ -215,6 +216,20 @@ def test_submodule_config_object():
     )
     assert model.rbln_config.language_model.max_seq_len == 16384
     assert model.rbln_config.language_model.batch_size == 2
+
+
+def test_decoder_block_count_is_load_only(tmp_path):
+    path = tmp_path / "rbln_config.json"
+    RBLNLlamaForCausalLMConfig(attn_impl="flash_attn", kvcache_num_blocks=6).save(path)
+    saved = json.loads(path.read_text())
+    assert "kvcache_num_blocks" not in saved
+    path.write_text(json.dumps({**saved, "kvcache_num_blocks": 6}))
+
+    assert RBLNLlamaForCausalLMConfig.from_pretrained(path).kvcache_num_blocks is None
+    loaded = RBLNLlamaForCausalLMConfig.from_pretrained(path, rbln_kvcache_num_blocks=7)
+    assert loaded.kvcache_num_blocks == 7
+    loaded.save(path)
+    assert json.loads(path.read_text()) == saved
 
 
 def test_logits_to_keep_zero_survives_construction_and_reload(tmp_path):

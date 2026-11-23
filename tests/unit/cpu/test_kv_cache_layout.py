@@ -44,7 +44,7 @@ def test_full_attention_meta_holds_key_and_value():
 
 
 @pytest.mark.parametrize(
-    ("attention", "count", "compile_blocks"), [("flash_attn", 6, 1), ("eager", 0, 8), ("eager", 6, 6)]
+    ("attention", "count", "compile_blocks"), [("flash_attn", 6, 1), ("eager", 0, 8), ("eager", 6, 8)]
 )
 def test_compile_shape_for_block_count(attention, count, compile_blocks):
     cfg = _cache_config(attn_impl=attention, kvcache_num_blocks=count)

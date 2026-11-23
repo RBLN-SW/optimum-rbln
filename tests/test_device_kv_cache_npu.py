@@ -1,4 +1,3 @@
-import hashlib
 import json
 import os
 
@@ -8,7 +7,7 @@ import torch
 from transformers import LlamaConfig, LlamaForCausalLM
 
 from optimum.rbln import RBLNLlamaForCausalLM
-from optimum.rbln.cli import _handle_kvcache_num_blocks
+from optimum.rbln.cli import _set_memory_budget
 
 
 @pytest.mark.skipif(
@@ -48,7 +47,7 @@ def test_decoder_with_caller_owned_cache(tmp_path):
         "decoder_batch_sizes": [1, 2],
         "attn_impl": "flash_attn",
         "kvcache_partition_len": 1024,
-        "memory_budget": "90%",
+        "kvcache_num_blocks": 6,
     }
     ids = torch.tensor([[6, 3, 9]])
 
@@ -59,8 +58,7 @@ def test_decoder_with_caller_owned_cache(tmp_path):
     RBLNLlamaForCausalLM.from_model(hf_model, model_save_dir=directory, rbln_config=opts)
     config_path = directory / "rbln_config.json"
     saved = config_path.read_bytes()
-    assert json.loads(saved)["kvcache_num_blocks"] == 0
-    assert json.loads(saved)["memory_budget"] == "90%"
+    assert "kvcache_num_blocks" not in json.loads(saved)
     default = RBLNLlamaForCausalLM.from_pretrained(directory, rbln_device=devices)
     assert default.get_kvcache_num_blocks() == 8
     expected = generate(default)
@@ -72,38 +70,23 @@ def test_decoder_with_caller_owned_cache(tmp_path):
         assert profile.device == "rbln"
         assert profile.variable_shape_dims == {0}
         assert compiled_model.exp_get_dram_tensor_sizes() == {}
-    external = {
-        name: torch.zeros((6, *t.shape[1:]), dtype=t.dtype, device=t.device)
-        for name, t in default.get_kv_cache().items()
-    }
     del default
-    model = RBLNLlamaForCausalLM.from_pretrained(directory, rbln_device=devices, kv_cache=external)
+    with pytest.raises(TypeError, match="unexpected keyword argument 'kv_cache'"):
+        RBLNLlamaForCausalLM.from_pretrained(directory, rbln_create_runtimes=False, kv_cache={})
+
+    copy = tmp_path / "with-budget"
+    _set_memory_budget(str(directory), "90%", str(copy))
+    budget_config = json.loads((copy / "rbln_config.json").read_bytes())
+    assert budget_config["memory_budget"] == 0.9
+    assert "kvcache_num_blocks" not in budget_config
+    with pytest.raises(ValueError, match="Insufficient memory"):
+        RBLNLlamaForCausalLM.from_pretrained(copy, rbln_device=devices, rbln_memory_budget=1)
+
+    model = RBLNLlamaForCausalLM.from_pretrained(copy, rbln_device=devices, rbln_kvcache_num_blocks=6)
     assert model.get_kvcache_num_blocks() == 6
     assert len(model.prefill_decoder.page_table_manager.free_block_pool) == 6
-    assert all(model.get_kv_cache()[name] is t for name, t in external.items())
-    assert torch.equal(generate(model), expected)
-    assert all(t.cpu().count_nonzero() > 0 for t in external.values())
+    assert "kvcache_num_blocks" not in model.rbln_config._prepare_for_serialization()
     assert config_path.read_bytes() == saved
-    del model, external
-    sized = RBLNLlamaForCausalLM.from_pretrained(directory, rbln_device=devices, rbln_kvcache_num_blocks=7)
-    assert sized.get_kvcache_num_blocks() == 7
-    assert torch.equal(generate(sized), expected)
-    assert config_path.read_bytes() == saved
-    del sized
-    with pytest.raises(ValueError, match="Insufficient memory"):
-        RBLNLlamaForCausalLM.from_pretrained(directory, rbln_device=devices, rbln_memory_budget=1)
-    binaries = {p: hashlib.sha256(p.read_bytes()).digest() for p in directory.glob("*.rbln")}
-    _handle_kvcache_num_blocks(str(directory), get=False, set_value=6)
-    assert all(hashlib.sha256(p.read_bytes()).digest() == digest for p, digest in binaries.items())
-
-    copy = tmp_path / "sized"
-    _handle_kvcache_num_blocks(
-        str(directory), get=False, set_value=None, output_dir=str(copy), set_memory_budget="90%"
-    )
-    assert json.loads((copy / "rbln_config.json").read_text())["kvcache_num_blocks"] == 8
-    assert all(hashlib.sha256((copy / p.name).read_bytes()).digest() == digest for p, digest in binaries.items())
-
-    model = RBLNLlamaForCausalLM.from_pretrained(directory, rbln_device=devices)
     initial = model.get_kv_cache()
     assert initial["past_key_values_0"].shape[0] == 6
     replacement = {name: torch.zeros_like(t) for name, t in initial.items()}

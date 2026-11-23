@@ -65,26 +65,14 @@ def runtime_cache_device(runtimes) -> torch.device:
 
 
 class DeviceKVCache:
-    def __init__(
-        self,
-        config: RBLNDecoderOnlyModelConfig,
-        device: torch.device,
-        num_blocks: int,
-        tensors: Mapping[str, torch.Tensor] | None = None,
-    ):
+    def __init__(self, config: RBLNDecoderOnlyModelConfig, device: torch.device, num_blocks: int):
         self.device = device
-        dynamic_meta = next((meta for meta in config.cache_metas if meta.can_resize), None)
-        if dynamic_meta is not None:
-            if tensors is not None:
-                tensor = tensors.get(dynamic_meta.name)
-                if not isinstance(tensor, torch.Tensor) or not tensor.ndim:
-                    raise ValueError(f"{dynamic_meta.name} requires a cache tensor with a block dimension.")
-                num_blocks = tensor.shape[0]
-            if not config.num_min_blocks <= num_blocks <= dynamic_meta.shape[0]:
-                raise ValueError(
-                    f"Expected {config.num_min_blocks} to {dynamic_meta.shape[0]} KV blocks, got {num_blocks}."
-                )
-        self.num_blocks = num_blocks or config.num_full_blocks
+        lower = (
+            config.num_min_blocks if any(meta.can_resize for meta in config.cache_metas) else config.num_full_blocks
+        )
+        if not lower <= num_blocks <= config.num_full_blocks:
+            raise ValueError(f"Expected {lower} to {config.num_full_blocks} KV blocks, got {num_blocks}.")
+        self.num_blocks = num_blocks
         self.specs = {
             meta.name: (
                 tuple([self.num_blocks, *meta.shape[1:]] if meta.can_resize else meta.shape),
@@ -92,12 +80,9 @@ class DeviceKVCache:
             )
             for meta in config.cache_metas
         }
-        if tensors is None:
-            self.tensors = {
-                name: torch.zeros(shape, dtype=dtype, device=device) for name, (shape, dtype) in self.specs.items()
-            }
-        else:
-            self.bind(tensors)
+        self.tensors = {
+            name: torch.zeros(shape, dtype=dtype, device=device) for name, (shape, dtype) in self.specs.items()
+        }
 
     def bind(self, tensors: Mapping[str, torch.Tensor]) -> None:
         if tensors.keys() != self.specs.keys():
@@ -241,10 +226,8 @@ def cache_requests(shards, config, blocks):
 def fit_cache_blocks(shards, config, room: dict[tuple[int, int], int]) -> int:
     fixed = cache_requests(shards, config, 0)
     base = {unit: sum(reqs) for unit, reqs in fixed.items()}
-    dynamic = any(meta.can_resize for meta in config.cache_metas)
-    fixed_blocks = config.kvcache_num_blocks or config.num_full_blocks
-    lower = config.num_min_blocks if dynamic else fixed_blocks
-    upper = config.num_full_blocks if dynamic else fixed_blocks
+    lower = config.num_min_blocks if any(meta.can_resize for meta in config.cache_metas) else config.num_full_blocks
+    upper = config.num_full_blocks
     if missing := base.keys() - room.keys():
         raise ValueError(f"Missing device memory information for cache chiplets {sorted(missing)}.")
     if any(available < 0 for available in room.values()):

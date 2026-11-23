@@ -19,9 +19,8 @@ import json
 import shutil
 import sys
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
-import rebel
 from huggingface_hub import hf_hub_download
 
 from .__version__ import __version__
@@ -424,76 +423,26 @@ def _infer_rbln_class_from_model_id(
     return None
 
 
-def _handle_kvcache_num_blocks(
-    model_id: str,
-    get: bool,
-    set_value: int | None,
-    output_dir: str | None = None,
-    set_memory_budget: str | None = None,
-) -> None:
-    """Read or set kvcache_num_blocks on an already-compiled local artifact directory.
-
-    `get` prints the current block count from rbln_config.json. To set, give either
-    `set_value` (an absolute block count) or `set_memory_budget` (a float/`"80%"`/bytes
-    budget, from which the largest fitting block count is estimated offline). Both set a default for loading.
-    """
-    from .transformers.modeling_attention_utils import RBLNDecoderOnlyFlashAttentionMixin
+def _set_memory_budget(model_id: str, budget: str, output_dir: str | None = None) -> None:
+    from .transformers.modeling_attention_utils import parse_memory_budget
     from .transformers.models.decoderonly.configuration_decoderonly import RBLNDecoderOnlyModelConfig
 
-    src_dir = Path(model_id)
-    if not (src_dir.exists() and src_dir.is_dir()):
-        raise ValueError(
-            f"--model-id must be a local compiled-artifact directory for this operation, got '{model_id}'."
-        )
+    src_dir = Path(model_id).resolve()
+    if not src_dir.is_dir() or not any(src_dir.glob("*.rbln")):
+        raise ValueError("--model-id must be a local compiled-artifact directory.")
+    config_cls, _ = load_config(src_dir)
+    if not issubclass(config_cls, RBLNDecoderOnlyModelConfig):
+        raise ValueError("--set-memory-budget requires a decoder-only artifact.")
+    rbln_config = config_cls.from_pretrained(src_dir, rbln_memory_budget=parse_memory_budget(parse_value(budget)))
+    dst_dir = src_dir if output_dir is None else Path(output_dir).resolve()
+    if dst_dir != src_dir:
 
-    config_cls, _ = load_config(model_id)
-    rbln_config = config_cls.from_pretrained(model_id)
-    if not (hasattr(rbln_config, "kvcache_num_blocks") and hasattr(rbln_config, "cache_metas")):
-        raise ValueError(
-            f"The model at '{model_id}' ({config_cls.__name__}) does not expose a top-level "
-            "resizable kv-cache. Only decoder-only causal LM artifacts are supported."
-        )
-    rbln_config = cast(RBLNDecoderOnlyModelConfig, rbln_config)
+        def exclude_destination(directory, names):
+            return [dst_dir.name] if Path(directory) == dst_dir.parent else []
 
-    if get:
-        print(rbln_config.kvcache_num_blocks)
-        return
-
-    paths = sorted(src_dir.glob("*.rbln"))
-    if not paths:
-        raise FileNotFoundError(f"No .rbln compiled models found in '{model_id}'.")
-
-    if set_value is not None:
-        target = set_value
-    else:
-        compiled_models = [rebel.RBLNCompiledModel(p) for p in paths]
-        rbln_config.memory_budget = parse_value(set_memory_budget)
-        target = RBLNDecoderOnlyFlashAttentionMixin.estimate_num_kvcache_blocks(compiled_models, rbln_config)
-        print(f"memory_budget {set_memory_budget} fits kvcache_num_blocks={target}")
-
-    if target < rbln_config.num_min_blocks:
-        raise ValueError(f"kvcache_num_blocks={target} is below the minimum {rbln_config.num_min_blocks}.")
-    if target != (rbln_config.kvcache_num_blocks or rbln_config.num_full_blocks):
-        if not any(meta.can_resize for meta in rbln_config.cache_metas):
-            raise ValueError("The compiled cache has a fixed block count.")
-        if target > rbln_config.num_full_blocks:
-            raise ValueError(f"The compiled block dimension supports at most {rbln_config.num_full_blocks} blocks.")
-
-    dst_dir = src_dir if output_dir is None else Path(output_dir)
-    if dst_dir.resolve() != src_dir.resolve():
-        dst_dir.mkdir(parents=True, exist_ok=True)
-        for item in src_dir.iterdir():
-            if item.name == "rbln_config.json":
-                continue
-            if item.is_dir():
-                shutil.copytree(item, dst_dir / item.name, dirs_exist_ok=True)
-            else:
-                shutil.copy2(item, dst_dir / item.name)
-
-    rbln_config.memory_budget = None
-    rbln_config.kvcache_num_blocks = target
+        shutil.copytree(src_dir, dst_dir, dirs_exist_ok=True, ignore=exclude_destination)
     rbln_config.save(str(dst_dir))
-    print(f"Set kvcache_num_blocks to {target} for artifact at {dst_dir.absolute()}")
+    print(f"Set memory_budget to {budget} for artifact at {dst_dir.absolute()}")
 
 
 def main():
@@ -595,30 +544,14 @@ def main():
         help="Show rbln_config keys for the resolved RBLN class (via --class or inferred from --model-id) and exit",
     )
 
-    # Post-compilation kv-cache block-count operations on an existing --model-id directory
-    parser.add_argument(
-        "--get-kvcache-num-blocks",
-        dest="get_kvcache_num_blocks",
-        action="store_true",
-        help="Print the configured KV block count (0 for automatic sizing at load time).",
-    )
-    parser.add_argument(
-        "--set-kvcache-num-blocks",
-        dest="set_kvcache_num_blocks",
-        type=int,
-        default=None,
-        metavar="N",
-        help="Set the default KV cache capacity to N blocks. Edits --model-id in place unless --output-dir is given.",
-    )
     parser.add_argument(
         "--set-memory-budget",
         dest="set_memory_budget",
         type=str,
         default=None,
         metavar="BUDGET",
-        help="Estimate the KV block count offline and save it as the default for loading. "
-        "BUDGET is a float fraction of the NPU available DRAM (e.g. 0.8), a "
-        "'80%%' string, or bytes ('10GB'). Mutually exclusive with --set-kvcache-num-blocks.",
+        help="Set the DRAM budget used to size the KV cache when loading --model-id. "
+        "Accepts a fraction, percentage, or byte size.",
     )
 
     # Standard --version that integrates with argparse (works after full parse)
@@ -674,22 +607,10 @@ def main():
     # Parse known args to allow for additional rbln_* arguments
     args, unknown_args = parser.parse_known_args()
 
-    # Post-compilation kv-cache block-count operations short-circuit the compile flow.
-    if args.get_kvcache_num_blocks or args.set_kvcache_num_blocks is not None or args.set_memory_budget is not None:
-        if args.set_kvcache_num_blocks is not None and args.set_memory_budget is not None:
-            print("--set-kvcache-num-blocks and --set-memory-budget are mutually exclusive.", file=sys.stderr)
-            sys.exit(2)
-        # --output-dir has a compile default; only honor it here when explicitly passed.
-        explicit_output = "--output-dir" in sys.argv or "-o" in sys.argv
-        output_dir = args.output_dir if explicit_output else None
+    if args.set_memory_budget is not None:
+        output_dir = args.output_dir if "--output-dir" in sys.argv or "-o" in sys.argv else None
         try:
-            _handle_kvcache_num_blocks(
-                args.model_id,
-                args.get_kvcache_num_blocks,
-                args.set_kvcache_num_blocks,
-                output_dir,
-                args.set_memory_budget,
-            )
+            _set_memory_budget(args.model_id, args.set_memory_budget, output_dir)
         except Exception as e:
             print(f"❌ Error: {e}", file=sys.stderr)
             sys.exit(1)

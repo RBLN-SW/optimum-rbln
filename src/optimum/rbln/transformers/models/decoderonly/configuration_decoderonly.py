@@ -38,7 +38,7 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
 
     _default_phases = ["prefill"]
     _default_logits_to_keep = 0
-    subclass_non_save_attributes = ["nested_compile_region"]
+    subclass_non_save_attributes = ["nested_compile_region", "kvcache_num_blocks"]
 
     def __init__(
         self,
@@ -178,8 +178,7 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
             used by the model. Each block holds `kvcache_block_size` tokens of Key and Value states.
 
             - For flash attention, zero selects the capacity from available device memory after loading the
-                model. Set `rbln_kvcache_num_blocks` when loading to select a specific capacity, or pass a
-                dictionary of device tensors as `kv_cache` to use their capacity directly.
+                model. Set `rbln_kvcache_num_blocks` when loading to select a capacity for this instance.
             - Eager attention uses the block dimension recorded in the compiled input shape.
             - **Performance Impact**: A larger number of blocks reduces the likelihood of cache eviction,
                 which is beneficial for tasks involving many long sequences or large batch sizes, enabling
@@ -233,9 +232,9 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
         self.kvcache_partition_len = kvcache_partition_len
         self.kvcache_block_size = kvcache_block_size
         self.prefill_chunk_size = prefill_chunk_size
-        self.kvcache_num_blocks = kvcache_num_blocks if kvcache_num_blocks is not None else 0
+        self.kvcache_num_blocks = kvcache_num_blocks or None
         self.memory_budget = memory_budget
-        if self.memory_budget is not None and self.kvcache_num_blocks > 0:
+        if self.memory_budget is not None and self.kvcache_num_blocks is not None:
             raise ValueError(
                 "`memory_budget` and an explicit `kvcache_num_blocks` are mutually exclusive. "
                 "`memory_budget` only guides automatic block estimation, which runs when "
@@ -352,17 +351,9 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
             return self.quantization.nbits_per_param
         return 16
 
-    @property
-    def is_auto_num_blocks(self) -> bool:
-        """Whether the block count should be selected automatically."""
-        return self.kvcache_num_blocks == 0
-
     @classmethod
     def _apply_load_overrides(cls, saved_config: dict[str, Any], options: dict[str, Any]) -> None:
-        if saved_config["attn_impl"] == "flash_attn" and (
-            "kvcache_num_blocks" in options or "memory_budget" in options
-        ):
-            saved_config["kvcache_num_blocks"] = options.pop("kvcache_num_blocks", 0)
+        if "memory_budget" in options or options.get("kvcache_num_blocks"):
             saved_config["memory_budget"] = options.pop("memory_budget", None)
         super()._apply_load_overrides(saved_config, options)
 
@@ -370,8 +361,6 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
         options = super().get_load_overrides()
         if self.memory_budget is not None:
             options["memory_budget"] = self.memory_budget
-        elif self.kvcache_num_blocks:
-            options["kvcache_num_blocks"] = self.kvcache_num_blocks
         return options
 
     @property

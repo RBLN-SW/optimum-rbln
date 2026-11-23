@@ -1,4 +1,3 @@
-from collections import defaultdict
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -6,7 +5,7 @@ import rebel
 import torch
 
 from ..utils.logging import get_logger
-from ..utils.runtime_utils import get_available_dram_per_chiplet, parse_byte_size, resolve_npu_or_none
+from ..utils.runtime_utils import parse_byte_size, resolve_npu_or_none
 from .device_kv_cache import (
     cache_requests,
     cache_shards,
@@ -188,30 +187,22 @@ def validate_sliding_window(rbln_config: "RBLNDecoderOnlyModelConfig") -> None:
         raise ValueError("`use_attention_mask` must be set to False when `cache_impl` is set to 'sliding_window'.")
 
 
-def _resolve_memory_budget(memory_budget: object | None, available_total: int) -> int:
-    """Resolve `memory_budget` to usable DRAM bytes (system reserve excluded), capped at available_total.
+def parse_memory_budget(value: int | float | str) -> int | float:
+    if isinstance(value, str) and value.strip().endswith("%"):
+        value = float(value.strip()[:-1]) / 100
+    if isinstance(value, float):
+        if not 0.0 < value <= 1.0:
+            raise ValueError(f"memory_budget fraction must be in (0, 1], got {value!r}.")
+        return value
+    return parse_byte_size(value)
 
-    None -> available_total; a float in (0, 1] (or a "80%" string) -> that fraction of it;
-    int/"10GB"/"512MB" -> parsed bytes. `available_total` is the device-wide available DRAM after
-    the per-chiplet system reserve.
-    """
+
+def _resolve_memory_budget(memory_budget: int | float | str | None, available_total: int) -> int:
     if memory_budget is None:
         return available_total
-    fraction = None
-    if isinstance(memory_budget, float):
-        fraction = memory_budget
-    elif isinstance(memory_budget, str) and memory_budget.strip().endswith("%"):
-        fraction = float(memory_budget.strip()[:-1]) / 100
-    if fraction is not None:
-        if not 0.0 < fraction <= 1.0:
-            raise ValueError(f"memory_budget fraction must be in (0, 1] (or (0%, 100%]), got {memory_budget!r}.")
-        budget = int(available_total * fraction)
-    elif isinstance(memory_budget, (int, str)):
-        budget = parse_byte_size(memory_budget)
-    else:
-        raise ValueError(
-            f"memory_budget must be None, a float, an int or a string, got {type(memory_budget).__name__}."
-        )
+    budget = parse_memory_budget(memory_budget)
+    if isinstance(budget, float):
+        return int(available_total * budget)
     if budget > available_total:
         raise ValueError(
             f"memory_budget ({budget} bytes) exceeds the target NPU's available DRAM ({available_total} bytes)."
@@ -223,32 +214,16 @@ class RBLNDecoderOnlyFlashAttentionMixin:
     @classmethod
     def estimate_num_kvcache_blocks(
         cls,
-        compiled_models: dict[str, rebel.RBLNCompiledModel] | list[rebel.RBLNCompiledModel],
+        compiled_models: list[rebel.RBLNCompiledModel],
         rbln_config: "RBLNDecoderOnlyModelConfig",
-        device: torch.device | None = None,
+        device: torch.device,
     ) -> int:
-        if isinstance(compiled_models, dict):
-            compiled_models = list(compiled_models.values())
         shards = cache_shards(compiled_models, rbln_config)
-        if device is not None:
-            stats = torch.rbln.mem_get_info_per_chiplet(device)
-            room = {}
-            for node, chiplet in cache_requests(shards, rbln_config, 1):
-                node_total = stats[f"npu.{node}.total"]
-                prefix = f"npu.{node}.chiplet.{chiplet}"
-                budget = _resolve_memory_budget(rbln_config.memory_budget, node_total)
-                room[node, chiplet] = budget * stats[f"{prefix}.total"] // node_total - stats[f"{prefix}.used"]
-            return fit_cache_blocks(shards, rbln_config, room)
-
-        used: dict[tuple[int, int], int] = defaultdict(int)
-        for model in compiled_models:
-            for allocation in model.get_alloc_per_chiplet_by_key().values():
-                for node, chiplets in enumerate(allocation):
-                    for chiplet, size in enumerate(chiplets):
-                        used[node, chiplet] += size
-
-        units = used.keys() | cache_requests(shards, rbln_config, 1).keys()
-        num_chiplets = max(chiplet for _, chiplet in units) + 1
-        available = get_available_dram_per_chiplet(num_chiplets, rbln_config.npu) * num_chiplets
-        budget = _resolve_memory_budget(rbln_config.memory_budget, available) // num_chiplets
-        return fit_cache_blocks(shards, rbln_config, {unit: budget - used[unit] for unit in units})
+        stats = torch.rbln.mem_get_info_per_chiplet(device)
+        room = {}
+        for node, chiplet in cache_requests(shards, rbln_config, 1):
+            node_total = stats[f"npu.{node}.total"]
+            prefix = f"npu.{node}.chiplet.{chiplet}"
+            budget = _resolve_memory_budget(rbln_config.memory_budget, node_total)
+            room[node, chiplet] = budget * stats[f"{prefix}.total"] // node_total - stats[f"{prefix}.used"]
+        return fit_cache_blocks(shards, rbln_config, room)
