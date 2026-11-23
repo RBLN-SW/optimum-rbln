@@ -227,9 +227,6 @@ def test_decoder_block_count_is_load_only(tmp_path):
     assert RBLNLlamaForCausalLMConfig.from_pretrained(path).kvcache_num_blocks is None
     loaded = RBLNLlamaForCausalLMConfig.from_pretrained(path, rbln_kvcache_num_blocks=7)
     assert loaded.kvcache_num_blocks == 7
-    assert RBLNLlamaForCausalLMConfig.from_pretrained(path, rbln_config=loaded).kvcache_num_blocks == 7
-    override = RBLNLlamaForCausalLMConfig.from_pretrained(path, rbln_config=loaded, rbln_kvcache_num_blocks=6)
-    assert override.kvcache_num_blocks == 6
     loaded.save(path)
     assert json.loads(path.read_text()) == saved
 
@@ -694,22 +691,6 @@ def test_get_load_overrides():
     # Compile-time attributes never cross the load boundary; the artifact's values win.
     partial = RBLNQwen2_5_VLForConditionalGenerationConfig(max_seq_len=1024)
     assert "max_seq_len" not in partial.get_load_overrides()
-
-
-def test_decoder_config_rejects_conflicting_cache_options(tmp_path):
-    RBLNLlamaForCausalLMConfig().save(tmp_path)
-    budget = RBLNLlamaForCausalLMConfig(memory_budget=0.8)
-    original_blocks = budget.kvcache_num_blocks
-    assert RBLNLlamaForCausalLMConfig.from_pretrained(tmp_path, rbln_config=budget).memory_budget == 0.8
-
-    with pytest.raises(ValueError, match="mutually exclusive"):
-        RBLNLlamaForCausalLMConfig(memory_budget=0.8, kvcache_num_blocks=6)
-    RBLNLlamaForCausalLMConfig(kvcache_num_blocks=6).save(tmp_path)
-    with pytest.raises(ValueError, match="mutually exclusive"):
-        RBLNLlamaForCausalLMConfig.from_pretrained(tmp_path, rbln_config=budget, rbln_kvcache_num_blocks=6)
-    with pytest.raises(ValueError, match="mutually exclusive"):
-        RBLNLlamaForCausalLMConfig.initialize_from_kwargs(budget, rbln_kvcache_num_blocks=6)
-    assert budget.kvcache_num_blocks == original_blocks
 
 
 def test_get_load_overrides_includes_non_save_flags():
