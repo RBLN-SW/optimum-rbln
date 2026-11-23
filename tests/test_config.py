@@ -234,7 +234,7 @@ def test_decoder_block_count_is_load_only(tmp_path):
     assert json.loads(path.read_text()) == saved
 
 
-def test_decoder_memory_budget_is_load_only_and_excludes_explicit_blocks(tmp_path):
+def test_decoder_memory_budget_is_load_only(tmp_path):
     path = tmp_path / "rbln_config.json"
     RBLNLlamaForCausalLMConfig().save(path)
     config = RBLNLlamaForCausalLMConfig.from_pretrained(path, rbln_memory_budget="80%", rbln_kvcache_num_blocks=0)
@@ -242,13 +242,6 @@ def test_decoder_memory_budget_is_load_only_and_excludes_explicit_blocks(tmp_pat
     config.save(path)
     assert "memory_budget" not in json.loads(path.read_text())
     assert RBLNLlamaForCausalLMConfig.from_pretrained(path).memory_budget is None
-    with pytest.raises(ValueError, match="mutually exclusive"):
-        RBLNLlamaForCausalLMConfig(memory_budget="80%", kvcache_num_blocks=6)
-    with pytest.raises(ValueError, match="mutually exclusive"):
-        RBLNLlamaForCausalLMConfig.from_pretrained(path, rbln_config=config, rbln_kvcache_num_blocks=6)
-    with pytest.raises(ValueError, match="mutually exclusive"):
-        RBLNLlamaForCausalLMConfig.initialize_from_kwargs(config, rbln_kvcache_num_blocks=6)
-    assert config.kvcache_num_blocks == 0
 
 
 def test_logits_to_keep_zero_survives_construction_and_reload(tmp_path):
@@ -703,14 +696,30 @@ def test_get_load_overrides():
     assert "max_seq_len" not in partial.get_load_overrides()
 
 
+def test_decoder_config_rejects_conflicting_cache_options(tmp_path):
+    RBLNLlamaForCausalLMConfig().save(tmp_path)
+    budget = RBLNLlamaForCausalLMConfig(memory_budget=0.8)
+    original_blocks = budget.kvcache_num_blocks
+    assert RBLNLlamaForCausalLMConfig.from_pretrained(tmp_path, rbln_config=budget).memory_budget == 0.8
+
+    with pytest.raises(ValueError, match="mutually exclusive"):
+        RBLNLlamaForCausalLMConfig(memory_budget=0.8, kvcache_num_blocks=6)
+    RBLNLlamaForCausalLMConfig(kvcache_num_blocks=6).save(tmp_path)
+    with pytest.raises(ValueError, match="mutually exclusive"):
+        RBLNLlamaForCausalLMConfig.from_pretrained(tmp_path, rbln_config=budget, rbln_kvcache_num_blocks=6)
+    with pytest.raises(ValueError, match="mutually exclusive"):
+        RBLNLlamaForCausalLMConfig.initialize_from_kwargs(budget, rbln_kvcache_num_blocks=6)
+    assert budget.kvcache_num_blocks == original_blocks
+
+
 def test_get_load_overrides_includes_non_save_flags():
     """Non-save attributes (subclass_non_save_attributes) must cross the load boundary:
     they are never serialized, so they can only travel with the caller."""
     from optimum.rbln import RBLNQwen2_5_VLForConditionalGenerationConfig, RBLNQwen3VLForConditionalGenerationConfig
 
-    cfg = RBLNQwen3VLForConditionalGenerationConfig(device=0, kvcache_num_blocks=8)
+    cfg = RBLNQwen3VLForConditionalGenerationConfig(device=0, memory_budget=0.8)
     overrides = cfg.get_load_overrides()
-    assert overrides["kvcache_num_blocks"] == 8
+    assert overrides["memory_budget"] == 0.8
     assert overrides["device"] == 0
 
     # A submodule left as a plain dict keeps runtime options only: its config class is

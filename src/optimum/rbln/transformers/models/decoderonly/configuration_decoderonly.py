@@ -281,7 +281,11 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
         budget = overrides.get("memory_budget", self.memory_budget)
         blocks = overrides.get("kvcache_num_blocks", self.kvcache_num_blocks)
         if budget is not None and blocks is not None and blocks > 0:
-            raise ValueError("`memory_budget` and an explicit `kvcache_num_blocks` are mutually exclusive.")
+            raise ValueError(
+                "`memory_budget` and an explicit `kvcache_num_blocks` are mutually exclusive. "
+                "`memory_budget` only guides automatic block estimation, which runs when "
+                "`kvcache_num_blocks` is unset."
+            )
 
     @staticmethod
     def validate_phases_type(phases: list[PhaseType]):
