@@ -1213,6 +1213,11 @@ dependencies = [
     { name = "typing-extensions" },
 ]
 
+[package.optional-dependencies]
+device-tensor = [
+    { name = "torch-rbln", marker = "platform_machine == 'x86_64'" },
+]
+
 [package.dev-dependencies]
 deploy = [
     { name = "twine" },
@@ -1246,6 +1251,7 @@ requires-dist = [
     { name = "packaging", specifier = ">=24.1" },
     { name = "tokenizers", specifier = "==0.22.1" },
     { name = "torch", specifier = "==2.13.0+cpu", index = "https://download.pytorch.org/whl/cpu" },
+    { name = "torch-rbln", marker = "platform_machine == 'x86_64' and extra == 'device-tensor'", specifier = "==0.12.1a1", index = "https://pypi.rebellions.in/simple/" },
     { name = "torchaudio", marker = "platform_machine == 'aarch64' and platform_python_implementation == 'CPython'", specifier = "==2.11.0", index = "https://download.pytorch.org/whl/cpu" },
     { name = "torchaudio", marker = "platform_machine == 'x86_64' and platform_python_implementation == 'CPython'", specifier = "==2.11.0+cpu", index = "https://download.pytorch.org/whl/cpu" },
     { name = "torchcodec", marker = "platform_machine == 'aarch64' and platform_python_implementation == 'CPython'", specifier = "==0.16.0", index = "https://download.pytorch.org/whl/cpu" },
@@ -1255,6 +1261,7 @@ requires-dist = [
     { name = "transformers", specifier = "==5.15.1" },
     { name = "typing-extensions", specifier = ">=4.5" },
 ]
+provides-extras = ["device-tensor"]
 
 [package.metadata.requires-dev]
 deploy = [{ name = "twine", specifier = ">=6.0.1" }]
@@ -2253,6 +2260,21 @@ wheels = [
     { url = "https://download-r2.pytorch.org/whl/cpu/torch-2.13.0%2Bcpu-cp314-cp314-manylinux_2_28_x86_64.whl", hash = "sha256:d20fa53ee744502fa4c69818a720b05ca0d37abd055d4f6e66cae155114bc691", upload-time = "2026-07-08T19:30:45Z" },
     { url = "https://download-r2.pytorch.org/whl/cpu/torch-2.13.0%2Bcpu-cp314-cp314t-manylinux_2_28_aarch64.whl", hash = "sha256:7b8d26e29bceafbdaa8d63bfe7612f23875b5af2cc07e13f809c3ed890bbe1d8", upload-time = "2026-07-08T19:31:21Z" },
     { url = "https://download-r2.pytorch.org/whl/cpu/torch-2.13.0%2Bcpu-cp314-cp314t-manylinux_2_28_x86_64.whl", hash = "sha256:b222c15a0fc2ce207d1c1a59700b46c8fa6748df1f447ad11e5c870dde0933d9", upload-time = "2026-07-08T19:31:35Z" },
+]
+
+[[package]]
+name = "torch-rbln"
+version = "0.12.1a1"
+source = { registry = "https://pypi.rebellions.in/simple/" }
+dependencies = [
+    { name = "torch" },
+]
+wheels = [
+    { url = "https://pypi.rebellions.in/api/package/torch-rbln/torch_rbln-0.12.1a1-cp310-cp310-manylinux_2_34_x86_64.whl", hash = "sha256:ed267ae7afe6a893c85f06727b856b386370c1b4140928e9ada00ae787ebb91e" },
+    { url = "https://pypi.rebellions.in/api/package/torch-rbln/torch_rbln-0.12.1a1-cp311-cp311-manylinux_2_34_x86_64.whl", hash = "sha256:01be7d74ee3bbbbec9399255c5f12c15d8c9401eb974db03bf73edd3110a3f3b" },
+    { url = "https://pypi.rebellions.in/api/package/torch-rbln/torch_rbln-0.12.1a1-cp312-cp312-manylinux_2_34_x86_64.whl", hash = "sha256:9187b66e4e055dff70274aac286bfe0ec018b850d3e29429d5c52d1217613cae" },
+    { url = "https://pypi.rebellions.in/api/package/torch-rbln/torch_rbln-0.12.1a1-cp313-cp313-manylinux_2_34_x86_64.whl", hash = "sha256:a6333860f6e9b4cfdf950c9ea68350ef290fda8902a0cc3d63a4017946eb54f0" },
+    { url = "https://pypi.rebellions.in/api/package/torch-rbln/torch_rbln-0.12.1a1-cp314-cp314-manylinux_2_34_x86_64.whl", hash = "sha256:f5d5d696a1c95c21c883f4d7d04c5020015d7bca4fb346e238ee5e6e1454fb7b" },
 ]
 
 [[package]]

@@ -5,9 +5,11 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import rebel
+import torch
 
 from ..utils.logging import get_logger
 from ..utils.runtime_utils import get_available_dram_per_chiplet, parse_byte_size, resolve_npu_or_none
+from .device_kv_cache import allocator_reserved, cache_requests, cache_shards, fit_cache_blocks
 
 
 if TYPE_CHECKING:
@@ -260,6 +262,8 @@ class RBLNDecoderOnlyFlashAttentionMixin:
                         f"  {key}: {[[format_byte_size(size) for size in sizes_at_chiplet] for sizes_at_chiplet in alloc_per_chiplet]}"
                     )
 
+                if rbln_config.use_device_kv_cache:
+                    continue
                 logger.debug(f"{prefix} DramTensor sizes in compiled_model[{phase}]:")
                 logger.debug("Please note that the sizes are not aligned. (alignment is not considered)")
                 for key, sizes_at_node in compiled_model.exp_get_dram_tensor_sizes().items():
@@ -279,6 +283,8 @@ class RBLNDecoderOnlyFlashAttentionMixin:
                 f"reducing `max_seq_len` or `batch_size` (currently {rbln_config.batch_size}) to lower the "
                 f"memory requirement."
             )
+        if rbln_config.use_device_kv_cache:
+            return
         cls.multiply_kv_cache_num_blocks(
             compiled_models=compiled_models, rbln_config=rbln_config, multiplier=rbln_config.kvcache_num_blocks
         )
@@ -306,9 +312,32 @@ class RBLNDecoderOnlyFlashAttentionMixin:
         alloc_without_dram, kvcache_tensor_sizes, available_per_chiplet, chiplets = (
             cls._collect_chiplet_kvcache_inputs(compiled_models, rbln_config)
         )
+        if rbln_config.use_device_kv_cache:
+            shards = cache_shards(compiled_models, rbln_config)
+            units = chiplets | cache_requests(shards, rbln_config, 1).keys()
+            room = {unit: available_per_chiplet - alloc_without_dram[unit] for unit in units}
+            return fit_cache_blocks(shards, rbln_config, room)
         return cls._search_num_kvcache_blocks(
             rbln_config, alloc_without_dram, kvcache_tensor_sizes, available_per_chiplet, chiplets, current_blocks
         )
+
+    @classmethod
+    def estimate_live_cache_blocks(cls, compiled_models, config, device):
+        stats = torch.rbln.mem_get_info_per_chiplet(device)
+        totals = {}
+        for key, value in stats.items():
+            parts = key.split(".")
+            if len(parts) == 5 and parts[2] == "chiplet" and parts[-1] == "total":
+                totals[int(parts[1]), int(parts[3])] = value
+        if not totals:
+            raise ValueError("The driver did not report per-chiplet DRAM for runtime_memory_budget.")
+        room = {}
+        for (node, chiplet), total in totals.items():
+            node_total = sum(size for (n, _), size in totals.items() if n == node)
+            budget = _resolve_memory_budget(config.runtime_memory_budget, node_total)
+            used = stats[f"npu.{node}.chiplet.{chiplet}.used"]
+            room[node, chiplet] = budget * total // node_total - used
+        return fit_cache_blocks(cache_shards(compiled_models, config), config, room)
 
     @classmethod
     def _collect_chiplet_kvcache_inputs(
@@ -323,7 +352,7 @@ class RBLNDecoderOnlyFlashAttentionMixin:
 
         for compiled_model in compiled_models.values():
             for key, alloc_per_chiplet in compiled_model.get_alloc_per_chiplet_by_key().items():
-                if key == "DramTensor":
+                if key == "DramTensor" and not rbln_config.use_device_kv_cache:
                     continue
                 for node_id, sizes_at_chiplet in enumerate(alloc_per_chiplet):
                     for chiplet_id, size in enumerate(sizes_at_chiplet):
@@ -331,7 +360,9 @@ class RBLNDecoderOnlyFlashAttentionMixin:
                         chiplets.add((node_id, chiplet_id))
 
         # kvcache_tensor_sizes[key][node_id][chiplet_id] = alloc_size
-        kvcache_tensor_sizes: dict[str, list[list[int]]] = compiled_models["prefill"].exp_get_dram_tensor_sizes()
+        kvcache_tensor_sizes: dict[str, list[list[int]]] = (
+            {} if rbln_config.use_device_kv_cache else compiled_models["prefill"].exp_get_dram_tensor_sizes()
+        )
         for sizes_at_node in kvcache_tensor_sizes.values():
             for node_id, sizes_at_chiplet in enumerate(sizes_at_node):
                 for chiplet_id in range(len(sizes_at_chiplet)):
@@ -434,6 +465,9 @@ class RBLNDecoderOnlyFlashAttentionMixin:
         (0 for the unresized compile baseline is treated as 1). Bytes are not linear in `num_blocks`
         because alignment is applied after scaling.
         """
+        if rbln_config.use_device_kv_cache:
+            requests = cache_requests(cache_shards(compiled_models, rbln_config), rbln_config, num_blocks)
+            return sum(allocator_reserved(values) for values in requests.values())
         kvcache_tensor_sizes = compiled_models["prefill"].exp_get_dram_tensor_sizes()
         current_blocks = rbln_config.kvcache_num_blocks or 1
         return sum(
@@ -478,6 +512,14 @@ class RBLNDecoderOnlyFlashAttentionMixin:
                 f"kvcache_num_blocks={target} is below the minimum required for the full sequence "
                 f"length (num_min_blocks={rbln_config.num_min_blocks})."
             )
+        if rbln_config.use_device_kv_cache:
+            if target != current and not any(meta.can_resize for meta in rbln_config.cache_metas):
+                raise ValueError("The compiled cache has a fixed block count.")
+            if target != current and target > rbln_config.num_full_blocks:
+                raise ValueError(
+                    f"The compiled block dimension supports at most {rbln_config.num_full_blocks} blocks."
+                )
+            return
         for compiled_model in compiled_models.values():
             if not hasattr(compiled_model, "exp_rescale_buffer_size"):
                 raise RuntimeError(

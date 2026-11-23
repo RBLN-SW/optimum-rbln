@@ -39,7 +39,7 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
 
     _default_phases = ["prefill"]
     _default_logits_to_keep = 0
-    subclass_non_save_attributes = ["memory_budget", "nested_compile_region"]
+    subclass_non_save_attributes = ["memory_budget", "runtime_memory_budget", "nested_compile_region"]
 
     @deprecate_kwarg(old_name="kvcache_metas", new_name="cache_metas", version="0.13.0")
     def __init__(
@@ -68,10 +68,14 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
         cache_metas: list["CacheMeta"] | None = None,
         _requires_batch_sort: bool | None = None,
         _is_prefix_lm: bool | None = None,
+        use_device_kv_cache: bool = False,
+        runtime_memory_budget: int | float | str | None = None,
         **kwargs: Any,
     ):
         """
         Args:
+            use_device_kv_cache (bool): Compile decoder cache inputs for caller-owned torch-rbln tensors.
+            runtime_memory_budget: Size a dynamic device cache from chiplet memory usage after loading the runtimes.
             nested_compile_region (bool): Preserve decoder boundaries as nested compile regions.
                 Uses strict export and requires compiler support for nested regions. Defaults to False.
                 This experimental compile-time option is not saved in `rbln_config.json`.
@@ -243,6 +247,8 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
         self.kvcache_block_size = kvcache_block_size
         self.prefill_chunk_size = prefill_chunk_size
         self.kvcache_num_blocks = kvcache_num_blocks if kvcache_num_blocks is not None else 0
+        self.use_device_kv_cache = use_device_kv_cache
+        self.runtime_memory_budget = runtime_memory_budget
         self.memory_budget = memory_budget
         if self.memory_budget is not None and self.kvcache_num_blocks > 0:
             raise ValueError(

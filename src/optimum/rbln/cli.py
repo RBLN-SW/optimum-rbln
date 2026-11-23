@@ -435,11 +435,9 @@ def _handle_kvcache_num_blocks(
 
     `get` prints the current block count from rbln_config.json. To set, give either
     `set_value` (an absolute block count) or `set_memory_budget` (a float/`"80%"`/bytes
-    budget, from which the largest fitting block count is computed). The kv-cache buffers
-    in every `*.rbln` are rescaled to the target and both the `.rbln` files and
-    rbln_config.json are written. With `output_dir` the source artifact is left untouched
-    and a full resized copy is written there; otherwise the edit is in place. Stateless:
-    rbln_config.json is the source of truth for the current block count.
+    budget, from which the largest fitting block count is computed). Caller-owned caches store
+    the resolved count in the config.
+    Runtime-owned caches also require rescaling the buffers in the compiled binaries.
     """
     from .transformers.modeling_attention_utils import RBLNDecoderOnlyFlashAttentionMixin
     from .transformers.models.decoderonly.configuration_decoderonly import RBLNDecoderOnlyModelConfig
@@ -463,9 +461,13 @@ def _handle_kvcache_num_blocks(
         print(rbln_config.kvcache_num_blocks)
         return
 
-    compiled_models = {p.stem: rebel.RBLNCompiledModel(p) for p in sorted(src_dir.glob("*.rbln"))}
-    if not compiled_models:
+    paths = sorted(src_dir.glob("*.rbln"))
+    if not paths:
         raise FileNotFoundError(f"No .rbln compiled models found in '{model_id}'.")
+
+    compiled_models = {}
+    if set_value is None or not rbln_config.use_device_kv_cache:
+        compiled_models = {path.stem: rebel.RBLNCompiledModel(path) for path in paths}
 
     if set_value is not None:
         target = set_value
@@ -477,22 +479,23 @@ def _handle_kvcache_num_blocks(
         )
         print(f"memory_budget {set_memory_budget} fits kvcache_num_blocks={target}")
 
+    RBLNDecoderOnlyFlashAttentionMixin.rescale_kvcache_num_blocks(
+        compiled_models=compiled_models, rbln_config=rbln_config, target=target
+    )
     dst_dir = src_dir if output_dir is None else Path(output_dir)
     if dst_dir.resolve() != src_dir.resolve():
         dst_dir.mkdir(parents=True, exist_ok=True)
         for item in src_dir.iterdir():
-            if item.suffix == ".rbln" or item.name == "rbln_config.json":
+            if (item.suffix == ".rbln" and not rbln_config.use_device_kv_cache) or item.name == "rbln_config.json":
                 continue
             if item.is_dir():
                 shutil.copytree(item, dst_dir / item.name, dirs_exist_ok=True)
             else:
                 shutil.copy2(item, dst_dir / item.name)
 
-    RBLNDecoderOnlyFlashAttentionMixin.rescale_kvcache_num_blocks(
-        compiled_models=compiled_models, rbln_config=rbln_config, target=target
-    )
-    for name, compiled_model in compiled_models.items():
-        compiled_model.save(dst_dir / f"{name}.rbln")
+    if not rbln_config.use_device_kv_cache:
+        for name, compiled_model in compiled_models.items():
+            compiled_model.save(dst_dir / f"{name}.rbln")
     rbln_config.kvcache_num_blocks = target
     rbln_config.save(str(dst_dir))
     print(f"Set kvcache_num_blocks to {target} for artifact at {dst_dir.absolute()}")

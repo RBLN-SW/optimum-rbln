@@ -85,6 +85,39 @@ optimum-rbln-cli --class RBLNQwen3ForCausalLM --show-rbln-config  # show accepte
 optimum-rbln-cli --examples                          # show more usage examples
 ```
 
+## Caller-owned decoder KV cache
+
+On x86-64, install the optional backend with `uv sync --extra device-tensor` and the matching rebel-compiler. Set `RBLN_DEVICE_MAP` before starting Python. For example, `RBLN_DEVICE_MAP='[8]'` makes physical NPU 8 available to torch as `rbln:0`. For tensor parallelism, map the whole group, for example `[12,13]`, and pass `rbln_device=[12, 13]` at load.
+
+```python
+import torch
+from optimum.rbln import RBLNLlamaForCausalLM
+
+RBLNLlamaForCausalLM.from_model(
+    hf_model,
+    model_save_dir="compiled-llama",
+    rbln_config={
+        "npu": "RBLN-CA25",
+        "create_runtimes": False,
+        "use_device_kv_cache": True,
+        "attn_impl": "flash_attn",
+        "max_seq_len": 4096,
+        "kvcache_partition_len": 1024,
+        "batch_size": 2,
+    },
+)
+model = RBLNLlamaForCausalLM.from_pretrained("compiled-llama", rbln_device=8)
+cache = model.get_kv_cache()
+replacement = {name: torch.zeros_like(tensor) for name, tensor in cache.items()}
+model.set_kv_cache(replacement)
+```
+
+The optional backend was tested with torch-rbln 0.12.1a1 and rebel-compiler 0.12.1.dev816+g24590902.prod. For offline CA25 export, start the compile process with `RBLN_DUMMY_DEVICE=1 RBLN_FORCE_NPU_NAME=RBLN-CA25` and use a separate process for inference.
+
+Prefill and every decode batch size share the bound tensors. Each cache input requires a distinct contiguous allocation. Bind the tensors between requests, after any outstanding execution finishes. Page tables and sequence positions belong to the request and must agree with the cache contents. A caller can bind its tensors before the first forward or call to `get_kv_cache()`.
+
+An explicit `kvcache_num_blocks` compiles a fixed shape. Automatic sizing with flash attention compiles a variable block dimension for full attention. The estimate uses each cache input's physical placement and the allocator's segment sizes on each chiplet. `--set-kvcache-num-blocks` and `--set-memory-budget` can change the saved block count of these artifacts. Their compiled binaries are reusable. To size against current device usage, pass e.g. `rbln_runtime_memory_budget="90%"` at load. This caps total usage per NPU, including the loaded runtimes. It requires driver support for per-chiplet memory statistics. When attaching an already materialized cache, use the matching saved block count and omit live sizing, which counts those tensors as occupied memory.
+
 ## Documentation
 
 Check out [the documentation of Optimum RBLN](https://docs.rbln.ai/latest/software/optimum/index.html) for more advanced usage.

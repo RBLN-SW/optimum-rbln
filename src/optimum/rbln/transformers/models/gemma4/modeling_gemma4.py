@@ -358,9 +358,9 @@ class RBLNGemma4ForCausalLM(RBLNMoeLoadMixin, RBLNDecoderOnlyModelForCausalLM):
         wrapped_model = cls._wrap_model_if_needed(model, rbln_config)
         prefill_compile_config = rbln_config.compile_cfgs[0]
 
-        meta_tensor_names = [name for name, _, _ in prefill_compile_config.input_info if "past_key_values" in name]
-        prefill_example_inputs = prefill_compile_config.get_dummy_inputs(fill=0, meta_tensor_names=meta_tensor_names)
-        context, static_tensors = cls._get_compile_context(prefill_compile_config, prefill_example_inputs)
+        prefill_example_inputs, context, static_tensors = cls._prefill_compile_inputs(
+            prefill_compile_config, rbln_config
+        )
 
         compiled_models = {}
         compiled_models["prefill"] = cls._compile_model(
@@ -425,10 +425,10 @@ class RBLNGemma4ForCausalLM(RBLNMoeLoadMixin, RBLNDecoderOnlyModelForCausalLM):
         save_dict = {}
         if rbln_config.use_inputs_embeds:
             save_dict["embed_tokens"] = model.get_input_embeddings().state_dict()
-            inner = getattr(model, "model", None)
-            embed_per_layer = getattr(inner, "embed_tokens_per_layer", None) if inner is not None else None
-            if embed_per_layer is not None:
-                save_dict["embed_tokens_per_layer"] = embed_per_layer.state_dict()
+        inner = getattr(model, "model", None)
+        embed_per_layer = getattr(inner, "embed_tokens_per_layer", None) if inner is not None else None
+        if embed_per_layer is not None:
+            save_dict["embed_tokens_per_layer"] = embed_per_layer.state_dict()
         if save_dict:
             # nosemgrep: trailofbits.python.pickles-in-pytorch.pickles-in-pytorch
             torch.save(save_dict, save_dir_path / subfolder / "torch_artifacts.pth")
