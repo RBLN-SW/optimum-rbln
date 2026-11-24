@@ -62,15 +62,13 @@ class Glm4Attention(DecoderOnlyAttention):
 
 
 class Glm4SplitMLP(nn.Module):
-    def __init__(self, mlp, nested_compile_region: bool):
+    def __init__(self, mlp, copy: bool):
         super().__init__()
         intermediate_size = mlp.down_proj.in_features
         gate_up = mlp.gate_up_proj.weight.data
         self.gate_proj = nn.Linear(gate_up.shape[1], intermediate_size, bias=False)
         self.up_proj = nn.Linear(gate_up.shape[1], intermediate_size, bias=False)
-        # A dim-0 slice is already contiguous, so contiguous() keeps views of one storage. A nested
-        # region rejects inputs that share storage, so copy them there.
-        own = torch.clone if nested_compile_region else torch.Tensor.contiguous
+        own = torch.clone if copy else torch.Tensor.contiguous
         self.gate_proj.weight = nn.Parameter(own(gate_up[:intermediate_size]), requires_grad=False)
         self.up_proj.weight = nn.Parameter(own(gate_up[intermediate_size:]), requires_grad=False)
         self.down_proj = mlp.down_proj

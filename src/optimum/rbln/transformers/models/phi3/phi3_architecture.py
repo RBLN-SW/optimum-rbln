@@ -32,10 +32,8 @@ class Phi3Wrapper(DecoderOnlyWrapper):
         return Phi3LayerRegion if self.rbln_config.nested_compile_region else Phi3Layer
 
 
-def _split_rows(linear: nn.Linear, sizes: list[int], nested_compile_region: bool) -> list[nn.Linear]:
-    # A dim-0 split is already contiguous, so contiguous() keeps views of one storage. A nested
-    # region rejects inputs that share storage, so copy them there.
-    own = torch.clone if nested_compile_region else torch.Tensor.contiguous
+def _split_rows(linear: nn.Linear, sizes: list[int], copy: bool) -> list[nn.Linear]:
+    own = torch.clone if copy else torch.Tensor.contiguous
     splits = []
     for rows in torch.split(linear.weight.data, sizes, dim=0):
         part = nn.Linear(linear.in_features, rows.shape[0], bias=False)
@@ -65,12 +63,10 @@ class Phi3Attention(DecoderOnlyAttention):
 
 
 class Phi3SplitMLP(nn.Module):
-    def __init__(self, mlp, nested_compile_region: bool):
+    def __init__(self, mlp, copy: bool):
         super().__init__()
         intermediate_size = mlp.down_proj.in_features
-        self.gate_proj, self.up_proj = _split_rows(
-            mlp.gate_up_proj, [intermediate_size, intermediate_size], nested_compile_region
-        )
+        self.gate_proj, self.up_proj = _split_rows(mlp.gate_up_proj, [intermediate_size, intermediate_size], copy)
         self.down_proj = mlp.down_proj
         self.act_fn = mlp.activation_fn
 
