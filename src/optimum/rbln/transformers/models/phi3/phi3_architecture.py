@@ -32,8 +32,8 @@ class Phi3Wrapper(DecoderOnlyWrapper):
         return Phi3LayerRegion if self.rbln_config.nested_compile_region else Phi3Layer
 
 
-def _split_rows(linear: nn.Linear, sizes: list[int], copy: bool) -> list[nn.Linear]:
-    own = torch.clone if copy else torch.Tensor.contiguous
+def _split_rows(linear: nn.Linear, sizes: list[int], nested_compile_region: bool) -> list[nn.Linear]:
+    own = torch.clone if nested_compile_region else torch.Tensor.contiguous
     splits = []
     for rows in torch.split(linear.weight.data, sizes, dim=0):
         part = nn.Linear(linear.in_features, rows.shape[0], bias=False)
@@ -63,10 +63,12 @@ class Phi3Attention(DecoderOnlyAttention):
 
 
 class Phi3SplitMLP(nn.Module):
-    def __init__(self, mlp, copy: bool):
+    def __init__(self, mlp, nested_compile_region: bool):
         super().__init__()
         intermediate_size = mlp.down_proj.in_features
-        self.gate_proj, self.up_proj = _split_rows(mlp.gate_up_proj, [intermediate_size, intermediate_size], copy)
+        self.gate_proj, self.up_proj = _split_rows(
+            mlp.gate_up_proj, [intermediate_size, intermediate_size], nested_compile_region
+        )
         self.down_proj = mlp.down_proj
         self.act_fn = mlp.activation_fn
 
@@ -76,7 +78,7 @@ class Phi3SplitMLP(nn.Module):
 
 class Phi3Layer(DecoderOnlyLayer):
     def __init__(self, layer, self_attn, lora_config=None):
-        layer.mlp = Phi3SplitMLP(layer.mlp, isinstance(self, NestedCompileRegionMixin))
+        layer.mlp = Phi3SplitMLP(layer.mlp, self_attn.rbln_config.nested_compile_region)
         super().__init__(layer, self_attn, lora_config=lora_config)
 
 
