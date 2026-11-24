@@ -17,6 +17,7 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+import numpy as np
 import rebel
 import torch
 from diffusers import CosmosTransformer3DModel
@@ -79,11 +80,16 @@ class RBLNCosmosRotaryPosEmbed(CosmosRotaryPosEmbed):
 
 
 class RBLNTimesteps(Timesteps):
-    def forward(self, timesteps: torch.Tensor) -> torch.Tensor:
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
         half_dim = self.num_channels // 2
         exponent = -math.log(10000) * torch.arange(half_dim, dtype=torch.float32)
         exponent = exponent / (half_dim - self.downscale_freq_shift)
-        emb = self.scale * (timesteps[:, None].float() * torch.exp(exponent)[None, :])
+        self.freqs = torch.from_numpy(np.exp(exponent.numpy()))
+
+    def forward(self, timesteps: torch.Tensor) -> torch.Tensor:
+        half_dim = self.num_channels // 2
+        emb = self.scale * (timesteps[:, None].float() * self.freqs[None, :])
 
         emb = torch.cat([np_sin(emb), np_cos(emb)], dim=-1)
         if self.flip_sin_to_cos:
