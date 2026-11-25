@@ -12,7 +12,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from ...configuration_generic import RBLNModelForMaskedLMConfig, RBLNModelForSequenceClassificationConfig
+from ...configuration_generic import (
+    RBLNModelForMaskedLMConfig,
+    RBLNModelForSequenceClassificationConfig,
+    RBLNTransformerEncoderForFeatureExtractionConfig,
+)
+
+
+class RBLNRobertaModelConfig(RBLNTransformerEncoderForFeatureExtractionConfig):
+    """
+    Configuration class for RBLNRobertaModel.
+
+    This configuration class stores the configuration parameters specific to
+    RBLN-optimized RoBERTa models for feature extraction tasks.
+    """
 
 
 class RBLNRobertaForMaskedLMConfig(RBLNModelForMaskedLMConfig):
@@ -36,4 +49,5 @@ class RBLNRobertaForSequenceClassificationConfig(RBLNModelForSequenceClassificat
 __all__ = [
     "RBLNRobertaForMaskedLMConfig",
     "RBLNRobertaForSequenceClassificationConfig",
+    "RBLNRobertaModelConfig",
 ]
