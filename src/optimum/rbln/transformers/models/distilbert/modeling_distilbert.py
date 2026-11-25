@@ -14,9 +14,43 @@
 
 
 import torch
-from transformers.modeling_outputs import QuestionAnsweringModelOutput
+from transformers.modeling_outputs import BaseModelOutput, QuestionAnsweringModelOutput
 
-from ...modeling_generic import RBLNModelForQuestionAnswering
+from ...modeling_generic import RBLNModelForQuestionAnswering, RBLNTransformerEncoderForFeatureExtraction
+
+
+class RBLNDistilBertModel(RBLNTransformerEncoderForFeatureExtraction):
+    """
+    RBLN optimized DistilBERT model for feature extraction tasks.
+
+    This class provides hardware-accelerated inference for DistilBERT models
+    on RBLN devices, optimized for extracting contextualized embeddings
+    and features from text sequences.
+    """
+
+    rbln_model_input_names = ["input_ids", "attention_mask"]
+
+    def forward(
+        self,
+        input_ids: torch.Tensor | None = None,
+        attention_mask: torch.Tensor | None = None,
+        **kwargs,
+    ) -> tuple | BaseModelOutput:
+        """
+        Forward pass for the RBLN-optimized DistilBERT model for feature extraction tasks.
+
+        Args:
+            input_ids (torch.Tensor of shape (batch_size, sequence_length), optional): Indices of input sequence tokens in the vocabulary.
+            attention_mask (torch.Tensor of shape (batch_size, sequence_length), optional): Mask to avoid performing attention on padding token indices.
+
+        Returns:
+            The model outputs. If return_dict=False is passed, returns a tuple of tensors. Otherwise, returns a BaseModelOutput object.
+        """
+
+        # DistilBERT has no token-type (segment) embeddings; drop token_type_ids if a tokenizer
+        # provides it (AutoTokenizer resolves to BertTokenizer for DistilBERT in transformers v5).
+        kwargs.pop("token_type_ids", None)
+        return super().forward(input_ids, attention_mask, **kwargs)
 
 
 class RBLNDistilBertForQuestionAnswering(RBLNModelForQuestionAnswering):
@@ -55,4 +89,5 @@ class RBLNDistilBertForQuestionAnswering(RBLNModelForQuestionAnswering):
 
 __all__ = [
     "RBLNDistilBertForQuestionAnswering",
+    "RBLNDistilBertModel",
 ]
