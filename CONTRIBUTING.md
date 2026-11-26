@@ -118,6 +118,12 @@ Public classes must have docstrings that `mkdocstrings` can render, because the 
 bash scripts/check-docstrings.sh
 ```
 
+An `Args:` section must document only parameters the signature has, in the same order as the signature, and it needs a blank line above it so that the reference documentation reads it. The CI enforces this, and you can run the same check locally with:
+
+```bash
+python scripts/check_docstring_args.py
+```
+
 ## Dependencies
 
 Runtime dependencies are declared in `pyproject.toml` and locked in `uv.lock`, which is committed. Change them with `uv add` / `uv remove` (use `--group tests` or `--group quality` for development-only tools) and commit the updated lockfile together with `pyproject.toml`. Dependency updates for `transformers` and `diffusers` are opened automatically by Renovate.

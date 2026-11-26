@@ -44,9 +44,9 @@ def get_available_dram_per_chiplet(num_chiplets: int, npu: str | None = None) ->
     node total.
 
     Args:
-        num_chiplets : int
+        num_chiplets (`int`):
             Number of chiplets the device DRAM is split across.
-        npu : str | None, default=None
+        npu (`str | None`, *optional*):
             The NPU to get the available DRAM size. Resolved from the local device if None.
 
     Returns:

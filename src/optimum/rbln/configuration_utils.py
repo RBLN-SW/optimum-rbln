@@ -42,11 +42,14 @@ def nested_update(base: dict[str, Any], override: dict[str, Any]) -> dict[str, A
     Recursively merge override dict into base dict.
     For nested dicts, values are merged recursively instead of being replaced.
     For non-dict values, override takes precedence.
+
     Args:
         base: The base dictionary to merge into (modified in-place).
         override: The dictionary with values to merge.
+
     Returns:
         The merged base dictionary.
+
     Example:
         >>> base = {"a": 1, "nested": {"x": 10, "y": 20}}
         >>> override = {"b": 2, "nested": {"y": 30, "z": 40}}

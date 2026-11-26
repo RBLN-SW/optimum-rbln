@@ -123,7 +123,7 @@ def deprecate_kwarg(
             If raise_if_greater_or_equal_version is True and the current version is greater than or equal to the deprecated version, or if raise_if_both_names is True and both old and new keyword arguments are provided.
 
     Returns:
-        Callable:
+        (Callable):
             A wrapped function that handles the deprecated keyword arguments according to the specified parameters.
     """
 
@@ -229,6 +229,7 @@ def deprecate_method(
     - Notify users when a method is deprecated.
     - Optionally specify a new method name that should be used instead.
     - Raise an error if the deprecated method is called after the specified version.
+
     Parameters:
         version (`str`):
             The version in which the method was (or will be) deprecated.
@@ -238,9 +239,11 @@ def deprecate_method(
             Whether to raise `ValueError` if current `optimum.rbln` version is greater than or equal to the deprecated version.
         additional_message (`str | None`, *optional*):
             An additional message to append to the default deprecation message.
+
     Returns:
-        Callable:
+        (Callable):
             A wrapped function that handles the deprecation warning or error.
+
     Examples:
         >>> class MyClass:
         ...     @deprecate_method(version="0.13.0", new_method="from_pretrained")

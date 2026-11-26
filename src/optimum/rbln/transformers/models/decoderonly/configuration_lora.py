@@ -104,7 +104,6 @@ class RBLNLoRAAdapterConfig(RBLNSerializableConfigProtocol):
             use_rslora (bool | None): Whether to use Rank-Stabilized LoRA. If None,
                 will be loaded from adapter config file.
             scaling_factor (float | None): Additional scaling factor for this adapter. Defaults to 1.0.
-            **kwargs: Additional adapter-specific arguments.
 
         Raises:
             ValueError: If lora_int_id is None.

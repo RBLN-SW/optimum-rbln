@@ -35,6 +35,7 @@ steps:
       - "uv run --no-sync ruff check ."
       - "uv run --no-sync mypy"
       - "uv run --no-sync python scripts/check_inits.py"
+      - "uv run --no-sync python scripts/check_docstring_args.py"
       # ruff and uv.lock are already checked above; this runs the remaining file hygiene hooks.
       - "SKIP=ruff-check,ruff-format,uv-lock uv run --no-sync pre-commit run --all-files --show-diff-on-failure"
 

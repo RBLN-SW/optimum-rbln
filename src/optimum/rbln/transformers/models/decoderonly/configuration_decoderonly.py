@@ -72,10 +72,6 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
     ):
         """
         Args:
-            nested_compile_region (bool): Preserve decoder boundaries as nested compile regions.
-                Uses strict export and requires compiler support for nested regions. Defaults to False.
-                This experimental compile-time option is not saved in `rbln_config.json`.
-                This option does not itself lower repeated decoder calls to a loop.
             batch_size (int | None): The batch size for inference. Defaults to 1.
             max_seq_len (int | None): The maximum sequence length supported by the model.
                 If not provided, it attempts to infer from the model's configuration
@@ -134,6 +130,10 @@ class RBLNDecoderOnlyModelConfig(RBLNModelConfig):
             logits_to_keep (int | None): The number of logits to keep for the decoder.  If set to 0, the decoder will keep all logits.
                 Defaults to 0 if DecoderOnlyModel is used, 1 if DecoderOnlyModelForCausalLM is used.
             output_hidden_states (bool | None): Whether to output the hidden states of the decoder. Defaults to False.
+            nested_compile_region (bool): Preserve decoder boundaries as nested compile regions.
+                Uses strict export and requires compiler support for nested regions. Defaults to False.
+                This experimental compile-time option is not saved in `rbln_config.json`.
+                This option does not itself lower repeated decoder calls to a loop.
             cache_metas (list["CacheMeta"] | None): The metadata for the cache tensors. Handled internally if not provided. Defaults to None.
             kwargs: Additional arguments passed to the parent RBLNModelConfig.
 
