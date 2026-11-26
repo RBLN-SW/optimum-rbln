@@ -146,6 +146,7 @@ def _compute_default_rope_parameters(
 ) -> tuple["torch.Tensor", float]:
     """
     Computes the inverse frequencies according to the original RoPE implementation
+
     Args:
         config ([`~transformers.PretrainedConfig`]):
             The model configuration.
@@ -153,6 +154,7 @@ def _compute_default_rope_parameters(
             The device to use for initialization of the inverse frequencies.
         seq_len (`int`, *optional*):
             The current sequence length. Unused for this type of RoPE.
+
     Returns:
         Tuple of (`torch.Tensor`, `float`), containing the inverse frequencies for the RoPE embeddings and the
         post-processing scaling factor applied to the computed cos/sin (unused in this type of RoPE).
@@ -176,6 +178,7 @@ def _compute_linear_scaling_rope_parameters(
 ) -> tuple["torch.Tensor", float]:
     """
     Computes the inverse frequencies with linear scaling. Credits to the Reddit user /u/kaiokendev
+
     Args:
         config ([`~transformers.PretrainedConfig`]):
             The model configuration.
@@ -183,6 +186,7 @@ def _compute_linear_scaling_rope_parameters(
             The device to use for initialization of the inverse frequencies.
         seq_len (`int`, *optional*):
             The current sequence length. Unused for this type of RoPE.
+
     Returns:
         Tuple of (`torch.Tensor`, `float`), containing the inverse frequencies for the RoPE embeddings and the
         post-processing scaling factor applied to the computed cos/sin (unused in this type of RoPE).
@@ -206,6 +210,7 @@ def _compute_dynamic_ntk_parameters(
 ) -> tuple["torch.Tensor", float]:
     """
     Computes the inverse frequencies with NTK scaling. Credits to the Reddit users /u/bloc97 and /u/emozilla
+
     Args:
         config ([`~transformers.PretrainedConfig`]):
             The model configuration.
@@ -213,6 +218,7 @@ def _compute_dynamic_ntk_parameters(
             The device to use for initialization of the inverse frequencies.
         seq_len (`int`, *optional*):
             The current sequence length, used to update the dynamic RoPE at inference time.
+
     Returns:
         Tuple of (`torch.Tensor`, `float`), containing the inverse frequencies for the RoPE embeddings and the
         post-processing scaling factor applied to the computed cos/sin (unused in this type of RoPE).
@@ -267,6 +273,7 @@ def _compute_yarn_parameters(
     """
     Computes the inverse frequencies with NTK scaling. Please refer to the
     [original paper](https://huggingface.co/papers/2309.00071)
+
     Args:
         config ([`~transformers.PretrainedConfig`]):
             The model configuration.
@@ -274,6 +281,7 @@ def _compute_yarn_parameters(
             The device to use for initialization of the inverse frequencies.
         seq_len (`int`, *optional*):
             The current sequence length. Unused for this type of RoPE.
+
     Returns:
         Tuple of (`torch.Tensor`, `float`), containing the inverse frequencies for the RoPE embeddings and the
         post-processing scaling factor applied to the computed cos/sin.
@@ -354,6 +362,7 @@ def _compute_longrope_parameters(
     """
     Computes the inverse frequencies with LongRoPE scaling. Please refer to the
     [original implementation](https://github.com/microsoft/LongRoPE)
+
     Args:
         config ([`~transformers.PretrainedConfig`]):
             The model configuration.
@@ -361,6 +370,7 @@ def _compute_longrope_parameters(
             The device to use for initialization of the inverse frequencies.
         seq_len (`int`, *optional*):
             The current sequence length.
+
     Returns:
         Tuple of (`torch.Tensor`, `float`), containing the inverse frequencies for the RoPE embeddings and the
         post-processing scaling factor applied to the computed cos/sin.
@@ -415,6 +425,7 @@ def _compute_llama3_parameters(
             The device to use for initialization of the inverse frequencies.
         seq_len (`int`, *optional*):
             The current sequence length. Unused for this type of RoPE.
+
     Returns:
         Tuple of (`torch.Tensor`, `float`), containing the inverse frequencies for the RoPE embeddings and the
         post-processing scaling factor applied to the computed cos/sin.
@@ -460,7 +471,12 @@ def _compute_proportional_rope_parameters(
             The device to use for initialization of the inverse frequencies.
         seq_len (`int`, *optional*):
             The current sequence length. Unused for this type of RoPE.
-        head_dim_key
+        layer_type (`str`, *optional*):
+            The key of `config.rope_parameters` that holds the RoPE parameters of one layer type. When `None`,
+            `config.rope_parameters` itself is used.
+        head_dim_key (`str`, *optional*, defaults to `"head_dim"`):
+            The name of the config attribute that holds the head dimension. When the attribute is missing or empty,
+            the head dimension is `hidden_size // num_attention_heads`.
 
     Returns:
         Tuple of (`torch.Tensor`, `float`), containing the inverse frequencies for the RoPE embeddings and the

@@ -356,12 +356,12 @@ class Seq2SeqDecoder(torch.nn.Module):
 
 
 class Seq2SeqDecoderLayer(torch.nn.Module):
-    """A modified decoder-only model implementation optimized for RBLN compilation.
+    """A modified Seq2SeqDecoderLayer implementation optimized for RBLN compilation.
 
     Args:
-        model: Original Huggingface model to adapt
-        layers (list[DecoderOnlyLayer]): Modified transformer layers optimized for RBLN
+        decoder_layer (nn.Module): Original Huggingface decoder layer to adapt
         self_attn (Seq2SeqSelfAttention): Modified self-attention layer optimized for RBLN
+        cross_attn (Seq2SeqCrossAttention): Modified cross-attention layer optimized for RBLN
     """
 
     def __init__(self, decoder_layer, self_attn, cross_attn):
