@@ -10,6 +10,10 @@ from rebel.core.compilation._impl import clone_nn_module
 from transformers import (
     Gemma2Config,
     Gemma2ForCausalLM,
+    Glm4Config,
+    Glm4ForCausalLM,
+    Phi3Config,
+    Phi3ForCausalLM,
     Qwen2_5_VLConfig,
     Qwen2_5_VLForConditionalGeneration,
     Qwen3_5Config,
@@ -23,6 +27,10 @@ from transformers import (
 from optimum.rbln import (
     RBLNGemma2ForCausalLM,
     RBLNGemma2ForCausalLMConfig,
+    RBLNGlm4ForCausalLM,
+    RBLNGlm4ForCausalLMConfig,
+    RBLNPhi3ForCausalLM,
+    RBLNPhi3ForCausalLMConfig,
     RBLNQwen2_5_VisionTransformerPretrainedModel,
     RBLNQwen2_5_VLForConditionalGeneration,
     RBLNQwen2_5_VLForConditionalGenerationConfig,
@@ -36,6 +44,7 @@ from optimum.rbln import (
     RBLNQwen3VLModelConfig,
 )
 from optimum.rbln.transformers.models.gpt_oss.gpt_oss_architecture import RBLNGptOssExperts
+from optimum.rbln.utils.nested_compile_region import NestedCompileRegionMixin
 
 
 @pytest.mark.parametrize("enabled", [False, True])
@@ -155,6 +164,36 @@ def test_decoder_export(monkeypatch, enabled, phase, gemma, max_seq_len):
     monkeypatch.setattr(rebel, "compile_from_torch", export)
     with torch.inference_mode():
         model_cls._compile_model(wrapped, ccfg, inputs, context, config, phase=phase)
+
+
+@pytest.mark.parametrize(
+    ("hf_config_cls", "hf_model_cls", "model_cls", "config_cls"),
+    [
+        pytest.param(Phi3Config, Phi3ForCausalLM, RBLNPhi3ForCausalLM, RBLNPhi3ForCausalLMConfig, id="phi3"),
+        pytest.param(Glm4Config, Glm4ForCausalLM, RBLNGlm4ForCausalLM, RBLNGlm4ForCausalLMConfig, id="glm4"),
+    ],
+)
+def test_split_projections_have_nonaliased_region_inputs(hf_config_cls, hf_model_cls, model_cls, config_cls):
+    cfg = hf_config_cls(
+        vocab_size=128,
+        hidden_size=128,
+        intermediate_size=256,
+        num_hidden_layers=2,
+        num_attention_heads=2,
+        num_key_value_heads=2,
+        head_dim=64,
+        pad_token_id=0,
+    )
+    model = hf_model_cls(cfg).eval()
+    config = config_cls(max_seq_len=8192, npu="RBLN-CR13", create_runtimes=False, nested_compile_region=True)
+    config = model_cls._update_rbln_config(model=model, model_config=cfg, rbln_config=config)
+    regions = [
+        m for m in model_cls._wrap_model_if_needed(model, config).modules() if isinstance(m, NestedCompileRegionMixin)
+    ]
+    assert regions
+    for region in regions:
+        storages = [p.untyped_storage().data_ptr() for p in region.parameters()]
+        assert len(storages) == len(set(storages)), region
 
 
 def test_gpt_oss_experts_have_nonaliased_inputs():
