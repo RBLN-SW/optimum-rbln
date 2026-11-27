@@ -524,6 +524,7 @@ QWEN_VL_VISION_CONFIGS = [
     ("RBLNQwen2_5_VLForConditionalGenerationConfig", "RBLNQwen2_5_VisionTransformerPretrainedModelConfig"),
     ("RBLNQwen3VLForConditionalGenerationConfig", "RBLNQwen3VLVisionModelConfig"),
     ("RBLNQwen3_5ForConditionalGenerationConfig", "RBLNQwen3_5VisionModelConfig"),
+    ("RBLNQwen3_5MoeForConditionalGenerationConfig", "RBLNQwen3_5MoeVisionModelConfig"),
     ("RBLNExaone4_5_ForConditionalGenerationConfig", "RBLNExaone4_5_VisionModelConfig"),
 ]
 
@@ -556,6 +557,8 @@ LOAD_VISUAL_RUNTIME_CONFIGS = [
     ("RBLNQwen3VLModelConfig", "RBLNQwen3VLVisionModelConfig"),
     ("RBLNQwen3_5ForConditionalGenerationConfig", "RBLNQwen3_5VisionModelConfig"),
     ("RBLNQwen3_5ModelConfig", "RBLNQwen3_5VisionModelConfig"),
+    ("RBLNQwen3_5MoeForConditionalGenerationConfig", "RBLNQwen3_5MoeVisionModelConfig"),
+    ("RBLNQwen3_5MoeModelConfig", "RBLNQwen3_5MoeVisionModelConfig"),
 ]
 
 
@@ -754,12 +757,19 @@ def test_load_with_roundtrip_config_object(saved_vlm_config_dir):
 
 
 def test_qwen3_5_gdn_chunk_size_default_is_decoupled_from_prefill():
-    from optimum.rbln import RBLNQwen3_5ForCausalLMConfig, RBLNQwen3_5ModelConfig
+    from optimum.rbln import (
+        RBLNQwen3_5ForCausalLMConfig,
+        RBLNQwen3_5ModelConfig,
+        RBLNQwen3_5MoeForCausalLMConfig,
+        RBLNQwen3_5MoeModelConfig,
+    )
     from optimum.rbln.transformers.models.qwen3_5.configuration_qwen3_5 import MAX_GDN_CHUNK_SIZE
 
     for cls, kwargs in (
         (RBLNQwen3_5ForCausalLMConfig, {}),
         (RBLNQwen3_5ModelConfig, {"use_inputs_embeds": True}),
+        (RBLNQwen3_5MoeForCausalLMConfig, {}),
+        (RBLNQwen3_5MoeModelConfig, {"use_inputs_embeds": True}),
     ):
         assert cls(**kwargs).gdn_chunk_size == MAX_GDN_CHUNK_SIZE
         assert cls(prefill_chunk_size=512, **kwargs).gdn_chunk_size == MAX_GDN_CHUNK_SIZE

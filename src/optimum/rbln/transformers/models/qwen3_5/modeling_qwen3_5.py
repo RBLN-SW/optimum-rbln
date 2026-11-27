@@ -390,6 +390,10 @@ class RBLNQwen3_5VisionModel(RBLNModel):
 
     auto_model_class = None
     _tp_support = True
+    # The HF vision classes this encoder is built from; the MoE variant binds its own copies of them.
+    _vision_model_class = Qwen3_5VisionModel
+    _patch_embed_class = Qwen3_5VisionPatchEmbed
+    _vision_rotary_emb_class = Qwen3_5VisionRotaryEmbedding
 
     def __post_init__(self, **kwargs):
         self.transformer = self.model[0]
@@ -401,12 +405,12 @@ class RBLNQwen3_5VisionModel(RBLNModel):
 
         head_dim = config.hidden_size // config.num_heads
         # Precompute the rotary cos/sin tables up to the largest ViT bucket
-        _freq_table = Qwen3_5VisionRotaryEmbedding(head_dim // 2)(torch.arange(int(self.max_seq_len.max().item())))
+        _freq_table = self._vision_rotary_emb_class(head_dim // 2)(torch.arange(int(self.max_seq_len.max().item())))
         self.rotary_cos_table = np_cos(_freq_table)
         self.rotary_sin_table = np_sin(_freq_table)
 
         with no_init_weights():
-            self.patch_embed = Qwen3_5VisionPatchEmbed(config=config)
+            self.patch_embed = self._patch_embed_class(config=config)
             self.pos_embed = torch.nn.Embedding(config.num_position_embeddings, config.hidden_size)
 
         self.num_grid_per_side = int(config.num_position_embeddings**0.5)
@@ -438,7 +442,7 @@ class RBLNQwen3_5VisionModel(RBLNModel):
         def redirect(func):
             return lambda *pargs, **kwargs: func(self, *pargs, **kwargs)
 
-        val = getattr(Qwen3_5VisionModel, __name)
+        val = getattr(type(self)._vision_model_class, __name)
         if isinstance(val, Callable) and "self" in set(inspect.signature(val).parameters):
             return redirect(val)
         return val
