@@ -17,7 +17,7 @@ import json
 from pathlib import Path
 
 from huggingface_hub import HfApi, get_token, hf_hub_download, try_to_load_from_cache
-from huggingface_hub.errors import LocalEntryNotFoundError
+from huggingface_hub.errors import EntryNotFoundError, LocalEntryNotFoundError
 
 
 def pull_compiled_model_from_hub(
@@ -75,7 +75,7 @@ def pull_compiled_model_from_hub(
             for rbln_file in rbln_files:
                 filename = rbln_file.name if subfolder == "" else f"{subfolder}/{rbln_file.name}"
                 # File might not exist in repo, skip it
-                with contextlib.suppress(LocalEntryNotFoundError):
+                with contextlib.suppress(EntryNotFoundError):
                     hf_hub_download(
                         repo_id=str(model_id),
                         filename=filename,
