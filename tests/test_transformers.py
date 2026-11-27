@@ -26,6 +26,7 @@ from optimum.rbln import (
     RBLNColPaliForRetrieval,
     RBLNColQwen2ForRetrieval,
     RBLNDistilBertForQuestionAnswering,
+    RBLNDistilBertModel,
     RBLNDPTForDepthEstimation,
     RBLNFlorence2ForConditionalGeneration,
     RBLNGroundingDinoForObjectDetection,
@@ -36,6 +37,7 @@ from optimum.rbln import (
     RBLNResNetForImageClassification,
     RBLNRobertaForMaskedLM,
     RBLNRobertaForSequenceClassification,
+    RBLNRobertaModel,
     RBLNT5EncoderModel,
     RBLNTimeSeriesTransformerForPrediction,
     RBLNViTForImageClassification,
@@ -149,6 +151,15 @@ class TestBertForQuestionAnswering(BaseTest.TestModel):
         "input_ids": RANDOM_INPUT_IDS,
         "attention_mask": RANDOM_ATTN_MASK,
         "token_type_ids": RANDOM_TOKEN_TYPE_IDS,
+    }
+
+
+class TestBertForQuestionAnsweringSingleTokenType(TestBertForQuestionAnswering):
+    # A single token type drops `token_type_ids` from the compiled graph, so the model must stop
+    # passing it while still accepting it from the caller.
+    HF_CONFIG_KWARGS = {
+        "type_vocab_size": 1,
+        "ignore_mismatched_sizes": True,
     }
 
 
@@ -526,6 +537,8 @@ class TestEncoderMaxSeqLenBucketing(unittest.TestCase):
 
 
 class TestXLMRobertaModelWithTokenTypeIds(TestXLMRobertaModel):
+    # `bge-m3` has `type_vocab_size == 1`, so `token_type_ids` is dropped at compile time: this
+    # guards that passing it anyway still works rather than over-filling the runtime.
     RBLN_CLASS_KWARGS = {
         "rbln_max_seq_len": 128,
         "rbln_model_input_names": ["input_ids", "attention_mask", "token_type_ids"],
@@ -757,6 +770,98 @@ class TestDistilBertForQuestionAnswering(BaseTest.TestModel):
     }
 
 
+class TestDistilBertModel(BaseTest.TestModel):
+    RBLN_AUTO_CLASS = [RBLNAutoModelForTextEncoding, RBLNAutoModel]
+    RBLN_CLASS = RBLNDistilBertModel
+    HF_MODEL_ID = "hf-tiny-model-private/tiny-random-DistilBertModel"
+    # DistilBERT has no token_type_ids; a tokenizer-provided one is dropped by `forward`.
+    GENERATION_KWARGS = {
+        "input_ids": RANDOM_INPUT_IDS,
+        "attention_mask": RANDOM_ATTN_MASK,
+        "token_type_ids": RANDOM_TOKEN_TYPE_IDS,
+    }
+
+    def test_compiled_input_names(self):
+        assert self.model._compiled_input_names == ["input_ids", "attention_mask"]
+
+    def test_output_shape(self):
+        expected = (*RANDOM_INPUT_IDS.shape, self.model.config.hidden_size)
+        with_token_type_ids = self.model(**self.GENERATION_KWARGS)
+        without_token_type_ids = self.model(input_ids=RANDOM_INPUT_IDS, attention_mask=RANDOM_ATTN_MASK)
+        assert tuple(with_token_type_ids[0].shape) == expected
+        assert tuple(without_token_type_ids[0].shape) == expected
+
+
+class TestDistilBertModelFromMaskedLMCheckpoint(TestDistilBertModel):
+    # The backbone is exported from a masked-LM checkpoint (e.g. distilbert-base-uncased): the head
+    # is not compiled, so the output is hidden states, not vocabulary logits.
+    HF_MODEL_ID = "hf-tiny-model-private/tiny-random-DistilBertForMaskedLM"
+
+
+class TestRobertaModel(BaseTest.TestModel):
+    RBLN_AUTO_CLASS = [RBLNAutoModelForTextEncoding, RBLNAutoModel]
+    RBLN_CLASS = RBLNRobertaModel
+    HF_MODEL_ID = "hf-tiny-model-private/tiny-random-RobertaModel"
+    GENERATION_KWARGS = {
+        "input_ids": RANDOM_INPUT_IDS[:, :256],
+        "attention_mask": RANDOM_ATTN_MASK[:, :256],
+    }
+    RBLN_CLASS_KWARGS = {"rbln_max_seq_len": 256, "rbln_batch_size": 1}
+    HF_CONFIG_KWARGS = {
+        "num_hidden_layers": 1,
+    }
+
+    def test_compiled_input_names(self):
+        assert self.model._compiled_input_names == ["input_ids", "attention_mask"]
+
+    def test_output_shape(self):
+        output = self.model(**self.GENERATION_KWARGS)
+        assert tuple(output[0].shape) == (*self.GENERATION_KWARGS["input_ids"].shape, self.model.config.hidden_size)
+
+    def test_nonzero_token_type_ids(self):
+        # The tiny config has `type_vocab_size == 16`, so dropping non-zero ids would change the output.
+        token_type_ids = torch.ones_like(self.GENERATION_KWARGS["input_ids"])
+        with pytest.raises(ValueError, match="token_type_ids"):
+            self.model(**self.GENERATION_KWARGS, token_type_ids=token_type_ids)
+
+        zero_token_type_ids = torch.zeros_like(token_type_ids)
+        output = self.model(**self.GENERATION_KWARGS, token_type_ids=zero_token_type_ids)
+        assert tuple(output[0].shape) == (*token_type_ids.shape, self.model.config.hidden_size)
+
+
+class TestRobertaModelFromMaskedLMCheckpoint(TestRobertaModel):
+    # The backbone is exported from a masked-LM checkpoint (e.g. SecureBERT): the head is not
+    # compiled, so the output is hidden states, not vocabulary logits.
+    HF_MODEL_ID = "hf-tiny-model-private/tiny-random-RobertaForMaskedLM"
+
+
+class TestRobertaModelSingleTokenType(TestRobertaModel):
+    # With `type_vocab_size == 1`, a compiled `token_type_ids` input is dropped from the graph (as with
+    # `bge-m3`), and non-zero ids are lossless to ignore, so they must not raise.
+    RBLN_CLASS_KWARGS = {
+        "rbln_max_seq_len": 256,
+        "rbln_batch_size": 1,
+        "rbln_model_input_names": ["input_ids", "attention_mask", "token_type_ids"],
+    }
+    GENERATION_KWARGS = {
+        **TestRobertaModel.GENERATION_KWARGS,
+        "token_type_ids": torch.zeros_like(RANDOM_INPUT_IDS[:, :256]),
+    }
+    HF_CONFIG_KWARGS = {
+        "num_hidden_layers": 1,
+        "type_vocab_size": 1,
+        "ignore_mismatched_sizes": True,
+    }
+
+    def test_nonzero_token_type_ids(self):
+        output = self.model(
+            input_ids=self.GENERATION_KWARGS["input_ids"],
+            attention_mask=self.GENERATION_KWARGS["attention_mask"],
+            token_type_ids=torch.ones_like(self.GENERATION_KWARGS["input_ids"]),
+        )
+        assert tuple(output[0].shape) == (*self.GENERATION_KWARGS["input_ids"].shape, self.model.config.hidden_size)
+
+
 class TestRobertaForMaskedLM(BaseTest.TestModel):
     RBLN_AUTO_CLASS = RBLNAutoModelForMaskedLM
     RBLN_CLASS = RBLNRobertaForMaskedLM
@@ -771,6 +876,20 @@ class TestRobertaForMaskedLM(BaseTest.TestModel):
     }
 
 
+class TestRobertaForMaskedLMSingleTokenType(TestRobertaForMaskedLM):
+    # `type_vocab_size == 1` drops `token_type_ids` from the compiled graph; passing it at inference
+    # must still work (it used to fail with "Number of inputs (3) exceeds the expected number (2)").
+    GENERATION_KWARGS = {
+        **TestRobertaForMaskedLM.GENERATION_KWARGS,
+        "token_type_ids": torch.zeros_like(RANDOM_INPUT_IDS[:, :256]),
+    }
+    HF_CONFIG_KWARGS = {
+        "num_hidden_layers": 1,
+        "type_vocab_size": 1,
+        "ignore_mismatched_sizes": True,
+    }
+
+
 class TestRobertaForSequenceClassification(BaseTest.TestModel):
     RBLN_AUTO_CLASS = RBLNAutoModelForSequenceClassification
     RBLN_CLASS = RBLNRobertaForSequenceClassification
@@ -782,6 +901,20 @@ class TestRobertaForSequenceClassification(BaseTest.TestModel):
     RBLN_CLASS_KWARGS = {"rbln_max_seq_len": 256, "rbln_batch_size": 1}
     HF_CONFIG_KWARGS = {
         "num_hidden_layers": 1,
+    }
+
+
+class TestRobertaForSequenceClassificationSingleTokenType(TestRobertaForSequenceClassification):
+    # `type_vocab_size == 1` drops `token_type_ids` from the compiled graph; passing it at inference
+    # must still work (it used to fail with "Number of inputs (3) exceeds the expected number (2)").
+    GENERATION_KWARGS = {
+        **TestRobertaForSequenceClassification.GENERATION_KWARGS,
+        "token_type_ids": torch.zeros_like(RANDOM_INPUT_IDS[:, :256]),
+    }
+    HF_CONFIG_KWARGS = {
+        "num_hidden_layers": 1,
+        "type_vocab_size": 1,
+        "ignore_mismatched_sizes": True,
     }
 
 
@@ -810,6 +943,8 @@ class TestGroundingDinoModel(BaseTest.TestModel):
         }
     }
 
+    TEXT_CONFIG_KWARGS = {}
+
     @classmethod
     def setUpClass(cls):
         from transformers import GroundingDinoConfig
@@ -827,6 +962,7 @@ class TestGroundingDinoModel(BaseTest.TestModel):
                 "num_attention_heads": 2,
                 "num_hidden_layers": 1,
                 "hidden_size": 32,
+                **cls.TEXT_CONFIG_KWARGS,
             },
             backbone_config={
                 "attention_probs_dropout_prob": 0.0,
@@ -862,6 +998,22 @@ class TestGroundingDinoModel(BaseTest.TestModel):
         assert all(isinstance(output, torch.Tensor) for output in tuple_output)
         assert tuple_output[0].shape == dict_output.logits.shape
         assert tuple_output[1].shape == dict_output.pred_boxes.shape
+
+
+class TestGroundingDinoModelTokenTypeIds(TestGroundingDinoModel):
+    # The BERT text backbone has `type_vocab_size == 2`, so all 4 text inputs are compiled
+    # and `token_type_ids` is actually passed.
+    TEXT_CONFIG_KWARGS = {"type_vocab_size": 2}
+    GENERATION_KWARGS = {
+        **TestGroundingDinoModel.GENERATION_KWARGS,
+        "token_type_ids": torch.zeros(1, 256, dtype=torch.int64),
+    }
+
+
+class TestGroundingDinoModelSingleTokenType(TestGroundingDinoModelTokenTypeIds):
+    # A single token type drops `token_type_ids` from the compiled text backbone; a passed
+    # `token_type_ids` must be dropped in forward (omitting it is covered by `TestGroundingDinoModel`).
+    TEXT_CONFIG_KWARGS = {"type_vocab_size": 1}
 
 
 if __name__ == "__main__":

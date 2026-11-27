@@ -65,18 +65,12 @@ class RBLNBertModel(RBLNTransformerEncoderForFeatureExtraction):
             The model outputs. If return_dict=False is passed, returns a tuple of tensors. Otherwise, returns a BaseModelOutputWithPoolingAndCrossAttentions object.
         """
 
-        input_map = {
-            "input_ids": input_ids,
-            "attention_mask": attention_mask,
-            "token_type_ids": token_type_ids,
-            "position_ids": position_ids,
-        }
-
-        model_input_names = getattr(self.rbln_config, "model_input_names", None)
-        if model_input_names is None:
-            model_input_names = self.rbln_model_input_names
-
-        ordered_inputs = [input_map[name] for name in model_input_names if name in input_map]
+        ordered_inputs = self._order_model_inputs(
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            token_type_ids=self._resolve_token_type_ids(token_type_ids),
+            position_ids=position_ids,
+        )
 
         return super().forward(*ordered_inputs, **kwargs)
 
@@ -111,7 +105,13 @@ class RBLNBertForMaskedLM(RBLNModelForMaskedLM):
             The model outputs. If return_dict=False is passed, returns a tuple of tensors. Otherwise, returns a MaskedLMOutput object.
         """
 
-        return super().forward(input_ids, attention_mask, token_type_ids, **kwargs)
+        ordered_inputs = self._order_model_inputs(
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            token_type_ids=self._resolve_token_type_ids(token_type_ids),
+        )
+
+        return super().forward(*ordered_inputs, **kwargs)
 
 
 class RBLNBertForQuestionAnswering(RBLNModelForQuestionAnswering):
@@ -144,7 +144,13 @@ class RBLNBertForQuestionAnswering(RBLNModelForQuestionAnswering):
             The model outputs. If return_dict=False is passed, returns a tuple of tensors. Otherwise, returns a QuestionAnsweringModelOutput object.
         """
 
-        return super().forward(input_ids, attention_mask, token_type_ids, **kwargs)
+        ordered_inputs = self._order_model_inputs(
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            token_type_ids=self._resolve_token_type_ids(token_type_ids),
+        )
+
+        return super().forward(*ordered_inputs, **kwargs)
 
 
 __all__ = [

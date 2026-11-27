@@ -16,10 +16,9 @@ import copy
 import importlib
 from collections.abc import Mapping
 from os import PathLike
-from typing import TYPE_CHECKING, Any, ClassVar, cast
+from typing import TYPE_CHECKING, Any, ClassVar, Self, cast
 
 import torch
-from typing_extensions import Self
 
 from ..configuration_utils import ContextRblnConfig, RBLNModelConfig, get_rbln_config_class
 from ..modeling import RBLNModel

@@ -14,9 +14,55 @@
 
 
 import torch
-from transformers.modeling_outputs import MaskedLMOutput, SequenceClassifierOutput
+from transformers.modeling_outputs import (
+    BaseModelOutputWithPoolingAndCrossAttentions,
+    MaskedLMOutput,
+    SequenceClassifierOutput,
+)
 
-from ...modeling_generic import RBLNModelForMaskedLM, RBLNModelForSequenceClassification
+from ...modeling_generic import (
+    RBLNModelForMaskedLM,
+    RBLNModelForSequenceClassification,
+    RBLNTransformerEncoderForFeatureExtraction,
+)
+
+
+class RBLNRobertaModel(RBLNTransformerEncoderForFeatureExtraction):
+    """
+    RBLN optimized RoBERTa model for feature extraction tasks.
+
+    This class provides hardware-accelerated inference for RoBERTa models
+    on RBLN devices, optimized for extracting contextualized embeddings
+    and features from text sequences.
+    """
+
+    rbln_model_input_names = ["input_ids", "attention_mask"]
+
+    def forward(
+        self,
+        input_ids: torch.Tensor,
+        attention_mask: torch.Tensor,
+        token_type_ids: torch.Tensor | None = None,
+        **kwargs,
+    ) -> tuple | BaseModelOutputWithPoolingAndCrossAttentions:
+        """
+        Forward pass for the RBLN-optimized RoBERTa model for feature extraction tasks.
+
+        Args:
+            input_ids (torch.LongTensor of shape (batch_size, sequence_length), optional): Indices of input sequence tokens in the vocabulary.
+            attention_mask (torch.FloatTensor of shape (batch_size, sequence_length), optional): Mask to avoid performing attention on padding token indices.
+            token_type_ids (torch.LongTensor of shape (batch_size, sequence_length), optional): Segment token indices to indicate first and second portions of the inputs.
+
+        Returns:
+            The model outputs. If return_dict=False is passed, returns a tuple of tensors. Otherwise, returns a BaseModelOutputWithPoolingAndCrossAttentions object.
+        """
+        ordered_inputs = self._order_model_inputs(
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            token_type_ids=self._resolve_token_type_ids(token_type_ids),
+        )
+
+        return super().forward(*ordered_inputs, **kwargs)
 
 
 class RBLNRobertaForMaskedLM(RBLNModelForMaskedLM):
@@ -30,18 +76,31 @@ class RBLNRobertaForMaskedLM(RBLNModelForMaskedLM):
 
     rbln_model_input_names = ["input_ids", "attention_mask"]
 
-    def forward(self, input_ids: torch.Tensor, attention_mask: torch.Tensor, **kwargs) -> tuple | MaskedLMOutput:
+    def forward(
+        self,
+        input_ids: torch.Tensor,
+        attention_mask: torch.Tensor,
+        token_type_ids: torch.Tensor | None = None,
+        **kwargs,
+    ) -> tuple | MaskedLMOutput:
         """
         Forward pass for the RBLN-optimized RoBERTa model for masked language modeling tasks.
 
         Args:
             input_ids (torch.LongTensor of shape (batch_size, sequence_length), optional): Indices of input sequence tokens in the vocabulary.
             attention_mask (torch.FloatTensor of shape (batch_size, sequence_length), optional): Mask to avoid performing attention on padding token indices.
+            token_type_ids (torch.LongTensor of shape (batch_size, sequence_length), optional): Segment token indices to indicate first and second portions of the inputs.
 
         Returns:
             The model outputs. If return_dict=False is passed, returns a tuple of tensors. Otherwise, returns a MaskedLMOutput object.
         """
-        return super().forward(input_ids, attention_mask, **kwargs)
+        ordered_inputs = self._order_model_inputs(
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            token_type_ids=self._resolve_token_type_ids(token_type_ids),
+        )
+
+        return super().forward(*ordered_inputs, **kwargs)
 
 
 class RBLNRobertaForSequenceClassification(RBLNModelForSequenceClassification):
@@ -56,7 +115,11 @@ class RBLNRobertaForSequenceClassification(RBLNModelForSequenceClassification):
     rbln_model_input_names = ["input_ids", "attention_mask"]
 
     def forward(
-        self, input_ids: torch.Tensor, attention_mask: torch.Tensor, **kwargs
+        self,
+        input_ids: torch.Tensor,
+        attention_mask: torch.Tensor,
+        token_type_ids: torch.Tensor | None = None,
+        **kwargs,
     ) -> tuple | SequenceClassifierOutput:
         """
         Forward pass for the RBLN-optimized RoBERTa model for sequence classification tasks.
@@ -64,14 +127,22 @@ class RBLNRobertaForSequenceClassification(RBLNModelForSequenceClassification):
         Args:
             input_ids (torch.LongTensor of shape (batch_size, sequence_length), optional): Indices of input sequence tokens in the vocabulary.
             attention_mask (torch.FloatTensor of shape (batch_size, sequence_length), optional): Mask to avoid performing attention on padding token indices.
+            token_type_ids (torch.LongTensor of shape (batch_size, sequence_length), optional): Segment token indices to indicate first and second portions of the inputs.
 
         Returns:
             The model outputs. If return_dict=False is passed, returns a tuple of tensors. Otherwise, returns a SequenceClassifierOutput object.
         """
-        return super().forward(input_ids, attention_mask, **kwargs)
+        ordered_inputs = self._order_model_inputs(
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            token_type_ids=self._resolve_token_type_ids(token_type_ids),
+        )
+
+        return super().forward(*ordered_inputs, **kwargs)
 
 
 __all__ = [
     "RBLNRobertaForMaskedLM",
     "RBLNRobertaForSequenceClassification",
+    "RBLNRobertaModel",
 ]

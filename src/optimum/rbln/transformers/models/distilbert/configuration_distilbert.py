@@ -12,7 +12,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from ...configuration_generic import RBLNModelForQuestionAnsweringConfig
+from ...configuration_generic import (
+    RBLNModelForQuestionAnsweringConfig,
+    RBLNTransformerEncoderForFeatureExtractionConfig,
+)
+
+
+class RBLNDistilBertModelConfig(RBLNTransformerEncoderForFeatureExtractionConfig):
+    """
+    Configuration class for RBLNDistilBertModel.
+
+    This configuration class stores the configuration parameters specific to
+    RBLN-optimized DistilBERT models for feature extraction tasks.
+    """
 
 
 class RBLNDistilBertForQuestionAnsweringConfig(RBLNModelForQuestionAnsweringConfig):
@@ -26,4 +38,5 @@ class RBLNDistilBertForQuestionAnsweringConfig(RBLNModelForQuestionAnsweringConf
 
 __all__ = [
     "RBLNDistilBertForQuestionAnsweringConfig",
+    "RBLNDistilBertModelConfig",
 ]
