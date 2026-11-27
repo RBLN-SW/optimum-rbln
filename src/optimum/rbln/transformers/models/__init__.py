@@ -68,6 +68,7 @@ if TYPE_CHECKING:
     from .qwen2_vl import *
     from .qwen3 import *
     from .qwen3_5 import *
+    from .qwen3_5_moe import *
     from .qwen3_asr import *
     from .qwen3_moe import *
     from .qwen3_vl import *

@@ -14,6 +14,8 @@ from transformers import (
     Qwen2_5_VLForConditionalGeneration,
     Qwen3_5Config,
     Qwen3_5ForConditionalGeneration,
+    Qwen3_5MoeConfig,
+    Qwen3_5MoeForConditionalGeneration,
     Qwen3Config,
     Qwen3ForCausalLM,
     Qwen3VLConfig,
@@ -29,6 +31,9 @@ from optimum.rbln import (
     RBLNQwen3_5ForConditionalGeneration,
     RBLNQwen3_5ForConditionalGenerationConfig,
     RBLNQwen3_5ModelConfig,
+    RBLNQwen3_5MoeForConditionalGeneration,
+    RBLNQwen3_5MoeForConditionalGenerationConfig,
+    RBLNQwen3_5MoeModelConfig,
     RBLNQwen3ForCausalLM,
     RBLNQwen3ForCausalLMConfig,
     RBLNQwen3VLForConditionalGeneration,
@@ -47,6 +52,8 @@ from optimum.rbln.transformers.models.gpt_oss.gpt_oss_architecture import RBLNGp
         (RBLNQwen3VLModelConfig, "RBLNQwen3VLVisionModelConfig"),
         (RBLNQwen3_5ForConditionalGenerationConfig, "RBLNQwen3_5VisionModelConfig"),
         (RBLNQwen3_5ModelConfig, "RBLNQwen3_5VisionModelConfig"),
+        (RBLNQwen3_5MoeForConditionalGenerationConfig, "RBLNQwen3_5MoeVisionModelConfig"),
+        (RBLNQwen3_5MoeModelConfig, "RBLNQwen3_5MoeVisionModelConfig"),
         (RBLNQwen2_5_VLForConditionalGenerationConfig, "RBLNQwen2_5_VisionTransformerPretrainedModelConfig"),
     ],
 )
@@ -180,9 +187,9 @@ def test_gpt_oss_experts_have_nonaliased_inputs():
 
 @pytest.mark.parametrize("enabled", [False, True])
 @pytest.mark.parametrize("phase", ["prefill", "decode"])
-@pytest.mark.parametrize("arch", ["qwen2_5_vl", "qwen3_5", "qwen3_vl"])
+@pytest.mark.parametrize("arch", ["qwen2_5_vl", "qwen3_5", "qwen3_5_moe", "qwen3_vl"])
 def test_packed_rotary_decoder_export(enabled, phase, arch):
-    hybrid = arch == "qwen3_5"
+    hybrid = arch in ("qwen3_5", "qwen3_5_moe")
     text = {
         "vocab_size": 128,
         "hidden_size": 128,
@@ -204,11 +211,21 @@ def test_packed_rotary_decoder_export(enabled, phase, arch):
             linear_num_value_heads=2,
         )
         vision["num_position_embeddings"] = 64
-        hf_config_cls, hf_model_cls = Qwen3_5Config, Qwen3_5ForConditionalGeneration
-        model_cls = RBLNQwen3_5ForConditionalGeneration
-        config_cls = RBLNQwen3_5ForConditionalGenerationConfig
-        vision_cls = "RBLNQwen3_5VisionModelConfig"
         extra["gdn_chunk_size"] = 128
+        if arch == "qwen3_5_moe":
+            # Every layer's MLP is a sparse MoE block (routed experts on custom_moe + a shared expert).
+            text.update(
+                num_experts=4, num_experts_per_tok=2, moe_intermediate_size=64, shared_expert_intermediate_size=64
+            )
+            hf_config_cls, hf_model_cls = Qwen3_5MoeConfig, Qwen3_5MoeForConditionalGeneration
+            model_cls = RBLNQwen3_5MoeForConditionalGeneration
+            config_cls = RBLNQwen3_5MoeForConditionalGenerationConfig
+            vision_cls = "RBLNQwen3_5MoeVisionModelConfig"
+        else:
+            hf_config_cls, hf_model_cls = Qwen3_5Config, Qwen3_5ForConditionalGeneration
+            model_cls = RBLNQwen3_5ForConditionalGeneration
+            config_cls = RBLNQwen3_5ForConditionalGenerationConfig
+            vision_cls = "RBLNQwen3_5VisionModelConfig"
     elif arch == "qwen2_5_vl":
         text["rope_parameters"] = {"rope_type": "default", "rope_theta": 10000, "mrope_section": [8, 12, 12]}
         vision["fullatt_block_indexes"] = [0]

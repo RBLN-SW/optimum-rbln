@@ -172,6 +172,15 @@ def test_qwen3_5_inherits_mixin():
     assert RBLNQwen3_5ForConditionalGeneration._video_grid_rows_are_chunks is True
 
 
+def test_qwen3_5_moe_inherits_mixin():
+    from optimum.rbln.transformers.models.qwen3_5_moe.modeling_qwen3_5_moe import (
+        RBLNQwen3_5MoeForConditionalGeneration,
+    )
+
+    assert issubclass(RBLNQwen3_5MoeForConditionalGeneration, RBLNQwenVLBatchSortMixin)
+    assert RBLNQwen3_5MoeForConditionalGeneration._video_grid_rows_are_chunks is True
+
+
 def test_exaone4_5_token_count_rows():
     model = _make_model(RBLNExaone4_5_ForConditionalGeneration, vision_config=SimpleNamespace(spatial_merge_size=2))
     # no vision_start marker; merged tokens per grid: 1, 2 (sample 0) and 4 (sample 2)

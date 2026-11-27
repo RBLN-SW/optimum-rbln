@@ -21,6 +21,8 @@ from transformers import (
     MixtralForCausalLM,
     Qwen2MoeConfig,
     Qwen2MoeForCausalLM,
+    Qwen3_5MoeConfig,
+    Qwen3_5MoeForConditionalGeneration,
     Qwen3MoeConfig,
     Qwen3MoeForCausalLM,
     Qwen3VLMoeConfig,
@@ -76,6 +78,8 @@ from optimum.rbln import (
     RBLNQwen2VLForConditionalGeneration,
     RBLNQwen3_5ForCausalLM,
     RBLNQwen3_5ForConditionalGeneration,
+    RBLNQwen3_5MoeForCausalLM,
+    RBLNQwen3_5MoeForConditionalGeneration,
     RBLNQwen3ASRForConditionalGeneration,
     RBLNQwen3ForCausalLM,
     RBLNQwen3Model,
@@ -366,6 +370,24 @@ class TestQwen3_5ForCausalLM(LLMTest.TestLLM):
         config.num_hidden_layers = 4
         config.layer_types = ["linear_attention", "linear_attention", "linear_attention", "full_attention"]
         cls.HF_CONFIG_KWARGS.update({"config": config, "ignore_mismatched_sizes": True})
+        return super().setUpClass()
+
+
+class TestQwen3_5MoeForCausalLM(LLMTest.TestLLM):
+    RBLN_CLASS = RBLNQwen3_5MoeForCausalLM
+    HF_MODEL_ID = "Qwen/Qwen3.6-35B-A3B"
+    RBLN_AUTO_CLASS = None
+    RBLN_CLASS_KWARGS = {"rbln_config": {"num_devices": 1, "max_seq_len": 8192, "kvcache_partition_len": 4096}}
+    HF_CONFIG_KWARGS = {}
+
+    @classmethod
+    def setUpClass(cls):
+        # The first four layers of the checkpoint (three GatedDeltaNet, one attention), every one with its
+        # 256-expert MoE MLP; the 36 layers left out are not read.
+        config = AutoConfig.from_pretrained(cls.HF_MODEL_ID).get_text_config()
+        config.num_hidden_layers = 4
+        config.layer_types = ["linear_attention", "linear_attention", "linear_attention", "full_attention"]
+        cls.HF_CONFIG_KWARGS.update({"config": config})
         return super().setUpClass()
 
 
@@ -1317,6 +1339,45 @@ class TestQwen3_5ForConditionalGeneration_OutputHiddenStates(TestQwen3_5ForCondi
         self._test_output_hidden_states_generation()
 
 
+class TestQwen3_5MoeForConditionalGeneration(LLMTest.TestLLM):
+    RBLN_AUTO_CLASS = RBLNAutoModelForImageTextToText
+    RBLN_CLASS = RBLNQwen3_5MoeForConditionalGeneration
+    TEST_PREFILL_ONLY = True
+    HF_MODEL_ID = "Qwen/Qwen3.6-35B-A3B"
+    PROMPT = "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\n<|vision_start|><|image_pad|><|vision_end|>Describe this image.<|im_end|>\n<|im_start|>assistant\n"
+    RBLN_CLASS_KWARGS = {
+        "rbln_config": {
+            "visual": {"max_seq_len": 512},
+            "num_devices": 1,
+            "kvcache_partition_len": 4096,
+            "max_seq_len": 8192,
+        }
+    }
+    IS_MULTIMODAL = True
+    HF_CONFIG_KWARGS = {}
+    HF_CONFIG_KWARGS_PREPROCESSOR = {"min_pixels": 64 * 16 * 16, "max_pixels": 64 * 16 * 16}
+
+    @classmethod
+    def setUpClass(cls):
+        config = AutoConfig.from_pretrained(cls.HF_MODEL_ID)
+        text_config = json.loads(config.text_config.to_json_string())
+        text_config["num_hidden_layers"] = 4
+        text_config["layer_types"] = ["linear_attention", "linear_attention", "linear_attention", "full_attention"]
+        vision_config = json.loads(config.vision_config.to_json_string())
+        vision_config["depth"] = 4
+        cls.HF_CONFIG_KWARGS.update({"text_config": text_config, "vision_config": vision_config})
+        return super().setUpClass()
+
+    def get_inputs(self):
+        tokenizer = self.get_tokenizer()
+        img_path = f"{os.path.dirname(__file__)}/../assets/rbln_logo_light.png"
+        image = Image.open(img_path)
+        inputs = tokenizer(images=[image], text=[self.PROMPT], return_tensors="pt", padding=True)
+        inputs["max_new_tokens"] = 20
+        inputs["do_sample"] = False
+        return inputs
+
+
 class TestQwen3ASRForConditionalGeneration(LLMTest.TestLLM):
     RBLN_AUTO_CLASS = RBLNAutoModelForMultimodalLM
     RBLN_CLASS = RBLNQwen3ASRForConditionalGeneration
@@ -1726,6 +1787,40 @@ class TestMoeHostMemory(unittest.TestCase):
             src.config.save_pretrained(tmp)
             del src
             self._check(RBLNQwen3VLMoeForConditionalGeneration, None, tmp, state_dict)
+
+    def test_qwen3_5_moe_hub_layout(self):
+        # Qwen3.5-MoE hub checkpoints store the experts natively fused ([E, 2I, H] and [E, H, I], no transpose),
+        # so they load as mmap views and only the wrapper's split copies them, as Gemma4's do.
+        text = {k: v for k, v in self.BASE.items() if k != "dtype"}
+        text.update(
+            moe_intermediate_size=128,
+            shared_expert_intermediate_size=128,
+            num_hidden_layers=4,
+            layer_types=["linear_attention", "linear_attention", "linear_attention", "full_attention"],
+            linear_num_key_heads=2,
+            linear_num_value_heads=4,
+            num_experts=64,
+            num_experts_per_tok=4,
+        )
+        vision = {
+            "depth": 1,
+            "hidden_size": 32,
+            "intermediate_size": 64,
+            "num_heads": 2,
+            "out_hidden_size": 512,
+            "patch_size": 16,
+            "spatial_merge_size": 2,
+            "temporal_patch_size": 2,
+            "num_position_embeddings": 64,
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            src = Qwen3_5MoeForConditionalGeneration(Qwen3_5MoeConfig(text_config=text, vision_config=vision))
+            src = src.to(torch.bfloat16).eval()
+            state_dict = {k: v.clone() for k, v in src.state_dict().items()}
+            save_file({k: v.contiguous() for k, v in state_dict.items()}, f"{tmp}/model.safetensors")
+            src.config.save_pretrained(tmp)
+            del src
+            self._check(RBLNQwen3_5MoeForConditionalGeneration, None, tmp, state_dict)
 
 
 if __name__ == "__main__":

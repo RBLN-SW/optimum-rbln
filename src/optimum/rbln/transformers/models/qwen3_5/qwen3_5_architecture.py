@@ -594,18 +594,19 @@ class Qwen3_5_CausalLMWrapper(DecoderOnlyWrapper):
     def get_rbln_causal_lm_class(self):
         return Qwen3_5ForCausalLM
 
+    def get_rbln_linear_layer_class(self):
+        """The class that wraps a `linear_attention` layer; `get_rbln_layer_class` covers `full_attention`."""
+        if self.rbln_config.nested_compile_region:
+            return Qwen3_5LinearDecoderLayerRegion
+        return Qwen3_5LinearDecoderLayer
+
     def convert_to_rbln_class(self, model, max_seq_len: int, use_rotary_emb: bool):
         layer_types = self.config.layer_types
         new_layers = []
         for layer_idx, layer in enumerate(self.get_decoder_layers(model)):
             if layer_types[layer_idx] == "linear_attention":
                 rbln_deltanet = Qwen3_5GatedDeltaNet(layer.linear_attn, self.rbln_config, layer_idx)
-                linear_layer_cls = (
-                    Qwen3_5LinearDecoderLayerRegion
-                    if self.rbln_config.nested_compile_region
-                    else Qwen3_5LinearDecoderLayer
-                )
-                new_layers.append(linear_layer_cls(layer, rbln_deltanet))
+                new_layers.append(self.get_rbln_linear_layer_class()(layer, rbln_deltanet))
             else:
                 new_self_attn = self.get_rbln_attn_class()(layer.self_attn, self.rbln_config, is_sliding=False)
                 new_layers.append(
